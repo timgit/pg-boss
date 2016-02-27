@@ -1,0 +1,26 @@
+{
+  "name": "postgresql-queue",
+  "version": "1.0.0",
+  "description": "A simple Node.js job queue backed by PostgreSQL",
+  "main": "index.js",
+  "dependencies": {
+    "pg": "^4.5.1"
+  },
+  "devDependencies": {},
+  "scripts": {},
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/timgit/postgresql-queue.git"
+  },
+  "keywords": [
+    "postgresql",
+    "queue",
+    "job"
+  ],
+  "author": "timgit",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/timgit/postgresql-queue/issues"
+  },
+  "homepage": "https://github.com/timgit/postgresql-queue#readme"
+}
