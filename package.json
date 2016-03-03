@@ -1,7 +1,7 @@
 {
-  "name": "postgresql-queue",
+  "name": "pg-boss",
   "version": "1.0.0",
-  "description": "A simple Node.js job queue backed by PostgreSQL",
+  "description": "Queueing jobs in Node.js using PostgreSQL like a boss",
   "main": "index.js",
   "dependencies": {
     "pg": "^4.5.1"
@@ -10,7 +10,7 @@
   "scripts": {},
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/timgit/postgresql-queue.git"
+    "url": "git+https://github.com/timgit/pg-boss.git"
   },
   "keywords": [
     "postgresql",
@@ -20,7 +20,7 @@
   "author": "timgit",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/timgit/postgresql-queue/issues"
+    "url": "https://github.com/timgit/pg-boss/issues"
   },
-  "homepage": "https://github.com/timgit/postgresql-queue#readme"
+  "homepage": "https://github.com/timgit/pg-boss#readme"
 }
