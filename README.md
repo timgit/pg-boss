@@ -1,2 +1,2 @@
-# postgresql-queue
-A simple Node.js job queue backed by PostgreSQL
+# pg-boss
+Queueing jobs in Node.js using PostgreSQL like a boss.
