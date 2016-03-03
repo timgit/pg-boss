@@ -1,0 +1,5 @@
+{
+	"database": "pgboss",
+	"user": "postgres",
+	"password": "postgres"
+}
