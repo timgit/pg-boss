@@ -19,37 +19,33 @@ const nextJobCommand = `
     WHERE id = nextJob.id
 `;
 
-const newJobcommand = `
-  INSERT INTO pdq.job (id, name, state, retryLimit, startAfter, expireAfter, createdOn, data)
-  VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-  `;
-
 class Worker extends EventEmitter {
-  constructor(config){
-    this.config = config;
-    this.interval = 1000;
-    this.jobRegistry = [];
-  }
+    constructor(config){
+        this.config = config;
+        this.interval = 1000;
+        this.jobRegistry = [];
 
-  clockIn(){
-    let self = this;
+        return clockIn(this);
 
-    return setInterval(checkForWork, self.interval);
 
-    function checkForWork() {
-      if(self.jobRegistry.length === 0)
-        return;
+        function clockIn(self){
 
-      let db = new Db(self.config);
+            return setInterval(checkForWork, self.interval);
 
-      return db.executeSql(nextJobCommand, [self.jobRegistry])
-        .then(job => {
-          if(job)
-            self.emit(job.name, job.data);
-        });
+            function checkForWork() {
+                if(self.jobRegistry.length === 0)
+                    return;
+
+                let db = new Db(self.config);
+
+                return db.executeSql(nextJobCommand, [self.jobRegistry])
+                    .then(job => {
+                        if(job)
+                            self.emit(job.name, job.data);
+                    });
+            }
+        }
     }
-
-  }
 
   registerJob(name, callback) {
     this.on(name, callback);
@@ -58,20 +54,28 @@ class Worker extends EventEmitter {
 
   submitJob(name, data){
 
-    let values = [
-      uuid.v4(),
-      name,
-      'created',
-      0,
-      null,
-      null,
-      new Date(),
-      data
-    ];
+    let now = new Date();
+    let fiveMinutes = (1000 * 60 * 5);
+
+    let id = uuid.v4(),
+        state = 'created',
+        retryLimit = 0,
+        startAfter = now,
+        expireAfter = new Date(now.getTime() + fiveMinutes),
+        createdOn = now;
+
+    const newJobcommand = `
+        INSERT INTO pdq.job (id, name, state, retryLimit, startAfter, expireAfter, createdOn, data)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`;
+
+    let values = [id, name, state, retryLimit, startAfter, expireAfter, createdOn, data];
 
     return db.executeSql(newJobcommand, values)
-      .catch(error => this.emit('error', error));
+        .then(() => id)
+        .catch(error => this.emit('error', error));
+
   }
+
 }
 
 module.exports = Worker;

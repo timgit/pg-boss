@@ -18,8 +18,9 @@ const command = `
     completedOn timestamp without time zone
   );
 
-  CREATE TABLE IF NOT EXISTS pdq.version (version text not null);
-  INSERT INTO pdq.version(version) VALUES ($1);
+  CREATE TABLE IF NOT EXISTS pdq.version (version text primary key);
+
+  INSERT INTO pdq.version(version) VALUES ($1) ON CONFLICT DO NOTHING;
 `;
 
 class Contractor {
