@@ -11,8 +11,10 @@ class Manager extends EventEmitter {
     }
 
     monitor(){
+        var self = this;
+
         setImmediate(timeoutOldJobs);
-        setInterval(timeoutOldJobs, this.monitorInterval);
+        setInterval(timeoutOldJobs, self.monitorInterval);
 
         function timeoutOldJobs(){
 
@@ -23,8 +25,10 @@ class Manager extends EventEmitter {
                 AND (startedOn + expireAfter) > now()
             `;
 
-            let db = new Db(this.config);
-            return db.executeSql(timeoutCommand);
+            let db = new Db(self.config);
+
+            return db.executeSql(timeoutCommand)
+                .catch(error => self.emit('error', error));
         }
     }
 
