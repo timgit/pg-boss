@@ -4,8 +4,8 @@ const config = require('./config.json');
 var boss = new PgBoss(config);
 
 boss.on('error', error => console.error(error));
-boss.on('ready', init);
 boss.on('job', job => console.log(`${job.name} job found - ${job.id}`));
+boss.on('ready', init);
 
 function init() {
 

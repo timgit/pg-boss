@@ -1,6 +1,8 @@
+const assert = require('assert');
 const EventEmitter = require('events');
 const Db = require('./db');
 const uuid = require('node-uuid');
+const Worker = require('./worker');
 
 class Manager extends EventEmitter {
     constructor(config){
@@ -8,6 +10,7 @@ class Manager extends EventEmitter {
 
         this.config = config;
         this.monitorInterval = 1000 * 60;
+        this.workers = [];
     }
 
     monitor(){
@@ -29,6 +32,31 @@ class Manager extends EventEmitter {
 
             return db.executeSql(timeoutCommand)
                 .catch(error => self.emit('error', error));
+        }
+    }
+
+    registerJob(name, config, callback){
+
+        assert(name, 'boss requires all jobs to have a name');
+
+        config = config || {};
+        assert(typeof config == 'object', 'expected config to be an object');
+
+        config.teamSize = config.teamSize || 1;
+
+        for(let w=0;w<config.teamSize; w++){
+
+            let worker = new Worker(name, this.config);
+
+            worker.on('error', error => this.emit('error', error));
+
+            worker.on(name, job => {
+                this.emit('job', {name, id: job.id});
+
+                callback(job, () => this.closeJob(job.id));
+            });
+
+            this.workers.push(worker);
         }
     }
 
