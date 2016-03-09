@@ -7,6 +7,8 @@ const Boss = require('./boss');
 
 class PgBoss extends EventEmitter {
     constructor(config){
+        super();
+
         assert(config && (typeof config == 'object' || typeof config == 'string'),
             'string or config object is required to connect to postgres');
 
@@ -19,10 +21,13 @@ class PgBoss extends EventEmitter {
         }
 
         this.config = config;
+        this.workers = [];
 
         // contractor makes sure we have a happy database home for work
         Contractor.checkEnvironment(config)
             .then(() => {
+
+                console.log('environment set up');
 
                 // boss keeps the books and archives old jobs
                 var boss = new Boss(config);
@@ -31,22 +36,20 @@ class PgBoss extends EventEmitter {
                 // manager makes sure workers aren't taking too long to finish their jobs
                 var manager = new Manager(config);
                 manager.monitor();
+                manager.on('error', error => this.emit('error', error));
 
-                this.workers = [];
+                this.manager = manager;
 
                 this.emit('ready');
-
             })
-            .catch(error => this.emit('error', error));
+            .catch(error => {
+                this.emit('error', error);
+            });
 
     }
 
-    registerJob(name, callback){
-      this.worker.registerJob(name, callback);
-    }
+    registerJob(name, config, callback){
 
-    submitJob(name, data, config){
-        //TODO: enhance with Job param
         assert(name, 'boss requires all jobs to have a name');
 
         config = config || {};
@@ -56,12 +59,23 @@ class PgBoss extends EventEmitter {
 
         for(let w=0;w<config.teamSize; w++){
 
-            let worker = new Worker(config);
-            worker.on('job', name => this.emit('job', name));
-            worker.submitJob(name, data, config);
+            let worker = new Worker(name, this.config);
+
+            worker.on('error', error => this.emit('error', error));
+
+            worker.on(name, job => {
+                this.emit('job', {name, id: job.id});
+
+                callback(job, () => this.manager.closeJob(job.id));
+            });
 
             this.workers.push(worker);
         }
+    }
+
+    submitJob(name, data, config){
+        //TODO: enhance with Job param
+        return this.manager.submitJob(name, data, config);
     }
 
 }

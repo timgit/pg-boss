@@ -1,26 +1,33 @@
 const pg = require('pg');
 
 class Db {
-  constructor(config){
-    this.config = config;
-  }
+    constructor(config){
+        this.config = config;
+    }
 
-  executeSql(sql, params){
-    if(params && !Array.isArray(params))
-      params = [params];
+    executeSql(sql, params){
+        if(params && !Array.isArray(params))
+            params = [params];
 
-    return new Promise((resolve, reject) => {
-      pg.connect(this.config, (err, client, done) => {
-        client.query(sql, params, (err, result) => {
-          if(err)
-            reject(err);
-          else
-            resolve(result);
+        return new Promise((resolve, reject) => {
+            pg.connect(this.config, (err, client, done) => {
 
-          done();
+                if(err) {
+                    reject(err);
+                    return done();
+                }
+
+                client.query(sql, params, (err, result) => {
+                    if(err)
+                        reject(err);
+                    else
+                        resolve(result);
+
+                    done();
+                });
+
+            });
         });
-      });
-    });
 
   }
 }
