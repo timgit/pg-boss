@@ -1,4 +1,4 @@
-const PgBoss = require('./index');
+const PgBoss = require('./lib/index');
 const config = require('./config.json');
 
 var boss = new PgBoss(config);

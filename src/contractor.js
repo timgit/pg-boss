@@ -1,5 +1,5 @@
 const Db = require('./db');
-const pkg = require('./package.json');
+const pkg = require('../package.json');
 
 class Contractor {
   static checkEnvironment(config){
