@@ -60,16 +60,22 @@ class Manager extends EventEmitter {
         }
     }
 
-    submitJob(name, data){
+    submitJob(name, data, options){
+
+        options = options || {};
 
         let now = new Date();
 
         let id = uuid.v4(),
             state = 'created',
-            retryLimit = 0,
-            startAfter = now,
-            expireAfter = '5 minutes',
+            retryLimit = options.retryLimit || 0,
+            expireAfter = options.expireAfter || '5 minutes',
             createdOn = now;
+
+        let startAfter =
+            (options.startAfter) ? options.startAfter
+            : (options.delay) ? new Date(now.getTime() + options.delay)
+            : now;
 
         const newJobcommand = `
         INSERT INTO pdq.job (id, name, state, retryLimit, startAfter, expireAfter, createdOn, data)
