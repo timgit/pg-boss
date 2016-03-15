@@ -22,10 +22,11 @@ class Manager extends EventEmitter {
         function timeoutOldJobs(){
 
             const timeoutCommand = `
-                UPDATE pdq.job
-                SET state = 'timeout'
+                UPDATE pgboss.job
+                SET state = 'expired',
+                    expiredOn = now()
                 WHERE state = 'active'
-                AND (startedOn + expireAfter) > now()
+                AND (startedOn + expireIn) > now()
             `;
 
             let db = new Db(self.config);
@@ -64,24 +65,25 @@ class Manager extends EventEmitter {
 
         options = options || {};
 
-        let now = new Date();
+        console.log(options);
+
+        // convert numeric to seconds
+        options.startIn =
+            (options.startIn > 0) ? options.startIn = '' + options.startIn
+            : (typeof options.startIn == 'string') ? options.startIn
+            : '0';
 
         let id = uuid.v4(),
             state = 'created',
             retryLimit = options.retryLimit || 0,
-            expireAfter = options.expireAfter || '5 minutes',
-            createdOn = now;
-
-        let startAfter =
-            (options.startAfter) ? options.startAfter
-            : (options.delay) ? new Date(now.getTime() + options.delay)
-            : now;
+            startIn = options.startIn || '0',
+            expireIn = options.expireIn || '15 minutes';
 
         const newJobcommand = `
-        INSERT INTO pdq.job (id, name, state, retryLimit, startAfter, expireAfter, createdOn, data)
-        VALUES ($1, $2, $3, $4, $5, CAST($6 as interval), $7, $8)`;
+        INSERT INTO pgboss.job (id, name, state, retryLimit, startIn, expireIn, data)
+        VALUES ($1, $2, $3, $4, CAST($5 as interval), CAST($6 as interval), $7)`;
 
-        let values = [id, name, state, retryLimit, startAfter, expireAfter, createdOn, data];
+        let values = [id, name, state, retryLimit, startIn, expireIn, data];
 
         let db = new Db(this.config);
 
@@ -93,11 +95,12 @@ class Manager extends EventEmitter {
 
     closeJob(id){
         const closeJobCommand = `
-            UPDATE pdq.job
-            SET completedOn = $1
-            WHERE id = $2`;
+            UPDATE pgboss.job
+            SET completedOn = now(),
+                state = 'complete'
+            WHERE id = $1`;
 
-        let values = [new Date(), id];
+        let values = [id];
 
         let db = new Db(this.config);
 

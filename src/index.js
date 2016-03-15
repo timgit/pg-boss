@@ -57,9 +57,9 @@ class PgBoss extends EventEmitter {
         return this.manager.registerJob(name, config, callback);
     }
 
-    submitJob(name, data, config){
+    submitJob(name, data, options){
         //TODO: enhance with Job param
-        return this.manager.submitJob(name, data, config);
+        return this.manager.submitJob(name, data, options);
     }
 }
 

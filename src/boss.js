@@ -2,7 +2,7 @@ const EventEmitter = require('events');
 const Db = require('./db');
 
 const archiveCommand = `
-  DELETE FROM pdq.job
+  DELETE FROM pgboss.job
   WHERE state = 'completed'
     AND completedOn + INTERVAL '1 day' < now()
 `;

@@ -4,21 +4,21 @@ const Db = require('./db');
 const nextJobCommand = `
   WITH nextJob as (
       SELECT id
-      FROM pdq.job
-      WHERE (state = 'created' OR (state = 'timeout' AND retryCount <= retryLimit))
+      FROM pgboss.job
+      WHERE (state = 'created' OR (state = 'expired' AND retryCount <= retryLimit))
         AND name = $1
-        AND startAfter < now()
+        AND (createdOn + startIn) < now()
       ORDER BY createdOn, id
       LIMIT 1
       FOR UPDATE
     )
-    UPDATE pdq.job SET
+    UPDATE pgboss.job SET
       state = 'active',
       startedOn = now(),
-      retryCount = CASE WHEN state = 'timeout' THEN retryCount + 1 ELSE retryCount END
+      retryCount = CASE WHEN state = 'expired' THEN retryCount + 1 ELSE retryCount END
     FROM nextJob
-    WHERE pdq.job.id = nextJob.id
-    RETURNING pdq.job.id, pdq.job.data
+    WHERE pgboss.job.id = nextJob.id
+    RETURNING pgboss.job.id, pgboss.job.data
 `;
 
 class Worker extends EventEmitter {

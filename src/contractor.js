@@ -22,24 +22,25 @@ class Contractor extends EventEmitter {
 
         function createSchema() {
             const schemaCreateCommand =
-              'CREATE SCHEMA IF NOT EXISTS pdq';
+              'CREATE SCHEMA IF NOT EXISTS pgboss';
 
             return db.executeSql(schemaCreateCommand);
         }
 
         function createJobTable() {
             const jobTableCreateCommand = `
-                CREATE TABLE IF NOT EXISTS pdq.job (
+                CREATE TABLE IF NOT EXISTS pgboss.job (
                     id uuid primary key not null,
                     name text not null,
                     data jsonb,
                     state text not null,
                     retryLimit integer not null default(0),
                     retryCount integer not null default(0),
-                    startAfter timestamp without time zone,
-                    expireAfter interval,
+                    startIn interval,
                     startedOn timestamp without time zone,
-                    createdOn timestamp without time zone not null,
+                    expireIn interval,
+                    expiredOn timestamp without time zone,
+                    createdOn timestamp without time zone not null default now(),
                     completedOn timestamp without time zone
                 )`;
 
@@ -48,14 +49,14 @@ class Contractor extends EventEmitter {
 
         function createVersionTable() {
             const versionTableCreateCommand =
-                'CREATE TABLE IF NOT EXISTS pdq.version (version text primary key)';
+                'CREATE TABLE IF NOT EXISTS pgboss.version (version text primary key)';
 
             return db.executeSql(versionTableCreateCommand);
         }
 
         function insertVersion() {
             const versionInsertCommand =
-                `INSERT INTO pdq.version(version) VALUES ($1) ON CONFLICT DO NOTHING;`;
+                `INSERT INTO pgboss.version(version) VALUES ($1) ON CONFLICT DO NOTHING;`;
 
             return db.executeSql(versionInsertCommand, pkg.version);
         }
