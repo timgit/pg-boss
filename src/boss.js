@@ -25,7 +25,7 @@ class Boss extends EventEmitter{
       let db = new Db(self.config);
 
       return db.executeSql(archiveCommand)
-          .catch(error => self.emit('error', error));;
+          .catch(error => self.emit('error', error));
     }
   }
 }
