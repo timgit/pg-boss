@@ -1,5 +1,10 @@
 {
 	"database": "pgboss",
 	"user": "postgres",
-	"password": "postgres"
+	"password": "postgres",
+	"schema": "pgboss",
+	"newJobCheckIntervalSeconds": 1,
+	"expireCheckIntervalMinutes": 1,
+	"archiveCheckIntervalMinutes": 60,
+	"archiveCompletedJobsEvery": "1 day"
 }
