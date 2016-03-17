@@ -26,31 +26,21 @@ class Worker extends EventEmitter {
     constructor(name, config){
         super();
 
-        var interval = 1000;
+        const interval = config.interval || 1000;
+        let db = new Db(config);
 
-        clockIn(this);
-
-        function clockIn(self){
-
-            return setInterval(checkForWork, interval);
-
-            function checkForWork() {
-                let db = new Db(config);
-
-                return db.executeSql(nextJobCommand, name)
-                    .then(result => {
-                        if(!result.rows.length)
-                            return;
-
-                        let job = result.rows[0];
-
-                        self.emit(name, job);
-                    })
-                    .catch(error => self.emit('error', error));
-            }
-        }
+        this.checkForWork(this, name, db, interval);
     }
 
+    checkForWork(worker, name, db, interval) {
+        db.executeSql(nextJobCommand, name)
+            .then(result => {
+                if(result.rows.length)
+                    worker.emit(name, result.rows[0]);
+            })
+            .catch(error => worker.emit('error', error))
+            .then(() => setTimeout(worker.checkForWork, interval, worker, name, db, interval));
+    }
 }
 
 module.exports = Worker;
