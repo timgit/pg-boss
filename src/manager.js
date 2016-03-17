@@ -14,7 +14,7 @@ const nextJobCommand = `
         AND completedOn IS NULL
       ORDER BY createdOn, id
       LIMIT 1
-      FOR UPDATE
+      FOR UPDATE SKIP LOCKED
     )
     UPDATE pgboss.job SET
       state = 'active',
