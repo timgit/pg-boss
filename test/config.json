@@ -3,6 +3,7 @@
 	"user": "postgres",
 	"password": "postgres",
 	"schema": "pgboss",
+	"uuid": "v1",
 	"newJobCheckIntervalSeconds": 1,
 	"expireCheckIntervalMinutes": 1,
 	"archiveCheckIntervalMinutes": 60,
