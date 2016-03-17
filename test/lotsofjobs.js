@@ -8,21 +8,23 @@ boss.on('ready', init);
 
 function init() {
 
+    const jobCount = 1000;
     var receivedCount = 0;
+    const jobName = 'one_of_many'
 
-    boss.registerJob('oneinahundred', {teamSize: 20}, (job, done) => {
+    boss.registerJob(jobName, {teamSize: jobCount}, (job, done) => {
         console.log(`got job ${job.id} payload: ${job.data.message}`);
         done().then(() => {
             receivedCount++;
 
-            if(receivedCount === 100)
+            if(receivedCount === jobCount)
                 process.exit();
         });
     });
 
-    for(var x=0; x<100; x++){
+    for(var x=0; x<jobCount; x++){
 
-        boss.submitJob('oneinahundred', {message: x + ' requested'})
+        boss.submitJob(jobName, {message: x + ' requested'})
             .then(jobId => console.log(`job id ${jobId} submitted`));
 
     }
