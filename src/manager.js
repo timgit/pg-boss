@@ -54,7 +54,7 @@ class Manager extends EventEmitter {
                 SET state = 'expired',
                     expiredOn = now()
                 WHERE state = 'active'
-                AND (startedOn + expireIn) > now()
+                AND (startedOn + expireIn) < now()
             `;
 
             let db = new Db(self.config);
