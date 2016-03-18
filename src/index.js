@@ -1,12 +1,14 @@
 const EventEmitter = require('events');
 const assert = require('assert');
+
+const Attorney = require('./attorney');
 const Contractor = require('./contractor');
 const Manager = require('./manager');
 const Boss = require('./boss');
 
 class PgBoss extends EventEmitter {
     constructor(config){
-        assertConfig();
+        Attorney.checkConfig(config);
 
         super();
 
@@ -14,52 +16,45 @@ class PgBoss extends EventEmitter {
 
         // contractor makes sure we have a happy database home for work
         var contractor = new Contractor(config);
+        this.contractor = contractor;
+
         contractor.on('error', error => this.emit('error', error));
 
-        contractor.checkEnvironment()
-            .then(() => {
-                // boss keeps the books and archives old jobs
-                var boss = new Boss(config);
-                boss.on('error', error => this.emit('error', error));
-                boss.supervise();
+        contractor.on('go', () => {
+            // boss keeps the books and archives old jobs
+            var boss = new Boss(config);
+            boss.on('error', error => this.emit('error', error));
+            boss.supervise();
 
-                // manager makes sure workers aren't taking too long to finish their jobs
-                var manager = new Manager(config);
-                manager.on('error', error => this.emit('error', error));
-                manager.on('job', job => this.emit('job', job));
-                manager.monitor();
+            // manager makes sure workers aren't taking too long to finish their jobs
+            var manager = new Manager(config);
+            manager.on('error', error => this.emit('error', error));
+            manager.on('job', job => this.emit('job', job));
+            manager.monitor();
 
-                this.manager = manager;
+            this.manager = manager;
 
-                this.emit('ready');
-            })
-            .catch(error => {
-                this.emit('error', error);
-            });
-
-
-        function assertConfig() {
-            assert(config && (typeof config == 'object' || typeof config == 'string'),
-                'string or config object is required to connect to postgres');
-
-            if(typeof config == 'object'){
-                assert(config.database && config.user && 'password' in config,
-                    'expected configuration object to have enough information to connect to PostgreSQL');
-
-                config.host = config.host || 'localhost';
-                config.port = config.port || 5432;
-            }
-        }
-
+            this.isReady = true;
+            this.emit('ready');
+        });
     }
 
-    registerJob(name, config, callback){
-        return this.manager.registerJob(name, config, callback);
+    start() {
+        this.contractor.start();
     }
 
-    submitJob(name, data, options){
-        //TODO: enhance with Job param
-        return this.manager.submitJob(name, data, options);
+    connect() {
+        this.contractor.connect();
+    }
+
+    subscribe(name, config, callback){
+        assert(this.isReady, "boss ain't ready.  Use start() or connect() to get started.");
+        return this.manager.subscribe(name, config, callback);
+    }
+
+    publish(name, data, options){
+        assert(this.isReady, "boss ain't ready.  Use start() or connect() to get started.");
+        return this.manager.publish(name, data, options);
     }
 }
 

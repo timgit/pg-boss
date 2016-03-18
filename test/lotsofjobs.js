@@ -1,12 +1,12 @@
 const PgBoss = require('../src/index');
 const config = require('./config.json');
-const Db = require('../src/db');
+const helper = require('./testService');
 
 var boss = new PgBoss(config);
+boss.start();
 
 boss.on('error', error => console.error(error));
-boss.on('ready', () => init().then(test));
-
+boss.on('ready', () => helper.init().then(test));
 
 function test(){
     const jobCount = 1000;
@@ -14,13 +14,13 @@ function test(){
     const jobName = 'one_of_many'
 
     for(var x=1; x<=jobCount; x++){
-        boss.submitJob(jobName, {message: 'message #' + x})
+        boss.publish(jobName, {message: 'message #' + x})
             .then(jobId => console.log(`job id ${jobId} submitted`));
     }
 
     var startTime = new Date();
 
-    boss.registerJob(jobName, {teamSize: jobCount}, (job, done) => {
+    boss.subscribe(jobName, {teamSize: jobCount}, (job, done) => {
 
         console.log(`got job ${job.id} payload: ${job.data.message}`);
 
@@ -37,14 +37,4 @@ function test(){
 
         });
     });
-
-}
-
-function init(){
-    const emptyJobsCommand = 'truncate table pgboss.job';
-
-    var db = new Db(config);
-
-    return db.executeSql(emptyJobsCommand)
-        .catch(error => console.error(error));
 }
