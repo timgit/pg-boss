@@ -2,16 +2,22 @@ const pg = require('pg');
 
 class Db {
     constructor(config){
-        this.config = config;
+        // prefers connection strings over objects
+        this.config = config.connectionString || config;
     }
 
     executeSql(sql, params){
         if(params && !Array.isArray(params))
             params = [params];
 
-        return new Promise((resolve, reject) => {
-            pg.connect(this.config, (err, client, done) => {
+        var config = this.config;
 
+        return new Promise(deferred);
+
+
+        function deferred(resolve, reject) {
+
+            pg.connect(config, (err, client, done) => {
                 if(err) {
                     reject(err);
                     return done();
@@ -25,9 +31,9 @@ class Db {
 
                     done();
                 });
-
             });
-        });
+
+        }
 
   }
 }
