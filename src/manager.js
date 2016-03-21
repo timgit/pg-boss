@@ -45,7 +45,7 @@ class Manager extends EventEmitter {
         let db = new Db(this.config);
 
         let jobFetcher = () =>
-            db.executeSql(this.nextJobCommand, name)
+            db.executePreparedSql('nextJob', this.nextJobCommand, name)
                 .then(result => result.rows.length ? result.rows[0] : null);
 
         let workerConfig = {name: name, fetcher: jobFetcher, interval: this.workerInterval};

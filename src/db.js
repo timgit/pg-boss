@@ -6,9 +6,18 @@ class Db {
         this.config = config.connectionString || config;
     }
 
-    executeSql(sql, params){
-        if(params && !Array.isArray(params))
-            params = [params];
+    executePreparedSql(name, text, values){
+        return this.execute({name,text,values});
+    }
+
+    executeSql(text, values){
+       return this.execute({text,values});
+    }
+
+
+    execute(query) {
+        if(query.values && !Array.isArray(query.values))
+            query.values = [query.values];
 
         var config = this.config;
 
@@ -23,7 +32,7 @@ class Db {
                     return done();
                 }
 
-                client.query(sql, params, (err, result) => {
+                client.query(query, (err, result) => {
                     if(err)
                         reject(err);
                     else
@@ -32,10 +41,9 @@ class Db {
                     done();
                 });
             });
-
         }
+    }
 
-  }
 }
 
 module.exports = Db;
