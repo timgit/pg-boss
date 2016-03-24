@@ -28,7 +28,7 @@ class Manager extends EventEmitter {
         timeoutOldJobs();
 
         function timeoutOldJobs(){
-            return db.executeSql(self.expireJobCommand)
+            db.executeSql(self.expireJobCommand)
                 .catch(error => self.emit('error', error))
                 .then(() => setTimeout(timeoutOldJobs, self.monitorInterval));
         }
@@ -58,9 +58,10 @@ class Manager extends EventEmitter {
 
             worker.on(name, job => {
                 this.emit('job', {name, id: job.id});
-
                 callback(job, () => this.completeJob(job.id));
             });
+
+            worker.start();
 
             this.workers.push(worker);
         }
@@ -86,7 +87,10 @@ class Manager extends EventEmitter {
 
         return db.executeSql(this.insertJobCommand, values)
             .then(() => id)
-            .catch(error => this.emit('error', error));
+            .catch(error => {
+                this.emit('error', error);
+                throw error;
+            });
     }
 
     completeJob(id){
@@ -95,7 +99,10 @@ class Manager extends EventEmitter {
         let db = new Db(this.config);
 
         return db.executeSql(this.completeJobCommand, values)
-            .catch(error => this.emit('error', error));
+            .catch(error => {
+                this.emit('error', error);
+                throw error;
+            });
     }
 }
 

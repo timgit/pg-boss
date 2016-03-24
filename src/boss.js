@@ -19,7 +19,7 @@ class Boss extends EventEmitter{
         function archive(){
             let db = new Db(self.config);
 
-            return db.executeSql(self.archiveCommand, self.config.archiveCompletedJobsEvery)
+            db.executeSql(self.archiveCommand, self.config.archiveCompletedJobsEvery)
                 .catch(error => self.emit('error', error))
                 .then(() => setTimeout(archive, self.superviseInterval));
         }

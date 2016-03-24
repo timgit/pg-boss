@@ -52,7 +52,10 @@ class Contractor extends EventEmitter {
                 else
                     this.emit('error', 'job table not found in your database. I can create it for you via start().')
             })
-            .catch(error => this.emit('error', error));
+            .catch(error => {
+                this.emit('error', error);
+                throw error;
+            });
     }
 }
 
