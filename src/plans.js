@@ -37,10 +37,12 @@ function createJobTable(schema) {
             retryCount integer not null default(0),
             startIn interval,
             startedOn timestamp without time zone,
+            singletonOn timestamp without time zone,
             expireIn interval,
             expiredOn timestamp without time zone,
             createdOn timestamp without time zone not null default now(),
-            completedOn timestamp without time zone
+            completedOn timestamp without time zone,
+            CONSTRAINT job_singleton UNIQUE(name, singletonOn)
         )`;
 }
 
@@ -96,8 +98,11 @@ function completeJob(schema){
 }
 
 function insertJob(schema) {
-    return `INSERT INTO ${schema}.job (id, name, state, retryLimit, startIn, expireIn, data)
-            VALUES ($1, $2, $3, $4, CAST($5 as interval), CAST($6 as interval), $7)`;
+    return `INSERT INTO ${schema}.job (id, name, state, retryLimit, startIn, expireIn, data, singletonOn)
+            VALUES ($1, $2, $3, $4, CAST($5 as interval), CAST($6 as interval), $7, 
+            CASE WHEN $8::integer IS NOT NULL THEN 'epoch'::timestamp + '1 second'::interval * ($8 * floor(date_part('epoch', now()) / $8)) ELSE NULL END
+            )
+            ON CONFLICT ON CONSTRAINT job_singleton DO NOTHING`;
 }
 
 function archive(schema) {

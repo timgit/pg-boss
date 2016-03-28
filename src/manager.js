@@ -58,7 +58,7 @@ class Manager extends EventEmitter {
 
             worker.on(name, job => {
                 this.emit('job', {name, id: job.id});
-                callback(job, () => this.completeJob(job.id));
+                setImmediate(() => callback(job, () => this.completeJob(job.id)));
             });
 
             worker.start();
@@ -71,17 +71,23 @@ class Manager extends EventEmitter {
         options = options || {};
 
         options.startIn =
-            (options.startIn > 0) ? options.startIn = '' + options.startIn
+            (options.startIn > 0) ? '' + options.startIn
             : (typeof options.startIn == 'string') ? options.startIn
             : '0';
+
+        options.singletonSeconds =
+            (options.singletonSeconds > 0) ? options.singletonSeconds
+            : (options.singletonMinutes > 0) ? options.singletonMinutes * 60
+            : (options.singletonHours > 0) ? options.singletonHours * 60 * 60
+            : (options.singletonDays > 0) ? options.singletonDays * 60 * 60 * 24
+            : null;
 
         let id = uuid[this.config.uuid](),
             state = 'created',
             retryLimit = options.retryLimit || 0,
-            startIn = options.startIn || '0',
             expireIn = options.expireIn || '15 minutes';
 
-        let values = [id, name, state, retryLimit, startIn, expireIn, data];
+        let values = [id, name, state, retryLimit, options.startIn, expireIn, data, options.singletonSeconds];
 
         let db = new Db(this.config);
 
