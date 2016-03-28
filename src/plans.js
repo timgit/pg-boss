@@ -100,7 +100,7 @@ function completeJob(schema){
 function insertJob(schema) {
     return `INSERT INTO ${schema}.job (id, name, state, retryLimit, startIn, expireIn, data, singletonOn)
             VALUES ($1, $2, $3, $4, CAST($5 as interval), CAST($6 as interval), $7, 
-            CASE WHEN $8 IS NOT NULL THEN 'epoch'::timestamp + '1 second'::interval * ($8 * floor(date_part('epoch', now()) / $8)) ELSE NULL END
+            CASE WHEN $8::integer IS NOT NULL THEN 'epoch'::timestamp + '1 second'::interval * ($8 * floor(date_part('epoch', now()) / $8)) ELSE NULL END
             )
             ON CONFLICT ON CONSTRAINT job_singleton DO NOTHING`;
 }
