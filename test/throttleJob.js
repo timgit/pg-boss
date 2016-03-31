@@ -9,8 +9,8 @@ boss.on('error', error => console.error(error));
 boss.on('ready', () => helper.init().then(test));
 
 function test() {
-    const singletonSeconds = 5;
-    const jobCount = 3;
+    const singletonSeconds = 10;
+    const jobCount = 5;
     const interval = 500;
 
     var receivedCount = 0;
