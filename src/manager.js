@@ -4,12 +4,14 @@ const Db = require('./db');
 const uuid = require('node-uuid');
 const Worker = require('./worker');
 const plans = require('./plans');
+const Promise = require('bluebird');
 
 class Manager extends EventEmitter {
     constructor(config){
         super();
 
         this.config = config;
+        this.db = new Db(config);
 
         this.workerInterval = config.newJobCheckIntervalSeconds * 1000;
         this.monitorInterval = config.expireCheckIntervalMinutes * 60 * 1000;
@@ -23,12 +25,11 @@ class Manager extends EventEmitter {
 
     monitor(){
         var self = this;
-        let db = new Db(self.config);
 
         timeoutOldJobs();
 
         function timeoutOldJobs(){
-            db.executeSql(self.expireJobCommand)
+            self.db.executeSql(self.expireJobCommand)
                 .catch(error => self.emit('error', error))
                 .then(() => setTimeout(timeoutOldJobs, self.monitorInterval));
         }
@@ -42,10 +43,8 @@ class Manager extends EventEmitter {
 
         config.teamSize = config.teamSize || 1;
 
-        let db = new Db(this.config);
-
         let jobFetcher = () =>
-            db.executePreparedSql('nextJob', this.nextJobCommand, name)
+            this.db.executePreparedSql('nextJob', this.nextJobCommand, name)
                 .then(result => result.rows.length ? result.rows[0] : null);
 
         let workerConfig = {name: name, fetcher: jobFetcher, interval: this.workerInterval};
@@ -68,43 +67,67 @@ class Manager extends EventEmitter {
     }
 
     publish(name, data, options){
-        options = options || {};
+        let self = this;
+        
+        return new Promise(deferred);
+        
 
-        options.startIn =
-            (options.startIn > 0) ? '' + options.startIn
-            : (typeof options.startIn == 'string') ? options.startIn
-            : '0';
+        function deferred(resolve, reject){
 
-        options.singletonSeconds =
-            (options.singletonSeconds > 0) ? options.singletonSeconds
-            : (options.singletonMinutes > 0) ? options.singletonMinutes * 60
-            : (options.singletonHours > 0) ? options.singletonHours * 60 * 60
-            : (options.singletonDays > 0) ? options.singletonDays * 60 * 60 * 24
-            : null;
+            insertJob();
 
-        let id = uuid[this.config.uuid](),
-            state = 'created',
-            retryLimit = options.retryLimit || 0,
-            expireIn = options.expireIn || '15 minutes';
+            function insertJob(){
+                options = options || {};
 
-        let values = [id, name, state, retryLimit, options.startIn, expireIn, data, options.singletonSeconds];
+                let startIn =
+                    (options.startIn > 0) ? '' + options.startIn
+                        : (typeof options.startIn == 'string') ? options.startIn
+                        : '0';
 
-        let db = new Db(this.config);
+                let singletonSeconds =
+                    (options.singletonSeconds > 0) ? options.singletonSeconds
+                        : (options.singletonMinutes > 0) ? options.singletonMinutes * 60
+                        : (options.singletonHours > 0) ? options.singletonHours * 60 * 60
+                        : (options.singletonDays > 0) ? options.singletonDays * 60 * 60 * 24
+                        : null;
 
-        return db.executeSql(this.insertJobCommand, values)
-            .then(() => id)
-            .catch(error => {
-                this.emit('error', error);
-                throw error;
-            });
+                let id = uuid[self.config.uuid](),
+                    state = 'created',
+                    retryLimit = options.retryLimit || 0,
+                    expireIn = options.expireIn || '15 minutes',
+                    singletonOffset = options.singletonOffset || 0;
+
+                let values = [id, name, state, retryLimit, startIn, expireIn, data, singletonSeconds, singletonOffset];
+
+                self.db.executeSql(self.insertJobCommand, values)
+                    .then(result => {
+                        if(result.rowCount === 1)
+                            return resolve(id);
+
+                        if(singletonSeconds && options.startIn != singletonSeconds){
+                            options.startIn = singletonSeconds;
+                            options.singletonOffset = singletonSeconds;
+
+                            insertJob(name, data, options);
+                        }
+                        else {
+                            resolve(null);
+                        }
+                    })
+                    .catch(error => {
+                        self.emit('error', error);
+                        reject(error);
+                    });
+            }
+
+        }
+
     }
 
     completeJob(id){
         let values = [id];
 
-        let db = new Db(this.config);
-
-        return db.executeSql(this.completeJobCommand, values)
+        return this.db.executeSql(this.completeJobCommand, values)
             .catch(error => {
                 this.emit('error', error);
                 throw error;
