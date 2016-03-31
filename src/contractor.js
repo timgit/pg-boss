@@ -21,7 +21,7 @@ class Contractor extends EventEmitter {
     }
 
     isCurrent(){
-        this.version().then(version => version === schemaVersion);
+        return this.version().then(version => version === schemaVersion);
     }
 
     isInstalled() {

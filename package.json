@@ -1,6 +1,6 @@
 {
   "name": "pg-boss",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Queueing jobs in Node.js using PostgreSQL like a boss",
   "main": "./lib/index.js",
   "dependencies": {
