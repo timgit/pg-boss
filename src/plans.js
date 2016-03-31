@@ -1,26 +1,17 @@
 module.exports = {
-    combinedCreateScript: combinedCreateScript,
     createSchema: createSchema,
     createJobTable: createJobTable,
     createVersionTable: createVersionTable,
-    setVersion: setVersion,
-    jobTableExists: jobTableExists,
+    insertVersion: insertVersion,
+    getVersion: getVersion,
+    versionTableExists: versionTableExists,
     fetchNextJob: fetchNextJob,
     expireJob: expireJob,
     completeJob: completeJob,
     insertJob: insertJob,
-    archive: archive
+    archive: archive,
+    getMigration: getMigration
 };
-
-function combinedCreateScript(schema) {
-    var commands = [
-        createSchema(schema),
-        createVersionTable(schema),
-        createJobTable(schema)
-    ];
-
-    return commands.join(';\n\n');
-}
 
 function createSchema(schema) {
     return `CREATE SCHEMA IF NOT EXISTS ${schema}`;
@@ -46,16 +37,23 @@ function createJobTable(schema) {
         )`;
 }
 
-function jobTableExists(schema) {
-    return `select to_regclass('${schema}.job') as name`;
+function getVersion(schema) {
+    return `select version from ${schema}.version`;
 }
 
 function createVersionTable(schema) {
-    return `CREATE TABLE IF NOT EXISTS ${schema}.version (version text primary key)`;
+    return `
+        CREATE TABLE IF NOT EXISTS ${schema}.version (
+            version text primary key
+        )`;
 }
 
-function setVersion(schema) {
-    return `INSERT INTO ${schema}.version(version) VALUES ($1) ON CONFLICT DO NOTHING;`;
+function versionTableExists(schema) {
+    return `select to_regclass('${schema}.version') as name`;
+}
+
+function insertVersion(schema) {
+    return `INSERT INTO ${schema}.version(version) VALUES ($1)`;
 }
 
 function fetchNextJob(schema) {
@@ -110,4 +108,42 @@ function archive(schema) {
         DELETE FROM ${schema}.job
         WHERE state = 'completed'
         AND completedOn + CAST($1 as interval) < now()`;
+}
+
+function getMigration(schema, version, uninstall) {
+    let migrations = [
+        {
+            version: '0.1.0',
+            previous: '0.0.1',
+            install: [
+                `ALTER TABLE ${schema}.job ADD singletonOn timestamp without time zone`,
+                `ALTER TABLE ${schema}.job ADD CONSTRAINT job_singleton UNIQUE(name, singletonOn)`,
+                `TRUNCATE TABLE ${schema}.version`,
+                `INSERT INTO ${schema}.version(version) values('0.0.1')`
+            ],
+            uninstall: [
+                `ALTER TABLE ${schema}.job DROP CONSTRAINT job_singleton`,
+                `ALTER TABLE ${schema}.job DROP COLUMN singletonOn`
+            ]
+        }
+    ];
+
+    for(var m=0; m<migrations.length; m++){
+        let migration = migrations[m];
+
+        let targetVersion = uninstall ? 'previous' : 'version';
+        let sourceVersion = uninstall ? 'version' : 'previous';
+
+        let targetCommands = uninstall ? 'uninstall' : 'install';
+
+        if(migration[sourceVersion] === version){
+            let commands = migration[targetCommands].concat();
+            commands.push(`UPDATE ${schema}.version SET version = '${migration[targetVersion]}'`);
+
+            return {
+                version: migration[targetVersion],
+                commands
+            };
+        }
+    }
 }

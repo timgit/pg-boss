@@ -6,10 +6,16 @@ var db = new Db(config);
 
 db.executeSql('DROP SCHEMA pgboss CASCADE')
     .then(test)
-    .catch(error => console.error(error));
+    .catch(error => null)
+    .then(test);
 
 function test() {
     var boss = new PgBoss(config);
+
+    boss.on('error', error => {
+        console.error(error);
+        process.exit(0);
+    });
+
     boss.connect();
-    boss.on('error', error => console.error(error));
 }

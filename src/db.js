@@ -1,4 +1,5 @@
 const pg = require('pg');
+const Promise = require("bluebird");
 
 class Db {
     constructor(config){
