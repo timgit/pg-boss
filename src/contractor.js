@@ -65,9 +65,9 @@ class Contractor extends EventEmitter {
 
             let migration = plans.getMigration(self.config.schema, version);
 
-            Promise.each(migration.commands.map(command => db.executeSql(command)))
+            Promise.each(migration.commands, command => db.executeSql(command))
                 .then(() => {
-                    if(migration == schemaVersion)
+                    if(migration.version === schemaVersion)
                         self.emit('go');
                     else
                         migrate(migration.version);                
