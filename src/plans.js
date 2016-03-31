@@ -1,4 +1,5 @@
 module.exports = {
+    createAll: createAll,
     createSchema: createSchema,
     createJobTable: createJobTable,
     createVersionTable: createVersionTable,
@@ -12,6 +13,14 @@ module.exports = {
     archive: archive,
     getMigration: getMigration
 };
+
+function createAll(schema) {
+    return [
+        createSchema(schema),
+        createJobTable(schema),
+        createVersionTable(schema)
+    ];
+}
 
 function createSchema(schema) {
     return `CREATE SCHEMA IF NOT EXISTS ${schema}`;
@@ -118,7 +127,7 @@ function getMigration(schema, version, uninstall) {
             install: [
                 `ALTER TABLE ${schema}.job ADD singletonOn timestamp without time zone`,
                 `ALTER TABLE ${schema}.job ADD CONSTRAINT job_singleton UNIQUE(name, singletonOn)`,
-                `TRUNCATE TABLE ${schema}.version`,
+                `TRUNCATE TABLE ${schema}.version`, // one time truncate because of previous schema
                 `INSERT INTO ${schema}.version(version) values('0.0.1')`
             ],
             uninstall: [

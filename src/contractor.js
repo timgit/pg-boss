@@ -30,14 +30,10 @@ class Contractor extends EventEmitter {
     }
 
     constructionPlans(){
-        var commands = [
-            plans.createSchema(this.config.schema),
-            plans.createJobTable(this.config.schema),
-            plans.createVersionTable(this.config.schema),
-            plans.insertVersion(this.config.schema)
-        ];
+        let exportPlans = plans.createAll(this.config.schema);
+        exportPlans.push(plans.insertVersion(this.config.schema).replace('$1', schemaVersion));
 
-        return commands.join(';\n\n');
+        return exportPlans.join(';\n\n');
     }
 
     start(){
@@ -63,7 +59,7 @@ class Contractor extends EventEmitter {
             if(version == '0.0.2')
                 version = '0.0.1';
 
-            let migration = plans.getMigration(self.config.schema, version);
+            let migration = plans.getMigration(config.schema, version);
 
             Promise.each(migration.commands, command => db.executeSql(command))
                 .then(() => {
@@ -76,13 +72,10 @@ class Contractor extends EventEmitter {
         }
         
         function create(){
-            //TODO migrate to .each() from array
-            db.executeSql(plans.createSchema(config.schema))
-                .then(() => db.executeSql(plans.createJobTable(config.schema)))
-                .then(() => db.executeSql(plans.createVersionTable(config.schema)))
+            Promise.each(plans.createAll(config.schema), command => db.executeSql(command))
                 .then(() => db.executeSql(plans.insertVersion(config.schema), schemaVersion))
-                .then(() => this.emit('go'))
-                .catch(error => this.emit('error', error));
+                .then(() => self.emit('go'))
+                .catch(error => self.emit('error', error));
         }
     }
 
