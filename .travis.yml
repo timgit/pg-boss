@@ -1,0 +1,27 @@
+sudo: false
+language: node_js
+node_js:
+  - "5"
+  - "5.1"
+  - "4"
+  - "4.0"
+  - "4.1"
+  - "4.2"
+  - "0.12"
+  - "0.11"
+  - "0.10"
+  - "iojs"
+services:
+addons:
+  postgresql: "9.5"
+  apt:
+    sources:
+      - precise-pgdg-9.5
+    packages:
+      - postgresql-9.5
+before_script:
+  - psql --version
+  - psql -c 'create database pgboss_test;' -U postgres
+cache:
+  directories:
+    - node_modules
