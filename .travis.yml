@@ -20,8 +20,7 @@ addons:
     packages:
       - postgresql-9.5
 env:
-  - PGPORT=5433
-  - PGHOST=localhost
+  - PGPORT=5433 PGHOST=localhost
 before_script:
   - psql --version
   - psql -c 'create database pgboss_test;' -U postgres
