@@ -6,6 +6,12 @@ var helper = require('./testService');
 describe('delayed jobs', function(){
     it('should wait before processing a delayed job submission', function(finished) {
 
+        // todo: temp test for travis config override
+        if(process.env.TRAVIS) {
+            config.port = 5433;
+            config.password = '';
+        }
+
         var boss = new PgBoss(config);
         boss.start();
 
