@@ -22,8 +22,9 @@ addons:
 env:
   - PGPORT=5433 PGHOST=localhost
 before_script:
-  - psql --version
-  - sudo -u postgres createdb -O pgboss
+  - sudo cp /etc/postgresql/9.4/main/pg_hba.conf /etc/postgresql/9.5/main/pg_hba.conf
+  - sudo /etc/init.d/postgresql restart
+  - psql -c 'create database pgboss;' -U postgres
 cache:
   directories:
     - node_modules
