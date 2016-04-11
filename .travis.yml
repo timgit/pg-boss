@@ -21,7 +21,7 @@ addons:
       - postgresql-9.5
 before_script:
   - psql --version
-  - psql -c 'create database pgboss_test;' -U postgres
+  - psql -c 'create database pgboss_test;' -U postgres -p 5433
 cache:
   directories:
     - node_modules
