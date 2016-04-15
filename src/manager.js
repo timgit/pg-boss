@@ -56,7 +56,8 @@ class Manager extends EventEmitter {
             worker.on('error', error => this.emit('error', error));
 
             worker.on(name, job => {
-                this.emit('job', {name, id: job.id});
+                job.name = name;
+                this.emit('job', job);
                 setImmediate(() => callback(job, () => this.completeJob(job.id)));
             });
 
