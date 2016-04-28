@@ -6,6 +6,9 @@ var helper = require('./testService');
 describe('delayed jobs', function(){
     it('should wait before processing a delayed job submission', function(finished) {
 
+        var delaySeconds = 2;
+        this.timeout(3000);
+
         // todo: temp test for travis config override
         if(process.env.TRAVIS) {
             config.port = 5433;
@@ -19,9 +22,6 @@ describe('delayed jobs', function(){
         boss.on('ready', () => helper.init().then(ready));
 
         function ready() {
-
-            var delaySeconds = 1;
-
             boss.subscribe('wait', null, (job, done) => {
                 var start = new Date(job.data.submitted);
                 var end = new Date();
