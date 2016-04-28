@@ -20,6 +20,7 @@ describe('performance', function() {
 
         function test(){
             var jobCount = 1000;
+            var expectedSeconds = 3;
             var receivedCount = 0;
             var jobName = 'one_of_many'
 
@@ -38,7 +39,7 @@ describe('performance', function() {
                         var elapsed = new Date().getTime() - startTime.getTime();
                         console.log(`finished ${jobCount} jobs in ${elapsed}ms`);
 
-                        assert.isBelow(elapsed/1000, 1);
+                        assert.isBelow(elapsed/1000, expectedSeconds);
                         finished();
                     }
 
