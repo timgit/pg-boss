@@ -68,6 +68,8 @@ class Manager extends EventEmitter {
     }
 
     publish(name, data, options){
+        assert(name, 'boss requires all jobs to have a name');
+
         let self = this;
         
         return new Promise(deferred);
