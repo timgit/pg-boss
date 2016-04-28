@@ -16,7 +16,7 @@
     "mocha": "^2.4.5"
   },
   "scripts": {
-    "test": "node_modules/.bin/mocha test/delayedJobTest.js",
+    "test": "node_modules/.bin/mocha test/*Test.js",
     "compile": "babel --presets es2015,stage-0 -d lib/ src/",
     "prepublish": "npm run compile"
   },

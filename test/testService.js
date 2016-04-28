@@ -1,13 +1,13 @@
-const Db = require('../lib/db');
-const config = require('./config.json');
+var Db = require('../lib/db');
+var config = require('./config.json');
 
 module.exports = {
   init: init
 };
 
 function init() {
-    const schema = config.schema || 'pgboss';
-    const emptyJobsCommand = `truncate table ${schema}.job`;
+    var schema = config.schema || 'pgboss';
+    var emptyJobsCommand = `truncate table ${schema}.job`;
 
     var db = new Db(config);
 
