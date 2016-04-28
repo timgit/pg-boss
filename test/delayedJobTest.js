@@ -38,7 +38,7 @@ describe('delayed jobs', function(){
 
             boss.publish('wait', {message: 'hold your horses', submitted: Date.now()}, {startIn: delaySeconds})
                 .then(jobId => {
-                    console.log(`job id ${jobId} requested to start in ${delaySeconds} seconds`);
+                    console.log(`job ${jobId} requested to start in ${delaySeconds} seconds`);
                 });
 
         }

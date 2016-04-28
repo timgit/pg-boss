@@ -4,7 +4,7 @@ var config = require('./config.json');
 var helper = require('./testService');
 
 describe('performance', function() {
-    it('should be able to complete 1000 jobs in a second', function (finished) {
+    it('should be able to complete 1000 jobs in 3 seconds', function (finished) {
 
         // todo: temp test for travis config override
         if(process.env.TRAVIS) {

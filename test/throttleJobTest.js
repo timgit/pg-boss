@@ -4,7 +4,7 @@ var config = require('./config.json');
 var helper = require('./testService');
 
 describe('throttle', function() {
-    it('should only process 1 job every second', function (finished) {
+    it('should process at most 1 job per second', function (finished) {
 
         var singletonSeconds = 1;
         var jobCount = 3;
@@ -35,7 +35,7 @@ describe('throttle', function() {
             });
 
             setTimeout(() => {
-                console.log('published ' + publishCount + ' jobs in '  + assertTimeout/1000 + ' seconds ' + ' and received only ' + subscribeCount + ' jobs');
+                console.log('published ' + publishCount + ' jobs in '  + assertTimeout/1000 + ' seconds but received ' + subscribeCount + ' jobs');
                 assert.isAtMost(subscribeCount, jobCount + 1);
 
                 finished();
