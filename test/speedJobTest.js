@@ -3,8 +3,11 @@ var PgBoss = require('../lib/index');
 var config = require('./config.json');
 var helper = require('./testService');
 
+var expectedSeconds = 5;
+var jobCount = 1000;
+
 describe('performance', function() {
-    it('should be able to complete 1000 jobs in 3 seconds', function (finished) {
+    it('should be able to complete ' + jobCount + ' jobs in ' + expectedSeconds + ' seconds', function (finished) {
 
         // todo: temp test for travis config override
         if(process.env.TRAVIS) {
@@ -29,10 +32,8 @@ describe('performance', function() {
         }
 
         function test(){
-            var jobCount = 1000;
-            var expectedSeconds = 3;
             var receivedCount = 0;
-            var jobName = 'one_of_many'
+            var jobName = 'one_of_many';
 
             for(var x=1; x<=jobCount; x++){
                 boss.publish(jobName, {message: 'message #' + x});
@@ -40,14 +41,14 @@ describe('performance', function() {
 
             var startTime = new Date();
 
-            boss.subscribe(jobName, {teamSize: jobCount}, (job, done) => {
+            boss.subscribe(jobName, {teamSize: jobCount}, function(job, done) {
 
-                done().then(() => {
+                done().then(function() {
                     receivedCount++;
 
                     if(receivedCount === jobCount){
                         var elapsed = new Date().getTime() - startTime.getTime();
-                        console.log(`finished ${jobCount} jobs in ${elapsed}ms`);
+                        console.log('finished ' + jobCount + ' jobs in ' + elapsed + 'ms');
 
                         assert.isBelow(elapsed/1000, expectedSeconds);
                         finished();
