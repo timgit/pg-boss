@@ -7,7 +7,7 @@ module.exports = {
 
 function init() {
     var schema = config.schema || 'pgboss';
-    var emptyJobsCommand = `truncate table ${schema}.job`;
+    var emptyJobsCommand = 'truncate table ' + schema + '.job';
 
     var db = new Db(config);
 
