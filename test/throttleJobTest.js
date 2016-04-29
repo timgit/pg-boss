@@ -21,31 +21,41 @@ describe('throttle', function() {
         }
 
         var boss = new PgBoss(config);
+
+        boss.on('error', logError);
+        boss.on('ready', ready);
+
         boss.start();
 
-        boss.on('error', error => console.error(error));
-        boss.on('ready', () => helper.init().then(test));
+        function logError(error) {
+            console.error(error);
+        }
+
+        function ready() {
+            helper.init()
+                .then(test);
+        }
 
         function test() {
             var publishCount = 0;
             var subscribeCount = 0;
 
-            boss.subscribe('expensive', null, (job, done) => {
-                done().then(() => subscribeCount++);
+            boss.subscribe('expensive', null, function(job, done) {
+                done().then(function() { subscribeCount++; });
             });
 
-            setTimeout(() => {
+            setTimeout(function() {
                 console.log('published ' + publishCount + ' jobs in '  + assertTimeout/1000 + ' seconds but received ' + subscribeCount + ' jobs');
                 assert.isAtMost(subscribeCount, jobCount + 1);
 
                 finished();
 
-            }, assertTimeout)
+            }, assertTimeout);
 
 
-            setInterval(() => {
+            setInterval(function() {
                 boss.publish('expensive', null, {singletonSeconds: singletonSeconds})
-                    .then(() => publishCount++);
+                    .then(function() { publishCount++; });
             }, publishInterval);
         }
 

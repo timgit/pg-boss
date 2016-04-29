@@ -21,7 +21,7 @@ describe('initialization', function(){
         function test() {
             var boss = new PgBoss(config);
 
-            boss.on('error', error => {
+            boss.on('error', function(error) {
                 assert.isNotNull(error);
                 finished();
             });

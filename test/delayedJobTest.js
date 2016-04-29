@@ -16,29 +16,40 @@ describe('delayed jobs', function(){
         }
 
         var boss = new PgBoss(config);
+
+        boss.on('error', logError);
+        boss.on('ready', ready);
+
         boss.start();
 
-        boss.on('error', error => console.error(error));
-        boss.on('ready', () => helper.init().then(ready));
+        function logError(error) {
+            console.error(error);
+        }
 
         function ready() {
-            boss.subscribe('wait', null, (job, done) => {
+            helper.init()
+                .then(test);
+        }
+
+        function test() {
+
+            boss.subscribe('wait', null, function(job, done) {
                 var start = new Date(job.data.submitted);
                 var end = new Date();
 
                 var elapsedSeconds = Math.floor((end-start)/1000);
 
-                console.log(`job ${job.id} received in ${elapsedSeconds} seconds with payload: ${job.data.message}`);
+                console.log('job '+ job.id + ' received in ' + elapsedSeconds + ' seconds with payload: ' + job.data.message);
 
-                done().then(() => {
+                done().then(function() {
                     assert.isAtLeast(delaySeconds, elapsedSeconds);
                     finished();
                 });
             });
 
             boss.publish('wait', {message: 'hold your horses', submitted: Date.now()}, {startIn: delaySeconds})
-                .then(jobId => {
-                    console.log(`job ${jobId} requested to start in ${delaySeconds} seconds`);
+                .then(function(jobId) {
+                    console.log('job ' + jobId + ' requested to start in ' + delaySeconds + ' seconds');
                 });
 
         }

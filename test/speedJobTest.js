@@ -11,12 +11,22 @@ describe('performance', function() {
             config.port = 5433;
             config.password = '';
         }
-        
+
         var boss = new PgBoss(config);
+
+        boss.on('error', logError);
+        boss.on('ready', ready);
+
         boss.start();
 
-        boss.on('error', error => console.error(error));
-        boss.on('ready', () => helper.init().then(test));
+        function logError(error) {
+            console.error(error);
+        }
+
+        function ready() {
+            helper.init()
+                .then(test);
+        }
 
         function test(){
             var jobCount = 1000;
