@@ -1,4 +1,4 @@
-const EventEmitter = require('events');
+const EventEmitter = require('events').EventEmitter; //node 0.10 compatibility
 const Db = require('./db');
 const plans = require('./plans');
 const schemaVersion = require('../version.json').schema;

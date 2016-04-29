@@ -1,4 +1,4 @@
-const EventEmitter = require('events');
+const EventEmitter = require('events').EventEmitter; //node 0.10 compatibility;
 
 class Worker extends EventEmitter {
     constructor(config){

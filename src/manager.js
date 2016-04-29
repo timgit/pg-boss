@@ -1,5 +1,5 @@
 const assert = require('assert');
-const EventEmitter = require('events');
+const EventEmitter = require('events').EventEmitter; //node 0.10 compatibility;
 const Db = require('./db');
 const uuid = require('node-uuid');
 const Worker = require('./worker');
