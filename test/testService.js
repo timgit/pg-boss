@@ -12,5 +12,5 @@ function init() {
     var db = new Db(config);
 
     return db.executeSql(emptyJobsCommand)
-        .catch(error => console.error(error));
+        .catch(function(error) { console.error(error); });
 }
