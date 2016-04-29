@@ -9,6 +9,9 @@ var jobCount = 1000;
 describe('performance', function() {
     it('should be able to complete ' + jobCount + ' jobs in ' + expectedSeconds + ' seconds', function (finished) {
 
+        // add an extra second to test timeout
+        this.timeout((expectedSeconds + 1) * 1000);
+
         // todo: temp test for travis config override
         if(process.env.TRAVIS) {
             config.port = 5433;
