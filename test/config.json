@@ -1,11 +1,12 @@
 {
+    "host": "127.0.0.1",
 	"database": "pgboss",
 	"user": "postgres",
 	"password": "postgres",
 	"schema": "pgboss",
 	"uuid": "v1",
 	"newJobCheckIntervalSeconds": 1,
-	"expireCheckIntervalMinutes": 1,
+	"expireCheckIntervalSeconds": 60,
 	"archiveCheckIntervalMinutes": 60,
 	"archiveCompletedJobsEvery": "1 day"
 }

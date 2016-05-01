@@ -70,7 +70,7 @@ function fetchNextJob(schema) {
         WITH nextJob as (
           SELECT id
           FROM ${schema}.job
-          WHERE (state = 'created' OR (state = 'expired' AND retryCount <= retryLimit))
+          WHERE (state = 'created' OR (state = 'expired' AND retryCount < retryLimit))
             AND name = $1
             AND (createdOn + startIn) < now()
             AND completedOn IS NULL

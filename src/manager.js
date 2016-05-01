@@ -14,7 +14,7 @@ class Manager extends EventEmitter {
         this.db = new Db(config);
 
         this.workerInterval = config.newJobCheckIntervalSeconds * 1000;
-        this.monitorInterval = config.expireCheckIntervalMinutes * 60 * 1000;
+        this.monitorInterval = config.expireCheckIntervalSeconds * 1000;
         this.nextJobCommand = plans.fetchNextJob(config.schema);
         this.expireJobCommand = plans.expireJob(config.schema);
         this.insertJobCommand = plans.insertJob(config.schema);
