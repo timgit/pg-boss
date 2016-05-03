@@ -40,7 +40,7 @@ describe('throttle', function() {
             var publishCount = 0;
             var subscribeCount = 0;
 
-            boss.subscribe('expensive', null, function(job, done) {
+            boss.subscribe('expensive', function(job, done) {
                 done().then(function() { subscribeCount++; });
             });
 

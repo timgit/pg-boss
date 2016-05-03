@@ -33,7 +33,7 @@ describe('delayed jobs', function(){
 
         function test() {
 
-            boss.subscribe('wait', null, function(job, done) {
+            boss.subscribe('wait', function(job, done) {
                 var start = new Date(job.data.submitted);
                 var end = new Date();
 

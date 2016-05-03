@@ -26,7 +26,7 @@ describe('examples', function(){
                     console.log('created job ' + jobId);
                 });
 
-            boss.subscribe('work', null, function(data, done) {
+            boss.subscribe('work', function(data, done) {
                 console.log('received work job with payload ' + data.message);
 
                 done().then(function() {

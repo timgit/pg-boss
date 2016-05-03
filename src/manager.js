@@ -35,13 +35,25 @@ class Manager extends EventEmitter {
         }
     }
 
-    subscribe(name, config, callback){
+    subscribe(name, ...args){
         assert(name, 'boss requires all jobs to have a name');
 
-        config = config || {};
-        assert(typeof config == 'object', 'expected config to be an object');
+        var options;
+        var callback;
 
-        config.teamSize = config.teamSize || 1;
+        if(args.length === 1){
+            callback = args[0];
+            options = {};
+        } else if (args.length === 2){
+            options = args[0] || {};
+            callback = args[1];
+        }
+        
+        assert(typeof callback == 'function', 'expected a callback function');
+        if(options)
+            assert(typeof options == 'object', 'expected config to be an object');
+        
+        options.teamSize = options.teamSize || 1;
 
         let jobFetcher = () =>
             this.db.executePreparedSql('nextJob', this.nextJobCommand, name)
@@ -49,7 +61,7 @@ class Manager extends EventEmitter {
 
         let workerConfig = {name: name, fetcher: jobFetcher, interval: this.workerInterval};
 
-        for(let w=0;w<config.teamSize; w++){
+        for(let w=0; w < options.teamSize; w++){
 
             let worker = new Worker(workerConfig);
 
