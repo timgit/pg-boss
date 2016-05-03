@@ -52,14 +52,14 @@ class PgBoss extends EventEmitter {
         this.contractor.connect();
     }
 
-    subscribe(name, config, callback){
+    subscribe(){
         assert(this.isReady, "boss ain't ready.  Use start() or connect() to get started.");
-        return this.manager.subscribe(name, config, callback);
+        return this.manager.subscribe.apply(this.manager, arguments);
     }
 
-    publish(name, data, options){
+    publish(){
         assert(this.isReady, "boss ain't ready.  Use start() or connect() to get started.");
-        return this.manager.publish(name, data, options);
+        return this.manager.publish.apply(this.manager, arguments);
     }
 }
 
