@@ -7,6 +7,10 @@ const Manager = require('./manager');
 const Boss = require('./boss');
 
 class PgBoss extends EventEmitter {
+    static getConstructionPlans(schema) {
+        return Contractor.constructionPlans(schema);
+    }
+
     constructor(config){
         Attorney.checkConfig(config);
 
@@ -16,23 +20,24 @@ class PgBoss extends EventEmitter {
 
         // contractor makes sure we have a happy database home for work
         var contractor = new Contractor(config);
+        contractor.on('error', error => this.emit('error', error));
         this.contractor = contractor;
 
-        contractor.on('error', error => this.emit('error', error));
+        // boss keeps the books and archives old jobs
+        var boss = new Boss(config);
+        boss.on('error', error => this.emit('error', error));
+
+        // manager makes sure workers aren't taking too long to finish their jobs
+        var manager = new Manager(config);
+        manager.on('error', error => this.emit('error', error));
+        manager.on('job', job => this.emit('job', job));
+        this.manager = manager;
 
         contractor.on('go', () => {
-            // boss keeps the books and archives old jobs
-            var boss = new Boss(config);
-            boss.on('error', error => this.emit('error', error));
-            boss.supervise();
-
-            // manager makes sure workers aren't taking too long to finish their jobs
-            var manager = new Manager(config);
-            manager.on('error', error => this.emit('error', error));
-            manager.on('job', job => this.emit('job', job));
-            manager.monitor();
-
-            this.manager = manager;
+            if(!this.isReady){
+                boss.supervise();
+                manager.monitor();
+            }
 
             this.isReady = true;
             this.emit('ready');

@@ -29,9 +29,9 @@ class Contractor extends EventEmitter {
             .then(result => result.rows.length ? result.rows[0].name : null);
     }
 
-    constructionPlans(){
-        let exportPlans = plans.createAll(this.config.schema);
-        exportPlans.push(plans.insertVersion(this.config.schema).replace('$1', schemaVersion));
+    static constructionPlans(schema){
+        let exportPlans = plans.createAll(schema);
+        exportPlans.push(plans.insertVersion(schema).replace('$1', schemaVersion));
 
         return exportPlans.join(';\n\n');
     }
