@@ -14,7 +14,7 @@ function checkConfig(config) {
         assert(config.database && config.user && 'password' in config,
             'configuration assert: not enough database settings to connect to PostgreSQL');
 
-        config.host = config.host || 'localhost';
+        config.host = config.host || '127.0.0.1';
         config.port = config.port || 5432;
     }
 
@@ -55,4 +55,6 @@ function checkConfig(config) {
     } else {
         config.expireCheckIntervalSeconds = config.expireCheckIntervalSeconds || 60;
     }
+
+    return config;
 }
