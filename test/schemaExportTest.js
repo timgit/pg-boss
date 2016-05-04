@@ -1,5 +1,5 @@
 var assert = require('chai').assert;
-var PgBoss = require('../lib/index');
+var PgBoss = require('../src/index');
 
 describe('schema export', function(){
    it('should export commands to manually build schema', function() {

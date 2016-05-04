@@ -1,7 +1,7 @@
 var assert = require('chai').assert;
-var PgBoss = require('../lib/index');
+var PgBoss = require('../src/index');
 var config = require('./config.json');
-var Db = require('../lib/db');
+var Db = require('../src/db');
 
 
 describe('initialization', function(){

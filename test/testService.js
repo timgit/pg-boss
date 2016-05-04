@@ -1,4 +1,4 @@
-var Db = require('../lib/db');
+var Db = require('../src/db');
 var config = require('./config.json');
 
 module.exports = {

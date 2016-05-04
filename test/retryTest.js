@@ -1,5 +1,5 @@
 var assert = require('chai').assert;
-var PgBoss = require('../lib/index');
+var PgBoss = require('../src/index');
 var config = require('./config.json');
 var helper = require('./testService');
 
