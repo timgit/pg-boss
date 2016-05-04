@@ -32,10 +32,15 @@ function ready() {
 ##Features
 * Guaranteed delivery and finalizing of jobs using a promise API
 * Delayed jobs
-* Distributed job submission throttling
+* Distributed and/or clustered workers
+* Job throttling (rate limiting)
 * Automatic provisioning of required storage into an dedicated schema
 * Automatic monitoring for expired jobs
 * Automatic archiving for completed jobs
+
+##Requirements
+* Node 0.10 or higher (It may work on older versions, but who's using < 0.10? :)
+* Postgres 9.5 or higher (see background below for rationale)
 
 ##Background
 pg-boss was created to leverage recent additions in PostreSQL 9.5 (specifically [SKIP LOCKED](src) and upserts)
