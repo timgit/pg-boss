@@ -11,34 +11,30 @@ describe('examples', function(){
             config.password = '';
         }
 
-        var connectionString = 'postgres://' + config.user + ':' + config.password + '@' + config.host + ':' + config.port + '/' + config.database;
-        var boss = new PgBoss(connectionString);
-
+        var connectionString = `postgres://${config.user}:${config.password}@${config.host}:${config.port}/${config.database}`;
+        
         // example start
-        boss.on('error', error);
+        var boss = new PgBoss(connectionString);
+        
+        boss.on('error', error => console.error(error));
         boss.on('ready', ready);
 
         boss.start();
-
+        
         function ready() {
             boss.publish('work', {message: 'stuff'})
-                .then(function(jobId){
-                    console.log('created job ' + jobId);
-                });
+                .then(jobId => console.log(`created job ${jobId}`));
 
-            boss.subscribe('work', function(data, done) {
-                console.log('received work job with payload ' + data.message);
+            boss.subscribe('work', (job, done) => {
+                console.log(`received job ${job.name}, ID ${job.id}, payload ${JSON.stringify(job.data)}`);
 
-                done().then(function() {
+                done().then(() => {
                     console.log('Confirmed done');
-                    assert(true); // exclude test code
+                    assert.equal('work', job.name); // exclude test code
+                    assert.equal('stuff', job.data.message); // exclude test code
                     finished();   // exclude test code
                 });
             });
-        }
-
-        function error(err){
-            console.error(err);
         }
         // example end
     });
