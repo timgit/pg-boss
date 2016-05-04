@@ -43,5 +43,7 @@ function ready() {
 * Postgres 9.5 or higher (see background below for rationale)
 
 ##Background
-pg-boss was created to leverage recent additions in PostreSQL 9.5 (specifically [SKIP LOCKED](src) and upserts)
+pg-boss was created to leverage recent additions in PostreSQL 9.5 (specifically [SKIP LOCKED](http://blog.2ndquadrant.com/what-is-select-skip-locked-for-in-postgresql-9-5) and upserts)
 which significantly enhances it's ability to act as a reliable, distributed message queue.
+For example, I have a performance test which regularly completes 1000 jobs per second ([a bit longer in CI of course](https://travis-ci.org/timgit/pg-boss/jobs/127713018#L301)) once SKIP LOCKED was added
+to my job fetch CTE.
