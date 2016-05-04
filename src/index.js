@@ -11,6 +11,10 @@ class PgBoss extends EventEmitter {
         return Contractor.constructionPlans(schema);
     }
 
+    static getMigrationPlans(schema, version, uninstall) {
+        return Contractor.migrationPlans(schema, version, uninstall);
+    }
+    
     constructor(config){
         config = Attorney.checkConfig(config);
 
