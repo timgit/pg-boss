@@ -29,8 +29,14 @@ function ready() {
 ##Installation
 `$ npm install pg-boss`
 
-##Why would I use this?
+##Features
+* Guaranteed delivery and finalizing of jobs using a promise API
+* Delayed jobs
+* Distributed job submission throttling
+* Automatic provisioning of required storage into an dedicated schema
+* Automatic monitoring for expired jobs
+* Automatic archiving for completed jobs
 
-
-##Can I use this?
-
+##Background
+pg-boss was created to leverage recent additions in PostreSQL 9.5 (specifically [SKIP LOCKED](src) and upserts)
+which significantly enhances it's ability to act as a reliable, distributed message queue.
