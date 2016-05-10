@@ -1,7 +1,5 @@
 var assert = require('chai').assert;
-var PgBoss = require('../src/index');
-var config = require('./config.json');
-var helper = require('./testService');
+var helper = require('./testHelper');
 
 describe('delayed jobs', function(){
     it('should wait before processing a delayed job submission', function(finished) {
@@ -9,29 +7,7 @@ describe('delayed jobs', function(){
         var delaySeconds = 2;
         this.timeout(3000);
 
-        // todo: temp test for travis config override
-        if(process.env.TRAVIS) {
-            config.port = 5433;
-            config.password = '';
-        }
-
-        var boss = new PgBoss(config);
-
-        boss.on('error', logError);
-        boss.on('ready', ready);
-
-        boss.start();
-
-        function logError(error) {
-            console.error(error);
-        }
-
-        function ready() {
-            helper.init()
-                .then(test);
-        }
-
-        function test() {
+        helper.start().then(boss => {
 
             boss.subscribe('wait', function(job, done) {
                 var start = new Date(job.data.submitted);
@@ -52,7 +28,7 @@ describe('delayed jobs', function(){
                     console.log('job ' + jobId + ' requested to start in ' + delaySeconds + ' seconds');
                 });
 
-        }
+        });
 
     });
 });

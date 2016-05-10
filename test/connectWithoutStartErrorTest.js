@@ -1,61 +1,38 @@
 var assert = require('chai').assert;
 var PgBoss = require('../src/index');
 var config = require('./config.json');
-var Db = require('../src/db');
-
+var helper = require('./testHelper');
 
 describe('initialization', function(){
     it('should fail if connecting to an uninitialized instance', function(finished) {
 
-        // todo: temp test for travis config override
-        if(process.env.TRAVIS) {
-            config.port = 5433;
-            config.password = '';
-        }
+        helper.getDb().executeSql(`DROP SCHEMA IF EXISTS ${config.schema} CASCADE`)
+            .then(() => {
+                var boss = new PgBoss(helper.config);
 
-        var db = new Db(config);
+                boss.on('error', function(error) {
+                    assert.isNotNull(error);
+                    finished();
+                });
 
-        db.executeSql('DROP SCHEMA IF EXISTS ' + config.schema + ' CASCADE')
-            .then(test);
-
-        function test() {
-            var boss = new PgBoss(config);
-
-            boss.on('error', function(error) {
-                assert.isNotNull(error);
-                finished();
+                boss.connect();
             });
-
-            boss.connect();
-        }
 
     });
 
     it('should start with a connection string', function(finished) {
 
-        // todo: temp test for travis config override
-        if(process.env.TRAVIS) {
-            config.port = 5433;
-            config.password = '';
-        }
+        helper.getDb().executeSql(`DROP SCHEMA IF EXISTS ${config.schema} CASCADE`)
+            .then(() => {
+                var boss = new PgBoss(helper.connectionString);
 
-        var connectionString = 'postgres://' + config.user + ':' + config.password + '@' + config.host + ':' + config.port + '/' + config.database;
+                boss.on('ready', function() {
+                    assert(true);
+                    finished();
+                });
 
-        var db = new Db(config);
-
-        db.executeSql('DROP SCHEMA IF EXISTS ' + config.schema + ' CASCADE')
-            .then(test);
-
-        function test() {
-            var boss = new PgBoss(connectionString);
-
-            boss.on('ready', function() {
-                assert(true);
-                finished();
+                boss.start();
             });
-
-            boss.start();
-        }
 
     });
 

@@ -1,17 +1,11 @@
 var assert = require('chai').assert;
 var PgBoss = require('../src/index');
 var config = require('./config.json');
+var helper = require('./testHelper');
 
 describe('examples', function(){
     it('readme example is totes valid', function(finished){
-
-        // todo: temp test for travis config override
-        if(process.env.TRAVIS) {
-            config.port = 5433;
-            config.password = '';
-        }
-
-        var connectionString = `postgres://${config.user}:${config.password}@${config.host}:${config.port}/${config.database}`;
+        var connectionString = helper.connectionString;
         
         // example start
         var boss = new PgBoss(connectionString);
@@ -26,7 +20,7 @@ describe('examples', function(){
                 .then(jobId => console.log(`created job ${jobId}`));
 
             boss.subscribe('work', (job, done) => {
-                console.log(`received job ${job.name}, ID ${job.id}, payload ${JSON.stringify(job.data)}`);
+                console.log(`received job ${job.name} (${job.id}) ${JSON.stringify(job.data)}`);
 
                 done().then(() => {
                     console.log('Confirmed done');

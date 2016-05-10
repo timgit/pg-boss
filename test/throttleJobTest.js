@@ -1,7 +1,5 @@
 var assert = require('chai').assert;
-var PgBoss = require('../src/index');
-var config = require('./config.json');
-var helper = require('./testService');
+var helper = require('./testHelper');
 
 describe('throttle', function() {
     it('should process at most 1 job per second', function (finished) {
@@ -14,29 +12,7 @@ describe('throttle', function() {
         // add an extra second to test timeout
         this.timeout((jobCount + 1) * 1000);
 
-        // todo: temp test for travis config override
-        if(process.env.TRAVIS) {
-            config.port = 5433;
-            config.password = '';
-        }
-
-        var boss = new PgBoss(config);
-
-        boss.on('error', logError);
-        boss.on('ready', ready);
-
-        boss.start();
-
-        function logError(error) {
-            console.error(error);
-        }
-
-        function ready() {
-            helper.init()
-                .then(test);
-        }
-
-        function test() {
+        helper.start().then(boss => {
             var publishCount = 0;
             var subscribeCount = 0;
 
@@ -57,7 +33,7 @@ describe('throttle', function() {
                 boss.publish('expensive', null, {singletonSeconds: singletonSeconds})
                     .then(function() { publishCount++; });
             }, publishInterval);
-        }
+        });
 
     });
 });

@@ -1,7 +1,5 @@
 var assert = require('chai').assert;
-var PgBoss = require('../src/index');
-var config = require('./config.json');
-var helper = require('./testService');
+var helper = require('./testHelper');
 
 describe('retries', function() {
     it('should retry a job that didn\'t complete', function (finished) {
@@ -11,31 +9,7 @@ describe('retries', function() {
 
         this.timeout(7000);
 
-        // todo: temp test for travis config override
-        if(process.env.TRAVIS) {
-            config.port = 5433;
-            config.password = '';
-        }
-
-        config.expireCheckIntervalSeconds = 1;
-        
-        var boss = new PgBoss(config);
-
-        boss.on('error', logError);
-        boss.on('ready', ready);
-
-        boss.start();
-
-        function logError(error) {
-            console.error(error);
-        }
-
-        function ready() {
-            helper.init()
-                .then(test);
-        }
-
-        function test() {
+        helper.start({expireCheckIntervalSeconds:1}).then(boss => {
             var subscribeCount = 0;
 
             boss.subscribe('unreliable', function(job, done) {
@@ -53,7 +27,7 @@ describe('retries', function() {
                 finished();
 
             }, 6000);
-        }
+        });
 
     });
 });
