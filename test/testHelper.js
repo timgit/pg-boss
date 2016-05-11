@@ -3,10 +3,10 @@ var config = require('./config.json');
 var PgBoss = require('../src/index');
 var Promise = require('bluebird');
 
-// todo: temp test for travis config override
 if(process.env.TRAVIS) {
     config.port = 5433;
     config.password = '';
+    config.schema = process.env.TRAVIS_JOB_ID;
 }
 
 module.exports = {
