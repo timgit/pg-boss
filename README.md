@@ -4,6 +4,7 @@ Queueing jobs in Node.js using PostgreSQL like a boss.
 [![Build Status](https://travis-ci.org/timgit/pg-boss.svg?branch=master)](https://travis-ci.org/timgit/pg-boss)
 [![Coverage Status](https://coveralls.io/repos/github/timgit/pg-boss/badge.svg?branch=master)](https://coveralls.io/github/timgit/pg-boss?branch=master)
 [![Dependencies](https://david-dm.org/timgit/pg-boss.svg)](https://david-dm.org/timgit/pg-boss)
+[![Node Version](https://img.shields.io/badge/node-0.10+-green.svg?maxAge=2592000)](https://www.nodejs.org)
 [![PostgreSql Version](https://img.shields.io/badge/PostgreSQL-9.5+-blue.svg?maxAge=2592000)](http://www.postgresql.org)
 
 ```
