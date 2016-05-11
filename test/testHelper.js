@@ -2,11 +2,12 @@ var Db = require('../src/db');
 var config = require('./config.json');
 var PgBoss = require('../src/index');
 var Promise = require('bluebird');
+var Contractor = require('../src/contractor');
 
 if(process.env.TRAVIS) {
     config.port = 5433;
     config.password = '';
-    config.schema = process.env.TRAVIS_JOB_ID;
+    config.schema = 'pgboss' + process.env.TRAVIS_JOB_ID;
 }
 
 module.exports = {
@@ -23,7 +24,12 @@ function getDb() {
 }
 
 function init() {
-    return getDb().executeSql(`truncate table ${config.schema}.job`)
+    var truncateJobTable = `truncate table ${config.schema}.job`;
+    var db = getDb();
+    var contractor = new Contractor(config);
+
+    return contractor.isInstalled()
+        .then(installed => installed ? db.execute(truncateJobTable) : null)
         .catch(error => console.error(error));
 }
 
