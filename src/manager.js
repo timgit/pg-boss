@@ -79,8 +79,30 @@ class Manager extends EventEmitter {
         }
     }
 
-    publish(name, data, options){
+    publish(...args){
+        var name, data, options;
+
+        if(typeof args[0] == 'string') {
+
+            name = args[0];
+            data = args[1];
+            options = args[2];
+
+        } else if(typeof args[0] == 'object'){
+
+            assert(arguments.length === 1, 'publish object API only accepts 1 argument');
+
+            var job = args[0];
+            
+            assert(job, 'boss requires all jobs to have a name');
+
+            name = job.name;
+            data = job.data;
+            options = job.options;
+        }
+
         assert(name, 'boss requires all jobs to have a name');
+        options = options || {};
 
         let self = this;
         
@@ -92,8 +114,6 @@ class Manager extends EventEmitter {
             insertJob();
 
             function insertJob(){
-                options = options || {};
-
                 let startIn =
                     (options.startIn > 0) ? '' + options.startIn
                         : (typeof options.startIn == 'string') ? options.startIn
@@ -123,7 +143,7 @@ class Manager extends EventEmitter {
                             options.startIn = singletonSeconds;
                             options.singletonOffset = singletonSeconds;
 
-                            insertJob(name, data, options);
+                            insertJob();
                         }
                         else {
                             resolve(null);
