@@ -13,7 +13,7 @@ describe('speed', function() {
             });
     });
 
-    var expectedSeconds = 5;
+    var expectedSeconds = 2;
     var jobCount = 1000;
 
     it('should be able to complete ' + jobCount + ' jobs in ' + expectedSeconds + ' seconds', function (finished) {

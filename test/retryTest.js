@@ -15,10 +15,10 @@ describe('retries', function() {
     
     it('should retry a job that didn\'t complete', function (finished) {
 
-        this.timeout(7000);
+        this.timeout(8000);
         
         var expireIn = '1 second';
-        var retries = 2;
+        var retries = 1;
         var subscribeCount = 0;
 
         boss.subscribe('unreliable', function(job, done) {
