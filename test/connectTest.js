@@ -4,6 +4,16 @@ var helper = require('./testHelper');
 
 describe('connect', function() {
 
+    var boss;
+
+    before(function(finished){
+        helper.start()
+            .then(dabauce => {
+                boss = dabauce;
+                finished();
+            });
+    });
+
     after(function(finished){
         helper.getDb().executeSql(`DROP SCHEMA IF EXISTS ${helper.config.schema} CASCADE`).then(() => finished());
     });
@@ -12,8 +22,6 @@ describe('connect', function() {
 
         helper.getDb().executeSql(`UPDATE ${helper.config.schema}.version SET VERSION = '0.0.0'`)
             .then(() => {
-                var boss = new PgBoss(helper.config);
-
                 boss.on('error', function (error) {
                     assert.isNotNull(error);
                     finished();
@@ -24,5 +32,3 @@ describe('connect', function() {
     });
 
 });
-
-
