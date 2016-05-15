@@ -1,6 +1,5 @@
 var assert = require('chai').assert;
 var PgBoss = require('../src/index');
-var config = require('./config.json');
 var helper = require('./testHelper');
 
 describe('examples', function(){

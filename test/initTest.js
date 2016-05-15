@@ -1,12 +1,11 @@
 var assert = require('chai').assert;
 var PgBoss = require('../src/index');
-var config = require('./config.json');
 var helper = require('./testHelper');
 
 describe('initialization', function(){
     
     beforeEach(function(finished) {
-        helper.getDb().executeSql(`DROP SCHEMA IF EXISTS ${config.schema} CASCADE`).then(() => finished());
+        helper.getDb().executeSql(`DROP SCHEMA IF EXISTS ${helper.config.schema} CASCADE`).then(() => finished());
     });
     
     it('should fail if connecting to an uninitialized instance', function(finished) {
