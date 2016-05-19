@@ -10,8 +10,7 @@ module.exports = {
     expireJob: expireJob,
     completeJob: completeJob,
     insertJob: insertJob,
-    archive: archive,
-    getMigration: getMigration
+    archive: archive
 };
 
 function createAll(schema) {
@@ -118,43 +117,4 @@ function archive(schema) {
         DELETE FROM ${schema}.job
         WHERE state = 'completed'
         AND completedOn + CAST($1 as interval) < now()`;
-}
-
-function getMigration(schema, version, uninstall) {
-    let migrations = [
-        {
-            version: '0.1.0',
-            previous: '0.0.1',
-            install: [
-                `ALTER TABLE ${schema}.job ADD singletonOn timestamp without time zone`,
-                `ALTER TABLE ${schema}.job ADD CONSTRAINT job_singleton UNIQUE(name, singletonOn)`,
-                // one time truncate because previous schema was inserting each version
-                `TRUNCATE TABLE ${schema}.version`,
-                `INSERT INTO ${schema}.version(version) values('0.0.1')`
-            ],
-            uninstall: [
-                `ALTER TABLE ${schema}.job DROP CONSTRAINT job_singleton`,
-                `ALTER TABLE ${schema}.job DROP COLUMN singletonOn`
-            ]
-        }
-    ];
-
-    for(var m=0; m<migrations.length; m++){
-        let migration = migrations[m];
-
-        let targetVersion = uninstall ? 'previous' : 'version';
-        let sourceVersion = uninstall ? 'version' : 'previous';
-
-        let targetCommands = uninstall ? 'uninstall' : 'install';
-
-        if(migration[sourceVersion] === version){
-            let commands = migration[targetCommands].concat();
-            commands.push(`UPDATE ${schema}.version SET version = '${migration[targetVersion]}'`);
-
-            return {
-                version: migration[targetVersion],
-                commands
-            };
-        }
-    }
 }

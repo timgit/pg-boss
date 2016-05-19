@@ -5,7 +5,8 @@ var helper = require('./testHelper');
 describe('initialization', function(){
     
     beforeEach(function(finished) {
-        helper.getDb().executeSql(`DROP SCHEMA IF EXISTS ${helper.config.schema} CASCADE`).then(() => finished());
+        helper.init()
+            .then(() => finished());
     });
     
     it('should fail if connecting to an uninitialized instance', function(finished) {

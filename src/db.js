@@ -1,5 +1,6 @@
 const pg = require('pg');
 const Promise = require("bluebird");
+const migrations = require('./migrations');
 
 class Db {
     constructor(config){
@@ -14,7 +15,6 @@ class Db {
     executeSql(text, values){
        return this.execute({text,values});
     }
-
 
     execute(query) {
         if(query.values && !Array.isArray(query.values))
@@ -45,6 +45,12 @@ class Db {
         }
     }
 
+    migrate(version, uninstall) {
+        let migration = migrations.get(this.config.schema, version, uninstall);
+
+        return Promise.each(migration.commands, command => this.executeSql(command))
+            .then(() => migration.version);
+    }
 }
 
 module.exports = Db;

@@ -2,6 +2,7 @@ const assert = require('assert');
 const EventEmitter = require('events').EventEmitter; //node 0.10 compatibility
 const Db = require('./db');
 const plans = require('./plans');
+const migrations = require('./migrations');
 const schemaVersion = require('../version.json').schema;
 const Promise = require("bluebird");
 
@@ -38,52 +39,47 @@ class Contractor extends EventEmitter {
     }
 
     static migrationPlans(schema, version, uninstall){
-        let migration = plans.getMigration(schema, version, uninstall);
+        let migration = migrations.get(schema, version, uninstall);
         assert(migration, 'migration not found for this version');
         return migration.commands.join(';\n\n');
     }
 
     start(){
-        let config = this.config;
-        let db = this.db;
-        let self = this;
-
         this.isInstalled()
             .then(installed => {
-                if(!installed)
-                    return create();
-
-                self.version()
-                    .then(version => {
-                        if(schemaVersion === version)
-                            return this.emit('go');
-
-                        migrate(version);
-                    });
+                if(!installed) {
+                    this.create()
+                        .then(() => this.emit('go'))
+                        .catch(error => this.emit('error', error));
+                } else {
+                    this.version()
+                        .then(version => {
+                            if (schemaVersion !== version) {
+                                this.update(version)
+                                    .then(() => this.emit('go'));
+                            } else {
+                                this.emit('go');
+                            }
+                        });
+                }
             });
+    }
 
-        function migrate(version) {
-            if(version == '0.0.2')
-                version = '0.0.1';
+    update(current) {
+        // temp workaround for bad 0.0.2 schema update 
+        if(current == '0.0.2')
+            current = '0.0.1';
 
-            let migration = plans.getMigration(config.schema, version);
-
-            Promise.each(migration.commands, command => db.executeSql(command))
-                .then(() => {
-                    if(migration.version === schemaVersion)
-                        self.emit('go');
-                    else
-                        migrate(migration.version);                
-                })
-                .catch(error => self.emit('error', error));
-        }
-        
-        function create(){
-            Promise.each(plans.createAll(config.schema), command => db.executeSql(command))
-                .then(() => db.executeSql(plans.insertVersion(config.schema), schemaVersion))
-                .then(() => self.emit('go'))
-                .catch(error => self.emit('error', error));
-        }
+        return this.db.migrate(current)
+            .then(version => {
+                if(version !== schemaVersion)
+                    return this.update(version);
+            });
+    }
+    
+    create(){
+        return Promise.each(plans.createAll(this.config.schema), command => this.db.executeSql(command))
+            .then(() => this.db.executeSql(plans.insertVersion(this.config.schema), schemaVersion));
     }
 
     connect(){
