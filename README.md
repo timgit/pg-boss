@@ -7,7 +7,7 @@ Queueing jobs in Node.js using PostgreSQL like a boss.
 [![Node Version](https://img.shields.io/badge/node-0.10+-green.svg?maxAge=2592000)](https://www.nodejs.org)
 [![PostgreSql Version](https://img.shields.io/badge/PostgreSQL-9.5+-blue.svg?maxAge=2592000)](http://www.postgresql.org)
 
-```
+```js
 var PgBoss = require('pg-boss');
 var boss = new PgBoss('postgres://username:password@localhost/database');
 
@@ -18,10 +18,10 @@ boss.start();
 
 function ready() {
     boss.publish('work', {message: 'stuff'})
-        .then(jobId => console.log(`created job ${jobId}`));
+        .then(jobId => console.log(`sent job ${jobId}`));
 
     boss.subscribe('work', (job, done) => {
-        console.log(`received job ${job.name} (${job.id}) ${JSON.stringify(job.data)}`);
+        console.log(`got job ${job.name} (${job.id}) ${JSON.stringify(job.data)}`);
 
         done().then(() => console.log('Confirmed done'));
     });
