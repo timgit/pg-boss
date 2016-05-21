@@ -7,6 +7,20 @@ const schemaVersion = require('../version.json').schema;
 const Promise = require("bluebird");
 
 class Contractor extends EventEmitter {
+
+    static constructionPlans(schema){
+        let exportPlans = plans.createAll(schema);
+        exportPlans.push(plans.insertVersion(schema).replace('$1', schemaVersion));
+
+        return exportPlans.join(';\n\n');
+    }
+
+    static migrationPlans(schema, version, uninstall){
+        let migration = migrations.get(schema, version, uninstall);
+        assert(migration, 'migration not found for this version');
+        return migration.commands.join(';\n\n');
+    }
+
     constructor(config){
         super();
         this.config = config;
@@ -31,42 +45,21 @@ class Contractor extends EventEmitter {
             .then(result => result.rows.length ? result.rows[0].name : null);
     }
 
-    static constructionPlans(schema){
-        let exportPlans = plans.createAll(schema);
-        exportPlans.push(plans.insertVersion(schema).replace('$1', schemaVersion));
-
-        return exportPlans.join(';\n\n');
-    }
-
-    static migrationPlans(schema, version, uninstall){
-        let migration = migrations.get(schema, version, uninstall);
-        assert(migration, 'migration not found for this version');
-        return migration.commands.join(';\n\n');
-    }
-
-    start(){
-        this.isInstalled()
-            .then(installed => {
-                if(!installed) {
-                    this.create()
-                        .then(() => this.emit('go'))
-                        .catch(error => this.emit('error', error));
-                } else {
-                    this.version()
-                        .then(version => {
-                            if (schemaVersion !== version) {
-                                this.update(version)
-                                    .then(() => this.emit('go'));
-                            } else {
-                                this.emit('go');
-                            }
-                        });
-                }
+    ensureCurrent() {
+        return this.version()
+            .then(version => {
+                if (schemaVersion !== version)
+                    return this.update(version);
             });
     }
 
+    create(){
+        return Promise.each(plans.createAll(this.config.schema), command => this.db.executeSql(command))
+            .then(() => this.db.executeSql(plans.insertVersion(this.config.schema), schemaVersion));
+    }
+
     update(current) {
-        // temp workaround for bad 0.0.2 schema update 
+        // temp workaround for bad 0.0.2 schema update
         if(current == '0.0.2')
             current = '0.0.1';
 
@@ -76,27 +69,25 @@ class Contractor extends EventEmitter {
                     return this.update(version);
             });
     }
-    
-    create(){
-        return Promise.each(plans.createAll(this.config.schema), command => this.db.executeSql(command))
-            .then(() => this.db.executeSql(plans.insertVersion(this.config.schema), schemaVersion));
-    }
 
+    start(){
+        return this.isInstalled()
+            .then(installed => installed ? this.ensureCurrent() : this.create());
+    }
+    
     connect(){
         let connectErrorMessage = 'this version of pg-boss does not appear to be installed in your database. I can create it for you via start().';
 
-        this.isInstalled()
+        return this.isInstalled()
             .then(installed => {
                 if(!installed)
-                    return this.emit('error', connectErrorMessage);
+                    throw new Error(connectErrorMessage);
 
-                this.isCurrent()
-                    .then(current => {
-                        if(current)
-                            this.emit('go');
-                        else
-                            this.emit('error', connectErrorMessage);
-                    });
+                return this.isCurrent();
+            })
+            .then(current => {
+                if(!current)
+                    throw new Error(connectErrorMessage);
             });
     }
 }

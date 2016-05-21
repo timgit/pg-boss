@@ -9,17 +9,16 @@ describe('examples', function(){
         // example start
         var boss = new PgBoss(connectionString);
         
-        boss.on('error', error => console.error(error));
-        boss.on('ready', ready);
-
-        boss.start();
+        boss.start()
+            .then(ready)
+            .catch(error => console.error(error));
         
         function ready() {
             boss.publish('work', {message: 'stuff'})
-                .then(jobId => console.log(`created job ${jobId}`));
+                .then(jobId => console.log(`sent job ${jobId}`));
 
             boss.subscribe('work', (job, done) => {
-                console.log(`received job ${job.name} (${job.id}) ${JSON.stringify(job.data)}`);
+                console.log(`got job ${job.name} (${job.id}) ${JSON.stringify(job.data)}`);
 
                 done().then(() => {
                     console.log('Confirmed done');

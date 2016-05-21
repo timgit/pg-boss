@@ -10,27 +10,18 @@ describe('initialization', function(){
     });
     
     it('should fail if connecting to an uninitialized instance', function(finished) {
-        var boss = new PgBoss(helper.config);
-
-        boss.on('error', function(error) {
-            assert.isNotNull(error);
-            finished();
-        });
-
-        boss.connect();
+        new PgBoss(helper.config).connect()
+            .catch(error => {
+                assert.isNotNull(error);
+                finished();
+            });
     });
 
     it('should start with a connection string', function(finished) {
-        var boss = new PgBoss(helper.connectionString);
-
-        boss.on('ready', function() {
-            assert(true);
-            finished();
-        });
-
-        boss.start();
+        new PgBoss(helper.connectionString).start()
+            .then(() => {
+                assert(true);
+                finished();
+            });
     });
-
-    
-
 });

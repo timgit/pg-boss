@@ -35,19 +35,12 @@ describe('migration', function() {
 
         contractor.create()
             .then(() => db.migrate(currentSchemaVersion, 'remove'))
-            .then(() => {
-                var boss = new PgBoss(helper.config);
-                boss.on('ready', () => {
-                    contractor.version()
-                        .then(version => {
-                            assert.equal(version, currentSchemaVersion);
-                            finished();
-                        })
-                });
-
-                boss.start();
+            .then(() => new PgBoss(helper.config).start())
+            .then(() => contractor.version())
+            .then(version => {
+                assert.equal(version, currentSchemaVersion);
+                finished();
             });
-
     });
 
 });

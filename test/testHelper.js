@@ -1,7 +1,6 @@
 var Db = require('../src/db');
 var config = require('./config.json');
 var PgBoss = require('../src/index');
-var Promise = require('bluebird');
 
 if(process.env.TRAVIS) {
     config.port = 5433;
@@ -28,23 +27,13 @@ function init() {
 
 function start(options) {
 
-    return new Promise(deferred);
-
-    function deferred(resolve, reject){
-        init().then(() => {
-
+    return init()
+        .then(() => {
             if(options && typeof options == 'object')
                 options = extend(config, options);
 
-            var boss = new PgBoss(options || config);
-
-            boss.on('error', error => reject(error));
-            boss.on('ready', () => resolve(boss));
-
-            boss.start();
+            return new PgBoss(options || config).start();
         });
-    }
-
 }
 
 function extend(dest, source) {

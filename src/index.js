@@ -29,6 +29,7 @@ class PgBoss extends EventEmitter {
 
         // boss keeps the books and archives old jobs
         var boss = new Boss(config);
+        this.boss = boss;
         boss.on('error', error => this.emit('error', error));
 
         // manager makes sure workers aren't taking too long to finish their jobs
@@ -36,33 +37,37 @@ class PgBoss extends EventEmitter {
         manager.on('error', error => this.emit('error', error));
         manager.on('job', job => this.emit('job', job));
         this.manager = manager;
-
-        contractor.on('go', () => {
-            if(!this.isReady){
-                boss.supervise();
-                manager.monitor();
-            }
-
-            this.isReady = true;
-            this.emit('ready');
-        });
     }
 
+    init() {
+        if(!this.isReady){
+            this.boss.supervise();
+            this.manager.monitor();
+        }
+
+        this.isReady = true;
+
+        return this;
+    }
+
+
     start() {
-        this.contractor.start();
+        return this.contractor.start.apply(this.contractor, arguments)
+            .then(() => this.init());
     }
 
     connect() {
-        this.contractor.connect();
+        return this.contractor.connect.apply(this.contractor, arguments)
+            .then(() => this.init());
     }
 
     subscribe(){
-        assert(this.isReady, "boss ain't ready.  Use start() or connect() to get started.");
+        if(!this.isReady) return Promise.reject(`boss ain't ready.  Use start() or connect() to get started.`);
         return this.manager.subscribe.apply(this.manager, arguments);
     }
 
     publish(){
-        assert(this.isReady, "boss ain't ready.  Use start() or connect() to get started.");
+        if(!this.isReady) return Promise.reject(`boss ain't ready.  Use start() or connect() to get started.`);
         return this.manager.publish.apply(this.manager, arguments);
     }
 }

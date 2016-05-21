@@ -10,11 +10,10 @@ Queueing jobs in Node.js using PostgreSQL like a boss.
 ```js
 var PgBoss = require('pg-boss');
 var boss = new PgBoss('postgres://username:password@localhost/database');
-
-boss.on('error', error => console.error(error));
-boss.on('ready', ready);
-
-boss.start();
+        
+boss.start()
+    .then(ready)
+    .catch(error => console.error(error));
 
 function ready() {
     boss.publish('work', {message: 'stuff'})
