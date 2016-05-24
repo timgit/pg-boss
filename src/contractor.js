@@ -29,11 +29,7 @@ class Contractor extends EventEmitter {
 
     version() {
         return this.db.executeSql(plans.getVersion(this.config.schema))
-            .then(result => result.rows.length ? result.rows[0].version : null)
-            .catch(error => {
-                this.emit('error', error);
-                return null;
-            });
+            .then(result => result.rows.length ? result.rows[0].version : null);
     }
 
     isCurrent(){
