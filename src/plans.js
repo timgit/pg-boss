@@ -72,7 +72,6 @@ function fetchNextJob(schema) {
           WHERE (state = 'created' OR (state = 'expired' AND retryCount < retryLimit))
             AND name = $1
             AND (createdOn + startIn) < now()
-            AND completedOn IS NULL
           ORDER BY createdOn, id
           LIMIT 1
           FOR UPDATE SKIP LOCKED

@@ -24,7 +24,6 @@ class PgBoss extends EventEmitter {
 
         // contractor makes sure we have a happy database home for work
         var contractor = new Contractor(config);
-        contractor.on('error', error => this.emit('error', error));
         this.contractor = contractor;
 
         // boss keeps the books and archives old jobs
