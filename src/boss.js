@@ -14,12 +14,12 @@ class Boss extends EventEmitter{
     supervise(){
         var self = this;
 
-        archive();
+        return archive();
 
         function archive(){
             let db = new Db(self.config);
 
-            db.executeSql(self.archiveCommand, self.config.archiveCompletedJobsEvery)
+            return db.executeSql(self.archiveCommand, self.config.archiveCompletedJobsEvery)
                 .catch(error => self.emit('error', error))
                 .then(() => setTimeout(archive, self.superviseInterval));
         }

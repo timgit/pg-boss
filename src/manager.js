@@ -26,10 +26,10 @@ class Manager extends EventEmitter {
     monitor(){
         var self = this;
 
-        timeoutOldJobs();
+        return timeoutOldJobs();
 
         function timeoutOldJobs(){
-            self.db.executeSql(self.expireJobCommand)
+            return self.db.executeSql(self.expireJobCommand)
                 .catch(error => self.emit('error', error))
                 .then(() => setTimeout(timeoutOldJobs, self.monitorInterval));
         }

@@ -40,13 +40,15 @@ class PgBoss extends EventEmitter {
 
     init() {
         if(!this.isReady){
-            this.boss.supervise();
-            this.manager.monitor();
+            return this.boss.supervise()
+                .then(() => this.manager.monitor())
+                .then(() => {
+                    this.isReady = true;
+                    return this;
+            });
         }
-
-        this.isReady = true;
-
-        return this;
+        else
+            return Promise.resolve(this);
     }
 
 
