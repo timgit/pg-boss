@@ -149,10 +149,7 @@ class Manager extends EventEmitter {
                             resolve(null);
                         }
                     })
-                    .catch(error => {
-                        self.emit('error', error);
-                        reject(error);
-                    });
+                    .catch(error => reject(error));
             }
 
         }
@@ -160,13 +157,7 @@ class Manager extends EventEmitter {
     }
 
     completeJob(id){
-        let values = [id];
-
-        return this.db.executeSql(this.completeJobCommand, values)
-            .catch(error => {
-                this.emit('error', error);
-                throw error;
-            });
+        return this.db.executeSql(this.completeJobCommand, [id]);
     }
 }
 
