@@ -64,6 +64,19 @@ class PgBoss extends EventEmitter {
             });
     }
 
+    disconnect() {
+        if(!this.isReady) return Promise.reject(`boss ain't ready.  Use start() or connect() to get started.`);
+        return this.manager.close.apply(this.manager, arguments).then(() => this.isReady = false);
+    }
+    
+    // stop() {
+    //     return Promise.all([
+    //         this.disconnect(),
+    //         this.manager.stopSupervise(),
+    //         this.boss.stopMonitor()
+    //     ]);
+    // }
+
     cancel(){
         if(!this.isReady) return Promise.reject(`boss ain't ready.  Use start() or connect() to get started.`);
         return this.manager.cancel.apply(this.manager, arguments);

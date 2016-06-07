@@ -13,6 +13,10 @@ describe('speed', function() {
             });
     });
 
+    after(function(finished){
+        boss.disconnect().then(finished);
+    });
+    
     var expectedSeconds = 4;
     var jobCount = 1000;
 

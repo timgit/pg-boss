@@ -42,6 +42,12 @@ class Manager extends EventEmitter {
         }
     }
 
+    close() {
+        this.workers.forEach(worker => worker.stop());
+        this.workers.length = 0;
+        return Promise.resolve(true);
+    }
+
     subscribe(name, ...args){
 
         let self = this;

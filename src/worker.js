@@ -12,11 +12,16 @@ class Worker extends EventEmitter {
         checkForWork();
 
         function checkForWork(){
-            self.config.fetcher()
-                .then(job => { if(job) self.emit(self.config.name, job); })
-                .catch(error => self.emit('error', error))
-                .then(() => setTimeout(checkForWork, self.config.interval));
+            if(!self.stopped)
+                self.config.fetcher()
+                    .then(job => { if(job) self.emit(self.config.name, job); })
+                    .catch(error => self.emit('error', error))
+                    .then(() => setTimeout(checkForWork, self.config.interval));
         }
+    }
+
+    stop() {
+        this.stopped = true;
     }
 }
 

@@ -13,6 +13,10 @@ describe('delayed jobs', function(){
             });
     });
 
+    after(function(finished){
+        boss.disconnect().then(finished);
+    });
+    
     it('should wait before processing a delayed job submission', function(finished) {
 
         var delaySeconds = 2;
