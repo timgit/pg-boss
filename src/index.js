@@ -23,8 +23,7 @@ class PgBoss extends EventEmitter {
         this.config = config;
 
         // contractor makes sure we have a happy database home for work
-        var contractor = new Contractor(config);
-        this.contractor = contractor;
+        this.contractor = new Contractor(config);
 
         // boss keeps the books and archives old jobs
         var boss = new Boss(config);
@@ -59,9 +58,17 @@ class PgBoss extends EventEmitter {
 
     connect() {
         return this.contractor.connect.apply(this.contractor, arguments)
-            .then(() => this.init());
+            .then(() => {
+                this.isReady = true;
+                return this;
+            });
     }
 
+    cancel(){
+        if(!this.isReady) return Promise.reject(`boss ain't ready.  Use start() or connect() to get started.`);
+        return this.manager.cancel.apply(this.manager, arguments);
+    }
+    
     subscribe(){
         if(!this.isReady) return Promise.reject(`boss ain't ready.  Use start() or connect() to get started.`);
         return this.manager.subscribe.apply(this.manager, arguments);

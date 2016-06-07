@@ -6,7 +6,7 @@ describe('retries', function() {
     var boss;
 
     before(function(finished){
-        helper.start({expireCheckIntervalSeconds:1})
+        helper.start({expireCheckInterval:200, newJobCheckInterval: 200})
             .then(dabauce => {
                 boss = dabauce;
                 finished();
@@ -15,10 +15,8 @@ describe('retries', function() {
     
     it('should retry a job that didn\'t complete', function (finished) {
 
-        this.timeout(8000);
-        
-        var expireIn = '1 second';
-        var retries = 1;
+        var expireIn = '100 milliseconds';
+        var retryLimit = 1;
         var subscribeCount = 0;
 
         boss.subscribe('unreliable', function(job, done) {
@@ -26,16 +24,13 @@ describe('retries', function() {
             subscribeCount++;
         });
 
-        boss.publish('unreliable', null, {
-            expireIn: expireIn,
-            retryLimit: retries
-        });
+        boss.publish({name: 'unreliable', options: {expireIn, retryLimit}});
 
         setTimeout(function() {
-            assert.equal(subscribeCount, retries + 1);
+            assert.equal(subscribeCount, retryLimit + 1);
             finished();
 
-        }, 6000);
+        }, 1000);
 
     });
 });

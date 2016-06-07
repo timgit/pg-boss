@@ -5,23 +5,27 @@ const plans = require('./plans');
 class Boss extends EventEmitter{
     constructor(config){
         super();
-
+        
+        this.db = new Db(config);
         this.config = config;
-        this.superviseInterval = config.archiveCheckIntervalMinutes * 1000 * 60;
         this.archiveCommand = plans.archive(config.schema);
     }
 
     supervise(){
         var self = this;
 
-        return archive();
-
+        return archive().then(init);
+        
         function archive(){
-            let db = new Db(self.config);
+            return self.db.executeSql(self.archiveCommand, self.config.archiveCompletedJobsEvery);
+        }
+        
+        function init() {
+            setTimeout(check, self.config.archiveCheckInterval);
 
-            return db.executeSql(self.archiveCommand, self.config.archiveCompletedJobsEvery)
-                .catch(error => self.emit('error', error))
-                .then(() => setTimeout(archive, self.superviseInterval));
+            function check() {
+                archive().catch(error => self.emit('error', error)).then(init)
+            }
         }
     }
 }

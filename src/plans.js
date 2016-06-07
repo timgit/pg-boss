@@ -9,6 +9,7 @@ module.exports = {
     fetchNextJob: fetchNextJob,
     expireJob: expireJob,
     completeJob: completeJob,
+    cancelJob: cancelJob,
     insertJob: insertJob,
     archive: archive
 };
@@ -102,6 +103,14 @@ function completeJob(schema){
         WHERE id = $1`;
 }
 
+function cancelJob(schema){
+    return `
+        UPDATE ${schema}.job
+        SET completedOn = now(),
+            state = 'cancelled'
+        WHERE id = $1`;
+}
+
 function insertJob(schema) {
     return `INSERT INTO ${schema}.job (id, name, state, retryLimit, startIn, expireIn, data, singletonOn)
             VALUES (
@@ -112,8 +121,5 @@ function insertJob(schema) {
 }
 
 function archive(schema) {
-    return `
-        DELETE FROM ${schema}.job
-        WHERE state = 'completed'
-        AND completedOn + CAST($1 as interval) < now()`;
+    return `DELETE FROM ${schema}.job WHERE completedOn + CAST($1 as interval) < now()`;
 }

@@ -1,10 +1,12 @@
 const assert = require('assert');
 const EventEmitter = require('events').EventEmitter; //node 0.10 compatibility;
-const Db = require('./db');
+const Promise = require('bluebird');
 const uuid = require('node-uuid');
+
+const Db = require('./db');
 const Worker = require('./worker');
 const plans = require('./plans');
-const Promise = require('bluebird');
+
 
 class Manager extends EventEmitter {
     constructor(config){
@@ -13,12 +15,11 @@ class Manager extends EventEmitter {
         this.config = config;
         this.db = new Db(config);
 
-        this.workerInterval = config.newJobCheckIntervalSeconds * 1000;
-        this.monitorInterval = config.expireCheckIntervalSeconds * 1000;
         this.nextJobCommand = plans.fetchNextJob(config.schema);
         this.expireJobCommand = plans.expireJob(config.schema);
         this.insertJobCommand = plans.insertJob(config.schema);
         this.completeJobCommand = plans.completeJob(config.schema);
+        this.cancelJobCommand = plans.cancelJob(config.schema);
 
         this.workers = [];
     }
@@ -26,92 +27,130 @@ class Manager extends EventEmitter {
     monitor(){
         var self = this;
 
-        return timeoutOldJobs();
+        return expire().then(init);
 
-        function timeoutOldJobs(){
-            return self.db.executeSql(self.expireJobCommand)
-                .catch(error => self.emit('error', error))
-                .then(() => setTimeout(timeoutOldJobs, self.monitorInterval));
+        function expire() {
+            return self.db.executeSql(self.expireJobCommand);
+        }
+
+        function init() {
+           setTimeout(check, self.config.expireCheckInterval);
+
+            function check() {
+                expire().catch(error => self.emit('error', error)).then(init);
+            }
         }
     }
 
     subscribe(name, ...args){
-        assert(name, 'boss requires all jobs to have a name');
 
-        var options;
-        var callback;
+        let self = this;
 
-        if(args.length === 1){
-            callback = args[0];
-            options = {};
-        } else if (args.length === 2){
-            options = args[0] || {};
-            callback = args[1];
+        return new Promise(deferred);
+
+        function deferred(resolve, reject){
+            var options, callback;
+
+            init();
+
+            register();
+
+            resolve();
+
+            function init() {
+
+                try {
+                    assert(name, 'boss requires all jobs to have a name');
+
+                    if(args.length === 1){
+                        callback = args[0];
+                        options = {};
+                    } else if (args.length === 2){
+                        options = args[0] || {};
+                        callback = args[1];
+                    }
+
+                    assert(typeof callback == 'function', 'expected a callback function');
+
+                    if(options)
+                        assert(typeof options == 'object', 'expected config to be an object');
+
+                    options = options || {};
+                    options.teamSize = options.teamSize || 1;
+                } catch(e) {
+                    reject(e);
+                }
+
+            }
+
+            function register() {
+                let jobFetcher = () =>
+                    self.db.executePreparedSql('nextJob', self.nextJobCommand, name)
+                        .then(result => result.rows.length ? result.rows[0] : null);
+
+                let workerConfig = {name: name, fetcher: jobFetcher, interval: self.config.newJobCheckInterval};
+
+                for(let w=0; w < options.teamSize; w++){
+
+                    let worker = new Worker(workerConfig);
+
+                    worker.on('error', error => self.emit('error', error));
+
+                    worker.on(name, job => {
+                        job.name = name;
+                        self.emit('job', job);
+                        setImmediate(() => callback(job, () => self.complete(job.id)));
+                    });
+
+                    worker.start();
+
+                    self.workers.push(worker);
+                }
+            }
         }
-        
-        assert(typeof callback == 'function', 'expected a callback function');
-        if(options)
-            assert(typeof options == 'object', 'expected config to be an object');
-        
-        options.teamSize = options.teamSize || 1;
 
-        let jobFetcher = () =>
-            this.db.executePreparedSql('nextJob', this.nextJobCommand, name)
-                .then(result => result.rows.length ? result.rows[0] : null);
-
-        let workerConfig = {name: name, fetcher: jobFetcher, interval: this.workerInterval};
-
-        for(let w=0; w < options.teamSize; w++){
-
-            let worker = new Worker(workerConfig);
-
-            worker.on('error', error => this.emit('error', error));
-
-            worker.on(name, job => {
-                job.name = name;
-                this.emit('job', job);
-                setImmediate(() => callback(job, () => this.completeJob(job.id)));
-            });
-
-            worker.start();
-
-            this.workers.push(worker);
-        }
     }
 
     publish(...args){
-        var name, data, options;
-
-        if(typeof args[0] == 'string') {
-
-            name = args[0];
-            data = args[1];
-            options = args[2];
-
-        } else if(typeof args[0] == 'object'){
-
-            assert(arguments.length === 1, 'publish object API only accepts 1 argument');
-
-            var job = args[0];
-            
-            assert(job, 'boss requires all jobs to have a name');
-
-            name = job.name;
-            data = job.data;
-            options = job.options;
-        }
-
-        assert(name, 'boss requires all jobs to have a name');
-        options = options || {};
-
         let self = this;
         
         return new Promise(deferred);
-        
 
         function deferred(resolve, reject){
 
+            var name, data, options;
+
+            init();
+
             insertJob();
+
+            function init() {
+                try {
+                    if(typeof args[0] == 'string') {
+
+                        name = args[0];
+                        data = args[1];
+                        options = args[2];
+
+                    } else if(typeof args[0] == 'object'){
+
+                        assert(args.length === 1, 'publish object API only accepts 1 argument');
+
+                        var job = args[0];
+
+                        assert(job, 'boss requires all jobs to have a name');
+
+                        name = job.name;
+                        data = job.data;
+                        options = job.options;
+                    }
+
+                    assert(name, 'boss requires all jobs to have a name');
+                    options = options || {};
+                } catch (error){
+                    return reject(error);
+                }
+            }
 
             function insertJob(){
                 let startIn =
@@ -149,15 +188,19 @@ class Manager extends EventEmitter {
                             resolve(null);
                         }
                     })
-                    .catch(error => reject(error));
+                    .catch(reject);
             }
 
         }
 
     }
 
-    completeJob(id){
+    complete(id){
         return this.db.executeSql(this.completeJobCommand, [id]);
+    }
+
+    cancel(id) {
+        return this.db.executeSql(this.cancelJobCommand, [id]);
     }
 }
 

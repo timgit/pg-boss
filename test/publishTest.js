@@ -13,8 +13,11 @@ describe('publish', function(){
             });
     });
 
-    it('should fail with no arguments', function() {
-        assert.throws(() => boss.publish());
+    it('should fail with no arguments', function(finished) {
+        boss.publish().catch(error => {
+            assert(true);
+            finished();
+        });
     });
 
     it('should accept single string argument', function(finished) {
