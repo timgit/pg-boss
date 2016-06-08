@@ -14,7 +14,7 @@ describe('publish', function(){
     });
 
     after(function(finished){
-        boss.disconnect().then(finished);
+        boss.stop().then(() => finished());
     });
 
     it('should fail with no arguments', function(finished) {

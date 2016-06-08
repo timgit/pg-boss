@@ -14,7 +14,7 @@ describe('delayed jobs', function(){
     });
 
     after(function(finished){
-        boss.disconnect().then(finished);
+        boss.stop().then(() => finished());
     });
     
     it('should wait before processing a delayed job submission', function(finished) {

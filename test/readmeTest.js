@@ -3,12 +3,21 @@ var PgBoss = require('../src/index');
 var helper = require('./testHelper');
 
 describe('examples', function(){
+
+    var _boss;
+    
+    after(function(finished){
+        _boss.stop().then(() => finished());
+    });
+
     it('readme example is totes valid', function(finished){
         var connectionString = helper.connectionString;
         
         // example start
         var boss = new PgBoss(connectionString);
-        
+
+        _boss = boss; // exclude test code
+
         boss.start()
             .then(ready)
             .catch(error => console.error(error));

@@ -14,7 +14,7 @@ describe('throttle', function() {
     });
 
     after(function(finished){
-        boss.disconnect().then(finished);
+        boss.stop().then(() => finished());
     });
 
     it('should process at most 1 job per second', function (finished) {

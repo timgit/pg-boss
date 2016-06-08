@@ -14,7 +14,7 @@ describe('connect', function() {
     });
 
     afterEach(function(finished){
-        boss.disconnect().then(finished);
+        boss.stop().then(() => finished());
     });
 
     it('should fail if connecting to an older schema version', function (finished) {

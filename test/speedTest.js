@@ -14,7 +14,7 @@ describe('speed', function() {
     });
 
     after(function(finished){
-        boss.disconnect().then(finished);
+        boss.stop().then(() => finished());
     });
     
     var expectedSeconds = 4;

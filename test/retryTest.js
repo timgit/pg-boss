@@ -14,7 +14,7 @@ describe('retries', function() {
     });
 
     after(function(finished){
-        boss.disconnect().then(finished);
+        boss.stop().then(() => finished());
     });
     
     it('should retry a job that didn\'t complete', function (finished) {

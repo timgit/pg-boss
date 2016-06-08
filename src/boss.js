@@ -21,12 +21,26 @@ class Boss extends EventEmitter{
         }
         
         function init() {
-            setTimeout(check, self.config.archiveCheckInterval);
+            if(self.stopped)
+                return;
+
+            self.archiveTimer = setTimeout(check, self.config.archiveCheckInterval);
 
             function check() {
                 archive().catch(error => self.emit('error', error)).then(init)
             }
         }
+    }
+
+    stop() {
+        return new Promise((resolve, reject) => {
+            this.stopped = true;
+
+            if(this.archiveTimer)
+                clearTimeout(this.archiveTimer);
+
+            resolve();
+        });
     }
 }
 

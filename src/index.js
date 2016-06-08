@@ -56,6 +56,14 @@ class PgBoss extends EventEmitter {
             .then(() => this.init());
     }
 
+    stop() {
+        return Promise.all([
+            this.disconnect(),
+            this.manager.stop(),
+            this.boss.stop()
+        ]);
+    }
+
     connect() {
         return this.contractor.connect.apply(this.contractor, arguments)
             .then(() => {
@@ -69,14 +77,6 @@ class PgBoss extends EventEmitter {
         return this.manager.close.apply(this.manager, arguments).then(() => this.isReady = false);
     }
     
-    // stop() {
-    //     return Promise.all([
-    //         this.disconnect(),
-    //         this.manager.stopSupervise(),
-    //         this.boss.stopMonitor()
-    //     ]);
-    // }
-
     cancel(){
         if(!this.isReady) return Promise.reject(`boss ain't ready.  Use start() or connect() to get started.`);
         return this.manager.cancel.apply(this.manager, arguments);

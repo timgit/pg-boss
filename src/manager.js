@@ -34,7 +34,11 @@ class Manager extends EventEmitter {
         }
 
         function init() {
-           setTimeout(check, self.config.expireCheckInterval);
+
+            if(self.stopped)
+                return;
+
+            self.expireTimer = setTimeout(check, self.config.expireCheckInterval);
 
             function check() {
                 expire().catch(error => self.emit('error', error)).then(init);
@@ -46,6 +50,15 @@ class Manager extends EventEmitter {
         this.workers.forEach(worker => worker.stop());
         this.workers.length = 0;
         return Promise.resolve(true);
+    }
+
+    stop() {
+        this.close().then(() => {
+            this.stopped = true;
+            
+            if(this.expireTimer)
+                clearTimeout(this.expireTimer);
+        });
     }
 
     subscribe(name, ...args){
