@@ -1,3 +1,7 @@
 .idea
 src/
 test/
+coverage/
+.travis.yml
+.babelrc
+readme.md
