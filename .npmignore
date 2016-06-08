@@ -4,4 +4,4 @@ test/
 coverage/
 .travis.yml
 .babelrc
-readme.md
+*.tgz
