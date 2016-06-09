@@ -6,6 +6,8 @@ const Contractor = require('./contractor');
 const Manager = require('./manager');
 const Boss = require('./boss');
 
+const notReadyErrorMessage = `boss ain't ready.  Use start() or connect() to get started.`;
+
 class PgBoss extends EventEmitter {
     static getConstructionPlans(schema) {
         return Contractor.constructionPlans(schema);
@@ -73,22 +75,23 @@ class PgBoss extends EventEmitter {
     }
 
     disconnect() {
-        if(!this.isReady) return Promise.reject(`boss ain't ready.  Use start() or connect() to get started.`);
-        return this.manager.close.apply(this.manager, arguments).then(() => this.isReady = false);
+        if(!this.isReady) return Promise.reject(notReadyErrorMessage);
+        return this.manager.close.apply(this.manager, arguments)
+            .then(() => this.isReady = false);
     }
     
     cancel(){
-        if(!this.isReady) return Promise.reject(`boss ain't ready.  Use start() or connect() to get started.`);
+        if(!this.isReady) return Promise.reject(notReadyErrorMessage);
         return this.manager.cancel.apply(this.manager, arguments);
     }
     
     subscribe(){
-        if(!this.isReady) return Promise.reject(`boss ain't ready.  Use start() or connect() to get started.`);
+        if(!this.isReady) return Promise.reject(notReadyErrorMessage);
         return this.manager.subscribe.apply(this.manager, arguments);
     }
 
     publish(){
-        if(!this.isReady) return Promise.reject(`boss ain't ready.  Use start() or connect() to get started.`);
+        if(!this.isReady) return Promise.reject(notReadyErrorMessage);
         return this.manager.publish.apply(this.manager, arguments);
     }
 }
