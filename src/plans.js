@@ -100,7 +100,8 @@ function completeJob(schema){
         UPDATE ${schema}.job
         SET completedOn = now(),
             state = 'complete'
-        WHERE id = $1`;
+        WHERE id = $1
+            AND state = 'active'`;
 }
 
 function cancelJob(schema){
@@ -108,14 +109,15 @@ function cancelJob(schema){
         UPDATE ${schema}.job
         SET completedOn = now(),
             state = 'cancelled'
-        WHERE id = $1`;
+        WHERE id = $1
+            AND state IN ('created','active')`;
 }
 
 function insertJob(schema) {
     return `INSERT INTO ${schema}.job (id, name, state, retryLimit, startIn, expireIn, data, singletonOn)
             VALUES (
-                $1, $2, $3, $4, CAST($5 as interval), CAST($6 as interval), $7, 
-                CASE WHEN $8::integer IS NOT NULL THEN 'epoch'::timestamp + '1 second'::interval * ($8 * floor((date_part('epoch', now()) + $9) / $8)) ELSE NULL END
+                $1, $2, 'created', $3, CAST($4 as interval), CAST($5 as interval), $6, 
+                CASE WHEN $7::integer IS NOT NULL THEN 'epoch'::timestamp + '1 second'::interval * ($7 * floor((date_part('epoch', now()) + $8) / $7)) ELSE NULL END
             )
             ON CONFLICT ON CONSTRAINT job_singleton DO NOTHING`;
 }

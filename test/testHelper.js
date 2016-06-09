@@ -13,6 +13,7 @@ module.exports = {
     start: start,
     extend: extend,
     getDb: getDb,
+    getJobById: getJobById,
     config: config,
     connectionString: `postgres://${config.user}:${config.password}@${config.host}:${config.port}/${config.database}`
 };
@@ -23,6 +24,10 @@ function getDb() {
 
 function init() {
     return getDb().executeSql(`DROP SCHEMA IF EXISTS ${config.schema} CASCADE`);
+}
+
+function getJobById(id) {
+    return getDb().executeSql(`select * from ${config.schema}.job where id = $1`, [id]);
 }
 
 function start(options) {

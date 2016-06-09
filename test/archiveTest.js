@@ -4,13 +4,11 @@ var helper = require('./testHelper');
 describe('archive', function() {
 
     var boss;
-    var db;
-    
+
     before(function(finished){
         helper.start({archiveCompletedJobsEvery:'1 second', archiveCheckInterval: 500})
             .then(dabauce => {
                 boss = dabauce;
-                db = helper.getDb();
                 finished();
             });
     });
@@ -28,16 +26,14 @@ describe('archive', function() {
         boss.publish(jobName).then(id => {
             jobId = id;
 
-            db.executeSql('select id from pgboss.job where id = $1', [jobId])
-                .then(result => {
-                    assert.equal(1, result.rows.length);
-                });
+            helper.getJobById(jobId)
+                .then(result => assert.equal(1, result.rows.length));
         });
 
         boss.subscribe(jobName, (job, done) => {
             done().then(() => {
                 setTimeout(() => {
-                    db.executeSql('select id from pgboss.job where id = $1', [jobId])
+                    helper.getJobById(jobId)
                         .then(result => {
                             assert.equal(0, result.rows.length);
                             finished();

@@ -185,12 +185,11 @@ class Manager extends EventEmitter {
                         : null;
 
                 let id = uuid[self.config.uuid](),
-                    state = 'created',
                     retryLimit = options.retryLimit || 0,
                     expireIn = options.expireIn || '15 minutes',
                     singletonOffset = options.singletonOffset || 0;
 
-                let values = [id, name, state, retryLimit, startIn, expireIn, data, singletonSeconds, singletonOffset];
+                let values = [id, name, retryLimit, startIn, expireIn, data, singletonSeconds, singletonOffset];
 
                 self.db.executeSql(self.insertJobCommand, values)
                     .then(result => {
@@ -215,11 +214,19 @@ class Manager extends EventEmitter {
     }
 
     complete(id){
-        return this.db.executeSql(this.completeJobCommand, [id]);
+        return this.db.executeSql(this.completeJobCommand, [id])
+            .then(result => {
+                assert(result.rowCount === 1, `Job ${id} could not be completed.`);
+                return id;
+            });
     }
 
     cancel(id) {
-        return this.db.executeSql(this.cancelJobCommand, [id]);
+        return this.db.executeSql(this.cancelJobCommand, [id])
+            .then(result => {
+                assert(result.rowCount === 1, `Job ${id} could not be cancelled.`);
+                return id;
+            });
     }
 }
 
