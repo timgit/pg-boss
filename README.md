@@ -45,8 +45,7 @@ function ready() {
 * Postgres 9.5 or higher (see background below for rationale)
 
 ##Documentation
-It's actually taking longer to document this than actually write it. :)
-* [API Docs](https://github.com/timgit/pg-boss/wiki/API-docs) - (in progress)
+* [Docs](https://github.com/timgit/pg-boss/wiki) - (in progress)
 
 ##Background
 pg-boss was created to leverage recent additions in PostreSQL 9.5
