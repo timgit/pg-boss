@@ -49,7 +49,8 @@ Why would you consider using this queue over others?  Well, I will say this is a
 `$ npm install pg-boss`
 
 ##Documentation
-* [Docs](https://github.com/timgit/pg-boss/wiki)
+* [API](https://github.com/timgit/pg-boss/wiki/api)
+* [Configuration](https://github.com/timgit/pg-boss/wiki/configuration)
 
 ##Background
 pg-boss was created to leverage recent additions in PostreSQL 9.5
