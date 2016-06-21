@@ -20,7 +20,8 @@ function ready() {
         .then(jobId => console.log(`sent job ${jobId}`));
 
     boss.subscribe('work', (job, done) => {
-        console.log(`got job ${job.name} (${job.id}) ${JSON.stringify(job.data)}`);
+        console.log(`received job ${job.name} (${job.id}));
+        console.log(JSON.stringify(job.data));
 
         done().then(() => console.log('Confirmed done'));
     });
