@@ -31,12 +31,14 @@ class PgBoss extends EventEmitter {
         var boss = new Boss(config);
         this.boss = boss;
         boss.on('error', error => this.emit('error', error));
+        boss.on('archived', count => this.emit('archived', count));
 
         // manager makes sure workers aren't taking too long to finish their jobs
         var manager = new Manager(config);
+        this.manager = manager;
         manager.on('error', error => this.emit('error', error));
         manager.on('job', job => this.emit('job', job));
-        this.manager = manager;
+        manager.on('expired', count => this.emit('expired', count));
     }
 
     init() {
