@@ -30,7 +30,11 @@ class Manager extends EventEmitter {
         return expire().then(init);
 
         function expire() {
-            return self.db.executeSql(self.expireJobCommand);
+            return self.db.executeSql(self.expireJobCommand)
+                .then(result => {
+                    if (result.rowCount)
+                        self.emit('expired', result.rowCount);
+                });
         }
 
         function init() {

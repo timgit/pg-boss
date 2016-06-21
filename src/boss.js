@@ -17,7 +17,11 @@ class Boss extends EventEmitter{
         return archive().then(init);
         
         function archive(){
-            return self.db.executeSql(self.archiveCommand, self.config.archiveCompletedJobsEvery);
+            return self.db.executeSql(self.archiveCommand, self.config.archiveCompletedJobsEvery)
+                .then(result => {
+                    if (result.rowCount)
+                        self.emit('archived', result.rowCount);
+                });
         }
         
         function init() {
