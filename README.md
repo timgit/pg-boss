@@ -30,7 +30,9 @@ function ready() {
 
 pg-boss is a message queue (aka job queue, task queue) built in Node.js on top of PostgreSQL in order to provide guaranteed messaging and asynchronous execution to your Node apps.  
 
-Why would you consider using this queue over others?  Well, I will say this is a crowded space in npm, and I haven't personally used very many of them, but if you're already using Node and Postgres, you could avoid a conversation with Ops. I wrote this to remove a dependency on Redis (via the kue package), consolidating systems I have to support in production and well as upgrading to guaranteed message processing. This will likely cater to anyone already familiar with the simplicity of relational database semantics and operations (querying and backups, for example) as well as a low budget solution to a very common problem. 
+Why would you consider using this queue over others? pg-boss was created to leverage recent additions in PostreSQL 9.5
+(specifically [SKIP LOCKED](http://blog.2ndquadrant.com/what-is-select-skip-locked-for-in-postgresql-9-5) and upserts)
+which significantly enhances it's ability to act as a reliable, distributed message queue. I wrote this to remove a dependency on Redis (via the kue package), consolidating systems I have to support in production and well as upgrading to guaranteed message processing. This will likely cater to anyone already familiar with the simplicity of relational database semantics and operations (querying and backups, for example) as well as a low budget solution to a very common problem. 
 
 ##Features
 * Guaranteed delivery and finalizing of jobs using a promise API
@@ -52,11 +54,3 @@ Why would you consider using this queue over others?  Well, I will say this is a
 ##Documentation
 * [API](https://github.com/timgit/pg-boss/wiki/api)
 * [Configuration](https://github.com/timgit/pg-boss/wiki/configuration)
-
-##Background
-pg-boss was created to leverage recent additions in PostreSQL 9.5
-(specifically [SKIP LOCKED](http://blog.2ndquadrant.com/what-is-select-skip-locked-for-in-postgresql-9-5) and upserts)
-which significantly enhances it's ability to act as a reliable, distributed message queue.
-For example, I have a performance test which regularly completes 1000 jobs per second
-([a bit longer in CI of course](https://travis-ci.org/timgit/pg-boss/jobs/127713018#L301)) once SKIP LOCKED was added
-to my job fetch CTE.
