@@ -24,6 +24,20 @@ describe('publish', function(){
         });
     });
 
+    it('should fail with a function for data', function(finished) {
+        boss.publish('job', () => true).catch(error => {
+            assert(true);
+            finished();
+        });
+    });
+
+    it('should fail with a function for options', function(finished) {
+        boss.publish('job', 'data', () => true).catch(error => {
+            assert(true);
+            finished();
+        });
+    });
+
     it('should accept single string argument', function(finished) {
         var jobName = 'publishNameOnly';
 
