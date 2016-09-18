@@ -153,6 +153,9 @@ class Manager extends EventEmitter {
 
                         name = args[0];
                         data = args[1];
+
+                        assert(typeof data != 'function', 'publish() cannot accept a function as the payload.  Did you intend to use subscribe()?');
+
                         options = args[2];
 
                     } else if(typeof args[0] == 'object'){
@@ -168,8 +171,11 @@ class Manager extends EventEmitter {
                         options = job.options;
                     }
 
-                    assert(name, 'boss requires all jobs to have a name');
                     options = options || {};
+
+                    assert(name, 'boss requires all jobs to have a name');
+                    assert(typeof options == 'object', 'options should be an object');
+
                 } catch (error){
                     return reject(error);
                 }
