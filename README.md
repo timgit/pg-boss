@@ -46,7 +46,7 @@ which significantly enhances it's ability to act as a reliable, distributed mess
 
 ##Requirements
 * Node 0.10 or higher (It may work on older versions, but who's using < 0.10? :)
-* Postgres 9.5 or higher (see background below for rationale)
+* Postgres 9.5 or higher
 
 ##Installation
 `$ npm install pg-boss`
