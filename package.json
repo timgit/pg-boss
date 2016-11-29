@@ -5,8 +5,8 @@
   "main": "./lib/index.js",
   "dependencies": {
     "bluebird": "^3.4.0",
-    "node-uuid": "^1.4.7",
-    "pg": "^6.0.0"
+    "pg": "^6.0.0",
+    "uuid": "^3.0.0"
   },
   "devDependencies": {
     "babel-cli": "^6.8.0",

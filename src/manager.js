@@ -1,7 +1,7 @@
 const assert = require('assert');
 const EventEmitter = require('events').EventEmitter; //node 0.10 compatibility;
 const Promise = require('bluebird');
-const uuid = require('node-uuid');
+const uuid = require('uuid');
 
 const Db = require('./db');
 const Worker = require('./worker');
