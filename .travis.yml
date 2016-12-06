@@ -1,23 +1,12 @@
-sudo: required
 language: node_js
 node_js:
-  - "6"
   - "4"
-  - "0.12"
-  - "0.10"
+  - "6"
+  - "7"
 services:
 addons:
   postgresql: "9.5"
-  apt:
-    sources:
-      - precise-pgdg-9.5
-    packages:
-      - postgresql-9.5
-env:
-  - PGPORT=5433 PGHOST=localhost
 before_script:
-  - sudo cp /etc/postgresql/9.4/main/pg_hba.conf /etc/postgresql/9.5/main/pg_hba.conf
-  - sudo /etc/init.d/postgresql restart
   - psql -c 'create database pgboss;' -U postgres
 script:
   - npm run cover
