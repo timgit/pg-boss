@@ -1,16 +1,14 @@
+sudo: false
+dist: trusty
+addons:
+    postgresql: "9.5"
+services:
+    - postgresql
 language: node_js
 node_js:
-  - "4"
-  - "6"
   - "7"
-services:
-addons:
-  postgresql: "9.5"
 before_script:
   - psql -c 'create database pgboss;' -U postgres
 script:
   - npm run cover
 after_script: "cat coverage/lcov.info | node_modules/coveralls/bin/coveralls.js"
-cache:
-  directories:
-    - node_modules
