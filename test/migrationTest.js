@@ -15,6 +15,8 @@ describe('migration', function() {
     });
 
     it('should migrate to previous version and back again', function (finished) {
+        this.timeout(2000);
+
         contractor.create()
             .then(() => db.migrate(currentSchemaVersion, 'remove'))
             .then(() => contractor.version())

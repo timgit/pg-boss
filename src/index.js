@@ -54,10 +54,19 @@ class PgBoss extends EventEmitter {
             return Promise.resolve(this);
     }
 
-
     start() {
+        var self = this;
+
+        if(this.isStarting)
+            return Promise.reject('boss is starting up. Please wait for the previous start() to finish.');
+
+        this.isStarting = true;
+
         return this.contractor.start.apply(this.contractor, arguments)
-            .then(() => this.init());
+            .then(() => {
+                self.isStarting = false;
+                return self.init();
+            });
     }
 
     stop() {
@@ -69,17 +78,21 @@ class PgBoss extends EventEmitter {
     }
 
     connect() {
+        var self = this;
+
         return this.contractor.connect.apply(this.contractor, arguments)
             .then(() => {
-                this.isReady = true;
-                return this;
+                self.isReady = true;
+                return self;
             });
     }
 
     disconnect() {
+        var self = this;
+
         if(!this.isReady) return Promise.reject(notReadyErrorMessage);
         return this.manager.close.apply(this.manager, arguments)
-            .then(() => this.isReady = false);
+            .then(() => self.isReady = false);
     }
     
     cancel(){

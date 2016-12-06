@@ -56,8 +56,7 @@ class Contractor extends EventEmitter {
 
     update(current) {
         // temp workaround for bad 0.0.2 schema update
-        if(current == '0.0.2')
-            current = '0.0.1';
+        if(current == '0.0.2') current = '0.0.1';
 
         return this.db.migrate(current)
             .then(version => {
