@@ -3,7 +3,7 @@ var config = require('./config.json');
 var PgBoss = require('../src/index');
 
 if(process.env.TRAVIS) {
-    config.port = 5433;
+    config.port = 5432;
     config.password = '';
     config.schema = 'pgboss' + process.env.TRAVIS_JOB_ID;
 }
