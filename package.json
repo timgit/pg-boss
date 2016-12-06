@@ -4,8 +4,8 @@
   "description": "Queueing jobs in Node.js using PostgreSQL like a boss",
   "main": "./lib/index.js",
   "dependencies": {
-    "bluebird": "^3.4.0",
-    "pg": "^6.0.0",
+    "bluebird": "^3.4.6",
+    "pg": "^6.1.0",
     "uuid": "^3.0.0"
   },
   "devDependencies": {
