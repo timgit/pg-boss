@@ -196,26 +196,12 @@ class Manager extends EventEmitter {
 
                 let id = uuid[self.config.uuid](),
                     retryLimit = options.retryLimit || 0,
-                    expireIn = options.expireIn || '15 minutes',
-                    singletonOffset = options.singletonOffset || 0;
+                    expireIn = options.expireIn || '15 minutes';
 
-                let values = [id, name, retryLimit, startIn, expireIn, data, singletonSeconds, singletonOffset];
+                let values = [id, name, retryLimit, startIn, expireIn, data, singletonSeconds];
 
                 self.db.executeSql(self.insertJobCommand, values)
-                    .then(result => {
-                        if(result.rowCount === 1)
-                            return resolve(id);
-
-                        if(singletonSeconds && options.startIn != singletonSeconds){
-                            options.startIn = singletonSeconds;
-                            options.singletonOffset = singletonSeconds;
-
-                            insertJob();
-                        }
-                        else {
-                            resolve(null);
-                        }
-                    })
+                    .then(result => resolve(result.rowCount === 1 ? id : null))
                     .catch(reject);
             }
 
