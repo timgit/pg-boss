@@ -18,7 +18,7 @@ describe('archive', function() {
     });
     
     it('should archive a job', function(finished){
-        this.timeout(3000);
+        this.timeout(5000);
 
         var jobName = 'archiveMe';
         var jobId = null;
