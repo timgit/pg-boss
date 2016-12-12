@@ -30,9 +30,9 @@ function ready() {
 
 pg-boss is a message queue (aka job queue, task queue) built in Node.js on top of PostgreSQL in order to provide guaranteed messaging and asynchronous execution to your Node apps.  
 
-Why would you consider using this queue over others? pg-boss was created to leverage recent additions in PostreSQL 9.5
+Why would you consider using this queue over others? pg-boss was created to leverage recent additions in PostgreSQL 9.5
 (specifically [SKIP LOCKED](http://blog.2ndquadrant.com/what-is-select-skip-locked-for-in-postgresql-9-5) and upserts)
-which significantly enhances it's ability to act as a reliable, distributed message queue. I wrote this to remove a dependency on Redis (via the kue package), consolidating systems I have to support in production and well as upgrading to guaranteed message processing. This will likely cater to anyone already familiar with the simplicity of relational database semantics and operations (querying and backups, for example) as well as a low budget solution to a very common problem. 
+which significantly enhances its ability to act as a reliable, distributed message queue. I wrote this to remove a dependency on Redis (via the kue package), consolidating systems I have to support in production and well as upgrading to guaranteed message processing. This will likely cater to anyone already familiar with the simplicity of relational database semantics and operations (querying and backups, for example) as well as a low budget solution to a very common problem. 
 
 ##Features
 * Guaranteed delivery and finalizing of jobs using a promise API
@@ -45,8 +45,8 @@ which significantly enhances it's ability to act as a reliable, distributed mess
 * Automatic archiving for completed jobs
 
 ##Requirements
-* Node 0.10 or higher (It may work on older versions, but who's using < 0.10? :)
-* Postgres 9.5 or higher
+* Node 0.10 or higher
+* PostgreSQL 9.5 or higher
 
 ##Installation
 `$ npm install pg-boss`
