@@ -1,6 +1,6 @@
 {
   "name": "pg-boss",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Queueing jobs in Node.js using PostgreSQL like a boss",
   "main": "./lib/index.js",
   "dependencies": {
@@ -15,7 +15,7 @@
     "chai": "^3.5.0",
     "coveralls": "^2.11.9",
     "isparta": "^4.0.0",
-    "mocha": "^2.4.5"
+    "mocha": "^3.2.0"
   },
   "scripts": {
     "test": "node_modules/.bin/mocha --compilers js:babel-core/register",
