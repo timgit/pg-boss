@@ -109,6 +109,16 @@ class PgBoss extends EventEmitter {
         if(!this.isReady) return Promise.reject(notReadyErrorMessage);
         return this.manager.publish.apply(this.manager, arguments);
     }
+
+    fetch(){
+        if(!this.isReady) return Promise.reject(notReadyErrorMessage);
+        return this.manager.fetch.apply(this.manager, arguments);
+    }
+
+    complete(){
+        if(!this.isReady) return Promise.reject(notReadyErrorMessage);
+        return this.manager.complete.apply(this.manager, arguments);
+    }
 }
 
 module.exports = PgBoss;

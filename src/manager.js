@@ -107,9 +107,7 @@ class Manager extends EventEmitter {
             }
 
             function register() {
-                let jobFetcher = () =>
-                    self.db.executePreparedSql('nextJob', self.nextJobCommand, name)
-                        .then(result => result.rows.length ? result.rows[0] : null);
+                let jobFetcher = () => self.fetch(name);
 
                 let workerConfig = {name: name, fetcher: jobFetcher, interval: self.config.newJobCheckInterval};
 
@@ -120,7 +118,6 @@ class Manager extends EventEmitter {
                     worker.on('error', error => self.emit('error', error));
 
                     worker.on(name, job => {
-                        job.name = name;
                         self.emit('job', job);
                         setImmediate(() => callback(job, () => self.complete(job.id)));
                     });
@@ -207,6 +204,20 @@ class Manager extends EventEmitter {
 
         }
 
+    }
+
+    fetch(name) {
+        return this.db.executePreparedSql('nextJob', this.nextJobCommand, name)
+            .then(result => {
+                if(result.rows.length === 0)
+                    return null;
+
+                let job = result.rows[0];
+
+                job.name = name;
+
+                return job;
+            });
     }
 
     complete(id){
