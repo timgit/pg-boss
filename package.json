@@ -1,6 +1,6 @@
 {
-  "name": "pg-boss",
-  "version": "0.5.0",
+  "name": "pg-boss-rota",
+  "version": "0.0.0",
   "description": "Queueing jobs in Node.js using PostgreSQL like a boss",
   "main": "./lib/index.js",
   "dependencies": {
@@ -21,8 +21,7 @@
     "test": "node_modules/.bin/mocha --compilers js:babel-core/register",
     "cover": "./node_modules/.bin/babel-node ./node_modules/isparta/bin/isparta cover --report text --report lcov node_modules/mocha/bin/_mocha -- --reporter dot",
     "compile": "babel -d lib/ src/",
-    "prepublish": "npm run compile",
-    "postinstall": "npm run compile"
+    "prepublish": "npm run compile"
   },
   "repository": {
     "type": "git",
