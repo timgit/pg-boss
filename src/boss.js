@@ -37,14 +37,13 @@ class Boss extends EventEmitter{
     }
 
     stop() {
-        return new Promise((resolve, reject) => {
-            this.stopped = true;
 
-            if(this.archiveTimer)
-                clearTimeout(this.archiveTimer);
+        this.stopped = true;
 
-            resolve();
-        });
+        if(this.archiveTimer)
+            clearTimeout(this.archiveTimer);
+
+        return Promise.resolve();
     }
 }
 

@@ -69,63 +69,59 @@ class Manager extends EventEmitter {
 
         let self = this;
 
-        return new Promise(deferred);
+        return getArgs(args)
+            .then(({options, callback}) => register(options, callback));
 
-        function deferred(resolve, reject){
-            var options, callback;
 
-            init();
+        function getArgs(args) {
 
-            register();
+            let options, callback;
 
-            resolve();
+            try {
+                assert(name, 'boss requires all jobs to have a name');
 
-            function init() {
-
-                try {
-                    assert(name, 'boss requires all jobs to have a name');
-
-                    if(args.length === 1){
-                        callback = args[0];
-                        options = {};
-                    } else if (args.length === 2){
-                        options = args[0] || {};
-                        callback = args[1];
-                    }
-
-                    assert(typeof callback == 'function', 'expected a callback function');
-
-                    if(options)
-                        assert(typeof options == 'object', 'expected config to be an object');
-
-                    options = options || {};
-                    options.teamSize = options.teamSize || 1;
-                } catch(e) {
-                    reject(e);
+                if(args.length === 1){
+                    callback = args[0];
+                    options = {};
+                } else if (args.length === 2){
+                    options = args[0] || {};
+                    callback = args[1];
                 }
 
+                assert(typeof callback == 'function', 'expected a callback function');
+
+                if(options)
+                    assert(typeof options == 'object', 'expected config to be an object');
+
+                options = options || {};
+                options.teamSize = options.teamSize || 1;
+            } catch(e) {
+                return Promise.reject(e);
             }
 
-            function register() {
-                let jobFetcher = () => self.fetch(name);
+            return Promise.resolve({options, callback});
 
-                let workerConfig = {name: name, fetcher: jobFetcher, interval: self.config.newJobCheckInterval};
+        }
 
-                for(let w=0; w < options.teamSize; w++){
+        function register(options, callback) {
+            let jobFetcher = () => self.fetch(name);
 
-                    let worker = new Worker(workerConfig);
+            let workerConfig = {name: name, fetcher: jobFetcher, interval: self.config.newJobCheckInterval};
 
-                    worker.on('error', error => self.emit('error', error));
+            for(let w=0; w < options.teamSize; w++){
 
-                    worker.on(name, job => {
-                        self.emit('job', job);
-                        setImmediate(() => callback(job, () => self.complete(job.id)));
-                    });
+                let worker = new Worker(workerConfig);
 
-                    worker.start();
+                worker.on('error', error => self.emit('error', error));
 
-                    self.workers.push(worker);
-                }
+                worker.on(name, job => {
+                    self.emit('job', job);
+                    setImmediate(() => callback(job, () => self.complete(job.id)));
+                });
+
+                worker.start();
+
+                self.workers.push(worker);
             }
         }
 
@@ -133,75 +129,70 @@ class Manager extends EventEmitter {
 
     publish(...args){
         let self = this;
-        
-        return new Promise(deferred);
 
-        function deferred(resolve, reject){
+        return getArgs(args)
+            .then(({name, data, options}) => insertJob(name, data, options));
 
-            var name, data, options;
 
-            init();
+        function getArgs(args) {
+            let name, data, options;
 
-            insertJob();
+            try {
+                if(typeof args[0] == 'string') {
 
-            function init() {
-                try {
-                    if(typeof args[0] == 'string') {
+                    name = args[0];
+                    data = args[1];
 
-                        name = args[0];
-                        data = args[1];
+                    assert(typeof data != 'function', 'publish() cannot accept a function as the payload.  Did you intend to use subscribe()?');
 
-                        assert(typeof data != 'function', 'publish() cannot accept a function as the payload.  Did you intend to use subscribe()?');
+                    options = args[2];
 
-                        options = args[2];
+                } else if(typeof args[0] == 'object'){
 
-                    } else if(typeof args[0] == 'object'){
+                    assert(args.length === 1, 'publish object API only accepts 1 argument');
 
-                        assert(args.length === 1, 'publish object API only accepts 1 argument');
+                    let job = args[0];
 
-                        var job = args[0];
+                    assert(job, 'boss requires all jobs to have a name');
 
-                        assert(job, 'boss requires all jobs to have a name');
-
-                        name = job.name;
-                        data = job.data;
-                        options = job.options;
-                    }
-
-                    options = options || {};
-
-                    assert(name, 'boss requires all jobs to have a name');
-                    assert(typeof options == 'object', 'options should be an object');
-
-                } catch (error){
-                    return reject(error);
+                    name = job.name;
+                    data = job.data;
+                    options = job.options;
                 }
+
+                options = options || {};
+
+                assert(name, 'boss requires all jobs to have a name');
+                assert(typeof options == 'object', 'options should be an object');
+
+            } catch (error){
+                return Promise.reject(error);
             }
 
-            function insertJob(){
-                let startIn =
-                    (options.startIn > 0) ? '' + options.startIn
-                        : (typeof options.startIn == 'string') ? options.startIn
-                        : '0';
+            return Promise.resolve({name, data, options});
+        }
 
-                let singletonSeconds =
-                    (options.singletonSeconds > 0) ? options.singletonSeconds
-                        : (options.singletonMinutes > 0) ? options.singletonMinutes * 60
-                        : (options.singletonHours > 0) ? options.singletonHours * 60 * 60
-                        : (options.singletonDays > 0) ? options.singletonDays * 60 * 60 * 24
-                        : null;
+        function insertJob(name, data, options){
+            let startIn =
+                (options.startIn > 0) ? '' + options.startIn
+                    : (typeof options.startIn == 'string') ? options.startIn
+                    : '0';
 
-                let id = uuid[self.config.uuid](),
-                    retryLimit = options.retryLimit || 0,
-                    expireIn = options.expireIn || '15 minutes';
+            let singletonSeconds =
+                (options.singletonSeconds > 0) ? options.singletonSeconds
+                    : (options.singletonMinutes > 0) ? options.singletonMinutes * 60
+                    : (options.singletonHours > 0) ? options.singletonHours * 60 * 60
+                    : (options.singletonDays > 0) ? options.singletonDays * 60 * 60 * 24
+                    : null;
 
-                let values = [id, name, retryLimit, startIn, expireIn, data, singletonSeconds];
+            let id = uuid[self.config.uuid](),
+                retryLimit = options.retryLimit || 0,
+                expireIn = options.expireIn || '15 minutes';
 
-                self.db.executeSql(self.insertJobCommand, values)
-                    .then(result => resolve(result.rowCount === 1 ? id : null))
-                    .catch(reject);
-            }
+            let values = [id, name, retryLimit, startIn, expireIn, data, singletonSeconds];
 
+            return self.db.executeSql(self.insertJobCommand, values)
+                .then(result => result.rowCount === 1 ? id : null);
         }
 
     }

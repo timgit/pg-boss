@@ -20,7 +20,7 @@ class Db {
         if(query.values && !Array.isArray(query.values))
             query.values = [query.values];
 
-        var config = this.config;
+        let config = this.config;
 
         return new Promise(deferred);
 
