@@ -28,13 +28,13 @@ class PgBoss extends EventEmitter {
         this.contractor = new Contractor(config);
 
         // boss keeps the books and archives old jobs
-        var boss = new Boss(config);
+        let boss = new Boss(config);
         this.boss = boss;
         boss.on('error', error => this.emit('error', error));
         boss.on('archived', count => this.emit('archived', count));
 
         // manager makes sure workers aren't taking too long to finish their jobs
-        var manager = new Manager(config);
+        let manager = new Manager(config);
         this.manager = manager;
         manager.on('error', error => this.emit('error', error));
         manager.on('job', job => this.emit('job', job));
@@ -42,20 +42,18 @@ class PgBoss extends EventEmitter {
     }
 
     init() {
-        if(!this.isReady){
-            return this.boss.supervise()
-                .then(() => this.manager.monitor())
-                .then(() => {
-                    this.isReady = true;
-                    return this;
-            });
-        }
-        else
-            return Promise.resolve(this);
+        if(this.isReady) return Promise.resolve(this);
+
+        return this.boss.supervise()
+            .then(() => this.manager.monitor())
+            .then(() => {
+                this.isReady = true;
+                return this;
+        });
     }
 
     start() {
-        var self = this;
+        let self = this;
 
         if(this.isStarting)
             return Promise.reject('boss is starting up. Please wait for the previous start() to finish.');
@@ -78,7 +76,7 @@ class PgBoss extends EventEmitter {
     }
 
     connect() {
-        var self = this;
+        let self = this;
 
         return this.contractor.connect.apply(this.contractor, arguments)
             .then(() => {
@@ -88,7 +86,7 @@ class PgBoss extends EventEmitter {
     }
 
     disconnect() {
-        var self = this;
+        let self = this;
 
         if(!this.isReady) return Promise.reject(notReadyErrorMessage);
         return this.manager.close.apply(this.manager, arguments)

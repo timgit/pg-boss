@@ -25,8 +25,7 @@ class Boss extends EventEmitter{
         }
         
         function init() {
-            if(self.stopped)
-                return;
+            if(self.stopped) return;
 
             self.archiveTimer = setTimeout(check, self.config.archiveCheckInterval);
 
@@ -37,7 +36,6 @@ class Boss extends EventEmitter{
     }
 
     stop() {
-
         this.stopped = true;
 
         if(this.archiveTimer)

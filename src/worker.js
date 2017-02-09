@@ -1,22 +1,22 @@
-const EventEmitter = require('events').EventEmitter; //node 0.10 compatibility;
-
-class Worker extends EventEmitter {
+class Worker {
     constructor(config){
-        super();
         this.config = config;
     }
     
     start() {
-        var self = this;
+        const self = this;
         
         checkForWork();
 
+        // could this be replaced with this.start() instead of checkForWork()?
+
         function checkForWork(){
-            if(!self.stopped)
-                self.config.fetcher()
-                    .then(job => { if(job) self.emit(self.config.name, job); })
-                    .catch(error => self.emit('error', error))
-                    .then(() => setTimeout(checkForWork, self.config.interval));
+            if(self.stopped) return;
+
+            self.config.fetcher()
+                .then(self.config.responder)
+                .catch(self.config.error)
+                .then(() => setTimeout(checkForWork, self.config.interval));
         }
     }
 

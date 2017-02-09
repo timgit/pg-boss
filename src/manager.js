@@ -38,9 +38,7 @@ class Manager extends EventEmitter {
         }
 
         function init() {
-
-            if(self.stopped)
-                return;
+            if(self.stopped) return;
 
             self.expireTimer = setTimeout(check, self.config.expireCheckInterval);
 
@@ -104,23 +102,22 @@ class Manager extends EventEmitter {
         }
 
         function register(options, callback) {
-            let jobFetcher = () => self.fetch(name);
 
-            let workerConfig = {name: name, fetcher: jobFetcher, interval: self.config.newJobCheckInterval};
-
-            for(let w=0; w < options.teamSize; w++){
-
-                let worker = new Worker(workerConfig);
-
-                worker.on('error', error => self.emit('error', error));
-
-                worker.on(name, job => {
+            let workerConfig = {
+                name,
+                fetcher: () => self.fetch(name),
+                responder: job => {
+                    if(!job) return;
                     self.emit('job', job);
                     setImmediate(() => callback(job, () => self.complete(job.id)));
-                });
+                },
+                error: error => self.emit('error', error),
+                interval: self.config.newJobCheckInterval
+            };
 
+            for(let w=0; w < options.teamSize; w++){
+                let worker = new Worker(workerConfig);
                 worker.start();
-
                 self.workers.push(worker);
             }
         }
