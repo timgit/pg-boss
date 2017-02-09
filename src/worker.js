@@ -4,20 +4,12 @@ class Worker {
     }
     
     start() {
-        const self = this;
-        
-        checkForWork();
+        if(this.stopped) return;
 
-        // could this be replaced with this.start() instead of checkForWork()?
-
-        function checkForWork(){
-            if(self.stopped) return;
-
-            self.config.fetcher()
-                .then(self.config.responder)
-                .catch(self.config.error)
-                .then(() => setTimeout(checkForWork, self.config.interval));
-        }
+        this.config.fetcher()
+            .then(this.config.responder)
+            .catch(this.config.error)
+            .then(() => setTimeout(() => this.start.apply(this), this.config.interval));
     }
 
     stop() {
