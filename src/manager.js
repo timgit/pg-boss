@@ -186,7 +186,9 @@ class Manager extends EventEmitter {
                 retryLimit = options.retryLimit || 0,
                 expireIn = options.expireIn || '15 minutes';
 
-            let values = [id, name, retryLimit, startIn, expireIn, data, singletonSeconds];
+            let singletonKey = options.singletonKey || null;
+
+            let values = [id, name, retryLimit, startIn, expireIn, data, singletonKey, singletonSeconds];
 
             return self.db.executeSql(self.insertJobCommand, values)
                 .then(result => result.rowCount === 1 ? id : null);

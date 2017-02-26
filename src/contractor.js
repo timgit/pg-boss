@@ -1,16 +1,15 @@
 const assert = require('assert');
-const EventEmitter = require('events').EventEmitter; //node 0.10 compatibility
 const Db = require('./db');
 const plans = require('./plans');
 const migrations = require('./migrations');
 const schemaVersion = require('../version.json').schema;
 const Promise = require("bluebird");
 
-class Contractor extends EventEmitter {
+class Contractor {
 
     static constructionPlans(schema){
-        let exportPlans = plans.createAll(schema);
-        exportPlans.push(plans.insertVersion(schema).replace('$1', schemaVersion));
+        let exportPlans = plans.create(schema);
+        exportPlans.push(plans.insertVersion(schema).replace('$1', `'${schemaVersion}'`));
 
         return exportPlans.join(';\n\n');
     }
@@ -22,7 +21,6 @@ class Contractor extends EventEmitter {
     }
 
     constructor(config){
-        super();
         this.config = config;
         this.db = new Db(config);
     }
@@ -50,7 +48,7 @@ class Contractor extends EventEmitter {
     }
 
     create(){
-        return Promise.each(plans.createAll(this.config.schema), command => this.db.executeSql(command))
+        return Promise.each(plans.create(this.config.schema), command => this.db.executeSql(command))
             .then(() => this.db.executeSql(plans.insertVersion(this.config.schema), schemaVersion));
     }
 

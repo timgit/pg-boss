@@ -14,9 +14,14 @@ module.exports = {
     extend: extend,
     getDb: getDb,
     getJobById: getJobById,
+    empty: empty,
     config: config,
     connectionString: `postgres://${config.user}:${config.password}@${config.host}:${config.port}/${config.database}`
 };
+
+function empty(){
+    return getDb().executeSql(`TRUNCATE TABLE ${config.schema}.job`);
+}
 
 function getDb() {
     return new Db(config);
