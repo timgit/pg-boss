@@ -37,6 +37,8 @@ function createVersionTable(schema) {
 }
 
 function createJobStateEnum(schema) {
+    // ENUM definition order is important
+    // base type is numeric and first values are less than last values
     return `
         CREATE TYPE ${schema}.job_state AS ENUM (
             'created',
@@ -67,22 +69,24 @@ function createJobTable(schema) {
         )`;
 }
 
+function createIndexSingletonKey(schema){
+    // anything with singletonKey means "only 1 job can be queued or active at a time"
+    return `
+        CREATE UNIQUE INDEX job_singletonKey ON ${schema}.job (name, singletonKey) WHERE state < 'complete' AND singletonOn IS NULL
+    `;
+}
 
 function createIndexSingletonOn(schema){
+    // anything with singletonOn means "only 1 job within this time period, queued, active or completed"
     return `
-        CREATE UNIQUE INDEX job_singletonOn ON ${schema}.job (name, singletonOn) WHERE state < 'expired'
+        CREATE UNIQUE INDEX job_singletonOn ON ${schema}.job (name, singletonOn) WHERE state < 'expired' AND singletonKey IS NULL
     `;
 }
 
 function createIndexSingletonKeyOn(schema){
+    // anything with both singletonOn and singletonKey means "only 1 job within this time period with this key, queued, active or completed"
     return `
         CREATE UNIQUE INDEX job_singletonKeyOn ON ${schema}.job (name, singletonOn, singletonKey) WHERE state < 'expired'
-    `;
-}
-
-function createIndexSingletonKey(schema){
-    return `
-        CREATE UNIQUE INDEX job_singletonKey ON ${schema}.job (name, singletonKey) WHERE state < 'complete'
     `;
 }
 
