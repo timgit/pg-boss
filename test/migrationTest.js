@@ -16,6 +16,8 @@ describe('migration', function() {
 
     it('should migrate to previous version and back again', function (finished) {
 
+        this.timeout(3000);
+
         contractor.create()
             .then(() => db.migrate(currentSchemaVersion, 'remove'))
             .then(version => {
@@ -30,6 +32,8 @@ describe('migration', function() {
 
     it('should migrate to latest during start if on previous schema version', function(finished){
 
+        this.timeout(3000);
+
         contractor.create()
             .then(() => db.migrate(currentSchemaVersion, 'remove'))
             .then(() => new PgBoss(helper.config).start())
@@ -41,6 +45,8 @@ describe('migration', function() {
     });
 
     it('should migrate through 2 versions back and forth', function (finished) {
+
+        this.timeout(3000);
 
         let prevVersion;
 
@@ -70,6 +76,8 @@ describe('migration', function() {
 
 
     it('should migrate to latest during start if on previous 2 schema versions', function(finished){
+
+        this.timeout(3000);
 
         contractor.create()
             .then(() => db.migrate(currentSchemaVersion, 'remove'))
