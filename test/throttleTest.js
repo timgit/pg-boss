@@ -83,4 +83,43 @@ describe('throttle', function() {
         }, publishInterval);
 
     });
+
+
+    it('should queue successfully into next time slot if throttled', function (finished) {
+
+        this.timeout(3000);
+
+        var jobName = 'singleton';
+
+        boss.publish(jobName, null, {singletonHours: 1})
+            .then(jobId => {
+                assert.isOk(jobId);
+                return boss.publish(jobName, null, {singletonHours: 1, singletonNextSlot:true});
+            })
+            .then(jobId => {
+                assert.isOk(jobId);
+                finished();
+            });
+
+    });
+
+
+    it('should reject 2nd request in the same time slot', function (finished) {
+
+        this.timeout(3000);
+
+        var jobName = 'singleton';
+
+        boss.publish(jobName, null, {singletonDays: 1})
+            .then(jobId => {
+                assert.isOk(jobId);
+                return boss.publish(jobName, null, {singletonDays: 1});
+            })
+            .then(jobId => {
+                assert.isNotOk(jobId);
+                finished();
+            });
+
+    });
+
 });

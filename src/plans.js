@@ -163,7 +163,7 @@ function insertJob(schema) {
         INSERT INTO ${schema}.job (id, name, state, retryLimit, startIn, expireIn, data, singletonKey, singletonOn)
         VALUES (
             $1, $2, 'created', $3, CAST($4 as interval), CAST($5 as interval), $6, $7,
-            CASE WHEN $8::integer IS NOT NULL THEN 'epoch'::timestamp + '1 second'::interval * ($8 * floor((date_part('epoch', now())) / $8)) ELSE NULL END
+            CASE WHEN $8::integer IS NOT NULL THEN 'epoch'::timestamp + '1 second'::interval * ($8 * floor((date_part('epoch', now()) + $9) / $8)) ELSE NULL END
         )
         ON CONFLICT DO NOTHING
     `;
