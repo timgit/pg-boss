@@ -11,7 +11,7 @@ describe('examples', function(){
     });
 
     it('readme example is totes valid', function(finished){
-        var connectionString = helper.connectionString;
+        var connectionString = helper.getConnectionString();
         
         // example start
         var boss = new PgBoss(connectionString);

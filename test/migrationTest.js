@@ -7,7 +7,7 @@ var currentSchemaVersion = require('../version.json').schema;
 describe('migration', function() {
 
     var db = helper.getDb();
-    var contractor = new Contractor(helper.config);
+    var contractor = new Contractor(helper.getConfig());
 
     beforeEach(function(finished){
         helper.init()
@@ -37,7 +37,7 @@ describe('migration', function() {
 
         contractor.create()
             .then(() => db.migrate(currentSchemaVersion, 'remove'))
-            .then(() => new PgBoss(helper.config).start())
+            .then(() => new PgBoss(helper.getConfig()).start())
             .then(() => contractor.version())
             .then(version => {
                 assert.equal(version, currentSchemaVersion);

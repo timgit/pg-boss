@@ -1,12 +1,5 @@
-var Db = require('../src/db');
-var config = require('./config.json');
-var PgBoss = require('../src/index');
-
-if(process.env.TRAVIS) {
-    config.port = 5432;
-    config.password = '';
-    config.schema = 'pgboss' + process.env.TRAVIS_JOB_ID;
-}
+const Db = require('../src/db');
+const PgBoss = require('../src/index');
 
 module.exports = {
     init: init,
@@ -14,26 +7,46 @@ module.exports = {
     extend: extend,
     getDb: getDb,
     getJobById: getJobById,
-    config: config,
-    connectionString: `postgres://${config.user}:${config.password}@${config.host}:${config.port}/${config.database}`
+    getConfig: getConfig,
+    getConnectionString: getConnectionString
 };
 
+function getConnectionString() {
+    let config = getConfig();
+
+    return `postgres://${config.user}:${config.password}@${config.host}:${config.port}/${config.database}`;
+}
+
+function getConfig(){
+    let config = require('./config.json');
+
+    if(process.env.TRAVIS) {
+        config.port = 5432;
+        config.password = '';
+        config.schema = 'pgboss' + process.env.TRAVIS_JOB_ID;
+    }
+
+    return clone(config);
+}
+
 function getDb() {
-    return new Db(config);
+    return new Db(getConfig());
 }
 
 function init() {
-    return getDb().executeSql(`DROP SCHEMA IF EXISTS ${config.schema} CASCADE`);
+    return getDb().executeSql(`DROP SCHEMA IF EXISTS ${getConfig().schema} CASCADE`);
 }
 
 function getJobById(id) {
-    return getDb().executeSql(`select * from ${config.schema}.job where id = $1`, [id]);
+    return getDb().executeSql(`select * from ${getConfig().schema}.job where id = $1`, [id]);
 }
 
 function start(options) {
 
     return init()
         .then(() => {
+            let config  = getConfig();
+
             if(options && typeof options == 'object')
                 options = extend(config, options);
 
@@ -47,4 +60,8 @@ function extend(dest, source) {
             dest[key] = source[key];
     }
     return dest;
+}
+
+function clone(source) {
+    return extend({}, source);
 }

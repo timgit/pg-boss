@@ -10,7 +10,7 @@ describe('manager', function(){
 
     it('should reject multiple simultaneous start requests', function(finished) {
 
-        var boss = new PgBoss(helper.config);
+        var boss = new PgBoss(helper.getConfig());
 
         boss.start();
 

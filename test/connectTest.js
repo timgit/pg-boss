@@ -18,7 +18,9 @@ describe('connect', function() {
     });
 
     it('should fail if connecting to an older schema version', function (finished) {
-        helper.getDb().executeSql(`UPDATE ${helper.config.schema}.version SET VERSION = '0.0.0'`)
+        let schema = helper.getConfig().schema;
+
+        helper.getDb().executeSql(`UPDATE ${schema}.version SET VERSION = '0.0.0'`)
             .then(() => {
                 boss.connect().catch(error => {
                     assert.isNotNull(error);
