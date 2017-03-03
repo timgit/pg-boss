@@ -20,7 +20,7 @@ function checkConfig(config) {
 
     if(config.schema){
         assert(typeof config.schema == 'string', 'configuration assert: schema must be a string');
-        assert(config.schema.length <= 50, 'configuration assert: schema should be between 1 and 50 characters');
+        assert(config.schema.length <= 50, 'configuration assert: schema name cannot exceed 50 characters');
         assert(!/\W/.test(config.schema), `configuration assert: ${config.schema} cannot be used as a schema. Only alphanumeric characters and underscores are allowed`);
     }
 
