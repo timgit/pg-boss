@@ -45,4 +45,14 @@ describe('migration', function() {
             });
     });
 
+    it('migrating to non-existent version fails gracefully', function(finished){
+
+        contractor.create()
+            .then(() => db.migrate('¯\_(ツ)_/¯'))
+            .catch(error => {
+                assert(error.message.indexOf('could not be found') > -1);
+                finished();
+            });
+    });
+
 });

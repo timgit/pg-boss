@@ -48,6 +48,11 @@ class Db {
     migrate(version, uninstall) {
         let migration = migrations.get(this.config.schema, version, uninstall);
 
+        if(!migration){
+            let errorMessage = `Migration to version ${version} failed because it could not be found.  Your database may have been upgraded by a newer version of pg-boss`;
+            return Promise.reject(new Error(errorMessage));
+        }
+
         return Promise.each(migration.commands, command => this.executeSql(command))
             .then(() => migration.version);
     }
