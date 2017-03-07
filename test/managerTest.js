@@ -12,12 +12,14 @@ describe('manager', function(){
 
         var boss = new PgBoss(helper.getConfig());
 
-        boss.start();
+        boss.start()
+            .then(() => boss.start())
+            .catch(() => {
+                assert(true);
+                return boss.stop();
+            })
+            .then(() => finished());
 
-        boss.start().catch(() => {
-            assert(true);
-            finished();
-        });
     });
 
 });
