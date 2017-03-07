@@ -1,11 +1,39 @@
 const pg = require('pg');
 const Promise = require("bluebird");
 const migrations = require('./migrations');
+const url = require('url');
 
 class Db {
     constructor(config){
-        // prefers connection strings over objects
-        this.config = config.connectionString || config;
+
+        this.config = config;
+
+        let poolConfig = (config.connectionString)
+            ? parseConnectionString(config.connectionString)
+            : config;
+
+        this.pool = new pg.Pool({
+            user: poolConfig.user,
+            password: poolConfig.password,
+            host: poolConfig.host,
+            port: poolConfig.port,
+            database: poolConfig.database,
+            max: poolConfig.poolSize
+        });
+
+
+        function parseConnectionString(connectionString){
+            const params = url.parse(connectionString);
+            const auth = params.auth.split(':');
+
+            return {
+                user: auth[0],
+                password: auth[1],
+                host: params.hostname,
+                port: params.port,
+                database: params.pathname.split('/')[1]
+            };
+        }
     }
 
     executePreparedSql(name, text, values){
@@ -20,29 +48,23 @@ class Db {
         if(query.values && !Array.isArray(query.values))
             query.values = [query.values];
 
-        let config = this.config;
+        return new Promise((resolve, reject) => {
+            this.pool.connect((err, client, done) => {
 
-        return new Promise(deferred);
-
-
-        function deferred(resolve, reject) {
-
-            pg.connect(config, (err, client, done) => {
-                if(err) {
-                    reject(err);
-                    return done();
-                }
+                if(err)
+                    return reject(err);
 
                 client.query(query, (err, result) => {
+                    done(err);
+
                     if(err)
                         reject(err);
                     else
                         resolve(result);
-
-                    done();
                 });
             });
-        }
+        });
+
     }
 
     migrate(version, uninstall) {

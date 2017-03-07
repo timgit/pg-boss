@@ -4,7 +4,7 @@ var PgBoss = require('../src/index');
 describe('database', function(){
     it('should fail on invalid database host', function(finished){
 
-        this.timeout(5000);
+        this.timeout(10000);
 
         var boss = new PgBoss('postgres://bobby:tables@wat:12345/northwind');
 

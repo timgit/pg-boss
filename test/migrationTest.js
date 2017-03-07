@@ -7,7 +7,7 @@ var currentSchemaVersion = require('../version.json').schema;
 describe('migration', function() {
 
     var db = helper.getDb();
-    var contractor = new Contractor(helper.getConfig());
+    var contractor = new Contractor(db, helper.getConfig());
 
     beforeEach(function(finished){
         helper.init()
@@ -15,7 +15,7 @@ describe('migration', function() {
     });
 
     it('should migrate to previous version and back again', function (finished) {
-        this.timeout(3000);
+        this.timeout(5000);
 
         contractor.create()
             .then(() => db.migrate(currentSchemaVersion, 'remove'))
@@ -35,6 +35,8 @@ describe('migration', function() {
 
     it('should migrate to latest during start if on previous schema version', function(finished){
 
+        this.timeout(5000);
+
         contractor.create()
             .then(() => db.migrate(currentSchemaVersion, 'remove'))
             .then(() => new PgBoss(helper.getConfig()).start())
@@ -46,6 +48,8 @@ describe('migration', function() {
     });
 
     it('migrating to non-existent version fails gracefully', function(finished){
+
+        this.timeout(5000);
 
         contractor.create()
             .then(() => db.migrate('¯\_(ツ)_/¯'))

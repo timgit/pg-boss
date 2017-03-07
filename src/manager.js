@@ -3,17 +3,16 @@ const EventEmitter = require('events').EventEmitter; //node 0.10 compatibility;
 const Promise = require('bluebird');
 const uuid = require('uuid');
 
-const Db = require('./db');
 const Worker = require('./worker');
 const plans = require('./plans');
 
 
 class Manager extends EventEmitter {
-    constructor(config){
+    constructor(db, config){
         super();
 
         this.config = config;
-        this.db = new Db(config);
+        this.db = db;
 
         this.nextJobCommand = plans.fetchNextJob(config.schema);
         this.expireJobCommand = plans.expireJob(config.schema);

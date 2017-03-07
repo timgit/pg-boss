@@ -1,6 +1,6 @@
 const assert = require('assert');
 const EventEmitter = require('events').EventEmitter; //node 0.10 compatibility
-const Db = require('./db');
+
 const plans = require('./plans');
 const migrations = require('./migrations');
 const schemaVersion = require('../version.json').schema;
@@ -21,10 +21,10 @@ class Contractor extends EventEmitter {
         return migration.commands.join(';\n\n');
     }
 
-    constructor(config){
+    constructor(db, config){
         super();
         this.config = config;
-        this.db = new Db(config);
+        this.db = db;
     }
 
     version() {

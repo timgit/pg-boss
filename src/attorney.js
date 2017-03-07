@@ -57,8 +57,12 @@ function checkConfig(config) {
 
     assert(!('uuid' in config) || config.uuid == 'v1' || config.uuid == 'v4', 'configuration assert: uuid option only supports v1 or v4');
 
+    assert(!('poolSize' in config) || config.poolSize >=1,
+        'configuration assert: poolSize must be at least 1');
+
     config.uuid = config.uuid || 'v1';
     config.schema = config.schema || 'pgboss';
+    config.poolSize = config.poolSize || 10;
 
     config.newJobCheckInterval =
           ('newJobCheckIntervalSeconds' in config) ? config.newJobCheckIntervalSeconds * 1000

@@ -5,6 +5,7 @@ const Attorney = require('./attorney');
 const Contractor = require('./contractor');
 const Manager = require('./manager');
 const Boss = require('./boss');
+const Db = require('./db');
 
 const notReadyErrorMessage = `boss ain't ready.  Use start() or connect() to get started.`;
 
@@ -24,17 +25,19 @@ class PgBoss extends EventEmitter {
 
         this.config = config;
 
+        const db = new Db(config);
+
         // contractor makes sure we have a happy database home for work
-        this.contractor = new Contractor(config);
+        this.contractor = new Contractor(db, config);
 
         // boss keeps the books and archives old jobs
-        let boss = new Boss(config);
+        let boss = new Boss(db, config);
         this.boss = boss;
         boss.on('error', error => this.emit('error', error));
         boss.on('archived', count => this.emit('archived', count));
 
         // manager makes sure workers aren't taking too long to finish their jobs
-        let manager = new Manager(config);
+        let manager = new Manager(db, config);
         this.manager = manager;
         manager.on('error', error => this.emit('error', error));
         manager.on('job', job => this.emit('job', job));
