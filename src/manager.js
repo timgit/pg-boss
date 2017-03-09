@@ -194,7 +194,7 @@ class Manager extends EventEmitter {
     }
 
     fetch(name) {
-        return this.db.executePreparedSql('nextJob', this.nextJobCommand, name)
+        return this.db.executeSql(this.nextJobCommand, name)
             .then(result => {
                 if(result.rows.length === 0)
                     return null;

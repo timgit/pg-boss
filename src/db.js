@@ -36,35 +36,11 @@ class Db {
         }
     }
 
-    executePreparedSql(name, text, values){
-        return this.execute({name,text,values});
-    }
+    executeSql(text, values) {
+        if(values && !Array.isArray(values))
+            values = [values];
 
-    executeSql(text, values){
-       return this.execute({text,values});
-    }
-
-    execute(query) {
-        if(query.values && !Array.isArray(query.values))
-            query.values = [query.values];
-
-        return new Promise((resolve, reject) => {
-            this.pool.connect((err, client, done) => {
-
-                if(err)
-                    return reject(err);
-
-                client.query(query, (err, result) => {
-                    done(err);
-
-                    if(err)
-                        reject(err);
-                    else
-                        resolve(result);
-                });
-            });
-        });
-
+        return this.pool.query(text, values);
     }
 
     migrate(version, uninstall) {
