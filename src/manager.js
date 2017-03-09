@@ -102,6 +102,8 @@ class Manager extends EventEmitter {
 
         function register(options, callback) {
 
+            let onError = error => self.emit('error', error);
+
             let workerConfig = {
                 name,
                 fetcher: () => self.fetch(name),
@@ -110,7 +112,7 @@ class Manager extends EventEmitter {
                     self.emit('job', job);
                     setImmediate(() => callback(job, () => self.complete(job.id)));
                 },
-                error: error => self.emit('error', error),
+                error: onError,
                 interval: self.config.newJobCheckInterval
             };
 
