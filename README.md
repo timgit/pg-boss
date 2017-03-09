@@ -8,8 +8,8 @@ Queueing jobs in Node.js using PostgreSQL like a boss.
 [![PostgreSql Version](https://img.shields.io/badge/PostgreSQL-9.5+-blue.svg?maxAge=2592000)](http://www.postgresql.org)
 
 ```js
-var PgBoss = require('pg-boss');
-var boss = new PgBoss('postgres://username:password@localhost/database');
+const PgBoss = require('pg-boss');
+const boss = new PgBoss('postgres://username:password@localhost/database');
         
 boss.start()
     .then(ready)
@@ -38,7 +38,8 @@ which significantly enhances its ability to act as a reliable, distributed messa
 * Guaranteed delivery and finalizing of jobs using a promise API
 * Delayed jobs
 * Job retries
-* Job throttling (rate limiting)
+* Job throttling (singleton jobs and rate limiting)
+* Configurable worker concurrency
 * Distributed and/or clustered workers
 * Automatic provisioning of required storage into a dedicated schema
 * Automatic monitoring for expired jobs

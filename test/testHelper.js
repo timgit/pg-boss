@@ -7,6 +7,7 @@ module.exports = {
     extend: extend,
     getDb: getDb,
     getJobById: getJobById,
+    empty,
     getConfig: getConfig,
     getConnectionString: getConnectionString
 };
@@ -31,6 +32,10 @@ function getConfig(){
 
 function getDb(config) {
     return new Db(config || getConfig());
+}
+
+function empty(){
+    return getDb().executeSql(`TRUNCATE TABLE ${getConfig().schema}.job`);
 }
 
 function init() {

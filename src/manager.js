@@ -170,7 +170,7 @@ class Manager extends EventEmitter {
             return Promise.resolve({name, data, options});
         }
 
-        function insertJob(name, data, options){
+        function insertJob(name, data, options, singletonOffset){
             let startIn =
                 (options.startIn > 0) ? '' + options.startIn
                     : (typeof options.startIn == 'string') ? options.startIn
@@ -187,10 +187,27 @@ class Manager extends EventEmitter {
                 retryLimit = options.retryLimit || 0,
                 expireIn = options.expireIn || '15 minutes';
 
-            let values = [id, name, retryLimit, startIn, expireIn, data, singletonSeconds];
+            let singletonKey = options.singletonKey || null;
+
+            let values = [id, name, retryLimit, startIn, expireIn, data, singletonKey, singletonSeconds, singletonOffset || 0];
 
             return self.db.executeSql(self.insertJobCommand, values)
-                .then(result => result.rowCount === 1 ? id : null);
+                .then(result => {
+                    if(result.rowCount === 1)
+                        return id;
+
+                    if(!options.singletonNextSlot)
+                        return null;
+
+                    // delay starting by the offset to honor throttling config
+                    options.startIn = singletonSeconds;
+                    // toggle off next slot config for round 2
+                    options.singletonNextSlot = false;
+
+                    let singletonOffset = singletonSeconds;
+
+                    return insertJob(name, data, options, singletonOffset);
+                });
         }
 
     }

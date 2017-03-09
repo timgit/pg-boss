@@ -6,6 +6,8 @@ describe('publish', function(){
     var boss;
 
     before(function(finished){
+        this.timeout(3000);
+
         helper.start()
             .then(dabauce => {
                 boss = dabauce;
