@@ -1,10 +1,12 @@
+const EventEmitter = require('events').EventEmitter; //node 0.10 compatibility;
 const pg = require('pg');
 const Promise = require("bluebird");
 const migrations = require('./migrations');
 const url = require('url');
 
-class Db {
+class Db extends EventEmitter {
     constructor(config){
+        super();
 
         this.config = config;
 
@@ -21,6 +23,7 @@ class Db {
             max: poolConfig.poolSize
         });
 
+        this.pool.on('error', error => this.emit('error', error));
 
         function parseConnectionString(connectionString){
             const params = url.parse(connectionString);

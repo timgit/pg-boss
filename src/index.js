@@ -26,6 +26,7 @@ class PgBoss extends EventEmitter {
         this.config = config;
 
         const db = new Db(config);
+        db.on('error', error => this.emit('error', error));
 
         // contractor makes sure we have a happy database home for work
         this.contractor = new Contractor(db, config);
