@@ -29,8 +29,8 @@ function getConfig(){
     return clone(config);
 }
 
-function getDb() {
-    return new Db(getConfig());
+function getDb(config) {
+    return new Db(config || getConfig());
 }
 
 function init() {
