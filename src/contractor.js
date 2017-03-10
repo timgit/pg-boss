@@ -15,7 +15,7 @@ class Contractor {
 
     static migrationPlans(schema, version, uninstall){
         let migration = migrations.get(schema, version, uninstall);
-        assert(migration, 'migration not found for this version');
+        assert(migration, `migration not found for version ${version}. schema: ${schema}`);
         return migration.commands.join(';\n\n');
     }
 
@@ -64,7 +64,7 @@ class Contractor {
         return this.isInstalled()
             .then(installed => installed ? this.ensureCurrent() : this.create());
     }
-    
+
     connect(){
         let connectErrorMessage = 'this version of pg-boss does not appear to be installed in your database. I can create it for you via start().';
 
