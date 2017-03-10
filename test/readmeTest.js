@@ -18,6 +18,8 @@ describe('examples', function(){
 
         _boss = boss; // exclude test code
 
+        boss.on('error', error => console.error(error));
+
         boss.start()
             .then(ready)
             .catch(error => console.error(error));

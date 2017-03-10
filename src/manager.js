@@ -104,14 +104,24 @@ class Manager extends EventEmitter {
 
             let onError = error => self.emit('error', error);
 
+            let onJob = job => {
+                if(!job) return;
+                self.emit('job', job);
+                setImmediate(() => {
+                    try {
+                        callback(job, () => self.complete(job.id));
+                    } catch(error) {
+                        onError(error);
+                    }
+                });
+            };
+
+            let onFetch = () => self.fetch(name);
+
             let workerConfig = {
                 name,
-                fetcher: () => self.fetch(name),
-                responder: job => {
-                    if(!job) return;
-                    self.emit('job', job);
-                    setImmediate(() => callback(job, () => self.complete(job.id)));
-                },
+                fetcher: onFetch,
+                responder: onJob,
                 error: onError,
                 interval: self.config.newJobCheckInterval
             };
