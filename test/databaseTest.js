@@ -1,8 +1,7 @@
-var assert = require('chai').assert;
-var PgBoss = require('../src/index');
-var helper = require('./testHelper');
-var Promise = require('bluebird');
-const domain = require('domain');
+const Promise = require("bluebird");
+const assert = require('chai').assert;
+const PgBoss = require('../src/index');
+const helper = require('./testHelper');
 
 describe('database', function(){
 
@@ -10,7 +9,7 @@ describe('database', function(){
 
         this.timeout(10000);
 
-        var boss = new PgBoss('postgres://bobby:tables@wat:12345/northwind');
+        const boss = new PgBoss('postgres://bobby:tables@wat:12345/northwind');
 
         boss.start()
             .then(() => {
@@ -45,11 +44,8 @@ describe('database', function(){
             .then(db => database = db)
             .then(() => countConnections(database))
             .then(connectionCount => prevConnectionCount = connectionCount)
-            .then(() => Promise.all(
-                    listeners.map((val, index) => boss.subscribe(`job${index}`, () => {}))
-                )
-            )
-            .then(() => new Promise(resolve => setTimeout(resolve, 3000)))
+            .then(() => Promise.map(listeners, (val, index) => boss.subscribe(`job${index}`, () => {})))
+            .then(() => Promise.delay(3000))
             .then(() => countConnections(database))
             .then(connectionCount => {
                 let newConnections = connectionCount - prevConnectionCount;

@@ -1,6 +1,7 @@
-var assert = require('chai').assert;
-var helper = require('./testHelper');
-var PgBoss = require('../src/index');
+const Promise = require("bluebird");
+const assert = require('chai').assert;
+const helper = require('./testHelper');
+const PgBoss = require('../src/index');
 
 describe('manager', function(){
 
@@ -10,10 +11,11 @@ describe('manager', function(){
 
     it('should reject multiple simultaneous start requests', function(finished) {
 
-        var boss = new PgBoss(helper.getConfig());
+        const boss = new PgBoss(helper.getConfig());
 
         boss.start()
-            .then(() => new Promise(resolve => setTimeout(() => boss.stop().then(resolve), 1000)))
+            .then(() => Promise.delay(1000))
+            .then(() => boss.stop())
             .then(() => finished());
 
         boss.start()
