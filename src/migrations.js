@@ -1,11 +1,11 @@
 module.exports = {
-    get: get
+    get
 };
 
 function get(schema, version, uninstall) {
     let migrations = getMigrations(schema);
 
-    for(var m=0; m<migrations.length; m++){
+    for(let m=0; m<migrations.length; m++){
         let migration = migrations[m];
 
         let targetVersion = uninstall ? 'previous' : 'version';
@@ -15,7 +15,7 @@ function get(schema, version, uninstall) {
 
         if(migration[sourceVersion] === version){
             let commands = migration[targetCommands].concat();
-            commands.push(`UPDATE ${schema}.version SET version = '${migration[targetVersion]}'`);
+            commands.push(`UPDATE ${schema}.version SET version = '${migration[targetVersion]}';`);
 
             return {
                 version: migration[targetVersion],
