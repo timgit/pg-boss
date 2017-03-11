@@ -1,4 +1,4 @@
-const EventEmitter = require('events').EventEmitter; //node 0.10 compatibility;
+const EventEmitter = require('events');
 const pg = require('pg');
 const Promise = require("bluebird");
 const migrations = require('./migrations');
@@ -20,7 +20,8 @@ class Db extends EventEmitter {
             host: poolConfig.host,
             port: poolConfig.port,
             database: poolConfig.database,
-            max: poolConfig.poolSize
+            max: poolConfig.poolSize,
+            Promise
         });
 
         this.pool.on('error', error => this.emit('error', error));

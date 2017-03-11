@@ -1,6 +1,6 @@
-const EventEmitter = require('events').EventEmitter; //node 0.10 compatibility;
+const EventEmitter = require('events');
 const assert = require('assert');
-
+const Promise = require("bluebird");
 const Attorney = require('./attorney');
 const Contractor = require('./contractor');
 const Manager = require('./manager');

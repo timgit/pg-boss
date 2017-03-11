@@ -1,5 +1,5 @@
 const assert = require('assert');
-const EventEmitter = require('events').EventEmitter; //node 0.10 compatibility;
+const EventEmitter = require('events');
 const Promise = require('bluebird');
 const uuid = require('uuid');
 
@@ -24,7 +24,7 @@ class Manager extends EventEmitter {
     }
 
     monitor(){
-        var self = this;
+        const self = this;
 
         return expire().then(init);
 

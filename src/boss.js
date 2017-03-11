@@ -1,5 +1,6 @@
-const EventEmitter = require('events').EventEmitter; //node 0.10 compatibility;
+const EventEmitter = require('events');
 const plans = require('./plans');
+const Promise = require("bluebird");
 
 class Boss extends EventEmitter{
     constructor(db, config){
@@ -11,7 +12,7 @@ class Boss extends EventEmitter{
     }
 
     supervise(){
-        var self = this;
+        const self = this;
 
         return archive().then(init);
         
