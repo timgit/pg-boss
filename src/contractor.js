@@ -15,7 +15,7 @@ class Contractor {
 
     static migrationPlans(schema, version, uninstall){
         let migration = migrations.get(schema, version, uninstall);
-        assert(migration, `migration not found for version ${version}. schema: ${schema}`);
+        assert(migration, `migration not found from version ${version}. schema: ${schema}`);
         return migration.commands.join(';\n\n');
     }
 
