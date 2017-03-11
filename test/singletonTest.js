@@ -1,9 +1,9 @@
-var assert = require('chai').assert;
-var helper = require('./testHelper');
+const assert = require('chai').assert;
+const helper = require('./testHelper');
 
 describe('singleton', function() {
 
-    var boss;
+    let boss;
 
     before(function(finished){
         helper.start()
@@ -23,8 +23,8 @@ describe('singleton', function() {
 
     it('should not allow more than 1 pending job at a time with the same key', function(finished){
 
-        var jobName = 'singleton';
-        var singletonKey = 'a';
+        const jobName = 'singleton';
+        const singletonKey = 'a';
 
         boss.publish(jobName, null, {singletonKey})
             .then(jobId => {
@@ -40,9 +40,9 @@ describe('singleton', function() {
 
     it('should not allow more than 1 complete job with the same key with an interval', function(finished){
 
-        var jobName = 'singleton';
-        var singletonKey = 'a';
-        var singletonMinutes = 1;
+        const jobName = 'singleton';
+        const singletonKey = 'a';
+        const singletonMinutes = 1;
 
         boss.publish(jobName, null, {singletonKey, singletonMinutes})
             .then(jobId => boss.fetch(jobName))
@@ -56,7 +56,7 @@ describe('singleton', function() {
 
     it('should allow more than 1 pending job at the same time with different keys', function (finished) {
 
-        var jobName = 'singleton';
+        const jobName = 'singleton';
 
         boss.publish(jobName, null, {singletonKey: 'a'})
             .then(jobId => {

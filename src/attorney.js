@@ -1,7 +1,7 @@
 const assert = require('assert');
 
 module.exports = {
-    checkConfig: checkConfig
+    checkConfig
 };
 
 function checkConfig(config) {

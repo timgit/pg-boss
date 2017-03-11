@@ -1,13 +1,13 @@
-var assert = require('chai').assert;
-var PgBoss = require('../src/index');
-var helper = require('./testHelper');
-var Contractor = require('../src/contractor');
-var currentSchemaVersion = require('../version.json').schema;
+const assert = require('chai').assert;
+const PgBoss = require('../src/index');
+const helper = require('./testHelper');
+const Contractor = require('../src/contractor');
+const currentSchemaVersion = require('../version.json').schema;
 
 describe('migration', function() {
 
-    var db = helper.getDb();
-    var contractor = new Contractor(db, helper.getConfig());
+    let db = helper.getDb();
+    let contractor = new Contractor(db, helper.getConfig());
 
     beforeEach(function(finished){
         helper.init()

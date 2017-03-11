@@ -1,9 +1,9 @@
-var assert = require('chai').assert;
-var helper = require('./testHelper');
+const assert = require('chai').assert;
+const helper = require('./testHelper');
 
 describe('publish', function(){
 
-    var boss;
+    let boss;
 
     before(function(finished){
         this.timeout(3000);
@@ -41,7 +41,7 @@ describe('publish', function(){
     });
 
     it('should accept single string argument', function(finished) {
-        var jobName = 'publishNameOnly';
+        const jobName = 'publishNameOnly';
 
         boss.subscribe(jobName, (job, done) => {
             done().then(() => {
@@ -55,7 +55,7 @@ describe('publish', function(){
 
 
     it('should accept job object argument with only name', function(finished){
-        var jobName = 'publishJobNameOnly';
+        const jobName = 'publishJobNameOnly';
 
         boss.subscribe(jobName, (job, done) => {
             done().then(() => {
@@ -69,8 +69,8 @@ describe('publish', function(){
 
     
     it('should accept job object with name and data only', function(finished){
-        var jobName = 'publishJobNameAndData';
-        var message = 'hi';
+        const jobName = 'publishJobNameAndData';
+        const message = 'hi';
 
         boss.subscribe(jobName, (job, done) => {
             done().then(() => {
@@ -84,8 +84,8 @@ describe('publish', function(){
 
 
     it('should accept job object with name and options only', function(finished){
-        var jobName = 'publishJobNameAndOptions';
-        var options = {someCrazyOption:'whatever'};
+        const jobName = 'publishJobNameAndOptions';
+        const options = {someCrazyOption:'whatever'};
 
         boss.subscribe(jobName, (job, done) => {
             done().then(() => {

@@ -1,20 +1,20 @@
-var assert = require('chai').assert;
-var PgBoss = require('../src/index');
-var helper = require('./testHelper');
+const assert = require('chai').assert;
+const PgBoss = require('../src/index');
+const helper = require('./testHelper');
 
 describe('examples', function(){
 
-    var _boss;
+    let _boss;
     
     after(function(finished){
         _boss.stop().then(() => finished());
     });
 
     it('readme example is totes valid', function(finished){
-        var connectionString = helper.getConnectionString();
+        const connectionString = helper.getConnectionString();
         
         // example start
-        var boss = new PgBoss(connectionString);
+        const boss = new PgBoss(connectionString);
 
         _boss = boss; // exclude test code
 

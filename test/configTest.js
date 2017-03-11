@@ -1,6 +1,6 @@
-var assert = require('chai').assert;
-var PgBoss = require('../src/index');
-var helper = require('./testHelper');
+const assert = require('chai').assert;
+const PgBoss = require('../src/index');
+const helper = require('./testHelper');
 
 describe('initialization', function(){
 

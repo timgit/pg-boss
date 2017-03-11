@@ -1,9 +1,9 @@
-var assert = require('chai').assert;
-var helper = require('./testHelper');
+const assert = require('chai').assert;
+const helper = require('./testHelper');
 
 describe('fetch', function(){
 
-    var boss;
+    let boss;
 
     before(function(finished){
         helper.start()
@@ -18,7 +18,7 @@ describe('fetch', function(){
     });
 
     it('should fetch a single job by name and manually complete', function(finished) {
-        var jobName = 'no-subscribe-required';
+        let jobName = 'no-subscribe-required';
 
         boss.publish(jobName)
             .then(() => boss.fetch(jobName))

@@ -1,9 +1,9 @@
-var assert = require('chai').assert;
-var helper = require('./testHelper');
+const assert = require('chai').assert;
+const helper = require('./testHelper');
 
 describe('retries', function() {
 
-    var boss;
+    let boss;
 
     before(function(finished){
         helper.start({expireCheckInterval:200, newJobCheckInterval: 200})
@@ -19,9 +19,10 @@ describe('retries', function() {
     
     it('should retry a job that didn\'t complete', function (finished) {
 
-        var expireIn = '100 milliseconds';
-        var retryLimit = 1;
-        var subscribeCount = 0;
+        const expireIn = '100 milliseconds';
+        const retryLimit = 1;
+
+        let subscribeCount = 0;
 
         boss.subscribe('unreliable', function(job, done) {
             // not calling done so it will expire

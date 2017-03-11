@@ -2,14 +2,14 @@ const Db = require('../src/db');
 const PgBoss = require('../src/index');
 
 module.exports = {
-    init: init,
-    start: start,
-    extend: extend,
-    getDb: getDb,
-    getJobById: getJobById,
+    init,
+    start,
+    extend,
+    getDb,
+    getJobById,
     empty,
-    getConfig: getConfig,
-    getConnectionString: getConnectionString
+    getConfig,
+    getConnectionString
 };
 
 function getConnectionString() {
@@ -60,7 +60,7 @@ function start(options) {
 }
 
 function extend(dest, source) {
-    for(var key in source) {
+    for(let key in source) {
         if(source.hasOwnProperty(key))
             dest[key] = source[key];
     }

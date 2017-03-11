@@ -1,9 +1,9 @@
-var assert = require('chai').assert;
-var helper = require('./testHelper');
+const assert = require('chai').assert;
+const helper = require('./testHelper');
 
 describe('connect', function() {
 
-    var boss;
+    let boss;
 
     beforeEach(function(finished){
         helper.start()
