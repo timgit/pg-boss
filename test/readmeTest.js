@@ -18,27 +18,34 @@ describe('examples', function(){
 
         _boss = boss; // exclude test code
 
-        boss.on('error', error => console.error(error));
+        boss.on('error', onError);
 
         boss.start()
-            .then(ready)
-            .catch(error => console.error(error));
+          .then(ready)
+          .catch(onError);
         
         function ready() {
-            boss.publish('work', {message: 'stuff'})
-                .then(jobId => console.log(`sent job ${jobId}`));
+          boss.publish('some-job', {param1: 'parameter1'})
+            .then(jobId => console.log(`sent job ${jobId}`))
+            .catch(onError);
 
-            boss.subscribe('work', (job, done) => {
-                console.log(`received job ${job.name} (${job.id})`);
-                console.log(JSON.stringify(job.data));
+          boss.subscribe('some-job', (job, done) => {
+            console.log(`received job ${job.name} (${job.id})`);
+            console.log(JSON.stringify(job.data));
 
-                done().then(() => {
-                    console.log('Confirmed done');
-                    assert.equal('work', job.name); // exclude test code
-                    assert.equal('stuff', job.data.message); // exclude test code
-                    finished();   // exclude test code
-                });
-            });
+            done()
+              .then(() => {
+                console.log(`job ${job.id} confirmed done`);
+                assert.equal('some-job', job.name); // exclude test code
+                assert.equal('parameter1', job.data.param1); // exclude test code
+                finished();   // exclude test code
+              })
+              .catch(onError);
+          });
+        }
+
+        function onError(error) {
+          console.error(error);
         }
         // example end
     });

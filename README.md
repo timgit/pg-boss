@@ -10,22 +10,29 @@ Queueing jobs in Node.js using PostgreSQL like a boss.
 const PgBoss = require('pg-boss');
 const boss = new PgBoss('postgres://user:pass@host/database');
         
-boss.on('error', error => console.error(error));
+boss.on('error', onError);
 
 boss.start()
-    .then(ready)
-    .catch(error => console.error(error));
+  .then(ready)
+  .catch(onError);
 
 function ready() {
-    boss.publish('work', {message: 'stuff'})
-        .then(jobId => console.log(`sent job ${jobId}`));
+  boss.publish('some-job', {param1: 'parameter1'})
+    .then(jobId => console.log(`sent job ${jobId}`))
+    .catch(onError);
 
-    boss.subscribe('work', (job, done) => {
-        console.log(`received job ${job.name} (${job.id})`);
-        console.log(JSON.stringify(job.data));
+  boss.subscribe('some-job', (job, done) => {
+    console.log(`received job ${job.name} (${job.id})`);
+    console.log(JSON.stringify(job.data));
 
-        done().then(() => console.log('Confirmed done'));
-    });
+    done()
+      .then(() => console.log(`job ${job.id} confirmed done`))
+      .catch(onError);
+  });
+}
+
+function onError(error) {
+  console.error(error);
 }
 ```
 
