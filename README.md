@@ -18,17 +18,21 @@ boss.start()
 
 function ready() {
   boss.publish('some-job', {param1: 'parameter1'})
-    .then(jobId => console.log(`sent job ${jobId}`))
+    .then(jobId => console.log(`created some-job ${jobId}`))
     .catch(onError);
 
-  boss.subscribe('some-job', (job, done) => {
-    console.log(`received job ${job.name} (${job.id})`);
-    console.log(JSON.stringify(job.data));
+  boss.subscribe('some-job', someJobHandler)
+    .then(() => console.log('subscribed to some-job'))
+    .catch(onError);
+}
 
-    done()
-      .then(() => console.log(`job ${job.id} confirmed done`))
-      .catch(onError);
-  });
+function someJobHandler(job, done) {
+  console.log(`received ${job.name} ${job.id}`);
+  console.log(`data: ${JSON.stringify(job.data)}`);
+
+  done()
+    .then(() => console.log(`some-job ${job.id} completed`))
+    .catch(onError);
 }
 
 function onError(error) {
