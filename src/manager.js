@@ -5,7 +5,7 @@ const uuid = require('uuid');
 
 const Worker = require('./worker');
 const plans = require('./plans');
-
+const Attorney = require('./attorney');
 
 class Manager extends EventEmitter {
     constructor(db, config){
@@ -92,12 +92,17 @@ class Manager extends EventEmitter {
 
                 options = options || {};
                 options.teamSize = options.teamSize || 1;
+
+                if('newJobCheckInterval' in options || 'newJobCheckIntervalSeconds' in options)
+                  Attorney.applyNewJobCheckInterval(options);
+                else
+                  options.newJobCheckInterval = self.config.newJobCheckInterval;
+
             } catch(e) {
                 return Promise.reject(e);
             }
 
             return Promise.resolve({options, callback});
-
         }
 
         function register(options, callback) {
@@ -123,7 +128,7 @@ class Manager extends EventEmitter {
                 fetcher: onFetch,
                 responder: onJob,
                 error: onError,
-                interval: self.config.newJobCheckInterval
+                interval: options.newJobCheckInterval
             };
 
             for(let w=0; w < options.teamSize; w++){

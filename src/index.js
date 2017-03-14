@@ -19,7 +19,7 @@ class PgBoss extends EventEmitter {
     }
     
     constructor(config){
-        config = Attorney.checkConfig(config);
+        config = Attorney.applyConfig(config);
 
         super();
 
