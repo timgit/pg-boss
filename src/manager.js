@@ -94,7 +94,7 @@ class Manager extends EventEmitter {
                 options.teamSize = options.teamSize || 1;
 
                 if('newJobCheckInterval' in options || 'newJobCheckIntervalSeconds' in options)
-                  Attorney.applyNewJobCheckInterval(options);
+                  options = Attorney.applyNewJobCheckInterval(options);
                 else
                   options.newJobCheckInterval = self.config.newJobCheckInterval;
 
