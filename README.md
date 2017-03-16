@@ -46,7 +46,7 @@ Why would you consider using this queue over others? pg-boss was created to leve
 (specifically [SKIP LOCKED](http://blog.2ndquadrant.com/what-is-select-skip-locked-for-in-postgresql-9-5) and upserts)
 which significantly enhances its ability to act as a reliable, distributed message queue. I wrote this to remove a dependency on Redis (via the kue package), consolidating systems I have to support in production and well as upgrading to guaranteed message processing. This will likely cater to anyone already familiar with the simplicity of relational database semantics and operations (querying and backups, for example) as well as a low budget solution to a very common problem. 
 
-##Features
+## Features
 * Guaranteed delivery and finalizing of jobs using a promise API
 * Delayed jobs
 * Job retries
@@ -57,13 +57,13 @@ which significantly enhances its ability to act as a reliable, distributed messa
 * Automatic monitoring for expired jobs
 * Automatic archiving for completed jobs
 
-##Requirements
+## Requirements
 * Node 4 or higher
 * PostgreSQL 9.5 or higher
 
-##Installation
+## Installation
 `$ npm install pg-boss`
 
-##Documentation
+## Documentation
 * [API](https://github.com/timgit/pg-boss/wiki/api)
 * [Configuration](https://github.com/timgit/pg-boss/wiki/configuration)
