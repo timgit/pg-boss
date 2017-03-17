@@ -1,43 +1,56 @@
-var assert = require('chai').assert;
-var PgBoss = require('../src/index');
-var helper = require('./testHelper');
+const assert = require('chai').assert;
+const PgBoss = require('../src/index');
+const helper = require('./testHelper');
 
 describe('examples', function(){
 
-    var _boss;
-    
-    after(function(finished){
-        _boss.stop().then(() => finished());
-    });
+  let _boss;
 
-    it('readme example is totes valid', function(finished){
-        var connectionString = helper.connectionString;
-        
-        // example start
-        var boss = new PgBoss(connectionString);
+  after(function(finished){
+      _boss.stop().then(() => finished());
+  });
 
-        _boss = boss; // exclude test code
+  it('readme example is totes valid', function(finished){
+    const connectionString = helper.getConnectionString();
 
-        boss.start()
-            .then(ready)
-            .catch(error => console.error(error));
-        
-        function ready() {
-            boss.publish('work', {message: 'stuff'})
-                .then(jobId => console.log(`sent job ${jobId}`));
+    // example start
+    const boss = new PgBoss(connectionString);
 
-            boss.subscribe('work', (job, done) => {
-                console.log(`received job ${job.name} (${job.id})`);
-                console.log(JSON.stringify(job.data));
+    _boss = boss; // exclude test code
 
-                done().then(() => {
-                    console.log('Confirmed done');
-                    assert.equal('work', job.name); // exclude test code
-                    assert.equal('stuff', job.data.message); // exclude test code
-                    finished();   // exclude test code
-                });
-            });
-        }
-        // example end
-    });
+    boss.on('error', onError);
+
+    boss.start()
+      .then(ready)
+      .catch(onError);
+
+    function ready() {
+      boss.publish('some-job', {param1: 'parameter1'})
+        .then(jobId => console.log(`created some-job ${jobId}`))
+        .catch(onError);
+
+      boss.subscribe('some-job', someJobHandler)
+        .then(() => console.log('subscribed to some-job'))
+        .catch(onError);
+    }
+
+    function someJobHandler(job, done) {
+      console.log(`received ${job.name} ${job.id}`);
+      console.log(`data: ${JSON.stringify(job.data)}`);
+
+      done()
+        .then(() => {
+          console.log(`some-job ${job.id} completed`);
+          assert.equal('some-job', job.name); // exclude test code
+          assert.equal('parameter1', job.data.param1); // exclude test code
+          finished();   // exclude test code
+        })
+        .catch(onError);
+    }
+
+    function onError(error) {
+      console.error(error);
+    }
+    // example end
+  });
 });

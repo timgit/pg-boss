@@ -1,52 +1,59 @@
+const EventEmitter = require('events');
 const pg = require('pg');
 const Promise = require("bluebird");
 const migrations = require('./migrations');
+const url = require('url');
 
-class Db {
+class Db extends EventEmitter {
     constructor(config){
-        // prefers connection strings over objects
-        this.config = config.connectionString || config;
-    }
+        super();
 
-    executePreparedSql(name, text, values){
-        return this.execute({name,text,values});
-    }
+        this.config = config;
 
-    executeSql(text, values){
-       return this.execute({text,values});
-    }
+        let poolConfig = (config.connectionString)
+            ? parseConnectionString(config.connectionString)
+            : config;
 
-    execute(query) {
-        if(query.values && !Array.isArray(query.values))
-            query.values = [query.values];
+        this.pool = new pg.Pool({
+            user: poolConfig.user,
+            password: poolConfig.password,
+            host: poolConfig.host,
+            port: poolConfig.port,
+            database: poolConfig.database,
+            max: poolConfig.poolSize,
+            Promise
+        });
 
-        let config = this.config;
+        this.pool.on('error', error => this.emit('error', error));
 
-        return new Promise(deferred);
+        function parseConnectionString(connectionString){
+            const params = url.parse(connectionString);
+            const auth = params.auth.split(':');
 
-
-        function deferred(resolve, reject) {
-
-            pg.connect(config, (err, client, done) => {
-                if(err) {
-                    reject(err);
-                    return done();
-                }
-
-                client.query(query, (err, result) => {
-                    if(err)
-                        reject(err);
-                    else
-                        resolve(result);
-
-                    done();
-                });
-            });
+            return {
+                user: auth[0],
+                password: auth[1],
+                host: params.hostname,
+                port: params.port,
+                database: params.pathname.split('/')[1]
+            };
         }
+    }
+
+    executeSql(text, values) {
+        if(values && !Array.isArray(values))
+            values = [values];
+
+        return this.pool.query(text, values);
     }
 
     migrate(version, uninstall) {
         let migration = migrations.get(this.config.schema, version, uninstall);
+
+        if(!migration){
+            let errorMessage = `Migration to version ${version} failed because it could not be found.  Your database may have been upgraded by a newer version of pg-boss`;
+            return Promise.reject(new Error(errorMessage));
+        }
 
         return Promise.each(migration.commands, command => this.executeSql(command))
             .then(() => migration.version);

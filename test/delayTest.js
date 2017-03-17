@@ -1,9 +1,9 @@
-var assert = require('chai').assert;
-var helper = require('./testHelper');
+const assert = require('chai').assert;
+const helper = require('./testHelper');
 
 describe('delayed jobs', function(){
 
-    var boss;
+    let boss;
 
     before(function(finished){
         helper.start()
@@ -19,14 +19,14 @@ describe('delayed jobs', function(){
     
     it('should wait before processing a delayed job submission', function(finished) {
 
-        var delaySeconds = 2;
+        let delaySeconds = 2;
         this.timeout(3000);
 
         boss.subscribe('wait', function(job, done) {
-            var start = new Date(job.data.submitted);
-            var end = new Date();
+            let start = new Date(job.data.submitted);
+            let end = new Date();
 
-            var elapsedSeconds = Math.floor((end-start)/1000);
+            let elapsedSeconds = Math.floor((end-start)/1000);
 
             console.log('job '+ job.id + ' received in ' + elapsedSeconds + ' seconds with payload: ' + job.data.message);
 

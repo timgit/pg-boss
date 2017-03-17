@@ -1,9 +1,9 @@
-var assert = require('chai').assert;
-var helper = require('./testHelper');
+const assert = require('chai').assert;
+const helper = require('./testHelper');
 
 describe('subscribe', function(){
 
-    var boss;
+    let boss;
 
     before(function(finished){
         helper.start()
@@ -38,6 +38,25 @@ describe('subscribe', function(){
         });
     });
 
+    it('should honor a custom new job check interval', function(finished){
+      this.timeout(5000);
+
+      let startTime = new Date();
+      const newJobCheckIntervalSeconds = 3;
+
+      boss.subscribe('foo', {newJobCheckIntervalSeconds}, (job, done) => {
+        let elapsed = new Date().getTime() - startTime.getTime();
+
+        assert.isAbove((elapsed / 1000), newJobCheckIntervalSeconds);
+
+        done()
+          .then(() => finished());
+
+      }).then(() => {
+        boss.publish('foo');
+      });
+
+    });
 
 });
 

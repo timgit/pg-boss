@@ -1,19 +1,18 @@
 const assert = require('assert');
-const EventEmitter = require('events').EventEmitter; //node 0.10 compatibility;
+const EventEmitter = require('events');
 const Promise = require('bluebird');
 const uuid = require('uuid');
 
-const Db = require('./db');
 const Worker = require('./worker');
 const plans = require('./plans');
-
+const Attorney = require('./attorney');
 
 class Manager extends EventEmitter {
-    constructor(config){
+    constructor(db, config){
         super();
 
         this.config = config;
-        this.db = new Db(config);
+        this.db = db;
 
         this.nextJobCommand = plans.fetchNextJob(config.schema);
         this.expireJobCommand = plans.expireJob(config.schema);
@@ -25,7 +24,7 @@ class Manager extends EventEmitter {
     }
 
     monitor(){
-        var self = this;
+        const self = this;
 
         return expire().then(init);
 
@@ -93,26 +92,43 @@ class Manager extends EventEmitter {
 
                 options = options || {};
                 options.teamSize = options.teamSize || 1;
+
+                if('newJobCheckInterval' in options || 'newJobCheckIntervalSeconds' in options)
+                  options = Attorney.applyNewJobCheckInterval(options);
+                else
+                  options.newJobCheckInterval = self.config.newJobCheckInterval;
+
             } catch(e) {
                 return Promise.reject(e);
             }
 
             return Promise.resolve({options, callback});
-
         }
 
         function register(options, callback) {
 
+            let onError = error => self.emit('error', error);
+
+            let onJob = job => {
+                if(!job) return;
+                self.emit('job', job);
+                setImmediate(() => {
+                    try {
+                        callback(job, () => self.complete(job.id));
+                    } catch(error) {
+                        onError(error);
+                    }
+                });
+            };
+
+            let onFetch = () => self.fetch(name);
+
             let workerConfig = {
                 name,
-                fetcher: () => self.fetch(name),
-                responder: job => {
-                    if(!job) return;
-                    self.emit('job', job);
-                    setImmediate(() => callback(job, () => self.complete(job.id)));
-                },
-                error: error => self.emit('error', error),
-                interval: self.config.newJobCheckInterval
+                fetcher: onFetch,
+                responder: onJob,
+                error: onError,
+                interval: options.newJobCheckInterval
             };
 
             for(let w=0; w < options.teamSize; w++){
@@ -169,7 +185,7 @@ class Manager extends EventEmitter {
             return Promise.resolve({name, data, options});
         }
 
-        function insertJob(name, data, options){
+        function insertJob(name, data, options, singletonOffset){
             let startIn =
                 (options.startIn > 0) ? '' + options.startIn
                     : (typeof options.startIn == 'string') ? options.startIn
@@ -186,16 +202,33 @@ class Manager extends EventEmitter {
                 retryLimit = options.retryLimit || 0,
                 expireIn = options.expireIn || '15 minutes';
 
-            let values = [id, name, retryLimit, startIn, expireIn, data, singletonSeconds];
+            let singletonKey = options.singletonKey || null;
+
+            let values = [id, name, retryLimit, startIn, expireIn, data, singletonKey, singletonSeconds, singletonOffset || 0];
 
             return self.db.executeSql(self.insertJobCommand, values)
-                .then(result => result.rowCount === 1 ? id : null);
+                .then(result => {
+                    if(result.rowCount === 1)
+                        return id;
+
+                    if(!options.singletonNextSlot)
+                        return null;
+
+                    // delay starting by the offset to honor throttling config
+                    options.startIn = singletonSeconds;
+                    // toggle off next slot config for round 2
+                    options.singletonNextSlot = false;
+
+                    let singletonOffset = singletonSeconds;
+
+                    return insertJob(name, data, options, singletonOffset);
+                });
         }
 
     }
 
     fetch(name) {
-        return this.db.executePreparedSql('nextJob', this.nextJobCommand, name)
+        return this.db.executeSql(this.nextJobCommand, name)
             .then(result => {
                 if(result.rows.length === 0)
                     return null;

@@ -1,30 +1,27 @@
 const assert = require('assert');
-const EventEmitter = require('events').EventEmitter; //node 0.10 compatibility
-const Db = require('./db');
 const plans = require('./plans');
 const migrations = require('./migrations');
 const schemaVersion = require('../version.json').schema;
 const Promise = require("bluebird");
 
-class Contractor extends EventEmitter {
+class Contractor {
 
     static constructionPlans(schema){
-        let exportPlans = plans.createAll(schema);
-        exportPlans.push(plans.insertVersion(schema).replace('$1', schemaVersion));
+        let exportPlans = plans.create(schema);
+        exportPlans.push(plans.insertVersion(schema).replace('$1', `'${schemaVersion}'`));
 
         return exportPlans.join(';\n\n');
     }
 
     static migrationPlans(schema, version, uninstall){
         let migration = migrations.get(schema, version, uninstall);
-        assert(migration, 'migration not found for this version');
+        assert(migration, `migration not found from version ${version}. schema: ${schema}`);
         return migration.commands.join(';\n\n');
     }
 
-    constructor(config){
-        super();
+    constructor(db, config){
         this.config = config;
-        this.db = new Db(config);
+        this.db = db;
     }
 
     version() {
@@ -50,7 +47,7 @@ class Contractor extends EventEmitter {
     }
 
     create(){
-        return Promise.each(plans.createAll(this.config.schema), command => this.db.executeSql(command))
+        return Promise.each(plans.create(this.config.schema), command => this.db.executeSql(command))
             .then(() => this.db.executeSql(plans.insertVersion(this.config.schema), schemaVersion));
     }
 
@@ -67,7 +64,7 @@ class Contractor extends EventEmitter {
         return this.isInstalled()
             .then(installed => installed ? this.ensureCurrent() : this.create());
     }
-    
+
     connect(){
         let connectErrorMessage = 'this version of pg-boss does not appear to be installed in your database. I can create it for you via start().';
 

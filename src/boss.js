@@ -1,18 +1,18 @@
-const EventEmitter = require('events').EventEmitter; //node 0.10 compatibility;
-const Db = require('./db');
+const EventEmitter = require('events');
 const plans = require('./plans');
+const Promise = require("bluebird");
 
 class Boss extends EventEmitter{
-    constructor(config){
+    constructor(db, config){
         super();
-        
-        this.db = new Db(config);
+
+        this.db = db;
         this.config = config;
         this.archiveCommand = plans.archive(config.schema);
     }
 
     supervise(){
-        var self = this;
+        const self = this;
 
         return archive().then(init);
         

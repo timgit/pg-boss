@@ -1,9 +1,9 @@
-var assert = require('chai').assert;
-var helper = require('./testHelper');
+const assert = require('chai').assert;
+const helper = require('./testHelper');
 
 describe('archive', function() {
 
-    var boss;
+    let boss;
 
     before(function(finished){
         helper.start({archiveCompletedJobsEvery:'1 second', archiveCheckInterval: 500})
@@ -20,8 +20,8 @@ describe('archive', function() {
     it('should archive a job', function(finished){
         this.timeout(5000);
 
-        var jobName = 'archiveMe';
-        var jobId = null;
+        let jobName = 'archiveMe';
+        let jobId = null;
 
         boss.publish(jobName).then(id => {
             jobId = id;
