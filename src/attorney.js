@@ -25,6 +25,9 @@ function applyDatabaseConfig(config) {
   if(typeof config == 'string') {
     config = {connectionString: config};
   }
+  else if ('connectionString' in config) {
+    assert(typeof config.connectionString == 'string', 'configuration assert: connectionString must be a string');
+  }
   else {
     assert(config.database && config.user && 'password' in config,
       'configuration assert: not enough database settings to connect to PostgreSQL');
