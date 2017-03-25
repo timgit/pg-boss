@@ -10,117 +10,128 @@ const Db = require('./db');
 const notReadyErrorMessage = `boss ain't ready.  Use start() or connect() to get started.`;
 
 class PgBoss extends EventEmitter {
-    static getConstructionPlans(schema) {
-        return Contractor.constructionPlans(schema);
+  static getConstructionPlans(schema) {
+    return Contractor.constructionPlans(schema);
+  }
+
+  static getMigrationPlans(schema, version, uninstall) {
+    return Contractor.migrationPlans(schema, version, uninstall);
+  }
+
+  constructor(config){
+    config = Attorney.applyConfig(config);
+
+    super();
+
+    this.config = config;
+
+    const db = new Db(config);
+
+    promoteEvent.call(this, db, 'error');
+
+    // contractor makes sure we have a happy database home for work
+    this.contractor = new Contractor(db, config);
+
+    // boss keeps the books and archives old jobs
+    let boss = new Boss(db, config);
+    this.boss = boss;
+
+    ['error','archived'].forEach(event => promoteEvent.call(this, boss, event));
+
+    // manager makes sure workers aren't taking too long to finish their jobs
+    let manager = new Manager(db, config);
+    this.manager = manager;
+
+    ['error','job','expired'].forEach(event => promoteEvent.call(this, manager, event));
+
+
+    function promoteEvent(emitter, event){
+      emitter.on(event, arg => this.emit(event, arg));
     }
+  }
 
-    static getMigrationPlans(schema, version, uninstall) {
-        return Contractor.migrationPlans(schema, version, uninstall);
-    }
-    
-    constructor(config){
-        config = Attorney.applyConfig(config);
+  init() {
+    if(this.isReady) return Promise.resolve(this);
 
-        super();
+    return this.boss.supervise()
+      .then(() => this.manager.monitor())
+      .then(() => {
+        this.isReady = true;
+        return this;
+      });
+  }
 
-        this.config = config;
+  start() {
+    let self = this;
 
-        const db = new Db(config);
-        db.on('error', error => this.emit('error', error));
+    if(this.isStarting)
+      return Promise.reject('boss is starting up. Please wait for the previous start() to finish.');
 
-        // contractor makes sure we have a happy database home for work
-        this.contractor = new Contractor(db, config);
+    this.isStarting = true;
 
-        // boss keeps the books and archives old jobs
-        let boss = new Boss(db, config);
-        this.boss = boss;
-        boss.on('error', error => this.emit('error', error));
-        boss.on('archived', count => this.emit('archived', count));
+    return this.contractor.start.apply(this.contractor, arguments)
+      .then(() => {
+        self.isStarting = false;
+        return self.init();
+      });
+  }
 
-        // manager makes sure workers aren't taking too long to finish their jobs
-        let manager = new Manager(db, config);
-        this.manager = manager;
-        manager.on('error', error => this.emit('error', error));
-        manager.on('job', job => this.emit('job', job));
-        manager.on('expired', count => this.emit('expired', count));
-    }
+  stop() {
+    return Promise.all([
+      this.disconnect(),
+      this.manager.stop(),
+      this.boss.stop()
+    ]);
+  }
 
-    init() {
-        if(this.isReady) return Promise.resolve(this);
+  connect() {
+    let self = this;
 
-        return this.boss.supervise()
-            .then(() => this.manager.monitor())
-            .then(() => {
-                this.isReady = true;
-                return this;
-        });
-    }
+    return this.contractor.connect.apply(this.contractor, arguments)
+      .then(() => {
+        self.isReady = true;
+        return self;
+      });
+  }
 
-    start() {
-        let self = this;
+  disconnect() {
+    let self = this;
 
-        if(this.isStarting)
-            return Promise.reject('boss is starting up. Please wait for the previous start() to finish.');
+    if(!this.isReady) return Promise.reject(notReadyErrorMessage);
+    return this.manager.close.apply(this.manager, arguments)
+      .then(() => self.isReady = false);
+  }
 
-        this.isStarting = true;
+  cancel(){
+    if(!this.isReady) return Promise.reject(notReadyErrorMessage);
+    return this.manager.cancel.apply(this.manager, arguments);
+  }
 
-        return this.contractor.start.apply(this.contractor, arguments)
-            .then(() => {
-                self.isStarting = false;
-                return self.init();
-            });
-    }
+  subscribe(){
+    if(!this.isReady) return Promise.reject(notReadyErrorMessage);
+    return this.manager.subscribe.apply(this.manager, arguments);
+  }
 
-    stop() {
-        return Promise.all([
-            this.disconnect(),
-            this.manager.stop(),
-            this.boss.stop()
-        ]);
-    }
+  unsubscribe(){
+    if(!this.isReady) return Promise.reject(notReadyErrorMessage);
+    return this.manager.unsubscribe.apply(this.manager, arguments);
+  }
 
-    connect() {
-        let self = this;
+  publish(){
+    if(!this.isReady) return Promise.reject(notReadyErrorMessage);
+    return this.manager.publish.apply(this.manager, arguments);
+  }
 
-        return this.contractor.connect.apply(this.contractor, arguments)
-            .then(() => {
-                self.isReady = true;
-                return self;
-            });
-    }
+  fetch(){
+    if(!this.isReady) return Promise.reject(notReadyErrorMessage);
+    return this.manager.fetch.apply(this.manager, arguments);
+  }
 
-    disconnect() {
-        let self = this;
+  complete(){
+    if(!this.isReady) return Promise.reject(notReadyErrorMessage);
+    return this.manager.complete.apply(this.manager, arguments);
+  }
 
-        if(!this.isReady) return Promise.reject(notReadyErrorMessage);
-        return this.manager.close.apply(this.manager, arguments)
-            .then(() => self.isReady = false);
-    }
-    
-    cancel(){
-        if(!this.isReady) return Promise.reject(notReadyErrorMessage);
-        return this.manager.cancel.apply(this.manager, arguments);
-    }
-    
-    subscribe(){
-        if(!this.isReady) return Promise.reject(notReadyErrorMessage);
-        return this.manager.subscribe.apply(this.manager, arguments);
-    }
-
-    publish(){
-        if(!this.isReady) return Promise.reject(notReadyErrorMessage);
-        return this.manager.publish.apply(this.manager, arguments);
-    }
-
-    fetch(){
-        if(!this.isReady) return Promise.reject(notReadyErrorMessage);
-        return this.manager.fetch.apply(this.manager, arguments);
-    }
-
-    complete(){
-        if(!this.isReady) return Promise.reject(notReadyErrorMessage);
-        return this.manager.complete.apply(this.manager, arguments);
-    }
 }
 
 module.exports = PgBoss;

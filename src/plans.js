@@ -138,7 +138,7 @@ function expireJob(schema) {
               AND (startedOn + expireIn) < now()    
           RETURNING id, name, state
       )
-      SELECT * FROM expired WHERE state = 'expired';
+      SELECT id, name FROM expired WHERE state = 'expired';
     `;
 }
 
