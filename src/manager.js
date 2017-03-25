@@ -20,7 +20,7 @@ class Manager extends EventEmitter {
         this.completeJobCommand = plans.completeJob(config.schema);
         this.cancelJobCommand = plans.cancelJob(config.schema);
 
-        this.workers = [];
+        this.subscriptions = {};
     }
 
     monitor(){
@@ -31,8 +31,19 @@ class Manager extends EventEmitter {
         function expire() {
             return self.db.executeSql(self.expireJobCommand)
                 .then(result => {
-                    if (result.rowCount)
-                        self.emit('expired', result.rowCount);
+                    if (result.rows.length){
+                        self.emit('expired', result.rows.length);
+
+                        result.rows.forEach(job => {
+                          let subscription = self.subscriptions[job.name];
+
+                          if(!subscription || !subscription.onExpire)
+                            return;
+
+                          subscription.onExpire(job);
+                        });
+                    }
+
                 });
         }
 
@@ -48,13 +59,17 @@ class Manager extends EventEmitter {
     }
 
     close() {
-        this.workers.forEach(worker => worker.stop());
-        this.workers.length = 0;
+        Object.keys(this.subscriptions)
+          .forEach(name => this.subscriptions[name].workers.forEach(worker => worker.stop())
+        );
+
+        this.subscriptions = {};
+
         return Promise.resolve(true);
     }
 
     stop() {
-        this.close().then(() => {
+        return this.close().then(() => {
             this.stopped = true;
             
             if(this.expireTimer)
@@ -62,17 +77,28 @@ class Manager extends EventEmitter {
         });
     }
 
+    unsubscribe(name){
+      assert(name in this.subscriptions, 'subscription not found for job ' + name);
+
+      this.subscriptions[name].workers.forEach(worker => worker.stop());
+
+      delete this.subscriptions[name];
+    }
+
     subscribe(name, ...args){
 
+        assert(!(name in this.subscriptions), 'this job has already been subscribed on this instance.')
+
         let self = this;
+        let noop = function(){};
 
         return getArgs(args)
-            .then(({options, callback}) => register(options, callback));
+            .then(({options, callback, onExpire}) => register(options, callback, onExpire));
 
 
         function getArgs(args) {
 
-            let options, callback;
+            let options, callback, onExpire = noop;
 
             try {
                 assert(name, 'boss requires all jobs to have a name');
@@ -80,15 +106,20 @@ class Manager extends EventEmitter {
                 if(args.length === 1){
                     callback = args[0];
                     options = {};
-                } else if (args.length === 2){
+                } else if (args.length > 1){
                     options = args[0] || {};
                     callback = args[1];
+
+                    if(args[2])
+                      onExpire = args[2];
                 }
 
-                assert(typeof callback == 'function', 'expected a callback function');
+                assert(typeof callback == 'function', 'expected callback to be a function');
 
                 if(options)
                     assert(typeof options == 'object', 'expected config to be an object');
+
+                assert(typeof onExpire == 'function', 'expected onExpire to be a function');
 
                 options = options || {};
                 options.teamSize = options.teamSize || 1;
@@ -102,10 +133,12 @@ class Manager extends EventEmitter {
                 return Promise.reject(e);
             }
 
-            return Promise.resolve({options, callback});
+            return Promise.resolve({options, callback, onExpire});
         }
 
-        function register(options, callback) {
+        function register(options, callback, onExpire) {
+
+            let subscription = self.subscriptions[name] = {workers:[]};
 
             let onError = error => self.emit('error', error);
 
@@ -134,8 +167,11 @@ class Manager extends EventEmitter {
             for(let w=0; w < options.teamSize; w++){
                 let worker = new Worker(workerConfig);
                 worker.start();
-                self.workers.push(worker);
+                subscription.workers.push(worker);
             }
+
+            if(onExpire !== noop)
+              subscription.onExpire = onExpire;
         }
 
     }

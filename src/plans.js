@@ -130,11 +130,15 @@ function fetchNextJob(schema) {
 
 function expireJob(schema) {
     return `
-        UPDATE ${schema}.job
-        SET state = CASE WHEN retryCount < retryLimit THEN 'retry'::${schema}.job_state ELSE 'expired'::${schema}.job_state END,        
-            completedOn = CASE WHEN retryCount < retryLimit THEN NULL ELSE now() END
-        WHERE state = 'active'
-            AND (startedOn + expireIn) < now()
+      WITH expired AS (
+          UPDATE ${schema}.job
+          SET state = CASE WHEN retryCount < retryLimit THEN 'retry'::${schema}.job_state ELSE 'expired'::${schema}.job_state END,        
+              completedOn = CASE WHEN retryCount < retryLimit THEN NULL ELSE now() END
+          WHERE state = 'active'
+              AND (startedOn + expireIn) < now()    
+          RETURNING id, name, state
+      )
+      SELECT * FROM expired WHERE state = 'expired';
     `;
 }
 
