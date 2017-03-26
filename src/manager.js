@@ -58,8 +58,7 @@ class Manager extends EventEmitter {
 
   close() {
     Object.keys(this.subscriptions)
-      .forEach(name => this.subscriptions[name].workers.forEach(worker => worker.stop())
-      );
+      .forEach(name => this.unsubscribe(name));
 
     this.subscriptions = {};
 
