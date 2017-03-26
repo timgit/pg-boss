@@ -7,6 +7,7 @@ module.exports = {
     expireJob,
     completeJob,
     cancelJob,
+    failJob,
     insertJob,
     archive
 };
@@ -46,7 +47,8 @@ function createJobStateEnum(schema) {
             'active',	
             'complete',
             'expired',
-            'cancelled'
+            'cancelled',
+            'failed'
         )`;
 }
 
@@ -136,9 +138,9 @@ function expireJob(schema) {
               completedOn = CASE WHEN retryCount < retryLimit THEN NULL ELSE now() END
           WHERE state = 'active'
               AND (startedOn + expireIn) < now()    
-          RETURNING id, name, state
+          RETURNING id, name, state, data
       )
-      SELECT id, name FROM expired WHERE state = 'expired';
+      SELECT id, name, data FROM expired WHERE state = 'expired';
     `;
 }
 
@@ -157,6 +159,16 @@ function cancelJob(schema){
         UPDATE ${schema}.job
         SET completedOn = now(),
             state = 'cancelled'
+        WHERE id = $1
+            AND state < 'complete'
+    `;
+}
+
+function failJob(schema){
+  return `
+        UPDATE ${schema}.job
+        SET completedOn = now(),
+            state = 'failed'
         WHERE id = $1
             AND state < 'complete'
     `;
