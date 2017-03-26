@@ -9,7 +9,6 @@ describe('error', function(){
         helper.start()
             .then(dabauce => {
                 boss = dabauce;
-                boss.on('error', console.error);
                 finished();
             });
     });

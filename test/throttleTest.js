@@ -90,7 +90,7 @@ describe('throttle', function() {
 
         this.timeout(3000);
 
-        const jobName = 'singleton';
+        const jobName = 'singletonPerDayWithFriends';
 
         boss.publish(jobName, null, {singletonHours: 1})
             .then(jobId => {
@@ -109,7 +109,7 @@ describe('throttle', function() {
 
         this.timeout(3000);
 
-        const jobName = 'singleton';
+        const jobName = 'singletonPerDay';
 
         boss.publish(jobName, null, {singletonDays: 1})
             .then(jobId => {
