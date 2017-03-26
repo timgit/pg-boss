@@ -36,8 +36,7 @@ class Db extends EventEmitter {
                 password: auth[1],
                 host: params.hostname,
                 port: params.port,
-                database: params.pathname.split('/')[1],
-                application_name: params.application_name || 'pgboss'
+                database: params.pathname.split('/')[1]
             };
         }
     }
