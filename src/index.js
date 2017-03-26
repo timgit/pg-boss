@@ -42,12 +42,13 @@ class PgBoss extends EventEmitter {
     let manager = new Manager(db, config);
     this.manager = manager;
 
-    ['error','job','expired'].forEach(event => promoteEvent.call(this, manager, event));
+    ['error','job','expired-job','expired-count','failed'].forEach(event => promoteEvent.call(this, manager, event));
 
 
     function promoteEvent(emitter, event){
       emitter.on(event, arg => this.emit(event, arg));
     }
+
   }
 
   init() {
@@ -127,11 +128,20 @@ class PgBoss extends EventEmitter {
     return this.manager.fetch.apply(this.manager, arguments);
   }
 
+  onExpire(){
+    if(!this.isReady) return Promise.reject(notReadyErrorMessage);
+    return this.manager.onExpire.apply(this.manager, arguments);
+  }
+
   complete(){
     if(!this.isReady) return Promise.reject(notReadyErrorMessage);
     return this.manager.complete.apply(this.manager, arguments);
   }
 
+  fail(){
+    if(!this.isReady) return Promise.reject(notReadyErrorMessage);
+    return this.manager.fail.apply(this.manager, arguments);
+  }
 }
 
 module.exports = PgBoss;
