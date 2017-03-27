@@ -42,8 +42,18 @@ class PgBoss extends EventEmitter {
     let manager = new Manager(db, config);
     this.manager = manager;
 
-    ['error','job','expired-job','expired-count','failed'].forEach(event => promoteEvent.call(this, manager, event));
+    ['error','job','expired-job','expired-count','failed']
+      .forEach(event => promoteEvent.call(this, manager, event));
 
+    ['fetch','complete','cancel','fail','publish','subscribe','unsubscribe','onExpire']
+      .forEach(func => promoteApi.call(this, manager, func));
+
+    function promoteApi(obj, func){
+      this[func] = (...args) => {
+        if(!this.isReady) return Promise.reject(notReadyErrorMessage);
+        return obj[func].apply(obj, args);
+      }
+    }
 
     function promoteEvent(emitter, event){
       emitter.on(event, arg => this.emit(event, arg));
@@ -62,7 +72,7 @@ class PgBoss extends EventEmitter {
       });
   }
 
-  start() {
+  start(...args) {
     let self = this;
 
     if(this.isStarting)
@@ -70,7 +80,7 @@ class PgBoss extends EventEmitter {
 
     this.isStarting = true;
 
-    return this.contractor.start.apply(this.contractor, arguments)
+    return this.contractor.start.apply(this.contractor, args)
       .then(() => {
         self.isStarting = false;
         return self.init();
@@ -85,63 +95,22 @@ class PgBoss extends EventEmitter {
     ]);
   }
 
-  connect() {
+  connect(...args) {
     let self = this;
 
-    return this.contractor.connect.apply(this.contractor, arguments)
+    return this.contractor.connect.apply(this.contractor, args)
       .then(() => {
         self.isReady = true;
         return self;
       });
   }
 
-  disconnect() {
-    let self = this;
-
+  disconnect(...args) {
     if(!this.isReady) return Promise.reject(notReadyErrorMessage);
-    return this.manager.close.apply(this.manager, arguments)
-      .then(() => self.isReady = false);
+    return this.manager.close.apply(this.manager, args)
+      .then(() => this.isReady = false);
   }
 
-  cancel(){
-    if(!this.isReady) return Promise.reject(notReadyErrorMessage);
-    return this.manager.cancel.apply(this.manager, arguments);
-  }
-
-  subscribe(){
-    if(!this.isReady) return Promise.reject(notReadyErrorMessage);
-    return this.manager.subscribe.apply(this.manager, arguments);
-  }
-
-  unsubscribe(){
-    if(!this.isReady) return Promise.reject(notReadyErrorMessage);
-    return this.manager.unsubscribe.apply(this.manager, arguments);
-  }
-
-  publish(){
-    if(!this.isReady) return Promise.reject(notReadyErrorMessage);
-    return this.manager.publish.apply(this.manager, arguments);
-  }
-
-  fetch(){
-    if(!this.isReady) return Promise.reject(notReadyErrorMessage);
-    return this.manager.fetch.apply(this.manager, arguments);
-  }
-
-  onExpire(){
-    if(!this.isReady) return Promise.reject(notReadyErrorMessage);
-    return this.manager.onExpire.apply(this.manager, arguments);
-  }
-
-  complete(){
-    if(!this.isReady) return Promise.reject(notReadyErrorMessage);
-    return this.manager.complete.apply(this.manager, arguments);
-  }
-
-  fail(){
-    if(!this.isReady) return Promise.reject(notReadyErrorMessage);
-    return this.manager.fail.apply(this.manager, arguments);
-  }
 }
 
 module.exports = PgBoss;
