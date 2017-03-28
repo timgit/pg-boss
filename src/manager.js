@@ -7,7 +7,7 @@ const Worker = require('./worker');
 const plans = require('./plans');
 const Attorney = require('./attorney');
 
-const expireJobSuffix = '__expired';
+const expireJobSuffix = plans.expireJobSuffix;
 
 class Manager extends EventEmitter {
   constructor(db, config){
