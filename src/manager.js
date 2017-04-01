@@ -17,7 +17,7 @@ class Manager extends EventEmitter {
     this.db = db;
 
     this.nextJobCommand = plans.fetchNextJob(config.schema);
-    this.expireJobCommand = plans.expireJob(config.schema);
+    this.expireCommand = plans.expire(config.schema);
     this.insertJobCommand = plans.insertJob(config.schema);
     this.completeJobCommand = plans.completeJob(config.schema);
     this.cancelJobCommand = plans.cancelJob(config.schema);
@@ -32,7 +32,7 @@ class Manager extends EventEmitter {
     return expire().then(init);
 
     function expire() {
-      return self.db.executeSql(self.expireJobCommand)
+      return self.db.executeSql(self.expireCommand)
         .then(result => {
           if (result.rows.length){
             self.emit('expired-count', result.rows.length);

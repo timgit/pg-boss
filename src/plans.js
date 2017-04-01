@@ -6,11 +6,11 @@ module.exports = {
   getVersion,
   versionTableExists,
   fetchNextJob,
-  expireJob,
   completeJob,
   cancelJob,
   failJob,
   insertJob,
+  expire,
   archive,
   expireJobSuffix
 };
@@ -138,20 +138,6 @@ function fetchNextJob(schema) {
   `;
 }
 
-function expireJob(schema) {
-  return `
-    WITH expired AS (
-      UPDATE ${schema}.job
-      SET state = CASE WHEN retryCount < retryLimit THEN 'retry'::${schema}.job_state ELSE 'expired'::${schema}.job_state END,        
-        completedOn = CASE WHEN retryCount < retryLimit THEN NULL ELSE now() END
-      WHERE state = 'active'
-        AND (startedOn + expireIn) < now()    
-      RETURNING id, name, state, data
-    )
-    SELECT id, name, data FROM expired WHERE state = 'expired';
-  `;
-}
-
 function completeJob(schema){
   return `
     UPDATE ${schema}.job
@@ -190,6 +176,20 @@ function insertJob(schema) {
       CASE WHEN $8::integer IS NOT NULL THEN 'epoch'::timestamp + '1 second'::interval * ($8 * floor((date_part('epoch', now()) + $9) / $8)) ELSE NULL END
     )
     ON CONFLICT DO NOTHING
+  `;
+}
+
+function expire(schema) {
+  return `
+    WITH expired AS (
+      UPDATE ${schema}.job
+      SET state = CASE WHEN retryCount < retryLimit THEN 'retry'::${schema}.job_state ELSE 'expired'::${schema}.job_state END,        
+        completedOn = CASE WHEN retryCount < retryLimit THEN NULL ELSE now() END
+      WHERE state = 'active'
+        AND (startedOn + expireIn) < now()    
+      RETURNING id, name, state, data
+    )
+    SELECT id, name, data FROM expired WHERE state = 'expired';
   `;
 }
 
