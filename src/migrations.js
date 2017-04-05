@@ -86,6 +86,20 @@ function getMigrations(schema) {
         // The migration committee decided to allow a leaky migration here since rollbacks are edge cases
         //   and IF NOT EXISTS will not throw on re-application
       ]
+    },
+    {
+      version: '4',
+      previous: '3',
+      install: [
+        `ALTER TABLE ${schema}.job ALTER COLUMN createdOn SET DATA TYPE timestamptz`,
+        `ALTER TABLE ${schema}.job ALTER COLUMN startedOn SET DATA TYPE timestamptz`,
+        `ALTER TABLE ${schema}.job ALTER COLUMN completedOn SET DATA TYPE timestamptz`
+      ],
+      uninstall: [
+        `ALTER TABLE ${schema}.job ALTER COLUMN createdOn SET DATA TYPE timestamp`,
+        `ALTER TABLE ${schema}.job ALTER COLUMN startedOn SET DATA TYPE timestamp`,
+        `ALTER TABLE ${schema}.job ALTER COLUMN completedOn SET DATA TYPE timestamp`
+      ]
     }
   ];
 }

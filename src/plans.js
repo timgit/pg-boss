@@ -67,12 +67,12 @@ function createJobTable(schema) {
       retryLimit integer not null default(0),
       retryCount integer not null default(0),
       startIn interval,
-      startedOn timestamp without time zone,
+      startedOn timestamp with time zone,
       singletonKey text,
       singletonOn timestamp without time zone,
       expireIn interval,
-      createdOn timestamp without time zone not null default now(),
-      completedOn timestamp without time zone
+      createdOn timestamp with time zone not null default now(),
+      completedOn timestamp with time zone
     )
   `;
 }
