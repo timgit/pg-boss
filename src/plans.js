@@ -12,6 +12,7 @@ module.exports = {
   insertJob,
   expire,
   archive,
+  countStates,
   expireJobSuffix
 };
 
@@ -198,5 +199,19 @@ function archive(schema) {
     DELETE FROM ${schema}.job
     WHERE (completedOn + CAST($1 as interval) < now())
       OR (state = 'created' and name like '%${expireJobSuffix}' and createdOn + CAST($1 as interval) < now())        
+  `;
+}
+
+function countStates(schema){
+  return `
+    SELECT
+      COUNT(*) FILTER (where state = 'created') as created,
+      COUNT(*) FILTER (where state = 'retry') as retry,
+      COUNT(*) FILTER (where state = 'active') as active,
+      COUNT(*) FILTER (where state = 'complete') as complete,
+      COUNT(*) FILTER (where state = 'expired') as expired,
+      COUNT(*) FILTER (where state = 'cancelled') as cancelled,
+      COUNT(*) FILTER (where state = 'failed') as failed
+    FROM ${schema}.job
   `;
 }
