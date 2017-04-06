@@ -91,11 +91,13 @@ function getMigrations(schema) {
       version: '4',
       previous: '3',
       install: [
+        `ALTER TABLE ${schema}.job ADD COLUMN priority integer not null default(0)`,
         `ALTER TABLE ${schema}.job ALTER COLUMN createdOn SET DATA TYPE timestamptz`,
         `ALTER TABLE ${schema}.job ALTER COLUMN startedOn SET DATA TYPE timestamptz`,
         `ALTER TABLE ${schema}.job ALTER COLUMN completedOn SET DATA TYPE timestamptz`
       ],
       uninstall: [
+        `ALTER TABLE ${schema}.job DROP COLUMN priority`,
         `ALTER TABLE ${schema}.job ALTER COLUMN createdOn SET DATA TYPE timestamp`,
         `ALTER TABLE ${schema}.job ALTER COLUMN startedOn SET DATA TYPE timestamp`,
         `ALTER TABLE ${schema}.job ALTER COLUMN completedOn SET DATA TYPE timestamp`

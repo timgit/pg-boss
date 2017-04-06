@@ -248,11 +248,14 @@ class Manager extends EventEmitter {
 
       let id = uuid[self.config.uuid](),
         retryLimit = options.retryLimit || 0,
-        expireIn = options.expireIn || '15 minutes';
+        expireIn = options.expireIn || '15 minutes',
+        priority = options.priority || 0;
 
       let singletonKey = options.singletonKey || null;
 
-      let values = [id, name, retryLimit, startIn, expireIn, data, singletonKey, singletonSeconds, singletonOffset || 0];
+      singletonOffset = singletonOffset || 0;
+
+      let values = [id, name, priority, retryLimit, startIn, expireIn, data, singletonKey, singletonSeconds, singletonOffset];
 
       return self.db.executeSql(self.insertJobCommand, values)
         .then(result => {

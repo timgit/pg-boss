@@ -63,6 +63,7 @@ function createJobTable(schema) {
     CREATE TABLE IF NOT EXISTS ${schema}.job (
       id uuid primary key not null,
       name text not null,
+      priority integer not null default(0),
       data jsonb,
       state ${schema}.job_state not null,
       retryLimit integer not null default(0),
@@ -125,7 +126,7 @@ function fetchNextJob(schema) {
       WHERE state < 'active'
         AND name = $1
         AND (createdOn + startIn) < now()
-      ORDER BY createdOn, id
+      ORDER BY priority desc, createdOn, id
       LIMIT 1
       FOR UPDATE SKIP LOCKED
     )
@@ -171,10 +172,10 @@ function failJob(schema){
 
 function insertJob(schema) {
   return `
-    INSERT INTO ${schema}.job (id, name, state, retryLimit, startIn, expireIn, data, singletonKey, singletonOn)
+    INSERT INTO ${schema}.job (id, name, priority, state, retryLimit, startIn, expireIn, data, singletonKey, singletonOn)
     VALUES (
-      $1, $2, 'created', $3, CAST($4 as interval), CAST($5 as interval), $6, $7,
-      CASE WHEN $8::integer IS NOT NULL THEN 'epoch'::timestamp + '1 second'::interval * ($8 * floor((date_part('epoch', now()) + $9) / $8)) ELSE NULL END
+      $1, $2, $3, 'created', $4, CAST($5 as interval), CAST($6 as interval), $7, $8,
+      CASE WHEN $9::integer IS NOT NULL THEN 'epoch'::timestamp + '1 second'::interval * ($9 * floor((date_part('epoch', now()) + $10) / $9)) ELSE NULL END
     )
     ON CONFLICT DO NOTHING
   `;
