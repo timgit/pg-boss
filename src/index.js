@@ -8,6 +8,7 @@ const Boss = require('./boss');
 const Db = require('./db');
 
 const notReadyErrorMessage = `boss ain't ready.  Use start() or connect() to get started.`;
+const startInProgressErrorMessage = 'boss is starting up. Please wait for the previous start() to finish.';
 
 class PgBoss extends EventEmitter {
   static getConstructionPlans(schema) {
@@ -29,21 +30,15 @@ class PgBoss extends EventEmitter {
 
     promoteEvent.call(this, db, 'error');
 
-    // contractor makes sure we have a happy database home for work
     this.contractor = new Contractor(db, config);
 
-    // boss keeps the books and archives old jobs
-    let boss = new Boss(db, config);
+    const boss = new Boss(db, config);
+    boss.promotedEvents.forEach(event => promoteEvent.call(this, boss, event));
     this.boss = boss;
 
-    ['error','archived'].forEach(event => promoteEvent.call(this, boss, event));
-
-    // manager makes sure workers aren't taking too long to finish their jobs
-    let manager = new Manager(db, config);
+    const manager = new Manager(db, config);
+    manager.promotedEvents.forEach(event => promoteEvent.call(this, manager, event));
     this.manager = manager;
-
-    ['error','job','expired-job','expired-count','failed']
-      .forEach(event => promoteEvent.call(this, manager, event));
 
     ['fetch','complete','cancel','fail','publish','subscribe','unsubscribe','onExpire']
       .forEach(func => promoteApi.call(this, manager, func));
@@ -76,7 +71,7 @@ class PgBoss extends EventEmitter {
     let self = this;
 
     if(this.isStarting)
-      return Promise.reject('boss is starting up. Please wait for the previous start() to finish.');
+      return Promise.reject(startInProgressErrorMessage);
 
     this.isStarting = true;
 

@@ -9,6 +9,14 @@ const Attorney = require('./attorney');
 
 const expireJobSuffix = plans.expireJobSuffix;
 
+const events = {
+  job: 'job',
+  expiredCount: 'expired-count',
+  expiredJob: 'expired-job',
+  failed: 'failed',
+  error: 'error'
+};
+
 class Manager extends EventEmitter {
   constructor(db, config){
     super();
@@ -24,6 +32,8 @@ class Manager extends EventEmitter {
     this.failJobCommand = plans.failJob(config.schema);
 
     this.subscriptions = {};
+
+    this.promotedEvents = Object.keys(events).map(key => events[key]);
   }
 
   monitor(){
@@ -35,10 +45,10 @@ class Manager extends EventEmitter {
       return self.db.executeSql(self.expireCommand)
         .then(result => {
           if (result.rows.length){
-            self.emit('expired-count', result.rows.length);
+            self.emit(events.expiredCount, result.rows.length);
 
             return Promise.map(result.rows, job => {
-              self.emit('expired-job', job);
+              self.emit(events.expiredJob, job);
               return self.publish(job.name + expireJobSuffix, job);
             });
           }
@@ -51,7 +61,7 @@ class Manager extends EventEmitter {
       self.expireTimer = setTimeout(check, self.config.expireCheckInterval);
 
       function check() {
-        expire().catch(error => self.emit('error', error)).then(init);
+        expire().catch(error => self.emit(events.error, error)).then(init);
       }
     }
   }
@@ -137,7 +147,7 @@ class Manager extends EventEmitter {
 
       let subscription = self.subscriptions[name] = {workers:[]};
 
-      let onError = error => self.emit('error', error);
+      let onError = error => self.emit(events.error, error);
 
       let complete = (error, job) => {
 
@@ -145,20 +155,20 @@ class Manager extends EventEmitter {
           return self.complete(job.id);
 
         return self.fail(job.id)
-          .then(() => self.emit('failed', {job, error}));
+          .then(() => self.emit(events.failed, {job, error}));
 
       };
 
       let onJob = job => {
         if(!job) return;
 
-        self.emit('job', job);
+        self.emit(events.job, job);
 
         setImmediate(() => {
           try {
             callback(job, error => complete(error, job));
           } catch(error) {
-            self.emit('failed', {job, error});
+            self.emit(events.failed, {job, error});
           }
         });
 

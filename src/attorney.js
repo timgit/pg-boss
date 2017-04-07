@@ -7,13 +7,14 @@ module.exports = {
 
 function applyConfig(config) {
 
-  assert(config && (typeof config == 'object' || typeof config == 'string'),
+  assert(config && (typeof config === 'object' || typeof config === 'string'),
     'configuration assert: string or config object is required to connect to postgres');
 
   config = applyDatabaseConfig(config);
   config = applyNewJobCheckInterval(config);
   config = applyExpireConfig(config);
   config = applyArchiveConfig(config);
+  config = applyMonitoringConfig(config);
   config = applyUuidConfig(config);
 
   return config;
@@ -22,7 +23,7 @@ function applyConfig(config) {
 
 function applyDatabaseConfig(config) {
 
-  if(typeof config == 'string') {
+  if(typeof config === 'string') {
     config = {connectionString: config};
   }
   else {
@@ -34,7 +35,7 @@ function applyDatabaseConfig(config) {
   }
 
   if(config.schema){
-    assert(typeof config.schema == 'string', 'configuration assert: schema must be a string');
+    assert(typeof config.schema === 'string', 'configuration assert: schema must be a string');
     assert(config.schema.length <= 50, 'configuration assert: schema name cannot exceed 50 characters');
     assert(!/\W/.test(config.schema), `configuration assert: ${config.schema} cannot be used as a schema. Only alphanumeric characters and underscores are allowed`);
   }
@@ -100,7 +101,7 @@ function applyArchiveConfig(config) {
           : 60 * 60 * 1000; // default is 1 hour
 
 
-  assert(!('archiveCompletedJobsEvery' in config) || typeof config.archiveCompletedJobsEvery == 'string',
+  assert(!('archiveCompletedJobsEvery' in config) || typeof config.archiveCompletedJobsEvery === 'string',
     'configuration assert: archiveCompletedJobsEvery should be a readable PostgreSQL interval such as "1 day"');
 
   config.archiveCompletedJobsEvery = config.archiveCompletedJobsEvery || '1 day';
@@ -108,8 +109,23 @@ function applyArchiveConfig(config) {
   return config;
 }
 
+function applyMonitoringConfig(config) {
+  assert(!('monitorStateIntervalSeconds' in config) || config.monitorStateIntervalSeconds >=1,
+    'configuration assert: monitorStateIntervalSeconds must be at least every second');
+
+  assert(!('monitorStateIntervalMinutes' in config) || config.monitorStateIntervalMinutes >=1,
+    'configuration assert: monitorStateIntervalMinutes must be at least every minute');
+
+  config.monitorStateInterval =
+    ('monitorStateIntervalMinutes' in config) ? config.monitorStateIntervalMinutes * 60 * 1000
+      : ('monitorStateIntervalSeconds' in config) ? config.monitorStateIntervalSeconds * 1000
+        : null;
+
+  return config;
+}
+
 function applyUuidConfig(config) {
-  assert(!('uuid' in config) || config.uuid == 'v1' || config.uuid == 'v4', 'configuration assert: uuid option only supports v1 or v4');
+  assert(!('uuid' in config) || config.uuid === 'v1' || config.uuid === 'v4', 'configuration assert: uuid option only supports v1 or v4');
   config.uuid = config.uuid || 'v1';
 
   return config;
