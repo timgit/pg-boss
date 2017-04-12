@@ -102,6 +102,18 @@ function getMigrations(schema) {
         `ALTER TABLE ${schema}.job ALTER COLUMN startedOn SET DATA TYPE timestamp`,
         `ALTER TABLE ${schema}.job ALTER COLUMN completedOn SET DATA TYPE timestamp`
       ]
+    },
+    {
+      version: '5',
+      previous: '4',
+      install: [
+        `ALTER TABLE ${schema}.job ALTER COLUMN startIn SET DEFAULT (interval '0')`,
+        `ALTER TABLE ${schema}.job ALTER COLUMN state SET DEFAULT ('created')`
+      ],
+      uninstall: [
+        `ALTER TABLE ${schema}.job ALTER COLUMN startIn DROP DEFAULT`,
+        `ALTER TABLE ${schema}.job ALTER COLUMN state DROP DEFAULT`
+      ]
     }
   ];
 }
