@@ -26,9 +26,9 @@ describe('cancel', function() {
 
         boss.publish('will_cancel', null, {startIn: 1})
             .then(id => boss.cancel(id))
-            .then(id => helper.getJobById(id))
+            .then(job => helper.getJobById(job.id))
             .then(result => {
-                assert(result.rows.length && result.rows[0].state == 'cancelled');
+                assert(result.rows.length && result.rows[0].state === 'cancelled');
                 finished();
             });
     });

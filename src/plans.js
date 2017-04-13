@@ -1,5 +1,15 @@
 const expireJobSuffix = '__expired';
 
+const states = {
+  created: 'created',
+  retry: 'retry',
+  active: 'active',
+  complete: 'complete',
+  expired: 'expired',
+  cancelled: 'cancelled',
+  failed: 'failed'
+};
+
 module.exports = {
   create,
   insertVersion,
@@ -13,6 +23,7 @@ module.exports = {
   expire,
   archive,
   countStates,
+  states,
   expireJobSuffix
 };
 
@@ -47,13 +58,13 @@ function createJobStateEnum(schema) {
   // base type is numeric and first values are less than last values
   return `
     CREATE TYPE ${schema}.job_state AS ENUM (
-      'created',
-      'retry',
-      'active',	
-      'complete',
-      'expired',
-      'cancelled',
-      'failed'
+      '${states.created}',
+      '${states.retry}',
+      '${states.active}',	
+      '${states.complete}',
+      '${states.expired}',
+      '${states.cancelled}',
+      '${states.failed}'
     )
   `;
 }
@@ -65,7 +76,7 @@ function createJobTable(schema) {
       name text not null,
       priority integer not null default(0),
       data jsonb,
-      state ${schema}.job_state not null default('created'),
+      state ${schema}.job_state not null default('${states.created}'),
       retryLimit integer not null default(0),
       retryCount integer not null default(0),
       startIn interval not null default(interval '0'),
@@ -82,21 +93,21 @@ function createJobTable(schema) {
 function createIndexSingletonKey(schema){
   // anything with singletonKey means "only 1 job can be queued or active at a time"
   return `
-    CREATE UNIQUE INDEX job_singletonKey ON ${schema}.job (name, singletonKey) WHERE state < 'complete' AND singletonOn IS NULL
+    CREATE UNIQUE INDEX job_singletonKey ON ${schema}.job (name, singletonKey) WHERE state < '${states.complete}' AND singletonOn IS NULL
   `;
 }
 
 function createIndexSingletonOn(schema){
   // anything with singletonOn means "only 1 job within this time period, queued, active or completed"
   return `
-    CREATE UNIQUE INDEX job_singletonOn ON ${schema}.job (name, singletonOn) WHERE state < 'expired' AND singletonKey IS NULL
+    CREATE UNIQUE INDEX job_singletonOn ON ${schema}.job (name, singletonOn) WHERE state < '${states.expired}' AND singletonKey IS NULL
   `;
 }
 
 function createIndexSingletonKeyOn(schema){
   // anything with both singletonOn and singletonKey means "only 1 job within this time period with this key, queued, active or completed"
   return `
-    CREATE UNIQUE INDEX job_singletonKeyOn ON ${schema}.job (name, singletonOn, singletonKey) WHERE state < 'expired'
+    CREATE UNIQUE INDEX job_singletonKeyOn ON ${schema}.job (name, singletonOn, singletonKey) WHERE state < '${states.expired}'
   `;
 }
 
@@ -123,7 +134,7 @@ function fetchNextJob(schema) {
     WITH nextJob as (
       SELECT id
       FROM ${schema}.job
-      WHERE state < 'active'
+      WHERE state < '${states.active}'
         AND name = $1
         AND (createdOn + startIn) < now()
       ORDER BY priority desc, createdOn, id
@@ -131,9 +142,9 @@ function fetchNextJob(schema) {
       FOR UPDATE SKIP LOCKED
     )
     UPDATE ${schema}.job SET
-      state = 'active',
+      state = '${states.active}',
       startedOn = now(),
-      retryCount = CASE WHEN state = 'retry' THEN retryCount + 1 ELSE retryCount END
+      retryCount = CASE WHEN state = '${states.retry}' THEN retryCount + 1 ELSE retryCount END
     FROM nextJob
     WHERE ${schema}.job.id = nextJob.id
     RETURNING ${schema}.job.id, ${schema}.job.data
@@ -144,19 +155,21 @@ function completeJob(schema){
   return `
     UPDATE ${schema}.job
     SET completedOn = now(),
-      state = 'complete'
+      state = '${states.complete}'
     WHERE id = $1
-      AND state = 'active'
-    `;
+      AND state = '${states.active}'
+    RETURNING id, name, data
+  `;
 }
 
 function cancelJob(schema){
   return `
     UPDATE ${schema}.job
     SET completedOn = now(),
-      state = 'cancelled'
+      state = '${states.cancelled}'
     WHERE id = $1
-      AND state < 'complete'
+      AND state < '${states.complete}'
+    RETURNING id, name, data
   `;
 }
 
@@ -164,9 +177,10 @@ function failJob(schema){
   return `
     UPDATE ${schema}.job
     SET completedOn = now(),
-      state = 'failed'
+      state = '${states.failed}'
     WHERE id = $1
-      AND state < 'complete'
+      AND state < '${states.complete}'
+    RETURNING id, name, data
   `;
 }
 
@@ -174,7 +188,7 @@ function insertJob(schema) {
   return `
     INSERT INTO ${schema}.job (id, name, priority, state, retryLimit, startIn, expireIn, data, singletonKey, singletonOn)
     VALUES (
-      $1, $2, $3, 'created', $4, CAST($5 as interval), CAST($6 as interval), $7, $8,
+      $1, $2, $3, '${states.created}', $4, CAST($5 as interval), CAST($6 as interval), $7, $8,
       CASE WHEN $9::integer IS NOT NULL THEN 'epoch'::timestamp + '1 second'::interval * ($9 * floor((date_part('epoch', now()) + $10) / $9)) ELSE NULL END
     )
     ON CONFLICT DO NOTHING
@@ -185,13 +199,13 @@ function expire(schema) {
   return `
     WITH expired AS (
       UPDATE ${schema}.job
-      SET state = CASE WHEN retryCount < retryLimit THEN 'retry'::${schema}.job_state ELSE 'expired'::${schema}.job_state END,        
+      SET state = CASE WHEN retryCount < retryLimit THEN '${states.retry}'::${schema}.job_state ELSE '${states.expired}'::${schema}.job_state END,        
         completedOn = CASE WHEN retryCount < retryLimit THEN NULL ELSE now() END
-      WHERE state = 'active'
+      WHERE state = '${states.active}'
         AND (startedOn + expireIn) < now()    
       RETURNING id, name, state, data
     )
-    SELECT id, name, data FROM expired WHERE state = 'expired';
+    SELECT id, name, data FROM expired WHERE state = '${states.expired}';
   `;
 }
 
@@ -199,20 +213,20 @@ function archive(schema) {
   return `
     DELETE FROM ${schema}.job
     WHERE (completedOn + CAST($1 as interval) < now())
-      OR (state = 'created' and name like '%${expireJobSuffix}' and createdOn + CAST($1 as interval) < now())        
+      OR (state = '${states.created}' and name like '%${expireJobSuffix}' and createdOn + CAST($1 as interval) < now())        
   `;
 }
 
 function countStates(schema){
   return `
     SELECT
-      COUNT(*) FILTER (where state = 'created') as created,
-      COUNT(*) FILTER (where state = 'retry') as retry,
-      COUNT(*) FILTER (where state = 'active') as active,
-      COUNT(*) FILTER (where state = 'complete') as complete,
-      COUNT(*) FILTER (where state = 'expired') as expired,
-      COUNT(*) FILTER (where state = 'cancelled') as cancelled,
-      COUNT(*) FILTER (where state = 'failed') as failed
+      COUNT(*) FILTER (where state = '${states.created}') as created,
+      COUNT(*) FILTER (where state = '${states.retry}') as retry,
+      COUNT(*) FILTER (where state = '${states.active}') as active,
+      COUNT(*) FILTER (where state = '${states.complete}') as complete,
+      COUNT(*) FILTER (where state = '${states.expired}') as expired,
+      COUNT(*) FILTER (where state = '${states.cancelled}') as cancelled,
+      COUNT(*) FILTER (where state = '${states.failed}') as failed
     FROM ${schema}.job
   `;
 }

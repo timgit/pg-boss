@@ -306,7 +306,7 @@ class Manager extends EventEmitter {
     return this.db.executeSql(this.completeJobCommand, [id])
       .then(result => {
         assert(result.rowCount === 1, `Job ${id} could not be completed.`);
-        return id;
+        return result.rows[0];
       });
   }
 
@@ -314,7 +314,7 @@ class Manager extends EventEmitter {
     return this.db.executeSql(this.cancelJobCommand, [id])
       .then(result => {
         assert(result.rowCount === 1, `Job ${id} could not be cancelled.`);
-        return id;
+        return result.rows[0];
       });
   }
 
@@ -322,7 +322,7 @@ class Manager extends EventEmitter {
     return this.db.executeSql(this.failJobCommand, [id])
       .then(result => {
         assert(result.rowCount === 1, `Job ${id} could not be marked as failed.`);
-        return id;
+        return result.rows[0];
       });
   }
 }
