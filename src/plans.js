@@ -1,5 +1,3 @@
-const expireJobSuffix = '__expired';
-
 const states = {
   created: 'created',
   retry: 'retry',
@@ -9,6 +7,9 @@ const states = {
   cancelled: 'cancelled',
   failed: 'failed'
 };
+
+const expiredJobSuffix = `__${states.expired}`;
+const completedJobSuffix = `__${states.complete}`;
 
 module.exports = {
   create,
@@ -24,7 +25,8 @@ module.exports = {
   archive,
   countStates,
   states,
-  expireJobSuffix
+  expiredJobSuffix,
+  completedJobSuffix
 };
 
 function create(schema) {
@@ -213,7 +215,11 @@ function archive(schema) {
   return `
     DELETE FROM ${schema}.job
     WHERE (completedOn + CAST($1 as interval) < now())
-      OR (state = '${states.created}' and name like '%${expireJobSuffix}' and createdOn + CAST($1 as interval) < now())        
+      OR (
+        state = '${states.created}' 
+        AND (name LIKE '%${expiredJobSuffix}' OR name LIKE '%${completedJobSuffix}') 
+        AND createdOn + CAST($1 as interval) < now()
+      )        
   `;
 }
 

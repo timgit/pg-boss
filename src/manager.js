@@ -7,7 +7,8 @@ const Worker = require('./worker');
 const plans = require('./plans');
 const Attorney = require('./attorney');
 
-const expireJobSuffix = plans.expireJobSuffix;
+const expiredJobSuffix = plans.expiredJobSuffix;
+const completedJobSuffix = plans.completedJobSuffix;
 
 const events = {
   job: 'job',
@@ -49,7 +50,7 @@ class Manager extends EventEmitter {
 
             return Promise.map(result.rows, job => {
               self.emit(events.expiredJob, job);
-              return self.publish(job.name + expireJobSuffix, job);
+              return self.publish(job.name + expiredJobSuffix, job);
             });
           }
         });
@@ -88,7 +89,8 @@ class Manager extends EventEmitter {
     assert(name in this.subscriptions, 'subscription not found for job ' + name);
 
     removeSubscription.call(this, name);
-    removeSubscription.call(this, name + expireJobSuffix);
+    removeSubscription.call(this, name + expiredJobSuffix);
+    removeSubscription.call(this, name + completedJobSuffix);
 
     function removeSubscription(name){
       if(!this.subscriptions[name]) return;
@@ -195,7 +197,11 @@ class Manager extends EventEmitter {
 
   onExpire(name, callback) {
     // unwrapping job in callback because we love our customers
-    return this.subscribe(name + expireJobSuffix, (job, done) => callback(job.data, done));
+    return this.subscribe(name + expiredJobSuffix, (job, done) => callback(job.data, done));
+  }
+
+  onComplete(name, callback) {
+    return this.subscribe(name + completedJobSuffix, callback);
   }
 
   publish(...args){
@@ -302,11 +308,20 @@ class Manager extends EventEmitter {
       });
   }
 
-  complete(id){
+  complete(id, data){
     return this.db.executeSql(this.completeJobCommand, [id])
       .then(result => {
         assert(result.rowCount === 1, `Job ${id} could not be completed.`);
-        return result.rows[0];
+        let job = result.rows[0];
+
+        if(data){
+          this.publish(job.name + completedJobSuffix, {
+            request: job,
+            response: data
+          });
+        }
+
+        return job;
       });
   }
 

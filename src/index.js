@@ -40,7 +40,7 @@ class PgBoss extends EventEmitter {
     manager.promotedEvents.forEach(event => promoteEvent.call(this, manager, event));
     this.manager = manager;
 
-    ['fetch','complete','cancel','fail','publish','subscribe','unsubscribe','onExpire']
+    ['fetch','complete','cancel','fail','publish','subscribe','unsubscribe','onComplete','onExpire']
       .forEach(func => promoteApi.call(this, manager, func));
 
     function promoteApi(obj, func){
