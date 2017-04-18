@@ -22,6 +22,7 @@ class Db extends EventEmitter {
       database: poolConfig.database,
       application_name: poolConfig.application_name || 'pgboss',
       max: poolConfig.poolSize,
+      ssl: !!poolConfig.ssl,
       Promise
     });
 
@@ -39,6 +40,10 @@ class Db extends EventEmitter {
         database: params.pathname.split('/')[1]
       };
     }
+  }
+
+  close(){
+    return this.pool.end();
   }
 
   executeSql(text, values) {
