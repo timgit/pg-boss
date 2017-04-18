@@ -4,38 +4,55 @@ const helper = require('./testHelper');
 
 describe('initialization', function(){
 
-    beforeEach(function(finished) {
-        helper.init()
-            .then(() => finished());
+  beforeEach(function(finished) {
+    helper.init()
+      .then(() => finished());
+  });
+
+  it('should allow a 50 character custom schema name', function(finished){
+
+    let config = helper.getConfig();
+
+    config.schema = 'thisisareallylongschemanamefortestingmaximumlength';
+
+    new PgBoss(config).start()
+      .then(boss => {
+        assert(true);
+        boss.stop().then(() => finished());
+      })
+      .catch(error => {
+        assert(false, error.message);
+        finished();
+      });
+
+  });
+
+  it('should not allow a 51 character custom schema name', function(){
+
+    let config = helper.getConfig();
+
+    config.schema = 'thisisareallylongschemanamefortestingmaximumlengthb';
+
+    assert.throws(function () {
+      let boss = new PgBoss(config);
     });
 
-    it('should allow a 50 character custom schema name', function(finished){
+  });
 
-        let config = helper.getConfig();
 
-        config.schema = 'thisisareallylongschemanamefortestingmaximumlength';
+  it('should accept a connectionString property', function(){
 
-        new PgBoss(config).start()
-            .then(boss => {
-                assert(true);
-                boss.stop().then(() => finished());
-            })
-            .catch(error => {
-                assert(false, error.message);
-                finished();
-            });
+    let connectionString = helper.getConnectionString();
 
-    });
+    new PgBoss({connectionString}).start()
+      .then(boss => {
+        assert(true);
+        boss.stop().then(() => finished());
+      })
+      .catch(error => {
+        assert(false, error.message);
+        finished();
+      });
+  });
 
-    it('should not allow a 51 character custom schema name', function(){
-
-        let config = helper.getConfig();
-
-        config.schema = 'thisisareallylongschemanamefortestingmaximumlengthb';
-
-        assert.throws(function () {
-            let boss = new PgBoss(config);
-        });
-
-    });
 });
