@@ -7,7 +7,7 @@ describe('examples', function(){
   let _boss;
 
   after(function(finished){
-      _boss.stop().then(() => finished());
+    _boss.stop().then(() => finished());
   });
 
   it('readme example is totes valid', function(finished){
