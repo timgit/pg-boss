@@ -40,7 +40,7 @@ describe('initialization', function(){
   });
 
 
-  it('should accept a connectionString property', function(){
+  it('should accept a connectionString property', function(finished){
 
     let connectionString = helper.getConnectionString();
 
