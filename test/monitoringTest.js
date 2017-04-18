@@ -36,13 +36,13 @@ describe('monitoring', function() {
         boss.on('monitor-states', states => {
 
           if(!firstJobCompleted){
-            assert.equal(states.created, 1);
-            assert.equal(states.active, 1);
-            assert.equal(states.complete, 1);
+            assert.strictEqual(states.created, 1);
+            assert.strictEqual(states.active, 1);
+            assert.strictEqual(states.complete, 1);
           } else {
-            assert.equal(states.created, 1);
-            assert.equal(states.active, 0);
-            assert.equal(states.complete, 2);
+            assert.strictEqual(states.created, 1);
+            assert.strictEqual(states.active, 0);
+            assert.strictEqual(states.complete, 2);
 
             finished();
           }
