@@ -27,27 +27,36 @@ class Boss extends EventEmitter{
 
     // todo: add query that calcs avg start time delta vs. creation time
 
-    return this.archive()
-      .then(() => {
-        if(this.config.monitorStateInterval)
-          monitor(this.countStates, this.config.monitorStateInterval);
-
-        monitor(this.archive, this.config.archiveCheckInterval);
-      });
+    return Promise.join(
+      monitor(this.archive, this.config.archiveCheckInterval),
+      this.config.monitorStateInterval ? monitor(this.countStates, this.config.monitorStateInterval) : null
+    );
 
     function monitor(func, interval) {
-      if(self.stopped) return;
 
-      self.timers[func.name] = setTimeout(() => {
-        func.call(self).catch(error => self.emit(events.error, error))
-          .then(() => monitor(func, interval));
-      }, interval);
+      return exec().then(repeat);
+
+      function exec() {
+        return func.call(self).catch(error => self.emit(events.error, error));
+      }
+
+      function repeat(){
+        if(self.stopped) return;
+        self.timers[func.name] = setTimeout(() => exec().then(repeat), interval);
+      }
+
     }
+
   }
 
   countStates(){
     return this.db.executeSql(this.countStatesCommand)
-      .then(result => this.emit(events.monitorStates, result.rows[0]));
+      .then(result => {
+        let states = result.rows[0];
+        // parsing int64 since pg returns it as string
+        Object.keys(states).forEach(state => states[state] = parseFloat(states[state]));
+        this.emit(events.monitorStates, states);
+      });
   }
 
   archive(){
