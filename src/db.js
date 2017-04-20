@@ -28,7 +28,8 @@ class Db extends EventEmitter {
     this.pool.on('error', error => this.emit('error', error));
 
     function parseConnectionString(connectionString){
-      const params = url.parse(connectionString);
+      const parseQuerystring = true;
+      const params = url.parse(connectionString, parseQuerystring);
       const auth = params.auth.split(':');
 
       return {
@@ -36,9 +37,11 @@ class Db extends EventEmitter {
         password: auth[1],
         host: params.hostname,
         port: params.port,
-        database: params.pathname.split('/')[1]
+        database: params.pathname.split('/')[1],
+        ssl: !!params.query.ssl
       };
     }
+    
   }
 
   close(){
