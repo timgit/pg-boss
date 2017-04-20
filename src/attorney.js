@@ -1,9 +1,74 @@
 const assert = require('assert');
+const Promise = require('bluebird');
 
 module.exports = {
   applyConfig,
-  applyNewJobCheckInterval
+  applyNewJobCheckInterval,
+  getPublishArgs,
+  getSubscribeArgs
 };
+
+function getPublishArgs(args) {
+  let name, data, options;
+
+  try {
+    if(typeof args[0] === 'string') {
+
+      name = args[0];
+      data = args[1];
+
+      assert(typeof data !== 'function', 'publish() cannot accept a function as the payload.  Did you intend to use subscribe()?');
+
+      options = args[2];
+
+    } else if(typeof args[0] === 'object'){
+
+      assert(args.length === 1, 'publish object API only accepts 1 argument');
+
+      let job = args[0];
+
+      assert(job, 'boss requires all jobs to have a name');
+
+      name = job.name;
+      data = job.data;
+      options = job.options;
+    }
+
+    options = options || {};
+
+    assert(name, 'boss requires all jobs to have a name');
+    assert(typeof options === 'object', 'options should be an object');
+
+  } catch (error){
+    return Promise.reject(error);
+  }
+
+  return Promise.resolve({name, data, options});
+}
+
+function getSubscribeArgs(args){
+  let options, callback;
+
+  try {
+    if(args.length === 1){
+      callback = args[0];
+      options = {};
+    } else if (args.length > 1){
+      options = args[0] || {};
+      callback = args[1];
+    }
+
+    assert(typeof callback === 'function', 'expected callback to be a function');
+
+    if(options)
+      assert(typeof options === 'object', 'expected config to be an object');
+
+  } catch(e) {
+    return Promise.reject(e);
+  }
+
+  return Promise.resolve({options, callback});
+}
 
 function applyConfig(config) {
 
