@@ -89,8 +89,6 @@ class Manager extends EventEmitter {
     assert(name in this.subscriptions, 'subscription not found for job ' + name);
 
     removeSubscription.call(this, name);
-    removeSubscription.call(this, name + expiredJobSuffix);
-    removeSubscription.call(this, name + completedJobSuffix);
 
     function removeSubscription(name){
       if(!this.subscriptions[name]) return;
@@ -102,81 +100,56 @@ class Manager extends EventEmitter {
 
   subscribe(name, ...args){
 
-    assert(!(name in this.subscriptions), 'this job has already been subscribed on this instance.')
+    return Attorney.getSubscribeArgs(args)
+      .then(({options, callback}) => {
 
-    let self = this;
+        assert(name, 'missing job name');
+        assert(!(name in this.subscriptions), 'this job has already been subscribed on this instance.');
 
-    return getArgs(args)
-      .then(({options, callback}) => register(options, callback));
-
-
-    function getArgs(args) {
-
-      let options, callback;
-
-      try {
-        assert(name, 'boss requires all jobs to have a name');
-
-        if(args.length === 1){
-          callback = args[0];
-          options = {};
-        } else if (args.length > 1){
-          options = args[0] || {};
-          callback = args[1];
-        }
-
-        assert(typeof callback === 'function', 'expected callback to be a function');
-
-        if(options)
-          assert(typeof options === 'object', 'expected config to be an object');
-
-        options = options || {};
         options.teamSize = options.teamSize || 1;
 
         if('newJobCheckInterval' in options || 'newJobCheckIntervalSeconds' in options)
           options = Attorney.applyNewJobCheckInterval(options);
         else
-          options.newJobCheckInterval = self.config.newJobCheckInterval;
+          options.newJobCheckInterval = this.config.newJobCheckInterval;
 
-      } catch(e) {
-        return Promise.reject(e);
-      }
+        return register.call(this, options, callback);
 
-      return Promise.resolve({options, callback});
-    }
+      });
+
 
     function register(options, callback) {
 
-      let subscription = self.subscriptions[name] = {workers:[]};
+      let subscription = this.subscriptions[name] = {workers:[]};
 
-      let onError = error => self.emit(events.error, error);
+      let onError = error => this.emit(events.error, error);
 
       let complete = (error, job) => {
 
         if(!error)
-          return self.complete(job.id);
+          return this.complete(job.id);
 
-        return self.fail(job.id)
-          .then(() => self.emit(events.failed, {job, error}));
+        return this.fail(job.id)
+          .then(() => this.emit(events.failed, {job, error}));
 
       };
 
       let onJob = job => {
         if(!job) return;
 
-        self.emit(events.job, job);
+        this.emit(events.job, job);
 
         setImmediate(() => {
           try {
             callback(job, error => complete(error, job));
           } catch(error) {
-            self.emit(events.failed, {job, error});
+            this.emit(events.failed, {job, error});
           }
         });
 
       };
 
-      let onFetch = () => self.fetch(name);
+      let onFetch = () => this.fetch(name);
 
       let workerConfig = {
         name,
@@ -195,59 +168,24 @@ class Manager extends EventEmitter {
 
   }
 
-  onExpire(name, callback) {
-    // unwrapping job in callback because we love our customers
-    return this.subscribe(name + expiredJobSuffix, (job, done) => callback(job.data, done));
+  onExpire(name, ...args) {
+    return Attorney.getSubscribeArgs(args)
+      .then(({options, callback}) => {
+        // unwrapping job in callback because we love our customers
+        return this.subscribe(name + expiredJobSuffix, options, (job, done) => callback(job.data, done));
+      });
   }
 
-  onComplete(name, callback) {
-    return this.subscribe(name + completedJobSuffix, callback);
+  onComplete(name, ...args) {
+    return Attorney.getSubscribeArgs(args)
+      .then(({options, callback}) => this.subscribe(name + completedJobSuffix, options, callback));
   }
 
   publish(...args){
     let self = this;
 
-    return getArgs(args)
+    return Attorney.getPublishArgs(args)
       .then(({name, data, options}) => insertJob(name, data, options));
-
-
-    function getArgs(args) {
-      let name, data, options;
-
-      try {
-        if(typeof args[0] === 'string') {
-
-          name = args[0];
-          data = args[1];
-
-          assert(typeof data !== 'function', 'publish() cannot accept a function as the payload.  Did you intend to use subscribe()?');
-
-          options = args[2];
-
-        } else if(typeof args[0] === 'object'){
-
-          assert(args.length === 1, 'publish object API only accepts 1 argument');
-
-          let job = args[0];
-
-          assert(job, 'boss requires all jobs to have a name');
-
-          name = job.name;
-          data = job.data;
-          options = job.options;
-        }
-
-        options = options || {};
-
-        assert(name, 'boss requires all jobs to have a name');
-        assert(typeof options === 'object', 'options should be an object');
-
-      } catch (error){
-        return Promise.reject(error);
-      }
-
-      return Promise.resolve({name, data, options});
-    }
 
     function insertJob(name, data, options, singletonOffset){
       let startIn =
