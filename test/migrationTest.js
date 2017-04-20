@@ -6,8 +6,7 @@ const currentSchemaVersion = require('../version.json').schema;
 
 describe('migration', function() {
 
-  let db = helper.getDb();
-  let contractor = new Contractor(db, helper.getConfig());
+  let contractor = new Contractor(helper.getDb(), helper.getConfig());
 
   beforeEach(function(finished){
     helper.init()
@@ -18,10 +17,10 @@ describe('migration', function() {
     this.timeout(5000);
 
     contractor.create()
-      .then(() => db.migrate(currentSchemaVersion, 'remove'))
+      .then(() => contractor.migrate(currentSchemaVersion, 'remove'))
       .then(version => {
         assert.notEqual(version, currentSchemaVersion);
-        return db.migrate(version);
+        return contractor.migrate(version);
       })
       .then(version => {
         assert.equal(version, currentSchemaVersion);
@@ -34,7 +33,7 @@ describe('migration', function() {
     this.timeout(3000);
 
     contractor.create()
-      .then(() => db.migrate(currentSchemaVersion, 'remove'))
+      .then(() => contractor.migrate(currentSchemaVersion, 'remove'))
       .then(() => new PgBoss(helper.getConfig()).start())
       .then(() => contractor.version())
       .then(version => {
@@ -50,22 +49,22 @@ describe('migration', function() {
     let prevVersion;
 
     contractor.create()
-      .then(() => db.migrate(currentSchemaVersion, 'remove'))
+      .then(() => contractor.migrate(currentSchemaVersion, 'remove'))
       .then(version => {
         prevVersion = version;
         assert.notEqual(version, currentSchemaVersion);
 
-        return db.migrate(version, 'remove');
+        return contractor.migrate(version, 'remove');
       })
       .then(version => {
         assert.notEqual(version, prevVersion);
 
-        return db.migrate(version);
+        return contractor.migrate(version);
       })
       .then(version => {
         assert.equal(version, prevVersion);
 
-        return db.migrate(version);
+        return contractor.migrate(version);
       })
       .then(version => {
         assert.equal(version, currentSchemaVersion);
@@ -81,8 +80,8 @@ describe('migration', function() {
     this.timeout(5000);
 
     contractor.create()
-      .then(() => db.migrate(currentSchemaVersion, 'remove'))
-      .then(version => db.migrate(version, 'remove'))
+      .then(() => contractor.migrate(currentSchemaVersion, 'remove'))
+      .then(version => contractor.migrate(version, 'remove'))
       .then(() => new PgBoss(helper.getConfig()).start())
       .then(() => contractor.version())
       .then(version => {
@@ -96,7 +95,7 @@ describe('migration', function() {
     this.timeout(5000);
 
     contractor.create()
-      .then(() => db.migrate('¯\_(ツ)_/¯'))
+      .then(() => contractor.migrate('¯\_(ツ)_/¯'))
       .catch(error => {
         assert(error.message.indexOf('could not be found') > -1);
         finished();

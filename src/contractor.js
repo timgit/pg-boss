@@ -54,7 +54,7 @@ class Contractor {
   update(current) {
     if(current == '0.0.2') current = '0.0.1';
 
-    return this.db.migrate(current)
+    return this.migrate(current)
       .then(version => {
         if(version !== schemaVersion) return this.update(version);
       });
@@ -79,6 +79,18 @@ class Contractor {
         if(!current)
           throw new Error(connectErrorMessage);
       });
+  }
+
+  migrate(version, uninstall) {
+    let migration = migrations.get(this.config.schema, version, uninstall);
+
+    if(!migration){
+      let errorMessage = `Migration to version ${version} failed because it could not be found.  Your database may have been upgraded by a newer version of pg-boss`;
+      return Promise.reject(new Error(errorMessage));
+    }
+
+    return Promise.each(migration.commands, command => this.db.executeSql(command))
+      .then(() => migration.version);
   }
 }
 

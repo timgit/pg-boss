@@ -1,7 +1,6 @@
 const EventEmitter = require('events');
 const pg = require('pg');
 const Promise = require("bluebird");
-const migrations = require('./migrations');
 const url = require('url');
 
 class Db extends EventEmitter {
@@ -51,18 +50,6 @@ class Db extends EventEmitter {
       values = [values];
 
     return this.pool.query(text, values);
-  }
-
-  migrate(version, uninstall) {
-    let migration = migrations.get(this.config.schema, version, uninstall);
-
-    if(!migration){
-      let errorMessage = `Migration to version ${version} failed because it could not be found.  Your database may have been upgraded by a newer version of pg-boss`;
-      return Promise.reject(new Error(errorMessage));
-    }
-
-    return Promise.each(migration.commands, command => this.executeSql(command))
-      .then(() => migration.version);
   }
 }
 
