@@ -14,8 +14,3 @@ before_script:
 script:
   - npm run cover
 after_script: "cat coverage/lcov.info | node_modules/coveralls/bin/coveralls.js"
-after_failure: "cat `ls -lt /home/travis/.npm/_logs/* | head -n 2 | tail -n 1 | awk '{print $9}'`"
-cache:
- yarn: true
- directories:
-   - node_modules
