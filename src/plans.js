@@ -8,9 +8,10 @@ const states = {
   failed: 'failed'
 };
 
-const expiredJobSuffix = `__${states.expired}`;
-const completedJobSuffix = `__${states.complete}`;
-const failedJobSuffix = `__${states.failed}`;
+const stateJobSuffix = '__state__';
+const expiredJobSuffix = stateJobSuffix + states.expired;
+const completedJobSuffix = stateJobSuffix + states.complete;
+const failedJobSuffix = stateJobSuffix + states.failed;
 
 module.exports = {
   create,
@@ -219,7 +220,7 @@ function archive(schema) {
     WHERE (completedOn + CAST($1 as interval) < now())
       OR (
         state = '${states.created}' 
-        AND (name LIKE '%${expiredJobSuffix}' OR name LIKE '%${completedJobSuffix}') 
+        AND name LIKE '%${stateJobSuffix}%' 
         AND createdOn + CAST($1 as interval) < now()
       )        
   `;
