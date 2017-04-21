@@ -1,4 +1,4 @@
-const Promise = require("bluebird");
+const Promise = require('bluebird');
 const assert = require('chai').assert;
 const helper = require('./testHelper');
 const PgBoss = require('../src/index');

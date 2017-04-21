@@ -2,7 +2,7 @@ const assert = require('assert');
 const plans = require('./plans');
 const migrations = require('./migrations');
 const schemaVersion = require('../version.json').schema;
-const Promise = require("bluebird");
+const Promise = require('bluebird');
 
 class Contractor {
 

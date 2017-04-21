@@ -1,6 +1,6 @@
 const EventEmitter = require('events');
 const assert = require('assert');
-const Promise = require("bluebird");
+const Promise = require('bluebird');
 const Attorney = require('./attorney');
 const Contractor = require('./contractor');
 const Manager = require('./manager');
@@ -29,14 +29,14 @@ class PgBoss extends EventEmitter {
 
     promoteEvent.call(this, db, 'error');
 
-    const boss = new Boss(db, config);
-    boss.promotedEvents.forEach(event => promoteEvent.call(this, boss, event));
-
     const manager = new Manager(db, config);
-    manager.promotedEvents.forEach(event => promoteEvent.call(this, manager, event));
+    Object.keys(manager.events).forEach(event => promoteEvent.call(this, manager, manager.events[event]));
 
-    ['fetch','complete','cancel','fail','publish','subscribe','unsubscribe','onComplete','onExpire']
-      .forEach(func => promoteApi.call(this, manager, func));
+    manager.functions.forEach(func => promoteFunction.call(this, manager, func));
+
+    const boss = new Boss(db, config);
+    Object.keys(boss.events).forEach(event => promoteEvent.call(this, boss, boss.events[event]));
+    boss.on(boss.events.expiredJob, job => manager.expired(job));
 
     this.config = config;
     this.db = db;
@@ -45,10 +45,10 @@ class PgBoss extends EventEmitter {
     this.manager = manager;
 
 
-    function promoteApi(obj, func){
-      this[func] = (...args) => {
+    function promoteFunction(obj, func){
+      this[func.name] = (...args) => {
         if(!this.isReady) return Promise.reject(notReadyErrorMessage);
-        return obj[func].apply(obj, args);
+        return func.apply(obj, args);
       }
     }
 
@@ -61,10 +61,8 @@ class PgBoss extends EventEmitter {
   init() {
     if(this.isReady) return Promise.resolve(this);
 
-    return Promise.join(
-      this.boss.supervise(),
-      this.manager.monitor()
-    ).then(() => {
+    return this.boss.supervise()
+      .then(() => {
         this.isReady = true;
         this.isStarted = true;
         return this;
@@ -112,7 +110,7 @@ class PgBoss extends EventEmitter {
   disconnect(...args) {
     if(!this.isReady) return Promise.reject(notReadyErrorMessage);
 
-    return this.manager.close.apply(this.manager, args)
+    return this.manager.stop.apply(this.manager, args)
       .then(() => this.db.close())
       .then(() => this.isReady = false);
   }

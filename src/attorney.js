@@ -4,11 +4,11 @@ const Promise = require('bluebird');
 module.exports = {
   applyConfig,
   applyNewJobCheckInterval,
-  getPublishArgs,
-  getSubscribeArgs
+  checkPublishArgs,
+  checkSubscribeArgs
 };
 
-function getPublishArgs(args) {
+function checkPublishArgs(args) {
   let name, data, options;
 
   try {
@@ -46,10 +46,12 @@ function getPublishArgs(args) {
   return Promise.resolve({name, data, options});
 }
 
-function getSubscribeArgs(args){
+function checkSubscribeArgs(name, args){
   let options, callback;
 
   try {
+    assert(name, 'missing job name');
+
     if(args.length === 1){
       callback = args[0];
       options = {};

@@ -1,10 +1,12 @@
 const EventEmitter = require('events');
 const plans = require('./plans');
-const Promise = require("bluebird");
+const Promise = require('bluebird');
 
 const events = {
   archived: 'archived',
   monitorStates: 'monitor-states',
+  expiredCount: 'expired-count',
+  expiredJob: 'expired-job',
   error: 'error'
 };
 
@@ -15,11 +17,12 @@ class Boss extends EventEmitter{
     this.db = db;
     this.config = config;
 
+    this.timers = {};
+    this.events = events;
+
+    this.expireCommand = plans.expire(config.schema);
     this.archiveCommand = plans.archive(config.schema);
     this.countStatesCommand = plans.countStates(config.schema);
-    this.timers = {};
-
-    this.promotedEvents = Object.keys(events).map(key => events[key]);
   }
 
   supervise(){
@@ -29,6 +32,7 @@ class Boss extends EventEmitter{
 
     return Promise.join(
       monitor(this.archive, this.config.archiveCheckInterval),
+      monitor(this.expire, this.config.expireCheckInterval),
       this.config.monitorStateInterval ? monitor(this.countStates, this.config.monitorStateInterval) : null
     );
 
@@ -44,9 +48,13 @@ class Boss extends EventEmitter{
         if(self.stopped) return;
         self.timers[func.name] = setTimeout(() => exec().then(repeat), interval);
       }
-
     }
+  }
 
+  stop() {
+    this.stopped = true;
+    Object.keys(this.timers).forEach(key => clearTimeout(this.timers[key]));
+    return Promise.resolve();
   }
 
   countStates(){
@@ -59,20 +67,22 @@ class Boss extends EventEmitter{
       });
   }
 
+  expire() {
+    return this.db.executeSql(this.expireCommand)
+      .then(result => {
+        if (result.rows.length) {
+          this.emit(events.expiredCount, result.rows.length);
+          return Promise.map(result.rows, job => this.emit(events.expiredJob, job));
+        }
+      });
+  }
+
   archive(){
     return this.db.executeSql(this.archiveCommand, this.config.archiveCompletedJobsEvery)
       .then(result => {
         if (result.rowCount)
           this.emit(events.archived, result.rowCount);
       });
-  }
-
-  stop() {
-    this.stopped = true;
-
-    Object.keys(this.timers).forEach(key => clearTimeout(this.timers[key]));
-
-    return Promise.resolve();
   }
 
 }

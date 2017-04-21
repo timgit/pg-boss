@@ -10,6 +10,7 @@ const states = {
 
 const expiredJobSuffix = `__${states.expired}`;
 const completedJobSuffix = `__${states.complete}`;
+const failedJobSuffix = `__${states.failed}`;
 
 module.exports = {
   create,
@@ -26,7 +27,8 @@ module.exports = {
   countStates,
   states,
   expiredJobSuffix,
-  completedJobSuffix
+  completedJobSuffix,
+  failedJobSuffix
 };
 
 function create(schema) {
