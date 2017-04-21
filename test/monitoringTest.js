@@ -1,8 +1,10 @@
 const assert = require('chai').assert;
 const helper = require('./testHelper');
+const Boss = require('../src/Boss');
 
 describe('monitoring', function() {
 
+  let silentBob = new Boss(helper.getDb(), helper.getConfig());
   let boss;
 
   before(function (finished) {
@@ -21,36 +23,49 @@ describe('monitoring', function() {
     this.timeout(5000);
 
     let jobName = 'monitorMe';
-    let firstJob, firstJobCompleted;
 
     boss.publish(jobName)
       .then(() => boss.publish(jobName))
+      .then(() => silentBob.countStates())
+      .then(states => {
+        assert.strictEqual(2, states.created, 'created count is wrong after 2 publishes');
+        assert.strictEqual(0, states.active, 'active count is wrong after 2 publishes');
+      })
       .then(() => boss.publish(jobName))
       .then(() => boss.fetch(jobName))
-      .then(job => {
-        firstJob = job;
-        return boss.fetch(jobName);
+      .then(() => silentBob.countStates())
+      .then(states => {
+        assert.strictEqual(2, states.created, 'created count is wrong after 3 publishes and 1 fetch');
+        assert.strictEqual(1, states.active, 'active count is wrong after 3 publishes and 1 fetch');
       })
+      .then(() => boss.fetch(jobName))
+      .then(() => silentBob.countStates())
+      .then(states => {
+        assert.strictEqual(1, states.created, 'created count is wrong after 3 publishes and 2 fetches');
+        assert.strictEqual(2, states.active, 'active count is wrong after 3 publishes and 2 fetches');
+      })
+      .then(() => boss.fetch(jobName))
       .then(job => boss.complete(job.id))
-      .then(() => {
+      .then(() => silentBob.countStates())
+      .then(states => {
+        assert.strictEqual(1, states.created, 'created count is wrong after 3 publishes and 3 fetches and 1 complete');
+        assert.strictEqual(2, states.active, 'active count is wrong after 3 publishes and 3 fetches and 1 complete');
+        assert.strictEqual(1, states.complete, 'complete count is wrong after 3 publishes and 3 fetches and 1 complete');
+
+        return states;
+      })
+      .then(lastStates => {
+
         boss.on('monitor-states', states => {
 
-          if(!firstJobCompleted){
-            assert.strictEqual(states.created, 1);
-            assert.strictEqual(states.active, 1);
-            assert.strictEqual(states.complete, 1);
-          } else {
-            assert.strictEqual(states.created, 1);
-            assert.strictEqual(states.active, 0);
-            assert.strictEqual(states.complete, 2);
+          assert.strictEqual(lastStates.created, states.created, `created count from monitor-states doesn't match`);
+          assert.strictEqual(lastStates.active, states.active, `active count from monitor-states doesn't match`);
+          assert.strictEqual(lastStates.complete, states.complete, `complete count from monitor-states doesn't match`);
 
-            finished();
-          }
-
+          finished();
         });
-      })
-      .then(() => boss.complete(firstJob.id))
-      .then(() => firstJobCompleted = true);
+
+      });
 
   });
 

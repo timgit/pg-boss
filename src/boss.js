@@ -64,6 +64,7 @@ class Boss extends EventEmitter{
         // parsing int64 since pg returns it as string
         Object.keys(states).forEach(state => states[state] = parseFloat(states[state]));
         this.emit(events.monitorStates, states);
+        return states;
       });
   }
 

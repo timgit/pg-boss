@@ -244,8 +244,8 @@ class Manager extends EventEmitter {
 
   respond(job, suffix, data){
       let payload = {
-        request: job,
-        response: data || {}
+          request: job,
+          response: data || null
       };
 
       return this.publish(job.name + suffix, payload);
