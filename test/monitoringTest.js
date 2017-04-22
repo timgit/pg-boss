@@ -1,6 +1,6 @@
 const assert = require('chai').assert;
 const helper = require('./testHelper');
-const Boss = require('../src/Boss');
+const Boss = require('../src/boss');
 
 describe('monitoring', function() {
 
