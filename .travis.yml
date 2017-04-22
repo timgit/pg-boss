@@ -7,8 +7,8 @@ services:
 language: node_js
 node_js:
   - "7"
-  - "6"
-  - "4"
+#  - "6"
+#  - "4"
 before_script:
   - psql -c 'create database pgboss' -U postgres
 script:

@@ -12,14 +12,15 @@
     "uuid": "^3.0.0"
   },
   "devDependencies": {
+    "babel-cli": "^6.24.1",
     "babel-core": "^6.24.1",
-    "babel-preset-es2015": "^6.24.1",
     "babel-plugin-istanbul": "^4.1.1",
+    "babel-preset-es2015": "^6.24.1",
+    "chai": "^3.5.0",
+    "coveralls": "^2.13.0",
     "cross-env": "^4.0.0",
     "mocha": "^3.2.0",
-    "chai": "^3.5.0",
-    "nyc": "^10.2.2",
-    "coveralls": "^2.13.0"
+    "nyc": "^10.2.2"
   },
   "scripts": {
     "test": "cross-env NODE_ENV=test nyc mocha --slow 10000",
