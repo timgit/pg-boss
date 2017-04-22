@@ -12,5 +12,4 @@ node_js:
 before_script:
   - psql -c 'create database pgboss' -U postgres
 script:
-  - npm run cover
-after_script: "cat coverage/lcov.info | node_modules/coveralls/bin/coveralls.js"
+  - npm run forcover | coveralls
