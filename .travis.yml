@@ -12,4 +12,4 @@ node_js:
 before_script:
   - psql -c 'create database pgboss' -U postgres
 script:
-  - npm run forcover | coveralls
+  - npm run forcover
