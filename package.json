@@ -24,7 +24,7 @@
   },
   "scripts": {
     "test": "cross-env NODE_ENV=test nyc mocha --slow 10000",
-    "forcover": "cross-env NODE_ENV=test nyc npm test && nyc report --reporter=text-lcov | coveralls",
+    "forcover": "cross-env NODE_ENV=test nyc report --reporter=text-lcov | coveralls",
     "compile": "babel -d lib/ src/",
     "prepublish": "npm run compile",
     "export-schema": "node ./scripts/construct.js",
