@@ -62,6 +62,26 @@ describe('error', function(){
     });
 
   });
+
+  it('should subscribe to a job failure', function(finished){
+
+    this.timeout(3000);
+
+    const jobName = 'subscribe-fail';
+    let jobId;
+
+    boss.onFail(jobName, job => {
+      assert.strictEqual(jobId, job.data.request.id);
+      finished();
+    });
+
+    boss.publish(jobName)
+      .then(id => jobId = id)
+      .then(() => boss.fetch(jobName))
+      .then(job => boss.fail(job.id));
+
+  });
+
 });
 
 
