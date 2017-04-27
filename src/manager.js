@@ -33,6 +33,14 @@ class Manager extends EventEmitter {
     this.cancelJobCommand = plans.cancelJob(config.schema);
     this.failJobCommand = plans.failJob(config.schema);
 
+    this.offFail = name => this.unsubscribe(name + failedJobSuffix);
+    this.offExpire = name => this.unsubscribe(name + expiredJobSuffix);
+    this.offComplete = name => this.unsubscribe(name + completedJobSuffix);
+
+    this.fetchFailed = name => this.fetch(name + failedJobSuffix);
+    this.fetchExpired = name => this.fetch(name + expiredJobSuffix);
+    this.fetchCompleted = name => this.fetch(name + completedJobSuffix);
+
     this.functions = [
       this.fetch,
       this.complete,
@@ -46,7 +54,10 @@ class Manager extends EventEmitter {
       this.onExpire,
       this.offExpire,
       this.onFail,
-      this.offFail
+      this.offFail,
+      this.fetchFailed,
+      this.fetchExpired,
+      this.fetchCompleted
     ];
   }
 
@@ -74,18 +85,6 @@ class Manager extends EventEmitter {
     // unwrapping job in callback here because we love our customers
     return Attorney.checkSubscribeArgs(name, args)
       .then(({options, callback}) => this.watch(name + expiredJobSuffix, options, (job, done) => callback(job.data, done)));
-  }
-
-  offExpire(name){
-    return this.unsubscribe(name + expiredJobSuffix);
-  }
-
-  offComplete(name){
-    return this.unsubscribe(name + completedJobSuffix);
-  }
-
-  offFail(name){
-    return this.unsubscribe(name + failedJobSuffix);
   }
 
   onComplete(name, ...args) {
