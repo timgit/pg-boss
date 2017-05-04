@@ -108,11 +108,13 @@ function getMigrations(schema) {
       previous: '4',
       install: [
         `ALTER TABLE ${schema}.job ALTER COLUMN startIn SET DEFAULT (interval '0')`,
-        `ALTER TABLE ${schema}.job ALTER COLUMN state SET DEFAULT ('created')`
+        `ALTER TABLE ${schema}.job ALTER COLUMN state SET DEFAULT ('created')`,
+        `UPDATE ${schema}.job SET name = left(name, -9) || '__state__expired' WHERE name LIKE '%__expired'`
       ],
       uninstall: [
         `ALTER TABLE ${schema}.job ALTER COLUMN startIn DROP DEFAULT`,
-        `ALTER TABLE ${schema}.job ALTER COLUMN state DROP DEFAULT`
+        `ALTER TABLE ${schema}.job ALTER COLUMN state DROP DEFAULT`,
+        `UPDATE ${schema}.job SET name = left(name, -16) || '__expired' WHERE name LIKE '%__state__expired'`
       ]
     }
   ];
