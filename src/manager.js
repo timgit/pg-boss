@@ -149,7 +149,8 @@ class Manager extends EventEmitter {
 
       };
 
-      let onJob = job => {
+      let onJob;
+      let processOneJob = job => {
         if(!job) return;
 
         self.emit('job', job);
@@ -161,10 +162,21 @@ class Manager extends EventEmitter {
             self.emit('failed', {job, error});
           }
         });
-
       };
 
-      let onFetch = () => self.fetch(name);
+      let onFetch;
+      // teamSize is set, get multiple jobs with one query
+      if (options.teamSize > 1) {
+        onFetch = () => self.fetchMultiple(name, options.teamSize);
+        onJob = jobs => {
+          if (jobs) {
+            jobs.map(processOneJob);
+          }
+        };
+      } else {
+        onFetch = () => self.fetch(name);
+        onJob = processOneJob;
+      }
 
       let workerConfig = {
         name,
@@ -174,11 +186,11 @@ class Manager extends EventEmitter {
         interval: options.newJobCheckInterval
       };
 
-      for(let w=0; w < options.teamSize; w++){
-        let worker = new Worker(workerConfig);
-        worker.start();
-        subscription.workers.push(worker);
-      }
+      // for(let w=0; w < options.teamSize; w++){
+      let worker = new Worker(workerConfig);
+      worker.start();
+      subscription.workers.push(worker);
+      // }
     }
 
   }
@@ -276,7 +288,7 @@ class Manager extends EventEmitter {
   }
 
   fetch(name) {
-    return this.db.executeSql(this.nextJobCommand, name)
+    return this.db.executeSql(this.nextJobCommand, [ name, 1 ])
       .then(result => {
         if(result.rows.length === 0)
           return null;
@@ -286,6 +298,21 @@ class Manager extends EventEmitter {
         job.name = name;
 
         return job;
+      });
+  }
+
+  // returns an array of jobs or null
+  fetchMultiple(name, limit) {
+    return this.db.executeSql(this.nextJobCommand, [ name, limit || 1 ])
+      .then(result => {
+        if(result.rows.length === 0)
+          return null;
+
+        result.rows.forEach((row) => {
+          row.name = name;
+        });
+
+        return result.rows;
       });
   }
 
