@@ -38,6 +38,7 @@ function create(schema) {
     createVersionTable(schema),
     createJobStateEnum(schema),
     createJobTable(schema),
+    createIndexJobFetch(schema),
     createIndexSingletonOn(schema),
     createIndexSingletonKeyOn(schema),
     createIndexSingletonKey(schema)
@@ -113,6 +114,12 @@ function createIndexSingletonKeyOn(schema){
   // anything with both singletonOn and singletonKey means "only 1 job within this time period with this key, queued, active or completed"
   return `
     CREATE UNIQUE INDEX job_singletonKeyOn ON ${schema}.job (name, singletonOn, singletonKey) WHERE state < '${states.expired}'
+  `;
+}
+
+function createIndexJobFetch(schema){
+  return `
+    CREATE INDEX job_fetch ON ${schema}.job (priority desc, createdOn, id) WHERE state < '${states.active}'
   `;
 }
 
