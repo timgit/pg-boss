@@ -125,7 +125,7 @@ function fetchNextJob(schema) {
         AND name = $1
         AND (createdOn + startIn) < now()
       ORDER BY createdOn, id
-      LIMIT 1
+      LIMIT $2
       FOR UPDATE SKIP LOCKED
     )
     UPDATE ${schema}.job SET
