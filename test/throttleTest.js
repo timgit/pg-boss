@@ -33,8 +33,9 @@ describe('throttle', function() {
     let publishCount = 0;
     let subscribeCount = 0;
 
-    boss.subscribe(jobName, function(job, done) {
-      done().then(function() { subscribeCount++; });
+    boss.subscribe(jobName, job => {
+      job.done()
+        .then(() => subscribeCount++);
     });
 
     let intervalId;
@@ -71,8 +72,9 @@ describe('throttle', function() {
     let publishCount = 0;
     let subscribeCount = 0;
 
-    boss.subscribe('expensive', function(job, done) {
-      done().then(function() { subscribeCount++; });
+    boss.subscribe('expensive', job => {
+      job.done()
+        .then(() => subscribeCount++);
     });
 
     let intervalId;

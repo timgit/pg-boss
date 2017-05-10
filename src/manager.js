@@ -37,9 +37,9 @@ class Manager extends EventEmitter {
     this.offExpire = name => this.unsubscribe(name + expiredJobSuffix);
     this.offComplete = name => this.unsubscribe(name + completedJobSuffix);
 
-    this.fetchFailed = name => this.fetch(name + failedJobSuffix);
-    this.fetchExpired = name => this.fetch(name + expiredJobSuffix);
-    this.fetchCompleted = name => this.fetch(name + completedJobSuffix);
+    this.fetchFailed = (name,batchSize) => this.fetch(name + failedJobSuffix, batchSize);
+    this.fetchExpired = (name,batchSize) => this.fetch(name + expiredJobSuffix, batchSize);
+    this.fetchCompleted = (name,batchSize) => this.fetch(name + completedJobSuffix, batchSize);
 
     this.functions = [
       this.fetch,
@@ -70,7 +70,7 @@ class Manager extends EventEmitter {
   unsubscribe(name){
     if(!this.subscriptions[name]) return Promise.reject(`No subscriptions for ${name} were found.`);
 
-    this.subscriptions[name].workers.forEach(worker => worker.stop());
+    this.subscriptions[name].worker.stop();
     delete this.subscriptions[name];
 
     return Promise.resolve(true);
@@ -84,7 +84,7 @@ class Manager extends EventEmitter {
   onExpire(name, ...args) {
     // unwrapping job in callback here because we love our customers
     return Attorney.checkSubscribeArgs(name, args)
-      .then(({options, callback}) => this.watch(name + expiredJobSuffix, options, (job, done) => callback(job.data, done)));
+      .then(({options, callback}) => this.watch(name + expiredJobSuffix, options, job => callback(job.data)));
   }
 
   onComplete(name, ...args) {
@@ -100,14 +100,14 @@ class Manager extends EventEmitter {
   watch(name, options, callback){
     assert(!(name in this.subscriptions), 'this job has already been subscribed on this instance.');
 
-    options.teamSize = options.teamSize || 1;
+    options.batchSize = options.batchSize || 1;
 
     if('newJobCheckInterval' in options || 'newJobCheckIntervalSeconds' in options)
       options = Attorney.applyNewJobCheckInterval(options);
     else
       options.newJobCheckInterval = this.config.newJobCheckInterval;
 
-    let subscription = this.subscriptions[name] = {workers:[]};
+    let subscription = this.subscriptions[name] = {worker:null};
 
     let onError = error => this.emit(events.error, error);
 
@@ -119,22 +119,29 @@ class Manager extends EventEmitter {
         .then(() => this.emit(events.failed, {job, error}));
     };
 
-    let respond = job => {
-      if(!job) return;
+    let respond = jobs => {
+      if(!jobs) return;
 
-      this.emit(events.job, job);
+      if(!Array.isArray(jobs))
+        jobs = [jobs];
+
+      jobs.forEach(job => {
+        this.emit(events.job, job);
+        job.done = error => complete(error, job);
+      });
 
       setImmediate(() => {
         try {
-          callback(job, error => complete(error, job));
+          let result = jobs.length === 1 ? jobs[0] : jobs;
+          callback(result);
         } catch(error) {
-          this.emit(events.failed, {job, error});
+          jobs.forEach(job => this.emit(events.failed, {job, error}));
         }
       });
 
     };
 
-    let fetch = () => this.fetch(name);
+    let fetch = () => this.fetch(name, options.batchSize);
 
     let workerConfig = {
       name,
@@ -144,11 +151,9 @@ class Manager extends EventEmitter {
       interval: options.newJobCheckInterval
     };
 
-    for(let w=0; w < options.teamSize; w++){
-      let worker = new Worker(workerConfig);
-      worker.start();
-      subscription.workers.push(worker);
-    }
+    let worker = new Worker(workerConfig);
+    worker.start();
+    subscription.worker = worker;
   }
 
   publish(...args){
@@ -203,30 +208,25 @@ class Manager extends EventEmitter {
       });
   }
 
-  fetch(name) {
-    return this.db.executeSql(this.nextJobCommand, name)
-      .then(result => {
-        if(result.rows.length === 0)
-          return null;
-
-        let job = result.rows[0];
-
-        job.name = name;
-
-        return job;
-      });
+  fetch(name, batchSize) {
+    return Attorney.checkFetchArgs(name, batchSize)
+      .then(() => this.db.executeSql(this.nextJobCommand, [name, batchSize || 1]))
+      .then(result => result.rows.length === 0 ? null :
+                      result.rows.length === 1 ? result.rows[0] :
+                      result.rows);
   }
 
   complete(id, data){
-    return this.db.executeSql(this.completeJobCommand, [id])
-      .then(result => {
-        assert(result.rowCount === 1, `Job ${id} could not be completed.`);
+    return Attorney.truthyAsync(id, 'complete() requires id argument')
+        .then(() => this.db.executeSql(this.completeJobCommand, [id]))
+        .then(result => {
+          assert(result.rowCount === 1, `Job ${id} could not be completed.`);
 
-        let job = result.rows[0];
+          let job = result.rows[0];
 
-        return this.respond(job, completedJobSuffix, data)
-          .then(() => job);
-      });
+          return this.respond(job, completedJobSuffix, data)
+            .then(() => job);
+        });
   }
 
   fail(id, data){

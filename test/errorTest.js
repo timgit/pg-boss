@@ -26,14 +26,14 @@ describe('error', function(){
     publish()
       .then(publish)
       .then(() => {
-        boss.subscribe('cray', function(job, done) {
+        boss.subscribe('cray', job => {
 
           subscribeCount++;
 
           if(subscribeCount === 1)
             throw new Error('test - nothing to see here');
           else {
-            done().then(() => {
+            job.done().then(() => {
               assert(true);
               finished();
             });

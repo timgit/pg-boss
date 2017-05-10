@@ -22,7 +22,7 @@ describe('delayed jobs', function(){
     let delaySeconds = 2;
     this.timeout(3000);
 
-    boss.subscribe('wait', function(job, done) {
+    boss.subscribe('wait', job => {
       let start = new Date(job.data.submitted);
       let end = new Date();
 
@@ -30,7 +30,7 @@ describe('delayed jobs', function(){
 
       console.log('job '+ job.id + ' received in ' + elapsedSeconds + ' seconds with payload: ' + job.data.message);
 
-      done().then(function() {
+      job.done().then(function() {
         assert.isAtLeast(delaySeconds, elapsedSeconds);
         finished();
       });

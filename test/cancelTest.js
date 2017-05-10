@@ -35,8 +35,8 @@ describe('cancel', function() {
 
   it('should not cancel a completed job', function(finished){
 
-    boss.subscribe('will_not_cancel', (job, done) => {
-        done()
+    boss.subscribe('will_not_cancel', job => {
+        job.done()
           .then(() => boss.cancel(job.id))
           .catch(() => {
             assert(true);

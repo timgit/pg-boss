@@ -34,11 +34,11 @@ describe('examples', function(){
         .catch(onError);
     }
 
-    function someJobHandler(job, done) {
+    function someJobHandler(job) {
       console.log(`received ${job.name} ${job.id}`);
       console.log(`data: ${JSON.stringify(job.data)}`);
 
-      done()
+      job.done()
         .then(() => {
           console.log(`some-job ${job.id} completed`);
           assert.equal('some-job', job.name); // exclude test code

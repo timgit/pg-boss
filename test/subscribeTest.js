@@ -44,17 +44,14 @@ describe('subscribe', function(){
     let startTime = new Date();
     const newJobCheckIntervalSeconds = 3;
 
-    boss.subscribe('foo', {newJobCheckIntervalSeconds}, (job, done) => {
+    boss.subscribe('foo', {newJobCheckIntervalSeconds}, job => {
       let elapsed = new Date().getTime() - startTime.getTime();
 
       assert.isAbove((elapsed / 1000), newJobCheckIntervalSeconds);
 
-      done()
-        .then(() => finished());
-
-    }).then(() => {
-      boss.publish('foo');
-    });
+      job.done().then(() => finished());
+    })
+      .then(() => boss.publish('foo'));
 
   });
 
@@ -65,10 +62,10 @@ describe('subscribe', function(){
 
     let receivedCount = 0;
 
-    boss.subscribe(jobName, (job, done) => {
+    boss.subscribe(jobName, job => {
       receivedCount++;
 
-      done()
+      job.done()
         .then(() => boss.unsubscribe(jobName))
         .then(() => boss.publish(jobName))
     });

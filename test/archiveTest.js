@@ -30,8 +30,8 @@ describe('archive', function() {
         .then(result => assert.equal(1, result.rows.length));
     });
 
-    boss.subscribe(jobName, (job, done) => {
-      done().then(() => {
+    boss.subscribe(jobName, job => {
+      job.done().then(() => {
         setTimeout(() => {
           helper.getJobById(jobId)
             .then(result => {

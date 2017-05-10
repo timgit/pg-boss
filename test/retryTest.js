@@ -24,10 +24,8 @@ describe('retries', function() {
 
     let subscribeCount = 0;
 
-    boss.subscribe('unreliable', function(job, done) {
-      // not calling done so it will expire
-      subscribeCount++;
-    });
+    // don't call job.done() so it will expire
+    boss.subscribe('unreliable', job => subscribeCount++);
 
     boss.publish({name: 'unreliable', options: {expireIn, retryLimit}});
 

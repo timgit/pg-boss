@@ -150,7 +150,7 @@ function fetchNextJob(schema) {
         AND name = $1
         AND (createdOn + startIn) < now()
       ORDER BY priority desc, createdOn, id
-      LIMIT 1
+      LIMIT $2
       FOR UPDATE SKIP LOCKED
     )
     UPDATE ${schema}.job SET
@@ -159,7 +159,7 @@ function fetchNextJob(schema) {
       retryCount = CASE WHEN state = '${states.retry}' THEN retryCount + 1 ELSE retryCount END
     FROM nextJob
     WHERE ${schema}.job.id = nextJob.id
-    RETURNING ${schema}.job.id, ${schema}.job.data
+    RETURNING ${schema}.job.id, $1 as name, ${schema}.job.data
   `;
 }
 

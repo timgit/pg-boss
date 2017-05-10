@@ -38,10 +38,7 @@ describe('expire', function() {
 
     });
 
-    boss.subscribe(jobName, (job, done) => {
-      // got a live one here
-    });
-
+    boss.subscribe(jobName, job => {});
   });
 
 });

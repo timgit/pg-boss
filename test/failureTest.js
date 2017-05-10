@@ -50,10 +50,10 @@ describe('error', function(){
       finished();
     });
 
-    boss.subscribe(jobName, (job, done) => {
+    boss.subscribe(jobName, job => {
       let myError = new Error(errorMessage);
 
-      done(myError)
+      job.done(myError)
         .catch(error => {
           console.error(error);
           assert(false, error.message);
