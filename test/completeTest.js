@@ -17,6 +17,10 @@ describe('complete', function() {
     boss.stop().then(() => finished());
   });
 
+  it('should reject missing id argument', function(finished){
+    boss.onComplete().catch(() => finished());
+  });
+
   it('should subscribe to the response on a complete call', function(finished){
 
     const jobName = 'part-of-something-important';

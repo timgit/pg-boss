@@ -17,6 +17,10 @@ describe('fetch', function(){
     boss.stop().then(() => finished());
   });
 
+  it('should reject missing id argument', function(finished){
+    boss.fetch().catch(() => finished());
+  });
+
   it('should fetch a single job by name and manually complete', function(finished) {
     let jobName = 'no-subscribe-required';
 
