@@ -230,7 +230,8 @@ class Manager extends EventEmitter {
   }
 
   fail(id, data){
-    return this.db.executeSql(this.failJobCommand, [id])
+    return Attorney.truthyAsync(id, 'fail() requires id argument')
+      .then(() => this.db.executeSql(this.failJobCommand, [id]))
       .then(result => {
         assert(result.rowCount === 1, `Job ${id} could not be marked as failed.`);
 
@@ -251,7 +252,8 @@ class Manager extends EventEmitter {
   }
 
   cancel(id) {
-    return this.db.executeSql(this.cancelJobCommand, [id])
+    return Attorney.truthyAsync(id, 'fail() requires id argument')
+      .then(() => this.db.executeSql(this.cancelJobCommand, [id]))
       .then(result => {
         assert(result.rowCount === 1, `Job ${id} could not be cancelled.`);
         return result.rows[0];

@@ -88,11 +88,10 @@ function checkFetchArgs(name, batchSize){
 function truthyAsync(arg, errorMessage){
   try {
     assert(arg, errorMessage);
+    return Promise.resolve(arg);
   } catch(e) {
     return Promise.reject(e);
   }
-
-  return Promise.resolve(arg);
 }
 
 function applyConfig(config) {

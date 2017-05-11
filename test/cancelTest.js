@@ -17,6 +17,10 @@ describe('cancel', function() {
     boss.stop().then(() => finished());
   });
 
+  it('should reject missing id argument', function(finished){
+    boss.cancel().catch(() => finished());
+  });
+
   it('should cancel a pending job', function(finished){
 
     boss.subscribe('will_cancel', () => {

@@ -82,6 +82,10 @@ describe('subscribe', function(){
 
   });
 
+  it('unsubscribe should fail without a name', function(finished){
+      boss.unsubscribe().catch(() => finished());
+  });
+
 });
 
 

@@ -17,6 +17,10 @@ describe('error', function(){
     boss.stop().then(() => finished());
   });
 
+  it('should reject missing id argument', function(finished){
+    boss.fail().catch(() => finished());
+  });
+
   it('should fail a job when requested', function(finished){
     this.timeout(3000);
 
