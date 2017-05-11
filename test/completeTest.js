@@ -1,3 +1,4 @@
+const Promise = require('bluebird');
 const assert = require('chai').assert;
 const helper = require('./testHelper');
 
@@ -19,6 +20,20 @@ describe('complete', function() {
 
   it('should reject missing id argument', function(finished){
     boss.complete().catch(() => finished());
+  });
+
+  it('should complete a batch of jobs', function(finished){
+    const jobName = 'complete-batch';
+
+    Promise.all([
+      boss.publish(jobName),
+      boss.publish(jobName),
+      boss.publish(jobName)
+    ])
+    .then(() => boss.fetch(jobName, 3))
+    .then(jobs => boss.complete(jobs.map(job => job.id)))
+    .then(() => finished());
+
   });
 
   it('should subscribe to the response on a complete call', function(finished){

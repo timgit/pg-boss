@@ -52,4 +52,17 @@ describe('cancel', function() {
     boss.publish('will_not_cancel');
   });
 
+  it('should cancel a batch of jobs', function(finished){
+    const jobName = 'cancel-batch';
+
+    Promise.all([
+      boss.publish(jobName),
+      boss.publish(jobName),
+      boss.publish(jobName)
+    ])
+    .then(jobs => boss.cancel(jobs))
+    .then(() => finished());
+
+  });
+
 });

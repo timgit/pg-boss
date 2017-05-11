@@ -30,8 +30,11 @@ class Manager extends EventEmitter {
     this.nextJobCommand = plans.fetchNextJob(config.schema);
     this.insertJobCommand = plans.insertJob(config.schema);
     this.completeJobCommand = plans.completeJob(config.schema);
+    this.completeJobsCommand = plans.completeJobs(config.schema);
     this.cancelJobCommand = plans.cancelJob(config.schema);
+    this.cancelJobsCommand = plans.cancelJobs(config.schema);
     this.failJobCommand = plans.failJob(config.schema);
+    this.failJobsCommand = plans.failJobs(config.schema);
 
     this.offFail = name => this.unsubscribe(name + failedJobSuffix);
     this.offExpire = name => this.unsubscribe(name + expiredJobSuffix);
@@ -41,6 +44,7 @@ class Manager extends EventEmitter {
     this.fetchExpired = (name,batchSize) => this.fetch(name + expiredJobSuffix, batchSize);
     this.fetchCompleted = (name,batchSize) => this.fetch(name + completedJobSuffix, batchSize);
 
+    // exported api to index
     this.functions = [
       this.fetch,
       this.complete,
@@ -216,48 +220,80 @@ class Manager extends EventEmitter {
                       result.rows);
   }
 
+  setStateForJob(id, data, actionName, command, stateSuffix, bypassNotify){
+    let job;
+
+    return this.db.executeSql(command, [id])
+      .then(result => {
+        assert(result.rowCount === 1, `${actionName}(): Job ${id} could not be updated.`);
+
+        job = result.rows[0];
+
+        return bypassNotify
+          ? null
+          : this.publish(job.name + stateSuffix, {request: job, response: data || null});
+      })
+      .then(() => job);
+  }
+
+  setStateForJobs(ids, actionName, command){
+    return this.db.executeSql(command, [ids])
+      .then(result => {
+        assert(result.rowCount === ids.length, `${actionName}(): ${ids.length} jobs submitted, ${result.rowCount} updated`);
+      });
+  }
+
+  setState(config){
+    let {id, data, actionName, command, batchCommand, stateSuffix, bypassNotify} = config;
+
+    return Attorney.assertAsync(id, `${actionName}() requires id argument`)
+      .then(() => {
+        let ids = Array.isArray(id) ? id : [id];
+
+        assert(ids.length, `${actionName}() requires at least 1 item in an array argument`);
+
+        return ids.length === 1
+          ? this.setStateForJob(ids[0], data, actionName, command, stateSuffix, bypassNotify)
+          : this.setStateForJobs(ids, actionName, batchCommand);
+      })
+  }
+
   complete(id, data){
-    return Attorney.truthyAsync(id, 'complete() requires id argument')
-        .then(() => this.db.executeSql(this.completeJobCommand, [id]))
-        .then(result => {
-          assert(result.rowCount === 1, `Job ${id} could not be completed.`);
+    const config = {
+      id,
+      data,
+      actionName: 'complete',
+      command: this.completeJobCommand,
+      batchCommand: this.completeJobsCommand,
+      stateSuffix: completedJobSuffix
+    };
 
-          let job = result.rows[0];
-
-          return this.respond(job, completedJobSuffix, data)
-            .then(() => job);
-        });
+    return this.setState(config);
   }
 
   fail(id, data){
-    return Attorney.truthyAsync(id, 'fail() requires id argument')
-      .then(() => this.db.executeSql(this.failJobCommand, [id]))
-      .then(result => {
-        assert(result.rowCount === 1, `Job ${id} could not be marked as failed.`);
+    const config = {
+      id,
+      data,
+      actionName: 'fail',
+      command: this.failJobCommand,
+      batchCommand: this.failJobsCommand,
+      stateSuffix: failedJobSuffix
+    };
 
-        let job = result.rows[0];
-
-        return this.respond(job, failedJobSuffix, data)
-          .then(() => job);
-      });
-  }
-
-  respond(job, suffix, data){
-      let payload = {
-          request: job,
-          response: data || null
-      };
-
-      return this.publish(job.name + suffix, payload);
+    return this.setState(config);
   }
 
   cancel(id) {
-    return Attorney.truthyAsync(id, 'fail() requires id argument')
-      .then(() => this.db.executeSql(this.cancelJobCommand, [id]))
-      .then(result => {
-        assert(result.rowCount === 1, `Job ${id} could not be cancelled.`);
-        return result.rows[0];
-      });
+    const config = {
+      id,
+      actionName: 'cancel',
+      command: this.cancelJobCommand,
+      batchCommand: this.cancelJobsCommand,
+      bypassNotify: true
+    };
+
+    return this.setState(config);
   }
 
 }

@@ -20,8 +20,11 @@ module.exports = {
   versionTableExists,
   fetchNextJob,
   completeJob,
+  completeJobs,
   cancelJob,
+  cancelJobs,
   failJob,
+  failJobs,
   insertJob,
   expire,
   archive,
@@ -174,6 +177,16 @@ function completeJob(schema){
   `;
 }
 
+function completeJobs(schema){
+  return `
+    UPDATE ${schema}.job
+    SET completedOn = now(),
+      state = '${states.complete}'
+    WHERE id = ANY($1)
+      AND state = '${states.active}'
+  `;
+}
+
 function cancelJob(schema){
   return `
     UPDATE ${schema}.job
@@ -185,6 +198,16 @@ function cancelJob(schema){
   `;
 }
 
+function cancelJobs(schema){
+  return `
+    UPDATE ${schema}.job
+    SET completedOn = now(),
+      state = '${states.cancelled}'
+    WHERE id = ANY($1)
+      AND state < '${states.complete}'
+  `;
+}
+
 function failJob(schema){
   return `
     UPDATE ${schema}.job
@@ -193,6 +216,16 @@ function failJob(schema){
     WHERE id = $1
       AND state < '${states.complete}'
     RETURNING id, name, data
+  `;
+}
+
+function failJobs(schema){
+  return `
+    UPDATE ${schema}.job
+    SET completedOn = now(),
+      state = '${states.failed}'
+    WHERE id = ANY($1)
+      AND state < '${states.complete}'    
   `;
 }
 

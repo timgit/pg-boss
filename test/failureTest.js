@@ -86,6 +86,20 @@ describe('error', function(){
 
   });
 
+  it('should fail a batch of jobs', function(finished){
+    const jobName = 'complete-batch';
+
+    Promise.all([
+      boss.publish(jobName),
+      boss.publish(jobName),
+      boss.publish(jobName)
+    ])
+    .then(() => boss.fetch(jobName, 3))
+    .then(jobs => boss.fail(jobs.map(job => job.id)))
+    .then(() => finished());
+
+  });
+
 });
 
 

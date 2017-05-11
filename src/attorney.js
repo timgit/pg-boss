@@ -7,7 +7,7 @@ module.exports = {
   checkPublishArgs,
   checkSubscribeArgs,
   checkFetchArgs,
-  truthyAsync
+  assertAsync
 };
 
 function checkPublishArgs(args) {
@@ -75,17 +75,11 @@ function checkSubscribeArgs(name, args){
 }
 
 function checkFetchArgs(name, batchSize){
-  try {
-    assert(name, 'missing job name');
-    assert(!batchSize || batchSize >=1, 'fetch() assert: optional batchSize arg must be at least 1');
-  } catch(e) {
-    return Promise.reject(e);
-  }
-
-  return Promise.resolve(true);
+  return assertAsync(name, 'missing job name')
+    .then(() => assert(!batchSize || batchSize >=1, 'fetch() assert: optional batchSize arg must be at least 1'));
 }
 
-function truthyAsync(arg, errorMessage){
+function assertAsync(arg, errorMessage){
   try {
     assert(arg, errorMessage);
     return Promise.resolve(arg);
