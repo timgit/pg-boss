@@ -136,8 +136,10 @@ class Manager extends EventEmitter {
 
       setImmediate(() => {
         try {
-          let result = jobs.length === 1 ? jobs[0] : jobs;
-          callback(result);
+          if(jobs.length === 1)
+            callback(jobs[0], jobs[0].done);
+          else
+            callback(jobs);
         } catch(error) {
           jobs.forEach(job => this.emit(events.failed, {job, error}));
         }
