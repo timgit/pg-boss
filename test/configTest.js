@@ -4,7 +4,7 @@ const helper = require('./testHelper');
 
 describe('initialization', function(){
 
-  beforeEach(function(finished) {
+  before(function(finished) {
     helper.init()
       .then(() => finished());
   });
@@ -15,16 +15,17 @@ describe('initialization', function(){
 
     config.schema = 'thisisareallylongschemanamefortestingmaximumlength';
 
-    new PgBoss(config).start()
-      .then(boss => {
-        assert(true);
-        boss.stop().then(() => finished());
-      })
-      .catch(error => {
-        assert(false, error.message);
-        finished();
+    helper.init(config.schema)
+      .then(() => {
+        new PgBoss(config).start()
+          .then(boss => boss.stop())
+          .then(() => helper.init(config.schema))
+          .then(() => finished())
+          .catch(error => {
+            assert(false, error.message);
+            finished();
+          });
       });
-
   });
 
   it('should not allow a 51 character custom schema name', function(){
@@ -38,7 +39,6 @@ describe('initialization', function(){
     });
 
   });
-
 
   it('should accept a connectionString property', function(finished){
 

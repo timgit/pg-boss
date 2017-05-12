@@ -38,8 +38,9 @@ function empty(){
   return getDb().executeSql(`TRUNCATE TABLE ${getConfig().schema}.job`);
 }
 
-function init() {
-  return getDb().executeSql(`DROP SCHEMA IF EXISTS ${getConfig().schema} CASCADE`);
+function init(schema) {
+  schema = schema || getConfig().schema;
+  return getDb().executeSql(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
 }
 
 function getJobById(id) {
