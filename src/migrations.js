@@ -116,6 +116,16 @@ function getMigrations(schema) {
         `ALTER TABLE ${schema}.job ALTER COLUMN state DROP DEFAULT`,
         `UPDATE ${schema}.job SET name = left(name, -16) || '__expired' WHERE name LIKE '%__state__expired'`
       ]
-    }
+    },
+    {
+      version: '6',
+      previous: '5',
+      install: [
+        `CREATE INDEX job_fetch ON ${schema}.job (priority desc, createdOn, id) WHERE state < 'active'`
+      ],
+      uninstall: [
+        `DROP INDEX ${schema}.job_fetch`
+      ]
+    },
   ];
 }
