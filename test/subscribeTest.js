@@ -1,3 +1,4 @@
+const Promise = require('bluebird');
 const assert = require('chai').assert;
 const helper = require('./testHelper');
 
@@ -83,7 +84,29 @@ describe('subscribe', function(){
   });
 
   it('unsubscribe should fail without a name', function(finished){
-      boss.unsubscribe().catch(() => finished());
+    boss.unsubscribe().catch(() => finished());
+  });
+
+  it('should handle a batch of jobs', function(finished){
+    const jobName = 'subscribe-batch';
+
+    Promise.join(
+      boss.publish(jobName),
+      boss.publish(jobName)
+    )
+    .then(() => boss.subscribe(jobName, {batchSize:2}, jobs => {
+        assert(jobs.length === 2);
+        finished();
+      })
+    );
+  });
+
+  it('should have a done callback for single job subscriptions', function(finished){
+    const name = 'subscribe-single';
+
+    boss.subscribe(name, (job, done) => done().then(() => finished()))
+      .then(() => boss.publish(name));
+
   });
 
 });
