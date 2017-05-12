@@ -104,6 +104,9 @@ class Manager extends EventEmitter {
   watch(name, options, callback){
     assert(!(name in this.subscriptions), 'this job has already been subscribed on this instance.');
 
+    if('teamSize' in options)
+      console.warn('pg-boss subscribe(): teamSize option is now obsolete.  It has been replaced by batchSize starting in version 2');
+
     options.batchSize = options.batchSize || 1;
 
     if('newJobCheckInterval' in options || 'newJobCheckIntervalSeconds' in options)
