@@ -104,10 +104,7 @@ class Manager extends EventEmitter {
   watch(name, options, callback){
     assert(!(name in this.subscriptions), 'this job has already been subscribed on this instance.');
 
-    if('teamSize' in options)
-      console.warn('pg-boss subscribe(): teamSize option is now obsolete.  It has been replaced by batchSize starting in version 2');
-
-    options.batchSize = options.batchSize || 1;
+    options.batchSize = options.batchSize || options.teamSize || 1;
 
     if('newJobCheckInterval' in options || 'newJobCheckIntervalSeconds' in options)
       options = Attorney.applyNewJobCheckInterval(options);
@@ -127,25 +124,23 @@ class Manager extends EventEmitter {
     };
 
     let respond = jobs => {
-      if(!jobs) return;
+      if (!jobs) return;
 
-      if(!Array.isArray(jobs))
+      if (!Array.isArray(jobs))
         jobs = [jobs];
 
-      jobs.forEach(job => {
-        this.emit(events.job, job);
-        job.done = error => complete(error, job);
-      });
-
       setImmediate(() => {
-        try {
-          if(jobs.length === 1)
-            callback(jobs[0], jobs[0].done);
-          else
-            callback(jobs);
-        } catch(error) {
-          jobs.forEach(job => this.emit(events.failed, {job, error}));
-        }
+        jobs.forEach(job => {
+          this.emit(events.job, job);
+          job.done = error => complete(error, job);
+
+          try {
+            callback(job, job.done);
+          }
+          catch (error) {
+            this.emit(events.failed, {job, error})
+          }
+        });
       });
 
     };

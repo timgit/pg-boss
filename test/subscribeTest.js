@@ -89,14 +89,21 @@ describe('subscribe', function(){
 
   it('should handle a batch of jobs', function(finished){
     const jobName = 'subscribe-batch';
+    const batchSize = 4;
+    let subscribeCount = 0;
 
     Promise.join(
       boss.publish(jobName),
+      boss.publish(jobName),
+      boss.publish(jobName),
       boss.publish(jobName)
     )
-    .then(() => boss.subscribe(jobName, {batchSize:2}, jobs => {
-        assert(jobs.length === 2);
-        finished();
+    .then(() => boss.subscribe(jobName, {batchSize}, job => {
+        subscribeCount++;
+
+        // idea here is that the test would time out if it had to wait for 4 intervals
+        if(subscribeCount === batchSize)
+          finished();
       })
     );
   });
