@@ -104,7 +104,7 @@ class Manager extends EventEmitter {
   watch(name, options, callback){
     assert(!(name in this.subscriptions), 'this job has already been subscribed on this instance.');
 
-    options.batchSize = options.batchSize || options.teamSize || 1;
+    options.batchSize = options.batchSize || options.teamSize;
 
     if('newJobCheckInterval' in options || 'newJobCheckIntervalSeconds' in options)
       options = Attorney.applyNewJobCheckInterval(options);
@@ -216,7 +216,7 @@ class Manager extends EventEmitter {
     return Attorney.checkFetchArgs(name, batchSize)
       .then(() => this.db.executeSql(this.nextJobCommand, [name, batchSize || 1]))
       .then(result => result.rows.length === 0 ? null :
-                      result.rows.length === 1 ? result.rows[0] :
+                      result.rows.length === 1 && !batchSize ? result.rows[0] :
                       result.rows);
   }
 

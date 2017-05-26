@@ -54,7 +54,15 @@ describe('fetch', function(){
     });
   });
 
+  it('should always return an array if batchSize specified', function(finished){
+    const jobName = 'fetch-batch';
+
+    boss.publish(jobName)
+      .then(() => boss.fetch(jobName, 2))
+      .then(jobs => {
+        assert(jobs.length === 1);
+        finished();
+    });
+  });
+
 });
-
-
-
