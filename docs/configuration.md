@@ -1,21 +1,28 @@
+Configuration
+=============
+
 pg-boss can be customized using configuration options when an instance is created (the constructor argument), during publishing as well as subscribing.
 
-* [Constructor Options](#constructor-options)
-  * [Database options](#database-options)
-  * [Job fetch options](#job-fetch-options)
-  * [Job expiration options](#job-expiration-options)
-  * [Job archive options](#job-archive-options)
-* [Publish Options](#publish-options)
-  * [Delayed jobs](#delayed-jobs)
-  * [Unique jobs](#unique-jobs)
-  * [Job throttling / Rate limiting](#throttled-jobs)
-  * [Job retries](#job-retries)
-  * [Job expiration](#job-expiration)
-* [Subscribe Options](#subscribe-options)
+<!-- TOC -->
+
+- [Constructor Options](#constructor-options)
+    - [Database options](#database-options)
+    - [Job fetch options](#job-fetch-options)
+    - [Job expiration options](#job-expiration-options)
+    - [Job archive options](#job-archive-options)
+- [Publish Options](#publish-options)
+    - [Delayed jobs](#delayed-jobs)
+    - [Unique jobs](#unique-jobs)
+    - [Throttled jobs](#throttled-jobs)
+    - [Job retries](#job-retries)
+    - [Job expiration](#job-expiration)
+- [Subscribe Options](#subscribe-options)
+
+<!-- /TOC -->
 
 ## Constructor Options
 
-#### Database options
+### Database options
 * **database** - string, *required*
 * **user** - string, *required*
 * **password** - string, *required*
@@ -39,7 +46,7 @@ pg-boss can be customized using configuration options when an instance is create
 
     Default: 10.  Maximum number of connections that will be shared by all subscriptions in this instance.
 
-#### Job fetch options
+### Job fetch options
 * **newJobCheckInterval**, int
 
     interval to check for new jobs in milliseconds, must be >=100
@@ -50,7 +57,7 @@ pg-boss can be customized using configuration options when an instance is create
 
 When `newJobCheckIntervalSeconds` is specified, `newJobCheckInterval` is ignored.
 
-#### Job expiration options
+### Job expiration options
 * **expireCheckInterval**, int
 
     interval to expire jobs in milliseconds, must be >=100
@@ -67,7 +74,7 @@ When `expireCheckIntervalMinutes` is specified, `expireCheckIntervalSeconds` and
 
 When `expireCheckIntervalSeconds` is specified, `expireCheckInterval` is ignored.
 
-#### Job archive options
+### Job archive options
 
 * **archiveCompletedJobsEvery**, string, [PostgreSQL interval](https://www.postgresql.org/docs/9.5/static/datatype-datetime.html#DATATYPE-INTERVAL-INPUT)
 
@@ -136,16 +143,16 @@ Order of precedence for throttling is least to greatest. For example, if `single
 
 ## Subscribe Options
 
-* **teamSize**, int
+* **teamSize** or **batchSize**, int
 
-    Default: 1. How many workers will listen concurrently for this job name.  Some jobs need more concurrency than others these days.
+    Default: 1. How many jobs will be fetched per polling interval.  
 
 * **newJobCheckInterval**, int
 
-    interval to check for new jobs in milliseconds, must be >=100
+    Polling interval to check for new jobs in milliseconds. Must be >=100 because we care about your database here in pg-boss land.
 
 * **newJobCheckIntervalSeconds**, int
 
-    Default: 1. interval to check for new jobs in seconds, must be >=1
+    Default: 1. interval to check for new jobs in seconds. Must be >=1
 
   When `newJobCheckIntervalSeconds` is specified, `newJobCheckInterval` is ignored.
