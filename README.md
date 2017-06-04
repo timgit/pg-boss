@@ -44,18 +44,19 @@ pg-boss is a message queue (aka job queue, task queue) built in Node.js on top o
 
 Why would you consider using this queue over others? pg-boss was created to leverage recent additions in PostgreSQL 9.5
 (specifically [SKIP LOCKED](http://blog.2ndquadrant.com/what-is-select-skip-locked-for-in-postgresql-9-5) and upserts)
-which significantly enhances its ability to act as a reliable, distributed message queue. I wrote this to remove a dependency on Redis (via the kue package), consolidating systems I have to support in production as well as upgrading to guaranteed message processing (you know, what Redis cannot offer you ;). This will likely cater to anyone already familiar with the simplicity of relational database semantics and operations (querying and backups, for example) as well as a low budget solution to a very common problem.
+which significantly enhance its ability to act as a reliable, distributed message queue. I wrote this to remove a dependency on Redis (via the kue package), consolidating systems I have to support in production as well as upgrading to guaranteed message processing (hint: [Redis persistence docs](https://redis.io/topics/persistence#ok-so-what-should-i-use)). 
+
+This will likely cater the most to teams already familiar with the simplicity of relational database semantics and operations (querying and backups, for example).
 
 ## Features
 * Guaranteed delivery and finalizing of jobs using a promise API
 * Delayed jobs
 * Job retries
 * Job throttling (singleton jobs and rate limiting)
-* Configurable worker concurrency
+* Configurable job concurrency
 * Distributed and/or clustered workers
-* Persisted job state for orchestration
+* State-based subscriptions to support orchestrations/sagas
 * Ad-hoc job fetching and completion for external integrations (such as web APIs)
-* Job fetch batching
 * Automatic provisioning of required storage into a dedicated schema
 * Automatic monitoring for expired jobs
 * Automatic archiving for completed jobs
@@ -68,5 +69,5 @@ which significantly enhances its ability to act as a reliable, distributed messa
 `$ npm install pg-boss`
 
 ## Documentation
-* [API](docs/api.md)
+* [Usage](docs/usage.md)
 * [Configuration](docs/configuration.md)

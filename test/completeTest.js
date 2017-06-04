@@ -36,7 +36,7 @@ describe('complete', function() {
 
   });
 
-  it('should subscribe to the response on a complete call', function(finished){
+  it('onComplete should have the payload from complete() in the response object', function(finished){
 
     const jobName = 'part-of-something-important';
     const responsePayload = {message: 'super-important-payload', arg2: '123'};
@@ -44,7 +44,6 @@ describe('complete', function() {
     let jobId = null;
 
     boss.onComplete(jobName, job => {
-      assert.equal(jobId, job.data.request.id);
       assert.equal(job.data.response.message, responsePayload.message);
       assert.equal(job.data.response.arg2, responsePayload.arg2);
 
@@ -52,6 +51,53 @@ describe('complete', function() {
     });
 
     boss.publish(jobName)
+      .then(id => jobId = id)
+      .then(() => boss.fetch(jobName))
+      .then(job => boss.complete(job.id, responsePayload));
+
+  });
+
+  it('onComplete should have the original payload in request object', function(finished){
+
+    const jobName = 'onCompleteRequestTest';
+    const requestPayload = {foo:'bar'};
+
+    let jobId = null;
+
+    boss.onComplete(jobName, job => {
+      assert.equal(jobId, job.data.request.id);
+      assert.equal(job.data.request.data.foo, requestPayload.foo);
+
+      finished();
+    });
+
+    boss.publish(jobName, requestPayload)
+      .then(id => jobId = id)
+      .then(() => boss.fetch(jobName))
+      .then(job => boss.complete(job.id));
+
+  });
+
+  it('onComplete should have both request and response', function(finished){
+
+    const jobName = 'onCompleteFtw';
+    const requestPayload = {token:'trivial'};
+    const responsePayload = {message: 'so verbose', code: '1234'};
+
+    let jobId = null;
+
+    boss.onComplete(jobName, job => {
+      assert.equal(jobId, job.data.request.id);
+      assert.equal(job.data.request.data.token, requestPayload.token);
+      assert.equal(job.data.response.message, responsePayload.message);
+      assert.equal(job.data.response.code, responsePayload.code);
+
+      console.log(JSON.stringify(job, null, '  '));
+
+      finished();
+    });
+
+    boss.publish(jobName, requestPayload)
       .then(id => jobId = id)
       .then(() => boss.fetch(jobName))
       .then(job => boss.complete(job.id, responsePayload));
