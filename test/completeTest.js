@@ -104,4 +104,18 @@ describe('complete', function() {
 
   });
 
+  it(`subscribe()'s job.done() should allow sending completion payload`, function(finished){
+    const jobName = 'complete-from-subscribe';
+    const responsePayload = {arg1: '123'};
+
+    boss.onComplete(jobName, job => {
+      assert.equal(job.data.response.arg1, responsePayload.arg1);
+      finished();
+    });
+
+    boss.publish(jobName)
+      .then(() => boss.subscribe(jobName, job => job.done(null, responsePayload)));
+
+  });
+
 });

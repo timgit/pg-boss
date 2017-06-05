@@ -115,9 +115,9 @@ class Manager extends EventEmitter {
 
     let onError = error => this.emit(events.error, error);
 
-    let complete = (error, job) => {
+    let complete = (job, error, response) => {
       if(!error)
-        return this.complete(job.id);
+        return this.complete(job.id, response);
 
       return this.fail(job.id)
         .then(() => this.emit(events.failed, {job, error}));
@@ -132,7 +132,7 @@ class Manager extends EventEmitter {
       setImmediate(() => {
         jobs.forEach(job => {
           this.emit(events.job, job);
-          job.done = error => complete(error, job);
+          job.done = (error, response) => complete(job, error, response);
 
           try {
             callback(job, job.done);
