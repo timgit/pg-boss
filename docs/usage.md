@@ -212,9 +212,9 @@ The job object has the following properties.
 |`id`| string, uuid | 
 |`name`| string | 
 |`data`| object | data sent from `publish()`
-|`done()` | function | callback function used to mark the job as completed or failed in the database. 
+|`done(err, data)` | function | callback function used to mark the job as completed or failed in the database. 
 
-`done()` accepts an optional error argument in typical node fashion.  If an error is passed, it will mark the job as failed.
+`done()` accepts optional arguments, the first being an error in typical node fashion. The second argument is an optional `data` argument for usage with [`onComplete()`](#oncompletename--options-handler) state-based subscriptions. If an error is passed, it will mark the job as failed and the data argument will be ignored.
 
 > If you forget to use the callback function to mark the job as completed, it will expire after the configured expiration period.  The default expiration can be found in the [configuration docs](configuration.md#job-expiration).
 
@@ -234,13 +234,15 @@ boss.subscribe('email-welcome', {teamSize: 5}, job => {
 
 Sometimes when a job changes state, it's important enough to trigger other things that should react to it. The following functions work identically to `subscribe()` and allow you to create orchestrations or sagas between jobs that may or may not know about each other. This common messaging pattern allows you to keep multi-job flow logic out of the individual job handlers so you can manage things in a more centralized fashion while not losing your mind. As you most likely already know, asynchronous jobs are complicated enough already.
 
-> Some state changes trigger events which 1 or more instances (or none!) may listen for.  You can read more about events below, but for now just keep in mind that an event doesn't care if anyone is listening on the other side, so you have no guarantees with them.  Using pg-boss subscriptions here is a guarantee that you can react to a state change per occurrence. 
+Internally, all state transitions are also jobs themselves (they have a special suffix of `__state__<state name>`).  Since pg-boss creates these, they are considered second class jobs and therefore not subject to the same expiration policies. In addition, the archiver ensures they don't hang around.
+
+> There are some state changes that also trigger [events](#events), and this may be a bit confusing as there is a bit of overlapping concerns. Events can be convenient since you can have as many listeners as desired per event. However, emitting an event doesn't require any listeners, so if no callbacks are registered for them, you will never receive them as they are not persisted. 
 
 ### `onComplete(name [, options], handler)`
 
 State-based `subscribe()` for completed jobs.
 
-The callback for `onComplete()` returns a job that is a combination of the original request and the response. The response being the optional data argument in [`complete()`](#completeid--data).
+The callback for `onComplete()` returns a job which contains a `request` and `response` property in its data property. The response property is the optional data argument in [`complete()`](#completeid--data).
 
 This definitely calls for an example.  Here's a lovely example from the test suite showing this in action.
 
@@ -297,7 +299,7 @@ And here's an example job from the callback in this test.
 
 State-based `subscribe()` for expired jobs.
 
-> While similar to the `expired-job` event, `onExpire()` is actually an internally persisted job so it will survive a restart. You're welcome.
+The job provided by `onExpire()` is the original job.
 
 ### `onFail(name [, options], handler)`
 
@@ -344,6 +346,26 @@ Typically one would use `subscribe()` for automated polling for new jobs based u
 
 Note: If you pass a batchSize, `fetch()` will always resovle an array response, even if only 1 job is returned. This seemed like a great idea at the time.
 
+The following code shows how to utilize batching via `fetch()` to get and complete 20 jobs at once on-demand.
+
+```js
+const jobName = 'email-daily-digest';
+const batchSize = 20;
+
+boss.fetch(jobName, batchSize)
+  .then(jobs => {
+    if(!jobs) return;
+
+    console.log(`received ${jobs.length} ${jobName} jobs`);
+
+    // our magical emailer knows what to do with job.data
+    let promises = jobs.map(job => emailer.send(job.data).then(() => job.done()));
+    
+    return Promise.all(promises);      
+  })
+  .catch(error => console.log(error));
+```
+
 ### `fetchCompleted(name [, batchSize])`
 
 Same as `fetch()`, but retrieves any completed jobs. See [`onComplete()`](#oncompletename--options-handler) for more information.
@@ -377,17 +399,33 @@ The promise will resolve on a successful assignment of failure, or reject if the
 
 # Events
 
+As explained in the introudction above, each instance of pg-boss is an EventEmitter.  You can run multiple instances of pg-boss for a variety of use cases including distribution and load balancing. Each instance has the freedom to subscribe to whichever jobs you need.  Because of this diversity, the job activity of one instance could be drastically different from another.  Therefore, **all of the events raised by pg-boss are instance-bound.** 
+
+> For example, if you were to subscribe to `error` in instance A, it will not receive an `error` event from instance B.  The same concept applies to all events.  If a job is subscribed in instance A, the `job` event will be raised alongside the `subscribe()` callback only for instance A.  There is currently no such thing as a global `job` event across instances.
+
 ## `error`
-The error event is raised from any errors that may occur during internal job fetching, monitoring and archiving activities. While not required, adding a listener to the error event is strongly encouraged. Ideally, code such as the following would be used after creating your instance before `start()` or `connect()` is called.
+The error event is raised from any errors that may occur during internal job fetching, monitoring and archiving activities. While not required, adding a listener to the error event is strongly encouraged:
+
+> If an EventEmitter does not have at least one listener registered for the 'error' event, and an 'error' event is emitted, the error is thrown, a stack trace is printed, and the Node.js process exits.
+>
+>Source: [Node.js Events > Error Events](https://nodejs.org/api/events.html#events_error_events)
+
+Ideally, code similar to the following example would be used after creating your instance, but  before `start()` or `connect()` is called.
 
 ```js
 boss.on('error', error => logger.error(error));
 ```
 
-**Note: Since error events are only raised during internal housekeeping activities, they are not raised for direct API calls, where promise `catch()` handlers should be used.**
+> **Note: Since error events are only raised during internal housekeeping activities, they are not raised for direct API calls, where promise `catch()` handlers should be used.**
 
 ## `job`
-When a job is found and processed, the subscriber's callback is called *and* a `job` event is raised.  Adding a listener to the job event is completely optional, but you may wish to use it for global job logging or tracking purposes.  The payload is the same job object that the subscriber's handler function receives with id, name and data properties.
+When a job is processed, the subscriber's callback is called *and* a `job` event is raised.  Adding a listener to the job event is completely optional, but you may wish to use it for logging or tracking purposes per instance. 
+
+The payload is the same job object that the subscriber's handler function receives with id, name and data properties.
+
+```js
+boss.on('job', job => console.log(`Job ${job.name} (${job.id}) received by subscriber`));
+```
 
 ## `failed`
 `failed` is raised for job failures.  This event is triggered automatically if any unhandled errors occur in a `subscribe()`, or manually from `fail(jobId)` or `done(error)` within a subscriber callback.
