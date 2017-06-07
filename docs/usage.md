@@ -116,7 +116,15 @@ If the CREATE privilege is not granted (so sad), you can still use the static fu
 
 **returns: Promise**
 
-The opposite of `start()`.  All job monitoring will be stopped and all subscriptions on this instance will be removed.  For example, if you were to call `stop()`, then immediately call `start()` again, you would need to re-subscribe via `subscribe()` to begin receiving jobs.
+All job monitoring will be stopped and all subscriptions on this instance will be removed. Basically, it's the opposite of `start()`. Even though `start()` may create new database objects during initialization, `stop()` will never remove anything from the database.  
+
+**If you need to uninstall pg-boss from a database, just run the following command.** 
+
+```sql
+DROP SCHEMA $1 CASCADE
+```
+
+Where `$1` is the name of your schema if you've customized it.  Otherwise, the default schema is `pgboss`.
 
 ## `connect()`
 
@@ -138,7 +146,7 @@ The opposite of `connect()`.  Disconnects from a job database. All subscriptions
 
 Creates a new job and resolves the job's unique identifier (uuid). 
 
-> `publish()` will resolve a `null` for job id under some use cases when using [unique jobs](configuration.md#unique-jobs) or [throttling](configuration#throttled-jobs).  These options are always opt-in on the publish side and therefore don't result in a promise rejection.
+> `publish()` will resolve a `null` for job id under some use cases when using [unique jobs](configuration.md#unique-jobs) or [throttling](configuration.md#throttled-jobs).  These options are always opt-in on the publish side and therefore don't result in a promise rejection.
 
 ### `publish(name, data, options)`
 
@@ -442,6 +450,8 @@ boss.on('failed', failure => {
 ## `archived`
 
 `archived` is raised each time 1 or more jobs are archived.  The payload is an integer representing the number of jobs archived.
+
+> Please note the term **"archive"** used in pg-boss actually results in completed jobs being **removed** from the job table to keep performance and capacity under control.  If you need to keep old jobs, you should set the `archiveCompletedJobsEvery` setting large enough to allow yourself a window of opportunity to grab them ahead of their scheduled removal.
 
 ## `expired-count`
 

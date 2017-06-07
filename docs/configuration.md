@@ -76,6 +76,8 @@ When `expireCheckIntervalSeconds` is specified, `expireCheckInterval` is ignored
 
 ### Job archive options
 
+> Please note the term **"archive"** used in pg-boss actually results in completed jobs being **removed** from the job table to keep performance and capacity under control.  If you need to keep old jobs, you should set the `archiveCompletedJobsEvery` setting large enough to allow yourself a window of opportunity to grab them ahead of their scheduled removal.
+
 * **archiveCompletedJobsEvery**, string, [PostgreSQL interval](https://www.postgresql.org/docs/9.5/static/datatype-datetime.html#DATATYPE-INTERVAL-INPUT)
 
     Default: "1 day".  When jobs become eligible for archive after completion.
