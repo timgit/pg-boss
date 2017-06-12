@@ -36,14 +36,6 @@ class Manager extends EventEmitter {
     this.failJobCommand = plans.failJob(config.schema);
     this.failJobsCommand = plans.failJobs(config.schema);
 
-    this.offFail = name => this.unsubscribe(name + failedJobSuffix);
-    this.offExpire = name => this.unsubscribe(name + expiredJobSuffix);
-    this.offComplete = name => this.unsubscribe(name + completedJobSuffix);
-
-    this.fetchFailed = (name,batchSize) => this.fetch(name + failedJobSuffix, batchSize);
-    this.fetchExpired = (name,batchSize) => this.fetch(name + expiredJobSuffix, batchSize);
-    this.fetchCompleted = (name,batchSize) => this.fetch(name + completedJobSuffix, batchSize);
-
     // exported api to index
     this.functions = [
       this.fetch,
@@ -68,15 +60,6 @@ class Manager extends EventEmitter {
   stop() {
     Object.keys(this.subscriptions).forEach(name => this.unsubscribe(name));
     this.subscriptions = {};
-    return Promise.resolve(true);
-  }
-
-  unsubscribe(name){
-    if(!this.subscriptions[name]) return Promise.reject(`No subscriptions for ${name} were found.`);
-
-    this.subscriptions[name].worker.stop();
-    delete this.subscriptions[name];
-
     return Promise.resolve(true);
   }
 
@@ -160,6 +143,27 @@ class Manager extends EventEmitter {
     subscription.worker = worker;
   }
 
+  unsubscribe(name){
+    if(!this.subscriptions[name]) return Promise.reject(`No subscriptions for ${name} were found.`);
+
+    this.subscriptions[name].worker.stop();
+    delete this.subscriptions[name];
+
+    return Promise.resolve(true);
+  }
+
+  offFail(name) {
+    return this.unsubscribe(name + failedJobSuffix);
+  }
+
+  offExpire(name) {
+    return this.unsubscribe(name + expiredJobSuffix);
+  }
+
+  offComplete(name){
+    return this.unsubscribe(name + completedJobSuffix);
+  }
+
   publish(...args){
     return Attorney.checkPublishArgs(args)
       .then(({name, data, options}) => this.createJob(name, data, options));
@@ -218,6 +222,23 @@ class Manager extends EventEmitter {
       .then(result => result.rows.length === 0 ? null :
                       result.rows.length === 1 && !batchSize ? result.rows[0] :
                       result.rows);
+  }
+
+  fetchFailed(name, batchSize) {
+    return this.fetch(name + failedJobSuffix, batchSize);
+  }
+
+  fetchExpired(name, batchSize) {
+    return this.fetch(name + expiredJobSuffix, batchSize)
+      .then(result => Array.isArray(result) ? result.map(this.unwrapStateJob) : this.unwrapStateJob(result));
+  }
+
+  fetchCompleted(name, batchSize){
+    return this.fetch(name + completedJobSuffix, batchSize);
+  }
+
+  unwrapStateJob(job){
+    return job.data;
   }
 
   setStateForJob(id, data, actionName, command, stateSuffix, bypassNotify){

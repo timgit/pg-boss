@@ -118,4 +118,51 @@ describe('complete', function() {
 
   });
 
+
+  it('should unsubscribe an onComplete subscription', function(finished){
+    this.timeout(3000);
+
+    const jobName = 'offComplete';
+
+    let receivedCount = 0;
+
+    boss.onComplete(jobName, job => {
+      receivedCount++;
+
+      boss.offComplete(jobName)
+        .then(() => boss.publish(jobName))
+        .then(() => boss.fetch(jobName))
+        .then(job => boss.complete(job.id));
+    });
+
+    boss.publish(jobName)
+      .then(() => boss.fetch(jobName))
+      .then(job => boss.complete(job.id))
+      .then(() => {
+
+        setTimeout(() => {
+          assert.strictEqual(receivedCount, 1);
+          finished();
+        }, 2000);
+
+      });
+
+  });
+
+  it('should fetch a completed job', function(finished){
+    const jobName = 'fetchCompleted';
+
+    let jobId;
+
+    boss.publish(jobName)
+      .then(id => jobId = id)
+      .then(() => boss.fetch(jobName))
+      .then(() => boss.complete(jobId))
+      .then(() => boss.fetchCompleted(jobName))
+      .then(job => {
+        assert.strictEqual(job.data.request.id, jobId);
+        finished();
+      })
+  });
+
 });
