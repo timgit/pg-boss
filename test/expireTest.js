@@ -50,11 +50,7 @@ describe('expire', function() {
     const jobName = 'offExpire';
     const jobRequest = {name: jobName, options: {expireIn:'1 second'}};
 
-    boss.on('expired-count', count => console.log(`${count} jobs expired.`));
-
     let receivedCount = 0;
-
-    boss.subscribe(jobName, job => {});
 
     boss.onExpire(jobName, job => {
       receivedCount++;
@@ -69,9 +65,11 @@ describe('expire', function() {
         setTimeout(() => {
           assert.strictEqual(receivedCount, 1);
           finished();
-        }, 3000);
+        }, 4000);
 
       });
+
+    boss.subscribe(jobName, job => {});
 
   });
 
