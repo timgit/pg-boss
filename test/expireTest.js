@@ -45,7 +45,7 @@ describe('expire', function() {
 
 
   it('should unsubscribe an expiration subscription', function(finished){
-    this.timeout(4000);
+    this.timeout(5000);
 
     const jobName = 'offExpire';
     const jobRequest = {name: jobName, options: {expireIn:'1 second'}};
