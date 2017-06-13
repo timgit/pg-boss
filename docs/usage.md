@@ -31,7 +31,7 @@ Usage
         - [`fetchFailed(name [, batchSize])`](#fetchfailedname--batchsize)
     - [`cancel(id)`](#cancelid)
     - [`complete(id [, data])`](#completeid--data)
-    - [`fail(id)`](#failid)
+    - [`fail(id [, data])`](#failid--data)
 - [Events](#events)
     - [`error`](#error)
     - [`job`](#job)
@@ -110,7 +110,7 @@ But wait. There's more! `start()` also verifies the versions of the objects and 
 
 > While this is most likely a welcome feature, be aware of this during upgrades since this could delay the promise resolution by however long the migration script takes to run against your data.  For example, if you happened to have millions of jobs in the job table just hanging around for archiving and the next version of the schema had a couple of new indexes, it may take a handful of seconds before `start()` resolves.
 
-If the CREATE privilege is not granted (so sad), you can still use the static function `PgBoss.getConstructionPlans()` method to export the SQL required to manually create the objects.  This also means you will also need to monitor future releases for schema changes (the schema property in [version.json](https://github.com/timgit/pg-boss/blob/master/version.json)) so they can be applied manually. In which case you'll also be interested in  `PgBoss.getMigrationPlans()`.
+If the CREATE privilege is not granted (so sad), you can still use the static function `PgBoss.getConstructionPlans()` method to export the SQL required to manually create the objects.  This means you will also need to monitor future releases for schema changes (the schema property in [version.json](../version.json)) so they can be applied manually. In which case you'll be interested in `PgBoss.getMigrationPlans()` for manual migration scripts.
 
 ## `stop()`
 
@@ -311,7 +311,9 @@ The job provided by `onExpire()` is the original job.
 
 ### `onFail(name [, options], handler)`
 
-State-based `subscribe()` for failed jobs.
+State-based `subscribe()` for failed jobs.  
+
+The callback for `onFail()` returns a job which contains a `request` and `response` property in its data property just like `onComplete()`. The response property is the optional data argument in [`fail()`](#failid--data).
 
 ## `unsubscribe(name)`
 
@@ -395,13 +397,13 @@ The promise will resolve on a successful cancel, or reject if the job could not 
 
 ## `complete(id [, data])`
 
-Completes an active job.  This would likely only be used with `fetch()`. Accepts an optional `data` argument for usage with [`onComplete()`](#oncompletename--options-handler) state-based subscriptions.
+Completes an active job.  This would likely only be used with `fetch()`. Accepts an optional `data` argument for usage with [`onComplete()`](#oncompletename--options-handler) state-based subscriptions or `fetchCompleted()`.
 
 The promise will resolve on a successful completion, or reject if the job could not be completed.
 
-## `fail(id)`
+## `fail(id [, data])`
 
-Marks an active job as failed.  This would likely only be used with `fetch()`.
+Marks an active job as failed.  This would likely only be used with `fetch()`. Accepts an optional `data` argument for usage with [`onFail()`](#onfailname--options-handler) state-based subscriptions or `fetchFailed()`.
 
 The promise will resolve on a successful assignment of failure, or reject if the job could not be marked as failed.
 
