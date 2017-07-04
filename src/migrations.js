@@ -86,6 +86,46 @@ function getMigrations(schema) {
         // The migration committee decided to allow a leaky migration here since rollbacks are edge cases
         //   and IF NOT EXISTS will not throw on re-application
       ]
-    }
+    },
+    {
+      version: '4',
+      previous: '3',
+      install: [
+        `ALTER TABLE ${schema}.job ADD COLUMN priority integer not null default(0)`,
+        `ALTER TABLE ${schema}.job ALTER COLUMN createdOn SET DATA TYPE timestamptz`,
+        `ALTER TABLE ${schema}.job ALTER COLUMN startedOn SET DATA TYPE timestamptz`,
+        `ALTER TABLE ${schema}.job ALTER COLUMN completedOn SET DATA TYPE timestamptz`
+      ],
+      uninstall: [
+        `ALTER TABLE ${schema}.job DROP COLUMN priority`,
+        `ALTER TABLE ${schema}.job ALTER COLUMN createdOn SET DATA TYPE timestamp`,
+        `ALTER TABLE ${schema}.job ALTER COLUMN startedOn SET DATA TYPE timestamp`,
+        `ALTER TABLE ${schema}.job ALTER COLUMN completedOn SET DATA TYPE timestamp`
+      ]
+    },
+    {
+      version: '5',
+      previous: '4',
+      install: [
+        `ALTER TABLE ${schema}.job ALTER COLUMN startIn SET DEFAULT (interval '0')`,
+        `ALTER TABLE ${schema}.job ALTER COLUMN state SET DEFAULT ('created')`,
+        `UPDATE ${schema}.job SET name = left(name, -9) || '__state__expired' WHERE name LIKE '%__expired'`
+      ],
+      uninstall: [
+        `ALTER TABLE ${schema}.job ALTER COLUMN startIn DROP DEFAULT`,
+        `ALTER TABLE ${schema}.job ALTER COLUMN state DROP DEFAULT`,
+        `UPDATE ${schema}.job SET name = left(name, -16) || '__expired' WHERE name LIKE '%__state__expired'`
+      ]
+    },
+    {
+      version: '6',
+      previous: '5',
+      install: [
+        `CREATE INDEX job_fetch ON ${schema}.job (priority desc, createdOn, id) WHERE state < 'active'`
+      ],
+      uninstall: [
+        `DROP INDEX ${schema}.job_fetch`
+      ]
+    },
   ];
 }

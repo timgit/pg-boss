@@ -7,7 +7,15 @@ const Worker = require('./worker');
 const plans = require('./plans');
 const Attorney = require('./attorney');
 
-const expireJobSuffix = plans.expireJobSuffix;
+const expiredJobSuffix = plans.expiredJobSuffix;
+const completedJobSuffix = plans.completedJobSuffix;
+const failedJobSuffix = plans.failedJobSuffix;
+
+const events = {
+  job: 'job',
+  failed: 'failed',
+  error: 'error'
+};
 
 class Manager extends EventEmitter {
   constructor(db, config){
@@ -16,302 +24,299 @@ class Manager extends EventEmitter {
     this.config = config;
     this.db = db;
 
+    this.events = events;
+    this.subscriptions = {};
+
     this.nextJobCommand = plans.fetchNextJob(config.schema);
-    this.expireCommand = plans.expire(config.schema);
     this.insertJobCommand = plans.insertJob(config.schema);
     this.completeJobCommand = plans.completeJob(config.schema);
+    this.completeJobsCommand = plans.completeJobs(config.schema);
     this.cancelJobCommand = plans.cancelJob(config.schema);
+    this.cancelJobsCommand = plans.cancelJobs(config.schema);
     this.failJobCommand = plans.failJob(config.schema);
+    this.failJobsCommand = plans.failJobs(config.schema);
 
-    this.subscriptions = {};
+    // exported api to index
+    this.functions = [
+      this.fetch,
+      this.complete,
+      this.cancel,
+      this.fail,
+      this.publish,
+      this.subscribe,
+      this.unsubscribe,
+      this.onComplete,
+      this.offComplete,
+      this.onExpire,
+      this.offExpire,
+      this.onFail,
+      this.offFail,
+      this.fetchFailed,
+      this.fetchExpired,
+      this.fetchCompleted
+    ];
   }
 
-  monitor(){
-    const self = this;
+  stop() {
+    Object.keys(this.subscriptions).forEach(name => this.unsubscribe(name));
+    this.subscriptions = {};
+    return Promise.resolve(true);
+  }
 
-    return expire().then(init);
+  subscribe(name, ...args){
+    return Attorney.checkSubscribeArgs(name, args)
+      .then(({options, callback}) => this.watch(name, options, callback));
+  }
 
-    function expire() {
-      return self.db.executeSql(self.expireCommand)
-        .then(result => {
-          if (result.rows.length){
-            self.emit('expired-count', result.rows.length);
+  onExpire(name, ...args) {
+    // unwrapping job in callback here because we love our customers
+    return Attorney.checkSubscribeArgs(name, args)
+      .then(({options, callback}) => this.watch(name + expiredJobSuffix, options, job => callback(job.data)));
+  }
 
-            return Promise.map(result.rows, job => {
-              self.emit('expired-job', job);
-              return self.publish(job.name + expireJobSuffix, job);
-            });
+  onComplete(name, ...args) {
+    return Attorney.checkSubscribeArgs(name, args)
+      .then(({options, callback}) => this.watch(name + completedJobSuffix, options, callback));
+  }
+
+  onFail(name, ...args) {
+    return Attorney.checkSubscribeArgs(name, args)
+      .then(({options, callback}) => this.watch(name + failedJobSuffix, options, callback));
+  }
+
+  watch(name, options, callback){
+    assert(!(name in this.subscriptions), 'this job has already been subscribed on this instance.');
+
+    options.batchSize = options.batchSize || options.teamSize;
+
+    if('newJobCheckInterval' in options || 'newJobCheckIntervalSeconds' in options)
+      options = Attorney.applyNewJobCheckInterval(options);
+    else
+      options.newJobCheckInterval = this.config.newJobCheckInterval;
+
+    let subscription = this.subscriptions[name] = {worker:null};
+
+    let onError = error => this.emit(events.error, error);
+
+    let complete = (job, error, response) => {
+      if(!error)
+        return this.complete(job.id, response);
+
+      return this.fail(job.id)
+        .then(() => this.emit(events.failed, {job, error}));
+    };
+
+    let respond = jobs => {
+      if (!jobs) return;
+
+      if (!Array.isArray(jobs))
+        jobs = [jobs];
+
+      setImmediate(() => {
+        jobs.forEach(job => {
+          this.emit(events.job, job);
+          job.done = (error, response) => complete(job, error, response);
+
+          try {
+            callback(job, job.done);
+          }
+          catch (error) {
+            this.emit(events.failed, {job, error})
           }
         });
-    }
+      });
 
-    function init() {
-      if(self.stopped) return;
+    };
 
-      self.expireTimer = setTimeout(check, self.config.expireCheckInterval);
+    let fetch = () => this.fetch(name, options.batchSize);
 
-      function check() {
-        expire().catch(error => self.emit('error', error)).then(init);
-      }
-    }
+    let workerConfig = {
+      name,
+      fetch,
+      respond,
+      onError,
+      interval: options.newJobCheckInterval
+    };
+
+    let worker = new Worker(workerConfig);
+    worker.start();
+    subscription.worker = worker;
   }
 
-  close() {
-    Object.keys(this.subscriptions)
-      .forEach(name => this.unsubscribe(name));
+  unsubscribe(name){
+    if(!this.subscriptions[name]) return Promise.reject(`No subscriptions for ${name} were found.`);
 
-    this.subscriptions = {};
+    this.subscriptions[name].worker.stop();
+    delete this.subscriptions[name];
 
     return Promise.resolve(true);
   }
 
-  stop() {
-    return this.close().then(() => {
-      this.stopped = true;
-
-      if(this.expireTimer)
-        clearTimeout(this.expireTimer);
-    });
+  offFail(name) {
+    return this.unsubscribe(name + failedJobSuffix);
   }
 
-  unsubscribe(name){
-    assert(name in this.subscriptions, 'subscription not found for job ' + name);
-
-    removeSubscription.call(this, name);
-    removeSubscription.call(this, name + expireJobSuffix);
-
-    function removeSubscription(name){
-      if(!this.subscriptions[name]) return;
-
-      this.subscriptions[name].workers.forEach(worker => worker.stop());
-      delete this.subscriptions[name];
-    }
+  offExpire(name) {
+    return this.unsubscribe(name + expiredJobSuffix);
   }
 
-  subscribe(name, ...args){
-
-    assert(!(name in this.subscriptions), 'this job has already been subscribed on this instance.')
-
-    let self = this;
-
-    return getArgs(args)
-      .then(({options, callback}) => register(options, callback));
-
-
-    function getArgs(args) {
-
-      let options, callback;
-
-      try {
-        assert(name, 'boss requires all jobs to have a name');
-
-        if(args.length === 1){
-          callback = args[0];
-          options = {};
-        } else if (args.length > 1){
-          options = args[0] || {};
-          callback = args[1];
-        }
-
-        assert(typeof callback === 'function', 'expected callback to be a function');
-
-        if(options)
-          assert(typeof options === 'object', 'expected config to be an object');
-
-        options = options || {};
-        options.teamSize = options.teamSize || 1;
-
-        if('newJobCheckInterval' in options || 'newJobCheckIntervalSeconds' in options)
-          options = Attorney.applyNewJobCheckInterval(options);
-        else
-          options.newJobCheckInterval = self.config.newJobCheckInterval;
-
-      } catch(e) {
-        return Promise.reject(e);
-      }
-
-      return Promise.resolve({options, callback});
-    }
-
-    function register(options, callback) {
-
-      let subscription = self.subscriptions[name] = {workers:[]};
-
-      let onError = error => self.emit('error', error);
-
-      let complete = (error, job) => {
-
-        if(!error)
-          return self.complete(job.id);
-
-        return self.fail(job.id)
-          .then(() => self.emit('failed', {job, error}));
-
-      };
-
-      let onJob = job => {
-        if(!job) return;
-
-        self.emit('job', job);
-
-        setImmediate(() => {
-          try {
-            callback(job, error => complete(error, job));
-          } catch(error) {
-            self.emit('failed', {job, error});
-          }
-        });
-
-      };
-
-      let onFetch = () => self.fetch(name);
-
-      let workerConfig = {
-        name,
-        fetcher: onFetch,
-        responder: onJob,
-        error: onError,
-        interval: options.newJobCheckInterval
-      };
-
-      for(let w=0; w < options.teamSize; w++){
-        let worker = new Worker(workerConfig);
-        worker.start();
-        subscription.workers.push(worker);
-      }
-    }
-
-  }
-
-  onExpire(name, callback) {
-    // unwrapping job in callback because we love our customers
-    return this.subscribe(name + expireJobSuffix, (job, done) => callback(job.data, done));
+  offComplete(name){
+    return this.unsubscribe(name + completedJobSuffix);
   }
 
   publish(...args){
-    let self = this;
-
-    return getArgs(args)
-      .then(({name, data, options}) => insertJob(name, data, options));
-
-
-    function getArgs(args) {
-      let name, data, options;
-
-      try {
-        if(typeof args[0] === 'string') {
-
-          name = args[0];
-          data = args[1];
-
-          assert(typeof data !== 'function', 'publish() cannot accept a function as the payload.  Did you intend to use subscribe()?');
-
-          options = args[2];
-
-        } else if(typeof args[0] === 'object'){
-
-          assert(args.length === 1, 'publish object API only accepts 1 argument');
-
-          let job = args[0];
-
-          assert(job, 'boss requires all jobs to have a name');
-
-          name = job.name;
-          data = job.data;
-          options = job.options;
-        }
-
-        options = options || {};
-
-        assert(name, 'boss requires all jobs to have a name');
-        assert(typeof options === 'object', 'options should be an object');
-
-      } catch (error){
-        return Promise.reject(error);
-      }
-
-      return Promise.resolve({name, data, options});
-    }
-
-    function insertJob(name, data, options, singletonOffset){
-      let startIn =
-        (options.startIn > 0) ? '' + options.startIn
-          : (typeof options.startIn === 'string') ? options.startIn
-          : '0';
-
-      let singletonSeconds =
-        (options.singletonSeconds > 0) ? options.singletonSeconds
-          : (options.singletonMinutes > 0) ? options.singletonMinutes * 60
-          : (options.singletonHours > 0) ? options.singletonHours * 60 * 60
-            : (options.singletonDays > 0) ? options.singletonDays * 60 * 60 * 24
-              : null;
-
-      let id = uuid[self.config.uuid](),
-        retryLimit = options.retryLimit || 0,
-        expireIn = options.expireIn || '15 minutes';
-
-      let singletonKey = options.singletonKey || null;
-
-      let values = [id, name, retryLimit, startIn, expireIn, data, singletonKey, singletonSeconds, singletonOffset || 0];
-
-      return self.db.executeSql(self.insertJobCommand, values)
-        .then(result => {
-          if(result.rowCount === 1)
-            return id;
-
-          if(!options.singletonNextSlot)
-            return null;
-
-          // delay starting by the offset to honor throttling config
-          options.startIn = singletonSeconds;
-          // toggle off next slot config for round 2
-          options.singletonNextSlot = false;
-
-          let singletonOffset = singletonSeconds;
-
-          return insertJob(name, data, options, singletonOffset);
-        });
-    }
-
+    return Attorney.checkPublishArgs(args)
+      .then(({name, data, options}) => this.createJob(name, data, options));
   }
 
-  fetch(name) {
-    return this.db.executeSql(this.nextJobCommand, name)
+  expired(job){
+    return this.publish(job.name + expiredJobSuffix, job);
+  };
+
+  createJob(name, data, options, singletonOffset){
+    let startIn =
+      (options.startIn > 0) ? '' + options.startIn
+        : (typeof options.startIn === 'string') ? options.startIn
+        : '0';
+
+    let singletonSeconds =
+      (options.singletonSeconds > 0) ? options.singletonSeconds
+        : (options.singletonMinutes > 0) ? options.singletonMinutes * 60
+        : (options.singletonHours > 0) ? options.singletonHours * 60 * 60
+          : (options.singletonDays > 0) ? options.singletonDays * 60 * 60 * 24
+            : null;
+
+    let id = uuid[this.config.uuid](),
+      retryLimit = options.retryLimit || 0,
+      expireIn = options.expireIn || '15 minutes',
+      priority = options.priority || 0;
+
+    let singletonKey = options.singletonKey || null;
+
+    singletonOffset = singletonOffset || 0;
+
+    let values = [id, name, priority, retryLimit, startIn, expireIn, data, singletonKey, singletonSeconds, singletonOffset];
+
+    return this.db.executeSql(this.insertJobCommand, values)
       .then(result => {
-        if(result.rows.length === 0)
+        if(result.rowCount === 1)
+          return id;
+
+        if(!options.singletonNextSlot)
           return null;
 
-        let job = result.rows[0];
+        // delay starting by the offset to honor throttling config
+        options.startIn = singletonSeconds;
+        // toggle off next slot config for round 2
+        options.singletonNextSlot = false;
 
-        job.name = name;
+        let singletonOffset = singletonSeconds;
 
-        return job;
+        return this.createJob(name, data, options, singletonOffset);
       });
   }
 
-  complete(id){
-    return this.db.executeSql(this.completeJobCommand, [id])
+  fetch(name, batchSize) {
+    return Attorney.checkFetchArgs(name, batchSize)
+      .then(() => this.db.executeSql(this.nextJobCommand, [name, batchSize || 1]))
+      .then(result => result.rows.length === 0 ? null :
+                      result.rows.length === 1 && !batchSize ? result.rows[0] :
+                      result.rows);
+  }
+
+  fetchFailed(name, batchSize) {
+    return this.fetch(name + failedJobSuffix, batchSize);
+  }
+
+  fetchExpired(name, batchSize) {
+    return this.fetch(name + expiredJobSuffix, batchSize)
+      .then(result => Array.isArray(result) ? result.map(this.unwrapStateJob) : this.unwrapStateJob(result));
+  }
+
+  fetchCompleted(name, batchSize){
+    return this.fetch(name + completedJobSuffix, batchSize);
+  }
+
+  unwrapStateJob(job){
+    return job.data;
+  }
+
+  setStateForJob(id, data, actionName, command, stateSuffix, bypassNotify){
+    let job;
+
+    return this.db.executeSql(command, [id])
       .then(result => {
-        assert(result.rowCount === 1, `Job ${id} could not be completed.`);
-        return id;
+        assert(result.rowCount === 1, `${actionName}(): Job ${id} could not be updated.`);
+
+        job = result.rows[0];
+
+        return bypassNotify
+          ? null
+          : this.publish(job.name + stateSuffix, {request: job, response: data || null});
+      })
+      .then(() => job);
+  }
+
+  setStateForJobs(ids, actionName, command){
+    return this.db.executeSql(command, [ids])
+      .then(result => {
+        assert(result.rowCount === ids.length, `${actionName}(): ${ids.length} jobs submitted, ${result.rowCount} updated`);
       });
+  }
+
+  setState(config){
+    let {id, data, actionName, command, batchCommand, stateSuffix, bypassNotify} = config;
+
+    return Attorney.assertAsync(id, `${actionName}() requires id argument`)
+      .then(() => {
+        let ids = Array.isArray(id) ? id : [id];
+
+        assert(ids.length, `${actionName}() requires at least 1 item in an array argument`);
+
+        return ids.length === 1
+          ? this.setStateForJob(ids[0], data, actionName, command, stateSuffix, bypassNotify)
+          : this.setStateForJobs(ids, actionName, batchCommand);
+      })
+  }
+
+  complete(id, data){
+    const config = {
+      id,
+      data,
+      actionName: 'complete',
+      command: this.completeJobCommand,
+      batchCommand: this.completeJobsCommand,
+      stateSuffix: completedJobSuffix
+    };
+
+    return this.setState(config);
+  }
+
+  fail(id, data){
+    const config = {
+      id,
+      data,
+      actionName: 'fail',
+      command: this.failJobCommand,
+      batchCommand: this.failJobsCommand,
+      stateSuffix: failedJobSuffix
+    };
+
+    return this.setState(config);
   }
 
   cancel(id) {
-    return this.db.executeSql(this.cancelJobCommand, [id])
-      .then(result => {
-        assert(result.rowCount === 1, `Job ${id} could not be cancelled.`);
-        return id;
-      });
+    const config = {
+      id,
+      actionName: 'cancel',
+      command: this.cancelJobCommand,
+      batchCommand: this.cancelJobsCommand,
+      bypassNotify: true
+    };
+
+    return this.setState(config);
   }
 
-  fail(id){
-    return this.db.executeSql(this.failJobCommand, [id])
-      .then(result => {
-        assert(result.rowCount === 1, `Job ${id} could not be marked as failed.`);
-        return id;
-      });
-  }
 }
 
 module.exports = Manager;

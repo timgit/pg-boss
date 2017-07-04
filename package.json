@@ -1,32 +1,42 @@
 {
   "name": "pg-boss",
-  "version": "1.1.0",
+  "version": "2.0.0",
   "description": "Queueing jobs in Node.js using PostgreSQL like a boss",
   "main": "./lib/index.js",
-  "engines": { "node" : ">=4.0.0" },
+  "engines": {
+    "node": ">=4.0.0"
+  },
   "dependencies": {
     "bluebird": "^3.4.6",
     "pg": "^6.1.0",
     "uuid": "^3.0.0"
   },
   "devDependencies": {
-    "babel-cli": "^6.8.0",
-    "babel-core": "^6.8.0",
-    "babel-preset-es2015": "^6.6.0",
+    "babel-cli": "^6.24.1",
+    "babel-core": "^6.24.1",
+    "babel-plugin-istanbul": "^4.1.1",
+    "babel-preset-es2015": "^6.24.1",
     "chai": "^3.5.0",
-    "coveralls": "^2.11.16",
-    "isparta": "^4.0.0",
-    "istanbul": "0.4.4",
-    "mocha": "^3.2.0"
+    "coveralls": "^2.13.0",
+    "cross-env": "^4.0.0",
+    "mocha": "^3.2.0",
+    "nyc": "^10.2.2"
   },
   "scripts": {
-    "test": "node_modules/.bin/mocha --compilers js:babel-core/register",
-    "cover": "./node_modules/.bin/babel-node ./node_modules/isparta/bin/isparta cover --report text --report lcov node_modules/mocha/bin/_mocha -- --reporter spec --slow 10000",
+    "test": "cross-env NODE_ENV=test nyc mocha --slow 10000",
+    "forcover": "cross-env NODE_ENV=test nyc npm test && nyc report --reporter=text-lcov | coveralls",
     "compile": "babel -d lib/ src/",
     "prepublish": "npm run compile",
     "export-schema": "node ./scripts/construct.js",
     "export-migration": "node ./scripts/migrate.js",
     "export-rollback": "node ./scripts/rollback.js"
+  },
+  "nyc": {
+    "require": [
+      "babel-register"
+    ],
+    "sourceMap": false,
+    "instrument": false
   },
   "repository": {
     "type": "git",

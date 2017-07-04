@@ -3,39 +3,37 @@ const helper = require('./testHelper');
 
 describe('retries', function() {
 
-    let boss;
+  let boss;
 
-    before(function(finished){
-        helper.start({expireCheckInterval:200, newJobCheckInterval: 200})
-            .then(dabauce => {
-                boss = dabauce;
-                finished();
-            });
-    });
+  before(function(finished){
+    helper.start({expireCheckInterval:200, newJobCheckInterval: 200})
+      .then(dabauce => {
+        boss = dabauce;
+        finished();
+      });
+  });
 
-    after(function(finished){
-        boss.stop().then(() => finished());
-    });
-    
-    it('should retry a job that didn\'t complete', function (finished) {
+  after(function(finished){
+    boss.stop().then(() => finished());
+  });
 
-        const expireIn = '100 milliseconds';
-        const retryLimit = 1;
+  it('should retry a job that didn\'t complete', function (finished) {
 
-        let subscribeCount = 0;
+    const expireIn = '100 milliseconds';
+    const retryLimit = 1;
 
-        boss.subscribe('unreliable', function(job, done) {
-            // not calling done so it will expire
-            subscribeCount++;
-        });
+    let subscribeCount = 0;
 
-        boss.publish({name: 'unreliable', options: {expireIn, retryLimit}});
+    // don't call job.done() so it will expire
+    boss.subscribe('unreliable', job => subscribeCount++);
 
-        setTimeout(function() {
-            assert.equal(subscribeCount, retryLimit + 1);
-            finished();
+    boss.publish({name: 'unreliable', options: {expireIn, retryLimit}});
 
-        }, 1000);
+    setTimeout(function() {
+      assert.equal(subscribeCount, retryLimit + 1);
+      finished();
 
-    });
+    }, 1000);
+
+  });
 });

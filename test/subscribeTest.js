@@ -1,3 +1,4 @@
+const Promise = require('bluebird');
 const assert = require('chai').assert;
 const helper = require('./testHelper');
 
@@ -44,17 +45,14 @@ describe('subscribe', function(){
     let startTime = new Date();
     const newJobCheckIntervalSeconds = 3;
 
-    boss.subscribe('foo', {newJobCheckIntervalSeconds}, (job, done) => {
+    boss.subscribe('foo', {newJobCheckIntervalSeconds}, job => {
       let elapsed = new Date().getTime() - startTime.getTime();
 
       assert.isAbove((elapsed / 1000), newJobCheckIntervalSeconds);
 
-      done()
-        .then(() => finished());
-
-    }).then(() => {
-      boss.publish('foo');
-    });
+      job.done().then(() => finished());
+    })
+      .then(() => boss.publish('foo'));
 
   });
 
@@ -65,10 +63,10 @@ describe('subscribe', function(){
 
     let receivedCount = 0;
 
-    boss.subscribe(jobName, (job, done) => {
+    boss.subscribe(jobName, job => {
       receivedCount++;
 
-      done()
+      job.done()
         .then(() => boss.unsubscribe(jobName))
         .then(() => boss.publish(jobName))
     });
@@ -82,6 +80,39 @@ describe('subscribe', function(){
         }, 2000);
 
       });
+
+  });
+
+  it('unsubscribe should fail without a name', function(finished){
+    boss.unsubscribe().catch(() => finished());
+  });
+
+  it('should handle a batch of jobs', function(finished){
+    const jobName = 'subscribe-batch';
+    const batchSize = 4;
+    let subscribeCount = 0;
+
+    Promise.join(
+      boss.publish(jobName),
+      boss.publish(jobName),
+      boss.publish(jobName),
+      boss.publish(jobName)
+    )
+    .then(() => boss.subscribe(jobName, {batchSize}, job => {
+        subscribeCount++;
+
+        // idea here is that the test would time out if it had to wait for 4 intervals
+        if(subscribeCount === batchSize)
+          finished();
+      })
+    );
+  });
+
+  it('should have a done callback for single job subscriptions', function(finished){
+    const name = 'subscribe-single';
+
+    boss.subscribe(name, (job, done) => done().then(() => finished()))
+      .then(() => boss.publish(name));
 
   });
 

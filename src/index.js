@@ -1,6 +1,6 @@
 const EventEmitter = require('events');
 const assert = require('assert');
-const Promise = require("bluebird");
+const Promise = require('bluebird');
 const Attorney = require('./attorney');
 const Contractor = require('./contractor');
 const Manager = require('./manager');
@@ -8,6 +8,8 @@ const Boss = require('./boss');
 const Db = require('./db');
 
 const notReadyErrorMessage = `boss ain't ready.  Use start() or connect() to get started.`;
+const startInProgressErrorMessage = 'boss is starting up. Please wait for the previous start() to finish.';
+const notStartedErrorMessage = `boss ain't started.  Use start().`;
 
 class PgBoss extends EventEmitter {
   static getConstructionPlans(schema) {
@@ -23,35 +25,30 @@ class PgBoss extends EventEmitter {
 
     super();
 
-    this.config = config;
-
     const db = new Db(config);
 
     promoteEvent.call(this, db, 'error');
 
-    // contractor makes sure we have a happy database home for work
-    this.contractor = new Contractor(db, config);
+    const manager = new Manager(db, config);
+    Object.keys(manager.events).forEach(event => promoteEvent.call(this, manager, manager.events[event]));
 
-    // boss keeps the books and archives old jobs
-    let boss = new Boss(db, config);
+    manager.functions.forEach(func => promoteFunction.call(this, manager, func));
+
+    const boss = new Boss(db, config);
+    Object.keys(boss.events).forEach(event => promoteEvent.call(this, boss, boss.events[event]));
+    boss.on(boss.events.expiredJob, job => manager.expired(job));
+
+    this.config = config;
+    this.db = db;
     this.boss = boss;
-
-    ['error','archived'].forEach(event => promoteEvent.call(this, boss, event));
-
-    // manager makes sure workers aren't taking too long to finish their jobs
-    let manager = new Manager(db, config);
+    this.contractor = new Contractor(db, config);
     this.manager = manager;
 
-    ['error','job','expired-job','expired-count','failed']
-      .forEach(event => promoteEvent.call(this, manager, event));
 
-    ['fetch','complete','cancel','fail','publish','subscribe','unsubscribe','onExpire']
-      .forEach(func => promoteApi.call(this, manager, func));
-
-    function promoteApi(obj, func){
-      this[func] = (...args) => {
+    function promoteFunction(obj, func){
+      this[func.name] = (...args) => {
         if(!this.isReady) return Promise.reject(notReadyErrorMessage);
-        return obj[func].apply(obj, args);
+        return func.apply(obj, args);
       }
     }
 
@@ -65,49 +62,56 @@ class PgBoss extends EventEmitter {
     if(this.isReady) return Promise.resolve(this);
 
     return this.boss.supervise()
-      .then(() => this.manager.monitor())
+      .then(() => {
+        this.isReady = true;
+        this.isStarted = true;
+        return this;
+    });
+  }
+
+  start(...args) {
+    if(this.isStarting)
+      return Promise.reject(startInProgressErrorMessage);
+
+    this.isStarting = true;
+
+    let check = this.isStarted
+      ? Promise.resolve(true)
+      : this.contractor.start.apply(this.contractor, args);
+
+    return check.then(() => {
+        this.isStarting = false;
+        return this.init();
+    });
+  }
+
+  stop() {
+    if(!this.isStarted) return Promise.reject(notStartedErrorMessage);
+
+    return Promise.join(
+        this.manager.stop(),
+        this.boss.stop()
+      )
+      .then(() => this.db.close())
+      .then(() => {
+        this.isReady = false;
+        this.isStarted = false;
+      });
+  }
+
+  connect(...args) {
+    return this.contractor.connect.apply(this.contractor, args)
       .then(() => {
         this.isReady = true;
         return this;
       });
   }
 
-  start(...args) {
-    let self = this;
-
-    if(this.isStarting)
-      return Promise.reject('boss is starting up. Please wait for the previous start() to finish.');
-
-    this.isStarting = true;
-
-    return this.contractor.start.apply(this.contractor, args)
-      .then(() => {
-        self.isStarting = false;
-        return self.init();
-      });
-  }
-
-  stop() {
-    return Promise.all([
-      this.disconnect(),
-      this.manager.stop(),
-      this.boss.stop()
-    ]);
-  }
-
-  connect(...args) {
-    let self = this;
-
-    return this.contractor.connect.apply(this.contractor, args)
-      .then(() => {
-        self.isReady = true;
-        return self;
-      });
-  }
-
   disconnect(...args) {
     if(!this.isReady) return Promise.reject(notReadyErrorMessage);
-    return this.manager.close.apply(this.manager, args)
+
+    return this.manager.stop.apply(this.manager, args)
+      .then(() => this.db.close())
       .then(() => this.isReady = false);
   }
 
