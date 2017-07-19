@@ -45,7 +45,7 @@ class Db extends EventEmitter {
   }
 
   close(){
-    return this.pool.end();
+    return !this.pool.ending ? this.pool.end() : Promise.resolve(true);
   }
 
   executeSql(text, values) {
