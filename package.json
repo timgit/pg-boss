@@ -52,5 +52,6 @@
   "bugs": {
     "url": "https://github.com/timgit/pg-boss/issues"
   },
-  "homepage": "https://github.com/timgit/pg-boss#readme"
+  "homepage": "https://github.com/timgit/pg-boss#readme",
+  "types": "./src/types.d.ts"
 }
