@@ -102,7 +102,7 @@ class Manager extends EventEmitter {
       if(!error)
         return this.complete(job.id, response);
 
-      return this.fail(job.id)
+      return this.fail(job.id, error)
         .then(() => this.emit(events.failed, {job, error}));
     };
 
