@@ -105,11 +105,15 @@ function applyConfig(config) {
 }
 
 function applyDatabaseConfig(config) {
-
-  if(typeof config === 'string' || (config.connectionString && typeof config.connectionString === 'string')) {
-    config = {connectionString: config.connectionString || config};
+  if(typeof config === 'string') {
+    return {
+      connectionString: config,
+      schema: 'pgboss',
+      poolSize: 10
+    };
   }
-  else {
+
+  if (typeof (config.connectionString) !== 'string') {
     assert(config.database && config.user && 'password' in config,
       'configuration assert: not enough database settings to connect to PostgreSQL');
 
