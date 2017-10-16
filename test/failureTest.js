@@ -36,7 +36,7 @@ describe('error', function(){
 
   });
 
-  it('should fail a job from a subscriber callback', function(finished) {
+  it('failure event is raised from subscriber error', function(finished) {
 
     this.timeout(3000);
 
@@ -44,26 +44,24 @@ describe('error', function(){
     const jobName = 'suspect-job';
     let jobId;
 
-
-    boss.publish(jobName)
-      .then(id => jobId = id);
-
     boss.on('failed', failure => {
       assert.equal(failure.job.id, jobId);
       assert.equal(errorMessage, failure.error.message);
+      boss.removeAllListeners('failed');
       finished();
     });
 
     boss.subscribe(jobName, job => {
-      let myError = new Error(errorMessage);
+        let myError = new Error(errorMessage);
 
-      job.done(myError)
-        .catch(error => {
-          console.error(error);
-          assert(false, error.message);
-        });
-
-    });
+        job.done(myError)
+          .catch(error => {
+            console.error(error);
+            assert(false, error.message);
+          });
+      })
+      .then(() => boss.publish(jobName))
+      .then(id => jobId = id);
 
   });
 
@@ -156,6 +154,22 @@ describe('error', function(){
         assert.strictEqual(job.data.request.id, jobId);
         finished();
       })
+  });
+
+  it('subscribe failure via done() should pass error payload to failed job', function(finished){
+    const jobName = 'fetchFailedWithPayload';
+    const failPayload = 'mah error';
+
+    boss.subscribe(jobName, job => {
+        job.done(failPayload)
+          .then(() => boss.fetchFailed(jobName))
+          .then(failedJob => {
+            assert.strictEqual(failedJob.data.response, failPayload);
+            finished();
+          })
+      })
+      .then(() => boss.publish(jobName));
+
   });
 
 });
