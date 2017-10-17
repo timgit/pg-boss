@@ -105,13 +105,9 @@ function applyConfig(config) {
 }
 
 function applyDatabaseConfig(config) {
-  if(typeof config === 'string') {
-    return {
-      connectionString: config,
-      schema: 'pgboss',
-      poolSize: 10
-    };
-  }
+
+  if(typeof config === 'string')
+    config = {connectionString: config};
 
   if (typeof (config.connectionString) !== 'string') {
     assert(config.database && config.user && 'password' in config,
