@@ -55,4 +55,14 @@ describe('initialization', function(){
       });
   });
 
+  it('should accept a connectionString and schema properties', function(finished){
+    const connectionString = 'postgresql://postgres@127.0.0.1:5432/db';
+    const schema = 'pgboss_custom_schema';
+    const boss = new PgBoss({connectionString, schema});
+
+    assert.equal(boss.config.schema, schema);
+
+    finished();
+  });
+
 });
