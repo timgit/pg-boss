@@ -141,6 +141,8 @@ class Manager extends EventEmitter {
     let worker = new Worker(workerConfig);
     worker.start();
     subscription.worker = worker;
+
+    return Promise.resolve(true);
   }
 
   unsubscribe(name){
