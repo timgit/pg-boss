@@ -127,5 +127,15 @@ function getMigrations(schema) {
         `DROP INDEX ${schema}.job_fetch`
       ]
     },
+    {
+      version: '7',
+      previous: '6',
+      install: [
+        `ALTER TABLE ${schema}.job ADD COLUMN retryIn interval`,
+      ],
+      uninstall: [
+        `DROP INDEX ${schema}.job_fetch`
+      ]
+    },
   ];
 }

@@ -12,6 +12,7 @@ const stateJobSuffix = '__state__';
 const expiredJobSuffix = stateJobSuffix + states.expired;
 const completedJobSuffix = stateJobSuffix + states.complete;
 const failedJobSuffix = stateJobSuffix + states.failed;
+const retryJobSuffix = stateJobSuffix + states.retry;
 
 module.exports = {
   create,
@@ -25,6 +26,8 @@ module.exports = {
   cancelJobs,
   failJob,
   failJobs,
+  retryJob,
+  retryJobs,
   insertJob,
   expire,
   archive,
@@ -69,7 +72,7 @@ function createJobStateEnum(schema) {
     CREATE TYPE ${schema}.job_state AS ENUM (
       '${states.created}',
       '${states.retry}',
-      '${states.active}',	
+      '${states.active}',
       '${states.complete}',
       '${states.expired}',
       '${states.cancelled}',
@@ -88,6 +91,7 @@ function createJobTable(schema) {
       state ${schema}.job_state not null default('${states.created}'),
       retryLimit integer not null default(0),
       retryCount integer not null default(0),
+      retryIn interval,
       startIn interval not null default(interval '0'),
       startedOn timestamp with time zone,
       singletonKey text,
@@ -152,6 +156,7 @@ function fetchNextJob(schema) {
       WHERE state < '${states.active}'
         AND name = $1
         AND (createdOn + startIn) < now()
+        AND ((retryIn IS NULL) OR (startedOn + retryIn) < now())
       ORDER BY priority desc, createdOn, id
       LIMIT $2
       FOR UPDATE SKIP LOCKED
@@ -162,7 +167,8 @@ function fetchNextJob(schema) {
       retryCount = CASE WHEN state = '${states.retry}' THEN retryCount + 1 ELSE retryCount END
     FROM nextJob
     WHERE ${schema}.job.id = nextJob.id
-    RETURNING ${schema}.job.id, $1 as name, ${schema}.job.data
+    RETURNING ${schema}.job.id, $1 as name, ${schema}.job.data, ${schema}.job.retryCount,
+      ${schema}.job.retryLimit, ${schema}.job.retryIn
   `;
 }
 
@@ -225,7 +231,28 @@ function failJobs(schema){
     SET completedOn = now(),
       state = '${states.failed}'
     WHERE id = ANY($1)
-      AND state < '${states.complete}'    
+      AND state < '${states.complete}'
+  `;
+}
+
+function retryJob(schema){
+  return `
+    UPDATE ${schema}.job
+    SET retryIn = concat(LEAST($3, $2 * 2 ^ job.retryCount), ' seconds')::interval,
+      state = '${states.retry}'
+    WHERE id = $1
+      AND state < '${states.complete}'
+    RETURNING id, name, data
+  `;
+}
+
+function retryJobs(schema){
+  return `
+    UPDATE ${schema}.job
+    SET retryIn = concat(LEAST(100, 2 * 2 ^ job.retryCount), ' seconds')::interval,
+      state = '${states.retry}'
+    WHERE id = ANY($1)
+      AND state < '${states.complete}'
   `;
 }
 
@@ -244,10 +271,10 @@ function expire(schema) {
   return `
     WITH expired AS (
       UPDATE ${schema}.job
-      SET state = CASE WHEN retryCount < retryLimit THEN '${states.retry}'::${schema}.job_state ELSE '${states.expired}'::${schema}.job_state END,        
+      SET state = CASE WHEN retryCount < retryLimit THEN '${states.retry}'::${schema}.job_state ELSE '${states.expired}'::${schema}.job_state END,
         completedOn = CASE WHEN retryCount < retryLimit THEN NULL ELSE now() END
       WHERE state = '${states.active}'
-        AND (startedOn + expireIn) < now()    
+        AND (startedOn + expireIn) < now()
       RETURNING id, name, state, data
     )
     SELECT id, name, data FROM expired WHERE state = '${states.expired}';
@@ -259,10 +286,10 @@ function archive(schema) {
     DELETE FROM ${schema}.job
     WHERE (completedOn + CAST($1 as interval) < now())
       OR (
-        state = '${states.created}' 
-        AND name LIKE '%${stateJobSuffix}%' 
+        state = '${states.created}'
+        AND name LIKE '%${stateJobSuffix}%'
         AND createdOn + CAST($1 as interval) < now()
-      )        
+      )
   `;
 }
 
