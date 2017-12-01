@@ -60,12 +60,10 @@ describe('retries', function() {
         assert.equal(tryCount, retryLimit + 1);
         finished();
 
-      }, 1000);
+      }, 500);
   });
 
   it('should set exponential back off for retries', function(finished) {
-    this.timeout(10000);
-
     const retryLimit = 3;
 
     let tryCount = 0;
@@ -115,8 +113,6 @@ describe('retries', function() {
   });
 
   it('should fail retriable job after retryLimit is reached', function(finished) {
-    this.timeout(3000);
-
     const retryLimit = 1;
 
     let tryCount = 0;
