@@ -4,9 +4,10 @@ const helper = require('./testHelper');
 describe('retries', function() {
 
   let boss;
+  const retryMinDelay = 0.1;
 
   before(function(finished){
-    helper.start({expireCheckInterval:200, newJobCheckInterval: 200, retryMinDelay: 0.2})
+    helper.start({expireCheckInterval:100, newJobCheckInterval: 100, retryMinDelay})
       .then(dabauce => {
         boss = dabauce;
         finished();
@@ -39,7 +40,6 @@ describe('retries', function() {
 
   it('should retry retriable failed job', function(finished) {
       const retryLimit = 1;
-      const retryMinDelay = 0.2;
 
       let tryCount = 0;
 
@@ -64,26 +64,42 @@ describe('retries', function() {
   });
 
   it('should set exponential back off for retries', function(finished) {
-    finished();
-/*    this.timeout(3000);
+    this.timeout(10000);
 
-    const retryLimit = 1;
+    const retryLimit = 3;
 
     let tryCount = 0;
+    let expectedDelay = 0;
+
+    let start = new Date();
 
     const errorMessage = 'something went wrong';
     const jobName = 'retry-backoff';
     let jobId;
-FIXME switch to time based approach - make sure at least x elapses between
+
     boss.on('failed', failure => {
       if (!failure.retry) {
-        assert.equal(0.2, failure.job.retryin, 'Job retry time was not set correctly');
         boss.removeAllListeners('failed');
         finished();
       }
     });
 
     boss.subscribe(jobName, job => {
+      if (tryCount) {
+        try {
+          let end = new Date();
+          let elapsedMillis = Math.floor((end-start));
+          expectedDelay += retryMinDelay * 1000 * Math.pow(2, tryCount - 1);
+          console.log(`Retried job ${tryCount} times after ${elapsedMillis}ms (expect ${expectedDelay} to ${expectedDelay + 300})`);
+          assert.isAtLeast(elapsedMillis, expectedDelay);
+          // Processing resolution is ~200ms
+          assert.isAtMost(elapsedMillis, expectedDelay + 300);
+        } catch (err) {
+          boss.removeAllListeners('failed');
+          finished(err);
+        }
+      }
+
       tryCount += 1;
       let myError = new Error(errorMessage);
       myError.shouldRetry = true;
@@ -94,8 +110,8 @@ FIXME switch to time based approach - make sure at least x elapses between
           assert(false, error.message);
         });
     })
-    .then(() => boss.publish({name: jobName, options: {retryLimit}}))
-    .then(id => jobId = id);*/
+    .then(() => boss.publish({name: jobName, options: {retryLimit, retryMinDelay}}))
+    .then(id => jobId = id);
   });
 
   it('should fail retriable job after retryLimit is reached', function(finished) {
