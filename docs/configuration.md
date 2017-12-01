@@ -9,6 +9,7 @@ pg-boss can be customized using configuration options when an instance is create
     - [Database options](#database-options)
     - [Job fetch options](#job-fetch-options)
     - [Job expiration options](#job-expiration-options)
+    - [Job retry options](#job-retry-options)
     - [Job archive options](#job-archive-options)
 - [Publish Options](#publish-options)
     - [Delayed jobs](#delayed-jobs)
@@ -74,6 +75,18 @@ When `expireCheckIntervalMinutes` is specified, `expireCheckIntervalSeconds` and
 
 When `expireCheckIntervalSeconds` is specified, `expireCheckInterval` is ignored.
 
+### Job retry options
+* **retryMinDelay**, int
+
+    Default: 2. Initial interval (in seconds) to retry a failed job after (fractional units accepted)
+
+* **retryMaxDelay**, int
+
+    Default: 3600. Maximum interval to wait before retrying a failed job
+
+Retried jobs use exponential backoff, initial retry will be `retryMinDelay` and will double
+with each retry up to `retryMaxDelay`.
+
 ### Job archive options
 
 > Please note the term **"archive"** used in pg-boss actually results in completed jobs being **removed** from the job table to keep performance and capacity under control.  If you need to keep old jobs, you should set the `archiveCompletedJobsEvery` setting large enough to allow yourself a window of opportunity to grab them ahead of their scheduled removal.
@@ -113,7 +126,7 @@ When `archiveCheckIntervalSeconds` is specified, `archiveCheckInterval` is ignor
 Only allows 1 job (within the same name) to be queued or active with the same singletonKey.
 
 ```js
-publish('my-job', {singletonKey: '123'}) // resolves a jobId 
+publish('my-job', {singletonKey: '123'}) // resolves a jobId
 publish('my-job', {singletonKey: '123'}) // resolves a null jobId until first job completed
 ```
 
