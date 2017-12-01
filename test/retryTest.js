@@ -54,7 +54,7 @@ describe('retries', function() {
         });
       });
 
-      boss.publish({name: 'unreliable-retriable', options: { retryLimit, retryMinDelay }});
+      boss.publish({name: 'unreliable-retriable', options: { retryLimit }});
 
       setTimeout(function() {
         assert.equal(tryCount, retryLimit + 1);
@@ -110,7 +110,7 @@ describe('retries', function() {
           assert(false, error.message);
         });
     })
-    .then(() => boss.publish({name: jobName, options: {retryLimit, retryMinDelay}}))
+    .then(() => boss.publish({name: jobName, options: {retryLimit}}))
     .then(id => jobId = id);
   });
 
