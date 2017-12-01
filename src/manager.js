@@ -10,6 +10,7 @@ const Attorney = require('./attorney');
 const expiredJobSuffix = plans.expiredJobSuffix;
 const completedJobSuffix = plans.completedJobSuffix;
 const failedJobSuffix = plans.failedJobSuffix;
+const retryFailedJobSuffix = plans.retryFailedJobSuffix;
 
 const events = {
   job: 'job',
@@ -35,6 +36,8 @@ class Manager extends EventEmitter {
     this.cancelJobsCommand = plans.cancelJobs(config.schema);
     this.failJobCommand = plans.failJob(config.schema);
     this.failJobsCommand = plans.failJobs(config.schema);
+    this.retryJobCommand = plans.retryJob(config.schema);
+    this.retryJobsCommand = plans.retryJobs(config.schema);
 
     // exported api to index
     this.functions = [
@@ -101,6 +104,13 @@ class Manager extends EventEmitter {
     let complete = (job, error, response) => {
       if(!error)
         return this.complete(job.id, response);
+
+      if ((error.shouldRetry) && (job.retrycount < job.retrylimit))
+        return this.retry(job.id, {
+            retryMinDelay: this.config.retryMinDelay || 2,
+            retryMaxDelay: this.config.retryMaxDelay || 3600
+          })
+          .then(() => this.emit(events.failed, {job, error, retry: true}));
 
       return this.fail(job.id, error)
         .then(() => this.emit(events.failed, {job, error}));
@@ -243,10 +253,10 @@ class Manager extends EventEmitter {
     return job.data;
   }
 
-  setStateForJob(id, data, actionName, command, stateSuffix, bypassNotify){
+  setStateForJob(id, data, actionName, command, stateSuffix, bypassNotify, sqlParams){
     let job;
 
-    return this.db.executeSql(command, [id])
+    return this.db.executeSql(command, [id].concat(sqlParams || []))
       .then(result => {
         assert(result.rowCount === 1, `${actionName}(): Job ${id} could not be updated.`);
 
@@ -259,15 +269,15 @@ class Manager extends EventEmitter {
       .then(() => job);
   }
 
-  setStateForJobs(ids, actionName, command){
-    return this.db.executeSql(command, [ids])
+  setStateForJobs(ids, actionName, command, sqlParams){
+    return this.db.executeSql(command, [ids].concat(sqlParams || []))
       .then(result => {
         assert(result.rowCount === ids.length, `${actionName}(): ${ids.length} jobs submitted, ${result.rowCount} updated`);
       });
   }
 
   setState(config){
-    let {id, data, actionName, command, batchCommand, stateSuffix, bypassNotify} = config;
+    let {id, data, actionName, command, batchCommand, stateSuffix, bypassNotify, sqlParams} = config;
 
     return Attorney.assertAsync(id, `${actionName}() requires id argument`)
       .then(() => {
@@ -276,8 +286,8 @@ class Manager extends EventEmitter {
         assert(ids.length, `${actionName}() requires at least 1 item in an array argument`);
 
         return ids.length === 1
-          ? this.setStateForJob(ids[0], data, actionName, command, stateSuffix, bypassNotify)
-          : this.setStateForJobs(ids, actionName, batchCommand);
+          ? this.setStateForJob(ids[0], data, actionName, command, stateSuffix, bypassNotify, sqlParams)
+          : this.setStateForJobs(ids, actionName, batchCommand, sqlParams);
       })
   }
 
@@ -302,6 +312,20 @@ class Manager extends EventEmitter {
       command: this.failJobCommand,
       batchCommand: this.failJobsCommand,
       stateSuffix: failedJobSuffix
+    };
+
+    return this.setState(config);
+  }
+
+  retry(id, data){
+    const config = {
+      id,
+      data,
+      actionName: 'retry',
+      command: this.retryJobCommand,
+      batchCommand: this.retryJobsCommand,
+      stateSuffix: retryFailedJobSuffix,
+      sqlParams: [data.retryMinDelay, data.retryMaxDelay]
     };
 
     return this.setState(config);
