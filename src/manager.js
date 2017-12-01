@@ -108,7 +108,7 @@ class Manager extends EventEmitter {
       if ((error.shouldRetry) && (job.retrycount < job.retrylimit))
         return this.retry(job.id, {
             retryMinDelay: this.config.retryMinDelay || 2,
-            retryMaxDelay: this.config.retryMaxDelay || 60
+            retryMaxDelay: this.config.retryMaxDelay || 3600
           })
           .then(() => this.emit(events.failed, {job, error, retry: true}));
 
