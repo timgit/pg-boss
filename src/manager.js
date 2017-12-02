@@ -197,7 +197,7 @@ class Manager extends EventEmitter {
             : null;
 
     let id = uuid[this.config.uuid](),
-      retryLimit = options.retryLimit || 0,
+      retryLimit = options.retryLimit || this.config.retryLimit || 0,
       expireIn = options.expireIn || '15 minutes',
       priority = options.priority || 0;
 
