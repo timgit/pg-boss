@@ -124,12 +124,15 @@ This can be used in conjunction with throttling explained below.
 * **singletonMinutes**, int
 * **singletonHours**, int
 * **singletonDays**, int
+* **singletonNextSlot**, bool
 
 Throttling jobs to 'once every n units', where units could be seconds, minutes, hours or days.  This option is set on the publish side of the API since jobs may or may not be created based on the existence of other jobs.
 
 For exampe, if you set the `singletonMinutes` to 1, then submit 2 jobs within a minute, only the first job will be accepted and resolve a job id.  The second request will be discarded, but resolve a null instead of an id.
 
 Order of precedence for throttling is least to greatest. For example, if `singletonSeconds` is set, `singletonMinutes` is ignored.
+
+Setting `singletonNextSlot` to true will cause the job to be scheduled to run after the current time slot if and when a job is throttled.  Basically it's debounce with a lousy name atm.  Expect this api to be improved in the future.  
 
 ### Job retries
 
