@@ -7,6 +7,7 @@ const Worker = require('./worker');
 const plans = require('./plans');
 const Attorney = require('./attorney');
 
+const stateJobDelimiter = plans.stateJobDelimiter;
 const expiredJobSuffix = plans.expiredJobSuffix;
 const completedJobSuffix = plans.completedJobSuffix;
 const failedJobSuffix = plans.failedJobSuffix;
@@ -251,6 +252,9 @@ class Manager extends EventEmitter {
         assert(result.rowCount === 1, `${actionName}(): Job ${id} could not be updated.`);
 
         job = result.rows[0];
+
+        if(!bypassNotify)
+          bypassNotify = job.name.indexOf(stateJobDelimiter) >= 0;
 
         return bypassNotify
           ? null

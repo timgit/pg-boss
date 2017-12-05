@@ -1,5 +1,6 @@
 const Db = require('../src/db');
 const PgBoss = require('../src/index');
+const plans = require('../src/plans');
 
 module.exports = {
   init,
@@ -7,6 +8,9 @@ module.exports = {
   extend,
   getDb,
   getJobById,
+  findJobs,
+  stateJobDelimiter: plans.stateJobDelimiter,
+  countJobs,
   empty,
   getConfig,
   getConnectionString
@@ -44,7 +48,16 @@ function init(schema) {
 }
 
 function getJobById(id) {
-  return getDb().executeSql(`select * from ${getConfig().schema}.job where id = $1`, [id]);
+  return findJobs('id = $1', [id]);
+}
+
+function findJobs(where, values){
+  return getDb().executeSql(`select * from ${getConfig().schema}.job where ${where}`, values);
+}
+
+function countJobs(where, values){
+  return getDb().executeSql(`select count(*) as count from ${getConfig().schema}.job where ${where}`, values)
+    .then(result => parseFloat(result.rows[0].count));
 }
 
 function start(options) {

@@ -165,4 +165,22 @@ describe('complete', function() {
       })
   });
 
+  it('should not create an extra state job after completion', function(finished){
+    const jobName = 'noMoreExtraStateJobs';
+
+    let jobId;
+
+    boss.publish(jobName)
+      .then(id => jobId = id)
+      .then(() => boss.fetch(jobName))
+      .then(() => boss.complete(jobId))
+      .then(() => boss.fetchCompleted(jobName))
+      .then(job => boss.complete(job.id))
+      .then(() => helper.countJobs(`name LIKE $1`, [`${jobName}${helper.stateJobDelimiter}%`]))
+      .then(stateJobCount => {
+        assert.strictEqual(stateJobCount, 1);
+        finished();
+      })
+  });
+
 });
