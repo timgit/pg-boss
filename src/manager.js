@@ -14,6 +14,7 @@ const failedJobSuffix = plans.failedJobSuffix;
 
 const events = {
   job: 'job',
+  jobs: 'jobs',
   failed: 'failed',
   error: 'error'
 };
@@ -88,7 +89,7 @@ class Manager extends EventEmitter {
   watch(name, options, callback){
     assert(!(name in this.subscriptions), 'this job has already been subscribed on this instance.');
 
-    options.batchSize = options.batchSize || options.teamSize;
+    let batchSize = options.batchSize || options.teamSize;
 
     if('newJobCheckInterval' in options || 'newJobCheckIntervalSeconds' in options)
       options = Attorney.applyNewJobCheckInterval(options);
@@ -99,13 +100,23 @@ class Manager extends EventEmitter {
 
     let onError = error => this.emit(events.error, error);
 
-    let complete = (job, error, response) => {
+    let jobComplete = (job, error, response) => {
       if(!error)
         return this.complete(job.id, response);
 
       return this.fail(job.id, error)
         .then(() => this.emit(events.failed, {job, error}));
     };
+
+    let jobsComplete = (jobs, error) => {
+      let ids = jobs.map((job) => job.id)
+
+      if(!error)
+        return this.complete(ids);
+
+      return this.fail(ids, error)
+        .then(() => this.emit(events.failed, {jobs, error}));
+    }
 
     let respond = jobs => {
       if (!jobs) return;
@@ -114,22 +125,33 @@ class Manager extends EventEmitter {
         jobs = [jobs];
 
       setImmediate(() => {
-        jobs.forEach(job => {
-          this.emit(events.job, job);
-          job.done = (error, response) => complete(job, error, response);
+        if (options.teamSize) {
+          jobs.forEach(job => {
+            this.emit(events.job, job);
+            job.done = (error, response) => jobComplete(job, error, response);
+
+            try {
+              callback(job, job.done);
+            }
+            catch (error) {
+              this.emit(events.failed, {job, error})
+            }
+          });
+        } else {
+          this.emit(events.jobs, jobs);
 
           try {
-            callback(job, job.done);
+            callback(jobs, (error) => jobsComplete(jobs, error));
           }
           catch (error) {
-            this.emit(events.failed, {job, error})
+            this.emit(events.failed, {jobs, error})
           }
-        });
+        }
       });
 
     };
 
-    let fetch = () => this.fetch(name, options.batchSize);
+    let fetch = () => this.fetch(name, batchSize);
 
     let workerConfig = {
       name,
