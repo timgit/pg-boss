@@ -108,16 +108,6 @@ class Manager extends EventEmitter {
         .then(() => this.emit(events.failed, {job, error}));
     };
 
-    let jobsComplete = (jobs, error) => {
-      let ids = jobs.map((job) => job.id)
-
-      if(!error)
-        return this.complete(ids);
-
-      return this.fail(ids, error)
-        .then(() => this.emit(events.failed, {jobs, error}));
-    }
-
     let respond = jobs => {
       if (!jobs) return;
 
@@ -129,7 +119,7 @@ class Manager extends EventEmitter {
           this.emit(events.jobs, jobs);
 
           try {
-            callback(jobs, (error) => jobsComplete(jobs, error));
+            callback(jobs);
           } catch (error) {
             this.emit(events.failed, {jobs, error})
           }
