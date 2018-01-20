@@ -125,27 +125,25 @@ class Manager extends EventEmitter {
         jobs = [jobs];
 
       setImmediate(() => {
-        if (options.teamSize) {
+        if (options.batchSize) {
+          this.emit(events.jobs, jobs);
+
+          try {
+            callback(jobs, (error) => jobsComplete(jobs, error));
+          } catch (error) {
+            this.emit(events.failed, {jobs, error})
+          }
+        } else {
           jobs.forEach(job => {
             this.emit(events.job, job);
             job.done = (error, response) => jobComplete(job, error, response);
 
             try {
               callback(job, job.done);
-            }
-            catch (error) {
+            } catch (error) {
               this.emit(events.failed, {job, error})
             }
           });
-        } else {
-          this.emit(events.jobs, jobs);
-
-          try {
-            callback(jobs, (error) => jobsComplete(jobs, error));
-          }
-          catch (error) {
-            this.emit(events.failed, {jobs, error})
-          }
         }
       });
 

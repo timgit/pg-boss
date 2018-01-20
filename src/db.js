@@ -41,7 +41,7 @@ class Db extends EventEmitter {
         ssl: !!params.query.ssl
       };
     }
-    
+
   }
 
   close(){
