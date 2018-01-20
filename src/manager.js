@@ -116,6 +116,10 @@ class Manager extends EventEmitter {
 
       setImmediate(() => {
         if (options.batchSize) {
+          jobs.forEach(job => {
+            job.done = (error, response) => jobComplete(job, error, response);
+          })
+
           this.emit(events.jobs, jobs);
 
           try {
