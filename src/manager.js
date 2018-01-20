@@ -100,7 +100,7 @@ class Manager extends EventEmitter {
 
     let onError = error => this.emit(events.error, error);
 
-    let jobComplete = (job, error, response) => {
+    let complete = (job, error, response) => {
       if(!error)
         return this.complete(job.id, response);
 
@@ -117,7 +117,7 @@ class Manager extends EventEmitter {
       setImmediate(() => {
         if (options.batchSize) {
           jobs.forEach(job => {
-            job.done = (error, response) => jobComplete(job, error, response);
+            job.done = (error, response) => complete(job, error, response);
           })
 
           this.emit(events.jobs, jobs);
@@ -130,7 +130,7 @@ class Manager extends EventEmitter {
         } else {
           jobs.forEach(job => {
             this.emit(events.job, job);
-            job.done = (error, response) => jobComplete(job, error, response);
+            job.done = (error, response) => complete(job, error, response);
 
             try {
               callback(job, job.done);
