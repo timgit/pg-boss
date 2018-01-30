@@ -48,7 +48,7 @@ class Contractor {
 
   create(){
     return Promise.each(plans.create(this.config.schema), command => this.db.executeSql(command))
-      .then(() => this.db.executeSql(plans.insertVersion(this.config.schema), schemaVersion));
+      .then(() => this.db.executeSql(plans.insertVersion(this.config.schema), [schemaVersion]));
   }
 
   update(current) {

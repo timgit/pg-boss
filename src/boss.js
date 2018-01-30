@@ -79,7 +79,7 @@ class Boss extends EventEmitter{
   }
 
   archive(){
-    return this.db.executeSql(this.archiveCommand, this.config.archiveCompletedJobsEvery)
+    return this.db.executeSql(this.archiveCommand, [this.config.archiveCompletedJobsEvery])
       .then(result => {
         if (result.rowCount)
           this.emit(events.archived, result.rowCount);

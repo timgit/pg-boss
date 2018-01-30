@@ -53,9 +53,6 @@ class Db extends EventEmitter {
   }
 
   executeSql(text, values) {
-    if(values && !Array.isArray(values))
-      values = [values];
-
     return this.pool.query(text, values);
   }
 }
