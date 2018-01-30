@@ -32,14 +32,18 @@ class Db extends EventEmitter {
       const params = url.parse(connectionString, parseQuerystring);
       const auth = params.auth.split(':');
 
-      return {
+      let parsed = {
         user: auth[0],
-        password: auth[1],
         host: params.hostname,
         port: params.port,
         database: params.pathname.split('/')[1],
         ssl: !!params.query.ssl
       };
+
+      if(auth.length === 2)
+        parsed.password = auth[1];
+
+      return parsed;
     }
     
   }

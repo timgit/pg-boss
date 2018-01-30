@@ -106,11 +106,11 @@ function applyConfig(config) {
 
 function applyDatabaseConfig(config) {
 
-  if(typeof config === 'string')
+  if(typeof config === 'string') {
     config = {connectionString: config};
-
-  if (typeof (config.connectionString) !== 'string') {
-    assert(config.database && config.user && 'password' in config,
+  }
+  else if (typeof (config.connectionString) !== 'string' && typeof config.db !== 'object') {
+    assert(config.database && config.user,
       'configuration assert: not enough database settings to connect to PostgreSQL');
 
     config.host = config.host || '127.0.0.1';
@@ -125,10 +125,13 @@ function applyDatabaseConfig(config) {
 
   config.schema = config.schema || 'pgboss';
 
-  assert(!('poolSize' in config) || config.poolSize >=1,
-    'configuration assert: poolSize must be at least 1');
+  // byodb means we don't apply connection pooling
+  if(typeof config.db !== 'object'){
+    assert(!('poolSize' in config) || config.poolSize >=1,
+      'configuration assert: poolSize must be at least 1');
 
-  config.poolSize = config.poolSize || 10;
+    config.poolSize = config.poolSize || 10;
+  }
 
   return config;
 }

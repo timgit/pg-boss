@@ -1,5 +1,4 @@
 const EventEmitter = require('events');
-const assert = require('assert');
 const Promise = require('bluebird');
 const Attorney = require('./attorney');
 const Contractor = require('./contractor');
@@ -25,9 +24,10 @@ class PgBoss extends EventEmitter {
 
     super();
 
-    const db = new Db(config);
+    const db = getDb(config);
 
-    promoteEvent.call(this, db, 'error');
+    if(db.isOurs)
+      promoteEvent.call(this, db, 'error');
 
     const manager = new Manager(db, config);
     Object.keys(manager.events).forEach(event => promoteEvent.call(this, manager, manager.events[event]));
@@ -44,6 +44,19 @@ class PgBoss extends EventEmitter {
     this.contractor = new Contractor(db, config);
     this.manager = manager;
 
+    function getDb(config){
+      let db;
+
+      if(config.db) {
+        db = config.db;
+      }
+      else {
+        db = new Db(config);
+        db.isOurs = true;
+      }
+
+      return db;
+    }
 
     function promoteFunction(obj, func){
       this[func.name] = (...args) => {
