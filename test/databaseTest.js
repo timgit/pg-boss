@@ -26,21 +26,19 @@ describe('database', function(){
 
   it('can be swapped out via BYODB', function(finished) {
 
-    const dbCloseResponse = 'nope';
+    const query = 'SELECT something FROM somewhere';
 
     const mydb = {
-      close: () => Promise.resolve(dbCloseResponse),
-      executeSql: (text, values) => Promise.resolve({rows:[]})
+      executeSql: (text, values) => Promise.resolve({rows:[],text})
     };
 
     const boss = new PgBoss({db:mydb});
 
     boss.start()
-      .then(() => boss.db.close())
-      .then(response => {
-        assert(response === dbCloseResponse);
-        finished();
-      })
+      .then(() => boss.db.executeSql(query))
+      .then(response => assert(response.text === query))
+      .then(() => boss.stop())
+      .then(() => finished())
       .catch(err => {
         console.error(err.message);
         finished();

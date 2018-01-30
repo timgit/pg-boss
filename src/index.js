@@ -105,7 +105,7 @@ class PgBoss extends EventEmitter {
         this.manager.stop(),
         this.boss.stop()
       )
-      .then(() => this.db.close())
+      .then(() => this.db.isOurs ? this.db.close() : null)
       .then(() => {
         this.isReady = false;
         this.isStarted = false;
@@ -124,7 +124,7 @@ class PgBoss extends EventEmitter {
     if(!this.isReady) return Promise.reject(notReadyErrorMessage);
 
     return this.manager.stop.apply(this.manager, args)
-      .then(() => this.db.close())
+      .then(() => this.db.isOurs ? this.db.close() : null)
       .then(() => this.isReady = false);
   }
 

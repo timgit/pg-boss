@@ -22,29 +22,65 @@ pg-boss can be customized using configuration options when an instance is create
 
 ## Constructor Options
 
+The constructor accepts either a string or an object.  If a string is used, it's interpreted as a Postgres connection string.
+Since passing only a connection string is intended to be for convenience, you can't set any other options.   
+
 ### Database options
+
+* **host** - string,  defaults to "127.0.0.1"
+
+* **port** - int,  defaults to 5432
+
+* **ssl** - bool, defaults to false
+
 * **database** - string, *required*
+
 * **user** - string, *required*
-* **password** - string, *required*
-* **host** - string
 
-    Default: "127.0.0.1"
+* **password** - string
 
-* **port** - int
+* **connectionString** - string
 
-    Default: 5432
+    PostgresSQL connection string will be parsed and used instead of `host`, `port`, `ssl`, `database`, `user`, `password`.
+    Based on the [pg](https://github.com/brianc/node-postgres) package. For example: 
+    
+    ```js
+    const boss = new PgBoss('postgres://user:pass@host:port/database?ssl=require');
+    ```
 
-* **schema** - string
+* **poolSize** - int, defaults to 10
 
-    Default: "pgboss".  Only alphanumeric and underscore allowed, length: <= 50 characters
+    Maximum number of connections that will be shared by all subscriptions in this instance
+    
+* **application_name** - string, defaults to "pgboss"
+    
+* **db** - object
 
-* **uuid** - string
+    Passing an object named db allows you "bring your own database connection".  
+    Setting this option ignores all of the above settings. The interface required for db:
+    
+    ```js
+    {
+      // resolves Promise with an object with an array called rows  
+      executeSql(text, [values])    
+    }
+    ```
+    
+    This option may be beneficial if you'd like to use an existing database service 
+    with its own connection pool.
+    
+    For example, you may be relying on the cluster module on 
+    a web server, and you'd like to limit the growth of total connections as much as possible. 
 
-    Default: "v1". uuid format used, "v1" or "v4"
+* **schema** - string, defaults to "pgboss"
 
-* **poolSize** - int
+    Only alphanumeric and underscore allowed, length: <= 50 characters    
 
-    Default: 10.  Maximum number of connections that will be shared by all subscriptions in this instance.
+### Job creation options
+
+* **uuid** - string, defaults to "v1"
+
+    uuid format used, "v1" or "v4"
 
 ### Job fetch options
 * **newJobCheckInterval**, int
