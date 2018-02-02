@@ -57,11 +57,11 @@ Since passing only a connection string is intended to be for convenience, you ca
 * **db** - object
 
     Passing an object named db allows you "bring your own database connection".  
-    Setting this option ignores all of the above settings. The interface required for db:
+    Setting this option ignores all of the above settings. The interface required for db is a single function called `executeSql` that accepts a SQL string and an optional array of parameters. This should return a promise that resolves an object just like the pg module: a `rows` array with results and `rowCount` property that contains affected records after an update operation.
     
     ```js
     {
-      // resolves Promise with an object with an array called rows  
+      // resolves Promise
       executeSql(text, [values])    
     }
     ```
