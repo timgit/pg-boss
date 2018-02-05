@@ -61,16 +61,10 @@ function countJobs(where, values){
 }
 
 function start(options) {
+  options = options || {};
 
-  return init()
-    .then(() => {
-      let config  = getConfig();
-
-      if(options && typeof options == 'object')
-        options = extend(config, options);
-
-      return new PgBoss(options || config).start();
-    });
+  return init(options.schema)
+    .then(() => new PgBoss(extend(getConfig(), options)).start());
 }
 
 function extend(dest, source) {
