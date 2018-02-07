@@ -2,14 +2,15 @@
 
 declare namespace PgBoss {
   export interface ConnectionOptions {
-    database: string
-    user: string
-    password: string
+    database?: string
+    user?: string
+    password?: string
     host?: string
     port?: number
     schema?: string
     uuid?: string
     poolSize?: number
+    db?: object
   }
 
   interface PublishOptions {
