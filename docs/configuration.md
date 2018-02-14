@@ -136,6 +136,10 @@ When `archiveCheckIntervalSeconds` is specified, `archiveCheckInterval` is ignor
 
 ## Publish Options
 
+* **priority**, int
+
+    optional priority.  Higher numbers have, um, higher priority
+
 ### Delayed jobs
 * **startIn** int or string
   * int: seconds to delay starting the job
