@@ -58,7 +58,7 @@ declare class PgBoss {
   stop(): Promise<void>;
   connect(): Promise<PgBoss>;
   disconnect(): Promise<void>;
-  publish(request: Request): Promise<string | null>;
+  publish(request: PgBoss.Request): Promise<string | null>;
   publish(name: string, data: object): Promise<string | null>;
   publish(name: string, data: object, options: PgBoss.PublishOptions): Promise<string | null>;
   subscribe(name: string, handler: Function): Promise<void>;
