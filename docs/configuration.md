@@ -153,8 +153,8 @@ When `archiveCheckIntervalSeconds` is specified, `archiveCheckInterval` is ignor
 Only allows 1 job (within the same name) to be queued or active with the same singletonKey.
 
 ```js
-publish('my-job', {singletonKey: '123'}) // resolves a jobId 
-publish('my-job', {singletonKey: '123'}) // resolves a null jobId until first job completed
+boss.publish('my-job', {}, {singletonKey: '123'}) // resolves a jobId 
+boss.publish('my-job', {}, {singletonKey: '123'}) // resolves a null jobId until first job completed
 ```
 
 This can be used in conjunction with throttling explained below.
