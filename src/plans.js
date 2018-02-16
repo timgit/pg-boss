@@ -28,6 +28,7 @@ module.exports = {
   insertJob,
   expire,
   archive,
+  purge,
   countStates,
   states,
   stateJobDelimiter,
@@ -42,6 +43,8 @@ function create(schema) {
     createVersionTable(schema),
     createJobStateEnum(schema),
     createJobTable(schema),
+    cloneJobTableForArchive(schema),
+    addArchivedOnToArchive(schema),
     createIndexJobFetch(schema),
     createIndexSingletonOn(schema),
     createIndexSingletonKeyOn(schema),
@@ -98,6 +101,14 @@ function createJobTable(schema) {
       completedOn timestamp with time zone
     )
   `;
+}
+
+function cloneJobTableForArchive(schema){
+  return `CREATE TABLE IF NOT EXISTS ${schema}.archive (LIKE ${schema}.job)`;
+}
+
+function addArchivedOnToArchive(schema) {
+  return `ALTER TABLE ${schema}.archive ADD archivedOn timestamptz NOT NULL DEFAULT now()`;
 }
 
 function createIndexSingletonKey(schema){
@@ -255,15 +266,28 @@ function expire(schema) {
   `;
 }
 
-function archive(schema) {
+function purge(schema) {
   return `
-    DELETE FROM ${schema}.job
-    WHERE (completedOn + CAST($1 as interval) < now())
-      OR (
-        state = '${states.created}' 
-        AND name LIKE '%${stateJobDelimiter}%' 
-        AND createdOn + CAST($1 as interval) < now()
-      )        
+    DELETE FROM ${schema}.archive
+    WHERE (archivedOn + CAST($1 as interval) < now())              
+  `;
+}
+
+function archive(schema){
+  return `
+    WITH archived_rows AS (
+      DELETE FROM ${schema}.job
+      WHERE
+        (completedOn + CAST($1 as interval) < now())
+        OR (
+          state = '${states.created}'
+          AND name LIKE '%${stateJobDelimiter}%'
+          AND createdOn + CAST($1 as interval) < now()
+        )
+      RETURNING *
+    )
+    INSERT INTO ${schema}.archive
+    SELECT * FROM archived_rows;
   `;
 }
 
