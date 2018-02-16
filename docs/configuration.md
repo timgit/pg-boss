@@ -7,6 +7,7 @@ pg-boss can be customized using configuration options when an instance is create
 
 - [Constructor Options](#constructor-options)
     - [Database options](#database-options)
+    - [Job creation options](#job-creation-options)
     - [Job fetch options](#job-fetch-options)
     - [Job expiration options](#job-expiration-options)
     - [Job archive options](#job-archive-options)
