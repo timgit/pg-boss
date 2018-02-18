@@ -1,5 +1,4 @@
 const assert = require('assert');
-const Promise = require('bluebird');
 
 module.exports = {
   applyConfig,
@@ -97,6 +96,7 @@ function applyConfig(config) {
   config = applyNewJobCheckInterval(config);
   config = applyExpireConfig(config);
   config = applyArchiveConfig(config);
+  config = applyDeleteConfig(config);
   config = applyMonitoringConfig(config);
   config = applyUuidConfig(config);
 
@@ -191,6 +191,21 @@ function applyArchiveConfig(config) {
     'configuration assert: archiveCompletedJobsEvery should be a readable PostgreSQL interval such as "1 day"');
 
   config.archiveCompletedJobsEvery = config.archiveCompletedJobsEvery || '1 day';
+
+  return config;
+}
+
+function applyDeleteConfig(config) {
+
+  config.deleteCheckInterval = ('deleteCheckInterval' in config)
+      ? config.deleteCheckInterval * 60 * 1000
+      : 60 * 60 * 1000; // default is 1 hour
+
+  // TODO: discontinue pg interval strings in favor of ms int for better validation (when interval is specified lower than check interval, for example)
+  assert(!('deleteArchivedJobsEvery' in config) || typeof config.deleteArchivedJobsEvery === 'string',
+    'configuration assert: deleteArchivedJobsEvery should be a readable PostgreSQL interval such as "7 days"');
+
+  config.deleteArchivedJobsEvery = config.deleteArchivedJobsEvery || '7 days';
 
   return config;
 }

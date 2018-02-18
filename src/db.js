@@ -1,6 +1,5 @@
 const EventEmitter = require('events');
 const pg = require('pg');
-const Promise = require('bluebird');
 const url = require('url');
 
 class Db extends EventEmitter {

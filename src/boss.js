@@ -1,9 +1,9 @@
 const EventEmitter = require('events');
 const plans = require('./plans');
-const Promise = require('bluebird');
 
 const events = {
   archived: 'archived',
+  deleted: 'deleted',
   monitorStates: 'monitor-states',
   expiredCount: 'expired-count',
   expiredJob: 'expired-job',
@@ -22,6 +22,7 @@ class Boss extends EventEmitter{
 
     this.expireCommand = plans.expire(config.schema);
     this.archiveCommand = plans.archive(config.schema);
+    this.purgeCommand = plans.purge(config.schema);
     this.countStatesCommand = plans.countStates(config.schema);
   }
 
@@ -30,11 +31,12 @@ class Boss extends EventEmitter{
 
     // todo: add query that calcs avg start time delta vs. creation time
 
-    return Promise.join(
+    return Promise.all([
       monitor(this.archive, this.config.archiveCheckInterval),
+      monitor(this.purge, this.config.deleteCheckInterval),
       monitor(this.expire, this.config.expireCheckInterval),
       this.config.monitorStateInterval ? monitor(this.countStates, this.config.monitorStateInterval) : null
-    );
+    ]);
 
     function monitor(func, interval) {
 
@@ -73,7 +75,7 @@ class Boss extends EventEmitter{
       .then(result => {
         if (result.rows.length) {
           this.emit(events.expiredCount, result.rows.length);
-          return Promise.map(result.rows, job => this.emit(events.expiredJob, job));
+          return Promise.all(result.rows.map(job => this.emit(events.expiredJob, job)));
         }
       });
   }
@@ -83,6 +85,14 @@ class Boss extends EventEmitter{
       .then(result => {
         if (result.rowCount)
           this.emit(events.archived, result.rowCount);
+      });
+  }
+
+  purge(){
+    return this.db.executeSql(this.purgeCommand, [this.config.deleteArchivedJobsEvery])
+      .then(result => {
+        if (result.rowCount)
+          this.emit(events.deleted, result.rowCount);
       });
   }
 

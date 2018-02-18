@@ -4,14 +4,15 @@
   "description": "Queueing jobs in Node.js using PostgreSQL like a boss",
   "main": "./lib/index.js",
   "engines": {
-    "node": ">=4.0.0"
+    "node": ">=4.0.0",
+    "npm": ">=5.0.0"
   },
   "dependencies": {
-    "bluebird": "^3.4.6",
     "pg": "^7.1.2",
     "uuid": "^3.0.0"
   },
   "devDependencies": {
+    "bluebird": "^3.4.6",
     "babel-cli": "^6.24.1",
     "babel-core": "^6.24.1",
     "babel-plugin-istanbul": "^4.1.1",

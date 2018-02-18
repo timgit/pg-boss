@@ -1,6 +1,5 @@
 const assert = require('assert');
 const EventEmitter = require('events');
-const Promise = require('bluebird');
 const uuid = require('uuid');
 
 const Worker = require('./worker');
