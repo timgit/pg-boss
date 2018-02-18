@@ -198,7 +198,7 @@ function applyArchiveConfig(config) {
 function applyDeleteConfig(config) {
 
   config.deleteCheckInterval = ('deleteCheckInterval' in config)
-      ? config.deleteCheckInterval * 60 * 1000
+      ? config.deleteCheckInterval
       : 60 * 60 * 1000; // default is 1 hour
 
   // TODO: discontinue pg interval strings in favor of ms int for better validation (when interval is specified lower than check interval, for example)
