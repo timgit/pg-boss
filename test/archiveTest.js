@@ -1,5 +1,6 @@
 const assert = require('chai').assert;
 const helper = require('./testHelper');
+const Promise = require('bluebird');
 
 describe('archive', function() {
 
@@ -23,27 +24,15 @@ describe('archive', function() {
     let jobName = 'archiveMe';
     let jobId = null;
 
-    boss.publish(jobName).then(id => {
-      jobId = id;
-
-      helper.getJobById(jobId)
-        .then(result => assert.equal(1, result.rows.length));
-    });
-
-    boss.subscribe(jobName, job => {
-      job.done().then(() => {
-        setTimeout(() => {
-          helper.getJobById(jobId)
-            .then(result => {
-              assert.equal(0, result.rows.length);
-              finished();
-            });
-        }, 2000);
-      });
-    });
-
+    boss.publish(jobName)
+      .then(id => jobId = id)
+      .then(() => boss.fetch(jobName))
+      .then(job => assert.equal(job.id, jobId))
+      .then(() => boss.complete(jobId))
+      .then(() => Promise.delay(2000))
+      .then(() => helper.getArchivedJobById(jobId))
+      .then(result => assert.equal(1, result.rows.length))
+      .then(() => finished());
   });
-
-
 
 });
