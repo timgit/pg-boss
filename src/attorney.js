@@ -190,7 +190,7 @@ function applyArchiveConfig(config) {
   assert(!('archiveCompletedJobsEvery' in config) || typeof config.archiveCompletedJobsEvery === 'string',
     'configuration assert: archiveCompletedJobsEvery should be a readable PostgreSQL interval such as "1 day"');
 
-  config.archiveCompletedJobsEvery = config.archiveCompletedJobsEvery || '1 day';
+  config.archiveCompletedJobsEvery = config.archiveCompletedJobsEvery || '1 hour';
 
   return config;
 }

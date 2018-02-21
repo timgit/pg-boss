@@ -6,6 +6,7 @@
 instead of immediate deletion. This allows the concerns of job indexing and job retention to be separated.
 - Archive: `deleteArchivedJobsEvery` and `deleteCheckInterval` settings added for defining job retention. 
 The default retention interval is 7 days.
+- Archive: Changed default archive interval to 1 hour from 1 day.
 - Downgraded bluebird to a dev dependency. Always nice to have 1 less dependency.
 
 ## 2.4.3
