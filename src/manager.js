@@ -14,6 +14,7 @@ const failedJobSuffix = plans.failedJobSuffix;
 
 const events = {
   job: 'job',
+  jobs: 'jobs',
   failed: 'failed',
   error: 'error'
 };
@@ -88,7 +89,7 @@ class Manager extends EventEmitter {
   watch(name, options, callback){
     assert(!(name in this.subscriptions), 'this job has already been subscribed on this instance.');
 
-    options.batchSize = options.batchSize || options.teamSize;
+    let batchSize = options.batchSize || options.teamSize;
 
     if('newJobCheckInterval' in options || 'newJobCheckIntervalSeconds' in options)
       options = Attorney.applyNewJobCheckInterval(options);
@@ -114,22 +115,35 @@ class Manager extends EventEmitter {
         jobs = [jobs];
 
       setImmediate(() => {
-        jobs.forEach(job => {
-          this.emit(events.job, job);
-          job.done = (error, response) => complete(job, error, response);
+        if (options.batchSize) {
+          jobs.forEach(job => {
+            job.done = (error, response) => complete(job, error, response);
+          })
+
+          this.emit(events.jobs, jobs);
 
           try {
-            callback(job, job.done);
+            callback(jobs);
+          } catch (error) {
+            this.emit(events.failed, {jobs, error})
           }
-          catch (error) {
-            this.emit(events.failed, {job, error})
-          }
-        });
+        } else {
+          jobs.forEach(job => {
+            this.emit(events.job, job);
+            job.done = (error, response) => complete(job, error, response);
+
+            try {
+              callback(job, job.done);
+            } catch (error) {
+              this.emit(events.failed, {job, error})
+            }
+          });
+        }
       });
 
     };
 
-    let fetch = () => this.fetch(name, options.batchSize);
+    let fetch = () => this.fetch(name, batchSize);
 
     let workerConfig = {
       name,

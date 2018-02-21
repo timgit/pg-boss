@@ -87,9 +87,9 @@ describe('subscribe', function(){
     boss.unsubscribe().catch(() => finished());
   });
 
-  it('should handle a batch of jobs', function(finished){
+  it('should handle a batch of jobs individually', function(finished){
     const jobName = 'subscribe-batch';
-    const batchSize = 4;
+    const teamSize = 4;
     let subscribeCount = 0;
 
     Promise.join(
@@ -98,15 +98,32 @@ describe('subscribe', function(){
       boss.publish(jobName),
       boss.publish(jobName)
     )
-    .then(() => boss.subscribe(jobName, {batchSize}, job => {
+    .then(() => boss.subscribe(jobName, {teamSize}, job => {
         subscribeCount++;
 
         // idea here is that the test would time out if it had to wait for 4 intervals
-        if(subscribeCount === batchSize)
+        if(subscribeCount === teamSize)
           finished();
       })
     );
   });
+
+  it('should handle a batch of jobs collectively', function(finished){
+    const jobName = 'subscribe-batch-2';
+    const batchSize = 4;
+
+    Promise.join(
+      boss.publish(jobName),
+      boss.publish(jobName),
+      boss.publish(jobName),
+      boss.publish(jobName)
+    )
+    .then(() => boss.subscribe(jobName, {batchSize}, jobs => {
+        assert(jobs.length, batchSize)
+        finished();
+      })
+    );
+  })
 
   it('should have a done callback for single job subscriptions', function(finished){
     const name = 'subscribe-single';
@@ -117,6 +134,3 @@ describe('subscribe', function(){
   });
 
 });
-
-
-

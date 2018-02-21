@@ -45,7 +45,7 @@ class Db extends EventEmitter {
 
       return parsed;
     }
-    
+
   }
 
   close(){
