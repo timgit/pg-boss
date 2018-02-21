@@ -127,5 +127,16 @@ function getMigrations(schema) {
         `DROP INDEX ${schema}.job_fetch`
       ]
     },
+    {
+      version: '7',
+      previous: '6',
+      install: [
+        `CREATE TABLE IF NOT EXISTS ${schema}.archive (LIKE ${schema}.job)`,
+        `ALTER TABLE ${schema}.archive ADD archivedOn timestamptz NOT NULL DEFAULT now()`
+      ],
+      uninstall: [
+        `DROP TABLE ${schema}.archive`
+      ]
+    }
   ];
 }
