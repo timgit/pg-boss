@@ -72,8 +72,7 @@ declare namespace PgBoss {
   }
 
   interface JobDoneCallback<T> {
-    (err: Error): void;
-    (err: null | undefined, data: T): void;
+    (err?: Error | null, data?: T): void;
   }
 
   interface Job<T = object> {
