@@ -293,14 +293,9 @@ function archive(schema){
 
 function countStates(schema){
   return `
-    SELECT
-      COUNT(*) FILTER (where state = '${states.created}') as created,
-      COUNT(*) FILTER (where state = '${states.retry}') as retry,
-      COUNT(*) FILTER (where state = '${states.active}') as active,
-      COUNT(*) FILTER (where state = '${states.complete}') as complete,
-      COUNT(*) FILTER (where state = '${states.expired}') as expired,
-      COUNT(*) FILTER (where state = '${states.cancelled}') as cancelled,
-      COUNT(*) FILTER (where state = '${states.failed}') as failed
+    SELECT name, state, count(*) size
     FROM ${schema}.job
+    WHERE name NOT LIKE '%${stateJobDelimiter}%'
+    GROUP BY name, rollup(state)
   `;
 }
