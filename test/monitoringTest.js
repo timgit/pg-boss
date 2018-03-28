@@ -62,9 +62,9 @@ describe('monitoring', function() {
           assert.strictEqual(lastStates.queues[jobName].active, states.queues[jobName].active, `active count from monitor-states doesn't match`);
           assert.strictEqual(lastStates.queues[jobName].complete, states.queues[jobName].complete, `complete count from monitor-states doesn't match`);
 
-          assert.strictEqual(states.totals.created, states.queues[jobName].created, `created count for job doesn't match totals count`);
-          assert.strictEqual(states.totals.active, states.queues[jobName].active, `active count for job doesn't match totals count`);
-          assert.strictEqual(states.totals.complete, states.queues[jobName].complete, `complete count for job doesn't match totals count`);
+          assert.strictEqual(states.created, states.queues[jobName].created, `created count for job doesn't match totals count`);
+          assert.strictEqual(states.active, states.queues[jobName].active, `active count for job doesn't match totals count`);
+          assert.strictEqual(states.complete, states.queues[jobName].complete, `complete count for job doesn't match totals count`);
 
 
           finished();

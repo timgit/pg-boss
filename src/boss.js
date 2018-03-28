@@ -71,7 +71,7 @@ class Boss extends EventEmitter{
             if(item.name)
               acc.queues[item.name] = acc.queues[item.name] || Object.assign({}, stateCountDefault);
 
-            let queue = item.name ? acc.queues[item.name] : acc.totals;
+            let queue = item.name ? acc.queues[item.name] : acc;
             let state = item.state || 'all';
 
             // parsing int64 since pg returns it as string
@@ -79,7 +79,7 @@ class Boss extends EventEmitter{
 
             return acc;
           },
-          { queues: {}, totals: Object.assign({}, stateCountDefault) }
+          Object.assign({}, stateCountDefault, { queues: {} })
         );
 
         console.log(JSON.stringify(states, null, '  '));

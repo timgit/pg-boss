@@ -7,6 +7,9 @@ instead of immediate deletion. This allows the concerns of job indexing and job 
 - Archive: `deleteArchivedJobsEvery` and `deleteCheckInterval` settings added for defining job retention. 
 The default retention interval is 7 days.
 - Archive: Changed default archive interval to 1 hour from 1 day.
+- Monitoring: Updated contract for `monitor-states` event to add counts by queue, not just totals.
+- Monitoring: Adjusted queue size counting to exclude state-based jobs.  While these were technically 
+correct in regards to physical record count, it was a bit too difficult to explain.  
 - Downgraded bluebird to a dev dependency. Always nice to have 1 less dependency.
 
 ## 2.4.3

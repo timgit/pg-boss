@@ -520,17 +520,15 @@ The payload of the event is an object with a key per queue and state, such as th
         "failed": 0,
         "all": 645
       }
-  },
-  "totals": {
-    "created": 530,
-    "retry": 40,
-    "active": 26,
-    "complete": 4045,
-    "expired": 4,
-    "cancelled": 0,
-    "failed": 4,
-    "all": 4694
-  }
+  },  
+  "created": 530,
+  "retry": 40,
+  "active": 26,
+  "complete": 4045,
+  "expired": 4,
+  "cancelled": 0,
+  "failed": 4,
+  "all": 4694
 }
 ```
 
