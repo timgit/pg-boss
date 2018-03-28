@@ -296,6 +296,6 @@ function countStates(schema){
     SELECT name, state, count(*) size
     FROM ${schema}.job
     WHERE name NOT LIKE '%${stateJobDelimiter}%'
-    GROUP BY name, rollup(state)
+    GROUP BY rollup(name), rollup(state)
   `;
 }

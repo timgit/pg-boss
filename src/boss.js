@@ -61,22 +61,26 @@ class Boss extends EventEmitter{
 
   countStates(){
     let stateCountDefault = Object.assign({}, plans.states);
+
     Object.keys(stateCountDefault).forEach(key => stateCountDefault[key] = 0);
 
     return this.db.executeSql(this.countStatesCommand)
       .then(counts => {
 
-
         let states = counts.rows.reduce((acc, item) => {
-          let queue = item.name || 'all';
-          let state = item.state || 'all';
+            if(item.name)
+              acc.queues[item.name] = acc.queues[item.name] || Object.assign({}, stateCountDefault);
 
-          acc[queue] = acc[queue] || Object.assign({}, stateCountDefault);
-          // parsing int64 since pg returns it as string
-          acc[queue][state] = parseFloat(item.size);
+            let queue = item.name ? acc.queues[item.name] : acc.totals;
+            let state = item.state || 'all';
 
-          return acc;
-        }, {});
+            // parsing int64 since pg returns it as string
+            queue[state] = parseFloat(item.size);
+
+            return acc;
+          },
+          { queues: {}, totals: Object.assign({}, stateCountDefault) }
+        );
 
         console.log(JSON.stringify(states, null, '  '));
 
