@@ -82,8 +82,6 @@ class Boss extends EventEmitter{
           Object.assign({}, stateCountDefault, { queues: {} })
         );
 
-        console.log(JSON.stringify(states, null, '  '));
-
         this.emit(events.monitorStates, states);
 
         return states;
