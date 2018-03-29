@@ -8,8 +8,8 @@
     "npm": ">=5.0.0"
   },
   "dependencies": {
-    "pg": "^7.1.2",
-    "uuid": "^3.0.0"
+    "pg": "^7.4.1",
+    "uuid": "^3.2.1"
   },
   "devDependencies": {
     "bluebird": "^3.4.6",
