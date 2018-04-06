@@ -8,6 +8,7 @@ module.exports = {
   extend,
   getDb,
   getJobById,
+  getArchivedJobById,
   findJobs,
   stateJobDelimiter: plans.stateJobDelimiter,
   countJobs,
@@ -53,6 +54,14 @@ function getJobById(id) {
 
 function findJobs(where, values){
   return getDb().executeSql(`select * from ${getConfig().schema}.job where ${where}`, values);
+}
+
+function getArchivedJobById(id) {
+  return findArchivedJobs('id = $1', [id]);
+}
+
+function findArchivedJobs(where, values){
+  return getDb().executeSql(`select * from ${getConfig().schema}.archive where ${where}`, values);
 }
 
 function countJobs(where, values){

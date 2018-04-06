@@ -1,5 +1,4 @@
 const EventEmitter = require('events');
-const Promise = require('bluebird');
 const Attorney = require('./attorney');
 const Contractor = require('./contractor');
 const Manager = require('./manager');
@@ -101,10 +100,10 @@ class PgBoss extends EventEmitter {
   stop() {
     if(!this.isStarted) return Promise.reject(notStartedErrorMessage);
 
-    return Promise.join(
+    return Promise.all([
         this.manager.stop(),
         this.boss.stop()
-      )
+      ])
       .then(() => this.db.isOurs ? this.db.close() : null)
       .then(() => {
         this.isReady = false;

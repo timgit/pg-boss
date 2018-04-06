@@ -495,17 +495,40 @@ Each time a job expires, `expired-job` is raised. Adding a listener to this even
 
 The `monitor-states` event is conditionally raised based on the `monitorStateInterval` configuration setting.  If passed during instance creation, it will provide a count of jobs in each state per interval.  This could be useful for logging or even determining if the job system is handling its load.
 
-The payload of the event is an object with state names and job count, such as the  following example.
+The payload of the event is an object with a key per queue and state, such as the  following example.
 
-```js
+```json
 {
+  "queues": {
+      "send-welcome-email": {
+        "created": 530,
+        "retry": 40,
+        "active": 26,
+        "complete": 3400,
+        "expired": 4,
+        "cancelled": 0,
+        "failed": 49,
+        "all": 4049
+      },
+      "archive-cleanup": {
+        "created": 0,
+        "retry": 0,
+        "active": 0,
+        "complete": 645,
+        "expired": 0,
+        "cancelled": 0,
+        "failed": 0,
+        "all": 645
+      }
+  },  
   "created": 530,
   "retry": 40,
   "active": 26,
-  "complete": 3400,
+  "complete": 4045,
   "expired": 4,
   "cancelled": 0,
-  "failed": 49
+  "failed": 4,
+  "all": 4694
 }
 ```
 

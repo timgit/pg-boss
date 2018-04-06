@@ -1,7 +1,5 @@
 const assert = require('assert');
 const EventEmitter = require('events');
-const Promise = require('bluebird');
-const uuid = require('uuid');
 
 const Worker = require('./worker');
 const plans = require('./plans');
@@ -189,7 +187,7 @@ class Manager extends EventEmitter {
           : (options.singletonDays > 0) ? options.singletonDays * 60 * 60 * 24
             : null;
 
-    let id = uuid[this.config.uuid](),
+    let id = require(`uuid/${this.config.uuid}`)(),
       retryLimit = options.retryLimit || 0,
       expireIn = options.expireIn || '15 minutes',
       priority = options.priority || 0;

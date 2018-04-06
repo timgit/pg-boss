@@ -92,12 +92,12 @@ describe('subscribe', function(){
     const batchSize = 4;
     let subscribeCount = 0;
 
-    Promise.join(
+    Promise.all([
       boss.publish(jobName),
       boss.publish(jobName),
       boss.publish(jobName),
       boss.publish(jobName)
-    )
+    ])
     .then(() => boss.subscribe(jobName, {batchSize}, job => {
         subscribeCount++;
 

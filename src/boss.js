@@ -1,9 +1,9 @@
 const EventEmitter = require('events');
 const plans = require('./plans');
-const Promise = require('bluebird');
 
 const events = {
   archived: 'archived',
+  deleted: 'deleted',
   monitorStates: 'monitor-states',
   expiredCount: 'expired-count',
   expiredJob: 'expired-job',
@@ -22,6 +22,7 @@ class Boss extends EventEmitter{
 
     this.expireCommand = plans.expire(config.schema);
     this.archiveCommand = plans.archive(config.schema);
+    this.purgeCommand = plans.purge(config.schema);
     this.countStatesCommand = plans.countStates(config.schema);
   }
 
@@ -30,11 +31,12 @@ class Boss extends EventEmitter{
 
     // todo: add query that calcs avg start time delta vs. creation time
 
-    return Promise.join(
+    return Promise.all([
       monitor(this.archive, this.config.archiveCheckInterval),
+      monitor(this.purge, this.config.deleteCheckInterval),
       monitor(this.expire, this.config.expireCheckInterval),
       this.config.monitorStateInterval ? monitor(this.countStates, this.config.monitorStateInterval) : null
-    );
+    ]);
 
     function monitor(func, interval) {
 
@@ -58,12 +60,30 @@ class Boss extends EventEmitter{
   }
 
   countStates(){
+    let stateCountDefault = Object.assign({}, plans.states);
+
+    Object.keys(stateCountDefault).forEach(key => stateCountDefault[key] = 0);
+
     return this.db.executeSql(this.countStatesCommand)
-      .then(result => {
-        let states = result.rows[0];
-        // parsing int64 since pg returns it as string
-        Object.keys(states).forEach(state => states[state] = parseFloat(states[state]));
+      .then(counts => {
+
+        let states = counts.rows.reduce((acc, item) => {
+            if(item.name)
+              acc.queues[item.name] = acc.queues[item.name] || Object.assign({}, stateCountDefault);
+
+            let queue = item.name ? acc.queues[item.name] : acc;
+            let state = item.state || 'all';
+
+            // parsing int64 since pg returns it as string
+            queue[state] = parseFloat(item.size);
+
+            return acc;
+          },
+          Object.assign({}, stateCountDefault, { queues: {} })
+        );
+
         this.emit(events.monitorStates, states);
+
         return states;
       });
   }
@@ -73,7 +93,7 @@ class Boss extends EventEmitter{
       .then(result => {
         if (result.rows.length) {
           this.emit(events.expiredCount, result.rows.length);
-          return Promise.map(result.rows, job => this.emit(events.expiredJob, job));
+          return Promise.all(result.rows.map(job => this.emit(events.expiredJob, job)));
         }
       });
   }
@@ -83,6 +103,14 @@ class Boss extends EventEmitter{
       .then(result => {
         if (result.rowCount)
           this.emit(events.archived, result.rowCount);
+      });
+  }
+
+  purge(){
+    return this.db.executeSql(this.purgeCommand, [this.config.deleteArchivedJobsEvery])
+      .then(result => {
+        if (result.rowCount)
+          this.emit(events.deleted, result.rowCount);
       });
   }
 
