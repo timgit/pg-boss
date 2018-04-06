@@ -5,17 +5,43 @@ declare namespace PgBoss {
     executeSql(text: string, values: any[]): Promise<{ rows: any[]; rowCount: number }>;
   }
 
-  interface ConnectionOptions {
+  interface DatabaseOptions {
+    application_name?: string;
     database?: string;
     user?: string;
     password?: string;
     host?: string;
     port?: number;
     schema?: string;
-    uuid?: string;
+    ssl?: boolean;
+    connectionString?: string;
     poolSize?: number;
     db?: Db;
   }
+
+  interface JobCreationOptions {
+    uuid?: "v1" | "v2";
+  }
+
+  interface JobFetchOptions {
+    newJobCheckInterval?: number;
+    newJobCheckIntervalSeconds?: number;
+  }
+
+  interface JobExpirationOptions {
+    expireCheckInterval?: number;
+    expireCheckIntervalSeconds?: number;
+    expireCheckIntervalMinutes?: number;
+  }
+
+  interface JobArchiveOptions {
+    archiveCompletedJobsEvery?: string;
+    archiveCheckInterval?: number;
+    archiveCheckIntervalSeconds?: number;
+    archiveCheckIntervalMinutes?: number;
+  }
+
+  type ConstructorOptions = DatabaseOptions & JobCreationOptions & JobFetchOptions & JobExpirationOptions & JobArchiveOptions;
 
   interface PublishOptions {
     startIn?: number | string;
@@ -35,25 +61,52 @@ declare namespace PgBoss {
     newJobCheckIntervalSeconds?: number;
   }
 
+  interface SubscribeHandler<ReqData, ResData> {
+    (job: PgBoss.JobWithDoneCallback<ReqData, ResData>, done: PgBoss.JobDoneCallback<ResData>): void;
+  }
+
   interface Request {
     name: string;
     data?: object;
     options?: PublishOptions;
   }
 
-  interface Job {
-    id: number;
+  interface JobDoneCallback<T> {
+    (err?: Error | null, data?: T): void;
+  }
+
+  interface Job<T = object> {
+    id: string;
     name: string;
-    data: object;
-    done: (err?: Error, data?: object) => void;
+    data: T;
+  }
+
+  interface JobWithDoneCallback<ReqData, ResData> extends Job<ReqData> {
+    done: JobDoneCallback<ResData>;
+  }
+
+  interface MonitorStates {
+    created: number;
+    retry: number;
+    active: number;
+    complete: number;
+    expired: number;
+    cancelled: number;
+    failed: number;
   }
 }
 
 declare class PgBoss {
   constructor(connectionString: string);
-  constructor(options: PgBoss.ConnectionOptions);
+  constructor(options: PgBoss.ConstructorOptions);
 
-  on(event: string, handler: Function): void;
+  on(event: "error", handler: (error: Error) => void): void;
+  on(event: "job", handler: (job: PgBoss.Job) => void): void;
+  on(event: "failed", handler: (failure: { job: PgBoss.Job; error: Error }) => void): void;
+  on(event: "archived", handler: (count: number) => void): void;
+  on(event: "expired-count", handler: (count: number) => void): void;
+  on(event: "expired-job", handler: (job: PgBoss.Job) => void): void;
+  on(event: "monitor-states", handler: (monitorStates: PgBoss.MonitorStates) => void): void;
   start(): Promise<PgBoss>;
   stop(): Promise<void>;
   connect(): Promise<PgBoss>;
@@ -61,8 +114,12 @@ declare class PgBoss {
   publish(request: PgBoss.Request): Promise<string | null>;
   publish(name: string, data: object): Promise<string | null>;
   publish(name: string, data: object, options: PgBoss.PublishOptions): Promise<string | null>;
-  subscribe(name: string, handler: Function): Promise<void>;
-  subscribe(name: string, options: PgBoss.SubscribeOptions, handler: Function): Promise<void>;
+  subscribe<ReqData, ResData>(name: string, handler: PgBoss.SubscribeHandler<ReqData, ResData>): Promise<void>;
+  subscribe<ReqData, ResData>(
+    name: string,
+    options: PgBoss.SubscribeOptions,
+    handler: PgBoss.SubscribeHandler<ReqData, ResData>
+  ): Promise<void>;
   onComplete(name: string, handler: Function): Promise<void>;
   onComplete(name: string, options: PgBoss.SubscribeOptions, handler: Function): Promise<void>;
   onFail(name: string, handler: Function): Promise<void>;
@@ -71,14 +128,14 @@ declare class PgBoss {
   offComplete(name: string): Promise<boolean>;
   offExpire(name: string): Promise<boolean>;
   offFail(name: string): Promise<boolean>;
-  fetch(name: string): Promise<PgBoss.Job | null>;
-  fetch(name: string, batchSize: number): Promise<PgBoss.Job | null>;
-  fetchCompleted(name: string): Promise<PgBoss.Job | null>;
-  fetchCompleted(name: string, batchSize: number): Promise<PgBoss.Job | null>;
-  fetchExpired(name: string): Promise<PgBoss.Job | null>;
-  fetchExpired(name: string, batchSize: number): Promise<PgBoss.Job | null>;
-  fetchFailed(name: string): Promise<PgBoss.Job | null>;
-  fetchFailed(name: string, batchSize: number): Promise<PgBoss.Job | null>;
+  fetch<T>(name: string): Promise<PgBoss.Job<T> | null>;
+  fetch<T>(name: string, batchSize: number): Promise<PgBoss.Job<T>[] | null>;
+  fetchCompleted<T>(name: string): Promise<PgBoss.Job<T> | null>;
+  fetchCompleted<T>(name: string, batchSize: number): Promise<PgBoss.Job<T>[] | null>;
+  fetchExpired<T>(name: string): Promise<PgBoss.Job<T> | null>;
+  fetchExpired<T>(name: string, batchSize: number): Promise<PgBoss.Job<T>[] | null>;
+  fetchFailed<T>(name: string): Promise<PgBoss.Job<T> | null>;
+  fetchFailed<T>(name: string, batchSize: number): Promise<PgBoss.Job<T>[] | null>;
   cancel(id: string): Promise<void>;
   cancel(ids: string[]): Promise<void>;
   complete(id: string): Promise<void>;
