@@ -12,7 +12,7 @@ describe('archive', function() {
     helper.start({archiveCompletedJobsEvery:'1 second', archiveCheckInterval: 500})
       .then(dabauce => {
         boss = dabauce;
-        console.log('finish');
+
         finished();
       });
   });
