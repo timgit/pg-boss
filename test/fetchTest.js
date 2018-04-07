@@ -41,12 +41,12 @@ describe('fetch', function(){
     const jobName = 'fetch-batch';
     const batchSize = 4;
 
-    Promise.join(
+    Promise.all([
       boss.publish(jobName),
       boss.publish(jobName),
       boss.publish(jobName),
       boss.publish(jobName)
-    )
+    ])
     .then(() => boss.fetch(jobName, batchSize))
     .then(jobs => {
       assert(jobs.length === batchSize);

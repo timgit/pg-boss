@@ -1,12 +1,11 @@
 const assert = require('assert');
 const EventEmitter = require('events');
-const Promise = require('bluebird');
-const uuid = require('uuid');
 
 const Worker = require('./worker');
 const plans = require('./plans');
 const Attorney = require('./attorney');
 
+const stateJobDelimiter = plans.stateJobDelimiter;
 const expiredJobSuffix = plans.expiredJobSuffix;
 const completedJobSuffix = plans.completedJobSuffix;
 const failedJobSuffix = plans.failedJobSuffix;
@@ -102,7 +101,7 @@ class Manager extends EventEmitter {
       if(!error)
         return this.complete(job.id, response);
 
-      return this.fail(job.id)
+      return this.fail(job.id, error)
         .then(() => this.emit(events.failed, {job, error}));
     };
 
@@ -141,6 +140,8 @@ class Manager extends EventEmitter {
     let worker = new Worker(workerConfig);
     worker.start();
     subscription.worker = worker;
+
+    return Promise.resolve(true);
   }
 
   unsubscribe(name){
@@ -186,7 +187,7 @@ class Manager extends EventEmitter {
           : (options.singletonDays > 0) ? options.singletonDays * 60 * 60 * 24
             : null;
 
-    let id = uuid[this.config.uuid](),
+    let id = require(`uuid/${this.config.uuid}`)(),
       retryLimit = options.retryLimit || 0,
       expireIn = options.expireIn || '15 minutes',
       priority = options.priority || 0;
@@ -249,6 +250,9 @@ class Manager extends EventEmitter {
         assert(result.rowCount === 1, `${actionName}(): Job ${id} could not be updated.`);
 
         job = result.rows[0];
+
+        if(!bypassNotify)
+          bypassNotify = job.name.indexOf(stateJobDelimiter) >= 0;
 
         return bypassNotify
           ? null

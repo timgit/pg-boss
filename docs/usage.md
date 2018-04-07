@@ -30,8 +30,11 @@ Usage
         - [`fetchExpired(name [, batchSize])`](#fetchexpiredname--batchsize)
         - [`fetchFailed(name [, batchSize])`](#fetchfailedname--batchsize)
     - [`cancel(id)`](#cancelid)
+    - [`cancel([ids])`](#cancelids)
     - [`complete(id [, data])`](#completeid--data)
+    - [`complete([ids])`](#completeids)
     - [`fail(id [, data])`](#failid--data)
+    - [`fail([ids])`](#failids)
 - [Events](#events)
     - [`error`](#error)
     - [`job`](#job)
@@ -39,6 +42,7 @@ Usage
     - [`archived`](#archived)
     - [`expired-count`](#expired-count)
     - [`expired-job`](#expired-job)
+    - [`monitor-states`](#monitor-states)
 - [Static functions](#static-functions)
     - [`string getConstructionPlans(schema)`](#string-getconstructionplansschema)
     - [`string getMigrationPlans(schema, version, uninstall)`](#string-getmigrationplansschema-version-uninstall)
@@ -391,9 +395,17 @@ Same as `fetch()`, but retrieves any failed jobs.  See [`onFail()`](#onfailname-
 
 ## `cancel(id)`
 
-Cancels a pending job.  This would likely only be used for delayed jobs.
+Cancels a pending or active job.
 
 The promise will resolve on a successful cancel, or reject if the job could not be cancelled.
+
+## `cancel([ids])`
+
+Cancels a set of pending or active jobs.
+
+The promise will resolve on a successful cancel, or reject if not all of the requested jobs could not be cancelled.  
+
+> Due to the nature of the use case of attempting a batch job cancellation, it may be likely that some jobs were in flight and even completed during the cancellation request. Because of this, cancellation will cancel as many as possible and reject with a message showing the number of jobs that could not be cancelled because they were no longer active.
 
 ## `complete(id [, data])`
 
@@ -401,15 +413,31 @@ Completes an active job.  This would likely only be used with `fetch()`. Accepts
 
 The promise will resolve on a successful completion, or reject if the job could not be completed.
 
+## `complete([ids])`
+
+Completes a set of active jobs.  
+
+The promise will resolve on a successful completion, or reject if not all of the requested jobs could not be marked as completed. 
+
+> See comments above on `cancel([ids])` regarding when the promise will resolve or reject because of a batch operation.
+
 ## `fail(id [, data])`
 
 Marks an active job as failed.  This would likely only be used with `fetch()`. Accepts an optional `data` argument for usage with [`onFail()`](#onfailname--options-handler) state-based subscriptions or `fetchFailed()`.
 
 The promise will resolve on a successful assignment of failure, or reject if the job could not be marked as failed.
 
+## `fail([ids])`
+
+Fails a set of active jobs.  
+
+The promise will resolve on a successful failure state assignment, or reject if not all of the requested jobs could not be marked as failed.  
+
+> See comments above on `cancel([ids])` regarding when the promise will resolve or reject because of a batch operation.
+
 # Events
 
-As explained in the introudction above, each instance of pg-boss is an EventEmitter.  You can run multiple instances of pg-boss for a variety of use cases including distribution and load balancing. Each instance has the freedom to subscribe to whichever jobs you need.  Because of this diversity, the job activity of one instance could be drastically different from another.  Therefore, **all of the events raised by pg-boss are instance-bound.** 
+As explained in the introduction above, each instance of pg-boss is an EventEmitter.  You can run multiple instances of pg-boss for a variety of use cases including distribution and load balancing. Each instance has the freedom to subscribe to whichever jobs you need.  Because of this diversity, the job activity of one instance could be drastically different from another.  Therefore, **all of the events raised by pg-boss are instance-bound.** 
 
 > For example, if you were to subscribe to `error` in instance A, it will not receive an `error` event from instance B.  The same concept applies to all events.  If a job is subscribed in instance A, the `job` event will be raised alongside the `subscribe()` callback only for instance A.  There is currently no such thing as a global `job` event across instances.
 
@@ -462,6 +490,47 @@ boss.on('failed', failure => {
 ## `expired-job`
 
 Each time a job expires, `expired-job` is raised. Adding a listener to this event is completely optional, but you may wish to use it for global job logging or tracking purposes. The payload is the same job object that the subscriber's handler function receives with id, name and data properties.  If you need to react to job expirations for a particular job name, you should use `onExpire()` instead.
+
+## `monitor-states`
+
+The `monitor-states` event is conditionally raised based on the `monitorStateInterval` configuration setting.  If passed during instance creation, it will provide a count of jobs in each state per interval.  This could be useful for logging or even determining if the job system is handling its load.
+
+The payload of the event is an object with a key per queue and state, such as the  following example.
+
+```json
+{
+  "queues": {
+      "send-welcome-email": {
+        "created": 530,
+        "retry": 40,
+        "active": 26,
+        "complete": 3400,
+        "expired": 4,
+        "cancelled": 0,
+        "failed": 49,
+        "all": 4049
+      },
+      "archive-cleanup": {
+        "created": 0,
+        "retry": 0,
+        "active": 0,
+        "complete": 645,
+        "expired": 0,
+        "cancelled": 0,
+        "failed": 0,
+        "all": 645
+      }
+  },  
+  "created": 530,
+  "retry": 40,
+  "active": 26,
+  "complete": 4045,
+  "expired": 4,
+  "cancelled": 0,
+  "failed": 4,
+  "all": 4694
+}
+```
 
 # Static functions
 

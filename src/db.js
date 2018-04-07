@@ -1,6 +1,5 @@
 const EventEmitter = require('events');
 const pg = require('pg');
-const Promise = require('bluebird');
 const url = require('url');
 
 class Db extends EventEmitter {
@@ -32,26 +31,27 @@ class Db extends EventEmitter {
       const params = url.parse(connectionString, parseQuerystring);
       const auth = params.auth.split(':');
 
-      return {
+      let parsed = {
         user: auth[0],
-        password: auth[1],
         host: params.hostname,
         port: params.port,
         database: params.pathname.split('/')[1],
         ssl: !!params.query.ssl
       };
+
+      if(auth.length === 2)
+        parsed.password = auth[1];
+
+      return parsed;
     }
     
   }
 
   close(){
-    return this.pool.end();
+    return !this.pool.ending ? this.pool.end() : Promise.resolve(true);
   }
 
   executeSql(text, values) {
-    if(values && !Array.isArray(values))
-      values = [values];
-
     return this.pool.query(text, values);
   }
 }

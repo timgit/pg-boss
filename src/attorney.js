@@ -1,5 +1,4 @@
 const assert = require('assert');
-const Promise = require('bluebird');
 
 module.exports = {
   applyConfig,
@@ -97,6 +96,7 @@ function applyConfig(config) {
   config = applyNewJobCheckInterval(config);
   config = applyExpireConfig(config);
   config = applyArchiveConfig(config);
+  config = applyDeleteConfig(config);
   config = applyMonitoringConfig(config);
   config = applyUuidConfig(config);
 
@@ -106,11 +106,11 @@ function applyConfig(config) {
 
 function applyDatabaseConfig(config) {
 
-  if(typeof config === 'string' || (config.connectionString && typeof config.connectionString === 'string')) {
-    config = {connectionString: config.connectionString || config};
+  if(typeof config === 'string') {
+    config = {connectionString: config};
   }
-  else {
-    assert(config.database && config.user && 'password' in config,
+  else if (typeof (config.connectionString) !== 'string' && typeof config.db !== 'object') {
+    assert(config.database && config.user,
       'configuration assert: not enough database settings to connect to PostgreSQL');
 
     config.host = config.host || '127.0.0.1';
@@ -125,10 +125,13 @@ function applyDatabaseConfig(config) {
 
   config.schema = config.schema || 'pgboss';
 
-  assert(!('poolSize' in config) || config.poolSize >=1,
-    'configuration assert: poolSize must be at least 1');
+  // byodb means we don't apply connection pooling
+  if(typeof config.db !== 'object'){
+    assert(!('poolSize' in config) || config.poolSize >=1,
+      'configuration assert: poolSize must be at least 1');
 
-  config.poolSize = config.poolSize || 10;
+    config.poolSize = config.poolSize || 10;
+  }
 
   return config;
 }
@@ -187,7 +190,22 @@ function applyArchiveConfig(config) {
   assert(!('archiveCompletedJobsEvery' in config) || typeof config.archiveCompletedJobsEvery === 'string',
     'configuration assert: archiveCompletedJobsEvery should be a readable PostgreSQL interval such as "1 day"');
 
-  config.archiveCompletedJobsEvery = config.archiveCompletedJobsEvery || '1 day';
+  config.archiveCompletedJobsEvery = config.archiveCompletedJobsEvery || '1 hour';
+
+  return config;
+}
+
+function applyDeleteConfig(config) {
+
+  config.deleteCheckInterval = ('deleteCheckInterval' in config)
+      ? config.deleteCheckInterval
+      : 60 * 60 * 1000; // default is 1 hour
+
+  // TODO: discontinue pg interval strings in favor of ms int for better validation (when interval is specified lower than check interval, for example)
+  assert(!('deleteArchivedJobsEvery' in config) || typeof config.deleteArchivedJobsEvery === 'string',
+    'configuration assert: deleteArchivedJobsEvery should be a readable PostgreSQL interval such as "7 days"');
+
+  config.deleteArchivedJobsEvery = config.deleteArchivedJobsEvery || '7 days';
 
   return config;
 }

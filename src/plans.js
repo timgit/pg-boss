@@ -8,10 +8,10 @@ const states = {
   failed: 'failed'
 };
 
-const stateJobSuffix = '__state__';
-const expiredJobSuffix = stateJobSuffix + states.expired;
-const completedJobSuffix = stateJobSuffix + states.complete;
-const failedJobSuffix = stateJobSuffix + states.failed;
+const stateJobDelimiter = '__state__';
+const expiredJobSuffix = stateJobDelimiter + states.expired;
+const completedJobSuffix = stateJobDelimiter + states.complete;
+const failedJobSuffix = stateJobDelimiter + states.failed;
 
 module.exports = {
   create,
@@ -28,8 +28,10 @@ module.exports = {
   insertJob,
   expire,
   archive,
+  purge,
   countStates,
   states,
+  stateJobDelimiter,
   expiredJobSuffix,
   completedJobSuffix,
   failedJobSuffix
@@ -41,6 +43,8 @@ function create(schema) {
     createVersionTable(schema),
     createJobStateEnum(schema),
     createJobTable(schema),
+    cloneJobTableForArchive(schema),
+    addArchivedOnToArchive(schema),
     createIndexJobFetch(schema),
     createIndexSingletonOn(schema),
     createIndexSingletonKeyOn(schema),
@@ -97,6 +101,14 @@ function createJobTable(schema) {
       completedOn timestamp with time zone
     )
   `;
+}
+
+function cloneJobTableForArchive(schema){
+  return `CREATE TABLE IF NOT EXISTS ${schema}.archive (LIKE ${schema}.job)`;
+}
+
+function addArchivedOnToArchive(schema) {
+  return `ALTER TABLE ${schema}.archive ADD archivedOn timestamptz NOT NULL DEFAULT now()`;
 }
 
 function createIndexSingletonKey(schema){
@@ -254,28 +266,36 @@ function expire(schema) {
   `;
 }
 
-function archive(schema) {
+function purge(schema) {
   return `
-    DELETE FROM ${schema}.job
-    WHERE (completedOn + CAST($1 as interval) < now())
-      OR (
-        state = '${states.created}' 
-        AND name LIKE '%${stateJobSuffix}%' 
-        AND createdOn + CAST($1 as interval) < now()
-      )        
+    DELETE FROM ${schema}.archive
+    WHERE (archivedOn + CAST($1 as interval) < now())              
+  `;
+}
+
+function archive(schema){
+  return `
+    WITH archived_rows AS (
+      DELETE FROM ${schema}.job
+      WHERE
+        (completedOn + CAST($1 as interval) < now())
+        OR (
+          state = '${states.created}'
+          AND name LIKE '%${stateJobDelimiter}%'
+          AND createdOn + CAST($1 as interval) < now()
+        )
+      RETURNING *
+    )
+    INSERT INTO ${schema}.archive
+    SELECT * FROM archived_rows;
   `;
 }
 
 function countStates(schema){
   return `
-    SELECT
-      COUNT(*) FILTER (where state = '${states.created}') as created,
-      COUNT(*) FILTER (where state = '${states.retry}') as retry,
-      COUNT(*) FILTER (where state = '${states.active}') as active,
-      COUNT(*) FILTER (where state = '${states.complete}') as complete,
-      COUNT(*) FILTER (where state = '${states.expired}') as expired,
-      COUNT(*) FILTER (where state = '${states.cancelled}') as cancelled,
-      COUNT(*) FILTER (where state = '${states.failed}') as failed
+    SELECT name, state, count(*) size
     FROM ${schema}.job
+    WHERE name NOT LIKE '%${stateJobDelimiter}%'
+    GROUP BY rollup(name), rollup(state)
   `;
 }

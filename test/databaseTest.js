@@ -23,6 +23,55 @@ describe('database', function(){
       });
   });
 
+
+  it('should work with a custom schema name', function(finished){
+
+    const jobName = 'custom-schema';
+
+    let config = helper.getConfig();
+    config.schema = '_queue';
+
+    let boss, jobId;
+
+    helper.start(config)
+      .then(result => boss = result)
+      .then(() => boss.publish(jobName))
+      .then(id => jobId = id)
+      .then(() => boss.fetch(jobName))
+      .then(job => {
+        assert(job.id === jobId);
+        finished();
+      })
+      .catch(error => {
+          assert(false, error.message);
+          finished();
+      });
+
+  });
+
+  it('can be swapped out via BYODB', function(finished) {
+
+    const query = 'SELECT something FROM somewhere';
+
+    const mydb = {
+      executeSql: (text, values) => Promise.resolve({rows:[], text, rowCount: 0})
+    };
+
+    const boss = new PgBoss({db:mydb});
+
+    boss.start()
+      .then(() => boss.db.executeSql(query))
+      .then(response => assert(response.text === query))
+      .then(() => boss.stop())
+      .then(() => finished())
+      .catch(err => {
+        console.error(err.message);
+        finished();
+      });
+
+  });
+
+
   it('connection count does not exceed configured pool size', function(finished){
 
     this.timeout(5000);

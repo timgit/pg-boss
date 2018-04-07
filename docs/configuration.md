@@ -7,6 +7,7 @@ pg-boss can be customized using configuration options when an instance is create
 
 - [Constructor Options](#constructor-options)
     - [Database options](#database-options)
+    - [Job creation options](#job-creation-options)
     - [Job fetch options](#job-fetch-options)
     - [Job expiration options](#job-expiration-options)
     - [Job archive options](#job-archive-options)
@@ -22,29 +23,65 @@ pg-boss can be customized using configuration options when an instance is create
 
 ## Constructor Options
 
+The constructor accepts either a string or an object.  If a string is used, it's interpreted as a Postgres connection string.
+Since passing only a connection string is intended to be for convenience, you can't set any other options.   
+
 ### Database options
+
+* **host** - string,  defaults to "127.0.0.1"
+
+* **port** - int,  defaults to 5432
+
+* **ssl** - bool, defaults to false
+
 * **database** - string, *required*
+
 * **user** - string, *required*
-* **password** - string, *required*
-* **host** - string
 
-    Default: "127.0.0.1"
+* **password** - string
 
-* **port** - int
+* **connectionString** - string
 
-    Default: 5432
+    PostgresSQL connection string will be parsed and used instead of `host`, `port`, `ssl`, `database`, `user`, `password`.
+    Based on the [pg](https://github.com/brianc/node-postgres) package. For example: 
+    
+    ```js
+    const boss = new PgBoss('postgres://user:pass@host:port/database?ssl=require');
+    ```
 
-* **schema** - string
+* **poolSize** - int, defaults to 10
 
-    Default: "pgboss".  Only alphanumeric and underscore allowed, length: <= 50 characters
+    Maximum number of connections that will be shared by all subscriptions in this instance
+    
+* **application_name** - string, defaults to "pgboss"
+    
+* **db** - object
 
-* **uuid** - string
+    Passing an object named db allows you "bring your own database connection".  
+    Setting this option ignores all of the above settings. The interface required for db is a single function called `executeSql` that accepts a SQL string and an optional array of parameters. This should return a promise that resolves an object just like the pg module: a `rows` array with results and `rowCount` property that contains affected records after an update operation.
+    
+    ```js
+    {
+      // resolves Promise
+      executeSql(text, [values])    
+    }
+    ```
+    
+    This option may be beneficial if you'd like to use an existing database service 
+    with its own connection pool.
+    
+    For example, you may be relying on the cluster module on 
+    a web server, and you'd like to limit the growth of total connections as much as possible. 
 
-    Default: "v1". uuid format used, "v1" or "v4"
+* **schema** - string, defaults to "pgboss"
 
-* **poolSize** - int
+    Only alphanumeric and underscore allowed, length: <= 50 characters    
 
-    Default: 10.  Maximum number of connections that will be shared by all subscriptions in this instance.
+### Job creation options
+
+* **uuid** - string, defaults to "v1"
+
+    uuid format used, "v1" or "v4"
 
 ### Job fetch options
 * **newJobCheckInterval**, int
@@ -100,6 +137,10 @@ When `archiveCheckIntervalSeconds` is specified, `archiveCheckInterval` is ignor
 
 ## Publish Options
 
+* **priority**, int
+
+    optional priority.  Higher numbers have, um, higher priority
+
 ### Delayed jobs
 * **startIn** int or string
   * int: seconds to delay starting the job
@@ -113,8 +154,8 @@ When `archiveCheckIntervalSeconds` is specified, `archiveCheckInterval` is ignor
 Only allows 1 job (within the same name) to be queued or active with the same singletonKey.
 
 ```js
-publish('my-job', {singletonKey: '123'}) // resolves a jobId 
-publish('my-job', {singletonKey: '123'}) // resolves a null jobId until first job completed
+boss.publish('my-job', {}, {singletonKey: '123'}) // resolves a jobId 
+boss.publish('my-job', {}, {singletonKey: '123'}) // resolves a null jobId until first job completed
 ```
 
 This can be used in conjunction with throttling explained below.
@@ -124,12 +165,15 @@ This can be used in conjunction with throttling explained below.
 * **singletonMinutes**, int
 * **singletonHours**, int
 * **singletonDays**, int
+* **singletonNextSlot**, bool
 
 Throttling jobs to 'once every n units', where units could be seconds, minutes, hours or days.  This option is set on the publish side of the API since jobs may or may not be created based on the existence of other jobs.
 
-For exampe, if you set the `singletonMinutes` to 1, then submit 2 jobs within a minute, only the first job will be accepted and resolve a job id.  The second request will be discarded, but resolve a null instead of an id.
+For example, if you set the `singletonMinutes` to 1, then submit 2 jobs within a minute, only the first job will be accepted and resolve a job id.  The second request will be discarded, but resolve a null instead of an id.
 
 Order of precedence for throttling is least to greatest. For example, if `singletonSeconds` is set, `singletonMinutes` is ignored.
+
+Setting `singletonNextSlot` to true will cause the job to be scheduled to run after the current time slot if and when a job is throttled.  Basically it's debounce with a lousy name atm.  Expect this api to be improved in the future.  
 
 ### Job retries
 

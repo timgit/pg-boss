@@ -1,6 +1,4 @@
 const EventEmitter = require('events');
-const assert = require('assert');
-const Promise = require('bluebird');
 const Attorney = require('./attorney');
 const Contractor = require('./contractor');
 const Manager = require('./manager');
@@ -25,9 +23,10 @@ class PgBoss extends EventEmitter {
 
     super();
 
-    const db = new Db(config);
+    const db = getDb(config);
 
-    promoteEvent.call(this, db, 'error');
+    if(db.isOurs)
+      promoteEvent.call(this, db, 'error');
 
     const manager = new Manager(db, config);
     Object.keys(manager.events).forEach(event => promoteEvent.call(this, manager, manager.events[event]));
@@ -44,6 +43,19 @@ class PgBoss extends EventEmitter {
     this.contractor = new Contractor(db, config);
     this.manager = manager;
 
+    function getDb(config){
+      let db;
+
+      if(config.db) {
+        db = config.db;
+      }
+      else {
+        db = new Db(config);
+        db.isOurs = true;
+      }
+
+      return db;
+    }
 
     function promoteFunction(obj, func){
       this[func.name] = (...args) => {
@@ -88,11 +100,11 @@ class PgBoss extends EventEmitter {
   stop() {
     if(!this.isStarted) return Promise.reject(notStartedErrorMessage);
 
-    return Promise.join(
+    return Promise.all([
         this.manager.stop(),
         this.boss.stop()
-      )
-      .then(() => this.db.close())
+      ])
+      .then(() => this.db.isOurs ? this.db.close() : null)
       .then(() => {
         this.isReady = false;
         this.isStarted = false;
@@ -111,7 +123,7 @@ class PgBoss extends EventEmitter {
     if(!this.isReady) return Promise.reject(notReadyErrorMessage);
 
     return this.manager.stop.apply(this.manager, args)
-      .then(() => this.db.close())
+      .then(() => this.db.isOurs ? this.db.close() : null)
       .then(() => this.isReady = false);
   }
 

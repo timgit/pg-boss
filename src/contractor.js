@@ -2,7 +2,6 @@ const assert = require('assert');
 const plans = require('./plans');
 const migrations = require('./migrations');
 const schemaVersion = require('../version.json').schema;
-const Promise = require('bluebird');
 
 class Contractor {
 
@@ -47,12 +46,14 @@ class Contractor {
   }
 
   create(){
-    return Promise.each(plans.create(this.config.schema), command => this.db.executeSql(command))
-      .then(() => this.db.executeSql(plans.insertVersion(this.config.schema), schemaVersion));
+    let promises = plans.create(this.config.schema).map(command => () => this.db.executeSql(command));
+
+    return this.promiseEach(promises)
+      .then(() => this.db.executeSql(plans.insertVersion(this.config.schema), [schemaVersion]));
   }
 
   update(current) {
-    if(current == '0.0.2') current = '0.0.1';
+    if(current === '0.0.2') current = '0.0.1';
 
     return this.migrate(current)
       .then(version => {
@@ -89,8 +90,14 @@ class Contractor {
       return Promise.reject(new Error(errorMessage));
     }
 
-    return Promise.each(migration.commands, command => this.db.executeSql(command))
+    let promises = migration.commands.map(command => () => this.db.executeSql(command));
+
+    return this.promiseEach(promises)
       .then(() => migration.version);
+  }
+
+  promiseEach(promises) {
+    return promises.reduce((promise, func) => promise.then(() => func().then()), Promise.resolve());
   }
 }
 
