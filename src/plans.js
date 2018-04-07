@@ -54,7 +54,7 @@ function create(schema) {
 
 function createSchema(schema) {
   return `
-    CREATE SCHEMA IF NOT EXISTS ${schema};
+    CREATE SCHEMA IF NOT EXISTS ${schema}
   `;
 }
 
@@ -62,7 +62,7 @@ function createVersionTable(schema) {
   return `
     CREATE TABLE IF NOT EXISTS ${schema}.version (
       version text primary key
-    );
+    )
   `;
 }
 
@@ -78,7 +78,7 @@ function createJobStateEnum(schema) {
       '${states.expired}',
       '${states.cancelled}',
       '${states.failed}'
-    );
+    )
   `;
 }
 
@@ -99,60 +99,60 @@ function createJobTable(schema) {
       expireIn interval,
       createdOn timestamp with time zone not null default now(),
       completedOn timestamp with time zone
-    );
+    )
   `;
 }
 
 function cloneJobTableForArchive(schema){
-  return `CREATE TABLE IF NOT EXISTS ${schema}.archive (LIKE ${schema}.job);`;
+  return `CREATE TABLE IF NOT EXISTS ${schema}.archive (LIKE ${schema}.job)`;
 }
 
 function addArchivedOnToArchive(schema) {
-  return `ALTER TABLE ${schema}.archive ADD archivedOn timestamptz NOT NULL DEFAULT now();`;
+  return `ALTER TABLE ${schema}.archive ADD archivedOn timestamptz NOT NULL DEFAULT now()`;
 }
 
 function createIndexSingletonKey(schema){
   // anything with singletonKey means "only 1 job can be queued or active at a time"
   return `
-    CREATE UNIQUE INDEX job_singletonKey ON ${schema}.job (name, singletonKey) WHERE state < '${states.complete}' AND singletonOn IS NULL;
+    CREATE UNIQUE INDEX job_singletonKey ON ${schema}.job (name, singletonKey) WHERE state < '${states.complete}' AND singletonOn IS NULL
   `;
 }
 
 function createIndexSingletonOn(schema){
   // anything with singletonOn means "only 1 job within this time period, queued, active or completed"
   return `
-    CREATE UNIQUE INDEX job_singletonOn ON ${schema}.job (name, singletonOn) WHERE state < '${states.expired}' AND singletonKey IS NULL;
+    CREATE UNIQUE INDEX job_singletonOn ON ${schema}.job (name, singletonOn) WHERE state < '${states.expired}' AND singletonKey IS NULL
   `;
 }
 
 function createIndexSingletonKeyOn(schema){
   // anything with both singletonOn and singletonKey means "only 1 job within this time period with this key, queued, active or completed"
   return `
-    CREATE UNIQUE INDEX job_singletonKeyOn ON ${schema}.job (name, singletonOn, singletonKey) WHERE state < '${states.expired}';
+    CREATE UNIQUE INDEX job_singletonKeyOn ON ${schema}.job (name, singletonOn, singletonKey) WHERE state < '${states.expired}'
   `;
 }
 
 function createIndexJobFetch(schema){
   return `
-    CREATE INDEX job_fetch ON ${schema}.job (priority desc, createdOn, id) WHERE state < '${states.active}';
+    CREATE INDEX job_fetch ON ${schema}.job (priority desc, createdOn, id) WHERE state < '${states.active}'
   `;
 }
 
 function getVersion(schema) {
   return `
-    SELECT version from ${schema}.version;
+    SELECT version from ${schema}.version
   `;
 }
 
 function versionTableExists(schema) {
   return `
-    SELECT to_regclass('${schema}.version') as name;
+    SELECT to_regclass('${schema}.version') as name
   `;
 }
 
 function insertVersion(schema) {
   return `
-    INSERT INTO ${schema}.version(version) VALUES ($1);
+    INSERT INTO ${schema}.version(version) VALUES ($1)
   `;
 }
 
@@ -174,7 +174,7 @@ function fetchNextJob(schema) {
       retryCount = CASE WHEN state = '${states.retry}' THEN retryCount + 1 ELSE retryCount END
     FROM nextJob
     WHERE ${schema}.job.id = nextJob.id
-    RETURNING ${schema}.job.id, $1 as name, ${schema}.job.data;
+    RETURNING ${schema}.job.id, $1 as name, ${schema}.job.data
   `;
 }
 
@@ -185,7 +185,7 @@ function completeJob(schema){
       state = '${states.complete}'
     WHERE id = $1
       AND state = '${states.active}'
-    RETURNING id, name, data;
+    RETURNING id, name, data
   `;
 }
 
@@ -195,7 +195,7 @@ function completeJobs(schema){
     SET completedOn = now(),
       state = '${states.complete}'
     WHERE id = ANY($1)
-      AND state = '${states.active}';
+      AND state = '${states.active}'
   `;
 }
 
@@ -206,7 +206,7 @@ function cancelJob(schema){
       state = '${states.cancelled}'
     WHERE id = $1
       AND state < '${states.complete}'
-    RETURNING id, name, data;
+    RETURNING id, name, data
   `;
 }
 
@@ -216,7 +216,7 @@ function cancelJobs(schema){
     SET completedOn = now(),
       state = '${states.cancelled}'
     WHERE id = ANY($1)
-      AND state < '${states.complete}';
+      AND state < '${states.complete}'
   `;
 }
 
@@ -227,7 +227,7 @@ function failJob(schema){
       state = '${states.failed}'
     WHERE id = $1
       AND state < '${states.complete}'
-    RETURNING id, name, data;
+    RETURNING id, name, data
   `;
 }
 
@@ -237,7 +237,7 @@ function failJobs(schema){
     SET completedOn = now(),
       state = '${states.failed}'
     WHERE id = ANY($1)
-      AND state < '${states.complete}'; 
+      AND state < '${states.complete}'
   `;
 }
 
@@ -248,7 +248,7 @@ function insertJob(schema) {
       $1, $2, $3, '${states.created}', $4, CAST($5 as interval), CAST($6 as interval), $7, $8,
       CASE WHEN $9::integer IS NOT NULL THEN 'epoch'::timestamp + '1 second'::interval * ($9 * floor((date_part('epoch', now()) + $10) / $9)) ELSE NULL END
     )
-    ON CONFLICT DO NOTHING;
+    ON CONFLICT DO NOTHING
   `;
 }
 
@@ -262,14 +262,14 @@ function expire(schema) {
         AND (startedOn + expireIn) < now()    
       RETURNING id, name, state, data
     )
-    SELECT id, name, data FROM expired WHERE state = '${states.expired}';
+    SELECT id, name, data FROM expired WHERE state = '${states.expired}'
   `;
 }
 
 function purge(schema) {
   return `
     DELETE FROM ${schema}.archive
-    WHERE (archivedOn + CAST($1 as interval) < now());
+    WHERE (archivedOn + CAST($1 as interval) < now())
   `;
 }
 
@@ -287,7 +287,7 @@ function archive(schema){
       RETURNING *
     )
     INSERT INTO ${schema}.archive
-    SELECT * FROM archived_rows;
+    SELECT * FROM archived_rows
   `;
 }
 
@@ -296,6 +296,6 @@ function countStates(schema){
     SELECT name, state, count(*) size
     FROM ${schema}.job
     WHERE name NOT LIKE '%${stateJobDelimiter}%'
-    GROUP BY rollup(name), rollup(state);
+    GROUP BY rollup(name), rollup(state)
   `;
 }
