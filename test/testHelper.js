@@ -71,7 +71,6 @@ function countJobs(where, values){
 
 function start(options) {
   options = options || {};
-
   return init(options.schema)
     .then(() => new PgBoss(extend(getConfig(), options)).start());
 }

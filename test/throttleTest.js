@@ -3,6 +3,8 @@ const helper = require('./testHelper');
 
 describe('throttle', function() {
 
+  this.timeout(10000);
+
   let boss;
 
   before(function(finished){
@@ -19,7 +21,7 @@ describe('throttle', function() {
 
   it('should only create 1 job for interval with a delay', function(finished){
 
-    const jobName = 'delayThrottle'
+    const jobName = 'delayThrottle';
     const singletonSeconds = 4;
     const startIn = '2 seconds';
 

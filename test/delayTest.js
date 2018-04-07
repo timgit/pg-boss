@@ -3,6 +3,8 @@ const helper = require('./testHelper');
 
 describe('delayed jobs', function(){
 
+  this.timeout(10000);
+
   let boss;
 
   before(function(finished){
@@ -20,7 +22,6 @@ describe('delayed jobs', function(){
   it('should wait before processing a delayed job submission', function(finished) {
 
     let delaySeconds = 2;
-    this.timeout(3000);
 
     boss.subscribe('wait', job => {
       let start = new Date(job.data.submitted);

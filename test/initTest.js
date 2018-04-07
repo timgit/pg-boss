@@ -4,6 +4,8 @@ const helper = require('./testHelper');
 
 describe('initialization', function(){
 
+  this.timeout(10000);
+
   beforeEach(function(finished) {
     helper.init()
       .then(() => finished());

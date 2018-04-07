@@ -2,6 +2,7 @@ const assert = require('assert');
 const plans = require('./plans');
 const migrations = require('./migrations');
 const schemaVersion = require('../version.json').schema;
+const Promise = require('bluebird');
 
 class Contractor {
 
@@ -46,10 +47,13 @@ class Contractor {
   }
 
   create(){
-    let promises = plans.create(this.config.schema).map(command => () => this.db.executeSql(command));
-
-    return this.promiseEach(promises)
-      .then(() => this.db.executeSql(plans.insertVersion(this.config.schema), [schemaVersion]));
+    // use transaction, in case one query fails, it will automatically rollback to avoid inconsistency
+    let queryInTransaction = `
+    BEGIN;
+    ${plans.create(this.config.schema).join(';')}
+    ${plans.insertVersion(this.config.schema).replace('$1', `'${schemaVersion}'`)}
+    COMMIT;`;
+    return this.db.executeSql(queryInTransaction);
   }
 
   update(current) {
@@ -82,22 +86,20 @@ class Contractor {
       });
   }
 
-  migrate(version, uninstall) {
+  migrate(version, uninstall){
     let migration = migrations.get(this.config.schema, version, uninstall);
 
     if(!migration){
       let errorMessage = `Migration to version ${version} failed because it could not be found.  Your database may have been upgraded by a newer version of pg-boss`;
       return Promise.reject(new Error(errorMessage));
     }
-
-    let promises = migration.commands.map(command => () => this.db.executeSql(command));
-
-    return this.promiseEach(promises)
+    // use transaction, in case one query fails, it will automatically rollback to avoid inconsistency
+    let queryInTransaction = `
+    BEGIN;
+    ${migration.commands.join(';')}
+    COMMIT;`;
+    return this.db.executeSql(queryInTransaction)
       .then(() => migration.version);
-  }
-
-  promiseEach(promises) {
-    return promises.reduce((promise, func) => promise.then(() => func().then()), Promise.resolve());
   }
 }
 
