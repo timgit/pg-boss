@@ -5,6 +5,8 @@ const PgBoss = require('../src/index');
 
 describe('manager', function(){
 
+  this.timeout(10000);
+
   before(function(finished){
     helper.init().then(() => finished());
   });

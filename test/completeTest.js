@@ -4,6 +4,8 @@ const helper = require('./testHelper');
 
 describe('complete', function() {
 
+  this.timeout(10000);
+
   let boss;
 
   before(function(finished){

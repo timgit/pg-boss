@@ -4,6 +4,8 @@ const Boss = require('../src/boss');
 
 describe('monitoring', function() {
 
+  this.timeout(10000);
+
   let silentBob = new Boss(helper.getDb(), helper.getConfig());
   let boss;
 
@@ -20,8 +22,6 @@ describe('monitoring', function() {
   });
 
   it('should emit state counts', function (finished) {
-    this.timeout(5000);
-
     let jobName = 'monitorMe';
 
     boss.publish(jobName)

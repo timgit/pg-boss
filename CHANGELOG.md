@@ -1,5 +1,11 @@
 # Changes
 
+## 2.5.1
+
+- Added `max` constructor option additional to `poolSize`
+- Migration: use pg transaction to avoid inconsistency
+
+
 ## 2.5.0
  
 - Archive: Existing archive configuration settings now apply to moving jobs into a new table `arvhive` 

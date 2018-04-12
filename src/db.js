@@ -19,7 +19,7 @@ class Db extends EventEmitter {
       port: poolConfig.port,
       database: poolConfig.database,
       application_name: poolConfig.application_name || 'pgboss',
-      max: poolConfig.poolSize,
+      max: poolConfig.poolSize || poolConfig.max,
       ssl: !!poolConfig.ssl,
       Promise
     });
@@ -44,7 +44,7 @@ class Db extends EventEmitter {
 
       return parsed;
     }
-    
+
   }
 
   close(){

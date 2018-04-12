@@ -73,7 +73,7 @@ const options = {
   database: 'database',
   user: 'user',
   password: 'password',
-  poolSize: 5,
+  poolSize: 5, // or max: 5
   archiveCompletedJobsEvery: '2 days'
 };
 

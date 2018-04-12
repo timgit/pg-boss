@@ -3,6 +3,8 @@ const helper = require('./testHelper');
 
 describe('retries', function() {
 
+  this.timeout(10000);
+
   let boss;
 
   before(function(finished){
@@ -33,7 +35,7 @@ describe('retries', function() {
       assert.equal(subscribeCount, retryLimit + 1);
       finished();
 
-    }, 1000);
+    }, 3000);
 
   });
 });

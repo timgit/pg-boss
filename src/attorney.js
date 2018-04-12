@@ -130,7 +130,7 @@ function applyDatabaseConfig(config) {
     assert(!('poolSize' in config) || config.poolSize >=1,
       'configuration assert: poolSize must be at least 1');
 
-    config.poolSize = config.poolSize || 10;
+    config.poolSize = config.poolSize || config.max || 10;
   }
 
   return config;

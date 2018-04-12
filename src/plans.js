@@ -237,7 +237,7 @@ function failJobs(schema){
     SET completedOn = now(),
       state = '${states.failed}'
     WHERE id = ANY($1)
-      AND state < '${states.complete}'    
+      AND state < '${states.complete}'
   `;
 }
 
@@ -262,14 +262,14 @@ function expire(schema) {
         AND (startedOn + expireIn) < now()    
       RETURNING id, name, state, data
     )
-    SELECT id, name, data FROM expired WHERE state = '${states.expired}';
+    SELECT id, name, data FROM expired WHERE state = '${states.expired}'
   `;
 }
 
 function purge(schema) {
   return `
     DELETE FROM ${schema}.archive
-    WHERE (archivedOn + CAST($1 as interval) < now())              
+    WHERE (archivedOn + CAST($1 as interval) < now())
   `;
 }
 
@@ -287,7 +287,7 @@ function archive(schema){
       RETURNING *
     )
     INSERT INTO ${schema}.archive
-    SELECT * FROM archived_rows;
+    SELECT * FROM archived_rows
   `;
 }
 

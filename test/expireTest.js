@@ -4,6 +4,8 @@ const Promise = require('bluebird');
 
 describe('expire', function() {
 
+  this.timeout(10000);
+
   let boss;
 
   // sanitizing each test run for expiration events
@@ -20,7 +22,7 @@ describe('expire', function() {
   });
 
   it('should expire a job', function(finished){
-    this.timeout(4000);
+    this.timeout(5000);
 
     let jobName = 'i-take-too-long';
     let jobId = null;
