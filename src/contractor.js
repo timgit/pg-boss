@@ -50,7 +50,7 @@ class Contractor {
     // use transaction, in case one query fails, it will automatically rollback to avoid inconsistency
     let queryInTransaction = `
     BEGIN;
-    ${plans.create(this.config.schema).join(';')}
+    ${plans.create(this.config.schema).join(';')};
     ${plans.insertVersion(this.config.schema).replace('$1', `'${schemaVersion}'`)}
     COMMIT;`;
     return this.db.executeSql(queryInTransaction);
@@ -96,7 +96,7 @@ class Contractor {
     // use transaction, in case one query fails, it will automatically rollback to avoid inconsistency
     let queryInTransaction = `
     BEGIN;
-    ${migration.commands.join(';')}
+    ${migration.commands.join(';')};
     COMMIT;`;
     return this.db.executeSql(queryInTransaction)
       .then(() => migration.version);
