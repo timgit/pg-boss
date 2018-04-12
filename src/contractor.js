@@ -2,7 +2,6 @@ const assert = require('assert');
 const plans = require('./plans');
 const migrations = require('./migrations');
 const schemaVersion = require('../version.json').schema;
-const Promise = require('bluebird');
 
 class Contractor {
 
@@ -51,7 +50,7 @@ class Contractor {
     let queryInTransaction = `
     BEGIN;
     ${plans.create(this.config.schema).join(';')};
-    ${plans.insertVersion(this.config.schema).replace('$1', `'${schemaVersion}'`)}
+    ${plans.insertVersion(this.config.schema).replace('$1', `'${schemaVersion}'`)};
     COMMIT;`;
     return this.db.executeSql(queryInTransaction);
   }
