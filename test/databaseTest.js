@@ -5,9 +5,9 @@ const helper = require('./testHelper');
 
 describe('database', function(){
 
-  it('should fail on invalid database host', function(finished){
+  this.timeout(15000);
 
-    this.timeout(10000);
+  it('should fail on invalid database host', function(finished){
 
     const boss = new PgBoss('postgres://bobby:tables@wat:12345/northwind');
 
@@ -72,9 +72,7 @@ describe('database', function(){
   });
 
 
-  it('connection count does not exceed configured pool size', function(finished){
-
-    this.timeout(5000);
+  it('connection count does not exceed configured pool size with `poolSize`', function(finished){
 
     const listenerCount = 100;
     const poolSize = 5;
@@ -84,18 +82,16 @@ describe('database', function(){
       listeners[x] = x;
 
     let boss;
-    let database;
     let prevConnectionCount;
 
     helper.start({poolSize})
       .then(b => boss = b)
-      .then(() => helper.getDb())
-      .then(db => database = db)
-      .then(() => countConnections(database))
+      .then(() => boss.db)
+      .then(() => countConnections(boss.db))
       .then(connectionCount => prevConnectionCount = connectionCount)
       .then(() => Promise.map(listeners, (val, index) => boss.subscribe(`job${index}`, () => {})))
       .then(() => Promise.delay(3000))
-      .then(() => countConnections(database))
+      .then(() => countConnections(boss.db))
       .then(connectionCount => {
         let newConnections = connectionCount - prevConnectionCount;
         console.log(`listeners: ${listenerCount}  pool size: ${poolSize}`);
@@ -108,7 +104,47 @@ describe('database', function(){
 
 
     function countConnections(db) {
-      return db.executeSql('SELECT count(*) as connections FROM pg_stat_activity')
+      return db.executeSql('SELECT count(*) as connections FROM pg_stat_activity WHERE application_name=$1',
+        [boss.db.config.application_name])
+        .then(result => parseFloat(result.rows[0].connections));
+    }
+
+  });
+
+  it('connection count does not exceed configured pool size with `max`', function(finished){
+
+    const listenerCount = 100;
+    const max = 5;
+
+    let listeners = [];
+    for(let x = 0; x<listenerCount; x++)
+      listeners[x] = x;
+
+    let boss;
+    let prevConnectionCount;
+
+    helper.start({max})
+      .then(b => boss = b)
+      .then(() => boss.db)
+      .then(() => countConnections(boss.db))
+      .then(connectionCount => prevConnectionCount = connectionCount)
+      .then(() => Promise.map(listeners, (val, index) => boss.subscribe(`job${index}`, () => {})))
+      .then(() => Promise.delay(3000))
+      .then(() => countConnections(boss.db))
+      .then(connectionCount => {
+        let newConnections = connectionCount - prevConnectionCount;
+        console.log(`listeners: ${listenerCount}  pool size: ${max}`);
+        console.log('connections:');
+        console.log(`  before subscribing: ${prevConnectionCount}  now: ${connectionCount}  new: ${newConnections}`);
+        assert(newConnections <= max);
+      })
+      .then(() => boss.stop())
+      .then(() => finished());
+
+
+    function countConnections(db) {
+      return db.executeSql('SELECT count(*) as connections FROM pg_stat_activity WHERE application_name=$1',
+        [boss.db.config.application_name])
         .then(result => parseFloat(result.rows[0].connections));
     }
 

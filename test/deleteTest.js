@@ -4,6 +4,8 @@ const Promise = require('bluebird');
 
 describe('delete', function() {
 
+  this.timeout(10000);
+
   let boss;
 
   before(function(finished){
@@ -27,7 +29,6 @@ describe('delete', function() {
   });
 
   it('should delete an archived job', function(finished){
-    this.timeout(5000);
 
     let jobName = 'deleteMe';
     let jobId = null;

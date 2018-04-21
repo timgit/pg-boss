@@ -1,6 +1,6 @@
 const assert = require('assert');
 const plans = require('./plans');
-const migrations = require('./migrations');
+const migrationStore = require('./migrationStore');
 const schemaVersion = require('../version.json').schema;
 
 class Contractor {
@@ -13,7 +13,7 @@ class Contractor {
   }
 
   static migrationPlans(schema, version, uninstall){
-    let migration = migrations.get(schema, version, uninstall);
+    let migration = migrationStore.get(schema, version, uninstall);
     assert(migration, `migration not found from version ${version}. schema: ${schema}`);
     return migration.commands.join(';\n\n');
   }
@@ -21,6 +21,7 @@ class Contractor {
   constructor(db, config){
     this.config = config;
     this.db = db;
+    this.migrations = this.config.migrations || migrationStore.getAll(this.config.schema);
   }
 
   version() {
@@ -46,10 +47,13 @@ class Contractor {
   }
 
   create(){
-    let promises = plans.create(this.config.schema).map(command => () => this.db.executeSql(command));
-
-    return this.promiseEach(promises)
-      .then(() => this.db.executeSql(plans.insertVersion(this.config.schema), [schemaVersion]));
+    // use transaction, in case one query fails, it will automatically rollback to avoid inconsistency
+    let queryInTransaction = `
+    BEGIN;
+    ${plans.create(this.config.schema).join(';')};
+    ${plans.insertVersion(this.config.schema).replace('$1', `'${schemaVersion}'`)};
+    COMMIT;`;
+    return this.db.executeSql(queryInTransaction);
   }
 
   update(current) {
@@ -82,22 +86,20 @@ class Contractor {
       });
   }
 
-  migrate(version, uninstall) {
-    let migration = migrations.get(this.config.schema, version, uninstall);
+  migrate(version, uninstall){
+    let migration = migrationStore.get(this.config.schema, version, uninstall, this.migrations);
 
     if(!migration){
       let errorMessage = `Migration to version ${version} failed because it could not be found.  Your database may have been upgraded by a newer version of pg-boss`;
       return Promise.reject(new Error(errorMessage));
     }
-
-    let promises = migration.commands.map(command => () => this.db.executeSql(command));
-
-    return this.promiseEach(promises)
+    // use transaction, in case one query fails, it will automatically rollback to avoid inconsistency
+    let queryInTransaction = `
+    BEGIN;
+    ${migration.commands.join(';')};
+    COMMIT;`;
+    return this.db.executeSql(queryInTransaction)
       .then(() => migration.version);
-  }
-
-  promiseEach(promises) {
-    return promises.reduce((promise, func) => promise.then(() => func().then()), Promise.resolve());
   }
 }
 

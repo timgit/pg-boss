@@ -3,11 +3,11 @@ const helper = require('./testHelper');
 
 describe('publish', function(){
 
+  this.timeout(10000);
+
   let boss;
 
   before(function(finished){
-    this.timeout(3000);
-
     helper.start()
       .then(dabauce => {
         boss = dabauce;

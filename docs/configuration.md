@@ -49,7 +49,7 @@ Since passing only a connection string is intended to be for convenience, you ca
     const boss = new PgBoss('postgres://user:pass@host:port/database?ssl=require');
     ```
 
-* **poolSize** - int, defaults to 10
+* **poolSize** or **max** - int, defaults to 10
 
     Maximum number of connections that will be shared by all subscriptions in this instance
     

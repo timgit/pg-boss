@@ -4,12 +4,15 @@ const Promise = require('bluebird');
 
 describe('archive', function() {
 
+  this.timeout(10000);
+
   let boss;
 
   before(function(finished){
     helper.start({archiveCompletedJobsEvery:'1 second', archiveCheckInterval: 500})
       .then(dabauce => {
         boss = dabauce;
+
         finished();
       });
   });
