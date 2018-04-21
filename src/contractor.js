@@ -1,6 +1,6 @@
 const assert = require('assert');
 const plans = require('./plans');
-const migrations = require('./migrations');
+const migrationStore = require('./migrationStore');
 const schemaVersion = require('../version.json').schema;
 
 class Contractor {
@@ -13,7 +13,7 @@ class Contractor {
   }
 
   static migrationPlans(schema, version, uninstall){
-    let migration = migrations.get(schema, version, uninstall);
+    let migration = migrationStore.get(schema, version, uninstall);
     assert(migration, `migration not found from version ${version}. schema: ${schema}`);
     return migration.commands.join(';\n\n');
   }
@@ -21,6 +21,7 @@ class Contractor {
   constructor(db, config){
     this.config = config;
     this.db = db;
+    this.migrations = this.config.migrations || migrationStore.getAll(this.config.schema);
   }
 
   version() {
@@ -86,7 +87,7 @@ class Contractor {
   }
 
   migrate(version, uninstall){
-    let migration = migrations.get(this.config.schema, version, uninstall);
+    let migration = migrationStore.get(this.config.schema, version, uninstall, this.migrations);
 
     if(!migration){
       let errorMessage = `Migration to version ${version} failed because it could not be found.  Your database may have been upgraded by a newer version of pg-boss`;

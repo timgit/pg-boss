@@ -2,6 +2,7 @@ const assert = require('chai').assert;
 const PgBoss = require('../src/index');
 const helper = require('./testHelper');
 const Contractor = require('../src/contractor');
+const migrationStore = require('../src/migrationStore');
 const currentSchemaVersion = require('../version.json').schema;
 
 describe('migration', function() {
@@ -86,6 +87,30 @@ describe('migration', function() {
         assert(error.message.indexOf('could not be found') > -1);
         finished();
       });
+  });
+
+  it('should roll back an error during a migration', function(finished){
+
+    let config = helper.getConfig();
+
+    config.migrations = migrationStore.getAll(config.schema);
+
+    config.migrations[config.migrations.length - 1].install.push('wat');
+
+    contractor.create()
+      .then(() => contractor.migrate(currentSchemaVersion, 'remove'))
+      .then(() => new PgBoss(config).start())
+      .catch(err => assert(err.message.indexOf('wat') > 0))
+      .then(() => contractor.version())
+      .then(version => {
+        assert.notEqual(version, currentSchemaVersion);
+        config.migrations[config.migrations.length - 1].install.pop();
+        return new PgBoss(config).start();
+      })
+      .then(() => contractor.version())
+      .then(version => assert.equal(version, currentSchemaVersion))
+      .then(() => finished());
+
   });
 
 });
