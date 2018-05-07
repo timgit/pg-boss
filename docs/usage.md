@@ -373,7 +373,7 @@ boss.fetch(jobName, batchSize)
     console.log(`received ${jobs.length} ${jobName} jobs`);
 
     // our magical emailer knows what to do with job.data
-    let promises = jobs.map(job => emailer.send(job.data).then(() => job.done()));
+    let promises = jobs.map(job => emailer.send(job.data).then(() => boss.complete(job.id)));
     
     return Promise.all(promises);      
   })
