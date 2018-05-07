@@ -481,8 +481,6 @@ boss.on('failed', failure => {
 
 `archived` is raised each time 1 or more jobs are archived.  The payload is an integer representing the number of jobs archived.
 
-> Please note the term **"archive"** used in pg-boss actually results in completed jobs being **removed** from the job table to keep performance and capacity under control.  If you need to keep old jobs, you should set the `archiveCompletedJobsEvery` setting large enough to allow yourself a window of opportunity to grab them ahead of their scheduled removal.
-
 ## `expired-count`
 
 `expired-count` is raised each time 1 or more jobs are expired.  The payload is an integer representing the number of jobs expired.
