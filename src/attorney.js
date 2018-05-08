@@ -97,6 +97,7 @@ function applyConfig(config) {
   config = applyExpireConfig(config);
   config = applyArchiveConfig(config);
   config = applyDeleteConfig(config);
+  config = applyRetryFailedConfig(config);
   config = applyMonitoringConfig(config);
   config = applyUuidConfig(config);
 
@@ -206,6 +207,26 @@ function applyDeleteConfig(config) {
     'configuration assert: deleteArchivedJobsEvery should be a readable PostgreSQL interval such as "7 days"');
 
   config.deleteArchivedJobsEvery = config.deleteArchivedJobsEvery || '7 days';
+
+  return config;
+}
+
+function applyRetryFailedConfig(config){
+  assert(!('failedCheckInterval' in config &&
+    config.failedCheckInterval !== null) || config.failedCheckInterval >=100,
+    'configuration assert: failedCheckInterval must be at least every 100ms');
+
+  assert(!('failedCheckIntervalSeconds' in config) || config.failedCheckIntervalSeconds >=1,
+    'configuration assert: failedCheckIntervalSeconds must be at least every second');
+
+  assert(!('failedCheckIntervalMinutes' in config) || config.failedCheckIntervalMinutes >=1,
+    'configuration assert: failedCheckIntervalMinutes must be at least every minute');
+
+  config.failedCheckInterval =
+    ('failedCheckIntervalMinutes' in config) ? config.failedCheckIntervalMinutes * 60 * 1000
+      : ('failedCheckIntervalSeconds' in config) ? config.failedCheckIntervalSeconds * 1000
+        : ('failedCheckInterval' in config) ? config.failedCheckInterval
+          : null;
 
   return config;
 }
