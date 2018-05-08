@@ -11,6 +11,7 @@ pg-boss can be customized using configuration options when an instance is create
     - [Job fetch options](#job-fetch-options)
     - [Job expiration options](#job-expiration-options)
     - [Job archive options](#job-archive-options)
+    - [Job retry options](#job-retry-options)
 - [Publish Options](#publish-options)
     - [Delayed jobs](#delayed-jobs)
     - [Unique jobs](#unique-jobs)
@@ -140,6 +141,27 @@ When `archiveCheckIntervalSeconds` is specified, `archiveCheckInterval` is ignor
 * **deleteCheckInterval**, int
 
     interval to delete jobs in milliseconds, must be >=100.   Default: 1 hour
+
+### Job retry options
+
+By default, only expired jobs are automatically retried when a `retryLimit` is specified.
+To also automatically retry failed jobs, set a check interval using one of the options below.
+
+* **failedCheckInterval**, int
+
+    interval to check for failed jobs to retry in milliseconds, must be >=100
+
+* **failedCheckIntervalSeconds**, int
+
+    interval to check for failed jobs to retry in seconds, must be >=1
+
+* **failedCheckIntervalMinutes**, int
+
+    interval to check for failed jobs to retry in minutes, must be >=1
+
+When `failedCheckIntervalMinutes` is specified, `failedCheckIntervalSeconds` and `failedCheckInterval` are ignored.
+
+When `failedCheckIntervalSeconds` is specified, `failedCheckInterval` is ignored.
 
 ## Publish Options
 
