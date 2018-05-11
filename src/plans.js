@@ -9,9 +9,7 @@ const states = {
 };
 
 const stateJobDelimiter = '__state__';
-const expiredJobSuffix = stateJobDelimiter + states.expired;
 const completedJobSuffix = stateJobDelimiter + states.complete;
-const failedJobSuffix = stateJobDelimiter + states.failed;
 
 module.exports = {
   create,
@@ -19,11 +17,8 @@ module.exports = {
   getVersion,
   versionTableExists,
   fetchNextJob,
-  completeJob,
   completeJobs,
-  cancelJob,
   cancelJobs,
-  failJob,
   failJobs,
   insertJob,
   expire,
@@ -32,9 +27,7 @@ module.exports = {
   countStates,
   states,
   stateJobDelimiter,
-  expiredJobSuffix,
   completedJobSuffix,
-  failedJobSuffix
 };
 
 function create(schema) {
@@ -45,6 +38,7 @@ function create(schema) {
     createJobTable(schema),
     cloneJobTableForArchive(schema),
     addArchivedOnToArchive(schema),
+    createIndexJobName(schema),
     createIndexJobFetch(schema),
     createIndexSingletonOn(schema),
     createIndexSingletonKeyOn(schema),
@@ -88,7 +82,7 @@ function createJobTable(schema) {
       id uuid primary key not null,
       name text not null,
       priority integer not null default(0),
-      data jsonb,
+      data json,
       state ${schema}.job_state not null default('${states.created}'),
       retryLimit integer not null default(0),
       retryCount integer not null default(0),
@@ -132,9 +126,15 @@ function createIndexSingletonKeyOn(schema){
   `;
 }
 
+function createIndexJobName(schema){
+  return `
+    CREATE INDEX job_name ON ${schema}.job (name) WHERE state < '${states.active}'
+  `;
+}
+
 function createIndexJobFetch(schema){
   return `
-    CREATE INDEX job_fetch ON ${schema}.job (priority desc, createdOn, id) WHERE state < '${states.active}'
+    CREATE INDEX job_fetch ON ${schema}.job (name, priority desc, createdOn, id) WHERE state < '${states.active}'
   `;
 }
 
@@ -162,7 +162,7 @@ function fetchNextJob(schema) {
       SELECT id
       FROM ${schema}.job
       WHERE state < '${states.active}'
-        AND name = $1
+        AND name = ANY($1)
         AND (createdOn + startIn) < now()
       ORDER BY priority desc, createdOn, id
       LIMIT $2
@@ -178,35 +178,55 @@ function fetchNextJob(schema) {
   `;
 }
 
-function completeJob(schema){
-  return `
-    UPDATE ${schema}.job
-    SET completedOn = now(),
-      state = '${states.complete}'
-    WHERE id = $1
-      AND state = '${states.active}'
-    RETURNING id, name, data
-  `;
-}
-
 function completeJobs(schema){
   return `
-    UPDATE ${schema}.job
-    SET completedOn = now(),
-      state = '${states.complete}'
-    WHERE id = ANY($1)
-      AND state = '${states.active}'
-  `;
+    WITH results AS (
+      UPDATE ${schema}.job
+      SET completedOn = now(),
+        state = '${states.complete}'
+      WHERE id = ANY($1)
+        AND state = '${states.active}'
+      RETURNING id, name, data
+    )
+    INSERT INTO ${schema}.job (name, data)
+    SELECT name || '${completedJobSuffix}', json_build_object('request', data, 'response', $2, 'state', state)
+    FROM results
+    RETURNING 1
+  `; // returning 1 here just to count results against input array
 }
 
-function cancelJob(schema){
+function failJobs(schema){
   return `
-    UPDATE ${schema}.job
-    SET completedOn = now(),
-      state = '${states.cancelled}'
-    WHERE id = $1
-      AND state < '${states.complete}'
-    RETURNING id, name, data
+    WITH results AS (
+      UPDATE ${schema}.job
+      SET state = CASE WHEN retryCount < retryLimit THEN '${states.retry}'::${schema}.job_state ELSE '${states.failed}'::${schema}.job_state END,        
+          completedOn = CASE WHEN retryCount < retryLimit THEN NULL ELSE now() END
+      WHERE id = ANY($1)
+        AND state < '${states.complete}'
+      RETURNING id, name, data, state
+    )
+    INSERT INTO ${schema}.job (name, data)
+    SELECT name || '${completedJobSuffix}', json_build_object('request', data, 'response', $2, 'state', state)
+    FROM results
+    WHERE state = '${states.failed}'
+    RETURNING 1
+  `; // returning 1 here just to count results against input array
+}
+
+function expire(schema) {
+  return `
+    WITH results AS (
+      UPDATE ${schema}.job
+      SET state = CASE WHEN retryCount < retryLimit THEN '${states.retry}'::${schema}.job_state ELSE '${states.expired}'::${schema}.job_state END,        
+        completedOn = CASE WHEN retryCount < retryLimit THEN NULL ELSE now() END
+      WHERE state = '${states.active}'
+        AND (startedOn + expireIn) < now()    
+      RETURNING id, name, state, data
+    )
+    INSERT INTO ${schema}.job (name, data)
+    SELECT name || '${completedJobSuffix}', json_build_object('request', data, 'response', null, 'state', state)
+    FROM results
+    WHERE state = '${states.expired}'
   `;
 }
 
@@ -217,28 +237,8 @@ function cancelJobs(schema){
       state = '${states.cancelled}'
     WHERE id = ANY($1)
       AND state < '${states.complete}'
-  `;
-}
-
-function failJob(schema){
-  return `
-    UPDATE ${schema}.job
-    SET completedOn = now(),
-      state = '${states.failed}'
-    WHERE id = $1
-      AND state < '${states.complete}'
-    RETURNING id, name, data
-  `;
-}
-
-function failJobs(schema){
-  return `
-    UPDATE ${schema}.job
-    SET completedOn = now(),
-      state = '${states.failed}'
-    WHERE id = ANY($1)
-      AND state < '${states.complete}'
-  `;
+    RETURNING 1
+  `;  // returning 1 here just to count results against input array
 }
 
 function insertJob(schema) {
@@ -249,20 +249,6 @@ function insertJob(schema) {
       CASE WHEN $9::integer IS NOT NULL THEN 'epoch'::timestamp + '1 second'::interval * ($9 * floor((date_part('epoch', now()) + $10) / $9)) ELSE NULL END
     )
     ON CONFLICT DO NOTHING
-  `;
-}
-
-function expire(schema) {
-  return `
-    WITH expired AS (
-      UPDATE ${schema}.job
-      SET state = CASE WHEN retryCount < retryLimit THEN '${states.retry}'::${schema}.job_state ELSE '${states.expired}'::${schema}.job_state END,        
-        completedOn = CASE WHEN retryCount < retryLimit THEN NULL ELSE now() END
-      WHERE state = '${states.active}'
-        AND (startedOn + expireIn) < now()    
-      RETURNING id, name, state, data
-    )
-    SELECT id, name, data FROM expired WHERE state = '${states.expired}'
   `;
 }
 

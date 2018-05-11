@@ -73,8 +73,8 @@ function checkSubscribeArgs(name, args){
   return Promise.resolve({options, callback});
 }
 
-function checkFetchArgs(name, batchSize){
-  return assertAsync(name, 'missing job name')
+function checkFetchArgs(names, batchSize){
+  return assertAsync(names.every(n => n), 'missing job name')
     .then(() => assert(!batchSize || batchSize >=1, 'fetch() assert: optional batchSize arg must be at least 1'));
 }
 

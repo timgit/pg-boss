@@ -5,14 +5,9 @@ const Worker = require('./worker');
 const plans = require('./plans');
 const Attorney = require('./attorney');
 
-const stateJobDelimiter = plans.stateJobDelimiter;
-const expiredJobSuffix = plans.expiredJobSuffix;
 const completedJobSuffix = plans.completedJobSuffix;
-const failedJobSuffix = plans.failedJobSuffix;
 
 const events = {
-  job: 'job',
-  failed: 'failed',
   error: 'error'
 };
 
@@ -28,11 +23,8 @@ class Manager extends EventEmitter {
 
     this.nextJobCommand = plans.fetchNextJob(config.schema);
     this.insertJobCommand = plans.insertJob(config.schema);
-    this.completeJobCommand = plans.completeJob(config.schema);
     this.completeJobsCommand = plans.completeJobs(config.schema);
-    this.cancelJobCommand = plans.cancelJob(config.schema);
     this.cancelJobsCommand = plans.cancelJobs(config.schema);
-    this.failJobCommand = plans.failJob(config.schema);
     this.failJobsCommand = plans.failJobs(config.schema);
 
     // exported api to index
@@ -46,12 +38,6 @@ class Manager extends EventEmitter {
       this.unsubscribe,
       this.onComplete,
       this.offComplete,
-      this.onExpire,
-      this.offExpire,
-      this.onFail,
-      this.offFail,
-      this.fetchFailed,
-      this.fetchExpired,
       this.fetchCompleted
     ];
   }
@@ -67,20 +53,9 @@ class Manager extends EventEmitter {
       .then(({options, callback}) => this.watch(name, options, callback));
   }
 
-  onExpire(name, ...args) {
-    // unwrapping job in callback here because we love our customers
-    return Attorney.checkSubscribeArgs(name, args)
-      .then(({options, callback}) => this.watch(name + expiredJobSuffix, options, job => callback(job.data)));
-  }
-
   onComplete(name, ...args) {
     return Attorney.checkSubscribeArgs(name, args)
       .then(({options, callback}) => this.watch(name + completedJobSuffix, options, callback));
-  }
-
-  onFail(name, ...args) {
-    return Attorney.checkSubscribeArgs(name, args)
-      .then(({options, callback}) => this.watch(name + failedJobSuffix, options, callback));
   }
 
   watch(name, options, callback){
@@ -101,10 +76,10 @@ class Manager extends EventEmitter {
       if(!error)
         return this.complete(job.id, response);
 
-      return this.fail(job.id, error)
-        .then(() => this.emit(events.failed, {job, error}));
+      return this.fail(job.id, error);
     };
 
+    //  TODO: should respond return a promise to worker to defer polling
     let respond = jobs => {
       if (!jobs) return;
 
@@ -112,15 +87,18 @@ class Manager extends EventEmitter {
         jobs = [jobs];
 
       setImmediate(() => {
+        // TODO: if batchSize option is passed, just respond with entire array
+        // TODO: if teamSize option is passed, continue with current behavior
         jobs.forEach(job => {
-          this.emit(events.job, job);
+
           job.done = (error, response) => complete(job, error, response);
 
           try {
+            // TODO: detect promise here and to defer respond?
             callback(job, job.done);
           }
           catch (error) {
-            this.emit(events.failed, {job, error})
+            // TODO: what to do here?
           }
         });
       });
@@ -153,14 +131,6 @@ class Manager extends EventEmitter {
     return Promise.resolve(true);
   }
 
-  offFail(name) {
-    return this.unsubscribe(name + failedJobSuffix);
-  }
-
-  offExpire(name) {
-    return this.unsubscribe(name + expiredJobSuffix);
-  }
-
   offComplete(name){
     return this.unsubscribe(name + completedJobSuffix);
   }
@@ -169,10 +139,6 @@ class Manager extends EventEmitter {
     return Attorney.checkPublishArgs(args)
       .then(({name, data, options}) => this.createJob(name, data, options));
   }
-
-  expired(job){
-    return this.publish(job.name + expiredJobSuffix, job);
-  };
 
   createJob(name, data, options, singletonOffset){
     let startIn =
@@ -218,107 +184,44 @@ class Manager extends EventEmitter {
   }
 
   fetch(name, batchSize) {
-    return Attorney.checkFetchArgs(name, batchSize)
-      .then(() => this.db.executeSql(this.nextJobCommand, [name, batchSize || 1]))
+    const names = Array.isArray(name) ? name : [name];
+
+    return Attorney.checkFetchArgs(names, batchSize)
+      .then(() => this.db.executeSql(this.nextJobCommand, [names, batchSize || 1]))
       .then(result => result.rows.length === 0 ? null :
                       result.rows.length === 1 && !batchSize ? result.rows[0] :
                       result.rows);
-  }
-
-  fetchFailed(name, batchSize) {
-    return this.fetch(name + failedJobSuffix, batchSize);
-  }
-
-  fetchExpired(name, batchSize) {
-    return this.fetch(name + expiredJobSuffix, batchSize)
-      .then(result => Array.isArray(result) ? result.map(this.unwrapStateJob) : this.unwrapStateJob(result));
   }
 
   fetchCompleted(name, batchSize){
     return this.fetch(name + completedJobSuffix, batchSize);
   }
 
-  unwrapStateJob(job){
-    return job.data;
-  }
+  setState(id, data, actionName, command){
 
-  setStateForJob(id, data, actionName, command, stateSuffix, bypassNotify){
-    let job;
+    const ids = Array.isArray(id) ? id : [id];
+    const values = [ids];
 
-    return this.db.executeSql(command, [id])
-      .then(result => {
-        assert(result.rowCount === 1, `${actionName}(): Job ${id} could not be updated.`);
+    if(data)
+      values.push(data);
 
-        job = result.rows[0];
+    return Attorney.assertAsync(ids.length, `${actionName}() requires an id argument`)
+      .then(() => this.db.executeSql(command, values))
+      .then(result => assert(result.rowCount === ids.length, `${actionName}(): ${ids.length} jobs submitted, ${result.rowCount} updated`));
 
-        if(!bypassNotify)
-          bypassNotify = job.name.indexOf(stateJobDelimiter) >= 0;
-
-        return bypassNotify
-          ? null
-          : this.publish(job.name + stateSuffix, {request: job, response: data || null});
-      })
-      .then(() => job);
-  }
-
-  setStateForJobs(ids, actionName, command){
-    return this.db.executeSql(command, [ids])
-      .then(result => {
-        assert(result.rowCount === ids.length, `${actionName}(): ${ids.length} jobs submitted, ${result.rowCount} updated`);
-      });
-  }
-
-  setState(config){
-    let {id, data, actionName, command, batchCommand, stateSuffix, bypassNotify} = config;
-
-    return Attorney.assertAsync(id, `${actionName}() requires id argument`)
-      .then(() => {
-        let ids = Array.isArray(id) ? id : [id];
-
-        assert(ids.length, `${actionName}() requires at least 1 item in an array argument`);
-
-        return ids.length === 1
-          ? this.setStateForJob(ids[0], data, actionName, command, stateSuffix, bypassNotify)
-          : this.setStateForJobs(ids, actionName, batchCommand);
-      })
   }
 
   complete(id, data){
-    const config = {
-      id,
-      data,
-      actionName: 'complete',
-      command: this.completeJobCommand,
-      batchCommand: this.completeJobsCommand,
-      stateSuffix: completedJobSuffix
-    };
-
-    return this.setState(config);
+    return this.setState(id, data, 'complete', this.completeJobsCommand);
   }
 
   fail(id, data){
-    const config = {
-      id,
-      data,
-      actionName: 'fail',
-      command: this.failJobCommand,
-      batchCommand: this.failJobsCommand,
-      stateSuffix: failedJobSuffix
-    };
-
-    return this.setState(config);
+    return this.setState(id, data, 'fail', this.failJobsCommand);
   }
 
   cancel(id) {
-    const config = {
-      id,
-      actionName: 'cancel',
-      command: this.cancelJobCommand,
-      batchCommand: this.cancelJobsCommand,
-      bypassNotify: true
-    };
-
-    return this.setState(config);
+    //TODO: possibly pass func instead of null arg here, but will still want a common error handling from setState
+    return this.setState(id, null, 'cancel', this.cancelJobsCommand);
   }
 
 }
