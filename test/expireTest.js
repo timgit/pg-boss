@@ -27,22 +27,17 @@ describe('expire', function() {
     let jobName = 'i-take-too-long';
     let jobId = null;
 
-    boss.on('expired-count', count => assert.equal(1, count));
-    boss.on('expired-job', job => assert.equal(job.id, jobId));
-
     boss.publish({name: jobName, options: {expireIn:'1 second'}})
-      .then(id => jobId = id);
-
-    boss.onExpire(jobName, job => {
-      // giving event emitter assertions a chance
-      setTimeout(() => {
-        assert.equal(jobId, job.id);
+      .then(id => jobId = id)
+      .then(() => boss.fetch(jobName))
+      .then(() => Promise.delay(2000))
+      .then(() => boss.fetchCompleted(jobName))
+      .then(job => {
+        assert.equal(jobId, job.data.request.id);
+        assert.equal('expired', job.data.state);
         finished();
-      }, 500);
+      });
 
     });
-
-    boss.subscribe(jobName, job => {});
-  });
 
 });

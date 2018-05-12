@@ -113,7 +113,9 @@ describe('subscribe', function(){
   it('should have a done callback for single job subscriptions', function(finished){
     const name = 'subscribe-single';
 
-    boss.subscribe(name, (job, done) => done().then(() => finished()))
+    boss.subscribe(name, job=> {
+        return job.done().then(() => finished());
+      })
       .then(() => boss.publish(name));
 
   });

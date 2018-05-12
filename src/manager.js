@@ -72,13 +72,6 @@ class Manager extends EventEmitter {
 
     let onError = error => this.emit(events.error, error);
 
-    let complete = (job, error, response) => {
-      if(!error)
-        return this.complete(job.id, response);
-
-      return this.fail(job.id, error);
-    };
-
     //  TODO: should respond return a promise to worker to defer polling
     let respond = jobs => {
       if (!jobs) return;
@@ -91,11 +84,11 @@ class Manager extends EventEmitter {
         // TODO: if teamSize option is passed, continue with current behavior
         jobs.forEach(job => {
 
-          job.done = (error, response) => complete(job, error, response);
+          job.done = (error, response) => error ? this.fail(job.id, error) : this.complete(job.id, response);
 
           try {
             // TODO: detect promise here and to defer respond?
-            callback(job, job.done);
+            callback(job);
           }
           catch (error) {
             // TODO: what to do here?
@@ -138,6 +131,14 @@ class Manager extends EventEmitter {
   publish(...args){
     return Attorney.checkPublishArgs(args)
       .then(({name, data, options}) => this.createJob(name, data, options));
+  }
+
+  publishThrottled(...args) {
+
+  }
+
+  publishDebounced(...args) {
+
   }
 
   createJob(name, data, options, singletonOffset){
@@ -197,31 +198,53 @@ class Manager extends EventEmitter {
     return this.fetch(name + completedJobSuffix, batchSize);
   }
 
-  setState(id, data, actionName, command){
+  mapCompletionIdArg(id, funcName) {
+    const errorMessage = `${funcName}() requires an id`;
 
-    const ids = Array.isArray(id) ? id : [id];
-    const values = [ids];
+    return Attorney.assertAsync(id, errorMessage)
+      .then(() => {
+        let ids = Array.isArray(id) ? id : [id];
+        assert(ids.length, errorMessage);
+        return ids;
+      });
+  }
 
-    if(data)
-      values.push(data);
+  mapCompletionDataArg(data) {
+    if(data === null || typeof data === 'undefined' || typeof data === 'function')
+      return null;
 
-    return Attorney.assertAsync(ids.length, `${actionName}() requires an id argument`)
-      .then(() => this.db.executeSql(command, values))
-      .then(result => assert(result.rowCount === ids.length, `${actionName}(): ${ids.length} jobs submitted, ${result.rowCount} updated`));
+    return (typeof data === 'object' && !Array.isArray(data))
+      ? data
+      : { value:data };
+  }
 
+  mapCompletionResponse(ids, result) {
+    return {
+      jobs: ids,
+      requested: ids.length,
+      updated: result.rowCount
+    };
   }
 
   complete(id, data){
-    return this.setState(id, data, 'complete', this.completeJobsCommand);
+    return this.mapCompletionIdArg(id, 'complete')
+      .then(ids => this.db.executeSql(this.completeJobsCommand, [ids, this.mapCompletionDataArg(data)])
+                    .then(result => this.mapCompletionResponse(ids, result))
+      );
   }
 
   fail(id, data){
-    return this.setState(id, data, 'fail', this.failJobsCommand);
+    return this.mapCompletionIdArg(id, 'fail')
+      .then(ids => this.db.executeSql(this.failJobsCommand, [ids, this.mapCompletionDataArg(data)])
+        .then(result => this.mapCompletionResponse(ids, result))
+      );
   }
 
   cancel(id) {
-    //TODO: possibly pass func instead of null arg here, but will still want a common error handling from setState
-    return this.setState(id, null, 'cancel', this.cancelJobsCommand);
+    return this.mapCompletionIdArg(id, 'cancel')
+      .then(ids => this.db.executeSql(this.cancelJobsCommand, [ids])
+        .then(result => this.mapCompletionResponse(ids, result))
+      );
   }
 
 }

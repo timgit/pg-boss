@@ -176,13 +176,13 @@ function fetchNextJob(schema) {
       LIMIT $2
       FOR UPDATE SKIP LOCKED
     )
-    UPDATE ${schema}.job SET
+    UPDATE ${schema}.job j SET
       state = '${states.active}',
       startedOn = now(),
       retryCount = CASE WHEN state = '${states.retry}' THEN retryCount + 1 ELSE retryCount END
     FROM nextJob
-    WHERE ${schema}.job.id = nextJob.id
-    RETURNING ${schema}.job.id, $1 as name, ${schema}.job.data
+    WHERE j.id = nextJob.id
+    RETURNING j.id, name, data
   `;
 }
 
@@ -199,6 +199,7 @@ function completeJobs(schema){
     INSERT INTO ${schema}.job (name, data)
     SELECT name || '${completedJobSuffix}', json_build_object('request', json_build_object('id', id, 'name', name, 'data', data), 'response', $2::json, 'state', state)
     FROM results
+    WHERE name NOT LIKE '%${completedJobSuffix}'
     RETURNING 1
   `; // returning 1 here just to count results against input array
 }

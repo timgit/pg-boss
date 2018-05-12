@@ -96,7 +96,7 @@ describe('error', function(){
           .then(() => boss.fetchCompleted(jobName))
           .then(failedJob => {
             assert.strictEqual(failedJob.data.state, 'failed');
-            assert.strictEqual(failedJob.data.response, failPayload);
+            assert.strictEqual(failedJob.data.response.value, failPayload);
             finished();
           })
       })
