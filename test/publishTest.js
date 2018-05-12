@@ -43,29 +43,20 @@ describe('publish', function(){
   it('should accept single string argument', function(finished) {
     const jobName = 'publishNameOnly';
 
-    boss.subscribe(jobName, job => {
-      job.done()
-        .then(() => {
-          assert(true);
-          finished();
-        });
-    });
+    boss.publish(jobName)
+      .then(() => boss.fetch(jobName))
+      .then(job => boss.complete(job.id))
+      .then(() => finished());
 
-    boss.publish(jobName);
   });
-
 
   it('should accept job object argument with only name', function(finished){
     const jobName = 'publishJobNameOnly';
 
-    boss.subscribe(jobName, job => {
-      job.done().then(() => {
-        assert(true);
-        finished();
-      });
-    });
-
-    boss.publish({name: jobName});
+    boss.publish({name: jobName})
+      .then(() => boss.fetch(jobName))
+      .then(job => boss.complete(job.id))
+      .then(() => finished());
   });
 
 
@@ -73,14 +64,14 @@ describe('publish', function(){
     const jobName = 'publishJobNameAndData';
     const message = 'hi';
 
-    boss.subscribe(jobName, job => {
-      job.done().then(() => {
+    boss.publish({name: jobName, data: {message}})
+      .then(() => boss.fetch(jobName))
+      .then(job => {
         assert.equal(message, job.data.message);
-        finished();
-      });
-    });
+        return boss.complete(job.id);
+      })
+      .then(() => finished());
 
-    boss.publish({name: jobName, data: {message}});
   });
 
 
@@ -88,14 +79,14 @@ describe('publish', function(){
     const jobName = 'publishJobNameAndOptions';
     const options = {someCrazyOption:'whatever'};
 
-    boss.subscribe(jobName, job => {
-      job.done().then(() => {
+    boss.publish({name: jobName, options})
+      .then(() => boss.fetch(jobName))
+      .then(job => {
         assert.isNull(job.data);
-        finished();
-      });
-    });
+        return boss.complete(job.id);
+      })
+      .then(() => finished());
 
-    boss.publish({name: jobName, options});
   });
 
 });

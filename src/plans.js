@@ -33,6 +33,7 @@ module.exports = {
 function create(schema) {
   return [
     createSchema(schema),
+    tryCreateCryptoExtension(),
     createVersionTable(schema),
     createJobStateEnum(schema),
     createJobTable(schema),
@@ -49,6 +50,13 @@ function create(schema) {
 function createSchema(schema) {
   return `
     CREATE SCHEMA IF NOT EXISTS ${schema}
+  `;
+}
+
+
+function tryCreateCryptoExtension() {
+  return `
+    CREATE EXTENSION IF NOT EXISTS pgcrypto
   `;
 }
 
@@ -79,7 +87,7 @@ function createJobStateEnum(schema) {
 function createJobTable(schema) {
   return `
     CREATE TABLE IF NOT EXISTS ${schema}.job (
-      id uuid primary key not null,
+      id uuid primary key not null default gen_random_uuid(),
       name text not null,
       priority integer not null default(0),
       data json,
@@ -186,10 +194,10 @@ function completeJobs(schema){
         state = '${states.complete}'
       WHERE id = ANY($1)
         AND state = '${states.active}'
-      RETURNING id, name, data
+      RETURNING *
     )
     INSERT INTO ${schema}.job (name, data)
-    SELECT name || '${completedJobSuffix}', json_build_object('request', data, 'response', $2, 'state', state)
+    SELECT name || '${completedJobSuffix}', json_build_object('request', json_build_object('id', id, 'name', name, 'data', data), 'response', $2::json, 'state', state)
     FROM results
     RETURNING 1
   `; // returning 1 here just to count results against input array
@@ -203,10 +211,10 @@ function failJobs(schema){
           completedOn = CASE WHEN retryCount < retryLimit THEN NULL ELSE now() END
       WHERE id = ANY($1)
         AND state < '${states.complete}'
-      RETURNING id, name, data, state
+      RETURNING *
     )
     INSERT INTO ${schema}.job (name, data)
-    SELECT name || '${completedJobSuffix}', json_build_object('request', data, 'response', $2, 'state', state)
+    SELECT name || '${completedJobSuffix}', json_build_object('request', json_build_object('id', id, 'name', name, 'data', data), 'response', $2::json, 'state', state)
     FROM results
     WHERE state = '${states.failed}'
     RETURNING 1
@@ -221,10 +229,10 @@ function expire(schema) {
         completedOn = CASE WHEN retryCount < retryLimit THEN NULL ELSE now() END
       WHERE state = '${states.active}'
         AND (startedOn + expireIn) < now()    
-      RETURNING id, name, state, data
+      RETURNING *
     )
     INSERT INTO ${schema}.job (name, data)
-    SELECT name || '${completedJobSuffix}', json_build_object('request', data, 'response', null, 'state', state)
+    SELECT name || '${completedJobSuffix}', json_build_object('request', json_build_object('id', id, 'name', name, 'data', data), 'response', null, 'state', state)
     FROM results
     WHERE state = '${states.expired}'
   `;

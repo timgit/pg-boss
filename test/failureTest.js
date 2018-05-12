@@ -38,35 +38,6 @@ describe('error', function(){
 
   });
 
-  it('failure event is raised from subscriber error', function(finished) {
-
-    this.timeout(3000);
-
-    const errorMessage = 'something went wrong';
-    const jobName = 'suspect-job';
-    let jobId;
-
-    boss.on('failed', failure => {
-      assert.equal(failure.job.id, jobId);
-      assert.equal(errorMessage, failure.error.message);
-      boss.removeAllListeners('failed');
-      finished();
-    });
-
-    boss.subscribe(jobName, job => {
-        let myError = new Error(errorMessage);
-
-        job.done(myError)
-          .catch(error => {
-            console.error(error);
-            assert(false, error.message);
-          });
-      })
-      .then(() => boss.publish(jobName))
-      .then(id => jobId = id);
-
-  });
-
   it('should subscribe to a job failure', function(finished){
 
     this.timeout(3000);
@@ -74,8 +45,9 @@ describe('error', function(){
     const jobName = 'subscribe-fail';
     let jobId;
 
-    boss.onFail(jobName, job => {
+    boss.onComplete(jobName, job => {
       assert.strictEqual(jobId, job.data.request.id);
+      assert.strictEqual('failed', job.data.state);
       finished();
     });
 
@@ -107,65 +79,23 @@ describe('error', function(){
 
     boss.publish(jobName)
       .then(jobId => boss.fail(jobId, failPayload))
-      .then(() => boss.fetchFailed(jobName))
+      .then(() => boss.fetchCompleted(jobName))
       .then(job => {
+        assert.strictEqual(job.data.state, 'failed');
         assert.strictEqual(job.data.response.someReason, failPayload.someReason);
         finished();
       });
   });
 
-  it('should unsubscribe a failure subscription', function(finished){
-    this.timeout(4000);
-
-    const jobName = 'offFail';
-
-    let receivedCount = 0;
-
-    boss.onFail(jobName, job => {
-      receivedCount++;
-
-      job.done()
-        .then(() => boss.offFail(jobName))
-        .then(() => boss.publish(jobName))
-        .then(jobId => boss.fail(jobId))
-    });
-
-    boss.publish(jobName)
-      .then(jobId => boss.fail(jobId))
-      .then(() => {
-
-        setTimeout(() => {
-          assert.strictEqual(receivedCount, 1);
-          finished();
-        }, 2000);
-
-      });
-
-  });
-
-  it('should fetch a failed job', function(finished){
-    const jobName = 'fetchFailed';
-
-    let jobId;
-
-    boss.publish(jobName)
-      .then(id => jobId = id)
-      .then(() => boss.fail(jobId))
-      .then(() => boss.fetchFailed(jobName))
-      .then(job => {
-        assert.strictEqual(job.data.request.id, jobId);
-        finished();
-      })
-  });
-
   it('subscribe failure via done() should pass error payload to failed job', function(finished){
-    const jobName = 'fetchFailedWithPayload';
+    const jobName = 'fetchFailureWithPayload';
     const failPayload = 'mah error';
 
     boss.subscribe(jobName, job => {
         job.done(failPayload)
-          .then(() => boss.fetchFailed(jobName))
+          .then(() => boss.fetchCompleted(jobName))
           .then(failedJob => {
+            assert.strictEqual(failedJob.data.state, 'failed');
             assert.strictEqual(failedJob.data.response, failPayload);
             finished();
           })
