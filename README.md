@@ -24,7 +24,7 @@ function ready() {
     .catch(onError);
 
   boss.subscribe(queue, someJobHandler)
-    .then(() => console.log(`subscribed to ${queue}'))
+    .then(() => console.log(`subscribed to ${queue}`))
     .catch(onError);
 }
 
