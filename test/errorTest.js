@@ -35,10 +35,8 @@ describe('error', function(){
           if(subscribeCount === 1)
             throw new Error('test - nothing to see here');
           else {
-            job.done().then(() => {
-              assert(true);
-              finished();
-            });
+            job.done()
+              .then(() => finished());
           }
 
         });

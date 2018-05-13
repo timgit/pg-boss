@@ -34,10 +34,7 @@ describe('connect', function() {
   it('should succeed if already started', function (finished) {
     boss.connect()
       .then(() => boss.disconnect())
-      .then(() => {
-        assert(true);
-        finished();
-      });
+      .then(() => finished());
   });
 
 });

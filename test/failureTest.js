@@ -31,10 +31,7 @@ describe('error', function(){
     boss.publish(jobName)
       .then(id => boss.fetch(jobName))
       .then(job => boss.fail(job.id))
-      .then(() => {
-        assert(true);
-        finished();
-      });
+      .then(() => finished());
 
   });
 

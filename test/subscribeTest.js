@@ -17,28 +17,23 @@ describe('subscribe', function(){
   });
 
   after(function(finished){
-    boss.stop().then(() => finished());
+    boss.stop()
+      .then(() => finished());
   });
 
   it('should fail with no arguments', function(finished) {
-    boss.subscribe().catch(error => {
-      assert(true);
-      finished();
-    });
+    boss.subscribe()
+      .catch(error => finished());
   });
 
   it('should fail if no callback provided', function(finished) {
-    boss.subscribe('foo').catch(error => {
-      assert(true);
-      finished();
-    });
+    boss.subscribe('foo')
+      .catch(error => finished());
   });
 
   it('should fail if options is not an object', function(finished) {
-    boss.subscribe('foo', () => {}, 'nope').catch(error => {
-      assert(true);
-      finished();
-    });
+    boss.subscribe('foo', () => {}, 'nope')
+      .catch(error => finished());
   });
 
   it('should honor a custom new job check interval', function(finished){
