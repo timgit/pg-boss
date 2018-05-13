@@ -17,11 +17,11 @@ boss.start()
   .catch(onError);
 
 function ready() {
-  boss.publish('some-job', {param1: 'parameter1'})
+  boss.publish('some-queue-name', {param1: 'parameter1'})
     .then(jobId => console.log(`created some-job ${jobId}`))
     .catch(onError);
 
-  boss.subscribe('some-job', someJobHandler)
+  boss.subscribe('some-queue-name', someJobHandler)
     .then(() => console.log('subscribed to some-job'))
     .catch(onError);
 }
