@@ -25,6 +25,8 @@ module.exports = {
   archive,
   purge,
   countStates,
+  deleteQueue,
+  deleteAllQueues,
   states,
   stateJobDelimiter,
   completedJobSuffix,
@@ -111,6 +113,14 @@ function cloneJobTableForArchive(schema){
 
 function addArchivedOnToArchive(schema) {
   return `ALTER TABLE ${schema}.archive ADD archivedOn timestamptz NOT NULL DEFAULT now()`;
+}
+
+function deleteQueue(schema){
+  return `DELETE FROM ${schema}.job WHERE name = $1`;
+}
+
+function deleteAllQueues(schema){
+  return `TRUNCATE ${schema}.job`;
 }
 
 function createIndexSingletonKey(schema){

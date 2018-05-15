@@ -38,4 +38,18 @@ describe('retries', function() {
     }, 3000);
 
   });
+
+  it('should retry a job that failed', function(finished){
+    const queueName = 'retryFailed';
+    const retryLimit = 1;
+
+    boss.publish(queueName, null, {retryLimit})
+      .then(() => boss.fetch(queueName))
+      .then(job => boss.fail(job.id))
+      .then(() => boss.fetch(queueName))
+      .then(job => {
+        assert(job, `failed job didn't get a 2nd chance`);
+        finished();
+      });
+  });
 });

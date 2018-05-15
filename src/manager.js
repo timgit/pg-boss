@@ -1,5 +1,6 @@
 const assert = require('assert');
 const EventEmitter = require('events');
+const Promise = require('bluebird');
 
 const Worker = require('./worker');
 const plans = require('./plans');
@@ -26,6 +27,8 @@ class Manager extends EventEmitter {
     this.completeJobsCommand = plans.completeJobs(config.schema);
     this.cancelJobsCommand = plans.cancelJobs(config.schema);
     this.failJobsCommand = plans.failJobs(config.schema);
+    this.deleteQueueCommand = plans.deleteQueue(config.schema);
+    this.deleteAllQueuesCommand = plans.deleteAllQueues(config.schema);
 
     // exported api to index
     this.functions = [
@@ -38,7 +41,11 @@ class Manager extends EventEmitter {
       this.unsubscribe,
       this.onComplete,
       this.offComplete,
-      this.fetchCompleted
+      this.fetchCompleted,
+      this.publishDebounced,
+      this.publishThrottled,
+      this.deleteQueue,
+      this.deleteAllQueues
     ];
   }
 
@@ -61,55 +68,32 @@ class Manager extends EventEmitter {
   watch(name, options, callback){
     assert(!(name in this.subscriptions), 'this job has already been subscribed on this instance.');
 
-    options.batchSize = options.batchSize || options.teamSize;
-
     if('newJobCheckInterval' in options || 'newJobCheckIntervalSeconds' in options)
       options = Attorney.applyNewJobCheckInterval(options);
     else
       options.newJobCheckInterval = this.config.newJobCheckInterval;
 
-    let subscription = this.subscriptions[name] = {worker:null};
+    let sendItBruh = (jobs) => {
+        if (!jobs)
+          return Promise.resolve();
 
-    let onError = error => this.emit(events.error, error);
-
-    //  TODO: should respond return a promise to worker to defer polling
-    let respond = jobs => {
-      if (!jobs) return;
-
-      if (!Array.isArray(jobs))
-        jobs = [jobs];
-
-      setImmediate(() => {
-        // TODO: if batchSize option is passed, just respond with entire array
-        // TODO: if teamSize option is passed, continue with current behavior
-        jobs.forEach(job => {
-
-          job.done = (error, response) => error ? this.fail(job.id, error) : this.complete(job.id, response);
-
-          try {
-            // TODO: detect promise here and to defer respond?
-            callback(job);
-          }
-          catch (error) {
-            // TODO: what to do here?
-          }
-        });
-      });
-
+        return (options.batchSize)
+              ? Promise.all([callback(jobs)])
+              : Promise.mapSeries(jobs, job => callback(job));
     };
-
-    let fetch = () => this.fetch(name, options.batchSize);
 
     let workerConfig = {
       name,
-      fetch,
-      respond,
-      onError,
+      fetch: () => this.fetch(name, options.batchSize || options.teamSize || 1),
+      onFetch: jobs => sendItBruh(jobs).catch(err => null), // just send it, bruh
+      onError: error => this.emit(events.error, error),
       interval: options.newJobCheckInterval
     };
 
     let worker = new Worker(workerConfig);
     worker.start();
+
+    let subscription = this.subscriptions[name] = {worker:null};
     subscription.worker = worker;
 
     return Promise.resolve(true);
@@ -134,11 +118,19 @@ class Manager extends EventEmitter {
   }
 
   publishThrottled(...args) {
-
+    return Attorney.checkPublishArgs(args)
+      .then(({name, data, options}) => {
+        // TODO: force throttle options
+        return this.createJob(name, data, options)
+      });
   }
 
   publishDebounced(...args) {
-
+    return Attorney.checkPublishArgs(args)
+      .then(({name, data, options}) => {
+        // TODO: force debounce options
+        return this.createJob(name, data, options);
+      });
   }
 
   createJob(name, data, options, singletonOffset){
@@ -189,9 +181,17 @@ class Manager extends EventEmitter {
 
     return Attorney.checkFetchArgs(names, batchSize)
       .then(() => this.db.executeSql(this.nextJobCommand, [names, batchSize || 1]))
-      .then(result => result.rows.length === 0 ? null :
-                      result.rows.length === 1 && !batchSize ? result.rows[0] :
-                      result.rows);
+      .then(result => {
+
+        const jobs = result.rows.map(job => {
+          job.done = (error, response) => error ? this.fail(job.id, error) : this.complete(job.id, response);
+          return job;
+        });
+
+        return jobs.length === 0 ? null :
+               jobs.length === 1 && !batchSize ? jobs[0] :
+               jobs;
+      });
   }
 
   fetchCompleted(name, batchSize){
@@ -245,6 +245,14 @@ class Manager extends EventEmitter {
       .then(ids => this.db.executeSql(this.cancelJobsCommand, [ids])
         .then(result => this.mapCompletionResponse(ids, result))
       );
+  }
+
+  deleteQueue(queue){
+    return this.db.executeSql(this.deleteQueueCommand, [queue]);
+  }
+
+  deleteAllQueues(){
+    return this.db.executeSql(this.deleteAllQueuesCommand);
   }
 
 }

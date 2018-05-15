@@ -8,11 +8,11 @@
     "npm": ">=5.0.0"
   },
   "dependencies": {
+    "bluebird": "^3.4.6",
     "pg": "^7.4.1",
     "uuid": "^3.2.1"
   },
   "devDependencies": {
-    "bluebird": "^3.4.6",
     "babel-cli": "^6.24.1",
     "babel-core": "^6.24.1",
     "babel-plugin-istanbul": "^4.1.1",

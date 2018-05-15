@@ -83,6 +83,13 @@ describe('publish', function(){
 
   });
 
+  // it('should accept an array of jobs', function(finished){
+  //   const name = 'publish-array';
+  //
+  //   boss.publish([{name},{name},{name},{name},{name}])
+  //     .then()
+  // });
+
 });
 
 

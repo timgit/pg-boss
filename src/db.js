@@ -20,8 +20,7 @@ class Db extends EventEmitter {
       database: poolConfig.database,
       application_name: poolConfig.application_name || 'pgboss',
       max: poolConfig.poolSize || poolConfig.max,
-      ssl: !!poolConfig.ssl,
-      Promise
+      ssl: !!poolConfig.ssl
     });
 
     this.pool.on('error', error => this.emit('error', error));

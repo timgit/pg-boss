@@ -84,8 +84,32 @@ describe('subscribe', function(){
     boss.unsubscribe().catch(() => finished());
   });
 
-  it('should handle a batch of jobs', function(finished){
-    const jobName = 'subscribe-batch';
+  it('should handle a batch of jobs via teamSize', function(finished){
+    const jobName = 'subscribe-teamSize';
+    const teamSize = 4;
+    let subscribeCount = 0;
+
+    Promise.all([
+      boss.publish(jobName),
+      boss.publish(jobName),
+      boss.publish(jobName),
+      boss.publish(jobName)
+    ])
+      .then(() => boss.subscribe(jobName, {teamSize}, job =>
+        job.done()
+          .then(() => {
+            subscribeCount++;
+
+            // idea here is that the test would time out if it had to wait for 4 intervals
+            if(subscribeCount === teamSize)
+              finished();
+          })
+        )
+      );
+  });
+
+  it('should handle a batch of jobs via batchSize', function(finished){
+    const jobName = 'subscribe-batchSize';
     const batchSize = 4;
     let subscribeCount = 0;
 
@@ -95,14 +119,35 @@ describe('subscribe', function(){
       boss.publish(jobName),
       boss.publish(jobName)
     ])
-    .then(() => boss.subscribe(jobName, {batchSize}, job => {
-        subscribeCount++;
+      .then(() => boss.subscribe(jobName, {batchSize}, jobs =>
+        boss.complete(jobs.map(job => job.id))
+          .then(() => {
+            assert.equal(jobs.length, batchSize);
+            finished();
+          })
+        )
+      );
+  });
 
-        // idea here is that the test would time out if it had to wait for 4 intervals
-        if(subscribeCount === batchSize)
-          finished();
-      })
-    );
+  it('returning promise applies backpressure', function(finished){
+
+    const queue = 'backpressure';
+    let subscribeCount = 0;
+
+    let jobs = [
+      boss.publish(queue),
+      boss.publish(queue),
+      boss.publish(queue),
+      boss.publish(queue)
+    ];
+
+    Promise.all(jobs)
+      .then(() => boss.subscribe(queue, job => Promise.delay(2000).then(() => subscribeCount++)))
+      .then(() => setTimeout(() => {
+        assert.isBelow(subscribeCount, jobs.length);
+        finished();
+      }, 7000));
+
   });
 
   it('should have a done callback for single job subscriptions', function(finished){
