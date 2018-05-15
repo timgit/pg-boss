@@ -23,6 +23,7 @@ class Boss extends EventEmitter{
     this.expireCommand = plans.expire(config.schema);
     this.archiveCommand = plans.archive(config.schema);
     this.purgeCommand = plans.purge(config.schema);
+    this.retryFailedCommand = plans.retryFailed(config.schema);
     this.countStatesCommand = plans.countStates(config.schema);
   }
 
@@ -32,9 +33,10 @@ class Boss extends EventEmitter{
     // todo: add query that calcs avg start time delta vs. creation time
 
     return Promise.all([
+      monitor(this.expire, this.config.expireCheckInterval),
       monitor(this.archive, this.config.archiveCheckInterval),
       monitor(this.purge, this.config.deleteCheckInterval),
-      monitor(this.expire, this.config.expireCheckInterval),
+      this.config.failedCheckInterval ? monitor(this.retryFailed, this.config.failedCheckInterval) : null,
       this.config.monitorStateInterval ? monitor(this.countStates, this.config.monitorStateInterval) : null
     ]);
 
@@ -114,6 +116,9 @@ class Boss extends EventEmitter{
       });
   }
 
+  retryFailed() {
+    return this.db.executeSql(this.retryFailedCommand);
+  }
 }
 
 module.exports = Boss;

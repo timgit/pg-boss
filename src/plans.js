@@ -29,6 +29,7 @@ module.exports = {
   expire,
   archive,
   purge,
+  retryFailed,
   countStates,
   states,
   stateJobDelimiter,
@@ -288,6 +289,16 @@ function archive(schema){
     )
     INSERT INTO ${schema}.archive
     SELECT * FROM archived_rows
+  `;
+}
+
+function retryFailed(schema) {
+  return `
+    UPDATE ${schema}.job
+    SET state = '${states.retry}'::${schema}.job_state,
+      completedOn = NULL
+    WHERE state = '${states.failed}'
+      AND retryCount < retryLimit
   `;
 }
 
