@@ -16,6 +16,7 @@ declare namespace PgBoss {
     ssl?: boolean;
     connectionString?: string;
     poolSize?: number;
+    max?: number;
     db?: Db;
   }
 

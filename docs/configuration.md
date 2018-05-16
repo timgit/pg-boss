@@ -49,7 +49,7 @@ Since passing only a connection string is intended to be for convenience, you ca
     const boss = new PgBoss('postgres://user:pass@host:port/database?ssl=require');
     ```
 
-* **poolSize** - int, defaults to 10
+* **poolSize** or **max** - int, defaults to 10
 
     Maximum number of connections that will be shared by all subscriptions in this instance
     
@@ -113,11 +113,9 @@ When `expireCheckIntervalSeconds` is specified, `expireCheckInterval` is ignored
 
 ### Job archive options
 
-> Please note the term **"archive"** used in pg-boss actually results in completed jobs being **removed** from the job table to keep performance and capacity under control.  If you need to keep old jobs, you should set the `archiveCompletedJobsEvery` setting large enough to allow yourself a window of opportunity to grab them ahead of their scheduled removal.
-
 * **archiveCompletedJobsEvery**, string, [PostgreSQL interval](https://www.postgresql.org/docs/9.5/static/datatype-datetime.html#DATATYPE-INTERVAL-INPUT)
 
-    Default: "1 day".  When jobs become eligible for archive after completion.
+    Default: "1 hour".  When jobs become eligible for archive after completion.
 
 * **archiveCheckInterval**, int
 
@@ -134,6 +132,14 @@ When `expireCheckIntervalSeconds` is specified, `expireCheckInterval` is ignored
 When `archiveCheckIntervalMinutes` is specified, `archiveCheckIntervalSeconds` and `archiveCheckInterval` are ignored.
 
 When `archiveCheckIntervalSeconds` is specified, `archiveCheckInterval` is ignored.
+
+* **deleteArchivedJobsEvery**, string, [PostgreSQL interval](https://www.postgresql.org/docs/9.5/static/datatype-datetime.html#DATATYPE-INTERVAL-INPUT)
+
+    Default: "7 days".  When jobs in the archive table become eligible for deletion.
+
+* **deleteCheckInterval**, int
+
+    interval to delete jobs in milliseconds, must be >=100.   Default: 1 hour
 
 ## Publish Options
 

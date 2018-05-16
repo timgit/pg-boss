@@ -12,26 +12,28 @@ const boss = new PgBoss('postgres://user:pass@host/database');
 
 boss.on('error', onError);
 
+const queue = 'some-queue-name';
+
 boss.start()
   .then(ready)
   .catch(onError);
 
 function ready() {
-  boss.publish('some-job', {param1: 'parameter1'})
-    .then(jobId => console.log(`created some-job ${jobId}`))
+  boss.publish(queue, {param1: 'parameter1'})
+    .then(jobId => console.log(`created job ${jobId}`))
     .catch(onError);
 
-  boss.subscribe('some-job', someJobHandler)
-    .then(() => console.log('subscribed to some-job'))
+  boss.subscribe(queue, someJobHandler)
+    .then(() => console.log(`subscribed to ${queue}`))
     .catch(onError);
 }
 
 function someJobHandler(job) {
-  console.log(`received ${job.name} ${job.id}`);
+  console.log(`received job ${job.id}`);
   console.log(`data: ${JSON.stringify(job.data)}`);
 
   job.done()
-    .then(() => console.log(`some-job ${job.id} completed`))
+    .then(() => console.log(`job ${job.id} completed`))
     .catch(onError);
 }
 

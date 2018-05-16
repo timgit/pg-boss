@@ -4,6 +4,8 @@ const helper = require('./testHelper');
 
 describe('examples', function(){
 
+  this.timeout(10000);
+
   let _boss;
 
   after(function(finished){
