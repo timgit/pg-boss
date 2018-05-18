@@ -32,7 +32,7 @@ describe('cancel', function() {
 
     let jobId;
 
-    boss.publish('will_cancel', null, {startIn: 1})
+    boss.publish('will_cancel', null, {startAfter: 1})
       .then(id => jobId = id)
       .then(() => boss.cancel(jobId))
       .then(() => helper.getJobById(jobId))

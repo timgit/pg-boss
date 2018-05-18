@@ -23,7 +23,7 @@ describe('throttle', function() {
 
     const jobName = 'delayThrottle';
     const singletonSeconds = 4;
-    const startIn = '2 seconds';
+    const startAfter = 2;
 
     const jobCount = 1;
 
@@ -56,7 +56,7 @@ describe('throttle', function() {
 
     intervalId = setInterval(function() {
       if(shuttingDown) return;
-      boss.publish(jobName, null, {startIn, singletonSeconds})
+      boss.publish(jobName, null, {startAfter, singletonSeconds})
         .then(function() { publishCount++; });
     }, publishInterval);
   });
@@ -102,11 +102,11 @@ describe('throttle', function() {
   });
 
 
-  it('should queue successfully into next time slot if throttled', function (finished) {
+  it('should debounce', function (finished) {
 
     this.timeout(3000);
 
-    const jobName = 'singletonPerDayWithFriends';
+    const jobName = 'debounce';
 
     boss.publish(jobName, null, {singletonHours: 1})
       .then(jobId => {
@@ -125,12 +125,12 @@ describe('throttle', function() {
 
     this.timeout(3000);
 
-    const jobName = 'singletonPerDay';
+    const jobName = 'throttle-reject-2nd';
 
-    boss.publish(jobName, null, {singletonDays: 1})
+    boss.publish(jobName, null, {singletonHours: 1})
       .then(jobId => {
         assert.isOk(jobId);
-        return boss.publish(jobName, null, {singletonDays: 1});
+        return boss.publish(jobName, null, {singletonHours: 1});
       })
       .then(jobId => {
         assert.isNotOk(jobId);

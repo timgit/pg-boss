@@ -96,11 +96,11 @@ function createJobTable(schema) {
       state ${schema}.job_state not null default('${states.created}'),
       retryLimit integer not null default(0),
       retryCount integer not null default(0),
-      startIn interval not null default(interval '0'),
+      startAfter timestamp with time zone not null default now(),
       startedOn timestamp with time zone,
       singletonKey text,
       singletonOn timestamp without time zone,
-      expireIn interval,
+      expireIn interval not null default interval '15 minutes',
       createdOn timestamp with time zone not null default now(),
       completedOn timestamp with time zone
     )
@@ -181,7 +181,7 @@ function fetchNextJob(schema) {
       FROM ${schema}.job
       WHERE state < '${states.active}'
         AND name = ANY($1)
-        AND (createdOn + startIn) < now()
+        AND startAfter < now()
       ORDER BY priority desc, createdOn, id
       LIMIT $2
       FOR UPDATE SKIP LOCKED
@@ -262,9 +262,28 @@ function cancelJobs(schema){
 
 function insertJob(schema) {
   return `
-    INSERT INTO ${schema}.job (id, name, priority, state, retryLimit, startIn, expireIn, data, singletonKey, singletonOn)
+    INSERT INTO ${schema}.job (
+      id, 
+      name, 
+      priority, 
+      state, 
+      retryLimit, 
+      startAfter, 
+      expireIn, 
+      data, 
+      singletonKey, 
+      singletonOn
+      )
     VALUES (
-      $1, $2, $3, '${states.created}', $4, CAST($5 as interval), CAST($6 as interval), $7, $8,
+      $1,
+      $2,
+      $3,
+      '${states.created}',
+      $4, 
+      CASE WHEN right($5, 1) = 'Z' THEN CAST($5 as timestamp with time zone) ELSE now() + CAST(COALESCE($5,'0') as interval) END,
+      CAST($6 as interval),
+      $7,
+      $8,
       CASE WHEN $9::integer IS NOT NULL THEN 'epoch'::timestamp + '1 second'::interval * ($9 * floor((date_part('epoch', now()) + $10) / $9)) ELSE NULL END
     )
     ON CONFLICT DO NOTHING

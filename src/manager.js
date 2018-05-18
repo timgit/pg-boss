@@ -44,6 +44,8 @@ class Manager extends EventEmitter {
       this.fetchCompleted,
       this.publishDebounced,
       this.publishThrottled,
+      this.publishOnce,
+      this.publishAfter,
       this.deleteQueue,
       this.deleteAllQueues
     ];
@@ -77,9 +79,18 @@ class Manager extends EventEmitter {
         if (!jobs)
           return Promise.resolve();
 
-        return (options.batchSize)
-              ? Promise.all([callback(jobs)])
-              : Promise.mapSeries(jobs, job => callback(job));
+        // if you get a batch, for now you should use complete() so you can control
+        // if you need individual completion responses or if a batch complete makes more sense
+        if(options.batchSize)
+          return Promise.all([callback(jobs)])
+            .catch(err => this.fail(jobs.map(job => job.id), err));
+
+        // either no option was set, or teamSize was used, so call each callback one at a time
+        return Promise.mapSeries(jobs, job => {
+          return callback(job)
+            .then(value => this.complete(jobs.id, value))
+            .catch(err => this.fail(job.id, err))
+        });
     };
 
     let workerConfig = {
@@ -117,45 +128,75 @@ class Manager extends EventEmitter {
       .then(({name, data, options}) => this.createJob(name, data, options));
   }
 
-  publishThrottled(...args) {
-    return Attorney.checkPublishArgs(args)
+  publishOnce(name, data, options, key) {
+    return Attorney.checkPublishArgs([name, data, options])
       .then(({name, data, options}) => {
-        // TODO: force throttle options
-        return this.createJob(name, data, options)
+
+        options.singletonKey = key;
+
+        return this.createJob(name, data, options);
       });
   }
 
-  publishDebounced(...args) {
-    return Attorney.checkPublishArgs(args)
+  publishAfter(name, data, options, after) {
+    return Attorney.checkPublishArgs([name, data, options])
       .then(({name, data, options}) => {
-        // TODO: force debounce options
+
+        options.startAfter = after;
+
+        return this.createJob(name, data, options);
+      });
+  }
+
+  publishThrottled(name, data, options, seconds, key) {
+    return Attorney.checkPublishArgs([name, data, options])
+      .then(({name, data, options}) => {
+
+        options.singletonSeconds = seconds;
+        options.singletonNextSlot = false;
+        options.singletonKey = key;
+
+        return this.createJob(name, data, options);
+      });
+  }
+
+  publishDebounced(name, data, options, seconds, key) {
+    return Attorney.checkPublishArgs([name, data, options])
+      .then(({name, data, options}) => {
+
+        options.singletonSeconds = seconds;
+        options.singletonNextSlot = true;
+        options.singletonKey = key;
+
         return this.createJob(name, data, options);
       });
   }
 
   createJob(name, data, options, singletonOffset){
-    let startIn =
-      (options.startIn > 0) ? '' + options.startIn
-        : (typeof options.startIn === 'string') ? options.startIn
-        : '0';
+
+    let startAfter = options.startAfter;
+
+    startAfter = (startAfter instanceof Date && typeof startAfter.toISOString === 'function') ? startAfter.toISOString()
+      : (startAfter > 0) ? '' + startAfter
+      : (typeof startAfter === 'string') ? startAfter
+      : null;
 
     let singletonSeconds =
       (options.singletonSeconds > 0) ? options.singletonSeconds
         : (options.singletonMinutes > 0) ? options.singletonMinutes * 60
         : (options.singletonHours > 0) ? options.singletonHours * 60 * 60
-          : (options.singletonDays > 0) ? options.singletonDays * 60 * 60 * 24
-            : null;
+        : null;
 
-    let id = require(`uuid/${this.config.uuid}`)(),
-      retryLimit = options.retryLimit || 0,
-      expireIn = options.expireIn || '15 minutes',
-      priority = options.priority || 0;
+    let id = require(`uuid/${this.config.uuid}`)();
+    let retryLimit = options.retryLimit || 0;
+    let expireIn = options.expireIn || '15 minutes';
+    let priority = options.priority || 0;
 
     let singletonKey = options.singletonKey || null;
 
     singletonOffset = singletonOffset || 0;
 
-    let values = [id, name, priority, retryLimit, startIn, expireIn, data, singletonKey, singletonSeconds, singletonOffset];
+    let values = [id, name, priority, retryLimit, startAfter, expireIn, data, singletonKey, singletonSeconds, singletonOffset];
 
     return this.db.executeSql(this.insertJobCommand, values)
       .then(result => {
@@ -166,7 +207,7 @@ class Manager extends EventEmitter {
           return null;
 
         // delay starting by the offset to honor throttling config
-        options.startIn = singletonSeconds;
+        options.startAfter = singletonSeconds;
         // toggle off next slot config for round 2
         options.singletonNextSlot = false;
 

@@ -167,7 +167,7 @@ var payload = {
 };
 
 var options =   {
-    startIn: "1 minute",
+    startAfter: 1,
     retryLimit: 2
 };
 

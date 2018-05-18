@@ -148,9 +148,10 @@ When `archiveCheckIntervalSeconds` is specified, `archiveCheckInterval` is ignor
     optional priority.  Higher numbers have, um, higher priority
 
 ### Delayed jobs
-* **startIn** int or string
+* **startAfter** int, string, or Date
   * int: seconds to delay starting the job
-  * string: PostgreSQL interval to delay starting the job
+  * string: Start after a UTC Date time string in 8601 format
+  * Date: Start after a Date object
 
     Default: 0
 
@@ -170,7 +171,6 @@ This can be used in conjunction with throttling explained below.
 * **singletonSeconds**, int
 * **singletonMinutes**, int
 * **singletonHours**, int
-* **singletonDays**, int
 * **singletonNextSlot**, bool
 
 Throttling jobs to 'once every n units', where units could be seconds, minutes, hours or days.  This option is set on the publish side of the API since jobs may or may not be created based on the existence of other jobs.

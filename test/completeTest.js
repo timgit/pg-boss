@@ -94,8 +94,6 @@ describe('complete', function() {
       assert.equal(job.data.response.message, responsePayload.message);
       assert.equal(job.data.response.code, responsePayload.code);
 
-      console.log(JSON.stringify(job, null, '  '));
-
       finished();
     });
 
