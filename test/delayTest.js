@@ -85,6 +85,28 @@ describe('delayed jobs', function(){
 
   });
 
+  it('should work with publishAfter() and a date object', function(finished) {
+
+    const queue = 'publishAfter-date-object';
+
+    let date = new Date();
+    date.setUTCSeconds(date.getUTCSeconds() + 2);
+
+    const startAfter = date;
+    const started = Date.now();
+
+    boss.publishAfter(queue, {something:1}, {retryLimit:0}, startAfter)
+      .then(() => boss.fetch(queue))
+      .then(job => assert.strictEqual(job, null))
+      .then(() => Promise.delay(2000))
+      .then(() => boss.fetch(queue))
+      .then(job => {
+        assert.isOk(job);
+        finished();
+      });
+
+  });
+
 });
 
 

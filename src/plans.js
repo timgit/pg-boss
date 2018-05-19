@@ -96,6 +96,8 @@ function createJobTable(schema) {
       state ${schema}.job_state not null default('${states.created}'),
       retryLimit integer not null default(0),
       retryCount integer not null default(0),
+      retryDelay integer not null default(0),
+      retryBackoff boolean not null default false,
       startAfter timestamp with time zone not null default now(),
       startedOn timestamp with time zone,
       singletonKey text,
@@ -207,7 +209,9 @@ function completeJobs(schema){
       RETURNING *
     )
     INSERT INTO ${schema}.job (name, data)
-    SELECT name || '${completedJobSuffix}', json_build_object('request', json_build_object('id', id, 'name', name, 'data', data), 'response', $2::json, 'state', state)
+    SELECT
+      name || '${completedJobSuffix}', 
+      json_build_object('request', json_build_object('id', id, 'name', name, 'data', data), 'response', $2::json, 'state', state)
     FROM results
     WHERE name NOT LIKE '%${completedJobSuffix}'
     RETURNING 1
@@ -218,14 +222,35 @@ function failJobs(schema){
   return `
     WITH results AS (
       UPDATE ${schema}.job
-      SET state = CASE WHEN retryCount < retryLimit THEN '${states.retry}'::${schema}.job_state ELSE '${states.failed}'::${schema}.job_state END,        
-          completedOn = CASE WHEN retryCount < retryLimit THEN NULL ELSE now() END
+      SET state = CASE
+          WHEN retryCount < retryLimit
+          THEN '${states.retry}'::${schema}.job_state
+          ELSE '${states.failed}'::${schema}.job_state
+          END,        
+        completedOn = CASE
+          WHEN retryCount < retryLimit
+          THEN NULL
+          ELSE now()
+          END,
+        startAfter = CASE
+          WHEN retryCount = retryLimit THEN startAfter
+          WHEN NOT retryBackoff THEN now() + retryDelay * interval '1'
+          ELSE now() +
+            (
+                retryDelay * 2 ^ LEAST(16, retryCount + 1) / 2
+                +
+                retryDelay * 2 ^ LEAST(16, retryCount + 1) / 2 * random()
+            )
+              * interval '1'
+            END
       WHERE id = ANY($1)
         AND state < '${states.complete}'
       RETURNING *
     )
     INSERT INTO ${schema}.job (name, data)
-    SELECT name || '${completedJobSuffix}', json_build_object('request', json_build_object('id', id, 'name', name, 'data', data), 'response', $2::json, 'state', state)
+    SELECT
+      name || '${completedJobSuffix}',
+      json_build_object('request', json_build_object('id', id, 'name', name, 'data', data), 'response', $2::json, 'state', state)
     FROM results
     WHERE state = '${states.failed}'
     RETURNING 1
@@ -236,14 +261,34 @@ function expire(schema) {
   return `
     WITH results AS (
       UPDATE ${schema}.job
-      SET state = CASE WHEN retryCount < retryLimit THEN '${states.retry}'::${schema}.job_state ELSE '${states.expired}'::${schema}.job_state END,        
-        completedOn = CASE WHEN retryCount < retryLimit THEN NULL ELSE now() END
+      SET state = CASE
+          WHEN retryCount < retryLimit THEN '${states.retry}'::${schema}.job_state
+          ELSE '${states.expired}'::${schema}.job_state
+          END,        
+        completedOn = CASE
+          WHEN retryCount < retryLimit
+          THEN NULL
+          ELSE now()
+          END,
+        startAfter = CASE
+          WHEN retryCount = retryLimit THEN startAfter
+          WHEN NOT retryBackoff THEN now() + retryDelay * interval '1'
+          ELSE now() +
+            (
+                retryDelay * 2 ^ LEAST(16, retryCount + 1) / 2
+                +
+                retryDelay * 2 ^ LEAST(16, retryCount + 1) / 2 * random()
+            )
+            * interval '1'
+          END
       WHERE state = '${states.active}'
         AND (startedOn + expireIn) < now()    
       RETURNING *
     )
     INSERT INTO ${schema}.job (name, data)
-    SELECT name || '${completedJobSuffix}', json_build_object('request', json_build_object('id', id, 'name', name, 'data', data), 'response', null, 'state', state)
+    SELECT
+      name || '${completedJobSuffix}',
+      json_build_object('request', json_build_object('id', id, 'name', name, 'data', data), 'response', null, 'state', state)
     FROM results
     WHERE state = '${states.expired}'
   `;
@@ -272,7 +317,9 @@ function insertJob(schema) {
       expireIn, 
       data, 
       singletonKey, 
-      singletonOn
+      singletonOn,
+      retryDelay, 
+      retryBackoff
       )
     VALUES (
       $1,
@@ -284,7 +331,9 @@ function insertJob(schema) {
       CAST($6 as interval),
       $7,
       $8,
-      CASE WHEN $9::integer IS NOT NULL THEN 'epoch'::timestamp + '1 second'::interval * ($9 * floor((date_part('epoch', now()) + $10) / $9)) ELSE NULL END
+      CASE WHEN $9::integer IS NOT NULL THEN 'epoch'::timestamp + '1 second'::interval * ($9 * floor((date_part('epoch', now()) + $10) / $9)) ELSE NULL END,
+      $11,
+      $12
     )
     ON CONFLICT DO NOTHING
   `;

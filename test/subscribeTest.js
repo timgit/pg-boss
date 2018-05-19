@@ -108,6 +108,30 @@ describe('subscribe', function(){
       );
   });
 
+  it('should apply teamConcurrency option', function(finished){
+    const jobName = 'subscribe-teamConcurrency';
+    const teamSize = 4;
+    const teamConcurrency = 4;
+    let subscribeCount = 0;
+
+    Promise.all([
+      boss.publish(jobName),
+      boss.publish(jobName),
+      boss.publish(jobName),
+      boss.publish(jobName)
+    ])
+      .then(() => boss.subscribe(jobName, {teamSize, teamConcurrency}, job => {
+        subscribeCount++;
+
+        // idea here is that the test would time out if it had to wait for 4 intervals
+        if (subscribeCount === teamSize)
+          finished();
+
+        return Promise.delay(4000);
+      }));
+
+  });
+
   it('should handle a batch of jobs via batchSize', function(finished){
     const jobName = 'subscribe-batchSize';
     const batchSize = 4;

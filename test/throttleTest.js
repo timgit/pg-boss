@@ -120,6 +120,24 @@ describe('throttle', function() {
 
   });
 
+  it('should debounce via publishDebounce()', function (finished) {
+
+    this.timeout(3000);
+
+    const jobName = 'publishDebounce()';
+
+    boss.publishDebounced(jobName, null, null, 60)
+      .then(jobId => {
+        assert.isOk(jobId);
+        return boss.publishDebounced(jobName, null, null, 60);
+      })
+      .then(jobId => {
+        assert.isOk(jobId);
+        finished();
+      });
+
+  });
+
 
   it('should reject 2nd request in the same time slot', function (finished) {
 
@@ -131,6 +149,24 @@ describe('throttle', function() {
       .then(jobId => {
         assert.isOk(jobId);
         return boss.publish(jobName, null, {singletonHours: 1});
+      })
+      .then(jobId => {
+        assert.isNotOk(jobId);
+        finished();
+      });
+
+  });
+
+  it('should throttle via publishThrottled()', function (finished) {
+
+    this.timeout(3000);
+
+    const jobName = 'publishThrottled()';
+
+    boss.publishThrottled(jobName, null, null, 2)
+      .then(jobId => {
+        assert.isOk(jobId);
+        return boss.publishThrottled(jobName, null, null, 2);
       })
       .then(jobId => {
         assert.isNotOk(jobId);

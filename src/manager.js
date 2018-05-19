@@ -68,6 +68,8 @@ class Manager extends EventEmitter {
   }
 
   watch(name, options, callback){
+    // watch() is always nested in a promise, so assert()s are welcome
+
     assert(!(name in this.subscriptions), 'this job has already been subscribed on this instance.');
 
     if('newJobCheckInterval' in options || 'newJobCheckIntervalSeconds' in options)
@@ -75,29 +77,44 @@ class Manager extends EventEmitter {
     else
       options.newJobCheckInterval = this.config.newJobCheckInterval;
 
+    if('teamConcurrency' in options){
+      const teamConcurrencyErrorMessage = 'teamConcurrency must be an integer between 1 and 1000';
+      assert(Number.isInteger(options.teamConcurrency) && options.teamConcurrency >= 1 && options.teamConcurrency <= 1000, teamConcurrencyErrorMessage);
+    }
+
+    if('teamSize' in options){
+      const teamSizeErrorMessage = 'teamSize must be an integer > 0';
+      assert(Number.isInteger(options.teamSize) && options.teamSize >= 1, teamSizeErrorMessage);
+    }
+
+    if('batchSize' in options) {
+      const batchSizeErrorMessage = 'batchSize must be an integer > 0';
+      assert(Number.isInteger(options.batchSize) && options.batchSize >= 1, batchSizeErrorMessage);
+    }
+
     let sendItBruh = (jobs) => {
         if (!jobs)
           return Promise.resolve();
 
-        // if you get a batch, for now you should use complete() so you can control
-        // if you need individual completion responses or if a batch complete makes more sense
+        // If you get a batch, for now you should use complete() so you can control
+        //   whether individual or group completion responses apply to your use case
+        // Failing will fail all fetched jobs
         if(options.batchSize)
-          return Promise.all([callback(jobs)])
-            .catch(err => this.fail(jobs.map(job => job.id), err));
+          return Promise.all([callback(jobs)]).catch(err => this.fail(jobs.map(job => job.id), err));
 
-        // either no option was set, or teamSize was used, so call each callback one at a time
-        return Promise.mapSeries(jobs, job => {
-          return callback(job)
-            .then(value => this.complete(jobs.id, value))
-            .catch(err => this.fail(job.id, err))
-        });
+        // either no option was set, or teamSize was used
+        return Promise.map(jobs, job => {
+          return callback(job).then(value => this.complete(jobs.id, value)).catch(err => this.fail(job.id, err))
+        }, {concurrency: options.teamConcurrency || 2});
     };
+
+    let onError = error => this.emit(events.error, error);
 
     let workerConfig = {
       name,
       fetch: () => this.fetch(name, options.batchSize || options.teamSize || 1),
       onFetch: jobs => sendItBruh(jobs).catch(err => null), // just send it, bruh
-      onError: error => this.emit(events.error, error),
+      onError,
       interval: options.newJobCheckInterval
     };
 
@@ -187,6 +204,19 @@ class Manager extends EventEmitter {
         : (options.singletonHours > 0) ? options.singletonHours * 60 * 60
         : null;
 
+    if('retryDelay' in options){
+        const retryDelayErrorMessage = 'retryDelay must be an integer >= 0';
+        assert(Number.isInteger(options.retryDelay) && options.retryDelay >= 0, retryDelayErrorMessage);
+    }
+
+    if('retryBackoff' in options){
+      const retryBackoffErrorMessage = 'retryBackoff must be either true or false';
+      assert(options.retryBackoff === true || options.retryBackoff === false, retryBackoffErrorMessage);
+    }
+
+    let retryDelay = options.retryDelay || 0;
+    let retryBackoff = !!options.retryBackoff;
+
     let id = require(`uuid/${this.config.uuid}`)();
     let retryLimit = options.retryLimit || 0;
     let expireIn = options.expireIn || '15 minutes';
@@ -196,7 +226,8 @@ class Manager extends EventEmitter {
 
     singletonOffset = singletonOffset || 0;
 
-    let values = [id, name, priority, retryLimit, startAfter, expireIn, data, singletonKey, singletonSeconds, singletonOffset];
+    // ordinals! [1,  2,    3,        4,          5,          6,        7,    8,            9,                10,              11,         12          ]
+    let values = [id, name, priority, retryLimit, startAfter, expireIn, data, singletonKey, singletonSeconds, singletonOffset, retryDelay, retryBackoff];
 
     return this.db.executeSql(this.insertJobCommand, values)
       .then(result => {

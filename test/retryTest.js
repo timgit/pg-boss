@@ -1,5 +1,6 @@
 const assert = require('chai').assert;
 const helper = require('./testHelper');
+const Promise = require('bluebird');
 
 describe('retries', function() {
 
@@ -52,4 +53,47 @@ describe('retries', function() {
         finished();
       });
   });
+
+  it('should retry with a fixed delay', function(finished){
+    const queue = 'retryDelayFixed';
+
+    boss.publish(queue, null, {retryLimit: 1, retryDelay: 1})
+      .then(() => boss.fetch(queue))
+      .then(job => boss.fail(job.id))
+      .then(() => boss.fetch(queue))
+      .then(job => assert.strictEqual(job, null))
+      .then(() => Promise.delay(1000))
+      .then(() => boss.fetch(queue))
+      .then(job => {
+        assert.isOk(job);
+        finished();
+      });
+
+  });
+
+
+  it('should retry with a exponential backoff', function(finished){
+    const queue = 'retryDelayBackoff';
+    let subscribeCount = 0;
+    let retryLimit = 3;
+
+    boss.subscribe(queue, job => {
+      subscribeCount++;
+      job.done('fail!');
+    });
+
+    boss.publish(queue, null, {retryLimit, retryDelay: 1, retryBackoff: true});
+
+    setTimeout(() => {
+      assert.isBelow(subscribeCount, retryLimit);
+    }, 4000);
+
+    setTimeout(() => {
+      assert.equal(subscribeCount, retryLimit);
+      finished();
+    }, 9000);
+
+  });
+
+
 });

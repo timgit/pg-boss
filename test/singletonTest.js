@@ -71,4 +71,22 @@ describe('singleton', function() {
       });
 
   });
+
+
+  it('publishOnce() should work', function (finished) {
+
+    const jobName = 'publishOnce()';
+    const key = 'only-once-plz';
+
+    boss.publishOnce(jobName, null, null, key)
+      .then(jobId => {
+        assert.isOk(jobId);
+        return boss.publishOnce(jobName, null, null, key);
+      })
+      .then(jobId => {
+        assert.strictEqual(jobId, null);
+        finished();
+      });
+
+  });
 });
