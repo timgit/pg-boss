@@ -2,7 +2,7 @@ const states = {
   created: 'created',
   retry: 'retry',
   active: 'active',
-  complete: 'complete',
+  complete: 'completed',
   expired: 'expired',
   cancelled: 'cancelled',
   failed: 'failed'
