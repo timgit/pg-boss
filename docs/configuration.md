@@ -187,6 +187,14 @@ Setting `singletonNextSlot` to true will cause the job to be scheduled to run af
 
     Default: 0
 
+* **retryDelay**, int
+
+    Default: 0
+
+* **retryBackoff**, bool
+
+    Default: false
+
 ### Job expiration
 
 * **expireIn**, string, PostgreSQL interval
@@ -195,9 +203,17 @@ Setting `singletonNextSlot` to true will cause the job to be scheduled to run af
 
 ## Subscribe Options
 
-* **teamSize** or **batchSize**, int
+* **teamSize**, int
 
-    Default: 1. How many jobs will be fetched per polling interval.  
+    Default: 1. How many jobs can be fetched per polling interval. Callback will be executed once per job.
+
+* **teamConcurrency**, int
+
+    Default: 2. How many callbacks will be called concurrently if promises are used for polling backpressure. Intended to be used along with `teamSize`.
+
+* **batchSize**, int
+
+    How many jobs can be fetched per polling interval.  Callback will be executed once per batch.
 
 * **newJobCheckInterval**, int
 

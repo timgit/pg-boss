@@ -9,8 +9,10 @@
   - New publish options: `retryDelay` (int) and `retryBackoff` (bool)
   - `retryBackoff` will use an exponential backoff algorithm with jitter to somewhat randomize the distribution. Inspired by Marc on the AWS blog post [Exponential Backoff and Jitter](https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/)
 - Backpressure support added to `subscribe()`! If your callback returns a promise, it will defer polling and other callbacks until it resolves.
-  > I've always preached that subscribe is merely a convenience api for polling, but it's really nice to not have to keep re-creating your own backpressure solutions via fetch() and complete().
+  - Returning a value in your promise replaces the need to use the job.done() callback, as this will be handled automatically. Any errors thrown will also automatically fail the job.
   - A new option `teamConcurrency` was added that can be used along with `teamSize` for single job callbacks to control backpressure if a promise is returned. 
+- `subscribe()` will now return an array of jobs all at once when `batchSize` is specified. When combined with your callback returning a promise once all jobs are completed, this should reduce the polling load on your database.
+- `fetch()` now returns jobs with a convenience `job.done()` function like `subscribe()`
 - Reduced polling load by consolidating all state-based completion subscriptions to `onComplete()`
 - Batch failure and completion now create completed state jobs for `onComplete()`.  Previously, if you called complete or fail with an array of job IDs, no state jobs were created.
 - Added convenience publish functions that set different configuration options:
@@ -19,23 +21,21 @@
   - `publishAfter(name, data, options, seconds | ISO date string | Date)`
   - `publishOnce(name, data, options, key)`
 - Added `deleteQueue()` and `deleteAllQueues()` api to clear queues if and when needed.
-- `subscribe()` can now emit an array of jobs via `batchSize`
-- `fetch()` now returns jobs with a convenience `job.done()` function like `subscribe()`
 
 ### Semver major items & breaking changes
-- Removed all events that emitted jobs, such as `failed`, `expired-job`, and `job`, as these were all instance-bound and pre-dated the more accurate `onComplete()`
+- Removed all events that emitted jobs, such as `failed`, `expired-job`, and `job`, as these were all instance-bound and pre-dated the distribution-friendly `onComplete()`
 - Removed extra convenience `done()` argument in `subscribe()` callback in favor of consolidating to `job.done()`
 - Renamed `expired-count` event to `expired`
 - Failure and completion results are now wrapped in an object with a value property if they're not an object
 - `subscribe()` with a `batchSize` property now runs the callback only once with an array of jobs. The `teamSize` option still calls back once per job.
-- Removed `onFail()`, `offFail()`, `onExpire()`, `onExpire()`, `fetchFailed()`, `fetchExpired()`.  `onComplete()` will now be used as a single completion state job.  It will be an object with `request`, `response`, and `state` to indicate how the job completed.  
+- Removed `onFail()`, `offFail()`, `onExpire()`, `onExpire()`, `fetchFailed()` and `fetchExpired()`.  All job completion subscriptions should now use `onComplete()`. Jobs returned will have `request`, `response`, and `state` properties on `data`.  `state` will indicate how the job completed: `'failed'`, `'expired'` or `'completed'`.
 - `startIn` option has been renamed to `startAfter` to make its behavior more clear.  Previously, this value accepted an integer for the number of seconds of delay, or a PostgreSQL interval string.  The interval string has been replaced with an UTC ISO date time string (must end in Z), or you can pass a Date object.
 - `singletonDays` option has been removed
 
 ### Other items of interest
 - The pgcrypto extension is now used internally for uuid generation with onComplete().  It will be added in the database if it's not already added.
 - Switched jsonb type in job table to json
-- Added index to help with fetch performance
+- Adjusted indexes to help with fetch performance
 
 ## 2.5.1
 

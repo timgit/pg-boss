@@ -13,22 +13,19 @@ Usage
     - [`publish()`](#publish)
         - [`publish(name, data, options)`](#publishname-data-options)
         - [`publish(request)`](#publishrequest)
+        - [`publishAfter(name, data, options, seconds | ISO date string | Date)`](#publishaftername-data-options-seconds--iso-date-string--date)
+        - [`publishOnce(name, data, options, key)`](#publishoncename-data-options-key)
+        - [`publishThrottled(name, data, options, seconds [, key])`](#publishthrottledname-data-options-seconds--key)
+        - [`publishDebounced(name, data, options, seconds [, key])`](#publishdebouncedname-data-options-seconds--key)
     - [`subscribe()`](#subscribe)
         - [`subscribe(name [, options], handler)`](#subscribename--options-handler)
-    - [State-based subscriptions](#state-based-subscriptions)
         - [`onComplete(name [, options], handler)`](#oncompletename--options-handler)
-        - [`onExpire(name [, options], handler)`](#onexpirename--options-handler)
-        - [`onFail(name [, options], handler)`](#onfailname--options-handler)
     - [`unsubscribe(name)`](#unsubscribename)
         - [`offComplete(name)`](#offcompletename)
-        - [`offExpire(name)`](#offexpirename)
-        - [`offFail(name)`](#offfailname)
     - [`fetch()`](#fetch)
         - [`fetch(name)`](#fetchname)
         - [`fetch(name, batchSize)`](#fetchname-batchsize)
         - [`fetchCompleted(name [, batchSize])`](#fetchcompletedname--batchsize)
-        - [`fetchExpired(name [, batchSize])`](#fetchexpiredname--batchsize)
-        - [`fetchFailed(name [, batchSize])`](#fetchfailedname--batchsize)
     - [`cancel(id)`](#cancelid)
     - [`cancel([ids])`](#cancelids)
     - [`complete(id [, data])`](#completeid--data)
@@ -37,11 +34,8 @@ Usage
     - [`fail([ids])`](#failids)
 - [Events](#events)
     - [`error`](#error)
-    - [`job`](#job)
-    - [`failed`](#failed)
     - [`archived`](#archived)
-    - [`expired-count`](#expired-count)
-    - [`expired-job`](#expired-job)
+    - [`expired`](#expired)
     - [`monitor-states`](#monitor-states)
 - [Static functions](#static-functions)
     - [`string getConstructionPlans(schema)`](#string-getconstructionplansschema)
@@ -200,6 +194,30 @@ boss.publish({
 .then(id => console.log(`job ${id} submitted`));
 ```
 
+### `publishAfter(name, data, options, seconds | ISO date string | Date)`
+
+Publish a job that should start after a number of seconds from now, or after a specific date time.  
+
+This is a convenience verion of `publish()` with the `startAfter` option assigned.
+
+### `publishOnce(name, data, options, key)`
+
+Publish a job with a unique key to make sure it isn't processed more than once.  Any other jobs published during this archive interval with the same queue name and key will be rejected. 
+
+This is a convenience verion of `publish()` with the `singletonKey` option assigned.
+
+### `publishThrottled(name, data, options, seconds [, key])`
+
+Only allows one job to be published to the same queue within a number of seconds.  In this case, the first job within the interval is allowed, and all other jobs within the same interval are rejected.
+
+This is a convenience verion of `publish()` with the `singletonSeconds` and `singletonKey` option assigned. The `key` argument is optional.
+
+### `publishDebounced(name, data, options, seconds [, key])`
+
+Like, `publishThrottled()`, but instead of rejecting if a job is already published in the current interval, it will try to add the job to the next interval is one hasn't already been published. 
+
+This is a convenience verion of `publish()` with the `singletonSeconds`, `singletonKey` and `singletonNextSlot` option assigned. The `key` argument is optional.
+
 ## `subscribe()`
 
 **returns: Promise**
@@ -213,9 +231,9 @@ The default concurrency for `subscribe()` is 1 job per second.  Both the interva
 **Arguments**
 - `name`: string, *required*
 - `options`: object 
-- `handler`: function(job, callback)
+- `handler`: function(job), *required*
 
-When you provide the `handler` callback, it should have at least 1 argument for the job. The second argument is a convenience 'done' callback that will finish the job before it expires. The job object also has this callback attached as `done()` for convenience. 
+If your handler function returns a promise, pg-boss will defer polling for new jobs until it resolves. Meaning, you'll get backpressure for free! Even though it's not required to return a promise, it's encouraged in order to make your instance more robust and reliable under load. For example, if your database were to experience a high load, it may slow down what otherwise may be a quick operation.  Being able to defer polling and emitting more jobs will make sure you don't overload an already busy system and add to the existing load.
 
 The job object has the following properties.
 
@@ -223,38 +241,54 @@ The job object has the following properties.
 | - | - | -|
 |`id`| string, uuid | 
 |`name`| string | 
-|`data`| object | data sent from `publish()`
+|`data`| object |
 |`done(err, data)` | function | callback function used to mark the job as completed or failed in the database. 
 
-`done()` accepts optional arguments, the first being an error in typical node fashion. The second argument is an optional `data` argument for usage with [`onComplete()`](#oncompletename--options-handler) state-based subscriptions. If an error is passed, it will mark the job as failed and the data argument will be ignored.
+The job completion callback is not required if you return a promise from your handler. If you return a promise, the value you resolve will be provided in the completion job, and if your promise throws, pg-boss will catch it and mark the job as failed.
 
-> If you forget to use the callback function to mark the job as completed, it will expire after the configured expiration period.  The default expiration can be found in the [configuration docs](configuration.md#job-expiration).
+If you do not return a promise, `done()` should be used to mark the job as completed or failed (just like in 2.x below). In that case, `done()` accepts optional arguments, the first being an error in typical node fashion. The second argument is an optional `data` argument for usage with [`onComplete()`](#oncompletename--options-handler) state-based subscriptions. If an error is passed, it will mark the job as failed.
 
-Following is an example of a subscription with the teamSize option set for increased job concurrency between polling intervals.
+> If you forget to use a promise or the callback function to mark the job as completed, it will expire after the configured expiration period.  The default expiration can be found in the [configuration docs](configuration.md#job-expiration).
+
+Following is an example of a subscription that returns a promise for completion with the teamSize option set for increased job concurrency between polling intervals.
 
 ```js
-boss.subscribe('email-welcome', {teamSize: 5}, job => {
-    myEmailService.sendWelcomeEmail(job.data)
-      .then(() => job.done())
-      .catch(error => job.done(error));
+boss.subscribe('email-welcome', {teamSize: 5, teamConcurrency: 5}, 
+      job => myEmailService.sendWelcomeEmail(job.data))
+  .then(() => console.log('subscription created'))
+  .catch(error => console.error(error));
+```
+
+And the same example, but without returnig a promise in the handler.
+
+```js
+boss.subscribe('email-welcome', {teamSize: 5, teamConcurrency: 5}, 
+      job => {
+        myEmailService.sendWelcomeEmail(job.data)
+          .then(() => job.done())
+          .catch(error => job.done(error));
   })
   .then(() => console.log('subscription created'))
   .catch(error => console.error(error));
 ```
 
-## State-based subscriptions
+Similar to the first example, but with a batch of jobs at once.
 
-Sometimes when a job changes state, it's important enough to trigger other things that should react to it. The following functions work identically to `subscribe()` and allow you to create orchestrations or sagas between jobs that may or may not know about each other. This common messaging pattern allows you to keep multi-job flow logic out of the individual job handlers so you can manage things in a more centralized fashion while not losing your mind. As you most likely already know, asynchronous jobs are complicated enough already.
-
-Internally, all state transitions are also jobs themselves (they have a special suffix of `__state__<state name>`).  Since pg-boss creates these, they are considered second class jobs and therefore not subject to the same expiration policies. In addition, the archiver ensures they don't hang around.
-
-> There are some state changes that also trigger [events](#events), and this may be a bit confusing as there is a bit of overlapping concerns. Events can be convenient since you can have as many listeners as desired per event. However, emitting an event doesn't require any listeners, so if no callbacks are registered for them, you will never receive them as they are not persisted. 
+```js
+boss.subscribe('email-welcome', {batchSize: 5}, 
+      jobs => myEmailService.sendWelcomeEmails(jobs.map(job => job.data))
+  )
+  .then(() => console.log('subscription created'))
+  .catch(error => console.error(error));
+```
 
 ### `onComplete(name [, options], handler)`
 
-State-based `subscribe()` for completed jobs.
+Sometimes when a job completes, expires or fails, it's important enough to trigger other things that should react to it. `onComplete` works identically to `subscribe()` and was created to facilitate the creation of orchestrations or sagas between jobs that may or may not know about each other. This common messaging pattern allows you to keep multi-job flow logic out of the individual job handlers so you can manage things in a more centralized fashion while not losing your mind. As you most likely already know, asynchronous jobs are complicated enough already.
 
-The callback for `onComplete()` returns a job which contains a `request` and `response` property in its data property. The response property is the optional data argument in [`complete()`](#completeid--data).
+> Internally, these jobs have a special suffix of `__state__completed`.  Since pg-boss creates these and it's possible that no subscriptions will ever be created for retrieving them, they are considered "second class" and will be archived even if they remain in 'created' state. Keep this in mind if you customize your archive interval.
+
+The callback for `onComplete()` returns a job whose data object contains `request`, `response` and `state`. `request` will be the original job as submitted, complete with id, name and data. `response` will be the optional data argument in [complete()](#completeid--data) or [fail()](#failid--data).
 
 This definitely calls for an example.  Here's a lovely example from the test suite showing this in action.
 
@@ -290,7 +324,7 @@ And here's an example job from the callback in this test.
 ```js
 {
   "id": "54687d40-48f9-11e7-af1e-9bf165e06ad0",
-  "name": "onCompleteFtw__state__complete",
+  "name": "onCompleteFtw__state__completed",
   "data": {
     "request": {
       "id": "5466cf90-48f9-11e7-af1e-9bf165e06ad0",
@@ -302,22 +336,11 @@ And here's an example job from the callback in this test.
     "response": {
       "code": "1234",
       "message": "so verbose"
-    }
+    },
+    "state": "completed"
   }
 }
 ```
-
-### `onExpire(name [, options], handler)`
-
-State-based `subscribe()` for expired jobs.
-
-The job provided by `onExpire()` is the original job.
-
-### `onFail(name [, options], handler)`
-
-State-based `subscribe()` for failed jobs.  
-
-The callback for `onFail()` returns a job which contains a `request` and `response` property in its data property just like `onComplete()`. The response property is the optional data argument in [`fail()`](#failid--data).
 
 ## `unsubscribe(name)`
 
@@ -326,14 +349,6 @@ Removes a subscription by job name and stops polling.
 ### `offComplete(name)`
 
 Same as `unsubscribe()`, but removes an `onComplete()` subscription.
-
-### `offExpire(name)`
-
-Same as `unsubscribe()`, but removes an `onExpire()` subscription.
-
-### `offFail(name)`
-
-Same as `unsubscribe()`, but removes an `onFail()` subscription.
 
 ## `fetch()`
 
@@ -384,15 +399,6 @@ boss.fetch(jobName, batchSize)
 
 Same as `fetch()`, but retrieves any completed jobs. See [`onComplete()`](#oncompletename--options-handler) for more information.
 
-### `fetchExpired(name [, batchSize])`
-
-Same as `fetch()`, but retrieves any expired jobs. See [`onExpire()`](#onexpirename--options-handler) for more information.
-
-
-### `fetchFailed(name [, batchSize])`
-
-Same as `fetch()`, but retrieves any failed jobs.  See [`onFail()`](#onfailname--options-handler) for more information.
-
 ## `cancel(id)`
 
 Cancels a pending or active job.
@@ -439,7 +445,7 @@ The promise will resolve on a successful failure state assignment, or reject if 
 
 As explained in the introduction above, each instance of pg-boss is an EventEmitter.  You can run multiple instances of pg-boss for a variety of use cases including distribution and load balancing. Each instance has the freedom to subscribe to whichever jobs you need.  Because of this diversity, the job activity of one instance could be drastically different from another.  Therefore, **all of the events raised by pg-boss are instance-bound.** 
 
-> For example, if you were to subscribe to `error` in instance A, it will not receive an `error` event from instance B.  The same concept applies to all events.  If a job is subscribed in instance A, the `job` event will be raised alongside the `subscribe()` callback only for instance A.  There is currently no such thing as a global `job` event across instances.
+> For example, if you were to subscribe to `error` in instance A, it will not receive an `error` event from instance B.
 
 ## `error`
 The error event is raised from any errors that may occur during internal job fetching, monitoring and archiving activities. While not required, adding a listener to the error event is strongly encouraged:
@@ -456,38 +462,14 @@ boss.on('error', error => logger.error(error));
 
 > **Note: Since error events are only raised during internal housekeeping activities, they are not raised for direct API calls, where promise `catch()` handlers should be used.**
 
-## `job`
-When a job is processed, the subscriber's callback is called *and* a `job` event is raised.  Adding a listener to the job event is completely optional, but you may wish to use it for logging or tracking purposes per instance. 
-
-The payload is the same job object that the subscriber's handler function receives with id, name and data properties.
-
-```js
-boss.on('job', job => console.log(`Job ${job.name} (${job.id}) received by subscriber`));
-```
-
-## `failed`
-`failed` is raised for job failures.  This event is triggered automatically if any unhandled errors occur in a `subscribe()`, or manually from `fail(jobId)` or `done(error)` within a subscriber callback.
-
-The payload is an object with the job and the error:
-
-```js
-boss.on('failed', failure => {
-  console.error(`Job ${failure.job.name} failed`);
-  console.error(failure.error);
-});
-```
 
 ## `archived`
 
 `archived` is raised each time 1 or more jobs are archived.  The payload is an integer representing the number of jobs archived.
 
-## `expired-count`
+## `expired`
 
-`expired-count` is raised each time 1 or more jobs are expired.  The payload is an integer representing the number of jobs expired.
-
-## `expired-job`
-
-Each time a job expires, `expired-job` is raised. Adding a listener to this event is completely optional, but you may wish to use it for global job logging or tracking purposes. The payload is the same job object that the subscriber's handler function receives with id, name and data properties.  If you need to react to job expirations for a particular job name, you should use `onExpire()` instead.
+`expired` is raised each time 1 or more jobs are expired.  The payload is an integer representing the number of jobs expired.
 
 ## `monitor-states`
 
@@ -502,7 +484,7 @@ The payload of the event is an object with a key per queue and state, such as th
         "created": 530,
         "retry": 40,
         "active": 26,
-        "complete": 3400,
+        "completed": 3400,
         "expired": 4,
         "cancelled": 0,
         "failed": 49,
@@ -512,7 +494,7 @@ The payload of the event is an object with a key per queue and state, such as th
         "created": 0,
         "retry": 0,
         "active": 0,
-        "complete": 645,
+        "completed": 645,
         "expired": 0,
         "cancelled": 0,
         "failed": 0,
@@ -522,7 +504,7 @@ The payload of the event is an object with a key per queue and state, such as th
   "created": 530,
   "retry": 40,
   "active": 26,
-  "complete": 4045,
+  "completed": 4045,
   "expired": 4,
   "cancelled": 0,
   "failed": 4,
