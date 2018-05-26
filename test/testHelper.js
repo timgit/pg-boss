@@ -10,7 +10,7 @@ module.exports = {
   getJobById,
   getArchivedJobById,
   findJobs,
-  stateJobDelimiter: plans.stateJobDelimiter,
+  completedJobSuffix: plans.completedJobSuffix,
   countJobs,
   empty,
   getConfig,
@@ -49,7 +49,8 @@ function init(schema) {
 }
 
 function getJobById(id) {
-  return findJobs('id = $1', [id]);
+  return findJobs('id = $1', [id])
+    .then(response => response.rows.length ? response.rows[0] : null);
 }
 
 function findJobs(where, values){
@@ -57,7 +58,8 @@ function findJobs(where, values){
 }
 
 function getArchivedJobById(id) {
-  return findArchivedJobs('id = $1', [id]);
+  return findArchivedJobs('id = $1', [id])
+    .then(response => response.rows.length ? response.rows[0] : null);
 }
 
 function findArchivedJobs(where, values){

@@ -15,10 +15,14 @@ describe('examples', function(){
   it('readme example is totes valid', function(finished){
     const connectionString = helper.getConnectionString();
 
+    let _jobId;
+
     // example start
     const boss = new PgBoss(connectionString);
 
     _boss = boss; // exclude test code
+
+    const someQueue = 'some-queue';
 
     boss.on('error', onError);
 
@@ -27,27 +31,28 @@ describe('examples', function(){
       .catch(onError);
 
     function ready() {
-      boss.publish('some-job', {param1: 'parameter1'})
-        .then(jobId => console.log(`created some-job ${jobId}`))
-        .catch(onError);
+      boss.publish(someQueue, {param1: 'parameter1'})
+        .then(jobId => {
+          console.log(`created job in queue ${someQueue}: ${jobId}`);
+          _jobId = jobId;
+        });
+    
+      boss.subscribe(someQueue, job => someAsyncJobHandler(job))
+        .then(() => console.log(`subscribed to queue ${someQueue}`));
 
-      boss.subscribe('some-job', someJobHandler)
-        .then(() => console.log('subscribed to some-job'))
-        .catch(onError);
+      boss.onComplete(someQueue, job => {
+        console.log(`job ${job.id} completed`);
+        assert.strictEqual(job.data.request.id, _jobId); // exclude test code
+        finished();   // exclude test code
+      });
+
     }
 
-    function someJobHandler(job) {
+    function someAsyncJobHandler(job) {
       console.log(`received ${job.name} ${job.id}`);
       console.log(`data: ${JSON.stringify(job.data)}`);
-
-      job.done()
-        .then(() => {
-          console.log(`some-job ${job.id} completed`);
-          assert.equal('some-job', job.name); // exclude test code
-          assert.equal('parameter1', job.data.param1); // exclude test code
-          finished();   // exclude test code
-        })
-        .catch(onError);
+    
+      return Promise.resolve('got it');
     }
 
     function onError(error) {

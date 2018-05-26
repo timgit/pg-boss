@@ -198,33 +198,39 @@ class Manager extends EventEmitter {
       : (typeof startAfter === 'string') ? startAfter
       : null;
 
+    if('retryDelay' in options)
+        assert(Number.isInteger(options.retryDelay) && options.retryDelay >= 0, 'retryDelay must be an integer >= 0');
+
+    if('retryBackoff' in options)
+      assert(options.retryBackoff === true || options.retryBackoff === false, 'retryBackoff must be either true or false');
+
+    if('retryLimit' in options)
+      assert(Number.isInteger(options.retryLimit) && options.retryLimit >= 0, 'retryLimit must be an integer >= 0');
+
+    let retryLimit = options.retryLimit || 0;
+    let retryBackoff = !!options.retryBackoff;
+    let retryDelay = options.retryDelay || 0;
+
+    if(retryBackoff && !retryDelay)
+      retryDelay = 1;
+
+    if(retryDelay && !retryLimit)
+      retryLimit = 1;
+
+    let expireIn = options.expireIn || '15 minutes';
+    let priority = options.priority || 0;
+
     let singletonSeconds =
       (options.singletonSeconds > 0) ? options.singletonSeconds
         : (options.singletonMinutes > 0) ? options.singletonMinutes * 60
         : (options.singletonHours > 0) ? options.singletonHours * 60 * 60
-        : null;
-
-    if('retryDelay' in options){
-        const retryDelayErrorMessage = 'retryDelay must be an integer >= 0';
-        assert(Number.isInteger(options.retryDelay) && options.retryDelay >= 0, retryDelayErrorMessage);
-    }
-
-    if('retryBackoff' in options){
-      const retryBackoffErrorMessage = 'retryBackoff must be either true or false';
-      assert(options.retryBackoff === true || options.retryBackoff === false, retryBackoffErrorMessage);
-    }
-
-    let retryDelay = options.retryDelay || 0;
-    let retryBackoff = !!options.retryBackoff;
-
-    let id = require(`uuid/${this.config.uuid}`)();
-    let retryLimit = options.retryLimit || 0;
-    let expireIn = options.expireIn || '15 minutes';
-    let priority = options.priority || 0;
+          : null;
 
     let singletonKey = options.singletonKey || null;
 
     singletonOffset = singletonOffset || 0;
+
+    let id = require(`uuid/${this.config.uuid}`)();
 
     // ordinals! [1,  2,    3,        4,          5,          6,        7,    8,            9,                10,              11,         12          ]
     let values = [id, name, priority, retryLimit, startAfter, expireIn, data, singletonKey, singletonSeconds, singletonOffset, retryDelay, retryBackoff];

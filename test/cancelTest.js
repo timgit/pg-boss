@@ -36,7 +36,7 @@ describe('cancel', function() {
       .then(id => jobId = id)
       .then(() => boss.cancel(jobId))
       .then(() => helper.getJobById(jobId))
-      .then(result => assert(result.rows.length && result.rows[0].state === 'cancelled'))
+      .then(job => assert(job && job.state === 'cancelled'))
       .then(() => finished());
 
   });

@@ -10,33 +10,30 @@ Queueing jobs in Node.js using PostgreSQL like a boss.
 const PgBoss = require('pg-boss');
 const boss = new PgBoss('postgres://user:pass@host/database');
 
-boss.on('error', onError);
+boss.on('error', error => console.error(error));
 
 boss.start()
   .then(ready)
-  .catch(onError);
+  .catch(error => console.error(error));
 
 function ready() {
-  boss.publish('some-job', {param1: 'parameter1'})
-    .then(jobId => console.log(`created some-job ${jobId}`))
-    .catch(onError);
+  boss.publish(someQueue, {param1: 'parameter1'})
+    .then(jobId => {
+      console.log(`created job in queue ${someQueue}: ${jobId}`);
+      _jobId = jobId;
+    });
 
-  boss.subscribe('some-job', someJobHandler)
-    .then(() => console.log('subscribed to some-job'))
-    .catch(onError);
+  boss.subscribe(someQueue, job => someAsyncJobHandler(job))
+    .then(() => console.log(`subscribed to queue ${someQueue}`));
+
+  boss.onComplete(someQueue, job => console.log(`job ${job.id} completed`));
 }
 
-function someJobHandler(job) {
+function someAsyncJobHandler(job) {
   console.log(`received ${job.name} ${job.id}`);
   console.log(`data: ${JSON.stringify(job.data)}`);
 
-  job.done()
-    .then(() => console.log(`some-job ${job.id} completed`))
-    .catch(onError);
-}
-
-function onError(error) {
-  console.error(error);
+  return Promise.resolve('got it');
 }
 ```
 
@@ -51,12 +48,14 @@ This will likely cater the most to teams already familiar with the simplicity of
 ## Features
 * Guaranteed delivery and finalizing of jobs using a promise API
 * Delayed jobs
-* Job retries
-* Job throttling (singleton jobs and rate limiting)
+* Job retries (opt-in exponential backoff)
+* Job throttling (unique jobs, rate limiting and/or debouncing)
+* Job batching for high volume use cases 
+* Backpressure-compatible subscriptions
 * Configurable job concurrency
 * Distributed and/or clustered workers
-* State-based subscriptions to support orchestrations/sagas
-* Ad-hoc job fetching and completion for external integrations (such as web APIs)
+* Completion subscriptions to support orchestrations/sagas
+* On-demand job fetching and completion for external integrations (such as web APIs)
 * Automatic provisioning of required storage into a dedicated schema
 * Automatic monitoring for expired jobs
 * Automatic archiving for completed jobs

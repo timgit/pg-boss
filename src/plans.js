@@ -8,8 +8,7 @@ const states = {
   failed: 'failed'
 };
 
-const stateJobDelimiter = '__state__';
-const completedJobSuffix = stateJobDelimiter + states.complete;
+const completedJobSuffix = '__state__' + states.complete;
 
 module.exports = {
   create,
@@ -28,7 +27,6 @@ module.exports = {
   deleteQueue,
   deleteAllQueues,
   states,
-  stateJobDelimiter,
   completedJobSuffix,
 };
 
@@ -218,6 +216,26 @@ function completeJobs(schema){
   `; // returning 1 here just to count results against input array
 }
 
+
+const retryCompletedOnCase = `CASE
+          WHEN retryCount < retryLimit
+          THEN NULL
+          ELSE now()
+          END`;
+
+const retryStartAfterCase = `CASE
+          WHEN retryCount = retryLimit THEN startAfter
+          WHEN NOT retryBackoff THEN now() + retryDelay * interval '1'
+          ELSE now() +
+            (
+                retryDelay * 2 ^ LEAST(16, retryCount + 1) / 2
+                +
+                retryDelay * 2 ^ LEAST(16, retryCount + 1) / 2 * random()
+            )
+            * interval '1'
+          END`;
+
+
 function failJobs(schema){
   return `
     WITH results AS (
@@ -227,22 +245,8 @@ function failJobs(schema){
           THEN '${states.retry}'::${schema}.job_state
           ELSE '${states.failed}'::${schema}.job_state
           END,        
-        completedOn = CASE
-          WHEN retryCount < retryLimit
-          THEN NULL
-          ELSE now()
-          END,
-        startAfter = CASE
-          WHEN retryCount = retryLimit THEN startAfter
-          WHEN NOT retryBackoff THEN now() + retryDelay * interval '1'
-          ELSE now() +
-            (
-                retryDelay * 2 ^ LEAST(16, retryCount + 1) / 2
-                +
-                retryDelay * 2 ^ LEAST(16, retryCount + 1) / 2 * random()
-            )
-              * interval '1'
-            END
+        completedOn = ${retryCompletedOnCase},
+        startAfter = ${retryStartAfterCase}
       WHERE id = ANY($1)
         AND state < '${states.complete}'
       RETURNING *
@@ -265,22 +269,8 @@ function expire(schema) {
           WHEN retryCount < retryLimit THEN '${states.retry}'::${schema}.job_state
           ELSE '${states.expired}'::${schema}.job_state
           END,        
-        completedOn = CASE
-          WHEN retryCount < retryLimit
-          THEN NULL
-          ELSE now()
-          END,
-        startAfter = CASE
-          WHEN retryCount = retryLimit THEN startAfter
-          WHEN NOT retryBackoff THEN now() + retryDelay * interval '1'
-          ELSE now() +
-            (
-                retryDelay * 2 ^ LEAST(16, retryCount + 1) / 2
-                +
-                retryDelay * 2 ^ LEAST(16, retryCount + 1) / 2 * random()
-            )
-            * interval '1'
-          END
+        completedOn = ${retryCompletedOnCase},
+        startAfter = ${retryStartAfterCase}
       WHERE state = '${states.active}'
         AND (startedOn + expireIn) < now()    
       RETURNING *
@@ -293,6 +283,7 @@ function expire(schema) {
     WHERE state = '${states.expired}'
   `;
 }
+
 
 function cancelJobs(schema){
   return `
@@ -354,7 +345,7 @@ function archive(schema){
         (completedOn + CAST($1 as interval) < now())
         OR (
           state = '${states.created}'
-          AND name LIKE '%${stateJobDelimiter}%'
+          AND name LIKE '%${completedJobSuffix}%'
           AND createdOn + CAST($1 as interval) < now()
         )
       RETURNING *
@@ -368,7 +359,7 @@ function countStates(schema){
   return `
     SELECT name, state, count(*) size
     FROM ${schema}.job
-    WHERE name NOT LIKE '%${stateJobDelimiter}%'
+    WHERE name NOT LIKE '%${completedJobSuffix}%'
     GROUP BY rollup(name), rollup(state)
   `;
 }

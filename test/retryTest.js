@@ -71,27 +71,38 @@ describe('retries', function() {
 
   });
 
-
   it('should retry with a exponential backoff', function(finished){
+
     const queue = 'retryDelayBackoff';
+
     let subscribeCount = 0;
-    let retryLimit = 3;
+    let retryLimit = 4;
 
-    boss.subscribe(queue, job => {
-      subscribeCount++;
-      job.done('fail!');
-    });
+    boss.subscribe(queue, {newJobCheckInterval:500}, job => job.done(++subscribeCount))
+      .then(() => boss.publish(queue, null, {retryLimit, retryBackoff: true}))
+      .then(() => Promise.delay(9000))
+      .then(() => {
+          assert.isBelow(subscribeCount, retryLimit);
+          finished();
+      });
 
-    boss.publish(queue, null, {retryLimit, retryDelay: 1, retryBackoff: true});
+  });
 
-    setTimeout(() => {
-      assert.isBelow(subscribeCount, retryLimit);
-    }, 4000);
+  it('should set the default retry limit to 1 if missing', function(finished){
 
-    setTimeout(() => {
-      assert.equal(subscribeCount, retryLimit);
-      finished();
-    }, 9000);
+    const queue = 'retryLimitDefault';
+
+    boss.publish(queue, null, {retryDelay: 1})
+      .then(() => boss.fetch(queue))
+      .then(job => boss.fail(job.id))
+      .then(() => boss.fetch(queue))
+      .then(job => assert.strictEqual(job, null))
+      .then(() => Promise.delay(1000))
+      .then(() => boss.fetch(queue))
+      .then(job => {
+        assert.isOk(job);
+        finished();
+      });
 
   });
 
