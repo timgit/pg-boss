@@ -184,6 +184,36 @@ describe('subscribe', function(){
 
   });
 
+  it('subscribe completion via Promise resolve() should pass string wrapped in value prop', function(finished){
+    const queue = 'subscribeCompletionViaResolveString';
+    const result = 'success';
+
+    boss.publish(queue)
+      .then(() => boss.subscribe(queue, job => Promise.resolve(result)));
+
+    boss.onComplete(queue, job => {
+      assert.strictEqual(job.data.state, 'completed');
+      assert.strictEqual(job.data.response.value, result);
+      finished();
+    });
+
+  });
+
+  it('subscribe completion via Promise resolve() should pass object payload', function(finished){
+    const queue = 'subscribeCompletionViaResolveObject';
+    const something = 'clever';
+
+    boss.publish(queue)
+      .then(() => boss.subscribe(queue, job => Promise.resolve({something})));
+
+    boss.onComplete(queue, job => {
+      assert.strictEqual(job.data.state, 'completed');
+      assert.strictEqual(job.data.response.something, something);
+      finished();
+    });
+
+  });
+
 });
 
 

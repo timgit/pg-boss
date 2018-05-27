@@ -101,6 +101,37 @@ describe('error', function(){
 
   });
 
+
+  it('subscribe failure via Promise reject() should pass string wrapped in value prop', function(finished){
+    const queue = 'subscribeFailureViaRejectString';
+    const failPayload = 'mah error';
+
+    boss.publish(queue)
+      .then(() => boss.subscribe(queue, job => Promise.reject(failPayload)));
+
+    boss.onComplete(queue, job => {
+      assert.strictEqual(job.data.state, 'failed');
+      assert.strictEqual(job.data.response.value, failPayload);
+      finished();
+    });
+
+  });
+
+  it('subscribe failure via Promise reject() should pass object payload', function(finished){
+    const queue = 'subscribeFailureViaRejectObject';
+    const something = 'clever';
+
+    boss.publish(queue)
+      .then(() => boss.subscribe(queue, job => Promise.reject({something})));
+
+    boss.onComplete(queue, job => {
+      assert.strictEqual(job.data.state, 'failed');
+      assert.strictEqual(job.data.response.something, something);
+      finished();
+    });
+
+  });
+
 });
 
 
