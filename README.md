@@ -17,22 +17,28 @@ boss.start()
   .catch(error => console.error(error));
 
 function ready() {
+  const someQueue = 'some-queue';
+
   boss.publish(someQueue, {param1: 'parameter1'})
     .then(jobId => {
       console.log(`created job in queue ${someQueue}: ${jobId}`);
-      _jobId = jobId;
     });
 
   boss.subscribe(someQueue, job => someAsyncJobHandler(job))
     .then(() => console.log(`subscribed to queue ${someQueue}`));
 
-  boss.onComplete(someQueue, job => console.log(`job ${job.id} completed`));
+  boss.onComplete(someQueue, job => {
+    console.log(`job ${job.data.request.id} completed`);
+    console.log(` - in state ${job.data.state}`);
+    console.log(` - responded with '${job.data.response.value}'`);
+  })
+  .then(() => console.log(`subscribed to queue ${someQueue} completions`));
 }
 
 function someAsyncJobHandler(job) {
-  console.log(`received ${job.name} ${job.id}`);
-  console.log(`data: ${JSON.stringify(job.data)}`);
-
+  console.log(`job ${job.id} received`);
+  console.log(` - with data: ${JSON.stringify(job.data)}`);
+    
   return Promise.resolve('got it');
 }
 ```
