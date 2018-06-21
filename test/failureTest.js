@@ -132,6 +132,28 @@ describe('error', function(){
 
   });
 
+  it('failure with Error object should get stored in the failure job', function(finished){
+    const jobName = 'failWithErrorObj';
+    const message = 'a real error!';
+
+      boss.subscribe(jobName, job => {
+        return Promise.resolve()
+          .then(() => {
+            throw new Error(message);
+          });
+      });
+
+      boss.onComplete(jobName, job => {
+          assert.strictEqual(job.data.state, 'failed');
+          assert.strictEqual(job.data.response.message.indexOf(message), 0);
+
+          finished();
+      });
+
+      boss.publish(jobName);
+
+  });
+
 });
 
 

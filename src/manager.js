@@ -291,6 +291,9 @@ class Manager extends EventEmitter {
     if(data === null || typeof data === 'undefined' || typeof data === 'function')
       return null;
 
+    if(data instanceof Error)
+      data = JSON.parse(JSON.stringify(data, Object.getOwnPropertyNames(data)));
+
     return (typeof data === 'object' && !Array.isArray(data))
       ? data
       : { value:data };
