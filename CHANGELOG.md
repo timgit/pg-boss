@@ -34,7 +34,6 @@
 
 ### Other items of interest
 - The pgcrypto extension is now used internally for uuid generation with onComplete().  It will be added in the database if it's not already added.
-- Switched jsonb type in job table to json
 - Adjusted indexes to help with fetch performance
 
 ## 2.5.1

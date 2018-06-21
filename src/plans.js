@@ -90,7 +90,7 @@ function createJobTable(schema) {
       id uuid primary key not null default gen_random_uuid(),
       name text not null,
       priority integer not null default(0),
-      data json,
+      data jsonb,
       state ${schema}.job_state not null default('${states.created}'),
       retryLimit integer not null default(0),
       retryCount integer not null default(0),
@@ -209,7 +209,7 @@ function completeJobs(schema){
     INSERT INTO ${schema}.job (name, data)
     SELECT
       name || '${completedJobSuffix}', 
-      json_build_object('request', json_build_object('id', id, 'name', name, 'data', data), 'response', $2::json, 'state', state)
+      jsonb_build_object('request', jsonb_build_object('id', id, 'name', name, 'data', data), 'response', $2::jsonb, 'state', state)
     FROM results
     WHERE name NOT LIKE '%${completedJobSuffix}'
     RETURNING 1
@@ -254,7 +254,7 @@ function failJobs(schema){
     INSERT INTO ${schema}.job (name, data)
     SELECT
       name || '${completedJobSuffix}',
-      json_build_object('request', json_build_object('id', id, 'name', name, 'data', data), 'response', $2::json, 'state', state)
+      jsonb_build_object('request', jsonb_build_object('id', id, 'name', name, 'data', data), 'response', $2::jsonb, 'state', state)
     FROM results
     WHERE state = '${states.failed}'
     RETURNING 1
@@ -278,7 +278,7 @@ function expire(schema) {
     INSERT INTO ${schema}.job (name, data)
     SELECT
       name || '${completedJobSuffix}',
-      json_build_object('request', json_build_object('id', id, 'name', name, 'data', data), 'response', null, 'state', state)
+      jsonb_build_object('request', jsonb_build_object('id', id, 'name', name, 'data', data), 'response', null, 'state', state)
     FROM results
     WHERE state = '${states.expired}'
   `;
