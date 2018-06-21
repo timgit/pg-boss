@@ -196,6 +196,19 @@ function fetchNextJob(schema) {
   `;
 }
 
+function buildJsonCompletionObject(withResponse) {
+  // job completion contract
+  return `jsonb_build_object(
+    'request', jsonb_build_object('id', id, 'name', name, 'data', data),
+    'response', ${withResponse ? '$2::jsonb' : 'null'},
+    'state', state,
+    'retryCount', retryCount,
+    'createdOn', createdOn,
+    'startedOn', startedOn,
+    'completedOn', completedOn
+  )`;
+}
+
 function completeJobs(schema){
   return `
     WITH results AS (
@@ -209,7 +222,7 @@ function completeJobs(schema){
     INSERT INTO ${schema}.job (name, data)
     SELECT
       name || '${completedJobSuffix}', 
-      jsonb_build_object('request', jsonb_build_object('id', id, 'name', name, 'data', data), 'response', $2::jsonb, 'state', state)
+      ${buildJsonCompletionObject(true)}
     FROM results
     WHERE name NOT LIKE '%${completedJobSuffix}'
     RETURNING 1
@@ -254,9 +267,10 @@ function failJobs(schema){
     INSERT INTO ${schema}.job (name, data)
     SELECT
       name || '${completedJobSuffix}',
-      jsonb_build_object('request', jsonb_build_object('id', id, 'name', name, 'data', data), 'response', $2::jsonb, 'state', state)
+      ${buildJsonCompletionObject(true)}
     FROM results
     WHERE state = '${states.failed}'
+      AND NOT name LIKE '%${completedJobSuffix}'
     RETURNING 1
   `; // returning 1 here just to count results against input array
 }
@@ -278,9 +292,10 @@ function expire(schema) {
     INSERT INTO ${schema}.job (name, data)
     SELECT
       name || '${completedJobSuffix}',
-      jsonb_build_object('request', jsonb_build_object('id', id, 'name', name, 'data', data), 'response', null, 'state', state)
+      ${buildJsonCompletionObject()}
     FROM results
     WHERE state = '${states.expired}'
+      AND NOT name LIKE '%${completedJobSuffix}'
   `;
 }
 
