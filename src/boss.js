@@ -53,8 +53,11 @@ class Boss extends EventEmitter{
   }
 
   stop() {
+    if(this.stopped) return Promise.resolve();
+
     this.stopped = true;
     Object.keys(this.timers).forEach(key => clearTimeout(this.timers[key]));
+    
     return Promise.resolve();
   }
 

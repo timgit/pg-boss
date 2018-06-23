@@ -68,24 +68,17 @@ class PgBoss extends EventEmitter {
 
   }
 
-  init() {
-    if(this.isReady) return Promise.resolve(this);
-
-    return this.boss.supervise()
-      .then(() => {
-        this.isReady = true;
-        return this;
-    });
-  }
-
   start(...args) {
-    if(this.isStarted)
-      return Promise.reject(alreadyStartedErrorMessage);
+    if(this.isStarted) return Promise.reject(alreadyStartedErrorMessage);
 
     this.isStarted = true;
 
     return this.contractor.start.apply(this.contractor, args)
-      .then(() => this.init());
+      .then(() => {
+        this.isReady = true;
+        this.boss.supervise(); // not in promise chain for async start()
+        return this;
+      });
   }
 
   stop() {
