@@ -21,7 +21,7 @@ declare namespace PgBoss {
   }
 
   interface JobCreationOptions {
-    uuid?: "v1" | "v2";
+    uuid?: "v1" | "v4";
   }
 
   interface JobFetchOptions {
