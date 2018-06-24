@@ -139,6 +139,44 @@ function getAll(schema) {
       uninstall: [
         `DROP TABLE ${schema}.archive`
       ]
+    },
+    {
+      version: '8',
+      previous: '7',
+      install: [
+        `CREATE EXTENSION IF NOT EXISTS pgcrypto`,
+        `ALTER TABLE ${schema}.job ALTER COLUMN id SET DEFAULT gen_random_uuid()`,
+        `ALTER TABLE ${schema}.job ADD retryDelay integer not null DEFAULT (0)`,
+        `ALTER TABLE ${schema}.job ADD retryBackoff boolean not null DEFAULT false`,
+        `ALTER TABLE ${schema}.job ADD startAfter timestamp with time zone not null default now()`,
+        `UPDATE ${schema}.job SET startAfter = createdOn + startIn`,
+        `ALTER TABLE ${schema}.job DROP COLUMN startIn`,
+        `UPDATE ${schema}.job SET expireIn = interval '15 minutes' WHERE expireIn IS NULL`,
+        `ALTER TABLE ${schema}.job ALTER COLUMN expireIn SET NOT NULL`,
+        `ALTER TABLE ${schema}.job ALTER COLUMN expireIn SET DEFAULT interval '15 minutes'`,
+        // archive table schema changes
+        `ALTER TABLE ${schema}.archive ADD retryDelay integer not null`,
+        `ALTER TABLE ${schema}.archive ADD retryBackoff boolean not null`,
+        `ALTER TABLE ${schema}.archive ADD startAfter timestamp with time zone`,
+        `UPDATE ${schema}.archive SET startAfter = createdOn + startIn`,
+        `ALTER TABLE ${schema}.archive DROP COLUMN startIn`
+      ],
+      uninstall: [
+        `ALTER TABLE ${schema}.job ALTER COLUMN id DROP DEFAULT`,
+        // won't know if we should drop pgcrypto extension so it stays
+        `ALTER TABLE ${schema}.job DROP COLUMN retryDelay`,
+        `ALTER TABLE ${schema}.job DROP COLUMN retryBackoff`,
+        `ALTER TABLE ${schema}.job DROP COLUMN startAfter`,
+        `ALTER TABLE ${schema}.job ADD COLUMN startIn interval not null default(interval '0')`,
+        // leaving migrated default data for expireIn
+        `ALTER TABLE ${schema}.job ALTER COLUMN expireIn DROP NOT NULL`,
+        `ALTER TABLE ${schema}.job ALTER COLUMN expireIn DROP DEFAULT`,
+        // archive table restore
+        `ALTER TABLE ${schema}.archive DROP COLUMN retryDelay`,
+        `ALTER TABLE ${schema}.archive DROP COLUMN retryBackoff`,
+        `ALTER TABLE ${schema}.archive DROP COLUMN startAfter`,
+        `ALTER TABLE ${schema}.archive ADD COLUMN startIn interval`
+      ]
     }
   ];
 }

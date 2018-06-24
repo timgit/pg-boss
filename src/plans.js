@@ -62,7 +62,7 @@ function tryCreateCryptoExtension() {
 
 function createVersionTable(schema) {
   return `
-    CREATE TABLE IF NOT EXISTS ${schema}.version (
+    CREATE TABLE ${schema}.version (
       version text primary key
     )
   `;
@@ -86,7 +86,7 @@ function createJobStateEnum(schema) {
 
 function createJobTable(schema) {
   return `
-    CREATE TABLE IF NOT EXISTS ${schema}.job (
+    CREATE TABLE ${schema}.job (
       id uuid primary key not null default gen_random_uuid(),
       name text not null,
       priority integer not null default(0),
@@ -108,7 +108,7 @@ function createJobTable(schema) {
 }
 
 function cloneJobTableForArchive(schema){
-  return `CREATE TABLE IF NOT EXISTS ${schema}.archive (LIKE ${schema}.job)`;
+  return `CREATE TABLE ${schema}.archive (LIKE ${schema}.job)`;
 }
 
 function addArchivedOnToArchive(schema) {
