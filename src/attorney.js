@@ -106,16 +106,9 @@ function applyConfig(config) {
 
 function applyDatabaseConfig(config) {
 
-  if(typeof config === 'string') {
-    config = {connectionString: config};
-  }
-  else if (typeof (config.connectionString) !== 'string' && typeof config.db !== 'object') {
-    assert(config.database && config.user,
-      'configuration assert: not enough database settings to connect to PostgreSQL');
-
-    config.host = config.host || '127.0.0.1';
-    config.port = config.port || 5432;
-  }
+  config = (typeof config === 'string')
+    ? {connectionString: config}
+    : config || {};
 
   if(config.schema){
     assert(typeof config.schema === 'string', 'configuration assert: schema must be a string');
