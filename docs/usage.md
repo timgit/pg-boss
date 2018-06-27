@@ -288,9 +288,9 @@ Sometimes when a job completes, expires or fails, it's important enough to trigg
 
 > Internally, these jobs have a special suffix of `__state__completed`.  Since pg-boss creates these and it's possible that no subscriptions will ever be created for retrieving them, they are considered "second class" and will be archived even if they remain in 'created' state. Keep this in mind if you customize your archive interval.
 
-The callback for `onComplete()` returns a job whose data object contains `request`, `response` and `state`. `request` will be the original job as submitted, complete with id, name and data. `response` will be the optional data argument in [complete()](#completeid--data) or [fail()](#failid--data).
+The callback for `onComplete()` returns a job containing the original job and completion details. `request` will be the original job as submitted with `id`, `name` and `data`. `response` may or may not have a value based on arguments in [complete()](#completeid--data) or [fail()](#failid--data).
 
-This definitely calls for an example.  Here's a lovely example from the test suite showing this in action.
+Here's an example from the test suite showing this in action.
 
 ```js
  it('onComplete should have both request and response', function(finished){
@@ -323,22 +323,22 @@ And here's an example job from the callback in this test.
 
 ```js
 {
-  "id": "54687d40-48f9-11e7-af1e-9bf165e06ad0",
-  "name": "onCompleteFtw__state__completed",
-  "data": {
     "request": {
-      "id": "5466cf90-48f9-11e7-af1e-9bf165e06ad0",
-      "data": {
-        "token": "trivial"
-      },
-      "name": "onCompleteFtw"
+        "id": "26a608d0-79bf-11e8-8391-653981c16efd",
+        "name": "onCompleteFtw",
+        "data": {
+            "token": "trivial"
+        }
     },
     "response": {
-      "code": "1234",
-      "message": "so verbose"
+        "message": "so verbose",
+        "code": "1234"
     },
-    "state": "completed"
-  }
+    "state": "completed",
+    "createdOn": "2018-06-26T23:04:12.9392-05:00",
+    "startedOn": "2018-06-26T23:04:12.945533-05:00",
+    "completedOn": "2018-06-26T23:04:12.949092-05:00",
+    "retryCount": 0
 }
 ```
 
