@@ -159,7 +159,28 @@ function getAll(schema) {
         `ALTER TABLE ${schema}.archive ADD retryBackoff boolean not null`,
         `ALTER TABLE ${schema}.archive ADD startAfter timestamp with time zone`,
         `UPDATE ${schema}.archive SET startAfter = createdOn + startIn`,
-        `ALTER TABLE ${schema}.archive DROP COLUMN startIn`
+        `ALTER TABLE ${schema}.archive DROP COLUMN startIn`,
+        // rename complete to completed for state enum - can't use ALTER TYPE :(
+        `DROP INDEX ${schema}.job_fetch`,
+        `DROP INDEX ${schema}.job_singletonOn`,
+        `DROP INDEX ${schema}.job_singletonKeyOn`,
+        `DROP INDEX ${schema}.job_singletonKey`,
+        `ALTER TABLE ${schema}.job ALTER COLUMN state DROP DEFAULT`,
+        `ALTER TABLE ${schema}.job ALTER COLUMN state SET DATA TYPE text USING state::text`,
+        `ALTER TABLE ${schema}.archive ALTER COLUMN state SET DATA TYPE text USING state::text`,
+        `DROP TYPE ${schema}.job_state`,
+        `CREATE TYPE ${schema}.job_state AS ENUM ('created', 'retry', 'active', 'completed', 'expired', 'cancelled', 'failed')`,
+        `UPDATE ${schema}.job SET state = 'completed' WHERE state = 'complete'`,
+        `UPDATE ${schema}.archive SET state = 'completed' WHERE state = 'complete'`,
+        `ALTER TABLE ${schema}.job ALTER COLUMN state SET DATA TYPE ${schema}.job_state USING state::${schema}.job_state`,
+        `ALTER TABLE ${schema}.job ALTER COLUMN state SET DEFAULT 'created'`,
+        `ALTER TABLE ${schema}.archive ALTER COLUMN state SET DATA TYPE ${schema}.job_state USING state::${schema}.job_state`,
+        `CREATE INDEX job_fetch ON pgboss.job (name, priority desc, createdOn, id) WHERE state < 'active'`,
+        `CREATE UNIQUE INDEX job_singletonOn ON pgboss.job (name, singletonOn) WHERE state < 'expired' AND singletonKey IS NULL`,
+        `CREATE UNIQUE INDEX job_singletonKeyOn ON pgboss.job (name, singletonOn, singletonKey) WHERE state < 'expired'`,
+        `CREATE UNIQUE INDEX job_singletonKey ON pgboss.job (name, singletonKey) WHERE state < 'completed' AND singletonOn IS NULL`,
+        // add new job name index
+        `CREATE INDEX job_name ON pgboss.job (name) WHERE state < 'active'`
       ],
       uninstall: [
         `ALTER TABLE ${schema}.job ALTER COLUMN id DROP DEFAULT`,
@@ -175,7 +196,28 @@ function getAll(schema) {
         `ALTER TABLE ${schema}.archive DROP COLUMN retryDelay`,
         `ALTER TABLE ${schema}.archive DROP COLUMN retryBackoff`,
         `ALTER TABLE ${schema}.archive DROP COLUMN startAfter`,
-        `ALTER TABLE ${schema}.archive ADD COLUMN startIn interval`
+        `ALTER TABLE ${schema}.archive ADD COLUMN startIn interval`,
+        // drop new job name index
+        `DROP INDEX ${schema}.job_name`,
+        // roll back to old enum def
+        `DROP INDEX ${schema}.job_fetch`,
+        `DROP INDEX ${schema}.job_singletonOn`,
+        `DROP INDEX ${schema}.job_singletonKeyOn`,
+        `DROP INDEX ${schema}.job_singletonKey`,
+        `ALTER TABLE ${schema}.job ALTER COLUMN state DROP DEFAULT`,
+        `ALTER TABLE ${schema}.job ALTER COLUMN state SET DATA TYPE text USING state::text`,
+        `ALTER TABLE ${schema}.archive ALTER COLUMN state SET DATA TYPE text USING state::text`,
+        `DROP TYPE ${schema}.job_state`,
+        `CREATE TYPE ${schema}.job_state AS ENUM ('created', 'retry', 'active', 'complete', 'expired', 'cancelled', 'failed')`,
+        `UPDATE ${schema}.job SET state = 'completed' WHERE state = 'complete'`,
+        `UPDATE ${schema}.archive SET state = 'complete' WHERE state = 'completed'`,
+        `ALTER TABLE ${schema}.job ALTER COLUMN state SET DATA TYPE ${schema}.job_state USING state::${schema}.job_state`,
+        `ALTER TABLE ${schema}.job ALTER COLUMN state SET DEFAULT 'created'`,
+        `ALTER TABLE ${schema}.archive ALTER COLUMN state SET DATA TYPE ${schema}.job_state USING state::${schema}.job_state`,
+        `CREATE INDEX job_fetch ON pgboss.job (name, priority desc, createdOn, id) WHERE state < 'active'`,
+        `CREATE UNIQUE INDEX job_singletonOn ON pgboss.job (name, singletonOn) WHERE state < 'expired' AND singletonKey IS NULL`,
+        `CREATE UNIQUE INDEX job_singletonKeyOn ON pgboss.job (name, singletonOn, singletonKey) WHERE state < 'expired'`,
+        `CREATE UNIQUE INDEX job_singletonKey ON pgboss.job (name, singletonKey) WHERE state < 'complete' AND singletonOn IS NULL`
       ]
     }
   ];

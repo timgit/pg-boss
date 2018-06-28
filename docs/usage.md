@@ -334,6 +334,7 @@ And here's an example job from the callback in this test.
         "message": "so verbose",
         "code": "1234"
     },
+    "failed": false,
     "state": "completed",
     "createdOn": "2018-06-26T23:04:12.9392-05:00",
     "startedOn": "2018-06-26T23:04:12.945533-05:00",

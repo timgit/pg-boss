@@ -2,13 +2,13 @@ const states = {
   created: 'created',
   retry: 'retry',
   active: 'active',
-  complete: 'completed',
+  completed: 'completed',
   expired: 'expired',
   cancelled: 'cancelled',
   failed: 'failed'
 };
 
-const completedJobSuffix = '__state__' + states.complete;
+const completedJobSuffix = '__state__' + states.completed;
 
 module.exports = {
   create,
@@ -76,7 +76,7 @@ function createJobStateEnum(schema) {
       '${states.created}',
       '${states.retry}',
       '${states.active}',	
-      '${states.complete}',
+      '${states.completed}',
       '${states.expired}',
       '${states.cancelled}',
       '${states.failed}'
@@ -126,7 +126,7 @@ function deleteAllQueues(schema){
 function createIndexSingletonKey(schema){
   // anything with singletonKey means "only 1 job can be queued or active at a time"
   return `
-    CREATE UNIQUE INDEX job_singletonKey ON ${schema}.job (name, singletonKey) WHERE state < '${states.complete}' AND singletonOn IS NULL
+    CREATE UNIQUE INDEX job_singletonKey ON ${schema}.job (name, singletonKey) WHERE state < '${states.completed}' AND singletonOn IS NULL
   `;
 }
 
@@ -205,7 +205,8 @@ function buildJsonCompletionObject(withResponse) {
     'retryCount', retryCount,
     'createdOn', createdOn,
     'startedOn', startedOn,
-    'completedOn', completedOn
+    'completedOn', completedOn,
+    'failed', CASE WHEN state = '${states.completed}' THEN false ELSE true END
   )`;
 }
 
@@ -214,7 +215,7 @@ function completeJobs(schema){
     WITH results AS (
       UPDATE ${schema}.job
       SET completedOn = now(),
-        state = '${states.complete}'
+        state = '${states.completed}'
       WHERE id = ANY($1)
         AND state = '${states.active}'
       RETURNING *
@@ -261,7 +262,7 @@ function failJobs(schema){
         completedOn = ${retryCompletedOnCase},
         startAfter = ${retryStartAfterCase}
       WHERE id = ANY($1)
-        AND state < '${states.complete}'
+        AND state < '${states.completed}'
       RETURNING *
     )
     INSERT INTO ${schema}.job (name, data)
@@ -306,7 +307,7 @@ function cancelJobs(schema){
     SET completedOn = now(),
       state = '${states.cancelled}'
     WHERE id = ANY($1)
-      AND state < '${states.complete}'
+      AND state < '${states.completed}'
     RETURNING 1
   `;  // returning 1 here just to count results against input array
 }
