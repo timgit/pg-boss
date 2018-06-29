@@ -41,13 +41,27 @@ describe('subscribe', function(){
     let startTime = new Date();
     const queue = 'customJobCheckInterval';
     const newJobCheckIntervalSeconds = 3;
+    const timeout = 9000;
+    let subscribeCount = 0;
 
-    boss.subscribe(queue, {newJobCheckIntervalSeconds}, job => {
-        let elapsedSeconds = (new Date().getTime() - startTime.getTime()) / 1000;
-        assert.isAbove(elapsedSeconds, newJobCheckIntervalSeconds);
-        finished();
-      })
-      .then(() => boss.publish(queue));
+    boss.subscribe(queue, {newJobCheckIntervalSeconds}, () => subscribeCount++)
+      .then(() => Promise.join(
+        boss.publish(queue),
+        boss.publish(queue),
+        boss.publish(queue),
+        boss.publish(queue),
+        boss.publish(queue),
+        boss.publish(queue),
+        boss.publish(queue),
+        boss.publish(queue),
+        boss.publish(queue),
+        boss.publish(queue)
+      ));
+
+    setTimeout(() => {
+      assert.isAtMost(subscribeCount, timeout / 1000 / newJobCheckIntervalSeconds);
+      finished();
+    }, timeout);
 
   });
 
