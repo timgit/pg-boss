@@ -32,7 +32,7 @@ describe('migration', function() {
   it('should migrate to latest during start if on previous schema version', function(finished){
     contractor.create()
       .then(() => contractor.migrate(currentSchemaVersion, 'remove'))
-      .then(() => contractor.start())
+      .then(() => new PgBoss(helper.getConfig()).start({ noSupervisor: true }))
       .then(() => contractor.version())
       .then(version => {
         assert.equal(version, currentSchemaVersion);
@@ -105,7 +105,7 @@ describe('migration', function() {
       .then(version => {
         assert.notEqual(version, currentSchemaVersion);
         config.migrations[config.migrations.length - 1].install.pop();
-        return contractor.start();
+        return new PgBoss(config).start({ noSupervisor: true });
       })
       .then(() => contractor.version())
       .then(version => assert.equal(version, currentSchemaVersion))
