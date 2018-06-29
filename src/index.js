@@ -68,15 +68,20 @@ class PgBoss extends EventEmitter {
 
   }
 
-  start(...args) {
+  start(options) {
     if(this.isStarted) return Promise.reject(alreadyStartedErrorMessage);
+
+    options = options || {};
 
     this.isStarted = true;
 
-    return this.contractor.start.apply(this.contractor, args)
+    return this.contractor.start.call(this.contractor)
       .then(() => {
         this.isReady = true;
-        this.boss.supervise(); // not in promise chain for async start()
+
+        if(!options.noSupervisor)
+          this.boss.supervise(); // not in promise chain for async start()
+
         return this;
       });
   }
@@ -95,8 +100,8 @@ class PgBoss extends EventEmitter {
       });
   }
 
-  connect(...args) {
-    return this.contractor.connect.apply(this.contractor, args)
+  connect() {
+    return this.contractor.connect.call(this.contractor)
       .then(() => {
         this.isReady = true;
         return this;

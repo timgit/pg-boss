@@ -37,19 +37,17 @@ describe('subscribe', function(){
   });
 
   it('should honor a custom new job check interval', function(finished){
-    this.timeout(5000);
 
     let startTime = new Date();
+    const queue = 'customJobCheckInterval';
     const newJobCheckIntervalSeconds = 3;
 
-    boss.subscribe('foo', {newJobCheckIntervalSeconds}, job => {
-      let elapsed = new Date().getTime() - startTime.getTime();
-
-      assert.isAbove((elapsed / 1000), newJobCheckIntervalSeconds);
-
-      job.done().then(() => finished());
-    })
-      .then(() => boss.publish('foo'));
+    boss.subscribe(queue, {newJobCheckIntervalSeconds}, job => {
+        let elapsedSeconds = (new Date().getTime() - startTime.getTime()) / 1000;
+        assert.isAbove(elapsedSeconds, newJobCheckIntervalSeconds);
+        finished();
+      })
+      .then(() => boss.publish(queue));
 
   });
 

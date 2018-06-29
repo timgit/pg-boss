@@ -366,8 +366,12 @@ function archive(schema){
         )
       RETURNING *
     )
-    INSERT INTO ${schema}.archive
-    SELECT * FROM archived_rows
+    INSERT INTO ${schema}.archive (
+      id, name, priority, data, state, retryLimit, retryCount, retryDelay, retryBackoff, startAfter, startedOn, singletonKey, singletonOn, expireIn, createdOn, completedOn
+    )
+    SELECT 
+      id, name, priority, data, state, retryLimit, retryCount, retryDelay, retryBackoff, startAfter, startedOn, singletonKey, singletonOn, expireIn, createdOn, completedOn
+    FROM archived_rows
   `;
 }
 
