@@ -175,12 +175,12 @@ function getAll(schema) {
         `ALTER TABLE ${schema}.job ALTER COLUMN state SET DATA TYPE ${schema}.job_state USING state::${schema}.job_state`,
         `ALTER TABLE ${schema}.job ALTER COLUMN state SET DEFAULT 'created'`,
         `ALTER TABLE ${schema}.archive ALTER COLUMN state SET DATA TYPE ${schema}.job_state USING state::${schema}.job_state`,
-        `CREATE INDEX job_fetch ON pgboss.job (name, priority desc, createdOn, id) WHERE state < 'active'`,
-        `CREATE UNIQUE INDEX job_singletonOn ON pgboss.job (name, singletonOn) WHERE state < 'expired' AND singletonKey IS NULL`,
-        `CREATE UNIQUE INDEX job_singletonKeyOn ON pgboss.job (name, singletonOn, singletonKey) WHERE state < 'expired'`,
-        `CREATE UNIQUE INDEX job_singletonKey ON pgboss.job (name, singletonKey) WHERE state < 'completed' AND singletonOn IS NULL`,
+        `CREATE INDEX job_fetch ON ${schema}.job (name, priority desc, createdOn, id) WHERE state < 'active'`,
+        `CREATE UNIQUE INDEX job_singletonOn ON ${schema}.job (name, singletonOn) WHERE state < 'expired' AND singletonKey IS NULL`,
+        `CREATE UNIQUE INDEX job_singletonKeyOn ON ${schema}.job (name, singletonOn, singletonKey) WHERE state < 'expired'`,
+        `CREATE UNIQUE INDEX job_singletonKey ON ${schema}.job (name, singletonKey) WHERE state < 'completed' AND singletonOn IS NULL`,
         // add new job name index
-        `CREATE INDEX job_name ON pgboss.job (name) WHERE state < 'active'`
+        `CREATE INDEX job_name ON ${schema}.job (name) WHERE state < 'active'`
       ],
       uninstall: [
         `ALTER TABLE ${schema}.job ALTER COLUMN id DROP DEFAULT`,
@@ -214,10 +214,10 @@ function getAll(schema) {
         `ALTER TABLE ${schema}.job ALTER COLUMN state SET DATA TYPE ${schema}.job_state USING state::${schema}.job_state`,
         `ALTER TABLE ${schema}.job ALTER COLUMN state SET DEFAULT 'created'`,
         `ALTER TABLE ${schema}.archive ALTER COLUMN state SET DATA TYPE ${schema}.job_state USING state::${schema}.job_state`,
-        `CREATE INDEX job_fetch ON pgboss.job (name, priority desc, createdOn, id) WHERE state < 'active'`,
-        `CREATE UNIQUE INDEX job_singletonOn ON pgboss.job (name, singletonOn) WHERE state < 'expired' AND singletonKey IS NULL`,
-        `CREATE UNIQUE INDEX job_singletonKeyOn ON pgboss.job (name, singletonOn, singletonKey) WHERE state < 'expired'`,
-        `CREATE UNIQUE INDEX job_singletonKey ON pgboss.job (name, singletonKey) WHERE state < 'complete' AND singletonOn IS NULL`
+        `CREATE INDEX job_fetch ON ${schema}.job (name, priority desc, createdOn, id) WHERE state < 'active'`,
+        `CREATE UNIQUE INDEX job_singletonOn ON ${schema}.job (name, singletonOn) WHERE state < 'expired' AND singletonKey IS NULL`,
+        `CREATE UNIQUE INDEX job_singletonKeyOn ON ${schema}.job (name, singletonOn, singletonKey) WHERE state < 'expired'`,
+        `CREATE UNIQUE INDEX job_singletonKey ON ${schema}.job (name, singletonKey) WHERE state < 'complete' AND singletonOn IS NULL`
       ]
     }
   ];
