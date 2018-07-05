@@ -26,7 +26,7 @@ module.exports = {
   countStates,
   deleteQueue,
   deleteAllQueues,
-  states,
+  states: Object.assign({}, states),
   completedJobSuffix,
 };
 

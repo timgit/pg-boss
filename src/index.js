@@ -4,6 +4,7 @@ const Contractor = require('./contractor');
 const Manager = require('./manager');
 const Boss = require('./boss');
 const Db = require('./db');
+const plans = require('./plans');
 
 const notReadyErrorMessage = `boss ain't ready.  Use start() or connect() to get started.`;
 const alreadyStartedErrorMessage = 'boss.start() has already been called on this instance.';
@@ -119,3 +120,4 @@ class PgBoss extends EventEmitter {
 }
 
 module.exports = PgBoss;
+module.exports.states = plans.states;

@@ -28,8 +28,10 @@ function ready() {
     .then(() => console.log(`subscribed to queue ${someQueue}`));
 
   boss.onComplete(someQueue, job => {
+    if(job.data.failed)
+      return console.error(`job ${job.data.request.id} ${job.data.state}`);
+
     console.log(`job ${job.data.request.id} completed`);
-    console.log(` - in state ${job.data.state}`);
     console.log(` - responded with '${job.data.response.value}'`);
   })
   .then(() => console.log(`subscribed to queue ${someQueue} completions`));
