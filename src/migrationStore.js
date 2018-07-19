@@ -155,8 +155,8 @@ function getAll(schema) {
         `ALTER TABLE ${schema}.job ALTER COLUMN expireIn SET NOT NULL`,
         `ALTER TABLE ${schema}.job ALTER COLUMN expireIn SET DEFAULT interval '15 minutes'`,
         // archive table schema changes
-        `ALTER TABLE ${schema}.archive ADD retryDelay integer not null`,
-        `ALTER TABLE ${schema}.archive ADD retryBackoff boolean not null`,
+        `ALTER TABLE ${schema}.archive ADD retryDelay integer not null DEFAULT (0)`,
+        `ALTER TABLE ${schema}.archive ADD retryBackoff boolean not null DEFAULT false`,
         `ALTER TABLE ${schema}.archive ADD startAfter timestamp with time zone`,
         `UPDATE ${schema}.archive SET startAfter = createdOn + startIn`,
         `ALTER TABLE ${schema}.archive DROP COLUMN startIn`,
