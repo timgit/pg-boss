@@ -7,41 +7,28 @@ Queueing jobs in Node.js using PostgreSQL like a boss.
 [![Dependencies](https://david-dm.org/timgit/pg-boss.svg)](https://david-dm.org/timgit/pg-boss)
 
 ```js
-const PgBoss = require('pg-boss');
-const boss = new PgBoss('postgres://user:pass@host/database');
+async function readme() {
+  const PgBoss = require('pg-boss');
+  const boss = new PgBoss('postgres://user:pass@host/database');
 
-boss.on('error', error => console.error(error));
+  boss.on('error', error => console.error(error));
 
-boss.start()
-  .then(ready)
-  .catch(error => console.error(error));
+  await boss.start();
+  
+  const queue = 'some-queue';
 
-function ready() {
-  const someQueue = 'some-queue';
+  let jobId = await boss.publish(queue, {param1: 'parameter1'})
+  
+  console.log(`created job in queue ${queue}: ${jobId}`);
 
-  boss.publish(someQueue, {param1: 'parameter1'})
-    .then(jobId => {
-      console.log(`created job in queue ${someQueue}: ${jobId}`);
-    });
-
-  boss.subscribe(someQueue, job => someAsyncJobHandler(job))
-    .then(() => console.log(`subscribed to queue ${someQueue}`));
-
-  boss.onComplete(someQueue, job => {
-    if(job.data.failed)
-      return console.error(`job ${job.data.request.id} ${job.data.state}`);
-
-    console.log(`job ${job.data.request.id} completed`);
-    console.log(` - responded with '${job.data.response.value}'`);
-  })
-  .then(() => console.log(`subscribed to queue ${someQueue} completions`));
+  await boss.subscribe(queue, someAsyncJobHandler);
 }
 
-function someAsyncJobHandler(job) {
-  console.log(`job ${job.id} received`);
-  console.log(` - with data: ${JSON.stringify(job.data)}`);
+async function someAsyncJobHandler(job) {
+  console.log(`job ${job.id} received with data:`);
+  console.log(JSON.stringify(job.data));
     
-  return Promise.resolve('got it');
+  await doSomethingAsyncWithThis(job.data);
 }
 ```
 
