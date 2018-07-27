@@ -56,7 +56,7 @@ This will likely cater the most to teams already familiar with the simplicity of
 * Automatic archiving for completed jobs
 
 ## Requirements
-* Node 4 or higher
+* Node 6 or higher
 * PostgreSQL 9.5 or higher
 
 ## Installation
