@@ -11,21 +11,21 @@
 - Backpressure support added to `subscribe()`! If your callback returns a promise, it will defer polling and other callbacks until it resolves.
   - Returning a value in your promise replaces the need to use the job.done() callback, as this will be handled automatically. Any errors thrown will also automatically fail the job.
   - A new option `teamConcurrency` was added that can be used along with `teamSize` for single job callbacks to control backpressure if a promise is returned. 
-- `subscribe()` will now return an array of jobs all at once when `batchSize` is specified. When combined with your callback returning a promise once all jobs are completed, this should reduce the polling load on your database.
+- `subscribe()` will now return an array of jobs all at once when `batchSize` is specified.
 - `fetch()` now returns jobs with a convenience `job.done()` function like `subscribe()`
 - Reduced polling load by consolidating all state-based completion subscriptions to `onComplete()`
   - Want to know if the job failed?  `job.data.failed` will be true.
   - Want to know if the job expired?  `job.data.state` will be `'expired'`.
   - Want to avoid hard-coding that constant? All state names are now exported in the root module and can be required as needed, like in the following example.
-     ```
+     ```js
      const {states} = require('pg-boss');
      
      if(job.data.state === states.expired) {
          console.log(`job ${job.data.request.id} in queue ${job.data.request.name} expired`);
-         console.log(`createdOn: ${job.data.createdOn}');     
-         console.log(`startedOn: ${job.data.startedOn}');     
-         console.log(`expiredOn: ${job.data.completedOn}');
-         console.log(`retryCount: ${job.data.retryCount}');
+         console.log(`createdOn: ${job.data.createdOn}`);     
+         console.log(`startedOn: ${job.data.startedOn}`);     
+         console.log(`expiredOn: ${job.data.completedOn}`);
+         console.log(`retryCount: ${job.data.retryCount}`);
      }
      ```
 - Batch failure and completion now create completed state jobs for `onComplete()`.  Previously, if you called complete or fail with an array of job IDs, no state jobs were created.
