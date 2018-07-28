@@ -14,6 +14,20 @@
 - `subscribe()` will now return an array of jobs all at once when `batchSize` is specified. When combined with your callback returning a promise once all jobs are completed, this should reduce the polling load on your database.
 - `fetch()` now returns jobs with a convenience `job.done()` function like `subscribe()`
 - Reduced polling load by consolidating all state-based completion subscriptions to `onComplete()`
+  - Want to know if the job failed?  `job.data.failed` will be true.
+  - Want to know if the job expired?  `job.data.state` will be `'expired'`.
+  - Want to avoid hard-coding that constant? All state names are now exported in the root module and can be required as needed, like in the following example.
+     ```
+     const {states} = require('pg-boss');
+     
+     if(job.data.state === states.expired) {
+         console.log(`job ${job.data.request.id} in queue ${job.data.request.name} expired`);
+         console.log(`createdOn: ${job.data.createdOn}');     
+         console.log(`startedOn: ${job.data.startedOn}');     
+         console.log(`expiredOn: ${job.data.completedOn}');
+         console.log(`retryCount: ${job.data.retryCount}');
+     }
+     ```
 - Batch failure and completion now create completed state jobs for `onComplete()`.  Previously, if you called complete or fail with an array of job IDs, no state jobs were created.
 - Added convenience publish functions that set different configuration options:
   - `publishThrottled(name, data, options, seconds, key)` 
@@ -32,9 +46,10 @@
 - `startIn` option has been renamed to `startAfter` to make its behavior more clear.  Previously, this value accepted an integer for the number of seconds of delay, or a PostgreSQL interval string.  The interval string has been replaced with an UTC ISO date time string (must end in Z), or you can pass a Date object.
 - `singletonDays` option has been removed
 
-### Other items of interest
+### Fixes and other items of interest
 - The pgcrypto extension is now used internally for uuid generation with onComplete().  It will be added in the database if it's not already added.
 - Adjusted indexes to help with fetch performance
+- Errors thrown in job handlers will now correctly serialize into the response property of the completion job.
 
 ## 2.5.1
 
