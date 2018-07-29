@@ -45,6 +45,7 @@
 - Removed `onFail()`, `offFail()`, `onExpire()`, `onExpire()`, `fetchFailed()` and `fetchExpired()`.  All job completion subscriptions should now use `onComplete()`. Jobs returned will have `request`, `response`, and `state` properties on `data`.  `state` will indicate how the job completed: `'failed'`, `'expired'` or `'completed'`.
 - `startIn` option has been renamed to `startAfter` to make its behavior more clear.  Previously, this value accepted an integer for the number of seconds of delay, or a PostgreSQL interval string.  The interval string has been replaced with an UTC ISO date time string (must end in Z), or you can pass a Date object.
 - `singletonDays` option has been removed
+- Dropped node 4 support.  3.0 will run fine on node 4, but it is now no longer tested in CI builds, so future releases may not work.
 
 ### Fixes and other items of interest
 - The pgcrypto extension is now used internally for uuid generation with onComplete().  It will be added in the database if it's not already added.
