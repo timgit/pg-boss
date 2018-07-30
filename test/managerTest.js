@@ -16,14 +16,9 @@ describe('manager', function(){
     const boss = new PgBoss(helper.getConfig());
 
     boss.start()
-      .then(() => Promise.delay(1000))
-      .then(() => boss.stop())
-      .then(() => finished());
-
-    boss.start()
-      .catch(() => {
-        assert(true);
-      });
+      .then(() => Promise.delay(2000))
+      .then(() => boss.start())
+      .catch(() => boss.stop().then(() => finished()))
 
   });
 

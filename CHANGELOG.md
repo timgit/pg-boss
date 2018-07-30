@@ -1,5 +1,57 @@
 # Changes
 
+## :tada: 3.0.0 :tada:
+
+### Additions and Enhancements
+
+- Retry support added for failed jobs!  Pretty much the #1 feature request of all time.
+- Retry delay and backoff options added!  Expired and failed jobs can now delay a retry by a fixed time, or even a jittered exponential backoff.
+  - New publish options: `retryDelay` (int) and `retryBackoff` (bool)
+  - `retryBackoff` will use an exponential backoff algorithm with jitter to somewhat randomize the distribution. Inspired by Marc on the AWS blog post [Exponential Backoff and Jitter](https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/)
+- Backpressure support added to `subscribe()`! If your callback returns a promise, it will defer polling and other callbacks until it resolves.
+  - Returning a value in your promise replaces the need to use the job.done() callback, as this will be handled automatically. Any errors thrown will also automatically fail the job.
+  - A new option `teamConcurrency` was added that can be used along with `teamSize` for single job callbacks to control backpressure if a promise is returned. 
+- `subscribe()` will now return an array of jobs all at once when `batchSize` is specified.
+- `fetch()` now returns jobs with a convenience `job.done()` function like `subscribe()`
+- Reduced polling load by consolidating all state-based completion subscriptions to `onComplete()`
+  - Want to know if the job failed?  `job.data.failed` will be true.
+  - Want to know if the job expired?  `job.data.state` will be `'expired'`.
+  - Want to avoid hard-coding that constant? All state names are now exported in the root module and can be required as needed, like in the following example.
+     ```js
+     const {states} = require('pg-boss');
+     
+     if(job.data.state === states.expired) {
+         console.log(`job ${job.data.request.id} in queue ${job.data.request.name} expired`);
+         console.log(`createdOn: ${job.data.createdOn}`);     
+         console.log(`startedOn: ${job.data.startedOn}`);     
+         console.log(`expiredOn: ${job.data.completedOn}`);
+         console.log(`retryCount: ${job.data.retryCount}`);
+     }
+     ```
+- Batch failure and completion now create completed state jobs for `onComplete()`.  Previously, if you called complete or fail with an array of job IDs, no state jobs were created.
+- Added convenience publish functions that set different configuration options:
+  - `publishThrottled(name, data, options, seconds, key)` 
+  - `publishDebounced(name, data, options, seconds, key)`
+  - `publishAfter(name, data, options, seconds | ISO date string | Date)`
+  - `publishOnce(name, data, options, key)`
+- Added `deleteQueue()` and `deleteAllQueues()` api to clear queues if and when needed.
+
+### Semver major items & breaking changes
+- Removed all events that emitted jobs, such as `failed`, `expired-job`, and `job`, as these were all instance-bound and pre-dated the distribution-friendly `onComplete()`
+- Removed extra convenience `done()` argument in `subscribe()` callback in favor of consolidating to `job.done()`
+- Renamed `expired-count` event to `expired`
+- Failure and completion results are now wrapped in an object with a value property if they're not an object
+- `subscribe()` with a `batchSize` property now runs the callback only once with an array of jobs. The `teamSize` option still calls back once per job.
+- Removed `onFail()`, `offFail()`, `onExpire()`, `onExpire()`, `fetchFailed()` and `fetchExpired()`.  All job completion subscriptions should now use `onComplete()`. Jobs returned will have `request`, `response`, and `state` properties on `data`.  `state` will indicate how the job completed: `'failed'`, `'expired'` or `'completed'`.
+- `startIn` option has been renamed to `startAfter` to make its behavior more clear.  Previously, this value accepted an integer for the number of seconds of delay, or a PostgreSQL interval string.  The interval string has been replaced with an UTC ISO date time string (must end in Z), or you can pass a Date object.
+- `singletonDays` option has been removed
+- Dropped node 4 support.  3.0 will run fine on node 4, but it is now no longer tested in CI builds, so future releases may not work.
+
+### Fixes and other items of interest
+- The pgcrypto extension is now used internally for uuid generation with onComplete().  It will be added in the database if it's not already added.
+- Adjusted indexes to help with fetch performance
+- Errors thrown in job handlers will now correctly serialize into the response property of the completion job.
+
 ## 2.5.1
 
 - Added `max` constructor option additional to `poolSize`

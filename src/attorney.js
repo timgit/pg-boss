@@ -73,8 +73,8 @@ function checkSubscribeArgs(name, args){
   return Promise.resolve({options, callback});
 }
 
-function checkFetchArgs(name, batchSize){
-  return assertAsync(name, 'missing job name')
+function checkFetchArgs(names, batchSize){
+  return assertAsync(names.every(n => n), 'missing job name')
     .then(() => assert(!batchSize || batchSize >=1, 'fetch() assert: optional batchSize arg must be at least 1'));
 }
 
@@ -106,16 +106,9 @@ function applyConfig(config) {
 
 function applyDatabaseConfig(config) {
 
-  if(typeof config === 'string') {
-    config = {connectionString: config};
-  }
-  else if (typeof (config.connectionString) !== 'string' && typeof config.db !== 'object') {
-    assert(config.database && config.user,
-      'configuration assert: not enough database settings to connect to PostgreSQL');
-
-    config.host = config.host || '127.0.0.1';
-    config.port = config.port || 5432;
-  }
+  config = (typeof config === 'string')
+    ? {connectionString: config}
+    : config || {};
 
   if(config.schema){
     assert(typeof config.schema === 'string', 'configuration assert: schema must be a string');

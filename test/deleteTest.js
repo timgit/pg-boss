@@ -40,8 +40,11 @@ describe('delete', function() {
       .then(() => boss.complete(jobId))
       .then(() => Promise.delay(3000))
       .then(() => helper.getArchivedJobById(jobId))
-      .then(result => assert.equal(0, result.rows.length))
-      .then(() => finished());
+      .then(job => {
+        assert.strictEqual(job, null);
+        finished();
+      });
+
   });
 
 });

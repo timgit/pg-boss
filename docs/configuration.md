@@ -148,9 +148,10 @@ When `archiveCheckIntervalSeconds` is specified, `archiveCheckInterval` is ignor
     optional priority.  Higher numbers have, um, higher priority
 
 ### Delayed jobs
-* **startIn** int or string
+* **startAfter** int, string, or Date
   * int: seconds to delay starting the job
-  * string: PostgreSQL interval to delay starting the job
+  * string: Start after a UTC Date time string in 8601 format
+  * Date: Start after a Date object
 
     Default: 0
 
@@ -170,7 +171,6 @@ This can be used in conjunction with throttling explained below.
 * **singletonSeconds**, int
 * **singletonMinutes**, int
 * **singletonHours**, int
-* **singletonDays**, int
 * **singletonNextSlot**, bool
 
 Throttling jobs to 'once every n units', where units could be seconds, minutes, hours or days.  This option is set on the publish side of the API since jobs may or may not be created based on the existence of other jobs.
@@ -187,6 +187,14 @@ Setting `singletonNextSlot` to true will cause the job to be scheduled to run af
 
     Default: 0
 
+* **retryDelay**, int
+
+    Default: 0
+
+* **retryBackoff**, bool
+
+    Default: false
+
 ### Job expiration
 
 * **expireIn**, string, PostgreSQL interval
@@ -195,9 +203,17 @@ Setting `singletonNextSlot` to true will cause the job to be scheduled to run af
 
 ## Subscribe Options
 
-* **teamSize** or **batchSize**, int
+* **teamSize**, int
 
-    Default: 1. How many jobs will be fetched per polling interval.  
+    Default: 1. How many jobs can be fetched per polling interval. Callback will be executed once per job.
+
+* **teamConcurrency**, int
+
+    Default: 2. How many callbacks will be called concurrently if promises are used for polling backpressure. Intended to be used along with `teamSize`.
+
+* **batchSize**, int
+
+    How many jobs can be fetched per polling interval.  Callback will be executed once per batch.
 
 * **newJobCheckInterval**, int
 

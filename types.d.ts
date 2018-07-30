@@ -45,18 +45,18 @@ declare namespace PgBoss {
   type ConstructorOptions = DatabaseOptions & JobCreationOptions & JobFetchOptions & JobExpirationOptions & JobArchiveOptions;
 
   interface PublishOptions {
-    startIn?: number | string;
+    startAfter?: number | string | Date;
     singletonKey?: string;
     singletonSeconds?: number;
     singletonMinutes?: number;
     singletonHours?: number;
-    singletonDays?: number;
     retryLimit?: number;
     expireIn?: string;
   }
 
   interface SubscribeOptions {
     teamSize?: number;
+    teamConcurrency?: number;
     batchSize?: number;
     newJobCheckInterval?: number;
     newJobCheckIntervalSeconds?: number;
@@ -102,11 +102,8 @@ declare class PgBoss {
   constructor(options: PgBoss.ConstructorOptions);
 
   on(event: "error", handler: (error: Error) => void): void;
-  on(event: "job", handler: (job: PgBoss.Job) => void): void;
-  on(event: "failed", handler: (failure: { job: PgBoss.Job; error: Error }) => void): void;
   on(event: "archived", handler: (count: number) => void): void;
-  on(event: "expired-count", handler: (count: number) => void): void;
-  on(event: "expired-job", handler: (job: PgBoss.Job) => void): void;
+  on(event: "expired", handler: (count: number) => void): void;
   on(event: "monitor-states", handler: (monitorStates: PgBoss.MonitorStates) => void): void;
   start(): Promise<PgBoss>;
   stop(): Promise<void>;
@@ -115,28 +112,28 @@ declare class PgBoss {
   publish(request: PgBoss.Request): Promise<string | null>;
   publish(name: string, data: object): Promise<string | null>;
   publish(name: string, data: object, options: PgBoss.PublishOptions): Promise<string | null>;
+  publishAfter(name: string, data: object, options: PgBoss.PublishOptions, date: Date): Promise<string | null>;
+  publishAfter(name: string, data: object, options: PgBoss.PublishOptions, dateString: string): Promise<string | null>;
+  publishAfter(name: string, data: object, options: PgBoss.PublishOptions, seconds: number): Promise<string | null>;
+  publishOnce(name: string, data: object, options: PgBoss.PublishOptions, key: string): Promise<string | null>;
+  publishThrottled(name: string, data: object, options: PgBoss.PublishOptions, seconds: number): Promise<string | null>;
+  publishThrottled(name: string, data: object, options: PgBoss.PublishOptions, seconds: number, key: string): Promise<string | null>;
+  publishDebounced(name: string, data: object, options: PgBoss.PublishOptions, seconds: number): Promise<string | null>;
+  publishDebounced(name: string, data: object, options: PgBoss.PublishOptions, seconds: number, key: string): Promise<string | null>;
   subscribe<ReqData, ResData>(name: string, handler: PgBoss.SubscribeHandler<ReqData, ResData>): Promise<void>;
   subscribe<ReqData, ResData>(
     name: string,
     options: PgBoss.SubscribeOptions,
     handler: PgBoss.SubscribeHandler<ReqData, ResData>
   ): Promise<void>;
+  unsubscribe(name: string): Promise<boolean>;
   onComplete(name: string, handler: Function): Promise<void>;
   onComplete(name: string, options: PgBoss.SubscribeOptions, handler: Function): Promise<void>;
-  onFail(name: string, handler: Function): Promise<void>;
-  onFail(name: string, options: PgBoss.SubscribeOptions, handler: Function): Promise<void>;
-  unsubscribe(name: string): Promise<boolean>;
   offComplete(name: string): Promise<boolean>;
-  offExpire(name: string): Promise<boolean>;
-  offFail(name: string): Promise<boolean>;
   fetch<T>(name: string): Promise<PgBoss.Job<T> | null>;
   fetch<T>(name: string, batchSize: number): Promise<PgBoss.Job<T>[] | null>;
   fetchCompleted<T>(name: string): Promise<PgBoss.Job<T> | null>;
   fetchCompleted<T>(name: string, batchSize: number): Promise<PgBoss.Job<T>[] | null>;
-  fetchExpired<T>(name: string): Promise<PgBoss.Job<T> | null>;
-  fetchExpired<T>(name: string, batchSize: number): Promise<PgBoss.Job<T>[] | null>;
-  fetchFailed<T>(name: string): Promise<PgBoss.Job<T> | null>;
-  fetchFailed<T>(name: string, batchSize: number): Promise<PgBoss.Job<T>[] | null>;
   cancel(id: string): Promise<void>;
   cancel(ids: string[]): Promise<void>;
   complete(id: string): Promise<void>;

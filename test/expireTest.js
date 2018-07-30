@@ -27,72 +27,17 @@ describe('expire', function() {
     let jobName = 'i-take-too-long';
     let jobId = null;
 
-    boss.on('expired-count', count => assert.equal(1, count));
-    boss.on('expired-job', job => assert.equal(job.id, jobId));
-
     boss.publish({name: jobName, options: {expireIn:'1 second'}})
-      .then(id => jobId = id);
-
-    boss.onExpire(jobName, job => {
-      // giving event emitter assertions a chance
-      setTimeout(() => {
-        assert.equal(jobId, job.id);
-        finished();
-      }, 500);
-
-    });
-
-    boss.subscribe(jobName, job => {});
-  });
-
-
-  it('should unsubscribe an expiration subscription', function(finished){
-    this.timeout(5000);
-
-    const jobName = 'offExpire';
-    const jobRequest = {name: jobName, options: {expireIn:'1 second'}};
-
-    let receivedCount = 0;
-
-    boss.onExpire(jobName, job => {
-      receivedCount++;
-
-      boss.offExpire(jobName)
-        .then(() => boss.publish(jobRequest));
-    });
-
-    boss.publish(jobRequest)
-      .then(() => {
-
-        setTimeout(() => {
-          assert.strictEqual(receivedCount, 1);
-          finished();
-        }, 4000);
-
-      });
-
-    boss.subscribe(jobName, job => {});
-
-  });
-
-  it('should fetch an expired job', function(finished){
-
-    this.timeout(3000);
-
-    const jobName = 'fetchExpired';
-    const jobRequest = {name: jobName, options: {expireIn:'1 second'}};
-
-    let jobId;
-
-    boss.publish(jobRequest)
       .then(id => jobId = id)
       .then(() => boss.fetch(jobName))
       .then(() => Promise.delay(2000))
-      .then(() => boss.fetchExpired(jobName))
+      .then(() => boss.fetchCompleted(jobName))
       .then(job => {
-        assert.strictEqual(job.id, jobId);
+        assert.equal(jobId, job.data.request.id);
+        assert.equal('expired', job.data.state);
         finished();
-      })
-  });
+      });
+
+    });
 
 });

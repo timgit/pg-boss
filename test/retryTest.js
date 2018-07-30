@@ -1,5 +1,6 @@
 const assert = require('chai').assert;
 const helper = require('./testHelper');
+const Promise = require('bluebird');
 
 describe('retries', function() {
 
@@ -38,4 +39,72 @@ describe('retries', function() {
     }, 3000);
 
   });
+
+  it('should retry a job that failed', function(finished){
+    const queueName = 'retryFailed';
+    const retryLimit = 1;
+
+    boss.publish(queueName, null, {retryLimit})
+      .then(() => boss.fetch(queueName))
+      .then(job => boss.fail(job.id))
+      .then(() => boss.fetch(queueName))
+      .then(job => {
+        assert(job, `failed job didn't get a 2nd chance`);
+        finished();
+      });
+  });
+
+  it('should retry with a fixed delay', function(finished){
+    const queue = 'retryDelayFixed';
+
+    boss.publish(queue, null, {retryLimit: 1, retryDelay: 1})
+      .then(() => boss.fetch(queue))
+      .then(job => boss.fail(job.id))
+      .then(() => boss.fetch(queue))
+      .then(job => assert.strictEqual(job, null))
+      .then(() => Promise.delay(1000))
+      .then(() => boss.fetch(queue))
+      .then(job => {
+        assert.isOk(job);
+        finished();
+      });
+
+  });
+
+  it('should retry with a exponential backoff', function(finished){
+
+    const queue = 'retryDelayBackoff';
+
+    let subscribeCount = 0;
+    let retryLimit = 4;
+
+    boss.subscribe(queue, {newJobCheckInterval:500}, job => job.done(++subscribeCount))
+      .then(() => boss.publish(queue, null, {retryLimit, retryBackoff: true}))
+      .then(() => Promise.delay(9000))
+      .then(() => {
+          assert.isBelow(subscribeCount, retryLimit);
+          finished();
+      });
+
+  });
+
+  it('should set the default retry limit to 1 if missing', function(finished){
+
+    const queue = 'retryLimitDefault';
+
+    boss.publish(queue, null, {retryDelay: 1})
+      .then(() => boss.fetch(queue))
+      .then(job => boss.fail(job.id))
+      .then(() => boss.fetch(queue))
+      .then(job => assert.strictEqual(job, null))
+      .then(() => Promise.delay(1000))
+      .then(() => boss.fetch(queue))
+      .then(job => {
+        assert.isOk(job);
+        finished();
+      });
+
+  });
+
+
 });

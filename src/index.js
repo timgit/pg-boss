@@ -4,9 +4,10 @@ const Contractor = require('./contractor');
 const Manager = require('./manager');
 const Boss = require('./boss');
 const Db = require('./db');
+const plans = require('./plans');
 
 const notReadyErrorMessage = `boss ain't ready.  Use start() or connect() to get started.`;
-const startInProgressErrorMessage = 'boss is starting up. Please wait for the previous start() to finish.';
+const alreadyStartedErrorMessage = 'boss.start() has already been called on this instance.';
 const notStartedErrorMessage = `boss ain't started.  Use start().`;
 
 class PgBoss extends EventEmitter {
@@ -30,12 +31,10 @@ class PgBoss extends EventEmitter {
 
     const manager = new Manager(db, config);
     Object.keys(manager.events).forEach(event => promoteEvent.call(this, manager, manager.events[event]));
-
     manager.functions.forEach(func => promoteFunction.call(this, manager, func));
 
     const boss = new Boss(db, config);
     Object.keys(boss.events).forEach(event => promoteEvent.call(this, boss, boss.events[event]));
-    boss.on(boss.events.expiredJob, job => manager.expired(job));
 
     this.config = config;
     this.db = db;
@@ -70,31 +69,22 @@ class PgBoss extends EventEmitter {
 
   }
 
-  init() {
-    if(this.isReady) return Promise.resolve(this);
+  start(options) {
+    if(this.isStarted) return Promise.reject(alreadyStartedErrorMessage);
 
-    return this.boss.supervise()
+    options = options || {};
+
+    this.isStarted = true;
+
+    return this.contractor.start.call(this.contractor)
       .then(() => {
         this.isReady = true;
-        this.isStarted = true;
+
+        if(!options.noSupervisor)
+          this.boss.supervise(); // not in promise chain for async start()
+
         return this;
-    });
-  }
-
-  start(...args) {
-    if(this.isStarting)
-      return Promise.reject(startInProgressErrorMessage);
-
-    this.isStarting = true;
-
-    let check = this.isStarted
-      ? Promise.resolve(true)
-      : this.contractor.start.apply(this.contractor, args);
-
-    return check.then(() => {
-        this.isStarting = false;
-        return this.init();
-    });
+      });
   }
 
   stop() {
@@ -111,8 +101,8 @@ class PgBoss extends EventEmitter {
       });
   }
 
-  connect(...args) {
-    return this.contractor.connect.apply(this.contractor, args)
+  connect() {
+    return this.contractor.connect.call(this.contractor)
       .then(() => {
         this.isReady = true;
         return this;
@@ -130,3 +120,4 @@ class PgBoss extends EventEmitter {
 }
 
 module.exports = PgBoss;
+module.exports.states = plans.states;

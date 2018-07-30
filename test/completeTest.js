@@ -94,8 +94,6 @@ describe('complete', function() {
       assert.equal(job.data.response.message, responsePayload.message);
       assert.equal(job.data.response.code, responsePayload.code);
 
-      console.log(JSON.stringify(job, null, '  '));
-
       finished();
     });
 
@@ -178,7 +176,7 @@ describe('complete', function() {
       .then(() => boss.complete(jobId))
       .then(() => boss.fetchCompleted(jobName))
       .then(job => boss.complete(job.id))
-      .then(() => helper.countJobs(`name LIKE $1`, [`${jobName}${helper.stateJobDelimiter}%`]))
+      .then(() => helper.countJobs(`name = $1`, [`${jobName}${helper.completedJobSuffix}`]))
       .then(stateJobCount => {
         assert.strictEqual(stateJobCount, 1);
         finished();

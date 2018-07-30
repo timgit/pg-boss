@@ -4,22 +4,24 @@ const helper = require('./testHelper');
 
 describe('speed', function() {
 
-  const expectedSeconds = 4;
-  const jobCount = 2000;
-  const jobName = 'one_of_many';
-  const jobs = new Array(jobCount).fill(null);
+  const expectedSeconds = 5;
+  const jobCount = 10000;
+  const name = 'speedTest';
+
+  this.timeout(10000);
+
+  const jobs = new Array(jobCount).fill(null).map((item, index) => ({name, data:{index}}));
+
   const testTitle = `should be able to complete ${jobCount} jobs in ${expectedSeconds} seconds`;
 
   let boss;
 
   before(function(finished){
-    this.timeout(expectedSeconds * 1000);
-
     helper.start()
       .then(dabauce => {
         boss = dabauce;
 
-        Promise.map(jobs, (val, index) => boss.publish(jobName, {message: 'message #' + index}))
+        Promise.map(jobs, job => boss.publish(job.name, job.data))
           .then(() => finished());
       });
   });
@@ -33,14 +35,15 @@ describe('speed', function() {
 
     const startTime = new Date();
 
-    boss.fetch(jobName, jobCount)
-      .then(jobs => Promise.map(jobs, job => boss.complete(job.id)))
+    boss.fetch(name, jobCount)
+      .then(jobs => boss.complete(jobs.map(job => job.id)))
       .then(() => {
         let elapsed = new Date().getTime() - startTime.getTime();
 
         console.log(`finished ${jobCount} jobs in ${elapsed}ms`);
 
         assert.isBelow(elapsed / 1000, expectedSeconds);
+
         finished();
     });
   });

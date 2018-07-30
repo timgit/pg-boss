@@ -34,8 +34,11 @@ describe('archive', function() {
       .then(() => boss.complete(jobId))
       .then(() => Promise.delay(2000))
       .then(() => helper.getArchivedJobById(jobId))
-      .then(result => assert.equal(1, result.rows.length))
-      .then(() => finished());
+      .then(job => {
+        assert.isOk(job);
+        finished();
+      });
+
   });
 
 });

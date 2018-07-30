@@ -17,10 +17,7 @@ describe('database', function(){
         return boss.stop();
       })
       .then(() => finished())
-      .catch(() => {
-        assert(true);
-        finished();
-      });
+      .catch(() => finished());
   });
 
 

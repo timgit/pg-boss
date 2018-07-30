@@ -1,5 +1,6 @@
 const assert = require('chai').assert;
 const helper = require('./testHelper');
+const Promise = require('bluebird');
 
 describe('error', function(){
 
@@ -23,33 +24,30 @@ describe('error', function(){
 
     this.timeout(3000);
 
+    const queue = 'error-handling';
     let subscribeCount = 0;
 
-    publish()
-      .then(publish)
+    Promise.join(
+      boss.publish(queue),
+      boss.publish(queue)
+    )
       .then(() => {
-        boss.subscribe('cray', job => {
+        boss.subscribe(queue, job => {
 
           subscribeCount++;
 
           if(subscribeCount === 1)
             throw new Error('test - nothing to see here');
           else {
-            job.done().then(() => {
-              assert(true);
-              finished();
-            });
+            job.done()
+              .then(() => finished());
           }
 
         });
       });
 
-    function publish(){
-      return boss.publish('cray', {message: 'volatile'})
-        .then(jobId => console.log(`job submitted: ${jobId}`));
-    }
-
   });
+
 });
 
 

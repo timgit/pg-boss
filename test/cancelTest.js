@@ -30,13 +30,15 @@ describe('cancel', function() {
       finished();
     });
 
-    boss.publish('will_cancel', null, {startIn: 1})
-      .then(id => boss.cancel(id))
-      .then(job => helper.getJobById(job.id))
-      .then(result => {
-        assert(result.rows.length && result.rows[0].state === 'cancelled');
-        finished();
-      });
+    let jobId;
+
+    boss.publish('will_cancel', null, {startAfter: 1})
+      .then(id => jobId = id)
+      .then(() => boss.cancel(jobId))
+      .then(() => helper.getJobById(jobId))
+      .then(job => assert(job && job.state === 'cancelled'))
+      .then(() => finished());
+
   });
 
   it('should not cancel a completed job', function(finished){
@@ -44,8 +46,8 @@ describe('cancel', function() {
     boss.subscribe('will_not_cancel', job => {
         job.done()
           .then(() => boss.cancel(job.id))
-          .catch(() => {
-            assert(true);
+          .then(response => {
+            assert.strictEqual(response.updated,0);
             finished();
           });
       }

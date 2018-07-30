@@ -23,7 +23,7 @@ describe('throttle', function() {
 
     const jobName = 'delayThrottle';
     const singletonSeconds = 4;
-    const startIn = '2 seconds';
+    const startAfter = 2;
 
     const jobCount = 1;
 
@@ -56,7 +56,7 @@ describe('throttle', function() {
 
     intervalId = setInterval(function() {
       if(shuttingDown) return;
-      boss.publish(jobName, null, {startIn, singletonSeconds})
+      boss.publish(jobName, null, {startAfter, singletonSeconds})
         .then(function() { publishCount++; });
     }, publishInterval);
   });
@@ -102,11 +102,11 @@ describe('throttle', function() {
   });
 
 
-  it('should queue successfully into next time slot if throttled', function (finished) {
+  it('should debounce', function (finished) {
 
     this.timeout(3000);
 
-    const jobName = 'singletonPerDayWithFriends';
+    const jobName = 'debounce';
 
     boss.publish(jobName, null, {singletonHours: 1})
       .then(jobId => {
@@ -120,17 +120,53 @@ describe('throttle', function() {
 
   });
 
+  it('should debounce via publishDebounce()', function (finished) {
+
+    this.timeout(3000);
+
+    const jobName = 'publishDebounce()';
+
+    boss.publishDebounced(jobName, null, null, 60)
+      .then(jobId => {
+        assert.isOk(jobId);
+        return boss.publishDebounced(jobName, null, null, 60);
+      })
+      .then(jobId => {
+        assert.isOk(jobId);
+        finished();
+      });
+
+  });
+
 
   it('should reject 2nd request in the same time slot', function (finished) {
 
     this.timeout(3000);
 
-    const jobName = 'singletonPerDay';
+    const jobName = 'throttle-reject-2nd';
 
-    boss.publish(jobName, null, {singletonDays: 1})
+    boss.publish(jobName, null, {singletonHours: 1})
       .then(jobId => {
         assert.isOk(jobId);
-        return boss.publish(jobName, null, {singletonDays: 1});
+        return boss.publish(jobName, null, {singletonHours: 1});
+      })
+      .then(jobId => {
+        assert.isNotOk(jobId);
+        finished();
+      });
+
+  });
+
+  it('should throttle via publishThrottled()', function (finished) {
+
+    this.timeout(3000);
+
+    const jobName = 'publishThrottled()';
+
+    boss.publishThrottled(jobName, null, null, 2)
+      .then(jobId => {
+        assert.isOk(jobId);
+        return boss.publishThrottled(jobName, null, null, 2);
       })
       .then(jobId => {
         assert.isNotOk(jobId);

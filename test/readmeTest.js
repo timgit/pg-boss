@@ -15,43 +15,47 @@ describe('examples', function(){
   it('readme example is totes valid', function(finished){
     const connectionString = helper.getConnectionString();
 
+    let _jobId;
+
     // example start
     const boss = new PgBoss(connectionString);
 
     _boss = boss; // exclude test code
 
-    boss.on('error', onError);
+    boss.on('error', error => console.error(error));
 
     boss.start()
       .then(ready)
-      .catch(onError);
+      .catch(error => console.error(error));
 
     function ready() {
-      boss.publish('some-job', {param1: 'parameter1'})
-        .then(jobId => console.log(`created some-job ${jobId}`))
-        .catch(onError);
+      const someQueue = 'some-queue';
 
-      boss.subscribe('some-job', someJobHandler)
-        .then(() => console.log('subscribed to some-job'))
-        .catch(onError);
+      boss.publish(someQueue, {param1: 'parameter1'})
+        .then(jobId => {
+          console.log(`created job in queue ${someQueue}: ${jobId}`);
+          _jobId = jobId;
+        });
+    
+      boss.subscribe(someQueue, job => someAsyncJobHandler(job))
+        .then(() => console.log(`subscribed to queue ${someQueue}`));
+
+      boss.onComplete(someQueue, job => {
+        console.log(`job ${job.data.request.id} completed`);
+        console.log(` - in state ${job.data.state}`);
+        console.log(` - responded with '${job.data.response.value}'`);
+        assert.strictEqual(job.data.request.id, _jobId); // exclude test code
+        finished();   // exclude test code
+      })
+        .then(() => console.log(`subscribed to queue ${someQueue} completions`));
+
     }
 
-    function someJobHandler(job) {
-      console.log(`received ${job.name} ${job.id}`);
-      console.log(`data: ${JSON.stringify(job.data)}`);
-
-      job.done()
-        .then(() => {
-          console.log(`some-job ${job.id} completed`);
-          assert.equal('some-job', job.name); // exclude test code
-          assert.equal('parameter1', job.data.param1); // exclude test code
-          finished();   // exclude test code
-        })
-        .catch(onError);
-    }
-
-    function onError(error) {
-      console.error(error);
+    function someAsyncJobHandler(job) {
+      console.log(`job ${job.id} received`);
+      console.log(` - with data: ${JSON.stringify(job.data)}`);
+    
+      return Promise.resolve('got it');
     }
     // example end
   });

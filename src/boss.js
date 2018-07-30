@@ -2,12 +2,11 @@ const EventEmitter = require('events');
 const plans = require('./plans');
 
 const events = {
+  error: 'error',
   archived: 'archived',
   deleted: 'deleted',
-  monitorStates: 'monitor-states',
-  expiredCount: 'expired-count',
-  expiredJob: 'expired-job',
-  error: 'error'
+  expired: 'expired',
+  monitorStates: 'monitor-states'
 };
 
 class Boss extends EventEmitter{
@@ -54,8 +53,11 @@ class Boss extends EventEmitter{
   }
 
   stop() {
+    if(this.stopped) return Promise.resolve();
+
     this.stopped = true;
     Object.keys(this.timers).forEach(key => clearTimeout(this.timers[key]));
+    
     return Promise.resolve();
   }
 
@@ -91,10 +93,8 @@ class Boss extends EventEmitter{
   expire() {
     return this.db.executeSql(this.expireCommand)
       .then(result => {
-        if (result.rows.length) {
-          this.emit(events.expiredCount, result.rows.length);
-          return Promise.all(result.rows.map(job => this.emit(events.expiredJob, job)));
-        }
+        if (result.rowCount)
+          this.emit(events.expired, result.rowCount);
       });
   }
 

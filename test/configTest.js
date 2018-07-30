@@ -47,10 +47,8 @@ describe('initialization', function(){
     let connectionString = helper.getConnectionString();
 
     new PgBoss({connectionString}).start()
-      .then(boss => {
-        assert(true);
-        boss.stop().then(() => finished());
-      })
+      .then(boss => boss.stop())
+      .then(() => finished())
       .catch(error => {
         assert(false, error.message);
         finished();

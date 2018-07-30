@@ -20,52 +20,37 @@ describe('publish', function(){
   });
 
   it('should fail with no arguments', function(finished) {
-    boss.publish().catch(error => {
-      assert(true);
-      finished();
-    });
+    boss.publish()
+      .catch(error => finished());
   });
 
   it('should fail with a function for data', function(finished) {
-    boss.publish('job', () => true).catch(error => {
-      assert(true);
-      finished();
-    });
+    boss.publish('job', () => true)
+      .catch(error => finished());
   });
 
   it('should fail with a function for options', function(finished) {
-    boss.publish('job', 'data', () => true).catch(error => {
-      assert(true);
-      finished();
-    });
+    boss.publish('job', 'data', () => true)
+      .catch(error => finished());
   });
 
   it('should accept single string argument', function(finished) {
     const jobName = 'publishNameOnly';
 
-    boss.subscribe(jobName, job => {
-      job.done()
-        .then(() => {
-          assert(true);
-          finished();
-        });
-    });
+    boss.publish(jobName)
+      .then(() => boss.fetch(jobName))
+      .then(job => boss.complete(job.id))
+      .then(() => finished());
 
-    boss.publish(jobName);
   });
-
 
   it('should accept job object argument with only name', function(finished){
     const jobName = 'publishJobNameOnly';
 
-    boss.subscribe(jobName, job => {
-      job.done().then(() => {
-        assert(true);
-        finished();
-      });
-    });
-
-    boss.publish({name: jobName});
+    boss.publish({name: jobName})
+      .then(() => boss.fetch(jobName))
+      .then(job => boss.complete(job.id))
+      .then(() => finished());
   });
 
 
@@ -73,14 +58,14 @@ describe('publish', function(){
     const jobName = 'publishJobNameAndData';
     const message = 'hi';
 
-    boss.subscribe(jobName, job => {
-      job.done().then(() => {
+    boss.publish({name: jobName, data: {message}})
+      .then(() => boss.fetch(jobName))
+      .then(job => {
         assert.equal(message, job.data.message);
-        finished();
-      });
-    });
+        return boss.complete(job.id);
+      })
+      .then(() => finished());
 
-    boss.publish({name: jobName, data: {message}});
   });
 
 
@@ -88,15 +73,22 @@ describe('publish', function(){
     const jobName = 'publishJobNameAndOptions';
     const options = {someCrazyOption:'whatever'};
 
-    boss.subscribe(jobName, job => {
-      job.done().then(() => {
+    boss.publish({name: jobName, options})
+      .then(() => boss.fetch(jobName))
+      .then(job => {
         assert.isNull(job.data);
-        finished();
-      });
-    });
+        return boss.complete(job.id);
+      })
+      .then(() => finished());
 
-    boss.publish({name: jobName, options});
   });
+
+  // it('should accept an array of jobs', function(finished){
+  //   const name = 'publish-array';
+  //
+  //   boss.publish([{name},{name},{name},{name},{name}])
+  //     .then()
+  // });
 
 });
 

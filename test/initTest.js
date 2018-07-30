@@ -20,10 +20,9 @@ describe('initialization', function(){
   });
 
   it('should start with a connection string', function(finished) {
-    new PgBoss(helper.getConnectionString()).start()
-      .then(boss => {
-        assert(true);
-        boss.stop().then(() => finished());
-      });
+    new PgBoss(helper.getConnectionString())
+      .start()
+      .then(boss => boss.stop())
+      .then(() => finished());
   });
 });

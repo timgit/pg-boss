@@ -7,38 +7,28 @@ Queueing jobs in Node.js using PostgreSQL like a boss.
 [![Dependencies](https://david-dm.org/timgit/pg-boss.svg)](https://david-dm.org/timgit/pg-boss)
 
 ```js
-const PgBoss = require('pg-boss');
-const boss = new PgBoss('postgres://user:pass@host/database');
+async function readme() {
+  const PgBoss = require('pg-boss');
+  const boss = new PgBoss('postgres://user:pass@host/database');
 
-boss.on('error', onError);
+  boss.on('error', error => console.error(error));
 
-const queue = 'some-queue-name';
+  await boss.start();
+  
+  const queue = 'some-queue';
 
-boss.start()
-  .then(ready)
-  .catch(onError);
+  let jobId = await boss.publish(queue, {param1: 'parameter1'})
+  
+  console.log(`created job in queue ${queue}: ${jobId}`);
 
-function ready() {
-  boss.publish(queue, {param1: 'parameter1'})
-    .then(jobId => console.log(`created job ${jobId}`))
-    .catch(onError);
-
-  boss.subscribe(queue, someJobHandler)
-    .then(() => console.log(`subscribed to ${queue}`))
-    .catch(onError);
+  await boss.subscribe(queue, someAsyncJobHandler);
 }
 
-function someJobHandler(job) {
-  console.log(`received job ${job.id}`);
-  console.log(`data: ${JSON.stringify(job.data)}`);
-
-  job.done()
-    .then(() => console.log(`job ${job.id} completed`))
-    .catch(onError);
-}
-
-function onError(error) {
-  console.error(error);
+async function someAsyncJobHandler(job) {
+  console.log(`job ${job.id} received with data:`);
+  console.log(JSON.stringify(job.data));
+    
+  await doSomethingAsyncWithThis(job.data);
 }
 ```
 
@@ -53,18 +43,20 @@ This will likely cater the most to teams already familiar with the simplicity of
 ## Features
 * Guaranteed delivery and finalizing of jobs using a promise API
 * Delayed jobs
-* Job retries
-* Job throttling (singleton jobs and rate limiting)
+* Job retries (opt-in exponential backoff)
+* Job throttling (unique jobs, rate limiting and/or debouncing)
+* Job batching for high volume use cases 
+* Backpressure-compatible subscriptions
 * Configurable job concurrency
 * Distributed and/or clustered workers
-* State-based subscriptions to support orchestrations/sagas
-* Ad-hoc job fetching and completion for external integrations (such as web APIs)
+* Completion subscriptions to support orchestrations/sagas
+* On-demand job fetching and completion for external integrations (such as web APIs)
 * Automatic provisioning of required storage into a dedicated schema
 * Automatic monitoring for expired jobs
 * Automatic archiving for completed jobs
 
 ## Requirements
-* Node 4 or higher
+* Node 6 or higher
 * PostgreSQL 9.5 or higher
 
 ## Installation

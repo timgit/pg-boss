@@ -7,7 +7,7 @@ class Worker {
     if(this.stopped) return;
 
     this.config.fetch()
-      .then(this.config.respond)
+      .then(this.config.onFetch)
       .catch(this.config.onError)
       .then(() => setTimeout(() => this.start.apply(this), this.config.interval));
   }
