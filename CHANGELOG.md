@@ -9,7 +9,7 @@
   - New publish options: `retryDelay` (int) and `retryBackoff` (bool)
   - `retryBackoff` will use an exponential backoff algorithm with jitter to somewhat randomize the distribution. Inspired by Marc on the AWS blog post [Exponential Backoff and Jitter](https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/)
 - Backpressure support added to `subscribe()`! If your callback returns a promise, it will defer polling and other callbacks until it resolves.
-  - Returning a value in your promise replaces the need to use the job.done() callback, as this will be handled automatically. Any errors thrown will also automatically fail the job.
+  - Returning a promise replaces the need to use the job.done() callback, as this will be handled automatically. Any errors thrown will also automatically fail the job.
   - A new option `teamConcurrency` was added that can be used along with `teamSize` for single job callbacks to control backpressure if a promise is returned. 
 - `subscribe()` will now return an array of jobs all at once when `batchSize` is specified.
 - `fetch()` now returns jobs with a convenience `job.done()` function like `subscribe()`
@@ -42,15 +42,19 @@
 - Renamed `expired-count` event to `expired`
 - Failure and completion results are now wrapped in an object with a value property if they're not an object
 - `subscribe()` with a `batchSize` property now runs the callback only once with an array of jobs. The `teamSize` option still calls back once per job.
-- Removed `onFail()`, `offFail()`, `onExpire()`, `onExpire()`, `fetchFailed()` and `fetchExpired()`.  All job completion subscriptions should now use `onComplete()`. Jobs returned will have `request`, `response`, and `state` properties on `data`.  `state` will indicate how the job completed: `'failed'`, `'expired'` or `'completed'`.
+- Removed `onFail()`, `offFail()`, `onExpire()`, `onExpire()`, `fetchFailed()` and `fetchExpired()`.  All job completion subscriptions should now use `onComplete()` and fetching is consolidated to `fetchCompleted()`. In order to determine how the job completed, additional helpful properties have been added to `data` on completed jobs, such as `state` and `failed`.
 - `startIn` option has been renamed to `startAfter` to make its behavior more clear.  Previously, this value accepted an integer for the number of seconds of delay, or a PostgreSQL interval string.  The interval string has been replaced with an UTC ISO date time string (must end in Z), or you can pass a Date object.
 - `singletonDays` option has been removed
-- Dropped node 4 support.  3.0 will run fine on node 4, but it is now no longer tested in CI builds, so future releases may not work.
+- Dropping node 4 support.  All tests in 3.0 have passed in CI on node 4, but during release I removed the Travis CI config for it, so future releases may not work.
 
 ### Fixes and other items of interest
 - The pgcrypto extension is now used internally for uuid generation with onComplete().  It will be added in the database if it's not already added.
 - Adjusted indexes to help with fetch performance
 - Errors thrown in job handlers will now correctly serialize into the response property of the completion job.
+
+## 2.5.2
+
+- Typescript defs patch
 
 ## 2.5.1
 
