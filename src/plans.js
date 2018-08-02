@@ -8,7 +8,7 @@ const states = {
   failed: 'failed'
 };
 
-const completedJobSuffix = '__state__' + states.completed;
+const completedJobPrefix = `__state__${states.completed}__`;
 
 module.exports = {
   create,
@@ -27,7 +27,7 @@ module.exports = {
   deleteQueue,
   deleteAllQueues,
   states: Object.assign({}, states),
-  completedJobSuffix,
+  completedJobPrefix,
 };
 
 function create(schema) {
@@ -222,10 +222,10 @@ function completeJobs(schema){
     )
     INSERT INTO ${schema}.job (name, data)
     SELECT
-      name || '${completedJobSuffix}', 
+      '${completedJobPrefix}' || name, 
       ${buildJsonCompletionObject(true)}
     FROM results
-    WHERE name NOT LIKE '%${completedJobSuffix}'
+    WHERE name NOT LIKE '${completedJobPrefix}%'
     RETURNING 1
   `; // returning 1 here just to count results against input array
 }
@@ -267,11 +267,11 @@ function failJobs(schema){
     )
     INSERT INTO ${schema}.job (name, data)
     SELECT
-      name || '${completedJobSuffix}',
+      '${completedJobPrefix}' || name,
       ${buildJsonCompletionObject(true)}
     FROM results
     WHERE state = '${states.failed}'
-      AND NOT name LIKE '%${completedJobSuffix}'
+      AND NOT name LIKE '${completedJobPrefix}%'
     RETURNING 1
   `; // returning 1 here just to count results against input array
 }
@@ -292,11 +292,11 @@ function expire(schema) {
     )
     INSERT INTO ${schema}.job (name, data)
     SELECT
-      name || '${completedJobSuffix}',
+      '${completedJobPrefix}' || name,
       ${buildJsonCompletionObject()}
     FROM results
     WHERE state = '${states.expired}'
-      AND NOT name LIKE '%${completedJobSuffix}'
+      AND NOT name LIKE '%${completedJobPrefix}'
   `;
 }
 
@@ -361,7 +361,7 @@ function archive(schema){
         (completedOn + CAST($1 as interval) < now())
         OR (
           state = '${states.created}'
-          AND name LIKE '%${completedJobSuffix}%'
+          AND name LIKE '${completedJobPrefix}%'
           AND createdOn + CAST($1 as interval) < now()
         )
       RETURNING *
@@ -379,7 +379,7 @@ function countStates(schema){
   return `
     SELECT name, state, count(*) size
     FROM ${schema}.job
-    WHERE name NOT LIKE '%${completedJobSuffix}%'
+    WHERE name NOT LIKE '${completedJobPrefix}%'
     GROUP BY rollup(name), rollup(state)
   `;
 }

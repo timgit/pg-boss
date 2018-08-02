@@ -176,7 +176,7 @@ describe('complete', function() {
       .then(() => boss.complete(jobId))
       .then(() => boss.fetchCompleted(jobName))
       .then(job => boss.complete(job.id))
-      .then(() => helper.countJobs(`name = $1`, [`${jobName}${helper.completedJobSuffix}`]))
+      .then(() => helper.countJobs(`name = $1`, [`${helper.completedJobPrefix}${jobName}`]))
       .then(stateJobCount => {
         assert.strictEqual(stateJobCount, 1);
         finished();

@@ -50,4 +50,19 @@ describe('wildcard', function(){
 
   });
 
+  it('should not accidentally fetch state completion jobs from a pattern', function(finished){
+
+    const baseName = 'wildcard-fetch-incomplete';
+
+    boss.publish(`${baseName}_1234`)
+      .then(() => boss.fetch(`${baseName}_*`))
+      .then(job => boss.complete(job.id))
+      .then(() => boss.fetch(`${baseName}_*`))
+      .then(job => {
+        assert.strictEqual(job, null);
+        finished()
+      });
+
+  });
+
 });

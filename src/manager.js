@@ -6,7 +6,7 @@ const Worker = require('./worker');
 const plans = require('./plans');
 const Attorney = require('./attorney');
 
-const completedJobSuffix = plans.completedJobSuffix;
+const completedJobPrefix = plans.completedJobPrefix;
 
 const events = {
   error: 'error'
@@ -64,7 +64,7 @@ class Manager extends EventEmitter {
 
   onComplete(name, ...args) {
     return Attorney.checkSubscribeArgs(name, args)
-      .then(({options, callback}) => this.watch(name + completedJobSuffix, options, callback));
+      .then(({options, callback}) => this.watch(completedJobPrefix + name, options, callback));
   }
 
   watch(name, options, callback){
@@ -137,7 +137,7 @@ class Manager extends EventEmitter {
   }
 
   offComplete(name){
-    return this.unsubscribe(name + completedJobSuffix);
+    return this.unsubscribe(completedJobPrefix + name);
   }
 
   publish(...args){
@@ -273,7 +273,7 @@ class Manager extends EventEmitter {
   }
 
   fetchCompleted(name, batchSize){
-    return this.fetch(name + completedJobSuffix, batchSize);
+    return this.fetch(completedJobPrefix + name, batchSize);
   }
 
   mapCompletionIdArg(id, funcName) {
