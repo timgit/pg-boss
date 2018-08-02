@@ -37,7 +37,7 @@ function checkPublishArgs(args) {
 
     options = options || {};
 
-    assert(name, 'boss requires all jobs to have a name');
+    assert(name, 'boss requires all jobs to have a queue name');
     assert(typeof options === 'object', 'options should be an object');
 
   } catch (error){
@@ -66,6 +66,8 @@ function checkSubscribeArgs(name, args){
     if(options)
       assert(typeof options === 'object', 'expected config to be an object');
 
+    name = sanitizeQueueNameForFetch(name);
+
   } catch(e) {
     return Promise.reject(e);
   }
@@ -73,9 +75,19 @@ function checkSubscribeArgs(name, args){
   return Promise.resolve({options, callback});
 }
 
-function checkFetchArgs(names, batchSize){
-  return assertAsync(names.every(n => n), 'missing job name')
-    .then(() => assert(!batchSize || batchSize >=1, 'fetch() assert: optional batchSize arg must be at least 1'));
+function checkFetchArgs(queues, batchSize){
+  return assertAsync(queues.every(q => q), 'missing queue name')
+    .then(() => {
+      queues.forEach((queue, index) => queues[index] = sanitizeQueueNameForFetch(queue));
+      assert(!batchSize || batchSize >=1, 'fetch() assert: optional batchSize arg must be at least 1');
+    });
+}
+
+function sanitizeQueueNameForFetch(name) {
+  return name.replace(
+      /[%_\*]/g,
+      match => match === '*' ? '%' : '\\' + match)
+    ;
 }
 
 function assertAsync(arg, errorMessage){

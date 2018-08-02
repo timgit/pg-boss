@@ -180,7 +180,7 @@ function fetchNextJob(schema) {
       SELECT id
       FROM ${schema}.job
       WHERE state < '${states.active}'
-        AND name = ANY($1)
+        AND name LIKE ANY($1)
         AND startAfter < now()
       ORDER BY priority desc, createdOn, id
       LIMIT $2
