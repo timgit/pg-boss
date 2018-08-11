@@ -40,7 +40,6 @@ function create(schema) {
     cloneJobTableForArchive(schema),
     addArchivedOnToArchive(schema),
     createIndexJobName(schema),
-    createIndexJobFetch(schema),
     createIndexSingletonOn(schema),
     createIndexSingletonKeyOn(schema),
     createIndexSingletonKey(schema)
@@ -146,13 +145,7 @@ function createIndexSingletonKeyOn(schema){
 
 function createIndexJobName(schema){
   return `
-    CREATE INDEX job_name ON ${schema}.job (name) WHERE state < '${states.active}'
-  `;
-}
-
-function createIndexJobFetch(schema){
-  return `
-    CREATE INDEX job_fetch ON ${schema}.job (name, priority desc, createdOn, id) WHERE state < '${states.active}'
+    CREATE INDEX job_name ON ${schema}.job (name text_pattern_ops)
   `;
 }
 
@@ -180,7 +173,7 @@ function fetchNextJob(schema) {
       SELECT id
       FROM ${schema}.job
       WHERE state < '${states.active}'
-        AND name LIKE ANY($1)
+        AND name LIKE $1
         AND startAfter < now()
       ORDER BY priority desc, createdOn, id
       LIMIT $2
@@ -216,7 +209,7 @@ function completeJobs(schema){
       UPDATE ${schema}.job
       SET completedOn = now(),
         state = '${states.completed}'
-      WHERE id = ANY($1)
+      WHERE id IN (SELECT UNNEST($1::uuid[]))
         AND state = '${states.active}'
       RETURNING *
     )
@@ -261,7 +254,7 @@ function failJobs(schema){
           END,        
         completedOn = ${retryCompletedOnCase},
         startAfter = ${retryStartAfterCase}
-      WHERE id = ANY($1)
+      WHERE id IN (SELECT UNNEST($1::uuid[]))
         AND state < '${states.completed}'
       RETURNING *
     )
@@ -306,7 +299,7 @@ function cancelJobs(schema){
     UPDATE ${schema}.job
     SET completedOn = now(),
       state = '${states.cancelled}'
-    WHERE id = ANY($1)
+    WHERE id IN (SELECT UNNEST($1::uuid[]))
       AND state < '${states.completed}'
     RETURNING 1
   `;  // returning 1 here just to count results against input array

@@ -219,6 +219,20 @@ function getAll(schema) {
         `CREATE UNIQUE INDEX job_singletonKeyOn ON ${schema}.job (name, singletonOn, singletonKey) WHERE state < 'expired'`,
         `CREATE UNIQUE INDEX job_singletonKey ON ${schema}.job (name, singletonKey) WHERE state < 'complete' AND singletonOn IS NULL`
       ]
-    }
+    },
+    {
+      version: '9',
+      previous: '8',
+      install: [
+        `DROP INDEX ${schema}.job_fetch`,
+        `DROP INDEX ${schema}.job_name`,
+        `CREATE INDEX job_name ON ${schema}.job (name text_pattern_ops)`
+      ],
+      uninstall: [
+        `CREATE INDEX job_fetch ON ${schema}.job (name, priority desc, createdOn, id) WHERE state < 'active'`,
+        `DROP INDEX ${schema}.job_name`,
+        `CREATE INDEX job_name ON ${schema}.job (name) WHERE state < 'active'`
+      ]
+    },
   ];
 }
