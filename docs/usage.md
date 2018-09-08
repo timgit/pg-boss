@@ -3,43 +3,44 @@ Usage
 
 <!-- TOC -->
 
+- [Usage](#usage)
 - [Instance functions](#instance-functions)
-    - [`new(connectionString)`](#newconnectionstring)
-    - [`new(options)`](#newoptions)
-    - [`start()`](#start)
-    - [`stop()`](#stop)
-    - [`connect()`](#connect)
-    - [`disconnect()`](#disconnect)
-    - [`publish()`](#publish)
-        - [`publish(name, data, options)`](#publishname-data-options)
-        - [`publish(request)`](#publishrequest)
-        - [`publishAfter(name, data, options, seconds | ISO date string | Date)`](#publishaftername-data-options-seconds--iso-date-string--date)
-        - [`publishOnce(name, data, options, key)`](#publishoncename-data-options-key)
-        - [`publishThrottled(name, data, options, seconds [, key])`](#publishthrottledname-data-options-seconds--key)
-        - [`publishDebounced(name, data, options, seconds [, key])`](#publishdebouncedname-data-options-seconds--key)
-    - [`subscribe()`](#subscribe)
-        - [`subscribe(name [, options], handler)`](#subscribename--options-handler)
-        - [`onComplete(name [, options], handler)`](#oncompletename--options-handler)
-    - [`unsubscribe(name)`](#unsubscribename)
-        - [`offComplete(name)`](#offcompletename)
-    - [`fetch()`](#fetch)
-        - [`fetch(name)`](#fetchname)
-        - [`fetch(name, batchSize)`](#fetchname-batchsize)
-        - [`fetchCompleted(name [, batchSize])`](#fetchcompletedname--batchsize)
-    - [`cancel(id)`](#cancelid)
-    - [`cancel([ids])`](#cancelids)
-    - [`complete(id [, data])`](#completeid--data)
-    - [`complete([ids])`](#completeids)
-    - [`fail(id [, data])`](#failid--data)
-    - [`fail([ids])`](#failids)
+  - [`new(connectionString)`](#newconnectionstring)
+  - [`new(options)`](#newoptions)
+  - [`start()`](#start)
+  - [`stop()`](#stop)
+  - [`connect()`](#connect)
+  - [`disconnect()`](#disconnect)
+  - [`publish()`](#publish)
+    - [`publish(name, data, options)`](#publishname-data-options)
+    - [`publish(request)`](#publishrequest)
+    - [`publishAfter(name, data, options, seconds | ISO date string | Date)`](#publishaftername-data-options-seconds--iso-date-string--date)
+    - [`publishOnce(name, data, options, key)`](#publishoncename-data-options-key)
+    - [`publishThrottled(name, data, options, seconds [, key])`](#publishthrottledname-data-options-seconds--key)
+    - [`publishDebounced(name, data, options, seconds [, key])`](#publishdebouncedname-data-options-seconds--key)
+  - [`subscribe()`](#subscribe)
+    - [`subscribe(name [, options], handler)`](#subscribename--options-handler)
+    - [`onComplete(name [, options], handler)`](#oncompletename--options-handler)
+  - [`unsubscribe(name)`](#unsubscribename)
+    - [`offComplete(name)`](#offcompletename)
+  - [`fetch()`](#fetch)
+    - [`fetch(name)`](#fetchname)
+    - [`fetch(name, batchSize)`](#fetchname-batchsize)
+    - [`fetchCompleted(name [, batchSize])`](#fetchcompletedname--batchsize)
+  - [`cancel(id)`](#cancelid)
+  - [`cancel([ids])`](#cancelids)
+  - [`complete(id [, data])`](#completeid--data)
+  - [`complete([ids])`](#completeids)
+  - [`fail(id [, data])`](#failid--data)
+  - [`fail([ids])`](#failids)
 - [Events](#events)
-    - [`error`](#error)
-    - [`archived`](#archived)
-    - [`expired`](#expired)
-    - [`monitor-states`](#monitor-states)
+  - [`error`](#error)
+  - [`archived`](#archived)
+  - [`expired`](#expired)
+  - [`monitor-states`](#monitor-states)
 - [Static functions](#static-functions)
-    - [`string getConstructionPlans(schema)`](#string-getconstructionplansschema)
-    - [`string getMigrationPlans(schema, version, uninstall)`](#string-getmigrationplansschema-version-uninstall)
+  - [`string getConstructionPlans(schema)`](#string-getconstructionplansschema)
+  - [`string getMigrationPlans(schema, version, uninstall)`](#string-getmigrationplansschema-version-uninstall)
 
 <!-- /TOC -->
 
@@ -222,7 +223,9 @@ This is a convenience verion of `publish()` with the `singletonSeconds`, `single
 
 **returns: Promise**
 
-Polls the database for a job by name and executes the provided callback function when found.  The promise resolves once a subscription has been created.  
+Polls the database for a job by name or pattern and executes the provided callback function when found.  The promise resolves once a subscription has been created.  
+
+Queue patterns are supported using the `*` character to match 0 or more characters.  For example, `queue-12345` will be fetched with pattern `queue-*`.
 
 The default concurrency for `subscribe()` is 1 job per second.  Both the interval and the number of jobs per interval can be customized by passing an optional [configuration option](configuration.md#subscribe-options) argument.
 
