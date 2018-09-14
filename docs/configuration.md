@@ -171,6 +171,7 @@ This can be used in conjunction with throttling explained below.
 * **singletonSeconds**, int
 * **singletonMinutes**, int
 * **singletonHours**, int
+* **singletonDays**, int
 * **singletonNextSlot**, bool
 
 Throttling jobs to 'once every n units', where units could be seconds, minutes, hours or days.  This option is set on the publish side of the API since jobs may or may not be created based on the existence of other jobs.
