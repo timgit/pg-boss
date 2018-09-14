@@ -1,5 +1,26 @@
 # Changes
 
+## 3.1.0
+
+### Features
+- Added wildcard pattern matching for subscriptions. The allows you to have 1 subscription over many queues. For example, the following subscription uses the `*` placeholder to fetch completed jobs from all queues that start with the text `sensor-report-`.
+
+  ```js
+    boss.onComplete('sensor-report-*', processSensorReport);
+  ```
+  Wildcards may be placed anywhere in the queue name. The motivation for this feature is adding the capability for an orchestration to use a single subscription to listen to potentially thousands of job processors that just have 1 thing to do via isolated queues.
+
+### Changes
+- Internal state job suffixes are now prefixes. The following shows a comparison of completed state jobs for the queue `some-job`.
+
+  - 3.0: `some-job__state__completed`
+  - 3.1: `__state__completed__some-job`
+
+  This is a internal implementation detail included here if you happen to have any custom queries written against the job tables. The migration will handle this for the job table (the archive will remain as-is).
+  
+### Fixes
+- Removed connection string parsing and validation.  The pg module bundles [pg-connection-string](https://github.com/iceddev/pg-connection-string) which supports everything I was trying to do previously with connection strings. This resolves some existing issues related to conditional connection arguments as well as allowing auto-promotion of any future enhancements that may be provided by these libraries.
+
 ## :tada: 3.0.0 :tada:
 
 ### Additions and Enhancements
