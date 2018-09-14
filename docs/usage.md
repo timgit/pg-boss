@@ -223,9 +223,9 @@ This is a convenience verion of `publish()` with the `singletonSeconds`, `single
 
 **returns: Promise**
 
-Polls the database for a job by name or pattern and executes the provided callback function when found.  The promise resolves once a subscription has been created.  
+Polls the database by a queue name or a pattern and executes the provided callback function when jobs are found.  The promise resolves once a subscription has been created.  
 
-Queue patterns are supported using the `*` character to match 0 or more characters.  For example, `queue-12345` will be fetched with pattern `queue-*`.
+Queue patterns use the `*` character to match 0 or more characters.  For example, a job from queue `status-report-12345` would be fetched with pattern `status-report-*` or even `stat*5`.
 
 The default concurrency for `subscribe()` is 1 job per second.  Both the interval and the number of jobs per interval can be customized by passing an optional [configuration option](configuration.md#subscribe-options) argument.
 
