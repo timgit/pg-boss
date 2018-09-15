@@ -4,6 +4,7 @@ Usage
 <!-- TOC -->
 
 - [Usage](#usage)
+- [Intro](#intro)
 - [Instance functions](#instance-functions)
   - [`new(connectionString)`](#newconnectionstring)
   - [`new(options)`](#newoptions)
@@ -44,11 +45,12 @@ Usage
 
 <!-- /TOC -->
 
+# Intro
+pg-boss is used by creating an instance of the exported class, a subclass of a Node [EventEmitter](https://nodejs.org/api/events.html). Since the majority of all interactions with pg-boss involve a database, all instance functions return promises. Once you have created an instance, nothing happens until you call either `start()` or `connect()`. When a job is created it is immediately persisted to the database, assigned to a queue by name and can be received from any pg-boss instance. 
+
+You may use as many instances in as many environments as needed based on your requirements.  Since each instance has a connection pool (or even if you bring your own), the only primary limitation on instance count is based on the maximum number of connections your database can accept.  If you need a larger number of workers than your postgres database can accept, or if you have constraints regarding direct database access, you should consider creating your own abstraction layer over pg-boss using the `fetch()` and `complete()` APIs.
+
 # Instance functions
-
-pg-boss is used by instantiating an instance of the exported class, which is actually a subclass of a Node [EventEmitter](https://nodejs.org/api/events.html). Any errors encountered during construction are thrown, so try catch is encouraged here. Since the majority of all interactions with pg-boss involve the database, all instance functions return promises, where `catch()` is encouraged. Once you have created an instance, nothing happens until you call either `start()` or `connect()`. In the case of `start()`, pg-boss begins monitoring the job system. If any errors occur during these operations, `error` will be emitted.
-
-All jobs created are immediately added to the database and can be received from any pg-boss instance with access to the database. There is no limit to the number of independent instances that can connect to a database. Each instance can create jobs, subscribe to receive jobs asynchronously, or manually fetch and interact with jobs. Jobs are always stored and managed by name. Each job name represents a queue for that job which is processed by creation order (FIFO) or by an optional priority.
 
 ## `new(connectionString)`
 
@@ -348,7 +350,7 @@ And here's an example job from the callback in this test.
 
 ## `unsubscribe(name)`
 
-Removes a subscription by job name and stops polling.
+Removes a subscription by name and stops polling.
 
 ### `offComplete(name)`
 
@@ -363,7 +365,7 @@ Typically one would use `subscribe()` for automated polling for new jobs based u
 ### `fetch(name)`
 
 **Arguments**
-- `name`: string, job name
+- `name`: string, queue name or pattern
 
 **Resolves**
 - `job`: job object, `null` if none found
@@ -371,7 +373,7 @@ Typically one would use `subscribe()` for automated polling for new jobs based u
 ### `fetch(name, batchSize)`
 
 **Arguments**
-- `name`: string, job name
+- `name`: string, queue name or pattern
 - `batchSize`: number, # of jobs to fetch
 
 **Resolves**
