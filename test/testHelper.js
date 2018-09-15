@@ -10,7 +10,7 @@ module.exports = {
   getJobById,
   getArchivedJobById,
   findJobs,
-  completedJobSuffix: plans.completedJobSuffix,
+  completedJobPrefix: plans.completedJobPrefix,
   countJobs,
   empty,
   getConfig,

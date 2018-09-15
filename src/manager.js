@@ -6,7 +6,7 @@ const Worker = require('./worker');
 const plans = require('./plans');
 const Attorney = require('./attorney');
 
-const completedJobSuffix = plans.completedJobSuffix;
+const completedJobPrefix = plans.completedJobPrefix;
 
 const events = {
   error: 'error'
@@ -64,13 +64,11 @@ class Manager extends EventEmitter {
 
   onComplete(name, ...args) {
     return Attorney.checkSubscribeArgs(name, args)
-      .then(({options, callback}) => this.watch(name + completedJobSuffix, options, callback));
+      .then(({options, callback}) => this.watch(completedJobPrefix + name, options, callback));
   }
 
   watch(name, options, callback){
     // watch() is always nested in a promise, so assert()s are welcome
-
-    assert(!(name in this.subscriptions), 'this job has already been subscribed on this instance.');
 
     if('newJobCheckInterval' in options || 'newJobCheckIntervalSeconds' in options)
       options = Attorney.applyNewJobCheckInterval(options);
@@ -121,8 +119,10 @@ class Manager extends EventEmitter {
     let worker = new Worker(workerConfig);
     worker.start();
 
-    let subscription = this.subscriptions[name] = {worker:null};
-    subscription.worker = worker;
+    if(!this.subscriptions[name])
+      this.subscriptions[name] = { workers: [] };
+
+    this.subscriptions[name].workers.push(worker);
 
     return Promise.resolve(true);
   }
@@ -130,14 +130,14 @@ class Manager extends EventEmitter {
   unsubscribe(name){
     if(!this.subscriptions[name]) return Promise.reject(`No subscriptions for ${name} were found.`);
 
-    this.subscriptions[name].worker.stop();
+    this.subscriptions[name].workers.forEach(worker => worker.stop());
     delete this.subscriptions[name];
 
     return Promise.resolve(true);
   }
 
   offComplete(name){
-    return this.unsubscribe(name + completedJobSuffix);
+    return this.unsubscribe(completedJobPrefix + name);
   }
 
   publish(...args){
@@ -255,10 +255,8 @@ class Manager extends EventEmitter {
   }
 
   fetch(name, batchSize) {
-    const names = Array.isArray(name) ? name : [name];
-
-    return Attorney.checkFetchArgs(names, batchSize)
-      .then(() => this.db.executeSql(this.nextJobCommand, [names, batchSize || 1]))
+    return Attorney.checkFetchArgs(name, batchSize)
+      .then(values => this.db.executeSql(this.nextJobCommand, [values.name, values.batchSize || 1]))
       .then(result => {
 
         const jobs = result.rows.map(job => {
@@ -273,7 +271,7 @@ class Manager extends EventEmitter {
   }
 
   fetchCompleted(name, batchSize){
-    return this.fetch(name + completedJobSuffix, batchSize);
+    return this.fetch(completedJobPrefix + name, batchSize);
   }
 
   mapCompletionIdArg(id, funcName) {

@@ -8,7 +8,7 @@ const states = {
   failed: 'failed'
 };
 
-const completedJobSuffix = '__state__' + states.completed;
+const completedJobPrefix = `__state__${states.completed}__`;
 
 module.exports = {
   create,
@@ -27,7 +27,7 @@ module.exports = {
   deleteQueue,
   deleteAllQueues,
   states: Object.assign({}, states),
-  completedJobSuffix,
+  completedJobPrefix,
 };
 
 function create(schema) {
@@ -40,7 +40,6 @@ function create(schema) {
     cloneJobTableForArchive(schema),
     addArchivedOnToArchive(schema),
     createIndexJobName(schema),
-    createIndexJobFetch(schema),
     createIndexSingletonOn(schema),
     createIndexSingletonKeyOn(schema),
     createIndexSingletonKey(schema)
@@ -146,13 +145,7 @@ function createIndexSingletonKeyOn(schema){
 
 function createIndexJobName(schema){
   return `
-    CREATE INDEX job_name ON ${schema}.job (name) WHERE state < '${states.active}'
-  `;
-}
-
-function createIndexJobFetch(schema){
-  return `
-    CREATE INDEX job_fetch ON ${schema}.job (name, priority desc, createdOn, id) WHERE state < '${states.active}'
+    CREATE INDEX job_name ON ${schema}.job (name text_pattern_ops)
   `;
 }
 
@@ -180,7 +173,7 @@ function fetchNextJob(schema) {
       SELECT id
       FROM ${schema}.job
       WHERE state < '${states.active}'
-        AND name = ANY($1)
+        AND name LIKE $1
         AND startAfter < now()
       ORDER BY priority desc, createdOn, id
       LIMIT $2
@@ -216,16 +209,16 @@ function completeJobs(schema){
       UPDATE ${schema}.job
       SET completedOn = now(),
         state = '${states.completed}'
-      WHERE id = ANY($1)
+      WHERE id IN (SELECT UNNEST($1::uuid[]))
         AND state = '${states.active}'
       RETURNING *
     )
     INSERT INTO ${schema}.job (name, data)
     SELECT
-      name || '${completedJobSuffix}', 
+      '${completedJobPrefix}' || name, 
       ${buildJsonCompletionObject(true)}
     FROM results
-    WHERE name NOT LIKE '%${completedJobSuffix}'
+    WHERE name NOT LIKE '${completedJobPrefix}%'
     RETURNING 1
   `; // returning 1 here just to count results against input array
 }
@@ -261,17 +254,17 @@ function failJobs(schema){
           END,        
         completedOn = ${retryCompletedOnCase},
         startAfter = ${retryStartAfterCase}
-      WHERE id = ANY($1)
+      WHERE id IN (SELECT UNNEST($1::uuid[]))
         AND state < '${states.completed}'
       RETURNING *
     )
     INSERT INTO ${schema}.job (name, data)
     SELECT
-      name || '${completedJobSuffix}',
+      '${completedJobPrefix}' || name,
       ${buildJsonCompletionObject(true)}
     FROM results
     WHERE state = '${states.failed}'
-      AND NOT name LIKE '%${completedJobSuffix}'
+      AND NOT name LIKE '${completedJobPrefix}%'
     RETURNING 1
   `; // returning 1 here just to count results against input array
 }
@@ -292,11 +285,11 @@ function expire(schema) {
     )
     INSERT INTO ${schema}.job (name, data)
     SELECT
-      name || '${completedJobSuffix}',
+      '${completedJobPrefix}' || name,
       ${buildJsonCompletionObject()}
     FROM results
     WHERE state = '${states.expired}'
-      AND NOT name LIKE '%${completedJobSuffix}'
+      AND NOT name LIKE '%${completedJobPrefix}'
   `;
 }
 
@@ -306,7 +299,7 @@ function cancelJobs(schema){
     UPDATE ${schema}.job
     SET completedOn = now(),
       state = '${states.cancelled}'
-    WHERE id = ANY($1)
+    WHERE id IN (SELECT UNNEST($1::uuid[]))
       AND state < '${states.completed}'
     RETURNING 1
   `;  // returning 1 here just to count results against input array
@@ -361,7 +354,7 @@ function archive(schema){
         (completedOn + CAST($1 as interval) < now())
         OR (
           state = '${states.created}'
-          AND name LIKE '%${completedJobSuffix}%'
+          AND name LIKE '${completedJobPrefix}%'
           AND createdOn + CAST($1 as interval) < now()
         )
       RETURNING *
@@ -379,7 +372,7 @@ function countStates(schema){
   return `
     SELECT name, state, count(*) size
     FROM ${schema}.job
-    WHERE name NOT LIKE '%${completedJobSuffix}%'
+    WHERE name NOT LIKE '${completedJobPrefix}%'
     GROUP BY rollup(name), rollup(state)
   `;
 }

@@ -1,51 +1,39 @@
-<!-- TOC -->
+- [Wildcard completion subscription](#wildcard-completion-subscription)
+- [Batch job fetch](#batch-job-fetch)
 
-- [Async Readme](#async-readme)
+## Wildcard completion subscription
 
-<!-- /TOC -->
-
-## Async Readme
-
-Same as readme, but with async await
+Subscribe based on matched pattern when jobs are completed to handle common completion logic.
 
 ```js
+async function wildcardCompletion() {
 
-const PgBoss = require('pg-boss');
 
-try {
-  await readme();
-} catch (err) {
-  console.error(err);
-}
+  await boss.onComplete(`worker-register-*`, commonRegistrationCompletion)
 
-async function readme() {
 
-  const boss = new PgBoss('postgres://user:pass@host/database');
-  boss.on('error', error => console.error(error));
-  
-  await boss.start();
-
-  const queue = 'some-queue';
-
-  let jobId = await boss.publish(queue, {param1: 'parameter1'});
-  
-  console.log(`created job in queue ${queue}: ${jobId}`);
-
-  await boss.subscribe(queue, job => await onJob(job));
-
-  await boss.onComplete(queue, job => {
-    console.log(`job ${job.data.request.id} completed`);
-    console.log(` - in state ${job.data.state}`);
-    console.log(` - responded with '${job.data.response.value}'`);
-  });
-
-  async function onJob(job) {
-    console.log(`job ${job.id} received`);
-    console.log(` - with data: ${JSON.stringify(job.data)}`);
-      
-    return 'got it';
+  async function commonRegistrationCompletion(job) {
+    if(job.data.failed)
+      return console.log(`job ${job.data.request.id} failed`);
+    
+    await logRegistration(job.data.response);
   }
 
 }
+```
 
+## Batch job fetch
+
+Fetch an array of jobs in a subscription. Returning a promise ensures no more jobs are fetched until it resolves.
+
+```js
+async function highVolumeSubscription() {
+
+  await boss.subscribe('send-text-message', {batchSize: 1000}, handleSend);
+
+  async function handleSend(jobs) {
+    await Promise.all(jobs.map(job => textMessageService.send(job.data)));
+  }
+
+}
 ```

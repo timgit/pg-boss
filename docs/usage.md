@@ -3,43 +3,44 @@ Usage
 
 <!-- TOC -->
 
+- [Usage](#usage)
 - [Instance functions](#instance-functions)
-    - [`new(connectionString)`](#newconnectionstring)
-    - [`new(options)`](#newoptions)
-    - [`start()`](#start)
-    - [`stop()`](#stop)
-    - [`connect()`](#connect)
-    - [`disconnect()`](#disconnect)
-    - [`publish()`](#publish)
-        - [`publish(name, data, options)`](#publishname-data-options)
-        - [`publish(request)`](#publishrequest)
-        - [`publishAfter(name, data, options, seconds | ISO date string | Date)`](#publishaftername-data-options-seconds--iso-date-string--date)
-        - [`publishOnce(name, data, options, key)`](#publishoncename-data-options-key)
-        - [`publishThrottled(name, data, options, seconds [, key])`](#publishthrottledname-data-options-seconds--key)
-        - [`publishDebounced(name, data, options, seconds [, key])`](#publishdebouncedname-data-options-seconds--key)
-    - [`subscribe()`](#subscribe)
-        - [`subscribe(name [, options], handler)`](#subscribename--options-handler)
-        - [`onComplete(name [, options], handler)`](#oncompletename--options-handler)
-    - [`unsubscribe(name)`](#unsubscribename)
-        - [`offComplete(name)`](#offcompletename)
-    - [`fetch()`](#fetch)
-        - [`fetch(name)`](#fetchname)
-        - [`fetch(name, batchSize)`](#fetchname-batchsize)
-        - [`fetchCompleted(name [, batchSize])`](#fetchcompletedname--batchsize)
-    - [`cancel(id)`](#cancelid)
-    - [`cancel([ids])`](#cancelids)
-    - [`complete(id [, data])`](#completeid--data)
-    - [`complete([ids])`](#completeids)
-    - [`fail(id [, data])`](#failid--data)
-    - [`fail([ids])`](#failids)
+  - [`new(connectionString)`](#newconnectionstring)
+  - [`new(options)`](#newoptions)
+  - [`start()`](#start)
+  - [`stop()`](#stop)
+  - [`connect()`](#connect)
+  - [`disconnect()`](#disconnect)
+  - [`publish()`](#publish)
+    - [`publish(name, data, options)`](#publishname-data-options)
+    - [`publish(request)`](#publishrequest)
+    - [`publishAfter(name, data, options, seconds | ISO date string | Date)`](#publishaftername-data-options-seconds--iso-date-string--date)
+    - [`publishOnce(name, data, options, key)`](#publishoncename-data-options-key)
+    - [`publishThrottled(name, data, options, seconds [, key])`](#publishthrottledname-data-options-seconds--key)
+    - [`publishDebounced(name, data, options, seconds [, key])`](#publishdebouncedname-data-options-seconds--key)
+  - [`subscribe()`](#subscribe)
+    - [`subscribe(name [, options], handler)`](#subscribename--options-handler)
+    - [`onComplete(name [, options], handler)`](#oncompletename--options-handler)
+  - [`unsubscribe(name)`](#unsubscribename)
+    - [`offComplete(name)`](#offcompletename)
+  - [`fetch()`](#fetch)
+    - [`fetch(name)`](#fetchname)
+    - [`fetch(name, batchSize)`](#fetchname-batchsize)
+    - [`fetchCompleted(name [, batchSize])`](#fetchcompletedname--batchsize)
+  - [`cancel(id)`](#cancelid)
+  - [`cancel([ids])`](#cancelids)
+  - [`complete(id [, data])`](#completeid--data)
+  - [`complete([ids])`](#completeids)
+  - [`fail(id [, data])`](#failid--data)
+  - [`fail([ids])`](#failids)
 - [Events](#events)
-    - [`error`](#error)
-    - [`archived`](#archived)
-    - [`expired`](#expired)
-    - [`monitor-states`](#monitor-states)
+  - [`error`](#error)
+  - [`archived`](#archived)
+  - [`expired`](#expired)
+  - [`monitor-states`](#monitor-states)
 - [Static functions](#static-functions)
-    - [`string getConstructionPlans(schema)`](#string-getconstructionplansschema)
-    - [`string getMigrationPlans(schema, version, uninstall)`](#string-getmigrationplansschema-version-uninstall)
+  - [`string getConstructionPlans(schema)`](#string-getconstructionplansschema)
+  - [`string getMigrationPlans(schema, version, uninstall)`](#string-getmigrationplansschema-version-uninstall)
 
 <!-- /TOC -->
 
@@ -222,7 +223,9 @@ This is a convenience verion of `publish()` with the `singletonSeconds`, `single
 
 **returns: Promise**
 
-Polls the database for a job by name and executes the provided callback function when found.  The promise resolves once a subscription has been created.  
+Polls the database by a queue name or a pattern and executes the provided callback function when jobs are found.  The promise resolves once a subscription has been created.  
+
+Queue patterns use the `*` character to match 0 or more characters.  For example, a job from queue `status-report-12345` would be fetched with pattern `status-report-*` or even `stat*5`.
 
 The default concurrency for `subscribe()` is 1 job per second.  Both the interval and the number of jobs per interval can be customized by passing an optional [configuration option](configuration.md#subscribe-options) argument.
 
@@ -286,7 +289,7 @@ boss.subscribe('email-welcome', {batchSize: 5},
 
 Sometimes when a job completes, expires or fails, it's important enough to trigger other things that should react to it. `onComplete` works identically to `subscribe()` and was created to facilitate the creation of orchestrations or sagas between jobs that may or may not know about each other. This common messaging pattern allows you to keep multi-job flow logic out of the individual job handlers so you can manage things in a more centralized fashion while not losing your mind. As you most likely already know, asynchronous jobs are complicated enough already.
 
-> Internally, these jobs have a special suffix of `__state__completed`.  Since pg-boss creates these and it's possible that no subscriptions will ever be created for retrieving them, they are considered "second class" and will be archived even if they remain in 'created' state. Keep this in mind if you customize your archive interval.
+> Internally, these jobs have a special prefix of `__state__completed__`.  Since pg-boss creates these and it's possible that no subscriptions will ever be created for retrieving them, they are considered "second class" and will be archived even if they remain in 'created' state. Keep this in mind if you customize your archive interval.
 
 The callback for `onComplete()` returns a job containing the original job and completion details. `request` will be the original job as submitted with `id`, `name` and `data`. `response` may or may not have a value based on arguments in [complete()](#completeid--data) or [fail()](#failid--data).
 

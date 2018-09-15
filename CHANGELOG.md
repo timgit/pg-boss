@@ -1,5 +1,32 @@
 # Changes
 
+## 3.1.0
+
+### Features
+- Added wildcard pattern matching for subscriptions. The allows you to have 1 subscription over many queues. For example, the following subscription uses the `*` placeholder to fetch completed jobs from all queues that start with the text `sensor-report-`.
+
+  ```js
+    boss.onComplete('sensor-report-*', processSensorReport);
+  ```
+  Wildcards may be placed anywhere in the queue name. The motivation for this feature is adding the capability for an orchestration to use a single subscription to listen to potentially thousands of job processors that just have 1 thing to do via isolated queues.
+
+### Changes
+- Multiple subscriptions to the same queue are now allowed on the same instance.
+  
+  Previously an error was thrown when attempting to subscribe to the same queue more than once on the same instance. This was merely an internal concern with worker tracking. Since `teamConcurrency` was introduced in 3.0, it blocks polling until the last job in a batch is completed, which may have the side effect of slowing down queue operations if one job is taking a long time to complete. Being able to have multiple subscriptions isn't necessarily something I'd advertise as a feature, but it's something easy I can offer until implementing a more elaborate producer consumer queue pattern that monitors its promises.
+  
+  Remember to keep in mind that `subscribe()` is intended to provide a nice abstraction over `fetch()` and `complete()`, which are always there if and when you require a use case that `subscribe()` cannot provide.
+  
+- Internal state job suffixes are now prefixes. The following shows a comparison of completed state jobs for the queue `some-job`.
+
+  - 3.0: `some-job__state__completed`
+  - 3.1: `__state__completed__some-job`
+
+  This is a internal implementation detail included here if you happen to have any custom queries written against the job tables. The migration will handle this for the job table (the archive will remain as-is).
+  
+### Fixes
+- Removed connection string parsing and validation.  The pg module bundles [pg-connection-string](https://github.com/iceddev/pg-connection-string) which supports everything I was trying to do previously with connection strings. This resolves some existing issues related to conditional connection arguments as well as allowing auto-promotion of any future enhancements that may be provided by these libraries.
+
 ## :tada: 3.0.0 :tada:
 
 ### Additions and Enhancements
