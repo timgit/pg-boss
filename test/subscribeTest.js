@@ -226,6 +226,15 @@ describe('subscribe', function(){
 
   });
 
+  it('should allow multiple subscriptions to the same queue per instance', function(finished){
+    const queue = 'multiple-subscriptions'
+    
+    boss.subscribe(queue, ()=>{})
+      .then(() => boss.subscribe(queue, ()=>{}))
+      .then(() => finished());
+      
+  });
+
 });
 
 
