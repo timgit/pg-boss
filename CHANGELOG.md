@@ -11,6 +11,12 @@
   Wildcards may be placed anywhere in the queue name. The motivation for this feature is adding the capability for an orchestration to use a single subscription to listen to potentially thousands of job processors that just have 1 thing to do via isolated queues.
 
 ### Changes
+- Multiple subscriptions to the same queue are now allowed on the same instance.
+  
+  Previously an error was thrown when attempting to subscribe to the same queue more than once on the same instance. This was merely an internal concern with worker tracking. Since `teamConcurrency` was introduced in 3.0, it blocks polling until the last job in a batch is completed, which may have the side effect of slowing down queue operations if one job is taking a long time to complete. Being able to have multiple subscriptions isn't necessarily something I'd advertise as a feature, but it's something easy I can offer until implementing a more elaborate producer consumer queue pattern that monitors its promises.
+  
+  Remember to keep in mind that `subscribe()` is intended to provide a nice abstraction over `fetch()` and `complete()`, which are always there if and when you require a use case that `subscribe()` cannot provide.
+  
 - Internal state job suffixes are now prefixes. The following shows a comparison of completed state jobs for the queue `some-job`.
 
   - 3.0: `some-job__state__completed`
