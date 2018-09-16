@@ -264,7 +264,7 @@ boss.subscribe('email-welcome', {teamSize: 5, teamConcurrency: 5},
   .catch(error => console.error(error));
 ```
 
-And the same example, but without returnig a promise in the handler.
+And the same example, but without returning a promise in the handler.
 
 ```js
 boss.subscribe('email-welcome', {teamSize: 5, teamConcurrency: 5}, 
