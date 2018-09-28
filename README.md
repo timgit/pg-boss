@@ -59,9 +59,6 @@ This will likely cater the most to teams already familiar with the simplicity of
 * Node 6 or higher
 * PostgreSQL 9.5 or higher
 
-## Installation
-`$ npm install pg-boss`
-
 ## Documentation
 * [Usage](docs/usage.md)
 * [Configuration](docs/configuration.md)
