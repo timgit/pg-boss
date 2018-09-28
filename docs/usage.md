@@ -5,7 +5,8 @@ Usage
 
 - [Usage](#usage)
 - [Intro](#intro)
-- [Instance functions](#instance-functions)
+- [Database installation](#database-installation)
+- [Functions](#functions)
   - [`new(connectionString)`](#newconnectionstring)
   - [`new(options)`](#newoptions)
   - [`start()`](#start)
@@ -50,7 +51,22 @@ pg-boss is used by creating an instance of the exported class, a subclass of a N
 
 You may use as many instances in as many environments as needed based on your requirements.  Since each instance has a connection pool (or even if you bring your own), the only primary limitation on instance count is based on the maximum number of connections your database can accept.  If you need a larger number of workers than your postgres database can accept, or if you have constraints regarding direct database access, you should consider creating your own abstraction layer over pg-boss using the `fetch()` and `complete()` APIs.
 
-# Instance functions
+# Database installation
+
+pg-boss can be installed into a new or existing database.  When started, it will detect if it exists in the specified database and automatically create the required dedicated schema for all queue operations.  Starting with 3.0, if the database doesn't already have the pgcrypto extension installed, you will need to have a superuser add it before pg-boss can create its schema.
+```sql
+CREATE EXTENSION pgcrypto;
+```
+
+Once this is completed, pg-boss requires the [CREATE](http://www.postgresql.org/docs/9.5/static/sql-grant.html) privilege in order to create and maintain its schema.
+
+```sql
+GRANT CREATE ON DATABASE ReallyImportantDb TO mostvaluableperson;
+```
+
+If the CREATE privilege is not granted (so sad), you can still use the static function `PgBoss.getConstructionPlans()` method to export the SQL required to manually create the objects.  This means you will also need to monitor future releases for schema changes (the schema property in [version.json](../version.json)) so they can be applied manually. In which case you'll be interested in `PgBoss.getMigrationPlans()` for manual migration scripts.
+
+# Functions
 
 ## `new(connectionString)`
 
@@ -101,17 +117,11 @@ Since it is responsible for monitoring jobs for expiration and archiving, `start
 
 > Keep calm, however, if you were to accidentally call `start()` from independently hosted instances pointing to the same database.  While it would be considered by most a bit wasteful to monitor jobs multiple times, no major harm will occur. :)
 
-If the required database objects do not exist in the specified database, **`start()` will automatically create them**. In order for this step to be successful, the specified user account will need the [CREATE](http://www.postgresql.org/docs/9.5/static/sql-grant.html) privilege. For example, the following command grants this privilege.
-
-```sql
-GRANT CREATE ON DATABASE ReallyImportantDb TO mostvaluableperson;
-```
+If the required database objects do not exist in the specified database, **`start()` will automatically create them**.
 
 But wait. There's more! `start()` also verifies the versions of the objects and will **automatically migrate your job system to the latest installed version** of pg-boss.  
 
 > While this is most likely a welcome feature, be aware of this during upgrades since this could delay the promise resolution by however long the migration script takes to run against your data.  For example, if you happened to have millions of jobs in the job table just hanging around for archiving and the next version of the schema had a couple of new indexes, it may take a handful of seconds before `start()` resolves.
-
-If the CREATE privilege is not granted (so sad), you can still use the static function `PgBoss.getConstructionPlans()` method to export the SQL required to manually create the objects.  This means you will also need to monitor future releases for schema changes (the schema property in [version.json](../version.json)) so they can be applied manually. In which case you'll be interested in `PgBoss.getMigrationPlans()` for manual migration scripts.
 
 ## `stop()`
 
