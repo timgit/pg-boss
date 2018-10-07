@@ -1,5 +1,9 @@
 # Changes
 
+## 3.1.1
+
+- Typescript defs patch
+
 ## 3.1.0
 
 ### Features
