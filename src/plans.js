@@ -203,27 +203,6 @@ function buildJsonCompletionObject(withResponse) {
   )`;
 }
 
-function completeJobs(schema){
-  return `
-    WITH results AS (
-      UPDATE ${schema}.job
-      SET completedOn = now(),
-        state = '${states.completed}'
-      WHERE id IN (SELECT UNNEST($1::uuid[]))
-        AND state = '${states.active}'
-      RETURNING *
-    )
-    INSERT INTO ${schema}.job (name, data)
-    SELECT
-      '${completedJobPrefix}' || name, 
-      ${buildJsonCompletionObject(true)}
-    FROM results
-    WHERE name NOT LIKE '${completedJobPrefix}%'
-    RETURNING 1
-  `; // returning 1 here just to count results against input array
-}
-
-
 const retryCompletedOnCase = `CASE
           WHEN retryCount < retryLimit
           THEN NULL
@@ -242,6 +221,26 @@ const retryStartAfterCase = `CASE
             * interval '1'
           END`;
 
+
+function completeJobs(schema){
+  return `
+    WITH results AS (
+      UPDATE ${schema}.job
+      SET completedOn = now(),
+        state = '${states.completed}'
+      WHERE id IN (SELECT UNNEST($1::uuid[]))
+        AND state = '${states.active}'
+      RETURNING *
+    )
+    INSERT INTO ${schema}.job (name, data)
+    SELECT
+      '${completedJobPrefix}' || name, 
+      ${buildJsonCompletionObject(true)}
+    FROM results
+    WHERE NOT name LIKE '${completedJobPrefix}%'
+    RETURNING 1
+  `; // returning 1 here just to count results against input array
+}
 
 function failJobs(schema){
   return `
@@ -289,10 +288,9 @@ function expire(schema) {
       ${buildJsonCompletionObject()}
     FROM results
     WHERE state = '${states.expired}'
-      AND NOT name LIKE '%${completedJobPrefix}'
+      AND NOT name LIKE '${completedJobPrefix}%'
   `;
 }
-
 
 function cancelJobs(schema){
   return `

@@ -1,5 +1,9 @@
 # Changes
 
+## 3.1.2
+
+- Prevented duplicate state completion jobs being created from an expired onComplete() subscription.
+
 ## 3.1.1
 
 - Typescript defs patch
