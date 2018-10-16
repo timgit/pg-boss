@@ -92,10 +92,11 @@ declare namespace PgBoss {
     created: number;
     retry: number;
     active: number;
-    complete: number;
+    completed: number;
     expired: number;
     cancelled: number;
     failed: number;
+    queues: object;
   }
 }
 
