@@ -334,7 +334,8 @@ function insertJob(schema) {
       $12
     )
     ON CONFLICT DO NOTHING
-  `;
+    RETURNING 1
+  `; // returning 1 here so we can actually return id on publish
 }
 
 function purge(schema) {
