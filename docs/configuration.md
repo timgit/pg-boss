@@ -193,7 +193,7 @@ Setting `singletonNextSlot` to true will cause the job to be scheduled to run af
 
 * **retryBackoff**, bool
 
-    Default: false. Enables exponential backoff, doubles retry delay every retry. Sets initial retryDelay to 1 if not set.
+    Default: false. Enables exponential backoff retries based on retryDelay instead of a fixed delay. Sets initial retryDelay to 1 if not set.
 
 ### Job expiration
 
