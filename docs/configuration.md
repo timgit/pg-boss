@@ -185,15 +185,15 @@ Setting `singletonNextSlot` to true will cause the job to be scheduled to run af
 
 * **retryLimit**, int
 
-    Default: 0
+    Default: 0. Max number of retries of failed jobs. Default is no retries.
 
 * **retryDelay**, int
 
-    Default: 0
+    Default: 0. Delay between retries of failed jobs, in seconds.
 
 * **retryBackoff**, bool
 
-    Default: false
+    Default: false. Enables exponential backoff retries based on retryDelay instead of a fixed delay. Sets initial retryDelay to 1 if not set.
 
 ### Job expiration
 
