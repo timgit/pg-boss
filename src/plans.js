@@ -38,6 +38,7 @@ function create(schema) {
     createJobStateEnum(schema),
     createJobTable(schema),
     cloneJobTableForArchive(schema),
+    addIndexToArchive(schema),
     addArchivedOnToArchive(schema),
     createIndexJobName(schema),
     createIndexSingletonOn(schema),
@@ -112,6 +113,10 @@ function cloneJobTableForArchive(schema){
 
 function addArchivedOnToArchive(schema) {
   return `ALTER TABLE ${schema}.archive ADD archivedOn timestamptz NOT NULL DEFAULT now()`;
+}
+
+function addIndexToArchive(schema) {
+  return `CREATE INDEX archive_id_idx ON ${schema}.archive(id)`
 }
 
 function deleteQueue(schema){
@@ -334,8 +339,8 @@ function insertJob(schema) {
       $12
     )
     ON CONFLICT DO NOTHING
-    RETURNING 1
-  `; // returning 1 here so we can actually return id on publish
+    RETURNING id
+  `;
 }
 
 function purge(schema) {

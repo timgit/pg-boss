@@ -235,6 +235,16 @@ function getAll(schema) {
         `DROP INDEX ${schema}.job_name`,
         `CREATE INDEX job_name ON ${schema}.job (name) WHERE state < 'active'`
       ]
+    },
+    {
+      version: '10',
+      previous: '9',
+      install: [
+        `CREATE INDEX archive_id_idx ON ${schema}.archive(id)`
+      ],
+      uninstall: [
+        `DROP INDEX ${schema}.archive_id_idx`
+      ]
     }
   ];
 }

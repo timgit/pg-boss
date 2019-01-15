@@ -238,7 +238,7 @@ class Manager extends EventEmitter {
     return this.db.executeSql(this.insertJobCommand, values)
       .then(result => {
         if(result.rowCount === 1)
-          return id;
+          return result.rows[0].id;
 
         if(!options.singletonNextSlot)
           return null;
