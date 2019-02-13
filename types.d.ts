@@ -45,6 +45,7 @@ declare namespace PgBoss {
   type ConstructorOptions = DatabaseOptions & JobCreationOptions & JobFetchOptions & JobExpirationOptions & JobArchiveOptions;
 
   interface PublishOptions {
+    priority?: number;
     startAfter?: number | string | Date;
     singletonKey?: string;
     singletonSeconds?: number;
