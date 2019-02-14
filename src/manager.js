@@ -103,7 +103,7 @@ class Manager extends EventEmitter {
         // either no option was set, or teamSize was used
         return Promise.map(jobs, job => {
           return callback(job).then(value => this.complete(job.id, value)).catch(err => this.fail(job.id, err))
-        }, {concurrency: options.teamConcurrency || 2});
+        }, {concurrency: options.teamConcurrency || 1});
     };
 
     let onError = error => this.emit(events.error, error);
