@@ -1,5 +1,13 @@
 # Changes
 
+## 3.1.4
+
+- Typescript type defs updated for static function exports via PR.
+
+## 3.1.3
+
+- Added support for typeorm with job insertion script via PR. 
+
 ## 3.1.2
 
 - Prevented duplicate state completion jobs being created from an expired onComplete() subscription.
