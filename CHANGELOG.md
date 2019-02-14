@@ -1,5 +1,10 @@
 # Changes
 
+## 3.1.5
+
+- Typescript type defs updated for job priority via PR.
+- Set default `teamConcurrency` to 1 when `teamSize` > 1.
+
 ## 3.1.4
 
 - Typescript type defs updated for static function exports via PR.
