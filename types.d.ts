@@ -40,6 +40,8 @@ declare namespace PgBoss {
     archiveCheckInterval?: number;
     archiveCheckIntervalSeconds?: number;
     archiveCheckIntervalMinutes?: number;
+    deleteArchivedJobsEvery?: string;
+    deleteCheckInterval?: number;
   }
 
   type ConstructorOptions = DatabaseOptions & JobCreationOptions & JobFetchOptions & JobExpirationOptions & JobArchiveOptions;
