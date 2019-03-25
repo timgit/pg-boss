@@ -211,25 +211,25 @@ boss.publish({
 
 Publish a job that should start after a number of seconds from now, or after a specific date time.  
 
-This is a convenience verion of `publish()` with the `startAfter` option assigned.
+This is a convenience version of `publish()` with the `startAfter` option assigned.
 
 ### `publishOnce(name, data, options, key)`
 
 Publish a job with a unique key to make sure it isn't processed more than once.  Any other jobs published during this archive interval with the same queue name and key will be rejected. 
 
-This is a convenience verion of `publish()` with the `singletonKey` option assigned.
+This is a convenience version of `publish()` with the `singletonKey` option assigned.
 
 ### `publishThrottled(name, data, options, seconds [, key])`
 
 Only allows one job to be published to the same queue within a number of seconds.  In this case, the first job within the interval is allowed, and all other jobs within the same interval are rejected.
 
-This is a convenience verion of `publish()` with the `singletonSeconds` and `singletonKey` option assigned. The `key` argument is optional.
+This is a convenience version of `publish()` with the `singletonSeconds` and `singletonKey` option assigned. The `key` argument is optional.
 
 ### `publishDebounced(name, data, options, seconds [, key])`
 
-Like, `publishThrottled()`, but instead of rejecting if a job is already published in the current interval, it will try to add the job to the next interval is one hasn't already been published. 
+Like, `publishThrottled()`, but instead of rejecting if a job is already published in the current interval, it will try to add the job to the next interval if one hasn't already been published. 
 
-This is a convenience verion of `publish()` with the `singletonSeconds`, `singletonKey` and `singletonNextSlot` option assigned. The `key` argument is optional.
+This is a convenience version of `publish()` with the `singletonSeconds`, `singletonKey` and `singletonNextSlot` option assigned. The `key` argument is optional.
 
 ## `subscribe()`
 
