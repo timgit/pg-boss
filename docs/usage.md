@@ -35,6 +35,8 @@ Usage
   - [`complete([ids])`](#completeids)
   - [`fail(id [, data])`](#failid--data)
   - [`fail([ids])`](#failids)
+  - [`deleteQueue(name)`](#deletequeuename)
+  - [`deleteAllQueues()`](#deleteallqueues)
 - [Events](#events)
   - [`error`](#error)
   - [`archived`](#archived)
@@ -456,6 +458,14 @@ Fails a set of active jobs.
 The promise will resolve on a successful failure state assignment, or reject if not all of the requested jobs could not be marked as failed.  
 
 > See comments above on `cancel([ids])` regarding when the promise will resolve or reject because of a batch operation.
+
+## `deleteQueue(name)`
+
+Deletes all jobs in the specified queue from the active job table.  All jobs in the archive table are retained.
+
+## `deleteAllQueues()`
+
+Deletes all jobs from all queues in the active job table. All jobs in the archive table are retained.  I guess you know what you're getting into with a function named like this.
 
 # Events
 
