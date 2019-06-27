@@ -75,7 +75,15 @@ Since passing only a connection string is intended to be for convenience, you ca
 
 * **schema** - string, defaults to "pgboss"
 
-    Only alphanumeric and underscore allowed, length: <= 50 characters    
+    Only alphanumeric and underscore allowed, length: <= 50 characters
+
+* **monitorStateIntervalSeconds** - int, default undefined
+
+    Specifies how often in seconds an instance will fire the `monitor-states` event. Cannot be less that 1.
+
+* **monitorStateIntervalMinutes** - int, default undefined
+
+    Specifies how often in minutes an instance will fire the `monitor-states` event. Cannot be less that 1. Do not use if using `monitorStateIntervalSeconds`.
 
 ### Job creation options
 
