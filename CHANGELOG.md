@@ -1,5 +1,9 @@
 # Changes
 
+## 3.1.6
+
+- Typescript type defs for deletion config updated via PR.
+
 ## 3.1.5
 
 - Typescript type defs updated for job priority via PR.
