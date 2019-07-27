@@ -53,6 +53,7 @@ declare namespace PgBoss {
     singletonSeconds?: number;
     singletonMinutes?: number;
     singletonHours?: number;
+    singletonNextSlot?: boolean;
     retryLimit?: number;
     retryDelay?: number;
     retryBackoff?: boolean;
