@@ -4,4 +4,3 @@ lib
 coverage/
 *.tgz
 .nyc_output/
-package-lock.json
