@@ -1,5 +1,9 @@
 # Changes
 
+## 3.1.7
+
+- Typescript type defs for singletonNextSlot config updated via PR.
+
 ## 3.1.6
 
 - Typescript type defs for deletion config updated via PR.
