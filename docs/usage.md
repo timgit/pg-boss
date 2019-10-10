@@ -51,11 +51,11 @@ Usage
 # Intro
 pg-boss is used by creating an instance of the exported class, a subclass of a Node [EventEmitter](https://nodejs.org/api/events.html). Since the majority of all interactions with pg-boss involve a database, all instance functions return promises. Once you have created an instance, nothing happens until you call either `start()` or `connect()`. When a job is created it is immediately persisted to the database, assigned to a queue by name and can be received from any pg-boss instance. 
 
-You may use as many instances in as many environments as needed based on your requirements.  Since each instance has a connection pool (or even if you bring your own), the only primary limitation on instance count is based on the maximum number of connections your database can accept.  If you need a larger number of workers than your postgres database can accept, consider using a centralized connection pool such as pgBouncer. If you have constraints preventing direct database access, consider creating your own abstraction layer over pg-boss such as a secure web API using the `fetch()` and `complete()` functions.  If you require multiple instances in the same database, you will need to specificy a separate schema name per instance in the constructor.
+You may use as many instances in as many environments as needed based on your requirements.  Since each instance has a connection pool (or even if you bring your own), the only primary limitation on instance count is based on the maximum number of connections your database can accept.  If you need a larger number of workers than your postgres database can accept, consider using a centralized connection pool such as pgBouncer. If you have constraints preventing direct database access, consider creating your own abstraction layer over pg-boss such as a secure web API using the `fetch()` and `complete()` functions.  If you require multiple instances in the same database, you will need to specify a separate schema name per instance in the constructor.
 
 # Database installation
 
-pg-boss can be installed into a new or existing database.  When started, it will detect if it exists in the specified database and automatically create the required dedicated schema for all queue operations.  Starting with 3.0, if the database doesn't already have the pgcrypto extension installed, you will need to have a superuser add it before pg-boss can create its schema.
+pg-boss can be installed into a new or existing database.  When started, it will detect if it exists in the specified database and automatically create the required schema for all queue operations.  Starting with 3.0, if the database doesn't already have the pgcrypto extension installed, you will need to have a superuser add it before pg-boss can create its schema.
 ```sql
 CREATE EXTENSION pgcrypto;
 ```
@@ -391,7 +391,7 @@ Typically one would use `subscribe()` for automated polling for new jobs based u
 **Resolves**
 - `[job]`: array of job objects, `null` if none found
 
-Note: If you pass a batchSize, `fetch()` will always resovle an array response, even if only 1 job is returned. This seemed like a great idea at the time.
+Note: If you pass a batchSize, `fetch()` will always resolve an array response, even if only 1 job is returned. This seemed like a great idea at the time.
 
 The following code shows how to utilize batching via `fetch()` to get and complete 20 jobs at once on-demand.
 
