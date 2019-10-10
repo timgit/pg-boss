@@ -8,17 +8,8 @@ describe('wildcard', function(){
 
   let boss;
 
-  before(function(finished){
-    helper.start()
-      .then(dabauce => {
-        boss = dabauce;
-        finished();
-      });
-  });
-
-  after(function(finished){
-    boss.stop().then(() => finished());
-  });
+  before(async () => { boss = await helper.start() })
+  after(() => boss.stop())
 
   it('fetch() should return all jobs using a wildcard pattern', function(finished) {
     const baseName = 'wildcard-fetch';
