@@ -100,12 +100,13 @@ function assertAsync(arg, errorMessage){
   }
 }
 
-function applyConfig(config) {
+function applyConfig(value) {
 
-  assert(config && (typeof config === 'object' || typeof config === 'string'),
+  assert(value && (typeof value === 'object' || typeof value === 'string'),
     'configuration assert: string or config object is required to connect to postgres');
 
-  config = applyDatabaseConfig(config);
+  let config = applyDatabaseConfig(value);
+
   config = applyNewJobCheckInterval(config);
   config = applyExpireConfig(config);
   config = applyArchiveConfig(config);
@@ -117,11 +118,11 @@ function applyConfig(config) {
 
 }
 
-function applyDatabaseConfig(config) {
+function applyDatabaseConfig(value) {
 
-  config = (typeof config === 'string')
-    ? {connectionString: config}
-    : config || {};
+  let config = (typeof value === 'string')
+    ? { connectionString: value }
+    : { ...value };
 
   if(config.schema){
     assert(typeof config.schema === 'string', 'configuration assert: schema must be a string');
