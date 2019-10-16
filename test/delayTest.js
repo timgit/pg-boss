@@ -8,17 +8,8 @@ describe('delayed jobs', function(){
 
   let boss;
 
-  before(function(finished){
-    helper.start()
-      .then(dabauce => {
-        boss = dabauce;
-        finished();
-      });
-  });
-
-  after(function(finished){
-    boss.stop().then(() => finished());
-  });
+  before(async () => { boss = await helper.start() })
+  after(() => boss.stop())
 
   it('should wait until after an int (in seconds)', function(finished) {
 

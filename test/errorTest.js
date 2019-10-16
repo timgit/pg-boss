@@ -1,54 +1,38 @@
 const assert = require('chai').assert;
 const helper = require('./testHelper');
-const Promise = require('bluebird');
 
-describe('error', function(){
+describe('error', function() {
 
-  this.timeout(10000);
+    this.timeout(10000)
 
-  let boss;
+    let boss
 
-  before(function(finished){
-    helper.start()
-      .then(dabauce => {
-        boss = dabauce;
-        finished();
-      });
-  });
+    before(async () => { boss = await helper.start() })
+    after(() => boss.stop())
 
-  after(function(finished){
-    boss.stop().then(() => finished());
-  });
+    it('should handle an error in a subscriber and not blow up', function(finished) {
 
-  it('should handle an error in a subscriber and not blow up', function(finished) {
+        test()
 
-    this.timeout(3000);
+        async function test() {
+            const queue = 'error-handling'
+            let subscribeCount = 0
+    
+            await boss.publish(queue)
+            await boss.publish(queue)
+    
+            boss.subscribe(queue, async job => {
+                subscribeCount++
+    
+                if(subscribeCount === 1) {
+                    throw new Error('test - nothing to see here')
+                } else {
+                    await job.done()
+                    finished()
+                }
+            })
+        }
+        
+    })
 
-    const queue = 'error-handling';
-    let subscribeCount = 0;
-
-    Promise.join(
-      boss.publish(queue),
-      boss.publish(queue)
-    )
-      .then(() => {
-        boss.subscribe(queue, job => {
-
-          subscribeCount++;
-
-          if(subscribeCount === 1)
-            throw new Error('test - nothing to see here');
-          else {
-            job.done()
-              .then(() => finished());
-          }
-
-        });
-      });
-
-  });
-
-});
-
-
-
+})
