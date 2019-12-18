@@ -2,98 +2,77 @@ const assert = require('chai').assert;
 const PgBoss = require('../src/index');
 const helper = require('./testHelper');
 
-describe('initialization', function(){
+describe('config', function(){
 
-  this.timeout(10000);
+    this.timeout(10000);
 
-  before(function(finished) {
-    helper.init()
-      .then(() => finished());
-  });
+    before(async () => helper.init())
 
-  it('should allow a 50 character custom schema name', function(finished){
+    it('should allow a 50 character custom schema name', async function() {
 
-    let config = helper.getConfig();
+        const config = helper.getConfig()
+        config.schema = 'thisisareallylongschemanamefortestingmaximumlength';
 
-    config.schema = 'thisisareallylongschemanamefortestingmaximumlength';
+        await helper.init(config.schema)
 
-    helper.init(config.schema)
-      .then(() => {
-        new PgBoss(config).start()
-          .then(boss => boss.stop())
-          .then(() => helper.init(config.schema))
-          .then(() => finished())
-          .catch(error => {
-            assert(false, error.message);
-            finished();
-          });
-      });
-  });
+        const boss = new PgBoss(config)
+        
+        await boss.start()
+        await boss.stop()
 
-  it('should not allow a 51 character custom schema name', function(){
+        await helper.init(config.schema)
 
-    let config = helper.getConfig();
-
-    config.schema = 'thisisareallylongschemanamefortestingmaximumlengthb';
-
-    assert.throws(function () {
-      let boss = new PgBoss(config);
     });
 
-  });
+    it('should not allow a 51 character custom schema name', function() {
+        const config = helper.getConfig()
+        config.schema = 'thisisareallylongschemanamefortestingmaximumlengthb'
+        assert.throws(() => new PgBoss(config))
+    });
 
-  it('should accept a connectionString property', function(finished){
+    it('should accept a connectionString property', async function(){
 
-    let connectionString = helper.getConnectionString();
+        const connectionString = helper.getConnectionString()
 
-    new PgBoss({connectionString}).start()
-      .then(boss => boss.stop())
-      .then(() => finished())
-      .catch(error => {
-        assert(false, error.message);
-        finished();
-      });
-  });
+        const boss = new PgBoss({ connectionString })
 
-  it('should accept a connectionString and schema properties', function(finished){
-    const connectionString = 'postgresql://postgres@127.0.0.1:5432/db';
-    const schema = 'pgboss_custom_schema';
-    const boss = new PgBoss({connectionString, schema});
+        await boss.start()
+        await boss.stop()
 
-    assert.equal(boss.config.schema, schema);
+    });
 
-    finished();
-  });
+    it('should accept a connectionString and schema properties', function() {
+        const connectionString = 'postgresql://postgres@127.0.0.1:5432/db';
+        const schema = 'pgboss_custom_schema';
+        const boss = new PgBoss({ connectionString, schema });
 
-  it('set pool config `poolSize`', function(finished){
+        assert.equal(boss.config.schema, schema);
+    });
 
-    let boss;
-    const poolSize = 14;
+    it('set pool config `poolSize`', async function() {
 
-    helper.start({poolSize})
-      .then(b => {
-        boss = b;
-        assert(boss.db.config.poolSize === poolSize);
-        assert(boss.db.pool.options.max === poolSize);
-      })
-      .then(() => boss.stop())
-      .then(() => finished());
-  });
+        const poolSize = 14;
 
-  it('set pool config `max`: `poolSize` === `max`', function(finished){
+        const boss = await helper.start({ poolSize })
+        
+        assert(boss.db.config.poolSize === poolSize)
+        assert(boss.db.pool.options.max === poolSize)
 
-    let boss;
-    const max = 13;
+        await boss.stop()
+    })
 
-    helper.start({max})
-      .then(b => {
-        boss = b;
-        assert(boss.db.config.max === boss.db.config.poolSize);
-        assert(boss.db.config.max === max);
-        assert(boss.db.config.poolSize === max);
-        assert(boss.db.pool.options.max === max);
-      })
-      .then(() => boss.stop())
-      .then(() => finished());
-  });
+    it('set pool config `max`: `poolSize` === `max`', async function() {
+
+        const max = 13;
+
+        const boss = await helper.start({ max })
+
+        assert(boss.db.config.max === boss.db.config.poolSize)
+        assert(boss.db.config.max === max)
+        assert(boss.db.config.poolSize === max)
+        assert(boss.db.pool.options.max === max)
+
+        await boss.stop()
+    })
+
 });

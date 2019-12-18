@@ -4,40 +4,33 @@ const Promise = require('bluebird');
 
 describe('expire', function() {
 
-  this.timeout(10000);
+    this.timeout(10000);
 
-  let boss;
+    let boss;
+    const config = { expireCheckInterval: 500 }
 
-  // sanitizing each test run for expiration events
-  beforeEach(function(finished){
-    helper.start({expireCheckInterval:500})
-      .then(dabauce => {
-        boss = dabauce;
-        finished();
-      });
-  });
+    beforeEach(async () => { boss = await helper.start(config) })
+    afterEach(() => boss.stop())
 
-  afterEach(function(finished) {
-    boss.stop().then(() => finished());
-  });
+    it('should expire a job', async function() {
 
-  it('should expire a job', function(finished){
-    this.timeout(5000);
+        this.timeout(5000);
 
-    let jobName = 'i-take-too-long';
-    let jobId = null;
+        const queue = 'i-take-too-long';
 
-    boss.publish({name: jobName, options: {expireIn:'1 second'}})
-      .then(id => jobId = id)
-      .then(() => boss.fetch(jobName))
-      .then(() => Promise.delay(2000))
-      .then(() => boss.fetchCompleted(jobName))
-      .then(job => {
-        assert.equal(jobId, job.data.request.id);
-        assert.equal('expired', job.data.state);
-        finished();
-      });
+        const jobId = await boss.publish({ name: queue, options: { expireIn: '1 second' } })
 
-    });
+        // fetch the job but don't complete it
+        await boss.fetch(queue)
+
+        // this should give it enough time to expire
+        await Promise.delay(2000)
+
+        const job = await boss.fetchCompleted(queue)
+
+        assert.equal(jobId, job.data.request.id)
+        assert.equal('expired', job.data.state)
+
+    })
 
 });

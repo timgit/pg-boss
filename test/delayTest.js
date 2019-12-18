@@ -4,101 +4,101 @@ const Promise = require('bluebird');
 
 describe('delayed jobs', function(){
 
-  this.timeout(10000);
+    this.timeout(10000);
 
-  let boss;
+    let boss;
 
-  before(async () => { boss = await helper.start() })
-  after(() => boss.stop())
+    before(async () => { boss = await helper.start() })
+    after(() => boss.stop())
 
-  it('should wait until after an int (in seconds)', function(finished) {
+    it('should wait until after an int (in seconds)', function(finished) {
 
-    let delaySeconds = 2;
+        let delaySeconds = 2;
 
-    boss.subscribe('wait', job => {
-      let start = new Date(job.data.submitted);
-      let end = new Date();
+        boss.subscribe('wait', async job => {
+            let start = new Date(job.data.submitted);
+            let end = new Date();
 
-      let elapsedSeconds = Math.floor((end-start)/1000);
+            let elapsedSeconds = Math.floor((end-start)/1000);
 
-      job.done()
-        .then(() => {
-          assert.isAtLeast(delaySeconds, elapsedSeconds);
-          finished();
+            await job.done()
+
+            assert.isAtLeast(delaySeconds, elapsedSeconds)
+
+            finished()
         });
+
+        boss.publish('wait', {message: 'hold your horses', submitted: Date.now()}, {startAfter: delaySeconds});
+
     });
 
-    boss.publish('wait', {message: 'hold your horses', submitted: Date.now()}, {startAfter: delaySeconds});
+    it('should wait until after a date time string', async function() {
 
-  });
+        const queue = 'delay-date-string'
 
-  it('should wait until after a date time string', function(finished) {
+        let date = new Date()
 
-    const queue = 'delay-date-string';
+        date.setUTCSeconds(date.getUTCSeconds() + 2)
 
-    let date = new Date();
-    date.setUTCSeconds(date.getUTCSeconds() + 2);
+        const startAfter = date.toISOString()
 
-    const startAfter = date.toISOString();
-    const started = Date.now();
+        await boss.publish(queue, null, {startAfter})
 
-    boss.publish(queue, null, {startAfter})
-      .then(() => boss.fetch(queue))
-      .then(job => assert.strictEqual(job, null))
-      .then(() => Promise.delay(2000))
-      .then(() => boss.fetch(queue))
-      .then(job => {
-        assert.isOk(job);
-        finished();
-      });
+        const job = await boss.fetch(queue)
+        
+        assert.strictEqual(job, null)
 
-  });
+        await Promise.delay(2000)
 
-  it('should wait until after a date object', function(finished) {
+        const job2 = await boss.fetch(queue)
+        
+        assert.isOk(job2)
 
-    const queue = 'delay-date-object';
+    });
 
-    let date = new Date();
-    date.setUTCSeconds(date.getUTCSeconds() + 2);
+    it('should wait until after a date object', async function() {
 
-    const startAfter = date;
-    const started = Date.now();
+        const queue = 'delay-date-object'
 
-    boss.publish(queue, null, {startAfter})
-      .then(() => boss.fetch(queue))
-      .then(job => assert.strictEqual(job, null))
-      .then(() => Promise.delay(2000))
-      .then(() => boss.fetch(queue))
-      .then(job => {
-        assert.isOk(job);
-        finished();
-      });
+        let date = new Date()
+        date.setUTCSeconds(date.getUTCSeconds() + 2)
 
-  });
+        const startAfter = date
 
-  it('should work with publishAfter() and a date object', function(finished) {
+        await boss.publish(queue, null, { startAfter })
+        
+        const job = await boss.fetch(queue)
 
-    const queue = 'publishAfter-date-object';
+        assert.strictEqual(job, null)
 
-    let date = new Date();
-    date.setUTCSeconds(date.getUTCSeconds() + 2);
+        await Promise.delay(2000)
 
-    const startAfter = date;
-    const started = Date.now();
+        const job2 = await boss.fetch(queue)
+        
+        assert.isOk(job2)
 
-    boss.publishAfter(queue, {something:1}, {retryLimit:0}, startAfter)
-      .then(() => boss.fetch(queue))
-      .then(job => assert.strictEqual(job, null))
-      .then(() => Promise.delay(2000))
-      .then(() => boss.fetch(queue))
-      .then(job => {
-        assert.isOk(job);
-        finished();
-      });
+    });
 
-  });
+    it('should work with publishAfter() and a date object', async function() {
+
+        const queue = 'publishAfter-date-object'
+
+        let date = new Date()
+        date.setUTCSeconds(date.getUTCSeconds() + 2)
+
+        const startAfter = date
+
+        await boss.publishAfter(queue, {something:1}, {retryLimit:0}, startAfter)
+
+        const job = await boss.fetch(queue)
+        
+        assert.strictEqual(job, null)
+        
+        await Promise.delay(2000)
+
+        const job2 = await boss.fetch(queue)
+        
+        assert.isOk(job2)
+    })
 
 });
-
-
-

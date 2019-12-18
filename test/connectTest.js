@@ -3,38 +3,30 @@ const helper = require('./testHelper');
 
 describe('connect', function() {
 
-  this.timeout(10000);
+    this.timeout(10000);
 
-  let boss;
+    let boss;
 
-  beforeEach(function(finished){
-    helper.start()
-      .then(dabauce => {
-        boss = dabauce;
-        finished();
-      });
-  });
+    beforeEach(async () => { boss = await helper.start() })
+    after(() => boss.stop())
 
-  afterEach(function(finished){
-    boss.stop().then(() => finished());
-  });
+    it('should fail if connecting to an older schema version', async function () {
 
-  it('should fail if connecting to an older schema version', function (finished) {
-    let schema = helper.getConfig().schema;
+        const schema = helper.getConfig().schema
 
-    helper.getDb().executeSql(`UPDATE ${schema}.version SET VERSION = '0.0.0'`)
-      .then(() => {
-        boss.connect().catch(error => {
-          assert.isNotNull(error);
-          finished();
-        });
-      });
-  });
+        await helper.getDb().executeSql(`UPDATE ${schema}.version SET VERSION = '0.0.0'`)
 
-  it('should succeed if already started', function (finished) {
-    boss.connect()
-      .then(() => boss.disconnect())
-      .then(() => finished());
-  });
+        try {
+            await boss.connect()
+        } catch(error) {
+            assert.isNotNull(error)
+        }
+
+    })
+
+    it('should succeed if already started', async function () {
+        await boss.connect()
+        await boss.disconnect()
+    })
 
 });

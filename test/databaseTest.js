@@ -14,7 +14,7 @@ describe('database', function(){
         try {
             await boss.start()
             assert(false)
-        } catch {
+        } catch(err) {
             await boss.stop()
         }
 

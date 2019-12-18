@@ -4,25 +4,26 @@ const helper = require('./testHelper');
 
 describe('initialization', function(){
 
-  this.timeout(10000);
+    this.timeout(10000)
 
-  beforeEach(function(finished) {
-    helper.init()
-      .then(() => finished());
-  });
+    beforeEach(async () => await helper.init())
+    
+    it('should fail if connecting to an uninitialized instance', async function() {
+        
+        try {
+            const config = helper.getConfig()
+            new PgBoss(config).connect()
+        } catch(error) {
+            assert.isNotNull(error)
+        }
 
-  it('should fail if connecting to an uninitialized instance', function(finished) {
-    new PgBoss(helper.getConfig()).connect()
-      .catch(error => {
-        assert.isNotNull(error);
-        finished();
-      });
-  });
+    });
 
-  it('should start with a connection string', function(finished) {
-    new PgBoss(helper.getConnectionString())
-      .start()
-      .then(boss => boss.stop())
-      .then(() => finished());
-  });
+    it('should start with a connection string', async function() {
+        const connectionString = helper.getConnectionString()
+        const boss = new PgBoss(connectionString)
+        await boss.start()
+        await boss.stop()
+    })
+
 });
