@@ -8,51 +8,34 @@ describe('fetch', function(){
 
   let boss;
 
-  before(function(finished){
-    helper.start()
-      .then(dabauce => {
-        boss = dabauce;
-        finished();
-      });
-  });
+  before(async () => { boss = await helper.start() })
+  after(() => boss.stop())
 
-  after(function(finished){
-    boss.stop().then(() => finished());
-  });
-
-  it('should reject missing id argument', function(finished){
+  it('should reject missing queue argument', function(finished) {
     boss.fetch().catch(() => finished());
   });
 
-  it('should get a single job by name and manually complete', function(finished) {
+  it('should fetch a job by name manually', async function() {
     let jobName = 'no-subscribe-required';
 
-    boss.publish(jobName)
-      .then(() => boss.fetch(jobName))
-      .then(job => {
-        assert(jobName === job.name);
-        return boss.complete(job.id);
-      })
-      .then(() => finished());
+    await boss.publish(jobName)
+    const job = await boss.fetch(jobName)
+    assert(jobName === job.name)
   });
 
-  it('should get a batch of jobs as an array', function(finished){
+  it('should get a batch of jobs as an array', async function(){
     const jobName = 'fetch-batch';
     const batchSize = 4;
 
-    Promise.all([
+    await Promise.all([
       boss.publish(jobName),
       boss.publish(jobName),
       boss.publish(jobName),
       boss.publish(jobName)
     ])
-    .then(() => boss.fetch(jobName, batchSize))
-    .then(jobs => {
-      assert(jobs.length === batchSize);
-      finished();
-    });
+
+    const jobs = await boss.fetch(jobName, batchSize)
+    
+    assert(jobs.length === batchSize);
   });
-
-
-
 });

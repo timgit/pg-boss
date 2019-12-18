@@ -4,107 +4,99 @@ const Promise = require('bluebird');
 
 describe('retries', function() {
 
-  this.timeout(10000);
+    this.timeout(10000);
 
-  let boss;
+    let boss;
+    const config = { expireCheckInterval:200, newJobCheckInterval: 200 }
 
-  before(function(finished){
-    helper.start({expireCheckInterval:200, newJobCheckInterval: 200})
-      .then(dabauce => {
-        boss = dabauce;
-        finished();
-      });
-  });
+    before(async () => { boss = await helper.start(config) })
+    after(() => boss.stop())
 
-  after(function(finished){
-    boss.stop().then(() => finished());
-  });
+    it('should retry a job that didn\'t complete', async function () {
 
-  it('should retry a job that didn\'t complete', function (finished) {
+        const queue = 'unreliable'
+        const expireIn = '100 milliseconds';
+        const retryLimit = 1;
 
-    const expireIn = '100 milliseconds';
-    const retryLimit = 1;
+        const jobId = await boss.publish({name: queue, options: { expireIn, retryLimit }})
+        
+        const try1 = await boss.fetch(queue)
 
-    let subscribeCount = 0;
+        await Promise.delay(1000)
 
-    // don't call job.done() so it will expire
-    boss.subscribe('unreliable', job => subscribeCount++);
+        const try2 = await boss.fetch(queue)
 
-    boss.publish({name: 'unreliable', options: {expireIn, retryLimit}});
+        assert.equal(try1.id, jobId)
+        assert.equal(try2.id, jobId)
 
-    setTimeout(function() {
-      assert.equal(subscribeCount, retryLimit + 1);
-      finished();
+    });
 
-    }, 3000);
+    it('should retry a job that failed', async function() {
+        const queueName = 'retryFailed';
+        const retryLimit = 1;
 
-  });
+        const jobId = await boss.publish(queueName, null, {retryLimit})
 
-  it('should retry a job that failed', function(finished){
-    const queueName = 'retryFailed';
-    const retryLimit = 1;
+        await boss.fetch(queueName)
+        await boss.fail(jobId)
+        
+        const job = await boss.fetch(queueName)
+        
+        assert.equal(job.id, jobId)
+    });
 
-    boss.publish(queueName, null, {retryLimit})
-      .then(() => boss.fetch(queueName))
-      .then(job => boss.fail(job.id))
-      .then(() => boss.fetch(queueName))
-      .then(job => {
-        assert(job, `failed job didn't get a 2nd chance`);
-        finished();
-      });
-  });
+    it('should retry with a fixed delay', async function() {
+        const queue = 'retryDelayFixed';
 
-  it('should retry with a fixed delay', function(finished){
-    const queue = 'retryDelayFixed';
+        const jobId = await boss.publish(queue, null, {retryLimit: 1, retryDelay: 1})
+        
+        await boss.fetch(queue)
+        await boss.fail(jobId)
+        
+        const job1 = await boss.fetch(queue)
+        
+        assert.strictEqual(job1, null)
 
-    boss.publish(queue, null, {retryLimit: 1, retryDelay: 1})
-      .then(() => boss.fetch(queue))
-      .then(job => boss.fail(job.id))
-      .then(() => boss.fetch(queue))
-      .then(job => assert.strictEqual(job, null))
-      .then(() => Promise.delay(1000))
-      .then(() => boss.fetch(queue))
-      .then(job => {
-        assert.isOk(job);
-        finished();
-      });
+        await Promise.delay(1000)
 
-  });
+        const job2 = await boss.fetch(queue)
 
-  it('should retry with a exponential backoff', function(finished){
+        assert.isOk(job2)
+    });
 
-    const queue = 'retryDelayBackoff';
+    it('should retry with a exponential backoff', async function() {
 
-    let subscribeCount = 0;
-    let retryLimit = 4;
+        const queue = 'retryDelayBackoff';
 
-    boss.subscribe(queue, {newJobCheckInterval:500}, job => job.done(++subscribeCount))
-      .then(() => boss.publish(queue, null, {retryLimit, retryBackoff: true}))
-      .then(() => Promise.delay(9000))
-      .then(() => {
-          assert.isBelow(subscribeCount, retryLimit);
-          finished();
-      });
+        let subscribeCount = 0;
+        let retryLimit = 4;
 
-  });
+        await boss.subscribe(queue, { newJobCheckInterval:500 }, job => job.done(++subscribeCount))
+        await boss.publish(queue, null, {retryLimit, retryBackoff: true})
 
-  it('should set the default retry limit to 1 if missing', function(finished){
+        await Promise.delay(9000)
 
-    const queue = 'retryLimitDefault';
+        assert.isBelow(subscribeCount, retryLimit);
+            
+    })
 
-    boss.publish(queue, null, {retryDelay: 1})
-      .then(() => boss.fetch(queue))
-      .then(job => boss.fail(job.id))
-      .then(() => boss.fetch(queue))
-      .then(job => assert.strictEqual(job, null))
-      .then(() => Promise.delay(1000))
-      .then(() => boss.fetch(queue))
-      .then(job => {
-        assert.isOk(job);
-        finished();
-      });
+    it('should set the default retry limit to 1 if missing', async function() {
 
-  });
+        const queue = 'retryLimitDefault';
 
+        const jobId = await boss.publish(queue, null, { retryDelay: 1 })
+        await boss.fetch(queue)
+        await boss.fail(jobId)
+        
+        const job1 = await boss.fetch(queue)
+
+        assert.strictEqual(job1, null)
+
+        await Promise.delay(1000)
+
+        const job2 = await boss.fetch(queue)
+        
+        assert.isOk(job2);
+    });
 
 });
