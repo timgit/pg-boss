@@ -1,5 +1,5 @@
 .idea
-src/
+lib/
 test/
 coverage/
 .travis.yml

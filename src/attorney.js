@@ -5,72 +5,62 @@ module.exports = {
   applyNewJobCheckInterval,
   checkPublishArgs,
   checkSubscribeArgs,
-  checkFetchArgs,
-  assertAsync
+  checkFetchArgs
 }
 
 function checkPublishArgs (args) {
   let name, data, options
 
-  try {
-    if (typeof args[0] === 'string') {
-      name = args[0]
-      data = args[1]
+  if (typeof args[0] === 'string') {
+    name = args[0]
+    data = args[1]
 
-      assert(typeof data !== 'function', 'publish() cannot accept a function as the payload.  Did you intend to use subscribe()?')
+    assert(typeof data !== 'function', 'publish() cannot accept a function as the payload.  Did you intend to use subscribe()?')
 
-      options = args[2]
-    } else if (typeof args[0] === 'object') {
-      assert(args.length === 1, 'publish object API only accepts 1 argument')
+    options = args[2]
+  } else if (typeof args[0] === 'object') {
+    assert(args.length === 1, 'publish object API only accepts 1 argument')
 
-      const job = args[0]
+    const job = args[0]
 
-      assert(job, 'boss requires all jobs to have a name')
+    assert(job, 'boss requires all jobs to have a name')
 
-      name = job.name
-      data = job.data
-      options = job.options
-    }
-
-    options = options || {}
-
-    assert(name, 'boss requires all jobs to have a queue name')
-    assert(typeof options === 'object', 'options should be an object')
-  } catch (error) {
-    return Promise.reject(error)
+    name = job.name
+    data = job.data
+    options = job.options
   }
 
-  return Promise.resolve({ name, data, options })
+  options = options || {}
+
+  assert(name, 'boss requires all jobs to have a queue name')
+  assert(typeof options === 'object', 'options should be an object')
+
+  return { name, data, options }
 }
 
 function checkSubscribeArgs (name, args) {
   let options, callback
 
-  try {
-    assert(name, 'missing job name')
+  assert(name, 'missing job name')
 
-    if (args.length === 1) {
-      callback = args[0]
-      options = {}
-    } else if (args.length > 1) {
-      options = args[0] || {}
-      callback = args[1]
-    }
-
-    assert(typeof callback === 'function', 'expected callback to be a function')
-
-    if (options) { assert(typeof options === 'object', 'expected config to be an object') }
-
-    name = sanitizeQueueNameForFetch(name)
-  } catch (e) {
-    return Promise.reject(e)
+  if (args.length === 1) {
+    callback = args[0]
+    options = {}
+  } else if (args.length > 1) {
+    options = args[0] || {}
+    callback = args[1]
   }
 
-  return Promise.resolve({ options, callback })
+  assert(typeof callback === 'function', 'expected callback to be a function')
+
+  if (options) { assert(typeof options === 'object', 'expected config to be an object') }
+
+  name = sanitizeQueueNameForFetch(name)
+  return { options, callback }
 }
 
-async function checkFetchArgs (name, batchSize) {
-  await assertAsync(name, 'missing queue name')
+function checkFetchArgs (name, batchSize) {
+  assert(name, 'missing queue name')
 
   name = sanitizeQueueNameForFetch(name)
 
@@ -80,18 +70,7 @@ async function checkFetchArgs (name, batchSize) {
 }
 
 function sanitizeQueueNameForFetch (name) {
-  return name.replace(
-    /[%_*]/g,
-    match => match === '*' ? '%' : '\\' + match)
-}
-
-function assertAsync (arg, errorMessage) {
-  try {
-    assert(arg, errorMessage)
-    return Promise.resolve(arg)
-  } catch (e) {
-    return Promise.reject(e)
-  }
+  return name.replace(/[%_*]/g, match => match === '*' ? '%' : '\\' + match)
 }
 
 function applyConfig (value) {

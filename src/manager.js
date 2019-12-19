@@ -51,23 +51,22 @@ class Manager extends EventEmitter {
     ]
   }
 
-  stop () {
+  async stop () {
     Object.keys(this.subscriptions).forEach(name => this.unsubscribe(name))
     this.subscriptions = {}
-    return Promise.resolve(true)
   }
 
-  subscribe (name, ...args) {
-    return Attorney.checkSubscribeArgs(name, args)
-      .then(({ options, callback }) => this.watch(name, options, callback))
+  async subscribe (name, ...args) {
+    const { options, callback } = Attorney.checkSubscribeArgs(name, args)
+    return this.watch(name, options, callback)
   }
 
-  onComplete (name, ...args) {
-    return Attorney.checkSubscribeArgs(name, args)
-      .then(({ options, callback }) => this.watch(completedJobPrefix + name, options, callback))
+  async onComplete (name, ...args) {
+    const { options, callback } = Attorney.checkSubscribeArgs(name, args)
+    return this.watch(completedJobPrefix + name, options, callback)
   }
 
-  watch (name, options, callback) {
+  async watch (name, options, callback) {
     // watch() is always nested in a promise, so assert()s are welcome
 
     if ('newJobCheckInterval' in options || 'newJobCheckIntervalSeconds' in options) { options = Attorney.applyNewJobCheckInterval(options) } else { options.newJobCheckInterval = this.config.newJobCheckInterval }
@@ -87,18 +86,29 @@ class Manager extends EventEmitter {
       assert(Number.isInteger(options.batchSize) && options.batchSize >= 1, batchSizeErrorMessage)
     }
 
-    const sendItBruh = (jobs) => {
-      if (!jobs) { return Promise.resolve() }
+    const sendItBruh = async (jobs) => {
+      if (!jobs) {
+        return
+      }
 
       // If you get a batch, for now you should use complete() so you can control
       //   whether individual or group completion responses apply to your use case
       // Failing will fail all fetched jobs
-      if (options.batchSize) { return Promise.all([callback(jobs)]).catch(err => this.fail(jobs.map(job => job.id), err)) }
+      if (options.batchSize) {
+        return Promise.all([callback(jobs)]).catch(err => this.fail(jobs.map(job => job.id), err))
+      }
+
+      const concurrency = options.teamConcurrency || 1
 
       // either no option was set, or teamSize was used
-      return Promise.map(jobs, job => {
-        return callback(job).then(value => this.complete(job.id, value)).catch(err => this.fail(job.id, err))
-      }, { concurrency: options.teamConcurrency || 1 })
+      return Promise.map(jobs, async job => {
+        try {
+          const value = await callback(job)
+          await this.complete(job.id, value)
+        } catch (err) {
+          this.fail(job.id, err)
+        }
+      }, { concurrency })
     }
 
     const onError = error => this.emit(events.error, error)
@@ -117,8 +127,6 @@ class Manager extends EventEmitter {
     if (!this.subscriptions[name]) { this.subscriptions[name] = { workers: [] } }
 
     this.subscriptions[name].workers.push(worker)
-
-    return Promise.resolve(true)
   }
 
   async unsubscribe (name) {
@@ -128,56 +136,52 @@ class Manager extends EventEmitter {
     delete this.subscriptions[name]
   }
 
-  offComplete (name) {
+  async offComplete (name) {
     return this.unsubscribe(completedJobPrefix + name)
   }
 
-  publish (...args) {
-    return Attorney.checkPublishArgs(args)
-      .then(({ name, data, options }) => this.createJob(name, data, options))
+  async publish (...args) {
+    const { name, data, options } = Attorney.checkPublishArgs(args)
+    return this.createJob(name, data, options)
   }
 
-  publishOnce (name, data, options, key) {
-    return Attorney.checkPublishArgs([name, data, options])
-      .then(({ name, data, options }) => {
-        options.singletonKey = key
+  async publishOnce (name, data, options, key) {
+    const result = Attorney.checkPublishArgs([name, data, options])
 
-        return this.createJob(name, data, options)
-      })
+    result.options.singletonKey = key
+
+    return this.createJob(result.name, result.data, result.options)
   }
 
-  publishAfter (name, data, options, after) {
-    return Attorney.checkPublishArgs([name, data, options])
-      .then(({ name, data, options }) => {
-        options.startAfter = after
+  async publishAfter (name, data, options, after) {
+    const result = Attorney.checkPublishArgs([name, data, options])
 
-        return this.createJob(name, data, options)
-      })
+    result.options.startAfter = after
+
+    return this.createJob(result.name, result.data, result.options)
   }
 
-  publishThrottled (name, data, options, seconds, key) {
-    return Attorney.checkPublishArgs([name, data, options])
-      .then(({ name, data, options }) => {
-        options.singletonSeconds = seconds
-        options.singletonNextSlot = false
-        options.singletonKey = key
+  async publishThrottled (name, data, options, seconds, key) {
+    const result = Attorney.checkPublishArgs([name, data, options])
 
-        return this.createJob(name, data, options)
-      })
+    result.options.singletonSeconds = seconds
+    result.options.singletonNextSlot = false
+    result.options.singletonKey = key
+
+    return this.createJob(result.name, result.data, result.options)
   }
 
-  publishDebounced (name, data, options, seconds, key) {
-    return Attorney.checkPublishArgs([name, data, options])
-      .then(({ name, data, options }) => {
-        options.singletonSeconds = seconds
-        options.singletonNextSlot = true
-        options.singletonKey = key
+  async publishDebounced (name, data, options, seconds, key) {
+    const result = Attorney.checkPublishArgs([name, data, options])
 
-        return this.createJob(name, data, options)
-      })
+    result.options.singletonSeconds = seconds
+    result.options.singletonNextSlot = true
+    result.options.singletonKey = key
+
+    return this.createJob(result.name, result.data, result.options)
   }
 
-  createJob (name, data, options, singletonOffset) {
+  async createJob (name, data, options, singletonOffset) {
     let startAfter = options.startAfter
 
     startAfter = (startAfter instanceof Date && typeof startAfter.toISOString === 'function') ? startAfter.toISOString()
@@ -217,36 +221,38 @@ class Manager extends EventEmitter {
     // ordinals! [1,  2,    3,        4,          5,          6,        7,    8,            9,                10,              11,         12          ]
     const values = [id, name, priority, retryLimit, startAfter, expireIn, data, singletonKey, singletonSeconds, singletonOffset, retryDelay, retryBackoff]
 
-    return this.db.executeSql(this.insertJobCommand, values)
-      .then(result => {
-        if (result.rowCount === 1) { return result.rows[0].id }
+    const result = await this.db.executeSql(this.insertJobCommand, values)
 
-        if (!options.singletonNextSlot) { return null }
+    if (result.rowCount === 1) {
+      return result.rows[0].id
+    }
 
-        // delay starting by the offset to honor throttling config
-        options.startAfter = singletonSeconds
-        // toggle off next slot config for round 2
-        options.singletonNextSlot = false
+    if (!options.singletonNextSlot) {
+      return null
+    }
 
-        const singletonOffset = singletonSeconds
+    // delay starting by the offset to honor throttling config
+    options.startAfter = singletonSeconds
+    // toggle off next slot config for round 2
+    options.singletonNextSlot = false
 
-        return this.createJob(name, data, options, singletonOffset)
-      })
+    singletonOffset = singletonSeconds
+
+    return this.createJob(name, data, options, singletonOffset)
   }
 
-  fetch (name, batchSize) {
-    return Attorney.checkFetchArgs(name, batchSize)
-      .then(values => this.db.executeSql(this.nextJobCommand, [values.name, values.batchSize || 1]))
-      .then(result => {
-        const jobs = result.rows.map(job => {
-          job.done = (error, response) => error ? this.fail(job.id, error) : this.complete(job.id, response)
-          return job
-        })
+  async fetch (name, batchSize) {
+    const values = Attorney.checkFetchArgs(name, batchSize)
+    const result = await this.db.executeSql(this.nextJobCommand, [values.name, values.batchSize || 1])
 
-        return jobs.length === 0 ? null
-          : jobs.length === 1 && !batchSize ? jobs[0]
-            : jobs
-      })
+    const jobs = result.rows.map(job => {
+      job.done = (error, response) => error ? this.fail(job.id, error) : this.complete(job.id, response)
+      return job
+    })
+
+    return jobs.length === 0 ? null
+      : jobs.length === 1 && !batchSize ? jobs[0]
+        : jobs
   }
 
   fetchCompleted (name, batchSize) {
@@ -256,12 +262,13 @@ class Manager extends EventEmitter {
   mapCompletionIdArg (id, funcName) {
     const errorMessage = `${funcName}() requires an id`
 
-    return Attorney.assertAsync(id, errorMessage)
-      .then(() => {
-        const ids = Array.isArray(id) ? id : [id]
-        assert(ids.length, errorMessage)
-        return ids
-      })
+    assert(id, errorMessage)
+
+    const ids = Array.isArray(id) ? id : [id]
+
+    assert(ids.length, errorMessage)
+
+    return ids
   }
 
   mapCompletionDataArg (data) {
@@ -282,25 +289,22 @@ class Manager extends EventEmitter {
     }
   }
 
-  complete (id, data) {
-    return this.mapCompletionIdArg(id, 'complete')
-      .then(ids => this.db.executeSql(this.completeJobsCommand, [ids, this.mapCompletionDataArg(data)])
-        .then(result => this.mapCompletionResponse(ids, result))
-      )
+  async complete (id, data) {
+    const ids = this.mapCompletionIdArg(id, 'complete')
+    const result = await this.db.executeSql(this.completeJobsCommand, [ids, this.mapCompletionDataArg(data)])
+    return this.mapCompletionResponse(ids, result)
   }
 
-  fail (id, data) {
-    return this.mapCompletionIdArg(id, 'fail')
-      .then(ids => this.db.executeSql(this.failJobsCommand, [ids, this.mapCompletionDataArg(data)])
-        .then(result => this.mapCompletionResponse(ids, result))
-      )
+  async fail (id, data) {
+    const ids = this.mapCompletionIdArg(id, 'fail')
+    const result = await this.db.executeSql(this.failJobsCommand, [ids, this.mapCompletionDataArg(data)])
+    return this.mapCompletionResponse(ids, result)
   }
 
-  cancel (id) {
-    return this.mapCompletionIdArg(id, 'cancel')
-      .then(ids => this.db.executeSql(this.cancelJobsCommand, [ids])
-        .then(result => this.mapCompletionResponse(ids, result))
-      )
+  async cancel (id) {
+    const ids = this.mapCompletionIdArg(id, 'cancel')
+    const result = await this.db.executeSql(this.cancelJobsCommand, [ids])
+    return this.mapCompletionResponse(ids, result)
   }
 
   deleteQueue (queue) {
