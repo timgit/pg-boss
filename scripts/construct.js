@@ -1,5 +1,5 @@
-const PgBoss = require('../lib');
+const PgBoss = require('../lib')
 
-let plans = PgBoss.getConstructionPlans('pgboss');
+const plans = PgBoss.getConstructionPlans('pgboss')
 
-console.log(plans);
+console.log(plans)

@@ -6,9 +6,9 @@ const states = {
   expired: 'expired',
   cancelled: 'cancelled',
   failed: 'failed'
-};
+}
 
-const completedJobPrefix = `__state__${states.completed}__`;
+const completedJobPrefix = `__state__${states.completed}__`
 
 module.exports = {
   create,
@@ -27,10 +27,10 @@ module.exports = {
   deleteQueue,
   deleteAllQueues,
   states: Object.assign({}, states),
-  completedJobPrefix,
-};
+  completedJobPrefix
+}
 
-function create(schema) {
+function create (schema) {
   return [
     createSchema(schema),
     tryCreateCryptoExtension(),
@@ -44,47 +44,46 @@ function create(schema) {
     createIndexSingletonOn(schema),
     createIndexSingletonKeyOn(schema),
     createIndexSingletonKey(schema)
-  ];
+  ]
 }
 
-function createSchema(schema) {
+function createSchema (schema) {
   return `
     CREATE SCHEMA IF NOT EXISTS ${schema}
-  `;
+  `
 }
 
-
-function tryCreateCryptoExtension() {
+function tryCreateCryptoExtension () {
   return `
     CREATE EXTENSION IF NOT EXISTS pgcrypto
-  `;
+  `
 }
 
-function createVersionTable(schema) {
+function createVersionTable (schema) {
   return `
     CREATE TABLE ${schema}.version (
       version text primary key
     )
-  `;
+  `
 }
 
-function createJobStateEnum(schema) {
+function createJobStateEnum (schema) {
   // ENUM definition order is important
   // base type is numeric and first values are less than last values
   return `
     CREATE TYPE ${schema}.job_state AS ENUM (
       '${states.created}',
       '${states.retry}',
-      '${states.active}',	
+      '${states.active}',
       '${states.completed}',
       '${states.expired}',
       '${states.cancelled}',
       '${states.failed}'
     )
-  `;
+  `
 }
 
-function createJobTable(schema) {
+function createJobTable (schema) {
   return `
     CREATE TABLE ${schema}.job (
       id uuid primary key not null default gen_random_uuid(),
@@ -104,75 +103,75 @@ function createJobTable(schema) {
       createdOn timestamp with time zone not null default now(),
       completedOn timestamp with time zone
     )
-  `;
+  `
 }
 
-function cloneJobTableForArchive(schema){
-  return `CREATE TABLE ${schema}.archive (LIKE ${schema}.job)`;
+function cloneJobTableForArchive (schema) {
+  return `CREATE TABLE ${schema}.archive (LIKE ${schema}.job)`
 }
 
-function addArchivedOnToArchive(schema) {
-  return `ALTER TABLE ${schema}.archive ADD archivedOn timestamptz NOT NULL DEFAULT now()`;
+function addArchivedOnToArchive (schema) {
+  return `ALTER TABLE ${schema}.archive ADD archivedOn timestamptz NOT NULL DEFAULT now()`
 }
 
-function addIndexToArchive(schema) {
+function addIndexToArchive (schema) {
   return `CREATE INDEX archive_id_idx ON ${schema}.archive(id)`
 }
 
-function deleteQueue(schema){
-  return `DELETE FROM ${schema}.job WHERE name = $1`;
+function deleteQueue (schema) {
+  return `DELETE FROM ${schema}.job WHERE name = $1`
 }
 
-function deleteAllQueues(schema){
-  return `TRUNCATE ${schema}.job`;
+function deleteAllQueues (schema) {
+  return `TRUNCATE ${schema}.job`
 }
 
-function createIndexSingletonKey(schema){
+function createIndexSingletonKey (schema) {
   // anything with singletonKey means "only 1 job can be queued or active at a time"
   return `
     CREATE UNIQUE INDEX job_singletonKey ON ${schema}.job (name, singletonKey) WHERE state < '${states.completed}' AND singletonOn IS NULL
-  `;
+  `
 }
 
-function createIndexSingletonOn(schema){
+function createIndexSingletonOn (schema) {
   // anything with singletonOn means "only 1 job within this time period, queued, active or completed"
   return `
     CREATE UNIQUE INDEX job_singletonOn ON ${schema}.job (name, singletonOn) WHERE state < '${states.expired}' AND singletonKey IS NULL
-  `;
+  `
 }
 
-function createIndexSingletonKeyOn(schema){
+function createIndexSingletonKeyOn (schema) {
   // anything with both singletonOn and singletonKey means "only 1 job within this time period with this key, queued, active or completed"
   return `
     CREATE UNIQUE INDEX job_singletonKeyOn ON ${schema}.job (name, singletonOn, singletonKey) WHERE state < '${states.expired}'
-  `;
+  `
 }
 
-function createIndexJobName(schema){
+function createIndexJobName (schema) {
   return `
     CREATE INDEX job_name ON ${schema}.job (name text_pattern_ops)
-  `;
+  `
 }
 
-function getVersion(schema) {
+function getVersion (schema) {
   return `
     SELECT version from ${schema}.version
-  `;
+  `
 }
 
-function versionTableExists(schema) {
+function versionTableExists (schema) {
   return `
     SELECT to_regclass('${schema}.version') as name
-  `;
+  `
 }
 
-function insertVersion(schema) {
+function insertVersion (schema) {
   return `
     INSERT INTO ${schema}.version(version) VALUES ($1)
-  `;
+  `
 }
 
-function fetchNextJob(schema) {
+function fetchNextJob (schema) {
   return `
     WITH nextJob as (
       SELECT id
@@ -191,10 +190,10 @@ function fetchNextJob(schema) {
     FROM nextJob
     WHERE j.id = nextJob.id
     RETURNING j.id, name, data
-  `;
+  `
 }
 
-function buildJsonCompletionObject(withResponse) {
+function buildJsonCompletionObject (withResponse) {
   // job completion contract
   return `jsonb_build_object(
     'request', jsonb_build_object('id', id, 'name', name, 'data', data),
@@ -205,14 +204,14 @@ function buildJsonCompletionObject(withResponse) {
     'startedOn', startedOn,
     'completedOn', completedOn,
     'failed', CASE WHEN state = '${states.completed}' THEN false ELSE true END
-  )`;
+  )`
 }
 
 const retryCompletedOnCase = `CASE
           WHEN retryCount < retryLimit
           THEN NULL
           ELSE now()
-          END`;
+          END`
 
 const retryStartAfterCase = `CASE
           WHEN retryCount = retryLimit THEN startAfter
@@ -224,10 +223,9 @@ const retryStartAfterCase = `CASE
                 retryDelay * 2 ^ LEAST(16, retryCount + 1) / 2 * random()
             )
             * interval '1'
-          END`;
+          END`
 
-
-function completeJobs(schema){
+function completeJobs (schema) {
   return `
     WITH results AS (
       UPDATE ${schema}.job
@@ -244,10 +242,10 @@ function completeJobs(schema){
     FROM results
     WHERE NOT name LIKE '${completedJobPrefix}%'
     RETURNING 1
-  `; // returning 1 here just to count results against input array
+  ` // returning 1 here just to count results against input array
 }
 
-function failJobs(schema){
+function failJobs (schema) {
   return `
     WITH results AS (
       UPDATE ${schema}.job
@@ -270,10 +268,10 @@ function failJobs(schema){
     WHERE state = '${states.failed}'
       AND NOT name LIKE '${completedJobPrefix}%'
     RETURNING 1
-  `; // returning 1 here just to count results against input array
+  ` // returning 1 here just to count results against input array
 }
 
-function expire(schema) {
+function expire (schema) {
   return `
     WITH results AS (
       UPDATE ${schema}.job
@@ -294,10 +292,10 @@ function expire(schema) {
     FROM results
     WHERE state = '${states.expired}'
       AND NOT name LIKE '${completedJobPrefix}%'
-  `;
+  `
 }
 
-function cancelJobs(schema){
+function cancelJobs (schema) {
   return `
     UPDATE ${schema}.job
     SET completedOn = now(),
@@ -305,10 +303,10 @@ function cancelJobs(schema){
     WHERE id IN (SELECT UNNEST($1::uuid[]))
       AND state < '${states.completed}'
     RETURNING 1
-  `;  // returning 1 here just to count results against input array
+  ` // returning 1 here just to count results against input array
 }
 
-function insertJob(schema) {
+function insertJob (schema) {
   return `
     INSERT INTO ${schema}.job (
       id, 
@@ -340,17 +338,17 @@ function insertJob(schema) {
     )
     ON CONFLICT DO NOTHING
     RETURNING id
-  `;
+  `
 }
 
-function purge(schema) {
+function purge (schema) {
   return `
     DELETE FROM ${schema}.archive
     WHERE (archivedOn + CAST($1 as interval) < now())
-  `;
+  `
 }
 
-function archive(schema){
+function archive (schema) {
   return `
     WITH archived_rows AS (
       DELETE FROM ${schema}.job
@@ -369,14 +367,14 @@ function archive(schema){
     SELECT 
       id, name, priority, data, state, retryLimit, retryCount, retryDelay, retryBackoff, startAfter, startedOn, singletonKey, singletonOn, expireIn, createdOn, completedOn
     FROM archived_rows
-  `;
+  `
 }
 
-function countStates(schema){
+function countStates (schema) {
   return `
     SELECT name, state, count(*) size
     FROM ${schema}.job
     WHERE name NOT LIKE '${completedJobPrefix}%'
     GROUP BY rollup(name), rollup(state)
-  `;
+  `
 }

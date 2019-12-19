@@ -1,39 +1,35 @@
-const assert = require('chai').assert;
-const helper = require('./testHelper');
-const Promise = require('bluebird');
+const assert = require('chai').assert
+const helper = require('./testHelper')
+const Promise = require('bluebird')
 
-describe('delete', async function() {
+describe('delete', async function () {
+  this.timeout(10000)
 
-    this.timeout(10000);
+  let boss
 
-    let boss;
+  const config = {
+    archiveCompletedJobsEvery: '1 second',
+    archiveCheckInterval: 500,
+    deleteArchivedJobsEvery: '1 second',
+    deleteCheckInterval: 500
+  }
 
-    const config = {
-        archiveCompletedJobsEvery:'1 second',
-        archiveCheckInterval: 500,
-        deleteArchivedJobsEvery: '1 second',
-        deleteCheckInterval: 500
-    };
+  before(async () => { boss = await helper.start(config) })
+  after(() => boss.stop())
 
-    before(async () => { boss = await helper.start(config) })
-    after(() => boss.stop())
+  it('should delete an archived job', async function () {
+    const jobName = 'deleteMe'
+    const jobId = await boss.publish(jobName)
+    const job = await boss.fetch(jobName)
 
-    it('should delete an archived job', async function(){
+    assert.equal(jobId, job.id)
 
-        let jobName = 'deleteMe';
-        let jobId = await boss.publish(jobName)
-        let job = await boss.fetch(jobName)
+    await boss.complete(jobId)
 
-        assert.equal(jobId, job.id)
+    await Promise.delay(3000)
 
-        await boss.complete(jobId)
+    const archivedJob = await helper.getArchivedJobById(jobId)
 
-        await Promise.delay(3000)
-
-        let archivedJob = await helper.getArchivedJobById(jobId)
-
-        assert.strictEqual(archivedJob, null)
-
-    });
-
-});
+    assert.strictEqual(archivedJob, null)
+  })
+})

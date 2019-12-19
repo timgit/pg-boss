@@ -1,123 +1,123 @@
-const EventEmitter = require('events');
-const Attorney = require('./attorney');
-const Contractor = require('./contractor');
-const Manager = require('./manager');
-const Boss = require('./boss');
-const Db = require('./db');
-const plans = require('./plans');
+const assert = require('assert')
+const EventEmitter = require('events')
+const Attorney = require('./attorney')
+const Contractor = require('./contractor')
+const Manager = require('./manager')
+const Boss = require('./boss')
+const Db = require('./db')
+const plans = require('./plans')
 
-const notReadyErrorMessage = `boss ain't ready.  Use start() or connect() to get started.`;
-const alreadyStartedErrorMessage = 'boss.start() has already been called on this instance.';
-const notStartedErrorMessage = `boss ain't started.  Use start().`;
+const notReadyErrorMessage = 'boss ain\'t ready.  Use start() or connect() to get started.'
+const alreadyStartedErrorMessage = 'boss.start() has already been called on this instance.'
+const notStartedErrorMessage = 'boss ain\'t started.  Use start().'
 
 class PgBoss extends EventEmitter {
-  static getConstructionPlans(schema) {
-    return Contractor.constructionPlans(schema);
+  static getConstructionPlans (schema) {
+    return Contractor.constructionPlans(schema)
   }
 
-  static getMigrationPlans(schema, version, uninstall) {
-    return Contractor.migrationPlans(schema, version, uninstall);
+  static getMigrationPlans (schema, version, uninstall) {
+    return Contractor.migrationPlans(schema, version, uninstall)
   }
 
-  constructor(config){
-    config = Attorney.applyConfig(config);
+  constructor (config) {
+    config = Attorney.applyConfig(config)
 
-    super();
+    super()
 
-    const db = getDb(config);
+    const db = getDb(config)
 
-    if(db.isOurs)
-      promoteEvent.call(this, db, 'error');
+    if (db.isOurs) { promoteEvent.call(this, db, 'error') }
 
-    const manager = new Manager(db, config);
-    Object.keys(manager.events).forEach(event => promoteEvent.call(this, manager, manager.events[event]));
-    manager.functions.forEach(func => promoteFunction.call(this, manager, func));
+    const manager = new Manager(db, config)
+    Object.keys(manager.events).forEach(event => promoteEvent.call(this, manager, manager.events[event]))
+    manager.functions.forEach(func => promoteFunction.call(this, manager, func))
 
-    const boss = new Boss(db, config);
-    Object.keys(boss.events).forEach(event => promoteEvent.call(this, boss, boss.events[event]));
+    const boss = new Boss(db, config)
+    Object.keys(boss.events).forEach(event => promoteEvent.call(this, boss, boss.events[event]))
 
-    this.config = config;
-    this.db = db;
-    this.boss = boss;
-    this.contractor = new Contractor(db, config);
-    this.manager = manager;
+    this.config = config
+    this.db = db
+    this.boss = boss
+    this.contractor = new Contractor(db, config)
+    this.manager = manager
 
-    function getDb(config){
-      let db;
+    function getDb (config) {
+      let db
 
-      if(config.db) {
-        db = config.db;
-      }
-      else {
-        db = new Db(config);
-        db.isOurs = true;
+      if (config.db) {
+        db = config.db
+      } else {
+        db = new Db(config)
+        db.isOurs = true
       }
 
-      return db;
+      return db
     }
 
-    function promoteFunction(obj, func){
+    function promoteFunction (obj, func) {
       this[func.name] = (...args) => {
-        if(!this.isReady) return Promise.reject(notReadyErrorMessage);
-        return func.apply(obj, args);
+        if (!this.isReady) return Promise.reject(notReadyErrorMessage)
+        return func.apply(obj, args)
       }
     }
 
-    function promoteEvent(emitter, event){
-      emitter.on(event, arg => this.emit(event, arg));
+    function promoteEvent (emitter, event) {
+      emitter.on(event, arg => this.emit(event, arg))
     }
-
   }
 
-  start(options) {
-    if(this.isStarted) return Promise.reject(alreadyStartedErrorMessage);
+  start (options) {
+    if (this.isStarted) return Promise.reject(alreadyStartedErrorMessage)
 
-    options = options || {};
+    options = options || {}
 
-    this.isStarted = true;
+    this.isStarted = true
 
-    return this.contractor.start.call(this.contractor)
+    return this.contractor.start()
       .then(() => {
-        this.isReady = true;
+        this.isReady = true
 
-        if(!options.noSupervisor)
-          this.boss.supervise(); // not in promise chain for async start()
+        if (!options.noSupervisor) { this.boss.supervise() } // not in promise chain for async start()
 
-        return this;
-      });
+        return this
+      })
   }
 
-  stop() {
-    if(!this.isStarted) return Promise.reject(notStartedErrorMessage);
+  stop () {
+    if (!this.isStarted) return Promise.reject(notStartedErrorMessage)
 
     return Promise.all([
-        this.manager.stop(),
-        this.boss.stop()
-      ])
+      this.manager.stop(),
+      this.boss.stop()
+    ])
       .then(() => this.db.isOurs ? this.db.close() : null)
       .then(() => {
-        this.isReady = false;
-        this.isStarted = false;
-      });
+        this.isReady = false
+        this.isStarted = false
+      })
   }
 
-  connect() {
-    return this.contractor.connect.call(this.contractor)
+  connect () {
+    return this.contractor.connect()
       .then(() => {
-        this.isReady = true;
-        return this;
-      });
+        this.isReady = true
+        return this
+      })
   }
 
-  disconnect(...args) {
-    if(!this.isReady) return Promise.reject(notReadyErrorMessage);
+  async disconnect (...args) {
+    assert(this.isReady, notReadyErrorMessage)
 
-    return this.manager.stop.apply(this.manager, args)
-      .then(() => this.db.isOurs ? this.db.close() : null)
-      .then(() => this.isReady = false);
+    await this.manager.stop.apply(this.manager, args)
+
+    if (this.db.isOurs) {
+      await this.db.close()
+    }
+
+    this.isReady = false
   }
-
 }
 
-module.exports = PgBoss;
-module.exports.states = plans.states;
+module.exports = PgBoss
+module.exports.states = plans.states

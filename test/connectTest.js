@@ -1,32 +1,28 @@
-const assert = require('chai').assert;
-const helper = require('./testHelper');
+const assert = require('chai').assert
+const helper = require('./testHelper')
 
-describe('connect', function() {
+describe('connect', function () {
+  this.timeout(10000)
 
-    this.timeout(10000);
+  let boss
 
-    let boss;
+  beforeEach(async () => { boss = await helper.start() })
+  after(() => boss.stop())
 
-    beforeEach(async () => { boss = await helper.start() })
-    after(() => boss.stop())
+  it('should fail if connecting to an older schema version', async function () {
+    const schema = helper.getConfig().schema
 
-    it('should fail if connecting to an older schema version', async function () {
+    await helper.getDb().executeSql(`UPDATE ${schema}.version SET VERSION = '0.0.0'`)
 
-        const schema = helper.getConfig().schema
+    try {
+      await boss.connect()
+    } catch (error) {
+      assert.isNotNull(error)
+    }
+  })
 
-        await helper.getDb().executeSql(`UPDATE ${schema}.version SET VERSION = '0.0.0'`)
-
-        try {
-            await boss.connect()
-        } catch(error) {
-            assert.isNotNull(error)
-        }
-
-    })
-
-    it('should succeed if already started', async function () {
-        await boss.connect()
-        await boss.disconnect()
-    })
-
-});
+  it('should succeed if already started', async function () {
+    await boss.connect()
+    await boss.disconnect()
+  })
+})

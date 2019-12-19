@@ -21,10 +21,11 @@
     "coveralls": "^3.0.5",
     "cross-env": "^5.2.0",
     "mocha": "^6.2.0",
-    "nyc": "^14.1.1"
+    "nyc": "^14.1.1",
+    "standard": "^14.3.1"
   },
   "scripts": {
-    "test": "mocha --exit --slow 10000",
+    "test": "standard && mocha --exit --slow 10000",
     "cover": "nyc --reporter=text npm test",
     "forcover": "npm run cover && nyc report --reporter=text-lcov | coveralls",
     "compile": "babel -d lib/ src/",
@@ -39,6 +40,9 @@
     ],
     "sourceMap": false,
     "instrument": true
+  },
+  "standard": {
+    "globals": [ "describe", "it", "before", "after", "beforeEach", "afterEach" ]
   },
   "repository": {
     "type": "git",

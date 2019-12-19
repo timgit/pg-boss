@@ -1,182 +1,168 @@
-const Promise = require('bluebird');
-const assert = require('chai').assert;
-const helper = require('./testHelper');
+const Promise = require('bluebird')
+const assert = require('chai').assert
+const helper = require('./testHelper')
 
-describe('complete', function() {
+describe('complete', function () {
+  this.timeout(10000)
 
-    this.timeout(10000);
+  let boss
 
-    let boss;
+  before(async () => { boss = await helper.start() })
+  after(() => boss.stop())
 
-    before(async () => { boss = await helper.start() })
-    after(() => boss.stop())
+  it('should reject missing id argument', function (finished) {
+    boss.complete().catch(() => finished())
+  })
 
-    it('should reject missing id argument', function(finished){
-        boss.complete().catch(() => finished());
-    });
+  it('should complete a batch of jobs', async function () {
+    const jobName = 'complete-batch'
 
-    it('should complete a batch of jobs', async function(){
-        const jobName = 'complete-batch';
+    await Promise.all([
+      boss.publish(jobName),
+      boss.publish(jobName),
+      boss.publish(jobName)
+    ])
 
-        await Promise.all([
-            boss.publish(jobName),
-            boss.publish(jobName),
-            boss.publish(jobName)
-        ])
+    const jobs = await boss.fetch(jobName, 3)
 
-        let jobs = await boss.fetch(jobName, 3)
+    await boss.complete(jobs.map(job => job.id))
+  })
 
-        await boss.complete(jobs.map(job => job.id))
+  it('onComplete should have the payload from complete() in the response object', function (finished) {
+    test()
 
-    });
+    async function test () {
+      const jobName = 'part-of-something-important'
+      const responsePayload = { message: 'super-important-payload', arg2: '123' }
 
-    it('onComplete should have the payload from complete() in the response object', function(finished){
+      await boss.publish(jobName)
 
-        test()
+      const job = await boss.fetch(jobName)
 
-        async function test() {
-            const jobName = 'part-of-something-important';
-            const responsePayload = {message: 'super-important-payload', arg2: '123'};
-    
-            await boss.publish(jobName)
-            
-            let job = await boss.fetch(jobName)
-            
-            await boss.complete(job.id, responsePayload)
-    
-            boss.onComplete(jobName, job => {
-                assert.equal(job.data.response.message, responsePayload.message);
-                assert.equal(job.data.response.arg2, responsePayload.arg2);
-    
-                finished();
-            });
-        }
+      await boss.complete(job.id, responsePayload)
 
-    });
+      boss.onComplete(jobName, job => {
+        assert.equal(job.data.response.message, responsePayload.message)
+        assert.equal(job.data.response.arg2, responsePayload.arg2)
 
-    it('onComplete should have the original payload in request object', function(finished){
+        finished()
+      })
+    }
+  })
 
-        test()
+  it('onComplete should have the original payload in request object', function (finished) {
+    test()
 
-        async function test() {
-            const queueName = 'onCompleteRequestTest';
-            const requestPayload = {foo:'bar'};
-    
-            let jobId = await boss.publish(queueName, requestPayload)
+    async function test () {
+      const queueName = 'onCompleteRequestTest'
+      const requestPayload = { foo: 'bar' }
 
-            boss.onComplete(queueName, job => {
-                assert.equal(jobId, job.data.request.id);
-                assert.equal(job.data.request.data.foo, requestPayload.foo);
-    
-                finished();
-            });
-            
-            let job = await boss.fetch(queueName)
-            await boss.complete(job.id)
-        }
-    
-    });
+      const jobId = await boss.publish(queueName, requestPayload)
 
-    it('onComplete should have both request and response', function(finished){
+      boss.onComplete(queueName, job => {
+        assert.equal(jobId, job.data.request.id)
+        assert.equal(job.data.request.data.foo, requestPayload.foo)
 
-        test()
+        finished()
+      })
 
-        async function test() {
-            const jobName = 'onCompleteFtw'
-            const requestPayload = { token:'trivial' }
-            const responsePayload = { message: 'so verbose', code: '1234' }
-    
-            boss.onComplete(jobName, job => {
-                assert.equal(jobId, job.data.request.id)
-                assert.equal(job.data.request.data.token, requestPayload.token)
-                assert.equal(job.data.response.message, responsePayload.message)
-                assert.equal(job.data.response.code, responsePayload.code)
-    
-                finished()
-            });
-    
-            const jobId = await boss.publish(jobName, requestPayload)
-            const job = await boss.fetch(jobName)
-            await boss.complete(job.id, responsePayload)
-        }
+      const job = await boss.fetch(queueName)
+      await boss.complete(job.id)
+    }
+  })
 
-    });
+  it('onComplete should have both request and response', function (finished) {
+    test()
 
-    it(`subscribe()'s job.done() should allow sending completion payload`, function(finished){
-        
-        test()
+    async function test () {
+      const jobName = 'onCompleteFtw'
+      const requestPayload = { token: 'trivial' }
+      const responsePayload = { message: 'so verbose', code: '1234' }
 
-        async function test() {
-            const jobName = 'complete-from-subscribe';
-            const responsePayload = {arg1: '123'};
-    
-            boss.onComplete(jobName, job => {
-                assert.equal(job.data.response.arg1, responsePayload.arg1);
-                finished();
-            });
-    
-            await boss.publish(jobName)
+      boss.onComplete(jobName, job => {
+        assert.equal(jobId, job.data.request.id)
+        assert.equal(job.data.request.data.token, requestPayload.token)
+        assert.equal(job.data.response.message, responsePayload.message)
+        assert.equal(job.data.response.code, responsePayload.code)
 
-            boss.subscribe(jobName, job => job.done(null, responsePayload))
-        }
-        
-    });
+        finished()
+      })
 
+      const jobId = await boss.publish(jobName, requestPayload)
+      const job = await boss.fetch(jobName)
+      await boss.complete(job.id, responsePayload)
+    }
+  })
 
-    it('should unsubscribe an onComplete subscription', async function(){
+  it('subscribe()\'s job.done() should allow sending completion payload', function (finished) {
+    test()
 
-        const jobName = 'offComplete';
+    async function test () {
+      const jobName = 'complete-from-subscribe'
+      const responsePayload = { arg1: '123' }
 
-        let receivedCount = 0;
-    
-        boss.onComplete(jobName, job => {
-            receivedCount++;
-            boss.offComplete(jobName)
-        });
+      boss.onComplete(jobName, job => {
+        assert.equal(job.data.response.arg1, responsePayload.arg1)
+        finished()
+      })
 
-        await boss.publish(jobName)
-        const job1 = await boss.fetch(jobName)
-        await boss.complete(job1.id)
+      await boss.publish(jobName)
 
-        await Promise.delay(2000)
+      boss.subscribe(jobName, job => job.done(null, responsePayload))
+    }
+  })
 
-        await boss.publish(jobName)
-        const job2 = await boss.fetch(jobName)
-        await boss.complete(job2.id)
-        
-        await Promise.delay(2000)
+  it('should unsubscribe an onComplete subscription', async function () {
+    const jobName = 'offComplete'
 
-        assert.strictEqual(receivedCount, 1)        
+    let receivedCount = 0
 
-    });
+    boss.onComplete(jobName, job => {
+      receivedCount++
+      boss.offComplete(jobName)
+    })
 
-    it('should fetch a completed job', async function(){
-        const queue = 'fetchCompleted';
+    await boss.publish(jobName)
+    const job1 = await boss.fetch(jobName)
+    await boss.complete(job1.id)
 
-        const jobId = await boss.publish(queue)
-        await boss.fetch(queue)
-        await boss.complete(jobId)
-        const job = await boss.fetchCompleted(queue)
-        
-        assert.strictEqual(job.data.request.id, jobId)
-    });
+    await Promise.delay(2000)
 
-    it('should not create an extra state job after completion', async function(){
-        const queue = 'noMoreExtraStateJobs';
+    await boss.publish(jobName)
+    const job2 = await boss.fetch(jobName)
+    await boss.complete(job2.id)
 
-        const jobId = await boss.publish(queue)
+    await Promise.delay(2000)
 
-        await boss.fetch(queue)
-        
-        await boss.complete(jobId)
+    assert.strictEqual(receivedCount, 1)
+  })
 
-        const job = await boss.fetchCompleted(queue)
+  it('should fetch a completed job', async function () {
+    const queue = 'fetchCompleted'
 
-        await boss.complete(job.id)
-        
-        const stateJobCount = await helper.countJobs(`name = $1`, [`${helper.completedJobPrefix}${queue}`])
-        
-        assert.strictEqual(stateJobCount, 1)
-    });
+    const jobId = await boss.publish(queue)
+    await boss.fetch(queue)
+    await boss.complete(jobId)
+    const job = await boss.fetchCompleted(queue)
 
-});
+    assert.strictEqual(job.data.request.id, jobId)
+  })
+
+  it('should not create an extra state job after completion', async function () {
+    const queue = 'noMoreExtraStateJobs'
+
+    const jobId = await boss.publish(queue)
+
+    await boss.fetch(queue)
+
+    await boss.complete(jobId)
+
+    const job = await boss.fetchCompleted(queue)
+
+    await boss.complete(job.id)
+
+    const stateJobCount = await helper.countJobs('name = $1', [`${helper.completedJobPrefix}${queue}`])
+
+    assert.strictEqual(stateJobCount, 1)
+  })
+})
