@@ -82,21 +82,21 @@ describe('complete', function() {
         test()
 
         async function test() {
-            const jobName = 'onCompleteFtw';
-            const requestPayload = {token:'trivial'};
-            const responsePayload = {message: 'so verbose', code: '1234'};
+            const jobName = 'onCompleteFtw'
+            const requestPayload = { token:'trivial' }
+            const responsePayload = { message: 'so verbose', code: '1234' }
     
             boss.onComplete(jobName, job => {
-                assert.equal(jobId, job.data.request.id);
-                assert.equal(job.data.request.data.token, requestPayload.token);
-                assert.equal(job.data.response.message, responsePayload.message);
-                assert.equal(job.data.response.code, responsePayload.code);
+                assert.equal(jobId, job.data.request.id)
+                assert.equal(job.data.request.data.token, requestPayload.token)
+                assert.equal(job.data.response.message, responsePayload.message)
+                assert.equal(job.data.response.code, responsePayload.code)
     
-                finished();
+                finished()
             });
     
-            let jobId = await boss.publish(jobName, requestPayload)
-            let job = await boss.fetch(jobName)
+            const jobId = await boss.publish(jobName, requestPayload)
+            const job = await boss.fetch(jobName)
             await boss.complete(job.id, responsePayload)
         }
 

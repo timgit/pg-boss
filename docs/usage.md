@@ -7,44 +7,44 @@ Usage
 - [Intro](#intro)
 - [Database installation](#database-installation)
 - [Functions](#functions)
-  - [`new(connectionString)`](#newconnectionstring)
-  - [`new(options)`](#newoptions)
-  - [`start()`](#start)
-  - [`stop()`](#stop)
-  - [`connect()`](#connect)
-  - [`disconnect()`](#disconnect)
-  - [`publish()`](#publish)
-    - [`publish(name, data, options)`](#publishname-data-options)
-    - [`publish(request)`](#publishrequest)
-    - [`publishAfter(name, data, options, seconds | ISO date string | Date)`](#publishaftername-data-options-seconds--iso-date-string--date)
-    - [`publishOnce(name, data, options, key)`](#publishoncename-data-options-key)
-    - [`publishThrottled(name, data, options, seconds [, key])`](#publishthrottledname-data-options-seconds--key)
-    - [`publishDebounced(name, data, options, seconds [, key])`](#publishdebouncedname-data-options-seconds--key)
-  - [`subscribe()`](#subscribe)
-    - [`subscribe(name [, options], handler)`](#subscribename--options-handler)
-    - [`onComplete(name [, options], handler)`](#oncompletename--options-handler)
-  - [`unsubscribe(name)`](#unsubscribename)
-    - [`offComplete(name)`](#offcompletename)
-  - [`fetch()`](#fetch)
-    - [`fetch(name)`](#fetchname)
-    - [`fetch(name, batchSize)`](#fetchname-batchsize)
-    - [`fetchCompleted(name [, batchSize])`](#fetchcompletedname--batchsize)
-  - [`cancel(id)`](#cancelid)
-  - [`cancel([ids])`](#cancelids)
-  - [`complete(id [, data])`](#completeid--data)
-  - [`complete([ids])`](#completeids)
-  - [`fail(id [, data])`](#failid--data)
-  - [`fail([ids])`](#failids)
-  - [`deleteQueue(name)`](#deletequeuename)
-  - [`deleteAllQueues()`](#deleteallqueues)
+  - [new(connectionString)](#newconnectionstring)
+  - [new(options)](#newoptions)
+  - [start()](#start)
+  - [stop()](#stop)
+  - [connect()](#connect)
+  - [disconnect()](#disconnect)
+  - [publish()](#publish)
+    - [publish(name, data, options)](#publishname-data-options)
+    - [publish(request)](#publishrequest)
+    - [publishAfter(name, data, options, seconds | ISO date string | Date)](#publishaftername-data-options-seconds--iso-date-string--date)
+    - [publishOnce(name, data, options, key)](#publishoncename-data-options-key)
+    - [publishThrottled(name, data, options, seconds [, key])](#publishthrottledname-data-options-seconds--key)
+    - [publishDebounced(name, data, options, seconds [, key])](#publishdebouncedname-data-options-seconds--key)
+  - [subscribe()](#subscribe)
+    - [subscribe(name [, options], handler)](#subscribename--options-handler)
+    - [onComplete(name [, options], handler)](#oncompletename--options-handler)
+  - [unsubscribe(name)](#unsubscribename)
+    - [offComplete(name)](#offcompletename)
+  - [fetch()](#fetch)
+    - [fetch(name)](#fetchname)
+    - [fetch(name, batchSize)](#fetchname-batchsize)
+    - [fetchCompleted(name [, batchSize])](#fetchcompletedname--batchsize)
+  - [cancel(id)](#cancelid)
+  - [cancel([ids])](#cancelids)
+  - [complete(id [, data])](#completeid--data)
+  - [complete([ids])](#completeids)
+  - [fail(id [, data])](#failid--data)
+  - [fail([ids])](#failids)
+  - [deleteQueue(name)](#deletequeuename)
+  - [deleteAllQueues()](#deleteallqueues)
 - [Events](#events)
-  - [`error`](#error)
-  - [`archived`](#archived)
-  - [`expired`](#expired)
-  - [`monitor-states`](#monitor-states)
+  - [error](#error)
+  - [archived](#archived)
+  - [expired](#expired)
+  - [monitor-states](#monitor-states)
 - [Static functions](#static-functions)
-  - [`string getConstructionPlans(schema)`](#string-getconstructionplansschema)
-  - [`string getMigrationPlans(schema, version, uninstall)`](#string-getmigrationplansschema-version-uninstall)
+  - [string getConstructionPlans(schema)](#string-getconstructionplansschema)
+  - [string getMigrationPlans(schema, version, uninstall)](#string-getmigrationplansschema-version-uninstall)
 
 <!-- /TOC -->
 
@@ -92,14 +92,7 @@ const options = {
   archiveCompletedJobsEvery: '2 days'
 };
 
-let boss;
-
-try {
-  boss = new PgBoss(options);
-}
-catch(error) {
-  console.error(error);
-}
+const boss = new PgBoss(options);
 ```
 
 ## `start()`
@@ -109,10 +102,8 @@ catch(error) {
 Prepares the target database and begins job monitoring.
 
 ```js
-boss.start()
-  .then(boss => {
-    boss.publish('hey-there', {msg:'this came for you'});
-  });
+await boss.start()
+await boss.publish('hey-there', { msg:'this came for you' })
 ```
 
 Since it is responsible for monitoring jobs for expiration and archiving, `start()` *should be called once and only once per backing database store.* Once this has been taken care of, if your use cases demand additional instances for job processing, you should use `connect()`.
@@ -170,18 +161,18 @@ Creates a new job and resolves the job's unique identifier (uuid).
 - `options`: object ([publish options](configuration.md#publish-options))
 
 ```js
-var payload = {
+const payload = {
     email: "billybob@veganplumbing.com",
     name: "Billy Bob"
 };
 
-var options =   {
+const options =   {
     startAfter: 1,
     retryLimit: 2
 };
 
-boss.publish('email-send-welcome', payload, options)
-  .then(jobId => console.log(`job ${jobId} submitted`));
+const jobId = await boss.publish('email-send-welcome', payload, options)
+console.log(`job ${jobId} submitted`)
 ```
 
 ### `publish(request)`
@@ -202,11 +193,12 @@ The request object has the following properties.
 This overload is for conditionally including data or options based on keys in an object, such as the following.
 
 ```js
-boss.publish({
-  name: 'database-backup',
-  options: { retryLimit: 1 }
+const jobId = await boss.publish({
+    name: 'database-backup',
+    options: { retryLimit: 1 }
 })
-.then(id => console.log(`job ${id} submitted`));
+
+console.log(`job ${jobId} submitted`)
 ```
 
 ### `publishAfter(name, data, options, seconds | ISO date string | Date)`
@@ -267,36 +259,30 @@ If you do not return a promise, `done()` should be used to mark the job as compl
 
 > If you forget to use a promise or the callback function to mark the job as completed, it will expire after the configured expiration period.  The default expiration can be found in the [configuration docs](configuration.md#job-expiration).
 
-Following is an example of a subscription that returns a promise for completion with the teamSize option set for increased job concurrency between polling intervals.
+Following is an example of a subscription that returns a promise (`sendWelcomeEmail()`) for completion with the teamSize option set for increased job concurrency between polling intervals.
 
 ```js
-boss.subscribe('email-welcome', {teamSize: 5, teamConcurrency: 5}, 
-      job => myEmailService.sendWelcomeEmail(job.data))
-  .then(() => console.log('subscription created'))
-  .catch(error => console.error(error));
+const options = { teamSize: 5, teamConcurrency: 5 }
+await boss.subscribe('email-welcome', options, job => myEmailService.sendWelcomeEmail(job.data))
 ```
 
 And the same example, but without returning a promise in the handler.
 
 ```js
-boss.subscribe('email-welcome', {teamSize: 5, teamConcurrency: 5}, 
-      job => {
-        myEmailService.sendWelcomeEmail(job.data)
-          .then(() => job.done())
-          .catch(error => job.done(error));
-  })
-  .then(() => console.log('subscription created'))
-  .catch(error => console.error(error));
+const options = { teamSize: 5, teamConcurrency: 5 }
+await boss.subscribe('email-welcome', options, job => {
+    myEmailService.sendWelcomeEmail(job.data)
+        .then(() => job.done())
+        .catch(error => job.done(error))
+  })  
 ```
 
 Similar to the first example, but with a batch of jobs at once.
 
 ```js
-boss.subscribe('email-welcome', {batchSize: 5}, 
-      jobs => myEmailService.sendWelcomeEmails(jobs.map(job => job.data))
-  )
-  .then(() => console.log('subscription created'))
-  .catch(error => console.error(error));
+await boss.subscribe('email-welcome', { batchSize: 5 }, 
+    jobs => myEmailService.sendWelcomeEmails(jobs.map(job => job.data))
+)
 ```
 
 ### `onComplete(name [, options], handler)`
@@ -310,33 +296,25 @@ The callback for `onComplete()` returns a job containing the original job and co
 Here's an example from the test suite showing this in action.
 
 ```js
- it('onComplete should have both request and response', function(finished){
+const jobName = 'onCompleteFtw'
+const requestPayload = { token:'trivial' }
+const responsePayload = { message: 'so verbose', code: '1234' }
 
-    const jobName = 'onCompleteFtw';
-    const requestPayload = {token:'trivial'};
-    const responsePayload = {message: 'so verbose', code: '1234'};
+boss.onComplete(jobName, job => {
+    assert.equal(jobId, job.data.request.id)
+    assert.equal(job.data.request.data.token, requestPayload.token)
+    assert.equal(job.data.response.message, responsePayload.message)
+    assert.equal(job.data.response.code, responsePayload.code)
 
-    let jobId = null;
+    finished()
+})
 
-    boss.onComplete(jobName, job => {
-      assert.equal(jobId, job.data.request.id);
-      assert.equal(job.data.request.data.token, requestPayload.token);
-      assert.equal(job.data.response.message, responsePayload.message);
-      assert.equal(job.data.response.code, responsePayload.code);
-
-      finished();
-    });
-
-    boss.publish(jobName, requestPayload)
-      .then(id => jobId = id)
-      .then(() => boss.fetch(jobName))
-      .then(job => boss.complete(job.id, responsePayload));
-
-  });
+const jobId = await boss.publish(jobName, requestPayload)
+const job = await boss.fetch(jobName)
+await boss.complete(job.id, responsePayload)
 ```
 
 And here's an example job from the callback in this test.
-
 
 ```js
 {
@@ -396,21 +374,25 @@ Note: If you pass a batchSize, `fetch()` will always resolve an array response, 
 The following code shows how to utilize batching via `fetch()` to get and complete 20 jobs at once on-demand.
 
 ```js
-const jobName = 'email-daily-digest';
-const batchSize = 20;
+const queue = 'email-daily-digest'
+const batchSize = 20
 
-boss.fetch(jobName, batchSize)
-  .then(jobs => {
-    if(!jobs) return;
+const jobs = await boss.fetch(queue, batchSize)
 
-    console.log(`received ${jobs.length} ${jobName} jobs`);
+if(!jobs) {
+    return
+}
 
-    // our magical emailer knows what to do with job.data
-    let promises = jobs.map(job => emailer.send(job.data).then(() => boss.complete(job.id)));
-    
-    return Promise.all(promises);      
-  })
-  .catch(error => console.log(error));
+for (let i = 0; i < jobs.length; i++) {
+    const job = jobs[i]
+
+    try {
+        await emailer.send(job.data)
+        await boss.complete(job.id)
+    } catch(err) {
+        await boss.fail(job.id, err)
+    }
+}
 ```
 
 ### `fetchCompleted(name [, batchSize])`
