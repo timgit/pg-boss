@@ -35,7 +35,7 @@ class PgBoss extends EventEmitter {
 
     const boss = new Boss(db, config)
     Object.keys(boss.events).forEach(event => promoteEvent.call(this, boss, boss.events[event]))
-    // boss.functions.forEach(func => promoteFunction.call(this, boss, func))
+    boss.functions.forEach(func => promoteFunction.call(this, boss, func))
 
     this.config = config
     this.db = db
@@ -75,6 +75,10 @@ class PgBoss extends EventEmitter {
 
     this.isStarted = true
 
+    if (this.db.isOurs && !this.db.opened) {
+      this.db.open()
+    }
+
     await this.contractor.start()
 
     this.isReady = true
@@ -102,6 +106,10 @@ class PgBoss extends EventEmitter {
   }
 
   async connect () {
+    if (this.db.isOurs && !this.db.opened) {
+      this.db.open()
+    }
+
     await this.contractor.connect()
     this.isReady = true
     return this
