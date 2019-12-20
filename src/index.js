@@ -68,7 +68,6 @@ class PgBoss extends EventEmitter {
   }
 
   async start (options) {
-
     assert(!this.isStarted, alreadyStartedErrorMessage)
 
     options = options || {}
@@ -76,13 +75,13 @@ class PgBoss extends EventEmitter {
     this.isStarted = true
 
     await this.contractor.start()
-    
+
     this.isReady = true
 
     if (!options.noSupervisor) {
-        // not in promise chain for async start()
-        this.boss.supervise()
-    } 
+      // not in promise chain for async start()
+      this.boss.supervise()
+    }
 
     return this
   }
@@ -93,8 +92,8 @@ class PgBoss extends EventEmitter {
     await this.manager.stop()
     await this.boss.stop()
 
-    if(this.db.isOurs) {
-        await this.db.close()
+    if (this.db.isOurs) {
+      await this.db.close()
     }
 
     this.isReady = false

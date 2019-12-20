@@ -17,8 +17,8 @@ class Db extends EventEmitter {
   }
 
   async close () {
-    if(!this.pool.ending) {
-        await this.pool.end()    
+    if (!this.pool.ending) {
+      await this.pool.end()
     }
   }
 

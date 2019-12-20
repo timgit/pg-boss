@@ -7,23 +7,23 @@ class Worker {
 
   async start () {
     if (this.stopped) {
-        return
+      return
     }
 
     try {
-        const result = await this.config.fetch()
-        await this.config.onFetch(result)
-    } catch(error) {
-        await this.config.onError(error)
+      const result = await this.config.fetch()
+      await this.config.onFetch(result)
+    } catch (error) {
+      await this.config.onError(error)
     }
-    
+
     await Promise.delay(this.config.interval)
 
     this.start()
   }
 
   stop () {
-    this.stopped = true 
+    this.stopped = true
   }
 }
 
