@@ -83,18 +83,17 @@ describe('failure', function () {
     const error = new Error(errorMessage)
 
     boss.publish(queue)
-        .then(() => boss.subscribe(queue, job => {
-            handler()
-    
-            async function handler() {
-                await job.done(error)
-                const failedJob = await boss.fetchCompleted(queue)
-                assert.strictEqual(failedJob.data.state, 'failed')
-                assert.strictEqual(failedJob.data.response.message, errorMessage)
-                finished()
-            }
-        }))
+      .then(() => boss.subscribe(queue, job => {
+        handler()
 
+        async function handler () {
+          await job.done(error)
+          const failedJob = await boss.fetchCompleted(queue)
+          assert.strictEqual(failedJob.data.state, 'failed')
+          assert.strictEqual(failedJob.data.response.message, errorMessage)
+          finished()
+        }
+      }))
   })
 
   it('subscribe failure via Promise reject() should pass string wrapped in value prop', async function () {

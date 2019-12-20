@@ -69,10 +69,10 @@ class Manager extends EventEmitter {
   async watch (name, options, callback) {
     // watch() is always nested in a promise, so assert()s are welcome
 
-    if ('newJobCheckInterval' in options || 'newJobCheckIntervalSeconds' in options) { 
-        options = Attorney.applyNewJobCheckInterval(options)
-    } else { 
-        options.newJobCheckInterval = this.config.newJobCheckInterval
+    if ('newJobCheckInterval' in options || 'newJobCheckIntervalSeconds' in options) {
+      options = Attorney.applyNewJobCheckInterval(options)
+    } else {
+      options.newJobCheckInterval = this.config.newJobCheckInterval
     }
 
     if ('teamConcurrency' in options) {
@@ -251,15 +251,15 @@ class Manager extends EventEmitter {
 
     const jobs = result.rows.map(job => {
       job.done = async (error, response) => {
-          if(error) {
-            console.log('job.done() got an error')
-            await this.fail(job.id, error)
-          } else {
-            console.log('job.done() reporting success')
-            await this.complete(job.id, response)
-          }
+        if (error) {
+          console.log('job.done() got an error')
+          await this.fail(job.id, error)
+        } else {
+          console.log('job.done() reporting success')
+          await this.complete(job.id, response)
         }
-        return job
+      }
+      return job
     })
 
     return jobs.length === 0 ? null
