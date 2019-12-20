@@ -41,35 +41,24 @@ class Boss extends EventEmitter {
       repeat()
 
       async function exec () {
-        if (self.stopped) {
-          return
-        }
-
-        try {
-          return await func.call(self)
-        } catch (err) {
-          self.emit(events.error, err)
+        if (!self.stopped) {
+          return func.call(self).catch(err => self.emit(events.error, err))
         }
       }
 
       function repeat () {
-        if (self.stopped) {
-          return
+        if (!self.stopped) {
+          self.timers[func.name] = setTimeout(() => exec().then(repeat), interval)
         }
-
-        self.timers[func.name] = setTimeout(function timer () {
-          exec().then(repeat)
-        }, interval)
       }
     }
   }
 
   async stop () {
-    if (this.stopped) return
-
-    this.stopped = true
-
-    Object.keys(this.timers).forEach(key => clearTimeout(this.timers[key]))
+    if (!this.stopped) {
+      this.stopped = true
+      Object.keys(this.timers).forEach(key => clearTimeout(this.timers[key]))
+    }
   }
 
   async countStates () {
