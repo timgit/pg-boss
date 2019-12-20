@@ -67,43 +67,44 @@ class PgBoss extends EventEmitter {
     }
   }
 
-  start (options) {
-    if (this.isStarted) return Promise.reject(alreadyStartedErrorMessage)
+  async start (options) {
+
+    assert(!this.isStarted, alreadyStartedErrorMessage)
 
     options = options || {}
 
     this.isStarted = true
 
-    return this.contractor.start()
-      .then(() => {
-        this.isReady = true
+    await this.contractor.start()
+    
+    this.isReady = true
 
-        if (!options.noSupervisor) { this.boss.supervise() } // not in promise chain for async start()
+    if (!options.noSupervisor) {
+        // not in promise chain for async start()
+        this.boss.supervise()
+    } 
 
-        return this
-      })
+    return this
   }
 
-  stop () {
-    if (!this.isStarted) return Promise.reject(notStartedErrorMessage)
+  async stop () {
+    assert(this.isStarted, notStartedErrorMessage)
 
-    return Promise.all([
-      this.manager.stop(),
-      this.boss.stop()
-    ])
-      .then(() => this.db.isOurs ? this.db.close() : null)
-      .then(() => {
-        this.isReady = false
-        this.isStarted = false
-      })
+    await this.manager.stop()
+    await this.boss.stop()
+
+    if(this.db.isOurs) {
+        await this.db.close()
+    }
+
+    this.isReady = false
+    this.isStarted = false
   }
 
-  connect () {
-    return this.contractor.connect()
-      .then(() => {
-        this.isReady = true
-        return this
-      })
+  async connect () {
+    await this.contractor.connect()
+    this.isReady = true
+    return this
   }
 
   async disconnect (...args) {

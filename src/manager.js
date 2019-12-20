@@ -307,7 +307,8 @@ class Manager extends EventEmitter {
     return this.mapCompletionResponse(ids, result)
   }
 
-  deleteQueue (queue) {
+  async deleteQueue (queue) {
+    assert(queue, 'Missing queue name argument')
     return this.db.executeSql(this.deleteQueueCommand, [queue])
   }
 

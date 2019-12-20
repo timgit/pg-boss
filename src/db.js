@@ -16,11 +16,13 @@ class Db extends EventEmitter {
     this.pool.on('error', error => this.emit('error', error))
   }
 
-  close () {
-    return !this.pool.ending ? this.pool.end() : Promise.resolve(true)
+  async close () {
+    if(!this.pool.ending) {
+        await this.pool.end()    
+    }
   }
 
-  executeSql (text, values) {
+  async executeSql (text, values) {
     return this.pool.query(text, values)
   }
 }
