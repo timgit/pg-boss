@@ -69,7 +69,11 @@ class Manager extends EventEmitter {
   async watch (name, options, callback) {
     // watch() is always nested in a promise, so assert()s are welcome
 
-    if ('newJobCheckInterval' in options || 'newJobCheckIntervalSeconds' in options) { options = Attorney.applyNewJobCheckInterval(options) } else { options.newJobCheckInterval = this.config.newJobCheckInterval }
+    if ('newJobCheckInterval' in options || 'newJobCheckIntervalSeconds' in options) { 
+        options = Attorney.applyNewJobCheckInterval(options)
+    } else { 
+        options.newJobCheckInterval = this.config.newJobCheckInterval
+    }
 
     if ('teamConcurrency' in options) {
       const teamConcurrencyErrorMessage = 'teamConcurrency must be an integer between 1 and 1000'
@@ -106,7 +110,7 @@ class Manager extends EventEmitter {
           const value = await callback(job)
           await this.complete(job.id, value)
         } catch (err) {
-          this.fail(job.id, err)
+          await this.fail(job.id, err)
         }
       }, { concurrency })
     }
@@ -246,8 +250,16 @@ class Manager extends EventEmitter {
     const result = await this.db.executeSql(this.nextJobCommand, [values.name, values.batchSize || 1])
 
     const jobs = result.rows.map(job => {
-      job.done = (error, response) => error ? this.fail(job.id, error) : this.complete(job.id, response)
-      return job
+      job.done = async (error, response) => {
+          if(error) {
+            console.log('job.done() got an error')
+            await this.fail(job.id, error)
+          } else {
+            console.log('job.done() reporting success')
+            await this.complete(job.id, response)
+          }
+        }
+        return job
     })
 
     return jobs.length === 0 ? null

@@ -79,20 +79,22 @@ describe('failure', function () {
 
   it('subscribe failure via done() should pass error payload to failed job', function (finished) {
     const queue = 'fetchFailureWithPayload'
-    const failPayload = 'mah error'
+    const errorMessage = 'mah error'
+    const error = new Error(errorMessage)
 
     boss.publish(queue)
-      .then(() => boss.subscribe(queue, job => {
-        job.done(failPayload)
-          .then(() => boss.fetchCompleted(queue))
-          .then(failedJob => {
-            assert.strictEqual(failedJob.data.state, 'failed')
-            assert.strictEqual(failedJob.data.response.value, failPayload)
+        .then(() => boss.subscribe(queue, job => {
+            handler()
+    
+            async function handler() {
+                await job.done(error)
+                const failedJob = await boss.fetchCompleted(queue)
+                assert.strictEqual(failedJob.data.state, 'failed')
+                assert.strictEqual(failedJob.data.response.message, errorMessage)
+                finished()
+            }
+        }))
 
-            finished()
-          })
-      })
-      )
   })
 
   it('subscribe failure via Promise reject() should pass string wrapped in value prop', async function () {

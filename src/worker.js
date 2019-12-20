@@ -14,7 +14,7 @@ class Worker {
       const result = await this.config.fetch()
       await this.config.onFetch(result)
     } catch (error) {
-      await this.config.onError(error)
+      this.config.onError(error)
     }
 
     await Promise.delay(this.config.interval)
