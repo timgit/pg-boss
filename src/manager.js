@@ -252,10 +252,8 @@ class Manager extends EventEmitter {
     const jobs = result.rows.map(job => {
       job.done = async (error, response) => {
         if (error) {
-          console.log('job.done() got an error')
           await this.fail(job.id, error)
         } else {
-          console.log('job.done() reporting success')
           await this.complete(job.id, response)
         }
       }
@@ -267,7 +265,7 @@ class Manager extends EventEmitter {
         : jobs
   }
 
-  fetchCompleted (name, batchSize) {
+  async fetchCompleted (name, batchSize) {
     return this.fetch(completedJobPrefix + name, batchSize)
   }
 

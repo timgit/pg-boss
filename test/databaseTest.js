@@ -86,10 +86,6 @@ describe('database', function () {
 
     const newConnections = connectionCount - prevConnectionCount
 
-    console.log(`listeners: ${listenerCount}  pool size: ${poolSize}`)
-    console.log('connections:')
-    console.log(`  before subscribing: ${prevConnectionCount}  now: ${connectionCount}  new: ${newConnections}`)
-
     assert(newConnections <= poolSize)
 
     await boss.stop()
