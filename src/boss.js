@@ -62,18 +62,16 @@ class Boss extends EventEmitter {
   }
 
   async countStates () {
-    const stateCountDefault = Object.assign({}, plans.states)
+    const stateCountDefault = { ...plans.states }
 
     Object.keys(stateCountDefault)
       .forEach(key => { stateCountDefault[key] = 0 })
-
-    const defaultAcc = Object.assign({}, stateCountDefault, { queues: {} })
 
     const counts = await this.db.executeSql(this.countStatesCommand)
 
     const states = counts.rows.reduce((acc, item) => {
       if (item.name) {
-        acc.queues[item.name] = acc.queues[item.name] || Object.assign({}, stateCountDefault)
+        acc.queues[item.name] = acc.queues[item.name] || { ...stateCountDefault }
       }
 
       const queue = item.name ? acc.queues[item.name] : acc
@@ -83,7 +81,7 @@ class Boss extends EventEmitter {
       queue[state] = parseFloat(item.size)
 
       return acc
-    }, defaultAcc)
+    }, { ...stateCountDefault, queues: {} })
 
     this.emit(events.monitorStates, states)
 

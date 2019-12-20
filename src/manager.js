@@ -105,14 +105,12 @@ class Manager extends EventEmitter {
       const concurrency = options.teamConcurrency || 1
 
       // either no option was set, or teamSize was used
-      return Promise.map(jobs, async job => {
-        try {
-          const value = await callback(job)
-          await this.complete(job.id, value)
-        } catch (err) {
-          await this.fail(job.id, err)
-        }
-      }, { concurrency })
+      return Promise.map(jobs, job =>
+        callback(job)
+          .then(value => this.complete(job.id, value))
+          .catch(err => this.fail(job.id, err))
+      , { concurrency }
+      ).catch(() => {}) // allow promises & non-promises to live together in harmony
     }
 
     const onError = error => this.emit(events.error, error)
@@ -120,7 +118,7 @@ class Manager extends EventEmitter {
     const workerConfig = {
       name,
       fetch: () => this.fetch(name, options.batchSize || options.teamSize || 1),
-      onFetch: jobs => sendItBruh(jobs).catch(() => {}), // just send it, bruh
+      onFetch: jobs => sendItBruh(jobs),
       onError,
       interval: options.newJobCheckInterval
     }
