@@ -245,6 +245,16 @@ function getAll (schema) {
       uninstall: [
         `DROP INDEX ${schema}.archive_id_idx`
       ]
+    },
+    {
+      version: '11',
+      previous: '10',
+      install: [
+          `CREATE INDEX archive_archivedon_idx ON ${schema}.archive(archivedon)`
+      ],
+      uninstall: [
+          `DROP INDEX ${schema}.archive_archivedon_idx`
+      ]
     }
   ]
 }

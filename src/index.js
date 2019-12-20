@@ -20,8 +20,8 @@ class PgBoss extends EventEmitter {
     return Contractor.migrationPlans(schema, version, uninstall)
   }
 
-  constructor (config) {
-    config = Attorney.applyConfig(config)
+  constructor (value) {
+    const config = Attorney.getConfig(value)
 
     super()
 
@@ -35,6 +35,7 @@ class PgBoss extends EventEmitter {
 
     const boss = new Boss(db, config)
     Object.keys(boss.events).forEach(event => promoteEvent.call(this, boss, boss.events[event]))
+    // boss.functions.forEach(func => promoteFunction.call(this, boss, func))
 
     this.config = config
     this.db = db

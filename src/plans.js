@@ -38,8 +38,9 @@ function create (schema) {
     createJobStateEnum(schema),
     createJobTable(schema),
     cloneJobTableForArchive(schema),
-    addIndexToArchive(schema),
+    addIdIndexToArchive(schema),
     addArchivedOnToArchive(schema),
+    addArchivedOnIndexToArchive(schema),
     createIndexJobName(schema),
     createIndexSingletonOn(schema),
     createIndexSingletonKeyOn(schema),
@@ -114,7 +115,11 @@ function addArchivedOnToArchive (schema) {
   return `ALTER TABLE ${schema}.archive ADD archivedOn timestamptz NOT NULL DEFAULT now()`
 }
 
-function addIndexToArchive (schema) {
+function addArchivedOnIndexToArchive (schema) {
+  return `CREATE INDEX archive_archivedon_idx ON ${schema}.archive(archivedon)`
+}
+
+function addIdIndexToArchive (schema) {
   return `CREATE INDEX archive_id_idx ON ${schema}.archive(id)`
 }
 
@@ -344,7 +349,7 @@ function insertJob (schema) {
 function purge (schema) {
   return `
     DELETE FROM ${schema}.archive
-    WHERE (archivedOn + CAST($1 as interval) < now())
+    WHERE archivedOn < (now() - CAST($1 as interval))
   `
 }
 
@@ -353,11 +358,11 @@ function archive (schema) {
     WITH archived_rows AS (
       DELETE FROM ${schema}.job
       WHERE
-        (completedOn + CAST($1 as interval) < now())
+        completedOn < (now() - CAST($1 as interval))
         OR (
           state = '${states.created}'
           AND name LIKE '${completedJobPrefix}%'
-          AND createdOn + CAST($1 as interval) < now()
+          AND createdOn < (now() - CAST($1 as interval))
         )
       RETURNING *
     )

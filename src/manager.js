@@ -70,7 +70,7 @@ class Manager extends EventEmitter {
     // watch() is always nested in a promise, so assert()s are welcome
 
     if ('newJobCheckInterval' in options || 'newJobCheckIntervalSeconds' in options) {
-      options = Attorney.applyNewJobCheckInterval(options)
+      Attorney.applyNewJobCheckInterval(options)
     } else {
       options.newJobCheckInterval = this.config.newJobCheckInterval
     }

@@ -1,7 +1,7 @@
 const assert = require('assert')
 
 module.exports = {
-  applyConfig,
+  getConfig,
   applyNewJobCheckInterval,
   checkPublishArgs,
   checkSubscribeArgs,
@@ -35,7 +35,7 @@ function checkPublishArgs (args) {
   assert(name, 'boss requires all jobs to have a queue name')
   assert(typeof options === 'object', 'options should be an object')
 
-  return { name, data, options }
+  return { name, data, options: { ...options } }
 }
 
 function checkSubscribeArgs (name, args) {
@@ -53,7 +53,10 @@ function checkSubscribeArgs (name, args) {
 
   assert(typeof callback === 'function', 'expected callback to be a function')
 
-  if (options) { assert(typeof options === 'object', 'expected config to be an object') }
+  if (options) {
+    assert(typeof options === 'object', 'expected config to be an object')
+    options = { ...options }
+  }
 
   name = sanitizeQueueNameForFetch(name)
   return { options, callback }
@@ -73,27 +76,26 @@ function sanitizeQueueNameForFetch (name) {
   return name.replace(/[%_*]/g, match => match === '*' ? '%' : '\\' + match)
 }
 
-function applyConfig (value) {
+function getConfig (value) {
   assert(value && (typeof value === 'object' || typeof value === 'string'),
     'configuration assert: string or config object is required to connect to postgres')
 
-  let config = applyDatabaseConfig(value)
-
-  config = applyNewJobCheckInterval(config)
-  config = applyExpireConfig(config)
-  config = applyArchiveConfig(config)
-  config = applyDeleteConfig(config)
-  config = applyMonitoringConfig(config)
-  config = applyUuidConfig(config)
-
-  return config
-}
-
-function applyDatabaseConfig (value) {
   const config = (typeof value === 'string')
     ? { connectionString: value }
     : { ...value }
 
+  applyDatabaseConfig(config)
+  applyNewJobCheckInterval(config)
+  applyExpireConfig(config)
+  applyArchiveConfig(config)
+  applyDeleteConfig(config)
+  applyMonitoringConfig(config)
+  applyUuidConfig(config)
+
+  return config
+}
+
+function applyDatabaseConfig (config) {
   if (config.schema) {
     assert(typeof config.schema === 'string', 'configuration assert: schema must be a string')
     assert(config.schema.length <= 50, 'configuration assert: schema name cannot exceed 50 characters')
@@ -109,8 +111,6 @@ function applyDatabaseConfig (value) {
 
     config.poolSize = config.poolSize || config.max || 10
   }
-
-  return config
 }
 
 function applyNewJobCheckInterval (config) {
@@ -124,8 +124,6 @@ function applyNewJobCheckInterval (config) {
     ('newJobCheckIntervalSeconds' in config) ? config.newJobCheckIntervalSeconds * 1000
       : ('newJobCheckInterval' in config) ? config.newJobCheckInterval
         : 1000 // default is 1 second
-
-  return config
 }
 
 function applyExpireConfig (config) {
@@ -143,8 +141,6 @@ function applyExpireConfig (config) {
       : ('expireCheckIntervalSeconds' in config) ? config.expireCheckIntervalSeconds * 1000
         : ('expireCheckInterval' in config) ? config.expireCheckInterval
           : 60 * 1000 // default is 1 minute
-
-  return config
 }
 
 function applyArchiveConfig (config) {
@@ -167,8 +163,6 @@ function applyArchiveConfig (config) {
     'configuration assert: archiveCompletedJobsEvery should be a readable PostgreSQL interval such as "1 day"')
 
   config.archiveCompletedJobsEvery = config.archiveCompletedJobsEvery || '1 hour'
-
-  return config
 }
 
 function applyDeleteConfig (config) {
@@ -181,8 +175,6 @@ function applyDeleteConfig (config) {
     'configuration assert: deleteArchivedJobsEvery should be a readable PostgreSQL interval such as "7 days"')
 
   config.deleteArchivedJobsEvery = config.deleteArchivedJobsEvery || '7 days'
-
-  return config
 }
 
 function applyMonitoringConfig (config) {
@@ -196,13 +188,9 @@ function applyMonitoringConfig (config) {
     ('monitorStateIntervalMinutes' in config) ? config.monitorStateIntervalMinutes * 60 * 1000
       : ('monitorStateIntervalSeconds' in config) ? config.monitorStateIntervalSeconds * 1000
         : null
-
-  return config
 }
 
 function applyUuidConfig (config) {
   assert(!('uuid' in config) || config.uuid === 'v1' || config.uuid === 'v4', 'configuration assert: uuid option only supports v1 or v4')
   config.uuid = config.uuid || 'v1'
-
-  return config
 }

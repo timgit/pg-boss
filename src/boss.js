@@ -23,17 +23,23 @@ class Boss extends EventEmitter {
     this.archiveCommand = plans.archive(config.schema)
     this.purgeCommand = plans.purge(config.schema)
     this.countStatesCommand = plans.countStates(config.schema)
+
+    this.functions = [
+      this.expire,
+      this.archive,
+      this.purge
+    ]
   }
 
   async supervise () {
     const self = this
 
-    await monitor(() => this.archive(), this.config.archiveCheckInterval)
-    await monitor(() => this.purge(), this.config.deleteCheckInterval)
-    await monitor(() => this.expire(), this.config.expireCheckInterval)
+    await monitor(this.archive, this.config.archiveCheckInterval)
+    await monitor(this.purge, this.config.deleteCheckInterval)
+    await monitor(this.expire, this.config.expireCheckInterval)
 
     if (this.config.monitorStateInterval) {
-      await monitor(() => this.countStates(), this.config.monitorStateInterval)
+      await monitor(this.countStates, this.config.monitorStateInterval)
     }
 
     async function monitor (func, interval) {
@@ -94,6 +100,8 @@ class Boss extends EventEmitter {
     if (result.rowCount) {
       this.emit(events.expired, result.rowCount)
     }
+
+    return result.rowCount
   }
 
   async archive () {
@@ -102,6 +110,8 @@ class Boss extends EventEmitter {
     if (result.rowCount) {
       this.emit(events.archived, result.rowCount)
     }
+
+    return result.rowCount
   }
 
   async purge () {
@@ -110,6 +120,8 @@ class Boss extends EventEmitter {
     if (result.rowCount) {
       this.emit(events.deleted, result.rowCount)
     }
+
+    return result.rowCount
   }
 }
 
