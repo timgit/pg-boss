@@ -1,6 +1,6 @@
 {
   "name": "pg-boss",
-  "version": "3.1.7",
+  "version": "3.2.0",
   "description": "Queueing jobs in Node.js using PostgreSQL like a boss",
   "main": "./src/index.js",
   "engines": {
@@ -13,13 +13,8 @@
     "uuid": "^3.2.1"
   },
   "devDependencies": {
-    "@babel/cli": "^7.5.5",
-    "@babel/core": "^7.5.5",
-    "@babel/preset-env": "^7.5.5",
-    "babel-plugin-istanbul": "^5.2.0",
     "chai": "^4.2.0",
     "coveralls": "^3.0.5",
-    "cross-env": "^5.2.0",
     "mocha": "^6.2.0",
     "nyc": "^14.1.1",
     "standard": "^14.3.1"
@@ -40,7 +35,14 @@
     "instrument": true
   },
   "standard": {
-    "globals": [ "describe", "it", "before", "after", "beforeEach", "afterEach" ]
+    "globals": [
+      "describe",
+      "it",
+      "before",
+      "after",
+      "beforeEach",
+      "afterEach"
+    ]
   },
   "repository": {
     "type": "git",

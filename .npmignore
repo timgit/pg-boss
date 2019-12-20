@@ -1,8 +1,6 @@
 .idea
-lib/
 test/
 coverage/
 .travis.yml
-.babelrc
 *.tgz
 .nyc_output/
