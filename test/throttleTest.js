@@ -1,178 +1,109 @@
-const assert = require('chai').assert;
-const helper = require('./testHelper');
+const assert = require('chai').assert
+const helper = require('./testHelper')
+const Promise = require('bluebird')
 
-describe('throttle', function() {
+describe('throttle', function () {
+  this.timeout(10000)
 
-  this.timeout(10000);
+  let boss
 
-  let boss;
+  before(async () => { boss = await helper.start() })
+  after(() => boss.stop())
 
-  before(function(finished){
-    helper.start()
-      .then(dabauce => {
-        boss = dabauce;
-        finished();
-      });
-  });
+  it('should only create 1 job for interval with a delay', async function () {
+    const queue = 'delayThrottle'
+    const singletonSeconds = 4
+    const startAfter = 2
+    const publishInterval = 200
+    const publishCount = 5
 
-  after(function(finished){
-    boss.stop().then(() => finished());
-  });
+    let subscribeCount = 0
 
-  it('should only create 1 job for interval with a delay', function(finished){
+    boss.subscribe(queue, async () => subscribeCount++)
 
-    const jobName = 'delayThrottle';
-    const singletonSeconds = 4;
-    const startAfter = 2;
+    for (let i = 0; i < publishCount; i++) {
+      await boss.publish(queue, null, { startAfter, singletonSeconds })
+      await Promise.delay(publishInterval)
+    }
 
-    const jobCount = 1;
+    await Promise.delay(singletonSeconds * 1000)
 
-    const publishInterval = 500;
-    const assertTimeout = 4000;
+    assert.isAtMost(subscribeCount, 2)
+  })
 
-    this.timeout(assertTimeout + 1000);
+  it('should process at most 1 job per second', async function () {
+    const queue = 'throttle-1ps'
+    const singletonSeconds = 1
+    const jobCount = 3
+    const publishInterval = 100
+    const assertTimeout = jobCount * 1000
 
-    let publishCount = 0;
-    let subscribeCount = 0;
+    const publishCount = 0
+    let subscribeCount = 0
 
-    boss.subscribe(jobName, job => {
-      job.done()
-        .then(() => subscribeCount++);
-    });
+    boss.subscribe(queue, async () => subscribeCount++)
 
-    let intervalId;
-    let shuttingDown = false;
+    for (let i = 0; i < publishCount; i++) {
+      await boss.publish(queue, null, { singletonSeconds })
+      await Promise.delay(publishInterval)
+    }
 
-    setTimeout(function() {
-      console.log('published ' + publishCount + ' jobs in '  + assertTimeout/1000 + ' seconds but received ' + subscribeCount + ' jobs');
-      assert.isAtMost(subscribeCount, jobCount + 1);
+    await Promise.delay(assertTimeout)
 
-      shuttingDown = true;
-      clearInterval(intervalId);
-      finished();
+    assert.isAtMost(subscribeCount, jobCount + 1)
+  })
 
-    }, assertTimeout);
+  it('should debounce', async function () {
+    const queue = 'debounce'
 
+    const jobId = await boss.publish(queue, null, { singletonHours: 1 })
 
-    intervalId = setInterval(function() {
-      if(shuttingDown) return;
-      boss.publish(jobName, null, {startAfter, singletonSeconds})
-        .then(function() { publishCount++; });
-    }, publishInterval);
-  });
+    assert.isOk(jobId)
 
-  it('should process at most 1 job per second', function (finished) {
+    const jobId2 = await boss.publish(queue, null, { singletonHours: 1, singletonNextSlot: true })
 
-    const singletonSeconds = 1;
-    const jobCount = 3;
-    const publishInterval = 100;
-    const assertTimeout = jobCount * 1000;
+    assert.isOk(jobId2)
+  })
 
-    // add an extra second to test timeout
-    this.timeout((jobCount + 1) * 1000);
+  it('should debounce via publishDebounced()', async function () {
+    const queue = 'publishDebounced'
+    const seconds = 60
 
-    let publishCount = 0;
-    let subscribeCount = 0;
+    const jobId = await boss.publishDebounced(queue, null, null, seconds)
 
-    boss.subscribe('expensive', job => {
-      job.done()
-        .then(() => subscribeCount++);
-    });
+    assert.isOk(jobId)
 
-    let intervalId;
-    let shuttingDown = false;
+    const jobId2 = await boss.publishDebounced(queue, null, null, seconds)
 
-    setTimeout(function() {
-      console.log('published ' + publishCount + ' jobs in '  + assertTimeout/1000 + ' seconds but received ' + subscribeCount + ' jobs');
-      assert.isAtMost(subscribeCount, jobCount + 1);
+    assert.isOk(jobId2)
 
-      shuttingDown = true;
-      clearInterval(intervalId);
-      finished();
+    const jobId3 = await boss.publishDebounced(queue, null, null, seconds)
 
-    }, assertTimeout);
+    assert.isNotOk(jobId3)
+  })
 
+  it('should reject 2nd request in the same time slot', async function () {
+    const queue = 'throttle-reject-2nd'
 
-    intervalId = setInterval(function() {
-      if(shuttingDown) return;
-      boss.publish('expensive', null, {singletonSeconds: singletonSeconds})
-        .then(function() { publishCount++; });
-    }, publishInterval);
+    const jobId1 = await boss.publish(queue, null, { singletonHours: 1 })
 
-  });
+    assert.isOk(jobId1)
 
+    const jobId2 = await boss.publish(queue, null, { singletonHours: 1 })
 
-  it('should debounce', function (finished) {
+    assert.isNotOk(jobId2)
+  })
 
-    this.timeout(3000);
+  it('should throttle via publishThrottled()', async function () {
+    const queue = 'throttle-reject-2nd-publishThrottled'
+    const seconds = 60
 
-    const jobName = 'debounce';
+    const jobId1 = await boss.publishThrottled(queue, null, null, seconds)
 
-    boss.publish(jobName, null, {singletonHours: 1})
-      .then(jobId => {
-        assert.isOk(jobId);
-        return boss.publish(jobName, null, {singletonHours: 1, singletonNextSlot:true});
-      })
-      .then(jobId => {
-        assert.isOk(jobId);
-        finished();
-      });
+    assert.isOk(jobId1)
 
-  });
+    const jobId2 = await boss.publishThrottled(queue, null, null, seconds)
 
-  it('should debounce via publishDebounce()', function (finished) {
-
-    this.timeout(3000);
-
-    const jobName = 'publishDebounce()';
-
-    boss.publishDebounced(jobName, null, null, 60)
-      .then(jobId => {
-        assert.isOk(jobId);
-        return boss.publishDebounced(jobName, null, null, 60);
-      })
-      .then(jobId => {
-        assert.isOk(jobId);
-        finished();
-      });
-
-  });
-
-
-  it('should reject 2nd request in the same time slot', function (finished) {
-
-    this.timeout(3000);
-
-    const jobName = 'throttle-reject-2nd';
-
-    boss.publish(jobName, null, {singletonHours: 1})
-      .then(jobId => {
-        assert.isOk(jobId);
-        return boss.publish(jobName, null, {singletonHours: 1});
-      })
-      .then(jobId => {
-        assert.isNotOk(jobId);
-        finished();
-      });
-
-  });
-
-  it('should throttle via publishThrottled()', function (finished) {
-
-    this.timeout(3000);
-
-    const jobName = 'publishThrottled()';
-
-    boss.publishThrottled(jobName, null, null, 2)
-      .then(jobId => {
-        assert.isOk(jobId);
-        return boss.publishThrottled(jobName, null, null, 2);
-      })
-      .then(jobId => {
-        assert.isNotOk(jobId);
-        finished();
-      });
-
-  });
-
-});
+    assert.isNotOk(jobId2)
+  })
+})

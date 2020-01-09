@@ -1,20 +1,22 @@
+const Promise = require('bluebird')
+
 class Worker {
-  constructor(config){
-    this.config = config;
+  constructor (config) {
+    this.config = config
   }
 
-  start() {
-    if(this.stopped) return;
+  async start () {
+    if (!this.stopped) {
+      await this.config.fetch().then(this.config.onFetch).catch(this.config.onError)
+      await Promise.delay(this.config.interval)
 
-    this.config.fetch()
-      .then(this.config.onFetch)
-      .catch(this.config.onError)
-      .then(() => setTimeout(() => this.start.apply(this), this.config.interval));
+      this.start()
+    }
   }
 
-  stop() {
-    this.stopped = true;
+  stop () {
+    this.stopped = true
   }
 }
 
-module.exports = Worker;
+module.exports = Worker

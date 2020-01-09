@@ -1,123 +1,132 @@
-const EventEmitter = require('events');
-const Attorney = require('./attorney');
-const Contractor = require('./contractor');
-const Manager = require('./manager');
-const Boss = require('./boss');
-const Db = require('./db');
-const plans = require('./plans');
+const assert = require('assert')
+const EventEmitter = require('events')
+const Attorney = require('./attorney')
+const Contractor = require('./contractor')
+const Manager = require('./manager')
+const Boss = require('./boss')
+const Db = require('./db')
+const plans = require('./plans')
 
-const notReadyErrorMessage = `boss ain't ready.  Use start() or connect() to get started.`;
-const alreadyStartedErrorMessage = 'boss.start() has already been called on this instance.';
-const notStartedErrorMessage = `boss ain't started.  Use start().`;
+const notReadyErrorMessage = 'boss ain\'t ready.  Use start() or connect() to get started.'
+const alreadyStartedErrorMessage = 'boss.start() has already been called on this instance.'
+const notStartedErrorMessage = 'boss ain\'t started.  Use start().'
 
 class PgBoss extends EventEmitter {
-  static getConstructionPlans(schema) {
-    return Contractor.constructionPlans(schema);
+  static getConstructionPlans (schema) {
+    return Contractor.constructionPlans(schema)
   }
 
-  static getMigrationPlans(schema, version, uninstall) {
-    return Contractor.migrationPlans(schema, version, uninstall);
+  static getMigrationPlans (schema, version, uninstall) {
+    return Contractor.migrationPlans(schema, version, uninstall)
   }
 
-  constructor(config){
-    config = Attorney.applyConfig(config);
+  constructor (value) {
+    const config = Attorney.getConfig(value)
 
-    super();
+    super()
 
-    const db = getDb(config);
+    const db = getDb(config)
 
-    if(db.isOurs)
-      promoteEvent.call(this, db, 'error');
+    if (db.isOurs) { promoteEvent.call(this, db, 'error') }
 
-    const manager = new Manager(db, config);
-    Object.keys(manager.events).forEach(event => promoteEvent.call(this, manager, manager.events[event]));
-    manager.functions.forEach(func => promoteFunction.call(this, manager, func));
+    const manager = new Manager(db, config)
+    Object.keys(manager.events).forEach(event => promoteEvent.call(this, manager, manager.events[event]))
+    manager.functions.forEach(func => promoteFunction.call(this, manager, func))
 
-    const boss = new Boss(db, config);
-    Object.keys(boss.events).forEach(event => promoteEvent.call(this, boss, boss.events[event]));
+    const boss = new Boss(db, config)
+    Object.keys(boss.events).forEach(event => promoteEvent.call(this, boss, boss.events[event]))
+    boss.functions.forEach(func => promoteFunction.call(this, boss, func))
 
-    this.config = config;
-    this.db = db;
-    this.boss = boss;
-    this.contractor = new Contractor(db, config);
-    this.manager = manager;
+    this.config = config
+    this.db = db
+    this.boss = boss
+    this.contractor = new Contractor(db, config)
+    this.manager = manager
 
-    function getDb(config){
-      let db;
+    function getDb (config) {
+      let db
 
-      if(config.db) {
-        db = config.db;
+      if (config.db) {
+        db = config.db
+      } else {
+        db = new Db(config)
+        db.isOurs = true
       }
-      else {
-        db = new Db(config);
-        db.isOurs = true;
-      }
 
-      return db;
+      return db
     }
 
-    function promoteFunction(obj, func){
+    function promoteFunction (obj, func) {
       this[func.name] = (...args) => {
-        if(!this.isReady) return Promise.reject(notReadyErrorMessage);
-        return func.apply(obj, args);
+        if (!this.isReady) return Promise.reject(notReadyErrorMessage)
+        return func.apply(obj, args)
       }
     }
 
-    function promoteEvent(emitter, event){
-      emitter.on(event, arg => this.emit(event, arg));
+    function promoteEvent (emitter, event) {
+      emitter.on(event, arg => this.emit(event, arg))
+    }
+  }
+
+  async start (options) {
+    assert(!this.isStarted, alreadyStartedErrorMessage)
+
+    options = options || {}
+
+    this.isStarted = true
+
+    if (this.db.isOurs && !this.db.opened) {
+      this.db.open()
     }
 
+    await this.contractor.start()
+
+    this.isReady = true
+
+    if (!options.noSupervisor) {
+      // not in promise chain for async start()
+      this.boss.supervise()
+    }
+
+    return this
   }
 
-  start(options) {
-    if(this.isStarted) return Promise.reject(alreadyStartedErrorMessage);
+  async stop () {
+    assert(this.isStarted, notStartedErrorMessage)
 
-    options = options || {};
+    await this.manager.stop()
+    await this.boss.stop()
 
-    this.isStarted = true;
+    if (this.db.isOurs) {
+      await this.db.close()
+    }
 
-    return this.contractor.start.call(this.contractor)
-      .then(() => {
-        this.isReady = true;
-
-        if(!options.noSupervisor)
-          this.boss.supervise(); // not in promise chain for async start()
-
-        return this;
-      });
+    this.isReady = false
+    this.isStarted = false
   }
 
-  stop() {
-    if(!this.isStarted) return Promise.reject(notStartedErrorMessage);
+  async connect () {
+    if (this.db.isOurs && !this.db.opened) {
+      this.db.open()
+    }
 
-    return Promise.all([
-        this.manager.stop(),
-        this.boss.stop()
-      ])
-      .then(() => this.db.isOurs ? this.db.close() : null)
-      .then(() => {
-        this.isReady = false;
-        this.isStarted = false;
-      });
+    await this.contractor.connect()
+    this.isReady = true
+    return this
   }
 
-  connect() {
-    return this.contractor.connect.call(this.contractor)
-      .then(() => {
-        this.isReady = true;
-        return this;
-      });
+  async disconnect (...args) {
+    assert(this.isReady, notReadyErrorMessage)
+
+    await this.manager.stop.apply(this.manager, args)
+
+    if (this.db.isOurs) {
+      await this.db.close()
+    }
+
+    this.isReady = false
   }
-
-  disconnect(...args) {
-    if(!this.isReady) return Promise.reject(notReadyErrorMessage);
-
-    return this.manager.stop.apply(this.manager, args)
-      .then(() => this.db.isOurs ? this.db.close() : null)
-      .then(() => this.isReady = false);
-  }
-
 }
 
-module.exports = PgBoss;
-module.exports.states = plans.states;
+module.exports = PgBoss
+module.exports.states = plans.states

@@ -17,7 +17,7 @@ async function readme() {
   
   const queue = 'some-queue';
 
-  let jobId = await boss.publish(queue, {param1: 'parameter1'})
+  let jobId = await boss.publish(queue, { param1: 'foo' })
   
   console.log(`created job in queue ${queue}: ${jobId}`);
 
@@ -32,11 +32,11 @@ async function someAsyncJobHandler(job) {
 }
 ```
 
-pg-boss is a message queue (aka job queue, task queue) built in Node.js on top of PostgreSQL in order to provide guaranteed messaging and asynchronous execution to your Node apps.  
+pg-boss is a job queue built in Node.js on top of PostgreSQL in order to provide background job processing and reliable asynchronous execution to Node.js applications.
 
-Why would you consider using this queue over others? pg-boss was created to leverage recent additions in PostgreSQL 9.5
+Why would you consider using this queue over others? pg-boss is actually a light abstraction over features added in PostgreSQL 9.5
 (specifically [SKIP LOCKED](http://blog.2ndquadrant.com/what-is-select-skip-locked-for-in-postgresql-9-5) and upserts)
-which significantly enhance its ability to act as a reliable, distributed message queue. I wrote this to remove a dependency on Redis (via the kue package), consolidating systems I have to support in production as well as upgrading to guaranteed message processing (hint: [Redis persistence docs](https://redis.io/topics/persistence#ok-so-what-should-i-use)). 
+which significantly enhanced its ability to act as a reliable, distributed message queue. I wrote this to remove a dependency on Redis (via the kue package), consolidating systems I have to support in production as well as upgrading to guaranteed message processing (hint: [Redis persistence docs](https://redis.io/topics/persistence#ok-so-what-should-i-use)). 
 
 This will likely cater the most to teams already familiar with the simplicity of relational database semantics and operations (querying and backups, for example).
 

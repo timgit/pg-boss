@@ -1,43 +1,32 @@
-const assert = require('chai').assert;
-const helper = require('./testHelper');
-const Promise = require('bluebird');
+const assert = require('chai').assert
+const helper = require('./testHelper')
+const Promise = require('bluebird')
 
-describe('expire', function() {
+describe('expire', function () {
+  this.timeout(10000)
 
-  this.timeout(10000);
+  let boss
+  const config = { expireCheckInterval: 500 }
 
-  let boss;
+  beforeEach(async () => { boss = await helper.start(config) })
+  afterEach(() => boss.stop())
 
-  // sanitizing each test run for expiration events
-  beforeEach(function(finished){
-    helper.start({expireCheckInterval:500})
-      .then(dabauce => {
-        boss = dabauce;
-        finished();
-      });
-  });
+  it('should expire a job', async function () {
+    this.timeout(5000)
 
-  afterEach(function(finished) {
-    boss.stop().then(() => finished());
-  });
+    const queue = 'i-take-too-long'
 
-  it('should expire a job', function(finished){
-    this.timeout(5000);
+    const jobId = await boss.publish({ name: queue, options: { expireIn: '1 second' } })
 
-    let jobName = 'i-take-too-long';
-    let jobId = null;
+    // fetch the job but don't complete it
+    await boss.fetch(queue)
 
-    boss.publish({name: jobName, options: {expireIn:'1 second'}})
-      .then(id => jobId = id)
-      .then(() => boss.fetch(jobName))
-      .then(() => Promise.delay(2000))
-      .then(() => boss.fetchCompleted(jobName))
-      .then(job => {
-        assert.equal(jobId, job.data.request.id);
-        assert.equal('expired', job.data.state);
-        finished();
-      });
+    // this should give it enough time to expire
+    await Promise.delay(2000)
 
-    });
+    const job = await boss.fetchCompleted(queue)
 
-});
+    assert.equal(jobId, job.data.request.id)
+    assert.equal('expired', job.data.state)
+  })
+})

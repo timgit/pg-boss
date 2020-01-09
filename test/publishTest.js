@@ -1,96 +1,58 @@
-const assert = require('chai').assert;
-const helper = require('./testHelper');
+const assert = require('chai').assert
+const helper = require('./testHelper')
 
-describe('publish', function(){
+describe('publish', function () {
+  this.timeout(10000)
 
-  this.timeout(10000);
+  let boss
 
-  let boss;
+  before(async () => { boss = await helper.start() })
+  after(() => boss.stop())
 
-  before(function(finished){
-    helper.start()
-      .then(dabauce => {
-        boss = dabauce;
-        finished();
-      });
-  });
-
-  after(function(finished){
-    boss.stop().then(() => finished());
-  });
-
-  it('should fail with no arguments', function(finished) {
+  it('should fail with no arguments', function (finished) {
     boss.publish()
-      .catch(error => finished());
-  });
+      .catch(() => finished())
+  })
 
-  it('should fail with a function for data', function(finished) {
+  it('should fail with a function for data', function (finished) {
     boss.publish('job', () => true)
-      .catch(error => finished());
-  });
+      .catch(() => finished())
+  })
 
-  it('should fail with a function for options', function(finished) {
+  it('should fail with a function for options', function (finished) {
     boss.publish('job', 'data', () => true)
-      .catch(error => finished());
-  });
+      .catch(() => finished())
+  })
 
-  it('should accept single string argument', function(finished) {
-    const jobName = 'publishNameOnly';
+  it('should accept single string argument', async function () {
+    const queue = 'publishNameOnly'
+    await boss.publish(queue)
+  })
 
-    boss.publish(jobName)
-      .then(() => boss.fetch(jobName))
-      .then(job => boss.complete(job.id))
-      .then(() => finished());
+  it('should accept job object argument with only name', async function () {
+    const queue = 'publishqueueOnly'
+    await boss.publish({ name: queue })
+  })
 
-  });
+  it('should accept job object with name and data only', async function () {
+    const queue = 'publishqueueAndData'
+    const message = 'hi'
 
-  it('should accept job object argument with only name', function(finished){
-    const jobName = 'publishJobNameOnly';
+    await boss.publish({ name: queue, data: { message } })
 
-    boss.publish({name: jobName})
-      .then(() => boss.fetch(jobName))
-      .then(job => boss.complete(job.id))
-      .then(() => finished());
-  });
+    const job = await boss.fetch(queue)
 
+    assert.equal(message, job.data.message)
+  })
 
-  it('should accept job object with name and data only', function(finished){
-    const jobName = 'publishJobNameAndData';
-    const message = 'hi';
+  it('should accept job object with name and options only', async function () {
+    const queue = 'publishqueueAndOptions'
+    const options = { someCrazyOption: 'whatever' }
 
-    boss.publish({name: jobName, data: {message}})
-      .then(() => boss.fetch(jobName))
-      .then(job => {
-        assert.equal(message, job.data.message);
-        return boss.complete(job.id);
-      })
-      .then(() => finished());
+    await boss.publish({ name: queue, options })
 
-  });
+    const job = await boss.fetch(queue)
 
-
-  it('should accept job object with name and options only', function(finished){
-    const jobName = 'publishJobNameAndOptions';
-    const options = {someCrazyOption:'whatever'};
-
-    boss.publish({name: jobName, options})
-      .then(() => boss.fetch(jobName))
-      .then(job => {
-        assert.isNull(job.data);
-        return boss.complete(job.id);
-      })
-      .then(() => finished());
-
-  });
-
-  // it('should accept an array of jobs', function(finished){
-  //   const name = 'publish-array';
-  //
-  //   boss.publish([{name},{name},{name},{name},{name}])
-  //     .then()
-  // });
-
-});
-
-
-
+    assert.isNull(job.data)
+  })
+})

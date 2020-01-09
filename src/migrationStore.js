@@ -1,33 +1,33 @@
 module.exports = {
   get,
   getAll
-};
+}
 
-function get(schema, version, uninstall, migrations) {
-  migrations = migrations || getAll(schema);
+function get (schema, version, uninstall, migrations) {
+  migrations = migrations || getAll(schema)
 
-  for(let m=0; m<migrations.length; m++){
-    let migration = migrations[m];
+  for (let m = 0; m < migrations.length; m++) {
+    const migration = migrations[m]
 
-    let targetVersion = uninstall ? 'previous' : 'version';
-    let sourceVersion = uninstall ? 'version' : 'previous';
+    const targetVersion = uninstall ? 'previous' : 'version'
+    const sourceVersion = uninstall ? 'version' : 'previous'
 
-    let targetCommands = uninstall ? 'uninstall' : 'install';
+    const targetCommands = uninstall ? 'uninstall' : 'install'
 
-    if(migration[sourceVersion] === version){
-      let commands = migration[targetCommands].concat();
+    if (migration[sourceVersion] === version) {
+      const commands = migration[targetCommands].concat()
 
-      commands.push(`UPDATE ${schema}.version SET version = '${migration[targetVersion]}';`);
+      commands.push(`UPDATE ${schema}.version SET version = '${migration[targetVersion]}';`)
 
       return {
         version: migration[targetVersion],
         commands
-      };
+      }
     }
   }
 }
 
-function getAll(schema) {
+function getAll (schema) {
   return [
     {
       version: '0.1.0',
@@ -144,7 +144,7 @@ function getAll(schema) {
       version: '8',
       previous: '7',
       install: [
-        `CREATE EXTENSION IF NOT EXISTS pgcrypto`,
+        'CREATE EXTENSION IF NOT EXISTS pgcrypto',
         `ALTER TABLE ${schema}.job ALTER COLUMN id SET DEFAULT gen_random_uuid()`,
         `ALTER TABLE ${schema}.job ADD retryDelay integer not null DEFAULT (0)`,
         `ALTER TABLE ${schema}.job ADD retryBackoff boolean not null DEFAULT false`,
@@ -227,7 +227,7 @@ function getAll(schema) {
         `DROP INDEX ${schema}.job_fetch`,
         `DROP INDEX ${schema}.job_name`,
         `CREATE INDEX job_name ON ${schema}.job (name text_pattern_ops)`,
-        `UPDATE ${schema}.job set name = '__state__completed__' || substr(name, 1, position('__state__completed' in name) - 1) WHERE name LIKE '%__state__completed'`        
+        `UPDATE ${schema}.job set name = '__state__completed__' || substr(name, 1, position('__state__completed' in name) - 1) WHERE name LIKE '%__state__completed'`
       ],
       uninstall: [
         `UPDATE ${schema}.job set name = substr(name, 21) || '__state__completed' WHERE name LIKE '__state__completed__%'`,
@@ -245,6 +245,16 @@ function getAll(schema) {
       uninstall: [
         `DROP INDEX ${schema}.archive_id_idx`
       ]
+    },
+    {
+      version: '11',
+      previous: '10',
+      install: [
+          `CREATE INDEX archive_archivedon_idx ON ${schema}.archive(archivedon)`
+      ],
+      uninstall: [
+          `DROP INDEX ${schema}.archive_archivedon_idx`
+      ]
     }
-  ];
+  ]
 }

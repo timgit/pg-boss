@@ -1,5 +1,5 @@
-const PgBoss = require('../lib');
+const PgBoss = require('../lib')
 
-let plans = PgBoss.getMigrationPlans('pgboss', process.argv[2]);
+const plans = PgBoss.getMigrationPlans('pgboss', process.argv[2])
 
-console.log(plans);
+console.log(plans)

@@ -1,28 +1,25 @@
-const Promise = require('bluebird');
-const assert = require('chai').assert;
-const helper = require('./testHelper');
-const PgBoss = require('../src/index');
+const Promise = require('bluebird')
+const assert = require('chai').assert
+const helper = require('./testHelper')
+const PgBoss = require('../src/index')
 
-describe('manager', function(){
+describe('manager', function () {
+  this.timeout(10000)
 
-  this.timeout(10000);
+  before(() => helper.init())
 
-  before(function(finished){
-    helper.init().then(() => finished());
-  });
+  it('should reject multiple simultaneous start requests', async function () {
+    const boss = new PgBoss(helper.getConfig())
 
-  it('should reject multiple simultaneous start requests', function(finished) {
+    await boss.start()
 
-    const boss = new PgBoss(helper.getConfig());
+    await Promise.delay(2000)
 
-    boss.start()
-      .then(() => Promise.delay(2000))
-      .then(() => boss.start())
-      .catch(() => boss.stop().then(() => finished()))
-
-  });
-
-});
-
-
-
+    try {
+      await boss.start()
+      assert(false)
+    } catch (error) {
+      boss.stop()
+    }
+  })
+})

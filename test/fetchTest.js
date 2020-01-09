@@ -1,58 +1,40 @@
-const Promise = require('bluebird');
-const assert = require('chai').assert;
-const helper = require('./testHelper');
+const Promise = require('bluebird')
+const assert = require('chai').assert
+const helper = require('./testHelper')
 
-describe('fetch', function(){
+describe('fetch', function () {
+  this.timeout(10000)
 
-  this.timeout(10000);
+  let boss
 
-  let boss;
+  before(async () => { boss = await helper.start() })
+  after(() => boss.stop())
 
-  before(function(finished){
-    helper.start()
-      .then(dabauce => {
-        boss = dabauce;
-        finished();
-      });
-  });
+  it('should reject missing queue argument', function (finished) {
+    boss.fetch().catch(() => finished())
+  })
 
-  after(function(finished){
-    boss.stop().then(() => finished());
-  });
+  it('should fetch a job by name manually', async function () {
+    const jobName = 'no-subscribe-required'
 
-  it('should reject missing id argument', function(finished){
-    boss.fetch().catch(() => finished());
-  });
+    await boss.publish(jobName)
+    const job = await boss.fetch(jobName)
+    assert(jobName === job.name)
+  })
 
-  it('should get a single job by name and manually complete', function(finished) {
-    let jobName = 'no-subscribe-required';
+  it('should get a batch of jobs as an array', async function () {
+    const jobName = 'fetch-batch'
+    const batchSize = 4
 
-    boss.publish(jobName)
-      .then(() => boss.fetch(jobName))
-      .then(job => {
-        assert(jobName === job.name);
-        return boss.complete(job.id);
-      })
-      .then(() => finished());
-  });
-
-  it('should get a batch of jobs as an array', function(finished){
-    const jobName = 'fetch-batch';
-    const batchSize = 4;
-
-    Promise.all([
+    await Promise.all([
       boss.publish(jobName),
       boss.publish(jobName),
       boss.publish(jobName),
       boss.publish(jobName)
     ])
-    .then(() => boss.fetch(jobName, batchSize))
-    .then(jobs => {
-      assert(jobs.length === batchSize);
-      finished();
-    });
-  });
 
+    const jobs = await boss.fetch(jobName, batchSize)
 
-
-});
+    assert(jobs.length === batchSize)
+  })
+})

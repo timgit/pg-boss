@@ -1,52 +1,37 @@
-const Promise = require('bluebird');
-const assert = require('chai').assert;
-const helper = require('./testHelper');
+const Promise = require('bluebird')
+const assert = require('chai').assert
+const helper = require('./testHelper')
 
-describe('speed', function() {
+describe('speed', function () {
+  const expectedSeconds = 2
+  const jobCount = 10000
+  const queue = 'speedTest'
 
-  const expectedSeconds = 5;
-  const jobCount = 10000;
-  const name = 'speedTest';
+  this.timeout(10000)
 
-  this.timeout(10000);
+  const jobs = new Array(jobCount).fill(null).map((item, index) => ({ name: queue, data: { index } }))
 
-  const jobs = new Array(jobCount).fill(null).map((item, index) => ({name, data:{index}}));
+  const testTitle = `should be able to fetch and complete ${jobCount} jobs in ${expectedSeconds} seconds`
 
-  const testTitle = `should be able to complete ${jobCount} jobs in ${expectedSeconds} seconds`;
+  let boss
 
-  let boss;
+  before(async () => {
+    boss = await helper.start()
+    await Promise.map(jobs, job => boss.publish(job.name, job.data))
+  })
 
-  before(function(finished){
-    helper.start()
-      .then(dabauce => {
-        boss = dabauce;
+  after(() => boss.stop())
 
-        Promise.map(jobs, job => boss.publish(job.name, job.data))
-          .then(() => finished());
-      });
-  });
+  it(testTitle, async function () {
+    const startTime = new Date()
 
-  after(function(finished){
-    boss.stop().then(() => finished());
-  });
+    const jobs = await boss.fetch(queue, jobCount)
+    await boss.complete(jobs.map(job => job.id))
 
-  it(testTitle, function(finished) {
-    this.timeout(expectedSeconds * 1000);
+    const elapsed = new Date().getTime() - startTime.getTime()
 
-    const startTime = new Date();
+    console.log(`finished ${jobCount} jobs in ${elapsed}ms`)
 
-    boss.fetch(name, jobCount)
-      .then(jobs => boss.complete(jobs.map(job => job.id)))
-      .then(() => {
-        let elapsed = new Date().getTime() - startTime.getTime();
-
-        console.log(`finished ${jobCount} jobs in ${elapsed}ms`);
-
-        assert.isBelow(elapsed / 1000, expectedSeconds);
-
-        finished();
-    });
-  });
-
-});
-
+    assert.isBelow(elapsed / 1000, expectedSeconds)
+  })
+})

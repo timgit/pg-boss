@@ -1,241 +1,222 @@
-const Promise = require('bluebird');
-const assert = require('chai').assert;
-const helper = require('./testHelper');
+const Promise = require('bluebird')
+const assert = require('chai').assert
+const helper = require('./testHelper')
 
-describe('subscribe', function(){
+describe('subscribe', function () {
+  this.timeout(10000)
+  let boss
 
-  this.timeout(10000);
+  before(async () => { boss = await helper.start() })
+  after(() => boss.stop())
 
-  let boss;
+  it('should fail with no arguments', function (finished) {
+    boss.subscribe().catch(() => finished())
+  })
 
-  before(function(finished){
-    helper.start()
-      .then(dabauce => {
-        boss = dabauce;
-        finished();
-      });
-  });
+  it('should fail if no callback provided', function (finished) {
+    boss.subscribe('foo').catch(() => finished())
+  })
 
-  after(function(finished){
-    boss.stop()
-      .then(() => finished());
-  });
+  it('should fail if options is not an object', function (finished) {
+    boss.subscribe('foo', () => {}, 'nope').catch(() => finished())
+  })
 
-  it('should fail with no arguments', function(finished) {
-    boss.subscribe()
-      .catch(error => finished());
-  });
+  it('unsubscribe should fail without a name', function (finished) {
+    boss.unsubscribe().catch(() => finished())
+  })
 
-  it('should fail if no callback provided', function(finished) {
-    boss.subscribe('foo')
-      .catch(error => finished());
-  });
+  it('should honor a custom new job check interval', async function () {
+    const queue = 'customJobCheckInterval'
+    const newJobCheckIntervalSeconds = 3
+    const timeout = 9000
+    let subscribeCount = 0
+    const jobCount = 10
 
-  it('should fail if options is not an object', function(finished) {
-    boss.subscribe('foo', () => {}, 'nope')
-      .catch(error => finished());
-  });
+    for (let i = 0; i < jobCount; i++) {
+      await boss.publish(queue)
+    }
 
-  it('should honor a custom new job check interval', function(finished){
+    await boss.subscribe(queue, { newJobCheckIntervalSeconds }, () => subscribeCount++)
 
-    let startTime = new Date();
-    const queue = 'customJobCheckInterval';
-    const newJobCheckIntervalSeconds = 3;
-    const timeout = 9000;
-    let subscribeCount = 0;
+    await Promise.delay(timeout)
 
-    boss.subscribe(queue, {newJobCheckIntervalSeconds}, () => subscribeCount++)
-      .then(() => Promise.join(
-        boss.publish(queue),
-        boss.publish(queue),
-        boss.publish(queue),
-        boss.publish(queue),
-        boss.publish(queue),
-        boss.publish(queue),
-        boss.publish(queue),
-        boss.publish(queue),
-        boss.publish(queue),
-        boss.publish(queue)
-      ));
+    assert.isAtMost(subscribeCount, timeout / 1000 / newJobCheckIntervalSeconds)
+  })
 
-    setTimeout(() => {
-      assert.isAtMost(subscribeCount, timeout / 1000 / newJobCheckIntervalSeconds);
-      finished();
-    }, timeout);
+  it('should unsubscribe a subscription', async function () {
+    const queue = 'unsubscribe-works'
 
-  });
+    let receivedCount = 0
 
-  it('should unsubscribe a subscription', function(finished){
-    this.timeout(4000);
+    boss.subscribe(queue, async () => {
+      receivedCount++
+      await boss.unsubscribe(queue)
+    })
 
-    const jobName = 'temp';
+    await boss.publish(queue)
+    await boss.publish(queue)
 
-    let receivedCount = 0;
+    await Promise.delay(2000)
 
-    boss.subscribe(jobName, job => {
-      receivedCount++;
+    assert.equal(receivedCount, 1)
+  })
 
-      job.done()
-        .then(() => boss.unsubscribe(jobName))
-        .then(() => boss.publish(jobName))
-    });
+  it('should handle a batch of jobs via teamSize', function (finished) {
+    this.timeout(1000)
 
-    boss.publish(jobName)
-      .then(() => {
+    const queue = 'subscribe-teamSize'
+    const teamSize = 4
 
-        setTimeout(() => {
-          assert.isAtMost(receivedCount, 1);
-          finished();
-        }, 2000);
+    let subscribeCount = 0
 
-      });
+    test()
 
-  });
+    async function test () {
+      for (let i = 0; i < teamSize; i++) {
+        await boss.publish(queue)
+      }
 
-  it('unsubscribe should fail without a name', function(finished){
-    boss.unsubscribe().catch(() => finished());
-  });
+      boss.subscribe(queue, { teamSize }, async () => {
+        subscribeCount++
 
-  it('should handle a batch of jobs via teamSize', function(finished){
-    const jobName = 'subscribe-teamSize';
-    const teamSize = 4;
-    let subscribeCount = 0;
-
-    Promise.all([
-      boss.publish(jobName),
-      boss.publish(jobName),
-      boss.publish(jobName),
-      boss.publish(jobName)
-    ])
-      .then(() => boss.subscribe(jobName, {teamSize}, job =>
-        job.done()
-          .then(() => {
-            subscribeCount++;
-
-            // idea here is that the test would time out if it had to wait for 4 intervals
-            if(subscribeCount === teamSize)
-              finished();
-          })
-        )
-      );
-  });
-
-  it('should apply teamConcurrency option', function(finished){
-    const jobName = 'subscribe-teamConcurrency';
-    const teamSize = 4;
-    const teamConcurrency = 4;
-    let subscribeCount = 0;
-
-    Promise.all([
-      boss.publish(jobName),
-      boss.publish(jobName),
-      boss.publish(jobName),
-      boss.publish(jobName)
-    ])
-      .then(() => boss.subscribe(jobName, {teamSize, teamConcurrency}, job => {
-        subscribeCount++;
-
-        // idea here is that the test would time out if it had to wait for 4 intervals
-        if (subscribeCount === teamSize)
-          finished();
-
-        return Promise.delay(4000);
-      }));
-
-  });
-
-  it('should handle a batch of jobs via batchSize', function(finished){
-    const jobName = 'subscribe-batchSize';
-    const batchSize = 4;
-    let subscribeCount = 0;
-
-    Promise.all([
-      boss.publish(jobName),
-      boss.publish(jobName),
-      boss.publish(jobName),
-      boss.publish(jobName)
-    ])
-      .then(() => boss.subscribe(jobName, {batchSize}, jobs =>
-        boss.complete(jobs.map(job => job.id))
-          .then(() => {
-            assert.equal(jobs.length, batchSize);
-            finished();
-          })
-        )
-      );
-  });
-
-  it('returning promise applies backpressure', function(finished){
-
-    const queue = 'backpressure';
-    let subscribeCount = 0;
-
-    let jobs = [
-      boss.publish(queue),
-      boss.publish(queue),
-      boss.publish(queue),
-      boss.publish(queue)
-    ];
-
-    Promise.all(jobs)
-      .then(() => boss.subscribe(queue, job => Promise.delay(2000).then(() => subscribeCount++)))
-      .then(() => setTimeout(() => {
-        assert.isBelow(subscribeCount, jobs.length);
-        finished();
-      }, 7000));
-
-  });
-
-  it('should have a done callback for single job subscriptions', function(finished){
-    const name = 'subscribe-single';
-
-    boss.subscribe(name, job=> {
-        return job.done().then(() => finished());
+        // test would time out if it had to wait for 4 fetch intervals
+        if (subscribeCount === teamSize) {
+          finished()
+        }
       })
-      .then(() => boss.publish(name));
+    }
+  })
 
-  });
+  it('should apply teamConcurrency option', function (finished) {
+    this.timeout(1000)
 
-  it('subscribe completion via Promise resolve() should pass string wrapped in value prop', function(finished){
-    const queue = 'subscribeCompletionViaResolveString';
-    const result = 'success';
+    const queue = 'subscribe-teamConcurrency'
+    const teamSize = 4
+    const teamConcurrency = 4
 
-    boss.publish(queue)
-      .then(() => boss.subscribe(queue, job => Promise.resolve(result)));
+    let subscribeCount = 0
 
-    boss.onComplete(queue, job => {
-      assert.strictEqual(job.data.state, 'completed');
-      assert.strictEqual(job.data.response.value, result);
-      finished();
-    });
+    test()
 
-  });
+    async function test () {
+      for (let i = 0; i < teamSize; i++) {
+        await boss.publish(queue)
+      }
 
-  it('subscribe completion via Promise resolve() should pass object payload', function(finished){
-    const queue = 'subscribeCompletionViaResolveObject';
-    const something = 'clever';
+      boss.subscribe(queue, { teamSize, teamConcurrency }, async () => {
+        subscribeCount++
 
-    boss.publish(queue)
-      .then(() => boss.subscribe(queue, job => Promise.resolve({something})));
+        if (subscribeCount === teamSize) {
+          finished()
+        }
 
-    boss.onComplete(queue, job => {
-      assert.strictEqual(job.data.state, 'completed');
-      assert.strictEqual(job.data.response.something, something);
-      finished();
-    });
+        // test would time out if it had to wait for each handler to resolve
+        await Promise.delay(4000)
+      })
+    }
+  })
 
-  });
+  it('should handle a batch of jobs via batchSize', function (finished) {
+    const queue = 'subscribe-batchSize'
+    const batchSize = 4
 
-  it('should allow multiple subscriptions to the same queue per instance', function(finished){
+    test()
+
+    async function test () {
+      for (let i = 0; i < batchSize; i++) {
+        await boss.publish(queue)
+      }
+
+      boss.subscribe(queue, { batchSize }, jobs => {
+        assert.equal(jobs.length, batchSize)
+        finished()
+      })
+    }
+  })
+
+  it('returning promise applies backpressure', async function () {
+    const queue = 'backpressure'
+    const batchSize = 4
+    let subscribeCount = 0
+
+    for (let i = 0; i < batchSize; i++) {
+      await boss.publish(queue)
+    }
+
+    boss.subscribe(queue, async () => {
+      // delay slows down subscribe fetch
+      await Promise.delay(2000)
+      subscribeCount++
+    })
+
+    await Promise.delay(7000)
+
+    assert.isBelow(subscribeCount, batchSize)
+  })
+
+  it('should have a done callback for single job subscriptions', function (finished) {
+    const queue = 'subscribe-single'
+
+    test()
+
+    async function test () {
+      await boss.publish(queue)
+
+      boss.subscribe(queue, async job => {
+        await job.done()
+        finished()
+      })
+    }
+  })
+
+  it('subscribe completion should pass string wrapped in value prop', function (finished) {
+    const queue = 'subscribeCompletionString'
+    const result = 'success'
+
+    test()
+
+    async function test () {
+      boss.subscribe(queue, async job => result)
+
+      await boss.publish(queue)
+
+      await Promise.delay(2000)
+
+      const job = await boss.fetchCompleted(queue)
+
+      assert.strictEqual(job.data.state, 'completed')
+      assert.strictEqual(job.data.response.value, result)
+
+      finished()
+    }
+  })
+
+  it('subscribe completion via Promise resolve() should pass object payload', function (finished) {
+    const queue = 'subscribeCompletionObject'
+    const something = 'clever'
+
+    test()
+
+    async function test () {
+      boss.subscribe(queue, async job => ({ something }))
+
+      await boss.publish(queue)
+
+      await Promise.delay(2000)
+
+      const job = await boss.fetchCompleted(queue)
+
+      assert.strictEqual(job.data.state, 'completed')
+      assert.strictEqual(job.data.response.something, something)
+
+      finished()
+    }
+  })
+
+  it('should allow multiple subscriptions to the same queue per instance', async function () {
     const queue = 'multiple-subscriptions'
-    
-    boss.subscribe(queue, ()=>{})
-      .then(() => boss.subscribe(queue, ()=>{}))
-      .then(() => finished());
-      
-  });
 
-});
-
-
-
+    await boss.subscribe(queue, () => {})
+    await boss.subscribe(queue, () => {})
+  })
+})

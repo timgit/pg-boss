@@ -152,6 +152,11 @@ declare class PgBoss {
   fail(id: string): Promise<void>;
   fail(id: string, data: object): Promise<void>;
   fail(ids: string[]): Promise<void>;
+  deleteQueue(name: string): Promise<void>;
+  deleteAllQueues(): Promise<void>;
+  archive(): Promise<void>;
+  purge(): Promise<void>;
+  expire(): Promise<void>;
 }
 
 export = PgBoss;

@@ -1,87 +1,61 @@
-const assert = require('chai').assert;
-const helper = require('./testHelper');
-const Promise = require('bluebird');
+const assert = require('chai').assert
+const helper = require('./testHelper')
 
-describe('deleteQueue', function() {
+describe('deleteQueue', function () {
+  this.timeout(10000)
 
-  this.timeout(10000);
+  let boss
 
-  let boss;
+  before(async () => { boss = await helper.start() })
+  after(() => boss.stop())
 
-  before(function(finished){
+  it('should clear a specific queue', async function () {
+    const queue1 = 'delete-named-queue-1'
+    const queue2 = 'delete-named-queue-2'
 
-    helper.start()
-      .then(dabauce => {
-        boss = dabauce;
-        finished();
-      });
-  });
+    await boss.publish(queue1)
+    await boss.publish(queue2)
 
-  after(function(finished) {
-    boss.stop().then(() => finished());
-  });
+    const q1Count1 = await helper.countJobs('name = $1', [queue1])
+    const q2Count1 = await helper.countJobs('name = $1', [queue2])
 
-  it('should clear a specific queue', function(finished){
+    assert.strictEqual(1, q1Count1)
+    assert.strictEqual(1, q2Count1)
 
-    const queue1 = 'delete-named-queue-1';
-    const queue2 = 'delete-named-queue-2';
-    
-    Promise.join(
-      boss.publish(queue1),
-      boss.publish(queue2)
-    )
-      .then(() => Promise.join(
-        helper.countJobs(`name = $1`, [queue1]),
-        helper.countJobs(`name = $1`, [queue2]),
-        (q1Count, q2Count) => {
-          assert.strictEqual(1, q1Count);
-          assert.strictEqual(1, q2Count);
-        }
-      ))
-      .then(() => boss.deleteQueue(queue1))
-      .then(() => Promise.join(
-        helper.countJobs(`name = $1`, [queue1]),
-        helper.countJobs(`name = $1`, [queue2]),
-        (q1Count, q2Count) => {
-          assert.strictEqual(0, q1Count);
-          assert.strictEqual(1, q2Count);
-        }
-      ))
-      .then(() => boss.deleteQueue(queue2))
-      .then(() => helper.countJobs(`name = $1`, [queue2]))
-      .then(q2Count => {
-        assert.strictEqual(0, q2Count);
-        finished()
-      });
-  });
+    await boss.deleteQueue(queue1)
 
-  it('should clear all queues', function(finished){
+    const q1Count2 = await helper.countJobs('name = $1', [queue1])
+    const q2Count2 = await helper.countJobs('name = $1', [queue2])
 
-    const queue1 = 'delete-named-queue-1';
-    const queue2 = 'delete-named-queue-2';
+    assert.strictEqual(0, q1Count2)
+    assert.strictEqual(1, q2Count2)
 
-    Promise.join(
-      boss.publish(queue1),
-      boss.publish(queue2)
-    )
-      .then(() => Promise.join(
-        helper.countJobs(`name = $1`, [queue1]),
-        helper.countJobs(`name = $1`, [queue2]),
-        (q1Count, q2Count) => {
-          assert.strictEqual(1, q1Count);
-          assert.strictEqual(1, q2Count);
-        }
-      ))
-      .then(() => boss.deleteAllQueues())
-      .then(() => Promise.join(
-        helper.countJobs(`name = $1`, [queue1]),
-        helper.countJobs(`name = $1`, [queue2]),
-        (q1Count, q2Count) => {
-          assert.strictEqual(0, q1Count);
-          assert.strictEqual(0, q2Count);
-          finished();
-        }
-      ));
-  });
+    await boss.deleteQueue(queue2)
 
-});
+    const q2Count3 = await helper.countJobs('name = $1', [queue2])
+
+    assert.strictEqual(0, q2Count3)
+  })
+
+  it('should clear all queues', async function () {
+    const queue1 = 'delete-named-queue-11'
+    const queue2 = 'delete-named-queue-22'
+
+    await boss.publish(queue1)
+    await boss.publish(queue2)
+
+    const q1Count1 = await helper.countJobs('name = $1', [queue1])
+    const q2Count1 = await helper.countJobs('name = $1', [queue2])
+
+    assert.strictEqual(1, q1Count1)
+    assert.strictEqual(1, q2Count1)
+
+    await boss.deleteAllQueues()
+
+    const q1Count2 = await helper.countJobs('name = $1', [queue1])
+    const q2Count2 = await helper.countJobs('name = $1', [queue2])
+
+    assert.strictEqual(0, q1Count2)
+    assert.strictEqual(0, q2Count2)
+  })
+})
