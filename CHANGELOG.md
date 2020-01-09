@@ -1,6 +1,6 @@
 # Changes
 
-## 3.2.0
+## 3.2.1
 
 - Fixed rare deadlocks by stacking housekeeping operations one at a time during start().
 - Added `archive()`, `purge()` and `expire()` to exports for manual housekeeping if desired along with connect().  Use this only if you need it for special cases, as it's not a good idea to run these in parallel (see deadlock comment above).
