@@ -1,5 +1,9 @@
 # Changes
 
+## 3.2.2
+
+- Deferring housekeeping operations on start to reduce deadlocks during concurrent start() instances
+
 ## 3.2.1
 
 - Fixed rare deadlocks by stacking housekeeping operations one at a time during start().

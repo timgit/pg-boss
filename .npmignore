@@ -3,3 +3,6 @@ coverage/
 .travis.yml
 *.tgz
 .nyc_output/
+docs/
+changelog.md
+readme.md

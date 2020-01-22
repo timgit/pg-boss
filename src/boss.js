@@ -43,7 +43,6 @@ class Boss extends EventEmitter {
     }
 
     async function monitor (func, interval) {
-      await exec()
       repeat()
 
       async function exec () {
