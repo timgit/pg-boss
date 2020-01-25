@@ -1,6 +1,8 @@
 const EventEmitter = require('events')
 const plans = require('./plans')
 
+const MAINTQ = '__pgboss__maintenance'
+
 const events = {
   error: 'error',
   archived: 'archived',
@@ -27,42 +29,48 @@ class Boss extends EventEmitter {
     this.functions = [
       this.expire,
       this.archive,
-      this.purge
+      this.purge,
+      this.countStates
     ]
+
+    this.ops = this.functions.reduce((acc, i) => Object.assign(acc, { [i.name]: i.name }, {}))
   }
 
   async supervise () {
     const self = this
 
-    await monitor(this.archive, this.config.archiveCheckInterval)
-    await monitor(this.purge, this.config.deleteCheckInterval)
-    await monitor(this.expire, this.config.expireCheckInterval)
+    await this.config.manager.deleteQueue(MAINTQ)
+
+    await this.config.manager.subscribe(MAINTQ, async job => {
+      const { op, interval } = job.data
+      try {
+        await this[op]()
+      } catch (err) {
+        this.emit(events.error, err)
+      } finally {
+        if (!self.stopped) {
+          this.config.manager.publishAfter(MAINTQ, { op, interval }, null, interval)
+        }
+      }
+    })
+
+    await this.monitor(this.ops.archive, this.config.archiveCheckInterval)
+    await this.monitor(this.ops.purge, this.config.deleteCheckInterval)
+    await this.monitor(this.ops.expire, this.config.expireCheckInterval)
 
     if (this.config.monitorStateInterval) {
-      await monitor(this.countStates, this.config.monitorStateInterval)
+      await this.monitor(this.ops.countStates, this.config.monitorStateInterval)
     }
+  }
 
-    async function monitor (func, interval) {
-      repeat()
-
-      async function exec () {
-        if (!self.stopped) {
-          return func.call(self).catch(err => self.emit(events.error, err))
-        }
-      }
-
-      function repeat () {
-        if (!self.stopped) {
-          self.timers[func.name] = setTimeout(() => exec().then(repeat), interval)
-        }
-      }
-    }
+  async monitor (op, interval) {
+    await this.config.manager.publishAfter(MAINTQ, { op, interval }, null, interval)
   }
 
   async stop () {
     if (!this.stopped) {
       this.stopped = true
-      Object.keys(this.timers).forEach(key => clearTimeout(this.timers[key]))
+      await this.config.manager.deleteQueue(MAINTQ)
     }
   }
 
