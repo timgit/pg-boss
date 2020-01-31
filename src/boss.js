@@ -71,7 +71,8 @@ class Boss extends EventEmitter {
 
   async onMonitorStates () {
     try {
-      await this.countStates()
+      const states = await this.countStates()
+      this.emit(events.monitorStates, states)
     } catch (err) {
       this.emit(events.error, err)
     }
@@ -108,8 +109,6 @@ class Boss extends EventEmitter {
 
       return acc
     }, { ...stateCountDefault, queues: {} })
-
-    this.emit(events.monitorStates, states)
 
     return states
   }
