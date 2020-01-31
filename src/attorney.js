@@ -86,7 +86,7 @@ function getConfig (value) {
 
   applyDatabaseConfig(config)
   applyNewJobCheckInterval(config)
-  applyExpireConfig(config)
+  applyMaintenanceConfig(config)
   applyArchiveConfig(config)
   applyDeleteConfig(config)
   applyMonitoringConfig(config)
@@ -126,39 +126,21 @@ function applyNewJobCheckInterval (config) {
         : 1000 // default is 1 second
 }
 
-function applyExpireConfig (config) {
-  assert(!('expireCheckInterval' in config) || config.expireCheckInterval >= 100,
-    'configuration assert: expireCheckInterval must be at least every 100ms')
+function applyMaintenanceConfig (config) {
+  assert(!('maintenanceIntervalSeconds' in config) || config.maintenanceIntervalSeconds >= 1,
+    'configuration assert: maintenanceIntervalSeconds must be at least every second')
 
-  assert(!('expireCheckIntervalSeconds' in config) || config.expireCheckIntervalSeconds >= 1,
-    'configuration assert: expireCheckIntervalSeconds must be at least every second')
+  assert(!('maintenanceIntervalMinutes' in config) || config.maintenanceIntervalMinutes >= 1,
+    'configuration assert: maintenanceIntervalMinutes must be at least every minute')
 
-  assert(!('expireCheckIntervalMinutes' in config) || config.expireCheckIntervalMinutes >= 1,
-    'configuration assert: expireCheckIntervalMinutes must be at least every minute')
-
-  config.expireCheckInterval =
-    ('expireCheckIntervalMinutes' in config) ? config.expireCheckIntervalMinutes * 60 * 1000
-      : ('expireCheckIntervalSeconds' in config) ? config.expireCheckIntervalSeconds * 1000
-        : ('expireCheckInterval' in config) ? config.expireCheckInterval
-          : 60 * 1000 // default is 1 minute
+  config.maintenanceInterval =
+    ('maintenanceIntervalMinutes' in config) ? config.maintenanceIntervalMinutes * 60 * 1000
+    // backing interval down a second to offset the internal subscription's fetch interval
+      : ('maintenanceIntervalSeconds' in config) ? (config.maintenanceIntervalSeconds - 1) * 1000
+        : 60 * 1000 // default is 1 minute
 }
 
 function applyArchiveConfig (config) {
-  assert(!('archiveCheckInterval' in config) || config.archiveCheckInterval >= 100,
-    'configuration assert: archiveCheckInterval must be at least every 100ms')
-
-  assert(!('archiveCheckIntervalSeconds' in config) || config.archiveCheckIntervalSeconds >= 1,
-    'configuration assert: archiveCheckIntervalSeconds must be at least every second')
-
-  assert(!('archiveCheckIntervalMinutes' in config) || config.archiveCheckIntervalMinutes >= 1,
-    'configuration assert: archiveCheckIntervalMinutes must be at least every minute')
-
-  config.archiveCheckInterval =
-    ('archiveCheckIntervalMinutes' in config) ? config.archiveCheckIntervalMinutes * 60 * 1000
-      : ('archiveCheckIntervalSeconds' in config) ? config.archiveCheckIntervalSeconds * 1000
-        : ('archiveCheckInterval' in config) ? config.archiveCheckInterval
-          : 60 * 60 * 1000 // default is 1 hour
-
   assert(!('archiveCompletedJobsEvery' in config) || typeof config.archiveCompletedJobsEvery === 'string',
     'configuration assert: archiveCompletedJobsEvery should be a readable PostgreSQL interval such as "1 day"')
 
@@ -166,10 +148,6 @@ function applyArchiveConfig (config) {
 }
 
 function applyDeleteConfig (config) {
-  config.deleteCheckInterval = ('deleteCheckInterval' in config)
-    ? config.deleteCheckInterval
-    : 60 * 60 * 1000 // default is 1 hour
-
   // TODO: discontinue pg interval strings in favor of ms int for better validation (when interval is specified lower than check interval, for example)
   assert(!('deleteArchivedJobsEvery' in config) || typeof config.deleteArchivedJobsEvery === 'string',
     'configuration assert: deleteArchivedJobsEvery should be a readable PostgreSQL interval such as "7 days"')
@@ -186,7 +164,8 @@ function applyMonitoringConfig (config) {
 
   config.monitorStateInterval =
     ('monitorStateIntervalMinutes' in config) ? config.monitorStateIntervalMinutes * 60 * 1000
-      : ('monitorStateIntervalSeconds' in config) ? config.monitorStateIntervalSeconds * 1000
+      // backing interval down a second to offset the internal subscription's fetch interval
+      : ('monitorStateIntervalSeconds' in config) ? (config.monitorStateIntervalSeconds - 1) * 1000
         : null
 }
 

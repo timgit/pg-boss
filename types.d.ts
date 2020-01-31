@@ -20,31 +20,22 @@ declare namespace PgBoss {
     db?: Db;
   }
 
-  interface JobCreationOptions {
+  interface QueueOptions {
     uuid?: "v1" | "v4";
-  }
-
-  interface JobFetchOptions {
     newJobCheckInterval?: number;
     newJobCheckIntervalSeconds?: number;
+    monitorStateIntervalSeconds?: number;
+    monitorStateIntervalMinutes?: number;
   }
 
-  interface JobExpirationOptions {
-    expireCheckInterval?: number;
-    expireCheckIntervalSeconds?: number;
-    expireCheckIntervalMinutes?: number;
-  }
-
-  interface JobArchiveOptions {
+  interface MaintenanceOptions {
     archiveCompletedJobsEvery?: string;
-    archiveCheckInterval?: number;
-    archiveCheckIntervalSeconds?: number;
-    archiveCheckIntervalMinutes?: number;
     deleteArchivedJobsEvery?: string;
-    deleteCheckInterval?: number;
+    maintenanceIntervalSeconds?: number;
+    maintenanceIntervalMinutes?: number;    
   }
 
-  type ConstructorOptions = DatabaseOptions & JobCreationOptions & JobFetchOptions & JobExpirationOptions & JobArchiveOptions;
+  type ConstructorOptions = DatabaseOptions & QueueOptions & MaintenanceOptions;
 
   interface PublishOptions {
     priority?: number;

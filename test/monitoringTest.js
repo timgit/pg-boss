@@ -8,7 +8,7 @@ describe('monitoring', function () {
   const silentBob = new Boss(helper.getDb(), helper.getConfig())
   let boss
 
-  const config = { monitorStateIntervalSeconds: 1 }
+  const config = { monitorStateIntervalSeconds: 3 }
 
   before(async () => { boss = await helper.start(config) })
   after(() => boss.stop())
@@ -54,10 +54,6 @@ describe('monitoring', function () {
         assert.strictEqual(states4.queues[jobName].created, states.queues[jobName].created, 'created count from monitor-states doesn\'t match')
         assert.strictEqual(states4.queues[jobName].active, states.queues[jobName].active, 'active count from monitor-states doesn\'t match')
         assert.strictEqual(states4.queues[jobName].completed, states.queues[jobName].completed, 'completed count from monitor-states doesn\'t match')
-
-        assert.strictEqual(states.created, states.queues[jobName].created, 'created count for job doesn\'t match totals count')
-        assert.strictEqual(states.active, states.queues[jobName].active, 'active count for job doesn\'t match totals count')
-        assert.strictEqual(states.completed, states.queues[jobName].completed, 'completed count for job doesn\'t match totals count')
 
         finished()
       })

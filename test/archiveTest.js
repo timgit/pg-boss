@@ -6,7 +6,7 @@ describe('archive', function () {
   this.timeout(10000)
 
   let boss
-  const config = { archiveCompletedJobsEvery: '1 second', archiveCheckInterval: 500 }
+  const config = { archiveCompletedJobsEvery: '1 second', maintenanceIntervalSeconds: 1 }
 
   before(async () => { boss = await helper.start(config) })
   after(() => boss.stop())
@@ -21,7 +21,7 @@ describe('archive', function () {
 
     await boss.complete(jobId)
 
-    await Promise.delay(2000)
+    await Promise.delay(3000)
 
     const archivedJob = await helper.getArchivedJobById(jobId)
 

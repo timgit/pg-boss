@@ -6,7 +6,7 @@ describe('retries', function () {
   this.timeout(10000)
 
   let boss
-  const config = { expireCheckInterval: 200, newJobCheckInterval: 200 }
+  const config = { maintenanceIntervalSeconds: 1, newJobCheckInterval: 200 }
 
   before(async () => { boss = await helper.start(config) })
   after(() => boss.stop())
@@ -20,7 +20,7 @@ describe('retries', function () {
 
     const try1 = await boss.fetch(queue)
 
-    await Promise.delay(1000)
+    await Promise.delay(3000)
 
     const try2 = await boss.fetch(queue)
 

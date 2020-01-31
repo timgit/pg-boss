@@ -16,7 +16,7 @@ describe('speed', function () {
   let boss
 
   before(async () => {
-    boss = await helper.start()
+    boss = await helper.start({ noSupervisor: true })
     await Promise.map(jobs, job => boss.publish(job.name, job.data))
   })
 

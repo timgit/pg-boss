@@ -78,7 +78,7 @@ class PgBoss extends EventEmitter {
     this.isStarted = true
 
     if (this.db.isOurs && !this.db.opened) {
-      this.db.open()
+      await this.db.open()
     }
 
     await this.contractor.start()
@@ -86,8 +86,7 @@ class PgBoss extends EventEmitter {
     this.isReady = true
 
     if (!options.noSupervisor) {
-      // not in promise chain for async start()
-      this.boss.supervise()
+      await this.boss.supervise()
     }
 
     return this
@@ -109,7 +108,7 @@ class PgBoss extends EventEmitter {
 
   async connect () {
     if (this.db.isOurs && !this.db.opened) {
-      this.db.open()
+      await this.db.open()
     }
 
     await this.contractor.connect()
@@ -117,10 +116,10 @@ class PgBoss extends EventEmitter {
     return this
   }
 
-  async disconnect (...args) {
+  async disconnect () {
     assert(this.isReady, notReadyErrorMessage)
 
-    await this.manager.stop.apply(this.manager, args)
+    await this.manager.stop()
 
     if (this.db.isOurs) {
       await this.db.close()

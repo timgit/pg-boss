@@ -1,5 +1,9 @@
 # Changes
 
+## 3.3.0
+
+- Switching housekeeping/maintenance operations to a dedicated queue for multi-master and/or concurrency control.
+
 ## 3.2.2
 
 - Deferring housekeeping operations on start to reduce deadlocks during concurrent start() instances

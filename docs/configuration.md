@@ -5,19 +5,18 @@ pg-boss can be customized using configuration options when an instance is create
 
 <!-- TOC -->
 
-- [Constructor Options](#constructor-options)
+- [Configuration](#configuration)
+  - [Constructor Options](#constructor-options)
     - [Database options](#database-options)
-    - [Job creation options](#job-creation-options)
-    - [Job fetch options](#job-fetch-options)
-    - [Job expiration options](#job-expiration-options)
-    - [Job archive options](#job-archive-options)
-- [Publish Options](#publish-options)
+    - [Queue options](#queue-options)
+    - [Maintenance options](#maintenance-options)
+  - [Publish Options](#publish-options)
     - [Delayed jobs](#delayed-jobs)
     - [Unique jobs](#unique-jobs)
     - [Throttled jobs](#throttled-jobs)
     - [Job retries](#job-retries)
     - [Job expiration](#job-expiration)
-- [Subscribe Options](#subscribe-options)
+  - [Subscribe Options](#subscribe-options)
 
 <!-- /TOC -->
 
@@ -77,21 +76,20 @@ Since passing only a connection string is intended to be for convenience, you ca
 
     Only alphanumeric and underscore allowed, length: <= 50 characters
 
+### Queue options
+
+* **uuid** - string, defaults to "v1"
+
+    job uuid format used, "v1" or "v4"
+
 * **monitorStateIntervalSeconds** - int, default undefined
 
-    Specifies how often in seconds an instance will fire the `monitor-states` event. Cannot be less than 1.
+    Specifies how often in seconds an instance will fire the `monitor-states` event. Cannot be less than 1.  This is only available 
 
 * **monitorStateIntervalMinutes** - int, default undefined
 
     Specifies how often in minutes an instance will fire the `monitor-states` event. Cannot be less than 1. Do not use if using `monitorStateIntervalSeconds`.
 
-### Job creation options
-
-* **uuid** - string, defaults to "v1"
-
-    uuid format used, "v1" or "v4"
-
-### Job fetch options
 * **newJobCheckInterval**, int
 
     interval to check for new jobs in milliseconds, must be >=100
@@ -100,54 +98,36 @@ Since passing only a connection string is intended to be for convenience, you ca
 
     Default: 1. interval to check for new jobs in seconds, must be >=1
 
-When `newJobCheckIntervalSeconds` is specified, `newJobCheckInterval` is ignored.
+> When `newJobCheckIntervalSeconds` is specified, `newJobCheckInterval` is ignored.
 
-### Job expiration options
-* **expireCheckInterval**, int
+### Maintenance options
 
-    interval to expire jobs in milliseconds, must be >=100
+Maintenance operations include checking active jobs for expiration, archiving completed jobs from the primary job table, and deleting archived jobs from the archive table.  
 
-* **expireCheckIntervalSeconds**, int
-
-    interval to expire jobs in seconds, must be >=1
-
-* **expireCheckIntervalMinutes**, int
-
-    Default: 1. interval to expire jobs in minutes, must be >=1
-
-When `expireCheckIntervalMinutes` is specified, `expireCheckIntervalSeconds` and `expireCheckInterval` are ignored.
-
-When `expireCheckIntervalSeconds` is specified, `expireCheckInterval` is ignored.
-
-### Job archive options
+* **noSupervisor**, bool, default undefined
+  
+  If this is set to true, maintenance operations will not be started during a `start()` after the schema is created.  This is an advanced use case, as bypassing maintenance operations is not something you would want to do under normal circumstances.  It's here if you need it, however.
 
 * **archiveCompletedJobsEvery**, string, [PostgreSQL interval](https://www.postgresql.org/docs/9.5/static/datatype-datetime.html#DATATYPE-INTERVAL-INPUT)
 
     Default: "1 hour".  When jobs become eligible for archive after completion.
 
-* **archiveCheckInterval**, int
-
-    interval to archive jobs in milliseconds, must be >=100
-
-* **archiveCheckIntervalSeconds**, int
-
-    interval to archive jobs in seconds, must be >=1
-
-* **archiveCheckIntervalMinutes**, int
-
-    Default: 60. interval to archive jobs in minutes, must be >=1
-
-When `archiveCheckIntervalMinutes` is specified, `archiveCheckIntervalSeconds` and `archiveCheckInterval` are ignored.
-
-When `archiveCheckIntervalSeconds` is specified, `archiveCheckInterval` is ignored.
-
 * **deleteArchivedJobsEvery**, string, [PostgreSQL interval](https://www.postgresql.org/docs/9.5/static/datatype-datetime.html#DATATYPE-INTERVAL-INPUT)
 
     Default: "7 days".  When jobs in the archive table become eligible for deletion.
 
-* **deleteCheckInterval**, int
+* **maintenanceIntervalSeconds**, int
 
-    interval to delete jobs in milliseconds, must be >=100.   Default: 1 hour
+    maintenance interval in seconds, must be >=1
+
+* **maintenanceIntervalMinutes**, int
+
+    Default: 1. interval in minutes, must be >=1
+
+> When `maintenanceIntervalMinutes` is specified, `maintenanceIntervalSeconds` and `maintenanceInterval` are ignored. 
+>
+> When `maintenanceIntervalSeconds` is specified, `maintenanceInterval` is ignored.
+
 
 ## Publish Options
 

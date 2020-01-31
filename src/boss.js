@@ -1,7 +1,10 @@
 const EventEmitter = require('events')
 const plans = require('./plans')
 
-const MAINTQ = '__pgboss__maintenance'
+const queues = {
+  MAINT: '__pgboss__maintenance',
+  MONITOR_STATES: '__pgboss__monitor-states'
+}
 
 const events = {
   error: 'error',
@@ -18,6 +21,14 @@ class Boss extends EventEmitter {
     this.db = db
     this.config = config
 
+    this.maintenanceIntervalSeconds = config.maintenanceInterval < 1000 ? 1 : config.maintenanceInterval / 1000
+
+    this.monitorStates = !!config.monitorStateInterval
+
+    if (this.monitorStates) {
+      this.monitorIntervalSeconds = config.monitorStateInterval < 1000 ? 1 : config.monitorStateInterval / 1000
+    }
+
     this.timers = {}
     this.events = events
 
@@ -32,45 +43,47 @@ class Boss extends EventEmitter {
       this.purge,
       this.countStates
     ]
-
-    this.ops = this.functions.reduce((acc, i) => Object.assign(acc, { [i.name]: i.name }, {}))
   }
 
   async supervise () {
-    const self = this
+    await this.config.manager.subscribe(queues.MAINT, { batchSize: 999 }, () => this.onMaintenance())
+    await this.config.manager.publishAfter(queues.MAINT, null, null, this.maintenanceIntervalSeconds)
 
-    await this.config.manager.deleteQueue(MAINTQ)
-
-    await this.config.manager.subscribe(MAINTQ, async job => {
-      const { op, interval } = job.data
-      try {
-        await this[op]()
-      } catch (err) {
-        this.emit(events.error, err)
-      } finally {
-        if (!self.stopped) {
-          this.config.manager.publishAfter(MAINTQ, { op, interval }, null, interval)
-        }
-      }
-    })
-
-    await this.monitor(this.ops.archive, this.config.archiveCheckInterval)
-    await this.monitor(this.ops.purge, this.config.deleteCheckInterval)
-    await this.monitor(this.ops.expire, this.config.expireCheckInterval)
-
-    if (this.config.monitorStateInterval) {
-      await this.monitor(this.ops.countStates, this.config.monitorStateInterval)
+    if (this.monitorStates) {
+      await this.config.manager.subscribe(queues.MONITOR_STATES, { batchSize: 999 }, () => this.onMonitorStates())
+      await this.config.manager.publishAfter(queues.MONITOR_STATES, null, null, this.monitorIntervalSeconds)
     }
   }
 
-  async monitor (op, interval) {
-    await this.config.manager.publishAfter(MAINTQ, { op, interval }, null, interval)
+  async onMaintenance () {
+    try {
+      await this.expire()
+      await this.archive()
+      await this.purge()
+    } catch (err) {
+      this.emit(events.error, err)
+    }
+
+    if (!this.stopped) {
+      await this.config.manager.publishAfter(queues.MAINT, null, null, this.maintenanceIntervalSeconds)
+    }
+  }
+
+  async onMonitorStates () {
+    try {
+      await this.countStates()
+    } catch (err) {
+      this.emit(events.error, err)
+    }
+
+    if (!this.stopped && this.monitorStates) {
+      await this.config.manager.publishAfter(queues.MONITOR_STATES, null, null, this.monitorIntervalSeconds)
+    }
   }
 
   async stop () {
     if (!this.stopped) {
       this.stopped = true
-      await this.config.manager.deleteQueue(MAINTQ)
     }
   }
 

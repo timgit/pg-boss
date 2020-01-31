@@ -6,14 +6,12 @@ describe('expire', function () {
   this.timeout(10000)
 
   let boss
-  const config = { expireCheckInterval: 500 }
+  const config = { maintenanceIntervalSeconds: 1 }
 
   beforeEach(async () => { boss = await helper.start(config) })
   afterEach(() => boss.stop())
 
   it('should expire a job', async function () {
-    this.timeout(5000)
-
     const queue = 'i-take-too-long'
 
     const jobId = await boss.publish({ name: queue, options: { expireIn: '1 second' } })
@@ -22,7 +20,7 @@ describe('expire', function () {
     await boss.fetch(queue)
 
     // this should give it enough time to expire
-    await Promise.delay(2000)
+    await Promise.delay(4000)
 
     const job = await boss.fetchCompleted(queue)
 

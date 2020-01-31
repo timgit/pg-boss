@@ -9,9 +9,8 @@ describe('delete', async function () {
 
   const config = {
     archiveCompletedJobsEvery: '1 second',
-    archiveCheckInterval: 500,
     deleteArchivedJobsEvery: '1 second',
-    deleteCheckInterval: 500
+    maintenanceIntervalSeconds: 1
   }
 
   before(async () => { boss = await helper.start(config) })
@@ -26,7 +25,7 @@ describe('delete', async function () {
 
     await boss.complete(jobId)
 
-    await Promise.delay(3000)
+    await Promise.delay(4000)
 
     const archivedJob = await helper.getArchivedJobById(jobId)
 
