@@ -7,6 +7,7 @@ pg-boss can be customized using configuration options when an instance is create
 
 - [Constructor Options](#constructor-options)
     - [Database options](#database-options)
+    - [Job monitor options](#job-monitor-options)
     - [Job creation options](#job-creation-options)
     - [Job fetch options](#job-fetch-options)
     - [Job expiration options](#job-expiration-options)
@@ -76,6 +77,8 @@ Since passing only a connection string is intended to be for convenience, you ca
 * **schema** - string, defaults to "pgboss"
 
     Only alphanumeric and underscore allowed, length: <= 50 characters
+
+### Job monitor options
 
 * **monitorStateIntervalSeconds** - int, default undefined
 
