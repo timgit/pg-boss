@@ -20,6 +20,18 @@ declare namespace PgBoss {
     db?: Db;
   }
 
+  interface JobMonitorOptions {
+    /** 
+     * Specifies how often in seconds an instance will fire the monitor-states event. Cannot be less than 1. 
+    */
+    monitorStateIntervalSeconds?: number
+
+    /**
+     * Specifies how often in minutes an instance will fire the monitor-states event. Cannot be less than 1. Do not use if using monitorStateIntervalSeconds
+     */
+    monitorStateIntervalMinutes?: number
+  }
+
   interface JobCreationOptions {
     uuid?: "v1" | "v4";
   }
@@ -44,7 +56,7 @@ declare namespace PgBoss {
     deleteCheckInterval?: number;
   }
 
-  type ConstructorOptions = DatabaseOptions & JobCreationOptions & JobFetchOptions & JobExpirationOptions & JobArchiveOptions;
+  type ConstructorOptions = DatabaseOptions & JobMonitorOptions & JobCreationOptions & JobFetchOptions & JobExpirationOptions & JobArchiveOptions;
 
   interface PublishOptions {
     priority?: number;
