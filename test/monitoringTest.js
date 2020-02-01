@@ -6,7 +6,7 @@ describe('monitoring', function () {
 
   let boss
 
-  const config = { monitorStateIntervalSeconds: 3, noSupervisor: true }
+  const config = { monitorStateIntervalSeconds: 1, maintenanceIntervalSeconds: 10 }
 
   before(async () => { boss = await helper.start(config) })
   after(() => boss.stop())
