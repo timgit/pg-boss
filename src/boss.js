@@ -57,15 +57,21 @@ class Boss extends EventEmitter {
 
   async onMaintenance () {
     try {
-      await this.expire()
-      await this.archive()
-      await this.purge()
+      this.emitValue(events.expired, await this.expire())
+      this.emitValue(events.archived, await this.archive())
+      this.emitValue(events.deleted, await this.purge())
     } catch (err) {
       this.emit(events.error, err)
     }
 
     if (!this.stopped) {
       await this.config.manager.publishAfter(queues.MAINT, null, null, this.maintenanceIntervalSeconds)
+    }
+  }
+
+  async emitValue (event, value) {
+    if (value > 0) {
+      this.emit(event, value)
     }
   }
 
@@ -114,33 +120,18 @@ class Boss extends EventEmitter {
   }
 
   async expire () {
-    const result = await this.db.executeSql(this.expireCommand)
-
-    if (result.rowCount) {
-      this.emit(events.expired, result.rowCount)
-    }
-
-    return result.rowCount
+    const { rowCount } = await this.db.executeSql(this.expireCommand)
+    return rowCount
   }
 
   async archive () {
-    const result = await this.db.executeSql(this.archiveCommand, [this.config.archiveCompletedJobsEvery])
-
-    if (result.rowCount) {
-      this.emit(events.archived, result.rowCount)
-    }
-
-    return result.rowCount
+    const { rowCount } = await this.db.executeSql(this.archiveCommand, [this.config.archiveCompletedJobsEvery])
+    return rowCount
   }
 
   async purge () {
-    const result = await this.db.executeSql(this.purgeCommand, [this.config.deleteArchivedJobsEvery])
-
-    if (result.rowCount) {
-      this.emit(events.deleted, result.rowCount)
-    }
-
-    return result.rowCount
+    const { rowCount } = await this.db.executeSql(this.purgeCommand, [this.config.deleteArchivedJobsEvery])
+    return rowCount
   }
 }
 

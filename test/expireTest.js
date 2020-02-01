@@ -20,7 +20,7 @@ describe('expire', function () {
     await boss.fetch(queue)
 
     // this should give it enough time to expire
-    await Promise.delay(4000)
+    await Promise.delay(8000)
 
     const job = await boss.fetchCompleted(queue)
 
