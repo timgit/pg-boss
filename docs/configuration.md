@@ -106,7 +106,7 @@ Maintenance operations include checking active jobs for expiration, archiving co
 
 * **noSupervisor**, bool, default undefined
   
-  If this is set to true, maintenance operations will not be started during a `start()` after the schema is created.  This is an advanced use case, as bypassing maintenance operations is not something you would want to do under normal circumstances.  It's here if you need it, however.
+  If this is set to true, maintenance and monitoring operations will not be started during a `start()` after the schema is created.  This is an advanced use case, as bypassing maintenance operations is not something you would want to do under normal circumstances.
 
 * **archiveCompletedJobsEvery**, string, [PostgreSQL interval](https://www.postgresql.org/docs/9.5/static/datatype-datetime.html#DATATYPE-INTERVAL-INPUT)
 
