@@ -57,7 +57,9 @@ describe('database', function () {
     const poolSize = 5
     const configOption = 'poolSize'
 
-    await poolSizeConnectionTest(listenerCount, poolSize, configOption)
+    const newConnections = await poolSizeConnectionTest(listenerCount, poolSize, configOption)
+
+    assert.isAtMost(newConnections, poolSize)
   })
 
   it('connection count does not exceed configured pool size with `max`', async function () {
@@ -65,7 +67,9 @@ describe('database', function () {
     const poolSize = 5
     const configOption = 'max'
 
-    await poolSizeConnectionTest(listenerCount, poolSize, configOption)
+    const newConnections = await poolSizeConnectionTest(listenerCount, poolSize, configOption)
+
+    assert.isAtMost(newConnections, poolSize)
   })
 
   async function poolSizeConnectionTest (listenerCount, poolSize, configOption) {
@@ -86,9 +90,9 @@ describe('database', function () {
 
     const newConnections = connectionCount - prevConnectionCount
 
-    assert(newConnections <= poolSize)
-
     await boss.stop()
+
+    return newConnections
 
     async function countConnections (db) {
       const sql = 'SELECT count(*) as connections FROM pg_stat_activity WHERE application_name=$1'

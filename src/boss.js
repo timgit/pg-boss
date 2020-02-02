@@ -46,17 +46,29 @@ class Boss extends EventEmitter {
   }
 
   async supervise () {
-    await this.config.manager.subscribe(queues.MAINT, { batchSize: 999 }, () => this.onMaintenance())
-    await this.config.manager.publishAfter(queues.MAINT, null, null, this.maintenanceIntervalSeconds)
+    await this.config.manager.subscribe(queues.MAINT, { batchSize: 999 }, (jobs) => this.onMaintenance(jobs))
+    await this.maintenanceAsync()
 
     if (this.monitorStates) {
-      await this.config.manager.subscribe(queues.MONITOR_STATES, { batchSize: 999 }, () => this.onMonitorStates())
-      await this.config.manager.publishAfter(queues.MONITOR_STATES, null, null, this.monitorIntervalSeconds)
+      await this.config.manager.subscribe(queues.MONITOR_STATES, { batchSize: 999 }, (jobs) => this.onMonitorStates(jobs))
+      await this.monitorStatesAsync()
     }
   }
 
-  async onMaintenance () {
+  async maintenanceAsync () {
+    await this.config.manager.publishAfter(queues.MAINT, null, null, this.maintenanceIntervalSeconds)
+  }
+
+  async monitorStatesAsync () {
+    await this.config.manager.publishAfter(queues.MONITOR_STATES, null, null, this.monitorIntervalSeconds)
+  }
+
+  async onMaintenance (jobs) {
     try {
+      if (this.config.__test_throw_on_maint__) {
+        throw new Error('throw test')
+      }
+
       this.emitValue(events.expired, await this.expire())
       this.emitValue(events.archived, await this.archive())
       this.emitValue(events.deleted, await this.purge())
@@ -64,8 +76,11 @@ class Boss extends EventEmitter {
       this.emit(events.error, err)
     }
 
+    // don't care if we can't complete these
+    await this.config.manager.complete(jobs.map(j => j.id)).catch(() => {})
+
     if (!this.stopped) {
-      await this.config.manager.publishAfter(queues.MAINT, null, null, this.maintenanceIntervalSeconds)
+      await this.maintenanceAsync()
     }
   }
 
@@ -75,16 +90,23 @@ class Boss extends EventEmitter {
     }
   }
 
-  async onMonitorStates () {
+  async onMonitorStates (jobs) {
     try {
+      if (this.config.__test_throw_on_monitor__) {
+        throw new Error('throw test')
+      }
+
       const states = await this.countStates()
       this.emit(events.monitorStates, states)
     } catch (err) {
       this.emit(events.error, err)
     }
 
+    // don't care if we can't complete these
+    await this.config.manager.complete(jobs.map(j => j.id)).catch(() => {})
+
     if (!this.stopped && this.monitorStates) {
-      await this.config.manager.publishAfter(queues.MONITOR_STATES, null, null, this.monitorIntervalSeconds)
+      await this.monitorStatesAsync()
     }
   }
 

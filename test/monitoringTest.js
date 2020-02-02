@@ -6,7 +6,10 @@ describe('monitoring', function () {
 
   let boss
 
-  const config = { monitorStateIntervalSeconds: 1, maintenanceIntervalSeconds: 10 }
+  const config = {
+    monitorStateIntervalSeconds: 1,
+    maintenanceIntervalSeconds: 10
+  }
 
   before(async () => { boss = await helper.start(config) })
   after(() => boss.stop())
@@ -58,9 +61,4 @@ describe('monitoring', function () {
       })
     }
   })
-
-  // it('should emit an error if an error happens during state monitoring', function (finished) {
-  //   boss.on('error', () => finished())
-  //   helper.getDb().executeSql('DROP TABLE pgboss.job')
-  // })
 })

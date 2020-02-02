@@ -1,6 +1,7 @@
 const Db = require('../src/db')
 const PgBoss = require('../src/index')
 const plans = require('../src/plans')
+const uuid = require('uuid/v4')
 
 module.exports = {
   init,
@@ -22,16 +23,18 @@ function getConnectionString () {
   return `postgres://${config.user}:${config.password}@${config.host}:${config.port}/${config.database}`
 }
 
-function getConfig () {
+function getConfig (options = {}) {
   const config = require('./config.json')
 
   if (process.env.TRAVIS) {
     config.port = 5432
     config.password = ''
-    config.schema = 'pgboss' + process.env.TRAVIS_JOB_ID
+    config.schema = `pgboss_${uuid().replace(/-/g, '')}`
   }
 
-  return { ...config }
+  const result = { ...config }
+
+  return Object.assign(result, options)
 }
 
 function getDb (config) {
