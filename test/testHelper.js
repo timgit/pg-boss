@@ -1,7 +1,6 @@
 const Db = require('../src/db')
 const PgBoss = require('../src/index')
 const plans = require('../src/plans')
-const uuid = require('uuid/v4')
 
 module.exports = {
   init,
@@ -29,7 +28,7 @@ function getConfig (options = {}) {
   if (process.env.TRAVIS) {
     config.port = 5432
     config.password = ''
-    config.schema = `pgboss_${uuid().replace(/-/g, '')}`
+    config.schema = 'pgboss' + process.env.TRAVIS_JOB_ID
   }
 
   const result = { ...config }

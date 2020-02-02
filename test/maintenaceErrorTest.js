@@ -1,5 +1,6 @@
 const helper = require('./testHelper')
 const Boss = require('../')
+
 describe('maintenance error handling', function () {
   this.timeout(10000)
 
@@ -13,9 +14,15 @@ describe('maintenance error handling', function () {
     }
 
     const boss = new Boss(helper.getConfig(config))
-    boss.on('error', () => {
-      boss.stop().then(() => finished())
+
+    boss.on('error', async () => {
+      if (boss.isStarted) {
+        await boss.stop()
+      }
+
+      finished()
     })
+
     boss.start()
   })
 
@@ -27,9 +34,15 @@ describe('maintenance error handling', function () {
     }
 
     const boss = new Boss(helper.getConfig(config))
-    boss.on('error', () => {
-      boss.stop().then(finished)
+
+    boss.on('error', async () => {
+      if (boss.isStarted) {
+        await boss.stop()
+      }
+
+      finished()
     })
+
     boss.start()
   })
 })

@@ -70,11 +70,8 @@ class PgBoss extends EventEmitter {
     }
   }
 
-  async start (options) {
+  async start (options = {}) {
     assert(!this.isStarted, alreadyStartedErrorMessage)
-
-    options = options || {}
-
     this.isStarted = true
 
     if (this.db.isOurs && !this.db.opened) {

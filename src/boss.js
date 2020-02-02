@@ -46,11 +46,11 @@ class Boss extends EventEmitter {
   }
 
   async supervise () {
-    await this.config.manager.subscribe(queues.MAINT, { batchSize: 999 }, (jobs) => this.onMaintenance(jobs))
+    await this.config.manager.subscribe(queues.MAINT, { batchSize: 10 }, (jobs) => this.onMaintenance(jobs))
     await this.maintenanceAsync()
 
     if (this.monitorStates) {
-      await this.config.manager.subscribe(queues.MONITOR_STATES, { batchSize: 999 }, (jobs) => this.onMonitorStates(jobs))
+      await this.config.manager.subscribe(queues.MONITOR_STATES, { batchSize: 10 }, (jobs) => this.onMonitorStates(jobs))
       await this.monitorStatesAsync()
     }
   }
@@ -72,12 +72,11 @@ class Boss extends EventEmitter {
       this.emitValue(events.expired, await this.expire())
       this.emitValue(events.archived, await this.archive())
       this.emitValue(events.deleted, await this.purge())
+
+      await this.config.manager.complete(jobs.map(j => j.id))
     } catch (err) {
       this.emit(events.error, err)
     }
-
-    // don't care if we can't complete these
-    await this.config.manager.complete(jobs.map(j => j.id)).catch(() => {})
 
     if (!this.stopped) {
       await this.maintenanceAsync()
@@ -98,12 +97,11 @@ class Boss extends EventEmitter {
 
       const states = await this.countStates()
       this.emit(events.monitorStates, states)
+
+      await this.config.manager.complete(jobs.map(j => j.id))
     } catch (err) {
       this.emit(events.error, err)
     }
-
-    // don't care if we can't complete these
-    await this.config.manager.complete(jobs.map(j => j.id)).catch(() => {})
 
     if (!this.stopped && this.monitorStates) {
       await this.monitorStatesAsync()
