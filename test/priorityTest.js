@@ -6,8 +6,8 @@ describe('priority', function () {
 
   let boss
 
-  before(async () => { boss = await helper.start() })
-  after(() => boss.stop())
+  before(async function () { boss = await helper.start() })
+  after(async function () { await boss.stop() })
 
   it('should process a newer higher priority job before an older lower priority job', async function () {
     const jobName = 'priority-test'

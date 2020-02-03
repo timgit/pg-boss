@@ -5,7 +5,7 @@ describe('ops', function () {
 
   let boss
 
-  before(async () => {
+  before(async function () {
     boss = await helper.start()
     await boss.stop()
   })

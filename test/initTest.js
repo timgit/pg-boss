@@ -5,7 +5,7 @@ const helper = require('./testHelper')
 describe('init', function () {
   this.timeout(10000)
 
-  beforeEach(() => helper.init())
+  beforeEach(async function () { await helper.init() })
 
   it('should fail if connecting to an uninitialized instance', async function () {
     try {

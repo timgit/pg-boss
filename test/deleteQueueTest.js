@@ -6,8 +6,8 @@ describe('deleteQueue', function () {
 
   let boss
 
-  before(async () => { boss = await helper.start() })
-  after(() => boss.stop())
+  before(async function () { boss = await helper.start() })
+  after(async function () { await boss.stop() })
 
   it('should clear a specific queue', async function () {
     const queue1 = 'delete-named-queue-1'

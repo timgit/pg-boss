@@ -7,8 +7,8 @@ describe('fetch', function () {
 
   let boss
 
-  before(async () => { boss = await helper.start() })
-  after(() => boss.stop())
+  before(async function () { boss = await helper.start() })
+  after(async function () { await boss.stop() })
 
   it('should reject missing queue argument', function (finished) {
     boss.fetch().catch(() => finished())

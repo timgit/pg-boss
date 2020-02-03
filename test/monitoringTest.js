@@ -11,8 +11,8 @@ describe('monitoring', function () {
     maintenanceIntervalSeconds: 10
   }
 
-  before(async () => { boss = await helper.start(config) })
-  after(() => boss.stop())
+  before(async function () { boss = await helper.start(config) })
+  after(async function () { await boss.stop() })
 
   it('should emit state counts', function (finished) {
     test()

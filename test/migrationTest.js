@@ -8,9 +8,13 @@ const currentSchemaVersion = require('../version.json').schema
 describe('migration', function () {
   this.timeout(10000)
 
-  const contractor = new Contractor(helper.getDb(), helper.getConfig())
+  let contractor
 
-  beforeEach(() => helper.init())
+  beforeEach(async function () {
+    await helper.init()
+    const db = await helper.getDb()
+    contractor = new Contractor(db, helper.getConfig())
+  })
 
   it('should migrate to previous version and back again', async function () {
     await contractor.create()

@@ -7,8 +7,8 @@ describe('delayed jobs', function () {
 
   let boss
 
-  before(async () => { boss = await helper.start() })
-  after(() => boss.stop())
+  before(async function () { boss = await helper.start() })
+  after(async function () { await boss.stop() })
 
   it('should wait until after an int (in seconds)', function (finished) {
     const delaySeconds = 2

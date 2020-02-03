@@ -6,8 +6,8 @@ describe('wildcard', function () {
 
   let boss
 
-  before(async () => { boss = await helper.start() })
-  after(() => boss.stop())
+  before(async function () { boss = await helper.start() })
+  after(async function () { await boss.stop() })
 
   it('fetch() should return all jobs using a wildcard pattern', async function () {
     const baseName = 'wildcard-fetch'

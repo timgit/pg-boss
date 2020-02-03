@@ -6,13 +6,14 @@ describe('connect', function () {
 
   let boss
 
-  beforeEach(async () => { boss = await helper.start() })
-  after(() => boss.stop())
+  beforeEach(async function () { boss = await helper.start() })
+  after(async function () { await boss.stop() })
 
   it('should fail if connecting to an older schema version', async function () {
     const schema = helper.getConfig().schema
 
-    await helper.getDb().executeSql(`UPDATE ${schema}.version SET VERSION = '0.0.0'`)
+    const db = await helper.getDb()
+    await db.executeSql(`UPDATE ${schema}.version SET VERSION = '0.0.0'`)
 
     try {
       await boss.connect()

@@ -5,7 +5,7 @@ const helper = require('./testHelper')
 describe('config', function () {
   this.timeout(10000)
 
-  before(async () => helper.init())
+  before(async function () { await helper.init() })
 
   it('should allow a 50 character custom schema name', async function () {
     const config = helper.getConfig()

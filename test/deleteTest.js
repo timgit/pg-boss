@@ -13,8 +13,8 @@ describe('delete', async function () {
     maintenanceIntervalSeconds: 1
   }
 
-  before(async () => { boss = await helper.start(config) })
-  after(() => boss.stop())
+  before(async function () { boss = await helper.start(config) })
+  after(async function () { await boss.stop() })
 
   it('should delete an archived job', async function () {
     const jobName = 'deleteMe'

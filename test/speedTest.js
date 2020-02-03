@@ -15,12 +15,12 @@ describe('speed', function () {
 
   let boss
 
-  before(async () => {
+  before(async function () {
     boss = await helper.start({ noSupervisor: true })
     await Promise.map(jobs, job => boss.publish(job.name, job.data))
   })
 
-  after(() => boss.stop())
+  after(async function () { await boss.stop() })
 
   it(testTitle, async function () {
     const startTime = new Date()

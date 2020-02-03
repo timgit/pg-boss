@@ -6,8 +6,8 @@ describe('publish', function () {
 
   let boss
 
-  before(async () => { boss = await helper.start() })
-  after(() => boss.stop())
+  before(async function () { boss = await helper.start() })
+  after(async function () { await boss.stop() })
 
   it('should fail with no arguments', function (finished) {
     boss.publish()

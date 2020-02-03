@@ -46,12 +46,12 @@ class Boss extends EventEmitter {
   }
 
   async supervise () {
-    await this.config.manager.subscribe(queues.MAINT, { batchSize: 10 }, (jobs) => this.onMaintenance(jobs))
     await this.maintenanceAsync()
+    await this.config.manager.subscribe(queues.MAINT, { batchSize: 10 }, (jobs) => this.onMaintenance(jobs))
 
     if (this.monitorStates) {
-      await this.config.manager.subscribe(queues.MONITOR_STATES, { batchSize: 10 }, (jobs) => this.onMonitorStates(jobs))
       await this.monitorStatesAsync()
+      await this.config.manager.subscribe(queues.MONITOR_STATES, { batchSize: 10 }, (jobs) => this.onMonitorStates(jobs))
     }
   }
 

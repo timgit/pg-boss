@@ -8,8 +8,8 @@ describe('archive', function () {
   let boss
   const config = { archiveCompletedJobsEvery: '1 second', maintenanceIntervalSeconds: 1 }
 
-  before(async () => { boss = await helper.start(config) })
-  after(() => boss.stop())
+  before(async function () { boss = await helper.start(config) })
+  after(async function () { await boss.stop() })
 
   it('should archive a job', async function () {
     const jobName = 'archiveMe'

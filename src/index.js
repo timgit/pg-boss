@@ -46,15 +46,12 @@ class PgBoss extends EventEmitter {
     this.manager = manager
 
     function getDb (config) {
-      let db
-
       if (config.db) {
-        db = config.db
-      } else {
-        db = new Db(config)
-        db.isOurs = true
+        return config.db
       }
 
+      const db = new Db(config)
+      db.isOurs = true
       return db
     }
 

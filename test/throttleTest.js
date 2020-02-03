@@ -7,8 +7,8 @@ describe('throttle', function () {
 
   let boss
 
-  before(async () => { boss = await helper.start() })
-  after(() => boss.stop())
+  before(async function () { boss = await helper.start() })
+  after(async function () { await boss.stop() })
 
   it('should only create 1 job for interval with a delay', async function () {
     const queue = 'delayThrottle'

@@ -8,8 +8,8 @@ describe('expire', function () {
   let boss
   const config = { maintenanceIntervalSeconds: 1 }
 
-  beforeEach(async () => { boss = await helper.start(config) })
-  afterEach(() => boss.stop())
+  beforeEach(async function () { boss = await helper.start(config) })
+  afterEach(async function () { await boss.stop() })
 
   it('should expire a job', async function () {
     const queue = 'i-take-too-long'

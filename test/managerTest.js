@@ -6,7 +6,7 @@ const PgBoss = require('../src/index')
 describe('manager', function () {
   this.timeout(10000)
 
-  before(() => helper.init())
+  before(async function () { await helper.init() })
 
   it('should reject multiple simultaneous start requests', async function () {
     const boss = new PgBoss(helper.getConfig())

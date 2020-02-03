@@ -36,17 +36,21 @@ function getConfig (options = {}) {
   return Object.assign(result, options)
 }
 
-function getDb (config) {
-  return new Db(config || getConfig())
+async function getDb (config) {
+  const db = new Db(config || getConfig())
+  await db.open()
+  return db
 }
 
 async function empty () {
-  await getDb().executeSql(`TRUNCATE TABLE ${getConfig().schema}.job`)
+  const db = await getDb()
+  await db.executeSql(`TRUNCATE TABLE ${getConfig().schema}.job`)
 }
 
 async function init (schema) {
   schema = schema || getConfig().schema
-  await getDb().executeSql(`DROP SCHEMA IF EXISTS ${schema} CASCADE`)
+  const db = await getDb()
+  await db.executeSql(`DROP SCHEMA IF EXISTS ${schema} CASCADE`)
 }
 
 async function getJobById (id) {
@@ -55,7 +59,7 @@ async function getJobById (id) {
 }
 
 async function findJobs (where, values) {
-  const db = getDb()
+  const db = await getDb()
   const jobs = await db.executeSql(`select * from ${getConfig().schema}.job where ${where}`, values)
   return jobs
 }
@@ -66,13 +70,13 @@ async function getArchivedJobById (id) {
 }
 
 async function findArchivedJobs (where, values) {
-  const db = getDb()
+  const db = await getDb()
   const result = await db.executeSql(`select * from ${getConfig().schema}.archive where ${where}`, values)
   return result
 }
 
 async function countJobs (where, values) {
-  const db = getDb()
+  const db = await getDb()
   const result = await db.executeSql(`select count(*) as count from ${getConfig().schema}.job where ${where}`, values)
   return parseFloat(result.rows[0].count)
 }

@@ -6,9 +6,9 @@ describe('singleton', function () {
 
   let boss
 
-  before(async () => { boss = await helper.start() })
-  after(() => boss.stop())
-  beforeEach(() => helper.empty())
+  before(async function () { boss = await helper.start() })
+  after(async function () { await boss.stop() })
+  beforeEach(async function () { await helper.empty() })
 
   it('should not allow more than 1 pending job at a time with the same key', async function () {
     const queue = 'singleton-1-pending'

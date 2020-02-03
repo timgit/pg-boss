@@ -4,9 +4,9 @@ const Boss = require('../')
 describe('maintenance error handling', function () {
   this.timeout(10000)
 
-  this.beforeEach(() => helper.init())
+  beforeEach(async function () { await helper.init() })
 
-  it('maintenance error handling works', function (finished) {
+  it('maintenance error handling works', async function () {
     const config = {
       monitorStateIntervalMinutes: 1,
       maintenanceIntervalSeconds: 1,
@@ -14,19 +14,11 @@ describe('maintenance error handling', function () {
     }
 
     const boss = new Boss(helper.getConfig(config))
-
-    boss.on('error', async () => {
-      if (boss.isStarted) {
-        await boss.stop()
-      }
-
-      finished()
-    })
-
-    boss.start()
+    await boss.start()
+    return new Promise(resolve => { boss.on('error', resolve) })
   })
 
-  it('state monitoring error handling works', function (finished) {
+  it('state monitoring error handling works', async function () {
     const config = {
       monitorStateIntervalSeconds: 1,
       maintenanceIntervalMinutes: 1,
@@ -34,15 +26,7 @@ describe('maintenance error handling', function () {
     }
 
     const boss = new Boss(helper.getConfig(config))
-
-    boss.on('error', async () => {
-      if (boss.isStarted) {
-        await boss.stop()
-      }
-
-      finished()
-    })
-
-    boss.start()
+    await boss.start()
+    return new Promise(resolve => { boss.on('error', resolve) })
   })
 })

@@ -6,8 +6,8 @@ describe('cancel', function () {
 
   let boss
 
-  before(async () => { boss = await helper.start() })
-  after(() => boss.stop())
+  before(async function () { boss = await helper.start() })
+  after(async function () { await boss.stop() })
 
   it('should reject missing id argument', function (finished) {
     boss.cancel().catch(() => finished())

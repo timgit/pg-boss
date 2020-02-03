@@ -8,8 +8,8 @@ describe('retries', function () {
   let boss
   const config = { maintenanceIntervalSeconds: 1, newJobCheckInterval: 200 }
 
-  before(async () => { boss = await helper.start(config) })
-  after(() => boss.stop())
+  before(async function () { boss = await helper.start(config) })
+  after(async function () { await boss.stop() })
 
   it('should retry a job that didn\'t complete', async function () {
     const queue = 'unreliable'

@@ -5,8 +5,8 @@ describe('error', function () {
 
   let boss
 
-  before(async () => { boss = await helper.start() })
-  after(() => boss.stop())
+  before(async function () { boss = await helper.start() })
+  after(async function () { await boss.stop() })
 
   it('should handle an error in a subscriber and not blow up', function (finished) {
     test()

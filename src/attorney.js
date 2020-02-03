@@ -135,8 +135,7 @@ function applyMaintenanceConfig (config) {
 
   config.maintenanceInterval =
     ('maintenanceIntervalMinutes' in config) ? config.maintenanceIntervalMinutes * 60 * 1000
-    // backing interval down a second to offset the internal subscription's fetch interval
-      : ('maintenanceIntervalSeconds' in config) ? (config.maintenanceIntervalSeconds - 1) * 1000
+      : ('maintenanceIntervalSeconds' in config) ? config.maintenanceIntervalSeconds * 1000
         : 60 * 1000 // default is 1 minute
 }
 
@@ -164,8 +163,7 @@ function applyMonitoringConfig (config) {
 
   config.monitorStateInterval =
     ('monitorStateIntervalMinutes' in config) ? config.monitorStateIntervalMinutes * 60 * 1000
-      // backing interval down a second to offset the internal subscription's fetch interval
-      : ('monitorStateIntervalSeconds' in config) ? (config.monitorStateIntervalSeconds - 1) * 1000
+      : ('monitorStateIntervalSeconds' in config) ? config.monitorStateIntervalSeconds * 1000
         : null
 }
 
