@@ -1,8 +1,32 @@
 # Changes
 
-## 3.3.0
+## 4.0.0
 
-- Switching housekeeping/maintenance operations to a dedicated queue for multi-master and/or concurrency control.
+- Switched maintenance and monitoring operations to a dedicated queue for multi-master and/or concurrency control.
+- MAJOR: Consolidated the maintenance constructor options and removed any options for intervals less than 1 second.  
+  - Removed:
+    - `expireCheckInterval`
+    - `expireCheckIntervalSeconds`
+    - `expireCheckIntervalMinutes`
+    - `archiveCheckInterval`
+    - `archiveCheckIntervalSeconds`
+    - `archiveCheckIntervalMinutes`
+    - `deleteCheckInterval`
+  - Added:
+    - `maintenacneIntervalSeconds`
+    - `maintenanceIntervalMinutes`
+  
+### Context
+
+The breaking changes introduced in this release should not cause any run-time failures, but if you are relying on customized maintenance intervals, you will need to adjust the configuration options when you upgrade.
+
+To keep maintenance operations running as light as possible, concurrency of each item (expiration, archiving, deletion) has been adjusted to 1 operation at a time. In the process of doing this, I've also migrated all internal timers to queues, basically having pg-boss eat it own dog food.
+
+This decision was made to address certain deployment situations, where a new instance is being started before another instance is turned off.  If and when this were to occur (it's quite common, actually), you may have a race condition of 2 maintenance operations attempting to execute at the same time, which in my experience has caused unpredictable deadlock errors (see issue #133) because of the use of unordered data sets in CTEs from a `DELETE ... RETURNING` statement. Upon review, addressing the concurrency problem was a far better option than introducing more changes to how the actual sql statement is working (or not :)
+
+The result of using a queue for maintenance instead of a timer is you can now run pg-boss in a (sort of) multi-master mode, where more than 1 instance is using `start()` simultaneously. Beginning in this release, if 2 or more instances are using `start()`, only 1 of them will be able to fetch the job (maintnenance or state monitoring) and issue the related SQL statements. 
+
+This is not an advertisement to go crazy with "master" instances, as you would still need to be careful since no explicit locking is in place to guard against schema creation or migration.  This may eventually lead to a future without the need of `connect()` entirely, so we'll see where this goes. 
 
 ## 3.2.2
 
