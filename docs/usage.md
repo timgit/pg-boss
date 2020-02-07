@@ -7,44 +7,44 @@ Usage
 - [Intro](#intro)
 - [Database installation](#database-installation)
 - [Functions](#functions)
-  - [new(connectionString)](#newconnectionstring)
-  - [new(options)](#newoptions)
-  - [start()](#start)
-  - [stop()](#stop)
-  - [connect()](#connect)
-  - [disconnect()](#disconnect)
-  - [publish()](#publish)
-    - [publish(name, data, options)](#publishname-data-options)
-    - [publish(request)](#publishrequest)
-    - [publishAfter(name, data, options, seconds | ISO date string | Date)](#publishaftername-data-options-seconds--iso-date-string--date)
-    - [publishOnce(name, data, options, key)](#publishoncename-data-options-key)
-    - [publishThrottled(name, data, options, seconds [, key])](#publishthrottledname-data-options-seconds--key)
-    - [publishDebounced(name, data, options, seconds [, key])](#publishdebouncedname-data-options-seconds--key)
-  - [subscribe()](#subscribe)
-    - [subscribe(name [, options], handler)](#subscribename--options-handler)
-    - [onComplete(name [, options], handler)](#oncompletename--options-handler)
-  - [unsubscribe(name)](#unsubscribename)
-    - [offComplete(name)](#offcompletename)
-  - [fetch()](#fetch)
-    - [fetch(name)](#fetchname)
-    - [fetch(name, batchSize)](#fetchname-batchsize)
-    - [fetchCompleted(name [, batchSize])](#fetchcompletedname--batchsize)
-  - [cancel(id)](#cancelid)
-  - [cancel([ids])](#cancelids)
-  - [complete(id [, data])](#completeid--data)
-  - [complete([ids])](#completeids)
-  - [fail(id [, data])](#failid--data)
-  - [fail([ids])](#failids)
-  - [deleteQueue(name)](#deletequeuename)
-  - [deleteAllQueues()](#deleteallqueues)
+  - [`new(connectionString)`](#newconnectionstring)
+  - [`new(options)`](#newoptions)
+  - [`start()`](#start)
+  - [`stop()`](#stop)
+  - [`connect()`](#connect)
+  - [`disconnect()`](#disconnect)
+  - [`publish()`](#publish)
+    - [`publish(name, data, options)`](#publishname-data-options)
+    - [`publish(request)`](#publishrequest)
+    - [`publishAfter(name, data, options, seconds | ISO date string | Date)`](#publishaftername-data-options-seconds--iso-date-string--date)
+    - [`publishOnce(name, data, options, key)`](#publishoncename-data-options-key)
+    - [`publishThrottled(name, data, options, seconds [, key])`](#publishthrottledname-data-options-seconds--key)
+    - [`publishDebounced(name, data, options, seconds [, key])`](#publishdebouncedname-data-options-seconds--key)
+  - [`subscribe()`](#subscribe)
+    - [`subscribe(name [, options], handler)`](#subscribename--options-handler)
+    - [`onComplete(name [, options], handler)`](#oncompletename--options-handler)
+  - [`unsubscribe(name)`](#unsubscribename)
+    - [`offComplete(name)`](#offcompletename)
+  - [`fetch()`](#fetch)
+    - [`fetch(name)`](#fetchname)
+    - [`fetch(name, batchSize)`](#fetchname-batchsize)
+    - [`fetchCompleted(name [, batchSize])`](#fetchcompletedname--batchsize)
+  - [`cancel(id)`](#cancelid)
+  - [`cancel([ids])`](#cancelids)
+  - [`complete(id [, data])`](#completeid--data)
+  - [`complete([ids])`](#completeids)
+  - [`fail(id [, data])`](#failid--data)
+  - [`fail([ids])`](#failids)
+  - [`deleteQueue(name)`](#deletequeuename)
+  - [`deleteAllQueues()`](#deleteallqueues)
 - [Events](#events)
-  - [error](#error)
-  - [archived](#archived)
-  - [expired](#expired)
-  - [monitor-states](#monitor-states)
+  - [`error`](#error)
+  - [`archived`](#archived)
+  - [`expired`](#expired)
+  - [`monitor-states`](#monitor-states)
 - [Static functions](#static-functions)
-  - [string getConstructionPlans(schema)](#string-getconstructionplansschema)
-  - [string getMigrationPlans(schema, version, uninstall)](#string-getmigrationplansschema-version-uninstall)
+  - [`string getConstructionPlans(schema)`](#string-getconstructionplansschema)
+  - [`string getMigrationPlans(schema, version, uninstall)`](#string-getmigrationplansschema-version-uninstall)
 
 <!-- /TOC -->
 
@@ -106,15 +106,13 @@ await boss.start()
 await boss.publish('hey-there', { msg:'this came for you' })
 ```
 
-Since it is responsible for monitoring jobs for expiration and archiving, `start()` *should be called once and only once per backing database store.* Once this has been taken care of, if your use cases demand additional instances for job processing, you should use `connect()`.
+Since it is responsible for both schema migrations and monitoring jobs for expiration and archiving, `start()` should be called once and only once per backing database store. Once this has been taken care of, if your use cases demand additional instances for job processing, you should use `connect()`.
 
-> Keep calm, however, if you were to accidentally call `start()` from independently hosted instances pointing to the same database.  While it would be considered by most a bit wasteful to monitor jobs multiple times, no major harm will occur. :)
-
-If the required database objects do not exist in the specified database, **`start()` will automatically create them**.
-
-But wait. There's more! `start()` also verifies the versions of the objects and will **automatically migrate your job system to the latest installed version** of pg-boss.  
+If the required database objects do not exist in the specified database, **`start()` will automatically create them**. The same process is true for updates as well. When you call `start()`, if a new schema version is found,  pg-boss will **automatically migrate the internal storage to the latest installed version**.  
 
 > While this is most likely a welcome feature, be aware of this during upgrades since this could delay the promise resolution by however long the migration script takes to run against your data.  For example, if you happened to have millions of jobs in the job table just hanging around for archiving and the next version of the schema had a couple of new indexes, it may take a handful of seconds before `start()` resolves.
+
+> As stated above, you should only have 1 instance running `start()` at a time, but if you have requirements that involve a rolling release deployment strategy, overlapping 2 instances, where 1 has already been running for a bit, will not re-issue additional maintenance commands, as maintenance operations are also bound to concurrency-safe internal queues.  Having mentioned this, pg-boss's initial schema creation and migration **are not** concurrency-safe. You should not attempt to run `start()` in multiple instances at the exact same time. This is an area of future development interest, however.
 
 ## `stop()`
 
