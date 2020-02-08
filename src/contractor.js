@@ -49,7 +49,7 @@ class Contractor {
   async create () {
     // use transaction, in case one query fails, it will automatically rollback to avoid inconsistency
     const queryInTransaction = `
-    BEGIN;
+    BEGIN;     
     ${plans.create(this.config.schema).join(';')};
     ${plans.insertVersion(this.config.schema).replace('$1', `'${schemaVersion}'`)};
     COMMIT;`
@@ -68,13 +68,30 @@ class Contractor {
   }
 
   async start () {
-    const installed = await this.isInstalled()
+    try {
+      await this.lock()
 
-    if (installed) {
-      await this.ensureCurrent()
-    } else {
-      await this.create()
+      const installed = await this.isInstalled()
+
+      if (installed) {
+        await this.ensureCurrent()
+      } else {
+        await this.create()
+      }
+
+      await this.unlock()
+    } catch (err) {
+      await this.unlock()
+      throw err
     }
+  }
+
+  async lock () {
+    await this.db.executeSql(plans.lock())
+  }
+
+  async unlock () {
+    await this.db.executeSql(plans.unlock())
   }
 
   async connect () {

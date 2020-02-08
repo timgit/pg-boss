@@ -10,6 +10,8 @@ const states = {
 
 const completedJobPrefix = `__state__${states.completed}__`
 
+const MUTEX = 1337968055000
+
 module.exports = {
   create,
   insertVersion,
@@ -27,7 +29,9 @@ module.exports = {
   deleteQueue,
   deleteAllQueues,
   states: { ...states },
-  completedJobPrefix
+  completedJobPrefix,
+  lock,
+  unlock
 }
 
 function create (schema) {
@@ -382,4 +386,12 @@ function countStates (schema) {
     WHERE name NOT LIKE '${completedJobPrefix}%'
     GROUP BY rollup(name), rollup(state)
   `
+}
+
+function lock () {
+  return `SELECT pg_advisory_lock(${MUTEX})`
+}
+
+function unlock () {
+  return `SELECT pg_advisory_unlock(${MUTEX})`
 }

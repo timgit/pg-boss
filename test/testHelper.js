@@ -82,8 +82,9 @@ async function countJobs (where, values) {
 }
 
 async function start (options = {}) {
+  options = Object.assign(getConfig(), options)
   await init(options.schema)
-  const boss = new PgBoss(Object.assign(getConfig(), options))
+  const boss = new PgBoss(options)
   await boss.start()
   return boss
 }
