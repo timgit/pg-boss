@@ -51,7 +51,7 @@ This will likely cater the most to teams already familiar with the simplicity of
 * Distributed and/or clustered workers
 * Completion subscriptions to support orchestrations/sagas
 * On-demand job fetching and completion for external integrations (such as web APIs)
-* Multi-master compatible for easier deployments using tools such as Kubernetes ReplicaSets
+* Multi-master capable using tools such as Kubernetes ReplicaSets
 * Automatic provisioning of required storage into a dedicated schema
 * Automatic monitoring for expired jobs
 * Automatic archiving for completed jobs
