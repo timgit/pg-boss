@@ -8,8 +8,8 @@ describe('delete', async function () {
   let boss
 
   const config = {
-    archiveCompletedJobsEvery: '1 second',
-    deleteArchivedJobsEvery: '1 second',
+    archiveIntervalSeconds: 1,
+    deleteIntervalSeconds: 1,
     maintenanceIntervalSeconds: 1
   }
 

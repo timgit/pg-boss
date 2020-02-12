@@ -6,7 +6,11 @@ describe('archive', function () {
   this.timeout(10000)
 
   let boss
-  const config = { archiveCompletedJobsEvery: '1 second', maintenanceIntervalSeconds: 1 }
+
+  const config = {
+    archiveIntervalSeconds: 1,
+    maintenanceIntervalSeconds: 1
+  }
 
   before(async function () { boss = await helper.start(config) })
   after(async function () { await boss.stop() })

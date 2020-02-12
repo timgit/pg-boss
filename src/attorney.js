@@ -1,5 +1,10 @@
 const assert = require('assert')
 
+const second = 1000
+const minute = 60 * second
+const hour = 60 * minute
+const day = 24 * hour
+
 module.exports = {
   getConfig,
   applyNewJobCheckInterval,
@@ -121,9 +126,9 @@ function applyNewJobCheckInterval (config) {
     'configuration assert: newJobCheckIntervalSeconds must be at least every second')
 
   config.newJobCheckInterval =
-    ('newJobCheckIntervalSeconds' in config) ? config.newJobCheckIntervalSeconds * 1000
+    ('newJobCheckIntervalSeconds' in config) ? config.newJobCheckIntervalSeconds * second
       : ('newJobCheckInterval' in config) ? config.newJobCheckInterval
-        : 1000 // default is 1 second
+        : second
 }
 
 function applyMaintenanceConfig (config) {
@@ -134,24 +139,57 @@ function applyMaintenanceConfig (config) {
     'configuration assert: maintenanceIntervalMinutes must be at least every minute')
 
   config.maintenanceInterval =
-    ('maintenanceIntervalMinutes' in config) ? config.maintenanceIntervalMinutes * 60 * 1000
-      : ('maintenanceIntervalSeconds' in config) ? config.maintenanceIntervalSeconds * 1000
-        : 60 * 1000 // default is 1 minute
+    ('maintenanceIntervalMinutes' in config) ? config.maintenanceIntervalMinutes * minute
+      : ('maintenanceIntervalSeconds' in config) ? config.maintenanceIntervalSeconds * second
+        : minute
 }
 
 function applyArchiveConfig (config) {
-  assert(!('archiveCompletedJobsEvery' in config) || typeof config.archiveCompletedJobsEvery === 'string',
-    'configuration assert: archiveCompletedJobsEvery should be a readable PostgreSQL interval such as "1 day"')
+  assert(!('archiveIntervalSeconds' in config) || config.archiveIntervalSeconds >= 1,
+    'configuration assert: archiveIntervalSeconds must be at least every second')
 
-  config.archiveCompletedJobsEvery = config.archiveCompletedJobsEvery || '1 hour'
+  assert(!('archiveIntervalMinutes' in config) || config.archiveIntervalMinutes >= 1,
+    'configuration assert: archiveIntervalMinutes must be at least every minute')
+
+  assert(!('archiveIntervalHours' in config) || config.archiveIntervalHours >= 1,
+    'configuration assert: archiveIntervalHours must be at least every hour')
+
+  assert(!('archiveIntervalDays' in config) || config.archiveIntervalDays >= 1,
+    'configuration assert: archiveIntervalDays must be at least every day')
+
+  const archiveInterval =
+    ('archiveIntervalDays' in config) ? config.archiveIntervalDays * day
+      : ('archiveIntervalHours' in config) ? config.archiveIntervalHours * hour
+        : ('archiveIntervalMinutes' in config) ? config.archiveIntervalMinutes * minute
+          : ('archiveIntervalSeconds' in config) ? config.archiveIntervalSeconds * second
+            : hour
+
+  // convert to string to be used as a pg interval arg
+  config.archiveInterval = `${archiveInterval}ms`
 }
 
 function applyDeleteConfig (config) {
-  // TODO: discontinue pg interval strings in favor of ms int for better validation (when interval is specified lower than check interval, for example)
-  assert(!('deleteArchivedJobsEvery' in config) || typeof config.deleteArchivedJobsEvery === 'string',
-    'configuration assert: deleteArchivedJobsEvery should be a readable PostgreSQL interval such as "7 days"')
+  assert(!('deleteIntervalSeconds' in config) || config.deleteIntervalSeconds >= 1,
+    'configuration assert: deleteIntervalSeconds must be at least every second')
 
-  config.deleteArchivedJobsEvery = config.deleteArchivedJobsEvery || '7 days'
+  assert(!('deleteIntervalMinutes' in config) || config.deleteIntervalMinutes >= 1,
+    'configuration assert: deleteIntervalMinutes must be at least every minute')
+
+  assert(!('deleteIntervalHours' in config) || config.deleteIntervalHours >= 1,
+    'configuration assert: deleteIntervalHours must be at least every hour')
+
+  assert(!('deleteIntervalDays' in config) || config.deleteIntervalDays >= 1,
+    'configuration assert: deleteIntervalDays must be at least every day')
+
+  const deleteInterval =
+    ('deleteIntervalDays' in config) ? config.deleteIntervalDays * day
+      : ('deleteIntervalHours' in config) ? config.deleteIntervalHours * hour
+        : ('deleteIntervalMinutes' in config) ? config.deleteIntervalMinutes * minute
+          : ('deleteIntervalSeconds' in config) ? config.deleteIntervalSeconds * second
+            : 7 * day
+
+  // convert to string to be used as a pg interval arg
+  config.deleteInterval = `${deleteInterval}ms`
 }
 
 function applyMonitoringConfig (config) {
@@ -162,8 +200,8 @@ function applyMonitoringConfig (config) {
     'configuration assert: monitorStateIntervalMinutes must be at least every minute')
 
   config.monitorStateInterval =
-    ('monitorStateIntervalMinutes' in config) ? config.monitorStateIntervalMinutes * 60 * 1000
-      : ('monitorStateIntervalSeconds' in config) ? config.monitorStateIntervalSeconds * 1000
+    ('monitorStateIntervalMinutes' in config) ? config.monitorStateIntervalMinutes * minute
+      : ('monitorStateIntervalSeconds' in config) ? config.monitorStateIntervalSeconds * second
         : null
 }
 

@@ -108,13 +108,45 @@ Maintenance operations include checking active jobs for expiration, archiving co
   
   If this is set to true, maintenance and monitoring operations will not be started during a `start()` after the schema is created.  This is an advanced use case, as bypassing maintenance operations is not something you would want to do under normal circumstances.
 
-* **archiveCompletedJobsEvery**, string, [PostgreSQL interval](https://www.postgresql.org/docs/9.5/static/datatype-datetime.html#DATATYPE-INTERVAL-INPUT)
+* **archiveIntervalSeconds**, int
 
-    Default: "1 hour".  When jobs become eligible for archive after completion.
+    archive interval in seconds, must be >=1
 
-* **deleteArchivedJobsEvery**, string, [PostgreSQL interval](https://www.postgresql.org/docs/9.5/static/datatype-datetime.html#DATATYPE-INTERVAL-INPUT)
+* **archiveIntervalMinutes**, int
 
-    Default: "7 days".  When jobs in the archive table become eligible for deletion.
+    archive interval in minutes, must be >=1
+
+* **archiveIntervalHours**, int
+
+    archive interval in hours, must be >=1
+
+* **archiveIntervalDays**, int
+
+    archive interval in days, must be >=1
+
+Default: 1 hour.  When jobs become eligible for archive after completion.
+
+> When a higher unit is is specified, such as hours, lower unit configuration settings are ignored. 
+
+* **deleteIntervalSeconds**, int
+
+    delete interval in seconds, must be >=1
+
+* **deleteIntervalMinutes**, int
+
+    delete interval in minutes, must be >=1
+
+* **deleteIntervalHours**, int
+
+    delete interval in hours, must be >=1
+
+* **deleteIntervalDays**, int
+
+    delete interval in days, must be >=1
+
+Default: 7 days  When jobs in the archive table become eligible for deletion.
+
+> When a higher unit is is specified, such as hours, lower unit configuration settings are ignored. 
 
 * **maintenanceIntervalSeconds**, int
 

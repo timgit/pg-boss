@@ -15,9 +15,22 @@
     - `archiveCheckIntervalMinutes`
     - `deleteCheckInterval`
   - Added:
-    - `maintenacneIntervalSeconds`
+    - `maintenanceIntervalSeconds`
     - `maintenanceIntervalMinutes`
-  
+- MAJOR: Replaced all pg interval configurations with specific integer settings for better validation and api consistency
+  - Removed:
+    - `deleteArchivedJobsEvery`
+    - `archiveCompletedJobsEvery`
+  - Added:
+    - `archiveIntervalSeconds`
+    - `archiveIntervalMinutes`
+    - `archiveIntervalHours`
+    - `archiveIntervalDays`
+    - `deleteIntervalSeconds`
+    - `deleteIntervalMinutes`
+    - `deleteIntervalHours`
+    - `deleteIntervalDays`
+
 ### Context
 
 The breaking changes introduced in this release should not cause any run-time failures, but if you are relying on customized maintenance intervals, you will need to adjust the configuration options when you upgrade.

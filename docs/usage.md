@@ -89,7 +89,7 @@ const options = {
   user: 'user',
   password: 'password',
   poolSize: 5, // or max: 5
-  archiveCompletedJobsEvery: '2 days'
+  archiveIntervalDays: 2
 };
 
 const boss = new PgBoss(options);

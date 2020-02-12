@@ -29,8 +29,14 @@ declare namespace PgBoss {
   }
 
   interface MaintenanceOptions {
-    archiveCompletedJobsEvery?: string;
-    deleteArchivedJobsEvery?: string;
+    archiveIntervalSeconds?: number;
+    archiveIntervalMinutes?: number;
+    archiveIntervalHours?: number;
+    archiveIntervalDays?: number;
+    deleteIntervalSeconds?: number;
+    deleteIntervalMinutes?: number;
+    deleteIntervalHours?: number;
+    deleteIntervalDays?: number;
     maintenanceIntervalSeconds?: number;
     maintenanceIntervalMinutes?: number;    
   }

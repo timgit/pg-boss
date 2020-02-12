@@ -5,6 +5,5 @@
 	"user": "postgres",
 	"password": "postgres",
 	"schema": "pgboss",
-	"uuid": "v1",
-	"archiveCompletedJobsEvery": "1 day"
+    "uuid": "v1"
 }

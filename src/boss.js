@@ -29,7 +29,6 @@ class Boss extends EventEmitter {
       this.monitorIntervalSeconds = config.monitorStateInterval <= 1000 ? 1 : config.monitorStateInterval / 1000
     }
 
-    this.timers = {}
     this.events = events
 
     this.expireCommand = plans.expire(config.schema)
@@ -145,12 +144,12 @@ class Boss extends EventEmitter {
   }
 
   async archive () {
-    const { rowCount } = await this.db.executeSql(this.archiveCommand, [this.config.archiveCompletedJobsEvery])
+    const { rowCount } = await this.db.executeSql(this.archiveCommand, [this.config.archiveInterval])
     return rowCount
   }
 
   async purge () {
-    const { rowCount } = await this.db.executeSql(this.purgeCommand, [this.config.deleteArchivedJobsEvery])
+    const { rowCount } = await this.db.executeSql(this.purgeCommand, [this.config.deleteInterval])
     return rowCount
   }
 }
