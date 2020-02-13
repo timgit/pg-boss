@@ -40,7 +40,11 @@ function checkPublishArgs (args) {
   assert(name, 'boss requires all jobs to have a queue name')
   assert(typeof options === 'object', 'options should be an object')
 
-  return { name, data, options: { ...options } }
+  options = { ...options }
+
+  applyPublishExpirationConfig(options)
+
+  return { name, data, options }
 }
 
 function checkSubscribeArgs (name, args) {
@@ -116,6 +120,26 @@ function applyDatabaseConfig (config) {
 
     config.poolSize = config.poolSize || config.max || 10
   }
+}
+
+function applyPublishExpirationConfig (config) {
+  assert(!('expireInSeconds' in config) || config.expireInSeconds >= 1,
+    'configuration assert: expireInSeconds must be at least every second')
+
+  assert(!('expireInMinutes' in config) || config.expireInMinutes >= 1,
+    'configuration assert: expireInMinutes must be at least every minute')
+
+  assert(!('expireInHours' in config) || config.expireInHours >= 1,
+    'configuration assert: expireInHours must be at least every hour')
+
+  const expireIn =
+    ('expireInHours' in config) ? config.expireInHours * hour
+      : ('expireInMinutes' in config) ? config.expireInMinutes * minute
+        : ('expireInSeconds' in config) ? config.expireInSeconds * second
+          : 15 * minute
+
+  // convert to string to be used as a pg interval arg
+  config.expireIn = `${expireIn}ms`
 }
 
 function applyNewJobCheckInterval (config) {

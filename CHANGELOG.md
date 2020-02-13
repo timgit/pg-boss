@@ -17,10 +17,10 @@
   - Added:
     - `maintenanceIntervalSeconds`
     - `maintenanceIntervalMinutes`
-- MAJOR: Replaced all pg interval configurations with specific integer settings for better validation and api consistency
+- MAJOR: Replaced maintenance pg interval string configurations with specific integer settings for better validation and api consistency
   - Removed:
     - `deleteArchivedJobsEvery`
-    - `archiveCompletedJobsEvery`
+    - `archiveCompletedJobsEvery`    
   - Added:
     - `archiveIntervalSeconds`
     - `archiveIntervalMinutes`
@@ -30,6 +30,13 @@
     - `deleteIntervalMinutes`
     - `deleteIntervalHours`
     - `deleteIntervalDays`
+- MAJOR: Replaced expiration pg interval string configuration in `publish()` with specific integer settings for better validation and api consistency
+  - Removed:
+    - `expireIn`
+  - Added:
+    - `expireInSeconds`
+    - `expireInMinutes`
+    - `expireInHours`
 
 ### Context
 

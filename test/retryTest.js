@@ -13,10 +13,8 @@ describe('retries', function () {
 
   it('should retry a job that didn\'t complete', async function () {
     const queue = 'unreliable'
-    const expireIn = '100 milliseconds'
-    const retryLimit = 1
 
-    const jobId = await boss.publish({ name: queue, options: { expireIn, retryLimit } })
+    const jobId = await boss.publish({ name: queue, options: { expireInSeconds: 1, retryLimit: 1 } })
 
     const try1 = await boss.fetch(queue)
 

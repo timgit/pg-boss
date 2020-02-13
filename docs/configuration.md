@@ -217,9 +217,19 @@ Setting `singletonNextSlot` to true will cause the job to be scheduled to run af
 
 ### Job expiration
 
-* **expireIn**, string, PostgreSQL interval
+* **expireInSeconds**, number
 
-    Default: 15 minutes
+    How many seconds a job may be in active state before it is failed because of expiration. Must be >=1
+
+* **expireInMinutes**, number
+
+    How many minutes a job may be in active state before it is failed because of expiration. Must be >=1
+
+* **expireInHours**, number
+
+    How many hours a job may be in active state before it is failed because of expiration. Must be >=1
+
+Default: 15 minutes
 
 ## Subscribe Options
 

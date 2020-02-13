@@ -54,7 +54,9 @@ declare namespace PgBoss {
     retryLimit?: number;
     retryDelay?: number;
     retryBackoff?: boolean;
-    expireIn?: string;
+    expireInSeconds?: number;
+    expireInMinutes?: number;
+    expireInHours?: number;
   }
 
   interface SubscribeOptions {

@@ -14,7 +14,7 @@ describe('expire', function () {
   it('should expire a job', async function () {
     const queue = 'i-take-too-long'
 
-    const jobId = await boss.publish({ name: queue, options: { expireIn: '1 second' } })
+    const jobId = await boss.publish({ name: queue, options: { expireInSeconds: 1 } })
 
     // fetch the job but don't complete it
     await boss.fetch(queue)
