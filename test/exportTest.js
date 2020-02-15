@@ -9,14 +9,4 @@ describe('export', function () {
     assert.include(plans, schema + '.job')
     assert.include(plans, schema + '.version')
   })
-
-  it('should export migration commands from 0.0.1 to 0.1.0', function () {
-    const schema = 'custom'
-    const currentSchemaVersion = '0.0.1'
-    const expectedMigrationVersion = '0.1.0'
-    const plans = PgBoss.getMigrationPlans(schema, currentSchemaVersion)
-
-    assert.include(plans, `ALTER TABLE ${schema}.job`)
-    assert.include(plans, `UPDATE ${schema}.version SET version = '${expectedMigrationVersion}`)
-  })
 })

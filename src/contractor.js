@@ -5,16 +5,15 @@ const schemaVersion = require('../version.json').schema
 
 class Contractor {
   static constructionPlans (schema) {
-    const exportPlans = plans.create(schema)
-    exportPlans.push(plans.insertVersion(schema).replace('$1', `'${schemaVersion}'`))
-
-    return exportPlans.join(';\n\n')
+    return plans.create(schema, schemaVersion)
   }
 
-  static migrationPlans (schema, version, uninstall) {
-    const migration = migrationStore.get(schema, version, uninstall)
-    assert(migration, `migration not found from version ${version}. schema: ${schema}`)
-    return migration.commands.join(';\n\n')
+  static migrationPlans (schema, version) {
+    return migrationStore.migrate(schema, version)
+  }
+
+  static rollbackPlans (schema, version) {
+    return migrationStore.rollback(schema, version)
   }
 
   constructor (db, config) {
@@ -25,7 +24,7 @@ class Contractor {
 
   async version () {
     const result = await this.db.executeSql(plans.getVersion(this.config.schema))
-    return result.rows.length ? result.rows[0].version : null
+    return result.rows.length ? parseInt(result.rows[0].version) : null
   }
 
   async isCurrent () {
@@ -38,60 +37,23 @@ class Contractor {
     return result.rows.length ? result.rows[0].name : null
   }
 
-  async ensureCurrent () {
-    const version = await this.version()
-
-    if (schemaVersion !== version) {
-      await this.update(version)
-    }
-  }
-
   async create () {
-    // use transaction, in case one query fails, it will automatically rollback to avoid inconsistency
-    const queryInTransaction = `
-    BEGIN;     
-    ${plans.create(this.config.schema).join(';')};
-    ${plans.insertVersion(this.config.schema).replace('$1', `'${schemaVersion}'`)};
-    COMMIT;`
-
-    await this.db.executeSql(queryInTransaction)
-  }
-
-  async update (current) {
-    if (current === '0.0.2') current = '0.0.1'
-
-    const version = await this.migrate(current)
-
-    if (version !== schemaVersion) {
-      await this.update(version)
-    }
+    const commands = plans.create(this.config.schema, schemaVersion)
+    await this.db.executeSql(commands)
   }
 
   async start () {
-    try {
-      await this.lock()
+    const installed = await this.isInstalled()
 
-      const installed = await this.isInstalled()
+    if (installed) {
+      const version = await this.version()
 
-      if (installed) {
-        await this.ensureCurrent()
-      } else {
-        await this.create()
+      if (schemaVersion !== version) {
+        await this.migrate(version)
       }
-
-      await this.unlock()
-    } catch (err) {
-      await this.unlock()
-      throw err
+    } else {
+      await this.create()
     }
-  }
-
-  async lock () {
-    await this.db.executeSql(plans.lock())
-  }
-
-  async unlock () {
-    await this.db.executeSql(plans.unlock())
   }
 
   async connect () {
@@ -106,20 +68,19 @@ class Contractor {
     assert(current, connectErrorMessage)
   }
 
-  async migrate (version, uninstall) {
-    const migration = migrationStore.get(this.config.schema, version, uninstall, this.migrations)
+  async migrate (version) {
+    const commands = migrationStore.migrate(this.config.schema, version, this.migrations)
+    await this.db.executeSql(commands)
+  }
 
-    assert(migration, `Migration to version ${version} failed because it could not be found.  Your database may have been upgraded by a newer version of pg-boss`)
+  async next (version) {
+    const commands = migrationStore.next(this.config.schema, version, this.migrations)
+    await this.db.executeSql(commands)
+  }
 
-    // use transaction, in case one query fails, it will automatically rollback to avoid inconsistency
-    const queryInTransaction = `
-    BEGIN;
-    ${migration.commands.join(';')};
-    COMMIT;`
-
-    await this.db.executeSql(queryInTransaction)
-
-    return migration.version
+  async rollback (version) {
+    const commands = migrationStore.rollback(this.config.schema, version, this.migrations)
+    await this.db.executeSql(commands)
   }
 }
 

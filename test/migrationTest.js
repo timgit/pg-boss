@@ -19,11 +19,13 @@ describe('migration', function () {
   it('should migrate to previous version and back again', async function () {
     await contractor.create()
 
-    const version = await contractor.migrate(currentSchemaVersion, 'remove')
+    await contractor.rollback(currentSchemaVersion)
+    const oldVersion = await contractor.version()
 
-    assert.notEqual(version, currentSchemaVersion)
+    assert.notEqual(oldVersion, currentSchemaVersion)
 
-    const newVersion = await contractor.migrate(version)
+    await contractor.migrate(oldVersion)
+    const newVersion = await contractor.version()
 
     assert.equal(newVersion, currentSchemaVersion)
   })
@@ -31,7 +33,7 @@ describe('migration', function () {
   it('should migrate to latest during start if on previous schema version', async function () {
     await contractor.create()
 
-    await contractor.migrate(currentSchemaVersion, 'remove')
+    await contractor.rollback(currentSchemaVersion)
 
     await new PgBoss(helper.getConfig()).start({ noSupervisor: true })
 
@@ -43,19 +45,23 @@ describe('migration', function () {
   it('should migrate through 2 versions back and forth', async function () {
     await contractor.create()
 
-    const oneVersionAgo = await contractor.migrate(currentSchemaVersion, 'remove')
+    await contractor.rollback(currentSchemaVersion)
+    const oneVersionAgo = await contractor.version()
 
     assert.notEqual(oneVersionAgo, currentSchemaVersion)
 
-    const twoVersionsAgo = await contractor.migrate(oneVersionAgo, 'remove')
+    await contractor.rollback(oneVersionAgo)
+    const twoVersionsAgo = await contractor.version()
 
     assert.notEqual(twoVersionsAgo, oneVersionAgo)
 
-    const oneVersionAgoPart2 = await contractor.migrate(twoVersionsAgo)
+    await contractor.next(twoVersionsAgo)
+    const oneVersionAgoPart2 = await contractor.version()
 
     assert.equal(oneVersionAgo, oneVersionAgoPart2)
 
-    const version = await contractor.migrate(oneVersionAgo)
+    await contractor.next(oneVersionAgo)
+    const version = await contractor.version()
 
     assert.equal(version, currentSchemaVersion)
   })
@@ -63,9 +69,10 @@ describe('migration', function () {
   it('should migrate to latest during start if on previous 2 schema versions', async function () {
     await contractor.create()
 
-    const oneVersionAgo = await contractor.migrate(currentSchemaVersion, 'remove')
+    await contractor.rollback(currentSchemaVersion)
+    const oneVersionAgo = await contractor.version()
 
-    await contractor.migrate(oneVersionAgo, 'remove')
+    await contractor.rollback(oneVersionAgo)
 
     const boss = new PgBoss(helper.getConfig())
 
@@ -82,7 +89,7 @@ describe('migration', function () {
     try {
       await contractor.migrate('¯\\_(ツ)_//¯')
     } catch (error) {
-      assert(error.message.indexOf('could not be found') > -1)
+      assert(error.message.indexOf('not found') > -1)
     }
   })
 
@@ -95,7 +102,8 @@ describe('migration', function () {
     config.migrations[config.migrations.length - 1].install.push('wat')
 
     await contractor.create()
-    const oneVersionAgo = await contractor.migrate(currentSchemaVersion, 'remove')
+    await contractor.rollback(currentSchemaVersion)
+    const oneVersionAgo = await contractor.version()
 
     try {
       await new PgBoss(config).start({ noSupervisor: true })

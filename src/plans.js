@@ -16,6 +16,7 @@ module.exports = {
   create,
   insertVersion,
   getVersion,
+  setVersion,
   versionTableExists,
   fetchNextJob,
   completeJobs,
@@ -30,13 +31,18 @@ module.exports = {
   deleteAllQueues,
   states: { ...states },
   completedJobPrefix,
+  createLocker,
   lock,
-  unlock
+  advisoryLock
 }
 
-function create (schema) {
+function create (schema, version) {
   return [
+    'BEGIN',
+    advisoryLock(),
     createSchema(schema),
+    //createLocker(schema),
+    //lock(schema),
     tryCreateCryptoExtension(),
     createVersionTable(schema),
     createJobStateEnum(schema),
@@ -48,8 +54,10 @@ function create (schema) {
     createIndexJobName(schema),
     createIndexSingletonOn(schema),
     createIndexSingletonKeyOn(schema),
-    createIndexSingletonKey(schema)
-  ]
+    createIndexSingletonKey(schema),
+    insertVersion(schema, version),
+    'COMMIT;'
+  ].join(';\n')
 }
 
 function createSchema (schema) {
@@ -163,21 +171,19 @@ function createIndexJobName (schema) {
 }
 
 function getVersion (schema) {
-  return `
-    SELECT version from ${schema}.version
-  `
+  return `SELECT version from ${schema}.version`
+}
+
+function setVersion (schema, version) {
+  return `UPDATE ${schema}.version SET version = '${version}'`
 }
 
 function versionTableExists (schema) {
-  return `
-    SELECT to_regclass('${schema}.version') as name
-  `
+  return `SELECT to_regclass('${schema}.version') as name`
 }
 
-function insertVersion (schema) {
-  return `
-    INSERT INTO ${schema}.version(version) VALUES ($1)
-  `
+function insertVersion (schema, version) {
+  return `INSERT INTO ${schema}.version(version) VALUES ('${version}')`
 }
 
 function fetchNextJob (schema) {
@@ -388,10 +394,17 @@ function countStates (schema) {
   `
 }
 
-function lock () {
-  return `SELECT pg_advisory_lock(${MUTEX})`
+function createLocker (schema) {
+  return `
+    CREATE UNLOGGED TABLE IF NOT EXISTS ${schema}.locker (id int)
+    WITH (autovacuum_enabled=false, toast.autovacuum_enabled=false)
+  `
 }
 
-function unlock () {
-  return `SELECT pg_advisory_unlock(${MUTEX})`
+function lock (schema) {
+  return `LOCK TABLE ${schema}.locker`
+}
+
+function advisoryLock() {
+  return `SELECT pg_advisory_xact_lock(${MUTEX})`
 }
