@@ -9,10 +9,10 @@ module.exports = {
 }
 
 function flatten (schema, commands, version) {
-
   const preflight = [
     'BEGIN',
-    plans.advisoryLock()
+    plans.advisoryLock(),
+    plans.assertMigration(schema, version)
   ]
 
   const postflight = [
@@ -50,6 +50,7 @@ function migrate (schema, version, migrations) {
 
   const result = migrations
     .filter(i => i.previous >= version)
+    .sort((a, b) => a.version - b.version)
     .reduce((acc, i) => {
       acc.install = acc.install.concat(i.install)
       acc.version = i.version
@@ -64,6 +65,36 @@ function migrate (schema, version, migrations) {
 function getAll (schema) {
   return [
     {
+      version: 12,
+      previous: 11,
+      install: [
+          `ALTER TABLE ${schema}.version ALTER COLUMN version TYPE int USING version::int`
+      ],
+      uninstall: [
+          `ALTER TABLE ${schema}.version ALTER COLUMN version TYPE text USING version::text`
+      ]
+    },
+    {
+      version: 11,
+      previous: 10,
+      install: [
+          `CREATE INDEX archive_archivedon_idx ON ${schema}.archive(archivedon)`
+      ],
+      uninstall: [
+          `DROP INDEX ${schema}.archive_archivedon_idx`
+      ]
+    },
+    {
+      version: 10,
+      previous: 9,
+      install: [
+        `CREATE INDEX archive_id_idx ON ${schema}.archive(id)`
+      ],
+      uninstall: [
+        `DROP INDEX ${schema}.archive_id_idx`
+      ]
+    },    
+    {
       version: 9,
       previous: 8,
       install: [
@@ -77,26 +108,6 @@ function getAll (schema) {
         `CREATE INDEX job_fetch ON ${schema}.job (name, priority desc, createdOn, id) WHERE state < 'active'`,
         `DROP INDEX ${schema}.job_name`,
         `CREATE INDEX job_name ON ${schema}.job (name) WHERE state < 'active'`
-      ]
-    },
-    {
-      version: 10,
-      previous: 9,
-      install: [
-        `CREATE INDEX archive_id_idx ON ${schema}.archive(id)`
-      ],
-      uninstall: [
-        `DROP INDEX ${schema}.archive_id_idx`
-      ]
-    },
-    {
-      version: 11,
-      previous: 10,
-      install: [
-          `CREATE INDEX archive_archivedon_idx ON ${schema}.archive(archivedon)`
-      ],
-      uninstall: [
-          `DROP INDEX ${schema}.archive_archivedon_idx`
       ]
     }
   ]

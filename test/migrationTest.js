@@ -71,8 +71,11 @@ describe('migration', function () {
 
     await contractor.rollback(currentSchemaVersion)
     const oneVersionAgo = await contractor.version()
+    assert.strictEqual(oneVersionAgo, currentSchemaVersion - 1)
 
     await contractor.rollback(oneVersionAgo)
+    const twoVersionsAgo = await contractor.version()
+    assert.strictEqual(twoVersionsAgo, currentSchemaVersion - 2)
 
     const boss = new PgBoss(helper.getConfig())
 
@@ -99,7 +102,7 @@ describe('migration', function () {
     config.migrations = migrationStore.getAll(config.schema)
 
     // add invalid sql statement
-    config.migrations[config.migrations.length - 1].install.push('wat')
+    config.migrations[0].install.push('wat')
 
     await contractor.create()
     await contractor.rollback(currentSchemaVersion)
@@ -116,7 +119,7 @@ describe('migration', function () {
     assert.equal(version1, oneVersionAgo)
 
     // remove bad sql statement
-    config.migrations[config.migrations.length - 1].install.pop()
+    config.migrations[0].install.pop()
 
     const boss = new PgBoss(config)
 

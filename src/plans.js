@@ -11,6 +11,8 @@ const states = {
 const completedJobPrefix = `__state__${states.completed}__`
 
 const MUTEX = 1337968055000
+const VERSION_RACE_MESSAGE = 'division by zero'
+const CREATE_RACE_MESSAGE = 'already exists'
 
 module.exports = {
   create,
@@ -31,9 +33,10 @@ module.exports = {
   deleteAllQueues,
   states: { ...states },
   completedJobPrefix,
-  createLocker,
-  lock,
-  advisoryLock
+  advisoryLock,
+  assertMigration,
+  VERSION_RACE_MESSAGE,
+  CREATE_RACE_MESSAGE
 }
 
 function create (schema, version) {
@@ -41,8 +44,6 @@ function create (schema, version) {
     'BEGIN',
     advisoryLock(),
     createSchema(schema),
-    //createLocker(schema),
-    //lock(schema),
     tryCreateCryptoExtension(),
     createVersionTable(schema),
     createJobStateEnum(schema),
@@ -62,7 +63,7 @@ function create (schema, version) {
 
 function createSchema (schema) {
   return `
-    CREATE SCHEMA IF NOT EXISTS ${schema}
+    CREATE SCHEMA ${schema}
   `
 }
 
@@ -75,7 +76,7 @@ function tryCreateCryptoExtension () {
 function createVersionTable (schema) {
   return `
     CREATE TABLE ${schema}.version (
-      version text primary key
+      version int primary key
     )
   `
 }
@@ -394,17 +395,11 @@ function countStates (schema) {
   `
 }
 
-function createLocker (schema) {
-  return `
-    CREATE UNLOGGED TABLE IF NOT EXISTS ${schema}.locker (id int)
-    WITH (autovacuum_enabled=false, toast.autovacuum_enabled=false)
-  `
-}
-
-function lock (schema) {
-  return `LOCK TABLE ${schema}.locker`
-}
-
 function advisoryLock() {
   return `SELECT pg_advisory_xact_lock(${MUTEX})`
+}
+
+function assertMigration(schema, version) {
+  // raises 'division by zero' if already on desired schema version
+  return `SELECT version::int/(version::int-${version}) from ${schema}.version`
 }

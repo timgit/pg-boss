@@ -13,7 +13,7 @@ describe('connect', function () {
     const schema = helper.getConfig().schema
 
     const db = await helper.getDb()
-    await db.executeSql(`UPDATE ${schema}.version SET VERSION = '0.0.0'`)
+    await db.executeSql(`UPDATE ${schema}.version SET VERSION = 2`)
 
     try {
       await boss.connect()

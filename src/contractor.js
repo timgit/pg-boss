@@ -38,39 +38,47 @@ class Contractor {
   }
 
   async create () {
-    const commands = plans.create(this.config.schema, schemaVersion)
-    await this.db.executeSql(commands)
+    try {
+      const commands = plans.create(this.config.schema, schemaVersion)
+      await this.db.executeSql(commands)
+    } catch(err) {
+      if(err.message.indexOf(plans.CREATE_RACE_MESSAGE) === -1) {
+        throw(err)
+      }
+    }    
   }
 
   async start () {
     const installed = await this.isInstalled()
-
+  
     if (installed) {
       const version = await this.version()
-
+  
       if (schemaVersion !== version) {
         await this.migrate(version)
       }
     } else {
       await this.create()
-    }
+    }      
   }
 
   async connect () {
-    const connectErrorMessage = 'this version of pg-boss does not appear to be installed in your database. I can create it for you via start().'
-
     const installed = await this.isInstalled()
+    assert(installed, `pg-boss is not installed in schema ${this.config.schema}. Running start() will automatically create it.`)
 
-    assert(installed, connectErrorMessage)
-
-    const current = await this.isCurrent()
-
-    assert(current, connectErrorMessage)
+    const version = await this.version()
+    assert((schemaVersion === version), `pg-boss database schema version ${version} is installed in this database, but this package expects v${schemaVersion}.`)
   }
 
   async migrate (version) {
-    const commands = migrationStore.migrate(this.config.schema, version, this.migrations)
-    await this.db.executeSql(commands)
+    try {
+      const commands = migrationStore.migrate(this.config.schema, version, this.migrations)
+      await this.db.executeSql(commands)
+    } catch(err) {
+      if(err.message.indexOf(plans.MIGRATE_RACE_MESSAGE) === -1) {
+        throw(err)
+      }
+    }
   }
 
   async next (version) {
