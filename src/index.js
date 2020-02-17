@@ -16,8 +16,12 @@ class PgBoss extends EventEmitter {
     return Contractor.constructionPlans(schema)
   }
 
-  static getMigrationPlans (schema, version, uninstall) {
-    return Contractor.migrationPlans(schema, version, uninstall)
+  static getMigrationPlans (schema, version) {
+    return Contractor.migrationPlans(schema, version)
+  }
+
+  static getRollbackPlans (schema, version) {
+    return Contractor.rollbackPlans(schema, version)
   }
 
   constructor (value) {

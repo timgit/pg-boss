@@ -27,39 +27,23 @@ class Contractor {
     return result.rows.length ? parseInt(result.rows[0].version) : null
   }
 
-  async isCurrent () {
-    const version = await this.version()
-    return version === schemaVersion
-  }
-
   async isInstalled () {
     const result = await this.db.executeSql(plans.versionTableExists(this.config.schema))
     return result.rows.length ? result.rows[0].name : null
   }
 
-  async create () {
-    try {
-      const commands = plans.create(this.config.schema, schemaVersion)
-      await this.db.executeSql(commands)
-    } catch(err) {
-      if(err.message.indexOf(plans.CREATE_RACE_MESSAGE) === -1) {
-        throw(err)
-      }
-    }    
-  }
-
   async start () {
     const installed = await this.isInstalled()
-  
+
     if (installed) {
       const version = await this.version()
-  
-      if (schemaVersion !== version) {
+
+      if (schemaVersion > version) {
         await this.migrate(version)
       }
     } else {
       await this.create()
-    }      
+    }
   }
 
   async connect () {
@@ -70,14 +54,21 @@ class Contractor {
     assert((schemaVersion === version), `pg-boss database schema version ${version} is installed in this database, but this package expects v${schemaVersion}.`)
   }
 
+  async create () {
+    try {
+      const commands = plans.create(this.config.schema, schemaVersion)
+      await this.db.executeSql(commands)
+    } catch (err) {
+      assert(err.message.indexOf(plans.CREATE_RACE_MESSAGE) > -1, err)
+    }
+  }
+
   async migrate (version) {
     try {
       const commands = migrationStore.migrate(this.config.schema, version, this.migrations)
       await this.db.executeSql(commands)
-    } catch(err) {
-      if(err.message.indexOf(plans.MIGRATE_RACE_MESSAGE) === -1) {
-        throw(err)
-      }
+    } catch (err) {
+      assert(err.message.indexOf(plans.MIGRATE_RACE_MESSAGE) > -1, err)
     }
   }
 

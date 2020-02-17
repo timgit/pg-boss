@@ -395,11 +395,11 @@ function countStates (schema) {
   `
 }
 
-function advisoryLock() {
+function advisoryLock () {
   return `SELECT pg_advisory_xact_lock(${MUTEX})`
 }
 
-function assertMigration(schema, version) {
+function assertMigration (schema, version) {
   // raises 'division by zero' if already on desired schema version
   return `SELECT version::int/(version::int-${version}) from ${schema}.version`
 }

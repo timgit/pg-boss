@@ -93,7 +93,7 @@ function getAll (schema) {
       uninstall: [
         `DROP INDEX ${schema}.archive_id_idx`
       ]
-    },    
+    },
     {
       version: 9,
       previous: 8,
