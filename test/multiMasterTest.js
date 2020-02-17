@@ -8,7 +8,6 @@ describe('multi-master', function () {
   this.timeout(10000)
 
   it('should only allow 1 master to start at a time', async function () {
-    
     await helper.init()
 
     const instances = 20
@@ -45,6 +44,5 @@ describe('multi-master', function () {
     } finally {
       await helper.init()
     }
-
   })
 })
