@@ -8,12 +8,18 @@ describe('multi-master', function () {
   this.timeout(10000)
 
   it('should only allow 1 master to start at a time', async function () {
-    const instances = 10
+    
+    await helper.init()
+
+    const instances = 20
 
     try {
       await Promise.map(new Array(instances), () => helper.start())
     } catch (err) {
       assert(false)
+      await Promise.delay(2000)
+    } finally {
+      await helper.init()
     }
   })
 
@@ -35,6 +41,10 @@ describe('multi-master', function () {
       await Promise.map(new Array(instances), () => helper.start())
     } catch (err) {
       assert(false)
+      await Promise.delay(2000)
+    } finally {
+      await helper.init()
     }
+
   })
 })
