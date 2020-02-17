@@ -11,9 +11,10 @@ describe('multi-master', function () {
     await helper.init()
 
     const instances = 20
+    const config = { noSupervisor: true }
 
     try {
-      await Promise.map(new Array(instances), () => helper.start())
+      await Promise.map(new Array(instances), () => helper.start(config))
     } catch (err) {
       assert(false)
       await Promise.delay(2000)
@@ -35,9 +36,10 @@ describe('multi-master', function () {
     assert.notEqual(oldVersion, currentSchemaVersion)
 
     const instances = 10
+    const config = { noSupervisor: true }
 
     try {
-      await Promise.map(new Array(instances), () => helper.start())
+      await Promise.map(new Array(instances), () => helper.start(config))
     } catch (err) {
       assert(false)
       await Promise.delay(2000)
