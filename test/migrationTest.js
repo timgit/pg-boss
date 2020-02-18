@@ -129,5 +129,4 @@ describe('migration', function () {
 
     assert.equal(version2, currentSchemaVersion)
   })
-
 })

@@ -12,7 +12,7 @@ describe('multi-master', function () {
     await helper.init()
 
     const instances = 20
-    const config = helper.getConfig({ noSupervisor:true })
+    const config = helper.getConfig({ noSupervisor: true })
 
     try {
       await Promise.map(new Array(instances), () => new PgBoss(config).start())
@@ -25,7 +25,7 @@ describe('multi-master', function () {
   it('should only allow 1 master to migrate to latest at a time', async function () {
     await helper.init()
     const db = await helper.getDb()
-    const config = helper.getConfig({ noSupervisor:true })
+    const config = helper.getConfig({ noSupervisor: true })
     const contractor = new Contractor(db, helper.getConfig())
 
     await contractor.create()
@@ -36,7 +36,7 @@ describe('multi-master', function () {
     assert.notEqual(oldVersion, currentSchemaVersion)
 
     const instances = 10
-    
+
     try {
       await Promise.map(new Array(instances), () => new PgBoss(config).start())
     } catch (err) {
