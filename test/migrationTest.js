@@ -1,5 +1,5 @@
 const assert = require('chai').assert
-const PgBoss = require('../src/index')
+const PgBoss = require('../')
 const helper = require('./testHelper')
 const Contractor = require('../src/contractor')
 const migrationStore = require('../src/migrationStore')
@@ -129,4 +129,5 @@ describe('migration', function () {
 
     assert.equal(version2, currentSchemaVersion)
   })
+
 })

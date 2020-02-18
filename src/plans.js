@@ -11,7 +11,7 @@ const states = {
 const completedJobPrefix = `__state__${states.completed}__`
 
 const MUTEX = 1337968055000
-const VERSION_RACE_MESSAGE = 'division by zero'
+const MIGRATE_RACE_MESSAGE = 'division by zero'
 const CREATE_RACE_MESSAGE = 'already exists'
 
 module.exports = {
@@ -35,7 +35,7 @@ module.exports = {
   completedJobPrefix,
   advisoryLock,
   assertMigration,
-  VERSION_RACE_MESSAGE,
+  MIGRATE_RACE_MESSAGE,
   CREATE_RACE_MESSAGE
 }
 

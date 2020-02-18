@@ -1,6 +1,7 @@
 const assert = require('chai').assert
 const helper = require('./testHelper')
 const Promise = require('bluebird')
+const PgBoss = require('../')
 const Contractor = require('../src/contractor')
 const currentSchemaVersion = require('../version.json').schema
 
@@ -11,21 +12,20 @@ describe('multi-master', function () {
     await helper.init()
 
     const instances = 20
-    const config = { noSupervisor: true }
+    const config = helper.getConfig({ noSupervisor:true })
 
     try {
-      await Promise.map(new Array(instances), () => helper.start(config))
+      await Promise.map(new Array(instances), () => new PgBoss(config).start())
     } catch (err) {
+      console.log(err.message)
       assert(false)
-      await Promise.delay(2000)
-    } finally {
-      await helper.init()
     }
   })
 
   it('should only allow 1 master to migrate to latest at a time', async function () {
     await helper.init()
     const db = await helper.getDb()
+    const config = helper.getConfig({ noSupervisor:true })
     const contractor = new Contractor(db, helper.getConfig())
 
     await contractor.create()
@@ -36,15 +36,12 @@ describe('multi-master', function () {
     assert.notEqual(oldVersion, currentSchemaVersion)
 
     const instances = 10
-    const config = { noSupervisor: true }
-
+    
     try {
-      await Promise.map(new Array(instances), () => helper.start(config))
+      await Promise.map(new Array(instances), () => new PgBoss(config).start())
     } catch (err) {
+      console.log(err.message)
       assert(false)
-      await Promise.delay(2000)
-    } finally {
-      await helper.init()
     }
   })
 })
