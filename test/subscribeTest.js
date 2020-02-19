@@ -56,7 +56,7 @@ describe('subscribe', function () {
     await boss.publish(queue)
     await boss.publish(queue)
 
-    await Promise.delay(2000)
+    await Promise.delay(5000)
 
     assert.equal(receivedCount, 1)
   })
