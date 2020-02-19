@@ -2,7 +2,7 @@ const helper = require('./testHelper')
 const Boss = require('../')
 
 describe('maintenance error handling', function () {
-  this.timeout(10000)
+  this.timeout(20000)
 
   beforeEach(async function () { await helper.init() })
 
@@ -16,8 +16,9 @@ describe('maintenance error handling', function () {
     const boss = new Boss(helper.getConfig(config))
 
     const onError = (err) => {
-      if (err) {
-        done()
+      done()
+
+      if (err && boss.isStarted) {
         boss.stop()
       }
     }
@@ -37,8 +38,9 @@ describe('maintenance error handling', function () {
     const boss = new Boss(helper.getConfig(config))
 
     const onError = (err) => {
-      if (err) {
-        done()
+      done()
+
+      if (err && boss.isStarted) {
         boss.stop()
       }
     }

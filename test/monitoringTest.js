@@ -2,7 +2,7 @@ const assert = require('chai').assert
 const helper = require('./testHelper')
 
 describe('monitoring', function () {
-  this.timeout(10000)
+  this.timeout(20000)
 
   let boss
 
