@@ -82,9 +82,16 @@ async function countJobs (where, values) {
 }
 
 async function start (options = {}) {
-  options = Object.assign(getConfig(), options)
-  await init(options.schema)
-  const boss = new PgBoss(options)
-  await boss.start()
-  return boss
+  try {
+    options = Object.assign(getConfig(), options)
+    await init(options.schema)
+    const boss = new PgBoss(options)
+    await boss.start()
+    return boss
+  } catch (err) {
+    // this is nice for occaisional debugging, Mr. Linter
+    if (err) {
+      throw err
+    }
+  }
 }

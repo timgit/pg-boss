@@ -6,7 +6,7 @@ describe('maintenance error handling', function () {
 
   beforeEach(async function () { await helper.init() })
 
-  it('maintenance error handling works', async function () {
+  it('maintenance error handling works', function (done) {
     const config = {
       monitorStateIntervalMinutes: 1,
       maintenanceIntervalSeconds: 1,
@@ -14,11 +14,20 @@ describe('maintenance error handling', function () {
     }
 
     const boss = new Boss(helper.getConfig(config))
-    await boss.start()
-    return new Promise(resolve => { boss.on('error', resolve) })
+
+    const onError = (err) => {
+      if (err) {
+        done()
+        boss.stop()
+      }
+    }
+
+    boss.on('error', onError)
+
+    boss.start().then(() => {})
   })
 
-  it('state monitoring error handling works', async function () {
+  it('state monitoring error handling works', function (done) {
     const config = {
       monitorStateIntervalSeconds: 1,
       maintenanceIntervalMinutes: 1,
@@ -26,7 +35,16 @@ describe('maintenance error handling', function () {
     }
 
     const boss = new Boss(helper.getConfig(config))
-    await boss.start()
-    return new Promise(resolve => { boss.on('error', resolve) })
+
+    const onError = (err) => {
+      if (err) {
+        done()
+        boss.stop()
+      }
+    }
+
+    boss.on('error', onError)
+
+    boss.start().then(() => {})
   })
 })

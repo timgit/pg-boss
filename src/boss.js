@@ -20,13 +20,11 @@ class Boss extends EventEmitter {
 
     this.db = db
     this.config = config
-
-    this.maintenanceIntervalSeconds = config.maintenanceInterval <= 1000 ? 1 : config.maintenanceInterval / 1000
-
-    this.monitorStates = config.monitorStateInterval !== null
+    this.maintenanceIntervalSeconds = config.maintenanceIntervalSeconds
+    this.monitorStates = config.monitorStateIntervalSeconds !== null
 
     if (this.monitorStates) {
-      this.monitorIntervalSeconds = config.monitorStateInterval <= 1000 ? 1 : config.monitorStateInterval / 1000
+      this.monitorIntervalSeconds = config.monitorStateIntervalSeconds
     }
 
     this.events = events

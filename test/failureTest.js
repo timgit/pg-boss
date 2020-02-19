@@ -112,7 +112,7 @@ describe('failure', function () {
     await boss.subscribe(queue, job => Promise.reject(failPayload))
     await boss.publish(queue)
 
-    await Promise.delay(2000)
+    await Promise.delay(7000)
 
     const job = await boss.fetchCompleted(queue)
 
@@ -130,7 +130,7 @@ describe('failure', function () {
     await boss.subscribe(queue, job => Promise.reject(errorResponse))
     await boss.publish(queue)
 
-    await Promise.delay(2000)
+    await Promise.delay(7000)
 
     const job = await boss.fetchCompleted(queue)
 

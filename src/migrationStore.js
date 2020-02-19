@@ -68,10 +68,14 @@ function getAll (schema) {
       version: 12,
       previous: 11,
       install: [
-          `ALTER TABLE ${schema}.version ALTER COLUMN version TYPE int USING version::int`
+          `ALTER TABLE ${schema}.version ALTER COLUMN version TYPE int USING version::int`,
+          `ALTER TABLE ${schema}.job ADD COLUMN keepUntil timestamptz`,
+          `ALTER TABLE ${schema}.archive ADD COLUMN keepUntil timestamptz`
       ],
       uninstall: [
-          `ALTER TABLE ${schema}.version ALTER COLUMN version TYPE text USING version::text`
+          `ALTER TABLE ${schema}.version ALTER COLUMN version TYPE text USING version::text`,
+          `ALTER TABLE ${schema}.job DROP COLUMN keepUntil`,
+          `ALTER TABLE ${schema}.archive DROP COLUMN keepUntil`
       ]
     },
     {

@@ -148,80 +148,75 @@ class Manager extends EventEmitter {
   }
 
   async publishOnce (name, data, options, key) {
-    const result = Attorney.checkPublishArgs([name, data, options])
+    options = options || {}
+    options.singletonKey = key
 
-    result.options.singletonKey = key
+    const result = Attorney.checkPublishArgs([name, data, options])
 
     return this.createJob(result.name, result.data, result.options)
   }
 
   async publishAfter (name, data, options, after) {
-    const result = Attorney.checkPublishArgs([name, data, options])
+    options = options || {}
+    options.startAfter = after
 
-    result.options.startAfter = after
+    const result = Attorney.checkPublishArgs([name, data, options])
 
     return this.createJob(result.name, result.data, result.options)
   }
 
   async publishThrottled (name, data, options, seconds, key) {
-    const result = Attorney.checkPublishArgs([name, data, options])
+    options = options || {}
+    options.singletonSeconds = seconds
+    options.singletonNextSlot = false
+    options.singletonKey = key
 
-    result.options.singletonSeconds = seconds
-    result.options.singletonNextSlot = false
-    result.options.singletonKey = key
+    const result = Attorney.checkPublishArgs([name, data, options])
 
     return this.createJob(result.name, result.data, result.options)
   }
 
   async publishDebounced (name, data, options, seconds, key) {
-    const result = Attorney.checkPublishArgs([name, data, options])
+    options = options || {}
+    options.singletonSeconds = seconds
+    options.singletonNextSlot = true
+    options.singletonKey = key
 
-    result.options.singletonSeconds = seconds
-    result.options.singletonNextSlot = true
-    result.options.singletonKey = key
+    const result = Attorney.checkPublishArgs([name, data, options])
 
     return this.createJob(result.name, result.data, result.options)
   }
 
-  async createJob (name, data, options, singletonOffset) {
-    let startAfter = options.startAfter
-
-    startAfter = (startAfter instanceof Date && typeof startAfter.toISOString === 'function') ? startAfter.toISOString()
-      : (startAfter > 0) ? '' + startAfter
-        : (typeof startAfter === 'string') ? startAfter
-          : null
-
-    if ('retryDelay' in options) { assert(Number.isInteger(options.retryDelay) && options.retryDelay >= 0, 'retryDelay must be an integer >= 0') }
-
-    if ('retryBackoff' in options) { assert(options.retryBackoff === true || options.retryBackoff === false, 'retryBackoff must be either true or false') }
-
-    if ('retryLimit' in options) { assert(Number.isInteger(options.retryLimit) && options.retryLimit >= 0, 'retryLimit must be an integer >= 0') }
-
-    let retryLimit = options.retryLimit || 0
-    const retryBackoff = !!options.retryBackoff
-    let retryDelay = options.retryDelay || 0
-
-    if (retryBackoff && !retryDelay) { retryDelay = 1 }
-
-    if (retryDelay && !retryLimit) { retryLimit = 1 }
-
-    const expireIn = options.expireIn || '15 minutes'
-    const priority = options.priority || 0
-
-    const singletonSeconds =
-      (options.singletonSeconds > 0) ? options.singletonSeconds
-        : (options.singletonMinutes > 0) ? options.singletonMinutes * 60
-          : (options.singletonHours > 0) ? options.singletonHours * 60 * 60
-            : null
-
-    const singletonKey = options.singletonKey || null
-
-    singletonOffset = singletonOffset || 0
+  async createJob (name, data, options, singletonOffset = 0) {
+    const {
+      expireIn,
+      priority,
+      startAfter,
+      keepUntil,
+      singletonKey = null,
+      singletonSeconds,
+      retryBackoff,
+      retryLimit,
+      retryDelay
+    } = options
 
     const id = require(`uuid/${this.config.uuid}`)()
 
-    // ordinals! [1,  2,    3,        4,          5,          6,        7,    8,            9,                10,              11,         12          ]
-    const values = [id, name, priority, retryLimit, startAfter, expireIn, data, singletonKey, singletonSeconds, singletonOffset, retryDelay, retryBackoff]
+    const values = [
+      id, // 1
+      name, // 2
+      priority, // 3
+      retryLimit, // 4
+      startAfter, // 5
+      expireIn, // 6
+      data, // 7
+      singletonKey, // 8
+      singletonSeconds, // 9
+      singletonOffset, // 10
+      retryDelay, // 11
+      retryBackoff, // 12
+      keepUntil // 13
+    ]
 
     const result = await this.db.executeSql(this.insertJobCommand, values)
 
@@ -320,7 +315,7 @@ class Manager extends EventEmitter {
     return this.db.executeSql(this.deleteQueueCommand, [queue])
   }
 
-  deleteAllQueues () {
+  async deleteAllQueues () {
     return this.db.executeSql(this.deleteAllQueuesCommand)
   }
 }

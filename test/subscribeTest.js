@@ -180,7 +180,7 @@ describe('subscribe', function () {
 
       await boss.publish(queue)
 
-      await Promise.delay(2000)
+      await Promise.delay(8000)
 
       const job = await boss.fetchCompleted(queue)
 
@@ -202,7 +202,7 @@ describe('subscribe', function () {
 
       await boss.publish(queue)
 
-      await Promise.delay(2000)
+      await Promise.delay(8000)
 
       const job = await boss.fetchCompleted(queue)
 

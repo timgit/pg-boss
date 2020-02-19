@@ -10,12 +10,16 @@ pg-boss can be customized using configuration options when an instance is create
     - [Database options](#database-options)
     - [Queue options](#queue-options)
     - [Maintenance options](#maintenance-options)
+      - [Archive completed jobs](#archive-completed-jobs)
+      - [Delete archived jobs](#delete-archived-jobs)
+      - [Maintenance interval](#maintenance-interval)
   - [Publish Options](#publish-options)
     - [Delayed jobs](#delayed-jobs)
     - [Unique jobs](#unique-jobs)
     - [Throttled jobs](#throttled-jobs)
     - [Job retries](#job-retries)
     - [Job expiration](#job-expiration)
+    - [Job retention](#job-retention)
   - [Subscribe Options](#subscribe-options)
 
 <!-- /TOC -->
@@ -23,7 +27,7 @@ pg-boss can be customized using configuration options when an instance is create
 ## Constructor Options
 
 The constructor accepts either a string or an object.  If a string is used, it's interpreted as a Postgres connection string.
-Since passing only a connection string is intended to be for convenience, you can't set any other options.   
+Since passing only a connection string is intended to be for convenience, you can't set any other options.
 
 ### Database options
 
@@ -42,8 +46,8 @@ Since passing only a connection string is intended to be for convenience, you ca
 * **connectionString** - string
 
     PostgresSQL connection string will be parsed and used instead of `host`, `port`, `ssl`, `database`, `user`, `password`.
-    Based on the [pg](https://github.com/brianc/node-postgres) package. For example: 
-    
+    Based on the [pg](https://github.com/brianc/node-postgres) package. For example:
+
     ```js
     const boss = new PgBoss('postgres://user:pass@host:port/database?ssl=require');
     ```
@@ -51,26 +55,26 @@ Since passing only a connection string is intended to be for convenience, you ca
 * **poolSize** or **max** - int, defaults to 10
 
     Maximum number of connections that will be shared by all subscriptions in this instance
-    
+
 * **application_name** - string, defaults to "pgboss"
-    
+
 * **db** - object
 
-    Passing an object named db allows you "bring your own database connection".  
+    Passing an object named db allows you "bring your own database connection".
     Setting this option ignores all of the above settings. The interface required for db is a single function called `executeSql` that accepts a SQL string and an optional array of parameters. This should return a promise that resolves an object just like the pg module: a `rows` array with results and `rowCount` property that contains affected records after an update operation.
-    
+
     ```js
     {
       // resolves Promise
-      executeSql(text, [values])    
+      executeSql(text, [values])
     }
     ```
-    
-    This option may be beneficial if you'd like to use an existing database service 
+
+    This option may be beneficial if you'd like to use an existing database service
     with its own connection pool.
-    
-    For example, you may be relying on the cluster module on 
-    a web server, and you'd like to limit the growth of total connections as much as possible. 
+
+    For example, you may be relying on the cluster module on
+    a web server, and you'd like to limit the growth of total connections as much as possible.
 
 * **schema** - string, defaults to "pgboss"
 
@@ -84,7 +88,7 @@ Since passing only a connection string is intended to be for convenience, you ca
 
 * **monitorStateIntervalSeconds** - int, default undefined
 
-    Specifies how often in seconds an instance will fire the `monitor-states` event. Cannot be less than 1.  This is only available 
+    Specifies how often in seconds an instance will fire the `monitor-states` event. Cannot be less than 1.  This is only available
 
 * **monitorStateIntervalMinutes** - int, default undefined
 
@@ -102,11 +106,13 @@ Since passing only a connection string is intended to be for convenience, you ca
 
 ### Maintenance options
 
-Maintenance operations include checking active jobs for expiration, archiving completed jobs from the primary job table, and deleting archived jobs from the archive table.  
+Maintenance operations include checking active jobs for expiration, archiving completed jobs from the primary job table, and deleting archived jobs from the archive table.
 
 * **noSupervisor**, bool, default undefined
-  
+
   If this is set to true, maintenance and monitoring operations will not be started during a `start()` after the schema is created.  This is an advanced use case, as bypassing maintenance operations is not something you would want to do under normal circumstances.
+
+#### Archive completed jobs
 
 * **archiveIntervalSeconds**, int
 
@@ -126,7 +132,9 @@ Maintenance operations include checking active jobs for expiration, archiving co
 
 Default: 1 hour.  When jobs become eligible for archive after completion.
 
-> When a higher unit is is specified, such as hours, lower unit configuration settings are ignored. 
+> When a higher unit is is specified, such as hours, lower unit configuration settings are ignored.
+
+#### Delete archived jobs
 
 * **deleteIntervalSeconds**, int
 
@@ -146,7 +154,9 @@ Default: 1 hour.  When jobs become eligible for archive after completion.
 
 Default: 7 days  When jobs in the archive table become eligible for deletion.
 
-> When a higher unit is is specified, such as hours, lower unit configuration settings are ignored. 
+> When a higher unit is is specified, such as hours, lower unit configuration settings are ignored.
+
+#### Maintenance interval
 
 * **maintenanceIntervalSeconds**, int
 
@@ -156,7 +166,7 @@ Default: 7 days  When jobs in the archive table become eligible for deletion.
 
     Default: 1. interval in minutes, must be >=1
 
-> When `maintenanceIntervalMinutes` is specified, `maintenanceIntervalSeconds` and `maintenanceInterval` are ignored. 
+> When `maintenanceIntervalMinutes` is specified, `maintenanceIntervalSeconds` and `maintenanceInterval` are ignored.
 >
 > When `maintenanceIntervalSeconds` is specified, `maintenanceInterval` is ignored.
 
@@ -181,7 +191,7 @@ Default: 7 days  When jobs in the archive table become eligible for deletion.
 Only allows 1 job (within the same name) to be queued or active with the same singletonKey.
 
 ```js
-boss.publish('my-job', {}, {singletonKey: '123'}) // resolves a jobId 
+boss.publish('my-job', {}, {singletonKey: '123'}) // resolves a jobId
 boss.publish('my-job', {}, {singletonKey: '123'}) // resolves a null jobId until first job completed
 ```
 
@@ -199,7 +209,7 @@ For example, if you set the `singletonMinutes` to 1, then submit 2 jobs within a
 
 Order of precedence for throttling is least to greatest. For example, if `singletonSeconds` is set, `singletonMinutes` is ignored.
 
-Setting `singletonNextSlot` to true will cause the job to be scheduled to run after the current time slot if and when a job is throttled.  Basically it's debounce with a lousy name atm.  Expect this api to be improved in the future.  
+Setting `singletonNextSlot` to true will cause the job to be scheduled to run after the current time slot if and when a job is throttled.  Basically it's debounce with a lousy name atm.  Expect this api to be improved in the future.
 
 ### Job retries
 
@@ -230,6 +240,22 @@ Setting `singletonNextSlot` to true will cause the job to be scheduled to run af
     How many hours a job may be in active state before it is failed because of expiration. Must be >=1
 
 Default: 15 minutes
+
+### Job retention
+
+* **retentionMinutes**, number
+
+    How many minutes a job may be in created state before it is considered abandoned and archived. Must be >=1
+
+* **retentionHours**, number
+
+    How many hours a job may be in created state before it is considered abandoned and archived. Must be >=1
+
+* **retentionDays**, number
+
+    How many days a job may be in created state before it is considered abandoned and archived. Must be >=1
+
+Default: 30 days
 
 ## Subscribe Options
 

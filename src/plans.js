@@ -115,7 +115,8 @@ function createJobTable (schema) {
       singletonOn timestamp without time zone,
       expireIn interval not null default interval '15 minutes',
       createdOn timestamp with time zone not null default now(),
-      completedOn timestamp with time zone
+      completedOn timestamp with time zone,
+      keepUntil timestamp with time zone
     )
   `
 }
@@ -251,10 +252,11 @@ function completeJobs (schema) {
         AND state = '${states.active}'
       RETURNING *
     )
-    INSERT INTO ${schema}.job (name, data)
+    INSERT INTO ${schema}.job (name, data, keepUntil)
     SELECT
-      '${completedJobPrefix}' || name, 
-      ${buildJsonCompletionObject(true)}
+      '${completedJobPrefix}' || name,
+      ${buildJsonCompletionObject(true)},
+      keepUntil
     FROM results
     WHERE NOT name LIKE '${completedJobPrefix}%'
     RETURNING 1
@@ -269,17 +271,18 @@ function failJobs (schema) {
           WHEN retryCount < retryLimit
           THEN '${states.retry}'::${schema}.job_state
           ELSE '${states.failed}'::${schema}.job_state
-          END,        
+          END,
         completedOn = ${retryCompletedOnCase},
         startAfter = ${retryStartAfterCase}
       WHERE id IN (SELECT UNNEST($1::uuid[]))
         AND state < '${states.completed}'
       RETURNING *
     )
-    INSERT INTO ${schema}.job (name, data)
+    INSERT INTO ${schema}.job (name, data, keepUntil)
     SELECT
       '${completedJobPrefix}' || name,
-      ${buildJsonCompletionObject(true)}
+      ${buildJsonCompletionObject(true)},
+      keepUntil
     FROM results
     WHERE state = '${states.failed}'
       AND NOT name LIKE '${completedJobPrefix}%'
@@ -294,17 +297,18 @@ function expire (schema) {
       SET state = CASE
           WHEN retryCount < retryLimit THEN '${states.retry}'::${schema}.job_state
           ELSE '${states.expired}'::${schema}.job_state
-          END,        
+          END,
         completedOn = ${retryCompletedOnCase},
         startAfter = ${retryStartAfterCase}
       WHERE state = '${states.active}'
-        AND (startedOn + expireIn) < now()    
+        AND (startedOn + expireIn) < now()
       RETURNING *
     )
-    INSERT INTO ${schema}.job (name, data)
+    INSERT INTO ${schema}.job (name, data, keepUntil)
     SELECT
       '${completedJobPrefix}' || name,
-      ${buildJsonCompletionObject()}
+      ${buildJsonCompletionObject()},
+      keepUntil
     FROM results
     WHERE state = '${states.expired}'
       AND NOT name LIKE '${completedJobPrefix}%'
@@ -325,32 +329,34 @@ function cancelJobs (schema) {
 function insertJob (schema) {
   return `
     INSERT INTO ${schema}.job (
-      id, 
-      name, 
-      priority, 
-      state, 
-      retryLimit, 
-      startAfter, 
-      expireIn, 
-      data, 
-      singletonKey, 
+      id,
+      name,
+      priority,
+      state,
+      retryLimit,
+      startAfter,
+      expireIn,
+      data,
+      singletonKey,
       singletonOn,
-      retryDelay, 
-      retryBackoff
+      retryDelay,
+      retryBackoff,
+      keepUntil
       )
     VALUES (
       $1,
       $2,
       $3,
       '${states.created}',
-      $4, 
+      $4,
       CASE WHEN right($5, 1) = 'Z' THEN CAST($5 as timestamp with time zone) ELSE now() + CAST(COALESCE($5,'0') as interval) END,
       CAST($6 as interval),
       $7,
       $8,
       CASE WHEN $9::integer IS NOT NULL THEN 'epoch'::timestamp + '1 second'::interval * ($9 * floor((date_part('epoch', now()) + $10) / $9)) ELSE NULL END,
       $11,
-      $12
+      $12,
+      CASE WHEN right($13, 1) = 'Z' THEN CAST($13 as timestamp with time zone) ELSE now() + CAST(COALESCE($13,'0') as interval) END
     )
     ON CONFLICT DO NOTHING
     RETURNING id
@@ -371,17 +377,15 @@ function archive (schema) {
       WHERE
         completedOn < (now() - CAST($1 as interval))
         OR (
-          state = '${states.created}'
-          AND name LIKE '${completedJobPrefix}%'
-          AND createdOn < (now() - CAST($1 as interval))
+          state = '${states.created}' AND COALESCE(keepUntil, now() - interval '30 days') < now()
         )
       RETURNING *
     )
     INSERT INTO ${schema}.archive (
-      id, name, priority, data, state, retryLimit, retryCount, retryDelay, retryBackoff, startAfter, startedOn, singletonKey, singletonOn, expireIn, createdOn, completedOn
+      id, name, priority, data, state, retryLimit, retryCount, retryDelay, retryBackoff, startAfter, startedOn, singletonKey, singletonOn, expireIn, createdOn, completedOn, keepUntil
     )
-    SELECT 
-      id, name, priority, data, state, retryLimit, retryCount, retryDelay, retryBackoff, startAfter, startedOn, singletonKey, singletonOn, expireIn, createdOn, completedOn
+    SELECT
+      id, name, priority, data, state, retryLimit, retryCount, retryDelay, retryBackoff, startAfter, startedOn, singletonKey, singletonOn, expireIn, createdOn, completedOn, keepUntil
     FROM archived_rows
   `
 }
