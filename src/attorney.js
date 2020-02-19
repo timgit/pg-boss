@@ -152,6 +152,9 @@ function applyDatabaseConfig (config) {
 }
 
 function applyPublishRetentionConfig (config) {
+  assert(!('retentionSeconds' in config) || config.retentionSeconds >= 1,
+    'configuration assert: retentionSeconds must be at least every second')
+
   assert(!('retentionMinutes' in config) || config.retentionMinutes >= 1,
     'configuration assert: retentionMinutes must be at least every minute')
 
@@ -165,7 +168,8 @@ function applyPublishRetentionConfig (config) {
     ('retentionDays' in config) ? `${config.retentionDays} days`
       : ('retentionHours' in config) ? `${config.retentionHours} hours`
         : ('retentionMinutes' in config) ? `${config.retentionMinutes} minutes`
-          : '30 days'
+          : ('retentionSeconds' in config) ? `${config.retentionSeconds} seconds`
+            : '30 days'
 
   config.keepUntil = keepUntil
 }
