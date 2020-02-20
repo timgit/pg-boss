@@ -34,6 +34,8 @@ describe('database', function () {
   })
 
   it('connection count does not exceed configured pool size with `poolSize`', async function () {
+    this.retries(1)
+
     const listenerCount = 100
     const poolSize = 5
     const boss = await helper.start({ ...this.test.bossConfig, poolSize })
@@ -44,6 +46,8 @@ describe('database', function () {
   })
 
   it('connection count does not exceed configured pool size with `max`', async function () {
+    this.retries(1)
+
     const listenerCount = 100
     const poolSize = 5
 

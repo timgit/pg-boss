@@ -26,7 +26,7 @@ describe('config', function () {
   })
 
   it('set pool config `poolSize`', async function () {
-    const poolSize = 14
+    const poolSize = 4
     const boss = await helper.start({ ...this.test.bossConfig, poolSize })
 
     assert(boss.db.config.poolSize === poolSize)
@@ -36,9 +36,8 @@ describe('config', function () {
   })
 
   it('set pool config `max`: `poolSize` === `max`', async function () {
-    const max = 13
-
-    const boss = await helper.start({ max })
+    const max = 4
+    const boss = await helper.start({ ...this.test.bossConfig, max })
 
     assert(boss.db.config.max === boss.db.config.poolSize)
     assert(boss.db.config.max === max)
