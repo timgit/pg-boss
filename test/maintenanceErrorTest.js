@@ -25,7 +25,7 @@ describe('maintenance error handling', function () {
 
     boss.start()
       .then(() => helper.getDb())
-      .then(db => db.executeSql(`alter table ${config.schema}.job drop column name`))
+      .then(db => db.executeSql(`alter table ${config.schema}.job drop column state`))
       .catch(err => done(err))
   })
 
@@ -50,7 +50,7 @@ describe('maintenance error handling', function () {
 
     boss.start()
       .then(() => helper.getDb())
-      .then(db => db.executeSql(`alter table ${config.schema}.job drop column name`))
+      .then(db => db.executeSql(`alter table ${config.schema}.job drop column state`))
       .catch(err => done(err))
   })
 })
