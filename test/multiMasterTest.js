@@ -7,8 +7,8 @@ const currentSchemaVersion = require('../version.json').schema
 
 describe('multi-master', function () {
   it('should only allow 1 master to start at a time', async function () {
-    const replicaCount = 5
-    const config = { ...this.test.bossConfig, noSupervisor: true }
+    const replicaCount = 20
+    const config = { ...this.test.bossConfig, noSupervisor: true, max: 1 }
     const instances = new Array(replicaCount)
 
     instances.forEach((i, index) => {
@@ -26,8 +26,8 @@ describe('multi-master', function () {
   })
 
   it('should only allow 1 master to migrate to latest at a time', async function () {
-    const replicaCount = 5
-    const config = { ...this.test.bossConfig, noSupervisor: true }
+    const replicaCount = 20
+    const config = { ...this.test.bossConfig, noSupervisor: true, max: 1 }
     const instances = new Array(replicaCount)
 
     instances.forEach((i, index) => {
@@ -35,7 +35,7 @@ describe('multi-master', function () {
     })
 
     const db = await helper.getDb()
-    const contractor = new Contractor(db, helper.getConfig())
+    const contractor = new Contractor(db, this.test.bossConfig)
 
     await contractor.create()
 

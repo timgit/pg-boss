@@ -32,11 +32,17 @@ describe('migration', function () {
 
     await contractor.rollback(currentSchemaVersion)
 
-    await new PgBoss(helper.getConfig()).start({ noSupervisor: true })
+    const config = { ...this.test.bossConfig, noSupervisor: true }
+
+    const boss = new PgBoss(config)
+
+    await boss.start()
 
     const version = await contractor.version()
 
     assert.strictEqual(version, currentSchemaVersion)
+
+    await boss.stop()
   })
 
   it('should migrate through 2 versions back and forth', async function () {
@@ -74,13 +80,15 @@ describe('migration', function () {
     const twoVersionsAgo = await contractor.version()
     assert.strictEqual(twoVersionsAgo, currentSchemaVersion - 2)
 
-    const boss = new PgBoss(helper.getConfig())
-
-    await boss.start({ noSupervisor: true })
+    const config = { ...this.test.bossConfig, noSupervisor: true }
+    const boss = new PgBoss(config)
+    await boss.start()
 
     const version = await contractor.version()
 
     assert.strictEqual(version, currentSchemaVersion)
+
+    await boss.stop()
   })
 
   it('migrating to non-existent version fails gracefully', async function () {
@@ -94,7 +102,8 @@ describe('migration', function () {
   })
 
   it('should roll back an error during a migration', async function () {
-    const config = helper.getConfig()
+
+    const config = this.test.bossConfig
 
     config.migrations = migrationStore.getAll(config.schema)
 
@@ -125,5 +134,7 @@ describe('migration', function () {
     const version2 = await contractor.version()
 
     assert.strictEqual(version2, currentSchemaVersion)
+
+    await boss.stop()
   })
 })
