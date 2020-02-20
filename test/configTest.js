@@ -4,17 +4,30 @@ const helper = require('./testHelper')
 
 describe('config', function () {
   it('should allow a 50 character custom schema name', async function () {
-    this.test.bossConfig.schema = 'thisisareallylongschemanamefortestingmaximumlength'
 
-    const boss = new PgBoss(this.test.bossConfig)
+    const config = this.test.bossConfig
+    config.schema = 'thisisareallylongschemanamefortestingmaximumlength'
+
+    assert.strictEqual(config.schema.length, 50)
+
+    const boss = new PgBoss(config)
 
     await boss.start()
     await boss.stop()
+
+    await helper.dropSchema(config.schema)
   })
 
-  it('should not allow a 51 character custom schema name', function () {
-    this.test.bossConfig.schema = 'thisisareallylongschemanamefortestingmaximumlengthb'
-    assert.throws(() => new PgBoss(this.test.bossConfig))
+  it('should not allow more than 50 characters in schema name', function () {
+
+    const config = this.test.bossConfig
+
+    config.schema = 'thisisareallylongschemanamefortestingmaximumlengthb'
+
+    assert(config.schema.length > 50)
+
+    assert.throws(() => new PgBoss(config))
+
   })
 
   it('should accept a connectionString property', async function () {
