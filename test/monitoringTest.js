@@ -44,13 +44,17 @@ describe('monitoring', function () {
     assert.strictEqual(1, states4.queues[queue].completed, 'completed count is wrong after 3 publishes and 3 fetches and 1 complete')
 
     return new Promise((resolve, reject) => {
+      let hitCount = 0
+
       boss.on('monitor-states', async states => {
         assert.strictEqual(states4.queues[queue].created, states.queues[queue].created, 'created count from monitor-states doesn\'t match')
         assert.strictEqual(states4.queues[queue].active, states.queues[queue].active, 'active count from monitor-states doesn\'t match')
         assert.strictEqual(states4.queues[queue].completed, states.queues[queue].completed, 'completed count from monitor-states doesn\'t match')
 
-        await boss.stop()
-        resolve()
+        if (++hitCount > 1) {
+          await boss.stop()
+          resolve()
+        }
       })
     })
   })

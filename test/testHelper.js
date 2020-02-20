@@ -43,7 +43,8 @@ function getConfig (options = {}) {
 }
 
 async function getDb () {
-  const db = new Db(getConfig())
+  const config = getConfig()
+  const db = new Db(config)
   await db.open()
   return db
 }
