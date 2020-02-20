@@ -89,13 +89,9 @@ function checkSubscribeArgs (name, args) {
   }
 
   assert(typeof callback === 'function', 'expected callback to be a function')
+  assert(typeof options === 'object', 'expected config to be an object')
 
-  if (options) {
-    assert(typeof options === 'object', 'expected config to be an object')
-    options = { ...options }
-  } else {
-    options = {}
-  }
+  options = { ...options }
 
   if ('newJobCheckInterval' in options || 'newJobCheckIntervalSeconds' in options) {
     applyNewJobCheckInterval(options)
