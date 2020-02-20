@@ -330,7 +330,7 @@ function insertJob (schema) {
   return `
     WITH j AS (SELECT
       $1::uuid as id,
-      $2 as name,
+      $2::text as name,
       $3::int as priority,
       '${states.created}'::${schema}.job_state as state,
       $4::int as retryLimit,
@@ -340,7 +340,7 @@ function insertJob (schema) {
         END as startAfter,
       CAST($6 as interval) as expireIn,
       $7::jsonb as data,
-      $8 as singletonKey,
+      $8::text as singletonKey,
       CASE
         WHEN $9::integer IS NOT NULL THEN 'epoch'::timestamp + '1 second'::interval * ($9 * floor((date_part('epoch', now()) + $10) / $9))
         ELSE NULL
