@@ -116,7 +116,7 @@ function createJobTable (schema) {
       expireIn interval not null default interval '15 minutes',
       createdOn timestamp with time zone not null default now(),
       completedOn timestamp with time zone,
-      keepUntil timestamp with time zone
+      keepUntil timestamp with time zone NOT NULL default now() + interval '30 days'
     )
   `
 }
@@ -377,7 +377,7 @@ function archive (schema) {
       WHERE
         completedOn < (now() - CAST($1 as interval))
         OR (
-          state = '${states.created}' AND COALESCE(keepUntil, now() - interval '30 days') < now()
+          state = '${states.created}' AND keepUntil < now()
         )
       RETURNING *
     )

@@ -70,7 +70,10 @@ function getAll (schema) {
       install: [
           `ALTER TABLE ${schema}.version ALTER COLUMN version TYPE int USING version::int`,
           `ALTER TABLE ${schema}.job ADD COLUMN keepUntil timestamptz`,
-          `ALTER TABLE ${schema}.archive ADD COLUMN keepUntil timestamptz`
+          `ALTER TABLE ${schema}.archive ADD COLUMN keepUntil timestamptz`,
+          `ALTER TABLE ${schema}.job ALTER COLUMN keepUntil SET DEFAULT now() + interval '30 days'`,
+          `UPDATE ${schema}.job SET keepUntil = createdOn + interval '30 days'`,
+          `ALTER TABLE ${schema}.job ALTER COLUMN keepUntil SET NOT NULL`
       ],
       uninstall: [
           `ALTER TABLE ${schema}.version ALTER COLUMN version TYPE text USING version::text`,
