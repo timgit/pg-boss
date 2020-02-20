@@ -1,9 +1,9 @@
 {
-    "host": "127.0.0.1",
-    "port": 5432,
+  "host": "127.0.0.1",
+  "port": 5432,
 	"database": "pgboss",
 	"user": "postgres",
 	"password": "postgres",
-	"schema": "pgboss",
-    "uuid": "v1"
+  "uuid": "v1",
+  "max": 3
 }

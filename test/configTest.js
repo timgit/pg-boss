@@ -1,53 +1,33 @@
-const assert = require('chai').assert
-const PgBoss = require('../src/index')
+const assert = require('assert')
+const PgBoss = require('../')
 const helper = require('./testHelper')
 
 describe('config', function () {
-  this.timeout(10000)
-
-  before(async function () { await helper.init() })
-
   it('should allow a 50 character custom schema name', async function () {
-    const config = helper.getConfig()
-    config.schema = 'thisisareallylongschemanamefortestingmaximumlength'
+    this.test.bossConfig.schema = 'thisisareallylongschemanamefortestingmaximumlength'
 
-    await helper.init(config.schema)
-
-    const boss = new PgBoss(config)
+    const boss = new PgBoss(this.test.bossConfig)
 
     await boss.start()
     await boss.stop()
-
-    await helper.init(config.schema)
   })
 
   it('should not allow a 51 character custom schema name', function () {
-    const config = helper.getConfig()
-    config.schema = 'thisisareallylongschemanamefortestingmaximumlengthb'
-    assert.throws(() => new PgBoss(config))
+    this.test.bossConfig.schema = 'thisisareallylongschemanamefortestingmaximumlengthb'
+    assert.throws(() => new PgBoss(this.test.bossConfig))
   })
 
   it('should accept a connectionString property', async function () {
     const connectionString = helper.getConnectionString()
-
-    const boss = new PgBoss({ connectionString })
+    const boss = new PgBoss({ connectionString, schema: this.test.bossConfig.schema })
 
     await boss.start()
     await boss.stop()
   })
 
-  it('should accept a connectionString and schema properties', function () {
-    const connectionString = 'postgresql://postgres@127.0.0.1:5432/db'
-    const schema = 'pgboss_custom_schema'
-    const boss = new PgBoss({ connectionString, schema })
-
-    assert.equal(boss.config.schema, schema)
-  })
-
   it('set pool config `poolSize`', async function () {
     const poolSize = 14
-
-    const boss = await helper.start({ poolSize })
+    const boss = await helper.start({ ...this.test.bossConfig, poolSize })
 
     assert(boss.db.config.poolSize === poolSize)
     assert(boss.db.pool.options.max === poolSize)

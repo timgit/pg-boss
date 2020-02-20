@@ -2,7 +2,6 @@ const assert = require('assert')
 
 module.exports = {
   getConfig,
-  applyNewJobCheckInterval,
   checkPublishArgs,
   checkSubscribeArgs,
   checkFetchArgs
@@ -94,9 +93,23 @@ function checkSubscribeArgs (name, args) {
   if (options) {
     assert(typeof options === 'object', 'expected config to be an object')
     options = { ...options }
+  } else {
+    options = {}
   }
 
+  if ('newJobCheckInterval' in options || 'newJobCheckIntervalSeconds' in options) {
+    applyNewJobCheckInterval(options)
+  }
+
+  assert(!('teamConcurrency' in options) ||
+    (Number.isInteger(options.teamConcurrency) && options.teamConcurrency >= 1 && options.teamConcurrency <= 1000),
+  'teamConcurrency must be an integer between 1 and 1000')
+
+  assert(!('teamSize' in options) || (Number.isInteger(options.teamSize) && options.teamSize >= 1), 'teamSize must be an integer > 0')
+  assert(!('batchSize' in options) || (Number.isInteger(options.batchSize) && options.batchSize >= 1), 'batchSize must be an integer > 0')
+
   name = sanitizeQueueNameForFetch(name)
+
   return { options, callback }
 }
 

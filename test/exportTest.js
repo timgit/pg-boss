@@ -1,5 +1,5 @@
-const assert = require('chai').assert
-const PgBoss = require('../src/index')
+const assert = require('assert')
+const PgBoss = require('../')
 const currentSchemaVersion = require('../version.json').schema
 
 describe('export', function () {
@@ -7,8 +7,8 @@ describe('export', function () {
     const schema = 'custom'
     const plans = PgBoss.getConstructionPlans(schema)
 
-    assert.include(plans, schema + '.job')
-    assert.include(plans, schema + '.version')
+    assert(plans.includes(`${schema}.job`))
+    assert(plans.includes(`${schema}.version`))
   })
 
   it('should export commands to migrate', function () {

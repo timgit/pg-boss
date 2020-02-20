@@ -62,10 +62,6 @@ class Boss extends EventEmitter {
 
   async onMaintenance (jobs) {
     try {
-      if (this.config.__test_throw_on_maint__) {
-        throw new Error('throw test')
-      }
-
       this.emitValue(events.expired, await this.expire())
       this.emitValue(events.archived, await this.archive())
       this.emitValue(events.deleted, await this.purge())
@@ -88,11 +84,8 @@ class Boss extends EventEmitter {
 
   async onMonitorStates (jobs) {
     try {
-      if (this.config.__test_throw_on_monitor__) {
-        throw new Error('throw test')
-      }
-
       const states = await this.countStates()
+
       this.emit(events.monitorStates, states)
 
       await this.config.manager.complete(jobs.map(j => j.id))

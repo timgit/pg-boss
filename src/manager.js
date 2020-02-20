@@ -67,28 +67,7 @@ class Manager extends EventEmitter {
   }
 
   async watch (name, options, callback) {
-    // watch() is always nested in a promise, so assert()s are welcome
-
-    if ('newJobCheckInterval' in options || 'newJobCheckIntervalSeconds' in options) {
-      Attorney.applyNewJobCheckInterval(options)
-    } else {
-      options.newJobCheckInterval = this.config.newJobCheckInterval
-    }
-
-    if ('teamConcurrency' in options) {
-      const teamConcurrencyErrorMessage = 'teamConcurrency must be an integer between 1 and 1000'
-      assert(Number.isInteger(options.teamConcurrency) && options.teamConcurrency >= 1 && options.teamConcurrency <= 1000, teamConcurrencyErrorMessage)
-    }
-
-    if ('teamSize' in options) {
-      const teamSizeErrorMessage = 'teamSize must be an integer > 0'
-      assert(Number.isInteger(options.teamSize) && options.teamSize >= 1, teamSizeErrorMessage)
-    }
-
-    if ('batchSize' in options) {
-      const batchSizeErrorMessage = 'batchSize must be an integer > 0'
-      assert(Number.isInteger(options.batchSize) && options.batchSize >= 1, batchSizeErrorMessage)
-    }
+    options.newJobCheckInterval = options.newJobCheckInterval || this.config.newJobCheckInterval
 
     const sendItBruh = async (jobs) => {
       if (!jobs) {

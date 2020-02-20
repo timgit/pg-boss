@@ -1,25 +1,12 @@
-const assert = require('chai').assert
-const PgBoss = require('../src/index')
-const helper = require('./testHelper')
+const assert = require('assert')
+const PgBoss = require('../')
 
 describe('init', function () {
-  this.timeout(10000)
-
-  beforeEach(async function () { await helper.init() })
-
   it('should fail if connecting to an uninitialized instance', async function () {
     try {
-      const config = helper.getConfig()
-      await new PgBoss(config).connect()
+      await new PgBoss(this.test.bossConfig).connect()
     } catch (error) {
-      assert.isNotNull(error)
+      assert(error)
     }
-  })
-
-  it('should start with a connection string', async function () {
-    const connectionString = helper.getConnectionString()
-    const boss = new PgBoss(connectionString)
-    await boss.start()
-    await boss.stop()
   })
 })

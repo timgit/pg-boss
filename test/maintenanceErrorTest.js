@@ -1,52 +1,56 @@
 const helper = require('./testHelper')
-const Boss = require('../')
+const PgBoss = require('../')
 
 describe('maintenance error handling', function () {
-  this.timeout(20000)
-
-  beforeEach(async function () { await helper.init() })
+  this.retries(1)
 
   it('maintenance error handling works', function (done) {
-    const config = {
+    const defaults = {
       monitorStateIntervalMinutes: 1,
-      maintenanceIntervalSeconds: 1,
-      __test_throw_on_maint__: true
+      maintenanceIntervalSeconds: 1
     }
 
-    const boss = new Boss(helper.getConfig(config))
+    const config = { ...this.test.bossConfig, ...defaults }
+    const boss = new PgBoss(config)
 
     const onError = (err) => {
-      done()
-
       if (err && boss.isStarted) {
-        boss.stop()
+        boss.stop().then(() => done())
+      } else {
+        done()
       }
     }
 
     boss.on('error', onError)
 
-    boss.start().then(() => {})
+    boss.start()
+      .then(() => helper.getDb())
+      .then(db => db.executeSql(`alter table ${config.schema}.job drop column name`))
+      .catch(err => done(err))
   })
 
   it('state monitoring error handling works', function (done) {
-    const config = {
+    const defaults = {
       monitorStateIntervalSeconds: 1,
-      maintenanceIntervalMinutes: 1,
-      __test_throw_on_monitor__: true
+      maintenanceIntervalMinutes: 1
     }
 
-    const boss = new Boss(helper.getConfig(config))
+    const config = { ...this.test.bossConfig, ...defaults }
+    const boss = new PgBoss(config)
 
     const onError = (err) => {
-      done()
-
       if (err && boss.isStarted) {
-        boss.stop()
+        boss.stop().then(() => done())
+      } else {
+        done()
       }
     }
 
     boss.on('error', onError)
 
-    boss.start().then(() => {})
+    boss.start()
+      .then(() => helper.getDb())
+      .then(db => db.executeSql(`alter table ${config.schema}.job drop column name`))
+      .catch(err => done(err))
   })
 })

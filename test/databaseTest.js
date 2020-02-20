@@ -1,11 +1,9 @@
 const Promise = require('bluebird')
-const assert = require('chai').assert
-const PgBoss = require('../src/index')
+const assert = require('assert')
+const PgBoss = require('../')
 const helper = require('./testHelper')
 
 describe('database', function () {
-  this.timeout(10000)
-
   it('should fail on invalid database host', async function () {
     const boss = new PgBoss('postgres://bobby:tables@wat:12345/northwind')
 
@@ -14,23 +12,6 @@ describe('database', function () {
       assert(false)
     } catch (err) {
       await boss.stop()
-    }
-  })
-
-  it('should work with a custom schema name', async function () {
-    const jobName = 'custom-schema'
-
-    const config = helper.getConfig()
-    config.schema = '_queue'
-
-    try {
-      const boss = await helper.start(config)
-      const jobId = await boss.publish(jobName)
-      const job = await boss.fetch(jobName)
-
-      assert(job.id === jobId)
-    } catch (err) {
-      assert(false, err.message)
     }
   })
 
@@ -55,31 +36,31 @@ describe('database', function () {
   it('connection count does not exceed configured pool size with `poolSize`', async function () {
     const listenerCount = 100
     const poolSize = 5
-    const configOption = 'poolSize'
+    const boss = await helper.start({ ...this.test.bossConfig, poolSize })
 
-    const newConnections = await poolSizeConnectionTest(listenerCount, poolSize, configOption)
+    const newConnections = await poolSizeConnectionTest(boss, listenerCount)
 
-    assert.isAtMost(newConnections, poolSize)
+    assert(newConnections <= poolSize)
   })
 
   it('connection count does not exceed configured pool size with `max`', async function () {
     const listenerCount = 100
     const poolSize = 5
-    const configOption = 'max'
 
-    const newConnections = await poolSizeConnectionTest(listenerCount, poolSize, configOption)
+    const boss = await helper.start({ ...this.test.bossConfig, max: poolSize })
 
-    assert.isAtMost(newConnections, poolSize)
+    const newConnections = await poolSizeConnectionTest(boss, listenerCount)
+
+    assert(newConnections <= poolSize)
   })
 
-  async function poolSizeConnectionTest (listenerCount, poolSize, configOption) {
+  async function poolSizeConnectionTest (boss, listenerCount) {
     const listeners = []
 
     for (let x = 0; x < listenerCount; x++) {
       listeners[x] = x
     }
 
-    const boss = await helper.start({ [configOption]: poolSize })
     const prevConnectionCount = await countConnections(boss.db)
 
     await Promise.map(listeners, (val, index) => boss.subscribe(`job${index}`, () => {}))

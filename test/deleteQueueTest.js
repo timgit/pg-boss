@@ -1,17 +1,12 @@
-const assert = require('chai').assert
+const assert = require('assert')
 const helper = require('./testHelper')
 
 describe('deleteQueue', function () {
-  this.timeout(10000)
-
-  let boss
-
-  before(async function () { boss = await helper.start() })
-  after(async function () { await boss.stop() })
-
   it('should clear a specific queue', async function () {
     const queue1 = 'delete-named-queue-1'
     const queue2 = 'delete-named-queue-2'
+
+    const boss = await helper.start(this.test.bossConfig)
 
     await boss.publish(queue1)
     await boss.publish(queue2)
@@ -35,11 +30,15 @@ describe('deleteQueue', function () {
     const q2Count3 = await helper.countJobs('name = $1', [queue2])
 
     assert.strictEqual(0, q2Count3)
+
+    await boss.stop()
   })
 
   it('should clear all queues', async function () {
     const queue1 = 'delete-named-queue-11'
     const queue2 = 'delete-named-queue-22'
+
+    const boss = await helper.start(this.test.bossConfig)
 
     await boss.publish(queue1)
     await boss.publish(queue2)
@@ -57,5 +56,7 @@ describe('deleteQueue', function () {
 
     assert.strictEqual(0, q1Count2)
     assert.strictEqual(0, q2Count2)
+
+    await boss.stop()
   })
 })

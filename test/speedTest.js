@@ -1,5 +1,4 @@
 const Promise = require('bluebird')
-const assert = require('chai').assert
 const helper = require('./testHelper')
 
 describe('speed', function () {
@@ -7,31 +6,25 @@ describe('speed', function () {
   const jobCount = 10000
   const queue = 'speedTest'
 
-  this.timeout(10000)
-
   const jobs = new Array(jobCount).fill(null).map((item, index) => ({ name: queue, data: { index } }))
 
   const testTitle = `should be able to fetch and complete ${jobCount} jobs in ${expectedSeconds} seconds`
 
   let boss
 
-  before(async function () {
-    boss = await helper.start({ noSupervisor: true })
+  beforeEach(async function () {
+    const defaults = { noSupervisor: true }
+    boss = await helper.start({ ...this.currentTest.bossConfig, ...defaults })
     await Promise.map(jobs, job => boss.publish(job.name, job.data))
   })
 
-  after(async function () { await boss.stop() })
+  afterEach(async function () { await boss.stop() })
 
   it(testTitle, async function () {
-    const startTime = new Date()
+    this.timeout(expectedSeconds * 1000)
+    this.slow(0)
 
     const jobs = await boss.fetch(queue, jobCount)
     await boss.complete(jobs.map(job => job.id))
-
-    const elapsed = new Date().getTime() - startTime.getTime()
-
-    console.log(`finished ${jobCount} jobs in ${elapsed}ms`)
-
-    assert.isBelow(elapsed / 1000, expectedSeconds)
   })
 })

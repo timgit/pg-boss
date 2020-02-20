@@ -13,19 +13,22 @@
     "uuid": "^3.4.0"
   },
   "devDependencies": {
-    "chai": "^4.2.0",
     "coveralls": "^3.0.9",
     "mocha": "^7.0.1",
     "nyc": "^15.0.0",
     "standard": "^14.3.1"
   },
   "scripts": {
-    "test": "standard && mocha --exit --slow 10000",
+    "test": "standard && mocha --exit",
     "cover": "nyc --reporter=text npm test",
     "forcover": "npm run cover && nyc report --reporter=text-lcov | coveralls",
     "export-schema": "node ./scripts/construct.js",
     "export-migration": "node ./scripts/migrate.js",
     "export-rollback": "node ./scripts/rollback.js"
+  },
+  "mocha": {
+    "timeout": 10000,
+    "slow": 10000
   },
   "nyc": {
     "include": [

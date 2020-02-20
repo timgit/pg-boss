@@ -1,21 +1,25 @@
 const Promise = require('bluebird')
-const assert = require('chai').assert
+const assert = require('assert')
 const helper = require('./testHelper')
 
 describe('complete', function () {
-  this.timeout(10000)
+  it('should reject missing id argument', async function () {
+    const boss = await helper.start(this.test.bossConfig)
 
-  let boss
-
-  before(async function () { boss = await helper.start() })
-  after(async function () { await boss.stop() })
-
-  it('should reject missing id argument', function (finished) {
-    boss.complete().catch(() => finished())
+    try {
+      await boss.complete()
+      assert(false)
+    } catch (err) {
+      assert(err)
+    } finally {
+      await boss.stop()
+    }
   })
 
   it('should complete a batch of jobs', async function () {
     const jobName = 'complete-batch'
+
+    const boss = await helper.start(this.test.bossConfig)
 
     await Promise.all([
       boss.publish(jobName),
@@ -26,14 +30,20 @@ describe('complete', function () {
     const jobs = await boss.fetch(jobName, 3)
 
     await boss.complete(jobs.map(job => job.id))
+
+    await boss.stop()
   })
 
   it('onComplete should have the payload from complete() in the response object', function (finished) {
+    const config = this.test.bossConfig
+
     test()
 
     async function test () {
       const jobName = 'part-of-something-important'
       const responsePayload = { message: 'super-important-payload', arg2: '123' }
+
+      const boss = await helper.start(config)
 
       await boss.publish(jobName)
 
@@ -41,9 +51,11 @@ describe('complete', function () {
 
       await boss.complete(job.id, responsePayload)
 
-      boss.onComplete(jobName, job => {
-        assert.equal(job.data.response.message, responsePayload.message)
-        assert.equal(job.data.response.arg2, responsePayload.arg2)
+      boss.onComplete(jobName, async job => {
+        assert.strictEqual(job.data.response.message, responsePayload.message)
+        assert.strictEqual(job.data.response.arg2, responsePayload.arg2)
+
+        await boss.stop()
 
         finished()
       })
@@ -51,18 +63,22 @@ describe('complete', function () {
   })
 
   it('onComplete should have the original payload in request object', function (finished) {
+    const config = this.test.bossConfig
+
     test()
 
     async function test () {
       const queueName = 'onCompleteRequestTest'
       const requestPayload = { foo: 'bar' }
 
+      const boss = await helper.start(config)
       const jobId = await boss.publish(queueName, requestPayload)
 
-      boss.onComplete(queueName, job => {
-        assert.equal(jobId, job.data.request.id)
-        assert.equal(job.data.request.data.foo, requestPayload.foo)
+      boss.onComplete(queueName, async job => {
+        assert.strictEqual(jobId, job.data.request.id)
+        assert.strictEqual(job.data.request.data.foo, requestPayload.foo)
 
+        await boss.stop()
         finished()
       })
 
@@ -72,6 +88,8 @@ describe('complete', function () {
   })
 
   it('onComplete should have both request and response', function (finished) {
+    const config = this.test.bossConfig
+
     test()
 
     async function test () {
@@ -79,30 +97,39 @@ describe('complete', function () {
       const requestPayload = { token: 'trivial' }
       const responsePayload = { message: 'so verbose', code: '1234' }
 
-      boss.onComplete(jobName, job => {
-        assert.equal(jobId, job.data.request.id)
-        assert.equal(job.data.request.data.token, requestPayload.token)
-        assert.equal(job.data.response.message, responsePayload.message)
-        assert.equal(job.data.response.code, responsePayload.code)
+      const boss = await helper.start(config)
 
+      boss.onComplete(jobName, async job => {
+        assert.strictEqual(jobId, job.data.request.id)
+        assert.strictEqual(job.data.request.data.token, requestPayload.token)
+        assert.strictEqual(job.data.response.message, responsePayload.message)
+        assert.strictEqual(job.data.response.code, responsePayload.code)
+
+        await boss.stop()
         finished()
       })
 
       const jobId = await boss.publish(jobName, requestPayload)
       const job = await boss.fetch(jobName)
+
       await boss.complete(job.id, responsePayload)
     }
   })
 
   it('subscribe()\'s job.done() should allow sending completion payload', function (finished) {
+    const config = this.test.bossConfig
+
     test()
 
     async function test () {
       const jobName = 'complete-from-subscribe'
       const responsePayload = { arg1: '123' }
 
-      boss.onComplete(jobName, job => {
-        assert.equal(job.data.response.arg1, responsePayload.arg1)
+      const boss = await helper.start(config)
+
+      boss.onComplete(jobName, async job => {
+        assert.strictEqual(job.data.response.arg1, responsePayload.arg1)
+        await boss.stop()
         finished()
       })
 
@@ -117,9 +144,11 @@ describe('complete', function () {
 
     let receivedCount = 0
 
-    boss.onComplete(jobName, job => {
+    const boss = await helper.start(this.test.bossConfig)
+
+    boss.onComplete(jobName, async job => {
       receivedCount++
-      boss.offComplete(jobName)
+      await boss.offComplete(jobName)
     })
 
     await boss.publish(jobName)
@@ -135,22 +164,28 @@ describe('complete', function () {
     await Promise.delay(2000)
 
     assert.strictEqual(receivedCount, 1)
+
+    await boss.stop()
   })
 
   it('should fetch a completed job', async function () {
     const queue = 'fetchCompleted'
 
+    const boss = await helper.start(this.test.bossConfig)
     const jobId = await boss.publish(queue)
     await boss.fetch(queue)
     await boss.complete(jobId)
     const job = await boss.fetchCompleted(queue)
 
     assert.strictEqual(job.data.request.id, jobId)
+
+    await boss.stop()
   })
 
   it('should not create an extra state job after completion', async function () {
     const queue = 'noMoreExtraStateJobs'
 
+    const boss = await helper.start(this.test.bossConfig)
     const jobId = await boss.publish(queue)
 
     await boss.fetch(queue)
@@ -164,5 +199,7 @@ describe('complete', function () {
     const stateJobCount = await helper.countJobs('name = $1', [`${helper.completedJobPrefix}${queue}`])
 
     assert.strictEqual(stateJobCount, 1)
+
+    await boss.stop()
   })
 })

@@ -1,32 +1,35 @@
-const assert = require('chai').assert
+const assert = require('assert')
 const helper = require('./testHelper')
 const Promise = require('bluebird')
 
 describe('delayed jobs', function () {
-  this.timeout(10000)
-
-  let boss
-
-  before(async function () { boss = await helper.start() })
-  after(async function () { await boss.stop() })
-
-  it('should wait until after an int (in seconds)', function (finished) {
+  it('should wait until after an int (in seconds)', async function () {
     const delaySeconds = 2
+    const queue = 'wait'
 
-    boss.subscribe('wait', async job => {
-      const start = new Date(job.data.submitted)
-      const end = new Date()
+    const boss = await helper.start(this.test.bossConfig)
 
-      const elapsedSeconds = Math.floor((end - start) / 1000)
+    const data = { message: 'hold your horses', submitted: Date.now() }
+    const options = { startAfter: delaySeconds }
 
-      await job.done()
+    await boss.publish(queue, data, options)
 
-      assert.isAtLeast(delaySeconds, elapsedSeconds)
+    return new Promise((resolve, reject) => {
+      boss.subscribe(queue, async job => {
+        const start = new Date(job.data.submitted)
+        const end = new Date()
 
-      finished()
+        const elapsedSeconds = Math.floor((end - start) / 1000)
+
+        await job.done()
+
+        assert(delaySeconds >= elapsedSeconds)
+
+        await boss.stop()
+
+        resolve()
+      })
     })
-
-    boss.publish('wait', { message: 'hold your horses', submitted: Date.now() }, { startAfter: delaySeconds })
   })
 
   it('should wait until after a date time string', async function () {
@@ -38,17 +41,20 @@ describe('delayed jobs', function () {
 
     const startAfter = date.toISOString()
 
+    const boss = await helper.start(this.test.bossConfig)
     await boss.publish(queue, null, { startAfter })
 
     const job = await boss.fetch(queue)
 
     assert.strictEqual(job, null)
 
-    await Promise.delay(2000)
+    await Promise.delay(5000)
 
     const job2 = await boss.fetch(queue)
 
-    assert.isOk(job2)
+    assert(job2)
+
+    await boss.stop()
   })
 
   it('should wait until after a date object', async function () {
@@ -59,6 +65,7 @@ describe('delayed jobs', function () {
 
     const startAfter = date
 
+    const boss = await helper.start(this.test.bossConfig)
     await boss.publish(queue, null, { startAfter })
 
     const job = await boss.fetch(queue)
@@ -69,7 +76,9 @@ describe('delayed jobs', function () {
 
     const job2 = await boss.fetch(queue)
 
-    assert.isOk(job2)
+    assert(job2)
+
+    await boss.stop()
   })
 
   it('should work with publishAfter() and a date object', async function () {
@@ -80,6 +89,7 @@ describe('delayed jobs', function () {
 
     const startAfter = date
 
+    const boss = await helper.start(this.test.bossConfig)
     await boss.publishAfter(queue, { something: 1 }, { retryLimit: 0 }, startAfter)
 
     const job = await boss.fetch(queue)
@@ -90,6 +100,8 @@ describe('delayed jobs', function () {
 
     const job2 = await boss.fetch(queue)
 
-    assert.isOk(job2)
+    assert(job2)
+
+    await boss.stop()
   })
 })

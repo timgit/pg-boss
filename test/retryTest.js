@@ -1,19 +1,14 @@
-const assert = require('chai').assert
+const assert = require('assert')
 const helper = require('./testHelper')
 const Promise = require('bluebird')
 
 describe('retries', function () {
-  this.timeout(10000)
-
-  let boss
-  const config = { maintenanceIntervalSeconds: 1 }
-
-  before(async function () { boss = await helper.start(config) })
-  after(async function () { await boss.stop() })
+  const defaults = { maintenanceIntervalSeconds: 1 }
 
   it('should retry a job that didn\'t complete', async function () {
     const queue = 'unreliable'
 
+    const boss = await helper.start({ ...this.test.bossConfig, ...defaults })
     const jobId = await boss.publish({ name: queue, options: { expireInSeconds: 1, retryLimit: 1 } })
 
     const try1 = await boss.fetch(queue)
@@ -22,14 +17,17 @@ describe('retries', function () {
 
     const try2 = await boss.fetch(queue)
 
-    assert.equal(try1.id, jobId)
-    assert.equal(try2.id, jobId)
+    assert.strictEqual(try1.id, jobId)
+    assert.strictEqual(try2.id, jobId)
+
+    await boss.stop()
   })
 
   it('should retry a job that failed', async function () {
     const queueName = 'retryFailed'
     const retryLimit = 1
 
+    const boss = await helper.start({ ...this.test.bossConfig, ...defaults })
     const jobId = await boss.publish(queueName, null, { retryLimit })
 
     await boss.fetch(queueName)
@@ -37,12 +35,15 @@ describe('retries', function () {
 
     const job = await boss.fetch(queueName)
 
-    assert.equal(job.id, jobId)
+    assert.strictEqual(job.id, jobId)
+
+    await boss.stop()
   })
 
   it('should retry with a fixed delay', async function () {
     const queue = 'retryDelayFixed'
 
+    const boss = await helper.start({ ...this.test.bossConfig, ...defaults })
     const jobId = await boss.publish(queue, null, { retryLimit: 1, retryDelay: 1 })
 
     await boss.fetch(queue)
@@ -56,7 +57,9 @@ describe('retries', function () {
 
     const job2 = await boss.fetch(queue)
 
-    assert.isOk(job2)
+    assert(job2)
+
+    await boss.stop()
   })
 
   it('should retry with a exponential backoff', async function () {
@@ -65,17 +68,21 @@ describe('retries', function () {
     let subscribeCount = 0
     const retryLimit = 4
 
+    const boss = await helper.start({ ...this.test.bossConfig, ...defaults })
     await boss.subscribe(queue, { newJobCheckInterval: 500 }, job => job.done(++subscribeCount))
     await boss.publish(queue, null, { retryLimit, retryBackoff: true })
 
     await Promise.delay(9000)
 
-    assert.isBelow(subscribeCount, retryLimit)
+    assert(subscribeCount < retryLimit)
+
+    await boss.stop()
   })
 
   it('should set the default retry limit to 1 if missing', async function () {
     const queue = 'retryLimitDefault'
 
+    const boss = await helper.start({ ...this.test.bossConfig, ...defaults })
     const jobId = await boss.publish(queue, null, { retryDelay: 1 })
     await boss.fetch(queue)
     await boss.fail(jobId)
@@ -88,6 +95,8 @@ describe('retries', function () {
 
     const job2 = await boss.fetch(queue)
 
-    assert.isOk(job2)
+    assert(job2)
+
+    await boss.stop()
   })
 })

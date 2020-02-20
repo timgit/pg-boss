@@ -49,7 +49,7 @@ Usage
 <!-- /TOC -->
 
 # Intro
-pg-boss is used by creating an instance of the exported class, a subclass of a Node [EventEmitter](https://nodejs.org/api/events.html). Since the majority of all interactions with pg-boss involve a database, all instance functions return promises. Once you have created an instance, nothing happens until you call either `start()` or `connect()`. When a job is created it is immediately persisted to the database, assigned to a queue by name and can be received from any pg-boss instance. 
+pg-boss is used by creating an instance of the exported class, a subclass of a Node [EventEmitter](https://nodejs.org/api/events.html). Since the majority of all interactions with pg-boss involve a database, all instance functions return promises. Once you have created an instance, nothing happens until you call either `start()` or `connect()`. When a job is created it is immediately persisted to the database, assigned to a queue by name and can be received from any pg-boss instance.
 
 You may use as many instances in as many environments as needed based on your requirements.  Since each instance has a connection pool (or even if you bring your own), the only primary limitation on instance count is based on the maximum number of connections your database can accept.  If you need a larger number of workers than your postgres database can accept, consider using a centralized connection pool such as pgBouncer. If you have constraints preventing direct database access, consider creating your own abstraction layer over pg-boss such as a secure web API using the `fetch()` and `complete()` functions.  If you require multiple instances in the same database, you will need to specify a separate schema name per instance in the constructor.
 
@@ -108,7 +108,7 @@ await boss.publish('hey-there', { msg:'this came for you' })
 
 Since it is responsible for both schema migrations and monitoring jobs for expiration and archiving, `start()` should be called once and only once per backing database store. Once this has been taken care of, if your use cases demand additional instances for job processing, you should use `connect()`.
 
-If the required database objects do not exist in the specified database, **`start()` will automatically create them**. The same process is true for updates as well. When you call `start()`, if a new schema version is found,  pg-boss will **automatically migrate the internal storage to the latest installed version**.  
+If the required database objects do not exist in the specified database, **`start()` will automatically create them**. The same process is true for updates as well. When you call `start()`, if a new schema version is found,  pg-boss will **automatically migrate the internal storage to the latest installed version**.
 
 > While this is most likely a welcome feature, be aware of this during upgrades since this could delay the promise resolution by however long the migration script takes to run against your data.  For example, if you happened to have millions of jobs in the job table just hanging around for archiving and the next version of the schema had a couple of new indexes, it may take a handful of seconds before `start()` resolves.
 
@@ -118,9 +118,9 @@ If the required database objects do not exist in the specified database, **`star
 
 **returns: Promise**
 
-All job monitoring will be stopped and all subscriptions on this instance will be removed. Basically, it's the opposite of `start()`. Even though `start()` may create new database objects during initialization, `stop()` will never remove anything from the database.  
+All job monitoring will be stopped and all subscriptions on this instance will be removed. Basically, it's the opposite of `start()`. Even though `start()` may create new database objects during initialization, `stop()` will never remove anything from the database.
 
-**If you need to uninstall pg-boss from a database, just run the following command.** 
+**If you need to uninstall pg-boss from a database, just run the following command.**
 
 ```sql
 DROP SCHEMA $1 CASCADE
@@ -146,7 +146,7 @@ The opposite of `connect()`.  Disconnects from a job database. All subscriptions
 
 **returns: Promise**
 
-Creates a new job and resolves the job's unique identifier (uuid). 
+Creates a new job and resolves the job's unique identifier (uuid).
 
 > `publish()` will resolve a `null` for job id under some use cases when using [unique jobs](configuration.md#unique-jobs) or [throttling](configuration.md#throttled-jobs).  These options are always opt-in on the publish side and therefore don't result in a promise rejection.
 
@@ -184,7 +184,7 @@ The request object has the following properties.
 | Prop | Type | |
 | - | - | -|
 |`name`| string | *required*
-|`data`| object | 
+|`data`| object |
 |`options` | object | [publish options](configuration.md#publish-options)
 
 
@@ -201,13 +201,13 @@ console.log(`job ${jobId} submitted`)
 
 ### `publishAfter(name, data, options, seconds | ISO date string | Date)`
 
-Publish a job that should start after a number of seconds from now, or after a specific date time.  
+Publish a job that should start after a number of seconds from now, or after a specific date time.
 
 This is a convenience version of `publish()` with the `startAfter` option assigned.
 
 ### `publishOnce(name, data, options, key)`
 
-Publish a job with a unique key to make sure it isn't processed more than once.  Any other jobs published during this archive interval with the same queue name and key will be rejected. 
+Publish a job with a unique key to make sure it isn't processed more than once.  Any other jobs published during this archive interval with the same queue name and key will be rejected.
 
 This is a convenience version of `publish()` with the `singletonKey` option assigned.
 
@@ -219,7 +219,7 @@ This is a convenience version of `publish()` with the `singletonSeconds` and `si
 
 ### `publishDebounced(name, data, options, seconds [, key])`
 
-Like, `publishThrottled()`, but instead of rejecting if a job is already published in the current interval, it will try to add the job to the next interval if one hasn't already been published. 
+Like, `publishThrottled()`, but instead of rejecting if a job is already published in the current interval, it will try to add the job to the next interval if one hasn't already been published.
 
 This is a convenience version of `publish()` with the `singletonSeconds`, `singletonKey` and `singletonNextSlot` option assigned. The `key` argument is optional.
 
@@ -227,7 +227,7 @@ This is a convenience version of `publish()` with the `singletonSeconds`, `singl
 
 **returns: Promise**
 
-Polls the database by a queue name or a pattern and executes the provided callback function when jobs are found.  The promise resolves once a subscription has been created.  
+Polls the database by a queue name or a pattern and executes the provided callback function when jobs are found.  The promise resolves once a subscription has been created.
 
 Queue patterns use the `*` character to match 0 or more characters.  For example, a job from queue `status-report-12345` would be fetched with pattern `status-report-*` or even `stat*5`.
 
@@ -237,7 +237,7 @@ The default concurrency for `subscribe()` is 1 job per second.  Both the interva
 
 **Arguments**
 - `name`: string, *required*
-- `options`: object 
+- `options`: object
 - `handler`: function(job), *required*
 
 If your handler function returns a promise, pg-boss will defer polling for new jobs until it resolves. Meaning, you'll get backpressure for free! Even though it's not required to return a promise, it's encouraged in order to make your instance more robust and reliable under load. For example, if your database were to experience a high load, it may slow down what otherwise may be a quick operation.  Being able to defer polling and emitting more jobs will make sure you don't overload an already busy system and add to the existing load.
@@ -246,10 +246,10 @@ The job object has the following properties.
 
 | Prop | Type | |
 | - | - | -|
-|`id`| string, uuid | 
-|`name`| string | 
+|`id`| string, uuid |
+|`name`| string |
 |`data`| object |
-|`done(err, data)` | function | callback function used to mark the job as completed or failed in the database. 
+|`done(err, data)` | function | callback function used to mark the job as completed or failed in the database.
 
 The job completion callback is not required if you return a promise from your handler. If you return a promise, the value you resolve will be provided in the completion job, and if your promise throws, pg-boss will catch it and mark the job as failed.
 
@@ -272,13 +272,13 @@ await boss.subscribe('email-welcome', options, job => {
     myEmailService.sendWelcomeEmail(job.data)
         .then(() => job.done())
         .catch(error => job.done(error))
-  })  
+  })
 ```
 
 Similar to the first example, but with a batch of jobs at once.
 
 ```js
-await boss.subscribe('email-welcome', { batchSize: 5 }, 
+await boss.subscribe('email-welcome', { batchSize: 5 },
     jobs => myEmailService.sendWelcomeEmails(jobs.map(job => job.data))
 )
 ```
@@ -299,10 +299,10 @@ const requestPayload = { token:'trivial' }
 const responsePayload = { message: 'so verbose', code: '1234' }
 
 boss.onComplete(jobName, job => {
-    assert.equal(jobId, job.data.request.id)
-    assert.equal(job.data.request.data.token, requestPayload.token)
-    assert.equal(job.data.response.message, responsePayload.message)
-    assert.equal(job.data.response.code, responsePayload.code)
+    assert.strictEqual(jobId, job.data.request.id)
+    assert.strictEqual(job.data.request.data.token, requestPayload.token)
+    assert.strictEqual(job.data.response.message, responsePayload.message)
+    assert.strictEqual(job.data.response.code, responsePayload.code)
 
     finished()
 })
@@ -346,7 +346,7 @@ Same as `unsubscribe()`, but removes an `onComplete()` subscription.
 
 ## `fetch()`
 
-Typically one would use `subscribe()` for automated polling for new jobs based upon a reasonable interval to finish the most jobs with the lowest latency. While `subscribe()` is a yet another free service we offer and it can be awfully convenient, sometimes you may have a special use case around when a job can be retrieved. Or, perhaps like me, you need to provide jobs via other entry points such as a web API. 
+Typically one would use `subscribe()` for automated polling for new jobs based upon a reasonable interval to finish the most jobs with the lowest latency. While `subscribe()` is a yet another free service we offer and it can be awfully convenient, sometimes you may have a special use case around when a job can be retrieved. Or, perhaps like me, you need to provide jobs via other entry points such as a web API.
 
 `fetch()` allows you to skip all that polling nonsense that `subscribe()` does and puts you back in control of database traffic. Once you have your shiny job, you'll use either `complete()` or `fail()` to mark it as finished.
 
@@ -407,7 +407,7 @@ The promise will resolve on a successful cancel, or reject if the job could not 
 
 Cancels a set of pending or active jobs.
 
-The promise will resolve on a successful cancel, or reject if not all of the requested jobs could not be cancelled.  
+The promise will resolve on a successful cancel, or reject if not all of the requested jobs could not be cancelled.
 
 > Due to the nature of the use case of attempting a batch job cancellation, it may be likely that some jobs were in flight and even completed during the cancellation request. Because of this, cancellation will cancel as many as possible and reject with a message showing the number of jobs that could not be cancelled because they were no longer active.
 
@@ -419,9 +419,9 @@ The promise will resolve on a successful completion, or reject if the job could 
 
 ## `complete([ids])`
 
-Completes a set of active jobs.  
+Completes a set of active jobs.
 
-The promise will resolve on a successful completion, or reject if not all of the requested jobs could not be marked as completed. 
+The promise will resolve on a successful completion, or reject if not all of the requested jobs could not be marked as completed.
 
 > See comments above on `cancel([ids])` regarding when the promise will resolve or reject because of a batch operation.
 
@@ -433,9 +433,9 @@ The promise will resolve on a successful assignment of failure, or reject if the
 
 ## `fail([ids])`
 
-Fails a set of active jobs.  
+Fails a set of active jobs.
 
-The promise will resolve on a successful failure state assignment, or reject if not all of the requested jobs could not be marked as failed.  
+The promise will resolve on a successful failure state assignment, or reject if not all of the requested jobs could not be marked as failed.
 
 > See comments above on `cancel([ids])` regarding when the promise will resolve or reject because of a batch operation.
 
@@ -449,7 +449,7 @@ Deletes all jobs from all queues in the active job table. All jobs in the archiv
 
 # Events
 
-As explained in the introduction above, each instance of pg-boss is an EventEmitter.  You can run multiple instances of pg-boss for a variety of use cases including distribution and load balancing. Each instance has the freedom to subscribe to whichever jobs you need.  Because of this diversity, the job activity of one instance could be drastically different from another.  Therefore, **all of the events raised by pg-boss are instance-bound.** 
+As explained in the introduction above, each instance of pg-boss is an EventEmitter.  You can run multiple instances of pg-boss for a variety of use cases including distribution and load balancing. Each instance has the freedom to subscribe to whichever jobs you need.  Because of this diversity, the job activity of one instance could be drastically different from another.  Therefore, **all of the events raised by pg-boss are instance-bound.**
 
 > For example, if you were to subscribe to `error` in instance A, it will not receive an `error` event from instance B.
 
@@ -506,7 +506,7 @@ The payload of the event is an object with a key per queue and state, such as th
         "failed": 0,
         "all": 645
       }
-  },  
+  },
   "created": 530,
   "retry": 40,
   "active": 26,

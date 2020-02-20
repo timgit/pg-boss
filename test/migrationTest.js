@@ -1,4 +1,4 @@
-const assert = require('chai').assert
+const assert = require('assert')
 const PgBoss = require('../')
 const helper = require('./testHelper')
 const Contractor = require('../src/contractor')
@@ -6,14 +6,11 @@ const migrationStore = require('../src/migrationStore')
 const currentSchemaVersion = require('../version.json').schema
 
 describe('migration', function () {
-  this.timeout(10000)
-
   let contractor
 
   beforeEach(async function () {
-    await helper.init()
     const db = await helper.getDb()
-    contractor = new Contractor(db, helper.getConfig())
+    contractor = new Contractor(db, this.currentTest.bossConfig)
   })
 
   it('should migrate to previous version and back again', async function () {
@@ -22,12 +19,12 @@ describe('migration', function () {
     await contractor.rollback(currentSchemaVersion)
     const oldVersion = await contractor.version()
 
-    assert.notEqual(oldVersion, currentSchemaVersion)
+    assert.notStrictEqual(oldVersion, currentSchemaVersion)
 
     await contractor.migrate(oldVersion)
     const newVersion = await contractor.version()
 
-    assert.equal(newVersion, currentSchemaVersion)
+    assert.strictEqual(newVersion, currentSchemaVersion)
   })
 
   it('should migrate to latest during start if on previous schema version', async function () {
@@ -39,7 +36,7 @@ describe('migration', function () {
 
     const version = await contractor.version()
 
-    assert.equal(version, currentSchemaVersion)
+    assert.strictEqual(version, currentSchemaVersion)
   })
 
   it('should migrate through 2 versions back and forth', async function () {
@@ -48,22 +45,22 @@ describe('migration', function () {
     await contractor.rollback(currentSchemaVersion)
     const oneVersionAgo = await contractor.version()
 
-    assert.notEqual(oneVersionAgo, currentSchemaVersion)
+    assert.notStrictEqual(oneVersionAgo, currentSchemaVersion)
 
     await contractor.rollback(oneVersionAgo)
     const twoVersionsAgo = await contractor.version()
 
-    assert.notEqual(twoVersionsAgo, oneVersionAgo)
+    assert.notStrictEqual(twoVersionsAgo, oneVersionAgo)
 
     await contractor.next(twoVersionsAgo)
     const oneVersionAgoPart2 = await contractor.version()
 
-    assert.equal(oneVersionAgo, oneVersionAgoPart2)
+    assert.strictEqual(oneVersionAgo, oneVersionAgoPart2)
 
     await contractor.next(oneVersionAgo)
     const version = await contractor.version()
 
-    assert.equal(version, currentSchemaVersion)
+    assert.strictEqual(version, currentSchemaVersion)
   })
 
   it('should migrate to latest during start if on previous 2 schema versions', async function () {
@@ -83,7 +80,7 @@ describe('migration', function () {
 
     const version = await contractor.version()
 
-    assert.equal(version, currentSchemaVersion)
+    assert.strictEqual(version, currentSchemaVersion)
   })
 
   it('migrating to non-existent version fails gracefully', async function () {
@@ -116,7 +113,7 @@ describe('migration', function () {
 
     const version1 = await contractor.version()
 
-    assert.equal(version1, oneVersionAgo)
+    assert.strictEqual(version1, oneVersionAgo)
 
     // remove bad sql statement
     config.migrations[0].install.pop()
@@ -127,6 +124,6 @@ describe('migration', function () {
 
     const version2 = await contractor.version()
 
-    assert.equal(version2, currentSchemaVersion)
+    assert.strictEqual(version2, currentSchemaVersion)
   })
 })

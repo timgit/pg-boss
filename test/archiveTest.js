@@ -1,27 +1,21 @@
-const assert = require('chai').assert
+const assert = require('assert')
 const helper = require('./testHelper')
 const Promise = require('bluebird')
 
 describe('archive', function () {
-  this.timeout(10000)
-
-  let boss
-
-  const config = {
+  const defaults = {
     archiveIntervalSeconds: 1,
     maintenanceIntervalSeconds: 1
   }
 
-  before(async function () { boss = await helper.start(config) })
-  after(async function () { await boss.stop() })
-
   it('should archive a completed job', async function () {
-    const jobName = 'archive-completed'
+    const boss = await helper.start({ ...this.test.bossConfig, ...defaults })
+    const queue = 'archive-completed'
 
-    const jobId = await boss.publish(jobName)
-    const job = await boss.fetch(jobName)
+    const jobId = await boss.publish(queue)
+    const job = await boss.fetch(queue)
 
-    assert.equal(job.id, jobId)
+    assert.strictEqual(job.id, jobId)
 
     await boss.complete(jobId)
 
@@ -29,20 +23,26 @@ describe('archive', function () {
 
     const archivedJob = await helper.getArchivedJobById(jobId)
 
-    assert.equal(jobId, archivedJob.id)
-    assert.equal(jobName, archivedJob.name)
+    assert.strictEqual(jobId, archivedJob.id)
+    assert.strictEqual(queue, archivedJob.name)
+
+    await boss.stop()
   })
 
   it('should archive a created job', async function () {
-    const jobName = 'archive-created'
+    const boss = await helper.start({ ...this.test.bossConfig, ...defaults })
 
-    const jobId = await boss.publish(jobName, null, { retentionSeconds: 1 })
+    const queue = 'archive-created'
+
+    const jobId = await boss.publish(queue, null, { retentionSeconds: 1 })
 
     await Promise.delay(5000)
 
     const archivedJob = await helper.getArchivedJobById(jobId)
 
-    assert.equal(jobId, archivedJob.id)
-    assert.equal(jobName, archivedJob.name)
+    assert.strictEqual(jobId, archivedJob.id)
+    assert.strictEqual(queue, archivedJob.name)
+
+    await boss.stop()
   })
 })

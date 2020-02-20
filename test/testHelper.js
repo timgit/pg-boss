@@ -1,9 +1,11 @@
 const Db = require('../src/db')
-const PgBoss = require('../src/index')
+const PgBoss = require('../')
 const plans = require('../src/plans')
+const crypto = require('crypto')
+const sha1 = (value) => crypto.createHash('sha1').update(value).digest('hex')
 
 module.exports = {
-  init,
+  dropSchema,
   start,
   getDb,
   getJobById,
@@ -24,12 +26,18 @@ function getConnectionString () {
 
 function getConfig (options = {}) {
   const config = require('./config.json')
+  const inTravis = !!process.env.TRAVIS
 
-  if (process.env.TRAVIS) {
-    config.port = 5432
+  if (inTravis) {
     config.password = ''
-    config.schema = 'pgboss' + process.env.TRAVIS_JOB_ID
+    config.schema = process.env.TRAVIS_JOB_ID
   }
+
+  if (options.testKey) {
+    config.schema = `pgboss${sha1(options.testKey).slice(-10)}${inTravis ? '_' + config.schema : ''}`
+  }
+
+  config.schema = config.schema || 'pgboss'
 
   const result = { ...config }
 
@@ -47,8 +55,7 @@ async function empty () {
   await db.executeSql(`TRUNCATE TABLE ${getConfig().schema}.job`)
 }
 
-async function init (schema) {
-  schema = schema || getConfig().schema
+async function dropSchema (schema) {
   const db = await getDb()
   await db.executeSql(`DROP SCHEMA IF EXISTS ${schema} CASCADE`)
 }
@@ -81,10 +88,9 @@ async function countJobs (where, values) {
   return parseFloat(result.rows[0].count)
 }
 
-async function start (options = {}) {
+async function start (options) {
   try {
-    options = Object.assign(getConfig(), options)
-    await init(options.schema)
+    options = getConfig(options)
     const boss = new PgBoss(options)
     await boss.start()
     return boss

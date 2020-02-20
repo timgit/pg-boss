@@ -1,58 +1,84 @@
-const assert = require('chai').assert
+const assert = require('assert')
 const helper = require('./testHelper')
 
 describe('publish', function () {
-  this.timeout(10000)
+  it('should fail with no arguments', async function () {
+    const boss = await helper.start(this.test.bossConfig)
 
-  let boss
-
-  before(async function () { boss = await helper.start() })
-  after(async function () { await boss.stop() })
-
-  it('should fail with no arguments', function (finished) {
-    boss.publish()
-      .catch(() => finished())
+    try {
+      await boss.publish()
+      assert(false)
+    } catch (err) {
+      assert(err)
+    } finally {
+      await boss.stop()
+    }
   })
 
-  it('should fail with a function for data', function (finished) {
-    boss.publish('job', () => true)
-      .catch(() => finished())
+  it('should fail with a function for data', async function () {
+    const boss = await helper.start(this.test.bossConfig)
+
+    try {
+      await boss.publish('job', () => true)
+      assert(false)
+    } catch (err) {
+      assert(err)
+    } finally {
+      await boss.stop()
+    }
   })
 
-  it('should fail with a function for options', function (finished) {
-    boss.publish('job', 'data', () => true)
-      .catch(() => finished())
+  it('should fail with a function for options', async function () {
+    const boss = await helper.start(this.test.bossConfig)
+
+    try {
+      await boss.publish('job', 'data', () => true)
+      assert(false)
+    } catch (err) {
+      assert(err)
+    } finally {
+      await boss.stop()
+    }
   })
 
   it('should accept single string argument', async function () {
+    const boss = await helper.start(this.test.bossConfig)
     const queue = 'publishNameOnly'
     await boss.publish(queue)
+    await boss.stop()
   })
 
   it('should accept job object argument with only name', async function () {
+    const boss = await helper.start(this.test.bossConfig)
     const queue = 'publishqueueOnly'
     await boss.publish({ name: queue })
+    await boss.stop()
   })
 
   it('should accept job object with name and data only', async function () {
     const queue = 'publishqueueAndData'
     const message = 'hi'
 
+    const boss = await helper.start(this.test.bossConfig)
     await boss.publish({ name: queue, data: { message } })
 
     const job = await boss.fetch(queue)
 
-    assert.equal(message, job.data.message)
+    assert.strictEqual(message, job.data.message)
+    await boss.stop()
   })
 
   it('should accept job object with name and options only', async function () {
     const queue = 'publishqueueAndOptions'
     const options = { someCrazyOption: 'whatever' }
 
+    const boss = await helper.start(this.test.bossConfig)
     await boss.publish({ name: queue, options })
 
     const job = await boss.fetch(queue)
 
-    assert.isNull(job.data)
+    assert.strictEqual(job.data, null)
+
+    await boss.stop()
   })
 })
