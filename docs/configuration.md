@@ -210,7 +210,7 @@ Setting `singletonNextSlot` to true will cause the job to be scheduled to run af
 
 * **expireIn**, string, PostgreSQL interval
 
-    Default: 15 minutes
+    Default: 15 minutes. Amount of time a job can be actively executing before it is marked as expired.
 
 ## Subscribe Options
 
