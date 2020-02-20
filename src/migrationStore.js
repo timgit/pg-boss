@@ -72,7 +72,7 @@ function getAll (schema) {
           `ALTER TABLE ${schema}.job ADD COLUMN keepUntil timestamptz`,
           `ALTER TABLE ${schema}.archive ADD COLUMN keepUntil timestamptz`,
           `ALTER TABLE ${schema}.job ALTER COLUMN keepUntil SET DEFAULT now() + interval '30 days'`,
-          `UPDATE ${schema}.job SET keepUntil = createdOn + interval '30 days'`,
+          `UPDATE ${schema}.job SET keepUntil = startAfter + interval '30 days'`,
           `ALTER TABLE ${schema}.job ALTER COLUMN keepUntil SET NOT NULL`
       ],
       uninstall: [

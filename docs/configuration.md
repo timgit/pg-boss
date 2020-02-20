@@ -243,6 +243,10 @@ Default: 15 minutes
 
 ### Job retention
 
+* **retentionSeconds**, number
+
+    How many seconds a job may be in created state before it is considered abandoned and archived. Must be >=1
+
 * **retentionMinutes**, number
 
     How many minutes a job may be in created state before it is considered abandoned and archived. Must be >=1
