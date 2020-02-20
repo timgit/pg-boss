@@ -10,10 +10,8 @@ module.exports = {
   getDb,
   getJobById,
   getArchivedJobById,
-  findJobs,
-  completedJobPrefix: plans.completedJobPrefix,
   countJobs,
-  empty,
+  completedJobPrefix: plans.completedJobPrefix,
   getConfig,
   getConnectionString
 }
@@ -44,15 +42,10 @@ function getConfig (options = {}) {
   return Object.assign(result, options)
 }
 
-async function getDb (config) {
-  const db = new Db(config || getConfig())
+async function getDb () {
+  const db = new Db(getConfig())
   await db.open()
   return db
-}
-
-async function empty () {
-  const db = await getDb()
-  await db.executeSql(`TRUNCATE TABLE ${getConfig().schema}.job`)
 }
 
 async function dropSchema (schema) {
@@ -60,31 +53,31 @@ async function dropSchema (schema) {
   await db.executeSql(`DROP SCHEMA IF EXISTS ${schema} CASCADE`)
 }
 
-async function getJobById (id) {
-  const response = await findJobs('id = $1', [id])
+async function getJobById (schema, id) {
+  const response = await findJobs(schema, 'id = $1', [id])
   return response.rows.length ? response.rows[0] : null
 }
 
-async function findJobs (where, values) {
+async function findJobs (schema, where, values) {
   const db = await getDb()
-  const jobs = await db.executeSql(`select * from ${getConfig().schema}.job where ${where}`, values)
+  const jobs = await db.executeSql(`select * from ${schema}.job where ${where}`, values)
   return jobs
 }
 
-async function getArchivedJobById (id) {
-  const response = await findArchivedJobs('id = $1', [id])
+async function getArchivedJobById (schema, id) {
+  const response = await findArchivedJobs(schema, 'id = $1', [id])
   return response.rows.length ? response.rows[0] : null
 }
 
-async function findArchivedJobs (where, values) {
+async function findArchivedJobs (schema, where, values) {
   const db = await getDb()
-  const result = await db.executeSql(`select * from ${getConfig().schema}.archive where ${where}`, values)
+  const result = await db.executeSql(`select * from ${schema}.archive where ${where}`, values)
   return result
 }
 
-async function countJobs (where, values) {
+async function countJobs (schema, where, values) {
   const db = await getDb()
-  const result = await db.executeSql(`select count(*) as count from ${getConfig().schema}.job where ${where}`, values)
+  const result = await db.executeSql(`select count(*) as count from ${schema}.job where ${where}`, values)
   return parseFloat(result.rows[0].count)
 }
 

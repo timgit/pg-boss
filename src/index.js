@@ -71,7 +71,7 @@ class PgBoss extends EventEmitter {
     }
   }
 
-  async start (options = {}) {
+  async start () {
     assert(!this.isStarted, alreadyStartedErrorMessage)
     this.isStarted = true
 
@@ -83,7 +83,7 @@ class PgBoss extends EventEmitter {
 
     this.isReady = true
 
-    if (!options.noSupervisor) {
+    if (!this.config.noSupervisor) {
       await this.boss.supervise()
     }
 

@@ -9,7 +9,8 @@ describe('archive', function () {
   }
 
   it('should archive a completed job', async function () {
-    const boss = await helper.start({ ...this.test.bossConfig, ...defaults })
+    const config = { ...this.test.bossConfig, ...defaults }
+    const boss = await helper.start(config)
     const queue = 'archive-completed'
 
     const jobId = await boss.publish(queue)
@@ -21,7 +22,7 @@ describe('archive', function () {
 
     await Promise.delay(3000)
 
-    const archivedJob = await helper.getArchivedJobById(jobId)
+    const archivedJob = await helper.getArchivedJobById(config.schema, jobId)
 
     assert.strictEqual(jobId, archivedJob.id)
     assert.strictEqual(queue, archivedJob.name)
@@ -30,7 +31,8 @@ describe('archive', function () {
   })
 
   it('should archive a created job', async function () {
-    const boss = await helper.start({ ...this.test.bossConfig, ...defaults })
+    const config = { ...this.test.bossConfig, ...defaults }
+    const boss = await helper.start(config)
 
     const queue = 'archive-created'
 
@@ -38,7 +40,7 @@ describe('archive', function () {
 
     await Promise.delay(5000)
 
-    const archivedJob = await helper.getArchivedJobById(jobId)
+    const archivedJob = await helper.getArchivedJobById(config.schema, jobId)
 
     assert.strictEqual(jobId, archivedJob.id)
     assert.strictEqual(queue, archivedJob.name)

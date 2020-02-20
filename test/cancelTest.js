@@ -16,13 +16,14 @@ describe('cancel', function () {
   })
 
   it('should cancel a pending job', async function () {
-    const boss = await helper.start(this.test.bossConfig)
+    const config = this.test.bossConfig
+    const boss = await helper.start(config)
 
     const jobId = await boss.publish('will_cancel', null, { startAfter: 1 })
 
     await boss.cancel(jobId)
 
-    const job = await helper.getJobById(jobId)
+    const job = await helper.getJobById(config.schema, jobId)
 
     assert(job && job.state === 'cancelled')
 

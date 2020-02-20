@@ -102,7 +102,7 @@ describe('migration', function () {
   })
 
   it('should roll back an error during a migration', async function () {
-    const config = this.test.bossConfig
+    const config = { ...this.test.bossConfig, noSupervisor: true }
 
     config.migrations = migrationStore.getAll(config.schema)
 
@@ -113,10 +113,14 @@ describe('migration', function () {
     await contractor.rollback(currentSchemaVersion)
     const oneVersionAgo = await contractor.version()
 
+    const boss1 = new PgBoss(config)
+
     try {
-      await new PgBoss(config).start({ noSupervisor: true })
+      await boss1.start()
     } catch (error) {
       assert(error.message.indexOf('wat') > 0)
+    } finally {
+      boss1.stop()
     }
 
     const version1 = await contractor.version()
@@ -126,14 +130,14 @@ describe('migration', function () {
     // remove bad sql statement
     config.migrations[0].install.pop()
 
-    const boss = new PgBoss(config)
+    const boss2 = new PgBoss(config)
 
-    await boss.start({ noSupervisor: true })
+    await boss2.start()
 
     const version2 = await contractor.version()
 
     assert.strictEqual(version2, currentSchemaVersion)
 
-    await boss.stop()
+    await boss2.stop()
   })
 })

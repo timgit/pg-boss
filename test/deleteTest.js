@@ -12,7 +12,8 @@ describe('delete', async function () {
   it('should delete an archived job', async function () {
     const jobName = 'deleteMe'
 
-    const boss = await helper.start({ ...this.test.bossConfig, ...defaults })
+    const config = { ...this.test.bossConfig, ...defaults }
+    const boss = await helper.start(config)
     const jobId = await boss.publish(jobName)
     const job = await boss.fetch(jobName)
 
@@ -22,7 +23,7 @@ describe('delete', async function () {
 
     await Promise.delay(7000)
 
-    const archivedJob = await helper.getArchivedJobById(jobId)
+    const archivedJob = await helper.getArchivedJobById(config.schema, jobId)
 
     assert.strictEqual(archivedJob, null)
 

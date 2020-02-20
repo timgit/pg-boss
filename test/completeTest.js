@@ -184,8 +184,9 @@ describe('complete', function () {
 
   it('should not create an extra state job after completion', async function () {
     const queue = 'noMoreExtraStateJobs'
+    const config = this.test.bossConfig
 
-    const boss = await helper.start(this.test.bossConfig)
+    const boss = await helper.start(config)
     const jobId = await boss.publish(queue)
 
     await boss.fetch(queue)
@@ -196,7 +197,7 @@ describe('complete', function () {
 
     await boss.complete(job.id)
 
-    const stateJobCount = await helper.countJobs('name = $1', [`${helper.completedJobPrefix}${queue}`])
+    const stateJobCount = await helper.countJobs(config.schema, 'name = $1', [`${helper.completedJobPrefix}${queue}`])
 
     assert.strictEqual(stateJobCount, 1)
 
