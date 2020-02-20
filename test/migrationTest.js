@@ -102,7 +102,6 @@ describe('migration', function () {
   })
 
   it('should roll back an error during a migration', async function () {
-
     const config = this.test.bossConfig
 
     config.migrations = migrationStore.getAll(config.schema)
