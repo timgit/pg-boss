@@ -38,7 +38,7 @@ declare namespace PgBoss {
     deleteIntervalHours?: number;
     deleteIntervalDays?: number;
     maintenanceIntervalSeconds?: number;
-    maintenanceIntervalMinutes?: number;    
+    maintenanceIntervalMinutes?: number;
   }
 
   type ConstructorOptions = DatabaseOptions & QueueOptions & MaintenanceOptions;
@@ -57,6 +57,9 @@ declare namespace PgBoss {
     expireInSeconds?: number;
     expireInMinutes?: number;
     expireInHours?: number;
+    retentionMinutes?: number;
+    retentionHours?: number;
+    retentionDays?: number;
   }
 
   interface SubscribeOptions {
@@ -106,7 +109,7 @@ declare namespace PgBoss {
 declare class PgBoss {
   constructor(connectionString: string);
   constructor(options: PgBoss.ConstructorOptions);
-  
+
   static getConstructionPlans(schema: string): string;
   static getMigrationPlans(schema: string, version: string, uninstall: boolean): string;
 
