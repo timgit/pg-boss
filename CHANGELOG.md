@@ -62,7 +62,7 @@ One trending example of how this is useful would be including `start()` inside t
 
 As mentioned above, previously only completed jobs were included in the archive maintenance, but with 1 exception: completion jobs were also moved to the archive even though they were in `created` state. This would sometimes result in missed jobs if an `onComplete` subscription were to reach a backlogged state that couldn't keep up with the configured archive interval.
 
-Now, a new set of retention options have been added to `publish` which control how long any job may exist in created state, original or completion. Currently, the default retention is 30 days, but even if it's customized it automatically carries over to the associated completion job as well.
+Now, a new set of retention options have been added to `publish()` which control how long any job may exist in created state, original or completion. Currently, the default retention is 30 days, but even if it's customized it automatically carries over to the associated completion job as well.
 
 Furthermore, this retention policy is aware of any deferred jobs. If you have any future-dated or interval-deferred jobs, the retention policy start date is internally based on this deferred date, not the created timestamp. During the upgrade, a migration script will run and set the retention to 30 days after the deferred date. If this default is not desirable and you would like to change this retention date, you should feel free to issue an `UPDATE` statement against the job table once upgraded.  You have 30 days to do that. :)
 
