@@ -245,19 +245,19 @@ Default: 15 minutes
 
 * **retentionSeconds**, number
 
-    How many seconds a job may be in created state before it is considered abandoned and archived. Must be >=1
+    How many seconds a job may be in created state before it becomes eligible to be archived. Must be >=1
 
 * **retentionMinutes**, number
 
-    How many minutes a job may be in created state before it is considered abandoned and archived. Must be >=1
+    How many minutes a job may be in created state before it becomes eligible to be archived. Must be >=1
 
 * **retentionHours**, number
 
-    How many hours a job may be in created state before it is considered abandoned and archived. Must be >=1
+    How many hours a job may be in created state before it becomes eligible to be archived. Must be >=1
 
 * **retentionDays**, number
 
-    How many days a job may be in created state before it is considered abandoned and archived. Must be >=1
+    How many days a job may be in created state before it becomes eligible to be archived. Must be >=1
 
 Default: 30 days
 
