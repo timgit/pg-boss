@@ -44,7 +44,6 @@ function create (schema, version) {
     'BEGIN',
     advisoryLock(),
     createSchema(schema),
-    tryCreateCryptoExtension(),
     createVersionTable(schema),
     createJobStateEnum(schema),
     createJobTable(schema),
@@ -64,12 +63,6 @@ function create (schema, version) {
 function createSchema (schema) {
   return `
     CREATE SCHEMA ${schema}
-  `
-}
-
-function tryCreateCryptoExtension () {
-  return `
-    CREATE EXTENSION IF NOT EXISTS pgcrypto
   `
 }
 

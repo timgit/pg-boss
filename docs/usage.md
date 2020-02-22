@@ -6,6 +6,7 @@ Usage
 - [Usage](#usage)
 - [Intro](#intro)
 - [Database installation](#database-installation)
+- [Database uninstall](#database-uninstall)
 - [Functions](#functions)
   - [`new(connectionString)`](#newconnectionstring)
   - [`new(options)`](#newoptions)
@@ -44,18 +45,20 @@ Usage
   - [`monitor-states`](#monitor-states)
 - [Static functions](#static-functions)
   - [`string getConstructionPlans(schema)`](#string-getconstructionplansschema)
-  - [`string getMigrationPlans(schema, version, uninstall)`](#string-getmigrationplansschema-version-uninstall)
+  - [`string getMigrationPlans(schema, version)`](#string-getmigrationplansschema-version)
+  - [`string getRollbackPlans(schema, version)`](#string-getrollbackplansschema-version)
 
 <!-- /TOC -->
 
 # Intro
 pg-boss is used by creating an instance of the exported class, a subclass of a Node [EventEmitter](https://nodejs.org/api/events.html). Since the majority of all interactions with pg-boss involve a database, all instance functions return promises. Once you have created an instance, nothing happens until you call either `start()` or `connect()`. When a job is created it is immediately persisted to the database, assigned to a queue by name and can be received from any pg-boss instance.
 
-You may use as many instances in as many environments as needed based on your requirements.  Since each instance has a connection pool (or even if you bring your own), the only primary limitation on instance count is based on the maximum number of connections your database can accept.  If you need a larger number of workers than your postgres database can accept, consider using a centralized connection pool such as pgBouncer. If you have constraints preventing direct database access, consider creating your own abstraction layer over pg-boss such as a secure web API using the `fetch()` and `complete()` functions.  If you require multiple instances in the same database, you will need to specify a separate schema name per instance in the constructor.
+You may use as many instances in as many environments as needed based on your requirements.  Since each instance has a connection pool (or even if you bring your own), the only primary limitation on instance count is based on the maximum number of connections your database can accept.  If you need a larger number of workers than your postgres database can accept, consider using a centralized connection pool such as pgBouncer. If you have constraints preventing direct database access, consider creating your own abstraction layer over pg-boss such as a secure web API using the `fetch()` and `complete()` functions.  If you require multiple installations in the same database, you will need to specify a separate schema name per install in the constructor.
 
 # Database installation
 
-pg-boss can be installed into a new or existing database.  When started, it will detect if it exists in the specified database and automatically create the required schema for all queue operations.  Starting with 3.0, if the database doesn't already have the pgcrypto extension installed, you will need to have a superuser add it before pg-boss can create its schema.
+pg-boss can be installed into any database.  When started, it will detect if it is installed and automatically create the required schema for all queue operations if needed.  Starting with 3.0, if the database doesn't already have the pgcrypto extension installed, you will need to have a superuser add it before pg-boss can create its schema.
+
 ```sql
 CREATE EXTENSION pgcrypto;
 ```
@@ -67,6 +70,16 @@ GRANT CREATE ON DATABASE ReallyImportantDb TO mostvaluableperson;
 ```
 
 If the CREATE privilege is not granted (so sad), you can still use the static function `PgBoss.getConstructionPlans()` method to export the SQL required to manually create the objects.  This means you will also need to monitor future releases for schema changes (the schema property in [version.json](../version.json)) so they can be applied manually. In which case you'll be interested in `PgBoss.getMigrationPlans()` for manual migration scripts.
+
+# Database uninstall
+
+If you need to uninstall pg-boss from a database, just run the following command.
+
+```sql
+DROP SCHEMA $1 CASCADE
+```
+
+Where `$1` is the name of your schema if you've customized it.  Otherwise, the default schema is `pgboss`.
 
 # Functions
 
@@ -88,7 +101,7 @@ const options = {
   database: 'database',
   user: 'user',
   password: 'password',
-  poolSize: 5, // or max: 5
+  max: 5,
   archiveIntervalDays: 2
 };
 
@@ -106,13 +119,13 @@ await boss.start()
 await boss.publish('hey-there', { msg:'this came for you' })
 ```
 
-Since it is responsible for both schema migrations and monitoring jobs for expiration and archiving, `start()` should be called once and only once per backing database store. Once this has been taken care of, if your use cases demand additional instances for job processing, you should use `connect()`.
+Since it is responsible for both schema migrations and monitoring jobs for expiration and archiving, at least 1 instances of `start()` should be used per database. If your deployment requires additional instances for job processing, you may use either `start()` or `connect()`. If the required database objects do not exist in the specified database, **`start()` will automatically create them**. The same process is true for updates as well. If a new schema version is required, pg-boss will automatically migrate the internal storage to the latest installed version.
 
-If the required database objects do not exist in the specified database, **`start()` will automatically create them**. The same process is true for updates as well. When you call `start()`, if a new schema version is found,  pg-boss will **automatically migrate the internal storage to the latest installed version**.
+> While this is most likely a welcome feature, be aware of this during upgrades since this could delay the promise resolution by however long the migration script takes to run against your data.  For example, if you happened to have millions of jobs in the job table just hanging around for archiving and the next version of the schema had a couple of new indexes, it may take a few seconds before `start()` resolves. Most migrations are very quick, however, and are designed with performance in mind.
 
-> While this is most likely a welcome feature, be aware of this during upgrades since this could delay the promise resolution by however long the migration script takes to run against your data.  For example, if you happened to have millions of jobs in the job table just hanging around for archiving and the next version of the schema had a couple of new indexes, it may take a handful of seconds before `start()` resolves.
+Additionally, all schema operations, both first-time provisioning and migrations, are nested within advisory locks to prevent race conditions during `start()`. Internally, these locks are created using `pg_advisory_xact_lock()` which auto-unlock at the end of the transaction and don't require a persistent session or the need to issue an unlock. This should make it compatible with most connection poolers, such as pgBouncer in transactional pooling mode.
 
-> As stated above, you should only have 1 instance running `start()` at a time, but if you have requirements that involve a rolling release deployment strategy, overlapping 2 instances, where 1 has already been running for a bit, will not re-issue additional maintenance commands, as maintenance operations are also bound to concurrency-safe internal queues.  Having mentioned this, pg-boss's initial schema creation and migration **are not** concurrency-safe. You should not attempt to run `start()` in multiple instances at the exact same time. This is an area of future development interest, however.
+One example of how this is useful would be including `start()` inside the bootstrapping of a pod in a ReplicaSet in Kubernetes. Being able to scale up your job processing using a container orchestration tool like k8s is becoming more and more popular, and pg-boss can be dropped into this system with no additional logic, fear, or special configuration.
 
 ## `stop()`
 
@@ -120,21 +133,13 @@ If the required database objects do not exist in the specified database, **`star
 
 All job monitoring will be stopped and all subscriptions on this instance will be removed. Basically, it's the opposite of `start()`. Even though `start()` may create new database objects during initialization, `stop()` will never remove anything from the database.
 
-**If you need to uninstall pg-boss from a database, just run the following command.**
-
-```sql
-DROP SCHEMA $1 CASCADE
-```
-
-Where `$1` is the name of your schema if you've customized it.  Otherwise, the default schema is `pgboss`.
-
 ## `connect()`
 
 **returns: Promise** *(resolves the same PgBoss instance used during invocation for convenience)*
 
-Connects to an existing job database.
+Connects to an existing job database, but does not run any maintenance or monitoring operations.
 
-`connect()` is used for secondary workers running in other processes or servers, with the assumption that `start()` was previously used against this database instance. `connect()` doesn't start job expiration monitoring or archiving intervals like `start()`.
+This may be used for secondary workers running in other processes or servers, with the assumption that `start()` was previously used against this database instance.
 
 ## `disconnect()`
 
@@ -477,7 +482,7 @@ boss.on('error', error => logger.error(error));
 
 ## `monitor-states`
 
-The `monitor-states` event is conditionally raised based on the `monitorStateInterval` configuration setting.  If passed during instance creation, it will provide a count of jobs in each state per interval.  This could be useful for logging or even determining if the job system is handling its load.
+The `monitor-states` event is conditionally raised based on the `monitorStateInterval` configuration setting and only emitted from `start()`. If passed during instance creation, it will provide a count of jobs in each state per interval.  This could be useful for logging or even determining if the job system is handling its load.
 
 The payload of the event is an object with a key per queue and state, such as the  following example.
 
@@ -527,11 +532,18 @@ The following static functions are not required during normal operations, but ar
 
 Returns the SQL commands required for manual creation of the required schema.
 
-## `string getMigrationPlans(schema, version, uninstall)`
+## `string getMigrationPlans(schema, version)`
 
 **Arguments**
 - `schema`: string, database schema name
 - `version`: string, target schema version to migrate
-- `uninstall`: boolean, reverts to the previous version if true
 
-Returns the SQL commands required to manually migrate to or from the specified version.
+Returns the SQL commands required to manually migrate from the specified version to the latest version.
+
+## `string getRollbackPlans(schema, version)`
+
+**Arguments**
+- `schema`: string, database schema name
+- `version`: string, target schema version to uninstall
+
+Returns the SQL commands required to manually roll back the specified version to the previous version

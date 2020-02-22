@@ -4,7 +4,7 @@
 
 ### Changes
 
-- `start()` is now multi-master compatible for both schema migrations and maintenance operations.
+- `start()` is now fully multi-master ready and supported for installation, schema migrations and maintenance operations.
 - MAJOR: Consolidated the maintenance constructor options and removed any options for intervals less than 1 second.
   - Removed:
     - `expireCheckInterval`
@@ -43,6 +43,12 @@
     - `retentionMinutes`
     - `retentionHours`
     - `retentionDays`
+- MAJOR: Split static getMigrationPlans() function into 2 functions for clarity.
+  - Removed:
+    - `uninstall` argument from `getMigrationPlans(schema, version)`
+  - Added:
+    - `getRollbackPlans(schema, version)`
+- MAJOR: Removed pgcrypto from installation script.
 
 ### Summary
 
@@ -54,9 +60,9 @@ This release was originally started to support rolling deployments where a new i
 
 The result of using a queue for maintenance instead of timers such as `setTimeouot()` is the same distruted concurrency benefit of using queues for any other workload. This is sometimes referred to as a multi-master configuration, where more than 1 instance is using `start()` simultaneously. If and when this occurs in your environment, only 1 of them will be able to fetch the job (maintnenance or state monitoring) and issue the related SQL commands.
 
-Additionally, all schema opertaions, both first-time provisioning and migrations, are now nested within transactional advisory locks to prevent race conditions during `start()`. Internally, these locks are created using `pg_advisory_xact_lock()` which auto-unlock at the end of the transaction and don't require a persistent session or the need to issue an unlock. This should make it compatible with most connection poolers, pgBouncer in transactional pooling mode being one of the more popular examples.
+Additionally, all schema operations, both first-time provisioning and migrations, are nested within advisory locks to prevent race conditions during `start()`. Internally, these locks are created using `pg_advisory_xact_lock()` which auto-unlock at the end of the transaction and don't require a persistent session or the need to issue an unlock. This should make it compatible with most connection poolers, such as pgBouncer in transactional pooling mode.
 
-One trending example of how this is useful would be including `start()` inside the bootstrapping of a pod in a ReplicaSet in Kubernetes. Being able to scale up your job processing using a container orchestration tool like k8s is becoming more and more popular, and now pg-boss can be dropped into this system with no additional logic, fear, or special configuration.
+One example of how this is useful would be including `start()` inside the bootstrapping of a pod in a ReplicaSet in Kubernetes. Being able to scale up your job processing using a container orchestration tool like k8s is becoming more and more popular, and pg-boss can be dropped into this system with no additional logic, fear, or special configuration.
 
 ### Retention Policies
 
@@ -64,11 +70,23 @@ As mentioned above, previously only completed jobs were included in the archive 
 
 Now, a new set of retention options have been added to `publish()` which control how long any job may exist in created state, original or completion. Currently, the default retention is 30 days, but even if it's customized it automatically carries over to the associated completion job as well.
 
-Furthermore, this retention policy is aware of any deferred jobs. If you have any future-dated or interval-deferred jobs, the retention policy start date is internally based on this deferred date, not the created timestamp. During the upgrade, a migration script will run and set the retention to 30 days after the deferred date. If this default is not desirable and you would like to change this retention date, you should feel free to issue an `UPDATE` statement against the job table once upgraded.  You have 30 days to do that. :)
+Furthermore, this retention policy is aware of any deferred jobs. If you have any future-dated or interval-deferred jobs, the retention policy start date is internally based on this deferred date, not the created timestamp. During the upgrade, a migration script will run and set the retention to 30 days after the deferred date. If this default is not desirable and you would like to change it, you should feel free to issue a statement such as the following. You have 30 days to decide on that. ;)
+
+```sql
+UPDATE ... SET keepUntil = startAfter + interval '7 days'
+```
 
 ### Maintenance and Monitoring queues
 
 To keep maintenance operations running as light as possible, the concurrency of each task (expiration, archiving, deletion) has been adjusted to 1 operation at a time and placed into dedicated queues prefixed with `'__pgboss__'`. The same was also done for the optional state count monitoring.
+
+### pgcrypto extension install removed from provisioning script
+
+If you were running pg-boss as a superuser account in production to have it auto-provision the pgcrypto extension in a new database, this change might be viewed as a disadvantage.  The primary principle at play in this decision is "It should be simple to uninstall anything which was installed". Adding an extension to a database cannot be scoped to a schema, and it requires superuser privilege. If pg-boss were to install pgcrypto, it would be unsafe to assume it could be later removed, as it may be in use by other databases. Also, having a script embedded in the installation which requires superuser privilege sends the wrong message of the intent of how applications should be configured in production, where a least privilege model should always be used. As a reminder, below is a simple 1-liner to run in your database if it's not already installed. If you are upgrading pg-boss from a previous version, this is obviously not an issue.
+
+```sql
+CREATE EXTENSION pgcrypto;
+```
 
 ## 3.2.2
 
