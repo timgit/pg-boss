@@ -1,11 +1,9 @@
-Usage
-=====
+# Usage <!-- omit in toc -->
 
 <!-- TOC -->
 
-- [Usage](#usage)
 - [Intro](#intro)
-- [Database installation](#database-installation)
+- [Database install](#database-install)
 - [Database uninstall](#database-uninstall)
 - [Functions](#functions)
   - [`new(connectionString)`](#newconnectionstring)
@@ -55,9 +53,9 @@ pg-boss is used by creating an instance of the exported class, a subclass of a N
 
 You may use as many instances in as many environments as needed based on your requirements.  Since each instance has a connection pool (or even if you bring your own), the only primary limitation on instance count is based on the maximum number of connections your database can accept.  If you need a larger number of workers than your postgres database can accept, consider using a centralized connection pool such as pgBouncer. If you have constraints preventing direct database access, consider creating your own abstraction layer over pg-boss such as a secure web API using the `fetch()` and `complete()` functions.  If you require multiple installations in the same database, you will need to specify a separate schema name per install in the constructor.
 
-# Database installation
+# Database install
 
-pg-boss can be installed into any database.  When started, it will detect if it is installed and automatically create the required schema for all queue operations if needed.  Starting with 3.0, if the database doesn't already have the pgcrypto extension installed, you will need to have a superuser add it before pg-boss can create its schema.
+pg-boss can be installed into any database.  When started, it will detect if it is installed and automatically create the required schema for all queue operations if needed.  If the database doesn't already have the pgcrypto extension installed, you will need to have a superuser add it before pg-boss can create its schema.
 
 ```sql
 CREATE EXTENSION pgcrypto;
@@ -66,10 +64,10 @@ CREATE EXTENSION pgcrypto;
 Once this is completed, pg-boss requires the [CREATE](http://www.postgresql.org/docs/9.5/static/sql-grant.html) privilege in order to create and maintain its schema.
 
 ```sql
-GRANT CREATE ON DATABASE ReallyImportantDb TO mostvaluableperson;
+GRANT CREATE ON DATABASE db1 TO leastprivuser;
 ```
 
-If the CREATE privilege is not granted (so sad), you can still use the static function `PgBoss.getConstructionPlans()` method to export the SQL required to manually create the objects.  This means you will also need to monitor future releases for schema changes (the schema property in [version.json](../version.json)) so they can be applied manually. In which case you'll be interested in `PgBoss.getMigrationPlans()` for manual migration scripts.
+If the CREATE privilege is not available or desired, you can use the included [static functions](#static-functions) to export the SQL commands to manually create or upgrade the required database schema.  **This means you will also need to monitor future releases for schema changes** (the schema property in [version.json](../version.json)) so they can be applied manually.
 
 # Database uninstall
 

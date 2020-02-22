@@ -1,26 +1,24 @@
-Configuration
-=============
+# Configuration <!-- omit in toc -->
 
 pg-boss can be customized using configuration options when an instance is created (the constructor argument), during publishing as well as subscribing.
 
 <!-- TOC -->
 
-- [Configuration](#configuration)
-  - [Constructor Options](#constructor-options)
-    - [Database options](#database-options)
-    - [Queue options](#queue-options)
-    - [Maintenance options](#maintenance-options)
-      - [Archive completed jobs](#archive-completed-jobs)
-      - [Delete archived jobs](#delete-archived-jobs)
-      - [Maintenance interval](#maintenance-interval)
-  - [Publish Options](#publish-options)
-    - [Delayed jobs](#delayed-jobs)
-    - [Unique jobs](#unique-jobs)
-    - [Throttled jobs](#throttled-jobs)
-    - [Job retries](#job-retries)
-    - [Job expiration](#job-expiration)
-    - [Job retention](#job-retention)
-  - [Subscribe Options](#subscribe-options)
+- [Constructor Options](#constructor-options)
+  - [Database options](#database-options)
+  - [Queue options](#queue-options)
+  - [Maintenance options](#maintenance-options)
+    - [Archive completed jobs](#archive-completed-jobs)
+    - [Delete archived jobs](#delete-archived-jobs)
+    - [Maintenance interval](#maintenance-interval)
+- [Publish Options](#publish-options)
+  - [Delayed jobs](#delayed-jobs)
+  - [Unique jobs](#unique-jobs)
+  - [Throttled jobs](#throttled-jobs)
+  - [Job retries](#job-retries)
+  - [Job expiration](#job-expiration)
+  - [Job retention](#job-retention)
+- [Subscribe Options](#subscribe-options)
 
 <!-- /TOC -->
 
