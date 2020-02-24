@@ -111,7 +111,8 @@ declare class PgBoss {
   constructor(options: PgBoss.ConstructorOptions);
 
   static getConstructionPlans(schema: string): string;
-  static getMigrationPlans(schema: string, version: string, uninstall: boolean): string;
+  static getMigrationPlans(schema: string, version: string): string;
+  static getRollbackPlans(schema: string, version: string): string;
 
   on(event: "error", handler: (error: Error) => void): void;
   on(event: "archived", handler: (count: number) => void): void;
