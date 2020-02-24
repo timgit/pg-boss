@@ -5,18 +5,13 @@
 ### Changes
 
 - `start()` is now fully multi-master ready and supported for installation, schema migrations and maintenance operations.
-- MAJOR: Consolidated the maintenance constructor options and removed any options for intervals less than 1 second.
+- MAJOR: Replaced expiration pg interval string configuration in `publish()` with specific integer settings for better validation and api consistency
   - Removed:
-    - `expireCheckInterval`
-    - `expireCheckIntervalSeconds`
-    - `expireCheckIntervalMinutes`
-    - `archiveCheckInterval`
-    - `archiveCheckIntervalSeconds`
-    - `archiveCheckIntervalMinutes`
-    - `deleteCheckInterval`
+    - `expireIn`
   - Added:
-    - `maintenanceIntervalSeconds`
-    - `maintenanceIntervalMinutes`
+    - `expireInSeconds`
+    - `expireInMinutes`
+    - `expireInHours`
 - MAJOR: Replaced maintenance pg interval string configurations with specific integer settings for better validation and api consistency
   - Removed:
     - `deleteArchivedJobsEvery`
@@ -30,13 +25,18 @@
     - `deleteIntervalMinutes`
     - `deleteIntervalHours`
     - `deleteIntervalDays`
-- MAJOR: Replaced expiration pg interval string configuration in `publish()` with specific integer settings for better validation and api consistency
+- MAJOR: Consolidated the maintenance constructor options and removed any options for intervals less than 1 second.
   - Removed:
-    - `expireIn`
+    - `expireCheckInterval`
+    - `expireCheckIntervalSeconds`
+    - `expireCheckIntervalMinutes`
+    - `archiveCheckInterval`
+    - `archiveCheckIntervalSeconds`
+    - `archiveCheckIntervalMinutes`
+    - `deleteCheckInterval`
   - Added:
-    - `expireInSeconds`
-    - `expireInMinutes`
-    - `expireInHours`
+    - `maintenanceIntervalSeconds`
+    - `maintenanceIntervalMinutes`
 - MAJOR: Added retention policies for created jobs.  In v3, maintenance operations archived completed jobs, but this policy ignored jobs which were created and never fetched.
   - Added the following configuration options to `publish()`
     - `retentionSeconds`
