@@ -9,8 +9,8 @@
   },
   "dependencies": {
     "bluebird": "^3.7.2",
-    "pg": "^7.18.1",
-    "uuid": "^3.4.0"
+    "pg": "^7.18.2",
+    "uuid": "^7.0.0"
   },
   "devDependencies": {
     "coveralls": "^3.0.9",

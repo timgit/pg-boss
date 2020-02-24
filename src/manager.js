@@ -1,6 +1,7 @@
 const assert = require('assert')
 const EventEmitter = require('events')
 const Promise = require('bluebird')
+const uuid = require('uuid')
 
 const Worker = require('./worker')
 const plans = require('./plans')
@@ -179,7 +180,7 @@ class Manager extends EventEmitter {
       retryDelay
     } = options
 
-    const id = require(`uuid/${this.config.uuid}`)()
+    const id = uuid[this.config.uuid]()
 
     const values = [
       id, // 1
