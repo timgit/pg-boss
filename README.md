@@ -14,11 +14,11 @@ async function readme() {
   boss.on('error', error => console.error(error));
 
   await boss.start();
-  
+
   const queue = 'some-queue';
 
   let jobId = await boss.publish(queue, { param1: 'foo' })
-  
+
   console.log(`created job in queue ${queue}: ${jobId}`);
 
   await boss.subscribe(queue, someAsyncJobHandler);
@@ -27,7 +27,7 @@ async function readme() {
 async function someAsyncJobHandler(job) {
   console.log(`job ${job.id} received with data:`);
   console.log(JSON.stringify(job.data));
-    
+
   await doSomethingAsyncWithThis(job.data);
 }
 ```
@@ -36,7 +36,7 @@ pg-boss is a job queue built in Node.js on top of PostgreSQL in order to provide
 
 Why would you consider using this queue over others? pg-boss is actually a light abstraction over features added in PostgreSQL 9.5
 (specifically [SKIP LOCKED](http://blog.2ndquadrant.com/what-is-select-skip-locked-for-in-postgresql-9-5) and upserts)
-which significantly enhanced its ability to act as a reliable, distributed message queue. I wrote this to remove a dependency on Redis (via the kue package), consolidating systems I have to support in production as well as upgrading to guaranteed message processing (hint: [Redis persistence docs](https://redis.io/topics/persistence#ok-so-what-should-i-use)). 
+which significantly enhanced its ability to act as a reliable, distributed message queue. I wrote this to remove a dependency on Redis (via the kue package), consolidating systems I have to support in production as well as upgrading to guaranteed message processing (hint: [Redis persistence docs](https://redis.io/topics/persistence#ok-so-what-should-i-use)).
 
 This will likely cater the most to teams already familiar with the simplicity of relational database semantics and operations (querying and backups, for example).
 
@@ -45,13 +45,14 @@ This will likely cater the most to teams already familiar with the simplicity of
 * Delayed jobs
 * Job retries (opt-in exponential backoff)
 * Job throttling (unique jobs, rate limiting and/or debouncing)
-* Job batching for high volume use cases 
+* Job batching for high volume use cases
 * Backpressure-compatible subscriptions
 * Configurable job concurrency
 * Distributed and/or clustered workers
 * Completion subscriptions to support orchestrations/sagas
 * On-demand job fetching and completion for external integrations (such as web APIs)
 * Multi-master capable using tools such as Kubernetes ReplicaSets
+* Direct table access for bulk loading via COPY or other advanced usage
 * Automatic provisioning of required storage into a dedicated schema
 * Automatic monitoring for expired jobs
 * Automatic archiving for completed jobs

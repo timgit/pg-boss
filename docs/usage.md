@@ -45,6 +45,8 @@
   - [`string getConstructionPlans(schema)`](#string-getconstructionplansschema)
   - [`string getMigrationPlans(schema, version)`](#string-getmigrationplansschema-version)
   - [`string getRollbackPlans(schema, version)`](#string-getrollbackplansschema-version)
+- [Direct database interactions](#direct-database-interactions)
+  - [Job table](#job-table)
 
 <!-- /TOC -->
 
@@ -545,3 +547,33 @@ Returns the SQL commands required to manually migrate from the specified version
 - `version`: string, target schema version to uninstall
 
 Returns the SQL commands required to manually roll back the specified version to the previous version
+
+# Direct database interactions
+
+If you need to interact with pg-boss outside of Node.js, such as other clients or even using triggers within PostgreSQL itself, most functionality is supported even when working directly against the internal tables.  Additionally, you may even decide to do this within Node.js. For example, if you wanted to bulk load jobs into pg-boss and skip calling `publish()` one job at a time, you could either use `INSERT` or the faster `COPY` command.
+
+## Job table
+
+The following command is the definition of the primary job table. For manual job creation, the only required column is `name`.  All other columns are nullable or have sensible defaults.
+
+```sql
+    CREATE TABLE ${schema}.job (
+      id uuid primary key not null default gen_random_uuid(),
+      name text not null,
+      priority integer not null default(0),
+      data jsonb,
+      state ${schema}.job_state not null default('${states.created}'),
+      retryLimit integer not null default(0),
+      retryCount integer not null default(0),
+      retryDelay integer not null default(0),
+      retryBackoff boolean not null default false,
+      startAfter timestamp with time zone not null default now(),
+      startedOn timestamp with time zone,
+      singletonKey text,
+      singletonOn timestamp without time zone,
+      expireIn interval not null default interval '15 minutes',
+      createdOn timestamp with time zone not null default now(),
+      completedOn timestamp with time zone,
+      keepUntil timestamp with time zone NOT NULL default now() + interval '30 days'
+    )
+```
