@@ -220,7 +220,7 @@ class Manager extends EventEmitter {
 
   async fetch (name, batchSize) {
     const values = Attorney.checkFetchArgs(name, batchSize)
-    const result = await this.db.executeSql(this.nextJobCommand, [values.name, values.batchSize || 1])
+    const result = await this.db.executeSql(this.nextJobCommand, [values.name, batchSize || 1])
 
     const jobs = result.rows.map(job => {
       job.done = async (error, response) => {

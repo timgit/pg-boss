@@ -104,8 +104,6 @@ function checkSubscribeArgs (name, args) {
   assert(!('teamSize' in options) || (Number.isInteger(options.teamSize) && options.teamSize >= 1), 'teamSize must be an integer > 0')
   assert(!('batchSize' in options) || (Number.isInteger(options.batchSize) && options.batchSize >= 1), 'batchSize must be an integer > 0')
 
-  name = sanitizeQueueNameForFetch(name)
-
   return { options, callback }
 }
 
@@ -116,7 +114,7 @@ function checkFetchArgs (name, batchSize) {
 
   assert(!batchSize || batchSize >= 1, 'fetch() assert: optional batchSize arg must be at least 1')
 
-  return { name, batchSize }
+  return { name }
 }
 
 function sanitizeQueueNameForFetch (name) {

@@ -11,7 +11,8 @@ const events = {
   archived: 'archived',
   deleted: 'deleted',
   expired: 'expired',
-  monitorStates: 'monitor-states'
+  monitorStates: 'monitor-states',
+  maintenance: 'maintenance'
 }
 
 class Boss extends EventEmitter {
@@ -38,7 +39,8 @@ class Boss extends EventEmitter {
       this.expire,
       this.archive,
       this.purge,
-      this.countStates
+      this.countStates,
+      this.getQueueNames
     ]
   }
 
@@ -66,11 +68,17 @@ class Boss extends EventEmitter {
         throw new Error('__test__throw_maint')
       }
 
+      const started = Date.now()
+
       this.emitValue(events.expired, await this.expire())
       this.emitValue(events.archived, await this.archive())
       this.emitValue(events.deleted, await this.purge())
 
       await this.config.manager.complete(jobs.map(j => j.id))
+
+      const ended = Date.now()
+
+      this.emit('maintenance', { count: jobs.length, ms: ended - started })
     } catch (err) {
       this.emit(events.error, err)
     }
@@ -150,6 +158,10 @@ class Boss extends EventEmitter {
   async purge () {
     const { rowCount } = await this.db.executeSql(this.purgeCommand, [this.config.deleteInterval])
     return rowCount
+  }
+
+  getQueueNames () {
+    return queues
   }
 }
 

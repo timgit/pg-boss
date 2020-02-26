@@ -1,6 +1,7 @@
 const Promise = require('bluebird')
 const assert = require('assert')
 const helper = require('./testHelper')
+const PgBoss = require('../')
 
 describe('complete', function () {
   it('should reject missing id argument', async function () {
@@ -17,19 +18,30 @@ describe('complete', function () {
   })
 
   it('should complete a batch of jobs', async function () {
-    const jobName = 'complete-batch'
+    const queue = 'complete-batch'
+    const batchSize = 3
 
     const boss = await helper.start(this.test.bossConfig)
 
     await Promise.all([
-      boss.publish(jobName),
-      boss.publish(jobName),
-      boss.publish(jobName)
+      boss.publish(queue),
+      boss.publish(queue),
+      boss.publish(queue)
     ])
 
-    const jobs = await boss.fetch(jobName, 3)
+    const countJobs = (state) => helper.countJobs(this.test.bossConfig.schema, 'name = $1 AND state = $2', [queue, state])
+
+    const jobs = await boss.fetch(queue, batchSize)
+
+    const activeCount = await countJobs(PgBoss.states.active)
+
+    assert.strictEqual(activeCount, batchSize)
 
     await boss.complete(jobs.map(job => job.id))
+
+    const completed = await boss.fetchCompleted(queue, batchSize)
+
+    assert.strictEqual(batchSize, completed.length)
 
     await boss.stop()
   })

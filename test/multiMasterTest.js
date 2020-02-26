@@ -59,4 +59,51 @@ describe('multi-master', function () {
       await Promise.map(instances, i => i.stop())
     }
   })
+
+  it('should pull in batches of maintenance jobs 10 at a time if they exist', async function () {
+    const { states } = PgBoss
+    const jobCount = 10
+
+    const defaults = {
+      maintenanceIntervalSeconds: 1,
+      noSupervisor: true
+    }
+
+    const config = { ...this.test.bossConfig, ...defaults }
+
+    const boss = new PgBoss(config)
+
+    const queues = boss.boss.getQueueNames()
+    const countJobs = (state) => helper.countJobs(config.schema, 'name = $1 AND state = $2', [queues.MAINT, state])
+
+    const maintenanceEvent = new Promise((resolve) => {
+      boss.on('maintenance', result => {
+        resolve(result)
+      })
+    })
+
+    await boss.start()
+
+    // create extra maintenace jobs manually
+    for (let i = 0; i < jobCount; i++) {
+      await boss.boss.maintenanceAsync()
+    }
+
+    const beforeCount = await countJobs(states.created)
+
+    assert.strictEqual(beforeCount, jobCount)
+
+    await boss.boss.supervise()
+
+    // wait long enough for maintenance promise to resolve
+    await Promise.delay(3000)
+
+    const maintResult = await maintenanceEvent
+
+    assert.strictEqual(maintResult.count, jobCount)
+
+    const completedCount = await countJobs(states.completed)
+
+    assert.strictEqual(completedCount, jobCount)
+  })
 })
