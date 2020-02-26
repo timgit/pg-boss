@@ -60,9 +60,9 @@ describe('multi-master', function () {
     }
   })
 
-  it('should pull in batches of maintenance jobs 10 at a time if they exist', async function () {
+  it('should clear maintenance queue before supervising', async function () {
     const { states } = PgBoss
-    const jobCount = 10
+    const jobCount = 5
 
     const defaults = {
       maintenanceIntervalSeconds: 1,
@@ -100,10 +100,10 @@ describe('multi-master', function () {
 
     const maintResult = await maintenanceEvent
 
-    assert.strictEqual(maintResult.count, jobCount)
+    assert.strictEqual(maintResult.count, 1)
 
     const completedCount = await countJobs(states.completed)
 
-    assert.strictEqual(completedCount, jobCount)
+    assert.strictEqual(completedCount, 1)
   })
 })
