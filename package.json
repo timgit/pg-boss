@@ -19,7 +19,7 @@
     "standard": "^14.3.1"
   },
   "scripts": {
-    "test": "standard && mocha --exit",
+    "test": "standard && mocha --exit --no-warnings",
     "cover": "nyc --reporter=text npm test",
     "forcover": "npm run cover && nyc report --reporter=text-lcov | coveralls",
     "export-schema": "node ./scripts/construct.js",
@@ -28,7 +28,8 @@
   },
   "mocha": {
     "timeout": 10000,
-    "slow": 10000
+    "slow": 10000,
+    "bail": true
   },
   "nyc": {
     "include": [

@@ -24,4 +24,25 @@ describe('expire', function () {
 
     await boss.stop()
   })
+
+  it('should warn with an old expireIn option only once', async function () {
+    const queue = 'expireIn-warning-only-once'
+
+    const boss = await helper.start({ ...this.test.bossConfig, noSupervisor: true })
+
+    let warningCount = 0
+
+    process.on('warning', (warning) => {
+      assert(warning.message.indexOf('expireIn') > -1)
+      warningCount++
+    })
+
+    await boss.publish({ name: queue, options: { expireIn: '1 minute' } })
+    await boss.publish({ name: queue, options: { expireIn: '1 minute' } })
+    await boss.publish({ name: queue, options: { expireIn: '1 minute' } })
+
+    assert.strictEqual(warningCount, 1)
+
+    await boss.stop()
+  })
 })

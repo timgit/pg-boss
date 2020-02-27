@@ -7,6 +7,12 @@ module.exports = {
   checkFetchArgs
 }
 
+const WARNINGS = {
+  publishExpireInRemoved: {
+    message: '\'expireIn\' option found in publish().  This option has been removed.  Use expireInSeconds, expireInMinutes or expireInHours'
+  }
+}
+
 function checkPublishArgs (args) {
   let name, data, options
 
@@ -182,6 +188,10 @@ function applyPublishRetentionConfig (config) {
 }
 
 function applyPublishExpirationConfig (config) {
+  if ('expireIn' in config) {
+    emitWarning(WARNINGS.publishExpireInRemoved)
+  }
+
   assert(!('expireInSeconds' in config) || config.expireInSeconds >= 1,
     'configuration assert: expireInSeconds must be at least every second')
 
@@ -290,4 +300,11 @@ function applyMonitoringConfig (config) {
 function applyUuidConfig (config) {
   assert(!('uuid' in config) || config.uuid === 'v1' || config.uuid === 'v4', 'configuration assert: uuid option only supports v1 or v4')
   config.uuid = config.uuid || 'v1'
+}
+
+function emitWarning (warning) {
+  if (!warning.warned) {
+    warning.warned = true
+    process.emitWarning(warning.message, warning.type, warning.code)
+  }
 }

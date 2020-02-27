@@ -105,5 +105,7 @@ describe('multi-master', function () {
     const completedCount = await countJobs(states.completed)
 
     assert.strictEqual(completedCount, 1)
+
+    await boss.stop()
   })
 })
