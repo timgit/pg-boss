@@ -6,11 +6,9 @@ class Worker {
   }
 
   async start () {
-    if (!this.stopped) {
+    while (!this.stopped) {
       await this.config.fetch().then(this.config.onFetch).catch(this.config.onError)
       await Promise.delay(this.config.interval)
-
-      this.start()
     }
   }
 
