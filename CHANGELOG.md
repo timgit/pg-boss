@@ -52,13 +52,13 @@
 
 ### Summary
 
-The breaking changes introduced in this release should not cause any run-time failures, as they are primarily focused on maintenance and operations. However, if you are relying on customized maintenance intervals you may need to adjust the configuration options referenced above when you upgrade. Additionally, if you use a lot of deferred jobs, **please read** the section below regarding the retention policy changes, as this version will now archive jobs which have been created but never fetched.
+The breaking changes introduced in this release should not cause any run-time failures, as they are focused on maintenance and operations. However, if you use the deferred publishing options, **please read** the section below regarding retention policy changes, as this version will now archive jobs which have been created but never fetched.
 
 ### Multi-master
 
-This release was originally started to support rolling deployments where a new instance was being started before another instance was turned off in a container orchestration system.  When this happened, somtimes a race condition occurred between maintenance operations causing unpredictable deadlock errors (see [issue #133](https://github.com/timgit/pg-boss/issues/133)). This was primarily because of the use of unordered data sets in CTEs from a `DELETE ... RETURNING` statement. However, instead of focusing on the SQL itself, the concurrency problem proved a far superior use case to resolve holistically, and this became a perfect example of pg-boss eating its own dog food via a dedicated maintenance queue (mentioned below).
+This release was originally started to support rolling deployments where a new instance was being started before another instance was turned off in a container orchestration system.  When this happened, sometimes a race condition occurred between maintenance operations causing unpredictable deadlock errors (see [issue #133](https://github.com/timgit/pg-boss/issues/133)). This was primarily because of the use of unordered data sets in CTEs from a `DELETE ... RETURNING` statement. However, instead of focusing on the SQL itself, the concurrency problem proved a far superior use case to resolve holistically, and this became a perfect example of pg-boss eating its own dog food via a dedicated maintenance queue (mentioned below).
 
-The result of using a queue for maintenance instead of timers such as `setTimeout()` is the same distruted concurrency benefit of using queues for any other workload. This is sometimes referred to as a multi-master configuration, where more than 1 instance is using `start()` simultaneously. If and when this occurs in your environment, only 1 of them will be able to fetch the job (maintnenance or state monitoring) and issue the related SQL commands.
+The result of using a queue for maintenance instead of timers such as `setTimeout()` is the same distruted concurrency benefit of using queues for any other workload. This is sometimes referred to as a multi-master configuration, where more than 1 instance is using `start()` simultaneously. If and when this occurs in your environment, only 1 of them will be able to fetch a job (maintnenance or state monitoring) and issue the related SQL commands.
 
 Additionally, all schema operations, both first-time provisioning and migrations, are nested within advisory locks to prevent race conditions during `start()`. Internally, these locks are created using `pg_advisory_xact_lock()` which auto-unlock at the end of the transaction and don't require a persistent session or the need to issue an unlock. This should make it compatible with most connection poolers, such as pgBouncer in transactional pooling mode.
 
@@ -70,10 +70,11 @@ As mentioned above, previously only completed jobs were included in the archive 
 
 Now, a new set of retention options have been added to `publish()` which control how long any job may exist in created state, original or completion. Currently, the default retention is 30 days, but even if it's customized it automatically carries over to the associated completion job as well.
 
-Furthermore, this retention policy is aware of any deferred jobs. If you have any future-dated or interval-deferred jobs, the retention policy start date is internally based on this deferred date, not the created timestamp. During the upgrade, a migration script will run and set the retention to 30 days after the deferred date. If this default is not desirable and you would like to change it, you should feel free to issue a statement such as the following. You have 30 days to decide on that. ;)
+Furthermore, this retention policy is aware of any deferred jobs. If you have future-dated or interval-deferred jobs, the retention policy start date is internally based on the deferred date, not the created timestamp. During the upgrade, a migration script will run and set the retention to 30 days after the deferred date. If this default is not desirable and you would like to change it, you should feel free to issue a statement such as the following. You have 30 days to decide on that. ;)
 
 ```sql
-UPDATE ... SET keepUntil = startAfter + interval '7 days'
+-- example of changing the default retention to 7 days instead of 30 days after the migration to v4
+UPDATE pgboss.job SET keepUntil = startAfter + interval '7 days'
 ```
 
 ### Maintenance and Monitoring queues
