@@ -45,8 +45,18 @@ function next (schema, version, migrations) {
   return flatten(schema, result.install, result.version)
 }
 
-function migrate (schema, version, migrations) {
-  migrations = migrations || getAll(schema)
+function migrate (value, version, migrations) {
+  let schema, config
+
+  if (typeof value === 'string') {
+    config = null
+    schema = value
+  } else {
+    config = value
+    schema = config.schema
+  }
+
+  migrations = migrations || getAll(schema, config)
 
   const result = migrations
     .filter(i => i.previous >= version)
@@ -62,7 +72,10 @@ function migrate (schema, version, migrations) {
   return flatten(schema, result.install, result.version)
 }
 
-function getAll (schema) {
+function getAll (schema, config) {
+  const DEFAULT_RETENTION = '30 days'
+  const keepUntil = config ? config.keepUntil : DEFAULT_RETENTION
+
   return [
     {
       version: 12,
@@ -71,8 +84,8 @@ function getAll (schema) {
           `ALTER TABLE ${schema}.version ALTER COLUMN version TYPE int USING version::int`,
           `ALTER TABLE ${schema}.job ADD COLUMN keepUntil timestamptz`,
           `ALTER TABLE ${schema}.archive ADD COLUMN keepUntil timestamptz`,
-          `ALTER TABLE ${schema}.job ALTER COLUMN keepUntil SET DEFAULT now() + interval '30 days'`,
-          `UPDATE ${schema}.job SET keepUntil = startAfter + interval '30 days'`,
+          `ALTER TABLE ${schema}.job ALTER COLUMN keepUntil SET DEFAULT now() + interval '${DEFAULT_RETENTION}'`,
+          `UPDATE ${schema}.job SET keepUntil = startAfter + interval '${keepUntil}'`,
           `ALTER TABLE ${schema}.job ALTER COLUMN keepUntil SET NOT NULL`
       ],
       uninstall: [

@@ -58,12 +58,12 @@ class Manager extends EventEmitter {
   }
 
   async subscribe (name, ...args) {
-    const { options, callback } = Attorney.checkSubscribeArgs(name, args)
+    const { options, callback } = Attorney.checkSubscribeArgs(name, args, this.config)
     return this.watch(name, options, callback)
   }
 
   async onComplete (name, ...args) {
-    const { options, callback } = Attorney.checkSubscribeArgs(name, args)
+    const { options, callback } = Attorney.checkSubscribeArgs(name, args, this.config)
     return this.watch(completedJobPrefix + name, options, callback)
   }
 
@@ -123,7 +123,7 @@ class Manager extends EventEmitter {
   }
 
   async publish (...args) {
-    const { name, data, options } = Attorney.checkPublishArgs(args)
+    const { name, data, options } = Attorney.checkPublishArgs(args, this.config)
     return this.createJob(name, data, options)
   }
 
@@ -131,7 +131,7 @@ class Manager extends EventEmitter {
     options = options || {}
     options.singletonKey = key
 
-    const result = Attorney.checkPublishArgs([name, data, options])
+    const result = Attorney.checkPublishArgs([name, data, options], this.config)
 
     return this.createJob(result.name, result.data, result.options)
   }
@@ -140,7 +140,7 @@ class Manager extends EventEmitter {
     options = options || {}
     options.startAfter = after
 
-    const result = Attorney.checkPublishArgs([name, data, options])
+    const result = Attorney.checkPublishArgs([name, data, options], this.config)
 
     return this.createJob(result.name, result.data, result.options)
   }
@@ -151,7 +151,7 @@ class Manager extends EventEmitter {
     options.singletonNextSlot = false
     options.singletonKey = key
 
-    const result = Attorney.checkPublishArgs([name, data, options])
+    const result = Attorney.checkPublishArgs([name, data, options], this.config)
 
     return this.createJob(result.name, result.data, result.options)
   }
@@ -162,7 +162,7 @@ class Manager extends EventEmitter {
     options.singletonNextSlot = true
     options.singletonKey = key
 
-    const result = Attorney.checkPublishArgs([name, data, options])
+    const result = Attorney.checkPublishArgs([name, data, options], this.config)
 
     return this.createJob(result.name, result.data, result.options)
   }

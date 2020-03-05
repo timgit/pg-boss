@@ -13,7 +13,7 @@ const WARNINGS = {
   }
 }
 
-function checkPublishArgs (args) {
+function checkPublishArgs (args, defaults) {
   let name, data, options
 
   if (typeof args[0] === 'string') {
@@ -42,21 +42,14 @@ function checkPublishArgs (args) {
 
   options = { ...options }
 
-  assert(!('retryDelay' in options) || (Number.isInteger(options.retryDelay) && options.retryDelay >= 0), 'retryDelay must be an integer >= 0')
-  assert(!('retryLimit' in options) || (Number.isInteger(options.retryLimit) && options.retryLimit >= 0), 'retryLimit must be an integer >= 0')
-  assert(!('retryBackoff' in options) || (options.retryBackoff === true || options.retryBackoff === false), 'retryBackoff must be either true or false')
   assert(!('priority' in options) || (Number.isInteger(options.priority)), 'priority must be an integer')
+  options.priority = options.priority || 0
 
-  const {
-    startAfter,
-    singletonSeconds,
-    singletonMinutes,
-    singletonHours,
-    retryDelay = 0,
-    retryLimit = 0,
-    retryBackoff,
-    priority = 0
-  } = options
+  applyRetryConfig(options, defaults)
+  applyExpirationConfig(options, defaults)
+  applyRetentionConfig(options, defaults)
+
+  const { startAfter, singletonSeconds, singletonMinutes, singletonHours } = options
 
   options.startAfter = (startAfter instanceof Date && typeof startAfter.toISOString === 'function') ? startAfter.toISOString()
     : (startAfter > 0) ? '' + startAfter
@@ -68,20 +61,10 @@ function checkPublishArgs (args) {
       : (singletonHours > 0) ? singletonHours * 60 * 60
         : null
 
-  options.retryDelay = retryDelay
-  options.retryLimit = retryLimit
-  options.priority = priority
-  options.retryBackoff = !!retryBackoff
-  options.retryDelay = (options.retryBackoff && !retryDelay) ? 1 : retryDelay
-  options.retryLimit = (options.retryDelay && !retryLimit) ? 1 : retryLimit
-
-  applyPublishRetentionConfig(options)
-  applyPublishExpirationConfig(options)
-
   return { name, data, options }
 }
 
-function checkSubscribeArgs (name, args) {
+function checkSubscribeArgs (name, args, defaults) {
   let options, callback
 
   assert(name, 'missing job name')
@@ -99,9 +82,7 @@ function checkSubscribeArgs (name, args) {
 
   options = { ...options }
 
-  if ('newJobCheckInterval' in options || 'newJobCheckIntervalSeconds' in options) {
-    applyNewJobCheckInterval(options)
-  }
+  applyNewJobCheckInterval(options, defaults)
 
   assert(!('teamConcurrency' in options) ||
     (Number.isInteger(options.teamConcurrency) && options.teamConcurrency >= 1 && options.teamConcurrency <= 1000),
@@ -136,12 +117,16 @@ function getConfig (value) {
     : { ...value }
 
   applyDatabaseConfig(config)
-  applyNewJobCheckInterval(config)
   applyMaintenanceConfig(config)
   applyArchiveConfig(config)
   applyDeleteConfig(config)
   applyMonitoringConfig(config)
   applyUuidConfig(config)
+
+  // defaults for publish and subscribe
+  applyNewJobCheckInterval(config)
+  applyExpirationConfig(config)
+  applyRetentionConfig(config)
 
   return config
 }
@@ -164,7 +149,7 @@ function applyDatabaseConfig (config) {
   }
 }
 
-function applyPublishRetentionConfig (config) {
+function applyRetentionConfig (config, defaults) {
   assert(!('retentionSeconds' in config) || config.retentionSeconds >= 1,
     'configuration assert: retentionSeconds must be at least every second')
 
@@ -182,12 +167,13 @@ function applyPublishRetentionConfig (config) {
       : ('retentionHours' in config) ? `${config.retentionHours} hours`
         : ('retentionMinutes' in config) ? `${config.retentionMinutes} minutes`
           : ('retentionSeconds' in config) ? `${config.retentionSeconds} seconds`
-            : '30 days'
+            : defaults ? defaults.keepUntil
+              : '30 days'
 
   config.keepUntil = keepUntil
 }
 
-function applyPublishExpirationConfig (config) {
+function applyExpirationConfig (config, defaults) {
   if ('expireIn' in config) {
     emitWarning(WARNINGS.publishExpireInRemoved)
   }
@@ -205,12 +191,31 @@ function applyPublishExpirationConfig (config) {
     ('expireInHours' in config) ? `${config.expireInHours} hours`
       : ('expireInMinutes' in config) ? `${config.expireInMinutes} minutes`
         : ('expireInSeconds' in config) ? `${config.expireInSeconds} seconds`
-          : '15 minutes'
+          : defaults ? defaults.expireIn
+            : '15 minutes'
 
   config.expireIn = expireIn
 }
 
-function applyNewJobCheckInterval (config) {
+function applyRetryConfig (config, defaults) {
+  assert(!('retryDelay' in config) || (Number.isInteger(config.retryDelay) && config.retryDelay >= 0), 'retryDelay must be an integer >= 0')
+  assert(!('retryLimit' in config) || (Number.isInteger(config.retryLimit) && config.retryLimit >= 0), 'retryLimit must be an integer >= 0')
+  assert(!('retryBackoff' in config) || (config.retryBackoff === true || config.retryBackoff === false), 'retryBackoff must be either true or false')
+
+  if (defaults) {
+    config.retryDelay = config.retryDelay || defaults.retryDelay
+    config.retryLimit = config.retryLimit || defaults.retryLimit
+    config.retryBackoff = config.retryBackoff || defaults.retryBackoff
+  }
+
+  config.retryDelay = config.retryDelay || 0
+  config.retryLimit = config.retryLimit || 0
+  config.retryBackoff = !!config.retryBackoff
+  config.retryDelay = (config.retryBackoff && !config.retryDelay) ? 1 : config.retryDelay
+  config.retryLimit = (config.retryDelay && !config.retryLimit) ? 1 : config.retryLimit
+}
+
+function applyNewJobCheckInterval (config, defaults) {
   const second = 1000
 
   assert(!('newJobCheckInterval' in config) || config.newJobCheckInterval >= 100,
@@ -222,7 +227,8 @@ function applyNewJobCheckInterval (config) {
   config.newJobCheckInterval =
     ('newJobCheckIntervalSeconds' in config) ? config.newJobCheckIntervalSeconds * second
       : ('newJobCheckInterval' in config) ? config.newJobCheckInterval
-        : second * 2
+        : defaults ? defaults.newJobCheckInterval
+          : second * 2
 }
 
 function applyMaintenanceConfig (config) {

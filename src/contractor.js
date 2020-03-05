@@ -65,7 +65,7 @@ class Contractor {
 
   async migrate (version) {
     try {
-      const commands = migrationStore.migrate(this.config.schema, version, this.migrations)
+      const commands = migrationStore.migrate(this.config, version, this.migrations)
       await this.db.executeSql(commands)
     } catch (err) {
       assert(err.message.indexOf(plans.MIGRATE_RACE_MESSAGE) > -1, err)
