@@ -9,7 +9,8 @@ module.exports = {
 
 const WARNINGS = {
   publishExpireInRemoved: {
-    message: '\'expireIn\' option found in publish().  This option has been removed.  Use expireInSeconds, expireInMinutes or expireInHours'
+    message: '\'expireIn\' option detected.  This option has been removed.  Use expireInSeconds, expireInMinutes or expireInHours',
+    code: 'pg-boss-w01'
   }
 }
 

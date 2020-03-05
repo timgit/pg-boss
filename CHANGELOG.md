@@ -5,14 +5,32 @@
 ### Changes
 
 - `start()` is now fully multi-master ready and supported for installation, schema migrations and maintenance operations.
-- MAJOR: Replaced expiration pg interval string configuration in `publish()` with specific integer settings for better validation and api consistency
+- Added default configurations. The following options can now be set in the constructor and will apply to all usages of `publish()` or `subscribe()` on the instance unless overridden on the functions themselves.
+  - Subscribe
+    - polling interval
+  - Publish
+    - Expiration
+    - Retries
+    - Retention (new)
+- MAJOR: Replaced expiration pg interval string configuration in `publish()` with specific integer options for better validation and api consistency. If the `expireIn` option is detected after upgrading, you will see a warning such as the following, which will only be emitted once per instance.
+
+  ```
+  (node:1) [pg-boss-w01] Warning: 'expireIn' option detected.  This option has been removed.  Use expireInSeconds, expireInMinutes or expireInHours
+  ```
+
   - Removed:
     - `expireIn`
   - Added:
     - `expireInSeconds`
     - `expireInMinutes`
     - `expireInHours`
-- MAJOR: Replaced maintenance pg interval string configurations with specific integer settings for better validation and api consistency
+- MAJOR: Added retention policies for created jobs.  In v3, maintenance operations archived completed jobs, but this policy ignored jobs which were created and never fetched.
+  - Added the following configuration options to `publish()`
+    - `retentionSeconds`
+    - `retentionMinutes`
+    - `retentionHours`
+    - `retentionDays`
+- MAJOR: Replaced maintenance pg interval string configurations with specific integer options for better validation and api consistency
   - Removed:
     - `deleteArchivedJobsEvery`
     - `archiveCompletedJobsEvery`
@@ -37,12 +55,6 @@
   - Added:
     - `maintenanceIntervalSeconds`
     - `maintenanceIntervalMinutes`
-- MAJOR: Added retention policies for created jobs.  In v3, maintenance operations archived completed jobs, but this policy ignored jobs which were created and never fetched.
-  - Added the following configuration options to `publish()`
-    - `retentionSeconds`
-    - `retentionMinutes`
-    - `retentionHours`
-    - `retentionDays`
 - MAJOR: Split static getMigrationPlans() function into 2 functions for clarity.
   - Removed:
     - `uninstall` argument from `getMigrationPlans(schema, version)`
@@ -58,7 +70,7 @@ The breaking changes introduced in this release should not cause any run-time fa
 
 This release was originally started to support rolling deployments where a new instance was being started before another instance was turned off in a container orchestration system.  When this happened, sometimes a race condition occurred between maintenance operations causing unpredictable deadlock errors (see [issue #133](https://github.com/timgit/pg-boss/issues/133)). This was primarily because of the use of unordered data sets in CTEs from a `DELETE ... RETURNING` statement. However, instead of focusing on the SQL itself, the concurrency problem proved a far superior use case to resolve holistically, and this became a perfect example of pg-boss eating its own dog food via a dedicated maintenance queue (mentioned below).
 
-The result of using a queue for maintenance instead of timers such as `setTimeout()` is the same distruted concurrency benefit of using queues for any other workload. This is sometimes referred to as a multi-master configuration, where more than 1 instance is using `start()` simultaneously. If and when this occurs in your environment, only 1 of them will be able to fetch a job (maintnenance or state monitoring) and issue the related SQL commands.
+The result of using a queue for maintenance instead of timers such as `setTimeout()` is the same distributed concurrency benefit of using queues for any other workload. This is sometimes referred to as a multi-master configuration, where more than 1 instance is using `start()` simultaneously. If and when this occurs in your environment, only 1 of them will be able to fetch a job (maintenance or state monitoring) and issue the related SQL commands.
 
 Additionally, all schema operations, both first-time provisioning and migrations, are nested within advisory locks to prevent race conditions during `start()`. Internally, these locks are created using `pg_advisory_xact_lock()` which auto-unlock at the end of the transaction and don't require a persistent session or the need to issue an unlock. This should make it compatible with most connection poolers, such as pgBouncer in transactional pooling mode.
 
@@ -68,14 +80,11 @@ One example of how this is useful would be including `start()` inside the bootst
 
 As mentioned above, previously only completed jobs were included in the archive maintenance, but with 1 exception: completion jobs were also moved to the archive even though they were in `created` state. This would sometimes result in missed jobs if an `onComplete` subscription were to reach a backlogged state that couldn't keep up with the configured archive interval.
 
-Now, a new set of retention options have been added to `publish()` which control how long any job may exist in created state, original or completion. Currently, the default retention is 30 days, but even if it's customized it automatically carries over to the associated completion job as well.
+A new set of retention options (listed above) have been added which control how long any job may exist in created state, original or completion. Currently, the default retention is 30 days, but even if it's customized it automatically carries over to the associated completion job as well.
 
-Furthermore, this retention policy is aware of any deferred jobs. If you have future-dated or interval-deferred jobs, the retention policy start date is internally based on the deferred date, not the created timestamp. During the upgrade, a migration script will run and set the retention to 30 days after the deferred date. If this default is not desirable and you would like to change it, you should feel free to issue a statement such as the following. You have 30 days to decide on that. ;)
+Furthermore, this retention policy is aware of any deferred jobs, such as those created with `publishAfter()`. If you have future-dated or interval-deferred jobs, the retention policy start date is internally based on the deferred date, not the created timestamp.
 
-```sql
--- example of changing the default retention to 7 days instead of 30 days after the migration to v4
-UPDATE pgboss.job SET keepUntil = startAfter + interval '7 days'
-```
+During an upgrade from v3, a migration script will run and set the retention date on all jobs found in 'created' state.  For example, if you use the option `retentionDays: 7` in the constructor, then run `start()`, the migration will assign a retention date of 7 days after the created or deferred date, whichever is later.
 
 ### Maintenance and Monitoring queues
 
