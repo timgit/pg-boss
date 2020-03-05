@@ -40,6 +40,23 @@ describe('retries', function () {
     await boss.stop()
   })
 
+  it('should retry a job that failed with cascaded config', async function () {
+    const queueName = 'retryFailed-config-cascade'
+    const retryLimit = 1
+
+    const boss = await helper.start({ ...this.test.bossConfig, ...defaults, retryLimit })
+    const jobId = await boss.publish(queueName)
+
+    await boss.fetch(queueName)
+    await boss.fail(jobId)
+
+    const job = await boss.fetch(queueName)
+
+    assert.strictEqual(job.id, jobId)
+
+    await boss.stop()
+  })
+
   it('should retry with a fixed delay', async function () {
     const queue = 'retryDelayFixed'
 

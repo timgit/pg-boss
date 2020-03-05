@@ -47,4 +47,22 @@ describe('archive', function () {
 
     await boss.stop()
   })
+
+  it('should archive a created job - cascaded config', async function () {
+    const config = { ...this.test.bossConfig, ...defaults, retentionSeconds: 1 }
+    const boss = await helper.start(config)
+
+    const queue = 'archive-created-cascaded-config'
+
+    const jobId = await boss.publish(queue)
+
+    await Promise.delay(5000)
+
+    const archivedJob = await helper.getArchivedJobById(config.schema, jobId)
+
+    assert.strictEqual(jobId, archivedJob.id)
+    assert.strictEqual(queue, archivedJob.name)
+
+    await boss.stop()
+  })
 })
