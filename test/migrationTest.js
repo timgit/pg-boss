@@ -46,7 +46,27 @@ describe('migration', function () {
   })
 
   it('should migrate through 2 versions back and forth', async function () {
-    await contractor.create()
+    const queue = 'migrate-back-2-and-forward'
+
+    const config = { ...this.test.bossConfig, noSupervisor: true }
+
+    const boss = new PgBoss(config)
+
+    await boss.start()
+
+    // creating jobs in 3 states to have data to migrate back and forth
+
+    // completed job
+    await boss.publish(queue)
+    const job = await boss.fetch(queue)
+    await boss.complete(job.id)
+
+    // active job
+    await boss.publish(queue)
+    await boss.fetch(queue)
+
+    // created job
+    await boss.publish(queue)
 
     await contractor.rollback(currentSchemaVersion)
     const oneVersionAgo = await contractor.version()
