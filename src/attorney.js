@@ -57,10 +57,11 @@ function checkPublishArgs (args, defaults) {
       : (typeof startAfter === 'string') ? startAfter
         : null
 
-  options.singletonSeconds = (singletonSeconds > 0) ? singletonSeconds
-    : (singletonMinutes > 0) ? singletonMinutes * 60
-      : (singletonHours > 0) ? singletonHours * 60 * 60
-        : null
+  options.singletonSeconds =
+    (singletonHours > 0) ? singletonHours * 60 * 60
+      : (singletonMinutes > 0) ? singletonMinutes * 60
+        : (singletonSeconds > 0) ? singletonSeconds
+          : null
 
   return { name, data, options }
 }
