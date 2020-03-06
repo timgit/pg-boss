@@ -43,7 +43,7 @@ Since passing only a connection string is intended to be for convenience, you ca
 
 * **connectionString** - string
 
-    PostgresSQL connection string will be parsed and used instead of `host`, `port`, `ssl`, `database`, `user`, `password`.
+    PostgreSQL connection string will be parsed and used instead of `host`, `port`, `ssl`, `database`, `user`, `password`.
     Based on the [pg](https://github.com/brianc/node-postgres) package. For example:
 
     ```js
