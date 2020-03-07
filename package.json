@@ -10,11 +10,11 @@
   "dependencies": {
     "bluebird": "^3.7.2",
     "pg": "^7.18.2",
-    "uuid": "^7.0.0"
+    "uuid": "^7.0.2"
   },
   "devDependencies": {
     "coveralls": "^3.0.9",
-    "mocha": "^7.0.1",
+    "mocha": "^7.1.0",
     "nyc": "^15.0.0",
     "standard": "^14.3.1"
   },
