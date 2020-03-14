@@ -307,7 +307,7 @@ boss.onComplete(jobName, job => {
     assert.strictEqual(job.data.response.message, responsePayload.message)
     assert.strictEqual(job.data.response.code, responsePayload.code)
 
-    finished()
+    finished() // test suite completion callback
 })
 
 const jobId = await boss.publish(jobName, requestPayload)
@@ -315,7 +315,7 @@ const job = await boss.fetch(jobName)
 await boss.complete(job.id, responsePayload)
 ```
 
-And here's an example job from the callback in this test.
+The following is an example data object from the job retrieved in the onComplete() subscription above.
 
 ```js
 {
