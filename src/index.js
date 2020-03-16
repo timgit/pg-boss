@@ -16,8 +16,12 @@ class PgBoss extends EventEmitter {
     return Contractor.constructionPlans(schema)
   }
 
-  static getMigrationPlans (schema, version, uninstall) {
-    return Contractor.migrationPlans(schema, version, uninstall)
+  static getMigrationPlans (schema, version) {
+    return Contractor.migrationPlans(schema, version)
+  }
+
+  static getRollbackPlans (schema, version) {
+    return Contractor.rollbackPlans(schema, version)
   }
 
   constructor (value) {
@@ -33,7 +37,9 @@ class PgBoss extends EventEmitter {
     Object.keys(manager.events).forEach(event => promoteEvent.call(this, manager, manager.events[event]))
     manager.functions.forEach(func => promoteFunction.call(this, manager, func))
 
-    const boss = new Boss(db, config)
+    const bossConfig = { ...config, manager }
+
+    const boss = new Boss(db, bossConfig)
     Object.keys(boss.events).forEach(event => promoteEvent.call(this, boss, boss.events[event]))
     boss.functions.forEach(func => promoteFunction.call(this, boss, func))
 
@@ -44,15 +50,12 @@ class PgBoss extends EventEmitter {
     this.manager = manager
 
     function getDb (config) {
-      let db
-
       if (config.db) {
-        db = config.db
-      } else {
-        db = new Db(config)
-        db.isOurs = true
+        return config.db
       }
 
+      const db = new Db(config)
+      db.isOurs = true
       return db
     }
 
@@ -68,24 +71,20 @@ class PgBoss extends EventEmitter {
     }
   }
 
-  async start (options) {
+  async start () {
     assert(!this.isStarted, alreadyStartedErrorMessage)
-
-    options = options || {}
-
     this.isStarted = true
 
     if (this.db.isOurs && !this.db.opened) {
-      this.db.open()
+      await this.db.open()
     }
 
     await this.contractor.start()
 
     this.isReady = true
 
-    if (!options.noSupervisor) {
-      // not in promise chain for async start()
-      this.boss.supervise()
+    if (!this.config.noSupervisor) {
+      await this.boss.supervise()
     }
 
     return this
@@ -107,7 +106,7 @@ class PgBoss extends EventEmitter {
 
   async connect () {
     if (this.db.isOurs && !this.db.opened) {
-      this.db.open()
+      await this.db.open()
     }
 
     await this.contractor.connect()
@@ -115,10 +114,10 @@ class PgBoss extends EventEmitter {
     return this
   }
 
-  async disconnect (...args) {
+  async disconnect () {
     assert(this.isReady, notReadyErrorMessage)
 
-    await this.manager.stop.apply(this.manager, args)
+    await this.manager.stop()
 
     if (this.db.isOurs) {
       await this.db.close()

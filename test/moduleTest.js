@@ -1,15 +1,15 @@
-const assert = require('chai').assert
+const assert = require('assert')
 
 describe('module', function () {
   it('should export states object', function () {
-    const { states } = require('../src/index')
+    const { states } = require('../')
 
-    assert.isOk(states.created)
-    assert.isOk(states.retry)
-    assert.isOk(states.active)
-    assert.isOk(states.completed)
-    assert.isOk(states.expired)
-    assert.isOk(states.cancelled)
-    assert.isOk(states.failed)
+    assert(states.created)
+    assert(states.retry)
+    assert(states.active)
+    assert(states.completed)
+    assert(states.expired)
+    assert(states.cancelled)
+    assert(states.failed)
   })
 })

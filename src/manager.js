@@ -1,6 +1,7 @@
 const assert = require('assert')
 const EventEmitter = require('events')
 const Promise = require('bluebird')
+const uuid = require('uuid')
 
 const Worker = require('./worker')
 const plans = require('./plans')
@@ -57,38 +58,17 @@ class Manager extends EventEmitter {
   }
 
   async subscribe (name, ...args) {
-    const { options, callback } = Attorney.checkSubscribeArgs(name, args)
+    const { options, callback } = Attorney.checkSubscribeArgs(name, args, this.config)
     return this.watch(name, options, callback)
   }
 
   async onComplete (name, ...args) {
-    const { options, callback } = Attorney.checkSubscribeArgs(name, args)
+    const { options, callback } = Attorney.checkSubscribeArgs(name, args, this.config)
     return this.watch(completedJobPrefix + name, options, callback)
   }
 
   async watch (name, options, callback) {
-    // watch() is always nested in a promise, so assert()s are welcome
-
-    if ('newJobCheckInterval' in options || 'newJobCheckIntervalSeconds' in options) {
-      Attorney.applyNewJobCheckInterval(options)
-    } else {
-      options.newJobCheckInterval = this.config.newJobCheckInterval
-    }
-
-    if ('teamConcurrency' in options) {
-      const teamConcurrencyErrorMessage = 'teamConcurrency must be an integer between 1 and 1000'
-      assert(Number.isInteger(options.teamConcurrency) && options.teamConcurrency >= 1 && options.teamConcurrency <= 1000, teamConcurrencyErrorMessage)
-    }
-
-    if ('teamSize' in options) {
-      const teamSizeErrorMessage = 'teamSize must be an integer > 0'
-      assert(Number.isInteger(options.teamSize) && options.teamSize >= 1, teamSizeErrorMessage)
-    }
-
-    if ('batchSize' in options) {
-      const batchSizeErrorMessage = 'batchSize must be an integer > 0'
-      assert(Number.isInteger(options.batchSize) && options.batchSize >= 1, batchSizeErrorMessage)
-    }
+    options.newJobCheckInterval = options.newJobCheckInterval || this.config.newJobCheckInterval
 
     const sendItBruh = async (jobs) => {
       if (!jobs) {
@@ -143,85 +123,80 @@ class Manager extends EventEmitter {
   }
 
   async publish (...args) {
-    const { name, data, options } = Attorney.checkPublishArgs(args)
+    const { name, data, options } = Attorney.checkPublishArgs(args, this.config)
     return this.createJob(name, data, options)
   }
 
   async publishOnce (name, data, options, key) {
-    const result = Attorney.checkPublishArgs([name, data, options])
+    options = options || {}
+    options.singletonKey = key
 
-    result.options.singletonKey = key
+    const result = Attorney.checkPublishArgs([name, data, options], this.config)
 
     return this.createJob(result.name, result.data, result.options)
   }
 
   async publishAfter (name, data, options, after) {
-    const result = Attorney.checkPublishArgs([name, data, options])
+    options = options || {}
+    options.startAfter = after
 
-    result.options.startAfter = after
+    const result = Attorney.checkPublishArgs([name, data, options], this.config)
 
     return this.createJob(result.name, result.data, result.options)
   }
 
   async publishThrottled (name, data, options, seconds, key) {
-    const result = Attorney.checkPublishArgs([name, data, options])
+    options = options || {}
+    options.singletonSeconds = seconds
+    options.singletonNextSlot = false
+    options.singletonKey = key
 
-    result.options.singletonSeconds = seconds
-    result.options.singletonNextSlot = false
-    result.options.singletonKey = key
+    const result = Attorney.checkPublishArgs([name, data, options], this.config)
 
     return this.createJob(result.name, result.data, result.options)
   }
 
   async publishDebounced (name, data, options, seconds, key) {
-    const result = Attorney.checkPublishArgs([name, data, options])
+    options = options || {}
+    options.singletonSeconds = seconds
+    options.singletonNextSlot = true
+    options.singletonKey = key
 
-    result.options.singletonSeconds = seconds
-    result.options.singletonNextSlot = true
-    result.options.singletonKey = key
+    const result = Attorney.checkPublishArgs([name, data, options], this.config)
 
     return this.createJob(result.name, result.data, result.options)
   }
 
-  async createJob (name, data, options, singletonOffset) {
-    let startAfter = options.startAfter
+  async createJob (name, data, options, singletonOffset = 0) {
+    const {
+      expireIn,
+      priority,
+      startAfter,
+      keepUntil,
+      singletonKey = null,
+      singletonSeconds,
+      retryBackoff,
+      retryLimit,
+      retryDelay
+    } = options
 
-    startAfter = (startAfter instanceof Date && typeof startAfter.toISOString === 'function') ? startAfter.toISOString()
-      : (startAfter > 0) ? '' + startAfter
-        : (typeof startAfter === 'string') ? startAfter
-          : null
+    const id = uuid[this.config.uuid]()
 
-    if ('retryDelay' in options) { assert(Number.isInteger(options.retryDelay) && options.retryDelay >= 0, 'retryDelay must be an integer >= 0') }
-
-    if ('retryBackoff' in options) { assert(options.retryBackoff === true || options.retryBackoff === false, 'retryBackoff must be either true or false') }
-
-    if ('retryLimit' in options) { assert(Number.isInteger(options.retryLimit) && options.retryLimit >= 0, 'retryLimit must be an integer >= 0') }
-
-    let retryLimit = options.retryLimit || 0
-    const retryBackoff = !!options.retryBackoff
-    let retryDelay = options.retryDelay || 0
-
-    if (retryBackoff && !retryDelay) { retryDelay = 1 }
-
-    if (retryDelay && !retryLimit) { retryLimit = 1 }
-
-    const expireIn = options.expireIn || '15 minutes'
-    const priority = options.priority || 0
-
-    const singletonSeconds =
-      (options.singletonSeconds > 0) ? options.singletonSeconds
-        : (options.singletonMinutes > 0) ? options.singletonMinutes * 60
-          : (options.singletonHours > 0) ? options.singletonHours * 60 * 60
-            : null
-
-    const singletonKey = options.singletonKey || null
-
-    singletonOffset = singletonOffset || 0
-
-    const id = require(`uuid/${this.config.uuid}`)()
-
-    // ordinals! [1,  2,    3,        4,          5,          6,        7,    8,            9,                10,              11,         12          ]
-    const values = [id, name, priority, retryLimit, startAfter, expireIn, data, singletonKey, singletonSeconds, singletonOffset, retryDelay, retryBackoff]
+    const values = [
+      id, // 1
+      name, // 2
+      priority, // 3
+      retryLimit, // 4
+      startAfter, // 5
+      expireIn, // 6
+      data, // 7
+      singletonKey, // 8
+      singletonSeconds, // 9
+      singletonOffset, // 10
+      retryDelay, // 11
+      retryBackoff, // 12
+      keepUntil // 13
+    ]
 
     const result = await this.db.executeSql(this.insertJobCommand, values)
 
@@ -245,7 +220,7 @@ class Manager extends EventEmitter {
 
   async fetch (name, batchSize) {
     const values = Attorney.checkFetchArgs(name, batchSize)
-    const result = await this.db.executeSql(this.nextJobCommand, [values.name, values.batchSize || 1])
+    const result = await this.db.executeSql(this.nextJobCommand, [values.name, batchSize || 1])
 
     const jobs = result.rows.map(job => {
       job.done = async (error, response) => {
@@ -320,7 +295,7 @@ class Manager extends EventEmitter {
     return this.db.executeSql(this.deleteQueueCommand, [queue])
   }
 
-  deleteAllQueues () {
+  async deleteAllQueues () {
     return this.db.executeSql(this.deleteAllQueuesCommand)
   }
 }

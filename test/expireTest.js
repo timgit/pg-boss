@@ -1,32 +1,68 @@
-const assert = require('chai').assert
+const assert = require('assert')
 const helper = require('./testHelper')
 const Promise = require('bluebird')
 
 describe('expire', function () {
-  this.timeout(10000)
-
-  let boss
-  const config = { expireCheckInterval: 500 }
-
-  beforeEach(async () => { boss = await helper.start(config) })
-  afterEach(() => boss.stop())
+  const defaults = { maintenanceIntervalSeconds: 1 }
 
   it('should expire a job', async function () {
-    this.timeout(5000)
+    const queue = 'expire'
 
-    const queue = 'i-take-too-long'
-
-    const jobId = await boss.publish({ name: queue, options: { expireIn: '1 second' } })
+    const boss = await helper.start({ ...this.test.bossConfig, ...defaults })
+    const jobId = await boss.publish({ name: queue, options: { expireInSeconds: 1 } })
 
     // fetch the job but don't complete it
     await boss.fetch(queue)
 
     // this should give it enough time to expire
-    await Promise.delay(2000)
+    await Promise.delay(8000)
 
     const job = await boss.fetchCompleted(queue)
 
-    assert.equal(jobId, job.data.request.id)
-    assert.equal('expired', job.data.state)
+    assert.strictEqual(jobId, job.data.request.id)
+    assert.strictEqual('expired', job.data.state)
+
+    await boss.stop()
+  })
+
+  it('should expire a job - cascaded config', async function () {
+    const queue = 'expire-cascade-config'
+
+    const boss = await helper.start({ ...this.test.bossConfig, ...defaults, expireInSeconds: 1 })
+    const jobId = await boss.publish(queue)
+
+    // fetch the job but don't complete it
+    await boss.fetch(queue)
+
+    // this should give it enough time to expire
+    await Promise.delay(8000)
+
+    const job = await boss.fetchCompleted(queue)
+
+    assert.strictEqual(jobId, job.data.request.id)
+    assert.strictEqual('expired', job.data.state)
+
+    await boss.stop()
+  })
+
+  it('should warn with an old expireIn option only once', async function () {
+    const queue = 'expireIn-warning-only-once'
+
+    const boss = await helper.start({ ...this.test.bossConfig, noSupervisor: true })
+
+    let warningCount = 0
+
+    process.on('warning', (warning) => {
+      assert(warning.message.indexOf('expireIn') > -1)
+      warningCount++
+    })
+
+    await boss.publish({ name: queue, options: { expireIn: '1 minute' } })
+    await boss.publish({ name: queue, options: { expireIn: '1 minute' } })
+    await boss.publish({ name: queue, options: { expireIn: '1 minute' } })
+
+    assert.strictEqual(warningCount, 1)
+
+    await boss.stop()
   })
 })

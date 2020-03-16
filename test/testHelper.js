@@ -1,17 +1,17 @@
 const Db = require('../src/db')
-const PgBoss = require('../src/index')
+const PgBoss = require('../')
 const plans = require('../src/plans')
+const crypto = require('crypto')
+const sha1 = (value) => crypto.createHash('sha1').update(value).digest('hex')
 
 module.exports = {
-  init,
+  dropSchema,
   start,
   getDb,
   getJobById,
   getArchivedJobById,
-  findJobs,
-  completedJobPrefix: plans.completedJobPrefix,
   countJobs,
-  empty,
+  completedJobPrefix: plans.completedJobPrefix,
   getConfig,
   getConnectionString
 }
@@ -22,62 +22,76 @@ function getConnectionString () {
   return `postgres://${config.user}:${config.password}@${config.host}:${config.port}/${config.database}`
 }
 
-function getConfig () {
+function getConfig (options = {}) {
   const config = require('./config.json')
+  const inTravis = !!process.env.TRAVIS
 
-  if (process.env.TRAVIS) {
-    config.port = 5432
+  if (inTravis) {
     config.password = ''
-    config.schema = 'pgboss' + process.env.TRAVIS_JOB_ID
+    config.schema = process.env.TRAVIS_JOB_ID
   }
 
-  return { ...config }
+  if (options.testKey) {
+    config.schema = `pgboss${sha1(options.testKey).slice(-10)}${inTravis ? '_' + config.schema : ''}`
+  }
+
+  config.schema = config.schema || 'pgboss'
+
+  const result = { ...config }
+
+  return Object.assign(result, options)
 }
 
-function getDb (config) {
-  return new Db(config || getConfig())
+async function getDb () {
+  const config = getConfig()
+  const db = new Db(config)
+  await db.open()
+  return db
 }
 
-async function empty () {
-  await getDb().executeSql(`TRUNCATE TABLE ${getConfig().schema}.job`)
+async function dropSchema (schema) {
+  const db = await getDb()
+  await db.executeSql(`DROP SCHEMA IF EXISTS ${schema} CASCADE`)
 }
 
-async function init (schema) {
-  schema = schema || getConfig().schema
-  await getDb().executeSql(`DROP SCHEMA IF EXISTS ${schema} CASCADE`)
-}
-
-async function getJobById (id) {
-  const response = await findJobs('id = $1', [id])
+async function getJobById (schema, id) {
+  const response = await findJobs(schema, 'id = $1', [id])
   return response.rows.length ? response.rows[0] : null
 }
 
-async function findJobs (where, values) {
-  const db = getDb()
-  const jobs = await db.executeSql(`select * from ${getConfig().schema}.job where ${where}`, values)
+async function findJobs (schema, where, values) {
+  const db = await getDb()
+  const jobs = await db.executeSql(`select * from ${schema}.job where ${where}`, values)
   return jobs
 }
 
-async function getArchivedJobById (id) {
-  const response = await findArchivedJobs('id = $1', [id])
+async function getArchivedJobById (schema, id) {
+  const response = await findArchivedJobs(schema, 'id = $1', [id])
   return response.rows.length ? response.rows[0] : null
 }
 
-async function findArchivedJobs (where, values) {
-  const db = getDb()
-  const result = await db.executeSql(`select * from ${getConfig().schema}.archive where ${where}`, values)
+async function findArchivedJobs (schema, where, values) {
+  const db = await getDb()
+  const result = await db.executeSql(`select * from ${schema}.archive where ${where}`, values)
   return result
 }
 
-async function countJobs (where, values) {
-  const db = getDb()
-  const result = await db.executeSql(`select count(*) as count from ${getConfig().schema}.job where ${where}`, values)
+async function countJobs (schema, where, values) {
+  const db = await getDb()
+  const result = await db.executeSql(`select count(*) as count from ${schema}.job where ${where}`, values)
   return parseFloat(result.rows[0].count)
 }
 
-async function start (options = {}) {
-  await init(options.schema)
-  const boss = new PgBoss(Object.assign(getConfig(), options))
-  await boss.start()
-  return boss
+async function start (options) {
+  try {
+    options = getConfig(options)
+    const boss = new PgBoss(options)
+    await boss.start()
+    return boss
+  } catch (err) {
+    // this is nice for occaisional debugging, Mr. Linter
+    if (err) {
+      throw err
+    }
+  }
 }

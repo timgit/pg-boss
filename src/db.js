@@ -12,8 +12,6 @@ class Db extends EventEmitter {
     config.application_name = config.application_name || 'pgboss'
 
     this.config = config
-
-    this.open()
   }
 
   async open () {

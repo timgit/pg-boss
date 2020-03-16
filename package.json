@@ -1,6 +1,6 @@
 {
   "name": "pg-boss",
-  "version": "3.2.2",
+  "version": "4.0.0",
   "description": "Queueing jobs in Node.js using PostgreSQL like a boss",
   "main": "./src/index.js",
   "engines": {
@@ -8,24 +8,28 @@
     "npm": ">=5.0.0"
   },
   "dependencies": {
-    "bluebird": "^3.5.2",
-    "pg": "^7.12.0",
-    "uuid": "^3.2.1"
+    "bluebird": "^3.7.2",
+    "pg": "^7.18.2",
+    "uuid": "^7.0.2"
   },
   "devDependencies": {
-    "chai": "^4.2.0",
-    "coveralls": "^3.0.5",
-    "mocha": "^6.2.0",
-    "nyc": "^14.1.1",
+    "coveralls": "^3.0.9",
+    "mocha": "^7.1.0",
+    "nyc": "^15.0.0",
     "standard": "^14.3.1"
   },
   "scripts": {
-    "test": "standard && mocha --exit --slow 10000",
+    "test": "standard && mocha --exit --no-warnings",
     "cover": "nyc --reporter=text npm test",
     "forcover": "npm run cover && nyc report --reporter=text-lcov | coveralls",
     "export-schema": "node ./scripts/construct.js",
     "export-migration": "node ./scripts/migrate.js",
     "export-rollback": "node ./scripts/rollback.js"
+  },
+  "mocha": {
+    "timeout": 10000,
+    "slow": 10000,
+    "bail": true
   },
   "nyc": {
     "include": [

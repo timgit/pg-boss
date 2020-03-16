@@ -2,13 +2,19 @@ const assert = require('assert')
 
 module.exports = {
   getConfig,
-  applyNewJobCheckInterval,
   checkPublishArgs,
   checkSubscribeArgs,
   checkFetchArgs
 }
 
-function checkPublishArgs (args) {
+const WARNINGS = {
+  publishExpireInRemoved: {
+    message: '\'expireIn\' option detected.  This option has been removed.  Use expireInSeconds, expireInMinutes or expireInHours',
+    code: 'pg-boss-w01'
+  }
+}
+
+function checkPublishArgs (args, defaults) {
   let name, data, options
 
   if (typeof args[0] === 'string') {
@@ -35,10 +41,32 @@ function checkPublishArgs (args) {
   assert(name, 'boss requires all jobs to have a queue name')
   assert(typeof options === 'object', 'options should be an object')
 
-  return { name, data, options: { ...options } }
+  options = { ...options }
+
+  assert(!('priority' in options) || (Number.isInteger(options.priority)), 'priority must be an integer')
+  options.priority = options.priority || 0
+
+  applyRetryConfig(options, defaults)
+  applyExpirationConfig(options, defaults)
+  applyRetentionConfig(options, defaults)
+
+  const { startAfter, singletonSeconds, singletonMinutes, singletonHours } = options
+
+  options.startAfter = (startAfter instanceof Date && typeof startAfter.toISOString === 'function') ? startAfter.toISOString()
+    : (startAfter > 0) ? '' + startAfter
+      : (typeof startAfter === 'string') ? startAfter
+        : null
+
+  options.singletonSeconds =
+    (singletonHours > 0) ? singletonHours * 60 * 60
+      : (singletonMinutes > 0) ? singletonMinutes * 60
+        : (singletonSeconds > 0) ? singletonSeconds
+          : null
+
+  return { name, data, options }
 }
 
-function checkSubscribeArgs (name, args) {
+function checkSubscribeArgs (name, args, defaults) {
   let options, callback
 
   assert(name, 'missing job name')
@@ -52,13 +80,19 @@ function checkSubscribeArgs (name, args) {
   }
 
   assert(typeof callback === 'function', 'expected callback to be a function')
+  assert(typeof options === 'object', 'expected config to be an object')
 
-  if (options) {
-    assert(typeof options === 'object', 'expected config to be an object')
-    options = { ...options }
-  }
+  options = { ...options }
 
-  name = sanitizeQueueNameForFetch(name)
+  applyNewJobCheckInterval(options, defaults)
+
+  assert(!('teamConcurrency' in options) ||
+    (Number.isInteger(options.teamConcurrency) && options.teamConcurrency >= 1 && options.teamConcurrency <= 1000),
+  'teamConcurrency must be an integer between 1 and 1000')
+
+  assert(!('teamSize' in options) || (Number.isInteger(options.teamSize) && options.teamSize >= 1), 'teamSize must be an integer > 0')
+  assert(!('batchSize' in options) || (Number.isInteger(options.batchSize) && options.batchSize >= 1), 'batchSize must be an integer > 0')
+
   return { options, callback }
 }
 
@@ -69,7 +103,7 @@ function checkFetchArgs (name, batchSize) {
 
   assert(!batchSize || batchSize >= 1, 'fetch() assert: optional batchSize arg must be at least 1')
 
-  return { name, batchSize }
+  return { name }
 }
 
 function sanitizeQueueNameForFetch (name) {
@@ -85,12 +119,16 @@ function getConfig (value) {
     : { ...value }
 
   applyDatabaseConfig(config)
-  applyNewJobCheckInterval(config)
-  applyExpireConfig(config)
+  applyMaintenanceConfig(config)
   applyArchiveConfig(config)
   applyDeleteConfig(config)
   applyMonitoringConfig(config)
   applyUuidConfig(config)
+
+  // defaults for publish and subscribe
+  applyNewJobCheckInterval(config)
+  applyExpirationConfig(config)
+  applyRetentionConfig(config)
 
   return config
 }
@@ -113,7 +151,75 @@ function applyDatabaseConfig (config) {
   }
 }
 
-function applyNewJobCheckInterval (config) {
+function applyRetentionConfig (config, defaults) {
+  assert(!('retentionSeconds' in config) || config.retentionSeconds >= 1,
+    'configuration assert: retentionSeconds must be at least every second')
+
+  assert(!('retentionMinutes' in config) || config.retentionMinutes >= 1,
+    'configuration assert: retentionMinutes must be at least every minute')
+
+  assert(!('retentionHours' in config) || config.retentionHours >= 1,
+    'configuration assert: retentionHours must be at least every hour')
+
+  assert(!('retentionDays' in config) || config.retentionDays >= 1,
+    'configuration assert: retentionDays must be at least every day')
+
+  const keepUntil =
+    ('retentionDays' in config) ? `${config.retentionDays} days`
+      : ('retentionHours' in config) ? `${config.retentionHours} hours`
+        : ('retentionMinutes' in config) ? `${config.retentionMinutes} minutes`
+          : ('retentionSeconds' in config) ? `${config.retentionSeconds} seconds`
+            : defaults ? defaults.keepUntil
+              : '30 days'
+
+  config.keepUntil = keepUntil
+}
+
+function applyExpirationConfig (config, defaults) {
+  if ('expireIn' in config) {
+    emitWarning(WARNINGS.publishExpireInRemoved)
+  }
+
+  assert(!('expireInSeconds' in config) || config.expireInSeconds >= 1,
+    'configuration assert: expireInSeconds must be at least every second')
+
+  assert(!('expireInMinutes' in config) || config.expireInMinutes >= 1,
+    'configuration assert: expireInMinutes must be at least every minute')
+
+  assert(!('expireInHours' in config) || config.expireInHours >= 1,
+    'configuration assert: expireInHours must be at least every hour')
+
+  const expireIn =
+    ('expireInHours' in config) ? `${config.expireInHours} hours`
+      : ('expireInMinutes' in config) ? `${config.expireInMinutes} minutes`
+        : ('expireInSeconds' in config) ? `${config.expireInSeconds} seconds`
+          : defaults ? defaults.expireIn
+            : '15 minutes'
+
+  config.expireIn = expireIn
+}
+
+function applyRetryConfig (config, defaults) {
+  assert(!('retryDelay' in config) || (Number.isInteger(config.retryDelay) && config.retryDelay >= 0), 'retryDelay must be an integer >= 0')
+  assert(!('retryLimit' in config) || (Number.isInteger(config.retryLimit) && config.retryLimit >= 0), 'retryLimit must be an integer >= 0')
+  assert(!('retryBackoff' in config) || (config.retryBackoff === true || config.retryBackoff === false), 'retryBackoff must be either true or false')
+
+  if (defaults) {
+    config.retryDelay = config.retryDelay || defaults.retryDelay
+    config.retryLimit = config.retryLimit || defaults.retryLimit
+    config.retryBackoff = config.retryBackoff || defaults.retryBackoff
+  }
+
+  config.retryDelay = config.retryDelay || 0
+  config.retryLimit = config.retryLimit || 0
+  config.retryBackoff = !!config.retryBackoff
+  config.retryDelay = (config.retryBackoff && !config.retryDelay) ? 1 : config.retryDelay
+  config.retryLimit = (config.retryDelay && !config.retryLimit) ? 1 : config.retryLimit
+}
+
+function applyNewJobCheckInterval (config, defaults) {
+  const second = 1000
+
   assert(!('newJobCheckInterval' in config) || config.newJobCheckInterval >= 100,
     'configuration assert: newJobCheckInterval must be at least every 100ms')
 
@@ -121,60 +227,69 @@ function applyNewJobCheckInterval (config) {
     'configuration assert: newJobCheckIntervalSeconds must be at least every second')
 
   config.newJobCheckInterval =
-    ('newJobCheckIntervalSeconds' in config) ? config.newJobCheckIntervalSeconds * 1000
+    ('newJobCheckIntervalSeconds' in config) ? config.newJobCheckIntervalSeconds * second
       : ('newJobCheckInterval' in config) ? config.newJobCheckInterval
-        : 1000 // default is 1 second
+        : defaults ? defaults.newJobCheckInterval
+          : second * 2
 }
 
-function applyExpireConfig (config) {
-  assert(!('expireCheckInterval' in config) || config.expireCheckInterval >= 100,
-    'configuration assert: expireCheckInterval must be at least every 100ms')
+function applyMaintenanceConfig (config) {
+  assert(!('maintenanceIntervalSeconds' in config) || config.maintenanceIntervalSeconds >= 1,
+    'configuration assert: maintenanceIntervalSeconds must be at least every second')
 
-  assert(!('expireCheckIntervalSeconds' in config) || config.expireCheckIntervalSeconds >= 1,
-    'configuration assert: expireCheckIntervalSeconds must be at least every second')
+  assert(!('maintenanceIntervalMinutes' in config) || config.maintenanceIntervalMinutes >= 1,
+    'configuration assert: maintenanceIntervalMinutes must be at least every minute')
 
-  assert(!('expireCheckIntervalMinutes' in config) || config.expireCheckIntervalMinutes >= 1,
-    'configuration assert: expireCheckIntervalMinutes must be at least every minute')
-
-  config.expireCheckInterval =
-    ('expireCheckIntervalMinutes' in config) ? config.expireCheckIntervalMinutes * 60 * 1000
-      : ('expireCheckIntervalSeconds' in config) ? config.expireCheckIntervalSeconds * 1000
-        : ('expireCheckInterval' in config) ? config.expireCheckInterval
-          : 60 * 1000 // default is 1 minute
+  config.maintenanceIntervalSeconds =
+    ('maintenanceIntervalMinutes' in config) ? config.maintenanceIntervalMinutes * 60
+      : ('maintenanceIntervalSeconds' in config) ? config.maintenanceIntervalSeconds
+        : 120
 }
 
 function applyArchiveConfig (config) {
-  assert(!('archiveCheckInterval' in config) || config.archiveCheckInterval >= 100,
-    'configuration assert: archiveCheckInterval must be at least every 100ms')
+  assert(!('archiveIntervalSeconds' in config) || config.archiveIntervalSeconds >= 1,
+    'configuration assert: archiveIntervalSeconds must be at least every second')
 
-  assert(!('archiveCheckIntervalSeconds' in config) || config.archiveCheckIntervalSeconds >= 1,
-    'configuration assert: archiveCheckIntervalSeconds must be at least every second')
+  assert(!('archiveIntervalMinutes' in config) || config.archiveIntervalMinutes >= 1,
+    'configuration assert: archiveIntervalMinutes must be at least every minute')
 
-  assert(!('archiveCheckIntervalMinutes' in config) || config.archiveCheckIntervalMinutes >= 1,
-    'configuration assert: archiveCheckIntervalMinutes must be at least every minute')
+  assert(!('archiveIntervalHours' in config) || config.archiveIntervalHours >= 1,
+    'configuration assert: archiveIntervalHours must be at least every hour')
 
-  config.archiveCheckInterval =
-    ('archiveCheckIntervalMinutes' in config) ? config.archiveCheckIntervalMinutes * 60 * 1000
-      : ('archiveCheckIntervalSeconds' in config) ? config.archiveCheckIntervalSeconds * 1000
-        : ('archiveCheckInterval' in config) ? config.archiveCheckInterval
-          : 60 * 60 * 1000 // default is 1 hour
+  assert(!('archiveIntervalDays' in config) || config.archiveIntervalDays >= 1,
+    'configuration assert: archiveIntervalDays must be at least every day')
 
-  assert(!('archiveCompletedJobsEvery' in config) || typeof config.archiveCompletedJobsEvery === 'string',
-    'configuration assert: archiveCompletedJobsEvery should be a readable PostgreSQL interval such as "1 day"')
+  const archiveInterval =
+    ('archiveIntervalDays' in config) ? `${config.archiveIntervalDays} days`
+      : ('archiveIntervalHours' in config) ? `${config.archiveIntervalHours} hours`
+        : ('archiveIntervalMinutes' in config) ? `${config.archiveIntervalMinutes} minutes`
+          : ('archiveIntervalSeconds' in config) ? `${config.archiveIntervalSeconds} seconds`
+            : '1 hour'
 
-  config.archiveCompletedJobsEvery = config.archiveCompletedJobsEvery || '1 hour'
+  config.archiveInterval = archiveInterval
 }
 
 function applyDeleteConfig (config) {
-  config.deleteCheckInterval = ('deleteCheckInterval' in config)
-    ? config.deleteCheckInterval
-    : 60 * 60 * 1000 // default is 1 hour
+  assert(!('deleteIntervalSeconds' in config) || config.deleteIntervalSeconds >= 1,
+    'configuration assert: deleteIntervalSeconds must be at least every second')
 
-  // TODO: discontinue pg interval strings in favor of ms int for better validation (when interval is specified lower than check interval, for example)
-  assert(!('deleteArchivedJobsEvery' in config) || typeof config.deleteArchivedJobsEvery === 'string',
-    'configuration assert: deleteArchivedJobsEvery should be a readable PostgreSQL interval such as "7 days"')
+  assert(!('deleteIntervalMinutes' in config) || config.deleteIntervalMinutes >= 1,
+    'configuration assert: deleteIntervalMinutes must be at least every minute')
 
-  config.deleteArchivedJobsEvery = config.deleteArchivedJobsEvery || '7 days'
+  assert(!('deleteIntervalHours' in config) || config.deleteIntervalHours >= 1,
+    'configuration assert: deleteIntervalHours must be at least every hour')
+
+  assert(!('deleteIntervalDays' in config) || config.deleteIntervalDays >= 1,
+    'configuration assert: deleteIntervalDays must be at least every day')
+
+  const deleteInterval =
+    ('deleteIntervalDays' in config) ? `${config.deleteIntervalDays} days`
+      : ('deleteIntervalHours' in config) ? `${config.deleteIntervalHours} hours`
+        : ('deleteIntervalMinutes' in config) ? `${config.deleteIntervalMinutes} minutes`
+          : ('deleteIntervalSeconds' in config) ? `${config.deleteIntervalSeconds} seconds`
+            : '7 days'
+
+  config.deleteInterval = deleteInterval
 }
 
 function applyMonitoringConfig (config) {
@@ -184,13 +299,20 @@ function applyMonitoringConfig (config) {
   assert(!('monitorStateIntervalMinutes' in config) || config.monitorStateIntervalMinutes >= 1,
     'configuration assert: monitorStateIntervalMinutes must be at least every minute')
 
-  config.monitorStateInterval =
-    ('monitorStateIntervalMinutes' in config) ? config.monitorStateIntervalMinutes * 60 * 1000
-      : ('monitorStateIntervalSeconds' in config) ? config.monitorStateIntervalSeconds * 1000
+  config.monitorStateIntervalSeconds =
+    ('monitorStateIntervalMinutes' in config) ? config.monitorStateIntervalMinutes * 60
+      : ('monitorStateIntervalSeconds' in config) ? config.monitorStateIntervalSeconds
         : null
 }
 
 function applyUuidConfig (config) {
   assert(!('uuid' in config) || config.uuid === 'v1' || config.uuid === 'v4', 'configuration assert: uuid option only supports v1 or v4')
   config.uuid = config.uuid || 'v1'
+}
+
+function emitWarning (warning) {
+  if (!warning.warned) {
+    warning.warned = true
+    process.emitWarning(warning.message, warning.type, warning.code)
+  }
 }

@@ -4,5 +4,4 @@ coverage/
 *.tgz
 .nyc_output/
 docs/
-CHANGELOG.md
-README.md
+.editorconfig

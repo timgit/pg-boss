@@ -1,31 +1,38 @@
-Configuration
-=============
+# Configuration <!-- omit in toc -->
 
 pg-boss can be customized using configuration options when an instance is created (the constructor argument), during publishing as well as subscribing.
 
 <!-- TOC -->
 
-- [Constructor Options](#constructor-options)
-    - [Database options](#database-options)
-    - [Job monitor options](#job-monitor-options)
-    - [Job creation options](#job-creation-options)
-    - [Job fetch options](#job-fetch-options)
-    - [Job expiration options](#job-expiration-options)
-    - [Job archive options](#job-archive-options)
-- [Publish Options](#publish-options)
-    - [Delayed jobs](#delayed-jobs)
-    - [Unique jobs](#unique-jobs)
-    - [Throttled jobs](#throttled-jobs)
-    - [Job retries](#job-retries)
-    - [Job expiration](#job-expiration)
-- [Subscribe Options](#subscribe-options)
+- [Constructor options](#constructor-options)
+  - [Database options](#database-options)
+  - [Queue options](#queue-options)
+  - [Maintenance options](#maintenance-options)
+    - [Archive completed jobs](#archive-completed-jobs)
+    - [Delete archived jobs](#delete-archived-jobs)
+    - [Maintenance interval](#maintenance-interval)
+- [Publish options](#publish-options)
+  - [Retry options](#retry-options)
+  - [Expiration options](#expiration-options)
+  - [Retention options](#retention-options)
+  - [Deferred jobs](#deferred-jobs)
+  - [Unique jobs](#unique-jobs)
+  - [Throttled jobs](#throttled-jobs)
+- [Subscribe options](#subscribe-options)
+  - [Job polling options](#job-polling-options)
 
 <!-- /TOC -->
 
-## Constructor Options
+## Constructor options
 
-The constructor accepts either a string or an object.  If a string is used, it's interpreted as a Postgres connection string.
-Since passing only a connection string is intended to be for convenience, you can't set any other options.   
+The constructor accepts either a string or an object.  If a string is used, it's interpreted as a PostgreSQL connection string based on the [pg](https://github.com/brianc/node-postgres) package. For example:
+
+```js
+const boss = new PgBoss('postgres://user:pass@host:port/database?ssl=require');
+```
+
+Alternatively, the following options can be set as properties in an object.
+
 
 ### Database options
 
@@ -43,122 +50,194 @@ Since passing only a connection string is intended to be for convenience, you ca
 
 * **connectionString** - string
 
-    PostgresSQL connection string will be parsed and used instead of `host`, `port`, `ssl`, `database`, `user`, `password`.
-    Based on the [pg](https://github.com/brianc/node-postgres) package. For example: 
-    
-    ```js
-    const boss = new PgBoss('postgres://user:pass@host:port/database?ssl=require');
-    ```
+  PostgreSQL connection string will be parsed and used instead of `host`, `port`, `ssl`, `database`, `user`, `password`.
 
 * **poolSize** or **max** - int, defaults to 10
 
     Maximum number of connections that will be shared by all subscriptions in this instance
-    
+
 * **application_name** - string, defaults to "pgboss"
-    
+
 * **db** - object
 
-    Passing an object named db allows you "bring your own database connection".  
+    Passing an object named db allows you "bring your own database connection".
     Setting this option ignores all of the above settings. The interface required for db is a single function called `executeSql` that accepts a SQL string and an optional array of parameters. This should return a promise that resolves an object just like the pg module: a `rows` array with results and `rowCount` property that contains affected records after an update operation.
-    
+
     ```js
     {
       // resolves Promise
-      executeSql(text, [values])    
+      executeSql(text, [value])
     }
     ```
-    
-    This option may be beneficial if you'd like to use an existing database service 
+
+    This option may be beneficial if you'd like to use an existing database service
     with its own connection pool.
-    
-    For example, you may be relying on the cluster module on 
-    a web server, and you'd like to limit the growth of total connections as much as possible. 
+
+    For example, you may be relying on the cluster module on
+    a web server, and you'd like to limit the growth of total connections as much as possible.
 
 * **schema** - string, defaults to "pgboss"
 
-    Only alphanumeric and underscore allowed, length: <= 50 characters
+    Database schema that contains all required storage objects. Only alphanumeric and underscore allowed, length: <= 50 characters
 
-### Job monitor options
+### Queue options
 
-* **monitorStateIntervalSeconds** - int, default undefined
-
-    Specifies how often in seconds an instance will fire the `monitor-states` event. Cannot be less than 1.
-
-* **monitorStateIntervalMinutes** - int, default undefined
-
-    Specifies how often in minutes an instance will fire the `monitor-states` event. Cannot be less than 1. Do not use if using `monitorStateIntervalSeconds`.
-
-### Job creation options
+Queue options contain the following constructor-only settings.
 
 * **uuid** - string, defaults to "v1"
 
-    uuid format used, "v1" or "v4"
+    job uuid format used, "v1" or "v4"
 
-### Job fetch options
-* **newJobCheckInterval**, int
+**State count monitoring**
 
-    interval to check for new jobs in milliseconds, must be >=100
+* **monitorStateIntervalSeconds** - int, default undefined
 
-* **newJobCheckIntervalSeconds**, int
+    Specifies how often in seconds an instance will fire the `monitor-states` event. Must be >= 1.
 
-    Default: 1. interval to check for new jobs in seconds, must be >=1
+* **monitorStateIntervalMinutes** - int, default undefined
 
-When `newJobCheckIntervalSeconds` is specified, `newJobCheckInterval` is ignored.
+    Specifies how often in minutes an instance will fire the `monitor-states` event. Must be >= 1.
 
-### Job expiration options
-* **expireCheckInterval**, int
+  > When a higher unit is is specified, lower unit configuration settings are ignored.
 
-    interval to expire jobs in milliseconds, must be >=100
 
-* **expireCheckIntervalSeconds**, int
+### Maintenance options
 
-    interval to expire jobs in seconds, must be >=1
+Maintenance operations include checking active jobs for expiration, archiving completed jobs from the primary job table, and deleting archived jobs from the archive table.
 
-* **expireCheckIntervalMinutes**, int
+* **noSupervisor**, bool, default false
 
-    Default: 1. interval to expire jobs in minutes, must be >=1
+  If this is set to true, maintenance and monitoring operations will not be started during a `start()` after the schema is created.  This is an advanced use case, as bypassing maintenance operations is not something you would want to do under normal circumstances.
 
-When `expireCheckIntervalMinutes` is specified, `expireCheckIntervalSeconds` and `expireCheckInterval` are ignored.
+#### Archive completed jobs
 
-When `expireCheckIntervalSeconds` is specified, `expireCheckInterval` is ignored.
+When jobs become eligible for archive after completion.
 
-### Job archive options
+* **archiveIntervalSeconds**, int
 
-* **archiveCompletedJobsEvery**, string, [PostgreSQL interval](https://www.postgresql.org/docs/9.5/static/datatype-datetime.html#DATATYPE-INTERVAL-INPUT)
+    archive interval in seconds, must be >=1
 
-    Default: "1 hour".  When jobs become eligible for archive after completion.
+* **archiveIntervalMinutes**, int
 
-* **archiveCheckInterval**, int
+    archive interval in minutes, must be >=1
 
-    interval to archive jobs in milliseconds, must be >=100
+* **archiveIntervalHours**, int
 
-* **archiveCheckIntervalSeconds**, int
+    archive interval in hours, must be >=1
 
-    interval to archive jobs in seconds, must be >=1
+* **archiveIntervalDays**, int
 
-* **archiveCheckIntervalMinutes**, int
+    archive interval in days, must be >=1
 
-    Default: 60. interval to archive jobs in minutes, must be >=1
+Default: 1 hour.
 
-When `archiveCheckIntervalMinutes` is specified, `archiveCheckIntervalSeconds` and `archiveCheckInterval` are ignored.
+> When a higher unit is is specified, lower unit configuration settings are ignored.
 
-When `archiveCheckIntervalSeconds` is specified, `archiveCheckInterval` is ignored.
+#### Delete archived jobs
 
-* **deleteArchivedJobsEvery**, string, [PostgreSQL interval](https://www.postgresql.org/docs/9.5/static/datatype-datetime.html#DATATYPE-INTERVAL-INPUT)
+When jobs in the archive table become eligible for deletion.
 
-    Default: "7 days".  When jobs in the archive table become eligible for deletion.
+* **deleteIntervalSeconds**, int
 
-* **deleteCheckInterval**, int
+    delete interval in seconds, must be >=1
 
-    interval to delete jobs in milliseconds, must be >=100.   Default: 1 hour
+* **deleteIntervalMinutes**, int
 
-## Publish Options
+    delete interval in minutes, must be >=1
+
+* **deleteIntervalHours**, int
+
+    delete interval in hours, must be >=1
+
+* **deleteIntervalDays**, int
+
+    delete interval in days, must be >=1
+
+Default: 7 days
+
+> When a higher unit is is specified, lower unit configuration settings are ignored.
+
+#### Maintenance interval
+
+How often maintenance operations are run against the job and archive tables.
+
+* **maintenanceIntervalSeconds**, int
+
+    maintenance interval in seconds, must be >=1
+
+* **maintenanceIntervalMinutes**, int
+
+    interval in minutes, must be >=1
+
+Default: 1 minute
+
+> When a higher unit is is specified, lower unit configuration settings are ignored.
+
+## Publish options
 
 * **priority**, int
 
     optional priority.  Higher numbers have, um, higher priority
 
-### Delayed jobs
+### Retry options
+
+Available in constructor as a default, or per-job in `publish()` and related publish convenience functions.
+
+* **retryLimit**, int
+
+    Default: 0. Max number of retries of failed jobs. Default is no retries.
+
+* **retryDelay**, int
+
+    Default: 0. Delay between retries of failed jobs, in seconds.
+
+* **retryBackoff**, bool
+
+    Default: false. Enables exponential backoff retries based on retryDelay instead of a fixed delay. Sets initial retryDelay to 1 if not set.
+
+### Expiration options
+
+* **expireInSeconds**, number
+
+    How many seconds a job may be in active state before it is failed because of expiration. Must be >=1
+
+* **expireInMinutes**, number
+
+    How many minutes a job may be in active state before it is failed because of expiration. Must be >=1
+
+* **expireInHours**, number
+
+    How many hours a job may be in active state before it is failed because of expiration. Must be >=1
+
+Default: 15 minutes
+
+> When a higher unit is is specified, lower unit configuration settings are ignored.
+
+
+### Retention options
+
+* **retentionSeconds**, number
+
+    How many seconds a job may be in created state before it becomes eligible to be archived. Must be >=1
+
+* **retentionMinutes**, number
+
+    How many minutes a job may be in created state before it becomes eligible to be archived. Must be >=1
+
+* **retentionHours**, number
+
+    How many hours a job may be in created state before it becomes eligible to be archived. Must be >=1
+
+* **retentionDays**, number
+
+    How many days a job may be in created state before it becomes eligible to be archived. Must be >=1
+
+Default: 30 days
+
+> When a higher unit is is specified, lower unit configuration settings are ignored.
+
+
+### Deferred jobs
 * **startAfter** int, string, or Date
   * int: seconds to delay starting the job
   * string: Start after a UTC Date time string in 8601 format
@@ -172,7 +251,7 @@ When `archiveCheckIntervalSeconds` is specified, `archiveCheckInterval` is ignor
 Only allows 1 job (within the same name) to be queued or active with the same singletonKey.
 
 ```js
-boss.publish('my-job', {}, {singletonKey: '123'}) // resolves a jobId 
+boss.publish('my-job', {}, {singletonKey: '123'}) // resolves a jobId
 boss.publish('my-job', {}, {singletonKey: '123'}) // resolves a null jobId until first job completed
 ```
 
@@ -188,31 +267,11 @@ Throttling jobs to 'once every n units', where units could be seconds, minutes, 
 
 For example, if you set the `singletonMinutes` to 1, then submit 2 jobs within a minute, only the first job will be accepted and resolve a job id.  The second request will be discarded, but resolve a null instead of an id.
 
-Order of precedence for throttling is least to greatest. For example, if `singletonSeconds` is set, `singletonMinutes` is ignored.
+> When a higher unit is is specified, lower unit configuration settings are ignored.
 
-Setting `singletonNextSlot` to true will cause the job to be scheduled to run after the current time slot if and when a job is throttled.  Basically it's debounce with a lousy name atm.  Expect this api to be improved in the future.  
+Setting `singletonNextSlot` to true will cause the job to be scheduled to run after the current time slot if and when a job is throttled. This option is set to true, for example, when calling the convenience function `publishDebounced()`.
 
-### Job retries
-
-* **retryLimit**, int
-
-    Default: 0. Max number of retries of failed jobs. Default is no retries.
-
-* **retryDelay**, int
-
-    Default: 0. Delay between retries of failed jobs, in seconds.
-
-* **retryBackoff**, bool
-
-    Default: false. Enables exponential backoff retries based on retryDelay instead of a fixed delay. Sets initial retryDelay to 1 if not set.
-
-### Job expiration
-
-* **expireIn**, string, PostgreSQL interval
-
-    Default: 15 minutes. Amount of time a job can be actively executing before it is marked as expired.
-
-## Subscribe Options
+## Subscribe options
 
 * **teamSize**, int
 
@@ -226,12 +285,18 @@ Setting `singletonNextSlot` to true will cause the job to be scheduled to run af
 
     How many jobs can be fetched per polling interval.  Callback will be executed once per batch.
 
+### Job polling options
+
+How often subscriptions will poll the queue table for jobs. Available in the constructor as a default or per subscription in `subscribe()` and `onComplete()`.
+
 * **newJobCheckInterval**, int
 
-    Polling interval to check for new jobs in milliseconds. Must be >=100 because we care about your database here in pg-boss land.
+  Interval to check for new jobs in milliseconds, must be >=100
 
 * **newJobCheckIntervalSeconds**, int
 
-    Default: 1. interval to check for new jobs in seconds. Must be >=1
+  Interval to check for new jobs in seconds, must be >=1
 
-  When `newJobCheckIntervalSeconds` is specified, `newJobCheckInterval` is ignored.
+Default: 2 seconds
+
+> When a higher unit is is specified, lower unit configuration settings are ignored.
