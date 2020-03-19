@@ -6,16 +6,17 @@ import { advisoryLock, assertMigration, setVersion, SchemaName, SchemaVersion } 
 */
 type MigrationCommand = string
 
-interface Migration {
+export interface Migration {
   version: SchemaVersion
   previous: SchemaVersion
   install: MigrationCommand[]
   uninstall: MigrationCommand[]
 }
 
-interface MigrationConfig {
+export interface MigrationConfig {
   keepUntil?: string
   schema: SchemaName
+  migrations?: Migration[]
 }
 
 function flatten(schema: SchemaName, commands: MigrationCommand[], version: SchemaVersion) {
