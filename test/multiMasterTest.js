@@ -2,8 +2,8 @@ const assert = require('assert')
 const helper = require('./testHelper')
 const Promise = require('bluebird')
 const PgBoss = require('../')
-const Contractor = require('../src/contractor')
-const migrationStore = require('../src/migrationStore')
+const Contractor = require('../lib/contractor')
+const migrationStore = require('../lib/migrationStore')
 const currentSchemaVersion = require('../version.json').schema
 
 describe('multi-master', function () {

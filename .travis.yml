@@ -12,4 +12,5 @@ node_js:
 before_script:
   - psql -c 'create database pgboss' -U postgres
 script:
+  - npm run build
   - npm run forcover

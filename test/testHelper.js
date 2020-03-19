@@ -1,6 +1,6 @@
-const Db = require('../src/db')
+const Db = require('../lib/db')
 const PgBoss = require('../')
-const plans = require('../src/plans')
+const plans = require('../lib/plans')
 const crypto = require('crypto')
 const sha1 = (value) => crypto.createHash('sha1').update(value).digest('hex')
 

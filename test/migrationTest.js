@@ -1,8 +1,8 @@
 const assert = require('assert')
 const PgBoss = require('../')
 const helper = require('./testHelper')
-const Contractor = require('../src/contractor')
-const migrationStore = require('../src/migrationStore')
+const Contractor = require('../lib/contractor')
+const migrationStore = require('../lib/migrationStore')
 const currentSchemaVersion = require('../version.json').schema
 
 describe('migration', function () {
