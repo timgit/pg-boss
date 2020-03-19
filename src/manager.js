@@ -95,6 +95,7 @@ class Manager extends EventEmitter {
 
     const onError = error => this.emit(events.error, error)
 
+    // TODO: tighten up WorkerConfig interface when converting this to TS
     const workerConfig = {
       name,
       fetch: () => this.fetch(name, options.batchSize || options.teamSize || 1),

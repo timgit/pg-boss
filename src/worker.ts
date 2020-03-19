@@ -1,14 +1,22 @@
-const Promise = require('bluebird')
+import { delay } from 'bluebird'
+
+interface WorkerConfig {
+  name: string
+  interval: number
+  fetch: () => Promise<any>
+  onFetch: () => Promise<any>
+  onError: () => any
+}
 
 class Worker {
-  constructor (config) {
-    this.config = config
-  }
+  constructor(private config: WorkerConfig) {}
+
+  private stopped = false
 
   async start () {
     while (!this.stopped) {
       await this.config.fetch().then(this.config.onFetch).catch(this.config.onError)
-      await Promise.delay(this.config.interval)
+      await delay(this.config.interval)
     }
   }
 
@@ -17,4 +25,4 @@ class Worker {
   }
 }
 
-module.exports = Worker
+export = Worker
