@@ -16,10 +16,12 @@
     "coveralls": "^3.0.9",
     "mocha": "^7.1.0",
     "nyc": "^15.0.0",
+    "rimraf": "3.0.2",
     "standard": "^14.3.1",
     "typescript": "3.8.3"
   },
   "scripts": {
+    "prebuild": "rimraf lib",
     "build": "tsc --build tsconfig.json",
     "test": "standard && mocha --exit --no-warnings",
     "cover": "nyc --reporter=text npm test",
