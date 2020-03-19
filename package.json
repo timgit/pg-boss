@@ -20,6 +20,7 @@
     "typescript": "3.8.3"
   },
   "scripts": {
+    "build": "tsc --build tsconfig.json",
     "test": "standard && mocha --exit --no-warnings",
     "cover": "nyc --reporter=text npm test",
     "forcover": "npm run cover && nyc report --reporter=text-lcov | coveralls",
