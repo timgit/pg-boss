@@ -16,7 +16,8 @@
     "coveralls": "^3.0.9",
     "mocha": "^7.1.0",
     "nyc": "^15.0.0",
-    "standard": "^14.3.1"
+    "standard": "^14.3.1",
+    "typescript": "3.8.3"
   },
   "scripts": {
     "test": "standard && mocha --exit --no-warnings",
