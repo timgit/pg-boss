@@ -321,26 +321,6 @@ function cancelJobs (schema) {
 
 function insertJob (schema) {
   return `
-    WITH j AS (SELECT
-      $1::uuid as id,
-      $2::text as name,
-      $3::int as priority,
-      '${states.created}'::${schema}.job_state as state,
-      $4::int as retryLimit,
-      CASE
-        WHEN right($5, 1) = 'Z' THEN CAST($5 as timestamp with time zone)
-        ELSE now() + CAST(COALESCE($5,'0') as interval)
-        END as startAfter,
-      CAST($6 as interval) as expireIn,
-      $7::jsonb as data,
-      $8::text as singletonKey,
-      CASE
-        WHEN $9::integer IS NOT NULL THEN 'epoch'::timestamp + '1 second'::interval * ($9 * floor((date_part('epoch', now()) + $10) / $9))
-        ELSE NULL
-        END as singletonOn,
-      $11::int as retryDelay,
-      $12::bool as retryBackoff
-    )
     INSERT INTO ${schema}.job (
       id,
       name,
@@ -355,7 +335,7 @@ function insertJob (schema) {
       retryDelay,
       retryBackoff,
       keepUntil
-      )
+    )
     SELECT
       id,
       name,
@@ -369,11 +349,40 @@ function insertJob (schema) {
       singletonOn,
       retryDelay,
       retryBackoff,
-      CASE
-        WHEN right($13, 1) = 'Z' THEN CAST($13 as timestamp with time zone)
-        ELSE startAfter + CAST(COALESCE($13,'0') as interval)
-        END as keepUntil
-    FROM j
+      keepUntil
+    FROM
+    ( SELECT *,
+        CASE
+          WHEN right(keepUntilValue, 1) = 'Z' THEN CAST(keepUntilValue as timestamp with time zone)
+          ELSE startAfter + CAST(COALESCE(keepUntilValue,'0') as interval)
+          END as keepUntil
+      FROM
+      ( SELECT *,
+          CASE
+            WHEN right(startAfterValue, 1) = 'Z' THEN CAST(startAfterValue as timestamp with time zone)
+            ELSE now() + CAST(COALESCE(startAfterValue,'0') as interval)
+            END as startAfter
+        FROM
+        ( SELECT
+            $1::uuid as id,
+            $2::text as name,
+            $3::int as priority,
+            '${states.created}'::${schema}.job_state as state,
+            $4::int as retryLimit,
+            $5::text as startAfterValue,
+            CAST($6 as interval) as expireIn,
+            $7::jsonb as data,
+            $8::text as singletonKey,
+            CASE
+              WHEN $9::integer IS NOT NULL THEN 'epoch'::timestamp + '1 second'::interval * ($9 * floor((date_part('epoch', now()) + $10) / $9))
+              ELSE NULL
+              END as singletonOn,
+            $11::int as retryDelay,
+            $12::bool as retryBackoff,
+            $13::text as keepUntilValue
+        ) j1
+      ) j2
+    ) j3
     ON CONFLICT DO NOTHING
     RETURNING id
   `
