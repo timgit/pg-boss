@@ -2,3 +2,4 @@ node_modules
 coverage/
 *.tgz
 .nyc_output/
+lib
