@@ -46,6 +46,7 @@ async function getDb () {
   const config = getConfig()
   const db = new Db(config)
   await db.open()
+  await db.executeSql('CREATE EXTENSION IF NOT EXISTS pgcrypto')
   return db
 }
 

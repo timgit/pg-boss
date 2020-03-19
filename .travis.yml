@@ -11,6 +11,5 @@ node_js:
   - "8"
 before_script:
   - psql -c 'create database pgboss' -U postgres
-  - psql -c 'create extension pgcrypto' -d pgboss -U postgres
 script:
   - npm run forcover
