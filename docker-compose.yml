@@ -1,0 +1,20 @@
+version: '3'
+
+services:
+  db:
+    ## image tag should match version used in travis
+    ## see .travis.yml
+    image: postgres:9.5
+    ports:
+      - "5432:5432"
+    volumes:
+      - db:/var/lib/postgresql/data
+    environment:
+      ## should match values in test/config.json
+      POSTGRES_DB: pgboss
+      POSTGRES_PASSWORD: postgres
+    ## https://marcopeg.com/2019/how-to-run-postgres-for-testing-in-docker
+    command: -c shared_buffers=500MB -c fsync=off -c log_statement=all
+
+volumes:
+  db:
