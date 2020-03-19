@@ -13,6 +13,7 @@
     "uuid": "^7.0.2"
   },
   "devDependencies": {
+    "@types/node": "13.9.2",
     "coveralls": "^3.0.9",
     "mocha": "^7.1.0",
     "nyc": "^15.0.0",

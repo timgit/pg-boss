@@ -1,33 +1,39 @@
-const assert = require('assert')
-const plans = require('./plans')
+import * as assert from 'assert'
+import { advisoryLock, assertMigration, setVersion, SchemaName, SchemaVersion } from './plans'
 
-module.exports = {
-  rollback,
-  next,
-  migrate,
-  getAll
+/**
+ * Migration SQL statement.
+*/
+type MigrationCommand = string
+
+interface Migration {
+  version: SchemaVersion
+  previous: SchemaVersion
+  install: MigrationCommand[]
+  uninstall: MigrationCommand[]
 }
 
-function flatten (schema, commands, version) {
+interface MigrationConfig {
+  keepUntil?: string
+  schema: SchemaName
+}
+
+function flatten(schema: SchemaName, commands: MigrationCommand[], version: SchemaVersion) {
   const preflight = [
     'BEGIN',
-    plans.advisoryLock(),
-    plans.assertMigration(schema, version)
+    advisoryLock(),
+    assertMigration(schema, version)
   ]
 
   const postflight = [
-    plans.setVersion(schema, version),
+    setVersion(schema, version),
     'COMMIT;'
   ]
 
-  commands = preflight.concat(commands).concat(postflight)
-
-  return commands.join(';')
+  return [...preflight, ...commands, ...postflight].join(';')
 }
 
-function rollback (schema, version, migrations) {
-  migrations = migrations || getAll(schema)
-
+export function rollback(schema: SchemaName, version: SchemaVersion, migrations = getAll(schema)) {
   const result = migrations.find(i => i.version === version)
 
   assert(result, `Version ${version} not found.`)
@@ -35,9 +41,7 @@ function rollback (schema, version, migrations) {
   return flatten(schema, result.uninstall, result.previous)
 }
 
-function next (schema, version, migrations) {
-  migrations = migrations || getAll(schema)
-
+export function next(schema: SchemaName, version: SchemaVersion, migrations = getAll(schema)) {
   const result = migrations.find(i => i.previous === version)
 
   assert(result, `Version ${version} not found.`)
@@ -45,8 +49,9 @@ function next (schema, version, migrations) {
   return flatten(schema, result.install, result.version)
 }
 
-function migrate (value, version, migrations) {
-  let schema, config
+export function migrate(value: MigrationConfig | SchemaName, version: SchemaVersion, migrations?: Migration[]) {
+  let schema: SchemaName
+  let config: MigrationConfig
 
   if (typeof value === 'string') {
     config = null
@@ -65,14 +70,14 @@ function migrate (value, version, migrations) {
       acc.install = acc.install.concat(i.install)
       acc.version = i.version
       return acc
-    }, { install: [], version })
+    }, { install: [] as MigrationCommand[], version })
 
   assert(result.install.length > 0, `Version ${version} not found.`)
 
   return flatten(schema, result.install, result.version)
 }
 
-function getAll (schema, config) {
+export function getAll(schema: SchemaName, config?: MigrationConfig): Migration[] {
   const DEFAULT_RETENTION = '30 days'
   const keepUntil = config ? config.keepUntil : DEFAULT_RETENTION
 

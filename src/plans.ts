@@ -9,8 +9,8 @@ export const states = Object.freeze({
 } as const)
 
 // TODO: refactor into an object that is passed around
-type SchemaName = string
-type SchemaVersion = number
+export type SchemaName = string
+export type SchemaVersion = number
 
 export const completedJobPrefix = `__state__${states.completed}__`
 
