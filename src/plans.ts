@@ -1,4 +1,4 @@
-const states = {
+export const states = Object.freeze({
   created: 'created',
   retry: 'retry',
   active: 'active',
@@ -6,40 +6,19 @@ const states = {
   expired: 'expired',
   cancelled: 'cancelled',
   failed: 'failed'
-}
+} as const)
 
-const completedJobPrefix = `__state__${states.completed}__`
+// TODO: refactor into an object that is passed around
+type SchemaName = string
+type SchemaVersion = number
+
+export const completedJobPrefix = `__state__${states.completed}__`
 
 const MUTEX = 1337968055000
-const MIGRATE_RACE_MESSAGE = 'division by zero'
-const CREATE_RACE_MESSAGE = 'already exists'
+export const MIGRATE_RACE_MESSAGE = 'division by zero'
+export const CREATE_RACE_MESSAGE = 'already exists'
 
-module.exports = {
-  create,
-  insertVersion,
-  getVersion,
-  setVersion,
-  versionTableExists,
-  fetchNextJob,
-  completeJobs,
-  cancelJobs,
-  failJobs,
-  insertJob,
-  expire,
-  archive,
-  purge,
-  countStates,
-  deleteQueue,
-  deleteAllQueues,
-  states: { ...states },
-  completedJobPrefix,
-  advisoryLock,
-  assertMigration,
-  MIGRATE_RACE_MESSAGE,
-  CREATE_RACE_MESSAGE
-}
-
-function create (schema, version) {
+export function create(schema: SchemaName, version: SchemaVersion) {
   return [
     'BEGIN',
     advisoryLock(),
@@ -60,13 +39,13 @@ function create (schema, version) {
   ].join(';\n')
 }
 
-function createSchema (schema) {
+function createSchema(schema: SchemaName) {
   return `
     CREATE SCHEMA ${schema}
   `
 }
 
-function createVersionTable (schema) {
+function createVersionTable(schema: SchemaName) {
   return `
     CREATE TABLE ${schema}.version (
       version int primary key
@@ -74,7 +53,7 @@ function createVersionTable (schema) {
   `
 }
 
-function createJobStateEnum (schema) {
+function createJobStateEnum (schema: SchemaName) {
   // ENUM definition order is important
   // base type is numeric and first values are less than last values
   return `
@@ -90,7 +69,7 @@ function createJobStateEnum (schema) {
   `
 }
 
-function createJobTable (schema) {
+function createJobTable (schema: SchemaName) {
   return `
     CREATE TABLE ${schema}.job (
       id uuid primary key not null default gen_random_uuid(),
@@ -114,74 +93,74 @@ function createJobTable (schema) {
   `
 }
 
-function cloneJobTableForArchive (schema) {
+function cloneJobTableForArchive (schema: SchemaName) {
   return `CREATE TABLE ${schema}.archive (LIKE ${schema}.job)`
 }
 
-function addArchivedOnToArchive (schema) {
+function addArchivedOnToArchive (schema: SchemaName) {
   return `ALTER TABLE ${schema}.archive ADD archivedOn timestamptz NOT NULL DEFAULT now()`
 }
 
-function addArchivedOnIndexToArchive (schema) {
+function addArchivedOnIndexToArchive (schema: SchemaName) {
   return `CREATE INDEX archive_archivedon_idx ON ${schema}.archive(archivedon)`
 }
 
-function addIdIndexToArchive (schema) {
+function addIdIndexToArchive (schema: SchemaName) {
   return `CREATE INDEX archive_id_idx ON ${schema}.archive(id)`
 }
 
-function deleteQueue (schema) {
+export function deleteQueue (schema: SchemaName) {
   return `DELETE FROM ${schema}.job WHERE name = $1`
 }
 
-function deleteAllQueues (schema) {
+export function deleteAllQueues (schema: SchemaName) {
   return `TRUNCATE ${schema}.job`
 }
 
-function createIndexSingletonKey (schema) {
+function createIndexSingletonKey (schema: SchemaName) {
   // anything with singletonKey means "only 1 job can be queued or active at a time"
   return `
     CREATE UNIQUE INDEX job_singletonKey ON ${schema}.job (name, singletonKey) WHERE state < '${states.completed}' AND singletonOn IS NULL
   `
 }
 
-function createIndexSingletonOn (schema) {
+function createIndexSingletonOn (schema: SchemaName) {
   // anything with singletonOn means "only 1 job within this time period, queued, active or completed"
   return `
     CREATE UNIQUE INDEX job_singletonOn ON ${schema}.job (name, singletonOn) WHERE state < '${states.expired}' AND singletonKey IS NULL
   `
 }
 
-function createIndexSingletonKeyOn (schema) {
+function createIndexSingletonKeyOn (schema: SchemaName) {
   // anything with both singletonOn and singletonKey means "only 1 job within this time period with this key, queued, active or completed"
   return `
     CREATE UNIQUE INDEX job_singletonKeyOn ON ${schema}.job (name, singletonOn, singletonKey) WHERE state < '${states.expired}'
   `
 }
 
-function createIndexJobName (schema) {
+function createIndexJobName (schema: SchemaName) {
   return `
     CREATE INDEX job_name ON ${schema}.job (name text_pattern_ops)
   `
 }
 
-function getVersion (schema) {
+export function getVersion (schema: SchemaName) {
   return `SELECT version from ${schema}.version`
 }
 
-function setVersion (schema, version) {
+export function setVersion (schema: SchemaName, version: SchemaVersion) {
   return `UPDATE ${schema}.version SET version = '${version}'`
 }
 
-function versionTableExists (schema) {
+export function versionTableExists (schema: SchemaName) {
   return `SELECT to_regclass('${schema}.version') as name`
 }
 
-function insertVersion (schema, version) {
+export function insertVersion (schema: SchemaName, version: SchemaVersion) {
   return `INSERT INTO ${schema}.version(version) VALUES ('${version}')`
 }
 
-function fetchNextJob (schema) {
+export function fetchNextJob (schema: SchemaName) {
   return `
     WITH nextJob as (
       SELECT id
@@ -203,7 +182,7 @@ function fetchNextJob (schema) {
   `
 }
 
-function buildJsonCompletionObject (withResponse) {
+function buildJsonCompletionObject (withResponse = false) {
   // job completion contract
   return `jsonb_build_object(
     'request', jsonb_build_object('id', id, 'name', name, 'data', data),
@@ -235,7 +214,7 @@ const retryStartAfterCase = `CASE
             * interval '1'
           END`
 
-function completeJobs (schema) {
+export function completeJobs (schema: SchemaName) {
   return `
     WITH results AS (
       UPDATE ${schema}.job
@@ -256,7 +235,7 @@ function completeJobs (schema) {
   ` // returning 1 here just to count results against input array
 }
 
-function failJobs (schema) {
+export function failJobs (schema: SchemaName) {
   return `
     WITH results AS (
       UPDATE ${schema}.job
@@ -283,7 +262,7 @@ function failJobs (schema) {
   ` // returning 1 here just to count results against input array
 }
 
-function expire (schema) {
+export function expire (schema: SchemaName) {
   return `
     WITH results AS (
       UPDATE ${schema}.job
@@ -308,7 +287,7 @@ function expire (schema) {
   `
 }
 
-function cancelJobs (schema) {
+export function cancelJobs (schema: SchemaName) {
   return `
     UPDATE ${schema}.job
     SET completedOn = now(),
@@ -319,7 +298,7 @@ function cancelJobs (schema) {
   ` // returning 1 here just to count results against input array
 }
 
-function insertJob (schema) {
+export function insertJob (schema: SchemaName) {
   return `
     INSERT INTO ${schema}.job (
       id,
@@ -388,14 +367,14 @@ function insertJob (schema) {
   `
 }
 
-function purge (schema) {
+export function purge (schema: SchemaName) {
   return `
     DELETE FROM ${schema}.archive
     WHERE archivedOn < (now() - CAST($1 as interval))
   `
 }
 
-function archive (schema) {
+export function archive (schema: SchemaName) {
   return `
     WITH archived_rows AS (
       DELETE FROM ${schema}.job
@@ -415,7 +394,7 @@ function archive (schema) {
   `
 }
 
-function countStates (schema) {
+export function countStates (schema: SchemaName) {
   return `
     SELECT name, state, count(*) size
     FROM ${schema}.job
@@ -424,11 +403,11 @@ function countStates (schema) {
   `
 }
 
-function advisoryLock () {
+export function advisoryLock () {
   return `SELECT pg_advisory_xact_lock(${MUTEX})`
 }
 
-function assertMigration (schema, version) {
+export function assertMigration (schema: SchemaName, version: SchemaVersion) {
   // raises 'division by zero' if already on desired schema version
   return `SELECT version::int/(version::int-${version}) from ${schema}.version`
 }
