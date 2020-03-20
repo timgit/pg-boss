@@ -1,6 +1,10 @@
 import Db from './db'
 
-export type DatabaseOptions = ConstructorParameters<typeof Db>[0]
+export interface BringYourOwnDatabase {
+  db: Db
+}
+
+export type DatabaseOptions = ConstructorParameters<typeof Db>[0] | BringYourOwnDatabase
 
 export interface QueueOptions {
   uuid?: 'v1' | 'v4'
