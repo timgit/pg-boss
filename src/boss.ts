@@ -1,72 +1,7 @@
 import { EventEmitter } from 'events'
 import * as plans from './plans'
+import { BossConfig } from './config'
 import Db from './db'
-
-type DatabaseOptions = ConstructorParameters<typeof Db>[0]
-
-interface QueueOptions {
-  uuid?: 'v1' | 'v4'
-  monitorStateIntervalSeconds?: number
-  monitorStateIntervalMinutes?: number
-}
-
-interface MaintenanceOptions {
-  noSupervisor?: boolean
-
-  archiveIntervalSeconds?: number
-  archiveIntervalMinutes?: number
-  archiveIntervalHours?: number
-  archiveIntervalDays?: number
-  archiveInterval: string // interval
-
-  deleteIntervalSeconds?: number
-  deleteIntervalMinutes?: number
-  deleteIntervalHours?: number
-  deleteIntervalDays?: number
-  deleteInterval: string
-
-  maintenanceIntervalSeconds?: number
-  maintenanceIntervalMinutes?: number
-
-}
-
-// TODO: add correct type
-interface Manager {
-  manager: any
-}
-
-type BossConfig =
-  DatabaseOptions
-  & QueueOptions
-  & MaintenanceOptions
-  & ExpirationOptions
-  & RetentionOptions
-  & RetryOptions
-  & JobPollingOptions
-  & Manager
-
-interface ExpirationOptions {
-  expireInSeconds?: number
-  expireInMinutes?: number
-  expireInHours?: number
-}
-
-interface RetentionOptions {
-  retentionMinutes?: number
-  retentionHours?: number
-  retentionDays?: number
-}
-
-interface RetryOptions {
-  retryLimit?: number
-  retryDelay?: number
-  retryBackoff?: boolean
-}
-
-interface JobPollingOptions {
-  newJobCheckInterval?: number
-  newJobCheckIntervalSeconds?: number
-}
 
 const queues = Object.freeze({
   MAINT: '__pgboss__maintenance',
@@ -157,7 +92,7 @@ class Boss extends EventEmitter {
 
   async onMaintenance (jobs) {
     try {
-      this.assertTestThrow()
+      this.assertTestThrow('__test__throw_maint')
 
       const started = Date.now()
 
@@ -192,7 +127,7 @@ class Boss extends EventEmitter {
 
   async onMonitorStates (jobs) {
     try {
-      this.assertTestThrow()
+      this.assertTestThrow('__test__throw_monitor')
 
       const states = await this.countStates()
 
@@ -208,7 +143,7 @@ class Boss extends EventEmitter {
     }
   }
 
-  stop () {
+  async stop () {
     if (!this.stopped) {
       this.stopped = true
     }
@@ -265,9 +200,7 @@ class Boss extends EventEmitter {
     return queues
   }
 
-  private assertTestThrow () {
-    const key = '__test__throw_maint'
-
+  private assertTestThrow (key: string) {
     if (key in this.config && this.config[key]) {
       throw new Error(key)
     }
