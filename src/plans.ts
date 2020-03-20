@@ -18,7 +18,7 @@ const MUTEX = 1337968055000
 export const MIGRATE_RACE_MESSAGE = 'division by zero'
 export const CREATE_RACE_MESSAGE = 'already exists'
 
-export function create(schema: SchemaName, version: SchemaVersion) {
+export function create (schema: SchemaName, version: SchemaVersion) {
   return [
     'BEGIN',
     advisoryLock(),
@@ -39,13 +39,13 @@ export function create(schema: SchemaName, version: SchemaVersion) {
   ].join(';\n')
 }
 
-function createSchema(schema: SchemaName) {
+function createSchema (schema: SchemaName) {
   return `
     CREATE SCHEMA ${schema}
   `
 }
 
-function createVersionTable(schema: SchemaName) {
+function createVersionTable (schema: SchemaName) {
   return `
     CREATE TABLE ${schema}.version (
       version int primary key

@@ -7,7 +7,7 @@ interface DbConfig extends PoolConfig {
 }
 
 class Db extends EventEmitter {
-  constructor(private config: DbConfig) {
+  constructor (private readonly config: DbConfig) {
     super()
 
     if (config.poolSize) {
@@ -21,7 +21,7 @@ class Db extends EventEmitter {
 
   public opened = false
 
-  async open () {
+  open () {
     this.pool = new Pool(this.config)
     this.pool.on('error', error => this.emit('error', error))
     this.opened = true
@@ -36,8 +36,8 @@ class Db extends EventEmitter {
     }
   }
 
-  async executeSql(text: Parameters<Pool['query']>[0], values?: Parameters<Pool['query']>[1]) {
-    return this.pool.query(text, values)
+  async executeSql<T = any>(text: Parameters<Pool['query']>[0], values?: Parameters<Pool['query']>[1]) {
+    return this.pool.query<T>(text, values)
   }
 }
 
