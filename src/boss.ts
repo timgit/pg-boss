@@ -1,34 +1,125 @@
-const EventEmitter = require('events')
-const plans = require('./plans')
+import { EventEmitter } from 'events'
+import * as plans from './plans'
+import Db from './db'
 
-const queues = {
-  MAINT: '__pgboss__maintenance',
-  MONITOR_STATES: '__pgboss__monitor-states'
+type DatabaseOptions = ConstructorParameters<typeof Db>[0]
+
+interface QueueOptions {
+  uuid?: 'v1' | 'v4'
+  monitorStateIntervalSeconds?: number
+  monitorStateIntervalMinutes?: number
 }
 
-const events = {
+interface MaintenanceOptions {
+  noSupervisor?: boolean
+
+  archiveIntervalSeconds?: number
+  archiveIntervalMinutes?: number
+  archiveIntervalHours?: number
+  archiveIntervalDays?: number
+  archiveInterval: string // interval
+
+  deleteIntervalSeconds?: number
+  deleteIntervalMinutes?: number
+  deleteIntervalHours?: number
+  deleteIntervalDays?: number
+  deleteInterval: string
+
+  maintenanceIntervalSeconds?: number
+  maintenanceIntervalMinutes?: number
+
+}
+
+// TODO: add correct type
+interface Manager {
+  manager: any
+}
+
+type BossConfig =
+  DatabaseOptions
+  & QueueOptions
+  & MaintenanceOptions
+  & ExpirationOptions
+  & RetentionOptions
+  & RetryOptions
+  & JobPollingOptions
+  & Manager
+
+interface ExpirationOptions {
+  expireInSeconds?: number
+  expireInMinutes?: number
+  expireInHours?: number
+}
+
+interface RetentionOptions {
+  retentionMinutes?: number
+  retentionHours?: number
+  retentionDays?: number
+}
+
+interface RetryOptions {
+  retryLimit?: number
+  retryDelay?: number
+  retryBackoff?: boolean
+}
+
+interface JobPollingOptions {
+  newJobCheckInterval?: number
+  newJobCheckIntervalSeconds?: number
+}
+
+const queues = Object.freeze({
+  MAINT: '__pgboss__maintenance',
+  MONITOR_STATES: '__pgboss__monitor-states'
+} as const)
+
+const events = Object.freeze({
   error: 'error',
   archived: 'archived',
   deleted: 'deleted',
   expired: 'expired',
   monitorStates: 'monitor-states',
   maintenance: 'maintenance'
+} as const)
+
+interface MaintenanceEvent {
+  count: number
+  ms: number
+}
+
+type ThenArg<T> = T extends PromiseLike<infer U> ? U : T
+type MonitorStatesEvent = ThenArg<ReturnType<Boss['countStates']>>
+
+declare interface Boss {
+  on(event: typeof events.archived, handler: (count: number) => void): this
+  on(event: typeof events.expired, handler: (count: number) => void): this
+  on(event: typeof events.deleted, handler: (count: number) => void): this
+  on(event: typeof events.error, handler: (error: Error) => void): this
+  on(event: typeof events.maintenance, handler: (maintenance: MaintenanceEvent) => void): this
+  on(event: typeof events.monitorStates, handler: (monitorStates: MonitorStatesEvent) => void): this
 }
 
 class Boss extends EventEmitter {
-  constructor (db, config) {
+  private readonly maintenanceIntervalSeconds: BossConfig['maintenanceIntervalSeconds']
+  private readonly monitorStates: boolean
+  private readonly monitorIntervalSeconds: BossConfig['monitorStateIntervalSeconds']
+  private readonly events = events
+  private readonly expireCommand: string
+  private readonly archiveCommand: string
+  private readonly purgeCommand: string
+  private readonly countStatesCommand: string
+  public functions: Function[]
+  private stopped = false
+
+  constructor (private readonly db: Db, private readonly config: BossConfig) {
     super()
 
-    this.db = db
-    this.config = config
     this.maintenanceIntervalSeconds = config.maintenanceIntervalSeconds
     this.monitorStates = config.monitorStateIntervalSeconds !== null
 
     if (this.monitorStates) {
       this.monitorIntervalSeconds = config.monitorStateIntervalSeconds
     }
-
-    this.events = events
 
     this.expireCommand = plans.expire(config.schema)
     this.archiveCommand = plans.archive(config.schema)
@@ -66,9 +157,7 @@ class Boss extends EventEmitter {
 
   async onMaintenance (jobs) {
     try {
-      if (this.config.__test__throw_maint) {
-        throw new Error('__test__throw_maint')
-      }
+      this.assertTestThrow()
 
       const started = Date.now()
 
@@ -80,7 +169,12 @@ class Boss extends EventEmitter {
 
       const ended = Date.now()
 
-      this.emit('maintenance', { count: jobs.length, ms: ended - started })
+      const maintenance: MaintenanceEvent = {
+        count: jobs.length,
+        ms: ended - started
+      }
+
+      this.emit('maintenance', maintenance)
     } catch (err) {
       this.emit(events.error, err)
     }
@@ -90,7 +184,7 @@ class Boss extends EventEmitter {
     }
   }
 
-  async emitValue (event, value) {
+  emitValue (event: string, value: number) {
     if (value > 0) {
       this.emit(event, value)
     }
@@ -98,9 +192,7 @@ class Boss extends EventEmitter {
 
   async onMonitorStates (jobs) {
     try {
-      if (this.config.__test__throw_monitor) {
-        throw new Error('__test__throw_monitor')
-      }
+      this.assertTestThrow()
 
       const states = await this.countStates()
 
@@ -116,19 +208,26 @@ class Boss extends EventEmitter {
     }
   }
 
-  async stop () {
+  stop () {
     if (!this.stopped) {
       this.stopped = true
     }
   }
 
   async countStates () {
-    const stateCountDefault = { ...plans.states }
+    interface StateCountQueryResult {
+      name: string
+      state: string
+      size: string
+    }
 
-    Object.keys(stateCountDefault)
-      .forEach(key => { stateCountDefault[key] = 0 })
+    type StateCount = Record<keyof typeof plans.states, number>
 
-    const counts = await this.db.executeSql(this.countStatesCommand)
+    const stateCountDefault = Object
+      .keys(plans.states)
+      .reduce((acc, key) => Object.assign(acc, { [key]: 0 }), {} as StateCount)
+
+    const counts = await this.db.executeSql<StateCountQueryResult>(this.countStatesCommand)
 
     const states = counts.rows.reduce((acc, item) => {
       if (item.name) {
@@ -142,7 +241,7 @@ class Boss extends EventEmitter {
       queue[state] = parseFloat(item.size)
 
       return acc
-    }, { ...stateCountDefault, queues: {} })
+    }, { ...stateCountDefault, queues: {} as Record<string, StateCount> })
 
     return states
   }
@@ -165,6 +264,14 @@ class Boss extends EventEmitter {
   getQueueNames () {
     return queues
   }
+
+  private assertTestThrow () {
+    const key = '__test__throw_maint'
+
+    if (key in this.config && this.config[key]) {
+      throw new Error(key)
+    }
+  }
 }
 
-module.exports = Boss
+export = Boss

@@ -2,7 +2,8 @@ import { EventEmitter } from 'events'
 import { Pool, PoolConfig } from 'pg'
 
 interface DbConfig extends PoolConfig {
-  poolSize: number
+  poolSize?: number
+  schema?: string
 }
 
 class Db extends EventEmitter {
