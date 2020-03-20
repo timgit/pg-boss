@@ -1,5 +1,9 @@
 # Changes
 
+## 4.0.1
+
+- Restored BYODB support for Knex.js
+
 ## 4.0.0 :tada:
 
 ### Changes
