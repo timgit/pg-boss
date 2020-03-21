@@ -1,21 +1,50 @@
-const assert = require('assert')
+import assert from 'assert'
+import { BossConfig, RetentionOptions, ExpirationOptions, RetryOptions, QueueOptions, MaintenanceOptions, JobPollingOptions, DatabaseOptions, DbConfig } from './config'
 
-module.exports = {
-  getConfig,
-  checkPublishArgs,
-  checkSubscribeArgs,
-  checkFetchArgs
+interface Warning {
+  message: string
+  code: string
+  warned?: boolean
 }
 
-const WARNINGS = {
+const WARNINGS: Record<string, Warning> = {
   publishExpireInRemoved: {
     message: '\'expireIn\' option detected.  This option has been removed.  Use expireInSeconds, expireInMinutes or expireInHours',
     code: 'pg-boss-w01'
   }
 }
 
-function checkPublishArgs (args, defaults) {
-  let name, data, options
+interface JobOptions {
+  priority?: number
+  startAfter?: number | string | Date
+  singletonKey?: string
+  singletonSeconds?: number | null
+  singletonMinutes?: number
+  singletonHours?: number
+  singletonNextSlot?: boolean
+}
+
+type PublishOptions =
+    JobOptions
+    & ExpirationOptions
+    & RetentionOptions
+    & RetryOptions
+
+type PublishArgsName = string
+type PublishArgsData = any
+
+interface PublishArgsConfig {
+  name: PublishArgsName
+  data: PublishArgsData
+  options: PublishOptions
+}
+
+type PublishArgs = [PublishArgsConfig] | [PublishArgsName, PublishArgsData, PublishOptions]
+
+export function checkPublishArgs (args: PublishArgs, defaults): PublishArgsConfig {
+  let name: PublishArgsName
+  let data: PublishArgsData
+  let options: PublishOptions
 
   if (typeof args[0] === 'string') {
     name = args[0]
@@ -36,7 +65,7 @@ function checkPublishArgs (args, defaults) {
     options = job.options
   }
 
-  options = options || {}
+  options = options || {} as JobOptions
 
   assert(name, 'boss requires all jobs to have a queue name')
   assert(typeof options === 'object', 'options should be an object')
@@ -66,8 +95,21 @@ function checkPublishArgs (args, defaults) {
   return { name, data, options }
 }
 
-function checkSubscribeArgs (name, args, defaults) {
-  let options, callback
+interface JobFetchOptions {
+  teamSize?: number
+  teamConcurrency?: number
+  batchSize?: number
+}
+
+type SubscribeOptions = JobFetchOptions & JobPollingOptions
+
+// TODO: narrown down callback type
+type SubscribeCallback = () => void
+type CheckSubscribeArgs = [SubscribeCallback] | [SubscribeOptions, SubscribeCallback]
+
+export function checkSubscribeArgs (name: string, args: CheckSubscribeArgs, defaults) {
+  let options: SubscribeOptions
+  let callback: SubscribeCallback
 
   assert(name, 'missing job name')
 
@@ -96,7 +138,7 @@ function checkSubscribeArgs (name, args, defaults) {
   return { options, callback }
 }
 
-function checkFetchArgs (name, batchSize) {
+export function checkFetchArgs (name: string, batchSize?: number) {
   assert(name, 'missing queue name')
 
   name = sanitizeQueueNameForFetch(name)
@@ -106,16 +148,16 @@ function checkFetchArgs (name, batchSize) {
   return { name }
 }
 
-function sanitizeQueueNameForFetch (name) {
+function sanitizeQueueNameForFetch (name: string) {
   return name.replace(/[%_*]/g, match => match === '*' ? '%' : '\\' + match)
 }
 
-function getConfig (value) {
+export function getConfig (value: BossConfig | string) {
   assert(value && (typeof value === 'object' || typeof value === 'string'),
     'configuration assert: string or config object is required to connect to postgres')
 
   const config = (typeof value === 'string')
-    ? { connectionString: value }
+    ? { connectionString: value } as BossConfig
     : { ...value }
 
   applyDatabaseConfig(config)
@@ -133,7 +175,11 @@ function getConfig (value) {
   return config
 }
 
-function applyDatabaseConfig (config) {
+function isDbConfig (config: DatabaseOptions): config is DbConfig {
+  return typeof config.db !== 'object'
+}
+
+function applyDatabaseConfig (config: DatabaseOptions) {
   if (config.schema) {
     assert(typeof config.schema === 'string', 'configuration assert: schema must be a string')
     assert(config.schema.length <= 50, 'configuration assert: schema name cannot exceed 50 characters')
@@ -147,11 +193,16 @@ function applyDatabaseConfig (config) {
     assert(!('poolSize' in config) || config.poolSize >= 1,
       'configuration assert: poolSize must be at least 1')
 
+    // type guard
+    if (!isDbConfig(config)) {
+      return
+    }
+
     config.poolSize = config.poolSize || config.max || 10
   }
 }
 
-function applyRetentionConfig (config, defaults) {
+function applyRetentionConfig (config: RetentionOptions, defaults?: RetentionOptions) {
   assert(!('retentionSeconds' in config) || config.retentionSeconds >= 1,
     'configuration assert: retentionSeconds must be at least every second')
 
@@ -175,7 +226,7 @@ function applyRetentionConfig (config, defaults) {
   config.keepUntil = keepUntil
 }
 
-function applyExpirationConfig (config, defaults) {
+function applyExpirationConfig (config: ExpirationOptions, defaults?: ExpirationOptions) {
   if ('expireIn' in config) {
     emitWarning(WARNINGS.publishExpireInRemoved)
   }
@@ -199,10 +250,10 @@ function applyExpirationConfig (config, defaults) {
   config.expireIn = expireIn
 }
 
-function applyRetryConfig (config, defaults) {
+function applyRetryConfig (config: RetryOptions, defaults?: RetryOptions) {
   assert(!('retryDelay' in config) || (Number.isInteger(config.retryDelay) && config.retryDelay >= 0), 'retryDelay must be an integer >= 0')
   assert(!('retryLimit' in config) || (Number.isInteger(config.retryLimit) && config.retryLimit >= 0), 'retryLimit must be an integer >= 0')
-  assert(!('retryBackoff' in config) || (config.retryBackoff === true || config.retryBackoff === false), 'retryBackoff must be either true or false')
+  assert(!('retryBackoff' in config) || (config.retryBackoff || !config.retryBackoff), 'retryBackoff must be either true or false')
 
   if (defaults) {
     config.retryDelay = config.retryDelay || defaults.retryDelay
@@ -217,7 +268,7 @@ function applyRetryConfig (config, defaults) {
   config.retryLimit = (config.retryDelay && !config.retryLimit) ? 1 : config.retryLimit
 }
 
-function applyNewJobCheckInterval (config, defaults) {
+function applyNewJobCheckInterval (config: JobPollingOptions, defaults?: JobPollingOptions) {
   const second = 1000
 
   assert(!('newJobCheckInterval' in config) || config.newJobCheckInterval >= 100,
@@ -233,7 +284,7 @@ function applyNewJobCheckInterval (config, defaults) {
           : second * 2
 }
 
-function applyMaintenanceConfig (config) {
+function applyMaintenanceConfig (config: MaintenanceOptions) {
   assert(!('maintenanceIntervalSeconds' in config) || config.maintenanceIntervalSeconds >= 1,
     'configuration assert: maintenanceIntervalSeconds must be at least every second')
 
@@ -246,7 +297,7 @@ function applyMaintenanceConfig (config) {
         : 120
 }
 
-function applyArchiveConfig (config) {
+function applyArchiveConfig (config: MaintenanceOptions) {
   assert(!('archiveIntervalSeconds' in config) || config.archiveIntervalSeconds >= 1,
     'configuration assert: archiveIntervalSeconds must be at least every second')
 
@@ -269,7 +320,7 @@ function applyArchiveConfig (config) {
   config.archiveInterval = archiveInterval
 }
 
-function applyDeleteConfig (config) {
+function applyDeleteConfig (config: MaintenanceOptions) {
   assert(!('deleteIntervalSeconds' in config) || config.deleteIntervalSeconds >= 1,
     'configuration assert: deleteIntervalSeconds must be at least every second')
 
@@ -292,7 +343,7 @@ function applyDeleteConfig (config) {
   config.deleteInterval = deleteInterval
 }
 
-function applyMonitoringConfig (config) {
+function applyMonitoringConfig (config: QueueOptions) {
   assert(!('monitorStateIntervalSeconds' in config) || config.monitorStateIntervalSeconds >= 1,
     'configuration assert: monitorStateIntervalSeconds must be at least every second')
 
@@ -305,14 +356,14 @@ function applyMonitoringConfig (config) {
         : null
 }
 
-function applyUuidConfig (config) {
+function applyUuidConfig (config: QueueOptions) {
   assert(!('uuid' in config) || config.uuid === 'v1' || config.uuid === 'v4', 'configuration assert: uuid option only supports v1 or v4')
   config.uuid = config.uuid || 'v1'
 }
 
-function emitWarning (warning) {
+function emitWarning (warning: Warning) {
   if (!warning.warned) {
     warning.warned = true
-    process.emitWarning(warning.message, warning.type, warning.code)
+    process.emitWarning(warning.message, warning.code)
   }
 }

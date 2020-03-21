@@ -1,10 +1,6 @@
 import { EventEmitter } from 'events'
-import { Pool, PoolConfig } from 'pg'
-
-interface DbConfig extends PoolConfig {
-  poolSize?: number
-  schema?: string
-}
+import { Pool } from 'pg'
+import { DbConfig } from './config'
 
 class Db extends EventEmitter {
   constructor (private readonly config: DbConfig) {

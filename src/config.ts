@@ -1,10 +1,36 @@
-import Db from './db'
+import { PoolConfig, Defaults } from 'pg'
 
-export interface BringYourOwnDatabase {
-  db: Db
+export interface DbConfig extends PoolConfig, Defaults {
+  db: never
 }
 
-export type DatabaseOptions = ConstructorParameters<typeof Db>[0] | BringYourOwnDatabase
+export interface BringYourOwnDatabaseInterface {
+  executeSql(text: string, values: any[]): Promise<{ rows: any[], rowCount: number }>
+}
+
+export interface BringYourOwnDatabaseConfig {
+  db: BringYourOwnDatabaseInterface
+}
+
+interface DbSchemaConfig {
+  schema?: string
+}
+
+export type DatabaseOptions = DbSchemaConfig & (DbConfig | BringYourOwnDatabaseConfig)
+
+const dop: DatabaseOptions = {
+  application_name: 'a',
+  connectionString: 'a',
+  db: {
+    executeSql: (text, values) => {
+      return Promise.resolve({
+        rows: [],
+        rowCount: 1
+      })
+    }
+  }
+}
+console.log(dop)
 
 export interface QueueOptions {
   uuid?: 'v1' | 'v4'
@@ -34,7 +60,7 @@ export interface MaintenanceOptions {
 
 // TODO: add correct type
 export interface Manager {
-  manager: any
+  manager?: any
 }
 
 export type BossConfig =
@@ -51,12 +77,19 @@ export interface ExpirationOptions {
   expireInSeconds?: number
   expireInMinutes?: number
   expireInHours?: number
+
+  /**
+   * @deprecated
+  */
+  expireIn?: number | string
 }
 
 export interface RetentionOptions {
+  retentionSeconds?: number
   retentionMinutes?: number
   retentionHours?: number
   retentionDays?: number
+  keepUntil?: string
 }
 
 export interface RetryOptions {
