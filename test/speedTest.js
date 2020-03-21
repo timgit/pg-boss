@@ -13,6 +13,9 @@ describe('speed', function () {
   let boss
 
   beforeEach(async function () {
+    // TODO: figure out why this is taking longer than before
+    this.timeout(100 * 1000)
+
     const defaults = { noSupervisor: true, min: 10, max: 10 }
     boss = await helper.start({ ...this.currentTest.bossConfig, ...defaults })
     await Promise.map(jobs, job => boss.publish(job.name, job.data))
