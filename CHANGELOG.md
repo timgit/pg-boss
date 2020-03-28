@@ -1,5 +1,9 @@
 # Changes
 
+## 4.0.2
+
+- Retention policies added for internal maintenance queues to reduce the number of records in the job table.
+
 ## 4.0.1
 
 - Restored BYODB support for Knex.js
