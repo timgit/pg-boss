@@ -48,7 +48,6 @@ class Boss extends EventEmitter {
 
   async supervise () {
     await this.config.manager.deleteQueue(plans.completedJobPrefix + queues.MAINTENANCE)
-    await this.config.manager.deleteQueue(queues.MAINTENANCE)
 
     await this.maintenanceAsync()
 
@@ -56,7 +55,6 @@ class Boss extends EventEmitter {
 
     if (this.monitorStates) {
       await this.config.manager.deleteQueue(plans.completedJobPrefix + queues.MONITOR_STATES)
-      await this.config.manager.deleteQueue(queues.MONITOR_STATES)
 
       await this.monitorStatesAsync()
 
@@ -70,6 +68,7 @@ class Boss extends EventEmitter {
       keepUntilSeconds: this.maintenanceIntervalSeconds * 2
     }
 
+    await this.config.manager.deleteQueue(queues.MAINTENANCE)
     await this.config.manager.publish(queues.MAINTENANCE, null, options)
   }
 
@@ -79,6 +78,7 @@ class Boss extends EventEmitter {
       keepUntilSeconds: this.monitorIntervalSeconds * 2
     }
 
+    await this.config.manager.deleteQueue(queues.MONITOR_STATES)
     await this.config.manager.publish(queues.MONITOR_STATES, null, options)
   }
 
