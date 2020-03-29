@@ -36,6 +36,8 @@
   - [`fail([ids])`](#failids)
   - [`deleteQueue(name)`](#deletequeuename)
   - [`deleteAllQueues()`](#deleteallqueues)
+  - [`getQueueSize(name [, options])`](#getqueuesizename--options)
+  - [`clearStorage()`](#clearstorage)
 - [Events](#events)
   - [`error`](#error)
   - [`archived`](#archived)
@@ -444,11 +446,33 @@ The promise will resolve on a successful failure state assignment, or reject if 
 
 ## `deleteQueue(name)`
 
-Deletes all jobs in the specified queue from the active job table.  All jobs in the archive table are retained.
+Deletes all pending jobs in the specified queue from the active job table.  All jobs in the archive table are retained.
 
 ## `deleteAllQueues()`
 
-Deletes all jobs from all queues in the active job table. All jobs in the archive table are retained.  I guess you know what you're getting into with a function named like this.
+Deletes all pending jobs from all queues in the active job table. All jobs in the archive table are retained.
+
+## `getQueueSize(name [, options])`
+
+Returns the number of pending jobs in a queue by name.
+
+`options`: Optional, object.
+
+| Prop | Type | Description | Default |
+| - | - | - | - |
+|`before`| string | count jobs in states before this state | states.active |
+
+As an example, the following options object include active jobs along with created and retry.
+
+```js
+{
+  before: states.completed
+}
+```
+
+## `clearStorage()`
+
+Utility function if and when needed to empty all job storage. Internally, this issues a `TRUNCATE` command against all jobs tables, archive included.
 
 # Events
 

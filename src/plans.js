@@ -31,6 +31,8 @@ module.exports = {
   countStates,
   deleteQueue,
   deleteAllQueues,
+  clearStorage,
+  getQueueSize,
   states: { ...states },
   completedJobPrefix,
   advisoryLock,
@@ -131,11 +133,20 @@ function addIdIndexToArchive (schema) {
 }
 
 function deleteQueue (schema) {
-  return `DELETE FROM ${schema}.job WHERE name = $1`
+  return `DELETE FROM ${schema}.job WHERE name = $1 and state < '${states.active}'`
 }
 
 function deleteAllQueues (schema) {
-  return `TRUNCATE ${schema}.job`
+  return `DELETE FROM ${schema}.job WHERE state < '${states.active}'`
+}
+
+function clearStorage (schema) {
+  return `TRUNCATE ${schema}.job, ${schema}.archive`
+}
+
+function getQueueSize (schema, options = {}) {
+  options.before = options.before || states.active
+  return `SELECT count(*) as count FROM ${schema}.job WHERE name = $1 AND state < '${options.before}'`
 }
 
 function createIndexSingletonKey (schema) {

@@ -21,6 +21,7 @@ class Boss extends EventEmitter {
 
     this.db = db
     this.config = config
+    this.manager = config.manager
 
     this.maintenanceIntervalSeconds = config.maintenanceIntervalSeconds
 
@@ -47,39 +48,43 @@ class Boss extends EventEmitter {
   }
 
   async supervise () {
-    await this.config.manager.deleteQueue(plans.completedJobPrefix + queues.MAINTENANCE)
+    await this.manager.deleteQueue(plans.completedJobPrefix + queues.MAINTENANCE)
+    await this.manager.deleteQueue(queues.MAINTENANCE)
 
     await this.maintenanceAsync()
 
-    await this.config.manager.subscribe(queues.MAINTENANCE, { batchSize: 10 }, (jobs) => this.onMaintenance(jobs))
+    await this.manager.subscribe(queues.MAINTENANCE, { batchSize: 10 }, (jobs) => this.onMaintenance(jobs))
 
     if (this.monitorStates) {
-      await this.config.manager.deleteQueue(plans.completedJobPrefix + queues.MONITOR_STATES)
+      await this.manager.deleteQueue(plans.completedJobPrefix + queues.MONITOR_STATES)
+      await this.manager.deleteQueue(queues.MONITOR_STATES)
 
       await this.monitorStatesAsync()
 
-      await this.config.manager.subscribe(queues.MONITOR_STATES, { batchSize: 10 }, (jobs) => this.onMonitorStates(jobs))
+      await this.manager.subscribe(queues.MONITOR_STATES, { batchSize: 10 }, (jobs) => this.onMonitorStates(jobs))
     }
   }
 
   async maintenanceAsync () {
     const options = {
       startAfter: this.maintenanceIntervalSeconds,
-      keepUntilSeconds: this.maintenanceIntervalSeconds * 2
+      keepUntilSeconds: this.maintenanceIntervalSeconds * 2,
+      singletonKey: queues.MAINTENANCE,
+      retryLimit: 5,
+      retryBackoff: true
     }
 
-    await this.config.manager.deleteQueue(queues.MAINTENANCE)
-    await this.config.manager.publish(queues.MAINTENANCE, null, options)
+    await this.manager.publish(queues.MAINTENANCE, null, options)
   }
 
   async monitorStatesAsync () {
     const options = {
       startAfter: this.monitorIntervalSeconds,
-      keepUntilSeconds: this.monitorIntervalSeconds * 2
+      keepUntilSeconds: this.monitorIntervalSeconds * 2,
+      singletonKey: queues.MONITOR_STATES
     }
 
-    await this.config.manager.deleteQueue(queues.MONITOR_STATES)
-    await this.config.manager.publish(queues.MONITOR_STATES, null, options)
+    await this.manager.publish(queues.MONITOR_STATES, null, options)
   }
 
   async onMaintenance (jobs) {
@@ -94,7 +99,7 @@ class Boss extends EventEmitter {
       this.emitValue(events.archived, await this.archive())
       this.emitValue(events.deleted, await this.purge())
 
-      await this.config.manager.complete(jobs.map(j => j.id))
+      await this.manager.complete(jobs.map(j => j.id))
 
       const ended = Date.now()
 
@@ -124,7 +129,7 @@ class Boss extends EventEmitter {
 
       this.emit(events.monitorStates, states)
 
-      await this.config.manager.complete(jobs.map(j => j.id))
+      await this.manager.complete(jobs.map(j => j.id))
     } catch (err) {
       this.emit(events.error, err)
     }

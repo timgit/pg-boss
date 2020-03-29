@@ -23,14 +23,9 @@ describe('database', function () {
     }
 
     const boss = new PgBoss({ db: mydb })
-
-    await boss.start()
-
     const response = await boss.db.executeSql(query)
 
     assert(response.text === query)
-
-    await boss.stop()
   })
 
   it('connection count does not exceed configured pool size with `poolSize`', async function () {
