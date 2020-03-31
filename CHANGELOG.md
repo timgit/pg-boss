@@ -8,7 +8,7 @@
 - Added `getQueueSize(name` to retrieve the current size of a queue.
 - Added `clearStorage()` as a utility function if and when needed to empty all job storage, archive included.
 - Restored older schema migrations to allow upgrading directly to version 4 from version 1.1 and higher.
-- Upgrade node-pg dependency to version 8.0.0.
+- Upgraded pg dependency to version 8.0.0.
 
 ## 4.0.1
 
