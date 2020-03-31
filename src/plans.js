@@ -246,6 +246,8 @@ const retryStartAfterCase = `CASE
             * interval '1'
           END`
 
+const keepUntilInheritance = 'keepUntil + (keepUntil - startAfter)'
+
 function completeJobs (schema) {
   return `
     WITH results AS (
@@ -260,7 +262,7 @@ function completeJobs (schema) {
     SELECT
       '${completedJobPrefix}' || name,
       ${buildJsonCompletionObject(true)},
-      keepUntil + (keepUntil - startAfter)
+      ${keepUntilInheritance}
     FROM results
     WHERE NOT name LIKE '${completedJobPrefix}%'
     RETURNING 1
@@ -286,7 +288,7 @@ function failJobs (schema) {
     SELECT
       '${completedJobPrefix}' || name,
       ${buildJsonCompletionObject(true)},
-      keepUntil + (keepUntil - startAfter)
+      ${keepUntilInheritance}
     FROM results
     WHERE state = '${states.failed}'
       AND NOT name LIKE '${completedJobPrefix}%'
@@ -312,7 +314,7 @@ function expire (schema) {
     SELECT
       '${completedJobPrefix}' || name,
       ${buildJsonCompletionObject()},
-      keepUntil + (keepUntil - startAfter)
+      ${keepUntilInheritance}
     FROM results
     WHERE state = '${states.expired}'
       AND NOT name LIKE '${completedJobPrefix}%'
