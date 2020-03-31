@@ -68,7 +68,7 @@ class Boss extends EventEmitter {
   async maintenanceAsync () {
     const options = {
       startAfter: this.maintenanceIntervalSeconds,
-      keepUntilSeconds: this.maintenanceIntervalSeconds * 2,
+      retentionSeconds: this.maintenanceIntervalSeconds * 2,
       singletonKey: queues.MAINTENANCE,
       retryLimit: 5,
       retryBackoff: true
@@ -80,7 +80,7 @@ class Boss extends EventEmitter {
   async monitorStatesAsync () {
     const options = {
       startAfter: this.monitorIntervalSeconds,
-      keepUntilSeconds: this.monitorIntervalSeconds * 2,
+      retentionSeconds: this.monitorIntervalSeconds * 2,
       singletonKey: queues.MONITOR_STATES
     }
 
