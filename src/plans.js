@@ -260,7 +260,7 @@ function completeJobs (schema) {
     SELECT
       '${completedJobPrefix}' || name,
       ${buildJsonCompletionObject(true)},
-      keepUntil
+      keepUntil + (keepUntil - startAfter)
     FROM results
     WHERE NOT name LIKE '${completedJobPrefix}%'
     RETURNING 1
@@ -286,7 +286,7 @@ function failJobs (schema) {
     SELECT
       '${completedJobPrefix}' || name,
       ${buildJsonCompletionObject(true)},
-      keepUntil
+      keepUntil + (keepUntil - startAfter)
     FROM results
     WHERE state = '${states.failed}'
       AND NOT name LIKE '${completedJobPrefix}%'
@@ -312,7 +312,7 @@ function expire (schema) {
     SELECT
       '${completedJobPrefix}' || name,
       ${buildJsonCompletionObject()},
-      keepUntil
+      keepUntil + (keepUntil - startAfter)
     FROM results
     WHERE state = '${states.expired}'
       AND NOT name LIKE '${completedJobPrefix}%'
