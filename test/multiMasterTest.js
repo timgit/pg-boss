@@ -74,7 +74,7 @@ describe('multi-master', function () {
     const boss = new PgBoss(config)
 
     const queues = boss.boss.getQueueNames()
-    const countJobs = (state) => helper.countJobs(config.schema, 'name = $1 AND state = $2', [queues.MAINT, state])
+    const countJobs = (state) => helper.countJobs(config.schema, 'name = $1 AND state = $2', [queues.MAINTENANCE, state])
 
     const maintenanceEvent = new Promise((resolve) => {
       boss.on('maintenance', result => {
@@ -86,7 +86,7 @@ describe('multi-master', function () {
 
     // create extra maintenace jobs manually
     for (let i = 0; i < jobCount; i++) {
-      await boss.boss.maintenanceAsync()
+      await boss.publish(queues.MAINTENANCE)
     }
 
     const beforeCount = await countJobs(states.created)

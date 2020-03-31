@@ -31,6 +31,8 @@ module.exports = {
   countStates,
   deleteQueue,
   deleteAllQueues,
+  clearStorage,
+  getQueueSize,
   states: { ...states },
   completedJobPrefix,
   advisoryLock,
@@ -131,11 +133,20 @@ function addIdIndexToArchive (schema) {
 }
 
 function deleteQueue (schema) {
-  return `DELETE FROM ${schema}.job WHERE name = $1`
+  return `DELETE FROM ${schema}.job WHERE name = $1 and state < '${states.active}'`
 }
 
 function deleteAllQueues (schema) {
-  return `TRUNCATE ${schema}.job`
+  return `DELETE FROM ${schema}.job WHERE state < '${states.active}'`
+}
+
+function clearStorage (schema) {
+  return `TRUNCATE ${schema}.job, ${schema}.archive`
+}
+
+function getQueueSize (schema, options = {}) {
+  options.before = options.before || states.active
+  return `SELECT count(*) as count FROM ${schema}.job WHERE name = $1 AND state < '${options.before}'`
 }
 
 function createIndexSingletonKey (schema) {
@@ -235,6 +246,8 @@ const retryStartAfterCase = `CASE
             * interval '1'
           END`
 
+const keepUntilInheritance = 'keepUntil + (keepUntil - startAfter)'
+
 function completeJobs (schema) {
   return `
     WITH results AS (
@@ -249,7 +262,7 @@ function completeJobs (schema) {
     SELECT
       '${completedJobPrefix}' || name,
       ${buildJsonCompletionObject(true)},
-      keepUntil
+      ${keepUntilInheritance}
     FROM results
     WHERE NOT name LIKE '${completedJobPrefix}%'
     RETURNING 1
@@ -275,7 +288,7 @@ function failJobs (schema) {
     SELECT
       '${completedJobPrefix}' || name,
       ${buildJsonCompletionObject(true)},
-      keepUntil
+      ${keepUntilInheritance}
     FROM results
     WHERE state = '${states.failed}'
       AND NOT name LIKE '${completedJobPrefix}%'
@@ -301,7 +314,7 @@ function expire (schema) {
     SELECT
       '${completedJobPrefix}' || name,
       ${buildJsonCompletionObject()},
-      keepUntil
+      ${keepUntilInheritance}
     FROM results
     WHERE state = '${states.expired}'
       AND NOT name LIKE '${completedJobPrefix}%'
