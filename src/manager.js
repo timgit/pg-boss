@@ -132,7 +132,7 @@ class Manager extends EventEmitter {
 
   async publishOnce (name, data, options, key) {
     options = options || {}
-    options.singletonKey = key
+    options.singletonKey = key || name
 
     const result = Attorney.checkPublishArgs([name, data, options], this.config)
 
