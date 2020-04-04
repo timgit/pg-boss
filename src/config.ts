@@ -18,20 +18,6 @@ interface DbSchemaConfig {
 
 export type DatabaseOptions = DbSchemaConfig & (DbConfig | BringYourOwnDatabaseConfig)
 
-const dop: DatabaseOptions = {
-  application_name: 'a',
-  connectionString: 'a',
-  db: {
-    executeSql: (text, values) => {
-      return Promise.resolve({
-        rows: [],
-        rowCount: 1
-      })
-    }
-  }
-}
-console.log(dop)
-
 export interface QueueOptions {
   uuid?: 'v1' | 'v4'
   monitorStateIntervalSeconds?: number
