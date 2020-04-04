@@ -17,6 +17,7 @@
     "@typescript-eslint/restrict-template-expressions": [0],
     "@typescript-eslint/restrict-plus-operands": [0],
     "@typescript-eslint/no-throw-literal": [0],
-    "@typescript-eslint/require-await": [0]
+    "@typescript-eslint/require-await": [0],
+    "@typescript-eslint/no-dynamic-delete": [0]
   }
 }
