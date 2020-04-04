@@ -1,15 +1,16 @@
-import { PoolConfig, Defaults } from 'pg'
+import { Pool, PoolConfig, QueryResult, Defaults } from 'pg'
 
 export interface DbConfig extends PoolConfig, Defaults {
   db: never
 }
 
-export interface BringYourOwnDatabaseInterface {
-  executeSql(text: string, values: any[]): Promise<{ rows: any[], rowCount: number }>
+export interface DatabaseInterface {
+  executeSql<T = any>(text: Parameters<Pool['query']>[0], values?: Parameters<Pool['query']>[1]): Promise<QueryResult<T>>
+  isOurs?: boolean
 }
 
 export interface BringYourOwnDatabaseConfig {
-  db: BringYourOwnDatabaseInterface
+  db: DatabaseInterface
 }
 
 interface DbSchemaConfig {

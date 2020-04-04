@@ -4,26 +4,26 @@ import { SchemaName, SchemaVersion } from './plans'
 import * as migrationStore from './migrationStore'
 import { Migration, MigrationConfig } from './migrationStore'
 import { schemaVersion } from './schemaVersion'
-import Db from './db'
+import { DatabaseInterface } from './config'
 
 class Contractor {
-  static constructionPlans(schema: SchemaName) {
+  static constructionPlans (schema: SchemaName) {
     return plans.create(schema, schemaVersion)
   }
 
-  static migrationPlans(schema: SchemaName, version: SchemaVersion) {
+  static migrationPlans (schema: SchemaName, version: SchemaVersion) {
     return migrationStore.migrate(schema, version)
   }
 
-  static rollbackPlans(schema: SchemaName, version: SchemaVersion) {
+  static rollbackPlans (schema: SchemaName, version: SchemaVersion) {
     return migrationStore.rollback(schema, version)
   }
 
-  constructor(private db: Db, private config: MigrationConfig) {
+  constructor (private readonly db: DatabaseInterface, private readonly config: MigrationConfig) {
     this.migrations = this.config.migrations || migrationStore.getAll(this.config.schema)
   }
 
-  private migrations: Migration[]
+  private readonly migrations: Migration[]
 
   async version (): Promise<SchemaVersion | null> {
     const result = await this.db.executeSql(plans.getVersion(this.config.schema))
@@ -63,7 +63,7 @@ class Contractor {
       await this.db.executeSql(commands)
     } catch (err) {
       const e = err as Error
-      assert(e.message.indexOf(plans.CREATE_RACE_MESSAGE) > -1, e)
+      assert(e.message.includes(plans.CREATE_RACE_MESSAGE), e)
     }
   }
 
@@ -73,7 +73,7 @@ class Contractor {
       await this.db.executeSql(commands)
     } catch (err) {
       const e = err as Error
-      assert(e.message.indexOf(plans.MIGRATE_RACE_MESSAGE) > -1, e)
+      assert(e.message.includes(plans.MIGRATE_RACE_MESSAGE), e)
     }
   }
 

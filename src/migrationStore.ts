@@ -19,7 +19,7 @@ export interface MigrationConfig {
   migrations?: Migration[]
 }
 
-function flatten(schema: SchemaName, commands: MigrationCommand[], version: SchemaVersion) {
+function flatten (schema: SchemaName, commands: MigrationCommand[], version: SchemaVersion) {
   const preflight = [
     'BEGIN',
     advisoryLock(),
@@ -34,7 +34,7 @@ function flatten(schema: SchemaName, commands: MigrationCommand[], version: Sche
   return [...preflight, ...commands, ...postflight].join(';')
 }
 
-export function rollback(schema: SchemaName, version: SchemaVersion, migrations = getAll(schema)) {
+export function rollback (schema: SchemaName, version: SchemaVersion, migrations = getAll(schema)) {
   const result = migrations.find(i => i.version === version)
 
   assert(result, `Version ${version} not found.`)
@@ -42,7 +42,7 @@ export function rollback(schema: SchemaName, version: SchemaVersion, migrations 
   return flatten(schema, result.uninstall, result.previous)
 }
 
-export function next(schema: SchemaName, version: SchemaVersion, migrations = getAll(schema)) {
+export function next (schema: SchemaName, version: SchemaVersion, migrations = getAll(schema)) {
   const result = migrations.find(i => i.previous === version)
 
   assert(result, `Version ${version} not found.`)
@@ -50,7 +50,7 @@ export function next(schema: SchemaName, version: SchemaVersion, migrations = ge
   return flatten(schema, result.install, result.version)
 }
 
-export function migrate(value: MigrationConfig | SchemaName, version: SchemaVersion, migrations?: Migration[]) {
+export function migrate (value: MigrationConfig | SchemaName, version: SchemaVersion, migrations?: Migration[]) {
   let schema: SchemaName
   let config: MigrationConfig
 
@@ -78,7 +78,7 @@ export function migrate(value: MigrationConfig | SchemaName, version: SchemaVers
   return flatten(schema, result.install, result.version)
 }
 
-export function getAll(schema: SchemaName, config?: MigrationConfig): Migration[] {
+export function getAll (schema: SchemaName, config?: MigrationConfig): Migration[] {
   const DEFAULT_RETENTION = '30 days'
   const keepUntil = config ? config.keepUntil : DEFAULT_RETENTION
 

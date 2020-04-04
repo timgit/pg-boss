@@ -4,11 +4,10 @@ import bluebird from 'bluebird'
 import * as uuid from 'uuid'
 import { QueryResult } from 'pg'
 import Worker from './worker'
-import Db from './db'
 import * as plans from './plans'
 import * as Attorney from './attorney'
 import { PublishOptions, PublishArgs, SubscribeOptions, SubscribeCallback, CheckSubscribeArgs } from './attorney'
-import { BossConfig, WorkerConfig, JobWithDoneCallback, Job } from './config'
+import { BossConfig, WorkerConfig, JobWithDoneCallback, Job, DatabaseInterface } from './config'
 
 const completedJobPrefix = plans.completedJobPrefix
 
@@ -32,7 +31,7 @@ declare interface Manager {
 }
 
 class Manager extends EventEmitter {
-  private readonly events: typeof events
+  public readonly events = events
   private subscriptions: Record<string, { workers: Worker[] }>
 
   // exported api to index
@@ -63,10 +62,9 @@ class Manager extends EventEmitter {
   private readonly deleteQueueCommand: string
   private readonly deleteAllQueuesCommand: string
 
-  constructor (private readonly db: Db, private readonly config: BossConfig) {
+  constructor (private readonly db: DatabaseInterface, private readonly config: BossConfig) {
     super()
 
-    this.events = events
     this.subscriptions = {}
 
     this.nextJobCommand = plans.fetchNextJob(config.schema)

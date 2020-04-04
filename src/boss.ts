@@ -1,7 +1,6 @@
 import { EventEmitter } from 'events'
 import * as plans from './plans'
-import { BossConfig } from './config'
-import Db from './db'
+import { BossConfig, DatabaseInterface } from './config'
 
 const queues = Object.freeze({
   MAINT: '__pgboss__maintenance',
@@ -38,7 +37,7 @@ class Boss extends EventEmitter {
   private readonly maintenanceIntervalSeconds: BossConfig['maintenanceIntervalSeconds']
   private readonly monitorStates: boolean
   private readonly monitorIntervalSeconds: BossConfig['monitorStateIntervalSeconds']
-  private readonly events = events
+  public readonly events = events
   private readonly expireCommand: string
   private readonly archiveCommand: string
   private readonly purgeCommand: string
@@ -46,7 +45,7 @@ class Boss extends EventEmitter {
   public functions: Function[]
   private stopped = false
 
-  constructor (private readonly db: Db, private readonly config: BossConfig) {
+  constructor (private readonly db: DatabaseInterface, private readonly config: BossConfig) {
     super()
 
     this.maintenanceIntervalSeconds = config.maintenanceIntervalSeconds

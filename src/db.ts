@@ -1,8 +1,8 @@
 import { EventEmitter } from 'events'
 import { Pool } from 'pg'
-import { DbConfig } from './config'
+import { DbConfig, DatabaseInterface } from './config'
 
-class Db extends EventEmitter {
+class Db extends EventEmitter implements DatabaseInterface {
   constructor (private readonly config: DbConfig) {
     super()
 

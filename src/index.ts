@@ -1,37 +1,41 @@
-const assert = require('assert')
-const EventEmitter = require('events')
-const Attorney = require('./attorney')
-const Contractor = require('./contractor')
-const Manager = require('./manager')
-const Boss = require('./boss')
-const Db = require('./db')
-const plans = require('./plans')
+import assert from 'assert'
+import { EventEmitter } from 'events'
+import * as Attorney from './attorney'
+import { isDbConfig } from './attorney'
+import Contractor from './contractor'
+import Manager from './manager'
+import Boss from './boss'
+import Db from './db'
+import * as plans from './plans'
+import { BossConfig, DatabaseInterface } from './config'
 
 const notReadyErrorMessage = 'boss ain\'t ready.  Use start() or connect() to get started.'
 const alreadyStartedErrorMessage = 'boss.start() has already been called on this instance.'
 const notStartedErrorMessage = 'boss ain\'t started.  Use start().'
 
 class PgBoss extends EventEmitter {
-  static getConstructionPlans (schema) {
+  static getConstructionPlans (schema: string) {
     return Contractor.constructionPlans(schema)
   }
 
-  static getMigrationPlans (schema, version) {
+  static getMigrationPlans (schema: string, version: number) {
     return Contractor.migrationPlans(schema, version)
   }
 
-  static getRollbackPlans (schema, version) {
+  static getRollbackPlans (schema: string, version: number) {
     return Contractor.rollbackPlans(schema, version)
   }
 
-  constructor (value) {
-    const config = Attorney.getConfig(value)
+  static readonly states = plans.states
 
+  constructor (value: Parameters<typeof Attorney.getConfig>[0]) {
     super()
+
+    const config = Attorney.getConfig(value)
 
     const db = getDb(config)
 
-    if (db.isOurs) { promoteEvent.call(this, db, 'error') }
+    if (db instanceof Db) { promoteEvent.call(this, db, 'error') }
 
     const manager = new Manager(db, config)
     Object.keys(manager.events).forEach(event => promoteEvent.call(this, manager, manager.events[event]))
@@ -46,17 +50,19 @@ class PgBoss extends EventEmitter {
     this.config = config
     this.db = db
     this.boss = boss
+    // TODO: fix on the second iteration.
+    // The value is actually set, but the types don't line up.
+    // Property 'schema' is optional in type 'DbSchemaConfig & DbConfig & QueueOptions & MaintenanceOptions & ExpirationOptions & RetentionOptions & RetryOptions & JobPollingOptions & Manager' but required in type 'MigrationConfig'
+    // @ts-ignore
     this.contractor = new Contractor(db, config)
     this.manager = manager
 
-    function getDb (config) {
-      if (config.db) {
+    function getDb (config: BossConfig): DatabaseInterface {
+      if (!isDbConfig(config)) {
         return config.db
       }
 
-      const db = new Db(config)
-      db.isOurs = true
-      return db
+      return new Db(config)
     }
 
     function promoteFunction (obj, func) {
@@ -71,11 +77,19 @@ class PgBoss extends EventEmitter {
     }
   }
 
+  private isStarted = false
+  private isReady = false
+  private readonly config: BossConfig
+  private readonly db: DatabaseInterface
+  private readonly contractor: Contractor
+  private readonly boss: Boss
+  private readonly manager: Manager
+
   async start () {
     assert(!this.isStarted, alreadyStartedErrorMessage)
     this.isStarted = true
 
-    if (this.db.isOurs && !this.db.opened) {
+    if (this.db instanceof Db && !this.db.opened) {
       await this.db.open()
     }
 
@@ -96,7 +110,7 @@ class PgBoss extends EventEmitter {
     await this.manager.stop()
     await this.boss.stop()
 
-    if (this.db.isOurs) {
+    if (this.db instanceof Db) {
       await this.db.close()
     }
 
@@ -105,7 +119,7 @@ class PgBoss extends EventEmitter {
   }
 
   async connect () {
-    if (this.db.isOurs && !this.db.opened) {
+    if (this.db instanceof Db && !this.db.opened) {
       await this.db.open()
     }
 
@@ -119,7 +133,7 @@ class PgBoss extends EventEmitter {
 
     await this.manager.stop()
 
-    if (this.db.isOurs) {
+    if (this.db instanceof Db) {
       await this.db.close()
     }
 
@@ -127,5 +141,4 @@ class PgBoss extends EventEmitter {
   }
 }
 
-module.exports = PgBoss
-module.exports.states = plans.states
+export = PgBoss

@@ -155,7 +155,7 @@ function sanitizeQueueNameForFetch (name: string) {
   return name.replace(/[%_*]/g, match => match === '*' ? '%' : '\\' + match)
 }
 
-export function getConfig (value: BossConfig | string) {
+export function getConfig (value: BossConfig | string): BossConfig {
   assert(value && (typeof value === 'object' || typeof value === 'string'),
     'configuration assert: string or config object is required to connect to postgres')
 
@@ -178,7 +178,7 @@ export function getConfig (value: BossConfig | string) {
   return config
 }
 
-function isDbConfig (config: DatabaseOptions): config is DbConfig {
+export function isDbConfig (config: DatabaseOptions): config is DbConfig {
   return typeof config.db !== 'object'
 }
 
