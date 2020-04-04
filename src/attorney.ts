@@ -1,5 +1,8 @@
 import assert from 'assert'
-import { BossConfig, RetentionOptions, ExpirationOptions, RetryOptions, QueueOptions, MaintenanceOptions, JobPollingOptions, DatabaseOptions, DbConfig } from './config'
+import {
+  BossConfig, RetentionOptions, ExpirationOptions, RetryOptions, QueueOptions, MaintenanceOptions,
+  JobPollingOptions, DatabaseOptions, DbConfig, Job
+} from './config'
 
 interface Warning {
   message: string
@@ -24,7 +27,7 @@ interface JobOptions {
   singletonNextSlot?: boolean
 }
 
-type PublishOptions =
+export type PublishOptions =
     JobOptions
     & ExpirationOptions
     & RetentionOptions
@@ -39,7 +42,7 @@ interface PublishArgsConfig {
   options: PublishOptions
 }
 
-type PublishArgs = [PublishArgsConfig] | [PublishArgsName, PublishArgsData, PublishOptions]
+export type PublishArgs = [PublishArgsConfig] | [PublishArgsName, PublishArgsData, PublishOptions]
 
 export function checkPublishArgs (args: PublishArgs, defaults): PublishArgsConfig {
   let name: PublishArgsName
@@ -101,11 +104,11 @@ interface JobFetchOptions {
   batchSize?: number
 }
 
-type SubscribeOptions = JobFetchOptions & JobPollingOptions
+export type SubscribeOptions = JobFetchOptions & JobPollingOptions
 
 // TODO: narrown down callback type
-type SubscribeCallback = () => void
-type CheckSubscribeArgs = [SubscribeCallback] | [SubscribeOptions, SubscribeCallback]
+export type SubscribeCallback = (jobs: Job | Job[]) => Promise<any>
+export type CheckSubscribeArgs = [SubscribeCallback] | [SubscribeOptions, SubscribeCallback]
 
 export function checkSubscribeArgs (name: string, args: CheckSubscribeArgs, defaults) {
   let options: SubscribeOptions

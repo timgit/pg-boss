@@ -1,15 +1,8 @@
 import { delay } from 'bluebird'
-
-interface WorkerConfig {
-  name: string
-  interval: number
-  fetch: () => Promise<any>
-  onFetch: () => Promise<any>
-  onError: () => any
-}
+import { WorkerConfig } from './config'
 
 class Worker {
-  constructor(private config: WorkerConfig) {}
+  constructor (private readonly config: WorkerConfig) {}
 
   private stopped = false
 

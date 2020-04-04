@@ -102,3 +102,21 @@ export interface JobPollingOptions {
   newJobCheckInterval?: number
   newJobCheckIntervalSeconds?: number
 }
+
+export interface Job<T = object> {
+  id: string
+  name: string
+  data: T
+}
+
+export interface JobWithDoneCallback<T = object> extends Job<T> {
+  done: (error: Error, response: object) => Promise<void>
+}
+
+export interface WorkerConfig {
+  name: string
+  interval: number
+  fetch: () => Promise<JobWithDoneCallback | JobWithDoneCallback[]>
+  onFetch: (jobs: JobWithDoneCallback[]) => Promise<any>
+  onError: (err: Error) => any
+}

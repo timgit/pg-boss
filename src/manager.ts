@@ -1,24 +1,70 @@
-const assert = require('assert')
-const EventEmitter = require('events')
-const Promise = require('bluebird')
-const uuid = require('uuid')
-
-const Worker = require('./worker')
-const plans = require('./plans')
-const Attorney = require('./attorney')
+import assert from 'assert'
+import { EventEmitter } from 'events'
+import bluebird from 'bluebird'
+import * as uuid from 'uuid'
+import { QueryResult } from 'pg'
+import Worker from './worker'
+import Db from './db'
+import * as plans from './plans'
+import * as Attorney from './attorney'
+import { PublishOptions, PublishArgs, SubscribeOptions, SubscribeCallback, CheckSubscribeArgs } from './attorney'
+import { BossConfig, WorkerConfig, JobWithDoneCallback, Job } from './config'
 
 const completedJobPrefix = plans.completedJobPrefix
 
-const events = {
+const events = Object.freeze({
   error: 'error'
+})
+
+type UUID = ReturnType<typeof uuid.v1>
+
+interface CompletionResponse {
+  /**
+   * Job IDs (`UUID[]`)
+  */
+  jobs: UUID[]
+  requested: number
+  updated: number
+}
+
+declare interface Manager {
+  on(event: typeof events.error, handler: (error: Error) => void): this
 }
 
 class Manager extends EventEmitter {
-  constructor (db, config) {
-    super()
+  private readonly events: typeof events
+  private subscriptions: Record<string, { workers: Worker[] }>
 
-    this.config = config
-    this.db = db
+  // exported api to index
+  public readonly functions = [
+    this.fetch,
+    this.complete,
+    this.cancel,
+    this.fail,
+    this.publish,
+    this.subscribe,
+    this.unsubscribe,
+    this.onComplete,
+    this.offComplete,
+    this.fetchCompleted,
+    this.publishDebounced,
+    this.publishThrottled,
+    this.publishOnce,
+    this.publishAfter,
+    this.deleteQueue,
+    this.deleteAllQueues
+  ]
+
+  private readonly nextJobCommand: string
+  private readonly insertJobCommand: string
+  private readonly completeJobsCommand: string
+  private readonly cancelJobsCommand: string
+  private readonly failJobsCommand: string
+  private readonly deleteQueueCommand: string
+  private readonly deleteAllQueuesCommand: string
+
+  constructor (private readonly db: Db, private readonly config: BossConfig) {
+    super()
 
     this.events = events
     this.subscriptions = {}
@@ -30,47 +76,27 @@ class Manager extends EventEmitter {
     this.failJobsCommand = plans.failJobs(config.schema)
     this.deleteQueueCommand = plans.deleteQueue(config.schema)
     this.deleteAllQueuesCommand = plans.deleteAllQueues(config.schema)
-
-    // exported api to index
-    this.functions = [
-      this.fetch,
-      this.complete,
-      this.cancel,
-      this.fail,
-      this.publish,
-      this.subscribe,
-      this.unsubscribe,
-      this.onComplete,
-      this.offComplete,
-      this.fetchCompleted,
-      this.publishDebounced,
-      this.publishThrottled,
-      this.publishOnce,
-      this.publishAfter,
-      this.deleteQueue,
-      this.deleteAllQueues
-    ]
   }
 
   async stop () {
-    Object.keys(this.subscriptions).forEach(name => this.unsubscribe(name))
+    await Promise.all(Object.keys(this.subscriptions).map(name => this.unsubscribe(name)))
     this.subscriptions = {}
   }
 
-  async subscribe (name, ...args) {
+  async subscribe (name: string, ...args: CheckSubscribeArgs) {
     const { options, callback } = Attorney.checkSubscribeArgs(name, args, this.config)
     return this.watch(name, options, callback)
   }
 
-  async onComplete (name, ...args) {
+  async onComplete (name: string, ...args: CheckSubscribeArgs) {
     const { options, callback } = Attorney.checkSubscribeArgs(name, args, this.config)
     return this.watch(completedJobPrefix + name, options, callback)
   }
 
-  async watch (name, options, callback) {
+  async watch (name: string, options: SubscribeOptions, callback: SubscribeCallback) {
     options.newJobCheckInterval = options.newJobCheckInterval || this.config.newJobCheckInterval
 
-    const sendItBruh = async (jobs) => {
+    const sendItBruh = async (jobs: JobWithDoneCallback[]) => {
       if (!jobs) {
         return
       }
@@ -85,21 +111,20 @@ class Manager extends EventEmitter {
       const concurrency = options.teamConcurrency || 1
 
       // either no option was set, or teamSize was used
-      return Promise.map(jobs, job =>
+      return bluebird.map(jobs, job =>
         callback(job)
-          .then(value => this.complete(job.id, value))
-          .catch(err => this.fail(job.id, err))
+          .then((value: object) => this.complete(job.id, value))
+          .catch((err: Error) => this.fail(job.id, err))
       , { concurrency }
       ).catch(() => {}) // allow promises & non-promises to live together in harmony
     }
 
-    const onError = error => this.emit(events.error, error)
+    const onError = (error: Error) => this.emit(events.error, error)
 
-    // TODO: tighten up WorkerConfig interface when converting this to TS
-    const workerConfig = {
+    const workerConfig: WorkerConfig = {
       name,
       fetch: () => this.fetch(name, options.batchSize || options.teamSize || 1),
-      onFetch: jobs => sendItBruh(jobs),
+      onFetch: (jobs: JobWithDoneCallback[]) => sendItBruh(jobs),
       onError,
       interval: options.newJobCheckInterval
     }
@@ -112,23 +137,23 @@ class Manager extends EventEmitter {
     this.subscriptions[name].workers.push(worker)
   }
 
-  async unsubscribe (name) {
+  async unsubscribe (name: string) {
     assert(this.subscriptions[name], `No subscriptions for ${name} were found.`)
 
     this.subscriptions[name].workers.forEach(worker => worker.stop())
     delete this.subscriptions[name]
   }
 
-  async offComplete (name) {
+  async offComplete (name: string) {
     return this.unsubscribe(completedJobPrefix + name)
   }
 
-  async publish (...args) {
+  async publish (...args: PublishArgs) {
     const { name, data, options } = Attorney.checkPublishArgs(args, this.config)
     return this.createJob(name, data, options)
   }
 
-  async publishOnce (name, data, options, key) {
+  async publishOnce (name: string, data: object, options: PublishOptions, key: string) {
     options = options || {}
     options.singletonKey = key
 
@@ -137,7 +162,7 @@ class Manager extends EventEmitter {
     return this.createJob(result.name, result.data, result.options)
   }
 
-  async publishAfter (name, data, options, after) {
+  async publishAfter (name: string, data: object, options: PublishOptions, after: PublishOptions['startAfter']) {
     options = options || {}
     options.startAfter = after
 
@@ -146,7 +171,7 @@ class Manager extends EventEmitter {
     return this.createJob(result.name, result.data, result.options)
   }
 
-  async publishThrottled (name, data, options, seconds, key) {
+  async publishThrottled (name: string, data: object, options: PublishOptions, seconds: number, key?: string) {
     options = options || {}
     options.singletonSeconds = seconds
     options.singletonNextSlot = false
@@ -157,7 +182,7 @@ class Manager extends EventEmitter {
     return this.createJob(result.name, result.data, result.options)
   }
 
-  async publishDebounced (name, data, options, seconds, key) {
+  async publishDebounced (name: string, data: object, options: PublishOptions, seconds: number, key?: string) {
     options = options || {}
     options.singletonSeconds = seconds
     options.singletonNextSlot = true
@@ -168,7 +193,7 @@ class Manager extends EventEmitter {
     return this.createJob(result.name, result.data, result.options)
   }
 
-  async createJob (name, data, options, singletonOffset = 0) {
+  async createJob (name: string, data: object, options: PublishOptions, singletonOffset = 0) {
     const {
       expireIn,
       priority,
@@ -219,19 +244,22 @@ class Manager extends EventEmitter {
     return this.createJob(name, data, options, singletonOffset)
   }
 
-  async fetch (name, batchSize) {
+  async fetch (name: string, batchSize: number) {
     const values = Attorney.checkFetchArgs(name, batchSize)
-    const result = await this.db.executeSql(this.nextJobCommand, [values.name, batchSize || 1])
+    const result = await this.db.executeSql<Job>(this.nextJobCommand, [values.name, batchSize || 1])
 
-    const jobs = result.rows.map(job => {
-      job.done = async (error, response) => {
-        if (error) {
-          await this.fail(job.id, error)
-        } else {
-          await this.complete(job.id, response)
+    const jobs = result.rows.map<JobWithDoneCallback>(job => {
+      return {
+        ...job,
+
+        done: async (error: Error, response: object) => {
+          if (error) {
+            await this.fail(job.id, error)
+          } else {
+            await this.complete(job.id, response)
+          }
         }
       }
-      return job
     })
 
     return jobs.length === 0 ? null
@@ -239,11 +267,11 @@ class Manager extends EventEmitter {
         : jobs
   }
 
-  async fetchCompleted (name, batchSize) {
+  async fetchCompleted (name: string, batchSize: number) {
     return this.fetch(completedJobPrefix + name, batchSize)
   }
 
-  mapCompletionIdArg (id, funcName) {
+  mapCompletionIdArg (id: UUID | UUID[], funcName: string): UUID[] {
     const errorMessage = `${funcName}() requires an id`
 
     assert(id, errorMessage)
@@ -255,7 +283,7 @@ class Manager extends EventEmitter {
     return ids
   }
 
-  mapCompletionDataArg (data) {
+  mapCompletionDataArg (data: object | Error): object | object[] | null {
     if (data === null || typeof data === 'undefined' || typeof data === 'function') { return null }
 
     if (data instanceof Error) { data = JSON.parse(JSON.stringify(data, Object.getOwnPropertyNames(data))) }
@@ -265,7 +293,7 @@ class Manager extends EventEmitter {
       : { value: data }
   }
 
-  mapCompletionResponse (ids, result) {
+  mapCompletionResponse (ids: UUID[], result: QueryResult<any>): CompletionResponse {
     return {
       jobs: ids,
       requested: ids.length,
@@ -273,25 +301,34 @@ class Manager extends EventEmitter {
     }
   }
 
-  async complete (id, data) {
+  async complete (id: UUID[]): Promise<CompletionResponse>
+  async complete (id: UUID): Promise<CompletionResponse>
+  async complete (id: UUID, data: object): Promise<CompletionResponse>
+  async complete (id: UUID | UUID[], data?: object): Promise<CompletionResponse> {
     const ids = this.mapCompletionIdArg(id, 'complete')
     const result = await this.db.executeSql(this.completeJobsCommand, [ids, this.mapCompletionDataArg(data)])
     return this.mapCompletionResponse(ids, result)
   }
 
-  async fail (id, data) {
+  async fail (id: UUID[]): Promise<CompletionResponse>
+  async fail (id: UUID[], data: object): Promise<CompletionResponse>
+  async fail (id: UUID): Promise<CompletionResponse>
+  async fail (id: UUID, data: object): Promise<CompletionResponse>
+  async fail (id: UUID | UUID[], data?: object): Promise<CompletionResponse> {
     const ids = this.mapCompletionIdArg(id, 'fail')
     const result = await this.db.executeSql(this.failJobsCommand, [ids, this.mapCompletionDataArg(data)])
     return this.mapCompletionResponse(ids, result)
   }
 
-  async cancel (id) {
+  async cancel (id: UUID): Promise<CompletionResponse>
+  async cancel (id: UUID[]): Promise<CompletionResponse>
+  async cancel (id: UUID | UUID[]): Promise<CompletionResponse> {
     const ids = this.mapCompletionIdArg(id, 'cancel')
     const result = await this.db.executeSql(this.cancelJobsCommand, [ids])
     return this.mapCompletionResponse(ids, result)
   }
 
-  async deleteQueue (queue) {
+  async deleteQueue (queue: string) {
     assert(queue, 'Missing queue name argument')
     return this.db.executeSql(this.deleteQueueCommand, [queue])
   }
@@ -301,4 +338,4 @@ class Manager extends EventEmitter {
   }
 }
 
-module.exports = Manager
+export = Manager
