@@ -1,5 +1,15 @@
 # Changes
 
+## 4.1.0
+
+- Retention policies added for internal maintenance queues to reduce the number of records in the job table.
+- Fixed issue in some multi-master use cases where too many maintenance jobs were being created.
+- Changed `deleteQueue(name)` and `deleteAllQueues()` behavior to only impact pending queue items and not delete completed or active jobs.
+- Added `getQueueSize(name)` to retrieve the current size of a queue.
+- Added `clearStorage()` as a utility function if and when needed to empty all job storage, archive included.
+- Restored older schema migrations to allow upgrading directly to version 4 from version 1.1 and higher.
+- Upgraded pg dependency to version 8.0.0.
+
 ## 4.0.1
 
 - Restored BYODB support for Knex.js

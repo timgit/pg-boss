@@ -1,9 +1,10 @@
 import { EventEmitter } from 'events'
 import * as plans from './plans'
 import { BossConfig, DatabaseInterface } from './config'
+import Manager from './manager'
 
 const queues = Object.freeze({
-  MAINT: '__pgboss__maintenance',
+  MAINTENANCE: '__pgboss__maintenance',
   MONITOR_STATES: '__pgboss__monitor-states'
 } as const)
 
@@ -44,11 +45,17 @@ class Boss extends EventEmitter {
   private readonly countStatesCommand: string
   public functions: Function[]
   private stopped = false
+  private readonly manager: Manager
 
   constructor (private readonly db: DatabaseInterface, private readonly config: BossConfig) {
     super()
 
+    this.db = db
+    this.config = config
+    this.manager = config.manager
+
     this.maintenanceIntervalSeconds = config.maintenanceIntervalSeconds
+
     this.monitorStates = config.monitorStateIntervalSeconds !== null
 
     if (this.monitorStates) {
@@ -70,23 +77,43 @@ class Boss extends EventEmitter {
   }
 
   async supervise () {
-    await this.config.manager.deleteQueue(queues.MAINT)
+    await this.manager.deleteQueue(plans.completedJobPrefix + queues.MAINTENANCE)
+    await this.manager.deleteQueue(queues.MAINTENANCE)
+
     await this.maintenanceAsync()
-    await this.config.manager.subscribe(queues.MAINT, { batchSize: 10 }, (jobs) => this.onMaintenance(jobs))
+
+    await this.manager.subscribe(queues.MAINTENANCE, { batchSize: 10 }, (jobs) => this.onMaintenance(jobs))
 
     if (this.monitorStates) {
-      await this.config.manager.deleteQueue(queues.MONITOR_STATES)
+      await this.manager.deleteQueue(plans.completedJobPrefix + queues.MONITOR_STATES)
+      await this.manager.deleteQueue(queues.MONITOR_STATES)
+
       await this.monitorStatesAsync()
-      await this.config.manager.subscribe(queues.MONITOR_STATES, { batchSize: 10 }, (jobs) => this.onMonitorStates(jobs))
+
+      await this.manager.subscribe(queues.MONITOR_STATES, { batchSize: 10 }, (jobs) => this.onMonitorStates(jobs))
     }
   }
 
   async maintenanceAsync () {
-    await this.config.manager.publishAfter(queues.MAINT, null, null, this.maintenanceIntervalSeconds)
+    const options = {
+      startAfter: this.maintenanceIntervalSeconds,
+      retentionSeconds: this.maintenanceIntervalSeconds * 2,
+      singletonKey: queues.MAINTENANCE,
+      retryLimit: 5,
+      retryBackoff: true
+    }
+
+    await this.manager.publish(queues.MAINTENANCE, null, options)
   }
 
   async monitorStatesAsync () {
-    await this.config.manager.publishAfter(queues.MONITOR_STATES, null, null, this.monitorIntervalSeconds)
+    const options = {
+      startAfter: this.monitorIntervalSeconds,
+      retentionSeconds: this.monitorIntervalSeconds * 2,
+      singletonKey: queues.MONITOR_STATES
+    }
+
+    await this.manager.publish(queues.MONITOR_STATES, null, options)
   }
 
   async onMaintenance (jobs) {
@@ -99,7 +126,7 @@ class Boss extends EventEmitter {
       this.emitValue(events.archived, await this.archive())
       this.emitValue(events.deleted, await this.purge())
 
-      await this.config.manager.complete(jobs.map(j => j.id))
+      await this.manager.complete(jobs.map(j => j.id))
 
       const ended = Date.now()
 
@@ -132,7 +159,7 @@ class Boss extends EventEmitter {
 
       this.emit(events.monitorStates, states)
 
-      await this.config.manager.complete(jobs.map(j => j.id))
+      await this.manager.complete(jobs.map(j => j.id))
     } catch (err) {
       this.emit(events.error, err)
     }

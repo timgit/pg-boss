@@ -1,6 +1,6 @@
 {
   "name": "pg-boss",
-  "version": "4.0.1",
+  "version": "4.1.0",
   "description": "Queueing jobs in Node.js using PostgreSQL like a boss",
   "main": "./lib/index.js",
   "engines": {
@@ -9,7 +9,7 @@
   },
   "dependencies": {
     "bluebird": "^3.7.2",
-    "pg": "^7.18.2",
+    "pg": "^8.0.0",
     "uuid": "^7.0.2"
   },
   "devDependencies": {

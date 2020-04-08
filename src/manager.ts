@@ -61,6 +61,7 @@ class Manager extends EventEmitter {
   private readonly failJobsCommand: string
   private readonly deleteQueueCommand: string
   private readonly deleteAllQueuesCommand: string
+  private readonly clearStorageCommand: string
 
   constructor (private readonly db: DatabaseInterface, private readonly config: BossConfig) {
     super()
@@ -74,6 +75,29 @@ class Manager extends EventEmitter {
     this.failJobsCommand = plans.failJobs(config.schema)
     this.deleteQueueCommand = plans.deleteQueue(config.schema)
     this.deleteAllQueuesCommand = plans.deleteAllQueues(config.schema)
+    this.clearStorageCommand = plans.clearStorage(config.schema)
+
+    // exported api to index
+    this.functions = [
+      this.fetch,
+      this.complete,
+      this.cancel,
+      this.fail,
+      this.publish,
+      this.subscribe,
+      this.unsubscribe,
+      this.onComplete,
+      this.offComplete,
+      this.fetchCompleted,
+      this.publishDebounced,
+      this.publishThrottled,
+      this.publishOnce,
+      this.publishAfter,
+      this.deleteQueue,
+      this.deleteAllQueues,
+      this.clearStorage,
+      this.getQueueSize
+    ]
   }
 
   async stop () {
@@ -333,6 +357,20 @@ class Manager extends EventEmitter {
 
   async deleteAllQueues () {
     return this.db.executeSql(this.deleteAllQueuesCommand)
+  }
+
+  async clearStorage () {
+    return this.db.executeSql(this.clearStorageCommand)
+  }
+
+  async getQueueSize (queue, options) {
+    assert(queue, 'Missing queue name argument')
+
+    const sql = plans.getQueueSize(this.config.schema, options)
+
+    const { rows } = await this.db.executeSql(sql, [queue])
+
+    return parseFloat(rows[0].count)
   }
 }
 

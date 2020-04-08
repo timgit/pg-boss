@@ -5,6 +5,17 @@
 - [Intro](#intro)
 - [Database install](#database-install)
 - [Database uninstall](#database-uninstall)
+- [Direct database interactions](#direct-database-interactions)
+  - [Job table](#job-table)
+- [Events](#events)
+  - [`error`](#error)
+  - [`archived`](#archived)
+  - [`expired`](#expired)
+  - [`monitor-states`](#monitor-states)
+- [Static functions](#static-functions)
+  - [`string getConstructionPlans(schema)`](#string-getconstructionplansschema)
+  - [`string getMigrationPlans(schema, version)`](#string-getmigrationplansschema-version)
+  - [`string getRollbackPlans(schema, version)`](#string-getrollbackplansschema-version)
 - [Functions](#functions)
   - [`new(connectionString)`](#newconnectionstring)
   - [`new(options)`](#newoptions)
@@ -36,17 +47,8 @@
   - [`fail([ids])`](#failids)
   - [`deleteQueue(name)`](#deletequeuename)
   - [`deleteAllQueues()`](#deleteallqueues)
-- [Events](#events)
-  - [`error`](#error)
-  - [`archived`](#archived)
-  - [`expired`](#expired)
-  - [`monitor-states`](#monitor-states)
-- [Static functions](#static-functions)
-  - [`string getConstructionPlans(schema)`](#string-getconstructionplansschema)
-  - [`string getMigrationPlans(schema, version)`](#string-getmigrationplansschema-version)
-  - [`string getRollbackPlans(schema, version)`](#string-getrollbackplansschema-version)
-- [Direct database interactions](#direct-database-interactions)
-  - [Job table](#job-table)
+  - [`getQueueSize(name [, options])`](#getqueuesizename--options)
+  - [`clearStorage()`](#clearstorage)
 
 <!-- /TOC -->
 
@@ -80,6 +82,134 @@ DROP SCHEMA $1 CASCADE
 ```
 
 Where `$1` is the name of your schema if you've customized it.  Otherwise, the default schema is `pgboss`.
+
+# Direct database interactions
+
+If you need to interact with pg-boss outside of Node.js, such as other clients or even using triggers within PostgreSQL itself, most functionality is supported even when working directly against the internal tables.  Additionally, you may even decide to do this within Node.js. For example, if you wanted to bulk load jobs into pg-boss and skip calling `publish()` one job at a time, you could either use `INSERT` or the faster `COPY` command.
+
+## Job table
+
+The following command is the definition of the primary job table. For manual job creation, the only required column is `name`.  All other columns are nullable or have sensible defaults.
+
+```sql
+    CREATE TABLE ${schema}.job (
+      id uuid primary key not null default gen_random_uuid(),
+      name text not null,
+      priority integer not null default(0),
+      data jsonb,
+      state ${schema}.job_state not null default('${states.created}'),
+      retryLimit integer not null default(0),
+      retryCount integer not null default(0),
+      retryDelay integer not null default(0),
+      retryBackoff boolean not null default false,
+      startAfter timestamp with time zone not null default now(),
+      startedOn timestamp with time zone,
+      singletonKey text,
+      singletonOn timestamp without time zone,
+      expireIn interval not null default interval '15 minutes',
+      createdOn timestamp with time zone not null default now(),
+      completedOn timestamp with time zone,
+      keepUntil timestamp with time zone NOT NULL default now() + interval '30 days'
+    )
+```
+
+# Events
+
+As explained in the introduction above, each instance of pg-boss is an EventEmitter.  You can run multiple instances of pg-boss for a variety of use cases including distribution and load balancing. Each instance has the freedom to subscribe to whichever jobs you need.  Because of this diversity, the job activity of one instance could be drastically different from another.  Therefore, **all of the events raised by pg-boss are instance-bound.**
+
+> For example, if you were to subscribe to `error` in instance A, it will not receive an `error` event from instance B.
+
+## `error`
+The error event is raised from any errors that may occur during internal job fetching, monitoring and archiving activities. While not required, adding a listener to the error event is strongly encouraged:
+
+> If an EventEmitter does not have at least one listener registered for the 'error' event, and an 'error' event is emitted, the error is thrown, a stack trace is printed, and the Node.js process exits.
+>
+>Source: [Node.js Events > Error Events](https://nodejs.org/api/events.html#events_error_events)
+
+Ideally, code similar to the following example would be used after creating your instance, but  before `start()` or `connect()` is called.
+
+```js
+boss.on('error', error => logger.error(error));
+```
+
+> **Note: Since error events are only raised during internal housekeeping activities, they are not raised for direct API calls, where promise `catch()` handlers should be used.**
+
+
+## `archived`
+
+`archived` is raised each time 1 or more jobs are archived.  The payload is an integer representing the number of jobs archived.
+
+## `expired`
+
+`expired` is raised each time 1 or more jobs are expired.  The payload is an integer representing the number of jobs expired.
+
+## `monitor-states`
+
+The `monitor-states` event is conditionally raised based on the `monitorStateInterval` configuration setting and only emitted from `start()`. If passed during instance creation, it will provide a count of jobs in each state per interval.  This could be useful for logging or even determining if the job system is handling its load.
+
+The payload of the event is an object with a key per queue and state, such as the  following example.
+
+```json
+{
+  "queues": {
+      "send-welcome-email": {
+        "created": 530,
+        "retry": 40,
+        "active": 26,
+        "completed": 3400,
+        "expired": 4,
+        "cancelled": 0,
+        "failed": 49,
+        "all": 4049
+      },
+      "archive-cleanup": {
+        "created": 0,
+        "retry": 0,
+        "active": 0,
+        "completed": 645,
+        "expired": 0,
+        "cancelled": 0,
+        "failed": 0,
+        "all": 645
+      }
+  },
+  "created": 530,
+  "retry": 40,
+  "active": 26,
+  "completed": 4045,
+  "expired": 4,
+  "cancelled": 0,
+  "failed": 4,
+  "all": 4694
+}
+```
+
+# Static functions
+
+The following static functions are not required during normal operations, but are intended to assist in schema creation or migration if run-time privileges do not allow schema changes.
+
+## `string getConstructionPlans(schema)`
+
+**Arguments**
+- `schema`: string, database schema name
+
+Returns the SQL commands required for manual creation of the required schema.
+
+## `string getMigrationPlans(schema, version)`
+
+**Arguments**
+- `schema`: string, database schema name
+- `version`: string, target schema version to migrate
+
+Returns the SQL commands required to manually migrate from the specified version to the latest version.
+
+## `string getRollbackPlans(schema, version)`
+
+**Arguments**
+- `schema`: string, database schema name
+- `version`: string, target schema version to uninstall
+
+Returns the SQL commands required to manually roll back the specified version to the previous version
 
 # Functions
 
@@ -444,136 +574,30 @@ The promise will resolve on a successful failure state assignment, or reject if 
 
 ## `deleteQueue(name)`
 
-Deletes all jobs in the specified queue from the active job table.  All jobs in the archive table are retained.
+Deletes all pending jobs in the specified queue from the active job table.  All jobs in the archive table are retained.
 
 ## `deleteAllQueues()`
 
-Deletes all jobs from all queues in the active job table. All jobs in the archive table are retained.  I guess you know what you're getting into with a function named like this.
+Deletes all pending jobs from all queues in the active job table. All jobs in the archive table are retained.
 
-# Events
+## `getQueueSize(name [, options])`
 
-As explained in the introduction above, each instance of pg-boss is an EventEmitter.  You can run multiple instances of pg-boss for a variety of use cases including distribution and load balancing. Each instance has the freedom to subscribe to whichever jobs you need.  Because of this diversity, the job activity of one instance could be drastically different from another.  Therefore, **all of the events raised by pg-boss are instance-bound.**
+Returns the number of pending jobs in a queue by name.
 
-> For example, if you were to subscribe to `error` in instance A, it will not receive an `error` event from instance B.
+`options`: Optional, object.
 
-## `error`
-The error event is raised from any errors that may occur during internal job fetching, monitoring and archiving activities. While not required, adding a listener to the error event is strongly encouraged:
+| Prop | Type | Description | Default |
+| - | - | - | - |
+|`before`| string | count jobs in states before this state | states.active |
 
-> If an EventEmitter does not have at least one listener registered for the 'error' event, and an 'error' event is emitted, the error is thrown, a stack trace is printed, and the Node.js process exits.
->
->Source: [Node.js Events > Error Events](https://nodejs.org/api/events.html#events_error_events)
-
-Ideally, code similar to the following example would be used after creating your instance, but  before `start()` or `connect()` is called.
+As an example, the following options object include active jobs along with created and retry.
 
 ```js
-boss.on('error', error => logger.error(error));
-```
-
-> **Note: Since error events are only raised during internal housekeeping activities, they are not raised for direct API calls, where promise `catch()` handlers should be used.**
-
-
-## `archived`
-
-`archived` is raised each time 1 or more jobs are archived.  The payload is an integer representing the number of jobs archived.
-
-## `expired`
-
-`expired` is raised each time 1 or more jobs are expired.  The payload is an integer representing the number of jobs expired.
-
-## `monitor-states`
-
-The `monitor-states` event is conditionally raised based on the `monitorStateInterval` configuration setting and only emitted from `start()`. If passed during instance creation, it will provide a count of jobs in each state per interval.  This could be useful for logging or even determining if the job system is handling its load.
-
-The payload of the event is an object with a key per queue and state, such as the  following example.
-
-```json
 {
-  "queues": {
-      "send-welcome-email": {
-        "created": 530,
-        "retry": 40,
-        "active": 26,
-        "completed": 3400,
-        "expired": 4,
-        "cancelled": 0,
-        "failed": 49,
-        "all": 4049
-      },
-      "archive-cleanup": {
-        "created": 0,
-        "retry": 0,
-        "active": 0,
-        "completed": 645,
-        "expired": 0,
-        "cancelled": 0,
-        "failed": 0,
-        "all": 645
-      }
-  },
-  "created": 530,
-  "retry": 40,
-  "active": 26,
-  "completed": 4045,
-  "expired": 4,
-  "cancelled": 0,
-  "failed": 4,
-  "all": 4694
+  before: states.completed
 }
 ```
 
-# Static functions
+## `clearStorage()`
 
-The following static functions are not required during normal operations, but are intended to assist in schema creation or migration if run-time privileges do not allow schema changes.
-
-## `string getConstructionPlans(schema)`
-
-**Arguments**
-- `schema`: string, database schema name
-
-Returns the SQL commands required for manual creation of the required schema.
-
-## `string getMigrationPlans(schema, version)`
-
-**Arguments**
-- `schema`: string, database schema name
-- `version`: string, target schema version to migrate
-
-Returns the SQL commands required to manually migrate from the specified version to the latest version.
-
-## `string getRollbackPlans(schema, version)`
-
-**Arguments**
-- `schema`: string, database schema name
-- `version`: string, target schema version to uninstall
-
-Returns the SQL commands required to manually roll back the specified version to the previous version
-
-# Direct database interactions
-
-If you need to interact with pg-boss outside of Node.js, such as other clients or even using triggers within PostgreSQL itself, most functionality is supported even when working directly against the internal tables.  Additionally, you may even decide to do this within Node.js. For example, if you wanted to bulk load jobs into pg-boss and skip calling `publish()` one job at a time, you could either use `INSERT` or the faster `COPY` command.
-
-## Job table
-
-The following command is the definition of the primary job table. For manual job creation, the only required column is `name`.  All other columns are nullable or have sensible defaults.
-
-```sql
-    CREATE TABLE ${schema}.job (
-      id uuid primary key not null default gen_random_uuid(),
-      name text not null,
-      priority integer not null default(0),
-      data jsonb,
-      state ${schema}.job_state not null default('${states.created}'),
-      retryLimit integer not null default(0),
-      retryCount integer not null default(0),
-      retryDelay integer not null default(0),
-      retryBackoff boolean not null default false,
-      startAfter timestamp with time zone not null default now(),
-      startedOn timestamp with time zone,
-      singletonKey text,
-      singletonOn timestamp without time zone,
-      expireIn interval not null default interval '15 minutes',
-      createdOn timestamp with time zone not null default now(),
-      completedOn timestamp with time zone,
-      keepUntil timestamp with time zone NOT NULL default now() + interval '30 days'
-    )
-```
+Utility function if and when needed to empty all job storage. Internally, this issues a `TRUNCATE` command against all jobs tables, archive included.

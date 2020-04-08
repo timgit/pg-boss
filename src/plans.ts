@@ -110,11 +110,24 @@ function addIdIndexToArchive (schema: SchemaName) {
 }
 
 export function deleteQueue (schema: SchemaName) {
-  return `DELETE FROM ${schema}.job WHERE name = $1`
+  return `DELETE FROM ${schema}.job WHERE name = $1 and state < '${states.active}'`
 }
 
 export function deleteAllQueues (schema: SchemaName) {
-  return `TRUNCATE ${schema}.job`
+  return `DELETE FROM ${schema}.job WHERE state < '${states.active}'`
+}
+
+export function clearStorage (schema: SchemaName) {
+  return `TRUNCATE ${schema}.job, ${schema}.archive`
+}
+
+interface GetQueueSizeOptions {
+  before?: keyof typeof states
+}
+
+export function getQueueSize (schema: SchemaName, options: GetQueueSizeOptions = {}) {
+  options.before = options.before || states.active
+  return `SELECT count(*) as count FROM ${schema}.job WHERE name = $1 AND state < '${options.before}'`
 }
 
 function createIndexSingletonKey (schema: SchemaName) {
@@ -214,6 +227,8 @@ const retryStartAfterCase = `CASE
             * interval '1'
           END`
 
+const keepUntilInheritance = 'keepUntil + (keepUntil - startAfter)'
+
 export function completeJobs (schema: SchemaName) {
   return `
     WITH results AS (
@@ -228,7 +243,7 @@ export function completeJobs (schema: SchemaName) {
     SELECT
       '${completedJobPrefix}' || name,
       ${buildJsonCompletionObject(true)},
-      keepUntil
+      ${keepUntilInheritance}
     FROM results
     WHERE NOT name LIKE '${completedJobPrefix}%'
     RETURNING 1
@@ -254,7 +269,7 @@ export function failJobs (schema: SchemaName) {
     SELECT
       '${completedJobPrefix}' || name,
       ${buildJsonCompletionObject(true)},
-      keepUntil
+      ${keepUntilInheritance}
     FROM results
     WHERE state = '${states.failed}'
       AND NOT name LIKE '${completedJobPrefix}%'
@@ -280,7 +295,7 @@ export function expire (schema: SchemaName) {
     SELECT
       '${completedJobPrefix}' || name,
       ${buildJsonCompletionObject()},
-      keepUntil
+      ${keepUntilInheritance}
     FROM results
     WHERE state = '${states.expired}'
       AND NOT name LIKE '${completedJobPrefix}%'
