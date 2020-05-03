@@ -56,4 +56,26 @@ describe('config', function () {
 
     await boss.stop()
   })
+
+  it('start() should fail if pgcrypto is not available', async function () {
+    const database = 'pgboss_test1'
+
+    const db = await helper.getDb('postgres')
+
+    await db.executeSql(`CREATE DATABASE ${database}`)
+
+    const config = { ...this.test.bossConfig, database }
+
+    const boss = new PgBoss(config)
+
+    try {
+      await boss.start()
+      assert(false, 'Error should have been thrown by missing pgcrypto extension')
+    } catch (err) {
+      assert(err.message.includes('gen_random_uuid()'))
+    }
+
+    await db.executeSql(`SELECT pg_terminate_backend( pid ) FROM pg_stat_activity WHERE pid <> pg_backend_pid() AND datname = '${database}'`)
+    await db.executeSql(`DROP DATABASE ${database}`)
+  })
 })
