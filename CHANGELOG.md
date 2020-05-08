@@ -1,5 +1,10 @@
 # Changes
 
+## 4.2.0
+
+- `publishOnce()` updated to fall back to the queue if the key argument is missing.
+- Upgraded uuid dependency to version 8.0.0.
+
 ## 4.1.0
 
 - Retention policies added for internal maintenance queues to reduce the number of records in the job table.

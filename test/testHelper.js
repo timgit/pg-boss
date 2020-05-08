@@ -42,10 +42,15 @@ function getConfig (options = {}) {
   return Object.assign(result, options)
 }
 
-async function getDb () {
+async function getDb (database) {
   const config = getConfig()
+
+  config.database = database || config.database
+
   const db = new Db(config)
+
   await db.open()
+
   return db
 }
 
