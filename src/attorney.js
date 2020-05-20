@@ -97,13 +97,13 @@ function checkSubscribeArgs (name, args, defaults) {
   return { options, callback }
 }
 
-function checkFetchArgs (name, batchSize, includeMetadata) {
+function checkFetchArgs (name, batchSize, options) {
   assert(name, 'missing queue name')
 
   name = sanitizeQueueNameForFetch(name)
 
-  assert(!batchSize || batchSize >= 1, 'fetch() assert: optional batchSize arg must be at least 1')
-  assert(includeMetadata === undefined || typeof includeMetadata === 'boolean', 'includeMetadata must be a boolean')
+  assert(!batchSize || (Number.isInteger(batchSize) && batchSize >= 1), 'batchSize must be an integer > 0')
+  assert(!('includeMetadata' in options) || typeof options.includeMetadata === 'boolean', 'includeMetadata must be a boolean')
 
   return { name }
 }

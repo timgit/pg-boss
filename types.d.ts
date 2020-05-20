@@ -100,6 +100,10 @@ declare namespace PgBoss {
 
   type SubscribeOptions = JobFetchOptions & JobPollingOptions
 
+  type FetchOptions = {
+    includeMetadata?: boolean;
+  }
+
   interface SubscribeHandler<ReqData, ResData> {
     (job: PgBoss.JobWithDoneCallback<ReqData, ResData>, done: PgBoss.JobDoneCallback<ResData>): void;
   }
@@ -211,13 +215,13 @@ declare class PgBoss {
 
   fetch<T>(name: string): Promise<PgBoss.Job<T> | null>;
   fetch<T>(name: string, batchSize: number): Promise<PgBoss.Job<T>[] | null>;
-  fetch<T>(name: string, batchSize: number, includeMetadata: true): Promise<PgBoss.JobWithMetadata<T>[] | null>;
-  fetch<T>(name: string, batchSize: number, includeMetadata: boolean): Promise<PgBoss.Job<T>[] | null>;
+  fetch<T>(name: string, batchSize: number, options: PgBoss.FetchOptions & { includeMetadata: true }): Promise<PgBoss.JobWithMetadata<T>[] | null>;
+  fetch<T>(name: string, batchSize: number, options: PgBoss.FetchOptions): Promise<PgBoss.Job<T>[] | null>;
 
   fetchCompleted<T>(name: string): Promise<PgBoss.Job<T> | null>;
   fetchCompleted<T>(name: string, batchSize: number): Promise<PgBoss.Job<T>[] | null>;
-  fetchCompleted<T>(name: string, batchSize: number, includeMetadata: true): Promise<PgBoss.JobWithMetadata<T>[] | null>;
-  fetchCompleted<T>(name: string, batchSize: number, includeMetadata: boolean): Promise<PgBoss.Job<T>[] | null>;
+  fetchCompleted<T>(name: string, batchSize: number, options: PgBoss.FetchOptions & { includeMetadata: true }): Promise<PgBoss.JobWithMetadata<T>[] | null>;
+  fetchCompleted<T>(name: string, batchSize: number, options: PgBoss.FetchOptions): Promise<PgBoss.Job<T>[] | null>;
 
   cancel(id: string): Promise<void>;
   cancel(ids: string[]): Promise<void>;

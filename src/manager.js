@@ -221,10 +221,10 @@ class Manager extends EventEmitter {
     return this.createJob(name, data, options, singletonOffset)
   }
 
-  async fetch (name, batchSize, includeMetadata) {
-    const values = Attorney.checkFetchArgs(name, batchSize, includeMetadata)
+  async fetch (name, batchSize, options = {}) {
+    const values = Attorney.checkFetchArgs(name, batchSize, options)
     const result = await this.db.executeSql(
-      this.nextJobCommand(includeMetadata || false),
+      this.nextJobCommand(options.includeMetadata || false),
       [values.name, batchSize || 1]
     )
 
@@ -244,8 +244,8 @@ class Manager extends EventEmitter {
         : jobs
   }
 
-  async fetchCompleted (name, batchSize, includeMetadata) {
-    return this.fetch(completedJobPrefix + name, batchSize, includeMetadata)
+  async fetchCompleted (name, batchSize, options = {}) {
+    return this.fetch(completedJobPrefix + name, batchSize, options)
   }
 
   mapCompletionIdArg (id, funcName) {

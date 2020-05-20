@@ -55,7 +55,7 @@ describe('fetch', function () {
 
     const boss = await helper.start(this.test.bossConfig)
     await boss.publish(jobName)
-    const job = await boss.fetch(jobName, undefined, true)
+    const job = await boss.fetch(jobName, undefined, { includeMetadata: true })
     assert(jobName === job.name)
     assert(job.priority === 0)
     assert(job.state === 'active')
@@ -87,7 +87,7 @@ describe('fetch', function () {
       boss.publish(jobName)
     ])
 
-    const jobs = await boss.fetch(jobName, batchSize, true)
+    const jobs = await boss.fetch(jobName, batchSize, { includeMetadata: true })
     assert(jobs.length === batchSize)
 
     jobs.forEach(job => {
