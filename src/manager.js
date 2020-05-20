@@ -96,11 +96,12 @@ class Manager extends EventEmitter {
       ).catch(() => {}) // allow promises & non-promises to live together in harmony
     }
 
+    const fetchOptions= { includeMetadata: options.includeMetadata || false }
     const onError = error => this.emit(events.error, error)
 
     const workerConfig = {
       name,
-      fetch: () => this.fetch(name, options.batchSize || options.teamSize || 1, options.includeMetadata || false),
+      fetch: () => this.fetch(name, options.batchSize || options.teamSize || 1, fetchOptions),
       onFetch: jobs => sendItBruh(jobs),
       onError,
       interval: options.newJobCheckInterval
