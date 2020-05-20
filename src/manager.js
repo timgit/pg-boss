@@ -100,7 +100,7 @@ class Manager extends EventEmitter {
 
     const workerConfig = {
       name,
-      fetch: () => this.fetch(name, options.batchSize || options.teamSize || 1),
+      fetch: () => this.fetch(name, options.batchSize || options.teamSize || 1, options.includeMetadata || false),
       onFetch: jobs => sendItBruh(jobs),
       onError,
       interval: options.newJobCheckInterval
@@ -221,9 +221,12 @@ class Manager extends EventEmitter {
     return this.createJob(name, data, options, singletonOffset)
   }
 
-  async fetch (name, batchSize) {
-    const values = Attorney.checkFetchArgs(name, batchSize)
-    const result = await this.db.executeSql(this.nextJobCommand, [values.name, batchSize || 1])
+  async fetch (name, batchSize, includeMetadata) {
+    const values = Attorney.checkFetchArgs(name, batchSize, includeMetadata)
+    const result = await this.db.executeSql(
+      this.nextJobCommand(includeMetadata || false),
+      [values.name, batchSize || 1]
+    )
 
     const jobs = result.rows.map(job => {
       job.done = async (error, response) => {
@@ -241,8 +244,8 @@ class Manager extends EventEmitter {
         : jobs
   }
 
-  async fetchCompleted (name, batchSize) {
-    return this.fetch(completedJobPrefix + name, batchSize)
+  async fetchCompleted (name, batchSize, includeMetadata) {
+    return this.fetch(completedJobPrefix + name, batchSize, includeMetadata)
   }
 
   mapCompletionIdArg (id, funcName) {

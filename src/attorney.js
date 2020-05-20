@@ -92,16 +92,18 @@ function checkSubscribeArgs (name, args, defaults) {
 
   assert(!('teamSize' in options) || (Number.isInteger(options.teamSize) && options.teamSize >= 1), 'teamSize must be an integer > 0')
   assert(!('batchSize' in options) || (Number.isInteger(options.batchSize) && options.batchSize >= 1), 'batchSize must be an integer > 0')
+  assert(!('includeMetadata' in options) || typeof options.includeMetadata === 'boolean', 'includeMetadata must be a boolean')
 
   return { options, callback }
 }
 
-function checkFetchArgs (name, batchSize) {
+function checkFetchArgs (name, batchSize, includeMetadata) {
   assert(name, 'missing queue name')
 
   name = sanitizeQueueNameForFetch(name)
 
   assert(!batchSize || batchSize >= 1, 'fetch() assert: optional batchSize arg must be at least 1')
+  assert(includeMetadata === undefined || typeof includeMetadata === 'boolean', 'includeMetadata must be a boolean')
 
   return { name }
 }
