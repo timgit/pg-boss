@@ -156,6 +156,7 @@ declare namespace PgBoss {
   }
 
   interface MonitorStates {
+    all: number;
     created: number;
     retry: number;
     active: number;
