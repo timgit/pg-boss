@@ -96,7 +96,7 @@ class Manager extends EventEmitter {
       ).catch(() => {}) // allow promises & non-promises to live together in harmony
     }
 
-    const fetchOptions= { includeMetadata: options.includeMetadata || false }
+    const fetchOptions = { includeMetadata: options.includeMetadata || false }
     const onError = error => this.emit(events.error, error)
 
     const workerConfig = {

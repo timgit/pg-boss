@@ -1,5 +1,9 @@
 # Changes
 
+## 4.3.0
+
+- Added `includeMetadata` option to `subscribe()`, `fetch()`, and their derivatives to allow including all job attributes during fetch. Thanks to @kevboh for the PR!
+
 ## 4.2.0
 
 - `publishOnce()` updated to fall back to the queue if the key argument is missing.
