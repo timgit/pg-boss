@@ -37,8 +37,8 @@
     - [`offComplete(name)`](#offcompletename)
   - [`fetch()`](#fetch)
     - [`fetch(name)`](#fetchname)
-    - [`fetch(name, batchSize)`](#fetchname-batchsize)
-    - [`fetchCompleted(name [, batchSize])`](#fetchcompletedname--batchsize)
+    - [`fetch(name, batchSize, [, options])`](#fetchname-batchsize--options)
+    - [`fetchCompleted(name [, batchSize] [, options])`](#fetchcompletedname--batchsize--options)
   - [`cancel(id)`](#cancelid)
   - [`cancel([ids])`](#cancelids)
   - [`complete(id [, data])`](#completeid--data)
@@ -491,11 +491,12 @@ Typically one would use `subscribe()` for automated polling for new jobs based u
 **Resolves**
 - `job`: job object, `null` if none found
 
-### `fetch(name, batchSize)`
+### `fetch(name, batchSize, [, options])`
 
 **Arguments**
 - `name`: string, queue name or pattern
 - `batchSize`: number, # of jobs to fetch
+- `options`: object
 
 **Resolves**
 - `[job]`: array of job objects, `null` if none found
@@ -526,7 +527,7 @@ for (let i = 0; i < jobs.length; i++) {
 }
 ```
 
-### `fetchCompleted(name [, batchSize])`
+### `fetchCompleted(name [, batchSize] [, options])`
 
 Same as `fetch()`, but retrieves any completed jobs. See [`onComplete()`](#oncompletename--options-handler) for more information.
 

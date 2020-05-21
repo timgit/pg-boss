@@ -18,6 +18,7 @@ pg-boss can be customized using configuration options when an instance is create
   - [Deferred jobs](#deferred-jobs)
   - [Unique jobs](#unique-jobs)
   - [Throttled jobs](#throttled-jobs)
+- [Fetch options](#fetch-options)
 - [Subscribe options](#subscribe-options)
   - [Job polling options](#job-polling-options)
 
@@ -271,6 +272,32 @@ For example, if you set the `singletonMinutes` to 1, then submit 2 jobs within a
 
 Setting `singletonNextSlot` to true will cause the job to be scheduled to run after the current time slot if and when a job is throttled. This option is set to true, for example, when calling the convenience function `publishDebounced()`.
 
+## Fetch options
+
+* **includeMetadata**, bool
+
+    If `true`, all job metadata will be returned on the job object.  The following table shows each property and its type, which is basically all columns from the job table.
+
+    | Prop | Type | |
+    | - | - | -|
+    | id | string, uuid |
+    | name| string |
+    | data | object |
+    | priority | number |
+    | state | string |
+    | retrylimit | number |
+    | retrycount | number |
+    | retrydelay | number |
+    | retrybackoff | bool |
+    | startafter | string, timestamp |
+    | startedon | string, timestamp |
+    | singletonkey | string |
+    | singletonon | string, timestamp |
+    | expirein | object, pg interval |
+    | createdon | string, timestamp |
+    | completedon | string, timestamp |
+    | keepuntil | string, timestamp |
+
 ## Subscribe options
 
 * **teamSize**, int
@@ -284,6 +311,10 @@ Setting `singletonNextSlot` to true will cause the job to be scheduled to run af
 * **batchSize**, int
 
     How many jobs can be fetched per polling interval.  Callback will be executed once per batch.
+
+* **includeMetadata**, bool
+
+    Same as above in fetch options
 
 ### Job polling options
 
