@@ -193,7 +193,7 @@ function insertVersion (schema, version) {
 }
 
 function fetchNextJob (schema) {
-  return `
+  return (includeMetadata) => `
     WITH nextJob as (
       SELECT id
       FROM ${schema}.job
@@ -210,7 +210,7 @@ function fetchNextJob (schema) {
       retryCount = CASE WHEN state = '${states.retry}' THEN retryCount + 1 ELSE retryCount END
     FROM nextJob
     WHERE j.id = nextJob.id
-    RETURNING j.id, name, data
+    RETURNING ${includeMetadata ? 'j.*' : 'j.id, name, data'}
   `
 }
 

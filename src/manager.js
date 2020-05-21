@@ -96,11 +96,12 @@ class Manager extends EventEmitter {
       ).catch(() => {}) // allow promises & non-promises to live together in harmony
     }
 
+    const fetchOptions= { includeMetadata: options.includeMetadata || false }
     const onError = error => this.emit(events.error, error)
 
     const workerConfig = {
       name,
-      fetch: () => this.fetch(name, options.batchSize || options.teamSize || 1),
+      fetch: () => this.fetch(name, options.batchSize || options.teamSize || 1, fetchOptions),
       onFetch: jobs => sendItBruh(jobs),
       onError,
       interval: options.newJobCheckInterval
@@ -221,9 +222,12 @@ class Manager extends EventEmitter {
     return this.createJob(name, data, options, singletonOffset)
   }
 
-  async fetch (name, batchSize) {
-    const values = Attorney.checkFetchArgs(name, batchSize)
-    const result = await this.db.executeSql(this.nextJobCommand, [values.name, batchSize || 1])
+  async fetch (name, batchSize, options = {}) {
+    const values = Attorney.checkFetchArgs(name, batchSize, options)
+    const result = await this.db.executeSql(
+      this.nextJobCommand(options.includeMetadata || false),
+      [values.name, batchSize || 1]
+    )
 
     const jobs = result.rows.map(job => {
       job.done = async (error, response) => {
@@ -241,8 +245,8 @@ class Manager extends EventEmitter {
         : jobs
   }
 
-  async fetchCompleted (name, batchSize) {
-    return this.fetch(completedJobPrefix + name, batchSize)
+  async fetchCompleted (name, batchSize, options = {}) {
+    return this.fetch(completedJobPrefix + name, batchSize, options)
   }
 
   mapCompletionIdArg (id, funcName) {

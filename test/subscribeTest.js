@@ -292,4 +292,24 @@ describe('subscribe', function () {
 
     await boss.stop()
   })
+
+  it('should honor the includeMetadata option', function (finished) {
+    const queue = 'subscribe-includeMetadata'
+
+    const config = this.test.bossConfig
+
+    test()
+
+    async function test () {
+      const boss = await helper.start(config)
+
+      await boss.publish(queue)
+
+      boss.subscribe(queue, { includeMetadata: true }, async job => {
+        assert(job.startedon !== undefined)
+        await boss.stop()
+        finished()
+      }).catch(finished)
+    }
+  })
 })

@@ -95,12 +95,21 @@ declare namespace PgBoss {
     teamSize?: number;
     teamConcurrency?: number;
     batchSize?: number;
+    includeMetadata?: boolean;
   }
 
   type SubscribeOptions = JobFetchOptions & JobPollingOptions
 
+  type FetchOptions = {
+    includeMetadata?: boolean;
+  }
+
   interface SubscribeHandler<ReqData, ResData> {
     (job: PgBoss.JobWithDoneCallback<ReqData, ResData>, done: PgBoss.JobDoneCallback<ResData>): void;
+  }
+
+  interface SubscribeWithMetadataHandler<ReqData, ResData> {
+    (job: PgBoss.JobWithMetadataDoneCallback<ReqData, ResData>, done: PgBoss.JobDoneCallback<ResData>): void;
   }
 
   interface Request {
@@ -119,7 +128,30 @@ declare namespace PgBoss {
     data: T;
   }
 
+  interface JobWithMetadata<T = object> extends Job<T> {
+    priority: number;
+    state: 'created' | 'retry' | 'active' | 'completed' | 'expired' | 'cancelled' | 'failed';
+    retrylimit: number;
+    retrycount: number;
+    retrydelay: number;
+    retrybackoff: boolean;
+    startafter: Date;
+    // This is nullable in the schema, but by the time this type is reified,
+    // it will have been set.
+    startedon: Date;
+    singletonkey: string | null;
+    singletonon: Date | null;
+    expirein: PostgresInterval;
+    createdon: Date;
+    completedon: Date | null;
+    keepuntil: Date;
+  }
+
   interface JobWithDoneCallback<ReqData, ResData> extends Job<ReqData> {
+    done: JobDoneCallback<ResData>;
+  }
+
+  interface JobWithMetadataDoneCallback<ReqData, ResData> extends JobWithMetadata<ReqData> {
     done: JobDoneCallback<ResData>;
   }
 
@@ -171,6 +203,7 @@ declare class PgBoss {
   publishDebounced(name: string, data: object, options: PgBoss.PublishOptions, seconds: number, key: string): Promise<string | null>;
 
   subscribe<ReqData, ResData>(name: string, handler: PgBoss.SubscribeHandler<ReqData, ResData>): Promise<void>;
+  subscribe<ReqData, ResData>(name: string, options: PgBoss.SubscribeOptions & { includeMetadata: true }, handler: PgBoss.SubscribeWithMetadataHandler<ReqData, ResData>): Promise<void>;
   subscribe<ReqData, ResData>(name: string, options: PgBoss.SubscribeOptions, handler: PgBoss.SubscribeHandler<ReqData, ResData>): Promise<void>;
 
   unsubscribe(name: string): Promise<boolean>;
@@ -182,9 +215,13 @@ declare class PgBoss {
 
   fetch<T>(name: string): Promise<PgBoss.Job<T> | null>;
   fetch<T>(name: string, batchSize: number): Promise<PgBoss.Job<T>[] | null>;
+  fetch<T>(name: string, batchSize: number, options: PgBoss.FetchOptions & { includeMetadata: true }): Promise<PgBoss.JobWithMetadata<T>[] | null>;
+  fetch<T>(name: string, batchSize: number, options: PgBoss.FetchOptions): Promise<PgBoss.Job<T>[] | null>;
 
   fetchCompleted<T>(name: string): Promise<PgBoss.Job<T> | null>;
   fetchCompleted<T>(name: string, batchSize: number): Promise<PgBoss.Job<T>[] | null>;
+  fetchCompleted<T>(name: string, batchSize: number, options: PgBoss.FetchOptions & { includeMetadata: true }): Promise<PgBoss.JobWithMetadata<T>[] | null>;
+  fetchCompleted<T>(name: string, batchSize: number, options: PgBoss.FetchOptions): Promise<PgBoss.Job<T>[] | null>;
 
   cancel(id: string): Promise<void>;
   cancel(ids: string[]): Promise<void>;
