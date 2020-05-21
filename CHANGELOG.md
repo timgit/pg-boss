@@ -2,7 +2,9 @@
 
 ## 4.3.0
 
-- Added `includeMetadata` option to `subscribe()`, `fetch()`, and their derivatives to allow including all job attributes during fetch. Thanks to @kevboh for the PR!
+- Added `includeMetadata` option to `fetch()`, `subscribe()`, and their derivatives to allow including all job attributes during fetch. PR from @kevboh
+- Fixed state monitoring Typescript type defs. PR from @brianmcd
+- Fixed issue with maintenance job creation if the instance was previously shut down during execution
 
 ## 4.2.0
 
