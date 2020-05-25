@@ -122,6 +122,22 @@ declare namespace PgBoss {
     (err?: Error | null, data?: T): void;
   }
 
+  // source (for now): https://github.com/bendrucker/postgres-interval/blob/master/index.d.ts
+  interface PostgresInterval {
+    years?: number;
+    months?: number;
+    days?: number;
+    hours?: number;
+    minutes?: number;
+    seconds?: number;
+    milliseconds?: number;
+
+    toPostgres(): string;
+
+    toISO(): string;
+    toISOString(): string;
+  }
+
   interface Job<T = object> {
     id: string;
     name: string;
