@@ -1,5 +1,9 @@
 # Changes
 
+## 4.3.1
+
+- Added missing Typescript type for pg intervals used by `includeMetadata`
+
 ## 4.3.0
 
 - Added `includeMetadata` option to `fetch()`, `subscribe()`, and their derivatives to allow including all job attributes during fetch. PR from @kevboh
