@@ -105,11 +105,11 @@ declare namespace PgBoss {
   }
 
   interface SubscribeHandler<ReqData, ResData> {
-    (job: PgBoss.JobWithDoneCallback<ReqData, ResData>, done: PgBoss.JobDoneCallback<ResData>): void;
+    (job: PgBoss.JobWithDoneCallback<ReqData, ResData>): Promise<ResData> | void;
   }
 
   interface SubscribeWithMetadataHandler<ReqData, ResData> {
-    (job: PgBoss.JobWithMetadataDoneCallback<ReqData, ResData>, done: PgBoss.JobDoneCallback<ResData>): void;
+    (job: PgBoss.JobWithMetadataDoneCallback<ReqData, ResData>): Promise<ResData> | void;
   }
 
   interface Request {
