@@ -1,5 +1,9 @@
 # Changes
 
+## 4.3.2
+
+- Typescript types updated to removed old done() function on subscribe callback.  PR from @GriffinSchneider
+
 ## 4.3.1
 
 - Added missing Typescript type for pg intervals used by `includeMetadata`
