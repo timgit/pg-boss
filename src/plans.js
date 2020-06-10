@@ -25,6 +25,10 @@ module.exports = {
   cancelJobs,
   failJobs,
   insertJob,
+  getTime,
+  getSchedules,
+  schedule,
+  unschedule,
   expire,
   archive,
   purge,
@@ -50,6 +54,7 @@ function create (schema, version) {
     createJobStateEnum(schema),
     createJobTable(schema),
     cloneJobTableForArchive(schema),
+    createCronTable(schema),
     addIdIndexToArchive(schema),
     addArchivedOnToArchive(schema),
     addArchivedOnIndexToArchive(schema),
@@ -174,6 +179,48 @@ function createIndexJobName (schema) {
   return `
     CREATE INDEX job_name ON ${schema}.job (name text_pattern_ops)
   `
+}
+
+function createCronTable (schema) {
+  return `
+    CREATE TABLE ${schema}.cron (
+      name text primary key,
+      schedule text not null,
+      data jsonb,
+      options jsonb,
+      created_on timestamp with time zone not null default now(),
+      updated_on timestamp with time zone not null default now()
+    )
+  `
+}
+
+function getSchedules (schema) {
+  return `
+    SELECT * FROM ${schema}.cron
+  `
+}
+
+function schedule (schema) {
+  return `
+    INSERT INTO ${schema}.cron (name, schedule, data, options)
+    VALUES ($1, $2, $3, $4)
+    ON CONFLICT DO UPDATE SET
+      schedule = EXCLUDED.schedule,
+      data = EXCLUDED.data,
+      options = EXCLUDED.options,
+      updated_on = now()
+  `
+}
+
+function unschedule (schema) {
+  return `
+    DELETE FROM ${schema}.cron
+    WHERE name = $1
+  `
+}
+
+function getTime () {
+  return 'SELECT now()'
 }
 
 function getVersion (schema) {

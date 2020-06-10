@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "bluebird": "^3.7.2",
+    "cron-parser": "^2.15.0",
     "pg": "^8.0.3",
     "uuid": "^8.0.0"
   },

@@ -78,6 +78,24 @@ function getAll (schema, config) {
 
   return [
     {
+      release: '4.4.0',
+      version: 13,
+      previous: 12,
+      install: [
+          `CREATE TABLE ${schema}.cron (
+            name text primary key,
+            schedule text not null,
+            data jsonb,
+            options jsonb,
+            created_on timestamp with time zone not null default now(),
+            updated_on timestamp with time zone not null default now()
+          )`
+      ],
+      uninstall: [
+          `DROP TABLE ${schema}.cron`
+      ]
+    },
+    {
       release: '4.0.0',
       version: 12,
       previous: 11,

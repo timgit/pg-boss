@@ -319,6 +319,14 @@ class Manager extends EventEmitter {
 
     return parseFloat(rows[0].count)
   }
+
+  async schedule (name, schedule, data, options) {
+    assert(name, 'Missing name argument')
+
+    const sql = plans.schedule(this.config.schema)
+
+    await this.db.executeSql(sql, [name, schedule, data, options])
+  }
 }
 
 module.exports = Manager

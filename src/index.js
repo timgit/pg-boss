@@ -3,6 +3,7 @@ const EventEmitter = require('events')
 const Attorney = require('./attorney')
 const Contractor = require('./contractor')
 const Manager = require('./manager')
+const Timekeeper = require('./timekeeper')
 const Boss = require('./boss')
 const Db = require('./db')
 const plans = require('./plans')
@@ -43,11 +44,16 @@ class PgBoss extends EventEmitter {
     Object.keys(boss.events).forEach(event => promoteEvent.call(this, boss, boss.events[event]))
     boss.functions.forEach(func => promoteFunction.call(this, boss, func))
 
+    const timekeeper = new Timekeeper(db, bossConfig)
+    Object.keys(timekeeper.events).forEach(event => promoteEvent.call(this, timekeeper, timekeeper.events[event]))
+    timekeeper.functions.forEach(func => promoteFunction.call(this, timekeeper, func))
+
     this.config = config
     this.db = db
     this.boss = boss
     this.contractor = new Contractor(db, config)
     this.manager = manager
+    this.timekeeper = timekeeper
 
     function getDb (config) {
       if (config.db) {
@@ -87,12 +93,15 @@ class PgBoss extends EventEmitter {
       await this.boss.supervise()
     }
 
+    await this.timekeeper.watch()
+
     return this
   }
 
   async stop () {
     assert(this.isStarted, notStartedErrorMessage)
 
+    await this.timekeeper.stop()
     await this.manager.stop()
     await this.boss.stop()
 
@@ -110,6 +119,8 @@ class PgBoss extends EventEmitter {
     }
 
     await this.contractor.connect()
+    await this.timekeeper.watch()
+
     this.isReady = true
     return this
   }
@@ -118,6 +129,7 @@ class PgBoss extends EventEmitter {
     assert(this.isReady, notReadyErrorMessage)
 
     await this.manager.stop()
+    await this.timekeeper.stop()
 
     if (this.db.isOurs) {
       await this.db.close()
