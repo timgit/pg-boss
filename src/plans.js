@@ -186,6 +186,7 @@ function createCronTable (schema) {
     CREATE TABLE ${schema}.cron (
       name text primary key,
       schedule text not null,
+      timezone text,
       data jsonb,
       options jsonb,
       created_on timestamp with time zone not null default now(),
@@ -202,10 +203,11 @@ function getSchedules (schema) {
 
 function schedule (schema) {
   return `
-    INSERT INTO ${schema}.cron (name, schedule, data, options)
-    VALUES ($1, $2, $3, $4)
+    INSERT INTO ${schema}.cron (name, schedule, timezone, data, options)
+    VALUES ($1, $2, $3, $4, $5)
     ON CONFLICT DO UPDATE SET
       schedule = EXCLUDED.schedule,
+      timezone = EXCLUDED.timezone,
       data = EXCLUDED.data,
       options = EXCLUDED.options,
       updated_on = now()
@@ -220,7 +222,7 @@ function unschedule (schema) {
 }
 
 function getTime () {
-  return 'SELECT now()'
+  return `SELECT date_part('epoch', now()) * 1000 as time ${''}`
 }
 
 function getVersion (schema) {

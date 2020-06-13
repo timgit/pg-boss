@@ -93,7 +93,7 @@ class PgBoss extends EventEmitter {
       await this.boss.supervise()
     }
 
-    await this.timekeeper.watch()
+    await this.timekeeper.start()
 
     return this
   }
@@ -119,7 +119,6 @@ class PgBoss extends EventEmitter {
     }
 
     await this.contractor.connect()
-    await this.timekeeper.watch()
 
     this.isReady = true
     return this

@@ -85,6 +85,7 @@ function getAll (schema, config) {
           `CREATE TABLE ${schema}.cron (
             name text primary key,
             schedule text not null,
+            timezone text,
             data jsonb,
             options jsonb,
             created_on timestamp with time zone not null default now(),

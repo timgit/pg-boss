@@ -4,13 +4,18 @@ module.exports = {
   getConfig,
   checkPublishArgs,
   checkSubscribeArgs,
-  checkFetchArgs
+  checkFetchArgs,
+  warnClockSkew
 }
 
 const WARNINGS = {
-  publishExpireInRemoved: {
-    message: '\'expireIn\' option detected.  This option has been removed.  Use expireInSeconds, expireInMinutes or expireInHours',
+  EXPIRE_IN_REMOVED: {
+    message: '\'expireIn\' option detected. This option has been removed. Use expireInSeconds, expireInMinutes or expireInHours.',
     code: 'pg-boss-w01'
+  },
+  CLOCK_SKEW: {
+    message: 'Timekeeper detected clock skew between this instance and the database server.  Scheduling is disabled if skew exceeds 1 minute.',
+    code: 'pg-boss-w02'
   }
 }
 
@@ -179,7 +184,7 @@ function applyRetentionConfig (config, defaults) {
 
 function applyExpirationConfig (config, defaults) {
   if ('expireIn' in config) {
-    emitWarning(WARNINGS.publishExpireInRemoved)
+    emitWarning(WARNINGS.EXPIRE_IN_REMOVED)
   }
 
   assert(!('expireInSeconds' in config) || config.expireInSeconds >= 1,
@@ -312,9 +317,16 @@ function applyUuidConfig (config) {
   config.uuid = config.uuid || 'v1'
 }
 
-function emitWarning (warning) {
-  if (!warning.warned) {
+function warnClockSkew (message) {
+  emitWarning(WARNINGS.CLOCK_SKEW, message, { force: true })
+}
+
+function emitWarning (warning, message, options = {}) {
+  const { force } = options
+
+  if (force || !warning.warned) {
     warning.warned = true
-    process.emitWarning(warning.message, warning.type, warning.code)
+    message = `${warning.message} ${message || ''}`
+    process.emitWarning(message, warning.type, warning.code)
   }
 }
