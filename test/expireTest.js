@@ -52,14 +52,19 @@ describe('expire', function () {
 
     let warningCount = 0
 
-    process.on('warning', (warning) => {
+    const warningEvent = 'warning'
+    const onWarning = (warning) => {
       assert(warning.message.indexOf('expireIn') > -1)
       warningCount++
-    })
+    }
+
+    process.on(warningEvent, onWarning)
 
     await boss.publish({ name: queue, options: { expireIn: '1 minute' } })
     await boss.publish({ name: queue, options: { expireIn: '1 minute' } })
     await boss.publish({ name: queue, options: { expireIn: '1 minute' } })
+
+    process.removeListener(warningEvent, onWarning)
 
     assert.strictEqual(warningCount, 1)
 
