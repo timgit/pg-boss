@@ -205,7 +205,7 @@ function schedule (schema) {
   return `
     INSERT INTO ${schema}.cron (name, schedule, timezone, data, options)
     VALUES ($1, $2, $3, $4, $5)
-    ON CONFLICT DO UPDATE SET
+    ON CONFLICT (name) DO UPDATE SET
       schedule = EXCLUDED.schedule,
       timezone = EXCLUDED.timezone,
       data = EXCLUDED.data,

@@ -105,7 +105,7 @@ class Timekeeper extends EventEmitter {
     try {
       const items = await this.getSchedules()
 
-      const sending = items.filter(i => this.shouldSendIt(i.schedule, i.options.timezone))
+      const sending = items.filter(i => this.shouldSendIt(i.schedule, i.timezone))
 
       if (sending.length) {
         await Promise.map(sending, it => this.send(it), { concurrency: 5 })
@@ -137,8 +137,8 @@ class Timekeeper extends EventEmitter {
   }
 
   async onSendIt (job) {
-    const { name, data } = job.data
-    await this.manager.publish(name, data)
+    const { name, data, options } = job.data
+    await this.manager.publish(name, data, options)
   }
 
   async checkSkew () {
@@ -167,8 +167,8 @@ class Timekeeper extends EventEmitter {
   }
 
   async schedule (name, schedule, data, options = {}) {
-    const { timezone } = options
-    const values = [name, schedule, timezone || 'UTC', data, options]
+    const { tz = 'UTC' } = options
+    const values = [name, schedule, tz, data, options]
     const { rowCount } = await this.db.executeSql(this.scheduleCommand, values)
     return rowCount
   }
