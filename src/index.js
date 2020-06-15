@@ -93,7 +93,9 @@ class PgBoss extends EventEmitter {
       await this.boss.supervise()
     }
 
-    await this.timekeeper.start()
+    if (!this.config.noScheduling) {
+      await this.timekeeper.start()
+    }
 
     return this
   }
@@ -128,7 +130,6 @@ class PgBoss extends EventEmitter {
     assert(this.isReady, notReadyErrorMessage)
 
     await this.manager.stop()
-    await this.timekeeper.stop()
 
     if (this.db.isOurs) {
       await this.db.close()

@@ -23,7 +23,7 @@ describe('maintenance error handling', function () {
 
     boss.on('error', onError)
 
-    boss.start().catch(done)
+    boss.start()
   })
 
   it('state monitoring error handling works', function (done) {
@@ -46,6 +46,6 @@ describe('maintenance error handling', function () {
 
     boss.on('error', onError)
 
-    boss.start().catch(done)
+    boss.start()
   })
 })

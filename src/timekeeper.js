@@ -37,28 +37,52 @@ class Timekeeper extends EventEmitter {
   }
 
   async start () {
+
     const ok = await this.checkSkew()
 
     if (ok) {
       await this.watch()
     }
 
-    this.monitor()
+    this.monitorSkew()
+
+    this.stopped = false
+
   }
 
-  monitor () {
-    const EVERY_TEN_MINUTES = 1000 * 60 * 10
+  monitorSkew () {
+    const TEN_MINUTES = 1000 * 60 * 10
 
     this.monitorInterval = setInterval(async () => {
       const ok = await this.checkSkew()
 
       if (ok && !this.watching) {
-        console.log('pgboss: clock skew recovered.  Watching for cron')
+        console.log('pg-boss: clock skew resolved and scheduling is enabled')
         await this.watch()
       } else if (!ok && this.watching) {
         await this.unwatch()
       }
-    }, EVERY_TEN_MINUTES)
+    }, TEN_MINUTES)
+  }
+
+  async checkSkew () {
+    const start = Date.now()
+
+    const { rows } = await this.db.executeSql(this.getTimeCommand)
+
+    const end = Date.now()
+
+    const latency = end - start
+
+    const dbTime = parseInt(rows[0].time) - (latency / 2)
+
+    const skew = Math.round(Math.abs(dbTime - start) / 1000)
+
+    if (skew >= 60) {
+      Attorney.warnClockSkew(`Skew: ${skew} seconds.`)
+    }
+
+    return skew < 60
   }
 
   async watch () {
@@ -81,6 +105,10 @@ class Timekeeper extends EventEmitter {
     if (!this.stopped) {
       this.stopped = true
 
+      if (this.watching) {
+        await this.unwatch()
+      }
+
       if (this.monitorInterval) {
         clearInterval(this.monitorInterval)
         this.monitorInterval = null
@@ -89,6 +117,7 @@ class Timekeeper extends EventEmitter {
   }
 
   async cronMonitorAsync (options = {}) {
+
     const { startAfter } = options
 
     const opts = {
@@ -102,6 +131,10 @@ class Timekeeper extends EventEmitter {
   }
 
   async onCron () {
+    if (this.stopped || !this.watching) {
+      return
+    }
+
     try {
       const items = await this.getSchedules()
 
@@ -139,26 +172,6 @@ class Timekeeper extends EventEmitter {
   async onSendIt (job) {
     const { name, data, options } = job.data
     await this.manager.publish(name, data, options)
-  }
-
-  async checkSkew () {
-    const start = Date.now()
-
-    const { rows } = await this.db.executeSql(this.getTimeCommand)
-
-    const end = Date.now()
-
-    const latency = end - start
-
-    const dbTime = parseInt(rows[0].time) - (latency / 2)
-
-    const skew = Math.round(Math.abs(dbTime - start) / 1000)
-
-    if (skew >= 60) {
-      Attorney.warnClockSkew(`Skew: ${skew} seconds.`)
-    }
-
-    return skew < 60
   }
 
   async getSchedules () {

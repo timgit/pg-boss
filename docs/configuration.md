@@ -110,6 +110,10 @@ Maintenance operations include checking active jobs for expiration, archiving co
 
   If this is set to true, maintenance and monitoring operations will not be started during a `start()` after the schema is created.  This is an advanced use case, as bypassing maintenance operations is not something you would want to do under normal circumstances.
 
+* **noScheduling**, bool, default false
+
+  If this is set to true, this instance will not monitor scheduled jobs during `start()`. However, this instance can still use the scheduling api. This is an advanced use case you may want to do for testing or if the clock of the server is skewed and you would like to disable the skew warnings.
+
 #### Archive completed jobs
 
 When jobs become eligible for archive after completion.

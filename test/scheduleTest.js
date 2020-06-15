@@ -23,13 +23,13 @@ describe('schedule', function () {
   it('should publish job based on every minute expression after a restart', async function () {
     const queue = 'schedule-every-min-restart'
 
-    const boss = await helper.start(this.test.bossConfig)
+    let boss = await helper.start({ ...this.test.bossConfig, noScheduling: true })
 
     await boss.schedule(queue, '* * * * *')
 
     await boss.stop()
 
-    await boss.start()
+    boss = await helper.start(this.test.bossConfig)
 
     await Promise.delay(5000)
 

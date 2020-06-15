@@ -28,6 +28,7 @@ declare namespace PgBoss {
 
   interface MaintenanceOptions {
     noSupervisor?: boolean;
+    noScheduling?: boolean;
 
     archiveIntervalSeconds?: number;
     archiveIntervalMinutes?: number;
