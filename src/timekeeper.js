@@ -49,8 +49,6 @@ class Timekeeper extends EventEmitter {
   }
 
   monitorSkew () {
-    const TEN_MINUTES = 1000 * 60 * 10
-
     this.monitorInterval = setInterval(async () => {
       const ok = await this.checkSkew()
 
@@ -60,7 +58,7 @@ class Timekeeper extends EventEmitter {
       } else if (!ok && this.watching) {
         await this.unwatch()
       }
-    }, TEN_MINUTES)
+    }, 1000 * this.config.monitorClockSeconds)
   }
 
   async checkSkew () {
@@ -78,7 +76,7 @@ class Timekeeper extends EventEmitter {
 
     if (skew >= 60) {
       Attorney.warnClockSkew(`Skew: ${skew} seconds.`)
-    }
+    } 
 
     return skew < 60
   }

@@ -310,6 +310,19 @@ function applyMonitoringConfig (config) {
     ('monitorStateIntervalMinutes' in config) ? config.monitorStateIntervalMinutes * 60
       : ('monitorStateIntervalSeconds' in config) ? config.monitorStateIntervalSeconds
         : null
+
+  const TEN_MINUTES_IN_SECONDS = 600
+
+  assert(!('monitorClockSeconds' in config) || (config.monitorClockSeconds >= 1 && config.monitorClockSeconds <= TEN_MINUTES_IN_SECONDS),
+    'configuration assert: monitorClockSeconds must be between 1 second and 10 minutes')
+
+  assert(!('monitorClockMinutes' in config) || (config.monitorClockMinutes >= 1 && config.monitorClockMinutes <= 10),
+    'configuration assert: monitorClockMinutes must be between 1 and 10')
+
+  config.monitorClockSeconds =
+    ('monitorClockMinutes' in config) ? config.monitorClockMinutes * 60
+      : ('monitorClockSeconds' in config) ? config.monitorClockSeconds
+        : TEN_MINUTES_IN_SECONDS
 }
 
 function applyUuidConfig (config) {

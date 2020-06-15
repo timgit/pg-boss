@@ -20,6 +20,22 @@ describe('schedule', function () {
     await boss.stop()
   })
 
+  it('should accept a custom clock monitoring interval in seconds', async function () {
+    const queue = 'schedule-custom-monitoring-seconds'
+
+    const boss = await helper.start({ ...this.test.bossConfig, monitorClockSeconds: 1 })
+
+    await boss.schedule(queue, '* * * * *')
+
+    await Promise.delay(5000)
+
+    const job = await boss.fetch(queue)
+
+    assert(job)
+
+    await boss.stop()
+  })
+
   it('should publish job based on every minute expression after a restart', async function () {
     const queue = 'schedule-every-min-restart'
 
