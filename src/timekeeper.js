@@ -37,7 +37,6 @@ class Timekeeper extends EventEmitter {
   }
 
   async start () {
-
     const ok = await this.checkSkew()
 
     if (ok) {
@@ -47,7 +46,6 @@ class Timekeeper extends EventEmitter {
     this.monitorSkew()
 
     this.stopped = false
-
   }
 
   monitorSkew () {
@@ -117,7 +115,6 @@ class Timekeeper extends EventEmitter {
   }
 
   async cronMonitorAsync (options = {}) {
-
     const { startAfter } = options
 
     const opts = {
