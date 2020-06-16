@@ -82,9 +82,9 @@ function getAll (schema, config) {
       version: 13,
       previous: 12,
       install: [
-          `CREATE TABLE ${schema}.cron (
+          `CREATE TABLE ${schema}.schedule (
             name text primary key,
-            schedule text not null,
+            cron text not null,
             timezone text,
             data jsonb,
             options jsonb,
@@ -93,7 +93,7 @@ function getAll (schema, config) {
           )`
       ],
       uninstall: [
-          `DROP TABLE ${schema}.cron`
+          `DROP TABLE ${schema}.schedule`
       ]
     },
     {

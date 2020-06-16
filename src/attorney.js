@@ -14,7 +14,7 @@ const WARNINGS = {
     code: 'pg-boss-w01'
   },
   CLOCK_SKEW: {
-    message: 'Timekeeper detected clock skew between this instance and the database server.  Scheduling is disabled if skew exceeds 1 minute.',
+    message: 'Timekeeper detected clock skew between this instance and the database server. This will not affect scheduling operations, but this warning is shown any time the skew exceeds 60 seconds.',
     code: 'pg-boss-w02'
   }
 }

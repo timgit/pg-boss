@@ -1,6 +1,6 @@
 const PgBoss = require('../')
 
-describe('maintenance error handling', function () {
+describe('background processing error handling', function () {
   this.retries(1)
 
   it('maintenance error handling works', function (done) {
@@ -34,6 +34,23 @@ describe('maintenance error handling', function () {
     }
 
     const config = { ...this.test.bossConfig, ...defaults }
+    const boss = new PgBoss(config)
+
+    const onError = (err) => {
+      if (err && boss.isStarted) {
+        boss.stop().then(() => done()).catch(done)
+      } else {
+        done(err)
+      }
+    }
+
+    boss.on('error', onError)
+
+    boss.start()
+  })
+
+  it('clock monitoring error handling works', function (done) {
+    const config = { ...this.test.bossConfig, __test__throw_clock_monitoring: true }
     const boss = new PgBoss(config)
 
     const onError = (err) => {

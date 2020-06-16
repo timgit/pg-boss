@@ -54,7 +54,7 @@ describe('expire', function () {
 
     const warningEvent = 'warning'
     const onWarning = (warning) => {
-      assert(warning.message.indexOf('expireIn') > -1)
+      assert(warning.message.includes('expireIn'))
       warningCount++
     }
 

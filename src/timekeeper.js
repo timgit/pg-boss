@@ -21,6 +21,8 @@ class Timekeeper extends EventEmitter {
     this.db = db
     this.config = config
     this.manager = config.manager
+    this.monitorIntervalMs = config.monitorClockSeconds * 1000
+    this.clockSkew = 0
 
     this.events = events
 
@@ -37,31 +39,29 @@ class Timekeeper extends EventEmitter {
   }
 
   async start () {
-    const ok = await this.checkSkew()
+    await this.cacheClockSkew()
+    await this.watch()
 
-    if (ok) {
-      await this.watch()
-    }
-
-    this.monitorSkew()
-
+    this.monitorInterval = setInterval(() => this.cacheClockSkew(), this.monitorIntervalMs)
     this.stopped = false
   }
 
-  monitorSkew () {
-    this.monitorInterval = setInterval(async () => {
-      const ok = await this.checkSkew()
+  async stop () {
+    if (!this.stopped) {
+      this.stopped = true
 
-      if (ok && !this.watching) {
-        console.log('pg-boss: clock skew resolved and scheduling is enabled')
-        await this.watch()
-      } else if (!ok && this.watching) {
+      if (this.watching) {
         await this.unwatch()
       }
-    }, 1000 * this.config.monitorClockSeconds)
+
+      if (this.monitorInterval) {
+        clearInterval(this.monitorInterval)
+        this.monitorInterval = null
+      }
+    }
   }
 
-  async checkSkew () {
+  async cacheClockSkew () {
     const start = Date.now()
 
     const { rows } = await this.db.executeSql(this.getTimeCommand)
@@ -72,13 +72,15 @@ class Timekeeper extends EventEmitter {
 
     const dbTime = parseInt(rows[0].time) - (latency / 2)
 
-    const skew = Math.round(Math.abs(dbTime - start) / 1000)
+    const skew = dbTime - start
 
-    if (skew >= 60) {
-      Attorney.warnClockSkew(`Skew: ${skew} seconds.`)
-    } 
+    const skewSeconds = Math.round(Math.abs(skew) / 1000)
 
-    return skew < 60
+    if (skewSeconds >= 60 || this.config.__test__force_clock_skew_warning) {
+      Attorney.warnClockSkew(`Instance clock is ${skewSeconds}s ${skew > 0 ? 'faster' : 'slower'} than database server.`)
+    }
+
+    this.clockSkew = skew
   }
 
   async watch () {
@@ -95,21 +97,6 @@ class Timekeeper extends EventEmitter {
     await this.manager.unsubscribe(queues.SEND_IT)
 
     this.watching = false
-  }
-
-  async stop () {
-    if (!this.stopped) {
-      this.stopped = true
-
-      if (this.watching) {
-        await this.unwatch()
-      }
-
-      if (this.monitorInterval) {
-        clearInterval(this.monitorInterval)
-        this.monitorInterval = null
-      }
-    }
   }
 
   async cronMonitorAsync (options = {}) {
@@ -131,9 +118,13 @@ class Timekeeper extends EventEmitter {
     }
 
     try {
+      if (this.config.__test__throw_clock_monitoring) {
+        throw new Error('clock monitoring error')
+      }
+
       const items = await this.getSchedules()
 
-      const sending = items.filter(i => this.shouldSendIt(i.schedule, i.timezone))
+      const sending = items.filter(i => this.shouldSendIt(i.cron, i.timezone))
 
       if (sending.length) {
         await Promise.map(sending, it => this.send(it), { concurrency: 5 })
@@ -150,7 +141,9 @@ class Timekeeper extends EventEmitter {
 
     const prevTime = interval.prev()
 
-    const prevDiff = (Date.now() - prevTime.getTime()) / 1000
+    const databaseTime = Date.now() + this.clockSkew
+
+    const prevDiff = (databaseTime - prevTime.getTime()) / 1000
 
     return prevDiff < 60
   }

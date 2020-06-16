@@ -54,7 +54,7 @@ function create (schema, version) {
     createJobStateEnum(schema),
     createJobTable(schema),
     cloneJobTableForArchive(schema),
-    createCronTable(schema),
+    createScheduleTable(schema),
     addIdIndexToArchive(schema),
     addArchivedOnToArchive(schema),
     addArchivedOnIndexToArchive(schema),
@@ -181,11 +181,11 @@ function createIndexJobName (schema) {
   `
 }
 
-function createCronTable (schema) {
+function createScheduleTable (schema) {
   return `
-    CREATE TABLE ${schema}.cron (
+    CREATE TABLE ${schema}.schedule (
       name text primary key,
-      schedule text not null,
+      cron text not null,
       timezone text,
       data jsonb,
       options jsonb,
@@ -197,16 +197,16 @@ function createCronTable (schema) {
 
 function getSchedules (schema) {
   return `
-    SELECT * FROM ${schema}.cron
+    SELECT * FROM ${schema}.schedule
   `
 }
 
 function schedule (schema) {
   return `
-    INSERT INTO ${schema}.cron (name, schedule, timezone, data, options)
+    INSERT INTO ${schema}.schedule (name, cron, timezone, data, options)
     VALUES ($1, $2, $3, $4, $5)
     ON CONFLICT (name) DO UPDATE SET
-      schedule = EXCLUDED.schedule,
+      cron = EXCLUDED.cron,
       timezone = EXCLUDED.timezone,
       data = EXCLUDED.data,
       options = EXCLUDED.options,
@@ -216,7 +216,7 @@ function schedule (schema) {
 
 function unschedule (schema) {
   return `
-    DELETE FROM ${schema}.cron
+    DELETE FROM ${schema}.schedule
     WHERE name = $1
   `
 }

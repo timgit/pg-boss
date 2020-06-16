@@ -59,7 +59,7 @@ class Contractor {
       const commands = plans.create(this.config.schema, schemaVersion)
       await this.db.executeSql(commands)
     } catch (err) {
-      assert(err.message.indexOf(plans.CREATE_RACE_MESSAGE) > -1, err)
+      assert(err.message.includes(plans.CREATE_RACE_MESSAGE), err)
     }
   }
 
@@ -68,7 +68,7 @@ class Contractor {
       const commands = migrationStore.migrate(this.config, version, this.migrations)
       await this.db.executeSql(commands)
     } catch (err) {
-      assert(err.message.indexOf(plans.MIGRATE_RACE_MESSAGE) > -1, err)
+      assert(err.message.includes(plans.MIGRATE_RACE_MESSAGE), err)
     }
   }
 

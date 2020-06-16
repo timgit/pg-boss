@@ -13,7 +13,9 @@ module.exports = {
   countJobs,
   completedJobPrefix: plans.completedJobPrefix,
   getConfig,
-  getConnectionString
+  getConnectionString,
+  tryDropDb,
+  createDb
 }
 
 function getConnectionString () {
@@ -57,6 +59,7 @@ async function getDb (database) {
 async function dropSchema (schema) {
   const db = await getDb()
   await db.executeSql(`DROP SCHEMA IF EXISTS ${schema} CASCADE`)
+  await db.close()
 }
 
 async function getJobById (schema, id) {
@@ -67,6 +70,7 @@ async function getJobById (schema, id) {
 async function findJobs (schema, where, values) {
   const db = await getDb()
   const jobs = await db.executeSql(`select * from ${schema}.job where ${where}`, values)
+  await db.close()
   return jobs
 }
 
@@ -78,13 +82,38 @@ async function getArchivedJobById (schema, id) {
 async function findArchivedJobs (schema, where, values) {
   const db = await getDb()
   const result = await db.executeSql(`select * from ${schema}.archive where ${where}`, values)
+  await db.close()
   return result
 }
 
 async function countJobs (schema, where, values) {
   const db = await getDb()
   const result = await db.executeSql(`select count(*) as count from ${schema}.job where ${where}`, values)
+  await db.close()
   return parseFloat(result.rows[0].count)
+}
+
+async function tryDropDb (database) {
+  const db1 = await getDb('postgres')
+
+  await db1.executeSql(`SELECT pg_terminate_backend( pid ) FROM pg_stat_activity WHERE pid <> pg_backend_pid() AND datname = '${database}'`)
+
+  await db1.close()
+
+  const db2 = await getDb('postgres')
+
+  await db2.executeSql(`DROP DATABASE IF EXISTS ${database}`)
+
+  await db2.close()
+}
+
+async function createDb (database) {
+  const db = await getDb('postgres')
+
+  // await tryDropDb(database)
+  await db.executeSql(`CREATE DATABASE ${database}`)
+
+  await db.close()
 }
 
 async function start (options) {

@@ -2,6 +2,7 @@ const Promise = require('bluebird')
 const assert = require('assert')
 const helper = require('./testHelper')
 const plans = require('../src/plans')
+const PgBoss = require('../')
 
 describe('schedule', function () {
   it('should publish job based on every minute expression', async function () {
@@ -136,6 +137,28 @@ describe('schedule', function () {
     const job = await boss.fetch(queue)
 
     assert(job)
+
+    await boss.stop()
+  })
+
+  it('should force a clock skew warning', async function () {
+    const boss = new PgBoss({ ...this.test.bossConfig, __test__force_clock_skew_warning: true })
+
+    let warningCount = 0
+
+    const warningEvent = 'warning'
+    const onWarning = (warning) => {
+      assert(warning.message.includes('clock skew'))
+      warningCount++
+    }
+
+    process.on(warningEvent, onWarning)
+
+    await boss.start()
+
+    process.removeListener(warningEvent, onWarning)
+
+    assert.strictEqual(warningCount, 1)
 
     await boss.stop()
   })
