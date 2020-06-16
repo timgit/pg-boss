@@ -1,24 +1,11 @@
 // Type definitions for pg-boss
-
+import {PoolConfig} from 'pg';
 declare namespace PgBoss {
   interface Db {
     executeSql(text: string, values: any[]): Promise<{ rows: any[]; rowCount: number }>;
   }
 
-  interface DatabaseOptions {
-    application_name?: string;
-    database?: string;
-    user?: string;
-    password?: string;
-    host?: string;
-    port?: number;
-    schema?: string;
-    ssl?: boolean;
-    connectionString?: string;
-    poolSize?: number;
-    max?: number;
-    db?: Db;
-  }
+  type DatabaseOptions = PoolConfig;
 
   interface QueueOptions {
     uuid?: "v1" | "v4";
