@@ -39,6 +39,8 @@
     - [`fetch(name)`](#fetchname)
     - [`fetch(name, batchSize, [, options])`](#fetchname-batchsize--options)
     - [`fetchCompleted(name [, batchSize] [, options])`](#fetchcompletedname--batchsize--options)
+  - [`schedule(name, cron, data, options)`](#schedulename-cron-data-options)
+  - [`unschedule(name)`](#unschedulename)
   - [`cancel(id)`](#cancelid)
   - [`cancel([ids])`](#cancelids)
   - [`complete(id [, data])`](#completeid--data)
@@ -530,6 +532,30 @@ for (let i = 0; i < jobs.length; i++) {
 ### `fetchCompleted(name [, batchSize] [, options])`
 
 Same as `fetch()`, but retrieves any completed jobs. See [`onComplete()`](#oncompletename--options-handler) for more information.
+
+## `schedule(name, cron, data, options)`
+
+Schedules a job to be published based on a cron expression. If the queue name already exists, the schedule is updated to the new cron expression. 
+
+**Arguments**
+
+- `name`: string, *required*
+- `cron`: string, *required*
+- `data`: object
+- `options`: object
+
+`options` supports all properties in [publish options](configuration.md#publish-options) and an optional `tz` property that specifies a time zone name. If not specified, the default is UTC.
+
+For example, the following code will publish a job at 3:00am in the US central time zone into the queue `notification-abc`.
+
+```js
+await boss.schedule('notification-abc', `0 3 * * *`, null, { tz: 'America/Chicago' })
+```
+
+
+## `unschedule(name)`
+
+Removes a scheduled job by name.
 
 ## `cancel(id)`
 
