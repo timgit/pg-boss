@@ -1,5 +1,9 @@
 # Changes
 
+## 4.3.3
+
+- Typescript types updated to support ssl options required in latest pg module.  PR from @asafh
+
 ## 4.3.2
 
 - Typescript types updated to removed old done() function on subscribe callback.  PR from @GriffinSchneider
