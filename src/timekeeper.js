@@ -167,10 +167,17 @@ class Timekeeper extends EventEmitter {
     return rows
   }
 
-  async schedule (name, schedule, data, options = {}) {
+  async schedule (name, cron, data, options = {}) {
     const { tz = 'UTC' } = options
-    const values = [name, schedule, tz, data, options]
+
+    cronParser.parseExpression(cron, { tz })
+
+    const result = Attorney.checkPublishArgs([name, data, options], this.config)
+
+    const values = [result.name, cron, tz, result.data, result.options]
+
     const { rowCount } = await this.db.executeSql(this.scheduleCommand, values)
+
     return rowCount
   }
 
