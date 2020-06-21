@@ -10,16 +10,15 @@
   "dependencies": {
     "bluebird": "^3.7.2",
     "cron-parser": "^2.15.0",
-    "pg": "^8.0.3",
-    "uuid": "^8.0.0"
+    "pg": "^8.2.1",
+    "uuid": "^8.1.0"
   },
   "devDependencies": {
     "coveralls": "^3.1.0",
-    "mocha": "^7.1.2",
+    "mocha": "^8.0.1",
     "moment-timezone": "^0.5.31",
-    "nyc": "^15.0.1",
-    "standard": "^14.3.3",
-    "@types/pg": "^7.14.3"
+    "nyc": "^15.1.0",
+    "standard": "^14.3.4"
   },
   "scripts": {
     "test": "standard && mocha --exit --no-warnings",
