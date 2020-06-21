@@ -35,6 +35,14 @@ describe('config', function () {
     await boss.stop()
   })
 
+  it('should not allow calling job instance functions if not started', async function () {
+    const boss = new PgBoss(this.test.bossConfig)
+    try {
+      await boss.publish('queue1')
+      assert(false)
+    } catch {}
+  })
+
   it('set pool config `poolSize`', async function () {
     const poolSize = 4
     const boss = await helper.start({ ...this.test.bossConfig, poolSize })

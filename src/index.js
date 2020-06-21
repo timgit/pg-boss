@@ -1,16 +1,11 @@
-const assert = require('assert')
 const EventEmitter = require('events')
+const plans = require('./plans')
 const Attorney = require('./attorney')
 const Contractor = require('./contractor')
 const Manager = require('./manager')
 const Timekeeper = require('./timekeeper')
 const Boss = require('./boss')
 const Db = require('./db')
-const plans = require('./plans')
-
-const notReadyErrorMessage = 'boss ain\'t ready.  Use start() or connect() to get started.'
-const alreadyStartedErrorMessage = 'boss.start() has already been called on this instance.'
-const notStartedErrorMessage = 'boss ain\'t started.  Use start().'
 
 class PgBoss extends EventEmitter {
   static getConstructionPlans (schema) {
@@ -32,7 +27,9 @@ class PgBoss extends EventEmitter {
 
     const db = getDb(config)
 
-    if (db.isOurs) { promoteEvent.call(this, db, 'error') }
+    if (db.isOurs) {
+      promoteEvent.call(this, db, 'error')
+    }
 
     const manager = new Manager(db, config)
     Object.keys(manager.events).forEach(event => promoteEvent.call(this, manager, manager.events[event]))
@@ -67,7 +64,10 @@ class PgBoss extends EventEmitter {
 
     function promoteFunction (obj, func) {
       this[func.name] = (...args) => {
-        if (!this.isReady) return Promise.reject(notReadyErrorMessage)
+        if (!this.isStarted) {
+          return Promise.reject(new Error('pg-boss not started! Use start().'))
+        }
+
         return func.apply(obj, args)
       }
     }
@@ -78,16 +78,15 @@ class PgBoss extends EventEmitter {
   }
 
   async start () {
-    assert(!this.isStarted, alreadyStartedErrorMessage)
-    this.isStarted = true
+    if (this.isStarted) {
+      return this
+    }
 
     if (this.db.isOurs && !this.db.opened) {
       await this.db.open()
     }
 
     await this.contractor.start()
-
-    this.isReady = true
 
     if (!this.config.noSupervisor) {
       await this.boss.supervise()
@@ -97,11 +96,15 @@ class PgBoss extends EventEmitter {
       await this.timekeeper.start()
     }
 
+    this.isStarted = true
+
     return this
   }
 
   async stop () {
-    assert(this.isStarted, notStartedErrorMessage)
+    if (!this.isStarted) {
+      return
+    }
 
     await this.timekeeper.stop()
     await this.manager.stop()
@@ -111,31 +114,7 @@ class PgBoss extends EventEmitter {
       await this.db.close()
     }
 
-    this.isReady = false
     this.isStarted = false
-  }
-
-  async connect () {
-    if (this.db.isOurs && !this.db.opened) {
-      await this.db.open()
-    }
-
-    await this.contractor.connect()
-
-    this.isReady = true
-    return this
-  }
-
-  async disconnect () {
-    assert(this.isReady, notReadyErrorMessage)
-
-    await this.manager.stop()
-
-    if (this.db.isOurs) {
-      await this.db.close()
-    }
-
-    this.isReady = false
   }
 }
 
