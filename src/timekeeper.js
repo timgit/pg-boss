@@ -21,7 +21,7 @@ class Timekeeper extends EventEmitter {
     this.db = db
     this.config = config
     this.manager = config.manager
-    this.monitorIntervalMs = config.monitorClockSeconds * 1000
+    this.monitorIntervalMs = config.clockMonitorIntervalSeconds * 1000
     this.clockSkew = 0
 
     this.events = events

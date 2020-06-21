@@ -313,15 +313,15 @@ function applyMonitoringConfig (config) {
 
   const TEN_MINUTES_IN_SECONDS = 600
 
-  assert(!('monitorClockSeconds' in config) || (config.monitorClockSeconds >= 1 && config.monitorClockSeconds <= TEN_MINUTES_IN_SECONDS),
-    'configuration assert: monitorClockSeconds must be between 1 second and 10 minutes')
+  assert(!('clockMonitorIntervalSeconds' in config) || (config.clockMonitorIntervalSeconds >= 1 && config.clockMonitorIntervalSeconds <= TEN_MINUTES_IN_SECONDS),
+    'configuration assert: clockMonitorIntervalSeconds must be between 1 second and 10 minutes')
 
-  assert(!('monitorClockMinutes' in config) || (config.monitorClockMinutes >= 1 && config.monitorClockMinutes <= 10),
-    'configuration assert: monitorClockMinutes must be between 1 and 10')
+  assert(!('clockMonitorIntervalMinutes' in config) || (config.clockMonitorIntervalMinutes >= 1 && config.clockMonitorIntervalMinutes <= 10),
+    'configuration assert: clockMonitorIntervalMinutes must be between 1 and 10')
 
-  config.monitorClockSeconds =
-    ('monitorClockMinutes' in config) ? config.monitorClockMinutes * 60
-      : ('monitorClockSeconds' in config) ? config.monitorClockSeconds
+  config.clockMonitorIntervalSeconds =
+    ('clockMonitorIntervalMinutes' in config) ? config.clockMonitorIntervalMinutes * 60
+      : ('clockMonitorIntervalSeconds' in config) ? config.clockMonitorIntervalSeconds
         : TEN_MINUTES_IN_SECONDS
 }
 
