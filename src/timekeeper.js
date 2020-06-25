@@ -70,14 +70,14 @@ class Timekeeper extends EventEmitter {
 
     const latency = end - start
 
-    const dbTime = parseInt(rows[0].time) - (latency / 2)
+    const dbTime = Math.round(parseFloat(rows[0].time) - (latency / 2))
 
     const skew = dbTime - start
 
-    const skewSeconds = Math.round(Math.abs(skew) / 1000)
+    const skewSeconds = Math.abs(skew) / 1000
 
     if (skewSeconds >= 60 || this.config.__test__force_clock_skew_warning) {
-      Attorney.warnClockSkew(`Instance clock is ${skewSeconds}s ${skew > 0 ? 'faster' : 'slower'} than database server.`)
+      Attorney.warnClockSkew(`Instance clock is ${skewSeconds}s ${skew > 0 ? 'faster' : 'slower'} than database.`)
     }
 
     this.clockSkew = skew

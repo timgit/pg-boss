@@ -40,7 +40,7 @@ This will likely cater the most to teams already familiar with the simplicity of
 
 ## Features
 * Backpressure-compatible subscriptions for monitoring queues on an interval (with configurable concurrency)
-* Distributed cron-based job scheduling with clock skew monitoring and mitigation
+* Distributed cron-based job scheduling with database clock synchronization
 * Job deferral, retries (with exponential backoff), throttling, rate limiting, debouncing
 * Job Completion subscriptions for orchestrations/sagas
 * Direct publish, fetch and completion APIs for custom integrations
