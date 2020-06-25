@@ -1,11 +1,22 @@
-// Type definitions for pg-boss
-import {PoolConfig} from 'pg';
 declare namespace PgBoss {
   interface Db {
     executeSql(text: string, values: any[]): Promise<{ rows: any[]; rowCount: number }>;
   }
 
-  type DatabaseOptions = PoolConfig;
+  interface DatabaseOptions {
+    application_name?: string;
+    database?: string;
+    user?: string;
+    password?: string;
+    host?: string;
+    port?: number;
+    schema?: string;
+    ssl?: any;
+    connectionString?: string;
+    max?: number;
+    db?: Db;
+  }
+
 
   interface QueueOptions {
     uuid?: "v1" | "v4";
@@ -17,15 +28,10 @@ declare namespace PgBoss {
     noSupervisor?: boolean;
     noScheduling?: boolean;
 
-    archiveIntervalSeconds?: number;
-    archiveIntervalMinutes?: number;
-    archiveIntervalHours?: number;
-    archiveIntervalDays?: number;
-
-    deleteIntervalSeconds?: number;
-    deleteIntervalMinutes?: number;
-    deleteIntervalHours?: number;
-    deleteIntervalDays?: number;
+    deleteAfterSeconds?: number;
+    deleteAfterMinutes?: number;
+    deleteAfterHours?: number;
+    deleteAfterDays?: number;
 
     maintenanceIntervalSeconds?: number;
     maintenanceIntervalMinutes?: number;
@@ -68,11 +74,9 @@ declare namespace PgBoss {
     singletonNextSlot?: boolean;
   }
 
-  type PublishOptions =
-    JobOptions
-      & ExpirationOptions
-      & RetentionOptions
-      & RetryOptions
+  type PublishOptions = JobOptions & ExpirationOptions & RetentionOptions & RetryOptions
+
+  type ScheduleOptions = PublishOptions & { tz?: string }
 
   interface JobPollingOptions {
     newJobCheckInterval?: number;
@@ -104,6 +108,13 @@ declare namespace PgBoss {
     name: string;
     data?: object;
     options?: PublishOptions;
+  }
+
+  interface Schedule {
+    name: string;
+    cron: string;
+    data?: object;
+    options?: ScheduleOptions;
   }
 
   interface JobDoneCallback<T> {
@@ -188,8 +199,6 @@ declare class PgBoss {
 
   start(): Promise<PgBoss>;
   stop(): Promise<void>;
-  connect(): Promise<PgBoss>;
-  disconnect(): Promise<void>;
 
   publish(request: PgBoss.Request): Promise<string | null>;
   publish(name: string, data: object): Promise<string | null>;
@@ -245,6 +254,10 @@ declare class PgBoss {
   archive(): Promise<void>;
   purge(): Promise<void>;
   expire(): Promise<void>;
+
+  schedule(name: string, cron: string, data?: object, options?: PgBoss.ScheduleOptions): Promise<void>;
+  unschedule(name: strig)
+  getSchedules(): Promise<PgBoss.Schedule[]>
 }
 
 export = PgBoss;

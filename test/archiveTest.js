@@ -4,7 +4,6 @@ const Promise = require('bluebird')
 
 describe('archive', function () {
   const defaults = {
-    archiveIntervalSeconds: 1,
     maintenanceIntervalSeconds: 1
   }
 

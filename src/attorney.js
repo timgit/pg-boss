@@ -127,7 +127,6 @@ function getConfig (value) {
 
   applyDatabaseConfig(config)
   applyMaintenanceConfig(config)
-  applyArchiveConfig(config)
   applyDeleteConfig(config)
   applyMonitoringConfig(config)
   applyUuidConfig(config)
@@ -148,14 +147,6 @@ function applyDatabaseConfig (config) {
   }
 
   config.schema = config.schema || 'pgboss'
-
-  // byodb means we don't apply connection pooling
-  if (typeof config.db !== 'object') {
-    assert(!('poolSize' in config) || config.poolSize >= 1,
-      'configuration assert: poolSize must be at least 1')
-
-    config.poolSize = config.poolSize || config.max || 10
-  }
 }
 
 function applyRetentionConfig (config, defaults) {
@@ -253,50 +244,27 @@ function applyMaintenanceConfig (config) {
         : 120
 }
 
-function applyArchiveConfig (config) {
-  assert(!('archiveIntervalSeconds' in config) || config.archiveIntervalSeconds >= 1,
-    'configuration assert: archiveIntervalSeconds must be at least every second')
-
-  assert(!('archiveIntervalMinutes' in config) || config.archiveIntervalMinutes >= 1,
-    'configuration assert: archiveIntervalMinutes must be at least every minute')
-
-  assert(!('archiveIntervalHours' in config) || config.archiveIntervalHours >= 1,
-    'configuration assert: archiveIntervalHours must be at least every hour')
-
-  assert(!('archiveIntervalDays' in config) || config.archiveIntervalDays >= 1,
-    'configuration assert: archiveIntervalDays must be at least every day')
-
-  const archiveInterval =
-    ('archiveIntervalDays' in config) ? `${config.archiveIntervalDays} days`
-      : ('archiveIntervalHours' in config) ? `${config.archiveIntervalHours} hours`
-        : ('archiveIntervalMinutes' in config) ? `${config.archiveIntervalMinutes} minutes`
-          : ('archiveIntervalSeconds' in config) ? `${config.archiveIntervalSeconds} seconds`
-            : '1 hour'
-
-  config.archiveInterval = archiveInterval
-}
-
 function applyDeleteConfig (config) {
-  assert(!('deleteIntervalSeconds' in config) || config.deleteIntervalSeconds >= 1,
-    'configuration assert: deleteIntervalSeconds must be at least every second')
+  assert(!('deleteAfterSeconds' in config) || config.deleteAfterSeconds >= 1,
+    'configuration assert: deleteAfterSeconds must be at least every second')
 
-  assert(!('deleteIntervalMinutes' in config) || config.deleteIntervalMinutes >= 1,
-    'configuration assert: deleteIntervalMinutes must be at least every minute')
+  assert(!('deleteAfterMinutes' in config) || config.deleteAfterMinutes >= 1,
+    'configuration assert: deleteAfterMinutes must be at least every minute')
 
-  assert(!('deleteIntervalHours' in config) || config.deleteIntervalHours >= 1,
-    'configuration assert: deleteIntervalHours must be at least every hour')
+  assert(!('deleteAfterHours' in config) || config.deleteAfterHours >= 1,
+    'configuration assert: deleteAfterHours must be at least every hour')
 
-  assert(!('deleteIntervalDays' in config) || config.deleteIntervalDays >= 1,
-    'configuration assert: deleteIntervalDays must be at least every day')
+  assert(!('deleteAfterDays' in config) || config.deleteAfterDays >= 1,
+    'configuration assert: deleteAfterDays must be at least every day')
 
-  const deleteInterval =
-    ('deleteIntervalDays' in config) ? `${config.deleteIntervalDays} days`
-      : ('deleteIntervalHours' in config) ? `${config.deleteIntervalHours} hours`
-        : ('deleteIntervalMinutes' in config) ? `${config.deleteIntervalMinutes} minutes`
-          : ('deleteIntervalSeconds' in config) ? `${config.deleteIntervalSeconds} seconds`
+  const deleteAfter =
+    ('deleteAfterDays' in config) ? `${config.deleteAfterDays} days`
+      : ('deleteAfterHours' in config) ? `${config.deleteAfterHours} hours`
+        : ('deleteAfterMinutes' in config) ? `${config.deleteAfterMinutes} minutes`
+          : ('deleteAfterSeconds' in config) ? `${config.deleteAfterSeconds} seconds`
             : '7 days'
 
-  config.deleteInterval = deleteInterval
+  config.deleteAfter = deleteAfter
 }
 
 function applyMonitoringConfig (config) {

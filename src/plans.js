@@ -462,7 +462,7 @@ function archive (schema) {
     WITH archived_rows AS (
       DELETE FROM ${schema}.job
       WHERE
-        completedOn < (now() - CAST($1 as interval))
+        completedOn IS NOT NULL
         OR (
           state = '${states.created}' AND keepUntil < now()
         )

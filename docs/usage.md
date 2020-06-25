@@ -21,8 +21,6 @@
   - [`new(options)`](#newoptions)
   - [`start()`](#start)
   - [`stop()`](#stop)
-  - [`connect()`](#connect)
-  - [`disconnect()`](#disconnect)
   - [`publish()`](#publish)
     - [`publish(name, data, options)`](#publishname-data-options)
     - [`publish(request)`](#publishrequest)
@@ -39,23 +37,25 @@
     - [`fetch(name)`](#fetchname)
     - [`fetch(name, batchSize, [, options])`](#fetchname-batchsize--options)
     - [`fetchCompleted(name [, batchSize] [, options])`](#fetchcompletedname--batchsize--options)
-  - [`schedule(name, cron, data, options)`](#schedulename-cron-data-options)
-  - [`unschedule(name)`](#unschedulename)
+  - [Scheduling](#scheduling)
+    - [`schedule(name, cron, data, options)`](#schedulename-cron-data-options)
+    - [`unschedule(name)`](#unschedulename)
+    - [`getSchedules()`](#getschedules)
   - [`cancel(id)`](#cancelid)
   - [`cancel([ids])`](#cancelids)
   - [`complete(id [, data])`](#completeid--data)
   - [`complete([ids])`](#completeids)
   - [`fail(id [, data])`](#failid--data)
   - [`fail([ids])`](#failids)
+  - [`getQueueSize(name [, options])`](#getqueuesizename--options)
   - [`deleteQueue(name)`](#deletequeuename)
   - [`deleteAllQueues()`](#deleteallqueues)
-  - [`getQueueSize(name [, options])`](#getqueuesizename--options)
   - [`clearStorage()`](#clearstorage)
 
 <!-- /TOC -->
 
 # Intro
-pg-boss is used by creating an instance of the exported class, a subclass of a Node [EventEmitter](https://nodejs.org/api/events.html). Since the majority of all interactions with pg-boss involve a database, all instance functions return promises. Once you have created an instance, nothing happens until you call either `start()` or `connect()`. When a job is created it is immediately persisted to the database, assigned to a queue by name and can be received from any pg-boss instance.
+pg-boss is used by creating an instance of the exported class, a subclass of a Node [EventEmitter](https://nodejs.org/api/events.html). Since the majority of all interactions with pg-boss involve a database, all instance functions return promises. Once you have created an instance, nothing happens until you call `start()`. When a job is created it is immediately persisted to the database, assigned to a queue by name and can be received from any pg-boss instance.
 
 You may use as many instances in as many environments as needed based on your requirements.  Since each instance has a connection pool (or even if you bring your own), the only primary limitation on instance count is based on the maximum number of connections your database can accept.  If you need a larger number of workers than your postgres database can accept, consider using a centralized connection pool such as pgBouncer. If you have constraints preventing direct database access, consider creating your own abstraction layer over pg-boss such as a secure web API using the `fetch()` and `complete()` functions.  If you require multiple installations in the same database, you will need to specify a separate schema name per install in the constructor.
 
@@ -128,7 +128,7 @@ The error event is raised from any errors that may occur during internal job fet
 >
 >Source: [Node.js Events > Error Events](https://nodejs.org/api/events.html#events_error_events)
 
-Ideally, code similar to the following example would be used after creating your instance, but  before `start()` or `connect()` is called.
+Ideally, code similar to the following example would be used after creating your instance, but before `start()` is called.
 
 ```js
 boss.on('error', error => logger.error(error));
@@ -234,7 +234,7 @@ const options = {
   user: 'user',
   password: 'password',
   max: 5,
-  archiveIntervalDays: 2
+  retentionDays: 7
 };
 
 const boss = new PgBoss(options);
@@ -251,7 +251,7 @@ await boss.start()
 await boss.publish('hey-there', { msg:'this came for you' })
 ```
 
-Since it is responsible for both schema migrations and monitoring jobs for expiration and archiving, at least 1 instances of `start()` should be used per database. If your deployment requires additional instances for job processing, you may use either `start()` or `connect()`. If the required database objects do not exist in the specified database, **`start()` will automatically create them**. The same process is true for updates as well. If a new schema version is required, pg-boss will automatically migrate the internal storage to the latest installed version.
+If the required database objects do not exist in the specified database, **`start()` will automatically create them**. The same process is true for updates as well. If a new schema version is required, pg-boss will automatically migrate the internal storage to the latest installed version.
 
 > While this is most likely a welcome feature, be aware of this during upgrades since this could delay the promise resolution by however long the migration script takes to run against your data.  For example, if you happened to have millions of jobs in the job table just hanging around for archiving and the next version of the schema had a couple of new indexes, it may take a few seconds before `start()` resolves. Most migrations are very quick, however, and are designed with performance in mind.
 
@@ -264,20 +264,6 @@ One example of how this is useful would be including `start()` inside the bootst
 **returns: Promise**
 
 All job monitoring will be stopped and all subscriptions on this instance will be removed. Basically, it's the opposite of `start()`. Even though `start()` may create new database objects during initialization, `stop()` will never remove anything from the database.
-
-## `connect()`
-
-**returns: Promise** *(resolves the same PgBoss instance used during invocation for convenience)*
-
-Connects to an existing job database, but does not run any maintenance or monitoring operations.
-
-This may be used for secondary workers running in other processes or servers, with the assumption that `start()` was previously used against this database instance.
-
-## `disconnect()`
-
-**returns: Promise**
-
-The opposite of `connect()`.  Disconnects from a job database. All subscriptions on this instance will be removed.
 
 ## `publish()`
 
@@ -368,7 +354,7 @@ Polls the database by a queue name or a pattern and executes the provided callba
 
 Queue patterns use the `*` character to match 0 or more characters.  For example, a job from queue `status-report-12345` would be fetched with pattern `status-report-*` or even `stat*5`.
 
-The default concurrency for `subscribe()` is 1 job per second.  Both the interval and the number of jobs per interval can be customized by passing an optional [configuration option](configuration.md#subscribe-options) argument.
+The default concurrency for `subscribe()` is 1 job every 2 seconds. Both the interval and the number of jobs per interval can be changed globally or per-queue with [configuration options](configuration.md#subscribe-options).
 
 ### `subscribe(name [, options], handler)`
 
@@ -377,7 +363,11 @@ The default concurrency for `subscribe()` is 1 job per second.  Both the interva
 - `options`: object
 - `handler`: function(job), *required*
 
-If your handler function returns a promise, pg-boss will defer polling for new jobs until it resolves. Meaning, you'll get backpressure for free! Even though it's not required to return a promise, it's encouraged in order to make your instance more robust and reliable under load. For example, if your database were to experience a high load, it may slow down what otherwise may be a quick operation.  Being able to defer polling and emitting more jobs will make sure you don't overload an already busy system and add to the existing load.
+Typically `handler` should be an `async` function unless you have a good reason not to, since this automatically returns promises that can be handled efficiently. 
+
+If handler returns a promise, the value resolved/returned will be stored in a completion job. Likewise, if an error occurs in the handler, it will be caught and useful error properties stored into a completion job in addition to marking the job as failed.
+
+Finally, and importantly, promise-returning handlers will be awaited before polling for new jobs which provides **automatic backpressure**.
 
 The job object has the following properties.
 
@@ -386,13 +376,11 @@ The job object has the following properties.
 |`id`| string, uuid |
 |`name`| string |
 |`data`| object |
-|`done(err, data)` | function | callback function used to mark the job as completed or failed in the database.
+|`done(err, data)` | function | callback function used to mark the job as completed or failed. Returns a promise.
 
-The job completion callback is not required if you return a promise from your handler. If you return a promise, the value you resolve will be provided in the completion job, and if your promise throws, pg-boss will catch it and mark the job as failed.
+If `handler` does not return a promise, `done()` should be used to mark the job as completed or failed. `done()` accepts optional arguments, `err` and `data`, for usage with [`onComplete()`](#oncompletename--options-handler) state-based subscriptions. If `err` is truthy, it will mark the job as failed.
 
-If you do not return a promise, `done()` should be used to mark the job as completed or failed (just like in 2.x below). In that case, `done()` accepts optional arguments, the first being an error in typical node fashion. The second argument is an optional `data` argument for usage with [`onComplete()`](#oncompletename--options-handler) state-based subscriptions. If an error is passed, it will mark the job as failed.
-
-> If you forget to use a promise or the callback function to mark the job as completed, it will expire after the configured expiration period.  The default expiration can be found in the [configuration docs](configuration.md#job-expiration).
+> If the job is not completed, either by returning a promise from `handler` or manually via `job.done()`, it will expire after the configured expiration period.  The default expiration can be found in the [configuration docs](configuration.md#job-expiration).
 
 Following is an example of a subscription that returns a promise (`sendWelcomeEmail()`) for completion with the teamSize option set for increased job concurrency between polling intervals.
 
@@ -533,9 +521,37 @@ for (let i = 0; i < jobs.length; i++) {
 
 Same as `fetch()`, but retrieves any completed jobs. See [`onComplete()`](#oncompletename--options-handler) for more information.
 
-## `schedule(name, cron, data, options)`
+## Scheduling
 
-Schedules a job to be published based on a cron expression. If the queue name already exists, the schedule is updated to the new cron expression. 
+Jobs may be published automatically based on a cron expression. As with other cron-based systems, at least one instance needs to be running for scheduling to work. In order to reduce the amount of evaluations, schedules are checked every 30 seconds, which means the 6-placeholder format should be discouraged in favor of the minute-level precision 5-placeholder format. 
+
+For example, use this format, which implies "any second during 3:30 am every day"
+
+```
+30 3 * * *
+```
+
+but **not** this format which is parsed as "only run exactly at 3:30:30 am every day"
+
+```
+30 30 3 * * *
+```
+
+In order mitigate clock skew and drift, every 10 minutes the clocks of each instance are compared to the database server's clock. The skew, if any, is stored and used as an offset during cron evaluation to ensure all instances are synchronized. Internally, job throttling options are then used to make sure only 1 job is published even if multiple instances are running. 
+
+If needed, the default clock monitoring interval can be adjusted using `clockMonitoringIntervalSeconds` or `clockMonitoringIntervalMinutes`. Additionally, to disable scheduling on an instance completely, use the following in the constructor options.
+
+```js
+{
+  noScheduling: true
+}
+```
+
+For more cron documentation and examples see the docs for the [cron-parser package](https://www.npmjs.com/package/cron-parser).
+
+### `schedule(name, cron, data, options)`
+
+Schedules a job to be published to the specified queue based on a cron expression. If the schedule already exists, it's updated to the new cron expression. 
 
 **Arguments**
 
@@ -552,10 +568,13 @@ For example, the following code will publish a job at 3:00am in the US central t
 await boss.schedule('notification-abc', `0 3 * * *`, null, { tz: 'America/Chicago' })
 ```
 
+### `unschedule(name)`
 
-## `unschedule(name)`
+Removes a schedule by queue name.
 
-Removes a scheduled job by name.
+### `getSchedules()`
+
+Retrieves an array of all scheduled jobs currently being monitored.
 
 ## `cancel(id)`
 
@@ -599,14 +618,6 @@ The promise will resolve on a successful failure state assignment, or reject if 
 
 > See comments above on `cancel([ids])` regarding when the promise will resolve or reject because of a batch operation.
 
-## `deleteQueue(name)`
-
-Deletes all pending jobs in the specified queue from the active job table.  All jobs in the archive table are retained.
-
-## `deleteAllQueues()`
-
-Deletes all pending jobs from all queues in the active job table. All jobs in the archive table are retained.
-
 ## `getQueueSize(name [, options])`
 
 Returns the number of pending jobs in a queue by name.
@@ -624,6 +635,14 @@ As an example, the following options object include active jobs along with creat
   before: states.completed
 }
 ```
+
+## `deleteQueue(name)`
+
+Deletes all pending jobs in the specified queue from the active job table.  All jobs in the archive table are retained.
+
+## `deleteAllQueues()`
+
+Deletes all pending jobs from all queues in the active job table. All jobs in the archive table are retained.
 
 ## `clearStorage()`
 

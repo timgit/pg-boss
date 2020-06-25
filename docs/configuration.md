@@ -8,7 +8,6 @@ pg-boss can be customized using configuration options when an instance is create
   - [Database options](#database-options)
   - [Queue options](#queue-options)
   - [Maintenance options](#maintenance-options)
-    - [Archive completed jobs](#archive-completed-jobs)
     - [Delete archived jobs](#delete-archived-jobs)
     - [Maintenance interval](#maintenance-interval)
 - [Publish options](#publish-options)
@@ -41,7 +40,7 @@ Alternatively, the following options can be set as properties in an object.
 
 * **port** - int,  defaults to 5432
 
-* **ssl** - bool, defaults to false
+* **ssl** - boolean or object
 
 * **database** - string, *required*
 
@@ -53,9 +52,9 @@ Alternatively, the following options can be set as properties in an object.
 
   PostgreSQL connection string will be parsed and used instead of `host`, `port`, `ssl`, `database`, `user`, `password`.
 
-* **poolSize** or **max** - int, defaults to 10
+* **max** - int, defaults to 10
 
-    Maximum number of connections that will be shared by all subscriptions in this instance
+  Maximum number of connections that will be shared by all subscriptions in this instance
 
 * **application_name** - string, defaults to "pgboss"
 
@@ -114,47 +113,23 @@ Maintenance operations include checking active jobs for expiration, archiving co
 
   If this is set to true, this instance will not monitor scheduled jobs during `start()`. However, this instance can still use the scheduling api. This is an advanced use case you may want to do for testing or if the clock of the server is skewed and you would like to disable the skew warnings.
 
-#### Archive completed jobs
-
-When jobs become eligible for archive after completion.
-
-* **archiveIntervalSeconds**, int
-
-    archive interval in seconds, must be >=1
-
-* **archiveIntervalMinutes**, int
-
-    archive interval in minutes, must be >=1
-
-* **archiveIntervalHours**, int
-
-    archive interval in hours, must be >=1
-
-* **archiveIntervalDays**, int
-
-    archive interval in days, must be >=1
-
-Default: 1 hour.
-
-> When a higher unit is is specified, lower unit configuration settings are ignored.
-
 #### Delete archived jobs
 
 When jobs in the archive table become eligible for deletion.
 
-* **deleteIntervalSeconds**, int
+* **deleteAfterSeconds**, int
 
     delete interval in seconds, must be >=1
 
-* **deleteIntervalMinutes**, int
+* **deleteAfterMinutes**, int
 
     delete interval in minutes, must be >=1
 
-* **deleteIntervalHours**, int
+* **deleteAfterHours**, int
 
     delete interval in hours, must be >=1
 
-* **deleteIntervalDays**, int
+* **deleteAfterDays**, int
 
     delete interval in days, must be >=1
 
@@ -223,19 +198,19 @@ Default: 15 minutes
 
 * **retentionSeconds**, number
 
-    How many seconds a job may be in created state before it becomes eligible to be archived. Must be >=1
+    How many seconds a job may be in created state before it's archived. Must be >=1
 
 * **retentionMinutes**, number
 
-    How many minutes a job may be in created state before it becomes eligible to be archived. Must be >=1
+    How many minutes a job may be in created state before it's archived. Must be >=1
 
 * **retentionHours**, number
 
-    How many hours a job may be in created state before it becomes eligible to be archived. Must be >=1
+    How many hours a job may be in created state before it's archived. Must be >=1
 
 * **retentionDays**, number
 
-    How many days a job may be in created state before it becomes eligible to be archived. Must be >=1
+    How many days a job may be in created state before it's archived. Must be >=1
 
 Default: 30 days
 

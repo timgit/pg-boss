@@ -4,8 +4,7 @@ const Promise = require('bluebird')
 
 describe('delete', async function () {
   const defaults = {
-    archiveIntervalSeconds: 1,
-    deleteIntervalSeconds: 1,
+    deleteAfterSeconds: 1,
     maintenanceIntervalSeconds: 1
   }
 

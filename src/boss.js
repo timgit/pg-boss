@@ -178,12 +178,12 @@ class Boss extends EventEmitter {
   }
 
   async archive () {
-    const { rowCount } = await this.db.executeSql(this.archiveCommand, [this.config.archiveInterval])
+    const { rowCount } = await this.db.executeSql(this.archiveCommand)
     return rowCount
   }
 
   async purge () {
-    const { rowCount } = await this.db.executeSql(this.purgeCommand, [this.config.deleteInterval])
+    const { rowCount } = await this.db.executeSql(this.purgeCommand, [this.config.deleteAfter])
     return rowCount
   }
 

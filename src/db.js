@@ -5,10 +5,6 @@ class Db extends EventEmitter {
   constructor (config) {
     super()
 
-    if (config.poolSize) {
-      config.max = config.poolSize
-    }
-
     config.application_name = config.application_name || 'pgboss'
 
     this.config = config

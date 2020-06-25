@@ -28,19 +28,7 @@ describe('database', function () {
     assert(response.text === query)
   })
 
-  it('connection count does not exceed configured pool size with `poolSize`', async function () {
-    this.retries(1)
-
-    const listenerCount = 100
-    const poolSize = 5
-    const boss = await helper.start({ ...this.test.bossConfig, poolSize })
-
-    const newConnections = await poolSizeConnectionTest(boss, listenerCount)
-
-    assert(newConnections <= poolSize)
-  })
-
-  it('connection count does not exceed configured pool size with `max`', async function () {
+  it('connection count does not exceed configured pool size', async function () {
     this.retries(1)
 
     const listenerCount = 100
