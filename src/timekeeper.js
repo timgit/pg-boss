@@ -77,7 +77,7 @@ class Timekeeper extends EventEmitter {
     const skewSeconds = Math.abs(skew) / 1000
 
     if (skewSeconds >= 60 || this.config.__test__force_clock_skew_warning) {
-      Attorney.warnClockSkew(`Instance clock is ${skewSeconds}s ${skew > 0 ? 'faster' : 'slower'} than database.`)
+      Attorney.warnClockSkew(`Instance clock is ${skewSeconds}s ${skew > 0 ? 'slower' : 'faster'} than database.`)
     }
 
     this.clockSkew = skew
