@@ -13,15 +13,11 @@ describe('background processing error handling', function () {
     const config = { ...this.test.bossConfig, ...defaults }
     const boss = new PgBoss(config)
 
-    const onError = (err) => {
-      if (err && boss.isStarted) {
-        boss.stop().then(() => done()).catch(done)
-      } else {
-        done(err)
-      }
-    }
-
-    boss.on('error', onError)
+    boss.on('error', async () => {
+      boss.removeAllListeners()
+      await boss.stop()
+      done()
+    })
 
     boss.start()
   })
@@ -36,15 +32,11 @@ describe('background processing error handling', function () {
     const config = { ...this.test.bossConfig, ...defaults }
     const boss = new PgBoss(config)
 
-    const onError = (err) => {
-      if (err && boss.isStarted) {
-        boss.stop().then(() => done()).catch(done)
-      } else {
-        done(err)
-      }
-    }
-
-    boss.on('error', onError)
+    boss.on('error', async () => {
+      boss.removeAllListeners()
+      await boss.stop()
+      done()
+    })
 
     boss.start()
   })
@@ -53,15 +45,11 @@ describe('background processing error handling', function () {
     const config = { ...this.test.bossConfig, __test__throw_clock_monitoring: true }
     const boss = new PgBoss(config)
 
-    const onError = (err) => {
-      if (err && boss.isStarted) {
-        boss.stop().then(() => done()).catch(done)
-      } else {
-        done(err)
-      }
-    }
-
-    boss.on('error', onError)
+    boss.on('error', async () => {
+      boss.removeAllListeners()
+      await boss.stop()
+      done()
+    })
 
     boss.start()
   })

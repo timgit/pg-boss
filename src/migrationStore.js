@@ -79,6 +79,17 @@ function getAll (schema, config) {
   return [
     {
       release: '5.0.0',
+      version: 14,
+      previous: 13,
+      install: [
+          `ALTER TABLE ${schema}.version ADD maintained_on timestamp with time zone`
+      ],
+      uninstall: [
+          `ALTER TABLE ${schema}.version DROP COLUMN maintained_on`
+      ]
+    },
+    {
+      release: '5.0.0-beta1',
       version: 13,
       previous: 12,
       install: [

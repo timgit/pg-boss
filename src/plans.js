@@ -37,6 +37,8 @@ module.exports = {
   deleteAllQueues,
   clearStorage,
   getQueueSize,
+  getMaintenanceTime,
+  setMaintenanceTime,
   states: { ...states },
   completedJobPrefix,
   advisoryLock,
@@ -76,7 +78,8 @@ function createSchema (schema) {
 function createVersionTable (schema) {
   return `
     CREATE TABLE ${schema}.version (
-      version int primary key
+      version int primary key,
+      maintained_on timestamp with time zone
     )
   `
 }
@@ -135,6 +138,14 @@ function addArchivedOnIndexToArchive (schema) {
 
 function addIdIndexToArchive (schema) {
   return `CREATE INDEX archive_id_idx ON ${schema}.archive(id)`
+}
+
+function setMaintenanceTime (schema) {
+  return `UPDATE ${schema}.version SET maintained_on = now()`
+}
+
+function getMaintenanceTime (schema) {
+  return `SELECT maintained_on, EXTRACT( EPOCH FROM (now() - maintained_on) ) seconds_ago FROM ${schema}.version`
 }
 
 function deleteQueue (schema) {
