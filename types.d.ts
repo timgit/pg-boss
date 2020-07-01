@@ -5,7 +5,7 @@ declare namespace PgBoss {
     executeSql(text: string, values: any[]): Promise<{ rows: any[]; rowCount: number }>;
   }
 
-  type DatabaseOptions = PoolConfig;
+  type DatabaseOptions = PoolConfig | { db: Db };
 
   interface QueueOptions {
     uuid?: "v1" | "v4";
