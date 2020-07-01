@@ -40,8 +40,10 @@ The pg-boss team hired a timekeeper and now has distributed cron-based schedulin
     | `deleteIntervalHours` | `deleteAfterHours` |
     | `deleteIntervalDays` | `deleteAfterDays` |
 
-- Fix: Typescript types for database configuration for ssl and restored missing settings hidden in 4.3.3.
+## 4.3.4
 
+- Typescript types fix for db connections.  Includes PR from @mlegenhausen
+ 
 ## 4.3.3
 
 - Typescript types updated to support ssl options required in latest pg module.  PR from @asafh
