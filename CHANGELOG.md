@@ -1,5 +1,9 @@
 # Changes
 
+## 4.3.4
+
+- Typescript types fix for db connections.  Includes PR from @mlegenhausen
+ 
 ## 4.3.3
 
 - Typescript types updated to support ssl options required in latest pg module.  PR from @asafh
