@@ -23,10 +23,16 @@ declare namespace PgBoss {
     monitorStateIntervalMinutes?: number;
   }
 
-  interface MaintenanceOptions {
-    noSupervisor?: boolean;
+  interface SchedulingOptions {
     noScheduling?: boolean;
 
+    clockMonitorIntervalSeconds?: number;
+    clockMonitorIntervalMinutes?: number;
+  }
+
+  interface MaintenanceOptions {
+    noSupervisor?: boolean;
+    
     deleteAfterSeconds?: number;
     deleteAfterMinutes?: number;
     deleteAfterHours?: number;
@@ -39,6 +45,7 @@ declare namespace PgBoss {
   type ConstructorOptions =
     DatabaseOptions
       & QueueOptions
+      & SchedulingOptions
       & MaintenanceOptions
       & ExpirationOptions
       & RetentionOptions
@@ -247,8 +254,11 @@ declare class PgBoss {
   fail(id: string, data: object): Promise<void>;
   fail(ids: string[]): Promise<void>;
 
+  getQueueSize(name: string, options?: object): Promise<number>;
+
   deleteQueue(name: string): Promise<void>;
   deleteAllQueues(): Promise<void>;
+  clearStorage(): Promise<void>;
 
   archive(): Promise<void>;
   purge(): Promise<void>;
