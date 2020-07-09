@@ -158,9 +158,10 @@ class Timekeeper extends EventEmitter {
 
     cronParser.parseExpression(cron, { tz })
 
-    const result = Attorney.checkPublishArgs([name, data, options], this.config)
+    // validation pre-check
+    Attorney.checkPublishArgs([name, data, options], this.config)
 
-    const values = [result.name, cron, tz, result.data, result.options]
+    const values = [name, cron, tz, data, options]
 
     const { rowCount } = await this.db.executeSql(this.scheduleCommand, values)
 
