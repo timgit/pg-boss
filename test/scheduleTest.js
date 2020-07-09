@@ -4,7 +4,10 @@ const helper = require('./testHelper')
 const plans = require('../src/plans')
 const PgBoss = require('../')
 
-describe('schedule', function () {
+const ASSERT_DELAY = 9000
+
+describe('schedule', function () {  
+
   it('should publish job based on every minute expression', async function () {
     const queue = 'schedule-every-min'
 
@@ -12,7 +15,7 @@ describe('schedule', function () {
 
     await boss.schedule(queue, '* * * * *')
 
-    await Promise.delay(5000)
+    await Promise.delay(ASSERT_DELAY)
 
     const job = await boss.fetch(queue)
 
@@ -28,7 +31,7 @@ describe('schedule', function () {
 
     await boss.schedule(queue, '* * * * *')
 
-    await Promise.delay(5000)
+    await Promise.delay(ASSERT_DELAY)
 
     const job = await boss.fetch(queue)
 
@@ -48,7 +51,7 @@ describe('schedule', function () {
 
     boss = await helper.start(this.test.bossConfig)
 
-    await Promise.delay(5000)
+    await Promise.delay(ASSERT_DELAY)
 
     const job = await boss.fetch(queue)
 
@@ -73,7 +76,7 @@ describe('schedule', function () {
 
     await boss.start()
 
-    await Promise.delay(5000)
+    await Promise.delay(ASSERT_DELAY)
 
     const job = await boss.fetch(queue)
 
@@ -100,7 +103,7 @@ describe('schedule', function () {
 
     await boss.schedule(queue, `${minuteExpression} * * * *`)
 
-    await Promise.delay(5000)
+    await Promise.delay(ASSERT_DELAY)
 
     const job = await boss.fetch(queue)
 
@@ -132,7 +135,7 @@ describe('schedule', function () {
 
     await boss.schedule(queue, `${minute} ${hour} * * *`, null, { tz })
 
-    await Promise.delay(5000)
+    await Promise.delay(ASSERT_DELAY)
 
     const job = await boss.fetch(queue)
 

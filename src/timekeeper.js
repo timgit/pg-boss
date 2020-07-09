@@ -80,8 +80,8 @@ class Timekeeper extends EventEmitter {
   }
 
   async watch () {
-    await this.manager.subscribe(queues.CRON, (job) => this.onCron(job))
-    await this.manager.subscribe(queues.SEND_IT, { teamSize: 50, teamConcurrency: 5 }, (job) => this.onSendIt(job))
+    await this.manager.subscribe(queues.CRON, { newJobCheckIntervalSeconds: 4 }, (job) => this.onCron(job))
+    await this.manager.subscribe(queues.SEND_IT, { newJobCheckIntervalSeconds: 4, teamSize: 50, teamConcurrency: 5 }, (job) => this.onSendIt(job))
 
     await this.cronMonitorAsync()
   }
@@ -90,17 +90,15 @@ class Timekeeper extends EventEmitter {
     const { startAfter } = options
 
     const opts = {
-      singletonKey: queues.CRON,
-      singletonSeconds: 60,
-      retentionSeconds: 60,
       startAfter,
-      retryLimit: 2
+      retryLimit: 2,
+      retentionSeconds: 60
     }
 
-    await this.manager.publish(queues.CRON, null, opts)
+    await this.manager.publishDebounced(queues.CRON, null, opts, 60)
   }
 
-  async onCron (job) {
+  async onCron () {
     if (this.stopped) {
       return
     }
@@ -121,10 +119,7 @@ class Timekeeper extends EventEmitter {
       this.emit(this.events.error, err)
     }
 
-    if (!this.stopped) {
-      await job.done() // pre-complete to bypass throttling
-      await this.cronMonitorAsync({ startAfter: 30 })
-    }
+    await this.cronMonitorAsync({ startAfter: 30 })
   }
 
   shouldSendIt (cron, tz) {
