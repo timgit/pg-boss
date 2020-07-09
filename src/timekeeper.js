@@ -50,10 +50,6 @@ class Timekeeper extends EventEmitter {
     if (!this.stopped) {
       this.stopped = true
 
-      if (this.watching) {
-        await this.unwatch()
-      }
-
       if (this.monitorInterval) {
         clearInterval(this.monitorInterval)
         this.monitorInterval = null
@@ -88,15 +84,6 @@ class Timekeeper extends EventEmitter {
     await this.manager.subscribe(queues.SEND_IT, { teamSize: 50, teamConcurrency: 5 }, (job) => this.onSendIt(job))
 
     await this.cronMonitorAsync()
-
-    this.watching = true
-  }
-
-  async unwatch () {
-    await this.manager.unsubscribe(queues.CRON)
-    await this.manager.unsubscribe(queues.SEND_IT)
-
-    this.watching = false
   }
 
   async cronMonitorAsync (options = {}) {
@@ -105,6 +92,7 @@ class Timekeeper extends EventEmitter {
     const opts = {
       singletonKey: queues.CRON,
       singletonSeconds: 60,
+      retentionSeconds: 60,
       startAfter,
       retryLimit: 2
     }
@@ -112,8 +100,8 @@ class Timekeeper extends EventEmitter {
     await this.manager.publish(queues.CRON, null, opts)
   }
 
-  async onCron () {
-    if (this.stopped || !this.watching) {
+  async onCron (job) {
+    if (this.stopped) {
       return
     }
 
@@ -133,7 +121,10 @@ class Timekeeper extends EventEmitter {
       this.emit(this.events.error, err)
     }
 
-    await this.cronMonitorAsync({ startAfter: 30 })
+    if (!this.stopped) {
+      await job.done() // pre-complete to bypass throttling
+      await this.cronMonitorAsync({ startAfter: 30 })
+    }
   }
 
   shouldSendIt (cron, tz) {
