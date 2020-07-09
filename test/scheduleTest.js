@@ -6,8 +6,7 @@ const PgBoss = require('../')
 
 const ASSERT_DELAY = 9000
 
-describe('schedule', function () {  
-
+describe('schedule', function () {
   it('should publish job based on every minute expression', async function () {
     const queue = 'schedule-every-min'
 
