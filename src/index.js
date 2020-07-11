@@ -45,6 +45,8 @@ class PgBoss extends EventEmitter {
     Object.keys(timekeeper.events).forEach(event => promoteEvent.call(this, timekeeper, timekeeper.events[event]))
     timekeeper.functions.forEach(func => promoteFunction.call(this, timekeeper, func))
 
+    manager.timekeeper = timekeeper
+
     this.config = config
     this.db = db
     this.boss = boss

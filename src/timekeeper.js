@@ -86,11 +86,8 @@ class Timekeeper extends EventEmitter {
     await this.cronMonitorAsync()
   }
 
-  async cronMonitorAsync (options = {}) {
-    const { startAfter } = options
-
+  async cronMonitorAsync () {
     const opts = {
-      startAfter,
       retryLimit: 2,
       retentionSeconds: 60
     }
@@ -119,7 +116,7 @@ class Timekeeper extends EventEmitter {
       this.emit(this.events.error, err)
     }
 
-    await this.cronMonitorAsync({ startAfter: 30 })
+    await this.cronMonitorAsync()
   }
 
   shouldSendIt (cron, tz) {
