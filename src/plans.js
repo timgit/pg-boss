@@ -25,6 +25,10 @@ module.exports = {
   cancelJobs,
   failJobs,
   insertJob,
+  getTime,
+  getSchedules,
+  schedule,
+  unschedule,
   expire,
   archive,
   purge,
@@ -33,6 +37,8 @@ module.exports = {
   deleteAllQueues,
   clearStorage,
   getQueueSize,
+  getMaintenanceTime,
+  setMaintenanceTime,
   states: { ...states },
   completedJobPrefix,
   advisoryLock,
@@ -50,6 +56,7 @@ function create (schema, version) {
     createJobStateEnum(schema),
     createJobTable(schema),
     cloneJobTableForArchive(schema),
+    createScheduleTable(schema),
     addIdIndexToArchive(schema),
     addArchivedOnToArchive(schema),
     addArchivedOnIndexToArchive(schema),
@@ -71,7 +78,8 @@ function createSchema (schema) {
 function createVersionTable (schema) {
   return `
     CREATE TABLE ${schema}.version (
-      version int primary key
+      version int primary key,
+      maintained_on timestamp with time zone
     )
   `
 }
@@ -132,6 +140,14 @@ function addIdIndexToArchive (schema) {
   return `CREATE INDEX archive_id_idx ON ${schema}.archive(id)`
 }
 
+function setMaintenanceTime (schema) {
+  return `UPDATE ${schema}.version SET maintained_on = now()`
+}
+
+function getMaintenanceTime (schema) {
+  return `SELECT maintained_on, EXTRACT( EPOCH FROM (now() - maintained_on) ) seconds_ago FROM ${schema}.version`
+}
+
 function deleteQueue (schema) {
   return `DELETE FROM ${schema}.job WHERE name = $1 and state < '${states.active}'`
 }
@@ -174,6 +190,50 @@ function createIndexJobName (schema) {
   return `
     CREATE INDEX job_name ON ${schema}.job (name text_pattern_ops)
   `
+}
+
+function createScheduleTable (schema) {
+  return `
+    CREATE TABLE ${schema}.schedule (
+      name text primary key,
+      cron text not null,
+      timezone text,
+      data jsonb,
+      options jsonb,
+      created_on timestamp with time zone not null default now(),
+      updated_on timestamp with time zone not null default now()
+    )
+  `
+}
+
+function getSchedules (schema) {
+  return `
+    SELECT * FROM ${schema}.schedule
+  `
+}
+
+function schedule (schema) {
+  return `
+    INSERT INTO ${schema}.schedule (name, cron, timezone, data, options)
+    VALUES ($1, $2, $3, $4, $5)
+    ON CONFLICT (name) DO UPDATE SET
+      cron = EXCLUDED.cron,
+      timezone = EXCLUDED.timezone,
+      data = EXCLUDED.data,
+      options = EXCLUDED.options,
+      updated_on = now()
+  `
+}
+
+function unschedule (schema) {
+  return `
+    DELETE FROM ${schema}.schedule
+    WHERE name = $1
+  `
+}
+
+function getTime () {
+  return `SELECT date_part('epoch', now()) * 1000 as time ${''}`
 }
 
 function getVersion (schema) {
@@ -413,7 +473,7 @@ function archive (schema) {
     WITH archived_rows AS (
       DELETE FROM ${schema}.job
       WHERE
-        completedOn < (now() - CAST($1 as interval))
+        completedOn IS NOT NULL
         OR (
           state = '${states.created}' AND keepUntil < now()
         )

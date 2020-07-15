@@ -117,7 +117,7 @@ describe('migration', function () {
     try {
       await contractor.migrate('¯\\_(ツ)_//¯')
     } catch (error) {
-      assert(error.message.indexOf('not found') > -1)
+      assert(error.message.includes('not found'))
     }
   })
 
@@ -138,7 +138,7 @@ describe('migration', function () {
     try {
       await boss1.start()
     } catch (error) {
-      assert(error.message.indexOf('wat') > 0)
+      assert(error.message.includes('wat'))
     } finally {
       boss1.stop()
     }

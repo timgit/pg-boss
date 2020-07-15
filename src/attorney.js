@@ -4,13 +4,18 @@ module.exports = {
   getConfig,
   checkPublishArgs,
   checkSubscribeArgs,
-  checkFetchArgs
+  checkFetchArgs,
+  warnClockSkew
 }
 
 const WARNINGS = {
-  publishExpireInRemoved: {
-    message: '\'expireIn\' option detected.  This option has been removed.  Use expireInSeconds, expireInMinutes or expireInHours',
+  EXPIRE_IN_REMOVED: {
+    message: '\'expireIn\' option detected. This option has been removed. Use expireInSeconds, expireInMinutes or expireInHours.',
     code: 'pg-boss-w01'
+  },
+  CLOCK_SKEW: {
+    message: 'Timekeeper detected clock skew between this instance and the database server. This will not affect scheduling operations, but this warning is shown any time the skew exceeds 60 seconds.',
+    code: 'pg-boss-w02'
   }
 }
 
@@ -122,7 +127,6 @@ function getConfig (value) {
 
   applyDatabaseConfig(config)
   applyMaintenanceConfig(config)
-  applyArchiveConfig(config)
   applyDeleteConfig(config)
   applyMonitoringConfig(config)
   applyUuidConfig(config)
@@ -143,14 +147,6 @@ function applyDatabaseConfig (config) {
   }
 
   config.schema = config.schema || 'pgboss'
-
-  // byodb means we don't apply connection pooling
-  if (typeof config.db !== 'object') {
-    assert(!('poolSize' in config) || config.poolSize >= 1,
-      'configuration assert: poolSize must be at least 1')
-
-    config.poolSize = config.poolSize || config.max || 10
-  }
 }
 
 function applyRetentionConfig (config, defaults) {
@@ -179,7 +175,7 @@ function applyRetentionConfig (config, defaults) {
 
 function applyExpirationConfig (config, defaults) {
   if ('expireIn' in config) {
-    emitWarning(WARNINGS.publishExpireInRemoved)
+    emitWarning(WARNINGS.EXPIRE_IN_REMOVED)
   }
 
   assert(!('expireInSeconds' in config) || config.expireInSeconds >= 1,
@@ -248,50 +244,27 @@ function applyMaintenanceConfig (config) {
         : 120
 }
 
-function applyArchiveConfig (config) {
-  assert(!('archiveIntervalSeconds' in config) || config.archiveIntervalSeconds >= 1,
-    'configuration assert: archiveIntervalSeconds must be at least every second')
-
-  assert(!('archiveIntervalMinutes' in config) || config.archiveIntervalMinutes >= 1,
-    'configuration assert: archiveIntervalMinutes must be at least every minute')
-
-  assert(!('archiveIntervalHours' in config) || config.archiveIntervalHours >= 1,
-    'configuration assert: archiveIntervalHours must be at least every hour')
-
-  assert(!('archiveIntervalDays' in config) || config.archiveIntervalDays >= 1,
-    'configuration assert: archiveIntervalDays must be at least every day')
-
-  const archiveInterval =
-    ('archiveIntervalDays' in config) ? `${config.archiveIntervalDays} days`
-      : ('archiveIntervalHours' in config) ? `${config.archiveIntervalHours} hours`
-        : ('archiveIntervalMinutes' in config) ? `${config.archiveIntervalMinutes} minutes`
-          : ('archiveIntervalSeconds' in config) ? `${config.archiveIntervalSeconds} seconds`
-            : '1 hour'
-
-  config.archiveInterval = archiveInterval
-}
-
 function applyDeleteConfig (config) {
-  assert(!('deleteIntervalSeconds' in config) || config.deleteIntervalSeconds >= 1,
-    'configuration assert: deleteIntervalSeconds must be at least every second')
+  assert(!('deleteAfterSeconds' in config) || config.deleteAfterSeconds >= 1,
+    'configuration assert: deleteAfterSeconds must be at least every second')
 
-  assert(!('deleteIntervalMinutes' in config) || config.deleteIntervalMinutes >= 1,
-    'configuration assert: deleteIntervalMinutes must be at least every minute')
+  assert(!('deleteAfterMinutes' in config) || config.deleteAfterMinutes >= 1,
+    'configuration assert: deleteAfterMinutes must be at least every minute')
 
-  assert(!('deleteIntervalHours' in config) || config.deleteIntervalHours >= 1,
-    'configuration assert: deleteIntervalHours must be at least every hour')
+  assert(!('deleteAfterHours' in config) || config.deleteAfterHours >= 1,
+    'configuration assert: deleteAfterHours must be at least every hour')
 
-  assert(!('deleteIntervalDays' in config) || config.deleteIntervalDays >= 1,
-    'configuration assert: deleteIntervalDays must be at least every day')
+  assert(!('deleteAfterDays' in config) || config.deleteAfterDays >= 1,
+    'configuration assert: deleteAfterDays must be at least every day')
 
-  const deleteInterval =
-    ('deleteIntervalDays' in config) ? `${config.deleteIntervalDays} days`
-      : ('deleteIntervalHours' in config) ? `${config.deleteIntervalHours} hours`
-        : ('deleteIntervalMinutes' in config) ? `${config.deleteIntervalMinutes} minutes`
-          : ('deleteIntervalSeconds' in config) ? `${config.deleteIntervalSeconds} seconds`
+  const deleteAfter =
+    ('deleteAfterDays' in config) ? `${config.deleteAfterDays} days`
+      : ('deleteAfterHours' in config) ? `${config.deleteAfterHours} hours`
+        : ('deleteAfterMinutes' in config) ? `${config.deleteAfterMinutes} minutes`
+          : ('deleteAfterSeconds' in config) ? `${config.deleteAfterSeconds} seconds`
             : '7 days'
 
-  config.deleteInterval = deleteInterval
+  config.deleteAfter = deleteAfter
 }
 
 function applyMonitoringConfig (config) {
@@ -305,6 +278,19 @@ function applyMonitoringConfig (config) {
     ('monitorStateIntervalMinutes' in config) ? config.monitorStateIntervalMinutes * 60
       : ('monitorStateIntervalSeconds' in config) ? config.monitorStateIntervalSeconds
         : null
+
+  const TEN_MINUTES_IN_SECONDS = 600
+
+  assert(!('clockMonitorIntervalSeconds' in config) || (config.clockMonitorIntervalSeconds >= 1 && config.clockMonitorIntervalSeconds <= TEN_MINUTES_IN_SECONDS),
+    'configuration assert: clockMonitorIntervalSeconds must be between 1 second and 10 minutes')
+
+  assert(!('clockMonitorIntervalMinutes' in config) || (config.clockMonitorIntervalMinutes >= 1 && config.clockMonitorIntervalMinutes <= 10),
+    'configuration assert: clockMonitorIntervalMinutes must be between 1 and 10')
+
+  config.clockMonitorIntervalSeconds =
+    ('clockMonitorIntervalMinutes' in config) ? config.clockMonitorIntervalMinutes * 60
+      : ('clockMonitorIntervalSeconds' in config) ? config.clockMonitorIntervalSeconds
+        : TEN_MINUTES_IN_SECONDS
 }
 
 function applyUuidConfig (config) {
@@ -312,9 +298,16 @@ function applyUuidConfig (config) {
   config.uuid = config.uuid || 'v1'
 }
 
-function emitWarning (warning) {
-  if (!warning.warned) {
+function warnClockSkew (message) {
+  emitWarning(WARNINGS.CLOCK_SKEW, message, { force: true })
+}
+
+function emitWarning (warning, message, options = {}) {
+  const { force } = options
+
+  if (force || !warning.warned) {
     warning.warned = true
-    process.emitWarning(warning.message, warning.type, warning.code)
+    message = `${warning.message} ${message || ''}`
+    process.emitWarning(message, warning.type, warning.code)
   }
 }

@@ -169,7 +169,7 @@ describe('failure', function () {
     const job = await boss.fetchCompleted(queue)
 
     assert.strictEqual(job.data.state, 'failed')
-    assert.strictEqual(job.data.response.message.indexOf(message), 0)
+    assert(job.data.response.message.includes(message))
 
     await boss.stop()
   })

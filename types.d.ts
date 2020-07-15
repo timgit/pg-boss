@@ -23,18 +23,20 @@ declare namespace PgBoss {
     monitorStateIntervalMinutes?: number;
   }
 
+  interface SchedulingOptions {
+    noScheduling?: boolean;
+
+    clockMonitorIntervalSeconds?: number;
+    clockMonitorIntervalMinutes?: number;
+  }
+
   interface MaintenanceOptions {
     noSupervisor?: boolean;
-
-    archiveIntervalSeconds?: number;
-    archiveIntervalMinutes?: number;
-    archiveIntervalHours?: number;
-    archiveIntervalDays?: number;
-
-    deleteIntervalSeconds?: number;
-    deleteIntervalMinutes?: number;
-    deleteIntervalHours?: number;
-    deleteIntervalDays?: number;
+    
+    deleteAfterSeconds?: number;
+    deleteAfterMinutes?: number;
+    deleteAfterHours?: number;
+    deleteAfterDays?: number;
 
     maintenanceIntervalSeconds?: number;
     maintenanceIntervalMinutes?: number;
@@ -43,6 +45,7 @@ declare namespace PgBoss {
   type ConstructorOptions =
     DatabaseOptions
       & QueueOptions
+      & SchedulingOptions
       & MaintenanceOptions
       & ExpirationOptions
       & RetentionOptions
@@ -77,11 +80,9 @@ declare namespace PgBoss {
     singletonNextSlot?: boolean;
   }
 
-  type PublishOptions =
-    JobOptions
-      & ExpirationOptions
-      & RetentionOptions
-      & RetryOptions
+  type PublishOptions = JobOptions & ExpirationOptions & RetentionOptions & RetryOptions
+
+  type ScheduleOptions = PublishOptions & { tz?: string }
 
   interface JobPollingOptions {
     newJobCheckInterval?: number;
@@ -113,6 +114,13 @@ declare namespace PgBoss {
     name: string;
     data?: object;
     options?: PublishOptions;
+  }
+
+  interface Schedule {
+    name: string;
+    cron: string;
+    data?: object;
+    options?: ScheduleOptions;
   }
 
   interface JobDoneCallback<T> {
@@ -197,8 +205,6 @@ declare class PgBoss {
 
   start(): Promise<PgBoss>;
   stop(): Promise<void>;
-  connect(): Promise<PgBoss>;
-  disconnect(): Promise<void>;
 
   publish(request: PgBoss.Request): Promise<string | null>;
   publish(name: string, data: object): Promise<string | null>;
@@ -248,12 +254,19 @@ declare class PgBoss {
   fail(id: string, data: object): Promise<void>;
   fail(ids: string[]): Promise<void>;
 
+  getQueueSize(name: string, options?: object): Promise<number>;
+
   deleteQueue(name: string): Promise<void>;
   deleteAllQueues(): Promise<void>;
+  clearStorage(): Promise<void>;
 
   archive(): Promise<void>;
   purge(): Promise<void>;
   expire(): Promise<void>;
+
+  schedule(name: string, cron: string, data?: object, options?: PgBoss.ScheduleOptions): Promise<void>;
+  unschedule(name: string): Promise<void>;
+  getSchedules(): Promise<PgBoss.Schedule[]>;
 }
 
 export = PgBoss;

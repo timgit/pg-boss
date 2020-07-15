@@ -78,6 +78,36 @@ function getAll (schema, config) {
 
   return [
     {
+      release: '5.0.0',
+      version: 14,
+      previous: 13,
+      install: [
+          `ALTER TABLE ${schema}.version ADD maintained_on timestamp with time zone`
+      ],
+      uninstall: [
+          `ALTER TABLE ${schema}.version DROP COLUMN maintained_on`
+      ]
+    },
+    {
+      release: '5.0.0-beta1',
+      version: 13,
+      previous: 12,
+      install: [
+          `CREATE TABLE ${schema}.schedule (
+            name text primary key,
+            cron text not null,
+            timezone text,
+            data jsonb,
+            options jsonb,
+            created_on timestamp with time zone not null default now(),
+            updated_on timestamp with time zone not null default now()
+          )`
+      ],
+      uninstall: [
+          `DROP TABLE ${schema}.schedule`
+      ]
+    },
+    {
       release: '4.0.0',
       version: 12,
       previous: 11,

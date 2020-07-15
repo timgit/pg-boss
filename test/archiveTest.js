@@ -4,7 +4,6 @@ const Promise = require('bluebird')
 
 describe('archive', function () {
   const defaults = {
-    archiveIntervalSeconds: 1,
     maintenanceIntervalSeconds: 1
   }
 
@@ -20,7 +19,7 @@ describe('archive', function () {
 
     await boss.complete(jobId)
 
-    await Promise.delay(3000)
+    await Promise.delay(7000)
 
     const archivedJob = await helper.getArchivedJobById(config.schema, jobId)
 
@@ -38,7 +37,7 @@ describe('archive', function () {
 
     const jobId = await boss.publish(queue, null, { retentionSeconds: 1 })
 
-    await Promise.delay(5000)
+    await Promise.delay(7000)
 
     const archivedJob = await helper.getArchivedJobById(config.schema, jobId)
 
@@ -56,7 +55,7 @@ describe('archive', function () {
 
     const jobId = await boss.publish(queue)
 
-    await Promise.delay(5000)
+    await Promise.delay(7000)
 
     const archivedJob = await helper.getArchivedJobById(config.schema, jobId)
 

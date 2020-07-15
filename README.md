@@ -34,31 +34,24 @@ async function someAsyncJobHandler(job) {
 
 pg-boss is a job queue built in Node.js on top of PostgreSQL in order to provide background processing and reliable asynchronous execution to Node.js applications.
 
-Why would you consider using this queue over others? pg-boss is actually a light abstraction over features added in PostgreSQL 9.5
-(specifically [SKIP LOCKED](http://blog.2ndquadrant.com/what-is-select-skip-locked-for-in-postgresql-9-5) and upserts)
-which significantly enhanced its ability to act as a reliable, distributed message queue. I wrote this to remove a dependency on Redis (via the kue package), consolidating systems I have to support in production as well as upgrading to guaranteed message processing (hint: [Redis persistence docs](https://redis.io/topics/persistence#ok-so-what-should-i-use)).
+pg-boss relies on [SKIP LOCKED](http://blog.2ndquadrant.com/what-is-select-skip-locked-for-in-postgresql-9-5), a feature introduced in PostgreSQL 9.5 written specifically for message queues, in order to resolve record locking challenges inherent with relational databases. This brings the safety of guaranteed atomic commits of a relational database to your asynchronous job processing.
 
-This will likely cater the most to teams already familiar with the simplicity of relational database semantics and operations (querying and backups, for example).
+This will likely cater the most to teams already familiar with the simplicity of relational database semantics and operations (SQL, querying, and backups). It will be especially useful to those already relying on PostgreSQL that want to limit how many systems are required to monitor and support in their architecture.
 
 ## Features
-* Guaranteed delivery and finalizing of jobs using a promise API
-* Delayed jobs
-* Job retries (opt-in exponential backoff)
-* Job throttling (unique jobs, rate limiting and/or debouncing)
-* Job batching for high volume use cases
-* Backpressure-compatible subscriptions
-* Configurable job concurrency
-* Distributed and/or clustered workers
-* Completion subscriptions to support orchestrations/sagas
-* On-demand job fetching and completion for external integrations (such as web APIs)
+* Backpressure-compatible subscriptions for monitoring queues on an interval (with configurable concurrency)
+* Distributed cron-based job scheduling with database clock synchronization
+* Job deferral, retries (with exponential backoff), throttling, rate limiting, debouncing
+* Job Completion subscriptions for orchestrations/sagas
+* Direct publish, fetch and completion APIs for custom integrations
+* Batching API for chunked job fetching
+* Direct table access for bulk loads via COPY or INSERT
 * Multi-master capable using tools such as Kubernetes ReplicaSets
-* Direct table access for bulk loading via COPY or other advanced usage
 * Automatic provisioning of required storage into a dedicated schema
-* Automatic monitoring for expired jobs
-* Automatic archiving for completed jobs
+* Automatic maintenance operations to manage table growth
 
 ## Requirements
-* Node 8 or higher
+* Node 10 or higher
 * PostgreSQL 9.5 or higher
 
 ## Documentation

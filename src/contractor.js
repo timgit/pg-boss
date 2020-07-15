@@ -46,20 +46,12 @@ class Contractor {
     }
   }
 
-  async connect () {
-    const installed = await this.isInstalled()
-    assert(installed, `pg-boss is not installed in schema ${this.config.schema}. Running start() will automatically create it.`)
-
-    const version = await this.version()
-    assert((schemaVersion === version), `pg-boss database schema version ${version} is installed in this database, but this package expects v${schemaVersion}.`)
-  }
-
   async create () {
     try {
       const commands = plans.create(this.config.schema, schemaVersion)
       await this.db.executeSql(commands)
     } catch (err) {
-      assert(err.message.indexOf(plans.CREATE_RACE_MESSAGE) > -1, err)
+      assert(err.message.includes(plans.CREATE_RACE_MESSAGE), err)
     }
   }
 
@@ -68,7 +60,7 @@ class Contractor {
       const commands = migrationStore.migrate(this.config, version, this.migrations)
       await this.db.executeSql(commands)
     } catch (err) {
-      assert(err.message.indexOf(plans.MIGRATE_RACE_MESSAGE) > -1, err)
+      assert(err.message.includes(plans.MIGRATE_RACE_MESSAGE), err)
     }
   }
 

@@ -36,6 +36,8 @@ class Boss extends EventEmitter {
     this.expireCommand = plans.expire(config.schema)
     this.archiveCommand = plans.archive(config.schema)
     this.purgeCommand = plans.purge(config.schema)
+    this.getMaintenanceTimeCommand = plans.getMaintenanceTime(config.schema)
+    this.setMaintenanceTimeCommand = plans.setMaintenanceTime(config.schema)
     this.countStatesCommand = plans.countStates(config.schema)
 
     this.functions = [
@@ -48,12 +50,18 @@ class Boss extends EventEmitter {
   }
 
   async supervise () {
+    this.metaMonitor()
+
     await this.manager.deleteQueue(plans.completedJobPrefix + queues.MAINTENANCE)
     await this.manager.deleteQueue(queues.MAINTENANCE)
 
     await this.maintenanceAsync()
 
-    await this.manager.subscribe(queues.MAINTENANCE, { batchSize: 10 }, (jobs) => this.onMaintenance(jobs))
+    const maintenanceSubscribeOptions = {
+      newJobCheckIntervalSeconds: Math.max(1, this.maintenanceIntervalSeconds / 2)
+    }
+
+    await this.manager.subscribe(queues.MAINTENANCE, maintenanceSubscribeOptions, (job) => this.onMaintenance(job))
 
     if (this.monitorStates) {
       await this.manager.deleteQueue(plans.completedJobPrefix + queues.MONITOR_STATES)
@@ -61,16 +69,31 @@ class Boss extends EventEmitter {
 
       await this.monitorStatesAsync()
 
-      await this.manager.subscribe(queues.MONITOR_STATES, { batchSize: 10 }, (jobs) => this.onMonitorStates(jobs))
+      const monitorStatesSubscribeOptions = {
+        newJobCheckIntervalSeconds: Math.max(1, this.monitorIntervalSeconds / 2)
+      }
+
+      await this.manager.subscribe(queues.MONITOR_STATES, monitorStatesSubscribeOptions, (job) => this.onMonitorStates(job))
     }
   }
 
-  async maintenanceAsync () {
-    const options = {
-      startAfter: this.maintenanceIntervalSeconds,
-      retentionSeconds: this.maintenanceIntervalSeconds * 2,
+  metaMonitor () {
+    this.metaMonitorInterval = setInterval(async () => {
+      const { secondsAgo } = await this.getMaintenanceTime()
+
+      if (secondsAgo > this.maintenanceIntervalSeconds) {
+        await this.maintenanceAsync()
+      }
+    }, this.maintenanceIntervalSeconds * 2 * 1000)
+  }
+
+  async maintenanceAsync (options = {}) {
+    const { startAfter } = options
+
+    options = {
+      startAfter,
+      retentionSeconds: this.maintenanceIntervalSeconds * 4,
       singletonKey: queues.MAINTENANCE,
-      singletonSeconds: this.maintenanceIntervalSeconds * 2,
       retryLimit: 5,
       retryBackoff: true
     }
@@ -78,18 +101,19 @@ class Boss extends EventEmitter {
     await this.manager.publish(queues.MAINTENANCE, null, options)
   }
 
-  async monitorStatesAsync () {
-    const options = {
-      startAfter: this.monitorIntervalSeconds,
-      retentionSeconds: this.monitorIntervalSeconds * 2,
-      singletonKey: queues.MONITOR_STATES,
-      singletonSeconds: this.monitorIntervalSeconds * 2
+  async monitorStatesAsync (options = {}) {
+    const { startAfter } = options
+
+    options = {
+      startAfter,
+      retentionSeconds: this.monitorIntervalSeconds * 4,
+      singletonKey: queues.MONITOR_STATES
     }
 
     await this.manager.publish(queues.MONITOR_STATES, null, options)
   }
 
-  async onMaintenance (jobs) {
+  async onMaintenance (job) {
     try {
       if (this.config.__test__throw_maint) {
         throw new Error('__test__throw_maint')
@@ -101,17 +125,19 @@ class Boss extends EventEmitter {
       this.emitValue(events.archived, await this.archive())
       this.emitValue(events.deleted, await this.purge())
 
-      await this.manager.complete(jobs.map(j => j.id))
-
       const ended = Date.now()
 
-      this.emit('maintenance', { count: jobs.length, ms: ended - started })
+      await this.setMaintenanceTime()
+
+      this.emit('maintenance', { ms: ended - started })
+
+      if (!this.stopped) {
+        await job.done() // pre-complete to bypass throttling
+        await this.maintenanceAsync({ startAfter: this.maintenanceIntervalSeconds })
+      }
     } catch (err) {
       this.emit(events.error, err)
-    }
-
-    if (!this.stopped) {
-      await this.maintenanceAsync()
+      throw err
     }
   }
 
@@ -121,7 +147,7 @@ class Boss extends EventEmitter {
     }
   }
 
-  async onMonitorStates (jobs) {
+  async onMonitorStates (job) {
     try {
       if (this.config.__test__throw_monitor) {
         throw new Error('__test__throw_monitor')
@@ -131,18 +157,21 @@ class Boss extends EventEmitter {
 
       this.emit(events.monitorStates, states)
 
-      await this.manager.complete(jobs.map(j => j.id))
+      if (!this.stopped && this.monitorStates) {
+        await job.done() // pre-complete to bypass throttling
+        await this.monitorStatesAsync({ startAfter: this.monitorIntervalSeconds })
+      }
     } catch (err) {
       this.emit(events.error, err)
-    }
-
-    if (!this.stopped && this.monitorStates) {
-      await this.monitorStatesAsync()
     }
   }
 
   async stop () {
     if (!this.stopped) {
+      if (this.metaMonitorInterval) {
+        clearInterval(this.metaMonitorInterval)
+      }
+
       this.stopped = true
     }
   }
@@ -178,13 +207,27 @@ class Boss extends EventEmitter {
   }
 
   async archive () {
-    const { rowCount } = await this.db.executeSql(this.archiveCommand, [this.config.archiveInterval])
+    const { rowCount } = await this.db.executeSql(this.archiveCommand)
     return rowCount
   }
 
   async purge () {
-    const { rowCount } = await this.db.executeSql(this.purgeCommand, [this.config.deleteInterval])
+    const { rowCount } = await this.db.executeSql(this.purgeCommand, [this.config.deleteAfter])
     return rowCount
+  }
+
+  async setMaintenanceTime () {
+    await this.db.executeSql(this.setMaintenanceTimeCommand)
+  }
+
+  async getMaintenanceTime () {
+    const { rows } = await this.db.executeSql(this.getMaintenanceTimeCommand)
+
+    let { maintained_on: maintainedOn, seconds_ago: secondsAgo } = rows[0]
+
+    secondsAgo = secondsAgo !== null ? parseInt(secondsAgo) : this.maintenanceIntervalSeconds * 2
+
+    return { maintainedOn, secondsAgo }
   }
 
   getQueueNames () {

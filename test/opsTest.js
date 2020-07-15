@@ -14,25 +14,19 @@ describe('ops', function () {
 
   it('should expire manually', async function () {
     const boss = await helper.start({ ...this.test.bossConfig, ...defaults })
-    await boss.stop()
-    await boss.connect()
     await boss.expire()
-    await boss.disconnect()
+    await boss.stop()
   })
 
   it('should archive manually', async function () {
     const boss = await helper.start({ ...this.test.bossConfig, ...defaults })
-    await boss.stop()
-    await boss.connect()
     await boss.archive()
-    await boss.disconnect()
+    await boss.stop()
   })
 
   it('should purge the archive manually', async function () {
     const boss = await helper.start({ ...this.test.bossConfig, ...defaults })
-    await boss.stop()
-    await boss.connect()
     await boss.purge()
-    await boss.disconnect()
+    await boss.stop()
   })
 })

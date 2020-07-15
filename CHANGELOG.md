@@ -1,5 +1,45 @@
 # Changes
 
+## 5.0.0 :tada:
+
+The pg-boss team hired a timekeeper and now has distributed cron-based scheduling! This works across all instances based on the database server's time as a central clock.
+
+  New functions:
+
+  - `schedule(name, cron, data, options)`
+  - `unschedule(name)`
+  - `getSchedules()`
+
+  New constructor configuration properties:
+
+  - `clockMonitorIntervalSeconds`
+  - `clockMonitorIntervalMinutes`
+  - `noScheduling`
+
+### Changes
+
+- MAJOR: Removed `connect()` and `disconnect()` to simplify usage since these functions became obsolete in v4.  If you had relied on secondary instances running with `connect()`, you should switch to `start()`. Since `start()` is multi-master, it's safe to let it monitor and submit maintenance work, but if you need to opt out of this for whatever reason on a particular instance, set the `noSupervisor` and `noScheduling` constructor options to `true`.
+- MAJOR: Dropped `poolSize` in constructor database config to standardize on `max` property used in the pg package.
+- MAJOR: Dropped Node 8 support and from Travis CI builds.
+- MAJOR: Adjusted maintenance configuration settings for clarity. For example, some operations run on an interval and contain the word "interval". However, other settings are time-based policies evaluated only after maintenance is run. These also contained "interval" which made it challenging to explain the differences between them.
+  - Removed properties related to moving completed jobs to the archive table. Completed jobs will be moved to the archive table based on the maintenance interval going forward.
+
+    | Old | New |
+    | - | - |
+    | `archiveIntervalSeconds` | ** REMOVED ** |
+    | `archiveIntervalMinutes` | ** REMOVED ** |
+    | `archiveIntervalHours` | ** REMOVED ** |
+    | `archiveIntervalDays` | ** REMOVED ** |
+
+  - Renamed properties for controlling when to delete jobs from the archive table
+  
+    | Old | New |
+    | - | - |
+    | `deleteIntervalSeconds` | `deleteAfterSeconds` |
+    | `deleteIntervalMinutes` | `deleteAfterMinutes` |
+    | `deleteIntervalHours` | `deleteAfterHours` |
+    | `deleteIntervalDays` | `deleteAfterDays` |
+
 ## 4.3.4
 
 - Typescript types fix for db connections.  Includes PR from @mlegenhausen

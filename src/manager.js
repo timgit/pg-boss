@@ -213,13 +213,27 @@ class Manager extends EventEmitter {
     }
 
     // delay starting by the offset to honor throttling config
-    options.startAfter = singletonSeconds
+    // try to get as close to second 0 for next slot
+    options.startAfter = this.getDebounceStartAfter(singletonSeconds, this.timekeeper.clockSkew)
+
     // toggle off next slot config for round 2
     options.singletonNextSlot = false
 
     singletonOffset = singletonSeconds
 
     return this.createJob(name, data, options, singletonOffset)
+  }
+
+  getDebounceStartAfter (singletonSeconds, clockOffset) {
+    const debounceInterval = singletonSeconds * 1000
+
+    const now = Date.now() + clockOffset
+
+    const slot = Math.floor(now / debounceInterval) * debounceInterval
+
+    const startAfter = singletonSeconds - Math.floor((now - slot) / 1000)
+
+    return startAfter
   }
 
   async fetch (name, batchSize, options = {}) {

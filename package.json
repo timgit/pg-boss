@@ -1,22 +1,23 @@
 {
   "name": "pg-boss",
-  "version": "4.3.4",
+  "version": "5.0.0",
   "description": "Queueing jobs in Node.js using PostgreSQL like a boss",
   "main": "./src/index.js",
   "engines": {
-    "node": ">=8.0.0",
-    "npm": ">=5.0.0"
+    "node": ">=10.0.0"
   },
   "dependencies": {
     "bluebird": "^3.7.2",
-    "pg": "^8.0.3",
-    "uuid": "^8.0.0"
+    "cron-parser": "^2.15.0",
+    "pg": "^8.3.0",
+    "uuid": "^8.2.0"
   },
   "devDependencies": {
     "coveralls": "^3.1.0",
-    "mocha": "^7.1.2",
-    "nyc": "^15.0.1",
-    "standard": "^14.3.3"
+    "mocha": "^8.0.1",
+    "moment-timezone": "^0.5.31",
+    "nyc": "^15.1.0",
+    "standard": "^14.3.4"
   },
   "scripts": {
     "test": "standard && mocha --exit --no-warnings",
