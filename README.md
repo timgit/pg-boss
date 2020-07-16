@@ -42,11 +42,11 @@ This will likely cater the most to teams already familiar with the simplicity of
 * Backpressure-compatible subscriptions for monitoring queues on an interval (with configurable concurrency)
 * Distributed cron-based job scheduling with database clock synchronization
 * Job deferral, retries (with exponential backoff), throttling, rate limiting, debouncing
-* Job Completion subscriptions for orchestrations/sagas
+* Job completion subscriptions for orchestrations/sagas
 * Direct publish, fetch and completion APIs for custom integrations
 * Batching API for chunked job fetching
 * Direct table access for bulk loads via COPY or INSERT
-* Multi-master capable using tools such as Kubernetes ReplicaSets
+* Multi-master compatible when running multiple instances (for example, in a Kubernetes ReplicaSet)
 * Automatic provisioning of required storage into a dedicated schema
 * Automatic maintenance operations to manage table growth
 

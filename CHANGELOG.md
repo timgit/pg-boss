@@ -1,5 +1,9 @@
 # Changes
 
+## 5.0.1
+
+- Dependenabot PR for lodash dep
+
 ## 5.0.0 :tada:
 
 The pg-boss team hired a timekeeper and now has distributed cron-based scheduling! This works across all instances based on the database server's time as a central clock.
