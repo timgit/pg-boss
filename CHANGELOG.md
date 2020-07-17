@@ -2,7 +2,7 @@
 
 ## 5.0.1
 
-- Dependenabot PR for lodash dep
+- Dependencies PR for lodash dep
 
 ## 5.0.0 :tada:
 
