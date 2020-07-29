@@ -1,5 +1,9 @@
 # Changes
 
+## 5.0.2
+
+- Updated queue maintenance monitoring to abort stalled active jobs
+
 ## 5.0.1
 
 - Dependencies PR for lodash dep
