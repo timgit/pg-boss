@@ -1,5 +1,6 @@
 const EventEmitter = require('events')
 const plans = require('./plans')
+const { states } = require('./plans')
 
 const queues = {
   MAINTENANCE: '__pgboss__maintenance',
@@ -81,7 +82,8 @@ class Boss extends EventEmitter {
     this.metaMonitorInterval = setInterval(async () => {
       const { secondsAgo } = await this.getMaintenanceTime()
 
-      if (secondsAgo > this.maintenanceIntervalSeconds) {
+      if (secondsAgo > this.maintenanceIntervalSeconds * 2) {
+        await this.manager.deleteQueue(queues.MONITOR_STATES, { before: states.completed })
         await this.maintenanceAsync()
       }
     }, this.maintenanceIntervalSeconds * 2 * 1000)

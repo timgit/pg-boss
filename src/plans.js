@@ -7,7 +7,7 @@ const states = {
   cancelled: 'cancelled',
   failed: 'failed'
 }
-
+const assert = require('assert')
 const completedJobPrefix = `__state__${states.completed}__`
 
 const MUTEX = 1337968055000
@@ -148,12 +148,16 @@ function getMaintenanceTime (schema) {
   return `SELECT maintained_on, EXTRACT( EPOCH FROM (now() - maintained_on) ) seconds_ago FROM ${schema}.version`
 }
 
-function deleteQueue (schema) {
-  return `DELETE FROM ${schema}.job WHERE name = $1 and state < '${states.active}'`
+function deleteQueue (schema, options = {}) {
+  options.before = options.before || states.active
+  assert(options.before in states, `${options.before} is not a valid state`)
+  return `DELETE FROM ${schema}.job WHERE name = $1 and state < '${options.before}'`
 }
 
-function deleteAllQueues (schema) {
-  return `DELETE FROM ${schema}.job WHERE state < '${states.active}'`
+function deleteAllQueues (schema, options = {}) {
+  options.before = options.before || states.active
+  assert(options.before in states, `${options.before} is not a valid state`)
+  return `DELETE FROM ${schema}.job WHERE state < '${options.before}'`
 }
 
 function clearStorage (schema) {
@@ -162,6 +166,7 @@ function clearStorage (schema) {
 
 function getQueueSize (schema, options = {}) {
   options.before = options.before || states.active
+  assert(options.before in states, `${options.before} is not a valid state`)
   return `SELECT count(*) as count FROM ${schema}.job WHERE name = $1 AND state < '${options.before}'`
 }
 
