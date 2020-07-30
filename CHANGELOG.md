@@ -1,5 +1,13 @@
 # Changes
 
+## 5.0.3
+
+Reintroduced archive delay for completed jobs to restore reliable throttling and debouncing.
+
+- `publish()` will now throw if you use a throttling or debouncing interval set higher than the archive delay.
+- Added `archiveCompletedAfterSeconds` constructor option to allow overriding the default of 12 hours.  If you set this lower than 60s, a warning will be emitted and cron processing will be disabled, as this feature relies on debouncing once a minute to operate properly.
+- Fixed maintenance queue monitoring bug introduced in 5.0.2
+
 ## 5.0.2
 
 - Updated queue maintenance monitoring to abort stalled active jobs
