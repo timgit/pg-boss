@@ -65,6 +65,7 @@ describe('deleteQueue', function () {
 
   it('clearStorage() should empty both job storage tables', async function () {
     const defaults = {
+      archiveCompletedAfterSeconds: 1,
       maintenanceIntervalSeconds: 1
     }
 

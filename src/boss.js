@@ -83,7 +83,7 @@ class Boss extends EventEmitter {
       const { secondsAgo } = await this.getMaintenanceTime()
 
       if (secondsAgo > this.maintenanceIntervalSeconds * 2) {
-        await this.manager.deleteQueue(queues.MONITOR_STATES, { before: states.completed })
+        await this.manager.deleteQueue(queues.MAINTENANCE, { before: states.completed })
         await this.maintenanceAsync()
       }
     }, this.maintenanceIntervalSeconds * 2 * 1000)
@@ -95,9 +95,7 @@ class Boss extends EventEmitter {
     options = {
       startAfter,
       retentionSeconds: this.maintenanceIntervalSeconds * 4,
-      singletonKey: queues.MAINTENANCE,
-      retryLimit: 5,
-      retryBackoff: true
+      singletonKey: queues.MAINTENANCE
     }
 
     await this.manager.publish(queues.MAINTENANCE, null, options)
@@ -209,7 +207,7 @@ class Boss extends EventEmitter {
   }
 
   async archive () {
-    const { rowCount } = await this.db.executeSql(this.archiveCommand)
+    const { rowCount } = await this.db.executeSql(this.archiveCommand, [this.config.archiveInterval])
     return rowCount
   }
 
@@ -227,7 +225,7 @@ class Boss extends EventEmitter {
 
     let { maintained_on: maintainedOn, seconds_ago: secondsAgo } = rows[0]
 
-    secondsAgo = secondsAgo !== null ? parseInt(secondsAgo) : this.maintenanceIntervalSeconds * 2
+    secondsAgo = secondsAgo !== null ? parseFloat(secondsAgo) : this.maintenanceIntervalSeconds * 10
 
     return { maintainedOn, secondsAgo }
   }

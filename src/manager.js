@@ -28,9 +28,6 @@ class Manager extends EventEmitter {
     this.completeJobsCommand = plans.completeJobs(config.schema)
     this.cancelJobsCommand = plans.cancelJobs(config.schema)
     this.failJobsCommand = plans.failJobs(config.schema)
-    this.deleteQueueCommand = plans.deleteQueue(config.schema)
-    this.deleteAllQueuesCommand = plans.deleteAllQueues(config.schema)
-    this.clearStorageCommand = plans.clearStorage(config.schema)
 
     // exported api to index
     this.functions = [
@@ -311,17 +308,22 @@ class Manager extends EventEmitter {
     return this.mapCompletionResponse(ids, result)
   }
 
-  async deleteQueue (queue) {
+  async deleteQueue (queue, options) {
     assert(queue, 'Missing queue name argument')
-    return this.db.executeSql(this.deleteQueueCommand, [queue])
+    const sql = plans.deleteQueue(this.config.schema, options)
+    const result = await this.db.executeSql(sql, [queue])
+    return result.rowCount
   }
 
-  async deleteAllQueues () {
-    return this.db.executeSql(this.deleteAllQueuesCommand)
+  async deleteAllQueues (options) {
+    const sql = plans.deleteAllQueues(this.config.schema, options)
+    const result = await this.db.executeSql(sql)
+    return result.rowCount
   }
 
   async clearStorage () {
-    return this.db.executeSql(this.clearStorageCommand)
+    const sql = plans.clearStorage(this.config.schema)
+    await this.db.executeSql(sql)
   }
 
   async getQueueSize (queue, options) {

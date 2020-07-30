@@ -16,6 +16,10 @@ const WARNINGS = {
   CLOCK_SKEW: {
     message: 'Timekeeper detected clock skew between this instance and the database server. This will not affect scheduling operations, but this warning is shown any time the skew exceeds 60 seconds.',
     code: 'pg-boss-w02'
+  },
+  CRON_DISABLED: {
+    message: 'Archive interval is set less than 60s.  Cron processing is disabled.',
+    code: 'pg-boss-w03'
   }
 }
 
@@ -67,6 +71,8 @@ function checkPublishArgs (args, defaults) {
       : (singletonMinutes > 0) ? singletonMinutes * 60
         : (singletonSeconds > 0) ? singletonSeconds
           : null
+
+  assert(!singletonSeconds || singletonSeconds <= defaults.archiveSeconds, `throttling interval ${singletonSeconds}s cannot exceed archive interval ${defaults.archiveSeconds}s`)
 
   return { name, data, options }
 }
@@ -127,6 +133,7 @@ function getConfig (value) {
 
   applyDatabaseConfig(config)
   applyMaintenanceConfig(config)
+  applyArchiveConfig(config)
   applyDeleteConfig(config)
   applyMonitoringConfig(config)
   applyUuidConfig(config)
@@ -147,6 +154,20 @@ function applyDatabaseConfig (config) {
   }
 
   config.schema = config.schema || 'pgboss'
+}
+
+function applyArchiveConfig (config) {
+  const ARCHIVE_DEFAULT = 60 * 60 * 12
+
+  assert(!('archiveCompletedAfterSeconds' in config) || config.archiveCompletedAfterSeconds >= 1,
+    'configuration assert: archiveCompletedAfterSeconds must be at least every second and less than ')
+
+  config.archiveSeconds = config.archiveCompletedAfterSeconds || ARCHIVE_DEFAULT
+  config.archiveInterval = `${config.archiveSeconds} seconds`
+
+  if (config.archiveSeconds < 60) {
+    emitWarning(WARNINGS.CRON_DISABLED)
+  }
 }
 
 function applyRetentionConfig (config, defaults) {

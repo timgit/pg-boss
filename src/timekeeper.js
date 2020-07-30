@@ -40,7 +40,10 @@ class Timekeeper extends EventEmitter {
 
   async start () {
     await this.cacheClockSkew()
-    await this.watch()
+
+    if (this.config.archiveSeconds >= 60) {
+      await this.watch()
+    }
 
     this.monitorInterval = setInterval(() => this.cacheClockSkew(), this.monitorIntervalMs)
     this.stopped = false
