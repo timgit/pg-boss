@@ -210,7 +210,6 @@ class Manager extends EventEmitter {
     }
 
     // delay starting by the offset to honor throttling config
-    // try to get as close to second 0 for next slot
     options.startAfter = this.getDebounceStartAfter(singletonSeconds, this.timekeeper.clockSkew)
 
     // toggle off next slot config for round 2
@@ -228,7 +227,12 @@ class Manager extends EventEmitter {
 
     const slot = Math.floor(now / debounceInterval) * debounceInterval
 
-    const startAfter = singletonSeconds - Math.floor((now - slot) / 1000)
+    // prevent startAfter=0 during debouncing
+    let startAfter = (singletonSeconds - Math.floor((now - slot) / 1000)) || 1
+
+    if (singletonSeconds > 1) {
+      startAfter++
+    }
 
     return startAfter
   }
