@@ -1,5 +1,9 @@
 # Changes
 
+## 5.0.4
+
+- Fixed debouncing offset calculation which would sometimes cause an interval overlap.  This was causing cron processing to be paused.  
+
 ## 5.0.3
 
 Reintroduced archive delay for completed jobs to restore reliable throttling and debouncing.
