@@ -61,17 +61,13 @@ class Timekeeper extends EventEmitter {
   }
 
   async cacheClockSkew () {
-    const start = Date.now()
-
     const { rows } = await this.db.executeSql(this.getTimeCommand)
 
-    const end = Date.now()
+    const local = Date.now()
 
-    const latency = end - start
+    const dbTime = parseFloat(rows[0].time)
 
-    const dbTime = Math.round(parseFloat(rows[0].time) - (latency / 2))
-
-    const skew = dbTime - start
+    const skew = dbTime - local
 
     const skewSeconds = Math.abs(skew) / 1000
 

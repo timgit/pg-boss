@@ -238,7 +238,7 @@ function unschedule (schema) {
 }
 
 function getTime () {
-  return `SELECT date_part('epoch', now()) * 1000 as time ${''}`
+  return "SELECT round(date_part('epoch', now()) * 1000) as time"
 }
 
 function getVersion (schema) {
