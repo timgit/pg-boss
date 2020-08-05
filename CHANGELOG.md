@@ -1,5 +1,9 @@
 # Changes
 
+## 5.0.5
+
+- Removed latency offset calculation during clock skew detection.  This was causing cron processing to be paused whenever a significant wait time was required to acquire a connection from the pool.
+
 ## 5.0.4
 
 - Fixed debouncing offset calculation which would sometimes cause an interval overlap.  This was causing cron processing to be paused.  
