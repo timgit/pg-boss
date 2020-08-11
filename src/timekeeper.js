@@ -30,6 +30,8 @@ class Timekeeper extends EventEmitter {
     this.getSchedulesCommand = plans.getSchedules(config.schema)
     this.scheduleCommand = plans.schedule(config.schema)
     this.unscheduleCommand = plans.unschedule(config.schema)
+    this.getCronTimeCommand = plans.getCronTime(config.schema)
+    this.setCronTimeCommand = plans.setCronTime(config.schema)
 
     this.functions = [
       this.schedule,
@@ -45,7 +47,9 @@ class Timekeeper extends EventEmitter {
       await this.watch()
     }
 
-    this.monitorInterval = setInterval(() => this.cacheClockSkew(), this.monitorIntervalMs)
+    this.skewMonitorInterval = setInterval(() => this.cacheClockSkew(), this.monitorIntervalMs)
+    this.cronMonitorInterval = setInterval(() => this.monitorCron(), 60)
+
     this.stopped = false
   }
 
@@ -53,10 +57,23 @@ class Timekeeper extends EventEmitter {
     if (!this.stopped) {
       this.stopped = true
 
-      if (this.monitorInterval) {
-        clearInterval(this.monitorInterval)
-        this.monitorInterval = null
+      if (this.skewMonitorInterval) {
+        clearInterval(this.skewMonitorInterval)
+        this.skewMonitorInterval = null
       }
+
+      if (this.cronMonitorInterval) {
+        clearInterval(this.cronMonitorInterval)
+        this.cronMonitorInterval = null
+      }
+    }
+  }
+
+  async monitorCron () {
+    const { secondsAgo } = await this.getCronTime()
+
+    if (secondsAgo > 60) {
+      await this.cronMonitorAsync()
     }
   }
 
@@ -111,6 +128,8 @@ class Timekeeper extends EventEmitter {
       if (sending.length) {
         await Promise.map(sending, it => this.send(it), { concurrency: 5 })
       }
+
+      await this.setCronTime()
     } catch (err) {
       this.emit(this.events.error, err)
     }
@@ -167,6 +186,20 @@ class Timekeeper extends EventEmitter {
   async unschedule (name) {
     const { rowCount } = await this.db.executeSql(this.unscheduleCommand, [name])
     return rowCount
+  }
+
+  async setCronTime () {
+    await this.db.executeSql(this.setCronTimeCommand)
+  }
+
+  async getCronTime () {
+    const { rows } = await this.db.executeSql(this.getCronTimeCommand)
+
+    let { cron_on: cronOn, seconds_ago: secondsAgo } = rows[0]
+
+    secondsAgo = secondsAgo !== null ? parseFloat(secondsAgo) : 61
+
+    return { cronOn, secondsAgo }
   }
 }
 
