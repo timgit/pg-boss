@@ -1,5 +1,9 @@
 # Changes
 
+## 5.0.6
+
+- Added a cron monitor to verify the health of the cron queue. 
+
 ## 5.0.5
 
 - Removed latency offset calculation during clock skew detection.  This was causing cron processing to be paused whenever a significant wait time was required to acquire a connection from the pool.

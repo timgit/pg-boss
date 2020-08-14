@@ -78,7 +78,7 @@ function getAll (schema, config) {
 
   return [
     {
-      release: '5.0.5',
+      release: '5.0.6',
       version: 15,
       previous: 14,
       install: [
