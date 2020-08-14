@@ -14,7 +14,7 @@
   },
   "devDependencies": {
     "coveralls": "^3.1.0",
-    "mocha": "^8.0.1",
+    "mocha": "^8.1.1",
     "moment-timezone": "^0.5.31",
     "nyc": "^15.1.0",
     "standard": "^14.3.4"
