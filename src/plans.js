@@ -39,6 +39,8 @@ module.exports = {
   getQueueSize,
   getMaintenanceTime,
   setMaintenanceTime,
+  getCronTime,
+  setCronTime,
   states: { ...states },
   completedJobPrefix,
   advisoryLock,
@@ -79,7 +81,8 @@ function createVersionTable (schema) {
   return `
     CREATE TABLE ${schema}.version (
       version int primary key,
-      maintained_on timestamp with time zone
+      maintained_on timestamp with time zone,
+      cron_on timestamp with time zone
     )
   `
 }
@@ -146,6 +149,14 @@ function setMaintenanceTime (schema) {
 
 function getMaintenanceTime (schema) {
   return `SELECT maintained_on, EXTRACT( EPOCH FROM (now() - maintained_on) ) seconds_ago FROM ${schema}.version`
+}
+
+function setCronTime (schema) {
+  return `UPDATE ${schema}.version SET cron_on = now()`
+}
+
+function getCronTime (schema) {
+  return `SELECT cron_on, EXTRACT( EPOCH FROM (now() - cron_on) ) seconds_ago FROM ${schema}.version`
 }
 
 function deleteQueue (schema, options = {}) {

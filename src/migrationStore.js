@@ -78,6 +78,17 @@ function getAll (schema, config) {
 
   return [
     {
+      release: '5.0.6',
+      version: 15,
+      previous: 14,
+      install: [
+          `ALTER TABLE ${schema}.version ADD cron_on timestamp with time zone`
+      ],
+      uninstall: [
+          `ALTER TABLE ${schema}.version DROP COLUMN cron_on`
+      ]
+    },
+    {
       release: '5.0.0',
       version: 14,
       previous: 13,
