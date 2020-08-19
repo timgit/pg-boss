@@ -2,6 +2,7 @@ const assert = require('assert')
 const EventEmitter = require('events')
 const Promise = require('bluebird')
 const uuid = require('uuid')
+const { default: PQueue } = require('p-queue')
 
 const Worker = require('./worker')
 const plans = require('./plans')
@@ -70,6 +71,10 @@ class Manager extends EventEmitter {
   async watch (name, options, callback) {
     options.newJobCheckInterval = options.newJobCheckInterval || this.config.newJobCheckInterval
 
+    const teamQueue = options.batchSize ? null : new PQueue({ concurrency: options.teamConcurrency || 1 })
+
+    const details = { teamSize: options.teamSize, teamConcurrency: options.teamConcurrency };
+
     const sendItBruh = async (jobs) => {
       if (!jobs) {
         return
@@ -82,23 +87,27 @@ class Manager extends EventEmitter {
         return Promise.all([callback(jobs)]).catch(err => this.fail(jobs.map(job => job.id), err))
       }
 
-      const concurrency = options.teamConcurrency || 1
+      // Resume the worker loop as soon as at least one job is complete
+      const continueWorker = new Promise(resolve => teamQueue.once('next', () => resolve))
 
-      // either no option was set, or teamSize was used
-      return Promise.map(jobs, job =>
-        callback(job)
-          .then(value => this.complete(job.id, value))
-          .catch(err => this.fail(job.id, err))
-      , { concurrency }
-      ).catch(() => {}) // allow promises & non-promises to live together in harmony
+      jobs.forEach(job =>
+        teamQueue.add(() =>
+          callback(job)
+            .then(value => this.complete(job.id, value))
+            .catch(err => this.fail(job.id, err))
+        )
+      )
+
+      return continueWorker
     }
 
     const fetchOptions = { includeMetadata: options.includeMetadata || false }
     const onError = error => this.emit(events.error, error)
+    const teamSize = options.teamSize || 1
 
     const workerConfig = {
       name,
-      fetch: () => this.fetch(name, options.batchSize || options.teamSize || 1, fetchOptions),
+      fetch: () => this.fetch(name, options.batchSize || (teamSize - teamQueue.size - teamQueue.pending), fetchOptions),
       onFetch: jobs => sendItBruh(jobs),
       onError,
       interval: options.newJobCheckInterval

@@ -160,6 +160,44 @@ describe('subscribe', function () {
     }
   })
 
+  it('teamConcurrency allows for fetching more jobs when one blocks', function (finished) {
+    this.timeout(1000)
+
+    const queue = 'subscribe-teamConcurrency'
+    const teamSize = 4
+    const teamConcurrency = 2
+
+    let subscribeCount = 0
+
+    const config = this.test.bossConfig
+
+    test().catch(finished)
+
+    async function test () {
+      const boss = await helper.start(config)
+
+      for (let i = 0; i < 6; i++) {
+        await boss.publish(queue)
+      }
+
+      const newJobCheckInterval = 100
+
+      await boss.subscribe(queue, { teamSize, teamConcurrency, newJobCheckInterval }, async () => {
+        subscribeCount++
+        if (subscribeCount === 1) {
+          // Test would timeout if all were blocked on this first
+          // process
+          await Promise.delay(4000)
+        }
+
+        if (subscribeCount === 6) {
+          await boss.stop()
+          finished()
+        }
+      })
+    }
+  })
+
   it('should handle a batch of jobs via batchSize', function (finished) {
     const queue = 'subscribe-batchSize'
     const batchSize = 4
