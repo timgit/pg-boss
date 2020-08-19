@@ -1,5 +1,9 @@
 # Changes
 
+## 5.0.7
+
+- Fixed cron monitor interval.
+
 ## 5.0.6
 
 - Added a cron monitor to verify the health of the cron queue. 

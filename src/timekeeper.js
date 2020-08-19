@@ -48,7 +48,7 @@ class Timekeeper extends EventEmitter {
     }
 
     this.skewMonitorInterval = setInterval(() => this.cacheClockSkew(), this.monitorIntervalMs)
-    this.cronMonitorInterval = setInterval(() => this.monitorCron(), 60)
+    this.cronMonitorInterval = setInterval(() => this.monitorCron(), 60000)
 
     this.stopped = false
   }
