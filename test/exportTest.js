@@ -1,22 +1,27 @@
-const assert = require('chai').assert;
-const PgBoss = require('../src/index');
+const assert = require('assert')
+const PgBoss = require('../')
+const currentSchemaVersion = require('../version.json').schema
 
-describe('schema export', function(){
-  it('should export commands to manually build schema', function() {
-    const schema = 'custom';
-    const plans = PgBoss.getConstructionPlans(schema);
+describe('export', function () {
+  it('should export commands to manually build schema', function () {
+    const schema = 'custom'
+    const plans = PgBoss.getConstructionPlans(schema)
 
-    assert.include(plans, schema + '.job');
-    assert.include(plans, schema + '.version');
-  });
+    assert(plans.includes(`${schema}.job`))
+    assert(plans.includes(`${schema}.version`))
+  })
 
-  it('should export migration commands from 0.0.1 to 0.1.0', function() {
-    const schema = 'custom';
-    const currentSchemaVersion = '0.0.1';
-    const expectedMigrationVersion = '0.1.0';
-    const plans = PgBoss.getMigrationPlans(schema, currentSchemaVersion);
+  it('should export commands to migrate', function () {
+    const schema = 'custom'
+    const plans = PgBoss.getMigrationPlans(schema, currentSchemaVersion - 1)
 
-    assert.include(plans, `ALTER TABLE ${schema}.job`);
-    assert.include(plans, `UPDATE ${schema}.version SET version = '${expectedMigrationVersion}`);
-  });
-});
+    assert(plans, 'migration plans not found')
+  })
+
+  it('should export commands to roll back', function () {
+    const schema = 'custom'
+    const plans = PgBoss.getRollbackPlans(schema, currentSchemaVersion)
+
+    assert(plans, 'rollback plans not found')
+  })
+})

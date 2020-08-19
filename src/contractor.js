@@ -1,104 +1,78 @@
-const assert = require('assert');
-const plans = require('./plans');
-const migrations = require('./migrations');
-const schemaVersion = require('../version.json').schema;
+const assert = require('assert')
+const plans = require('./plans')
+const migrationStore = require('./migrationStore')
+const schemaVersion = require('../version.json').schema
 
 class Contractor {
-
-  static constructionPlans(schema){
-    let exportPlans = plans.create(schema);
-    exportPlans.push(plans.insertVersion(schema).replace('$1', `'${schemaVersion}'`));
-
-    return exportPlans.join(';\n\n');
+  static constructionPlans (schema) {
+    return plans.create(schema, schemaVersion)
   }
 
-  static migrationPlans(schema, version, uninstall){
-    let migration = migrations.get(schema, version, uninstall);
-    assert(migration, `migration not found from version ${version}. schema: ${schema}`);
-    return migration.commands.join(';\n\n');
+  static migrationPlans (schema, version) {
+    return migrationStore.migrate(schema, version)
   }
 
-  constructor(db, config){
-    this.config = config;
-    this.db = db;
+  static rollbackPlans (schema, version) {
+    return migrationStore.rollback(schema, version)
   }
 
-  version() {
-    return this.db.executeSql(plans.getVersion(this.config.schema))
-      .then(result => result.rows.length ? result.rows[0].version : null);
+  constructor (db, config) {
+    this.config = config
+    this.db = db
+    this.migrations = this.config.migrations || migrationStore.getAll(this.config.schema)
   }
 
-  isCurrent(){
-    return this.version().then(version => version === schemaVersion);
+  async version () {
+    const result = await this.db.executeSql(plans.getVersion(this.config.schema))
+    return result.rows.length ? parseInt(result.rows[0].version) : null
   }
 
-  isInstalled() {
-    return this.db.executeSql(plans.versionTableExists(this.config.schema))
-      .then(result => result.rows.length ? result.rows[0].name : null);
+  async isInstalled () {
+    const result = await this.db.executeSql(plans.versionTableExists(this.config.schema))
+    return result.rows.length ? result.rows[0].name : null
   }
 
-  ensureCurrent() {
-    return this.version()
-      .then(version => {
-        if (schemaVersion !== version)
-          return this.update(version);
-      });
-  }
+  async start () {
+    const installed = await this.isInstalled()
 
-  create(){
-    let promises = plans.create(this.config.schema).map(command => () => this.db.executeSql(command));
+    if (installed) {
+      const version = await this.version()
 
-    return this.promiseEach(promises)
-      .then(() => this.db.executeSql(plans.insertVersion(this.config.schema), [schemaVersion]));
-  }
-
-  update(current) {
-    if(current === '0.0.2') current = '0.0.1';
-
-    return this.migrate(current)
-      .then(version => {
-        if(version !== schemaVersion) return this.update(version);
-      });
-  }
-
-  start(){
-    return this.isInstalled()
-      .then(installed => installed ? this.ensureCurrent() : this.create());
-  }
-
-  connect(){
-    let connectErrorMessage = 'this version of pg-boss does not appear to be installed in your database. I can create it for you via start().';
-
-    return this.isInstalled()
-      .then(installed => {
-        if(!installed)
-          throw new Error(connectErrorMessage);
-
-        return this.isCurrent();
-      })
-      .then(current => {
-        if(!current)
-          throw new Error(connectErrorMessage);
-      });
-  }
-
-  migrate(version, uninstall) {
-    let migration = migrations.get(this.config.schema, version, uninstall);
-
-    if(!migration){
-      let errorMessage = `Migration to version ${version} failed because it could not be found.  Your database may have been upgraded by a newer version of pg-boss`;
-      return Promise.reject(new Error(errorMessage));
+      if (schemaVersion > version) {
+        await this.migrate(version)
+      }
+    } else {
+      await this.create()
     }
-
-    let promises = migration.commands.map(command => () => this.db.executeSql(command));
-
-    return this.promiseEach(promises)
-      .then(() => migration.version);
   }
 
-  promiseEach(promises) {
-    return promises.reduce((promise, func) => promise.then(() => func().then()), Promise.resolve());
+  async create () {
+    try {
+      const commands = plans.create(this.config.schema, schemaVersion)
+      await this.db.executeSql(commands)
+    } catch (err) {
+      assert(err.message.includes(plans.CREATE_RACE_MESSAGE), err)
+    }
+  }
+
+  async migrate (version) {
+    try {
+      const commands = migrationStore.migrate(this.config, version, this.migrations)
+      await this.db.executeSql(commands)
+    } catch (err) {
+      assert(err.message.includes(plans.MIGRATE_RACE_MESSAGE), err)
+    }
+  }
+
+  async next (version) {
+    const commands = migrationStore.next(this.config.schema, version, this.migrations)
+    await this.db.executeSql(commands)
+  }
+
+  async rollback (version) {
+    const commands = migrationStore.rollback(this.config.schema, version, this.migrations)
+    await this.db.executeSql(commands)
   }
 }
 
-module.exports = Contractor;
+module.exports = Contractor

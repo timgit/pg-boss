@@ -1,46 +1,31 @@
-const assert = require('chai').assert;
-const helper = require('./testHelper');
-const Promise = require('bluebird');
+const assert = require('assert')
+const helper = require('./testHelper')
+const Promise = require('bluebird')
 
-describe('delete', function() {
+describe('delete', async function () {
+  const defaults = {
+    deleteAfterSeconds: 1,
+    maintenanceIntervalSeconds: 1
+  }
 
-  let boss;
+  it('should delete an archived job', async function () {
+    const jobName = 'deleteMe'
 
-  before(function(finished){
+    const config = { ...this.test.bossConfig, ...defaults }
+    const boss = await helper.start(config)
+    const jobId = await boss.publish(jobName)
+    const job = await boss.fetch(jobName)
 
-    const options = {
-      archiveCompletedJobsEvery:'1 second',
-      archiveCheckInterval: 500,
-      deleteArchivedJobsEvery: '1 second',
-      deleteCheckInterval: 500
-    };
+    assert.strictEqual(jobId, job.id)
 
-    helper.start(options)
-      .then(dabauce => {
-        boss = dabauce;
-        finished();
-      });
-  });
+    await boss.complete(jobId)
 
-  after(function(finished) {
-    boss.stop().then(() => finished());
-  });
+    await Promise.delay(7000)
 
-  it('should delete an archived job', function(finished){
-    this.timeout(5000);
+    const archivedJob = await helper.getArchivedJobById(config.schema, jobId)
 
-    let jobName = 'deleteMe';
-    let jobId = null;
+    assert.strictEqual(archivedJob, null)
 
-    boss.publish(jobName)
-      .then(id => jobId = id)
-      .then(() => boss.fetch(jobName))
-      .then(job => assert.equal(jobId, job.id))
-      .then(() => boss.complete(jobId))
-      .then(() => Promise.delay(3000))
-      .then(() => helper.getArchivedJobById(jobId))
-      .then(result => assert.equal(0, result.rows.length))
-      .then(() => finished());
-  });
-
-});
+    await boss.stop()
+  })
+})

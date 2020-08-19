@@ -1,49 +1,31 @@
-const Promise = require('bluebird');
-const assert = require('chai').assert;
-const helper = require('./testHelper');
+const Promise = require('bluebird')
+const helper = require('./testHelper')
 
-describe('speed', function() {
+describe('speed', function () {
+  const expectedSeconds = 2
+  const jobCount = 10000
+  const queue = 'speedTest'
 
-  const expectedSeconds = 4;
-  const jobCount = 2000;
-  const jobName = 'one_of_many';
-  const jobs = new Array(jobCount).fill(null);
-  const testTitle = `should be able to complete ${jobCount} jobs in ${expectedSeconds} seconds`;
+  const jobs = new Array(jobCount).fill(null).map((item, index) => ({ name: queue, data: { index } }))
 
-  let boss;
+  const testTitle = `should be able to fetch and complete ${jobCount} jobs in ${expectedSeconds} seconds`
 
-  before(function(finished){
-    this.timeout(expectedSeconds * 1000);
+  let boss
 
-    helper.start()
-      .then(dabauce => {
-        boss = dabauce;
+  beforeEach(async function () {
+    const defaults = { noSupervisor: true, min: 10, max: 10 }
+    boss = await helper.start({ ...this.currentTest.bossConfig, ...defaults })
+    await Promise.map(jobs, job => boss.publish(job.name, job.data))
+  })
 
-        Promise.map(jobs, (val, index) => boss.publish(jobName, {message: 'message #' + index}))
-          .then(() => finished());
-      });
-  });
+  afterEach(async function () { await boss.stop() })
 
-  after(function(finished){
-    boss.stop().then(() => finished());
-  });
+  it(testTitle, async function () {
+    this.timeout(expectedSeconds * 1000)
+    this.slow(0)
+    this.retries(1)
 
-  it(testTitle, function(finished) {
-    this.timeout(expectedSeconds * 1000);
-
-    const startTime = new Date();
-
-    boss.fetch(jobName, jobCount)
-      .then(jobs => Promise.map(jobs, job => boss.complete(job.id)))
-      .then(() => {
-        let elapsed = new Date().getTime() - startTime.getTime();
-
-        console.log(`finished ${jobCount} jobs in ${elapsed}ms`);
-
-        assert.isBelow(elapsed / 1000, expectedSeconds);
-        finished();
-    });
-  });
-
-});
-
+    const jobs = await boss.fetch(queue, jobCount)
+    await boss.complete(jobs.map(job => job.id))
+  })
+})

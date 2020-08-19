@@ -1,39 +1,119 @@
-const assert = require('chai').assert;
-const helper = require('./testHelper');
+const assert = require('assert')
+const helper = require('./testHelper')
+const Promise = require('bluebird')
 
-describe('retries', function() {
+describe('retries', function () {
+  const defaults = { maintenanceIntervalSeconds: 1 }
 
-  let boss;
+  it('should retry a job that didn\'t complete', async function () {
+    const queue = 'unreliable'
 
-  before(function(finished){
-    helper.start({expireCheckInterval:200, newJobCheckInterval: 200})
-      .then(dabauce => {
-        boss = dabauce;
-        finished();
-      });
-  });
+    const boss = await helper.start({ ...this.test.bossConfig, ...defaults })
+    const jobId = await boss.publish({ name: queue, options: { expireInSeconds: 1, retryLimit: 1 } })
 
-  after(function(finished){
-    boss.stop().then(() => finished());
-  });
+    const try1 = await boss.fetch(queue)
 
-  it('should retry a job that didn\'t complete', function (finished) {
+    await Promise.delay(5000)
 
-    const expireIn = '100 milliseconds';
-    const retryLimit = 1;
+    const try2 = await boss.fetch(queue)
 
-    let subscribeCount = 0;
+    assert.strictEqual(try1.id, jobId)
+    assert.strictEqual(try2.id, jobId)
 
-    // don't call job.done() so it will expire
-    boss.subscribe('unreliable', job => subscribeCount++);
+    await boss.stop()
+  })
 
-    boss.publish({name: 'unreliable', options: {expireIn, retryLimit}});
+  it('should retry a job that failed', async function () {
+    const queueName = 'retryFailed'
+    const retryLimit = 1
 
-    setTimeout(function() {
-      assert.equal(subscribeCount, retryLimit + 1);
-      finished();
+    const boss = await helper.start({ ...this.test.bossConfig, ...defaults })
+    const jobId = await boss.publish(queueName, null, { retryLimit })
 
-    }, 1000);
+    await boss.fetch(queueName)
+    await boss.fail(jobId)
 
-  });
-});
+    const job = await boss.fetch(queueName)
+
+    assert.strictEqual(job.id, jobId)
+
+    await boss.stop()
+  })
+
+  it('should retry a job that failed with cascaded config', async function () {
+    const queueName = 'retryFailed-config-cascade'
+    const retryLimit = 1
+
+    const boss = await helper.start({ ...this.test.bossConfig, ...defaults, retryLimit })
+    const jobId = await boss.publish(queueName)
+
+    await boss.fetch(queueName)
+    await boss.fail(jobId)
+
+    const job = await boss.fetch(queueName)
+
+    assert.strictEqual(job.id, jobId)
+
+    await boss.stop()
+  })
+
+  it('should retry with a fixed delay', async function () {
+    const queue = 'retryDelayFixed'
+
+    const boss = await helper.start({ ...this.test.bossConfig, ...defaults })
+    const jobId = await boss.publish(queue, null, { retryLimit: 1, retryDelay: 1 })
+
+    await boss.fetch(queue)
+    await boss.fail(jobId)
+
+    const job1 = await boss.fetch(queue)
+
+    assert.strictEqual(job1, null)
+
+    await Promise.delay(1000)
+
+    const job2 = await boss.fetch(queue)
+
+    assert(job2)
+
+    await boss.stop()
+  })
+
+  it('should retry with a exponential backoff', async function () {
+    const queue = 'retryDelayBackoff'
+
+    let subscribeCount = 0
+    const retryLimit = 4
+
+    const boss = await helper.start({ ...this.test.bossConfig, ...defaults })
+    await boss.subscribe(queue, { newJobCheckInterval: 500 }, job => job.done(++subscribeCount))
+    await boss.publish(queue, null, { retryLimit, retryBackoff: true })
+
+    await Promise.delay(9000)
+
+    assert(subscribeCount < retryLimit)
+
+    await boss.stop()
+  })
+
+  it('should set the default retry limit to 1 if missing', async function () {
+    const queue = 'retryLimitDefault'
+
+    const boss = await helper.start({ ...this.test.bossConfig, ...defaults })
+    const jobId = await boss.publish(queue, null, { retryDelay: 1 })
+    await boss.fetch(queue)
+    await boss.fail(jobId)
+
+    const job1 = await boss.fetch(queue)
+
+    assert.strictEqual(job1, null)
+
+    await Promise.delay(1000)
+
+    const job2 = await boss.fetch(queue)
+
+    assert(job2)
+
+    await boss.stop()
+  })
+})

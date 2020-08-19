@@ -1,105 +1,163 @@
-const assert = require('chai').assert;
-const PgBoss = require('../src/index');
-const helper = require('./testHelper');
-const Contractor = require('../src/contractor');
-const currentSchemaVersion = require('../version.json').schema;
+const assert = require('assert')
+const PgBoss = require('../')
+const helper = require('./testHelper')
+const Contractor = require('../src/contractor')
+const migrationStore = require('../src/migrationStore')
+const currentSchemaVersion = require('../version.json').schema
 
-describe('migration', function() {
+describe('migration', function () {
+  let contractor
 
-  let contractor = new Contractor(helper.getDb(), helper.getConfig());
+  beforeEach(async function () {
+    const db = await helper.getDb()
+    contractor = new Contractor(db, this.currentTest.bossConfig)
+  })
 
-  beforeEach(function(finished){
-    helper.init()
-      .then(() => finished());
-  });
+  it('should migrate to previous version and back again', async function () {
+    await contractor.create()
 
-  it('should migrate to previous version and back again', function (finished) {
-    this.timeout(5000);
+    await contractor.rollback(currentSchemaVersion)
+    const oldVersion = await contractor.version()
 
-    contractor.create()
-      .then(() => contractor.migrate(currentSchemaVersion, 'remove'))
-      .then(version => {
-        assert.notEqual(version, currentSchemaVersion);
-        return contractor.migrate(version);
-      })
-      .then(version => {
-        assert.equal(version, currentSchemaVersion);
-        finished();
-      });
-  });
+    assert.notStrictEqual(oldVersion, currentSchemaVersion)
 
-  it('should migrate to latest during start if on previous schema version', function(finished){
+    await contractor.migrate(oldVersion)
+    const newVersion = await contractor.version()
 
-    this.timeout(3000);
+    assert.strictEqual(newVersion, currentSchemaVersion)
+  })
 
-    contractor.create()
-      .then(() => contractor.migrate(currentSchemaVersion, 'remove'))
-      .then(() => new PgBoss(helper.getConfig()).start())
-      .then(() => contractor.version())
-      .then(version => {
-        assert.equal(version, currentSchemaVersion);
-        finished();
-      });
-  });
+  it('should migrate to latest during start if on previous schema version', async function () {
+    await contractor.create()
 
-  it('should migrate through 2 versions back and forth', function (finished) {
+    await contractor.rollback(currentSchemaVersion)
 
-    this.timeout(3000);
+    const config = { ...this.test.bossConfig, noSupervisor: true }
 
-    let prevVersion;
+    const boss = new PgBoss(config)
 
-    contractor.create()
-      .then(() => contractor.migrate(currentSchemaVersion, 'remove'))
-      .then(version => {
-        prevVersion = version;
-        assert.notEqual(version, currentSchemaVersion);
+    await boss.start()
 
-        return contractor.migrate(version, 'remove');
-      })
-      .then(version => {
-        assert.notEqual(version, prevVersion);
+    const version = await contractor.version()
 
-        return contractor.migrate(version);
-      })
-      .then(version => {
-        assert.equal(version, prevVersion);
+    assert.strictEqual(version, currentSchemaVersion)
 
-        return contractor.migrate(version);
-      })
-      .then(version => {
-        assert.equal(version, currentSchemaVersion);
-        finished();
-      });
-  });
+    await boss.stop()
+  })
 
+  it('should migrate through 2 versions back and forth', async function () {
+    const queue = 'migrate-back-2-and-forward'
 
-  it('should migrate to latest during start if on previous 2 schema versions', function(finished){
+    const config = { ...this.test.bossConfig, noSupervisor: true }
 
-    this.timeout(3000);
+    const boss = new PgBoss(config)
 
-    this.timeout(5000);
+    await boss.start()
 
-    contractor.create()
-      .then(() => contractor.migrate(currentSchemaVersion, 'remove'))
-      .then(version => contractor.migrate(version, 'remove'))
-      .then(() => new PgBoss(helper.getConfig()).start())
-      .then(() => contractor.version())
-      .then(version => {
-        assert.equal(version, currentSchemaVersion);
-        finished();
-      });
-  });
+    // creating jobs in 3 states to have data to migrate back and forth
 
-  it('migrating to non-existent version fails gracefully', function(finished){
+    // completed job
+    await boss.publish(queue)
+    const job = await boss.fetch(queue)
+    await boss.complete(job.id)
 
-    this.timeout(5000);
+    // active job
+    await boss.publish(queue)
+    await boss.fetch(queue)
 
-    contractor.create()
-      .then(() => contractor.migrate('¯\_(ツ)_/¯'))
-      .catch(error => {
-        assert(error.message.indexOf('could not be found') > -1);
-        finished();
-      });
-  });
+    // created job
+    await boss.publish(queue)
 
-});
+    await contractor.rollback(currentSchemaVersion)
+    const oneVersionAgo = await contractor.version()
+
+    assert.notStrictEqual(oneVersionAgo, currentSchemaVersion)
+
+    await contractor.rollback(oneVersionAgo)
+    const twoVersionsAgo = await contractor.version()
+
+    assert.notStrictEqual(twoVersionsAgo, oneVersionAgo)
+
+    await contractor.next(twoVersionsAgo)
+    const oneVersionAgoPart2 = await contractor.version()
+
+    assert.strictEqual(oneVersionAgo, oneVersionAgoPart2)
+
+    await contractor.next(oneVersionAgo)
+    const version = await contractor.version()
+
+    assert.strictEqual(version, currentSchemaVersion)
+  })
+
+  it('should migrate to latest during start if on previous 2 schema versions', async function () {
+    await contractor.create()
+
+    await contractor.rollback(currentSchemaVersion)
+    const oneVersionAgo = await contractor.version()
+    assert.strictEqual(oneVersionAgo, currentSchemaVersion - 1)
+
+    await contractor.rollback(oneVersionAgo)
+    const twoVersionsAgo = await contractor.version()
+    assert.strictEqual(twoVersionsAgo, currentSchemaVersion - 2)
+
+    const config = { ...this.test.bossConfig, noSupervisor: true }
+    const boss = new PgBoss(config)
+    await boss.start()
+
+    const version = await contractor.version()
+
+    assert.strictEqual(version, currentSchemaVersion)
+
+    await boss.stop()
+  })
+
+  it('migrating to non-existent version fails gracefully', async function () {
+    await contractor.create()
+
+    try {
+      await contractor.migrate('¯\\_(ツ)_//¯')
+    } catch (error) {
+      assert(error.message.includes('not found'))
+    }
+  })
+
+  it('should roll back an error during a migration', async function () {
+    const config = { ...this.test.bossConfig, noSupervisor: true }
+
+    config.migrations = migrationStore.getAll(config.schema)
+
+    // add invalid sql statement
+    config.migrations[0].install.push('wat')
+
+    await contractor.create()
+    await contractor.rollback(currentSchemaVersion)
+    const oneVersionAgo = await contractor.version()
+
+    const boss1 = new PgBoss(config)
+
+    try {
+      await boss1.start()
+    } catch (error) {
+      assert(error.message.includes('wat'))
+    } finally {
+      boss1.stop()
+    }
+
+    const version1 = await contractor.version()
+
+    assert.strictEqual(version1, oneVersionAgo)
+
+    // remove bad sql statement
+    config.migrations[0].install.pop()
+
+    const boss2 = new PgBoss(config)
+
+    await boss2.start()
+
+    const version2 = await contractor.version()
+
+    assert.strictEqual(version2, currentSchemaVersion)
+
+    await boss2.stop()
+  })
+})

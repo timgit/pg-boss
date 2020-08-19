@@ -1,68 +1,64 @@
-const assert = require('chai').assert;
-const PgBoss = require('../src/index');
-const helper = require('./testHelper');
+const assert = require('assert')
+const PgBoss = require('../')
+const helper = require('./testHelper')
 
-describe('initialization', function(){
+describe('config', function () {
+  it('should allow a 50 character custom schema name', async function () {
+    const config = this.test.bossConfig
+    config.schema = 'thisisareallylongschemanamefortestingmaximumlength'
 
-  before(function(finished) {
-    helper.init()
-      .then(() => finished());
-  });
+    assert.strictEqual(config.schema.length, 50)
 
-  it('should allow a 50 character custom schema name', function(finished){
+    const boss = new PgBoss(config)
 
-    let config = helper.getConfig();
+    await boss.start()
+    await boss.stop()
 
-    config.schema = 'thisisareallylongschemanamefortestingmaximumlength';
+    await helper.dropSchema(config.schema)
+  })
 
-    helper.init(config.schema)
-      .then(() => {
-        new PgBoss(config).start()
-          .then(boss => boss.stop())
-          .then(() => helper.init(config.schema))
-          .then(() => finished())
-          .catch(error => {
-            assert(false, error.message);
-            finished();
-          });
-      });
-  });
+  it('should not allow more than 50 characters in schema name', function () {
+    const config = this.test.bossConfig
 
-  it('should not allow a 51 character custom schema name', function(){
+    config.schema = 'thisisareallylongschemanamefortestingmaximumlengthb'
 
-    let config = helper.getConfig();
+    assert(config.schema.length > 50)
 
-    config.schema = 'thisisareallylongschemanamefortestingmaximumlengthb';
+    assert.throws(() => new PgBoss(config))
+  })
 
-    assert.throws(function () {
-      let boss = new PgBoss(config);
-    });
+  it('should accept a connectionString property', async function () {
+    const connectionString = helper.getConnectionString()
+    const boss = new PgBoss({ connectionString, schema: this.test.bossConfig.schema })
 
-  });
+    await boss.start()
+    await boss.stop()
+  })
 
-  it('should accept a connectionString property', function(finished){
+  it('should not allow calling job instance functions if not started', async function () {
+    const boss = new PgBoss(this.test.bossConfig)
+    try {
+      await boss.publish('queue1')
+      assert(false)
+    } catch {}
+  })
 
-    let connectionString = helper.getConnectionString();
+  it.skip('start() should fail if pgcrypto is not available', async function () {
+    const database = 'pgboss_test1'
 
-    new PgBoss({connectionString}).start()
-      .then(boss => {
-        assert(true);
-        boss.stop().then(() => finished());
-      })
-      .catch(error => {
-        assert(false, error.message);
-        finished();
-      });
-  });
+    await helper.createDb(database)
 
-  it('should accept a connectionString and schema properties', function(finished){
-    const connectionString = 'postgresql://postgres@127.0.0.1:5432/db';
-    const schema = 'pgboss_custom_schema';
-    const boss = new PgBoss({connectionString, schema});
+    const config = { ...this.test.bossConfig, database }
 
-    assert.equal(boss.config.schema, schema);
+    const boss = new PgBoss(config)
 
-    finished();
-  });
+    try {
+      await boss.start()
+      assert(false, 'Error should have been thrown by missing pgcrypto extension')
+    } catch (err) {
+      assert(err.message.includes('gen_random_uuid()'))
+    }
 
-});
+    await helper.tryDropDb(database)
+  })
+})

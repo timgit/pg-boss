@@ -1,186 +1,218 @@
-const Promise = require('bluebird');
-const assert = require('chai').assert;
-const helper = require('./testHelper');
+const Promise = require('bluebird')
+const assert = require('assert')
+const helper = require('./testHelper')
+const PgBoss = require('../')
 
-describe('complete', function() {
+describe('complete', function () {
+  it('should reject missing id argument', async function () {
+    const boss = await helper.start(this.test.bossConfig)
 
-  let boss;
+    try {
+      await boss.complete()
+      assert(false)
+    } catch (err) {
+      assert(err)
+    } finally {
+      await boss.stop()
+    }
+  })
 
-  before(function(finished){
-    helper.start()
-      .then(dabauce => {
-        boss = dabauce;
-        finished();
-      });
-  });
+  it('should complete a batch of jobs', async function () {
+    const queue = 'complete-batch'
+    const batchSize = 3
 
-  after(function(finished) {
-    boss.stop().then(() => finished());
-  });
+    const boss = await helper.start(this.test.bossConfig)
 
-  it('should reject missing id argument', function(finished){
-    boss.complete().catch(() => finished());
-  });
-
-  it('should complete a batch of jobs', function(finished){
-    const jobName = 'complete-batch';
-
-    Promise.all([
-      boss.publish(jobName),
-      boss.publish(jobName),
-      boss.publish(jobName)
+    await Promise.all([
+      boss.publish(queue),
+      boss.publish(queue),
+      boss.publish(queue)
     ])
-    .then(() => boss.fetch(jobName, 3))
-    .then(jobs => boss.complete(jobs.map(job => job.id)))
-    .then(() => finished());
 
-  });
+    const countJobs = (state) => helper.countJobs(this.test.bossConfig.schema, 'name = $1 AND state = $2', [queue, state])
 
-  it('onComplete should have the payload from complete() in the response object', function(finished){
+    const jobs = await boss.fetch(queue, batchSize)
 
-    const jobName = 'part-of-something-important';
-    const responsePayload = {message: 'super-important-payload', arg2: '123'};
+    const activeCount = await countJobs(PgBoss.states.active)
 
-    let jobId = null;
+    assert.strictEqual(activeCount, batchSize)
 
-    boss.onComplete(jobName, job => {
-      assert.equal(job.data.response.message, responsePayload.message);
-      assert.equal(job.data.response.arg2, responsePayload.arg2);
+    await boss.complete(jobs.map(job => job.id))
 
-      finished();
-    });
+    const completed = await boss.fetchCompleted(queue, batchSize)
 
-    boss.publish(jobName)
-      .then(id => jobId = id)
-      .then(() => boss.fetch(jobName))
-      .then(job => boss.complete(job.id, responsePayload));
+    assert.strictEqual(batchSize, completed.length)
 
-  });
+    await boss.stop()
+  })
 
-  it('onComplete should have the original payload in request object', function(finished){
+  it('onComplete should have the payload from complete() in the response object', function (finished) {
+    const config = this.test.bossConfig
 
-    const jobName = 'onCompleteRequestTest';
-    const requestPayload = {foo:'bar'};
+    test()
 
-    let jobId = null;
+    async function test () {
+      const jobName = 'part-of-something-important'
+      const responsePayload = { message: 'super-important-payload', arg2: '123' }
 
-    boss.onComplete(jobName, job => {
-      assert.equal(jobId, job.data.request.id);
-      assert.equal(job.data.request.data.foo, requestPayload.foo);
+      const boss = await helper.start(config)
 
-      finished();
-    });
+      await boss.publish(jobName)
 
-    boss.publish(jobName, requestPayload)
-      .then(id => jobId = id)
-      .then(() => boss.fetch(jobName))
-      .then(job => boss.complete(job.id));
+      const job = await boss.fetch(jobName)
 
-  });
+      await boss.complete(job.id, responsePayload)
 
-  it('onComplete should have both request and response', function(finished){
+      boss.onComplete(jobName, async job => {
+        assert.strictEqual(job.data.response.message, responsePayload.message)
+        assert.strictEqual(job.data.response.arg2, responsePayload.arg2)
 
-    const jobName = 'onCompleteFtw';
-    const requestPayload = {token:'trivial'};
-    const responsePayload = {message: 'so verbose', code: '1234'};
+        await boss.stop()
 
-    let jobId = null;
-
-    boss.onComplete(jobName, job => {
-      assert.equal(jobId, job.data.request.id);
-      assert.equal(job.data.request.data.token, requestPayload.token);
-      assert.equal(job.data.response.message, responsePayload.message);
-      assert.equal(job.data.response.code, responsePayload.code);
-
-      console.log(JSON.stringify(job, null, '  '));
-
-      finished();
-    });
-
-    boss.publish(jobName, requestPayload)
-      .then(id => jobId = id)
-      .then(() => boss.fetch(jobName))
-      .then(job => boss.complete(job.id, responsePayload));
-
-  });
-
-  it(`subscribe()'s job.done() should allow sending completion payload`, function(finished){
-    const jobName = 'complete-from-subscribe';
-    const responsePayload = {arg1: '123'};
-
-    boss.onComplete(jobName, job => {
-      assert.equal(job.data.response.arg1, responsePayload.arg1);
-      finished();
-    });
-
-    boss.publish(jobName)
-      .then(() => boss.subscribe(jobName, job => job.done(null, responsePayload)));
-
-  });
-
-
-  it('should unsubscribe an onComplete subscription', function(finished){
-    this.timeout(3000);
-
-    const jobName = 'offComplete';
-
-    let receivedCount = 0;
-
-    boss.onComplete(jobName, job => {
-      receivedCount++;
-
-      boss.offComplete(jobName)
-        .then(() => boss.publish(jobName))
-        .then(() => boss.fetch(jobName))
-        .then(job => boss.complete(job.id));
-    });
-
-    boss.publish(jobName)
-      .then(() => boss.fetch(jobName))
-      .then(job => boss.complete(job.id))
-      .then(() => {
-
-        setTimeout(() => {
-          assert.strictEqual(receivedCount, 1);
-          finished();
-        }, 2000);
-
-      });
-
-  });
-
-  it('should fetch a completed job', function(finished){
-    const jobName = 'fetchCompleted';
-
-    let jobId;
-
-    boss.publish(jobName)
-      .then(id => jobId = id)
-      .then(() => boss.fetch(jobName))
-      .then(() => boss.complete(jobId))
-      .then(() => boss.fetchCompleted(jobName))
-      .then(job => {
-        assert.strictEqual(job.data.request.id, jobId);
-        finished();
+        finished()
       })
-  });
+    }
+  })
 
-  it('should not create an extra state job after completion', function(finished){
-    const jobName = 'noMoreExtraStateJobs';
+  it('onComplete should have the original payload in request object', function (finished) {
+    const config = this.test.bossConfig
 
-    let jobId;
+    test()
 
-    boss.publish(jobName)
-      .then(id => jobId = id)
-      .then(() => boss.fetch(jobName))
-      .then(() => boss.complete(jobId))
-      .then(() => boss.fetchCompleted(jobName))
-      .then(job => boss.complete(job.id))
-      .then(() => helper.countJobs(`name LIKE $1`, [`${jobName}${helper.stateJobDelimiter}%`]))
-      .then(stateJobCount => {
-        assert.strictEqual(stateJobCount, 1);
-        finished();
+    async function test () {
+      const queueName = 'onCompleteRequestTest'
+      const requestPayload = { foo: 'bar' }
+
+      const boss = await helper.start(config)
+      const jobId = await boss.publish(queueName, requestPayload)
+
+      boss.onComplete(queueName, async job => {
+        assert.strictEqual(jobId, job.data.request.id)
+        assert.strictEqual(job.data.request.data.foo, requestPayload.foo)
+
+        await boss.stop()
+        finished()
       })
-  });
 
-});
+      const job = await boss.fetch(queueName)
+      await boss.complete(job.id)
+    }
+  })
+
+  it('onComplete should have both request and response', function (finished) {
+    const config = this.test.bossConfig
+
+    test()
+
+    async function test () {
+      const jobName = 'onCompleteFtw'
+      const requestPayload = { token: 'trivial' }
+      const responsePayload = { message: 'so verbose', code: '1234' }
+
+      const boss = await helper.start(config)
+
+      boss.onComplete(jobName, async job => {
+        assert.strictEqual(jobId, job.data.request.id)
+        assert.strictEqual(job.data.request.data.token, requestPayload.token)
+        assert.strictEqual(job.data.response.message, responsePayload.message)
+        assert.strictEqual(job.data.response.code, responsePayload.code)
+
+        await boss.stop()
+        finished()
+      })
+
+      const jobId = await boss.publish(jobName, requestPayload)
+      const job = await boss.fetch(jobName)
+
+      await boss.complete(job.id, responsePayload)
+    }
+  })
+
+  it('subscribe()\'s job.done() should allow sending completion payload', function (finished) {
+    const config = this.test.bossConfig
+
+    test()
+
+    async function test () {
+      const jobName = 'complete-from-subscribe'
+      const responsePayload = { arg1: '123' }
+
+      const boss = await helper.start(config)
+
+      boss.onComplete(jobName, async job => {
+        assert.strictEqual(job.data.response.arg1, responsePayload.arg1)
+        await boss.stop()
+        finished()
+      })
+
+      await boss.publish(jobName)
+
+      boss.subscribe(jobName, job => job.done(null, responsePayload))
+    }
+  })
+
+  it('should unsubscribe an onComplete subscription', async function () {
+    const jobName = 'offComplete'
+
+    let receivedCount = 0
+
+    const boss = await helper.start(this.test.bossConfig)
+
+    boss.onComplete(jobName, async job => {
+      receivedCount++
+      await boss.offComplete(jobName)
+    })
+
+    await boss.publish(jobName)
+    const job1 = await boss.fetch(jobName)
+    await boss.complete(job1.id)
+
+    await Promise.delay(2000)
+
+    await boss.publish(jobName)
+    const job2 = await boss.fetch(jobName)
+    await boss.complete(job2.id)
+
+    await Promise.delay(2000)
+
+    assert.strictEqual(receivedCount, 1)
+
+    await boss.stop()
+  })
+
+  it('should fetch a completed job', async function () {
+    const queue = 'fetchCompleted'
+
+    const boss = await helper.start(this.test.bossConfig)
+    const jobId = await boss.publish(queue)
+    await boss.fetch(queue)
+    await boss.complete(jobId)
+    const job = await boss.fetchCompleted(queue)
+
+    assert.strictEqual(job.data.request.id, jobId)
+
+    await boss.stop()
+  })
+
+  it('should not create an extra state job after completion', async function () {
+    const queue = 'noMoreExtraStateJobs'
+    const config = this.test.bossConfig
+
+    const boss = await helper.start(config)
+    const jobId = await boss.publish(queue)
+
+    await boss.fetch(queue)
+
+    await boss.complete(jobId)
+
+    const job = await boss.fetchCompleted(queue)
+
+    await boss.complete(job.id)
+
+    const stateJobCount = await helper.countJobs(config.schema, 'name = $1', [`${helper.completedJobPrefix}${queue}`])
+
+    assert.strictEqual(stateJobCount, 1)
+
+    await boss.stop()
+  })
+})
