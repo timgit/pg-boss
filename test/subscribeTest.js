@@ -163,7 +163,7 @@ describe('subscribe', function () {
   it('teamConcurrency allows for fetching more jobs when one blocks', function (finished) {
     this.timeout(1000)
 
-    const queue = 'subscribe-teamConcurrency'
+    const queue = 'subscribe-teamConcurrency-topup'
     const teamSize = 4
     const teamConcurrency = 2
 
@@ -241,6 +241,40 @@ describe('subscribe', function () {
     await Promise.delay(7000)
 
     assert(subscribeCount < batchSize)
+
+    await boss.stop()
+  })
+
+  it('does not fetch more than teamSize', async function () {
+    const queue = 'teamSize-topup-limit'
+    const teamSize = 4
+    const teamConcurrency = 2
+    const newJobCheckInterval = 500
+    let subscribeCount = 0
+    let remainCount = 0
+
+    const boss = await helper.start(this.test.bossConfig)
+
+    for (let i = 0; i < 7; i++) {
+      await boss.publish(queue)
+    }
+
+    // This should consume 5 jobs, all will block after the first job
+    await boss.subscribe(queue, { teamSize, teamConcurrency, newJobCheckInterval }, async () => {
+      subscribeCount++
+      if (subscribeCount > 1) await Promise.delay(4000)
+    })
+
+    await Promise.delay(1000)
+
+    // If the above hasn't over subscribed, this should pick up the last 2 jobs
+    await boss.subscribe(queue, { teamSize, teamConcurrency, newJobCheckInterval }, async () => {
+      remainCount++
+    })
+
+    await Promise.delay(1000)
+
+    assert(remainCount === 2)
 
     await boss.stop()
   })
