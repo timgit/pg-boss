@@ -73,8 +73,6 @@ class Manager extends EventEmitter {
 
     const teamQueue = options.batchSize ? null : new PQueue({ concurrency: options.teamConcurrency || 1 })
 
-    const details = { teamSize: options.teamSize, teamConcurrency: options.teamConcurrency };
-
     const sendItBruh = async (jobs) => {
       if (!jobs) {
         return
@@ -88,7 +86,7 @@ class Manager extends EventEmitter {
       }
 
       // Resume the worker loop as soon as at least one job is complete
-      const continueWorker = new Promise(resolve => teamQueue.once('next', () => resolve))
+      const continueWorker = new Promise(resolve => teamQueue.once('next', () => resolve()))
 
       jobs.forEach(job =>
         teamQueue.add(() =>
