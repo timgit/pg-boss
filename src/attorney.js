@@ -312,6 +312,13 @@ function applyMonitoringConfig (config) {
     ('clockMonitorIntervalMinutes' in config) ? config.clockMonitorIntervalMinutes * 60
       : ('clockMonitorIntervalSeconds' in config) ? config.clockMonitorIntervalSeconds
         : TEN_MINUTES_IN_SECONDS
+
+  assert(!('cronMonitorIntervalSeconds' in config) || (config.cronMonitorIntervalSeconds >= 1 && config.cronMonitorIntervalSeconds <= 60),
+    'configuration assert: cronMonitorIntervalSeconds must be between 1 and 60 seconds')
+
+  config.cronMonitorIntervalSeconds =
+    ('cronMonitorIntervalSeconds' in config) ? config.cronMonitorIntervalSeconds
+      : 60
 }
 
 function applyUuidConfig (config) {

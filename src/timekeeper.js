@@ -21,7 +21,8 @@ class Timekeeper extends EventEmitter {
     this.db = db
     this.config = config
     this.manager = config.manager
-    this.monitorIntervalMs = config.clockMonitorIntervalSeconds * 1000
+    this.skewMonitorIntervalMs = config.clockMonitorIntervalSeconds * 1000
+    this.cronMonitorIntervalMs = config.cronMonitorIntervalSeconds * 1000
     this.clockSkew = 0
 
     this.events = events
@@ -45,10 +46,10 @@ class Timekeeper extends EventEmitter {
 
     if (this.config.archiveSeconds >= 60) {
       await this.watch()
+      this.cronMonitorInterval = setInterval(async () => await this.monitorCron(), this.cronMonitorIntervalMs)
     }
 
-    this.skewMonitorInterval = setInterval(() => this.cacheClockSkew(), this.monitorIntervalMs)
-    this.cronMonitorInterval = setInterval(() => this.monitorCron(), 60000)
+    this.skewMonitorInterval = setInterval(async () => await this.cacheClockSkew(), this.skewMonitorIntervalMs)
 
     this.stopped = false
   }
