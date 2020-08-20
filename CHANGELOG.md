@@ -1,5 +1,10 @@
 # Changes
 
+## 5.0.8
+
+- Retention policy applied to abandoned jobs in retry state.
+- Cron monitoring properly disabled when archive interval is set lower than 1 minute.
+
 ## 5.0.7
 
 - Fixed cron monitor interval.
