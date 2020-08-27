@@ -72,6 +72,8 @@ class Manager extends EventEmitter {
     options.newJobCheckInterval = options.newJobCheckInterval || this.config.newJobCheckInterval
 
     const teamQueue = options.batchSize ? null : new PQueue({ concurrency: options.teamConcurrency || 1 })
+    const teamSize = options.teamSize || 1
+    const queueSize = () => teamQueue.size - teamQueue.pending
 
     const sendItBruh = async (jobs) => {
       if (!jobs) {
@@ -85,8 +87,23 @@ class Manager extends EventEmitter {
         return Promise.all([callback(jobs)]).catch(err => this.fail(jobs.map(job => job.id), err))
       }
 
-      // Resume the worker loop as soon as at least one job is complete
-      const continueWorker = new Promise(resolve => teamQueue.once('next', () => resolve()))
+      let resolveWorker
+      const continueWorker = new Promise(resolve => { resolveWorker = resolve })
+
+      // Resume the worker loop only when there's a minimum number of jobs ready
+      // or on first job if no minimum is specified
+      // (or if there's nothing in the queue so we don't jam on bad input)
+      const nextJobHandler = () => {
+        const pending = queueSize()
+        if (!options.teamMinimumFetch ||
+          !pending ||
+          (teamSize - pending) > options.teamMinimumFetch) {
+          resolveWorker()
+          teamQueue.off('next', nextJobHandler)
+        }
+      }
+
+      teamQueue.on('next', nextJobHandler)
 
       jobs.forEach(job =>
         teamQueue.add(() =>
@@ -101,11 +118,10 @@ class Manager extends EventEmitter {
 
     const fetchOptions = { includeMetadata: options.includeMetadata || false }
     const onError = error => this.emit(events.error, error)
-    const teamSize = options.teamSize || 1
 
     const workerConfig = {
       name,
-      fetch: () => this.fetch(name, options.batchSize || (teamSize - teamQueue.size - teamQueue.pending), fetchOptions),
+      fetch: () => this.fetch(name, options.batchSize || teamSize - queueSize(), fetchOptions),
       onFetch: jobs => sendItBruh(jobs),
       onError,
       interval: options.newJobCheckInterval
