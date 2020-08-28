@@ -112,7 +112,7 @@ class Manager extends EventEmitter {
           // to resolve it
           const oldDone = job.done
           let jobResolve
-          const jobDonePromise = new Promise((resolve) => jobResolve = resolve)
+          const jobDonePromise = new Promise((resolve) => { jobResolve = resolve })
           job.done = (...args) => {
             jobResolve()
             oldDone(...args)
@@ -124,8 +124,10 @@ class Manager extends EventEmitter {
 
           // If the callback returned a promise
           return result
-            .then(value => this.complete(job.id, value))
-            .catch(err => this.fail(job.id, err))
+            .then((value) => this.complete(job.id, value))
+            .catch((err) => this.fail(job.id, err))
+            // Ignore any error writing fail
+            .catch(() => {})
         })
       )
 
