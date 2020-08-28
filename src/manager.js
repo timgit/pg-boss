@@ -110,7 +110,7 @@ class Manager extends EventEmitter {
           try {
             const result = callback(job)
 
-            // If the caller doesn't return a promise
+            // If the caller returns a promise
             if (typeof (result || {}).then === 'function') {
               return result
                 .then((value) => this.complete(job.id, value))
