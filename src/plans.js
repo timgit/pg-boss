@@ -151,8 +151,9 @@ function getMaintenanceTime (schema) {
   return `SELECT maintained_on, EXTRACT( EPOCH FROM (now() - maintained_on) ) seconds_ago FROM ${schema}.version`
 }
 
-function setCronTime (schema) {
-  return `UPDATE ${schema}.version SET cron_on = now()`
+function setCronTime (schema, time) {
+  time = time || 'now()'
+  return `UPDATE ${schema}.version SET cron_on = ${time}`
 }
 
 function getCronTime (schema) {
@@ -491,7 +492,7 @@ function archive (schema) {
       WHERE
         completedOn < (now() - CAST($1 as interval))
         OR (
-          state = '${states.created}' AND keepUntil < now()
+          state < '${states.active}' AND keepUntil < now()
         )
       RETURNING *
     )

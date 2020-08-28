@@ -26,7 +26,38 @@ describe('schedule', function () {
   it('should accept a custom clock monitoring interval in seconds', async function () {
     const queue = 'schedule-custom-monitoring-seconds'
 
-    const boss = await helper.start({ ...this.test.bossConfig, clockMonitorIntervalSeconds: 1 })
+    const config = {
+      ...this.test.bossConfig,
+      clockMonitorIntervalSeconds: 1
+    }
+
+    const boss = await helper.start(config)
+
+    await boss.schedule(queue, '* * * * *')
+
+    await Promise.delay(ASSERT_DELAY)
+
+    const job = await boss.fetch(queue)
+
+    assert(job)
+
+    await boss.stop()
+  })
+
+  it('cron monitoring should restart cron if paused', async function () {
+    const queue = 'schedule-cron-monitoring'
+
+    const config = {
+      ...this.test.bossConfig,
+      cronMonitorIntervalSeconds: 1
+    }
+
+    const boss = await helper.start(config)
+
+    const { schema } = this.test.bossConfig
+    const db = await helper.getDb()
+    await db.executeSql(plans.clearStorage(schema))
+    await db.executeSql(plans.setCronTime(schema, "now() - interval '1 hour'"))
 
     await boss.schedule(queue, '* * * * *')
 
