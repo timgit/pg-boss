@@ -106,11 +106,27 @@ class Manager extends EventEmitter {
       teamQueue.on('next', nextJobHandler)
 
       jobs.forEach(job =>
-        teamQueue.add(() =>
-          callback(job)
+        teamQueue.add(() => {
+          // If the callback doesn't return a promise
+          // create our own, and wrap the done function
+          // to resolve it
+          const oldDone = job.done
+          let jobResolve
+          const jobDonePromise = new Promise((resolve) => jobResolve = resolve)
+          job.done = (...args) => {
+            jobResolve()
+            oldDone(...args)
+          }
+          const result = callback(job)
+
+          // If the caller doesn't return a promise
+          if (typeof (result || {}).then !== 'function') return jobDonePromise
+
+          // If the callback returned a promise
+          return result
             .then(value => this.complete(job.id, value))
             .catch(err => this.fail(job.id, err))
-        )
+        })
       )
 
       return continueWorker
