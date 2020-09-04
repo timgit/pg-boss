@@ -73,7 +73,7 @@ class Manager extends EventEmitter {
 
     const teamQueue = options.batchSize ? null : new PQueue({ concurrency: options.teamConcurrency || 1, timeout: 15 * 60 * 1000 })
     const teamSize = options.teamSize || 1
-    const queueSize = () => teamQueue.size - teamQueue.pending
+    const queueSize = () => teamQueue.size + teamQueue.pending
 
     const sendItBruh = async (jobs) => {
       if (!jobs) {
