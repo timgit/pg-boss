@@ -287,7 +287,7 @@ function fetchNextJob (schema) {
       retryCount = CASE WHEN state = '${states.retry}' THEN retryCount + 1 ELSE retryCount END
     FROM nextJob
     WHERE j.id = nextJob.id
-    RETURNING ${includeMetadata ? 'j.*' : 'j.id, name, data'}
+    RETURNING ${includeMetadata ? 'j.*' : 'j.id, name, data, expireIn'}
   `
 }
 

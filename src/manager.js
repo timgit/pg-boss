@@ -71,7 +71,7 @@ class Manager extends EventEmitter {
   async watch (name, options, callback) {
     options.newJobCheckInterval = options.newJobCheckInterval || this.config.newJobCheckInterval
 
-    const teamQueue = options.batchSize ? null : new PQueue({ concurrency: options.teamConcurrency || 1, timeout: 15 * 60 * 1000 })
+    const teamQueue = options.batchSize ? null : new PQueue({ concurrency: options.teamConcurrency || 1 })
     const teamSize = options.teamSize || 1
     const queueSize = () => teamQueue.size + teamQueue.pending
 
@@ -112,7 +112,7 @@ class Manager extends EventEmitter {
 
             // If the caller returns a promise
             if (typeof (result || {}).then === 'function') {
-              return result
+              return Promise.race([result, this.expiringJobPromise(job)])
                 .then((value) => this.complete(job.id, value))
                 .catch((err) => this.fail(job.id, err))
                 .catch(() => {})
@@ -141,6 +141,24 @@ class Manager extends EventEmitter {
     if (!this.subscriptions[name]) { this.subscriptions[name] = { workers: [] } }
 
     this.subscriptions[name].workers.push(worker)
+  }
+
+  async expiringJobPromise(job) {
+    var times = {
+      // I really hope no-one is keeping a promise
+      // hanging for days
+      days: 86400000,
+      hours: 3600000,
+      minutes: 60000,
+      seconds: 1000,
+      milliseconds: 1,
+    };
+    const time = Object.keys(job.expirein).reduce((total, key) => time += times[key] * job.expirein[key], 0);
+    return new Promise(resolve, reject => {
+      const timer = setTimeout(() => {
+        reject(new Error('Job expired'));
+      }, time);
+    })
   }
 
   async unsubscribe (name) {
