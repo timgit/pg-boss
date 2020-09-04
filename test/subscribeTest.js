@@ -188,6 +188,7 @@ describe('subscribe', function () {
           // Test would timeout if all were blocked on this first
           // process
           await Promise.delay(4000)
+          return
         }
 
         if (subscribeCount === 6) {
