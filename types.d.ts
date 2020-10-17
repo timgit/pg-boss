@@ -1,6 +1,6 @@
 declare namespace PgBoss {
   interface Db {
-    executeSql(text: string, values: any[]): Promise<{ rows: any[]; rowCount: number }>;
+    executeSql(text: string, values: any[], options?: ExecutionOptions): Promise<{ rows: any[]; rowCount: number }>;
   }
 
   interface DatabaseOptions {
@@ -80,7 +80,11 @@ declare namespace PgBoss {
     singletonNextSlot?: boolean;
   }
 
-  type PublishOptions = JobOptions & ExpirationOptions & RetentionOptions & RetryOptions
+  interface ExecutionOptions {
+    connection?: any;
+  }
+
+  type PublishOptions = JobOptions & ExpirationOptions & RetentionOptions & RetryOptions & ExecutionOptions
 
   type ScheduleOptions = PublishOptions & { tz?: string }
 

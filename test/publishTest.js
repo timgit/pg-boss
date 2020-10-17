@@ -81,4 +81,29 @@ describe('publish', function () {
 
     await boss.stop()
   })
+
+  it('should pass a connection through to executeSql', async function () {
+    const db = await helper.getDb()
+    let received
+    this.test.bossConfig.db = {
+      executeSql: async (text, values, options) => {
+        const connection = options && options.connection
+        if (connection) {
+          received = connection
+          return connection.query(text, values)
+        } else {
+          return db.executeSql(text, values)
+        }
+      }
+    }
+    const boss = await helper.start(this.test.bossConfig)
+    const connection = await db.pool.connect()
+    try {
+      await boss.publish({ name: 'passConnection', options: { connection } })
+    } finally {
+      connection.release()
+    }
+
+    assert(received === connection)
+  })
 })

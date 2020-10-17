@@ -170,6 +170,7 @@ class Manager extends EventEmitter {
 
   async createJob (name, data, options, singletonOffset = 0) {
     const {
+      connection,
       expireIn,
       priority,
       startAfter,
@@ -199,7 +200,7 @@ class Manager extends EventEmitter {
       keepUntil // 13
     ]
 
-    const result = await this.db.executeSql(this.insertJobCommand, values)
+    const result = await this.db.executeSql(this.insertJobCommand, values, { connection })
 
     if (result.rowCount === 1) {
       return result.rows[0].id
