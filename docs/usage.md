@@ -3,6 +3,7 @@
 <!-- TOC -->
 
 - [Intro](#intro)
+  - [`error`](#error)
 - [Database install](#database-install)
 - [Database uninstall](#database-uninstall)
 - [Direct database interactions](#direct-database-interactions)
@@ -58,6 +59,16 @@
 pg-boss is used by creating an instance of the exported class, a subclass of a Node [EventEmitter](https://nodejs.org/api/events.html). Since the majority of all interactions with pg-boss involve a database, all instance functions return promises. Once you have created an instance, nothing happens until you call `start()`. When a job is created it is immediately persisted to the database, assigned to a queue by name and can be received from any pg-boss instance.
 
 You may use as many instances in as many environments as needed based on your requirements.  Since each instance has a connection pool (or even if you bring your own), the only primary limitation on instance count is based on the maximum number of connections your database can accept.  If you need a larger number of workers than your postgres database can accept, consider using a centralized connection pool such as pgBouncer. If you have constraints preventing direct database access, consider creating your own abstraction layer over pg-boss such as a secure web API using the `fetch()` and `complete()` functions.  If you require multiple installations in the same database, you will need to specify a separate schema name per install in the constructor.
+
+## Job states
+
+A pg-boss job undergoes certain states during its lifetime. All jobs start out as `created` - from there, they will usually become `active` when picked up for work. If job processing completes successfully, jobs will go to `completed`. If job processing is not successful, jobs will go to either `failed` or `retry` (if they were started with the respective retry options). It's also possible for `active` jobs to become `expired`, which happens when job processing takes too long.
+
+Jobs can also be `cancelled` via [`cancel(id)`](#cancelid) or [`cancel([ids])`](#cancelids), which will transition them into the `cancelled` state.
+
+All jobs that are `completed`, `expired`, `cancelled` or `failed` become eligible for archiving (i.e. they will transition into the `archive` state) after the configured `archiveCompletedAfterSeconds` time. Once `archive`d, jobs will be automatically deleted by pg-boss after the configured deletion period.
+
+Here's a state diagram that shows the possible states and their transitions:
 
 # Database install
 
