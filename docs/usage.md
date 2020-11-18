@@ -3,7 +3,7 @@
 <!-- TOC -->
 
 - [Intro](#intro)
-  - [`error`](#error)
+  - [Job states](#job-states)
 - [Database install](#database-install)
 - [Database uninstall](#database-uninstall)
 - [Direct database interactions](#direct-database-interactions)
@@ -69,6 +69,8 @@ Jobs can also be `cancelled` via [`cancel(id)`](#cancelid) or [`cancel([ids])`](
 All jobs that are `completed`, `expired`, `cancelled` or `failed` become eligible for archiving (i.e. they will transition into the `archive` state) after the configured `archiveCompletedAfterSeconds` time. Once `archive`d, jobs will be automatically deleted by pg-boss after the configured deletion period.
 
 Here's a state diagram that shows the possible states and their transitions:
+
+![job state diagram](./images/job-states.png)
 
 # Database install
 
