@@ -10,8 +10,6 @@
   - [Job table](#job-table)
 - [Events](#events)
   - [`error`](#error)
-  - [`archived`](#archived)
-  - [`expired`](#expired)
   - [`monitor-states`](#monitor-states)
 - [Static functions](#static-functions)
   - [`string getConstructionPlans(schema)`](#string-getconstructionplansschema)
@@ -148,15 +146,6 @@ boss.on('error', error => logger.error(error));
 ```
 
 > **Note: Since error events are only raised during internal housekeeping activities, they are not raised for direct API calls, where promise `catch()` handlers should be used.**
-
-
-## `archived`
-
-`archived` is raised each time 1 or more jobs are archived.  The payload is an integer representing the number of jobs archived.
-
-## `expired`
-
-`expired` is raised each time 1 or more jobs are expired.  The payload is an integer representing the number of jobs expired.
 
 ## `monitor-states`
 

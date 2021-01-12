@@ -1,5 +1,10 @@
 # Changes
 
+## 5.1.0
+
+- Added transactional locking to maintenance queries as a safeguard from deadlocks under load.
+- Removed maintenance events, `archived`, `deleted`, and `expired`.
+  
 ## 5.0.8
 
 - Retention policy applied to abandoned jobs in retry state.
