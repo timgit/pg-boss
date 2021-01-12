@@ -9,20 +9,10 @@ module.exports = {
 }
 
 function flatten (schema, commands, version) {
-  const preflight = [
-    'BEGIN',
-    plans.advisoryLock(),
-    plans.assertMigration(schema, version)
-  ]
+  commands.unshift(plans.assertMigration(schema, version))
+  commands.push(plans.setVersion(schema, version))
 
-  const postflight = [
-    plans.setVersion(schema, version),
-    'COMMIT;'
-  ]
-
-  commands = preflight.concat(commands).concat(postflight)
-
-  return commands.join(';')
+  return plans.locked(commands)
 }
 
 function rollback (schema, version, migrations) {

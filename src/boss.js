@@ -9,9 +9,6 @@ const queues = {
 
 const events = {
   error: 'error',
-  archived: 'archived',
-  deleted: 'deleted',
-  expired: 'expired',
   monitorStates: 'monitor-states',
   maintenance: 'maintenance'
 }
@@ -35,8 +32,8 @@ class Boss extends EventEmitter {
     this.events = events
 
     this.expireCommand = plans.expire(config.schema)
-    this.archiveCommand = plans.archive(config.schema)
-    this.purgeCommand = plans.purge(config.schema)
+    this.archiveCommand = plans.archive(config.schema, config.archiveInterval)
+    this.purgeCommand = plans.purge(config.schema, config.deleteAfter)
     this.getMaintenanceTimeCommand = plans.getMaintenanceTime(config.schema)
     this.setMaintenanceTimeCommand = plans.setMaintenanceTime(config.schema)
     this.countStatesCommand = plans.countStates(config.schema)
@@ -121,9 +118,9 @@ class Boss extends EventEmitter {
 
       const started = Date.now()
 
-      this.emitValue(events.expired, await this.expire())
-      this.emitValue(events.archived, await this.archive())
-      this.emitValue(events.deleted, await this.purge())
+      await this.expire()
+      await this.archive()
+      await this.purge()
 
       const ended = Date.now()
 
@@ -138,12 +135,6 @@ class Boss extends EventEmitter {
     } catch (err) {
       this.emit(events.error, err)
       throw err
-    }
-  }
-
-  async emitValue (event, value) {
-    if (value > 0) {
-      this.emit(event, value)
     }
   }
 
@@ -202,18 +193,15 @@ class Boss extends EventEmitter {
   }
 
   async expire () {
-    const { rowCount } = await this.db.executeSql(this.expireCommand)
-    return rowCount
+    await this.db.executeSql(plans.locked(this.expireCommand))
   }
 
   async archive () {
-    const { rowCount } = await this.db.executeSql(this.archiveCommand, [this.config.archiveInterval])
-    return rowCount
+    await this.db.executeSql(plans.locked(this.archiveCommand))
   }
 
   async purge () {
-    const { rowCount } = await this.db.executeSql(this.purgeCommand, [this.config.deleteAfter])
-    return rowCount
+    await this.db.executeSql(plans.locked(this.purgeCommand))
   }
 
   async setMaintenanceTime () {

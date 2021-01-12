@@ -8,16 +8,16 @@
   },
   "dependencies": {
     "bluebird": "^3.7.2",
-    "cron-parser": "^2.16.3",
-    "pg": "^8.3.2",
-    "uuid": "^8.3.0"
+    "cron-parser": "^3.1.0",
+    "pg": "^8.5.1",
+    "uuid": "^8.3.2"
   },
   "devDependencies": {
     "coveralls": "^3.1.0",
-    "mocha": "^8.1.1",
-    "moment-timezone": "^0.5.31",
+    "luxon": "^1.25.0",
+    "mocha": "^8.2.1",
     "nyc": "^15.1.0",
-    "standard": "^14.3.4"
+    "standard": "^16.0.3"
   },
   "scripts": {
     "test": "standard && mocha --exit --no-warnings",
