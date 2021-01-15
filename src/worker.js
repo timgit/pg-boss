@@ -7,8 +7,15 @@ class Worker {
 
   async start () {
     while (!this.stopped) {
+      const started = Date.now()
+
       await this.config.fetch().then(this.config.onFetch).catch(this.config.onError)
-      await Promise.delay(this.config.interval)
+
+      const duration = Date.now() - started
+
+      if (duration < this.config.interval) {
+        await Promise.delay(this.config.interval - duration)
+      }
     }
   }
 
