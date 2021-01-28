@@ -88,6 +88,12 @@ Queue options contain the following constructor-only settings.
 
     job uuid format used, "v1" or "v4"
 
+* **archiveCompletedAfterSeconds**
+
+    Specifies how long in seconds completed jobs get archived. Note: a warning will be emitted if set to lower than 60s and cron processing will be disabled.
+
+Default: 12 hours
+
 **State count monitoring**
 
 * **monitorStateIntervalSeconds** - int, default undefined
@@ -198,19 +204,19 @@ Default: 15 minutes
 
 * **retentionSeconds**, number
 
-    How many seconds a job may be in created state before it's archived. Must be >=1
+    How many seconds a job may be in created or retry state before it's archived. Must be >=1
 
 * **retentionMinutes**, number
 
-    How many minutes a job may be in created state before it's archived. Must be >=1
+    How many minutes a job may be in created or retry state before it's archived. Must be >=1
 
 * **retentionHours**, number
 
-    How many hours a job may be in created state before it's archived. Must be >=1
+    How many hours a job may be in created or retry state before it's archived. Must be >=1
 
 * **retentionDays**, number
 
-    How many days a job may be in created state before it's archived. Must be >=1
+    How many days a job may be in created or retry state before it's archived. Must be >=1
 
 Default: 30 days
 
