@@ -255,8 +255,10 @@ class Manager extends EventEmitter {
       return job
     })
 
-    return jobs.length === 0 ? null
-      : jobs.length === 1 && !batchSize ? jobs[0]
+    return jobs.length === 0
+      ? null
+      : jobs.length === 1 && !batchSize
+        ? jobs[0]
         : jobs
   }
 

@@ -43,16 +43,27 @@ module.exports = {
   setCronTime,
   states: { ...states },
   completedJobPrefix,
-  advisoryLock,
+  locked,
   assertMigration,
   MIGRATE_RACE_MESSAGE,
   CREATE_RACE_MESSAGE
 }
 
+function locked (query) {
+  if (Array.isArray(query)) {
+    query = query.join(';\n')
+  }
+
+  return `
+    BEGIN;
+    ${advisoryLock()};
+    ${query};
+    COMMIT;
+  `
+}
+
 function create (schema, version) {
-  return [
-    'BEGIN',
-    advisoryLock(),
+  const commands = [
     createSchema(schema),
     createVersionTable(schema),
     createJobStateEnum(schema),
@@ -66,9 +77,10 @@ function create (schema, version) {
     createIndexSingletonOn(schema),
     createIndexSingletonKeyOn(schema),
     createIndexSingletonKey(schema),
-    insertVersion(schema, version),
-    'COMMIT;'
-  ].join(';\n')
+    insertVersion(schema, version)
+  ]
+
+  return locked(commands)
 }
 
 function createSchema (schema) {
@@ -478,19 +490,19 @@ function insertJob (schema) {
   `
 }
 
-function purge (schema) {
+function purge (schema, interval) {
   return `
     DELETE FROM ${schema}.archive
-    WHERE archivedOn < (now() - CAST($1 as interval))
+    WHERE archivedOn < (now() - interval '${interval}')
   `
 }
 
-function archive (schema) {
+function archive (schema, interval) {
   return `
     WITH archived_rows AS (
       DELETE FROM ${schema}.job
       WHERE
-        completedOn < (now() - CAST($1 as interval))
+        completedOn < (now() - interval '${interval}')
         OR (
           state < '${states.active}' AND keepUntil < now()
         )

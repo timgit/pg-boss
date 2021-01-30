@@ -1,5 +1,6 @@
 const Promise = require('bluebird')
 const assert = require('assert')
+const { DateTime } = require('luxon')
 const helper = require('./testHelper')
 const plans = require('../src/plans')
 const PgBoss = require('../')
@@ -146,16 +147,16 @@ describe('schedule', function () {
     const queue = 'schedule-current-min-timezone'
 
     const tz = 'America/Los_Angeles'
-    const moment = require('moment-timezone')
-    const nowLocal = moment().tz(tz)
 
-    const currentMinute = nowLocal.minutes()
-    const currentHour = nowLocal.hours()
+    const nowLocal = DateTime.fromObject({ zone: tz })
 
-    nowLocal.minutes(currentMinute + 1)
+    const currentMinute = nowLocal.minute
+    const currentHour = nowLocal.hour
 
-    const nextMinute = nowLocal.minutes()
-    const nextHour = nowLocal.hours()
+    nowLocal.plus({ minutes: 1 })
+
+    const nextMinute = nowLocal.minute
+    const nextHour = nowLocal.hour
 
     // using current and next minute because the clock is ticking
     const minute = `${currentMinute},${nextMinute}`
