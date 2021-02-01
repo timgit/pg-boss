@@ -74,6 +74,7 @@ function getAll (schema, config) {
       install: [
           `ALTER TABLE ${schema}.job ADD on_complete boolean`,
           `UPDATE ${schema}.job SET on_complete = true`,
+          `ALTER TABLE ${schema}.job ALTER COLUMN on_complete SET DEFAULT true`,
           `ALTER TABLE ${schema}.job ALTER COLUMN on_complete SET NOT NULL`,
           `ALTER TABLE ${schema}.archive ADD on_complete boolean`
       ],

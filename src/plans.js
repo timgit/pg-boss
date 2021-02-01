@@ -135,7 +135,7 @@ function createJobTable (schema) {
       createdOn timestamp with time zone not null default now(),
       completedOn timestamp with time zone,
       keepUntil timestamp with time zone NOT NULL default now() + interval '30 days',
-      on_complete boolean not null default(true)
+      on_complete boolean not null default true
     )
   `
 }
