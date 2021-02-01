@@ -1,4 +1,5 @@
-const Promise = require('bluebird')
+const delay = require('delay')
+const pMap = require('p-map')
 const assert = require('assert')
 const PgBoss = require('../')
 const helper = require('./testHelper')
@@ -50,9 +51,9 @@ describe('database', function () {
 
     const prevConnectionCount = await countConnections(boss.db)
 
-    await Promise.map(listeners, (val, index) => boss.subscribe(`job${index}`, () => {}))
+    await pMap(listeners, (val, index) => boss.subscribe(`job${index}`, () => {}))
 
-    await Promise.delay(3000)
+    await delay(3000)
 
     const connectionCount = await countConnections(boss.db)
 

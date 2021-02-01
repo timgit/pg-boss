@@ -1,6 +1,6 @@
 const assert = require('assert')
 const EventEmitter = require('events')
-const Promise = require('bluebird')
+const pMap = require('p-map')
 const uuid = require('uuid')
 
 const Worker = require('./worker')
@@ -85,7 +85,7 @@ class Manager extends EventEmitter {
       const concurrency = options.teamConcurrency || 1
 
       // either no option was set, or teamSize was used
-      return Promise.map(jobs, job =>
+      return pMap(jobs, job =>
         callback(job)
           .then(value => this.complete(job.id, value))
           .catch(err => this.fail(job.id, err))
@@ -178,7 +178,8 @@ class Manager extends EventEmitter {
       singletonSeconds,
       retryBackoff,
       retryLimit,
-      retryDelay
+      retryDelay,
+      onComplete
     } = options
 
     const id = uuid[this.config.uuid]()
@@ -196,7 +197,8 @@ class Manager extends EventEmitter {
       singletonOffset, // 10
       retryDelay, // 11
       retryBackoff, // 12
-      keepUntil // 13
+      keepUntil, // 13
+      onComplete // 14
     ]
 
     const result = await this.db.executeSql(this.insertJobCommand, values)

@@ -1,6 +1,6 @@
 const assert = require('assert')
 const helper = require('./testHelper')
-const Promise = require('bluebird')
+const delay = require('delay')
 
 describe('deleteQueue', function () {
   it('should clear a specific queue', async function () {
@@ -80,7 +80,7 @@ describe('deleteQueue', function () {
 
     await boss.complete(jobId)
 
-    await Promise.delay(3000)
+    await delay(3000)
 
     const db = await helper.getDb()
 

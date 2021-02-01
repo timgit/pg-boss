@@ -1,4 +1,4 @@
-const Promise = require('bluebird')
+const pMap = require('p-map')
 const EventEmitter = require('events')
 const plans = require('./plans')
 const cronParser = require('cron-parser')
@@ -106,7 +106,8 @@ class Timekeeper extends EventEmitter {
   async cronMonitorAsync () {
     const opts = {
       retryLimit: 2,
-      retentionSeconds: 60
+      retentionSeconds: 60,
+      onComplete: false
     }
 
     await this.manager.publishDebounced(queues.CRON, null, opts, 60)
@@ -127,7 +128,7 @@ class Timekeeper extends EventEmitter {
       const sending = items.filter(i => this.shouldSendIt(i.cron, i.timezone))
 
       if (sending.length) {
-        await Promise.map(sending, it => this.send(it), { concurrency: 5 })
+        await pMap(sending, it => this.send(it), { concurrency: 5 })
       }
 
       await this.setCronTime()
@@ -153,7 +154,8 @@ class Timekeeper extends EventEmitter {
   async send (job) {
     const options = {
       singletonKey: job.name,
-      singletonSeconds: 60
+      singletonSeconds: 60,
+      onComplete: false
     }
 
     await this.manager.publish(queues.SEND_IT, job, options)

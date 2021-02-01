@@ -1,4 +1,4 @@
-const Promise = require('bluebird')
+const delay = require('delay')
 const assert = require('assert')
 const helper = require('./testHelper')
 const PgBoss = require('../')
@@ -167,13 +167,13 @@ describe('complete', function () {
     const job1 = await boss.fetch(jobName)
     await boss.complete(job1.id)
 
-    await Promise.delay(2000)
+    await delay(2000)
 
     await boss.publish(jobName)
     const job2 = await boss.fetch(jobName)
     await boss.complete(job2.id)
 
-    await Promise.delay(2000)
+    await delay(2000)
 
     assert.strictEqual(receivedCount, 1)
 
@@ -212,6 +212,66 @@ describe('complete', function () {
     const stateJobCount = await helper.countJobs(config.schema, 'name = $1', [`${helper.completedJobPrefix}${queue}`])
 
     assert.strictEqual(stateJobCount, 1)
+
+    await boss.stop()
+  })
+
+  it('should not create a completion job if opted out during publish', async function () {
+    const queue = 'onCompleteOptOut'
+
+    const config = this.test.bossConfig
+
+    const boss = await helper.start(config)
+
+    const jobId = await boss.publish(queue, null, { onComplete: false })
+
+    await boss.fetch(queue)
+
+    await boss.complete(jobId)
+
+    const job = await boss.fetchCompleted(queue)
+
+    assert.strictEqual(job, null)
+
+    await boss.stop()
+  })
+
+  it('should not create a completion job if opted out during constructor', async function () {
+    const queue = 'onCompleteOptOutGlobal'
+
+    const config = this.test.bossConfig
+
+    const boss = await helper.start({ ...config, onComplete: false })
+
+    const jobId = await boss.publish(queue)
+
+    await boss.fetch(queue)
+
+    await boss.complete(jobId)
+
+    const job = await boss.fetchCompleted(queue)
+
+    assert.strictEqual(job, null)
+
+    await boss.stop()
+  })
+
+  it('should create completion job if overriding the default from constructor', async function () {
+    const queue = 'onCompleteOptInOverride'
+
+    const config = this.test.bossConfig
+
+    const boss = await helper.start({ ...config, onComplete: false })
+
+    const jobId = await boss.publish(queue, null, { onComplete: true })
+
+    await boss.fetch(queue)
+
+    await boss.complete(jobId)
+
+    const job = await boss.fetchCompleted(queue)
+
+    assert.strictEqual(job.data.request.id, jobId)
 
     await boss.stop()
   })

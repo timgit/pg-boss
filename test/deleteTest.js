@@ -1,6 +1,6 @@
 const assert = require('assert')
 const helper = require('./testHelper')
-const Promise = require('bluebird')
+const delay = require('delay')
 
 describe('delete', async function () {
   const defaults = {
@@ -20,7 +20,7 @@ describe('delete', async function () {
 
     await boss.complete(jobId)
 
-    await Promise.delay(7000)
+    await delay(7000)
 
     const archivedJob = await helper.getArchivedJobById(config.schema, jobId)
 

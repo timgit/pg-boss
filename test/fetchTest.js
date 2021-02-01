@@ -1,4 +1,3 @@
-const Promise = require('bluebird')
 const assert = require('assert')
 const helper = require('./testHelper')
 
