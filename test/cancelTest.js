@@ -30,23 +30,24 @@ describe('cancel', function () {
     await boss.stop()
   })
 
-  it('should not cancel a completed job', function (finished) {
+  it('should not cancel a completed job', async function () {
     const config = this.test.bossConfig
 
-    test()
+    const boss = await helper.start(config)
 
-    async function test () {
-      const boss = await helper.start(config)
-      await boss.publish('will_not_cancel')
+    const queue = 'will_not_cancel'
 
-      boss.subscribe('will_not_cancel', async job => {
-        await job.done()
-        const response = await boss.cancel(job.id)
-        assert.strictEqual(response.updated, 0)
-        await boss.stop()
-        finished()
-      })
-    }
+    await boss.publish(queue)
+
+    const job = await boss.fetch(queue)
+
+    await boss.complete(job.id)
+
+    const response = await boss.cancel(job.id)
+
+    assert.strictEqual(response.updated, 0)
+
+    await boss.stop()
   })
 
   it('should cancel a batch of jobs', async function () {

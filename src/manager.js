@@ -294,7 +294,7 @@ class Manager extends EventEmitter {
     return {
       jobs: ids,
       requested: ids.length,
-      updated: result.rowCount
+      updated: parseInt(result.rows[0].count)
     }
   }
 

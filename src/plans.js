@@ -347,17 +347,18 @@ function completeJobs (schema) {
       WHERE id IN (SELECT UNNEST($1::uuid[]))
         AND state = '${states.active}'
       RETURNING *
+    ), completion_jobs as (
+      INSERT INTO ${schema}.job (name, data, keepUntil)
+      SELECT
+        '${completedJobPrefix}' || name,
+        ${buildJsonCompletionObject(true)},
+        ${keepUntilInheritance}
+      FROM results
+      WHERE NOT name LIKE '${completedJobPrefix}%'
+        AND on_complete
     )
-    INSERT INTO ${schema}.job (name, data, keepUntil)
-    SELECT
-      '${completedJobPrefix}' || name,
-      ${buildJsonCompletionObject(true)},
-      ${keepUntilInheritance}
-    FROM results
-    WHERE NOT name LIKE '${completedJobPrefix}%'
-      AND on_complete
-    RETURNING 1
-  ` // returning 1 here just to count results against input array
+    SELECT COUNT(*) FROM results
+  `
 }
 
 function failJobs (schema) {
@@ -374,18 +375,19 @@ function failJobs (schema) {
       WHERE id IN (SELECT UNNEST($1::uuid[]))
         AND state < '${states.completed}'
       RETURNING *
+    ), completion_jobs as (
+      INSERT INTO ${schema}.job (name, data, keepUntil)
+      SELECT
+        '${completedJobPrefix}' || name,
+        ${buildJsonCompletionObject(true)},
+        ${keepUntilInheritance}
+      FROM results
+      WHERE state = '${states.failed}'
+        AND NOT name LIKE '${completedJobPrefix}%'
+        AND on_complete
     )
-    INSERT INTO ${schema}.job (name, data, keepUntil)
-    SELECT
-      '${completedJobPrefix}' || name,
-      ${buildJsonCompletionObject(true)},
-      ${keepUntilInheritance}
-    FROM results
-    WHERE state = '${states.failed}'
-      AND NOT name LIKE '${completedJobPrefix}%'
-      AND on_complete
-    RETURNING 1
-  ` // returning 1 here just to count results against input array
+    SELECT COUNT(*) FROM results
+  `
 }
 
 function expire (schema) {
@@ -416,13 +418,16 @@ function expire (schema) {
 
 function cancelJobs (schema) {
   return `
-    UPDATE ${schema}.job
-    SET completedOn = now(),
-      state = '${states.cancelled}'
-    WHERE id IN (SELECT UNNEST($1::uuid[]))
-      AND state < '${states.completed}'
-    RETURNING 1
-  ` // returning 1 here just to count results against input array
+    with results as (
+      UPDATE ${schema}.job
+      SET completedOn = now(),
+        state = '${states.cancelled}'
+      WHERE id IN (SELECT UNNEST($1::uuid[]))
+        AND state < '${states.completed}'
+      RETURNING 1
+    )
+    SELECT COUNT(*) from results
+  `
 }
 
 function insertJob (schema) {
