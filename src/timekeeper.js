@@ -114,9 +114,7 @@ class Timekeeper extends EventEmitter {
   }
 
   async onCron () {
-    if (this.stopped) {
-      return
-    }
+    if (this.stopped) return
 
     try {
       if (this.config.__test__throw_clock_monitoring) {
@@ -127,14 +125,18 @@ class Timekeeper extends EventEmitter {
 
       const sending = items.filter(i => this.shouldSendIt(i.cron, i.timezone))
 
-      if (sending.length) {
+      if (sending.length && !this.stopped) {
         await pMap(sending, it => this.send(it), { concurrency: 5 })
       }
+
+      if (this.stopped) return
 
       await this.setCronTime()
     } catch (err) {
       this.emit(this.events.error, err)
     }
+
+    if (this.stopped) return
 
     await this.cronMonitorAsync()
   }
@@ -162,6 +164,7 @@ class Timekeeper extends EventEmitter {
   }
 
   async onSendIt (job) {
+    if (this.stopped) return
     const { name, data, options } = job.data
     await this.manager.publish(name, data, options)
   }
