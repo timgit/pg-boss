@@ -1,6 +1,6 @@
 const assert = require('assert')
 const helper = require('./testHelper')
-const Promise = require('bluebird')
+const delay = require('delay')
 
 describe('delayed jobs', function () {
   it('should wait until after an int (in seconds)', async function () {
@@ -48,7 +48,7 @@ describe('delayed jobs', function () {
 
     assert.strictEqual(job, null)
 
-    await Promise.delay(5000)
+    await delay(5000)
 
     const job2 = await boss.fetch(queue)
 
@@ -72,7 +72,7 @@ describe('delayed jobs', function () {
 
     assert.strictEqual(job, null)
 
-    await Promise.delay(2000)
+    await delay(2000)
 
     const job2 = await boss.fetch(queue)
 
@@ -96,7 +96,7 @@ describe('delayed jobs', function () {
 
     assert.strictEqual(job, null)
 
-    await Promise.delay(2000)
+    await delay(2000)
 
     const job2 = await boss.fetch(queue)
 

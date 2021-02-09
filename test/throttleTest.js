@@ -1,6 +1,6 @@
 const assert = require('assert')
 const helper = require('./testHelper')
-const Promise = require('bluebird')
+const delay = require('delay')
 
 describe('throttle', function () {
   it('should only create 1 job for interval with a delay', async function () {
@@ -18,10 +18,10 @@ describe('throttle', function () {
 
     for (let i = 0; i < publishCount; i++) {
       await boss.publish(queue, null, { startAfter, singletonSeconds })
-      await Promise.delay(publishInterval)
+      await delay(publishInterval)
     }
 
-    await Promise.delay(singletonSeconds * 1000)
+    await delay(singletonSeconds * 1000)
 
     assert(subscribeCount <= 2)
 
@@ -44,10 +44,10 @@ describe('throttle', function () {
 
     for (let i = 0; i < publishCount; i++) {
       await boss.publish(queue, null, { singletonSeconds })
-      await Promise.delay(publishInterval)
+      await delay(publishInterval)
     }
 
-    await Promise.delay(assertTimeout)
+    await delay(assertTimeout)
 
     assert(subscribeCount <= jobCount + 1)
 

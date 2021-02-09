@@ -17,6 +17,7 @@ pg-boss can be customized using configuration options when an instance is create
   - [Deferred jobs](#deferred-jobs)
   - [Unique jobs](#unique-jobs)
   - [Throttled jobs](#throttled-jobs)
+  - [Completion jobs](#completion-jobs)
 - [Fetch options](#fetch-options)
 - [Subscribe options](#subscribe-options)
   - [Job polling options](#job-polling-options)
@@ -256,6 +257,11 @@ For example, if you set the `singletonMinutes` to 1, then submit 2 jobs within a
 > When a higher unit is is specified, lower unit configuration settings are ignored.
 
 Setting `singletonNextSlot` to true will cause the job to be scheduled to run after the current time slot if and when a job is throttled. This option is set to true, for example, when calling the convenience function `publishDebounced()`.
+
+### Completion jobs
+* **onComplete**, bool (Default: true)
+
+When a job completes, a completion job will be created in the queue, copying the same retention policy as the job, for the purpose of `onComplete()` or `fetchCompleted()`.  If completion jobs are not used, they will be archived according to the retention policy.  If the queue in question has a very high volume, this can be set to `false` to bypass creating the completion job.  This can also be set in the constructor as a default for all calls to `publish()`.
 
 ## Fetch options
 

@@ -1,4 +1,4 @@
-const Promise = require('bluebird')
+const pMap = require('p-map')
 const helper = require('./testHelper')
 
 describe('speed', function () {
@@ -15,7 +15,7 @@ describe('speed', function () {
   beforeEach(async function () {
     const defaults = { noSupervisor: true, min: 10, max: 10 }
     boss = await helper.start({ ...this.currentTest.bossConfig, ...defaults })
-    await Promise.map(jobs, job => boss.publish(job.name, job.data))
+    await pMap(jobs, job => boss.publish(job.name, job.data))
   })
 
   afterEach(async function () { await boss.stop() })

@@ -92,7 +92,8 @@ class Boss extends EventEmitter {
     options = {
       startAfter,
       retentionSeconds: this.maintenanceIntervalSeconds * 4,
-      singletonKey: queues.MAINTENANCE
+      singletonKey: queues.MAINTENANCE,
+      onComplete: false
     }
 
     await this.manager.publish(queues.MAINTENANCE, null, options)
@@ -104,7 +105,8 @@ class Boss extends EventEmitter {
     options = {
       startAfter,
       retentionSeconds: this.monitorIntervalSeconds * 4,
-      singletonKey: queues.MONITOR_STATES
+      singletonKey: queues.MONITOR_STATES,
+      onComplete: false
     }
 
     await this.manager.publish(queues.MONITOR_STATES, null, options)

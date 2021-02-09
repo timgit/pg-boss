@@ -58,6 +58,7 @@ function checkPublishArgs (args, defaults) {
   applyRetryConfig(options, defaults)
   applyExpirationConfig(options, defaults)
   applyRetentionConfig(options, defaults)
+  applyCompletionConfig(options, defaults)
 
   const { startAfter, singletonSeconds, singletonMinutes, singletonHours } = options
 
@@ -147,6 +148,7 @@ function getConfig (value) {
   applyNewJobCheckInterval(config)
   applyExpirationConfig(config)
   applyRetentionConfig(config)
+  applyCompletionConfig(config)
 
   return config
 }
@@ -172,6 +174,17 @@ function applyArchiveConfig (config) {
 
   if (config.archiveSeconds < 60) {
     emitWarning(WARNINGS.CRON_DISABLED)
+  }
+}
+
+function applyCompletionConfig (config, defaults) {
+  assert(!('onComplete' in config) || config.onComplete === true || config.onComplete === false,
+    'configuration assert: onComplete must be either true or false')
+
+  if (!('onComplete' in config)) {
+    config.onComplete = defaults
+      ? defaults.onComplete
+      : true
   }
 }
 

@@ -1,4 +1,4 @@
-const Promise = require('bluebird')
+const delay = require('delay')
 const assert = require('assert')
 const helper = require('./testHelper')
 
@@ -125,7 +125,7 @@ describe('failure', function () {
     await boss.subscribe(queue, job => Promise.reject(failPayload))
     await boss.publish(queue)
 
-    await Promise.delay(7000)
+    await delay(7000)
 
     const job = await boss.fetchCompleted(queue)
 
@@ -146,7 +146,7 @@ describe('failure', function () {
     await boss.subscribe(queue, job => Promise.reject(errorResponse))
     await boss.publish(queue)
 
-    await Promise.delay(7000)
+    await delay(7000)
 
     const job = await boss.fetchCompleted(queue)
 
@@ -164,7 +164,7 @@ describe('failure', function () {
     await boss.publish(queue)
     await boss.subscribe(queue, async () => { throw new Error(message) })
 
-    await Promise.delay(2000)
+    await delay(2000)
 
     const job = await boss.fetchCompleted(queue)
 

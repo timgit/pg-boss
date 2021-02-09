@@ -68,6 +68,22 @@ function getAll (schema, config) {
 
   return [
     {
+      release: '5.2.0',
+      version: 16,
+      previous: 15,
+      install: [
+          `ALTER TABLE ${schema}.job ADD on_complete boolean`,
+          `UPDATE ${schema}.job SET on_complete = true`,
+          `ALTER TABLE ${schema}.job ALTER COLUMN on_complete SET DEFAULT true`,
+          `ALTER TABLE ${schema}.job ALTER COLUMN on_complete SET NOT NULL`,
+          `ALTER TABLE ${schema}.archive ADD on_complete boolean`
+      ],
+      uninstall: [
+          `ALTER TABLE ${schema}.job DROP COLUMN on_complete`,
+          `ALTER TABLE ${schema}.archive DROP COLUMN on_complete`
+      ]
+    },
+    {
       release: '5.0.6',
       version: 15,
       previous: 14,

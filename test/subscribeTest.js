@@ -1,4 +1,4 @@
-const Promise = require('bluebird')
+const delay = require('delay')
 const assert = require('assert')
 const helper = require('./testHelper')
 
@@ -70,7 +70,7 @@ describe('subscribe', function () {
 
     await boss.subscribe(queue, { newJobCheckIntervalSeconds }, () => subscribeCount++)
 
-    await Promise.delay(timeout)
+    await delay(timeout)
 
     assert(subscribeCount <= timeout / 1000 / newJobCheckIntervalSeconds)
 
@@ -92,7 +92,7 @@ describe('subscribe', function () {
     await boss.publish(queue)
     await boss.publish(queue)
 
-    await Promise.delay(5000)
+    await delay(5000)
 
     assert.strictEqual(receivedCount, 1)
 
@@ -155,7 +155,7 @@ describe('subscribe', function () {
         }
 
         // test would time out if it had to wait for each handler to resolve
-        await Promise.delay(4000)
+        await delay(4000)
       })
     }
   })
@@ -196,11 +196,11 @@ describe('subscribe', function () {
 
     await boss.subscribe(queue, async () => {
       // delay slows down subscribe fetch
-      await Promise.delay(2000)
+      await delay(2000)
       subscribeCount++
     })
 
-    await Promise.delay(7000)
+    await delay(7000)
 
     assert(subscribeCount < batchSize)
 
@@ -241,7 +241,7 @@ describe('subscribe', function () {
 
       await boss.publish(queue)
 
-      await Promise.delay(8000)
+      await delay(8000)
 
       const job = await boss.fetchCompleted(queue)
 
@@ -269,7 +269,7 @@ describe('subscribe', function () {
 
       await boss.publish(queue)
 
-      await Promise.delay(8000)
+      await delay(8000)
 
       const job = await boss.fetchCompleted(queue)
 

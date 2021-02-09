@@ -51,7 +51,11 @@ declare namespace PgBoss {
       & RetentionOptions
       & RetryOptions
       & JobPollingOptions
+      & CompletionOptions
 
+  interface CompletionOptions {
+    onComplete?: boolean;
+  }
   interface ExpirationOptions {
     expireInSeconds?: number;
     expireInMinutes?: number;
@@ -80,7 +84,7 @@ declare namespace PgBoss {
     singletonNextSlot?: boolean;
   }
 
-  type PublishOptions = JobOptions & ExpirationOptions & RetentionOptions & RetryOptions
+  type PublishOptions = JobOptions & ExpirationOptions & RetentionOptions & RetryOptions & CompletionOptions
 
   type ScheduleOptions = PublishOptions & { tz?: string }
 
@@ -198,8 +202,6 @@ declare class PgBoss {
   static getRollbackPlans(schema: string, version: string): string;
 
   on(event: "error", handler: (error: Error) => void): void;
-  on(event: "archived", handler: (count: number) => void): void;
-  on(event: "expired", handler: (count: number) => void): void;
   on(event: "maintenance", handler: () => void): void;
   on(event: "monitor-states", handler: (monitorStates: PgBoss.MonitorStates) => void): void;
 

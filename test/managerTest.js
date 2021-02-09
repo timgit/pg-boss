@@ -1,4 +1,4 @@
-const Promise = require('bluebird')
+const delay = require('delay')
 const assert = require('assert')
 const PgBoss = require('../')
 
@@ -8,7 +8,7 @@ describe('manager', function () {
 
     await boss.start()
 
-    await Promise.delay(2000)
+    await delay(2000)
 
     try {
       await boss.start()

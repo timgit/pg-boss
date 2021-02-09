@@ -1,4 +1,4 @@
-const Promise = require('bluebird')
+const delay = require('delay')
 
 class Worker {
   constructor (config) {
@@ -14,7 +14,7 @@ class Worker {
       const duration = Date.now() - started
 
       if (duration < this.config.interval) {
-        await Promise.delay(this.config.interval - duration)
+        await delay(this.config.interval - duration)
       }
     }
   }

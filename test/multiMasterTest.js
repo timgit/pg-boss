@@ -1,6 +1,7 @@
 const assert = require('assert')
+const pMap = require('p-map')
+const delay = require('delay')
 const helper = require('./testHelper')
-const Promise = require('bluebird')
 const PgBoss = require('../')
 const Contractor = require('../src/contractor')
 const migrationStore = require('../src/migrationStore')
@@ -17,12 +18,12 @@ describe('multi-master', function () {
     }
 
     try {
-      await Promise.map(instances, i => i.start())
+      await pMap(instances, i => i.start())
     } catch (err) {
       console.log(err.message)
       assert(false)
     } finally {
-      await Promise.map(instances, i => i.stop())
+      await pMap(instances, i => i.stop())
     }
   })
 
@@ -51,12 +52,12 @@ describe('multi-master', function () {
     }
 
     try {
-      await Promise.map(instances, i => i.start())
+      await pMap(instances, i => i.start())
     } catch (err) {
       console.log(err.message)
       assert(false)
     } finally {
-      await Promise.map(instances, i => i.stop())
+      await pMap(instances, i => i.stop())
     }
   })
 
@@ -93,7 +94,7 @@ describe('multi-master', function () {
 
     await boss.start()
 
-    await Promise.delay(3000)
+    await delay(3000)
 
     const completedCount = await countJobs(states.completed)
 

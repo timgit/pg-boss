@@ -134,7 +134,8 @@ function createJobTable (schema) {
       expireIn interval not null default interval '15 minutes',
       createdOn timestamp with time zone not null default now(),
       completedOn timestamp with time zone,
-      keepUntil timestamp with time zone NOT NULL default now() + interval '30 days'
+      keepUntil timestamp with time zone NOT NULL default now() + interval '30 days',
+      on_complete boolean not null default true
     )
   `
 }
@@ -346,16 +347,18 @@ function completeJobs (schema) {
       WHERE id IN (SELECT UNNEST($1::uuid[]))
         AND state = '${states.active}'
       RETURNING *
+    ), completion_jobs as (
+      INSERT INTO ${schema}.job (name, data, keepUntil)
+      SELECT
+        '${completedJobPrefix}' || name,
+        ${buildJsonCompletionObject(true)},
+        ${keepUntilInheritance}
+      FROM results
+      WHERE NOT name LIKE '${completedJobPrefix}%'
+        AND on_complete
     )
-    INSERT INTO ${schema}.job (name, data, keepUntil)
-    SELECT
-      '${completedJobPrefix}' || name,
-      ${buildJsonCompletionObject(true)},
-      ${keepUntilInheritance}
-    FROM results
-    WHERE NOT name LIKE '${completedJobPrefix}%'
-    RETURNING 1
-  ` // returning 1 here just to count results against input array
+    SELECT COUNT(*) FROM results
+  `
 }
 
 function failJobs (schema) {
@@ -372,17 +375,19 @@ function failJobs (schema) {
       WHERE id IN (SELECT UNNEST($1::uuid[]))
         AND state < '${states.completed}'
       RETURNING *
+    ), completion_jobs as (
+      INSERT INTO ${schema}.job (name, data, keepUntil)
+      SELECT
+        '${completedJobPrefix}' || name,
+        ${buildJsonCompletionObject(true)},
+        ${keepUntilInheritance}
+      FROM results
+      WHERE state = '${states.failed}'
+        AND NOT name LIKE '${completedJobPrefix}%'
+        AND on_complete
     )
-    INSERT INTO ${schema}.job (name, data, keepUntil)
-    SELECT
-      '${completedJobPrefix}' || name,
-      ${buildJsonCompletionObject(true)},
-      ${keepUntilInheritance}
-    FROM results
-    WHERE state = '${states.failed}'
-      AND NOT name LIKE '${completedJobPrefix}%'
-    RETURNING 1
-  ` // returning 1 here just to count results against input array
+    SELECT COUNT(*) FROM results
+  `
 }
 
 function expire (schema) {
@@ -407,18 +412,22 @@ function expire (schema) {
     FROM results
     WHERE state = '${states.expired}'
       AND NOT name LIKE '${completedJobPrefix}%'
+      AND on_complete
   `
 }
 
 function cancelJobs (schema) {
   return `
-    UPDATE ${schema}.job
-    SET completedOn = now(),
-      state = '${states.cancelled}'
-    WHERE id IN (SELECT UNNEST($1::uuid[]))
-      AND state < '${states.completed}'
-    RETURNING 1
-  ` // returning 1 here just to count results against input array
+    with results as (
+      UPDATE ${schema}.job
+      SET completedOn = now(),
+        state = '${states.cancelled}'
+      WHERE id IN (SELECT UNNEST($1::uuid[]))
+        AND state < '${states.completed}'
+      RETURNING 1
+    )
+    SELECT COUNT(*) from results
+  `
 }
 
 function insertJob (schema) {
@@ -436,7 +445,8 @@ function insertJob (schema) {
       singletonOn,
       retryDelay,
       retryBackoff,
-      keepUntil
+      keepUntil,
+      on_complete
     )
     SELECT
       id,
@@ -451,7 +461,8 @@ function insertJob (schema) {
       singletonOn,
       retryDelay,
       retryBackoff,
-      keepUntil
+      keepUntil,
+      on_complete
     FROM
     ( SELECT *,
         CASE
@@ -481,7 +492,8 @@ function insertJob (schema) {
               END as singletonOn,
             $11::int as retryDelay,
             $12::bool as retryBackoff,
-            $13::text as keepUntilValue
+            $13::text as keepUntilValue,
+            $14::boolean as on_complete
         ) j1
       ) j2
     ) j3
@@ -509,10 +521,10 @@ function archive (schema, interval) {
       RETURNING *
     )
     INSERT INTO ${schema}.archive (
-      id, name, priority, data, state, retryLimit, retryCount, retryDelay, retryBackoff, startAfter, startedOn, singletonKey, singletonOn, expireIn, createdOn, completedOn, keepUntil
+      id, name, priority, data, state, retryLimit, retryCount, retryDelay, retryBackoff, startAfter, startedOn, singletonKey, singletonOn, expireIn, createdOn, completedOn, keepUntil, on_complete
     )
     SELECT
-      id, name, priority, data, state, retryLimit, retryCount, retryDelay, retryBackoff, startAfter, startedOn, singletonKey, singletonOn, expireIn, createdOn, completedOn, keepUntil
+      id, name, priority, data, state, retryLimit, retryCount, retryDelay, retryBackoff, startAfter, startedOn, singletonKey, singletonOn, expireIn, createdOn, completedOn, keepUntil, on_complete
     FROM archived_rows
   `
 }

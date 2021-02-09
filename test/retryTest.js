@@ -1,6 +1,6 @@
 const assert = require('assert')
 const helper = require('./testHelper')
-const Promise = require('bluebird')
+const delay = require('delay')
 
 describe('retries', function () {
   const defaults = { maintenanceIntervalSeconds: 1 }
@@ -13,7 +13,7 @@ describe('retries', function () {
 
     const try1 = await boss.fetch(queue)
 
-    await Promise.delay(5000)
+    await delay(5000)
 
     const try2 = await boss.fetch(queue)
 
@@ -70,7 +70,7 @@ describe('retries', function () {
 
     assert.strictEqual(job1, null)
 
-    await Promise.delay(1000)
+    await delay(1000)
 
     const job2 = await boss.fetch(queue)
 
@@ -89,7 +89,7 @@ describe('retries', function () {
     await boss.subscribe(queue, { newJobCheckInterval: 500 }, job => job.done(++subscribeCount))
     await boss.publish(queue, null, { retryLimit, retryBackoff: true })
 
-    await Promise.delay(9000)
+    await delay(9000)
 
     assert(subscribeCount < retryLimit)
 
@@ -108,7 +108,7 @@ describe('retries', function () {
 
     assert.strictEqual(job1, null)
 
-    await Promise.delay(1000)
+    await delay(1000)
 
     const job2 = await boss.fetch(queue)
 

@@ -1,4 +1,4 @@
-const Promise = require('bluebird')
+const pMap = require('p-map')
 const EventEmitter = require('events')
 const plans = require('./plans')
 const cronParser = require('cron-parser')
@@ -106,16 +106,15 @@ class Timekeeper extends EventEmitter {
   async cronMonitorAsync () {
     const opts = {
       retryLimit: 2,
-      retentionSeconds: 60
+      retentionSeconds: 60,
+      onComplete: false
     }
 
     await this.manager.publishDebounced(queues.CRON, null, opts, 60)
   }
 
   async onCron () {
-    if (this.stopped) {
-      return
-    }
+    if (this.stopped) return
 
     try {
       if (this.config.__test__throw_clock_monitoring) {
@@ -126,14 +125,18 @@ class Timekeeper extends EventEmitter {
 
       const sending = items.filter(i => this.shouldSendIt(i.cron, i.timezone))
 
-      if (sending.length) {
-        await Promise.map(sending, it => this.send(it), { concurrency: 5 })
+      if (sending.length && !this.stopped) {
+        await pMap(sending, it => this.send(it), { concurrency: 5 })
       }
+
+      if (this.stopped) return
 
       await this.setCronTime()
     } catch (err) {
       this.emit(this.events.error, err)
     }
+
+    if (this.stopped) return
 
     await this.cronMonitorAsync()
   }
@@ -153,13 +156,15 @@ class Timekeeper extends EventEmitter {
   async send (job) {
     const options = {
       singletonKey: job.name,
-      singletonSeconds: 60
+      singletonSeconds: 60,
+      onComplete: false
     }
 
     await this.manager.publish(queues.SEND_IT, job, options)
   }
 
   async onSendIt (job) {
+    if (this.stopped) return
     const { name, data, options } = job.data
     await this.manager.publish(name, data, options)
   }

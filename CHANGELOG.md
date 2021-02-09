@@ -1,5 +1,10 @@
 # Changes
 
+## 5.2.0
+
+- Added constructor and publish option `onComplete` to opt out of creating a completion job in the queue once a job is completed.  This defaults to true for backwards compatibility.
+- Replaced bluebird dependency with p-map and delay.
+  
 ## 5.1.0
 
 - Added transactional locking to maintenance queries as a safeguard from deadlocks under load.

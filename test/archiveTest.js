@@ -1,6 +1,6 @@
 const assert = require('assert')
 const helper = require('./testHelper')
-const Promise = require('bluebird')
+const delay = require('delay')
 
 describe('archive', function () {
   const defaults = {
@@ -20,7 +20,7 @@ describe('archive', function () {
 
     await boss.complete(jobId)
 
-    await Promise.delay(7000)
+    await delay(7000)
 
     const archivedJob = await helper.getArchivedJobById(config.schema, jobId)
 
@@ -38,7 +38,7 @@ describe('archive', function () {
 
     const jobId = await boss.publish(queue, null, { retentionSeconds: 1 })
 
-    await Promise.delay(7000)
+    await delay(7000)
 
     const archivedJob = await helper.getArchivedJobById(config.schema, jobId)
 
@@ -56,7 +56,7 @@ describe('archive', function () {
 
     const jobId = await boss.publish(queue)
 
-    await Promise.delay(7000)
+    await delay(7000)
 
     const archivedJob = await helper.getArchivedJobById(config.schema, jobId)
 
