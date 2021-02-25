@@ -1,5 +1,8 @@
 # Changes
 
+## 5.2.1
+
+- Typescript types updated to support `archiveCompletedAfterSeconds` constructor option.
 ## 5.2.0
 
 - Added constructor and publish option `onComplete` to opt out of creating a completion job in the queue once a job is completed.  This defaults to true for backwards compatibility.
