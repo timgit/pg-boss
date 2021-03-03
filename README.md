@@ -37,6 +37,16 @@ pg-boss relies on [SKIP LOCKED](http://blog.2ndquadrant.com/what-is-select-skip-
 
 This will likely cater the most to teams already familiar with the simplicity of relational database semantics and operations (SQL, querying, and backups). It will be especially useful to those already relying on PostgreSQL that want to limit how many systems are required to monitor and support in their architecture.
 
+## Installation
+
+``` bash
+# npm
+npm install pg-boss
+
+# yarn
+yarn add pg-boss
+```
+
 ## Features
 * Backpressure-compatible subscriptions for monitoring queues on an interval (with configurable concurrency)
 * Distributed cron-based job scheduling with database clock synchronization
