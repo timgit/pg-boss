@@ -53,6 +53,16 @@ This will likely cater the most to teams already familiar with the simplicity of
 * Node 10 or higher
 * PostgreSQL 9.5 or higher
 
+## Installation
+
+``` bash
+# npm
+npm install pg-boss
+
+# yarn
+yarn add pg-boss
+```
+
 ## Documentation
 * [Usage](docs/usage.md)
 * [Configuration](docs/configuration.md)
