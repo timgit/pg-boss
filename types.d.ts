@@ -32,7 +32,7 @@ declare namespace PgBoss {
 
   interface MaintenanceOptions {
     noSupervisor?: boolean;
-    
+
     deleteAfterSeconds?: number;
     deleteAfterMinutes?: number;
     deleteAfterHours?: number;
@@ -65,6 +65,7 @@ declare namespace PgBoss {
   }
 
   interface RetentionOptions {
+    retentionSeconds?: number;
     retentionMinutes?: number;
     retentionHours?: number;
     retentionDays?: number;
@@ -206,6 +207,10 @@ declare class PgBoss {
   on(event: "error", handler: (error: Error) => void): void;
   on(event: "maintenance", handler: () => void): void;
   on(event: "monitor-states", handler: (monitorStates: PgBoss.MonitorStates) => void): void;
+
+  off(event: "error", handler: (error: Error) => void): void;
+  off(event: "maintenance", handler: () => void): void;
+  off(event: "monitor-states", handler: (monitorStates: PgBoss.MonitorStates) => void): void;
 
   start(): Promise<PgBoss>;
   stop(): Promise<void>;
