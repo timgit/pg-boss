@@ -1,5 +1,9 @@
 # Changes
 
+## 5.2.2
+
+- Typescript types updated to support `retentionSeconds` option as well as `EventEmitter.off()`. PR from @fiznool
+- Updated dependencies
 ## 5.2.1
 
 - Typescript types updated to support `archiveCompletedAfterSeconds` constructor option.
