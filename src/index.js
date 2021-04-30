@@ -8,6 +8,10 @@ const Boss = require('./boss')
 const Db = require('./db')
 const delay = require('delay')
 
+const events = {
+  error: 'error',
+  stopped: 'stopped'
+}
 class PgBoss extends EventEmitter {
   static getConstructionPlans (schema) {
     return Contractor.constructionPlans(schema)
@@ -130,7 +134,7 @@ class PgBoss extends EventEmitter {
         }
       } catch (err) {
         if (polling) {
-          this.emit('error', err)
+          this.emit(events.error, err)
         } else {
           throw err
         }
@@ -138,7 +142,7 @@ class PgBoss extends EventEmitter {
         this.isStarted = false
         this.stoppingOn = null
 
-        this.emit('stopped')
+        this.emit(events.stopped)
       }
     }
 

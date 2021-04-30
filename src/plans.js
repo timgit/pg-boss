@@ -76,6 +76,7 @@ function create (schema, version) {
     addArchivedOnToArchive(schema),
     addArchivedOnIndexToArchive(schema),
     createIndexJobName(schema),
+    createIndexJobFetch(schema),
     createIndexSingletonOn(schema),
     createIndexSingletonKeyOn(schema),
     createIndexSingletonKey(schema),
@@ -138,7 +139,8 @@ function createJobTable (schema) {
       createdOn timestamp with time zone not null default now(),
       completedOn timestamp with time zone,
       keepUntil timestamp with time zone NOT NULL default now() + interval '30 days',
-      on_complete boolean not null default true
+      on_complete boolean not null default true,
+      output jsonb
     )
   `
 }
@@ -229,6 +231,12 @@ function createIndexSingletonQueue (schema) {
 function createIndexJobName (schema) {
   return `
     CREATE INDEX job_name ON ${schema}.job (name text_pattern_ops)
+  `
+}
+
+function createIndexJobFetch (schema) {
+  return `
+    CREATE INDEX job_fetch ON ${schema}.job (state, name text_pattern_ops, startAfter)
   `
 }
 
@@ -353,7 +361,8 @@ function completeJobs (schema) {
     WITH results AS (
       UPDATE ${schema}.job
       SET completedOn = now(),
-        state = '${states.completed}'
+        state = '${states.completed}',
+        output = $2::jsonb
       WHERE id IN (SELECT UNNEST($1::uuid[]))
         AND state = '${states.active}'
       RETURNING *
@@ -381,7 +390,8 @@ function failJobs (schema) {
           ELSE '${states.failed}'::${schema}.job_state
           END,
         completedOn = ${retryCompletedOnCase},
-        startAfter = ${retryStartAfterCase}
+        startAfter = ${retryStartAfterCase},
+        output = $2::jsonb
       WHERE id IN (SELECT UNNEST($1::uuid[]))
         AND state < '${states.completed}'
       RETURNING *
@@ -409,7 +419,8 @@ function expire (schema) {
           ELSE '${states.expired}'::${schema}.job_state
           END,
         completedOn = ${retryCompletedOnCase},
-        startAfter = ${retryStartAfterCase}
+        startAfter = ${retryStartAfterCase},
+        output = $2::jsonb
       WHERE state = '${states.active}'
         AND (startedOn + expireIn) < now()
       RETURNING *

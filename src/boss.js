@@ -170,6 +170,12 @@ class Boss extends EventEmitter {
 
   async stop () {
     if (!this.stopped) {
+      await this.manager.unsubscribe(queues.MAINTENANCE)
+
+      if (this.monitorStates) {
+        await this.manager.unsubscribe(queues.MONITOR_STATES)
+      }
+
       if (this.metaMonitorInterval) {
         clearInterval(this.metaMonitorInterval)
       }

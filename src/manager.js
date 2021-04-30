@@ -26,7 +26,7 @@ class Manager extends EventEmitter {
     this.db = db
 
     this.events = events
-    this.subscriptions = {}
+    this.subscriptions = new Map()
 
     this.nextJobCommand = plans.fetchNextJob(config.schema)
     this.insertJobCommand = plans.insertJob(config.schema)
@@ -60,13 +60,11 @@ class Manager extends EventEmitter {
   async stop (options = {}) {
     const { not = null } = options
 
-    let subs = Object.values(this.subscriptions)
+    for (const sub of this.subscriptions.values()) {
+      if (not && not === sub.name) {
+        continue
+      }
 
-    if (not) {
-      subs = subs.filter(i => i.name !== not)
-    }
-
-    for (const sub of subs) {
       await this.unsubscribe(sub.name)
     }
   }
@@ -82,8 +80,32 @@ class Manager extends EventEmitter {
   }
 
   getWipData () {
-    const data = Object.values(this.subscriptions)
-      .map(({ name, jobs }) => ({ name, count: jobs.size() }))
+    const data = Array.from(this.subscriptions.values())
+      .map(({
+        id,
+        name,
+        options,
+        state,
+        jobs,
+        createdOn,
+        lastFetchedOn,
+        lastJobStartedOn,
+        lastJobEndedOn,
+        lastError,
+        lastErrorOn
+      }) => ({
+        id,
+        name,
+        options,
+        state,
+        count: jobs.length,
+        createdOn,
+        lastFetchedOn,
+        lastJobStartedOn,
+        lastJobEndedOn,
+        lastError,
+        lastErrorOn
+      }))
       .filter(i => i.count > 0)
 
     return data
@@ -91,57 +113,6 @@ class Manager extends EventEmitter {
 
   emitWipThrottled () {
     debounce(() => this.emit(events.wip, this.getWipData()), WIP_EVENT_INTERVAL, WIP_DEBOUNCE_OPTIONS)
-  }
-
-  registerWorker (worker) {
-    const { name } = worker
-
-    if (!this.subscriptions[name]) {
-      this.subscriptions[name] = {
-        name,
-        workers: [],
-        jobs: new Set()
-      }
-    }
-
-    this.subscriptions[name].workers.push(worker)
-  }
-
-  registerJobs (name, value) {
-    value = Array.isArray(value) ? value : [value]
-
-    for (const job of value) {
-      this.subscriptions[name].jobs.add(job.id)
-    }
-
-    this.emitWipThrottled()
-  }
-
-  deregisterJobs (name, value) {
-    value = Array.isArray(value) ? value : [value]
-
-    for (const jobId of value) {
-      this.subscriptions[name].jobs.delete(jobId)
-    }
-
-    this.emitWipThrottled()
-  }
-
-  async watchFinish (name, value, cb) {
-    try {
-      await cb()
-      this.deregisterJobs(name, value)
-    } catch (err) {
-      this.emit(events.error, err)
-    }
-  }
-
-  async watchFail (name, value, data) {
-    await this.watchFinish(name, value, () => this.fail(value, data))
-  }
-
-  async watchComplete (name, value, data) {
-    await this.watchFinish(name, value, () => this.complete(value, data))
   }
 
   async watch (name, options, callback) {
@@ -158,45 +129,60 @@ class Manager extends EventEmitter {
     const fetch = () => this.fetch(name, batchSize || teamSize, { includeMetadata })
 
     const onFetch = async (jobs) => {
-      this.registerJobs(name, jobs)
-
       // Failing will fail all fetched jobs
       if (batchSize) {
-        return await Promise.all([callback(jobs)]).catch(err => this.watchFail(name, jobs.map(job => job.id), err))
+        return await Promise.all([callback(jobs)]).catch(err => this.fail(jobs.map(job => job.id), err))
       }
 
       return await pMap(jobs, job =>
         callback(job)
-          .then(result => this.watchComplete(name, job.id, result))
-          .catch(err => this.watchFail(name, job.id, err))
+          .then(result => this.complete(job.id, result))
+          .catch(err => this.fail(job.id, err))
       , { concurrency: teamConcurrency }
       ).catch(() => {}) // allow promises & non-promises to live together in harmony
     }
 
     const onError = error => {
-      console.log(error)
-      this.emit(events.error, { ...error, pgbossWorker: id, pgbossQueue: name })
+      console.log(error) // todo: remove
+      this.emit(events.error, { ...error, queue: name, worker: id })
     }
 
-    const worker = new Worker({ id, name, fetch, onFetch, onError, interval })
+    const worker = new Worker({ id, name, options, interval, fetch, onFetch, onError })
 
-    this.registerWorker(worker)
+    this.subscriptions.set(worker.id, worker)
 
     worker.start()
+
+    return id
   }
 
-  async unsubscribe (name) {
-    const subscription = this.subscriptions[name]
+  async unsubscribe (value) {
+    assert(value, 'Missing required argument')
 
-    assert(subscription, `No subscriptions for ${name} were found.`)
+    const query = (typeof value === 'string')
+      ? { type: 'name', value, filter: i => i.name === value }
+      : (typeof value === 'object' && value.worker)
+          ? { type: 'worker', value: value.worker, filter: i => i.id === value.worker }
+          : null
 
-    subscription.stopping = true
+    assert(query, 'Invalid argument. Expected string or object: { worker: id }')
 
-    subscription.workers.forEach(worker => worker.stop())
+    const workers = Array.from(this.subscriptions.values())
+      .filter(i => query.filter(i) && !i.stopping && !i.stopped)
+
+    if (workers.length === 0) {
+      return
+    }
+
+    for (const worker of workers) {
+      worker.stop()
+    }
 
     setInterval(() => {
-      if (subscription.workers.every(w => w.stopped)) {
-        delete this.subscriptions[name]
+      if (workers.every(w => w.stopped)) {
+        for (const worker of workers) {
+          this.subscriptions.delete(worker.id)
+        }
       }
     }, 2000)
   }
