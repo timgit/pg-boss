@@ -29,6 +29,7 @@ class Boss extends EventEmitter {
       this.monitorIntervalSeconds = config.monitorStateIntervalSeconds
     }
 
+    this.queues = queues
     this.events = events
 
     this.expireCommand = plans.expire(config.schema)

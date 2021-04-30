@@ -27,7 +27,7 @@ describe('archive', function () {
     assert.strictEqual(jobId, archivedJob.id)
     assert.strictEqual(queue, archivedJob.name)
 
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 
   it('should archive a created job', async function () {
@@ -45,7 +45,7 @@ describe('archive', function () {
     assert.strictEqual(jobId, archivedJob.id)
     assert.strictEqual(queue, archivedJob.name)
 
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 
   it('should archive a created job - cascaded config', async function () {
@@ -63,6 +63,6 @@ describe('archive', function () {
     assert.strictEqual(jobId, archivedJob.id)
     assert.strictEqual(queue, archivedJob.name)
 
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 })

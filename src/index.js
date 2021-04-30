@@ -67,8 +67,9 @@ class PgBoss extends EventEmitter {
 
     function promoteFunction (obj, func) {
       this[func.name] = (...args) => {
-        if (!this.isStarted) {
-          return Promise.reject(new Error('pg-boss not started! Use start().'))
+        if (!this.isStarted || this.stoppingOn) {
+          const state = this.stoppingOn ? 'stopping' : 'stopped'
+          return Promise.reject(new Error(`pg-boss is ${state}.`))
         }
 
         return func.apply(obj, args)
@@ -104,42 +105,70 @@ class PgBoss extends EventEmitter {
     return this
   }
 
-  async stop ({ force }) {
-    if (!this.isStarted || this.stopping) {
+  async stop (options = {}) {
+    if (!this.isStarted || this.stoppingOn) {
       return
     }
 
-    this.stopping = true
+    let { graceful = true, timeout = 30000 } = options
 
-    await this.manager.stop()
+    timeout = Math.max(timeout, 1000)
+
+    this.stoppingOn = Date.now()
+
+    await this.manager.stop({ not: this.boss.queues.MAINTENANCE })
+    await this.timekeeper.stop()
+
+    let polling = false
 
     const shutdown = async () => {
-      await this.timekeeper.stop()
-      await this.boss.stop()
 
-      if (this.db.isOurs && force === true) {
-        await this.db.close()
+      try {
+        await this.boss.stop()
+
+        if (this.db.isOurs) {
+          await this.db.close()
+        }
+    
+      } catch(err) {
+
+        if(polling) {
+          this.emit('error', err)
+        } else {
+          throw err
+        }
+
+      } finally {
+
+        this.isStarted = false
+        this.stoppingOn = null
+
+        this.emit('stopped')
       }
-
-      this.isStarted = false
-      this.stopping = false
+      
     }
 
-    if (force) {
+    if (!graceful) {
       return await shutdown()
     }
 
-    let iterations = 0
+    if (this.manager.getWipData().length === 0) {
+      return await shutdown()
+    }
 
-    while (iterations < 10) {
-      if (this.manager.getWipData().length === 0) {
-        return await shutdown()
+    polling = true
+
+    setImmediate(async () => {
+      while (Date.now() - this.stoppingOn < timeout) {
+        await delay(2000)
+
+        if (this.manager.getWipData().length === 0) {
+          return await shutdown()
+        }
       }
 
-      await delay(5000)
-
-      iterations++
-    }
+      await shutdown()
+    })
   }
 }
 

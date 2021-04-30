@@ -57,12 +57,19 @@ class Manager extends EventEmitter {
     ]
   }
 
-  async stop () {
-    for (const sub of Object.values(this.subscriptions)) {
-      await this.unsubscribe(sub.name)
+  async stop (options = {}) {
+
+    const { not = null } = options
+
+    let subs = Object.values(this.subscriptions)
+
+    if(not) {
+      subs = subs.filter(i => i.name !== not)
     }
 
-    this.subscriptions = {}
+    for (const sub of subs) {
+        await this.unsubscribe(sub.name)
+    }
   }
 
   async subscribe (name, ...args) {
@@ -179,14 +186,21 @@ class Manager extends EventEmitter {
   }
 
   async unsubscribe (name) {
-    assert(this.subscriptions[name], `No subscriptions for ${name} were found.`)
 
-    this.subscriptions[name].stopping = true
+    const subscription = this.subscriptions[name]
 
-    this.subscriptions[name].workers.forEach(worker => worker.stop())
+    assert(subscription, `No subscriptions for ${name} were found.`)
 
-    // todo: we need to wait until each worker is done before killing the map key
-    // delete this.subscriptions[name]
+    subscription.stopping = true
+
+    subscription.workers.forEach(worker => worker.stop())
+
+    setInterval(() => {
+      if(subscription.workers.every(w => w.stopped)) {        
+        delete this.subscriptions[name]
+      }
+    }, 2000)
+    
   }
 
   async offComplete (name) {

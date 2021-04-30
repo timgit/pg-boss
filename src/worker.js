@@ -6,7 +6,7 @@ class Worker {
   }
 
   async start () {
-    while (!this.stopped) {
+    while (!this.stopping) {
       const started = Date.now()
 
       try {
@@ -18,14 +18,16 @@ class Worker {
 
       const duration = Date.now() - started
 
-      if (duration < this.config.interval) {
+      if (!this.stopping && duration < this.config.interval) {
         await delay(this.config.interval - duration)
       }
     }
+
+    this.stopped = true
   }
 
   stop () {
-    this.stopped = true
+    this.stopping = true
   }
 }
 

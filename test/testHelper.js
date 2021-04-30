@@ -39,6 +39,8 @@ function getConfig (options = {}) {
 
   config.schema = config.schema || 'pgboss'
 
+  config.stopOptions = { graceful: false }
+
   const result = { ...config }
 
   return Object.assign(result, options)
