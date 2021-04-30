@@ -122,30 +122,24 @@ class PgBoss extends EventEmitter {
     let polling = false
 
     const shutdown = async () => {
-
       try {
         await this.boss.stop()
 
         if (this.db.isOurs) {
           await this.db.close()
         }
-    
-      } catch(err) {
-
-        if(polling) {
+      } catch (err) {
+        if (polling) {
           this.emit('error', err)
         } else {
           throw err
         }
-
       } finally {
-
         this.isStarted = false
         this.stoppingOn = null
 
         this.emit('stopped')
       }
-      
     }
 
     if (!graceful) {

@@ -2,7 +2,7 @@ const delay = require('delay')
 
 class Worker {
   constructor (config) {
-    this.config = config
+    Object.assign(this, config)
   }
 
   async start () {
@@ -10,16 +10,19 @@ class Worker {
       const started = Date.now()
 
       try {
-        const jobs = await this.config.fetch()
-        await this.config.onFetch(jobs)
+        const jobs = await this.fetch()
+
+        if (jobs) {
+          await this.onFetch(jobs)
+        }
       } catch (err) {
-        this.config.onError(err)
+        this.onError(err)
       }
 
       const duration = Date.now() - started
 
-      if (!this.stopping && duration < this.config.interval) {
-        await delay(this.config.interval - duration)
+      if (!this.stopping && duration < this.interval) {
+        await delay(this.interval - duration)
       }
     }
 

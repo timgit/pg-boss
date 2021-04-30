@@ -121,9 +121,17 @@ class Boss extends EventEmitter {
 
       const started = Date.now()
 
-      await this.expire()
-      await this.archive()
-      await this.purge()
+      if (!this.stopped) {
+        await this.expire()
+      }
+
+      if (!this.stopped) {
+        await this.archive()
+      }
+
+      if (!this.stopped) {
+        await this.purge()
+      }
 
       const ended = Date.now()
 

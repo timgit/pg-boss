@@ -58,17 +58,16 @@ class Manager extends EventEmitter {
   }
 
   async stop (options = {}) {
-
     const { not = null } = options
 
     let subs = Object.values(this.subscriptions)
 
-    if(not) {
+    if (not) {
       subs = subs.filter(i => i.name !== not)
     }
 
     for (const sub of subs) {
-        await this.unsubscribe(sub.name)
+      await this.unsubscribe(sub.name)
     }
   }
 
@@ -83,16 +82,20 @@ class Manager extends EventEmitter {
   }
 
   getWipData () {
-    return Object.values(this.subscriptions)
+    const data = Object.values(this.subscriptions)
       .map(({ name, jobs }) => ({ name, count: jobs.size() }))
       .filter(i => i.count > 0)
+
+    return data
   }
 
   emitWipThrottled () {
     debounce(() => this.emit(events.wip, this.getWipData()), WIP_EVENT_INTERVAL, WIP_DEBOUNCE_OPTIONS)
   }
 
-  registerWorker (name, worker) {
+  registerWorker (worker) {
+    const { name } = worker
+
     if (!this.subscriptions[name]) {
       this.subscriptions[name] = {
         name,
@@ -155,10 +158,6 @@ class Manager extends EventEmitter {
     const fetch = () => this.fetch(name, batchSize || teamSize, { includeMetadata })
 
     const onFetch = async (jobs) => {
-      if (!jobs) {
-        return
-      }
-
       this.registerJobs(name, jobs)
 
       // Failing will fail all fetched jobs
@@ -166,7 +165,7 @@ class Manager extends EventEmitter {
         return await Promise.all([callback(jobs)]).catch(err => this.watchFail(name, jobs.map(job => job.id), err))
       }
 
-      await pMap(jobs, job =>
+      return await pMap(jobs, job =>
         callback(job)
           .then(result => this.watchComplete(name, job.id, result))
           .catch(err => this.watchFail(name, job.id, err))
@@ -175,6 +174,7 @@ class Manager extends EventEmitter {
     }
 
     const onError = error => {
+      console.log(error)
       this.emit(events.error, { ...error, pgbossWorker: id, pgbossQueue: name })
     }
 
@@ -186,7 +186,6 @@ class Manager extends EventEmitter {
   }
 
   async unsubscribe (name) {
-
     const subscription = this.subscriptions[name]
 
     assert(subscription, `No subscriptions for ${name} were found.`)
@@ -196,11 +195,10 @@ class Manager extends EventEmitter {
     subscription.workers.forEach(worker => worker.stop())
 
     setInterval(() => {
-      if(subscription.workers.every(w => w.stopped)) {        
+      if (subscription.workers.every(w => w.stopped)) {
         delete this.subscriptions[name]
       }
     }, 2000)
-    
   }
 
   async offComplete (name) {
