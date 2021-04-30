@@ -66,4 +66,19 @@ describe('singleton', function () {
 
     await boss.stop()
   })
+
+  it('publishOnce() without a key should also work', async function () {
+    const queue = 'publishOnceNoKey'
+
+    const boss = await helper.start(this.test.bossConfig)
+    const jobId = await boss.publishOnce(queue)
+
+    assert(jobId)
+
+    const jobId2 = await boss.publishOnce(queue)
+
+    assert.strictEqual(jobId2, null)
+
+    await boss.stop()
+  })
 })

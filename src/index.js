@@ -6,6 +6,7 @@ const Manager = require('./manager')
 const Timekeeper = require('./timekeeper')
 const Boss = require('./boss')
 const Db = require('./db')
+const delay = require('delay')
 
 class PgBoss extends EventEmitter {
   static getConstructionPlans (schema) {
@@ -103,20 +104,42 @@ class PgBoss extends EventEmitter {
     return this
   }
 
-  async stop () {
-    if (!this.isStarted) {
+  async stop ({ force }) {
+    if (!this.isStarted || this.stopping) {
       return
     }
 
-    await this.timekeeper.stop()
-    await this.manager.stop()
-    await this.boss.stop()
+    this.stopping = true
 
-    if (this.db.isOurs) {
-      await this.db.close()
+    await this.manager.stop()
+
+    const shutdown = async () => {
+      await this.timekeeper.stop()
+      await this.boss.stop()
+
+      if (this.db.isOurs && force === true) {
+        await this.db.close()
+      }
+
+      this.isStarted = false
+      this.stopping = false
     }
 
-    this.isStarted = false
+    if (force) {
+      return await shutdown()
+    }
+
+    let iterations = 0
+
+    while (iterations < 10) {
+      if (this.manager.getWipData().length === 0) {
+        return await shutdown()
+      }
+
+      await delay(5000)
+
+      iterations++
+    }
   }
 }
 

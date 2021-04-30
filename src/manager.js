@@ -2,15 +2,20 @@ const assert = require('assert')
 const EventEmitter = require('events')
 const pMap = require('p-map')
 const uuid = require('uuid')
+const debounce = require('lodash.debounce')
 
-const Worker = require('./worker')
-const plans = require('./plans')
 const Attorney = require('./attorney')
+const Worker = require('./worker')
 
-const completedJobPrefix = plans.completedJobPrefix
+const plans = require('./plans')
+const { COMPLETION_JOB_PREFIX } = plans
+
+const WIP_EVENT_INTERVAL = 2000
+const WIP_DEBOUNCE_OPTIONS = { leading: true, trailing: true, maxWait: WIP_EVENT_INTERVAL }
 
 const events = {
-  error: 'error'
+  error: 'error',
+  wip: 'wip'
 }
 
 class Manager extends EventEmitter {
@@ -53,7 +58,10 @@ class Manager extends EventEmitter {
   }
 
   async stop () {
-    Object.keys(this.subscriptions).forEach(name => this.unsubscribe(name))
+    for (const sub of Object.values(this.subscriptions)) {
+      await this.unsubscribe(sub.name)
+    }
+
     this.subscriptions = {}
   }
 
@@ -64,63 +72,125 @@ class Manager extends EventEmitter {
 
   async onComplete (name, ...args) {
     const { options, callback } = Attorney.checkSubscribeArgs(name, args, this.config)
-    return this.watch(completedJobPrefix + name, options, callback)
+    return this.watch(COMPLETION_JOB_PREFIX + name, options, callback)
+  }
+
+  getWipData () {
+    return Object.values(this.subscriptions)
+      .map(({ name, jobs }) => ({ name, count: jobs.size() }))
+      .filter(i => i.count > 0)
+  }
+
+  emitWipThrottled () {
+    debounce(() => this.emit(events.wip, this.getWipData()), WIP_EVENT_INTERVAL, WIP_DEBOUNCE_OPTIONS)
+  }
+
+  registerWorker (name, worker) {
+    if (!this.subscriptions[name]) {
+      this.subscriptions[name] = {
+        name,
+        workers: [],
+        jobs: new Set()
+      }
+    }
+
+    this.subscriptions[name].workers.push(worker)
+  }
+
+  registerJobs (name, value) {
+    value = Array.isArray(value) ? value : [value]
+
+    for (const job of value) {
+      this.subscriptions[name].jobs.add(job.id)
+    }
+
+    this.emitWipThrottled()
+  }
+
+  deregisterJobs (name, value) {
+    value = Array.isArray(value) ? value : [value]
+
+    for (const jobId of value) {
+      this.subscriptions[name].jobs.delete(jobId)
+    }
+
+    this.emitWipThrottled()
+  }
+
+  async watchFinish (name, value, cb) {
+    try {
+      await cb()
+      this.deregisterJobs(name, value)
+    } catch (err) {
+      this.emit(events.error, err)
+    }
+  }
+
+  async watchFail (name, value, data) {
+    await this.watchFinish(name, value, () => this.fail(value, data))
+  }
+
+  async watchComplete (name, value, data) {
+    await this.watchFinish(name, value, () => this.complete(value, data))
   }
 
   async watch (name, options, callback) {
-    options.newJobCheckInterval = options.newJobCheckInterval || this.config.newJobCheckInterval
+    const {
+      newJobCheckInterval: interval = this.config.newJobCheckInterval,
+      batchSize,
+      teamSize = 1,
+      teamConcurrency = 1,
+      includeMetadata = false
+    } = options
 
-    const sendItBruh = async (jobs) => {
+    const id = uuid.v4()
+
+    const fetch = () => this.fetch(name, batchSize || teamSize, { includeMetadata })
+
+    const onFetch = async (jobs) => {
       if (!jobs) {
         return
       }
 
-      // If you get a batch, for now you should use complete() so you can control
-      //   whether individual or group completion responses apply to your use case
+      this.registerJobs(name, jobs)
+
       // Failing will fail all fetched jobs
-      if (options.batchSize) {
-        return Promise.all([callback(jobs)]).catch(err => this.fail(jobs.map(job => job.id), err))
+      if (batchSize) {
+        return await Promise.all([callback(jobs)]).catch(err => this.watchFail(name, jobs.map(job => job.id), err))
       }
 
-      const concurrency = options.teamConcurrency || 1
-
-      // either no option was set, or teamSize was used
-      return pMap(jobs, job =>
+      await pMap(jobs, job =>
         callback(job)
-          .then(value => this.complete(job.id, value))
-          .catch(err => this.fail(job.id, err))
-      , { concurrency }
+          .then(result => this.watchComplete(name, job.id, result))
+          .catch(err => this.watchFail(name, job.id, err))
+      , { concurrency: teamConcurrency }
       ).catch(() => {}) // allow promises & non-promises to live together in harmony
     }
 
-    const fetchOptions = { includeMetadata: options.includeMetadata || false }
-    const onError = error => this.emit(events.error, error)
-
-    const workerConfig = {
-      name,
-      fetch: () => this.fetch(name, options.batchSize || options.teamSize || 1, fetchOptions),
-      onFetch: jobs => sendItBruh(jobs),
-      onError,
-      interval: options.newJobCheckInterval
+    const onError = error => {
+      this.emit(events.error, { ...error, pgbossWorker: id, pgbossQueue: name })
     }
 
-    const worker = new Worker(workerConfig)
+    const worker = new Worker({ id, name, fetch, onFetch, onError, interval })
+
+    this.registerWorker(worker)
+
     worker.start()
-
-    if (!this.subscriptions[name]) { this.subscriptions[name] = { workers: [] } }
-
-    this.subscriptions[name].workers.push(worker)
   }
 
   async unsubscribe (name) {
     assert(this.subscriptions[name], `No subscriptions for ${name} were found.`)
 
+    this.subscriptions[name].stopping = true
+
     this.subscriptions[name].workers.forEach(worker => worker.stop())
-    delete this.subscriptions[name]
+
+    // todo: we need to wait until each worker is done before killing the map key
+    // delete this.subscriptions[name]
   }
 
   async offComplete (name) {
-    return this.unsubscribe(completedJobPrefix + name)
+    return this.unsubscribe(COMPLETION_JOB_PREFIX + name)
   }
 
   async publish (...args) {
@@ -265,7 +335,7 @@ class Manager extends EventEmitter {
   }
 
   async fetchCompleted (name, batchSize, options = {}) {
-    return this.fetch(completedJobPrefix + name, batchSize, options)
+    return this.fetch(COMPLETION_JOB_PREFIX + name, batchSize, options)
   }
 
   mapCompletionIdArg (id, funcName) {

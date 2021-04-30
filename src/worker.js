@@ -9,7 +9,12 @@ class Worker {
     while (!this.stopped) {
       const started = Date.now()
 
-      await this.config.fetch().then(this.config.onFetch).catch(this.config.onError)
+      try {
+        const jobs = await this.config.fetch()
+        await this.config.onFetch(jobs)
+      } catch (err) {
+        this.config.onError(err)
+      }
 
       const duration = Date.now() - started
 

@@ -9,6 +9,7 @@
   "dependencies": {
     "cron-parser": "^3.3.0",
     "delay": "^5.0.0",
+    "lodash.debounce": "^4.0.8",
     "p-map": "^4.0.0",
     "pg": "^8.5.1",
     "uuid": "^8.3.2"

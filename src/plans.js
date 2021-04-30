@@ -8,7 +8,9 @@ const states = {
   failed: 'failed'
 }
 const assert = require('assert')
-const completedJobPrefix = `__state__${states.completed}__`
+
+const COMPLETION_JOB_PREFIX = `__state__${states.completed}__`
+const SINGLETON_QUEUE_KEY = '__pgboss__singleton_queue'
 
 const MUTEX = 1337968055000
 const MIGRATE_RACE_MESSAGE = 'division by zero'
@@ -42,7 +44,7 @@ module.exports = {
   getCronTime,
   setCronTime,
   states: { ...states },
-  completedJobPrefix,
+  COMPLETION_JOB_PREFIX,
   locked,
   assertMigration,
   MIGRATE_RACE_MESSAGE,
@@ -77,6 +79,7 @@ function create (schema, version) {
     createIndexSingletonOn(schema),
     createIndexSingletonKeyOn(schema),
     createIndexSingletonKey(schema),
+    createIndexSingletonQueue(schema),
     insertVersion(schema, version)
   ]
 
@@ -216,6 +219,13 @@ function createIndexSingletonKeyOn (schema) {
   `
 }
 
+function createIndexSingletonQueue (schema) {
+  // "singleton queue" means "only 1 job can be queued at a time"
+  return `
+    CREATE UNIQUE INDEX job_singleton_queue ON ${schema}.job (name, singletonKey) WHERE state < '${states.active}' AND singletonOn IS NULL AND singletonKey = '${SINGLETON_QUEUE_KEY}'
+  `
+}
+
 function createIndexJobName (schema) {
   return `
     CREATE INDEX job_name ON ${schema}.job (name text_pattern_ops)
@@ -350,11 +360,11 @@ function completeJobs (schema) {
     ), completion_jobs as (
       INSERT INTO ${schema}.job (name, data, keepUntil)
       SELECT
-        '${completedJobPrefix}' || name,
+        '${COMPLETION_JOB_PREFIX}' || name,
         ${buildJsonCompletionObject(true)},
         ${keepUntilInheritance}
       FROM results
-      WHERE NOT name LIKE '${completedJobPrefix}%'
+      WHERE NOT name LIKE '${COMPLETION_JOB_PREFIX}%'
         AND on_complete
     )
     SELECT COUNT(*) FROM results
@@ -378,12 +388,12 @@ function failJobs (schema) {
     ), completion_jobs as (
       INSERT INTO ${schema}.job (name, data, keepUntil)
       SELECT
-        '${completedJobPrefix}' || name,
+        '${COMPLETION_JOB_PREFIX}' || name,
         ${buildJsonCompletionObject(true)},
         ${keepUntilInheritance}
       FROM results
       WHERE state = '${states.failed}'
-        AND NOT name LIKE '${completedJobPrefix}%'
+        AND NOT name LIKE '${COMPLETION_JOB_PREFIX}%'
         AND on_complete
     )
     SELECT COUNT(*) FROM results
@@ -406,12 +416,12 @@ function expire (schema) {
     )
     INSERT INTO ${schema}.job (name, data, keepUntil)
     SELECT
-      '${completedJobPrefix}' || name,
+      '${COMPLETION_JOB_PREFIX}' || name,
       ${buildJsonCompletionObject()},
       ${keepUntilInheritance}
     FROM results
     WHERE state = '${states.expired}'
-      AND NOT name LIKE '${completedJobPrefix}%'
+      AND NOT name LIKE '${COMPLETION_JOB_PREFIX}%'
       AND on_complete
   `
 }
@@ -533,7 +543,7 @@ function countStates (schema) {
   return `
     SELECT name, state, count(*) size
     FROM ${schema}.job
-    WHERE name NOT LIKE '${completedJobPrefix}%'
+    WHERE name NOT LIKE '${COMPLETION_JOB_PREFIX}%'
     GROUP BY rollup(name), rollup(state)
   `
 }
