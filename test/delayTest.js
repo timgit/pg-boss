@@ -25,7 +25,7 @@ describe('delayed jobs', function () {
 
         assert(delaySeconds >= elapsedSeconds)
 
-        await boss.stop()
+        await boss.stop(this.test.bossConfig.stopOptions)
 
         resolve()
       })
@@ -54,7 +54,7 @@ describe('delayed jobs', function () {
 
     assert(job2)
 
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 
   it('should wait until after a date object', async function () {
@@ -78,7 +78,7 @@ describe('delayed jobs', function () {
 
     assert(job2)
 
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 
   it('should work with publishAfter() and a date object', async function () {
@@ -102,6 +102,6 @@ describe('delayed jobs', function () {
 
     assert(job2)
 
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 })

@@ -21,7 +21,7 @@ describe('schedule', function () {
 
     assert(job)
 
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 
   it('should accept a custom clock monitoring interval in seconds', async function () {
@@ -42,7 +42,7 @@ describe('schedule', function () {
 
     assert(job)
 
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 
   it('cron monitoring should restart cron if paused', async function () {
@@ -68,7 +68,7 @@ describe('schedule', function () {
 
     assert(job)
 
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 
   it('should publish job based on every minute expression after a restart', async function () {
@@ -78,7 +78,7 @@ describe('schedule', function () {
 
     await boss.schedule(queue, '* * * * *')
 
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
 
     boss = await helper.start(this.test.bossConfig)
 
@@ -88,7 +88,7 @@ describe('schedule', function () {
 
     assert(job)
 
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 
   it('should remove previously scheduled job', async function () {
@@ -100,7 +100,7 @@ describe('schedule', function () {
 
     await boss.unschedule(queue)
 
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
 
     const db = await helper.getDb()
     await db.executeSql(plans.clearStorage(this.test.bossConfig.schema))
@@ -113,7 +113,7 @@ describe('schedule', function () {
 
     assert(job === null)
 
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 
   it('should publish job based on current minute in UTC', async function () {
@@ -140,7 +140,7 @@ describe('schedule', function () {
 
     assert(job)
 
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 
   it('should publish job based on current minute in a specified time zone', async function () {
@@ -172,7 +172,7 @@ describe('schedule', function () {
 
     assert(job)
 
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 
   it('should force a clock skew warning', async function () {
@@ -194,6 +194,6 @@ describe('schedule', function () {
 
     assert.strictEqual(warningCount, 1)
 
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 })

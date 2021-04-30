@@ -28,7 +28,7 @@ describe('wildcard', function () {
 
       boss.subscribe(`${baseName}_*`, { batchSize: 2 }, jobs => {
         assert.strictEqual(jobs.length, 2)
-        boss.stop().then(() => finished())
+        boss.stop(this.test.bossConfig.stopOptions).then(() => finished())
       })
     }
   })
@@ -44,6 +44,6 @@ describe('wildcard', function () {
     const job2 = await boss.fetch(`${baseName}_*`)
 
     assert.strictEqual(job2, null)
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 })

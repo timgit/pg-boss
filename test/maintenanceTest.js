@@ -27,6 +27,6 @@ describe('maintenance', async function () {
     const count = await countJobs()
     assert(count > 1)
 
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 })

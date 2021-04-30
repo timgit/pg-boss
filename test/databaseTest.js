@@ -12,7 +12,7 @@ describe('database', function () {
       await boss.start()
       assert(false)
     } catch (err) {
-      await boss.stop()
+      await boss.stop(this.test.bossConfig.stopOptions)
     }
   })
 
@@ -59,7 +59,7 @@ describe('database', function () {
 
     const newConnections = connectionCount - prevConnectionCount
 
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
 
     return newConnections
 

@@ -15,7 +15,7 @@ describe('singleton', function () {
 
     assert.strictEqual(jobId2, null)
 
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 
   it('should not allow more than 1 complete job with the same key with an interval', async function () {
@@ -33,7 +33,7 @@ describe('singleton', function () {
 
     assert.strictEqual(jobId, null)
 
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 
   it('should allow more than 1 pending job at the same time with different keys', async function () {
@@ -48,7 +48,7 @@ describe('singleton', function () {
 
     assert(jobId2)
 
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 
   it('publishOnce() should work', async function () {
@@ -64,7 +64,7 @@ describe('singleton', function () {
 
     assert.strictEqual(jobId2, null)
 
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 
   it('publishOnce() without a key should also work', async function () {
@@ -79,6 +79,6 @@ describe('singleton', function () {
 
     assert.strictEqual(jobId2, null)
 
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 })

@@ -20,7 +20,7 @@ describe('retries', function () {
     assert.strictEqual(try1.id, jobId)
     assert.strictEqual(try2.id, jobId)
 
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 
   it('should retry a job that failed', async function () {
@@ -37,7 +37,7 @@ describe('retries', function () {
 
     assert.strictEqual(job.id, jobId)
 
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 
   it('should retry a job that failed with cascaded config', async function () {
@@ -54,7 +54,7 @@ describe('retries', function () {
 
     assert.strictEqual(job.id, jobId)
 
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 
   it('should retry with a fixed delay', async function () {
@@ -76,7 +76,7 @@ describe('retries', function () {
 
     assert(job2)
 
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 
   it('should retry with a exponential backoff', async function () {
@@ -93,7 +93,7 @@ describe('retries', function () {
 
     assert(subscribeCount < retryLimit)
 
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 
   it('should set the default retry limit to 1 if missing', async function () {
@@ -114,6 +114,6 @@ describe('retries', function () {
 
     assert(job2)
 
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 })

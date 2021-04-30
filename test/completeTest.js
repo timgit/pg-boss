@@ -13,7 +13,7 @@ describe('complete', function () {
     } catch (err) {
       assert(err)
     } finally {
-      await boss.stop()
+      await boss.stop(this.test.bossConfig.stopOptions)
     }
   })
 
@@ -43,7 +43,7 @@ describe('complete', function () {
 
     assert.strictEqual(batchSize, completed.length)
 
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 
   it('onComplete should have the payload from complete() in the response object', function (finished) {
@@ -67,7 +67,7 @@ describe('complete', function () {
         assert.strictEqual(job.data.response.message, responsePayload.message)
         assert.strictEqual(job.data.response.arg2, responsePayload.arg2)
 
-        await boss.stop()
+        await boss.stop(this.test.bossConfig.stopOptions)
 
         finished()
       })
@@ -90,7 +90,7 @@ describe('complete', function () {
         assert.strictEqual(jobId, job.data.request.id)
         assert.strictEqual(job.data.request.data.foo, requestPayload.foo)
 
-        await boss.stop()
+        await boss.stop(this.test.bossConfig.stopOptions)
         finished()
       })
 
@@ -117,7 +117,7 @@ describe('complete', function () {
         assert.strictEqual(job.data.response.message, responsePayload.message)
         assert.strictEqual(job.data.response.code, responsePayload.code)
 
-        await boss.stop()
+        await boss.stop(this.test.bossConfig.stopOptions)
         finished()
       })
 
@@ -141,7 +141,7 @@ describe('complete', function () {
 
       boss.onComplete(jobName, async job => {
         assert.strictEqual(job.data.response.arg1, responsePayload.arg1)
-        await boss.stop()
+        await boss.stop(this.test.bossConfig.stopOptions)
         finished()
       })
 
@@ -177,7 +177,7 @@ describe('complete', function () {
 
     assert.strictEqual(receivedCount, 1)
 
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 
   it('should fetch a completed job', async function () {
@@ -191,7 +191,7 @@ describe('complete', function () {
 
     assert.strictEqual(job.data.request.id, jobId)
 
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 
   it('should not create an extra state job after completion', async function () {
@@ -213,7 +213,7 @@ describe('complete', function () {
 
     assert.strictEqual(stateJobCount, 1)
 
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 
   it('should not create a completion job if opted out during publish', async function () {
@@ -233,7 +233,7 @@ describe('complete', function () {
 
     assert.strictEqual(job, null)
 
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 
   it('should not create a completion job if opted out during constructor', async function () {
@@ -253,7 +253,7 @@ describe('complete', function () {
 
     assert.strictEqual(job, null)
 
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 
   it('should create completion job if overriding the default from constructor', async function () {
@@ -273,6 +273,6 @@ describe('complete', function () {
 
     assert.strictEqual(job.data.request.id, jobId)
 
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 })

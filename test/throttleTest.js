@@ -25,7 +25,7 @@ describe('throttle', function () {
 
     assert(subscribeCount <= 2)
 
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 
   it('should process at most 1 job per second', async function () {
@@ -51,7 +51,7 @@ describe('throttle', function () {
 
     assert(subscribeCount <= jobCount + 1)
 
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 
   it('should debounce', async function () {
@@ -67,7 +67,7 @@ describe('throttle', function () {
 
     assert(jobId2)
 
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 
   it('should debounce via publishDebounced()', async function () {
@@ -88,7 +88,7 @@ describe('throttle', function () {
 
     assert.strictEqual(jobId3, null)
 
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 
   it('should reject 2nd request in the same time slot', async function () {
@@ -104,7 +104,7 @@ describe('throttle', function () {
 
     assert.strictEqual(jobId2, null)
 
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 
   it('should throttle via publishThrottled()', async function () {
@@ -121,6 +121,6 @@ describe('throttle', function () {
 
     assert.strictEqual(jobId2, null)
 
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 })

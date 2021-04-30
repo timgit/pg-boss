@@ -22,7 +22,7 @@ describe('error', function () {
           throw new Error('test - nothing to see here')
         } else {
           await job.done()
-          await boss.stop()
+          await boss.stop(this.test.bossConfig.stopOptions)
           finished()
         }
       })

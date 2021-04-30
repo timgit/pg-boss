@@ -12,7 +12,7 @@ describe('failure', function () {
     } catch (err) {
       assert(err)
     } finally {
-      await boss.stop()
+      await boss.stop(this.test.bossConfig.stopOptions)
     }
   })
 
@@ -26,7 +26,7 @@ describe('failure', function () {
 
     await boss.fail(job.id)
 
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 
   it('should subscribe to a job failure', async function () {
@@ -44,7 +44,7 @@ describe('failure', function () {
         assert.strictEqual(jobId, job.data.request.id)
         assert.strictEqual('failed', job.data.state)
 
-        await boss.stop()
+        await boss.stop(this.test.bossConfig.stopOptions)
         resolve()
       }).catch(reject)
     })
@@ -64,7 +64,7 @@ describe('failure', function () {
     const jobs = await boss.fetch(queue, 3)
 
     await boss.fail(jobs.map(job => job.id))
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 
   it('should accept a payload', async function () {
@@ -81,7 +81,7 @@ describe('failure', function () {
     assert.strictEqual(job.data.state, 'failed')
     assert.strictEqual(job.data.response.someReason, failPayload.someReason)
 
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 
   it('subscribe failure via done() should pass error payload to failed job', function (finished) {
@@ -109,7 +109,7 @@ describe('failure', function () {
           assert.strictEqual(failedJob.data.state, 'failed')
           assert.strictEqual(failedJob.data.response.message, errorMessage)
 
-          await boss.stop()
+          await boss.stop(this.test.bossConfig.stopOptions)
 
           finished()
         }
@@ -132,7 +132,7 @@ describe('failure', function () {
     assert.strictEqual(job.data.state, 'failed')
     assert.strictEqual(job.data.response.value, failPayload)
 
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 
   it('subscribe failure via Promise reject() should pass object payload', async function () {
@@ -153,7 +153,7 @@ describe('failure', function () {
     assert.strictEqual(job.data.state, 'failed')
     assert.strictEqual(job.data.response.something, something)
 
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 
   it('failure with Error object should get stored in the failure job', async function () {
@@ -171,6 +171,6 @@ describe('failure', function () {
     assert.strictEqual(job.data.state, 'failed')
     assert(job.data.response.message.includes(message))
 
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 })

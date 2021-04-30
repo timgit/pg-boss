@@ -22,7 +22,7 @@ describe('expire', function () {
     assert.strictEqual(jobId, job.data.request.id)
     assert.strictEqual('expired', job.data.state)
 
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 
   it('should expire a job - cascaded config', async function () {
@@ -42,7 +42,7 @@ describe('expire', function () {
     assert.strictEqual(jobId, job.data.request.id)
     assert.strictEqual('expired', job.data.state)
 
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 
   it('should warn with an old expireIn option only once', async function () {
@@ -68,6 +68,6 @@ describe('expire', function () {
 
     assert.strictEqual(warningCount, 1)
 
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 })

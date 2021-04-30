@@ -11,7 +11,7 @@ describe('publish', function () {
     } catch (err) {
       assert(err)
     } finally {
-      await boss.stop()
+      await boss.stop(this.test.bossConfig.stopOptions)
     }
   })
 
@@ -24,7 +24,7 @@ describe('publish', function () {
     } catch (err) {
       assert(err)
     } finally {
-      await boss.stop()
+      await boss.stop(this.test.bossConfig.stopOptions)
     }
   })
 
@@ -37,7 +37,7 @@ describe('publish', function () {
     } catch (err) {
       assert(err)
     } finally {
-      await boss.stop()
+      await boss.stop(this.test.bossConfig.stopOptions)
     }
   })
 
@@ -45,14 +45,14 @@ describe('publish', function () {
     const boss = await helper.start(this.test.bossConfig)
     const queue = 'publishNameOnly'
     await boss.publish(queue)
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 
   it('should accept job object argument with only name', async function () {
     const boss = await helper.start(this.test.bossConfig)
     const queue = 'publishqueueOnly'
     await boss.publish({ name: queue })
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 
   it('should accept job object with name and data only', async function () {
@@ -65,7 +65,7 @@ describe('publish', function () {
     const job = await boss.fetch(queue)
 
     assert.strictEqual(message, job.data.message)
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 
   it('should accept job object with name and options only', async function () {
@@ -79,6 +79,6 @@ describe('publish', function () {
 
     assert.strictEqual(job.data, null)
 
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 })

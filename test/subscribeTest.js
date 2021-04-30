@@ -12,7 +12,7 @@ describe('subscribe', function () {
     } catch (err) {
       assert(err)
     } finally {
-      await boss.stop()
+      await boss.stop(this.test.bossConfig.stopOptions)
     }
   })
 
@@ -25,7 +25,7 @@ describe('subscribe', function () {
     } catch (err) {
       assert(err)
     } finally {
-      await boss.stop()
+      await boss.stop(this.test.bossConfig.stopOptions)
     }
   })
 
@@ -38,7 +38,7 @@ describe('subscribe', function () {
     } catch (err) {
       assert(err)
     } finally {
-      await boss.stop()
+      await boss.stop(this.test.bossConfig.stopOptions)
     }
   })
 
@@ -51,7 +51,7 @@ describe('subscribe', function () {
     } catch (err) {
       assert(err)
     } finally {
-      await boss.stop()
+      await boss.stop(this.test.bossConfig.stopOptions)
     }
   })
 
@@ -74,7 +74,7 @@ describe('subscribe', function () {
 
     assert(subscribeCount <= timeout / 1000 / newJobCheckIntervalSeconds)
 
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 
   it('should unsubscribe a subscription', async function () {
@@ -96,7 +96,7 @@ describe('subscribe', function () {
 
     assert.strictEqual(receivedCount, 1)
 
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 
   it('should handle a batch of jobs via teamSize', async function () {
@@ -119,7 +119,7 @@ describe('subscribe', function () {
 
         // test would time out if it had to wait for 4 fetch intervals
         if (subscribeCount === teamSize) {
-          await boss.stop()
+          await boss.stop(this.test.bossConfig.stopOptions)
           resolve()
         }
       }).catch(reject)
@@ -150,7 +150,7 @@ describe('subscribe', function () {
         subscribeCount++
 
         if (subscribeCount === teamSize) {
-          await boss.stop()
+          await boss.stop(this.test.bossConfig.stopOptions)
           finished()
         }
 
@@ -177,7 +177,7 @@ describe('subscribe', function () {
 
       boss.subscribe(queue, { batchSize }, async jobs => {
         assert.strictEqual(jobs.length, batchSize)
-        await boss.stop()
+        await boss.stop(this.test.bossConfig.stopOptions)
         finished()
       }).catch(finished)
     }
@@ -204,7 +204,7 @@ describe('subscribe', function () {
 
     assert(subscribeCount < batchSize)
 
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 
   it('should have a done callback for single job subscriptions', function (finished) {
@@ -220,7 +220,7 @@ describe('subscribe', function () {
 
       boss.subscribe(queue, async job => {
         await job.done()
-        await boss.stop()
+        await boss.stop(this.test.bossConfig.stopOptions)
         finished()
       })
     }
@@ -248,7 +248,7 @@ describe('subscribe', function () {
       assert.strictEqual(job.data.state, 'completed')
       assert.strictEqual(job.data.response.value, result)
 
-      await boss.stop()
+      await boss.stop(this.test.bossConfig.stopOptions)
 
       finished()
     }
@@ -276,7 +276,7 @@ describe('subscribe', function () {
       assert.strictEqual(job.data.state, 'completed')
       assert.strictEqual(job.data.response.something, something)
 
-      await boss.stop()
+      await boss.stop(this.test.bossConfig.stopOptions)
 
       finished()
     }
@@ -290,7 +290,7 @@ describe('subscribe', function () {
     await boss.subscribe(queue, () => {})
     await boss.subscribe(queue, () => {})
 
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 
   it('should honor the includeMetadata option', function (finished) {
@@ -307,7 +307,7 @@ describe('subscribe', function () {
 
       boss.subscribe(queue, { includeMetadata: true }, async job => {
         assert(job.startedon !== undefined)
-        await boss.stop()
+        await boss.stop(this.test.bossConfig.stopOptions)
         finished()
       }).catch(finished)
     }

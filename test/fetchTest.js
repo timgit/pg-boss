@@ -11,7 +11,7 @@ describe('fetch', function () {
     } catch (err) {
       assert(err)
     } finally {
-      await boss.stop()
+      await boss.stop(this.test.bossConfig.stopOptions)
     }
   })
 
@@ -24,7 +24,7 @@ describe('fetch', function () {
     assert(jobName === job.name)
     // Metadata should only be included when specifically requested
     assert(job.startedon === undefined)
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 
   it('should get a batch of jobs as an array', async function () {
@@ -46,7 +46,7 @@ describe('fetch', function () {
     // Metadata should only be included when specifically requested
     assert(jobs[0].startedon === undefined)
 
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 
   it('should fetch all metadata for a single job when requested', async function () {
@@ -70,7 +70,7 @@ describe('fetch', function () {
     assert(job.createdon !== undefined)
     assert(job.completedon === null)
     assert(job.keepuntil !== undefined)
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 
   it('should fetch all metadata for a batch of jobs when requested', async function () {
@@ -106,6 +106,6 @@ describe('fetch', function () {
       assert(job.completedon === null)
       assert(job.keepuntil !== undefined)
     })
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 })

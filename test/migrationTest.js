@@ -42,7 +42,7 @@ describe('migration', function () {
 
     assert.strictEqual(version, currentSchemaVersion)
 
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 
   it('should migrate through 2 versions back and forth', async function () {
@@ -108,7 +108,7 @@ describe('migration', function () {
 
     assert.strictEqual(version, currentSchemaVersion)
 
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 
   it('migrating to non-existent version fails gracefully', async function () {

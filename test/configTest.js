@@ -12,7 +12,7 @@ describe('config', function () {
     const boss = new PgBoss(config)
 
     await boss.start()
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
 
     await helper.dropSchema(config.schema)
   })
@@ -32,7 +32,7 @@ describe('config', function () {
     const boss = new PgBoss({ connectionString, schema: this.test.bossConfig.schema })
 
     await boss.start()
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 
   it('should not allow calling job instance functions if not started', async function () {

@@ -15,7 +15,7 @@ describe('priority', function () {
 
     assert.strictEqual(job.id, high)
 
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 
   it('should process several jobs in descending priority order', async function () {
@@ -35,6 +35,6 @@ describe('priority', function () {
     assert.strictEqual(job2.id, medium)
     assert.strictEqual(job3.id, low)
 
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 })

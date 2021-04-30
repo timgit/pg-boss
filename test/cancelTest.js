@@ -11,7 +11,7 @@ describe('cancel', function () {
     } catch (err) {
       assert(err)
     } finally {
-      await boss.stop()
+      await boss.stop(this.test.bossConfig.stopOptions)
     }
   })
 
@@ -27,7 +27,7 @@ describe('cancel', function () {
 
     assert(job && job.state === 'cancelled')
 
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 
   it('should not cancel a completed job', async function () {
@@ -47,7 +47,7 @@ describe('cancel', function () {
 
     assert.strictEqual(response.updated, 0)
 
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 
   it('should cancel a batch of jobs', async function () {
@@ -62,6 +62,6 @@ describe('cancel', function () {
 
     await boss.cancel(jobs)
 
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 })

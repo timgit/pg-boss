@@ -33,7 +33,7 @@ describe('deleteQueue', function () {
 
     assert.strictEqual(0, q2Count3)
 
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 
   it('should clear all queues', async function () {
@@ -60,7 +60,7 @@ describe('deleteQueue', function () {
     assert.strictEqual(0, q1Count2)
     assert.strictEqual(0, q2Count2)
 
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 
   it('clearStorage() should empty both job storage tables', async function () {
@@ -103,6 +103,6 @@ describe('deleteQueue', function () {
     assert(postJobCount === 0)
     assert(postArchiveCount === 0)
 
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 })

@@ -51,7 +51,7 @@ describe('monitoring', function () {
         assert.strictEqual(states4.queues[queue].active, states.queues[queue].active, 'active count from monitor-states doesn\'t match')
         assert.strictEqual(states4.queues[queue].completed, states.queues[queue].completed, 'completed count from monitor-states doesn\'t match')
 
-        await boss.stop()
+        await boss.stop(this.test.bossConfig.stopOptions)
 
         resolve()
       })

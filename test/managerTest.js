@@ -14,7 +14,7 @@ describe('manager', function () {
       await boss.start()
       assert(false)
     } catch (error) {
-      await boss.stop()
+      await boss.stop(this.test.bossConfig.stopOptions)
     }
   })
 })

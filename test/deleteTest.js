@@ -26,6 +26,6 @@ describe('delete', async function () {
 
     assert.strictEqual(archivedJob, null)
 
-    await boss.stop()
+    await boss.stop(this.test.bossConfig.stopOptions)
   })
 })
