@@ -1,6 +1,7 @@
 const EventEmitter = require('events')
 const plans = require('./plans')
 const { states } = require('./plans')
+const { COMPLETION_JOB_PREFIX } = plans
 
 const queues = {
   MAINTENANCE: '__pgboss__maintenance',
@@ -50,7 +51,7 @@ class Boss extends EventEmitter {
   async supervise () {
     this.metaMonitor()
 
-    await this.manager.deleteQueue(plans.completedJobPrefix + queues.MAINTENANCE)
+    await this.manager.deleteQueue(COMPLETION_JOB_PREFIX + queues.MAINTENANCE)
     await this.manager.deleteQueue(queues.MAINTENANCE)
 
     await this.maintenanceAsync()
@@ -62,7 +63,7 @@ class Boss extends EventEmitter {
     await this.manager.subscribe(queues.MAINTENANCE, maintenanceSubscribeOptions, (job) => this.onMaintenance(job))
 
     if (this.monitorStates) {
-      await this.manager.deleteQueue(plans.completedJobPrefix + queues.MONITOR_STATES)
+      await this.manager.deleteQueue(COMPLETION_JOB_PREFIX + queues.MONITOR_STATES)
       await this.manager.deleteQueue(queues.MONITOR_STATES)
 
       await this.monitorStatesAsync()

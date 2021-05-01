@@ -182,7 +182,7 @@ describe('complete', function () {
 
     await boss.complete(job.id)
 
-    const stateJobCount = await helper.countJobs(config.schema, 'name = $1', [`${helper.completedJobPrefix}${queue}`])
+    const stateJobCount = await helper.countJobs(config.schema, 'name = $1', [`${helper.COMPLETION_JOB_PREFIX}${queue}`])
 
     assert.strictEqual(stateJobCount, 1)
   })
