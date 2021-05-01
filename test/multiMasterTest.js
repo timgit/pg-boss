@@ -88,7 +88,7 @@ describe('multi-master', function () {
 
     assert.strictEqual(beforeCount, jobCount)
 
-    await boss.stop(this.test.bossConfig.stopOptions)
+    await boss.stop()
 
     boss = new PgBoss(this.test.bossConfig)
 
@@ -100,6 +100,6 @@ describe('multi-master', function () {
 
     assert.strictEqual(completedCount, 1)
 
-    await boss.stop(this.test.bossConfig.stopOptions)
+    await boss.stop()
   })
 })

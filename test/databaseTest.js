@@ -12,7 +12,7 @@ describe('database', function () {
       await boss.start()
       assert(false)
     } catch (err) {
-      await boss.stop(this.test.bossConfig.stopOptions)
+      assert(true)
     }
   })
 
@@ -35,7 +35,7 @@ describe('database', function () {
     const listenerCount = 100
     const poolSize = 5
 
-    const boss = await helper.start({ ...this.test.bossConfig, max: poolSize })
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, max: poolSize })
 
     const newConnections = await poolSizeConnectionTest(boss, listenerCount)
 
@@ -58,8 +58,6 @@ describe('database', function () {
     const connectionCount = await countConnections(boss.db)
 
     const newConnections = connectionCount - prevConnectionCount
-
-    await boss.stop(this.test.bossConfig.stopOptions)
 
     return newConnections
 

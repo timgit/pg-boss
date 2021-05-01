@@ -79,8 +79,20 @@ class Manager extends EventEmitter {
     return this.watch(COMPLETION_JOB_PREFIX + name, options, callback)
   }
 
+  addWorker (worker) {
+    this.subscriptions.set(worker.id, worker)
+  }
+
+  removeWorker (worker) {
+    this.subscriptions.delete(worker.id)
+  }
+
+  getWorkers () {
+    return Array.from(this.subscriptions.values())
+  }
+
   getWipData () {
-    const data = Array.from(this.subscriptions.values())
+    const data = this.getWorkers()
       .map(({
         id,
         name,
@@ -149,7 +161,7 @@ class Manager extends EventEmitter {
 
     const worker = new Worker({ id, name, options, interval, fetch, onFetch, onError })
 
-    this.subscriptions.set(worker.id, worker)
+    this.addWorker(worker)
 
     worker.start()
 
@@ -167,8 +179,7 @@ class Manager extends EventEmitter {
 
     assert(query, 'Invalid argument. Expected string or object: { worker: id }')
 
-    const workers = Array.from(this.subscriptions.values())
-      .filter(i => query.filter(i) && !i.stopping && !i.stopped)
+    const workers = this.getWorkers().filter(i => query.filter(i) && !i.stopping && !i.stopped)
 
     if (workers.length === 0) {
       return
@@ -181,7 +192,7 @@ class Manager extends EventEmitter {
     setInterval(() => {
       if (workers.every(w => w.stopped)) {
         for (const worker of workers) {
-          this.subscriptions.delete(worker.id)
+          this.removeWorker(worker)
         }
       }
     }, 2000)

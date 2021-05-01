@@ -419,8 +419,7 @@ function expire (schema) {
           ELSE '${states.expired}'::${schema}.job_state
           END,
         completedOn = ${retryCompletedOnCase},
-        startAfter = ${retryStartAfterCase},
-        output = $2::jsonb
+        startAfter = ${retryStartAfterCase}
       WHERE state = '${states.active}'
         AND (startedOn + expireIn) < now()
       RETURNING *

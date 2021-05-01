@@ -1,8 +1,6 @@
 const PgBoss = require('../')
-const delay = require('delay')
-describe('background processing error handling', function () {
-  // this.retries(1)
 
+describe('background processing error handling', function () {
   it('maintenance error handling works', function (done) {
     const defaults = {
       monitorStateIntervalMinutes: 1,
@@ -11,12 +9,10 @@ describe('background processing error handling', function () {
     }
 
     const config = { ...this.test.bossConfig, ...defaults }
-    const boss = new PgBoss(config)
+    const boss = this.test.boss = new PgBoss(config)
 
     boss.on('error', async () => {
       boss.removeAllListeners()
-      await boss.stop(this.test.bossConfig.stopOptions)
-      await delay(2000)
       done()
     })
 
@@ -31,12 +27,10 @@ describe('background processing error handling', function () {
     }
 
     const config = { ...this.test.bossConfig, ...defaults }
-    const boss = new PgBoss(config)
+    const boss = this.test.boss = new PgBoss(config)
 
     boss.on('error', async () => {
       boss.removeAllListeners()
-      await boss.stop(this.test.bossConfig.stopOptions)
-      await delay(2000)
       done()
     })
 
@@ -45,12 +39,10 @@ describe('background processing error handling', function () {
 
   it('clock monitoring error handling works', function (done) {
     const config = { ...this.test.bossConfig, __test__throw_clock_monitoring: true }
-    const boss = new PgBoss(config)
+    const boss = this.test.boss = new PgBoss(config)
 
     boss.on('error', async () => {
       boss.removeAllListeners()
-      await boss.stop(this.test.bossConfig.stopOptions)
-      await delay(2000)
       done()
     })
 

@@ -4,65 +4,57 @@ const helper = require('./testHelper')
 
 describe('subscribe', function () {
   it('should fail with no arguments', async function () {
-    const boss = await helper.start(this.test.bossConfig)
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
 
     try {
       await boss.subscribe()
       assert(false)
     } catch (err) {
       assert(err)
-    } finally {
-      await boss.stop(this.test.bossConfig.stopOptions)
     }
   })
 
   it('should fail if no callback provided', async function () {
-    const boss = await helper.start(this.test.bossConfig)
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
 
     try {
       await boss.subscribe('foo')
       assert(false)
     } catch (err) {
       assert(err)
-    } finally {
-      await boss.stop(this.test.bossConfig.stopOptions)
     }
   })
 
   it('should fail if options is not an object', async function () {
-    const boss = await helper.start(this.test.bossConfig)
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
 
     try {
       await boss.subscribe('foo', () => {}, 'nope')
       assert(false)
     } catch (err) {
       assert(err)
-    } finally {
-      await boss.stop(this.test.bossConfig.stopOptions)
     }
   })
 
   it('unsubscribe should fail without a name', async function () {
-    const boss = await helper.start(this.test.bossConfig)
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
 
     try {
       await boss.unsubscribe()
       assert(false)
     } catch (err) {
       assert(err)
-    } finally {
-      await boss.stop(this.test.bossConfig.stopOptions)
     }
   })
 
   it('should honor a custom new job check interval', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+
     const queue = 'customJobCheckInterval'
     const newJobCheckIntervalSeconds = 3
     const timeout = 9000
     let subscribeCount = 0
     const jobCount = 10
-
-    const boss = await helper.start(this.test.bossConfig)
 
     for (let i = 0; i < jobCount; i++) {
       await boss.publish(queue)
@@ -73,16 +65,14 @@ describe('subscribe', function () {
     await delay(timeout)
 
     assert(subscribeCount <= timeout / 1000 / newJobCheckIntervalSeconds)
-
-    await boss.stop(this.test.bossConfig.stopOptions)
   })
 
   it('should unsubscribe a subscription', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+
     const queue = 'unsubscribe-works'
 
     let receivedCount = 0
-
-    const boss = await helper.start(this.test.bossConfig)
 
     boss.subscribe(queue, async () => {
       receivedCount++
@@ -95,19 +85,15 @@ describe('subscribe', function () {
     await delay(5000)
 
     assert.strictEqual(receivedCount, 1)
-
-    await boss.stop(this.test.bossConfig.stopOptions)
   })
 
   it('should handle a batch of jobs via teamSize', async function () {
-    this.timeout(1000)
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
 
     const queue = 'subscribe-teamSize'
     const teamSize = 4
 
     let subscribeCount = 0
-
-    const boss = await helper.start(this.test.bossConfig)
 
     for (let i = 0; i < teamSize; i++) {
       await boss.publish(queue)
@@ -119,15 +105,14 @@ describe('subscribe', function () {
 
         // test would time out if it had to wait for 4 fetch intervals
         if (subscribeCount === teamSize) {
-          await boss.stop(this.test.bossConfig.stopOptions)
           resolve()
         }
       }).catch(reject)
     })
   })
 
-  it('should apply teamConcurrency option', function (finished) {
-    this.timeout(1000)
+  it('should apply teamConcurrency option', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
 
     const queue = 'subscribe-teamConcurrency'
     const teamSize = 4
@@ -135,60 +120,48 @@ describe('subscribe', function () {
 
     let subscribeCount = 0
 
-    const config = this.test.bossConfig
+    for (let i = 0; i < teamSize; i++) {
+      await boss.publish(queue)
+    }
 
-    test()
-
-    async function test () {
-      const boss = await helper.start(config)
-
-      for (let i = 0; i < teamSize; i++) {
-        await boss.publish(queue)
-      }
-
+    return new Promise((resolve) => {
       boss.subscribe(queue, { teamSize, teamConcurrency }, async () => {
         subscribeCount++
 
         if (subscribeCount === teamSize) {
-          await boss.stop(this.test.bossConfig.stopOptions)
-          finished()
+          resolve()
         }
 
         // test would time out if it had to wait for each handler to resolve
         await delay(4000)
       })
-    }
+    })
   })
 
-  it('should handle a batch of jobs via batchSize', function (finished) {
+  it('should handle a batch of jobs via batchSize', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+
     const queue = 'subscribe-batchSize'
     const batchSize = 4
 
-    const config = this.test.bossConfig
+    for (let i = 0; i < batchSize; i++) {
+      await boss.publish(queue)
+    }
 
-    test()
-
-    async function test () {
-      const boss = await helper.start(config)
-
-      for (let i = 0; i < batchSize; i++) {
-        await boss.publish(queue)
-      }
-
+    return new Promise((resolve) => {
       boss.subscribe(queue, { batchSize }, async jobs => {
         assert.strictEqual(jobs.length, batchSize)
-        await boss.stop(this.test.bossConfig.stopOptions)
-        finished()
-      }).catch(finished)
-    }
+        resolve()
+      })
+    })
   })
 
   it('returning promise applies backpressure', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
     const queue = 'backpressure'
+
     const batchSize = 4
     let subscribeCount = 0
-
-    const boss = await helper.start(this.test.bossConfig)
 
     for (let i = 0; i < batchSize; i++) {
       await boss.publish(queue)
@@ -203,113 +176,78 @@ describe('subscribe', function () {
     await delay(7000)
 
     assert(subscribeCount < batchSize)
-
-    await boss.stop(this.test.bossConfig.stopOptions)
   })
 
-  it('should have a done callback for single job subscriptions', function (finished) {
+  it('should have a done callback for single job subscriptions', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
     const queue = 'subscribe-single'
 
-    const config = this.test.bossConfig
+    await boss.publish(queue)
 
-    test()
-
-    async function test () {
-      const boss = await helper.start(config)
-      await boss.publish(queue)
-
+    return new Promise((resolve) => {
       boss.subscribe(queue, async job => {
-        await job.done()
-        await boss.stop(this.test.bossConfig.stopOptions)
-        finished()
+        job.done()
+        resolve()
       })
-    }
+    })
   })
 
-  it('subscribe completion should pass string wrapped in value prop', function (finished) {
+  it('subscribe completion should pass string wrapped in value prop', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+
     const queue = 'subscribeCompletionString'
     const result = 'success'
 
-    const config = this.test.bossConfig
+    boss.subscribe(queue, async job => result)
 
-    test()
+    await boss.publish(queue)
 
-    async function test () {
-      const boss = await helper.start(config)
+    await delay(8000)
 
-      boss.subscribe(queue, async job => result)
+    const job = await boss.fetchCompleted(queue)
 
-      await boss.publish(queue)
-
-      await delay(8000)
-
-      const job = await boss.fetchCompleted(queue)
-
-      assert.strictEqual(job.data.state, 'completed')
-      assert.strictEqual(job.data.response.value, result)
-
-      await boss.stop(this.test.bossConfig.stopOptions)
-
-      finished()
-    }
+    assert.strictEqual(job.data.state, 'completed')
+    assert.strictEqual(job.data.response.value, result)
   })
 
-  it('subscribe completion via Promise resolve() should pass object payload', function (finished) {
+  it('subscribe completion via Promise resolve() should pass object payload', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+
     const queue = 'subscribeCompletionObject'
     const something = 'clever'
 
-    const config = this.test.bossConfig
+    boss.subscribe(queue, async job => ({ something }))
 
-    test()
+    await boss.publish(queue)
 
-    async function test () {
-      const boss = await helper.start(config)
+    await delay(8000)
 
-      boss.subscribe(queue, async job => ({ something }))
+    const job = await boss.fetchCompleted(queue)
 
-      await boss.publish(queue)
-
-      await delay(8000)
-
-      const job = await boss.fetchCompleted(queue)
-
-      assert.strictEqual(job.data.state, 'completed')
-      assert.strictEqual(job.data.response.something, something)
-
-      await boss.stop(this.test.bossConfig.stopOptions)
-
-      finished()
-    }
+    assert.strictEqual(job.data.state, 'completed')
+    assert.strictEqual(job.data.response.something, something)
   })
 
   it('should allow multiple subscriptions to the same queue per instance', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
     const queue = 'multiple-subscriptions'
 
-    const boss = await helper.start(this.test.bossConfig)
-
     await boss.subscribe(queue, () => {})
     await boss.subscribe(queue, () => {})
-
-    await boss.stop(this.test.bossConfig.stopOptions)
   })
 
-  it('should honor the includeMetadata option', function (finished) {
+  it('should honor the includeMetadata option', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+
     const queue = 'subscribe-includeMetadata'
 
-    const config = this.test.bossConfig
+    await boss.publish(queue)
 
-    test()
-
-    async function test () {
-      const boss = await helper.start(config)
-
-      await boss.publish(queue)
-
+    return new Promise((resolve) => {
       boss.subscribe(queue, { includeMetadata: true }, async job => {
         assert(job.startedon !== undefined)
-        await boss.stop(this.test.bossConfig.stopOptions)
-        finished()
-      }).catch(finished)
-    }
+        resolve()
+      })
+    })
   })
 })

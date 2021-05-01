@@ -7,6 +7,7 @@ const sha1 = (value) => crypto.createHash('sha1').update(value).digest('hex')
 module.exports = {
   dropSchema,
   start,
+  stop,
   getDb,
   getJobById,
   getArchivedJobById,
@@ -38,8 +39,6 @@ function getConfig (options = {}) {
   }
 
   config.schema = config.schema || 'pgboss'
-
-  config.stopOptions = { graceful: false }
 
   const result = { ...config }
 
@@ -122,6 +121,7 @@ async function start (options) {
   try {
     options = getConfig(options)
     const boss = new PgBoss(options)
+    boss.on('error', err => console.log({ schema: options.schema, message: err.message }))
     await boss.start()
     return boss
   } catch (err) {
@@ -130,4 +130,8 @@ async function start (options) {
       throw err
     }
   }
+}
+
+async function stop (boss) {
+  await boss.stop({ timeout: 4000 })
 }

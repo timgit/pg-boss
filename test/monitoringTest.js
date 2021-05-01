@@ -8,7 +8,7 @@ describe('monitoring', function () {
       maintenanceIntervalSeconds: 10
     }
 
-    const boss = await helper.start({ ...this.test.bossConfig, ...defaults })
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, ...defaults })
 
     const queue = 'monitorMe'
 
@@ -50,8 +50,6 @@ describe('monitoring', function () {
         assert.strictEqual(states4.queues[queue].created, states.queues[queue].created, 'created count from monitor-states doesn\'t match')
         assert.strictEqual(states4.queues[queue].active, states.queues[queue].active, 'active count from monitor-states doesn\'t match')
         assert.strictEqual(states4.queues[queue].completed, states.queues[queue].completed, 'completed count from monitor-states doesn\'t match')
-
-        await boss.stop(this.test.bossConfig.stopOptions)
 
         resolve()
       })

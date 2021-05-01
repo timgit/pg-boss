@@ -121,17 +121,9 @@ class Boss extends EventEmitter {
 
       const started = Date.now()
 
-      if (!this.stopped) {
-        await this.expire()
-      }
-
-      if (!this.stopped) {
-        await this.archive()
-      }
-
-      if (!this.stopped) {
-        await this.purge()
-      }
+      await this.expire()
+      await this.archive()
+      await this.purge()
 
       const ended = Date.now()
 
@@ -190,7 +182,7 @@ class Boss extends EventEmitter {
     Object.keys(stateCountDefault)
       .forEach(key => { stateCountDefault[key] = 0 })
 
-    const counts = await this.db.executeSql(this.countStatesCommand)
+    const counts = await this.executeSql(this.countStatesCommand)
 
     const states = counts.rows.reduce((acc, item) => {
       if (item.name) {
@@ -210,22 +202,26 @@ class Boss extends EventEmitter {
   }
 
   async expire () {
-    await this.db.executeSql(plans.locked(this.expireCommand))
+    await this.executeSql(plans.locked(this.expireCommand))
   }
 
   async archive () {
-    await this.db.executeSql(plans.locked(this.archiveCommand))
+    await this.executeSql(plans.locked(this.archiveCommand))
   }
 
   async purge () {
-    await this.db.executeSql(plans.locked(this.purgeCommand))
+    await this.executeSql(plans.locked(this.purgeCommand))
   }
 
   async setMaintenanceTime () {
-    await this.db.executeSql(this.setMaintenanceTimeCommand)
+    await this.executeSql(this.setMaintenanceTimeCommand)
   }
 
   async getMaintenanceTime () {
+    if (this.stopped) {
+      return
+    }
+
     const { rows } = await this.db.executeSql(this.getMaintenanceTimeCommand)
 
     let { maintained_on: maintainedOn, seconds_ago: secondsAgo } = rows[0]
@@ -237,6 +233,12 @@ class Boss extends EventEmitter {
 
   getQueueNames () {
     return queues
+  }
+
+  async executeSql (sql, params) {
+    if (!this.stopped) {
+      return await this.db.executeSql(sql, params)
+    }
   }
 }
 

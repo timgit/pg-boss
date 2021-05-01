@@ -10,7 +10,8 @@ describe('archive', function () {
 
   it('should archive a completed job', async function () {
     const config = { ...this.test.bossConfig, ...defaults }
-    const boss = await helper.start(config)
+    const boss = this.test.boss = await helper.start(config)
+
     const queue = 'archive-completed'
 
     const jobId = await boss.publish(queue)
@@ -20,19 +21,17 @@ describe('archive', function () {
 
     await boss.complete(jobId)
 
-    await delay(7000)
+    await delay(4000)
 
     const archivedJob = await helper.getArchivedJobById(config.schema, jobId)
 
     assert.strictEqual(jobId, archivedJob.id)
     assert.strictEqual(queue, archivedJob.name)
-
-    await boss.stop(this.test.bossConfig.stopOptions)
   })
 
   it('should archive a created job', async function () {
     const config = { ...this.test.bossConfig, ...defaults }
-    const boss = await helper.start(config)
+    const boss = this.test.boss = await helper.start(config)
 
     const queue = 'archive-created'
 
@@ -44,13 +43,11 @@ describe('archive', function () {
 
     assert.strictEqual(jobId, archivedJob.id)
     assert.strictEqual(queue, archivedJob.name)
-
-    await boss.stop(this.test.bossConfig.stopOptions)
   })
 
   it('should archive a created job - cascaded config', async function () {
     const config = { ...this.test.bossConfig, ...defaults, retentionSeconds: 1 }
-    const boss = await helper.start(config)
+    const boss = this.test.boss = await helper.start(config)
 
     const queue = 'archive-created-cascaded-config'
 
@@ -62,7 +59,5 @@ describe('archive', function () {
 
     assert.strictEqual(jobId, archivedJob.id)
     assert.strictEqual(queue, archivedJob.name)
-
-    await boss.stop(this.test.bossConfig.stopOptions)
   })
 })
