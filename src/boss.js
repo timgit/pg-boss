@@ -29,7 +29,6 @@ class Boss extends EventEmitter {
       this.monitorIntervalSeconds = config.monitorStateIntervalSeconds
     }
 
-    this.queues = queues
     this.events = events
 
     this.expireCommand = plans.expire(config.schema)
@@ -137,7 +136,6 @@ class Boss extends EventEmitter {
       }
     } catch (err) {
       this.emit(events.error, err)
-      throw err
     }
   }
 
@@ -162,14 +160,14 @@ class Boss extends EventEmitter {
 
   async stop () {
     if (!this.stopped) {
+      if (this.metaMonitorInterval) {
+        clearInterval(this.metaMonitorInterval)
+      }
+
       await this.manager.unsubscribe(queues.MAINTENANCE)
 
       if (this.monitorStates) {
         await this.manager.unsubscribe(queues.MONITOR_STATES)
-      }
-
-      if (this.metaMonitorInterval) {
-        clearInterval(this.metaMonitorInterval)
       }
 
       this.stopped = true
@@ -243,3 +241,4 @@ class Boss extends EventEmitter {
 }
 
 module.exports = Boss
+module.exports.QUEUES = queues

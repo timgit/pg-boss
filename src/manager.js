@@ -7,6 +7,9 @@ const debounce = require('lodash.debounce')
 const Attorney = require('./attorney')
 const Worker = require('./worker')
 
+const { QUEUES: BOSS_QUEUES } = require('./boss')
+const HIDDEN_QUEUES = Object.values(BOSS_QUEUES)
+
 const plans = require('./plans')
 const { COMPLETION_JOB_PREFIX } = plans
 
@@ -57,11 +60,9 @@ class Manager extends EventEmitter {
     ]
   }
 
-  async stop (options = {}) {
-    const { not = null } = options
-
+  async stop () {
     for (const sub of this.subscriptions.values()) {
-      if (not && not === sub.name) {
+      if (HIDDEN_QUEUES.includes(sub.name)) {
         continue
       }
 
@@ -118,7 +119,7 @@ class Manager extends EventEmitter {
         lastError,
         lastErrorOn
       }))
-      .filter(i => i.count > 0)
+      .filter(i => i.count > 0 && !HIDDEN_QUEUES.includes(i.name))
 
     return data
   }
@@ -155,7 +156,6 @@ class Manager extends EventEmitter {
     }
 
     const onError = error => {
-      console.log(error) // todo: remove
       this.emit(events.error, { ...error, queue: name, worker: id })
     }
 
@@ -195,7 +195,7 @@ class Manager extends EventEmitter {
           this.removeWorker(worker)
         }
       }
-    }, 2000)
+    }, 1000)
   }
 
   async offComplete (name) {
@@ -282,7 +282,7 @@ class Manager extends EventEmitter {
 
     const result = await this.db.executeSql(this.insertJobCommand, values)
 
-    if (result.rowCount === 1) {
+    if (result && result.rowCount === 1) {
       return result.rows[0].id
     }
 
@@ -324,6 +324,10 @@ class Manager extends EventEmitter {
       this.nextJobCommand(options.includeMetadata || false),
       [values.name, batchSize || 1]
     )
+
+    if (!result) {
+      return null
+    }
 
     const jobs = result.rows.map(job => {
       job.done = async (error, response) => {
@@ -373,7 +377,7 @@ class Manager extends EventEmitter {
     return {
       jobs: ids,
       requested: ids.length,
-      updated: parseInt(result.rows[0].count)
+      updated: result && result.rows ? parseInt(result.rows[0].count) : 0
     }
   }
 
@@ -399,13 +403,13 @@ class Manager extends EventEmitter {
     assert(queue, 'Missing queue name argument')
     const sql = plans.deleteQueue(this.config.schema, options)
     const result = await this.db.executeSql(sql, [queue])
-    return result.rowCount
+    return result ? result.rowCount : null
   }
 
   async deleteAllQueues (options) {
     const sql = plans.deleteAllQueues(this.config.schema, options)
     const result = await this.db.executeSql(sql)
-    return result.rowCount
+    return result ? result.rowCount : null
   }
 
   async clearStorage () {

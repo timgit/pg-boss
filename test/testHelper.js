@@ -132,6 +132,6 @@ async function start (options) {
   }
 }
 
-async function stop (boss) {
-  await boss.stop({ timeout: 4000 })
+async function stop (boss, timeout = 4000) {
+  await boss.stop({ timeout })
 }

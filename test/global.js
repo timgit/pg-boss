@@ -1,24 +1,26 @@
 const helper = require('./testHelper')
-const delay = require('delay')
 
 beforeEach(async function () {
   this.timeout(2000)
   const config = helper.getConfig({ testKey: getTestKey(this.currentTest) })
-  console.log(`      - ${config.schema}`)
+  console.log(`      ${this.currentTest.title} (schema: ${config.schema})...`)
   await helper.dropSchema(config.schema)
   this.currentTest.bossConfig = config
 })
 
 afterEach(async function () {
-  this.timeout(5000)
-
-  if (this.currentTest.boss) {
-    await helper.stop(this.currentTest.boss)
-  }
-
-  await delay(2000)
+  this.timeout(10000)
 
   const config = helper.getConfig({ testKey: getTestKey(this.currentTest) })
+
+  const { boss } = this.currentTest
+
+  if (boss) {
+    await new Promise((resolve) => {
+      boss.on('stopped', resolve)
+      helper.stop(boss, 2000)
+    })
+  }
 
   await helper.dropSchema(config.schema)
 })
