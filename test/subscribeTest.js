@@ -193,7 +193,7 @@ describe('subscribe', function () {
   })
 
   it('subscribe completion should pass string wrapped in value prop', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, onComplete: true })
 
     const queue = 'subscribeCompletionString'
     const result = 'success'
@@ -211,7 +211,7 @@ describe('subscribe', function () {
   })
 
   it('subscribe completion via Promise resolve() should pass object payload', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, onComplete: true })
 
     const queue = 'subscribeCompletionObject'
     const something = 'clever'
@@ -249,5 +249,52 @@ describe('subscribe', function () {
         resolve()
       })
     })
+  })
+
+  it('should fail job at expiration without maintenance', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+
+    const queue = this.test.bossConfig.schema
+
+    const maintenanceTick = new Promise((resolve) => boss.on('maintenance', resolve))
+
+    await maintenanceTick
+
+    const jobId = await boss.publish(queue, null, { expireInSeconds: 1 })
+
+    await boss.subscribe(queue, () => delay(2000))
+
+    await delay(2000)
+
+    const job = await boss.getJobById(jobId)
+
+    assert.strictEqual(job.state, 'failed')
+    assert(job.output.message.includes('timeout'))
+  })
+
+  it('should fail a batch of jobs at expiration without maintenance', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+
+    const queue = this.test.bossConfig.schema
+
+    const maintenanceTick = new Promise((resolve) => boss.on('maintenance', resolve))
+
+    await maintenanceTick
+
+    const jobId1 = await boss.publish(queue, null, { expireInSeconds: 1 })
+    const jobId2 = await boss.publish(queue, null, { expireInSeconds: 1 })
+
+    await boss.subscribe(queue, { batchSize: 2 }, () => delay(2000))
+
+    await delay(2000)
+
+    const job1 = await boss.getJobById(jobId1)
+    const job2 = await boss.getJobById(jobId2)
+
+    assert.strictEqual(job1.state, 'failed')
+    assert(job1.output.message, 'job handler timeout exceeded in subscription')
+
+    assert.strictEqual(job2.state, 'failed')
+    assert(job2.output.message, 'job handler timeout exceeded in subscription')
   })
 })

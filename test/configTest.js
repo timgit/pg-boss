@@ -8,6 +8,8 @@ describe('config', function () {
 
     config.schema = 'thisisareallylongschemanamefortestingmaximumlength'
 
+    await helper.dropSchema(config.schema)
+
     assert.strictEqual(config.schema.length, 50)
 
     const boss = this.test.boss = new PgBoss(config)
@@ -15,10 +17,12 @@ describe('config', function () {
     await boss.start()
   })
 
-  it('should not allow more than 50 characters in schema name', function () {
+  it('should not allow more than 50 characters in schema name', async function () {
     const config = this.test.bossConfig
 
     config.schema = 'thisisareallylongschemanamefortestingmaximumlengthb'
+
+    await helper.dropSchema(config.schema)
 
     assert(config.schema.length > 50)
 

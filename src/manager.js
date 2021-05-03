@@ -1,6 +1,7 @@
 const assert = require('assert')
 const EventEmitter = require('events')
 const pMap = require('p-map')
+const delay = require('delay')
 const uuid = require('uuid')
 const debounce = require('lodash.debounce')
 
@@ -10,8 +11,10 @@ const Worker = require('./worker')
 const { QUEUES: BOSS_QUEUES } = require('./boss')
 const HIDDEN_QUEUES = Object.values(BOSS_QUEUES)
 
+// todo: add cron and send it queues to ignore list
+
 const plans = require('./plans')
-const { COMPLETION_JOB_PREFIX } = plans
+const { COMPLETION_JOB_PREFIX, SINGLETON_QUEUE_KEY } = plans
 
 const WIP_EVENT_INTERVAL = 2000
 const WIP_DEBOUNCE_OPTIONS = { leading: true, trailing: true, maxWait: WIP_EVENT_INTERVAL }
@@ -56,7 +59,8 @@ class Manager extends EventEmitter {
       this.deleteQueue,
       this.deleteAllQueues,
       this.clearStorage,
-      this.getQueueSize
+      this.getQueueSize,
+      this.getJobById
     ]
   }
 
@@ -142,13 +146,21 @@ class Manager extends EventEmitter {
     const fetch = () => this.fetch(name, batchSize || teamSize, { includeMetadata })
 
     const onFetch = async (jobs) => {
+      const expirationRace = (promise, timeout) => Promise.race([
+        promise,
+        delay.reject(timeout, { value: new Error('job handler timeout exceeded in subscription') })
+      ])
+
       // Failing will fail all fetched jobs
       if (batchSize) {
-        return await Promise.all([callback(jobs)]).catch(err => this.fail(jobs.map(job => job.id), err))
+        const maxMs = jobs.reduce((acc, i) => Math.max(acc, plans.intervalToMs(i.expirein)))
+
+        return await expirationRace(Promise.all([callback(jobs)]), maxMs)
+          .catch(err => this.fail(jobs.map(job => job.id), err))
       }
 
       return await pMap(jobs, job =>
-        callback(job)
+        expirationRace(callback(job), plans.intervalToMs(job.expirein))
           .then(result => this.complete(job.id, result))
           .catch(err => this.fail(job.id, err))
       , { concurrency: teamConcurrency }
@@ -209,7 +221,10 @@ class Manager extends EventEmitter {
 
   async publishOnce (name, data, options, key) {
     options = options || {}
-    options.singletonKey = key || name
+
+    const { ignoreActive = false } = options
+
+    options.singletonKey = ignoreActive ? SINGLETON_QUEUE_KEY : key || name
 
     const result = Attorney.checkPublishArgs([name, data, options], this.config)
 
@@ -422,9 +437,27 @@ class Manager extends EventEmitter {
 
     const sql = plans.getQueueSize(this.config.schema, options)
 
-    const { rows } = await this.db.executeSql(sql, [queue])
+    const result = await this.db.executeSql(sql, [queue])
 
-    return parseFloat(rows[0].count)
+    return result ? parseFloat(result.rows[0].count) : null
+  }
+
+  async getJobById (id) {
+    const fetchSql = plans.getJobById(this.config.schema)
+    const result1 = await this.db.executeSql(fetchSql, [id])
+
+    if (result1 && result1.rows && result1.rows.length === 1) {
+      return result1.rows[0]
+    }
+
+    const fetchArchiveSql = plans.getArchivedJobById(this.config.schema)
+    const result2 = await this.db.executeSql(fetchArchiveSql, [id])
+
+    if (result2 && result2.rows && result2.rows.length === 1) {
+      return result1.rows[0]
+    }
+
+    return null
   }
 }
 

@@ -21,7 +21,7 @@ describe('cancel', function () {
 
     await boss.cancel(jobId)
 
-    const job = await helper.getJobById(config.schema, jobId)
+    const job = await boss.getJobById(jobId)
 
     assert(job && job.state === 'cancelled')
   })

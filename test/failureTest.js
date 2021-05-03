@@ -30,7 +30,7 @@ describe('failure', function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
 
     const queue = 'subscribe-fail'
-    const jobId = await boss.publish(queue)
+    const jobId = await boss.publish(queue, null, { onComplete: true })
 
     const job = await boss.fetch(queue)
 
@@ -67,7 +67,7 @@ describe('failure', function () {
     const queue = 'fail-payload'
     const failPayload = { someReason: 'nuna' }
 
-    const jobId = await boss.publish(queue)
+    const jobId = await boss.publish(queue, null, { onComplete: true })
 
     await boss.fail(jobId, failPayload)
 
@@ -83,7 +83,7 @@ describe('failure', function () {
     const queue = 'fetchFailureWithPayload'
     const errorMessage = 'mah error'
 
-    await boss.publish(queue)
+    await boss.publish(queue, null, { onComplete: true })
 
     return new Promise((resolve) => {
       boss.subscribe(queue, async job => {
@@ -108,7 +108,7 @@ describe('failure', function () {
     const failPayload = 'mah error'
 
     await boss.subscribe(queue, job => Promise.reject(failPayload))
-    await boss.publish(queue)
+    await boss.publish(queue, null, { onComplete: true })
 
     await delay(7000)
 
@@ -128,7 +128,7 @@ describe('failure', function () {
     errorResponse.something = something
 
     await boss.subscribe(queue, job => Promise.reject(errorResponse))
-    await boss.publish(queue)
+    await boss.publish(queue, null, { onComplete: true })
 
     await delay(7000)
 
@@ -144,7 +144,7 @@ describe('failure', function () {
     const queue = 'failWithErrorObj'
     const message = 'a real error!'
 
-    await boss.publish(queue)
+    await boss.publish(queue, null, { onComplete: true })
     await boss.subscribe(queue, async () => { throw new Error(message) })
 
     await delay(2000)

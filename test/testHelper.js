@@ -10,9 +10,9 @@ module.exports = {
   start,
   stop,
   getDb,
-  getJobById,
   getArchivedJobById,
   countJobs,
+  findJobs,
   COMPLETION_JOB_PREFIX,
   getConfig,
   getConnectionString,
@@ -62,11 +62,6 @@ async function dropSchema (schema) {
   const db = await getDb()
   await db.executeSql(`DROP SCHEMA IF EXISTS ${schema} CASCADE`)
   await db.close()
-}
-
-async function getJobById (schema, id) {
-  const response = await findJobs(schema, 'id = $1', [id])
-  return response.rows.length ? response.rows[0] : null
 }
 
 async function findJobs (schema, where, values) {

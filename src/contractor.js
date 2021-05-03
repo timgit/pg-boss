@@ -1,18 +1,19 @@
 const assert = require('assert')
 const plans = require('./plans')
+const { DEFAULT_SCHEMA } = plans
 const migrationStore = require('./migrationStore')
 const schemaVersion = require('../version.json').schema
 
 class Contractor {
-  static constructionPlans (schema) {
+  static constructionPlans (schema = DEFAULT_SCHEMA) {
     return plans.create(schema, schemaVersion)
   }
 
-  static migrationPlans (schema, version) {
+  static migrationPlans (schema = DEFAULT_SCHEMA, version = schemaVersion) {
     return migrationStore.migrate(schema, version)
   }
 
-  static rollbackPlans (schema, version) {
+  static rollbackPlans (schema = DEFAULT_SCHEMA, version = schemaVersion) {
     return migrationStore.rollback(schema, version)
   }
 

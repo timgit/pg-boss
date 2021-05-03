@@ -1,3 +1,5 @@
+const assert = require('assert')
+
 const states = {
   created: 'created',
   retry: 'retry',
@@ -7,14 +9,28 @@ const states = {
   cancelled: 'cancelled',
   failed: 'failed'
 }
-const assert = require('assert')
 
+const DEFAULT_SCHEMA = 'pgboss'
 const COMPLETION_JOB_PREFIX = `__state__${states.completed}__`
 const SINGLETON_QUEUE_KEY = '__pgboss__singleton_queue'
 
 const MUTEX = 1337968055000
 const MIGRATE_RACE_MESSAGE = 'division by zero'
 const CREATE_RACE_MESSAGE = 'already exists'
+
+const SECOND = 1000
+const MINUTE = SECOND * 60
+const HOUR = MINUTE * 60
+const DAY = HOUR * 24
+
+// source: pg.types -> postgres-interval
+const INTERVAL_MAP = {
+  days: DAY,
+  hours: HOUR,
+  minutes: MINUTE,
+  seconds: SECOND,
+  milliseconds: 1
+}
 
 module.exports = {
   create,
@@ -43,12 +59,22 @@ module.exports = {
   setMaintenanceTime,
   getCronTime,
   setCronTime,
-  states: { ...states },
-  COMPLETION_JOB_PREFIX,
   locked,
   assertMigration,
+  intervalToMs,
+  getArchivedJobById,
+  getJobById,
+  states: { ...states },
+  COMPLETION_JOB_PREFIX,
+  SINGLETON_QUEUE_KEY,
   MIGRATE_RACE_MESSAGE,
-  CREATE_RACE_MESSAGE
+  CREATE_RACE_MESSAGE,
+  DEFAULT_SCHEMA
+}
+
+function intervalToMs (interval) {
+  const ms = Object.keys(interval).reduce((total, key) => total + INTERVAL_MAP[key] * interval[key], 0)
+  return ms
 }
 
 function locked (query) {
@@ -318,7 +344,7 @@ function fetchNextJob (schema) {
       retryCount = CASE WHEN state = '${states.retry}' THEN retryCount + 1 ELSE retryCount END
     FROM nextJob
     WHERE j.id = nextJob.id
-    RETURNING ${includeMetadata ? 'j.*' : 'j.id, name, data'}
+    RETURNING ${includeMetadata ? 'j.*' : 'j.id, name, data, expireIn'}
   `
 }
 
@@ -565,4 +591,16 @@ function advisoryLock () {
 function assertMigration (schema, version) {
   // raises 'division by zero' if already on desired schema version
   return `SELECT version::int/(version::int-${version}) from ${schema}.version`
+}
+
+function getJobById (schema) {
+  return getJobByTableAndId(schema, 'job')
+}
+
+function getArchivedJobById (schema) {
+  return getJobByTableAndId(schema, 'archive')
+}
+
+function getJobByTableAndId (schema, table) {
+  return `SELECT * From ${schema}.${table} WHERE id = $1`
 }

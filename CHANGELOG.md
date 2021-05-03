@@ -1,5 +1,34 @@
 # Changes
 
+## 6.0.0 :tada:
+
+- `stop({ graceful = true, timeout = 30000 })` will now attempt to gracefully stop any polling subscriptions (workers) by sending them a signal and then waiting for the workers to drain. The promise will still resolve once the signal is sent, so if you need to be notified when all work is completed, add a listener to the `stopped` event.  Once this event is emitted, if pg-boss had created its own connection pool, it will be closed.
+- Added a `wip` event for polling subscriptions that will emit as jobs are in-flight. If no work is being done, no events will be emitted.  This will emit at most once every 2 seconds for monitoring purposes.
+- Added the `output` jsonb column to storage tables to store result or error data along with the original job, which were previously only available via completion jobs.  This has the added benefit of storing any errors or results from completion jobs themselves, which were previously discarded.
+- `getJobById(id)` can now be used to fetch a job from either primary or archive storage by id. This may be helpful if needed to inspect `output` and you have the job id.
+- Added new option, `ignoreActive`, to `publishOnce()` to ignore active jobs.
+- MAJOR: Added a new index to the primary job table to improve fetch time performace as the job table size increases. Depending on how many jobs you have in your job table, creating this index may delay `start()` bootstrapping promise resolution. If this is a concern, you can fetch the new schema version via `getMigrationPlans()` and create the indexes out of band. The migration includes an `IF NOT EXISTS` to bypass creation.
+
+  For example, once you have installed this version, using the node repl, the following command will dump the migration commands for the default schema 'pgboss' (change this if customized).
+
+  ```js
+  console.log(require('./node_modules/pg-boss').getMigrationPlans())
+  ```
+
+  Which will print the indexes within the standard transaction scope:
+
+  ```shell
+    BEGIN;
+    ...
+    CREATE INDEX ...
+    ...
+    COMMIT;
+  ```
+
+- MAJOR: `onComplete` is now defaulted to `false`, which breaks backward compatability for automatic creation of completion jobs. To restore the previous behavior of completion jobs being created by default, you should set `onComplete` to `true` in your constructor options.
+- MAJOR: The default retention policy has been reduced from 30 to 14 days. This can still be customized as an option in the constructor.
+- MAJOR: Node 10 is End-of-Life. Node 12 is now the minimum supported version.
+
 ## 5.2.3
 
 - Dependency PR from dependabot
