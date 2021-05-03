@@ -24,7 +24,7 @@ const HOUR = MINUTE * 60
 const DAY = HOUR * 24
 
 // source: pg.types -> postgres-interval
-const INTERVAL_MAP = {
+const INTERVAL_TO_MS_MAP = {
   days: DAY,
   hours: HOUR,
   minutes: MINUTE,
@@ -73,7 +73,7 @@ module.exports = {
 }
 
 function intervalToMs (interval) {
-  const ms = Object.keys(interval).reduce((total, key) => total + INTERVAL_MAP[key] * interval[key], 0)
+  const ms = Object.keys(interval).reduce((total, key) => total + INTERVAL_TO_MS_MAP[key] * interval[key], 0)
   return ms
 }
 

@@ -1,6 +1,7 @@
 const delay = require('delay')
 const assert = require('assert')
 const helper = require('./testHelper')
+const PgBoss = require('../')
 
 describe('subscribe', function () {
   it('should fail with no arguments', async function () {
@@ -252,13 +253,17 @@ describe('subscribe', function () {
   })
 
   it('should fail job at expiration without maintenance', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const boss = this.test.boss = new PgBoss(this.test.bossConfig)
 
-    const queue = this.test.bossConfig.schema
+    boss.on('error', err => console.log(err))
 
     const maintenanceTick = new Promise((resolve) => boss.on('maintenance', resolve))
 
+    await boss.start()
+
     await maintenanceTick
+
+    const queue = this.test.bossConfig.schema
 
     const jobId = await boss.publish(queue, null, { expireInSeconds: 1 })
 
@@ -273,13 +278,17 @@ describe('subscribe', function () {
   })
 
   it('should fail a batch of jobs at expiration without maintenance', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const boss = this.test.boss = new PgBoss(this.test.bossConfig)
 
-    const queue = this.test.bossConfig.schema
+    boss.on('error', err => console.log(err))
 
     const maintenanceTick = new Promise((resolve) => boss.on('maintenance', resolve))
 
+    await boss.start()
+
     await maintenanceTick
+
+    const queue = this.test.bossConfig.schema
 
     const jobId1 = await boss.publish(queue, null, { expireInSeconds: 1 })
     const jobId2 = await boss.publish(queue, null, { expireInSeconds: 1 })
