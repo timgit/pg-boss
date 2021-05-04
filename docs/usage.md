@@ -33,8 +33,8 @@
   - [`subscribe()`](#subscribe)
     - [`subscribe(name [, options], handler)`](#subscribename--options-handler)
     - [`onComplete(name [, options], handler)`](#oncompletename--options-handler)
-  - [`unsubscribe(name)`](#unsubscribename)
-    - [`offComplete(name)`](#offcompletename)
+  - [`unsubscribe(value)`](#unsubscribevalue)
+    - [`offComplete(value)`](#offcompletevalue)
   - [`fetch()`](#fetch)
     - [`fetch(name)`](#fetchname)
     - [`fetch(name, batchSize, [, options])`](#fetchname-batchsize--options)
@@ -495,13 +495,20 @@ The following is an example data object from the job retrieved in the onComplete
 }
 ```
 
-## `unsubscribe(name)`
+## `unsubscribe(value)`
 
-Removes a subscription by name and stops polling.
+Removes a subscription by name or id and stops polling.
 
-### `offComplete(name)`
+** Arguments **
+- value: string or object
 
-Same as `unsubscribe()`, but removes an `onComplete()` subscription.
+  If a string, removes all subscriptions found matching the name.  If an object, only the subscription with a matching `id` will be removed.
+
+### `offComplete(value)`
+
+Similar to `unsubscribe()`, but removes an `onComplete()` subscription.
+
+** 
 
 ## `fetch()`
 

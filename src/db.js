@@ -25,7 +25,7 @@ class Db extends EventEmitter {
 
   async executeSql (text, values) {
     if (this.opened) {
-      return this.pool.query(text, values)
+      return await this.pool.query(text, values)
     }
   }
 }

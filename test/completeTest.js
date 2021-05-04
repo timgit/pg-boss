@@ -134,7 +134,7 @@ describe('complete', function () {
 
     let receivedCount = 0
 
-    boss.onComplete(jobName, async job => {
+    boss.onComplete(jobName, { newJobCheckInterval: 500 }, async job => {
       receivedCount++
       await boss.offComplete(jobName)
     })
@@ -148,6 +148,30 @@ describe('complete', function () {
     await boss.publish(jobName)
     const job2 = await boss.fetch(jobName)
     await boss.complete(job2.id)
+
+    await delay(2000)
+
+    assert.strictEqual(receivedCount, 1)
+  })
+
+  it('should unsubscribe an onComplete subscription by id', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, onComplete: true })
+    const queue = this.test.bossConfig.schema
+
+    let receivedCount = 0
+
+    await boss.publish(queue)
+    const job1 = await boss.fetch(queue)
+    await boss.complete(job1.id)
+
+    await boss.publish(queue)
+    const job2 = await boss.fetch(queue)
+    await boss.complete(job2.id)
+
+    const id = await boss.onComplete(queue, { newJobCheckInterval: 500 }, async () => {
+      receivedCount++
+      await boss.offComplete({ id })
+    })
 
     await delay(2000)
 

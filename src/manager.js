@@ -79,12 +79,12 @@ class Manager extends EventEmitter {
 
   async subscribe (name, ...args) {
     const { options, callback } = Attorney.checkSubscribeArgs(name, args, this.config)
-    return this.watch(name, options, callback)
+    return await this.watch(name, options, callback)
   }
 
   async onComplete (name, ...args) {
     const { options, callback } = Attorney.checkSubscribeArgs(name, args, this.config)
-    return this.watch(COMPLETION_JOB_PREFIX + name, options, callback)
+    return await this.watch(COMPLETION_JOB_PREFIX + name, options, callback)
   }
 
   addWorker (worker) {
@@ -195,12 +195,12 @@ class Manager extends EventEmitter {
     assert(value, 'Missing required argument')
 
     const query = (typeof value === 'string')
-      ? { type: 'name', value, filter: i => i.name === value }
-      : (typeof value === 'object' && value.worker)
-          ? { type: 'worker', value: value.worker, filter: i => i.id === value.worker }
+      ? { filter: i => i.name === value }
+      : (typeof value === 'object' && value.id)
+          ? { filter: i => i.id === value.id }
           : null
 
-    assert(query, 'Invalid argument. Expected string or object: { worker: id }')
+    assert(query, 'Invalid argument. Expected string or object: { id }')
 
     const workers = this.getWorkers().filter(i => query.filter(i) && !i.stopping && !i.stopped)
 
@@ -221,13 +221,17 @@ class Manager extends EventEmitter {
     }, 1000)
   }
 
-  async offComplete (name) {
-    return this.unsubscribe(COMPLETION_JOB_PREFIX + name)
+  async offComplete (value) {
+    if (typeof value === 'string') {
+      value = COMPLETION_JOB_PREFIX + value
+    }
+
+    return await this.unsubscribe(value)
   }
 
   async publish (...args) {
     const { name, data, options } = Attorney.checkPublishArgs(args, this.config)
-    return this.createJob(name, data, options)
+    return await this.createJob(name, data, options)
   }
 
   async publishOnce (name, data, options, key) {
@@ -237,7 +241,7 @@ class Manager extends EventEmitter {
 
     const result = Attorney.checkPublishArgs([name, data, options], this.config)
 
-    return this.createJob(result.name, result.data, result.options)
+    return await this.createJob(result.name, result.data, result.options)
   }
 
   async publishSingleton (name, data, options) {
@@ -247,7 +251,7 @@ class Manager extends EventEmitter {
 
     const result = Attorney.checkPublishArgs([name, data, options], this.config)
 
-    return this.createJob(result.name, result.data, result.options)
+    return await this.createJob(result.name, result.data, result.options)
   }
 
   async publishAfter (name, data, options, after) {
@@ -256,7 +260,7 @@ class Manager extends EventEmitter {
 
     const result = Attorney.checkPublishArgs([name, data, options], this.config)
 
-    return this.createJob(result.name, result.data, result.options)
+    return await this.createJob(result.name, result.data, result.options)
   }
 
   async publishThrottled (name, data, options, seconds, key) {
@@ -267,7 +271,7 @@ class Manager extends EventEmitter {
 
     const result = Attorney.checkPublishArgs([name, data, options], this.config)
 
-    return this.createJob(result.name, result.data, result.options)
+    return await this.createJob(result.name, result.data, result.options)
   }
 
   async publishDebounced (name, data, options, seconds, key) {
@@ -278,7 +282,7 @@ class Manager extends EventEmitter {
 
     const result = Attorney.checkPublishArgs([name, data, options], this.config)
 
-    return this.createJob(result.name, result.data, result.options)
+    return await this.createJob(result.name, result.data, result.options)
   }
 
   async createJob (name, data, options, singletonOffset = 0) {
@@ -332,7 +336,7 @@ class Manager extends EventEmitter {
 
     singletonOffset = singletonSeconds
 
-    return this.createJob(name, data, options, singletonOffset)
+    return await this.createJob(name, data, options, singletonOffset)
   }
 
   getDebounceStartAfter (singletonSeconds, clockOffset) {
@@ -382,7 +386,7 @@ class Manager extends EventEmitter {
   }
 
   async fetchCompleted (name, batchSize, options = {}) {
-    return this.fetch(COMPLETION_JOB_PREFIX + name, batchSize, options)
+    return await this.fetch(COMPLETION_JOB_PREFIX + name, batchSize, options)
   }
 
   mapCompletionIdArg (id, funcName) {

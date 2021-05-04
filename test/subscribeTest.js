@@ -88,6 +88,25 @@ describe('subscribe', function () {
     assert.strictEqual(receivedCount, 1)
   })
 
+  it('should unsubscribe a subscription by id', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const queue = this.test.bossConfig.schema
+
+    let receivedCount = 0
+
+    await boss.publish(queue)
+    await boss.publish(queue)
+
+    const id = await boss.subscribe(queue, { newJobCheckInterval: 500 }, async () => {
+      receivedCount++
+      await boss.unsubscribe({ id })
+    })
+
+    await delay(2000)
+
+    assert.strictEqual(receivedCount, 1)
+  })
+
   it('should handle a batch of jobs via teamSize', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
 
