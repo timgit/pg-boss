@@ -25,6 +25,7 @@
     - [`publish(request)`](#publishrequest)
     - [`publishAfter(name, data, options, seconds | ISO date string | Date)`](#publishaftername-data-options-seconds--iso-date-string--date)
     - [`publishOnce(name, data, options, key)`](#publishoncename-data-options-key)
+    - [`publishSingleton(name, data, options)`](#publishsingletonname-data-options)
     - [`publishThrottled(name, data, options, seconds [, key])`](#publishthrottledname-data-options-seconds--key)
     - [`publishDebounced(name, data, options, seconds [, key])`](#publishdebouncedname-data-options-seconds--key)
   - [`subscribe()`](#subscribe)
@@ -332,7 +333,13 @@ This is a convenience version of `publish()` with the `startAfter` option assign
 
 ### `publishOnce(name, data, options, key)`
 
-Publish a job with a unique key to make sure it isn't processed more than once.  Any other jobs published during this archive interval with the same queue name and key will be rejected.
+Publish a job with a unique key to only allow 1 job to be in created, retry, or active state at a time.
+
+This is a convenience version of `publish()` with the `singletonKey` option assigned.
+
+### `publishSingleton(name, data, options)`
+
+Publish a job but only allow 1 job to be in created or retry state at at time.
 
 This is a convenience version of `publish()` with the `singletonKey` option assigned.
 

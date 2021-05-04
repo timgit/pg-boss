@@ -56,6 +56,7 @@ class Manager extends EventEmitter {
       this.publishThrottled,
       this.publishOnce,
       this.publishAfter,
+      this.publishSingleton,
       this.deleteQueue,
       this.deleteAllQueues,
       this.clearStorage,
@@ -222,9 +223,17 @@ class Manager extends EventEmitter {
   async publishOnce (name, data, options, key) {
     options = options || {}
 
-    const { ignoreActive = false } = options
+    options.singletonKey = key || name
 
-    options.singletonKey = ignoreActive ? SINGLETON_QUEUE_KEY : key || name
+    const result = Attorney.checkPublishArgs([name, data, options], this.config)
+
+    return this.createJob(result.name, result.data, result.options)
+  }
+
+  async publishSingleton (name, data, options) {
+    options = options || {}
+
+    options.singletonKey = SINGLETON_QUEUE_KEY
 
     const result = Attorney.checkPublishArgs([name, data, options], this.config)
 
@@ -454,7 +463,7 @@ class Manager extends EventEmitter {
     const result2 = await this.db.executeSql(fetchArchiveSql, [id])
 
     if (result2 && result2.rows && result2.rows.length === 1) {
-      return result1.rows[0]
+      return result2.rows[0]
     }
 
     return null

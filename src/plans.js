@@ -229,7 +229,14 @@ function getQueueSize (schema, options = {}) {
 function createIndexSingletonKey (schema) {
   // anything with singletonKey means "only 1 job can be queued or active at a time"
   return `
-    CREATE UNIQUE INDEX job_singletonKey ON ${schema}.job (name, singletonKey) WHERE state < '${states.completed}' AND singletonOn IS NULL
+    CREATE UNIQUE INDEX job_singletonKey ON ${schema}.job (name, singletonKey) WHERE state < '${states.completed}' AND singletonOn IS NULL AND NOT singletonKey = '${SINGLETON_QUEUE_KEY}'
+  `
+}
+
+function createIndexSingletonQueue (schema) {
+  // "singleton queue" means "only 1 job can be queued at a time"
+  return `
+    CREATE UNIQUE INDEX job_singleton_queue ON ${schema}.job (name, singletonKey) WHERE state < '${states.active}' AND singletonOn IS NULL AND singletonKey = '${SINGLETON_QUEUE_KEY}'
   `
 }
 
@@ -244,13 +251,6 @@ function createIndexSingletonKeyOn (schema) {
   // anything with both singletonOn and singletonKey means "only 1 job within this time period with this key, queued, active or completed"
   return `
     CREATE UNIQUE INDEX job_singletonKeyOn ON ${schema}.job (name, singletonOn, singletonKey) WHERE state < '${states.expired}'
-  `
-}
-
-function createIndexSingletonQueue (schema) {
-  // "singleton queue" means "only 1 job can be queued at a time"
-  return `
-    CREATE UNIQUE INDEX job_singleton_queue ON ${schema}.job (name, singletonKey) WHERE state < '${states.active}' AND singletonOn IS NULL AND singletonKey = '${SINGLETON_QUEUE_KEY}'
   `
 }
 

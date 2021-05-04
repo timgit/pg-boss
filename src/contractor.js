@@ -9,7 +9,7 @@ class Contractor {
     return plans.create(schema, schemaVersion)
   }
 
-  static migrationPlans (schema = DEFAULT_SCHEMA, version = schemaVersion) {
+  static migrationPlans (schema = DEFAULT_SCHEMA, version = schemaVersion - 1) {
     return migrationStore.migrate(schema, version)
   }
 

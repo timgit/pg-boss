@@ -29,6 +29,26 @@ describe('archive', function () {
     assert.strictEqual(queue, archivedJob.name)
   })
 
+  it('should retrieve an archived job via getJobById()', async function () {
+    const config = { ...this.test.bossConfig, ...defaults }
+    const boss = this.test.boss = await helper.start(config)
+    const queue = this.test.bossConfig.schema
+
+    const jobId = await boss.publish(queue)
+    const job = await boss.fetch(queue)
+
+    assert.strictEqual(job.id, jobId)
+
+    await boss.complete(jobId)
+
+    await delay(4000)
+
+    const archivedJob = await boss.getJobById(jobId)
+
+    assert.strictEqual(jobId, archivedJob.id)
+    assert.strictEqual(queue, archivedJob.name)
+  })
+
   it('should archive a created job', async function () {
     const config = { ...this.test.bossConfig, ...defaults }
     const boss = this.test.boss = await helper.start(config)

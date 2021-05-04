@@ -60,6 +60,14 @@ describe('singleton', function () {
     const jobId2 = await boss.publishOnce(queue, null, null, key)
 
     assert.strictEqual(jobId2, null)
+
+    const job = await boss.fetch(queue)
+
+    assert.strictEqual(job.id, jobId)
+
+    const jobId3 = await boss.publishOnce(queue, null, null, key)
+
+    assert.strictEqual(jobId3, null)
   })
 
   it('publishOnce() without a key should also work', async function () {
@@ -73,5 +81,27 @@ describe('singleton', function () {
     const jobId2 = await boss.publishOnce(queue)
 
     assert.strictEqual(jobId2, null)
+  })
+
+  it('publishSingleton() works', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+
+    const queue = this.test.bossConfig.schema
+
+    const jobId = await boss.publishSingleton(queue)
+
+    assert(jobId)
+
+    const jobId2 = await boss.publishSingleton(queue)
+
+    assert.strictEqual(jobId2, null)
+
+    const job = await boss.fetch(queue)
+
+    assert.strictEqual(job.id, jobId)
+
+    const jobId3 = await boss.publishSingleton(queue)
+
+    assert(jobId3)
   })
 })
