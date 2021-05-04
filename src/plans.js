@@ -262,7 +262,7 @@ function createIndexJobName (schema) {
 
 function createIndexJobFetch (schema) {
   return `
-    CREATE INDEX job_fetch ON ${schema}.job (state, name text_pattern_ops, startAfter)
+    CREATE INDEX job_fetch ON ${schema}.job (name text_pattern_ops, startAfter) WHERE state < '${states.active}'
   `
 }
 

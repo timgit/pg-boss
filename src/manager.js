@@ -63,6 +63,8 @@ class Manager extends EventEmitter {
       this.getQueueSize,
       this.getJobById
     ]
+
+    this.emitWipThrottled = debounce(() => this.emit(events.wip, this.getWipData()), WIP_EVENT_INTERVAL, WIP_DEBOUNCE_OPTIONS)
   }
 
   async stop () {
@@ -129,10 +131,6 @@ class Manager extends EventEmitter {
     return data
   }
 
-  emitWipThrottled () {
-    debounce(() => this.emit(events.wip, this.getWipData()), WIP_EVENT_INTERVAL, WIP_DEBOUNCE_OPTIONS)
-  }
-
   async watch (name, options, callback) {
     const {
       newJobCheckInterval: interval = this.config.newJobCheckInterval,
@@ -152,20 +150,32 @@ class Manager extends EventEmitter {
         delay.reject(timeout, { value: new Error('job handler timeout exceeded in subscription') })
       ])
 
+      if (!HIDDEN_QUEUES.includes(name)) {
+        this.emitWipThrottled()
+      }
+
+      let result
+
       // Failing will fail all fetched jobs
       if (batchSize) {
         const maxMs = jobs.reduce((acc, i) => Math.max(acc, plans.intervalToMs(i.expirein)))
 
-        return await expirationRace(Promise.all([callback(jobs)]), maxMs)
+        result = await expirationRace(Promise.all([callback(jobs)]), maxMs)
           .catch(err => this.fail(jobs.map(job => job.id), err))
       }
 
-      return await pMap(jobs, job =>
+      result = await pMap(jobs, job =>
         expirationRace(callback(job), plans.intervalToMs(job.expirein))
           .then(result => this.complete(job.id, result))
           .catch(err => this.fail(job.id, err))
       , { concurrency: teamConcurrency }
       ).catch(() => {}) // allow promises & non-promises to live together in harmony
+
+      if (!HIDDEN_QUEUES.includes(name)) {
+        this.emitWipThrottled()
+      }
+
+      return result
     }
 
     const onError = error => {

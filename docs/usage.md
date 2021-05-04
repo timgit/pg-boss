@@ -11,6 +11,8 @@
 - [Events](#events)
   - [`error`](#error)
   - [`monitor-states`](#monitor-states)
+  - [`wip`](#wip)
+  - [`stopped`](#stopped)
 - [Static functions](#static-functions)
   - [`string getConstructionPlans(schema)`](#string-getconstructionplansschema)
   - [`string getMigrationPlans(schema, version)`](#string-getmigrationplansschema-version)
@@ -188,6 +190,31 @@ The payload of the event is an object with a key per queue and state, such as th
   "all": 4694
 }
 ```
+## `wip`
+
+Emitted at most once every 2 seconds when polling subscriptions are active and jobs are entering or leaving active state. The payload is an array that represents each worker in this instance of pg-boss.  If you want to monitor queue activity across all instances, use `monitor-states`.
+
+```js
+[
+  {
+    id: 'fc738fb0-1de5-4947-b138-40d6a790749e',
+    name: 'my-queue',
+    options: { newJobCheckInterval: 2000 },
+    state: 'active',
+    count: 1,
+    createdOn: 1620149137015,
+    lastFetchedOn: 1620149137015,
+    lastJobStartedOn: 1620149137015,
+    lastJobEndedOn: null,
+    lastError: null,
+    lastErrorOn: null
+  }
+]
+```
+
+## `stopped`
+
+Emitted after `stop()` once all subscription workers have completed their work and maintenance has been shut down.
 
 # Static functions
 
@@ -359,7 +386,7 @@ This is a convenience version of `publish()` with the `singletonSeconds`, `singl
 
 **returns: Promise**
 
-Polls the database by a queue name or a pattern and executes the provided callback function when jobs are found.  The promise resolves once a subscription has been created.
+Polls the database by a queue name or a pattern and executes the provided callback function when jobs are found.  The promise resolves once a subscription has been created with a unique id of the subscription.  You can monitor the state of subscriptions using the `wip` event.
 
 Queue patterns use the `*` character to match 0 or more characters.  For example, a job from queue `status-report-12345` would be fetched with pattern `status-report-*` or even `stat*5`.
 

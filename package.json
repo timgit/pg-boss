@@ -22,7 +22,7 @@
     "standard": "^16.0.3"
   },
   "scripts": {
-    "test": "standard && mocha --exit --no-warnings",
+    "test": "standard && mocha --exit --no-warnings --parallel --require ./test/hooks",
     "cover": "nyc --reporter=text npm test",
     "forcover": "npm run cover && nyc report --reporter=text-lcov | coveralls",
     "export-schema": "node ./scripts/construct.js",

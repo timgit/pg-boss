@@ -306,4 +306,24 @@ describe('subscribe', function () {
     assert.strictEqual(job2.state, 'failed')
     assert(job2.output.message, 'job handler timeout exceeded in subscription')
   })
+
+  it('should emit wip event every 2s during subscriptions', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const queue = this.test.bossConfig.schema
+
+    const firstWipEvent = new Promise(resolve => boss.once('wip', resolve))
+
+    await boss.publish(queue)
+    await boss.subscribe(queue, () => delay(1000))
+
+    const wip1 = await firstWipEvent
+
+    assert.strictEqual(wip1.length, 1)
+
+    const secondWipEvent = new Promise(resolve => boss.once('wip', resolve))
+
+    const wip2 = await secondWipEvent
+
+    assert.strictEqual(wip2.length, 0)
+  })
 })
