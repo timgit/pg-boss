@@ -8,13 +8,13 @@
 - NEW: Added the `output` jsonb column to storage tables to store result or error data along with the original job, which were previously only available via completion jobs.  This has the added benefit of storing any errors or results from completion jobs themselves, which were previously discarded.
 - NEW: `getJobById(id)` can now be used to fetch a job from either primary or archive storage by id. This may be helpful if needed to inspect `output` and you have the job id.
 - NEW: Added new function, `publishSingleton()`, similar to publishOnce(), but throttles publish to only allow 1 job in the queue at a time, allowing a job to be queued even if 1 or more jobs are currently active.
-- CHANGE: `subscribe()` and `onComplete()` now resolve with a unique worker id that will be visible in `wip` along with additional metadata about the subscription.
+- CHANGE: `subscribe()` and `onComplete()` now resolve with a unique id that will be visible in `wip` along with additional metadata about the subscription.
 - CHANGE: `subscribe()` and `onComplete()` now abort promise execution client-side based on the job's expiration.
 - CHANGE: `unsubscribe()` and `offComplete()` now accept an object as an argument to allow removing a specific subscription by id.
 - MAJOR: The `onComplete` publish option is now defaulted to `false`, which breaks backward compatability for automatic creation of completion jobs. To restore the previous behavior of completion jobs being created by default, you should set `onComplete` to `true` in your constructor options.
 - MAJOR: The default retention policy has been reduced from 30 to 14 days. This can still be customized as an option in the constructor.
 - MAJOR: Node 10 is EOL. Node 12 is now the minimum supported version.
-- MAJOR: Added a new index to the primary job table to improve fetch time performace as the job table size increases. Depending on how many jobs you have in your job table, creating this index may delay `start()` promise resolution. If this is a concern, you can fetch the new schema version via `getMigrationPlans()` and create the indexes out of band. The migration includes an `IF NOT EXISTS` to bypass creation.
+- MAJOR: Added a new index to the primary job table, `job_fetch`, to improve fetch time performace as the job table size increases. Depending on how many jobs you have in your job table, creating this index may delay `start()` promise resolution. If this is a concern, you can get the DDL via `getMigrationPlans()` and create the index out of band. The DLL includes an `IF NOT EXISTS` which will skip this step in the migration if already created.
 
   In the following example, once you have installed this package version, using the node repl, you can get the DDL for the index from `getMigrationPlans()`.
 

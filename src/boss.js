@@ -160,6 +160,10 @@ class Boss extends EventEmitter {
   }
 
   async stop () {
+    if (this.config.__test__throw_stop) {
+      throw new Error('__test__throw_stop')
+    }
+
     if (!this.stopped) {
       if (this.metaMonitorInterval) {
         clearInterval(this.metaMonitorInterval)
@@ -217,17 +221,15 @@ class Boss extends EventEmitter {
   }
 
   async getMaintenanceTime () {
-    if (this.stopped) {
-      return
+    if (!this.stopped) {
+      const { rows } = await this.db.executeSql(this.getMaintenanceTimeCommand)
+
+      let { maintained_on: maintainedOn, seconds_ago: secondsAgo } = rows[0]
+
+      secondsAgo = secondsAgo !== null ? parseFloat(secondsAgo) : this.maintenanceIntervalSeconds * 10
+
+      return { maintainedOn, secondsAgo }
     }
-
-    const { rows } = await this.db.executeSql(this.getMaintenanceTimeCommand)
-
-    let { maintained_on: maintainedOn, seconds_ago: secondsAgo } = rows[0]
-
-    secondsAgo = secondsAgo !== null ? parseFloat(secondsAgo) : this.maintenanceIntervalSeconds * 10
-
-    return { maintainedOn, secondsAgo }
   }
 
   getQueueNames () {

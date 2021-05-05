@@ -9,9 +9,9 @@ const Attorney = require('./attorney')
 const Worker = require('./worker')
 
 const { QUEUES: BOSS_QUEUES } = require('./boss')
-const HIDDEN_QUEUES = Object.values(BOSS_QUEUES)
+const { QUEUES: TIMEKEEPER_QUEUES } = require('./timekeeper')
 
-// todo: add cron and send it queues to ignore list
+const INTERNAL_QUEUES = Object.values(BOSS_QUEUES).concat(Object.values(TIMEKEEPER_QUEUES)).reduce((acc, i) => ({ ...acc, [i]: i }), {})
 
 const plans = require('./plans')
 const { COMPLETION_JOB_PREFIX, SINGLETON_QUEUE_KEY } = plans
@@ -39,6 +39,8 @@ class Manager extends EventEmitter {
     this.completeJobsCommand = plans.completeJobs(config.schema)
     this.cancelJobsCommand = plans.cancelJobs(config.schema)
     this.failJobsCommand = plans.failJobs(config.schema)
+    this.getJobByIdCommand = plans.getJobById(config.schema)
+    this.getArchivedJobByIdCommand = plans.getArchivedJobById(config.schema)
 
     // exported api to index
     this.functions = [
@@ -67,13 +69,17 @@ class Manager extends EventEmitter {
     this.emitWipThrottled = debounce(() => this.emit(events.wip, this.getWipData()), WIP_EVENT_INTERVAL, WIP_DEBOUNCE_OPTIONS)
   }
 
-  async stop () {
-    for (const sub of this.subscriptions.values()) {
-      if (HIDDEN_QUEUES.includes(sub.name)) {
-        continue
-      }
+  start () {
+    this.stopping = false
+  }
 
-      await this.unsubscribe(sub.name)
+  async stop () {
+    this.stopping = true
+
+    for (const sub of this.subscriptions.values()) {
+      if (!INTERNAL_QUEUES[sub.name]) {
+        await this.unsubscribe(sub.name)
+      }
     }
   }
 
@@ -97,6 +103,12 @@ class Manager extends EventEmitter {
 
   getWorkers () {
     return Array.from(this.subscriptions.values())
+  }
+
+  emitWip (name) {
+    if (!INTERNAL_QUEUES[name]) {
+      this.emitWipThrottled()
+    }
   }
 
   getWipData () {
@@ -126,12 +138,16 @@ class Manager extends EventEmitter {
         lastError,
         lastErrorOn
       }))
-      .filter(i => i.count > 0 && !HIDDEN_QUEUES.includes(i.name))
+      .filter(i => i.count > 0 && !INTERNAL_QUEUES[i.name])
 
     return data
   }
 
   async watch (name, options, callback) {
+    if (this.stopping) {
+      throw new Error('Subscriptions are disabled. pg-boss is stopping.')
+    }
+
     const {
       newJobCheckInterval: interval = this.config.newJobCheckInterval,
       batchSize,
@@ -145,35 +161,35 @@ class Manager extends EventEmitter {
     const fetch = () => this.fetch(name, batchSize || teamSize, { includeMetadata })
 
     const onFetch = async (jobs) => {
+      if (this.config.__test__throw_subscription) {
+        throw new Error('__test__throw_subscription')
+      }
+
       const expirationRace = (promise, timeout) => Promise.race([
         promise,
         delay.reject(timeout, { value: new Error('job handler timeout exceeded in subscription') })
       ])
 
-      if (!HIDDEN_QUEUES.includes(name)) {
-        this.emitWipThrottled()
-      }
+      this.emitWip(name)
 
       let result
 
-      // Failing will fail all fetched jobs
       if (batchSize) {
-        const maxMs = jobs.reduce((acc, i) => Math.max(acc, plans.intervalToMs(i.expirein)))
+        const maxTimeout = jobs.reduce((acc, i) => Math.max(acc, plans.intervalToMs(i.expirein)))
 
-        result = await expirationRace(Promise.all([callback(jobs)]), maxMs)
+        // Failing will fail all fetched jobs
+        result = await expirationRace(Promise.all([callback(jobs)]), maxTimeout)
           .catch(err => this.fail(jobs.map(job => job.id), err))
+      } else {
+        result = await pMap(jobs, job =>
+          expirationRace(callback(job), plans.intervalToMs(job.expirein))
+            .then(result => this.complete(job.id, result))
+            .catch(err => this.fail(job.id, err))
+        , { concurrency: teamConcurrency }
+        ).catch(() => {}) // allow promises & non-promises to live together in harmony
       }
 
-      result = await pMap(jobs, job =>
-        expirationRace(callback(job), plans.intervalToMs(job.expirein))
-          .then(result => this.complete(job.id, result))
-          .catch(err => this.fail(job.id, err))
-      , { concurrency: teamConcurrency }
-      ).catch(() => {}) // allow promises & non-promises to live together in harmony
-
-      if (!HIDDEN_QUEUES.includes(name)) {
-        this.emitWipThrottled()
-      }
+      this.emitWip(name)
 
       return result
     }
@@ -466,15 +482,13 @@ class Manager extends EventEmitter {
   }
 
   async getJobById (id) {
-    const fetchSql = plans.getJobById(this.config.schema)
-    const result1 = await this.db.executeSql(fetchSql, [id])
+    const result1 = await this.db.executeSql(this.getJobByIdCommand, [id])
 
     if (result1 && result1.rows && result1.rows.length === 1) {
       return result1.rows[0]
     }
 
-    const fetchArchiveSql = plans.getArchivedJobById(this.config.schema)
-    const result2 = await this.db.executeSql(fetchArchiveSql, [id])
+    const result2 = await this.db.executeSql(this.getArchivedJobByIdCommand, [id])
 
     if (result2 && result2.rows && result2.rows.length === 1) {
       return result2.rows[0]

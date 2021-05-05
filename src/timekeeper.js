@@ -210,3 +210,4 @@ class Timekeeper extends EventEmitter {
 }
 
 module.exports = Timekeeper
+module.exports.QUEUES = queues

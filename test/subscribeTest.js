@@ -345,4 +345,18 @@ describe('subscribe', function () {
 
     assert.strictEqual(wip2.length, 0)
   })
+
+  it('should reject subscribe() after stopping', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const queue = this.test.bossConfig.schema
+
+    boss.stop({ timeout: 1 })
+
+    try {
+      await boss.subscribe(queue)
+      assert(false)
+    } catch (err) {
+      assert(err.message.includes('stopping'))
+    }
+  })
 })

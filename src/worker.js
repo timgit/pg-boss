@@ -61,6 +61,8 @@ class Worker {
 
       const duration = Date.now() - started
 
+      this.lastJobDuration = duration
+
       if (!this.stopping && duration < this.interval) {
         await delay(this.interval - duration)
       }

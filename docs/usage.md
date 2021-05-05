@@ -207,6 +207,7 @@ Emitted at most once every 2 seconds when polling subscriptions are active and j
     lastFetchedOn: 1620149137015,
     lastJobStartedOn: 1620149137015,
     lastJobEndedOn: null,
+    lastJobDuration: 343
     lastError: null,
     lastErrorOn: null
   }
