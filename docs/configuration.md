@@ -74,9 +74,6 @@ Alternatively, the following options can be set as properties in an object.
     This option may be beneficial if you'd like to use an existing database service
     with its own connection pool.
 
-    For example, you may be relying on the cluster module on
-    a web server, and you'd like to limit the growth of total connections as much as possible.
-
 * **schema** - string, defaults to "pgboss"
 
     Database schema that contains all required storage objects. Only alphanumeric and underscore allowed, length: <= 50 characters
@@ -259,7 +256,7 @@ For example, if you set the `singletonMinutes` to 1, then submit 2 jobs within a
 Setting `singletonNextSlot` to true will cause the job to be scheduled to run after the current time slot if and when a job is throttled. This option is set to true, for example, when calling the convenience function `publishDebounced()`.
 
 ### Completion jobs
-* **onComplete**, bool (Default: true)
+* **onComplete**, bool (Default: false)
 
 When a job completes, a completion job will be created in the queue, copying the same retention policy as the job, for the purpose of `onComplete()` or `fetchCompleted()`.  If completion jobs are not used, they will be archived according to the retention policy.  If the queue in question has a very high volume, this can be set to `false` to bypass creating the completion job.  This can also be set in the constructor as a default for all calls to `publish()`.
 
@@ -288,6 +285,8 @@ When a job completes, a completion job will be created in the queue, copying the
     | createdon | string, timestamp |
     | completedon | string, timestamp |
     | keepuntil | string, timestamp |
+    | oncomplete | bool |
+    | output | object |
 
 ## Subscribe options
 

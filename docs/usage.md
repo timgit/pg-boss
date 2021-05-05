@@ -50,6 +50,7 @@
   - [`fail(id [, data])`](#failid--data)
   - [`fail([ids])`](#failids)
   - [`getQueueSize(name [, options])`](#getqueuesizename--options)
+  - [`getJobById(id)`](#getjobbyidid)
   - [`deleteQueue(name)`](#deletequeuename)
   - [`deleteAllQueues()`](#deleteallqueues)
   - [`clearStorage()`](#clearstorage)
@@ -678,6 +679,10 @@ As an example, the following options object include active jobs along with creat
   before: states.completed
 }
 ```
+
+## `getJobById(id)`
+
+Retrieves a job with all metadata by id in either the primary or archive storage.
 
 ## `deleteQueue(name)`
 
