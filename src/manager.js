@@ -175,7 +175,7 @@ class Manager extends EventEmitter {
       let result
 
       if (batchSize) {
-        const maxTimeout = jobs.reduce((acc, i) => Math.max(acc, plans.intervalToMs(i.expirein)))
+        const maxTimeout = jobs.reduce((acc, i) => Math.max(acc, plans.intervalToMs(i.expirein)), 0)
 
         // Failing will fail all fetched jobs
         result = await expirationRace(Promise.all([callback(jobs)]), maxTimeout)
