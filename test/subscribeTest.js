@@ -293,7 +293,7 @@ describe('subscribe', function () {
     const job = await boss.getJobById(jobId)
 
     assert.strictEqual(job.state, 'failed')
-    assert(job.output.message.includes('timeout'))
+    assert(job.output.message.includes('handler execution exceeded'))
   })
 
   it('should fail a batch of jobs at expiration without maintenance', async function () {
@@ -320,10 +320,10 @@ describe('subscribe', function () {
     const job2 = await boss.getJobById(jobId2)
 
     assert.strictEqual(job1.state, 'failed')
-    assert(job1.output.message, 'job handler timeout exceeded in subscription')
+    assert(job1.output.message.includes('handler execution exceeded'))
 
     assert.strictEqual(job2.state, 'failed')
-    assert(job2.output.message, 'job handler timeout exceeded in subscription')
+    assert(job2.output.message.includes('handler execution exceeded'))
   })
 
   it('should emit wip event every 2s during subscriptions', async function () {

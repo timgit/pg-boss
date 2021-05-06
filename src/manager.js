@@ -167,7 +167,7 @@ class Manager extends EventEmitter {
 
       const expirationRace = (promise, timeout) => Promise.race([
         promise,
-        delay.reject(timeout, { value: new Error('job handler timeout exceeded in subscription') })
+        delay.reject(timeout, { value: new Error(`handler execution exceeded ${timeout}ms`) })
       ])
 
       this.emitWip(name)
