@@ -26,6 +26,7 @@ class Worker {
     this.state = WORKER_STATES.created
     this.stopping = false
     this.stopped = false
+    this.loopDelayPromise = null
   }
 
   async start () {
@@ -64,7 +65,9 @@ class Worker {
       this.lastJobDuration = duration
 
       if (!this.stopping && duration < this.interval) {
-        await delay(this.interval - duration)
+        this.loopDelayPromise = delay(this.interval - duration)
+        await this.loopDelayPromise
+        this.loopDelayPromise = null
       }
     }
 
@@ -76,6 +79,10 @@ class Worker {
   stop () {
     this.stopping = true
     this.state = WORKER_STATES.stopping
+
+    if (this.loopDelayPromise) {
+      this.loopDelayPromise.clear()
+    }
   }
 }
 
