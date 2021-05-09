@@ -14,9 +14,9 @@
 - MAJOR: The `onComplete` publish option is now defaulted to `false`, which breaks backward compatability for automatic creation of completion jobs. To restore the previous behavior of completion jobs being created by default, you should set `onComplete` to `true` in your constructor options.
 - MAJOR: The default retention policy has been reduced from 30 to 14 days. This can still be customized as an option in the constructor.
 - MAJOR: Node 10 is EOL. Node 12 is now the minimum supported version.
-- MAJOR: Added a new index to the primary job table, `job_fetch`, to improve fetch time performace as the job table size increases. Depending on how many jobs you have in your job table, creating this index may delay `start()` promise resolution. If this is a concern, you can get the DDL via `getMigrationPlans()` and create the index out of band. The DLL includes an `IF NOT EXISTS` which will skip this step in the migration if already created.
+- MAJOR: Added a new index to the primary job table, `job_fetch`, to improve fetch time performace as the job table size increases. Depending on how many jobs you have in your job table, creating this index may delay `start()` promise resolution. If this is a concern, you can get the SQL via `getMigrationPlans()` and create the index out of band. The `CREATE INDEX` command includes an `IF NOT EXISTS` which will skip this step in the migration if already created.
 
-  In the following example, once you have installed this package version, using the node repl, you can get the DDL for the index from `getMigrationPlans()`.
+  For example, once you have installed this package version, using the node repl, console.log the output of `getMigrationPlans()`.
 
   ```shell
 
