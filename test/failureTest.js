@@ -1,6 +1,7 @@
 const delay = require('delay')
 const assert = require('assert')
 const helper = require('./testHelper')
+const pMap = require('p-map')
 
 describe('failure', function () {
   it('should reject missing id argument', async function () {
@@ -59,6 +60,26 @@ describe('failure', function () {
     const jobs = await boss.fetch(queue, 3)
 
     await boss.fail(jobs.map(job => job.id))
+  })
+
+  it('should fail a batch of jobs with a data arg', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const queue = this.test.bossConfig.schema
+    const message = 'some error'
+
+    await Promise.all([
+      boss.publish(queue),
+      boss.publish(queue),
+      boss.publish(queue)
+    ])
+
+    const jobs = await boss.fetch(queue, 3)
+
+    await boss.fail(jobs.map(job => job.id), new Error(message))
+
+    const results = await pMap(jobs, job => boss.getJobById(job.id))
+
+    assert(results.every(i => i.output.message === message))
   })
 
   it('should accept a payload', async function () {
