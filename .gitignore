@@ -1,5 +1,4 @@
 node_modules
-coverage/
-*.tgz
-.nyc_output/
+.nyc_output
 .vscode
+*.tgz
