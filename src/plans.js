@@ -164,7 +164,7 @@ function createJobTable (schema) {
       expireIn interval not null default interval '15 minutes',
       createdOn timestamp with time zone not null default now(),
       completedOn timestamp with time zone,
-      keepUntil timestamp with time zone NOT NULL default now() + interval '30 days',
+      keepUntil timestamp with time zone NOT NULL default now() + interval '14 days',
       on_complete boolean not null default true,
       output jsonb
     )

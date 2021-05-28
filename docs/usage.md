@@ -109,25 +109,27 @@ If you need to interact with pg-boss outside of Node.js, such as other clients o
 The following command is the definition of the primary job table. For manual job creation, the only required column is `name`.  All other columns are nullable or have sensible defaults.
 
 ```sql
-    CREATE TABLE ${schema}.job (
-      id uuid primary key not null default gen_random_uuid(),
-      name text not null,
-      priority integer not null default(0),
-      data jsonb,
-      state ${schema}.job_state not null default('${states.created}'),
-      retryLimit integer not null default(0),
-      retryCount integer not null default(0),
-      retryDelay integer not null default(0),
-      retryBackoff boolean not null default false,
-      startAfter timestamp with time zone not null default now(),
-      startedOn timestamp with time zone,
-      singletonKey text,
-      singletonOn timestamp without time zone,
-      expireIn interval not null default interval '15 minutes',
-      createdOn timestamp with time zone not null default now(),
-      completedOn timestamp with time zone,
-      keepUntil timestamp with time zone NOT NULL default now() + interval '30 days'
-    )
+  CREATE TABLE ${schema}.job (
+    id uuid primary key not null default gen_random_uuid(),
+    name text not null,
+    priority integer not null default(0),
+    data jsonb,
+    state ${schema}.job_state not null default('${states.created}'),
+    retryLimit integer not null default(0),
+    retryCount integer not null default(0),
+    retryDelay integer not null default(0),
+    retryBackoff boolean not null default false,
+    startAfter timestamp with time zone not null default now(),
+    startedOn timestamp with time zone,
+    singletonKey text,
+    singletonOn timestamp without time zone,
+    expireIn interval not null default interval '15 minutes',
+    createdOn timestamp with time zone not null default now(),
+    completedOn timestamp with time zone,
+    keepUntil timestamp with time zone NOT NULL default now() + interval '14 days',
+    on_complete boolean not null default true,
+    output jsonb
+  )
 ```
 
 # Events
