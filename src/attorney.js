@@ -1,4 +1,5 @@
 const assert = require('assert')
+const { DEFAULT_SCHEMA } = require('./plans')
 
 module.exports = {
   getConfig,
@@ -160,7 +161,7 @@ function applyDatabaseConfig (config) {
     assert(!/\W/.test(config.schema), `configuration assert: ${config.schema} cannot be used as a schema. Only alphanumeric characters and underscores are allowed`)
   }
 
-  config.schema = config.schema || 'pgboss'
+  config.schema = config.schema || DEFAULT_SCHEMA
 }
 
 function applyArchiveConfig (config) {
@@ -184,7 +185,7 @@ function applyCompletionConfig (config, defaults) {
   if (!('onComplete' in config)) {
     config.onComplete = defaults
       ? defaults.onComplete
-      : true
+      : false
   }
 }
 
@@ -211,7 +212,7 @@ function applyRetentionConfig (config, defaults) {
                 ? `${config.retentionSeconds} seconds`
                 : defaults
                   ? defaults.keepUntil
-                  : '30 days'
+                  : '14 days'
 
   config.keepUntil = keepUntil
 }

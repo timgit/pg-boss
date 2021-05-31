@@ -6,7 +6,12 @@ const Manager = require('./manager')
 const Timekeeper = require('./timekeeper')
 const Boss = require('./boss')
 const Db = require('./db')
+const delay = require('delay')
 
+const events = {
+  error: 'error',
+  stopped: 'stopped'
+}
 class PgBoss extends EventEmitter {
   static getConstructionPlans (schema) {
     return Contractor.constructionPlans(schema)
@@ -47,6 +52,8 @@ class PgBoss extends EventEmitter {
 
     manager.timekeeper = timekeeper
 
+    this.stoppingOn = null
+    this.stopped = true
     this.config = config
     this.db = db
     this.boss = boss
@@ -66,8 +73,9 @@ class PgBoss extends EventEmitter {
 
     function promoteFunction (obj, func) {
       this[func.name] = (...args) => {
-        if (!this.isStarted) {
-          return Promise.reject(new Error('pg-boss not started! Use start().'))
+        if (this.stopped || this.stoppingOn) {
+          const state = this.stoppingOn ? 'stopping' : 'stopped'
+          return Promise.reject(new Error(`pg-boss is ${state}.`))
         }
 
         return func.apply(obj, args)
@@ -80,15 +88,19 @@ class PgBoss extends EventEmitter {
   }
 
   async start () {
-    if (this.isStarted) {
+    if (!this.stopped) {
       return this
     }
+
+    this.stopped = false
 
     if (this.db.isOurs && !this.db.opened) {
       await this.db.open()
     }
 
     await this.contractor.start()
+
+    this.manager.start()
 
     if (!this.config.noSupervisor) {
       await this.boss.supervise()
@@ -98,25 +110,71 @@ class PgBoss extends EventEmitter {
       await this.timekeeper.start()
     }
 
-    this.isStarted = true
-
     return this
   }
 
-  async stop () {
-    if (!this.isStarted) {
+  async stop (options = {}) {
+    if (this.stoppingOn) {
       return
     }
 
-    await this.timekeeper.stop()
-    await this.manager.stop()
-    await this.boss.stop()
-
-    if (this.db.isOurs) {
-      await this.db.close()
+    if (this.stopped) {
+      this.emit(events.stopped)
     }
 
-    this.isStarted = false
+    let { graceful = true, timeout = 30000 } = options
+
+    timeout = Math.max(timeout, 1000)
+
+    this.stoppingOn = Date.now()
+
+    await this.manager.stop()
+    await this.timekeeper.stop()
+
+    let polling = false
+
+    const shutdown = async () => {
+      try {
+        await this.boss.stop()
+
+        if (this.db.isOurs) {
+          await this.db.close()
+        }
+      } catch (err) {
+        if (polling) {
+          this.emit(events.error, err)
+        } else {
+          throw err
+        }
+      } finally {
+        this.stopped = true
+        this.stoppingOn = null
+
+        this.emit(events.stopped)
+      }
+    }
+
+    if (!graceful) {
+      return await shutdown()
+    }
+
+    if (this.manager.getWipData().length === 0) {
+      return await shutdown()
+    }
+
+    polling = true
+
+    setImmediate(async () => {
+      while (Date.now() - this.stoppingOn < timeout) {
+        await delay(1000)
+
+        if (this.manager.getWipData().length === 0) {
+          return await shutdown()
+        }
+      }
+
+      await shutdown()
+    })
   }
 }
 

@@ -1,17 +1,19 @@
 const Db = require('../src/db')
 const PgBoss = require('../')
 const plans = require('../src/plans')
+const { COMPLETION_JOB_PREFIX } = plans
 const crypto = require('crypto')
 const sha1 = (value) => crypto.createHash('sha1').update(value).digest('hex')
 
 module.exports = {
   dropSchema,
   start,
+  stop,
   getDb,
-  getJobById,
   getArchivedJobById,
   countJobs,
-  completedJobPrefix: plans.completedJobPrefix,
+  findJobs,
+  COMPLETION_JOB_PREFIX,
   getConfig,
   getConnectionString,
   tryDropDb,
@@ -60,11 +62,6 @@ async function dropSchema (schema) {
   const db = await getDb()
   await db.executeSql(`DROP SCHEMA IF EXISTS ${schema} CASCADE`)
   await db.close()
-}
-
-async function getJobById (schema, id) {
-  const response = await findJobs(schema, 'id = $1', [id])
-  return response.rows.length ? response.rows[0] : null
 }
 
 async function findJobs (schema, where, values) {
@@ -120,6 +117,7 @@ async function start (options) {
   try {
     options = getConfig(options)
     const boss = new PgBoss(options)
+    boss.on('error', err => console.log({ schema: options.schema, message: err.message }))
     await boss.start()
     return boss
   } catch (err) {
@@ -128,4 +126,8 @@ async function start (options) {
       throw err
     }
   }
+}
+
+async function stop (boss, timeout = 4000) {
+  await boss.stop({ timeout })
 }

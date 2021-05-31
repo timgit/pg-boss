@@ -58,6 +58,7 @@ declare namespace PgBoss {
   interface CompletionOptions {
     onComplete?: boolean;
   }
+
   interface ExpirationOptions {
     expireInSeconds?: number;
     expireInMinutes?: number;
@@ -173,6 +174,8 @@ declare namespace PgBoss {
     createdon: Date;
     completedon: Date | null;
     keepuntil: Date;
+    oncomplete: boolean,
+    output: object
   }
 
   interface JobWithDoneCallback<ReqData, ResData> extends Job<ReqData> {
@@ -194,6 +197,31 @@ declare namespace PgBoss {
     failed: number;
     queues: object;
   }
+
+  interface Subscription {
+    id: string,
+    name: string,
+    options: SubscribeOptions,
+    state: 'created' | 'retry' | 'active' | 'completed' | 'expired' | 'cancelled' | 'failed',
+    count: number,
+    createdOn: Date,
+    lastFetchedOn: Date,
+    lastJobStartedOn: Date,
+    lastJobEndedOn: Date,
+    lastJobDuration: number,
+    lastError: object,
+    lastErrorOn: Date
+  }
+
+  interface StopOptions {
+    graceful: boolean,
+    timeout: number
+  }
+
+  interface UnsubscribeOptions {
+    id: string
+  }
+
 }
 
 declare class PgBoss {
@@ -201,19 +229,33 @@ declare class PgBoss {
   constructor(options: PgBoss.ConstructorOptions);
 
   static getConstructionPlans(schema: string): string;
+  static getConstructionPlans(): string;
+
   static getMigrationPlans(schema: string, version: string): string;
+  static getMigrationPlans(schema: string): string;
+  static getMigrationPlans(): string;
+
   static getRollbackPlans(schema: string, version: string): string;
+  static getRollbackPlans(schema: string): string;
+  static getRollbackPlans(): string;
 
   on(event: "error", handler: (error: Error) => void): void;
-  on(event: "maintenance", handler: () => void): void;
-  on(event: "monitor-states", handler: (monitorStates: PgBoss.MonitorStates) => void): void;
-
   off(event: "error", handler: (error: Error) => void): void;
+
+  on(event: "maintenance", handler: () => void): void;
   off(event: "maintenance", handler: () => void): void;
+
+  on(event: "monitor-states", handler: (monitorStates: PgBoss.MonitorStates) => void): void;
   off(event: "monitor-states", handler: (monitorStates: PgBoss.MonitorStates) => void): void;
 
+  on(event: "wip", handler: (data: PgBoss.Subscription[]) => void): void;
+  off(event: "wip", handler: (data: PgBoss.Subscription[]) => void): void;
+
+  on(event: "stopped", handler: () => void): void;
+  off(event: "stopped", handler: () => void): void;
+
   start(): Promise<PgBoss>;
-  stop(): Promise<void>;
+  stop(options: PgBoss.StopOptions): Promise<void>;
 
   publish(request: PgBoss.Request): Promise<string | null>;
   publish(name: string, data: object): Promise<string | null>;
@@ -225,22 +267,26 @@ declare class PgBoss {
 
   publishOnce(name: string, data: object, options: PgBoss.PublishOptions, key: string): Promise<string | null>;
 
+  publishSingleton(name: string, data: object, options: PgBoss.PublishOptions): Promise<string | null>;
+
   publishThrottled(name: string, data: object, options: PgBoss.PublishOptions, seconds: number): Promise<string | null>;
   publishThrottled(name: string, data: object, options: PgBoss.PublishOptions, seconds: number, key: string): Promise<string | null>;
 
   publishDebounced(name: string, data: object, options: PgBoss.PublishOptions, seconds: number): Promise<string | null>;
   publishDebounced(name: string, data: object, options: PgBoss.PublishOptions, seconds: number, key: string): Promise<string | null>;
 
-  subscribe<ReqData, ResData>(name: string, handler: PgBoss.SubscribeHandler<ReqData, ResData>): Promise<void>;
-  subscribe<ReqData, ResData>(name: string, options: PgBoss.SubscribeOptions & { includeMetadata: true }, handler: PgBoss.SubscribeWithMetadataHandler<ReqData, ResData>): Promise<void>;
-  subscribe<ReqData, ResData>(name: string, options: PgBoss.SubscribeOptions, handler: PgBoss.SubscribeHandler<ReqData, ResData>): Promise<void>;
+  subscribe<ReqData, ResData>(name: string, handler: PgBoss.SubscribeHandler<ReqData, ResData>): Promise<string>;
+  subscribe<ReqData, ResData>(name: string, options: PgBoss.SubscribeOptions & { includeMetadata: true }, handler: PgBoss.SubscribeWithMetadataHandler<ReqData, ResData>): Promise<string>;
+  subscribe<ReqData, ResData>(name: string, options: PgBoss.SubscribeOptions, handler: PgBoss.SubscribeHandler<ReqData, ResData>): Promise<string>;
 
-  unsubscribe(name: string): Promise<boolean>;
+  onComplete(name: string, handler: Function): Promise<string>;
+  onComplete(name: string, options: PgBoss.SubscribeOptions, handler: Function): Promise<string>;
 
-  onComplete(name: string, handler: Function): Promise<void>;
-  onComplete(name: string, options: PgBoss.SubscribeOptions, handler: Function): Promise<void>;
+  unsubscribe(name: string): Promise<void>;
+  unsubscribe(options: PgBoss.UnsubscribeOptions): Promise<void>;
 
-  offComplete(name: string): Promise<boolean>;
+  offComplete(name: string): Promise<void>;
+  offComplete(options: PgBoss.UnsubscribeOptions): Promise<void>;
 
   fetch<T>(name: string): Promise<PgBoss.Job<T> | null>;
   fetch<T>(name: string, batchSize: number): Promise<PgBoss.Job<T>[] | null>;
@@ -264,6 +310,7 @@ declare class PgBoss {
   fail(ids: string[]): Promise<void>;
 
   getQueueSize(name: string, options?: object): Promise<number>;
+  getJobById(id: string): Promise<PgBoss.JobWithMetadata | null>;
 
   deleteQueue(name: string): Promise<void>;
   deleteAllQueues(): Promise<void>;

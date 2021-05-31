@@ -20,7 +20,6 @@ describe('multi-master', function () {
     try {
       await pMap(instances, i => i.start())
     } catch (err) {
-      console.log(err.message)
       assert(false)
     } finally {
       await pMap(instances, i => i.stop())
@@ -54,7 +53,6 @@ describe('multi-master', function () {
     try {
       await pMap(instances, i => i.start())
     } catch (err) {
-      console.log(err.message)
       assert(false)
     } finally {
       await pMap(instances, i => i.stop())

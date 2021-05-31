@@ -11,6 +11,8 @@
 - [Events](#events)
   - [`error`](#error)
   - [`monitor-states`](#monitor-states)
+  - [`wip`](#wip)
+  - [`stopped`](#stopped)
 - [Static functions](#static-functions)
   - [`string getConstructionPlans(schema)`](#string-getconstructionplansschema)
   - [`string getMigrationPlans(schema, version)`](#string-getmigrationplansschema-version)
@@ -25,13 +27,14 @@
     - [`publish(request)`](#publishrequest)
     - [`publishAfter(name, data, options, seconds | ISO date string | Date)`](#publishaftername-data-options-seconds--iso-date-string--date)
     - [`publishOnce(name, data, options, key)`](#publishoncename-data-options-key)
+    - [`publishSingleton(name, data, options)`](#publishsingletonname-data-options)
     - [`publishThrottled(name, data, options, seconds [, key])`](#publishthrottledname-data-options-seconds--key)
     - [`publishDebounced(name, data, options, seconds [, key])`](#publishdebouncedname-data-options-seconds--key)
   - [`subscribe()`](#subscribe)
     - [`subscribe(name [, options], handler)`](#subscribename--options-handler)
     - [`onComplete(name [, options], handler)`](#oncompletename--options-handler)
-  - [`unsubscribe(name)`](#unsubscribename)
-    - [`offComplete(name)`](#offcompletename)
+  - [`unsubscribe(value)`](#unsubscribevalue)
+    - [`offComplete(value)`](#offcompletevalue)
   - [`fetch()`](#fetch)
     - [`fetch(name)`](#fetchname)
     - [`fetch(name, batchSize, [, options])`](#fetchname-batchsize--options)
@@ -47,6 +50,7 @@
   - [`fail(id [, data])`](#failid--data)
   - [`fail([ids])`](#failids)
   - [`getQueueSize(name [, options])`](#getqueuesizename--options)
+  - [`getJobById(id)`](#getjobbyidid)
   - [`deleteQueue(name)`](#deletequeuename)
   - [`deleteAllQueues()`](#deleteallqueues)
   - [`clearStorage()`](#clearstorage)
@@ -105,25 +109,27 @@ If you need to interact with pg-boss outside of Node.js, such as other clients o
 The following command is the definition of the primary job table. For manual job creation, the only required column is `name`.  All other columns are nullable or have sensible defaults.
 
 ```sql
-    CREATE TABLE ${schema}.job (
-      id uuid primary key not null default gen_random_uuid(),
-      name text not null,
-      priority integer not null default(0),
-      data jsonb,
-      state ${schema}.job_state not null default('${states.created}'),
-      retryLimit integer not null default(0),
-      retryCount integer not null default(0),
-      retryDelay integer not null default(0),
-      retryBackoff boolean not null default false,
-      startAfter timestamp with time zone not null default now(),
-      startedOn timestamp with time zone,
-      singletonKey text,
-      singletonOn timestamp without time zone,
-      expireIn interval not null default interval '15 minutes',
-      createdOn timestamp with time zone not null default now(),
-      completedOn timestamp with time zone,
-      keepUntil timestamp with time zone NOT NULL default now() + interval '30 days'
-    )
+  CREATE TABLE ${schema}.job (
+    id uuid primary key not null default gen_random_uuid(),
+    name text not null,
+    priority integer not null default(0),
+    data jsonb,
+    state ${schema}.job_state not null default('${states.created}'),
+    retryLimit integer not null default(0),
+    retryCount integer not null default(0),
+    retryDelay integer not null default(0),
+    retryBackoff boolean not null default false,
+    startAfter timestamp with time zone not null default now(),
+    startedOn timestamp with time zone,
+    singletonKey text,
+    singletonOn timestamp without time zone,
+    expireIn interval not null default interval '15 minutes',
+    createdOn timestamp with time zone not null default now(),
+    completedOn timestamp with time zone,
+    keepUntil timestamp with time zone NOT NULL default now() + interval '14 days',
+    on_complete boolean not null default true,
+    output jsonb
+  )
 ```
 
 # Events
@@ -187,6 +193,32 @@ The payload of the event is an object with a key per queue and state, such as th
   "all": 4694
 }
 ```
+## `wip`
+
+Emitted at most once every 2 seconds when polling subscriptions are active and jobs are entering or leaving active state. The payload is an array that represents each worker in this instance of pg-boss.  If you want to monitor queue activity across all instances, use `monitor-states`.
+
+```js
+[
+  {
+    id: 'fc738fb0-1de5-4947-b138-40d6a790749e',
+    name: 'my-queue',
+    options: { newJobCheckInterval: 2000 },
+    state: 'active',
+    count: 1,
+    createdOn: 1620149137015,
+    lastFetchedOn: 1620149137015,
+    lastJobStartedOn: 1620149137015,
+    lastJobEndedOn: null,
+    lastJobDuration: 343
+    lastError: null,
+    lastErrorOn: null
+  }
+]
+```
+
+## `stopped`
+
+Emitted after `stop()` once all subscription workers have completed their work and maintenance has been shut down.
 
 # Static functions
 
@@ -332,7 +364,13 @@ This is a convenience version of `publish()` with the `startAfter` option assign
 
 ### `publishOnce(name, data, options, key)`
 
-Publish a job with a unique key to make sure it isn't processed more than once.  Any other jobs published during this archive interval with the same queue name and key will be rejected.
+Publish a job with a unique key to only allow 1 job to be in created, retry, or active state at a time.
+
+This is a convenience version of `publish()` with the `singletonKey` option assigned.
+
+### `publishSingleton(name, data, options)`
+
+Publish a job but only allow 1 job to be in created or retry state at at time.
 
 This is a convenience version of `publish()` with the `singletonKey` option assigned.
 
@@ -352,7 +390,7 @@ This is a convenience version of `publish()` with the `singletonSeconds`, `singl
 
 **returns: Promise**
 
-Polls the database by a queue name or a pattern and executes the provided callback function when jobs are found.  The promise resolves once a subscription has been created.
+Polls the database by a queue name or a pattern and executes the provided callback function when jobs are found.  The promise resolves once a subscription has been created with a unique id of the subscription.  You can monitor the state of subscriptions using the `wip` event.
 
 Queue patterns use the `*` character to match 0 or more characters.  For example, a job from queue `status-report-12345` would be fetched with pattern `status-report-*` or even `stat*5`.
 
@@ -461,13 +499,20 @@ The following is an example data object from the job retrieved in the onComplete
 }
 ```
 
-## `unsubscribe(name)`
+## `unsubscribe(value)`
 
-Removes a subscription by name and stops polling.
+Removes a subscription by name or id and stops polling.
 
-### `offComplete(name)`
+** Arguments **
+- value: string or object
 
-Same as `unsubscribe()`, but removes an `onComplete()` subscription.
+  If a string, removes all subscriptions found matching the name.  If an object, only the subscription with a matching `id` will be removed.
+
+### `offComplete(value)`
+
+Similar to `unsubscribe()`, but removes an `onComplete()` subscription.
+
+** 
 
 ## `fetch()`
 
@@ -637,6 +682,10 @@ As an example, the following options object include active jobs along with creat
   before: states.completed
 }
 ```
+
+## `getJobById(id)`
+
+Retrieves a job with all metadata by id in either the primary or archive storage.
 
 ## `deleteQueue(name)`
 

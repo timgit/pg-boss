@@ -9,9 +9,9 @@ const ASSERT_DELAY = 9000
 
 describe('schedule', function () {
   it('should publish job based on every minute expression', async function () {
-    const queue = 'schedule-every-min'
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
 
-    const boss = await helper.start(this.test.bossConfig)
+    const queue = 'schedule-every-min'
 
     await boss.schedule(queue, '* * * * *')
 
@@ -20,19 +20,17 @@ describe('schedule', function () {
     const job = await boss.fetch(queue)
 
     assert(job)
-
-    await boss.stop()
   })
 
   it('should accept a custom clock monitoring interval in seconds', async function () {
-    const queue = 'schedule-custom-monitoring-seconds'
-
     const config = {
       ...this.test.bossConfig,
       clockMonitorIntervalSeconds: 1
     }
 
-    const boss = await helper.start(config)
+    const boss = this.test.boss = await helper.start(config)
+
+    const queue = 'schedule-custom-monitoring-seconds'
 
     await boss.schedule(queue, '* * * * *')
 
@@ -41,19 +39,17 @@ describe('schedule', function () {
     const job = await boss.fetch(queue)
 
     assert(job)
-
-    await boss.stop()
   })
 
   it('cron monitoring should restart cron if paused', async function () {
-    const queue = 'schedule-cron-monitoring'
-
     const config = {
       ...this.test.bossConfig,
       cronMonitorIntervalSeconds: 1
     }
 
-    const boss = await helper.start(config)
+    const boss = this.test.boss = await helper.start(config)
+
+    const queue = 'schedule-cron-monitoring'
 
     const { schema } = this.test.bossConfig
     const db = await helper.getDb()
@@ -67,20 +63,18 @@ describe('schedule', function () {
     const job = await boss.fetch(queue)
 
     assert(job)
-
-    await boss.stop()
   })
 
   it('should publish job based on every minute expression after a restart', async function () {
     const queue = 'schedule-every-min-restart'
 
-    let boss = await helper.start({ ...this.test.bossConfig, noScheduling: true })
+    let boss = await helper.start({ ...this.test.bossConfig, noScheduling: true, noSupervisor: true })
 
     await boss.schedule(queue, '* * * * *')
 
     await boss.stop()
 
-    boss = await helper.start(this.test.bossConfig)
+    boss = await helper.start({ ...this.test.bossConfig, noSupervisor: true })
 
     await delay(ASSERT_DELAY)
 
@@ -94,7 +88,7 @@ describe('schedule', function () {
   it('should remove previously scheduled job', async function () {
     const queue = 'schedule-remove'
 
-    const boss = await helper.start(this.test.bossConfig)
+    const boss = await helper.start({ ...this.test.bossConfig, noSupervisor: true })
 
     await boss.schedule(queue, '* * * * *')
 
@@ -117,6 +111,8 @@ describe('schedule', function () {
   })
 
   it('should publish job based on current minute in UTC', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+
     const queue = 'schedule-current-min-utc'
 
     const now = new Date()
@@ -130,8 +126,6 @@ describe('schedule', function () {
     // using current and next minute because the clock is ticking
     const minuteExpression = `${currentMinute},${nextMinute}`
 
-    const boss = await helper.start(this.test.bossConfig)
-
     await boss.schedule(queue, `${minuteExpression} * * * *`)
 
     await delay(ASSERT_DELAY)
@@ -139,11 +133,11 @@ describe('schedule', function () {
     const job = await boss.fetch(queue)
 
     assert(job)
-
-    await boss.stop()
   })
 
   it('should publish job based on current minute in a specified time zone', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+
     const queue = 'schedule-current-min-timezone'
 
     const tz = 'America/Los_Angeles'
@@ -162,8 +156,6 @@ describe('schedule', function () {
     const minute = `${currentMinute},${nextMinute}`
     const hour = `${currentHour},${nextHour}`
 
-    const boss = await helper.start(this.test.bossConfig)
-
     await boss.schedule(queue, `${minute} ${hour} * * *`, null, { tz })
 
     await delay(ASSERT_DELAY)
@@ -171,12 +163,10 @@ describe('schedule', function () {
     const job = await boss.fetch(queue)
 
     assert(job)
-
-    await boss.stop()
   })
 
   it('should force a clock skew warning', async function () {
-    const boss = new PgBoss({ ...this.test.bossConfig, __test__force_clock_skew_warning: true })
+    const boss = this.test.boss = new PgBoss({ ...this.test.bossConfig, __test__force_clock_skew_warning: true })
 
     let warningCount = 0
 
@@ -193,7 +183,5 @@ describe('schedule', function () {
     process.removeListener(warningEvent, onWarning)
 
     assert.strictEqual(warningCount, 1)
-
-    await boss.stop()
   })
 })

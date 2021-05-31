@@ -1,56 +1,71 @@
 const PgBoss = require('../')
 
 describe('background processing error handling', function () {
-  this.retries(1)
-
-  it('maintenance error handling works', function (done) {
+  it('maintenance error handling works', async function () {
     const defaults = {
       monitorStateIntervalMinutes: 1,
       maintenanceIntervalSeconds: 1,
+      noScheduling: true,
       __test__throw_maint: true
     }
 
     const config = { ...this.test.bossConfig, ...defaults }
-    const boss = new PgBoss(config)
+    const boss = this.test.boss = new PgBoss(config)
 
-    boss.on('error', async () => {
-      boss.removeAllListeners()
-      await boss.stop()
-      done()
+    return new Promise((resolve) => {
+      let resolved = false
+
+      boss.on('error', () => {
+        if (!resolved) {
+          resolved = true
+          resolve()
+        }
+      })
+
+      boss.start().then(() => {})
     })
-
-    boss.start()
   })
 
-  it('state monitoring error handling works', function (done) {
+  it('state monitoring error handling works', async function () {
     const defaults = {
-      monitorStateIntervalSeconds: 1,
+      monitorStateIntervalSeconds: 2,
       maintenanceIntervalMinutes: 1,
+      noScheduling: true,
       __test__throw_monitor: true
     }
 
     const config = { ...this.test.bossConfig, ...defaults }
-    const boss = new PgBoss(config)
+    const boss = this.test.boss = new PgBoss(config)
 
-    boss.on('error', async () => {
-      boss.removeAllListeners()
-      await boss.stop()
-      done()
+    return new Promise((resolve) => {
+      let resolved = false
+
+      boss.on('error', () => {
+        if (!resolved) {
+          resolved = true
+          resolve()
+        }
+      })
+
+      boss.start().then(() => {})
     })
-
-    boss.start()
   })
 
-  it('clock monitoring error handling works', function (done) {
+  it('clock monitoring error handling works', async function () {
     const config = { ...this.test.bossConfig, __test__throw_clock_monitoring: true }
-    const boss = new PgBoss(config)
+    const boss = this.test.boss = new PgBoss(config)
 
-    boss.on('error', async () => {
-      boss.removeAllListeners()
-      await boss.stop()
-      done()
+    return new Promise((resolve) => {
+      let resolved = false
+
+      boss.on('error', () => {
+        if (!resolved) {
+          resolved = true
+          resolve()
+        }
+      })
+
+      boss.start().then(() => {})
     })
-
-    boss.start()
   })
 })

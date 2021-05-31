@@ -4,10 +4,10 @@ const delay = require('delay')
 
 describe('delayed jobs', function () {
   it('should wait until after an int (in seconds)', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+
     const delaySeconds = 2
     const queue = 'wait'
-
-    const boss = await helper.start(this.test.bossConfig)
 
     const data = { message: 'hold your horses', submitted: Date.now() }
     const options = { startAfter: delaySeconds }
@@ -25,14 +25,14 @@ describe('delayed jobs', function () {
 
         assert(delaySeconds >= elapsedSeconds)
 
-        await boss.stop()
-
         resolve()
       })
     })
   })
 
   it('should wait until after a date time string', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+
     const queue = 'delay-date-string'
 
     const date = new Date()
@@ -41,7 +41,6 @@ describe('delayed jobs', function () {
 
     const startAfter = date.toISOString()
 
-    const boss = await helper.start(this.test.bossConfig)
     await boss.publish(queue, null, { startAfter })
 
     const job = await boss.fetch(queue)
@@ -53,11 +52,10 @@ describe('delayed jobs', function () {
     const job2 = await boss.fetch(queue)
 
     assert(job2)
-
-    await boss.stop()
   })
 
   it('should wait until after a date object', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
     const queue = 'delay-date-object'
 
     const date = new Date()
@@ -65,7 +63,6 @@ describe('delayed jobs', function () {
 
     const startAfter = date
 
-    const boss = await helper.start(this.test.bossConfig)
     await boss.publish(queue, null, { startAfter })
 
     const job = await boss.fetch(queue)
@@ -77,11 +74,10 @@ describe('delayed jobs', function () {
     const job2 = await boss.fetch(queue)
 
     assert(job2)
-
-    await boss.stop()
   })
 
   it('should work with publishAfter() and a date object', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
     const queue = 'publishAfter-date-object'
 
     const date = new Date()
@@ -89,7 +85,6 @@ describe('delayed jobs', function () {
 
     const startAfter = date
 
-    const boss = await helper.start(this.test.bossConfig)
     await boss.publishAfter(queue, { something: 1 }, { retryLimit: 0 }, startAfter)
 
     const job = await boss.fetch(queue)
@@ -101,7 +96,5 @@ describe('delayed jobs', function () {
     const job2 = await boss.fetch(queue)
 
     assert(job2)
-
-    await boss.stop()
   })
 })

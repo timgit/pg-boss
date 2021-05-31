@@ -184,14 +184,14 @@ class Timekeeper extends EventEmitter {
 
     const values = [name, cron, tz, data, options]
 
-    const { rowCount } = await this.db.executeSql(this.scheduleCommand, values)
+    const result = await this.db.executeSql(this.scheduleCommand, values)
 
-    return rowCount
+    return result ? result.rowCount : null
   }
 
   async unschedule (name) {
-    const { rowCount } = await this.db.executeSql(this.unscheduleCommand, [name])
-    return rowCount
+    const result = await this.db.executeSql(this.unscheduleCommand, [name])
+    return result ? result.rowCount : null
   }
 
   async setCronTime () {
@@ -210,3 +210,4 @@ class Timekeeper extends EventEmitter {
 }
 
 module.exports = Timekeeper
+module.exports.QUEUES = queues

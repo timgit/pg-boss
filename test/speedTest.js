@@ -18,7 +18,7 @@ describe('speed', function () {
     await pMap(jobs, job => boss.publish(job.name, job.data))
   })
 
-  afterEach(async function () { await boss.stop() })
+  afterEach(async function () { await helper.stop(boss) })
 
   it(testTitle, async function () {
     this.timeout(expectedSeconds * 1000)

@@ -9,7 +9,7 @@ describe('maintenance', async function () {
 
     const db = await helper.getDb()
 
-    const boss = new PgBoss(config)
+    const boss = this.test.boss = new PgBoss(config)
 
     const queues = boss.boss.getQueueNames()
     const countJobs = () => helper.countJobs(config.schema, 'name = $1', [queues.MAINTENANCE])
@@ -26,7 +26,5 @@ describe('maintenance', async function () {
 
     const count = await countJobs()
     assert(count > 1)
-
-    await boss.stop()
   })
 })

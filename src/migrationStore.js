@@ -68,6 +68,31 @@ function getAll (schema, config) {
 
   return [
     {
+      release: '6.0.0',
+      version: 17,
+      previous: 16,
+      install: [
+        `DROP INDEX ${schema}.job_singletonKey`,
+        `CREATE UNIQUE INDEX job_singletonKey ON ${schema}.job (name, singletonKey) WHERE state < 'completed' AND singletonOn IS NULL AND NOT singletonKey = '__pgboss__singleton_queue'`,
+        `CREATE UNIQUE INDEX job_singleton_queue ON ${schema}.job (name, singletonKey) WHERE state < 'active' AND singletonOn IS NULL AND singletonKey = '__pgboss__singleton_queue'`,
+        `CREATE INDEX IF NOT EXISTS job_fetch ON ${schema}.job (name text_pattern_ops, startAfter) WHERE state < 'active'`,
+        `ALTER TABLE ${schema}.job ADD output jsonb`,
+        `ALTER TABLE ${schema}.archive ADD output jsonb`,
+        `ALTER TABLE ${schema}.job ALTER COLUMN on_complete SET DEFAULT false`,
+        `ALTER TABLE ${schema}.job ALTER COLUMN keepuntil SET DEFAULT now() + interval '14 days'`
+      ],
+      uninstall: [
+        `DROP INDEX ${schema}.job_fetch`,
+        `DROP INDEX ${schema}.job_singleton_queue`,
+        `DROP INDEX ${schema}.job_singletonKey`,
+        `CREATE UNIQUE INDEX job_singletonKey ON ${schema}.job (name, singletonKey) WHERE state < 'completed' AND singletonOn IS NULL`,
+        `ALTER TABLE ${schema}.job DROP COLUMN output`,
+        `ALTER TABLE ${schema}.archive DROP COLUMN output`,
+        `ALTER TABLE ${schema}.job ALTER COLUMN on_complete SET DEFAULT true`,
+        `ALTER TABLE ${schema}.job ALTER COLUMN keepuntil SET DEFAULT now() + interval '30 days'`
+      ]
+    },
+    {
       release: '5.2.0',
       version: 16,
       previous: 15,
