@@ -115,7 +115,7 @@ function create (schema, version) {
 
 function createSchema (schema) {
   return `
-    CREATE SCHEMA ${schema}
+    CREATE SCHEMA IF NOT EXISTS ${schema}
   `
 }
 
