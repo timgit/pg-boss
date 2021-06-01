@@ -1,5 +1,8 @@
 # Changes
 
+## 6.0.1
+
+- Typescript types updated for `stop()`. PR from @stnwk
 ## 6.0.0 :tada:
 
 - CHANGE: `stop()` has been enhanced with a graceful stop feature that will signal and monitor any polling subscriptions (workers using `subscribe()` or `onComlete()`) before closing the internal connection pool and stopping maintenance operations. The defalt options, `{ graceful = true, timeout = 30000 }`, will wait for 30s before shutting down.
