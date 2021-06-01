@@ -255,7 +255,7 @@ declare class PgBoss {
   off(event: "stopped", handler: () => void): void;
 
   start(): Promise<PgBoss>;
-  stop(options: PgBoss.StopOptions): Promise<void>;
+  stop(options?: Partial<PgBoss.StopOptions>): Promise<void>;
 
   publish(request: PgBoss.Request): Promise<string | null>;
   publish(name: string, data: object): Promise<string | null>;
