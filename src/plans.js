@@ -73,8 +73,9 @@ module.exports = {
 }
 
 function intervalToMs (interval) {
-  const ms = Object.keys(interval).reduce((total, key) => total + INTERVAL_TO_MS_MAP[key] * interval[key], 0)
-  return ms
+  return 900000;
+  //const ms = Object.keys(interval).reduce((total, key) => total + INTERVAL_TO_MS_MAP[key] * interval[key], 0)
+  //return ms
 }
 
 function locked (query) {
