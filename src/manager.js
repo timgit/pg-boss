@@ -111,7 +111,9 @@ class Manager extends EventEmitter {
     }
   }
 
-  getWipData () {
+  getWipData (options = {}) {
+    const { includeInternal = false } = options
+
     const data = this.getWorkers()
       .map(({
         id,
@@ -138,7 +140,7 @@ class Manager extends EventEmitter {
         lastError,
         lastErrorOn
       }))
-      .filter(i => i.count > 0 && !INTERNAL_QUEUES[i.name])
+      .filter(i => i.count > 0 && (!INTERNAL_QUEUES[i.name] || includeInternal))
 
     return data
   }
@@ -165,24 +167,28 @@ class Manager extends EventEmitter {
         throw new Error('__test__throw_subscription')
       }
 
-      const expirationRace = (promise, timeout) => Promise.race([
-        promise,
-        delay.reject(timeout, { value: new Error(`handler execution exceeded ${timeout}ms`) })
-      ])
+      const resolveWithinSeconds = (promise, seconds) => {
+        const timeout = Math.max(1, seconds) * 1000
+
+        return Promise.race([
+          promise,
+          delay.reject(timeout, { value: new Error(`handler execution exceeded ${timeout}ms`) })
+        ])
+      }
 
       this.emitWip(name)
 
       let result
 
       if (batchSize) {
-        const maxTimeout = jobs.reduce((acc, i) => Math.max(acc, plans.intervalToMs(i.expirein)), 0)
+        const maxExpiration = jobs.reduce((acc, i) => Math.max(acc, i.expirein), 0)
 
         // Failing will fail all fetched jobs
-        result = await expirationRace(Promise.all([callback(jobs)]), maxTimeout)
+        result = await resolveWithinSeconds(Promise.all([callback(jobs)]), maxExpiration)
           .catch(err => this.fail(jobs.map(job => job.id), err))
       } else {
         result = await pMap(jobs, job =>
-          expirationRace(callback(job), plans.intervalToMs(job.expirein))
+          resolveWithinSeconds(callback(job), job.expirein)
             .then(result => this.complete(job.id, result))
             .catch(err => this.fail(job.id, err))
         , { concurrency: teamConcurrency }
@@ -228,13 +234,15 @@ class Manager extends EventEmitter {
       worker.stop()
     }
 
-    setInterval(() => {
-      if (workers.every(w => w.stopped)) {
-        for (const worker of workers) {
-          this.removeWorker(worker)
-        }
+    setImmediate(async () => {
+      while (!workers.every(w => w.stopped)) {
+        await delay(1000)
       }
-    }, 1000)
+
+      for (const worker of workers) {
+        this.removeWorker(worker)
+      }
+    })
   }
 
   async offComplete (value) {

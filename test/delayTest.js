@@ -5,29 +5,21 @@ const delay = require('delay')
 describe('delayed jobs', function () {
   it('should wait until after an int (in seconds)', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const queue = this.test.bossConfig.schema
 
-    const delaySeconds = 2
-    const queue = 'wait'
+    const startAfter = 2
 
-    const data = { message: 'hold your horses', submitted: Date.now() }
-    const options = { startAfter: delaySeconds }
+    await boss.publish(queue, null, { startAfter })
 
-    await boss.publish(queue, data, options)
+    const job = await boss.fetch(queue)
 
-    return new Promise((resolve, reject) => {
-      boss.subscribe(queue, async job => {
-        const start = new Date(job.data.submitted)
-        const end = new Date()
+    assert.strictEqual(job, null)
 
-        const elapsedSeconds = Math.floor((end - start) / 1000)
+    await delay(startAfter * 1000)
 
-        await job.done()
+    const job2 = await boss.fetch(queue)
 
-        assert(delaySeconds >= elapsedSeconds)
-
-        resolve()
-      })
-    })
+    assert(job2)
   })
 
   it('should wait until after a date time string', async function () {

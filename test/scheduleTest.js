@@ -72,7 +72,7 @@ describe('schedule', function () {
 
     await boss.schedule(queue, '* * * * *')
 
-    await boss.stop()
+    await boss.stop({ graceful: false })
 
     boss = await helper.start({ ...this.test.bossConfig, noSupervisor: true })
 
@@ -82,19 +82,19 @@ describe('schedule', function () {
 
     assert(job)
 
-    await boss.stop()
+    await boss.stop({ graceful: false })
   })
 
   it('should remove previously scheduled job', async function () {
     const queue = 'schedule-remove'
 
-    const boss = await helper.start({ ...this.test.bossConfig, noSupervisor: true })
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noSupervisor: true })
 
     await boss.schedule(queue, '* * * * *')
 
     await boss.unschedule(queue)
 
-    await boss.stop()
+    await boss.stop({ graceful: false })
 
     const db = await helper.getDb()
     await db.executeSql(plans.clearStorage(this.test.bossConfig.schema))
@@ -106,8 +106,6 @@ describe('schedule', function () {
     const job = await boss.fetch(queue)
 
     assert(job === null)
-
-    await boss.stop()
   })
 
   it('should publish job based on current minute in UTC', async function () {

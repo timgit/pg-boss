@@ -135,8 +135,6 @@ class PgBoss extends EventEmitter {
 
     const shutdown = async () => {
       try {
-        await this.boss.stop()
-
         if (this.db.isOurs) {
           await this.db.close()
         }
@@ -158,19 +156,26 @@ class PgBoss extends EventEmitter {
       return await shutdown()
     }
 
-    if (this.manager.getWipData().length === 0) {
-      return await shutdown()
-    }
-
-    polling = true
-
     setImmediate(async () => {
-      while (Date.now() - this.stoppingOn < timeout) {
-        await delay(1000)
+      polling = true
+      let closing = false
 
-        if (this.manager.getWipData().length === 0) {
-          return await shutdown()
+      while (Date.now() - this.stoppingOn < timeout) {
+        if (this.manager.getWipData({ includeInternal: closing }).length === 0) {
+          if (closing) {
+            break
+          }
+
+          closing = true
+
+          try {
+            await this.boss.stop()
+          } catch (err) {
+            this.emit(events.error, err)
+          }
         }
+
+        await delay(1000)
       }
 
       await shutdown()

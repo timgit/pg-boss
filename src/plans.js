@@ -18,20 +18,6 @@ const MUTEX = 1337968055000
 const MIGRATE_RACE_MESSAGE = 'division by zero'
 const CREATE_RACE_MESSAGE = 'already exists'
 
-const SECOND = 1000
-const MINUTE = SECOND * 60
-const HOUR = MINUTE * 60
-const DAY = HOUR * 24
-
-// source: pg.types -> postgres-interval
-const INTERVAL_TO_MS_MAP = {
-  days: DAY,
-  hours: HOUR,
-  minutes: MINUTE,
-  seconds: SECOND,
-  milliseconds: 1
-}
-
 module.exports = {
   create,
   insertVersion,
@@ -61,7 +47,6 @@ module.exports = {
   setCronTime,
   locked,
   assertMigration,
-  intervalToMs,
   getArchivedJobById,
   getJobById,
   states: { ...states },
@@ -70,11 +55,6 @@ module.exports = {
   MIGRATE_RACE_MESSAGE,
   CREATE_RACE_MESSAGE,
   DEFAULT_SCHEMA
-}
-
-function intervalToMs (interval) {
-  const ms = Object.keys(interval).reduce((total, key) => total + INTERVAL_TO_MS_MAP[key] * interval[key], 0)
-  return ms
 }
 
 function locked (query) {
@@ -344,7 +324,7 @@ function fetchNextJob (schema) {
       retryCount = CASE WHEN state = '${states.retry}' THEN retryCount + 1 ELSE retryCount END
     FROM nextJob
     WHERE j.id = nextJob.id
-    RETURNING ${includeMetadata ? 'j.*' : 'j.id, name, data, expireIn'}
+    RETURNING ${includeMetadata ? 'j.*' : 'j.id, name, data, EXTRACT(epoch FROM expireIn) as expireIn'}
   `
 }
 
