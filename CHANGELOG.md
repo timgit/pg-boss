@@ -1,5 +1,9 @@
 # Changes
 
+## 6.0.2
+
+- Fixed expiration rejection in subscriptions when the pg driver wasn't returning an interval object.
+- Fixed uncleared interval in `unsubscribe()`
 ## 6.0.1
 
 - Typescript types updated for `stop()`. PR from @stnwk
