@@ -64,7 +64,7 @@ describe('ops', function () {
   })
 
   it('should emit error during graceful stop if subscriptions busy', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, ...defaults, __test__throw_stop: true })
+    const boss = await helper.start({ ...this.test.bossConfig, ...defaults, __test__throw_stop: true })
     const queue = this.test.bossConfig.schema
 
     await boss.publish(queue)
@@ -78,7 +78,7 @@ describe('ops', function () {
   })
 
   it('should throw error during graceful stop if no subscriptions are busy', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, ...defaults, __test__throw_stop: true })
+    const boss = await helper.start({ ...this.test.bossConfig, ...defaults, __test__throw_stop: true })
 
     try {
       await boss.stop({ timeout: 1 })

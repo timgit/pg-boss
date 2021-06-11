@@ -131,54 +131,45 @@ class PgBoss extends EventEmitter {
     await this.manager.stop()
     await this.timekeeper.stop()
 
-    let polling = false
-
     const shutdown = async () => {
-      try {
-        if (this.db.isOurs) {
-          await this.db.close()
-        }
-      } catch (err) {
-        if (polling) {
-          this.emit(events.error, err)
-        } else {
-          throw err
-        }
-      } finally {
-        this.stopped = true
-        this.stoppingOn = null
-
-        this.emit(events.stopped)
+      if (this.db.isOurs) {
+        await this.db.close()
       }
+
+      this.stopped = true
+      this.stoppingOn = null
+
+      this.emit(events.stopped)
     }
 
     if (!graceful) {
-      return await shutdown()
+      await this.boss.stop()
+      await shutdown()
+      return
     }
 
     setImmediate(async () => {
-      polling = true
       let closing = false
 
-      while (Date.now() - this.stoppingOn < timeout) {
-        if (this.manager.getWipData({ includeInternal: closing }).length === 0) {
-          if (closing) {
-            break
-          }
+      try {
+        while (Date.now() - this.stoppingOn < timeout) {
+          if (this.manager.getWipData({ includeInternal: closing }).length === 0) {
+            if (closing) {
+              break
+            }
 
-          closing = true
+            closing = true
 
-          try {
             await this.boss.stop()
-          } catch (err) {
-            this.emit(events.error, err)
           }
+
+          await delay(1000)
         }
 
-        await delay(1000)
+        await shutdown()
+      } catch (err) {
+        this.emit(events.error, err)
       }
-
-      await shutdown()
     })
   }
 }

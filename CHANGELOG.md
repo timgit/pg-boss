@@ -2,7 +2,7 @@
 
 ## 6.1.0
 
-- Existing schemas can now be used via the `schema` property in the constructor. Keep in mind this is a bit more risky than creating a dedicated schema, and will make uninstalling more of a manual process since you would no longer simply drop a created schema. 
+- Existing schemas can now be used via the `schema` property in the constructor. 
 - Fixed expiration rejection in subscriptions when the pg driver wasn't returning an interval object.
 - Removed setInterval() in `unsubscribe()` causing process to hang
 
