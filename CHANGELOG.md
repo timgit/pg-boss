@@ -1,9 +1,11 @@
 # Changes
 
-## 6.0.2
+## 6.1.0
 
+- Existing schemas can now be used via the `schema` property in the constructor.
 - Fixed expiration rejection in subscriptions when the pg driver wasn't returning an interval object.
 - Fixed uncleared interval in `unsubscribe()`
+
 ## 6.0.1
 
 - Typescript types updated for `stop()`. PR from @stnwk
