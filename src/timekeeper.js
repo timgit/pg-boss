@@ -39,34 +39,46 @@ class Timekeeper extends EventEmitter {
       this.unschedule,
       this.getSchedules
     ]
+
+    this.stopped = true
   }
 
   async start () {
-    await this.cacheClockSkew()
-
-    if (this.config.archiveSeconds >= 60) {
-      await this.watch()
-      this.cronMonitorInterval = setInterval(async () => await this.monitorCron(), this.cronMonitorIntervalMs)
+    if (this.config.archiveSeconds < 60) {
+      return
     }
 
+    await this.cacheClockSkew()
+
+    await this.manager.subscribe(queues.CRON, { newJobCheckIntervalSeconds: 4 }, (job) => this.onCron(job))
+    await this.manager.subscribe(queues.SEND_IT, { newJobCheckIntervalSeconds: 4, teamSize: 50, teamConcurrency: 5 }, (job) => this.onSendIt(job))
+
+    await this.cronMonitorAsync()
+
+    this.cronMonitorInterval = setInterval(async () => await this.monitorCron(), this.cronMonitorIntervalMs)
     this.skewMonitorInterval = setInterval(async () => await this.cacheClockSkew(), this.skewMonitorIntervalMs)
 
     this.stopped = false
   }
 
   async stop () {
-    if (!this.stopped) {
-      this.stopped = true
+    if (this.stopped) {
+      return
+    }
 
-      if (this.skewMonitorInterval) {
-        clearInterval(this.skewMonitorInterval)
-        this.skewMonitorInterval = null
-      }
+    this.stopped = true
 
-      if (this.cronMonitorInterval) {
-        clearInterval(this.cronMonitorInterval)
-        this.cronMonitorInterval = null
-      }
+    await this.manager.unsubscribe(queues.CRON)
+    await this.manager.unsubscribe(queues.SEND_IT)
+
+    if (this.skewMonitorInterval) {
+      clearInterval(this.skewMonitorInterval)
+      this.skewMonitorInterval = null
+    }
+
+    if (this.cronMonitorInterval) {
+      clearInterval(this.cronMonitorInterval)
+      this.cronMonitorInterval = null
     }
   }
 
@@ -94,13 +106,6 @@ class Timekeeper extends EventEmitter {
     }
 
     this.clockSkew = skew
-  }
-
-  async watch () {
-    await this.manager.subscribe(queues.CRON, { newJobCheckIntervalSeconds: 4 }, (job) => this.onCron(job))
-    await this.manager.subscribe(queues.SEND_IT, { newJobCheckIntervalSeconds: 4, teamSize: 50, teamConcurrency: 5 }, (job) => this.onSendIt(job))
-
-    await this.cronMonitorAsync()
   }
 
   async cronMonitorAsync () {

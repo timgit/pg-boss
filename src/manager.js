@@ -382,12 +382,13 @@ class Manager extends EventEmitter {
 
   async fetch (name, batchSize, options = {}) {
     const values = Attorney.checkFetchArgs(name, batchSize, options)
+
     const result = await this.db.executeSql(
       this.nextJobCommand(options.includeMetadata || false),
       [values.name, batchSize || 1]
     )
 
-    if (!result) {
+    if (!result || result.rows.length === 0) {
       return null
     }
 
@@ -402,11 +403,7 @@ class Manager extends EventEmitter {
       return job
     })
 
-    return jobs.length === 0
-      ? null
-      : jobs.length === 1 && !batchSize
-        ? jobs[0]
-        : jobs
+    return jobs.length === 1 && !batchSize ? jobs[0] : jobs
   }
 
   async fetchCompleted (name, batchSize, options = {}) {
