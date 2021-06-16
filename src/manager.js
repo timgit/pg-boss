@@ -167,13 +167,17 @@ class Manager extends EventEmitter {
         throw new Error('__test__throw_subscription')
       }
 
-      const resolveWithinSeconds = (promise, seconds) => {
+      const resolveWithinSeconds = async (promise, seconds) => {
         const timeout = Math.max(1, seconds) * 1000
+        const reject = delay.reject(timeout, { value: new Error(`handler execution exceeded ${timeout}ms`) })
 
-        return Promise.race([
-          promise,
-          delay.reject(timeout, { value: new Error(`handler execution exceeded ${timeout}ms`) })
-        ])
+        const result = await Promise.race([promise, reject])
+
+        try {
+          reject.clear()
+        } catch {}
+
+        return result
       }
 
       this.emitWip(name)
