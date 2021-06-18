@@ -185,14 +185,14 @@ class Manager extends EventEmitter {
       let result
 
       if (batchSize) {
-        const maxExpiration = jobs.reduce((acc, i) => Math.max(acc, i.expirein), 0)
+        const maxExpiration = jobs.reduce((acc, i) => Math.max(acc, i.expire_in_seconds), 0)
 
         // Failing will fail all fetched jobs
         result = await resolveWithinSeconds(Promise.all([callback(jobs)]), maxExpiration)
           .catch(err => this.fail(jobs.map(job => job.id), err))
       } else {
         result = await pMap(jobs, job =>
-          resolveWithinSeconds(callback(job), job.expirein)
+          resolveWithinSeconds(callback(job), job.expire_in_seconds)
             .then(result => this.complete(job.id, result))
             .catch(err => this.fail(job.id, err))
         , { concurrency: teamConcurrency }
