@@ -58,9 +58,11 @@
 <!-- /TOC -->
 
 # Intro
-pg-boss is used by creating an instance of the exported class, a subclass of a Node [EventEmitter](https://nodejs.org/api/events.html). Since the majority of all interactions with pg-boss involve a database, all instance functions return promises. Once you have created an instance, nothing happens until you call `start()`. When a job is created it is immediately persisted to the database, assigned to a queue by name and can be received from any pg-boss instance.
+pg-boss is a job queue written in Node.js and backed by the reliability of Postgres.
 
-You may use as many instances in as many environments as needed based on your requirements.  Since each instance has a connection pool (or even if you bring your own), the only primary limitation on instance count is based on the maximum number of connections your database can accept.  If you need a larger number of workers than your postgres database can accept, consider using a centralized connection pool such as pgBouncer. If you have constraints preventing direct database access, consider creating your own abstraction layer over pg-boss such as a secure web API using the `fetch()` and `complete()` functions.  If you require multiple installations in the same database, you will need to specify a separate schema name per install in the constructor.
+You may use as many instances as needed to connect to the same Postgres database.  Each instance maintains a connection pool (or you bring your own), so the only limitation on connection count is based on the maximum number of connections your database can accept.  If you need a larger number of workers than your postgres database can accept, consider using a centralized connection pool such as pgBouncer. If you have constraints preventing direct database access, consider creating your own abstraction layer over pg-boss such as a secure web API using the `fetch()` and `complete()` functions.  
+
+If you require multiple installations in the same database, such as for large volume queues, you may wish to specify a separate schemas per install to achieve partitioning.
 
 ## Job states
 
