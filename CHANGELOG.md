@@ -1,5 +1,11 @@
 # Changes
 
+## 6.1.0
+
+- Existing schemas can now be used via the `schema` property in the constructor. 
+- Fixed expiration rejection in subscriptions when the pg driver wasn't returning an interval object.
+- Removed timers causing process to hang during shut down
+
 ## 6.0.1
 
 - Typescript types updated for `stop()`. PR from @stnwk

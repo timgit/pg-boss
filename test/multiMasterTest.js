@@ -22,7 +22,7 @@ describe('multi-master', function () {
     } catch (err) {
       assert(false)
     } finally {
-      await pMap(instances, i => i.stop())
+      await pMap(instances, i => i.stop({ graceful: false }))
     }
   })
 
@@ -55,7 +55,7 @@ describe('multi-master', function () {
     } catch (err) {
       assert(false)
     } finally {
-      await pMap(instances, i => i.stop())
+      await pMap(instances, i => i.stop({ graceful: false }))
     }
   })
 
@@ -86,7 +86,7 @@ describe('multi-master', function () {
 
     assert.strictEqual(beforeCount, jobCount)
 
-    await boss.stop()
+    await boss.stop({ graceful: false })
 
     boss = new PgBoss(this.test.bossConfig)
 
@@ -98,6 +98,6 @@ describe('multi-master', function () {
 
     assert.strictEqual(completedCount, 1)
 
-    await boss.stop()
+    await boss.stop({ graceful: false })
   })
 })

@@ -50,10 +50,10 @@ describe('subscribe', function () {
 
   it('should honor a custom new job check interval', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const queue = this.test.bossConfig.schema
 
-    const queue = 'customJobCheckInterval'
-    const newJobCheckIntervalSeconds = 3
-    const timeout = 9000
+    const newJobCheckIntervalSeconds = 1
+    const timeout = 5000
     let subscribeCount = 0
     const jobCount = 10
 
@@ -65,7 +65,7 @@ describe('subscribe', function () {
 
     await delay(timeout)
 
-    assert(subscribeCount <= timeout / 1000 / newJobCheckIntervalSeconds)
+    assert.strictEqual(subscribeCount, timeout / 1000 / newJobCheckIntervalSeconds)
   })
 
   it('should unsubscribe a subscription', async function () {

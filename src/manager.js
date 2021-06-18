@@ -111,7 +111,9 @@ class Manager extends EventEmitter {
     }
   }
 
-  getWipData () {
+  getWipData (options = {}) {
+    const { includeInternal = false } = options
+
     const data = this.getWorkers()
       .map(({
         id,
@@ -138,7 +140,7 @@ class Manager extends EventEmitter {
         lastError,
         lastErrorOn
       }))
-      .filter(i => i.count > 0 && !INTERNAL_QUEUES[i.name])
+      .filter(i => i.count > 0 && (!INTERNAL_QUEUES[i.name] || includeInternal))
 
     return data
   }
@@ -165,24 +167,32 @@ class Manager extends EventEmitter {
         throw new Error('__test__throw_subscription')
       }
 
-      const expirationRace = (promise, timeout) => Promise.race([
-        promise,
-        delay.reject(timeout, { value: new Error(`handler execution exceeded ${timeout}ms`) })
-      ])
+      const resolveWithinSeconds = async (promise, seconds) => {
+        const timeout = Math.max(1, seconds) * 1000
+        const reject = delay.reject(timeout, { value: new Error(`handler execution exceeded ${timeout}ms`) })
+
+        const result = await Promise.race([promise, reject])
+
+        try {
+          reject.clear()
+        } catch {}
+
+        return result
+      }
 
       this.emitWip(name)
 
       let result
 
       if (batchSize) {
-        const maxTimeout = jobs.reduce((acc, i) => Math.max(acc, plans.intervalToMs(i.expirein)), 0)
+        const maxExpiration = jobs.reduce((acc, i) => Math.max(acc, i.expire_in_seconds), 0)
 
         // Failing will fail all fetched jobs
-        result = await expirationRace(Promise.all([callback(jobs)]), maxTimeout)
+        result = await resolveWithinSeconds(Promise.all([callback(jobs)]), maxExpiration)
           .catch(err => this.fail(jobs.map(job => job.id), err))
       } else {
         result = await pMap(jobs, job =>
-          expirationRace(callback(job), plans.intervalToMs(job.expirein))
+          resolveWithinSeconds(callback(job), job.expire_in_seconds)
             .then(result => this.complete(job.id, result))
             .catch(err => this.fail(job.id, err))
         , { concurrency: teamConcurrency }
@@ -228,13 +238,15 @@ class Manager extends EventEmitter {
       worker.stop()
     }
 
-    setInterval(() => {
-      if (workers.every(w => w.stopped)) {
-        for (const worker of workers) {
-          this.removeWorker(worker)
-        }
+    setImmediate(async () => {
+      while (!workers.every(w => w.stopped)) {
+        await delay(1000)
       }
-    }, 1000)
+
+      for (const worker of workers) {
+        this.removeWorker(worker)
+      }
+    })
   }
 
   async offComplete (value) {
@@ -374,12 +386,13 @@ class Manager extends EventEmitter {
 
   async fetch (name, batchSize, options = {}) {
     const values = Attorney.checkFetchArgs(name, batchSize, options)
+
     const result = await this.db.executeSql(
       this.nextJobCommand(options.includeMetadata || false),
       [values.name, batchSize || 1]
     )
 
-    if (!result) {
+    if (!result || result.rows.length === 0) {
       return null
     }
 
@@ -394,11 +407,7 @@ class Manager extends EventEmitter {
       return job
     })
 
-    return jobs.length === 0
-      ? null
-      : jobs.length === 1 && !batchSize
-        ? jobs[0]
-        : jobs
+    return jobs.length === 1 && !batchSize ? jobs[0] : jobs
   }
 
   async fetchCompleted (name, batchSize, options = {}) {
