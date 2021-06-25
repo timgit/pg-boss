@@ -1,5 +1,8 @@
 # Changes
 
+## 6.1.1
+
+- Fixed drift in schema migration between new and upgraded instances since the 6.0.0 release.  In this case, the onComplete default was still set to true for direct table integrations on new intances, but migrated to the correct default of false for upgraded instances.
 ## 6.1.0
 
 - Existing schemas can now be used via the `schema` property in the constructor. 

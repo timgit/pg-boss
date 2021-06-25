@@ -22,7 +22,7 @@ function rollback (schema, version, migrations) {
 
   assert(result, `Version ${version} not found.`)
 
-  return flatten(schema, result.uninstall, result.previous)
+  return flatten(schema, result.uninstall || [], result.previous)
 }
 
 function next (schema, version, migrations) {
@@ -67,6 +67,14 @@ function getAll (schema, config) {
   const keepUntil = config ? config.keepUntil : DEFAULT_RETENTION
 
   return [
+    {
+      release: '6.1.1',
+      version: 18,
+      previous: 17,
+      install: [
+        `ALTER TABLE ${schema}.job ALTER COLUMN on_complete SET DEFAULT false`
+      ]
+    },
     {
       release: '6.0.0',
       version: 17,

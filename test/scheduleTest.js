@@ -111,7 +111,7 @@ describe('schedule', function () {
   it('should publish job based on current minute in UTC', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
 
-    const queue = 'schedule-current-min-utc'
+    const queue = this.test.bossConfig.schema
 
     const now = new Date()
 
@@ -136,7 +136,7 @@ describe('schedule', function () {
   it('should publish job based on current minute in a specified time zone', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
 
-    const queue = 'schedule-current-min-timezone'
+    const queue = this.test.bossConfig.schema
 
     const tz = 'America/Los_Angeles'
 
