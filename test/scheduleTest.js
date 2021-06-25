@@ -113,18 +113,23 @@ describe('schedule', function () {
 
     const queue = this.test.bossConfig.schema
 
-    const now = new Date()
+    const nowUtc = DateTime.utc()
 
-    const currentMinute = now.getUTCMinutes()
+    const currentMinute = nowUtc.minute
+    const currentHour = nowUtc.hour
 
-    now.setUTCMinutes(currentMinute + 1)
+    const nextUtc = nowUtc.plus({ minutes: 1 })
 
-    const nextMinute = now.getUTCMinutes()
+    const nextMinute = nextUtc.minute
+    const nextHour = nextUtc.hour
 
     // using current and next minute because the clock is ticking
-    const minuteExpression = `${currentMinute},${nextMinute}`
+    const minute = `${currentMinute},${nextMinute}`
+    const hour = `${currentHour},${nextHour}`
 
-    await boss.schedule(queue, `${minuteExpression} * * * *`)
+    const cron = `${minute} ${hour} * * *`
+
+    await boss.schedule(queue, cron)
 
     await delay(ASSERT_DELAY)
 
@@ -145,16 +150,18 @@ describe('schedule', function () {
     const currentMinute = nowLocal.minute
     const currentHour = nowLocal.hour
 
-    nowLocal.plus({ minutes: 1 })
+    const nextLocal = nowLocal.plus({ minutes: 1 })
 
-    const nextMinute = nowLocal.minute
-    const nextHour = nowLocal.hour
+    const nextMinute = nextLocal.minute
+    const nextHour = nextLocal.hour
 
     // using current and next minute because the clock is ticking
     const minute = `${currentMinute},${nextMinute}`
     const hour = `${currentHour},${nextHour}`
 
-    await boss.schedule(queue, `${minute} ${hour} * * *`, null, { tz })
+    const cron = `${minute} ${hour} * * *`
+
+    await boss.schedule(queue, cron, null, { tz })
 
     await delay(ASSERT_DELAY)
 
