@@ -307,11 +307,17 @@ Additionally, all schema operations, both first-time provisioning and migrations
 
 One example of how this is useful would be including `start()` inside the bootstrapping of a pod in a ReplicaSet in Kubernetes. Being able to scale up your job processing using a container orchestration tool like k8s is becoming more and more popular, and pg-boss can be dropped into this system with no additional logic, fear, or special configuration.
 
-## `stop()`
+## `stop(options)`
+
+**Arguments**
+
+- `options`: optional object ([stop options](configuration.md#stop-options))
 
 **returns: Promise**
 
 All job monitoring will be stopped and all subscriptions on this instance will be removed. Basically, it's the opposite of `start()`. Even though `start()` may create new database objects during initialization, `stop()` will never remove anything from the database.
+
+By default, calling `stop()` without any arguments will gracefully wait for all workers to finish processing active jobs before closing the internal connection pool and stopping maintenance operations. This behaviour can be configured using the stop options object. In graceful stop mode, the promise returned by `stop()` will be resolved once all active jobs have finished, or will be rejected if the timeout is reached before jobs have finished processing.
 
 ## `publish()`
 
