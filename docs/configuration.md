@@ -21,6 +21,7 @@ pg-boss can be customized using configuration options when an instance is create
 - [Fetch options](#fetch-options)
 - [Subscribe options](#subscribe-options)
   - [Job polling options](#job-polling-options)
+- [Stop options](#stop-options)
 
 <!-- /TOC -->
 
@@ -321,3 +322,15 @@ How often subscriptions will poll the queue table for jobs. Available in the con
 Default: 2 seconds
 
 > When a higher unit is is specified, lower unit configuration settings are ignored.
+
+## Stop options
+
+Options to configure the graceful stop feature when calling `stop()` on the PgBoss instance.
+
+* **graceful**, bool
+
+    Default: `true`. If `true`, the PgBoss instance will wait for any workers that are currently processing jobs to finish, up to the specified timeout. During this period, new jobs will not be processed, but active jobs will be allowed to finish.
+
+* **timeout**, int
+
+    Default: 30000. Maximum time (in milliseconds) to wait for workers to finish job processing before shutting down the PgBoss instance.
