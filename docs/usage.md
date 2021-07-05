@@ -317,7 +317,7 @@ One example of how this is useful would be including `start()` inside the bootst
 
 All job monitoring will be stopped and all subscriptions on this instance will be removed. Basically, it's the opposite of `start()`. Even though `start()` may create new database objects during initialization, `stop()` will never remove anything from the database.
 
-By default, calling `stop()` without any arguments will gracefully wait for all workers to finish processing active jobs before closing the internal connection pool and stopping maintenance operations. This behaviour can be configured using the stop options object. In graceful stop mode, the promise returned by `stop()` will be resolved once all active jobs have finished, or will be rejected if the timeout is reached before jobs have finished processing.
+By default, calling `stop()` without any arguments will gracefully wait for all workers to finish processing active jobs before closing the internal connection pool and stopping maintenance operations. This behaviour can be configured using the stop options object. In graceful stop mode, the promise returned by `stop()` will still be resolved immediately.  If monitoring for the end of the stop is needed, add a listener to the `stopped` event.
 
 ## `publish()`
 
