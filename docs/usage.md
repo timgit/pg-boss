@@ -21,7 +21,7 @@
   - [`new(connectionString)`](#newconnectionstring)
   - [`new(options)`](#newoptions)
   - [`start()`](#start)
-  - [`stop()`](#stop)
+  - [`stop()`](#stopoptions)
   - [`publish()`](#publish)
     - [`publish(name, data, options)`](#publishname-data-options)
     - [`publish(request)`](#publishrequest)
