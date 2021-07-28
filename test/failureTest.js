@@ -98,11 +98,12 @@ describe('failure', function () {
     assert.strictEqual(job.data.response.someReason, failPayload.someReason)
   })
 
-  it('should preserve nested objects within a payload', async function () {
+  it('should preserve nested objects within a payload that is an instance of Error', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
 
     const queue = 'fail-payload'
-    const failPayload = { some: { deeply: { nested: { reason: 'nuna' } } } }
+    const failPayload = new Error('Something went wrong')
+    failPayload.some = { deeply: { nested: { reason: 'nuna' } } }
 
     const jobId = await boss.publish(queue, null, { onComplete: true })
 
