@@ -66,3 +66,29 @@ yarn add pg-boss
 ## Documentation
 * [Usage](docs/usage.md)
 * [Configuration](docs/configuration.md)
+
+## Contributing
+
+To setup a development environment for this library:
+
+```bash
+git clone https://github.com/timgit/pg-boss.git
+npm install
+
+```
+
+To run the test suite you will need to pgboss access to an empty postgres database. You can set one up using the following commands on a local postgres instance:
+
+```sql
+CREATE DATABASE pgboss;
+CREATE user postgres WITH PASSWORD 'postgres';
+GRANT ALL PRIVILEGES ON DATABASE pgboss to postgres;
+```
+
+If you use a different database name, username or password, or want to run the test suite against a database that is running on a remote machine then you will need to edit the `test/config.json` file with the appropriate connection values.
+
+You can then run the linter and test suite using:
+
+```bash
+npm run test
+```
