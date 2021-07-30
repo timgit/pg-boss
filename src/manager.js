@@ -429,7 +429,11 @@ class Manager extends EventEmitter {
   mapCompletionDataArg (data) {
     if (data === null || typeof data === 'undefined' || typeof data === 'function') { return null }
 
-    if (data instanceof Error) { data = JSON.parse(JSON.stringify(data, Object.getOwnPropertyNames(data))) }
+    if (data instanceof Error) {
+      const newData = {}
+      Object.getOwnPropertyNames(data).forEach(key => { newData[key] = data[key] })
+      data = newData
+    }
 
     return (typeof data === 'object' && !Array.isArray(data))
       ? data
