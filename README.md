@@ -83,6 +83,8 @@ To run the test suite you will need to pgboss access to an empty postgres databa
 CREATE DATABASE pgboss;
 CREATE user postgres WITH PASSWORD 'postgres';
 GRANT ALL PRIVILEGES ON DATABASE pgboss to postgres;
+-- run the following command in the context of the pgboss database
+CREATE EXTENSION pgcrypto;
 ```
 
 If you use a different database name, username or password, or want to run the test suite against a database that is running on a remote machine then you will need to edit the `test/config.json` file with the appropriate connection values.
@@ -90,5 +92,5 @@ If you use a different database name, username or password, or want to run the t
 You can then run the linter and test suite using:
 
 ```bash
-npm run test
+npm test
 ```
