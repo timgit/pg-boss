@@ -559,7 +559,6 @@ function countStates (schema) {
   return `
     SELECT name, state, count(*) size
     FROM ${schema}.job
-    WHERE name NOT LIKE '${COMPLETION_JOB_PREFIX}%'
     GROUP BY rollup(name), rollup(state)
   `
 }
