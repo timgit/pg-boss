@@ -551,7 +551,7 @@ function insertJobs (schema) {
       data,
       COALESCE(priority, 0) as priority,
       COALESCE("startAfter", now()) as startAfter,
-      COALESCE("expireIn", interval '15 minutes') as expireIn,
+      COALESCE("expireInSeconds", 15 * 60) * interval '1s' as expireIn,
       COALESCE("retryLimit", 0) as retryLimit,
       COALESCE("retryDelay", 0) as retryDelay,
       COALESCE("retryBackoff", false) as retryBackoff,
@@ -568,7 +568,7 @@ function insertJobs (schema) {
       "retryBackoff" boolean,
       "startAfter" timestamp with time zone,
       "singletonKey" text,
-      "expireIn" interval,
+      "expireInSeconds" integer,
       "keepUntil" timestamp with time zone,
       "onComplete" boolean
     )

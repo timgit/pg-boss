@@ -178,6 +178,21 @@ declare namespace PgBoss {
     output: object
   }
 
+  interface JobInsert<T = object> {
+    id?: string,
+    name: string;
+    data?: T;
+    priority?: number;
+    retryLimit?: number;
+    retryDelay?: number;
+    retryBackoff?: boolean;
+    startAfter?: Date | string;    
+    singletonKey?: string;
+    expireInSeconds?: number;
+    keepUntil?: Date | string;
+    onComplete?: boolean
+  }
+
   interface JobWithDoneCallback<ReqData, ResData> extends Job<ReqData> {
     done: JobDoneCallback<ResData>;
   }
@@ -274,6 +289,8 @@ declare class PgBoss {
 
   publishDebounced(name: string, data: object, options: PgBoss.PublishOptions, seconds: number): Promise<string | null>;
   publishDebounced(name: string, data: object, options: PgBoss.PublishOptions, seconds: number, key: string): Promise<string | null>;
+
+  insert(jobs: PgBoss.JobInsert[]): Promise<void>;
 
   subscribe<ReqData, ResData>(name: string, handler: PgBoss.SubscribeHandler<ReqData, ResData>): Promise<string>;
   subscribe<ReqData, ResData>(name: string, options: PgBoss.SubscribeOptions & { includeMetadata: true }, handler: PgBoss.SubscribeWithMetadataHandler<ReqData, ResData>): Promise<string>;
