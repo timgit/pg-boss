@@ -36,6 +36,7 @@ class Manager extends EventEmitter {
 
     this.nextJobCommand = plans.fetchNextJob(config.schema)
     this.insertJobCommand = plans.insertJob(config.schema)
+    this.insertJobsCommand = plans.insertJobs(config.schema)
     this.completeJobsCommand = plans.completeJobs(config.schema)
     this.cancelJobsCommand = plans.cancelJobs(config.schema)
     this.failJobsCommand = plans.failJobs(config.schema)
@@ -49,6 +50,7 @@ class Manager extends EventEmitter {
       this.cancel,
       this.fail,
       this.publish,
+      this.insert,
       this.subscribe,
       this.unsubscribe,
       this.onComplete,
@@ -365,6 +367,12 @@ class Manager extends EventEmitter {
     singletonOffset = singletonSeconds
 
     return await this.createJob(name, data, options, singletonOffset)
+  }
+
+  async insert (jobs) {
+    assert(Array.isArray(jobs), `jobs argument should be an array.  Received '${typeof jobs}'`)
+    const data = JSON.stringify(jobs)
+    return await this.db.executeSql(this.insertJobsCommand, [data])
   }
 
   getDebounceStartAfter (singletonSeconds, clockOffset) {

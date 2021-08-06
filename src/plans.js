@@ -29,6 +29,7 @@ module.exports = {
   cancelJobs,
   failJobs,
   insertJob,
+  insertJobs,
   getTime,
   getSchedules,
   schedule,
@@ -525,6 +526,55 @@ function insertJob (schema) {
     ) j3
     ON CONFLICT DO NOTHING
     RETURNING id
+  `
+}
+
+function insertJobs (schema) {
+  return `
+    INSERT INTO ${schema}.job (
+      id,
+      name,
+      data,
+      priority,
+      startAfter,
+      expireIn,
+      retryLimit,
+      retryDelay,
+      retryBackoff,
+      singletonKey,
+      singletonOn,
+      keepUntil,
+      on_complete
+    )
+    SELECT 
+      COALESCE(id, gen_random_uuid()) as id,
+      name,
+      data,
+      COALESCE(priority, 0) as priority,
+      COALESCE("startAfter", now()) as startAfter,
+      COALESCE("expireIn", interval '15 minutes') as expireIn,
+      COALESCE("retryLimit", 0) as retryLimit,
+      COALESCE("retryDelay", 0) as retryDelay,
+      COALESCE("retryBackoff", false) as retryBackoff,
+      "singletonKey",
+      "singletonOn",
+      COALESCE("keepUntil", now() + interval '14 days') as keepUntil,
+      COALESCE("onComplete", false) as onComplete
+    FROM json_to_recordset($1) as x(
+      id uuid,
+      name text,
+      priority integer,
+      data jsonb,
+      "retryLimit" integer,
+      "retryDelay" integer,
+      "retryBackoff" boolean,
+      "startAfter" timestamp with time zone,
+      "singletonKey" text,
+      "singletonOn" timestamp without time zone,
+      "expireIn" interval,
+      "keepUntil" timestamp with time zone,
+      "onComplete" boolean
+    )
   `
 }
 
