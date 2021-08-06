@@ -542,7 +542,6 @@ function insertJobs (schema) {
       retryDelay,
       retryBackoff,
       singletonKey,
-      singletonOn,
       keepUntil,
       on_complete
     )
@@ -557,7 +556,6 @@ function insertJobs (schema) {
       COALESCE("retryDelay", 0) as retryDelay,
       COALESCE("retryBackoff", false) as retryBackoff,
       "singletonKey",
-      "singletonOn",
       COALESCE("keepUntil", now() + interval '14 days') as keepUntil,
       COALESCE("onComplete", false) as onComplete
     FROM json_to_recordset($1) as x(
@@ -570,7 +568,6 @@ function insertJobs (schema) {
       "retryBackoff" boolean,
       "startAfter" timestamp with time zone,
       "singletonKey" text,
-      "singletonOn" timestamp without time zone,
       "expireIn" interval,
       "keepUntil" timestamp with time zone,
       "onComplete" boolean

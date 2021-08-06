@@ -30,6 +30,7 @@ describe('insert', function () {
       retryBackoff: true,
       startAfter: new Date().toISOString(),
       expireIn: 5,
+      singletonKey: '123',
       keepUntil: new Date().toISOString(),
       onComplete: true
     }
@@ -47,6 +48,7 @@ describe('insert', function () {
     assert.strictEqual(job.retrybackoff, input.retryBackoff, `retryBackoff input ${input.retryBackoff} didn't match job ${job.retrybackoff}`)
     assert.strictEqual(new Date(job.startafter).toISOString(), input.startAfter, `startAfter input ${input.startAfter} didn't match job ${job.startafter}`)
     assert.strictEqual(job.expirein.seconds, input.expireIn, `expireIn input ${input.expireIn} didn't match job ${job.expirein}`)
+    assert.strictEqual(job.singletonkey, input.singletonKey, `name input ${input.singletonKey} didn't match job ${job.singletonkey}`)
     assert.strictEqual(new Date(job.keepuntil).toISOString(), input.keepUntil, `keepUntil input ${input.keepUntil} didn't match job ${job.keepuntil}`)
     assert.strictEqual(job.on_complete, input.onComplete, `onComplete input ${input.onComplete} didn't match job ${job.on_complete}`)
   })
