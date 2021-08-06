@@ -572,6 +572,7 @@ function insertJobs (schema) {
       "keepUntil" timestamp with time zone,
       "onComplete" boolean
     )
+    ON CONFLICT DO NOTHING
   `
 }
 
