@@ -21,7 +21,7 @@
   - [`new(connectionString)`](#newconnectionstring)
   - [`new(options)`](#newoptions)
   - [`start()`](#start)
-  - [`stop()`](#stopoptions)
+  - [`stop(options)`](#stopoptions)
   - [`publish()`](#publish)
     - [`publish(name, data, options)`](#publishname-data-options)
     - [`publish(request)`](#publishrequest)
@@ -30,6 +30,7 @@
     - [`publishSingleton(name, data, options)`](#publishsingletonname-data-options)
     - [`publishThrottled(name, data, options, seconds [, key])`](#publishthrottledname-data-options-seconds--key)
     - [`publishDebounced(name, data, options, seconds [, key])`](#publishdebouncedname-data-options-seconds--key)
+  - [`insert([jobs])`](#insertjobs)
   - [`subscribe()`](#subscribe)
     - [`subscribe(name [, options], handler)`](#subscribename--options-handler)
     - [`onComplete(name [, options], handler)`](#oncompletename--options-handler)
@@ -406,9 +407,32 @@ Like, `publishThrottled()`, but instead of rejecting if a job is already publish
 
 This is a convenience version of `publish()` with the `singletonSeconds`, `singletonKey` and `singletonNextSlot` option assigned. The `key` argument is optional.
 
-## `subscribe()`
+## `insert([jobs])`
 
-**returns: Promise**
+Create multiple jobs in one request with an array of objects. 
+
+The contract and supported features are slightly different than `publish()`, which is why this function is named independently.  For example, debouncing is not supported.
+
+The following contract is a typescript defintion of the expected object. Only `name` is required, but most other properties can be set. This will likely be enhanced later with more support for deferral and retention by an offset. For now, calculate any desired timestamps for these features before insertion.
+
+```ts
+interface JobInsert<T = object> {
+  id?: string,
+  name: string;
+  data?: T;
+  priority?: number;
+  retryLimit?: number;
+  retryDelay?: number;
+  retryBackoff?: boolean;
+  startAfter?: Date | string;    
+  singletonKey?: string;
+  expireInSeconds?: number;
+  keepUntil?: Date | string;
+  onComplete?: boolean
+}
+```
+
+## `subscribe()`
 
 Polls the database by a queue name or a pattern and executes the provided callback function when jobs are found.  The promise resolves once a subscription has been created with a unique id of the subscription.  You can monitor the state of subscriptions using the `wip` event.
 

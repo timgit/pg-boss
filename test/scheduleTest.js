@@ -145,7 +145,7 @@ describe('schedule', function () {
 
     const tz = 'America/Los_Angeles'
 
-    const nowLocal = DateTime.fromObject({ zone: tz })
+    const nowLocal = DateTime.fromObject({}, { zone: tz })
 
     const currentMinute = nowLocal.minute
     const currentHour = nowLocal.hour
