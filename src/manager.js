@@ -173,11 +173,15 @@ class Manager extends EventEmitter {
         const timeout = Math.max(1, seconds) * 1000
         const reject = delay.reject(timeout, { value: new Error(`handler execution exceeded ${timeout}ms`) })
 
-        const result = await Promise.race([promise, reject])
+        let result
 
         try {
-          reject.clear()
-        } catch {}
+          result = await Promise.race([promise, reject])
+        } finally {
+          try {
+            reject.clear()
+          } catch {}
+        }
 
         return result
       }
