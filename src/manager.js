@@ -175,8 +175,8 @@ class Manager extends EventEmitter {
 
     const jobFinally = () => {
       queueSize--
-      // This triggers a queue refill
-      // only trigger it the first time
+      // Resolves the promise returned by onFetch
+      // allowing the worker to fetch a new batch of jobs
       resolveRefillTeam()
       // We'll need a new promise for the next onFetch to wait for
       createTeamRefillPromise()
@@ -235,8 +235,10 @@ class Manager extends EventEmitter {
 
       // It's possible that another job finished while
       // this batch was being fetched, in which case
-      // there may be 1 or more slots to fill
-      // so check the queueSize and return immediately if it's low
+      // there may be 1 or more additional slots to fill
+      // in the next interval
+      // So check the queueSize and return immediately if it's
+      // not full
       // otherwise, wait for a job to complete which will
       // resolve the refillTeam promise
       return (queueSize < teamSize) ? null : refillTeam
