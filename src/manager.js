@@ -162,12 +162,32 @@ class Manager extends EventEmitter {
 
     const id = uuid.v4()
 
-    const fetch = () => this.fetch(name, batchSize || teamSize, { includeMetadata })
+    let queueSize = 0
+
+    let refillTeam
+    let resolveRefillTeam
+    const createTeamRefillPromise = () => {
+      refillTeam = new Promise((resolve) => { resolveRefillTeam = resolve })
+    }
+    createTeamRefillPromise()
+
+    const jobFinally = () => {
+      queueSize--
+      // This triggers a queue refill
+      // only trigger it the first time
+      resolveRefillTeam()
+      // We'll need a new promise for the next onFetch to wait for
+      createTeamRefillPromise()
+    }
+
+    const fetch = () => this.fetch(name, batchSize || (teamSize - queueSize), { includeMetadata })
 
     const onFetch = async (jobs) => {
       if (this.config.__test__throw_subscription) {
         throw new Error('__test__throw_subscription')
       }
+
+      queueSize += jobs.length || 1
 
       const resolveWithinSeconds = async (promise, seconds) => {
         const timeout = Math.max(1, seconds) * 1000
@@ -197,17 +217,27 @@ class Manager extends EventEmitter {
         result = await resolveWithinSeconds(Promise.all([callback(jobs)]), maxExpiration)
           .catch(err => this.fail(jobs.map(job => job.id), err))
       } else {
-        result = await pMap(jobs, job =>
+        pMap(jobs, job =>
           resolveWithinSeconds(callback(job), job.expire_in_seconds)
             .then(result => this.complete(job.id, result))
             .catch(err => this.fail(job.id, err))
+            // Trigger a queue top-up whenever a job finishes or times out
+            .then(() => jobFinally())
         , { concurrency: teamConcurrency }
         ).catch(() => {}) // allow promises & non-promises to live together in harmony
       }
 
       this.emitWip(name)
 
-      return result
+      if (batchSize) return result
+
+      // It's possible that another job finished while
+      // this batch was being fetched, in which case
+      // there may be 1 or more slots to fill
+      // so check the queueSize and return immediately if it's low
+      // otherwise, wait for a job to complete which will
+      // resolve the refillTeam promise
+      return (queueSize < teamSize) ? null : refillTeam
     }
 
     const onError = error => {
