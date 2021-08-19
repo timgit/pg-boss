@@ -166,6 +166,8 @@ class Manager extends EventEmitter {
 
     let refillTeam
     let resolveRefillTeam
+    // Setup a promise that onFetch can await for when at least one
+    // job is finished and so the team is ready to be topped up
     const createTeamRefillPromise = () => {
       refillTeam = new Promise((resolve) => { resolveRefillTeam = resolve })
     }
