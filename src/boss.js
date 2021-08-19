@@ -1,6 +1,7 @@
 const EventEmitter = require('events')
 const plans = require('./plans')
 const { states } = require('./plans')
+const { COMPLETION_JOB_PREFIX } = plans
 
 const queues = {
   MAINTENANCE: '__pgboss__maintenance',
@@ -9,9 +10,6 @@ const queues = {
 
 const events = {
   error: 'error',
-  archived: 'archived',
-  deleted: 'deleted',
-  expired: 'expired',
   monitorStates: 'monitor-states',
   maintenance: 'maintenance'
 }
@@ -35,8 +33,8 @@ class Boss extends EventEmitter {
     this.events = events
 
     this.expireCommand = plans.expire(config.schema)
-    this.archiveCommand = plans.archive(config.schema)
-    this.purgeCommand = plans.purge(config.schema)
+    this.archiveCommand = plans.archive(config.schema, config.archiveInterval)
+    this.purgeCommand = plans.purge(config.schema, config.deleteAfter)
     this.getMaintenanceTimeCommand = plans.getMaintenanceTime(config.schema)
     this.setMaintenanceTimeCommand = plans.setMaintenanceTime(config.schema)
     this.countStatesCommand = plans.countStates(config.schema)
@@ -53,7 +51,7 @@ class Boss extends EventEmitter {
   async supervise () {
     this.metaMonitor()
 
-    await this.manager.deleteQueue(plans.completedJobPrefix + queues.MAINTENANCE)
+    await this.manager.deleteQueue(COMPLETION_JOB_PREFIX + queues.MAINTENANCE)
     await this.manager.deleteQueue(queues.MAINTENANCE)
 
     await this.maintenanceAsync()
@@ -65,7 +63,7 @@ class Boss extends EventEmitter {
     await this.manager.subscribe(queues.MAINTENANCE, maintenanceSubscribeOptions, (job) => this.onMaintenance(job))
 
     if (this.monitorStates) {
-      await this.manager.deleteQueue(plans.completedJobPrefix + queues.MONITOR_STATES)
+      await this.manager.deleteQueue(COMPLETION_JOB_PREFIX + queues.MONITOR_STATES)
       await this.manager.deleteQueue(queues.MONITOR_STATES)
 
       await this.monitorStatesAsync()
@@ -95,7 +93,8 @@ class Boss extends EventEmitter {
     options = {
       startAfter,
       retentionSeconds: this.maintenanceIntervalSeconds * 4,
-      singletonKey: queues.MAINTENANCE
+      singletonKey: queues.MAINTENANCE,
+      onComplete: false
     }
 
     await this.manager.publish(queues.MAINTENANCE, null, options)
@@ -107,7 +106,8 @@ class Boss extends EventEmitter {
     options = {
       startAfter,
       retentionSeconds: this.monitorIntervalSeconds * 4,
-      singletonKey: queues.MONITOR_STATES
+      singletonKey: queues.MONITOR_STATES,
+      onComplete: false
     }
 
     await this.manager.publish(queues.MONITOR_STATES, null, options)
@@ -121,9 +121,9 @@ class Boss extends EventEmitter {
 
       const started = Date.now()
 
-      this.emitValue(events.expired, await this.expire())
-      this.emitValue(events.archived, await this.archive())
-      this.emitValue(events.deleted, await this.purge())
+      await this.expire()
+      await this.archive()
+      await this.purge()
 
       const ended = Date.now()
 
@@ -137,13 +137,6 @@ class Boss extends EventEmitter {
       }
     } catch (err) {
       this.emit(events.error, err)
-      throw err
-    }
-  }
-
-  async emitValue (event, value) {
-    if (value > 0) {
-      this.emit(event, value)
     }
   }
 
@@ -167,9 +160,19 @@ class Boss extends EventEmitter {
   }
 
   async stop () {
+    if (this.config.__test__throw_stop) {
+      throw new Error('__test__throw_stop')
+    }
+
     if (!this.stopped) {
       if (this.metaMonitorInterval) {
         clearInterval(this.metaMonitorInterval)
+      }
+
+      await this.manager.unsubscribe(queues.MAINTENANCE)
+
+      if (this.monitorStates) {
+        await this.manager.unsubscribe(queues.MONITOR_STATES)
       }
 
       this.stopped = true
@@ -182,7 +185,7 @@ class Boss extends EventEmitter {
     Object.keys(stateCountDefault)
       .forEach(key => { stateCountDefault[key] = 0 })
 
-    const counts = await this.db.executeSql(this.countStatesCommand)
+    const counts = await this.executeSql(this.countStatesCommand)
 
     const states = counts.rows.reduce((acc, item) => {
       if (item.name) {
@@ -202,37 +205,43 @@ class Boss extends EventEmitter {
   }
 
   async expire () {
-    const { rowCount } = await this.db.executeSql(this.expireCommand)
-    return rowCount
+    await this.executeSql(plans.locked(this.expireCommand))
   }
 
   async archive () {
-    const { rowCount } = await this.db.executeSql(this.archiveCommand, [this.config.archiveInterval])
-    return rowCount
+    await this.executeSql(plans.locked(this.archiveCommand))
   }
 
   async purge () {
-    const { rowCount } = await this.db.executeSql(this.purgeCommand, [this.config.deleteAfter])
-    return rowCount
+    await this.executeSql(plans.locked(this.purgeCommand))
   }
 
   async setMaintenanceTime () {
-    await this.db.executeSql(this.setMaintenanceTimeCommand)
+    await this.executeSql(this.setMaintenanceTimeCommand)
   }
 
   async getMaintenanceTime () {
-    const { rows } = await this.db.executeSql(this.getMaintenanceTimeCommand)
+    if (!this.stopped) {
+      const { rows } = await this.db.executeSql(this.getMaintenanceTimeCommand)
 
-    let { maintained_on: maintainedOn, seconds_ago: secondsAgo } = rows[0]
+      let { maintained_on: maintainedOn, seconds_ago: secondsAgo } = rows[0]
 
-    secondsAgo = secondsAgo !== null ? parseFloat(secondsAgo) : this.maintenanceIntervalSeconds * 10
+      secondsAgo = secondsAgo !== null ? parseFloat(secondsAgo) : this.maintenanceIntervalSeconds * 10
 
-    return { maintainedOn, secondsAgo }
+      return { maintainedOn, secondsAgo }
+    }
   }
 
   getQueueNames () {
     return queues
   }
+
+  async executeSql (sql, params) {
+    if (!this.stopped) {
+      return await this.db.executeSql(sql, params)
+    }
+  }
 }
 
 module.exports = Boss
+module.exports.QUEUES = queues

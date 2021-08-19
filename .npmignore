@@ -1,8 +1,8 @@
-test/
-coverage/
+.github
+.nyc_output
+.vscode
+docs
+test
+.editorconfig
 .travis.yml
 *.tgz
-.nyc_output/
-docs/
-.editorconfig
-.github/

@@ -1,3 +1,5 @@
+const assert = require('assert')
+
 const states = {
   created: 'created',
   retry: 'retry',
@@ -7,8 +9,10 @@ const states = {
   cancelled: 'cancelled',
   failed: 'failed'
 }
-const assert = require('assert')
-const completedJobPrefix = `__state__${states.completed}__`
+
+const DEFAULT_SCHEMA = 'pgboss'
+const COMPLETION_JOB_PREFIX = `__state__${states.completed}__`
+const SINGLETON_QUEUE_KEY = '__pgboss__singleton_queue'
 
 const MUTEX = 1337968055000
 const MIGRATE_RACE_MESSAGE = 'division by zero'
@@ -25,6 +29,7 @@ module.exports = {
   cancelJobs,
   failJobs,
   insertJob,
+  insertJobs,
   getTime,
   getSchedules,
   schedule,
@@ -41,18 +46,33 @@ module.exports = {
   setMaintenanceTime,
   getCronTime,
   setCronTime,
-  states: { ...states },
-  completedJobPrefix,
-  advisoryLock,
+  locked,
   assertMigration,
+  getArchivedJobById,
+  getJobById,
+  states: { ...states },
+  COMPLETION_JOB_PREFIX,
+  SINGLETON_QUEUE_KEY,
   MIGRATE_RACE_MESSAGE,
-  CREATE_RACE_MESSAGE
+  CREATE_RACE_MESSAGE,
+  DEFAULT_SCHEMA
+}
+
+function locked (query) {
+  if (Array.isArray(query)) {
+    query = query.join(';\n')
+  }
+
+  return `
+    BEGIN;
+    ${advisoryLock()};
+    ${query};
+    COMMIT;
+  `
 }
 
 function create (schema, version) {
-  return [
-    'BEGIN',
-    advisoryLock(),
+  const commands = [
     createSchema(schema),
     createVersionTable(schema),
     createJobStateEnum(schema),
@@ -63,17 +83,20 @@ function create (schema, version) {
     addArchivedOnToArchive(schema),
     addArchivedOnIndexToArchive(schema),
     createIndexJobName(schema),
+    createIndexJobFetch(schema),
     createIndexSingletonOn(schema),
     createIndexSingletonKeyOn(schema),
     createIndexSingletonKey(schema),
-    insertVersion(schema, version),
-    'COMMIT;'
-  ].join(';\n')
+    createIndexSingletonQueue(schema),
+    insertVersion(schema, version)
+  ]
+
+  return locked(commands)
 }
 
 function createSchema (schema) {
   return `
-    CREATE SCHEMA ${schema}
+    CREATE SCHEMA IF NOT EXISTS ${schema}
   `
 }
 
@@ -122,7 +145,9 @@ function createJobTable (schema) {
       expireIn interval not null default interval '15 minutes',
       createdOn timestamp with time zone not null default now(),
       completedOn timestamp with time zone,
-      keepUntil timestamp with time zone NOT NULL default now() + interval '30 days'
+      keepUntil timestamp with time zone NOT NULL default now() + interval '14 days',
+      on_complete boolean not null default false,
+      output jsonb
     )
   `
 }
@@ -151,8 +176,9 @@ function getMaintenanceTime (schema) {
   return `SELECT maintained_on, EXTRACT( EPOCH FROM (now() - maintained_on) ) seconds_ago FROM ${schema}.version`
 }
 
-function setCronTime (schema) {
-  return `UPDATE ${schema}.version SET cron_on = now()`
+function setCronTime (schema, time) {
+  time = time || 'now()'
+  return `UPDATE ${schema}.version SET cron_on = ${time}`
 }
 
 function getCronTime (schema) {
@@ -184,7 +210,14 @@ function getQueueSize (schema, options = {}) {
 function createIndexSingletonKey (schema) {
   // anything with singletonKey means "only 1 job can be queued or active at a time"
   return `
-    CREATE UNIQUE INDEX job_singletonKey ON ${schema}.job (name, singletonKey) WHERE state < '${states.completed}' AND singletonOn IS NULL
+    CREATE UNIQUE INDEX job_singletonKey ON ${schema}.job (name, singletonKey) WHERE state < '${states.completed}' AND singletonOn IS NULL AND NOT singletonKey = '${SINGLETON_QUEUE_KEY}'
+  `
+}
+
+function createIndexSingletonQueue (schema) {
+  // "singleton queue" means "only 1 job can be queued at a time"
+  return `
+    CREATE UNIQUE INDEX job_singleton_queue ON ${schema}.job (name, singletonKey) WHERE state < '${states.active}' AND singletonOn IS NULL AND singletonKey = '${SINGLETON_QUEUE_KEY}'
   `
 }
 
@@ -205,6 +238,12 @@ function createIndexSingletonKeyOn (schema) {
 function createIndexJobName (schema) {
   return `
     CREATE INDEX job_name ON ${schema}.job (name text_pattern_ops)
+  `
+}
+
+function createIndexJobFetch (schema) {
+  return `
+    CREATE INDEX job_fetch ON ${schema}.job (name text_pattern_ops, startAfter) WHERE state < '${states.active}'
   `
 }
 
@@ -286,7 +325,7 @@ function fetchNextJob (schema) {
       retryCount = CASE WHEN state = '${states.retry}' THEN retryCount + 1 ELSE retryCount END
     FROM nextJob
     WHERE j.id = nextJob.id
-    RETURNING ${includeMetadata ? 'j.*' : 'j.id, name, data'}
+    RETURNING ${includeMetadata ? 'j.*' : 'j.id, name, data'}, EXTRACT(epoch FROM expireIn) as expire_in_seconds
   `
 }
 
@@ -329,20 +368,23 @@ function completeJobs (schema) {
     WITH results AS (
       UPDATE ${schema}.job
       SET completedOn = now(),
-        state = '${states.completed}'
+        state = '${states.completed}',
+        output = $2::jsonb
       WHERE id IN (SELECT UNNEST($1::uuid[]))
         AND state = '${states.active}'
       RETURNING *
+    ), completion_jobs as (
+      INSERT INTO ${schema}.job (name, data, keepUntil)
+      SELECT
+        '${COMPLETION_JOB_PREFIX}' || name,
+        ${buildJsonCompletionObject(true)},
+        ${keepUntilInheritance}
+      FROM results
+      WHERE NOT name LIKE '${COMPLETION_JOB_PREFIX}%'
+        AND on_complete
     )
-    INSERT INTO ${schema}.job (name, data, keepUntil)
-    SELECT
-      '${completedJobPrefix}' || name,
-      ${buildJsonCompletionObject(true)},
-      ${keepUntilInheritance}
-    FROM results
-    WHERE NOT name LIKE '${completedJobPrefix}%'
-    RETURNING 1
-  ` // returning 1 here just to count results against input array
+    SELECT COUNT(*) FROM results
+  `
 }
 
 function failJobs (schema) {
@@ -355,21 +397,24 @@ function failJobs (schema) {
           ELSE '${states.failed}'::${schema}.job_state
           END,
         completedOn = ${retryCompletedOnCase},
-        startAfter = ${retryStartAfterCase}
+        startAfter = ${retryStartAfterCase},
+        output = $2::jsonb
       WHERE id IN (SELECT UNNEST($1::uuid[]))
         AND state < '${states.completed}'
       RETURNING *
+    ), completion_jobs as (
+      INSERT INTO ${schema}.job (name, data, keepUntil)
+      SELECT
+        '${COMPLETION_JOB_PREFIX}' || name,
+        ${buildJsonCompletionObject(true)},
+        ${keepUntilInheritance}
+      FROM results
+      WHERE state = '${states.failed}'
+        AND NOT name LIKE '${COMPLETION_JOB_PREFIX}%'
+        AND on_complete
     )
-    INSERT INTO ${schema}.job (name, data, keepUntil)
-    SELECT
-      '${completedJobPrefix}' || name,
-      ${buildJsonCompletionObject(true)},
-      ${keepUntilInheritance}
-    FROM results
-    WHERE state = '${states.failed}'
-      AND NOT name LIKE '${completedJobPrefix}%'
-    RETURNING 1
-  ` // returning 1 here just to count results against input array
+    SELECT COUNT(*) FROM results
+  `
 }
 
 function expire (schema) {
@@ -388,24 +433,28 @@ function expire (schema) {
     )
     INSERT INTO ${schema}.job (name, data, keepUntil)
     SELECT
-      '${completedJobPrefix}' || name,
+      '${COMPLETION_JOB_PREFIX}' || name,
       ${buildJsonCompletionObject()},
       ${keepUntilInheritance}
     FROM results
     WHERE state = '${states.expired}'
-      AND NOT name LIKE '${completedJobPrefix}%'
+      AND NOT name LIKE '${COMPLETION_JOB_PREFIX}%'
+      AND on_complete
   `
 }
 
 function cancelJobs (schema) {
   return `
-    UPDATE ${schema}.job
-    SET completedOn = now(),
-      state = '${states.cancelled}'
-    WHERE id IN (SELECT UNNEST($1::uuid[]))
-      AND state < '${states.completed}'
-    RETURNING 1
-  ` // returning 1 here just to count results against input array
+    with results as (
+      UPDATE ${schema}.job
+      SET completedOn = now(),
+        state = '${states.cancelled}'
+      WHERE id IN (SELECT UNNEST($1::uuid[]))
+        AND state < '${states.completed}'
+      RETURNING 1
+    )
+    SELECT COUNT(*) from results
+  `
 }
 
 function insertJob (schema) {
@@ -423,7 +472,8 @@ function insertJob (schema) {
       singletonOn,
       retryDelay,
       retryBackoff,
-      keepUntil
+      keepUntil,
+      on_complete
     )
     SELECT
       id,
@@ -438,7 +488,8 @@ function insertJob (schema) {
       singletonOn,
       retryDelay,
       retryBackoff,
-      keepUntil
+      keepUntil,
+      on_complete
     FROM
     ( SELECT *,
         CASE
@@ -468,7 +519,8 @@ function insertJob (schema) {
               END as singletonOn,
             $11::int as retryDelay,
             $12::bool as retryBackoff,
-            $13::text as keepUntilValue
+            $13::text as keepUntilValue,
+            $14::boolean as on_complete
         ) j1
       ) j2
     ) j3
@@ -477,29 +529,76 @@ function insertJob (schema) {
   `
 }
 
-function purge (schema) {
+function insertJobs (schema) {
   return `
-    DELETE FROM ${schema}.archive
-    WHERE archivedOn < (now() - CAST($1 as interval))
+    INSERT INTO ${schema}.job (
+      id,
+      name,
+      data,
+      priority,
+      startAfter,
+      expireIn,
+      retryLimit,
+      retryDelay,
+      retryBackoff,
+      singletonKey,
+      keepUntil,
+      on_complete
+    )
+    SELECT 
+      COALESCE(id, gen_random_uuid()) as id,
+      name,
+      data,
+      COALESCE(priority, 0) as priority,
+      COALESCE("startAfter", now()) as startAfter,
+      COALESCE("expireInSeconds", 15 * 60) * interval '1s' as expireIn,
+      COALESCE("retryLimit", 0) as retryLimit,
+      COALESCE("retryDelay", 0) as retryDelay,
+      COALESCE("retryBackoff", false) as retryBackoff,
+      "singletonKey",
+      COALESCE("keepUntil", now() + interval '14 days') as keepUntil,
+      COALESCE("onComplete", false) as onComplete
+    FROM json_to_recordset($1) as x(
+      id uuid,
+      name text,
+      priority integer,
+      data jsonb,
+      "retryLimit" integer,
+      "retryDelay" integer,
+      "retryBackoff" boolean,
+      "startAfter" timestamp with time zone,
+      "singletonKey" text,
+      "expireInSeconds" integer,
+      "keepUntil" timestamp with time zone,
+      "onComplete" boolean
+    )
+    ON CONFLICT DO NOTHING
   `
 }
 
-function archive (schema) {
+function purge (schema, interval) {
+  return `
+    DELETE FROM ${schema}.archive
+    WHERE archivedOn < (now() - interval '${interval}')
+  `
+}
+
+function archive (schema, interval) {
   return `
     WITH archived_rows AS (
       DELETE FROM ${schema}.job
       WHERE
-        completedOn < (now() - CAST($1 as interval))
+        completedOn < (now() - interval '${interval}')
         OR (
-          state = '${states.created}' AND keepUntil < now()
+          state < '${states.active}' AND keepUntil < now()
         )
       RETURNING *
     )
     INSERT INTO ${schema}.archive (
-      id, name, priority, data, state, retryLimit, retryCount, retryDelay, retryBackoff, startAfter, startedOn, singletonKey, singletonOn, expireIn, createdOn, completedOn, keepUntil
+      id, name, priority, data, state, retryLimit, retryCount, retryDelay, retryBackoff, startAfter, startedOn, singletonKey, singletonOn, expireIn, createdOn, completedOn, keepUntil, on_complete, output
     )
     SELECT
-      id, name, priority, data, state, retryLimit, retryCount, retryDelay, retryBackoff, startAfter, startedOn, singletonKey, singletonOn, expireIn, createdOn, completedOn, keepUntil
+      id, name, priority, data, state, retryLimit, retryCount, retryDelay, retryBackoff, startAfter, startedOn, singletonKey, singletonOn, expireIn, createdOn, completedOn, keepUntil, on_complete, output
     FROM archived_rows
   `
 }
@@ -508,7 +607,6 @@ function countStates (schema) {
   return `
     SELECT name, state, count(*) size
     FROM ${schema}.job
-    WHERE name NOT LIKE '${completedJobPrefix}%'
     GROUP BY rollup(name), rollup(state)
   `
 }
@@ -520,4 +618,16 @@ function advisoryLock () {
 function assertMigration (schema, version) {
   // raises 'division by zero' if already on desired schema version
   return `SELECT version::int/(version::int-${version}) from ${schema}.version`
+}
+
+function getJobById (schema) {
+  return getJobByTableAndId(schema, 'job')
+}
+
+function getArchivedJobById (schema) {
+  return getJobByTableAndId(schema, 'archive')
+}
+
+function getJobByTableAndId (schema, table) {
+  return `SELECT * From ${schema}.${table} WHERE id = $1`
 }

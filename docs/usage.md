@@ -3,15 +3,16 @@
 <!-- TOC -->
 
 - [Intro](#intro)
+  - [Job states](#job-states)
 - [Database install](#database-install)
 - [Database uninstall](#database-uninstall)
 - [Direct database interactions](#direct-database-interactions)
   - [Job table](#job-table)
 - [Events](#events)
   - [`error`](#error)
-  - [`archived`](#archived)
-  - [`expired`](#expired)
   - [`monitor-states`](#monitor-states)
+  - [`wip`](#wip)
+  - [`stopped`](#stopped)
 - [Static functions](#static-functions)
   - [`string getConstructionPlans(schema)`](#string-getconstructionplansschema)
   - [`string getMigrationPlans(schema, version)`](#string-getmigrationplansschema-version)
@@ -20,19 +21,21 @@
   - [`new(connectionString)`](#newconnectionstring)
   - [`new(options)`](#newoptions)
   - [`start()`](#start)
-  - [`stop()`](#stop)
+  - [`stop(options)`](#stopoptions)
   - [`publish()`](#publish)
     - [`publish(name, data, options)`](#publishname-data-options)
     - [`publish(request)`](#publishrequest)
     - [`publishAfter(name, data, options, seconds | ISO date string | Date)`](#publishaftername-data-options-seconds--iso-date-string--date)
     - [`publishOnce(name, data, options, key)`](#publishoncename-data-options-key)
+    - [`publishSingleton(name, data, options)`](#publishsingletonname-data-options)
     - [`publishThrottled(name, data, options, seconds [, key])`](#publishthrottledname-data-options-seconds--key)
     - [`publishDebounced(name, data, options, seconds [, key])`](#publishdebouncedname-data-options-seconds--key)
+  - [`insert([jobs])`](#insertjobs)
   - [`subscribe()`](#subscribe)
     - [`subscribe(name [, options], handler)`](#subscribename--options-handler)
     - [`onComplete(name [, options], handler)`](#oncompletename--options-handler)
-  - [`unsubscribe(name)`](#unsubscribename)
-    - [`offComplete(name)`](#offcompletename)
+  - [`unsubscribe(value)`](#unsubscribevalue)
+    - [`offComplete(value)`](#offcompletevalue)
   - [`fetch()`](#fetch)
     - [`fetch(name)`](#fetchname)
     - [`fetch(name, batchSize, [, options])`](#fetchname-batchsize--options)
@@ -48,6 +51,7 @@
   - [`fail(id [, data])`](#failid--data)
   - [`fail([ids])`](#failids)
   - [`getQueueSize(name [, options])`](#getqueuesizename--options)
+  - [`getJobById(id)`](#getjobbyidid)
   - [`deleteQueue(name)`](#deletequeuename)
   - [`deleteAllQueues()`](#deleteallqueues)
   - [`clearStorage()`](#clearstorage)
@@ -55,9 +59,23 @@
 <!-- /TOC -->
 
 # Intro
-pg-boss is used by creating an instance of the exported class, a subclass of a Node [EventEmitter](https://nodejs.org/api/events.html). Since the majority of all interactions with pg-boss involve a database, all instance functions return promises. Once you have created an instance, nothing happens until you call `start()`. When a job is created it is immediately persisted to the database, assigned to a queue by name and can be received from any pg-boss instance.
+pg-boss is a job queue written in Node.js and backed by the reliability of Postgres.
 
-You may use as many instances in as many environments as needed based on your requirements.  Since each instance has a connection pool (or even if you bring your own), the only primary limitation on instance count is based on the maximum number of connections your database can accept.  If you need a larger number of workers than your postgres database can accept, consider using a centralized connection pool such as pgBouncer. If you have constraints preventing direct database access, consider creating your own abstraction layer over pg-boss such as a secure web API using the `fetch()` and `complete()` functions.  If you require multiple installations in the same database, you will need to specify a separate schema name per install in the constructor.
+You may use as many instances as needed to connect to the same Postgres database.  Each instance maintains a connection pool (or you bring your own), so the only limitation on connection count is based on the maximum number of connections your database can accept.  If you need a larger number of workers than your postgres database can accept, consider using a centralized connection pool such as pgBouncer. If you have constraints preventing direct database access, consider creating your own abstraction layer over pg-boss such as a secure web API using the `fetch()` and `complete()` functions.  
+
+If you require multiple installations in the same database, such as for large volume queues, you may wish to specify a separate schemas per install to achieve partitioning.
+
+## Job states
+
+A pg-boss job undergoes certain states during its lifetime. All jobs start out as `created` - from there, they will usually become `active` when picked up for work. If job processing completes successfully, jobs will go to `completed`. If job processing is not successful, jobs will go to either `failed` or `retry` (if they were started with the respective retry options). It's also possible for `active` jobs to become `expired`, which happens when job processing takes too long.
+
+Jobs can also be `cancelled` via [`cancel(id)`](#cancelid) or [`cancel([ids])`](#cancelids), which will transition them into the `cancelled` state.
+
+All jobs that are `completed`, `expired`, `cancelled` or `failed` become eligible for archiving (i.e. they will transition into the `archive` state) after the configured `archiveCompletedAfterSeconds` time. Once `archive`d, jobs will be automatically deleted by pg-boss after the configured deletion period.
+
+Here's a state diagram that shows the possible states and their transitions:
+
+![job state diagram](./images/job-states.png)
 
 # Database install
 
@@ -75,6 +93,8 @@ GRANT CREATE ON DATABASE db1 TO leastprivuser;
 
 If the CREATE privilege is not available or desired, you can use the included [static functions](#static-functions) to export the SQL commands to manually create or upgrade the required database schema.  **This means you will also need to monitor future releases for schema changes** (the schema property in [version.json](../version.json)) so they can be applied manually.
 
+NOTE: Using an existing schema is supported for advanced use cases **but discouraged**, as this opens up the possibility that creation will fail on an object name collision, and it will add more steps to the uninstallation process. 
+
 # Database uninstall
 
 If you need to uninstall pg-boss from a database, just run the following command.
@@ -83,7 +103,17 @@ If you need to uninstall pg-boss from a database, just run the following command
 DROP SCHEMA $1 CASCADE
 ```
 
-Where `$1` is the name of your schema if you've customized it.  Otherwise, the default schema is `pgboss`.
+Where `$1` is the name of your schema if you've customized it.  Otherwise, the default schema is `pgboss`.  
+
+NOTE: If an existing schema was used during installation, created objects will need to be removed manually using the following commands.
+
+```sql
+DROP TABLE ${schema}.archive;
+DROP TABLE ${schema}.job;
+DROP TABLE ${schema}.schedule;
+DROP TABLE ${schema}.version;
+DROP TYPE ${schema}.job_state;
+```
 
 # Direct database interactions
 
@@ -94,25 +124,27 @@ If you need to interact with pg-boss outside of Node.js, such as other clients o
 The following command is the definition of the primary job table. For manual job creation, the only required column is `name`.  All other columns are nullable or have sensible defaults.
 
 ```sql
-    CREATE TABLE ${schema}.job (
-      id uuid primary key not null default gen_random_uuid(),
-      name text not null,
-      priority integer not null default(0),
-      data jsonb,
-      state ${schema}.job_state not null default('${states.created}'),
-      retryLimit integer not null default(0),
-      retryCount integer not null default(0),
-      retryDelay integer not null default(0),
-      retryBackoff boolean not null default false,
-      startAfter timestamp with time zone not null default now(),
-      startedOn timestamp with time zone,
-      singletonKey text,
-      singletonOn timestamp without time zone,
-      expireIn interval not null default interval '15 minutes',
-      createdOn timestamp with time zone not null default now(),
-      completedOn timestamp with time zone,
-      keepUntil timestamp with time zone NOT NULL default now() + interval '30 days'
-    )
+  CREATE TABLE ${schema}.job (
+    id uuid primary key not null default gen_random_uuid(),
+    name text not null,
+    priority integer not null default(0),
+    data jsonb,
+    state ${schema}.job_state not null default('${states.created}'),
+    retryLimit integer not null default(0),
+    retryCount integer not null default(0),
+    retryDelay integer not null default(0),
+    retryBackoff boolean not null default false,
+    startAfter timestamp with time zone not null default now(),
+    startedOn timestamp with time zone,
+    singletonKey text,
+    singletonOn timestamp without time zone,
+    expireIn interval not null default interval '15 minutes',
+    createdOn timestamp with time zone not null default now(),
+    completedOn timestamp with time zone,
+    keepUntil timestamp with time zone NOT NULL default now() + interval '14 days',
+    on_complete boolean not null default true,
+    output jsonb
+  )
 ```
 
 # Events
@@ -135,15 +167,6 @@ boss.on('error', error => logger.error(error));
 ```
 
 > **Note: Since error events are only raised during internal housekeeping activities, they are not raised for direct API calls, where promise `catch()` handlers should be used.**
-
-
-## `archived`
-
-`archived` is raised each time 1 or more jobs are archived.  The payload is an integer representing the number of jobs archived.
-
-## `expired`
-
-`expired` is raised each time 1 or more jobs are expired.  The payload is an integer representing the number of jobs expired.
 
 ## `monitor-states`
 
@@ -185,6 +208,32 @@ The payload of the event is an object with a key per queue and state, such as th
   "all": 4694
 }
 ```
+## `wip`
+
+Emitted at most once every 2 seconds when polling subscriptions are active and jobs are entering or leaving active state. The payload is an array that represents each worker in this instance of pg-boss.  If you want to monitor queue activity across all instances, use `monitor-states`.
+
+```js
+[
+  {
+    id: 'fc738fb0-1de5-4947-b138-40d6a790749e',
+    name: 'my-queue',
+    options: { newJobCheckInterval: 2000 },
+    state: 'active',
+    count: 1,
+    createdOn: 1620149137015,
+    lastFetchedOn: 1620149137015,
+    lastJobStartedOn: 1620149137015,
+    lastJobEndedOn: null,
+    lastJobDuration: 343
+    lastError: null,
+    lastErrorOn: null
+  }
+]
+```
+
+## `stopped`
+
+Emitted after `stop()` once all subscription workers have completed their work and maintenance has been shut down.
 
 # Static functions
 
@@ -259,11 +308,17 @@ Additionally, all schema operations, both first-time provisioning and migrations
 
 One example of how this is useful would be including `start()` inside the bootstrapping of a pod in a ReplicaSet in Kubernetes. Being able to scale up your job processing using a container orchestration tool like k8s is becoming more and more popular, and pg-boss can be dropped into this system with no additional logic, fear, or special configuration.
 
-## `stop()`
+## `stop(options)`
+
+**Arguments**
+
+- `options`: optional object ([stop options](configuration.md#stop-options))
 
 **returns: Promise**
 
 All job monitoring will be stopped and all subscriptions on this instance will be removed. Basically, it's the opposite of `start()`. Even though `start()` may create new database objects during initialization, `stop()` will never remove anything from the database.
+
+By default, calling `stop()` without any arguments will gracefully wait for all workers to finish processing active jobs before closing the internal connection pool and stopping maintenance operations. This behaviour can be configured using the stop options object. In graceful stop mode, the promise returned by `stop()` will still be resolved immediately.  If monitoring for the end of the stop is needed, add a listener to the `stopped` event.
 
 ## `publish()`
 
@@ -330,7 +385,13 @@ This is a convenience version of `publish()` with the `startAfter` option assign
 
 ### `publishOnce(name, data, options, key)`
 
-Publish a job with a unique key to make sure it isn't processed more than once.  Any other jobs published during this archive interval with the same queue name and key will be rejected.
+Publish a job with a unique key to only allow 1 job to be in created, retry, or active state at a time.
+
+This is a convenience version of `publish()` with the `singletonKey` option assigned.
+
+### `publishSingleton(name, data, options)`
+
+Publish a job but only allow 1 job to be in created or retry state at at time.
 
 This is a convenience version of `publish()` with the `singletonKey` option assigned.
 
@@ -346,11 +407,34 @@ Like, `publishThrottled()`, but instead of rejecting if a job is already publish
 
 This is a convenience version of `publish()` with the `singletonSeconds`, `singletonKey` and `singletonNextSlot` option assigned. The `key` argument is optional.
 
+## `insert([jobs])`
+
+Create multiple jobs in one request with an array of objects. 
+
+The contract and supported features are slightly different than `publish()`, which is why this function is named independently.  For example, debouncing is not supported.
+
+The following contract is a typescript defintion of the expected object. Only `name` is required, but most other properties can be set. This will likely be enhanced later with more support for deferral and retention by an offset. For now, calculate any desired timestamps for these features before insertion.
+
+```ts
+interface JobInsert<T = object> {
+  id?: string,
+  name: string;
+  data?: T;
+  priority?: number;
+  retryLimit?: number;
+  retryDelay?: number;
+  retryBackoff?: boolean;
+  startAfter?: Date | string;    
+  singletonKey?: string;
+  expireInSeconds?: number;
+  keepUntil?: Date | string;
+  onComplete?: boolean
+}
+```
+
 ## `subscribe()`
 
-**returns: Promise**
-
-Polls the database by a queue name or a pattern and executes the provided callback function when jobs are found.  The promise resolves once a subscription has been created.
+Polls the database by a queue name or a pattern and executes the provided callback function when jobs are found.  The promise resolves once a subscription has been created with a unique id of the subscription.  You can monitor the state of subscriptions using the `wip` event.
 
 Queue patterns use the `*` character to match 0 or more characters.  For example, a job from queue `status-report-12345` would be fetched with pattern `status-report-*` or even `stat*5`.
 
@@ -459,13 +543,20 @@ The following is an example data object from the job retrieved in the onComplete
 }
 ```
 
-## `unsubscribe(name)`
+## `unsubscribe(value)`
 
-Removes a subscription by name and stops polling.
+Removes a subscription by name or id and stops polling.
 
-### `offComplete(name)`
+** Arguments **
+- value: string or object
 
-Same as `unsubscribe()`, but removes an `onComplete()` subscription.
+  If a string, removes all subscriptions found matching the name.  If an object, only the subscription with a matching `id` will be removed.
+
+### `offComplete(value)`
+
+Similar to `unsubscribe()`, but removes an `onComplete()` subscription.
+
+** 
 
 ## `fetch()`
 
@@ -635,6 +726,10 @@ As an example, the following options object include active jobs along with creat
   before: states.completed
 }
 ```
+
+## `getJobById(id)`
+
+Retrieves a job with all metadata by id in either the primary or archive storage.
 
 ## `deleteQueue(name)`
 

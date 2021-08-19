@@ -1,20 +1,20 @@
-const Promise = require('bluebird')
+const delay = require('delay')
 const assert = require('assert')
-const PgBoss = require('../')
+const helper = require('./testHelper')
 
 describe('manager', function () {
   it('should reject multiple simultaneous start requests', async function () {
-    const boss = new PgBoss(this.test.bossConfig)
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
 
     await boss.start()
 
-    await Promise.delay(2000)
+    await delay(2000)
 
     try {
       await boss.start()
       assert(false)
     } catch (error) {
-      await boss.stop()
+      assert(true)
     }
   })
 })

@@ -1,6 +1,6 @@
 const assert = require('assert')
 const helper = require('./testHelper')
-const Promise = require('bluebird')
+const delay = require('delay')
 const PgBoss = require('../')
 
 describe('maintenance', async function () {
@@ -9,7 +9,7 @@ describe('maintenance', async function () {
 
     const db = await helper.getDb()
 
-    const boss = new PgBoss(config)
+    const boss = this.test.boss = new PgBoss(config)
 
     const queues = boss.boss.getQueueNames()
     const countJobs = () => helper.countJobs(config.schema, 'name = $1', [queues.MAINTENANCE])
@@ -22,11 +22,9 @@ describe('maintenance', async function () {
     })
 
     // wait for monitoring to check timestamp
-    await Promise.delay(4000)
+    await delay(4000)
 
     const count = await countJobs()
     assert(count > 1)
-
-    await boss.stop()
   })
 })

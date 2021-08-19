@@ -1,4 +1,5 @@
 const assert = require('assert')
+const { DEFAULT_SCHEMA } = require('./plans')
 
 module.exports = {
   getConfig,
@@ -58,19 +59,25 @@ function checkPublishArgs (args, defaults) {
   applyRetryConfig(options, defaults)
   applyExpirationConfig(options, defaults)
   applyRetentionConfig(options, defaults)
+  applyCompletionConfig(options, defaults)
 
   const { startAfter, singletonSeconds, singletonMinutes, singletonHours } = options
 
-  options.startAfter = (startAfter instanceof Date && typeof startAfter.toISOString === 'function') ? startAfter.toISOString()
-    : (startAfter > 0) ? '' + startAfter
-      : (typeof startAfter === 'string') ? startAfter
-        : null
+  options.startAfter = (startAfter instanceof Date && typeof startAfter.toISOString === 'function')
+    ? startAfter.toISOString()
+    : (startAfter > 0)
+        ? '' + startAfter
+        : (typeof startAfter === 'string')
+            ? startAfter
+            : null
 
-  options.singletonSeconds =
-    (singletonHours > 0) ? singletonHours * 60 * 60
-      : (singletonMinutes > 0) ? singletonMinutes * 60
-        : (singletonSeconds > 0) ? singletonSeconds
-          : null
+  options.singletonSeconds = (singletonHours > 0)
+    ? singletonHours * 60 * 60
+    : (singletonMinutes > 0)
+        ? singletonMinutes * 60
+        : (singletonSeconds > 0)
+            ? singletonSeconds
+            : null
 
   assert(!singletonSeconds || singletonSeconds <= defaults.archiveSeconds, `throttling interval ${singletonSeconds}s cannot exceed archive interval ${defaults.archiveSeconds}s`)
 
@@ -142,6 +149,7 @@ function getConfig (value) {
   applyNewJobCheckInterval(config)
   applyExpirationConfig(config)
   applyRetentionConfig(config)
+  applyCompletionConfig(config)
 
   return config
 }
@@ -153,7 +161,7 @@ function applyDatabaseConfig (config) {
     assert(!/\W/.test(config.schema), `configuration assert: ${config.schema} cannot be used as a schema. Only alphanumeric characters and underscores are allowed`)
   }
 
-  config.schema = config.schema || 'pgboss'
+  config.schema = config.schema || DEFAULT_SCHEMA
 }
 
 function applyArchiveConfig (config) {
@@ -170,6 +178,17 @@ function applyArchiveConfig (config) {
   }
 }
 
+function applyCompletionConfig (config, defaults) {
+  assert(!('onComplete' in config) || config.onComplete === true || config.onComplete === false,
+    'configuration assert: onComplete must be either true or false')
+
+  if (!('onComplete' in config)) {
+    config.onComplete = defaults
+      ? defaults.onComplete
+      : false
+  }
+}
+
 function applyRetentionConfig (config, defaults) {
   assert(!('retentionSeconds' in config) || config.retentionSeconds >= 1,
     'configuration assert: retentionSeconds must be at least every second')
@@ -183,13 +202,17 @@ function applyRetentionConfig (config, defaults) {
   assert(!('retentionDays' in config) || config.retentionDays >= 1,
     'configuration assert: retentionDays must be at least every day')
 
-  const keepUntil =
-    ('retentionDays' in config) ? `${config.retentionDays} days`
-      : ('retentionHours' in config) ? `${config.retentionHours} hours`
-        : ('retentionMinutes' in config) ? `${config.retentionMinutes} minutes`
-          : ('retentionSeconds' in config) ? `${config.retentionSeconds} seconds`
-            : defaults ? defaults.keepUntil
-              : '30 days'
+  const keepUntil = ('retentionDays' in config)
+    ? `${config.retentionDays} days`
+    : ('retentionHours' in config)
+        ? `${config.retentionHours} hours`
+        : ('retentionMinutes' in config)
+            ? `${config.retentionMinutes} minutes`
+            : ('retentionSeconds' in config)
+                ? `${config.retentionSeconds} seconds`
+                : defaults
+                  ? defaults.keepUntil
+                  : '14 days'
 
   config.keepUntil = keepUntil
 }
@@ -208,12 +231,15 @@ function applyExpirationConfig (config, defaults) {
   assert(!('expireInHours' in config) || config.expireInHours >= 1,
     'configuration assert: expireInHours must be at least every hour')
 
-  const expireIn =
-    ('expireInHours' in config) ? `${config.expireInHours} hours`
-      : ('expireInMinutes' in config) ? `${config.expireInMinutes} minutes`
-        : ('expireInSeconds' in config) ? `${config.expireInSeconds} seconds`
-          : defaults ? defaults.expireIn
-            : '15 minutes'
+  const expireIn = ('expireInHours' in config)
+    ? `${config.expireInHours} hours`
+    : ('expireInMinutes' in config)
+        ? `${config.expireInMinutes} minutes`
+        : ('expireInSeconds' in config)
+            ? `${config.expireInSeconds} seconds`
+            : defaults
+              ? defaults.expireIn
+              : '15 minutes'
 
   config.expireIn = expireIn
 }
@@ -245,10 +271,12 @@ function applyNewJobCheckInterval (config, defaults) {
   assert(!('newJobCheckIntervalSeconds' in config) || config.newJobCheckIntervalSeconds >= 1,
     'configuration assert: newJobCheckIntervalSeconds must be at least every second')
 
-  config.newJobCheckInterval =
-    ('newJobCheckIntervalSeconds' in config) ? config.newJobCheckIntervalSeconds * second
-      : ('newJobCheckInterval' in config) ? config.newJobCheckInterval
-        : defaults ? defaults.newJobCheckInterval
+  config.newJobCheckInterval = ('newJobCheckIntervalSeconds' in config)
+    ? config.newJobCheckIntervalSeconds * second
+    : ('newJobCheckInterval' in config)
+        ? config.newJobCheckInterval
+        : defaults
+          ? defaults.newJobCheckInterval
           : second * 2
 }
 
@@ -259,9 +287,10 @@ function applyMaintenanceConfig (config) {
   assert(!('maintenanceIntervalMinutes' in config) || config.maintenanceIntervalMinutes >= 1,
     'configuration assert: maintenanceIntervalMinutes must be at least every minute')
 
-  config.maintenanceIntervalSeconds =
-    ('maintenanceIntervalMinutes' in config) ? config.maintenanceIntervalMinutes * 60
-      : ('maintenanceIntervalSeconds' in config) ? config.maintenanceIntervalSeconds
+  config.maintenanceIntervalSeconds = ('maintenanceIntervalMinutes' in config)
+    ? config.maintenanceIntervalMinutes * 60
+    : ('maintenanceIntervalSeconds' in config)
+        ? config.maintenanceIntervalSeconds
         : 120
 }
 
@@ -278,12 +307,15 @@ function applyDeleteConfig (config) {
   assert(!('deleteAfterDays' in config) || config.deleteAfterDays >= 1,
     'configuration assert: deleteAfterDays must be at least every day')
 
-  const deleteAfter =
-    ('deleteAfterDays' in config) ? `${config.deleteAfterDays} days`
-      : ('deleteAfterHours' in config) ? `${config.deleteAfterHours} hours`
-        : ('deleteAfterMinutes' in config) ? `${config.deleteAfterMinutes} minutes`
-          : ('deleteAfterSeconds' in config) ? `${config.deleteAfterSeconds} seconds`
-            : '7 days'
+  const deleteAfter = ('deleteAfterDays' in config)
+    ? `${config.deleteAfterDays} days`
+    : ('deleteAfterHours' in config)
+        ? `${config.deleteAfterHours} hours`
+        : ('deleteAfterMinutes' in config)
+            ? `${config.deleteAfterMinutes} minutes`
+            : ('deleteAfterSeconds' in config)
+                ? `${config.deleteAfterSeconds} seconds`
+                : '7 days'
 
   config.deleteAfter = deleteAfter
 }
@@ -296,9 +328,11 @@ function applyMonitoringConfig (config) {
     'configuration assert: monitorStateIntervalMinutes must be at least every minute')
 
   config.monitorStateIntervalSeconds =
-    ('monitorStateIntervalMinutes' in config) ? config.monitorStateIntervalMinutes * 60
-      : ('monitorStateIntervalSeconds' in config) ? config.monitorStateIntervalSeconds
-        : null
+    ('monitorStateIntervalMinutes' in config)
+      ? config.monitorStateIntervalMinutes * 60
+      : ('monitorStateIntervalSeconds' in config)
+          ? config.monitorStateIntervalSeconds
+          : null
 
   const TEN_MINUTES_IN_SECONDS = 600
 
@@ -309,9 +343,19 @@ function applyMonitoringConfig (config) {
     'configuration assert: clockMonitorIntervalMinutes must be between 1 and 10')
 
   config.clockMonitorIntervalSeconds =
-    ('clockMonitorIntervalMinutes' in config) ? config.clockMonitorIntervalMinutes * 60
-      : ('clockMonitorIntervalSeconds' in config) ? config.clockMonitorIntervalSeconds
-        : TEN_MINUTES_IN_SECONDS
+    ('clockMonitorIntervalMinutes' in config)
+      ? config.clockMonitorIntervalMinutes * 60
+      : ('clockMonitorIntervalSeconds' in config)
+          ? config.clockMonitorIntervalSeconds
+          : TEN_MINUTES_IN_SECONDS
+
+  assert(!('cronMonitorIntervalSeconds' in config) || (config.cronMonitorIntervalSeconds >= 1 && config.cronMonitorIntervalSeconds <= 60),
+    'configuration assert: cronMonitorIntervalSeconds must be between 1 and 60 seconds')
+
+  config.cronMonitorIntervalSeconds =
+    ('cronMonitorIntervalSeconds' in config)
+      ? config.cronMonitorIntervalSeconds
+      : 60
 }
 
 function applyUuidConfig (config) {

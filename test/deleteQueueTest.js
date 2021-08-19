@@ -1,14 +1,13 @@
 const assert = require('assert')
 const helper = require('./testHelper')
-const Promise = require('bluebird')
+const delay = require('delay')
 
 describe('deleteQueue', function () {
   it('should clear a specific queue', async function () {
-    const queue1 = 'delete-named-queue-1'
-    const queue2 = 'delete-named-queue-2'
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
 
-    const config = this.test.bossConfig
-    const boss = await helper.start(config)
+    const queue2 = 'delete-named-queue-2'
+    const queue1 = 'delete-named-queue-1'
 
     await boss.publish(queue1)
     await boss.publish(queue2)
@@ -32,16 +31,13 @@ describe('deleteQueue', function () {
     const q2Count3 = await boss.getQueueSize(queue2)
 
     assert.strictEqual(0, q2Count3)
-
-    await boss.stop()
   })
 
   it('should clear all queues', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+
     const queue1 = 'delete-named-queue-11'
     const queue2 = 'delete-named-queue-22'
-
-    const config = this.test.bossConfig
-    const boss = await helper.start(config)
 
     await boss.publish(queue1)
     await boss.publish(queue2)
@@ -59,8 +55,6 @@ describe('deleteQueue', function () {
 
     assert.strictEqual(0, q1Count2)
     assert.strictEqual(0, q2Count2)
-
-    await boss.stop()
   })
 
   it('clearStorage() should empty both job storage tables', async function () {
@@ -68,9 +62,8 @@ describe('deleteQueue', function () {
       archiveCompletedAfterSeconds: 1,
       maintenanceIntervalSeconds: 1
     }
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, ...defaults })
 
-    const config = { ...this.test.bossConfig, ...defaults }
-    const boss = await helper.start(config)
     const queue = 'clear-storage-works'
 
     const jobId = await boss.publish(queue)
@@ -80,12 +73,12 @@ describe('deleteQueue', function () {
 
     await boss.complete(jobId)
 
-    await Promise.delay(3000)
+    await delay(3000)
 
     const db = await helper.getDb()
 
     const getJobCount = async table => {
-      const jobCountResult = await db.executeSql(`SELECT count(*)::int as job_count FROM ${config.schema}.${table}`)
+      const jobCountResult = await db.executeSql(`SELECT count(*)::int as job_count FROM ${this.test.bossConfig.schema}.${table}`)
       return jobCountResult.rows[0].job_count
     }
 
@@ -102,7 +95,5 @@ describe('deleteQueue', function () {
 
     assert(postJobCount === 0)
     assert(postArchiveCount === 0)
-
-    await boss.stop()
   })
 })

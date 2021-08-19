@@ -17,9 +17,11 @@ pg-boss can be customized using configuration options when an instance is create
   - [Deferred jobs](#deferred-jobs)
   - [Unique jobs](#unique-jobs)
   - [Throttled jobs](#throttled-jobs)
+  - [Completion jobs](#completion-jobs)
 - [Fetch options](#fetch-options)
 - [Subscribe options](#subscribe-options)
   - [Job polling options](#job-polling-options)
+- [Stop options](#stop-options)
 
 <!-- /TOC -->
 
@@ -73,9 +75,6 @@ Alternatively, the following options can be set as properties in an object.
     This option may be beneficial if you'd like to use an existing database service
     with its own connection pool.
 
-    For example, you may be relying on the cluster module on
-    a web server, and you'd like to limit the growth of total connections as much as possible.
-
 * **schema** - string, defaults to "pgboss"
 
     Database schema that contains all required storage objects. Only alphanumeric and underscore allowed, length: <= 50 characters
@@ -87,6 +86,12 @@ Queue options contain the following constructor-only settings.
 * **uuid** - string, defaults to "v1"
 
     job uuid format used, "v1" or "v4"
+
+* **archiveCompletedAfterSeconds**
+
+    Specifies how long in seconds completed jobs get archived. Note: a warning will be emitted if set to lower than 60s and cron processing will be disabled.
+
+Default: 12 hours
 
 **State count monitoring**
 
@@ -198,19 +203,19 @@ Default: 15 minutes
 
 * **retentionSeconds**, number
 
-    How many seconds a job may be in created state before it's archived. Must be >=1
+    How many seconds a job may be in created or retry state before it's archived. Must be >=1
 
 * **retentionMinutes**, number
 
-    How many minutes a job may be in created state before it's archived. Must be >=1
+    How many minutes a job may be in created or retry state before it's archived. Must be >=1
 
 * **retentionHours**, number
 
-    How many hours a job may be in created state before it's archived. Must be >=1
+    How many hours a job may be in created or retry state before it's archived. Must be >=1
 
 * **retentionDays**, number
 
-    How many days a job may be in created state before it's archived. Must be >=1
+    How many days a job may be in created or retry state before it's archived. Must be >=1
 
 Default: 30 days
 
@@ -251,6 +256,11 @@ For example, if you set the `singletonMinutes` to 1, then submit 2 jobs within a
 
 Setting `singletonNextSlot` to true will cause the job to be scheduled to run after the current time slot if and when a job is throttled. This option is set to true, for example, when calling the convenience function `publishDebounced()`.
 
+### Completion jobs
+* **onComplete**, bool (Default: false)
+
+When a job completes, a completion job will be created in the queue, copying the same retention policy as the job, for the purpose of `onComplete()` or `fetchCompleted()`.  If completion jobs are not used, they will be archived according to the retention policy.  If the queue in question has a very high volume, this can be set to `false` to bypass creating the completion job.  This can also be set in the constructor as a default for all calls to `publish()`.
+
 ## Fetch options
 
 * **includeMetadata**, bool
@@ -276,6 +286,8 @@ Setting `singletonNextSlot` to true will cause the job to be scheduled to run af
     | createdon | string, timestamp |
     | completedon | string, timestamp |
     | keepuntil | string, timestamp |
+    | oncomplete | bool |
+    | output | object |
 
 ## Subscribe options
 
@@ -310,3 +322,15 @@ How often subscriptions will poll the queue table for jobs. Available in the con
 Default: 2 seconds
 
 > When a higher unit is is specified, lower unit configuration settings are ignored.
+
+## Stop options
+
+Options to configure the graceful stop feature when calling `stop()` on the PgBoss instance.
+
+* **graceful**, bool
+
+    Default: `true`. If `true`, the PgBoss instance will wait for any workers that are currently processing jobs to finish, up to the specified timeout. During this period, new jobs will not be processed, but active jobs will be allowed to finish.
+
+* **timeout**, int
+
+    Default: 30000. Maximum time (in milliseconds) to wait for workers to finish job processing before shutting down the PgBoss instance.

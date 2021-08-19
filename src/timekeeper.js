@@ -1,4 +1,4 @@
-const Promise = require('bluebird')
+const pMap = require('p-map')
 const EventEmitter = require('events')
 const plans = require('./plans')
 const cronParser = require('cron-parser')
@@ -21,7 +21,8 @@ class Timekeeper extends EventEmitter {
     this.db = db
     this.config = config
     this.manager = config.manager
-    this.monitorIntervalMs = config.clockMonitorIntervalSeconds * 1000
+    this.skewMonitorIntervalMs = config.clockMonitorIntervalSeconds * 1000
+    this.cronMonitorIntervalMs = config.cronMonitorIntervalSeconds * 1000
     this.clockSkew = 0
 
     this.events = events
@@ -38,34 +39,46 @@ class Timekeeper extends EventEmitter {
       this.unschedule,
       this.getSchedules
     ]
+
+    this.stopped = true
   }
 
   async start () {
-    await this.cacheClockSkew()
-
-    if (this.config.archiveSeconds >= 60) {
-      await this.watch()
+    if (this.config.archiveSeconds < 60) {
+      return
     }
 
-    this.skewMonitorInterval = setInterval(() => this.cacheClockSkew(), this.monitorIntervalMs)
-    this.cronMonitorInterval = setInterval(() => this.monitorCron(), 60)
+    await this.cacheClockSkew()
+
+    await this.manager.subscribe(queues.CRON, { newJobCheckIntervalSeconds: 4 }, (job) => this.onCron(job))
+    await this.manager.subscribe(queues.SEND_IT, { newJobCheckIntervalSeconds: 4, teamSize: 50, teamConcurrency: 5 }, (job) => this.onSendIt(job))
+
+    await this.cronMonitorAsync()
+
+    this.cronMonitorInterval = setInterval(async () => await this.monitorCron(), this.cronMonitorIntervalMs)
+    this.skewMonitorInterval = setInterval(async () => await this.cacheClockSkew(), this.skewMonitorIntervalMs)
 
     this.stopped = false
   }
 
   async stop () {
-    if (!this.stopped) {
-      this.stopped = true
+    if (this.stopped) {
+      return
+    }
 
-      if (this.skewMonitorInterval) {
-        clearInterval(this.skewMonitorInterval)
-        this.skewMonitorInterval = null
-      }
+    this.stopped = true
 
-      if (this.cronMonitorInterval) {
-        clearInterval(this.cronMonitorInterval)
-        this.cronMonitorInterval = null
-      }
+    await this.manager.unsubscribe(queues.CRON)
+    await this.manager.unsubscribe(queues.SEND_IT)
+
+    if (this.skewMonitorInterval) {
+      clearInterval(this.skewMonitorInterval)
+      this.skewMonitorInterval = null
+    }
+
+    if (this.cronMonitorInterval) {
+      clearInterval(this.cronMonitorInterval)
+      this.cronMonitorInterval = null
     }
   }
 
@@ -95,26 +108,18 @@ class Timekeeper extends EventEmitter {
     this.clockSkew = skew
   }
 
-  async watch () {
-    await this.manager.subscribe(queues.CRON, { newJobCheckIntervalSeconds: 4 }, (job) => this.onCron(job))
-    await this.manager.subscribe(queues.SEND_IT, { newJobCheckIntervalSeconds: 4, teamSize: 50, teamConcurrency: 5 }, (job) => this.onSendIt(job))
-
-    await this.cronMonitorAsync()
-  }
-
   async cronMonitorAsync () {
     const opts = {
       retryLimit: 2,
-      retentionSeconds: 60
+      retentionSeconds: 60,
+      onComplete: false
     }
 
     await this.manager.publishDebounced(queues.CRON, null, opts, 60)
   }
 
   async onCron () {
-    if (this.stopped) {
-      return
-    }
+    if (this.stopped) return
 
     try {
       if (this.config.__test__throw_clock_monitoring) {
@@ -125,14 +130,18 @@ class Timekeeper extends EventEmitter {
 
       const sending = items.filter(i => this.shouldSendIt(i.cron, i.timezone))
 
-      if (sending.length) {
-        await Promise.map(sending, it => this.send(it), { concurrency: 5 })
+      if (sending.length && !this.stopped) {
+        await pMap(sending, it => this.send(it), { concurrency: 5 })
       }
+
+      if (this.stopped) return
 
       await this.setCronTime()
     } catch (err) {
       this.emit(this.events.error, err)
     }
+
+    if (this.stopped) return
 
     await this.cronMonitorAsync()
   }
@@ -152,13 +161,15 @@ class Timekeeper extends EventEmitter {
   async send (job) {
     const options = {
       singletonKey: job.name,
-      singletonSeconds: 60
+      singletonSeconds: 60,
+      onComplete: false
     }
 
     await this.manager.publish(queues.SEND_IT, job, options)
   }
 
   async onSendIt (job) {
+    if (this.stopped) return
     const { name, data, options } = job.data
     await this.manager.publish(name, data, options)
   }
@@ -178,14 +189,14 @@ class Timekeeper extends EventEmitter {
 
     const values = [name, cron, tz, data, options]
 
-    const { rowCount } = await this.db.executeSql(this.scheduleCommand, values)
+    const result = await this.db.executeSql(this.scheduleCommand, values)
 
-    return rowCount
+    return result ? result.rowCount : null
   }
 
   async unschedule (name) {
-    const { rowCount } = await this.db.executeSql(this.unscheduleCommand, [name])
-    return rowCount
+    const result = await this.db.executeSql(this.unscheduleCommand, [name])
+    return result ? result.rowCount : null
   }
 
   async setCronTime () {
@@ -204,3 +215,4 @@ class Timekeeper extends EventEmitter {
 }
 
 module.exports = Timekeeper
+module.exports.QUEUES = queues

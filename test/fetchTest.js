@@ -1,38 +1,33 @@
-const Promise = require('bluebird')
 const assert = require('assert')
 const helper = require('./testHelper')
 
 describe('fetch', function () {
   it('should reject missing queue argument', async function () {
-    const boss = await helper.start(this.test.bossConfig)
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
 
     try {
       await boss.fetch()
       assert(false)
     } catch (err) {
       assert(err)
-    } finally {
-      await boss.stop()
     }
   })
 
   it('should fetch a job by name manually', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
     const jobName = 'no-subscribe-required'
 
-    const boss = await helper.start(this.test.bossConfig)
     await boss.publish(jobName)
     const job = await boss.fetch(jobName)
     assert(jobName === job.name)
     // Metadata should only be included when specifically requested
     assert(job.startedon === undefined)
-    await boss.stop()
   })
 
   it('should get a batch of jobs as an array', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
     const jobName = 'fetch-batch'
     const batchSize = 4
-
-    const boss = await helper.start(this.test.bossConfig)
 
     await Promise.all([
       boss.publish(jobName),
@@ -46,14 +41,12 @@ describe('fetch', function () {
     assert(jobs.length === batchSize)
     // Metadata should only be included when specifically requested
     assert(jobs[0].startedon === undefined)
-
-    await boss.stop()
   })
 
   it('should fetch all metadata for a single job when requested', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
     const jobName = 'fetch-include-metadata'
 
-    const boss = await helper.start(this.test.bossConfig)
     await boss.publish(jobName)
     const job = await boss.fetch(jobName, undefined, { includeMetadata: true })
     assert(jobName === job.name)
@@ -71,14 +64,12 @@ describe('fetch', function () {
     assert(job.createdon !== undefined)
     assert(job.completedon === null)
     assert(job.keepuntil !== undefined)
-    await boss.stop()
   })
 
   it('should fetch all metadata for a batch of jobs when requested', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
     const jobName = 'fetch-include-metadata-batch'
     const batchSize = 4
-
-    const boss = await helper.start(this.test.bossConfig)
 
     await Promise.all([
       boss.publish(jobName),
@@ -107,6 +98,5 @@ describe('fetch', function () {
       assert(job.completedon === null)
       assert(job.keepuntil !== undefined)
     })
-    await boss.stop()
   })
 })
