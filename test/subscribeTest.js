@@ -198,6 +198,71 @@ describe('subscribe', function () {
     assert(subscribeCount < batchSize)
   })
 
+  it('top up jobs when at one job in team is still running', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+
+    this.timeout(1000)
+
+    const queue = 'subscribe-teamConcurrency-topup'
+    const teamSize = 4
+    const teamConcurrency = 2
+
+    let subscribeCount = 0
+
+    for (let i = 0; i < 6; i++) {
+      await boss.publish(queue)
+    }
+
+    const newJobCheckInterval = 100
+
+    return new Promise((resolve) => {
+      boss.subscribe(queue, { teamSize, teamConcurrency, newJobCheckInterval }, async () => {
+        subscribeCount++
+        if (subscribeCount === 1) {
+          // Test would timeout if all were blocked on this first
+          // process
+          await new Promise(resolve => setTimeout(resolve, 500))
+          return
+        }
+
+        if (subscribeCount === 6) {
+          resolve()
+        }
+      })
+    })
+  })
+
+  it('does not fetch more than teamSize', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const queue = 'teamSize-topup-limit'
+    const teamSize = 4
+    const teamConcurrency = 2
+    const newJobCheckInterval = 200
+    let subscribeCount = 0
+    let remainCount = 0
+
+    for (let i = 0; i < 7; i++) {
+      await boss.publish(queue)
+    }
+
+    // This should consume 5 jobs, all will block after the first job
+    await boss.subscribe(queue, { teamSize, teamConcurrency, newJobCheckInterval }, async () => {
+      subscribeCount++
+      if (subscribeCount > 1) await new Promise(resolve => setTimeout(resolve, 1000))
+    })
+
+    await new Promise(resolve => setTimeout(resolve, 400))
+
+    // If the above hasn't over subscribed, this should pick up the last 2 jobs
+    await boss.subscribe(queue, { teamSize, teamConcurrency, newJobCheckInterval }, async () => {
+      remainCount++
+    })
+
+    await new Promise(resolve => setTimeout(resolve, 400))
+
+    assert(remainCount === 2)
+  })
+
   it('should have a done callback for single job subscriptions', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
     const queue = 'subscribe-single'
