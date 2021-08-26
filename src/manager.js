@@ -164,12 +164,12 @@ class Manager extends EventEmitter {
 
     let queueSize = 0
 
-    let refillTeam
+    let refillTeamPromise
     let resolveRefillTeam
     // Setup a promise that onFetch can await for when at least one
     // job is finished and so the team is ready to be topped up
     const createTeamRefillPromise = () => {
-      refillTeam = new Promise((resolve) => { resolveRefillTeam = resolve })
+      refillTeamPromise = new Promise((resolve) => { resolveRefillTeam = resolve })
     }
     createTeamRefillPromise()
 
@@ -240,8 +240,8 @@ class Manager extends EventEmitter {
       // So check the queueSize and return immediately if it's
       // not full
       // otherwise, wait for a job to complete which will
-      // resolve the refillTeam promise
-      return (queueSize < teamSize) ? null : refillTeam
+      // resolve refillTeamPromise
+      return (queueSize < teamSize) ? null : refillTeamPromise
     }
 
     const onError = error => {
