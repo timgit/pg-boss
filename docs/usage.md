@@ -22,19 +22,19 @@
   - [`new(options)`](#newoptions)
   - [`start()`](#start)
   - [`stop(options)`](#stopoptions)
-  - [`publish()`](#publish)
-    - [`publish(name, data, options)`](#publishname-data-options)
-    - [`publish(request)`](#publishrequest)
-    - [`publishAfter(name, data, options, seconds | ISO date string | Date)`](#publishaftername-data-options-seconds--iso-date-string--date)
-    - [`publishOnce(name, data, options, key)`](#publishoncename-data-options-key)
-    - [`publishSingleton(name, data, options)`](#publishsingletonname-data-options)
-    - [`publishThrottled(name, data, options, seconds [, key])`](#publishthrottledname-data-options-seconds--key)
-    - [`publishDebounced(name, data, options, seconds [, key])`](#publishdebouncedname-data-options-seconds--key)
+  - [`send()`](#send)
+    - [`send(name, data, options)`](#sendname-data-options)
+    - [`send(request)`](#sendrequest)
+    - [`sendAfter(name, data, options, seconds | ISO date string | Date)`](#sendaftername-data-options-seconds--iso-date-string--date)
+    - [`sendOnce(name, data, options, key)`](#sendoncename-data-options-key)
+    - [`sendSingleton(name, data, options)`](#sendsingletonname-data-options)
+    - [`sendThrottled(name, data, options, seconds [, key])`](#sendthrottledname-data-options-seconds--key)
+    - [`sendDebounced(name, data, options, seconds [, key])`](#senddebouncedname-data-options-seconds--key)
   - [`insert([jobs])`](#insertjobs)
-  - [`subscribe()`](#subscribe)
-    - [`subscribe(name [, options], handler)`](#subscribename--options-handler)
+  - [`process()`](#process)
+    - [`process(name [, options], handler)`](#processname--options-handler)
     - [`onComplete(name [, options], handler)`](#oncompletename--options-handler)
-  - [`unsubscribe(value)`](#unsubscribevalue)
+  - [`unprocess(value)`](#unprocessvalue)
     - [`offComplete(value)`](#offcompletevalue)
   - [`fetch()`](#fetch)
     - [`fetch(name)`](#fetchname)
@@ -117,7 +117,7 @@ DROP TYPE ${schema}.job_state;
 
 # Direct database interactions
 
-If you need to interact with pg-boss outside of Node.js, such as other clients or even using triggers within PostgreSQL itself, most functionality is supported even when working directly against the internal tables.  Additionally, you may even decide to do this within Node.js. For example, if you wanted to bulk load jobs into pg-boss and skip calling `publish()` one job at a time, you could either use `INSERT` or the faster `COPY` command.
+If you need to interact with pg-boss outside of Node.js, such as other clients or even using triggers within PostgreSQL itself, most functionality is supported even when working directly against the internal tables.  Additionally, you may even decide to do this within Node.js. For example, if you wanted to bulk load jobs into pg-boss and skip calling `send()` one job at a time, you could either use `INSERT` or the faster `COPY` command.
 
 ## Job table
 
@@ -149,9 +149,9 @@ The following command is the definition of the primary job table. For manual job
 
 # Events
 
-As explained in the introduction above, each instance of pg-boss is an EventEmitter.  You can run multiple instances of pg-boss for a variety of use cases including distribution and load balancing. Each instance has the freedom to subscribe to whichever jobs you need.  Because of this diversity, the job activity of one instance could be drastically different from another.  Therefore, **all of the events raised by pg-boss are instance-bound.**
+As explained in the introduction above, each instance of pg-boss is an EventEmitter.  You can run multiple instances of pg-boss for a variety of use cases including distribution and load balancing. Each instance has the freedom to process to whichever jobs you need.  Because of this diversity, the job activity of one instance could be drastically different from another.  Therefore, **all of the events raised by pg-boss are instance-bound.**
 
-> For example, if you were to subscribe to `error` in instance A, it will not receive an `error` event from instance B.
+> For example, if you were to process to `error` in instance A, it will not receive an `error` event from instance B.
 
 ## `error`
 The error event is raised from any errors that may occur during internal job fetching, monitoring and archiving activities. While not required, adding a listener to the error event is strongly encouraged:
@@ -297,7 +297,7 @@ Prepares the target database and begins job monitoring.
 
 ```js
 await boss.start()
-await boss.publish('hey-there', { msg:'this came for you' })
+await boss.send('hey-there', { msg:'this came for you' })
 ```
 
 If the required database objects do not exist in the specified database, **`start()` will automatically create them**. The same process is true for updates as well. If a new schema version is required, pg-boss will automatically migrate the internal storage to the latest installed version.
@@ -320,21 +320,21 @@ All job monitoring will be stopped and all subscriptions on this instance will b
 
 By default, calling `stop()` without any arguments will gracefully wait for all workers to finish processing active jobs before closing the internal connection pool and stopping maintenance operations. This behaviour can be configured using the stop options object. In graceful stop mode, the promise returned by `stop()` will still be resolved immediately.  If monitoring for the end of the stop is needed, add a listener to the `stopped` event.
 
-## `publish()`
+## `send()`
 
 **returns: Promise**
 
 Creates a new job and resolves the job's unique identifier (uuid).
 
-> `publish()` will resolve a `null` for job id under some use cases when using [unique jobs](configuration.md#unique-jobs) or [throttling](configuration.md#throttled-jobs).  These options are always opt-in on the publish side and therefore don't result in a promise rejection.
+> `send()` will resolve a `null` for job id under some use cases when using [unique jobs](configuration.md#unique-jobs) or [throttling](configuration.md#throttled-jobs).  These options are always opt-in on the send side and therefore don't result in a promise rejection.
 
-### `publish(name, data, options)`
+### `send(name, data, options)`
 
 **Arguments**
 
 - `name`: string, *required*
 - `data`: object
-- `options`: object ([publish options](configuration.md#publish-options))
+- `options`: object ([send options](configuration.md#send-options))
 
 ```js
 const payload = {
@@ -347,11 +347,11 @@ const options =   {
     retryLimit: 2
 };
 
-const jobId = await boss.publish('email-send-welcome', payload, options)
+const jobId = await boss.send('email-send-welcome', payload, options)
 console.log(`job ${jobId} submitted`)
 ```
 
-### `publish(request)`
+### `send(request)`
 
 **Arguments**
 
@@ -363,13 +363,13 @@ The request object has the following properties.
 | - | - | -|
 |`name`| string | *required*
 |`data`| object |
-|`options` | object | [publish options](configuration.md#publish-options)
+|`options` | object | [send options](configuration.md#send-options)
 
 
 This overload is for conditionally including data or options based on keys in an object, such as the following.
 
 ```js
-const jobId = await boss.publish({
+const jobId = await boss.send({
     name: 'database-backup',
     options: { retryLimit: 1 }
 })
@@ -377,41 +377,41 @@ const jobId = await boss.publish({
 console.log(`job ${jobId} submitted`)
 ```
 
-### `publishAfter(name, data, options, seconds | ISO date string | Date)`
+### `sendAfter(name, data, options, seconds | ISO date string | Date)`
 
-Publish a job that should start after a number of seconds from now, or after a specific date time.
+Send a job that should start after a number of seconds from now, or after a specific date time.
 
-This is a convenience version of `publish()` with the `startAfter` option assigned.
+This is a convenience version of `send()` with the `startAfter` option assigned.
 
-### `publishOnce(name, data, options, key)`
+### `sendOnce(name, data, options, key)`
 
-Publish a job with a unique key to only allow 1 job to be in created, retry, or active state at a time.
+Send a job with a unique key to only allow 1 job to be in created, retry, or active state at a time.
 
-This is a convenience version of `publish()` with the `singletonKey` option assigned.
+This is a convenience version of `send()` with the `singletonKey` option assigned.
 
-### `publishSingleton(name, data, options)`
+### `sendSingleton(name, data, options)`
 
-Publish a job but only allow 1 job to be in created or retry state at at time.
+Send a job but only allow 1 job to be in created or retry state at at time.
 
-This is a convenience version of `publish()` with the `singletonKey` option assigned.
+This is a convenience version of `send()` with the `singletonKey` option assigned.
 
-### `publishThrottled(name, data, options, seconds [, key])`
+### `sendThrottled(name, data, options, seconds [, key])`
 
-Only allows one job to be published to the same queue within a number of seconds.  In this case, the first job within the interval is allowed, and all other jobs within the same interval are rejected.
+Only allows one job to be sended to the same queue within a number of seconds.  In this case, the first job within the interval is allowed, and all other jobs within the same interval are rejected.
 
-This is a convenience version of `publish()` with the `singletonSeconds` and `singletonKey` option assigned. The `key` argument is optional.
+This is a convenience version of `send()` with the `singletonSeconds` and `singletonKey` option assigned. The `key` argument is optional.
 
-### `publishDebounced(name, data, options, seconds [, key])`
+### `sendDebounced(name, data, options, seconds [, key])`
 
-Like, `publishThrottled()`, but instead of rejecting if a job is already published in the current interval, it will try to add the job to the next interval if one hasn't already been published.
+Like, `sendThrottled()`, but instead of rejecting if a job is already sended in the current interval, it will try to add the job to the next interval if one hasn't already been sended.
 
-This is a convenience version of `publish()` with the `singletonSeconds`, `singletonKey` and `singletonNextSlot` option assigned. The `key` argument is optional.
+This is a convenience version of `send()` with the `singletonSeconds`, `singletonKey` and `singletonNextSlot` option assigned. The `key` argument is optional.
 
 ## `insert([jobs])`
 
 Create multiple jobs in one request with an array of objects. 
 
-The contract and supported features are slightly different than `publish()`, which is why this function is named independently.  For example, debouncing is not supported.
+The contract and supported features are slightly different than `send()`, which is why this function is named independently.  For example, debouncing is not supported.
 
 The following contract is a typescript defintion of the expected object. Only `name` is required, but most other properties can be set. This will likely be enhanced later with more support for deferral and retention by an offset. For now, calculate any desired timestamps for these features before insertion.
 
@@ -432,15 +432,15 @@ interface JobInsert<T = object> {
 }
 ```
 
-## `subscribe()`
+## `process()`
 
 Polls the database by a queue name or a pattern and executes the provided callback function when jobs are found.  The promise resolves once a subscription has been created with a unique id of the subscription.  You can monitor the state of subscriptions using the `wip` event.
 
 Queue patterns use the `*` character to match 0 or more characters.  For example, a job from queue `status-report-12345` would be fetched with pattern `status-report-*` or even `stat*5`.
 
-The default concurrency for `subscribe()` is 1 job every 2 seconds. Both the interval and the number of jobs per interval can be changed globally or per-queue with [configuration options](configuration.md#subscribe-options).
+The default concurrency for `process()` is 1 job every 2 seconds. Both the interval and the number of jobs per interval can be changed globally or per-queue with [configuration options](configuration.md#process-options).
 
-### `subscribe(name [, options], handler)`
+### `process(name [, options], handler)`
 
 **Arguments**
 - `name`: string, *required*
@@ -470,14 +470,14 @@ Following is an example of a subscription that returns a promise (`sendWelcomeEm
 
 ```js
 const options = { teamSize: 5, teamConcurrency: 5 }
-await boss.subscribe('email-welcome', options, job => myEmailService.sendWelcomeEmail(job.data))
+await boss.process('email-welcome', options, job => myEmailService.sendWelcomeEmail(job.data))
 ```
 
 And the same example, but without returning a promise in the handler.
 
 ```js
 const options = { teamSize: 5, teamConcurrency: 5 }
-await boss.subscribe('email-welcome', options, job => {
+await boss.process('email-welcome', options, job => {
     myEmailService.sendWelcomeEmail(job.data)
         .then(() => job.done())
         .catch(error => job.done(error))
@@ -487,14 +487,14 @@ await boss.subscribe('email-welcome', options, job => {
 Similar to the first example, but with a batch of jobs at once.
 
 ```js
-await boss.subscribe('email-welcome', { batchSize: 5 },
+await boss.process('email-welcome', { batchSize: 5 },
     jobs => myEmailService.sendWelcomeEmails(jobs.map(job => job.data))
 )
 ```
 
 ### `onComplete(name [, options], handler)`
 
-Sometimes when a job completes, expires or fails, it's important enough to trigger other things that should react to it. `onComplete` works identically to `subscribe()` and was created to facilitate the creation of orchestrations or sagas between jobs that may or may not know about each other. This common messaging pattern allows you to keep multi-job flow logic out of the individual job handlers so you can manage things in a more centralized fashion while not losing your mind. As you most likely already know, asynchronous jobs are complicated enough already. Internally, these jobs have a special prefix of `__state__completed__`.
+Sometimes when a job completes, expires or fails, it's important enough to trigger other things that should react to it. `onComplete` works identically to `process()` and was created to facilitate the creation of orchestrations or sagas between jobs that may or may not know about each other. This common messaging pattern allows you to keep multi-job flow logic out of the individual job handlers so you can manage things in a more centralized fashion while not losing your mind. As you most likely already know, asynchronous jobs are complicated enough already. Internally, these jobs have a special prefix of `__state__completed__`.
 
 The callback for `onComplete()` returns a job containing the original job and completion details. `request` will be the original job as submitted with `id`, `name` and `data`. `response` may or may not have a value based on arguments in [complete()](#completeid--data) or [fail()](#failid--data).
 
@@ -514,7 +514,7 @@ boss.onComplete(jobName, job => {
     finished() // test suite completion callback
 })
 
-const jobId = await boss.publish(jobName, requestPayload)
+const jobId = await boss.send(jobName, requestPayload)
 const job = await boss.fetch(jobName)
 await boss.complete(job.id, responsePayload)
 ```
@@ -543,7 +543,7 @@ The following is an example data object from the job retrieved in the onComplete
 }
 ```
 
-## `unsubscribe(value)`
+## `unprocess(value)`
 
 Removes a subscription by name or id and stops polling.
 
@@ -554,15 +554,15 @@ Removes a subscription by name or id and stops polling.
 
 ### `offComplete(value)`
 
-Similar to `unsubscribe()`, but removes an `onComplete()` subscription.
+Similar to `unprocess()`, but removes an `onComplete()` subscription.
 
 ** 
 
 ## `fetch()`
 
-Typically one would use `subscribe()` for automated polling for new jobs based upon a reasonable interval to finish the most jobs with the lowest latency. While `subscribe()` is a yet another free service we offer and it can be awfully convenient, sometimes you may have a special use case around when a job can be retrieved. Or, perhaps like me, you need to provide jobs via other entry points such as a web API.
+Typically one would use `process()` for automated polling for new jobs based upon a reasonable interval to finish the most jobs with the lowest latency. While `process()` is a yet another free service we offer and it can be awfully convenient, sometimes you may have a special use case around when a job can be retrieved. Or, perhaps like me, you need to provide jobs via other entry points such as a web API.
 
-`fetch()` allows you to skip all that polling nonsense that `subscribe()` does and puts you back in control of database traffic. Once you have your shiny job, you'll use either `complete()` or `fail()` to mark it as finished.
+`fetch()` allows you to skip all that polling nonsense that `process()` does and puts you back in control of database traffic. Once you have your shiny job, you'll use either `complete()` or `fail()` to mark it as finished.
 
 ### `fetch(name)`
 
@@ -614,7 +614,7 @@ Same as `fetch()`, but retrieves any completed jobs. See [`onComplete()`](#oncom
 
 ## Scheduling
 
-Jobs may be published automatically based on a cron expression. As with other cron-based systems, at least one instance needs to be running for scheduling to work. In order to reduce the amount of evaluations, schedules are checked every 30 seconds, which means the 6-placeholder format should be discouraged in favor of the minute-level precision 5-placeholder format. 
+Jobs may be sended automatically based on a cron expression. As with other cron-based systems, at least one instance needs to be running for scheduling to work. In order to reduce the amount of evaluations, schedules are checked every 30 seconds, which means the 6-placeholder format should be discouraged in favor of the minute-level precision 5-placeholder format. 
 
 For example, use this format, which implies "any second during 3:30 am every day"
 
@@ -628,7 +628,7 @@ but **not** this format which is parsed as "only run exactly at 3:30:30 am every
 30 30 3 * * *
 ```
 
-In order mitigate clock skew and drift, every 10 minutes the clocks of each instance are compared to the database server's clock. The skew, if any, is stored and used as an offset during cron evaluation to ensure all instances are synchronized. Internally, job throttling options are then used to make sure only 1 job is published even if multiple instances are running. 
+In order mitigate clock skew and drift, every 10 minutes the clocks of each instance are compared to the database server's clock. The skew, if any, is stored and used as an offset during cron evaluation to ensure all instances are synchronized. Internally, job throttling options are then used to make sure only 1 job is sended even if multiple instances are running. 
 
 If needed, the default clock monitoring interval can be adjusted using `clockMonitoringIntervalSeconds` or `clockMonitoringIntervalMinutes`. Additionally, to disable scheduling on an instance completely, use the following in the constructor options.
 
@@ -642,7 +642,7 @@ For more cron documentation and examples see the docs for the [cron-parser packa
 
 ### `schedule(name, cron, data, options)`
 
-Schedules a job to be published to the specified queue based on a cron expression. If the schedule already exists, it's updated to the new cron expression. 
+Schedules a job to be sended to the specified queue based on a cron expression. If the schedule already exists, it's updated to the new cron expression. 
 
 **Arguments**
 
@@ -651,9 +651,9 @@ Schedules a job to be published to the specified queue based on a cron expressio
 - `data`: object
 - `options`: object
 
-`options` supports all properties in [publish options](configuration.md#publish-options) and an optional `tz` property that specifies a time zone name. If not specified, the default is UTC.
+`options` supports all properties in [send options](configuration.md#send-options) and an optional `tz` property that specifies a time zone name. If not specified, the default is UTC.
 
-For example, the following code will publish a job at 3:00am in the US central time zone into the queue `notification-abc`.
+For example, the following code will send a job at 3:00am in the US central time zone into the queue `notification-abc`.
 
 ```js
 await boss.schedule('notification-abc', `0 3 * * *`, null, { tz: 'America/Chicago' })

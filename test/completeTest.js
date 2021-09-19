@@ -22,9 +22,9 @@ describe('complete', function () {
     const batchSize = 3
 
     await Promise.all([
-      boss.publish(queue),
-      boss.publish(queue),
-      boss.publish(queue)
+      boss.send(queue),
+      boss.send(queue),
+      boss.send(queue)
     ])
 
     const countJobs = (state) => helper.countJobs(this.test.bossConfig.schema, 'name = $1 AND state = $2', [queue, state])
@@ -48,7 +48,7 @@ describe('complete', function () {
     const jobName = 'part-of-something-important'
     const responsePayload = { message: 'super-important-payload', arg2: '123' }
 
-    await boss.publish(jobName)
+    await boss.send(jobName)
 
     const job = await boss.fetch(jobName)
 
@@ -70,7 +70,7 @@ describe('complete', function () {
     const queueName = 'onCompleteRequestTest'
     const requestPayload = { foo: 'bar' }
 
-    const jobId = await boss.publish(queueName, requestPayload)
+    const jobId = await boss.send(queueName, requestPayload)
 
     const job = await boss.fetch(queueName)
     await boss.complete(job.id)
@@ -92,7 +92,7 @@ describe('complete', function () {
     const requestPayload = { token: 'trivial' }
     const responsePayload = { message: 'so verbose', code: '1234' }
 
-    const jobId = await boss.publish(jobName, requestPayload)
+    const jobId = await boss.send(jobName, requestPayload)
     const job = await boss.fetch(jobName)
 
     await boss.complete(job.id, responsePayload)
@@ -109,15 +109,15 @@ describe('complete', function () {
     })
   })
 
-  it('subscribe()\'s job.done() should allow sending completion payload', async function () {
+  it('process()\'s job.done() should allow sending completion payload', async function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, onComplete: true })
 
-    const jobName = 'complete-from-subscribe'
+    const jobName = 'complete-from-process'
     const responsePayload = { arg1: '123' }
 
-    await boss.publish(jobName)
+    await boss.send(jobName)
 
-    boss.subscribe(jobName, job => job.done(null, responsePayload))
+    boss.process(jobName, job => job.done(null, responsePayload))
 
     return new Promise((resolve) => {
       boss.onComplete(jobName, async job => {
@@ -127,7 +127,7 @@ describe('complete', function () {
     })
   })
 
-  it('should unsubscribe an onComplete subscription', async function () {
+  it('should unprocess an onComplete subscription', async function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, onComplete: true })
 
     const jobName = 'offComplete'
@@ -139,13 +139,13 @@ describe('complete', function () {
       await boss.offComplete(jobName)
     })
 
-    await boss.publish(jobName)
+    await boss.send(jobName)
     const job1 = await boss.fetch(jobName)
     await boss.complete(job1.id)
 
     await delay(2000)
 
-    await boss.publish(jobName)
+    await boss.send(jobName)
     const job2 = await boss.fetch(jobName)
     await boss.complete(job2.id)
 
@@ -154,17 +154,17 @@ describe('complete', function () {
     assert.strictEqual(receivedCount, 1)
   })
 
-  it('should unsubscribe an onComplete subscription by id', async function () {
+  it('should unprocess an onComplete subscription by id', async function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, onComplete: true })
     const queue = this.test.bossConfig.schema
 
     let receivedCount = 0
 
-    await boss.publish(queue)
+    await boss.send(queue)
     const job1 = await boss.fetch(queue)
     await boss.complete(job1.id)
 
-    await boss.publish(queue)
+    await boss.send(queue)
     const job2 = await boss.fetch(queue)
     await boss.complete(job2.id)
 
@@ -182,7 +182,7 @@ describe('complete', function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, onComplete: true })
 
     const queue = 'fetchCompleted'
-    const jobId = await boss.publish(queue)
+    const jobId = await boss.send(queue)
     await boss.fetch(queue)
     await boss.complete(jobId)
     const job = await boss.fetchCompleted(queue)
@@ -196,7 +196,7 @@ describe('complete', function () {
     const queue = 'noMoreExtraStateJobs'
     const config = this.test.bossConfig
 
-    const jobId = await boss.publish(queue)
+    const jobId = await boss.send(queue)
 
     await boss.fetch(queue)
 
@@ -211,12 +211,12 @@ describe('complete', function () {
     assert.strictEqual(stateJobCount, 1)
   })
 
-  it('should not create a completion job if opted out during publish', async function () {
+  it('should not create a completion job if opted out during send', async function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, onComplete: true })
 
     const queue = 'onCompleteOptOut'
 
-    const jobId = await boss.publish(queue, null, { onComplete: false })
+    const jobId = await boss.send(queue, null, { onComplete: false })
 
     await boss.fetch(queue)
 
@@ -232,7 +232,7 @@ describe('complete', function () {
 
     const queue = 'onCompleteOptOutGlobal'
 
-    const jobId = await boss.publish(queue)
+    const jobId = await boss.send(queue)
 
     await boss.fetch(queue)
 
@@ -248,7 +248,7 @@ describe('complete', function () {
 
     const queue = 'onCompleteOptInOverride'
 
-    const jobId = await boss.publish(queue, null, { onComplete: true })
+    const jobId = await boss.send(queue, null, { onComplete: true })
 
     await boss.fetch(queue)
 
@@ -264,7 +264,7 @@ describe('complete', function () {
 
     const queue = 'completion-data-in-job-output'
 
-    const jobId = await boss.publish(queue, null, { onComplete: false })
+    const jobId = await boss.send(queue, null, { onComplete: false })
 
     const { id } = await boss.fetch(queue)
 
@@ -284,7 +284,7 @@ describe('complete', function () {
 
     const queue = 'completion-data-in-job-output'
 
-    const jobId = await boss.publish(queue, null, { onComplete: false })
+    const jobId = await boss.send(queue, null, { onComplete: false })
 
     const { id } = await boss.fetch(queue)
 

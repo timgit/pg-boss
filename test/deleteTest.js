@@ -13,7 +13,7 @@ describe('delete', async function () {
 
     const config = { ...this.test.bossConfig, ...defaults }
     const boss = this.test.boss = await helper.start(config)
-    const jobId = await boss.publish(jobName)
+    const jobId = await boss.send(jobName)
     const job = await boss.fetch(jobName)
 
     assert.strictEqual(jobId, job.id)

@@ -9,8 +9,8 @@ describe('deleteQueue', function () {
     const queue2 = 'delete-named-queue-2'
     const queue1 = 'delete-named-queue-1'
 
-    await boss.publish(queue1)
-    await boss.publish(queue2)
+    await boss.send(queue1)
+    await boss.send(queue2)
 
     const q1Count1 = await boss.getQueueSize(queue1)
     const q2Count1 = await boss.getQueueSize(queue2)
@@ -39,8 +39,8 @@ describe('deleteQueue', function () {
     const queue1 = 'delete-named-queue-11'
     const queue2 = 'delete-named-queue-22'
 
-    await boss.publish(queue1)
-    await boss.publish(queue2)
+    await boss.send(queue1)
+    await boss.send(queue2)
 
     const q1Count1 = await boss.getQueueSize(queue1)
     const q2Count1 = await boss.getQueueSize(queue2)
@@ -66,7 +66,7 @@ describe('deleteQueue', function () {
 
     const queue = 'clear-storage-works'
 
-    const jobId = await boss.publish(queue)
+    const jobId = await boss.send(queue)
     const job = await boss.fetch(queue)
 
     assert.strictEqual(job.id, jobId)

@@ -44,8 +44,8 @@ describe('ops', function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, ...defaults, __test__throw_subscription: true })
     const queue = this.test.bossConfig.schema
 
-    await boss.publish(queue)
-    await boss.subscribe(queue, () => {})
+    await boss.send(queue)
+    await boss.process(queue, () => {})
 
     await new Promise(resolve => boss.once('error', resolve))
   })
@@ -67,8 +67,8 @@ describe('ops', function () {
     const boss = await helper.start({ ...this.test.bossConfig, ...defaults, __test__throw_stop: true })
     const queue = this.test.bossConfig.schema
 
-    await boss.publish(queue)
-    await boss.subscribe(queue, () => delay(2000))
+    await boss.send(queue)
+    await boss.process(queue, () => delay(2000))
 
     await delay(500)
 

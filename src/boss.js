@@ -56,11 +56,11 @@ class Boss extends EventEmitter {
 
     await this.maintenanceAsync()
 
-    const maintenanceSubscribeOptions = {
+    const maintenanceProcessOptions = {
       newJobCheckIntervalSeconds: Math.max(1, this.maintenanceIntervalSeconds / 2)
     }
 
-    await this.manager.subscribe(queues.MAINTENANCE, maintenanceSubscribeOptions, (job) => this.onMaintenance(job))
+    await this.manager.process(queues.MAINTENANCE, maintenanceProcessOptions, (job) => this.onMaintenance(job))
 
     if (this.monitorStates) {
       await this.manager.deleteQueue(COMPLETION_JOB_PREFIX + queues.MONITOR_STATES)
@@ -68,11 +68,11 @@ class Boss extends EventEmitter {
 
       await this.monitorStatesAsync()
 
-      const monitorStatesSubscribeOptions = {
+      const monitorStatesProcessOptions = {
         newJobCheckIntervalSeconds: Math.max(1, this.monitorIntervalSeconds / 2)
       }
 
-      await this.manager.subscribe(queues.MONITOR_STATES, monitorStatesSubscribeOptions, (job) => this.onMonitorStates(job))
+      await this.manager.process(queues.MONITOR_STATES, monitorStatesProcessOptions, (job) => this.onMonitorStates(job))
     }
   }
 
@@ -97,7 +97,7 @@ class Boss extends EventEmitter {
       onComplete: false
     }
 
-    await this.manager.publish(queues.MAINTENANCE, null, options)
+    await this.manager.send(queues.MAINTENANCE, null, options)
   }
 
   async monitorStatesAsync (options = {}) {
@@ -110,7 +110,7 @@ class Boss extends EventEmitter {
       onComplete: false
     }
 
-    await this.manager.publish(queues.MONITOR_STATES, null, options)
+    await this.manager.send(queues.MONITOR_STATES, null, options)
   }
 
   async onMaintenance (job) {
@@ -169,10 +169,10 @@ class Boss extends EventEmitter {
         clearInterval(this.metaMonitorInterval)
       }
 
-      await this.manager.unsubscribe(queues.MAINTENANCE)
+      await this.manager.unprocess(queues.MAINTENANCE)
 
       if (this.monitorStates) {
-        await this.manager.unsubscribe(queues.MONITOR_STATES)
+        await this.manager.unprocess(queues.MONITOR_STATES)
       }
 
       this.stopped = true

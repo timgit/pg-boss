@@ -1,12 +1,12 @@
 const assert = require('assert')
 const helper = require('./testHelper')
 
-describe('publish', function () {
+describe('send', function () {
   it('should fail with no arguments', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
 
     try {
-      await boss.publish()
+      await boss.send()
       assert(false)
     } catch (err) {
       assert(err)
@@ -17,7 +17,7 @@ describe('publish', function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
 
     try {
-      await boss.publish('job', () => true)
+      await boss.send('job', () => true)
       assert(false)
     } catch (err) {
       assert(err)
@@ -28,7 +28,7 @@ describe('publish', function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
 
     try {
-      await boss.publish('job', 'data', () => true)
+      await boss.send('job', 'data', () => true)
       assert(false)
     } catch (err) {
       assert(err)
@@ -37,22 +37,22 @@ describe('publish', function () {
 
   it('should accept single string argument', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
-    const queue = 'publishNameOnly'
-    await boss.publish(queue)
+    const queue = 'sendNameOnly'
+    await boss.send(queue)
   })
 
   it('should accept job object argument with only name', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
-    const queue = 'publishqueueOnly'
-    await boss.publish({ name: queue })
+    const queue = 'sendqueueOnly'
+    await boss.send({ name: queue })
   })
 
   it('should accept job object with name and data only', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
-    const queue = 'publishqueueAndData'
+    const queue = 'sendqueueAndData'
     const message = 'hi'
 
-    await boss.publish({ name: queue, data: { message } })
+    await boss.send({ name: queue, data: { message } })
 
     const job = await boss.fetch(queue)
 
@@ -61,10 +61,10 @@ describe('publish', function () {
 
   it('should accept job object with name and options only', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
-    const queue = 'publishqueueAndOptions'
+    const queue = 'sendqueueAndOptions'
     const options = { someCrazyOption: 'whatever' }
 
-    await boss.publish({ name: queue, options })
+    await boss.send({ name: queue, options })
 
     const job = await boss.fetch(queue)
 

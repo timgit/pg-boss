@@ -15,9 +15,9 @@ describe('fetch', function () {
 
   it('should fetch a job by name manually', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
-    const jobName = 'no-subscribe-required'
+    const jobName = 'no-process-required'
 
-    await boss.publish(jobName)
+    await boss.send(jobName)
     const job = await boss.fetch(jobName)
     assert(jobName === job.name)
     // Metadata should only be included when specifically requested
@@ -30,10 +30,10 @@ describe('fetch', function () {
     const batchSize = 4
 
     await Promise.all([
-      boss.publish(jobName),
-      boss.publish(jobName),
-      boss.publish(jobName),
-      boss.publish(jobName)
+      boss.send(jobName),
+      boss.send(jobName),
+      boss.send(jobName),
+      boss.send(jobName)
     ])
 
     const jobs = await boss.fetch(jobName, batchSize)
@@ -47,7 +47,7 @@ describe('fetch', function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
     const jobName = 'fetch-include-metadata'
 
-    await boss.publish(jobName)
+    await boss.send(jobName)
     const job = await boss.fetch(jobName, undefined, { includeMetadata: true })
     assert(jobName === job.name)
     assert(job.priority === 0)
@@ -72,10 +72,10 @@ describe('fetch', function () {
     const batchSize = 4
 
     await Promise.all([
-      boss.publish(jobName),
-      boss.publish(jobName),
-      boss.publish(jobName),
-      boss.publish(jobName)
+      boss.send(jobName),
+      boss.send(jobName),
+      boss.send(jobName),
+      boss.send(jobName)
     ])
 
     const jobs = await boss.fetch(jobName, batchSize, { includeMetadata: true })

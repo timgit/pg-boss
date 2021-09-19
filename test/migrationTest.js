@@ -55,16 +55,16 @@ describe('migration', function () {
     // creating jobs in 3 states to have data to migrate back and forth
 
     // completed job
-    await boss.publish(queue)
+    await boss.send(queue)
     const job = await boss.fetch(queue)
     await boss.complete(job.id)
 
     // active job
-    await boss.publish(queue)
+    await boss.send(queue)
     await boss.fetch(queue)
 
     // created job
-    await boss.publish(queue)
+    await boss.send(queue)
 
     await contractor.rollback(currentSchemaVersion)
     const oneVersionAgo = await contractor.version()
