@@ -82,6 +82,7 @@ function create (schema, version) {
     createJobTable(schema),
     cloneJobTableForArchive(schema),
     createScheduleTable(schema),
+    createSubscriptionTable(schema),
     addIdIndexToArchive(schema),
     addArchivedOnToArchive(schema),
     addArchivedOnIndexToArchive(schema),
@@ -260,6 +261,18 @@ function createScheduleTable (schema) {
       options jsonb,
       created_on timestamp with time zone not null default now(),
       updated_on timestamp with time zone not null default now()
+    )
+  `
+}
+
+function createSubscriptionTable (schema) {
+  return `
+    CREATE TABLE ${schema}.subscription (
+      event text not null,
+      name text not null,
+      created_on timestamp with time zone not null default now(),
+      updated_on timestamp with time zone not null default now(),
+      PRIMARY KEY(event, name)
     )
   `
 }
