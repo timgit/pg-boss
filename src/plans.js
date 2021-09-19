@@ -34,6 +34,9 @@ module.exports = {
   getSchedules,
   schedule,
   unschedule,
+  subscribe,
+  unsubscribe,
+  getQueuesForEvent,
   expire,
   archive,
   purge,
@@ -284,6 +287,31 @@ function unschedule (schema) {
   return `
     DELETE FROM ${schema}.schedule
     WHERE name = $1
+  `
+}
+
+function subscribe (schema) {
+  return `
+    INSERT INTO ${schema}.subscription (event, name)
+    VALUES ($1, $2)
+    ON CONFLICT (event, name) DO UPDATE SET
+      event = EXCLUDED.event,
+      name = EXCLUDED.name,
+      updated_on = now()
+  `
+}
+
+function unsubscribe (schema) {
+  return `
+    DELETE FROM ${schema}.subscription
+    WHERE event = $1 and name = $2
+  `
+}
+
+function getQueuesForEvent (schema) {
+  return `
+    SELECT name FROM ${schema}.subscription
+    WHERE event = $1
   `
 }
 

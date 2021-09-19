@@ -36,6 +36,9 @@
     - [`onComplete(name [, options], handler)`](#oncompletename--options-handler)
   - [`unprocess(value)`](#unprocessvalue)
     - [`offComplete(value)`](#offcompletevalue)
+  - [`subscribe(event, name)`](#subscribeevent-name)
+  - [`unsubscribe(event, name)`](#unsubscribeevent-name)
+  - [`publish()`](#publish)
   - [`fetch()`](#fetch)
     - [`fetch(name)`](#fetchname)
     - [`fetch(name, batchSize, [, options])`](#fetchname-batchsize--options)
@@ -551,6 +554,22 @@ Removes a subscription by name or id and stops polling.
 - value: string or object
 
   If a string, removes all subscriptions found matching the name.  If an object, only the subscription with a matching `id` will be removed.
+
+**
+
+## `subscribe(event, name)`
+
+Subscribe queue `name` to `event`.
+
+## `unsubscribe(event, name)`
+
+Remove the subscription of queue `name` to `event`.
+
+## `publish()`
+
+**returns: Promise**
+
+Publish an event. Looks up all subscriptions for the event and sends jobs to all those queues. Returns an array of job ids.
 
 ### `offComplete(value)`
 

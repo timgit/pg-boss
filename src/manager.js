@@ -42,6 +42,9 @@ class Manager extends EventEmitter {
     this.failJobsCommand = plans.failJobs(config.schema)
     this.getJobByIdCommand = plans.getJobById(config.schema)
     this.getArchivedJobByIdCommand = plans.getArchivedJobById(config.schema)
+    this.subscribeCommand = plans.subscribe(config.schema)
+    this.unsubscribeCommand = plans.unsubscribe(config.schema)
+    this.getQueuesForEvent = plans.getQueuesForEvent(config.schema)
 
     // exported api to index
     this.functions = [
@@ -54,6 +57,9 @@ class Manager extends EventEmitter {
       this.process,
       this.unprocess,
       this.onComplete,
+      this.subscribe,
+      this.unsubscribe,
+      this.publish,
       this.offComplete,
       this.fetchCompleted,
       this.sendDebounced,
@@ -253,6 +259,31 @@ class Manager extends EventEmitter {
         this.removeWorker(worker)
       }
     })
+  }
+
+  async subscribe (event, name) {
+    assert(event, 'Missing required argument')
+    assert(name, 'Missing required argument')
+
+    return await this.db.executeSql(this.subscribeCommand, [event, name])
+  }
+
+  async unsubscribe (event, name) {
+    assert(event, 'Missing required argument')
+    assert(name, 'Missing required argument')
+
+    return await this.db.executeSql(this.unsubscribeCommand, [event, name])
+  }
+
+  async publish (event, ...args) {
+    assert(event, 'Missing required argument')
+
+    const result = await this.db.executeSql(this.getQueuesForEvent, [event])
+    if (!result || result.rowCount === 0) {
+      return []
+    }
+
+    return await Promise.all(result.rows.map(({ name }) => this.send(name, ...args)))
   }
 
   async offComplete (value) {

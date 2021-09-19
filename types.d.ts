@@ -302,6 +302,10 @@ declare class PgBoss {
   unprocess(name: string): Promise<void>;
   unprocess(options: PgBoss.UnprocessOptions): Promise<void>;
 
+  subscribe(event: string, name: string): Promise<void>;
+  unsubscribe(event: string, name: string): Promise<void>;
+  publish(request: Resolute.Request): Promise<string[]>;
+
   offComplete(name: string): Promise<void>;
   offComplete(options: PgBoss.UnprocessOptions): Promise<void>;
 
