@@ -315,7 +315,7 @@ function fetchNextJob (schema) {
       WHERE state < '${states.active}'
         AND name LIKE $1
         AND startAfter < now()
-        ${onlyOneJobActivePerQueue ? `AND (SELECT count(*) FROM ${schema}.job WHERE name LIKE $1 AND state = '${states.active}' = 0` : ''}
+        ${onlyOneJobActivePerQueue ? `AND (SELECT count(*) FROM ${schema}.job WHERE name LIKE $1 AND state = '${states.active}' = 0)` : ''}
       ORDER BY priority desc, createdOn, id
       LIMIT $2
       FOR UPDATE SKIP LOCKED
