@@ -102,12 +102,14 @@ declare namespace PgBoss {
     teamConcurrency?: number;
     batchSize?: number;
     includeMetadata?: boolean;
+    onlyOneJobActivePerQueue?: boolean;
   }
 
   type SubscribeOptions = JobFetchOptions & JobPollingOptions
 
   type FetchOptions = {
     includeMetadata?: boolean;
+    onlyOneJobActivePerQueue?: boolean;
   }
 
   interface SubscribeHandler<ReqData, ResData> {
@@ -186,7 +188,7 @@ declare namespace PgBoss {
     retryLimit?: number;
     retryDelay?: number;
     retryBackoff?: boolean;
-    startAfter?: Date | string;    
+    startAfter?: Date | string;
     singletonKey?: string;
     expireInSeconds?: number;
     keepUntil?: Date | string;

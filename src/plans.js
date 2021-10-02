@@ -308,13 +308,14 @@ function insertVersion (schema, version) {
 }
 
 function fetchNextJob (schema) {
-  return (includeMetadata) => `
+  return (includeMetadata, onlyOneJobActivePerQueue) => `
     WITH nextJob as (
       SELECT id
       FROM ${schema}.job
       WHERE state < '${states.active}'
         AND name LIKE $1
         AND startAfter < now()
+        ${onlyOneJobActivePerQueue ? `AND (SELECT count(*) FROM ${schema}.job WHERE name LIKE $1 AND state = '${states.active}' = 0` : ''}
       ORDER BY priority desc, createdOn, id
       LIMIT $2
       FOR UPDATE SKIP LOCKED
@@ -545,7 +546,7 @@ function insertJobs (schema) {
       keepUntil,
       on_complete
     )
-    SELECT 
+    SELECT
       COALESCE(id, gen_random_uuid()) as id,
       name,
       data,

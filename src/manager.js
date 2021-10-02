@@ -157,12 +157,13 @@ class Manager extends EventEmitter {
       batchSize,
       teamSize = 1,
       teamConcurrency = 1,
-      includeMetadata = false
+      includeMetadata = false,
+      onlyOneJobActivePerQueue = false,
     } = options
 
     const id = uuid.v4()
 
-    const fetch = () => this.fetch(name, batchSize || teamSize, { includeMetadata })
+    const fetch = () => this.fetch(name, batchSize || teamSize, { includeMetadata, onlyOneJobActivePerQueue })
 
     const onFetch = async (jobs) => {
       if (this.config.__test__throw_subscription) {
@@ -400,7 +401,7 @@ class Manager extends EventEmitter {
     const values = Attorney.checkFetchArgs(name, batchSize, options)
 
     const result = await this.db.executeSql(
-      this.nextJobCommand(options.includeMetadata || false),
+      this.nextJobCommand(options.includeMetadata || false, options.onlyOneJobActivePerQueue || false),
       [values.name, batchSize || 1]
     )
 

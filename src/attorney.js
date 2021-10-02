@@ -111,6 +111,7 @@ function checkSubscribeArgs (name, args, defaults) {
   assert(!('teamSize' in options) || (Number.isInteger(options.teamSize) && options.teamSize >= 1), 'teamSize must be an integer > 0')
   assert(!('batchSize' in options) || (Number.isInteger(options.batchSize) && options.batchSize >= 1), 'batchSize must be an integer > 0')
   assert(!('includeMetadata' in options) || typeof options.includeMetadata === 'boolean', 'includeMetadata must be a boolean')
+  assert(!('onlyOneJobActivePerQueue' in options) || typeof options.onlyOneJobActivePerQueue === 'boolean', 'onlyOneJobActivePerQueue must be a boolean')
 
   return { options, callback }
 }
@@ -122,6 +123,7 @@ function checkFetchArgs (name, batchSize, options) {
 
   assert(!batchSize || (Number.isInteger(batchSize) && batchSize >= 1), 'batchSize must be an integer > 0')
   assert(!('includeMetadata' in options) || typeof options.includeMetadata === 'boolean', 'includeMetadata must be a boolean')
+  assert(!('onlyOneJobActivePerQueue' in options) || typeof options.onlyOneJobActivePerQueue === 'boolean', 'onlyOneJobActivePerQueue must be a boolean')
 
   return { name }
 }
