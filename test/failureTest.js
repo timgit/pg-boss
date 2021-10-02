@@ -1,180 +1,195 @@
-const assert = require('chai').assert;
-const helper = require('./testHelper');
+const delay = require('delay')
+const assert = require('assert')
+const helper = require('./testHelper')
+const pMap = require('p-map')
 
-describe('error', function(){
+describe('failure', function () {
+  it('should reject missing id argument', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
 
-  this.timeout(10000);
+    try {
+      await boss.fail()
+      assert(false)
+    } catch (err) {
+      assert(err)
+    }
+  })
 
-  let boss;
+  it('should fail a job when requested', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
 
-  before(function(finished){
-    helper.start()
-      .then(dabauce => {
-        boss = dabauce;
-        finished();
-      });
-  });
+    const queue = 'will-fail'
 
-  after(function(finished){
-    boss.stop().then(() => finished());
-  });
+    await boss.publish(queue)
 
-  it('should reject missing id argument', function(finished){
-    boss.fail().catch(() => finished());
-  });
+    const job = await boss.fetch(queue)
 
-  it('should fail a job when requested', function(finished){
-    this.timeout(3000);
+    await boss.fail(job.id)
+  })
 
-    const jobName = 'will-fail';
+  it('should subscribe to a job failure', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
 
-    boss.publish(jobName)
-      .then(id => boss.fetch(jobName))
-      .then(job => boss.fail(job.id))
-      .then(() => {
-        assert(true);
-        finished();
-      });
+    const queue = 'subscribe-fail'
+    const jobId = await boss.publish(queue, null, { onComplete: true })
 
-  });
+    const job = await boss.fetch(queue)
 
-  it('failure event is raised from subscriber error', function(finished) {
+    await boss.fail(job.id)
 
-    this.timeout(3000);
+    return new Promise((resolve, reject) => {
+      boss.onComplete(queue, async job => {
+        assert.strictEqual(jobId, job.data.request.id)
+        assert.strictEqual('failed', job.data.state)
+        resolve()
+      }).catch(reject)
+    })
+  })
 
-    const errorMessage = 'something went wrong';
-    const jobName = 'suspect-job';
-    let jobId;
+  it('should fail a batch of jobs', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
 
-    boss.on('failed', failure => {
-      assert.equal(failure.job.id, jobId);
-      assert.equal(errorMessage, failure.error.message);
-      boss.removeAllListeners('failed');
-      finished();
-    });
+    const queue = 'complete-batch'
 
-    boss.subscribe(jobName, job => {
-        let myError = new Error(errorMessage);
-
-        job.done(myError)
-          .catch(error => {
-            console.error(error);
-            assert(false, error.message);
-          });
-      })
-      .then(() => boss.publish(jobName))
-      .then(id => jobId = id);
-
-  });
-
-  it('should subscribe to a job failure', function(finished){
-
-    this.timeout(3000);
-
-    const jobName = 'subscribe-fail';
-    let jobId;
-
-    boss.onFail(jobName, job => {
-      assert.strictEqual(jobId, job.data.request.id);
-      finished();
-    });
-
-    boss.publish(jobName)
-      .then(id => jobId = id)
-      .then(() => boss.fetch(jobName))
-      .then(job => boss.fail(job.id));
-
-  });
-
-  it('should fail a batch of jobs', function(finished){
-    const jobName = 'complete-batch';
-
-    Promise.all([
-      boss.publish(jobName),
-      boss.publish(jobName),
-      boss.publish(jobName)
+    await Promise.all([
+      boss.publish(queue),
+      boss.publish(queue),
+      boss.publish(queue)
     ])
-    .then(() => boss.fetch(jobName, 3))
-    .then(jobs => boss.fail(jobs.map(job => job.id)))
-    .then(() => finished());
-  });
 
-  it('should accept a payload', function(finished){
-    const jobName = 'fail-payload';    
-    const failPayload = {
-      someReason: 'nuna'
-    };
+    const jobs = await boss.fetch(queue, 3)
 
-    boss.publish(jobName)
-      .then(jobId => boss.fail(jobId, failPayload))
-      .then(() => boss.fetchFailed(jobName))
-      .then(job => {
-        assert.strictEqual(job.data.response.someReason, failPayload.someReason);
-        finished();
-      });
-  });
+    await boss.fail(jobs.map(job => job.id))
+  })
 
-  it('should unsubscribe a failure subscription', function(finished){
-    this.timeout(4000);
+  it('should fail a batch of jobs with a data arg', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const queue = this.test.bossConfig.schema
+    const message = 'some error'
 
-    const jobName = 'offFail';
+    await Promise.all([
+      boss.publish(queue),
+      boss.publish(queue),
+      boss.publish(queue)
+    ])
 
-    let receivedCount = 0;
+    const jobs = await boss.fetch(queue, 3)
 
-    boss.onFail(jobName, job => {
-      receivedCount++;
+    await boss.fail(jobs.map(job => job.id), new Error(message))
 
-      job.done()
-        .then(() => boss.offFail(jobName))
-        .then(() => boss.publish(jobName))
-        .then(jobId => boss.fail(jobId))
-    });
+    const results = await pMap(jobs, job => boss.getJobById(job.id))
 
-    boss.publish(jobName)
-      .then(jobId => boss.fail(jobId))
-      .then(() => {
+    assert(results.every(i => i.output.message === message))
+  })
 
-        setTimeout(() => {
-          assert.strictEqual(receivedCount, 1);
-          finished();
-        }, 2000);
+  it('should accept a payload', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
 
-      });
+    const queue = 'fail-payload'
+    const failPayload = { someReason: 'nuna' }
 
-  });
+    const jobId = await boss.publish(queue, null, { onComplete: true })
 
-  it('should fetch a failed job', function(finished){
-    const jobName = 'fetchFailed';
+    await boss.fail(jobId, failPayload)
 
-    let jobId;
+    const job = await boss.fetchCompleted(queue)
 
-    boss.publish(jobName)
-      .then(id => jobId = id)
-      .then(() => boss.fail(jobId))
-      .then(() => boss.fetchFailed(jobName))
-      .then(job => {
-        assert.strictEqual(job.data.request.id, jobId);
-        finished();
+    assert.strictEqual(job.data.state, 'failed')
+    assert.strictEqual(job.data.response.someReason, failPayload.someReason)
+  })
+
+  it('should preserve nested objects within a payload that is an instance of Error', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+
+    const queue = 'fail-payload'
+    const failPayload = new Error('Something went wrong')
+    failPayload.some = { deeply: { nested: { reason: 'nuna' } } }
+
+    const jobId = await boss.publish(queue, null, { onComplete: true })
+
+    await boss.fail(jobId, failPayload)
+
+    const job = await boss.fetchCompleted(queue)
+
+    assert.strictEqual(job.data.state, 'failed')
+    assert.strictEqual(job.data.response.some.deeply.nested.reason, failPayload.some.deeply.nested.reason)
+  })
+
+  it('subscribe failure via done() should pass error payload to failed job', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+
+    const queue = 'fetchFailureWithPayload'
+    const errorMessage = 'mah error'
+
+    await boss.publish(queue, null, { onComplete: true })
+
+    return new Promise((resolve) => {
+      boss.subscribe(queue, async job => {
+        const error = new Error(errorMessage)
+
+        await job.done(error)
+
+        const failedJob = await boss.fetchCompleted(queue)
+
+        assert.strictEqual(failedJob.data.state, 'failed')
+        assert.strictEqual(failedJob.data.response.message, errorMessage)
+
+        resolve()
       })
-  });
+    })
+  })
 
-  it('subscribe failure via done() should pass error payload to failed job', function(finished){
-    const jobName = 'fetchFailedWithPayload';
-    const failPayload = 'mah error';
+  it('subscribe failure via Promise reject() should pass string wrapped in value prop', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
 
-    boss.subscribe(jobName, job => {
-        job.done(failPayload)
-          .then(() => boss.fetchFailed(jobName))
-          .then(failedJob => {
-            assert.strictEqual(failedJob.data.response, failPayload);
-            finished();
-          })
-      })
-      .then(() => boss.publish(jobName));
+    const queue = 'subscribeFailureViaRejectString'
+    const failPayload = 'mah error'
 
-  });
+    await boss.subscribe(queue, job => Promise.reject(failPayload))
+    await boss.publish(queue, null, { onComplete: true })
 
-});
+    await delay(7000)
 
+    const job = await boss.fetchCompleted(queue)
 
+    assert.strictEqual(job.data.state, 'failed')
+    assert.strictEqual(job.data.response.value, failPayload)
+  })
 
+  it('subscribe failure via Promise reject() should pass object payload', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+
+    const queue = 'subscribeFailureViaRejectObject'
+    const something = 'clever'
+
+    const errorResponse = new Error('custom error')
+    errorResponse.something = something
+
+    await boss.subscribe(queue, job => Promise.reject(errorResponse))
+    await boss.publish(queue, null, { onComplete: true })
+
+    await delay(7000)
+
+    const job = await boss.fetchCompleted(queue)
+
+    assert.strictEqual(job.data.state, 'failed')
+    assert.strictEqual(job.data.response.something, something)
+  })
+
+  it('failure with Error object should get stored in the failure job', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+
+    const queue = 'failWithErrorObj'
+    const message = 'a real error!'
+
+    await boss.publish(queue, null, { onComplete: true })
+    await boss.subscribe(queue, async () => { throw new Error(message) })
+
+    await delay(2000)
+
+    const job = await boss.fetchCompleted(queue)
+
+    assert.strictEqual(job.data.state, 'failed')
+    assert(job.data.response.message.includes(message))
+  })
+})

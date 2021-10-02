@@ -1,41 +1,83 @@
-const assert = require('chai').assert;
-const helper = require('./testHelper');
-const Promise = require('bluebird');
+const assert = require('assert')
+const helper = require('./testHelper')
+const delay = require('delay')
 
-describe('archive', function() {
+describe('archive', function () {
+  const defaults = {
+    archiveCompletedAfterSeconds: 1,
+    maintenanceIntervalSeconds: 1
+  }
 
-  this.timeout(10000);
+  it('should archive a completed job', async function () {
+    const config = { ...this.test.bossConfig, ...defaults }
+    const boss = this.test.boss = await helper.start(config)
 
-  let boss;
+    const queue = 'archive-completed'
 
-  before(function(finished){
-    helper.start({archiveCompletedJobsEvery:'1 second', archiveCheckInterval: 500})
-      .then(dabauce => {
-        boss = dabauce;
+    const jobId = await boss.publish(queue)
+    const job = await boss.fetch(queue)
 
-        finished();
-      });
-  });
+    assert.strictEqual(job.id, jobId)
 
-  after(function(finished) {
-    boss.stop().then(() => finished());
-  });
+    await boss.complete(jobId)
 
-  it('should archive a job', function(finished){
-    this.timeout(5000);
+    await delay(4000)
 
-    let jobName = 'archiveMe';
-    let jobId = null;
+    const archivedJob = await helper.getArchivedJobById(config.schema, jobId)
 
-    boss.publish(jobName)
-      .then(id => jobId = id)
-      .then(() => boss.fetch(jobName))
-      .then(job => assert.equal(job.id, jobId))
-      .then(() => boss.complete(jobId))
-      .then(() => Promise.delay(2000))
-      .then(() => helper.getArchivedJobById(jobId))
-      .then(result => assert.equal(1, result.rows.length))
-      .then(() => finished());
-  });
+    assert.strictEqual(jobId, archivedJob.id)
+    assert.strictEqual(queue, archivedJob.name)
+  })
 
-});
+  it('should retrieve an archived job via getJobById()', async function () {
+    const config = { ...this.test.bossConfig, ...defaults }
+    const boss = this.test.boss = await helper.start(config)
+    const queue = this.test.bossConfig.schema
+
+    const jobId = await boss.publish(queue)
+    const job = await boss.fetch(queue)
+
+    assert.strictEqual(job.id, jobId)
+
+    await boss.complete(jobId)
+
+    await delay(4000)
+
+    const archivedJob = await boss.getJobById(jobId)
+
+    assert.strictEqual(jobId, archivedJob.id)
+    assert.strictEqual(queue, archivedJob.name)
+  })
+
+  it('should archive a created job', async function () {
+    const config = { ...this.test.bossConfig, ...defaults }
+    const boss = this.test.boss = await helper.start(config)
+
+    const queue = 'archive-created'
+
+    const jobId = await boss.publish(queue, null, { retentionSeconds: 1 })
+
+    await delay(7000)
+
+    const archivedJob = await helper.getArchivedJobById(config.schema, jobId)
+
+    assert.strictEqual(jobId, archivedJob.id)
+    assert.strictEqual(queue, archivedJob.name)
+  })
+
+  it('should archive a created job - cascaded config', async function () {
+    const config = { ...this.test.bossConfig, ...defaults, retentionSeconds: 1 }
+    const boss = this.test.boss = await helper.start(config)
+
+    const queue = 'archive-created-cascaded-config'
+
+    const jobId = await boss.publish(queue)
+
+    await delay(7000)
+
+    const archivedJob = await helper.getArchivedJobById(config.schema, jobId)
+
+    assert.strictEqual(jobId, archivedJob.id)
+    assert.strictEqual(queue, archivedJob.name)
+  })
+})

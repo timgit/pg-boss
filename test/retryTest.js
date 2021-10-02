@@ -1,41 +1,114 @@
-const assert = require('chai').assert;
-const helper = require('./testHelper');
+const assert = require('assert')
+const helper = require('./testHelper')
+const delay = require('delay')
 
-describe('retries', function() {
+describe('retries', function () {
+  const defaults = { maintenanceIntervalSeconds: 1 }
 
-  this.timeout(10000);
+  it('should retry a job that didn\'t complete', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, ...defaults })
 
-  let boss;
+    const queue = 'unreliable'
 
-  before(function(finished){
-    helper.start({expireCheckInterval:200, newJobCheckInterval: 200})
-      .then(dabauce => {
-        boss = dabauce;
-        finished();
-      });
-  });
+    const jobId = await boss.publish({ name: queue, options: { expireInSeconds: 1, retryLimit: 1 } })
 
-  after(function(finished){
-    boss.stop().then(() => finished());
-  });
+    const try1 = await boss.fetch(queue)
 
-  it('should retry a job that didn\'t complete', function (finished) {
+    await delay(5000)
 
-    const expireIn = '100 milliseconds';
-    const retryLimit = 1;
+    const try2 = await boss.fetch(queue)
 
-    let subscribeCount = 0;
+    assert.strictEqual(try1.id, jobId)
+    assert.strictEqual(try2.id, jobId)
+  })
 
-    // don't call job.done() so it will expire
-    boss.subscribe('unreliable', job => subscribeCount++);
+  it('should retry a job that failed', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, ...defaults })
 
-    boss.publish({name: 'unreliable', options: {expireIn, retryLimit}});
+    const queueName = 'retryFailed'
+    const retryLimit = 1
 
-    setTimeout(function() {
-      assert.equal(subscribeCount, retryLimit + 1);
-      finished();
+    const jobId = await boss.publish(queueName, null, { retryLimit })
 
-    }, 3000);
+    await boss.fetch(queueName)
+    await boss.fail(jobId)
 
-  });
-});
+    const job = await boss.fetch(queueName)
+
+    assert.strictEqual(job.id, jobId)
+  })
+
+  it('should retry a job that failed with cascaded config', async function () {
+    const retryLimit = 1
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, ...defaults, retryLimit })
+
+    const queueName = 'retryFailed-config-cascade'
+
+    const jobId = await boss.publish(queueName)
+
+    await boss.fetch(queueName)
+    await boss.fail(jobId)
+
+    const job = await boss.fetch(queueName)
+
+    assert.strictEqual(job.id, jobId)
+  })
+
+  it('should retry with a fixed delay', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, ...defaults })
+
+    const queue = 'retryDelayFixed'
+
+    const jobId = await boss.publish(queue, null, { retryLimit: 1, retryDelay: 1 })
+
+    await boss.fetch(queue)
+    await boss.fail(jobId)
+
+    const job1 = await boss.fetch(queue)
+
+    assert.strictEqual(job1, null)
+
+    await delay(1000)
+
+    const job2 = await boss.fetch(queue)
+
+    assert(job2)
+  })
+
+  it('should retry with a exponential backoff', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, ...defaults })
+
+    const queue = 'retryDelayBackoff'
+
+    let subscribeCount = 0
+    const retryLimit = 4
+
+    await boss.subscribe(queue, { newJobCheckInterval: 500 }, job => job.done(++subscribeCount))
+    await boss.publish(queue, null, { retryLimit, retryBackoff: true })
+
+    await delay(9000)
+
+    assert(subscribeCount < retryLimit)
+  })
+
+  it('should set the default retry limit to 1 if missing', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, ...defaults })
+
+    const queue = 'retryLimitDefault'
+
+    const jobId = await boss.publish(queue, null, { retryDelay: 1 })
+
+    await boss.fetch(queue)
+    await boss.fail(jobId)
+
+    const job1 = await boss.fetch(queue)
+
+    assert.strictEqual(job1, null)
+
+    await delay(1000)
+
+    const job2 = await boss.fetch(queue)
+
+    assert(job2)
+  })
+})

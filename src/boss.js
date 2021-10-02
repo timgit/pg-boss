@@ -1,119 +1,247 @@
-const EventEmitter = require('events');
-const plans = require('./plans');
+const EventEmitter = require('events')
+const plans = require('./plans')
+const { states } = require('./plans')
+const { COMPLETION_JOB_PREFIX } = plans
+
+const queues = {
+  MAINTENANCE: '__pgboss__maintenance',
+  MONITOR_STATES: '__pgboss__monitor-states'
+}
 
 const events = {
-  archived: 'archived',
-  deleted: 'deleted',
+  error: 'error',
   monitorStates: 'monitor-states',
-  expiredCount: 'expired-count',
-  expiredJob: 'expired-job',
-  error: 'error'
-};
+  maintenance: 'maintenance'
+}
 
-class Boss extends EventEmitter{
-  constructor(db, config){
-    super();
+class Boss extends EventEmitter {
+  constructor (db, config) {
+    super()
 
-    this.db = db;
-    this.config = config;
+    this.db = db
+    this.config = config
+    this.manager = config.manager
 
-    this.timers = {};
-    this.events = events;
+    this.maintenanceIntervalSeconds = config.maintenanceIntervalSeconds
 
-    this.expireCommand = plans.expire(config.schema);
-    this.archiveCommand = plans.archive(config.schema);
-    this.purgeCommand = plans.purge(config.schema);
-    this.countStatesCommand = plans.countStates(config.schema);
+    this.monitorStates = config.monitorStateIntervalSeconds !== null
+
+    if (this.monitorStates) {
+      this.monitorIntervalSeconds = config.monitorStateIntervalSeconds
+    }
+
+    this.events = events
+
+    this.expireCommand = plans.expire(config.schema)
+    this.archiveCommand = plans.archive(config.schema, config.archiveInterval)
+    this.purgeCommand = plans.purge(config.schema, config.deleteAfter)
+    this.getMaintenanceTimeCommand = plans.getMaintenanceTime(config.schema)
+    this.setMaintenanceTimeCommand = plans.setMaintenanceTime(config.schema)
+    this.countStatesCommand = plans.countStates(config.schema)
+
+    this.functions = [
+      this.expire,
+      this.archive,
+      this.purge,
+      this.countStates,
+      this.getQueueNames
+    ]
   }
 
-  supervise(){
-    const self = this;
+  async supervise () {
+    this.metaMonitor()
 
-    // todo: add query that calcs avg start time delta vs. creation time
+    await this.manager.deleteQueue(COMPLETION_JOB_PREFIX + queues.MAINTENANCE)
+    await this.manager.deleteQueue(queues.MAINTENANCE)
 
-    return Promise.all([
-      monitor(this.archive, this.config.archiveCheckInterval),
-      monitor(this.purge, this.config.deleteCheckInterval),
-      monitor(this.expire, this.config.expireCheckInterval),
-      this.config.monitorStateInterval ? monitor(this.countStates, this.config.monitorStateInterval) : null
-    ]);
+    await this.maintenanceAsync()
 
-    function monitor(func, interval) {
+    const maintenanceSubscribeOptions = {
+      newJobCheckIntervalSeconds: Math.max(1, this.maintenanceIntervalSeconds / 2)
+    }
 
-      return exec().then(repeat);
+    await this.manager.subscribe(queues.MAINTENANCE, maintenanceSubscribeOptions, (job) => this.onMaintenance(job))
 
-      function exec() {
-        return func.call(self).catch(error => self.emit(events.error, error));
+    if (this.monitorStates) {
+      await this.manager.deleteQueue(COMPLETION_JOB_PREFIX + queues.MONITOR_STATES)
+      await this.manager.deleteQueue(queues.MONITOR_STATES)
+
+      await this.monitorStatesAsync()
+
+      const monitorStatesSubscribeOptions = {
+        newJobCheckIntervalSeconds: Math.max(1, this.monitorIntervalSeconds / 2)
       }
 
-      function repeat(){
-        if(self.stopped) return;
-        self.timers[func.name] = setTimeout(() => exec().then(repeat), interval);
-      }
+      await this.manager.subscribe(queues.MONITOR_STATES, monitorStatesSubscribeOptions, (job) => this.onMonitorStates(job))
     }
   }
 
-  stop() {
-    this.stopped = true;
-    Object.keys(this.timers).forEach(key => clearTimeout(this.timers[key]));
-    return Promise.resolve();
+  metaMonitor () {
+    this.metaMonitorInterval = setInterval(async () => {
+      const { secondsAgo } = await this.getMaintenanceTime()
+
+      if (secondsAgo > this.maintenanceIntervalSeconds * 2) {
+        await this.manager.deleteQueue(queues.MAINTENANCE, { before: states.completed })
+        await this.maintenanceAsync()
+      }
+    }, this.maintenanceIntervalSeconds * 2 * 1000)
   }
 
-  countStates(){
-    let stateCountDefault = Object.assign({}, plans.states);
+  async maintenanceAsync (options = {}) {
+    const { startAfter } = options
 
-    Object.keys(stateCountDefault).forEach(key => stateCountDefault[key] = 0);
+    options = {
+      startAfter,
+      retentionSeconds: this.maintenanceIntervalSeconds * 4,
+      singletonKey: queues.MAINTENANCE,
+      onComplete: false
+    }
 
-    return this.db.executeSql(this.countStatesCommand)
-      .then(counts => {
-
-        let states = counts.rows.reduce((acc, item) => {
-            if(item.name)
-              acc.queues[item.name] = acc.queues[item.name] || Object.assign({}, stateCountDefault);
-
-            let queue = item.name ? acc.queues[item.name] : acc;
-            let state = item.state || 'all';
-
-            // parsing int64 since pg returns it as string
-            queue[state] = parseFloat(item.size);
-
-            return acc;
-          },
-          Object.assign({}, stateCountDefault, { queues: {} })
-        );
-
-        this.emit(events.monitorStates, states);
-
-        return states;
-      });
+    await this.manager.publish(queues.MAINTENANCE, null, options)
   }
 
-  expire() {
-    return this.db.executeSql(this.expireCommand)
-      .then(result => {
-        if (result.rows.length) {
-          this.emit(events.expiredCount, result.rows.length);
-          return Promise.all(result.rows.map(job => this.emit(events.expiredJob, job)));
-        }
-      });
+  async monitorStatesAsync (options = {}) {
+    const { startAfter } = options
+
+    options = {
+      startAfter,
+      retentionSeconds: this.monitorIntervalSeconds * 4,
+      singletonKey: queues.MONITOR_STATES,
+      onComplete: false
+    }
+
+    await this.manager.publish(queues.MONITOR_STATES, null, options)
   }
 
-  archive(){
-    return this.db.executeSql(this.archiveCommand, [this.config.archiveCompletedJobsEvery])
-      .then(result => {
-        if (result.rowCount)
-          this.emit(events.archived, result.rowCount);
-      });
+  async onMaintenance (job) {
+    try {
+      if (this.config.__test__throw_maint) {
+        throw new Error('__test__throw_maint')
+      }
+
+      const started = Date.now()
+
+      await this.expire()
+      await this.archive()
+      await this.purge()
+
+      const ended = Date.now()
+
+      await this.setMaintenanceTime()
+
+      this.emit('maintenance', { ms: ended - started })
+
+      if (!this.stopped) {
+        await job.done() // pre-complete to bypass throttling
+        await this.maintenanceAsync({ startAfter: this.maintenanceIntervalSeconds })
+      }
+    } catch (err) {
+      this.emit(events.error, err)
+    }
   }
 
-  purge(){
-    return this.db.executeSql(this.purgeCommand, [this.config.deleteArchivedJobsEvery])
-      .then(result => {
-        if (result.rowCount)
-          this.emit(events.deleted, result.rowCount);
-      });
+  async onMonitorStates (job) {
+    try {
+      if (this.config.__test__throw_monitor) {
+        throw new Error('__test__throw_monitor')
+      }
+
+      const states = await this.countStates()
+
+      this.emit(events.monitorStates, states)
+
+      if (!this.stopped && this.monitorStates) {
+        await job.done() // pre-complete to bypass throttling
+        await this.monitorStatesAsync({ startAfter: this.monitorIntervalSeconds })
+      }
+    } catch (err) {
+      this.emit(events.error, err)
+    }
   }
 
+  async stop () {
+    if (this.config.__test__throw_stop) {
+      throw new Error('__test__throw_stop')
+    }
+
+    if (!this.stopped) {
+      if (this.metaMonitorInterval) {
+        clearInterval(this.metaMonitorInterval)
+      }
+
+      await this.manager.unsubscribe(queues.MAINTENANCE)
+
+      if (this.monitorStates) {
+        await this.manager.unsubscribe(queues.MONITOR_STATES)
+      }
+
+      this.stopped = true
+    }
+  }
+
+  async countStates () {
+    const stateCountDefault = { ...plans.states }
+
+    Object.keys(stateCountDefault)
+      .forEach(key => { stateCountDefault[key] = 0 })
+
+    const counts = await this.executeSql(this.countStatesCommand)
+
+    const states = counts.rows.reduce((acc, item) => {
+      if (item.name) {
+        acc.queues[item.name] = acc.queues[item.name] || { ...stateCountDefault }
+      }
+
+      const queue = item.name ? acc.queues[item.name] : acc
+      const state = item.state || 'all'
+
+      // parsing int64 since pg returns it as string
+      queue[state] = parseFloat(item.size)
+
+      return acc
+    }, { ...stateCountDefault, queues: {} })
+
+    return states
+  }
+
+  async expire () {
+    await this.executeSql(plans.locked(this.expireCommand))
+  }
+
+  async archive () {
+    await this.executeSql(plans.locked(this.archiveCommand))
+  }
+
+  async purge () {
+    await this.executeSql(plans.locked(this.purgeCommand))
+  }
+
+  async setMaintenanceTime () {
+    await this.executeSql(this.setMaintenanceTimeCommand)
+  }
+
+  async getMaintenanceTime () {
+    if (!this.stopped) {
+      const { rows } = await this.db.executeSql(this.getMaintenanceTimeCommand)
+
+      let { maintained_on: maintainedOn, seconds_ago: secondsAgo } = rows[0]
+
+      secondsAgo = secondsAgo !== null ? parseFloat(secondsAgo) : this.maintenanceIntervalSeconds * 10
+
+      return { maintainedOn, secondsAgo }
+    }
+  }
+
+  getQueueNames () {
+    return queues
+  }
+
+  async executeSql (sql, params) {
+    if (!this.stopped) {
+      return await this.db.executeSql(sql, params)
+    }
+  }
 }
 
-module.exports = Boss;
+module.exports = Boss
+module.exports.QUEUES = queues

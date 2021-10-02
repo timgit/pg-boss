@@ -1,74 +1,107 @@
-const assert = require('chai').assert;
-const helper = require('./testHelper');
+const assert = require('assert')
+const helper = require('./testHelper')
 
-describe('singleton', function() {
+describe('singleton', function () {
+  it('should not allow more than 1 pending job at a time with the same key', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
 
-  this.timeout(10000);
+    const queue = 'singleton-1-pending'
+    const singletonKey = 'a'
 
-  let boss;
+    const jobId = await boss.publish(queue, null, { singletonKey })
 
-  before(function(finished){
-    helper.start()
-      .then(dabauce => {
-        boss = dabauce;
-        finished();
-      });
-  });
+    assert(jobId)
 
-  after(function(finished){
-    boss.stop().then(() => finished());
-  });
+    const jobId2 = await boss.publish(queue, null, { singletonKey })
 
-  beforeEach(function(finished){
-    helper.empty().then(() => finished());
-  });
+    assert.strictEqual(jobId2, null)
+  })
 
-  it('should not allow more than 1 pending job at a time with the same key', function(finished){
+  it('should not allow more than 1 complete job with the same key with an interval', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
 
-    const jobName = 'singleton';
-    const singletonKey = 'a';
+    const queue = 'singleton-1-complete'
+    const singletonKey = 'a'
+    const singletonMinutes = 1
 
-    boss.publish(jobName, null, {singletonKey})
-      .then(jobId => {
-        assert.isOk(jobId);
-        return boss.publish(jobName, null, {singletonKey});
-      })
-      .then(jobId => {
-        assert.isNotOk(jobId);
-        finished();
-      });
+    await boss.publish(queue, null, { singletonKey, singletonMinutes })
+    const job = await boss.fetch(queue)
 
-  });
+    await boss.complete(job.id)
 
-  it('should not allow more than 1 complete job with the same key with an interval', function(finished){
+    const jobId = await boss.publish(queue, null, { singletonKey, singletonMinutes })
 
-    const jobName = 'singleton';
-    const singletonKey = 'a';
-    const singletonMinutes = 1;
+    assert.strictEqual(jobId, null)
+  })
 
-    boss.publish(jobName, null, {singletonKey, singletonMinutes})
-      .then(jobId => boss.fetch(jobName))
-      .then(job => boss.complete(job.id))
-      .then(() => boss.publish(jobName, null, {singletonKey, singletonMinutes}))
-      .then(jobId => {
-        assert.isNotOk(jobId);
-        finished();
-      });
-  });
+  it('should allow more than 1 pending job at the same time with different keys', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
 
-  it('should allow more than 1 pending job at the same time with different keys', function (finished) {
+    const queue = 'singleton'
+    const jobId = await boss.publish(queue, null, { singletonKey: 'a' })
 
-    const jobName = 'singleton';
+    assert(jobId)
 
-    boss.publish(jobName, null, {singletonKey: 'a'})
-      .then(jobId => {
-        assert.isOk(jobId);
-        return boss.publish(jobName, null, {singletonKey: 'b'});
-      })
-      .then(jobId => {
-        assert.isOk(jobId);
-        finished();
-      });
+    const jobId2 = await boss.publish(queue, null, { singletonKey: 'b' })
 
-  });
-});
+    assert(jobId2)
+  })
+
+  it('publishOnce() should work', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+
+    const queue = 'publishOnce'
+    const key = 'only-once-plz'
+
+    const jobId = await boss.publishOnce(queue, null, null, key)
+
+    assert(jobId)
+
+    const jobId2 = await boss.publishOnce(queue, null, null, key)
+
+    assert.strictEqual(jobId2, null)
+
+    const job = await boss.fetch(queue)
+
+    assert.strictEqual(job.id, jobId)
+
+    const jobId3 = await boss.publishOnce(queue, null, null, key)
+
+    assert.strictEqual(jobId3, null)
+  })
+
+  it('publishOnce() without a key should also work', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+
+    const queue = 'publishOnceNoKey'
+    const jobId = await boss.publishOnce(queue)
+
+    assert(jobId)
+
+    const jobId2 = await boss.publishOnce(queue)
+
+    assert.strictEqual(jobId2, null)
+  })
+
+  it('publishSingleton() works', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+
+    const queue = this.test.bossConfig.schema
+
+    const jobId = await boss.publishSingleton(queue)
+
+    assert(jobId)
+
+    const jobId2 = await boss.publishSingleton(queue)
+
+    assert.strictEqual(jobId2, null)
+
+    const job = await boss.fetch(queue)
+
+    assert.strictEqual(job.id, jobId)
+
+    const jobId3 = await boss.publishSingleton(queue)
+
+    assert(jobId3)
+  })
+})

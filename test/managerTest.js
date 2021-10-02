@@ -1,33 +1,20 @@
-const Promise = require('bluebird');
-const assert = require('chai').assert;
-const helper = require('./testHelper');
-const PgBoss = require('../src/index');
+const delay = require('delay')
+const assert = require('assert')
+const helper = require('./testHelper')
 
-describe('manager', function(){
+describe('manager', function () {
+  it('should reject multiple simultaneous start requests', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
 
-  this.timeout(10000);
+    await boss.start()
 
-  before(function(finished){
-    helper.init().then(() => finished());
-  });
+    await delay(2000)
 
-  it('should reject multiple simultaneous start requests', function(finished) {
-
-    const boss = new PgBoss(helper.getConfig());
-
-    boss.start()
-      .then(() => Promise.delay(1000))
-      .then(() => boss.stop())
-      .then(() => finished());
-
-    boss.start()
-      .catch(() => {
-        assert(true);
-      });
-
-  });
-
-});
-
-
-
+    try {
+      await boss.start()
+      assert(false)
+    } catch (error) {
+      assert(true)
+    }
+  })
+})

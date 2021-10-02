@@ -1,7 +1,4 @@
 node_modules
-.idea
-lib
-coverage/
+.nyc_output
+.vscode
 *.tgz
-.nyc_output/
-package-lock.json

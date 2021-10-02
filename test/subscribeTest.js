@@ -1,124 +1,362 @@
-const Promise = require('bluebird');
-const assert = require('chai').assert;
-const helper = require('./testHelper');
+const delay = require('delay')
+const assert = require('assert')
+const helper = require('./testHelper')
+const PgBoss = require('../')
 
-describe('subscribe', function(){
+describe('subscribe', function () {
+  it('should fail with no arguments', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
 
-  this.timeout(10000);
+    try {
+      await boss.subscribe()
+      assert(false)
+    } catch (err) {
+      assert(err)
+    }
+  })
 
-  let boss;
+  it('should fail if no callback provided', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
 
-  before(function(finished){
-    helper.start()
-      .then(dabauce => {
-        boss = dabauce;
-        finished();
-      });
-  });
+    try {
+      await boss.subscribe('foo')
+      assert(false)
+    } catch (err) {
+      assert(err)
+    }
+  })
 
-  after(function(finished){
-    boss.stop().then(() => finished());
-  });
+  it('should fail if options is not an object', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
 
-  it('should fail with no arguments', function(finished) {
-    boss.subscribe().catch(error => {
-      assert(true);
-      finished();
-    });
-  });
+    try {
+      await boss.subscribe('foo', () => {}, 'nope')
+      assert(false)
+    } catch (err) {
+      assert(err)
+    }
+  })
 
-  it('should fail if no callback provided', function(finished) {
-    boss.subscribe('foo').catch(error => {
-      assert(true);
-      finished();
-    });
-  });
+  it('unsubscribe should fail without a name', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
 
-  it('should fail if options is not an object', function(finished) {
-    boss.subscribe('foo', () => {}, 'nope').catch(error => {
-      assert(true);
-      finished();
-    });
-  });
+    try {
+      await boss.unsubscribe()
+      assert(false)
+    } catch (err) {
+      assert(err)
+    }
+  })
 
-  it('should honor a custom new job check interval', function(finished){
-    this.timeout(5000);
+  it('should honor a custom new job check interval', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const queue = this.test.bossConfig.schema
 
-    let startTime = new Date();
-    const newJobCheckIntervalSeconds = 3;
+    const newJobCheckIntervalSeconds = 1
+    const timeout = 5000
+    let subscribeCount = 0
+    const jobCount = 10
 
-    boss.subscribe('foo', {newJobCheckIntervalSeconds}, job => {
-      let elapsed = new Date().getTime() - startTime.getTime();
+    for (let i = 0; i < jobCount; i++) {
+      await boss.publish(queue)
+    }
 
-      assert.isAbove((elapsed / 1000), newJobCheckIntervalSeconds);
+    await boss.subscribe(queue, { newJobCheckIntervalSeconds }, () => subscribeCount++)
 
-      job.done().then(() => finished());
+    await delay(timeout)
+
+    assert.strictEqual(subscribeCount, timeout / 1000 / newJobCheckIntervalSeconds)
+  })
+
+  it('should unsubscribe a subscription', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+
+    const queue = 'unsubscribe-works'
+
+    let receivedCount = 0
+
+    boss.subscribe(queue, async () => {
+      receivedCount++
+      await boss.unsubscribe(queue)
     })
-      .then(() => boss.publish('foo'));
 
-  });
+    await boss.publish(queue)
+    await boss.publish(queue)
 
-  it('should unsubscribe a subscription', function(finished){
-    this.timeout(4000);
+    await delay(5000)
 
-    const jobName = 'temp';
+    assert.strictEqual(receivedCount, 1)
+  })
 
-    let receivedCount = 0;
+  it('should unsubscribe a subscription by id', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const queue = this.test.bossConfig.schema
 
-    boss.subscribe(jobName, job => {
-      receivedCount++;
+    let receivedCount = 0
 
-      job.done()
-        .then(() => boss.unsubscribe(jobName))
-        .then(() => boss.publish(jobName))
-    });
+    await boss.publish(queue)
+    await boss.publish(queue)
 
-    boss.publish(jobName)
-      .then(() => {
+    const id = await boss.subscribe(queue, { newJobCheckInterval: 500 }, async () => {
+      receivedCount++
+      await boss.unsubscribe({ id })
+    })
 
-        setTimeout(() => {
-          assert.isAtMost(receivedCount, 1);
-          finished();
-        }, 2000);
+    await delay(2000)
 
-      });
+    assert.strictEqual(receivedCount, 1)
+  })
 
-  });
+  it('should handle a batch of jobs via teamSize', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
 
-  it('unsubscribe should fail without a name', function(finished){
-    boss.unsubscribe().catch(() => finished());
-  });
+    const queue = 'subscribe-teamSize'
+    const teamSize = 4
 
-  it('should handle a batch of jobs', function(finished){
-    const jobName = 'subscribe-batch';
-    const batchSize = 4;
-    let subscribeCount = 0;
+    let subscribeCount = 0
 
-    Promise.all([
-      boss.publish(jobName),
-      boss.publish(jobName),
-      boss.publish(jobName),
-      boss.publish(jobName)
-    ])
-    .then(() => boss.subscribe(jobName, {batchSize}, job => {
-        subscribeCount++;
+    for (let i = 0; i < teamSize; i++) {
+      await boss.publish(queue)
+    }
 
-        // idea here is that the test would time out if it had to wait for 4 intervals
-        if(subscribeCount === batchSize)
-          finished();
+    return new Promise((resolve, reject) => {
+      boss.subscribe(queue, { teamSize }, async () => {
+        subscribeCount++
+
+        // test would time out if it had to wait for 4 fetch intervals
+        if (subscribeCount === teamSize) {
+          resolve()
+        }
+      }).catch(reject)
+    })
+  })
+
+  it('should apply teamConcurrency option', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+
+    const queue = 'subscribe-teamConcurrency'
+    const teamSize = 4
+    const teamConcurrency = 4
+
+    let subscribeCount = 0
+
+    for (let i = 0; i < teamSize; i++) {
+      await boss.publish(queue)
+    }
+
+    return new Promise((resolve) => {
+      boss.subscribe(queue, { teamSize, teamConcurrency }, async () => {
+        subscribeCount++
+
+        if (subscribeCount === teamSize) {
+          resolve()
+        }
+
+        // test would time out if it had to wait for each handler to resolve
+        await delay(4000)
       })
-    );
-  });
+    })
+  })
 
-  it('should have a done callback for single job subscriptions', function(finished){
-    const name = 'subscribe-single';
+  it('should handle a batch of jobs via batchSize', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
 
-    boss.subscribe(name, (job, done) => done().then(() => finished()))
-      .then(() => boss.publish(name));
+    const queue = 'subscribe-batchSize'
+    const batchSize = 4
 
-  });
+    for (let i = 0; i < batchSize; i++) {
+      await boss.publish(queue)
+    }
 
-});
+    return new Promise((resolve) => {
+      boss.subscribe(queue, { batchSize }, async jobs => {
+        assert.strictEqual(jobs.length, batchSize)
+        resolve()
+      })
+    })
+  })
 
+  it('returning promise applies backpressure', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const queue = 'backpressure'
 
+    const batchSize = 4
+    let subscribeCount = 0
 
+    for (let i = 0; i < batchSize; i++) {
+      await boss.publish(queue)
+    }
+
+    await boss.subscribe(queue, async () => {
+      // delay slows down subscribe fetch
+      await delay(2000)
+      subscribeCount++
+    })
+
+    await delay(7000)
+
+    assert(subscribeCount < batchSize)
+  })
+
+  it('should have a done callback for single job subscriptions', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const queue = 'subscribe-single'
+
+    await boss.publish(queue)
+
+    return new Promise((resolve) => {
+      boss.subscribe(queue, async job => {
+        job.done()
+        resolve()
+      })
+    })
+  })
+
+  it('subscribe completion should pass string wrapped in value prop', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, onComplete: true })
+
+    const queue = 'subscribeCompletionString'
+    const result = 'success'
+
+    boss.subscribe(queue, async job => result)
+
+    await boss.publish(queue)
+
+    await delay(8000)
+
+    const job = await boss.fetchCompleted(queue)
+
+    assert.strictEqual(job.data.state, 'completed')
+    assert.strictEqual(job.data.response.value, result)
+  })
+
+  it('subscribe completion via Promise resolve() should pass object payload', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, onComplete: true })
+
+    const queue = 'subscribeCompletionObject'
+    const something = 'clever'
+
+    boss.subscribe(queue, async job => ({ something }))
+
+    await boss.publish(queue)
+
+    await delay(8000)
+
+    const job = await boss.fetchCompleted(queue)
+
+    assert.strictEqual(job.data.state, 'completed')
+    assert.strictEqual(job.data.response.something, something)
+  })
+
+  it('should allow multiple subscriptions to the same queue per instance', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const queue = 'multiple-subscriptions'
+
+    await boss.subscribe(queue, () => {})
+    await boss.subscribe(queue, () => {})
+  })
+
+  it('should honor the includeMetadata option', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+
+    const queue = 'subscribe-includeMetadata'
+
+    await boss.publish(queue)
+
+    return new Promise((resolve) => {
+      boss.subscribe(queue, { includeMetadata: true }, async job => {
+        assert(job.startedon !== undefined)
+        resolve()
+      })
+    })
+  })
+
+  it('should fail job at expiration without maintenance', async function () {
+    const boss = this.test.boss = new PgBoss(this.test.bossConfig)
+
+    boss.on('error', err => console.log(err))
+
+    const maintenanceTick = new Promise((resolve) => boss.on('maintenance', resolve))
+
+    await boss.start()
+
+    await maintenanceTick
+
+    const queue = this.test.bossConfig.schema
+
+    const jobId = await boss.publish(queue, null, { expireInSeconds: 1 })
+
+    await boss.subscribe(queue, () => delay(2000))
+
+    await delay(2000)
+
+    const job = await boss.getJobById(jobId)
+
+    assert.strictEqual(job.state, 'failed')
+    assert(job.output.message.includes('handler execution exceeded'))
+  })
+
+  it('should fail a batch of jobs at expiration without maintenance', async function () {
+    const boss = this.test.boss = new PgBoss(this.test.bossConfig)
+
+    boss.on('error', err => console.log(err))
+
+    const maintenanceTick = new Promise((resolve) => boss.on('maintenance', resolve))
+
+    await boss.start()
+
+    await maintenanceTick
+
+    const queue = this.test.bossConfig.schema
+
+    const jobId1 = await boss.publish(queue, null, { expireInSeconds: 1 })
+    const jobId2 = await boss.publish(queue, null, { expireInSeconds: 1 })
+
+    await boss.subscribe(queue, { batchSize: 2 }, () => delay(2000))
+
+    await delay(2000)
+
+    const job1 = await boss.getJobById(jobId1)
+    const job2 = await boss.getJobById(jobId2)
+
+    assert.strictEqual(job1.state, 'failed')
+    assert(job1.output.message.includes('handler execution exceeded'))
+
+    assert.strictEqual(job2.state, 'failed')
+    assert(job2.output.message.includes('handler execution exceeded'))
+  })
+
+  it('should emit wip event every 2s during subscriptions', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const queue = this.test.bossConfig.schema
+
+    const firstWipEvent = new Promise(resolve => boss.once('wip', resolve))
+
+    await boss.publish(queue)
+    await boss.subscribe(queue, () => delay(1000))
+
+    const wip1 = await firstWipEvent
+
+    assert.strictEqual(wip1.length, 1)
+
+    const secondWipEvent = new Promise(resolve => boss.once('wip', resolve))
+
+    const wip2 = await secondWipEvent
+
+    assert.strictEqual(wip2.length, 0)
+  })
+
+  it('should reject subscribe() after stopping', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const queue = this.test.bossConfig.schema
+
+    boss.stop({ timeout: 1 })
+
+    try {
+      await boss.subscribe(queue)
+      assert(false)
+    } catch (err) {
+      assert(err.message.includes('stopping'))
+    }
+  })
+})

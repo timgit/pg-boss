@@ -1,104 +1,73 @@
-const assert = require('chai').assert;
-const helper = require('./testHelper');
+const assert = require('assert')
+const helper = require('./testHelper')
 
-describe('publish', function(){
+describe('publish', function () {
+  it('should fail with no arguments', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
 
-  this.timeout(10000);
+    try {
+      await boss.publish()
+      assert(false)
+    } catch (err) {
+      assert(err)
+    }
+  })
 
-  let boss;
+  it('should fail with a function for data', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
 
-  before(function(finished){
-    helper.start()
-      .then(dabauce => {
-        boss = dabauce;
-        finished();
-      });
-  });
+    try {
+      await boss.publish('job', () => true)
+      assert(false)
+    } catch (err) {
+      assert(err)
+    }
+  })
 
-  after(function(finished){
-    boss.stop().then(() => finished());
-  });
+  it('should fail with a function for options', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
 
-  it('should fail with no arguments', function(finished) {
-    boss.publish().catch(error => {
-      assert(true);
-      finished();
-    });
-  });
+    try {
+      await boss.publish('job', 'data', () => true)
+      assert(false)
+    } catch (err) {
+      assert(err)
+    }
+  })
 
-  it('should fail with a function for data', function(finished) {
-    boss.publish('job', () => true).catch(error => {
-      assert(true);
-      finished();
-    });
-  });
+  it('should accept single string argument', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const queue = 'publishNameOnly'
+    await boss.publish(queue)
+  })
 
-  it('should fail with a function for options', function(finished) {
-    boss.publish('job', 'data', () => true).catch(error => {
-      assert(true);
-      finished();
-    });
-  });
+  it('should accept job object argument with only name', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const queue = 'publishqueueOnly'
+    await boss.publish({ name: queue })
+  })
 
-  it('should accept single string argument', function(finished) {
-    const jobName = 'publishNameOnly';
+  it('should accept job object with name and data only', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const queue = 'publishqueueAndData'
+    const message = 'hi'
 
-    boss.subscribe(jobName, job => {
-      job.done()
-        .then(() => {
-          assert(true);
-          finished();
-        });
-    });
+    await boss.publish({ name: queue, data: { message } })
 
-    boss.publish(jobName);
-  });
+    const job = await boss.fetch(queue)
 
+    assert.strictEqual(message, job.data.message)
+  })
 
-  it('should accept job object argument with only name', function(finished){
-    const jobName = 'publishJobNameOnly';
+  it('should accept job object with name and options only', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const queue = 'publishqueueAndOptions'
+    const options = { someCrazyOption: 'whatever' }
 
-    boss.subscribe(jobName, job => {
-      job.done().then(() => {
-        assert(true);
-        finished();
-      });
-    });
+    await boss.publish({ name: queue, options })
 
-    boss.publish({name: jobName});
-  });
+    const job = await boss.fetch(queue)
 
-
-  it('should accept job object with name and data only', function(finished){
-    const jobName = 'publishJobNameAndData';
-    const message = 'hi';
-
-    boss.subscribe(jobName, job => {
-      job.done().then(() => {
-        assert.equal(message, job.data.message);
-        finished();
-      });
-    });
-
-    boss.publish({name: jobName, data: {message}});
-  });
-
-
-  it('should accept job object with name and options only', function(finished){
-    const jobName = 'publishJobNameAndOptions';
-    const options = {someCrazyOption:'whatever'};
-
-    boss.subscribe(jobName, job => {
-      job.done().then(() => {
-        assert.isNull(job.data);
-        finished();
-      });
-    });
-
-    boss.publish({name: jobName, options});
-  });
-
-});
-
-
-
+    assert.strictEqual(job.data, null)
+  })
+})

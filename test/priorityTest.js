@@ -1,79 +1,36 @@
-const assert = require('chai').assert;
-const helper = require('./testHelper');
+const assert = require('assert')
+const helper = require('./testHelper')
 
-describe('priority', function(){
+describe('priority', function () {
+  it('should process a newer higher priority job before an older lower priority job', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
 
-  this.timeout(10000);
+    const jobName = 'priority-test'
 
-  let boss;
+    await boss.publish(jobName)
 
-  before(function(finished){
-    helper.start()
-      .then(dabauce => {
-        boss = dabauce;
-        finished();
-      });
-  });
+    const high = await boss.publish(jobName, null, { priority: 1 })
 
-  after(function(finished){
-    boss.stop().then(() => finished());
-  });
+    const job = await boss.fetch(jobName)
 
-  it('should process a newer higher priority job before an older lower priority job', function(finished) {
+    assert.strictEqual(job.id, high)
+  })
 
-    const jobName = 'priority-test';
-    let lowerPriority, higherPriority;
+  it('should process several jobs in descending priority order', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
 
-    boss.publish(jobName)
-      .then(jobId => {
-        lowerPriority = jobId;
-        return boss.publish(jobName, null, {priority: 1})
-      })
-      .then(jobId => {
-        higherPriority = jobId;
-        return boss.fetch(jobName)
-      })
-      .then(job => {
-        assert.equal(job.id, higherPriority);
-        finished();
-      });
+    const queue = 'multiple-priority-test'
 
-  });
+    const low = await boss.publish(queue, null, { priority: 1 })
+    const medium = await boss.publish(queue, null, { priority: 5 })
+    const high = await boss.publish(queue, null, { priority: 10 })
 
-  it('should process several jobs in descending priority order', function(finished) {
+    const job1 = await boss.fetch(queue)
+    const job2 = await boss.fetch(queue)
+    const job3 = await boss.fetch(queue)
 
-    const jobName = 'multiple-priority-test';
-    let low, medium, high;
-
-    boss.publish(jobName, null, {priority: 1})
-      .then(jobId => {
-        low = jobId;
-        return boss.publish(jobName, null, {priority: 5})
-      })
-      .then(jobId => {
-        medium = jobId;
-        return boss.publish(jobName, null, {priority: 10})
-      })
-      .then(jobId => {
-        high = jobId;
-        return boss.fetch(jobName);
-      })
-      .then(job => {
-        assert.equal(job.id, high);
-        return boss.fetch(jobName);
-      })
-      .then(job => {
-        assert.equal(job.id, medium);
-        return boss.fetch(jobName);
-      })
-      .then(job => {
-        assert.equal(job.id, low);
-        finished();
-      })
-
-  });
-
-});
-
-
-
+    assert.strictEqual(job1.id, high)
+    assert.strictEqual(job2.id, medium)
+    assert.strictEqual(job3.id, low)
+  })
+})

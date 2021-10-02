@@ -1,56 +1,27 @@
-const assert = require('chai').assert;
-const helper = require('./testHelper');
+const helper = require('./testHelper')
 
-describe('error', function(){
+describe('error', function () {
+  it('should handle an error in a subscriber and not blow up', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
 
-  this.timeout(10000);
+    const queue = 'error-handling'
 
-  let boss;
+    let subscribeCount = 0
 
-  before(function(finished){
-    helper.start()
-      .then(dabauce => {
-        boss = dabauce;
-        finished();
-      });
-  });
+    await boss.publish(queue)
+    await boss.publish(queue)
 
-  after(function(finished){
-    boss.stop().then(() => finished());
-  });
+    return new Promise((resolve) => {
+      boss.subscribe(queue, async job => {
+        subscribeCount++
 
-  it('should handle an error in a subscriber and not blow up', function(finished) {
-
-    this.timeout(3000);
-
-    let subscribeCount = 0;
-
-    publish()
-      .then(publish)
-      .then(() => {
-        boss.subscribe('cray', job => {
-
-          subscribeCount++;
-
-          if(subscribeCount === 1)
-            throw new Error('test - nothing to see here');
-          else {
-            job.done().then(() => {
-              assert(true);
-              finished();
-            });
-          }
-
-        });
-      });
-
-    function publish(){
-      return boss.publish('cray', {message: 'volatile'})
-        .then(jobId => console.log(`job submitted: ${jobId}`));
-    }
-
-  });
-});
-
-
-
+        if (subscribeCount === 1) {
+          throw new Error('test - nothing to see here')
+        } else {
+          job.done()
+          resolve()
+        }
+      })
+    })
+  })
+})

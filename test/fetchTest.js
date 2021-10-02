@@ -1,70 +1,102 @@
-const Promise = require('bluebird');
-const assert = require('chai').assert;
-const helper = require('./testHelper');
+const assert = require('assert')
+const helper = require('./testHelper')
 
-describe('fetch', function(){
+describe('fetch', function () {
+  it('should reject missing queue argument', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
 
-  this.timeout(10000);
+    try {
+      await boss.fetch()
+      assert(false)
+    } catch (err) {
+      assert(err)
+    }
+  })
 
-  let boss;
+  it('should fetch a job by name manually', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const jobName = 'no-subscribe-required'
 
-  before(function(finished){
-    helper.start()
-      .then(dabauce => {
-        boss = dabauce;
-        finished();
-      });
-  });
+    await boss.publish(jobName)
+    const job = await boss.fetch(jobName)
+    assert(jobName === job.name)
+    // Metadata should only be included when specifically requested
+    assert(job.startedon === undefined)
+  })
 
-  after(function(finished){
-    boss.stop().then(() => finished());
-  });
+  it('should get a batch of jobs as an array', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const jobName = 'fetch-batch'
+    const batchSize = 4
 
-  it('should reject missing id argument', function(finished){
-    boss.fetch().catch(() => finished());
-  });
-
-  it('should get a single job by name and manually complete', function(finished) {
-    let jobName = 'no-subscribe-required';
-
-    boss.publish(jobName)
-      .then(() => boss.fetch(jobName))
-      .then(job => {
-        assert(jobName === job.name);
-        return boss.complete(job.id);
-      })
-      .then(() => {
-        assert(true);
-        finished();
-      });
-  });
-
-  it('should get a batch of jobs as an array', function(finished){
-    const jobName = 'fetch-batch';
-    const batchSize = 4;
-
-    Promise.all([
+    await Promise.all([
       boss.publish(jobName),
       boss.publish(jobName),
       boss.publish(jobName),
       boss.publish(jobName)
     ])
-    .then(() => boss.fetch(jobName, batchSize))
-    .then(jobs => {
-      assert(jobs.length === batchSize);
-      finished();
-    });
-  });
 
-  it('should always return an array if batchSize specified', function(finished){
-    const jobName = 'fetch-batch';
+    const jobs = await boss.fetch(jobName, batchSize)
 
-    boss.publish(jobName)
-      .then(() => boss.fetch(jobName, 2))
-      .then(jobs => {
-        assert(jobs.length === 1);
-        finished();
-    });
-  });
+    assert(jobs.length === batchSize)
+    // Metadata should only be included when specifically requested
+    assert(jobs[0].startedon === undefined)
+  })
 
-});
+  it('should fetch all metadata for a single job when requested', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const jobName = 'fetch-include-metadata'
+
+    await boss.publish(jobName)
+    const job = await boss.fetch(jobName, undefined, { includeMetadata: true })
+    assert(jobName === job.name)
+    assert(job.priority === 0)
+    assert(job.state === 'active')
+    assert(job.retrylimit === 0)
+    assert(job.retrycount === 0)
+    assert(job.retrydelay === 0)
+    assert(job.retrybackoff === false)
+    assert(job.startafter !== undefined)
+    assert(job.startedon !== undefined)
+    assert(job.singletonkey === null)
+    assert(job.singletonon === null)
+    assert(job.expirein.minutes === 15)
+    assert(job.createdon !== undefined)
+    assert(job.completedon === null)
+    assert(job.keepuntil !== undefined)
+  })
+
+  it('should fetch all metadata for a batch of jobs when requested', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const jobName = 'fetch-include-metadata-batch'
+    const batchSize = 4
+
+    await Promise.all([
+      boss.publish(jobName),
+      boss.publish(jobName),
+      boss.publish(jobName),
+      boss.publish(jobName)
+    ])
+
+    const jobs = await boss.fetch(jobName, batchSize, { includeMetadata: true })
+    assert(jobs.length === batchSize)
+
+    jobs.forEach(job => {
+      assert(jobName === job.name)
+      assert(job.priority === 0)
+      assert(job.state === 'active')
+      assert(job.retrylimit === 0)
+      assert(job.retrycount === 0)
+      assert(job.retrydelay === 0)
+      assert(job.retrybackoff === false)
+      assert(job.startafter !== undefined)
+      assert(job.startedon !== undefined)
+      assert(job.singletonkey === null)
+      assert(job.singletonon === null)
+      assert(job.expirein.minutes === 15)
+      assert(job.createdon !== undefined)
+      assert(job.completedon === null)
+      assert(job.keepuntil !== undefined)
+    })
+  })
+})

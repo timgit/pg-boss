@@ -1,70 +1,59 @@
-const assert = require('chai').assert;
-const helper = require('./testHelper');
+const assert = require('assert')
+const helper = require('./testHelper')
 
-describe('cancel', function() {
+describe('cancel', function () {
+  it('should reject missing id argument', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
 
-  this.timeout(10000);
+    try {
+      await boss.cancel()
+      assert(false)
+    } catch (err) {
+      assert(err)
+    }
+  })
 
-  let boss;
+  it('should cancel a pending job', async function () {
+    const config = this.test.bossConfig
+    const boss = this.test.boss = await helper.start(config)
 
-  before(function(finished){
-    helper.start()
-      .then(dabauce => {
-        boss = dabauce;
-        finished();
-      });
-  });
+    const jobId = await boss.publish('will_cancel', null, { startAfter: 1 })
 
-  after(function(finished){
-    boss.stop().then(() => finished());
-  });
+    await boss.cancel(jobId)
 
-  it('should reject missing id argument', function(finished){
-    boss.cancel().catch(() => finished());
-  });
+    const job = await boss.getJobById(jobId)
 
-  it('should cancel a pending job', function(finished){
+    assert(job && job.state === 'cancelled')
+  })
 
-    boss.subscribe('will_cancel', () => {
-      assert(false, "job was cancelled, but still worked");
-      finished();
-    });
+  it('should not cancel a completed job', async function () {
+    const config = this.test.bossConfig
 
-    boss.publish('will_cancel', null, {startIn: 1})
-      .then(id => boss.cancel(id))
-      .then(job => helper.getJobById(job.id))
-      .then(result => {
-        assert(result.rows.length && result.rows[0].state === 'cancelled');
-        finished();
-      });
-  });
+    const boss = this.test.boss = await helper.start(config)
 
-  it('should not cancel a completed job', function(finished){
+    const queue = 'will_not_cancel'
 
-    boss.subscribe('will_not_cancel', job => {
-        job.done()
-          .then(() => boss.cancel(job.id))
-          .catch(() => {
-            assert(true);
-            finished();
-          });
-      }
-    );
+    await boss.publish(queue)
 
-    boss.publish('will_not_cancel');
-  });
+    const job = await boss.fetch(queue)
 
-  it('should cancel a batch of jobs', function(finished){
-    const jobName = 'cancel-batch';
+    await boss.complete(job.id)
 
-    Promise.all([
-      boss.publish(jobName),
-      boss.publish(jobName),
-      boss.publish(jobName)
+    const response = await boss.cancel(job.id)
+
+    assert.strictEqual(response.updated, 0)
+  })
+
+  it('should cancel a batch of jobs', async function () {
+    const queue = 'cancel-batch'
+
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const jobs = await Promise.all([
+      boss.publish(queue),
+      boss.publish(queue),
+      boss.publish(queue)
     ])
-    .then(jobs => boss.cancel(jobs))
-    .then(() => finished());
 
-  });
-
-});
+    await boss.cancel(jobs)
+  })
+})

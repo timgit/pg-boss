@@ -1,98 +1,70 @@
-const assert = require('chai').assert;
-const helper = require('./testHelper');
-const Promise = require('bluebird');
+const assert = require('assert')
+const helper = require('./testHelper')
+const delay = require('delay')
 
-describe('expire', function() {
+describe('expire', function () {
+  const defaults = { maintenanceIntervalSeconds: 1 }
 
-  this.timeout(10000);
+  it('should expire a job', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, ...defaults, onComplete: true })
 
-  let boss;
+    const queue = 'expire'
 
-  // sanitizing each test run for expiration events
-  beforeEach(function(finished){
-    helper.start({expireCheckInterval:500})
-      .then(dabauce => {
-        boss = dabauce;
-        finished();
-      });
-  });
+    const jobId = await boss.publish({ name: queue, options: { expireInSeconds: 1 } })
 
-  afterEach(function(finished) {
-    boss.stop().then(() => finished());
-  });
+    // fetch the job but don't complete it
+    await boss.fetch(queue)
 
-  it('should expire a job', function(finished){
-    this.timeout(5000);
+    // this should give it enough time to expire
+    await delay(8000)
 
-    let jobName = 'i-take-too-long';
-    let jobId = null;
+    const job = await boss.fetchCompleted(queue)
 
-    boss.on('expired-count', count => assert.equal(1, count));
-    boss.on('expired-job', job => assert.equal(job.id, jobId));
+    assert.strictEqual(jobId, job.data.request.id)
+    assert.strictEqual('expired', job.data.state)
+  })
 
-    boss.publish({name: jobName, options: {expireIn:'1 second'}})
-      .then(id => jobId = id);
+  it('should expire a job - cascaded config', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, ...defaults, expireInSeconds: 1 })
 
-    boss.onExpire(jobName, job => {
-      // giving event emitter assertions a chance
-      setTimeout(() => {
-        assert.equal(jobId, job.id);
-        finished();
-      }, 500);
+    const queue = 'expire-cascade-config'
 
-    });
+    const jobId = await boss.publish(queue)
 
-    boss.subscribe(jobName, job => {});
-  });
+    // fetch the job but don't complete it
+    const { id } = await boss.fetch(queue)
 
+    assert.strictEqual(jobId, id)
 
-  it('should unsubscribe an expiration subscription', function(finished){
-    this.timeout(5000);
+    // this should give it enough time to expire
+    await delay(8000)
 
-    const jobName = 'offExpire';
-    const jobRequest = {name: jobName, options: {expireIn:'1 second'}};
+    const job = await boss.getJobById(jobId)
 
-    let receivedCount = 0;
+    assert.strictEqual('expired', job.state)
+  })
 
-    boss.onExpire(jobName, job => {
-      receivedCount++;
+  it('should warn with an old expireIn option only once', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noSupervisor: true })
 
-      boss.offExpire(jobName)
-        .then(() => boss.publish(jobRequest));
-    });
+    const queue = 'expireIn-warning-only-once'
 
-    boss.publish(jobRequest)
-      .then(() => {
+    let warningCount = 0
 
-        setTimeout(() => {
-          assert.strictEqual(receivedCount, 1);
-          finished();
-        }, 4000);
+    const warningEvent = 'warning'
+    const onWarning = (warning) => {
+      assert(warning.message.includes('expireIn'))
+      warningCount++
+    }
 
-      });
+    process.on(warningEvent, onWarning)
 
-    boss.subscribe(jobName, job => {});
+    await boss.publish({ name: queue, options: { expireIn: '1 minute' } })
+    await boss.publish({ name: queue, options: { expireIn: '1 minute' } })
+    await boss.publish({ name: queue, options: { expireIn: '1 minute' } })
 
-  });
+    process.removeListener(warningEvent, onWarning)
 
-  it('should fetch an expired job', function(finished){
-
-    this.timeout(3000);
-
-    const jobName = 'fetchExpired';
-    const jobRequest = {name: jobName, options: {expireIn:'1 second'}};
-
-    let jobId;
-
-    boss.publish(jobRequest)
-      .then(id => jobId = id)
-      .then(() => boss.fetch(jobName))
-      .then(() => Promise.delay(2000))
-      .then(() => boss.fetchExpired(jobName))
-      .then(job => {
-        assert.strictEqual(job.id, jobId);
-        finished();
-      })
-  });
-
-});
+    assert.strictEqual(warningCount, 1)
+  })
+})

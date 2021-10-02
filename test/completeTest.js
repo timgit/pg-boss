@@ -1,188 +1,301 @@
-const Promise = require('bluebird');
-const assert = require('chai').assert;
-const helper = require('./testHelper');
+const delay = require('delay')
+const assert = require('assert')
+const helper = require('./testHelper')
+const PgBoss = require('../')
 
-describe('complete', function() {
+describe('complete', function () {
+  it('should reject missing id argument', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
 
-  this.timeout(10000);
+    try {
+      await boss.complete()
+      assert(false)
+    } catch (err) {
+      assert(err)
+    }
+  })
 
-  let boss;
+  it('should complete a batch of jobs', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, onComplete: true })
 
-  before(function(finished){
-    helper.start()
-      .then(dabauce => {
-        boss = dabauce;
-        finished();
-      });
-  });
+    const queue = 'complete-batch'
+    const batchSize = 3
 
-  after(function(finished) {
-    boss.stop().then(() => finished());
-  });
-
-  it('should reject missing id argument', function(finished){
-    boss.complete().catch(() => finished());
-  });
-
-  it('should complete a batch of jobs', function(finished){
-    const jobName = 'complete-batch';
-
-    Promise.all([
-      boss.publish(jobName),
-      boss.publish(jobName),
-      boss.publish(jobName)
+    await Promise.all([
+      boss.publish(queue),
+      boss.publish(queue),
+      boss.publish(queue)
     ])
-    .then(() => boss.fetch(jobName, 3))
-    .then(jobs => boss.complete(jobs.map(job => job.id)))
-    .then(() => finished());
 
-  });
+    const countJobs = (state) => helper.countJobs(this.test.bossConfig.schema, 'name = $1 AND state = $2', [queue, state])
 
-  it('onComplete should have the payload from complete() in the response object', function(finished){
+    const jobs = await boss.fetch(queue, batchSize)
 
-    const jobName = 'part-of-something-important';
-    const responsePayload = {message: 'super-important-payload', arg2: '123'};
+    const activeCount = await countJobs(PgBoss.states.active)
 
-    let jobId = null;
+    assert.strictEqual(activeCount, batchSize)
 
-    boss.onComplete(jobName, job => {
-      assert.equal(job.data.response.message, responsePayload.message);
-      assert.equal(job.data.response.arg2, responsePayload.arg2);
+    await boss.complete(jobs.map(job => job.id))
 
-      finished();
-    });
+    const completed = await boss.fetchCompleted(queue, batchSize)
 
-    boss.publish(jobName)
-      .then(id => jobId = id)
-      .then(() => boss.fetch(jobName))
-      .then(job => boss.complete(job.id, responsePayload));
+    assert.strictEqual(batchSize, completed.length)
+  })
 
-  });
+  it('onComplete should have the payload from complete() in the response object', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, onComplete: true })
 
-  it('onComplete should have the original payload in request object', function(finished){
+    const jobName = 'part-of-something-important'
+    const responsePayload = { message: 'super-important-payload', arg2: '123' }
 
-    const jobName = 'onCompleteRequestTest';
-    const requestPayload = {foo:'bar'};
+    await boss.publish(jobName)
 
-    let jobId = null;
+    const job = await boss.fetch(jobName)
 
-    boss.onComplete(jobName, job => {
-      assert.equal(jobId, job.data.request.id);
-      assert.equal(job.data.request.data.foo, requestPayload.foo);
+    await boss.complete(job.id, responsePayload)
 
-      finished();
-    });
+    return new Promise((resolve) => {
+      boss.onComplete(jobName, async job => {
+        assert.strictEqual(job.data.response.message, responsePayload.message)
+        assert.strictEqual(job.data.response.arg2, responsePayload.arg2)
 
-    boss.publish(jobName, requestPayload)
-      .then(id => jobId = id)
-      .then(() => boss.fetch(jobName))
-      .then(job => boss.complete(job.id));
-
-  });
-
-  it('onComplete should have both request and response', function(finished){
-
-    const jobName = 'onCompleteFtw';
-    const requestPayload = {token:'trivial'};
-    const responsePayload = {message: 'so verbose', code: '1234'};
-
-    let jobId = null;
-
-    boss.onComplete(jobName, job => {
-      assert.equal(jobId, job.data.request.id);
-      assert.equal(job.data.request.data.token, requestPayload.token);
-      assert.equal(job.data.response.message, responsePayload.message);
-      assert.equal(job.data.response.code, responsePayload.code);
-
-      console.log(JSON.stringify(job, null, '  '));
-
-      finished();
-    });
-
-    boss.publish(jobName, requestPayload)
-      .then(id => jobId = id)
-      .then(() => boss.fetch(jobName))
-      .then(job => boss.complete(job.id, responsePayload));
-
-  });
-
-  it(`subscribe()'s job.done() should allow sending completion payload`, function(finished){
-    const jobName = 'complete-from-subscribe';
-    const responsePayload = {arg1: '123'};
-
-    boss.onComplete(jobName, job => {
-      assert.equal(job.data.response.arg1, responsePayload.arg1);
-      finished();
-    });
-
-    boss.publish(jobName)
-      .then(() => boss.subscribe(jobName, job => job.done(null, responsePayload)));
-
-  });
-
-
-  it('should unsubscribe an onComplete subscription', function(finished){
-    this.timeout(3000);
-
-    const jobName = 'offComplete';
-
-    let receivedCount = 0;
-
-    boss.onComplete(jobName, job => {
-      receivedCount++;
-
-      boss.offComplete(jobName)
-        .then(() => boss.publish(jobName))
-        .then(() => boss.fetch(jobName))
-        .then(job => boss.complete(job.id));
-    });
-
-    boss.publish(jobName)
-      .then(() => boss.fetch(jobName))
-      .then(job => boss.complete(job.id))
-      .then(() => {
-
-        setTimeout(() => {
-          assert.strictEqual(receivedCount, 1);
-          finished();
-        }, 2000);
-
-      });
-
-  });
-
-  it('should fetch a completed job', function(finished){
-    const jobName = 'fetchCompleted';
-
-    let jobId;
-
-    boss.publish(jobName)
-      .then(id => jobId = id)
-      .then(() => boss.fetch(jobName))
-      .then(() => boss.complete(jobId))
-      .then(() => boss.fetchCompleted(jobName))
-      .then(job => {
-        assert.strictEqual(job.data.request.id, jobId);
-        finished();
+        resolve()
       })
-  });
+    })
+  })
 
-  it('should not create an extra state job after completion', function(finished){
-    const jobName = 'noMoreExtraStateJobs';
+  it('onComplete should have the original payload in request object', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, onComplete: true })
 
-    let jobId;
+    const queueName = 'onCompleteRequestTest'
+    const requestPayload = { foo: 'bar' }
 
-    boss.publish(jobName)
-      .then(id => jobId = id)
-      .then(() => boss.fetch(jobName))
-      .then(() => boss.complete(jobId))
-      .then(() => boss.fetchCompleted(jobName))
-      .then(job => boss.complete(job.id))
-      .then(() => helper.countJobs(`name LIKE $1`, [`${jobName}${helper.stateJobDelimiter}%`]))
-      .then(stateJobCount => {
-        assert.strictEqual(stateJobCount, 1);
-        finished();
+    const jobId = await boss.publish(queueName, requestPayload)
+
+    const job = await boss.fetch(queueName)
+    await boss.complete(job.id)
+
+    return new Promise((resolve) => {
+      boss.onComplete(queueName, async job => {
+        assert.strictEqual(jobId, job.data.request.id)
+        assert.strictEqual(job.data.request.data.foo, requestPayload.foo)
+
+        resolve()
       })
-  });
+    })
+  })
 
-});
+  it('onComplete should have both request and response', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, onComplete: true })
+
+    const jobName = 'onCompleteFtw'
+    const requestPayload = { token: 'trivial' }
+    const responsePayload = { message: 'so verbose', code: '1234' }
+
+    const jobId = await boss.publish(jobName, requestPayload)
+    const job = await boss.fetch(jobName)
+
+    await boss.complete(job.id, responsePayload)
+
+    return new Promise((resolve) => {
+      boss.onComplete(jobName, async job => {
+        assert.strictEqual(jobId, job.data.request.id)
+        assert.strictEqual(job.data.request.data.token, requestPayload.token)
+        assert.strictEqual(job.data.response.message, responsePayload.message)
+        assert.strictEqual(job.data.response.code, responsePayload.code)
+
+        resolve()
+      })
+    })
+  })
+
+  it('subscribe()\'s job.done() should allow sending completion payload', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, onComplete: true })
+
+    const jobName = 'complete-from-subscribe'
+    const responsePayload = { arg1: '123' }
+
+    await boss.publish(jobName)
+
+    boss.subscribe(jobName, job => job.done(null, responsePayload))
+
+    return new Promise((resolve) => {
+      boss.onComplete(jobName, async job => {
+        assert.strictEqual(job.data.response.arg1, responsePayload.arg1)
+        resolve()
+      })
+    })
+  })
+
+  it('should unsubscribe an onComplete subscription', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, onComplete: true })
+
+    const jobName = 'offComplete'
+
+    let receivedCount = 0
+
+    boss.onComplete(jobName, { newJobCheckInterval: 500 }, async job => {
+      receivedCount++
+      await boss.offComplete(jobName)
+    })
+
+    await boss.publish(jobName)
+    const job1 = await boss.fetch(jobName)
+    await boss.complete(job1.id)
+
+    await delay(2000)
+
+    await boss.publish(jobName)
+    const job2 = await boss.fetch(jobName)
+    await boss.complete(job2.id)
+
+    await delay(2000)
+
+    assert.strictEqual(receivedCount, 1)
+  })
+
+  it('should unsubscribe an onComplete subscription by id', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, onComplete: true })
+    const queue = this.test.bossConfig.schema
+
+    let receivedCount = 0
+
+    await boss.publish(queue)
+    const job1 = await boss.fetch(queue)
+    await boss.complete(job1.id)
+
+    await boss.publish(queue)
+    const job2 = await boss.fetch(queue)
+    await boss.complete(job2.id)
+
+    const id = await boss.onComplete(queue, { newJobCheckInterval: 500 }, async () => {
+      receivedCount++
+      await boss.offComplete({ id })
+    })
+
+    await delay(2000)
+
+    assert.strictEqual(receivedCount, 1)
+  })
+
+  it('should fetch a completed job', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, onComplete: true })
+
+    const queue = 'fetchCompleted'
+    const jobId = await boss.publish(queue)
+    await boss.fetch(queue)
+    await boss.complete(jobId)
+    const job = await boss.fetchCompleted(queue)
+
+    assert.strictEqual(job.data.request.id, jobId)
+  })
+
+  it('should not create an extra state job after completion', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, onComplete: true })
+
+    const queue = 'noMoreExtraStateJobs'
+    const config = this.test.bossConfig
+
+    const jobId = await boss.publish(queue)
+
+    await boss.fetch(queue)
+
+    await boss.complete(jobId)
+
+    const job = await boss.fetchCompleted(queue)
+
+    await boss.complete(job.id)
+
+    const stateJobCount = await helper.countJobs(config.schema, 'name = $1', [`${helper.COMPLETION_JOB_PREFIX}${queue}`])
+
+    assert.strictEqual(stateJobCount, 1)
+  })
+
+  it('should not create a completion job if opted out during publish', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, onComplete: true })
+
+    const queue = 'onCompleteOptOut'
+
+    const jobId = await boss.publish(queue, null, { onComplete: false })
+
+    await boss.fetch(queue)
+
+    await boss.complete(jobId)
+
+    const job = await boss.fetchCompleted(queue)
+
+    assert.strictEqual(job, null)
+  })
+
+  it('should not create a completion job if opted out during constructor', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, onComplete: false })
+
+    const queue = 'onCompleteOptOutGlobal'
+
+    const jobId = await boss.publish(queue)
+
+    await boss.fetch(queue)
+
+    await boss.complete(jobId)
+
+    const job = await boss.fetchCompleted(queue)
+
+    assert.strictEqual(job, null)
+  })
+
+  it('should create completion job if overriding the default from constructor', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, onComplete: false })
+
+    const queue = 'onCompleteOptInOverride'
+
+    const jobId = await boss.publish(queue, null, { onComplete: true })
+
+    await boss.fetch(queue)
+
+    await boss.complete(jobId)
+
+    const job = await boss.fetchCompleted(queue)
+
+    assert.strictEqual(job.data.request.id, jobId)
+  })
+
+  it('should store job output in job.output from complete()', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+
+    const queue = 'completion-data-in-job-output'
+
+    const jobId = await boss.publish(queue, null, { onComplete: false })
+
+    const { id } = await boss.fetch(queue)
+
+    assert.strictEqual(jobId, id)
+
+    const completionData = { msg: 'i am complete' }
+
+    await boss.complete(jobId, completionData)
+
+    const job = await boss.getJobById(jobId)
+
+    assert.strictEqual(job.output.msg, completionData.msg)
+  })
+
+  it('should store job error in job.output from fail()', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+
+    const queue = 'completion-data-in-job-output'
+
+    const jobId = await boss.publish(queue, null, { onComplete: false })
+
+    const { id } = await boss.fetch(queue)
+
+    assert.strictEqual(jobId, id)
+
+    const completionError = new Error('i am complete')
+
+    await boss.fail(jobId, completionError)
+
+    const job = await boss.getJobById(jobId)
+
+    assert.strictEqual(job.output.message, completionError.message)
+  })
+})
