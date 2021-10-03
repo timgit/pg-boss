@@ -211,7 +211,7 @@ class Manager extends EventEmitter {
     }
 
     const onError = error => {
-      this.emit(events.error, { ...error, queue: name, worker: id })
+      this.emit(events.error, { ...error, message: error.message, stack: error.stack, queue: name, worker: id })
     }
 
     const worker = new Worker({ id, name, options, interval, fetch, onFetch, onError })
