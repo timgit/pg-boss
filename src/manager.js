@@ -212,7 +212,7 @@ class Manager extends EventEmitter {
     }
 
     const onError = error => {
-      this.emit(events.error, { ...error, queue: name, worker: id })
+      this.emit(events.error, { ...error, message: error.message, stack: error.stack, queue: name, worker: id })
     }
 
     const worker = new Worker({ id, name, options, interval, fetch, onFetch, onError })
@@ -400,10 +400,26 @@ class Manager extends EventEmitter {
   async fetch (name, batchSize, options = {}) {
     const values = Attorney.checkFetchArgs(name, batchSize, options)
 
-    const result = await this.db.executeSql(
-      this.nextJobCommand(options.includeMetadata || false, options.onlyOneJobActivePerQueue || false),
-      [values.name, batchSize || 1]
+    let command = this.nextJobCommand(options.includeMetadata || false, options.onlyOneJobActivePerQueue || false)
+    let preparedValues = [values.name, batchSize || 1]
+    if (options.onlyOneJobActivePerQueue) {
+      command = command.replace(/\$1/g, '\'' + values.name + '\'')
+      command = command.replace(/\$2/g, batchSize || 1)
+      // console.log(command)
+      // remove values, otherwise we would get `cannot insert multiple commands into a prepared statement`
+      preparedValues = undefined
+    }
+
+    let result = await this.db.executeSql(
+      command,
+      preparedValues
     )
+
+    // in case of onlyOneJobActivePerQueue=true, we will receive an array of results (BEGIN, SELECT, UPDATE)
+    // the UPDATE is the result we want
+    if (options.onlyOneJobActivePerQueue) {
+      result = result.find((r) => r.command === 'UPDATE')
+    }
 
     if (!result || result.rows.length === 0) {
       return null

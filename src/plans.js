@@ -309,6 +309,7 @@ function insertVersion (schema, version) {
 
 function fetchNextJob (schema) {
   return (includeMetadata, onlyOneJobActivePerQueue) => `
+    ${onlyOneJobActivePerQueue ? `BEGIN;SELECT pg_advisory_xact_lock(hashtext($1));` : ''}
     WITH nextJob as (
       SELECT id
       FROM ${schema}.job
@@ -326,7 +327,8 @@ function fetchNextJob (schema) {
       retryCount = CASE WHEN state = '${states.retry}' THEN retryCount + 1 ELSE retryCount END
     FROM nextJob
     WHERE j.id = nextJob.id
-    RETURNING ${includeMetadata ? 'j.*' : 'j.id, name, data'}, EXTRACT(epoch FROM expireIn) as expire_in_seconds
+    RETURNING ${includeMetadata ? 'j.*' : 'j.id, name, data'}, EXTRACT(epoch FROM expireIn) as expire_in_seconds;
+    ${onlyOneJobActivePerQueue ? `COMMIT;` : ''}
   `
 }
 
