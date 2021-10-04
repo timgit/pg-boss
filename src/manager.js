@@ -400,7 +400,7 @@ class Manager extends EventEmitter {
   async fetch (name, batchSize, options = {}) {
     const values = Attorney.checkFetchArgs(name, batchSize, options)
 
-    let command = this.nextJobCommand(options.includeMetadata || false, options.onlyOneJobActivePerQueue || false)
+    let command = this.nextJobCommand(options.includeMetadata || false, options.onlyOneJobActivePerQueue || false, this.db.config.database)
     let preparedValues = [values.name, batchSize || 1]
     if (options.onlyOneJobActivePerQueue) {
       command = command.replace(/\$1/g, '\'' + values.name + '\'')
