@@ -309,7 +309,7 @@ function insertVersion (schema, version) {
 
 function fetchNextJob (schema) {
   return (includeMetadata, onlyOneJobActivePerQueue) => `
-    ${onlyOneJobActivePerQueue ? `BEGIN;SELECT pg_advisory_xact_lock(hashtext($1));` : ''}
+    ${onlyOneJobActivePerQueue ? `BEGIN;SELECT pg_advisory_xact_lock(hashtext(${schema}_$1));` : ''}
     WITH nextJob as (
       SELECT id
       FROM ${schema}.job
