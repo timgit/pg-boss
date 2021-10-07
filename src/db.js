@@ -38,8 +38,6 @@ class Db {
 
                     done();
                 });
-
-                done();
             });
         }
 
