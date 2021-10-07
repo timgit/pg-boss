@@ -18,11 +18,13 @@ class Db {
     }
 
     execute(query) {
+        let pool = this.pool;
+
         if(query.values && !Array.isArray(query.values))
             query.values = [query.values];
 
         function deferred(resolve, reject) {
-            this.pool.connect(function(err, client, done) {
+            pool.connect(function(err, client, done) {
                 if(err) {
                     reject(err);
                     return done();
