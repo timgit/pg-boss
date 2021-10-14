@@ -32,9 +32,9 @@ class Boss extends EventEmitter {
 
     this.events = events
 
-    this.expireCommand = plans.expire(config.schema)
-    this.archiveCommand = plans.archive(config.schema, config.archiveInterval)
-    this.purgeCommand = plans.purge(config.schema, config.deleteAfter)
+    this.expireCommand = plans.locked(config.schema, plans.expire(config.schema))
+    this.archiveCommand = plans.locked(config.schema, plans.archive(config.schema, config.archiveInterval))
+    this.purgeCommand = plans.locked(config.schema, plans.purge(config.schema, config.deleteAfter))
     this.getMaintenanceTimeCommand = plans.getMaintenanceTime(config.schema)
     this.setMaintenanceTimeCommand = plans.setMaintenanceTime(config.schema)
     this.countStatesCommand = plans.countStates(config.schema)
@@ -205,15 +205,15 @@ class Boss extends EventEmitter {
   }
 
   async expire () {
-    await this.executeSql(plans.locked(this.expireCommand))
+    await this.executeSql(this.expireCommand)
   }
 
   async archive () {
-    await this.executeSql(plans.locked(this.archiveCommand))
+    await this.executeSql(this.archiveCommand)
   }
 
   async purge () {
-    await this.executeSql(plans.locked(this.purgeCommand))
+    await this.executeSql(this.purgeCommand)
   }
 
   async setMaintenanceTime () {
