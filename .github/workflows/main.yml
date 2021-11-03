@@ -1,4 +1,4 @@
-mname: Build and Publish NPM package
+name: Build and Publish NPM package
 on:
   release:
     types: [ created ]
@@ -20,4 +20,3 @@ jobs:
       - run: npm publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          
