@@ -8,7 +8,7 @@ const PgBoss = require('../')
 const ASSERT_DELAY = 9000
 
 describe('schedule', function () {
-  it('should publish job based on every minute expression', async function () {
+  it('should send job based on every minute expression', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
 
     const queue = 'schedule-every-min'
@@ -65,7 +65,7 @@ describe('schedule', function () {
     assert(job)
   })
 
-  it('should publish job based on every minute expression after a restart', async function () {
+  it('should send job based on every minute expression after a restart', async function () {
     const queue = 'schedule-every-min-restart'
 
     let boss = await helper.start({ ...this.test.bossConfig, noScheduling: true, noSupervisor: true })
@@ -108,7 +108,7 @@ describe('schedule', function () {
     assert(job === null)
   })
 
-  it('should publish job based on current minute in UTC', async function () {
+  it('should send job based on current minute in UTC', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
 
     const queue = this.test.bossConfig.schema
@@ -138,7 +138,7 @@ describe('schedule', function () {
     assert(job)
   })
 
-  it('should publish job based on current minute in a specified time zone', async function () {
+  it('should send job based on current minute in a specified time zone', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
 
     const queue = this.test.bossConfig.schema

@@ -1,6 +1,6 @@
 # Configuration <!-- omit in toc -->
 
-pg-boss can be customized using configuration options when an instance is created (the constructor argument), during publishing as well as subscribing.
+pg-boss can be customized using configuration options when an instance is created (the constructor argument), during sending as well as subscribing.
 
 <!-- TOC -->
 
@@ -10,7 +10,7 @@ pg-boss can be customized using configuration options when an instance is create
   - [Maintenance options](#maintenance-options)
     - [Delete archived jobs](#delete-archived-jobs)
     - [Maintenance interval](#maintenance-interval)
-- [Publish options](#publish-options)
+- [Send options](#send-options)
   - [Retry options](#retry-options)
   - [Expiration options](#expiration-options)
   - [Retention options](#retention-options)
@@ -19,7 +19,7 @@ pg-boss can be customized using configuration options when an instance is create
   - [Throttled jobs](#throttled-jobs)
   - [Completion jobs](#completion-jobs)
 - [Fetch options](#fetch-options)
-- [Subscribe options](#subscribe-options)
+- [Process options](#process-options)
   - [Job polling options](#job-polling-options)
 - [Stop options](#stop-options)
 
@@ -158,7 +158,7 @@ Default: 1 minute
 
 > When a higher unit is is specified, lower unit configuration settings are ignored.
 
-## Publish options
+## Send options
 
 * **priority**, int
 
@@ -166,7 +166,7 @@ Default: 1 minute
 
 ### Retry options
 
-Available in constructor as a default, or per-job in `publish()` and related publish convenience functions.
+Available in constructor as a default, or per-job in `send()` and related send convenience functions.
 
 * **retryLimit**, int
 
@@ -236,8 +236,8 @@ Default: 30 days
 Only allows 1 job (within the same name) to be queued or active with the same singletonKey.
 
 ```js
-boss.publish('my-job', {}, {singletonKey: '123'}) // resolves a jobId
-boss.publish('my-job', {}, {singletonKey: '123'}) // resolves a null jobId until first job completed
+boss.send('my-job', {}, {singletonKey: '123'}) // resolves a jobId
+boss.send('my-job', {}, {singletonKey: '123'}) // resolves a null jobId until first job completed
 ```
 
 This can be used in conjunction with throttling explained below.
@@ -248,18 +248,18 @@ This can be used in conjunction with throttling explained below.
 * **singletonHours**, int
 * **singletonNextSlot**, bool
 
-Throttling jobs to 'once every n units', where units could be seconds, minutes, or hours.  This option is set on the publish side of the API since jobs may or may not be created based on the existence of other jobs.
+Throttling jobs to 'once every n units', where units could be seconds, minutes, or hours.  This option is set on the send side of the API since jobs may or may not be created based on the existence of other jobs.
 
 For example, if you set the `singletonMinutes` to 1, then submit 2 jobs within a minute, only the first job will be accepted and resolve a job id.  The second request will be discarded, but resolve a null instead of an id.
 
 > When a higher unit is is specified, lower unit configuration settings are ignored.
 
-Setting `singletonNextSlot` to true will cause the job to be scheduled to run after the current time slot if and when a job is throttled. This option is set to true, for example, when calling the convenience function `publishDebounced()`.
+Setting `singletonNextSlot` to true will cause the job to be scheduled to run after the current time slot if and when a job is throttled. This option is set to true, for example, when calling the convenience function `sendDebounced()`.
 
 ### Completion jobs
 * **onComplete**, bool (Default: false)
 
-When a job completes, a completion job will be created in the queue, copying the same retention policy as the job, for the purpose of `onComplete()` or `fetchCompleted()`.  If completion jobs are not used, they will be archived according to the retention policy.  If the queue in question has a very high volume, this can be set to `false` to bypass creating the completion job.  This can also be set in the constructor as a default for all calls to `publish()`.
+When a job completes, a completion job will be created in the queue, copying the same retention policy as the job, for the purpose of `onComplete()` or `fetchCompleted()`.  If completion jobs are not used, they will be archived according to the retention policy.  If the queue in question has a very high volume, this can be set to `false` to bypass creating the completion job.  This can also be set in the constructor as a default for all calls to `send()`.
 
 ## Fetch options
 
@@ -289,7 +289,7 @@ When a job completes, a completion job will be created in the queue, copying the
     | oncomplete | bool |
     | output | object |
 
-## Subscribe options
+## Process options
 
 * **teamSize**, int
 
@@ -309,7 +309,7 @@ When a job completes, a completion job will be created in the queue, copying the
 
 ### Job polling options
 
-How often subscriptions will poll the queue table for jobs. Available in the constructor as a default or per subscription in `subscribe()` and `onComplete()`.
+How often subscriptions will poll the queue table for jobs. Available in the constructor as a default or per subscription in `process()` and `onComplete()`.
 
 * **newJobCheckInterval**, int
 

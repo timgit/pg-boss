@@ -9,7 +9,7 @@ describe('delayed jobs', function () {
 
     const startAfter = 2
 
-    await boss.publish(queue, null, { startAfter })
+    await boss.send(queue, null, { startAfter })
 
     const job = await boss.fetch(queue)
 
@@ -33,7 +33,7 @@ describe('delayed jobs', function () {
 
     const startAfter = date.toISOString()
 
-    await boss.publish(queue, null, { startAfter })
+    await boss.send(queue, null, { startAfter })
 
     const job = await boss.fetch(queue)
 
@@ -55,7 +55,7 @@ describe('delayed jobs', function () {
 
     const startAfter = date
 
-    await boss.publish(queue, null, { startAfter })
+    await boss.send(queue, null, { startAfter })
 
     const job = await boss.fetch(queue)
 
@@ -68,16 +68,16 @@ describe('delayed jobs', function () {
     assert(job2)
   })
 
-  it('should work with publishAfter() and a date object', async function () {
+  it('should work with sendAfter() and a date object', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
-    const queue = 'publishAfter-date-object'
+    const queue = 'sendAfter-date-object'
 
     const date = new Date()
     date.setUTCSeconds(date.getUTCSeconds() + 2)
 
     const startAfter = date
 
-    await boss.publishAfter(queue, { something: 1 }, { retryLimit: 0 }, startAfter)
+    await boss.sendAfter(queue, { something: 1 }, { retryLimit: 0 }, startAfter)
 
     const job = await boss.fetch(queue)
 

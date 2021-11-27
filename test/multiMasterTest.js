@@ -79,7 +79,7 @@ describe('multi-master', function () {
 
     // create extra maintenace jobs manually
     for (let i = 0; i < jobCount; i++) {
-      await boss.publish(queues.MAINTENANCE)
+      await boss.send(queues.MAINTENANCE)
     }
 
     const beforeCount = await countJobs(states.created)

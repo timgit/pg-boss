@@ -3,8 +3,8 @@ const { DEFAULT_SCHEMA } = require('./plans')
 
 module.exports = {
   getConfig,
-  checkPublishArgs,
-  checkSubscribeArgs,
+  checkSendArgs,
+  checkProcessArgs,
   checkFetchArgs,
   warnClockSkew
 }
@@ -24,18 +24,18 @@ const WARNINGS = {
   }
 }
 
-function checkPublishArgs (args, defaults) {
+function checkSendArgs (args, defaults) {
   let name, data, options
 
   if (typeof args[0] === 'string') {
     name = args[0]
     data = args[1]
 
-    assert(typeof data !== 'function', 'publish() cannot accept a function as the payload.  Did you intend to use subscribe()?')
+    assert(typeof data !== 'function', 'send() cannot accept a function as the payload.  Did you intend to use process()?')
 
     options = args[2]
   } else if (typeof args[0] === 'object') {
-    assert(args.length === 1, 'publish object API only accepts 1 argument')
+    assert(args.length === 1, 'send object API only accepts 1 argument')
 
     const job = args[0]
 
@@ -84,7 +84,7 @@ function checkPublishArgs (args, defaults) {
   return { name, data, options }
 }
 
-function checkSubscribeArgs (name, args, defaults) {
+function checkProcessArgs (name, args, defaults) {
   let options, callback
 
   assert(name, 'missing job name')
@@ -145,7 +145,7 @@ function getConfig (value) {
   applyMonitoringConfig(config)
   applyUuidConfig(config)
 
-  // defaults for publish and subscribe
+  // defaults for send and process
   applyNewJobCheckInterval(config)
   applyExpirationConfig(config)
   applyRetentionConfig(config)

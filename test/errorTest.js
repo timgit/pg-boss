@@ -1,21 +1,21 @@
 const helper = require('./testHelper')
 
 describe('error', function () {
-  it('should handle an error in a subscriber and not blow up', async function () {
+  it('should handle an error in a processr and not blow up', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
 
     const queue = 'error-handling'
 
-    let subscribeCount = 0
+    let processCount = 0
 
-    await boss.publish(queue)
-    await boss.publish(queue)
+    await boss.send(queue)
+    await boss.send(queue)
 
     return new Promise((resolve) => {
-      boss.subscribe(queue, async job => {
-        subscribeCount++
+      boss.process(queue, async job => {
+        processCount++
 
-        if (subscribeCount === 1) {
+        if (processCount === 1) {
           throw new Error('test - nothing to see here')
         } else {
           job.done()

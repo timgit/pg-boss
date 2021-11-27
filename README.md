@@ -16,11 +16,11 @@ async function readme() {
 
   const queue = 'some-queue';
 
-  let jobId = await boss.publish(queue, { param1: 'foo' })
+  let jobId = await boss.send(queue, { param1: 'foo' })
 
   console.log(`created job in queue ${queue}: ${jobId}`);
 
-  await boss.subscribe(queue, someAsyncJobHandler);
+  await boss.process(queue, someAsyncJobHandler);
 }
 
 async function someAsyncJobHandler(job) {
@@ -42,7 +42,7 @@ This will likely cater the most to teams already familiar with the simplicity of
 * Distributed cron-based job scheduling with database clock synchronization
 * Job deferral, retries (with exponential backoff), throttling, rate limiting, debouncing
 * Job completion subscriptions for orchestrations/sagas
-* Direct publish, fetch and completion APIs for custom integrations
+* Direct send, fetch and completion APIs for custom integrations
 * Batching API for chunked job fetching
 * Direct table access for bulk loads via COPY or INSERT
 * Multi-master compatible when running multiple instances (for example, in a Kubernetes ReplicaSet)

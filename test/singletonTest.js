@@ -8,11 +8,11 @@ describe('singleton', function () {
     const queue = 'singleton-1-pending'
     const singletonKey = 'a'
 
-    const jobId = await boss.publish(queue, null, { singletonKey })
+    const jobId = await boss.send(queue, null, { singletonKey })
 
     assert(jobId)
 
-    const jobId2 = await boss.publish(queue, null, { singletonKey })
+    const jobId2 = await boss.send(queue, null, { singletonKey })
 
     assert.strictEqual(jobId2, null)
   })
@@ -24,12 +24,12 @@ describe('singleton', function () {
     const singletonKey = 'a'
     const singletonMinutes = 1
 
-    await boss.publish(queue, null, { singletonKey, singletonMinutes })
+    await boss.send(queue, null, { singletonKey, singletonMinutes })
     const job = await boss.fetch(queue)
 
     await boss.complete(job.id)
 
-    const jobId = await boss.publish(queue, null, { singletonKey, singletonMinutes })
+    const jobId = await boss.send(queue, null, { singletonKey, singletonMinutes })
 
     assert.strictEqual(jobId, null)
   })
@@ -38,26 +38,26 @@ describe('singleton', function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
 
     const queue = 'singleton'
-    const jobId = await boss.publish(queue, null, { singletonKey: 'a' })
+    const jobId = await boss.send(queue, null, { singletonKey: 'a' })
 
     assert(jobId)
 
-    const jobId2 = await boss.publish(queue, null, { singletonKey: 'b' })
+    const jobId2 = await boss.send(queue, null, { singletonKey: 'b' })
 
     assert(jobId2)
   })
 
-  it('publishOnce() should work', async function () {
+  it('sendOnce() should work', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
 
-    const queue = 'publishOnce'
+    const queue = 'sendOnce'
     const key = 'only-once-plz'
 
-    const jobId = await boss.publishOnce(queue, null, null, key)
+    const jobId = await boss.sendOnce(queue, null, null, key)
 
     assert(jobId)
 
-    const jobId2 = await boss.publishOnce(queue, null, null, key)
+    const jobId2 = await boss.sendOnce(queue, null, null, key)
 
     assert.strictEqual(jobId2, null)
 
@@ -65,34 +65,34 @@ describe('singleton', function () {
 
     assert.strictEqual(job.id, jobId)
 
-    const jobId3 = await boss.publishOnce(queue, null, null, key)
+    const jobId3 = await boss.sendOnce(queue, null, null, key)
 
     assert.strictEqual(jobId3, null)
   })
 
-  it('publishOnce() without a key should also work', async function () {
+  it('sendOnce() without a key should also work', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
 
-    const queue = 'publishOnceNoKey'
-    const jobId = await boss.publishOnce(queue)
+    const queue = 'sendOnceNoKey'
+    const jobId = await boss.sendOnce(queue)
 
     assert(jobId)
 
-    const jobId2 = await boss.publishOnce(queue)
+    const jobId2 = await boss.sendOnce(queue)
 
     assert.strictEqual(jobId2, null)
   })
 
-  it('publishSingleton() works', async function () {
+  it('sendSingleton() works', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
 
     const queue = this.test.bossConfig.schema
 
-    const jobId = await boss.publishSingleton(queue)
+    const jobId = await boss.sendSingleton(queue)
 
     assert(jobId)
 
-    const jobId2 = await boss.publishSingleton(queue)
+    const jobId2 = await boss.sendSingleton(queue)
 
     assert.strictEqual(jobId2, null)
 
@@ -100,7 +100,7 @@ describe('singleton', function () {
 
     assert.strictEqual(job.id, jobId)
 
-    const jobId3 = await boss.publishSingleton(queue)
+    const jobId3 = await boss.sendSingleton(queue)
 
     assert(jobId3)
   })

@@ -10,7 +10,7 @@ describe('expire', function () {
 
     const queue = 'expire'
 
-    const jobId = await boss.publish({ name: queue, options: { expireInSeconds: 1 } })
+    const jobId = await boss.send({ name: queue, options: { expireInSeconds: 1 } })
 
     // fetch the job but don't complete it
     await boss.fetch(queue)
@@ -29,7 +29,7 @@ describe('expire', function () {
 
     const queue = 'expire-cascade-config'
 
-    const jobId = await boss.publish(queue)
+    const jobId = await boss.send(queue)
 
     // fetch the job but don't complete it
     const { id } = await boss.fetch(queue)
@@ -59,9 +59,9 @@ describe('expire', function () {
 
     process.on(warningEvent, onWarning)
 
-    await boss.publish({ name: queue, options: { expireIn: '1 minute' } })
-    await boss.publish({ name: queue, options: { expireIn: '1 minute' } })
-    await boss.publish({ name: queue, options: { expireIn: '1 minute' } })
+    await boss.send({ name: queue, options: { expireIn: '1 minute' } })
+    await boss.send({ name: queue, options: { expireIn: '1 minute' } })
+    await boss.send({ name: queue, options: { expireIn: '1 minute' } })
 
     process.removeListener(warningEvent, onWarning)
 

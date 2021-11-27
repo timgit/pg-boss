@@ -42,6 +42,9 @@ class Manager extends EventEmitter {
     this.failJobsCommand = plans.failJobs(config.schema)
     this.getJobByIdCommand = plans.getJobById(config.schema)
     this.getArchivedJobByIdCommand = plans.getArchivedJobById(config.schema)
+    this.subscribeCommand = plans.subscribe(config.schema)
+    this.unsubscribeCommand = plans.unsubscribe(config.schema)
+    this.getQueuesForEvent = plans.getQueuesForEvent(config.schema)
 
     // exported api to index
     this.functions = [
@@ -49,18 +52,21 @@ class Manager extends EventEmitter {
       this.complete,
       this.cancel,
       this.fail,
-      this.publish,
+      this.send,
       this.insert,
+      this.process,
+      this.unprocess,
+      this.onComplete,
       this.subscribe,
       this.unsubscribe,
-      this.onComplete,
+      this.publish,
       this.offComplete,
       this.fetchCompleted,
-      this.publishDebounced,
-      this.publishThrottled,
-      this.publishOnce,
-      this.publishAfter,
-      this.publishSingleton,
+      this.sendDebounced,
+      this.sendThrottled,
+      this.sendOnce,
+      this.sendAfter,
+      this.sendSingleton,
       this.deleteQueue,
       this.deleteAllQueues,
       this.clearStorage,
@@ -80,18 +86,18 @@ class Manager extends EventEmitter {
 
     for (const sub of this.subscriptions.values()) {
       if (!INTERNAL_QUEUES[sub.name]) {
-        await this.unsubscribe(sub.name)
+        await this.unprocess(sub.name)
       }
     }
   }
 
-  async subscribe (name, ...args) {
-    const { options, callback } = Attorney.checkSubscribeArgs(name, args, this.config)
+  async process (name, ...args) {
+    const { options, callback } = Attorney.checkProcessArgs(name, args, this.config)
     return await this.watch(name, options, callback)
   }
 
   async onComplete (name, ...args) {
-    const { options, callback } = Attorney.checkSubscribeArgs(name, args, this.config)
+    const { options, callback } = Attorney.checkProcessArgs(name, args, this.config)
     return await this.watch(COMPLETION_JOB_PREFIX + name, options, callback)
   }
 
@@ -223,7 +229,7 @@ class Manager extends EventEmitter {
     return id
   }
 
-  async unsubscribe (value) {
+  async unprocess (value) {
     assert(value, 'Missing required argument')
 
     const query = (typeof value === 'string')
@@ -255,66 +261,91 @@ class Manager extends EventEmitter {
     })
   }
 
+  async subscribe (event, name) {
+    assert(event, 'Missing required argument')
+    assert(name, 'Missing required argument')
+
+    return await this.db.executeSql(this.subscribeCommand, [event, name])
+  }
+
+  async unsubscribe (event, name) {
+    assert(event, 'Missing required argument')
+    assert(name, 'Missing required argument')
+
+    return await this.db.executeSql(this.unsubscribeCommand, [event, name])
+  }
+
+  async publish (event, ...args) {
+    assert(event, 'Missing required argument')
+
+    const result = await this.db.executeSql(this.getQueuesForEvent, [event])
+    if (!result || result.rowCount === 0) {
+      return []
+    }
+
+    return await Promise.all(result.rows.map(({ name }) => this.send(name, ...args)))
+  }
+
   async offComplete (value) {
     if (typeof value === 'string') {
       value = COMPLETION_JOB_PREFIX + value
     }
 
-    return await this.unsubscribe(value)
+    return await this.unprocess(value)
   }
 
-  async publish (...args) {
-    const { name, data, options } = Attorney.checkPublishArgs(args, this.config)
+  async send (...args) {
+    const { name, data, options } = Attorney.checkSendArgs(args, this.config)
     return await this.createJob(name, data, options)
   }
 
-  async publishOnce (name, data, options, key) {
+  async sendOnce (name, data, options, key) {
     options = options || {}
 
     options.singletonKey = key || name
 
-    const result = Attorney.checkPublishArgs([name, data, options], this.config)
+    const result = Attorney.checkSendArgs([name, data, options], this.config)
 
     return await this.createJob(result.name, result.data, result.options)
   }
 
-  async publishSingleton (name, data, options) {
+  async sendSingleton (name, data, options) {
     options = options || {}
 
     options.singletonKey = SINGLETON_QUEUE_KEY
 
-    const result = Attorney.checkPublishArgs([name, data, options], this.config)
+    const result = Attorney.checkSendArgs([name, data, options], this.config)
 
     return await this.createJob(result.name, result.data, result.options)
   }
 
-  async publishAfter (name, data, options, after) {
+  async sendAfter (name, data, options, after) {
     options = options || {}
     options.startAfter = after
 
-    const result = Attorney.checkPublishArgs([name, data, options], this.config)
+    const result = Attorney.checkSendArgs([name, data, options], this.config)
 
     return await this.createJob(result.name, result.data, result.options)
   }
 
-  async publishThrottled (name, data, options, seconds, key) {
+  async sendThrottled (name, data, options, seconds, key) {
     options = options || {}
     options.singletonSeconds = seconds
     options.singletonNextSlot = false
     options.singletonKey = key
 
-    const result = Attorney.checkPublishArgs([name, data, options], this.config)
+    const result = Attorney.checkSendArgs([name, data, options], this.config)
 
     return await this.createJob(result.name, result.data, result.options)
   }
 
-  async publishDebounced (name, data, options, seconds, key) {
+  async sendDebounced (name, data, options, seconds, key) {
     options = options || {}
     options.singletonSeconds = seconds
     options.singletonNextSlot = true
     options.singletonKey = key
 
-    const result = Attorney.checkPublishArgs([name, data, options], this.config)
+    const result = Attorney.checkSendArgs([name, data, options], this.config)
 
     return await this.createJob(result.name, result.data, result.options)
   }

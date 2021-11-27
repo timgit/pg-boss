@@ -34,6 +34,9 @@ module.exports = {
   getSchedules,
   schedule,
   unschedule,
+  subscribe,
+  unsubscribe,
+  getQueuesForEvent,
   expire,
   archive,
   purge,
@@ -79,6 +82,7 @@ function create (schema, version) {
     createJobTable(schema),
     cloneJobTableForArchive(schema),
     createScheduleTable(schema),
+    createSubscriptionTable(schema),
     addIdIndexToArchive(schema),
     addArchivedOnToArchive(schema),
     addArchivedOnIndexToArchive(schema),
@@ -261,6 +265,18 @@ function createScheduleTable (schema) {
   `
 }
 
+function createSubscriptionTable (schema) {
+  return `
+    CREATE TABLE ${schema}.subscription (
+      event text not null,
+      name text not null,
+      created_on timestamp with time zone not null default now(),
+      updated_on timestamp with time zone not null default now(),
+      PRIMARY KEY(event, name)
+    )
+  `
+}
+
 function getSchedules (schema) {
   return `
     SELECT * FROM ${schema}.schedule
@@ -284,6 +300,31 @@ function unschedule (schema) {
   return `
     DELETE FROM ${schema}.schedule
     WHERE name = $1
+  `
+}
+
+function subscribe (schema) {
+  return `
+    INSERT INTO ${schema}.subscription (event, name)
+    VALUES ($1, $2)
+    ON CONFLICT (event, name) DO UPDATE SET
+      event = EXCLUDED.event,
+      name = EXCLUDED.name,
+      updated_on = now()
+  `
+}
+
+function unsubscribe (schema) {
+  return `
+    DELETE FROM ${schema}.subscription
+    WHERE event = $1 and name = $2
+  `
+}
+
+function getQueuesForEvent (schema) {
+  return `
+    SELECT name FROM ${schema}.subscription
+    WHERE event = $1
   `
 }
 

@@ -6,7 +6,7 @@ describe('send', function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
 
     try {
-      await boss.publish()
+      await boss.send()
       assert(false)
     } catch (err) {
       assert(err)
@@ -17,7 +17,7 @@ describe('send', function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
 
     try {
-      await boss.publish('job', () => true)
+      await boss.send('job', () => true)
       assert(false)
     } catch (err) {
       assert(err)
@@ -28,7 +28,7 @@ describe('send', function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
 
     try {
-      await boss.publish('event', 'data', () => true)
+      await boss.send('job', 'data', () => true)
       assert(false)
     } catch (err) {
       assert(err)
@@ -38,56 +38,36 @@ describe('send', function () {
   it('should accept single string argument', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
     const queue = 'sendNameOnly'
-    await boss.publish(queue)
+    await boss.send(queue)
   })
 
   it('should accept job object argument with only name', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
     const queue = 'sendqueueOnly'
-    await boss.publish(queue)
+    await boss.send({ name: queue })
   })
 
-  it('should not send to the same named queue', async function () {
+  it('should accept job object with name and data only', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
     const queue = 'sendqueueAndData'
     const message = 'hi'
 
-    await boss.publish(queue, { message })
-
-    const job = await boss.fetch(queue)
-
-    assert.strictEqual(job, null)
-  })
-
-  it('should use subscriptions to map to a single queue', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
-    const queue = 'sendqueueAndData'
-    const event = 'event'
-    const message = 'hi'
-
-    await boss.subscribe(event, queue)
-    await boss.publish(event, { message })
+    await boss.send({ name: queue, data: { message } })
 
     const job = await boss.fetch(queue)
 
     assert.strictEqual(message, job.data.message)
   })
 
-  it('should use subscriptions to map to more than one queue', async function () {
+  it('should accept job object with name and options only', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
-    const queue1 = 'queue1'
-    const queue2 = 'queue2'
-    const event = 'event'
-    const message = 'hi'
+    const queue = 'sendqueueAndOptions'
+    const options = { someCrazyOption: 'whatever' }
 
-    await boss.subscribe(event, queue1)
-    await boss.subscribe(event, queue2)
-    await boss.publish(event, { message })
+    await boss.send({ name: queue, options })
 
-    const job1 = await boss.fetch(queue1)
-    const job2 = await boss.fetch(queue2)
+    const job = await boss.fetch(queue)
 
-    assert.strictEqual(message, job1.data.message)
-    assert.strictEqual(message, job2.data.message)
+    assert.strictEqual(job.data, null)
   })
 })
