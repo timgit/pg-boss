@@ -12,7 +12,7 @@ function flatten (schema, commands, version) {
   commands.unshift(plans.assertMigration(schema, version))
   commands.push(plans.setVersion(schema, version))
 
-  return plans.locked(commands)
+  return plans.locked(schema, commands)
 }
 
 function rollback (schema, version, migrations) {

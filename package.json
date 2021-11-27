@@ -1,13 +1,13 @@
 {
   "name": "pg-boss",
-  "version": "7.0.0-alpha.0",
+  "version": "7.0.0-alpha1",
   "description": "Queueing jobs in Node.js using PostgreSQL like a boss",
   "main": "./src/index.js",
   "engines": {
     "node": ">=12.0.0"
   },
   "dependencies": {
-    "cron-parser": "^3.3.0",
+    "cron-parser": "^4.0.0",
     "delay": "^5.0.0",
     "lodash.debounce": "^4.0.8",
     "p-map": "^4.0.0",
