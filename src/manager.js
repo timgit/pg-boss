@@ -279,6 +279,7 @@ class Manager extends EventEmitter {
     assert(event, 'Missing required argument')
 
     const result = await this.db.executeSql(this.getQueuesForEvent, [event])
+
     if (!result || result.rowCount === 0) {
       return []
     }

@@ -137,6 +137,8 @@ it('unsubscribe works', async function () {
 
   assert.strictEqual(null, await boss.fetch(queue2))
 
+  await boss.unsubscribe(event, queue1)
+
   await boss.publish(event)
 
   assert.strictEqual(null, await boss.fetch(queue1))
