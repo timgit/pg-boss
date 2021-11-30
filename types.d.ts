@@ -213,7 +213,7 @@ declare namespace PgBoss {
     queues: object;
   }
 
-  interface Subscription {
+  interface Worker {
     id: string,
     name: string,
     options: ProcessOptions,
@@ -263,8 +263,8 @@ declare class PgBoss {
   on(event: "monitor-states", handler: (monitorStates: PgBoss.MonitorStates) => void): void;
   off(event: "monitor-states", handler: (monitorStates: PgBoss.MonitorStates) => void): void;
 
-  on(event: "wip", handler: (data: PgBoss.Subscription[]) => void): void;
-  off(event: "wip", handler: (data: PgBoss.Subscription[]) => void): void;
+  on(event: "wip", handler: (data: PgBoss.Worker[]) => void): void;
+  off(event: "wip", handler: (data: PgBoss.Worker[]) => void): void;
 
   on(event: "stopped", handler: () => void): void;
   off(event: "stopped", handler: () => void): void;
