@@ -38,15 +38,15 @@ pg-boss relies on [SKIP LOCKED](http://blog.2ndquadrant.com/what-is-select-skip-
 This will likely cater the most to teams already familiar with the simplicity of relational database semantics and operations (SQL, querying, and backups). It will be especially useful to those already relying on PostgreSQL that want to limit how many systems are required to monitor and support in their architecture.
 
 ## Features
-* Backpressure-compatible subscriptions for monitoring queues on an interval (with configurable concurrency)
+* Backpressure-compatible processors for polling queues
 * Distributed cron-based job scheduling with database clock synchronization
+* Pub/sub API for fan-out queue relationships
 * Job deferral, retries (with exponential backoff), throttling, rate limiting, debouncing
-* Job completion subscriptions for orchestrations/sagas
+* Job completion hooks for orchestrations/sagas
 * Direct send, fetch and completion APIs for custom integrations
-* Batching API for chunked job fetching
 * Direct table access for bulk loads via COPY or INSERT
 * Multi-master compatible when running multiple instances (for example, in a Kubernetes ReplicaSet)
-* Automatic provisioning of required storage into a dedicated schema
+* Automatic provisioning of required storage
 * Automatic maintenance operations to manage table growth
 
 ## Requirements
@@ -64,8 +64,7 @@ yarn add pg-boss
 ```
 
 ## Documentation
-* [Usage](docs/usage.md)
-* [Configuration](docs/configuration.md)
+* [Docs](docs/readme.md)
 
 ## Contributing
 
