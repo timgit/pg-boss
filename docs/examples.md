@@ -1,16 +1,14 @@
-- [Wildcard completion subscription](#wildcard-completion-subscription)
+- [Wildcard completion](#wildcard-completion)
 - [Batch job fetch](#batch-job-fetch)
 
-## Wildcard completion subscription
+## Wildcard completion
 
 Process based on matched pattern when jobs are completed to handle common completion logic.
 
 ```js
 async function wildcardCompletion() {
 
-
   await boss.onComplete(`worker-register-*`, commonRegistrationCompletion)
-
 
   async function commonRegistrationCompletion(job) {
     if(job.data.failed)
@@ -24,10 +22,10 @@ async function wildcardCompletion() {
 
 ## Batch job fetch
 
-Fetch an array of jobs in a subscription. Returning a promise ensures no more jobs are fetched until it resolves.
+Fetch an array of jobs in a worker. Returning a promise ensures no more jobs are fetched until it resolves.
 
 ```js
-async function highVolumeSubscription() {
+async function highVolumeWorker() {
 
   await boss.process('send-text-message', {batchSize: 1000}, handleSend);
 

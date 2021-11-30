@@ -68,7 +68,7 @@ describe('process', function () {
     assert.strictEqual(processCount, timeout / 1000 / newJobCheckIntervalSeconds)
   })
 
-  it('should unprocess a subscription', async function () {
+  it('should remove a worker', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
 
     const queue = 'unprocess-works'
@@ -88,7 +88,7 @@ describe('process', function () {
     assert.strictEqual(receivedCount, 1)
   })
 
-  it('should unprocess a subscription by id', async function () {
+  it('should remove a worker by id', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
     const queue = this.test.bossConfig.schema
 
@@ -198,7 +198,7 @@ describe('process', function () {
     assert(processCount < batchSize)
   })
 
-  it('should have a done callback for single job subscriptions', async function () {
+  it('should have a done callback for single job', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
     const queue = 'process-single'
 
@@ -248,9 +248,9 @@ describe('process', function () {
     assert.strictEqual(job.data.response.something, something)
   })
 
-  it('should allow multiple subscriptions to the same queue per instance', async function () {
+  it('should allow multiple workers to the same queue per instance', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
-    const queue = 'multiple-subscriptions'
+    const queue = 'multiple-workers'
 
     await boss.process(queue, () => {})
     await boss.process(queue, () => {})
@@ -326,7 +326,7 @@ describe('process', function () {
     assert(job2.output.message.includes('handler execution exceeded'))
   })
 
-  it('should emit wip event every 2s during subscriptions', async function () {
+  it('should emit wip event every 2s for workers', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
     const queue = this.test.bossConfig.schema
 

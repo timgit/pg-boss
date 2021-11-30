@@ -127,7 +127,7 @@ describe('complete', function () {
     })
   })
 
-  it('should unprocess an onComplete subscription', async function () {
+  it('should remove an onComplete worker', async function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, onComplete: true })
 
     const jobName = 'offComplete'
@@ -154,7 +154,7 @@ describe('complete', function () {
     assert.strictEqual(receivedCount, 1)
   })
 
-  it('should unprocess an onComplete subscription by id', async function () {
+  it('should remove an onComplete worker by id', async function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, onComplete: true })
     const queue = this.test.bossConfig.schema
 

@@ -32,7 +32,7 @@ class Manager extends EventEmitter {
     this.db = db
 
     this.events = events
-    this.subscriptions = new Map()
+    this.workers = new Map()
 
     this.nextJobCommand = plans.fetchNextJob(config.schema)
     this.insertJobCommand = plans.insertJob(config.schema)
@@ -84,7 +84,7 @@ class Manager extends EventEmitter {
   async stop () {
     this.stopping = true
 
-    for (const sub of this.subscriptions.values()) {
+    for (const sub of this.workers.values()) {
       if (!INTERNAL_QUEUES[sub.name]) {
         await this.unprocess(sub.name)
       }
@@ -102,15 +102,15 @@ class Manager extends EventEmitter {
   }
 
   addWorker (worker) {
-    this.subscriptions.set(worker.id, worker)
+    this.workers.set(worker.id, worker)
   }
 
   removeWorker (worker) {
-    this.subscriptions.delete(worker.id)
+    this.workers.delete(worker.id)
   }
 
   getWorkers () {
-    return Array.from(this.subscriptions.values())
+    return Array.from(this.workers.values())
   }
 
   emitWip (name) {
@@ -155,7 +155,7 @@ class Manager extends EventEmitter {
 
   async watch (name, options, callback) {
     if (this.stopping) {
-      throw new Error('Subscriptions are disabled. pg-boss is stopping.')
+      throw new Error('Workers are disabled. pg-boss is stopping.')
     }
 
     const {
@@ -171,8 +171,8 @@ class Manager extends EventEmitter {
     const fetch = () => this.fetch(name, batchSize || teamSize, { includeMetadata })
 
     const onFetch = async (jobs) => {
-      if (this.config.__test__throw_subscription) {
-        throw new Error('__test__throw_subscription')
+      if (this.config.__test__throw_worker) {
+        throw new Error('__test__throw_worker')
       }
 
       const resolveWithinSeconds = async (promise, seconds) => {

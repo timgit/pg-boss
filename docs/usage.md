@@ -213,7 +213,7 @@ The payload of the event is an object with a key per queue and state, such as th
 ```
 ## `wip`
 
-Emitted at most once every 2 seconds when polling subscriptions are active and jobs are entering or leaving active state. The payload is an array that represents each worker in this instance of pg-boss.  If you want to monitor queue activity across all instances, use `monitor-states`.
+Emitted at most once every 2 seconds when polling workers are active and jobs are entering or leaving active state. The payload is an array that represents each worker in this instance of pg-boss.  If you want to monitor queue activity across all instances, use `monitor-states`.
 
 ```js
 [
@@ -236,7 +236,7 @@ Emitted at most once every 2 seconds when polling subscriptions are active and j
 
 ## `stopped`
 
-Emitted after `stop()` once all subscription workers have completed their work and maintenance has been shut down.
+Emitted after `stop()` once all workers have completed their work and maintenance has been shut down.
 
 # Static functions
 
@@ -424,7 +424,7 @@ One example of how this is useful would be including `start()` inside the bootst
 
 ## `stop(options)`
 
-All job monitoring will be stopped and all subscriptions on this instance will be removed. Basically, it's the opposite of `start()`. Even though `start()` may create new database objects during initialization, `stop()` will never remove anything from the database.
+All job monitoring will be stopped and all workers on this instance will be removed. Basically, it's the opposite of `start()`. Even though `start()` may create new database objects during initialization, `stop()` will never remove anything from the database.
 
 By default, calling `stop()` without any arguments will gracefully wait for all workers to finish processing active jobs before closing the internal connection pool and stopping maintenance operations. This behaviour can be configured using the stop options object. In graceful stop mode, the promise returned by `stop()` will still be resolved immediately.  If monitoring for the end of the stop is needed, add a listener to the `stopped` event.
 
@@ -662,7 +662,7 @@ interface JobInsert<T = object> {
 
 ## `process()`
 
-Polls the database by a queue name or a pattern and executes the provided callback function when jobs are found.  The promise resolves once a subscription has been created with a unique id of the subscription.  You can monitor the state of subscriptions using the `wip` event.
+Polls the database by a queue name or a pattern and executes the provided callback function when jobs are found.  The promise resolves once a worker has been created with its unique id.  You can monitor the state of workers using the `wip` event.
 
 Queue patterns use the `*` character to match 0 or more characters.  For example, a job from queue `status-report-12345` would be fetched with pattern `status-report-*` or even `stat*5`.
 
@@ -695,7 +695,7 @@ The default concurrency for `process()` is 1 job every 2 seconds. Both the inter
 
 **Polling options**
 
-How often subscriptions will poll the queue table for jobs. Available in the constructor as a default or per subscription in `process()` and `onComplete()`.
+How often workers will poll the queue table for jobs. Available in the constructor as a default or per worker in `process()` and `onComplete()`.
 
 * **newJobCheckInterval**, int
 
@@ -727,11 +727,11 @@ The job object has the following properties.
 |`data`| object |
 |`done(err, data)` | function | callback function used to mark the job as completed or failed. Returns a promise.
 
-If `handler` does not return a promise, `done()` should be used to mark the job as completed or failed. `done()` accepts optional arguments, `err` and `data`, for usage with [`onComplete()`](#oncompletename--options-handler) state-based subscriptions. If `err` is truthy, it will mark the job as failed.
+If `handler` does not return a promise, `done()` should be used to mark the job as completed or failed. `done()` accepts optional arguments, `err` and `data`, for usage with [`onComplete()`](#oncompletename--options-handler) state-based workers. If `err` is truthy, it will mark the job as failed.
 
 > If the job is not completed, either by returning a promise from `handler` or manually via `job.done()`, it will expire after the configured expiration period.  The default expiration can be found in the [configuration docs](configuration.md#job-expiration).
 
-Following is an example of a subscription that returns a promise (`sendWelcomeEmail()`) for completion with the teamSize option set for increased job concurrency between polling intervals.
+Following is an example of a worker that returns a promise (`sendWelcomeEmail()`) for completion with the teamSize option set for increased job concurrency between polling intervals.
 
 ```js
 const options = { teamSize: 5, teamConcurrency: 5 }
@@ -784,7 +784,7 @@ const job = await boss.fetch(jobName)
 await boss.complete(job.id, responsePayload)
 ```
 
-The following is an example data object from the job retrieved in the onComplete() subscription above.
+The following is an example data object from the job retrieved in onComplete() above.
 
 ```js
 {
@@ -810,12 +810,12 @@ The following is an example data object from the job retrieved in the onComplete
 
 ## `unprocess(value)`
 
-Removes a subscription by name or id and stops polling.
+Removes a worker by name or id and stops polling.
 
 ** Arguments **
 - value: string or object
 
-  If a string, removes all subscriptions found matching the name.  If an object, only the subscription with a matching `id` will be removed.
+  If a string, removes all workers found matching the name.  If an object, only the worker with a matching `id` will be removed.
 
 **
 
@@ -835,7 +835,7 @@ Publish an event. Looks up all subscriptions for the event and sends jobs to all
 
 ### `offComplete(value)`
 
-Similar to `unprocess()`, but removes an `onComplete()` subscription.
+Similar to `unprocess()`, but removes an `onComplete()` worker.
 
 ** 
 
@@ -994,7 +994,7 @@ The promise will resolve on a successful cancel, or reject if not all of the req
 
 ## `complete(id [, data])`
 
-Completes an active job.  This would likely only be used with `fetch()`. Accepts an optional `data` argument for usage with [`onComplete()`](#oncompletename--options-handler) state-based subscriptions or `fetchCompleted()`.
+Completes an active job.  This would likely only be used with `fetch()`. Accepts an optional `data` argument for usage with [`onComplete()`](#oncompletename--options-handler) state-based workers or `fetchCompleted()`.
 
 The promise will resolve on a successful completion, or reject if the job could not be completed.
 
@@ -1008,7 +1008,7 @@ The promise will resolve on a successful completion, or reject if not all of the
 
 ## `fail(id [, data])`
 
-Marks an active job as failed.  This would likely only be used with `fetch()`. Accepts an optional `data` argument for usage with [`onFail()`](#onfailname--options-handler) state-based subscriptions or `fetchFailed()`.
+Marks an active job as failed.  This would likely only be used with `fetch()`. Accepts an optional `data` argument for usage with [`onFail()`](#onfailname--options-handler) state-based workers or `fetchFailed()`.
 
 The promise will resolve on a successful assignment of failure, or reject if the job could not be marked as failed.
 

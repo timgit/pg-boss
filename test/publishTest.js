@@ -1,7 +1,7 @@
 const assert = require('assert')
 const helper = require('./testHelper')
 
-describe('send', function () {
+describe('pubsub', function () {
   it('should fail with no arguments', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
 
@@ -90,4 +90,54 @@ describe('send', function () {
     assert.strictEqual(message, job1.data.message)
     assert.strictEqual(message, job2.data.message)
   })
+})
+
+it('should fail if unsubscribe is called without args', async function () {
+  const boss = this.test.boss = await helper.start(this.test.bossConfig)
+
+  try {
+    await boss.unsubscribe()
+    assert(false)
+  } catch (err) {
+    assert(err)
+  }
+})
+
+it('should fail if unsubscribe is called without both args', async function () {
+  const boss = this.test.boss = await helper.start(this.test.bossConfig)
+
+  try {
+    await boss.unsubscribe('foo')
+    assert(false)
+  } catch (err) {
+    assert(err)
+  }
+})
+
+it('unsubscribe works', async function () {
+  const boss = this.test.boss = await helper.start(this.test.bossConfig)
+
+  const event = 'foo'
+  const queue1 = 'queue1'
+  const queue2 = 'queue2'
+
+  await boss.subscribe(event, queue1)
+  await boss.subscribe(event, queue2)
+
+  await boss.publish(event)
+
+  assert(await boss.fetch(queue1))
+  assert(await boss.fetch(queue2))
+
+  await boss.unsubscribe(event, queue2)
+
+  await boss.publish(event)
+
+  assert(await boss.fetch(queue1))
+
+  assert.strictEqual(null, await boss.fetch(queue2))
+
+  await boss.publish(event)
+
+  assert.strictEqual(null, await boss.fetch(queue1))
 })
