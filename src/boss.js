@@ -56,11 +56,11 @@ class Boss extends EventEmitter {
 
     await this.maintenanceAsync()
 
-    const maintenanceProcessOptions = {
+    const maintenanceWorkOptions = {
       newJobCheckIntervalSeconds: Math.max(1, this.maintenanceIntervalSeconds / 2)
     }
 
-    await this.manager.process(queues.MAINTENANCE, maintenanceProcessOptions, (job) => this.onMaintenance(job))
+    await this.manager.work(queues.MAINTENANCE, maintenanceWorkOptions, (job) => this.onMaintenance(job))
 
     if (this.monitorStates) {
       await this.manager.deleteQueue(COMPLETION_JOB_PREFIX + queues.MONITOR_STATES)
@@ -68,11 +68,11 @@ class Boss extends EventEmitter {
 
       await this.monitorStatesAsync()
 
-      const monitorStatesProcessOptions = {
+      const monitorStatesWorkOptions = {
         newJobCheckIntervalSeconds: Math.max(1, this.monitorIntervalSeconds / 2)
       }
 
-      await this.manager.process(queues.MONITOR_STATES, monitorStatesProcessOptions, (job) => this.onMonitorStates(job))
+      await this.manager.work(queues.MONITOR_STATES, monitorStatesWorkOptions, (job) => this.onMonitorStates(job))
     }
   }
 
@@ -169,10 +169,10 @@ class Boss extends EventEmitter {
         clearInterval(this.metaMonitorInterval)
       }
 
-      await this.manager.unprocess(queues.MAINTENANCE)
+      await this.manager.stopWorker(queues.MAINTENANCE)
 
       if (this.monitorStates) {
-        await this.manager.unprocess(queues.MONITOR_STATES)
+        await this.manager.stopWorker(queues.MONITOR_STATES)
       }
 
       this.stopped = true

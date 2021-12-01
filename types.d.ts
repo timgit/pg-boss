@@ -104,17 +104,17 @@ declare namespace PgBoss {
     includeMetadata?: boolean;
   }
 
-  type ProcessOptions = JobFetchOptions & JobPollingOptions
+  type WorkOptions = JobFetchOptions & JobPollingOptions
 
   type FetchOptions = {
     includeMetadata?: boolean;
   }
 
-  interface ProcessHandler<ReqData, ResData> {
+  interface WorkHandler<ReqData, ResData> {
     (job: PgBoss.JobWithDoneCallback<ReqData, ResData>): Promise<ResData> | void;
   }
 
-  interface ProcessWithMetadataHandler<ReqData, ResData> {
+  interface WorkWithMetadataHandler<ReqData, ResData> {
     (job: PgBoss.JobWithMetadataDoneCallback<ReqData, ResData>): Promise<ResData> | void;
   }
 
@@ -216,7 +216,7 @@ declare namespace PgBoss {
   interface Worker {
     id: string,
     name: string,
-    options: ProcessOptions,
+    options: WorkOptions,
     state: 'created' | 'retry' | 'active' | 'completed' | 'expired' | 'cancelled' | 'failed',
     count: number,
     createdOn: Date,
@@ -233,7 +233,7 @@ declare namespace PgBoss {
     timeout?: number
   }
 
-  interface UnprocessOptions {
+  interface StopWorkerOptions {
     id: string
   }
 
@@ -292,22 +292,22 @@ declare class PgBoss {
 
   insert(jobs: PgBoss.JobInsert[]): Promise<void>;
 
-  process<ReqData, ResData>(name: string, handler: PgBoss.ProcessHandler<ReqData, ResData>): Promise<string>;
-  process<ReqData, ResData>(name: string, options: PgBoss.ProcessOptions & { includeMetadata: true }, handler: PgBoss.ProcessWithMetadataHandler<ReqData, ResData>): Promise<string>;
-  process<ReqData, ResData>(name: string, options: PgBoss.ProcessOptions, handler: PgBoss.ProcessHandler<ReqData, ResData>): Promise<string>;
+  work<ReqData, ResData>(name: string, handler: PgBoss.WorkHandler<ReqData, ResData>): Promise<string>;
+  work<ReqData, ResData>(name: string, options: PgBoss.WorkOptions & { includeMetadata: true }, handler: PgBoss.WorkWithMetadataHandler<ReqData, ResData>): Promise<string>;
+  work<ReqData, ResData>(name: string, options: PgBoss.WorkOptions, handler: PgBoss.WorkHandler<ReqData, ResData>): Promise<string>;
 
   onComplete(name: string, handler: Function): Promise<string>;
-  onComplete(name: string, options: PgBoss.ProcessOptions, handler: Function): Promise<string>;
+  onComplete(name: string, options: PgBoss.WorkOptions, handler: Function): Promise<string>;
 
-  unprocess(name: string): Promise<void>;
-  unprocess(options: PgBoss.UnprocessOptions): Promise<void>;
+  stopWorker(name: string): Promise<void>;
+  stopWorker(options: PgBoss.StopWorkerOptions): Promise<void>;
 
   subscribe(event: string, name: string): Promise<void>;
   unsubscribe(event: string, name: string): Promise<void>;
   publish(request: Resolute.Request): Promise<string[]>;
 
   offComplete(name: string): Promise<void>;
-  offComplete(options: PgBoss.UnprocessOptions): Promise<void>;
+  offComplete(options: PgBoss.StopWorkerOptions): Promise<void>;
 
   fetch<T>(name: string): Promise<PgBoss.Job<T> | null>;
   fetch<T>(name: string, batchSize: number): Promise<PgBoss.Job<T>[] | null>;

@@ -20,7 +20,7 @@ async function readme() {
 
   console.log(`created job in queue ${queue}: ${jobId}`);
 
-  await boss.process(queue, someAsyncJobHandler);
+  await boss.work(queue, someAsyncJobHandler);
 }
 
 async function someAsyncJobHandler(job) {
@@ -38,7 +38,7 @@ pg-boss relies on [SKIP LOCKED](http://blog.2ndquadrant.com/what-is-select-skip-
 This will likely cater the most to teams already familiar with the simplicity of relational database semantics and operations (SQL, querying, and backups). It will be especially useful to those already relying on PostgreSQL that want to limit how many systems are required to monitor and support in their architecture.
 
 ## Features
-* Backpressure-compatible processors for polling queues
+* Backpressure-compatible workers for polling queues
 * Distributed cron-based job scheduling with database clock synchronization
 * Pub/sub API for fan-out queue relationships
 * Job deferral, retries (with exponential backoff), throttling, rate limiting, debouncing

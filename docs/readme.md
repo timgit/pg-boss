@@ -31,10 +31,10 @@
     - [`sendThrottled(name, data, options, seconds [, key])`](#sendthrottledname-data-options-seconds--key)
     - [`sendDebounced(name, data, options, seconds [, key])`](#senddebouncedname-data-options-seconds--key)
   - [`insert([jobs])`](#insertjobs)
-  - [`process()`](#process)
-    - [`process(name [, options], handler)`](#processname--options-handler)
+  - [`work()`](#work)
+    - [`work(name [, options], handler)`](#workname--options-handler)
     - [`onComplete(name [, options], handler)`](#oncompletename--options-handler)
-  - [`unprocess(value)`](#unprocessvalue)
+  - [`stopWorker(value)`](#stopworkervalue)
   - [`subscribe(event, name)`](#subscribeevent-name)
   - [`unsubscribe(event, name)`](#unsubscribeevent-name)
   - [`publish()`](#publish)
@@ -660,15 +660,15 @@ interface JobInsert<T = object> {
 }
 ```
 
-## `process()`
+## `work()`
 
 Polls the database by a queue name or a pattern and executes the provided callback function when jobs are found.  The promise resolves once a worker has been created with its unique id.  You can monitor the state of workers using the `wip` event.
 
 Queue patterns use the `*` character to match 0 or more characters.  For example, a job from queue `status-report-12345` would be fetched with pattern `status-report-*` or even `stat*5`.
 
-The default concurrency for `process()` is 1 job every 2 seconds. Both the interval and the number of jobs per interval can be changed globally or per-queue with configuration options.
+The default concurrency for `work()` is 1 job every 2 seconds. Both the interval and the number of jobs per interval can be changed globally or per-queue with configuration options.
 
-### `process(name [, options], handler)`
+### `work(name [, options], handler)`
 
 **Arguments**
 - `name`: string, *required*
@@ -695,7 +695,7 @@ The default concurrency for `process()` is 1 job every 2 seconds. Both the inter
 
 **Polling options**
 
-How often workers will poll the queue table for jobs. Available in the constructor as a default or per worker in `process()` and `onComplete()`.
+How often workers will poll the queue table for jobs. Available in the constructor as a default or per worker in `work()` and `onComplete()`.
 
 * **newJobCheckInterval**, int
 
@@ -735,14 +735,14 @@ Following is an example of a worker that returns a promise (`sendWelcomeEmail()`
 
 ```js
 const options = { teamSize: 5, teamConcurrency: 5 }
-await boss.process('email-welcome', options, job => myEmailService.sendWelcomeEmail(job.data))
+await boss.work('email-welcome', options, job => myEmailService.sendWelcomeEmail(job.data))
 ```
 
 And the same example, but without returning a promise in the handler.
 
 ```js
 const options = { teamSize: 5, teamConcurrency: 5 }
-await boss.process('email-welcome', options, job => {
+await boss.work('email-welcome', options, job => {
     myEmailService.sendWelcomeEmail(job.data)
         .then(() => job.done())
         .catch(error => job.done(error))
@@ -752,14 +752,14 @@ await boss.process('email-welcome', options, job => {
 Similar to the first example, but with a batch of jobs at once.
 
 ```js
-await boss.process('email-welcome', { batchSize: 5 },
+await boss.work('email-welcome', { batchSize: 5 },
     jobs => myEmailService.sendWelcomeEmails(jobs.map(job => job.data))
 )
 ```
 
 ### `onComplete(name [, options], handler)`
 
-Sometimes when a job completes, expires or fails, it's important enough to trigger other things that should react to it. `onComplete` works identically to `process()` and was created to facilitate the creation of orchestrations or sagas between jobs that may or may not know about each other. This common messaging pattern allows you to keep multi-job flow logic out of the individual job handlers so you can manage things in a more centralized fashion while not losing your mind. As you most likely already know, asynchronous jobs are complicated enough already. Internally, these jobs have a special prefix of `__state__completed__`.
+Sometimes when a job completes, expires or fails, it's important enough to trigger other things that should react to it. `onComplete` works identically to `work()` and was created to facilitate the creation of orchestrations or sagas between jobs that may or may not know about each other. This common messaging pattern allows you to keep multi-job flow logic out of the individual job handlers so you can manage things in a more centralized fashion while not losing your mind. As you most likely already know, asynchronous jobs are complicated enough already. Internally, these jobs have a special prefix of `__state__completed__`.
 
 The callback for `onComplete()` returns a job containing the original job and completion details. `request` will be the original job as submitted with `id`, `name` and `data`. `response` may or may not have a value based on arguments in [complete()](#completeid--data) or [fail()](#failid--data).
 
@@ -808,7 +808,7 @@ The following is an example data object from the job retrieved in onComplete() a
 }
 ```
 
-## `unprocess(value)`
+## `stopWorker(value)`
 
 Removes a worker by name or id and stops polling.
 
@@ -835,15 +835,15 @@ Publish an event. Looks up all subscriptions for the event and sends jobs to all
 
 ### `offComplete(value)`
 
-Similar to `unprocess()`, but removes an `onComplete()` worker.
+Similar to `stopWorker()`, but removes an `onComplete()` worker.
 
 ** 
 
 ## `fetch()`
 
-Typically one would use `process()` for automated polling for new jobs based upon a reasonable interval to finish the most jobs with the lowest latency. While `process()` is a yet another free service we offer and it can be awfully convenient, sometimes you may have a special use case around when a job can be retrieved. Or, perhaps like me, you need to provide jobs via other entry points such as a web API.
+Typically one would use `work()` for automated polling for new jobs based upon a reasonable interval to finish the most jobs with the lowest latency. While `work()` is a yet another free service we offer and it can be awfully convenient, sometimes you may have a special use case around when a job can be retrieved. Or, perhaps like me, you need to provide jobs via other entry points such as a web API.
 
-`fetch()` allows you to skip all that polling nonsense that `process()` does and puts you back in control of database traffic. Once you have your shiny job, you'll use either `complete()` or `fail()` to mark it as finished.
+`fetch()` allows you to skip all that polling nonsense that `work()` does and puts you back in control of database traffic. Once you have your shiny job, you'll use either `complete()` or `fail()` to mark it as finished.
 
 ### `fetch(name)`
 

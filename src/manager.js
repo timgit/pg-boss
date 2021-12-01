@@ -54,8 +54,8 @@ class Manager extends EventEmitter {
       this.fail,
       this.send,
       this.insert,
-      this.process,
-      this.unprocess,
+      this.work,
+      this.stopWorker,
       this.onComplete,
       this.subscribe,
       this.unsubscribe,
@@ -86,18 +86,18 @@ class Manager extends EventEmitter {
 
     for (const sub of this.workers.values()) {
       if (!INTERNAL_QUEUES[sub.name]) {
-        await this.unprocess(sub.name)
+        await this.stopWorker(sub.name)
       }
     }
   }
 
-  async process (name, ...args) {
-    const { options, callback } = Attorney.checkProcessArgs(name, args, this.config)
+  async work (name, ...args) {
+    const { options, callback } = Attorney.checkWorkArgs(name, args, this.config)
     return await this.watch(name, options, callback)
   }
 
   async onComplete (name, ...args) {
-    const { options, callback } = Attorney.checkProcessArgs(name, args, this.config)
+    const { options, callback } = Attorney.checkWorkArgs(name, args, this.config)
     return await this.watch(COMPLETION_JOB_PREFIX + name, options, callback)
   }
 
@@ -229,7 +229,7 @@ class Manager extends EventEmitter {
     return id
   }
 
-  async unprocess (value) {
+  async stopWorker (value) {
     assert(value, 'Missing required argument')
 
     const query = (typeof value === 'string')
@@ -292,7 +292,7 @@ class Manager extends EventEmitter {
       value = COMPLETION_JOB_PREFIX + value
     }
 
-    return await this.unprocess(value)
+    return await this.stopWorker(value)
   }
 
   async send (...args) {

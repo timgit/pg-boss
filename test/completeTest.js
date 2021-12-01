@@ -109,18 +109,18 @@ describe('complete', function () {
     })
   })
 
-  it('process()\'s job.done() should allow sending completion payload', async function () {
+  it('work()\'s job.done() should allow sending completion payload', async function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, onComplete: true })
 
-    const jobName = 'complete-from-process'
+    const queue = this.test.bossConfig.schema
     const responsePayload = { arg1: '123' }
 
-    await boss.send(jobName)
+    await boss.send(queue)
 
-    boss.process(jobName, job => job.done(null, responsePayload))
+    boss.work(queue, job => job.done(null, responsePayload))
 
     return new Promise((resolve) => {
-      boss.onComplete(jobName, async job => {
+      boss.onComplete(queue, async job => {
         assert.strictEqual(job.data.response.arg1, responsePayload.arg1)
         resolve()
       })

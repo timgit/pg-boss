@@ -17,8 +17,7 @@ describe('failure', function () {
 
   it('should fail a job when requested', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
-
-    const queue = 'will-fail'
+    const queue = this.test.bossConfig.schema
 
     await boss.send(queue)
 
@@ -27,10 +26,10 @@ describe('failure', function () {
     await boss.fail(job.id)
   })
 
-  it('should process to a job failure', async function () {
+  it('worker for job failure', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const queue = this.test.bossConfig.schema
 
-    const queue = 'process-fail'
     const jobId = await boss.send(queue, null, { onComplete: true })
 
     const job = await boss.fetch(queue)
@@ -48,8 +47,7 @@ describe('failure', function () {
 
   it('should fail a batch of jobs', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
-
-    const queue = 'complete-batch'
+    const queue = this.test.bossConfig.schema
 
     await Promise.all([
       boss.send(queue),
@@ -84,8 +82,8 @@ describe('failure', function () {
 
   it('should accept a payload', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const queue = this.test.bossConfig.schema
 
-    const queue = 'fail-payload'
     const failPayload = { someReason: 'nuna' }
 
     const jobId = await boss.send(queue, null, { onComplete: true })
@@ -100,8 +98,8 @@ describe('failure', function () {
 
   it('should preserve nested objects within a payload that is an instance of Error', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const queue = this.test.bossConfig.schema
 
-    const queue = 'fail-payload'
     const failPayload = new Error('Something went wrong')
     failPayload.some = { deeply: { nested: { reason: 'nuna' } } }
 
@@ -115,16 +113,15 @@ describe('failure', function () {
     assert.strictEqual(job.data.response.some.deeply.nested.reason, failPayload.some.deeply.nested.reason)
   })
 
-  it('process failure via done() should pass error payload to failed job', async function () {
+  it('failure via done() should pass error payload to failed job', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
-
-    const queue = 'fetchFailureWithPayload'
+    const queue = this.test.bossConfig.schema
     const errorMessage = 'mah error'
 
     await boss.send(queue, null, { onComplete: true })
 
     return new Promise((resolve) => {
-      boss.process(queue, async job => {
+      boss.work(queue, async job => {
         const error = new Error(errorMessage)
 
         await job.done(error)
@@ -139,13 +136,12 @@ describe('failure', function () {
     })
   })
 
-  it('process failure via Promise reject() should pass string wrapped in value prop', async function () {
+  it('failure via Promise reject() should pass string wrapped in value prop', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
-
-    const queue = 'processFailureViaRejectString'
+    const queue = this.test.bossConfig.schema
     const failPayload = 'mah error'
 
-    await boss.process(queue, job => Promise.reject(failPayload))
+    await boss.work(queue, job => Promise.reject(failPayload))
     await boss.send(queue, null, { onComplete: true })
 
     await delay(7000)
@@ -156,16 +152,15 @@ describe('failure', function () {
     assert.strictEqual(job.data.response.value, failPayload)
   })
 
-  it('process failure via Promise reject() should pass object payload', async function () {
+  it('failure via Promise reject() should pass object payload', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
-
-    const queue = 'processFailureViaRejectObject'
+    const queue = this.test.bossConfig.schema
     const something = 'clever'
 
     const errorResponse = new Error('custom error')
     errorResponse.something = something
 
-    await boss.process(queue, job => Promise.reject(errorResponse))
+    await boss.work(queue, job => Promise.reject(errorResponse))
     await boss.send(queue, null, { onComplete: true })
 
     await delay(7000)
@@ -178,12 +173,11 @@ describe('failure', function () {
 
   it('failure with Error object should get stored in the failure job', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
-
-    const queue = 'failWithErrorObj'
+    const queue = this.test.bossConfig.schema
     const message = 'a real error!'
 
     await boss.send(queue, null, { onComplete: true })
-    await boss.process(queue, async () => { throw new Error(message) })
+    await boss.work(queue, async () => { throw new Error(message) })
 
     await delay(2000)
 

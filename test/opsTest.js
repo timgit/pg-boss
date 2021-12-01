@@ -45,7 +45,7 @@ describe('ops', function () {
     const queue = this.test.bossConfig.schema
 
     await boss.send(queue)
-    await boss.process(queue, () => {})
+    await boss.work(queue, () => {})
 
     await new Promise(resolve => boss.once('error', resolve))
   })
@@ -68,7 +68,7 @@ describe('ops', function () {
     const queue = this.test.bossConfig.schema
 
     await boss.send(queue)
-    await boss.process(queue, () => delay(2000))
+    await boss.work(queue, () => delay(2000))
 
     await delay(500)
 

@@ -50,8 +50,8 @@ class Timekeeper extends EventEmitter {
 
     await this.cacheClockSkew()
 
-    await this.manager.process(queues.CRON, { newJobCheckIntervalSeconds: 4 }, (job) => this.onCron(job))
-    await this.manager.process(queues.SEND_IT, { newJobCheckIntervalSeconds: 4, teamSize: 50, teamConcurrency: 5 }, (job) => this.onSendIt(job))
+    await this.manager.work(queues.CRON, { newJobCheckIntervalSeconds: 4 }, (job) => this.onCron(job))
+    await this.manager.work(queues.SEND_IT, { newJobCheckIntervalSeconds: 4, teamSize: 50, teamConcurrency: 5 }, (job) => this.onSendIt(job))
 
     await this.cronMonitorAsync()
 
@@ -68,8 +68,8 @@ class Timekeeper extends EventEmitter {
 
     this.stopped = true
 
-    await this.manager.unprocess(queues.CRON)
-    await this.manager.unprocess(queues.SEND_IT)
+    await this.manager.stopWorker(queues.CRON)
+    await this.manager.stopWorker(queues.SEND_IT)
 
     if (this.skewMonitorInterval) {
       clearInterval(this.skewMonitorInterval)

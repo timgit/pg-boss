@@ -2,7 +2,7 @@ const assert = require('assert')
 const helper = require('./testHelper')
 
 describe('priority', function () {
-  it('should process a newer higher priority job before an older lower priority job', async function () {
+  it('higher priority job', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
 
     const jobName = 'priority-test'
@@ -16,7 +16,7 @@ describe('priority', function () {
     assert.strictEqual(job.id, high)
   })
 
-  it('should process several jobs in descending priority order', async function () {
+  it('descending priority order', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
 
     const queue = 'multiple-priority-test'

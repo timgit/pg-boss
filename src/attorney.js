@@ -4,7 +4,7 @@ const { DEFAULT_SCHEMA } = require('./plans')
 module.exports = {
   getConfig,
   checkSendArgs,
-  checkProcessArgs,
+  checkWorkArgs,
   checkFetchArgs,
   warnClockSkew
 }
@@ -31,7 +31,7 @@ function checkSendArgs (args, defaults) {
     name = args[0]
     data = args[1]
 
-    assert(typeof data !== 'function', 'send() cannot accept a function as the payload.  Did you intend to use process()?')
+    assert(typeof data !== 'function', 'send() cannot accept a function as the payload.  Did you intend to use work()?')
 
     options = args[2]
   } else if (typeof args[0] === 'object') {
@@ -84,7 +84,7 @@ function checkSendArgs (args, defaults) {
   return { name, data, options }
 }
 
-function checkProcessArgs (name, args, defaults) {
+function checkWorkArgs (name, args, defaults) {
   let options, callback
 
   assert(name, 'missing job name')
@@ -145,7 +145,6 @@ function getConfig (value) {
   applyMonitoringConfig(config)
   applyUuidConfig(config)
 
-  // defaults for send and process
   applyNewJobCheckInterval(config)
   applyExpirationConfig(config)
   applyRetentionConfig(config)

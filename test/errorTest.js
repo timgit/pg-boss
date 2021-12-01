@@ -1,10 +1,9 @@
 const helper = require('./testHelper')
 
 describe('error', function () {
-  it('should handle an error in a processr and not blow up', async function () {
+  it('should handle an error in a worker and not blow up', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
-
-    const queue = 'error-handling'
+    const queue = this.test.bossConfig.schema
 
     let processCount = 0
 
@@ -12,7 +11,7 @@ describe('error', function () {
     await boss.send(queue)
 
     return new Promise((resolve) => {
-      boss.process(queue, async job => {
+      boss.work(queue, async job => {
         processCount++
 
         if (processCount === 1) {

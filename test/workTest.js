@@ -3,12 +3,12 @@ const assert = require('assert')
 const helper = require('./testHelper')
 const PgBoss = require('../')
 
-describe('process', function () {
+describe('work', function () {
   it('should fail with no arguments', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
 
     try {
-      await boss.process()
+      await boss.work()
       assert(false)
     } catch (err) {
       assert(err)
@@ -19,7 +19,7 @@ describe('process', function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
 
     try {
-      await boss.process('foo')
+      await boss.work('foo')
       assert(false)
     } catch (err) {
       assert(err)
@@ -30,18 +30,18 @@ describe('process', function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
 
     try {
-      await boss.process('foo', () => {}, 'nope')
+      await boss.work('foo', () => {}, 'nope')
       assert(false)
     } catch (err) {
       assert(err)
     }
   })
 
-  it('unprocess should fail without a name', async function () {
+  it('stopWorker should fail without a name', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
 
     try {
-      await boss.unprocess()
+      await boss.stopWorker()
       assert(false)
     } catch (err) {
       assert(err)
@@ -61,7 +61,7 @@ describe('process', function () {
       await boss.send(queue)
     }
 
-    await boss.process(queue, { newJobCheckIntervalSeconds }, () => processCount++)
+    await boss.work(queue, { newJobCheckIntervalSeconds }, () => processCount++)
 
     await delay(timeout)
 
@@ -70,14 +70,13 @@ describe('process', function () {
 
   it('should remove a worker', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
-
-    const queue = 'unprocess-works'
+    const queue = this.test.bossConfig.schema
 
     let receivedCount = 0
 
-    boss.process(queue, async () => {
+    boss.work(queue, async () => {
       receivedCount++
-      await boss.unprocess(queue)
+      await boss.stopWorker(queue)
     })
 
     await boss.send(queue)
@@ -97,9 +96,9 @@ describe('process', function () {
     await boss.send(queue)
     await boss.send(queue)
 
-    const id = await boss.process(queue, { newJobCheckInterval: 500 }, async () => {
+    const id = await boss.work(queue, { newJobCheckInterval: 500 }, async () => {
       receivedCount++
-      await boss.unprocess({ id })
+      await boss.stopWorker({ id })
     })
 
     await delay(2000)
@@ -120,7 +119,7 @@ describe('process', function () {
     }
 
     return new Promise((resolve, reject) => {
-      boss.process(queue, { teamSize }, async () => {
+      boss.work(queue, { teamSize }, async () => {
         processCount++
 
         // test would time out if it had to wait for 4 fetch intervals
@@ -145,7 +144,7 @@ describe('process', function () {
     }
 
     return new Promise((resolve) => {
-      boss.process(queue, { teamSize, teamConcurrency }, async () => {
+      boss.work(queue, { teamSize, teamConcurrency }, async () => {
         processCount++
 
         if (processCount === teamSize) {
@@ -169,7 +168,7 @@ describe('process', function () {
     }
 
     return new Promise((resolve) => {
-      boss.process(queue, { batchSize }, async jobs => {
+      boss.work(queue, { batchSize }, async jobs => {
         assert.strictEqual(jobs.length, batchSize)
         resolve()
       })
@@ -187,7 +186,7 @@ describe('process', function () {
       await boss.send(queue)
     }
 
-    await boss.process(queue, async () => {
+    await boss.work(queue, async () => {
       // delay slows down process fetch
       await delay(2000)
       processCount++
@@ -205,7 +204,7 @@ describe('process', function () {
     await boss.send(queue)
 
     return new Promise((resolve) => {
-      boss.process(queue, async job => {
+      boss.work(queue, async job => {
         job.done()
         resolve()
       })
@@ -218,7 +217,7 @@ describe('process', function () {
     const queue = 'processCompletionString'
     const result = 'success'
 
-    boss.process(queue, async job => result)
+    boss.work(queue, async job => result)
 
     await boss.send(queue)
 
@@ -236,7 +235,7 @@ describe('process', function () {
     const queue = 'processCompletionObject'
     const something = 'clever'
 
-    boss.process(queue, async job => ({ something }))
+    boss.work(queue, async job => ({ something }))
 
     await boss.send(queue)
 
@@ -252,8 +251,8 @@ describe('process', function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
     const queue = 'multiple-workers'
 
-    await boss.process(queue, () => {})
-    await boss.process(queue, () => {})
+    await boss.work(queue, () => {})
+    await boss.work(queue, () => {})
   })
 
   it('should honor the includeMetadata option', async function () {
@@ -264,7 +263,7 @@ describe('process', function () {
     await boss.send(queue)
 
     return new Promise((resolve) => {
-      boss.process(queue, { includeMetadata: true }, async job => {
+      boss.work(queue, { includeMetadata: true }, async job => {
         assert(job.startedon !== undefined)
         resolve()
       })
@@ -286,7 +285,7 @@ describe('process', function () {
 
     const jobId = await boss.send(queue, null, { expireInSeconds: 1 })
 
-    await boss.process(queue, () => delay(2000))
+    await boss.work(queue, () => delay(2000))
 
     await delay(2000)
 
@@ -312,7 +311,7 @@ describe('process', function () {
     const jobId1 = await boss.send(queue, null, { expireInSeconds: 1 })
     const jobId2 = await boss.send(queue, null, { expireInSeconds: 1 })
 
-    await boss.process(queue, { batchSize: 2 }, () => delay(2000))
+    await boss.work(queue, { batchSize: 2 }, () => delay(2000))
 
     await delay(2000)
 
@@ -333,7 +332,7 @@ describe('process', function () {
     const firstWipEvent = new Promise(resolve => boss.once('wip', resolve))
 
     await boss.send(queue)
-    await boss.process(queue, () => delay(1000))
+    await boss.work(queue, () => delay(1000))
 
     const wip1 = await firstWipEvent
 
@@ -346,14 +345,14 @@ describe('process', function () {
     assert.strictEqual(wip2.length, 0)
   })
 
-  it('should reject process() after stopping', async function () {
+  it('should reject work() after stopping', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
     const queue = this.test.bossConfig.schema
 
     boss.stop({ timeout: 1 })
 
     try {
-      await boss.process(queue)
+      await boss.work(queue)
       assert(false)
     } catch (err) {
       assert(err.message.includes('stopping'))

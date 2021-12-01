@@ -14,7 +14,7 @@ describe('throttle', function () {
 
     let processCount = 0
 
-    boss.process(queue, async () => processCount++)
+    boss.work(queue, async () => processCount++)
 
     for (let i = 0; i < sendCount; i++) {
       await boss.send(queue, null, { startAfter, singletonSeconds })
@@ -38,7 +38,7 @@ describe('throttle', function () {
     const sendCount = 0
     let processCount = 0
 
-    boss.process(queue, async () => processCount++)
+    boss.work(queue, async () => processCount++)
 
     for (let i = 0; i < sendCount; i++) {
       await boss.send(queue, null, { singletonSeconds })

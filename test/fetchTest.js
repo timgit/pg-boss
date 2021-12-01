@@ -15,28 +15,28 @@ describe('fetch', function () {
 
   it('should fetch a job by name manually', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
-    const jobName = 'no-process-required'
+    const queue = this.test.bossConfig.schema
 
-    await boss.send(jobName)
-    const job = await boss.fetch(jobName)
-    assert(jobName === job.name)
+    await boss.send(queue)
+    const job = await boss.fetch(queue)
+    assert(queue === job.name)
     // Metadata should only be included when specifically requested
     assert(job.startedon === undefined)
   })
 
   it('should get a batch of jobs as an array', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
-    const jobName = 'fetch-batch'
+    const queue = this.test.bossConfig.schema
     const batchSize = 4
 
     await Promise.all([
-      boss.send(jobName),
-      boss.send(jobName),
-      boss.send(jobName),
-      boss.send(jobName)
+      boss.send(queue),
+      boss.send(queue),
+      boss.send(queue),
+      boss.send(queue)
     ])
 
-    const jobs = await boss.fetch(jobName, batchSize)
+    const jobs = await boss.fetch(queue, batchSize)
 
     assert(jobs.length === batchSize)
     // Metadata should only be included when specifically requested
@@ -45,11 +45,11 @@ describe('fetch', function () {
 
   it('should fetch all metadata for a single job when requested', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
-    const jobName = 'fetch-include-metadata'
+    const queue = this.test.bossConfig.schema
 
-    await boss.send(jobName)
-    const job = await boss.fetch(jobName, undefined, { includeMetadata: true })
-    assert(jobName === job.name)
+    await boss.send(queue)
+    const job = await boss.fetch(queue, undefined, { includeMetadata: true })
+    assert(queue === job.name)
     assert(job.priority === 0)
     assert(job.state === 'active')
     assert(job.retrylimit === 0)
@@ -68,21 +68,21 @@ describe('fetch', function () {
 
   it('should fetch all metadata for a batch of jobs when requested', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
-    const jobName = 'fetch-include-metadata-batch'
+    const queue = this.test.bossConfig.schema
     const batchSize = 4
 
     await Promise.all([
-      boss.send(jobName),
-      boss.send(jobName),
-      boss.send(jobName),
-      boss.send(jobName)
+      boss.send(queue),
+      boss.send(queue),
+      boss.send(queue),
+      boss.send(queue)
     ])
 
-    const jobs = await boss.fetch(jobName, batchSize, { includeMetadata: true })
+    const jobs = await boss.fetch(queue, batchSize, { includeMetadata: true })
     assert(jobs.length === batchSize)
 
     jobs.forEach(job => {
-      assert(jobName === job.name)
+      assert(queue === job.name)
       assert(job.priority === 0)
       assert(job.state === 'active')
       assert(job.retrylimit === 0)
