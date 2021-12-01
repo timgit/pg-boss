@@ -24,6 +24,23 @@ const events = {
   wip: 'wip'
 }
 
+const resolveWithinSeconds = async (promise, seconds) => {
+  const timeout = Math.max(1, seconds) * 1000
+  const reject = delay.reject(timeout, { value: new Error(`handler execution exceeded ${timeout}ms`) })
+
+  let result
+
+  try {
+    result = await Promise.race([promise, reject])
+  } finally {
+    try {
+      reject.clear()
+    } catch {}
+  }
+
+  return result
+}
+
 class Manager extends EventEmitter {
   constructor (db, config) {
     super()
@@ -163,57 +180,71 @@ class Manager extends EventEmitter {
       batchSize,
       teamSize = 1,
       teamConcurrency = 1,
+      teamRefill: refill = false,
       includeMetadata = false
     } = options
 
     const id = uuid.v4()
 
-    const fetch = () => this.fetch(name, batchSize || teamSize, { includeMetadata })
+    let queueSize = 0
+
+    let refillTeamPromise
+    let resolveRefillTeam
+
+    // Setup a promise that onFetch can await for when at least one
+    // job is finished and so the team is ready to be topped up
+    const createTeamRefillPromise = () => {
+      refillTeamPromise = new Promise((resolve) => { resolveRefillTeam = resolve })
+    }
+
+    createTeamRefillPromise()
+
+    const onRefill = () => {
+      queueSize--
+      resolveRefillTeam()
+      createTeamRefillPromise()
+    }
+
+    const fetch = () => this.fetch(name, batchSize || (teamSize - queueSize), { includeMetadata })
 
     const onFetch = async (jobs) => {
       if (this.config.__test__throw_worker) {
         throw new Error('__test__throw_worker')
       }
 
-      const resolveWithinSeconds = async (promise, seconds) => {
-        const timeout = Math.max(1, seconds) * 1000
-        const reject = delay.reject(timeout, { value: new Error(`handler execution exceeded ${timeout}ms`) })
-
-        let result
-
-        try {
-          result = await Promise.race([promise, reject])
-        } finally {
-          try {
-            reject.clear()
-          } catch {}
-        }
-
-        return result
-      }
-
       this.emitWip(name)
-
-      let result
 
       if (batchSize) {
         const maxExpiration = jobs.reduce((acc, i) => Math.max(acc, i.expire_in_seconds), 0)
 
         // Failing will fail all fetched jobs
-        result = await resolveWithinSeconds(Promise.all([callback(jobs)]), maxExpiration)
+        await resolveWithinSeconds(Promise.all([callback(jobs)]), maxExpiration)
           .catch(err => this.fail(jobs.map(job => job.id), err))
       } else {
-        result = await pMap(jobs, job =>
+        if (refill) {
+          queueSize += jobs.length || 1
+        }
+
+        const allTeamPromise = pMap(jobs, job =>
           resolveWithinSeconds(callback(job), job.expire_in_seconds)
             .then(result => this.complete(job.id, result))
             .catch(err => this.fail(job.id, err))
+            .then(() => refill ? onRefill() : null)
         , { concurrency: teamConcurrency }
         ).catch(() => {}) // allow promises & non-promises to live together in harmony
+
+        if (refill) {
+          if (queueSize < teamSize) {
+            return
+          } else {
+            await refillTeamPromise
+          }
+        } else {
+          await allTeamPromise
+        }
       }
 
       this.emitWip(name)
-
-      return result
     }
 
     const onError = error => {

@@ -197,6 +197,71 @@ describe('work', function () {
     assert(processCount < batchSize)
   })
 
+  it('top up jobs when at least one job in team is still running', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const queue = this.test.bossConfig.schema
+
+    this.timeout(1000)
+
+    const teamSize = 4
+    const teamConcurrency = 2
+
+    let processCount = 0
+
+    for (let i = 0; i < 6; i++) {
+      await boss.send(queue)
+    }
+
+    const newJobCheckInterval = 100
+
+    return new Promise((resolve) => {
+      boss.work(queue, { teamSize, teamConcurrency, newJobCheckInterval, teamRefill: true }, async () => {
+        processCount++
+        if (processCount === 1) {
+          // Test would timeout if all were blocked on this first
+          // process
+          await new Promise(resolve => setTimeout(resolve, 500))
+          return
+        }
+
+        if (processCount === 6) {
+          resolve()
+        }
+      })
+    })
+  })
+
+  it('does not fetch more than teamSize', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const queue = this.test.bossConfig.schema
+    const teamSize = 4
+    const teamConcurrency = 2
+    const newJobCheckInterval = 200
+    let processCount = 0
+    let remainCount = 0
+
+    for (let i = 0; i < 7; i++) {
+      await boss.send(queue)
+    }
+
+    // This should consume 5 jobs, all will block after the first job
+    await boss.work(queue, { teamSize, teamConcurrency, newJobCheckInterval, teamRefill: true }, async () => {
+      processCount++
+      if (processCount > 1) await new Promise(resolve => setTimeout(resolve, 1000))
+    })
+
+    await new Promise(resolve => setTimeout(resolve, 400))
+
+    // this should pick up the last 2 jobs
+    await boss.work(queue, { teamSize, teamConcurrency, newJobCheckInterval, teamRefill: true }, async () => {
+      remainCount++
+    })
+
+    await new Promise(resolve => setTimeout(resolve, 400))
+
+    assert(remainCount === 2)
+  })
+
   it('should have a done callback for single job', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
     const queue = 'process-single'
@@ -211,7 +276,7 @@ describe('work', function () {
     })
   })
 
-  it('process completion should pass string wrapped in value prop', async function () {
+  it('completion should pass string wrapped in value prop', async function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, onComplete: true })
 
     const queue = 'processCompletionString'
@@ -229,7 +294,7 @@ describe('work', function () {
     assert.strictEqual(job.data.response.value, result)
   })
 
-  it('process completion via Promise resolve() should pass object payload', async function () {
+  it('completion via Promise resolve() should pass object payload', async function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, onComplete: true })
 
     const queue = 'processCompletionObject'
@@ -273,8 +338,6 @@ describe('work', function () {
   it('should fail job at expiration without maintenance', async function () {
     const boss = this.test.boss = new PgBoss(this.test.bossConfig)
 
-    boss.on('error', err => console.log(err))
-
     const maintenanceTick = new Promise((resolve) => boss.on('maintenance', resolve))
 
     await boss.start()
@@ -297,8 +360,6 @@ describe('work', function () {
 
   it('should fail a batch of jobs at expiration without maintenance', async function () {
     const boss = this.test.boss = new PgBoss(this.test.bossConfig)
-
-    boss.on('error', err => console.log(err))
 
     const maintenanceTick = new Promise((resolve) => boss.on('maintenance', resolve))
 
