@@ -445,7 +445,7 @@ By default, calling `stop()` without any arguments will gracefully wait for all 
 
 Creates a new job and resolves the job's unique identifier (uuid).
 
-> `send()` will resolve a `null` for job id under some use cases when using [unique jobs](configuration.md#unique-jobs) or [throttling](configuration.md#throttled-jobs).  These options are always opt-in on the send side and therefore don't result in a promise rejection.
+> `send()` will resolve a `null` for job id under some use cases when using unique jobs or throttling (see below).  These options are always opt-in on the send side and therefore don't result in a promise rejection.
 
 ### `send(name, data, options)`
 
@@ -662,7 +662,9 @@ interface JobInsert<T = object> {
 
 ## `work()`
 
-Polls the database by a queue name or a pattern and executes the provided callback function when jobs are found.  The promise resolves once a worker has been created with its unique id.  You can monitor the state of workers using the `wip` event.
+Adds a new polling worker for a queue and executes the provided callback function when jobs are found. Multiple workers can be added if needed. 
+
+Workers can be stopped via `stopWorker()` all at once by queue name or individually by using the unique id resolved by `work()`. Workers may be monitored by listening to the `wip` event.
 
 Queue patterns use the `*` character to match 0 or more characters.  For example, a job from queue `status-report-12345` would be fetched with pattern `status-report-*` or even `stat*5`.
 
@@ -729,7 +731,7 @@ The job object has the following properties.
 
 If `handler` does not return a promise, `done()` should be used to mark the job as completed or failed. `done()` accepts optional arguments, `err` and `data`, for usage with [`onComplete()`](#oncompletename--options-handler) state-based workers. If `err` is truthy, it will mark the job as failed.
 
-> If the job is not completed, either by returning a promise from `handler` or manually via `job.done()`, it will expire after the configured expiration period.  The default expiration can be found in the [configuration docs](configuration.md#job-expiration).
+> If the job is not completed, either by returning a promise from `handler` or manually via `job.done()`, it will expire after the configured expiration period.
 
 Following is an example of a worker that returns a promise (`sendWelcomeEmail()`) for completion with the teamSize option set for increased job concurrency between polling intervals.
 
@@ -962,7 +964,7 @@ Schedules a job to be sended to the specified queue based on a cron expression. 
 - `data`: object
 - `options`: object
 
-`options` supports all properties in [send options](configuration.md#send-options) and an optional `tz` property that specifies a time zone name. If not specified, the default is UTC.
+`options` supports all properties in `send()` and an optional `tz` property that specifies a time zone name. If not specified, the default is UTC.
 
 For example, the following code will send a job at 3:00am in the US central time zone into the queue `notification-abc`.
 
