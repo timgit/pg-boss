@@ -31,18 +31,18 @@
     - [`sendThrottled(name, data, options, seconds [, key])`](#sendthrottledname-data-options-seconds--key)
     - [`sendDebounced(name, data, options, seconds [, key])`](#senddebouncedname-data-options-seconds--key)
   - [`insert([jobs])`](#insertjobs)
-  - [`work()`](#work)
-    - [`work(name [, options], handler)`](#workname--options-handler)
-    - [`onComplete(name [, options], handler)`](#oncompletename--options-handler)
-  - [`stopWorker(value)`](#stopworkervalue)
-  - [`subscribe(event, name)`](#subscribeevent-name)
-  - [`unsubscribe(event, name)`](#unsubscribeevent-name)
-  - [`publish()`](#publish)
-    - [`offComplete(value)`](#offcompletevalue)
   - [`fetch()`](#fetch)
     - [`fetch(name)`](#fetchname)
     - [`fetch(name, batchSize, [, options])`](#fetchname-batchsize--options)
     - [`fetchCompleted(name [, batchSize] [, options])`](#fetchcompletedname--batchsize--options)
+  - [`work()`](#work)
+    - [`work(name [, options], handler)`](#workname--options-handler)
+    - [`onComplete(name [, options], handler)`](#oncompletename--options-handler)
+  - [`offWork(value)`](#offworkvalue)
+    - [`offComplete(value)`](#offcompletevalue)
+  - [`publish()`](#publish)
+  - [`subscribe(event, name)`](#subscribeevent-name)
+  - [`unsubscribe(event, name)`](#unsubscribeevent-name)
   - [Scheduling](#scheduling)
     - [`schedule(name, cron, data, options)`](#schedulename-cron-data-options)
     - [`unschedule(name)`](#unschedulename)
@@ -661,11 +661,95 @@ interface JobInsert<T = object> {
 }
 ```
 
+
+## `fetch()`
+
+Typically one would use `work()` for automated polling for new jobs based upon a reasonable interval to finish the most jobs with the lowest latency. While `work()` is a yet another free service we offer and it can be awfully convenient, sometimes you may have a special use case around when a job can be retrieved. Or, perhaps like me, you need to provide jobs via other entry points such as a web API.
+
+`fetch()` allows you to skip all that polling nonsense that `work()` does and puts you back in control of database traffic. Once you have your shiny job, you'll use either `complete()` or `fail()` to mark it as finished.
+
+### `fetch(name)`
+
+**Arguments**
+- `name`: string, queue name or pattern
+
+**Resolves**
+- `job`: job object, `null` if none found
+
+### `fetch(name, batchSize, [, options])`
+
+**Arguments**
+- `name`: string, queue name or pattern
+- `batchSize`: number, # of jobs to fetch
+- `options`: object
+
+  * `includeMetadata`, bool
+
+    If `true`, all job metadata will be returned on the job object.  The following table shows each property and its type, which is basically all columns from the job table.
+
+    | Prop | Type | |
+    | - | - | -|
+    | id | string, uuid |
+    | name| string |
+    | data | object |
+    | priority | number |
+    | state | string |
+    | retrylimit | number |
+    | retrycount | number |
+    | retrydelay | number |
+    | retrybackoff | bool |
+    | startafter | string, timestamp |
+    | startedon | string, timestamp |
+    | singletonkey | string |
+    | singletonon | string, timestamp |
+    | expirein | object, pg interval |
+    | createdon | string, timestamp |
+    | completedon | string, timestamp |
+    | keepuntil | string, timestamp |
+    | oncomplete | bool |
+    | output | object |
+
+
+**Resolves**
+- `[job]`: array of job objects, `null` if none found
+
+**Notes**
+
+If you pass a batchSize, `fetch()` will always resolve an array response, even if only 1 job is returned. This seemed like a great idea at the time.
+
+The following code shows how to utilize batching via `fetch()` to get and complete 20 jobs at once on-demand.
+
+
+```js
+const queue = 'email-daily-digest'
+const batchSize = 20
+
+const jobs = await boss.fetch(queue, batchSize)
+
+if(!jobs) {
+    return
+}
+
+for (let i = 0; i < jobs.length; i++) {
+    const job = jobs[i]
+
+    try {
+        await emailer.send(job.data)
+        await boss.complete(job.id)
+    } catch(err) {
+        await boss.fail(job.id, err)
+    }
+}
+```
+
+### `fetchCompleted(name [, batchSize] [, options])`
+
+Same as `fetch()`, but retrieves any completed jobs. See [`onComplete()`](#oncompletename--options-handler) for more information.
 ## `work()`
 
 Adds a new polling worker for a queue and executes the provided callback function when jobs are found. Multiple workers can be added if needed. 
 
-Workers can be stopped via `stopWorker()` all at once by queue name or individually by using the unique id resolved by `work()`. Workers may be monitored by listening to the `wip` event.
+Workers can be stopped via `offWork()` all at once by queue name or individually by using the unique id resolved by `work()`. Workers may be monitored by listening to the `wip` event.
 
 Queue patterns use the `*` character to match 0 or more characters.  For example, a job from queue `status-report-12345` would be fetched with pattern `status-report-*` or even `stat*5`.
 
@@ -815,7 +899,7 @@ The following is an example data object from the job retrieved in onComplete() a
 }
 ```
 
-## `stopWorker(value)`
+## `offWork(value)`
 
 Removes a worker by name or id and stops polling.
 
@@ -824,7 +908,15 @@ Removes a worker by name or id and stops polling.
 
   If a string, removes all workers found matching the name.  If an object, only the worker with a matching `id` will be removed.
 
-**
+### `offComplete(value)`
+
+Similar to `offWork()`, but removes an `onComplete()` worker.
+
+## `publish()`
+
+**returns: Promise**
+
+Publish an event. Looks up all subscriptions for the event and sends jobs to all those queues. Returns an array of job ids.
 
 ## `subscribe(event, name)`
 
@@ -833,102 +925,6 @@ Subscribe queue `name` to `event`.
 ## `unsubscribe(event, name)`
 
 Remove the subscription of queue `name` to `event`.
-
-## `publish()`
-
-**returns: Promise**
-
-Publish an event. Looks up all subscriptions for the event and sends jobs to all those queues. Returns an array of job ids.
-
-### `offComplete(value)`
-
-Similar to `stopWorker()`, but removes an `onComplete()` worker.
-
-** 
-
-## `fetch()`
-
-Typically one would use `work()` for automated polling for new jobs based upon a reasonable interval to finish the most jobs with the lowest latency. While `work()` is a yet another free service we offer and it can be awfully convenient, sometimes you may have a special use case around when a job can be retrieved. Or, perhaps like me, you need to provide jobs via other entry points such as a web API.
-
-`fetch()` allows you to skip all that polling nonsense that `work()` does and puts you back in control of database traffic. Once you have your shiny job, you'll use either `complete()` or `fail()` to mark it as finished.
-
-### `fetch(name)`
-
-**Arguments**
-- `name`: string, queue name or pattern
-
-**Resolves**
-- `job`: job object, `null` if none found
-
-### `fetch(name, batchSize, [, options])`
-
-**Arguments**
-- `name`: string, queue name or pattern
-- `batchSize`: number, # of jobs to fetch
-- `options`: object
-
-  * `includeMetadata`, bool
-
-    If `true`, all job metadata will be returned on the job object.  The following table shows each property and its type, which is basically all columns from the job table.
-
-    | Prop | Type | |
-    | - | - | -|
-    | id | string, uuid |
-    | name| string |
-    | data | object |
-    | priority | number |
-    | state | string |
-    | retrylimit | number |
-    | retrycount | number |
-    | retrydelay | number |
-    | retrybackoff | bool |
-    | startafter | string, timestamp |
-    | startedon | string, timestamp |
-    | singletonkey | string |
-    | singletonon | string, timestamp |
-    | expirein | object, pg interval |
-    | createdon | string, timestamp |
-    | completedon | string, timestamp |
-    | keepuntil | string, timestamp |
-    | oncomplete | bool |
-    | output | object |
-
-
-**Resolves**
-- `[job]`: array of job objects, `null` if none found
-
-**Notes**
-
-If you pass a batchSize, `fetch()` will always resolve an array response, even if only 1 job is returned. This seemed like a great idea at the time.
-
-The following code shows how to utilize batching via `fetch()` to get and complete 20 jobs at once on-demand.
-
-
-```js
-const queue = 'email-daily-digest'
-const batchSize = 20
-
-const jobs = await boss.fetch(queue, batchSize)
-
-if(!jobs) {
-    return
-}
-
-for (let i = 0; i < jobs.length; i++) {
-    const job = jobs[i]
-
-    try {
-        await emailer.send(job.data)
-        await boss.complete(job.id)
-    } catch(err) {
-        await boss.fail(job.id, err)
-    }
-}
-```
-
-### `fetchCompleted(name [, batchSize] [, options])`
-
-Same as `fetch()`, but retrieves any completed jobs. See [`onComplete()`](#oncompletename--options-handler) for more information.
 
 ## Scheduling
 

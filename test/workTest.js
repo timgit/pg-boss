@@ -37,11 +37,11 @@ describe('work', function () {
     }
   })
 
-  it('stopWorker should fail without a name', async function () {
+  it('offWork should fail without a name', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
 
     try {
-      await boss.stopWorker()
+      await boss.offWork()
       assert(false)
     } catch (err) {
       assert(err)
@@ -76,7 +76,7 @@ describe('work', function () {
 
     boss.work(queue, async () => {
       receivedCount++
-      await boss.stopWorker(queue)
+      await boss.offWork(queue)
     })
 
     await boss.send(queue)
@@ -98,7 +98,7 @@ describe('work', function () {
 
     const id = await boss.work(queue, { newJobCheckInterval: 500 }, async () => {
       receivedCount++
-      await boss.stopWorker({ id })
+      await boss.offWork({ id })
     })
 
     await delay(2000)

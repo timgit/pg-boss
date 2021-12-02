@@ -72,7 +72,7 @@ class Manager extends EventEmitter {
       this.send,
       this.insert,
       this.work,
-      this.stopWorker,
+      this.offWork,
       this.onComplete,
       this.subscribe,
       this.unsubscribe,
@@ -103,7 +103,7 @@ class Manager extends EventEmitter {
 
     for (const sub of this.workers.values()) {
       if (!INTERNAL_QUEUES[sub.name]) {
-        await this.stopWorker(sub.name)
+        await this.offWork(sub.name)
       }
     }
   }
@@ -260,7 +260,7 @@ class Manager extends EventEmitter {
     return id
   }
 
-  async stopWorker (value) {
+  async offWork (value) {
     assert(value, 'Missing required argument')
 
     const query = (typeof value === 'string')
@@ -323,7 +323,7 @@ class Manager extends EventEmitter {
       value = COMPLETION_JOB_PREFIX + value
     }
 
-    return await this.stopWorker(value)
+    return await this.offWork(value)
   }
 
   async send (...args) {

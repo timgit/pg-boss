@@ -169,10 +169,10 @@ class Boss extends EventEmitter {
         clearInterval(this.metaMonitorInterval)
       }
 
-      await this.manager.stopWorker(queues.MAINTENANCE)
+      await this.manager.offWork(queues.MAINTENANCE)
 
       if (this.monitorStates) {
-        await this.manager.stopWorker(queues.MONITOR_STATES)
+        await this.manager.offWork(queues.MONITOR_STATES)
       }
 
       this.stopped = true

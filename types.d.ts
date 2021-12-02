@@ -233,7 +233,7 @@ declare namespace PgBoss {
     timeout?: number
   }
 
-  interface StopWorkerOptions {
+  interface OffWorkOptions {
     id: string
   }
 
@@ -299,15 +299,15 @@ declare class PgBoss {
   onComplete(name: string, handler: Function): Promise<string>;
   onComplete(name: string, options: PgBoss.WorkOptions, handler: Function): Promise<string>;
 
-  stopWorker(name: string): Promise<void>;
-  stopWorker(options: PgBoss.StopWorkerOptions): Promise<void>;
+  offWork(name: string): Promise<void>;
+  offWork(options: PgBoss.OffWorkOptions): Promise<void>;
 
   subscribe(event: string, name: string): Promise<void>;
   unsubscribe(event: string, name: string): Promise<void>;
   publish(request: Resolute.Request): Promise<string[]>;
 
   offComplete(name: string): Promise<void>;
-  offComplete(options: PgBoss.StopWorkerOptions): Promise<void>;
+  offComplete(options: PgBoss.OffWorkOptions): Promise<void>;
 
   fetch<T>(name: string): Promise<PgBoss.Job<T> | null>;
   fetch<T>(name: string, batchSize: number): Promise<PgBoss.Job<T>[] | null>;

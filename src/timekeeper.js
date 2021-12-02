@@ -68,8 +68,8 @@ class Timekeeper extends EventEmitter {
 
     this.stopped = true
 
-    await this.manager.stopWorker(queues.CRON)
-    await this.manager.stopWorker(queues.SEND_IT)
+    await this.manager.offWork(queues.CRON)
+    await this.manager.offWork(queues.SEND_IT)
 
     if (this.skewMonitorInterval) {
       clearInterval(this.skewMonitorInterval)
