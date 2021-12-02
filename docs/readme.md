@@ -114,6 +114,7 @@ NOTE: If an existing schema was used during installation, created objects will n
 DROP TABLE ${schema}.archive;
 DROP TABLE ${schema}.job;
 DROP TABLE ${schema}.schedule;
+DROP TABLE ${schema}.subscription;
 DROP TABLE ${schema}.version;
 DROP TYPE ${schema}.job_state;
 ```
@@ -213,7 +214,7 @@ The payload of the event is an object with a key per queue and state, such as th
 ```
 ## `wip`
 
-Emitted at most once every 2 seconds when polling workers are active and jobs are entering or leaving active state. The payload is an array that represents each worker in this instance of pg-boss.  If you want to monitor queue activity across all instances, use `monitor-states`.
+Emitted at most once every 2 seconds when workers are active and jobs are entering or leaving active state. The payload is an array that represents each worker in this instance of pg-boss.  If you want to monitor queue activity across all instances, use `monitor-states`.
 
 ```js
 [
@@ -686,6 +687,10 @@ The default concurrency for `work()` is 1 job every 2 seconds. Both the interval
 * **teamConcurrency**, int
 
     Default: 2. How many callbacks will be called concurrently if promises are used for polling backpressure. Intended to be used along with `teamSize`.
+
+* **teamRefill**, bool
+
+    Default: false.  If true, worker will refill the queue based on the number of completed jobs from the last batch (if `teamSize` > 1) in order to keep the active job count as close to `teamSize` as possible. This could be helpful if one of the fetched jobs is taking longer than expected.
 
 * **batchSize**, int
 
