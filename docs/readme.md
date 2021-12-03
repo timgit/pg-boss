@@ -40,7 +40,7 @@
     - [`onComplete(name [, options], handler)`](#oncompletename--options-handler)
   - [`offWork(value)`](#offworkvalue)
     - [`offComplete(value)`](#offcompletevalue)
-  - [`publish()`](#publish)
+  - [`publish(event, data, options)`](#publishevent-data-options)
   - [`subscribe(event, name)`](#subscribeevent-name)
   - [`unsubscribe(event, name)`](#unsubscribeevent-name)
   - [Scheduling](#scheduling)
@@ -406,7 +406,7 @@ How often maintenance operations are run against the job and archive tables.
 
 ## `start()`
 
-**returns: Promise** *(resolves the same PgBoss instance used during invocation for convenience)*
+Returns the same PgBoss instance used during invocation
 
 Prepares the target database and begins job monitoring.
 
@@ -912,11 +912,9 @@ Removes a worker by name or id and stops polling.
 
 Similar to `offWork()`, but removes an `onComplete()` worker.
 
-## `publish()`
+## `publish(event, data, options)`
 
-**returns: Promise**
-
-Publish an event. Looks up all subscriptions for the event and sends jobs to all those queues. Returns an array of job ids.
+Publish an event with optional data and options (Same as `send()` args). Looks up all subscriptions for the event and sends jobs to all those queues. Returns an array of job ids.
 
 ## `subscribe(event, name)`
 
