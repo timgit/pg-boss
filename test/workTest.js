@@ -412,6 +412,8 @@ describe('work', function () {
 
     boss.stop({ timeout: 1 })
 
+    await delay(500)
+
     try {
       await boss.work(queue)
       assert(false)
