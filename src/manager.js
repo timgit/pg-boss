@@ -61,24 +61,24 @@ class Manager extends EventEmitter {
     this.getArchivedJobByIdCommand = plans.getArchivedJobById(config.schema)
     this.subscribeCommand = plans.subscribe(config.schema)
     this.unsubscribeCommand = plans.unsubscribe(config.schema)
-    this.getQueuesForEvent = plans.getQueuesForEvent(config.schema)
+    this.getQueuesForEventCommand = plans.getQueuesForEvent(config.schema)
 
     // exported api to index
     this.functions = [
-      this.fetch,
       this.complete,
       this.cancel,
       this.fail,
-      this.send,
-      this.insert,
+      this.fetch,
+      this.fetchCompleted,
       this.work,
       this.offWork,
       this.onComplete,
+      this.offComplete,
+      this.publish,
       this.subscribe,
       this.unsubscribe,
-      this.publish,
-      this.offComplete,
-      this.fetchCompleted,
+      this.insert,
+      this.send,
       this.sendDebounced,
       this.sendThrottled,
       this.sendOnce,
@@ -309,7 +309,7 @@ class Manager extends EventEmitter {
   async publish (event, ...args) {
     assert(event, 'Missing required argument')
 
-    const result = await this.db.executeSql(this.getQueuesForEvent, [event])
+    const result = await this.db.executeSql(this.getQueuesForEventCommand, [event])
 
     if (!result || result.rowCount === 0) {
       return []
