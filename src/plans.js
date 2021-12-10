@@ -14,7 +14,6 @@ const DEFAULT_SCHEMA = 'pgboss'
 const COMPLETION_JOB_PREFIX = `__state__${states.completed}__`
 const SINGLETON_QUEUE_KEY = '__pgboss__singleton_queue'
 
-const MUTEX = 1337968055000
 const MIGRATE_RACE_MESSAGE = 'division by zero'
 const CREATE_RACE_MESSAGE = 'already exists'
 
@@ -58,14 +57,14 @@ module.exports = {
   DEFAULT_SCHEMA
 }
 
-function locked (query) {
+function locked (schema, query) {
   if (Array.isArray(query)) {
     query = query.join(';\n')
   }
 
   return `
     BEGIN;
-    ${advisoryLock()};
+    ${advisoryLock(schema)};
     ${query};
     COMMIT;
   `
@@ -91,7 +90,7 @@ function create (schema, version) {
     insertVersion(schema, version)
   ]
 
-  return locked(commands)
+  return locked(schema, commands)
 }
 
 function createSchema (schema) {
@@ -614,8 +613,10 @@ function countStates (schema) {
   `
 }
 
-function advisoryLock () {
-  return `SELECT pg_advisory_xact_lock(${MUTEX})`
+function advisoryLock (schema) {
+  return `SELECT pg_advisory_xact_lock(
+      ('x' || md5(current_database() || '.pgboss.${schema}'))::bit(64)::bigint
+  )`
 }
 
 function assertMigration (schema, version) {
