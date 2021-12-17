@@ -17,7 +17,7 @@ describe('cancel', function () {
     const config = this.test.bossConfig
     const boss = this.test.boss = await helper.start(config)
 
-    const jobId = await boss.publish('will_cancel', null, { startAfter: 1 })
+    const jobId = await boss.send('will_cancel', null, { startAfter: 1 })
 
     await boss.cancel(jobId)
 
@@ -33,7 +33,7 @@ describe('cancel', function () {
 
     const queue = 'will_not_cancel'
 
-    await boss.publish(queue)
+    await boss.send(queue)
 
     const job = await boss.fetch(queue)
 
@@ -49,9 +49,9 @@ describe('cancel', function () {
 
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
     const jobs = await Promise.all([
-      boss.publish(queue),
-      boss.publish(queue),
-      boss.publish(queue)
+      boss.send(queue),
+      boss.send(queue),
+      boss.send(queue)
     ])
 
     await boss.cancel(jobs)

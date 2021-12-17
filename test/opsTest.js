@@ -40,12 +40,12 @@ describe('ops', function () {
     await stopPromise2
   })
 
-  it('should emit error in subscription', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, ...defaults, __test__throw_subscription: true })
+  it('should emit error in worker', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, ...defaults, __test__throw_worker: true })
     const queue = this.test.bossConfig.schema
 
-    await boss.publish(queue)
-    await boss.subscribe(queue, () => {})
+    await boss.send(queue)
+    await boss.work(queue, () => {})
 
     await new Promise(resolve => boss.once('error', resolve))
   })
@@ -63,12 +63,12 @@ describe('ops', function () {
     await boss.stop({ graceful: false })
   })
 
-  it('should emit error during graceful stop if subscriptions busy', async function () {
+  it('should emit error during graceful stop if worker is busy', async function () {
     const boss = await helper.start({ ...this.test.bossConfig, ...defaults, __test__throw_stop: true })
     const queue = this.test.bossConfig.schema
 
-    await boss.publish(queue)
-    await boss.subscribe(queue, () => delay(2000))
+    await boss.send(queue)
+    await boss.work(queue, () => delay(2000))
 
     await delay(500)
 
@@ -77,7 +77,7 @@ describe('ops', function () {
     await new Promise(resolve => boss.on('error', resolve))
   })
 
-  it('should throw error during graceful stop if no subscriptions are busy', async function () {
+  it('should throw error during graceful stop if no workers are busy', async function () {
     const boss = await helper.start({ ...this.test.bossConfig, ...defaults, __test__throw_stop: true })
 
     try {

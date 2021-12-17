@@ -88,9 +88,9 @@ declare namespace PgBoss {
     singletonNextSlot?: boolean;
   }
 
-  type PublishOptions = JobOptions & ExpirationOptions & RetentionOptions & RetryOptions & CompletionOptions
+  type SendOptions = JobOptions & ExpirationOptions & RetentionOptions & RetryOptions & CompletionOptions
 
-  type ScheduleOptions = PublishOptions & { tz?: string }
+  type ScheduleOptions = SendOptions & { tz?: string }
 
   interface JobPollingOptions {
     newJobCheckInterval?: number;
@@ -104,24 +104,24 @@ declare namespace PgBoss {
     includeMetadata?: boolean;
   }
 
-  type SubscribeOptions = JobFetchOptions & JobPollingOptions
+  type WorkOptions = JobFetchOptions & JobPollingOptions
 
   type FetchOptions = {
     includeMetadata?: boolean;
   }
 
-  interface SubscribeHandler<ReqData, ResData> {
+  interface WorkHandler<ReqData, ResData> {
     (job: PgBoss.JobWithDoneCallback<ReqData, ResData>): Promise<ResData> | void;
   }
 
-  interface SubscribeWithMetadataHandler<ReqData, ResData> {
+  interface WorkWithMetadataHandler<ReqData, ResData> {
     (job: PgBoss.JobWithMetadataDoneCallback<ReqData, ResData>): Promise<ResData> | void;
   }
 
   interface Request {
     name: string;
     data?: object;
-    options?: PublishOptions;
+    options?: SendOptions;
   }
 
   interface Schedule {
@@ -213,10 +213,10 @@ declare namespace PgBoss {
     queues: object;
   }
 
-  interface Subscription {
+  interface Worker {
     id: string,
     name: string,
-    options: SubscribeOptions,
+    options: WorkOptions,
     state: 'created' | 'retry' | 'active' | 'completed' | 'expired' | 'cancelled' | 'failed',
     count: number,
     createdOn: Date,
@@ -233,7 +233,7 @@ declare namespace PgBoss {
     timeout?: number
   }
 
-  interface UnsubscribeOptions {
+  interface OffWorkOptions {
     id: string
   }
 
@@ -263,8 +263,8 @@ declare class PgBoss {
   on(event: "monitor-states", handler: (monitorStates: PgBoss.MonitorStates) => void): void;
   off(event: "monitor-states", handler: (monitorStates: PgBoss.MonitorStates) => void): void;
 
-  on(event: "wip", handler: (data: PgBoss.Subscription[]) => void): void;
-  off(event: "wip", handler: (data: PgBoss.Subscription[]) => void): void;
+  on(event: "wip", handler: (data: PgBoss.Worker[]) => void): void;
+  off(event: "wip", handler: (data: PgBoss.Worker[]) => void): void;
 
   on(event: "stopped", handler: () => void): void;
   off(event: "stopped", handler: () => void): void;
@@ -272,38 +272,42 @@ declare class PgBoss {
   start(): Promise<PgBoss>;
   stop(options?: PgBoss.StopOptions): Promise<void>;
 
-  publish(request: PgBoss.Request): Promise<string | null>;
-  publish(name: string, data: object): Promise<string | null>;
-  publish(name: string, data: object, options: PgBoss.PublishOptions): Promise<string | null>;
+  send(request: PgBoss.Request): Promise<string | null>;
+  send(name: string, data: object): Promise<string | null>;
+  send(name: string, data: object, options: PgBoss.SendOptions): Promise<string | null>;
 
-  publishAfter(name: string, data: object, options: PgBoss.PublishOptions, date: Date): Promise<string | null>;
-  publishAfter(name: string, data: object, options: PgBoss.PublishOptions, dateString: string): Promise<string | null>;
-  publishAfter(name: string, data: object, options: PgBoss.PublishOptions, seconds: number): Promise<string | null>;
+  sendAfter(name: string, data: object, options: PgBoss.SendOptions, date: Date): Promise<string | null>;
+  sendAfter(name: string, data: object, options: PgBoss.SendOptions, dateString: string): Promise<string | null>;
+  sendAfter(name: string, data: object, options: PgBoss.SendOptions, seconds: number): Promise<string | null>;
 
-  publishOnce(name: string, data: object, options: PgBoss.PublishOptions, key: string): Promise<string | null>;
+  sendOnce(name: string, data: object, options: PgBoss.SendOptions, key: string): Promise<string | null>;
 
-  publishSingleton(name: string, data: object, options: PgBoss.PublishOptions): Promise<string | null>;
+  sendSingleton(name: string, data: object, options: PgBoss.SendOptions): Promise<string | null>;
 
-  publishThrottled(name: string, data: object, options: PgBoss.PublishOptions, seconds: number): Promise<string | null>;
-  publishThrottled(name: string, data: object, options: PgBoss.PublishOptions, seconds: number, key: string): Promise<string | null>;
+  sendThrottled(name: string, data: object, options: PgBoss.SendOptions, seconds: number): Promise<string | null>;
+  sendThrottled(name: string, data: object, options: PgBoss.SendOptions, seconds: number, key: string): Promise<string | null>;
 
-  publishDebounced(name: string, data: object, options: PgBoss.PublishOptions, seconds: number): Promise<string | null>;
-  publishDebounced(name: string, data: object, options: PgBoss.PublishOptions, seconds: number, key: string): Promise<string | null>;
+  sendDebounced(name: string, data: object, options: PgBoss.SendOptions, seconds: number): Promise<string | null>;
+  sendDebounced(name: string, data: object, options: PgBoss.SendOptions, seconds: number, key: string): Promise<string | null>;
 
   insert(jobs: PgBoss.JobInsert[]): Promise<void>;
 
-  subscribe<ReqData, ResData>(name: string, handler: PgBoss.SubscribeHandler<ReqData, ResData>): Promise<string>;
-  subscribe<ReqData, ResData>(name: string, options: PgBoss.SubscribeOptions & { includeMetadata: true }, handler: PgBoss.SubscribeWithMetadataHandler<ReqData, ResData>): Promise<string>;
-  subscribe<ReqData, ResData>(name: string, options: PgBoss.SubscribeOptions, handler: PgBoss.SubscribeHandler<ReqData, ResData>): Promise<string>;
+  work<ReqData, ResData>(name: string, handler: PgBoss.WorkHandler<ReqData, ResData>): Promise<string>;
+  work<ReqData, ResData>(name: string, options: PgBoss.WorkOptions & { includeMetadata: true }, handler: PgBoss.WorkWithMetadataHandler<ReqData, ResData>): Promise<string>;
+  work<ReqData, ResData>(name: string, options: PgBoss.WorkOptions, handler: PgBoss.WorkHandler<ReqData, ResData>): Promise<string>;
 
   onComplete(name: string, handler: Function): Promise<string>;
-  onComplete(name: string, options: PgBoss.SubscribeOptions, handler: Function): Promise<string>;
+  onComplete(name: string, options: PgBoss.WorkOptions, handler: Function): Promise<string>;
 
-  unsubscribe(name: string): Promise<void>;
-  unsubscribe(options: PgBoss.UnsubscribeOptions): Promise<void>;
+  offWork(name: string): Promise<void>;
+  offWork(options: PgBoss.OffWorkOptions): Promise<void>;
+
+  subscribe(event: string, name: string): Promise<void>;
+  unsubscribe(event: string, name: string): Promise<void>;
+  publish(request: Resolute.Request): Promise<string[]>;
 
   offComplete(name: string): Promise<void>;
-  offComplete(options: PgBoss.UnsubscribeOptions): Promise<void>;
+  offComplete(options: PgBoss.OffWorkOptions): Promise<void>;
 
   fetch<T>(name: string): Promise<PgBoss.Job<T> | null>;
   fetch<T>(name: string, batchSize: number): Promise<PgBoss.Job<T>[] | null>;

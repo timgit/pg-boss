@@ -39,7 +39,7 @@ describe('config', function () {
   it('should not allow calling job instance functions if not started', async function () {
     const boss = new PgBoss(this.test.bossConfig)
     try {
-      await boss.publish('queue1')
+      await boss.send('queue1')
       assert(false)
     } catch {}
   })

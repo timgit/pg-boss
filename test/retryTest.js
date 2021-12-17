@@ -10,7 +10,7 @@ describe('retries', function () {
 
     const queue = 'unreliable'
 
-    const jobId = await boss.publish({ name: queue, options: { expireInSeconds: 1, retryLimit: 1 } })
+    const jobId = await boss.send({ name: queue, options: { expireInSeconds: 1, retryLimit: 1 } })
 
     const try1 = await boss.fetch(queue)
 
@@ -28,7 +28,7 @@ describe('retries', function () {
     const queueName = 'retryFailed'
     const retryLimit = 1
 
-    const jobId = await boss.publish(queueName, null, { retryLimit })
+    const jobId = await boss.send(queueName, null, { retryLimit })
 
     await boss.fetch(queueName)
     await boss.fail(jobId)
@@ -44,7 +44,7 @@ describe('retries', function () {
 
     const queueName = 'retryFailed-config-cascade'
 
-    const jobId = await boss.publish(queueName)
+    const jobId = await boss.send(queueName)
 
     await boss.fetch(queueName)
     await boss.fail(jobId)
@@ -59,7 +59,7 @@ describe('retries', function () {
 
     const queue = 'retryDelayFixed'
 
-    const jobId = await boss.publish(queue, null, { retryLimit: 1, retryDelay: 1 })
+    const jobId = await boss.send(queue, null, { retryLimit: 1, retryDelay: 1 })
 
     await boss.fetch(queue)
     await boss.fail(jobId)
@@ -80,15 +80,15 @@ describe('retries', function () {
 
     const queue = 'retryDelayBackoff'
 
-    let subscribeCount = 0
+    let processCount = 0
     const retryLimit = 4
 
-    await boss.subscribe(queue, { newJobCheckInterval: 500 }, job => job.done(++subscribeCount))
-    await boss.publish(queue, null, { retryLimit, retryBackoff: true })
+    await boss.work(queue, { newJobCheckInterval: 500 }, job => job.done(++processCount))
+    await boss.send(queue, null, { retryLimit, retryBackoff: true })
 
     await delay(9000)
 
-    assert(subscribeCount < retryLimit)
+    assert(processCount < retryLimit)
   })
 
   it('should set the default retry limit to 1 if missing', async function () {
@@ -96,7 +96,7 @@ describe('retries', function () {
 
     const queue = 'retryLimitDefault'
 
-    const jobId = await boss.publish(queue, null, { retryDelay: 1 })
+    const jobId = await boss.send(queue, null, { retryDelay: 1 })
 
     await boss.fetch(queue)
     await boss.fail(jobId)

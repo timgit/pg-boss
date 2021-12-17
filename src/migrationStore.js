@@ -68,6 +68,23 @@ function getAll (schema, config) {
 
   return [
     {
+      release: '7.0.0',
+      version: 19,
+      previous: 18,
+      install: [
+        `CREATE TABLE ${schema}.subscription (
+          event text not null,
+          name text not null,
+          created_on timestamp with time zone not null default now(),
+          updated_on timestamp with time zone not null default now(),
+          PRIMARY KEY(event, name)
+        )`
+      ],
+      uninstall: [
+        `DROP TABLE ${schema}.subscription`
+      ]
+    },
+    {
       release: '6.1.1',
       version: 18,
       previous: 17,

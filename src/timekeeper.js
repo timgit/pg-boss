@@ -50,8 +50,8 @@ class Timekeeper extends EventEmitter {
 
     await this.cacheClockSkew()
 
-    await this.manager.subscribe(queues.CRON, { newJobCheckIntervalSeconds: 4 }, (job) => this.onCron(job))
-    await this.manager.subscribe(queues.SEND_IT, { newJobCheckIntervalSeconds: 4, teamSize: 50, teamConcurrency: 5 }, (job) => this.onSendIt(job))
+    await this.manager.work(queues.CRON, { newJobCheckIntervalSeconds: 4 }, (job) => this.onCron(job))
+    await this.manager.work(queues.SEND_IT, { newJobCheckIntervalSeconds: 4, teamSize: 50, teamConcurrency: 5 }, (job) => this.onSendIt(job))
 
     await this.cronMonitorAsync()
 
@@ -68,8 +68,8 @@ class Timekeeper extends EventEmitter {
 
     this.stopped = true
 
-    await this.manager.unsubscribe(queues.CRON)
-    await this.manager.unsubscribe(queues.SEND_IT)
+    await this.manager.offWork(queues.CRON)
+    await this.manager.offWork(queues.SEND_IT)
 
     if (this.skewMonitorInterval) {
       clearInterval(this.skewMonitorInterval)
@@ -115,7 +115,7 @@ class Timekeeper extends EventEmitter {
       onComplete: false
     }
 
-    await this.manager.publishDebounced(queues.CRON, null, opts, 60)
+    await this.manager.sendDebounced(queues.CRON, null, opts, 60)
   }
 
   async onCron () {
@@ -165,13 +165,13 @@ class Timekeeper extends EventEmitter {
       onComplete: false
     }
 
-    await this.manager.publish(queues.SEND_IT, job, options)
+    await this.manager.send(queues.SEND_IT, job, options)
   }
 
   async onSendIt (job) {
     if (this.stopped) return
     const { name, data, options } = job.data
-    await this.manager.publish(name, data, options)
+    await this.manager.send(name, data, options)
   }
 
   async getSchedules () {
@@ -185,7 +185,7 @@ class Timekeeper extends EventEmitter {
     cronParser.parseExpression(cron, { tz })
 
     // validation pre-check
-    Attorney.checkPublishArgs([name, data, options], this.config)
+    Attorney.checkSendArgs([name, data, options], this.config)
 
     const values = [name, cron, tz, data, options]
 

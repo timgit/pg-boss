@@ -14,7 +14,7 @@ describe('archive', function () {
 
     const queue = 'archive-completed'
 
-    const jobId = await boss.publish(queue)
+    const jobId = await boss.send(queue)
     const job = await boss.fetch(queue)
 
     assert.strictEqual(job.id, jobId)
@@ -34,7 +34,7 @@ describe('archive', function () {
     const boss = this.test.boss = await helper.start(config)
     const queue = this.test.bossConfig.schema
 
-    const jobId = await boss.publish(queue)
+    const jobId = await boss.send(queue)
     const job = await boss.fetch(queue)
 
     assert.strictEqual(job.id, jobId)
@@ -55,7 +55,7 @@ describe('archive', function () {
 
     const queue = 'archive-created'
 
-    const jobId = await boss.publish(queue, null, { retentionSeconds: 1 })
+    const jobId = await boss.send(queue, null, { retentionSeconds: 1 })
 
     await delay(7000)
 
@@ -71,7 +71,7 @@ describe('archive', function () {
 
     const queue = 'archive-created-cascaded-config'
 
-    const jobId = await boss.publish(queue)
+    const jobId = await boss.send(queue)
 
     await delay(7000)
 

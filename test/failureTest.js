@@ -17,21 +17,20 @@ describe('failure', function () {
 
   it('should fail a job when requested', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const queue = this.test.bossConfig.schema
 
-    const queue = 'will-fail'
-
-    await boss.publish(queue)
+    await boss.send(queue)
 
     const job = await boss.fetch(queue)
 
     await boss.fail(job.id)
   })
 
-  it('should subscribe to a job failure', async function () {
+  it('worker for job failure', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const queue = this.test.bossConfig.schema
 
-    const queue = 'subscribe-fail'
-    const jobId = await boss.publish(queue, null, { onComplete: true })
+    const jobId = await boss.send(queue, null, { onComplete: true })
 
     const job = await boss.fetch(queue)
 
@@ -48,13 +47,12 @@ describe('failure', function () {
 
   it('should fail a batch of jobs', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
-
-    const queue = 'complete-batch'
+    const queue = this.test.bossConfig.schema
 
     await Promise.all([
-      boss.publish(queue),
-      boss.publish(queue),
-      boss.publish(queue)
+      boss.send(queue),
+      boss.send(queue),
+      boss.send(queue)
     ])
 
     const jobs = await boss.fetch(queue, 3)
@@ -68,9 +66,9 @@ describe('failure', function () {
     const message = 'some error'
 
     await Promise.all([
-      boss.publish(queue),
-      boss.publish(queue),
-      boss.publish(queue)
+      boss.send(queue),
+      boss.send(queue),
+      boss.send(queue)
     ])
 
     const jobs = await boss.fetch(queue, 3)
@@ -84,11 +82,11 @@ describe('failure', function () {
 
   it('should accept a payload', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const queue = this.test.bossConfig.schema
 
-    const queue = 'fail-payload'
     const failPayload = { someReason: 'nuna' }
 
-    const jobId = await boss.publish(queue, null, { onComplete: true })
+    const jobId = await boss.send(queue, null, { onComplete: true })
 
     await boss.fail(jobId, failPayload)
 
@@ -100,12 +98,12 @@ describe('failure', function () {
 
   it('should preserve nested objects within a payload that is an instance of Error', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const queue = this.test.bossConfig.schema
 
-    const queue = 'fail-payload'
     const failPayload = new Error('Something went wrong')
     failPayload.some = { deeply: { nested: { reason: 'nuna' } } }
 
-    const jobId = await boss.publish(queue, null, { onComplete: true })
+    const jobId = await boss.send(queue, null, { onComplete: true })
 
     await boss.fail(jobId, failPayload)
 
@@ -115,16 +113,15 @@ describe('failure', function () {
     assert.strictEqual(job.data.response.some.deeply.nested.reason, failPayload.some.deeply.nested.reason)
   })
 
-  it('subscribe failure via done() should pass error payload to failed job', async function () {
+  it('failure via done() should pass error payload to failed job', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
-
-    const queue = 'fetchFailureWithPayload'
+    const queue = this.test.bossConfig.schema
     const errorMessage = 'mah error'
 
-    await boss.publish(queue, null, { onComplete: true })
+    await boss.send(queue, null, { onComplete: true })
 
     return new Promise((resolve) => {
-      boss.subscribe(queue, async job => {
+      boss.work(queue, async job => {
         const error = new Error(errorMessage)
 
         await job.done(error)
@@ -139,14 +136,13 @@ describe('failure', function () {
     })
   })
 
-  it('subscribe failure via Promise reject() should pass string wrapped in value prop', async function () {
+  it('failure via Promise reject() should pass string wrapped in value prop', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
-
-    const queue = 'subscribeFailureViaRejectString'
+    const queue = this.test.bossConfig.schema
     const failPayload = 'mah error'
 
-    await boss.subscribe(queue, job => Promise.reject(failPayload))
-    await boss.publish(queue, null, { onComplete: true })
+    await boss.work(queue, job => Promise.reject(failPayload))
+    await boss.send(queue, null, { onComplete: true })
 
     await delay(7000)
 
@@ -156,17 +152,16 @@ describe('failure', function () {
     assert.strictEqual(job.data.response.value, failPayload)
   })
 
-  it('subscribe failure via Promise reject() should pass object payload', async function () {
+  it('failure via Promise reject() should pass object payload', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
-
-    const queue = 'subscribeFailureViaRejectObject'
+    const queue = this.test.bossConfig.schema
     const something = 'clever'
 
     const errorResponse = new Error('custom error')
     errorResponse.something = something
 
-    await boss.subscribe(queue, job => Promise.reject(errorResponse))
-    await boss.publish(queue, null, { onComplete: true })
+    await boss.work(queue, job => Promise.reject(errorResponse))
+    await boss.send(queue, null, { onComplete: true })
 
     await delay(7000)
 
@@ -178,12 +173,11 @@ describe('failure', function () {
 
   it('failure with Error object should get stored in the failure job', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
-
-    const queue = 'failWithErrorObj'
+    const queue = this.test.bossConfig.schema
     const message = 'a real error!'
 
-    await boss.publish(queue, null, { onComplete: true })
-    await boss.subscribe(queue, async () => { throw new Error(message) })
+    await boss.send(queue, null, { onComplete: true })
+    await boss.work(queue, async () => { throw new Error(message) })
 
     await delay(2000)
 

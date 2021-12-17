@@ -15,7 +15,7 @@ describe('speed', function () {
   beforeEach(async function () {
     const defaults = { noSupervisor: true, min: 10, max: 10 }
     boss = await helper.start({ ...this.currentTest.bossConfig, ...defaults })
-    await pMap(jobs, job => boss.publish(job.name, job.data))
+    await pMap(jobs, job => boss.send(job.name, job.data))
   })
 
   afterEach(async function () { await helper.stop(boss) })

@@ -1,7 +1,7 @@
 const assert = require('assert')
 const helper = require('./testHelper')
 
-describe('publish', function () {
+describe('pubsub', function () {
   it('should fail with no arguments', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
 
@@ -28,7 +28,7 @@ describe('publish', function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
 
     try {
-      await boss.publish('job', 'data', () => true)
+      await boss.publish('event', 'data', () => true)
       assert(false)
     } catch (err) {
       assert(err)
@@ -37,37 +37,109 @@ describe('publish', function () {
 
   it('should accept single string argument', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
-    const queue = 'publishNameOnly'
+    const queue = 'sendNameOnly'
     await boss.publish(queue)
   })
 
   it('should accept job object argument with only name', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
-    const queue = 'publishqueueOnly'
-    await boss.publish({ name: queue })
+    const queue = 'sendqueueOnly'
+    await boss.publish(queue)
   })
 
-  it('should accept job object with name and data only', async function () {
+  it('should not send to the same named queue', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
-    const queue = 'publishqueueAndData'
+    const queue = 'sendqueueAndData'
     const message = 'hi'
 
-    await boss.publish({ name: queue, data: { message } })
+    await boss.publish(queue, { message })
+
+    const job = await boss.fetch(queue)
+
+    assert.strictEqual(job, null)
+  })
+
+  it('should use subscriptions to map to a single queue', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const queue = 'sendqueueAndData'
+    const event = 'event'
+    const message = 'hi'
+
+    await boss.subscribe(event, queue)
+    await boss.publish(event, { message })
 
     const job = await boss.fetch(queue)
 
     assert.strictEqual(message, job.data.message)
   })
 
-  it('should accept job object with name and options only', async function () {
+  it('should use subscriptions to map to more than one queue', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
-    const queue = 'publishqueueAndOptions'
-    const options = { someCrazyOption: 'whatever' }
+    const queue1 = 'queue1'
+    const queue2 = 'queue2'
+    const event = 'event'
+    const message = 'hi'
 
-    await boss.publish({ name: queue, options })
+    await boss.subscribe(event, queue1)
+    await boss.subscribe(event, queue2)
+    await boss.publish(event, { message })
 
-    const job = await boss.fetch(queue)
+    const job1 = await boss.fetch(queue1)
+    const job2 = await boss.fetch(queue2)
 
-    assert.strictEqual(job.data, null)
+    assert.strictEqual(message, job1.data.message)
+    assert.strictEqual(message, job2.data.message)
   })
+})
+
+it('should fail if unsubscribe is called without args', async function () {
+  const boss = this.test.boss = await helper.start(this.test.bossConfig)
+
+  try {
+    await boss.unsubscribe()
+    assert(false)
+  } catch (err) {
+    assert(err)
+  }
+})
+
+it('should fail if unsubscribe is called without both args', async function () {
+  const boss = this.test.boss = await helper.start(this.test.bossConfig)
+
+  try {
+    await boss.unsubscribe('foo')
+    assert(false)
+  } catch (err) {
+    assert(err)
+  }
+})
+
+it('unsubscribe works', async function () {
+  const boss = this.test.boss = await helper.start(this.test.bossConfig)
+
+  const event = 'foo'
+  const queue1 = 'queue1'
+  const queue2 = 'queue2'
+
+  await boss.subscribe(event, queue1)
+  await boss.subscribe(event, queue2)
+
+  await boss.publish(event)
+
+  assert(await boss.fetch(queue1))
+  assert(await boss.fetch(queue2))
+
+  await boss.unsubscribe(event, queue2)
+
+  await boss.publish(event)
+
+  assert(await boss.fetch(queue1))
+
+  assert.strictEqual(null, await boss.fetch(queue2))
+
+  await boss.unsubscribe(event, queue1)
+
+  await boss.publish(event)
+
+  assert.strictEqual(null, await boss.fetch(queue1))
 })

@@ -4,7 +4,7 @@ const delay = require('delay')
 const PgBoss = require('../')
 
 describe('maintenance', async function () {
-  it('should publish maintenance job if missing during monitoring', async function () {
+  it('should send maintenance job if missing during monitoring', async function () {
     const config = { ...this.test.bossConfig, maintenanceIntervalSeconds: 1 }
 
     const db = await helper.getDb()

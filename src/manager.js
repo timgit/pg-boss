@@ -24,6 +24,23 @@ const events = {
   wip: 'wip'
 }
 
+const resolveWithinSeconds = async (promise, seconds) => {
+  const timeout = Math.max(1, seconds) * 1000
+  const reject = delay.reject(timeout, { value: new Error(`handler execution exceeded ${timeout}ms`) })
+
+  let result
+
+  try {
+    result = await Promise.race([promise, reject])
+  } finally {
+    try {
+      reject.clear()
+    } catch {}
+  }
+
+  return result
+}
+
 class Manager extends EventEmitter {
   constructor (db, config) {
     super()
@@ -32,7 +49,7 @@ class Manager extends EventEmitter {
     this.db = db
 
     this.events = events
-    this.subscriptions = new Map()
+    this.workers = new Map()
 
     this.nextJobCommand = plans.fetchNextJob(config.schema)
     this.insertJobCommand = plans.insertJob(config.schema)
@@ -42,25 +59,31 @@ class Manager extends EventEmitter {
     this.failJobsCommand = plans.failJobs(config.schema)
     this.getJobByIdCommand = plans.getJobById(config.schema)
     this.getArchivedJobByIdCommand = plans.getArchivedJobById(config.schema)
+    this.subscribeCommand = plans.subscribe(config.schema)
+    this.unsubscribeCommand = plans.unsubscribe(config.schema)
+    this.getQueuesForEventCommand = plans.getQueuesForEvent(config.schema)
 
     // exported api to index
     this.functions = [
-      this.fetch,
       this.complete,
       this.cancel,
       this.fail,
-      this.publish,
-      this.insert,
-      this.subscribe,
-      this.unsubscribe,
+      this.fetch,
+      this.fetchCompleted,
+      this.work,
+      this.offWork,
       this.onComplete,
       this.offComplete,
-      this.fetchCompleted,
-      this.publishDebounced,
-      this.publishThrottled,
-      this.publishOnce,
-      this.publishAfter,
-      this.publishSingleton,
+      this.publish,
+      this.subscribe,
+      this.unsubscribe,
+      this.insert,
+      this.send,
+      this.sendDebounced,
+      this.sendThrottled,
+      this.sendOnce,
+      this.sendAfter,
+      this.sendSingleton,
       this.deleteQueue,
       this.deleteAllQueues,
       this.clearStorage,
@@ -78,33 +101,33 @@ class Manager extends EventEmitter {
   async stop () {
     this.stopping = true
 
-    for (const sub of this.subscriptions.values()) {
+    for (const sub of this.workers.values()) {
       if (!INTERNAL_QUEUES[sub.name]) {
-        await this.unsubscribe(sub.name)
+        await this.offWork(sub.name)
       }
     }
   }
 
-  async subscribe (name, ...args) {
-    const { options, callback } = Attorney.checkSubscribeArgs(name, args, this.config)
+  async work (name, ...args) {
+    const { options, callback } = Attorney.checkWorkArgs(name, args, this.config)
     return await this.watch(name, options, callback)
   }
 
   async onComplete (name, ...args) {
-    const { options, callback } = Attorney.checkSubscribeArgs(name, args, this.config)
+    const { options, callback } = Attorney.checkWorkArgs(name, args, this.config)
     return await this.watch(COMPLETION_JOB_PREFIX + name, options, callback)
   }
 
   addWorker (worker) {
-    this.subscriptions.set(worker.id, worker)
+    this.workers.set(worker.id, worker)
   }
 
   removeWorker (worker) {
-    this.subscriptions.delete(worker.id)
+    this.workers.delete(worker.id)
   }
 
   getWorkers () {
-    return Array.from(this.subscriptions.values())
+    return Array.from(this.workers.values())
   }
 
   emitWip (name) {
@@ -149,7 +172,7 @@ class Manager extends EventEmitter {
 
   async watch (name, options, callback) {
     if (this.stopping) {
-      throw new Error('Subscriptions are disabled. pg-boss is stopping.')
+      throw new Error('Workers are disabled. pg-boss is stopping.')
     }
 
     const {
@@ -157,57 +180,71 @@ class Manager extends EventEmitter {
       batchSize,
       teamSize = 1,
       teamConcurrency = 1,
+      teamRefill: refill = false,
       includeMetadata = false
     } = options
 
     const id = uuid.v4()
 
-    const fetch = () => this.fetch(name, batchSize || teamSize, { includeMetadata })
+    let queueSize = 0
+
+    let refillTeamPromise
+    let resolveRefillTeam
+
+    // Setup a promise that onFetch can await for when at least one
+    // job is finished and so the team is ready to be topped up
+    const createTeamRefillPromise = () => {
+      refillTeamPromise = new Promise((resolve) => { resolveRefillTeam = resolve })
+    }
+
+    createTeamRefillPromise()
+
+    const onRefill = () => {
+      queueSize--
+      resolveRefillTeam()
+      createTeamRefillPromise()
+    }
+
+    const fetch = () => this.fetch(name, batchSize || (teamSize - queueSize), { includeMetadata })
 
     const onFetch = async (jobs) => {
-      if (this.config.__test__throw_subscription) {
-        throw new Error('__test__throw_subscription')
-      }
-
-      const resolveWithinSeconds = async (promise, seconds) => {
-        const timeout = Math.max(1, seconds) * 1000
-        const reject = delay.reject(timeout, { value: new Error(`handler execution exceeded ${timeout}ms`) })
-
-        let result
-
-        try {
-          result = await Promise.race([promise, reject])
-        } finally {
-          try {
-            reject.clear()
-          } catch {}
-        }
-
-        return result
+      if (this.config.__test__throw_worker) {
+        throw new Error('__test__throw_worker')
       }
 
       this.emitWip(name)
-
-      let result
 
       if (batchSize) {
         const maxExpiration = jobs.reduce((acc, i) => Math.max(acc, i.expire_in_seconds), 0)
 
         // Failing will fail all fetched jobs
-        result = await resolveWithinSeconds(Promise.all([callback(jobs)]), maxExpiration)
+        await resolveWithinSeconds(Promise.all([callback(jobs)]), maxExpiration)
           .catch(err => this.fail(jobs.map(job => job.id), err))
       } else {
-        result = await pMap(jobs, job =>
+        if (refill) {
+          queueSize += jobs.length || 1
+        }
+
+        const allTeamPromise = pMap(jobs, job =>
           resolveWithinSeconds(callback(job), job.expire_in_seconds)
             .then(result => this.complete(job.id, result))
             .catch(err => this.fail(job.id, err))
+            .then(() => refill ? onRefill() : null)
         , { concurrency: teamConcurrency }
         ).catch(() => {}) // allow promises & non-promises to live together in harmony
+
+        if (refill) {
+          if (queueSize < teamSize) {
+            return
+          } else {
+            await refillTeamPromise
+          }
+        } else {
+          await allTeamPromise
+        }
       }
 
       this.emitWip(name)
-
-      return result
     }
 
     const onError = error => {
@@ -223,7 +260,7 @@ class Manager extends EventEmitter {
     return id
   }
 
-  async unsubscribe (value) {
+  async offWork (value) {
     assert(value, 'Missing required argument')
 
     const query = (typeof value === 'string')
@@ -255,66 +292,92 @@ class Manager extends EventEmitter {
     })
   }
 
+  async subscribe (event, name) {
+    assert(event, 'Missing required argument')
+    assert(name, 'Missing required argument')
+
+    return await this.db.executeSql(this.subscribeCommand, [event, name])
+  }
+
+  async unsubscribe (event, name) {
+    assert(event, 'Missing required argument')
+    assert(name, 'Missing required argument')
+
+    return await this.db.executeSql(this.unsubscribeCommand, [event, name])
+  }
+
+  async publish (event, ...args) {
+    assert(event, 'Missing required argument')
+
+    const result = await this.db.executeSql(this.getQueuesForEventCommand, [event])
+
+    if (!result || result.rowCount === 0) {
+      return []
+    }
+
+    return await Promise.all(result.rows.map(({ name }) => this.send(name, ...args)))
+  }
+
   async offComplete (value) {
     if (typeof value === 'string') {
       value = COMPLETION_JOB_PREFIX + value
     }
 
-    return await this.unsubscribe(value)
+    return await this.offWork(value)
   }
 
-  async publish (...args) {
-    const { name, data, options } = Attorney.checkPublishArgs(args, this.config)
+  async send (...args) {
+    const { name, data, options } = Attorney.checkSendArgs(args, this.config)
     return await this.createJob(name, data, options)
   }
 
-  async publishOnce (name, data, options, key) {
+  async sendOnce (name, data, options, key) {
     options = options || {}
 
     options.singletonKey = key || name
 
-    const result = Attorney.checkPublishArgs([name, data, options], this.config)
+    const result = Attorney.checkSendArgs([name, data, options], this.config)
 
     return await this.createJob(result.name, result.data, result.options)
   }
 
-  async publishSingleton (name, data, options) {
+  async sendSingleton (name, data, options) {
     options = options || {}
 
     options.singletonKey = SINGLETON_QUEUE_KEY
 
-    const result = Attorney.checkPublishArgs([name, data, options], this.config)
+    const result = Attorney.checkSendArgs([name, data, options], this.config)
 
     return await this.createJob(result.name, result.data, result.options)
   }
 
-  async publishAfter (name, data, options, after) {
+  async sendAfter (name, data, options, after) {
     options = options || {}
     options.startAfter = after
 
-    const result = Attorney.checkPublishArgs([name, data, options], this.config)
+    const result = Attorney.checkSendArgs([name, data, options], this.config)
 
     return await this.createJob(result.name, result.data, result.options)
   }
 
-  async publishThrottled (name, data, options, seconds, key) {
+  async sendThrottled (name, data, options, seconds, key) {
     options = options || {}
     options.singletonSeconds = seconds
     options.singletonNextSlot = false
     options.singletonKey = key
 
-    const result = Attorney.checkPublishArgs([name, data, options], this.config)
+    const result = Attorney.checkSendArgs([name, data, options], this.config)
 
     return await this.createJob(result.name, result.data, result.options)
   }
 
-  async publishDebounced (name, data, options, seconds, key) {
+  async sendDebounced (name, data, options, seconds, key) {
     options = options || {}
     options.singletonSeconds = seconds
     options.singletonNextSlot = true
     options.singletonKey = key
 
-    const result = Attorney.checkPublishArgs([name, data, options], this.config)
+    const result = Attorney.checkSendArgs([name, data, options], this.config)
 
     return await this.createJob(result.name, result.data, result.options)
   }
