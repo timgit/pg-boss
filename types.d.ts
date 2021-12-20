@@ -304,7 +304,7 @@ declare class PgBoss {
 
   subscribe(event: string, name: string): Promise<void>;
   unsubscribe(event: string, name: string): Promise<void>;
-  publish(request: Resolute.Request): Promise<string[]>;
+  publish(request: PgBoss.Request): Promise<string[]>;
 
   offComplete(name: string): Promise<void>;
   offComplete(options: PgBoss.OffWorkOptions): Promise<void>;
