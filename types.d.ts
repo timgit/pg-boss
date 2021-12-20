@@ -304,7 +304,9 @@ declare class PgBoss {
 
   subscribe(event: string, name: string): Promise<void>;
   unsubscribe(event: string, name: string): Promise<void>;
-  publish(request: PgBoss.Request): Promise<string[]>;
+  publish(event: string): Promise<string[]>;
+  publish(event: string, data: object): Promise<string[]>;
+  publish(event: string, data: object, options: PgBoss.SendOptions): Promise<string[]>;
 
   offComplete(name: string): Promise<void>;
   offComplete(options: PgBoss.OffWorkOptions): Promise<void>;
