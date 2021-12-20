@@ -27,7 +27,8 @@
     "forcover": "npm run cover && nyc report --reporter=text-lcov | coveralls",
     "export-schema": "node ./scripts/construct.js",
     "export-migration": "node ./scripts/migrate.js",
-    "export-rollback": "node ./scripts/rollback.js"
+    "export-rollback": "node ./scripts/rollback.js",
+    "tsc": "tsc --noEmit types.d.ts"
   },
   "mocha": {
     "timeout": 10000,
