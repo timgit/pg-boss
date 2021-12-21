@@ -1,3 +1,5 @@
+import { EventEmitter } from 'events'
+
 declare namespace PgBoss {
   interface Db {
     executeSql(text: string, values: any[]): Promise<{ rows: any[]; rowCount: number }>;
@@ -239,7 +241,7 @@ declare namespace PgBoss {
 
 }
 
-declare class PgBoss {
+declare class PgBoss extends EventEmitter {
   constructor(connectionString: string);
   constructor(options: PgBoss.ConstructorOptions);
 
@@ -254,20 +256,20 @@ declare class PgBoss {
   static getRollbackPlans(schema: string): string;
   static getRollbackPlans(): string;
 
-  on(event: "error", handler: (error: Error) => void): void;
-  off(event: "error", handler: (error: Error) => void): void;
+  on(event: "error", handler: (error: Error) => void): this;
+  off(event: "error", handler: (error: Error) => void): this;
 
-  on(event: "maintenance", handler: () => void): void;
-  off(event: "maintenance", handler: () => void): void;
+  on(event: "maintenance", handler: () => void): this;
+  off(event: "maintenance", handler: () => void): this;
 
-  on(event: "monitor-states", handler: (monitorStates: PgBoss.MonitorStates) => void): void;
-  off(event: "monitor-states", handler: (monitorStates: PgBoss.MonitorStates) => void): void;
+  on(event: "monitor-states", handler: (monitorStates: PgBoss.MonitorStates) => void): this;
+  off(event: "monitor-states", handler: (monitorStates: PgBoss.MonitorStates) => void): this;
 
-  on(event: "wip", handler: (data: PgBoss.Worker[]) => void): void;
-  off(event: "wip", handler: (data: PgBoss.Worker[]) => void): void;
+  on(event: "wip", handler: (data: PgBoss.Worker[]) => void): this;
+  off(event: "wip", handler: (data: PgBoss.Worker[]) => void): this;
 
-  on(event: "stopped", handler: () => void): void;
-  off(event: "stopped", handler: () => void): void;
+  on(event: "stopped", handler: () => void): this;
+  off(event: "stopped", handler: () => void): this;
 
   start(): Promise<PgBoss>;
   stop(options?: PgBoss.StopOptions): Promise<void>;
