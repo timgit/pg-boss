@@ -203,7 +203,7 @@ declare namespace PgBoss {
     done: JobDoneCallback<ResData>;
   }
 
-  interface MonitorStates {
+  interface MonitorState {
     all: number;
     created: number;
     retry: number;
@@ -212,7 +212,10 @@ declare namespace PgBoss {
     expired: number;
     cancelled: number;
     failed: number;
-    queues: object;
+  }
+
+  interface MonitorStates extends MonitorState {
+    queues: { [queueName: string]: MonitorState };
   }
 
   interface Worker {
