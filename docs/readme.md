@@ -64,15 +64,15 @@
 # Intro
 pg-boss is a job queue written in Node.js and backed by the reliability of Postgres.
 
-You may use as many instances as needed to connect to the same Postgres database.  Each instance maintains a connection pool (or you bring your own), so the only limitation on connection count is based on the maximum number of connections your database can accept.  If you need a larger number of workers than your postgres database can accept, consider using a centralized connection pool such as pgBouncer. If you have constraints preventing direct database access, consider creating your own abstraction layer over pg-boss such as a secure web API using the `fetch()` and `complete()` functions.  
+You may use as many instances as needed to connect to the same Postgres database. Each instance maintains a connection pool or you can bring your own, limited to the maximum number of connections your database server can accept. If you need a larger number of workers, consider using a centralized connection pool such as pgBouncer. [Creating your own web API or UI](https://github.com/timgit/pg-boss/issues/266) is another option if direct database access is not available.
 
-If you require multiple installations in the same database, such as for large volume queues, you may wish to specify a separate schemas per install to achieve partitioning.
+If you require multiple installations in the same database, such as for large volume queues, you may wish to specify a separate schema per install to achieve partitioning.
+
+Architecturally, pg-boss is somewhat similar to queue products such as AWS SQS, which primarily acts as a store of jobs that are "pulled", not "pushed" from the server. If at least one pg-boss instance is running, internal maintenance jobs will be periodically run to make sure fetched jobs that are never completed are marked as expired or retried (if configured). If and when this happnes, think of a job with a retry configuration to act just like the SQS messasge visibility timeout. In regards to job delivery, Postgres [SKIP LOCKED](http://blog.2ndquadrant.com/what-is-select-skip-locked-for-in-postgresql-9-5) will guarantee exactly-once, which is only available in SQS via FIFO queues (and its throughput limitations). However, even if you have exactly-once delivery, this is not a guarantee that a job will never be processed more than once if you opt into retries, so keep the general recommendation for idempotency with queueing systems in mind.
 
 ## Job states
 
-A pg-boss job undergoes certain states during its lifetime. All jobs start out as `created` - from there, they will usually become `active` when picked up for work. If job processing completes successfully, jobs will go to `completed`. If job processing is not successful, jobs will go to either `failed` or `retry` (if they were started with the respective retry options). It's also possible for `active` jobs to become `expired`, which happens when job processing takes too long.
-
-Jobs can also be `cancelled` via [`cancel(id)`](#cancelid) or [`cancel([ids])`](#cancelids), which will transition them into the `cancelled` state.
+All jobs start out in the `created` state and become `active` when picked up for work. If job processing completes successfully, jobs will go to `completed`. If a job fails, it will typcially enter the `failed` state. However, if a job has retry options configured, it will enter the `retry` state on failure instead and have a chance to re-enter `active` state. It's also possible for `active` jobs to become `expired`, which happens when job processing takes too long. Jobs can also enter `cancelled` state via [`cancel(id)`](#cancelid) or [`cancel([ids])`](#cancelids).
 
 All jobs that are `completed`, `expired`, `cancelled` or `failed` become eligible for archiving (i.e. they will transition into the `archive` state) after the configured `archiveCompletedAfterSeconds` time. Once `archive`d, jobs will be automatically deleted by pg-boss after the configured deletion period.
 
@@ -121,7 +121,7 @@ DROP TYPE ${schema}.job_state;
 
 # Direct database interactions
 
-If you need to interact with pg-boss outside of Node.js, such as other clients or even using triggers within PostgreSQL itself, most functionality is supported even when working directly against the internal tables.  Additionally, you may even decide to do this within Node.js. For example, if you wanted to bulk load jobs into pg-boss and skip calling `send()` one job at a time, you could either use `INSERT` or the faster `COPY` command.
+If you need to interact with pg-boss outside of Node.js, such as other clients or even using triggers within PostgreSQL itself, most functionality is supported even when working directly against the internal tables.  Additionally, you may even decide to do this within Node.js. For example, if you wanted to bulk load jobs into pg-boss and skip calling `send()` or `insert()`, you could use SQL `INSERT` or `COPY` commands.
 
 ## Job table
 

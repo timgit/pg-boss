@@ -33,20 +33,19 @@ async function someAsyncJobHandler(job) {
 
 pg-boss is a job queue built in Node.js on top of PostgreSQL in order to provide background processing and reliable asynchronous execution to Node.js applications.
 
-pg-boss relies on [SKIP LOCKED](http://blog.2ndquadrant.com/what-is-select-skip-locked-for-in-postgresql-9-5), a feature introduced in PostgreSQL 9.5 written specifically for message queues, in order to resolve record locking challenges inherent with relational databases. This brings the safety of guaranteed atomic commits of a relational database to your asynchronous job processing.
+pg-boss relies on [SKIP LOCKED](http://blog.2ndquadrant.com/what-is-select-skip-locked-for-in-postgresql-9-5), a feature added to postgres specifically for message queues, in order to resolve record locking challenges inherent with relational databases. This brings the safety of guaranteed atomic commits of a relational database to your asynchronous job processing.
 
 This will likely cater the most to teams already familiar with the simplicity of relational database semantics and operations (SQL, querying, and backups). It will be especially useful to those already relying on PostgreSQL that want to limit how many systems are required to monitor and support in their architecture.
 
 ## Features
-* Backpressure-compatible workers for polling queues
-* Distributed cron-based job scheduling with database clock synchronization
+* Backpressure-compatible polling workers
+* Cron scheduling
 * Pub/sub API for fan-out queue relationships
-* Job deferral, retries (with exponential backoff), throttling, rate limiting, debouncing
-* Job completion hooks for orchestrations/sagas
-* Direct send, fetch and completion APIs for custom integrations
+* Deferral, retries (with exponential backoff), rate limiting, debouncing
+* Completion jobs for orchestrations/sagas
 * Direct table access for bulk loads via COPY or INSERT
-* Multi-master compatible when running multiple instances (for example, in a Kubernetes ReplicaSet)
-* Automatic provisioning of required storage
+* Multi-master compatible (for example, in a Kubernetes ReplicaSet)
+* Automatic creation and migration of storage tables
 * Automatic maintenance operations to manage table growth
 
 ## Requirements
