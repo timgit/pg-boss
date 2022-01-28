@@ -421,4 +421,15 @@ describe('work', function () {
       assert(err.message.includes('stopping'))
     }
   })
+
+  it('should allow send() after stopping', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const queue = this.test.bossConfig.schema
+
+    boss.stop({ timeout: 1 })
+
+    await delay(500)
+
+    await boss.send(queue)
+  })
 })

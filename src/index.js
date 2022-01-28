@@ -73,12 +73,14 @@ class PgBoss extends EventEmitter {
 
     function promoteFunction (obj, func) {
       this[func.name] = (...args) => {
-        if (this.stopped || this.stoppingOn) {
-          const state = this.stoppingOn ? 'stopping' : 'stopped'
+        const shouldRun = !this.started || !((func.name === 'work' || func.name === 'onComplete') && (this.stopped || this.stoppingOn))
+
+        if (shouldRun) {
+          return func.apply(obj, args)
+        } else {
+          const state = this.stoppingOn ? 'stopping' : this.stopped ? 'stopped' : !this.started ? 'not started' : 'started'
           return Promise.reject(new Error(`pg-boss is ${state}.`))
         }
-
-        return func.apply(obj, args)
       }
     }
 
@@ -99,6 +101,8 @@ class PgBoss extends EventEmitter {
     }
 
     await this.contractor.start()
+
+    this.started = true
 
     this.manager.start()
 
@@ -132,10 +136,6 @@ class PgBoss extends EventEmitter {
     await this.timekeeper.stop()
 
     const shutdown = async () => {
-      if (this.db.isOurs) {
-        await this.db.close()
-      }
-
       this.stopped = true
       this.stoppingOn = null
 
