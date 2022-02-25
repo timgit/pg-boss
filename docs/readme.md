@@ -49,6 +49,8 @@
     - [`getSchedules()`](#getschedules)
   - [`cancel(id)`](#cancelid)
   - [`cancel([ids])`](#cancelids)
+  - [`resume(id)`](#resumeid)
+  - [`resume([ids])`](#resumeids)
   - [`complete(id [, data])`](#completeid--data)
   - [`complete([ids])`](#completeids)
   - [`fail(id [, data])`](#failid--data)
@@ -992,6 +994,14 @@ Cancels a set of pending or active jobs.
 The promise will resolve on a successful cancel, or reject if not all of the requested jobs could not be cancelled.
 
 > Due to the nature of the use case of attempting a batch job cancellation, it may be likely that some jobs were in flight and even completed during the cancellation request. Because of this, cancellation will cancel as many as possible and reject with a message showing the number of jobs that could not be cancelled because they were no longer active.
+
+## `resume(id)`
+
+Resumes a cancelled job.
+
+## `resume([ids])`
+
+Resumes a set of cancelled jobs.
 
 ## `complete(id [, data])`
 
