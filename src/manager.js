@@ -56,6 +56,7 @@ class Manager extends EventEmitter {
     this.insertJobsCommand = plans.insertJobs(config.schema)
     this.completeJobsCommand = plans.completeJobs(config.schema)
     this.cancelJobsCommand = plans.cancelJobs(config.schema)
+    this.resumeJobsCommand = plans.resumeJobs(config.schema)
     this.failJobsCommand = plans.failJobs(config.schema)
     this.getJobByIdCommand = plans.getJobById(config.schema)
     this.getArchivedJobByIdCommand = plans.getArchivedJobById(config.schema)
@@ -67,6 +68,7 @@ class Manager extends EventEmitter {
     this.functions = [
       this.complete,
       this.cancel,
+      this.resume,
       this.fail,
       this.fetch,
       this.fetchCompleted,
@@ -538,6 +540,12 @@ class Manager extends EventEmitter {
   async cancel (id) {
     const ids = this.mapCompletionIdArg(id, 'cancel')
     const result = await this.db.executeSql(this.cancelJobsCommand, [ids])
+    return this.mapCompletionResponse(ids, result)
+  }
+
+  async resume (id) {
+    const ids = this.mapCompletionIdArg(id, 'resume')
+    const result = await this.db.executeSql(this.resumeJobsCommand, [ids])
     return this.mapCompletionResponse(ids, result)
   }
 

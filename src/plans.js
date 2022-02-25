@@ -26,6 +26,7 @@ module.exports = {
   fetchNextJob,
   completeJobs,
   cancelJobs,
+  resumeJobs,
   failJobs,
   insertJob,
   insertJobs,
@@ -491,6 +492,19 @@ function cancelJobs (schema) {
         state = '${states.cancelled}'
       WHERE id IN (SELECT UNNEST($1::uuid[]))
         AND state < '${states.completed}'
+      RETURNING 1
+    )
+    SELECT COUNT(*) from results
+  `
+}
+
+function resumeJobs (schema) {
+  return `
+    with results as (
+      UPDATE ${schema}.job
+      SET completedOn = NULL,
+        state = '${states.created}'
+      WHERE id IN (SELECT UNNEST($1::uuid[]))
       RETURNING 1
     )
     SELECT COUNT(*) from results
