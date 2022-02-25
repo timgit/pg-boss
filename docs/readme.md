@@ -155,7 +155,7 @@ The following command is the definition of the primary job table. For manual job
 
 # Events
 
-As explained in the introduction above, each instance of pg-boss is an EventEmitter.  You can run multiple instances of pg-boss for a variety of use cases including distribution and load balancing. Each instance has the freedom to process to whichever jobs you need.  Because of this diversity, the job activity of one instance could be drastically different from another.  Therefore, **all of the events raised by pg-boss are instance-bound.**
+Each instance of pg-boss is an EventEmitter.  You can run multiple instances of pg-boss for a variety of use cases including distribution and load balancing. Each instance has the freedom to process to whichever jobs you need.  Because of this diversity, the job activity of one instance could be drastically different from another. 
 
 > For example, if you were to process to `error` in instance A, it will not receive an `error` event from instance B.
 
@@ -172,7 +172,7 @@ Ideally, code similar to the following example would be used after creating your
 boss.on('error', error => logger.error(error));
 ```
 
-> **Note: Since error events are only raised during internal housekeeping activities, they are not raised for direct API calls, where promise `catch()` handlers should be used.**
+> **Note: Since error events are only raised during internal housekeeping activities, they are not raised for direct API calls.**
 
 ## `monitor-states`
 
@@ -308,18 +308,20 @@ The following options can be set as properties in an object for additional confi
 
 * **db** - object
 
-    Passing an object named db allows you "bring your own database connection".
-    Setting this option ignores all of the above settings. The interface required for db is a single function called `executeSql` that accepts a SQL string and an optional array of parameters. This should return a promise that resolves an object just like the pg module: a `rows` array with results and `rowCount` property that contains affected records after an update operation.
-
+    Passing an object named db allows you "bring your own database connection". This option may be beneficial if you'd like to use an existing database service with its own connection pool. Setting this option will bypass the above configuration. 
+    
+    The expected interface is a function named `executeSql` that allows the following code to run without errors.
+    
+  
     ```js
-    {
-      // resolves Promise
-      executeSql(text, [value])
-    }
-    ```
+    const text = "select 1 as value1 from table1 where bar = $1"
+    const values = ['foo']
 
-    This option may be beneficial if you'd like to use an existing database service
-    with its own connection pool.
+    const { rows, rowCount } = await executeSql(text, values)
+
+    assert(rows[0].value1 === 1)
+    assert(rowCount === 1)
+    ```    
 
 * **schema** - string, defaults to "pgboss"
 
