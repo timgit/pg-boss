@@ -329,6 +329,9 @@ declare class PgBoss extends EventEmitter {
   cancel(id: string): Promise<void>;
   cancel(ids: string[]): Promise<void>;
 
+  resume(id: string): Promise<void>;
+  resume(ids: string[]): Promise<void>;
+
   complete(id: string): Promise<void>;
   complete(id: string, data: object): Promise<void>;
   complete(ids: string[]): Promise<void>;

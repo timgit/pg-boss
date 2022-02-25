@@ -1,4 +1,4 @@
-# Usage <!-- omit in toc -->
+# pg-boss Docs<!-- omit in toc -->
 
 <!-- TOC -->
 
@@ -49,6 +49,8 @@
     - [`getSchedules()`](#getschedules)
   - [`cancel(id)`](#cancelid)
   - [`cancel([ids])`](#cancelids)
+  - [`resume(id)`](#resumeid)
+  - [`resume([ids])`](#resumeids)
   - [`complete(id [, data])`](#completeid--data)
   - [`complete([ids])`](#completeids)
   - [`fail(id [, data])`](#failid--data)
@@ -68,7 +70,7 @@ You may use as many instances as needed to connect to the same Postgres database
 
 If you require multiple installations in the same database, such as for large volume queues, you may wish to specify a separate schema per install to achieve partitioning.
 
-Architecturally, pg-boss is somewhat similar to queue products such as AWS SQS, which primarily acts as a store of jobs that are "pulled", not "pushed" from the server. If at least one pg-boss instance is running, internal maintenance jobs will be periodically run to make sure fetched jobs that are never completed are marked as expired or retried (if configured). If and when this happnes, think of a job with a retry configuration to act just like the SQS messasge visibility timeout. In regards to job delivery, Postgres [SKIP LOCKED](http://blog.2ndquadrant.com/what-is-select-skip-locked-for-in-postgresql-9-5) will guarantee exactly-once, which is only available in SQS via FIFO queues (and its throughput limitations). However, even if you have exactly-once delivery, this is not a guarantee that a job will never be processed more than once if you opt into retries, so keep the general recommendation for idempotency with queueing systems in mind.
+Architecturally, pg-boss is somewhat similar to queue products such as AWS SQS, which primarily acts as a store of jobs that are "pulled", not "pushed" from the server. If at least one pg-boss instance is running, internal maintenance jobs will be periodically run to make sure fetched jobs that are never completed are marked as expired or retried (if configured). If and when this happens, think of a job with a retry configuration to act just like the SQS message visibility timeout. In regards to job delivery, Postgres [SKIP LOCKED](http://blog.2ndquadrant.com/what-is-select-skip-locked-for-in-postgresql-9-5) will guarantee exactly-once, which is only available in SQS via FIFO queues (and its throughput limitations). However, even if you have exactly-once delivery, this is not a guarantee that a job will never be processed more than once if you opt into retries, so keep the general recommendation for idempotency with queueing systems in mind.
 
 ## Job states
 
@@ -153,7 +155,7 @@ The following command is the definition of the primary job table. For manual job
 
 # Events
 
-As explained in the introduction above, each instance of pg-boss is an EventEmitter.  You can run multiple instances of pg-boss for a variety of use cases including distribution and load balancing. Each instance has the freedom to process to whichever jobs you need.  Because of this diversity, the job activity of one instance could be drastically different from another.  Therefore, **all of the events raised by pg-boss are instance-bound.**
+Each instance of pg-boss is an EventEmitter.  You can run multiple instances of pg-boss for a variety of use cases including distribution and load balancing. Each instance has the freedom to process to whichever jobs you need.  Because of this diversity, the job activity of one instance could be drastically different from another. 
 
 > For example, if you were to process to `error` in instance A, it will not receive an `error` event from instance B.
 
@@ -170,7 +172,7 @@ Ideally, code similar to the following example would be used after creating your
 boss.on('error', error => logger.error(error));
 ```
 
-> **Note: Since error events are only raised during internal housekeeping activities, they are not raised for direct API calls, where promise `catch()` handlers should be used.**
+> **Note: Since error events are only raised during internal housekeeping activities, they are not raised for direct API calls.**
 
 ## `monitor-states`
 
@@ -306,18 +308,20 @@ The following options can be set as properties in an object for additional confi
 
 * **db** - object
 
-    Passing an object named db allows you "bring your own database connection".
-    Setting this option ignores all of the above settings. The interface required for db is a single function called `executeSql` that accepts a SQL string and an optional array of parameters. This should return a promise that resolves an object just like the pg module: a `rows` array with results and `rowCount` property that contains affected records after an update operation.
-
+    Passing an object named db allows you "bring your own database connection". This option may be beneficial if you'd like to use an existing database service with its own connection pool. Setting this option will bypass the above configuration. 
+    
+    The expected interface is a function named `executeSql` that allows the following code to run without errors.
+    
+  
     ```js
-    {
-      // resolves Promise
-      executeSql(text, [value])
-    }
-    ```
+    const text = "select 1 as value1 from table1 where bar = $1"
+    const values = ['foo']
 
-    This option may be beneficial if you'd like to use an existing database service
-    with its own connection pool.
+    const { rows, rowCount } = await executeSql(text, values)
+
+    assert(rows[0].value1 === 1)
+    assert(rowCount === 1)
+    ```    
 
 * **schema** - string, defaults to "pgboss"
 
@@ -992,6 +996,14 @@ Cancels a set of pending or active jobs.
 The promise will resolve on a successful cancel, or reject if not all of the requested jobs could not be cancelled.
 
 > Due to the nature of the use case of attempting a batch job cancellation, it may be likely that some jobs were in flight and even completed during the cancellation request. Because of this, cancellation will cancel as many as possible and reject with a message showing the number of jobs that could not be cancelled because they were no longer active.
+
+## `resume(id)`
+
+Resumes a cancelled job.
+
+## `resume([ids])`
+
+Resumes a set of cancelled jobs.
 
 ## `complete(id [, data])`
 
