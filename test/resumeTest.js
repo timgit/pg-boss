@@ -25,8 +25,10 @@ describe('cancel', function () {
 
     assert(job && job.state === 'cancelled')
 
-    const jobResume = await boss.resume(jobId)
+    await boss.resume(jobId)
 
-    assert(jobResume && jobResume.state === 'created')
+    const job2 = await boss.getJobById(jobId)
+
+    assert(job2 && job2.state === 'created')
   })
 })
