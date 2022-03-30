@@ -1,7 +1,6 @@
 const delay = require('delay')
 const assert = require('assert')
 const helper = require('./testHelper')
-const pMap = require('p-map')
 
 describe('failure', function () {
   it('should reject missing id argument', async function () {
@@ -61,6 +60,8 @@ describe('failure', function () {
   })
 
   it('should fail a batch of jobs with a data arg', async function () {
+    const { default: pMap } = await import('p-map')
+
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
     const queue = this.test.bossConfig.schema
     const message = 'some error'

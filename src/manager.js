@@ -1,6 +1,5 @@
 const assert = require('assert')
 const EventEmitter = require('events')
-const pMap = require('p-map')
 const delay = require('delay')
 const uuid = require('uuid')
 const debounce = require('lodash.debounce')
@@ -210,6 +209,8 @@ class Manager extends EventEmitter {
     const fetch = () => this.fetch(name, batchSize || (teamSize - queueSize), { includeMetadata })
 
     const onFetch = async (jobs) => {
+      const { default: pMap } = await import('p-map')
+
       if (this.config.__test__throw_worker) {
         throw new Error('__test__throw_worker')
       }
