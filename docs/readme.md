@@ -774,7 +774,7 @@ The default concurrency for `work()` is 1 job every 2 seconds. Both the interval
 
 * **teamConcurrency**, int
 
-    Default: 2. How many callbacks will be called concurrently if promises are used for polling backpressure. Intended to be used along with `teamSize`.
+    Default: 1. How many callbacks will be called concurrently if promises are used for polling backpressure. Intended to be used along with `teamSize`.
 
 * **teamRefill**, bool
 

@@ -102,6 +102,7 @@ declare namespace PgBoss {
   interface JobFetchOptions {
     teamSize?: number;
     teamConcurrency?: number;
+    teamRefill?: boolean;
     batchSize?: number;
     includeMetadata?: boolean;
   }
