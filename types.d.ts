@@ -308,6 +308,12 @@ declare class PgBoss extends EventEmitter {
   offWork(name: string): Promise<void>;
   offWork(options: PgBoss.OffWorkOptions): Promise<void>;
 
+  /**
+   * Notify worker that something has changed
+   * @param workerId 
+   */
+  notifyWorker(workerId: string): void;
+
   subscribe(event: string, name: string): Promise<void>;
   unsubscribe(event: string, name: string): Promise<void>;
   publish(event: string): Promise<string[]>;

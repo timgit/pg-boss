@@ -68,6 +68,26 @@ describe('work', function () {
     assert.strictEqual(processCount, timeout / 1000 / newJobCheckIntervalSeconds)
   })
 
+  it('should honor when a worker is notified', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const queue = this.test.bossConfig.schema
+
+    let processCount = 0
+    const newJobCheckIntervalSeconds = 5
+
+    await boss.send(queue)
+
+    const workerId = await boss.work(queue, { newJobCheckIntervalSeconds }, () => processCount++)
+    await delay(100)
+    assert.strictEqual(processCount, 1)
+    await boss.send(queue)
+
+    boss.notifyWorker(workerId)
+
+    await delay(100)
+    assert.strictEqual(processCount, 2)
+  })
+
   it('should remove a worker', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
     const queue = this.test.bossConfig.schema
