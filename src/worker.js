@@ -27,6 +27,15 @@ class Worker {
     this.stopping = false
     this.stopped = false
     this.loopDelayPromise = null
+    this.beenNotified = false
+  }
+
+  notify () {
+    this.beenNotified = true
+
+    if (this.loopDelayPromise) {
+      this.loopDelayPromise.clear()
+    }
   }
 
   async start () {
@@ -36,6 +45,7 @@ class Worker {
       const started = Date.now()
 
       try {
+        this.beenNotified = false
         const jobs = await this.fetch()
 
         this.lastFetchedOn = Date.now()
@@ -64,7 +74,7 @@ class Worker {
 
       this.lastJobDuration = duration
 
-      if (!this.stopping && duration < this.interval) {
+      if (!this.stopping && !this.beenNotified && duration < this.interval) {
         this.loopDelayPromise = delay(this.interval - duration)
         await this.loopDelayPromise
         this.loopDelayPromise = null

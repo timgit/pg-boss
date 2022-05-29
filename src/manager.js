@@ -74,6 +74,7 @@ class Manager extends EventEmitter {
       this.fetchCompleted,
       this.work,
       this.offWork,
+      this.notifyWorker,
       this.onComplete,
       this.offComplete,
       this.publish,
@@ -292,6 +293,12 @@ class Manager extends EventEmitter {
         this.removeWorker(worker)
       }
     })
+  }
+
+  notifyWorker (workerId) {
+    if (this.workers.has(workerId)) {
+      this.workers.get(workerId).notify()
+    }
   }
 
   async subscribe (event, name) {
