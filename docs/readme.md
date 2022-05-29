@@ -55,6 +55,7 @@
   - [`complete([ids])`](#completeids)
   - [`fail(id [, data])`](#failid--data)
   - [`fail([ids])`](#failids)
+  - [`notifyWorker(id)`](#notifyworkerid)
   - [`getQueueSize(name [, options])`](#getqueuesizename--options)
   - [`getJobById(id)`](#getjobbyidid)
   - [`deleteQueue(name)`](#deletequeuename)
@@ -1032,6 +1033,10 @@ Fails a set of active jobs.
 The promise will resolve on a successful failure state assignment, or reject if not all of the requested jobs could not be marked as failed.
 
 > See comments above on `cancel([ids])` regarding when the promise will resolve or reject because of a batch operation.
+
+## `notifyWorker(id)`
+
+Notifies a worker by id to bypass the job polling interval (see `newJobCheckInterval`) for this iteration in the loop. 
 
 ## `getQueueSize(name [, options])`
 
