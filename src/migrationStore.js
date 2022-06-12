@@ -68,6 +68,23 @@ function getAll (schema, config) {
 
   return [
     {
+      release: '7.4.0', // TODO: verify this version
+      version: 20,
+      previous: 19,
+      install: [
+        `DROP INDEX ${schema}.job_singletonKey`,
+        `DROP INDEX ${schema}.job_singleton_queue`,
+        `CREATE UNIQUE INDEX job_singletonKey ON ${schema}.job (name, singletonKey) WHERE state < 'completed' AND singletonOn IS NULL AND NOT singletonKey LIKE '\\_\\_pgboss\\_\\_singleton\\_queue%'`,
+        `CREATE UNIQUE INDEX job_singleton_queue ON ${schema}.job (name, singletonKey) WHERE state < 'active' AND singletonOn IS NULL AND singletonKey LIKE '\\_\\_pgboss\\_\\_singleton\\_queue%'`
+      ],
+      uninstall: [
+        `DROP INDEX ${schema}.job_singletonKey`,
+        `DROP INDEX ${schema}.job_singleton_queue`,
+        `CREATE UNIQUE INDEX job_singletonKey ON ${schema}.job (name, singletonKey) WHERE state < 'completed' AND singletonOn IS NULL AND NOT singletonKey = '__pgboss__singleton_queue'`,
+        `CREATE UNIQUE INDEX job_singleton_queue ON ${schema}.job (name, singletonKey) WHERE state < 'active' AND singletonOn IS NULL AND singletonKey = '__pgboss__singleton_queue'`
+      ]
+    },
+    {
       release: '7.0.0',
       version: 19,
       previous: 18,
