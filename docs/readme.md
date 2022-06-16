@@ -547,6 +547,15 @@ Available in constructor as a default, or overridden in send.
 
   This can be used in conjunction with throttling explained below.
 
+  * **useSingletonQueue** boolean
+
+  When used in conjunction with singletonKey, only allows 1 job (within the same name) to be queued with the same singletonKey.
+
+  ```js
+  boss.send('my-job', {}, {singletonKey: '123', useSingletonQueue: true}) // resolves a jobId
+  boss.send('my-job', {}, {singletonKey: '123', useSingletonQueue: true}) // resolves a null jobId until first job becomes active
+  ```
+
 **Throttled jobs**
 
 * **singletonSeconds**, int
