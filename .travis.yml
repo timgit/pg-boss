@@ -6,6 +6,7 @@ services:
     - postgresql
 language: node_js
 node_js:
+  - "18"
   - "16"
   - "14"
 before_script:
