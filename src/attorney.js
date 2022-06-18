@@ -1,9 +1,10 @@
 const assert = require('assert')
-const { DEFAULT_SCHEMA } = require('./plans')
+const { DEFAULT_SCHEMA, SINGLETON_QUEUE_KEY } = require('./plans')
 
 module.exports = {
   getConfig,
   checkSendArgs,
+  checkInsertArgs,
   checkWorkArgs,
   checkFetchArgs,
   warnClockSkew
@@ -60,6 +61,7 @@ function checkSendArgs (args, defaults) {
   applyExpirationConfig(options, defaults)
   applyRetentionConfig(options, defaults)
   applyCompletionConfig(options, defaults)
+  applySingletonKeyConfig(options)
 
   const { startAfter, singletonSeconds, singletonMinutes, singletonHours } = options
 
@@ -82,6 +84,22 @@ function checkSendArgs (args, defaults) {
   assert(!singletonSeconds || singletonSeconds <= defaults.archiveSeconds, `throttling interval ${singletonSeconds}s cannot exceed archive interval ${defaults.archiveSeconds}s`)
 
   return { name, data, options }
+}
+
+function checkInsertArgs (jobs) {
+  assert(Array.isArray(jobs), `jobs argument should be an array.  Received '${typeof jobs}'`)
+  return jobs.map(job => {
+    job = { ...job }
+    applySingletonKeyConfig(job)
+    return job
+  })
+}
+
+function applySingletonKeyConfig (options) {
+  if (options.singletonKey && options.useSingletonQueue && options.singletonKey !== SINGLETON_QUEUE_KEY) {
+    options.singletonKey = SINGLETON_QUEUE_KEY + options.singletonKey
+  }
+  delete options.useSingletonQueue
 }
 
 function checkWorkArgs (name, args, defaults) {

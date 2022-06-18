@@ -1,4 +1,5 @@
 const assert = require('assert')
+const { v4: uuid } = require('uuid')
 const helper = require('./testHelper')
 
 describe('singleton', function () {
@@ -103,5 +104,54 @@ describe('singleton', function () {
     const jobId3 = await boss.sendSingleton(queue)
 
     assert(jobId3)
+  })
+
+  it('useSingletonQueue allows a second singleton job if first has enetered active state', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+
+    const queue = 'singleton-queue-check'
+    const singletonKey = 'myKey'
+
+    const jobId = await boss.send(queue, null, { singletonKey, useSingletonQueue: true })
+
+    assert(jobId)
+
+    const jobId2 = await boss.send(queue, null, { singletonKey, useSingletonQueue: true })
+
+    assert.strictEqual(jobId2, null)
+
+    const job = await boss.fetch(queue)
+
+    assert.strictEqual(job.id, jobId)
+
+    const jobId3 = await boss.send(queue, null, { singletonKey, useSingletonQueue: true })
+
+    assert(jobId3)
+  })
+
+  it('useSingletonQueue works when using insert', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+
+    const name = 'singleton-queue-check'
+    const singletonKey = 'myKey'
+
+    const jobId = uuid()
+    await boss.insert([{ id: jobId, name, singletonKey, useSingletonQueue: true }])
+
+    assert(await boss.getJobById(jobId))
+
+    const jobId2 = uuid()
+    await boss.insert([{ id: jobId2, name, singletonKey, useSingletonQueue: true }])
+
+    assert.strictEqual(await boss.getJobById(jobId2), null)
+
+    const job = await boss.fetch(name)
+
+    assert.strictEqual(job.id, jobId)
+
+    const jobId3 = uuid()
+    await boss.insert([{ id: jobId3, name, singletonKey, useSingletonQueue: true }])
+
+    assert(await boss.getJobById(jobId3))
   })
 })

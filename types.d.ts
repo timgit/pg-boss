@@ -84,6 +84,7 @@ declare namespace PgBoss {
     priority?: number;
     startAfter?: number | string | Date;
     singletonKey?: string;
+    useSingletonQueue?: boolean;
     singletonSeconds?: number;
     singletonMinutes?: number;
     singletonHours?: number;
