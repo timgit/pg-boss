@@ -50,7 +50,7 @@ This will likely cater the most to teams already familiar with the simplicity of
 * Automatic maintenance operations to manage table growth
 
 ## Requirements
-* Node 12 or higher
+* Node 14 or higher
 * PostgreSQL 9.5 or higher
 
 ## Installation
