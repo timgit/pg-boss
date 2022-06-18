@@ -43,18 +43,23 @@ class Timekeeper extends EventEmitter {
   }
 
   async start () {
+    // setting the archive config too low breaks the cron 60s debounce interval so don't even try
     if (this.config.archiveSeconds < 60) {
       return
     }
 
+    // cache the clock skew from the db server
     await this.cacheClockSkew()
 
     await this.manager.work(queues.CRON, { newJobCheckIntervalSeconds: 4 }, (job) => this.onCron(job))
     await this.manager.work(queues.SEND_IT, { newJobCheckIntervalSeconds: 4, teamSize: 50, teamConcurrency: 5 }, (job) => this.onSendIt(job))
 
-    await this.cronMonitorAsync()
+    // uses sendDebounced() to enqueue a cron check
+    await this.checkSchedulesAsync()
 
+    // create monitoring interval to make sure cron hasn't crashed
     this.cronMonitorInterval = setInterval(async () => await this.monitorCron(), this.cronMonitorIntervalMs)
+    // create monitoring interval to measure and adjust for drift in clock skew
     this.skewMonitorInterval = setInterval(async () => await this.cacheClockSkew(), this.skewMonitorIntervalMs)
 
     this.stopped = false
@@ -85,7 +90,7 @@ class Timekeeper extends EventEmitter {
     const { secondsAgo } = await this.getCronTime()
 
     if (secondsAgo > 60) {
-      await this.cronMonitorAsync()
+      await this.checkSchedulesAsync()
     }
   }
 
@@ -107,7 +112,7 @@ class Timekeeper extends EventEmitter {
     this.clockSkew = skew
   }
 
-  async cronMonitorAsync () {
+  async checkSchedulesAsync () {
     const opts = {
       retryLimit: 2,
       retentionSeconds: 60,
@@ -137,6 +142,7 @@ class Timekeeper extends EventEmitter {
 
       if (this.stopped) return
 
+      // set last time cron was evaluated for downstream usage in cron monitoring
       await this.setCronTime()
     } catch (err) {
       this.emit(this.events.error, err)
@@ -144,7 +150,8 @@ class Timekeeper extends EventEmitter {
 
     if (this.stopped) return
 
-    await this.cronMonitorAsync()
+    // uses sendDebounced() to enqueue a cron check
+    await this.checkSchedulesAsync()
   }
 
   shouldSendIt (cron, tz) {

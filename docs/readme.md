@@ -55,6 +55,7 @@
   - [`complete([ids])`](#completeids)
   - [`fail(id [, data])`](#failid--data)
   - [`fail([ids])`](#failids)
+  - [`notifyWorker(id)`](#notifyworkerid)
   - [`getQueueSize(name [, options])`](#getqueuesizename--options)
   - [`getJobById(id)`](#getjobbyidid)
   - [`deleteQueue(name)`](#deletequeuename)
@@ -546,6 +547,15 @@ Available in constructor as a default, or overridden in send.
 
   This can be used in conjunction with throttling explained below.
 
+  * **useSingletonQueue** boolean
+
+  When used in conjunction with singletonKey, only allows 1 job (within the same name) to be queued with the same singletonKey.
+
+  ```js
+  boss.send('my-job', {}, {singletonKey: '123', useSingletonQueue: true}) // resolves a jobId
+  boss.send('my-job', {}, {singletonKey: '123', useSingletonQueue: true}) // resolves a null jobId until first job becomes active
+  ```
+
 **Throttled jobs**
 
 * **singletonSeconds**, int
@@ -1032,6 +1042,10 @@ Fails a set of active jobs.
 The promise will resolve on a successful failure state assignment, or reject if not all of the requested jobs could not be marked as failed.
 
 > See comments above on `cancel([ids])` regarding when the promise will resolve or reject because of a batch operation.
+
+## `notifyWorker(id)`
+
+Notifies a worker by id to bypass the job polling interval (see `newJobCheckInterval`) for this iteration in the loop. 
 
 ## `getQueueSize(name [, options])`
 

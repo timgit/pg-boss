@@ -73,6 +73,7 @@ class Manager extends EventEmitter {
       this.fetchCompleted,
       this.work,
       this.offWork,
+      this.notifyWorker,
       this.onComplete,
       this.offComplete,
       this.publish,
@@ -295,6 +296,12 @@ class Manager extends EventEmitter {
     })
   }
 
+  notifyWorker (workerId) {
+    if (this.workers.has(workerId)) {
+      this.workers.get(workerId).notify()
+    }
+  }
+
   async subscribe (event, name) {
     assert(event, 'Missing required argument')
     assert(name, 'Missing required argument')
@@ -440,8 +447,8 @@ class Manager extends EventEmitter {
   }
 
   async insert (jobs) {
-    assert(Array.isArray(jobs), `jobs argument should be an array.  Received '${typeof jobs}'`)
-    const data = JSON.stringify(jobs)
+    const checkedJobs = Attorney.checkInsertArgs(jobs)
+    const data = JSON.stringify(checkedJobs)
     return await this.db.executeSql(this.insertJobsCommand, [data])
   }
 
