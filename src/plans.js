@@ -69,6 +69,7 @@ function locked (schema, query) {
 
   return `
     BEGIN;
+    SET LOCAL statement_timeout = '30s';
     ${advisoryLock(schema)};
     ${query};
     COMMIT;
