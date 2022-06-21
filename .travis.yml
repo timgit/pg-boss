@@ -1,7 +1,5 @@
 sudo: required
 dist: focal
-addons:
-    postgresql: "9.5"
 services:
     - postgresql
 language: node_js
