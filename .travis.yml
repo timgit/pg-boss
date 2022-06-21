@@ -12,3 +12,7 @@ before_script:
   - psql -c 'create extension pgcrypto' -d pgboss -U postgres
 script:
   - npm run forcover
+env:
+  global:
+  - PGPORT=5433
+  - PGUSER=travis
