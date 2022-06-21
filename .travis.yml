@@ -7,6 +7,12 @@ node_js:
   - "18"
 #  - "16"
 #  - "14"
+addons:
+  postgresql: "12"
+  apt:
+    packages:
+    - postgresql-12
+    - postgresql-client-12
 before_script:
   - psql -c 'create database pgboss'
   - psql -c 'create extension pgcrypto' -d pgboss
