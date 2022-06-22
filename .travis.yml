@@ -1,7 +1,4 @@
-sudo: required
 dist: focal
-services:
-    - postgresql
 language: node_js
 node_js:
   - "18"
@@ -12,7 +9,6 @@ addons:
   apt:
     packages:
     - postgresql-12
-    - postgresql-client-12
 before_script:
   - psql -c 'create database pgboss'
   - psql -c 'create extension pgcrypto' -d pgboss
@@ -20,5 +16,6 @@ script:
   - npm run forcover
 env:
   global:
-  - PGPORT=5433
-  - PGUSER=travis
+  - PGPORT=5432
+  - PGUSER=postgres
+  - PGHOST=localhost
