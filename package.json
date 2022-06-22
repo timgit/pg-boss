@@ -25,7 +25,9 @@
   "scripts": {
     "test": "standard && mocha",
     "cover": "nyc --reporter=text npm test",
-    "forcover": "npm run cover && nyc report --reporter=text-lcov | coveralls",
+    "travis-cover": "nyc --reporter=text npm run travis-test",
+    "travis-test": "standard && mocha --jobs 0 --exit",
+    "forcover": "npm run travis-cover && nyc report --reporter=text-lcov | coveralls",
     "export-schema": "node ./scripts/construct.js",
     "export-migration": "node ./scripts/migrate.js",
     "export-rollback": "node ./scripts/rollback.js",

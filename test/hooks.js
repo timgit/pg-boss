@@ -23,7 +23,7 @@ async function afterEach () {
   if (boss) {
     await new Promise((resolve) => {
       boss.on('stopped', resolve)
-      helper.stop(boss, 2000)
+      helper.stop(boss)
     })
   }
 
