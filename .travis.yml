@@ -2,9 +2,9 @@
 dist: focal
 language: node_js
 node_js:
-  - "18"
-#  - "16"
-#  - "14"
+  - '18'
+  - '16'
+  - '14'
 addons:
   postgresql: '13'
   apt:
@@ -20,7 +20,8 @@ before_install:
  - sudo service postgresql restart
  - sleep 1
  - postgres --version
-script:
+before_script:
   - psql -c 'create database pgboss' -U postgres
   - psql -c 'create extension pgcrypto' -U postgres -d pgboss
+script:
   - npm run forcover
