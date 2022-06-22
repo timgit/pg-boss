@@ -17,5 +17,6 @@ script:
 env:
   global:
   - PGPORT=5433
-  - PGUSER=postgres
+  - PGUSER=travis
   - PGHOST=localhost
+  - PGPASSWORD=
