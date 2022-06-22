@@ -6,10 +6,10 @@ node_js:
   - '16'
   - '14'
 addons:
-  postgresql: '14'
+  postgresql: '13'
   apt:
     packages:
-    - postgresql-14
+    - postgresql-13
 env:
   global:
   - PGHOST=localhost
