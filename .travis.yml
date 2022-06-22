@@ -1,3 +1,4 @@
+# from: https://travis-ci.community/t/update-postgresql-version-to-13-in-travisci/12884
 dist: focal
 language: node_js
 node_js:
@@ -5,18 +6,21 @@ node_js:
 #  - "16"
 #  - "14"
 addons:
-  postgresql: "12"
+  postgresql: '13'
   apt:
     packages:
-    - postgresql-12
-before_script:
-  - psql -c 'create database pgboss'
-  - psql -c 'create extension pgcrypto' -d pgboss
-script:
-  - npm run forcover
+    - postgresql-13
 env:
   global:
-  - PGPORT=5433
-  - PGUSER=travis
   - PGHOST=localhost
-  - PGPASSWORD=
+  - PGPORT=5432
+  - PGUSER=postgres
+before_install:
+ - sudo sed -i -e '/local.*peer/s/postgres/all/' -e 's/peer\|md5/trust/g' /etc/postgresql/*/main/pg_hba.conf
+ - sudo service postgresql restart
+ - sleep 1
+ - postgres --version
+script:
+  - psql -c 'create database pgboss' -U postgres
+  - psql -c 'create extension pgcrypto' -U postgres -d pgboss
+  - npm run forcover
