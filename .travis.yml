@@ -16,6 +16,6 @@ script:
   - npm run forcover
 env:
   global:
-  - PGPORT=5432
+  - PGPORT=5433
   - PGUSER=postgres
   - PGHOST=localhost
