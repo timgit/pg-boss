@@ -44,6 +44,8 @@ class Manager extends EventEmitter {
   constructor (db, config) {
     super()
 
+    this.stringify = null
+
     this.config = config
     this.db = db
 
@@ -96,7 +98,8 @@ class Manager extends EventEmitter {
     this.emitWipThrottled = debounce(() => this.emit(events.wip, this.getWipData()), WIP_EVENT_INTERVAL, WIP_DEBOUNCE_OPTIONS)
   }
 
-  start () {
+  start ({ stringify }) {
+    this.stringify = stringify
     this.stopping = false
   }
 
@@ -514,15 +517,11 @@ class Manager extends EventEmitter {
   mapCompletionDataArg (data) {
     if (data === null || typeof data === 'undefined' || typeof data === 'function') { return null }
 
-    if (data instanceof Error) {
-      const newData = {}
-      Object.getOwnPropertyNames(data).forEach(key => { newData[key] = data[key] })
-      data = newData
-    }
-
-    return (typeof data === 'object' && !Array.isArray(data))
+    const result = (typeof data === 'object' && !Array.isArray(data))
       ? data
       : { value: data }
+
+    return this.stringify(result)
   }
 
   mapCompletionResponse (ids, result) {
