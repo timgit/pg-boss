@@ -640,13 +640,13 @@ This is a convenience version of `send()` with the `singletonKey` option assigne
 
 ### `sendThrottled(name, data, options, seconds [, key])`
 
-Only allows one job to be sended to the same queue within a number of seconds.  In this case, the first job within the interval is allowed, and all other jobs within the same interval are rejected.
+Only allows one job to be sent to the same queue within a number of seconds.  In this case, the first job within the interval is allowed, and all other jobs within the same interval are rejected.
 
 This is a convenience version of `send()` with the `singletonSeconds` and `singletonKey` option assigned. The `key` argument is optional.
 
 ### `sendDebounced(name, data, options, seconds [, key])`
 
-Like, `sendThrottled()`, but instead of rejecting if a job is already sended in the current interval, it will try to add the job to the next interval if one hasn't already been sended.
+Like, `sendThrottled()`, but instead of rejecting if a job is already sent in the current interval, it will try to add the job to the next interval if one hasn't already been sent.
 
 This is a convenience version of `send()` with the `singletonSeconds`, `singletonKey` and `singletonNextSlot` option assigned. The `key` argument is optional.
 
@@ -940,7 +940,7 @@ Remove the subscription of queue `name` to `event`.
 
 ## Scheduling
 
-Jobs may be sended automatically based on a cron expression. As with other cron-based systems, at least one instance needs to be running for scheduling to work. In order to reduce the amount of evaluations, schedules are checked every 30 seconds, which means the 6-placeholder format should be discouraged in favor of the minute-level precision 5-placeholder format. 
+Jobs may be sent automatically based on a cron expression. As with other cron-based systems, at least one instance needs to be running for scheduling to work. In order to reduce the amount of evaluations, schedules are checked every 30 seconds, which means the 6-placeholder format should be discouraged in favor of the minute-level precision 5-placeholder format. 
 
 For example, use this format, which implies "any second during 3:30 am every day"
 
@@ -954,7 +954,7 @@ but **not** this format which is parsed as "only run exactly at 3:30:30 am every
 30 30 3 * * *
 ```
 
-In order mitigate clock skew and drift, every 10 minutes the clocks of each instance are compared to the database server's clock. The skew, if any, is stored and used as an offset during cron evaluation to ensure all instances are synchronized. Internally, job throttling options are then used to make sure only 1 job is sended even if multiple instances are running. 
+In order mitigate clock skew and drift, every 10 minutes the clocks of each instance are compared to the database server's clock. The skew, if any, is stored and used as an offset during cron evaluation to ensure all instances are synchronized. Internally, job throttling options are then used to make sure only 1 job is sent even if multiple instances are running. 
 
 If needed, the default clock monitoring interval can be adjusted using `clockMonitorIntervalSeconds` or `clockMonitorIntervalMinutes`. Additionally, to disable scheduling on an instance completely, use the following in the constructor options.
 
@@ -968,7 +968,7 @@ For more cron documentation and examples see the docs for the [cron-parser packa
 
 ### `schedule(name, cron, data, options)`
 
-Schedules a job to be sended to the specified queue based on a cron expression. If the schedule already exists, it's updated to the new cron expression. 
+Schedules a job to be sent to the specified queue based on a cron expression. If the schedule already exists, it's updated to the new cron expression. 
 
 **Arguments**
 
