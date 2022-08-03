@@ -1,5 +1,4 @@
 const assert = require('assert')
-const pMap = require('p-map')
 const delay = require('delay')
 const helper = require('./testHelper')
 const PgBoss = require('../')
@@ -9,6 +8,8 @@ const currentSchemaVersion = require('../version.json').schema
 
 describe('multi-master', function () {
   it('should only allow 1 master to start at a time', async function () {
+    const { default: pMap } = await import('p-map')
+
     const replicaCount = 20
     const config = { ...this.test.bossConfig, noSupervisor: true, max: 2 }
     const instances = []
@@ -27,7 +28,9 @@ describe('multi-master', function () {
   })
 
   it('should only allow 1 master to migrate to latest at a time', async function () {
-    const replicaCount = 20
+    const { default: pMap } = await import('p-map')
+
+    const replicaCount = 5
     const config = { ...this.test.bossConfig, noSupervisor: true, max: 2 }
 
     const db = await helper.getDb()

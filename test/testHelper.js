@@ -33,6 +33,8 @@ function getConfig (options = {}) {
   if (inTravis) {
     config.password = ''
     config.schema = process.env.TRAVIS_JOB_ID
+    config.user = process.env.PGUSER
+    config.port = process.env.PGPORT
   }
 
   if (options.testKey) {
