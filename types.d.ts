@@ -91,7 +91,13 @@ declare namespace PgBoss {
     singletonNextSlot?: boolean;
   }
 
-  type SendOptions = JobOptions & ExpirationOptions & RetentionOptions & RetryOptions & CompletionOptions
+  interface ConnectionOptions {
+    db?: Db;
+  }
+
+  type InsertOptions = ConnectionOptions;
+
+  type SendOptions = JobOptions & ExpirationOptions & RetentionOptions & RetryOptions & CompletionOptions & ConnectionOptions;
 
   type ScheduleOptions = SendOptions & { tz?: string }
 
@@ -112,7 +118,7 @@ declare namespace PgBoss {
 
   type FetchOptions = {
     includeMetadata?: boolean;
-  }
+  } & ConnectionOptions;
 
   interface WorkHandler<ReqData, ResData> {
     (job: PgBoss.JobWithDoneCallback<ReqData, ResData>): Promise<ResData> | void;
@@ -190,7 +196,7 @@ declare namespace PgBoss {
     retryLimit?: number;
     retryDelay?: number;
     retryBackoff?: boolean;
-    startAfter?: Date | string;    
+    startAfter?: Date | string;
     singletonKey?: string;
     expireInSeconds?: number;
     keepUntil?: Date | string;
@@ -298,6 +304,7 @@ declare class PgBoss extends EventEmitter {
   sendDebounced(name: string, data: object, options: PgBoss.SendOptions, seconds: number, key: string): Promise<string | null>;
 
   insert(jobs: PgBoss.JobInsert[]): Promise<void>;
+  insert(jobs: PgBoss.JobInsert[], options: PgBoss.InsertOptions): Promise<void>;
 
   work<ReqData, ResData>(name: string, handler: PgBoss.WorkHandler<ReqData, ResData>): Promise<string>;
   work<ReqData, ResData>(name: string, options: PgBoss.WorkOptions & { includeMetadata: true }, handler: PgBoss.WorkWithMetadataHandler<ReqData, ResData>): Promise<string>;
@@ -311,7 +318,7 @@ declare class PgBoss extends EventEmitter {
 
   /**
    * Notify worker that something has changed
-   * @param workerId 
+   * @param workerId
    */
   notifyWorker(workerId: string): void;
 

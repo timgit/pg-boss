@@ -99,4 +99,26 @@ describe('fetch', function () {
       assert(job.keepuntil !== undefined)
     })
   })
+
+  it('should fetch a job with custom connection', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const queue = this.test.bossConfig.schema
+
+    let calledCounter = 0
+    const db = await helper.getDb()
+    const options = {
+      db: {
+        async executeSql (sql, values) {
+          calledCounter++
+          return db.pool.query(sql, values)
+        }
+      }
+    }
+
+    await boss.send(queue, {}, options)
+    const [job] = await boss.fetch(queue, 10, options)
+    assert(queue === job.name)
+    assert(job.startedon === undefined)
+    assert.strictEqual(calledCounter, 2)
+  })
 })
