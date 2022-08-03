@@ -397,6 +397,7 @@ class Manager extends EventEmitter {
 
   async createJob (name, data, options, singletonOffset = 0) {
     const {
+      db: wrapper,
       expireIn,
       priority,
       startAfter,
@@ -427,8 +428,8 @@ class Manager extends EventEmitter {
       keepUntil, // 13
       onComplete // 14
     ]
-
-    const result = await this.db.executeSql(this.insertJobCommand, values)
+    const db = wrapper || this.db
+    const result = await db.executeSql(this.insertJobCommand, values)
 
     if (result && result.rowCount === 1) {
       return result.rows[0].id
@@ -449,10 +450,12 @@ class Manager extends EventEmitter {
     return await this.createJob(name, data, options, singletonOffset)
   }
 
-  async insert (jobs) {
+  async insert (jobs, options = {}) {
+    const { db: wrapper } = options
+    const db = wrapper || this.db
     const checkedJobs = Attorney.checkInsertArgs(jobs)
     const data = JSON.stringify(checkedJobs)
-    return await this.db.executeSql(this.insertJobsCommand, [data])
+    return await db.executeSql(this.insertJobsCommand, [data])
   }
 
   getDebounceStartAfter (singletonSeconds, clockOffset) {
@@ -474,8 +477,8 @@ class Manager extends EventEmitter {
 
   async fetch (name, batchSize, options = {}) {
     const values = Attorney.checkFetchArgs(name, batchSize, options)
-
-    const result = await this.db.executeSql(
+    const db = options.db || this.db
+    const result = await db.executeSql(
       this.nextJobCommand(options.includeMetadata || false),
       [values.name, batchSize || 1]
     )
