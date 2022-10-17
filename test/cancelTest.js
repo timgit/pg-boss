@@ -56,4 +56,27 @@ describe('cancel', function () {
 
     await boss.cancel(jobs)
   })
+
+  it('should cancel a pending job with custom connection', async function () {
+    const config = this.test.bossConfig
+    const boss = this.test.boss = await helper.start(config)
+
+    let called = false
+    const _db = await helper.getDb()
+    const db = {
+      async executeSql (sql, values) {
+        called = true
+        return _db.pool.query(sql, values)
+      }
+    }
+
+    const jobId = await boss.send('will_cancel', null, { startAfter: 1 })
+
+    await boss.cancel(jobId, { db })
+
+    const job = await boss.getJobById(jobId)
+
+    assert(job && job.state === 'cancelled')
+    assert.strictEqual(called, true)
+  })
 })

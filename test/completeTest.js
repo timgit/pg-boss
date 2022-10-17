@@ -298,4 +298,41 @@ describe('complete', function () {
 
     assert.strictEqual(job.output.message, completionError.message)
   })
+
+  it('should complete a batch of jobs with custom connection', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, onComplete: true })
+
+    const queue = 'complete-batch'
+    const batchSize = 3
+
+    await Promise.all([
+      boss.send(queue),
+      boss.send(queue),
+      boss.send(queue)
+    ])
+
+    const countJobs = (state) => helper.countJobs(this.test.bossConfig.schema, 'name = $1 AND state = $2', [queue, state])
+
+    const jobs = await boss.fetch(queue, batchSize)
+
+    const activeCount = await countJobs(PgBoss.states.active)
+
+    assert.strictEqual(activeCount, batchSize)
+
+    let called = false
+    const _db = await helper.getDb()
+    const db = {
+      async executeSql (sql, values) {
+        called = true
+        return _db.pool.query(sql, values)
+      }
+    }
+
+    await boss.complete(jobs.map(job => job.id), { db })
+
+    const completed = await boss.fetchCompleted(queue, batchSize)
+
+    assert.strictEqual(batchSize, completed.length)
+    assert.strictEqual(called, true)
+  })
 })

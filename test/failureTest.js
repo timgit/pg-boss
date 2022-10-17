@@ -187,4 +187,26 @@ describe('failure', function () {
     assert.strictEqual(job.data.state, 'failed')
     assert(job.data.response.message.includes(message))
   })
+
+  it('should fail a job with custom connection', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const queue = this.test.bossConfig.schema
+
+    await boss.send(queue)
+
+    const job = await boss.fetch(queue)
+
+    let called = false
+    const _db = await helper.getDb()
+    const db = {
+      async executeSql (sql, values) {
+        called = true
+        return _db.pool.query(sql, values)
+      }
+    }
+
+    await boss.fail(job.id, { db })
+
+    assert.strictEqual(called, true)
+  })
 })
