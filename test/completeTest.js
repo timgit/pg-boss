@@ -328,7 +328,7 @@ describe('complete', function () {
       }
     }
 
-    await boss.complete(jobs.map(job => job.id), { db })
+    await boss.complete(jobs.map(job => job.id), null, { db })
 
     const completed = await boss.fetchCompleted(queue, batchSize)
 
