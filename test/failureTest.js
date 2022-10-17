@@ -205,7 +205,7 @@ describe('failure', function () {
       }
     }
 
-    await boss.fail(job.id, { db })
+    await boss.fail(job.id, null, { db })
 
     assert.strictEqual(called, true)
   })
