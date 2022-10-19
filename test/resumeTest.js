@@ -31,4 +31,33 @@ describe('cancel', function () {
 
     assert(job2 && job2.state === 'created')
   })
+
+  it('should cancel and resume a pending job with custom connection', async function () {
+    const config = this.test.bossConfig
+    const boss = this.test.boss = await helper.start(config)
+
+    const jobId = await boss.send('will_cancel', null, { startAfter: 1 })
+
+    let callCount = 0
+    const _db = await helper.getDb()
+    const db = {
+      async executeSql (sql, values) {
+        callCount++
+        return _db.pool.query(sql, values)
+      }
+    }
+
+    await boss.cancel(jobId, { db })
+
+    const job = await boss.getJobById(jobId, { db })
+
+    assert(job && job.state === 'cancelled')
+
+    await boss.resume(jobId, { db })
+
+    const job2 = await boss.getJobById(jobId, { db })
+
+    assert(job2 && job2.state === 'created')
+    assert.strictEqual(callCount, 4)
+  })
 })
