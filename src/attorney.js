@@ -377,7 +377,7 @@ function applyMonitoringConfig (config) {
 
 function applyUuidConfig (config) {
   assert(!('uuid' in config) || config.uuid === 'v1' || config.uuid === 'v4', 'configuration assert: uuid option only supports v1 or v4')
-  config.uuid = config.uuid || 'v1'
+  config.uuid = config.uuid || 'v4'
 }
 
 function warnClockSkew (message) {

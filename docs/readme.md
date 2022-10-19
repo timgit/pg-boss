@@ -333,7 +333,7 @@ The following options can be set as properties in an object for additional confi
 
 Queue options contain the following constructor-only settings.
 
-* **uuid** - string, defaults to "v1"
+* **uuid** - string, defaults to "v4"
 
     job uuid format used, "v1" or "v4"
 
