@@ -48,14 +48,14 @@ declare namespace PgBoss {
 
   type ConstructorOptions =
     DatabaseOptions
-      & QueueOptions
-      & SchedulingOptions
-      & MaintenanceOptions
-      & ExpirationOptions
-      & RetentionOptions
-      & RetryOptions
-      & JobPollingOptions
-      & CompletionOptions
+    & QueueOptions
+    & SchedulingOptions
+    & MaintenanceOptions
+    & ExpirationOptions
+    & RetentionOptions
+    & RetryOptions
+    & JobPollingOptions
+    & CompletionOptions
 
   interface CompletionOptions {
     onComplete?: boolean;
@@ -341,22 +341,22 @@ declare class PgBoss extends EventEmitter {
   fetchCompleted<T>(name: string, batchSize: number, options: PgBoss.FetchOptions & { includeMetadata: true }): Promise<PgBoss.JobWithMetadata<T>[] | null>;
   fetchCompleted<T>(name: string, batchSize: number, options: PgBoss.FetchOptions): Promise<PgBoss.Job<T>[] | null>;
 
-  cancel(id: string, options: PgBoss.ConnectionOptions): Promise<void>;
-  cancel(ids: string[], options: PgBoss.ConnectionOptions): Promise<void>;
+  cancel(id: string, options?: PgBoss.ConnectionOptions): Promise<void>;
+  cancel(ids: string[], options?: PgBoss.ConnectionOptions): Promise<void>;
 
-  resume(id: string, options: PgBoss.ConnectionOptions): Promise<void>;
-  resume(ids: string[], options: PgBoss.ConnectionOptions): Promise<void>;
+  resume(id: string, options?: PgBoss.ConnectionOptions): Promise<void>;
+  resume(ids: string[], options?: PgBoss.ConnectionOptions): Promise<void>;
 
-  complete(id: string, options: PgBoss.ConnectionOptions): Promise<void>;
-  complete(id: string, data: object, options: PgBoss.ConnectionOptions): Promise<void>;
-  complete(ids: string[], options: PgBoss.ConnectionOptions): Promise<void>;
+  complete(id: string, options?: PgBoss.ConnectionOptions): Promise<void>;
+  complete(id: string, data: object, options?: PgBoss.ConnectionOptions): Promise<void>;
+  complete(ids: string[], options?: PgBoss.ConnectionOptions): Promise<void>;
 
-  fail(id: string, options: PgBoss.ConnectionOptions): Promise<void>;
-  fail(id: string, data: object, options: PgBoss.ConnectionOptions): Promise<void>;
-  fail(ids: string[], options: PgBoss.ConnectionOptions): Promise<void>;
+  fail(id: string, options?: PgBoss.ConnectionOptions): Promise<void>;
+  fail(id: string, data: object, options?: PgBoss.ConnectionOptions): Promise<void>;
+  fail(ids: string[], options?: PgBoss.ConnectionOptions): Promise<void>;
 
   getQueueSize(name: string, options?: object): Promise<number>;
-  getJobById(id: string, options: PgBoss.ConnectionOptions): Promise<PgBoss.JobWithMetadata | null>;
+  getJobById(id: string, options?: PgBoss.ConnectionOptions): Promise<PgBoss.JobWithMetadata | null>;
 
   deleteQueue(name: string): Promise<void>;
   deleteAllQueues(): Promise<void>;
