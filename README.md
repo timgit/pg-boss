@@ -88,7 +88,7 @@ CREATE EXTENSION pgcrypto;
 
 If you use a different database name, username or password, or want to run the test suite against a database that is running on a remote machine then you will need to edit the `test/config.json` file with the appropriate connection values.
 
-You can then run the linter and test suite using:
+You can then run the linter and test suite using
 
 ```bash
 npm test
