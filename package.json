@@ -1,6 +1,6 @@
 {
   "name": "pg-boss",
-  "version": "8.1.1",
+  "version": "8.2.0",
   "description": "Queueing jobs in Node.js using PostgreSQL like a boss",
   "main": "./src/index.js",
   "engines": {
@@ -10,9 +10,9 @@
     "cron-parser": "^4.0.0",
     "delay": "^5.0.0",
     "lodash.debounce": "^4.0.8",
-    "p-map": "^5.3.0",
+    "p-map": "^4.0.0",
     "pg": "^8.5.1",
-    "serialize-error": "^11.0.0",
+    "serialize-error": "^8.1.0",
     "uuid": "^9.0.0"
   },
   "devDependencies": {

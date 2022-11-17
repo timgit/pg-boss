@@ -1,4 +1,5 @@
 const helper = require('./testHelper')
+const pMap = require('p-map')
 
 describe('speed', function () {
   const expectedSeconds = 2
@@ -12,8 +13,6 @@ describe('speed', function () {
   let boss
 
   beforeEach(async function () {
-    const { default: pMap } = await import('p-map')
-
     const defaults = { noSupervisor: true, min: 10, max: 10 }
     boss = await helper.start({ ...this.currentTest.bossConfig, ...defaults })
     await pMap(jobs, job => boss.send(job.name, job.data))

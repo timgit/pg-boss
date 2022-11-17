@@ -90,8 +90,6 @@ class PgBoss extends EventEmitter {
   }
 
   async start () {
-    const { serializeError } = await import('serialize-error')
-
     if (!this.stopped) {
       return this
     }
@@ -106,7 +104,7 @@ class PgBoss extends EventEmitter {
 
     this.started = true
 
-    this.manager.start({ stringify: serializeError })
+    this.manager.start()
 
     if (!this.config.noSupervisor) {
       await this.boss.supervise()

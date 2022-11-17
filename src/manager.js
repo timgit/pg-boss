@@ -3,9 +3,10 @@ const EventEmitter = require('events')
 const delay = require('delay')
 const uuid = require('uuid')
 const debounce = require('lodash.debounce')
-
+const { serializeError: stringify } = require('serialize-error')
 const Attorney = require('./attorney')
 const Worker = require('./worker')
+const pMap = require('p-map')
 
 const { QUEUES: BOSS_QUEUES } = require('./boss')
 const { QUEUES: TIMEKEEPER_QUEUES } = require('./timekeeper')
@@ -43,8 +44,6 @@ const resolveWithinSeconds = async (promise, seconds) => {
 class Manager extends EventEmitter {
   constructor (db, config) {
     super()
-
-    this.stringify = null
 
     this.config = config
     this.db = db
@@ -98,8 +97,7 @@ class Manager extends EventEmitter {
     this.emitWipThrottled = debounce(() => this.emit(events.wip, this.getWipData()), WIP_EVENT_INTERVAL, WIP_DEBOUNCE_OPTIONS)
   }
 
-  start ({ stringify }) {
-    this.stringify = stringify
+  start () {
     this.stopping = false
   }
 
@@ -213,8 +211,6 @@ class Manager extends EventEmitter {
     const fetch = () => this.fetch(name, batchSize || (teamSize - queueSize), { includeMetadata })
 
     const onFetch = async (jobs) => {
-      const { default: pMap } = await import('p-map')
-
       if (this.config.__test__throw_worker) {
         throw new Error('__test__throw_worker')
       }
@@ -524,7 +520,7 @@ class Manager extends EventEmitter {
       ? data
       : { value: data }
 
-    return this.stringify(result)
+    return stringify(result)
   }
 
   mapCompletionResponse (ids, result) {

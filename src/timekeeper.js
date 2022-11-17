@@ -2,6 +2,7 @@ const EventEmitter = require('events')
 const plans = require('./plans')
 const cronParser = require('cron-parser')
 const Attorney = require('./attorney')
+const pMap = require('p-map')
 
 const queues = {
   CRON: '__pgboss__cron',
@@ -124,8 +125,6 @@ class Timekeeper extends EventEmitter {
 
   async onCron () {
     if (this.stopped) return
-
-    const { default: pMap } = await import('p-map')
 
     try {
       if (this.config.__test__throw_clock_monitoring) {

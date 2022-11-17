@@ -5,11 +5,10 @@ const PgBoss = require('../')
 const Contractor = require('../src/contractor')
 const migrationStore = require('../src/migrationStore')
 const currentSchemaVersion = require('../version.json').schema
+const pMap = require('p-map')
 
 describe('multi-master', function () {
   it('should only allow 1 master to start at a time', async function () {
-    const { default: pMap } = await import('p-map')
-
     const replicaCount = 20
     const config = { ...this.test.bossConfig, noSupervisor: true, max: 2 }
     const instances = []
@@ -28,8 +27,6 @@ describe('multi-master', function () {
   })
 
   it('should only allow 1 master to migrate to latest at a time', async function () {
-    const { default: pMap } = await import('p-map')
-
     const replicaCount = 5
     const config = { ...this.test.bossConfig, noSupervisor: true, max: 2 }
 
