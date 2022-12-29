@@ -438,6 +438,9 @@ By default, calling `stop()` without any arguments will gracefully wait for all 
 
 * `options`: object
 
+  * `destroy`, bool
+    Default: `false`. If `true` and the database connection is managed by pg-boss, it will destroy the connection pool.
+
   * `graceful`, bool
 
     Default: `true`. If `true`, the PgBoss instance will wait for any workers that are currently processing jobs to finish, up to the specified timeout. During this period, new jobs will not be processed, but active jobs will be allowed to finish.
