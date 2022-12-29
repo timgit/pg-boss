@@ -126,7 +126,7 @@ class PgBoss extends EventEmitter {
       this.emit(events.stopped)
     }
 
-    let { graceful = true, timeout = 30000 } = options
+    let { destroy = false, graceful = true, timeout = 30000 } = options
 
     timeout = Math.max(timeout, 1000)
 
@@ -138,6 +138,10 @@ class PgBoss extends EventEmitter {
     const shutdown = async () => {
       this.stopped = true
       this.stoppingOn = null
+
+      if (this.db.isOurs && this.db.opened && destroy) {
+        await this.db.close()
+      }
 
       this.emit(events.stopped)
     }

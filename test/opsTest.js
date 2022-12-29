@@ -63,6 +63,23 @@ describe('ops', function () {
     await boss.stop({ graceful: false })
   })
 
+  it('should destroy the connection pool', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, ...defaults })
+    await boss.stop({ destroy: true, graceful: false })
+
+    assert(boss.db.pool.totalCount === 0)
+  })
+
+  it('should destroy the connection pool gracefully', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, ...defaults })
+    await boss.stop({ destroy: true })
+    await new Promise((resolve) => {
+      boss.on('stopped', () => resolve())
+    })
+
+    assert(boss.db.pool.totalCount === 0)
+  })
+
   it('should emit error during graceful stop if worker is busy', async function () {
     const boss = await helper.start({ ...this.test.bossConfig, ...defaults, __test__throw_stop: true })
     const queue = this.test.bossConfig.schema
