@@ -242,6 +242,7 @@ declare namespace PgBoss {
   }
 
   interface StopOptions {
+    destroy?: boolean,
     graceful?: boolean,
     timeout?: number
   }
