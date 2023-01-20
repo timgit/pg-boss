@@ -601,7 +601,7 @@ function insertJobs (schema) {
       keepUntil,
       on_complete
     )
-    SELECT 
+    SELECT
       COALESCE(id, gen_random_uuid()) as id,
       name,
       data,
@@ -635,7 +635,7 @@ function insertJobs (schema) {
 function purge (schema, interval) {
   return `
     DELETE FROM ${schema}.archive
-    WHERE archivedOn < (now() - interval '${interval}')
+    WHERE archivedOn < (now() - interval '${interval}') RETURNING id
   `
 }
 
