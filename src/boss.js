@@ -11,7 +11,8 @@ const queues = {
 const events = {
   error: 'error',
   monitorStates: 'monitor-states',
-  maintenance: 'maintenance'
+  maintenance: 'maintenance',
+  afterPurge: 'after-purge'
 }
 
 class Boss extends EventEmitter {
@@ -213,7 +214,11 @@ class Boss extends EventEmitter {
   }
 
   async purge () {
-    await this.executeSql(this.purgeCommand)
+    const purgedJobs = await this.executeSql(this.purgeCommand)
+    const deleteResult = purgedJobs.find(r => r.command === 'DELETE')
+    if (deleteResult && deleteResult.rows && deleteResult.rows.length > 0) {
+      this.emit(events.afterPurge, deleteResult.rows.map(r => r.id))
+    }
   }
 
   async setMaintenanceTime () {
