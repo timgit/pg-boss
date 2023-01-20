@@ -13,6 +13,7 @@
   - [`monitor-states`](#monitor-states)
   - [`wip`](#wip)
   - [`stopped`](#stopped)
+  - [`after-purge`](#after-purge)
 - [Static functions](#static-functions)
   - [`string getConstructionPlans(schema)`](#string-getconstructionplansschema)
   - [`string getMigrationPlans(schema, version)`](#string-getmigrationplansschema-version)
@@ -241,6 +242,17 @@ Emitted at most once every 2 seconds when workers are active and jobs are enteri
 ## `stopped`
 
 Emitted after `stop()` once all workers have completed their work and maintenance has been shut down.
+
+## `after-purge`
+
+Emitted after `purge()` gets called from the maintenance job. Only emitted if any archived job was deleted
+```js
+const boss = new PgBoss(....)
+boss.on('after-purge', (jobIds) => {
+  console.log(jobIds) // ['fc738fb0-1de5-4947-b138-40d6a790749e']
+})
+
+```
 
 # Static functions
 
