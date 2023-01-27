@@ -170,6 +170,7 @@ class PgBoss extends EventEmitter {
           await delay(1000)
         }
 
+        await this.boss.stop()
         await shutdown()
       } catch (err) {
         this.emit(events.error, err)
