@@ -601,7 +601,7 @@ function insertJobs (schema) {
       keepUntil,
       on_complete
     )
-    SELECT 
+    SELECT
       COALESCE(id, gen_random_uuid()) as id,
       name,
       data,
@@ -639,12 +639,16 @@ function purge (schema, interval) {
   `
 }
 
-function archive (schema, interval) {
+function archive (schema, completedInterval, failedInterval = completedInterval) {
   return `
     WITH archived_rows AS (
       DELETE FROM ${schema}.job
-      WHERE
-        completedOn < (now() - interval '${interval}')
+      WHERE (
+          state <> '${states.failed}' AND completedOn < (now() - interval '${completedInterval}')
+        )
+        OR (
+          state = '${states.failed}' AND completedOn < (now() - interval '${failedInterval}')
+        )
         OR (
           state < '${states.active}' AND keepUntil < now()
         )

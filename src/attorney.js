@@ -159,6 +159,7 @@ function getConfig (value) {
   applyDatabaseConfig(config)
   applyMaintenanceConfig(config)
   applyArchiveConfig(config)
+  applyArchiveFailedConfig(config)
   applyDeleteConfig(config)
   applyMonitoringConfig(config)
   applyUuidConfig(config)
@@ -189,6 +190,20 @@ function applyArchiveConfig (config) {
 
   config.archiveSeconds = config.archiveCompletedAfterSeconds || ARCHIVE_DEFAULT
   config.archiveInterval = `${config.archiveSeconds} seconds`
+
+  if (config.archiveSeconds < 60) {
+    emitWarning(WARNINGS.CRON_DISABLED)
+  }
+}
+
+function applyArchiveFailedConfig (config) {
+  const ARCHIVE_DEFAULT = 60 * 60 * 24 * 7
+
+  assert(!('archiveFailedAfterSeconds' in config) || config.archiveFailedAfterSeconds >= 1,
+    'configuration assert: archiveFailedAfterSeconds must be at least every second and less than ')
+
+  config.archiveFailedSeconds = config.archiveFailedAfterSeconds || ARCHIVE_DEFAULT
+  config.archiveFailedInterval = `${config.archiveFailedSeconds} seconds`
 
   if (config.archiveSeconds < 60) {
     emitWarning(WARNINGS.CRON_DISABLED)
