@@ -205,7 +205,7 @@ function applyArchiveFailedConfig (config) {
   config.archiveFailedSeconds = config.archiveFailedAfterSeconds || ARCHIVE_DEFAULT
   config.archiveFailedInterval = `${config.archiveFailedSeconds} seconds`
 
-  if (config.archiveSeconds < 60) {
+  if (config.archiveFailedSeconds < 60) {
     emitWarning(WARNINGS.CRON_DISABLED)
   }
 }
