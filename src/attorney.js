@@ -197,12 +197,10 @@ function applyArchiveConfig (config) {
 }
 
 function applyArchiveFailedConfig (config) {
-  const ARCHIVE_DEFAULT = 60 * 60 * 24 * 7
-
   assert(!('archiveFailedAfterSeconds' in config) || config.archiveFailedAfterSeconds >= 1,
     'configuration assert: archiveFailedAfterSeconds must be at least every second and less than ')
 
-  config.archiveFailedSeconds = config.archiveFailedAfterSeconds || ARCHIVE_DEFAULT
+  config.archiveFailedSeconds = config.archiveFailedAfterSeconds || config.archiveCompletedAfterSeconds
   config.archiveFailedInterval = `${config.archiveFailedSeconds} seconds`
 
   if (config.archiveFailedSeconds < 60) {
