@@ -203,7 +203,8 @@ function applyArchiveFailedConfig (config) {
   config.archiveFailedSeconds = config.archiveFailedAfterSeconds || config.archiveCompletedAfterSeconds
   config.archiveFailedInterval = `${config.archiveFailedSeconds} seconds`
 
-  if (config.archiveFailedSeconds < 60) {
+  // Do not emit warning twice
+  if (config.archiveFailedSeconds < 60 && config.archiveSeconds >= 60) {
     emitWarning(WARNINGS.CRON_DISABLED)
   }
 }
