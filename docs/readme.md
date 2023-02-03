@@ -347,7 +347,7 @@ Queue options contain the following constructor-only settings.
 
     Specifies how long in seconds failed jobs get archived. Note: a warning will be emitted if set to lower than 60s and cron processing will be disabled.
 
-  Default: 12 hours
+  Default: `archiveCompletedAfterSeconds`
 
 **Monitoring options**
 
