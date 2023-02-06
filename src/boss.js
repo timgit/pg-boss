@@ -12,7 +12,7 @@ const events = {
   error: 'error',
   monitorStates: 'monitor-states',
   maintenance: 'maintenance',
-  afterPurge: 'after-purge'
+  purge: 'purge'
 }
 
 class Boss extends EventEmitter {
