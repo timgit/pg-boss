@@ -200,7 +200,7 @@ function applyArchiveFailedConfig (config) {
   assert(!('archiveFailedAfterSeconds' in config) || config.archiveFailedAfterSeconds >= 1,
     'configuration assert: archiveFailedAfterSeconds must be at least every second and less than ')
 
-  config.archiveFailedSeconds = config.archiveFailedAfterSeconds || config.archiveCompletedAfterSeconds
+  config.archiveFailedSeconds = config.archiveFailedAfterSeconds || config.archiveSeconds
   config.archiveFailedInterval = `${config.archiveFailedSeconds} seconds`
 
   // Do not emit warning twice
