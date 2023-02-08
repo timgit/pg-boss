@@ -6,15 +6,13 @@ const { states } = require('../src/plans')
 describe('archive', function () {
   const defaults = {
     archiveCompletedAfterSeconds: 1,
-    archiveFailedAfterSeconds: 10,
     maintenanceIntervalSeconds: 1
   }
 
   it('should archive a completed job', async function () {
     const config = { ...this.test.bossConfig, ...defaults }
     const boss = this.test.boss = await helper.start(config)
-
-    const queue = 'archive-completed'
+    const queue = this.test.bossConfig.schema
 
     const jobId = await boss.send(queue)
     const job = await boss.fetch(queue)
@@ -54,8 +52,7 @@ describe('archive', function () {
   it('should archive a created job', async function () {
     const config = { ...this.test.bossConfig, ...defaults }
     const boss = this.test.boss = await helper.start(config)
-
-    const queue = 'archive-created'
+    const queue = this.test.bossConfig.schema
 
     const jobId = await boss.send(queue, null, { retentionSeconds: 1 })
 
@@ -70,8 +67,7 @@ describe('archive', function () {
   it('should archive a created job - cascaded config', async function () {
     const config = { ...this.test.bossConfig, ...defaults, retentionSeconds: 1 }
     const boss = this.test.boss = await helper.start(config)
-
-    const queue = 'archive-created-cascaded-config'
+    const queue = this.test.bossConfig.schema
 
     const jobId = await boss.send(queue)
 
@@ -84,10 +80,9 @@ describe('archive', function () {
   })
 
   it('should not archive a failed job before the config setting', async function () {
-    const config = { ...this.test.bossConfig, ...defaults }
+    const config = { ...this.test.bossConfig, ...defaults, archiveFailedAfterSeconds: 10 }
     const boss = this.test.boss = await helper.start(config)
-
-    const queue = 'archive-failed'
+    const queue = this.test.bossConfig.schema
 
     const failPayload = { someReason: 'nuna' }
     const jobId = await boss.send(queue, null, { retentionSeconds: 1 })
@@ -101,10 +96,9 @@ describe('archive', function () {
   })
 
   it('should archive a failed job', async function () {
-    const config = { ...this.test.bossConfig, ...defaults, archiveFailedAfterSeconds: 1 }
+    const config = { ...this.test.bossConfig, maintenanceIntervalSeconds: 1, archiveFailedAfterSeconds: 1 }
     const boss = this.test.boss = await helper.start(config)
-
-    const queue = 'archive-failed'
+    const queue = this.test.bossConfig.schema
 
     const failPayload = { someReason: 'nuna' }
     const jobId = await boss.send(queue, null, { retentionSeconds: 1 })
