@@ -33,7 +33,7 @@ class Boss extends EventEmitter {
     this.events = events
 
     this.expireCommand = plans.locked(config.schema, plans.expire(config.schema))
-    this.archiveCommand = plans.locked(config.schema, plans.archive(config.schema, config.archiveInterval))
+    this.archiveCommand = plans.locked(config.schema, plans.archive(config.schema, config.archiveInterval, config.archiveFailedInterval))
     this.purgeCommand = plans.locked(config.schema, plans.purge(config.schema, config.deleteAfter))
     this.getMaintenanceTimeCommand = plans.getMaintenanceTime(config.schema)
     this.setMaintenanceTimeCommand = plans.setMaintenanceTime(config.schema)
