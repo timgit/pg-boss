@@ -44,6 +44,7 @@ declare namespace PgBoss {
     maintenanceIntervalMinutes?: number;
 
     archiveCompletedAfterSeconds?: number;
+    archiveFailedAfterSeconds?: number;
   }
 
   type ConstructorOptions =
