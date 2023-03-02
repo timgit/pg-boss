@@ -1,4 +1,6 @@
+const assert = require('assert')
 const PgBoss = require('../')
+const delay = require('delay')
 
 describe('background processing error handling', function () {
   it('maintenance error handling works', async function () {
@@ -52,20 +54,25 @@ describe('background processing error handling', function () {
   })
 
   it('clock monitoring error handling works', async function () {
-    const config = { ...this.test.bossConfig, __test__throw_clock_monitoring: true }
+    const config = {
+      ...this.test.bossConfig,
+      clockMonitorIntervalSeconds: 1,
+      __test__throw_clock_monitoring: 'pg-boss mock error: clock monitoring'
+    }
+
+    let errorCount = 0
+
     const boss = this.test.boss = new PgBoss(config)
 
-    return new Promise((resolve) => {
-      let resolved = false
-
-      boss.on('error', () => {
-        if (!resolved) {
-          resolved = true
-          resolve()
-        }
-      })
-
-      boss.start().then(() => {})
+    boss.once('error', (error) => {
+      assert.strictEqual(error.message, config.__test__throw_clock_monitoring)
+      errorCount++
     })
+
+    await boss.start()
+
+    await delay(8000)
+
+    assert.strictEqual(errorCount, 1)
   })
 })
