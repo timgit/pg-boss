@@ -387,6 +387,14 @@ function applyMonitoringConfig (config) {
     ('cronMonitorIntervalSeconds' in config)
       ? config.cronMonitorIntervalSeconds
       : 60
+
+  assert(!('cronWorkerIntervalSeconds' in config) || (config.cronWorkerIntervalSeconds >= 1 && config.cronWorkerIntervalSeconds <= 60),
+    'configuration assert: cronWorkerIntervalSeconds must be between 1 and 60 seconds')
+
+  config.cronWorkerIntervalSeconds =
+    ('cronWorkerIntervalSeconds' in config)
+      ? config.cronWorkerIntervalSeconds
+      : 4
 }
 
 function applyUuidConfig (config) {

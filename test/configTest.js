@@ -43,23 +43,4 @@ describe('config', function () {
       assert(false)
     } catch {}
   })
-
-  it.skip('start() should fail if pgcrypto is not available', async function () {
-    const database = 'pgboss_test1'
-
-    await helper.createDb(database)
-
-    const config = { ...this.test.bossConfig, database }
-
-    const boss = new PgBoss(config)
-
-    try {
-      await boss.start()
-      assert(false, 'Error should have been thrown by missing pgcrypto extension')
-    } catch (err) {
-      assert(err.message.includes('gen_random_uuid()'))
-    }
-
-    await helper.tryDropDb(database)
-  })
 })

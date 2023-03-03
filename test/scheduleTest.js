@@ -5,13 +5,18 @@ const helper = require('./testHelper')
 const plans = require('../src/plans')
 const PgBoss = require('../')
 
-const ASSERT_DELAY = 9000
+const ASSERT_DELAY = 4000
 
 describe('schedule', function () {
   it('should send job based on every minute expression', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const config = {
+      ...this.test.bossConfig,
+      cronWorkerIntervalSeconds: 1
+    }
 
-    const queue = 'schedule-every-min'
+    const boss = this.test.boss = await helper.start(config)
+
+    const queue = this.test.bossConfig.schema
 
     await boss.schedule(queue, '* * * * *')
 
@@ -25,12 +30,13 @@ describe('schedule', function () {
   it('should accept a custom clock monitoring interval in seconds', async function () {
     const config = {
       ...this.test.bossConfig,
-      clockMonitorIntervalSeconds: 1
+      clockMonitorIntervalSeconds: 1,
+      cronWorkerIntervalSeconds: 1
     }
 
     const boss = this.test.boss = await helper.start(config)
 
-    const queue = 'schedule-custom-monitoring-seconds'
+    const queue = this.test.bossConfig.schema
 
     await boss.schedule(queue, '* * * * *')
 
@@ -44,12 +50,13 @@ describe('schedule', function () {
   it('cron monitoring should restart cron if paused', async function () {
     const config = {
       ...this.test.bossConfig,
-      cronMonitorIntervalSeconds: 1
+      cronMonitorIntervalSeconds: 1,
+      cronWorkerIntervalSeconds: 1
     }
 
     const boss = this.test.boss = await helper.start(config)
 
-    const queue = 'schedule-cron-monitoring'
+    const queue = this.test.bossConfig.schema
 
     const { schema } = this.test.bossConfig
     const db = await helper.getDb()
@@ -66,15 +73,22 @@ describe('schedule', function () {
   })
 
   it('should send job based on every minute expression after a restart', async function () {
-    const queue = 'schedule-every-min-restart'
+    const config = {
+      ...this.test.bossConfig,
+      cronMonitorIntervalSeconds: 1,
+      noScheduling: true,
+      noSupervisor: true
+    }
 
-    let boss = await helper.start({ ...this.test.bossConfig, noScheduling: true, noSupervisor: true })
+    let boss = await helper.start(config)
+
+    const queue = this.test.bossConfig.schema
 
     await boss.schedule(queue, '* * * * *')
 
-    await boss.stop({ graceful: false })
+    await boss.stop()
 
-    boss = await helper.start({ ...this.test.bossConfig, noSupervisor: true })
+    boss = await helper.start({ ...this.test.bossConfig, cronWorkerIntervalSeconds: 1 })
 
     await delay(ASSERT_DELAY)
 
@@ -82,13 +96,18 @@ describe('schedule', function () {
 
     assert(job)
 
-    await boss.stop({ graceful: false })
+    await boss.stop()
   })
 
   it('should remove previously scheduled job', async function () {
-    const queue = 'schedule-remove'
+    const config = {
+      ...this.test.bossConfig,
+      noSupervisor: true,
+      cronWorkerIntervalSeconds: 1
+    }
+    const boss = this.test.boss = await helper.start(config)
 
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noSupervisor: true })
+    const queue = this.test.bossConfig.schema
 
     await boss.schedule(queue, '* * * * *')
 
@@ -99,7 +118,7 @@ describe('schedule', function () {
     const db = await helper.getDb()
     await db.executeSql(plans.clearStorage(this.test.bossConfig.schema))
 
-    await boss.start()
+    await boss.start(config)
 
     await delay(ASSERT_DELAY)
 
@@ -109,7 +128,12 @@ describe('schedule', function () {
   })
 
   it('should send job based on current minute in UTC', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const config = {
+      ...this.test.bossConfig,
+      cronWorkerIntervalSeconds: 1
+    }
+
+    const boss = this.test.boss = await helper.start(config)
 
     const queue = this.test.bossConfig.schema
 
@@ -139,7 +163,12 @@ describe('schedule', function () {
   })
 
   it('should send job based on current minute in a specified time zone', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const config = {
+      ...this.test.bossConfig,
+      cronWorkerIntervalSeconds: 1
+    }
+
+    const boss = this.test.boss = await helper.start(config)
 
     const queue = this.test.bossConfig.schema
 
@@ -171,11 +200,17 @@ describe('schedule', function () {
   })
 
   it('should force a clock skew warning', async function () {
-    const boss = this.test.boss = new PgBoss({ ...this.test.bossConfig, __test__force_clock_skew_warning: true })
+    const config = {
+      ...this.test.bossConfig,
+      __test__force_clock_skew_warning: true
+    }
+
+    const boss = this.test.boss = new PgBoss(config)
 
     let warningCount = 0
 
     const warningEvent = 'warning'
+
     const onWarning = (warning) => {
       assert(warning.message.includes('clock skew'))
       warningCount++
