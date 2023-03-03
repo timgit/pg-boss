@@ -341,7 +341,7 @@ class Manager extends EventEmitter {
   }
 
   async sendOnce (name, data, options, key) {
-    options = options || {}
+    options = options ? { ...options } : {}
 
     options.singletonKey = key || name
 
@@ -351,7 +351,7 @@ class Manager extends EventEmitter {
   }
 
   async sendSingleton (name, data, options) {
-    options = options || {}
+    options = options ? { ...options } : {}
 
     options.singletonKey = SINGLETON_QUEUE_KEY
 
@@ -361,7 +361,7 @@ class Manager extends EventEmitter {
   }
 
   async sendAfter (name, data, options, after) {
-    options = options || {}
+    options = options ? { ...options } : {}
     options.startAfter = after
 
     const result = Attorney.checkSendArgs([name, data, options], this.config)
@@ -370,7 +370,7 @@ class Manager extends EventEmitter {
   }
 
   async sendThrottled (name, data, options, seconds, key) {
-    options = options || {}
+    options = options ? { ...options } : {}
     options.singletonSeconds = seconds
     options.singletonNextSlot = false
     options.singletonKey = key
@@ -381,7 +381,7 @@ class Manager extends EventEmitter {
   }
 
   async sendDebounced (name, data, options, seconds, key) {
-    options = options || {}
+    options = options ? { ...options } : {}
     options.singletonSeconds = seconds
     options.singletonNextSlot = true
     options.singletonKey = key

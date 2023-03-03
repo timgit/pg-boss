@@ -189,4 +189,50 @@ describe('schedule', function () {
 
     assert.strictEqual(warningCount, 1)
   })
+
+  it('errors during clock skew monitoring should emit', async function () {
+    const config = {
+      ...this.test.bossConfig,
+      clockMonitorIntervalSeconds: 1,
+      __test__force_clock_monitoring_error: 'pg-boss mock error: clock skew monitoring'
+    }
+
+    let errorCount = 0
+
+    const boss = this.test.boss = new PgBoss(config)
+
+    boss.once('error', error => {
+      assert.strictEqual(error.message, config.__test__force_clock_monitoring_error)
+      errorCount++
+    })
+
+    await boss.start()
+
+    await delay(2000)
+
+    assert.strictEqual(errorCount, 1)
+  })
+
+  it('errors during cron monitoring should emit', async function () {
+    const config = {
+      ...this.test.bossConfig,
+      cronMonitorIntervalSeconds: 1,
+      __test__force_cron_monitoring_error: 'pg-boss mock error: cron monitoring'
+    }
+
+    let errorCount = 0
+
+    const boss = this.test.boss = new PgBoss(config)
+
+    boss.once('error', error => {
+      assert.strictEqual(error.message, config.__test__force_cron_monitoring_error)
+      errorCount++
+    })
+
+    await boss.start()
+
+    await delay(2000)
+
+    assert.strictEqual(errorCount, 1)
+  })
 })

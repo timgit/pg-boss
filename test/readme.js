@@ -4,9 +4,7 @@ async function readme () {
   const PgBoss = require('../src')
   const boss = new PgBoss(helper.getConnectionString())
 
-  boss.on('error', error => {
-    console.error(error)
-  })
+  boss.on('error', console.error)
 
   await boss.start()
 
