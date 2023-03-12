@@ -559,7 +559,7 @@ Available in constructor as a default, or overridden in send.
 
 * **singletonKey** string
 
-  Only allows 1 job (within the same name) to be queued or active with the same singletonKey.
+  Allows a max of 1 job (with the same name and singletonKey) to be queued or active.
 
   ```js
   boss.send('my-job', {}, {singletonKey: '123'}) // resolves a jobId
@@ -570,7 +570,9 @@ Available in constructor as a default, or overridden in send.
 
   * **useSingletonQueue** boolean
 
-  When used in conjunction with singletonKey, only allows 1 job (within the same name) to be queued with the same singletonKey.
+    When used in conjunction with singletonKey, allows a max of 1 job to be queued.
+
+    >By default, there is no limit on the number of these jobs that may be active. However, this behavior may be modified by passing the [enforceSingletonQueueActiveLimit](#fetch) option.
 
   ```js
   boss.send('my-job', {}, {singletonKey: '123', useSingletonQueue: true}) // resolves a jobId
@@ -744,6 +746,11 @@ Typically one would use `work()` for automated polling for new jobs based upon a
     | oncomplete | bool |
     | output | object |
 
+  * `enforceSingletonQueueActiveLimit`, bool
+
+    If `true`, modifies the behavior of the `useSingletonQueue` flag to allow a max of 1 job to be queued plus a max of 1 job to be active.
+    >Note that use of this option can impact performance on instances with large numbers of jobs.
+
 
 **Resolves**
 - `[job]`: array of job objects, `null` if none found
@@ -816,6 +823,10 @@ The default concurrency for `work()` is 1 job every 2 seconds. Both the interval
     How many jobs can be fetched per polling interval.  Callback will be executed once per batch.
 
 * **includeMetadata**, bool
+
+    Same as in [`fetch()`](#fetch)
+
+* **enforceSingletonQueueActiveLimit**, bool
 
     Same as in [`fetch()`](#fetch)
 

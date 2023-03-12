@@ -184,7 +184,8 @@ class Manager extends EventEmitter {
       teamSize = 1,
       teamConcurrency = 1,
       teamRefill: refill = false,
-      includeMetadata = false
+      includeMetadata = false,
+      enforceSingletonQueueActiveLimit = false
     } = options
 
     const id = uuid.v4()
@@ -208,7 +209,7 @@ class Manager extends EventEmitter {
       createTeamRefillPromise()
     }
 
-    const fetch = () => this.fetch(name, batchSize || (teamSize - queueSize), { includeMetadata })
+    const fetch = () => this.fetch(name, batchSize || (teamSize - queueSize), { includeMetadata, enforceSingletonQueueActiveLimit })
 
     const onFetch = async (jobs) => {
       if (this.config.__test__throw_worker) {
@@ -475,7 +476,7 @@ class Manager extends EventEmitter {
     const values = Attorney.checkFetchArgs(name, batchSize, options)
     const db = options.db || this.db
     const result = await db.executeSql(
-      this.nextJobCommand(options.includeMetadata || false),
+      this.nextJobCommand(options.includeMetadata || false, options.enforceSingletonQueueActiveLimit || false),
       [values.name, batchSize || 1]
     )
 

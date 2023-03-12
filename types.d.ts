@@ -113,12 +113,14 @@ declare namespace PgBoss {
     teamRefill?: boolean;
     batchSize?: number;
     includeMetadata?: boolean;
+    enforceSingletonQueueActiveLimit?: boolean;
   }
 
   type WorkOptions = JobFetchOptions & JobPollingOptions
 
   type FetchOptions = {
     includeMetadata?: boolean;
+    enforceSingletonQueueActiveLimit?: boolean;
   } & ConnectionOptions;
 
   interface WorkHandler<ReqData, ResData> {

@@ -351,13 +351,30 @@ function insertVersion (schema, version) {
 }
 
 function fetchNextJob (schema) {
-  return (includeMetadata) => `
+  return (includeMetadata, enforceSingletonQueueActiveLimit) => `
     WITH nextJob as (
       SELECT id
-      FROM ${schema}.job
+      FROM ${schema}.job j
       WHERE state < '${states.active}'
         AND name LIKE $1
         AND startAfter < now()
+        ${enforceSingletonQueueActiveLimit
+        ? `AND (
+          CASE
+            WHEN singletonKey IS NOT NULL
+              AND singletonKey LIKE '${SINGLETON_QUEUE_KEY_ESCAPED}%'
+              THEN NOT EXISTS (
+                SELECT *
+                FROM ${schema}.job active_job
+                WHERE active_job.state = '${states.active}'
+                  AND active_job.name = j.name
+                  AND active_job.singletonKey = j.singletonKey
+              )
+            ELSE
+              true
+          END
+        )`
+        : ''}
       ORDER BY priority desc, createdOn, id
       LIMIT $2
       FOR UPDATE SKIP LOCKED
