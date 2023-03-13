@@ -76,13 +76,17 @@ class Boss extends EventEmitter {
     }
   }
 
-  metaMonitor () {
+  metaMonitor() {
     this.metaMonitorInterval = setInterval(async () => {
-      const { secondsAgo } = await this.getMaintenanceTime()
+      try {
+        const { secondsAgo } = await this.getMaintenanceTime()
 
-      if (secondsAgo > this.maintenanceIntervalSeconds * 2) {
-        await this.manager.deleteQueue(queues.MAINTENANCE, { before: states.completed })
-        await this.maintenanceAsync()
+        if (secondsAgo > this.maintenanceIntervalSeconds * 2) {
+          await this.manager.deleteQueue(queues.MAINTENANCE, { before: states.completed })
+          await this.maintenanceAsync()
+        }
+      } catch (err) {
+        this.emit(events.error, err)
       }
     }, this.maintenanceIntervalSeconds * 2 * 1000)
   }
