@@ -364,11 +364,12 @@ function fetchNextJob (schema) {
             WHEN singletonKey IS NOT NULL
               AND singletonKey LIKE '${SINGLETON_QUEUE_KEY_ESCAPED}%'
               THEN NOT EXISTS (
-                SELECT *
+                SELECT 1
                 FROM ${schema}.job active_job
                 WHERE active_job.state = '${states.active}'
                   AND active_job.name = j.name
                   AND active_job.singletonKey = j.singletonKey
+                  LIMIT 1
               )
             ELSE
               true
