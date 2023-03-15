@@ -27,4 +27,27 @@ describe('maintenance', async function () {
     const count = await countJobs()
     assert(count > 1)
   })
+
+  it('meta monitoring error handling works', async function () {
+    const config = {
+      ...this.test.bossConfig,
+      maintenanceIntervalSeconds: 1,
+      __test__throw_meta_monitor: 'meta monitoring error'
+    }
+
+    let errorCount = 0
+
+    const boss = this.test.boss = new PgBoss(config)
+
+    boss.once('error', (error) => {
+      assert.strictEqual(error.message, config.__test__throw_meta_monitor)
+      errorCount++
+    })
+
+    await boss.start()
+
+    await delay(6000)
+
+    assert.strictEqual(errorCount, 1)
+  })
 })
