@@ -28,6 +28,14 @@ class Db extends EventEmitter {
       return await this.pool.query(text, values)
     }
   }
+
+  static quotePostgresStr (str) {
+    const delimeter = '$sanitize$'
+    if (str.includes(delimeter)) {
+      throw new Error(`Attempted to quote string that contains reserved Postgres delimeter: ${str}`)
+    }
+    return `${delimeter}${str}${delimeter}`
+  }
 }
 
 module.exports = Db
