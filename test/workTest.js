@@ -89,7 +89,7 @@ describe('work', function () {
   })
 
   it('should honor when useNotify in config', async function () {
-    const boss = this.test.boss = await helper.start({...this.test.bossConfig, useNotify: true})
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, useNotify: true })
     const queue = this.test.bossConfig.schema
 
     let processCount = 0
