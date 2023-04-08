@@ -12,6 +12,7 @@
     "lodash.debounce": "^4.0.8",
     "p-map": "^4.0.0",
     "pg": "^8.5.1",
+    "pg-listen": "^1.7.0",
     "serialize-error": "^8.1.0",
     "uuid": "^9.0.0"
   },

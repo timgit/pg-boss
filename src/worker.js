@@ -8,7 +8,7 @@ const WORKER_STATES = {
 }
 
 class Worker {
-  constructor ({ id, name, options, interval, fetch, onFetch, onError }) {
+  constructor ({ id, name, options, interval, fetch, onFetch, onError, notifier }) {
     this.id = id
     this.name = name
     this.options = options
@@ -16,6 +16,8 @@ class Worker {
     this.onFetch = onFetch
     this.onError = onError
     this.interval = interval
+    this.notifier = notifier
+    this.notifierListener = () => this.notify()
     this.jobs = []
     this.createdOn = Date.now()
     this.lastFetchedOn = null
@@ -40,6 +42,11 @@ class Worker {
 
   async start () {
     this.state = WORKER_STATES.active
+
+    if (this.notifier) {
+      await this.notifier.listenTo(`pgboss-${this.name}`)
+      this.notifier.notifications.on(`pgboss-${this.name}`, this.notifierListener)
+    }
 
     while (!this.stopping) {
       const started = Date.now()
@@ -86,9 +93,14 @@ class Worker {
     this.state = WORKER_STATES.stopped
   }
 
-  stop () {
+  async stop () {
     this.stopping = true
     this.state = WORKER_STATES.stopping
+
+    if (this.notifier) {
+      await this.notifier.unlisten(`pgboss-${this.name}`)
+      this.notifier.notifications.off(`pgboss-${this.name}`, this.notifierListener)
+    }
 
     if (this.loopDelayPromise) {
       this.loopDelayPromise.clear()

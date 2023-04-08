@@ -105,6 +105,7 @@ declare namespace PgBoss {
   interface JobPollingOptions {
     newJobCheckInterval?: number;
     newJobCheckIntervalSeconds?: number;
+    useNotify?: boolean;
   }
 
   interface JobFetchOptions {

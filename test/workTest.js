@@ -88,6 +88,24 @@ describe('work', function () {
     assert.strictEqual(processCount, 2)
   })
 
+  it('should honor when useNotify in config', async function () {
+    const boss = this.test.boss = await helper.start({...this.test.bossConfig, useNotify: true})
+    const queue = this.test.bossConfig.schema
+
+    let processCount = 0
+    const newJobCheckIntervalSeconds = 5
+
+    await boss.send(queue)
+
+    await boss.work(queue, { newJobCheckIntervalSeconds }, () => processCount++)
+    await delay(100)
+    assert.strictEqual(processCount, 1)
+    await boss.send(queue)
+
+    await delay(100)
+    assert.strictEqual(processCount, 2)
+  })
+
   it('should remove a worker', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
     const queue = this.test.bossConfig.schema

@@ -414,6 +414,13 @@ How often maintenance operations are run against the job and archive tables.
 
   > When a higher unit is is specified, lower unit configuration settings are ignored.
 
+**Polling options**
+
+How often workers will poll the queue table for jobs
+
+* **useNotify**, boolean
+
+    Default: false. Use built-in Postgres LISTEN/NOTIFY for reducing polling latency
 
 ## `start()`
 

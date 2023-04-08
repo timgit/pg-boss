@@ -1,5 +1,6 @@
 const EventEmitter = require('events')
 const pg = require('pg')
+const createSubscriber = require('pg-listen')
 
 class Db extends EventEmitter {
   constructor (config) {
@@ -8,11 +9,17 @@ class Db extends EventEmitter {
     config.application_name = config.application_name || 'pgboss'
 
     this.config = config
+    this.notifier = null
   }
 
   async open () {
     this.pool = new pg.Pool(this.config)
     this.pool.on('error', error => this.emit('error', error))
+    if (this.config.useNotify) {
+      this.notifier = createSubscriber(this.config)
+      this.notifier.events.on('error', error => this.emit('error', error))
+      await this.notifier.connect()
+    }
     this.opened = true
   }
 
@@ -20,6 +27,7 @@ class Db extends EventEmitter {
     if (!this.pool.ending) {
       this.opened = false
       await this.pool.end()
+      this.notifier?.close()
     }
   }
 
