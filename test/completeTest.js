@@ -335,4 +335,20 @@ describe('complete', function () {
     assert.strictEqual(batchSize, completed.length)
     assert.strictEqual(called, true)
   })
+
+  it('should honor onComplete when useNotify in config', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, onComplete: true, useNotify: true })
+    const queue = this.test.bossConfig.schema
+
+    let completeCount = 0
+    const newJobCheckIntervalSeconds = 3
+
+    await boss.work(queue, { newJobCheckIntervalSeconds }, () => {})
+    await boss.onComplete(queue, { newJobCheckIntervalSeconds }, () => completeCount++)
+
+    await boss.send(queue)
+    await delay(100)
+
+    assert.strictEqual(completeCount, 1)
+  })
 })

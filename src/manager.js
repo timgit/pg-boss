@@ -233,6 +233,7 @@ class Manager extends EventEmitter {
             .then(result => this.complete(job.id, result))
             .catch(err => this.fail(job.id, err))
             .then(() => refill ? onRefill() : null)
+            .then(() => !name.startsWith(COMPLETION_JOB_PREFIX) && this.db.notifier?.notify(`pgboss-${COMPLETION_JOB_PREFIX}${name}`, {}))
         , { concurrency: teamConcurrency }
         ).catch(() => {}) // allow promises & non-promises to live together in harmony
 
