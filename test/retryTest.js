@@ -83,7 +83,11 @@ describe('retries', function () {
     let processCount = 0
     const retryLimit = 4
 
-    await boss.work(queue, { newJobCheckInterval: 500 }, job => job.done(++processCount))
+    await boss.work(queue, { newJobCheckInterval: 500 }, async () => {
+      ++processCount
+      throw new Error('retry')
+    })
+
     await boss.send(queue, null, { retryLimit, retryBackoff: true })
 
     await delay(9000)

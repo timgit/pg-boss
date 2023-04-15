@@ -302,20 +302,6 @@ describe('work', function () {
     assert(remainCount === 2)
   })
 
-  it('should have a done callback for single job', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
-    const queue = 'process-single'
-
-    await boss.send(queue)
-
-    return new Promise((resolve) => {
-      boss.work(queue, async job => {
-        job.done()
-        resolve()
-      })
-    })
-  })
-
   it('completion should pass string wrapped in value prop', async function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, onComplete: true })
 

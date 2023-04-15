@@ -501,18 +501,7 @@ class Manager extends EventEmitter {
       return null
     }
 
-    const jobs = result.rows.map(job => {
-      job.done = async (error, response) => {
-        if (error) {
-          await this.fail(job.id, error)
-        } else {
-          await this.complete(job.id, response)
-        }
-      }
-      return job
-    })
-
-    return jobs.length === 1 && !batchSize ? jobs[0] : jobs
+    return result.rows.length === 1 && !batchSize ? result.rows[0] : result.rows
   }
 
   async fetchCompleted (name, batchSize, options = {}) {

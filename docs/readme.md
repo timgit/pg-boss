@@ -47,17 +47,17 @@
     - [`schedule(name, cron, data, options)`](#schedulename-cron-data-options)
     - [`unschedule(name)`](#unschedulename)
     - [`getSchedules()`](#getschedules)
-  - [`cancel(id)`](#cancelid)
-  - [`cancel([ids])`](#cancelids)
-  - [`resume(id)`](#resumeid)
-  - [`resume([ids])`](#resumeids)
-  - [`complete(id [, data])`](#completeid--data)
-  - [`complete([ids])`](#completeids)
-  - [`fail(id [, data])`](#failid--data)
-  - [`fail([ids])`](#failids)
+  - [`cancel(id, options)`](#cancelid-options)
+  - [`cancel([ids], options)`](#cancelids-options)
+  - [`resume(id, options)`](#resumeid-options)
+  - [`resume([ids], options)`](#resumeids-options)
+  - [`complete(id [, data, options])`](#completeid--data-options)
+  - [`complete([ids], options)`](#completeids-options)
+  - [`fail(id [, data, options])`](#failid--data-options)
+  - [`fail([ids], options)`](#failids-options)
   - [`notifyWorker(id)`](#notifyworkerid)
   - [`getQueueSize(name [, options])`](#getqueuesizename--options)
-  - [`getJobById(id)`](#getjobbyidid)
+  - [`getJobById(id, options)`](#getjobbyidid-options)
   - [`deleteQueue(name)`](#deletequeuename)
   - [`deleteAllQueues()`](#deleteallqueues)
   - [`clearStorage()`](#clearstorage)
@@ -849,11 +849,9 @@ How often workers will poll the queue table for jobs. Available in the construct
 
 **Handler function**
 
-Typically `handler` will be an `async` function, since this automatically returns promises that can be awaited for backpressure support.
+`handler` should either be an `async` function or return a promise. If an error occurs in the handler, it will be caught and stored into an output storage column in addition to marking the job as failed.
 
-If handler returns a promise, the value resolved/returned will be stored in a completion job. Likewise, if an error occurs in the handler, it will be caught and useful error properties stored into a completion job in addition to marking the job as failed.
-
-Finally, and importantly, promise-returning handlers will be awaited before polling for new jobs which provides **automatic backpressure**.
+Enforcing promise-returning handlers that are awaited in the workers defers polling for new jobs until the existing jobs are completed, providing backpressure.
 
 The job object has the following properties.
 
@@ -862,28 +860,14 @@ The job object has the following properties.
 |`id`| string, uuid |
 |`name`| string |
 |`data`| object |
-|`done(err, data)` | function | callback function used to mark the job as completed or failed. Returns a promise.
 
-If `handler` does not return a promise, `done()` should be used to mark the job as completed or failed. `done()` accepts optional arguments, `err` and `data`, for usage with [`onComplete()`](#oncompletename--options-handler) state-based workers. If `err` is truthy, it will mark the job as failed.
-
-> If the job is not completed, either by returning a promise from `handler` or manually via `job.done()`, it will expire after the configured expiration period.
+> If the job is not completed, it will expire after the configured expiration period.
 
 Following is an example of a worker that returns a promise (`sendWelcomeEmail()`) for completion with the teamSize option set for increased job concurrency between polling intervals.
 
 ```js
 const options = { teamSize: 5, teamConcurrency: 5 }
 await boss.work('email-welcome', options, job => myEmailService.sendWelcomeEmail(job.data))
-```
-
-And the same example, but without returning a promise in the handler.
-
-```js
-const options = { teamSize: 5, teamConcurrency: 5 }
-await boss.work('email-welcome', options, job => {
-    myEmailService.sendWelcomeEmail(job.data)
-        .then(() => job.done())
-        .catch(error => job.done(error))
-  })
 ```
 
 Similar to the first example, but with a batch of jobs at once.

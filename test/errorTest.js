@@ -10,14 +10,13 @@ describe('error', function () {
     await boss.send(queue)
     await boss.send(queue)
 
-    return new Promise((resolve) => {
+    await new Promise((resolve) => {
       boss.work(queue, async job => {
         processCount++
 
         if (processCount === 1) {
           throw new Error('test - nothing to see here')
         } else {
-          job.done()
           resolve()
         }
       })
