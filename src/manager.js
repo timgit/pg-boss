@@ -6,6 +6,7 @@ const debounce = require('lodash.debounce')
 const { serializeError: stringify } = require('serialize-error')
 const Attorney = require('./attorney')
 const Worker = require('./worker')
+const Db = require('./db')
 const pMap = require('p-map')
 
 const { QUEUES: BOSS_QUEUES } = require('./boss')
@@ -184,7 +185,8 @@ class Manager extends EventEmitter {
       teamSize = 1,
       teamConcurrency = 1,
       teamRefill: refill = false,
-      includeMetadata = false
+      includeMetadata = false,
+      enforceSingletonQueueActiveLimit = false
     } = options
 
     const id = uuid.v4()
@@ -208,7 +210,7 @@ class Manager extends EventEmitter {
       createTeamRefillPromise()
     }
 
-    const fetch = () => this.fetch(name, batchSize || (teamSize - queueSize), { includeMetadata })
+    const fetch = () => this.fetch(name, batchSize || (teamSize - queueSize), { includeMetadata, enforceSingletonQueueActiveLimit })
 
     const onFetch = async (jobs) => {
       if (this.config.__test__throw_worker) {
@@ -474,10 +476,26 @@ class Manager extends EventEmitter {
   async fetch (name, batchSize, options = {}) {
     const values = Attorney.checkFetchArgs(name, batchSize, options)
     const db = options.db || this.db
-    const result = await db.executeSql(
-      this.nextJobCommand(options.includeMetadata || false),
-      [values.name, batchSize || 1]
-    )
+    const preparedStatement = this.nextJobCommand(options.includeMetadata || false, options.enforceSingletonQueueActiveLimit || false)
+    const statementValues = [values.name, batchSize || 1]
+
+    let result
+    if (options.enforceSingletonQueueActiveLimit && !options.db) {
+      // Prepare/format now and send multi-statement transaction
+      const fetchQuery = preparedStatement
+        .replace('$1', Db.quotePostgresStr(statementValues[0]))
+        .replace('$2', statementValues[1].toString())
+      // eslint-disable-next-line no-unused-vars
+      const [_begin, _setLocal, fetchResult, _commit] = await db.executeSql([
+        'BEGIN',
+        'SET LOCAL jit = OFF', // JIT can slow things down significantly
+        fetchQuery,
+        'COMMIT'
+      ].join(';\n'))
+      result = fetchResult
+    } else {
+      result = await db.executeSql(preparedStatement, statementValues)
+    }
 
     if (!result || result.rows.length === 0) {
       return null

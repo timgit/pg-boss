@@ -121,4 +121,49 @@ describe('fetch', function () {
     assert(job.startedon === undefined)
     assert.strictEqual(calledCounter, 2)
   })
+
+  describe('enforceSingletonQueueActiveLimit option', function () {
+    it('when enforceSingletonQueueActiveLimit=false, should fetch singleton queue job even if there is already an active one', async function () {
+      const boss = this.test.boss = await helper.start(this.test.bossConfig)
+      const queue = this.test.bossConfig.schema
+      const jobOptions = { singletonKey: 'singleton_queue_active_test', useSingletonQueue: true }
+      const sendArgs = [queue, {}, jobOptions]
+      const fetchArgs = [queue, undefined, { enforceSingletonQueueActiveLimit: false }]
+
+      const publish1 = await boss.send(...sendArgs)
+      assert(publish1)
+      const fetch1 = await boss.fetch(...fetchArgs)
+      assert(fetch1)
+
+      const publish2 = await boss.send(...sendArgs)
+      assert(publish2)
+      const fetch2 = await boss.fetch(...fetchArgs)
+      assert(fetch2)
+    })
+
+    it('when enforceSingletonQueueActiveLimit=true, should not fetch singleton queue job if there is already an active one', async function () {
+      const boss = this.test.boss = await helper.start(this.test.bossConfig)
+      const queue = this.test.bossConfig.schema
+      const jobOptions = { singletonKey: 'singleton_queue_active_test', useSingletonQueue: true }
+      const sendArgs = [queue, {}, jobOptions]
+      const fetchArgs = [queue, undefined, { enforceSingletonQueueActiveLimit: true }]
+
+      const publish1 = await boss.send(...sendArgs)
+      assert(publish1)
+      const fetch1 = await boss.fetch(...fetchArgs)
+      assert(fetch1)
+
+      const publish2 = await boss.send(...sendArgs)
+      assert(publish2)
+      // Job 1 still active, can't fetch job 2
+      const fetch2 = await boss.fetch(...fetchArgs)
+      assert(fetch2 === null)
+
+      await boss.complete(fetch1.id)
+      // Job 1 no longer active, should be able to fetch job 2
+      const retryFetch2 = await boss.fetch(...fetchArgs)
+      assert(retryFetch2)
+      assert(retryFetch2.id === publish2)
+    })
+  })
 })
