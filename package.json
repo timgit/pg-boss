@@ -1,10 +1,10 @@
 {
   "name": "pg-boss",
-  "version": "8.5.0",
+  "version": "9.0.0",
   "description": "Queueing jobs in Node.js using PostgreSQL like a boss",
   "main": "./src/index.js",
   "engines": {
-    "node": ">=14"
+    "node": ">=16"
   },
   "dependencies": {
     "cron-parser": "^4.0.0",
