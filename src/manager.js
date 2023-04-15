@@ -222,8 +222,8 @@ class Manager extends EventEmitter {
       if (batchSize) {
         const maxExpiration = jobs.reduce((acc, i) => Math.max(acc, i.expire_in_seconds), 0)
 
-        // Failing will fail all fetched jobs
         await resolveWithinSeconds(Promise.all([callback(jobs)]), maxExpiration)
+          .then(() => this.complete(jobs.map(job => job.id)))
           .catch(err => this.fail(jobs.map(job => job.id), err))
       } else {
         if (refill) {
