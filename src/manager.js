@@ -235,6 +235,7 @@ class Manager extends EventEmitter {
             .then(result => this.complete(job.id, result))
             .catch(err => this.fail(job.id, err))
             .then(() => refill ? onRefill() : null)
+            .then(() => !name.startsWith(COMPLETION_JOB_PREFIX) && this.db.notifier?.notify(`pgboss-${COMPLETION_JOB_PREFIX}${name}`, {}))
         , { concurrency: teamConcurrency }
         ).catch(() => {}) // allow promises & non-promises to live together in harmony
 
@@ -256,7 +257,7 @@ class Manager extends EventEmitter {
       this.emit(events.error, { ...error, message: error.message, stack: error.stack, queue: name, worker: id })
     }
 
-    const worker = new Worker({ id, name, options, interval, fetch, onFetch, onError })
+    const worker = new Worker({ id, name, options, interval, fetch, onFetch, onError, notifier: this.db.notifier })
 
     this.addWorker(worker)
 
@@ -283,7 +284,7 @@ class Manager extends EventEmitter {
     }
 
     for (const worker of workers) {
-      worker.stop()
+      await worker.stop()
     }
 
     setImmediate(async () => {
@@ -339,7 +340,9 @@ class Manager extends EventEmitter {
 
   async send (...args) {
     const { name, data, options } = Attorney.checkSendArgs(args, this.config)
-    return await this.createJob(name, data, options)
+    const resp = await this.createJob(name, data, options)
+    await this.db.notifier?.notify(`pgboss-${name}`, {})
+    return resp
   }
 
   async sendOnce (name, data, options, key) {
@@ -349,7 +352,9 @@ class Manager extends EventEmitter {
 
     const result = Attorney.checkSendArgs([name, data, options], this.config)
 
-    return await this.createJob(result.name, result.data, result.options)
+    const resp = await this.createJob(result.name, result.data, result.options)
+    await this.db.notifier?.notify(`pgboss-${name}`, {})
+    return resp
   }
 
   async sendSingleton (name, data, options) {
@@ -359,7 +364,9 @@ class Manager extends EventEmitter {
 
     const result = Attorney.checkSendArgs([name, data, options], this.config)
 
-    return await this.createJob(result.name, result.data, result.options)
+    const resp = await this.createJob(result.name, result.data, result.options)
+    await this.db.notifier?.notify(`pgboss-${name}`, {})
+    return resp
   }
 
   async sendAfter (name, data, options, after) {
@@ -368,7 +375,9 @@ class Manager extends EventEmitter {
 
     const result = Attorney.checkSendArgs([name, data, options], this.config)
 
-    return await this.createJob(result.name, result.data, result.options)
+    const resp = await this.createJob(result.name, result.data, result.options)
+    await this.db.notifier?.notify(`pgboss-${name}`, {})
+    return resp
   }
 
   async sendThrottled (name, data, options, seconds, key) {
@@ -379,7 +388,9 @@ class Manager extends EventEmitter {
 
     const result = Attorney.checkSendArgs([name, data, options], this.config)
 
-    return await this.createJob(result.name, result.data, result.options)
+    const resp = await this.createJob(result.name, result.data, result.options)
+    await this.db.notifier?.notify(`pgboss-${name}`, {})
+    return resp
   }
 
   async sendDebounced (name, data, options, seconds, key) {
@@ -390,7 +401,9 @@ class Manager extends EventEmitter {
 
     const result = Attorney.checkSendArgs([name, data, options], this.config)
 
-    return await this.createJob(result.name, result.data, result.options)
+    const resp = await this.createJob(result.name, result.data, result.options)
+    await this.db.notifier?.notify(`pgboss-${name}`, {})
+    return resp
   }
 
   async createJob (name, data, options, singletonOffset = 0) {
