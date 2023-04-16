@@ -4,7 +4,6 @@ language: node_js
 node_js:
   - '18'
   - '16'
-  - '14'
 addons:
   postgresql: '13'
   apt:

@@ -140,7 +140,7 @@ class Boss extends EventEmitter {
       this.emit('maintenance', { ms: ended - started })
 
       if (!this.stopped) {
-        await job.done() // pre-complete to bypass throttling
+        await this.manager.complete(job.id) // pre-complete to bypass throttling
         await this.maintenanceAsync({ startAfter: this.maintenanceIntervalSeconds })
       }
     } catch (err) {
@@ -159,7 +159,7 @@ class Boss extends EventEmitter {
       this.emit(events.monitorStates, states)
 
       if (!this.stopped && this.monitorStates) {
-        await job.done() // pre-complete to bypass throttling
+        await this.manager.complete(job.id) // pre-complete to bypass throttling
         await this.monitorStatesAsync({ startAfter: this.monitorIntervalSeconds })
       }
     } catch (err) {

@@ -109,24 +109,6 @@ describe('complete', function () {
     })
   })
 
-  it('work()\'s job.done() should allow sending completion payload', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, onComplete: true })
-
-    const queue = this.test.bossConfig.schema
-    const responsePayload = { arg1: '123' }
-
-    await boss.send(queue)
-
-    boss.work(queue, job => job.done(null, responsePayload))
-
-    return new Promise((resolve) => {
-      boss.onComplete(queue, async job => {
-        assert.strictEqual(job.data.response.arg1, responsePayload.arg1)
-        resolve()
-      })
-    })
-  })
-
   it('should remove an onComplete worker', async function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, onComplete: true })
 
