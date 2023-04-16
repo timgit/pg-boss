@@ -185,4 +185,29 @@ describe('failure', function () {
 
     assert.strictEqual(called, true)
   })
+
+  it('failure with circular payload should be safely serialized', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const queue = this.test.bossConfig.schema
+
+    await boss.send(queue, null, { onComplete: true })
+
+    await boss.work(queue, async job => {
+        let err = {
+          message: 'something'
+        }
+       
+        err.myself = err 
+  
+        throw err        
+    })
+
+    await delay(2000)
+
+    const job = await boss.fetchCompleted(queue)
+
+    assert(job)
+
+  })
+
 })
