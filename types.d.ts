@@ -113,20 +113,22 @@ declare namespace PgBoss {
     teamRefill?: boolean;
     batchSize?: number;
     includeMetadata?: boolean;
+    enforceSingletonQueueActiveLimit?: boolean;
   }
 
   type WorkOptions = JobFetchOptions & JobPollingOptions
 
   type FetchOptions = {
     includeMetadata?: boolean;
+    enforceSingletonQueueActiveLimit?: boolean;
   } & ConnectionOptions;
 
-  interface WorkHandler<ReqData, ResData> {
-    (job: PgBoss.JobWithDoneCallback<ReqData, ResData>): Promise<ResData> | void;
+  interface WorkHandler<ReqData> {
+    (job: PgBoss.Job<ReqData>): void;
   }
 
-  interface WorkWithMetadataHandler<ReqData, ResData> {
-    (job: PgBoss.JobWithMetadataDoneCallback<ReqData, ResData>): Promise<ResData> | void;
+  interface WorkWithMetadataHandler<ReqData> {
+    (job: PgBoss.JobWithMetadata<ReqData>): void;
   }
 
   interface Request {
@@ -140,10 +142,6 @@ declare namespace PgBoss {
     cron: string;
     data?: object;
     options?: ScheduleOptions;
-  }
-
-  interface JobDoneCallback<T> {
-    (err?: Error | null, data?: T): void;
   }
 
   // source (for now): https://github.com/bendrucker/postgres-interval/blob/master/index.d.ts
@@ -202,14 +200,6 @@ declare namespace PgBoss {
     expireInSeconds?: number;
     keepUntil?: Date | string;
     onComplete?: boolean
-  }
-
-  interface JobWithDoneCallback<ReqData, ResData> extends Job<ReqData> {
-    done: JobDoneCallback<ResData>;
-  }
-
-  interface JobWithMetadataDoneCallback<ReqData, ResData> extends JobWithMetadata<ReqData> {
-    done: JobDoneCallback<ResData>;
   }
 
   interface MonitorState {
@@ -308,9 +298,9 @@ declare class PgBoss extends EventEmitter {
   insert(jobs: PgBoss.JobInsert[]): Promise<void>;
   insert(jobs: PgBoss.JobInsert[], options: PgBoss.InsertOptions): Promise<void>;
 
-  work<ReqData, ResData>(name: string, handler: PgBoss.WorkHandler<ReqData, ResData>): Promise<string>;
-  work<ReqData, ResData>(name: string, options: PgBoss.WorkOptions & { includeMetadata: true }, handler: PgBoss.WorkWithMetadataHandler<ReqData, ResData>): Promise<string>;
-  work<ReqData, ResData>(name: string, options: PgBoss.WorkOptions, handler: PgBoss.WorkHandler<ReqData, ResData>): Promise<string>;
+  work<ReqData>(name: string, handler: PgBoss.WorkHandler<ReqData>): Promise<string>;
+  work<ReqData>(name: string, options: PgBoss.WorkOptions & { includeMetadata: true }, handler: PgBoss.WorkWithMetadataHandler<ReqData>): Promise<string>;
+  work<ReqData>(name: string, options: PgBoss.WorkOptions, handler: PgBoss.WorkHandler<ReqData>): Promise<string>;
 
   onComplete(name: string, handler: Function): Promise<string>;
   onComplete(name: string, options: PgBoss.WorkOptions, handler: Function): Promise<string>;

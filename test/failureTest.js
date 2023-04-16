@@ -113,29 +113,6 @@ describe('failure', function () {
     assert.strictEqual(job.data.response.some.deeply.nested.reason, failPayload.some.deeply.nested.reason)
   })
 
-  it('failure via done() should pass error payload to failed job', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
-    const queue = this.test.bossConfig.schema
-    const errorMessage = 'mah error'
-
-    await boss.send(queue, null, { onComplete: true })
-
-    return new Promise((resolve) => {
-      boss.work(queue, async job => {
-        const error = new Error(errorMessage)
-
-        await job.done(error)
-
-        const failedJob = await boss.fetchCompleted(queue)
-
-        assert.strictEqual(failedJob.data.state, 'failed')
-        assert.strictEqual(failedJob.data.response.message, errorMessage)
-
-        resolve()
-      })
-    })
-  })
-
   it('failure via Promise reject() should pass string wrapped in value prop', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
     const queue = this.test.bossConfig.schema
@@ -207,5 +184,28 @@ describe('failure', function () {
     await boss.fail(job.id, null, { db })
 
     assert.strictEqual(called, true)
+  })
+
+  it('failure with circular payload should be safely serialized', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const queue = this.test.bossConfig.schema
+
+    await boss.send(queue, null, { onComplete: true })
+
+    await boss.work(queue, async job => {
+      const err = {
+        message: 'something'
+      }
+
+      err.myself = err
+
+      throw err
+    })
+
+    await delay(2000)
+
+    const job = await boss.fetchCompleted(queue)
+
+    assert(job)
   })
 })

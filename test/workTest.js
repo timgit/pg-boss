@@ -195,14 +195,34 @@ describe('work', function () {
     })
   })
 
+  it('batchSize should auto-complete the jobs', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const queue = this.test.bossConfig.schema
+
+    await boss.send(queue, null, { onComplete: true })
+
+    await new Promise((resolve) => {
+      boss.work(queue, { batchSize: 1 }, async jobs => {
+        assert.strictEqual(jobs.length, 1)
+        resolve()
+      })
+    })
+
+    await delay(2000)
+
+    const result = await boss.fetchCompleted(queue)
+
+    assert(result)
+  })
+
   it('returning promise applies backpressure', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
     const queue = 'backpressure'
 
-    const batchSize = 4
+    const jobCount = 4
     let processCount = 0
 
-    for (let i = 0; i < batchSize; i++) {
+    for (let i = 0; i < jobCount; i++) {
       await boss.send(queue)
     }
 
@@ -214,7 +234,7 @@ describe('work', function () {
 
     await delay(7000)
 
-    assert(processCount < batchSize)
+    assert(processCount < jobCount)
   })
 
   it('top up jobs when at least one job in team is still running', async function () {
@@ -280,20 +300,6 @@ describe('work', function () {
     await new Promise(resolve => setTimeout(resolve, 400))
 
     assert(remainCount === 2)
-  })
-
-  it('should have a done callback for single job', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
-    const queue = 'process-single'
-
-    await boss.send(queue)
-
-    return new Promise((resolve) => {
-      boss.work(queue, async job => {
-        job.done()
-        resolve()
-      })
-    })
   })
 
   it('completion should pass string wrapped in value prop', async function () {
