@@ -193,13 +193,13 @@ describe('failure', function () {
     await boss.send(queue, null, { onComplete: true })
 
     await boss.work(queue, async job => {
-        let err = {
-          message: 'something'
-        }
-       
-        err.myself = err 
-  
-        throw err        
+      const err = {
+        message: 'something'
+      }
+
+      err.myself = err
+
+      throw err
     })
 
     await delay(2000)
@@ -207,7 +207,5 @@ describe('failure', function () {
     const job = await boss.fetchCompleted(queue)
 
     assert(job)
-
   })
-
 })
