@@ -124,11 +124,11 @@ declare namespace PgBoss {
   } & ConnectionOptions;
 
   interface WorkHandler<ReqData> {
-    (job: PgBoss.Job<ReqData>): void;
+    (job: PgBoss.Job<ReqData>): Promise<void>;
   }
 
   interface WorkWithMetadataHandler<ReqData> {
-    (job: PgBoss.JobWithMetadata<ReqData>): void;
+    (job: PgBoss.JobWithMetadata<ReqData>): Promise<void>;
   }
 
   interface Request {
