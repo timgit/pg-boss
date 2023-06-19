@@ -107,16 +107,23 @@ declare namespace PgBoss {
     newJobCheckIntervalSeconds?: number;
   }
 
-  interface JobFetchOptions {
-    teamSize?: number;
-    teamConcurrency?: number;
-    teamRefill?: boolean;
-    batchSize?: number;
+  interface CommonJobFetchOptions {
     includeMetadata?: boolean;
     enforceSingletonQueueActiveLimit?: boolean;
   }
 
+  type JobFetchOptions  = CommonJobFetchOptions & {
+    teamSize?: number;
+    teamConcurrency?: number;
+    teamRefill?: boolean;
+  }
+
+  type BatchJobFetchOptions = CommonJobFetchOptions & {
+    batchSize: number;
+  }
+
   type WorkOptions = JobFetchOptions & JobPollingOptions
+  type BatchWorkOptions = BatchJobFetchOptions & JobPollingOptions
 
   type FetchOptions = {
     includeMetadata?: boolean;
@@ -127,8 +134,16 @@ declare namespace PgBoss {
     (job: PgBoss.Job<ReqData>): Promise<void>;
   }
 
+  interface BatchWorkHandler<ReqData> {
+    (job: PgBoss.Job<ReqData>[]): Promise<void>;
+  }
+
   interface WorkWithMetadataHandler<ReqData> {
     (job: PgBoss.JobWithMetadata<ReqData>): Promise<void>;
+  }
+
+  interface BatchWorkWithMetadataHandler<ReqData> {
+    (job: PgBoss.JobWithMetadata<ReqData>[]): Promise<void>;
   }
 
   interface Request {
@@ -301,6 +316,9 @@ declare class PgBoss extends EventEmitter {
   work<ReqData>(name: string, handler: PgBoss.WorkHandler<ReqData>): Promise<string>;
   work<ReqData>(name: string, options: PgBoss.WorkOptions & { includeMetadata: true }, handler: PgBoss.WorkWithMetadataHandler<ReqData>): Promise<string>;
   work<ReqData>(name: string, options: PgBoss.WorkOptions, handler: PgBoss.WorkHandler<ReqData>): Promise<string>;
+
+  work<ReqData>(name: string, options: PgBoss.BatchWorkOptions & { includeMetadata: true }, handler: PgBoss.BatchWorkWithMetadataHandler<ReqData>): Promise<string>;
+  work<ReqData>(name: string, options: PgBoss.BatchWorkOptions, handler: PgBoss.BatchWorkHandler<ReqData>): Promise<string>;
 
   onComplete(name: string, handler: Function): Promise<string>;
   onComplete(name: string, options: PgBoss.WorkOptions, handler: Function): Promise<string>;
