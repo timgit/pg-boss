@@ -131,19 +131,19 @@ declare namespace PgBoss {
   } & ConnectionOptions;
 
   interface WorkHandler<ReqData> {
-    (job: PgBoss.Job<ReqData>): Promise<void>;
+    (job: PgBoss.Job<ReqData>): Promise<any>;
   }
 
   interface BatchWorkHandler<ReqData> {
-    (job: PgBoss.Job<ReqData>[]): Promise<void>;
+    (job: PgBoss.Job<ReqData>[]): Promise<any>;
   }
 
   interface WorkWithMetadataHandler<ReqData> {
-    (job: PgBoss.JobWithMetadata<ReqData>): Promise<void>;
+    (job: PgBoss.JobWithMetadata<ReqData>): Promise<any>;
   }
 
   interface BatchWorkWithMetadataHandler<ReqData> {
-    (job: PgBoss.JobWithMetadata<ReqData>[]): Promise<void>;
+    (job: PgBoss.JobWithMetadata<ReqData>[]): Promise<any>;
   }
 
   interface Request {

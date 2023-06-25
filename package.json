@@ -1,6 +1,6 @@
 {
   "name": "pg-boss",
-  "version": "9.0.1",
+  "version": "9.0.2",
   "description": "Queueing jobs in Node.js using PostgreSQL like a boss",
   "main": "./src/index.js",
   "engines": {
@@ -25,9 +25,10 @@
   },
   "scripts": {
     "test": "standard && mocha",
-    "cover": "nyc --reporter=text npm test",
-    "travis-cover": "nyc --reporter=text npm run travis-test",
-    "travis-test": "standard && mocha --jobs 0 --exit",
+    "cover": "nyc npm test",
+    "cover-lcov": "nyc npm test && nyc report --reporter=text-lcov | coveralls",
+    "travis-cover": "nyc npm run travis-test",
+    "travis-test": "standard && mocha",
     "forcover": "npm run travis-cover && nyc report --reporter=text-lcov | coveralls",
     "export-schema": "node ./scripts/construct.js",
     "export-migration": "node ./scripts/migrate.js",
