@@ -1,4 +1,9 @@
-on: [ "push", "pull_request" ]
+on:
+  push:
+    branches: [master]
+    tags-ignore: ['**']
+  pull_request:
+    branches: [master]
 
 name: CI
 
