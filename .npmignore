@@ -4,5 +4,4 @@
 docs
 test
 .editorconfig
-.travis.yml
 *.tgz
