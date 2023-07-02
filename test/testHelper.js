@@ -16,8 +16,8 @@ module.exports = {
   COMPLETION_JOB_PREFIX,
   getConfig,
   getConnectionString,
-  tryDropDb,
-  createDb
+  tryCreateDb,
+  init
 }
 
 function getConnectionString () {
@@ -28,17 +28,13 @@ function getConnectionString () {
 
 function getConfig (options = {}) {
   const config = require('./config.json')
-  const inTravis = !!process.env.TRAVIS
 
-  if (inTravis) {
-    config.password = ''
-    config.schema = process.env.TRAVIS_JOB_ID
-    config.user = process.env.PGUSER
-    config.port = process.env.PGPORT
-  }
+  config.host = process.env.POSTGRES_HOST || config.host
+  config.port = process.env.POSTGRES_PORT || config.port
+  config.password = process.env.POSTGRES_PASSWORD || config.password
 
   if (options.testKey) {
-    config.schema = `pgboss${sha1(options.testKey).slice(-10)}${inTravis ? '_' + config.schema : ''}`
+    config.schema = `pgboss${sha1(options.testKey).slice(-10)}`
   }
 
   config.schema = config.schema || 'pgboss'
@@ -46,6 +42,13 @@ function getConfig (options = {}) {
   const result = { ...config }
 
   return Object.assign(result, options)
+}
+
+async function init () {
+  const { database } = getConfig()
+
+  await tryCreateDb(database)
+  await createPgCrypto(database)
 }
 
 async function getDb (database) {
@@ -58,6 +61,12 @@ async function getDb (database) {
   await db.open()
 
   return db
+}
+
+async function createPgCrypto (database) {
+  const db = await getDb(database)
+  await db.executeSql('create extension if not exists pgcrypto')
+  await db.close()
 }
 
 async function dropSchema (schema) {
@@ -92,27 +101,14 @@ async function countJobs (schema, where, values) {
   return parseFloat(result.rows[0].count)
 }
 
-async function tryDropDb (database) {
-  const db1 = await getDb('postgres')
-
-  await db1.executeSql(`SELECT pg_terminate_backend( pid ) FROM pg_stat_activity WHERE pid <> pg_backend_pid() AND datname = '${database}'`)
-
-  await db1.close()
-
-  const db2 = await getDb('postgres')
-
-  await db2.executeSql(`DROP DATABASE IF EXISTS ${database}`)
-
-  await db2.close()
-}
-
-async function createDb (database) {
+async function tryCreateDb (database) {
   const db = await getDb('postgres')
 
-  // await tryDropDb(database)
-  await db.executeSql(`CREATE DATABASE ${database}`)
-
-  await db.close()
+  try {
+    await db.executeSql(`CREATE DATABASE ${database}`)
+  } catch {} finally {
+    await db.close()
+  }
 }
 
 async function start (options) {

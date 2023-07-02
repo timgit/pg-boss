@@ -1,0 +1,55 @@
+on: [ "pull_request" ]
+
+name: CI
+
+jobs:
+  container-job:
+    runs-on: ubuntu-latest
+    container: node:18
+    strategy:
+      matrix:
+        node: [ 16, 18 ]
+    services:      
+      postgres:
+        image: postgres
+        env:
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+          
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: Set up Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: ${{ matrix.node }}
+
+    - name: Install
+      run: npm install
+      
+    - name: Test
+      run: npm run cover
+      env:
+        POSTGRES_HOST: postgres
+      
+    - name: Coveralls
+      uses: coverallsapp/github-action@v2
+      with:
+        flag-name: run-${{ join(matrix.*, '-') }}
+        parallel: true
+
+  finish:
+    needs: container-job
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+    - name: Coveralls Finished
+      uses: coverallsapp/github-action@v2
+      with:
+        parallel-finished: true
+        carryforward: "run-1,run-2"

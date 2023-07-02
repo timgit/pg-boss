@@ -16,8 +16,7 @@
     "uuid": "^9.0.0"
   },
   "devDependencies": {
-    "@types/node": "^18.0.0",
-    "coveralls": "^3.1.0",
+    "@types/node": "^20.3.3",
     "luxon": "^3.0.1",
     "mocha": "^10.0.0",
     "nyc": "^15.1.0",
@@ -26,10 +25,6 @@
   "scripts": {
     "test": "standard && mocha",
     "cover": "nyc npm test",
-    "cover-lcov": "nyc npm test && nyc report --reporter=text-lcov | coveralls",
-    "travis-cover": "nyc npm run travis-test",
-    "travis-test": "standard && mocha",
-    "forcover": "npm run travis-cover && nyc report --reporter=text-lcov | coveralls",
     "export-schema": "node ./scripts/construct.js",
     "export-migration": "node ./scripts/migrate.js",
     "export-rollback": "node ./scripts/rollback.js",
@@ -48,7 +43,12 @@
       "src/**/*.js"
     ],
     "sourceMap": false,
-    "instrument": true
+    "instrument": true,
+    "reporter": [
+      "lcov",
+      "text-summary",
+      "text"
+    ]
   },
   "standard": {
     "globals": [
@@ -56,6 +56,7 @@
       "it",
       "before",
       "after",
+      "before",
       "beforeEach",
       "afterEach"
     ]
