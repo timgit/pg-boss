@@ -16,8 +16,8 @@ module.exports = {
   COMPLETION_JOB_PREFIX,
   getConfig,
   getConnectionString,
-  tryDropDb,
-  createDb
+  tryCreateDb,
+  init
 }
 
 function getConnectionString () {
@@ -48,6 +48,13 @@ function getConfig (options = {}) {
   return Object.assign(result, options)
 }
 
+async function init () {
+  const { database } = getConfig()
+
+  await tryCreateDb(database)
+  await createPgCrypto(database)
+}
+
 async function getDb (database) {
   const config = getConfig()
 
@@ -58,6 +65,12 @@ async function getDb (database) {
   await db.open()
 
   return db
+}
+
+async function createPgCrypto (database) {
+  const db = await getDb(database)
+  await db.executeSql('create extension if not exists pgcrypto')
+  await db.close()
 }
 
 async function dropSchema (schema) {
@@ -92,27 +105,14 @@ async function countJobs (schema, where, values) {
   return parseFloat(result.rows[0].count)
 }
 
-async function tryDropDb (database) {
-  const db1 = await getDb('postgres')
-
-  await db1.executeSql(`SELECT pg_terminate_backend( pid ) FROM pg_stat_activity WHERE pid <> pg_backend_pid() AND datname = '${database}'`)
-
-  await db1.close()
-
-  const db2 = await getDb('postgres')
-
-  await db2.executeSql(`DROP DATABASE IF EXISTS ${database}`)
-
-  await db2.close()
-}
-
-async function createDb (database) {
+async function tryCreateDb (database) {
   const db = await getDb('postgres')
 
-  // await tryDropDb(database)
-  await db.executeSql(`CREATE DATABASE ${database}`)
-
-  await db.close()
+  try {
+    await db.executeSql(`CREATE DATABASE ${database}`)
+  } catch {} finally {
+    await db.close()
+  }
 }
 
 async function start (options) {

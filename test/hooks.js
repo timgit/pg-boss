@@ -1,8 +1,13 @@
 const helper = require('./testHelper')
 
 exports.mochaHooks = {
+  beforeAll,
   beforeEach,
   afterEach
+}
+
+async function beforeAll () {
+  await helper.init()
 }
 
 async function beforeEach () {
