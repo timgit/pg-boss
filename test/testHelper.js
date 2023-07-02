@@ -28,17 +28,13 @@ function getConnectionString () {
 
 function getConfig (options = {}) {
   const config = require('./config.json')
-  const inTravis = !!process.env.TRAVIS
 
-  if (inTravis) {
-    config.password = ''
-    config.schema = process.env.TRAVIS_JOB_ID
-    config.user = process.env.PGUSER
-    config.port = process.env.PGPORT
-  }
+  config.host = process.env.POSTGRES_HOST || config.host
+  config.port = process.env.POSTGRES_PORT || config.port
+  config.password = process.env.POSTGRES_PASSWORD || config.password
 
   if (options.testKey) {
-    config.schema = `pgboss${sha1(options.testKey).slice(-10)}${inTravis ? '_' + config.schema : ''}`
+    config.schema = `pgboss${sha1(options.testKey).slice(-10)}`
   }
 
   config.schema = config.schema || 'pgboss'

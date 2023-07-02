@@ -34,6 +34,8 @@ jobs:
       
     - name: Test
       run: npm run cover
+      env:
+        POSTGRES_HOST: postgres
       
     - name: Coveralls
       uses: coverallsapp/github-action@v2
