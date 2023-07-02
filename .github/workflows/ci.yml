@@ -8,8 +8,7 @@ jobs:
     container: node:18
     strategy:
       matrix:
-        node_version:
-          - 18    
+        node: [ 16, 18 ]
     services:      
       postgres:
         image: postgres
@@ -22,12 +21,13 @@ jobs:
           --health-retries 5
           
     steps:
-    - uses: actions/checkout@3
+    - name: Checkout code
+      uses: actions/checkout@v3
     
     - name: Set up Node.js
-      uses: actions/setup-node@3
+      uses: actions/setup-node@v3
       with:
-        node-version: ${{matrix.node_version}}.x
+        node-version: ${{ matrix.node }}
 
     - name: Install
       run: npm install
