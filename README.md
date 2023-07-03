@@ -73,23 +73,11 @@ To setup a development environment for this library:
 ```bash
 git clone https://github.com/timgit/pg-boss.git
 npm install
-
 ```
 
-To run the test suite you will need to pgboss access to an empty postgres database. You can set one up using the following commands on a local postgres instance:
-
-```sql
-CREATE DATABASE pgboss;
-CREATE user postgres WITH PASSWORD 'postgres';
-GRANT ALL PRIVILEGES ON DATABASE pgboss to postgres;
--- run the following command in the context of the pgboss database
-CREATE EXTENSION pgcrypto;
-```
-
-If you use a different database name, username or password, or want to run the test suite against a database that is running on a remote machine then you will need to edit the `test/config.json` file with the appropriate connection values.
-
-You can then run the linter and test suite using
-
+To run the test suite, linter and code coverage:
 ```bash
-npm test
+npm run cover
 ```
+
+The test suite will try and create a new database named pgboss. The [config.json](test/config.json) file has the default credentials to connect to postgres. 
