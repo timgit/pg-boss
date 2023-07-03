@@ -5,3 +5,4 @@ docs
 test
 .editorconfig
 *.tgz
+coverage
