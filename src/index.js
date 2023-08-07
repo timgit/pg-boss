@@ -98,7 +98,9 @@ class PgBoss extends EventEmitter {
       await this.db.open()
     }
 
-    await this.contractor.start()
+    if (!this.config.noContractor) {
+      await this.contractor.start()
+    }
 
     this.stopped = false
     this.started = true

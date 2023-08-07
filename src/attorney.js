@@ -22,6 +22,10 @@ const WARNINGS = {
   CRON_DISABLED: {
     message: 'Archive interval is set less than 60s.  Cron processing is disabled.',
     code: 'pg-boss-w03'
+  },
+  ON_COMPLETE_REMOVED: {
+    message: '\'onComplete\' option detected. This option has been removed. Use deadLetter if needed.',
+    code: 'pg-boss-w04'
   }
 }
 
@@ -255,6 +259,8 @@ function applyExpirationConfig (config, defaults) {
     emitWarning(WARNINGS.EXPIRE_IN_REMOVED)
   }
 
+  const MAX_EXPIRATION_HOURS = 24
+
   assert(!('expireInSeconds' in config) || config.expireInSeconds >= 1,
     'configuration assert: expireInSeconds must be at least every second')
 
@@ -265,21 +271,23 @@ function applyExpirationConfig (config, defaults) {
     'configuration assert: expireInHours must be at least every hour')
 
   const expireIn = ('expireInHours' in config)
-    ? `${config.expireInHours} hours`
+    ? config.expireInHours * 60 * 60
     : ('expireInMinutes' in config)
-        ? `${config.expireInMinutes} minutes`
+        ? config.expireInMinutes * 60
         : ('expireInSeconds' in config)
-            ? `${config.expireInSeconds} seconds`
-            : defaults
+            ? config.expireInSeconds
+            : defaults && defaults.expireIn
               ? defaults.expireIn
-              : '15 minutes'
+              : 15 * 60
+
+  assert(expireIn / 60 / 60 < MAX_EXPIRATION_HOURS, `configuration assert: expiration cannot exceed ${MAX_EXPIRATION_HOURS} hours`)
 
   config.expireIn = expireIn
 }
 
 function applyRetryConfig (config, defaults) {
   assert(!('retryDelay' in config) || (Number.isInteger(config.retryDelay) && config.retryDelay >= 0), 'retryDelay must be an integer >= 0')
-  assert(!('retryLimit' in config) || (Number.isInteger(config.retryLimit) && config.retryLimit >= 0), 'retryLimit must be an integer >= 0')
+  assert(!('retryLimit' in config) || (Number.isInteger(config.retryLimit) && config.retryLimit >= 1), 'retryLimit must be an integer >= 1')
   assert(!('retryBackoff' in config) || (config.retryBackoff === true || config.retryBackoff === false), 'retryBackoff must be either true or false')
 
   if (defaults) {
@@ -289,7 +297,7 @@ function applyRetryConfig (config, defaults) {
   }
 
   config.retryDelay = config.retryDelay || 0
-  config.retryLimit = config.retryLimit || 0
+  config.retryLimit = config.retryLimit || 2
   config.retryBackoff = !!config.retryBackoff
   config.retryDelay = (config.retryBackoff && !config.retryDelay) ? 1 : config.retryDelay
   config.retryLimit = (config.retryDelay && !config.retryLimit) ? 1 : config.retryLimit

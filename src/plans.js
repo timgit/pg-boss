@@ -82,6 +82,7 @@ function create (schema, version) {
     createVersionTable(schema),
     createJobStateEnum(schema),
     createJobTable(schema),
+    addPrimaryKeyToArchive(schema),
     cloneJobTableForArchive(schema),
     createScheduleTable(schema),
     createSubscriptionTable(schema),
@@ -152,14 +153,18 @@ function createJobTable (schema) {
       createdOn timestamp with time zone not null default now(),
       completedOn timestamp with time zone,
       keepUntil timestamp with time zone NOT NULL default now() + interval '14 days',
-      on_complete boolean not null default false,
-      output jsonb
+      output jsonb,
+      dead_letter text
     )
   `
 }
 
 function cloneJobTableForArchive (schema) {
   return `CREATE TABLE ${schema}.archive (LIKE ${schema}.job)`
+}
+
+function addPrimaryKeyToArchive (schema) {
+  return `ALTER TABLE ${schema}.archive ADD CONSTRAINT archive_pkey PRIMARY KEY ON (id)`
 }
 
 function addArchivedOnToArchive (schema) {
@@ -434,15 +439,6 @@ function completeJobs (schema) {
       WHERE id IN (SELECT UNNEST($1::uuid[]))
         AND state = '${states.active}'
       RETURNING *
-    ), completion_jobs as (
-      INSERT INTO ${schema}.job (name, data, keepUntil)
-      SELECT
-        '${COMPLETION_JOB_PREFIX}' || name,
-        ${buildJsonCompletionObject(true)},
-        ${keepUntilInheritance}
-      FROM results
-      WHERE NOT name LIKE '${COMPLETION_JOB_PREFIX}%'
-        AND on_complete
     )
     SELECT COUNT(*) FROM results
   `
@@ -466,13 +462,13 @@ function failJobs (schema) {
     ), completion_jobs as (
       INSERT INTO ${schema}.job (name, data, keepUntil)
       SELECT
-        '${COMPLETION_JOB_PREFIX}' || name,
+        dead_letter
         ${buildJsonCompletionObject(true)},
         ${keepUntilInheritance}
       FROM results
       WHERE state = '${states.failed}'
-        AND NOT name LIKE '${COMPLETION_JOB_PREFIX}%'
-        AND on_complete
+        AND NOT name = dead_letter
+        AND dead_letter IS NOT NULL
     )
     SELECT COUNT(*) FROM results
   `
@@ -484,7 +480,7 @@ function expire (schema) {
       UPDATE ${schema}.job
       SET state = CASE
           WHEN retryCount < retryLimit THEN '${states.retry}'::${schema}.job_state
-          ELSE '${states.expired}'::${schema}.job_state
+          ELSE '${states.failed}'::${schema}.job_state
           END,
         completedOn = ${retryCompletedOnCase},
         startAfter = ${retryStartAfterCase}
@@ -500,7 +496,6 @@ function expire (schema) {
     FROM results
     WHERE state = '${states.expired}'
       AND NOT name LIKE '${COMPLETION_JOB_PREFIX}%'
-      AND on_complete
   `
 }
 
@@ -547,7 +542,7 @@ function insertJob (schema) {
       retryDelay,
       retryBackoff,
       keepUntil,
-      on_complete
+      dead_letter
     )
     SELECT
       id,
@@ -563,7 +558,7 @@ function insertJob (schema) {
       retryDelay,
       retryBackoff,
       keepUntil,
-      on_complete
+      dead_letter
     FROM
     ( SELECT *,
         CASE
@@ -594,7 +589,7 @@ function insertJob (schema) {
             $11::int as retryDelay,
             $12::bool as retryBackoff,
             $13::text as keepUntilValue,
-            $14::boolean as on_complete
+            $14::text as dead_letter
         ) j1
       ) j2
     ) j3
@@ -617,7 +612,7 @@ function insertJobs (schema) {
       retryBackoff,
       singletonKey,
       keepUntil,
-      on_complete
+      dead_letter
     )
     SELECT
       COALESCE(id, gen_random_uuid()) as id,
@@ -631,7 +626,7 @@ function insertJobs (schema) {
       COALESCE("retryBackoff", false) as retryBackoff,
       "singletonKey",
       COALESCE("keepUntil", now() + interval '14 days') as keepUntil,
-      COALESCE("onComplete", false) as onComplete
+      "deadLetter"
     FROM json_to_recordset($1) as x(
       id uuid,
       name text,
@@ -644,7 +639,7 @@ function insertJobs (schema) {
       "singletonKey" text,
       "expireInSeconds" integer,
       "keepUntil" timestamp with time zone,
-      "onComplete" boolean
+      "deadLetter" text
     )
     ON CONFLICT DO NOTHING
   `
@@ -661,22 +656,16 @@ function archive (schema, completedInterval, failedInterval = completedInterval)
   return `
     WITH archived_rows AS (
       DELETE FROM ${schema}.job
-      WHERE (
-          state <> '${states.failed}' AND completedOn < (now() - interval '${completedInterval}')
-        )
-        OR (
-          state = '${states.failed}' AND completedOn < (now() - interval '${failedInterval}')
-        )
-        OR (
-          state < '${states.active}' AND keepUntil < now()
-        )
+      WHERE (state <> '${states.failed}' AND completedOn < (now() - interval '${completedInterval}'))
+        OR (state = '${states.failed}' AND completedOn < (now() - interval '${failedInterval}'))
+        OR (state < '${states.active}' AND keepUntil < now())
       RETURNING *
     )
     INSERT INTO ${schema}.archive (
-      id, name, priority, data, state, retryLimit, retryCount, retryDelay, retryBackoff, startAfter, startedOn, singletonKey, singletonOn, expireIn, createdOn, completedOn, keepUntil, on_complete, output
+      id, name, priority, data, state, retryLimit, retryCount, retryDelay, retryBackoff, startAfter, startedOn, singletonKey, singletonOn, expireIn, createdOn, completedOn, keepUntil, dead_letter, output
     )
     SELECT
-      id, name, priority, data, state, retryLimit, retryCount, retryDelay, retryBackoff, startAfter, startedOn, singletonKey, singletonOn, expireIn, createdOn, completedOn, keepUntil, on_complete, output
+      id, name, priority, data, state, retryLimit, retryCount, retryDelay, retryBackoff, startAfter, startedOn, singletonKey, singletonOn, expireIn, createdOn, completedOn, keepUntil, dead_letter, output
     FROM archived_rows
   `
 }
