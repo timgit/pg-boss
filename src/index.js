@@ -73,7 +73,7 @@ class PgBoss extends EventEmitter {
 
     function promoteFunction (obj, func) {
       this[func.name] = (...args) => {
-        const shouldRun = !this.started || !((func.name === 'work' || func.name === 'onComplete') && (this.stopped || this.stoppingOn))
+        const shouldRun = !this.started || !(func.name === 'work' && (this.stopped || this.stoppingOn))
 
         if (shouldRun) {
           return func.apply(obj, args)

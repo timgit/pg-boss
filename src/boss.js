@@ -101,8 +101,7 @@ class Boss extends EventEmitter {
     options = {
       startAfter,
       retentionSeconds: this.maintenanceIntervalSeconds * 4,
-      singletonKey: queues.MAINTENANCE,
-      onComplete: false
+      singletonKey: queues.MAINTENANCE
     }
 
     await this.manager.send(queues.MAINTENANCE, null, options)
@@ -114,8 +113,7 @@ class Boss extends EventEmitter {
     options = {
       startAfter,
       retentionSeconds: this.monitorIntervalSeconds * 4,
-      singletonKey: queues.MONITOR_STATES,
-      onComplete: false
+      singletonKey: queues.MONITOR_STATES
     }
 
     await this.manager.send(queues.MONITOR_STATES, null, options)
@@ -137,7 +135,7 @@ class Boss extends EventEmitter {
 
       await this.setMaintenanceTime()
 
-      this.emit('maintenance', { ms: ended - started })
+      this.emit(events.maintenance, { ms: ended - started })
 
       if (!this.stopped) {
         await this.manager.complete(job.id) // pre-complete to bypass throttling

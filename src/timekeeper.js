@@ -134,8 +134,7 @@ class Timekeeper extends EventEmitter {
   async checkSchedulesAsync () {
     const opts = {
       retryLimit: 2,
-      retentionSeconds: 60,
-      onComplete: false
+      retentionSeconds: 60
     }
 
     await this.manager.sendDebounced(queues.CRON, null, opts, 60)
@@ -186,8 +185,7 @@ class Timekeeper extends EventEmitter {
   async send (job) {
     const options = {
       singletonKey: job.name,
-      singletonSeconds: 60,
-      onComplete: false
+      singletonSeconds: 60
     }
 
     await this.manager.send(queues.SEND_IT, job, options)

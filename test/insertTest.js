@@ -32,7 +32,7 @@ describe('insert', function () {
       expireInSeconds: 5,
       singletonKey: '123',
       keepUntil: new Date().toISOString(),
-      onComplete: true
+      deadLetter: `${queue}_dlq`
     }
 
     await boss.insert([input])
@@ -50,7 +50,7 @@ describe('insert', function () {
     assert.strictEqual(job.expirein.seconds, input.expireInSeconds, `expireInSeconds input ${input.expireInSeconds} didn't match job ${job.expirein}`)
     assert.strictEqual(job.singletonkey, input.singletonKey, `name input ${input.singletonKey} didn't match job ${job.singletonkey}`)
     assert.strictEqual(new Date(job.keepuntil).toISOString(), input.keepUntil, `keepUntil input ${input.keepUntil} didn't match job ${job.keepuntil}`)
-    assert.strictEqual(job.on_complete, input.onComplete, `onComplete input ${input.onComplete} didn't match job ${job.on_complete}`)
+    assert.strictEqual(job.deadletter, input.deadLetter, `deadLetter input ${input.deadLetter} didn't match job ${job.deadletter}`)
   })
 
   it('should create jobs from an array with all properties and custom connection', async function () {
@@ -69,7 +69,7 @@ describe('insert', function () {
       expireInSeconds: 5,
       singletonKey: '123',
       keepUntil: new Date().toISOString(),
-      onComplete: true
+      deadLetter: `${queue}_dlq`
     }
     let called = false
     const db = await helper.getDb()
@@ -97,7 +97,7 @@ describe('insert', function () {
     assert.strictEqual(job.expirein.seconds, input.expireInSeconds, `expireInSeconds input ${input.expireInSeconds} didn't match job ${job.expirein}`)
     assert.strictEqual(job.singletonkey, input.singletonKey, `name input ${input.singletonKey} didn't match job ${job.singletonkey}`)
     assert.strictEqual(new Date(job.keepuntil).toISOString(), input.keepUntil, `keepUntil input ${input.keepUntil} didn't match job ${job.keepuntil}`)
-    assert.strictEqual(job.on_complete, input.onComplete, `onComplete input ${input.onComplete} didn't match job ${job.on_complete}`)
+    assert.strictEqual(job.deadletter, input.deadLetter, `deadLetter input ${input.deadLetter} didn't match job ${job.deadletter}`)
     assert.strictEqual(called, true)
   })
 })

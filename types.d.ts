@@ -56,11 +56,6 @@ declare namespace PgBoss {
     & RetentionOptions
     & RetryOptions
     & JobPollingOptions
-    & CompletionOptions
-
-  interface CompletionOptions {
-    onComplete?: boolean;
-  }
 
   interface ExpirationOptions {
     expireInSeconds?: number;
@@ -90,6 +85,7 @@ declare namespace PgBoss {
     singletonMinutes?: number;
     singletonHours?: number;
     singletonNextSlot?: boolean;
+    deadLetter?: string;
   }
 
   interface ConnectionOptions {
@@ -183,7 +179,7 @@ declare namespace PgBoss {
 
   interface JobWithMetadata<T = object> extends Job<T> {
     priority: number;
-    state: 'created' | 'retry' | 'active' | 'completed' | 'expired' | 'cancelled' | 'failed';
+    state: 'created' | 'retry' | 'active' | 'completed' | 'cancelled' | 'failed';
     retrylimit: number;
     retrycount: number;
     retrydelay: number;
@@ -198,7 +194,7 @@ declare namespace PgBoss {
     createdon: Date;
     completedon: Date | null;
     keepuntil: Date;
-    oncomplete: boolean,
+    deadletter: boolean,
     output: object
   }
 
@@ -214,7 +210,7 @@ declare namespace PgBoss {
     singletonKey?: string;
     expireInSeconds?: number;
     keepUntil?: Date | string;
-    onComplete?: boolean
+    deadLetter?: string;
   }
 
   interface MonitorState {
@@ -223,7 +219,6 @@ declare namespace PgBoss {
     retry: number;
     active: number;
     completed: number;
-    expired: number;
     cancelled: number;
     failed: number;
   }
@@ -236,7 +231,7 @@ declare namespace PgBoss {
     id: string,
     name: string,
     options: WorkOptions,
-    state: 'created' | 'retry' | 'active' | 'completed' | 'expired' | 'cancelled' | 'failed',
+    state: 'created' | 'retry' | 'active' | 'completed' | 'cancelled' | 'failed',
     count: number,
     createdOn: Date,
     lastFetchedOn: Date,
@@ -320,9 +315,6 @@ declare class PgBoss extends EventEmitter {
   work<ReqData>(name: string, options: PgBoss.BatchWorkOptions & { includeMetadata: true }, handler: PgBoss.BatchWorkWithMetadataHandler<ReqData>): Promise<string>;
   work<ReqData>(name: string, options: PgBoss.BatchWorkOptions, handler: PgBoss.BatchWorkHandler<ReqData>): Promise<string>;
 
-  onComplete(name: string, handler: Function): Promise<string>;
-  onComplete(name: string, options: PgBoss.WorkOptions, handler: Function): Promise<string>;
-
   offWork(name: string): Promise<void>;
   offWork(options: PgBoss.OffWorkOptions): Promise<void>;
 
@@ -338,18 +330,10 @@ declare class PgBoss extends EventEmitter {
   publish(event: string, data: object): Promise<string[]>;
   publish(event: string, data: object, options: PgBoss.SendOptions): Promise<string[]>;
 
-  offComplete(name: string): Promise<void>;
-  offComplete(options: PgBoss.OffWorkOptions): Promise<void>;
-
   fetch<T>(name: string): Promise<PgBoss.Job<T> | null>;
   fetch<T>(name: string, batchSize: number): Promise<PgBoss.Job<T>[] | null>;
   fetch<T>(name: string, batchSize: number, options: PgBoss.FetchOptions & { includeMetadata: true }): Promise<PgBoss.JobWithMetadata<T>[] | null>;
   fetch<T>(name: string, batchSize: number, options: PgBoss.FetchOptions): Promise<PgBoss.Job<T>[] | null>;
-
-  fetchCompleted<T>(name: string): Promise<PgBoss.Job<T> | null>;
-  fetchCompleted<T>(name: string, batchSize: number): Promise<PgBoss.Job<T>[] | null>;
-  fetchCompleted<T>(name: string, batchSize: number, options: PgBoss.FetchOptions & { includeMetadata: true }): Promise<PgBoss.JobWithMetadata<T>[] | null>;
-  fetchCompleted<T>(name: string, batchSize: number, options: PgBoss.FetchOptions): Promise<PgBoss.Job<T>[] | null>;
 
   cancel(id: string, options?: PgBoss.ConnectionOptions): Promise<void>;
   cancel(ids: string[], options?: PgBoss.ConnectionOptions): Promise<void>;

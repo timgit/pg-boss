@@ -199,7 +199,7 @@ describe('work', function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
     const queue = this.test.bossConfig.schema
 
-    await boss.send(queue, null, { onComplete: true })
+    const jobId = await boss.send(queue)
 
     await new Promise((resolve) => {
       boss.work(queue, { batchSize: 1 }, async jobs => {
@@ -208,11 +208,9 @@ describe('work', function () {
       })
     })
 
-    await delay(2000)
+    const job = await helper.getJobById(jobId)
 
-    const result = await boss.fetchCompleted(queue)
-
-    assert(result)
+    assert.strictEqual(job.state, 'completed')
   })
 
   it('returning promise applies backpressure', async function () {
@@ -303,39 +301,38 @@ describe('work', function () {
   })
 
   it('completion should pass string wrapped in value prop', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, onComplete: true })
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
 
     const queue = 'processCompletionString'
     const result = 'success'
 
-    boss.work(queue, async job => result)
+    const jobId = await boss.send(queue)
 
-    await boss.send(queue)
+    await boss.work(queue, async job => result)
 
-    await delay(8000)
+    await delay(1000)
 
-    const job = await boss.fetchCompleted(queue)
+    const job = await helper.getJobById(jobId)
 
     assert.strictEqual(job.data.state, 'completed')
-    assert.strictEqual(job.data.response.value, result)
+    assert.strictEqual(job.output.value, result)
   })
 
   it('completion via Promise resolve() should pass object payload', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, onComplete: true })
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
 
     const queue = 'processCompletionObject'
     const something = 'clever'
 
-    boss.work(queue, async job => ({ something }))
+    const jobId = await boss.send(queue)
+    await boss.work(queue, async () => ({ something }))
 
-    await boss.send(queue)
+    await delay(1000)
 
-    await delay(8000)
-
-    const job = await boss.fetchCompleted(queue)
+    const job = await helper.getJobById(jobId)
 
     assert.strictEqual(job.data.state, 'completed')
-    assert.strictEqual(job.data.response.something, something)
+    assert.strictEqual(job.output.something, something)
   })
 
   it('should allow multiple workers to the same queue per instance', async function () {

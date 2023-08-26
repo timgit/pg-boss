@@ -26,25 +26,6 @@ describe('failure', function () {
     await boss.fail(job.id)
   })
 
-  it('worker for job failure', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
-    const queue = this.test.bossConfig.schema
-
-    const jobId = await boss.send(queue, null, { onComplete: true })
-
-    const job = await boss.fetch(queue)
-
-    await boss.fail(job.id)
-
-    return new Promise((resolve, reject) => {
-      boss.onComplete(queue, async job => {
-        assert.strictEqual(jobId, job.data.request.id)
-        assert.strictEqual('failed', job.data.state)
-        resolve()
-      }).catch(reject)
-    })
-  })
-
   it('should fail a batch of jobs', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
     const queue = this.test.bossConfig.schema
@@ -57,7 +38,9 @@ describe('failure', function () {
 
     const jobs = await boss.fetch(queue, 3)
 
-    await boss.fail(jobs.map(job => job.id))
+    const result = await boss.fail(jobs.map(job => job.id))
+
+    assert.strictEqual(result.jobs.length, 3)
   })
 
   it('should fail a batch of jobs with a data arg', async function () {
@@ -80,22 +63,6 @@ describe('failure', function () {
     assert(results.every(i => i.output.message === message))
   })
 
-  it('should accept a payload', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
-    const queue = this.test.bossConfig.schema
-
-    const failPayload = { someReason: 'nuna' }
-
-    const jobId = await boss.send(queue, null, { onComplete: true })
-
-    await boss.fail(jobId, failPayload)
-
-    const job = await boss.fetchCompleted(queue)
-
-    assert.strictEqual(job.data.state, 'failed')
-    assert.strictEqual(job.data.response.someReason, failPayload.someReason)
-  })
-
   it('should preserve nested objects within a payload that is an instance of Error', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
     const queue = this.test.bossConfig.schema
@@ -103,14 +70,14 @@ describe('failure', function () {
     const failPayload = new Error('Something went wrong')
     failPayload.some = { deeply: { nested: { reason: 'nuna' } } }
 
-    const jobId = await boss.send(queue, null, { onComplete: true })
+    const jobId = await boss.send(queue)
 
     await boss.fail(jobId, failPayload)
 
-    const job = await boss.fetchCompleted(queue)
+    const job = helper.getJobById(jobId)
 
     assert.strictEqual(job.data.state, 'failed')
-    assert.strictEqual(job.data.response.some.deeply.nested.reason, failPayload.some.deeply.nested.reason)
+    assert.strictEqual(job.output.response.some.deeply.nested.reason, failPayload.some.deeply.nested.reason)
   })
 
   it('failure via Promise reject() should pass string wrapped in value prop', async function () {
@@ -118,15 +85,15 @@ describe('failure', function () {
     const queue = this.test.bossConfig.schema
     const failPayload = 'mah error'
 
-    await boss.work(queue, job => Promise.reject(failPayload))
-    await boss.send(queue, null, { onComplete: true })
+    await boss.work(queue, () => Promise.reject(failPayload))
+    const jobId = await boss.send(queue)
 
     await delay(7000)
 
-    const job = await boss.fetchCompleted(queue)
+    const job = helper.getJobById(jobId)
 
     assert.strictEqual(job.data.state, 'failed')
-    assert.strictEqual(job.data.response.value, failPayload)
+    assert.strictEqual(job.output.value, failPayload)
   })
 
   it('failure via Promise reject() should pass object payload', async function () {
@@ -137,31 +104,31 @@ describe('failure', function () {
     const errorResponse = new Error('custom error')
     errorResponse.something = something
 
-    await boss.work(queue, job => Promise.reject(errorResponse))
-    await boss.send(queue, null, { onComplete: true })
+    const jobId = await boss.send(queue)
+    await boss.work(queue, () => Promise.reject(errorResponse))
 
     await delay(7000)
 
-    const job = await boss.fetchCompleted(queue)
+    const job = helper.getJobById(jobId)
 
     assert.strictEqual(job.data.state, 'failed')
-    assert.strictEqual(job.data.response.something, something)
+    assert.strictEqual(job.output.something, something)
   })
 
-  it('failure with Error object should get stored in the failure job', async function () {
+  it('failure with Error object should be saved in the job', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
     const queue = this.test.bossConfig.schema
     const message = 'a real error!'
 
-    await boss.send(queue, null, { onComplete: true })
+    const jobId = await boss.send(queue)
     await boss.work(queue, async () => { throw new Error(message) })
 
     await delay(2000)
 
-    const job = await boss.fetchCompleted(queue)
+    const job = helper.getJobById(jobId)
 
     assert.strictEqual(job.data.state, 'failed')
-    assert(job.data.response.message.includes(message))
+    assert(job.output.message.includes(message))
   })
 
   it('should fail a job with custom connection', async function () {
@@ -190,22 +157,19 @@ describe('failure', function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
     const queue = this.test.bossConfig.schema
 
-    await boss.send(queue, null, { onComplete: true })
+    const jobId = await boss.send(queue)
+    const message =
 
-    await boss.work(queue, async job => {
-      const err = {
-        message: 'something'
-      }
-
+    await boss.work(queue, { newJobCheckInterval: 500 }, async () => {
+      const err = { message }
       err.myself = err
-
       throw err
     })
 
     await delay(2000)
 
-    const job = await boss.fetchCompleted(queue)
+    const job = await helper.getJobById(jobId)
 
-    assert(job)
+    assert.strictEqual(job.output.message, message)
   })
 })

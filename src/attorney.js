@@ -7,14 +7,11 @@ module.exports = {
   checkInsertArgs,
   checkWorkArgs,
   checkFetchArgs,
+  queueNameHasPatternMatch,
   warnClockSkew
 }
 
 const WARNINGS = {
-  EXPIRE_IN_REMOVED: {
-    message: '\'expireIn\' option detected. This option has been removed. Use expireInSeconds, expireInMinutes or expireInHours.',
-    code: 'pg-boss-w01'
-  },
   CLOCK_SKEW: {
     message: 'Timekeeper detected clock skew between this instance and the database server. This will not affect scheduling operations, but this warning is shown any time the skew exceeds 60 seconds.',
     code: 'pg-boss-w02'
@@ -24,7 +21,7 @@ const WARNINGS = {
     code: 'pg-boss-w03'
   },
   ON_COMPLETE_REMOVED: {
-    message: '\'onComplete\' option detected. This option has been removed. Use deadLetter if needed.',
+    message: '\'onComplete\' option detected. This option has been removed. Consider deadLetter if needed.',
     code: 'pg-boss-w04'
   }
 }
@@ -64,7 +61,6 @@ function checkSendArgs (args, defaults) {
   applyRetryConfig(options, defaults)
   applyExpirationConfig(options, defaults)
   applyRetentionConfig(options, defaults)
-  applyCompletionConfig(options, defaults)
   applySingletonKeyConfig(options)
 
   const { startAfter, singletonSeconds, singletonMinutes, singletonHours } = options
@@ -154,6 +150,10 @@ function sanitizeQueueNameForFetch (name) {
   return name.replace(/[%_*]/g, match => match === '*' ? '%' : '\\' + match)
 }
 
+function queueNameHasPatternMatch (name) {
+  return name.includes('*')
+}
+
 function getConfig (value) {
   assert(value && (typeof value === 'object' || typeof value === 'string'),
     'configuration assert: string or config object is required to connect to postgres')
@@ -173,7 +173,6 @@ function getConfig (value) {
   applyNewJobCheckInterval(config)
   applyExpirationConfig(config)
   applyRetentionConfig(config)
-  applyCompletionConfig(config)
 
   return config
 }
@@ -212,17 +211,6 @@ function applyArchiveFailedConfig (config) {
   // Do not emit warning twice
   if (config.archiveFailedSeconds < 60 && config.archiveSeconds >= 60) {
     emitWarning(WARNINGS.CRON_DISABLED)
-  }
-}
-
-function applyCompletionConfig (config, defaults) {
-  assert(!('onComplete' in config) || config.onComplete === true || config.onComplete === false,
-    'configuration assert: onComplete must be either true or false')
-
-  if (!('onComplete' in config)) {
-    config.onComplete = defaults
-      ? defaults.onComplete
-      : false
   }
 }
 

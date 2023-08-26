@@ -34,12 +34,9 @@
   - [`fetch()`](#fetch)
     - [`fetch(name)`](#fetchname)
     - [`fetch(name, batchSize, [, options])`](#fetchname-batchsize--options)
-    - [`fetchCompleted(name [, batchSize] [, options])`](#fetchcompletedname--batchsize--options)
   - [`work()`](#work)
     - [`work(name [, options], handler)`](#workname--options-handler)
-    - [`onComplete(name [, options], handler)`](#oncompletename--options-handler)
   - [`offWork(value)`](#offworkvalue)
-    - [`offComplete(value)`](#offcompletevalue)
   - [`publish(event, data, options)`](#publishevent-data-options)
   - [`subscribe(event, name)`](#subscribeevent-name)
   - [`unsubscribe(event, name)`](#unsubscribeevent-name)
@@ -71,17 +68,13 @@ You may use as many instances as needed to connect to the same Postgres database
 
 If you require multiple installations in the same database, such as for large volume queues, you may wish to specify a separate schema per install to achieve partitioning.
 
-Architecturally, pg-boss is somewhat similar to queue products such as AWS SQS, which primarily acts as a store of jobs that are "pulled", not "pushed" from the server. If at least one pg-boss instance is running, internal maintenance jobs will be periodically run to make sure fetched jobs that are never completed are marked as expired or retried (if configured). If and when this happens, think of a job with a retry configuration to act just like the SQS message visibility timeout. In regards to job delivery, Postgres [SKIP LOCKED](http://blog.2ndquadrant.com/what-is-select-skip-locked-for-in-postgresql-9-5) will guarantee exactly-once, which is only available in SQS via FIFO queues (and its throughput limitations). However, even if you have exactly-once delivery, this is not a guarantee that a job will never be processed more than once if you opt into retries, so keep the general recommendation for idempotency with queueing systems in mind.
+Architecturally, pg-boss is somewhat similar to queue products such as AWS SQS, which primarily acts as a store of jobs that are "pulled", not "pushed" from the server. If at least one pg-boss instance is running, internal maintenance jobs will be periodically run to make sure fetched jobs that are never completed are moved into the retry or failed state (this is somewhat similar to the SQS message visibility timeout). [SKIP LOCKED](https://www.2ndquadrant.com/en/blog/what-is-select-skip-locked-for-in-postgresql-9-5) guarantees exactly-once delivery, which is only available in SQS via FIFO queues (with the caveat of their throughput limitations). Keep in mind that exactly-once delivery is not a guarantee that a job will never be processed more than once because of retries, so keep the general recommendation for idempotency with queueing systems in mind.
 
 ## Job states
 
-All jobs start out in the `created` state and become `active` when picked up for work. If job processing completes successfully, jobs will go to `completed`. If a job fails, it will typcially enter the `failed` state. However, if a job has retry options configured, it will enter the `retry` state on failure instead and have a chance to re-enter `active` state. It's also possible for `active` jobs to become `expired`, which happens when job processing takes too long. Jobs can also enter `cancelled` state via [`cancel(id)`](#cancelid) or [`cancel([ids])`](#cancelids).
+All jobs start out in the `created` state and become `active` when picked up for work. If job processing completes successfully, jobs will go to `completed`. If a job fails, it will typcially enter the `failed` state. However, if a job has retry options configured, it will enter the `retry` state on failure instead and have a chance to re-enter `active` state. Jobs can also enter `cancelled` state via [`cancel(id)`](#cancelid) or [`cancel([ids])`](#cancelids).
 
 All jobs that are `completed`, `expired`, `cancelled` or `failed` become eligible for archiving (i.e. they will transition into the `archive` state) after the configured `archiveCompletedAfterSeconds` time. Once `archive`d, jobs will be automatically deleted by pg-boss after the configured deletion period.
-
-Here's a state diagram that shows the possible states and their transitions:
-
-![job state diagram](./images/job-states.png)
 
 # Database install
 
@@ -189,7 +182,6 @@ The payload of the event is an object with a key per queue and state, such as th
         "retry": 40,
         "active": 26,
         "completed": 3400,
-        "expired": 4,
         "cancelled": 0,
         "failed": 49,
         "all": 4049
@@ -199,7 +191,6 @@ The payload of the event is an object with a key per queue and state, such as th
         "retry": 0,
         "active": 0,
         "completed": 645,
-        "expired": 0,
         "cancelled": 0,
         "failed": 0,
         "all": 645
@@ -209,7 +200,6 @@ The payload of the event is an object with a key per queue and state, such as th
   "retry": 40,
   "active": 26,
   "completed": 4045,
-  "expired": 4,
   "cancelled": 0,
   "failed": 4,
   "all": 4694
@@ -594,12 +584,11 @@ For example, if you set the `singletonMinutes` to 1, then submit 2 jobs within a
 
 Setting `singletonNextSlot` to true will cause the job to be scheduled to run after the current time slot if and when a job is throttled. This option is set to true, for example, when calling the convenience function `sendDebounced()`.
 
-**Completion jobs**
+**Dead Letter Queues**
 
-* **onComplete**, bool (Default: false)
+* **deadLetter**, string
 
-When a job completes, a completion job will be created in the queue, copying the same retention policy as the job, for the purpose of `onComplete()` or `fetchCompleted()`.  If completion jobs are not used, they will be archived according to the retention policy.  If the queue in question has a very high volume, this can be set to `false` to bypass creating the completion job.  This can also be set in the constructor as a default for all calls to `send()`.
-
+When a job fails after all retries, if a `deadLetter` property exists, the job's payload will be copied into that queue,  copying the same retention and retry configuration as the original job.
 
 
 ```js
@@ -694,7 +683,7 @@ interface JobInsert<T = object> {
   singletonKey?: string;
   expireInSeconds?: number;
   keepUntil?: Date | string;
-  onComplete?: boolean
+  deadLetter?: string;
 }
 ```
 
@@ -743,13 +732,8 @@ Typically one would use `work()` for automated polling for new jobs based upon a
     | createdon | string, timestamp |
     | completedon | string, timestamp |
     | keepuntil | string, timestamp |
-    | oncomplete | bool |
+    | deadletter | string |
     | output | object |
-
-  * `enforceSingletonQueueActiveLimit`, bool
-
-    If `true`, modifies the behavior of the `useSingletonQueue` flag to allow a max of 1 job to be queued plus a max of 1 job to be active.
-    >Note that use of this option can impact performance on instances with large numbers of jobs.
 
 
 **Resolves**
@@ -784,9 +768,6 @@ for (let i = 0; i < jobs.length; i++) {
 }
 ```
 
-### `fetchCompleted(name [, batchSize] [, options])`
-
-Same as `fetch()`, but retrieves any completed jobs. See [`onComplete()`](#oncompletename--options-handler) for more information.
 ## `work()`
 
 Adds a new polling worker for a queue and executes the provided callback function when jobs are found. Multiple workers can be added if needed.
@@ -832,7 +813,7 @@ The default concurrency for `work()` is 1 job every 2 seconds. Both the interval
 
 **Polling options**
 
-How often workers will poll the queue table for jobs. Available in the constructor as a default or per worker in `work()` and `onComplete()`.
+How often workers will poll the queue table for jobs. Available in the constructor as a default or per worker in `work()`.
 
 * **newJobCheckInterval**, int
 
@@ -878,57 +859,6 @@ await boss.work('email-welcome', { batchSize: 5 },
 )
 ```
 
-### `onComplete(name [, options], handler)`
-
-Sometimes when a job completes, expires or fails, it's important enough to trigger other things that should react to it. `onComplete` works identically to `work()` and was created to facilitate the creation of orchestrations or sagas between jobs that may or may not know about each other. This common messaging pattern allows you to keep multi-job flow logic out of the individual job handlers so you can manage things in a more centralized fashion while not losing your mind. As you most likely already know, asynchronous jobs are complicated enough already. Internally, these jobs have a special prefix of `__state__completed__`.
-
-The callback for `onComplete()` returns a job containing the original job and completion details. `request` will be the original job as submitted with `id`, `name` and `data`. `response` may or may not have a value based on arguments in [complete()](#completeid--data) or [fail()](#failid--data).
-
-Here's an example from the test suite showing this in action.
-
-```js
-const jobName = 'onCompleteFtw'
-const requestPayload = { token:'trivial' }
-const responsePayload = { message: 'so verbose', code: '1234' }
-
-boss.onComplete(jobName, job => {
-    assert.strictEqual(jobId, job.data.request.id)
-    assert.strictEqual(job.data.request.data.token, requestPayload.token)
-    assert.strictEqual(job.data.response.message, responsePayload.message)
-    assert.strictEqual(job.data.response.code, responsePayload.code)
-
-    finished() // test suite completion callback
-})
-
-const jobId = await boss.send(jobName, requestPayload)
-const job = await boss.fetch(jobName)
-await boss.complete(job.id, responsePayload)
-```
-
-The following is an example data object from the job retrieved in onComplete() above.
-
-```js
-{
-    "request": {
-        "id": "26a608d0-79bf-11e8-8391-653981c16efd",
-        "name": "onCompleteFtw",
-        "data": {
-            "token": "trivial"
-        }
-    },
-    "response": {
-        "message": "so verbose",
-        "code": "1234"
-    },
-    "failed": false,
-    "state": "completed",
-    "createdOn": "2018-06-26T23:04:12.9392-05:00",
-    "startedOn": "2018-06-26T23:04:12.945533-05:00",
-    "completedOn": "2018-06-26T23:04:12.949092-05:00",
-    "retryCount": 0
-}
-```
-
 ## `offWork(value)`
 
 Removes a worker by name or id and stops polling.
@@ -937,10 +867,6 @@ Removes a worker by name or id and stops polling.
 - value: string or object
 
   If a string, removes all workers found matching the name.  If an object, only the worker with a matching `id` will be removed.
-
-### `offComplete(value)`
-
-Similar to `offWork()`, but removes an `onComplete()` worker.
 
 ## `publish(event, data, options)`
 
@@ -1033,7 +959,7 @@ Resumes a set of cancelled jobs.
 
 ## `complete(id [, data, options])`
 
-Completes an active job.  This would likely only be used with `fetch()`. Accepts an optional `data` argument for usage with [`onComplete()`](#oncompletename--options-handler) state-based workers or `fetchCompleted()`.
+Completes an active job.  This would likely only be used with `fetch()`. Accepts an optional `data` argument.
 
 The promise will resolve on a successful completion, or reject if the job could not be completed.
 

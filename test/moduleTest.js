@@ -8,7 +8,6 @@ describe('module', function () {
     assert(states.retry)
     assert(states.active)
     assert(states.completed)
-    assert(states.expired)
     assert(states.cancelled)
     assert(states.failed)
   })

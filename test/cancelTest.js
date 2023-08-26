@@ -27,21 +27,20 @@ describe('cancel', function () {
   })
 
   it('should not cancel a completed job', async function () {
-    const config = this.test.bossConfig
-
-    const boss = this.test.boss = await helper.start(config)
-
-    const queue = 'will_not_cancel'
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const queue = this.test.bossConfig.schema
 
     await boss.send(queue)
 
     const job = await boss.fetch(queue)
 
-    await boss.complete(job.id)
+    const completeResult = await boss.complete(job.id)
 
-    const response = await boss.cancel(job.id)
+    assert.strictEqual(completeResult.updated, 1)
 
-    assert.strictEqual(response.updated, 0)
+    const cancelResult = await boss.cancel(job.id)
+
+    assert.strictEqual(cancelResult.updated, 0)
   })
 
   it('should cancel a batch of jobs', async function () {

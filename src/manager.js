@@ -15,7 +15,7 @@ const { QUEUES: TIMEKEEPER_QUEUES } = require('./timekeeper')
 const INTERNAL_QUEUES = Object.values(BOSS_QUEUES).concat(Object.values(TIMEKEEPER_QUEUES)).reduce((acc, i) => ({ ...acc, [i]: i }), {})
 
 const plans = require('./plans')
-const { COMPLETION_JOB_PREFIX, SINGLETON_QUEUE_KEY } = plans
+const { SINGLETON_QUEUE_KEY } = plans
 
 const WIP_EVENT_INTERVAL = 2000
 const WIP_DEBOUNCE_OPTIONS = { leading: true, trailing: true, maxWait: WIP_EVENT_INTERVAL }
@@ -72,12 +72,9 @@ class Manager extends EventEmitter {
       this.resume,
       this.fail,
       this.fetch,
-      this.fetchCompleted,
       this.work,
       this.offWork,
       this.notifyWorker,
-      this.onComplete,
-      this.offComplete,
       this.publish,
       this.subscribe,
       this.unsubscribe,
@@ -115,11 +112,6 @@ class Manager extends EventEmitter {
   async work (name, ...args) {
     const { options, callback } = Attorney.checkWorkArgs(name, args, this.config)
     return await this.watch(name, options, callback)
-  }
-
-  async onComplete (name, ...args) {
-    const { options, callback } = Attorney.checkWorkArgs(name, args, this.config)
-    return await this.watch(COMPLETION_JOB_PREFIX + name, options, callback)
   }
 
   addWorker (worker) {
@@ -185,8 +177,7 @@ class Manager extends EventEmitter {
       teamSize = 1,
       teamConcurrency = 1,
       teamRefill: refill = false,
-      includeMetadata = false,
-      enforceSingletonQueueActiveLimit = false
+      includeMetadata = false
     } = options
 
     const id = uuid.v4()
@@ -210,7 +201,9 @@ class Manager extends EventEmitter {
       createTeamRefillPromise()
     }
 
-    const fetch = () => this.fetch(name, batchSize || (teamSize - queueSize), { includeMetadata, enforceSingletonQueueActiveLimit })
+    const patternMatch = Attorney.queueNameHasPatternMatch(name)
+
+    const fetch = () => this.fetch(name, batchSize || (teamSize - queueSize), { includeMetadata, patternMatch })
 
     const onFetch = async (jobs) => {
       if (this.config.__test__throw_worker) {
@@ -329,14 +322,6 @@ class Manager extends EventEmitter {
     return await Promise.all(result.rows.map(({ name }) => this.send(name, ...args)))
   }
 
-  async offComplete (value) {
-    if (typeof value === 'string') {
-      value = COMPLETION_JOB_PREFIX + value
-    }
-
-    return await this.offWork(value)
-  }
-
   async send (...args) {
     const { name, data, options } = Attorney.checkSendArgs(args, this.config)
     return await this.createJob(name, data, options)
@@ -405,7 +390,7 @@ class Manager extends EventEmitter {
       retryBackoff,
       retryLimit,
       retryDelay,
-      onComplete
+      deadLetter
     } = options
 
     const id = uuid[this.config.uuid]()
@@ -424,7 +409,7 @@ class Manager extends EventEmitter {
       retryDelay, // 11
       retryBackoff, // 12
       keepUntil, // 13
-      onComplete // 14
+      deadLetter // 14
     ]
     const db = wrapper || this.db
     const result = await db.executeSql(this.insertJobCommand, values)
@@ -476,25 +461,31 @@ class Manager extends EventEmitter {
   async fetch (name, batchSize, options = {}) {
     const values = Attorney.checkFetchArgs(name, batchSize, options)
     const db = options.db || this.db
-    const preparedStatement = this.nextJobCommand(options.includeMetadata || false, options.enforceSingletonQueueActiveLimit || false)
+    const nextJobSql = this.nextJobCommand(options.includeMetadata || false)
     const statementValues = [values.name, batchSize || 1]
 
     let result
-    if (options.enforceSingletonQueueActiveLimit && !options.db) {
-      // Prepare/format now and send multi-statement transaction
-      const fetchQuery = preparedStatement
-        .replace('$1', Db.quotePostgresStr(statementValues[0]))
-        .replace('$2', statementValues[1].toString())
-      // eslint-disable-next-line no-unused-vars
-      const [_begin, _setLocal, fetchResult, _commit] = await db.executeSql([
-        'BEGIN',
-        'SET LOCAL jit = OFF', // JIT can slow things down significantly
-        fetchQuery,
-        'COMMIT'
-      ].join(';\n'))
-      result = fetchResult
-    } else {
-      result = await db.executeSql(preparedStatement, statementValues)
+
+    try {
+      if (!options.db) {
+        // Prepare/format now and send multi-statement transaction
+        const fetchQuery = nextJobSql
+          .replace('$1', Db.quotePostgresStr(statementValues[0]))
+          .replace('$2', statementValues[1].toString())
+
+        // eslint-disable-next-line no-unused-vars
+        const [_begin, _setLocal, fetchResult, _commit] = await db.executeSql([
+          'BEGIN',
+          'SET LOCAL jit = OFF', // JIT can slow things down significantly
+          fetchQuery,
+          'COMMIT'
+        ].join(';\n'))
+        result = fetchResult
+      } else {
+        result = await db.executeSql(nextJobSql, statementValues)
+      }
+    } catch (err) {
+      // errors from fetchquery should only be unique constraint violations
     }
 
     if (!result || result.rows.length === 0) {
@@ -502,10 +493,6 @@ class Manager extends EventEmitter {
     }
 
     return result.rows.length === 1 && !batchSize ? result.rows[0] : result.rows
-  }
-
-  async fetchCompleted (name, batchSize, options = {}) {
-    return await this.fetch(COMPLETION_JOB_PREFIX + name, batchSize, options)
   }
 
   mapCompletionIdArg (id, funcName) {

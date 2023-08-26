@@ -5,7 +5,6 @@ const states = {
   retry: 'retry',
   active: 'active',
   completed: 'completed',
-  expired: 'expired',
   cancelled: 'cancelled',
   failed: 'failed'
 }
@@ -13,7 +12,10 @@ const states = {
 const DEFAULT_SCHEMA = 'pgboss'
 const COMPLETION_JOB_PREFIX = `__state__${states.completed}__`
 const SINGLETON_QUEUE_KEY = '__pgboss__singleton_queue'
-const SINGLETON_QUEUE_KEY_ESCAPED = SINGLETON_QUEUE_KEY.replace(/_/g, '\\_')
+// __pgboss-singleton-queued
+// __pgboss-singleton-active
+// __pgboss-singleton-queued-active
+// const SINGLETON_QUEUE_KEY_ESCAPED = SINGLETON_QUEUE_KEY.replace(/_/g, '\\_')
 
 const MIGRATE_RACE_MESSAGE = 'division by zero'
 const CREATE_RACE_MESSAGE = 'already exists'
@@ -82,19 +84,20 @@ function create (schema, version) {
     createVersionTable(schema),
     createJobStateEnum(schema),
     createJobTable(schema),
-    addPrimaryKeyToArchive(schema),
-    cloneJobTableForArchive(schema),
-    createScheduleTable(schema),
-    createSubscriptionTable(schema),
-    addIdIndexToArchive(schema),
-    addArchivedOnToArchive(schema),
-    addArchivedOnIndexToArchive(schema),
     createIndexJobName(schema),
     createIndexJobFetch(schema),
-    createIndexSingletonOn(schema),
-    createIndexSingletonKeyOn(schema),
-    createIndexSingletonKey(schema),
-    createIndexSingletonQueue(schema),
+    createIndexSingletonQueued(schema),
+    createIndexSingletonActive(schema),
+    createIndexSingletonQueuedAndActive(schema),
+    createIndexThrottle(schema),
+    createArchiveTable(schema),
+    addPrimaryKeyToArchive(schema),
+    addArchivedOnToArchive(schema),
+    addArchivedOnIndexToArchive(schema),
+    addNameIndexToArchive(schema),
+    createArchiveBackupTable(schema),
+    createScheduleTable(schema),
+    createSubscriptionTable(schema),
     insertVersion(schema, version)
   ]
 
@@ -126,7 +129,6 @@ function createJobStateEnum (schema) {
       '${states.retry}',
       '${states.active}',
       '${states.completed}',
-      '${states.expired}',
       '${states.cancelled}',
       '${states.failed}'
     )
@@ -154,17 +156,45 @@ function createJobTable (schema) {
       completedOn timestamp with time zone,
       keepUntil timestamp with time zone NOT NULL default now() + interval '14 days',
       output jsonb,
-      dead_letter text
+      deadletter text
     )
   `
 }
 
-function cloneJobTableForArchive (schema) {
+function createIndexSingletonQueued (schema) {
+  return `CREATE UNIQUE INDEX job_singleton_queued ON ${schema}.job (name) WHERE state = '${states.created}' AND singletonKey = '__pgboss-singleton-queued' AND singletonOn IS NULL`
+}
+
+function createIndexSingletonActive (schema) {
+  return `CREATE UNIQUE INDEX job_singleton_active ON ${schema}.job (name) WHERE state = '${states.active}' AND singletonKey = '__pgboss-singleton-active' AND singletonOn IS NULL`
+}
+
+function createIndexSingletonQueuedAndActive (schema) {
+  return `CREATE UNIQUE INDEX job_singleton_queued_active ON ${schema}.job (name, state) WHERE state IN ('${states.created}','${states.active}') AND singletonKey = 'pgboss-singleton-queued-active' AND singletonOn IS NULL`
+}
+
+function createIndexThrottle (schema) {
+  return `CREATE UNIQUE INDEX job_throttle ON ${schema}.job (name, singletonOn) WHERE state <= '${states.completed}' AND singletonOn IS NOT NULL`
+}
+
+function createIndexJobName (schema) {
+  return `CREATE INDEX job_name ON ${schema}.job (name text_pattern_ops)`
+}
+
+function createIndexJobFetch (schema) {
+  return `CREATE INDEX job_fetch ON ${schema}.job (name text_pattern_ops, startAfter) WHERE state < '${states.active}'`
+}
+
+function createArchiveTable (schema) {
   return `CREATE TABLE ${schema}.archive (LIKE ${schema}.job)`
 }
 
+function createArchiveBackupTable (schema) {
+  return `CREATE TABLE ${schema}.archive_backup (LIKE ${schema}.job)`
+}
+
 function addPrimaryKeyToArchive (schema) {
-  return `ALTER TABLE ${schema}.archive ADD CONSTRAINT archive_pkey PRIMARY KEY ON (id)`
+  return `ALTER TABLE ${schema}.archive ADD CONSTRAINT archive_pkey PRIMARY KEY (id)`
 }
 
 function addArchivedOnToArchive (schema) {
@@ -175,8 +205,8 @@ function addArchivedOnIndexToArchive (schema) {
   return `CREATE INDEX archive_archivedon_idx ON ${schema}.archive(archivedon)`
 }
 
-function addIdIndexToArchive (schema) {
-  return `CREATE INDEX archive_id_idx ON ${schema}.archive(id)`
+function addNameIndexToArchive (schema) {
+  return `CREATE INDEX archive_name_idx ON ${schema}.archive(name)`
 }
 
 function setMaintenanceTime (schema) {
@@ -216,46 +246,6 @@ function getQueueSize (schema, options = {}) {
   options.before = options.before || states.active
   assert(options.before in states, `${options.before} is not a valid state`)
   return `SELECT count(*) as count FROM ${schema}.job WHERE name = $1 AND state < '${options.before}'`
-}
-
-function createIndexSingletonKey (schema) {
-  // anything with singletonKey means "only 1 job can be queued or active at a time"
-  return `
-    CREATE UNIQUE INDEX job_singletonKey ON ${schema}.job (name, singletonKey) WHERE state < '${states.completed}' AND singletonOn IS NULL AND NOT singletonKey LIKE '${SINGLETON_QUEUE_KEY_ESCAPED}%'
-  `
-}
-
-function createIndexSingletonQueue (schema) {
-  // "singleton queue" means "only 1 job can be queued at a time"
-  return `
-    CREATE UNIQUE INDEX job_singleton_queue ON ${schema}.job (name, singletonKey) WHERE state < '${states.active}' AND singletonOn IS NULL AND singletonKey LIKE '${SINGLETON_QUEUE_KEY_ESCAPED}%'
-  `
-}
-
-function createIndexSingletonOn (schema) {
-  // anything with singletonOn means "only 1 job within this time period, queued, active or completed"
-  return `
-    CREATE UNIQUE INDEX job_singletonOn ON ${schema}.job (name, singletonOn) WHERE state < '${states.expired}' AND singletonKey IS NULL
-  `
-}
-
-function createIndexSingletonKeyOn (schema) {
-  // anything with both singletonOn and singletonKey means "only 1 job within this time period with this key, queued, active or completed"
-  return `
-    CREATE UNIQUE INDEX job_singletonKeyOn ON ${schema}.job (name, singletonOn, singletonKey) WHERE state < '${states.expired}'
-  `
-}
-
-function createIndexJobName (schema) {
-  return `
-    CREATE INDEX job_name ON ${schema}.job (name text_pattern_ops)
-  `
-}
-
-function createIndexJobFetch (schema) {
-  return `
-    CREATE INDEX job_fetch ON ${schema}.job (name text_pattern_ops, startAfter) WHERE state < '${states.active}'
-  `
 }
 
 function createScheduleTable (schema) {
@@ -356,31 +346,13 @@ function insertVersion (schema, version) {
 }
 
 function fetchNextJob (schema) {
-  return (includeMetadata, enforceSingletonQueueActiveLimit) => `
+  return (includeMetadata, patternMatch) => `
     WITH nextJob as (
       SELECT id
       FROM ${schema}.job j
       WHERE state < '${states.active}'
-        AND name LIKE $1
+        AND name ${patternMatch ? 'LIKE' : '='} $1
         AND startAfter < now()
-        ${enforceSingletonQueueActiveLimit
-        ? `AND (
-          CASE
-            WHEN singletonKey IS NOT NULL
-              AND singletonKey LIKE '${SINGLETON_QUEUE_KEY_ESCAPED}%'
-              THEN NOT EXISTS (
-                SELECT 1
-                FROM ${schema}.job active_job
-                WHERE active_job.state = '${states.active}'
-                  AND active_job.name = j.name
-                  AND active_job.singletonKey = j.singletonKey
-                  LIMIT 1
-              )
-            ELSE
-              true
-          END
-        )`
-        : ''}
       ORDER BY priority desc, createdOn, id
       LIMIT $2
       FOR UPDATE SKIP LOCKED
@@ -388,25 +360,12 @@ function fetchNextJob (schema) {
     UPDATE ${schema}.job j SET
       state = '${states.active}',
       startedOn = now(),
-      retryCount = CASE WHEN state = '${states.retry}' THEN retryCount + 1 ELSE retryCount END
+      retryCount = CASE WHEN startedOn IS NOT NULL THEN retryCount + 1 ELSE retryCount END
     FROM nextJob
     WHERE j.id = nextJob.id
-    RETURNING ${includeMetadata ? 'j.*' : 'j.id, name, data'}, EXTRACT(epoch FROM expireIn) as expire_in_seconds
+    RETURNING ${includeMetadata ? 'j.*' : 'j.id, name, data'}, 
+      EXTRACT(epoch FROM expireIn) as expire_in_seconds
   `
-}
-
-function buildJsonCompletionObject (withResponse) {
-  // job completion contract
-  return `jsonb_build_object(
-    'request', jsonb_build_object('id', id, 'name', name, 'data', data),
-    'response', ${withResponse ? '$2::jsonb' : 'null'},
-    'state', state,
-    'retryCount', retryCount,
-    'createdOn', createdOn,
-    'startedOn', startedOn,
-    'completedOn', completedOn,
-    'failed', CASE WHEN state = '${states.completed}' THEN false ELSE true END
-  )`
 }
 
 const retryCompletedOnCase = `CASE
@@ -459,16 +418,18 @@ function failJobs (schema) {
       WHERE id IN (SELECT UNNEST($1::uuid[]))
         AND state < '${states.completed}'
       RETURNING *
-    ), completion_jobs as (
-      INSERT INTO ${schema}.job (name, data, keepUntil)
+    ), dlq_jobs as (
+      INSERT INTO ${schema}.job (name, data, output, retryLimit, keepUntil)
       SELECT
-        dead_letter
-        ${buildJsonCompletionObject(true)},
+        deadletter,
+        data,
+        output,
+        retryLimit,
         ${keepUntilInheritance}
       FROM results
       WHERE state = '${states.failed}'
-        AND NOT name = dead_letter
-        AND dead_letter IS NOT NULL
+        AND deadletter IS NOT NULL
+        AND NOT name = deadletter
     )
     SELECT COUNT(*) FROM results
   `
@@ -488,14 +449,16 @@ function expire (schema) {
         AND (startedOn + expireIn) < now()
       RETURNING *
     )
-    INSERT INTO ${schema}.job (name, data, keepUntil)
+    INSERT INTO ${schema}.job (name, data, retryLimit, keepUntil)
     SELECT
-      '${COMPLETION_JOB_PREFIX}' || name,
-      ${buildJsonCompletionObject()},
+      deadletter,
+      data,
+      retryLimit,
       ${keepUntilInheritance}
     FROM results
-    WHERE state = '${states.expired}'
-      AND NOT name LIKE '${COMPLETION_JOB_PREFIX}%'
+    WHERE state = '${states.failed}'
+      AND deadletter IS NOT NULL
+      AND NOT name = deadletter
   `
 }
 
@@ -542,7 +505,7 @@ function insertJob (schema) {
       retryDelay,
       retryBackoff,
       keepUntil,
-      dead_letter
+      deadletter
     )
     SELECT
       id,
@@ -558,7 +521,7 @@ function insertJob (schema) {
       retryDelay,
       retryBackoff,
       keepUntil,
-      dead_letter
+      deadletter
     FROM
     ( SELECT *,
         CASE
@@ -589,7 +552,7 @@ function insertJob (schema) {
             $11::int as retryDelay,
             $12::bool as retryBackoff,
             $13::text as keepUntilValue,
-            $14::text as dead_letter
+            $14::text as deadletter
         ) j1
       ) j2
     ) j3
@@ -612,7 +575,7 @@ function insertJobs (schema) {
       retryBackoff,
       singletonKey,
       keepUntil,
-      dead_letter
+      deadletter
     )
     SELECT
       COALESCE(id, gen_random_uuid()) as id,
@@ -662,10 +625,10 @@ function archive (schema, completedInterval, failedInterval = completedInterval)
       RETURNING *
     )
     INSERT INTO ${schema}.archive (
-      id, name, priority, data, state, retryLimit, retryCount, retryDelay, retryBackoff, startAfter, startedOn, singletonKey, singletonOn, expireIn, createdOn, completedOn, keepUntil, dead_letter, output
+      id, name, priority, data, state, retryLimit, retryCount, retryDelay, retryBackoff, startAfter, startedOn, singletonKey, singletonOn, expireIn, createdOn, completedOn, keepUntil, deadletter, output
     )
     SELECT
-      id, name, priority, data, state, retryLimit, retryCount, retryDelay, retryBackoff, startAfter, startedOn, singletonKey, singletonOn, expireIn, createdOn, completedOn, keepUntil, dead_letter, output
+      id, name, priority, data, state, retryLimit, retryCount, retryDelay, retryBackoff, startAfter, startedOn, singletonKey, singletonOn, expireIn, createdOn, completedOn, keepUntil, deadletter, output
     FROM archived_rows
   `
 }

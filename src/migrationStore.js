@@ -65,6 +65,43 @@ function migrate (value, version, migrations) {
 function getAll (schema) {
   return [
     {
+      release: '10.0.0',
+      version: 21,
+      previous: 20,
+      install: [
+        `ALTER TABLE ${schema}.job ALTER COLUMN state TYPE text`,
+        `ALTER TABLE ${schema}.archive ALTER COLUMN state TYPE text`,
+        `DROP TYPE ${schema}.job_state`,
+        `CREATE TYPE ${schema}.job_state AS ENUM ('created','retry','active','completed','cancelled','failed')`,
+        `ALTER TABLE ${schema}.job ALTER COLUMN state TYPE job_state`,
+        `ALTER TABLE ${schema}.archive RENAME to archive_backup`,
+        `CREATE TABLE ${schema}.archive (LIKE ${schema}.job)`,
+        `ALTER TABLE ${schema}.archive ADD CONSTRAINT archive_pkey PRIMARY KEY (id)`,
+        `ALTER TABLE ${schema}.archive ADD archivedOn timestamptz NOT NULL DEFAULT now()`,
+        `CREATE INDEX archive_archivedon_idx ON ${schema}.archive(archivedon)`,
+        `CREATE INDEX archive_name_idx ON ${schema}.archive(name)`,
+        `DROP INDEX ${schema}.job_singletonKey`,
+        `DROP INDEX ${schema}.job_singleton_queue`,
+        `DROP INDEX ${schema}.job_singletonOn`,
+        `DROP INDEX ${schema}.job_singletonKeyOn`,
+        `CREATE UNIQUE INDEX job_singleton ON ${schema}.job (name, state) WHERE state <= 'active' AND singletonKey = '__pgboss__singleton_queue'`,
+        `CREATE UNIQUE INDEX job_throttle_on ON ${schema}.job (name, singletonOn) WHERE state <= 'completed' AND singletonOn IS NOT NULL AND singletonKey = '__pgboss__singleton_queue'`,
+        `CREATE UNIQUE INDEX job_throttle_key_on ON ${schema}.job (name, singletonOn, singletonKey) WHERE state <= 'completed' AND singletonOn IS NOT NULL AND singletonKey IS NOT NULL`
+      ],
+      uninstall: [
+        `ALTER TYPE ${schema}.job_state ADD VALUE 'expired' AFTER 'completed'`,
+        `ALTER TABLE ${schema}.archive DROP CONSTRAINT archive_pkey`,
+        `DROP TABLE IF EXISTS ${schema}.archive_backup`,
+        `DROP INDEX ${schema}.job_singleton`,
+        `DROP INDEX ${schema}.job_throttle_on`,
+        `DROP INDEX ${schema}.job_throttle_key_on`,
+        `CREATE UNIQUE INDEX job_singletonOn ON ${schema}.job (name, singletonOn) WHERE state < 'expired' AND singletonKey IS NULL`,
+        `CREATE UNIQUE INDEX job_singletonKeyOn ON ${schema}.job (name, singletonOn, singletonKey) WHERE state < 'expired'`,
+        `CREATE UNIQUE INDEX job_singletonKey ON ${schema}.job (name, singletonKey) WHERE state < 'completed' AND singletonOn IS NULL AND NOT singletonKey LIKE '\\_\\_pgboss\\_\\_singleton\\_queue%'`,
+        `CREATE UNIQUE INDEX job_singleton_queue ON ${schema}.job (name, singletonKey) WHERE state < 'active' AND singletonOn IS NULL AND singletonKey LIKE '\\_\\_pgboss\\_\\_singleton\\_queue%'`
+      ]
+    },
+    {
       release: '7.4.0',
       version: 20,
       previous: 19,
@@ -96,77 +133,6 @@ function getAll (schema) {
       ],
       uninstall: [
         `DROP TABLE ${schema}.subscription`
-      ]
-    },
-    {
-      release: '6.1.1',
-      version: 18,
-      previous: 17,
-      install: [
-        `ALTER TABLE ${schema}.job ALTER COLUMN on_complete SET DEFAULT false`
-      ]
-    },
-    {
-      release: '6.0.0',
-      version: 17,
-      previous: 16,
-      install: [
-        `DROP INDEX ${schema}.job_singletonKey`,
-        `CREATE UNIQUE INDEX job_singletonKey ON ${schema}.job (name, singletonKey) WHERE state < 'completed' AND singletonOn IS NULL AND NOT singletonKey = '__pgboss__singleton_queue'`,
-        `CREATE UNIQUE INDEX job_singleton_queue ON ${schema}.job (name, singletonKey) WHERE state < 'active' AND singletonOn IS NULL AND singletonKey = '__pgboss__singleton_queue'`,
-        `CREATE INDEX IF NOT EXISTS job_fetch ON ${schema}.job (name text_pattern_ops, startAfter) WHERE state < 'active'`,
-        `ALTER TABLE ${schema}.job ADD output jsonb`,
-        `ALTER TABLE ${schema}.archive ADD output jsonb`,
-        `ALTER TABLE ${schema}.job ALTER COLUMN on_complete SET DEFAULT false`,
-        `ALTER TABLE ${schema}.job ALTER COLUMN keepuntil SET DEFAULT now() + interval '14 days'`
-      ],
-      uninstall: [
-        `DROP INDEX ${schema}.job_fetch`,
-        `DROP INDEX ${schema}.job_singleton_queue`,
-        `DROP INDEX ${schema}.job_singletonKey`,
-        `CREATE UNIQUE INDEX job_singletonKey ON ${schema}.job (name, singletonKey) WHERE state < 'completed' AND singletonOn IS NULL`,
-        `ALTER TABLE ${schema}.job DROP COLUMN output`,
-        `ALTER TABLE ${schema}.archive DROP COLUMN output`,
-        `ALTER TABLE ${schema}.job ALTER COLUMN on_complete SET DEFAULT true`,
-        `ALTER TABLE ${schema}.job ALTER COLUMN keepuntil SET DEFAULT now() + interval '30 days'`
-      ]
-    },
-    {
-      release: '5.2.0',
-      version: 16,
-      previous: 15,
-      install: [
-          `ALTER TABLE ${schema}.job ADD on_complete boolean`,
-          `UPDATE ${schema}.job SET on_complete = true`,
-          `ALTER TABLE ${schema}.job ALTER COLUMN on_complete SET DEFAULT true`,
-          `ALTER TABLE ${schema}.job ALTER COLUMN on_complete SET NOT NULL`,
-          `ALTER TABLE ${schema}.archive ADD on_complete boolean`
-      ],
-      uninstall: [
-          `ALTER TABLE ${schema}.job DROP COLUMN on_complete`,
-          `ALTER TABLE ${schema}.archive DROP COLUMN on_complete`
-      ]
-    },
-    {
-      release: '5.0.6',
-      version: 15,
-      previous: 14,
-      install: [
-          `ALTER TABLE ${schema}.version ADD cron_on timestamp with time zone`
-      ],
-      uninstall: [
-          `ALTER TABLE ${schema}.version DROP COLUMN cron_on`
-      ]
-    },
-    {
-      release: '5.0.0',
-      version: 14,
-      previous: 13,
-      install: [
-          `ALTER TABLE ${schema}.version ADD maintained_on timestamp with time zone`
-      ],
-      uninstall: [
-          `ALTER TABLE ${schema}.version DROP COLUMN maintained_on`
       ]
     }
   ]
