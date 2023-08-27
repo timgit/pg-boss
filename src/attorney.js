@@ -137,8 +137,8 @@ function checkWorkArgs (name, args, defaults) {
 function checkFetchArgs (name, batchSize, options) {
   assert(name, 'missing queue name')
 
-  if(queueNameHasPatternMatch(name)) {
-    name =  sanitizeQueueNameForFetch(name)
+  if (queueNameHasPatternMatch(name)) {
+    name = sanitizeQueueNameForFetch(name)
   }
 
   assert(!batchSize || (Number.isInteger(batchSize) && batchSize >= 1), 'batchSize must be an integer > 0')
@@ -277,7 +277,7 @@ function applyExpirationConfig (config, defaults) {
 
 function applyRetryConfig (config, defaults) {
   assert(!('retryDelay' in config) || (Number.isInteger(config.retryDelay) && config.retryDelay >= 0), 'retryDelay must be an integer >= 0')
-  assert(!('retryLimit' in config) || (Number.isInteger(config.retryLimit) && config.retryLimit >= 1), 'retryLimit must be an integer >= 1')
+  assert(!('retryLimit' in config) || (Number.isInteger(config.retryLimit) && config.retryLimit >= 0), 'retryLimit must be an integer >= 0')
   assert(!('retryBackoff' in config) || (config.retryBackoff === true || config.retryBackoff === false), 'retryBackoff must be either true or false')
 
   if (defaults) {
@@ -287,7 +287,8 @@ function applyRetryConfig (config, defaults) {
   }
 
   config.retryDelay = config.retryDelay || 0
-  config.retryLimit = config.retryLimit || 2
+  config.retryLimit = ('retryLimit' in config) ? config.retryLimit : 2
+
   config.retryBackoff = !!config.retryBackoff
   config.retryDelay = (config.retryBackoff && !config.retryDelay) ? 1 : config.retryDelay
   config.retryLimit = (config.retryDelay && !config.retryLimit) ? 1 : config.retryLimit

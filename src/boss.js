@@ -219,7 +219,7 @@ class Boss extends EventEmitter {
   }
 
   async expire () {
-    const output = stringify({ value: { message: 'job failed by timeout in active state' }})
+    const output = stringify({ value: { message: 'job failed by timeout in active state' } })
     await this.executeSql(this.failJobsByTimeoutCommand, [null, output])
   }
 

@@ -170,18 +170,13 @@ describe('failure', function () {
   })
 
   it('dead letter queues are working', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, debug: true })
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
     const queue = this.test.bossConfig.schema
     const deadLetter = `${queue}_dlq`
 
     const jobId = await boss.send(queue, { key: queue }, { deadLetter })
 
     await boss.fetch(queue)
-
-    await boss.fail(jobId)
-    
-    await boss.fetch(queue)
-
     await boss.fail(jobId)
 
     const job = await boss.fetch(deadLetter)
