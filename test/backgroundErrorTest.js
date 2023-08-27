@@ -31,7 +31,6 @@ describe('background processing error handling', function () {
   it('state monitoring error handling works', async function () {
     const defaults = {
       monitorStateIntervalSeconds: 2,
-      maintenanceIntervalMinutes: 1,
       noScheduling: true,
       __test__throw_monitor: true
     }

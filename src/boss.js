@@ -1,4 +1,5 @@
 const EventEmitter = require('events')
+const { serializeError: stringify } = require('serialize-error')
 const plans = require('./plans')
 const { states } = require('./plans')
 const { COMPLETION_JOB_PREFIX } = plans
@@ -32,7 +33,7 @@ class Boss extends EventEmitter {
 
     this.events = events
 
-    this.expireCommand = plans.locked(config.schema, plans.expire(config.schema))
+    this.failJobsByTimeoutCommand = plans.locked(config.schema, plans.failJobsByTimeout(config.schema))
     this.archiveCommand = plans.locked(config.schema, plans.archive(config.schema, config.archiveInterval, config.archiveFailedInterval))
     this.purgeCommand = plans.locked(config.schema, plans.purge(config.schema, config.deleteAfter))
     this.getMaintenanceTimeCommand = plans.getMaintenanceTime(config.schema)
@@ -44,7 +45,8 @@ class Boss extends EventEmitter {
       this.archive,
       this.purge,
       this.countStates,
-      this.getQueueNames
+      this.getQueueNames,
+      this.maintain
     ]
   }
 
@@ -119,23 +121,29 @@ class Boss extends EventEmitter {
     await this.manager.send(queues.MONITOR_STATES, null, options)
   }
 
+  async maintain () {
+    const started = Date.now()
+
+    await this.expire()
+    await this.archive()
+    await this.purge()
+
+    const ended = Date.now()
+
+    await this.setMaintenanceTime()
+
+    return { ms: ended - started }
+  }
+
   async onMaintenance (job) {
     try {
       if (this.config.__test__throw_maint) {
         throw new Error(this.config.__test__throw_maint)
       }
 
-      const started = Date.now()
+      const result = await this.maintain()
 
-      await this.expire()
-      await this.archive()
-      await this.purge()
-
-      const ended = Date.now()
-
-      await this.setMaintenanceTime()
-
-      this.emit(events.maintenance, { ms: ended - started })
+      this.emit(events.maintenance, result)
 
       if (!this.stopped) {
         await this.manager.complete(job.id) // pre-complete to bypass throttling
@@ -211,7 +219,8 @@ class Boss extends EventEmitter {
   }
 
   async expire () {
-    await this.executeSql(this.expireCommand)
+    const output = stringify({ value: { message: 'job failed by timeout in active state' }})
+    await this.executeSql(this.failJobsByTimeoutCommand, [null, output])
   }
 
   async archive () {

@@ -4,8 +4,7 @@ const helper = require('./testHelper')
 describe('monitoring', function () {
   it('should emit state counts', async function () {
     const defaults = {
-      monitorStateIntervalSeconds: 1,
-      maintenanceIntervalSeconds: 10
+      monitorStateIntervalSeconds: 1
     }
 
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, ...defaults })

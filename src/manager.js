@@ -58,7 +58,7 @@ class Manager extends EventEmitter {
     this.completeJobsCommand = plans.completeJobs(config.schema)
     this.cancelJobsCommand = plans.cancelJobs(config.schema)
     this.resumeJobsCommand = plans.resumeJobs(config.schema)
-    this.failJobsCommand = plans.failJobs(config.schema)
+    this.failJobsCommand = plans.failJobsById(config.schema)
     this.getJobByIdCommand = plans.getJobById(config.schema)
     this.getArchivedJobByIdCommand = plans.getArchivedJobById(config.schema)
     this.subscribeCommand = plans.subscribe(config.schema)

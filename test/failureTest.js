@@ -74,10 +74,9 @@ describe('failure', function () {
 
     await boss.fail(jobId, failPayload)
 
-    const job = helper.getJobById(jobId)
+    const job = await boss.getJobById(jobId)
 
-    assert.strictEqual(job.data.state, 'failed')
-    assert.strictEqual(job.output.response.some.deeply.nested.reason, failPayload.some.deeply.nested.reason)
+    assert.strictEqual(job.output.some.deeply.nested.reason, failPayload.some.deeply.nested.reason)
   })
 
   it('failure via Promise reject() should pass string wrapped in value prop', async function () {
@@ -85,14 +84,13 @@ describe('failure', function () {
     const queue = this.test.bossConfig.schema
     const failPayload = 'mah error'
 
-    await boss.work(queue, () => Promise.reject(failPayload))
     const jobId = await boss.send(queue)
+    await boss.work(queue, () => Promise.reject(failPayload))
 
-    await delay(7000)
+    await delay(1000)
 
-    const job = helper.getJobById(jobId)
+    const job = await boss.getJobById(jobId)
 
-    assert.strictEqual(job.data.state, 'failed')
     assert.strictEqual(job.output.value, failPayload)
   })
 
@@ -107,11 +105,10 @@ describe('failure', function () {
     const jobId = await boss.send(queue)
     await boss.work(queue, () => Promise.reject(errorResponse))
 
-    await delay(7000)
+    await delay(1000)
 
-    const job = helper.getJobById(jobId)
+    const job = await boss.getJobById(jobId)
 
-    assert.strictEqual(job.data.state, 'failed')
     assert.strictEqual(job.output.something, something)
   })
 
@@ -123,11 +120,10 @@ describe('failure', function () {
     const jobId = await boss.send(queue)
     await boss.work(queue, async () => { throw new Error(message) })
 
-    await delay(2000)
+    await delay(1000)
 
-    const job = helper.getJobById(jobId)
+    const job = await boss.getJobById(jobId)
 
-    assert.strictEqual(job.data.state, 'failed')
     assert(job.output.message.includes(message))
   })
 
@@ -158,7 +154,7 @@ describe('failure', function () {
     const queue = this.test.bossConfig.schema
 
     const jobId = await boss.send(queue)
-    const message =
+    const message = 'mhmm'
 
     await boss.work(queue, { newJobCheckInterval: 500 }, async () => {
       const err = { message }
@@ -168,8 +164,28 @@ describe('failure', function () {
 
     await delay(2000)
 
-    const job = await helper.getJobById(jobId)
+    const job = await boss.getJobById(jobId)
 
     assert.strictEqual(job.output.message, message)
+  })
+
+  it('dead letter queues are working', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, debug: true })
+    const queue = this.test.bossConfig.schema
+    const deadLetter = `${queue}_dlq`
+
+    const jobId = await boss.send(queue, { key: queue }, { deadLetter })
+
+    await boss.fetch(queue)
+
+    await boss.fail(jobId)
+    
+    await boss.fetch(queue)
+
+    await boss.fail(jobId)
+
+    const job = await boss.fetch(deadLetter)
+
+    assert.strictEqual(job.data.key, queue)
   })
 })

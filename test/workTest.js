@@ -208,7 +208,7 @@ describe('work', function () {
       })
     })
 
-    const job = await helper.getJobById(jobId)
+    const job = await boss.getJobById(jobId)
 
     assert.strictEqual(job.state, 'completed')
   })
@@ -312,9 +312,9 @@ describe('work', function () {
 
     await delay(1000)
 
-    const job = await helper.getJobById(jobId)
+    const job = await boss.getJobById(jobId)
 
-    assert.strictEqual(job.data.state, 'completed')
+    assert.strictEqual(job.state, 'completed')
     assert.strictEqual(job.output.value, result)
   })
 
@@ -329,9 +329,9 @@ describe('work', function () {
 
     await delay(1000)
 
-    const job = await helper.getJobById(jobId)
+    const job = await boss.getJobById(jobId)
 
-    assert.strictEqual(job.data.state, 'completed')
+    assert.strictEqual(job.state, 'completed')
     assert.strictEqual(job.output.something, something)
   })
 

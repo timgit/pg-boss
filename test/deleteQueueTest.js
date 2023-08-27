@@ -1,6 +1,5 @@
 const assert = require('assert')
 const helper = require('./testHelper')
-const delay = require('delay')
 
 describe('deleteQueue', function () {
   it('should clear a specific queue', async function () {
@@ -59,8 +58,7 @@ describe('deleteQueue', function () {
 
   it('clearStorage() should empty both job storage tables', async function () {
     const defaults = {
-      archiveCompletedAfterSeconds: 1,
-      maintenanceIntervalSeconds: 1
+      archiveCompletedAfterSeconds: 1
     }
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, ...defaults })
 
@@ -72,8 +70,6 @@ describe('deleteQueue', function () {
     assert.strictEqual(job.id, jobId)
 
     await boss.complete(jobId)
-
-    await delay(3000)
 
     const db = await helper.getDb()
 

@@ -30,7 +30,8 @@ module.exports = {
   completeJobs,
   cancelJobs,
   resumeJobs,
-  failJobs,
+  failJobsById,
+  failJobsByTimeout,
   insertJob,
   insertJobs,
   getTime,
@@ -40,7 +41,6 @@ module.exports = {
   subscribe,
   unsubscribe,
   getQueuesForEvent,
-  expire,
   archive,
   purge,
   countStates,
@@ -368,26 +368,6 @@ function fetchNextJob (schema) {
   `
 }
 
-const retryCompletedOnCase = `CASE
-          WHEN retryCount < retryLimit
-          THEN NULL
-          ELSE now()
-          END`
-
-const retryStartAfterCase = `CASE
-          WHEN retryCount = retryLimit THEN startAfter
-          WHEN NOT retryBackoff THEN now() + retryDelay * interval '1'
-          ELSE now() +
-            (
-                retryDelay * 2 ^ LEAST(16, retryCount + 1) / 2
-                +
-                retryDelay * 2 ^ LEAST(16, retryCount + 1) / 2 * random()
-            )
-            * interval '1'
-          END`
-
-const keepUntilInheritance = 'keepUntil + (keepUntil - startAfter)'
-
 function completeJobs (schema) {
   return `
     WITH results AS (
@@ -403,20 +383,38 @@ function completeJobs (schema) {
   `
 }
 
-function failJobs (schema) {
+function failJobsById (schema) {
+  const where = `id IN (SELECT UNNEST($1::uuid[])) AND state < '${states.completed}'`
+  return failJobs(schema, where)
+}
+
+function failJobsByTimeout (schema) {
+  const where = `state = '${states.active}' AND (startedOn + expireIn) < now()`
+  return failJobs(schema, where)
+}
+
+function failJobs (schema, where) {
   return `
     WITH results AS (
-      UPDATE ${schema}.job
-      SET state = CASE
-          WHEN retryCount < retryLimit
-          THEN '${states.retry}'::${schema}.job_state
+      UPDATE ${schema}.job SET
+        state = CASE
+          WHEN retryCount < retryLimit THEN '${states.retry}'::${schema}.job_state
           ELSE '${states.failed}'::${schema}.job_state
           END,
-        completedOn = ${retryCompletedOnCase},
-        startAfter = ${retryStartAfterCase},
+        completedOn = CASE
+          WHEN retryCount < retryLimit THEN NULL
+          ELSE now()
+          END,
+        startAfter = CASE
+          WHEN retryCount = retryLimit THEN startAfter
+          WHEN NOT retryBackoff THEN now() + retryDelay * interval '1'
+          ELSE now() + (
+                retryDelay * 2 ^ LEAST(16, retryCount + 1) / 2 +
+                retryDelay * 2 ^ LEAST(16, retryCount + 1) / 2 * random()
+            ) * interval '1'
+          END,
         output = $2::jsonb
-      WHERE id IN (SELECT UNNEST($1::uuid[]))
-        AND state < '${states.completed}'
+      WHERE ${where}
       RETURNING *
     ), dlq_jobs as (
       INSERT INTO ${schema}.job (name, data, output, retryLimit, keepUntil)
@@ -425,40 +423,13 @@ function failJobs (schema) {
         data,
         output,
         retryLimit,
-        ${keepUntilInheritance}
+        keepUntil + (keepUntil - startAfter)
       FROM results
       WHERE state = '${states.failed}'
         AND deadletter IS NOT NULL
         AND NOT name = deadletter
     )
     SELECT COUNT(*) FROM results
-  `
-}
-
-function expire (schema) {
-  return `
-    WITH results AS (
-      UPDATE ${schema}.job
-      SET state = CASE
-          WHEN retryCount < retryLimit THEN '${states.retry}'::${schema}.job_state
-          ELSE '${states.failed}'::${schema}.job_state
-          END,
-        completedOn = ${retryCompletedOnCase},
-        startAfter = ${retryStartAfterCase}
-      WHERE state = '${states.active}'
-        AND (startedOn + expireIn) < now()
-      RETURNING *
-    )
-    INSERT INTO ${schema}.job (name, data, retryLimit, keepUntil)
-    SELECT
-      deadletter,
-      data,
-      retryLimit,
-      ${keepUntilInheritance}
-    FROM results
-    WHERE state = '${states.failed}'
-      AND deadletter IS NOT NULL
-      AND NOT name = deadletter
   `
 }
 

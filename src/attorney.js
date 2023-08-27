@@ -137,7 +137,9 @@ function checkWorkArgs (name, args, defaults) {
 function checkFetchArgs (name, batchSize, options) {
   assert(name, 'missing queue name')
 
-  name = sanitizeQueueNameForFetch(name)
+  if(queueNameHasPatternMatch(name)) {
+    name =  sanitizeQueueNameForFetch(name)
+  }
 
   assert(!batchSize || (Number.isInteger(batchSize) && batchSize >= 1), 'batchSize must be an integer > 0')
   assert(!('includeMetadata' in options) || typeof options.includeMetadata === 'boolean', 'includeMetadata must be a boolean')
