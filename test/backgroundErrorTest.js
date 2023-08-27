@@ -8,6 +8,7 @@ describe('background processing error handling', function () {
       monitorStateIntervalMinutes: 1,
       maintenanceIntervalSeconds: 1,
       noScheduling: true,
+      noSupervisor: false,
       __test__throw_maint: true
     }
 
@@ -31,6 +32,7 @@ describe('background processing error handling', function () {
   it('state monitoring error handling works', async function () {
     const defaults = {
       monitorStateIntervalSeconds: 2,
+      noSupervisor: false,
       noScheduling: true,
       __test__throw_monitor: true
     }
@@ -55,6 +57,8 @@ describe('background processing error handling', function () {
   it('clock monitoring error handling works', async function () {
     const config = {
       ...this.test.bossConfig,
+      noSupervisor: false,
+      noScheduling: false,
       clockMonitorIntervalSeconds: 1,
       __test__throw_clock_monitoring: 'pg-boss mock error: clock monitoring'
     }

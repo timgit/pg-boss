@@ -7,7 +7,7 @@ describe('retries', function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
     const queue = this.test.bossConfig.schema
 
-    const jobId = await boss.send({ name: queue, options: { expireInSeconds: 1 } })
+    const jobId = await boss.send({ name: queue, options: { expireInSeconds: 1, retryLimit: 1 } })
 
     const try1 = await boss.fetch(queue)
 
@@ -22,40 +22,35 @@ describe('retries', function () {
 
   it('should retry a job that failed', async function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const queue = this.test.bossConfig.schema
 
-    const queueName = 'retryFailed'
-    const retryLimit = 1
+    const jobId = await boss.send(queue, null, { retryLimit: 1 })
 
-    const jobId = await boss.send(queueName, null, { retryLimit })
-
-    await boss.fetch(queueName)
+    await boss.fetch(queue)
     await boss.fail(jobId)
 
-    const job = await boss.fetch(queueName)
+    const job = await boss.fetch(queue)
 
     assert.strictEqual(job.id, jobId)
   })
 
   it('should retry a job that failed with cascaded config', async function () {
-    const retryLimit = 1
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, retryLimit })
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, retryLimit: 1 })
+    const queue = this.test.bossConfig.schema
 
-    const queueName = 'retryFailed-config-cascade'
+    const jobId = await boss.send(queue)
 
-    const jobId = await boss.send(queueName)
-
-    await boss.fetch(queueName)
+    await boss.fetch(queue)
     await boss.fail(jobId)
 
-    const job = await boss.fetch(queueName)
+    const job = await boss.fetch(queue)
 
     assert.strictEqual(job.id, jobId)
   })
 
   it('should retry with a fixed delay', async function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
-
-    const queue = 'retryDelayFixed'
+    const queue = this.test.bossConfig.schema
 
     const jobId = await boss.send(queue, null, { retryLimit: 1, retryDelay: 1 })
 
@@ -75,8 +70,7 @@ describe('retries', function () {
 
   it('should retry with a exponential backoff', async function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
-
-    const queue = 'retryDelayBackoff'
+    const queue = this.test.bossConfig.schema
 
     let processCount = 0
     const retryLimit = 4
@@ -95,8 +89,7 @@ describe('retries', function () {
 
   it('should set the default retry limit to 1 if missing', async function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
-
-    const queue = 'retryLimitDefault'
+    const queue = this.test.bossConfig.schema
 
     const jobId = await boss.send(queue, null, { retryDelay: 1 })
     await boss.fetch(queue)

@@ -63,17 +63,10 @@ describe('multi-master', function () {
     const { states } = PgBoss
     const jobCount = 5
 
-    const defaults = {
-      maintenanceIntervalSeconds: 1,
-      noSupervisor: true
-    }
-
-    const config = { ...this.test.bossConfig, ...defaults }
-
-    let boss = new PgBoss(config)
+    let boss = new PgBoss({ ...this.test.bossConfig, maintenanceIntervalSeconds: 1 })
 
     const queues = boss.boss.getQueueNames()
-    const countJobs = (state) => helper.countJobs(config.schema, 'name = $1 AND state = $2', [queues.MAINTENANCE, state])
+    const countJobs = (state) => helper.countJobs(this.test.bossConfig.schema, 'name = $1 AND state = $2', [queues.MAINTENANCE, state])
 
     await boss.start()
 
@@ -88,7 +81,7 @@ describe('multi-master', function () {
 
     await boss.stop({ graceful: false })
 
-    boss = new PgBoss(this.test.bossConfig)
+    boss = new PgBoss({ ...this.test.bossConfig, noSupervisor: false })
 
     await boss.start()
 
