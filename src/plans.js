@@ -10,12 +10,12 @@ const states = {
 }
 
 const DEFAULT_SCHEMA = 'pgboss'
-const COMPLETION_JOB_PREFIX = `__state__${states.completed}__`
-const SINGLETON_QUEUE_KEY = '__pgboss__singleton_queue'
-// __pgboss-singleton-queued
-// __pgboss-singleton-active
-// __pgboss-singleton-queued-active
-// const SINGLETON_QUEUE_KEY_ESCAPED = SINGLETON_QUEUE_KEY.replace(/_/g, '\\_')
+
+const SINGLETON_TYPE = {
+  queued: '__pgboss-singleton-queued',
+  active: '__pgboss-singleton-active',
+  incomplete: '__pgboss-singleton-incomplete'
+}
 
 const MIGRATE_RACE_MESSAGE = 'division by zero'
 const CREATE_RACE_MESSAGE = 'already exists'
@@ -57,8 +57,7 @@ module.exports = {
   getArchivedJobById,
   getJobById,
   states: { ...states },
-  COMPLETION_JOB_PREFIX,
-  SINGLETON_QUEUE_KEY,
+  SINGLETON_TYPE,
   MIGRATE_RACE_MESSAGE,
   CREATE_RACE_MESSAGE,
   DEFAULT_SCHEMA
@@ -86,9 +85,9 @@ function create (schema, version) {
     createJobTable(schema),
     createIndexJobName(schema),
     createIndexJobFetch(schema),
+    createIndexSingleton(schema),
     createIndexSingletonQueued(schema),
     createIndexSingletonActive(schema),
-    createIndexSingletonQueuedAndActive(schema),
     createIndexThrottle(schema),
     createArchiveTable(schema),
     addPrimaryKeyToArchive(schema),
@@ -161,16 +160,16 @@ function createJobTable (schema) {
   `
 }
 
+function createIndexSingleton (schema) {
+  return `CREATE UNIQUE INDEX job_singleton ON ${schema}.job (name, state) WHERE state <= '${states.active}' AND singletonKey = '${SINGLETON_TYPE.incomplete}' AND singletonOn IS NULL`
+}
+
 function createIndexSingletonQueued (schema) {
-  return `CREATE UNIQUE INDEX job_singleton_queued ON ${schema}.job (name) WHERE state = '${states.created}' AND singletonKey = '__pgboss-singleton-queued' AND singletonOn IS NULL`
+  return `CREATE UNIQUE INDEX job_singleton_queued ON ${schema}.job (name) WHERE state <= '${states.retry}' AND singletonKey = '${SINGLETON_TYPE.queued}' AND singletonOn IS NULL`
 }
 
 function createIndexSingletonActive (schema) {
-  return `CREATE UNIQUE INDEX job_singleton_active ON ${schema}.job (name) WHERE state = '${states.active}' AND singletonKey = '__pgboss-singleton-active' AND singletonOn IS NULL`
-}
-
-function createIndexSingletonQueuedAndActive (schema) {
-  return `CREATE UNIQUE INDEX job_singleton_queued_active ON ${schema}.job (name, state) WHERE state IN ('${states.created}','${states.active}') AND singletonKey = 'pgboss-singleton-queued-active' AND singletonOn IS NULL`
+  return `CREATE UNIQUE INDEX job_singleton_active ON ${schema}.job (name) WHERE state = '${states.active}' AND singletonKey = '${SINGLETON_TYPE.active}' AND singletonOn IS NULL`
 }
 
 function createIndexThrottle (schema) {
@@ -385,15 +384,18 @@ function completeJobs (schema) {
 
 function failJobsById (schema) {
   const where = `id IN (SELECT UNNEST($1::uuid[])) AND state < '${states.completed}'`
-  return failJobs(schema, where)
+  const output = '$2::jsonb'
+
+  return failJobs(schema, where, output)
 }
 
 function failJobsByTimeout (schema) {
   const where = `state = '${states.active}' AND (startedOn + expireIn) < now()`
-  return failJobs(schema, where)
+  const output = '\'{ "value": { "message": "job failed by timeout in active state" } }\'::jsonb'
+  return failJobs(schema, where, output)
 }
 
-function failJobs (schema, where) {
+function failJobs (schema, where, output) {
   return `
     WITH results AS (
       UPDATE ${schema}.job SET
@@ -413,7 +415,7 @@ function failJobs (schema, where) {
                 retryDelay * 2 ^ LEAST(16, retryCount + 1) / 2 * random()
             ) * interval '1'
           END,
-        output = $2::jsonb
+        output = ${output}
       WHERE ${where}
       RETURNING *
     ), dlq_jobs as (

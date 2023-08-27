@@ -20,6 +20,8 @@ describe('archive', function () {
 
     await boss.complete(jobId)
 
+    await delay(1000)
+
     await boss.maintain()
 
     const archivedJob = await helper.getArchivedJobById(config.schema, jobId)

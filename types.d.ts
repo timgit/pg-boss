@@ -105,7 +105,6 @@ declare namespace PgBoss {
 
   interface CommonJobFetchOptions {
     includeMetadata?: boolean;
-    enforceSingletonQueueActiveLimit?: boolean;
   }
 
   type JobFetchOptions  = CommonJobFetchOptions & {
@@ -123,7 +122,6 @@ declare namespace PgBoss {
 
   type FetchOptions = {
     includeMetadata?: boolean;
-    enforceSingletonQueueActiveLimit?: boolean;
   } & ConnectionOptions;
 
   interface WorkHandler<ReqData> {

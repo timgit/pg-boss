@@ -1,8 +1,6 @@
 const EventEmitter = require('events')
-const { serializeError: stringify } = require('serialize-error')
 const plans = require('./plans')
 const { states } = require('./plans')
-const { COMPLETION_JOB_PREFIX } = plans
 
 const queues = {
   MAINTENANCE: '__pgboss__maintenance',
@@ -53,7 +51,6 @@ class Boss extends EventEmitter {
   async supervise () {
     this.metaMonitor()
 
-    await this.manager.deleteQueue(COMPLETION_JOB_PREFIX + queues.MAINTENANCE)
     await this.manager.deleteQueue(queues.MAINTENANCE)
 
     await this.maintenanceAsync()
@@ -65,7 +62,6 @@ class Boss extends EventEmitter {
     await this.manager.work(queues.MAINTENANCE, maintenanceWorkOptions, (job) => this.onMaintenance(job))
 
     if (this.monitorStates) {
-      await this.manager.deleteQueue(COMPLETION_JOB_PREFIX + queues.MONITOR_STATES)
       await this.manager.deleteQueue(queues.MONITOR_STATES)
 
       await this.monitorStatesAsync()
@@ -219,8 +215,7 @@ class Boss extends EventEmitter {
   }
 
   async expire () {
-    const output = stringify({ value: { message: 'job failed by timeout in active state' } })
-    await this.executeSql(this.failJobsByTimeoutCommand, [null, output])
+    await this.executeSql(this.failJobsByTimeoutCommand)
   }
 
   async archive () {

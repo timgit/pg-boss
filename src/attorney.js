@@ -1,5 +1,5 @@
 const assert = require('assert')
-const { DEFAULT_SCHEMA, SINGLETON_QUEUE_KEY } = require('./plans')
+const { DEFAULT_SCHEMA } = require('./plans')
 
 module.exports = {
   getConfig,
@@ -61,7 +61,7 @@ function checkSendArgs (args, defaults) {
   applyRetryConfig(options, defaults)
   applyExpirationConfig(options, defaults)
   applyRetentionConfig(options, defaults)
-  applySingletonKeyConfig(options)
+  // applySingletonKeyConfig(options)
 
   const { startAfter, singletonSeconds, singletonMinutes, singletonHours } = options
 
@@ -90,17 +90,17 @@ function checkInsertArgs (jobs) {
   assert(Array.isArray(jobs), `jobs argument should be an array.  Received '${typeof jobs}'`)
   return jobs.map(job => {
     job = { ...job }
-    applySingletonKeyConfig(job)
+    // applySingletonKeyConfig(job)
     return job
   })
 }
 
-function applySingletonKeyConfig (options) {
-  if (options.singletonKey && options.useSingletonQueue && options.singletonKey !== SINGLETON_QUEUE_KEY) {
-    options.singletonKey = SINGLETON_QUEUE_KEY + options.singletonKey
-  }
-  delete options.useSingletonQueue
-}
+// function applySingletonKeyConfig (options) {
+//   if (options.singletonKey && options.useSingletonQueue && options.singletonKey !== SINGLETON_QUEUE_KEY) {
+//     options.singletonKey = SINGLETON_QUEUE_KEY + options.singletonKey
+//   }
+//   delete options.useSingletonQueue
+// }
 
 function checkWorkArgs (name, args, defaults) {
   let options, callback
@@ -129,7 +129,6 @@ function checkWorkArgs (name, args, defaults) {
   assert(!('teamSize' in options) || (Number.isInteger(options.teamSize) && options.teamSize >= 1), 'teamSize must be an integer > 0')
   assert(!('batchSize' in options) || (Number.isInteger(options.batchSize) && options.batchSize >= 1), 'batchSize must be an integer > 0')
   assert(!('includeMetadata' in options) || typeof options.includeMetadata === 'boolean', 'includeMetadata must be a boolean')
-  assert(!('enforceSingletonQueueActiveLimit' in options) || typeof options.enforceSingletonQueueActiveLimit === 'boolean', 'enforceSingletonQueueActiveLimit must be a boolean')
 
   return { options, callback }
 }
@@ -143,7 +142,6 @@ function checkFetchArgs (name, batchSize, options) {
 
   assert(!batchSize || (Number.isInteger(batchSize) && batchSize >= 1), 'batchSize must be an integer > 0')
   assert(!('includeMetadata' in options) || typeof options.includeMetadata === 'boolean', 'includeMetadata must be a boolean')
-  assert(!('enforceSingletonQueueActiveLimit' in options) || typeof options.enforceSingletonQueueActiveLimit === 'boolean', 'enforceSingletonQueueActiveLimit must be a boolean')
 
   return { name }
 }
@@ -281,13 +279,13 @@ function applyRetryConfig (config, defaults) {
   assert(!('retryBackoff' in config) || (config.retryBackoff === true || config.retryBackoff === false), 'retryBackoff must be either true or false')
 
   if (defaults) {
-    config.retryDelay = config.retryDelay || defaults.retryDelay
-    config.retryLimit = config.retryLimit || defaults.retryLimit
-    config.retryBackoff = config.retryBackoff || defaults.retryBackoff
+    config.retryDelay = ('retryDelay' in config) ? config.retryDelay : defaults.retryDelay
+    config.retryLimit = ('retryLimit' in config) ? config.retryLimit : defaults.retryLimit
+    config.retryBackoff = ('retryBackoff' in config) ? config.retryBackoff : defaults.retryBackoff
   }
 
   config.retryDelay = config.retryDelay || 0
-  config.retryLimit = ('retryLimit' in config) ? config.retryLimit : 2
+  config.retryLimit = Number.isInteger(config.retryLimit) ? config.retryLimit : 2
 
   config.retryBackoff = !!config.retryBackoff
   config.retryDelay = (config.retryBackoff && !config.retryDelay) ? 1 : config.retryDelay

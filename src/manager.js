@@ -15,7 +15,7 @@ const { QUEUES: TIMEKEEPER_QUEUES } = require('./timekeeper')
 const INTERNAL_QUEUES = Object.values(BOSS_QUEUES).concat(Object.values(TIMEKEEPER_QUEUES)).reduce((acc, i) => ({ ...acc, [i]: i }), {})
 
 const plans = require('./plans')
-const { SINGLETON_QUEUE_KEY } = plans
+// const { SINGLETON_TYPE } = plans
 
 const WIP_EVENT_INTERVAL = 2000
 const WIP_DEBOUNCE_OPTIONS = { leading: true, trailing: true, maxWait: WIP_EVENT_INTERVAL }
@@ -58,7 +58,7 @@ class Manager extends EventEmitter {
     this.completeJobsCommand = plans.completeJobs(config.schema)
     this.cancelJobsCommand = plans.cancelJobs(config.schema)
     this.resumeJobsCommand = plans.resumeJobs(config.schema)
-    this.failJobsCommand = plans.failJobsById(config.schema)
+    this.failJobsByIdCommand = plans.failJobsById(config.schema)
     this.getJobByIdCommand = plans.getJobById(config.schema)
     this.getArchivedJobByIdCommand = plans.getArchivedJobById(config.schema)
     this.subscribeCommand = plans.subscribe(config.schema)
@@ -340,7 +340,7 @@ class Manager extends EventEmitter {
   async sendSingleton (name, data, options) {
     options = options ? { ...options } : {}
 
-    options.singletonKey = SINGLETON_QUEUE_KEY
+    // options.singletonKey = SINGLETON_QUEUE_KEY
 
     const result = Attorney.checkSendArgs([name, data, options], this.config)
 
@@ -535,7 +535,7 @@ class Manager extends EventEmitter {
   async fail (id, data, options = {}) {
     const db = options.db || this.db
     const ids = this.mapCompletionIdArg(id, 'fail')
-    const result = await db.executeSql(this.failJobsCommand, [ids, this.mapCompletionDataArg(data)])
+    const result = await db.executeSql(this.failJobsByIdCommand, [ids, this.mapCompletionDataArg(data)])
     return this.mapCompletionResponse(ids, result)
   }
 

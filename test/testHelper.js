@@ -55,12 +55,12 @@ async function init () {
   await createPgCrypto(database)
 }
 
-async function getDb (database) {
+async function getDb ({ database, debug } = {}) {
   const config = getConfig()
 
   config.database = database || config.database
 
-  const db = new Db(config)
+  const db = new Db({ ...config, debug })
 
   await db.open()
 
@@ -68,7 +68,7 @@ async function getDb (database) {
 }
 
 async function createPgCrypto (database) {
-  const db = await getDb(database)
+  const db = await getDb({ database })
   await db.executeSql('create extension if not exists pgcrypto')
   await db.close()
 }
@@ -106,7 +106,7 @@ async function countJobs (schema, where, values) {
 }
 
 async function tryCreateDb (database) {
-  const db = await getDb('postgres')
+  const db = await getDb({ database: 'postgres' })
 
   try {
     await db.executeSql(`CREATE DATABASE ${database}`)

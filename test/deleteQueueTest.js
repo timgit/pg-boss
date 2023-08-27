@@ -1,5 +1,6 @@
 const assert = require('assert')
 const helper = require('./testHelper')
+const delay = require('delay')
 
 describe('deleteQueue', function () {
   it('should clear a specific queue', async function () {
@@ -57,19 +58,17 @@ describe('deleteQueue', function () {
   })
 
   it('clearStorage() should empty both job storage tables', async function () {
-    const defaults = {
-      archiveCompletedAfterSeconds: 1
-    }
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, ...defaults })
-
-    const queue = 'clear-storage-works'
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, archiveCompletedAfterSeconds: 1 })
+    const queue = this.test.bossConfig.schema
 
     const jobId = await boss.send(queue)
-    const job = await boss.fetch(queue)
-
-    assert.strictEqual(job.id, jobId)
-
+    await boss.fetch(queue)
     await boss.complete(jobId)
+
+    await delay(1000)
+    await boss.maintain()
+
+    await boss.send(queue)
 
     const db = await helper.getDb()
 
@@ -81,15 +80,15 @@ describe('deleteQueue', function () {
     const preJobCount = await getJobCount('job')
     const preArchiveCount = await getJobCount('archive')
 
-    assert(preJobCount > 0)
-    assert(preArchiveCount > 0)
+    assert.strictEqual(preJobCount, 1)
+    assert.strictEqual(preArchiveCount, 1)
 
     await boss.clearStorage()
 
     const postJobCount = await getJobCount('job')
     const postArchiveCount = await getJobCount('archive')
 
-    assert(postJobCount === 0)
-    assert(postArchiveCount === 0)
+    assert.strictEqual(postJobCount, 0)
+    assert.strictEqual(postArchiveCount, 0)
   })
 })

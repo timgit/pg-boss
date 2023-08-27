@@ -562,8 +562,6 @@ Available in constructor as a default, or overridden in send.
 
     When used in conjunction with singletonKey, allows a max of 1 job to be queued.
 
-    >By default, there is no limit on the number of these jobs that may be active. However, this behavior may be modified by passing the [enforceSingletonQueueActiveLimit](#fetch) option.
-
   ```js
   boss.send('my-job', {}, {singletonKey: '123', useSingletonQueue: true}) // resolves a jobId
   boss.send('my-job', {}, {singletonKey: '123', useSingletonQueue: true}) // resolves a null jobId until first job becomes active
@@ -807,9 +805,6 @@ The default concurrency for `work()` is 1 job every 2 seconds. Both the interval
 
     Same as in [`fetch()`](#fetch)
 
-* **enforceSingletonQueueActiveLimit**, bool
-
-    Same as in [`fetch()`](#fetch)
 
 **Polling options**
 
