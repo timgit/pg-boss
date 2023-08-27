@@ -39,6 +39,10 @@ function getConfig (options = {}) {
 
   config.schema = config.schema || 'pgboss'
 
+  config.noSupervisor = true
+  config.noScheduling = true
+  config.retryLimit = 0
+
   const result = { ...config }
 
   return Object.assign(result, options)
