@@ -201,9 +201,7 @@ class Manager extends EventEmitter {
       createTeamRefillPromise()
     }
 
-    const patternMatch = Attorney.queueNameHasPatternMatch(name)
-
-    const fetch = () => this.fetch(name, batchSize || (teamSize - queueSize), { includeMetadata, patternMatch })
+    const fetch = () => this.fetch(name, batchSize || (teamSize - queueSize), { includeMetadata })
 
     const onFetch = async (jobs) => {
       if (this.config.__test__throw_worker) {
@@ -459,9 +457,10 @@ class Manager extends EventEmitter {
   }
 
   async fetch (name, batchSize, options = {}) {
+    const patternMatch = Attorney.queueNameHasPatternMatch(name)
     const values = Attorney.checkFetchArgs(name, batchSize, options)
     const db = options.db || this.db
-    const nextJobSql = this.nextJobCommand(options.includeMetadata || false)
+    const nextJobSql = this.nextJobCommand(options.includeMetadata || false, patternMatch)
     const statementValues = [values.name, batchSize || 1]
 
     let result

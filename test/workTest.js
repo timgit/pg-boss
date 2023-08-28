@@ -208,6 +208,8 @@ describe('work', function () {
       })
     })
 
+    await delay(500)
+
     const job = await boss.getJobById(jobId)
 
     assert.strictEqual(job.state, 'completed')
@@ -359,7 +361,7 @@ describe('work', function () {
   })
 
   it('should fail job at expiration without maintenance', async function () {
-    const boss = this.test.boss = new PgBoss(this.test.bossConfig)
+    const boss = this.test.boss = new PgBoss({ ...this.test.bossConfig, noSupervisor: false })
 
     const maintenanceTick = new Promise((resolve) => boss.on('maintenance', resolve))
 
@@ -382,7 +384,7 @@ describe('work', function () {
   })
 
   it('should fail a batch of jobs at expiration without maintenance', async function () {
-    const boss = this.test.boss = new PgBoss(this.test.bossConfig)
+    const boss = this.test.boss = new PgBoss({ ...this.test.bossConfig, noSupervisor: false })
 
     const maintenanceTick = new Promise((resolve) => boss.on('maintenance', resolve))
 

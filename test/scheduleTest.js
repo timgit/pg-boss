@@ -11,7 +11,8 @@ describe('schedule', function () {
   it('should send job based on every minute expression', async function () {
     const config = {
       ...this.test.bossConfig,
-      cronWorkerIntervalSeconds: 1
+      cronWorkerIntervalSeconds: 1,
+      noScheduling: false
     }
 
     const boss = this.test.boss = await helper.start(config)
@@ -31,7 +32,8 @@ describe('schedule', function () {
     const config = {
       ...this.test.bossConfig,
       clockMonitorIntervalSeconds: 1,
-      cronWorkerIntervalSeconds: 1
+      cronWorkerIntervalSeconds: 1,
+      noScheduling: false
     }
 
     const boss = this.test.boss = await helper.start(config)
@@ -51,7 +53,8 @@ describe('schedule', function () {
     const config = {
       ...this.test.bossConfig,
       cronMonitorIntervalSeconds: 1,
-      cronWorkerIntervalSeconds: 1
+      cronWorkerIntervalSeconds: 1,
+      noScheduling: false
     }
 
     const boss = this.test.boss = await helper.start(config)
@@ -88,7 +91,7 @@ describe('schedule', function () {
 
     await boss.stop()
 
-    boss = await helper.start({ ...this.test.bossConfig, cronWorkerIntervalSeconds: 1 })
+    boss = await helper.start({ ...this.test.bossConfig, cronWorkerIntervalSeconds: 1, noScheduling: false })
 
     await delay(ASSERT_DELAY)
 
@@ -130,7 +133,8 @@ describe('schedule', function () {
   it('should send job based on current minute in UTC', async function () {
     const config = {
       ...this.test.bossConfig,
-      cronWorkerIntervalSeconds: 1
+      cronWorkerIntervalSeconds: 1,
+      noScheduling: false
     }
 
     const boss = this.test.boss = await helper.start(config)
@@ -165,7 +169,8 @@ describe('schedule', function () {
   it('should send job based on current minute in a specified time zone', async function () {
     const config = {
       ...this.test.bossConfig,
-      cronWorkerIntervalSeconds: 1
+      cronWorkerIntervalSeconds: 1,
+      noScheduling: false
     }
 
     const boss = this.test.boss = await helper.start(config)
@@ -202,6 +207,7 @@ describe('schedule', function () {
   it('should force a clock skew warning', async function () {
     const config = {
       ...this.test.bossConfig,
+      noScheduling: false,
       __test__force_clock_skew_warning: true
     }
 
@@ -229,6 +235,7 @@ describe('schedule', function () {
     const config = {
       ...this.test.bossConfig,
       clockMonitorIntervalSeconds: 1,
+      noScheduling: false,
       __test__force_clock_monitoring_error: 'pg-boss mock error: clock skew monitoring'
     }
 
@@ -252,6 +259,7 @@ describe('schedule', function () {
     const config = {
       ...this.test.bossConfig,
       cronMonitorIntervalSeconds: 1,
+      noScheduling: false,
       __test__force_cron_monitoring_error: 'pg-boss mock error: cron monitoring'
     }
 

@@ -7,8 +7,8 @@ module.exports = {
   checkInsertArgs,
   checkWorkArgs,
   checkFetchArgs,
-  queueNameHasPatternMatch,
-  warnClockSkew
+  warnClockSkew,
+  queueNameHasPatternMatch
 }
 
 const WARNINGS = {

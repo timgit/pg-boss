@@ -91,9 +91,11 @@ describe('retries', function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
     const queue = this.test.bossConfig.schema
 
-    const jobId = await boss.send(queue, null, { retryDelay: 1 })
+    const jobId = await boss.send(queue, null, { retryDelay: 1, retryLimit: 0 })
     await boss.fetch(queue)
     await boss.fail(jobId)
+
+    await delay(1000)
 
     const job1 = await boss.fetch(queue)
 

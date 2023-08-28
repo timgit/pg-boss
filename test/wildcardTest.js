@@ -3,7 +3,7 @@ const helper = require('./testHelper')
 
 describe('wildcard', function () {
   it('fetch() should return all jobs using a wildcard pattern', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
     const queue = this.test.bossConfig.schema
 
     await boss.send(`${queue}_1234`)
@@ -27,17 +27,5 @@ describe('wildcard', function () {
         resolve()
       })
     })
-  })
-
-  it('should not accidentally fetch state completion jobs from a pattern', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
-    const queue = this.test.bossConfig.schema
-
-    await boss.send(`${queue}_1234`)
-    const job = await boss.fetch(`${queue}_*`)
-    await boss.complete(job.id)
-    const job2 = await boss.fetch(`${queue}_*`)
-
-    assert.strictEqual(job2, null)
   })
 })

@@ -1,7 +1,5 @@
 const Db = require('../src/db')
 const PgBoss = require('../')
-const plans = require('../src/plans')
-const { COMPLETION_JOB_PREFIX } = plans
 const crypto = require('crypto')
 const sha1 = (value) => crypto.createHash('sha1').update(value).digest('hex')
 
@@ -13,7 +11,6 @@ module.exports = {
   getArchivedJobById,
   countJobs,
   findJobs,
-  COMPLETION_JOB_PREFIX,
   getConfig,
   getConnectionString,
   tryCreateDb,

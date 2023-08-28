@@ -14,11 +14,10 @@ async function readme () {
 
   console.log(`created cronjob in queue ${queue}`)
 
-  await boss.work(queue, someAsyncJobHandler)
-}
-
-async function someAsyncJobHandler (job) {
-  console.log(`running job ${job.id}`)
+  await boss.work(queue, async job => {
+    console.log(`running job ${job.id}`)
+    boss.unschedule(queue)
+  })
 }
 
 readme()

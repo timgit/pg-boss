@@ -43,9 +43,9 @@ This will likely cater the most to teams already familiar with the simplicity of
 * Cron scheduling
 * Pub/sub API for fan-out queue relationships
 * Deferral, retries (with exponential backoff), rate limiting, debouncing
-* Completion jobs for orchestrations/sagas
 * Direct table access for bulk loads via COPY or INSERT
 * Multi-master compatible (for example, in a Kubernetes ReplicaSet)
+* Dead letter queues
 * Automatic creation and migration of storage tables
 * Automatic maintenance operations to manage table growth
 
