@@ -15,7 +15,8 @@ const { QUEUES: TIMEKEEPER_QUEUES } = require('./timekeeper')
 const INTERNAL_QUEUES = Object.values(BOSS_QUEUES).concat(Object.values(TIMEKEEPER_QUEUES)).reduce((acc, i) => ({ ...acc, [i]: i }), {})
 
 const plans = require('./plans')
-// const { SINGLETON_TYPE } = plans
+
+const { QUEUE_POLICY } = plans
 
 const WIP_EVENT_INTERVAL = 2000
 const WIP_DEBOUNCE_OPTIONS = { leading: true, trailing: true, maxWait: WIP_EVENT_INTERVAL }
@@ -84,9 +85,8 @@ class Manager extends EventEmitter {
       this.sendThrottled,
       this.sendOnce,
       this.sendAfter,
-      this.sendSingleton,
+      this.createQueue,
       this.deleteQueue,
-      this.deleteAllQueues,
       this.clearStorage,
       this.getQueueSize,
       this.getJobById
@@ -102,10 +102,18 @@ class Manager extends EventEmitter {
   async stop () {
     this.stopping = true
 
-    for (const sub of this.workers.values()) {
-      if (!INTERNAL_QUEUES[sub.name]) {
-        await this.offWork(sub.name)
+    for (const worker of this.workers.values()) {
+      if (!INTERNAL_QUEUES[worker.name]) {
+        await this.offWork(worker.name)
       }
+    }
+  }
+
+  async failWip () {
+    const jobIds = Array.from(this.workers.values()).flatMap(w => w.jobs.map(j => j.id))
+
+    if (jobIds.length) {
+      await this.fail(jobIds, 'pg-boss shut down while active')
     }
   }
 
@@ -335,16 +343,6 @@ class Manager extends EventEmitter {
     return await this.createJob(result.name, result.data, result.options)
   }
 
-  async sendSingleton (name, data, options) {
-    options = options ? { ...options } : {}
-
-    // options.singletonKey = SINGLETON_QUEUE_KEY
-
-    const result = Attorney.checkSendArgs([name, data, options], this.config)
-
-    return await this.createJob(result.name, result.data, result.options)
-  }
-
   async sendAfter (name, data, options, after) {
     options = options ? { ...options } : {}
     options.startAfter = after
@@ -388,7 +386,7 @@ class Manager extends EventEmitter {
       retryBackoff,
       retryLimit,
       retryDelay,
-      deadLetter
+      deadLetter = null
     } = options
 
     const id = uuid[this.config.uuid]()
@@ -552,16 +550,42 @@ class Manager extends EventEmitter {
     return this.mapCompletionResponse(ids, result)
   }
 
+  async createQueue (name, options) {
+    assert(name, 'Missing queue name argument')
+
+    const {
+      policy,
+      retryLimit,
+      retryDelay,
+      retryBackoff,
+      expireInSeconds,
+      retentionMinutes,
+      deadLetter
+    } = options
+
+    const params = [
+      policy,
+      retryLimit,
+      retryDelay,
+      retryBackoff,
+      expireInSeconds,
+      retentionMinutes,
+      deadLetter
+    ]
+
+    assert(policy in QUEUE_POLICY, `${policy} is not a valid queue policy`)
+
+    // todo
+
+    const sql = plans.createQueue(this.config.schema)(name)
+
+    await this.db.executeSql(sql, params)
+  }
+
   async deleteQueue (queue, options) {
     assert(queue, 'Missing queue name argument')
     const sql = plans.deleteQueue(this.config.schema, options)
     const result = await this.db.executeSql(sql, [queue])
-    return result ? result.rowCount : null
-  }
-
-  async deleteAllQueues (options) {
-    const sql = plans.deleteAllQueues(this.config.schema, options)
-    const result = await this.db.executeSql(sql)
     return result ? result.rowCount : null
   }
 

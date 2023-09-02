@@ -27,7 +27,6 @@
     - [`send(request)`](#sendrequest)
     - [`sendAfter(name, data, options, seconds | ISO date string | Date)`](#sendaftername-data-options-seconds--iso-date-string--date)
     - [`sendOnce(name, data, options, key)`](#sendoncename-data-options-key)
-    - [`sendSingleton(name, data, options)`](#sendsingletonname-data-options)
     - [`sendThrottled(name, data, options, seconds [, key])`](#sendthrottledname-data-options-seconds--key)
     - [`sendDebounced(name, data, options, seconds [, key])`](#senddebouncedname-data-options-seconds--key)
   - [`insert([jobs])`](#insertjobs)
@@ -55,8 +54,8 @@
   - [`notifyWorker(id)`](#notifyworkerid)
   - [`getQueueSize(name [, options])`](#getqueuesizename--options)
   - [`getJobById(id, options)`](#getjobbyidid-options)
+  - [`createQueue(name, type)`](#createqueuename-type)
   - [`deleteQueue(name)`](#deletequeuename)
-  - [`deleteAllQueues()`](#deleteallqueues)
   - [`clearStorage()`](#clearstorage)
 
 <!-- /TOC -->
@@ -642,11 +641,6 @@ Send a job with a unique key to only allow 1 job to be in created, retry, or act
 
 This is a convenience version of `send()` with the `singletonKey` option assigned.
 
-### `sendSingleton(name, data, options)`
-
-Send a job but only allow 1 job to be in created or retry state at at time.
-
-This is a convenience version of `send()` with the `singletonKey` option assigned.
 
 ### `sendThrottled(name, data, options, seconds [, key])`
 
@@ -1006,13 +1000,21 @@ As an example, the following options object include active jobs along with creat
 
 Retrieves a job with all metadata by id in either the primary or archive storage.
 
+## `createQueue(name, type)`
+
+Creates a typed queue. This is an optional step in order to use unique constraints to limit how many jobs can exist in each state. 
+
+Allowed type values:
+
+| type | description |
+| - | - |
+| debounced | Allows only 1 job to be queued, unlimited active |
+| singleton | Allows only 1 job to be active, unlimited queued |
+| stately | Combination of the above: Allow 1 job to be queued. Allow 1 job to be active |
+
 ## `deleteQueue(name)`
 
-Deletes all pending jobs in the specified queue from the active job table.  All jobs in the archive table are retained.
-
-## `deleteAllQueues()`
-
-Deletes all pending jobs from all queues in the active job table. All jobs in the archive table are retained.
+Deletes a queue and all jobs from the active job table.  All jobs in the archive table are retained.
 
 ## `clearStorage()`
 

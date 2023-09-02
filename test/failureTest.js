@@ -183,4 +183,23 @@ describe('failure', function () {
 
     assert.strictEqual(job.data.key, queue)
   })
+
+  it('should fail active jobs in a worker during shutdown', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const queue = this.test.bossConfig.schema
+
+    const jobId = await boss.send(queue, null, { retryLimit: 1, expireInSeconds: 60 })
+
+    await boss.work(queue, async () => await delay(10000))
+
+    await delay(1000)
+
+    await boss.stop({ wait: true, timeout: 2000 })
+
+    await boss.start()
+
+    const job = await boss.fetch(queue)
+
+    assert.strictEqual(job?.id, jobId)
+  })
 })

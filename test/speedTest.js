@@ -3,7 +3,7 @@ const pMap = require('p-map')
 
 describe('speed', function () {
   const expectedSeconds = 2
-  const jobCount = 10000
+  const jobCount = 10_000
   const queue = 'speedTest'
 
   const jobs = new Array(jobCount).fill(null).map((item, index) => ({ name: queue, data: { index } }))

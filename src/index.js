@@ -90,9 +90,11 @@ class PgBoss extends EventEmitter {
   }
 
   async start () {
-    if (!this.stopped) {
-      return this
+    if (this.starting || this.started) {
+      return
     }
+
+    this.starting = true
 
     if (this.db.isOurs && !this.db.opened) {
       await this.db.open()
@@ -101,9 +103,6 @@ class PgBoss extends EventEmitter {
     if (!this.config.noContractor) {
       await this.contractor.start()
     }
-
-    this.stopped = false
-    this.started = true
 
     this.manager.start()
 
@@ -115,19 +114,19 @@ class PgBoss extends EventEmitter {
       await this.timekeeper.start()
     }
 
+    this.starting = false
+    this.started = true
+    this.stopped = false
+
     return this
   }
 
   async stop (options = {}) {
-    if (this.stoppingOn) {
+    if (this.stoppingOn || this.stopped) {
       return
     }
 
-    if (this.stopped) {
-      this.emit(events.stopped)
-    }
-
-    let { destroy = false, graceful = true, timeout = 30000 } = options
+    let { destroy = false, graceful = true, timeout = 30000, wait = false } = options
 
     timeout = Math.max(timeout, 1000)
 
@@ -135,46 +134,54 @@ class PgBoss extends EventEmitter {
 
     await this.manager.stop()
     await this.timekeeper.stop()
+    await this.boss.stop()
 
-    const shutdown = async () => {
-      this.stopped = true
-      this.stoppingOn = null
-
-      if (this.db.isOurs && this.db.opened && destroy) {
-        await this.db.close()
-      }
-
-      this.emit(events.stopped)
-    }
-
-    if (!graceful) {
-      await this.boss.stop()
-      await shutdown()
-      return
-    }
-
-    setImmediate(async () => {
-      let closing = false
-
+    await new Promise((resolve, reject) => {
       try {
-        while (Date.now() - this.stoppingOn < timeout) {
-          if (this.manager.getWipData({ includeInternal: closing }).length === 0) {
-            if (closing) {
-              break
+        const shutdown = async () => {
+          try {
+            await this.manager.failWip()
+
+            if (this.db.isOurs && this.db.opened && destroy) {
+              await this.db.close()
             }
 
-            closing = true
+            this.stopped = true
+            this.stoppingOn = null
+            this.started = false
 
-            await this.boss.stop()
+            this.emit(events.stopped)
+            resolve()
+          } catch (err) {
+            this.emit(events.error, err)
+            reject(err)
           }
-
-          await delay(1000)
         }
 
-        await this.boss.stop()
-        await shutdown()
+        if (!graceful) {
+          return shutdown()
+        }
+
+        if (!wait) {
+          resolve()
+        }
+
+        const isWip = () => this.manager.getWipData({ includeInternal: false }).length > 0
+
+        setImmediate(async () => {
+          try {
+            while ((Date.now() - this.stoppingOn) < timeout && isWip()) {
+              await delay(500)
+            }
+
+            await shutdown()
+          } catch (err) {
+            this.emit(events.error, err)
+            reject(err)
+          }
+        })
       } catch (err) {
-        this.emit(events.error, err)
+        reject(err)
       }
     })
   }

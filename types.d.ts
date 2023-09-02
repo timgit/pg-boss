@@ -295,8 +295,6 @@ declare class PgBoss extends EventEmitter {
 
   sendOnce(name: string, data: object, options: PgBoss.SendOptions, key: string): Promise<string | null>;
 
-  sendSingleton(name: string, data: object, options: PgBoss.SendOptions): Promise<string | null>;
-
   sendThrottled(name: string, data: object, options: PgBoss.SendOptions, seconds: number): Promise<string | null>;
   sendThrottled(name: string, data: object, options: PgBoss.SendOptions, seconds: number, key: string): Promise<string | null>;
 
@@ -351,7 +349,6 @@ declare class PgBoss extends EventEmitter {
   getJobById(id: string, options?: PgBoss.ConnectionOptions): Promise<PgBoss.JobWithMetadata | null>;
 
   deleteQueue(name: string): Promise<void>;
-  deleteAllQueues(): Promise<void>;
   clearStorage(): Promise<void>;
 
   archive(): Promise<void>;

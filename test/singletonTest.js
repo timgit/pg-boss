@@ -4,7 +4,7 @@ const helper = require('./testHelper')
 
 describe('singleton', function () {
   it('should not allow more than 1 pending job at a time with the same key', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, debug: true })
 
     const queue = 'singleton-1-pending'
     const singletonKey = 'a'
@@ -82,28 +82,6 @@ describe('singleton', function () {
     const jobId2 = await boss.sendOnce(queue)
 
     assert.strictEqual(jobId2, null)
-  })
-
-  it('sendSingleton() works', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
-
-    const queue = this.test.bossConfig.schema
-
-    const jobId = await boss.sendSingleton(queue)
-
-    assert(jobId)
-
-    const jobId2 = await boss.sendSingleton(queue)
-
-    assert.strictEqual(jobId2, null)
-
-    const job = await boss.fetch(queue)
-
-    assert.strictEqual(job.id, jobId)
-
-    const jobId3 = await boss.sendSingleton(queue)
-
-    assert(jobId3)
   })
 
   it('useSingletonQueue allows a second singleton job if first has enetered active state', async function () {

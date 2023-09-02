@@ -33,30 +33,6 @@ describe('deleteQueue', function () {
     assert.strictEqual(0, q2Count3)
   })
 
-  it('should clear all queues', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
-
-    const queue1 = 'delete-named-queue-11'
-    const queue2 = 'delete-named-queue-22'
-
-    await boss.send(queue1)
-    await boss.send(queue2)
-
-    const q1Count1 = await boss.getQueueSize(queue1)
-    const q2Count1 = await boss.getQueueSize(queue2)
-
-    assert.strictEqual(1, q1Count1)
-    assert.strictEqual(1, q2Count1)
-
-    await boss.deleteAllQueues()
-
-    const q1Count2 = await boss.getQueueSize(queue1)
-    const q2Count2 = await boss.getQueueSize(queue2)
-
-    assert.strictEqual(0, q1Count2)
-    assert.strictEqual(0, q2Count2)
-  })
-
   it('clearStorage() should empty both job storage tables', async function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, archiveCompletedAfterSeconds: 1 })
     const queue = this.test.bossConfig.schema
