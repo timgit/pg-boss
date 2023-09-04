@@ -114,7 +114,7 @@ describe('complete', function () {
     assert.strictEqual(called, true)
   })
 
-  it.skip('should warn with an old onComplete option only once', async function () {
+  it('should warn with an old onComplete option only once', async function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
 
     const queue = this.test.bossConfig.schema

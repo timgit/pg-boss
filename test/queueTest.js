@@ -96,12 +96,76 @@ describe('queues', function () {
     await boss.purgeQueue(queue)
   })
 
-  it.skip('should update queue properties', async function () {
+  it('should update queue properties', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const queue = this.test.bossConfig.schema
 
+    const createProps = {
+      retryLimit: 1,
+      retryBackoff: false,
+      retryDelay: 1,
+      expireInSeconds: 1,
+      retentionMinutes: 1,
+      deadLetter: `${queue}_1`
+    }
+
+    await boss.createQueue(queue, createProps)
+
+    let queueObj = await boss.getQueue(queue)
+
+    assert.strictEqual(createProps.retryLimit, queueObj.retryLimit)
+    assert.strictEqual(createProps.retryBackoff, queueObj.retryBackoff)
+    assert.strictEqual(createProps.retryDelay, queueObj.retryDelay)
+    assert.strictEqual(createProps.expireInSeconds, queueObj.expireInSeconds)
+    assert.strictEqual(createProps.retentionMinutes, queueObj.retentionMinutes)
+    assert.strictEqual(createProps.deadLetter, queueObj.deadLetter)
+
+    const updateProps = {
+      retryLimit: 2,
+      retryBackoff: true,
+      retryDelay: 2,
+      expireInSeconds: 2,
+      retentionMinutes: 2,
+      deadLetter: `${queue}_2`
+    }
+
+    await boss.updateQueue(queue, updateProps)
+
+    queueObj = await boss.getQueue(queue)
+
+    assert.strictEqual(updateProps.retryLimit, queueObj.retryLimit)
+    assert.strictEqual(updateProps.retryBackoff, queueObj.retryBackoff)
+    assert.strictEqual(updateProps.retryDelay, queueObj.retryDelay)
+    assert.strictEqual(updateProps.expireInSeconds, queueObj.expireInSeconds)
+    assert.strictEqual(updateProps.retentionMinutes, queueObj.retentionMinutes)
+    assert.strictEqual(updateProps.deadLetter, queueObj.deadLetter)
   })
 
-  it.skip('jobs should inherit properties from queue', async function () {
+  it('jobs should inherit properties from queue', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const queue = this.test.bossConfig.schema
 
+    const createProps = {
+      retryLimit: 1,
+      retryBackoff: true,
+      retryDelay: 2,
+      expireInSeconds: 3,
+      retentionMinutes: 4,
+      deadLetter: `${queue}_1`
+    }
+
+    await boss.createQueue(queue, createProps)
+
+    const jobId = await boss.send(queue)
+
+    const job = await boss.getJobById(jobId)
+
+    assert.strictEqual(createProps.retryLimit, job.retrylimit)
+    assert.strictEqual(createProps.retryBackoff, job.retrybackoff)
+    assert.strictEqual(createProps.retryDelay, job.retrydelay)
+    assert.strictEqual(createProps.expireInSeconds, job.expireIn)
+    assert.strictEqual(createProps.retentionMinutes, job.retentionMinutes)
+    assert.strictEqual(createProps.deadLetter, job.deadletter)
   })
 
   it('short policy only allows 1 job in queue', async function () {

@@ -84,11 +84,11 @@ class Manager extends EventEmitter {
       this.sendAfter,
       this.createQueue,
       this.updateQueue,
-      this.getQueueProperties,
+      this.getQueue,
       this.deleteQueue,
       this.purgeQueue,
-      this.clearStorage,
       this.getQueueSize,
+      this.clearStorage,
       this.getJobById
     ]
 
@@ -603,13 +603,36 @@ class Manager extends EventEmitter {
     await this.db.executeSql(sql, params)
   }
 
-  async getQueueProperties (name) {
+  async getQueue (name) {
     assert(name, 'Missing queue name argument')
 
     const sql = plans.getQueueByName(this.config.schema)
     const result = await this.db.executeSql(sql, [name])
 
-    return result.rows.length ? result.rows[0] : null
+    if (result.rows.length === 0) {
+      return null
+    }
+
+    const {
+      policy,
+      retry_limit: retryLimit,
+      retry_delay: retryDelay,
+      retry_backoff: retryBackoff,
+      expire_seconds: expireInSeconds,
+      retention_minutes: retentionMinutes,
+      dead_letter: deadLetter
+    } = result.rows[0]
+
+    return {
+      name,
+      policy,
+      retryLimit,
+      retryDelay,
+      retryBackoff,
+      expireInSeconds,
+      retentionMinutes,
+      deadLetter
+    }
   }
 
   async deleteQueue (name) {

@@ -419,9 +419,7 @@ describe('work', function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
     const queue = this.test.bossConfig.schema
 
-    boss.stop({ timeout: 1 })
-
-    await delay(500)
+    boss.stop({ timeout: 1, wait: true })
 
     try {
       await boss.work(queue)
@@ -435,9 +433,7 @@ describe('work', function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
     const queue = this.test.bossConfig.schema
 
-    boss.stop({ timeout: 1 })
-
-    await delay(500)
+    boss.stop({ timeout: 1, wait: true })
 
     await boss.send(queue)
   })

@@ -99,6 +99,10 @@ function checkSendArgs (args, defaults) {
 
   assert(!singletonSeconds || singletonSeconds <= defaults.archiveSeconds, `throttling interval ${singletonSeconds}s cannot exceed archive interval ${defaults.archiveSeconds}s`)
 
+  if (options.onComplete) {
+    emitWarning(WARNINGS.ON_COMPLETE_REMOVED)
+  }
+
   return { name, data, options }
 }
 
