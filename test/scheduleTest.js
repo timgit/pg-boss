@@ -276,4 +276,28 @@ describe('schedule', function () {
 
     assert.strictEqual(errorCount, 1)
   })
+
+  it('clock monitoring error handling works', async function () {
+    const config = {
+      ...this.test.bossConfig,
+      schedule: true,
+      clockMonitorIntervalSeconds: 1,
+      __test__force_clock_monitoring_error: 'pg-boss mock error: clock monitoring'
+    }
+
+    let errorCount = 0
+
+    const boss = this.test.boss = new PgBoss(config)
+
+    boss.once('error', (error) => {
+      assert.strictEqual(error.message, config.__test__force_clock_monitoring_error)
+      errorCount++
+    })
+
+    await boss.start()
+
+    await delay(4000)
+
+    assert.strictEqual(errorCount, 1)
+  })
 })

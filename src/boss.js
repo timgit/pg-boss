@@ -16,7 +16,7 @@ class Boss extends EventEmitter {
     this.manager = config.manager
 
     this.maintenanceIntervalSeconds = config.maintenanceIntervalSeconds
-    this.maintenanceIntervalSeconds = config.monitorStateIntervalSeconds
+    this.monitorStateIntervalSeconds = config.monitorStateIntervalSeconds
 
     this.events = events
 
@@ -51,20 +51,18 @@ class Boss extends EventEmitter {
 
         monitoring = true
 
-        if (this.config.__test__throw_meta_monitor) {
-          throw new Error(this.config.__test__throw_meta_monitor)
+        if (this.config.__test__throw_monitor) {
+          throw new Error(this.config.__test__throw_monitor)
         }
 
         locker = await this.db.lock({ key: 'monitor' })
 
         const { secondsAgo } = await this.getMonitorTime()
 
-        if (secondsAgo > this.monitorIntervalSeconds) {
-          if (!this.stopped) {
-            const states = await this.countStates()
-            this.setMonitorTime()
-            this.emit(events.monitorStates, states)
-          }
+        if (secondsAgo > this.monitorStateIntervalSeconds && !this.stopped) {
+          const states = await this.countStates()
+          this.setMonitorTime()
+          this.emit(events.monitorStates, states)
         }
       } catch (err) {
         this.emit(events.error, err)
@@ -75,7 +73,7 @@ class Boss extends EventEmitter {
 
         monitoring = false
       }
-    }, this.monitorIntervalSeconds * 1000)
+    }, this.monitorStateIntervalSeconds * 1000)
   }
 
   async supervise () {
@@ -91,8 +89,8 @@ class Boss extends EventEmitter {
 
         maintaining = true
 
-        if (this.config.__test__throw_meta_monitor) {
-          throw new Error(this.config.__test__throw_meta_monitor)
+        if (this.config.__test__throw_maint) {
+          throw new Error(this.config.__test__throw_maint)
         }
 
         locker = await this.db.lock({ key: 'maintenance' })
@@ -130,10 +128,6 @@ class Boss extends EventEmitter {
   }
 
   async stop () {
-    if (this.config.__test__throw_stop) {
-      throw new Error(this.config.__test__throw_stop)
-    }
-
     if (!this.stopped) {
       if (this.maintenanceInterval) {
         clearInterval(this.maintenanceInterval)

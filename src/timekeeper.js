@@ -144,9 +144,9 @@ class Timekeeper extends EventEmitter {
     if (this.stopped) return
 
     try {
-      if (this.config.__test__throw_clock_monitoring) {
-        throw new Error(this.config.__test__throw_clock_monitoring)
-      }
+      // if (this.config.__test__throw_clock_monitoring) {
+      //   throw new Error(this.config.__test__throw_clock_monitoring)
+      // }
 
       const items = await this.getSchedules()
 

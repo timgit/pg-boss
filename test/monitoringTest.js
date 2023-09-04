@@ -3,12 +3,12 @@ const helper = require('./testHelper')
 
 describe('monitoring', function () {
   it('should emit state counts', async function () {
-    const defaults = {
-      supervise: true,
+    const config = {
+      ...this.test.bossConfig,
       monitorStateIntervalSeconds: 1
     }
 
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, ...defaults })
+    const boss = this.test.boss = await helper.start(config)
 
     const queue = 'monitorMe'
 

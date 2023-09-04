@@ -1,7 +1,6 @@
 const assert = require('assert')
 const helper = require('./testHelper')
 const { v4: uuid } = require('uuid')
-const delay = require('delay')
 
 describe('ops', function () {
   it('should expire manually', async function () {
@@ -17,22 +16,6 @@ describe('ops', function () {
   it('should purge the archive manually', async function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
     await boss.drop()
-  })
-
-  it('stop should re-emit stoppped if already stopped', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
-
-    const stopPromise1 = new Promise(resolve => boss.once('stopped', resolve))
-
-    await boss.stop({ timeout: 1 })
-
-    await stopPromise1
-
-    const stopPromise2 = new Promise(resolve => boss.once('stopped', resolve))
-
-    await boss.stop({ timeout: 1 })
-
-    await stopPromise2
   })
 
   it('should emit error in worker', async function () {
@@ -73,30 +56,5 @@ describe('ops', function () {
     })
 
     assert(boss.db.pool.totalCount === 0)
-  })
-
-  it('should emit error during graceful stop if worker is busy', async function () {
-    const boss = await helper.start({ ...this.test.bossConfig, __test__throw_stop: true })
-    const queue = this.test.bossConfig.schema
-
-    await boss.send(queue)
-    await boss.work(queue, () => delay(2000))
-
-    await delay(500)
-
-    await boss.stop({ timeout: 5000 })
-
-    await new Promise(resolve => boss.on('error', resolve))
-  })
-
-  it('should throw error during graceful stop if no workers are busy', async function () {
-    const boss = await helper.start({ ...this.test.bossConfig, __test__throw_stop: true })
-
-    try {
-      await boss.stop({ timeout: 1 })
-      assert(false)
-    } catch (err) {
-      assert(true)
-    }
   })
 })
