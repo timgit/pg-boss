@@ -4,28 +4,23 @@ const { v4: uuid } = require('uuid')
 const delay = require('delay')
 
 describe('ops', function () {
-  const defaults = {
-    noSupervisor: true,
-    noScheduling: true
-  }
-
   it('should expire manually', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, ...defaults })
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
     await boss.expire()
   })
 
   it('should archive manually', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, ...defaults })
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
     await boss.archive()
   })
 
   it('should purge the archive manually', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, ...defaults })
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
     await boss.purge()
   })
 
   it('stop should re-emit stoppped if already stopped', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, ...defaults })
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
 
     const stopPromise1 = new Promise(resolve => boss.once('stopped', resolve))
 
@@ -41,7 +36,7 @@ describe('ops', function () {
   })
 
   it('should emit error in worker', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, ...defaults, __test__throw_worker: true })
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, __test__throw_worker: true })
     const queue = this.test.bossConfig.schema
 
     await boss.send(queue)
@@ -51,7 +46,7 @@ describe('ops', function () {
   })
 
   it('should return null from getJobById if not found', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, ...defaults })
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
 
     const jobId = await boss.getJobById(uuid())
 
@@ -59,19 +54,19 @@ describe('ops', function () {
   })
 
   it('should force stop', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, ...defaults })
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
     await boss.stop({ graceful: false })
   })
 
   it('should destroy the connection pool', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, ...defaults })
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
     await boss.stop({ destroy: true, graceful: false })
 
     assert(boss.db.pool.totalCount === 0)
   })
 
   it('should destroy the connection pool gracefully', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, ...defaults })
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
     await boss.stop({ destroy: true })
     await new Promise((resolve) => {
       boss.on('stopped', () => resolve())
@@ -81,7 +76,7 @@ describe('ops', function () {
   })
 
   it('should emit error during graceful stop if worker is busy', async function () {
-    const boss = await helper.start({ ...this.test.bossConfig, ...defaults, __test__throw_stop: true })
+    const boss = await helper.start({ ...this.test.bossConfig, __test__throw_stop: true })
     const queue = this.test.bossConfig.schema
 
     await boss.send(queue)
@@ -95,7 +90,7 @@ describe('ops', function () {
   })
 
   it('should throw error during graceful stop if no workers are busy', async function () {
-    const boss = await helper.start({ ...this.test.bossConfig, ...defaults, __test__throw_stop: true })
+    const boss = await helper.start({ ...this.test.bossConfig, __test__throw_stop: true })
 
     try {
       await boss.stop({ timeout: 1 })

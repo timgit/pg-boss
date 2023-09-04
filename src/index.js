@@ -100,17 +100,17 @@ class PgBoss extends EventEmitter {
       await this.db.open()
     }
 
-    if (!this.config.noContractor) {
+    if (this.config.migrate) {
       await this.contractor.start()
     }
 
     this.manager.start()
 
-    if (!this.config.noSupervisor) {
+    if (this.config.supervise) {
       await this.boss.supervise()
     }
 
-    if (!this.config.noScheduling) {
+    if (this.config.schedule) {
       await this.timekeeper.start()
     }
 

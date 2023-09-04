@@ -26,14 +26,14 @@ declare namespace PgBoss {
   }
 
   interface SchedulingOptions {
-    noScheduling?: boolean;
+    schedule?: boolean;
 
     clockMonitorIntervalSeconds?: number;
     clockMonitorIntervalMinutes?: number;
   }
 
   interface MaintenanceOptions {
-    noSupervisor?: boolean;
+    supervise?: boolean;
 
     deleteAfterSeconds?: number;
     deleteAfterMinutes?: number;

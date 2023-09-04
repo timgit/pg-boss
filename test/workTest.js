@@ -1,7 +1,6 @@
 const delay = require('delay')
 const assert = require('assert')
 const helper = require('./testHelper')
-const PgBoss = require('../')
 
 describe('work', function () {
   it('should fail with no arguments', async function () {
@@ -128,8 +127,8 @@ describe('work', function () {
 
   it('should handle a batch of jobs via teamSize', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const queue = this.test.bossConfig.schema
 
-    const queue = 'process-teamSize'
     const teamSize = 4
 
     let processCount = 0
@@ -152,8 +151,8 @@ describe('work', function () {
 
   it('should apply teamConcurrency option', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const queue = this.test.bossConfig.schema
 
-    const queue = 'process-teamConcurrency'
     const teamSize = 4
     const teamConcurrency = 4
 
@@ -179,8 +178,8 @@ describe('work', function () {
 
   it('should handle a batch of jobs via batchSize', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const queue = this.test.bossConfig.schema
 
-    const queue = 'process-batchSize'
     const batchSize = 4
 
     for (let i = 0; i < batchSize; i++) {
@@ -217,7 +216,7 @@ describe('work', function () {
 
   it('returning promise applies backpressure', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
-    const queue = 'backpressure'
+    const queue = this.test.bossConfig.schema
 
     const jobCount = 4
     let processCount = 0
@@ -274,6 +273,7 @@ describe('work', function () {
   it('does not fetch more than teamSize', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
     const queue = this.test.bossConfig.schema
+
     const teamSize = 4
     const teamConcurrency = 2
     const newJobCheckInterval = 200
@@ -304,8 +304,8 @@ describe('work', function () {
 
   it('completion should pass string wrapped in value prop', async function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const queue = this.test.bossConfig.schema
 
-    const queue = 'processCompletionString'
     const result = 'success'
 
     const jobId = await boss.send(queue)
@@ -322,8 +322,7 @@ describe('work', function () {
 
   it('completion via Promise resolve() should pass object payload', async function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
-
-    const queue = 'processCompletionObject'
+    const queue = this.test.bossConfig.schema
     const something = 'clever'
 
     const jobId = await boss.send(queue)
@@ -339,7 +338,7 @@ describe('work', function () {
 
   it('should allow multiple workers to the same queue per instance', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
-    const queue = 'multiple-workers'
+    const queue = this.test.bossConfig.schema
 
     await boss.work(queue, () => {})
     await boss.work(queue, () => {})
@@ -347,8 +346,7 @@ describe('work', function () {
 
   it('should honor the includeMetadata option', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
-
-    const queue = 'process-includeMetadata'
+    const queue = this.test.bossConfig.schema
 
     await boss.send(queue)
 
@@ -360,15 +358,8 @@ describe('work', function () {
     })
   })
 
-  it('should fail job at expiration without maintenance', async function () {
-    const boss = this.test.boss = new PgBoss({ ...this.test.bossConfig, noSupervisor: false })
-
-    const maintenanceTick = new Promise((resolve) => boss.on('maintenance', resolve))
-
-    await boss.start()
-
-    await maintenanceTick
-
+  it('should fail job at expiration in worker', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, supervise: false })
     const queue = this.test.bossConfig.schema
 
     const jobId = await boss.send(queue, null, { expireInSeconds: 1 })
@@ -383,15 +374,8 @@ describe('work', function () {
     assert(job.output.message.includes('handler execution exceeded'))
   })
 
-  it('should fail a batch of jobs at expiration without maintenance', async function () {
-    const boss = this.test.boss = new PgBoss({ ...this.test.bossConfig, noSupervisor: false })
-
-    const maintenanceTick = new Promise((resolve) => boss.on('maintenance', resolve))
-
-    await boss.start()
-
-    await maintenanceTick
-
+  it('should fail a batch of jobs at expiration in worker', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, supervise: false })
     const queue = this.test.bossConfig.schema
 
     const jobId1 = await boss.send(queue, null, { expireInSeconds: 1 })

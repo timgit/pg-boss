@@ -115,7 +115,7 @@ describe('complete', function () {
   })
 
   it.skip('should warn with an old onComplete option only once', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noSupervisor: true })
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
 
     const queue = this.test.bossConfig.schema
 

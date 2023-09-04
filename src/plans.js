@@ -14,6 +14,7 @@ const MIGRATE_RACE_MESSAGE = 'division by zero'
 const CREATE_RACE_MESSAGE = 'already exists'
 
 const QUEUE_POLICY = {
+  standard: 'standard',
   short: 'short',
   priority: 'priority',
   singleton: 'singleton',
@@ -45,9 +46,14 @@ module.exports = {
   purge,
   countStates,
   createQueue,
-  deleteQueue,
-  clearStorage,
+  updateQueue,
+  createQueueTablePartition,
+  dropQueueTablePartition,
+  deleteQueueRecords,
+  getQueueByName,
   getQueueSize,
+  purgeQueue,
+  clearStorage,
   getMaintenanceTime,
   setMaintenanceTime,
   getCronTime,
@@ -56,6 +62,7 @@ module.exports = {
   assertMigration,
   getArchivedJobById,
   getJobById,
+  QUEUE_POLICY,
   states: { ...states },
   MIGRATE_RACE_MESSAGE,
   CREATE_RACE_MESSAGE,
@@ -246,44 +253,47 @@ function getCronTime (schema) {
 }
 
 function createQueue (schema) {
-  return (name) => {
-    return `
-      WITH partition AS (
-        CREATE TABLE ${schema}.job_${name} PARTITION OF ${schema}.job
-          FOR VALUES FROM ('${name}') TO ('${name}')  
-      )
-      INSERT INTO ${schema}.queue (
-        name, 
-        policy,
-        retry_limit,
-        retry_delay,
-        retry_backoff,
-        expire_seconds,
-        retention_minutes,
-        dead_letter
-      ) VALUES (
-        '${name}',
-        $1,
-        $2,
-        $3,
-        $4,
-        $5,
-        $6,
-        $7,
-      )
-      
-    `
-  }
+  return `
+    INSERT INTO ${schema}.queue (name, policy, retry_limit, retry_delay, retry_backoff, expire_seconds, retention_minutes, dead_letter)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+  `
 }
 
-function deleteQueue (schema, name) {
+function updateQueue (schema) {
   return `
-    WITH deleted_queue AS (
-      DELETE FROM ${schema}.queue WHERE name = '${name}'
-    )
-    DELETE FROM ${schema}.job WHERE name = '${name}';
-    DROP TABLE IF EXISTS job_${name}
+    UPDATE ${schema}.queue SET
+      retry_limit = COALESCE($2, retry_limit),
+      retry_delay = COALESCE($3, retry_delay),
+      retry_backoff = COALESCE($4, retry_backoff),
+      expire_seconds = COALESCE($5, expire_seconds),
+      retention_minutes = COALESCE($6, retention_minutes),
+      dead_letter = COALESCE($7, dead_letter)
+    WHERE name = $1
   `
+}
+
+function createQueueTablePartition (schema, name) {
+  return `CREATE TABLE ${schema}.job_${name} PARTITION OF ${schema}.job FOR VALUES FROM ('${name}') TO ('${name}__pgboss__')`
+}
+
+function dropQueueTablePartition (schema, name) {
+  return `DROP TABLE IF EXISTS ${schema}.job_${name}`
+}
+
+function getQueueByName (schema) {
+  return `SELECT * FROM ${schema}.queue WHERE name = $1`
+}
+
+function deleteQueueRecords (schema) {
+  return `WITH dq AS (
+      DELETE FROM ${schema}.queue WHERE name = $1
+    )
+    DELETE FROM ${schema}.job WHERE name = $1
+  `
+}
+
+function purgeQueue (schema) {
+  return `DELETE from ${schema}.job WHERE name = $1 and state < '${states.active}'`
 }
 
 function clearStorage (schema) {

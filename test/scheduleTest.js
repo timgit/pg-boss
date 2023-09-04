@@ -12,7 +12,7 @@ describe('schedule', function () {
     const config = {
       ...this.test.bossConfig,
       cronWorkerIntervalSeconds: 1,
-      noScheduling: false
+      schedule: true
     }
 
     const boss = this.test.boss = await helper.start(config)
@@ -33,7 +33,7 @@ describe('schedule', function () {
       ...this.test.bossConfig,
       clockMonitorIntervalSeconds: 1,
       cronWorkerIntervalSeconds: 1,
-      noScheduling: false
+      schedule: true
     }
 
     const boss = this.test.boss = await helper.start(config)
@@ -54,7 +54,7 @@ describe('schedule', function () {
       ...this.test.bossConfig,
       cronMonitorIntervalSeconds: 1,
       cronWorkerIntervalSeconds: 1,
-      noScheduling: false
+      schedule: true
     }
 
     const boss = this.test.boss = await helper.start(config)
@@ -79,8 +79,7 @@ describe('schedule', function () {
     const config = {
       ...this.test.bossConfig,
       cronMonitorIntervalSeconds: 1,
-      noScheduling: true,
-      noSupervisor: true
+      schedule: false
     }
 
     let boss = await helper.start(config)
@@ -91,7 +90,7 @@ describe('schedule', function () {
 
     await boss.stop()
 
-    boss = await helper.start({ ...this.test.bossConfig, cronWorkerIntervalSeconds: 1, noScheduling: false })
+    boss = await helper.start({ ...this.test.bossConfig, cronWorkerIntervalSeconds: 1, schedule: true })
 
     await delay(ASSERT_DELAY)
 
@@ -105,7 +104,6 @@ describe('schedule', function () {
   it('should remove previously scheduled job', async function () {
     const config = {
       ...this.test.bossConfig,
-      noSupervisor: true,
       cronWorkerIntervalSeconds: 1
     }
     const boss = this.test.boss = await helper.start(config)
@@ -134,7 +132,7 @@ describe('schedule', function () {
     const config = {
       ...this.test.bossConfig,
       cronWorkerIntervalSeconds: 1,
-      noScheduling: false
+      schedule: true
     }
 
     const boss = this.test.boss = await helper.start(config)
@@ -170,7 +168,7 @@ describe('schedule', function () {
     const config = {
       ...this.test.bossConfig,
       cronWorkerIntervalSeconds: 1,
-      noScheduling: false
+      schedule: true
     }
 
     const boss = this.test.boss = await helper.start(config)
@@ -207,7 +205,7 @@ describe('schedule', function () {
   it('should force a clock skew warning', async function () {
     const config = {
       ...this.test.bossConfig,
-      noScheduling: false,
+      schedule: true,
       __test__force_clock_skew_warning: true
     }
 
@@ -235,7 +233,7 @@ describe('schedule', function () {
     const config = {
       ...this.test.bossConfig,
       clockMonitorIntervalSeconds: 1,
-      noScheduling: false,
+      schedule: true,
       __test__force_clock_monitoring_error: 'pg-boss mock error: clock skew monitoring'
     }
 
@@ -259,7 +257,7 @@ describe('schedule', function () {
     const config = {
       ...this.test.bossConfig,
       cronMonitorIntervalSeconds: 1,
-      noScheduling: false,
+      schedule: true,
       __test__force_cron_monitoring_error: 'pg-boss mock error: cron monitoring'
     }
 

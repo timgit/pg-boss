@@ -4,11 +4,12 @@ const { DEFAULT_SCHEMA } = require('./plans')
 module.exports = {
   getConfig,
   checkSendArgs,
-  checkInsertArgs,
+  checkQueueArgs,
   checkWorkArgs,
   checkFetchArgs,
   warnClockSkew,
-  queueNameHasPatternMatch
+  queueNameHasPatternMatch,
+  assertPostgresObjectName
 }
 
 const WARNINGS = {
@@ -24,6 +25,18 @@ const WARNINGS = {
     message: '\'onComplete\' option detected. This option has been removed. Consider deadLetter if needed.',
     code: 'pg-boss-w04'
   }
+}
+
+function checkQueueArgs (name, options = {}) {
+  assertPostgresObjectName(name)
+
+  assert(!('deadLetter' in options) || (typeof options.deadLetter === 'string'), 'deadLetter must be a string')
+
+  applyRetryConfig(options)
+  applyExpirationConfig(options)
+  applyRetentionConfig(options)
+
+  return options
 }
 
 function checkSendArgs (args, defaults) {
@@ -58,10 +71,11 @@ function checkSendArgs (args, defaults) {
   assert(!('priority' in options) || (Number.isInteger(options.priority)), 'priority must be an integer')
   options.priority = options.priority || 0
 
+  assert(!('deadLetter' in options) || (typeof options.deadLetter === 'string'), 'deadLetter must be a string')
+
   applyRetryConfig(options, defaults)
   applyExpirationConfig(options, defaults)
   applyRetentionConfig(options, defaults)
-  // applySingletonKeyConfig(options)
 
   const { startAfter, singletonSeconds, singletonMinutes, singletonHours } = options
 
@@ -85,22 +99,6 @@ function checkSendArgs (args, defaults) {
 
   return { name, data, options }
 }
-
-function checkInsertArgs (jobs) {
-  assert(Array.isArray(jobs), `jobs argument should be an array.  Received '${typeof jobs}'`)
-  return jobs.map(job => {
-    job = { ...job }
-    // applySingletonKeyConfig(job)
-    return job
-  })
-}
-
-// function applySingletonKeyConfig (options) {
-//   if (options.singletonKey && options.useSingletonQueue && options.singletonKey !== SINGLETON_QUEUE_KEY) {
-//     options.singletonKey = SINGLETON_QUEUE_KEY + options.singletonKey
-//   }
-//   delete options.useSingletonQueue
-// }
 
 function checkWorkArgs (name, args, defaults) {
   let options, callback
@@ -162,7 +160,7 @@ function getConfig (value) {
     ? { connectionString: value }
     : { ...value }
 
-  applyDatabaseConfig(config)
+  applySchemaConfig(config)
   applyMaintenanceConfig(config)
   applyArchiveConfig(config)
   applyArchiveFailedConfig(config)
@@ -177,14 +175,19 @@ function getConfig (value) {
   return config
 }
 
-function applyDatabaseConfig (config) {
+function applySchemaConfig (config) {
   if (config.schema) {
-    assert(typeof config.schema === 'string', 'configuration assert: schema must be a string')
-    assert(config.schema.length <= 50, 'configuration assert: schema name cannot exceed 50 characters')
-    assert(!/\W/.test(config.schema), `configuration assert: ${config.schema} cannot be used as a schema. Only alphanumeric characters and underscores are allowed`)
+    assertPostgresObjectName(config.schema)
   }
 
   config.schema = config.schema || DEFAULT_SCHEMA
+}
+
+function assertPostgresObjectName (name) {
+  assert(typeof name === 'string', 'Name must be a string')
+  assert(name.length <= 50, 'Name cannot exceed 50 characters')
+  assert(!/\W/.test(name), 'Name can only contain alphanumeric characters and underscores are allowed')
+  assert(!/^d/.test(name), 'Name cannot start with a number')
 }
 
 function applyArchiveConfig (config) {
@@ -322,6 +325,10 @@ function applyMaintenanceConfig (config) {
     : ('maintenanceIntervalSeconds' in config)
         ? config.maintenanceIntervalSeconds
         : 120
+
+  config.schedule = ('schedule' in config) ? config.schedule : true
+  config.maintenance = ('maintenance' in config) ? config.maintenance : true
+  config.migrate = ('migrate' in config) ? config.migrate : true
 }
 
 function applyDeleteConfig (config) {

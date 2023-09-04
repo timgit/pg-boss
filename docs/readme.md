@@ -355,13 +355,17 @@ Queue options contain the following constructor-only settings.
 
 Maintenance operations include checking active jobs for expiration, archiving completed jobs from the primary job table, and deleting archived jobs from the archive table.
 
-* **noSupervisor**, bool, default false
+* **supervise**, bool, default true
 
-  If this is set to true, maintenance and monitoring operations will not be started during a `start()` after the schema is created.  This is an advanced use case, as bypassing maintenance operations is not something you would want to do under normal circumstances.
+  If this is set to false, maintenance and monitoring operations will be disabled on this instance.  This is an advanced use case, as bypassing maintenance operations is not something you would want to do under normal circumstances.
 
-* **noScheduling**, bool, default false
+* **schedule**, bool, default true
 
-  If this is set to true, this instance will not monitor scheduled jobs during `start()`. However, this instance can still use the scheduling api. This is an advanced use case you may want to do for testing or if the clock of the server is skewed and you would like to disable the skew warnings.
+  If this is set to false, this instance will not monitor or created scheduled jobs during. This is an advanced use case you may want to do for testing or if the clock of the server is skewed and you would like to disable the skew warnings.
+
+* **migrate**, bool, default true
+
+  If this is set to false, this instance will skip attempts to run schema migratations during `start()`. If schema migrations exist, `start()` will throw and error and block usage. This is an advanced use case when the configured user account does not have schema mutation privileges.
 
 **Archive options**
 
@@ -871,7 +875,7 @@ Remove the subscription of queue `name` to `event`.
 
 ## Scheduling
 
-Jobs may be sent automatically based on a cron expression. As with other cron-based systems, at least one instance needs to be running for scheduling to work. In order to reduce the amount of evaluations, schedules are checked every 30 seconds, which means the 6-placeholder format should be discouraged in favor of the minute-level precision 5-placeholder format.
+Jobs may be created automatically based on a cron expression. As with other cron-based systems, at least one instance needs to be running for scheduling to work. In order to reduce the amount of evaluations, schedules are checked every 30 seconds, which means the 6-placeholder format should be discouraged in favor of the minute-level precision 5-placeholder format.
 
 For example, use this format, which implies "any second during 3:30 am every day"
 
@@ -891,7 +895,7 @@ If needed, the default clock monitoring interval can be adjusted using `clockMon
 
 ```js
 {
-  noScheduling: true
+  schedule: false
 }
 ```
 

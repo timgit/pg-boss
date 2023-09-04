@@ -10,7 +10,7 @@ const pMap = require('p-map')
 describe('multi-master', function () {
   it('should only allow 1 master to start at a time', async function () {
     const replicaCount = 20
-    const config = { ...this.test.bossConfig, noSupervisor: true, max: 2 }
+    const config = { ...this.test.bossConfig, max: 2 }
     const instances = []
 
     for (let i = 0; i < replicaCount; i++) {
@@ -28,7 +28,7 @@ describe('multi-master', function () {
 
   it('should only allow 1 master to migrate to latest at a time', async function () {
     const replicaCount = 5
-    const config = { ...this.test.bossConfig, noSupervisor: true, max: 2 }
+    const config = { ...this.test.bossConfig, supervise: true, max: 2 }
 
     const db = await helper.getDb()
     const contractor = new Contractor(db, config)
@@ -81,7 +81,7 @@ describe('multi-master', function () {
 
     await boss.stop({ graceful: false })
 
-    boss = new PgBoss({ ...this.test.bossConfig, noSupervisor: false })
+    boss = new PgBoss({ ...this.test.bossConfig, supervise: true })
 
     await boss.start()
 

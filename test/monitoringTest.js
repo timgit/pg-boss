@@ -4,7 +4,7 @@ const helper = require('./testHelper')
 describe('monitoring', function () {
   it('should emit state counts', async function () {
     const defaults = {
-      noSupervisor: false,
+      supervise: true,
       monitorStateIntervalSeconds: 1
     }
 

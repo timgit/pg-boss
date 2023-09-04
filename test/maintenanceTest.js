@@ -4,12 +4,10 @@ const delay = require('delay')
 const PgBoss = require('../')
 
 describe('maintenance', async function () {
-  const defaults = { noSupervisor: false }
-
   it('should send maintenance job if missing during monitoring', async function () {
     const config = {
       ...this.test.bossConfig,
-      ...defaults,
+      supervise: true,
       maintenanceIntervalSeconds: 1
     }
 
@@ -37,7 +35,7 @@ describe('maintenance', async function () {
   it('meta monitoring error handling works', async function () {
     const config = {
       ...this.test.bossConfig,
-      ...defaults,
+      supervise: true,
       maintenanceIntervalSeconds: 1,
       __test__throw_meta_monitor: 'meta monitoring error'
     }

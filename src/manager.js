@@ -4,19 +4,18 @@ const delay = require('delay')
 const uuid = require('uuid')
 const debounce = require('lodash.debounce')
 const { serializeError: stringify } = require('serialize-error')
+const pMap = require('p-map')
+
 const Attorney = require('./attorney')
 const Worker = require('./worker')
+const plans = require('./plans')
 const Db = require('./db')
-const pMap = require('p-map')
 
 const { QUEUES: BOSS_QUEUES } = require('./boss')
 const { QUEUES: TIMEKEEPER_QUEUES } = require('./timekeeper')
+const { QUEUE_POLICY } = plans
 
 const INTERNAL_QUEUES = Object.values(BOSS_QUEUES).concat(Object.values(TIMEKEEPER_QUEUES)).reduce((acc, i) => ({ ...acc, [i]: i }), {})
-
-const plans = require('./plans')
-
-const { QUEUE_POLICY } = plans
 
 const WIP_EVENT_INTERVAL = 2000
 const WIP_DEBOUNCE_OPTIONS = { leading: true, trailing: true, maxWait: WIP_EVENT_INTERVAL }
@@ -86,7 +85,10 @@ class Manager extends EventEmitter {
       this.sendOnce,
       this.sendAfter,
       this.createQueue,
+      this.updateQueue,
+      this.getQueueProperties,
       this.deleteQueue,
+      this.purgeQueue,
       this.clearStorage,
       this.getQueueSize,
       this.getJobById
@@ -430,11 +432,11 @@ class Manager extends EventEmitter {
   }
 
   async insert (jobs, options = {}) {
-    const { db: wrapper } = options
-    const db = wrapper || this.db
-    const checkedJobs = Attorney.checkInsertArgs(jobs)
-    const data = JSON.stringify(checkedJobs)
-    return await db.executeSql(this.insertJobsCommand, [data])
+    assert(Array.isArray(jobs), 'jobs argument should be an array')
+
+    const db = options.db || this.db
+
+    return await db.executeSql(this.insertJobsCommand, [JSON.stringify(jobs)])
   }
 
   getDebounceStartAfter (singletonSeconds, clockOffset) {
@@ -550,20 +552,30 @@ class Manager extends EventEmitter {
     return this.mapCompletionResponse(ids, result)
   }
 
-  async createQueue (name, options) {
+  async createQueue (name, options = {}) {
     assert(name, 'Missing queue name argument')
 
+    const { policy = QUEUE_POLICY.standard } = options
+
+    assert(policy in QUEUE_POLICY, `${policy} is not a valid queue policy`)
+
     const {
-      policy,
       retryLimit,
       retryDelay,
       retryBackoff,
       expireInSeconds,
       retentionMinutes,
       deadLetter
-    } = options
+    } = Attorney.checkQueueArgs(name, options)
+
+    const paritionSql = plans.createQueueTablePartition(this.config.schema, name)
+
+    await this.db.executeSql(paritionSql)
+
+    const sql = plans.createQueue(this.config.schema, name)
 
     const params = [
+      name,
       policy,
       retryLimit,
       retryDelay,
@@ -573,20 +585,66 @@ class Manager extends EventEmitter {
       deadLetter
     ]
 
-    assert(policy in QUEUE_POLICY, `${policy} is not a valid queue policy`)
+    await this.db.executeSql(sql, params)
+  }
 
-    // todo
+  async updateQueue (name, options = {}) {
+    assert(name, 'Missing queue name argument')
 
-    const sql = plans.createQueue(this.config.schema)(name)
+    const {
+      retryLimit,
+      retryDelay,
+      retryBackoff,
+      expireInSeconds,
+      retentionMinutes,
+      deadLetter
+    } = Attorney.checkQueueArgs(name, options)
+
+    const sql = plans.updateQueue(this.config.schema)
+
+    const params = [
+      name,
+      retryLimit,
+      retryDelay,
+      retryBackoff,
+      expireInSeconds,
+      retentionMinutes,
+      deadLetter
+    ]
 
     await this.db.executeSql(sql, params)
   }
 
-  async deleteQueue (queue, options) {
+  async getQueueProperties (name) {
+    assert(name, 'Missing queue name argument')
+
+    const sql = plans.getQueueByName(this.config.schema)
+    const result = await this.db.executeSql(sql, [name])
+
+    return result.rows.length ? result.rows[0] : null
+  }
+
+  async deleteQueue (name) {
+    assert(name, 'Missing queue name argument')
+
+    const queueSql = plans.getQueueByName(this.config.schema)
+    const result = await this.db.executeSql(queueSql, [name])
+
+    if (result?.rows?.length) {
+      Attorney.assertPostgresObjectName(name)
+      const sql = plans.dropQueueTablePartition(this.config.schema, name)
+      await this.db.executeSql(sql)
+    }
+
+    const sql = plans.deleteQueueRecords(this.config.schema)
+    const result2 = await this.db.executeSql(sql, [name])
+    return result2?.rowCount || null
+  }
+
+  async purgeQueue (queue) {
     assert(queue, 'Missing queue name argument')
-    const sql = plans.deleteQueue(this.config.schema, options)
-    const result = await this.db.executeSql(sql, [queue])
-    return result ? result.rowCount : null
+    const sql = plans.purgeQueue(this.config.schema)
+    await this.db.executeSql(sql, [queue])
   }
 
   async clearStorage () {

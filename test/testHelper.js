@@ -36,8 +36,8 @@ function getConfig (options = {}) {
 
   config.schema = config.schema || 'pgboss'
 
-  config.noSupervisor = true
-  config.noScheduling = true
+  config.supervise = false
+  config.schedule = false
   config.retryLimit = 0
 
   const result = { ...config }
