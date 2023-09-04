@@ -95,4 +95,93 @@ describe('queues', function () {
     await boss.createQueue(queue)
     await boss.purgeQueue(queue)
   })
+
+  it.skip('should update queue properties', async function () {
+
+  })
+
+  it.skip('jobs should inherit properties from queue', async function () {
+
+  })
+
+  it('short policy only allows 1 job in queue', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const queue = this.test.bossConfig.schema
+
+    await boss.createQueue(queue, { policy: 'short' })
+
+    const jobId = await boss.send(queue)
+
+    assert(jobId)
+
+    const jobId2 = await boss.send(queue)
+
+    assert.strictEqual(jobId2, null)
+
+    const job = await boss.fetch(queue)
+
+    assert.strictEqual(job.id, jobId)
+
+    const jobId3 = await boss.send(queue)
+
+    assert(jobId3)
+  })
+
+  it('singleton policy only allows 1 active job', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const queue = this.test.bossConfig.schema
+
+    await boss.createQueue(queue, { policy: 'singleton' })
+
+    await boss.send(queue)
+
+    await boss.send(queue)
+
+    const job1 = await boss.fetch(queue)
+
+    const job2 = await boss.fetch(queue)
+
+    assert.strictEqual(job2, null)
+
+    await boss.complete(job1.id)
+
+    const job3 = await boss.fetch(queue)
+
+    assert(job3)
+  })
+
+  it('stately policy only allows 1 job per state up to active', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const queue = this.test.bossConfig.schema
+
+    await boss.createQueue(queue, { policy: 'stately' })
+
+    const jobId1 = await boss.send(queue, null, { retryLimit: 1 })
+
+    const blockedId = await boss.send(queue)
+
+    assert.strictEqual(blockedId, null)
+
+    let job1 = await boss.fetch(queue)
+
+    await boss.fail(job1.id)
+
+    job1 = await boss.getJobById(jobId1)
+
+    assert.strictEqual(job1.state, 'retry')
+
+    const jobId2 = await boss.send(queue, null, { retryLimit: 1 })
+
+    assert(jobId2)
+
+    job1 = await boss.fetch(queue)
+
+    job1 = await boss.getJobById(jobId1)
+
+    assert.strictEqual(job1.state, 'active')
+
+    const blockedSecondActive = await boss.fetch(queue)
+
+    assert.strictEqual(blockedSecondActive, null)
+  })
 })

@@ -82,7 +82,6 @@ class Manager extends EventEmitter {
       this.send,
       this.sendDebounced,
       this.sendThrottled,
-      this.sendOnce,
       this.sendAfter,
       this.createQueue,
       this.updateQueue,
@@ -333,16 +332,6 @@ class Manager extends EventEmitter {
   async send (...args) {
     const { name, data, options } = Attorney.checkSendArgs(args, this.config)
     return await this.createJob(name, data, options)
-  }
-
-  async sendOnce (name, data, options, key) {
-    options = options ? { ...options } : {}
-
-    options.singletonKey = key || name
-
-    const result = Attorney.checkSendArgs([name, data, options], this.config)
-
-    return await this.createJob(result.name, result.data, result.options)
   }
 
   async sendAfter (name, data, options, after) {

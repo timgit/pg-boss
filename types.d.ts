@@ -80,7 +80,6 @@ declare namespace PgBoss {
     priority?: number;
     startAfter?: number | string | Date;
     singletonKey?: string;
-    useSingletonQueue?: boolean;
     singletonSeconds?: number;
     singletonMinutes?: number;
     singletonHours?: number;
@@ -293,8 +292,6 @@ declare class PgBoss extends EventEmitter {
   sendAfter(name: string, data: object, options: PgBoss.SendOptions, dateString: string): Promise<string | null>;
   sendAfter(name: string, data: object, options: PgBoss.SendOptions, seconds: number): Promise<string | null>;
 
-  sendOnce(name: string, data: object, options: PgBoss.SendOptions, key: string): Promise<string | null>;
-
   sendThrottled(name: string, data: object, options: PgBoss.SendOptions, seconds: number): Promise<string | null>;
   sendThrottled(name: string, data: object, options: PgBoss.SendOptions, seconds: number, key: string): Promise<string | null>;
 
@@ -349,6 +346,7 @@ declare class PgBoss extends EventEmitter {
   getJobById(id: string, options?: PgBoss.ConnectionOptions): Promise<PgBoss.JobWithMetadata | null>;
 
   deleteQueue(name: string): Promise<void>;
+  purgeQueue(name: string): Promise<void>;
   clearStorage(): Promise<void>;
 
   archive(): Promise<void>;

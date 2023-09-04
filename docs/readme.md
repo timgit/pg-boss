@@ -26,7 +26,6 @@
     - [`send(name, data, options)`](#sendname-data-options)
     - [`send(request)`](#sendrequest)
     - [`sendAfter(name, data, options, seconds | ISO date string | Date)`](#sendaftername-data-options-seconds--iso-date-string--date)
-    - [`sendOnce(name, data, options, key)`](#sendoncename-data-options-key)
     - [`sendThrottled(name, data, options, seconds [, key])`](#sendthrottledname-data-options-seconds--key)
     - [`sendDebounced(name, data, options, seconds [, key])`](#senddebouncedname-data-options-seconds--key)
   - [`insert([jobs])`](#insertjobs)
@@ -559,17 +558,6 @@ Available in constructor as a default, or overridden in send.
   boss.send('my-job', {}, {singletonKey: '123'}) // resolves a null jobId until first job completed
   ```
 
-  This can be used in conjunction with throttling explained below.
-
-  * **useSingletonQueue** boolean
-
-    When used in conjunction with singletonKey, allows a max of 1 job to be queued.
-
-  ```js
-  boss.send('my-job', {}, {singletonKey: '123', useSingletonQueue: true}) // resolves a jobId
-  boss.send('my-job', {}, {singletonKey: '123', useSingletonQueue: true}) // resolves a null jobId until first job becomes active
-  ```
-
 **Throttled jobs**
 
 * **singletonSeconds**, int
@@ -638,12 +626,6 @@ console.log(`job ${jobId} submitted`)
 Send a job that should start after a number of seconds from now, or after a specific date time.
 
 This is a convenience version of `send()` with the `startAfter` option assigned.
-
-### `sendOnce(name, data, options, key)`
-
-Send a job with a unique key to only allow 1 job to be in created, retry, or active state at a time.
-
-This is a convenience version of `send()` with the `singletonKey` option assigned.
 
 
 ### `sendThrottled(name, data, options, seconds [, key])`

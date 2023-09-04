@@ -9,7 +9,7 @@ describe('migration', function () {
   let contractor
 
   beforeEach(async function () {
-    const db = await helper.getDb()
+    const db = await helper.getDb({ debug: false })
     contractor = new Contractor(db, this.currentTest.bossConfig)
   })
 

@@ -50,7 +50,7 @@ class Boss extends EventEmitter {
   async supervise () {
     this.metaMonitor()
 
-    await this.manager.deleteQueue(queues.MAINTENANCE)
+    await this.manager.purgeQueue(queues.MAINTENANCE)
 
     await this.maintenanceAsync()
 
@@ -61,7 +61,7 @@ class Boss extends EventEmitter {
     await this.manager.work(queues.MAINTENANCE, maintenanceWorkOptions, (job) => this.onMaintenance(job))
 
     if (this.monitorStates) {
-      await this.manager.deleteQueue(queues.MONITOR_STATES)
+      await this.manager.purgeQueue(queues.MONITOR_STATES)
 
       await this.monitorStatesAsync()
 
@@ -83,7 +83,7 @@ class Boss extends EventEmitter {
         const { secondsAgo } = await this.getMaintenanceTime()
 
         if (secondsAgo > this.maintenanceIntervalSeconds * 2) {
-          await this.manager.deleteQueue(queues.MAINTENANCE)
+          await this.manager.purgeQueue(queues.MAINTENANCE)
           await this.maintenanceAsync()
         }
       } catch (err) {
@@ -138,12 +138,12 @@ class Boss extends EventEmitter {
 
       const result = await this.maintain()
 
-      this.emit(events.maintenance, result)
-
       if (!this.stopped) {
         await this.manager.complete(job.id) // pre-complete to bypass throttling
         await this.maintenanceAsync({ startAfter: this.maintenanceIntervalSeconds })
       }
+
+      this.emit(events.maintenance, result)
     } catch (err) {
       this.emit(events.error, err)
     }

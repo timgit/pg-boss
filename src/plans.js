@@ -96,11 +96,11 @@ function create (schema, version) {
     createIndexJobPolicyStately(schema),
     createIndexJobPolicyShort(schema),
     createIndexJobPolicySingleton(schema),
-    createIndexJobThrottle(schema),
-    createIndexJobDebounce(schema),
+    createIndexJobThrottleOn(schema),
+    createIndexJobThrottleKey(schema),
 
     createTableArchive(schema),
-    createIndexArchiveId(schema),
+    createPrimaryKeyArchive(schema),
     createColumnArchiveArchivedOn(schema),
     createIndexArchiveArchivedOn(schema),
     createIndexArchiveName(schema),
@@ -183,8 +183,12 @@ function createPrimaryKeyJob (schema) {
   return `ALTER TABLE ${schema}.job ADD CONSTRAINT job_pkey PRIMARY KEY (name, id)`
 }
 
+function createPrimaryKeyArchive (schema) {
+  return `ALTER TABLE ${schema}.archive ADD CONSTRAINT archive_pkey PRIMARY KEY (name, id)`
+}
+
 function createIndexJobPolicyShort (schema) {
-  return `CREATE UNIQUE INDEX job_policy_short ON ${schema}.job (name) WHERE state <= '${states.retry}' AND policy = '${QUEUE_POLICY.short}'`
+  return `CREATE UNIQUE INDEX job_policy_short ON ${schema}.job (name) WHERE state = '${states.created}' AND policy = '${QUEUE_POLICY.short}'`
 }
 
 function createIndexJobPolicySingleton (schema) {
@@ -195,12 +199,12 @@ function createIndexJobPolicyStately (schema) {
   return `CREATE UNIQUE INDEX job_policy_stately ON ${schema}.job (name, state) WHERE state <= '${states.active}' AND policy = '${QUEUE_POLICY.stately}'`
 }
 
-function createIndexJobThrottle (schema) {
-  return `CREATE UNIQUE INDEX job_throttle ON ${schema}.job (name, singletonOn) WHERE state <= '${states.completed}' AND singletonOn IS NOT NULL AND singletonKey IS NULL`
+function createIndexJobThrottleOn (schema) {
+  return `CREATE UNIQUE INDEX job_throttle_on ON ${schema}.job (name, singletonOn, COALESCE(singletonKey, '')) WHERE state <= '${states.completed}' AND singletonOn IS NOT NULL`
 }
 
-function createIndexJobDebounce (schema) {
-  return `CREATE UNIQUE INDEX job_debounce ON ${schema}.job (name, singletonOn, singletonKey) WHERE state <= '${states.completed}'`
+function createIndexJobThrottleKey (schema) {
+  return `CREATE UNIQUE INDEX job_throttle_key ON ${schema}.job (name, singletonKey) WHERE state <= '${states.completed}' AND singletonOn IS NULL`
 }
 
 function createIndexJobName (schema) {
@@ -217,10 +221,6 @@ function createTableArchive (schema) {
 
 function createArchiveBackupTable (schema) {
   return `CREATE TABLE ${schema}.archive_backup (LIKE ${schema}.job)`
-}
-
-function createIndexArchiveId (schema) {
-  return `CREATE INDEX archive_id on ${schema}.archive (id)`
 }
 
 function createColumnArchiveArchivedOn (schema) {
@@ -637,7 +637,7 @@ function insertJobs (schema) {
       CASE
         WHEN "keepUntil" IS NOT NULL THEN "keepUntil"
         WHEN q.retention_minutes IS NOT NULL THEN now() + q.retention_minutes * interval '1 minute'
-        ELSE now() + interval '14 days')
+        ELSE now() + interval '14 days'
         END,
       q.policy
     FROM json_to_recordset($1) as j (
@@ -676,10 +676,10 @@ function archive (schema, completedInterval, failedInterval = completedInterval)
       RETURNING *
     )
     INSERT INTO ${schema}.archive (
-      id, name, priority, data, state, retryLimit, retryCount, retryDelay, retryBackoff, startAfter, startedOn, singletonKey, singletonOn, expireIn, createdOn, completedOn, keepUntil, deadletter, output
+      id, name, priority, data, state, retryLimit, retryCount, retryDelay, retryBackoff, startAfter, startedOn, singletonKey, singletonOn, expireIn, createdOn, completedOn, keepUntil, deadletter, policy, output
     )
     SELECT
-      id, name, priority, data, state, retryLimit, retryCount, retryDelay, retryBackoff, startAfter, startedOn, singletonKey, singletonOn, expireIn, createdOn, completedOn, keepUntil, deadletter, output
+      id, name, priority, data, state, retryLimit, retryCount, retryDelay, retryBackoff, startAfter, startedOn, singletonKey, singletonOn, expireIn, createdOn, completedOn, keepUntil, deadletter, policy, output
     FROM archived_rows
   `
 }

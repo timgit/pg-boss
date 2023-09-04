@@ -90,11 +90,11 @@ function getAll (schema) {
         `CREATE INDEX archive_archivedon_idx ON ${schema}.archive(archivedon)`,
         `CREATE INDEX archive_name_idx ON ${schema}.archive(name)`,
         `CREATE INDEX job_fetch ON ${schema}.job (name text_pattern_ops, startAfter) INCLUDE (priority, createdOn) WHERE state < 'active'`,
-        `CREATE UNIQUE INDEX job_policy_short ON ${schema}.job (name) WHERE state <= 'retry' AND policy = 'short'`,
+        `CREATE UNIQUE INDEX job_policy_short ON ${schema}.job (name) WHERE state = 'created' AND policy = 'short'`,
         `CREATE UNIQUE INDEX job_policy_singleton ON ${schema}.job (name) WHERE state = 'active' AND policy = 'singleton'`,
         `CREATE UNIQUE INDEX job_policy_stately ON ${schema}.job (name, state) WHERE state <= 'active' AND policy = 'stately'`,
-        `CREATE UNIQUE INDEX job_throttle ON ${schema}.job (name, singletonOn, COALESCE(singletonKey, '')) WHERE state <= 'completed' AND singletonOn IS NOT NULL`,
-        `CREATE UNIQUE INDEX job_debounce ON ${schema}.job (name, singletonOn, singletonKey) WHERE state <= 'completed'`,
+        `CREATE UNIQUE INDEX job_throttle_key ON ${schema}.job (name, singletonKey) WHERE state <= 'completed' AND singletonOn IS NULL`,
+        `CREATE UNIQUE INDEX job_throttle_on ON ${schema}.job (name, singletonOn, COALESCE(singletonKey, '')) WHERE state <= 'completed' AND singletonOn IS NOT NULL`,
         `CREATE TABLE ${schema}.queue (
           name text primary key,
           policy text,
@@ -104,7 +104,7 @@ function getAll (schema) {
           expire_seconds int,
           retention_minutes int,
           dead_letter text,
-          created_on timestamp with time zone not null default now(),
+          created_on timestamp with time zone not null default now()
         )`
       ],
       uninstall: [
@@ -112,7 +112,8 @@ function getAll (schema) {
         `DROP INDEX ${schema}.job_policy_stately`,
         `DROP INDEX ${schema}.job_policy_short`,
         `DROP INDEX ${schema}.job_policy_singleton`,
-        `DROP INDEX ${schema}.job_throttle`,
+        `DROP INDEX ${schema}.job_throttle_on`,
+        `DROP INDEX ${schema}.job_throttle_key`,
         `DROP INDEX ${schema}.job_fetch`,
         `DROP INDEX ${schema}.archive_archivedon_idx`,
         `DROP INDEX ${schema}.archive_name_idx`,
