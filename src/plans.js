@@ -43,7 +43,7 @@ module.exports = {
   unsubscribe,
   getQueuesForEvent,
   archive,
-  purge,
+  drop,
   countStates,
   createQueue,
   updateQueue,
@@ -56,9 +56,12 @@ module.exports = {
   clearStorage,
   getMaintenanceTime,
   setMaintenanceTime,
+  getMonitorTime,
+  setMonitorTime,
   getCronTime,
   setCronTime,
   locked,
+  advisoryLock,
   assertMigration,
   getArchivedJobById,
   getJobById,
@@ -67,20 +70,6 @@ module.exports = {
   MIGRATE_RACE_MESSAGE,
   CREATE_RACE_MESSAGE,
   DEFAULT_SCHEMA
-}
-
-function locked (schema, query) {
-  if (Array.isArray(query)) {
-    query = query.join(';\n')
-  }
-
-  return `
-    BEGIN;
-    SET LOCAL statement_timeout = '30s';
-    ${advisoryLock(schema)};
-    ${query};
-    COMMIT;
-  `
 }
 
 function create (schema, version) {
@@ -128,7 +117,8 @@ function createTableVersion (schema) {
     CREATE TABLE ${schema}.version (
       version int primary key,
       maintained_on timestamp with time zone,
-      cron_on timestamp with time zone
+      cron_on timestamp with time zone,
+      monitored_on timestamp with time zone
     )
   `
 }
@@ -235,12 +225,20 @@ function createIndexArchiveName (schema) {
   return `CREATE INDEX archive_name_idx ON ${schema}.archive(name)`
 }
 
+function getMaintenanceTime (schema) {
+  return `SELECT maintained_on, EXTRACT( EPOCH FROM (now() - maintained_on) ) seconds_ago FROM ${schema}.version`
+}
+
 function setMaintenanceTime (schema) {
   return `UPDATE ${schema}.version SET maintained_on = now()`
 }
 
-function getMaintenanceTime (schema) {
-  return `SELECT maintained_on, EXTRACT( EPOCH FROM (now() - maintained_on) ) seconds_ago FROM ${schema}.version`
+function getMonitorTime (schema) {
+  return `SELECT monitored_on, EXTRACT( EPOCH FROM (now() - monitored_on) ) seconds_ago FROM ${schema}.version`
+}
+
+function setMonitorTime (schema) {
+  return `UPDATE ${schema}.version SET monitored_on = now()`
 }
 
 function setCronTime (schema, time) {
@@ -659,7 +657,7 @@ function insertJobs (schema) {
   `
 }
 
-function purge (schema, interval) {
+function drop (schema, interval) {
   return `
     DELETE FROM ${schema}.archive
     WHERE archivedOn < (now() - interval '${interval}')
@@ -692,9 +690,23 @@ function countStates (schema) {
   `
 }
 
-function advisoryLock (schema) {
+function locked (schema, query) {
+  if (Array.isArray(query)) {
+    query = query.join(';\n')
+  }
+
+  return `
+    BEGIN;
+    SET LOCAL lock_timeout = '30s';
+    ${advisoryLock(schema)};
+    ${query};
+    COMMIT;
+  `
+}
+
+function advisoryLock (schema, key) {
   return `SELECT pg_advisory_xact_lock(
-      ('x' || md5(current_database() || '.pgboss.${schema}'))::bit(64)::bigint
+      ('x' || md5(current_database() || '.pgboss.${schema}${key || ''}'))::bit(64)::bigint
   )`
 }
 

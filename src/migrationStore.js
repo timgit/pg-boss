@@ -95,6 +95,7 @@ function getAll (schema) {
         `CREATE UNIQUE INDEX job_policy_stately ON ${schema}.job (name, state) WHERE state <= 'active' AND policy = 'stately'`,
         `CREATE UNIQUE INDEX job_throttle_key ON ${schema}.job (name, singletonKey) WHERE state <= 'completed' AND singletonOn IS NULL`,
         `CREATE UNIQUE INDEX job_throttle_on ON ${schema}.job (name, singletonOn, COALESCE(singletonKey, '')) WHERE state <= 'completed' AND singletonOn IS NOT NULL`,
+        `ALTER TABLE ${schema}.version ADD COLUMN monitored_on timestamp with time zone`,
         `CREATE TABLE ${schema}.queue (
           name text primary key,
           policy text,
@@ -133,7 +134,8 @@ function getAll (schema) {
         `CREATE UNIQUE INDEX job_singletonKeyOn ON ${schema}.job (name, singletonOn, singletonKey) WHERE state < 'expired'`,
         `CREATE UNIQUE INDEX job_singletonKey ON ${schema}.job (name, singletonKey) WHERE state < 'completed' AND singletonOn IS NULL AND NOT singletonKey LIKE '\\_\\_pgboss\\_\\_singleton\\_queue%'`,
         `CREATE UNIQUE INDEX job_singleton_queue ON ${schema}.job (name, singletonKey) WHERE state < 'active' AND singletonOn IS NULL AND singletonKey LIKE '\\_\\_pgboss\\_\\_singleton\\_queue%'`,
-        `DROP TABLE ${schema}.queue`
+        `DROP TABLE ${schema}.queue`,
+        `ALTER TABLE ${schema}.version DROP COLUMN monitored_on`
       ]
     },
     {

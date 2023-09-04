@@ -1,11 +1,6 @@
 const EventEmitter = require('events')
 const plans = require('./plans')
 
-const queues = {
-  MAINTENANCE: '__pgboss__maintenance',
-  MONITOR_STATES: '__pgboss__monitor-states'
-}
-
 const events = {
   error: 'error',
   monitorStates: 'monitor-states',
@@ -21,107 +16,111 @@ class Boss extends EventEmitter {
     this.manager = config.manager
 
     this.maintenanceIntervalSeconds = config.maintenanceIntervalSeconds
-
-    this.monitorStates = config.monitorStateIntervalSeconds !== null
-
-    if (this.monitorStates) {
-      this.monitorIntervalSeconds = config.monitorStateIntervalSeconds
-    }
+    this.maintenanceIntervalSeconds = config.monitorStateIntervalSeconds
 
     this.events = events
 
     this.failJobsByTimeoutCommand = plans.locked(config.schema, plans.failJobsByTimeout(config.schema))
     this.archiveCommand = plans.locked(config.schema, plans.archive(config.schema, config.archiveInterval, config.archiveFailedInterval))
-    this.purgeCommand = plans.locked(config.schema, plans.purge(config.schema, config.deleteAfter))
+    this.dropCommand = plans.locked(config.schema, plans.drop(config.schema, config.deleteAfter))
     this.getMaintenanceTimeCommand = plans.getMaintenanceTime(config.schema)
     this.setMaintenanceTimeCommand = plans.setMaintenanceTime(config.schema)
+    this.getMonitorTimeCommand = plans.getMonitorTime(config.schema)
+    this.setMonitorTimeCommand = plans.setMonitorTime(config.schema)
     this.countStatesCommand = plans.countStates(config.schema)
 
     this.functions = [
       this.expire,
       this.archive,
-      this.purge,
+      this.drop,
       this.countStates,
-      this.getQueueNames,
       this.maintain
     ]
   }
 
-  async supervise () {
-    this.metaMonitor()
+  async monitor () {
+    let monitoring
 
-    await this.manager.purgeQueue(queues.MAINTENANCE)
+    this.monitorInterval = setInterval(async () => {
+      let locker
 
-    await this.maintenanceAsync()
-
-    const maintenanceWorkOptions = {
-      newJobCheckIntervalSeconds: Math.max(1, this.maintenanceIntervalSeconds / 2)
-    }
-
-    await this.manager.work(queues.MAINTENANCE, maintenanceWorkOptions, (job) => this.onMaintenance(job))
-
-    if (this.monitorStates) {
-      await this.manager.purgeQueue(queues.MONITOR_STATES)
-
-      await this.monitorStatesAsync()
-
-      const monitorStatesWorkOptions = {
-        newJobCheckIntervalSeconds: Math.max(1, this.monitorIntervalSeconds / 2)
-      }
-
-      await this.manager.work(queues.MONITOR_STATES, monitorStatesWorkOptions, (job) => this.onMonitorStates(job))
-    }
-  }
-
-  metaMonitor () {
-    this.metaMonitorInterval = setInterval(async () => {
       try {
+        if (monitoring) {
+          return
+        }
+
+        monitoring = true
+
         if (this.config.__test__throw_meta_monitor) {
           throw new Error(this.config.__test__throw_meta_monitor)
         }
 
-        const { secondsAgo } = await this.getMaintenanceTime()
+        locker = await this.db.lock({ key: 'monitor' })
 
-        if (secondsAgo > this.maintenanceIntervalSeconds * 2) {
-          await this.manager.purgeQueue(queues.MAINTENANCE)
-          await this.maintenanceAsync()
+        const { secondsAgo } = await this.getMonitorTime()
+
+        if (secondsAgo > this.monitorIntervalSeconds) {
+          if (!this.stopped) {
+            const states = await this.countStates()
+            this.setMonitorTime()
+            this.emit(events.monitorStates, states)
+          }
         }
       } catch (err) {
         this.emit(events.error, err)
+      } finally {
+        if (locker?.locked) {
+          await locker.unlock()
+        }
+
+        monitoring = false
       }
-    }, this.maintenanceIntervalSeconds * 2 * 1000)
+    }, this.monitorIntervalSeconds * 1000)
   }
 
-  async maintenanceAsync (options = {}) {
-    const { startAfter } = options
+  async supervise () {
+    let maintaining
 
-    options = {
-      startAfter,
-      retentionSeconds: this.maintenanceIntervalSeconds * 4,
-      singletonKey: queues.MAINTENANCE
-    }
+    this.maintenanceInterval = setInterval(async () => {
+      let locker
 
-    await this.manager.send(queues.MAINTENANCE, null, options)
-  }
+      try {
+        if (maintaining) {
+          return
+        }
 
-  async monitorStatesAsync (options = {}) {
-    const { startAfter } = options
+        maintaining = true
 
-    options = {
-      startAfter,
-      retentionSeconds: this.monitorIntervalSeconds * 4,
-      singletonKey: queues.MONITOR_STATES
-    }
+        if (this.config.__test__throw_meta_monitor) {
+          throw new Error(this.config.__test__throw_meta_monitor)
+        }
 
-    await this.manager.send(queues.MONITOR_STATES, null, options)
+        locker = await this.db.lock({ key: 'maintenance' })
+
+        const { secondsAgo } = await this.getMaintenanceTime()
+
+        if (secondsAgo > this.maintenanceIntervalSeconds) {
+          const result = await this.maintain()
+          this.emit(events.maintenance, result)
+        }
+      } catch (err) {
+        this.emit(events.error, err)
+      } finally {
+        if (locker?.locked) {
+          await locker.unlock()
+        }
+
+        maintaining = false
+      }
+    }, this.maintenanceIntervalSeconds * 1000)
   }
 
   async maintain () {
     const started = Date.now()
 
-    await this.expire()
-    await this.archive()
-    await this.purge()
+    !this.stopped && await this.expire()
+    !this.stopped && await this.archive()
+    !this.stopped && await this.drop()
 
     const ended = Date.now()
 
@@ -130,58 +129,18 @@ class Boss extends EventEmitter {
     return { ms: ended - started }
   }
 
-  async onMaintenance (job) {
-    try {
-      if (this.config.__test__throw_maint) {
-        throw new Error(this.config.__test__throw_maint)
-      }
-
-      const result = await this.maintain()
-
-      if (!this.stopped) {
-        await this.manager.complete(job.id) // pre-complete to bypass throttling
-        await this.maintenanceAsync({ startAfter: this.maintenanceIntervalSeconds })
-      }
-
-      this.emit(events.maintenance, result)
-    } catch (err) {
-      this.emit(events.error, err)
-    }
-  }
-
-  async onMonitorStates (job) {
-    try {
-      if (this.config.__test__throw_monitor) {
-        throw new Error(this.config.__test__throw_monitor)
-      }
-
-      const states = await this.countStates()
-
-      this.emit(events.monitorStates, states)
-
-      if (!this.stopped && this.monitorStates) {
-        await this.manager.complete(job.id) // pre-complete to bypass throttling
-        await this.monitorStatesAsync({ startAfter: this.monitorIntervalSeconds })
-      }
-    } catch (err) {
-      this.emit(events.error, err)
-    }
-  }
-
   async stop () {
     if (this.config.__test__throw_stop) {
       throw new Error(this.config.__test__throw_stop)
     }
 
     if (!this.stopped) {
-      if (this.metaMonitorInterval) {
-        clearInterval(this.metaMonitorInterval)
+      if (this.maintenanceInterval) {
+        clearInterval(this.maintenanceInterval)
       }
 
-      await this.manager.offWork(queues.MAINTENANCE)
-
-      if (this.monitorStates) {
-        await this.manager.offWork(queues.MONITOR_STATES)
+      if (this.monitorInterval) {
+        clearInterval(this.monitorInterval)
       }
 
       this.stopped = true
@@ -194,7 +153,7 @@ class Boss extends EventEmitter {
     Object.keys(stateCountDefault)
       .forEach(key => { stateCountDefault[key] = 0 })
 
-    const counts = await this.executeSql(this.countStatesCommand)
+    const counts = await this.db.executeSql(this.countStatesCommand)
 
     const states = counts.rows.reduce((acc, item) => {
       if (item.name) {
@@ -214,43 +173,44 @@ class Boss extends EventEmitter {
   }
 
   async expire () {
-    await this.executeSql(this.failJobsByTimeoutCommand)
+    await this.db.executeSql(this.failJobsByTimeoutCommand)
   }
 
   async archive () {
-    await this.executeSql(this.archiveCommand)
+    await this.db.executeSql(this.archiveCommand)
   }
 
-  async purge () {
-    await this.executeSql(this.purgeCommand)
+  async drop () {
+    await this.db.executeSql(this.dropCommand)
   }
 
   async setMaintenanceTime () {
-    await this.executeSql(this.setMaintenanceTimeCommand)
+    await this.db.executeSql(this.setMaintenanceTimeCommand)
   }
 
   async getMaintenanceTime () {
-    if (!this.stopped) {
-      const { rows } = await this.db.executeSql(this.getMaintenanceTimeCommand)
+    const { rows } = await this.db.executeSql(this.getMaintenanceTimeCommand)
 
-      let { maintained_on: maintainedOn, seconds_ago: secondsAgo } = rows[0]
+    let { maintained_on: maintainedOn, seconds_ago: secondsAgo } = rows[0]
 
-      secondsAgo = secondsAgo !== null ? parseFloat(secondsAgo) : this.maintenanceIntervalSeconds * 10
+    secondsAgo = secondsAgo !== null ? parseFloat(secondsAgo) : 999_999_999
 
-      return { maintainedOn, secondsAgo }
-    }
+    return { maintainedOn, secondsAgo }
   }
 
-  getQueueNames () {
-    return queues
+  async setMonitorTime () {
+    await this.db.executeSql(this.setMonitorTimeCommand)
   }
 
-  async executeSql (sql, params) {
-    if (!this.stopped) {
-      return await this.db.executeSql(sql, params)
-    }
+  async getMonitorTime () {
+    const { rows } = await this.db.executeSql(this.getMonitorTimeCommand)
+
+    let { monitored_on: monitoredOn, seconds_ago: secondsAgo } = rows[0]
+
+    secondsAgo = secondsAgo !== null ? parseFloat(secondsAgo) : 999_999_999
+
+    return { monitoredOn, secondsAgo }
   }
 }
 
 module.exports = Boss
-module.exports.QUEUES = queues

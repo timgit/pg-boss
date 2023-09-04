@@ -1,5 +1,4 @@
 const assert = require('assert')
-const delay = require('delay')
 const helper = require('./testHelper')
 const PgBoss = require('../')
 const Contractor = require('../src/contractor')
@@ -57,40 +56,5 @@ describe('multi-master', function () {
     } finally {
       await pMap(instances, i => i.stop({ graceful: false }))
     }
-  })
-
-  it('should clear maintenance queue before supervising', async function () {
-    const { states } = PgBoss
-    const jobCount = 5
-
-    let boss = new PgBoss({ ...this.test.bossConfig, maintenanceIntervalSeconds: 1 })
-
-    const queues = boss.boss.getQueueNames()
-    const countJobs = (state) => helper.countJobs(this.test.bossConfig.schema, 'name = $1 AND state = $2', [queues.MAINTENANCE, state])
-
-    await boss.start()
-
-    // create extra maintenace jobs manually
-    for (let i = 0; i < jobCount; i++) {
-      await boss.send(queues.MAINTENANCE)
-    }
-
-    const beforeCount = await countJobs(states.created)
-
-    assert.strictEqual(beforeCount, jobCount)
-
-    await boss.stop({ graceful: false })
-
-    boss = new PgBoss({ ...this.test.bossConfig, supervise: true })
-
-    await boss.start()
-
-    await delay(3000)
-
-    const completedCount = await countJobs(states.completed)
-
-    assert.strictEqual(completedCount, 1)
-
-    await boss.stop({ graceful: false })
   })
 })

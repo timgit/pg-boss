@@ -16,7 +16,7 @@ describe('ops', function () {
 
   it('should purge the archive manually', async function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
-    await boss.purge()
+    await boss.drop()
   })
 
   it('stop should re-emit stoppped if already stopped', async function () {

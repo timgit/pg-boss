@@ -12,6 +12,8 @@ module.exports = {
   assertPostgresObjectName
 }
 
+const MAX_INTERVAL_HOURS = 24
+
 const WARNINGS = {
   CLOCK_SKEW: {
     message: 'Timekeeper detected clock skew between this instance and the database server. This will not affect scheduling operations, but this warning is shown any time the skew exceeds 60 seconds.',
@@ -250,8 +252,6 @@ function applyExpirationConfig (config, defaults) {
     emitWarning(WARNINGS.EXPIRE_IN_REMOVED)
   }
 
-  const MAX_EXPIRATION_HOURS = 24
-
   assert(!('expireInSeconds' in config) || config.expireInSeconds >= 1,
     'configuration assert: expireInSeconds must be at least every second')
 
@@ -271,7 +271,7 @@ function applyExpirationConfig (config, defaults) {
               ? defaults.expireIn
               : 15 * 60
 
-  assert(expireIn / 60 / 60 < MAX_EXPIRATION_HOURS, `configuration assert: expiration cannot exceed ${MAX_EXPIRATION_HOURS} hours`)
+  assert(expireIn / 60 / 60 < MAX_INTERVAL_HOURS, `configuration assert: expiration cannot exceed ${MAX_INTERVAL_HOURS} hours`)
 
   config.expireIn = expireIn
 }
@@ -326,6 +326,8 @@ function applyMaintenanceConfig (config) {
         ? config.maintenanceIntervalSeconds
         : 120
 
+  assert(config.maintenanceIntervalSeconds / 60 / 60 < MAX_INTERVAL_HOURS, `configuration assert: maintenance interval cannot exceed ${MAX_INTERVAL_HOURS} hours`)
+
   config.schedule = ('schedule' in config) ? config.schedule : true
   config.maintenance = ('maintenance' in config) ? config.maintenance : true
   config.migrate = ('migrate' in config) ? config.migrate : true
@@ -370,6 +372,10 @@ function applyMonitoringConfig (config) {
       : ('monitorStateIntervalSeconds' in config)
           ? config.monitorStateIntervalSeconds
           : null
+
+  if (config.monitorStateIntervalSeconds) {
+    assert(config.monitorStateIntervalSeconds / 60 / 60 < MAX_INTERVAL_HOURS, `configuration assert: state monitoring interval cannot exceed ${MAX_INTERVAL_HOURS} hours`)
+  }
 
   const TEN_MINUTES_IN_SECONDS = 600
 

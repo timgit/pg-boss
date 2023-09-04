@@ -11,11 +11,10 @@ const Worker = require('./worker')
 const plans = require('./plans')
 const Db = require('./db')
 
-const { QUEUES: BOSS_QUEUES } = require('./boss')
 const { QUEUES: TIMEKEEPER_QUEUES } = require('./timekeeper')
 const { QUEUE_POLICY } = plans
 
-const INTERNAL_QUEUES = Object.values(BOSS_QUEUES).concat(Object.values(TIMEKEEPER_QUEUES)).reduce((acc, i) => ({ ...acc, [i]: i }), {})
+const INTERNAL_QUEUES = Object.values(TIMEKEEPER_QUEUES).reduce((acc, i) => ({ ...acc, [i]: i }), {})
 
 const WIP_EVENT_INTERVAL = 2000
 const WIP_DEBOUNCE_OPTIONS = { leading: true, trailing: true, maxWait: WIP_EVENT_INTERVAL }
