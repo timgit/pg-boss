@@ -252,10 +252,6 @@ function applyRetentionConfig (config, defaults) {
 }
 
 function applyExpirationConfig (config, defaults) {
-  if ('expireIn' in config) {
-    emitWarning(WARNINGS.EXPIRE_IN_REMOVED)
-  }
-
   assert(!('expireInSeconds' in config) || config.expireInSeconds >= 1,
     'configuration assert: expireInSeconds must be at least every second')
 

@@ -38,79 +38,79 @@ class Boss extends EventEmitter {
     ]
   }
 
-  async monitor () {
-    let monitoring
-
-    this.monitorInterval = setInterval(async () => {
-      let locker
-
-      try {
-        if (monitoring) {
-          return
-        }
-
-        monitoring = true
-
-        if (this.config.__test__throw_monitor) {
-          throw new Error(this.config.__test__throw_monitor)
-        }
-
-        locker = await this.db.lock({ key: 'monitor' })
-
-        const { secondsAgo } = await this.getMonitorTime()
-
-        if (secondsAgo > this.monitorStateIntervalSeconds && !this.stopped) {
-          const states = await this.countStates()
-          this.setMonitorTime()
-          this.emit(events.monitorStates, states)
-        }
-      } catch (err) {
-        this.emit(events.error, err)
-      } finally {
-        if (locker?.locked) {
-          await locker.unlock()
-        }
-
-        monitoring = false
-      }
-    }, this.monitorStateIntervalSeconds * 1000)
+  async supervise () {
+    this.maintenanceInterval = setInterval(() => this.onSupervise(), this.maintenanceIntervalSeconds * 1000)
   }
 
-  async supervise () {
-    let maintaining
+  async monitor () {
+    this.monitorInterval = setInterval(() => this.onMonitor(), this.monitorStateIntervalSeconds * 1000)
+  }
 
-    this.maintenanceInterval = setInterval(async () => {
-      let locker
+  async onMonitor () {
+    let locker
 
-      try {
-        if (maintaining) {
-          return
-        }
-
-        maintaining = true
-
-        if (this.config.__test__throw_maint) {
-          throw new Error(this.config.__test__throw_maint)
-        }
-
-        locker = await this.db.lock({ key: 'maintenance' })
-
-        const { secondsAgo } = await this.getMaintenanceTime()
-
-        if (secondsAgo > this.maintenanceIntervalSeconds) {
-          const result = await this.maintain()
-          this.emit(events.maintenance, result)
-        }
-      } catch (err) {
-        this.emit(events.error, err)
-      } finally {
-        if (locker?.locked) {
-          await locker.unlock()
-        }
-
-        maintaining = false
+    try {
+      if (this.monitoring) {
+        return
       }
-    }, this.maintenanceIntervalSeconds * 1000)
+
+      this.monitoring = true
+
+      if (this.config.__test__throw_monitor) {
+        throw new Error(this.config.__test__throw_monitor)
+      }
+
+      locker = await this.db.lock({ key: 'monitor' })
+
+      const { secondsAgo } = await this.getMonitorTime()
+
+      if (secondsAgo > this.monitorStateIntervalSeconds && !this.stopped) {
+        const states = await this.countStates()
+        this.setMonitorTime()
+        this.emit(events.monitorStates, states)
+      }
+    } catch (err) {
+      this.emit(events.error, err)
+    } finally {
+      if (locker?.locked) {
+        await locker.unlock()
+      }
+
+      this.monitoring = false
+    }
+  }
+
+  async onSupervise () {
+    let locker
+
+    try {
+      if (this.maintaining) {
+        return
+      }
+
+      this.maintaining = true
+
+      if (this.config.__test__throw_maint) {
+        throw new Error(this.config.__test__throw_maint)
+      }
+
+      locker = await this.db.lock({ key: 'maintenance' })
+
+      const { secondsAgo } = await this.getMaintenanceTime()
+
+      if (secondsAgo > this.maintenanceIntervalSeconds) {
+        const result = await this.maintain()
+        this.emit(events.maintenance, result)
+      }
+    } catch (err) {
+      this.emit(events.error, err)
+    } finally {
+      if (locker?.locked) {
+        await locker.unlock()
+      }
+
+      this.maintaining = false
+    }
   }
 
   async maintain () {
