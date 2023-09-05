@@ -96,6 +96,12 @@ describe('queues', function () {
     await boss.purgeQueue(queue)
   })
 
+  it('getQueue() returns null when missing', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const queue = await boss.getQueue(this.test.bossConfig.schema)
+    assert.strictEqual(queue, null)
+  })
+
   it('should update queue properties', async function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
     const queue = this.test.bossConfig.schema

@@ -96,11 +96,11 @@ class Manager extends EventEmitter {
   }
 
   start () {
-    this.stopping = false
+    this.stopped = false
   }
 
   async stop () {
-    this.stopping = true
+    this.stopped = true
 
     for (const worker of this.workers.values()) {
       if (!INTERNAL_QUEUES[worker.name]) {
@@ -175,8 +175,8 @@ class Manager extends EventEmitter {
   }
 
   async watch (name, options, callback) {
-    if (this.stopping) {
-      throw new Error('Workers are disabled. pg-boss is stopping.')
+    if (this.stopped) {
+      throw new Error('Workers are disabled. pg-boss is stopped')
     }
 
     const {

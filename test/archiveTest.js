@@ -5,7 +5,8 @@ const { states } = require('../src/plans')
 
 describe('archive', function () {
   const defaults = {
-    archiveCompletedAfterSeconds: 1
+    archiveCompletedAfterSeconds: 1,
+    supervise: true
   }
 
   it('should archive a completed job', async function () {
@@ -42,6 +43,8 @@ describe('archive', function () {
 
     await boss.complete(jobId)
 
+    await delay(1000)
+
     await boss.maintain()
 
     const archivedJob = await boss.getJobById(jobId)
@@ -58,6 +61,7 @@ describe('archive', function () {
     const jobId = await boss.send(queue, null, { retentionSeconds: 1 })
 
     await delay(1000)
+
     await boss.maintain()
 
     const archivedJob = await helper.getArchivedJobById(config.schema, jobId)
@@ -74,6 +78,7 @@ describe('archive', function () {
     const jobId = await boss.send(queue)
 
     await delay(1000)
+
     await boss.maintain()
 
     const archivedJob = await helper.getArchivedJobById(config.schema, jobId)
@@ -93,6 +98,7 @@ describe('archive', function () {
     await boss.fail(jobId, failPayload)
 
     await delay(1000)
+
     await boss.maintain()
 
     const archivedJob = await helper.getArchivedJobById(config.schema, jobId)
@@ -111,6 +117,7 @@ describe('archive', function () {
     await boss.fail(jobId, failPayload)
 
     await delay(1000)
+
     await boss.maintain()
 
     const archivedJob = await helper.getArchivedJobById(config.schema, jobId)

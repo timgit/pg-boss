@@ -419,10 +419,10 @@ describe('work', function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
     const queue = this.test.bossConfig.schema
 
-    await boss.stop({ timeout: 1, wait: true })
+    await boss.stop({ wait: true })
 
     try {
-      await boss.work(queue)
+      await boss.work(queue, () => {})
       assert(false)
     } catch (err) {
       assert(true)
@@ -433,7 +433,7 @@ describe('work', function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
     const queue = this.test.bossConfig.schema
 
-    boss.stop({ timeout: 1, wait: true })
+    boss.stop({ wait: true })
 
     await boss.send(queue)
   })

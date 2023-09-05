@@ -1,5 +1,6 @@
 const EventEmitter = require('events')
 const plans = require('./plans')
+const delay = require('delay')
 
 const events = {
   error: 'error',
@@ -56,6 +57,10 @@ class Boss extends EventEmitter {
 
       this.monitoring = true
 
+      if (this.config.__test__delay_monitor) {
+        await delay(this.config.__test__delay_monitor)
+      }
+
       if (this.config.__test__throw_monitor) {
         throw new Error(this.config.__test__throw_monitor)
       }
@@ -89,6 +94,10 @@ class Boss extends EventEmitter {
       }
 
       this.maintaining = true
+
+      if (this.config.__test__delay_maintenance) {
+        await delay(this.config.__test__delay_maintenance)
+      }
 
       if (this.config.__test__throw_maint) {
         throw new Error(this.config.__test__throw_maint)
