@@ -223,7 +223,7 @@ function applyArchiveFailedConfig (config) {
   }
 }
 
-function applyRetentionConfig (config, defaults) {
+function applyRetentionConfig (config, defaults = {}) {
   assert(!('retentionSeconds' in config) || config.retentionSeconds >= 1,
     'configuration assert: retentionSeconds must be at least every second')
 
@@ -244,14 +244,13 @@ function applyRetentionConfig (config, defaults) {
             ? `${config.retentionMinutes} minutes`
             : ('retentionSeconds' in config)
                 ? `${config.retentionSeconds} seconds`
-                : defaults
-                  ? defaults.keepUntil
-                  : '14 days'
+                : null
 
   config.keepUntil = keepUntil
+  config.keepUntilDefault = defaults?.keepUntil
 }
 
-function applyExpirationConfig (config, defaults) {
+function applyExpirationConfig (config, defaults = {}) {
   assert(!('expireInSeconds' in config) || config.expireInSeconds >= 1,
     'configuration assert: expireInSeconds must be at least every second')
 
@@ -267,13 +266,12 @@ function applyExpirationConfig (config, defaults) {
         ? config.expireInMinutes * 60
         : ('expireInSeconds' in config)
             ? config.expireInSeconds
-            : defaults && defaults.expireIn
-              ? defaults.expireIn
-              : 15 * 60
+            : null
 
-  assert(expireIn / 60 / 60 < MAX_INTERVAL_HOURS, `configuration assert: expiration cannot exceed ${MAX_INTERVAL_HOURS} hours`)
+  assert(!expireIn || expireIn / 60 / 60 < MAX_INTERVAL_HOURS, `configuration assert: expiration cannot exceed ${MAX_INTERVAL_HOURS} hours`)
 
   config.expireIn = expireIn
+  config.expireInDefault = defaults?.expireIn
 }
 
 function applyRetryConfig (config, defaults) {
@@ -281,36 +279,23 @@ function applyRetryConfig (config, defaults) {
   assert(!('retryLimit' in config) || (Number.isInteger(config.retryLimit) && config.retryLimit >= 0), 'retryLimit must be an integer >= 0')
   assert(!('retryBackoff' in config) || (config.retryBackoff === true || config.retryBackoff === false), 'retryBackoff must be either true or false')
 
-  if (defaults) {
-    config.retryDelay = ('retryDelay' in config) ? config.retryDelay : defaults.retryDelay
-    config.retryLimit = ('retryLimit' in config) ? config.retryLimit : defaults.retryLimit
-    config.retryBackoff = ('retryBackoff' in config) ? config.retryBackoff : defaults.retryBackoff
-  }
-
-  config.retryDelay = config.retryDelay || 0
-  config.retryLimit = Number.isInteger(config.retryLimit) ? config.retryLimit : 2
-
-  config.retryBackoff = !!config.retryBackoff
-  config.retryDelay = (config.retryBackoff && !config.retryDelay) ? 1 : config.retryDelay
-  config.retryLimit = (config.retryDelay && !config.retryLimit) ? 1 : config.retryLimit
+  config.retryDelayDefault = defaults?.retryDelay
+  config.retryLimitDefault = defaults?.retryLimit
+  config.retryBackoffDefault = defaults?.retryBackoff
 }
 
 function applyNewJobCheckInterval (config, defaults) {
-  const second = 1000
-
-  assert(!('newJobCheckInterval' in config) || config.newJobCheckInterval >= 100,
-    'configuration assert: newJobCheckInterval must be at least every 100ms')
+  assert(!('newJobCheckInterval' in config) || config.newJobCheckInterval >= 500,
+    'configuration assert: newJobCheckInterval must be at least every 500ms')
 
   assert(!('newJobCheckIntervalSeconds' in config) || config.newJobCheckIntervalSeconds >= 1,
     'configuration assert: newJobCheckIntervalSeconds must be at least every second')
 
   config.newJobCheckInterval = ('newJobCheckIntervalSeconds' in config)
-    ? config.newJobCheckIntervalSeconds * second
+    ? config.newJobCheckIntervalSeconds * 1000
     : ('newJobCheckInterval' in config)
         ? config.newJobCheckInterval
-        : defaults
-          ? defaults.newJobCheckInterval
-          : second * 2
+        : defaults?.newJobCheckInterval || 2000
 }
 
 function applyMaintenanceConfig (config) {

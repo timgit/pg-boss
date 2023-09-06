@@ -542,16 +542,15 @@ function insertJob (schema) {
       name,
       data,
       priority,
-      state,
       startAfter,
       singletonKey,
       singletonOn,
+      deadletter,
       expireIn,
+      keepUntil,
       retryLimit,
       retryDelay,
       retryBackoff,
-      deadletter,
-      keepUntil,
       policy
     )
     SELECT
@@ -559,44 +558,44 @@ function insertJob (schema) {
       j.name,
       data,
       priority,
-      state,
       startAfter,
       singletonKey,
       singletonOn,
-      CASE WHEN expireIn IS NOT NULL THEN expireIn
+      COALESCE(deadLetter, q.dead_letter),
+      CASE
+        WHEN expireIn IS NOT NULL THEN CAST(expireIn as interval)
         WHEN q.expire_seconds IS NOT NULL THEN q.expire_seconds * interval '1s'
         ELSE interval '15 minutes'
-        END,      
+        END as expireIn,
+      CASE
+        WHEN right(keepUntilValue, 1) = 'Z' THEN CAST(keepUntilValue as timestamp with time zone)
+        ELSE startAfter + CAST(COALESCE(keepUntilValue, (q.retention_minutes * 60)::text, '14 days') as interval)
+        END as keepUntil,
       COALESCE(retryLimit, q.retry_limit, 2),
       COALESCE(retryDelay, q.retry_delay, 0),
       COALESCE(retryBackoff, q.retry_backoff, false),
-      COALESCE(deadLetter, q.dead_letter),
-      CASE WHEN right(keepUntilValue, 1) = 'Z' THEN CAST(keepUntilValue as timestamp with time zone)
-          ELSE startAfter + CAST(COALESCE(keepUntilValue, (COALESCE(q.retention_minutes, 0) * 60)::text, '0') as interval)
-          END as keepUntil,
       q.policy
     FROM
       ( SELECT
-          $1::uuid as id,
-          $2::text as name,
-          $3::int as priority,
-          '${states.created}'::${schema}.job_state as state,
-          $4::int as retryLimit,
+          COALESCE($1::uuid, gen_random_uuid()) as id,
+          $2 as name,
+          $3::jsonb as data,
+          COALESCE($4::int, 0) as priority,
           CASE
-            WHEN right($5::text, 1) = 'Z' THEN CAST($5::text as timestamp with time zone)
-            ELSE now() + CAST(COALESCE($5::text,'0') as interval)
+            WHEN right($5, 1) = 'Z' THEN CAST($5 as timestamp with time zone)
+            ELSE now() + CAST(COALESCE($5,'0') as interval)
             END as startAfter,
-          CAST($6 as interval) as expireIn,
-          $7::jsonb as data,
-          $8::text as singletonKey,
+          $6 as singletonKey,
           CASE
-            WHEN $9::integer IS NOT NULL THEN 'epoch'::timestamp + '1 second'::interval * ($9 * floor((date_part('epoch', now()) + $10) / $9))
+            WHEN $7::integer IS NOT NULL THEN 'epoch'::timestamp + '1 second'::interval * ($7 * floor((date_part('epoch', now()) + $8) / $7))
             ELSE NULL
             END as singletonOn,
-          $11::int as retryDelay,
-          $12::bool as retryBackoff,
-          $13::text as keepUntilValue,
-          $14::text as deadletter
+          $9 as deadletter,
+          COALESCE($10,$11) as expireIn,
+          COALESCE($12,$13) as keepUntilValue,
+          COALESCE($14::int,$15::int) as retryLimit,
+          COALESCE($16::int,$17::int) as retryDelay,
+          COALESCE($18::bool,$19::bool) as retryBackoff
       ) j LEFT JOIN ${schema}.queue q ON j.name = q.name
     ON CONFLICT DO NOTHING
     RETURNING id
@@ -612,12 +611,12 @@ function insertJobs (schema) {
       priority,
       startAfter,
       singletonKey,
+      deadletter,
       expireIn,
+      keepUntil,
       retryLimit,
       retryDelay,
       retryBackoff,
-      deadletter,
-      keepUntil,
       policy
     )
     SELECT
@@ -627,26 +626,26 @@ function insertJobs (schema) {
       COALESCE(priority, 0),
       COALESCE("startAfter", now()),
       "singletonKey",
-      COALESCE("expireInSeconds", q.expire_seconds, 15 * 60) * interval '1s',
-      COALESCE("retryLimit", q.retry_limit, 2),
-      COALESCE("retryDelay", q.retry_delay, 0),
-      COALESCE("retryBackoff", q.retry_backoff, false),
       COALESCE("deadLetter", q.dead_letter),
+      COALESCE("expireInSeconds", q.expire_seconds, 15 * 60) * interval '1s',
       CASE
         WHEN "keepUntil" IS NOT NULL THEN "keepUntil"
         WHEN q.retention_minutes IS NOT NULL THEN now() + q.retention_minutes * interval '1 minute'
         ELSE now() + interval '14 days'
         END,
+      COALESCE("retryLimit", q.retry_limit, 2),
+      COALESCE("retryDelay", q.retry_delay, 0),
+      COALESCE("retryBackoff", q.retry_backoff, false),
       q.policy
     FROM json_to_recordset($1) as j (
       id uuid,
       name text,
       priority integer,
       data jsonb,
+      "startAfter" timestamp with time zone,
       "retryLimit" integer,
       "retryDelay" integer,
       "retryBackoff" boolean,
-      "startAfter" timestamp with time zone,
       "singletonKey" text,
       "expireInSeconds" integer,
       "keepUntil" timestamp with time zone,

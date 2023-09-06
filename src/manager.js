@@ -366,37 +366,47 @@ class Manager extends EventEmitter {
 
   async createJob (name, data, options, singletonOffset = 0) {
     const {
+      id = null,
       db: wrapper,
-      expireIn,
       priority,
       startAfter,
-      keepUntil,
       singletonKey = null,
       singletonSeconds,
-      retryBackoff,
+      deadLetter = null,
+      expireIn,
+      expireInDefault,
+      keepUntil,
+      keepUntilDefault,
       retryLimit,
+      retryLimitDefault,
       retryDelay,
-      deadLetter = null
+      retryDelayDefault,
+      retryBackoff,
+      retryBackoffDefault
     } = options
-
-    const id = uuid[this.config.uuid]()
 
     const values = [
       id, // 1
       name, // 2
-      priority, // 3
-      retryLimit, // 4
+      data, // 3
+      priority, // 4
       startAfter, // 5
-      expireIn, // 6
-      data, // 7
-      singletonKey, // 8
-      singletonSeconds, // 9
-      singletonOffset, // 10
-      retryDelay, // 11
-      retryBackoff, // 12
-      keepUntil, // 13
-      deadLetter // 14
+      singletonKey, // 6
+      singletonSeconds, // 7
+      singletonOffset, // 8
+      deadLetter, // 9
+      expireIn, // 10
+      expireInDefault, // 11
+      keepUntil, // 12
+      keepUntilDefault, // 13
+      retryLimit, // 14
+      retryLimitDefault, // 15
+      retryDelay, // 16
+      retryDelayDefault, // 17
+      retryBackoff, // 18
+      retryBackoffDefault // 19
     ]
+
     const db = wrapper || this.db
     const result = await db.executeSql(this.insertJobCommand, values)
 
