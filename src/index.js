@@ -93,6 +93,8 @@ class PgBoss extends EventEmitter {
 
     if (this.config.migrate) {
       await this.contractor.start()
+    } else {
+      await this.contractor.check()
     }
 
     this.manager.start()

@@ -157,7 +157,49 @@ describe('migration', function () {
     await boss2.stop({ graceful: false })
   })
 
-  it.skip('should not migrate if migrations option is false', async function () {
-    assert(false)
+  it('should not install if migrate option is false', async function () {
+    const config = { ...this.test.bossConfig, migrate: false }
+    const boss = this.test.boss = new PgBoss(config)
+    try {
+      await boss.start()
+      assert(false)
+    } catch (err) {
+      assert(true)
+    }
+  })
+  it('should not migrate if migrate option is false', async function () {
+    await contractor.create()
+
+    await contractor.rollback(currentSchemaVersion)
+
+    const config = { ...this.test.bossConfig, migrate: false }
+    const boss = this.test.boss = new PgBoss(config)
+
+    try {
+      await boss.start()
+      assert(false)
+    } catch (err) {
+      assert(true)
+    }
+  })
+
+  it('should still work if migrate option is false', async function () {
+    await contractor.create()
+
+    const config = { ...this.test.bossConfig, migrate: false }
+    const queue = this.test.bossConfig.schema
+
+    const boss = this.test.boss = new PgBoss(config)
+
+    try {
+      await boss.start()
+      await boss.send(queue)
+      const job = await boss.fetch(queue)
+      await boss.complete(job.id)
+
+      assert(false)
+    } catch (err) {
+      assert(true)
+    }
   })
 })

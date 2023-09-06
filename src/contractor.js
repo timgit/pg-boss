@@ -47,6 +47,20 @@ class Contractor {
     }
   }
 
+  async check () {
+    const installed = await this.isInstalled()
+
+    if (!installed) {
+      throw new Error('pg-boss is not installed')
+    }
+
+    const version = await this.version()
+
+    if (schemaVersion !== version) {
+      throw new Error('pg-boss database requires migrations')
+    }
+  }
+
   async create () {
     try {
       const commands = plans.create(this.config.schema, schemaVersion)
