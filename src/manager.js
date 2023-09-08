@@ -1,7 +1,7 @@
 const assert = require('assert')
 const EventEmitter = require('events')
+const { randomUUID } = require('crypto')
 const delay = require('delay')
-const uuid = require('uuid')
 const debounce = require('lodash.debounce')
 const { serializeError: stringify } = require('serialize-error')
 const pMap = require('p-map')
@@ -188,7 +188,7 @@ class Manager extends EventEmitter {
       includeMetadata = false
     } = options
 
-    const id = uuid.v4()
+    const id = randomUUID({ disableEntropyCache: true })
 
     let queueSize = 0
 

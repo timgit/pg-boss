@@ -172,7 +172,6 @@ function getConfig (value) {
   applyArchiveFailedConfig(config)
   applyDeleteConfig(config)
   applyMonitoringConfig(config)
-  applyUuidConfig(config)
 
   applyNewJobCheckInterval(config)
   applyExpirationConfig(config)
@@ -314,7 +313,7 @@ function applyMaintenanceConfig (config) {
   assert(config.maintenanceIntervalSeconds / 60 / 60 < MAX_INTERVAL_HOURS, `configuration assert: maintenance interval cannot exceed ${MAX_INTERVAL_HOURS} hours`)
 
   config.schedule = ('schedule' in config) ? config.schedule : true
-  config.maintenance = ('maintenance' in config) ? config.maintenance : true
+  config.supervise = ('supervise' in config) ? config.supervise : true
   config.migrate = ('migrate' in config) ? config.migrate : true
 }
 
@@ -392,11 +391,6 @@ function applyMonitoringConfig (config) {
     ('cronWorkerIntervalSeconds' in config)
       ? config.cronWorkerIntervalSeconds
       : 4
-}
-
-function applyUuidConfig (config) {
-  assert(!('uuid' in config) || config.uuid === 'v1' || config.uuid === 'v4', 'configuration assert: uuid option only supports v1 or v4')
-  config.uuid = config.uuid || 'v4'
 }
 
 function warnClockSkew (message) {

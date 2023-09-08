@@ -1,5 +1,5 @@
 const assert = require('assert')
-const { v4: uuid } = require('uuid')
+const { randomUUID } = require('crypto')
 const helper = require('./testHelper')
 
 describe('insert', function () {
@@ -21,7 +21,7 @@ describe('insert', function () {
     const queue = this.test.bossConfig.schema
 
     const input = {
-      id: uuid(),
+      id: randomUUID(),
       name: queue,
       priority: 1,
       data: { some: 'data' },
@@ -58,7 +58,7 @@ describe('insert', function () {
     const queue = this.test.bossConfig.schema
 
     const input = {
-      id: uuid(),
+      id: randomUUID(),
       name: queue,
       priority: 1,
       data: { some: 'data' },

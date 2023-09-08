@@ -20,7 +20,6 @@ declare namespace PgBoss {
   }
 
   interface QueueOptions {
-    uuid?: "v1" | "v4";
     monitorStateIntervalSeconds?: number;
     monitorStateIntervalMinutes?: number;
   }

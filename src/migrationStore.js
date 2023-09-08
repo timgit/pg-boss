@@ -74,7 +74,11 @@ function getAll (schema) {
         `DROP INDEX ${schema}.job_singletonOn`,
         `DROP INDEX ${schema}.job_singletonKeyOn`,
         `DROP INDEX ${schema}.job_fetch`,
+
+        `ALTER TABLE ${schema}.job ADD COLUMN deadletter text`,
         `ALTER TABLE ${schema}.job ADD COLUMN policy text`,
+
+        // update state enum
         `ALTER TABLE ${schema}.job ALTER COLUMN state TYPE text`,
         `ALTER TABLE ${schema}.job ALTER COLUMN state DROP DEFAULT`,
         `ALTER TABLE ${schema}.archive ALTER COLUMN state TYPE text`,
@@ -84,6 +88,36 @@ function getAll (schema) {
         `CREATE TYPE ${schema}.job_state AS ENUM ('created','retry','active','completed','cancelled','failed')`,
         `ALTER TABLE ${schema}.job ALTER COLUMN state TYPE ${schema}.job_state USING state::${schema}.job_state`,
         `ALTER TABLE ${schema}.job ALTER COLUMN state SET DEFAULT 'created'::${schema}.job_state`,
+
+        // set up job partitioning
+        `ALTER TABLE ${schema}.job RENAME TO job_default`,
+
+        `CREATE TABLE ${schema}.job (
+          id uuid not null default gen_random_uuid(),
+          name text not null,
+          priority integer not null default(0),
+          data jsonb,
+          state ${schema}.job_state not null default('created'),
+          retryLimit integer not null default(0),
+          retryCount integer not null default(0),
+          retryDelay integer not null default(0),
+          retryBackoff boolean not null default false,
+          startAfter timestamp with time zone not null default now(),
+          startedOn timestamp with time zone,
+          singletonKey text,
+          singletonOn timestamp without time zone,
+          expireIn interval not null default interval '15 minutes',
+          createdOn timestamp with time zone not null default now(),
+          completedOn timestamp with time zone,
+          keepUntil timestamp with time zone NOT NULL default now() + interval '14 days',
+          output jsonb,
+          deadletter text,
+          policy text,
+          CONSTRAINT job_pkey PRIMARY KEY (name, id)
+        ) PARTITION BY RANGE (name)`,
+
+        `ALTER TABLE ${schema}.job ATTACH PARTITION ${schema}.job_default DEFAULT`,
+
         `CREATE TABLE ${schema}.archive (LIKE ${schema}.job)`,
         `ALTER TABLE ${schema}.archive ADD CONSTRAINT archive_pkey PRIMARY KEY (id)`,
         `ALTER TABLE ${schema}.archive ADD archivedOn timestamptz NOT NULL DEFAULT now()`,
@@ -109,15 +143,19 @@ function getAll (schema) {
         )`
       ],
       uninstall: [
-        `DROP TABLE IF EXISTS ${schema}.archive_backup`,
         `DROP INDEX ${schema}.job_policy_stately`,
         `DROP INDEX ${schema}.job_policy_short`,
         `DROP INDEX ${schema}.job_policy_singleton`,
         `DROP INDEX ${schema}.job_throttle_on`,
         `DROP INDEX ${schema}.job_throttle_key`,
         `DROP INDEX ${schema}.job_fetch`,
+        `ALTER TABLE ${schema}.job DETACH PARTITION ${schema}.job_default`,
+        `DROP TABLE ${schema}.job`,
+        `ALTER TABLE ${schema}.job_default RENAME TO job`,
+        `DROP TABLE IF EXISTS ${schema}.archive_backup`,
         `DROP INDEX ${schema}.archive_archivedon_idx`,
         `DROP INDEX ${schema}.archive_name_idx`,
+        `ALTER TABLE ${schema}.job DROP COLUMN deadletter`,
         `ALTER TABLE ${schema}.job DROP COLUMN policy`,
         `ALTER TABLE ${schema}.job ALTER COLUMN state TYPE text`,
         `ALTER TABLE ${schema}.job ALTER COLUMN state DROP DEFAULT`,

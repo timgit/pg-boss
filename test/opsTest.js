@@ -1,6 +1,6 @@
 const assert = require('assert')
 const helper = require('./testHelper')
-const { v4: uuid } = require('uuid')
+const { randomUUID } = require('crypto')
 
 describe('ops', function () {
   it('should expire manually', async function () {
@@ -31,7 +31,7 @@ describe('ops', function () {
   it('should return null from getJobById if not found', async function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
 
-    const jobId = await boss.getJobById(uuid())
+    const jobId = await boss.getJobById(randomUUID())
 
     assert.strictEqual(jobId, null)
   })

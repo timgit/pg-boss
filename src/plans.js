@@ -78,8 +78,8 @@ function create (schema, version) {
     createEnumJobState(schema),
 
     createTableJob(schema),
-    createTablePartitionJobDefault(schema),
-    createPrimaryKeyJob(schema),
+    createTableJobDefault(schema),
+    attachPartitionJobDefault(schema),
     createIndexJobName(schema),
     createIndexJobFetch(schema),
     createIndexJobPolicyStately(schema),
@@ -160,17 +160,18 @@ function createTableJob (schema) {
       keepUntil timestamp with time zone NOT NULL default now() + interval '14 days',
       output jsonb,
       deadletter text,
-      policy text
+      policy text,
+      CONSTRAINT job_pkey PRIMARY KEY (name, id)
     ) PARTITION BY RANGE (name)
   `
 }
 
-function createTablePartitionJobDefault (schema) {
-  return `CREATE TABLE ${schema}.job_default PARTITION OF ${schema}.job DEFAULT`
+function createTableJobDefault (schema) {
+  return `CREATE TABLE ${schema}.job_default (LIKE ${schema}.job INCLUDING DEFAULTS INCLUDING CONSTRAINTS)`
 }
 
-function createPrimaryKeyJob (schema) {
-  return `ALTER TABLE ${schema}.job ADD CONSTRAINT job_pkey PRIMARY KEY (name, id)`
+function attachPartitionJobDefault (schema) {
+  return `ALTER TABLE ${schema}.job ATTACH PARTITION ${schema}.job_default DEFAULT`
 }
 
 function createPrimaryKeyArchive (schema) {
@@ -565,15 +566,16 @@ function insertJob (schema) {
       CASE
         WHEN expireIn IS NOT NULL THEN CAST(expireIn as interval)
         WHEN q.expire_seconds IS NOT NULL THEN q.expire_seconds * interval '1s'
+        WHEN expireInDefault IS NOT NULL THEN CAST(expireInDefault as interval)
         ELSE interval '15 minutes'
         END as expireIn,
       CASE
-        WHEN right(keepUntilValue, 1) = 'Z' THEN CAST(keepUntilValue as timestamp with time zone)
-        ELSE startAfter + CAST(COALESCE(keepUntilValue, (q.retention_minutes * 60)::text, '14 days') as interval)
+        WHEN right(keepUntil, 1) = 'Z' THEN CAST(keepUntil as timestamp with time zone)
+        ELSE startAfter + CAST(COALESCE(keepUntil, (q.retention_minutes * 60)::text, keepUntilDefault, '14 days') as interval)
         END as keepUntil,
-      COALESCE(retryLimit, q.retry_limit, 2),
-      COALESCE(retryDelay, q.retry_delay, 0),
-      COALESCE(retryBackoff, q.retry_backoff, false),
+      COALESCE(retryLimit, q.retry_limit, retryLimitDefault, 2),
+      COALESCE(retryDelay, q.retry_delay, retryDelayDefault, 0),
+      COALESCE(retryBackoff, q.retry_backoff, retryBackoffDefault, false),
       q.policy
     FROM
       ( SELECT
@@ -591,11 +593,16 @@ function insertJob (schema) {
             ELSE NULL
             END as singletonOn,
           $9 as deadletter,
-          COALESCE($10,$11) as expireIn,
-          COALESCE($12,$13) as keepUntilValue,
-          COALESCE($14::int,$15::int) as retryLimit,
-          COALESCE($16::int,$17::int) as retryDelay,
-          COALESCE($18::bool,$19::bool) as retryBackoff
+          $10 as expireIn,
+          $11 as expireInDefault,
+          $12 as keepUntil,
+          $13 as keepUntilDefault,
+          $14::int as retryLimit,
+          $15::int as retryLimitDefault,
+          $16::int as retryDelay,
+          $17::int as retryDelayDefault,
+          $18::bool as retryBackoff,
+          $19::bool as retryBackoffDefault
       ) j LEFT JOIN ${schema}.queue q ON j.name = q.name
     ON CONFLICT DO NOTHING
     RETURNING id

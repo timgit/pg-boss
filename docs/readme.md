@@ -321,10 +321,6 @@ The following options can be set as properties in an object for additional confi
 
 Queue options contain the following constructor-only settings.
 
-* **uuid** - string, defaults to "v4"
-
-    job uuid format used, "v1" or "v4"
-
 * **archiveCompletedAfterSeconds**
 
     Specifies how long in seconds completed jobs get archived. Note: a warning will be emitted if set to lower than 60s and cron processing will be disabled.
