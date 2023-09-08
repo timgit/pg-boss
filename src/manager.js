@@ -566,7 +566,7 @@ class Manager extends EventEmitter {
       deadLetter
     } = Attorney.checkQueueArgs(name, options)
 
-    const paritionSql = plans.createQueueTablePartition(this.config.schema, name)
+    const paritionSql = plans.partitionCreateJobName(this.config.schema, name)
 
     await this.db.executeSql(paritionSql)
 
@@ -653,7 +653,7 @@ class Manager extends EventEmitter {
 
     if (result?.rows?.length) {
       Attorney.assertPostgresObjectName(name)
-      const sql = plans.dropQueueTablePartition(this.config.schema, name)
+      const sql = plans.dropJobTablePartition(this.config.schema, name)
       await this.db.executeSql(sql)
     }
 

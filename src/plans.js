@@ -47,8 +47,8 @@ module.exports = {
   countStates,
   createQueue,
   updateQueue,
-  createQueueTablePartition,
-  dropQueueTablePartition,
+  partitionCreateJobName,
+  dropJobTablePartition,
   deleteQueueRecords,
   getQueueByName,
   getQueueSize,
@@ -162,7 +162,7 @@ function createTableJob (schema) {
       deadletter text,
       policy text,
       CONSTRAINT job_pkey PRIMARY KEY (name, id)
-    ) PARTITION BY RANGE (name)
+    ) PARTITION BY LIST (name)
   `
 }
 
@@ -172,6 +172,18 @@ function createTableJobDefault (schema) {
 
 function attachPartitionJobDefault (schema) {
   return `ALTER TABLE ${schema}.job ATTACH PARTITION ${schema}.job_default DEFAULT`
+}
+
+function partitionCreateJobName (schema, name) {
+  return `
+    CREATE TABLE ${schema}.job_${name} (LIKE ${schema}.job INCLUDING DEFAULTS INCLUDING CONSTRAINTS);
+    ALTER TABLE ${schema}.job_${name} ADD CONSTRAINT job_check_${name} CHECK (name='${name}');
+    ALTER TABLE ${schema}.job ATTACH PARTITION ${schema}.job_${name} FOR VALUES IN ('${name}');
+  `
+}
+
+function dropJobTablePartition (schema, name) {
+  return `DROP TABLE IF EXISTS ${schema}.job_${name}`
 }
 
 function createPrimaryKeyArchive (schema) {
@@ -269,14 +281,6 @@ function updateQueue (schema) {
       dead_letter = COALESCE($7, dead_letter)
     WHERE name = $1
   `
-}
-
-function createQueueTablePartition (schema, name) {
-  return `CREATE TABLE ${schema}.job_${name} PARTITION OF ${schema}.job FOR VALUES FROM ('${name}') TO ('${name}__pgboss__')`
-}
-
-function dropQueueTablePartition (schema, name) {
-  return `DROP TABLE IF EXISTS ${schema}.job_${name}`
 }
 
 function getQueueByName (schema) {
@@ -574,7 +578,11 @@ function insertJob (schema) {
         ELSE startAfter + CAST(COALESCE(keepUntil, (q.retention_minutes * 60)::text, keepUntilDefault, '14 days') as interval)
         END as keepUntil,
       COALESCE(retryLimit, q.retry_limit, retryLimitDefault, 2),
-      COALESCE(retryDelay, q.retry_delay, retryDelayDefault, 0),
+      CASE
+        WHEN COALESCE(retryBackoff, q.retry_backoff, retryBackoffDefault, false)
+        THEN GREATEST(COALESCE(retryDelay, q.retry_delay, retryDelayDefault, 0), 1)
+        ELSE COALESCE(retryDelay, q.retry_delay, retryDelayDefault, 0)
+        END,
       COALESCE(retryBackoff, q.retry_backoff, retryBackoffDefault, false),
       q.policy
     FROM
@@ -638,6 +646,7 @@ function insertJobs (schema) {
       CASE
         WHEN "keepUntil" IS NOT NULL THEN "keepUntil"
         WHEN q.retention_minutes IS NOT NULL THEN now() + q.retention_minutes * interval '1 minute'
+        -- todo - add default fallback
         ELSE now() + interval '14 days'
         END,
       COALESCE("retryLimit", q.retry_limit, 2),

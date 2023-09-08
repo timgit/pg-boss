@@ -26,15 +26,15 @@ class Db extends EventEmitter {
 
   async executeSql (text, values) {
     if (this.opened) {
-      // if (this.config.debug === true) {
-      //   console.log(`${new Date().toISOString()}: DEBUG SQL`)
-      //   console.log(text)
+      if (this.config.debug === true) {
+        console.log(`${new Date().toISOString()}: DEBUG SQL`)
+        console.log(text)
 
-      //   if (values) {
-      //     console.log(`${new Date().toISOString()}: DEBUG VALUES`)
-      //     console.log(values)
-      //   }
-      // }
+        if (values) {
+          console.log(`${new Date().toISOString()}: DEBUG VALUES`)
+          console.log(values)
+        }
+      }
 
       return await this.pool.query(text, values)
     }
@@ -49,7 +49,7 @@ class Db extends EventEmitter {
         BEGIN;
         SET LOCAL lock_timeout = '${timeout}s';
         SET LOCAL idle_in_transaction_session_timeout = '3600s';
-        ${advisoryLock(key)};
+        ${advisoryLock(this.config.schema, key)};
     `
 
     await lockedClient.query(query)

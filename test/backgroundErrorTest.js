@@ -32,7 +32,7 @@ describe('background processing error handling', function () {
       ...this.test.bossConfig,
       maintenanceIntervalSeconds: 1,
       supervise: true,
-      __test__delay_maintenance: 4000
+      __test__delay_maintenance: 2000
     }
 
     const boss = this.test.boss = new PgBoss(config)
@@ -43,7 +43,7 @@ describe('background processing error handling', function () {
 
     await boss.start()
 
-    await delay(7000)
+    await delay(5000)
 
     assert.strictEqual(eventCount, 1)
   })
@@ -52,7 +52,7 @@ describe('background processing error handling', function () {
     const config = {
       ...this.test.bossConfig,
       monitorStateIntervalSeconds: 1,
-      __test__delay_monitor: 4000
+      __test__delay_monitor: 2000
     }
 
     const boss = this.test.boss = new PgBoss(config)
@@ -63,7 +63,7 @@ describe('background processing error handling', function () {
 
     await boss.start()
 
-    await delay(7000)
+    await delay(4000)
 
     assert.strictEqual(eventCount, 1)
   })

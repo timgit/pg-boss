@@ -33,6 +33,7 @@ declare namespace PgBoss {
 
   interface MaintenanceOptions {
     supervise?: boolean;
+    migrate?: boolean;
 
     deleteAfterSeconds?: number;
     deleteAfterMinutes?: number;
@@ -190,7 +191,7 @@ declare namespace PgBoss {
     createdon: Date;
     completedon: Date | null;
     keepuntil: Date;
-    deadletter: boolean,
+    deadletter: string,
     output: object
   }
 
@@ -344,6 +345,7 @@ declare class PgBoss extends EventEmitter {
   getQueueSize(name: string, options?: object): Promise<number>;
   getJobById(id: string, options?: PgBoss.ConnectionOptions): Promise<PgBoss.JobWithMetadata | null>;
 
+  createQueue(name: string, policy: string): Promise<void>;
   deleteQueue(name: string): Promise<void>;
   purgeQueue(name: string): Promise<void>;
   clearStorage(): Promise<void>;

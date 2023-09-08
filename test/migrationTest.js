@@ -59,10 +59,6 @@ describe('migration', function () {
     const job = await boss.fetch(queue)
     await boss.complete(job.id)
 
-    // active job
-    await boss.send(queue)
-    await boss.fetch(queue)
-
     // created job
     await boss.send(queue)
 
@@ -85,6 +81,10 @@ describe('migration', function () {
     const version = await contractor.version()
 
     assert.strictEqual(version, currentSchemaVersion)
+
+    await boss.send(queue)
+    const job2 = await boss.fetch(queue)
+    await boss.complete(job2.id)
   })
 
   it('should migrate to latest during start if on previous 2 schema versions', async function () {

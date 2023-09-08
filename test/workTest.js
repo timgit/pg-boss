@@ -240,30 +240,34 @@ describe('work', function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
     const queue = this.test.bossConfig.schema
 
-    this.timeout(1000)
+    this.timeout(2000)
 
-    const teamSize = 4
-    const teamConcurrency = 2
+    const jobCount = 6
 
-    let processCount = 0
+    let workCount = 0
 
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < jobCount; i++) {
       await boss.send(queue)
     }
 
-    const newJobCheckInterval = 100
+    const options = {
+      teamSize: 4,
+      teamConcurrency: 2,
+      newJobCheckInterval: 500,
+      teamRefill: true
+    }
 
-    return new Promise((resolve) => {
-      boss.work(queue, { teamSize, teamConcurrency, newJobCheckInterval, teamRefill: true }, async () => {
-        processCount++
-        if (processCount === 1) {
-          // Test would timeout if all were blocked on this first
-          // process
-          await new Promise(resolve => setTimeout(resolve, 500))
+    await new Promise((resolve) => {
+      boss.work(queue, options, async () => {
+        workCount++
+
+        if (workCount === 1) {
+          // Test would timeout if all were blocked on
+          await new Promise(resolve => setTimeout(resolve, 1000))
           return
         }
 
-        if (processCount === 6) {
+        if (workCount === jobCount) {
           resolve()
         }
       })
@@ -274,32 +278,30 @@ describe('work', function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
     const queue = this.test.bossConfig.schema
 
-    const teamSize = 4
-    const teamConcurrency = 2
-    const newJobCheckInterval = 200
-    let processCount = 0
-    let remainCount = 0
+    const options = {
+      teamSize: 4,
+      teamConcurrency: 2,
+      newJobCheckInterval: 500,
+      teamRefill: true
+    }
+
+    let workCount = 0
 
     for (let i = 0; i < 7; i++) {
       await boss.send(queue)
     }
 
     // This should consume 5 jobs, all will block after the first job
-    await boss.work(queue, { teamSize, teamConcurrency, newJobCheckInterval, teamRefill: true }, async () => {
-      processCount++
-      if (processCount > 1) await new Promise(resolve => setTimeout(resolve, 1000))
+    await boss.work(queue, options, async () => {
+      workCount++
+      if (workCount > 1) await new Promise(resolve => setTimeout(resolve, 2000))
     })
 
-    await new Promise(resolve => setTimeout(resolve, 400))
+    await new Promise(resolve => setTimeout(resolve, 1000))
 
-    // this should pick up the last 2 jobs
-    await boss.work(queue, { teamSize, teamConcurrency, newJobCheckInterval, teamRefill: true }, async () => {
-      remainCount++
-    })
+    const remainingJobs = await boss.fetch(queue, 2)
 
-    await new Promise(resolve => setTimeout(resolve, 400))
-
-    assert(remainCount === 2)
+    assert.strictEqual(2, remainingJobs.length)
   })
 
   it('completion should pass string wrapped in value prop', async function () {

@@ -95,12 +95,16 @@ class Boss extends EventEmitter {
 
       this.maintaining = true
 
-      if (this.config.__test__delay_maintenance) {
-        await delay(this.config.__test__delay_maintenance)
+      if (this.config.__test__delay_maintenance && !this.stopped) {
+        this.__testDelayPromise = await delay(this.config.__test__delay_maintenance)
       }
 
       if (this.config.__test__throw_maint) {
         throw new Error(this.config.__test__throw_maint)
+      }
+
+      if (this.stopped) {
+        return
       }
 
       locker = await this.db.lock({ key: 'maintenance' })
@@ -138,13 +142,9 @@ class Boss extends EventEmitter {
 
   async stop () {
     if (!this.stopped) {
-      if (this.maintenanceInterval) {
-        clearInterval(this.maintenanceInterval)
-      }
-
-      if (this.monitorInterval) {
-        clearInterval(this.monitorInterval)
-      }
+      if (this.__testDelayPromise) this.__testDelayPromise.clear()
+      if (this.maintenanceInterval) clearInterval(this.maintenanceInterval)
+      if (this.monitorInterval) clearInterval(this.monitorInterval)
 
       this.stopped = true
     }
