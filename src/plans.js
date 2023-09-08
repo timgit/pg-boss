@@ -730,5 +730,5 @@ function getArchivedJobById (schema) {
 }
 
 function getJobByTableAndId (schema, table) {
-  return `SELECT * From ${schema}.${table} WHERE id = $1`
+  return `SELECT * FROM ${schema}.${table} WHERE id = $1`
 }

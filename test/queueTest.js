@@ -166,11 +166,13 @@ describe('queues', function () {
 
     const job = await boss.getJobById(jobId)
 
+    const retentionMinutes = (new Date(job.keepuntil) - new Date(job.createdon)) / 1000 / 60
+
     assert.strictEqual(createProps.retryLimit, job.retrylimit)
     assert.strictEqual(createProps.retryBackoff, job.retrybackoff)
     assert.strictEqual(createProps.retryDelay, job.retrydelay)
-    assert.strictEqual(createProps.expireInSeconds, job.expireIn)
-    assert.strictEqual(createProps.retentionMinutes, job.retentionMinutes)
+    assert.strictEqual(createProps.expireInSeconds, job.expirein.seconds)
+    assert.strictEqual(createProps.retentionMinutes, retentionMinutes)
     assert.strictEqual(createProps.deadLetter, job.deadletter)
   })
 
