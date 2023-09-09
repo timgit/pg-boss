@@ -73,13 +73,6 @@ describe('queues', function () {
     await boss.createQueue(queue, { policy: 'short' })
   })
 
-  it('should create a queue with priority policy', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
-    const queue = this.test.bossConfig.schema
-
-    await boss.createQueue(queue, { policy: 'priority' })
-  })
-
   it('should delete a queue', async function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
     const queue = this.test.bossConfig.schema

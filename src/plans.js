@@ -16,7 +16,6 @@ const CREATE_RACE_MESSAGE = 'already exists'
 const QUEUE_POLICY = {
   standard: 'standard',
   short: 'short',
-  priority: 'priority',
   singleton: 'singleton',
   stately: 'stately'
 }
@@ -215,7 +214,7 @@ function createIndexJobName (schema) {
 }
 
 function createIndexJobFetch (schema) {
-  return `CREATE INDEX job_fetch ON ${schema}.job (name text_pattern_ops, startAfter) INCLUDE (priority, createdOn) WHERE state < '${states.active}'`
+  return `CREATE INDEX job_fetch ON ${schema}.job (name text_pattern_ops, startAfter) INCLUDE (priority, createdOn, id) WHERE state < '${states.active}'`
 }
 
 function createTableArchive (schema) {
@@ -423,14 +422,14 @@ function insertVersion (schema, version) {
 }
 
 function fetchNextJob (schema) {
-  return (includeMetadata, patternMatch) => `
-    WITH nextJob as (
+  return ({ includeMetadata, patternMatch, priority = true } = {}) => `
+    WITH next as (
       SELECT id
-      FROM ${schema}.job j
+      FROM ${schema}.job
       WHERE state < '${states.active}'
         AND name ${patternMatch ? 'LIKE' : '='} $1
         AND startAfter < now()
-      ORDER BY priority desc, createdOn, id
+      ORDER BY ${priority && 'priority desc, '} createdOn, id
       LIMIT $2
       FOR UPDATE SKIP LOCKED
     )
@@ -438,8 +437,8 @@ function fetchNextJob (schema) {
       state = '${states.active}',
       startedOn = now(),
       retryCount = CASE WHEN startedOn IS NOT NULL THEN retryCount + 1 ELSE retryCount END
-    FROM nextJob
-    WHERE j.id = nextJob.id
+    FROM next
+    WHERE j.id = next.id
     RETURNING ${includeMetadata ? 'j.*' : 'j.id, name, data'}, 
       EXTRACT(epoch FROM expireIn) as expire_in_seconds
   `
@@ -566,7 +565,7 @@ function insertJob (schema) {
       startAfter,
       singletonKey,
       singletonOn,
-      COALESCE(deadLetter, q.dead_letter),
+      COALESCE(deadLetter, q.dead_letter) as deadletter,
       CASE
         WHEN expireIn IS NOT NULL THEN CAST(expireIn as interval)
         WHEN q.expire_seconds IS NOT NULL THEN q.expire_seconds * interval '1s'
@@ -577,13 +576,13 @@ function insertJob (schema) {
         WHEN right(keepUntil, 1) = 'Z' THEN CAST(keepUntil as timestamp with time zone)
         ELSE startAfter + CAST(COALESCE(keepUntil, (q.retention_minutes * 60)::text, keepUntilDefault, '14 days') as interval)
         END as keepUntil,
-      COALESCE(retryLimit, q.retry_limit, retryLimitDefault, 2),
+      COALESCE(retryLimit, q.retry_limit, retryLimitDefault, 2) as retryLimit,
       CASE
         WHEN COALESCE(retryBackoff, q.retry_backoff, retryBackoffDefault, false)
-        THEN GREATEST(COALESCE(retryDelay, q.retry_delay, retryDelayDefault, 0), 1)
+        THEN GREATEST(COALESCE(retryDelay, q.retry_delay, retryDelayDefault), 1)
         ELSE COALESCE(retryDelay, q.retry_delay, retryDelayDefault, 0)
-        END,
-      COALESCE(retryBackoff, q.retry_backoff, retryBackoffDefault, false),
+        END as retryDelay,
+      COALESCE(retryBackoff, q.retry_backoff, retryBackoffDefault, false) as retryBackoff,
       q.policy
     FROM
       ( SELECT
@@ -619,6 +618,14 @@ function insertJob (schema) {
 
 function insertJobs (schema) {
   return `
+    WITH defaults as (
+      SELECT 
+        $2 as expireIn,
+        $3 as keepUntil,
+        $4::int as retryLimit,
+        $5::int as retryDelay,
+        $6::bool as retryBackoff
+    )
     INSERT INTO ${schema}.job (
       id,
       name,
@@ -642,16 +649,23 @@ function insertJobs (schema) {
       COALESCE("startAfter", now()),
       "singletonKey",
       COALESCE("deadLetter", q.dead_letter),
-      COALESCE("expireInSeconds", q.expire_seconds, 15 * 60) * interval '1s',
+      CASE
+        WHEN "expireInSeconds" IS NOT NULL THEN "expireInSeconds" *  interval '1s'
+        WHEN q.expire_seconds IS NOT NULL THEN q.expire_seconds * interval '1s'
+        WHEN defaults.expireIn IS NOT NULL THEN CAST(defaults.expireIn as interval)
+        ELSE interval '15 minutes'
+        END as expireIn,
       CASE
         WHEN "keepUntil" IS NOT NULL THEN "keepUntil"
-        WHEN q.retention_minutes IS NOT NULL THEN now() + q.retention_minutes * interval '1 minute'
-        -- todo - add default fallback
-        ELSE now() + interval '14 days'
-        END,
-      COALESCE("retryLimit", q.retry_limit, 2),
-      COALESCE("retryDelay", q.retry_delay, 0),
-      COALESCE("retryBackoff", q.retry_backoff, false),
+        ELSE COALESCE("startAfter", now()) + CAST(COALESCE((q.retention_minutes * 60)::text, defaults.keepUntil, '14 days') as interval)
+        END as keepUntil,
+      COALESCE("retryLimit", q.retry_limit, defaults.retryLimit, 2),
+      CASE
+        WHEN COALESCE("retryBackoff", q.retry_backoff, defaults.retryBackoff, false)
+          THEN GREATEST(COALESCE("retryDelay", q.retry_delay, defaults.retryDelay), 1)
+        ELSE COALESCE("retryDelay", q.retry_delay, defaults.retryDelay, 0)
+        END as retryDelay,      
+      COALESCE("retryBackoff", q.retry_backoff, defaults.retryBackoff, false) as retryBackoff,
       q.policy
     FROM json_to_recordset($1) as j (
       id uuid,
@@ -667,7 +681,8 @@ function insertJobs (schema) {
       "keepUntil" timestamp with time zone,
       "deadLetter" text
     )
-    LEFT JOIN ${schema}.queue q ON j.name = q.name
+    LEFT JOIN ${schema}.queue q ON j.name = q.name,
+      defaults
     ON CONFLICT DO NOTHING
   `
 }

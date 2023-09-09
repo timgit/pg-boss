@@ -345,7 +345,7 @@ declare class PgBoss extends EventEmitter {
   getQueueSize(name: string, options?: object): Promise<number>;
   getJobById(id: string, options?: PgBoss.ConnectionOptions): Promise<PgBoss.JobWithMetadata | null>;
 
-  createQueue(name: string, policy: string): Promise<void>;
+  createQueue(name: string, policy: 'standard' | 'short' | 'singleton' | 'stately'): Promise<void>;
   deleteQueue(name: string): Promise<void>;
   purgeQueue(name: string): Promise<void>;
   clearStorage(): Promise<void>;

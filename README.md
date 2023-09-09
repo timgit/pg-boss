@@ -42,7 +42,7 @@ This will likely cater the most to teams already familiar with the simplicity of
 * Backpressure-compatible polling workers
 * Cron scheduling
 * Pub/sub API for fan-out queue relationships
-* Deferral, retries (with exponential backoff), rate limiting, debouncing
+* Priority, deferral, retries (with exponential backoff), rate limiting, debouncing
 * Direct table access for bulk loads via COPY or INSERT
 * Multi-master compatible (for example, in a Kubernetes ReplicaSet)
 * Dead letter queues
@@ -50,8 +50,8 @@ This will likely cater the most to teams already familiar with the simplicity of
 * Automatic maintenance operations to manage table growth
 
 ## Requirements
-* Node 16 or higher
-* PostgreSQL 11 or higher
+* Node 18 or higher
+* PostgreSQL 12 or higher
 
 ## Installation
 

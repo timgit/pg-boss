@@ -6,7 +6,6 @@ const sha1 = (value) => crypto.createHash('sha1').update(value).digest('hex')
 module.exports = {
   dropSchema,
   start,
-  stop,
   getDb,
   getArchivedJobById,
   countJobs,
@@ -125,8 +124,4 @@ async function start (options) {
       throw err
     }
   }
-}
-
-async function stop (boss, timeout = 1000) {
-  await boss.stop({ timeout })
 }

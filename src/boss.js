@@ -96,7 +96,8 @@ class Boss extends EventEmitter {
       this.maintaining = true
 
       if (this.config.__test__delay_maintenance && !this.stopped) {
-        this.__testDelayPromise = await delay(this.config.__test__delay_maintenance)
+        this.__testDelayPromise = delay(this.config.__test__delay_maintenance)
+        await this.__testDelayPromise
       }
 
       if (this.config.__test__throw_maint) {

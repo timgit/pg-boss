@@ -434,7 +434,16 @@ class Manager extends EventEmitter {
 
     const db = options.db || this.db
 
-    return await db.executeSql(this.insertJobsCommand, [JSON.stringify(jobs)])
+    const params = [
+      JSON.stringify(jobs), // 1
+      this.config.expireIn, // 2
+      this.config.keepUntil, // 3
+      this.config.retryLimit, // 4
+      this.config.retryDelay, // 5
+      this.config.retryBackoff // 6
+    ]
+
+    return await db.executeSql(this.insertJobsCommand, params)
   }
 
   getDebounceStartAfter (singletonSeconds, clockOffset) {
@@ -458,7 +467,7 @@ class Manager extends EventEmitter {
     const patternMatch = Attorney.queueNameHasPatternMatch(name)
     const values = Attorney.checkFetchArgs(name, batchSize, options)
     const db = options.db || this.db
-    const nextJobSql = this.nextJobCommand(options.includeMetadata || false, patternMatch)
+    const nextJobSql = this.nextJobCommand({ ...options, patternMatch })
     const statementValues = [values.name, batchSize || 1]
 
     let result
