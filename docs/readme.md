@@ -683,7 +683,11 @@ Typically one would use `work()` for automated polling for new jobs based upon a
 - `batchSize`: number, # of jobs to fetch
 - `options`: object
 
-  * `includeMetadata`, bool
+  * `priority`, bool, default: `true`
+
+    If true, allow jobs with a higher priority to be fetched before jobs with lower or no priority
+
+  * `includeMetadata`, bool, default: `false`
 
     If `true`, all job metadata will be returned on the job object.  The following table shows each property and its type, which is basically all columns from the job table.
 

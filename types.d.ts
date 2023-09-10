@@ -104,6 +104,7 @@ declare namespace PgBoss {
 
   interface CommonJobFetchOptions {
     includeMetadata?: boolean;
+    priority?: boolean;
   }
 
   type JobFetchOptions  = CommonJobFetchOptions & {

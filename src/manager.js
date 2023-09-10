@@ -182,7 +182,8 @@ class Manager extends EventEmitter {
       teamSize = 1,
       teamConcurrency = 1,
       teamRefill: refill = false,
-      includeMetadata = false
+      includeMetadata = false,
+      priority = true
     } = options
 
     const id = randomUUID({ disableEntropyCache: true })
@@ -206,7 +207,7 @@ class Manager extends EventEmitter {
       createTeamRefillPromise()
     }
 
-    const fetch = () => this.fetch(name, batchSize || (teamSize - queueSize), { includeMetadata })
+    const fetch = () => this.fetch(name, batchSize || (teamSize - queueSize), { includeMetadata, priority })
 
     const onFetch = async (jobs) => {
       if (this.config.__test__throw_worker) {
