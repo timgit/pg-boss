@@ -1,4 +1,4 @@
-const delay = require('delay')
+const { delay } = require('../src/tools')
 const assert = require('assert')
 const helper = require('./testHelper')
 const pMap = require('p-map')

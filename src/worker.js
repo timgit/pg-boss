@@ -1,4 +1,4 @@
-const delay = require('delay')
+const { delay } = require('./tools')
 
 const WORKER_STATES = {
   created: 'created',
@@ -34,7 +34,7 @@ class Worker {
     this.beenNotified = true
 
     if (this.loopDelayPromise) {
-      this.loopDelayPromise.clear()
+      this.loopDelayPromise.abort()
     }
   }
 
@@ -91,7 +91,7 @@ class Worker {
     this.state = WORKER_STATES.stopping
 
     if (this.loopDelayPromise) {
-      this.loopDelayPromise.clear()
+      this.loopDelayPromise.abort()
     }
   }
 }

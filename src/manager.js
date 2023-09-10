@@ -1,11 +1,10 @@
 const assert = require('assert')
 const EventEmitter = require('events')
 const { randomUUID } = require('crypto')
-const delay = require('delay')
 const debounce = require('lodash.debounce')
 const { serializeError: stringify } = require('serialize-error')
 const pMap = require('p-map')
-
+const { delay } = require('./tools')
 const Attorney = require('./attorney')
 const Worker = require('./worker')
 const plans = require('./plans')
@@ -26,16 +25,14 @@ const events = {
 
 const resolveWithinSeconds = async (promise, seconds) => {
   const timeout = Math.max(1, seconds) * 1000
-  const reject = delay.reject(timeout, { value: new Error(`handler execution exceeded ${timeout}ms`) })
+  const reject = delay(timeout, `handler execution exceeded ${timeout}ms`)
 
   let result
 
   try {
     result = await Promise.race([promise, reject])
   } finally {
-    try {
-      reject.clear()
-    } catch {}
+    reject.abort()
   }
 
   return result

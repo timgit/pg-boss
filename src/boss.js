@@ -1,6 +1,6 @@
 const EventEmitter = require('events')
 const plans = require('./plans')
-const delay = require('delay')
+const { delay } = require('./tools')
 
 const events = {
   error: 'error',
@@ -143,7 +143,7 @@ class Boss extends EventEmitter {
 
   async stop () {
     if (!this.stopped) {
-      if (this.__testDelayPromise) this.__testDelayPromise.clear()
+      if (this.__testDelayPromise) this.__testDelayPromise.abort()
       if (this.maintenanceInterval) clearInterval(this.maintenanceInterval)
       if (this.monitorInterval) clearInterval(this.monitorInterval)
 

@@ -1,6 +1,6 @@
 const assert = require('assert')
 const helper = require('./testHelper')
-const delay = require('delay')
+const { delay } = require('../src/tools')
 
 describe('maintenance', async function () {
   it('clearStorage() should empty both job storage tables', async function () {

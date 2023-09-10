@@ -1,7 +1,10 @@
 ## v10
 
+* Postgres 12 and Node 18 required
  
-* Create explicit queues.  Each queue is partitioned into dedicated storage
+* Created policy queues.  Each queue is partitioned into dedicated storage (via postgres declarative partitioning)
+
+* cascade configuration for send() and insert() from policy queue and then global settings in the constructor 
 
 * Introduce dead letter queue config
    * Removes completion jobs and onComplete config
@@ -32,4 +35,3 @@ New constructor option
  ## TODO
 
 * Add peek API for running TOP N queries against job tables
-* cascade configuration for boss.insert([jobs])

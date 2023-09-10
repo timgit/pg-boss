@@ -1,6 +1,6 @@
 const assert = require('assert')
 const helper = require('./testHelper')
-const delay = require('delay')
+const { delay } = require('../src/tools')
 
 describe('expire', function () {
   it('should expire a job', async function () {

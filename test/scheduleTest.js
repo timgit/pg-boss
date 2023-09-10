@@ -1,4 +1,4 @@
-const delay = require('delay')
+const { delay } = require('../src/tools')
 const assert = require('assert')
 const { DateTime } = require('luxon')
 const helper = require('./testHelper')

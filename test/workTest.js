@@ -1,4 +1,4 @@
-const delay = require('delay')
+const { delay } = require('../src/tools')
 const assert = require('assert')
 const helper = require('./testHelper')
 
@@ -72,18 +72,21 @@ describe('work', function () {
     const queue = this.test.bossConfig.schema
 
     let processCount = 0
-    const newJobCheckIntervalSeconds = 5
 
     await boss.send(queue)
 
-    const workerId = await boss.work(queue, { newJobCheckIntervalSeconds }, () => processCount++)
-    await delay(100)
+    const workerId = await boss.work(queue, { newJobCheckIntervalSeconds: 5 }, () => processCount++)
+
+    await delay(500)
+
     assert.strictEqual(processCount, 1)
+
     await boss.send(queue)
 
     boss.notifyWorker(workerId)
 
-    await delay(100)
+    await delay(500)
+
     assert.strictEqual(processCount, 2)
   })
 

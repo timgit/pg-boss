@@ -6,7 +6,7 @@ const Manager = require('./manager')
 const Timekeeper = require('./timekeeper')
 const Boss = require('./boss')
 const Db = require('./db')
-const delay = require('delay')
+const { delay } = require('./tools')
 
 const events = {
   error: 'error',
