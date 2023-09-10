@@ -13,7 +13,7 @@ jobs:
     container: node:18
     strategy:
       matrix:
-        node: [ 16, 18 ]
+        node: [ 18, 20 ]
     services:      
       postgres:
         image: postgres

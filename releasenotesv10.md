@@ -27,6 +27,10 @@ New constructor option
 ```
 * consolidate failed states: expired => failed
 
+
+* Add priority option to work and fetch to bypass priority sorting
+
+
 * Add manual maintenance API for one-off upgrade API without processing queues
 ```js
   await boss.maintain()
