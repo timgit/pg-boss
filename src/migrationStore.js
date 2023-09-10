@@ -77,6 +77,7 @@ function getAll (schema) {
 
         `ALTER TABLE ${schema}.job ADD COLUMN deadletter text`,
         `ALTER TABLE ${schema}.job ADD COLUMN policy text`,
+        `ALTER TABLE ${schema}.job DROP COLUMN onComplete`,
 
         // update state enum
         `ALTER TABLE ${schema}.job ALTER COLUMN state TYPE text`,
@@ -164,6 +165,7 @@ function getAll (schema) {
         `CREATE TYPE ${schema}.job_state AS ENUM ('created','retry','active','completed','expired','cancelled','failed')`,
         `ALTER TABLE ${schema}.job ALTER COLUMN state TYPE ${schema}.job_state USING state::${schema}.job_state`,
         `ALTER TABLE ${schema}.job ALTER COLUMN state SET DEFAULT 'created'::${schema}.job_state`,
+        `ALTER TABLE ${schema}.job ADD COLUMN onComplete bool`,
         `ALTER TABLE ${schema}.archive ALTER COLUMN state TYPE ${schema}.job_state USING state::${schema}.job_state`,
         `ALTER TABLE ${schema}.archive DROP COLUMN policy`,
         `ALTER TABLE ${schema}.archive DROP CONSTRAINT archive_pkey`,
