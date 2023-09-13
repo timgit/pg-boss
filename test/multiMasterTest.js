@@ -21,7 +21,7 @@ describe('multi-master', function () {
     } catch (err) {
       assert(false, err.message)
     } finally {
-      await pMap(instances, i => i.stop({ graceful: false }))
+      await pMap(instances, i => i.stop({ graceful: false, wait: false }))
     }
   })
 
@@ -58,7 +58,7 @@ describe('multi-master', function () {
     } catch (err) {
       assert(false)
     } finally {
-      await pMap(instances, i => i.stop({ graceful: false }))
+      await pMap(instances, i => i.stop({ graceful: false, wait: false }))
     }
   })
 })

@@ -26,7 +26,7 @@ async function afterEach () {
   const { boss } = this.currentTest
 
   if (boss) {
-    await boss.stop({ wait: true, timeout: 2000 })
+    await boss.stop({ timeout: 2000 })
   }
 
   await helper.dropSchema(config.schema)

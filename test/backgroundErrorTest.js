@@ -109,7 +109,7 @@ describe('background processing error handling', function () {
 
     await boss.start()
 
-    await boss.stop()
+    await boss.stop({ wait: false })
 
     await delay(1000)
 
@@ -127,7 +127,7 @@ describe('background processing error handling', function () {
     await boss.start()
 
     try {
-      await boss.stop()
+      await boss.stop({ wait: false })
       assert(false)
     } catch (err) {
       assert(true)

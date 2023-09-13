@@ -77,6 +77,7 @@ declare namespace PgBoss {
   }
 
   interface JobOptions {
+    id?: string,
     priority?: number;
     startAfter?: number | string | Date;
     singletonKey?: string;
@@ -93,7 +94,7 @@ declare namespace PgBoss {
 
   type InsertOptions = ConnectionOptions;
 
-  type SendOptions = JobOptions & ExpirationOptions & RetentionOptions & RetryOptions & CompletionOptions & ConnectionOptions;
+  type SendOptions = JobOptions & ExpirationOptions & RetentionOptions & RetryOptions & ConnectionOptions;
 
   type ScheduleOptions = SendOptions & { tz?: string }
 

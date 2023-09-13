@@ -109,7 +109,7 @@ describe('schedule', function () {
 
     await boss.schedule(queue, '* * * * *')
 
-    await boss.stop()
+    await boss.stop({ wait: false })
 
     boss = await helper.start({ ...this.test.bossConfig, cronWorkerIntervalSeconds: 1, schedule: true })
 
@@ -119,7 +119,7 @@ describe('schedule', function () {
 
     assert(job)
 
-    await boss.stop()
+    await boss.stop({ wait: false })
   })
 
   it('should remove previously scheduled job', async function () {
@@ -135,7 +135,7 @@ describe('schedule', function () {
 
     await boss.unschedule(queue)
 
-    await boss.stop({ graceful: false })
+    await boss.stop({ graceful: false, wait: false })
 
     const db = await helper.getDb()
     await db.executeSql(plans.clearStorage(this.test.bossConfig.schema))

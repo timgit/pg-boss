@@ -123,7 +123,7 @@ class PgBoss extends EventEmitter {
       return
     }
 
-    let { destroy = false, graceful = true, timeout = 30000, wait = false } = options
+    let { destroy = false, graceful = true, timeout = 30000, wait = true } = options
 
     timeout = Math.max(timeout, 1000)
 

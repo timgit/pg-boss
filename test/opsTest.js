@@ -38,19 +38,19 @@ describe('ops', function () {
 
   it('should force stop', async function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
-    await boss.stop({ graceful: false })
+    await boss.stop({ graceful: false, wait: false })
   })
 
   it('should destroy the connection pool', async function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
-    await boss.stop({ destroy: true, graceful: false })
+    await boss.stop({ destroy: true, graceful: false, wait: false })
 
     assert(boss.db.pool.totalCount === 0)
   })
 
   it('should destroy the connection pool gracefully', async function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
-    await boss.stop({ destroy: true })
+    await boss.stop({ destroy: true, wait: false })
     await new Promise((resolve) => {
       boss.on('stopped', () => resolve())
     })
