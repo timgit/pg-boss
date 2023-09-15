@@ -230,7 +230,7 @@ declare namespace PgBoss {
     id: string,
     name: string,
     options: WorkOptions,
-    state: 'created' | 'retry' | 'active' | 'completed' | 'cancelled' | 'failed',
+    state: 'created' | 'active' | 'stopping' | 'stopped'
     count: number,
     createdOn: Date,
     lastFetchedOn: Date,
@@ -244,7 +244,8 @@ declare namespace PgBoss {
   interface StopOptions {
     destroy?: boolean,
     graceful?: boolean,
-    timeout?: number
+    timeout?: number,
+    wait?: boolean
   }
 
   interface OffWorkOptions {
@@ -355,6 +356,7 @@ declare class PgBoss extends EventEmitter {
   archive(): Promise<void>;
   purge(): Promise<void>;
   expire(): Promise<void>;
+  maintain(): Promise<void>;
 
   schedule(name: string, cron: string, data?: object, options?: PgBoss.ScheduleOptions): Promise<void>;
   unschedule(name: string): Promise<void>;
