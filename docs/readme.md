@@ -61,7 +61,7 @@
   - [`deleteQueue(name)`](#deletequeuename)
   - [`deleteAllQueues()`](#deleteallqueues)
   - [`clearStorage()`](#clearstorage)
-  - [`updateStartAfterDate(id, newDate, options)`](#cancelid-options)
+  - [`updateStartAfterDate(id, newDate, options)`](#updateStartAfterDateid-newDate-options)
 
 <!-- /TOC -->
 
