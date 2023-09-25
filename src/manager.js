@@ -614,6 +614,11 @@ class Manager extends EventEmitter {
   }
 
   async updateStartAfterDate (id, newDate, options = {}) {
+    // check if newDate is a valid date
+    if (isNaN(newDate.getTime())) {
+      throw new Error('Invalid date')
+    }
+
     const db = options.db || this.db
     const ids = this.mapCompletionIdArg(id, 'updateStartAfterDate')
     const result = await db.executeSql(this.updateStartAfterDateCommand, [ids, newDate])
