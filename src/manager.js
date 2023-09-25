@@ -64,6 +64,7 @@ class Manager extends EventEmitter {
     this.subscribeCommand = plans.subscribe(config.schema)
     this.unsubscribeCommand = plans.unsubscribe(config.schema)
     this.getQueuesForEventCommand = plans.getQueuesForEvent(config.schema)
+    this.updateStartAfterDateCommand = plans.updateStartAfterDate(config.schema)
 
     // exported api to index
     this.functions = [
@@ -92,7 +93,8 @@ class Manager extends EventEmitter {
       this.deleteAllQueues,
       this.clearStorage,
       this.getQueueSize,
-      this.getJobById
+      this.getJobById,
+      this.updateStartAfterDate
     ]
 
     this.emitWipThrottled = debounce(() => this.emit(events.wip, this.getWipData()), WIP_EVENT_INTERVAL, WIP_DEBOUNCE_OPTIONS)
@@ -609,6 +611,13 @@ class Manager extends EventEmitter {
     }
 
     return null
+  }
+
+  async updateStartAfterDate (id, newDate, options = {}) {
+    const db = options.db || this.db
+    const ids = this.mapCompletionIdArg(id, 'updateStartAfterDate')
+    const result = await db.executeSql(this.updateStartAfterDateCommand, [ids, newDate])
+    return this.mapCompletionResponse(ids, result)
   }
 }
 
