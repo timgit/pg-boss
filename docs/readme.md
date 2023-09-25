@@ -61,6 +61,7 @@
   - [`deleteQueue(name)`](#deletequeuename)
   - [`deleteAllQueues()`](#deleteallqueues)
   - [`clearStorage()`](#clearstorage)
+  - [`updateStartAfterDate(id, newDate, options)`](#cancelid-options)
 
 <!-- /TOC -->
 
@@ -1096,3 +1097,23 @@ Deletes all pending jobs from all queues in the active job table. All jobs in th
 ## `clearStorage()`
 
 Utility function if and when needed to empty all job storage. Internally, this issues a `TRUNCATE` command against all jobs tables, archive included.
+
+## `updateStartAfterDate(id, newDate, options)`
+
+Edits the ``startafter`` value of a job
+
+```js
+
+    const originalDate = new Date()
+    
+    const jobId = await boss.send('start_after_date_should_change', null, { startAfter: originalDate })
+
+    const newDate = new Date(originalDate.setMonth(originalDate.getMonth() + 1))
+
+    await boss.updateStartAfterDate(jobId, newDate)
+
+    const job = await boss.getJobById(jobId)
+
+    console.log(job.startafter) // should now resemble newDate 
+
+```
