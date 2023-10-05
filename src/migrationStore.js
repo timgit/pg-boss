@@ -77,21 +77,28 @@ function getAll (schema) {
 
         `ALTER TABLE ${schema}.job ADD COLUMN deadletter text`,
         `ALTER TABLE ${schema}.job ADD COLUMN policy text`,
-        `ALTER TABLE ${schema}.job DROP COLUMN onComplete`,
+        `ALTER TABLE ${schema}.job DROP COLUMN on_complete`,
 
         // update state enum
         `ALTER TABLE ${schema}.job ALTER COLUMN state TYPE text`,
         `ALTER TABLE ${schema}.job ALTER COLUMN state DROP DEFAULT`,
         `ALTER TABLE ${schema}.archive ALTER COLUMN state TYPE text`,
+
         `DROP TABLE IF EXISTS ${schema}.archive_backup`,
         `ALTER TABLE ${schema}.archive RENAME to archive_backup`,
+        `ALTER INDEX ${schema}.archive_archivedon_idx RENAME to archive_backup_archivedon_idx`,
+
         `DROP TYPE ${schema}.job_state`,
         `CREATE TYPE ${schema}.job_state AS ENUM ('created','retry','active','completed','cancelled','failed')`,
+
         `ALTER TABLE ${schema}.job ALTER COLUMN state TYPE ${schema}.job_state USING state::${schema}.job_state`,
         `ALTER TABLE ${schema}.job ALTER COLUMN state SET DEFAULT 'created'::${schema}.job_state`,
 
+        `DELETE FROM ${schema}.job WHERE name LIKE '__pgboss__%'`,
+
         // set up job partitioning
         `ALTER TABLE ${schema}.job RENAME TO job_default`,
+        `ALTER TABLE ${schema}.job_default DROP CONSTRAINT job_pkey`,
 
         `CREATE TABLE ${schema}.job (
           id uuid not null default gen_random_uuid(),
@@ -115,22 +122,26 @@ function getAll (schema) {
           deadletter text,
           policy text,
           CONSTRAINT job_pkey PRIMARY KEY (name, id)
-        ) PARTITION BY RANGE (name)`,
+        ) PARTITION BY RANGE (name)`,        
 
         `ALTER TABLE ${schema}.job ATTACH PARTITION ${schema}.job_default DEFAULT`,
 
         `CREATE TABLE ${schema}.archive (LIKE ${schema}.job)`,
-        `ALTER TABLE ${schema}.archive ADD CONSTRAINT archive_pkey PRIMARY KEY (id)`,
+        `ALTER TABLE ${schema}.archive ADD CONSTRAINT archive_pkey PRIMARY KEY (name, id)`,
         `ALTER TABLE ${schema}.archive ADD archivedOn timestamptz NOT NULL DEFAULT now()`,
         `CREATE INDEX archive_archivedon_idx ON ${schema}.archive(archivedon)`,
         `CREATE INDEX archive_name_idx ON ${schema}.archive(name)`,
+
         `CREATE INDEX job_fetch ON ${schema}.job (name text_pattern_ops, startAfter) INCLUDE (priority, createdOn) WHERE state < 'active'`,
+        `CREATE INDEX job_name ON ${schema}.job (name text_pattern_ops)`
         `CREATE UNIQUE INDEX job_policy_short ON ${schema}.job (name) WHERE state = 'created' AND policy = 'short'`,
         `CREATE UNIQUE INDEX job_policy_singleton ON ${schema}.job (name) WHERE state = 'active' AND policy = 'singleton'`,
         `CREATE UNIQUE INDEX job_policy_stately ON ${schema}.job (name, state) WHERE state <= 'active' AND policy = 'stately'`,
         `CREATE UNIQUE INDEX job_throttle_key ON ${schema}.job (name, singletonKey) WHERE state <= 'completed' AND singletonOn IS NULL`,
         `CREATE UNIQUE INDEX job_throttle_on ON ${schema}.job (name, singletonOn, COALESCE(singletonKey, '')) WHERE state <= 'completed' AND singletonOn IS NOT NULL`,
+        
         `ALTER TABLE ${schema}.version ADD COLUMN monitored_on timestamp with time zone`,
+        
         `CREATE TABLE ${schema}.queue (
           name text primary key,
           policy text,
@@ -150,6 +161,7 @@ function getAll (schema) {
         `DROP INDEX ${schema}.job_throttle_on`,
         `DROP INDEX ${schema}.job_throttle_key`,
         `DROP INDEX ${schema}.job_fetch`,
+        `DROP INDEX ${schema}.job_name`,
         `ALTER TABLE ${schema}.job DETACH PARTITION ${schema}.job_default`,
         `DROP TABLE ${schema}.job`,
         `ALTER TABLE ${schema}.job_default RENAME TO job`,
@@ -165,7 +177,7 @@ function getAll (schema) {
         `CREATE TYPE ${schema}.job_state AS ENUM ('created','retry','active','completed','expired','cancelled','failed')`,
         `ALTER TABLE ${schema}.job ALTER COLUMN state TYPE ${schema}.job_state USING state::${schema}.job_state`,
         `ALTER TABLE ${schema}.job ALTER COLUMN state SET DEFAULT 'created'::${schema}.job_state`,
-        `ALTER TABLE ${schema}.job ADD COLUMN onComplete bool`,
+        `ALTER TABLE ${schema}.job ADD COLUMN on_complete bool NOT NULL DEFAULT false`,
         `ALTER TABLE ${schema}.archive ALTER COLUMN state TYPE ${schema}.job_state USING state::${schema}.job_state`,
         `ALTER TABLE ${schema}.archive DROP COLUMN policy`,
         `ALTER TABLE ${schema}.archive DROP CONSTRAINT archive_pkey`,
