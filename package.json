@@ -23,9 +23,6 @@
   "scripts": {
     "test": "standard && mocha",
     "cover": "nyc npm test",
-    "export-schema": "node ./scripts/construct.js",
-    "export-migration": "node ./scripts/migrate.js",
-    "export-rollback": "node ./scripts/rollback.js",
     "tsc": "tsc --noEmit types.d.ts",
     "readme": "node ./test/readme.js"
   },

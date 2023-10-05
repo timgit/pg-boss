@@ -8,7 +8,11 @@ async function readme () {
 
   await boss.start()
 
-  const queue = 'some-queue'
+  const queue = 'some_queue'
+
+  try {
+    await boss.createQueue(queue)
+  } catch{}
 
   await boss.schedule(queue, '* * * * *')
 
