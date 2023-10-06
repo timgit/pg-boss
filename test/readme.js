@@ -12,7 +12,7 @@ async function readme () {
 
   try {
     await boss.createQueue(queue)
-  } catch{}
+  } catch {}
 
   await boss.schedule(queue, '* * * * *')
 
