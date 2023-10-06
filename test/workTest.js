@@ -1,7 +1,6 @@
-const delay = require('delay')
+const { delay } = require('../src/tools')
 const assert = require('assert')
 const helper = require('./testHelper')
-const PgBoss = require('../')
 
 describe('work', function () {
   it('should fail with no arguments', async function () {
@@ -73,18 +72,21 @@ describe('work', function () {
     const queue = this.test.bossConfig.schema
 
     let processCount = 0
-    const newJobCheckIntervalSeconds = 5
 
     await boss.send(queue)
 
-    const workerId = await boss.work(queue, { newJobCheckIntervalSeconds }, () => processCount++)
-    await delay(100)
+    const workerId = await boss.work(queue, { newJobCheckIntervalSeconds: 5 }, () => processCount++)
+
+    await delay(500)
+
     assert.strictEqual(processCount, 1)
+
     await boss.send(queue)
 
     boss.notifyWorker(workerId)
 
-    await delay(100)
+    await delay(500)
+
     assert.strictEqual(processCount, 2)
   })
 
@@ -128,8 +130,8 @@ describe('work', function () {
 
   it('should handle a batch of jobs via teamSize', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const queue = this.test.bossConfig.schema
 
-    const queue = 'process-teamSize'
     const teamSize = 4
 
     let processCount = 0
@@ -152,8 +154,8 @@ describe('work', function () {
 
   it('should apply teamConcurrency option', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const queue = this.test.bossConfig.schema
 
-    const queue = 'process-teamConcurrency'
     const teamSize = 4
     const teamConcurrency = 4
 
@@ -179,8 +181,8 @@ describe('work', function () {
 
   it('should handle a batch of jobs via batchSize', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const queue = this.test.bossConfig.schema
 
-    const queue = 'process-batchSize'
     const batchSize = 4
 
     for (let i = 0; i < batchSize; i++) {
@@ -199,7 +201,7 @@ describe('work', function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
     const queue = this.test.bossConfig.schema
 
-    await boss.send(queue, null, { onComplete: true })
+    const jobId = await boss.send(queue)
 
     await new Promise((resolve) => {
       boss.work(queue, { batchSize: 1 }, async jobs => {
@@ -208,16 +210,16 @@ describe('work', function () {
       })
     })
 
-    await delay(2000)
+    await delay(500)
 
-    const result = await boss.fetchCompleted(queue)
+    const job = await boss.getJobById(jobId)
 
-    assert(result)
+    assert.strictEqual(job.state, 'completed')
   })
 
   it('returning promise applies backpressure', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
-    const queue = 'backpressure'
+    const queue = this.test.bossConfig.schema
 
     const jobCount = 4
     let processCount = 0
@@ -241,30 +243,34 @@ describe('work', function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
     const queue = this.test.bossConfig.schema
 
-    this.timeout(1000)
+    this.timeout(2000)
 
-    const teamSize = 4
-    const teamConcurrency = 2
+    const jobCount = 6
 
-    let processCount = 0
+    let workCount = 0
 
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < jobCount; i++) {
       await boss.send(queue)
     }
 
-    const newJobCheckInterval = 100
+    const options = {
+      teamSize: 4,
+      teamConcurrency: 2,
+      newJobCheckInterval: 500,
+      teamRefill: true
+    }
 
-    return new Promise((resolve) => {
-      boss.work(queue, { teamSize, teamConcurrency, newJobCheckInterval, teamRefill: true }, async () => {
-        processCount++
-        if (processCount === 1) {
-          // Test would timeout if all were blocked on this first
-          // process
-          await new Promise(resolve => setTimeout(resolve, 500))
+    await new Promise((resolve) => {
+      boss.work(queue, options, async () => {
+        workCount++
+
+        if (workCount === 1) {
+          // Test would timeout if all were blocked on
+          await new Promise(resolve => setTimeout(resolve, 1000))
           return
         }
 
-        if (processCount === 6) {
+        if (workCount === jobCount) {
           resolve()
         }
       })
@@ -274,73 +280,70 @@ describe('work', function () {
   it('does not fetch more than teamSize', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
     const queue = this.test.bossConfig.schema
-    const teamSize = 4
-    const teamConcurrency = 2
-    const newJobCheckInterval = 200
-    let processCount = 0
-    let remainCount = 0
+
+    const options = {
+      teamSize: 4,
+      teamConcurrency: 2,
+      newJobCheckInterval: 500,
+      teamRefill: true
+    }
+
+    let workCount = 0
 
     for (let i = 0; i < 7; i++) {
       await boss.send(queue)
     }
 
     // This should consume 5 jobs, all will block after the first job
-    await boss.work(queue, { teamSize, teamConcurrency, newJobCheckInterval, teamRefill: true }, async () => {
-      processCount++
-      if (processCount > 1) await new Promise(resolve => setTimeout(resolve, 1000))
+    await boss.work(queue, options, async () => {
+      workCount++
+      if (workCount > 1) await new Promise(resolve => setTimeout(resolve, 2000))
     })
 
-    await new Promise(resolve => setTimeout(resolve, 400))
+    await new Promise(resolve => setTimeout(resolve, 1000))
 
-    // this should pick up the last 2 jobs
-    await boss.work(queue, { teamSize, teamConcurrency, newJobCheckInterval, teamRefill: true }, async () => {
-      remainCount++
-    })
+    const remainingJobs = await boss.fetch(queue, 2)
 
-    await new Promise(resolve => setTimeout(resolve, 400))
-
-    assert(remainCount === 2)
+    assert.strictEqual(2, remainingJobs.length)
   })
 
   it('completion should pass string wrapped in value prop', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, onComplete: true })
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const queue = this.test.bossConfig.schema
 
-    const queue = 'processCompletionString'
     const result = 'success'
 
-    boss.work(queue, async job => result)
+    const jobId = await boss.send(queue)
 
-    await boss.send(queue)
+    await boss.work(queue, async job => result)
 
-    await delay(8000)
+    await delay(1000)
 
-    const job = await boss.fetchCompleted(queue)
+    const job = await boss.getJobById(jobId)
 
-    assert.strictEqual(job.data.state, 'completed')
-    assert.strictEqual(job.data.response.value, result)
+    assert.strictEqual(job.state, 'completed')
+    assert.strictEqual(job.output.value, result)
   })
 
   it('completion via Promise resolve() should pass object payload', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, onComplete: true })
-
-    const queue = 'processCompletionObject'
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const queue = this.test.bossConfig.schema
     const something = 'clever'
 
-    boss.work(queue, async job => ({ something }))
+    const jobId = await boss.send(queue)
+    await boss.work(queue, async () => ({ something }))
 
-    await boss.send(queue)
+    await delay(1000)
 
-    await delay(8000)
+    const job = await boss.getJobById(jobId)
 
-    const job = await boss.fetchCompleted(queue)
-
-    assert.strictEqual(job.data.state, 'completed')
-    assert.strictEqual(job.data.response.something, something)
+    assert.strictEqual(job.state, 'completed')
+    assert.strictEqual(job.output.something, something)
   })
 
   it('should allow multiple workers to the same queue per instance', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
-    const queue = 'multiple-workers'
+    const queue = this.test.bossConfig.schema
 
     await boss.work(queue, () => {})
     await boss.work(queue, () => {})
@@ -348,8 +351,7 @@ describe('work', function () {
 
   it('should honor the includeMetadata option', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
-
-    const queue = 'process-includeMetadata'
+    const queue = this.test.bossConfig.schema
 
     await boss.send(queue)
 
@@ -361,15 +363,8 @@ describe('work', function () {
     })
   })
 
-  it('should fail job at expiration without maintenance', async function () {
-    const boss = this.test.boss = new PgBoss(this.test.bossConfig)
-
-    const maintenanceTick = new Promise((resolve) => boss.on('maintenance', resolve))
-
-    await boss.start()
-
-    await maintenanceTick
-
+  it('should fail job at expiration in worker', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, supervise: false })
     const queue = this.test.bossConfig.schema
 
     const jobId = await boss.send(queue, null, { expireInSeconds: 1 })
@@ -384,15 +379,8 @@ describe('work', function () {
     assert(job.output.message.includes('handler execution exceeded'))
   })
 
-  it('should fail a batch of jobs at expiration without maintenance', async function () {
-    const boss = this.test.boss = new PgBoss(this.test.bossConfig)
-
-    const maintenanceTick = new Promise((resolve) => boss.on('maintenance', resolve))
-
-    await boss.start()
-
-    await maintenanceTick
-
+  it('should fail a batch of jobs at expiration in worker', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, supervise: false })
     const queue = this.test.bossConfig.schema
 
     const jobId1 = await boss.send(queue, null, { expireInSeconds: 1 })
@@ -436,15 +424,13 @@ describe('work', function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
     const queue = this.test.bossConfig.schema
 
-    boss.stop({ timeout: 1 })
-
-    await delay(500)
+    await boss.stop({ wait: true })
 
     try {
-      await boss.work(queue)
+      await boss.work(queue, () => {})
       assert(false)
     } catch (err) {
-      assert(err.message.includes('stopping'))
+      assert(true)
     }
   })
 
@@ -452,9 +438,7 @@ describe('work', function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
     const queue = this.test.bossConfig.schema
 
-    boss.stop({ timeout: 1 })
-
-    await delay(500)
+    boss.stop({ wait: true })
 
     await boss.send(queue)
   })

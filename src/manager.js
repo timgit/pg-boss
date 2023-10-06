@@ -1,21 +1,19 @@
 const assert = require('assert')
 const EventEmitter = require('events')
-const delay = require('delay')
-const uuid = require('uuid')
+const { randomUUID } = require('crypto')
 const debounce = require('lodash.debounce')
 const { serializeError: stringify } = require('serialize-error')
+const pMap = require('p-map')
+const { delay } = require('./tools')
 const Attorney = require('./attorney')
 const Worker = require('./worker')
-const Db = require('./db')
-const pMap = require('p-map')
-
-const { QUEUES: BOSS_QUEUES } = require('./boss')
-const { QUEUES: TIMEKEEPER_QUEUES } = require('./timekeeper')
-
-const INTERNAL_QUEUES = Object.values(BOSS_QUEUES).concat(Object.values(TIMEKEEPER_QUEUES)).reduce((acc, i) => ({ ...acc, [i]: i }), {})
-
 const plans = require('./plans')
-const { COMPLETION_JOB_PREFIX, SINGLETON_QUEUE_KEY } = plans
+const Db = require('./db')
+
+const { QUEUES: TIMEKEEPER_QUEUES } = require('./timekeeper')
+const { QUEUE_POLICY } = plans
+
+const INTERNAL_QUEUES = Object.values(TIMEKEEPER_QUEUES).reduce((acc, i) => ({ ...acc, [i]: i }), {})
 
 const WIP_EVENT_INTERVAL = 2000
 const WIP_DEBOUNCE_OPTIONS = { leading: true, trailing: true, maxWait: WIP_EVENT_INTERVAL }
@@ -27,16 +25,14 @@ const events = {
 
 const resolveWithinSeconds = async (promise, seconds) => {
   const timeout = Math.max(1, seconds) * 1000
-  const reject = delay.reject(timeout, { value: new Error(`handler execution exceeded ${timeout}ms`) })
+  const reject = delay(timeout, `handler execution exceeded ${timeout}ms`)
 
   let result
 
   try {
     result = await Promise.race([promise, reject])
   } finally {
-    try {
-      reject.clear()
-    } catch {}
+    reject.abort()
   }
 
   return result
@@ -58,7 +54,7 @@ class Manager extends EventEmitter {
     this.completeJobsCommand = plans.completeJobs(config.schema)
     this.cancelJobsCommand = plans.cancelJobs(config.schema)
     this.resumeJobsCommand = plans.resumeJobs(config.schema)
-    this.failJobsCommand = plans.failJobs(config.schema)
+    this.failJobsByIdCommand = plans.failJobsById(config.schema)
     this.getJobByIdCommand = plans.getJobById(config.schema)
     this.getArchivedJobByIdCommand = plans.getArchivedJobById(config.schema)
     this.subscribeCommand = plans.subscribe(config.schema)
@@ -72,12 +68,9 @@ class Manager extends EventEmitter {
       this.resume,
       this.fail,
       this.fetch,
-      this.fetchCompleted,
       this.work,
       this.offWork,
       this.notifyWorker,
-      this.onComplete,
-      this.offComplete,
       this.publish,
       this.subscribe,
       this.unsubscribe,
@@ -85,13 +78,14 @@ class Manager extends EventEmitter {
       this.send,
       this.sendDebounced,
       this.sendThrottled,
-      this.sendOnce,
       this.sendAfter,
-      this.sendSingleton,
+      this.createQueue,
+      this.updateQueue,
+      this.getQueue,
       this.deleteQueue,
-      this.deleteAllQueues,
-      this.clearStorage,
+      this.purgeQueue,
       this.getQueueSize,
+      this.clearStorage,
       this.getJobById
     ]
 
@@ -99,27 +93,30 @@ class Manager extends EventEmitter {
   }
 
   start () {
-    this.stopping = false
+    this.stopped = false
   }
 
   async stop () {
-    this.stopping = true
+    this.stopped = true
 
-    for (const sub of this.workers.values()) {
-      if (!INTERNAL_QUEUES[sub.name]) {
-        await this.offWork(sub.name)
+    for (const worker of this.workers.values()) {
+      if (!INTERNAL_QUEUES[worker.name]) {
+        await this.offWork(worker.name)
       }
+    }
+  }
+
+  async failWip () {
+    const jobIds = Array.from(this.workers.values()).flatMap(w => w.jobs.map(j => j.id))
+
+    if (jobIds.length) {
+      await this.fail(jobIds, 'pg-boss shut down while active')
     }
   }
 
   async work (name, ...args) {
     const { options, callback } = Attorney.checkWorkArgs(name, args, this.config)
     return await this.watch(name, options, callback)
-  }
-
-  async onComplete (name, ...args) {
-    const { options, callback } = Attorney.checkWorkArgs(name, args, this.config)
-    return await this.watch(COMPLETION_JOB_PREFIX + name, options, callback)
   }
 
   addWorker (worker) {
@@ -175,8 +172,8 @@ class Manager extends EventEmitter {
   }
 
   async watch (name, options, callback) {
-    if (this.stopping) {
-      throw new Error('Workers are disabled. pg-boss is stopping.')
+    if (this.stopped) {
+      throw new Error('Workers are disabled. pg-boss is stopped')
     }
 
     const {
@@ -186,10 +183,10 @@ class Manager extends EventEmitter {
       teamConcurrency = 1,
       teamRefill: refill = false,
       includeMetadata = false,
-      enforceSingletonQueueActiveLimit = false
+      priority = true
     } = options
 
-    const id = uuid.v4()
+    const id = randomUUID({ disableEntropyCache: true })
 
     let queueSize = 0
 
@@ -210,7 +207,7 @@ class Manager extends EventEmitter {
       createTeamRefillPromise()
     }
 
-    const fetch = () => this.fetch(name, batchSize || (teamSize - queueSize), { includeMetadata, enforceSingletonQueueActiveLimit })
+    const fetch = () => this.fetch(name, batchSize || (teamSize - queueSize), { includeMetadata, priority })
 
     const onFetch = async (jobs) => {
       if (this.config.__test__throw_worker) {
@@ -329,37 +326,9 @@ class Manager extends EventEmitter {
     return await Promise.all(result.rows.map(({ name }) => this.send(name, ...args)))
   }
 
-  async offComplete (value) {
-    if (typeof value === 'string') {
-      value = COMPLETION_JOB_PREFIX + value
-    }
-
-    return await this.offWork(value)
-  }
-
   async send (...args) {
     const { name, data, options } = Attorney.checkSendArgs(args, this.config)
     return await this.createJob(name, data, options)
-  }
-
-  async sendOnce (name, data, options, key) {
-    options = options ? { ...options } : {}
-
-    options.singletonKey = key || name
-
-    const result = Attorney.checkSendArgs([name, data, options], this.config)
-
-    return await this.createJob(result.name, result.data, result.options)
-  }
-
-  async sendSingleton (name, data, options) {
-    options = options ? { ...options } : {}
-
-    options.singletonKey = SINGLETON_QUEUE_KEY
-
-    const result = Attorney.checkSendArgs([name, data, options], this.config)
-
-    return await this.createJob(result.name, result.data, result.options)
   }
 
   async sendAfter (name, data, options, after) {
@@ -395,37 +364,47 @@ class Manager extends EventEmitter {
 
   async createJob (name, data, options, singletonOffset = 0) {
     const {
+      id = null,
       db: wrapper,
-      expireIn,
       priority,
       startAfter,
-      keepUntil,
       singletonKey = null,
       singletonSeconds,
-      retryBackoff,
+      deadLetter = null,
+      expireIn,
+      expireInDefault,
+      keepUntil,
+      keepUntilDefault,
       retryLimit,
+      retryLimitDefault,
       retryDelay,
-      onComplete
+      retryDelayDefault,
+      retryBackoff,
+      retryBackoffDefault
     } = options
-
-    const id = uuid[this.config.uuid]()
 
     const values = [
       id, // 1
       name, // 2
-      priority, // 3
-      retryLimit, // 4
+      data, // 3
+      priority, // 4
       startAfter, // 5
-      expireIn, // 6
-      data, // 7
-      singletonKey, // 8
-      singletonSeconds, // 9
-      singletonOffset, // 10
-      retryDelay, // 11
-      retryBackoff, // 12
-      keepUntil, // 13
-      onComplete // 14
+      singletonKey, // 6
+      singletonSeconds, // 7
+      singletonOffset, // 8
+      deadLetter, // 9
+      expireIn, // 10
+      expireInDefault, // 11
+      keepUntil, // 12
+      keepUntilDefault, // 13
+      retryLimit, // 14
+      retryLimitDefault, // 15
+      retryDelay, // 16
+      retryDelayDefault, // 17
+      retryBackoff, // 18
+      retryBackoffDefault // 19
     ]
+
     const db = wrapper || this.db
     const result = await db.executeSql(this.insertJobCommand, values)
 
@@ -449,11 +428,20 @@ class Manager extends EventEmitter {
   }
 
   async insert (jobs, options = {}) {
-    const { db: wrapper } = options
-    const db = wrapper || this.db
-    const checkedJobs = Attorney.checkInsertArgs(jobs)
-    const data = JSON.stringify(checkedJobs)
-    return await db.executeSql(this.insertJobsCommand, [data])
+    assert(Array.isArray(jobs), 'jobs argument should be an array')
+
+    const db = options.db || this.db
+
+    const params = [
+      JSON.stringify(jobs), // 1
+      this.config.expireIn, // 2
+      this.config.keepUntil, // 3
+      this.config.retryLimit, // 4
+      this.config.retryDelay, // 5
+      this.config.retryBackoff // 6
+    ]
+
+    return await db.executeSql(this.insertJobsCommand, params)
   }
 
   getDebounceStartAfter (singletonSeconds, clockOffset) {
@@ -474,27 +462,34 @@ class Manager extends EventEmitter {
   }
 
   async fetch (name, batchSize, options = {}) {
+    const patternMatch = Attorney.queueNameHasPatternMatch(name)
     const values = Attorney.checkFetchArgs(name, batchSize, options)
     const db = options.db || this.db
-    const preparedStatement = this.nextJobCommand(options.includeMetadata || false, options.enforceSingletonQueueActiveLimit || false)
+    const nextJobSql = this.nextJobCommand({ ...options, patternMatch })
     const statementValues = [values.name, batchSize || 1]
 
     let result
-    if (options.enforceSingletonQueueActiveLimit && !options.db) {
-      // Prepare/format now and send multi-statement transaction
-      const fetchQuery = preparedStatement
-        .replace('$1', Db.quotePostgresStr(statementValues[0]))
-        .replace('$2', statementValues[1].toString())
-      // eslint-disable-next-line no-unused-vars
-      const [_begin, _setLocal, fetchResult, _commit] = await db.executeSql([
-        'BEGIN',
-        'SET LOCAL jit = OFF', // JIT can slow things down significantly
-        fetchQuery,
-        'COMMIT'
-      ].join(';\n'))
-      result = fetchResult
-    } else {
-      result = await db.executeSql(preparedStatement, statementValues)
+
+    try {
+      if (!options.db) {
+        // Prepare/format now and send multi-statement transaction
+        const fetchQuery = nextJobSql
+          .replace('$1', Db.quotePostgresStr(statementValues[0]))
+          .replace('$2', statementValues[1].toString())
+
+        // eslint-disable-next-line no-unused-vars
+        const [_begin, _setLocal, fetchResult, _commit] = await db.executeSql([
+          'BEGIN',
+          'SET LOCAL jit = OFF', // JIT can slow things down significantly
+          fetchQuery,
+          'COMMIT'
+        ].join(';\n'))
+        result = fetchResult
+      } else {
+        result = await db.executeSql(nextJobSql, statementValues)
+      }
+    } catch (err) {
+      // errors from fetchquery should only be unique constraint violations
     }
 
     if (!result || result.rows.length === 0) {
@@ -502,10 +497,6 @@ class Manager extends EventEmitter {
     }
 
     return result.rows.length === 1 && !batchSize ? result.rows[0] : result.rows
-  }
-
-  async fetchCompleted (name, batchSize, options = {}) {
-    return await this.fetch(COMPLETION_JOB_PREFIX + name, batchSize, options)
   }
 
   mapCompletionIdArg (id, funcName) {
@@ -548,7 +539,7 @@ class Manager extends EventEmitter {
   async fail (id, data, options = {}) {
     const db = options.db || this.db
     const ids = this.mapCompletionIdArg(id, 'fail')
-    const result = await db.executeSql(this.failJobsCommand, [ids, this.mapCompletionDataArg(data)])
+    const result = await db.executeSql(this.failJobsByIdCommand, [ids, this.mapCompletionDataArg(data)])
     return this.mapCompletionResponse(ids, result)
   }
 
@@ -566,17 +557,122 @@ class Manager extends EventEmitter {
     return this.mapCompletionResponse(ids, result)
   }
 
-  async deleteQueue (queue, options) {
-    assert(queue, 'Missing queue name argument')
-    const sql = plans.deleteQueue(this.config.schema, options)
-    const result = await this.db.executeSql(sql, [queue])
-    return result ? result.rowCount : null
+  async createQueue (name, options = {}) {
+    assert(name, 'Missing queue name argument')
+
+    const { policy = QUEUE_POLICY.standard } = options
+
+    assert(policy in QUEUE_POLICY, `${policy} is not a valid queue policy`)
+
+    const {
+      retryLimit,
+      retryDelay,
+      retryBackoff,
+      expireInSeconds,
+      retentionMinutes,
+      deadLetter
+    } = Attorney.checkQueueArgs(name, options)
+
+    const paritionSql = plans.partitionCreateJobName(this.config.schema, name)
+
+    await this.db.executeSql(paritionSql)
+
+    const sql = plans.createQueue(this.config.schema, name)
+
+    const params = [
+      name,
+      policy,
+      retryLimit,
+      retryDelay,
+      retryBackoff,
+      expireInSeconds,
+      retentionMinutes,
+      deadLetter
+    ]
+
+    await this.db.executeSql(sql, params)
   }
 
-  async deleteAllQueues (options) {
-    const sql = plans.deleteAllQueues(this.config.schema, options)
-    const result = await this.db.executeSql(sql)
-    return result ? result.rowCount : null
+  async updateQueue (name, options = {}) {
+    assert(name, 'Missing queue name argument')
+
+    const {
+      retryLimit,
+      retryDelay,
+      retryBackoff,
+      expireInSeconds,
+      retentionMinutes,
+      deadLetter
+    } = Attorney.checkQueueArgs(name, options)
+
+    const sql = plans.updateQueue(this.config.schema)
+
+    const params = [
+      name,
+      retryLimit,
+      retryDelay,
+      retryBackoff,
+      expireInSeconds,
+      retentionMinutes,
+      deadLetter
+    ]
+
+    await this.db.executeSql(sql, params)
+  }
+
+  async getQueue (name) {
+    assert(name, 'Missing queue name argument')
+
+    const sql = plans.getQueueByName(this.config.schema)
+    const result = await this.db.executeSql(sql, [name])
+
+    if (result.rows.length === 0) {
+      return null
+    }
+
+    const {
+      policy,
+      retry_limit: retryLimit,
+      retry_delay: retryDelay,
+      retry_backoff: retryBackoff,
+      expire_seconds: expireInSeconds,
+      retention_minutes: retentionMinutes,
+      dead_letter: deadLetter
+    } = result.rows[0]
+
+    return {
+      name,
+      policy,
+      retryLimit,
+      retryDelay,
+      retryBackoff,
+      expireInSeconds,
+      retentionMinutes,
+      deadLetter
+    }
+  }
+
+  async deleteQueue (name) {
+    assert(name, 'Missing queue name argument')
+
+    const queueSql = plans.getQueueByName(this.config.schema)
+    const result = await this.db.executeSql(queueSql, [name])
+
+    if (result?.rows?.length) {
+      Attorney.assertPostgresObjectName(name)
+      const sql = plans.dropJobTablePartition(this.config.schema, name)
+      await this.db.executeSql(sql)
+    }
+
+    const sql = plans.deleteQueueRecords(this.config.schema)
+    const result2 = await this.db.executeSql(sql, [name])
+    return result2?.rowCount || null
+  }
+
+  async purgeQueue (queue) {
+    assert(queue, 'Missing queue name argument')
+    const sql = plans.purgeQueue(this.config.schema)
+    await this.db.executeSql(sql, [queue])
   }
 
   async clearStorage () {

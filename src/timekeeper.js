@@ -134,8 +134,7 @@ class Timekeeper extends EventEmitter {
   async checkSchedulesAsync () {
     const opts = {
       retryLimit: 2,
-      retentionSeconds: 60,
-      onComplete: false
+      retentionSeconds: 60
     }
 
     await this.manager.sendDebounced(queues.CRON, null, opts, 60)
@@ -145,8 +144,8 @@ class Timekeeper extends EventEmitter {
     if (this.stopped) return
 
     try {
-      if (this.config.__test__throw_clock_monitoring) {
-        throw new Error(this.config.__test__throw_clock_monitoring)
+      if (this.config.__test__throw_cron_processing) {
+        throw new Error(this.config.__test__throw_cron_processing)
       }
 
       const items = await this.getSchedules()
@@ -186,8 +185,7 @@ class Timekeeper extends EventEmitter {
   async send (job) {
     const options = {
       singletonKey: job.name,
-      singletonSeconds: 60,
-      onComplete: false
+      singletonSeconds: 60
     }
 
     await this.manager.send(queues.SEND_IT, job, options)

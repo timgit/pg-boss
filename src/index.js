@@ -6,7 +6,7 @@ const Manager = require('./manager')
 const Timekeeper = require('./timekeeper')
 const Boss = require('./boss')
 const Db = require('./db')
-const delay = require('delay')
+const { delay } = require('./tools')
 
 const events = {
   error: 'error',
@@ -72,16 +72,7 @@ class PgBoss extends EventEmitter {
     }
 
     function promoteFunction (obj, func) {
-      this[func.name] = (...args) => {
-        const shouldRun = !this.started || !((func.name === 'work' || func.name === 'onComplete') && (this.stopped || this.stoppingOn))
-
-        if (shouldRun) {
-          return func.apply(obj, args)
-        } else {
-          const state = this.stoppingOn ? 'stopping' : this.stopped ? 'stopped' : !this.started ? 'not started' : 'started'
-          return Promise.reject(new Error(`pg-boss is ${state}.`))
-        }
-      }
+      this[func.name] = (...args) => func.apply(obj, args)
     }
 
     function promoteEvent (emitter, event) {
@@ -90,42 +81,49 @@ class PgBoss extends EventEmitter {
   }
 
   async start () {
-    if (!this.stopped) {
-      return this
+    if (this.starting || this.started) {
+      return
     }
+
+    this.starting = true
 
     if (this.db.isOurs && !this.db.opened) {
       await this.db.open()
     }
 
-    await this.contractor.start()
-
-    this.stopped = false
-    this.started = true
+    if (this.config.migrate) {
+      await this.contractor.start()
+    } else {
+      await this.contractor.check()
+    }
 
     this.manager.start()
 
-    if (!this.config.noSupervisor) {
+    if (this.config.supervise) {
       await this.boss.supervise()
     }
 
-    if (!this.config.noScheduling) {
+    if (this.config.monitorStateIntervalSeconds) {
+      await this.boss.monitor()
+    }
+
+    if (this.config.schedule) {
       await this.timekeeper.start()
     }
+
+    this.starting = false
+    this.started = true
+    this.stopped = false
 
     return this
   }
 
   async stop (options = {}) {
-    if (this.stoppingOn) {
+    if (this.stoppingOn || this.stopped) {
       return
     }
 
-    if (this.stopped) {
-      this.emit(events.stopped)
-    }
-
-    let { destroy = false, graceful = true, timeout = 30000 } = options
+    let { destroy = false, graceful = true, timeout = 30000, wait = true } = options
 
     timeout = Math.max(timeout, 1000)
 
@@ -133,47 +131,59 @@ class PgBoss extends EventEmitter {
 
     await this.manager.stop()
     await this.timekeeper.stop()
+    await this.boss.stop()
 
-    const shutdown = async () => {
-      this.stopped = true
-      this.stoppingOn = null
-
-      if (this.db.isOurs && this.db.opened && destroy) {
-        await this.db.close()
-      }
-
-      this.emit(events.stopped)
-    }
-
-    if (!graceful) {
-      await this.boss.stop()
-      await shutdown()
-      return
-    }
-
-    setImmediate(async () => {
-      let closing = false
-
-      try {
-        while (Date.now() - this.stoppingOn < timeout) {
-          if (this.manager.getWipData({ includeInternal: closing }).length === 0) {
-            if (closing) {
-              break
-            }
-
-            closing = true
-
-            await this.boss.stop()
+    await new Promise((resolve, reject) => {
+      const shutdown = async () => {
+        try {
+          if (this.config.__test__throw_shutdown) {
+            throw new Error(this.config.__test__throw_shutdown)
           }
 
-          await delay(1000)
-        }
+          await this.manager.failWip()
 
-        await this.boss.stop()
-        await shutdown()
-      } catch (err) {
-        this.emit(events.error, err)
+          if (this.db.isOurs && this.db.opened && destroy) {
+            await this.db.close()
+          }
+
+          this.stopped = true
+          this.stoppingOn = null
+          this.started = false
+
+          this.emit(events.stopped)
+          resolve()
+        } catch (err) {
+          this.emit(events.error, err)
+          reject(err)
+        }
       }
+
+      if (!graceful) {
+        return shutdown()
+      }
+
+      if (!wait) {
+        resolve()
+      }
+
+      setImmediate(async () => {
+        try {
+          if (this.config.__test__throw_stop_monitor) {
+            throw new Error(this.config.__test__throw_stop_monitor)
+          }
+
+          const isWip = () => this.manager.getWipData({ includeInternal: false }).length > 0
+
+          while ((Date.now() - this.stoppingOn) < timeout && isWip()) {
+            await delay(500)
+          }
+
+          await shutdown()
+        } catch (err) {
+          reject(err)
+          this.emit(events.error, err)
+        }
+      })
     })
   }
 }

@@ -1,26 +1,19 @@
 const assert = require('assert')
 const helper = require('./testHelper')
-const delay = require('delay')
 
 describe('delete', async function () {
-  const defaults = {
-    deleteAfterSeconds: 1,
-    maintenanceIntervalSeconds: 1
-  }
-
   it('should delete an archived job', async function () {
-    const jobName = 'deleteMe'
-
-    const config = { ...this.test.bossConfig, ...defaults }
+    const config = { ...this.test.bossConfig, deleteAfterSeconds: 1 }
     const boss = this.test.boss = await helper.start(config)
-    const jobId = await boss.send(jobName)
-    const job = await boss.fetch(jobName)
+    const queue = this.test.bossConfig.schema
 
-    assert.strictEqual(jobId, job.id)
+    const jobId = await boss.send(queue)
+
+    await boss.fetch(queue)
 
     await boss.complete(jobId)
 
-    await delay(7000)
+    await boss.maintain()
 
     const archivedJob = await helper.getArchivedJobById(config.schema, jobId)
 

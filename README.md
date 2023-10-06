@@ -1,6 +1,5 @@
 Queueing jobs in Node.js using PostgreSQL like a boss.
 
-[![PostgreSql Version](https://img.shields.io/badge/PostgreSQL-11+-blue.svg?maxAge=2592000)](http://www.postgresql.org)
 [![npm version](https://badge.fury.io/js/pg-boss.svg)](https://badge.fury.io/js/pg-boss)
 [![Build](https://github.com/timgit/pg-boss/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/timgit/pg-boss/actions/workflows/ci.yml)
 [![Coverage Status](https://coveralls.io/repos/github/timgit/pg-boss/badge.svg?branch=master)](https://coveralls.io/github/timgit/pg-boss?branch=master)
@@ -42,16 +41,16 @@ This will likely cater the most to teams already familiar with the simplicity of
 * Backpressure-compatible polling workers
 * Cron scheduling
 * Pub/sub API for fan-out queue relationships
-* Deferral, retries (with exponential backoff), rate limiting, debouncing
-* Completion jobs for orchestrations/sagas
+* Priority, deferral, retries (with exponential backoff), rate limiting, debouncing
 * Direct table access for bulk loads via COPY or INSERT
 * Multi-master compatible (for example, in a Kubernetes ReplicaSet)
+* Dead letter queues
 * Automatic creation and migration of storage tables
 * Automatic maintenance operations to manage table growth
 
 ## Requirements
-* Node 16 or higher
-* PostgreSQL 11 or higher
+* Node 18 or higher
+* PostgreSQL 12 or higher
 
 ## Installation
 

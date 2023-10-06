@@ -1,78 +1,136 @@
 const assert = require('assert')
 const PgBoss = require('../')
-const delay = require('delay')
+const { delay } = require('../src/tools')
 
 describe('background processing error handling', function () {
   it('maintenance error handling works', async function () {
     const defaults = {
-      monitorStateIntervalMinutes: 1,
       maintenanceIntervalSeconds: 1,
-      noScheduling: true,
-      __test__throw_maint: true
+      supervise: true,
+      __test__throw_maint: 'my maintenance error'
     }
 
     const config = { ...this.test.bossConfig, ...defaults }
     const boss = this.test.boss = new PgBoss(config)
-
-    return new Promise((resolve) => {
-      let resolved = false
-
-      boss.on('error', () => {
-        if (!resolved) {
-          resolved = true
-          resolve()
-        }
-      })
-
-      boss.start().then(() => {})
-    })
-  })
-
-  it('state monitoring error handling works', async function () {
-    const defaults = {
-      monitorStateIntervalSeconds: 2,
-      maintenanceIntervalMinutes: 1,
-      noScheduling: true,
-      __test__throw_monitor: true
-    }
-
-    const config = { ...this.test.bossConfig, ...defaults }
-    const boss = this.test.boss = new PgBoss(config)
-
-    return new Promise((resolve) => {
-      let resolved = false
-
-      boss.on('error', () => {
-        if (!resolved) {
-          resolved = true
-          resolve()
-        }
-      })
-
-      boss.start().then(() => {})
-    })
-  })
-
-  it('clock monitoring error handling works', async function () {
-    const config = {
-      ...this.test.bossConfig,
-      clockMonitorIntervalSeconds: 1,
-      __test__throw_clock_monitoring: 'pg-boss mock error: clock monitoring'
-    }
 
     let errorCount = 0
 
-    const boss = this.test.boss = new PgBoss(config)
-
     boss.once('error', (error) => {
-      assert.strictEqual(error.message, config.__test__throw_clock_monitoring)
+      assert.strictEqual(error.message, config.__test__throw_maint)
       errorCount++
     })
 
     await boss.start()
 
-    await delay(8000)
+    await delay(3000)
 
     assert.strictEqual(errorCount, 1)
+  })
+
+  it('slow maintenance will back off loop interval', async function () {
+    const config = {
+      ...this.test.bossConfig,
+      maintenanceIntervalSeconds: 1,
+      supervise: true,
+      __test__delay_maintenance: 2000
+    }
+
+    const boss = this.test.boss = new PgBoss(config)
+
+    let eventCount = 0
+
+    boss.on('maintenance', () => eventCount++)
+
+    await boss.start()
+
+    await delay(5000)
+
+    assert.strictEqual(eventCount, 1)
+  })
+
+  it('slow monitoring will back off loop interval', async function () {
+    const config = {
+      ...this.test.bossConfig,
+      monitorStateIntervalSeconds: 1,
+      __test__delay_monitor: 2000
+    }
+
+    const boss = this.test.boss = new PgBoss(config)
+
+    let eventCount = 0
+
+    boss.on('monitor-states', () => eventCount++)
+
+    await boss.start()
+
+    await delay(4000)
+
+    assert.strictEqual(eventCount, 1)
+  })
+
+  it('state monitoring error handling works', async function () {
+    const defaults = {
+      monitorStateIntervalSeconds: 1,
+      supervise: true,
+      __test__throw_monitor: 'my monitor error'
+    }
+
+    const config = { ...this.test.bossConfig, ...defaults }
+    const boss = this.test.boss = new PgBoss(config)
+
+    let errorCount = 0
+
+    boss.once('error', (error) => {
+      assert.strictEqual(error.message, config.__test__throw_monitor)
+      errorCount++
+    })
+
+    await boss.start()
+
+    await delay(3000)
+
+    assert.strictEqual(errorCount, 1)
+  })
+
+  it('shutdown monitoring error handling works', async function () {
+    const config = {
+      ...this.test.bossConfig,
+      __test__throw_shutdown: 'shutdown error'
+    }
+
+    const boss = this.test.boss = new PgBoss(config)
+
+    let errorCount = 0
+
+    boss.once('error', (error) => {
+      assert.strictEqual(error.message, config.__test__throw_shutdown)
+      errorCount++
+    })
+
+    await boss.start()
+
+    await boss.stop({ wait: false })
+
+    await delay(1000)
+
+    assert.strictEqual(errorCount, 1)
+  })
+
+  it('shutdown error handling works', async function () {
+    const config = {
+      ...this.test.bossConfig,
+      __test__throw_stop_monitor: 'monitor error'
+    }
+
+    const boss = this.test.boss = new PgBoss(config)
+
+    await boss.start()
+
+    try {
+      await boss.stop({ wait: false })
+      assert(false)
+    } catch (err) {
+      assert(true)
+    }
   })
 })

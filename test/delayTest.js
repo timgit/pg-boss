@@ -1,6 +1,6 @@
 const assert = require('assert')
 const helper = require('./testHelper')
-const delay = require('delay')
+const { delay } = require('../src/tools')
 
 describe('delayed jobs', function () {
   it('should wait until after an int (in seconds)', async function () {
