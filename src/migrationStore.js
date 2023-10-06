@@ -74,6 +74,7 @@ function getAll (schema) {
         `DROP INDEX ${schema}.job_singletonOn`,
         `DROP INDEX ${schema}.job_singletonKeyOn`,
         `DROP INDEX ${schema}.job_fetch`,
+        `DROP INDEX ${schema}.job_name`,
 
         `ALTER TABLE ${schema}.job ADD COLUMN deadletter text`,
         `ALTER TABLE ${schema}.job ADD COLUMN policy text`,
@@ -98,7 +99,7 @@ function getAll (schema) {
 
         // set up job partitioning
         `ALTER TABLE ${schema}.job RENAME TO job_default`,
-        `ALTER TABLE ${schema}.job_default DROP CONSTRAINT job_pkey`,
+        `ALTER TABLE ${schema}.job_default DROP CONSTRAINT IF EXISTS job_pkey`,
 
         `CREATE TABLE ${schema}.job (
           id uuid not null default gen_random_uuid(),
@@ -122,7 +123,7 @@ function getAll (schema) {
           deadletter text,
           policy text,
           CONSTRAINT job_pkey PRIMARY KEY (name, id)
-        ) PARTITION BY RANGE (name)`,        
+        ) PARTITION BY LIST (name)`,
 
         `ALTER TABLE ${schema}.job ATTACH PARTITION ${schema}.job_default DEFAULT`,
 
@@ -132,16 +133,16 @@ function getAll (schema) {
         `CREATE INDEX archive_archivedon_idx ON ${schema}.archive(archivedon)`,
         `CREATE INDEX archive_name_idx ON ${schema}.archive(name)`,
 
-        `CREATE INDEX job_fetch ON ${schema}.job (name text_pattern_ops, startAfter) INCLUDE (priority, createdOn) WHERE state < 'active'`,
-        `CREATE INDEX job_name ON ${schema}.job (name text_pattern_ops)`
+        `CREATE INDEX job_fetch ON ${schema}.job (name text_pattern_ops, startAfter) INCLUDE (priority, createdOn, id) WHERE state < 'active'`,
+        `CREATE INDEX job_name ON ${schema}.job (name text_pattern_ops)`,
         `CREATE UNIQUE INDEX job_policy_short ON ${schema}.job (name) WHERE state = 'created' AND policy = 'short'`,
         `CREATE UNIQUE INDEX job_policy_singleton ON ${schema}.job (name) WHERE state = 'active' AND policy = 'singleton'`,
         `CREATE UNIQUE INDEX job_policy_stately ON ${schema}.job (name, state) WHERE state <= 'active' AND policy = 'stately'`,
         `CREATE UNIQUE INDEX job_throttle_key ON ${schema}.job (name, singletonKey) WHERE state <= 'completed' AND singletonOn IS NULL`,
         `CREATE UNIQUE INDEX job_throttle_on ON ${schema}.job (name, singletonOn, COALESCE(singletonKey, '')) WHERE state <= 'completed' AND singletonOn IS NOT NULL`,
-        
+
         `ALTER TABLE ${schema}.version ADD COLUMN monitored_on timestamp with time zone`,
-        
+
         `CREATE TABLE ${schema}.queue (
           name text primary key,
           policy text,
@@ -166,7 +167,6 @@ function getAll (schema) {
         `DROP TABLE ${schema}.job`,
         `ALTER TABLE ${schema}.job_default RENAME TO job`,
         `DROP TABLE IF EXISTS ${schema}.archive_backup`,
-        `DROP INDEX ${schema}.archive_archivedon_idx`,
         `DROP INDEX ${schema}.archive_name_idx`,
         `ALTER TABLE ${schema}.job DROP COLUMN deadletter`,
         `ALTER TABLE ${schema}.job DROP COLUMN policy`,
@@ -182,6 +182,7 @@ function getAll (schema) {
         `ALTER TABLE ${schema}.archive DROP COLUMN policy`,
         `ALTER TABLE ${schema}.archive DROP CONSTRAINT archive_pkey`,
         `CREATE INDEX job_fetch ON ${schema}.job (name text_pattern_ops, startAfter) WHERE state < 'active'`,
+        `CREATE INDEX job_name ON ${schema}.job (name text_pattern_ops)`,
         `CREATE UNIQUE INDEX job_singletonOn ON ${schema}.job (name, singletonOn) WHERE state < 'expired' AND singletonKey IS NULL`,
         `CREATE UNIQUE INDEX job_singletonKeyOn ON ${schema}.job (name, singletonOn, singletonKey) WHERE state < 'expired'`,
         `CREATE UNIQUE INDEX job_singletonKey ON ${schema}.job (name, singletonKey) WHERE state < 'completed' AND singletonOn IS NULL AND NOT singletonKey LIKE '\\_\\_pgboss\\_\\_singleton\\_queue%'`,
