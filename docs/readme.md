@@ -75,7 +75,7 @@ Architecturally, pg-boss is somewhat similar to queue products such as AWS SQS, 
 
 ## Job states
 
-All jobs start out in the `created` state and become `active` when picked up for work. If job processing completes successfully, jobs will go to `completed`. If a job fails, it will typcially enter the `failed` state. However, if a job has retry options configured, it will enter the `retry` state on failure instead and have a chance to re-enter `active` state. It's also possible for `active` jobs to become `expired`, which happens when job processing takes too long. Jobs can also enter `cancelled` state via [`cancel(id)`](#cancelid) or [`cancel([ids])`](#cancelids).
+All jobs start out in the `created` state and become `active` when picked up for work. If job processing completes successfully, jobs will go to `completed`. If a job fails, it will typically enter the `failed` state. However, if a job has retry options configured, it will enter the `retry` state on failure instead and have a chance to re-enter `active` state. It's also possible for `active` jobs to become `expired`, which happens when job processing takes too long. Jobs can also enter `cancelled` state via [`cancel(id)`](#cancelid) or [`cancel([ids])`](#cancelids).
 
 All jobs that are `completed`, `expired`, `cancelled` or `failed` become eligible for archiving (i.e. they will transition into the `archive` state) after the configured `archiveCompletedAfterSeconds` time. Once `archive`d, jobs will be automatically deleted by pg-boss after the configured deletion period.
 
