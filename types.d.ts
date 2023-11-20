@@ -379,6 +379,8 @@ declare class PgBoss extends EventEmitter {
   schedule(name: string, cron: string, data?: object, options?: PgBoss.ScheduleOptions): Promise<void>;
   unschedule(name: string): Promise<void>;
   getSchedules(): Promise<PgBoss.Schedule[]>;
+
+  updateStartAfterDate(id: string, newDate: Date, options?: PgBoss.ConnectionOptions): Promise<void>;
 }
 
 export = PgBoss;

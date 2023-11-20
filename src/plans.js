@@ -54,6 +54,7 @@ module.exports = {
   assertMigration,
   getArchivedJobById,
   getJobById,
+  updateStartAfterDate,
   states: { ...states },
   COMPLETION_JOB_PREFIX,
   SINGLETON_QUEUE_KEY,
@@ -710,4 +711,17 @@ function getArchivedJobById (schema) {
 
 function getJobByTableAndId (schema, table) {
   return `SELECT * From ${schema}.${table} WHERE id = $1`
+}
+
+function updateStartAfterDate (schema, newDate) {
+  return `
+    with results as (
+      UPDATE ${schema}.job
+      SET startafter = $2
+      WHERE id IN (SELECT UNNEST($1::uuid[]))
+        AND state < '${states.completed}'
+      RETURNING 1
+    )
+    SELECT COUNT(*) from results
+  `
 }
