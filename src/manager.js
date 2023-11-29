@@ -85,6 +85,7 @@ class Manager extends EventEmitter {
       this.send,
       this.sendDebounced,
       this.sendThrottled,
+      this.sendQueued,
       this.sendOnce,
       this.sendAfter,
       this.sendSingleton,
@@ -393,6 +394,18 @@ class Manager extends EventEmitter {
     return await this.createJob(result.name, result.data, result.options)
   }
 
+  async sendQueued (name, data, options, seconds, key) {
+    options = options ? { ...options } : {}
+    options.shouldQueueAll = true
+    options.singletonSeconds = seconds
+    options.singletonNextSlot = true
+    options.singletonKey = key
+
+    const result = Attorney.checkSendArgs([name, data, options], this.config)
+
+    return await this.createJob(result.name, result.data, result.options)
+  }
+
   async createJob (name, data, options, singletonOffset = 0) {
     const {
       db: wrapper,
@@ -437,15 +450,13 @@ class Manager extends EventEmitter {
       return null
     }
 
-    // delay starting by the offset to honor throttling config
-    options.startAfter = this.getDebounceStartAfter(singletonSeconds, this.timekeeper.clockSkew)
+    const nextOffset = (singletonOffset || 0) + singletonSeconds
 
-    // toggle off next slot config for round 2
-    options.singletonNextSlot = false
+    options.singletonNextSlot = options.shouldQueueAll || false
 
-    singletonOffset = singletonSeconds
+    options.startAfter = this.getDebounceStartAfter(nextOffset, singletonSeconds)
 
-    return await this.createJob(name, data, options, singletonOffset)
+    return await this.createJob(name, data, options, nextOffset)
   }
 
   async insert (jobs, options = {}) {
@@ -456,15 +467,10 @@ class Manager extends EventEmitter {
     return await db.executeSql(this.insertJobsCommand, [data])
   }
 
-  getDebounceStartAfter (singletonSeconds, clockOffset) {
-    const debounceInterval = singletonSeconds * 1000
-
-    const now = Date.now() + clockOffset
-
-    const slot = Math.floor(now / debounceInterval) * debounceInterval
-
-    // prevent startAfter=0 during debouncing
-    let startAfter = (singletonSeconds - Math.floor((now - slot) / 1000)) || 1
+  getDebounceStartAfter (offset, singletonSeconds) {
+    const now = Date.now()
+    const slot = Math.ceil(now / (singletonSeconds * 1000)) * (singletonSeconds * 1000)
+    let startAfter = ((offset - singletonSeconds) + singletonSeconds - Math.ceil((now - slot) / 1000)) || 1
 
     if (singletonSeconds > 1) {
       startAfter++

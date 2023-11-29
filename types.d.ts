@@ -90,6 +90,7 @@ declare namespace PgBoss {
     singletonMinutes?: number;
     singletonHours?: number;
     singletonNextSlot?: boolean;
+    shouldQueueAll?: boolean;
   }
 
   interface ConnectionOptions {
@@ -309,6 +310,9 @@ declare class PgBoss extends EventEmitter {
 
   sendDebounced(name: string, data: object, options: PgBoss.SendOptions, seconds: number): Promise<string | null>;
   sendDebounced(name: string, data: object, options: PgBoss.SendOptions, seconds: number, key: string): Promise<string | null>;
+
+  sendQueued(name: string, data: object, options: PgBoss.SendOptions, seconds: number): Promise<string | null>;
+  sendQueued(name: string, data: object, options: PgBoss.SendOptions, seconds: number, key: string): Promise<string | null>;
 
   insert(jobs: PgBoss.JobInsert[]): Promise<void>;
   insert(jobs: PgBoss.JobInsert[], options: PgBoss.InsertOptions): Promise<void>;
