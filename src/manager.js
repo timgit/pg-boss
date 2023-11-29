@@ -85,6 +85,7 @@ class Manager extends EventEmitter {
       this.send,
       this.sendDebounced,
       this.sendThrottled,
+      this.sendQueued,
       this.sendOnce,
       this.sendAfter,
       this.sendSingleton,
@@ -393,6 +394,18 @@ class Manager extends EventEmitter {
     return await this.createJob(result.name, result.data, result.options)
   }
 
+  async sendQueued (name, data, options, seconds, key) {
+    options = options ? { ...options } : {}
+    options.shouldQueueAll = true
+    options.singletonSeconds = seconds
+    options.singletonNextSlot = true
+    options.singletonKey = key
+
+    const result = Attorney.checkSendArgs([name, data, options], this.config)
+
+    return await this.createJob(result.name, result.data, result.options)
+  }
+
   async createJob (name, data, options, singletonOffset = 0) {
     const {
       db: wrapper,
@@ -440,12 +453,15 @@ class Manager extends EventEmitter {
     // delay starting by the offset to honor throttling config
     options.startAfter = this.getDebounceStartAfter(singletonSeconds, this.timekeeper.clockSkew)
 
-    // toggle off next slot config for round 2
+    let nextOffset = singletonSeconds
     options.singletonNextSlot = false
 
-    singletonOffset = singletonSeconds
+    if (options.shouldQueueAll) {
+      options.singletonNextSlot = true
+      nextOffset = singletonOffset + singletonSeconds
+    }
 
-    return await this.createJob(name, data, options, singletonOffset)
+    return await this.createJob(name, data, options, nextOffset)
   }
 
   async insert (jobs, options = {}) {

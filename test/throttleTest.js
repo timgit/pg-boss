@@ -111,4 +111,23 @@ describe('throttle', function () {
 
     assert.strictEqual(jobId2, null)
   })
+
+  it('should log 4 jobs when called by 4 sendQueued()', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+
+    const queue = 'debounced-compile-4-jobs'
+    const seconds = 60
+
+    const jobId1 = await boss.sendQueued(queue, null, null, seconds)
+
+    assert(jobId1)
+
+    const jobId2 = await boss.sendQueued(queue, null, null, seconds)
+
+    assert.notEqual(jobId2, null)
+
+    const jobId3 = await boss.sendQueued(queue, null, { shouldQueueAll: true }, seconds)
+
+    assert.notEqual(jobId3, null)
+  })
 })
