@@ -58,7 +58,7 @@
   - [`notifyWorker(id)`](#notifyworkerid)
   - [`getQueueSize(name [, options])`](#getqueuesizename--options)
   - [`getJobById(id, options)`](#getjobbyidid-options)
-  - [`deleteQueue(name)`](#deletequeuename)
+  - [`deleteQueue(name [, options])`](#deletequeuename)
   - [`deleteAllQueues()`](#deleteallqueues)
   - [`clearStorage()`](#clearstorage)
 
@@ -1085,9 +1085,16 @@ As an example, the following options object include active jobs along with creat
 
 Retrieves a job with all metadata by id in either the primary or archive storage.
 
-## `deleteQueue(name)`
+## `deleteQueue(name [, options])`
 
 Deletes all pending jobs in the specified queue from the active job table.  All jobs in the archive table are retained.
+
+`options`: Optional, object.
+
+| Prop | Type | Description | Default |
+| - | - | - | - |
+|`before`| string | delete jobs in states before this state | states.active |
+
 
 ## `deleteAllQueues()`
 

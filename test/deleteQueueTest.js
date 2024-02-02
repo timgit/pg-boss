@@ -33,6 +33,46 @@ describe('deleteQueue', function () {
     assert.strictEqual(0, q2Count3)
   })
 
+  it('should clear a specific queue and state', async function () {
+    const defaults = {
+      archiveCompletedAfterSeconds: 1,
+      maintenanceIntervalSeconds: 1
+    }
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, ...defaults })
+
+    const queue = 'delete-queue-by-state-works'
+
+    const jobId = await boss.send(queue)
+    const job = await boss.fetch(queue)
+
+    assert.strictEqual(job.id, jobId)
+
+    await boss.complete(jobId)
+
+    await delay(3000)
+
+    const db = await helper.getDb()
+
+    const getJobCount = async table => {
+      const jobCountResult = await db.executeSql(`SELECT count(*)::int as job_count FROM ${this.test.bossConfig.schema}.${table}`)
+      return jobCountResult.rows[0].job_count
+    }
+
+    const preJobCount = await getJobCount('job')
+    const preArchiveCount = await getJobCount('archive')
+
+    assert(preJobCount === 1)
+    assert(preArchiveCount === 1)
+
+    await boss.deleteQueue(queue, { before: 'completed' })
+
+    const postJobCount = await getJobCount('job')
+    const postArchiveCount = await getJobCount('archive')
+
+    assert(postJobCount === 0)
+    assert(postArchiveCount > 0) // archive should still have records
+  })
+
   it('should clear all queues', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
 
