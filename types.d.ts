@@ -102,6 +102,8 @@ declare namespace PgBoss {
 
   type ScheduleOptions = SendOptions & { tz?: string }
 
+  type DeleteQueueOptions = { before?: 'created' | 'retry' | 'active' | 'completed' | 'expired' | 'cancelled' | 'failed' };
+
   interface JobPollingOptions {
     newJobCheckInterval?: number;
     newJobCheckIntervalSeconds?: number;
@@ -368,7 +370,7 @@ declare class PgBoss extends EventEmitter {
   getQueueSize(name: string, options?: object): Promise<number>;
   getJobById(id: string, options?: PgBoss.ConnectionOptions): Promise<PgBoss.JobWithMetadata | null>;
 
-  deleteQueue(name: string): Promise<void>;
+  deleteQueue(name: string, options?: PgBoss.DeleteQueueOptions): Promise<void>;
   deleteAllQueues(): Promise<void>;
   clearStorage(): Promise<void>;
 
