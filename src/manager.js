@@ -64,6 +64,8 @@ class Manager extends EventEmitter {
     this.subscribeCommand = plans.subscribe(config.schema)
     this.unsubscribeCommand = plans.unsubscribe(config.schema)
     this.getQueuesForEventCommand = plans.getQueuesForEvent(config.schema)
+    this.rescheduleJobBySingletonKeyCommand = plans.rescheduleJobBySingletonKey(config.schema); 
+    this.rescheduleJobByIdCommand = plans.rescheduleJobById(config.schema);
 
     // exported api to index
     this.functions = [
@@ -92,7 +94,9 @@ class Manager extends EventEmitter {
       this.deleteAllQueues,
       this.clearStorage,
       this.getQueueSize,
-      this.getJobById
+      this.getJobById,
+      this.rescheduleJobBySingletonKey,
+      this.rescheduleJobById
     ]
 
     this.emitWipThrottled = debounce(() => this.emit(events.wip, this.getWipData()), WIP_EVENT_INTERVAL, WIP_DEBOUNCE_OPTIONS)
@@ -609,6 +613,20 @@ class Manager extends EventEmitter {
     }
 
     return null
+  }
+
+  async rescheduleJobBySingletonKey(singletonKey, time, options = {}){
+    const db = options.db || this.db
+    assert(singletonKey, 'Missing required singletonKey')
+    Attorney.checkValidTimeArg(time)
+    return await db.executeSql(this.rescheduleJobBySingletonKeyCommand, [singletonKey])    
+  }
+
+  async rescheduleJobById(id, time, options = {}){
+    const db = options.db || this.db
+    assert(id, 'Missing required id')
+    Attorney.checkValidTimeArg(time)
+    return await db.executeSql(this.rescheduleJobByIdCommand, [id])    
   }
 }
 

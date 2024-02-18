@@ -7,7 +7,8 @@ module.exports = {
   checkInsertArgs,
   checkWorkArgs,
   checkFetchArgs,
-  warnClockSkew
+  warnClockSkew,
+  checkValidTimeArg
 }
 
 const WARNINGS = {
@@ -417,3 +418,8 @@ function emitWarning (warning, message, options = {}) {
     process.emitWarning(message, warning.type, warning.code)
   }
 }
+
+function checkValidTimeArg(time){    
+  assert(isNaN(new Date(time)), "Invalid time arg");
+}
+
