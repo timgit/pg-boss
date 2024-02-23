@@ -420,6 +420,6 @@ function emitWarning (warning, message, options = {}) {
 }
 
 function checkValidTimeArg(time){    
-  assert(isNaN(new Date(time)), "Invalid time arg");
+  assert(!isNaN(new Date(time)), "Invalid time arg");
 }
 
