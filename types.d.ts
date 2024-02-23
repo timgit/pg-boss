@@ -102,6 +102,8 @@ declare namespace PgBoss {
 
   type ScheduleOptions = SendOptions & { tz?: string }
 
+  type RescheduleOptions = RetentionOptions & ConnectionOptions
+
   interface JobPollingOptions {
     newJobCheckInterval?: number;
     newJobCheckIntervalSeconds?: number;
@@ -380,13 +382,13 @@ declare class PgBoss extends EventEmitter {
   unschedule(name: string): Promise<void>;
   getSchedules(): Promise<PgBoss.Schedule[]>;
 
-  rescheduleJobBySingletonKey(singletonKey: string, time: Date, options?: PgBoss.ConnectionOptions): Promise<PgBoss.JobWithMetadata | null>;
-  rescheduleJobBySingletonKey(singletonKey: string, timeString: string, options?: PgBoss.ConnectionOptions): Promise<PgBoss.JobWithMetadata | null>;
-  rescheduleJobBySingletonKey(singletonKey: string, seconds: number, options?: PgBoss.ConnectionOptions): Promise<PgBoss.JobWithMetadata | null>;
+  rescheduleJobBySingletonKey(singletonKey: string, time: Date, options?: PgBoss.RescheduleOptions): Promise<PgBoss.JobWithMetadata | null>;
+  rescheduleJobBySingletonKey(singletonKey: string, timeString: string, options?: PgBoss.RescheduleOptions): Promise<PgBoss.JobWithMetadata | null>;
+  rescheduleJobBySingletonKey(singletonKey: string, seconds: number, options?: PgBoss.RescheduleOptions): Promise<PgBoss.JobWithMetadata | null>;
 
-  rescheduleJobById(id: string, time: Date, options?: PgBoss.ConnectionOptions): Promise<PgBoss.JobWithMetadata | null>;
-  rescheduleJobById(id: string, timeString: string, options?: PgBoss.ConnectionOptions): Promise<PgBoss.JobWithMetadata | null>;
-  rescheduleJobById(id: string, seconds: number, options?: PgBoss.ConnectionOptions): Promise<PgBoss.JobWithMetadata | null>;
+  rescheduleJobById(id: string, time: Date, options?: PgBoss.RescheduleOptions): Promise<PgBoss.JobWithMetadata | null>;
+  rescheduleJobById(id: string, timeString: string, options?: PgBoss.RescheduleOptions): Promise<PgBoss.JobWithMetadata | null>;
+  rescheduleJobById(id: string, seconds: number, options?: PgBoss.RescheduleOptions): Promise<PgBoss.JobWithMetadata | null>;
 
 }
 

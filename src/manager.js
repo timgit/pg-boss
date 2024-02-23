@@ -64,8 +64,8 @@ class Manager extends EventEmitter {
     this.subscribeCommand = plans.subscribe(config.schema)
     this.unsubscribeCommand = plans.unsubscribe(config.schema)
     this.getQueuesForEventCommand = plans.getQueuesForEvent(config.schema)
-    this.rescheduleJobBySingletonKeyCommand = plans.rescheduleJobBySingletonKey(config.schema); 
-    this.rescheduleJobByIdCommand = plans.rescheduleJobById(config.schema);
+    this.rescheduleJobBySingletonKeyCommand = plans.rescheduleJobBySingletonKey(config.schema)
+    this.rescheduleJobByIdCommand = plans.rescheduleJobById(config.schema)
 
     // exported api to index
     this.functions = [
@@ -618,17 +618,17 @@ class Manager extends EventEmitter {
   async rescheduleJobBySingletonKey(singletonKey, startAfter, options = {}){
     const db = options.db || this.db
     assert(singletonKey, 'Missing required singletonKey')
-    assert(startAfter, 'Missing required startAfter')
-    const result = await db.executeSql(this.rescheduleJobBySingletonKeyCommand, [singletonKey, Attorney.convertStartAfter(startAfter)])
-    return result.rows[0]     
+    const result = Attorney.checkRescheduleArgs(startAfter, options, this.config)
+    const executionResult =  await db.executeSql(this.rescheduleJobBySingletonKeyCommand, [singletonKey, result.startAfter, result.options.keepUntil])    
+    return executionResult.rows[0] ?? null       
   }
 
   async rescheduleJobById(id, startAfter, options = {}){
     const db = options.db || this.db
     assert(id, 'Missing required id')
-    assert(startAfter, 'Missing required startAfter')
-    const result =  await db.executeSql(this.rescheduleJobByIdCommand, [id, Attorney.convertStartAfter(startAfter)])  
-    return result.rows[0]     
+    const result = Attorney.checkRescheduleArgs(startAfter, options, this.config)
+    const executionResult =  await db.executeSql(this.rescheduleJobByIdCommand, [id, result.startAfter, result.options.keepUntil])  
+    return executionResult.rows[0]   ?? null   
   }
 }
 

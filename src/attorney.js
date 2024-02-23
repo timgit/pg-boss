@@ -8,7 +8,8 @@ module.exports = {
   checkWorkArgs,
   checkFetchArgs,
   warnClockSkew,
-  convertStartAfter
+  convertStartAfter, 
+  checkRescheduleArgs
 }
 
 const WARNINGS = {
@@ -421,4 +422,10 @@ function convertStartAfter(startAfter) {
       : (typeof startAfter === 'string')
           ? startAfter
           : null
+}
+
+function checkRescheduleArgs(startAfter, options, defaults) {
+  assert(startAfter, 'Missing required startAfter')  
+  applyRetentionConfig(options, defaults)
+  return { startAfter: convertStartAfter(startAfter), options }
 }
