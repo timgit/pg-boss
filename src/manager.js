@@ -626,7 +626,7 @@ class Manager extends EventEmitter {
     const db = options.db || this.db
     assert(id, 'Missing required id')
     Attorney.checkValidTimeArg(startAfter)
-    return await db.executeSql(this.rescheduleJobByIdCommand, [id,startAfter])    
+    return await db.executeSql(this.rescheduleJobByIdCommand, [id, startAfter])    
   }
 }
 
