@@ -379,6 +379,15 @@ declare class PgBoss extends EventEmitter {
   schedule(name: string, cron: string, data?: object, options?: PgBoss.ScheduleOptions): Promise<void>;
   unschedule(name: string): Promise<void>;
   getSchedules(): Promise<PgBoss.Schedule[]>;
+
+  rescheduleJobBySingletonKey(singletonKey: string, time: Date, options?: PgBoss.ConnectionOptions): Promise<PgBoss.JobWithMetadata | null>;
+  rescheduleJobBySingletonKey(singletonKey: string, timeString: string, options?: PgBoss.ConnectionOptions): Promise<PgBoss.JobWithMetadata | null>;
+  rescheduleJobBySingletonKey(singletonKey: string, seconds: number, options?: PgBoss.ConnectionOptions): Promise<PgBoss.JobWithMetadata | null>;
+
+  rescheduleJobById(id: string, time: Date, options?: PgBoss.ConnectionOptions): Promise<PgBoss.JobWithMetadata | null>;
+  rescheduleJobById(id: string, timeString: string, options?: PgBoss.ConnectionOptions): Promise<PgBoss.JobWithMetadata | null>;
+  rescheduleJobById(id: string, seconds: number, options?: PgBoss.ConnectionOptions): Promise<PgBoss.JobWithMetadata | null>;
+
 }
 
 export = PgBoss;
