@@ -715,29 +715,29 @@ function getJobByTableAndId (schema, table) {
 }
 
 function rescheduleJobBySingletonKey (schema) {
-  return `
-    with results as (
+  return `    
       UPDATE ${schema}.job
       SET 
-        startAfter = $2
+        startAfter = CASE
+          WHEN right($2, 1) = 'Z' THEN CAST($2 as timestamp with time zone)
+          ELSE now() + CAST(COALESCE($2,'0') as interval)
+        END
       WHERE singletonKey = $1
         AND state = '${states.created}'
-      RETURNING 1
-    )
-    SELECT COUNT(*) from results
+      RETURNING *
   `
 }
 
 function rescheduleJobById (schema) {
   return `
-    with results as (
       UPDATE ${schema}.job
       SET 
-        startAfter = $2
+      startAfter = CASE
+        WHEN right($2, 1) = 'Z' THEN CAST($2 as timestamp with time zone)
+        ELSE now() + CAST(COALESCE($2,'0') as interval)
+      END
       WHERE id = $1
         AND state = '${states.created}'
-      RETURNING 1
-    )
-    SELECT COUNT(*) from results
+      RETURNING *
   `
 }

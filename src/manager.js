@@ -618,15 +618,17 @@ class Manager extends EventEmitter {
   async rescheduleJobBySingletonKey(singletonKey, startAfter, options = {}){
     const db = options.db || this.db
     assert(singletonKey, 'Missing required singletonKey')
-    Attorney.checkValidTimeArg(startAfter)
-    return await db.executeSql(this.rescheduleJobBySingletonKeyCommand, [singletonKey, startAfter])    
+    assert(startAfter, 'Missing required startAfter')
+    const result = await db.executeSql(this.rescheduleJobBySingletonKeyCommand, [singletonKey, Attorney.convertStartAfter(startAfter)])
+    return result.rows[0]     
   }
 
   async rescheduleJobById(id, startAfter, options = {}){
     const db = options.db || this.db
     assert(id, 'Missing required id')
-    Attorney.checkValidTimeArg(startAfter)
-    return await db.executeSql(this.rescheduleJobByIdCommand, [id, startAfter])    
+    assert(startAfter, 'Missing required startAfter')
+    const result =  await db.executeSql(this.rescheduleJobByIdCommand, [id, Attorney.convertStartAfter(startAfter)])  
+    return result.rows[0]     
   }
 }
 

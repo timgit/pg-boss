@@ -8,7 +8,7 @@ module.exports = {
   checkWorkArgs,
   checkFetchArgs,
   warnClockSkew,
-  checkValidTimeArg
+  convertStartAfter
 }
 
 const WARNINGS = {
@@ -66,13 +66,7 @@ function checkSendArgs (args, defaults) {
 
   const { startAfter, singletonSeconds, singletonMinutes, singletonHours } = options
 
-  options.startAfter = (startAfter instanceof Date && typeof startAfter.toISOString === 'function')
-    ? startAfter.toISOString()
-    : (startAfter > 0)
-        ? '' + startAfter
-        : (typeof startAfter === 'string')
-            ? startAfter
-            : null
+  options.startAfter = convertStartAfter(startAfter)
 
   options.singletonSeconds = (singletonHours > 0)
     ? singletonHours * 60 * 60
@@ -419,7 +413,12 @@ function emitWarning (warning, message, options = {}) {
   }
 }
 
-function checkValidTimeArg(time){    
-  assert(!isNaN(new Date(time)), "Invalid time arg");
+function convertStartAfter(startAfter) {
+  return (startAfter instanceof Date && typeof startAfter.toISOString === 'function')
+  ? startAfter.toISOString()
+  : (startAfter > 0)
+      ? '' + startAfter
+      : (typeof startAfter === 'string')
+          ? startAfter
+          : null
 }
-
