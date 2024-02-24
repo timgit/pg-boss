@@ -382,9 +382,9 @@ declare class PgBoss extends EventEmitter {
   unschedule(name: string): Promise<void>;
   getSchedules(): Promise<PgBoss.Schedule[]>;
 
-  rescheduleJobBySingletonKey(singletonKey: string, time: Date, options?: PgBoss.RescheduleOptions): Promise<PgBoss.JobWithMetadata | null>;
-  rescheduleJobBySingletonKey(singletonKey: string, timeString: string, options?: PgBoss.RescheduleOptions): Promise<PgBoss.JobWithMetadata | null>;
-  rescheduleJobBySingletonKey(singletonKey: string, seconds: number, options?: PgBoss.RescheduleOptions): Promise<PgBoss.JobWithMetadata | null>;
+  rescheduleJobBySingletonKey(name: string, singletonKey: string, time: Date, options?: PgBoss.RescheduleOptions): Promise<PgBoss.JobWithMetadata | null>;
+  rescheduleJobBySingletonKey(name: string, singletonKey: string, timeString: string, options?: PgBoss.RescheduleOptions): Promise<PgBoss.JobWithMetadata | null>;
+  rescheduleJobBySingletonKey(name: string, singletonKey: string, seconds: number, options?: PgBoss.RescheduleOptions): Promise<PgBoss.JobWithMetadata | null>;
 
   rescheduleJobById(id: string, time: Date, options?: PgBoss.RescheduleOptions): Promise<PgBoss.JobWithMetadata | null>;
   rescheduleJobById(id: string, timeString: string, options?: PgBoss.RescheduleOptions): Promise<PgBoss.JobWithMetadata | null>;
