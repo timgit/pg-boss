@@ -728,6 +728,7 @@ const rescheduleQuery = (type,schema) => {
                 END
   WHERE ${type} = $1
     AND state = '${states.created}'
+    ${type == 'singletonKey' && 'AND name = $4'}
   RETURNING *
 `
 }
