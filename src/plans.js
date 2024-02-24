@@ -727,8 +727,7 @@ const rescheduleQuery = (type, schema) => {
                   ELSE startAfter + CAST(COALESCE($3,'0') as interval)
                 END
   WHERE ${type} = $1
-    AND state = '${states.created}'
-    ${type === 'singletonKey' && 'AND name = $4'}
+    AND state = '${states.created}' ${type === 'singletonKey' ? 'AND name = $4' : ''}
   RETURNING *
 `
 }
