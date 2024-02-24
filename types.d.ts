@@ -102,6 +102,8 @@ declare namespace PgBoss {
 
   type ScheduleOptions = SendOptions & { tz?: string }
 
+  type RescheduleOptions = RetentionOptions & ConnectionOptions
+
   interface JobPollingOptions {
     newJobCheckInterval?: number;
     newJobCheckIntervalSeconds?: number;
@@ -379,6 +381,15 @@ declare class PgBoss extends EventEmitter {
   schedule(name: string, cron: string, data?: object, options?: PgBoss.ScheduleOptions): Promise<void>;
   unschedule(name: string): Promise<void>;
   getSchedules(): Promise<PgBoss.Schedule[]>;
+
+  rescheduleJobBySingletonKey(name: string, singletonKey: string, date: Date, options?: PgBoss.RescheduleOptions): Promise<PgBoss.JobWithMetadata | null>;
+  rescheduleJobBySingletonKey(name: string, singletonKey: string, dateString: string, options?: PgBoss.RescheduleOptions): Promise<PgBoss.JobWithMetadata | null>;
+  rescheduleJobBySingletonKey(name: string, singletonKey: string, seconds: number, options?: PgBoss.RescheduleOptions): Promise<PgBoss.JobWithMetadata | null>;
+
+  rescheduleJobById(id: string, date: Date, options?: PgBoss.RescheduleOptions): Promise<PgBoss.JobWithMetadata | null>;
+  rescheduleJobById(id: string, dateString: string, options?: PgBoss.RescheduleOptions): Promise<PgBoss.JobWithMetadata | null>;
+  rescheduleJobById(id: string, seconds: number, options?: PgBoss.RescheduleOptions): Promise<PgBoss.JobWithMetadata | null>;
+
 }
 
 export = PgBoss;

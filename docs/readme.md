@@ -61,6 +61,8 @@
   - [`deleteQueue(name)`](#deletequeuename)
   - [`deleteAllQueues()`](#deleteallqueues)
   - [`clearStorage()`](#clearstorage)
+  - [`rescheduleJobBySingletonKey(name, singletonKey, seconds | ISO date string | Date, options)`](#reschedulejobbysingletonkeyname-singletonkey-seconds--iso-date-string--date-options)
+  - [`rescheduleJobById(id, seconds | ISO date string | Date, options)`](#reschedulejobbyidid-seconds--iso-date-string--date-options)
 
 <!-- /TOC -->
 
@@ -1096,3 +1098,11 @@ Deletes all pending jobs from all queues in the active job table. All jobs in th
 ## `clearStorage()`
 
 Utility function if and when needed to empty all job storage. Internally, this issues a `TRUNCATE` command against all jobs tables, archive included.
+
+### `rescheduleJobBySingletonKey(name, singletonKey, seconds | ISO date string | Date, options)`
+
+Reschedule a job which is in pending state by singletonKey. This will update the value of 'startAfter' and optionally can change the retention period as well.
+
+### `rescheduleJobById(id, seconds | ISO date string | Date, options)`
+
+Similar to 'rescheduleJobBySingletonKey', but will reschedule the job for a given id.

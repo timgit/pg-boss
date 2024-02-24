@@ -54,6 +54,8 @@ module.exports = {
   assertMigration,
   getArchivedJobById,
   getJobById,
+  rescheduleJobBySingletonKey,
+  rescheduleJobById,
   states: { ...states },
   COMPLETION_JOB_PREFIX,
   SINGLETON_QUEUE_KEY,
@@ -710,4 +712,30 @@ function getArchivedJobById (schema) {
 
 function getJobByTableAndId (schema, table) {
   return `SELECT * From ${schema}.${table} WHERE id = $1`
+}
+
+const rescheduleQuery = (type, schema) => {
+  return `    
+  UPDATE ${schema}.job
+  SET 
+    startAfter = CASE
+                   WHEN right($2, 1) = 'Z' THEN CAST($2 as timestamp with time zone)
+                   ELSE now() + CAST(COALESCE($2,'0') as interval)
+                 END,
+    keepUntil = CASE
+                  WHEN right($3, 1) = 'Z' THEN CAST($3 as timestamp with time zone)
+                  ELSE startAfter + CAST(COALESCE($3,'0') as interval)
+                END
+  WHERE ${type} = $1
+    AND state = '${states.created}' ${type === 'singletonKey' ? 'AND name = $4' : ''}
+  RETURNING *
+`
+}
+
+function rescheduleJobBySingletonKey (schema) {
+  return rescheduleQuery('singletonKey', schema)
+}
+
+function rescheduleJobById (schema) {
+  return rescheduleQuery('id', schema)
 }
