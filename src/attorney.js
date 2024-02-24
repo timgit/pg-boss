@@ -8,7 +8,7 @@ module.exports = {
   checkWorkArgs,
   checkFetchArgs,
   warnClockSkew,
-  convertStartAfter, 
+  convertStartAfter,
   checkRescheduleArgs
 }
 
@@ -414,18 +414,18 @@ function emitWarning (warning, message, options = {}) {
   }
 }
 
-function convertStartAfter(startAfter) {
+function convertStartAfter (startAfter) {
   return (startAfter instanceof Date && typeof startAfter.toISOString === 'function')
-  ? startAfter.toISOString()
-  : (startAfter > 0)
-      ? '' + startAfter
-      : (typeof startAfter === 'string')
-          ? startAfter
-          : null
+    ? startAfter.toISOString()
+    : (startAfter > 0)
+        ? '' + startAfter
+        : (typeof startAfter === 'string')
+            ? startAfter
+            : null
 }
 
-function checkRescheduleArgs(startAfter, options, defaults) {
-  assert(startAfter, 'Missing required startAfter')  
+function checkRescheduleArgs (startAfter, options, defaults) {
+  assert(startAfter, 'Missing required startAfter')
   applyRetentionConfig(options, defaults)
   return { startAfter: convertStartAfter(startAfter), options }
 }

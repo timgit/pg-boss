@@ -714,7 +714,7 @@ function getJobByTableAndId (schema, table) {
   return `SELECT * From ${schema}.${table} WHERE id = $1`
 }
 
-const rescheduleQuery = (type,schema) => {
+const rescheduleQuery = (type, schema) => {
   return `    
   UPDATE ${schema}.job
   SET 
@@ -733,9 +733,9 @@ const rescheduleQuery = (type,schema) => {
 }
 
 function rescheduleJobBySingletonKey (schema) {
-  return rescheduleQuery('singletonKey',schema)
+  return rescheduleQuery('singletonKey', schema)
 }
 
 function rescheduleJobById (schema) {
-  return rescheduleQuery('id',schema)
+  return rescheduleQuery('id', schema)
 }
