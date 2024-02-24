@@ -8,7 +8,6 @@ module.exports = {
   checkWorkArgs,
   checkFetchArgs,
   warnClockSkew,
-  convertStartAfter,
   checkRescheduleArgs
 }
 
