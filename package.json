@@ -24,7 +24,8 @@
     "test": "standard && mocha",
     "cover": "nyc npm test",
     "tsc": "tsc --noEmit types.d.ts",
-    "readme": "node ./test/readme.js"
+    "readme": "node ./test/readme.js",
+    "migrate": "node -e 'console.log(require(\"./src\").getMigrationPlans())'"
   },
   "mocha": {
     "timeout": 10000,
