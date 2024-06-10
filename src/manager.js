@@ -59,6 +59,7 @@ class Manager extends EventEmitter {
     this.cancelJobsCommand = plans.cancelJobs(config.schema)
     this.resumeJobsCommand = plans.resumeJobs(config.schema)
     this.failJobsCommand = plans.failJobs(config.schema)
+    this.failJobsWithoutRetryCommand = plans.failJobsWithoutRetry(config.schema)
     this.getJobByIdCommand = plans.getJobById(config.schema)
     this.getArchivedJobByIdCommand = plans.getArchivedJobById(config.schema)
     this.subscribeCommand = plans.subscribe(config.schema)
@@ -71,6 +72,7 @@ class Manager extends EventEmitter {
       this.cancel,
       this.resume,
       this.fail,
+      this.failWithoutRetry,
       this.fetch,
       this.fetchCompleted,
       this.work,
@@ -552,10 +554,17 @@ class Manager extends EventEmitter {
     return this.mapCompletionResponse(ids, result)
   }
 
-  async cancel (id, options = {}) {
+  async failWithoutRetry (id, data, options = {}) {
+    const db = options.db || this.db
+    const ids = this.mapCompletionIdArg(id, 'fail')
+    const result = await db.executeSql(this.failJobsWithoutRetryCommand, [ids, this.mapCompletionDataArg(data)])
+    return this.mapCompletionResponse(ids, result)
+  }
+
+  async cancel (id, data, options = {}) {
     const db = options.db || this.db
     const ids = this.mapCompletionIdArg(id, 'cancel')
-    const result = await db.executeSql(this.cancelJobsCommand, [ids])
+    const result = await db.executeSql(this.cancelJobsCommand, [ids, this.mapCompletionDataArg(data)])
     return this.mapCompletionResponse(ids, result)
   }
 

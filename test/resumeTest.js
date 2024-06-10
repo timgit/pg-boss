@@ -47,7 +47,7 @@ describe('cancel', function () {
       }
     }
 
-    await boss.cancel(jobId, { db })
+    await boss.cancel(jobId, null, { db })
 
     const job = await boss.getJobById(jobId, { db })
 

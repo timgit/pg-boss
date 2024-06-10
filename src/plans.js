@@ -29,6 +29,7 @@ module.exports = {
   cancelJobs,
   resumeJobs,
   failJobs,
+  failJobsWithoutRetry,
   insertJob,
   insertJobs,
   getTime,
@@ -478,6 +479,31 @@ function failJobs (schema) {
   `
 }
 
+function failJobsWithoutRetry (schema) {
+  return `
+    WITH results AS (
+      UPDATE ${schema}.job
+      SET state = '${states.failed}'::${schema}.job_state,
+        completedOn = now(),
+        output = $2::jsonb
+      WHERE id IN (SELECT UNNEST($1::uuid[]))
+        AND state < '${states.completed}'
+      RETURNING *
+    ), completion_jobs as (
+      INSERT INTO ${schema}.job (name, data, keepUntil)
+      SELECT
+        '${COMPLETION_JOB_PREFIX}' || name,
+        ${buildJsonCompletionObject(true)},
+        ${keepUntilInheritance}
+      FROM results
+      WHERE state = '${states.failed}'
+        AND NOT name LIKE '${COMPLETION_JOB_PREFIX}%'
+        AND on_complete
+    )
+    SELECT COUNT(*) FROM results
+  `
+}
+
 function expire (schema) {
   return `
     WITH results AS (
@@ -509,7 +535,8 @@ function cancelJobs (schema) {
     with results as (
       UPDATE ${schema}.job
       SET completedOn = now(),
-        state = '${states.cancelled}'
+        state = '${states.cancelled}',
+        output = $2::jsonb
       WHERE id IN (SELECT UNNEST($1::uuid[]))
         AND state < '${states.completed}'
       RETURNING 1

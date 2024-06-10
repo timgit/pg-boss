@@ -72,11 +72,29 @@ describe('cancel', function () {
 
     const jobId = await boss.send('will_cancel', null, { startAfter: 1 })
 
-    await boss.cancel(jobId, { db })
+    await boss.cancel(jobId, null, { db })
 
     const job = await boss.getJobById(jobId)
 
     assert(job && job.state === 'cancelled')
     assert.strictEqual(called, true)
+  })
+
+  it('should cancel a pending job, populating job output if provided', async function () {
+    const queue = 'cancel-data-batch'
+
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    await boss.send(queue)
+
+    const jobId = await boss.send('will_cancel', null, { startAfter: 1 })
+
+    const cancellationData = { msg: 'i am cancelled' }
+
+    await boss.cancel(jobId, cancellationData)
+
+    const job = await boss.getJobById(jobId)
+
+    assert(job && job.state === 'cancelled')
+    assert.strictEqual(job.output.msg, cancellationData.msg)
   })
 })
