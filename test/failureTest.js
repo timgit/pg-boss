@@ -208,4 +208,22 @@ describe('failure', function () {
 
     assert(job)
   })
+
+  it('should accept a payload and not retry', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const queue = this.test.bossConfig.schema
+
+    const failPayload = { message: 'i am a failed job' }
+
+    const jobId = await boss.send(queue, null, { onComplete: true, retryLimit: 20 })
+
+    await boss.failWithoutRetry(jobId, failPayload)
+
+    const job = await boss.getJobById(jobId)
+
+    assert.strictEqual(job.state, 'failed')
+    assert.strictEqual(job.retrycount, 0)
+    assert.strictEqual(job.retrylimit, 20)
+    assert.strictEqual(job.output.message, failPayload.message)
+  })
 })
