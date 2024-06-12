@@ -212,6 +212,7 @@ declare namespace PgBoss {
     retryBackoff?: boolean;
     startAfter?: Date | string;
     singletonKey?: string;
+    useSingletonQueue?: boolean;
     expireInSeconds?: number;
     keepUntil?: Date | string;
     onComplete?: boolean
