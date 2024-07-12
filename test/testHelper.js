@@ -82,8 +82,8 @@ async function findJobs (schema, where, values) {
   return jobs
 }
 
-async function getArchivedJobById (schema, id) {
-  const response = await findArchivedJobs(schema, 'id = $1', [id])
+async function getArchivedJobById (schema, name, id) {
+  const response = await findArchivedJobs(schema, 'name = $1 AND id = $2', [name, id])
   return response.rows.length ? response.rows[0] : null
 }
 

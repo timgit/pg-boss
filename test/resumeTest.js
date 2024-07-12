@@ -19,15 +19,15 @@ describe('cancel', function () {
 
     const jobId = await boss.send(queue, null, { startAfter: 1 })
 
-    await boss.cancel(jobId)
+    await boss.cancel(queue, jobId)
 
-    const job = await boss.getJobById(jobId)
+    const job = await boss.getJobById(queue, jobId)
 
     assert(job && job.state === 'cancelled')
 
-    await boss.resume(jobId)
+    await boss.resume(queue, jobId)
 
-    const job2 = await boss.getJobById(jobId)
+    const job2 = await boss.getJobById(queue, jobId)
 
     assert(job2 && job2.state === 'created')
   })
@@ -47,15 +47,15 @@ describe('cancel', function () {
       }
     }
 
-    await boss.cancel(jobId, { db })
+    await boss.cancel(queue, jobId, { db })
 
-    const job = await boss.getJobById(jobId, { db })
+    const job = await boss.getJobById(queue, jobId, { db })
 
     assert(job && job.state === 'cancelled')
 
-    await boss.resume(jobId, { db })
+    await boss.resume(queue, jobId, { db })
 
-    const job2 = await boss.getJobById(jobId, { db })
+    const job2 = await boss.getJobById(queue, jobId, { db })
 
     assert(job2 && job2.state === 'created')
     assert.strictEqual(callCount, 4)

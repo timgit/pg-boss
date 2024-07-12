@@ -37,7 +37,7 @@ describe('insert', function () {
 
     await boss.insert([input])
 
-    const job = await boss.getJobById(input.id)
+    const job = await boss.getJobById(queue, input.id)
 
     assert.strictEqual(job.id, input.id, `id input ${input.id} didn't match job ${job.id}`)
     assert.strictEqual(job.name, input.name, `name input ${input.name} didn't match job ${job.name}`)
@@ -84,7 +84,7 @@ describe('insert', function () {
 
     await boss.insert([input], options)
 
-    const job = await boss.getJobById(input.id)
+    const job = await boss.getJobById(queue, input.id)
 
     assert.strictEqual(job.id, input.id, `id input ${input.id} didn't match job ${job.id}`)
     assert.strictEqual(job.name, input.name, `name input ${input.name} didn't match job ${job.name}`)

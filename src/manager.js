@@ -107,10 +107,11 @@ class Manager extends EventEmitter {
   }
 
   async failWip () {
-    const jobIds = Array.from(this.workers.values()).flatMap(w => w.jobs.map(j => j.id))
-
-    if (jobIds.length) {
-      await this.fail(jobIds, 'pg-boss shut down while active')
+    for (const worker of this.workers.values()) {
+      const jobIds = worker.jobs.map(j => j.id)
+      if (jobIds.length) {
+        await this.fail(worker.name, jobIds, 'pg-boss shut down while active')
+      }
     }
   }
 
@@ -220,8 +221,8 @@ class Manager extends EventEmitter {
         const maxExpiration = jobs.reduce((acc, i) => Math.max(acc, i.expire_in_seconds), 0)
 
         await resolveWithinSeconds(Promise.all([callback(jobs)]), maxExpiration)
-          .then(() => this.complete(jobs.map(job => job.id)))
-          .catch(err => this.fail(jobs.map(job => job.id), err))
+          .then(() => this.complete(name, jobs.map(job => job.id)))
+          .catch(err => this.fail(name, jobs.map(job => job.id), err))
       } else {
         if (refill) {
           queueSize += jobs.length || 1
@@ -229,8 +230,8 @@ class Manager extends EventEmitter {
 
         const allTeamPromise = pMap(jobs, job =>
           resolveWithinSeconds(callback(job), job.expire_in_seconds)
-            .then(result => this.complete(job.id, result))
-            .catch(err => this.fail(job.id, err))
+            .then(result => this.complete(name, job.id, result))
+            .catch(err => this.fail(name, job.id, err))
             .then(() => refill ? onRefill() : null)
         , { concurrency: teamConcurrency }
         ).catch(() => {}) // allow promises & non-promises to live together in harmony
@@ -528,31 +529,35 @@ class Manager extends EventEmitter {
     }
   }
 
-  async complete (id, data, options = {}) {
+  async complete (name, id, data, options = {}) {
+    assert(name, 'Missing queue name argument')
     const db = options.db || this.db
     const ids = this.mapCompletionIdArg(id, 'complete')
-    const result = await db.executeSql(this.completeJobsCommand, [ids, this.mapCompletionDataArg(data)])
+    const result = await db.executeSql(this.completeJobsCommand, [name, ids, this.mapCompletionDataArg(data)])
     return this.mapCompletionResponse(ids, result)
   }
 
-  async fail (id, data, options = {}) {
+  async fail (name, id, data, options = {}) {
+    assert(name, 'Missing queue name argument')
     const db = options.db || this.db
     const ids = this.mapCompletionIdArg(id, 'fail')
-    const result = await db.executeSql(this.failJobsByIdCommand, [ids, this.mapCompletionDataArg(data)])
+    const result = await db.executeSql(this.failJobsByIdCommand, [name, ids, this.mapCompletionDataArg(data)])
     return this.mapCompletionResponse(ids, result)
   }
 
-  async cancel (id, options = {}) {
+  async cancel (name, id, options = {}) {
+    assert(name, 'Missing queue name argument')
     const db = options.db || this.db
     const ids = this.mapCompletionIdArg(id, 'cancel')
-    const result = await db.executeSql(this.cancelJobsCommand, [ids])
+    const result = await db.executeSql(this.cancelJobsCommand, [name, ids])
     return this.mapCompletionResponse(ids, result)
   }
 
-  async resume (id, options = {}) {
+  async resume (name, id, options = {}) {
+    assert(name, 'Missing queue name argument')
     const db = options.db || this.db
     const ids = this.mapCompletionIdArg(id, 'resume')
-    const result = await db.executeSql(this.resumeJobsCommand, [ids])
+    const result = await db.executeSql(this.resumeJobsCommand, [name, ids])
     return this.mapCompletionResponse(ids, result)
   }
 
@@ -689,15 +694,15 @@ class Manager extends EventEmitter {
     return result ? parseFloat(result.rows[0].count) : null
   }
 
-  async getJobById (id, options = {}) {
+  async getJobById (queue, id, options = {}) {
     const db = options.db || this.db
-    const result1 = await db.executeSql(this.getJobByIdCommand, [id])
+    const result1 = await db.executeSql(this.getJobByIdCommand, [queue, id])
 
     if (result1 && result1.rows && result1.rows.length === 1) {
       return result1.rows[0]
     }
 
-    const result2 = await db.executeSql(this.getArchivedJobByIdCommand, [id])
+    const result2 = await db.executeSql(this.getArchivedJobByIdCommand, [queue, id])
 
     if (result2 && result2.rows && result2.rows.length === 1) {
       return result2.rows[0]

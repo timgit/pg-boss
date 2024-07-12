@@ -57,7 +57,7 @@ describe.skip('migration', function () {
     // completed job
     await boss.send(queue)
     const job = await boss.fetch(queue)
-    await boss.complete(job.id)
+    await boss.complete(queue, job.id)
 
     // created job
     await boss.send(queue)
@@ -84,7 +84,7 @@ describe.skip('migration', function () {
 
     await boss.send(queue)
     const job2 = await boss.fetch(queue)
-    await boss.complete(job2.id)
+    await boss.complete(queue, job2.id)
   })
 
   it('should migrate to latest during start if on previous 2 schema versions', async function () {
@@ -196,7 +196,7 @@ describe.skip('migration', function () {
       await boss.start()
       await boss.send(queue)
       const job = await boss.fetch(queue)
-      await boss.complete(job.id)
+      await boss.complete(queue, job.id)
 
       assert(false)
     } catch (err) {

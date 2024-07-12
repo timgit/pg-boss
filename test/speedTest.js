@@ -20,6 +20,6 @@ describe('speed', function () {
 
     assert.strictEqual(jobCount, jobs.length)
 
-    await boss.complete(jobs.map(job => job.id))
+    await boss.complete(queue, jobs.map(job => job.id))
   })
 })

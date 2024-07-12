@@ -34,7 +34,7 @@ describe('complete', function () {
 
     assert.strictEqual(activeCount, batchSize)
 
-    const result = await boss.complete(jobs.map(job => job.id))
+    const result = await boss.complete(queue, jobs.map(job => job.id))
 
     assert.strictEqual(batchSize, result.jobs.length)
   })
@@ -51,9 +51,9 @@ describe('complete', function () {
 
     const completionData = { msg: 'i am complete' }
 
-    await boss.complete(jobId, completionData)
+    await boss.complete(queue, jobId, completionData)
 
-    const job = await boss.getJobById(jobId)
+    const job = await boss.getJobById(queue, jobId)
 
     assert.strictEqual(job.output.msg, completionData.msg)
   })
@@ -70,9 +70,9 @@ describe('complete', function () {
 
     const completionError = new Error('i am complete')
 
-    await boss.fail(jobId, completionError)
+    await boss.fail(queue, jobId, completionError)
 
-    const job = await boss.getJobById(jobId)
+    const job = await boss.getJobById(queue, jobId)
 
     assert.strictEqual(job.output.message, completionError.message)
   })
@@ -106,7 +106,7 @@ describe('complete', function () {
       }
     }
 
-    const result = await boss.complete(jobs.map(job => job.id), null, { db })
+    const result = await boss.complete(queue, jobs.map(job => job.id), null, { db })
 
     assert.strictEqual(batchSize, result.jobs.length)
     assert.strictEqual(called, true)

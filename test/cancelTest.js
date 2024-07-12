@@ -2,7 +2,7 @@ const assert = require('assert')
 const helper = require('./testHelper')
 
 describe('cancel', function () {
-  it('should reject missing id argument', async function () {
+  it('should reject missing arguments', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
 
     try {
@@ -19,9 +19,9 @@ describe('cancel', function () {
 
     const jobId = await boss.send(queue, null, { startAfter: 1 })
 
-    await boss.cancel(jobId)
+    await boss.cancel(queue, jobId)
 
-    const job = await boss.getJobById(jobId)
+    const job = await boss.getJobById(queue, jobId)
 
     assert(job && job.state === 'cancelled')
   })
@@ -34,11 +34,11 @@ describe('cancel', function () {
 
     const job = await boss.fetch(queue)
 
-    const completeResult = await boss.complete(job.id)
+    const completeResult = await boss.complete(queue, job.id)
 
     assert.strictEqual(completeResult.updated, 1)
 
-    const cancelResult = await boss.cancel(job.id)
+    const cancelResult = await boss.cancel(queue, job.id)
 
     assert.strictEqual(cancelResult.updated, 0)
   })
@@ -53,7 +53,7 @@ describe('cancel', function () {
       boss.send(queue)
     ])
 
-    await boss.cancel(jobs)
+    await boss.cancel(queue, jobs)
   })
 
   it('should cancel a pending job with custom connection', async function () {
@@ -71,9 +71,9 @@ describe('cancel', function () {
 
     const jobId = await boss.send(queue, null, { startAfter: 1 })
 
-    await boss.cancel(jobId, { db })
+    await boss.cancel(queue, jobId, { db })
 
-    const job = await boss.getJobById(jobId)
+    const job = await boss.getJobById(queue, jobId)
 
     assert(job && job.state === 'cancelled')
     assert.strictEqual(called, true)

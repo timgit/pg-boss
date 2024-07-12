@@ -27,7 +27,7 @@ describe('singleton keys', function () {
     await boss.send(queue, null, { singletonKey, singletonMinutes })
     const job = await boss.fetch(queue)
 
-    await boss.complete(job.id)
+    await boss.complete(queue, job.id)
 
     const jobId = await boss.send(queue, null, { singletonKey, singletonMinutes })
 

@@ -21,15 +21,16 @@ async function beforeEach () {
 async function afterEach () {
   this.timeout(10000)
 
-  const config = helper.getConfig({ testKey: getTestKey(this.currentTest) })
-
-  const { boss } = this.currentTest
+  const { boss, state } = this.currentTest
 
   if (boss) {
     await boss.stop({ timeout: 2000 })
   }
 
-  await helper.dropSchema(config.schema)
+  if (state === 'passed') {
+    const config = helper.getConfig({ testKey: getTestKey(this.currentTest) })
+    await helper.dropSchema(config.schema)
+  }
 }
 
 function getTestKey (ctx) {

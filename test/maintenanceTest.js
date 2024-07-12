@@ -9,7 +9,7 @@ describe('maintenance', async function () {
 
     const jobId = await boss.send(queue)
     await boss.fetch(queue)
-    await boss.complete(jobId)
+    await boss.complete(queue, jobId)
 
     await delay(1000)
     await boss.maintain()

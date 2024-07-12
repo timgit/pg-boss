@@ -30,8 +30,9 @@ describe('ops', function () {
 
   it('should return null from getJobById if not found', async function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const queue = this.test.bossConfig.schema
 
-    const jobId = await boss.getJobById(randomUUID())
+    const jobId = await boss.getJobById(queue, randomUUID())
 
     assert.strictEqual(jobId, null)
   })

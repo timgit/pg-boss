@@ -157,7 +157,7 @@ describe('queues', function () {
 
     const jobId = await boss.send(queue)
 
-    const job = await boss.getJobById(jobId)
+    const job = await boss.getJobById(queue, jobId)
 
     const retentionMinutes = (new Date(job.keepuntil) - new Date(job.createdon)) / 1000 / 60
 
@@ -208,7 +208,7 @@ describe('queues', function () {
 
     assert.strictEqual(job2, null)
 
-    await boss.complete(job1.id)
+    await boss.complete(queue, job1.id)
 
     const job3 = await boss.fetch(queue)
 
@@ -229,9 +229,9 @@ describe('queues', function () {
 
     let job1 = await boss.fetch(queue)
 
-    await boss.fail(job1.id)
+    await boss.fail(queue, job1.id)
 
-    job1 = await boss.getJobById(jobId1)
+    job1 = await boss.getJobById(queue, jobId1)
 
     assert.strictEqual(job1.state, 'retry')
 
@@ -241,7 +241,7 @@ describe('queues', function () {
 
     job1 = await boss.fetch(queue)
 
-    job1 = await boss.getJobById(jobId1)
+    job1 = await boss.getJobById(queue, jobId1)
 
     assert.strictEqual(job1.state, 'active')
 
