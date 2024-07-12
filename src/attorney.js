@@ -179,7 +179,7 @@ function assertPostgresObjectName (name) {
   assert(typeof name === 'string', 'Name must be a string')
   assert(name.length <= 50, 'Name cannot exceed 50 characters')
   assert(!/\W/.test(name), 'Name can only contain alphanumeric characters and underscores')
-  assert(!/^d/.test(name), 'Name cannot start with a number')
+  assert(!/^\d/.test(name), 'Name cannot start with a number')
 }
 
 function applyArchiveConfig (config) {
