@@ -16,8 +16,8 @@ describe('complete', function () {
 
   it('should complete a batch of jobs', async function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const queue = this.test.bossConfig.schema
 
-    const queue = 'complete-batch'
     const batchSize = 3
 
     await Promise.all([
@@ -40,9 +40,8 @@ describe('complete', function () {
   })
 
   it('should store job output in job.output from complete()', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
-
-    const queue = 'completion-data-in-job-output'
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const queue = this.test.bossConfig.schema
 
     const jobId = await boss.send(queue)
 
@@ -60,9 +59,8 @@ describe('complete', function () {
   })
 
   it('should store job error in job.output from fail()', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
-
-    const queue = 'completion-data-in-job-output'
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const queue = this.test.bossConfig.schema
 
     const jobId = await boss.send(queue)
 
@@ -81,8 +79,8 @@ describe('complete', function () {
 
   it('should complete a batch of jobs with custom connection', async function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const queue = this.test.bossConfig.schema
 
-    const queue = 'complete-batch'
     const batchSize = 3
 
     await Promise.all([
@@ -116,7 +114,6 @@ describe('complete', function () {
 
   it('should warn with an old onComplete option only once', async function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
-
     const queue = this.test.bossConfig.schema
 
     let warningCount = 0

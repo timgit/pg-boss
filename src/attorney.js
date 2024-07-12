@@ -8,7 +8,6 @@ module.exports = {
   checkWorkArgs,
   checkFetchArgs,
   warnClockSkew,
-  queueNameHasPatternMatch,
   assertPostgresObjectName
 }
 
@@ -140,22 +139,10 @@ function checkWorkArgs (name, args, defaults) {
 function checkFetchArgs (name, batchSize, options) {
   assert(name, 'missing queue name')
 
-  if (queueNameHasPatternMatch(name)) {
-    name = sanitizeQueueNameForFetch(name)
-  }
-
   assert(!batchSize || (Number.isInteger(batchSize) && batchSize >= 1), 'batchSize must be an integer > 0')
   assert(!('includeMetadata' in options) || typeof options.includeMetadata === 'boolean', 'includeMetadata must be a boolean')
 
   return { name }
-}
-
-function sanitizeQueueNameForFetch (name) {
-  return name.replace(/[%_*]/g, match => match === '*' ? '%' : '\\' + match)
-}
-
-function queueNameHasPatternMatch (name) {
-  return name.includes('*')
 }
 
 function getConfig (value) {

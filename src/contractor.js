@@ -40,7 +40,8 @@ class Contractor {
       const version = await this.version()
 
       if (schemaVersion > version) {
-        await this.migrate(version)
+        throw new Error('Migrations are not supported to v10')
+        // await this.migrate(version)
       }
     } else {
       await this.create()

@@ -14,10 +14,10 @@ describe('cancel', function () {
   })
 
   it('should cancel a pending job', async function () {
-    const config = this.test.bossConfig
-    const boss = this.test.boss = await helper.start(config)
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const queue = this.test.bossConfig.schema
 
-    const jobId = await boss.send('will_cancel', null, { startAfter: 1 })
+    const jobId = await boss.send(queue, null, { startAfter: 1 })
 
     await boss.cancel(jobId)
 
@@ -44,9 +44,9 @@ describe('cancel', function () {
   })
 
   it('should cancel a batch of jobs', async function () {
-    const queue = 'cancel-batch'
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const queue = this.test.bossConfig.schema
 
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
     const jobs = await Promise.all([
       boss.send(queue),
       boss.send(queue),
@@ -57,8 +57,8 @@ describe('cancel', function () {
   })
 
   it('should cancel a pending job with custom connection', async function () {
-    const config = this.test.bossConfig
-    const boss = this.test.boss = await helper.start(config)
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const queue = this.test.bossConfig.schema
 
     let called = false
     const _db = await helper.getDb()
@@ -69,7 +69,7 @@ describe('cancel', function () {
       }
     }
 
-    const jobId = await boss.send('will_cancel', null, { startAfter: 1 })
+    const jobId = await boss.send(queue, null, { startAfter: 1 })
 
     await boss.cancel(jobId, { db })
 

@@ -6,7 +6,7 @@ const pMap = require('p-map')
 
 const queues = {
   CRON: '__pgboss__cron',
-  SEND_IT: '__pgboss__send-it'
+  SEND_IT: '__pgboss__send_it'
 }
 
 const events = {
@@ -51,6 +51,9 @@ class Timekeeper extends EventEmitter {
 
     // cache the clock skew from the db server
     await this.cacheClockSkew()
+
+    await this.manager.createQueue(queues.CRON)
+    await this.manager.createQueue(queues.SEND_IT)
 
     await this.manager.work(queues.CRON, { newJobCheckIntervalSeconds: this.config.cronWorkerIntervalSeconds }, (job) => this.onCron(job))
     await this.manager.work(queues.SEND_IT, { newJobCheckIntervalSeconds: this.config.cronWorkerIntervalSeconds, teamSize: 50, teamConcurrency: 5 }, (job) => this.onSendIt(job))

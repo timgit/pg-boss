@@ -5,7 +5,7 @@ const Contractor = require('../src/contractor')
 const migrationStore = require('../src/migrationStore')
 const currentSchemaVersion = require('../version.json').schema
 
-describe('migration', function () {
+describe.skip('migration', function () {
   let contractor
 
   beforeEach(async function () {
@@ -167,6 +167,7 @@ describe('migration', function () {
       assert(true)
     }
   })
+
   it('should not migrate if migrate option is false', async function () {
     await contractor.create()
 

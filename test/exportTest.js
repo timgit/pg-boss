@@ -11,14 +11,14 @@ describe('export', function () {
     assert(plans.includes(`${schema}.version`))
   })
 
-  it('should export commands to migrate', function () {
+  it.skip('should export commands to migrate', function () {
     const schema = 'custom'
     const plans = PgBoss.getMigrationPlans(schema, currentSchemaVersion - 1)
 
     assert(plans, 'migration plans not found')
   })
 
-  it('should export commands to roll back', function () {
+  it.skip('should export commands to roll back', function () {
     const schema = 'custom'
     const plans = PgBoss.getRollbackPlans(schema, currentSchemaVersion)
 

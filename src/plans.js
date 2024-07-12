@@ -77,8 +77,6 @@ function create (schema, version) {
     createEnumJobState(schema),
 
     createTableJob(schema),
-    createTableJobDefault(schema),
-    attachPartitionJobDefault(schema),
     createIndexJobName(schema),
     createIndexJobFetch(schema),
     createIndexJobPolicyStately(schema),
@@ -165,14 +163,6 @@ function createTableJob (schema) {
   `
 }
 
-function createTableJobDefault (schema) {
-  return `CREATE TABLE ${schema}.job_default (LIKE ${schema}.job INCLUDING DEFAULTS INCLUDING CONSTRAINTS)`
-}
-
-function attachPartitionJobDefault (schema) {
-  return `ALTER TABLE ${schema}.job ATTACH PARTITION ${schema}.job_default DEFAULT`
-}
-
 function partitionCreateJobName (schema, name) {
   return `
     CREATE TABLE ${schema}.job_${name} (LIKE ${schema}.job INCLUDING DEFAULTS INCLUDING CONSTRAINTS);
@@ -210,11 +200,11 @@ function createIndexJobThrottleKey (schema) {
 }
 
 function createIndexJobName (schema) {
-  return `CREATE INDEX job_name ON ${schema}.job (name text_pattern_ops)`
+  return `CREATE INDEX job_name ON ${schema}.job (name)`
 }
 
 function createIndexJobFetch (schema) {
-  return `CREATE INDEX job_fetch ON ${schema}.job (name text_pattern_ops, startAfter) INCLUDE (priority, createdOn, id) WHERE state < '${states.active}'`
+  return `CREATE INDEX job_fetch ON ${schema}.job (name, startAfter) INCLUDE (priority, createdOn, id) WHERE state < '${states.active}'`
 }
 
 function createTableArchive (schema) {
@@ -422,12 +412,12 @@ function insertVersion (schema, version) {
 }
 
 function fetchNextJob (schema) {
-  return ({ includeMetadata, patternMatch, priority = true } = {}) => `
+  return ({ includeMetadata, priority = true } = {}) => `
     WITH next as (
       SELECT id
       FROM ${schema}.job
       WHERE state < '${states.active}'
-        AND name ${patternMatch ? 'LIKE' : '='} $1
+        AND name = $1
         AND startAfter < now()
       ORDER BY ${priority && 'priority desc, '} createdOn, id
       LIMIT $2

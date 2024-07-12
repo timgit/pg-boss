@@ -3,14 +3,14 @@ const helper = require('./testHelper')
 
 describe('queues', function () {
   it('should create a queue', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
     const queue = this.test.bossConfig.schema
 
     await boss.createQueue(queue)
   })
 
   it('should reject a queue with invalid characters', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
     const queue = `*${this.test.bossConfig.schema}`
 
     try {
@@ -22,7 +22,7 @@ describe('queues', function () {
   })
 
   it('should reject a queue that starts with a number', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
     const queue = `4${this.test.bossConfig.schema}`
 
     try {
@@ -34,7 +34,7 @@ describe('queues', function () {
   })
 
   it('should reject a queue with invalid policy', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
     const queue = this.test.bossConfig.schema
 
     try {
@@ -46,35 +46,35 @@ describe('queues', function () {
   })
 
   it('should create a queue with standard policy', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
     const queue = this.test.bossConfig.schema
 
     await boss.createQueue(queue, { policy: 'standard' })
   })
 
   it('should create a queue with stately policy', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
     const queue = this.test.bossConfig.schema
 
     await boss.createQueue(queue, { policy: 'stately' })
   })
 
   it('should create a queue with singleton policy', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
     const queue = this.test.bossConfig.schema
 
     await boss.createQueue(queue, { policy: 'singleton' })
   })
 
   it('should create a queue with short policy', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
     const queue = this.test.bossConfig.schema
 
     await boss.createQueue(queue, { policy: 'short' })
   })
 
   it('should delete a queue', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
     const queue = this.test.bossConfig.schema
 
     await boss.createQueue(queue)
@@ -82,7 +82,7 @@ describe('queues', function () {
   })
 
   it('should purge a queue', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
     const queue = this.test.bossConfig.schema
 
     await boss.createQueue(queue)
@@ -90,13 +90,13 @@ describe('queues', function () {
   })
 
   it('getQueue() returns null when missing', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
     const queue = await boss.getQueue(this.test.bossConfig.schema)
     assert.strictEqual(queue, null)
   })
 
   it('should update queue properties', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
     const queue = this.test.bossConfig.schema
 
     const createProps = {
@@ -141,7 +141,7 @@ describe('queues', function () {
   })
 
   it('jobs should inherit properties from queue', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
     const queue = this.test.bossConfig.schema
 
     const createProps = {
@@ -170,7 +170,7 @@ describe('queues', function () {
   })
 
   it('short policy only allows 1 job in queue', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
     const queue = this.test.bossConfig.schema
 
     await boss.createQueue(queue, { policy: 'short' })
@@ -193,7 +193,7 @@ describe('queues', function () {
   })
 
   it('singleton policy only allows 1 active job', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
     const queue = this.test.bossConfig.schema
 
     await boss.createQueue(queue, { policy: 'singleton' })
@@ -216,7 +216,7 @@ describe('queues', function () {
   })
 
   it('stately policy only allows 1 job per state up to active', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
     const queue = this.test.bossConfig.schema
 
     await boss.createQueue(queue, { policy: 'stately' })
@@ -251,12 +251,15 @@ describe('queues', function () {
   })
 
   it('should clear a specific queue', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
 
     const queue1 = `${this.test.bossConfig.schema}1`
     const queue2 = `${this.test.bossConfig.schema}2`
 
+    await boss.createQueue(queue1)
     await boss.send(queue1)
+
+    await boss.createQueue(queue2)
     await boss.send(queue2)
 
     const q1Count1 = await boss.getQueueSize(queue1)

@@ -462,10 +462,9 @@ class Manager extends EventEmitter {
   }
 
   async fetch (name, batchSize, options = {}) {
-    const patternMatch = Attorney.queueNameHasPatternMatch(name)
     const values = Attorney.checkFetchArgs(name, batchSize, options)
     const db = options.db || this.db
-    const nextJobSql = this.nextJobCommand({ ...options, patternMatch })
+    const nextJobSql = this.nextJobCommand({ ...options })
     const statementValues = [values.name, batchSize || 1]
 
     let result

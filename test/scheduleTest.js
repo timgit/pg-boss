@@ -97,21 +97,16 @@ describe('schedule', function () {
   })
 
   it('should send job based on every minute expression after a restart', async function () {
-    const config = {
-      ...this.test.bossConfig,
-      cronMonitorIntervalSeconds: 1,
-      schedule: false
-    }
-
-    let boss = await helper.start(config)
-
+    let boss = await helper.start({ ...this.test.bossConfig, cronMonitorIntervalSeconds: 1, schedule: false, noDefault: true })
     const queue = this.test.bossConfig.schema
+
+    await boss.createQueue(queue)
 
     await boss.schedule(queue, '* * * * *')
 
     await boss.stop({ wait: false })
 
-    boss = await helper.start({ ...this.test.bossConfig, cronWorkerIntervalSeconds: 1, schedule: true })
+    boss = await helper.start({ ...this.test.bossConfig, cronWorkerIntervalSeconds: 1, schedule: true, noDefault: true })
 
     await delay(ASSERT_DELAY)
 
