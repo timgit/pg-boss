@@ -70,9 +70,9 @@ Architecturally, pg-boss is somewhat similar to queue products such as AWS SQS, 
 
 ## Job states
 
-All jobs start out in the `created` state and become `active` when picked up for work. If job processing completes successfully, jobs will go to `completed`. If a job fails, it will typcially enter the `failed` state. However, if a job has retry options configured, it will enter the `retry` state on failure instead and have a chance to re-enter `active` state. Jobs can also enter `cancelled` state via [`cancel(id)`](#cancelid) or [`cancel([ids])`](#cancelids).
+All jobs start out in the `created` state and become `active` when picked up for work. If job processing completes successfully, jobs will go to `completed`. If a job fails, it will typcially enter the `failed` state. However, if a job has retry options configured, it will enter the `retry` state on failure instead and have a chance to re-enter `active` state. Jobs can also enter `cancelled` state via [`cancel(name, id)`](#cancelname-id-options) or [`cancel([ids])`](#cancelname-ids-options).
 
-All jobs that are `completed`, `expired`, `cancelled` or `failed` become eligible for archiving (i.e. they will transition into the `archive` state) after the configured `archiveCompletedAfterSeconds` time. Once `archive`d, jobs will be automatically deleted by pg-boss after the configured deletion period.
+All jobs that are `completed`, `cancelled` or `failed` become eligible for archiving (i.e. they will transition into the `archive` state) after the configured `archiveCompletedAfterSeconds` time. Once `archive`d, jobs will be automatically deleted by pg-boss after the configured deletion period.
 
 # Database install
 
@@ -946,7 +946,7 @@ The promise will resolve on a successful completion, or reject if not all of the
 
 ## `fail(name, id [, data, options])`
 
-Marks an active job as failed.  This would likely only be used with `fetch()`. Accepts an optional `data` argument for usage with [`onFail()`](#onfailname--options-handler) state-based workers or `fetchFailed()`.
+Marks an active job as failed.
 
 The promise will resolve on a successful assignment of failure, or reject if the job could not be marked as failed.
 
