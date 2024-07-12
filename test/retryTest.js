@@ -73,7 +73,7 @@ describe('retries', function () {
     const queue = this.test.bossConfig.schema
 
     let processCount = 0
-    const retryLimit = 4
+    const retryLimit = 5
 
     await boss.work(queue, { newJobCheckInterval: 500 }, async () => {
       ++processCount
