@@ -74,7 +74,7 @@ class Worker {
 
       this.lastJobDuration = duration
 
-      if (!this.stopping && !this.beenNotified && duration < this.interval) {
+      if (!this.stopping && !this.beenNotified && (this.interval - duration > 500)) {
         this.loopDelayPromise = delay(this.interval - duration)
         await this.loopDelayPromise
         this.loopDelayPromise = null

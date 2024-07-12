@@ -42,17 +42,17 @@
     - [`schedule(name, cron, data, options)`](#schedulename-cron-data-options)
     - [`unschedule(name)`](#unschedulename)
     - [`getSchedules()`](#getschedules)
-  - [`cancel(id, options)`](#cancelid-options)
-  - [`cancel([ids], options)`](#cancelids-options)
-  - [`resume(id, options)`](#resumeid-options)
-  - [`resume([ids], options)`](#resumeids-options)
-  - [`complete(id [, data, options])`](#completeid--data-options)
-  - [`complete([ids], options)`](#completeids-options)
-  - [`fail(id [, data, options])`](#failid--data-options)
-  - [`fail([ids], options)`](#failids-options)
+  - [`cancel(name, id, options)`](#cancelname-id-options)
+  - [`cancel(name, [ids], options)`](#cancelname-ids-options)
+  - [`resume(name, id, options)`](#resumename-id-options)
+  - [`resume(name, [ids], options)`](#resumename-ids-options)
+  - [`complete(name, id [, data, options])`](#completename-id--data-options)
+  - [`complete(name, [ids], options)`](#completename-ids-options)
+  - [`fail(name, id [, data, options])`](#failname-id--data-options)
+  - [`fail(name, [ids], options)`](#failname-ids-options)
   - [`notifyWorker(id)`](#notifyworkerid)
   - [`getQueueSize(name [, options])`](#getqueuesizename--options)
-  - [`getJobById(id, options)`](#getjobbyidid-options)
+  - [`getJobById(name, id, options)`](#getjobbyidname-id-options)
   - [`createQueue(name, type)`](#createqueuename-type)
   - [`deleteQueue(name)`](#deletequeuename)
   - [`clearStorage()`](#clearstorage)
@@ -671,7 +671,7 @@ Typically one would use `work()` for automated polling for new jobs based upon a
 ### `fetch(name)`
 
 **Arguments**
-- `name`: string, queue name or pattern
+- `name`: string
 
 **Resolves**
 - `job`: job object, `null` if none found
@@ -679,7 +679,7 @@ Typically one would use `work()` for automated polling for new jobs based upon a
 ### `fetch(name, batchSize, [, options])`
 
 **Arguments**
-- `name`: string, queue name or pattern
+- `name`: string
 - `batchSize`: number, # of jobs to fetch
 - `options`: object
 
@@ -751,8 +751,6 @@ for (let i = 0; i < jobs.length; i++) {
 Adds a new polling worker for a queue and executes the provided callback function when jobs are found. Multiple workers can be added if needed.
 
 Workers can be stopped via `offWork()` all at once by queue name or individually by using the unique id resolved by `work()`. Workers may be monitored by listening to the `wip` event.
-
-Queue patterns use the `*` character to match 0 or more characters.  For example, a job from queue `status-report-12345` would be fetched with pattern `status-report-*` or even `stat*5`.
 
 The default concurrency for `work()` is 1 job every 2 seconds. Both the interval and the number of jobs per interval can be changed globally or per-queue with configuration options.
 
@@ -910,13 +908,13 @@ Removes a schedule by queue name.
 
 Retrieves an array of all scheduled jobs currently being monitored.
 
-## `cancel(id, options)`
+## `cancel(name, id, options)`
 
 Cancels a pending or active job.
 
 The promise will resolve on a successful cancel, or reject if the job could not be cancelled.
 
-## `cancel([ids], options)`
+## `cancel(name, [ids], options)`
 
 Cancels a set of pending or active jobs.
 
@@ -924,21 +922,21 @@ The promise will resolve on a successful cancel, or reject if not all of the req
 
 > Due to the nature of the use case of attempting a batch job cancellation, it may be likely that some jobs were in flight and even completed during the cancellation request. Because of this, cancellation will cancel as many as possible and reject with a message showing the number of jobs that could not be cancelled because they were no longer active.
 
-## `resume(id, options)`
+## `resume(name, id, options)`
 
 Resumes a cancelled job.
 
-## `resume([ids], options)`
+## `resume(name, [ids], options)`
 
 Resumes a set of cancelled jobs.
 
-## `complete(id [, data, options])`
+## `complete(name, id [, data, options])`
 
 Completes an active job.  This would likely only be used with `fetch()`. Accepts an optional `data` argument.
 
 The promise will resolve on a successful completion, or reject if the job could not be completed.
 
-## `complete([ids], options)`
+## `complete(name, [ids], options)`
 
 Completes a set of active jobs.
 
@@ -946,13 +944,13 @@ The promise will resolve on a successful completion, or reject if not all of the
 
 > See comments above on `cancel([ids])` regarding when the promise will resolve or reject because of a batch operation.
 
-## `fail(id [, data, options])`
+## `fail(name, id [, data, options])`
 
 Marks an active job as failed.  This would likely only be used with `fetch()`. Accepts an optional `data` argument for usage with [`onFail()`](#onfailname--options-handler) state-based workers or `fetchFailed()`.
 
 The promise will resolve on a successful assignment of failure, or reject if the job could not be marked as failed.
 
-## `fail([ids], options)`
+## `fail(name, [ids], options)`
 
 Fails a set of active jobs.
 
@@ -982,7 +980,7 @@ As an example, the following options object include active jobs along with creat
 }
 ```
 
-## `getJobById(id, options)`
+## `getJobById(name, id, options)`
 
 Retrieves a job with all metadata by id in either the primary or archive storage.
 

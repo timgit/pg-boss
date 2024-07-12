@@ -4,9 +4,9 @@ const { delay } = require('../src/tools')
 
 describe('throttle', function () {
   it('should only create 1 job for interval with a delay', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const queue = this.test.bossConfig.schema
 
-    const queue = 'delayThrottle'
     const singletonSeconds = 4
     const startAfter = 2
     const sendInterval = 200
@@ -27,9 +27,9 @@ describe('throttle', function () {
   })
 
   it('should process at most 1 job per second', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const queue = this.test.bossConfig.schema
 
-    const queue = 'throttle-1ps'
     const singletonSeconds = 1
     const jobCount = 3
     const sendInterval = 100
@@ -51,9 +51,8 @@ describe('throttle', function () {
   })
 
   it('should debounce', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
-
-    const queue = 'debounce'
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const queue = this.test.bossConfig.schema
 
     const jobId = await boss.send(queue, null, { singletonHours: 1 })
 
@@ -65,9 +64,9 @@ describe('throttle', function () {
   })
 
   it('should debounce via sendDebounced()', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const queue = this.test.bossConfig.schema
 
-    const queue = 'sendDebounced'
     const seconds = 60
 
     const jobId = await boss.sendDebounced(queue, null, null, seconds)
@@ -84,9 +83,8 @@ describe('throttle', function () {
   })
 
   it('should reject 2nd request in the same time slot', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
-
-    const queue = 'throttle-reject-2nd'
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const queue = this.test.bossConfig.schema
 
     const jobId1 = await boss.send(queue, null, { singletonHours: 1 })
 
@@ -98,9 +96,9 @@ describe('throttle', function () {
   })
 
   it('should throttle via sendThrottled()', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const queue = this.test.bossConfig.schema
 
-    const queue = 'throttle-reject-2nd-sendThrottled'
     const seconds = 60
 
     const jobId1 = await boss.sendThrottled(queue, null, null, seconds)

@@ -27,7 +27,7 @@ describe('singleton keys', function () {
     await boss.send(queue, null, { singletonKey, singletonMinutes })
     const job = await boss.fetch(queue)
 
-    await boss.complete(job.id)
+    await boss.complete(queue, job.id)
 
     const jobId = await boss.send(queue, null, { singletonKey, singletonMinutes })
 
@@ -35,9 +35,9 @@ describe('singleton keys', function () {
   })
 
   it('should allow more than 1 pending job at the same time with different keys', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const queue = this.test.bossConfig.schema
 
-    const queue = 'singleton'
     const jobId = await boss.send(queue, null, { singletonKey: 'a' })
 
     assert(jobId)

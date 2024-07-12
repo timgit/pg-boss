@@ -212,7 +212,7 @@ describe('work', function () {
 
     await delay(500)
 
-    const job = await boss.getJobById(jobId)
+    const job = await boss.getJobById(queue, jobId)
 
     assert.strictEqual(job.state, 'completed')
   })
@@ -319,7 +319,7 @@ describe('work', function () {
 
     await delay(1000)
 
-    const job = await boss.getJobById(jobId)
+    const job = await boss.getJobById(queue, jobId)
 
     assert.strictEqual(job.state, 'completed')
     assert.strictEqual(job.output.value, result)
@@ -335,7 +335,7 @@ describe('work', function () {
 
     await delay(1000)
 
-    const job = await boss.getJobById(jobId)
+    const job = await boss.getJobById(queue, jobId)
 
     assert.strictEqual(job.state, 'completed')
     assert.strictEqual(job.output.something, something)
@@ -373,7 +373,7 @@ describe('work', function () {
 
     await delay(2000)
 
-    const job = await boss.getJobById(jobId)
+    const job = await boss.getJobById(queue, jobId)
 
     assert.strictEqual(job.state, 'failed')
     assert(job.output.message.includes('handler execution exceeded'))
@@ -390,8 +390,8 @@ describe('work', function () {
 
     await delay(2000)
 
-    const job1 = await boss.getJobById(jobId1)
-    const job2 = await boss.getJobById(jobId2)
+    const job1 = await boss.getJobById(queue, jobId1)
+    const job2 = await boss.getJobById(queue, jobId2)
 
     assert.strictEqual(job1.state, 'failed')
     assert(job1.output.message.includes('handler execution exceeded'))

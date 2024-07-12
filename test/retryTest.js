@@ -27,7 +27,7 @@ describe('retries', function () {
     const jobId = await boss.send(queue, null, { retryLimit: 1 })
 
     await boss.fetch(queue)
-    await boss.fail(jobId)
+    await boss.fail(queue, jobId)
 
     const job = await boss.fetch(queue)
 
@@ -41,7 +41,7 @@ describe('retries', function () {
     const jobId = await boss.send(queue)
 
     await boss.fetch(queue)
-    await boss.fail(jobId)
+    await boss.fail(queue, jobId)
 
     const job = await boss.fetch(queue)
 
@@ -55,7 +55,7 @@ describe('retries', function () {
     const jobId = await boss.send(queue, null, { retryLimit: 1, retryDelay: 1 })
 
     await boss.fetch(queue)
-    await boss.fail(jobId)
+    await boss.fail(queue, jobId)
 
     const job1 = await boss.fetch(queue)
 

@@ -18,7 +18,7 @@ describe('expire', function () {
 
     await boss.maintain()
 
-    const job = await boss.getJobById(jobId)
+    const job = await boss.getJobById(queue, jobId)
 
     assert.strictEqual('failed', job.state)
   })
@@ -36,7 +36,7 @@ describe('expire', function () {
 
     await boss.maintain()
 
-    const job = await boss.getJobById(jobId)
+    const job = await boss.getJobById(queue, jobId)
 
     assert.strictEqual('failed', job.state)
   })

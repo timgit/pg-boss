@@ -19,13 +19,13 @@ describe('archive', function () {
 
     assert.strictEqual(job.id, jobId)
 
-    await boss.complete(jobId)
+    await boss.complete(queue, jobId)
 
     await delay(1000)
 
     await boss.maintain()
 
-    const archivedJob = await helper.getArchivedJobById(config.schema, jobId)
+    const archivedJob = await helper.getArchivedJobById(config.schema, queue, jobId)
 
     assert.strictEqual(jobId, archivedJob.id)
     assert.strictEqual(queue, archivedJob.name)
@@ -41,13 +41,13 @@ describe('archive', function () {
 
     assert.strictEqual(job.id, jobId)
 
-    await boss.complete(jobId)
+    await boss.complete(queue, jobId)
 
     await delay(1000)
 
     await boss.maintain()
 
-    const archivedJob = await boss.getJobById(jobId)
+    const archivedJob = await boss.getJobById(queue, jobId)
 
     assert.strictEqual(jobId, archivedJob.id)
     assert.strictEqual(queue, archivedJob.name)
@@ -64,7 +64,7 @@ describe('archive', function () {
 
     await boss.maintain()
 
-    const archivedJob = await helper.getArchivedJobById(config.schema, jobId)
+    const archivedJob = await helper.getArchivedJobById(config.schema, queue, jobId)
 
     assert.strictEqual(jobId, archivedJob.id)
     assert.strictEqual(queue, archivedJob.name)
@@ -81,7 +81,7 @@ describe('archive', function () {
 
     await boss.maintain()
 
-    const archivedJob = await helper.getArchivedJobById(config.schema, jobId)
+    const archivedJob = await helper.getArchivedJobById(config.schema, queue, jobId)
 
     assert.strictEqual(jobId, archivedJob.id)
     assert.strictEqual(queue, archivedJob.name)
@@ -95,13 +95,13 @@ describe('archive', function () {
     const failPayload = { someReason: 'nuna' }
     const jobId = await boss.send(queue, null, { retentionSeconds: 1 })
 
-    await boss.fail(jobId, failPayload)
+    await boss.fail(queue, jobId, failPayload)
 
     await delay(1000)
 
     await boss.maintain()
 
-    const archivedJob = await helper.getArchivedJobById(config.schema, jobId)
+    const archivedJob = await helper.getArchivedJobById(config.schema, queue, jobId)
 
     assert.strictEqual(archivedJob, null)
   })
@@ -114,13 +114,13 @@ describe('archive', function () {
     const failPayload = { someReason: 'nuna' }
     const jobId = await boss.send(queue, null, { retentionSeconds: 1 })
 
-    await boss.fail(jobId, failPayload)
+    await boss.fail(queue, jobId, failPayload)
 
     await delay(1000)
 
     await boss.maintain()
 
-    const archivedJob = await helper.getArchivedJobById(config.schema, jobId)
+    const archivedJob = await helper.getArchivedJobById(config.schema, queue, jobId)
 
     assert.strictEqual(jobId, archivedJob.id)
     assert.strictEqual(queue, archivedJob.name)

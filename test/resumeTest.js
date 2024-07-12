@@ -14,29 +14,29 @@ describe('cancel', function () {
   })
 
   it('should cancel and resume a pending job', async function () {
-    const config = this.test.bossConfig
-    const boss = this.test.boss = await helper.start(config)
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const queue = this.test.bossConfig.schema
 
-    const jobId = await boss.send('will_cancel', null, { startAfter: 1 })
+    const jobId = await boss.send(queue, null, { startAfter: 1 })
 
-    await boss.cancel(jobId)
+    await boss.cancel(queue, jobId)
 
-    const job = await boss.getJobById(jobId)
+    const job = await boss.getJobById(queue, jobId)
 
     assert(job && job.state === 'cancelled')
 
-    await boss.resume(jobId)
+    await boss.resume(queue, jobId)
 
-    const job2 = await boss.getJobById(jobId)
+    const job2 = await boss.getJobById(queue, jobId)
 
     assert(job2 && job2.state === 'created')
   })
 
   it('should cancel and resume a pending job with custom connection', async function () {
-    const config = this.test.bossConfig
-    const boss = this.test.boss = await helper.start(config)
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const queue = this.test.bossConfig.schema
 
-    const jobId = await boss.send('will_cancel', null, { startAfter: 1 })
+    const jobId = await boss.send(queue, null, { startAfter: 1 })
 
     let callCount = 0
     const _db = await helper.getDb()
@@ -47,15 +47,15 @@ describe('cancel', function () {
       }
     }
 
-    await boss.cancel(jobId, { db })
+    await boss.cancel(queue, jobId, { db })
 
-    const job = await boss.getJobById(jobId, { db })
+    const job = await boss.getJobById(queue, jobId, { db })
 
     assert(job && job.state === 'cancelled')
 
-    await boss.resume(jobId, { db })
+    await boss.resume(queue, jobId, { db })
 
-    const job2 = await boss.getJobById(jobId, { db })
+    const job2 = await boss.getJobById(queue, jobId, { db })
 
     assert(job2 && job2.state === 'created')
     assert.strictEqual(callCount, 4)

@@ -36,20 +36,23 @@ describe('send', function () {
   })
 
   it('should accept single string argument', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
-    const queue = 'sendNameOnly'
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const queue = this.test.bossConfig.schema
+
     await boss.send(queue)
   })
 
   it('should accept job object argument with only name', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
-    const queue = 'sendqueueOnly'
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const queue = this.test.bossConfig.schema
+
     await boss.send({ name: queue })
   })
 
   it('should accept job object with name and data only', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
-    const queue = 'sendqueueAndData'
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const queue = this.test.bossConfig.schema
+
     const message = 'hi'
 
     await boss.send({ name: queue, data: { message } })
@@ -60,8 +63,9 @@ describe('send', function () {
   })
 
   it('should accept job object with name and options only', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
-    const queue = 'sendqueueAndOptions'
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const queue = this.test.bossConfig.schema
+
     const options = { someCrazyOption: 'whatever' }
 
     await boss.send({ name: queue, options })
@@ -72,8 +76,9 @@ describe('send', function () {
   })
 
   it('should accept job object with name and custom connection', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
-    const queue = 'sendqueueAndOptions'
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const queue = this.test.bossConfig.schema
+
     let called = false
     const db = await helper.getDb()
     const options = {
@@ -96,8 +101,9 @@ describe('send', function () {
   })
 
   it('should not create job if transaction fails', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
-    const queue = 'sendqueueAndOptions'
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const queue = this.test.bossConfig.schema
+
     const db = await helper.getDb()
     const client = db.pool
     await client.query('CREATE TABLE IF NOT EXISTS test (label VARCHAR(50))')

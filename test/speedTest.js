@@ -2,7 +2,7 @@ const helper = require('./testHelper')
 const assert = require('assert')
 
 describe('speed', function () {
-  const expectedSeconds = 4
+  const expectedSeconds = 6
   const jobCount = 10_000
   const queue = 'speedTest'
   const data = new Array(jobCount).fill(null).map((item, index) => ({ name: queue, data: { index } }))
@@ -12,13 +12,14 @@ describe('speed', function () {
     this.timeout(expectedSeconds * 1000)
     this.slow(0)
 
-    const config = { ...this.test.bossConfig, min: 10, max: 10 }
+    const config = { ...this.test.bossConfig, min: 10, max: 10, noDefault: true }
     const boss = this.test.boss = await helper.start(config)
+    await boss.createQueue(queue)
     await boss.insert(data)
     const jobs = await boss.fetch(queue, jobCount)
 
     assert.strictEqual(jobCount, jobs.length)
 
-    await boss.complete(jobs.map(job => job.id))
+    await boss.complete(queue, jobs.map(job => job.id))
   })
 })

@@ -11,11 +11,11 @@ describe('delete', async function () {
 
     await boss.fetch(queue)
 
-    await boss.complete(jobId)
+    await boss.complete(queue, jobId)
 
     await boss.maintain()
 
-    const archivedJob = await helper.getArchivedJobById(config.schema, jobId)
+    const archivedJob = await helper.getArchivedJobById(config.schema, queue, jobId)
 
     assert.strictEqual(archivedJob, null)
   })

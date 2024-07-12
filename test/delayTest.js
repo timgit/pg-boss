@@ -23,9 +23,8 @@ describe('delayed jobs', function () {
   })
 
   it('should wait until after a date time string', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
-
-    const queue = 'delay-date-string'
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const queue = this.test.bossConfig.schema
 
     const date = new Date()
 
@@ -47,8 +46,8 @@ describe('delayed jobs', function () {
   })
 
   it('should wait until after a date object', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
-    const queue = 'delay-date-object'
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const queue = this.test.bossConfig.schema
 
     const date = new Date()
     date.setUTCSeconds(date.getUTCSeconds() + 2)
@@ -69,8 +68,8 @@ describe('delayed jobs', function () {
   })
 
   it('should work with sendAfter() and a date object', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
-    const queue = 'sendAfter-date-object'
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const queue = this.test.bossConfig.schema
 
     const date = new Date()
     date.setUTCSeconds(date.getUTCSeconds() + 2)

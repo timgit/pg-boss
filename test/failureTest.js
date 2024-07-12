@@ -23,7 +23,7 @@ describe('failure', function () {
 
     const job = await boss.fetch(queue)
 
-    await boss.fail(job.id)
+    await boss.fail(queue, job.id)
   })
 
   it('should fail a batch of jobs', async function () {
@@ -38,7 +38,7 @@ describe('failure', function () {
 
     const jobs = await boss.fetch(queue, 3)
 
-    const result = await boss.fail(jobs.map(job => job.id))
+    const result = await boss.fail(queue, jobs.map(job => job.id))
 
     assert.strictEqual(result.jobs.length, 3)
   })
@@ -56,9 +56,9 @@ describe('failure', function () {
 
     const jobs = await boss.fetch(queue, 3)
 
-    await boss.fail(jobs.map(job => job.id), new Error(message))
+    await boss.fail(queue, jobs.map(job => job.id), new Error(message))
 
-    const results = await pMap(jobs, job => boss.getJobById(job.id))
+    const results = await pMap(jobs, job => boss.getJobById(queue, job.id))
 
     assert(results.every(i => i.output.message === message))
   })
@@ -72,9 +72,9 @@ describe('failure', function () {
 
     const jobId = await boss.send(queue)
 
-    await boss.fail(jobId, failPayload)
+    await boss.fail(queue, jobId, failPayload)
 
-    const job = await boss.getJobById(jobId)
+    const job = await boss.getJobById(queue, jobId)
 
     assert.strictEqual(job.output.some.deeply.nested.reason, failPayload.some.deeply.nested.reason)
   })
@@ -89,7 +89,7 @@ describe('failure', function () {
 
     await delay(1000)
 
-    const job = await boss.getJobById(jobId)
+    const job = await boss.getJobById(queue, jobId)
 
     assert.strictEqual(job.output.value, failPayload)
   })
@@ -107,7 +107,7 @@ describe('failure', function () {
 
     await delay(1000)
 
-    const job = await boss.getJobById(jobId)
+    const job = await boss.getJobById(queue, jobId)
 
     assert.strictEqual(job.output.something, something)
   })
@@ -122,7 +122,7 @@ describe('failure', function () {
 
     await delay(1000)
 
-    const job = await boss.getJobById(jobId)
+    const job = await boss.getJobById(queue, jobId)
 
     assert(job.output.message.includes(message))
   })
@@ -144,7 +144,7 @@ describe('failure', function () {
       }
     }
 
-    await boss.fail(job.id, null, { db })
+    await boss.fail(queue, job.id, null, { db })
 
     assert.strictEqual(called, true)
   })
@@ -164,20 +164,24 @@ describe('failure', function () {
 
     await delay(2000)
 
-    const job = await boss.getJobById(jobId)
+    const job = await boss.getJobById(queue, jobId)
 
     assert.strictEqual(job.output.message, message)
   })
 
   it('dead letter queues are working', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
+
     const queue = this.test.bossConfig.schema
     const deadLetter = `${queue}_dlq`
+
+    await boss.createQueue(queue)
+    await boss.createQueue(deadLetter)
 
     const jobId = await boss.send(queue, { key: queue }, { deadLetter })
 
     await boss.fetch(queue)
-    await boss.fail(jobId)
+    await boss.fail(queue, jobId)
 
     const job = await boss.fetch(deadLetter)
 

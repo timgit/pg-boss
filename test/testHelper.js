@@ -82,8 +82,8 @@ async function findJobs (schema, where, values) {
   return jobs
 }
 
-async function getArchivedJobById (schema, id) {
-  const response = await findArchivedJobs(schema, 'id = $1', [id])
+async function getArchivedJobById (schema, name, id) {
+  const response = await findArchivedJobs(schema, 'name = $1 AND id = $2', [name, id])
   return response.rows.length ? response.rows[0] : null
 }
 
@@ -117,6 +117,10 @@ async function start (options) {
     const boss = new PgBoss(options)
     boss.on('error', err => console.log({ schema: options.schema, message: err.message }))
     await boss.start()
+    // auto-create queue for tests
+    if (!options.noDefault) {
+      await boss.createQueue(options.schema)
+    }
     return boss
   } catch (err) {
     // this is nice for occaisional debugging, Mr. Linter

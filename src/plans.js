@@ -77,8 +77,6 @@ function create (schema, version) {
     createEnumJobState(schema),
 
     createTableJob(schema),
-    createTableJobDefault(schema),
-    attachPartitionJobDefault(schema),
     createIndexJobName(schema),
     createIndexJobFetch(schema),
     createIndexJobPolicyStately(schema),
@@ -92,7 +90,6 @@ function create (schema, version) {
     createColumnArchiveArchivedOn(schema),
     createIndexArchiveArchivedOn(schema),
     createIndexArchiveName(schema),
-    createArchiveBackupTable(schema),
 
     createTableVersion(schema),
     createTableQueue(schema),
@@ -165,14 +162,6 @@ function createTableJob (schema) {
   `
 }
 
-function createTableJobDefault (schema) {
-  return `CREATE TABLE ${schema}.job_default (LIKE ${schema}.job INCLUDING DEFAULTS INCLUDING CONSTRAINTS)`
-}
-
-function attachPartitionJobDefault (schema) {
-  return `ALTER TABLE ${schema}.job ATTACH PARTITION ${schema}.job_default DEFAULT`
-}
-
 function partitionCreateJobName (schema, name) {
   return `
     CREATE TABLE ${schema}.job_${name} (LIKE ${schema}.job INCLUDING DEFAULTS INCLUDING CONSTRAINTS);
@@ -210,19 +199,15 @@ function createIndexJobThrottleKey (schema) {
 }
 
 function createIndexJobName (schema) {
-  return `CREATE INDEX job_name ON ${schema}.job (name text_pattern_ops)`
+  return `CREATE INDEX job_name ON ${schema}.job (name)`
 }
 
 function createIndexJobFetch (schema) {
-  return `CREATE INDEX job_fetch ON ${schema}.job (name text_pattern_ops, startAfter) INCLUDE (priority, createdOn, id) WHERE state < '${states.active}'`
+  return `CREATE INDEX job_fetch ON ${schema}.job (name, startAfter) INCLUDE (priority, createdOn, id) WHERE state < '${states.active}'`
 }
 
 function createTableArchive (schema) {
   return `CREATE TABLE ${schema}.archive (LIKE ${schema}.job)`
-}
-
-function createArchiveBackupTable (schema) {
-  return `CREATE TABLE ${schema}.archive_backup (LIKE ${schema}.job)`
 }
 
 function createColumnArchiveArchivedOn (schema) {
@@ -422,12 +407,12 @@ function insertVersion (schema, version) {
 }
 
 function fetchNextJob (schema) {
-  return ({ includeMetadata, patternMatch, priority = true } = {}) => `
+  return ({ includeMetadata, priority = true } = {}) => `
     WITH next as (
       SELECT id
       FROM ${schema}.job
-      WHERE state < '${states.active}'
-        AND name ${patternMatch ? 'LIKE' : '='} $1
+      WHERE name = $1
+        AND state < '${states.active}'
         AND startAfter < now()
       ORDER BY ${priority && 'priority desc, '} createdOn, id
       LIMIT $2
@@ -438,7 +423,7 @@ function fetchNextJob (schema) {
       startedOn = now(),
       retryCount = CASE WHEN startedOn IS NOT NULL THEN retryCount + 1 ELSE retryCount END
     FROM next
-    WHERE j.id = next.id
+    WHERE name = $1 AND j.id = next.id
     RETURNING ${includeMetadata ? 'j.*' : 'j.id, name, data'}, 
       EXTRACT(epoch FROM expireIn) as expire_in_seconds
   `
@@ -450,8 +435,9 @@ function completeJobs (schema) {
       UPDATE ${schema}.job
       SET completedOn = now(),
         state = '${states.completed}',
-        output = $2::jsonb
-      WHERE id IN (SELECT UNNEST($1::uuid[]))
+        output = $3::jsonb
+      WHERE name = $1
+        AND id IN (SELECT UNNEST($2::uuid[]))
         AND state = '${states.active}'
       RETURNING *
     )
@@ -460,8 +446,8 @@ function completeJobs (schema) {
 }
 
 function failJobsById (schema) {
-  const where = `id IN (SELECT UNNEST($1::uuid[])) AND state < '${states.completed}'`
-  const output = '$2::jsonb'
+  const where = `name = $1 AND id IN (SELECT UNNEST($2::uuid[])) AND state < '${states.completed}'`
+  const output = '$3::jsonb'
 
   return failJobs(schema, where, output)
 }
@@ -518,7 +504,8 @@ function cancelJobs (schema) {
       UPDATE ${schema}.job
       SET completedOn = now(),
         state = '${states.cancelled}'
-      WHERE id IN (SELECT UNNEST($1::uuid[]))
+      WHERE name = $1
+        AND id IN (SELECT UNNEST($2::uuid[]))
         AND state < '${states.completed}'
       RETURNING 1
     )
@@ -532,7 +519,8 @@ function resumeJobs (schema) {
       UPDATE ${schema}.job
       SET completedOn = NULL,
         state = '${states.created}'
-      WHERE id IN (SELECT UNNEST($1::uuid[]))
+      WHERE name = $1
+        AND id IN (SELECT UNNEST($2::uuid[]))
       RETURNING 1
     )
     SELECT COUNT(*) from results
@@ -754,5 +742,5 @@ function getArchivedJobById (schema) {
 }
 
 function getJobByTableAndId (schema, table) {
-  return `SELECT * FROM ${schema}.${table} WHERE id = $1`
+  return `SELECT * FROM ${schema}.${table} WHERE name = $1 AND id = $2`
 }

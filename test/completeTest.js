@@ -16,8 +16,8 @@ describe('complete', function () {
 
   it('should complete a batch of jobs', async function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const queue = this.test.bossConfig.schema
 
-    const queue = 'complete-batch'
     const batchSize = 3
 
     await Promise.all([
@@ -34,15 +34,14 @@ describe('complete', function () {
 
     assert.strictEqual(activeCount, batchSize)
 
-    const result = await boss.complete(jobs.map(job => job.id))
+    const result = await boss.complete(queue, jobs.map(job => job.id))
 
     assert.strictEqual(batchSize, result.jobs.length)
   })
 
   it('should store job output in job.output from complete()', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
-
-    const queue = 'completion-data-in-job-output'
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const queue = this.test.bossConfig.schema
 
     const jobId = await boss.send(queue)
 
@@ -52,17 +51,16 @@ describe('complete', function () {
 
     const completionData = { msg: 'i am complete' }
 
-    await boss.complete(jobId, completionData)
+    await boss.complete(queue, jobId, completionData)
 
-    const job = await boss.getJobById(jobId)
+    const job = await boss.getJobById(queue, jobId)
 
     assert.strictEqual(job.output.msg, completionData.msg)
   })
 
   it('should store job error in job.output from fail()', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
-
-    const queue = 'completion-data-in-job-output'
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const queue = this.test.bossConfig.schema
 
     const jobId = await boss.send(queue)
 
@@ -72,17 +70,17 @@ describe('complete', function () {
 
     const completionError = new Error('i am complete')
 
-    await boss.fail(jobId, completionError)
+    await boss.fail(queue, jobId, completionError)
 
-    const job = await boss.getJobById(jobId)
+    const job = await boss.getJobById(queue, jobId)
 
     assert.strictEqual(job.output.message, completionError.message)
   })
 
   it('should complete a batch of jobs with custom connection', async function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const queue = this.test.bossConfig.schema
 
-    const queue = 'complete-batch'
     const batchSize = 3
 
     await Promise.all([
@@ -108,7 +106,7 @@ describe('complete', function () {
       }
     }
 
-    const result = await boss.complete(jobs.map(job => job.id), null, { db })
+    const result = await boss.complete(queue, jobs.map(job => job.id), null, { db })
 
     assert.strictEqual(batchSize, result.jobs.length)
     assert.strictEqual(called, true)
@@ -116,7 +114,6 @@ describe('complete', function () {
 
   it('should warn with an old onComplete option only once', async function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
-
     const queue = this.test.bossConfig.schema
 
     let warningCount = 0
