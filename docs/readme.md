@@ -60,13 +60,14 @@
 <!-- /TOC -->
 
 # Intro
-pg-boss is a job queue written in Node.js and backed by the reliability of Postgres.
+pg-boss is a job queue powered by Postgres, operated by 1 or more Node.js instances.
 
-You may use as many instances as needed to connect to the same Postgres database. Each instance maintains a connection pool or you can bring your own, limited to the maximum number of connections your database server can accept. If you need a larger number of workers, consider using a centralized connection pool such as pgBouncer. [Creating your own web API or UI](https://github.com/timgit/pg-boss/issues/266) is another option if direct database access is not available.
+Architecturally, pg-boss is similar to queue products such as AWS SQS, which primarily acts as a store of jobs that are "pulled", not "pushed" from the server. For example, pg-boss handles job timeouts and retries similar to the SQS message visibility timeout. [SKIP LOCKED](https://www.2ndquadrant.com/en/blog/what-is-select-skip-locked-for-in-postgresql-9-5) guarantees exactly-once delivery, which is only available in SQS via FIFO queues (with the caveat of their throughput limitations). Keep in mind that exactly-once delivery is not a guarantee that a job will never be processed more than once because of retries, so keep the general recommendation for idempotency with queueing systems in mind.
 
-If you require multiple installations in the same database, such as for large volume queues, you may wish to specify a separate schema per install to achieve partitioning.
+pg-boss uses declarative list-based partitioning for queue storage (each queue creates a dedicated child table that is attached to the parent partitioned job table). This partitioning strategy is a balance between maintenance operations (there is only 1 logical table to manage) and queue isolation. Physical queue isolation prevents volume spikes and backlogs in a queue from affecting the performance of other queues. This should address the majority of systems that involve < 10,000 distinct queues. If your usage exceeds this and you experience performance issues, consider spreading your queues across  multiple pg-boss instances, each connected to a different schema in the target database.
 
-Architecturally, pg-boss is somewhat similar to queue products such as AWS SQS, which primarily acts as a store of jobs that are "pulled", not "pushed" from the server. If at least one pg-boss instance is running, internal maintenance jobs will be periodically run to make sure fetched jobs that are never completed are moved into the retry or failed state (this is somewhat similar to the SQS message visibility timeout). [SKIP LOCKED](https://www.2ndquadrant.com/en/blog/what-is-select-skip-locked-for-in-postgresql-9-5) guarantees exactly-once delivery, which is only available in SQS via FIFO queues (with the caveat of their throughput limitations). Keep in mind that exactly-once delivery is not a guarantee that a job will never be processed more than once because of retries, so keep the general recommendation for idempotency with queueing systems in mind.
+You may use as many Node.js instances as desired to connect to Postgres and scale workers out. Each instance maintains a connection pool or you can bring your own, limited to the maximum number of connections your database server can accept. 
+If you find yourself needing even more connections, pg-boss is also compatible with common server-side connection poolers such as pgBouncer.
 
 ## Job states
 

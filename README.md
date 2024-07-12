@@ -41,15 +41,13 @@ This will likely cater the most to teams already familiar with the simplicity of
 * Backpressure-compatible polling workers
 * Cron scheduling
 * Pub/sub API for fan-out queue relationships
-* Priority, deferral, retries (with exponential backoff), rate limiting, debouncing
-* Direct table access for bulk loads via COPY or INSERT
+* Priority queues, deferral, retries (with exponential backoff), rate limiting, debouncing
+* Table operations via SQL for bulk loads via COPY or INSERT
 * Multi-master compatible (for example, in a Kubernetes ReplicaSet)
 * Dead letter queues
-* Automatic creation and migration of storage tables
-* Automatic maintenance operations to manage table growth
 
 ## Requirements
-* Node 18 or higher
+* Node 20 or higher
 * PostgreSQL 12 or higher
 
 ## Installation
@@ -66,7 +64,6 @@ yarn add pg-boss
 * [Docs](docs/readme.md)
 
 ## Contributing
-
 To setup a development environment for this library:
 
 ```bash
