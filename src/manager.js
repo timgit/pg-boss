@@ -8,7 +8,6 @@ const { delay } = require('./tools')
 const Attorney = require('./attorney')
 const Worker = require('./worker')
 const plans = require('./plans')
-const Db = require('./db')
 
 const { QUEUES: TIMEKEEPER_QUEUES } = require('./timekeeper')
 const { QUEUE_POLICY } = plans
@@ -471,23 +470,7 @@ class Manager extends EventEmitter {
     let result
 
     try {
-      if (!options.db) {
-        // Prepare/format now and send multi-statement transaction
-        const fetchQuery = nextJobSql
-          .replace('$1', Db.quotePostgresStr(statementValues[0]))
-          .replace('$2', statementValues[1].toString())
-
-        // eslint-disable-next-line no-unused-vars
-        const [_begin, _setLocal, fetchResult, _commit] = await db.executeSql([
-          'BEGIN',
-          'SET LOCAL jit = OFF', // JIT can slow things down significantly
-          fetchQuery,
-          'COMMIT'
-        ].join(';\n'))
-        result = fetchResult
-      } else {
-        result = await db.executeSql(nextJobSql, statementValues)
-      }
+      result = await db.executeSql(nextJobSql, statementValues)
     } catch (err) {
       // errors from fetchquery should only be unique constraint violations
     }

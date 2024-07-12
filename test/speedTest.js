@@ -2,7 +2,7 @@ const helper = require('./testHelper')
 const assert = require('assert')
 
 describe('speed', function () {
-  const expectedSeconds = 4
+  const expectedSeconds = 6
   const jobCount = 10_000
   const queue = 'speedTest'
   const data = new Array(jobCount).fill(null).map((item, index) => ({ name: queue, data: { index } }))

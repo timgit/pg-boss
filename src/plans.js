@@ -505,7 +505,7 @@ function cancelJobs (schema) {
       SET completedOn = now(),
         state = '${states.cancelled}'
       WHERE name = $1
-        AND id IN (SELECT UNNEST($1::uuid[]))
+        AND id IN (SELECT UNNEST($2::uuid[]))
         AND state < '${states.completed}'
       RETURNING 1
     )
