@@ -13,6 +13,15 @@ const events = {
   stopped: 'stopped'
 }
 class PgBoss extends EventEmitter {
+  #stoppingOn
+  #stopped
+  #config
+  #db
+  #boss
+  #contractor
+  #manager
+  #timekeeper
+
   static getConstructionPlans (schema) {
     return Contractor.constructionPlans(schema)
   }
@@ -26,57 +35,69 @@ class PgBoss extends EventEmitter {
   }
 
   constructor (value) {
-    const config = Attorney.getConfig(value)
-
     super()
 
-    const db = getDb(config)
+    this.#stoppingOn = null
+    this.#stopped = true
+
+    const config = Attorney.getConfig(value)
+    this.#config = config
+
+    const db = this.getDb()
+    this.#db = db
 
     if (db.isOurs) {
-      promoteEvent.call(this, db, 'error')
+      this.#promoteEvents(db)
     }
 
-    const manager = new Manager(db, config)
-    Object.keys(manager.events).forEach(event => promoteEvent.call(this, manager, manager.events[event]))
-    manager.functions.forEach(func => promoteFunction.call(this, manager, func))
+    const contractor = new Contractor(db, config)
 
+    const manager = new Manager(db, config)
     const bossConfig = { ...config, manager }
 
     const boss = new Boss(db, bossConfig)
-    Object.keys(boss.events).forEach(event => promoteEvent.call(this, boss, boss.events[event]))
-    boss.functions.forEach(func => promoteFunction.call(this, boss, func))
 
     const timekeeper = new Timekeeper(db, bossConfig)
-    Object.keys(timekeeper.events).forEach(event => promoteEvent.call(this, timekeeper, timekeeper.events[event]))
-    timekeeper.functions.forEach(func => promoteFunction.call(this, timekeeper, func))
-
     manager.timekeeper = timekeeper
 
-    this.stoppingOn = null
-    this.stopped = true
-    this.config = config
-    this.db = db
-    this.boss = boss
-    this.contractor = new Contractor(db, config)
-    this.manager = manager
-    this.timekeeper = timekeeper
+    this.#promoteEvents(manager)
+    this.#promoteEvents(boss)
+    this.#promoteEvents(timekeeper)
 
-    function getDb (config) {
-      if (config.db) {
-        return config.db
-      }
+    this.#promoteFunctions(boss)
+    this.#promoteFunctions(contractor)
+    this.#promoteFunctions(manager)
+    this.#promoteFunctions(timekeeper)
 
-      const db = new Db(config)
-      db.isOurs = true
-      return db
+    this.#boss = boss
+    this.#contractor = contractor
+    this.#manager = manager
+    this.#timekeeper = timekeeper
+  }
+
+  getDb () {
+    if (this.#db) {
+      return this.#db
     }
 
-    function promoteFunction (obj, func) {
-      this[func.name] = (...args) => func.apply(obj, args)
+    if (this.#config.db) {
+      return this.#config.db
     }
 
-    function promoteEvent (emitter, event) {
+    const db = new Db(this.#config)
+    db.isOurs = true
+    return db
+  }
+
+  #promoteEvents (emitter) {
+    for (const event of Object.values(emitter?.events)) {
       emitter.on(event, arg => this.emit(event, arg))
+    }
+  }
+
+  #promoteFunctions (obj) {
+    for (const func of obj?.functions) {
+      this[func.name] = (...args) => func.apply(obj, args)
     }
   }
 
@@ -87,39 +108,39 @@ class PgBoss extends EventEmitter {
 
     this.starting = true
 
-    if (this.db.isOurs && !this.db.opened) {
-      await this.db.open()
+    if (this.#db.isOurs && !this.#db.opened) {
+      await this.#db.open()
     }
 
-    if (this.config.migrate) {
-      await this.contractor.start()
+    if (this.#config.migrate) {
+      await this.#contractor.start()
     } else {
-      await this.contractor.check()
+      await this.#contractor.check()
     }
 
-    this.manager.start()
+    this.#manager.start()
 
-    if (this.config.supervise) {
-      await this.boss.supervise()
+    if (this.#config.supervise) {
+      await this.#boss.supervise()
     }
 
-    if (this.config.monitorStateIntervalSeconds) {
-      await this.boss.monitor()
+    if (this.#config.monitorStateIntervalSeconds) {
+      await this.#boss.monitor()
     }
 
-    if (this.config.schedule) {
-      await this.timekeeper.start()
+    if (this.#config.schedule) {
+      await this.#timekeeper.start()
     }
 
     this.starting = false
     this.started = true
-    this.stopped = false
+    this.#stopped = false
 
     return this
   }
 
   async stop (options = {}) {
-    if (this.stoppingOn || this.stopped) {
+    if (this.#stoppingOn || this.#stopped) {
       return
     }
 
@@ -127,27 +148,27 @@ class PgBoss extends EventEmitter {
 
     timeout = Math.max(timeout, 1000)
 
-    this.stoppingOn = Date.now()
+    this.#stoppingOn = Date.now()
 
-    await this.manager.stop()
-    await this.timekeeper.stop()
-    await this.boss.stop()
+    await this.#manager.stop()
+    await this.#timekeeper.stop()
+    await this.#boss.stop()
 
     await new Promise((resolve, reject) => {
       const shutdown = async () => {
         try {
-          if (this.config.__test__throw_shutdown) {
-            throw new Error(this.config.__test__throw_shutdown)
+          if (this.#config.__test__throw_shutdown) {
+            throw new Error(this.#config.__test__throw_shutdown)
           }
 
-          await this.manager.failWip()
+          await this.#manager.failWip()
 
-          if (this.db.isOurs && this.db.opened && destroy) {
-            await this.db.close()
+          if (this.#db.isOurs && this.#db.opened && destroy) {
+            await this.#db.close()
           }
 
-          this.stopped = true
-          this.stoppingOn = null
+          this.#stopped = true
+          this.#stoppingOn = null
           this.started = false
 
           this.emit(events.stopped)
@@ -168,13 +189,13 @@ class PgBoss extends EventEmitter {
 
       setImmediate(async () => {
         try {
-          if (this.config.__test__throw_stop_monitor) {
-            throw new Error(this.config.__test__throw_stop_monitor)
+          if (this.#config.__test__throw_stop_monitor) {
+            throw new Error(this.#config.__test__throw_stop_monitor)
           }
 
-          const isWip = () => this.manager.getWipData({ includeInternal: false }).length > 0
+          const isWip = () => this.#manager.getWipData({ includeInternal: false }).length > 0
 
-          while ((Date.now() - this.stoppingOn) < timeout && isWip()) {
+          while ((Date.now() - this.#stoppingOn) < timeout && isWip()) {
             await delay(500)
           }
 

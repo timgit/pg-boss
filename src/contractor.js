@@ -21,6 +21,12 @@ class Contractor {
     this.config = config
     this.db = db
     this.migrations = this.config.migrations || migrationStore.getAll(this.config.schema)
+
+    // exported api to index
+    this.functions = [
+      this.version,
+      this.isInstalled
+    ]
   }
 
   async version () {

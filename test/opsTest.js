@@ -46,7 +46,7 @@ describe('ops', function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
     await boss.stop({ destroy: true, graceful: false, wait: false })
 
-    assert(boss.db.pool.totalCount === 0)
+    assert(boss.getDb().pool.totalCount === 0)
   })
 
   it('should destroy the connection pool gracefully', async function () {
@@ -56,6 +56,6 @@ describe('ops', function () {
       boss.on('stopped', () => resolve())
     })
 
-    assert(boss.db.pool.totalCount === 0)
+    assert(boss.getDb().pool.totalCount === 0)
   })
 })
