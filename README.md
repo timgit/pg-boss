@@ -1,4 +1,4 @@
-Queueing jobs in Node.js using PostgreSQL like a boss.
+Queueing jobs in Postgres from Node.js like a boss.
 
 [![npm version](https://badge.fury.io/js/pg-boss.svg)](https://badge.fury.io/js/pg-boss)
 [![Build](https://github.com/timgit/pg-boss/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/timgit/pg-boss/actions/workflows/ci.yml)

@@ -8,7 +8,8 @@ module.exports = {
   checkWorkArgs,
   checkFetchArgs,
   warnClockSkew,
-  assertPostgresObjectName
+  assertPostgresObjectName,
+  assertQueueName
 }
 
 const MAX_INTERVAL_HOURS = 24
@@ -29,8 +30,6 @@ const WARNINGS = {
 }
 
 function checkQueueArgs (name, options = {}) {
-  assertPostgresObjectName(name)
-
   assert(!('deadLetter' in options) || (typeof options.deadLetter === 'string'), 'deadLetter must be a string')
 
   applyRetryConfig(options)
@@ -178,8 +177,14 @@ function applySchemaConfig (config) {
 function assertPostgresObjectName (name) {
   assert(typeof name === 'string', 'Name must be a string')
   assert(name.length <= 50, 'Name cannot exceed 50 characters')
-  assert(!/\W/.test(name), 'Name can only contain alphanumeric characters and underscores')
+  assert(!/\W/.test(name), 'Name can only contain alphanumeric characters or underscores')
   assert(!/^\d/.test(name), 'Name cannot start with a number')
+}
+
+function assertQueueName (name) {
+  assert(typeof name === 'string', 'Name must be a string')
+  assert(name.length <= 50, 'Name cannot exceed 50 characters')
+  assert(/[\w-]/.test(name), 'Name can only contain alphanumeric characters, underscores, or hyphens')
 }
 
 function applyArchiveConfig (config) {
