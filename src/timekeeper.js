@@ -6,7 +6,7 @@ const pMap = require('p-map')
 
 const queues = {
   CRON: '__pgboss__cron',
-  SEND_IT: '__pgboss__send_it'
+  SEND_IT: '__pgboss__send-it'
 }
 
 const events = {

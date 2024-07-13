@@ -46,8 +46,8 @@ module.exports = {
   countStates,
   createQueue,
   updateQueue,
-  partitionCreateJobName,
-  dropJobTablePartition,
+  createPartition,
+  dropPartition,
   deleteQueueRecords,
   getQueueByName,
   getQueueSize,
@@ -95,6 +95,10 @@ function create (schema, version) {
     createTableQueue(schema),
     createTableSchedule(schema),
     createTableSubscription(schema),
+
+    getPartitionFunction(schema),
+    createPartitionFunction(schema),
+    dropPartitionFunction(schema),
 
     insertVersion(schema, version)
   ]
@@ -162,16 +166,53 @@ function createTableJob (schema) {
   `
 }
 
-function partitionCreateJobName (schema, name) {
+function createPartition (schema, name) {
+  return `SELECT ${schema}.create_partition('${name}');`
+}
+
+function getPartitionFunction (schema) {
   return `
-    CREATE TABLE ${schema}.job_${name} (LIKE ${schema}.job INCLUDING DEFAULTS INCLUDING CONSTRAINTS);
-    ALTER TABLE ${schema}.job_${name} ADD CONSTRAINT job_check_${name} CHECK (name='${name}');
-    ALTER TABLE ${schema}.job ATTACH PARTITION ${schema}.job_${name} FOR VALUES IN ('${name}');
+    CREATE FUNCTION ${schema}.get_partition(queue_name text, out name text) AS
+    $$
+    SELECT '${schema}.j' || encode(digest(queue_name, 'sha1'), 'hex');
+    $$
+    LANGUAGE SQL
+    IMMUTABLE
   `
 }
 
-function dropJobTablePartition (schema, name) {
-  return `DROP TABLE IF EXISTS ${schema}.job_${name}`
+function createPartitionFunction (schema) {
+  return `
+    CREATE FUNCTION ${schema}.create_partition(queue_name text)
+    RETURNS VOID AS
+    $$
+    DECLARE
+      table_name varchar := ${schema}.get_partition(queue_name);
+    BEGIN
+      EXECUTE format('CREATE TABLE %I (LIKE ${schema}.job INCLUDING DEFAULTS INCLUDING CONSTRAINTS)', table_name);
+      EXECUTE format('ALTER TABLE %I ADD CHECK (name=%L)', table_name, queue_name);
+      EXECUTE format('ALTER TABLE ${schema}.job ATTACH PARTITION %I FOR VALUES IN (%L)', table_name, queue_name);
+    END;
+    $$
+    LANGUAGE plpgsql;
+  `
+}
+
+function dropPartitionFunction (schema) {
+  return `
+    CREATE FUNCTION ${schema}.drop_partition(queue_name text)
+    RETURNS VOID AS
+    $$
+    BEGIN  
+      EXECUTE format('DROP TABLE IF EXISTS %I', ${schema}.get_partition(queue_name));
+    END;
+    $$
+    LANGUAGE plpgsql;
+  `
+}
+
+function dropPartition (schema, name) {
+  return `SELECT ${schema}.drop_partition('${name}');`
 }
 
 function createPrimaryKeyArchive (schema) {
@@ -723,8 +764,8 @@ function locked (schema, query) {
 }
 
 function advisoryLock (schema, key) {
-  return `SELECT pg_advisory_xact_lock(
-      ('x' || md5(current_database() || '.pgboss.${schema}${key || ''}'))::bit(64)::bigint
+  return `SELECT pg_advisory_xact_lock(      
+      ('x' || encode(digest(current_database() || '.pgboss.${schema}${key || ''}', 'sha256'), 'hex'))::bit(64)::bigint
   )`
 }
 

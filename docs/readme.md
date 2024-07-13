@@ -71,13 +71,13 @@ If you find yourself needing even more connections, pg-boss is also compatible w
 
 ## Job states
 
-All jobs start out in the `created` state and become `active` when picked up for work. If job processing completes successfully, jobs will go to `completed`. If a job fails, it will typcially enter the `failed` state. However, if a job has retry options configured, it will enter the `retry` state on failure instead and have a chance to re-enter `active` state. Jobs can also enter `cancelled` state via [`cancel(name, id)`](#cancelname-id-options) or [`cancel([ids])`](#cancelname-ids-options).
+All jobs start out in the `created` state and become `active` when picked up for work. If job processing completes successfully, jobs will go to `completed`. If a job fails, it will typcially enter the `failed` state. However, if a job has retry options configured, it will enter the `retry` state on failure instead and have a chance to re-enter `active` state. Jobs can also enter `cancelled` state via [`cancel(name, id)`](#cancelname-id-options) or [`cancel(name, [ids])`](#cancelname-ids-options).
 
-All jobs that are `completed`, `cancelled` or `failed` become eligible for archiving (i.e. they will transition into the `archive` state) after the configured `archiveCompletedAfterSeconds` time. Once `archive`d, jobs will be automatically deleted by pg-boss after the configured deletion period.
+All jobs that are `completed`, `cancelled` or `failed` become eligible for archiving (i.e. they will transition into the `archive` state) after the configured `archiveCompletedAfterSeconds` time. Once archived, jobs will be automatically deleted after the configured deletion period.
 
 # Database install
 
-pg-boss can be installed into any database.  When started, it will detect if it is installed and automatically create the required schema for all queue operations if needed.  If the database doesn't already have the pgcrypto extension installed, you will need to have a superuser add it before pg-boss can create its schema.
+pg-boss can be installed into any database.  When started, it will detect if it is installed and automatically create required storage.  If the database doesn't already have the pgcrypto extension installed, you will need to have a superuser add it before pg-boss can create its schema.
 
 ```sql
 CREATE EXTENSION pgcrypto;
@@ -108,10 +108,12 @@ NOTE: If an existing schema was used during installation, created objects will n
 ```sql
 DROP TABLE ${schema}.archive;
 DROP TABLE ${schema}.job;
+DROP TABLE ${schema}.queue;
 DROP TABLE ${schema}.schedule;
 DROP TABLE ${schema}.subscription;
 DROP TABLE ${schema}.version;
 DROP TYPE ${schema}.job_state;
+DROP FUNCTION ${schema}.create_queue;
 ```
 
 # Direct database interactions

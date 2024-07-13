@@ -547,6 +547,8 @@ class Manager extends EventEmitter {
   async createQueue (name, options = {}) {
     assert(name, 'Missing queue name argument')
 
+    Attorney.assertQueueName(name)
+
     const { policy = QUEUE_POLICY.standard } = options
 
     assert(policy in QUEUE_POLICY, `${policy} is not a valid queue policy`)
@@ -560,7 +562,7 @@ class Manager extends EventEmitter {
       deadLetter
     } = Attorney.checkQueueArgs(name, options)
 
-    const paritionSql = plans.partitionCreateJobName(this.config.schema, name)
+    const paritionSql = plans.createPartition(this.config.schema, name)
 
     await this.db.executeSql(paritionSql)
 
@@ -646,8 +648,8 @@ class Manager extends EventEmitter {
     const result = await this.db.executeSql(queueSql, [name])
 
     if (result?.rows?.length) {
-      Attorney.assertPostgresObjectName(name)
-      const sql = plans.dropJobTablePartition(this.config.schema, name)
+      Attorney.assertQueueName(name)
+      const sql = plans.dropPartition(this.config.schema, name)
       await this.db.executeSql(sql)
     }
 
