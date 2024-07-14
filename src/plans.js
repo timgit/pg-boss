@@ -174,7 +174,7 @@ function getPartitionFunction (schema) {
   return `
     CREATE FUNCTION ${schema}.get_partition(queue_name text, out name text) AS
     $$
-    SELECT '${schema}.j' || encode(digest(queue_name, 'sha1'), 'hex');
+    SELECT '${schema}.job' || encode(digest(queue_name, 'sha1'), 'hex');
     $$
     LANGUAGE SQL
     IMMUTABLE

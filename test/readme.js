@@ -8,19 +8,19 @@ async function readme () {
 
   await boss.start()
 
-  const queue = 'some_queue'
+  const queue = 'readme-queue'
 
   try {
     await boss.createQueue(queue)
   } catch {}
 
-  await boss.schedule(queue, '* * * * *')
+  const id = await boss.send(queue, { arg1: 'read me' })
 
-  console.log(`created cronjob in queue ${queue}`)
+  console.log(`created job ${id} in queue ${queue}`)
 
   await boss.work(queue, async job => {
-    console.log(`running job ${job.id}`)
-    boss.unschedule(queue)
+    console.log(`received job ${job.id} with data ${JSON.stringify(job.data)}`)
+    process.exit()
   })
 }
 

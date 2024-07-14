@@ -52,8 +52,10 @@ class Timekeeper extends EventEmitter {
     // cache the clock skew from the db server
     await this.cacheClockSkew()
 
-    await this.manager.createQueue(queues.CRON)
-    await this.manager.createQueue(queues.SEND_IT)
+    try {
+      await this.manager.createQueue(queues.CRON)
+      await this.manager.createQueue(queues.SEND_IT)
+    } catch {}
 
     await this.manager.work(queues.CRON, { newJobCheckIntervalSeconds: this.config.cronWorkerIntervalSeconds }, (job) => this.onCron(job))
     await this.manager.work(queues.SEND_IT, { newJobCheckIntervalSeconds: this.config.cronWorkerIntervalSeconds, teamSize: 50, teamConcurrency: 5 }, (job) => this.onSendIt(job))
