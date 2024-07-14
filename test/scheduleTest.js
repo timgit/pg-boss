@@ -5,23 +5,27 @@ const helper = require('./testHelper')
 const plans = require('../src/plans')
 const PgBoss = require('../')
 
-const ASSERT_DELAY = 4000
+const ASSERT_DELAY = 3000
 
 describe('schedule', function () {
   it('should send job based on every minute expression', async function () {
     const config = {
       ...this.test.bossConfig,
+      cronMonitorIntervalSeconds: 1,
       cronWorkerIntervalSeconds: 1,
-      schedule: true
+      noDefault: true
     }
 
-    const boss = this.test.boss = await helper.start(config)
-
+    let boss = this.test.boss = await helper.start({ ...config, schedule: false })
     const queue = this.test.bossConfig.schema
 
+    await boss.createQueue(queue)
     await boss.schedule(queue, '* * * * *')
+    await boss.stop({ wait: false })
 
-    await delay(ASSERT_DELAY)
+    boss = await helper.start({ ...config, schedule: true })
+
+    await delay(2000)
 
     const job = await boss.fetch(queue)
 
@@ -31,8 +35,8 @@ describe('schedule', function () {
   it('should not enable scheduling if archive config is < 60s', async function () {
     const config = {
       ...this.test.bossConfig,
-      clockMonitorIntervalSeconds: 1,
       cronWorkerIntervalSeconds: 1,
+      cronMonitorIntervalSeconds: 1,
       archiveCompletedAfterSeconds: 1,
       schedule: true
     }
@@ -49,60 +53,16 @@ describe('schedule', function () {
     assert.strictEqual(job, null)
   })
 
-  it('should accept a custom clock monitoring interval in seconds', async function () {
-    const config = {
-      ...this.test.bossConfig,
-      clockMonitorIntervalSeconds: 1,
-      cronWorkerIntervalSeconds: 1,
-      schedule: true
-    }
-
-    const boss = this.test.boss = await helper.start(config)
-
-    const queue = this.test.bossConfig.schema
-
-    await boss.schedule(queue, '* * * * *')
-
-    await delay(ASSERT_DELAY)
-
-    const job = await boss.fetch(queue)
-
-    assert(job)
-  })
-
-  it('cron monitoring should restart cron if paused', async function () {
-    const config = {
-      ...this.test.bossConfig,
-      cronMonitorIntervalSeconds: 1,
-      cronWorkerIntervalSeconds: 1,
-      schedule: true
-    }
-
-    const boss = this.test.boss = await helper.start(config)
-
-    const queue = this.test.bossConfig.schema
-
-    const { schema } = this.test.bossConfig
-    const db = await helper.getDb()
-    await db.executeSql(plans.clearStorage(schema))
-    await db.executeSql(plans.setCronTime(schema, "now() - interval '1 hour'"))
-
-    await boss.schedule(queue, '* * * * *')
-
-    await delay(ASSERT_DELAY)
-
-    const job = await boss.fetch(queue)
-
-    assert(job)
-  })
-
   it('should send job based on every minute expression after a restart', async function () {
-    let boss = await helper.start({ ...this.test.bossConfig, cronMonitorIntervalSeconds: 1, schedule: false, noDefault: true })
+    let boss = await helper.start({ ...this.test.bossConfig, schedule: false, noDefault: true })
+
     const queue = this.test.bossConfig.schema
 
     await boss.createQueue(queue)
 
     await boss.schedule(queue, '* * * * *')
+
+    await delay(ASSERT_DELAY)
 
     await boss.stop({ wait: false })
 
@@ -147,6 +107,7 @@ describe('schedule', function () {
   it('should send job based on current minute in UTC', async function () {
     const config = {
       ...this.test.bossConfig,
+      cronMonitorIntervalSeconds: 1,
       cronWorkerIntervalSeconds: 1,
       schedule: true
     }
@@ -183,6 +144,7 @@ describe('schedule', function () {
   it('should send job based on current minute in a specified time zone', async function () {
     const config = {
       ...this.test.bossConfig,
+      cronMonitorIntervalSeconds: 1,
       cronWorkerIntervalSeconds: 1,
       schedule: true
     }
@@ -283,30 +245,6 @@ describe('schedule', function () {
 
     boss.once('error', error => {
       assert.strictEqual(error.message, config.__test__force_cron_monitoring_error)
-      errorCount++
-    })
-
-    await boss.start()
-
-    await delay(2000)
-
-    assert.strictEqual(errorCount, 1)
-  })
-
-  it('errors during cron processing should emit', async function () {
-    const config = {
-      ...this.test.bossConfig,
-      cronWorkerIntervalSeconds: 1,
-      schedule: true,
-      __test__throw_cron_processing: 'cron processing'
-    }
-
-    let errorCount = 0
-
-    const boss = this.test.boss = new PgBoss(config)
-
-    boss.once('error', error => {
-      assert.strictEqual(error.message, config.__test__throw_cron_processing)
       errorCount++
     })
 

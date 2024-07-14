@@ -368,21 +368,21 @@ function applyMonitoringConfig (config) {
           ? config.clockMonitorIntervalSeconds
           : TEN_MINUTES_IN_SECONDS
 
-  assert(!('cronMonitorIntervalSeconds' in config) || (config.cronMonitorIntervalSeconds >= 1 && config.cronMonitorIntervalSeconds <= 60),
-    'configuration assert: cronMonitorIntervalSeconds must be between 1 and 60 seconds')
+  assert(!('cronMonitorIntervalSeconds' in config) || (config.cronMonitorIntervalSeconds >= 1 && config.cronMonitorIntervalSeconds <= 45),
+    'configuration assert: cronMonitorIntervalSeconds must be between 1 and 45 seconds')
 
   config.cronMonitorIntervalSeconds =
     ('cronMonitorIntervalSeconds' in config)
       ? config.cronMonitorIntervalSeconds
-      : 60
+      : 30
 
-  assert(!('cronWorkerIntervalSeconds' in config) || (config.cronWorkerIntervalSeconds >= 1 && config.cronWorkerIntervalSeconds <= 60),
-    'configuration assert: cronWorkerIntervalSeconds must be between 1 and 60 seconds')
+  assert(!('cronWorkerIntervalSeconds' in config) || (config.cronWorkerIntervalSeconds >= 1 && config.cronWorkerIntervalSeconds <= 45),
+    'configuration assert: cronWorkerIntervalSeconds must be between 1 and 45 seconds')
 
   config.cronWorkerIntervalSeconds =
     ('cronWorkerIntervalSeconds' in config)
       ? config.cronWorkerIntervalSeconds
-      : 4
+      : 5
 }
 
 function warnClockSkew (message) {

@@ -5,7 +5,6 @@ const Attorney = require('./attorney')
 const pMap = require('p-map')
 
 const queues = {
-  CRON: '__pgboss__cron',
   SEND_IT: '__pgboss__send-it'
 }
 
@@ -28,6 +27,7 @@ class Timekeeper extends EventEmitter {
     this.events = events
 
     this.getTimeCommand = plans.getTime(config.schema)
+    this.getQueueCommand = plans.getQueueByName(config.schema)
     this.getSchedulesCommand = plans.getSchedules(config.schema)
     this.scheduleCommand = plans.schedule(config.schema)
     this.unscheduleCommand = plans.unschedule(config.schema)
@@ -44,6 +44,8 @@ class Timekeeper extends EventEmitter {
   }
 
   async start () {
+    this.stopped = false
+
     // setting the archive config too low breaks the cron 60s debounce interval so don't even try
     if (this.config.archiveSeconds < 60 || this.config.archiveFailedSeconds < 60) {
       return
@@ -53,22 +55,17 @@ class Timekeeper extends EventEmitter {
     await this.cacheClockSkew()
 
     try {
-      await this.manager.createQueue(queues.CRON)
       await this.manager.createQueue(queues.SEND_IT)
     } catch {}
 
-    await this.manager.work(queues.CRON, { newJobCheckIntervalSeconds: this.config.cronWorkerIntervalSeconds }, (job) => this.onCron(job))
     await this.manager.work(queues.SEND_IT, { newJobCheckIntervalSeconds: this.config.cronWorkerIntervalSeconds, teamSize: 50, teamConcurrency: 5 }, (job) => this.onSendIt(job))
 
-    // uses sendDebounced() to enqueue a cron check
-    await this.checkSchedulesAsync()
+    setImmediate(() => this.onCron())
 
     // create monitoring interval to make sure cron hasn't crashed
-    this.cronMonitorInterval = setInterval(async () => await this.monitorCron(), this.cronMonitorIntervalMs)
+    this.cronMonitorInterval = setInterval(async () => await this.onCron(), this.cronMonitorIntervalMs)
     // create monitoring interval to measure and adjust for drift in clock skew
     this.skewMonitorInterval = setInterval(async () => await this.cacheClockSkew(), this.skewMonitorIntervalMs)
-
-    this.stopped = false
   }
 
   async stop () {
@@ -78,7 +75,6 @@ class Timekeeper extends EventEmitter {
 
     this.stopped = true
 
-    await this.manager.offWork(queues.CRON)
     await this.manager.offWork(queues.SEND_IT)
 
     if (this.skewMonitorInterval) {
@@ -89,22 +85,6 @@ class Timekeeper extends EventEmitter {
     if (this.cronMonitorInterval) {
       clearInterval(this.cronMonitorInterval)
       this.cronMonitorInterval = null
-    }
-  }
-
-  async monitorCron () {
-    try {
-      if (this.config.__test__force_cron_monitoring_error) {
-        throw new Error(this.config.__test__force_cron_monitoring_error)
-      }
-
-      const { secondsAgo } = await this.getCronTime()
-
-      if (secondsAgo > 60) {
-        await this.checkSchedulesAsync()
-      }
-    } catch (err) {
-      this.emit(this.events.error, err)
     }
   }
 
@@ -136,43 +116,45 @@ class Timekeeper extends EventEmitter {
     }
   }
 
-  async checkSchedulesAsync () {
-    const opts = {
-      retryLimit: 2,
-      retentionSeconds: 60
-    }
-
-    await this.manager.sendDebounced(queues.CRON, null, opts, 60)
-  }
-
   async onCron () {
-    if (this.stopped) return
+    let locker
 
     try {
-      if (this.config.__test__throw_cron_processing) {
-        throw new Error(this.config.__test__throw_cron_processing)
+      if (this.stopped || this.timekeeping) return
+
+      if (this.config.__test__force_cron_monitoring_error) {
+        throw new Error(this.config.__test__force_cron_monitoring_error)
       }
 
-      const items = await this.getSchedules()
+      this.timekeeping = true
 
-      const sending = items.filter(i => this.shouldSendIt(i.cron, i.timezone))
+      locker = await this.db.lock({ key: 'timekeeper' })
 
-      if (sending.length && !this.stopped) {
-        await pMap(sending, it => this.send(it), { concurrency: 5 })
+      const { secondsAgo } = await this.getCronTime()
+
+      if (secondsAgo > 30) {
+        await this.cron()
+        await this.setCronTime()
       }
-
-      if (this.stopped) return
-
-      // set last time cron was evaluated for downstream usage in cron monitoring
-      await this.setCronTime()
     } catch (err) {
       this.emit(this.events.error, err)
+    } finally {
+      if (locker?.locked) {
+        await locker.unlock()
+      }
+
+      this.timekeeping = false
     }
+  }
 
-    if (this.stopped) return
+  async cron () {
+    const items = await this.getSchedules()
 
-    // uses sendDebounced() to enqueue a cron check
-    await this.checkSchedulesAsync()
+    const sending = items.filter(i => this.shouldSendIt(i.cron, i.timezone))
+
+    if (sending.length && !this.stopped) {
+      await pMap(sending, it => this.send(it), { concurrency: 5 })
+    }
   }
 
   shouldSendIt (cron, tz) {
@@ -188,12 +170,7 @@ class Timekeeper extends EventEmitter {
   }
 
   async send (job) {
-    const options = {
-      singletonKey: job.name,
-      singletonSeconds: 60
-    }
-
-    await this.manager.send(queues.SEND_IT, job, options)
+    await this.manager.send(queues.SEND_IT, job, { singletonKey: job.name, singletonSeconds: 60 })
   }
 
   async onSendIt (job) {
@@ -214,6 +191,13 @@ class Timekeeper extends EventEmitter {
 
     // validation pre-check
     Attorney.checkSendArgs([name, data, options], this.config)
+
+    // make sure queue exists before scheduling
+    const queue = await this.db.executeSql(this.getQueueCommand, [name])
+
+    if (!queue.rows.length === 0) {
+      throw new Error(`Queue '${name}' not found`)
+    }
 
     const values = [name, cron, tz, data, options]
 

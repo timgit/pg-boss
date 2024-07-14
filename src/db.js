@@ -45,14 +45,14 @@ class Db extends EventEmitter {
   }
 
   async lock ({ timeout = 30, key } = {}) {
-    // const lockedClient = new pg.Client(this.config)
-    // await lockedClient.connect()
-    const lockedClient = await this.pool.connect()
+    const lockedClient = new pg.Client(this.config)
+    await lockedClient.connect()
+    // const lockedClient = await this.pool.connect()
 
     const query = `
         BEGIN;
         SET LOCAL lock_timeout = '${timeout}s';
-        SET LOCAL idle_in_transaction_session_timeout = '3600s';
+        SET LOCAL idle_in_transaction_session_timeout = '${timeout}s';
         ${advisoryLock(this.config.schema, key)};
     `
 

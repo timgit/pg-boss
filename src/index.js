@@ -15,6 +15,8 @@ const events = {
 class PgBoss extends EventEmitter {
   #stoppingOn
   #stopped
+  #starting
+  #started
   #config
   #db
   #boss
@@ -102,11 +104,11 @@ class PgBoss extends EventEmitter {
   }
 
   async start () {
-    if (this.starting || this.started) {
+    if (this.#starting || this.#started) {
       return
     }
 
-    this.starting = true
+    this.#starting = true
 
     if (this.#db.isOurs && !this.#db.opened) {
       await this.#db.open()
@@ -132,8 +134,8 @@ class PgBoss extends EventEmitter {
       await this.#timekeeper.start()
     }
 
-    this.starting = false
-    this.started = true
+    this.#starting = false
+    this.#started = true
     this.#stopped = false
 
     return this
@@ -169,7 +171,7 @@ class PgBoss extends EventEmitter {
 
           this.#stopped = true
           this.#stoppingOn = null
-          this.started = false
+          this.#started = false
 
           this.emit(events.stopped)
           resolve()

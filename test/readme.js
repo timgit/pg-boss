@@ -20,7 +20,6 @@ async function readme () {
 
   await boss.work(queue, async job => {
     console.log(`received job ${job.id} with data ${JSON.stringify(job.data)}`)
-    process.exit()
   })
 }
 

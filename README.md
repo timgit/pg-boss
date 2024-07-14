@@ -9,24 +9,23 @@ async function readme() {
   const PgBoss = require('pg-boss');
   const boss = new PgBoss('postgres://user:pass@host/database');
 
-  boss.on('error', error => console.error(error));
+  boss.on('error', console.error)
 
-  await boss.start();
+  await boss.start()
 
-  const queue = 'some-queue';
+  const queue = 'readme-queue'
 
-  let jobId = await boss.send(queue, { param1: 'foo' })
+  try {
+    await boss.createQueue(queue)
+  } catch {}
 
-  console.log(`created job in queue ${queue}: ${jobId}`);
+  const id = await boss.send(queue, { arg1: 'read me' })
 
-  await boss.work(queue, someAsyncJobHandler);
-}
+  console.log(`created job ${id} in queue ${queue}`)
 
-async function someAsyncJobHandler(job) {
-  console.log(`job ${job.id} received with data:`);
-  console.log(JSON.stringify(job.data));
-
-  await doSomethingAsyncWithThis(job.data);
+  await boss.work(queue, async job => {
+    console.log(`received job ${job.id} with data ${JSON.stringify(job.data)}`)
+  })
 }
 ```
 

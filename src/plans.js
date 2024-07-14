@@ -174,7 +174,7 @@ function getPartitionFunction (schema) {
   return `
     CREATE FUNCTION ${schema}.get_partition(queue_name text, out name text) AS
     $$
-    SELECT '${schema}.job' || encode(digest(queue_name, 'sha1'), 'hex');
+    SELECT '${schema}.job_' || encode(digest(queue_name, 'sha1'), 'hex');
     $$
     LANGUAGE SQL
     IMMUTABLE
@@ -315,6 +315,8 @@ function getQueueByName (schema) {
 function deleteQueueRecords (schema) {
   return `WITH dq AS (
       DELETE FROM ${schema}.queue WHERE name = $1
+    ), ds AS (
+      DELETE FROM ${schema}.schedule WHERE name = $1
     )
     DELETE FROM ${schema}.job WHERE name = $1
   `
@@ -378,7 +380,9 @@ function createTableSubscription (schema) {
 
 function getSchedules (schema) {
   return `
-    SELECT * FROM ${schema}.schedule
+    SELECT s.*
+    FROM ${schema}.schedule s
+      JOIN ${schema}.queue q on s.name = q.name
   `
 }
 

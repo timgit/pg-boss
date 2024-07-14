@@ -30,7 +30,7 @@ function getConfig (options = {}) {
   config.password = process.env.POSTGRES_PASSWORD || config.password
 
   if (options.testKey) {
-    config.schema = `pgboss${sha1(options.testKey).slice(-10)}`
+    config.schema = `pgboss${sha1(options.testKey)}`
   }
 
   config.schema = config.schema || 'pgboss'
