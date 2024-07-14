@@ -10,9 +10,8 @@ async function readme () {
 
   const queue = 'readme-queue'
 
-  try {
-    await boss.createQueue(queue)
-  } catch {}
+  await boss.deleteQueue(queue)
+  await boss.createQueue(queue)
 
   const id = await boss.send(queue, { arg1: 'read me' })
 
