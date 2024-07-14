@@ -77,10 +77,7 @@ class Boss extends EventEmitter {
     } catch (err) {
       this.emit(events.error, err)
     } finally {
-      if (locker?.locked) {
-        await locker.unlock()
-      }
-
+      await locker?.unlock()
       this.monitoring = false
     }
   }
@@ -119,10 +116,7 @@ class Boss extends EventEmitter {
     } catch (err) {
       this.emit(events.error, err)
     } finally {
-      if (locker?.locked) {
-        await locker.unlock()
-      }
-
+      await locker?.unlock()
       this.maintaining = false
     }
   }

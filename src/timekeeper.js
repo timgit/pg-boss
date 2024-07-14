@@ -132,18 +132,15 @@ class Timekeeper extends EventEmitter {
 
       const { secondsAgo } = await this.getCronTime()
 
-      if (secondsAgo > 30) {
+      if (secondsAgo > this.config.cronMonitorIntervalSeconds) {
         await this.cron()
         await this.setCronTime()
       }
     } catch (err) {
       this.emit(this.events.error, err)
     } finally {
-      if (locker?.locked) {
-        await locker.unlock()
-      }
-
       this.timekeeping = false
+      await locker?.unlock()
     }
   }
 

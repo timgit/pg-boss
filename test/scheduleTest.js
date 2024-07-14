@@ -16,12 +16,12 @@ describe('schedule', function () {
       noDefault: true
     }
 
-    let boss = this.test.boss = await helper.start({ ...config, schedule: false })
+    let boss = await helper.start(config)
     const queue = this.test.bossConfig.schema
 
     await boss.createQueue(queue)
     await boss.schedule(queue, '* * * * *')
-    await boss.stop({ wait: false })
+    await boss.stop({ graceful: false })
 
     boss = await helper.start({ ...config, schedule: true })
 
@@ -30,6 +30,8 @@ describe('schedule', function () {
     const job = await boss.fetch(queue)
 
     assert(job)
+
+    await boss.stop({ graceful: false })
   })
 
   it('should not enable scheduling if archive config is < 60s', async function () {
@@ -64,7 +66,7 @@ describe('schedule', function () {
 
     await delay(ASSERT_DELAY)
 
-    await boss.stop({ wait: false })
+    await boss.stop({ graceful: false })
 
     boss = await helper.start({ ...this.test.bossConfig, cronWorkerIntervalSeconds: 1, schedule: true, noDefault: true })
 
@@ -74,7 +76,7 @@ describe('schedule', function () {
 
     assert(job)
 
-    await boss.stop({ wait: false })
+    await boss.stop({ graceful: false })
   })
 
   it('should remove previously scheduled job', async function () {
@@ -134,7 +136,7 @@ describe('schedule', function () {
 
     await boss.schedule(queue, cron)
 
-    await delay(ASSERT_DELAY)
+    await delay(6000)
 
     const job = await boss.fetch(queue)
 

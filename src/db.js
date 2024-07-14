@@ -45,9 +45,7 @@ class Db extends EventEmitter {
   }
 
   async lock ({ timeout = 30, key } = {}) {
-    const lockedClient = new pg.Client(this.config)
-    await lockedClient.connect()
-    // const lockedClient = await this.pool.connect()
+    const lockedClient = await this.pool.connect()
 
     const query = `
         BEGIN;
@@ -59,13 +57,11 @@ class Db extends EventEmitter {
     await lockedClient.query(query)
 
     const locker = {
-      locked: true,
       unlock: async function () {
         try {
           await lockedClient.query('COMMIT')
-          await lockedClient.end()
         } finally {
-          this.locked = false
+          lockedClient.release()
         }
       }
     }
