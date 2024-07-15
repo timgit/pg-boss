@@ -43,7 +43,7 @@ This will likely cater the most to teams already familiar with the simplicity of
 
 ## Requirements
 * Node 20 or higher
-* PostgreSQL 12 or higher
+* PostgreSQL 13 or higher
 
 ## Installation
 

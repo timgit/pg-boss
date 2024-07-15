@@ -77,13 +77,7 @@ All jobs that are `completed`, `cancelled` or `failed` become eligible for archi
 
 # Database install
 
-pg-boss can be installed into any database.  When started, it will detect if it is installed and automatically create required storage.  If the database doesn't already have the pgcrypto extension installed, you will need to have a superuser add it before pg-boss can create its schema.
-
-```sql
-CREATE EXTENSION pgcrypto;
-```
-
-Once this is completed, pg-boss requires the [CREATE](http://www.postgresql.org/docs/9.5/static/sql-grant.html) privilege in order to create and maintain its schema.
+pg-boss can be installed into any database.  When started, it will detect if it is installed and automatically create required storage.  Automatic creation requires the [CREATE](http://www.postgresql.org/docs/9.5/static/sql-grant.html) privilege in order to create and maintain its schema.
 
 ```sql
 GRANT CREATE ON DATABASE db1 TO leastprivuser;
