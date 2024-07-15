@@ -174,7 +174,7 @@ function getPartitionFunction (schema) {
   return `
     CREATE FUNCTION ${schema}.get_partition(queue_name text, out name text) AS
     $$
-    SELECT '${schema}.job_' || encode(digest(queue_name, 'sha1'), 'hex');
+    SELECT '${schema}.job_' || encode(sha224(queue_name::bytea), 'hex');
     $$
     LANGUAGE SQL
     IMMUTABLE
@@ -769,7 +769,7 @@ function locked (schema, query) {
 
 function advisoryLock (schema, key) {
   return `SELECT pg_advisory_xact_lock(      
-      ('x' || encode(digest(current_database() || '.pgboss.${schema}${key || ''}', 'sha256'), 'hex'))::bit(64)::bigint
+      ('x' || encode(sha224((current_database() || '.pgboss.${schema}${key || ''}')::bytea), 'hex'))::bit(64)::bigint
   )`
 }
 
