@@ -152,6 +152,10 @@ function getConfig (value) {
     ? { connectionString: value }
     : { ...value }
 
+  config.schedule = ('schedule' in config) ? config.schedule : true
+  config.supervise = ('supervise' in config) ? config.supervise : true
+  config.migrate = ('migrate' in config) ? config.migrate : true
+
   applySchemaConfig(config)
   applyMaintenanceConfig(config)
   applyArchiveConfig(config)
@@ -303,10 +307,6 @@ function applyMaintenanceConfig (config) {
         : 120
 
   assert(config.maintenanceIntervalSeconds / 60 / 60 < MAX_INTERVAL_HOURS, `configuration assert: maintenance interval cannot exceed ${MAX_INTERVAL_HOURS} hours`)
-
-  config.schedule = ('schedule' in config) ? config.schedule : true
-  config.supervise = ('supervise' in config) ? config.supervise : true
-  config.migrate = ('migrate' in config) ? config.migrate : true
 }
 
 function applyDeleteConfig (config) {
