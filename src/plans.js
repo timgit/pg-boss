@@ -77,7 +77,6 @@ function create (schema, version) {
     createEnumJobState(schema),
 
     createTableJob(schema),
-    createIndexJobName(schema),
     createIndexJobFetch(schema),
     createIndexJobPolicyStately(schema),
     createIndexJobPolicyShort(schema),
@@ -89,7 +88,6 @@ function create (schema, version) {
     createPrimaryKeyArchive(schema),
     createColumnArchiveArchivedOn(schema),
     createIndexArchiveArchivedOn(schema),
-    createIndexArchiveName(schema),
 
     createTableVersion(schema),
     createTableQueue(schema),
@@ -257,10 +255,6 @@ function createIndexJobThrottleKey (schema) {
   return `CREATE UNIQUE INDEX job_throttle_key ON ${schema}.job (name, singleton_key) WHERE state <= '${states.completed}' AND singleton_on IS NULL`
 }
 
-function createIndexJobName (schema) {
-  return `CREATE INDEX job_name ON ${schema}.job (name)`
-}
-
 function createIndexJobFetch (schema) {
   return `CREATE INDEX job_fetch ON ${schema}.job (name, start_after) INCLUDE (priority, created_on, id) WHERE state < '${states.active}'`
 }
@@ -275,10 +269,6 @@ function createColumnArchiveArchivedOn (schema) {
 
 function createIndexArchiveArchivedOn (schema) {
   return `CREATE INDEX archive_archived_on_idx ON ${schema}.archive(archived_on)`
-}
-
-function createIndexArchiveName (schema) {
-  return `CREATE INDEX archive_name_idx ON ${schema}.archive(name)`
 }
 
 function getMaintenanceTime (schema) {

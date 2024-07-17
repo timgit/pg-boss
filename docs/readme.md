@@ -118,30 +118,32 @@ If you need to interact with pg-boss outside of Node.js, such as other clients o
 
 ## Job table
 
-The following command is the definition of the primary job table. For manual job creation, the only required column is `name`.  All other columns are nullable or have sensible defaults.
+The following command is the definition of the primary job table. For manual job creation, the only required column is `name`.  All other columns are nullable or have defaults.
 
 ```sql
-  CREATE TABLE ${schema}.job (
-    id uuid primary key not null default gen_random_uuid(),
-    name text not null,
-    priority integer not null default(0),
-    data jsonb,
-    state ${schema}.job_state not null default('${states.created}'),
-    retryLimit integer not null default(0),
-    retryCount integer not null default(0),
-    retryDelay integer not null default(0),
-    retryBackoff boolean not null default false,
-    startAfter timestamp with time zone not null default now(),
-    startedOn timestamp with time zone,
-    singletonKey text,
-    singletonOn timestamp without time zone,
-    expireIn interval not null default interval '15 minutes',
-    createdOn timestamp with time zone not null default now(),
-    completedOn timestamp with time zone,
-    keepUntil timestamp with time zone NOT NULL default now() + interval '14 days',
-    on_complete boolean not null default true,
-    output jsonb
-  )
+CREATE TABLE pgboss.job (
+  id uuid not null default gen_random_uuid(),
+  name text not null,
+  priority integer not null default(0),
+  data jsonb,
+  state pgboss.job_state not null default('created'),
+  retry_limit integer not null default(0),
+  retry_count integer not null default(0),
+  retry_delay integer not null default(0),
+  retry_backoff boolean not null default false,
+  start_after timestamp with time zone not null default now(),
+  started_on timestamp with time zone,
+  singleton_key text,
+  singleton_on timestamp without time zone,
+  expire_in interval not null default interval '15 minutes',
+  created_on timestamp with time zone not null default now(),
+  completed_on timestamp with time zone,
+  keep_until timestamp with time zone NOT NULL default now() + interval '14 days',
+  output jsonb,
+  dead_letter text,
+  policy text,
+  CONSTRAINT job_pkey PRIMARY KEY (name, id)
+) PARTITION BY LIST (name)
 ```
 
 # Events
