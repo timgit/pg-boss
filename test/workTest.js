@@ -357,7 +357,7 @@ describe('work', function () {
 
     return new Promise((resolve) => {
       boss.work(queue, { includeMetadata: true }, async job => {
-        assert(job.startedon !== undefined)
+        assert(job.startedOn !== undefined)
         resolve()
       })
     })

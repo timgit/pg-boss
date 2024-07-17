@@ -159,14 +159,14 @@ describe('queues', function () {
 
     const job = await boss.getJobById(queue, jobId)
 
-    const retentionMinutes = (new Date(job.keepuntil) - new Date(job.createdon)) / 1000 / 60
+    const retentionMinutes = (new Date(job.keepUntil) - new Date(job.createdOn)) / 1000 / 60
 
-    assert.strictEqual(createProps.retryLimit, job.retrylimit)
-    assert.strictEqual(createProps.retryBackoff, job.retrybackoff)
-    assert.strictEqual(createProps.retryDelay, job.retrydelay)
-    assert.strictEqual(createProps.expireInSeconds, job.expirein.seconds)
+    assert.strictEqual(createProps.retryLimit, job.retryLimit)
+    assert.strictEqual(createProps.retryBackoff, job.retryBackoff)
+    assert.strictEqual(createProps.retryDelay, job.retryDelay)
+    assert.strictEqual(createProps.expireInSeconds, job.expireIn.seconds)
     assert.strictEqual(createProps.retentionMinutes, retentionMinutes)
-    assert.strictEqual(createProps.deadLetter, job.deadletter)
+    assert.strictEqual(createProps.deadLetter, job.deadLetter)
   })
 
   it('short policy only allows 1 job in queue', async function () {

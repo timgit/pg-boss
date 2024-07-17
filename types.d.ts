@@ -176,24 +176,26 @@ declare namespace PgBoss {
     data: T;
   }
 
-  interface JobWithMetadata<T = object> extends Job<T> {
+  interface JobWithMetadata<T = object> {
+    id: string;
+    name: string;
+    data: T;
     priority: number;
     state: 'created' | 'retry' | 'active' | 'completed' | 'cancelled' | 'failed';
-    retrylimit: number;
-    retrycount: number;
-    retrydelay: number;
-    retrybackoff: boolean;
-    startafter: Date;
-    // This is nullable in the schema, but by the time this type is reified,
-    // it will have been set.
-    startedon: Date;
-    singletonkey: string | null;
-    singletonon: Date | null;
-    expirein: PostgresInterval;
-    createdon: Date;
-    completedon: Date | null;
-    keepuntil: Date;
-    deadletter: string,
+    retryLimit: number;
+    retryCount: number;
+    retryDelay: number;
+    retryBackoff: boolean;
+    startAfter: Date;
+    startedOn: Date;
+    singletonKey: string | null;
+    singletonOn: Date | null;
+    expireIn: PostgresInterval;
+    createdOn: Date;
+    completedOn: Date | null;
+    keepUntil: Date;
+    deadLetter: string,
+    policy: string,
     output: object
   }
 

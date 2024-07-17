@@ -217,7 +217,7 @@ class Manager extends EventEmitter {
       this.emitWip(name)
 
       if (batchSize) {
-        const maxExpiration = jobs.reduce((acc, i) => Math.max(acc, i.expire_in_seconds), 0)
+        const maxExpiration = jobs.reduce((acc, i) => Math.max(acc, i.expireInSeconds), 0)
 
         await resolveWithinSeconds(Promise.all([callback(jobs)]), maxExpiration)
           .then(() => this.complete(name, jobs.map(job => job.id)))
@@ -228,7 +228,7 @@ class Manager extends EventEmitter {
         }
 
         const allTeamPromise = pMap(jobs, job =>
-          resolveWithinSeconds(callback(job), job.expire_in_seconds)
+          resolveWithinSeconds(callback(job), job.expireInSeconds)
             .then(result => this.complete(name, job.id, result))
             .catch(err => this.fail(name, job.id, err))
             .then(() => refill ? onRefill() : null)

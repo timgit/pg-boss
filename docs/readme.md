@@ -686,30 +686,32 @@ Typically one would use `work()` for automated polling for new jobs based upon a
 
   * `includeMetadata`, bool, default: `false`
 
-    If `true`, all job metadata will be returned on the job object.  The following table shows each property and its type, which is basically all columns from the job table.
+    If `true`, all job metadata will be returned on the job object.
 
-    | Prop | Type | |
-    | - | - | -|
-    | id | string, uuid |
-    | name| string |
-    | data | object |
-    | priority | number |
-    | state | string |
-    | retrylimit | number |
-    | retrycount | number |
-    | retrydelay | number |
-    | retrybackoff | bool |
-    | startafter | string, timestamp |
-    | startedon | string, timestamp |
-    | singletonkey | string |
-    | singletonon | string, timestamp |
-    | expirein | object, pg interval |
-    | createdon | string, timestamp |
-    | completedon | string, timestamp |
-    | keepuntil | string, timestamp |
-    | deadletter | string |
-    | output | object |
-
+    ```js
+    interface JobWithMetadata<T = object> {
+      id: string;
+      name: string;
+      data: T;
+      priority: number;
+      state: 'created' | 'retry' | 'active' | 'completed' | 'cancelled' | 'failed';
+      retryLimit: number;
+      retryCount: number;
+      retryDelay: number;
+      retryBackoff: boolean;
+      startAfter: Date;
+      startedOn: Date;
+      singletonKey: string | null;
+      singletonOn: Date | null;
+      expireIn: PostgresInterval;
+      createdOn: Date;
+      completedOn: Date | null;
+      keepUntil: Date;
+      deadLetter: string,
+      policy: string,
+      output: object
+    }
+    ```
 
 **Resolves**
 - `[job]`: array of job objects, `null` if none found
