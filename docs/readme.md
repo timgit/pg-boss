@@ -107,7 +107,9 @@ DROP TABLE ${schema}.schedule;
 DROP TABLE ${schema}.subscription;
 DROP TABLE ${schema}.version;
 DROP TYPE ${schema}.job_state;
-DROP FUNCTION ${schema}.create_queue;
+DROP FUNCTION ${schema}.get_partition;
+DROP FUNCTION ${schema}.create_partition;
+DROP FUNCTION ${schema}.drop_partition;
 ```
 
 # Direct database interactions
