@@ -350,9 +350,9 @@ declare class PgBoss extends EventEmitter {
   getQueueSize(name: string, options?: object): Promise<number>;
   getJobById(name: string, id: string, options?: PgBoss.ConnectionOptions): Promise<PgBoss.JobWithMetadata | null>;
 
-  createQueue(name: string, options?: Queue): Promise<void>;
-  getQueue(name: string): Promise<Queue | null>;
-  updateQueue(name: string, options?: QueueUpdateOptions): Promise<void>;
+  createQueue(name: string, options?: PgBoss.Queue): Promise<void>;
+  getQueue(name: string): Promise<PgBoss.Queue | null>;
+  updateQueue(name: string, options?: PgBoss.QueueUpdateOptions): Promise<void>;
   deleteQueue(name: string): Promise<void>;
   purgeQueue(name: string): Promise<void>;
 
@@ -361,6 +361,8 @@ declare class PgBoss extends EventEmitter {
   purge(): Promise<void>;
   expire(): Promise<void>;
   maintain(): Promise<void>;
+  isInstalled(): Promise<Boolean>;
+  schemaVersion(): Promise<Number>;
 
   schedule(name: string, cron: string, data?: object, options?: PgBoss.ScheduleOptions): Promise<void>;
   unschedule(name: string): Promise<void>;

@@ -24,26 +24,26 @@ class Contractor {
 
     // exported api to index
     this.functions = [
-      this.version,
+      this.schemaVersion,
       this.isInstalled
     ]
   }
 
-  async version () {
+  async schemaVersion () {
     const result = await this.db.executeSql(plans.getVersion(this.config.schema))
     return result.rows.length ? parseInt(result.rows[0].version) : null
   }
 
   async isInstalled () {
     const result = await this.db.executeSql(plans.versionTableExists(this.config.schema))
-    return result.rows.length ? result.rows[0].name : null
+    return !!result.rows[0].name
   }
 
   async start () {
     const installed = await this.isInstalled()
 
     if (installed) {
-      const version = await this.version()
+      const version = await this.schemaVersion()
 
       if (schemaVersion > version) {
         throw new Error('Migrations are not supported to v10')
@@ -61,7 +61,7 @@ class Contractor {
       throw new Error('pg-boss is not installed')
     }
 
-    const version = await this.version()
+    const version = await this.schemaVersion()
 
     if (schemaVersion !== version) {
       throw new Error('pg-boss database requires migrations')
