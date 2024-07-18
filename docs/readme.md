@@ -56,6 +56,8 @@
   - [`createQueue(name, type)`](#createqueuename-type)
   - [`deleteQueue(name)`](#deletequeuename)
   - [`clearStorage()`](#clearstorage)
+  - [`isInstalled()`](#isinstalled)
+  - [`schemaVersion()`](#schemaversion)
 
 <!-- /TOC -->
 
@@ -1005,3 +1007,11 @@ Deletes a queue and all jobs from the active job table.  All jobs in the archive
 ## `clearStorage()`
 
 Utility function if and when needed to empty all job storage. Internally, this issues a `TRUNCATE` command against all jobs tables, archive included.
+
+## `isInstalled()`
+
+Utility function to see if pg-boss is installed in the configured database.
+
+## `schemaVersion()`
+
+Utility function to get the database schema version.
