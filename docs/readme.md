@@ -304,13 +304,12 @@ The following options can be set as properties in an object for additional confi
 
 
     ```js
-    const text = "select 1 as value1 from table1 where bar = $1"
-    const values = ['foo']
+    const text = "select $1 as input"
+    const values = ['arg1']
 
-    const { rows, rowCount } = await executeSql(text, values)
+    const { rows } = await executeSql(text, values)
 
-    assert(rows[0].value1 === 1)
-    assert(rowCount === 1)
+    assert(rows[0].input === 'arg1')
     ```
 
 * **schema** - string, defaults to "pgboss"

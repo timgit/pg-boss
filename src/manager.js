@@ -317,13 +317,9 @@ class Manager extends EventEmitter {
   async publish (event, ...args) {
     assert(event, 'Missing required argument')
 
-    const result = await this.db.executeSql(this.getQueuesForEventCommand, [event])
+    const { rows } = await this.db.executeSql(this.getQueuesForEventCommand, [event])
 
-    if (!result || result.rowCount === 0) {
-      return []
-    }
-
-    return await Promise.all(result.rows.map(({ name }) => this.send(name, ...args)))
+    return await Promise.all(rows.map(({ name }) => this.send(name, ...args)))
   }
 
   async send (...args) {
@@ -406,10 +402,10 @@ class Manager extends EventEmitter {
     ]
 
     const db = wrapper || this.db
-    const result = await db.executeSql(this.insertJobCommand, values)
+    const { rows } = await db.executeSql(this.insertJobCommand, values)
 
-    if (result && result.rowCount === 1) {
-      return result.rows[0].id
+    if (rows.length === 1) {
+      return rows[0].id
     }
 
     if (!options.singletonNextSlot) {
@@ -645,17 +641,16 @@ class Manager extends EventEmitter {
     assert(name, 'Missing queue name argument')
 
     const queueSql = plans.getQueueByName(this.config.schema)
-    const result = await this.db.executeSql(queueSql, [name])
+    const { rows } = await this.db.executeSql(queueSql, [name])
 
-    if (result?.rows?.length) {
+    if (rows.length) {
       Attorney.assertQueueName(name)
       const sql = plans.dropPartition(this.config.schema, name)
       await this.db.executeSql(sql)
     }
 
     const sql = plans.deleteQueueRecords(this.config.schema)
-    const result2 = await this.db.executeSql(sql, [name])
-    return result2?.rowCount || null
+    await this.db.executeSql(sql, [name])
   }
 
   async purgeQueue (queue) {

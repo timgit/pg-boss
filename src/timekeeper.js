@@ -31,8 +31,7 @@ class Timekeeper extends EventEmitter {
     this.getSchedulesCommand = plans.getSchedules(config.schema)
     this.scheduleCommand = plans.schedule(config.schema)
     this.unscheduleCommand = plans.unschedule(config.schema)
-    this.getCronTimeCommand = plans.getCronTime(config.schema)
-    this.setCronTimeCommand = plans.setCronTime(config.schema)
+    this.trySetCronTimeCommand = plans.trySetCronTime(config.schema)
 
     this.functions = [
       this.schedule,
@@ -44,27 +43,30 @@ class Timekeeper extends EventEmitter {
   }
 
   async start () {
-    this.stopped = false
-
     // setting the archive config too low breaks the cron 60s debounce interval so don't even try
     if (this.config.archiveSeconds < 60 || this.config.archiveFailedSeconds < 60) {
       return
     }
 
-    // cache the clock skew from the db server
+    this.stopped = false
+
     await this.cacheClockSkew()
 
     try {
       await this.manager.createQueue(queues.SEND_IT)
     } catch {}
 
-    await this.manager.work(queues.SEND_IT, { newJobCheckIntervalSeconds: this.config.cronWorkerIntervalSeconds, teamSize: 50, teamConcurrency: 5 }, (job) => this.onSendIt(job))
+    const options = {
+      newJobCheckIntervalSeconds: this.config.cronWorkerIntervalSeconds,
+      teamSize: 50,
+      teamConcurrency: 5
+    }
+
+    await this.manager.work(queues.SEND_IT, options, (job) => this.onSendIt(job))
 
     setImmediate(() => this.onCron())
 
-    // create monitoring interval to make sure cron hasn't crashed
     this.cronMonitorInterval = setInterval(async () => await this.onCron(), this.cronMonitorIntervalMs)
-    // create monitoring interval to measure and adjust for drift in clock skew
     this.skewMonitorInterval = setInterval(async () => await this.cacheClockSkew(), this.skewMonitorIntervalMs)
   }
 
@@ -117,8 +119,6 @@ class Timekeeper extends EventEmitter {
   }
 
   async onCron () {
-    let locker
-
     try {
       if (this.stopped || this.timekeeping) return
 
@@ -128,19 +128,15 @@ class Timekeeper extends EventEmitter {
 
       this.timekeeping = true
 
-      locker = await this.db.lock({ key: 'timekeeper' })
+      const { rows } = await this.db.executeSql(this.trySetCronTimeCommand, [this.config.cronMonitorIntervalSeconds])
 
-      const { secondsAgo } = await this.getCronTime()
-
-      if (secondsAgo > this.config.cronMonitorIntervalSeconds) {
+      if (rows.length === 1 && !this.stopped) {
         await this.cron()
-        await this.setCronTime()
       }
     } catch (err) {
       this.emit(this.events.error, err)
     } finally {
       this.timekeeping = false
-      await locker?.unlock()
     }
   }
 
@@ -198,28 +194,11 @@ class Timekeeper extends EventEmitter {
 
     const values = [name, cron, tz, data, options]
 
-    const result = await this.db.executeSql(this.scheduleCommand, values)
-
-    return result ? result.rowCount : null
+    await this.db.executeSql(this.scheduleCommand, values)
   }
 
   async unschedule (name) {
-    const result = await this.db.executeSql(this.unscheduleCommand, [name])
-    return result ? result.rowCount : null
-  }
-
-  async setCronTime () {
-    await this.db.executeSql(this.setCronTimeCommand)
-  }
-
-  async getCronTime () {
-    const { rows } = await this.db.executeSql(this.getCronTimeCommand)
-
-    let { cron_on: cronOn, seconds_ago: secondsAgo } = rows[0]
-
-    secondsAgo = secondsAgo !== null ? parseFloat(secondsAgo) : 61
-
-    return { cronOn, secondsAgo }
+    await this.db.executeSql(this.unscheduleCommand, [name])
   }
 }
 

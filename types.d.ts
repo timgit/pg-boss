@@ -2,7 +2,7 @@ import { EventEmitter } from 'events'
 
 declare namespace PgBoss {
   interface Db {
-    executeSql(text: string, values: any[]): Promise<{ rows: any[]; rowCount: number }>;
+    executeSql(text: string, values: any[]): Promise<{ rows: any[] }>;
   }
 
   interface DatabaseOptions {
@@ -91,10 +91,14 @@ declare namespace PgBoss {
   interface ConnectionOptions {
     db?: Db;
   }
-
+  
   type InsertOptions = ConnectionOptions;
-
+  
   type SendOptions = JobOptions & ExpirationOptions & RetentionOptions & RetryOptions & ConnectionOptions;
+  
+  type QueuePolicy = 'standard' | 'short' | 'singleton' | 'stately'
+  type Queue = ExpirationOptions & RetentionOptions & RetryOptions & { policy: QueuePolicy }
+  type QueueUpdateOptions = ExpirationOptions & RetentionOptions & RetryOptions
 
   type ScheduleOptions = SendOptions & { tz?: string }
 
@@ -195,7 +199,7 @@ declare namespace PgBoss {
     completedOn: Date | null;
     keepUntil: Date;
     deadLetter: string,
-    policy: string,
+    policy: QueuePolicy,
     output: object
   }
 
@@ -316,10 +320,6 @@ declare class PgBoss extends EventEmitter {
   offWork(name: string): Promise<void>;
   offWork(options: PgBoss.OffWorkOptions): Promise<void>;
 
-  /**
-   * Notify worker that something has changed
-   * @param workerId
-   */
   notifyWorker(workerId: string): void;
 
   subscribe(event: string, name: string): Promise<void>;
@@ -350,11 +350,13 @@ declare class PgBoss extends EventEmitter {
   getQueueSize(name: string, options?: object): Promise<number>;
   getJobById(name: string, id: string, options?: PgBoss.ConnectionOptions): Promise<PgBoss.JobWithMetadata | null>;
 
-  createQueue(name: string, options?: { policy: 'standard' | 'short' | 'singleton' | 'stately' }): Promise<void>;
+  createQueue(name: string, options?: Queue): Promise<void>;
+  getQueue(name: string): Promise<Queue | null>;
+  updateQueue(name: string, options?: QueueUpdateOptions): Promise<void>;
   deleteQueue(name: string): Promise<void>;
   purgeQueue(name: string): Promise<void>;
-  clearStorage(): Promise<void>;
 
+  clearStorage(): Promise<void>;
   archive(): Promise<void>;
   purge(): Promise<void>;
   expire(): Promise<void>;

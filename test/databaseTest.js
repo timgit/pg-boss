@@ -17,7 +17,7 @@ describe('database', function () {
     const query = 'SELECT something FROM somewhere'
 
     const mydb = {
-      executeSql: async (text, values) => ({ rows: [], text, rowCount: 0 })
+      executeSql: async (text, values) => ({ rows: [], text })
     }
 
     const boss = new PgBoss({ db: mydb })

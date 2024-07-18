@@ -24,10 +24,8 @@ class Boss extends EventEmitter {
     this.failJobsByTimeoutCommand = plans.locked(config.schema, plans.failJobsByTimeout(config.schema))
     this.archiveCommand = plans.locked(config.schema, plans.archive(config.schema, config.archiveInterval, config.archiveFailedInterval))
     this.dropCommand = plans.locked(config.schema, plans.drop(config.schema, config.deleteAfter))
-    this.getMaintenanceTimeCommand = plans.getMaintenanceTime(config.schema)
-    this.setMaintenanceTimeCommand = plans.setMaintenanceTime(config.schema)
-    this.getMonitorTimeCommand = plans.getMonitorTime(config.schema)
-    this.setMonitorTimeCommand = plans.setMonitorTime(config.schema)
+    this.trySetMaintenanceTimeCommand = plans.trySetMaintenanceTime(config.schema)
+    this.trySetMonitorTimeCommand = plans.trySetMonitorTime(config.schema)
     this.countStatesCommand = plans.countStates(config.schema)
 
     this.functions = [
@@ -48,8 +46,6 @@ class Boss extends EventEmitter {
   }
 
   async onMonitor () {
-    let locker
-
     try {
       if (this.monitoring) {
         return
@@ -65,26 +61,24 @@ class Boss extends EventEmitter {
         throw new Error(this.config.__test__throw_monitor)
       }
 
-      locker = await this.db.lock({ key: 'monitor' })
+      if (this.stopped) {
+        return
+      }
 
-      const { secondsAgo } = await this.getMonitorTime()
+      const { rows } = await this.db.executeSql(this.trySetMonitorTimeCommand, [this.config.monitorStateIntervalSeconds])
 
-      if (secondsAgo > this.monitorStateIntervalSeconds && !this.stopped) {
+      if (rows.length === 1 && !this.stopped) {
         const states = await this.countStates()
-        this.setMonitorTime()
         this.emit(events.monitorStates, states)
       }
     } catch (err) {
       this.emit(events.error, err)
     } finally {
-      await locker?.unlock()
       this.monitoring = false
     }
   }
 
   async onSupervise () {
-    let locker
-
     try {
       if (this.maintaining) {
         return
@@ -105,18 +99,15 @@ class Boss extends EventEmitter {
         return
       }
 
-      locker = await this.db.lock({ key: 'maintenance' })
+      const { rows } = await this.db.executeSql(this.trySetMaintenanceTimeCommand, [this.config.maintenanceIntervalSeconds])
 
-      const { secondsAgo } = await this.getMaintenanceTime()
-
-      if (secondsAgo > this.maintenanceIntervalSeconds) {
+      if (rows.length === 1 && !this.stopped) {
         const result = await this.maintain()
         this.emit(events.maintenance, result)
       }
     } catch (err) {
       this.emit(events.error, err)
     } finally {
-      await locker?.unlock()
       this.maintaining = false
     }
   }
@@ -129,8 +120,6 @@ class Boss extends EventEmitter {
     !this.stopped && await this.drop()
 
     const ended = Date.now()
-
-    await this.setMaintenanceTime()
 
     return { ms: ended - started }
   }

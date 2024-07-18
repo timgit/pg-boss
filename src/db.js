@@ -1,6 +1,5 @@
 const EventEmitter = require('events')
 const pg = require('pg')
-const { advisoryLock } = require('./plans')
 
 class Db extends EventEmitter {
   constructor (config) {
@@ -42,31 +41,6 @@ class Db extends EventEmitter {
 
       return await this.pool.query(text, values)
     }
-  }
-
-  async lock ({ timeout = 30, key } = {}) {
-    const lockedClient = await this.pool.connect()
-
-    const query = `
-        BEGIN;
-        SET LOCAL lock_timeout = '${timeout}s';
-        SET LOCAL idle_in_transaction_session_timeout = '${timeout}s';
-        ${advisoryLock(this.config.schema, key)};
-    `
-
-    await lockedClient.query(query)
-
-    const locker = {
-      unlock: async function () {
-        try {
-          await lockedClient.query('COMMIT')
-        } finally {
-          lockedClient.release()
-        }
-      }
-    }
-
-    return locker
   }
 }
 

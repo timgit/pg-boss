@@ -53,14 +53,10 @@ module.exports = {
   getQueueSize,
   purgeQueue,
   clearStorage,
-  getMaintenanceTime,
-  setMaintenanceTime,
-  getMonitorTime,
-  setMonitorTime,
-  getCronTime,
-  setCronTime,
+  trySetMaintenanceTime,
+  trySetMonitorTime,
+  trySetCronTime,
   locked,
-  advisoryLock,
   assertMigration,
   getArchivedJobById,
   getJobById,
@@ -271,29 +267,24 @@ function createIndexArchiveArchivedOn (schema) {
   return `CREATE INDEX archive_archived_on_idx ON ${schema}.archive(archived_on)`
 }
 
-function getMaintenanceTime (schema) {
-  return `SELECT maintained_on, EXTRACT( EPOCH FROM (now() - maintained_on) ) seconds_ago FROM ${schema}.version`
+function trySetMaintenanceTime (schema) {
+  return trySetTimestamp(schema, 'maintained_on')
 }
 
-function setMaintenanceTime (schema) {
-  return `UPDATE ${schema}.version SET maintained_on = now()`
+function trySetMonitorTime (schema) {
+  return trySetTimestamp(schema, 'monitored_on')
 }
 
-function getMonitorTime (schema) {
-  return `SELECT monitored_on, EXTRACT( EPOCH FROM (now() - monitored_on) ) seconds_ago FROM ${schema}.version`
+function trySetCronTime (schema) {
+  return trySetTimestamp(schema, 'cron_on')
 }
 
-function setMonitorTime (schema) {
-  return `UPDATE ${schema}.version SET monitored_on = now()`
-}
-
-function setCronTime (schema, time) {
-  time = time || 'now()'
-  return `UPDATE ${schema}.version SET cron_on = ${time}`
-}
-
-function getCronTime (schema) {
-  return `SELECT cron_on, EXTRACT( EPOCH FROM (now() - cron_on) ) seconds_ago FROM ${schema}.version`
+function trySetTimestamp (schema, column) {
+  return `
+    UPDATE ${schema}.version SET ${column} = now()
+    WHERE EXTRACT( EPOCH FROM (now() - COALESCE(${column}, now() - interval '1 week') ) ) > $1
+    RETURNING true
+  `
 }
 
 function createQueue (schema) {
@@ -767,6 +758,7 @@ function locked (schema, query) {
   return `
     BEGIN;
     SET LOCAL lock_timeout = '30s';
+    SET LOCAL idle_in_transaction_session_timeout = '30s';
     ${advisoryLock(schema)};
     ${query};
     COMMIT;
