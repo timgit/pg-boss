@@ -10,7 +10,7 @@ const Worker = require('./worker')
 const plans = require('./plans')
 
 const { QUEUES: TIMEKEEPER_QUEUES } = require('./timekeeper')
-const { QUEUE_POLICY } = plans
+const { QUEUE_POLICIES } = plans
 
 const INTERNAL_QUEUES = Object.values(TIMEKEEPER_QUEUES).reduce((acc, i) => ({ ...acc, [i]: i }), {})
 
@@ -545,9 +545,9 @@ class Manager extends EventEmitter {
 
     Attorney.assertQueueName(name)
 
-    const { policy = QUEUE_POLICY.standard } = options
+    const { policy = QUEUE_POLICIES.standard } = options
 
-    assert(policy in QUEUE_POLICY, `${policy} is not a valid queue policy`)
+    assert(policy in QUEUE_POLICIES, `${policy} is not a valid queue policy`)
 
     const {
       retryLimit,

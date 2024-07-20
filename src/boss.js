@@ -135,10 +135,11 @@ class Boss extends EventEmitter {
   }
 
   async countStates () {
-    const stateCountDefault = { ...plans.states }
+    const stateCountDefault = { ...plans.JOB_STATES }
 
-    Object.keys(stateCountDefault)
-      .forEach(key => { stateCountDefault[key] = 0 })
+    for (const key of Object.keys(stateCountDefault)) {
+      stateCountDefault[key] = 0
+    }
 
     const counts = await this.db.executeSql(this.countStatesCommand)
 

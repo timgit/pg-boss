@@ -1,24 +1,22 @@
-const assert = require('assert')
+const DEFAULT_SCHEMA = 'pgboss'
+const MIGRATE_RACE_MESSAGE = 'division by zero'
+const CREATE_RACE_MESSAGE = 'already exists'
 
-const states = {
+const JOB_STATES = Object.freeze({
   created: 'created',
   retry: 'retry',
   active: 'active',
   completed: 'completed',
   cancelled: 'cancelled',
   failed: 'failed'
-}
+})
 
-const DEFAULT_SCHEMA = 'pgboss'
-const MIGRATE_RACE_MESSAGE = 'division by zero'
-const CREATE_RACE_MESSAGE = 'already exists'
-
-const QUEUE_POLICY = {
+const QUEUE_POLICIES = Object.freeze({
   standard: 'standard',
   short: 'short',
   singleton: 'singleton',
   stately: 'stately'
-}
+})
 
 module.exports = {
   create,
@@ -60,12 +58,14 @@ module.exports = {
   assertMigration,
   getArchivedJobById,
   getJobById,
-  QUEUE_POLICY,
-  states: { ...states },
+  QUEUE_POLICIES,
+  JOB_STATES,
   MIGRATE_RACE_MESSAGE,
   CREATE_RACE_MESSAGE,
   DEFAULT_SCHEMA
 }
+
+const assert = require('assert')
 
 function create (schema, version) {
   const commands = [
@@ -122,12 +122,12 @@ function createEnumJobState (schema) {
   // base type is numeric and first values are less than last values
   return `
     CREATE TYPE ${schema}.job_state AS ENUM (
-      '${states.created}',
-      '${states.retry}',
-      '${states.active}',
-      '${states.completed}',
-      '${states.cancelled}',
-      '${states.failed}'
+      '${JOB_STATES.created}',
+      '${JOB_STATES.retry}',
+      '${JOB_STATES.active}',
+      '${JOB_STATES.completed}',
+      '${JOB_STATES.cancelled}',
+      '${JOB_STATES.failed}'
     )
   `
 }
@@ -139,7 +139,7 @@ function createTableJob (schema) {
       name text not null,
       priority integer not null default(0),
       data jsonb,
-      state ${schema}.job_state not null default('${states.created}'),
+      state ${schema}.job_state not null default('${JOB_STATES.created}'),
       retry_limit integer not null default(0),
       retry_count integer not null default(0),
       retry_delay integer not null default(0),
@@ -232,27 +232,27 @@ function createPrimaryKeyArchive (schema) {
 }
 
 function createIndexJobPolicyShort (schema) {
-  return `CREATE UNIQUE INDEX job_policy_short ON ${schema}.job (name) WHERE state = '${states.created}' AND policy = '${QUEUE_POLICY.short}'`
+  return `CREATE UNIQUE INDEX job_policy_short ON ${schema}.job (name) WHERE state = '${JOB_STATES.created}' AND policy = '${QUEUE_POLICIES.short}'`
 }
 
 function createIndexJobPolicySingleton (schema) {
-  return `CREATE UNIQUE INDEX job_policy_singleton ON ${schema}.job (name) WHERE state = '${states.active}' AND policy = '${QUEUE_POLICY.singleton}'`
+  return `CREATE UNIQUE INDEX job_policy_singleton ON ${schema}.job (name) WHERE state = '${JOB_STATES.active}' AND policy = '${QUEUE_POLICIES.singleton}'`
 }
 
 function createIndexJobPolicyStately (schema) {
-  return `CREATE UNIQUE INDEX job_policy_stately ON ${schema}.job (name, state) WHERE state <= '${states.active}' AND policy = '${QUEUE_POLICY.stately}'`
+  return `CREATE UNIQUE INDEX job_policy_stately ON ${schema}.job (name, state) WHERE state <= '${JOB_STATES.active}' AND policy = '${QUEUE_POLICIES.stately}'`
 }
 
 function createIndexJobThrottleOn (schema) {
-  return `CREATE UNIQUE INDEX job_throttle_on ON ${schema}.job (name, singleton_on, COALESCE(singleton_key, '')) WHERE state <= '${states.completed}' AND singleton_on IS NOT NULL`
+  return `CREATE UNIQUE INDEX job_throttle_on ON ${schema}.job (name, singleton_on, COALESCE(singleton_key, '')) WHERE state <= '${JOB_STATES.completed}' AND singleton_on IS NOT NULL`
 }
 
 function createIndexJobThrottleKey (schema) {
-  return `CREATE UNIQUE INDEX job_throttle_key ON ${schema}.job (name, singleton_key) WHERE state <= '${states.completed}' AND singleton_on IS NULL`
+  return `CREATE UNIQUE INDEX job_throttle_key ON ${schema}.job (name, singleton_key) WHERE state <= '${JOB_STATES.completed}' AND singleton_on IS NULL`
 }
 
 function createIndexJobFetch (schema) {
-  return `CREATE INDEX job_fetch ON ${schema}.job (name, start_after) INCLUDE (priority, created_on, id) WHERE state < '${states.active}'`
+  return `CREATE INDEX job_fetch ON ${schema}.job (name, start_after) INCLUDE (priority, created_on, id) WHERE state < '${JOB_STATES.active}'`
 }
 
 function createTableArchive (schema) {
@@ -322,7 +322,7 @@ function deleteQueueRecords (schema) {
 }
 
 function purgeQueue (schema) {
-  return `DELETE from ${schema}.job WHERE name = $1 and state < '${states.active}'`
+  return `DELETE from ${schema}.job WHERE name = $1 and state < '${JOB_STATES.active}'`
 }
 
 function clearStorage (schema) {
@@ -330,8 +330,8 @@ function clearStorage (schema) {
 }
 
 function getQueueSize (schema, options = {}) {
-  options.before = options.before || states.active
-  assert(options.before in states, `${options.before} is not a valid state`)
+  options.before = options.before || JOB_STATES.active
+  assert(options.before in JOB_STATES, `${options.before} is not a valid state`)
   return `SELECT count(*) as count FROM ${schema}.job WHERE name = $1 AND state < '${options.before}'`
 }
 
@@ -456,14 +456,14 @@ function fetchNextJob (schema) {
       SELECT id
       FROM ${schema}.job
       WHERE name = $1
-        AND state < '${states.active}'
+        AND state < '${JOB_STATES.active}'
         AND start_after < now()
       ORDER BY ${priority && 'priority desc, '} created_on, id
       LIMIT $2
       FOR UPDATE SKIP LOCKED
     )
     UPDATE ${schema}.job j SET
-      state = '${states.active}',
+      state = '${JOB_STATES.active}',
       started_on = now(),
       retry_count = CASE WHEN started_on IS NOT NULL THEN retry_count + 1 ELSE retry_count END
     FROM next
@@ -477,11 +477,11 @@ function completeJobs (schema) {
     WITH results AS (
       UPDATE ${schema}.job
       SET completed_on = now(),
-        state = '${states.completed}',
+        state = '${JOB_STATES.completed}',
         output = $3::jsonb
       WHERE name = $1
         AND id IN (SELECT UNNEST($2::uuid[]))
-        AND state = '${states.active}'
+        AND state = '${JOB_STATES.active}'
       RETURNING *
     )
     SELECT COUNT(*) FROM results
@@ -489,14 +489,14 @@ function completeJobs (schema) {
 }
 
 function failJobsById (schema) {
-  const where = `name = $1 AND id IN (SELECT UNNEST($2::uuid[])) AND state < '${states.completed}'`
+  const where = `name = $1 AND id IN (SELECT UNNEST($2::uuid[])) AND state < '${JOB_STATES.completed}'`
   const output = '$3::jsonb'
 
   return failJobs(schema, where, output)
 }
 
 function failJobsByTimeout (schema) {
-  const where = `state = '${states.active}' AND (started_on + expire_in) < now()`
+  const where = `state = '${JOB_STATES.active}' AND (started_on + expire_in) < now()`
   const output = '\'{ "value": { "message": "job failed by timeout in active state" } }\'::jsonb'
   return failJobs(schema, where, output)
 }
@@ -506,8 +506,8 @@ function failJobs (schema, where, output) {
     WITH results AS (
       UPDATE ${schema}.job SET
         state = CASE
-          WHEN retry_count < retry_limit THEN '${states.retry}'::${schema}.job_state
-          ELSE '${states.failed}'::${schema}.job_state
+          WHEN retry_count < retry_limit THEN '${JOB_STATES.retry}'::${schema}.job_state
+          ELSE '${JOB_STATES.failed}'::${schema}.job_state
           END,
         completed_on = CASE
           WHEN retry_count < retry_limit THEN NULL
@@ -533,7 +533,7 @@ function failJobs (schema, where, output) {
         retry_limit,
         keep_until + (keep_until - start_after)
       FROM results
-      WHERE state = '${states.failed}'
+      WHERE state = '${JOB_STATES.failed}'
         AND dead_letter IS NOT NULL
         AND NOT name = dead_letter
     )
@@ -546,10 +546,10 @@ function cancelJobs (schema) {
     with results as (
       UPDATE ${schema}.job
       SET completed_on = now(),
-        state = '${states.cancelled}'
+        state = '${JOB_STATES.cancelled}'
       WHERE name = $1
         AND id IN (SELECT UNNEST($2::uuid[]))
-        AND state < '${states.completed}'
+        AND state < '${JOB_STATES.completed}'
       RETURNING 1
     )
     SELECT COUNT(*) from results
@@ -561,7 +561,7 @@ function resumeJobs (schema) {
     with results as (
       UPDATE ${schema}.job
       SET completed_on = NULL,
-        state = '${states.created}'
+        state = '${JOB_STATES.created}'
       WHERE name = $1
         AND id IN (SELECT UNNEST($2::uuid[]))
       RETURNING 1
@@ -731,9 +731,9 @@ function archive (schema, completedInterval, failedInterval = completedInterval)
   return `
     WITH archived_rows AS (
       DELETE FROM ${schema}.job
-      WHERE (state <> '${states.failed}' AND completed_on < (now() - interval '${completedInterval}'))
-        OR (state = '${states.failed}' AND completed_on < (now() - interval '${failedInterval}'))
-        OR (state < '${states.active}' AND keep_until < now())
+      WHERE (state <> '${JOB_STATES.failed}' AND completed_on < (now() - interval '${completedInterval}'))
+        OR (state = '${JOB_STATES.failed}' AND completed_on < (now() - interval '${failedInterval}'))
+        OR (state < '${JOB_STATES.active}' AND keep_until < now())
       RETURNING *
     )
     INSERT INTO ${schema}.archive (${columns})

@@ -36,6 +36,9 @@ class PgBoss extends EventEmitter {
     return Contractor.rollbackPlans(schema, version)
   }
 
+  static states = plans.JOB_STATES
+  static policies = plans.QUEUE_POLICIES
+
   constructor (value) {
     super()
 
@@ -212,4 +215,3 @@ class PgBoss extends EventEmitter {
 }
 
 module.exports = PgBoss
-module.exports.states = plans.states

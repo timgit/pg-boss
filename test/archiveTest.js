@@ -1,7 +1,7 @@
 const assert = require('assert')
 const helper = require('./testHelper')
 const { delay } = require('../src/tools')
-const { states } = require('../src/plans')
+const { JOB_STATES } = require('../src/plans')
 
 describe('archive', function () {
   const defaults = {
@@ -124,6 +124,6 @@ describe('archive', function () {
 
     assert.strictEqual(jobId, archivedJob.id)
     assert.strictEqual(queue, archivedJob.name)
-    assert.strictEqual(states.failed, archivedJob.state)
+    assert.strictEqual(JOB_STATES.failed, archivedJob.state)
   })
 })

@@ -1,6 +1,22 @@
 import { EventEmitter } from 'events'
 
 declare namespace PgBoss {
+  
+  type JobStates = {
+    created : 'created',
+    retry: 'retry',
+    active: 'active',
+    completed: 'completed',
+    cancelled: 'cancelled',
+    failed: 'failed'
+  }
+
+  type QueuePolicies = {
+    standard: 'standard'
+    short: 'short',
+    singleton: 'singleton',
+    stately: 'stately'
+  }
   interface Db {
     executeSql(text: string, values: any[]): Promise<{ rows: any[] }>;
   }
@@ -274,6 +290,9 @@ declare class PgBoss extends EventEmitter {
   static getRollbackPlans(schema: string, version: string): string;
   static getRollbackPlans(schema: string): string;
   static getRollbackPlans(): string;
+
+  static states: PgBoss.JobStates
+  static policies: PgBoss.QueuePolicies
 
   on(event: "error", handler: (error: Error) => void): this;
   off(event: "error", handler: (error: Error) => void): this;

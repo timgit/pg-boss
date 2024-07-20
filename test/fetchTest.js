@@ -83,7 +83,7 @@ describe('fetch', function () {
     const jobs = await boss.fetch(queue, batchSize, { includeMetadata: true })
     assert(jobs.length === batchSize)
 
-    jobs.forEach(job => {
+    for (const job of jobs) {
       assert(queue === job.name)
       assert(job.priority === 0)
       assert(job.state === 'active')
@@ -100,7 +100,7 @@ describe('fetch', function () {
       assert(job.createdOn !== undefined)
       assert(job.completedOn === null)
       assert(job.keepUntil !== undefined)
-    })
+    }
   })
 
   it('should fetch a job with custom connection', async function () {
