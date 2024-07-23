@@ -186,7 +186,7 @@ function getPartitionFunction (schema) {
   return `
     CREATE FUNCTION ${schema}.get_partition(queue_name text, out name text) AS
     $$
-    SELECT '${schema}.job_' || encode(sha224(queue_name::bytea), 'hex');
+    SELECT 'job_' || encode(sha224(queue_name::bytea), 'hex');
     $$
     LANGUAGE SQL
     IMMUTABLE
@@ -201,9 +201,9 @@ function createPartitionFunction (schema) {
     DECLARE
       table_name varchar := ${schema}.get_partition(queue_name);
     BEGIN
-      EXECUTE format('CREATE TABLE %I (LIKE ${schema}.job INCLUDING DEFAULTS INCLUDING CONSTRAINTS)', table_name);
-      EXECUTE format('ALTER TABLE %I ADD CHECK (name=%L)', table_name, queue_name);
-      EXECUTE format('ALTER TABLE ${schema}.job ATTACH PARTITION %I FOR VALUES IN (%L)', table_name, queue_name);
+      EXECUTE format('CREATE TABLE ${schema}.%I (LIKE ${schema}.job INCLUDING DEFAULTS INCLUDING CONSTRAINTS)', table_name);
+      EXECUTE format('ALTER TABLE ${schema}.%I ADD CHECK (name=%L)', table_name, queue_name);
+      EXECUTE format('ALTER TABLE ${schema}.job ATTACH PARTITION ${schema}.%I FOR VALUES IN (%L)', table_name, queue_name);
     END;
     $$
     LANGUAGE plpgsql;

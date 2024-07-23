@@ -102,11 +102,12 @@ describe('send', function () {
 
   it('should not create job if transaction fails', async function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
-    const queue = this.test.bossConfig.schema
+    const { schema } = this.test.bossConfig
+    const queue = schema
 
     const db = await helper.getDb()
     const client = db.pool
-    await client.query('CREATE TABLE IF NOT EXISTS test (label VARCHAR(50))')
+    await client.query(`CREATE TABLE IF NOT EXISTS ${schema}.test (label VARCHAR(50))`)
 
     const throwError = () => { throw new Error('Error!!') }
 
@@ -120,7 +121,7 @@ describe('send', function () {
         },
         someCrazyOption: 'whatever'
       }
-      const queryText = 'INSERT INTO test(label) VALUES(\'Test\')'
+      const queryText = `INSERT INTO ${schema}.test(label) VALUES('Test')`
       await client.query(queryText)
 
       await boss.send({ name: queue, options })
