@@ -122,7 +122,7 @@ function checkWorkArgs (name, args, defaults) {
 
   options = { ...options }
 
-  applyNewJobCheckInterval(options, defaults)
+  applyPollingInterval(options, defaults)
 
   assert(!('teamConcurrency' in options) ||
     (Number.isInteger(options.teamConcurrency) && options.teamConcurrency >= 1 && options.teamConcurrency <= 1000),
@@ -163,7 +163,7 @@ function getConfig (value) {
   applyDeleteConfig(config)
   applyMonitoringConfig(config)
 
-  applyNewJobCheckInterval(config)
+  applyPollingInterval(config)
   applyExpirationConfig(config)
   applyRetentionConfig(config)
 
@@ -279,18 +279,13 @@ function applyRetryConfig (config, defaults) {
   config.retryBackoffDefault = defaults?.retryBackoff
 }
 
-function applyNewJobCheckInterval (config, defaults) {
-  assert(!('newJobCheckInterval' in config) || config.newJobCheckInterval >= 500,
-    'configuration assert: newJobCheckInterval must be at least every 500ms')
+function applyPollingInterval (config, defaults) {
+  assert(!('pollingIntervalSeconds' in config) || config.pollingIntervalSeconds >= 0.5,
+    'configuration assert: pollingIntervalSeconds must be at least every 500ms')
 
-  assert(!('newJobCheckIntervalSeconds' in config) || config.newJobCheckIntervalSeconds >= 1,
-    'configuration assert: newJobCheckIntervalSeconds must be at least every second')
-
-  config.newJobCheckInterval = ('newJobCheckIntervalSeconds' in config)
-    ? config.newJobCheckIntervalSeconds * 1000
-    : ('newJobCheckInterval' in config)
-        ? config.newJobCheckInterval
-        : defaults?.newJobCheckInterval || 2000
+  config.pollingInterval = ('pollingIntervalSeconds' in config)
+    ? config.pollingIntervalSeconds * 1000
+    : defaults?.pollingInterval || 2000
 }
 
 function applyMaintenanceConfig (config) {

@@ -156,7 +156,7 @@ describe('failure', function () {
     const jobId = await boss.send(queue)
     const message = 'mhmm'
 
-    await boss.work(queue, { newJobCheckInterval: 500 }, async () => {
+    await boss.work(queue, { pollingIntervalSeconds: 0.5 }, async () => {
       const err = { message }
       err.myself = err
       throw err

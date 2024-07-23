@@ -57,7 +57,7 @@ class Timekeeper extends EventEmitter {
     } catch {}
 
     const options = {
-      newJobCheckIntervalSeconds: this.config.cronWorkerIntervalSeconds,
+      pollingIntervalSeconds: this.config.cronWorkerIntervalSeconds,
       teamSize: 50,
       teamConcurrency: 5
     }

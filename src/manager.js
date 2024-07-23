@@ -177,7 +177,7 @@ class Manager extends EventEmitter {
     }
 
     const {
-      newJobCheckInterval: interval = this.config.newJobCheckInterval,
+      pollingInterval: interval = this.config.pollingInterval,
       batchSize,
       teamSize = 1,
       teamConcurrency = 1,

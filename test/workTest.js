@@ -51,7 +51,7 @@ describe('work', function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
     const queue = this.test.bossConfig.schema
 
-    const newJobCheckIntervalSeconds = 1
+    const pollingIntervalSeconds = 1
     const timeout = 5000
     let processCount = 0
     const jobCount = 10
@@ -60,11 +60,11 @@ describe('work', function () {
       await boss.send(queue)
     }
 
-    await boss.work(queue, { newJobCheckIntervalSeconds }, () => processCount++)
+    await boss.work(queue, { pollingIntervalSeconds }, () => processCount++)
 
     await delay(timeout)
 
-    assert.strictEqual(processCount, timeout / 1000 / newJobCheckIntervalSeconds)
+    assert.strictEqual(processCount, timeout / 1000 / pollingIntervalSeconds)
   })
 
   it('should honor when a worker is notified', async function () {
@@ -75,7 +75,7 @@ describe('work', function () {
 
     await boss.send(queue)
 
-    const workerId = await boss.work(queue, { newJobCheckIntervalSeconds: 5 }, () => processCount++)
+    const workerId = await boss.work(queue, { pollingIntervalSeconds: 5 }, () => processCount++)
 
     await delay(500)
 
@@ -118,7 +118,7 @@ describe('work', function () {
     await boss.send(queue)
     await boss.send(queue)
 
-    const id = await boss.work(queue, { newJobCheckInterval: 500 }, async () => {
+    const id = await boss.work(queue, { pollingIntervalSeconds: 0.5 }, async () => {
       receivedCount++
       await boss.offWork({ id })
     })
@@ -256,7 +256,7 @@ describe('work', function () {
     const options = {
       teamSize: 4,
       teamConcurrency: 2,
-      newJobCheckInterval: 500,
+      pollingIntervalSeconds: 0.5,
       teamRefill: true
     }
 
@@ -284,7 +284,7 @@ describe('work', function () {
     const options = {
       teamSize: 4,
       teamConcurrency: 2,
-      newJobCheckInterval: 500,
+      pollingIntervalSeconds: 0.5,
       teamRefill: true
     }
 

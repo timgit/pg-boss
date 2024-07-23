@@ -215,7 +215,7 @@ Emitted at most once every 2 seconds when workers are active and jobs are enteri
   {
     id: 'fc738fb0-1de5-4947-b138-40d6a790749e',
     name: 'my-queue',
-    options: { newJobCheckInterval: 2000 },
+    options: { pollingInterval: 2000 },
     state: 'active',
     count: 1,
     createdOn: 1620149137015,
@@ -792,13 +792,9 @@ The default concurrency for `work()` is 1 job every 2 seconds. Both the interval
 
 How often workers will poll the queue table for jobs. Available in the constructor as a default or per worker in `work()`.
 
-* **newJobCheckInterval**, int
+* **pollingIntervalSeconds**, int
 
-  Interval to check for new jobs in milliseconds, must be >=100
-
-* **newJobCheckIntervalSeconds**, int
-
-  Interval to check for new jobs in seconds, must be >=1
+  Interval to check for new jobs in seconds, must be >=0.5 (500ms)
 
 * Default: 2 seconds
 
@@ -964,7 +960,7 @@ The promise will resolve on a successful failure state assignment, or reject if 
 
 ## `notifyWorker(id)`
 
-Notifies a worker by id to bypass the job polling interval (see `newJobCheckInterval`) for this iteration in the loop.
+Notifies a worker by id to bypass the job polling interval (see `pollingIntervalSeconds`) for this iteration in the loop.
 
 ## `getQueueSize(name [, options])`
 

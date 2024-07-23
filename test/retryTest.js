@@ -75,7 +75,7 @@ describe('retries', function () {
     let processCount = 0
     const retryLimit = 5
 
-    await boss.work(queue, { newJobCheckInterval: 500 }, async () => {
+    await boss.work(queue, { pollingIntervalSeconds: 0.5 }, async () => {
       ++processCount
       throw new Error('retry')
     })

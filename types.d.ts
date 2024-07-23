@@ -119,8 +119,7 @@ declare namespace PgBoss {
   type ScheduleOptions = SendOptions & { tz?: string }
 
   interface JobPollingOptions {
-    newJobCheckInterval?: number;
-    newJobCheckIntervalSeconds?: number;
+    pollingIntervalSeconds?: number;
   }
 
   interface CommonJobFetchOptions {
