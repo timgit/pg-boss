@@ -73,12 +73,13 @@ describe('queues', function () {
     await boss.createQueue(queue, { policy: 'short' })
   })
 
-  it('should delete a queue', async function () {
+  it('should delete and then create a queue', async function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
     const queue = this.test.bossConfig.schema
 
     await boss.createQueue(queue)
     await boss.deleteQueue(queue)
+    await boss.createQueue(queue)
   })
 
   it('should purge a queue', async function () {

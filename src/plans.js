@@ -42,11 +42,12 @@ module.exports = {
   archive,
   drop,
   countStates,
-  createQueue,
+  insertQueue,
   updateQueue,
   createPartition,
   dropPartition,
   deleteQueueRecords,
+  getQueues,
   getQueueByName,
   getQueueSize,
   purgeQueue,
@@ -216,7 +217,7 @@ function dropPartitionFunction (schema) {
     RETURNS VOID AS
     $$
     BEGIN  
-      EXECUTE format('DROP TABLE IF EXISTS %I', ${schema}.get_partition(queue_name));
+      EXECUTE format('DROP TABLE IF EXISTS ${schema}.%I', ${schema}.get_partition(queue_name));
     END;
     $$
     LANGUAGE plpgsql;
@@ -232,6 +233,7 @@ function createPrimaryKeyArchive (schema) {
 }
 
 function createIndexJobPolicyShort (schema) {
+  // todo: how to combine these policies with singleton key?
   return `CREATE UNIQUE INDEX job_policy_short ON ${schema}.job (name) WHERE state = '${JOB_STATES.created}' AND policy = '${QUEUE_POLICIES.short}'`
 }
 
@@ -248,6 +250,7 @@ function createIndexJobThrottleOn (schema) {
 }
 
 function createIndexJobThrottleKey (schema) {
+  // how useful is this really?
   return `CREATE UNIQUE INDEX job_throttle_key ON ${schema}.job (name, singleton_key) WHERE state <= '${JOB_STATES.completed}' AND singleton_on IS NULL`
 }
 
@@ -287,7 +290,7 @@ function trySetTimestamp (schema, column) {
   `
 }
 
-function createQueue (schema) {
+function insertQueue (schema) {
   return `
     INSERT INTO ${schema}.queue (name, policy, retry_limit, retry_delay, retry_backoff, expire_seconds, retention_minutes, dead_letter)
     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -305,6 +308,10 @@ function updateQueue (schema) {
       dead_letter = COALESCE($7, dead_letter)
     WHERE name = $1
   `
+}
+
+function getQueues (schema) {
+  return `SELECT * FROM ${schema}.queue`
 }
 
 function getQueueByName (schema) {

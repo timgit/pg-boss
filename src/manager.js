@@ -58,6 +58,7 @@ class Manager extends EventEmitter {
     this.getArchivedJobByIdCommand = plans.getArchivedJobById(config.schema)
     this.subscribeCommand = plans.subscribe(config.schema)
     this.unsubscribeCommand = plans.unsubscribe(config.schema)
+    this.getQueuesCommand = plans.getQueues(config.schema)
     this.getQueuesForEventCommand = plans.getQueuesForEvent(config.schema)
 
     // exported api to index
@@ -80,10 +81,11 @@ class Manager extends EventEmitter {
       this.sendAfter,
       this.createQueue,
       this.updateQueue,
-      this.getQueue,
       this.deleteQueue,
       this.purgeQueue,
       this.getQueueSize,
+      this.getQueue,
+      this.getQueues,
       this.clearStorage,
       this.getJobById
     ]
@@ -562,7 +564,7 @@ class Manager extends EventEmitter {
 
     await this.db.executeSql(paritionSql)
 
-    const sql = plans.createQueue(this.config.schema, name)
+    const sql = plans.insertQueue(this.config.schema)
 
     const params = [
       name,
@@ -576,6 +578,11 @@ class Manager extends EventEmitter {
     ]
 
     await this.db.executeSql(sql, params)
+  }
+
+  async getQueues () {
+    const { rows } = await this.db.executeSql(this.getQueuesCommand)
+    return rows
   }
 
   async updateQueue (name, options = {}) {
