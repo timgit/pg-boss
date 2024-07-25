@@ -74,6 +74,7 @@ function create (schema, version) {
     createEnumJobState(schema),
 
     createTableJob(schema),
+    createPrimaryKeyJob(schema),
     createIndexJobFetch(schema),
     createIndexJobPolicyStately(schema),
     createIndexJobPolicyShort(schema),
@@ -155,8 +156,7 @@ function createTableJob (schema) {
       keep_until timestamp with time zone NOT NULL default now() + interval '14 days',
       output jsonb,
       dead_letter text,
-      policy text,
-      CONSTRAINT job_pkey PRIMARY KEY (name, id)
+      policy text      
     ) PARTITION BY LIST (name)
   `
 }
@@ -187,7 +187,7 @@ function getPartitionFunction (schema) {
   return `
     CREATE FUNCTION ${schema}.get_partition(queue_name text, out name text) AS
     $$
-    SELECT 'job_' || encode(sha224(queue_name::bytea), 'hex');
+    SELECT 'j' || left(regexp_replace(queue_name, '\\W', '', 'g'),10) || left(encode(sha224(queue_name::bytea), 'hex'),10);
     $$
     LANGUAGE SQL
     IMMUTABLE
@@ -202,13 +202,26 @@ function createPartitionFunction (schema) {
     DECLARE
       table_name varchar := ${schema}.get_partition(queue_name);
     BEGIN
-      EXECUTE format('CREATE TABLE ${schema}.%I (LIKE ${schema}.job INCLUDING DEFAULTS INCLUDING CONSTRAINTS)', table_name);
-      EXECUTE format('ALTER TABLE ${schema}.%I ADD CHECK (name=%L)', table_name, queue_name);
+      EXECUTE format('CREATE TABLE ${schema}.%I (LIKE ${schema}.job INCLUDING DEFAULTS)', table_name);
+      
+      EXECUTE format('${formatPartitionCommand(createPrimaryKeyJob(schema))}', table_name);
+      EXECUTE format('${formatPartitionCommand(createIndexJobPolicyShort(schema))}', table_name);
+      EXECUTE format('${formatPartitionCommand(createIndexJobPolicySingleton(schema))}', table_name);
+      EXECUTE format('${formatPartitionCommand(createIndexJobPolicyStately(schema))}', table_name);
+      EXECUTE format('${formatPartitionCommand(createIndexJobThrottleOn(schema))}', table_name);
+      EXECUTE format('${formatPartitionCommand(createIndexJobThrottleKey(schema))}', table_name);
+      EXECUTE format('${formatPartitionCommand(createIndexJobFetch(schema))}', table_name);
+
+      EXECUTE format('ALTER TABLE ${schema}.%I ADD CONSTRAINT cjc CHECK (name=%L)', table_name, queue_name);
       EXECUTE format('ALTER TABLE ${schema}.job ATTACH PARTITION ${schema}.%I FOR VALUES IN (%L)', table_name, queue_name);
     END;
     $$
     LANGUAGE plpgsql;
   `
+}
+
+function formatPartitionCommand (command) {
+  return command.replace('.job', '.%1$I').replace('job_idx', '%1$s_idx').replaceAll('\'', '\'\'')
 }
 
 function dropPartitionFunction (schema) {
@@ -228,34 +241,37 @@ function dropPartition (schema, name) {
   return `SELECT ${schema}.drop_partition('${name}');`
 }
 
+function createPrimaryKeyJob (schema) {
+  return `ALTER TABLE ${schema}.job ADD PRIMARY KEY (name, id)`
+}
+
 function createPrimaryKeyArchive (schema) {
-  return `ALTER TABLE ${schema}.archive ADD CONSTRAINT archive_pkey PRIMARY KEY (name, id)`
+  return `ALTER TABLE ${schema}.archive ADD PRIMARY KEY (name, id)`
 }
 
 function createIndexJobPolicyShort (schema) {
-  // todo: how to combine these policies with singleton key?
-  return `CREATE UNIQUE INDEX job_policy_short ON ${schema}.job (name) WHERE state = '${JOB_STATES.created}' AND policy = '${QUEUE_POLICIES.short}'`
+  return `CREATE UNIQUE INDEX job_idx_psh ON ${schema}.job (name, COALESCE(singleton_key, '')) WHERE state = '${JOB_STATES.created}' AND policy = '${QUEUE_POLICIES.short}';`
 }
 
 function createIndexJobPolicySingleton (schema) {
-  return `CREATE UNIQUE INDEX job_policy_singleton ON ${schema}.job (name) WHERE state = '${JOB_STATES.active}' AND policy = '${QUEUE_POLICIES.singleton}'`
+  return `CREATE UNIQUE INDEX job_idx_psi ON ${schema}.job (name, COALESCE(singleton_key, '')) WHERE state = '${JOB_STATES.active}' AND policy = '${QUEUE_POLICIES.singleton}'`
 }
 
 function createIndexJobPolicyStately (schema) {
-  return `CREATE UNIQUE INDEX job_policy_stately ON ${schema}.job (name, state) WHERE state <= '${JOB_STATES.active}' AND policy = '${QUEUE_POLICIES.stately}'`
+  return `CREATE UNIQUE INDEX job_idx_pst ON ${schema}.job (name, state, COALESCE(singleton_key, '')) WHERE state <= '${JOB_STATES.active}' AND policy = '${QUEUE_POLICIES.stately}'`
 }
 
 function createIndexJobThrottleOn (schema) {
-  return `CREATE UNIQUE INDEX job_throttle_on ON ${schema}.job (name, singleton_on, COALESCE(singleton_key, '')) WHERE state <= '${JOB_STATES.completed}' AND singleton_on IS NOT NULL`
+  return `CREATE UNIQUE INDEX job_idx_to ON ${schema}.job (name, singleton_on, COALESCE(singleton_key, '')) WHERE state <= '${JOB_STATES.completed}' AND singleton_on IS NOT NULL`
 }
 
 function createIndexJobThrottleKey (schema) {
   // how useful is this really?
-  return `CREATE UNIQUE INDEX job_throttle_key ON ${schema}.job (name, singleton_key) WHERE state <= '${JOB_STATES.completed}' AND singleton_on IS NULL`
+  return `CREATE UNIQUE INDEX job_idx_tk ON ${schema}.job (name, singleton_key) WHERE state <= '${JOB_STATES.completed}' AND singleton_on IS NULL`
 }
 
 function createIndexJobFetch (schema) {
-  return `CREATE INDEX job_fetch ON ${schema}.job (name, start_after) INCLUDE (priority, created_on, id) WHERE state < '${JOB_STATES.active}'`
+  return `CREATE INDEX job_idx_f ON ${schema}.job (name, start_after) INCLUDE (priority, created_on, id) WHERE state < '${JOB_STATES.active}'`
 }
 
 function createTableArchive (schema) {
@@ -267,7 +283,7 @@ function createColumnArchiveArchivedOn (schema) {
 }
 
 function createIndexArchiveArchivedOn (schema) {
-  return `CREATE INDEX archive_archived_on_idx ON ${schema}.archive(archived_on)`
+  return `CREATE INDEX archive_idx_ao ON ${schema}.archive(archived_on)`
 }
 
 function trySetMaintenanceTime (schema) {
@@ -385,11 +401,7 @@ function createTableSubscription (schema) {
 }
 
 function getSchedules (schema) {
-  return `
-    SELECT s.*
-    FROM ${schema}.schedule s
-      JOIN ${schema}.queue q on s.name = q.name
-  `
+  return `SELECT * FROM ${schema}.schedule`
 }
 
 function schedule (schema) {
