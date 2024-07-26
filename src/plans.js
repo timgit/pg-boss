@@ -73,6 +73,11 @@ function create (schema, version) {
     createSchema(schema),
     createEnumJobState(schema),
 
+    createTableVersion(schema),
+    createTableQueue(schema),
+    createTableSchedule(schema),
+    createTableSubscription(schema),
+
     createTableJob(schema),
     createPrimaryKeyJob(schema),
     createIndexJobFetch(schema),
@@ -86,11 +91,6 @@ function create (schema, version) {
     createPrimaryKeyArchive(schema),
     createColumnArchiveArchivedOn(schema),
     createIndexArchiveArchivedOn(schema),
-
-    createTableVersion(schema),
-    createTableQueue(schema),
-    createTableSchedule(schema),
-    createTableSubscription(schema),
 
     getPartitionFunction(schema),
     createPartitionFunction(schema),
@@ -108,17 +108,6 @@ function createSchema (schema) {
   `
 }
 
-function createTableVersion (schema) {
-  return `
-    CREATE TABLE ${schema}.version (
-      version int primary key,
-      maintained_on timestamp with time zone,
-      cron_on timestamp with time zone,
-      monitored_on timestamp with time zone
-    )
-  `
-}
-
 function createEnumJobState (schema) {
   // ENUM definition order is important
   // base type is numeric and first values are less than last values
@@ -130,6 +119,61 @@ function createEnumJobState (schema) {
       '${JOB_STATES.completed}',
       '${JOB_STATES.cancelled}',
       '${JOB_STATES.failed}'
+    )
+  `
+}
+
+function createTableVersion (schema) {
+  return `
+    CREATE TABLE ${schema}.version (
+      version int primary key,
+      maintained_on timestamp with time zone,
+      cron_on timestamp with time zone,
+      monitored_on timestamp with time zone
+    )
+  `
+}
+
+function createTableQueue (schema) {
+  return `
+    CREATE TABLE ${schema}.queue (
+      name text,
+      policy text,
+      retry_limit int,
+      retry_delay int,
+      retry_backoff bool,
+      expire_seconds int,
+      retention_minutes int,
+      dead_letter text,
+      created_on timestamp with time zone not null default now(),
+      PRIMARY KEY (name) 
+    )
+  `
+}
+
+function createTableSchedule (schema) {
+  return `
+    CREATE TABLE ${schema}.schedule (
+      name text REFERENCES ${schema}.queue ON DELETE CASCADE,
+      cron text not null,
+      timezone text,
+      data jsonb,
+      options jsonb,
+      created_on timestamp with time zone not null default now(),
+      updated_on timestamp with time zone not null default now(),
+      PRIMARY KEY (name)
+    )
+  `
+}
+
+function createTableSubscription (schema) {
+  return `
+    CREATE TABLE ${schema}.subscription (
+      event text not null,
+      name text not null REFERENCES ${schema}.queue ON DELETE CASCADE,
+      created_on timestamp with time zone not null default now(),
+      updated_on timestamp with time zone not null default now(),
+      PRIMARY KEY(event, name)
     )
   `
 }
@@ -205,6 +249,7 @@ function createPartitionFunction (schema) {
       EXECUTE format('CREATE TABLE ${schema}.%I (LIKE ${schema}.job INCLUDING DEFAULTS)', table_name);
       
       EXECUTE format('${formatPartitionCommand(createPrimaryKeyJob(schema))}', table_name);
+      EXECUTE format('${formatPartitionCommand(createQueueForeignKeyJob(schema))}', table_name);
       EXECUTE format('${formatPartitionCommand(createIndexJobPolicyShort(schema))}', table_name);
       EXECUTE format('${formatPartitionCommand(createIndexJobPolicySingleton(schema))}', table_name);
       EXECUTE format('${formatPartitionCommand(createIndexJobPolicyStately(schema))}', table_name);
@@ -243,6 +288,10 @@ function dropPartition (schema, name) {
 
 function createPrimaryKeyJob (schema) {
   return `ALTER TABLE ${schema}.job ADD PRIMARY KEY (name, id)`
+}
+
+function createQueueForeignKeyJob (schema) {
+  return `ALTER TABLE ${schema}.job ADD FOREIGN KEY (name) REFERENCES ${schema}.queue (name) ON DELETE RESTRICT`
 }
 
 function createPrimaryKeyArchive (schema) {
@@ -335,13 +384,7 @@ function getQueueByName (schema) {
 }
 
 function deleteQueueRecords (schema) {
-  return `WITH dq AS (
-      DELETE FROM ${schema}.queue WHERE name = $1
-    ), ds AS (
-      DELETE FROM ${schema}.schedule WHERE name = $1
-    )
-    DELETE FROM ${schema}.job WHERE name = $1
-  `
+  return `DELETE FROM ${schema}.queue WHERE name = $1`
 }
 
 function purgeQueue (schema) {
@@ -356,48 +399,6 @@ function getQueueSize (schema, options = {}) {
   options.before = options.before || JOB_STATES.active
   assert(options.before in JOB_STATES, `${options.before} is not a valid state`)
   return `SELECT count(*) as count FROM ${schema}.job WHERE name = $1 AND state < '${options.before}'`
-}
-
-function createTableQueue (schema) {
-  return `
-    CREATE TABLE ${schema}.queue (
-      name text primary key,
-      policy text,
-      retry_limit int,
-      retry_delay int,
-      retry_backoff bool,
-      expire_seconds int,
-      retention_minutes int,
-      dead_letter text,
-      created_on timestamp with time zone not null default now()
-    )
-  `
-}
-
-function createTableSchedule (schema) {
-  return `
-    CREATE TABLE ${schema}.schedule (
-      name text primary key,
-      cron text not null,
-      timezone text,
-      data jsonb,
-      options jsonb,
-      created_on timestamp with time zone not null default now(),
-      updated_on timestamp with time zone not null default now()
-    )
-  `
-}
-
-function createTableSubscription (schema) {
-  return `
-    CREATE TABLE ${schema}.subscription (
-      event text not null,
-      name text not null,
-      created_on timestamp with time zone not null default now(),
-      updated_on timestamp with time zone not null default now(),
-      PRIMARY KEY(event, name)
-    )
-  `
 }
 
 function getSchedules (schema) {

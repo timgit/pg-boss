@@ -511,7 +511,7 @@ class Manager extends EventEmitter {
   }
 
   async complete (name, id, data, options = {}) {
-    assert(name, 'Missing queue name argument')
+    Attorney.assertQueueName(name)
     const db = options.db || this.db
     const ids = this.mapCompletionIdArg(id, 'complete')
     const result = await db.executeSql(this.completeJobsCommand, [name, ids, this.mapCompletionDataArg(data)])
@@ -519,7 +519,7 @@ class Manager extends EventEmitter {
   }
 
   async fail (name, id, data, options = {}) {
-    assert(name, 'Missing queue name argument')
+    Attorney.assertQueueName(name)
     const db = options.db || this.db
     const ids = this.mapCompletionIdArg(id, 'fail')
     const result = await db.executeSql(this.failJobsByIdCommand, [name, ids, this.mapCompletionDataArg(data)])
@@ -527,7 +527,7 @@ class Manager extends EventEmitter {
   }
 
   async cancel (name, id, options = {}) {
-    assert(name, 'Missing queue name argument')
+    Attorney.assertQueueName(name)
     const db = options.db || this.db
     const ids = this.mapCompletionIdArg(id, 'cancel')
     const result = await db.executeSql(this.cancelJobsCommand, [name, ids])
@@ -535,7 +535,7 @@ class Manager extends EventEmitter {
   }
 
   async resume (name, id, options = {}) {
-    assert(name, 'Missing queue name argument')
+    Attorney.assertQueueName(name)
     const db = options.db || this.db
     const ids = this.mapCompletionIdArg(id, 'resume')
     const result = await db.executeSql(this.resumeJobsCommand, [name, ids])
@@ -543,8 +543,6 @@ class Manager extends EventEmitter {
   }
 
   async createQueue (name, options = {}) {
-    assert(name, 'Missing queue name argument')
-
     Attorney.assertQueueName(name)
 
     const { policy = QUEUE_POLICIES.standard } = options
@@ -586,7 +584,7 @@ class Manager extends EventEmitter {
   }
 
   async updateQueue (name, options = {}) {
-    assert(name, 'Missing queue name argument')
+    Attorney.assertQueueName(name)
 
     const {
       retryLimit,
@@ -613,7 +611,7 @@ class Manager extends EventEmitter {
   }
 
   async getQueue (name) {
-    assert(name, 'Missing queue name argument')
+    Attorney.assertQueueName(name)
 
     const sql = plans.getQueueByName(this.config.schema)
     const result = await this.db.executeSql(sql, [name])
@@ -645,25 +643,21 @@ class Manager extends EventEmitter {
   }
 
   async deleteQueue (name) {
-    assert(name, 'Missing queue name argument')
+    Attorney.assertQueueName(name)
 
     const queueSql = plans.getQueueByName(this.config.schema)
     const { rows } = await this.db.executeSql(queueSql, [name])
 
     if (rows.length) {
-      Attorney.assertQueueName(name)
-      const sql = plans.dropPartition(this.config.schema, name)
-      await this.db.executeSql(sql)
+      await this.db.executeSql(plans.dropPartition(this.config.schema, name))
+      await this.db.executeSql(plans.deleteQueueRecords(this.config.schema), [name])
     }
-
-    const sql = plans.deleteQueueRecords(this.config.schema)
-    await this.db.executeSql(sql, [name])
   }
 
-  async purgeQueue (queue) {
-    assert(queue, 'Missing queue name argument')
+  async purgeQueue (name) {
+    Attorney.assertQueueName(name)
     const sql = plans.purgeQueue(this.config.schema)
-    await this.db.executeSql(sql, [queue])
+    await this.db.executeSql(sql, [name])
   }
 
   async clearStorage () {
@@ -671,25 +665,27 @@ class Manager extends EventEmitter {
     await this.db.executeSql(sql)
   }
 
-  async getQueueSize (queue, options) {
-    assert(queue, 'Missing queue name argument')
+  async getQueueSize (name, options) {
+    Attorney.assertQueueName(name)
 
     const sql = plans.getQueueSize(this.config.schema, options)
 
-    const result = await this.db.executeSql(sql, [queue])
+    const result = await this.db.executeSql(sql, [name])
 
     return result ? parseFloat(result.rows[0].count) : null
   }
 
-  async getJobById (queue, id, options = {}) {
+  async getJobById (name, id, options = {}) {
+    Attorney.assertQueueName(name)
+
     const db = options.db || this.db
-    const result1 = await db.executeSql(this.getJobByIdCommand, [queue, id])
+    const result1 = await db.executeSql(this.getJobByIdCommand, [name, id])
 
     if (result1 && result1.rows && result1.rows.length === 1) {
       return result1.rows[0]
     }
 
-    const result2 = await db.executeSql(this.getArchivedJobByIdCommand, [queue, id])
+    const result2 = await db.executeSql(this.getArchivedJobByIdCommand, [name, id])
 
     if (result2 && result2.rows && result2.rows.length === 1) {
       return result2.rows[0]

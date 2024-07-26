@@ -186,6 +186,7 @@ function assertPostgresObjectName (name) {
 }
 
 function assertQueueName (name) {
+  assert(name, 'Name is required')
   assert(typeof name === 'string', 'Name must be a string')
   assert(/[\w-]/.test(name), 'Name can only contain alphanumeric characters, underscores, or hyphens')
 }
