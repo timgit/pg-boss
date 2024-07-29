@@ -60,6 +60,14 @@ class Manager extends EventEmitter {
     this.unsubscribeCommand = plans.unsubscribe(config.schema)
     this.getQueuesCommand = plans.getQueues(config.schema)
     this.getQueuesForEventCommand = plans.getQueuesForEvent(config.schema)
+    this.getQueueByNameCommand = plans.getQueueByName(config.schema)
+    this.deleteQueueRecordsCommand = plans.deleteQueueRecords(config.schema)
+    this.insertQueueCommand = plans.insertQueue(config.schema)
+    this.updateQueueCommand = plans.updateQueue(config.schema)
+    this.createPartitionCommand = plans.createPartition(config.schema)
+    this.dropPartitionCommand = plans.dropPartition(config.schema)
+    this.clearStorageCommand = plans.clearStorage(config.schema)
+    this.purgeQueueCommand = plans.purgeQueue(config.schema)
 
     // exported api to index
     this.functions = [
@@ -564,11 +572,7 @@ class Manager extends EventEmitter {
       Attorney.assertQueueName(deadLetter)
     }
 
-    const paritionSql = plans.createPartition(this.config.schema, name)
-
-    await this.db.executeSql(paritionSql)
-
-    const sql = plans.insertQueue(this.config.schema)
+    await this.db.executeSql(this.createPartitionCommand, [name])
 
     const params = [
       name,
@@ -581,7 +585,7 @@ class Manager extends EventEmitter {
       deadLetter
     ]
 
-    await this.db.executeSql(sql, params)
+    await this.db.executeSql(this.insertQueueCommand, params)
   }
 
   async getQueues () {
@@ -605,8 +609,6 @@ class Manager extends EventEmitter {
       deadLetter
     } = Attorney.checkQueueArgs(name, options)
 
-    const sql = plans.updateQueue(this.config.schema)
-
     const params = [
       name,
       policy,
@@ -618,14 +620,13 @@ class Manager extends EventEmitter {
       deadLetter
     ]
 
-    await this.db.executeSql(sql, params)
+    await this.db.executeSql(this.updateQueueCommand, params)
   }
 
   async getQueue (name) {
     Attorney.assertQueueName(name)
 
-    const sql = plans.getQueueByName(this.config.schema)
-    const result = await this.db.executeSql(sql, [name])
+    const result = await this.db.executeSql(this.getQueueByNameCommand, [name])
 
     if (result.rows.length === 0) {
       return null
@@ -656,24 +657,21 @@ class Manager extends EventEmitter {
   async deleteQueue (name) {
     Attorney.assertQueueName(name)
 
-    const queueSql = plans.getQueueByName(this.config.schema)
-    const { rows } = await this.db.executeSql(queueSql, [name])
+    const { rows } = await this.db.executeSql(this.getQueueByNameCommand, [name])
 
     if (rows.length) {
-      await this.db.executeSql(plans.dropPartition(this.config.schema, name))
-      await this.db.executeSql(plans.deleteQueueRecords(this.config.schema), [name])
+      await this.db.executeSql(this.dropPartitionCommand, [name])
+      await this.db.executeSql(this.deleteQueueRecordsCommand, [name])
     }
   }
 
   async purgeQueue (name) {
     Attorney.assertQueueName(name)
-    const sql = plans.purgeQueue(this.config.schema)
-    await this.db.executeSql(sql, [name])
+    await this.db.executeSql(this.purgeQueueCommand, [name])
   }
 
   async clearStorage () {
-    const sql = plans.clearStorage(this.config.schema)
-    await this.db.executeSql(sql)
+    await this.db.executeSql(this.clearStorageCommand)
   }
 
   async getQueueSize (name, options) {

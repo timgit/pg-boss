@@ -216,8 +216,8 @@ const allJobColumns = `${baseJobColumns}, policy, state, priority,
   output
 `
 
-function createPartition (schema, name) {
-  return `SELECT ${schema}.create_partition('${name}');`
+function createPartition (schema) {
+  return `SELECT ${schema}.create_partition($1)`
 }
 
 function getPartitionFunction (schema) {
@@ -275,8 +275,8 @@ function dropPartitionFunction (schema) {
   `
 }
 
-function dropPartition (schema, name) {
-  return `SELECT ${schema}.drop_partition('${name}');`
+function dropPartition (schema) {
+  return `SELECT ${schema}.drop_partition($1)`
 }
 
 function createPrimaryKeyJob (schema) {
