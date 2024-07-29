@@ -1001,14 +1001,14 @@ type Queue = RetryOptions &
              }
 ```
 
-Allowed type values:
+Allowed policy values:
 
-| type | description |
+| Policy | Description |
 | - | - |
 | standard | (Default) Supports all standard features such as deferral, priority, and throttling |
-| debounced | All standard features, but only allows 1 job to be queued, unlimited active |
-| singleton | All standard features, but only allows 1 job to be active, unlimited queued |
-| stately | Combination of debounced and singleton: Only allows 1 job per state, queued and/or active |
+| debounced | All standard features, but only allows 1 job to be queued, unlimited active. Can be extended with `singletonKey` |
+| singleton | All standard features, but only allows 1 job to be active, unlimited queued. Can be extended with `singletonKey` |
+| stately | Combination of debounced and singleton: Only allows 1 job per state, queued and/or active. Can be extended with `singletonKey` |
 
 
 ## `deleteQueue(name)`
