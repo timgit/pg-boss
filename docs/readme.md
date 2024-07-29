@@ -991,7 +991,15 @@ Creates a queue.
 Options: Same retry, expiration and retention as documented above. 
 
 ```ts
-type Queue = RetryOptions & ExpirationOptions & RetentionOptions & { name: string, policy: QueuePolicy, deadLetter?: string }```
+type Queue = RetryOptions &
+             ExpirationOptions & 
+             RetentionOptions &
+             {
+              name: string, 
+              policy: QueuePolicy, 
+              deadLetter?: string
+             }
+```
 
 Allowed type values:
 
