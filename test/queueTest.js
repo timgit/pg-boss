@@ -78,6 +78,7 @@ describe('queues', function () {
     const queue = this.test.bossConfig.schema
 
     await boss.createQueue(queue)
+    assert(await boss.getQueue(queue))
     await boss.deleteQueue(queue)
     await boss.createQueue(queue)
   })
@@ -100,19 +101,24 @@ describe('queues', function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
     const queue = this.test.bossConfig.schema
 
+    let deadLetter = `${queue}_dlq1`
+    await boss.createQueue(deadLetter)
+
     const createProps = {
+      policy: 'standard',
       retryLimit: 1,
       retryBackoff: false,
       retryDelay: 1,
       expireInSeconds: 1,
       retentionMinutes: 1,
-      deadLetter: `${queue}_1`
+      deadLetter
     }
 
     await boss.createQueue(queue, createProps)
 
     let queueObj = await boss.getQueue(queue)
 
+    assert.strictEqual(createProps.policy, queueObj.policy)
     assert.strictEqual(createProps.retryLimit, queueObj.retryLimit)
     assert.strictEqual(createProps.retryBackoff, queueObj.retryBackoff)
     assert.strictEqual(createProps.retryDelay, queueObj.retryDelay)
@@ -120,19 +126,23 @@ describe('queues', function () {
     assert.strictEqual(createProps.retentionMinutes, queueObj.retentionMinutes)
     assert.strictEqual(createProps.deadLetter, queueObj.deadLetter)
 
+    deadLetter = `${queue}_dlq2`
+
     const updateProps = {
+      policy: 'short',
       retryLimit: 2,
       retryBackoff: true,
       retryDelay: 2,
       expireInSeconds: 2,
       retentionMinutes: 2,
-      deadLetter: `${queue}_2`
+      deadLetter
     }
 
     await boss.updateQueue(queue, updateProps)
 
     queueObj = await boss.getQueue(queue)
 
+    assert.strictEqual(updateProps.policy, queueObj.policy)
     assert.strictEqual(updateProps.retryLimit, queueObj.retryLimit)
     assert.strictEqual(updateProps.retryBackoff, queueObj.retryBackoff)
     assert.strictEqual(updateProps.retryDelay, queueObj.retryDelay)
@@ -145,13 +155,16 @@ describe('queues', function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
     const queue = this.test.bossConfig.schema
 
+    const deadLetter = `${queue}_dlq`
+    await boss.createQueue(deadLetter)
+
     const createProps = {
       retryLimit: 1,
       retryBackoff: true,
       retryDelay: 2,
       expireInSeconds: 3,
       retentionMinutes: 4,
-      deadLetter: `${queue}_1`
+      deadLetter
     }
 
     await boss.createQueue(queue, createProps)
@@ -193,6 +206,33 @@ describe('queues', function () {
     assert(jobId3)
   })
 
+  it('short policy should be extended with singletonKey', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
+    const queue = this.test.bossConfig.schema
+
+    await boss.createQueue(queue, { policy: 'short' })
+
+    const jobId = await boss.send(queue, null, { singletonKey: 'a' })
+
+    assert(jobId)
+
+    const jobId2 = await boss.send(queue, null, { singletonKey: 'a' })
+
+    assert.strictEqual(jobId2, null)
+
+    const jobId3 = await boss.send(queue, null, { singletonKey: 'b' })
+
+    assert(jobId3)
+
+    const job = await boss.fetch(queue)
+
+    assert.strictEqual(job.id, jobId)
+
+    const jobId4 = await boss.send(queue, null, { singletonKey: 'a' })
+
+    assert(jobId4)
+  })
+
   it('singleton policy only allows 1 active job', async function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
     const queue = this.test.bossConfig.schema
@@ -212,6 +252,37 @@ describe('queues', function () {
     await boss.complete(queue, job1.id)
 
     const job3 = await boss.fetch(queue)
+
+    assert(job3)
+  })
+
+  it('singleton policy should be extended with singletonKey', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
+    const queue = this.test.bossConfig.schema
+
+    await boss.createQueue(queue, { policy: 'singleton' })
+
+    await boss.send(queue, null, { singletonKey: 'a' })
+
+    await boss.send(queue, null, { singletonKey: 'b' })
+
+    const job1 = await boss.fetch(queue)
+
+    assert(job1)
+
+    const job2 = await boss.fetch(queue)
+
+    assert(job2)
+
+    await boss.send(queue, null, { singletonKey: 'b' })
+
+    let job3 = await boss.fetch(queue)
+
+    assert.strictEqual(job3, null)
+
+    await boss.complete(queue, job2.id)
+
+    job3 = await boss.fetch(queue)
 
     assert(job3)
   })
@@ -249,6 +320,55 @@ describe('queues', function () {
     const blockedSecondActive = await boss.fetch(queue)
 
     assert.strictEqual(blockedSecondActive, null)
+  })
+
+  it('stately policy should be extended with singletonKey', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
+    const queue = this.test.bossConfig.schema
+
+    await boss.createQueue(queue, { policy: 'stately' })
+
+    const jobAId = await boss.send(queue, null, { singletonKey: 'a', retryLimit: 1 })
+
+    assert(jobAId)
+
+    const jobBId = await boss.send(queue, null, { singletonKey: 'b', retryLimit: 1 })
+
+    assert(jobBId)
+
+    const jobA2Id = await boss.send(queue, null, { singletonKey: 'a', retryLimit: 1 })
+
+    assert.strictEqual(jobA2Id, null)
+
+    let jobA = await boss.fetch(queue)
+
+    await boss.fail(queue, jobA.id)
+
+    jobA = await boss.getJobById(queue, jobAId)
+
+    assert.strictEqual(jobA.state, 'retry')
+
+    jobA = await boss.fetch(queue)
+
+    jobA = await boss.getJobById(queue, jobAId)
+
+    assert.strictEqual(jobA.state, 'active')
+
+    let jobB = await boss.fetch(queue)
+
+    assert(jobB)
+
+    jobB = await boss.getJobById(queue, jobBId)
+
+    assert.strictEqual(jobB.state, 'active')
+
+    const jobA3Id = await boss.send(queue, null, { singletonKey: 'a' })
+
+    assert(jobA3Id)
+
+    const jobA3 = await boss.fetch(queue)
+
+    assert.strictEqual(jobA3, null)
   })
 
   it('should clear a specific queue', async function () {

@@ -543,6 +543,8 @@ class Manager extends EventEmitter {
   }
 
   async createQueue (name, options = {}) {
+    name = name || options.name
+
     Attorney.assertQueueName(name)
 
     const { policy = QUEUE_POLICIES.standard } = options
@@ -557,6 +559,10 @@ class Manager extends EventEmitter {
       retentionMinutes,
       deadLetter
     } = Attorney.checkQueueArgs(name, options)
+
+    if (deadLetter) {
+      Attorney.assertQueueName(deadLetter)
+    }
 
     const paritionSql = plans.createPartition(this.config.schema, name)
 
@@ -586,6 +592,10 @@ class Manager extends EventEmitter {
   async updateQueue (name, options = {}) {
     Attorney.assertQueueName(name)
 
+    const { policy = QUEUE_POLICIES.standard } = options
+
+    assert(policy in QUEUE_POLICIES, `${policy} is not a valid queue policy`)
+
     const {
       retryLimit,
       retryDelay,
@@ -599,6 +609,7 @@ class Manager extends EventEmitter {
 
     const params = [
       name,
+      policy,
       retryLimit,
       retryDelay,
       retryBackoff,

@@ -20,6 +20,9 @@ describe('insert', function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
     const queue = this.test.bossConfig.schema
 
+    const deadLetter = `${queue}_dlq`
+    await boss.createQueue(deadLetter)
+
     const input = {
       id: randomUUID(),
       name: queue,
@@ -32,7 +35,7 @@ describe('insert', function () {
       expireInSeconds: 5,
       singletonKey: '123',
       keepUntil: new Date().toISOString(),
-      deadLetter: `${queue}_dlq`
+      deadLetter
     }
 
     await boss.insert([input])
@@ -57,6 +60,9 @@ describe('insert', function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
     const queue = this.test.bossConfig.schema
 
+    const deadLetter = `${queue}_dlq`
+    await boss.createQueue(deadLetter)
+
     const input = {
       id: randomUUID(),
       name: queue,
@@ -69,7 +75,7 @@ describe('insert', function () {
       expireInSeconds: 5,
       singletonKey: '123',
       keepUntil: new Date().toISOString(),
-      deadLetter: `${queue}_dlq`
+      deadLetter
     }
     let called = false
     const db = await helper.getDb()

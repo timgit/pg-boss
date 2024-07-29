@@ -79,13 +79,6 @@ function create (schema, version) {
     createTableSubscription(schema),
 
     createTableJob(schema),
-    createPrimaryKeyJob(schema),
-    createIndexJobFetch(schema),
-    createIndexJobPolicyStately(schema),
-    createIndexJobPolicyShort(schema),
-    createIndexJobPolicySingleton(schema),
-    createIndexJobThrottleOn(schema),
-    createIndexJobThrottleKey(schema),
 
     createTableArchive(schema),
     createPrimaryKeyArchive(schema),
@@ -250,11 +243,11 @@ function createPartitionFunction (schema) {
       
       EXECUTE format('${formatPartitionCommand(createPrimaryKeyJob(schema))}', table_name);
       EXECUTE format('${formatPartitionCommand(createQueueForeignKeyJob(schema))}', table_name);
+      EXECUTE format('${formatPartitionCommand(createQueueForeignKeyJobDeadLetter(schema))}', table_name);
       EXECUTE format('${formatPartitionCommand(createIndexJobPolicyShort(schema))}', table_name);
       EXECUTE format('${formatPartitionCommand(createIndexJobPolicySingleton(schema))}', table_name);
       EXECUTE format('${formatPartitionCommand(createIndexJobPolicyStately(schema))}', table_name);
-      EXECUTE format('${formatPartitionCommand(createIndexJobThrottleOn(schema))}', table_name);
-      EXECUTE format('${formatPartitionCommand(createIndexJobThrottleKey(schema))}', table_name);
+      EXECUTE format('${formatPartitionCommand(createIndexJobThrottle(schema))}', table_name);
       EXECUTE format('${formatPartitionCommand(createIndexJobFetch(schema))}', table_name);
 
       EXECUTE format('ALTER TABLE ${schema}.%I ADD CONSTRAINT cjc CHECK (name=%L)', table_name, queue_name);
@@ -294,6 +287,10 @@ function createQueueForeignKeyJob (schema) {
   return `ALTER TABLE ${schema}.job ADD FOREIGN KEY (name) REFERENCES ${schema}.queue (name) ON DELETE RESTRICT`
 }
 
+function createQueueForeignKeyJobDeadLetter (schema) {
+  return `ALTER TABLE ${schema}.job ADD FOREIGN KEY (dead_letter) REFERENCES ${schema}.queue (name) ON DELETE RESTRICT`
+}
+
 function createPrimaryKeyArchive (schema) {
   return `ALTER TABLE ${schema}.archive ADD PRIMARY KEY (name, id)`
 }
@@ -310,13 +307,8 @@ function createIndexJobPolicyStately (schema) {
   return `CREATE UNIQUE INDEX job_idx_pst ON ${schema}.job (name, state, COALESCE(singleton_key, '')) WHERE state <= '${JOB_STATES.active}' AND policy = '${QUEUE_POLICIES.stately}'`
 }
 
-function createIndexJobThrottleOn (schema) {
-  return `CREATE UNIQUE INDEX job_idx_to ON ${schema}.job (name, singleton_on, COALESCE(singleton_key, '')) WHERE state <= '${JOB_STATES.completed}' AND singleton_on IS NOT NULL`
-}
-
-function createIndexJobThrottleKey (schema) {
-  // how useful is this really?
-  return `CREATE UNIQUE INDEX job_idx_tk ON ${schema}.job (name, singleton_key) WHERE state <= '${JOB_STATES.completed}' AND singleton_on IS NULL`
+function createIndexJobThrottle (schema) {
+  return `CREATE UNIQUE INDEX job_idx_to ON ${schema}.job (name, singleton_on, COALESCE(singleton_key, '')) WHERE state <> '${JOB_STATES.cancelled}' AND singleton_on IS NOT NULL`
 }
 
 function createIndexJobFetch (schema) {
@@ -365,12 +357,13 @@ function insertQueue (schema) {
 function updateQueue (schema) {
   return `
     UPDATE ${schema}.queue SET
-      retry_limit = COALESCE($2, retry_limit),
-      retry_delay = COALESCE($3, retry_delay),
-      retry_backoff = COALESCE($4, retry_backoff),
-      expire_seconds = COALESCE($5, expire_seconds),
-      retention_minutes = COALESCE($6, retention_minutes),
-      dead_letter = COALESCE($7, dead_letter)
+      policy = COALESCE($2, policy),
+      retry_limit = COALESCE($3, retry_limit),
+      retry_delay = COALESCE($4, retry_delay),
+      retry_backoff = COALESCE($5, retry_backoff),
+      expire_seconds = COALESCE($6, expire_seconds),
+      retention_minutes = COALESCE($7, retention_minutes),
+      dead_letter = COALESCE($8, dead_letter)
     WHERE name = $1
   `
 }

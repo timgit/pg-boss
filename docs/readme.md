@@ -53,7 +53,7 @@
   - [`notifyWorker(id)`](#notifyworkerid)
   - [`getQueueSize(name [, options])`](#getqueuesizename--options)
   - [`getJobById(name, id, options)`](#getjobbyidname-id-options)
-  - [`createQueue(name, type)`](#createqueuename-type)
+  - [`createQueue(name, Queue)`](#createqueuename-queue)
   - [`deleteQueue(name)`](#deletequeuename)
   - [`clearStorage()`](#clearstorage)
   - [`isInstalled()`](#isinstalled)
@@ -984,25 +984,32 @@ As an example, the following options object include active jobs along with creat
 
 Retrieves a job with all metadata by id in either the primary or archive storage.
 
-## `createQueue(name, type)`
+## `createQueue(name, Queue)`
 
-Creates a typed queue. This is an optional step in order to use unique constraints to limit how many jobs can exist in each state. 
+Creates a queue.
+
+Options: Same retry, expiration and retention as documented above. 
+
+```ts
+type Queue = RetryOptions & ExpirationOptions & RetentionOptions & { name: string, policy: QueuePolicy, deadLetter?: string }```
 
 Allowed type values:
 
 | type | description |
 | - | - |
-| debounced | Allows only 1 job to be queued, unlimited active |
-| singleton | Allows only 1 job to be active, unlimited queued |
-| stately | Combination of the above: Allow 1 job to be queued. Allow 1 job to be active |
+| standard | (Default) Supports all standard features such as deferral, priority, and throttling |
+| debounced | All standard features, but only allows 1 job to be queued, unlimited active |
+| singleton | All standard features, but only allows 1 job to be active, unlimited queued |
+| stately | Combination of debounced and singleton: Only allows 1 job per state, queued and/or active |
+
 
 ## `deleteQueue(name)`
 
-Deletes a queue and all jobs from the active job table.  All jobs in the archive table are retained.
+Deletes a queue and all jobs from the active job table.  Any jobs in the archive table are retained.
 
 ## `clearStorage()`
 
-Utility function if and when needed to empty all job storage. Internally, this issues a `TRUNCATE` command against all jobs tables, archive included.
+Utility function if and when needed to clear all job and archive storage tables. Internally, this issues a `TRUNCATE` command.
 
 ## `isInstalled()`
 
