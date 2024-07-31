@@ -284,11 +284,11 @@ function createPrimaryKeyJob (schema) {
 }
 
 function createQueueForeignKeyJob (schema) {
-  return `ALTER TABLE ${schema}.job ADD FOREIGN KEY (name) REFERENCES ${schema}.queue (name) ON DELETE RESTRICT`
+  return `ALTER TABLE ${schema}.job ADD CONSTRAINT q_fkey FOREIGN KEY (name) REFERENCES ${schema}.queue (name) ON DELETE RESTRICT`
 }
 
 function createQueueForeignKeyJobDeadLetter (schema) {
-  return `ALTER TABLE ${schema}.job ADD FOREIGN KEY (dead_letter) REFERENCES ${schema}.queue (name) ON DELETE RESTRICT`
+  return `ALTER TABLE ${schema}.job ADD CONSTRAINT dlq_fkey FOREIGN KEY (dead_letter) REFERENCES ${schema}.queue (name) ON DELETE RESTRICT`
 }
 
 function createPrimaryKeyArchive (schema) {
