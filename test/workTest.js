@@ -407,9 +407,12 @@ describe('work', function () {
     const firstWipEvent = new Promise(resolve => boss.once('wip', resolve))
 
     await boss.send(queue)
-    await boss.work(queue, () => delay(1000))
+
+    await boss.work(queue, { pollingIntervalSeconds: 1 }, () => delay(2000))
 
     const wip1 = await firstWipEvent
+
+    await boss.send(queue)
 
     assert.strictEqual(wip1.length, 1)
 
@@ -417,7 +420,7 @@ describe('work', function () {
 
     const wip2 = await secondWipEvent
 
-    assert.strictEqual(wip2.length, 0)
+    assert.strictEqual(wip2.length, 1)
   })
 
   it('should reject work() after stopping', async function () {

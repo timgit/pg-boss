@@ -1,7 +1,6 @@
 const assert = require('assert')
 const EventEmitter = require('events')
 const { randomUUID } = require('crypto')
-const debounce = require('lodash.debounce')
 const { serializeError: stringify } = require('serialize-error')
 const pMap = require('p-map')
 const { delay } = require('./tools')
@@ -13,9 +12,6 @@ const { QUEUES: TIMEKEEPER_QUEUES } = require('./timekeeper')
 const { QUEUE_POLICIES } = plans
 
 const INTERNAL_QUEUES = Object.values(TIMEKEEPER_QUEUES).reduce((acc, i) => ({ ...acc, [i]: i }), {})
-
-const WIP_EVENT_INTERVAL = 2000
-const WIP_DEBOUNCE_OPTIONS = { leading: true, trailing: true, maxWait: WIP_EVENT_INTERVAL }
 
 const events = {
   error: 'error',
@@ -45,6 +41,7 @@ class Manager extends EventEmitter {
     this.db = db
 
     this.events = events
+    this.wipTs = Date.now()
     this.workers = new Map()
 
     this.nextJobCommand = plans.fetchNextJob(config.schema)
@@ -97,8 +94,6 @@ class Manager extends EventEmitter {
       this.clearStorage,
       this.getJobById
     ]
-
-    this.emitWipThrottled = debounce(() => this.emit(events.wip, this.getWipData()), WIP_EVENT_INTERVAL, WIP_DEBOUNCE_OPTIONS)
   }
 
   start () {
@@ -143,7 +138,12 @@ class Manager extends EventEmitter {
 
   emitWip (name) {
     if (!INTERNAL_QUEUES[name]) {
-      this.emitWipThrottled()
+      const now = Date.now()
+
+      if (now - this.wipTs > 2000) {
+        this.emit(events.wip, this.getWipData())
+        this.wipTs = now
+      }
     }
   }
 
