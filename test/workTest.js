@@ -47,7 +47,7 @@ describe('work', function () {
     }
   })
 
-  it('should honor a custom new job check interval', async function () {
+  it('should honor a custom polling interval', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
     const queue = this.test.bossConfig.schema
 

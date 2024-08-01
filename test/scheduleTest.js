@@ -92,7 +92,7 @@ describe('schedule', function () {
 
     await boss.unschedule(queue)
 
-    await boss.stop({ graceful: false, wait: false })
+    await boss.stop({ destroy: true, graceful: false, wait: false })
 
     const db = await helper.getDb()
     await db.executeSql(plans.clearStorage(this.test.bossConfig.schema))

@@ -24,7 +24,7 @@ async function afterEach () {
   const { boss, state } = this.currentTest
 
   if (boss) {
-    await boss.stop({ timeout: 2000 })
+    await boss.stop({ destroy: true, timeout: 2000 })
   }
 
   if (state === 'passed') {
