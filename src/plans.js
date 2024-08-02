@@ -224,7 +224,7 @@ function getPartitionFunction (schema) {
   return `
     CREATE FUNCTION ${schema}.get_partition(queue_name text, out name text) AS
     $$
-    SELECT 'j' || left(regexp_replace(queue_name, '\\W', '', 'g'),10) || left(encode(sha224(queue_name::bytea), 'hex'),10);
+    SELECT 'j' || lower(left(regexp_replace(queue_name, '\\W', '', 'g'),10)) || left(encode(sha224(queue_name::bytea), 'hex'),10);
     $$
     LANGUAGE SQL
     IMMUTABLE

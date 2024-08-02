@@ -80,8 +80,8 @@ describe('pubsub', function () {
   it('should use subscriptions to map to more than one queue', async function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
 
-    const queue1 = 'queue1'
-    const queue2 = 'queue2'
+    const queue1 = 'subqueue1'
+    const queue2 = 'subqueue2'
 
     await boss.createQueue(queue1)
     await boss.createQueue(queue2)
