@@ -224,7 +224,7 @@ function getPartitionFunction (schema) {
   return `
     CREATE FUNCTION ${schema}.get_partition(queue_name text, out name text) AS
     $$
-    SELECT 'j' || lower(left(regexp_replace(queue_name, '\\W', '', 'g'),10)) || left(encode(sha224(queue_name::bytea), 'hex'),10);
+    SELECT 'j' || encode(sha224(queue_name::bytea), 'hex');
     $$
     LANGUAGE SQL
     IMMUTABLE
@@ -259,7 +259,7 @@ function createPartitionFunction (schema) {
 }
 
 function formatPartitionCommand (command) {
-  return command.replace('.job', '.%1$I').replace('job_idx', '%1$s_idx').replaceAll('\'', '\'\'')
+  return command.replace('.job', '.%1$I').replace('job_i', '%1$s_i').replaceAll('\'', '\'\'')
 }
 
 function dropPartitionFunction (schema) {
@@ -296,23 +296,23 @@ function createPrimaryKeyArchive (schema) {
 }
 
 function createIndexJobPolicyShort (schema) {
-  return `CREATE UNIQUE INDEX job_idx_psh ON ${schema}.job (name, COALESCE(singleton_key, '')) WHERE state = '${JOB_STATES.created}' AND policy = '${QUEUE_POLICIES.short}';`
+  return `CREATE UNIQUE INDEX job_i1 ON ${schema}.job (name, COALESCE(singleton_key, '')) WHERE state = '${JOB_STATES.created}' AND policy = '${QUEUE_POLICIES.short}';`
 }
 
 function createIndexJobPolicySingleton (schema) {
-  return `CREATE UNIQUE INDEX job_idx_psi ON ${schema}.job (name, COALESCE(singleton_key, '')) WHERE state = '${JOB_STATES.active}' AND policy = '${QUEUE_POLICIES.singleton}'`
+  return `CREATE UNIQUE INDEX job_i2 ON ${schema}.job (name, COALESCE(singleton_key, '')) WHERE state = '${JOB_STATES.active}' AND policy = '${QUEUE_POLICIES.singleton}'`
 }
 
 function createIndexJobPolicyStately (schema) {
-  return `CREATE UNIQUE INDEX job_idx_pst ON ${schema}.job (name, state, COALESCE(singleton_key, '')) WHERE state <= '${JOB_STATES.active}' AND policy = '${QUEUE_POLICIES.stately}'`
+  return `CREATE UNIQUE INDEX job_i3 ON ${schema}.job (name, state, COALESCE(singleton_key, '')) WHERE state <= '${JOB_STATES.active}' AND policy = '${QUEUE_POLICIES.stately}'`
 }
 
 function createIndexJobThrottle (schema) {
-  return `CREATE UNIQUE INDEX job_idx_to ON ${schema}.job (name, singleton_on, COALESCE(singleton_key, '')) WHERE state <> '${JOB_STATES.cancelled}' AND singleton_on IS NOT NULL`
+  return `CREATE UNIQUE INDEX job_i4 ON ${schema}.job (name, singleton_on, COALESCE(singleton_key, '')) WHERE state <> '${JOB_STATES.cancelled}' AND singleton_on IS NOT NULL`
 }
 
 function createIndexJobFetch (schema) {
-  return `CREATE INDEX job_idx_f ON ${schema}.job (name, start_after) INCLUDE (priority, created_on, id) WHERE state < '${JOB_STATES.active}'`
+  return `CREATE INDEX job_i5 ON ${schema}.job (name, start_after) INCLUDE (priority, created_on, id) WHERE state < '${JOB_STATES.active}'`
 }
 
 function createTableArchive (schema) {
@@ -324,7 +324,7 @@ function createColumnArchiveArchivedOn (schema) {
 }
 
 function createIndexArchiveArchivedOn (schema) {
-  return `CREATE INDEX archive_idx_ao ON ${schema}.archive(archived_on)`
+  return `CREATE INDEX archive_i1 ON ${schema}.archive(archived_on)`
 }
 
 function trySetMaintenanceTime (schema) {
