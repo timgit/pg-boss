@@ -127,6 +127,7 @@ describe('queues', function () {
     assert.strictEqual(createProps.deadLetter, queueObj.deadLetter)
 
     deadLetter = `${queue}_dlq2`
+    await boss.createQueue(deadLetter)
 
     const updateProps = {
       policy: 'short',

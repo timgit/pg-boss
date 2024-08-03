@@ -42,11 +42,9 @@ module.exports = {
   archive,
   drop,
   countStates,
-  insertQueue,
   updateQueue,
-  createPartition,
-  dropPartition,
-  deleteQueueRecords,
+  createQueue,
+  deleteQueue,
   getQueues,
   getQueueByName,
   getQueueSize,
@@ -85,9 +83,8 @@ function create (schema, version) {
     createColumnArchiveArchivedOn(schema),
     createIndexArchiveArchivedOn(schema),
 
-    getPartitionFunction(schema),
-    createPartitionFunction(schema),
-    dropPartitionFunction(schema),
+    createQueueFunction(schema),
+    deleteQueueFunction(schema),
 
     insertVersion(schema, version)
   ]
@@ -137,8 +134,10 @@ function createTableQueue (schema) {
       retry_backoff bool,
       expire_seconds int,
       retention_minutes int,
-      dead_letter text,
+      dead_letter text REFERENCES ${schema}.queue (name),
+      partition_name text,
       created_on timestamp with time zone not null default now(),
+      updated_on timestamp with time zone not null default now(),
       PRIMARY KEY (name) 
     )
   `
@@ -199,7 +198,10 @@ function createTableJob (schema) {
 }
 
 const baseJobColumns = 'id, name, data, EXTRACT(epoch FROM expire_in) as "expireInSeconds"'
-const allJobColumns = `${baseJobColumns}, policy, state, priority,
+const allJobColumns = `${baseJobColumns},
+  policy,
+  state,
+  priority,
   retry_limit as "retryLimit",
   retry_count as "retryCount",
   retry_delay as "retryDelay",
@@ -216,29 +218,38 @@ const allJobColumns = `${baseJobColumns}, policy, state, priority,
   output
 `
 
-function createPartition (schema) {
-  return `SELECT ${schema}.create_partition($1)`
-}
-
-function getPartitionFunction (schema) {
+function createQueueFunction (schema) {
   return `
-    CREATE FUNCTION ${schema}.get_partition(queue_name text, out name text) AS
-    $$
-    SELECT 'j' || encode(sha224(queue_name::bytea), 'hex');
-    $$
-    LANGUAGE SQL
-    IMMUTABLE
-  `
-}
-
-function createPartitionFunction (schema) {
-  return `
-    CREATE FUNCTION ${schema}.create_partition(queue_name text)
+    CREATE FUNCTION ${schema}.create_queue(queue_name text, options json)
     RETURNS VOID AS
     $$
     DECLARE
-      table_name varchar := ${schema}.get_partition(queue_name);
+      table_name varchar := 'j' || encode(sha224(queue_name::bytea), 'hex');
     BEGIN
+
+      INSERT INTO ${schema}.queue (
+        name,
+        policy,
+        retry_limit,
+        retry_delay,
+        retry_backoff,
+        expire_seconds,
+        retention_minutes,
+        dead_letter,
+        partition_name
+      )
+      VALUES (
+        queue_name,
+        options->>'policy',
+        (options->>'retryLimit')::int,
+        (options->>'retryDelay')::int,
+        (options->>'retryBackoff')::bool,
+        (options->>'expireInSeconds')::int,
+        (options->>'retentionMinutes')::int,
+        options->>'deadLetter',
+        table_name
+      );
+
       EXECUTE format('CREATE TABLE ${schema}.%I (LIKE ${schema}.job INCLUDING DEFAULTS)', table_name);
       
       EXECUTE format('${formatPartitionCommand(createPrimaryKeyJob(schema))}', table_name);
@@ -262,21 +273,34 @@ function formatPartitionCommand (command) {
   return command.replace('.job', '.%1$I').replace('job_i', '%1$s_i').replaceAll('\'', '\'\'')
 }
 
-function dropPartitionFunction (schema) {
+function deleteQueueFunction (schema) {
   return `
-    CREATE FUNCTION ${schema}.drop_partition(queue_name text)
+    CREATE FUNCTION ${schema}.delete_queue(queue_name text)
     RETURNS VOID AS
     $$
+    DECLARE
+      table_name varchar;
     BEGIN  
-      EXECUTE format('DROP TABLE IF EXISTS ${schema}.%I', ${schema}.get_partition(queue_name));
+      WITH deleted as (
+        DELETE FROM ${schema}.queue
+        WHERE name = queue_name
+        RETURNING partition_name
+      )
+      SELECT partition_name from deleted INTO table_name;
+
+      EXECUTE format('DROP TABLE IF EXISTS ${schema}.%I', table_name);
     END;
     $$
     LANGUAGE plpgsql;
   `
 }
 
-function dropPartition (schema) {
-  return `SELECT ${schema}.drop_partition($1)`
+function createQueue (schema) {
+  return `SELECT ${schema}.create_queue($1, $2)`
+}
+
+function deleteQueue (schema) {
+  return `SELECT ${schema}.delete_queue($1)`
 }
 
 function createPrimaryKeyJob (schema) {
@@ -284,11 +308,11 @@ function createPrimaryKeyJob (schema) {
 }
 
 function createQueueForeignKeyJob (schema) {
-  return `ALTER TABLE ${schema}.job ADD CONSTRAINT q_fkey FOREIGN KEY (name) REFERENCES ${schema}.queue (name) ON DELETE RESTRICT`
+  return `ALTER TABLE ${schema}.job ADD CONSTRAINT q_fkey FOREIGN KEY (name) REFERENCES ${schema}.queue (name) ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED`
 }
 
 function createQueueForeignKeyJobDeadLetter (schema) {
-  return `ALTER TABLE ${schema}.job ADD CONSTRAINT dlq_fkey FOREIGN KEY (dead_letter) REFERENCES ${schema}.queue (name) ON DELETE RESTRICT`
+  return `ALTER TABLE ${schema}.job ADD CONSTRAINT dlq_fkey FOREIGN KEY (dead_letter) REFERENCES ${schema}.queue (name) ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED`
 }
 
 function createPrimaryKeyArchive (schema) {
@@ -347,13 +371,6 @@ function trySetTimestamp (schema, column) {
   `
 }
 
-function insertQueue (schema) {
-  return `
-    INSERT INTO ${schema}.queue (name, policy, retry_limit, retry_delay, retry_backoff, expire_seconds, retention_minutes, dead_letter)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-  `
-}
-
 function updateQueue (schema) {
   return `
     UPDATE ${schema}.queue SET
@@ -363,21 +380,28 @@ function updateQueue (schema) {
       retry_backoff = COALESCE($5, retry_backoff),
       expire_seconds = COALESCE($6, expire_seconds),
       retention_minutes = COALESCE($7, retention_minutes),
-      dead_letter = COALESCE($8, dead_letter)
+      dead_letter = COALESCE($8, dead_letter),
+      updated_on = now()
     WHERE name = $1
   `
 }
 
 function getQueues (schema) {
-  return `SELECT * FROM ${schema}.queue`
+  return `
+    SELECT 
+      policy,
+      retry_limit as "retryLimit",
+      retry_delay as "retryDelay",
+      retry_backoff as "retryBackoff",
+      expire_seconds as "expireInSeconds",
+      retention_minutes as "retentionMinutes",
+      dead_letter as "deadLetter"
+    FROM ${schema}.queue    
+   `
 }
 
 function getQueueByName (schema) {
-  return `SELECT * FROM ${schema}.queue WHERE name = $1`
-}
-
-function deleteQueueRecords (schema) {
-  return `DELETE FROM ${schema}.queue WHERE name = $1`
+  return `${getQueues(schema)} WHERE name = $1`
 }
 
 function purgeQueue (schema) {
@@ -779,7 +803,7 @@ function locked (schema, query) {
 }
 
 function advisoryLock (schema, key) {
-  return `SELECT pg_advisory_xact_lock(      
+  return `SELECT pg_advisory_xact_lock(
       ('x' || encode(sha224((current_database() || '.pgboss.${schema}${key || ''}')::bytea), 'hex'))::bit(64)::bigint
   )`
 }

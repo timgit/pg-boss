@@ -56,15 +56,13 @@ class Manager extends EventEmitter {
     this.subscribeCommand = plans.subscribe(config.schema)
     this.unsubscribeCommand = plans.unsubscribe(config.schema)
     this.getQueuesCommand = plans.getQueues(config.schema)
-    this.getQueuesForEventCommand = plans.getQueuesForEvent(config.schema)
     this.getQueueByNameCommand = plans.getQueueByName(config.schema)
-    this.deleteQueueRecordsCommand = plans.deleteQueueRecords(config.schema)
-    this.insertQueueCommand = plans.insertQueue(config.schema)
+    this.getQueuesForEventCommand = plans.getQueuesForEvent(config.schema)
+    this.createQueueCommand = plans.createQueue(config.schema)
     this.updateQueueCommand = plans.updateQueue(config.schema)
-    this.createPartitionCommand = plans.createPartition(config.schema)
-    this.dropPartitionCommand = plans.dropPartition(config.schema)
-    this.clearStorageCommand = plans.clearStorage(config.schema)
     this.purgeQueueCommand = plans.purgeQueue(config.schema)
+    this.deleteQueueCommand = plans.deleteQueue(config.schema)
+    this.clearStorageCommand = plans.clearStorage(config.schema)
 
     // exported api to index
     this.functions = [
@@ -572,10 +570,7 @@ class Manager extends EventEmitter {
       Attorney.assertQueueName(deadLetter)
     }
 
-    await this.db.executeSql(this.createPartitionCommand, [name])
-
-    const params = [
-      name,
+    const data = {
       policy,
       retryLimit,
       retryDelay,
@@ -583,9 +578,9 @@ class Manager extends EventEmitter {
       expireInSeconds,
       retentionMinutes,
       deadLetter
-    ]
+    }
 
-    await this.db.executeSql(this.insertQueueCommand, params)
+    await this.db.executeSql(this.createQueueCommand, [name, data])
   }
 
   async getQueues () {
@@ -626,32 +621,9 @@ class Manager extends EventEmitter {
   async getQueue (name) {
     Attorney.assertQueueName(name)
 
-    const result = await this.db.executeSql(this.getQueueByNameCommand, [name])
+    const { rows } = await this.db.executeSql(this.getQueueByNameCommand, [name])
 
-    if (result.rows.length === 0) {
-      return null
-    }
-
-    const {
-      policy,
-      retry_limit: retryLimit,
-      retry_delay: retryDelay,
-      retry_backoff: retryBackoff,
-      expire_seconds: expireInSeconds,
-      retention_minutes: retentionMinutes,
-      dead_letter: deadLetter
-    } = result.rows[0]
-
-    return {
-      name,
-      policy,
-      retryLimit,
-      retryDelay,
-      retryBackoff,
-      expireInSeconds,
-      retentionMinutes,
-      deadLetter
-    }
+    return rows[0] || null
   }
 
   async deleteQueue (name) {
@@ -659,9 +631,8 @@ class Manager extends EventEmitter {
 
     const { rows } = await this.db.executeSql(this.getQueueByNameCommand, [name])
 
-    if (rows.length) {
-      await this.db.executeSql(this.dropPartitionCommand, [name])
-      await this.db.executeSql(this.deleteQueueRecordsCommand, [name])
+    if (rows.length === 1) {
+      await this.db.executeSql(this.deleteQueueCommand, [name])
     }
   }
 

@@ -102,16 +102,15 @@ Where `$1` is the name of your schema if you've customized it.  Otherwise, the d
 NOTE: If an existing schema was used during installation, created objects will need to be removed manually using the following commands.
 
 ```sql
-DROP TABLE ${schema}.archive;
-DROP TABLE ${schema}.job;
-DROP TABLE ${schema}.queue;
-DROP TABLE ${schema}.schedule;
-DROP TABLE ${schema}.subscription;
-DROP TABLE ${schema}.version;
-DROP TYPE ${schema}.job_state;
-DROP FUNCTION ${schema}.get_partition;
-DROP FUNCTION ${schema}.create_partition;
-DROP FUNCTION ${schema}.drop_partition;
+DROP TABLE pgboss.version;
+DROP TABLE pgboss.job;
+DROP TABLE pgboss.archive;
+DROP TYPE pgboss.job_state;
+DROP TABLE pgboss.subscription;
+DROP TABLE pgboss.schedule;
+DROP FUNCTION pgboss.create_queue;
+DROP FUNCTION pgboss.delete_queue;
+DROP TABLE pgboss.queue;
 ```
 
 # Direct database interactions
