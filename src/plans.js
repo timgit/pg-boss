@@ -713,10 +713,10 @@ function insertJobs (schema) {
       COALESCE(id, gen_random_uuid()) as id,
       j.name,
       data,
-      COALESCE(priority, 0),
-      COALESCE("startAfter", now()),
-      "singletonKey",
-      COALESCE("deadLetter", q.dead_letter),
+      COALESCE(priority, 0) as priority,
+      j.start_after,
+      "singletonKey" as singleton_key,
+      COALESCE("deadLetter", q.dead_letter) as dead_letter,
       CASE
         WHEN "expireInSeconds" IS NOT NULL THEN "expireInSeconds" *  interval '1s'
         WHEN q.expire_seconds IS NOT NULL THEN q.expire_seconds * interval '1s'
@@ -725,7 +725,7 @@ function insertJobs (schema) {
         END as expire_in,
       CASE
         WHEN "keepUntil" IS NOT NULL THEN "keepUntil"
-        ELSE COALESCE("startAfter", now()) + CAST(COALESCE((q.retention_minutes * 60)::text, defaults.keep_until, '14 days') as interval)
+        ELSE COALESCE(j.start_after, now()) + CAST(COALESCE((q.retention_minutes * 60)::text, defaults.keep_until, '14 days') as interval)
         END as keep_until,
       COALESCE("retryLimit", q.retry_limit, defaults.retry_limit, 2),
       CASE
@@ -735,20 +735,28 @@ function insertJobs (schema) {
         END as retry_delay,      
       COALESCE("retryBackoff", q.retry_backoff, defaults.retry_backoff, false) as retry_backoff,
       q.policy
-    FROM json_to_recordset($1) as j (
-      id uuid,
-      name text,
-      priority integer,
-      data jsonb,
-      "startAfter" timestamp with time zone,
-      "retryLimit" integer,
-      "retryDelay" integer,
-      "retryBackoff" boolean,
-      "singletonKey" text,
-      "expireInSeconds" integer,
-      "keepUntil" timestamp with time zone,
-      "deadLetter" text
-    )
+    FROM (
+      SELECT *,
+        CASE
+          WHEN right("startAfter", 1) = 'Z' THEN CAST("startAfter" as timestamp with time zone)
+          ELSE now() + CAST(COALESCE("startAfter",'0') as interval)
+          END as start_after
+      FROM json_to_recordset($1) as x (
+        id uuid,
+        name text,
+        priority integer,
+        data jsonb,
+        "startAfter" text,
+        "retryLimit" integer,
+        "retryDelay" integer,
+        "retryBackoff" boolean,
+        "singletonKey" text,
+        "singletonOn" text,
+        "expireInSeconds" integer,
+        "keepUntil" timestamp with time zone,
+        "deadLetter" text
+      ) 
+    ) j
     JOIN ${schema}.queue q ON j.name = q.name,
       defaults
     ON CONFLICT DO NOTHING
