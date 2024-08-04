@@ -678,7 +678,7 @@ function insertJob (schema) {
           $17::int as retry_delay_default,
           $18::bool as retry_backoff,
           $19::bool as retry_backoff_default
-      ) j LEFT JOIN ${schema}.queue q ON j.name = q.name
+      ) j JOIN ${schema}.queue q ON j.name = q.name
     ON CONFLICT DO NOTHING
     RETURNING id
   `
@@ -749,7 +749,7 @@ function insertJobs (schema) {
       "keepUntil" timestamp with time zone,
       "deadLetter" text
     )
-    LEFT JOIN ${schema}.queue q ON j.name = q.name,
+    JOIN ${schema}.queue q ON j.name = q.name,
       defaults
     ON CONFLICT DO NOTHING
   `
