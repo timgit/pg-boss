@@ -57,11 +57,10 @@ class Timekeeper extends EventEmitter {
 
     const options = {
       pollingIntervalSeconds: this.config.cronWorkerIntervalSeconds,
-      teamSize: 50,
-      teamConcurrency: 5
+      batchSize: 50
     }
 
-    await this.manager.work(QUEUES.SEND_IT, options, (job) => this.onSendIt(job))
+    await this.manager.work(QUEUES.SEND_IT, options, (jobs) => this.manager.insert(jobs.map(i => i.data)))
 
     setImmediate(() => this.onCron())
 
@@ -162,12 +161,6 @@ class Timekeeper extends EventEmitter {
     const prevDiff = (databaseTime - prevTime.getTime()) / 1000
 
     return prevDiff < 60
-  }
-
-  async onSendIt (job) {
-    if (this.stopped) return
-    const { name, data, options } = job.data
-    await this.manager.send(name, data, options)
   }
 
   async getSchedules () {
