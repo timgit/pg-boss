@@ -35,6 +35,7 @@ class Boss extends EventEmitter {
     this.expireCommand = plans.locked(config.schema, plans.expire(config.schema))
     this.archiveCommand = plans.locked(config.schema, plans.archive(config.schema, config.archiveInterval, config.archiveFailedInterval))
     this.purgeCommand = plans.locked(config.schema, plans.purge(config.schema, config.deleteAfter))
+    this.cancelDuplicateJobsCommand = plans.locked(config.schema, plans.cancelDuplicateJobs(config.schema))
     this.getMaintenanceTimeCommand = plans.getMaintenanceTime(config.schema)
     this.setMaintenanceTimeCommand = plans.setMaintenanceTime(config.schema)
     this.countStatesCommand = plans.countStates(config.schema)
@@ -43,6 +44,7 @@ class Boss extends EventEmitter {
       this.expire,
       this.archive,
       this.purge,
+      this.cancelDuplicateJobs,
       this.countStates,
       this.getQueueNames
     ]
@@ -129,6 +131,7 @@ class Boss extends EventEmitter {
 
       const started = Date.now()
 
+      await this.cancelDuplicateJobs()
       await this.expire()
       await this.archive()
       await this.purge()
@@ -210,6 +213,10 @@ class Boss extends EventEmitter {
     }, { ...stateCountDefault, queues: {} })
 
     return states
+  }
+
+  async cancelDuplicateJobs () {
+    await this.executeSql(this.cancelDuplicateJobsCommand)
   }
 
   async expire () {

@@ -25,6 +25,7 @@ module.exports = {
   setVersion,
   versionTableExists,
   fetchNextJob,
+  cancelDuplicateJobs,
   completeJobs,
   cancelJobs,
   resumeJobs,
@@ -423,6 +424,26 @@ const retryStartAfterCase = `CASE
           END`
 
 const keepUntilInheritance = 'keepUntil + (keepUntil - startAfter)'
+
+function cancelDuplicateJobs (schema) {
+  return `
+    UPDATE ${schema}.job
+      SET state = '${states.cancelled}'
+    WHERE
+      id IN(
+        SELECT
+          job.id FROM pgboss.job job
+        LEFT JOIN pgboss.job existing ON existing.id <> job.id
+          AND job.singletonkey = existing.singletonkey
+          AND existing.state = '${states.created}'
+      WHERE
+        job.state = '${states.active}'
+        AND(job.startedOn + job.expireIn) < now()
+        AND existing.id IS NOT NULL
+      GROUP BY
+        job.id)
+  `
+}
 
 function completeJobs (schema) {
   return `
