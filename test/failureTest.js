@@ -1,7 +1,6 @@
 const { delay } = require('../src/tools')
 const assert = require('assert')
 const helper = require('./testHelper')
-const pMap = require('p-map')
 
 describe('failure', function () {
   it('should reject missing id argument', async function () {
@@ -58,7 +57,7 @@ describe('failure', function () {
 
     await boss.fail(queue, jobs.map(job => job.id), new Error(message))
 
-    const results = await pMap(jobs, job => boss.getJobById(queue, job.id))
+    const results = await Promise.all(jobs.map(job => boss.getJobById(queue, job.id)))
 
     assert(results.every(i => i.output.message === message))
   })

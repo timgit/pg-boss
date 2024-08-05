@@ -842,7 +842,7 @@ Removes a worker by name or id and stops polling.
 
 ## `publish(event, data, options)`
 
-Publish an event with optional data and options (Same as `send()` args). Looks up all subscriptions for the event and sends jobs to all those queues. Returns an array of job ids.
+Publish an event with optional data and options (Same as `send()` args). Looks up all subscriptions for the event and sends to each queue.
 
 ## `subscribe(event, name)`
 

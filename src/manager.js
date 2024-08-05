@@ -50,6 +50,7 @@ class Manager extends EventEmitter {
     this.completeJobsCommand = plans.completeJobs(config.schema)
     this.cancelJobsCommand = plans.cancelJobs(config.schema)
     this.resumeJobsCommand = plans.resumeJobs(config.schema)
+    this.deleteJobsCommand = plans.deleteJobs(config.schema)
     this.failJobsByIdCommand = plans.failJobsById(config.schema)
     this.getJobByIdCommand = plans.getJobById(config.schema)
     this.getArchivedJobByIdCommand = plans.getArchivedJobById(config.schema)
@@ -69,6 +70,7 @@ class Manager extends EventEmitter {
       this.complete,
       this.cancel,
       this.resume,
+      this.delete,
       this.fail,
       this.fetch,
       this.work,
@@ -327,7 +329,7 @@ class Manager extends EventEmitter {
 
     const { rows } = await this.db.executeSql(this.getQueuesForEventCommand, [event])
 
-    return await Promise.all(rows.map(({ name }) => this.send(name, ...args)))
+    await Promise.allSettled(rows.map(({ name }) => this.send(name, ...args)))
   }
 
   async send (...args) {
@@ -508,11 +510,11 @@ class Manager extends EventEmitter {
     return stringify(result)
   }
 
-  mapCompletionResponse (ids, result) {
+  mapCommandResponse (ids, result) {
     return {
       jobs: ids,
       requested: ids.length,
-      updated: result && result.rows ? parseInt(result.rows[0].count) : 0
+      affected: result && result.rows ? parseInt(result.rows[0].count) : 0
     }
   }
 
@@ -521,7 +523,7 @@ class Manager extends EventEmitter {
     const db = options.db || this.db
     const ids = this.mapCompletionIdArg(id, 'complete')
     const result = await db.executeSql(this.completeJobsCommand, [name, ids, this.mapCompletionDataArg(data)])
-    return this.mapCompletionResponse(ids, result)
+    return this.mapCommandResponse(ids, result)
   }
 
   async fail (name, id, data, options = {}) {
@@ -529,7 +531,7 @@ class Manager extends EventEmitter {
     const db = options.db || this.db
     const ids = this.mapCompletionIdArg(id, 'fail')
     const result = await db.executeSql(this.failJobsByIdCommand, [name, ids, this.mapCompletionDataArg(data)])
-    return this.mapCompletionResponse(ids, result)
+    return this.mapCommandResponse(ids, result)
   }
 
   async cancel (name, id, options = {}) {
@@ -537,7 +539,15 @@ class Manager extends EventEmitter {
     const db = options.db || this.db
     const ids = this.mapCompletionIdArg(id, 'cancel')
     const result = await db.executeSql(this.cancelJobsCommand, [name, ids])
-    return this.mapCompletionResponse(ids, result)
+    return this.mapCommandResponse(ids, result)
+  }
+
+  async delete (name, id, options = {}) {
+    Attorney.assertQueueName(name)
+    const db = options.db || this.db
+    const ids = this.mapCompletionIdArg(id, 'delete')
+    const result = await db.executeSql(this.deleteJobsCommand, [name, ids])
+    return this.mapCommandResponse(ids, result)
   }
 
   async resume (name, id, options = {}) {
@@ -545,7 +555,7 @@ class Manager extends EventEmitter {
     const db = options.db || this.db
     const ids = this.mapCompletionIdArg(id, 'resume')
     const result = await db.executeSql(this.resumeJobsCommand, [name, ids])
-    return this.mapCompletionResponse(ids, result)
+    return this.mapCommandResponse(ids, result)
   }
 
   async createQueue (name, options = {}) {
@@ -570,6 +580,7 @@ class Manager extends EventEmitter {
       Attorney.assertQueueName(deadLetter)
     }
 
+    // todo: pull in defaults from constructor config
     const data = {
       policy,
       retryLimit,

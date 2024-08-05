@@ -2,13 +2,12 @@ const EventEmitter = require('events')
 const plans = require('./plans')
 const cronParser = require('cron-parser')
 const Attorney = require('./attorney')
-const pMap = require('p-map')
 
-const queues = {
+const QUEUES = {
   SEND_IT: '__pgboss__send-it'
 }
 
-const events = {
+const EVENTS = {
   error: 'error',
   schedule: 'schedule'
 }
@@ -24,7 +23,7 @@ class Timekeeper extends EventEmitter {
     this.cronMonitorIntervalMs = config.cronMonitorIntervalSeconds * 1000
     this.clockSkew = 0
 
-    this.events = events
+    this.events = EVENTS
 
     this.getTimeCommand = plans.getTime(config.schema)
     this.getQueueCommand = plans.getQueueByName(config.schema)
@@ -53,7 +52,7 @@ class Timekeeper extends EventEmitter {
     await this.cacheClockSkew()
 
     try {
-      await this.manager.createQueue(queues.SEND_IT)
+      await this.manager.createQueue(QUEUES.SEND_IT)
     } catch {}
 
     const options = {
@@ -62,7 +61,7 @@ class Timekeeper extends EventEmitter {
       teamConcurrency: 5
     }
 
-    await this.manager.work(queues.SEND_IT, options, (job) => this.onSendIt(job))
+    await this.manager.work(QUEUES.SEND_IT, options, (job) => this.onSendIt(job))
 
     setImmediate(() => this.onCron())
 
@@ -77,7 +76,7 @@ class Timekeeper extends EventEmitter {
 
     this.stopped = true
 
-    await this.manager.offWork(queues.SEND_IT)
+    await this.manager.offWork(QUEUES.SEND_IT)
 
     if (this.skewMonitorInterval) {
       clearInterval(this.skewMonitorInterval)
@@ -141,12 +140,15 @@ class Timekeeper extends EventEmitter {
   }
 
   async cron () {
-    const items = await this.getSchedules()
+    const schedules = await this.getSchedules()
 
-    const sending = items.filter(i => this.shouldSendIt(i.cron, i.timezone))
+    const scheduled = schedules
+      .filter(i => this.shouldSendIt(i.cron, i.timezone))
+      .map(({ name, data, options }) =>
+        ({ name: QUEUES.SEND_IT, data: { name, data, options }, options: { singletonKey: name, singletonSeconds: 60 } }))
 
-    if (sending.length && !this.stopped) {
-      await pMap(sending, it => this.send(it), { concurrency: 5 })
+    if (scheduled.length > 0 && !this.stopped) {
+      await this.manager.insert(scheduled)
     }
   }
 
@@ -160,10 +162,6 @@ class Timekeeper extends EventEmitter {
     const prevDiff = (databaseTime - prevTime.getTime()) / 1000
 
     return prevDiff < 60
-  }
-
-  async send (job) {
-    await this.manager.send(queues.SEND_IT, job, { singletonKey: job.name, singletonSeconds: 60 })
   }
 
   async onSendIt (job) {
@@ -203,4 +201,4 @@ class Timekeeper extends EventEmitter {
 }
 
 module.exports = Timekeeper
-module.exports.QUEUES = queues
+module.exports.QUEUES = QUEUES

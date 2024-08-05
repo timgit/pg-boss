@@ -342,9 +342,9 @@ declare class PgBoss extends EventEmitter {
 
   subscribe(event: string, name: string): Promise<void>;
   unsubscribe(event: string, name: string): Promise<void>;
-  publish(event: string): Promise<string[]>;
-  publish(event: string, data: object): Promise<string[]>;
-  publish(event: string, data: object, options: PgBoss.SendOptions): Promise<string[]>;
+  publish(event: string): Promise<void>;
+  publish(event: string, data: object): Promise<void>;
+  publish(event: string, data: object, options: PgBoss.SendOptions): Promise<void>;
 
   fetch<T>(name: string): Promise<PgBoss.Job<T> | null>;
   fetch<T>(name: string, batchSize: number): Promise<PgBoss.Job<T>[] | null>;
@@ -357,6 +357,9 @@ declare class PgBoss extends EventEmitter {
   resume(name: string, id: string, options?: PgBoss.ConnectionOptions): Promise<void>;
   resume(name: string, ids: string[], options?: PgBoss.ConnectionOptions): Promise<void>;
 
+  delete(name: string, id: string, options?: PgBoss.ConnectionOptions): Promise<void>;
+  delete(name: string, ids: string[], options?: PgBoss.ConnectionOptions): Promise<void>;
+  
   complete(name: string, id: string, options?: PgBoss.ConnectionOptions): Promise<void>;
   complete(name: string, id: string, data: object, options?: PgBoss.ConnectionOptions): Promise<void>;
   complete(name: string, ids: string[], options?: PgBoss.ConnectionOptions): Promise<void>;

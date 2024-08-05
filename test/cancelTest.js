@@ -36,11 +36,11 @@ describe('cancel', function () {
 
     const completeResult = await boss.complete(queue, job.id)
 
-    assert.strictEqual(completeResult.updated, 1)
+    assert.strictEqual(completeResult.affected, 1)
 
     const cancelResult = await boss.cancel(queue, job.id)
 
-    assert.strictEqual(cancelResult.updated, 0)
+    assert.strictEqual(cancelResult.affected, 0)
   })
 
   it('should cancel a batch of jobs', async function () {

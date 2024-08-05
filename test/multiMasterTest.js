@@ -4,7 +4,6 @@ const PgBoss = require('../')
 const Contractor = require('../src/contractor')
 const migrationStore = require('../src/migrationStore')
 const currentSchemaVersion = require('../version.json').schema
-const pMap = require('p-map')
 
 describe('multi-master', function () {
   it('should only allow 1 master to start at a time', async function () {
@@ -17,11 +16,11 @@ describe('multi-master', function () {
     }
 
     try {
-      await pMap(instances, i => i.start())
+      await Promise.all(instances.map(i => i.start()))
     } catch (err) {
       assert(false, err.message)
     } finally {
-      await pMap(instances, i => i.stop({ graceful: false, wait: false }))
+      await Promise.all(instances.map(i => i.stop({ graceful: false, wait: false })))
     }
   })
 
@@ -54,11 +53,11 @@ describe('multi-master', function () {
     }
 
     try {
-      await pMap(instances, i => i.start())
+      await Promise.all(instances.map(i => i.start()))
     } catch (err) {
       assert(false)
     } finally {
-      await pMap(instances, i => i.stop({ graceful: false, wait: false }))
+      await Promise.all(instances.map(i => i.stop({ graceful: false, wait: false })))
     }
   })
 })

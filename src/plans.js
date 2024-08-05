@@ -28,6 +28,7 @@ module.exports = {
   completeJobs,
   cancelJobs,
   resumeJobs,
+  deleteJobs,
   failJobsById,
   failJobsByTimeout,
   insertJob,
@@ -601,6 +602,19 @@ function resumeJobs (schema) {
         state = '${JOB_STATES.created}'
       WHERE name = $1
         AND id IN (SELECT UNNEST($2::uuid[]))
+        AND state = '${JOB_STATES.cancelled}'
+      RETURNING 1
+    )
+    SELECT COUNT(*) from results
+  `
+}
+
+function deleteJobs (schema) {
+  return `
+    with results as (
+      DELETE FROM ${schema}.job
+      WHERE name = $1
+        AND id IN (SELECT UNNEST($2::uuid[]))        
       RETURNING 1
     )
     SELECT COUNT(*) from results
@@ -784,6 +798,7 @@ function archive (schema, completedInterval, failedInterval = completedInterval)
     INSERT INTO ${schema}.archive (${columns})
     SELECT ${columns}
     FROM archived_rows
+    ON CONFLICT DO NOTHING
   `
 }
 
