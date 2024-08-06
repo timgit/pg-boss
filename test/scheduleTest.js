@@ -27,7 +27,7 @@ describe('schedule', function () {
 
     await delay(2000)
 
-    const job = await boss.fetch(queue)
+    const [job] = await boss.fetch(queue)
 
     assert(job)
 
@@ -50,9 +50,9 @@ describe('schedule', function () {
 
     await delay(ASSERT_DELAY)
 
-    const job = await boss.fetch(queue)
+    const [job] = await boss.fetch(queue)
 
-    assert.strictEqual(job, null)
+    assert(!job)
   })
 
   it('should send job based on every minute expression after a restart', async function () {
@@ -72,7 +72,7 @@ describe('schedule', function () {
 
     await delay(ASSERT_DELAY)
 
-    const job = await boss.fetch(queue)
+    const [job] = await boss.fetch(queue)
 
     assert(job)
 
@@ -101,9 +101,9 @@ describe('schedule', function () {
 
     await delay(ASSERT_DELAY)
 
-    const job = await boss.fetch(queue)
+    const [job] = await boss.fetch(queue)
 
-    assert(job === null)
+    assert(!job)
   })
 
   it('should send job based on current minute in UTC', async function () {
@@ -138,7 +138,7 @@ describe('schedule', function () {
 
     await delay(6000)
 
-    const job = await boss.fetch(queue)
+    const [job] = await boss.fetch(queue)
 
     assert(job)
   })
@@ -177,7 +177,7 @@ describe('schedule', function () {
 
     await delay(ASSERT_DELAY)
 
-    const job = await boss.fetch(queue)
+    const [job] = await boss.fetch(queue)
 
     assert(job)
   })

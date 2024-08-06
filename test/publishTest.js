@@ -57,9 +57,9 @@ describe('pubsub', function () {
 
     await boss.publish(queue, { message })
 
-    const job = await boss.fetch(queue)
+    const [job] = await boss.fetch(queue)
 
-    assert.strictEqual(job, null)
+    assert(!job)
   })
 
   it('should use subscriptions to map to a single queue', async function () {
@@ -72,7 +72,7 @@ describe('pubsub', function () {
     await boss.subscribe(event, queue)
     await boss.publish(event, { message })
 
-    const job = await boss.fetch(queue)
+    const [job] = await boss.fetch(queue)
 
     assert.strictEqual(message, job.data.message)
   })
@@ -93,8 +93,8 @@ describe('pubsub', function () {
     await boss.subscribe(event, queue2)
     await boss.publish(event, { message })
 
-    const job1 = await boss.fetch(queue1)
-    const job2 = await boss.fetch(queue2)
+    const [job1] = await boss.fetch(queue1)
+    const [job2] = await boss.fetch(queue2)
 
     assert.strictEqual(message, job1.data.message)
     assert.strictEqual(message, job2.data.message)
@@ -139,20 +139,30 @@ it('unsubscribe works', async function () {
 
   await boss.publish(event)
 
-  assert(await boss.fetch(queue1))
-  assert(await boss.fetch(queue2))
+  const [job1] = await boss.fetch(queue1)
+
+  assert(job1)
+
+  const [job2] = await boss.fetch(queue2)
+
+  assert(job2)
 
   await boss.unsubscribe(event, queue2)
 
   await boss.publish(event)
 
-  assert(await boss.fetch(queue1))
+  const [job3] = await boss.fetch(queue1)
 
-  assert.strictEqual(null, await boss.fetch(queue2))
+  assert(job3)
+
+  const [job4] = await boss.fetch(queue2)
+
+  assert(!job4)
 
   await boss.unsubscribe(event, queue1)
 
   await boss.publish(event)
 
-  assert.strictEqual(null, await boss.fetch(queue1))
+  const [job5] = await boss.fetch(queue1)
+  assert(!job5)
 })

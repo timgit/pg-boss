@@ -11,13 +11,13 @@ describe('delayed jobs', function () {
 
     await boss.send(queue, null, { startAfter })
 
-    const job = await boss.fetch(queue)
+    const [job] = await boss.fetch(queue)
 
-    assert.strictEqual(job, null)
+    assert(!job)
 
     await delay(startAfter * 1000)
 
-    const job2 = await boss.fetch(queue)
+    const [job2] = await boss.fetch(queue)
 
     assert(job2)
   })
@@ -34,9 +34,9 @@ describe('delayed jobs', function () {
 
     await boss.send(queue, null, { startAfter })
 
-    const job = await boss.fetch(queue)
+    const [job] = await boss.fetch(queue)
 
-    assert.strictEqual(job, null)
+    assert(!job)
 
     await delay(5000)
 
@@ -56,13 +56,13 @@ describe('delayed jobs', function () {
 
     await boss.send(queue, null, { startAfter })
 
-    const job = await boss.fetch(queue)
+    const [job] = await boss.fetch(queue)
 
-    assert.strictEqual(job, null)
+    assert(!job)
 
     await delay(2000)
 
-    const job2 = await boss.fetch(queue)
+    const [job2] = await boss.fetch(queue)
 
     assert(job2)
   })
@@ -78,13 +78,13 @@ describe('delayed jobs', function () {
 
     await boss.sendAfter(queue, { something: 1 }, { retryLimit: 0 }, startAfter)
 
-    const job = await boss.fetch(queue)
+    const [job] = await boss.fetch(queue)
 
-    assert.strictEqual(job, null)
+    assert(!job)
 
     await delay(2000)
 
-    const job2 = await boss.fetch(queue)
+    const [job2] = await boss.fetch(queue)
 
     assert(job2)
   })

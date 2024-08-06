@@ -33,7 +33,7 @@ describe('monitoring', function () {
     assert.strictEqual(1, states3.queues[queue].created, 'created count is wrong after 3 sendes and 2 fetches')
     assert.strictEqual(2, states3.queues[queue].active, 'active count is wrong after 3 sendes and 2 fetches')
 
-    const job = await boss.fetch(queue)
+    const [job] = await boss.fetch(queue)
     await boss.complete(queue, job.id)
 
     const states4 = await boss.countStates()

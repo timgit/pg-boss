@@ -57,7 +57,7 @@ describe('send', function () {
 
     await boss.send({ name: queue, data: { message } })
 
-    const job = await boss.fetch(queue)
+    const [job] = await boss.fetch(queue)
 
     assert.strictEqual(message, job.data.message)
   })
@@ -70,7 +70,7 @@ describe('send', function () {
 
     await boss.send({ name: queue, options })
 
-    const job = await boss.fetch(queue)
+    const [job] = await boss.fetch(queue)
 
     assert.strictEqual(job.data, null)
   })
@@ -93,7 +93,7 @@ describe('send', function () {
 
     await boss.send({ name: queue, options })
 
-    const job = await boss.fetch(queue)
+    const [job] = await boss.fetch(queue)
 
     assert.notEqual(job, null)
     assert.strictEqual(job.data, null)
@@ -132,8 +132,8 @@ describe('send', function () {
       await client.query('ROLLBACK')
     }
 
-    const job = await boss.fetch(queue)
+    const [job] = await boss.fetch(queue)
 
-    assert.strictEqual(job, null)
+    assert(!job)
   })
 })

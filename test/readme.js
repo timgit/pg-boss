@@ -18,7 +18,7 @@ async function readme () {
 
   console.log(`created job ${id} in queue ${queue}`)
 
-  await boss.work(queue, async job => {
+  await boss.work(queue, async ([job]) => {
     console.log(`received job ${job.id} with data ${JSON.stringify(job.data)}`)
   })
 

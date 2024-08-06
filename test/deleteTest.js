@@ -17,7 +17,7 @@ describe('delete', async function () {
 
     const archivedJob = await helper.getArchivedJobById(config.schema, queue, jobId)
 
-    assert.strictEqual(archivedJob, null)
+    assert(!archivedJob)
   })
 
   it('should delete a job via delete()', async function () {
@@ -33,6 +33,6 @@ describe('delete', async function () {
 
     const job = await boss.getJobById(queue, jobId)
 
-    assert.strictEqual(job, null)
+    assert(!job)
   })
 })

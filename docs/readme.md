@@ -731,20 +731,16 @@ The following code shows how to utilize batching via `fetch()` to get and comple
 const queue = 'email-daily-digest'
 const batchSize = 20
 
-const jobs = await boss.fetch(queue, batchSize)
-
-if(!jobs) {
-    return
-}
+const jobs = await boss.fetch(queue, { batchSize })
 
 for (let i = 0; i < jobs.length; i++) {
     const job = jobs[i]
 
     try {
         await emailer.send(job.data)
-        await boss.complete(job.id)
+        await boss.complete(queue, job.id)
     } catch(err) {
-        await boss.fail(job.id, err)
+        await boss.fail(queue, job.id, err)
     }
 }
 ```
@@ -766,38 +762,21 @@ The default concurrency for `work()` is 1 job every 2 seconds. Both the interval
 
 **Options**
 
-* **teamSize**, int
+* **batchSize**, int, *(default=1)*
 
-    Default: 1. How many jobs can be fetched per polling interval. Callback will be executed once per job.
+  Same as in [`fetch()`](#fetch)
 
-* **teamConcurrency**, int
+* **includeMetadata**, bool, *(default=true)*
 
-    Default: 1. How many callbacks will be called concurrently if promises are used for polling backpressure. Intended to be used along with `teamSize`.
+  Same as in [`fetch()`](#fetch)
 
-* **teamRefill**, bool
+* **priority**, bool, *(default=true)*
 
-    Default: false.  If true, worker will refill the queue based on the number of completed jobs from the last batch (if `teamSize` > 1) in order to keep the active job count as close to `teamSize` as possible. This could be helpful if one of the fetched jobs is taking longer than expected.
+  Same as in [`fetch()`](#fetch)
 
-* **batchSize**, int
-
-    How many jobs can be fetched per polling interval.  Callback will be executed once per batch.
-
-* **includeMetadata**, bool
-
-    Same as in [`fetch()`](#fetch)
-
-
-**Polling options**
-
-How often workers will poll the queue table for jobs. Available in the constructor as a default or per worker in `work()`.
-
-* **pollingIntervalSeconds**, int
+* **pollingIntervalSeconds**, int, *(default=2)*
 
   Interval to check for new jobs in seconds, must be >=0.5 (500ms)
-
-* Default: 2 seconds
-
-  > When a higher unit is is specified, lower unit configuration settings are ignored.
 
 
 **Handler function**
@@ -816,14 +795,7 @@ The job object has the following properties.
 
 > If the job is not completed, it will expire after the configured expiration period.
 
-Following is an example of a worker that returns a promise (`sendWelcomeEmail()`) for completion with the teamSize option set for increased job concurrency between polling intervals.
-
-```js
-const options = { teamSize: 5, teamConcurrency: 5 }
-await boss.work('email-welcome', options, job => myEmailService.sendWelcomeEmail(job.data))
-```
-
-Similar to the first example, but with a batch of jobs at once.
+Following is an example of a worker that returns a promise (`sendWelcomeEmail()`) with the batchSize option increased from the default.
 
 ```js
 await boss.work('email-welcome', { batchSize: 5 },

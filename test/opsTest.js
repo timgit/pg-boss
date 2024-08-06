@@ -34,7 +34,7 @@ describe('ops', function () {
 
     const jobId = await boss.getJobById(queue, randomUUID())
 
-    assert.strictEqual(jobId, null)
+    assert(!jobId)
   })
 
   it('should force stop', async function () {

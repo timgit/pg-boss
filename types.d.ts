@@ -122,41 +122,20 @@ declare namespace PgBoss {
     pollingIntervalSeconds?: number;
   }
 
-  interface CommonJobFetchOptions {
+  interface JobFetchOptions {
     includeMetadata?: boolean;
     priority?: boolean;
-  }
-
-  type JobFetchOptions  = CommonJobFetchOptions & {
-    teamSize?: number;
-    teamConcurrency?: number;
-    teamRefill?: boolean;
-  }
-
-  type BatchJobFetchOptions = CommonJobFetchOptions & {
-    batchSize: number;
+    batchSize?: number;
   }
 
   type WorkOptions = JobFetchOptions & JobPollingOptions
-  type BatchWorkOptions = BatchJobFetchOptions & JobPollingOptions
-
-  type FetchOptions = {
-    includeMetadata?: boolean;
-  } & ConnectionOptions;
+  type FetchOptions = JobFetchOptions & ConnectionOptions;
 
   interface WorkHandler<ReqData> {
-    (job: PgBoss.Job<ReqData>): Promise<any>;
-  }
-
-  interface BatchWorkHandler<ReqData> {
     (job: PgBoss.Job<ReqData>[]): Promise<any>;
   }
 
   interface WorkWithMetadataHandler<ReqData> {
-    (job: PgBoss.JobWithMetadata<ReqData>): Promise<any>;
-  }
-
-  interface BatchWorkWithMetadataHandler<ReqData> {
     (job: PgBoss.JobWithMetadata<ReqData>[]): Promise<any>;
   }
 
@@ -328,12 +307,13 @@ declare class PgBoss extends EventEmitter {
   insert(jobs: PgBoss.JobInsert[]): Promise<void>;
   insert(jobs: PgBoss.JobInsert[], options: PgBoss.InsertOptions): Promise<void>;
 
+  fetch<T>(name: string): Promise<PgBoss.Job<T>[] | null>;
+  fetch<T>(name: string, options: PgBoss.FetchOptions & { includeMetadata: true }): Promise<PgBoss.JobWithMetadata<T>[] | null>;
+  fetch<T>(name: string, options: PgBoss.FetchOptions): Promise<PgBoss.Job<T>[] | null>;
+
   work<ReqData>(name: string, handler: PgBoss.WorkHandler<ReqData>): Promise<string>;
   work<ReqData>(name: string, options: PgBoss.WorkOptions & { includeMetadata: true }, handler: PgBoss.WorkWithMetadataHandler<ReqData>): Promise<string>;
   work<ReqData>(name: string, options: PgBoss.WorkOptions, handler: PgBoss.WorkHandler<ReqData>): Promise<string>;
-
-  work<ReqData>(name: string, options: PgBoss.BatchWorkOptions & { includeMetadata: true }, handler: PgBoss.BatchWorkWithMetadataHandler<ReqData>): Promise<string>;
-  work<ReqData>(name: string, options: PgBoss.BatchWorkOptions, handler: PgBoss.BatchWorkHandler<ReqData>): Promise<string>;
 
   offWork(name: string): Promise<void>;
   offWork(options: PgBoss.OffWorkOptions): Promise<void>;
@@ -345,11 +325,6 @@ declare class PgBoss extends EventEmitter {
   publish(event: string): Promise<void>;
   publish(event: string, data: object): Promise<void>;
   publish(event: string, data: object, options: PgBoss.SendOptions): Promise<void>;
-
-  fetch<T>(name: string): Promise<PgBoss.Job<T> | null>;
-  fetch<T>(name: string, batchSize: number): Promise<PgBoss.Job<T>[] | null>;
-  fetch<T>(name: string, batchSize: number, options: PgBoss.FetchOptions & { includeMetadata: true }): Promise<PgBoss.JobWithMetadata<T>[] | null>;
-  fetch<T>(name: string, batchSize: number, options: PgBoss.FetchOptions): Promise<PgBoss.Job<T>[] | null>;
 
   cancel(name: string, id: string, options?: PgBoss.ConnectionOptions): Promise<void>;
   cancel(name: string, ids: string[], options?: PgBoss.ConnectionOptions): Promise<void>;
@@ -373,7 +348,7 @@ declare class PgBoss extends EventEmitter {
 
   createQueue(name: string, options?: PgBoss.Queue): Promise<void>;
   getQueue(name: string): Promise<PgBoss.Queue | null>;
-  getQueues(): Promise<[PgBoss.Queue]>;
+  getQueues(): Promise<PgBoss.Queue[]>;
   updateQueue(name: string, options?: PgBoss.Queue): Promise<void>;
   deleteQueue(name: string): Promise<void>;
   purgeQueue(name: string): Promise<void>;

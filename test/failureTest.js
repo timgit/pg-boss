@@ -20,7 +20,7 @@ describe('failure', function () {
 
     await boss.send(queue)
 
-    const job = await boss.fetch(queue)
+    const [job] = await boss.fetch(queue)
 
     await boss.fail(queue, job.id)
   })
@@ -35,7 +35,7 @@ describe('failure', function () {
       boss.send(queue)
     ])
 
-    const jobs = await boss.fetch(queue, 3)
+    const jobs = await boss.fetch(queue, { batchSize: 3 })
 
     const result = await boss.fail(queue, jobs.map(job => job.id))
 
@@ -53,7 +53,7 @@ describe('failure', function () {
       boss.send(queue)
     ])
 
-    const jobs = await boss.fetch(queue, 3)
+    const jobs = await boss.fetch(queue, { batchSize: 3 })
 
     await boss.fail(queue, jobs.map(job => job.id), new Error(message))
 
@@ -132,7 +132,7 @@ describe('failure', function () {
 
     await boss.send(queue)
 
-    const job = await boss.fetch(queue)
+    const [job] = await boss.fetch(queue)
 
     let called = false
     const _db = await helper.getDb()
@@ -182,7 +182,7 @@ describe('failure', function () {
     await boss.fetch(queue)
     await boss.fail(queue, jobId)
 
-    const job = await boss.fetch(deadLetter)
+    const [job] = await boss.fetch(deadLetter)
 
     assert.strictEqual(job.data.key, queue)
   })
@@ -201,7 +201,7 @@ describe('failure', function () {
 
     await boss.start()
 
-    const job = await boss.fetch(queue)
+    const [job] = await boss.fetch(queue)
 
     assert.strictEqual(job?.id, jobId)
   })

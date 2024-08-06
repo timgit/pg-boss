@@ -18,7 +18,7 @@ describe('fetch', function () {
     const queue = this.test.bossConfig.schema
 
     await boss.send(queue)
-    const job = await boss.fetch(queue)
+    const [job] = await boss.fetch(queue)
     assert(queue === job.name)
     // Metadata should only be included when specifically requested
     assert(job.startedOn === undefined)
@@ -36,7 +36,7 @@ describe('fetch', function () {
       boss.send(queue)
     ])
 
-    const jobs = await boss.fetch(queue, batchSize)
+    const jobs = await boss.fetch(queue, { batchSize })
 
     assert(jobs.length === batchSize)
     // Metadata should only be included when specifically requested
@@ -48,7 +48,7 @@ describe('fetch', function () {
     const queue = this.test.bossConfig.schema
 
     await boss.send(queue)
-    const job = await boss.fetch(queue, undefined, { includeMetadata: true })
+    const [job] = await boss.fetch(queue, { includeMetadata: true })
 
     assert(queue === job.name)
     assert(job.priority === 0)
@@ -80,7 +80,7 @@ describe('fetch', function () {
       boss.send(queue)
     ])
 
-    const jobs = await boss.fetch(queue, batchSize, { includeMetadata: true })
+    const jobs = await boss.fetch(queue, { batchSize, includeMetadata: true })
     assert(jobs.length === batchSize)
 
     for (const job of jobs) {
@@ -119,7 +119,7 @@ describe('fetch', function () {
     }
 
     await boss.send(queue, {}, options)
-    const [job] = await boss.fetch(queue, 10, options)
+    const [job] = await boss.fetch(queue, { ...options, batchSize: 10 })
     assert(queue === job.name)
     assert(job.startedOn === undefined)
     assert.strictEqual(calledCounter, 2)

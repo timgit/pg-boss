@@ -10,7 +10,7 @@ describe('expire', function () {
 
     const jobId = await boss.send({ name: queue, data: { key }, options: { retryLimit: 0, expireInSeconds: 1 } })
 
-    const job1 = await boss.fetch(queue)
+    const [job1] = await boss.fetch(queue)
 
     assert(job1)
 

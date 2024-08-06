@@ -16,7 +16,7 @@ describe('speed', function () {
     const boss = this.test.boss = await helper.start(config)
     await boss.createQueue(queue)
     await boss.insert(data)
-    const jobs = await boss.fetch(queue, jobCount)
+    const jobs = await boss.fetch(queue, { batchSize: jobCount })
 
     assert.strictEqual(jobCount, jobs.length)
 

@@ -9,12 +9,12 @@ describe('retries', function () {
 
     const jobId = await boss.send({ name: queue, options: { expireInSeconds: 1, retryLimit: 1 } })
 
-    const try1 = await boss.fetch(queue)
+    const [try1] = await boss.fetch(queue)
 
     await delay(1000)
     await boss.maintain()
 
-    const try2 = await boss.fetch(queue)
+    const [try2] = await boss.fetch(queue)
 
     assert.strictEqual(try1.id, jobId)
     assert.strictEqual(try2.id, jobId)
@@ -29,7 +29,7 @@ describe('retries', function () {
     await boss.fetch(queue)
     await boss.fail(queue, jobId)
 
-    const job = await boss.fetch(queue)
+    const [job] = await boss.fetch(queue)
 
     assert.strictEqual(job.id, jobId)
   })
@@ -43,7 +43,7 @@ describe('retries', function () {
     await boss.fetch(queue)
     await boss.fail(queue, jobId)
 
-    const job = await boss.fetch(queue)
+    const [job] = await boss.fetch(queue)
 
     assert.strictEqual(job.id, jobId)
   })
@@ -57,13 +57,13 @@ describe('retries', function () {
     await boss.fetch(queue)
     await boss.fail(queue, jobId)
 
-    const job1 = await boss.fetch(queue)
+    const [job1] = await boss.fetch(queue)
 
-    assert.strictEqual(job1, null)
+    assert(!job1)
 
     await delay(1000)
 
-    const job2 = await boss.fetch(queue)
+    const [job2] = await boss.fetch(queue)
 
     assert(job2)
   })
@@ -73,16 +73,16 @@ describe('retries', function () {
     const queue = this.test.bossConfig.schema
 
     let processCount = 0
-    const retryLimit = 5
+    const retryLimit = 4
 
-    await boss.work(queue, { pollingIntervalSeconds: 0.5 }, async () => {
+    await boss.work(queue, { pollingIntervalSeconds: 1 }, async () => {
       ++processCount
       throw new Error('retry')
     })
 
-    await boss.send(queue, null, { retryLimit, retryBackoff: true })
+    await boss.send(queue, null, { retryLimit, retryDelay: 2, retryBackoff: true })
 
-    await delay(9000)
+    await delay(8000)
 
     assert(processCount < retryLimit)
   })

@@ -56,7 +56,7 @@ describe.skip('migration', function () {
 
     // completed job
     await boss.send(queue)
-    const job = await boss.fetch(queue)
+    const [job] = await boss.fetch(queue)
     await boss.complete(queue, job.id)
 
     // created job
@@ -83,7 +83,7 @@ describe.skip('migration', function () {
     assert.strictEqual(version, currentSchemaVersion)
 
     await boss.send(queue)
-    const job2 = await boss.fetch(queue)
+    const [job2] = await boss.fetch(queue)
     await boss.complete(queue, job2.id)
   })
 
@@ -195,7 +195,7 @@ describe.skip('migration', function () {
     try {
       await boss.start()
       await boss.send(queue)
-      const job = await boss.fetch(queue)
+      const [job] = await boss.fetch(queue)
       await boss.complete(queue, job.id)
 
       assert(false)

@@ -124,24 +124,23 @@ function checkWorkArgs (name, args, defaults) {
 
   applyPollingInterval(options, defaults)
 
-  assert(!('teamConcurrency' in options) ||
-    (Number.isInteger(options.teamConcurrency) && options.teamConcurrency >= 1 && options.teamConcurrency <= 1000),
-  'teamConcurrency must be an integer between 1 and 1000')
-
-  assert(!('teamSize' in options) || (Number.isInteger(options.teamSize) && options.teamSize >= 1), 'teamSize must be an integer > 0')
   assert(!('batchSize' in options) || (Number.isInteger(options.batchSize) && options.batchSize >= 1), 'batchSize must be an integer > 0')
   assert(!('includeMetadata' in options) || typeof options.includeMetadata === 'boolean', 'includeMetadata must be a boolean')
+  assert(!('priority' in options) || typeof options.priority === 'boolean', 'priority must be a boolean')
+
+  options.batchSize = options.batchSize || 1
 
   return { options, callback }
 }
 
-function checkFetchArgs (name, batchSize, options) {
+function checkFetchArgs (name, options) {
   assert(name, 'missing queue name')
 
-  assert(!batchSize || (Number.isInteger(batchSize) && batchSize >= 1), 'batchSize must be an integer > 0')
+  assert(!('batchSize' in options) || (Number.isInteger(options.batchSize) && options.batchSize >= 1), 'batchSize must be an integer > 0')
   assert(!('includeMetadata' in options) || typeof options.includeMetadata === 'boolean', 'includeMetadata must be a boolean')
+  assert(!('priority' in options) || typeof options.priority === 'boolean', 'priority must be a boolean')
 
-  return { name }
+  options.batchSize = options.batchSize || 1
 }
 
 function getConfig (value) {

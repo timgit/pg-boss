@@ -3,27 +3,21 @@ const helper = require('./testHelper')
 const { delay } = require('../src/tools')
 
 describe('throttle', function () {
-  it('should only create 1 job for interval with a delay', async function () {
+  it('should only create 1 job for interval', async function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
     const queue = this.test.bossConfig.schema
 
-    const singletonSeconds = 4
-    const startAfter = 2
-    const sendInterval = 200
-    const sendCount = 5
-
-    let processCount = 0
-
-    boss.work(queue, async () => processCount++)
+    const singletonSeconds = 2
+    const sendCount = 4
 
     for (let i = 0; i < sendCount; i++) {
-      await boss.send(queue, null, { startAfter, singletonSeconds })
-      await delay(sendInterval)
+      await boss.send(queue, null, { singletonSeconds })
+      await delay(1000)
     }
 
-    await delay(singletonSeconds * 1000)
+    const { length } = await boss.fetch(queue, { batchSize: sendCount })
 
-    assert(processCount <= 2)
+    assert(length < sendCount)
   })
 
   it('should process at most 1 job per second', async function () {
@@ -118,7 +112,7 @@ describe('throttle', function () {
     const singletonMinutes = 1
 
     await boss.send(queue, null, { singletonKey, singletonMinutes })
-    const job = await boss.fetch(queue)
+    const [job] = await boss.fetch(queue)
 
     await boss.complete(queue, job.id)
 

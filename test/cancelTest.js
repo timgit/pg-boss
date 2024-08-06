@@ -32,7 +32,7 @@ describe('cancel', function () {
 
     await boss.send(queue)
 
-    const job = await boss.fetch(queue)
+    const [job] = await boss.fetch(queue)
 
     const completeResult = await boss.complete(queue, job.id)
 

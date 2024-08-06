@@ -15,7 +15,7 @@ describe('archive', function () {
     const queue = this.test.bossConfig.schema
 
     const jobId = await boss.send(queue)
-    const job = await boss.fetch(queue)
+    const [job] = await boss.fetch(queue)
 
     assert.strictEqual(job.id, jobId)
 
@@ -37,7 +37,7 @@ describe('archive', function () {
     const queue = this.test.bossConfig.schema
 
     const jobId = await boss.send(queue)
-    const job = await boss.fetch(queue)
+    const [job] = await boss.fetch(queue)
 
     assert.strictEqual(job.id, jobId)
 

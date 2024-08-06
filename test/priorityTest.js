@@ -10,7 +10,7 @@ describe('priority', function () {
 
     const high = await boss.send(queue, null, { priority: 1 })
 
-    const job = await boss.fetch(queue)
+    const [job] = await boss.fetch(queue)
 
     assert.strictEqual(job.id, high)
   })
@@ -23,9 +23,9 @@ describe('priority', function () {
     const medium = await boss.send(queue, null, { priority: 5 })
     const high = await boss.send(queue, null, { priority: 10 })
 
-    const job1 = await boss.fetch(queue)
-    const job2 = await boss.fetch(queue)
-    const job3 = await boss.fetch(queue)
+    const [job1] = await boss.fetch(queue)
+    const [job2] = await boss.fetch(queue)
+    const [job3] = await boss.fetch(queue)
 
     assert.strictEqual(job1.id, high)
     assert.strictEqual(job2.id, medium)

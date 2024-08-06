@@ -198,7 +198,7 @@ describe('queues', function () {
 
     assert.strictEqual(jobId2, null)
 
-    const job = await boss.fetch(queue)
+    const [job] = await boss.fetch(queue)
 
     assert.strictEqual(job.id, jobId)
 
@@ -225,7 +225,7 @@ describe('queues', function () {
 
     assert(jobId3)
 
-    const job = await boss.fetch(queue)
+    const [job] = await boss.fetch(queue)
 
     assert.strictEqual(job.id, jobId)
 
@@ -244,15 +244,15 @@ describe('queues', function () {
 
     await boss.send(queue)
 
-    const job1 = await boss.fetch(queue)
+    const [job1] = await boss.fetch(queue)
 
-    const job2 = await boss.fetch(queue)
+    const [job2] = await boss.fetch(queue)
 
-    assert.strictEqual(job2, null)
+    assert(!job2)
 
     await boss.complete(queue, job1.id)
 
-    const job3 = await boss.fetch(queue)
+    const [job3] = await boss.fetch(queue)
 
     assert(job3)
   })
@@ -267,25 +267,25 @@ describe('queues', function () {
 
     await boss.send(queue, null, { singletonKey: 'b' })
 
-    const job1 = await boss.fetch(queue)
+    const [job1] = await boss.fetch(queue)
 
     assert(job1)
 
-    const job2 = await boss.fetch(queue)
+    const [job2] = await boss.fetch(queue)
 
     assert(job2)
 
     await boss.send(queue, null, { singletonKey: 'b' })
 
-    let job3 = await boss.fetch(queue)
+    const [job3] = await boss.fetch(queue)
 
-    assert.strictEqual(job3, null)
+    assert(!job3)
 
     await boss.complete(queue, job2.id)
 
-    job3 = await boss.fetch(queue)
+    const [job3b] = await boss.fetch(queue)
 
-    assert(job3)
+    assert(job3b)
   })
 
   it('stately policy only allows 1 job per state up to active', async function () {
@@ -300,7 +300,7 @@ describe('queues', function () {
 
     assert.strictEqual(blockedId, null)
 
-    let job1 = await boss.fetch(queue)
+    let [job1] = await boss.fetch(queue)
 
     await boss.fail(queue, job1.id)
 
@@ -312,15 +312,15 @@ describe('queues', function () {
 
     assert(jobId2)
 
-    job1 = await boss.fetch(queue)
+    await boss.fetch(queue)
 
-    job1 = await boss.getJobById(queue, jobId1)
+    const job1a = await boss.getJobById(queue, jobId1)
 
-    assert.strictEqual(job1.state, 'active')
+    assert.strictEqual(job1a.state, 'active')
 
-    const blockedSecondActive = await boss.fetch(queue)
+    const [blockedSecondActive] = await boss.fetch(queue)
 
-    assert.strictEqual(blockedSecondActive, null)
+    assert(!blockedSecondActive)
   })
 
   it('stately policy should be extended with singletonKey', async function () {
@@ -341,7 +341,7 @@ describe('queues', function () {
 
     assert.strictEqual(jobA2Id, null)
 
-    let jobA = await boss.fetch(queue)
+    let [jobA] = await boss.fetch(queue)
 
     await boss.fail(queue, jobA.id)
 
@@ -349,13 +349,13 @@ describe('queues', function () {
 
     assert.strictEqual(jobA.state, 'retry')
 
-    jobA = await boss.fetch(queue)
+    await boss.fetch(queue)
 
     jobA = await boss.getJobById(queue, jobAId)
 
     assert.strictEqual(jobA.state, 'active')
 
-    let jobB = await boss.fetch(queue)
+    let [jobB] = await boss.fetch(queue)
 
     assert(jobB)
 
@@ -367,9 +367,9 @@ describe('queues', function () {
 
     assert(jobA3Id)
 
-    const jobA3 = await boss.fetch(queue)
+    const [jobA3] = await boss.fetch(queue)
 
-    assert.strictEqual(jobA3, null)
+    assert(!jobA3)
   })
 
   it('should clear a specific queue', async function () {

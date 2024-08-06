@@ -2,7 +2,6 @@ const assert = require('assert')
 const EventEmitter = require('events')
 const { randomUUID } = require('crypto')
 const { serializeError: stringify } = require('serialize-error')
-const pMap = require('p-map')
 const { delay } = require('./tools')
 const Attorney = require('./attorney')
 const Worker = require('./worker')
@@ -189,71 +188,33 @@ class Manager extends EventEmitter {
     const {
       pollingInterval: interval = this.config.pollingInterval,
       batchSize,
-      teamSize = 1,
-      teamConcurrency = 1,
-      teamRefill: refill = false,
       includeMetadata = false,
       priority = true
     } = options
 
     const id = randomUUID({ disableEntropyCache: true })
 
-    let queueSize = 0
-
-    let refillTeamPromise
-    let resolveRefillTeam
-
-    // Setup a promise that onFetch can await for when at least one
-    // job is finished and so the team is ready to be topped up
-    const createTeamRefillPromise = () => {
-      refillTeamPromise = new Promise((resolve) => { resolveRefillTeam = resolve })
-    }
-
-    createTeamRefillPromise()
-
-    const onRefill = () => {
-      queueSize--
-      resolveRefillTeam()
-      createTeamRefillPromise()
-    }
-
-    const fetch = () => this.fetch(name, batchSize || (teamSize - queueSize), { includeMetadata, priority })
+    const fetch = () => this.fetch(name, { batchSize, includeMetadata, priority })
 
     const onFetch = async (jobs) => {
+      if (!jobs.length) {
+        return
+      }
+
       if (this.config.__test__throw_worker) {
         throw new Error('__test__throw_worker')
       }
 
       this.emitWip(name)
 
-      if (batchSize) {
-        const maxExpiration = jobs.reduce((acc, i) => Math.max(acc, i.expireInSeconds), 0)
+      const maxExpiration = jobs.reduce((acc, i) => Math.max(acc, i.expireInSeconds), 0)
+      const jobIds = jobs.map(job => job.id)
 
-        await resolveWithinSeconds(Promise.all([callback(jobs)]), maxExpiration)
-          .then(() => this.complete(name, jobs.map(job => job.id)))
-          .catch(err => this.fail(name, jobs.map(job => job.id), err))
-      } else {
-        if (refill) {
-          queueSize += jobs.length || 1
-        }
-
-        const allTeamPromise = pMap(jobs, job =>
-          resolveWithinSeconds(callback(job), job.expireInSeconds)
-            .then(result => this.complete(name, job.id, result))
-            .catch(err => this.fail(name, job.id, err))
-            .then(() => refill ? onRefill() : null)
-        , { concurrency: teamConcurrency }
-        ).catch(() => {}) // allow promises & non-promises to live together in harmony
-
-        if (refill) {
-          if (queueSize < teamSize) {
-            return
-          } else {
-            await refillTeamPromise
-          }
-        } else {
-          await allTeamPromise
-        }
+      try {
+        const result = await resolveWithinSeconds(callback(jobs), maxExpiration)
+        this.complete(name, jobIds, jobIds.length === 1 ? result : undefined)
+      } catch (err) {
+        this.fail(name, jobIds, err)
       }
 
       this.emitWip(name)
@@ -467,25 +428,20 @@ class Manager extends EventEmitter {
     return startAfter
   }
 
-  async fetch (name, batchSize, options = {}) {
-    const values = Attorney.checkFetchArgs(name, batchSize, options)
+  async fetch (name, options = {}) {
+    Attorney.checkFetchArgs(name, options)
     const db = options.db || this.db
     const nextJobSql = this.nextJobCommand({ ...options })
-    const statementValues = [values.name, batchSize || 1]
 
     let result
 
     try {
-      result = await db.executeSql(nextJobSql, statementValues)
+      result = await db.executeSql(nextJobSql, [name, options.batchSize])
     } catch (err) {
       // errors from fetchquery should only be unique constraint violations
     }
 
-    if (!result || result.rows.length === 0) {
-      return null
-    }
-
-    return result.rows.length === 1 && !batchSize ? result.rows[0] : result.rows
+    return result?.rows || []
   }
 
   mapCompletionIdArg (id, funcName) {

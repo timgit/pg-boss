@@ -28,7 +28,7 @@ describe('complete', function () {
 
     const countJobs = (state) => helper.countJobs(this.test.bossConfig.schema, 'name = $1 AND state = $2', [queue, state])
 
-    const jobs = await boss.fetch(queue, batchSize)
+    const jobs = await boss.fetch(queue, { batchSize })
 
     const activeCount = await countJobs(PgBoss.states.active)
 
@@ -45,15 +45,15 @@ describe('complete', function () {
 
     const jobId = await boss.send(queue)
 
-    const { id } = await boss.fetch(queue)
+    let [job] = await boss.fetch(queue)
 
-    assert.strictEqual(jobId, id)
+    assert.strictEqual(jobId, job.id)
 
     const completionData = { msg: 'i am complete' }
 
     await boss.complete(queue, jobId, completionData)
 
-    const job = await boss.getJobById(queue, jobId)
+    job = await boss.getJobById(queue, jobId)
 
     assert.strictEqual(job.output.msg, completionData.msg)
   })
@@ -64,15 +64,15 @@ describe('complete', function () {
 
     const jobId = await boss.send(queue)
 
-    const { id } = await boss.fetch(queue)
+    let [job] = await boss.fetch(queue)
 
-    assert.strictEqual(jobId, id)
+    assert.strictEqual(jobId, job.id)
 
     const completionError = new Error('i am complete')
 
     await boss.fail(queue, jobId, completionError)
 
-    const job = await boss.getJobById(queue, jobId)
+    job = await boss.getJobById(queue, jobId)
 
     assert.strictEqual(job.output.message, completionError.message)
   })
@@ -91,7 +91,7 @@ describe('complete', function () {
 
     const countJobs = (state) => helper.countJobs(this.test.bossConfig.schema, 'name = $1 AND state = $2', [queue, state])
 
-    const jobs = await boss.fetch(queue, batchSize)
+    const jobs = await boss.fetch(queue, { batchSize })
 
     const activeCount = await countJobs(PgBoss.states.active)
 
