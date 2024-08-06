@@ -206,7 +206,7 @@ describe('work', function () {
     assert.strictEqual(job.output.value, result)
   })
 
-  it('completion via Promise resolve() should pass object payload', async function () {
+  it('handler result should be stored in output', async function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
     const queue = this.test.bossConfig.schema
     const something = 'clever'
@@ -220,6 +220,20 @@ describe('work', function () {
 
     assert.strictEqual(job.state, 'completed')
     assert.strictEqual(job.output.something, something)
+  })
+
+  it('job cab be deleted in handler', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const queue = this.test.bossConfig.schema
+
+    const jobId = await boss.send(queue)
+    await boss.work(queue, async ([job]) => boss.delete(queue, job.id))
+
+    await delay(1000)
+
+    const job = await boss.getJobById(queue, jobId)
+
+    assert(!job)
   })
 
   it('should allow multiple workers to the same queue per instance', async function () {

@@ -114,7 +114,7 @@ declare namespace PgBoss {
   
   type QueuePolicy = 'standard' | 'short' | 'singleton' | 'stately'
   
-  type Queue = RetryOptions & ExpirationOptions & RetentionOptions & { name: string, policy: QueuePolicy, deadLetter?: string }
+  type Queue = RetryOptions & ExpirationOptions & RetentionOptions & { name: string, policy?: QueuePolicy, deadLetter?: string }
   
   type ScheduleOptions = SendOptions & { tz?: string }
 
@@ -307,9 +307,9 @@ declare class PgBoss extends EventEmitter {
   insert(jobs: PgBoss.JobInsert[]): Promise<void>;
   insert(jobs: PgBoss.JobInsert[], options: PgBoss.InsertOptions): Promise<void>;
 
-  fetch<T>(name: string): Promise<PgBoss.Job<T>[] | null>;
-  fetch<T>(name: string, options: PgBoss.FetchOptions & { includeMetadata: true }): Promise<PgBoss.JobWithMetadata<T>[] | null>;
-  fetch<T>(name: string, options: PgBoss.FetchOptions): Promise<PgBoss.Job<T>[] | null>;
+  fetch<T>(name: string): Promise<PgBoss.Job<T>[]>;
+  fetch<T>(name: string, options: PgBoss.FetchOptions & { includeMetadata: true }): Promise<PgBoss.JobWithMetadata<T>[]>;
+  fetch<T>(name: string, options: PgBoss.FetchOptions): Promise<PgBoss.Job<T>[]>;
 
   work<ReqData>(name: string, handler: PgBoss.WorkHandler<ReqData>): Promise<string>;
   work<ReqData>(name: string, options: PgBoss.WorkOptions & { includeMetadata: true }, handler: PgBoss.WorkWithMetadataHandler<ReqData>): Promise<string>;
@@ -344,7 +344,7 @@ declare class PgBoss extends EventEmitter {
   fail(name: string, ids: string[], options?: PgBoss.ConnectionOptions): Promise<void>;
 
   getQueueSize(name: string, options?: object): Promise<number>;
-  getJobById(name: string, id: string, options?: PgBoss.ConnectionOptions): Promise<PgBoss.JobWithMetadata | null>;
+  getJobById(name: string, id: string, options?: PgBoss.ConnectionOptions & { includeArchive: bool }): Promise<PgBoss.JobWithMetadata | null>;
 
   createQueue(name: string, options?: PgBoss.Queue): Promise<void>;
   getQueue(name: string): Promise<PgBoss.Queue | null>;

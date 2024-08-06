@@ -47,7 +47,7 @@ describe('archive', function () {
 
     await boss.maintain()
 
-    const archivedJob = await boss.getJobById(queue, jobId)
+    const archivedJob = await boss.getJobById(queue, jobId, { includeArchive: true })
 
     assert.strictEqual(jobId, archivedJob.id)
     assert.strictEqual(queue, archivedJob.name)

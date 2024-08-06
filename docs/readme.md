@@ -25,15 +25,14 @@
   - [`send()`](#send)
     - [`send(name, data, options)`](#sendname-data-options)
     - [`send(request)`](#sendrequest)
-    - [`sendAfter(name, data, options, seconds | ISO date string | Date)`](#sendaftername-data-options-seconds--iso-date-string--date)
-    - [`sendThrottled(name, data, options, seconds [, key])`](#sendthrottledname-data-options-seconds--key)
-    - [`sendDebounced(name, data, options, seconds [, key])`](#senddebouncedname-data-options-seconds--key)
+    - [`sendAfter(name, data, options, value)`](#sendaftername-data-options-value)
+    - [`sendThrottled(name, data, options, seconds, key)`](#sendthrottledname-data-options-seconds-key)
+    - [`sendDebounced(name, data, options, seconds, key)`](#senddebouncedname-data-options-seconds-key)
   - [`insert([jobs])`](#insertjobs)
-  - [`fetch()`](#fetch)
-    - [`fetch(name)`](#fetchname)
-    - [`fetch(name, batchSize, [, options])`](#fetchname-batchsize--options)
+  - [`fetch(name, options)`](#fetchname-options)
   - [`work()`](#work)
-    - [`work(name [, options], handler)`](#workname--options-handler)
+    - [`work(name, options, handler)`](#workname-options-handler)
+    - [`work(name, handler)`](#workname-handler)
   - [`offWork(value)`](#offworkvalue)
   - [`publish(event, data, options)`](#publishevent-data-options)
   - [`subscribe(event, name)`](#subscribeevent-name)
@@ -42,16 +41,18 @@
     - [`schedule(name, cron, data, options)`](#schedulename-cron-data-options)
     - [`unschedule(name)`](#unschedulename)
     - [`getSchedules()`](#getschedules)
+  - [`delete(name, id, options)`](#deletename-id-options)
+  - [`delete(name, [ids], options)`](#deletename-ids-options)
   - [`cancel(name, id, options)`](#cancelname-id-options)
   - [`cancel(name, [ids], options)`](#cancelname-ids-options)
   - [`resume(name, id, options)`](#resumename-id-options)
   - [`resume(name, [ids], options)`](#resumename-ids-options)
-  - [`complete(name, id [, data, options])`](#completename-id--data-options)
+  - [`complete(name, id, data, options)`](#completename-id-data-options)
   - [`complete(name, [ids], options)`](#completename-ids-options)
-  - [`fail(name, id [, data, options])`](#failname-id--data-options)
+  - [`fail(name, id, data, options)`](#failname-id-data-options)
   - [`fail(name, [ids], options)`](#failname-ids-options)
   - [`notifyWorker(id)`](#notifyworkerid)
-  - [`getQueueSize(name [, options])`](#getqueuesizename--options)
+  - [`getQueueSize(name, options)`](#getqueuesizename-options)
   - [`getJobById(name, id, options)`](#getjobbyidname-id-options)
   - [`createQueue(name, Queue)`](#createqueuename-queue)
   - [`deleteQueue(name)`](#deletequeuename)
@@ -64,22 +65,26 @@
 # Intro
 pg-boss is a job queue powered by Postgres, operated by 1 or more Node.js instances.
 
-Architecturally, pg-boss is similar to queue products such as AWS SQS, which primarily acts as a store of jobs that are "pulled", not "pushed" from the server. For example, pg-boss handles job timeouts and retries similar to the SQS message visibility timeout. [SKIP LOCKED](https://www.2ndquadrant.com/en/blog/what-is-select-skip-locked-for-in-postgresql-9-5) guarantees exactly-once delivery, which is only available in SQS via FIFO queues (with the caveat of their throughput limitations). Keep in mind that exactly-once delivery is not a guarantee that a job will never be processed more than once because of retries, so keep the general recommendation for idempotency with queueing systems in mind.
+Architecturally, pg-boss is similar to queue products such as AWS SQS, which functions as a store of jobs that are "pulled", not "pushed" from the server. For example, pg-boss handles job expiration and retries similar to the SQS message visibility timeout. [SKIP LOCKED](https://www.2ndquadrant.com/en/blog/what-is-select-skip-locked-for-in-postgresql-9-5) guarantees exactly-once delivery. Keep in mind that while exactly-once delivery is great, this is not a guarantee that a job will never be processed more than once because of retries, so keep the general recommendation for idempotency in mind.
 
-pg-boss uses declarative list-based partitioning for queue storage (each queue creates a dedicated child table that is attached to the parent partitioned job table). This partitioning strategy is a balance between maintenance operations (there is only 1 logical table to manage) and queue isolation. Physical queue isolation prevents volume spikes and backlogs in a queue from affecting the performance of other queues. This should address the majority of systems that involve < 10,000 distinct queues. If your usage exceeds this and you experience performance issues, consider spreading your queues across  multiple pg-boss instances, each connected to a different schema in the target database.
+pg-boss uses PostgreSQL's declarative list-based partitioning to create a physical table per queue within 1 logical job table. This partitioning strategy is a balance between global maintenance operations, queue storage isolation, and query plan optimization. According to [the docs](https://www.postgresql.org/docs/13/ddl-partitioning.html#DDL-PARTITIONING-DECLARATIVE-BEST-PRACTICES), this strategy should scale to thousands of queues. If your usage exceeds this and you experience performance issues, consider grouping queues into separate schemas in the target database.
 
-You may use as many Node.js instances as desired to connect to Postgres and scale workers out. Each instance maintains a connection pool or you can bring your own, limited to the maximum number of connections your database server can accept. 
-If you find yourself needing even more connections, pg-boss is also compatible with common server-side connection poolers such as pgBouncer.
+You may use as many Node.js instances as desired to connect to Postgres and scale workers out. Each instance maintains a client-side connection pool or you can substitute your own database client, limited to the maximum number of connections your database server (or server-side connection pooler) can accept. 
+If you find yourself needing even more connections, pg-boss can easily be used behind your custom web API.
 
 ## Job states
 
-All jobs start out in the `created` state and become `active` when picked up for work. If job processing completes successfully, jobs will go to `completed`. If a job fails, it will typcially enter the `failed` state. However, if a job has retry options configured, it will enter the `retry` state on failure instead and have a chance to re-enter `active` state. Jobs can also enter `cancelled` state via [`cancel(name, id)`](#cancelname-id-options) or [`cancel(name, [ids])`](#cancelname-ids-options).
+All jobs start out in the `created` state and become `active` via [`fetch(name, options)`](#fetchname-options) or in a polling worker via [`work()`](#work). 
 
-All jobs that are `completed`, `cancelled` or `failed` become eligible for archiving (i.e. they will transition into the `archive` state) after the configured `archiveCompletedAfterSeconds` time. Once archived, jobs will be automatically deleted after the configured deletion period.
+In a worker, when your handler function completes, jobs will be marked `completed` automatically unless previously deleted via [`delete(name, id)`](#deletename-id-options). If an unhandled error is thrown in your handler, the job will usually enter the `retry` state, and then the `failed` state once all retries have been attempted. 
+
+Uncompleted jobs may also be assigned to `cancelled` state via [`cancel(name, id)`](#cancelname-id-options), where they can be moved back into `created` via [`resume(name, id)`](#resumename-id-options).
+
+All jobs that are `completed`, `cancelled` or `failed` become eligible for archiving according to your configuration. Once archived, jobs will be automatically deleted after the configured retention period.
 
 # Database install
 
-pg-boss can be installed into any database.  When started, it will detect if it is installed and automatically create required storage.  Automatic creation requires the [CREATE](http://www.postgresql.org/docs/9.5/static/sql-grant.html) privilege in order to create and maintain its schema.
+pg-boss is usually installed into a dedicated schema in the target database.  When started, it will automatically create this schema and all required storage objects (requires the [CREATE](http://www.postgresql.org/docs/13/static/sql-grant.html) privilege).
 
 ```sql
 GRANT CREATE ON DATABASE db1 TO leastprivuser;
@@ -427,18 +432,21 @@ One example of how this is useful would be including `start()` inside the bootst
 
 All job monitoring will be stopped and all workers on this instance will be removed. Basically, it's the opposite of `start()`. Even though `start()` may create new database objects during initialization, `stop()` will never remove anything from the database.
 
-By default, calling `stop()` without any arguments will gracefully wait for all workers to finish processing active jobs before closing the internal connection pool and stopping maintenance operations. This behaviour can be configured using the stop options object. In graceful stop mode, the promise returned by `stop()` will still be resolved immediately.  If monitoring for the end of the stop is needed, add a listener to the `stopped` event.
+By default, calling `stop()` without any arguments will gracefully wait for all workers to finish processing active jobs before resolving. This behaviour can be configured using the options argument. If monitoring for the end of the stop is needed, add a listener to the `stopped` event.
 
 **Arguments**
 
 * `options`: object
 
-  * `destroy`, bool
-    Default: `false`. If `true` and the database connection is managed by pg-boss, it will destroy the connection pool.
+  * `wait`, bool
+    Default: `true`. If `true`, the promise won't be resolved until all workers and maintenance jobs are finished.
 
   * `graceful`, bool
 
     Default: `true`. If `true`, the PgBoss instance will wait for any workers that are currently processing jobs to finish, up to the specified timeout. During this period, new jobs will not be processed, but active jobs will be allowed to finish.
+
+  * `destroy`, bool
+    Default: `false`. If `true` and the database connection is managed by pg-boss, it will destroy the connection pool.
 
   * `timeout`, int
 
@@ -618,20 +626,22 @@ const jobId = await boss.send({
 console.log(`job ${jobId} submitted`)
 ```
 
-### `sendAfter(name, data, options, seconds | ISO date string | Date)`
+### `sendAfter(name, data, options, value)`
 
 Send a job that should start after a number of seconds from now, or after a specific date time.
 
 This is a convenience version of `send()` with the `startAfter` option assigned.
 
+`value`: int: seconds | string: ISO date string | Date
 
-### `sendThrottled(name, data, options, seconds [, key])`
+
+### `sendThrottled(name, data, options, seconds, key)`
 
 Only allows one job to be sent to the same queue within a number of seconds.  In this case, the first job within the interval is allowed, and all other jobs within the same interval are rejected.
 
 This is a convenience version of `send()` with the `singletonSeconds` and `singletonKey` option assigned. The `key` argument is optional.
 
-### `sendDebounced(name, data, options, seconds [, key])`
+### `sendDebounced(name, data, options, seconds, key)`
 
 Like, `sendThrottled()`, but instead of rejecting if a job is already sent in the current interval, it will try to add the job to the next interval if one hasn't already been sent.
 
@@ -662,33 +672,21 @@ interface JobInsert<T = object> {
 }
 ```
 
-
-## `fetch()`
-
-Typically one would use `work()` for automated polling for new jobs based upon a reasonable interval to finish the most jobs with the lowest latency. While `work()` is a yet another free service we offer and it can be awfully convenient, sometimes you may have a special use case around when a job can be retrieved. Or, perhaps like me, you need to provide jobs via other entry points such as a web API.
-
-`fetch()` allows you to skip all that polling nonsense that `work()` does and puts you back in control of database traffic. Once you have your shiny job, you'll use either `complete()` or `fail()` to mark it as finished.
-
-### `fetch(name)`
+## `fetch(name, options)`
 
 **Arguments**
 - `name`: string
-
-**Resolves**
-- `job`: job object, `null` if none found
-
-### `fetch(name, batchSize, [, options])`
-
-**Arguments**
-- `name`: string
-- `batchSize`: number, # of jobs to fetch
 - `options`: object
 
-  * `priority`, bool, default: `true`
+  * `batchSize`, int, *default: 1*
+
+    Number of jobs to return
+
+  * `priority`, bool, *default: true*
 
     If true, allow jobs with a higher priority to be fetched before jobs with lower or no priority
 
-  * `includeMetadata`, bool, default: `false`
+  * `includeMetadata`, bool, *default: false*
 
     If `true`, all job metadata will be returned on the job object.
 
@@ -718,47 +716,42 @@ Typically one would use `work()` for automated polling for new jobs based upon a
     ```
 
 **Resolves**
-- `[job]`: array of job objects, `null` if none found
+- `[job]`: array of jobs
 
 **Notes**
 
-If you pass a batchSize, `fetch()` will always resolve an array response, even if only 1 job is returned. This seemed like a great idea at the time.
-
-The following code shows how to utilize batching via `fetch()` to get and complete 20 jobs at once on-demand.
-
+The following example shows how to fetch and delete up to 20 jobs.
 
 ```js
-const queue = 'email-daily-digest'
-const batchSize = 20
+const QUEUE = 'email-daily-digest'
+const emailer = require('./emailer.js')
 
-const jobs = await boss.fetch(queue, { batchSize })
+const jobs = await boss.fetch(QUEUE, { batchSize: 20 })
 
-for (let i = 0; i < jobs.length; i++) {
-    const job = jobs[i]
-
-    try {
-        await emailer.send(job.data)
-        await boss.complete(queue, job.id)
-    } catch(err) {
-        await boss.fail(queue, job.id, err)
-    }
-}
+await Promise.allSettled(jobs.map(async job => {
+  try {
+    await emailer.send(job.data)
+    await boss.delete(QUEUE, job.id)
+  } catch(err) {
+    await boss.fail(QUEUE, job.id, err)
+  }
+}))
 ```
 
 ## `work()`
 
-Adds a new polling worker for a queue and executes the provided callback function when jobs are found. Multiple workers can be added if needed.
+Adds a new polling worker for a queue and executes the provided callback function when jobs are found. Each call to work() will add a new worker.
 
 Workers can be stopped via `offWork()` all at once by queue name or individually by using the unique id resolved by `work()`. Workers may be monitored by listening to the `wip` event.
 
-The default concurrency for `work()` is 1 job every 2 seconds. Both the interval and the number of jobs per interval can be changed globally or per-queue with configuration options.
+The default concurrency for `work()` is 1 job every 2 seconds. Both the interval and the number of jobs per interval can be changed globally or per-call with configuration options.
 
-### `work(name [, options], handler)`
+### `work(name, options, handler)`
 
 **Arguments**
 - `name`: string, *required*
 - `options`: object
-- `handler`: function(job), *required*
+- `handler`: function(jobs), *required*
 
 **Options**
 
@@ -781,11 +774,9 @@ The default concurrency for `work()` is 1 job every 2 seconds. Both the interval
 
 **Handler function**
 
-`handler` should either be an `async` function or return a promise. If an error occurs in the handler, it will be caught and stored into an output storage column in addition to marking the job as failed.
+`handler` should return a promise (Usually this is an `async` function). If an unhandled error occurs in a handler, `fail()` will automatically be called for the jobs, storing the error in the `output` property, making the job or jobs available for retry.
 
-Enforcing promise-returning handlers that are awaited in the workers defers polling for new jobs until the existing jobs are completed, providing backpressure.
-
-The job object has the following properties.
+The jobs argument is an array of jobs with the following properties.
 
 | Prop | Type | |
 | - | - | -|
@@ -793,14 +784,36 @@ The job object has the following properties.
 |`name`| string |
 |`data`| object |
 
-> If the job is not completed, it will expire after the configured expiration period.
 
-Following is an example of a worker that returns a promise (`sendWelcomeEmail()`) with the batchSize option increased from the default.
+An example of a worker that checks for a job every 10 seconds.
 
 ```js
-await boss.work('email-welcome', { batchSize: 5 },
-    jobs => myEmailService.sendWelcomeEmails(jobs.map(job => job.data))
-)
+await boss.work('email-welcome', { pollingIntervalSeconds: 10 }, ([ job ]) => myEmailService.sendWelcomeEmail(job.data))
+```
+
+An example of a worker that returns a maximum of 5 jobs in a batch.
+
+```js
+await boss.work('email-welcome', { batchSize: 5 }, (jobs) => myEmailService.sendWelcomeEmails(jobs.map(job => job.data)))
+```
+
+### `work(name, handler)`
+
+Simplified work() without an options argument
+
+```js
+await boss.work('email-welcome', ([ job ]) => emailer.sendWelcomeEmail(job.data))
+```
+
+work() with active job deletion
+
+```js
+const queue = 'email-welcome'
+
+await boss.work(queue, async ([ job ]) => {
+  await emailer.sendWelcomeEmail(job.data)
+  await boss.delete(queue, job.id)
+})
 ```
 
 ## `offWork(value)`
@@ -879,19 +892,25 @@ Removes a schedule by queue name.
 
 Retrieves an array of all scheduled jobs currently being monitored.
 
+## `delete(name, id, options)`
+
+Deletes a job by id.
+
+> A quick note about deleting jobs. You may use a "fetch then delete" workflow similar to SQS in pg-boss. The only thing to watch out for is how deleting job would impact opt-in job throttling that works via unique constraints. For example, if you are debouncing a queue to "only allow 1 job per hour", deleting job records would make that time slot available again, breaking your throttling policy. 
+
+## `delete(name, [ids], options)`
+
+Deletes a set of jobs by id.
+
 ## `cancel(name, id, options)`
 
 Cancels a pending or active job.
-
-The promise will resolve on a successful cancel, or reject if the job could not be cancelled.
 
 ## `cancel(name, [ids], options)`
 
 Cancels a set of pending or active jobs.
 
-The promise will resolve on a successful cancel, or reject if not all of the requested jobs could not be cancelled.
-
-> Due to the nature of the use case of attempting a batch job cancellation, it may be likely that some jobs were in flight and even completed during the cancellation request. Because of this, cancellation will cancel as many as possible and reject with a message showing the number of jobs that could not be cancelled because they were no longer active.
+When passing an array of ids, it's possible that the operation may partially succeed based on the state of individual jobs requested. Consider this a best-effort attempt. 
 
 ## `resume(name, id, options)`
 
@@ -901,9 +920,9 @@ Resumes a cancelled job.
 
 Resumes a set of cancelled jobs.
 
-## `complete(name, id [, data, options])`
+## `complete(name, id, data, options)`
 
-Completes an active job.  This would likely only be used with `fetch()`. Accepts an optional `data` argument.
+Completes an active job. This would likely only be used with `fetch()`. Accepts an optional `data` argument.
 
 The promise will resolve on a successful completion, or reject if the job could not be completed.
 
@@ -915,7 +934,7 @@ The promise will resolve on a successful completion, or reject if not all of the
 
 > See comments above on `cancel([ids])` regarding when the promise will resolve or reject because of a batch operation.
 
-## `fail(name, id [, data, options])`
+## `fail(name, id, data, options)`
 
 Marks an active job as failed.
 
@@ -933,7 +952,7 @@ The promise will resolve on a successful failure state assignment, or reject if 
 
 Notifies a worker by id to bypass the job polling interval (see `pollingIntervalSeconds`) for this iteration in the loop.
 
-## `getQueueSize(name [, options])`
+## `getQueueSize(name, options)`
 
 Returns the number of pending jobs in a queue by name.
 

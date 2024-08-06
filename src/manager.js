@@ -626,19 +626,17 @@ class Manager extends EventEmitter {
     Attorney.assertQueueName(name)
 
     const db = options.db || this.db
+
     const result1 = await db.executeSql(this.getJobByIdCommand, [name, id])
 
-    if (result1 && result1.rows && result1.rows.length === 1) {
+    if (result1?.rows?.length === 1) {
       return result1.rows[0]
+    } else if (options.includeArchive) {
+      const result2 = await db.executeSql(this.getArchivedJobByIdCommand, [name, id])
+      return result2?.rows[0] || null
+    } else {
+      return null
     }
-
-    const result2 = await db.executeSql(this.getArchivedJobByIdCommand, [name, id])
-
-    if (result2 && result2.rows && result2.rows.length === 1) {
-      return result2.rows[0]
-    }
-
-    return null
   }
 }
 
