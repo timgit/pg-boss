@@ -20,7 +20,7 @@ describe('delete', async function () {
     assert(!archivedJob)
   })
 
-  it('should delete a job via delete()', async function () {
+  it('should delete a job via deleteJob()', async function () {
     const config = { ...this.test.bossConfig }
     const boss = this.test.boss = await helper.start(config)
     const queue = config.schema
@@ -29,7 +29,7 @@ describe('delete', async function () {
 
     await boss.fetch(queue)
 
-    await boss.delete(queue, jobId)
+    await boss.deleteJob(queue, jobId)
 
     const job = await boss.getJobById(queue, jobId)
 

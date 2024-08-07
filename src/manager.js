@@ -69,7 +69,7 @@ class Manager extends EventEmitter {
       this.complete,
       this.cancel,
       this.resume,
-      this.delete,
+      this.deleteJob,
       this.fail,
       this.fetch,
       this.work,
@@ -498,10 +498,10 @@ class Manager extends EventEmitter {
     return this.mapCommandResponse(ids, result)
   }
 
-  async delete (name, id, options = {}) {
+  async deleteJob (name, id, options = {}) {
     Attorney.assertQueueName(name)
     const db = options.db || this.db
-    const ids = this.mapCompletionIdArg(id, 'delete')
+    const ids = this.mapCompletionIdArg(id, 'deleteJob')
     const result = await db.executeSql(this.deleteJobsCommand, [name, ids])
     return this.mapCommandResponse(ids, result)
   }

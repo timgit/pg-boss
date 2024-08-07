@@ -41,8 +41,8 @@
     - [`schedule(name, cron, data, options)`](#schedulename-cron-data-options)
     - [`unschedule(name)`](#unschedulename)
     - [`getSchedules()`](#getschedules)
-  - [`delete(name, id, options)`](#deletename-id-options)
-  - [`delete(name, [ids], options)`](#deletename-ids-options)
+  - [`deleteJob(name, id, options)`](#deletejobname-id-options)
+  - [`deleteJob(name, [ids], options)`](#deletejobname-ids-options)
   - [`cancel(name, id, options)`](#cancelname-id-options)
   - [`cancel(name, [ids], options)`](#cancelname-ids-options)
   - [`resume(name, id, options)`](#resumename-id-options)
@@ -76,7 +76,7 @@ If you find yourself needing even more connections, pg-boss can easily be used b
 
 All jobs start out in the `created` state and become `active` via [`fetch(name, options)`](#fetchname-options) or in a polling worker via [`work()`](#work). 
 
-In a worker, when your handler function completes, jobs will be marked `completed` automatically unless previously deleted via [`delete(name, id)`](#deletename-id-options). If an unhandled error is thrown in your handler, the job will usually enter the `retry` state, and then the `failed` state once all retries have been attempted. 
+In a worker, when your handler function completes, jobs will be marked `completed` automatically unless previously deleted via [`deleteJob(name, id)`](#deletejobname-id-options). If an unhandled error is thrown in your handler, the job will usually enter the `retry` state, and then the `failed` state once all retries have been attempted. 
 
 Uncompleted jobs may also be assigned to `cancelled` state via [`cancel(name, id)`](#cancelname-id-options), where they can be moved back into `created` via [`resume(name, id)`](#resumename-id-options).
 
@@ -731,7 +731,7 @@ const jobs = await boss.fetch(QUEUE, { batchSize: 20 })
 await Promise.allSettled(jobs.map(async job => {
   try {
     await emailer.send(job.data)
-    await boss.delete(QUEUE, job.id)
+    await boss.deleteJob(QUEUE, job.id)
   } catch(err) {
     await boss.fail(QUEUE, job.id, err)
   }
@@ -812,7 +812,7 @@ const queue = 'email-welcome'
 
 await boss.work(queue, async ([ job ]) => {
   await emailer.sendWelcomeEmail(job.data)
-  await boss.delete(queue, job.id)
+  await boss.deleteJob(queue, job.id)
 })
 ```
 
@@ -892,13 +892,13 @@ Removes a schedule by queue name.
 
 Retrieves an array of all scheduled jobs currently being monitored.
 
-## `delete(name, id, options)`
+## `deleteJob(name, id, options)`
 
 Deletes a job by id.
 
 > A quick note about deleting jobs. You may use a "fetch then delete" workflow similar to SQS in pg-boss. The only thing to watch out for is how deleting job would impact opt-in job throttling that works via unique constraints. For example, if you are debouncing a queue to "only allow 1 job per hour", deleting job records would make that time slot available again, breaking your throttling policy. 
 
-## `delete(name, [ids], options)`
+## `deleteJob(name, [ids], options)`
 
 Deletes a set of jobs by id.
 

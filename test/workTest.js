@@ -227,7 +227,7 @@ describe('work', function () {
     const queue = this.test.bossConfig.schema
 
     const jobId = await boss.send(queue)
-    await boss.work(queue, async ([job]) => boss.delete(queue, job.id))
+    await boss.work(queue, async ([job]) => boss.deleteJob(queue, job.id))
 
     await delay(1000)
 
