@@ -171,34 +171,6 @@ class Boss extends EventEmitter {
   async drop () {
     await this.db.executeSql(this.dropCommand)
   }
-
-  async setMaintenanceTime () {
-    await this.db.executeSql(this.setMaintenanceTimeCommand)
-  }
-
-  async getMaintenanceTime () {
-    const { rows } = await this.db.executeSql(this.getMaintenanceTimeCommand)
-
-    let { maintained_on: maintainedOn, seconds_ago: secondsAgo } = rows[0]
-
-    secondsAgo = secondsAgo !== null ? parseFloat(secondsAgo) : 999_999_999
-
-    return { maintainedOn, secondsAgo }
-  }
-
-  async setMonitorTime () {
-    await this.db.executeSql(this.setMonitorTimeCommand)
-  }
-
-  async getMonitorTime () {
-    const { rows } = await this.db.executeSql(this.getMonitorTimeCommand)
-
-    let { monitored_on: monitoredOn, seconds_ago: secondsAgo } = rows[0]
-
-    secondsAgo = secondsAgo !== null ? parseFloat(secondsAgo) : 999_999_999
-
-    return { monitoredOn, secondsAgo }
-  }
 }
 
 module.exports = Boss

@@ -5,7 +5,7 @@ const Contractor = require('../src/contractor')
 const migrationStore = require('../src/migrationStore')
 const currentSchemaVersion = require('../version.json').schema
 
-describe.skip('migration', function () {
+describe('migration', function () {
   let contractor
 
   beforeEach(async function () {
@@ -13,7 +13,7 @@ describe.skip('migration', function () {
     contractor = new Contractor(db, this.currentTest.bossConfig)
   })
 
-  it('should migrate to previous version and back again', async function () {
+  it.skip('should migrate to previous version and back again', async function () {
     await contractor.create()
 
     await contractor.rollback(currentSchemaVersion)
@@ -27,7 +27,7 @@ describe.skip('migration', function () {
     assert.strictEqual(newVersion, currentSchemaVersion)
   })
 
-  it('should migrate to latest during start if on previous schema version', async function () {
+  it.skip('should migrate to latest during start if on previous schema version', async function () {
     await contractor.create()
 
     await contractor.rollback(currentSchemaVersion)
@@ -43,7 +43,7 @@ describe.skip('migration', function () {
     assert.strictEqual(version, currentSchemaVersion)
   })
 
-  it('should migrate through 2 versions back and forth', async function () {
+  it.skip('should migrate through 2 versions back and forth', async function () {
     const queue = 'migrate-back-2-and-forward'
 
     const config = { ...this.test.bossConfig }
@@ -87,7 +87,7 @@ describe.skip('migration', function () {
     await boss.complete(queue, job2.id)
   })
 
-  it('should migrate to latest during start if on previous 2 schema versions', async function () {
+  it.skip('should migrate to latest during start if on previous 2 schema versions', async function () {
     await contractor.create()
 
     await contractor.rollback(currentSchemaVersion)
@@ -117,7 +117,7 @@ describe.skip('migration', function () {
     }
   })
 
-  it('should roll back an error during a migration', async function () {
+  it.skip('should roll back an error during a migration', async function () {
     const config = { ...this.test.bossConfig }
 
     config.migrations = migrationStore.getAll(config.schema)
@@ -168,7 +168,7 @@ describe.skip('migration', function () {
     }
   })
 
-  it('should not migrate if migrate option is false', async function () {
+  it.skip('should not migrate if migrate option is false', async function () {
     await contractor.create()
 
     await contractor.rollback(currentSchemaVersion)
