@@ -39,23 +39,31 @@ describe('ops', function () {
 
   it('should force stop', async function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
-    await boss.stop({ graceful: false, wait: false })
+    await boss.stop({ graceful: false, wait: true })
   })
 
-  it('should destroy the connection pool', async function () {
+  it('should close the connection pool', async function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
-    await boss.stop({ destroy: true, graceful: false, wait: false })
+    await boss.stop({ graceful: false, wait: true })
 
     assert(boss.getDb().pool.totalCount === 0)
   })
 
-  it('should destroy the connection pool gracefully', async function () {
+  it('should close the connection pool gracefully', async function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
-    await boss.stop({ destroy: true, wait: false })
-    await new Promise((resolve) => {
-      boss.on('stopped', () => resolve())
-    })
+    await boss.stop({ wait: true })
 
     assert(boss.getDb().pool.totalCount === 0)
+  })
+
+  it('should not close the connection pool after stop with close option', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const queue = this.test.bossConfig.schema
+    await boss.stop({ close: false, wait: true })
+
+    const jobId = await boss.send(queue)
+    const [job] = await boss.fetch(queue)
+
+    assert.strictEqual(jobId, job.id)
   })
 })

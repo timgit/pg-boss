@@ -155,12 +155,10 @@ CREATE TABLE pgboss.job (
 
 # Events
 
-Each instance of pg-boss is an EventEmitter.  You can run multiple instances of pg-boss for a variety of use cases including distribution and load balancing. Each instance has the freedom to process to whichever jobs you need.  Because of this diversity, the job activity of one instance could be drastically different from another.
-
-> For example, if you were to process to `error` in instance A, it will not receive an `error` event from instance B.
+The pg-boss class inherits from EventEmitter.
 
 ## `error`
-The error event is raised from any errors that may occur during internal job fetching, monitoring and archiving activities. While not required, adding a listener to the error event is strongly encouraged:
+The error event is raised from any errors that may occur during internal processing, such as scheduling and maintenance. While not required, adding a listener to the error event is strongly encouraged:
 
 > If an EventEmitter does not have at least one listener registered for the 'error' event, and an 'error' event is emitted, the error is thrown, a stack trace is printed, and the Node.js process exits.
 >
@@ -171,8 +169,6 @@ Ideally, code similar to the following example would be used after creating your
 ```js
 boss.on('error', error => logger.error(error));
 ```
-
-> **Note: Since error events are only raised during internal housekeeping activities, they are not raised for direct API calls.**
 
 ## `monitor-states`
 
@@ -425,13 +421,13 @@ If the required database objects do not exist in the specified database, **`star
 
 > While this is most likely a welcome feature, be aware of this during upgrades since this could delay the promise resolution by however long the migration script takes to run against your data.  For example, if you happened to have millions of jobs in the job table just hanging around for archiving and the next version of the schema had a couple of new indexes, it may take a few seconds before `start()` resolves. Most migrations are very quick, however, and are designed with performance in mind.
 
-Additionally, all schema operations, both first-time provisioning and migrations, are nested within advisory locks to prevent race conditions during `start()`. Internally, these locks are created using `pg_advisory_xact_lock()` which auto-unlock at the end of the transaction and don't require a persistent session or the need to issue an unlock. This should make it compatible with most connection poolers, such as pgBouncer in transactional pooling mode.
+Additionally, all schema operations, both first-time provisioning and migrations, are nested within advisory locks to prevent race conditions during `start()`. Internally, these locks are created using `pg_advisory_xact_lock()` which auto-unlock at the end of the transaction and don't require a persistent session or the need to issue an unlock. 
 
-One example of how this is useful would be including `start()` inside the bootstrapping of a pod in a ReplicaSet in Kubernetes. Being able to scale up your job processing using a container orchestration tool like k8s is becoming more and more popular, and pg-boss can be dropped into this system with no additional logic, fear, or special configuration.
+One example of how this is useful would be including `start()` inside the bootstrapping of a pod in a ReplicaSet in Kubernetes. Being able to scale up your job processing using a container orchestration tool like k8s is becoming more and more popular, and pg-boss can be dropped into this system without any special startup handling.
 
 ## `stop(options)`
 
-All job monitoring will be stopped and all workers on this instance will be removed. Basically, it's the opposite of `start()`. Even though `start()` may create new database objects during initialization, `stop()` will never remove anything from the database.
+Stops all background processing, such as maintenance and scheduling, as well as all polling workers started with `work()`.
 
 By default, calling `stop()` without any arguments will gracefully wait for all workers to finish processing active jobs before resolving. This behaviour can be configured using the options argument. If monitoring for the end of the stop is needed, add a listener to the `stopped` event.
 
@@ -446,8 +442,8 @@ By default, calling `stop()` without any arguments will gracefully wait for all 
 
     Default: `true`. If `true`, the PgBoss instance will wait for any workers that are currently processing jobs to finish, up to the specified timeout. During this period, new jobs will not be processed, but active jobs will be allowed to finish.
 
-  * `destroy`, bool
-    Default: `false`. If `true` and the database connection is managed by pg-boss, it will destroy the connection pool.
+  * `close`, bool
+    Default: `true`. If `true` and the database connection is managed by pg-boss, it will close the connection pool. Use `false` if needed to continue allowing operations such as `send()` and `fetch()`.
 
   * `timeout`, int
 

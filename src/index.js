@@ -149,7 +149,7 @@ class PgBoss extends EventEmitter {
       return
     }
 
-    let { destroy = false, graceful = true, timeout = 30000, wait = true } = options
+    let { close = true, graceful = true, timeout = 30000, wait = true } = options
 
     timeout = Math.max(timeout, 1000)
 
@@ -168,7 +168,7 @@ class PgBoss extends EventEmitter {
 
           await this.#manager.failWip()
 
-          if (this.#db.isOurs && this.#db.opened && destroy) {
+          if (this.#db.isOurs && this.#db.opened && close) {
             await this.#db.close()
           }
 

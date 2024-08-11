@@ -23,7 +23,7 @@ async function readme () {
   })
 
   await delay(2000)
-  await boss.stop({ destroy: true })
+  await boss.stop()
 }
 
 readme()
