@@ -32,15 +32,16 @@ pg-boss relies on [SKIP LOCKED](https://www.2ndquadrant.com/en/blog/what-is-sele
 This will likely cater the most to teams already familiar with the simplicity of relational database semantics and operations (SQL, querying, and backups). It will be especially useful to those already relying on PostgreSQL that want to limit how many systems are required to monitor and support in their architecture.
 
 
-## Features
+## Summary
 * Exactly-once job delivery
 * Backpressure-compatible polling workers
 * Cron scheduling
+* Queue storage policies to support a variety of rate limiting, debouncing, and concurrency use cases
+* Priority queues, dead letter queues, job deferral, automatic retries with exponential backoff
 * Pub/sub API for fan-out queue relationships
-* Priority queues, deferral, retries (with exponential backoff), rate limiting, debouncing
-* Table operations via SQL for bulk loads via COPY or INSERT
+* Raw SQL support for non-Node.js runtimes via INSERT or COPY
+* Serverless function compatible
 * Multi-master compatible (for example, in a Kubernetes ReplicaSet)
-* Dead letter queues
 
 ## Requirements
 * Node 20 or higher

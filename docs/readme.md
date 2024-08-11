@@ -71,7 +71,7 @@ This will likely cater the most to teams already familiar with the simplicity of
 
 Internally, pg-boss uses declarative list-based partitioning to create a physical table per queue within 1 logical job table. This partitioning strategy is a balance between global maintenance operations, queue storage isolation, and query plan optimization. According to [the docs](https://www.postgresql.org/docs/13/ddl-partitioning.html#DDL-PARTITIONING-DECLARATIVE-BEST-PRACTICES), this strategy should scale to thousands of queues. If your usage exceeds this and you experience performance issues, consider grouping queues into separate schemas in the target database.
 
-You may use as many Node.js instances as desired to connect to Postgres and scale workers out. Each instance maintains a client-side connection pool or you can substitute your own database client, limited to the maximum number of connections your database server (or server-side connection pooler) can accept. If you find yourself needing even more connections, pg-boss can easily be used behind your custom web API.
+You may use as many Node.js instances as desired to connect to the same Postgres database, even running it inside serverless functions if needed. Each instance maintains a client-side connection pool or you can substitute your own database client, limited to the maximum number of connections your database server (or server-side connection pooler) can accept. If you find yourself needing even more connections, pg-boss can easily be used behind your custom web API.
 
 ## Job states
 
@@ -429,7 +429,7 @@ One example of how this is useful would be including `start()` inside the bootst
 
 Stops all background processing, such as maintenance and scheduling, as well as all polling workers started with `work()`.
 
-By default, calling `stop()` without any arguments will gracefully wait for all workers to finish processing active jobs before resolving. This behaviour can be configured using the options argument. If monitoring for the end of the stop is needed, add a listener to the `stopped` event.
+By default, calling `stop()` without any arguments will gracefully wait for all workers to finish processing active jobs before resolving. Emits a `stopped` event if needed.
 
 **Arguments**
 
@@ -443,7 +443,7 @@ By default, calling `stop()` without any arguments will gracefully wait for all 
     Default: `true`. If `true`, the PgBoss instance will wait for any workers that are currently processing jobs to finish, up to the specified timeout. During this period, new jobs will not be processed, but active jobs will be allowed to finish.
 
   * `close`, bool
-    Default: `true`. If `true` and the database connection is managed by pg-boss, it will close the connection pool. Use `false` if needed to continue allowing operations such as `send()` and `fetch()`.
+    Default: `true`. If the database connection is managed by pg-boss, it will close the connection pool. Use `false` if needed to continue allowing operations such as `send()` and `fetch()`.
 
   * `timeout`, int
 
@@ -452,7 +452,7 @@ By default, calling `stop()` without any arguments will gracefully wait for all 
 
 ## `send()`
 
-Creates a new job and resolves the job's unique identifier (uuid).
+Creates a new job and returns the job id.
 
 > `send()` will resolve a `null` for job id under some use cases when using unique jobs or throttling (see below).  These options are always opt-in on the send side and therefore don't result in a promise rejection.
 
@@ -530,14 +530,13 @@ Available in constructor as a default, or overridden in send.
 **Connection options**
 
 * **db**, object
-  A wrapper object containing an async method called `executeSql` that performs the query to the db. Can be used to manage jobs inside a transaction. Example:
+  
+  Instead of using pg-boss's default adapter, you can use your own, as long as it implements the following interface (the same as the pg module).
 
-    ```
-    const db = {
-      async executeSql (sql, values) {
-        return trx.query(sql, values)
-      }
-    }
+    ```ts
+    interface Db {
+      executeSql(text: string, values: any[]): Promise<{ rows: any[] }>;
+  }
     ```
 
 **Deferred jobs**
@@ -549,31 +548,23 @@ Available in constructor as a default, or overridden in send.
 
     Default: 0
 
-**Unique jobs**
-
-* **singletonKey** string
-
-  Allows a max of 1 job (with the same name and singletonKey) to be queued or active.
-
-  ```js
-  boss.send('my-job', {}, {singletonKey: '123'}) // resolves a jobId
-  boss.send('my-job', {}, {singletonKey: '123'}) // resolves a null jobId until first job completed
-  ```
-
-**Throttled jobs**
+**Throttle or debounce jobs**
 
 * **singletonSeconds**, int
 * **singletonMinutes**, int
 * **singletonHours**, int
 * **singletonNextSlot**, bool
+* **singletonKey** string
 
-Throttling jobs to 'once every n units', where units could be seconds, minutes, or hours.  This option is set on the send side of the API since jobs may or may not be created based on the existence of other jobs.
+Throttling jobs to 'one per time slot', where units could be seconds, minutes, or hours.  This option is set on the send side of the API since jobs may or may not be created based on the existence of other jobs.
 
-For example, if you set the `singletonMinutes` to 1, then submit 2 jobs within a minute, only the first job will be accepted and resolve a job id.  The second request will be discarded, but resolve a null instead of an id.
+For example, if you set the `singletonMinutes` to 1, then submit 2 jobs within the same minute, only the first job will be accepted and resolve a job id.  The second request will resolve a null instead of a job id.
 
 > When a higher unit is is specified, lower unit configuration settings are ignored.
 
 Setting `singletonNextSlot` to true will cause the job to be scheduled to run after the current time slot if and when a job is throttled. This option is set to true, for example, when calling the convenience function `sendDebounced()`.
+
+As with queue policies, using `singletonKey` will extend throttling to allow one job per key within the time slot.
 
 **Dead Letter Queues**
 
@@ -737,11 +728,11 @@ await Promise.allSettled(jobs.map(async job => {
 
 ## `work()`
 
-Adds a new polling worker for a queue and executes the provided callback function when jobs are found. Each call to work() will add a new worker.
+Adds a new polling worker for a queue and executes the provided callback function when jobs are found. Each call to work() will add a new worker and resolve a unqiue worker id.
 
-Workers can be stopped via `offWork()` all at once by queue name or individually by using the unique id resolved by `work()`. Workers may be monitored by listening to the `wip` event.
+Workers can be stopped via `offWork()` all at once by queue name or individually by using the worker id. Worker activity may be monitored by listening to the `wip` event.
 
-The default concurrency for `work()` is 1 job every 2 seconds. Both the interval and the number of jobs per interval can be changed globally or per-call with configuration options.
+The default options for `work()` is 1 job every 2 seconds.
 
 ### `work(name, options, handler)`
 
@@ -893,7 +884,7 @@ Retrieves an array of all scheduled jobs currently being monitored.
 
 Deletes a job by id.
 
-> A quick note about deleting jobs. You may use a "fetch then delete" workflow similar to SQS in pg-boss. The only thing to watch out for is how deleting job would impact opt-in job throttling that works via unique constraints. For example, if you are debouncing a queue to "only allow 1 job per hour", deleting job records would make that time slot available again, breaking your throttling policy. 
+> Job deletion is offered if desired for a "fetch then delete" workflow similar to SQS. This is not the default behavior for workers so "everything just works" by default, including job throttling and debouncing, which requires jobs to exist to enforce a unique constraint. For example, if you are debouncing a queue to "only allow 1 job per hour", deleting jobs after processing would re-open that time slot, breaking your throttling policy. 
 
 ## `deleteJob(name, [ids], options)`
 
