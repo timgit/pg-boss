@@ -4,16 +4,37 @@ const helper = require('./testHelper')
 const Contractor = require('../src/contractor')
 const migrationStore = require('../src/migrationStore')
 const currentSchemaVersion = require('../version.json').schema
+const plans = require('../src/plans')
 
 describe('migration', function () {
-  let contractor
-
   beforeEach(async function () {
     const db = await helper.getDb({ debug: false })
-    contractor = new Contractor(db, this.currentTest.bossConfig)
+    this.currentTest.contractor = new Contractor(db, this.currentTest.bossConfig)
+  })
+
+  it('should not migrate when current version is not found in migration store', async function () {
+    const { contractor } = this.test
+    const config = { ...this.test.bossConfig }
+
+    await contractor.create()
+
+    const db = await helper.getDb()
+    // version 20 was v9 and dropped from the migration store with v10
+    await db.executeSql(plans.setVersion(config.schema, 20))
+
+    const boss = this.test.boss = new PgBoss(config)
+
+    try {
+      await boss.start()
+      assert(false)
+    } catch {
+      assert(true)
+    }
   })
 
   it.skip('should migrate to previous version and back again', async function () {
+    const { contractor } = this.test
+
     await contractor.create()
 
     await contractor.rollback(currentSchemaVersion)
@@ -28,6 +49,8 @@ describe('migration', function () {
   })
 
   it.skip('should migrate to latest during start if on previous schema version', async function () {
+    const { contractor } = this.test
+
     await contractor.create()
 
     await contractor.rollback(currentSchemaVersion)
@@ -44,6 +67,8 @@ describe('migration', function () {
   })
 
   it.skip('should migrate through 2 versions back and forth', async function () {
+    const { contractor } = this.test
+
     const queue = 'migrate-back-2-and-forward'
 
     const config = { ...this.test.bossConfig }
@@ -88,6 +113,8 @@ describe('migration', function () {
   })
 
   it.skip('should migrate to latest during start if on previous 2 schema versions', async function () {
+    const { contractor } = this.test
+
     await contractor.create()
 
     await contractor.rollback(currentSchemaVersion)
@@ -108,6 +135,8 @@ describe('migration', function () {
   })
 
   it('migrating to non-existent version fails gracefully', async function () {
+    const { contractor } = this.test
+
     await contractor.create()
 
     try {
@@ -118,6 +147,8 @@ describe('migration', function () {
   })
 
   it.skip('should roll back an error during a migration', async function () {
+    const { contractor } = this.test
+
     const config = { ...this.test.bossConfig }
 
     config.migrations = migrationStore.getAll(config.schema)
@@ -169,6 +200,8 @@ describe('migration', function () {
   })
 
   it.skip('should not migrate if migrate option is false', async function () {
+    const { contractor } = this.test
+
     await contractor.create()
 
     await contractor.rollback(currentSchemaVersion)
@@ -185,6 +218,8 @@ describe('migration', function () {
   })
 
   it('should still work if migrate option is false', async function () {
+    const { contractor } = this.test
+
     await contractor.create()
 
     const config = { ...this.test.bossConfig, migrate: false }

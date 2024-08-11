@@ -173,19 +173,19 @@ class Timekeeper extends EventEmitter {
 
     cronParser.parseExpression(cron, { tz })
 
-    // validation pre-check
     Attorney.checkSendArgs([name, data, options], this.config)
-
-    // make sure queue exists before scheduling
-    const queue = await this.db.executeSql(this.getQueueCommand, [name])
-
-    if (!queue.rows.length === 0) {
-      throw new Error(`Queue '${name}' not found`)
-    }
 
     const values = [name, cron, tz, data, options]
 
-    await this.db.executeSql(this.scheduleCommand, values)
+    try {
+      await this.db.executeSql(this.scheduleCommand, values)
+    } catch (err) {
+      if (err.message.includes('foreign key')) {
+        err.message = `Queue ${name} not found`
+      }
+
+      throw err
+    }
   }
 
   async unschedule (name) {

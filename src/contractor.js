@@ -86,15 +86,15 @@ class Contractor {
     }
   }
 
-  async next (version) {
-    const commands = migrationStore.next(this.config.schema, version, this.migrations)
-    await this.db.executeSql(commands)
-  }
+  // async next (version) {
+  //   const commands = migrationStore.next(this.config.schema, version, this.migrations)
+  //   await this.db.executeSql(commands)
+  // }
 
-  async rollback (version) {
-    const commands = migrationStore.rollback(this.config.schema, version, this.migrations)
-    await this.db.executeSql(commands)
-  }
+  // async rollback (version) {
+  //   const commands = migrationStore.rollback(this.config.schema, version, this.migrations)
+  //   await this.db.executeSql(commands)
+  // }
 }
 
 module.exports = Contractor

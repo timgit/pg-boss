@@ -97,6 +97,22 @@ describe('queues', function () {
     assert.strictEqual(queue, null)
   })
 
+  it('getQueues() returns queues array', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
+    const queue1 = `${this.test.bossConfig.schema}_1`
+    const queue2 = `${this.test.bossConfig.schema}_2`
+
+    await boss.createQueue(queue1)
+    await boss.createQueue(queue2)
+
+    const queues = await boss.getQueues()
+
+    assert.strictEqual(queues.length, 2)
+
+    assert(queues.some(q => q.name === queue1))
+    assert(queues.some(q => q.name === queue2))
+  })
+
   it('should update queue properties', async function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
     const queue = this.test.bossConfig.schema

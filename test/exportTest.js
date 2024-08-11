@@ -11,11 +11,33 @@ describe('export', function () {
     assert(plans.includes(`${schema}.version`))
   })
 
+  it('should fail to export migration using current version', function () {
+    const schema = 'custom'
+
+    try {
+      PgBoss.getMigrationPlans(schema, currentSchemaVersion)
+      assert(false, 'migration plans should fail on current version')
+    } catch {
+      assert(true)
+    }
+  })
+
   it.skip('should export commands to migrate', function () {
     const schema = 'custom'
     const plans = PgBoss.getMigrationPlans(schema, currentSchemaVersion - 1)
 
     assert(plans, 'migration plans not found')
+  })
+
+  it('should fail to export commands to roll back from invalid version', function () {
+    const schema = 'custom'
+
+    try {
+      PgBoss.getRollbackPlans(schema, -1)
+      assert(false, 'migration plans should fail on current version')
+    } catch {
+      assert(true)
+    }
   })
 
   it.skip('should export commands to roll back', function () {

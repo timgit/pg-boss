@@ -115,7 +115,7 @@ declare namespace PgBoss {
   type QueuePolicy = 'standard' | 'short' | 'singleton' | 'stately'
   
   type Queue = RetryOptions & ExpirationOptions & RetentionOptions & { name: string, policy?: QueuePolicy, deadLetter?: string }
-  
+  type QueueResult = Queue & { createdOn: Date, updatedOn: Date }
   type ScheduleOptions = SendOptions & { tz?: string }
 
   interface JobPollingOptions {
@@ -348,7 +348,7 @@ declare class PgBoss extends EventEmitter {
 
   createQueue(name: string, options?: PgBoss.Queue): Promise<void>;
   getQueue(name: string): Promise<PgBoss.Queue | null>;
-  getQueues(): Promise<PgBoss.Queue[]>;
+  getQueues(): Promise<PgBoss.QueueResult[]>;
   updateQueue(name: string, options?: PgBoss.Queue): Promise<void>;
   deleteQueue(name: string): Promise<void>;
   purgeQueue(name: string): Promise<void>;

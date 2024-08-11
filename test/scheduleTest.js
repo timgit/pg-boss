@@ -55,6 +55,19 @@ describe('schedule', function () {
     assert(!job)
   })
 
+  it('should fail to schedule a queue that does not exist', async function () {
+    const boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
+    const queue = this.test.bossConfig.schema
+
+    try {
+      await boss.schedule(queue, '* * * * *')
+      assert(false)
+    } catch (err) {
+      console.log(err)
+      assert(true)
+    }
+  })
+
   it('should send job based on every minute expression after a restart', async function () {
     let boss = await helper.start({ ...this.test.bossConfig, schedule: false, noDefault: true })
 

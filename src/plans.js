@@ -390,13 +390,16 @@ function updateQueue (schema) {
 function getQueues (schema) {
   return `
     SELECT 
+      name,
       policy,
       retry_limit as "retryLimit",
       retry_delay as "retryDelay",
       retry_backoff as "retryBackoff",
       expire_seconds as "expireInSeconds",
       retention_minutes as "retentionMinutes",
-      dead_letter as "deadLetter"
+      dead_letter as "deadLetter",
+      created_on as "createdOn",
+      updated_on as "updatedOn"
     FROM ${schema}.queue    
    `
 }
