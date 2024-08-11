@@ -63,7 +63,6 @@ describe('schedule', function () {
       await boss.schedule(queue, '* * * * *')
       assert(false)
     } catch (err) {
-      console.log(err)
       assert(true)
     }
   })

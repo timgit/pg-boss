@@ -400,7 +400,7 @@ function getQueues (schema) {
       dead_letter as "deadLetter",
       created_on as "createdOn",
       updated_on as "updatedOn"
-    FROM ${schema}.queue    
+    FROM ${schema}.queue
    `
 }
 

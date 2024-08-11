@@ -343,15 +343,15 @@ declare class PgBoss extends EventEmitter {
   fail(name: string, id: string, data: object, options?: PgBoss.ConnectionOptions): Promise<void>;
   fail(name: string, ids: string[], options?: PgBoss.ConnectionOptions): Promise<void>;
 
-  getQueueSize(name: string, options?: object): Promise<number>;
   getJobById(name: string, id: string, options?: PgBoss.ConnectionOptions & { includeArchive: bool }): Promise<PgBoss.JobWithMetadata | null>;
-
+  
   createQueue(name: string, options?: PgBoss.Queue): Promise<void>;
-  getQueue(name: string): Promise<PgBoss.Queue | null>;
-  getQueues(): Promise<PgBoss.QueueResult[]>;
   updateQueue(name: string, options?: PgBoss.Queue): Promise<void>;
   deleteQueue(name: string): Promise<void>;
   purgeQueue(name: string): Promise<void>;
+  getQueues(): Promise<PgBoss.QueueResult[]>;
+  getQueue(name: string): Promise<PgBoss.QueueResult | null>;
+  getQueueSize(name: string, options?: { before: 'retry' | 'active' | 'completed' | 'cancelled' | 'failed' }): Promise<number>;
 
   clearStorage(): Promise<void>;
   archive(): Promise<void>;

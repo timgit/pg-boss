@@ -28,11 +28,12 @@
     - [`sendAfter(name, data, options, value)`](#sendaftername-data-options-value)
     - [`sendThrottled(name, data, options, seconds, key)`](#sendthrottledname-data-options-seconds-key)
     - [`sendDebounced(name, data, options, seconds, key)`](#senddebouncedname-data-options-seconds-key)
-  - [`insert([jobs])`](#insertjobs)
+  - [`insert(Job[])`](#insertjob)
   - [`fetch(name, options)`](#fetchname-options)
   - [`work()`](#work)
     - [`work(name, options, handler)`](#workname-options-handler)
     - [`work(name, handler)`](#workname-handler)
+  - [`notifyWorker(id)`](#notifyworkerid)
   - [`offWork(value)`](#offworkvalue)
   - [`publish(event, data, options)`](#publishevent-data-options)
   - [`subscribe(event, name)`](#subscribeevent-name)
@@ -51,11 +52,14 @@
   - [`complete(name, [ids], options)`](#completename-ids-options)
   - [`fail(name, id, data, options)`](#failname-id-data-options)
   - [`fail(name, [ids], options)`](#failname-ids-options)
-  - [`notifyWorker(id)`](#notifyworkerid)
-  - [`getQueueSize(name, options)`](#getqueuesizename-options)
   - [`getJobById(name, id, options)`](#getjobbyidname-id-options)
   - [`createQueue(name, Queue)`](#createqueuename-queue)
+  - [`updateQueue(name, options)`](#updatequeuename-options)
+  - [`purgeQueue(name)`](#purgequeuename)
   - [`deleteQueue(name)`](#deletequeuename)
+  - [`getQueues()`](#getqueues)
+  - [`getQueue(name)`](#getqueuename)
+  - [`getQueueSize(name, options)`](#getqueuesizename-options)
   - [`clearStorage()`](#clearstorage)
   - [`isInstalled()`](#isinstalled)
   - [`schemaVersion()`](#schemaversion)
@@ -635,7 +639,7 @@ Like, `sendThrottled()`, but instead of rejecting if a job is already sent in th
 
 This is a convenience version of `send()` with the `singletonSeconds`, `singletonKey` and `singletonNextSlot` option assigned. The `key` argument is optional.
 
-## `insert([jobs])`
+## `insert(Job[])`
 
 Create multiple jobs in one request with an array of objects.
 
@@ -661,6 +665,8 @@ interface JobInsert<T = object> {
 ```
 
 ## `fetch(name, options)`
+
+Returns an array of jobs from a queue
 
 **Arguments**
 - `name`: string
@@ -703,8 +709,6 @@ interface JobInsert<T = object> {
     }
     ```
 
-**Resolves**
-- `[job]`: array of jobs
 
 **Notes**
 
@@ -803,6 +807,11 @@ await boss.work(queue, async ([ job ]) => {
   await boss.deleteJob(queue, job.id)
 })
 ```
+
+## `notifyWorker(id)`
+
+Notifies a worker by id to bypass the job polling interval (see `pollingIntervalSeconds`) for this iteration in the loop.
+
 
 ## `offWork(value)`
 
@@ -936,31 +945,16 @@ The promise will resolve on a successful failure state assignment, or reject if 
 
 > See comments above on `cancel([ids])` regarding when the promise will resolve or reject because of a batch operation.
 
-## `notifyWorker(id)`
-
-Notifies a worker by id to bypass the job polling interval (see `pollingIntervalSeconds`) for this iteration in the loop.
-
-## `getQueueSize(name, options)`
-
-Returns the number of pending jobs in a queue by name.
-
-`options`: Optional, object.
-
-| Prop | Type | Description | Default |
-| - | - | - | - |
-|`before`| string | count jobs in states before this state | states.active |
-
-As an example, the following options object include active jobs along with created and retry.
-
-```js
-{
-  before: states.completed
-}
-```
 
 ## `getJobById(name, id, options)`
 
-Retrieves a job with all metadata by id in either the primary or archive storage.
+Retrieves a job with all metadata by name and id
+
+**options**
+
+* `includeArchive`: bool, default: false
+
+  If `true`, it will search for the job in the archive if not found in the primary job storage.
 
 ## `createQueue(name, Queue)`
 
@@ -984,14 +978,47 @@ Allowed policy values:
 | Policy | Description |
 | - | - |
 | standard | (Default) Supports all standard features such as deferral, priority, and throttling |
-| debounced | All standard features, but only allows 1 job to be queued, unlimited active. Can be extended with `singletonKey` |
+| short | All standard features, but only allows 1 job to be queued, unlimited active. Can be extended with `singletonKey` |
 | singleton | All standard features, but only allows 1 job to be active, unlimited queued. Can be extended with `singletonKey` |
-| stately | Combination of debounced and singleton: Only allows 1 job per state, queued and/or active. Can be extended with `singletonKey` |
+| stately | Combination of short and singleton: Only allows 1 job per state, queued and/or active. Can be extended with `singletonKey` |
 
+## `updateQueue(name, options)`
+
+Updates options on an existing queue. The policy can be changed, but understand this won't impact existing jobs in flight and will only apply the new policy on new incoming jobs.
+
+## `purgeQueue(name)`
+
+Deletes all queued jobs in a queue.
 
 ## `deleteQueue(name)`
 
 Deletes a queue and all jobs from the active job table.  Any jobs in the archive table are retained.
+
+## `getQueues()`
+
+Returns all queues
+
+## `getQueue(name)`
+
+Returns a queue by name
+
+## `getQueueSize(name, options)`
+
+Returns the number of pending jobs in a queue by name.
+
+`options`: Optional, object.
+
+| Prop | Type | Description | Default |
+| - | - | - | - |
+|`before`| string | count jobs in states before this state | states.active |
+
+As an example, the following options object include active jobs along with created and retry.
+
+```js
+{
+  before: states.completed
+}
+```
 
 ## `clearStorage()`
 

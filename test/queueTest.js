@@ -134,6 +134,7 @@ describe('queues', function () {
 
     let queueObj = await boss.getQueue(queue)
 
+    assert.strictEqual(queue, queueObj.name)
     assert.strictEqual(createProps.policy, queueObj.policy)
     assert.strictEqual(createProps.retryLimit, queueObj.retryLimit)
     assert.strictEqual(createProps.retryBackoff, queueObj.retryBackoff)
@@ -141,6 +142,8 @@ describe('queues', function () {
     assert.strictEqual(createProps.expireInSeconds, queueObj.expireInSeconds)
     assert.strictEqual(createProps.retentionMinutes, queueObj.retentionMinutes)
     assert.strictEqual(createProps.deadLetter, queueObj.deadLetter)
+    assert(queueObj.createdOn)
+    assert(queueObj.updatedOn)
 
     deadLetter = `${queue}_dlq2`
     await boss.createQueue(deadLetter)

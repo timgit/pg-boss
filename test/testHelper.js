@@ -108,7 +108,7 @@ async function start (options) {
   try {
     options = getConfig(options)
     const boss = new PgBoss(options)
-    boss.on('error', err => console.log({ schema: options.schema, message: err.message }))
+    // boss.on('error', err => console.log({ schema: options.schema, message: err.message }))
     await boss.start()
     // auto-create queue for tests
     if (!options.noDefault) {
