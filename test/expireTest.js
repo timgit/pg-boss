@@ -1,70 +1,43 @@
 const assert = require('assert')
 const helper = require('./testHelper')
-const delay = require('delay')
+const { delay } = require('../src/tools')
 
 describe('expire', function () {
-  const defaults = { maintenanceIntervalSeconds: 1 }
-
   it('should expire a job', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, ...defaults, onComplete: true })
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const queue = this.test.bossConfig.schema
+    const key = this.test.bossConfig.schema
 
-    const queue = 'expire'
+    const jobId = await boss.send({ name: queue, data: { key }, options: { retryLimit: 0, expireInSeconds: 1 } })
 
-    const jobId = await boss.send({ name: queue, options: { expireInSeconds: 1 } })
+    const [job1] = await boss.fetch(queue)
 
-    // fetch the job but don't complete it
-    await boss.fetch(queue)
+    assert(job1)
 
-    // this should give it enough time to expire
-    await delay(8000)
+    await delay(1000)
 
-    const job = await boss.fetchCompleted(queue)
+    await boss.maintain()
 
-    assert.strictEqual(jobId, job.data.request.id)
-    assert.strictEqual('expired', job.data.state)
+    const job = await boss.getJobById(queue, jobId)
+
+    assert.strictEqual('failed', job.state)
   })
 
   it('should expire a job - cascaded config', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, ...defaults, expireInSeconds: 1 })
-
-    const queue = 'expire-cascade-config'
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, expireInSeconds: 1, retryLimit: 0 })
+    const queue = this.test.bossConfig.schema
 
     const jobId = await boss.send(queue)
 
     // fetch the job but don't complete it
-    const { id } = await boss.fetch(queue)
+    await boss.fetch(queue)
 
-    assert.strictEqual(jobId, id)
+    await delay(1000)
 
-    // this should give it enough time to expire
-    await delay(8000)
+    await boss.maintain()
 
-    const job = await boss.getJobById(jobId)
+    const job = await boss.getJobById(queue, jobId)
 
-    assert.strictEqual('expired', job.state)
-  })
-
-  it('should warn with an old expireIn option only once', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noSupervisor: true })
-
-    const queue = 'expireIn-warning-only-once'
-
-    let warningCount = 0
-
-    const warningEvent = 'warning'
-    const onWarning = (warning) => {
-      assert(warning.message.includes('expireIn'))
-      warningCount++
-    }
-
-    process.on(warningEvent, onWarning)
-
-    await boss.send({ name: queue, options: { expireIn: '1 minute' } })
-    await boss.send({ name: queue, options: { expireIn: '1 minute' } })
-    await boss.send({ name: queue, options: { expireIn: '1 minute' } })
-
-    process.removeListener(warningEvent, onWarning)
-
-    assert.strictEqual(warningCount, 1)
+    assert.strictEqual('failed', job.state)
   })
 })

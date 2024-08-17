@@ -1,7 +1,6 @@
-const delay = require('delay')
+const { delay } = require('../src/tools')
 const assert = require('assert')
 const helper = require('./testHelper')
-const pMap = require('p-map')
 
 describe('failure', function () {
   it('should reject missing id argument', async function () {
@@ -21,28 +20,9 @@ describe('failure', function () {
 
     await boss.send(queue)
 
-    const job = await boss.fetch(queue)
+    const [job] = await boss.fetch(queue)
 
-    await boss.fail(job.id)
-  })
-
-  it('worker for job failure', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
-    const queue = this.test.bossConfig.schema
-
-    const jobId = await boss.send(queue, null, { onComplete: true })
-
-    const job = await boss.fetch(queue)
-
-    await boss.fail(job.id)
-
-    return new Promise((resolve, reject) => {
-      boss.onComplete(queue, async job => {
-        assert.strictEqual(jobId, job.data.request.id)
-        assert.strictEqual('failed', job.data.state)
-        resolve()
-      }).catch(reject)
-    })
+    await boss.fail(queue, job.id)
   })
 
   it('should fail a batch of jobs', async function () {
@@ -55,9 +35,11 @@ describe('failure', function () {
       boss.send(queue)
     ])
 
-    const jobs = await boss.fetch(queue, 3)
+    const jobs = await boss.fetch(queue, { batchSize: 3 })
 
-    await boss.fail(jobs.map(job => job.id))
+    const result = await boss.fail(queue, jobs.map(job => job.id))
+
+    assert.strictEqual(result.jobs.length, 3)
   })
 
   it('should fail a batch of jobs with a data arg', async function () {
@@ -71,29 +53,13 @@ describe('failure', function () {
       boss.send(queue)
     ])
 
-    const jobs = await boss.fetch(queue, 3)
+    const jobs = await boss.fetch(queue, { batchSize: 3 })
 
-    await boss.fail(jobs.map(job => job.id), new Error(message))
+    await boss.fail(queue, jobs.map(job => job.id), new Error(message))
 
-    const results = await pMap(jobs, job => boss.getJobById(job.id))
+    const results = await Promise.all(jobs.map(job => boss.getJobById(queue, job.id)))
 
     assert(results.every(i => i.output.message === message))
-  })
-
-  it('should accept a payload', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
-    const queue = this.test.bossConfig.schema
-
-    const failPayload = { someReason: 'nuna' }
-
-    const jobId = await boss.send(queue, null, { onComplete: true })
-
-    await boss.fail(jobId, failPayload)
-
-    const job = await boss.fetchCompleted(queue)
-
-    assert.strictEqual(job.data.state, 'failed')
-    assert.strictEqual(job.data.response.someReason, failPayload.someReason)
   })
 
   it('should preserve nested objects within a payload that is an instance of Error', async function () {
@@ -103,14 +69,13 @@ describe('failure', function () {
     const failPayload = new Error('Something went wrong')
     failPayload.some = { deeply: { nested: { reason: 'nuna' } } }
 
-    const jobId = await boss.send(queue, null, { onComplete: true })
+    const jobId = await boss.send(queue)
 
-    await boss.fail(jobId, failPayload)
+    await boss.fail(queue, jobId, failPayload)
 
-    const job = await boss.fetchCompleted(queue)
+    const job = await boss.getJobById(queue, jobId)
 
-    assert.strictEqual(job.data.state, 'failed')
-    assert.strictEqual(job.data.response.some.deeply.nested.reason, failPayload.some.deeply.nested.reason)
+    assert.strictEqual(job.output.some.deeply.nested.reason, failPayload.some.deeply.nested.reason)
   })
 
   it('failure via Promise reject() should pass string wrapped in value prop', async function () {
@@ -118,15 +83,14 @@ describe('failure', function () {
     const queue = this.test.bossConfig.schema
     const failPayload = 'mah error'
 
-    await boss.work(queue, job => Promise.reject(failPayload))
-    await boss.send(queue, null, { onComplete: true })
+    const jobId = await boss.send(queue)
+    await boss.work(queue, () => Promise.reject(failPayload))
 
-    await delay(7000)
+    await delay(1000)
 
-    const job = await boss.fetchCompleted(queue)
+    const job = await boss.getJobById(queue, jobId)
 
-    assert.strictEqual(job.data.state, 'failed')
-    assert.strictEqual(job.data.response.value, failPayload)
+    assert.strictEqual(job.output.value, failPayload)
   })
 
   it('failure via Promise reject() should pass object payload', async function () {
@@ -137,31 +101,29 @@ describe('failure', function () {
     const errorResponse = new Error('custom error')
     errorResponse.something = something
 
-    await boss.work(queue, job => Promise.reject(errorResponse))
-    await boss.send(queue, null, { onComplete: true })
+    const jobId = await boss.send(queue)
+    await boss.work(queue, () => Promise.reject(errorResponse))
 
-    await delay(7000)
+    await delay(1000)
 
-    const job = await boss.fetchCompleted(queue)
+    const job = await boss.getJobById(queue, jobId)
 
-    assert.strictEqual(job.data.state, 'failed')
-    assert.strictEqual(job.data.response.something, something)
+    assert.strictEqual(job.output.something, something)
   })
 
-  it('failure with Error object should get stored in the failure job', async function () {
+  it('failure with Error object should be saved in the job', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
     const queue = this.test.bossConfig.schema
     const message = 'a real error!'
 
-    await boss.send(queue, null, { onComplete: true })
+    const jobId = await boss.send(queue)
     await boss.work(queue, async () => { throw new Error(message) })
 
-    await delay(2000)
+    await delay(1000)
 
-    const job = await boss.fetchCompleted(queue)
+    const job = await boss.getJobById(queue, jobId)
 
-    assert.strictEqual(job.data.state, 'failed')
-    assert(job.data.response.message.includes(message))
+    assert(job.output.message.includes(message))
   })
 
   it('should fail a job with custom connection', async function () {
@@ -170,7 +132,7 @@ describe('failure', function () {
 
     await boss.send(queue)
 
-    const job = await boss.fetch(queue)
+    const [job] = await boss.fetch(queue)
 
     let called = false
     const _db = await helper.getDb()
@@ -181,7 +143,7 @@ describe('failure', function () {
       }
     }
 
-    await boss.fail(job.id, null, { db })
+    await boss.fail(queue, job.id, null, { db })
 
     assert.strictEqual(called, true)
   })
@@ -190,22 +152,57 @@ describe('failure', function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
     const queue = this.test.bossConfig.schema
 
-    await boss.send(queue, null, { onComplete: true })
+    const jobId = await boss.send(queue)
+    const message = 'mhmm'
 
-    await boss.work(queue, async job => {
-      const err = {
-        message: 'something'
-      }
-
+    await boss.work(queue, { pollingIntervalSeconds: 0.5 }, async () => {
+      const err = { message }
       err.myself = err
-
       throw err
     })
 
     await delay(2000)
 
-    const job = await boss.fetchCompleted(queue)
+    const job = await boss.getJobById(queue, jobId)
 
-    assert(job)
+    assert.strictEqual(job.output.message, message)
+  })
+
+  it('dead letter queues are working', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
+
+    const queue = this.test.bossConfig.schema
+    const deadLetter = `${queue}_dlq`
+
+    await boss.createQueue(queue)
+    await boss.createQueue(deadLetter)
+
+    const jobId = await boss.send(queue, { key: queue }, { deadLetter })
+
+    await boss.fetch(queue)
+    await boss.fail(queue, jobId)
+
+    const [job] = await boss.fetch(deadLetter)
+
+    assert.strictEqual(job.data.key, queue)
+  })
+
+  it('should fail active jobs in a worker during shutdown', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const queue = this.test.bossConfig.schema
+
+    const jobId = await boss.send(queue, null, { retryLimit: 1, expireInSeconds: 60 })
+
+    await boss.work(queue, async () => await delay(10000))
+
+    await delay(1000)
+
+    await boss.stop({ wait: true, timeout: 2000 })
+
+    await boss.start()
+
+    const [job] = await boss.fetch(queue)
+
+    assert.strictEqual(job?.id, jobId)
   })
 })

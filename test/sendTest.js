@@ -36,44 +36,49 @@ describe('send', function () {
   })
 
   it('should accept single string argument', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
-    const queue = 'sendNameOnly'
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const queue = this.test.bossConfig.schema
+
     await boss.send(queue)
   })
 
   it('should accept job object argument with only name', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
-    const queue = 'sendqueueOnly'
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const queue = this.test.bossConfig.schema
+
     await boss.send({ name: queue })
   })
 
   it('should accept job object with name and data only', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
-    const queue = 'sendqueueAndData'
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const queue = this.test.bossConfig.schema
+
     const message = 'hi'
 
     await boss.send({ name: queue, data: { message } })
 
-    const job = await boss.fetch(queue)
+    const [job] = await boss.fetch(queue)
 
     assert.strictEqual(message, job.data.message)
   })
 
   it('should accept job object with name and options only', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
-    const queue = 'sendqueueAndOptions'
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const queue = this.test.bossConfig.schema
+
     const options = { someCrazyOption: 'whatever' }
 
     await boss.send({ name: queue, options })
 
-    const job = await boss.fetch(queue)
+    const [job] = await boss.fetch(queue)
 
     assert.strictEqual(job.data, null)
   })
 
   it('should accept job object with name and custom connection', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
-    const queue = 'sendqueueAndOptions'
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const queue = this.test.bossConfig.schema
+
     let called = false
     const db = await helper.getDb()
     const options = {
@@ -88,7 +93,7 @@ describe('send', function () {
 
     await boss.send({ name: queue, options })
 
-    const job = await boss.fetch(queue)
+    const [job] = await boss.fetch(queue)
 
     assert.notEqual(job, null)
     assert.strictEqual(job.data, null)
@@ -96,11 +101,13 @@ describe('send', function () {
   })
 
   it('should not create job if transaction fails', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
-    const queue = 'sendqueueAndOptions'
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const { schema } = this.test.bossConfig
+    const queue = schema
+
     const db = await helper.getDb()
     const client = db.pool
-    await client.query('CREATE TABLE IF NOT EXISTS test (label VARCHAR(50))')
+    await client.query(`CREATE TABLE IF NOT EXISTS ${schema}.test (label VARCHAR(50))`)
 
     const throwError = () => { throw new Error('Error!!') }
 
@@ -114,7 +121,7 @@ describe('send', function () {
         },
         someCrazyOption: 'whatever'
       }
-      const queryText = 'INSERT INTO test(label) VALUES(\'Test\')'
+      const queryText = `INSERT INTO ${schema}.test(label) VALUES('Test')`
       await client.query(queryText)
 
       await boss.send({ name: queue, options })
@@ -125,8 +132,8 @@ describe('send', function () {
       await client.query('ROLLBACK')
     }
 
-    const job = await boss.fetch(queue)
+    const [job] = await boss.fetch(queue)
 
-    assert.strictEqual(job, null)
+    assert(!job)
   })
 })

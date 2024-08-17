@@ -1,6 +1,5 @@
-Queueing jobs in Node.js using PostgreSQL like a boss.
+Queueing jobs in Postgres from Node.js like a boss.
 
-[![PostgreSql Version](https://img.shields.io/badge/PostgreSQL-11+-blue.svg?maxAge=2592000)](http://www.postgresql.org)
 [![npm version](https://badge.fury.io/js/pg-boss.svg)](https://badge.fury.io/js/pg-boss)
 [![Build](https://github.com/timgit/pg-boss/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/timgit/pg-boss/actions/workflows/ci.yml)
 [![Coverage Status](https://coveralls.io/repos/github/timgit/pg-boss/badge.svg?branch=master)](https://coveralls.io/github/timgit/pg-boss?branch=master)
@@ -10,52 +9,47 @@ async function readme() {
   const PgBoss = require('pg-boss');
   const boss = new PgBoss('postgres://user:pass@host/database');
 
-  boss.on('error', error => console.error(error));
+  boss.on('error', console.error)
 
-  await boss.start();
+  await boss.start()
 
-  const queue = 'some-queue';
+  const queue = 'readme-queue'
 
-  let jobId = await boss.send(queue, { param1: 'foo' })
+  const id = await boss.send(queue, { arg1: 'read me' })
 
-  console.log(`created job in queue ${queue}: ${jobId}`);
+  console.log(`created job ${id} in queue ${queue}`)
 
-  await boss.work(queue, someAsyncJobHandler);
-}
-
-async function someAsyncJobHandler(job) {
-  console.log(`job ${job.id} received with data:`);
-  console.log(JSON.stringify(job.data));
-
-  await doSomethingAsyncWithThis(job.data);
+  await boss.work(queue, async ([ job ]) => {
+    console.log(`received job ${job.id} with data ${JSON.stringify(job.data)}`)
+  })
 }
 ```
 
 pg-boss is a job queue built in Node.js on top of PostgreSQL in order to provide background processing and reliable asynchronous execution to Node.js applications.
 
-pg-boss relies on [SKIP LOCKED](https://www.2ndquadrant.com/en/blog/what-is-select-skip-locked-for-in-postgresql-9-5/), a feature added to postgres specifically for message queues, in order to resolve record locking challenges inherent with relational databases. This brings the safety of guaranteed atomic commits of a relational database to your asynchronous job processing.
+pg-boss relies on [SKIP LOCKED](https://www.2ndquadrant.com/en/blog/what-is-select-skip-locked-for-in-postgresql-9-5/), a feature built specifically for message queues to resolve record locking challenges inherent with relational databases. This provides exactly-once delivery and the safety of guaranteed atomic commits to asynchronous job processing.
 
 This will likely cater the most to teams already familiar with the simplicity of relational database semantics and operations (SQL, querying, and backups). It will be especially useful to those already relying on PostgreSQL that want to limit how many systems are required to monitor and support in their architecture.
 
-## Features
+
+## Summary
 * Exactly-once job delivery
 * Backpressure-compatible polling workers
 * Cron scheduling
+* Queue storage policies to support a variety of rate limiting, debouncing, and concurrency use cases
+* Priority queues, dead letter queues, job deferral, automatic retries with exponential backoff
 * Pub/sub API for fan-out queue relationships
-* Deferral, retries (with exponential backoff), rate limiting, debouncing
-* Completion jobs for orchestrations/sagas
-* Direct table access for bulk loads via COPY or INSERT
+* Raw SQL support for non-Node.js runtimes via INSERT or COPY
+* Serverless function compatible
 * Multi-master compatible (for example, in a Kubernetes ReplicaSet)
-* Automatic creation and migration of storage tables
-* Automatic maintenance operations to manage table growth
 
 ## Requirements
-* Node 16 or higher
-* PostgreSQL 11 or higher
+* Node 20 or higher
+* PostgreSQL 13 or higher
 
 ## Installation
 
-``` bash
+```bash
 # npm
 npm install pg-boss
 
@@ -67,7 +61,6 @@ yarn add pg-boss
 * [Docs](docs/readme.md)
 
 ## Contributing
-
 To setup a development environment for this library:
 
 ```bash

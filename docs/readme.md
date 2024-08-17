@@ -25,21 +25,16 @@
   - [`send()`](#send)
     - [`send(name, data, options)`](#sendname-data-options)
     - [`send(request)`](#sendrequest)
-    - [`sendAfter(name, data, options, seconds | ISO date string | Date)`](#sendaftername-data-options-seconds--iso-date-string--date)
-    - [`sendOnce(name, data, options, key)`](#sendoncename-data-options-key)
-    - [`sendSingleton(name, data, options)`](#sendsingletonname-data-options)
-    - [`sendThrottled(name, data, options, seconds [, key])`](#sendthrottledname-data-options-seconds--key)
-    - [`sendDebounced(name, data, options, seconds [, key])`](#senddebouncedname-data-options-seconds--key)
-  - [`insert([jobs])`](#insertjobs)
-  - [`fetch()`](#fetch)
-    - [`fetch(name)`](#fetchname)
-    - [`fetch(name, batchSize, [, options])`](#fetchname-batchsize--options)
-    - [`fetchCompleted(name [, batchSize] [, options])`](#fetchcompletedname--batchsize--options)
+    - [`sendAfter(name, data, options, value)`](#sendaftername-data-options-value)
+    - [`sendThrottled(name, data, options, seconds, key)`](#sendthrottledname-data-options-seconds-key)
+    - [`sendDebounced(name, data, options, seconds, key)`](#senddebouncedname-data-options-seconds-key)
+  - [`insert(Job[])`](#insertjob)
+  - [`fetch(name, options)`](#fetchname-options)
   - [`work()`](#work)
-    - [`work(name [, options], handler)`](#workname--options-handler)
-    - [`onComplete(name [, options], handler)`](#oncompletename--options-handler)
+    - [`work(name, options, handler)`](#workname-options-handler)
+    - [`work(name, handler)`](#workname-handler)
+  - [`notifyWorker(id)`](#notifyworkerid)
   - [`offWork(value)`](#offworkvalue)
-    - [`offComplete(value)`](#offcompletevalue)
   - [`publish(event, data, options)`](#publishevent-data-options)
   - [`subscribe(event, name)`](#subscribeevent-name)
   - [`unsubscribe(event, name)`](#unsubscribeevent-name)
@@ -47,51 +42,54 @@
     - [`schedule(name, cron, data, options)`](#schedulename-cron-data-options)
     - [`unschedule(name)`](#unschedulename)
     - [`getSchedules()`](#getschedules)
-  - [`cancel(id, options)`](#cancelid-options)
-  - [`cancel([ids], options)`](#cancelids-options)
-  - [`resume(id, options)`](#resumeid-options)
-  - [`resume([ids], options)`](#resumeids-options)
-  - [`complete(id [, data, options])`](#completeid--data-options)
-  - [`complete([ids], options)`](#completeids-options)
-  - [`fail(id [, data, options])`](#failid--data-options)
-  - [`fail([ids], options)`](#failids-options)
-  - [`notifyWorker(id)`](#notifyworkerid)
-  - [`getQueueSize(name [, options])`](#getqueuesizename--options)
-  - [`getJobById(id, options)`](#getjobbyidid-options)
+  - [`deleteJob(name, id, options)`](#deletejobname-id-options)
+  - [`deleteJob(name, [ids], options)`](#deletejobname-ids-options)
+  - [`cancel(name, id, options)`](#cancelname-id-options)
+  - [`cancel(name, [ids], options)`](#cancelname-ids-options)
+  - [`resume(name, id, options)`](#resumename-id-options)
+  - [`resume(name, [ids], options)`](#resumename-ids-options)
+  - [`complete(name, id, data, options)`](#completename-id-data-options)
+  - [`complete(name, [ids], options)`](#completename-ids-options)
+  - [`fail(name, id, data, options)`](#failname-id-data-options)
+  - [`fail(name, [ids], options)`](#failname-ids-options)
+  - [`getJobById(name, id, options)`](#getjobbyidname-id-options)
+  - [`createQueue(name, Queue)`](#createqueuename-queue)
+  - [`updateQueue(name, options)`](#updatequeuename-options)
+  - [`purgeQueue(name)`](#purgequeuename)
   - [`deleteQueue(name)`](#deletequeuename)
-  - [`deleteAllQueues()`](#deleteallqueues)
+  - [`getQueues()`](#getqueues)
+  - [`getQueue(name)`](#getqueuename)
+  - [`getQueueSize(name, options)`](#getqueuesizename-options)
   - [`clearStorage()`](#clearstorage)
+  - [`isInstalled()`](#isinstalled)
+  - [`schemaVersion()`](#schemaversion)
 
 <!-- /TOC -->
 
 # Intro
-pg-boss is a job queue written in Node.js and backed by the reliability of Postgres.
+pg-boss is a job queue powered by Postgres, operated by 1 or more Node.js instances.
 
-You may use as many instances as needed to connect to the same Postgres database. Each instance maintains a connection pool or you can bring your own, limited to the maximum number of connections your database server can accept. If you need a larger number of workers, consider using a centralized connection pool such as pgBouncer. [Creating your own web API or UI](https://github.com/timgit/pg-boss/issues/266) is another option if direct database access is not available.
+pg-boss relies on [SKIP LOCKED](https://www.2ndquadrant.com/en/blog/what-is-select-skip-locked-for-in-postgresql-9-5/), a feature built specifically for message queues to resolve record locking challenges inherent with relational databases. This provides exactly-once delivery and the safety of guaranteed atomic commits to asynchronous job processing.
 
-If you require multiple installations in the same database, such as for large volume queues, you may wish to specify a separate schema per install to achieve partitioning.
+This will likely cater the most to teams already familiar with the simplicity of relational database semantics and operations (SQL, querying, and backups). It will be especially useful to those already relying on PostgreSQL that want to limit how many systems are required to monitor and support in their architecture.
 
-Architecturally, pg-boss is somewhat similar to queue products such as AWS SQS, which primarily acts as a store of jobs that are "pulled", not "pushed" from the server. If at least one pg-boss instance is running, internal maintenance jobs will be periodically run to make sure fetched jobs that are never completed are marked as expired or retried (if configured). If and when this happens, think of a job with a retry configuration to act just like the SQS message visibility timeout. In regards to job delivery, Postgres [SKIP LOCKED](http://blog.2ndquadrant.com/what-is-select-skip-locked-for-in-postgresql-9-5) will guarantee exactly-once, which is only available in SQS via FIFO queues (and its throughput limitations). However, even if you have exactly-once delivery, this is not a guarantee that a job will never be processed more than once if you opt into retries, so keep the general recommendation for idempotency with queueing systems in mind.
+Internally, pg-boss uses declarative list-based partitioning to create a physical table per queue within 1 logical job table. This partitioning strategy is a balance between global maintenance operations, queue storage isolation, and query plan optimization. According to [the docs](https://www.postgresql.org/docs/13/ddl-partitioning.html#DDL-PARTITIONING-DECLARATIVE-BEST-PRACTICES), this strategy should scale to thousands of queues. If your usage exceeds this and you experience performance issues, consider grouping queues into separate schemas in the target database.
+
+You may use as many Node.js instances as desired to connect to the same Postgres database, even running it inside serverless functions if needed. Each instance maintains a client-side connection pool or you can substitute your own database client, limited to the maximum number of connections your database server (or server-side connection pooler) can accept. If you find yourself needing even more connections, pg-boss can easily be used behind your custom web API.
 
 ## Job states
 
-All jobs start out in the `created` state and become `active` when picked up for work. If job processing completes successfully, jobs will go to `completed`. If a job fails, it will typically enter the `failed` state. However, if a job has retry options configured, it will enter the `retry` state on failure instead and have a chance to re-enter `active` state. It's also possible for `active` jobs to become `expired`, which happens when job processing takes too long. Jobs can also enter `cancelled` state via [`cancel(id)`](#cancelid) or [`cancel([ids])`](#cancelids).
+All jobs start out in the `created` state and become `active` via [`fetch(name, options)`](#fetchname-options) or in a polling worker via [`work()`](#work). 
 
-All jobs that are `completed`, `expired`, `cancelled` or `failed` become eligible for archiving (i.e. they will transition into the `archive` state) after the configured `archiveCompletedAfterSeconds` time. Once `archive`d, jobs will be automatically deleted by pg-boss after the configured deletion period.
+In a worker, when your handler function completes, jobs will be marked `completed` automatically unless previously deleted via [`deleteJob(name, id)`](#deletejobname-id-options). If an unhandled error is thrown in your handler, the job will usually enter the `retry` state, and then the `failed` state once all retries have been attempted. 
 
-Here's a state diagram that shows the possible states and their transitions:
+Uncompleted jobs may also be assigned to `cancelled` state via [`cancel(name, id)`](#cancelname-id-options), where they can be moved back into `created` via [`resume(name, id)`](#resumename-id-options).
 
-![job state diagram](./images/job-states.png)
+All jobs that are `completed`, `cancelled` or `failed` become eligible for archiving according to your configuration. Once archived, jobs will be automatically deleted after the configured retention period.
 
 # Database install
 
-pg-boss can be installed into any database.  When started, it will detect if it is installed and automatically create the required schema for all queue operations if needed.  If the database doesn't already have the pgcrypto extension installed, you will need to have a superuser add it before pg-boss can create its schema.
-
-```sql
-CREATE EXTENSION pgcrypto;
-```
-
-Once this is completed, pg-boss requires the [CREATE](http://www.postgresql.org/docs/9.5/static/sql-grant.html) privilege in order to create and maintain its schema.
+pg-boss is usually installed into a dedicated schema in the target database.  When started, it will automatically create this schema and all required storage objects (requires the [CREATE](http://www.postgresql.org/docs/13/static/sql-grant.html) privilege).
 
 ```sql
 GRANT CREATE ON DATABASE db1 TO leastprivuser;
@@ -114,12 +112,15 @@ Where `$1` is the name of your schema if you've customized it.  Otherwise, the d
 NOTE: If an existing schema was used during installation, created objects will need to be removed manually using the following commands.
 
 ```sql
-DROP TABLE ${schema}.archive;
-DROP TABLE ${schema}.job;
-DROP TABLE ${schema}.schedule;
-DROP TABLE ${schema}.subscription;
-DROP TABLE ${schema}.version;
-DROP TYPE ${schema}.job_state;
+DROP TABLE pgboss.version;
+DROP TABLE pgboss.job;
+DROP TABLE pgboss.archive;
+DROP TYPE pgboss.job_state;
+DROP TABLE pgboss.subscription;
+DROP TABLE pgboss.schedule;
+DROP FUNCTION pgboss.create_queue;
+DROP FUNCTION pgboss.delete_queue;
+DROP TABLE pgboss.queue;
 ```
 
 # Direct database interactions
@@ -128,40 +129,40 @@ If you need to interact with pg-boss outside of Node.js, such as other clients o
 
 ## Job table
 
-The following command is the definition of the primary job table. For manual job creation, the only required column is `name`.  All other columns are nullable or have sensible defaults.
+The following command is the definition of the primary job table. For manual job creation, the only required column is `name`.  All other columns are nullable or have defaults.
 
 ```sql
-  CREATE TABLE ${schema}.job (
-    id uuid primary key not null default gen_random_uuid(),
-    name text not null,
-    priority integer not null default(0),
-    data jsonb,
-    state ${schema}.job_state not null default('${states.created}'),
-    retryLimit integer not null default(0),
-    retryCount integer not null default(0),
-    retryDelay integer not null default(0),
-    retryBackoff boolean not null default false,
-    startAfter timestamp with time zone not null default now(),
-    startedOn timestamp with time zone,
-    singletonKey text,
-    singletonOn timestamp without time zone,
-    expireIn interval not null default interval '15 minutes',
-    createdOn timestamp with time zone not null default now(),
-    completedOn timestamp with time zone,
-    keepUntil timestamp with time zone NOT NULL default now() + interval '14 days',
-    on_complete boolean not null default true,
-    output jsonb
-  )
+CREATE TABLE pgboss.job (
+  id uuid not null default gen_random_uuid(),
+  name text not null,
+  priority integer not null default(0),
+  data jsonb,
+  state pgboss.job_state not null default('created'),
+  retry_limit integer not null default(0),
+  retry_count integer not null default(0),
+  retry_delay integer not null default(0),
+  retry_backoff boolean not null default false,
+  start_after timestamp with time zone not null default now(),
+  started_on timestamp with time zone,
+  singleton_key text,
+  singleton_on timestamp without time zone,
+  expire_in interval not null default interval '15 minutes',
+  created_on timestamp with time zone not null default now(),
+  completed_on timestamp with time zone,
+  keep_until timestamp with time zone NOT NULL default now() + interval '14 days',
+  output jsonb,
+  dead_letter text,
+  policy text,
+  CONSTRAINT job_pkey PRIMARY KEY (name, id)
+) PARTITION BY LIST (name)
 ```
 
 # Events
 
-Each instance of pg-boss is an EventEmitter.  You can run multiple instances of pg-boss for a variety of use cases including distribution and load balancing. Each instance has the freedom to process to whichever jobs you need.  Because of this diversity, the job activity of one instance could be drastically different from another.
-
-> For example, if you were to process to `error` in instance A, it will not receive an `error` event from instance B.
+The pg-boss class inherits from EventEmitter.
 
 ## `error`
-The error event is raised from any errors that may occur during internal job fetching, monitoring and archiving activities. While not required, adding a listener to the error event is strongly encouraged:
+The error event is raised from any errors that may occur during internal processing, such as scheduling and maintenance. While not required, adding a listener to the error event is strongly encouraged:
 
 > If an EventEmitter does not have at least one listener registered for the 'error' event, and an 'error' event is emitted, the error is thrown, a stack trace is printed, and the Node.js process exits.
 >
@@ -172,8 +173,6 @@ Ideally, code similar to the following example would be used after creating your
 ```js
 boss.on('error', error => logger.error(error));
 ```
-
-> **Note: Since error events are only raised during internal housekeeping activities, they are not raised for direct API calls.**
 
 ## `monitor-states`
 
@@ -189,7 +188,6 @@ The payload of the event is an object with a key per queue and state, such as th
         "retry": 40,
         "active": 26,
         "completed": 3400,
-        "expired": 4,
         "cancelled": 0,
         "failed": 49,
         "all": 4049
@@ -199,7 +197,6 @@ The payload of the event is an object with a key per queue and state, such as th
         "retry": 0,
         "active": 0,
         "completed": 645,
-        "expired": 0,
         "cancelled": 0,
         "failed": 0,
         "all": 645
@@ -209,7 +206,6 @@ The payload of the event is an object with a key per queue and state, such as th
   "retry": 40,
   "active": 26,
   "completed": 4045,
-  "expired": 4,
   "cancelled": 0,
   "failed": 4,
   "all": 4694
@@ -224,7 +220,7 @@ Emitted at most once every 2 seconds when workers are active and jobs are enteri
   {
     id: 'fc738fb0-1de5-4947-b138-40d6a790749e',
     name: 'my-queue',
-    options: { newJobCheckInterval: 2000 },
+    options: { pollingInterval: 2000 },
     state: 'active',
     count: 1,
     createdOn: 1620149137015,
@@ -315,13 +311,12 @@ The following options can be set as properties in an object for additional confi
 
 
     ```js
-    const text = "select 1 as value1 from table1 where bar = $1"
-    const values = ['foo']
+    const text = "select $1 as input"
+    const values = ['arg1']
 
-    const { rows, rowCount } = await executeSql(text, values)
+    const { rows } = await executeSql(text, values)
 
-    assert(rows[0].value1 === 1)
-    assert(rowCount === 1)
+    assert(rows[0].input === 'arg1')
     ```
 
 * **schema** - string, defaults to "pgboss"
@@ -332,10 +327,6 @@ The following options can be set as properties in an object for additional confi
 **Queue options**
 
 Queue options contain the following constructor-only settings.
-
-* **uuid** - string, defaults to "v4"
-
-    job uuid format used, "v1" or "v4"
 
 * **archiveCompletedAfterSeconds**
 
@@ -366,13 +357,17 @@ Queue options contain the following constructor-only settings.
 
 Maintenance operations include checking active jobs for expiration, archiving completed jobs from the primary job table, and deleting archived jobs from the archive table.
 
-* **noSupervisor**, bool, default false
+* **supervise**, bool, default true
 
-  If this is set to true, maintenance and monitoring operations will not be started during a `start()` after the schema is created.  This is an advanced use case, as bypassing maintenance operations is not something you would want to do under normal circumstances.
+  If this is set to false, maintenance and monitoring operations will be disabled on this instance.  This is an advanced use case, as bypassing maintenance operations is not something you would want to do under normal circumstances.
 
-* **noScheduling**, bool, default false
+* **schedule**, bool, default true
 
-  If this is set to true, this instance will not monitor scheduled jobs during `start()`. However, this instance can still use the scheduling api. This is an advanced use case you may want to do for testing or if the clock of the server is skewed and you would like to disable the skew warnings.
+  If this is set to false, this instance will not monitor or created scheduled jobs during. This is an advanced use case you may want to do for testing or if the clock of the server is skewed and you would like to disable the skew warnings.
+
+* **migrate**, bool, default true
+
+  If this is set to false, this instance will skip attempts to run schema migratations during `start()`. If schema migrations exist, `start()` will throw and error and block usage. This is an advanced use case when the configured user account does not have schema mutation privileges.
 
 **Archive options**
 
@@ -430,26 +425,29 @@ If the required database objects do not exist in the specified database, **`star
 
 > While this is most likely a welcome feature, be aware of this during upgrades since this could delay the promise resolution by however long the migration script takes to run against your data.  For example, if you happened to have millions of jobs in the job table just hanging around for archiving and the next version of the schema had a couple of new indexes, it may take a few seconds before `start()` resolves. Most migrations are very quick, however, and are designed with performance in mind.
 
-Additionally, all schema operations, both first-time provisioning and migrations, are nested within advisory locks to prevent race conditions during `start()`. Internally, these locks are created using `pg_advisory_xact_lock()` which auto-unlock at the end of the transaction and don't require a persistent session or the need to issue an unlock. This should make it compatible with most connection poolers, such as pgBouncer in transactional pooling mode.
+Additionally, all schema operations, both first-time provisioning and migrations, are nested within advisory locks to prevent race conditions during `start()`. Internally, these locks are created using `pg_advisory_xact_lock()` which auto-unlock at the end of the transaction and don't require a persistent session or the need to issue an unlock. 
 
-One example of how this is useful would be including `start()` inside the bootstrapping of a pod in a ReplicaSet in Kubernetes. Being able to scale up your job processing using a container orchestration tool like k8s is becoming more and more popular, and pg-boss can be dropped into this system with no additional logic, fear, or special configuration.
+One example of how this is useful would be including `start()` inside the bootstrapping of a pod in a ReplicaSet in Kubernetes. Being able to scale up your job processing using a container orchestration tool like k8s is becoming more and more popular, and pg-boss can be dropped into this system without any special startup handling.
 
 ## `stop(options)`
 
-All job monitoring will be stopped and all workers on this instance will be removed. Basically, it's the opposite of `start()`. Even though `start()` may create new database objects during initialization, `stop()` will never remove anything from the database.
+Stops all background processing, such as maintenance and scheduling, as well as all polling workers started with `work()`.
 
-By default, calling `stop()` without any arguments will gracefully wait for all workers to finish processing active jobs before closing the internal connection pool and stopping maintenance operations. This behaviour can be configured using the stop options object. In graceful stop mode, the promise returned by `stop()` will still be resolved immediately.  If monitoring for the end of the stop is needed, add a listener to the `stopped` event.
+By default, calling `stop()` without any arguments will gracefully wait for all workers to finish processing active jobs before resolving. Emits a `stopped` event if needed.
 
 **Arguments**
 
 * `options`: object
 
-  * `destroy`, bool
-    Default: `false`. If `true` and the database connection is managed by pg-boss, it will destroy the connection pool.
+  * `wait`, bool
+    Default: `true`. If `true`, the promise won't be resolved until all workers and maintenance jobs are finished.
 
   * `graceful`, bool
 
     Default: `true`. If `true`, the PgBoss instance will wait for any workers that are currently processing jobs to finish, up to the specified timeout. During this period, new jobs will not be processed, but active jobs will be allowed to finish.
+
+  * `close`, bool
+    Default: `true`. If the database connection is managed by pg-boss, it will close the connection pool. Use `false` if needed to continue allowing operations such as `send()` and `fetch()`.
 
   * `timeout`, int
 
@@ -458,7 +456,7 @@ By default, calling `stop()` without any arguments will gracefully wait for all 
 
 ## `send()`
 
-Creates a new job and resolves the job's unique identifier (uuid).
+Creates a new job and returns the job id.
 
 > `send()` will resolve a `null` for job id under some use cases when using unique jobs or throttling (see below).  These options are always opt-in on the send side and therefore don't result in a promise rejection.
 
@@ -536,14 +534,13 @@ Available in constructor as a default, or overridden in send.
 **Connection options**
 
 * **db**, object
-  A wrapper object containing an async method called `executeSql` that performs the query to the db. Can be used to manage jobs inside a transaction. Example:
+  
+  Instead of using pg-boss's default adapter, you can use your own, as long as it implements the following interface (the same as the pg module).
 
-    ```
-    const db = {
-      async executeSql (sql, values) {
-        return trx.query(sql, values)
-      }
-    }
+    ```ts
+    interface Db {
+      executeSql(text: string, values: any[]): Promise<{ rows: any[] }>;
+  }
     ```
 
 **Deferred jobs**
@@ -555,51 +552,29 @@ Available in constructor as a default, or overridden in send.
 
     Default: 0
 
-**Unique jobs**
-
-* **singletonKey** string
-
-  Allows a max of 1 job (with the same name and singletonKey) to be queued or active.
-
-  ```js
-  boss.send('my-job', {}, {singletonKey: '123'}) // resolves a jobId
-  boss.send('my-job', {}, {singletonKey: '123'}) // resolves a null jobId until first job completed
-  ```
-
-  This can be used in conjunction with throttling explained below.
-
-  * **useSingletonQueue** boolean
-
-    When used in conjunction with singletonKey, allows a max of 1 job to be queued.
-
-    >By default, there is no limit on the number of these jobs that may be active. However, this behavior may be modified by passing the [enforceSingletonQueueActiveLimit](#fetch) option.
-
-  ```js
-  boss.send('my-job', {}, {singletonKey: '123', useSingletonQueue: true}) // resolves a jobId
-  boss.send('my-job', {}, {singletonKey: '123', useSingletonQueue: true}) // resolves a null jobId until first job becomes active
-  ```
-
-**Throttled jobs**
+**Throttle or debounce jobs**
 
 * **singletonSeconds**, int
 * **singletonMinutes**, int
 * **singletonHours**, int
 * **singletonNextSlot**, bool
+* **singletonKey** string
 
-Throttling jobs to 'once every n units', where units could be seconds, minutes, or hours.  This option is set on the send side of the API since jobs may or may not be created based on the existence of other jobs.
+Throttling jobs to 'one per time slot', where units could be seconds, minutes, or hours.  This option is set on the send side of the API since jobs may or may not be created based on the existence of other jobs.
 
-For example, if you set the `singletonMinutes` to 1, then submit 2 jobs within a minute, only the first job will be accepted and resolve a job id.  The second request will be discarded, but resolve a null instead of an id.
+For example, if you set the `singletonMinutes` to 1, then submit 2 jobs within the same minute, only the first job will be accepted and resolve a job id.  The second request will resolve a null instead of a job id.
 
 > When a higher unit is is specified, lower unit configuration settings are ignored.
 
 Setting `singletonNextSlot` to true will cause the job to be scheduled to run after the current time slot if and when a job is throttled. This option is set to true, for example, when calling the convenience function `sendDebounced()`.
 
-**Completion jobs**
+As with queue policies, using `singletonKey` will extend throttling to allow one job per key within the time slot.
 
-* **onComplete**, bool (Default: false)
+**Dead Letter Queues**
 
-When a job completes, a completion job will be created in the queue, copying the same retention policy as the job, for the purpose of `onComplete()` or `fetchCompleted()`.  If completion jobs are not used, they will be archived according to the retention policy.  If the queue in question has a very high volume, this can be set to `false` to bypass creating the completion job.  This can also be set in the constructor as a default for all calls to `send()`.
+* **deadLetter**, string
 
+When a job fails after all retries, if a `deadLetter` property exists, the job's payload will be copied into that queue,  copying the same retention and retry configuration as the original job.
 
 
 ```js
@@ -643,37 +618,28 @@ const jobId = await boss.send({
 console.log(`job ${jobId} submitted`)
 ```
 
-### `sendAfter(name, data, options, seconds | ISO date string | Date)`
+### `sendAfter(name, data, options, value)`
 
 Send a job that should start after a number of seconds from now, or after a specific date time.
 
 This is a convenience version of `send()` with the `startAfter` option assigned.
 
-### `sendOnce(name, data, options, key)`
+`value`: int: seconds | string: ISO date string | Date
 
-Send a job with a unique key to only allow 1 job to be in created, retry, or active state at a time.
 
-This is a convenience version of `send()` with the `singletonKey` option assigned.
-
-### `sendSingleton(name, data, options)`
-
-Send a job but only allow 1 job to be in created or retry state at at time.
-
-This is a convenience version of `send()` with the `singletonKey` option assigned.
-
-### `sendThrottled(name, data, options, seconds [, key])`
+### `sendThrottled(name, data, options, seconds, key)`
 
 Only allows one job to be sent to the same queue within a number of seconds.  In this case, the first job within the interval is allowed, and all other jobs within the same interval are rejected.
 
 This is a convenience version of `send()` with the `singletonSeconds` and `singletonKey` option assigned. The `key` argument is optional.
 
-### `sendDebounced(name, data, options, seconds [, key])`
+### `sendDebounced(name, data, options, seconds, key)`
 
 Like, `sendThrottled()`, but instead of rejecting if a job is already sent in the current interval, it will try to add the job to the next interval if one hasn't already been sent.
 
 This is a convenience version of `send()` with the `singletonSeconds`, `singletonKey` and `singletonNextSlot` option assigned. The `key` argument is optional.
 
-## `insert([jobs])`
+## `insert(Job[])`
 
 Create multiple jobs in one request with an array of objects.
 
@@ -694,166 +660,115 @@ interface JobInsert<T = object> {
   singletonKey?: string;
   expireInSeconds?: number;
   keepUntil?: Date | string;
-  onComplete?: boolean
+  deadLetter?: string;
 }
 ```
 
+## `fetch(name, options)`
 
-## `fetch()`
-
-Typically one would use `work()` for automated polling for new jobs based upon a reasonable interval to finish the most jobs with the lowest latency. While `work()` is a yet another free service we offer and it can be awfully convenient, sometimes you may have a special use case around when a job can be retrieved. Or, perhaps like me, you need to provide jobs via other entry points such as a web API.
-
-`fetch()` allows you to skip all that polling nonsense that `work()` does and puts you back in control of database traffic. Once you have your shiny job, you'll use either `complete()` or `fail()` to mark it as finished.
-
-### `fetch(name)`
+Returns an array of jobs from a queue
 
 **Arguments**
-- `name`: string, queue name or pattern
-
-**Resolves**
-- `job`: job object, `null` if none found
-
-### `fetch(name, batchSize, [, options])`
-
-**Arguments**
-- `name`: string, queue name or pattern
-- `batchSize`: number, # of jobs to fetch
+- `name`: string
 - `options`: object
 
-  * `includeMetadata`, bool
+  * `batchSize`, int, *default: 1*
 
-    If `true`, all job metadata will be returned on the job object.  The following table shows each property and its type, which is basically all columns from the job table.
+    Number of jobs to return
 
-    | Prop | Type | |
-    | - | - | -|
-    | id | string, uuid |
-    | name| string |
-    | data | object |
-    | priority | number |
-    | state | string |
-    | retrylimit | number |
-    | retrycount | number |
-    | retrydelay | number |
-    | retrybackoff | bool |
-    | startafter | string, timestamp |
-    | startedon | string, timestamp |
-    | singletonkey | string |
-    | singletonon | string, timestamp |
-    | expirein | object, pg interval |
-    | createdon | string, timestamp |
-    | completedon | string, timestamp |
-    | keepuntil | string, timestamp |
-    | oncomplete | bool |
-    | output | object |
+  * `priority`, bool, *default: true*
 
-  * `enforceSingletonQueueActiveLimit`, bool
+    If true, allow jobs with a higher priority to be fetched before jobs with lower or no priority
 
-    If `true`, modifies the behavior of the `useSingletonQueue` flag to allow a max of 1 job to be queued plus a max of 1 job to be active.
-    >Note that use of this option can impact performance on instances with large numbers of jobs.
+  * `includeMetadata`, bool, *default: false*
 
+    If `true`, all job metadata will be returned on the job object.
 
-**Resolves**
-- `[job]`: array of job objects, `null` if none found
+    ```js
+    interface JobWithMetadata<T = object> {
+      id: string;
+      name: string;
+      data: T;
+      priority: number;
+      state: 'created' | 'retry' | 'active' | 'completed' | 'cancelled' | 'failed';
+      retryLimit: number;
+      retryCount: number;
+      retryDelay: number;
+      retryBackoff: boolean;
+      startAfter: Date;
+      startedOn: Date;
+      singletonKey: string | null;
+      singletonOn: Date | null;
+      expireIn: PostgresInterval;
+      createdOn: Date;
+      completedOn: Date | null;
+      keepUntil: Date;
+      deadLetter: string,
+      policy: string,
+      output: object
+    }
+    ```
+
 
 **Notes**
 
-If you pass a batchSize, `fetch()` will always resolve an array response, even if only 1 job is returned. This seemed like a great idea at the time.
-
-The following code shows how to utilize batching via `fetch()` to get and complete 20 jobs at once on-demand.
-
+The following example shows how to fetch and delete up to 20 jobs.
 
 ```js
-const queue = 'email-daily-digest'
-const batchSize = 20
+const QUEUE = 'email-daily-digest'
+const emailer = require('./emailer.js')
 
-const jobs = await boss.fetch(queue, batchSize)
+const jobs = await boss.fetch(QUEUE, { batchSize: 20 })
 
-if(!jobs) {
-    return
-}
-
-for (let i = 0; i < jobs.length; i++) {
-    const job = jobs[i]
-
-    try {
-        await emailer.send(job.data)
-        await boss.complete(job.id)
-    } catch(err) {
-        await boss.fail(job.id, err)
-    }
-}
+await Promise.allSettled(jobs.map(async job => {
+  try {
+    await emailer.send(job.data)
+    await boss.deleteJob(QUEUE, job.id)
+  } catch(err) {
+    await boss.fail(QUEUE, job.id, err)
+  }
+}))
 ```
 
-### `fetchCompleted(name [, batchSize] [, options])`
-
-Same as `fetch()`, but retrieves any completed jobs. See [`onComplete()`](#oncompletename--options-handler) for more information.
 ## `work()`
 
-Adds a new polling worker for a queue and executes the provided callback function when jobs are found. Multiple workers can be added if needed.
+Adds a new polling worker for a queue and executes the provided callback function when jobs are found. Each call to work() will add a new worker and resolve a unqiue worker id.
 
-Workers can be stopped via `offWork()` all at once by queue name or individually by using the unique id resolved by `work()`. Workers may be monitored by listening to the `wip` event.
+Workers can be stopped via `offWork()` all at once by queue name or individually by using the worker id. Worker activity may be monitored by listening to the `wip` event.
 
-Queue patterns use the `*` character to match 0 or more characters.  For example, a job from queue `status-report-12345` would be fetched with pattern `status-report-*` or even `stat*5`.
+The default options for `work()` is 1 job every 2 seconds.
 
-The default concurrency for `work()` is 1 job every 2 seconds. Both the interval and the number of jobs per interval can be changed globally or per-queue with configuration options.
-
-### `work(name [, options], handler)`
+### `work(name, options, handler)`
 
 **Arguments**
 - `name`: string, *required*
 - `options`: object
-- `handler`: function(job), *required*
+- `handler`: function(jobs), *required*
 
 **Options**
 
-* **teamSize**, int
+* **batchSize**, int, *(default=1)*
 
-    Default: 1. How many jobs can be fetched per polling interval. Callback will be executed once per job.
+  Same as in [`fetch()`](#fetch)
 
-* **teamConcurrency**, int
+* **includeMetadata**, bool, *(default=true)*
 
-    Default: 1. How many callbacks will be called concurrently if promises are used for polling backpressure. Intended to be used along with `teamSize`.
+  Same as in [`fetch()`](#fetch)
 
-* **teamRefill**, bool
+* **priority**, bool, *(default=true)*
 
-    Default: false.  If true, worker will refill the queue based on the number of completed jobs from the last batch (if `teamSize` > 1) in order to keep the active job count as close to `teamSize` as possible. This could be helpful if one of the fetched jobs is taking longer than expected.
+  Same as in [`fetch()`](#fetch)
 
-* **batchSize**, int
+* **pollingIntervalSeconds**, int, *(default=2)*
 
-    How many jobs can be fetched per polling interval.  Callback will be executed once per batch.
-
-* **includeMetadata**, bool
-
-    Same as in [`fetch()`](#fetch)
-
-* **enforceSingletonQueueActiveLimit**, bool
-
-    Same as in [`fetch()`](#fetch)
-
-**Polling options**
-
-How often workers will poll the queue table for jobs. Available in the constructor as a default or per worker in `work()` and `onComplete()`.
-
-* **newJobCheckInterval**, int
-
-  Interval to check for new jobs in milliseconds, must be >=100
-
-* **newJobCheckIntervalSeconds**, int
-
-  Interval to check for new jobs in seconds, must be >=1
-
-* Default: 2 seconds
-
-  > When a higher unit is is specified, lower unit configuration settings are ignored.
+  Interval to check for new jobs in seconds, must be >=0.5 (500ms)
 
 
 **Handler function**
 
-`handler` should either be an `async` function or return a promise. If an error occurs in the handler, it will be caught and stored into an output storage column in addition to marking the job as failed.
+`handler` should return a promise (Usually this is an `async` function). If an unhandled error occurs in a handler, `fail()` will automatically be called for the jobs, storing the error in the `output` property, making the job or jobs available for retry.
 
-Enforcing promise-returning handlers that are awaited in the workers defers polling for new jobs until the existing jobs are completed, providing backpressure.
-
-The job object has the following properties.
+The jobs argument is an array of jobs with the following properties.
 
 | Prop | Type | |
 | - | - | -|
@@ -861,73 +776,42 @@ The job object has the following properties.
 |`name`| string |
 |`data`| object |
 
-> If the job is not completed, it will expire after the configured expiration period.
 
-Following is an example of a worker that returns a promise (`sendWelcomeEmail()`) for completion with the teamSize option set for increased job concurrency between polling intervals.
+An example of a worker that checks for a job every 10 seconds.
 
 ```js
-const options = { teamSize: 5, teamConcurrency: 5 }
-await boss.work('email-welcome', options, job => myEmailService.sendWelcomeEmail(job.data))
+await boss.work('email-welcome', { pollingIntervalSeconds: 10 }, ([ job ]) => myEmailService.sendWelcomeEmail(job.data))
 ```
 
-Similar to the first example, but with a batch of jobs at once.
+An example of a worker that returns a maximum of 5 jobs in a batch.
 
 ```js
-await boss.work('email-welcome', { batchSize: 5 },
-    jobs => myEmailService.sendWelcomeEmails(jobs.map(job => job.data))
-)
+await boss.work('email-welcome', { batchSize: 5 }, (jobs) => myEmailService.sendWelcomeEmails(jobs.map(job => job.data)))
 ```
 
-### `onComplete(name [, options], handler)`
+### `work(name, handler)`
 
-Sometimes when a job completes, expires or fails, it's important enough to trigger other things that should react to it. `onComplete` works identically to `work()` and was created to facilitate the creation of orchestrations or sagas between jobs that may or may not know about each other. This common messaging pattern allows you to keep multi-job flow logic out of the individual job handlers so you can manage things in a more centralized fashion while not losing your mind. As you most likely already know, asynchronous jobs are complicated enough already. Internally, these jobs have a special prefix of `__state__completed__`.
-
-The callback for `onComplete()` returns a job containing the original job and completion details. `request` will be the original job as submitted with `id`, `name` and `data`. `response` may or may not have a value based on arguments in [complete()](#completeid--data) or [fail()](#failid--data).
-
-Here's an example from the test suite showing this in action.
+Simplified work() without an options argument
 
 ```js
-const jobName = 'onCompleteFtw'
-const requestPayload = { token:'trivial' }
-const responsePayload = { message: 'so verbose', code: '1234' }
+await boss.work('email-welcome', ([ job ]) => emailer.sendWelcomeEmail(job.data))
+```
 
-boss.onComplete(jobName, job => {
-    assert.strictEqual(jobId, job.data.request.id)
-    assert.strictEqual(job.data.request.data.token, requestPayload.token)
-    assert.strictEqual(job.data.response.message, responsePayload.message)
-    assert.strictEqual(job.data.response.code, responsePayload.code)
+work() with active job deletion
 
-    finished() // test suite completion callback
+```js
+const queue = 'email-welcome'
+
+await boss.work(queue, async ([ job ]) => {
+  await emailer.sendWelcomeEmail(job.data)
+  await boss.deleteJob(queue, job.id)
 })
-
-const jobId = await boss.send(jobName, requestPayload)
-const job = await boss.fetch(jobName)
-await boss.complete(job.id, responsePayload)
 ```
 
-The following is an example data object from the job retrieved in onComplete() above.
+## `notifyWorker(id)`
 
-```js
-{
-    "request": {
-        "id": "26a608d0-79bf-11e8-8391-653981c16efd",
-        "name": "onCompleteFtw",
-        "data": {
-            "token": "trivial"
-        }
-    },
-    "response": {
-        "message": "so verbose",
-        "code": "1234"
-    },
-    "failed": false,
-    "state": "completed",
-    "createdOn": "2018-06-26T23:04:12.9392-05:00",
-    "startedOn": "2018-06-26T23:04:12.945533-05:00",
-    "completedOn": "2018-06-26T23:04:12.949092-05:00",
-    "retryCount": 0
-}
-```
+Notifies a worker by id to bypass the job polling interval (see `pollingIntervalSeconds`) for this iteration in the loop.
+
 
 ## `offWork(value)`
 
@@ -938,13 +822,9 @@ Removes a worker by name or id and stops polling.
 
   If a string, removes all workers found matching the name.  If an object, only the worker with a matching `id` will be removed.
 
-### `offComplete(value)`
-
-Similar to `offWork()`, but removes an `onComplete()` worker.
-
 ## `publish(event, data, options)`
 
-Publish an event with optional data and options (Same as `send()` args). Looks up all subscriptions for the event and sends jobs to all those queues. Returns an array of job ids.
+Publish an event with optional data and options (Same as `send()` args). Looks up all subscriptions for the event and sends to each queue.
 
 ## `subscribe(event, name)`
 
@@ -956,7 +836,7 @@ Remove the subscription of queue `name` to `event`.
 
 ## Scheduling
 
-Jobs may be sent automatically based on a cron expression. As with other cron-based systems, at least one instance needs to be running for scheduling to work. In order to reduce the amount of evaluations, schedules are checked every 30 seconds, which means the 6-placeholder format should be discouraged in favor of the minute-level precision 5-placeholder format.
+Jobs may be created automatically based on a cron expression. As with other cron-based systems, at least one instance needs to be running for scheduling to work. In order to reduce the amount of evaluations, schedules are checked every 30 seconds, which means the 6-placeholder format should be discouraged in favor of the minute-level precision 5-placeholder format.
 
 For example, use this format, which implies "any second during 3:30 am every day"
 
@@ -976,7 +856,7 @@ If needed, the default clock monitoring interval can be adjusted using `clockMon
 
 ```js
 {
-  noScheduling: true
+  schedule: false
 }
 ```
 
@@ -1009,35 +889,41 @@ Removes a schedule by queue name.
 
 Retrieves an array of all scheduled jobs currently being monitored.
 
-## `cancel(id, options)`
+## `deleteJob(name, id, options)`
+
+Deletes a job by id.
+
+> Job deletion is offered if desired for a "fetch then delete" workflow similar to SQS. This is not the default behavior for workers so "everything just works" by default, including job throttling and debouncing, which requires jobs to exist to enforce a unique constraint. For example, if you are debouncing a queue to "only allow 1 job per hour", deleting jobs after processing would re-open that time slot, breaking your throttling policy. 
+
+## `deleteJob(name, [ids], options)`
+
+Deletes a set of jobs by id.
+
+## `cancel(name, id, options)`
 
 Cancels a pending or active job.
 
-The promise will resolve on a successful cancel, or reject if the job could not be cancelled.
-
-## `cancel([ids], options)`
+## `cancel(name, [ids], options)`
 
 Cancels a set of pending or active jobs.
 
-The promise will resolve on a successful cancel, or reject if not all of the requested jobs could not be cancelled.
+When passing an array of ids, it's possible that the operation may partially succeed based on the state of individual jobs requested. Consider this a best-effort attempt. 
 
-> Due to the nature of the use case of attempting a batch job cancellation, it may be likely that some jobs were in flight and even completed during the cancellation request. Because of this, cancellation will cancel as many as possible and reject with a message showing the number of jobs that could not be cancelled because they were no longer active.
-
-## `resume(id, options)`
+## `resume(name, id, options)`
 
 Resumes a cancelled job.
 
-## `resume([ids], options)`
+## `resume(name, [ids], options)`
 
 Resumes a set of cancelled jobs.
 
-## `complete(id [, data, options])`
+## `complete(name, id, data, options)`
 
-Completes an active job.  This would likely only be used with `fetch()`. Accepts an optional `data` argument for usage with [`onComplete()`](#oncompletename--options-handler) state-based workers or `fetchCompleted()`.
+Completes an active job. This would likely only be used with `fetch()`. Accepts an optional `data` argument.
 
 The promise will resolve on a successful completion, or reject if the job could not be completed.
 
-## `complete([ids], options)`
+## `complete(name, [ids], options)`
 
 Completes a set of active jobs.
 
@@ -1045,13 +931,13 @@ The promise will resolve on a successful completion, or reject if not all of the
 
 > See comments above on `cancel([ids])` regarding when the promise will resolve or reject because of a batch operation.
 
-## `fail(id [, data, options])`
+## `fail(name, id, data, options)`
 
-Marks an active job as failed.  This would likely only be used with `fetch()`. Accepts an optional `data` argument for usage with [`onFail()`](#onfailname--options-handler) state-based workers or `fetchFailed()`.
+Marks an active job as failed.
 
 The promise will resolve on a successful assignment of failure, or reject if the job could not be marked as failed.
 
-## `fail([ids], options)`
+## `fail(name, [ids], options)`
 
 Fails a set of active jobs.
 
@@ -1059,11 +945,64 @@ The promise will resolve on a successful failure state assignment, or reject if 
 
 > See comments above on `cancel([ids])` regarding when the promise will resolve or reject because of a batch operation.
 
-## `notifyWorker(id)`
 
-Notifies a worker by id to bypass the job polling interval (see `newJobCheckInterval`) for this iteration in the loop.
+## `getJobById(name, id, options)`
 
-## `getQueueSize(name [, options])`
+Retrieves a job with all metadata by name and id
+
+**options**
+
+* `includeArchive`: bool, default: false
+
+  If `true`, it will search for the job in the archive if not found in the primary job storage.
+
+## `createQueue(name, Queue)`
+
+Creates a queue.
+
+Options: Same retry, expiration and retention as documented above. 
+
+```ts
+type Queue = RetryOptions &
+             ExpirationOptions & 
+             RetentionOptions &
+             {
+              name: string, 
+              policy: QueuePolicy, 
+              deadLetter?: string
+             }
+```
+
+Allowed policy values:
+
+| Policy | Description |
+| - | - |
+| standard | (Default) Supports all standard features such as deferral, priority, and throttling |
+| short | All standard features, but only allows 1 job to be queued, unlimited active. Can be extended with `singletonKey` |
+| singleton | All standard features, but only allows 1 job to be active, unlimited queued. Can be extended with `singletonKey` |
+| stately | Combination of short and singleton: Only allows 1 job per state, queued and/or active. Can be extended with `singletonKey` |
+
+## `updateQueue(name, options)`
+
+Updates options on an existing queue. The policy can be changed, but understand this won't impact existing jobs in flight and will only apply the new policy on new incoming jobs.
+
+## `purgeQueue(name)`
+
+Deletes all queued jobs in a queue.
+
+## `deleteQueue(name)`
+
+Deletes a queue and all jobs from the active job table.  Any jobs in the archive table are retained.
+
+## `getQueues()`
+
+Returns all queues
+
+## `getQueue(name)`
+
+Returns a queue by name
+
+## `getQueueSize(name, options)`
 
 Returns the number of pending jobs in a queue by name.
 
@@ -1081,18 +1020,14 @@ As an example, the following options object include active jobs along with creat
 }
 ```
 
-## `getJobById(id, options)`
-
-Retrieves a job with all metadata by id in either the primary or archive storage.
-
-## `deleteQueue(name)`
-
-Deletes all pending jobs in the specified queue from the active job table.  All jobs in the archive table are retained.
-
-## `deleteAllQueues()`
-
-Deletes all pending jobs from all queues in the active job table. All jobs in the archive table are retained.
-
 ## `clearStorage()`
 
-Utility function if and when needed to empty all job storage. Internally, this issues a `TRUNCATE` command against all jobs tables, archive included.
+Utility function if and when needed to clear all job and archive storage tables. Internally, this issues a `TRUNCATE` command.
+
+## `isInstalled()`
+
+Utility function to see if pg-boss is installed in the configured database.
+
+## `schemaVersion()`
+
+Utility function to get the database schema version.

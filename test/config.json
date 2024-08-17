@@ -4,6 +4,6 @@
 	"database": "pgboss",
 	"user": "postgres",
 	"password": "postgres",
-  "uuid": "v4",
-  "max": 3
+  "max": 3,
+  "debug": false
 }

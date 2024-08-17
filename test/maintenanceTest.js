@@ -1,53 +1,40 @@
 const assert = require('assert')
 const helper = require('./testHelper')
-const delay = require('delay')
-const PgBoss = require('../')
+const { delay } = require('../src/tools')
 
 describe('maintenance', async function () {
-  it('should send maintenance job if missing during monitoring', async function () {
-    const config = { ...this.test.bossConfig, maintenanceIntervalSeconds: 1 }
+  it('clearStorage() should empty both job storage tables', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, archiveCompletedAfterSeconds: 1 })
+    const queue = this.test.bossConfig.schema
+
+    const jobId = await boss.send(queue)
+    await boss.fetch(queue)
+    await boss.complete(queue, jobId)
+
+    await delay(1000)
+    await boss.maintain()
+
+    await boss.send(queue)
 
     const db = await helper.getDb()
 
-    const boss = this.test.boss = new PgBoss(config)
-
-    const queues = boss.boss.getQueueNames()
-    const countJobs = () => helper.countJobs(config.schema, 'name = $1', [queues.MAINTENANCE])
-
-    await boss.start()
-
-    boss.on('maintenance', async () => {
-      // force timestamp to an older date
-      await db.executeSql(`UPDATE ${config.schema}.version SET maintained_on = now() - interval '5 minutes'`)
-    })
-
-    // wait for monitoring to check timestamp
-    await delay(4000)
-
-    const count = await countJobs()
-    assert(count > 1)
-  })
-
-  it('meta monitoring error handling works', async function () {
-    const config = {
-      ...this.test.bossConfig,
-      maintenanceIntervalSeconds: 1,
-      __test__throw_meta_monitor: 'meta monitoring error'
+    const getJobCount = async table => {
+      const jobCountResult = await db.executeSql(`SELECT count(*)::int as job_count FROM ${this.test.bossConfig.schema}.${table}`)
+      return jobCountResult.rows[0].job_count
     }
 
-    let errorCount = 0
+    const preJobCount = await getJobCount('job')
+    const preArchiveCount = await getJobCount('archive')
 
-    const boss = this.test.boss = new PgBoss(config)
+    assert.strictEqual(preJobCount, 1)
+    assert.strictEqual(preArchiveCount, 1)
 
-    boss.once('error', (error) => {
-      assert.strictEqual(error.message, config.__test__throw_meta_monitor)
-      errorCount++
-    })
+    await boss.clearStorage()
 
-    await boss.start()
+    const postJobCount = await getJobCount('job')
+    const postArchiveCount = await getJobCount('archive')
 
-    await delay(6000)
-
-    assert.strictEqual(errorCount, 1)
+    assert.strictEqual(postJobCount, 0)
+    assert.strictEqual(postArchiveCount, 0)
   })
 })

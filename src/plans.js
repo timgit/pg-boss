@@ -1,22 +1,22 @@
-const assert = require('assert')
+const DEFAULT_SCHEMA = 'pgboss'
+const MIGRATE_RACE_MESSAGE = 'division by zero'
+const CREATE_RACE_MESSAGE = 'already exists'
 
-const states = {
+const JOB_STATES = Object.freeze({
   created: 'created',
   retry: 'retry',
   active: 'active',
   completed: 'completed',
-  expired: 'expired',
   cancelled: 'cancelled',
   failed: 'failed'
-}
+})
 
-const DEFAULT_SCHEMA = 'pgboss'
-const COMPLETION_JOB_PREFIX = `__state__${states.completed}__`
-const SINGLETON_QUEUE_KEY = '__pgboss__singleton_queue'
-const SINGLETON_QUEUE_KEY_ESCAPED = SINGLETON_QUEUE_KEY.replace(/_/g, '\\_')
-
-const MIGRATE_RACE_MESSAGE = 'division by zero'
-const CREATE_RACE_MESSAGE = 'already exists'
+const QUEUE_POLICIES = Object.freeze({
+  standard: 'standard',
+  short: 'short',
+  singleton: 'singleton',
+  stately: 'stately'
+})
 
 module.exports = {
   create,
@@ -28,7 +28,9 @@ module.exports = {
   completeJobs,
   cancelJobs,
   resumeJobs,
-  failJobs,
+  deleteJobs,
+  failJobsById,
+  failJobsByTimeout,
   insertJob,
   insertJobs,
   getTime,
@@ -38,62 +40,53 @@ module.exports = {
   subscribe,
   unsubscribe,
   getQueuesForEvent,
-  expire,
   archive,
-  purge,
+  drop,
   countStates,
+  updateQueue,
+  createQueue,
   deleteQueue,
-  deleteAllQueues,
-  clearStorage,
+  getQueues,
+  getQueueByName,
   getQueueSize,
-  getMaintenanceTime,
-  setMaintenanceTime,
-  getCronTime,
-  setCronTime,
+  purgeQueue,
+  clearStorage,
+  trySetMaintenanceTime,
+  trySetMonitorTime,
+  trySetCronTime,
   locked,
   assertMigration,
   getArchivedJobById,
   getJobById,
-  states: { ...states },
-  COMPLETION_JOB_PREFIX,
-  SINGLETON_QUEUE_KEY,
+  QUEUE_POLICIES,
+  JOB_STATES,
   MIGRATE_RACE_MESSAGE,
   CREATE_RACE_MESSAGE,
   DEFAULT_SCHEMA
 }
 
-function locked (schema, query) {
-  if (Array.isArray(query)) {
-    query = query.join(';\n')
-  }
-
-  return `
-    BEGIN;
-    SET LOCAL statement_timeout = '30s';
-    ${advisoryLock(schema)};
-    ${query};
-    COMMIT;
-  `
-}
+const assert = require('assert')
 
 function create (schema, version) {
   const commands = [
     createSchema(schema),
-    createVersionTable(schema),
-    createJobStateEnum(schema),
-    createJobTable(schema),
-    cloneJobTableForArchive(schema),
-    createScheduleTable(schema),
-    createSubscriptionTable(schema),
-    addIdIndexToArchive(schema),
-    addArchivedOnToArchive(schema),
-    addArchivedOnIndexToArchive(schema),
-    createIndexJobName(schema),
-    createIndexJobFetch(schema),
-    createIndexSingletonOn(schema),
-    createIndexSingletonKeyOn(schema),
-    createIndexSingletonKey(schema),
-    createIndexSingletonQueue(schema),
+    createEnumJobState(schema),
+
+    createTableVersion(schema),
+    createTableQueue(schema),
+    createTableSchedule(schema),
+    createTableSubscription(schema),
+
+    createTableJob(schema),
+
+    createTableArchive(schema),
+    createPrimaryKeyArchive(schema),
+    createColumnArchiveArchivedOn(schema),
+    createIndexArchiveArchivedOn(schema),
+
+    createQueueFunction(schema),
+    deleteQueueFunction(schema),
+
     insertVersion(schema, version)
   ]
 
@@ -106,172 +99,71 @@ function createSchema (schema) {
   `
 }
 
-function createVersionTable (schema) {
-  return `
-    CREATE TABLE ${schema}.version (
-      version int primary key,
-      maintained_on timestamp with time zone,
-      cron_on timestamp with time zone
-    )
-  `
-}
-
-function createJobStateEnum (schema) {
+function createEnumJobState (schema) {
   // ENUM definition order is important
   // base type is numeric and first values are less than last values
   return `
     CREATE TYPE ${schema}.job_state AS ENUM (
-      '${states.created}',
-      '${states.retry}',
-      '${states.active}',
-      '${states.completed}',
-      '${states.expired}',
-      '${states.cancelled}',
-      '${states.failed}'
+      '${JOB_STATES.created}',
+      '${JOB_STATES.retry}',
+      '${JOB_STATES.active}',
+      '${JOB_STATES.completed}',
+      '${JOB_STATES.cancelled}',
+      '${JOB_STATES.failed}'
     )
   `
 }
 
-function createJobTable (schema) {
+function createTableVersion (schema) {
   return `
-    CREATE TABLE ${schema}.job (
-      id uuid primary key not null default gen_random_uuid(),
-      name text not null,
-      priority integer not null default(0),
-      data jsonb,
-      state ${schema}.job_state not null default('${states.created}'),
-      retryLimit integer not null default(0),
-      retryCount integer not null default(0),
-      retryDelay integer not null default(0),
-      retryBackoff boolean not null default false,
-      startAfter timestamp with time zone not null default now(),
-      startedOn timestamp with time zone,
-      singletonKey text,
-      singletonOn timestamp without time zone,
-      expireIn interval not null default interval '15 minutes',
-      createdOn timestamp with time zone not null default now(),
-      completedOn timestamp with time zone,
-      keepUntil timestamp with time zone NOT NULL default now() + interval '14 days',
-      on_complete boolean not null default false,
-      output jsonb
+    CREATE TABLE ${schema}.version (
+      version int primary key,
+      maintained_on timestamp with time zone,
+      cron_on timestamp with time zone,
+      monitored_on timestamp with time zone
     )
   `
 }
 
-function cloneJobTableForArchive (schema) {
-  return `CREATE TABLE ${schema}.archive (LIKE ${schema}.job)`
-}
-
-function addArchivedOnToArchive (schema) {
-  return `ALTER TABLE ${schema}.archive ADD archivedOn timestamptz NOT NULL DEFAULT now()`
-}
-
-function addArchivedOnIndexToArchive (schema) {
-  return `CREATE INDEX archive_archivedon_idx ON ${schema}.archive(archivedon)`
-}
-
-function addIdIndexToArchive (schema) {
-  return `CREATE INDEX archive_id_idx ON ${schema}.archive(id)`
-}
-
-function setMaintenanceTime (schema) {
-  return `UPDATE ${schema}.version SET maintained_on = now()`
-}
-
-function getMaintenanceTime (schema) {
-  return `SELECT maintained_on, EXTRACT( EPOCH FROM (now() - maintained_on) ) seconds_ago FROM ${schema}.version`
-}
-
-function setCronTime (schema, time) {
-  time = time || 'now()'
-  return `UPDATE ${schema}.version SET cron_on = ${time}`
-}
-
-function getCronTime (schema) {
-  return `SELECT cron_on, EXTRACT( EPOCH FROM (now() - cron_on) ) seconds_ago FROM ${schema}.version`
-}
-
-function deleteQueue (schema, options = {}) {
-  options.before = options.before || states.active
-  assert(options.before in states, `${options.before} is not a valid state`)
-  return `DELETE FROM ${schema}.job WHERE name = $1 and state < '${options.before}'`
-}
-
-function deleteAllQueues (schema, options = {}) {
-  options.before = options.before || states.active
-  assert(options.before in states, `${options.before} is not a valid state`)
-  return `DELETE FROM ${schema}.job WHERE state < '${options.before}'`
-}
-
-function clearStorage (schema) {
-  return `TRUNCATE ${schema}.job, ${schema}.archive`
-}
-
-function getQueueSize (schema, options = {}) {
-  options.before = options.before || states.active
-  assert(options.before in states, `${options.before} is not a valid state`)
-  return `SELECT count(*) as count FROM ${schema}.job WHERE name = $1 AND state < '${options.before}'`
-}
-
-function createIndexSingletonKey (schema) {
-  // anything with singletonKey means "only 1 job can be queued or active at a time"
+function createTableQueue (schema) {
   return `
-    CREATE UNIQUE INDEX job_singletonKey ON ${schema}.job (name, singletonKey) WHERE state < '${states.completed}' AND singletonOn IS NULL AND NOT singletonKey LIKE '${SINGLETON_QUEUE_KEY_ESCAPED}%'
+    CREATE TABLE ${schema}.queue (
+      name text,
+      policy text,
+      retry_limit int,
+      retry_delay int,
+      retry_backoff bool,
+      expire_seconds int,
+      retention_minutes int,
+      dead_letter text REFERENCES ${schema}.queue (name),
+      partition_name text,
+      created_on timestamp with time zone not null default now(),
+      updated_on timestamp with time zone not null default now(),
+      PRIMARY KEY (name) 
+    )
   `
 }
 
-function createIndexSingletonQueue (schema) {
-  // "singleton queue" means "only 1 job can be queued at a time"
-  return `
-    CREATE UNIQUE INDEX job_singleton_queue ON ${schema}.job (name, singletonKey) WHERE state < '${states.active}' AND singletonOn IS NULL AND singletonKey LIKE '${SINGLETON_QUEUE_KEY_ESCAPED}%'
-  `
-}
-
-function createIndexSingletonOn (schema) {
-  // anything with singletonOn means "only 1 job within this time period, queued, active or completed"
-  return `
-    CREATE UNIQUE INDEX job_singletonOn ON ${schema}.job (name, singletonOn) WHERE state < '${states.expired}' AND singletonKey IS NULL
-  `
-}
-
-function createIndexSingletonKeyOn (schema) {
-  // anything with both singletonOn and singletonKey means "only 1 job within this time period with this key, queued, active or completed"
-  return `
-    CREATE UNIQUE INDEX job_singletonKeyOn ON ${schema}.job (name, singletonOn, singletonKey) WHERE state < '${states.expired}'
-  `
-}
-
-function createIndexJobName (schema) {
-  return `
-    CREATE INDEX job_name ON ${schema}.job (name text_pattern_ops)
-  `
-}
-
-function createIndexJobFetch (schema) {
-  return `
-    CREATE INDEX job_fetch ON ${schema}.job (name text_pattern_ops, startAfter) WHERE state < '${states.active}'
-  `
-}
-
-function createScheduleTable (schema) {
+function createTableSchedule (schema) {
   return `
     CREATE TABLE ${schema}.schedule (
-      name text primary key,
+      name text REFERENCES ${schema}.queue ON DELETE CASCADE,
       cron text not null,
       timezone text,
       data jsonb,
       options jsonb,
       created_on timestamp with time zone not null default now(),
-      updated_on timestamp with time zone not null default now()
+      updated_on timestamp with time zone not null default now(),
+      PRIMARY KEY (name)
     )
   `
 }
 
-function createSubscriptionTable (schema) {
+function createTableSubscription (schema) {
   return `
     CREATE TABLE ${schema}.subscription (
       event text not null,
-      name text not null,
+      name text not null REFERENCES ${schema}.queue ON DELETE CASCADE,
       created_on timestamp with time zone not null default now(),
       updated_on timestamp with time zone not null default now(),
       PRIMARY KEY(event, name)
@@ -279,10 +171,259 @@ function createSubscriptionTable (schema) {
   `
 }
 
-function getSchedules (schema) {
+function createTableJob (schema) {
   return `
-    SELECT * FROM ${schema}.schedule
+    CREATE TABLE ${schema}.job (
+      id uuid not null default gen_random_uuid(),
+      name text not null,
+      priority integer not null default(0),
+      data jsonb,
+      state ${schema}.job_state not null default('${JOB_STATES.created}'),
+      retry_limit integer not null default(0),
+      retry_count integer not null default(0),
+      retry_delay integer not null default(0),
+      retry_backoff boolean not null default false,
+      start_after timestamp with time zone not null default now(),
+      started_on timestamp with time zone,
+      singleton_key text,
+      singleton_on timestamp without time zone,
+      expire_in interval not null default interval '15 minutes',
+      created_on timestamp with time zone not null default now(),
+      completed_on timestamp with time zone,
+      keep_until timestamp with time zone NOT NULL default now() + interval '14 days',
+      output jsonb,
+      dead_letter text,
+      policy text      
+    ) PARTITION BY LIST (name)
   `
+}
+
+const baseJobColumns = 'id, name, data, EXTRACT(epoch FROM expire_in) as "expireInSeconds"'
+const allJobColumns = `${baseJobColumns},
+  policy,
+  state,
+  priority,
+  retry_limit as "retryLimit",
+  retry_count as "retryCount",
+  retry_delay as "retryDelay",
+  retry_backoff as "retryBackoff",
+  start_after as "startAfter",  
+  started_on as "startedOn",
+  singleton_key as "singletonKey",
+  singleton_on as "singletonOn",
+  expire_in as "expireIn",
+  created_on as "createdOn",
+  completed_on as "completedOn",
+  keep_until as "keepUntil",
+  dead_letter as "deadLetter",
+  output
+`
+
+function createQueueFunction (schema) {
+  return `
+    CREATE FUNCTION ${schema}.create_queue(queue_name text, options json)
+    RETURNS VOID AS
+    $$
+    DECLARE
+      table_name varchar := 'j' || encode(sha224(queue_name::bytea), 'hex');
+    BEGIN
+
+      INSERT INTO ${schema}.queue (
+        name,
+        policy,
+        retry_limit,
+        retry_delay,
+        retry_backoff,
+        expire_seconds,
+        retention_minutes,
+        dead_letter,
+        partition_name
+      )
+      VALUES (
+        queue_name,
+        options->>'policy',
+        (options->>'retryLimit')::int,
+        (options->>'retryDelay')::int,
+        (options->>'retryBackoff')::bool,
+        (options->>'expireInSeconds')::int,
+        (options->>'retentionMinutes')::int,
+        options->>'deadLetter',
+        table_name
+      );
+
+      EXECUTE format('CREATE TABLE ${schema}.%I (LIKE ${schema}.job INCLUDING DEFAULTS)', table_name);
+      
+      EXECUTE format('${formatPartitionCommand(createPrimaryKeyJob(schema))}', table_name);
+      EXECUTE format('${formatPartitionCommand(createQueueForeignKeyJob(schema))}', table_name);
+      EXECUTE format('${formatPartitionCommand(createQueueForeignKeyJobDeadLetter(schema))}', table_name);
+      EXECUTE format('${formatPartitionCommand(createIndexJobPolicyShort(schema))}', table_name);
+      EXECUTE format('${formatPartitionCommand(createIndexJobPolicySingleton(schema))}', table_name);
+      EXECUTE format('${formatPartitionCommand(createIndexJobPolicyStately(schema))}', table_name);
+      EXECUTE format('${formatPartitionCommand(createIndexJobThrottle(schema))}', table_name);
+      EXECUTE format('${formatPartitionCommand(createIndexJobFetch(schema))}', table_name);
+
+      EXECUTE format('ALTER TABLE ${schema}.%I ADD CONSTRAINT cjc CHECK (name=%L)', table_name, queue_name);
+      EXECUTE format('ALTER TABLE ${schema}.job ATTACH PARTITION ${schema}.%I FOR VALUES IN (%L)', table_name, queue_name);
+    END;
+    $$
+    LANGUAGE plpgsql;
+  `
+}
+
+function formatPartitionCommand (command) {
+  return command.replace('.job', '.%1$I').replace('job_i', '%1$s_i').replaceAll('\'', '\'\'')
+}
+
+function deleteQueueFunction (schema) {
+  return `
+    CREATE FUNCTION ${schema}.delete_queue(queue_name text)
+    RETURNS VOID AS
+    $$
+    DECLARE
+      table_name varchar;
+    BEGIN  
+      WITH deleted as (
+        DELETE FROM ${schema}.queue
+        WHERE name = queue_name
+        RETURNING partition_name
+      )
+      SELECT partition_name from deleted INTO table_name;
+
+      EXECUTE format('DROP TABLE IF EXISTS ${schema}.%I', table_name);
+    END;
+    $$
+    LANGUAGE plpgsql;
+  `
+}
+
+function createQueue (schema) {
+  return `SELECT ${schema}.create_queue($1, $2)`
+}
+
+function deleteQueue (schema) {
+  return `SELECT ${schema}.delete_queue($1)`
+}
+
+function createPrimaryKeyJob (schema) {
+  return `ALTER TABLE ${schema}.job ADD PRIMARY KEY (name, id)`
+}
+
+function createQueueForeignKeyJob (schema) {
+  return `ALTER TABLE ${schema}.job ADD CONSTRAINT q_fkey FOREIGN KEY (name) REFERENCES ${schema}.queue (name) ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED`
+}
+
+function createQueueForeignKeyJobDeadLetter (schema) {
+  return `ALTER TABLE ${schema}.job ADD CONSTRAINT dlq_fkey FOREIGN KEY (dead_letter) REFERENCES ${schema}.queue (name) ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED`
+}
+
+function createPrimaryKeyArchive (schema) {
+  return `ALTER TABLE ${schema}.archive ADD PRIMARY KEY (name, id)`
+}
+
+function createIndexJobPolicyShort (schema) {
+  return `CREATE UNIQUE INDEX job_i1 ON ${schema}.job (name, COALESCE(singleton_key, '')) WHERE state = '${JOB_STATES.created}' AND policy = '${QUEUE_POLICIES.short}';`
+}
+
+function createIndexJobPolicySingleton (schema) {
+  return `CREATE UNIQUE INDEX job_i2 ON ${schema}.job (name, COALESCE(singleton_key, '')) WHERE state = '${JOB_STATES.active}' AND policy = '${QUEUE_POLICIES.singleton}'`
+}
+
+function createIndexJobPolicyStately (schema) {
+  return `CREATE UNIQUE INDEX job_i3 ON ${schema}.job (name, state, COALESCE(singleton_key, '')) WHERE state <= '${JOB_STATES.active}' AND policy = '${QUEUE_POLICIES.stately}'`
+}
+
+function createIndexJobThrottle (schema) {
+  return `CREATE UNIQUE INDEX job_i4 ON ${schema}.job (name, singleton_on, COALESCE(singleton_key, '')) WHERE state <> '${JOB_STATES.cancelled}' AND singleton_on IS NOT NULL`
+}
+
+function createIndexJobFetch (schema) {
+  return `CREATE INDEX job_i5 ON ${schema}.job (name, start_after) INCLUDE (priority, created_on, id) WHERE state < '${JOB_STATES.active}'`
+}
+
+function createTableArchive (schema) {
+  return `CREATE TABLE ${schema}.archive (LIKE ${schema}.job)`
+}
+
+function createColumnArchiveArchivedOn (schema) {
+  return `ALTER TABLE ${schema}.archive ADD archived_on timestamptz NOT NULL DEFAULT now()`
+}
+
+function createIndexArchiveArchivedOn (schema) {
+  return `CREATE INDEX archive_i1 ON ${schema}.archive(archived_on)`
+}
+
+function trySetMaintenanceTime (schema) {
+  return trySetTimestamp(schema, 'maintained_on')
+}
+
+function trySetMonitorTime (schema) {
+  return trySetTimestamp(schema, 'monitored_on')
+}
+
+function trySetCronTime (schema) {
+  return trySetTimestamp(schema, 'cron_on')
+}
+
+function trySetTimestamp (schema, column) {
+  return `
+    UPDATE ${schema}.version SET ${column} = now()
+    WHERE EXTRACT( EPOCH FROM (now() - COALESCE(${column}, now() - interval '1 week') ) ) > $1
+    RETURNING true
+  `
+}
+
+function updateQueue (schema) {
+  return `
+    UPDATE ${schema}.queue SET
+      policy = COALESCE($2, policy),
+      retry_limit = COALESCE($3, retry_limit),
+      retry_delay = COALESCE($4, retry_delay),
+      retry_backoff = COALESCE($5, retry_backoff),
+      expire_seconds = COALESCE($6, expire_seconds),
+      retention_minutes = COALESCE($7, retention_minutes),
+      dead_letter = COALESCE($8, dead_letter),
+      updated_on = now()
+    WHERE name = $1
+  `
+}
+
+function getQueues (schema) {
+  return `
+    SELECT 
+      name,
+      policy,
+      retry_limit as "retryLimit",
+      retry_delay as "retryDelay",
+      retry_backoff as "retryBackoff",
+      expire_seconds as "expireInSeconds",
+      retention_minutes as "retentionMinutes",
+      dead_letter as "deadLetter",
+      created_on as "createdOn",
+      updated_on as "updatedOn"
+    FROM ${schema}.queue
+   `
+}
+
+function getQueueByName (schema) {
+  return `${getQueues(schema)} WHERE name = $1`
+}
+
+function purgeQueue (schema) {
+  return `DELETE from ${schema}.job WHERE name = $1 and state < '${JOB_STATES.active}'`
+}
+
+function clearStorage (schema) {
+  return `TRUNCATE ${schema}.job, ${schema}.archive`
+}
+
+function getQueueSize (schema, options = {}) {
+  options.before = options.before || JOB_STATES.active
+  assert(options.before in JOB_STATES, `${options.before} is not a valid state`)
+  return `SELECT count(*) as count FROM ${schema}.job WHERE name = $1 AND state < '${options.before}'`
+}
+
+function getSchedules (schema) {
+  return `SELECT * FROM ${schema}.schedule`
 }
 
 function schedule (schema) {
@@ -351,156 +492,93 @@ function insertVersion (schema, version) {
 }
 
 function fetchNextJob (schema) {
-  return (includeMetadata, enforceSingletonQueueActiveLimit) => `
-    WITH nextJob as (
+  return ({ includeMetadata, priority = true } = {}) => `
+    WITH next as (
       SELECT id
-      FROM ${schema}.job j
-      WHERE state < '${states.active}'
-        AND name LIKE $1
-        AND startAfter < now()
-        ${enforceSingletonQueueActiveLimit
-        ? `AND (
-          CASE
-            WHEN singletonKey IS NOT NULL
-              AND singletonKey LIKE '${SINGLETON_QUEUE_KEY_ESCAPED}%'
-              THEN NOT EXISTS (
-                SELECT 1
-                FROM ${schema}.job active_job
-                WHERE active_job.state = '${states.active}'
-                  AND active_job.name = j.name
-                  AND active_job.singletonKey = j.singletonKey
-                  LIMIT 1
-              )
-            ELSE
-              true
-          END
-        )`
-        : ''}
-      ORDER BY priority desc, createdOn, id
+      FROM ${schema}.job
+      WHERE name = $1
+        AND state < '${JOB_STATES.active}'
+        AND start_after < now()
+      ORDER BY ${priority && 'priority desc, '} created_on, id
       LIMIT $2
       FOR UPDATE SKIP LOCKED
     )
     UPDATE ${schema}.job j SET
-      state = '${states.active}',
-      startedOn = now(),
-      retryCount = CASE WHEN state = '${states.retry}' THEN retryCount + 1 ELSE retryCount END
-    FROM nextJob
-    WHERE j.id = nextJob.id
-    RETURNING ${includeMetadata ? 'j.*' : 'j.id, name, data'}, EXTRACT(epoch FROM expireIn) as expire_in_seconds
+      state = '${JOB_STATES.active}',
+      started_on = now(),
+      retry_count = CASE WHEN started_on IS NOT NULL THEN retry_count + 1 ELSE retry_count END
+    FROM next
+    WHERE name = $1 AND j.id = next.id
+    RETURNING j.${includeMetadata ? allJobColumns : baseJobColumns}      
   `
 }
-
-function buildJsonCompletionObject (withResponse) {
-  // job completion contract
-  return `jsonb_build_object(
-    'request', jsonb_build_object('id', id, 'name', name, 'data', data),
-    'response', ${withResponse ? '$2::jsonb' : 'null'},
-    'state', state,
-    'retryCount', retryCount,
-    'createdOn', createdOn,
-    'startedOn', startedOn,
-    'completedOn', completedOn,
-    'failed', CASE WHEN state = '${states.completed}' THEN false ELSE true END
-  )`
-}
-
-const retryCompletedOnCase = `CASE
-          WHEN retryCount < retryLimit
-          THEN NULL
-          ELSE now()
-          END`
-
-const retryStartAfterCase = `CASE
-          WHEN retryCount = retryLimit THEN startAfter
-          WHEN NOT retryBackoff THEN now() + retryDelay * interval '1'
-          ELSE now() +
-            (
-                retryDelay * 2 ^ LEAST(16, retryCount + 1) / 2
-                +
-                retryDelay * 2 ^ LEAST(16, retryCount + 1) / 2 * random()
-            )
-            * interval '1'
-          END`
-
-const keepUntilInheritance = 'keepUntil + (keepUntil - startAfter)'
 
 function completeJobs (schema) {
   return `
     WITH results AS (
       UPDATE ${schema}.job
-      SET completedOn = now(),
-        state = '${states.completed}',
-        output = $2::jsonb
-      WHERE id IN (SELECT UNNEST($1::uuid[]))
-        AND state = '${states.active}'
+      SET completed_on = now(),
+        state = '${JOB_STATES.completed}',
+        output = $3::jsonb
+      WHERE name = $1
+        AND id IN (SELECT UNNEST($2::uuid[]))
+        AND state = '${JOB_STATES.active}'
       RETURNING *
-    ), completion_jobs as (
-      INSERT INTO ${schema}.job (name, data, keepUntil)
-      SELECT
-        '${COMPLETION_JOB_PREFIX}' || name,
-        ${buildJsonCompletionObject(true)},
-        ${keepUntilInheritance}
-      FROM results
-      WHERE NOT name LIKE '${COMPLETION_JOB_PREFIX}%'
-        AND on_complete
     )
     SELECT COUNT(*) FROM results
   `
 }
 
-function failJobs (schema) {
-  return `
-    WITH results AS (
-      UPDATE ${schema}.job
-      SET state = CASE
-          WHEN retryCount < retryLimit
-          THEN '${states.retry}'::${schema}.job_state
-          ELSE '${states.failed}'::${schema}.job_state
-          END,
-        completedOn = ${retryCompletedOnCase},
-        startAfter = ${retryStartAfterCase},
-        output = $2::jsonb
-      WHERE id IN (SELECT UNNEST($1::uuid[]))
-        AND state < '${states.completed}'
-      RETURNING *
-    ), completion_jobs as (
-      INSERT INTO ${schema}.job (name, data, keepUntil)
-      SELECT
-        '${COMPLETION_JOB_PREFIX}' || name,
-        ${buildJsonCompletionObject(true)},
-        ${keepUntilInheritance}
-      FROM results
-      WHERE state = '${states.failed}'
-        AND NOT name LIKE '${COMPLETION_JOB_PREFIX}%'
-        AND on_complete
-    )
-    SELECT COUNT(*) FROM results
-  `
+function failJobsById (schema) {
+  const where = `name = $1 AND id IN (SELECT UNNEST($2::uuid[])) AND state < '${JOB_STATES.completed}'`
+  const output = '$3::jsonb'
+
+  return failJobs(schema, where, output)
 }
 
-function expire (schema) {
+function failJobsByTimeout (schema) {
+  const where = `state = '${JOB_STATES.active}' AND (started_on + expire_in) < now()`
+  const output = '\'{ "value": { "message": "job failed by timeout in active state" } }\'::jsonb'
+  return failJobs(schema, where, output)
+}
+
+function failJobs (schema, where, output) {
   return `
     WITH results AS (
-      UPDATE ${schema}.job
-      SET state = CASE
-          WHEN retryCount < retryLimit THEN '${states.retry}'::${schema}.job_state
-          ELSE '${states.expired}'::${schema}.job_state
+      UPDATE ${schema}.job SET
+        state = CASE
+          WHEN retry_count < retry_limit THEN '${JOB_STATES.retry}'::${schema}.job_state
+          ELSE '${JOB_STATES.failed}'::${schema}.job_state
           END,
-        completedOn = ${retryCompletedOnCase},
-        startAfter = ${retryStartAfterCase}
-      WHERE state = '${states.active}'
-        AND (startedOn + expireIn) < now()
+        completed_on = CASE
+          WHEN retry_count < retry_limit THEN NULL
+          ELSE now()
+          END,
+        start_after = CASE
+          WHEN retry_count = retry_limit THEN start_after
+          WHEN NOT retry_backoff THEN now() + retry_delay * interval '1'
+          ELSE now() + (
+                retry_delay * 2 ^ LEAST(16, retry_count + 1) / 2 +
+                retry_delay * 2 ^ LEAST(16, retry_count + 1) / 2 * random()
+            ) * interval '1'
+          END,
+        output = ${output}
+      WHERE ${where}
       RETURNING *
+    ), dlq_jobs as (
+      INSERT INTO ${schema}.job (name, data, output, retry_limit, keep_until)
+      SELECT
+        dead_letter,
+        data,
+        output,
+        retry_limit,
+        keep_until + (keep_until - start_after)
+      FROM results
+      WHERE state = '${JOB_STATES.failed}'
+        AND dead_letter IS NOT NULL
+        AND NOT name = dead_letter
     )
-    INSERT INTO ${schema}.job (name, data, keepUntil)
-    SELECT
-      '${COMPLETION_JOB_PREFIX}' || name,
-      ${buildJsonCompletionObject()},
-      ${keepUntilInheritance}
-    FROM results
-    WHERE state = '${states.expired}'
-      AND NOT name LIKE '${COMPLETION_JOB_PREFIX}%'
-      AND on_complete
+    SELECT COUNT(*) FROM results
   `
 }
 
@@ -508,10 +586,11 @@ function cancelJobs (schema) {
   return `
     with results as (
       UPDATE ${schema}.job
-      SET completedOn = now(),
-        state = '${states.cancelled}'
-      WHERE id IN (SELECT UNNEST($1::uuid[]))
-        AND state < '${states.completed}'
+      SET completed_on = now(),
+        state = '${JOB_STATES.cancelled}'
+      WHERE name = $1
+        AND id IN (SELECT UNNEST($2::uuid[]))
+        AND state < '${JOB_STATES.completed}'
       RETURNING 1
     )
     SELECT COUNT(*) from results
@@ -522,9 +601,23 @@ function resumeJobs (schema) {
   return `
     with results as (
       UPDATE ${schema}.job
-      SET completedOn = NULL,
-        state = '${states.created}'
-      WHERE id IN (SELECT UNNEST($1::uuid[]))
+      SET completed_on = NULL,
+        state = '${JOB_STATES.created}'
+      WHERE name = $1
+        AND id IN (SELECT UNNEST($2::uuid[]))
+        AND state = '${JOB_STATES.cancelled}'
+      RETURNING 1
+    )
+    SELECT COUNT(*) from results
+  `
+}
+
+function deleteJobs (schema) {
+  return `
+    with results as (
+      DELETE FROM ${schema}.job
+      WHERE name = $1
+        AND id IN (SELECT UNNEST($2::uuid[]))        
       RETURNING 1
     )
     SELECT COUNT(*) from results
@@ -536,68 +629,73 @@ function insertJob (schema) {
     INSERT INTO ${schema}.job (
       id,
       name,
-      priority,
-      state,
-      retryLimit,
-      startAfter,
-      expireIn,
       data,
-      singletonKey,
-      singletonOn,
-      retryDelay,
-      retryBackoff,
-      keepUntil,
-      on_complete
+      priority,
+      start_after,
+      singleton_key,
+      singleton_on,
+      dead_letter,
+      expire_in,
+      keep_until,
+      retry_limit,
+      retry_delay,
+      retry_backoff,
+      policy
     )
     SELECT
       id,
-      name,
-      priority,
-      state,
-      retryLimit,
-      startAfter,
-      expireIn,
+      j.name,
       data,
-      singletonKey,
-      singletonOn,
-      retryDelay,
-      retryBackoff,
-      keepUntil,
-      on_complete
+      priority,
+      start_after,
+      singleton_key,
+      singleton_on,
+      COALESCE(j.dead_letter, q.dead_letter) as dead_letter,
+      CASE
+        WHEN expire_in IS NOT NULL THEN CAST(expire_in as interval)
+        WHEN q.expire_seconds IS NOT NULL THEN q.expire_seconds * interval '1s'
+        WHEN expire_in_default IS NOT NULL THEN CAST(expire_in_default as interval)
+        ELSE interval '15 minutes'
+        END as expire_in,
+      CASE
+        WHEN right(keep_until, 1) = 'Z' THEN CAST(keep_until as timestamp with time zone)
+        ELSE start_after + CAST(COALESCE(keep_until, (q.retention_minutes * 60)::text, keep_until_default, '14 days') as interval)
+        END as keep_until,
+      COALESCE(j.retry_limit, q.retry_limit, retry_limit_default, 2) as retry_limit,
+      CASE
+        WHEN COALESCE(j.retry_backoff, q.retry_backoff, retry_backoff_default, false)
+        THEN GREATEST(COALESCE(j.retry_delay, q.retry_delay, retry_delay_default), 1)
+        ELSE COALESCE(j.retry_delay, q.retry_delay, retry_delay_default, 0)
+        END as retry_delay,
+      COALESCE(j.retry_backoff, q.retry_backoff, retry_backoff_default, false) as retry_backoff,
+      q.policy
     FROM
-    ( SELECT *,
-        CASE
-          WHEN right(keepUntilValue, 1) = 'Z' THEN CAST(keepUntilValue as timestamp with time zone)
-          ELSE startAfter + CAST(COALESCE(keepUntilValue,'0') as interval)
-          END as keepUntil
-      FROM
-      ( SELECT *,
+      ( SELECT
+          COALESCE($1::uuid, gen_random_uuid()) as id,
+          $2 as name,
+          $3::jsonb as data,
+          COALESCE($4::int, 0) as priority,
           CASE
-            WHEN right(startAfterValue, 1) = 'Z' THEN CAST(startAfterValue as timestamp with time zone)
-            ELSE now() + CAST(COALESCE(startAfterValue,'0') as interval)
-            END as startAfter
-        FROM
-        ( SELECT
-            $1::uuid as id,
-            $2::text as name,
-            $3::int as priority,
-            '${states.created}'::${schema}.job_state as state,
-            $4::int as retryLimit,
-            $5::text as startAfterValue,
-            CAST($6 as interval) as expireIn,
-            $7::jsonb as data,
-            $8::text as singletonKey,
-            CASE
-              WHEN $9::integer IS NOT NULL THEN 'epoch'::timestamp + '1 second'::interval * ($9 * floor((date_part('epoch', now()) + $10) / $9))
-              ELSE NULL
-              END as singletonOn,
-            $11::int as retryDelay,
-            $12::bool as retryBackoff,
-            $13::text as keepUntilValue,
-            $14::boolean as on_complete
-        ) j1
-      ) j2
-    ) j3
+            WHEN right($5, 1) = 'Z' THEN CAST($5 as timestamp with time zone)
+            ELSE now() + CAST(COALESCE($5,'0') as interval)
+            END as start_after,
+          $6 as singleton_key,
+          CASE
+            WHEN $7::integer IS NOT NULL THEN 'epoch'::timestamp + '1 second'::interval * ($7 * floor((date_part('epoch', now()) + $8) / $7))
+            ELSE NULL
+            END as singleton_on,
+          $9 as dead_letter,
+          $10 as expire_in,
+          $11 as expire_in_default,
+          $12 as keep_until,
+          $13 as keep_until_default,
+          $14::int as retry_limit,
+          $15::int as retry_limit_default,
+          $16::int as retry_delay,
+          $17::int as retry_delay_default,
+          $18::bool as retry_backoff,
+          $19::bool as retry_backoff_default
+      ) j JOIN ${schema}.queue q ON j.name = q.name
     ON CONFLICT DO NOTHING
     RETURNING id
   `
@@ -605,79 +703,105 @@ function insertJob (schema) {
 
 function insertJobs (schema) {
   return `
+    WITH defaults as (
+      SELECT 
+        $2 as expire_in,
+        $3 as keep_until,
+        $4::int as retry_limit,
+        $5::int as retry_delay,
+        $6::bool as retry_backoff
+    )
     INSERT INTO ${schema}.job (
       id,
       name,
       data,
       priority,
-      startAfter,
-      expireIn,
-      retryLimit,
-      retryDelay,
-      retryBackoff,
-      singletonKey,
-      keepUntil,
-      on_complete
+      start_after,
+      singleton_key,
+      dead_letter,
+      expire_in,
+      keep_until,
+      retry_limit,
+      retry_delay,
+      retry_backoff,
+      policy
     )
     SELECT
       COALESCE(id, gen_random_uuid()) as id,
-      name,
+      j.name,
       data,
       COALESCE(priority, 0) as priority,
-      COALESCE("startAfter", now()) as startAfter,
-      COALESCE("expireInSeconds", 15 * 60) * interval '1s' as expireIn,
-      COALESCE("retryLimit", 0) as retryLimit,
-      COALESCE("retryDelay", 0) as retryDelay,
-      COALESCE("retryBackoff", false) as retryBackoff,
-      "singletonKey",
-      COALESCE("keepUntil", now() + interval '14 days') as keepUntil,
-      COALESCE("onComplete", false) as onComplete
-    FROM json_to_recordset($1) as x(
-      id uuid,
-      name text,
-      priority integer,
-      data jsonb,
-      "retryLimit" integer,
-      "retryDelay" integer,
-      "retryBackoff" boolean,
-      "startAfter" timestamp with time zone,
-      "singletonKey" text,
-      "expireInSeconds" integer,
-      "keepUntil" timestamp with time zone,
-      "onComplete" boolean
-    )
+      j.start_after,
+      "singletonKey" as singleton_key,
+      COALESCE("deadLetter", q.dead_letter) as dead_letter,
+      CASE
+        WHEN "expireInSeconds" IS NOT NULL THEN "expireInSeconds" *  interval '1s'
+        WHEN q.expire_seconds IS NOT NULL THEN q.expire_seconds * interval '1s'
+        WHEN defaults.expire_in IS NOT NULL THEN CAST(defaults.expire_in as interval)
+        ELSE interval '15 minutes'
+        END as expire_in,
+      CASE
+        WHEN "keepUntil" IS NOT NULL THEN "keepUntil"
+        ELSE COALESCE(j.start_after, now()) + CAST(COALESCE((q.retention_minutes * 60)::text, defaults.keep_until, '14 days') as interval)
+        END as keep_until,
+      COALESCE("retryLimit", q.retry_limit, defaults.retry_limit, 2),
+      CASE
+        WHEN COALESCE("retryBackoff", q.retry_backoff, defaults.retry_backoff, false)
+          THEN GREATEST(COALESCE("retryDelay", q.retry_delay, defaults.retry_delay), 1)
+        ELSE COALESCE("retryDelay", q.retry_delay, defaults.retry_delay, 0)
+        END as retry_delay,      
+      COALESCE("retryBackoff", q.retry_backoff, defaults.retry_backoff, false) as retry_backoff,
+      q.policy
+    FROM (
+      SELECT *,
+        CASE
+          WHEN right("startAfter", 1) = 'Z' THEN CAST("startAfter" as timestamp with time zone)
+          ELSE now() + CAST(COALESCE("startAfter",'0') as interval)
+          END as start_after
+      FROM json_to_recordset($1) as x (
+        id uuid,
+        name text,
+        priority integer,
+        data jsonb,
+        "startAfter" text,
+        "retryLimit" integer,
+        "retryDelay" integer,
+        "retryBackoff" boolean,
+        "singletonKey" text,
+        "singletonOn" text,
+        "expireInSeconds" integer,
+        "keepUntil" timestamp with time zone,
+        "deadLetter" text
+      ) 
+    ) j
+    JOIN ${schema}.queue q ON j.name = q.name,
+      defaults
     ON CONFLICT DO NOTHING
   `
 }
 
-function purge (schema, interval) {
+function drop (schema, interval) {
   return `
     DELETE FROM ${schema}.archive
-    WHERE archivedOn < (now() - interval '${interval}')
+    WHERE archived_on < (now() - interval '${interval}')
   `
 }
 
 function archive (schema, completedInterval, failedInterval = completedInterval) {
+  const columns = 'id, name, priority, data, state, retry_limit, retry_count, retry_delay, retry_backoff, start_after, started_on, singleton_key, singleton_on, expire_in, created_on, completed_on, keep_until, dead_letter, policy, output'
+
   return `
     WITH archived_rows AS (
       DELETE FROM ${schema}.job
-      WHERE (
-          state <> '${states.failed}' AND completedOn < (now() - interval '${completedInterval}')
-        )
-        OR (
-          state = '${states.failed}' AND completedOn < (now() - interval '${failedInterval}')
-        )
-        OR (
-          state < '${states.active}' AND keepUntil < now()
-        )
+      WHERE (state <> '${JOB_STATES.failed}' AND completed_on < (now() - interval '${completedInterval}'))
+        OR (state = '${JOB_STATES.failed}' AND completed_on < (now() - interval '${failedInterval}'))
+        OR (state < '${JOB_STATES.active}' AND keep_until < now())
       RETURNING *
     )
-    INSERT INTO ${schema}.archive (
-      id, name, priority, data, state, retryLimit, retryCount, retryDelay, retryBackoff, startAfter, startedOn, singletonKey, singletonOn, expireIn, createdOn, completedOn, keepUntil, on_complete, output
-    )
-    SELECT
-      id, name, priority, data, state, retryLimit, retryCount, retryDelay, retryBackoff, startAfter, startedOn, singletonKey, singletonOn, expireIn, createdOn, completedOn, keepUntil, on_complete, output
+    INSERT INTO ${schema}.archive (${columns})
+    SELECT ${columns}
     FROM archived_rows
+    ON CONFLICT DO NOTHING
   `
 }
 
@@ -689,9 +813,24 @@ function countStates (schema) {
   `
 }
 
-function advisoryLock (schema) {
+function locked (schema, query) {
+  if (Array.isArray(query)) {
+    query = query.join(';\n')
+  }
+
+  return `
+    BEGIN;
+    SET LOCAL lock_timeout = '30s';
+    SET LOCAL idle_in_transaction_session_timeout = '30s';
+    ${advisoryLock(schema)};
+    ${query};
+    COMMIT;
+  `
+}
+
+function advisoryLock (schema, key) {
   return `SELECT pg_advisory_xact_lock(
-      ('x' || md5(current_database() || '.pgboss.${schema}'))::bit(64)::bigint
+      ('x' || encode(sha224((current_database() || '.pgboss.${schema}${key || ''}')::bytea), 'hex'))::bit(64)::bigint
   )`
 }
 
@@ -701,13 +840,13 @@ function assertMigration (schema, version) {
 }
 
 function getJobById (schema) {
-  return getJobByTableAndId(schema, 'job')
+  return getJobByTableQueueId(schema, 'job')
 }
 
 function getArchivedJobById (schema) {
-  return getJobByTableAndId(schema, 'archive')
+  return getJobByTableQueueId(schema, 'archive')
 }
 
-function getJobByTableAndId (schema, table) {
-  return `SELECT * From ${schema}.${table} WHERE id = $1`
+function getJobByTableQueueId (schema, table) {
+  return `SELECT ${allJobColumns} FROM ${schema}.${table} WHERE name = $1 AND id = $2`
 }

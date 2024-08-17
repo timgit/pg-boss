@@ -21,29 +21,50 @@ class Contractor {
     this.config = config
     this.db = db
     this.migrations = this.config.migrations || migrationStore.getAll(this.config.schema)
+
+    // exported api to index
+    this.functions = [
+      this.schemaVersion,
+      this.isInstalled
+    ]
   }
 
-  async version () {
+  async schemaVersion () {
     const result = await this.db.executeSql(plans.getVersion(this.config.schema))
     return result.rows.length ? parseInt(result.rows[0].version) : null
   }
 
   async isInstalled () {
     const result = await this.db.executeSql(plans.versionTableExists(this.config.schema))
-    return result.rows.length ? result.rows[0].name : null
+    return !!result.rows[0].name
   }
 
   async start () {
     const installed = await this.isInstalled()
 
     if (installed) {
-      const version = await this.version()
+      const version = await this.schemaVersion()
 
       if (schemaVersion > version) {
-        await this.migrate(version)
+        throw new Error('Migrations are not supported to v10')
+        // await this.migrate(version)
       }
     } else {
       await this.create()
+    }
+  }
+
+  async check () {
+    const installed = await this.isInstalled()
+
+    if (!installed) {
+      throw new Error('pg-boss is not installed')
+    }
+
+    const version = await this.schemaVersion()
+
+    if (schemaVersion !== version) {
+      throw new Error('pg-boss database requires migrations')
     }
   }
 
@@ -65,15 +86,15 @@ class Contractor {
     }
   }
 
-  async next (version) {
-    const commands = migrationStore.next(this.config.schema, version, this.migrations)
-    await this.db.executeSql(commands)
-  }
+  // async next (version) {
+  //   const commands = migrationStore.next(this.config.schema, version, this.migrations)
+  //   await this.db.executeSql(commands)
+  // }
 
-  async rollback (version) {
-    const commands = migrationStore.rollback(this.config.schema, version, this.migrations)
-    await this.db.executeSql(commands)
-  }
+  // async rollback (version) {
+  //   const commands = migrationStore.rollback(this.config.schema, version, this.migrations)
+  //   await this.db.executeSql(commands)
+  // }
 }
 
 module.exports = Contractor

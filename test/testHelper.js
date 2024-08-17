@@ -1,19 +1,15 @@
 const Db = require('../src/db')
 const PgBoss = require('../')
-const plans = require('../src/plans')
-const { COMPLETION_JOB_PREFIX } = plans
 const crypto = require('crypto')
 const sha1 = (value) => crypto.createHash('sha1').update(value).digest('hex')
 
 module.exports = {
   dropSchema,
   start,
-  stop,
   getDb,
   getArchivedJobById,
   countJobs,
   findJobs,
-  COMPLETION_JOB_PREFIX,
   getConfig,
   getConnectionString,
   tryCreateDb,
@@ -34,10 +30,14 @@ function getConfig (options = {}) {
   config.password = process.env.POSTGRES_PASSWORD || config.password
 
   if (options.testKey) {
-    config.schema = `pgboss${sha1(options.testKey).slice(-10)}`
+    config.schema = `pgboss${sha1(options.testKey)}`
   }
 
   config.schema = config.schema || 'pgboss'
+
+  config.supervise = false
+  config.schedule = false
+  config.retryLimit = 0
 
   const result = { ...config }
 
@@ -48,25 +48,18 @@ async function init () {
   const { database } = getConfig()
 
   await tryCreateDb(database)
-  await createPgCrypto(database)
 }
 
-async function getDb (database) {
+async function getDb ({ database, debug } = {}) {
   const config = getConfig()
 
   config.database = database || config.database
 
-  const db = new Db(config)
+  const db = new Db({ ...config, debug })
 
   await db.open()
 
   return db
-}
-
-async function createPgCrypto (database) {
-  const db = await getDb(database)
-  await db.executeSql('create extension if not exists pgcrypto')
-  await db.close()
 }
 
 async function dropSchema (schema) {
@@ -82,8 +75,8 @@ async function findJobs (schema, where, values) {
   return jobs
 }
 
-async function getArchivedJobById (schema, id) {
-  const response = await findArchivedJobs(schema, 'id = $1', [id])
+async function getArchivedJobById (schema, name, id) {
+  const response = await findArchivedJobs(schema, 'name = $1 AND id = $2', [name, id])
   return response.rows.length ? response.rows[0] : null
 }
 
@@ -102,7 +95,7 @@ async function countJobs (schema, where, values) {
 }
 
 async function tryCreateDb (database) {
-  const db = await getDb('postgres')
+  const db = await getDb({ database: 'postgres' })
 
   try {
     await db.executeSql(`CREATE DATABASE ${database}`)
@@ -115,8 +108,12 @@ async function start (options) {
   try {
     options = getConfig(options)
     const boss = new PgBoss(options)
-    boss.on('error', err => console.log({ schema: options.schema, message: err.message }))
+    // boss.on('error', err => console.log({ schema: options.schema, message: err.message }))
     await boss.start()
+    // auto-create queue for tests
+    if (!options.noDefault) {
+      await boss.createQueue(options.schema)
+    }
     return boss
   } catch (err) {
     // this is nice for occaisional debugging, Mr. Linter
@@ -124,8 +121,4 @@ async function start (options) {
       throw err
     }
   }
-}
-
-async function stop (boss, timeout = 4000) {
-  await boss.stop({ timeout })
 }

@@ -1,4 +1,5 @@
 const helper = require('./testHelper')
+const { delay } = require('../src/tools')
 
 async function readme () {
   const PgBoss = require('../src')
@@ -8,17 +9,21 @@ async function readme () {
 
   await boss.start()
 
-  const queue = 'some-queue'
+  const queue = 'readme-queue'
 
-  await boss.schedule(queue, '* * * * *')
+  await boss.deleteQueue(queue)
+  await boss.createQueue(queue)
 
-  console.log(`created cronjob in queue ${queue}`)
+  const id = await boss.send(queue, { arg1: 'read me' })
 
-  await boss.work(queue, someAsyncJobHandler)
-}
+  console.log(`created job ${id} in queue ${queue}`)
 
-async function someAsyncJobHandler (job) {
-  console.log(`running job ${job.id}`)
+  await boss.work(queue, async ([job]) => {
+    console.log(`received job ${job.id} with data ${JSON.stringify(job.data)}`)
+  })
+
+  await delay(2000)
+  await boss.stop()
 }
 
 readme()

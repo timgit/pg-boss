@@ -3,14 +3,13 @@ const helper = require('./testHelper')
 
 describe('monitoring', function () {
   it('should emit state counts', async function () {
-    const defaults = {
-      monitorStateIntervalSeconds: 1,
-      maintenanceIntervalSeconds: 10
+    const config = {
+      ...this.test.bossConfig,
+      monitorStateIntervalSeconds: 1
     }
 
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, ...defaults })
-
-    const queue = 'monitorMe'
+    const boss = this.test.boss = await helper.start(config)
+    const queue = this.test.bossConfig.schema
 
     await boss.send(queue)
     await boss.send(queue)
@@ -34,8 +33,8 @@ describe('monitoring', function () {
     assert.strictEqual(1, states3.queues[queue].created, 'created count is wrong after 3 sendes and 2 fetches')
     assert.strictEqual(2, states3.queues[queue].active, 'active count is wrong after 3 sendes and 2 fetches')
 
-    const job = await boss.fetch(queue)
-    await boss.complete(job.id)
+    const [job] = await boss.fetch(queue)
+    await boss.complete(queue, job.id)
 
     const states4 = await boss.countStates()
 
@@ -43,18 +42,13 @@ describe('monitoring', function () {
     assert.strictEqual(2, states4.queues[queue].active, 'active count is wrong after 3 sendes and 3 fetches and 1 complete')
     assert.strictEqual(1, states4.queues[queue].completed, 'completed count is wrong after 3 sendes and 3 fetches and 1 complete')
 
-    return new Promise((resolve) => {
-      let resolved = false
+    await new Promise((resolve) => {
+      boss.once('monitor-states', async states => {
+        assert.strictEqual(states4.queues[queue].created, states.queues[queue].created, 'created count from monitor-states doesn\'t match')
+        assert.strictEqual(states4.queues[queue].active, states.queues[queue].active, 'active count from monitor-states doesn\'t match')
+        assert.strictEqual(states4.queues[queue].completed, states.queues[queue].completed, 'completed count from monitor-states doesn\'t match')
 
-      boss.on('monitor-states', async states => {
-        if (!resolved) {
-          resolved = true
-          assert.strictEqual(states4.queues[queue].created, states.queues[queue].created, 'created count from monitor-states doesn\'t match')
-          assert.strictEqual(states4.queues[queue].active, states.queues[queue].active, 'active count from monitor-states doesn\'t match')
-          assert.strictEqual(states4.queues[queue].completed, states.queues[queue].completed, 'completed count from monitor-states doesn\'t match')
-
-          resolve()
-        }
+        resolve()
       })
     })
   })

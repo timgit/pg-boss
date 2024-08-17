@@ -1,20 +1,20 @@
 const assert = require('assert')
-const { DEFAULT_SCHEMA, SINGLETON_QUEUE_KEY } = require('./plans')
+const { DEFAULT_SCHEMA } = require('./plans')
 
 module.exports = {
   getConfig,
   checkSendArgs,
-  checkInsertArgs,
+  checkQueueArgs,
   checkWorkArgs,
   checkFetchArgs,
-  warnClockSkew
+  warnClockSkew,
+  assertPostgresObjectName,
+  assertQueueName
 }
 
+const MAX_INTERVAL_HOURS = 24
+
 const WARNINGS = {
-  EXPIRE_IN_REMOVED: {
-    message: '\'expireIn\' option detected. This option has been removed. Use expireInSeconds, expireInMinutes or expireInHours.',
-    code: 'pg-boss-w01'
-  },
   CLOCK_SKEW: {
     message: 'Timekeeper detected clock skew between this instance and the database server. This will not affect scheduling operations, but this warning is shown any time the skew exceeds 60 seconds.',
     code: 'pg-boss-w02'
@@ -22,7 +22,21 @@ const WARNINGS = {
   CRON_DISABLED: {
     message: 'Archive interval is set less than 60s.  Cron processing is disabled.',
     code: 'pg-boss-w03'
+  },
+  ON_COMPLETE_REMOVED: {
+    message: '\'onComplete\' option detected. This option has been removed. Consider deadLetter if needed.',
+    code: 'pg-boss-w04'
   }
+}
+
+function checkQueueArgs (name, options = {}) {
+  assert(!('deadLetter' in options) || (typeof options.deadLetter === 'string'), 'deadLetter must be a string')
+
+  applyRetryConfig(options)
+  applyExpirationConfig(options)
+  applyRetentionConfig(options)
+
+  return options
 }
 
 function checkSendArgs (args, defaults) {
@@ -57,11 +71,11 @@ function checkSendArgs (args, defaults) {
   assert(!('priority' in options) || (Number.isInteger(options.priority)), 'priority must be an integer')
   options.priority = options.priority || 0
 
+  assert(!('deadLetter' in options) || (typeof options.deadLetter === 'string'), 'deadLetter must be a string')
+
   applyRetryConfig(options, defaults)
   applyExpirationConfig(options, defaults)
   applyRetentionConfig(options, defaults)
-  applyCompletionConfig(options, defaults)
-  applySingletonKeyConfig(options)
 
   const { startAfter, singletonSeconds, singletonMinutes, singletonHours } = options
 
@@ -83,23 +97,11 @@ function checkSendArgs (args, defaults) {
 
   assert(!singletonSeconds || singletonSeconds <= defaults.archiveSeconds, `throttling interval ${singletonSeconds}s cannot exceed archive interval ${defaults.archiveSeconds}s`)
 
-  return { name, data, options }
-}
-
-function checkInsertArgs (jobs) {
-  assert(Array.isArray(jobs), `jobs argument should be an array.  Received '${typeof jobs}'`)
-  return jobs.map(job => {
-    job = { ...job }
-    applySingletonKeyConfig(job)
-    return job
-  })
-}
-
-function applySingletonKeyConfig (options) {
-  if (options.singletonKey && options.useSingletonQueue && options.singletonKey !== SINGLETON_QUEUE_KEY) {
-    options.singletonKey = SINGLETON_QUEUE_KEY + options.singletonKey
+  if (options.onComplete) {
+    emitWarning(WARNINGS.ON_COMPLETE_REMOVED)
   }
-  delete options.useSingletonQueue
+
+  return { name, data, options }
 }
 
 function checkWorkArgs (name, args, defaults) {
@@ -120,34 +122,25 @@ function checkWorkArgs (name, args, defaults) {
 
   options = { ...options }
 
-  applyNewJobCheckInterval(options, defaults)
+  applyPollingInterval(options, defaults)
 
-  assert(!('teamConcurrency' in options) ||
-    (Number.isInteger(options.teamConcurrency) && options.teamConcurrency >= 1 && options.teamConcurrency <= 1000),
-  'teamConcurrency must be an integer between 1 and 1000')
-
-  assert(!('teamSize' in options) || (Number.isInteger(options.teamSize) && options.teamSize >= 1), 'teamSize must be an integer > 0')
   assert(!('batchSize' in options) || (Number.isInteger(options.batchSize) && options.batchSize >= 1), 'batchSize must be an integer > 0')
   assert(!('includeMetadata' in options) || typeof options.includeMetadata === 'boolean', 'includeMetadata must be a boolean')
-  assert(!('enforceSingletonQueueActiveLimit' in options) || typeof options.enforceSingletonQueueActiveLimit === 'boolean', 'enforceSingletonQueueActiveLimit must be a boolean')
+  assert(!('priority' in options) || typeof options.priority === 'boolean', 'priority must be a boolean')
+
+  options.batchSize = options.batchSize || 1
 
   return { options, callback }
 }
 
-function checkFetchArgs (name, batchSize, options) {
+function checkFetchArgs (name, options) {
   assert(name, 'missing queue name')
 
-  name = sanitizeQueueNameForFetch(name)
-
-  assert(!batchSize || (Number.isInteger(batchSize) && batchSize >= 1), 'batchSize must be an integer > 0')
+  assert(!('batchSize' in options) || (Number.isInteger(options.batchSize) && options.batchSize >= 1), 'batchSize must be an integer > 0')
   assert(!('includeMetadata' in options) || typeof options.includeMetadata === 'boolean', 'includeMetadata must be a boolean')
-  assert(!('enforceSingletonQueueActiveLimit' in options) || typeof options.enforceSingletonQueueActiveLimit === 'boolean', 'enforceSingletonQueueActiveLimit must be a boolean')
+  assert(!('priority' in options) || typeof options.priority === 'boolean', 'priority must be a boolean')
 
-  return { name }
-}
-
-function sanitizeQueueNameForFetch (name) {
-  return name.replace(/[%_*]/g, match => match === '*' ? '%' : '\\' + match)
+  options.batchSize = options.batchSize || 1
 }
 
 function getConfig (value) {
@@ -158,30 +151,43 @@ function getConfig (value) {
     ? { connectionString: value }
     : { ...value }
 
-  applyDatabaseConfig(config)
+  config.schedule = ('schedule' in config) ? config.schedule : true
+  config.supervise = ('supervise' in config) ? config.supervise : true
+  config.migrate = ('migrate' in config) ? config.migrate : true
+
+  applySchemaConfig(config)
   applyMaintenanceConfig(config)
   applyArchiveConfig(config)
   applyArchiveFailedConfig(config)
   applyDeleteConfig(config)
   applyMonitoringConfig(config)
-  applyUuidConfig(config)
 
-  applyNewJobCheckInterval(config)
+  applyPollingInterval(config)
   applyExpirationConfig(config)
   applyRetentionConfig(config)
-  applyCompletionConfig(config)
 
   return config
 }
 
-function applyDatabaseConfig (config) {
+function applySchemaConfig (config) {
   if (config.schema) {
-    assert(typeof config.schema === 'string', 'configuration assert: schema must be a string')
-    assert(config.schema.length <= 50, 'configuration assert: schema name cannot exceed 50 characters')
-    assert(!/\W/.test(config.schema), `configuration assert: ${config.schema} cannot be used as a schema. Only alphanumeric characters and underscores are allowed`)
+    assertPostgresObjectName(config.schema)
   }
 
   config.schema = config.schema || DEFAULT_SCHEMA
+}
+
+function assertPostgresObjectName (name) {
+  assert(typeof name === 'string', 'Name must be a string')
+  assert(name.length <= 50, 'Name cannot exceed 50 characters')
+  assert(!/\W/.test(name), 'Name can only contain alphanumeric characters or underscores')
+  assert(!/^\d/.test(name), 'Name cannot start with a number')
+}
+
+function assertQueueName (name) {
+  assert(name, 'Name is required')
+  assert(typeof name === 'string', 'Name must be a string')
+  assert(/[\w-]/.test(name), 'Name can only contain alphanumeric characters, underscores, or hyphens')
 }
 
 function applyArchiveConfig (config) {
@@ -211,18 +217,7 @@ function applyArchiveFailedConfig (config) {
   }
 }
 
-function applyCompletionConfig (config, defaults) {
-  assert(!('onComplete' in config) || config.onComplete === true || config.onComplete === false,
-    'configuration assert: onComplete must be either true or false')
-
-  if (!('onComplete' in config)) {
-    config.onComplete = defaults
-      ? defaults.onComplete
-      : false
-  }
-}
-
-function applyRetentionConfig (config, defaults) {
+function applyRetentionConfig (config, defaults = {}) {
   assert(!('retentionSeconds' in config) || config.retentionSeconds >= 1,
     'configuration assert: retentionSeconds must be at least every second')
 
@@ -243,18 +238,13 @@ function applyRetentionConfig (config, defaults) {
             ? `${config.retentionMinutes} minutes`
             : ('retentionSeconds' in config)
                 ? `${config.retentionSeconds} seconds`
-                : defaults
-                  ? defaults.keepUntil
-                  : '14 days'
+                : null
 
   config.keepUntil = keepUntil
+  config.keepUntilDefault = defaults?.keepUntil
 }
 
-function applyExpirationConfig (config, defaults) {
-  if ('expireIn' in config) {
-    emitWarning(WARNINGS.EXPIRE_IN_REMOVED)
-  }
-
+function applyExpirationConfig (config, defaults = {}) {
   assert(!('expireInSeconds' in config) || config.expireInSeconds >= 1,
     'configuration assert: expireInSeconds must be at least every second')
 
@@ -265,16 +255,17 @@ function applyExpirationConfig (config, defaults) {
     'configuration assert: expireInHours must be at least every hour')
 
   const expireIn = ('expireInHours' in config)
-    ? `${config.expireInHours} hours`
+    ? config.expireInHours * 60 * 60
     : ('expireInMinutes' in config)
-        ? `${config.expireInMinutes} minutes`
+        ? config.expireInMinutes * 60
         : ('expireInSeconds' in config)
-            ? `${config.expireInSeconds} seconds`
-            : defaults
-              ? defaults.expireIn
-              : '15 minutes'
+            ? config.expireInSeconds
+            : null
+
+  assert(!expireIn || expireIn / 60 / 60 < MAX_INTERVAL_HOURS, `configuration assert: expiration cannot exceed ${MAX_INTERVAL_HOURS} hours`)
 
   config.expireIn = expireIn
+  config.expireInDefault = defaults?.expireIn
 }
 
 function applyRetryConfig (config, defaults) {
@@ -282,35 +273,18 @@ function applyRetryConfig (config, defaults) {
   assert(!('retryLimit' in config) || (Number.isInteger(config.retryLimit) && config.retryLimit >= 0), 'retryLimit must be an integer >= 0')
   assert(!('retryBackoff' in config) || (config.retryBackoff === true || config.retryBackoff === false), 'retryBackoff must be either true or false')
 
-  if (defaults) {
-    config.retryDelay = config.retryDelay || defaults.retryDelay
-    config.retryLimit = config.retryLimit || defaults.retryLimit
-    config.retryBackoff = config.retryBackoff || defaults.retryBackoff
-  }
-
-  config.retryDelay = config.retryDelay || 0
-  config.retryLimit = config.retryLimit || 0
-  config.retryBackoff = !!config.retryBackoff
-  config.retryDelay = (config.retryBackoff && !config.retryDelay) ? 1 : config.retryDelay
-  config.retryLimit = (config.retryDelay && !config.retryLimit) ? 1 : config.retryLimit
+  config.retryDelayDefault = defaults?.retryDelay
+  config.retryLimitDefault = defaults?.retryLimit
+  config.retryBackoffDefault = defaults?.retryBackoff
 }
 
-function applyNewJobCheckInterval (config, defaults) {
-  const second = 1000
+function applyPollingInterval (config, defaults) {
+  assert(!('pollingIntervalSeconds' in config) || config.pollingIntervalSeconds >= 0.5,
+    'configuration assert: pollingIntervalSeconds must be at least every 500ms')
 
-  assert(!('newJobCheckInterval' in config) || config.newJobCheckInterval >= 100,
-    'configuration assert: newJobCheckInterval must be at least every 100ms')
-
-  assert(!('newJobCheckIntervalSeconds' in config) || config.newJobCheckIntervalSeconds >= 1,
-    'configuration assert: newJobCheckIntervalSeconds must be at least every second')
-
-  config.newJobCheckInterval = ('newJobCheckIntervalSeconds' in config)
-    ? config.newJobCheckIntervalSeconds * second
-    : ('newJobCheckInterval' in config)
-        ? config.newJobCheckInterval
-        : defaults
-          ? defaults.newJobCheckInterval
-          : second * 2
+  config.pollingInterval = ('pollingIntervalSeconds' in config)
+    ? config.pollingIntervalSeconds * 1000
+    : defaults?.pollingInterval || 2000
 }
 
 function applyMaintenanceConfig (config) {
@@ -325,6 +299,8 @@ function applyMaintenanceConfig (config) {
     : ('maintenanceIntervalSeconds' in config)
         ? config.maintenanceIntervalSeconds
         : 120
+
+  assert(config.maintenanceIntervalSeconds / 60 / 60 < MAX_INTERVAL_HOURS, `configuration assert: maintenance interval cannot exceed ${MAX_INTERVAL_HOURS} hours`)
 }
 
 function applyDeleteConfig (config) {
@@ -367,6 +343,10 @@ function applyMonitoringConfig (config) {
           ? config.monitorStateIntervalSeconds
           : null
 
+  if (config.monitorStateIntervalSeconds) {
+    assert(config.monitorStateIntervalSeconds / 60 / 60 < MAX_INTERVAL_HOURS, `configuration assert: state monitoring interval cannot exceed ${MAX_INTERVAL_HOURS} hours`)
+  }
+
   const TEN_MINUTES_IN_SECONDS = 600
 
   assert(!('clockMonitorIntervalSeconds' in config) || (config.clockMonitorIntervalSeconds >= 1 && config.clockMonitorIntervalSeconds <= TEN_MINUTES_IN_SECONDS),
@@ -382,26 +362,21 @@ function applyMonitoringConfig (config) {
           ? config.clockMonitorIntervalSeconds
           : TEN_MINUTES_IN_SECONDS
 
-  assert(!('cronMonitorIntervalSeconds' in config) || (config.cronMonitorIntervalSeconds >= 1 && config.cronMonitorIntervalSeconds <= 60),
-    'configuration assert: cronMonitorIntervalSeconds must be between 1 and 60 seconds')
+  assert(!('cronMonitorIntervalSeconds' in config) || (config.cronMonitorIntervalSeconds >= 1 && config.cronMonitorIntervalSeconds <= 45),
+    'configuration assert: cronMonitorIntervalSeconds must be between 1 and 45 seconds')
 
   config.cronMonitorIntervalSeconds =
     ('cronMonitorIntervalSeconds' in config)
       ? config.cronMonitorIntervalSeconds
-      : 60
+      : 30
 
-  assert(!('cronWorkerIntervalSeconds' in config) || (config.cronWorkerIntervalSeconds >= 1 && config.cronWorkerIntervalSeconds <= 60),
-    'configuration assert: cronWorkerIntervalSeconds must be between 1 and 60 seconds')
+  assert(!('cronWorkerIntervalSeconds' in config) || (config.cronWorkerIntervalSeconds >= 1 && config.cronWorkerIntervalSeconds <= 45),
+    'configuration assert: cronWorkerIntervalSeconds must be between 1 and 45 seconds')
 
   config.cronWorkerIntervalSeconds =
     ('cronWorkerIntervalSeconds' in config)
       ? config.cronWorkerIntervalSeconds
-      : 4
-}
-
-function applyUuidConfig (config) {
-  assert(!('uuid' in config) || config.uuid === 'v1' || config.uuid === 'v4', 'configuration assert: uuid option only supports v1 or v4')
-  config.uuid = config.uuid || 'v4'
+      : 5
 }
 
 function warnClockSkew (message) {

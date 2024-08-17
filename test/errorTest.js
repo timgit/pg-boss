@@ -11,7 +11,7 @@ describe('error', function () {
     await boss.send(queue)
 
     await new Promise((resolve) => {
-      boss.work(queue, async job => {
+      boss.work(queue, async () => {
         processCount++
 
         if (processCount === 1) {

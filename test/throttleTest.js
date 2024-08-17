@@ -1,35 +1,29 @@
 const assert = require('assert')
 const helper = require('./testHelper')
-const delay = require('delay')
+const { delay } = require('../src/tools')
 
 describe('throttle', function () {
-  it('should only create 1 job for interval with a delay', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+  it('should only create 1 job for interval', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const queue = this.test.bossConfig.schema
 
-    const queue = 'delayThrottle'
-    const singletonSeconds = 4
-    const startAfter = 2
-    const sendInterval = 200
-    const sendCount = 5
-
-    let processCount = 0
-
-    boss.work(queue, async () => processCount++)
+    const singletonSeconds = 2
+    const sendCount = 4
 
     for (let i = 0; i < sendCount; i++) {
-      await boss.send(queue, null, { startAfter, singletonSeconds })
-      await delay(sendInterval)
+      await boss.send(queue, null, { singletonSeconds })
+      await delay(1000)
     }
 
-    await delay(singletonSeconds * 1000)
+    const { length } = await boss.fetch(queue, { batchSize: sendCount })
 
-    assert(processCount <= 2)
+    assert(length < sendCount)
   })
 
   it('should process at most 1 job per second', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const queue = this.test.bossConfig.schema
 
-    const queue = 'throttle-1ps'
     const singletonSeconds = 1
     const jobCount = 3
     const sendInterval = 100
@@ -51,9 +45,8 @@ describe('throttle', function () {
   })
 
   it('should debounce', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
-
-    const queue = 'debounce'
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const queue = this.test.bossConfig.schema
 
     const jobId = await boss.send(queue, null, { singletonHours: 1 })
 
@@ -65,9 +58,9 @@ describe('throttle', function () {
   })
 
   it('should debounce via sendDebounced()', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const queue = this.test.bossConfig.schema
 
-    const queue = 'sendDebounced'
     const seconds = 60
 
     const jobId = await boss.sendDebounced(queue, null, null, seconds)
@@ -84,9 +77,8 @@ describe('throttle', function () {
   })
 
   it('should reject 2nd request in the same time slot', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
-
-    const queue = 'throttle-reject-2nd'
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const queue = this.test.bossConfig.schema
 
     const jobId1 = await boss.send(queue, null, { singletonHours: 1 })
 
@@ -98,9 +90,9 @@ describe('throttle', function () {
   })
 
   it('should throttle via sendThrottled()', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const queue = this.test.bossConfig.schema
 
-    const queue = 'throttle-reject-2nd-sendThrottled'
     const seconds = 60
 
     const jobId1 = await boss.sendThrottled(queue, null, null, seconds)
@@ -110,5 +102,22 @@ describe('throttle', function () {
     const jobId2 = await boss.sendThrottled(queue, null, null, seconds)
 
     assert.strictEqual(jobId2, null)
+  })
+
+  it('should not allow more than 1 complete job with the same key with an interval', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const queue = this.test.bossConfig.schema
+
+    const singletonKey = 'a'
+    const singletonMinutes = 1
+
+    await boss.send(queue, null, { singletonKey, singletonMinutes })
+    const [job] = await boss.fetch(queue)
+
+    await boss.complete(queue, job.id)
+
+    const jobId = await boss.send(queue, null, { singletonKey, singletonMinutes })
+
+    assert.strictEqual(jobId, null)
   })
 })

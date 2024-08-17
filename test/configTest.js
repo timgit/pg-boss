@@ -15,6 +15,8 @@ describe('config', function () {
     const boss = this.test.boss = new PgBoss(config)
 
     await boss.start()
+
+    await helper.dropSchema(config.schema)
   })
 
   it('should not allow more than 50 characters in schema name', async function () {
