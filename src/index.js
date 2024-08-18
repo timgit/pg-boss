@@ -108,7 +108,7 @@ class PgBoss extends EventEmitter {
 
   async start () {
     if (this.#starting || this.#started) {
-      return
+      return this
     }
 
     this.#starting = true

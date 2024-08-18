@@ -45,4 +45,10 @@ describe('config', function () {
       assert(false)
     } catch {}
   })
+
+  it('start() should return instance after', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const result2 = await boss.start()
+    assert(result2)
+  })
 })
