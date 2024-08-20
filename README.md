@@ -34,6 +34,7 @@ This will likely cater the most to teams already familiar with the simplicity of
 
 ## Summary
 * Exactly-once job delivery
+* Create jobs within your existing database transaction
 * Backpressure-compatible polling workers
 * Cron scheduling
 * Queue storage policies to support a variety of rate limiting, debouncing, and concurrency use cases
