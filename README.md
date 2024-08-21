@@ -15,6 +15,8 @@ async function readme() {
 
   const queue = 'readme-queue'
 
+  await boss.createQueue(queue)
+
   const id = await boss.send(queue, { arg1: 'read me' })
 
   console.log(`created job ${id} in queue ${queue}`)
