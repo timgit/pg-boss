@@ -1,7 +1,7 @@
 import { EventEmitter } from 'events'
 
 declare namespace PgBoss {
-  
+
   type JobStates = {
     created : 'created',
     retry: 'retry',
@@ -107,13 +107,13 @@ declare namespace PgBoss {
   interface ConnectionOptions {
     db?: Db;
   }
-  
+
   type InsertOptions = ConnectionOptions;
-  
+
   type SendOptions = JobOptions & ExpirationOptions & RetentionOptions & RetryOptions & ConnectionOptions;
-  
+
   type QueuePolicy = 'standard' | 'short' | 'singleton' | 'stately'
-  
+
   type Queue = RetryOptions & ExpirationOptions & RetentionOptions & { name: string, policy?: QueuePolicy, deadLetter?: string }
   type QueueResult = Queue & { createdOn: Date, updatedOn: Date }
   type ScheduleOptions = SendOptions & { tz?: string }
@@ -334,7 +334,7 @@ declare class PgBoss extends EventEmitter {
 
   deleteJob(name: string, id: string, options?: PgBoss.ConnectionOptions): Promise<void>;
   deleteJob(name: string, ids: string[], options?: PgBoss.ConnectionOptions): Promise<void>;
-  
+
   complete(name: string, id: string, options?: PgBoss.ConnectionOptions): Promise<void>;
   complete(name: string, id: string, data: object, options?: PgBoss.ConnectionOptions): Promise<void>;
   complete(name: string, ids: string[], options?: PgBoss.ConnectionOptions): Promise<void>;
@@ -343,8 +343,8 @@ declare class PgBoss extends EventEmitter {
   fail(name: string, id: string, data: object, options?: PgBoss.ConnectionOptions): Promise<void>;
   fail(name: string, ids: string[], options?: PgBoss.ConnectionOptions): Promise<void>;
 
-  getJobById(name: string, id: string, options?: PgBoss.ConnectionOptions & { includeArchive: bool }): Promise<PgBoss.JobWithMetadata | null>;
-  
+  getJobById<T>(name: string, id: string, options?: PgBoss.ConnectionOptions & { includeArchive: boolean }): Promise<PgBoss.JobWithMetadata<T> | null>;
+
   createQueue(name: string, options?: PgBoss.Queue): Promise<void>;
   updateQueue(name: string, options?: PgBoss.Queue): Promise<void>;
   deleteQueue(name: string): Promise<void>;
