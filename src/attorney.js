@@ -1,7 +1,13 @@
 const assert = require('assert')
 const { DEFAULT_SCHEMA } = require('./plans')
 
+const POLICY = {
+  MAX_EXPIRATION_HOURS: 24,
+  MIN_POLLING_INTERVAL_MS: 500
+}
+
 module.exports = {
+  POLICY,
   getConfig,
   checkSendArgs,
   checkQueueArgs,
@@ -11,8 +17,6 @@ module.exports = {
   assertPostgresObjectName,
   assertQueueName
 }
-
-const MAX_INTERVAL_HOURS = 24
 
 const WARNINGS = {
   CLOCK_SKEW: {
@@ -262,7 +266,7 @@ function applyExpirationConfig (config, defaults = {}) {
             ? config.expireInSeconds
             : null
 
-  assert(!expireIn || expireIn / 60 / 60 < MAX_INTERVAL_HOURS, `configuration assert: expiration cannot exceed ${MAX_INTERVAL_HOURS} hours`)
+  assert(!expireIn || expireIn / 60 / 60 < POLICY.MAX_EXPIRATION_HOURS, `configuration assert: expiration cannot exceed ${POLICY.MAX_EXPIRATION_HOURS} hours`)
 
   config.expireIn = expireIn
   config.expireInDefault = defaults?.expireIn
@@ -279,8 +283,8 @@ function applyRetryConfig (config, defaults) {
 }
 
 function applyPollingInterval (config, defaults) {
-  assert(!('pollingIntervalSeconds' in config) || config.pollingIntervalSeconds >= 0.5,
-    'configuration assert: pollingIntervalSeconds must be at least every 500ms')
+  assert(!('pollingIntervalSeconds' in config) || config.pollingIntervalSeconds >= POLICY.MIN_POLLING_INTERVAL_MS / 1000,
+    `configuration assert: pollingIntervalSeconds must be at least every ${POLICY.MIN_POLLING_INTERVAL_MS}ms`)
 
   config.pollingInterval = ('pollingIntervalSeconds' in config)
     ? config.pollingIntervalSeconds * 1000
@@ -300,7 +304,8 @@ function applyMaintenanceConfig (config) {
         ? config.maintenanceIntervalSeconds
         : 120
 
-  assert(config.maintenanceIntervalSeconds / 60 / 60 < MAX_INTERVAL_HOURS, `configuration assert: maintenance interval cannot exceed ${MAX_INTERVAL_HOURS} hours`)
+  assert(config.maintenanceIntervalSeconds / 60 / 60 < POLICY.MAX_EXPIRATION_HOURS,
+    `configuration assert: maintenance interval cannot exceed ${POLICY.MAX_EXPIRATION_HOURS} hours`)
 }
 
 function applyDeleteConfig (config) {
@@ -344,7 +349,8 @@ function applyMonitoringConfig (config) {
           : null
 
   if (config.monitorStateIntervalSeconds) {
-    assert(config.monitorStateIntervalSeconds / 60 / 60 < MAX_INTERVAL_HOURS, `configuration assert: state monitoring interval cannot exceed ${MAX_INTERVAL_HOURS} hours`)
+    assert(config.monitorStateIntervalSeconds / 60 / 60 < POLICY.MAX_EXPIRATION_HOURS,
+      `configuration assert: state monitoring interval cannot exceed ${POLICY.MAX_EXPIRATION_HOURS} hours`)
   }
 
   const TEN_MINUTES_IN_SECONDS = 600
