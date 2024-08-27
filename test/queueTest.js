@@ -9,6 +9,14 @@ describe('queues', function () {
     await boss.createQueue(queue)
   })
 
+  it('createQueue should work if queue already exists', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
+    const queue = this.test.bossConfig.schema
+
+    await boss.createQueue(queue)
+    await boss.createQueue(queue)
+  })
+
   it('should reject a queue with invalid characters', async function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
     const queue = `*${this.test.bossConfig.schema}`
