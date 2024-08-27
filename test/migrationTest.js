@@ -1,4 +1,4 @@
-const assert = require('assert')
+const assert = require('node:assert')
 const PgBoss = require('../')
 const helper = require('./testHelper')
 const Contractor = require('../src/contractor')
@@ -32,23 +32,39 @@ describe('migration', function () {
     }
   })
 
-  it.skip('should migrate to previous version and back again', async function () {
+  it('should migrate to previous version and back again', async function () {
     const { contractor } = this.test
 
     await contractor.create()
 
     await contractor.rollback(currentSchemaVersion)
-    const oldVersion = await contractor.version()
+    const oldVersion = await contractor.schemaVersion()
 
     assert.notStrictEqual(oldVersion, currentSchemaVersion)
 
     await contractor.migrate(oldVersion)
-    const newVersion = await contractor.version()
+    const newVersion = await contractor.schemaVersion()
 
     assert.strictEqual(newVersion, currentSchemaVersion)
   })
 
-  it.skip('should migrate to latest during start if on previous schema version', async function () {
+  it('should install next version via contractor', async function () {
+    const { contractor } = this.test
+
+    await contractor.create()
+
+    await contractor.rollback(currentSchemaVersion)
+
+    const oneVersionAgo = await contractor.schemaVersion()
+
+    await contractor.next(oneVersionAgo)
+
+    const version = await contractor.schemaVersion()
+
+    assert.strictEqual(version, currentSchemaVersion)
+  })
+
+  it('should migrate to latest during start if on previous schema version', async function () {
     const { contractor } = this.test
 
     await contractor.create()
@@ -61,7 +77,7 @@ describe('migration', function () {
 
     await boss.start()
 
-    const version = await contractor.version()
+    const version = await contractor.schemaVersion()
 
     assert.strictEqual(version, currentSchemaVersion)
   })
@@ -88,22 +104,22 @@ describe('migration', function () {
     await boss.send(queue)
 
     await contractor.rollback(currentSchemaVersion)
-    const oneVersionAgo = await contractor.version()
+    const oneVersionAgo = await contractor.schemaVersion()
 
     assert.notStrictEqual(oneVersionAgo, currentSchemaVersion)
 
     await contractor.rollback(oneVersionAgo)
-    const twoVersionsAgo = await contractor.version()
+    const twoVersionsAgo = await contractor.schemaVersion()
 
     assert.notStrictEqual(twoVersionsAgo, oneVersionAgo)
 
     await contractor.next(twoVersionsAgo)
-    const oneVersionAgoPart2 = await contractor.version()
+    const oneVersionAgoPart2 = await contractor.schemaVersion()
 
     assert.strictEqual(oneVersionAgo, oneVersionAgoPart2)
 
     await contractor.next(oneVersionAgo)
-    const version = await contractor.version()
+    const version = await contractor.schemaVersion()
 
     assert.strictEqual(version, currentSchemaVersion)
 
@@ -118,18 +134,18 @@ describe('migration', function () {
     await contractor.create()
 
     await contractor.rollback(currentSchemaVersion)
-    const oneVersionAgo = await contractor.version()
+    const oneVersionAgo = await contractor.schemaVersion()
     assert.strictEqual(oneVersionAgo, currentSchemaVersion - 1)
 
     await contractor.rollback(oneVersionAgo)
-    const twoVersionsAgo = await contractor.version()
+    const twoVersionsAgo = await contractor.schemaVersion()
     assert.strictEqual(twoVersionsAgo, currentSchemaVersion - 2)
 
     const config = { ...this.test.bossConfig }
     const boss = this.test.boss = new PgBoss(config)
     await boss.start()
 
-    const version = await contractor.version()
+    const version = await contractor.schemaVersion()
 
     assert.strictEqual(version, currentSchemaVersion)
   })
@@ -146,7 +162,7 @@ describe('migration', function () {
     }
   })
 
-  it.skip('should roll back an error during a migration', async function () {
+  it('should roll back an error during a migration', async function () {
     const { contractor } = this.test
 
     const config = { ...this.test.bossConfig }
@@ -158,7 +174,7 @@ describe('migration', function () {
 
     await contractor.create()
     await contractor.rollback(currentSchemaVersion)
-    const oneVersionAgo = await contractor.version()
+    const oneVersionAgo = await contractor.schemaVersion()
 
     const boss1 = new PgBoss(config)
 
@@ -170,7 +186,7 @@ describe('migration', function () {
       await boss1.stop({ graceful: false, wait: false })
     }
 
-    const version1 = await contractor.version()
+    const version1 = await contractor.schemaVersion()
 
     assert.strictEqual(version1, oneVersionAgo)
 
@@ -181,7 +197,7 @@ describe('migration', function () {
 
     await boss2.start()
 
-    const version2 = await contractor.version()
+    const version2 = await contractor.schemaVersion()
 
     assert.strictEqual(version2, currentSchemaVersion)
 
@@ -199,7 +215,7 @@ describe('migration', function () {
     }
   })
 
-  it.skip('should not migrate if migrate option is false', async function () {
+  it('should not migrate if migrate option is false', async function () {
     const { contractor } = this.test
 
     await contractor.create()

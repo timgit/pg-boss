@@ -1,4 +1,4 @@
-const assert = require('assert')
+const assert = require('node:assert')
 const plans = require('./plans')
 const { DEFAULT_SCHEMA } = plans
 const migrationStore = require('./migrationStore')
@@ -46,8 +46,7 @@ class Contractor {
       const version = await this.schemaVersion()
 
       if (schemaVersion > version) {
-        throw new Error('Migrations are not supported to v10')
-        // await this.migrate(version)
+        await this.migrate(version)
       }
     } else {
       await this.create()
@@ -86,15 +85,15 @@ class Contractor {
     }
   }
 
-  // async next (version) {
-  //   const commands = migrationStore.next(this.config.schema, version, this.migrations)
-  //   await this.db.executeSql(commands)
-  // }
+  async next (version) {
+    const commands = migrationStore.next(this.config.schema, version, this.migrations)
+    await this.db.executeSql(commands)
+  }
 
-  // async rollback (version) {
-  //   const commands = migrationStore.rollback(this.config.schema, version, this.migrations)
-  //   await this.db.executeSql(commands)
-  // }
+  async rollback (version) {
+    const commands = migrationStore.rollback(this.config.schema, version, this.migrations)
+    await this.db.executeSql(commands)
+  }
 }
 
 module.exports = Contractor

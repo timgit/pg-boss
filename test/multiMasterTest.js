@@ -1,4 +1,4 @@
-const assert = require('assert')
+const assert = require('node:assert')
 const helper = require('./testHelper')
 const PgBoss = require('../')
 const Contractor = require('../src/contractor')
@@ -39,7 +39,7 @@ describe('multi-master', function () {
 
     await contractor.rollback(currentSchemaVersion)
 
-    const oldVersion = await contractor.version()
+    const oldVersion = await contractor.schemaVersion()
 
     assert.notStrictEqual(oldVersion, currentSchemaVersion)
 

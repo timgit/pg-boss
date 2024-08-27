@@ -1,4 +1,4 @@
-const EventEmitter = require('events')
+const EventEmitter = require('node:events')
 const plans = require('./plans')
 const cronParser = require('cron-parser')
 const Attorney = require('./attorney')

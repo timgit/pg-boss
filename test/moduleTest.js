@@ -1,4 +1,4 @@
-const assert = require('assert')
+const assert = require('node:assert')
 
 describe('module', function () {
   it('should export states object', function () {
