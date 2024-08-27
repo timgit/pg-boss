@@ -1,4 +1,4 @@
-const assert = require('assert')
+const assert = require('node:assert')
 const helper = require('./testHelper')
 const { delay } = require('../src/tools')
 const { JOB_STATES } = require('../src/plans')

@@ -65,7 +65,7 @@ module.exports = {
   DEFAULT_SCHEMA
 }
 
-const assert = require('assert')
+const assert = require('node:assert')
 
 function create (schema, version) {
   const commands = [

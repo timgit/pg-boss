@@ -1,4 +1,4 @@
-const assert = require('assert')
+const assert = require('node:assert')
 const PgBoss = require('../')
 
 describe('database', function () {

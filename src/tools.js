@@ -3,7 +3,7 @@ module.exports = {
 }
 
 function delay (ms, error) {
-  const { setTimeout } = require('timers/promises')
+  const { setTimeout } = require('node:timers/promises')
   const ac = new AbortController()
 
   const promise = new Promise((resolve, reject) => {

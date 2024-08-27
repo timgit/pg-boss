@@ -1,4 +1,4 @@
-const assert = require('assert')
+const assert = require('node:assert')
 const PgBoss = require('../')
 const helper = require('./testHelper')
 const Contractor = require('../src/contractor')

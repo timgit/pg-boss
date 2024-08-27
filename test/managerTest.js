@@ -1,5 +1,5 @@
 const { delay } = require('../src/tools')
-const assert = require('assert')
+const assert = require('node:assert')
 const helper = require('./testHelper')
 
 describe('manager', function () {

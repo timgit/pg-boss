@@ -1,4 +1,4 @@
-const assert = require('assert')
+const assert = require('node:assert')
 const plans = require('./plans')
 const { DEFAULT_SCHEMA } = plans
 const migrationStore = require('./migrationStore')
