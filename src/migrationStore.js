@@ -64,5 +64,16 @@ function migrate (value, version, migrations) {
 
 function getAll (schema) {
   return [
+    {
+      release: '10.0.6',
+      version: 22,
+      previous: 21,
+      install: [
+        `ALTER TABLE ${schema}.job ALTER COLUMN retry_limit SET DEFAULT 2`
+      ],
+      uninstall: [
+        `ALTER TABLE ${schema}.job ALTER COLUMN retry_limit SET DEFAULT 0`
+      ]
+    }
   ]
 }

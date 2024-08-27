@@ -179,7 +179,7 @@ function createTableJob (schema) {
       priority integer not null default(0),
       data jsonb,
       state ${schema}.job_state not null default('${JOB_STATES.created}'),
-      retry_limit integer not null default(0),
+      retry_limit integer not null default(2),
       retry_count integer not null default(0),
       retry_delay integer not null default(0),
       retry_backoff boolean not null default false,

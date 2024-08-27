@@ -39,7 +39,7 @@ describe('multi-master', function () {
 
     await contractor.rollback(currentSchemaVersion)
 
-    const oldVersion = await contractor.version()
+    const oldVersion = await contractor.schemaVersion()
 
     assert.notStrictEqual(oldVersion, currentSchemaVersion)
 
