@@ -226,8 +226,10 @@ function createQueueFunction (schema) {
     $$
     DECLARE
       table_name varchar := 'j' || encode(sha224(queue_name::bytea), 'hex');
+      queue_created_on timestamptz;
     BEGIN
 
+      WITH q as (
       INSERT INTO ${schema}.queue (
         name,
         policy,
@@ -249,7 +251,15 @@ function createQueueFunction (schema) {
         (options->>'retentionMinutes')::int,
         options->>'deadLetter',
         table_name
-      );
+      )
+      ON CONFLICT DO NOTHING
+      RETURNING created_on
+      )
+      SELECT created_on into queue_created_on from q;
+
+      IF queue_created_on IS NULL THEN
+        RETURN;
+      END IF;
 
       EXECUTE format('CREATE TABLE ${schema}.%I (LIKE ${schema}.job INCLUDING DEFAULTS)', table_name);
       

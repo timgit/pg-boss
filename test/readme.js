@@ -11,7 +11,6 @@ async function readme () {
 
   const queue = 'readme-queue'
 
-  await boss.deleteQueue(queue)
   await boss.createQueue(queue)
 
   const id = await boss.send(queue, { arg1: 'read me' })
@@ -27,3 +26,7 @@ async function readme () {
 }
 
 readme()
+  .catch(err => {
+    console.log(err)
+    process.exit(1)
+  })
