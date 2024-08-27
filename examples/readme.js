@@ -1,5 +1,4 @@
-const helper = require('./testHelper')
-const { delay } = require('../src/tools')
+const helper = require('../test/testHelper')
 
 async function readme () {
   const PgBoss = require('../src')
@@ -20,9 +19,6 @@ async function readme () {
   await boss.work(queue, async ([job]) => {
     console.log(`received job ${job.id} with data ${JSON.stringify(job.data)}`)
   })
-
-  await delay(2000)
-  await boss.stop()
 }
 
 readme()
