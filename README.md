@@ -25,6 +25,12 @@ async function readme() {
     console.log(`received job ${job.id} with data ${JSON.stringify(job.data)}`)
   })
 }
+
+readme()
+  .catch(err => {
+    console.log(err)
+    process.exit(1)
+  })
 ```
 
 pg-boss is a job queue built in Node.js on top of PostgreSQL in order to provide background processing and reliable asynchronous execution to Node.js applications.
