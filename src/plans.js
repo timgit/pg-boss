@@ -499,7 +499,7 @@ function fetchNextJob (schema) {
       WHERE name = $1
         AND state < '${JOB_STATES.active}'
         AND start_after < now()
-      ORDER BY ${priority && 'priority desc, '} created_on, id
+      ORDER BY ${priority ? 'priority desc, ' : ''}created_on, id
       LIMIT $2
       FOR UPDATE SKIP LOCKED
     )
