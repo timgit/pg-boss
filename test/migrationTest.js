@@ -82,7 +82,7 @@ describe('migration', function () {
     assert.strictEqual(version, currentSchemaVersion)
   })
 
-  it.skip('should migrate through 2 versions back and forth', async function () {
+  it('should migrate through 2 versions back and forth', async function () {
     const { contractor } = this.test
 
     const queue = 'migrate-back-2-and-forward'
@@ -96,6 +96,7 @@ describe('migration', function () {
     // creating jobs in 3 states to have data to migrate back and forth
 
     // completed job
+    await boss.createQueue(queue)
     await boss.send(queue)
     const [job] = await boss.fetch(queue)
     await boss.complete(queue, job.id)
@@ -128,7 +129,7 @@ describe('migration', function () {
     await boss.complete(queue, job2.id)
   })
 
-  it.skip('should migrate to latest during start if on previous 2 schema versions', async function () {
+  it('should migrate to latest during start if on previous 2 schema versions', async function () {
     const { contractor } = this.test
 
     await contractor.create()
