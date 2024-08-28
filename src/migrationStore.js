@@ -65,6 +65,17 @@ function migrate (value, version, migrations) {
 function getAll (schema) {
   return [
     {
+      release: '10.1.1',
+      version: 23,
+      previous: 22,
+      install: [
+        `ALTER TABLE ${schema}.job ADD PRIMARY KEY (name, id)`
+      ],
+      uninstall: [
+        `ALTER TABLE ${schema}.job DROP CONSTRAINT job_pkey`
+      ]
+    },
+    {
       release: '10.0.6',
       version: 22,
       previous: 21,

@@ -78,6 +78,7 @@ function create (schema, version) {
     createTableSubscription(schema),
 
     createTableJob(schema),
+    createPrimaryKeyJob(schema),
 
     createTableArchive(schema),
     createPrimaryKeyArchive(schema),

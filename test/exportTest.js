@@ -22,7 +22,7 @@ describe('export', function () {
     }
   })
 
-  it.skip('should export commands to migrate', function () {
+  it('should export commands to migrate', function () {
     const schema = 'custom'
     const plans = PgBoss.getMigrationPlans(schema, currentSchemaVersion - 1)
 
@@ -40,7 +40,7 @@ describe('export', function () {
     }
   })
 
-  it.skip('should export commands to roll back', function () {
+  it('should export commands to roll back', function () {
     const schema = 'custom'
     const plans = PgBoss.getRollbackPlans(schema, currentSchemaVersion)
 
