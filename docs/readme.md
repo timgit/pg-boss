@@ -138,7 +138,7 @@ CREATE TABLE pgboss.job (
   priority integer not null default(0),
   data jsonb,
   state pgboss.job_state not null default('created'),
-  retry_limit integer not null default(0),
+  retry_limit integer not null default(2),
   retry_count integer not null default(0),
   retry_delay integer not null default(0),
   retry_backoff boolean not null default false,
