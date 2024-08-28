@@ -728,6 +728,7 @@ function insertJobs (schema) {
       priority,
       start_after,
       singleton_key,
+      singleton_on,
       dead_letter,
       expire_in,
       keep_until,
@@ -743,6 +744,10 @@ function insertJobs (schema) {
       COALESCE(priority, 0) as priority,
       j.start_after,
       "singletonKey" as singleton_key,
+      CASE
+        WHEN "singletonSeconds" IS NOT NULL THEN 'epoch'::timestamp + '1 second'::interval * ("singletonSeconds" * floor( date_part('epoch', now()) / "singletonSeconds" ))
+        ELSE NULL
+        END as singleton_on,
       COALESCE("deadLetter", q.dead_letter) as dead_letter,
       CASE
         WHEN "expireInSeconds" IS NOT NULL THEN "expireInSeconds" *  interval '1s'
@@ -778,7 +783,7 @@ function insertJobs (schema) {
         "retryDelay" integer,
         "retryBackoff" boolean,
         "singletonKey" text,
-        "singletonOn" text,
+        "singletonSeconds" integer,
         "expireInSeconds" integer,
         "keepUntil" timestamp with time zone,
         "deadLetter" text

@@ -60,7 +60,7 @@ class Timekeeper extends EventEmitter {
       batchSize: 50
     }
 
-    await this.manager.work(QUEUES.SEND_IT, options, (jobs) => this.manager.insert(jobs.map(i => i.data)))
+    await this.manager.work(QUEUES.SEND_IT, options, async (jobs) => { await this.manager.insert(jobs.map(i => i.data)) })
 
     setImmediate(() => this.onCron())
 

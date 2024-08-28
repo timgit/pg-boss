@@ -408,7 +408,9 @@ class Manager extends EventEmitter {
       this.config.retryBackoff // 6
     ]
 
-    return await db.executeSql(this.insertJobsCommand, params)
+    const { rows } = await db.executeSql(this.insertJobsCommand, params)
+
+    return (rows.length) ? rows.map(i => i.id) : null
   }
 
   getDebounceStartAfter (singletonSeconds, clockOffset) {
