@@ -159,10 +159,10 @@ CREATE TABLE pgboss.job (
 
 # Events
 
-The pg-boss class inherits from EventEmitter.
+Each pg-boss instance is an EventEmitter, and contains the following events.
 
 ## `error`
-The error event is raised from any errors that may occur during internal processing, such as scheduling and maintenance. While not required, adding a listener to the error event is strongly encouraged:
+The `error` event could be raised during internal processing, such as scheduling and maintenance. Adding a listener to the error event is strongly encouraged because of the default behavior of Node.
 
 > If an EventEmitter does not have at least one listener registered for the 'error' event, and an 'error' event is emitted, the error is thrown, a stack trace is printed, and the Node.js process exits.
 >
@@ -213,7 +213,7 @@ The payload of the event is an object with a key per queue and state, such as th
 ```
 ## `wip`
 
-Emitted at most once every 2 seconds when workers are active and jobs are entering or leaving active state. The payload is an array that represents each worker in this instance of pg-boss.  If you want to monitor queue activity across all instances, use `monitor-states`.
+Emitted at most once every 2 seconds when workers are receiving jobs. The payload is an array that represents each worker in this instance of pg-boss.  If you'd rather monitor activity across all instances, use `monitor-states`.
 
 ```js
 [
@@ -474,6 +474,10 @@ Creates a new job and returns the job id.
 * **priority**, int
 
     optional priority.  Higher numbers have, um, higher priority
+  
+* **id**, uuid
+
+    optional id.  If not set, a uuid will automatically created
 
 **Retry options**
 
