@@ -10,8 +10,8 @@ on:
   push:
     branches:
       - "gh-pages-docs"
-  path:
-    - "docs/**"  
+    path:
+      - "docs/**"  
 
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
