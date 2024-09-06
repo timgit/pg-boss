@@ -1,5 +1,6 @@
 const helper = require('../../test/testHelper')
 const { delay } = require('../../src/tools')
+const PgBoss = require('../../src')
 
 const SCHEMA_COUNT = 60
 const QUEUE_COUNT = 200
@@ -11,33 +12,37 @@ loadTest()
   })
 
 async function loadTest () {
-  const PgBoss = require('../../src')
   
+  const schemas = new Array(SCHEMA_COUNT).fill(null).map((_, index) => `schema${index}`)
+
+  for (const schema of schemas){
+    setImmediate(() => init(schema))
+  }
+  
+}
+
+async function init(schema) {
   const config = helper.getConfig()
-  const boss = new PgBoss({ ...config, supervise: true, max: 100 })
+  const boss = new PgBoss({ ...config, schema, supervise: true })
 
   boss.on('error', console.error)
 
   await boss.start()
 
-  const queueCount = 200
-
   console.log('creating queues')
 
-  const queues = new Array(queueCount).fill(null).map((_, index) => `queue${index}`)
+  const queues = new Array(QUEUE_COUNT).fill(null).map((_, index) => `queue${index}`)
 
-  //await Promise.all(queues.map(async queue => {
-    for (const queue of queues){
-    console.log(`creating queue ${queue}`)
-    await boss.createQueue(queue)
-    await boss.work(queue, () => {})
-}
-  //}))
+  for (const queue of queues){
+      console.log(`creating queue ${schema}.${queue}`)
+      await boss.createQueue(queue)
+      await boss.work(queue, () => {})
+  }
 
   console.log('created queues')
 
   while (true) {
-    console.log(`sending a job to each one: ${new Date()}`)
+    console.log(`${schema}: sending a job to each one: ${new Date()}`)
 
     await Promise.all(queues.map(async queue => {
       await boss.send(queue)
@@ -46,8 +51,4 @@ async function loadTest () {
 
     await delay(1000)
   }
-}
-
-function init(schema) {
-  
 }
