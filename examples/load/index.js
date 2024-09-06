@@ -1,4 +1,5 @@
 const helper = require('../../test/testHelper')
+const { delay } = require('../../src/tools')
 
 loadTest()
   .catch(err => {
@@ -15,7 +16,7 @@ async function loadTest () {
 
   await boss.start()
 
-  const queueCount = 1000
+  const queueCount = 200
 
   console.log('creating queues')
 
@@ -24,6 +25,7 @@ async function loadTest () {
   await Promise.all(queues.map(async queue => {
     console.log(`creating queue ${queue}`)
     await boss.createQueue(queue)
+    await boss.work(queue, () => {})
   }))
 
   console.log('created queues')
@@ -35,5 +37,7 @@ async function loadTest () {
       await boss.send(queue)
       await boss.fetch(queue)
     }))
+
+    await delay(1000)
   }
 }
