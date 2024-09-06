@@ -1,6 +1,9 @@
 const helper = require('../../test/testHelper')
 const { delay } = require('../../src/tools')
 
+const SCHEMA_COUNT = 60
+const QUEUE_COUNT = 200
+
 loadTest()
   .catch(err => {
     console.log(err)
@@ -9,6 +12,7 @@ loadTest()
 
 async function loadTest () {
   const PgBoss = require('../../src')
+  
   const config = helper.getConfig()
   const boss = new PgBoss({ ...config, supervise: true, max: 100 })
 
@@ -22,11 +26,13 @@ async function loadTest () {
 
   const queues = new Array(queueCount).fill(null).map((_, index) => `queue${index}`)
 
-  await Promise.all(queues.map(async queue => {
+  //await Promise.all(queues.map(async queue => {
+    for (const queue of queues){
     console.log(`creating queue ${queue}`)
     await boss.createQueue(queue)
     await boss.work(queue, () => {})
-  }))
+}
+  //}))
 
   console.log('created queues')
 
@@ -40,4 +46,8 @@ async function loadTest () {
 
     await delay(1000)
   }
+}
+
+function init(schema) {
+  
 }
