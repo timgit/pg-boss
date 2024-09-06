@@ -21,7 +21,7 @@ class Boss extends EventEmitter {
 
     this.events = events
 
-    this.failJobsByTimeoutCommand = plans.locked(config.schema, plans.failJobsByTimeout(config.schema))
+    this.failJobsByTimeoutCommand = plans.locked(config.schema, plans.failJobsByTimeoutFn(config.schema)({ table: 'job' }))
     this.archiveCommand = plans.locked(config.schema, plans.archive(config.schema, config.archiveInterval, config.archiveFailedInterval))
     this.dropCommand = plans.locked(config.schema, plans.drop(config.schema, config.deleteAfter))
     this.trySetMaintenanceTimeCommand = plans.trySetMaintenanceTime(config.schema)

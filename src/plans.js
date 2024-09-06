@@ -24,14 +24,14 @@ module.exports = {
   getVersion,
   setVersion,
   versionTableExists,
-  fetchNextJob,
-  completeJobs,
-  cancelJobs,
-  resumeJobs,
-  deleteJobs,
-  failJobsById,
-  failJobsByTimeout,
-  insertJob,
+  fetchNextJobFn,
+  completeJobsFn,
+  cancelJobsFn,
+  resumeJobsFn,
+  deleteJobsFn,
+  failJobsByIdFn,
+  failJobsByTimeoutFn,
+  insertJobFn,
   insertJobs,
   getTime,
   getSchedules,
@@ -56,8 +56,8 @@ module.exports = {
   trySetCronTime,
   locked,
   assertMigration,
-  getArchivedJobById,
   getJobById,
+  getArchivedJobById,
   QUEUE_POLICIES,
   JOB_STATES,
   MIGRATE_RACE_MESSAGE,
@@ -409,6 +409,7 @@ function getQueues (schema) {
       expire_seconds as "expireInSeconds",
       retention_minutes as "retentionMinutes",
       dead_letter as "deadLetter",
+      partition_name as "partitionName",
       created_on as "createdOn",
       updated_on as "updatedOn"
     FROM ${schema}.queue
@@ -430,6 +431,7 @@ function clearStorage (schema) {
 function getQueueSize (schema, options = {}) {
   options.before = options.before || JOB_STATES.active
   assert(options.before in JOB_STATES, `${options.before} is not a valid state`)
+
   return `SELECT count(*) as count FROM ${schema}.job WHERE name = $1 AND state < '${options.before}'`
 }
 
@@ -502,32 +504,32 @@ function insertVersion (schema, version) {
   return `INSERT INTO ${schema}.version(version) VALUES ('${version}')`
 }
 
-function fetchNextJob (schema) {
-  return ({ includeMetadata, priority = true } = {}) => `
+function fetchNextJobFn (schema) {
+  return ({ includeMetadata, priority = true, table, name, limit }) => `
     WITH next as (
       SELECT id
-      FROM ${schema}.job
-      WHERE name = $1
+      FROM ${schema}.${table}
+      WHERE name = '${name}'
         AND state < '${JOB_STATES.active}'
         AND start_after < now()
       ORDER BY ${priority ? 'priority desc, ' : ''}created_on, id
-      LIMIT $2
+      LIMIT ${limit}
       FOR UPDATE SKIP LOCKED
     )
-    UPDATE ${schema}.job j SET
+    UPDATE ${schema}.${table} j SET
       state = '${JOB_STATES.active}',
       started_on = now(),
       retry_count = CASE WHEN started_on IS NOT NULL THEN retry_count + 1 ELSE retry_count END
     FROM next
-    WHERE name = $1 AND j.id = next.id
+    WHERE name = '${name}' AND j.id = next.id
     RETURNING j.${includeMetadata ? allJobColumns : baseJobColumns}      
   `
 }
 
-function completeJobs (schema) {
-  return `
+function completeJobsFn (schema) {
+  return ({ table }) => `
     WITH results AS (
-      UPDATE ${schema}.job
+      UPDATE ${schema}.${table}
       SET completed_on = now(),
         state = '${JOB_STATES.completed}',
         output = $3::jsonb
@@ -540,23 +542,24 @@ function completeJobs (schema) {
   `
 }
 
-function failJobsById (schema) {
+function failJobsByIdFn (schema) {
   const where = `name = $1 AND id IN (SELECT UNNEST($2::uuid[])) AND state < '${JOB_STATES.completed}'`
   const output = '$3::jsonb'
 
-  return failJobs(schema, where, output)
+  return failJobsFn(schema, where, output)
 }
 
-function failJobsByTimeout (schema) {
+function failJobsByTimeoutFn (schema) {
   const where = `state = '${JOB_STATES.active}' AND (started_on + expire_in) < now()`
   const output = '\'{ "value": { "message": "job failed by timeout in active state" } }\'::jsonb'
-  return failJobs(schema, where, output)
+
+  return failJobsFn(schema, where, output)
 }
 
-function failJobs (schema, where, output) {
-  return `
+function failJobsFn (schema, where, output) {
+  return ({ table }) => `
     WITH results AS (
-      UPDATE ${schema}.job SET
+      UPDATE ${schema}.${table} SET
         state = CASE
           WHEN retry_count < retry_limit THEN '${JOB_STATES.retry}'::${schema}.job_state
           ELSE '${JOB_STATES.failed}'::${schema}.job_state
@@ -593,10 +596,10 @@ function failJobs (schema, where, output) {
   `
 }
 
-function cancelJobs (schema) {
-  return `
+function cancelJobsFn (schema) {
+  return ({ table }) => `
     with results as (
-      UPDATE ${schema}.job
+      UPDATE ${schema}.${table}
       SET completed_on = now(),
         state = '${JOB_STATES.cancelled}'
       WHERE name = $1
@@ -608,10 +611,10 @@ function cancelJobs (schema) {
   `
 }
 
-function resumeJobs (schema) {
-  return `
+function resumeJobsFn (schema) {
+  return ({ table }) => `
     with results as (
-      UPDATE ${schema}.job
+      UPDATE ${schema}.${table}
       SET completed_on = NULL,
         state = '${JOB_STATES.created}'
       WHERE name = $1
@@ -623,10 +626,10 @@ function resumeJobs (schema) {
   `
 }
 
-function deleteJobs (schema) {
-  return `
+function deleteJobsFn (schema) {
+  return ({ table }) => `
     with results as (
-      DELETE FROM ${schema}.job
+      DELETE FROM ${schema}.${table}
       WHERE name = $1
         AND id IN (SELECT UNNEST($2::uuid[]))        
       RETURNING 1
@@ -635,9 +638,9 @@ function deleteJobs (schema) {
   `
 }
 
-function insertJob (schema) {
-  return `
-    INSERT INTO ${schema}.job (
+function insertJobFn (schema) {
+  return ({ table }) => `
+    INSERT INTO ${schema}.${table} (
       id,
       name,
       data,
@@ -855,14 +858,10 @@ function assertMigration (schema, version) {
   return `SELECT version::int/(version::int-${version}) from ${schema}.version`
 }
 
-function getJobById (schema) {
-  return getJobByTableQueueId(schema, 'job')
-}
-
 function getArchivedJobById (schema) {
-  return getJobByTableQueueId(schema, 'archive')
+  return getJobById(schema, 'archive')
 }
 
-function getJobByTableQueueId (schema, table) {
+function getJobById (schema, table) {
   return `SELECT ${allJobColumns} FROM ${schema}.${table} WHERE name = $1 AND id = $2`
 }

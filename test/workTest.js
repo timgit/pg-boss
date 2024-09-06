@@ -336,7 +336,7 @@ describe('work', function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
     const queue = this.test.bossConfig.schema
 
-    boss.stop({ wait: true })
+    boss.stop({ wait: true, close: false })
 
     await boss.send(queue)
   })
