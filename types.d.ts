@@ -217,10 +217,6 @@ declare namespace PgBoss {
     failed: number;
   }
 
-  interface MonitorStates extends MonitorState {
-    queues: { [queueName: string]: MonitorState };
-  }
-
   interface Worker {
     id: string,
     name: string,

@@ -4,8 +4,6 @@ const { DateTime } = require('luxon')
 const helper = require('./testHelper')
 const PgBoss = require('../')
 
-const ASSERT_DELAY = 3000
-
 describe('schedule', function () {
   it('should send job based on every minute expression', async function () {
     const config = {
@@ -42,7 +40,7 @@ describe('schedule', function () {
 
     await boss.schedule(queue, '* * * * *')
 
-    await delay(ASSERT_DELAY)
+    await delay(4000)
 
     const [job] = await boss.fetch(queue)
 
@@ -62,21 +60,17 @@ describe('schedule', function () {
   })
 
   it('should send job based on every minute expression after a restart', async function () {
-    let boss = await helper.start({ ...this.test.bossConfig, schedule: false, noDefault: true })
+    let boss = await helper.start({ ...this.test.bossConfig, schedule: false })
 
     const queue = this.test.bossConfig.schema
 
-    await boss.createQueue(queue)
-
     await boss.schedule(queue, '* * * * *')
-
-    await delay(ASSERT_DELAY)
 
     await boss.stop({ graceful: false })
 
-    boss = await helper.start({ ...this.test.bossConfig, cronWorkerIntervalSeconds: 1, schedule: true, noDefault: true })
+    boss = await helper.start({ ...this.test.bossConfig, cronWorkerIntervalSeconds: 1, schedule: true })
 
-    await delay(ASSERT_DELAY)
+    await delay(4000)
 
     const [job] = await boss.fetch(queue)
 
@@ -97,7 +91,7 @@ describe('schedule', function () {
     await boss.schedule(queue, '* * * * *')
     await boss.unschedule(queue)
 
-    await delay(ASSERT_DELAY)
+    await delay(4000)
 
     const scheduled = await boss.getSchedules()
 
@@ -173,7 +167,7 @@ describe('schedule', function () {
 
     await boss.schedule(queue, cron, null, { tz })
 
-    await delay(ASSERT_DELAY)
+    await delay(6000)
 
     const [job] = await boss.fetch(queue)
 
