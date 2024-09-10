@@ -304,6 +304,7 @@ class Manager extends EventEmitter {
   }
 
   async send (...args) {
+    // this.config should be dropped in favor of using queue props
     const { name, data, options } = Attorney.checkSendArgs(args, this.config)
 
     return await this.createJob(name, data, options)
@@ -604,11 +605,12 @@ class Manager extends EventEmitter {
   async updateQueue (name, options = {}) {
     Attorney.assertQueueName(name)
 
-    const { policy = QUEUE_POLICIES.standard } = options
+    if('policy' in options) {
+      const { policy = QUEUE_POLICIES.standard } = options
+      assert(policy in QUEUE_POLICIES, `${policy} is not a valid queue policy`)
+    }
 
-    assert(policy in QUEUE_POLICIES, `${policy} is not a valid queue policy`)
-
-    //
+    // todo: only use props that were assigned
     const {
       retryLimit,
       retryDelay,
@@ -617,6 +619,8 @@ class Manager extends EventEmitter {
       retentionMinutes,
       deadLetter
     } = Attorney.checkQueueArgs(options)
+
+
 
     if (deadLetter) {
       Attorney.assertQueueName(deadLetter)

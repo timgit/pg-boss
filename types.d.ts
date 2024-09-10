@@ -111,6 +111,19 @@ declare namespace PgBoss {
     deadLetter?: string
   } & RetryOptions & ExpirationOptions & RetentionOptions
 
+  
+  // expireInSeconds
+  // retentionMinutes
+  // deadLetterTable
+  // availableCount
+  // activeCount
+  // totalCount
+  // table
+  // createdOn
+  // updatedOn
+
+
+
   type QueueResult = Queue & { createdOn: Date, updatedOn: Date }
   type ScheduleOptions = SendOptions & { tz?: string }
 
