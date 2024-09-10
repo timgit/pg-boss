@@ -6,7 +6,7 @@ class Db extends EventEmitter {
     super()
 
     config.application_name = config.application_name || 'pgboss'
-
+    config.maxUses = config.maxUses || 10000
     this.config = config
   }
 
