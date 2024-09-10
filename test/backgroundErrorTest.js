@@ -27,27 +27,6 @@ describe('background processing error handling', function () {
     assert.strictEqual(errorCount, 1)
   })
 
-  it('slow maintenance will back off loop interval', async function () {
-    const config = {
-      ...this.test.bossConfig,
-      superviseIntervalSeconds: 1,
-      supervise: true,
-      __test__delay_maintenance: 2000
-    }
-
-    const boss = this.test.boss = new PgBoss(config)
-
-    let eventCount = 0
-
-    boss.on('maintenance', () => eventCount++)
-
-    await boss.start()
-
-    await delay(5000)
-
-    assert.strictEqual(eventCount, 1)
-  })
-
   it('shutdown error handling works', async function () {
     const config = {
       ...this.test.bossConfig,

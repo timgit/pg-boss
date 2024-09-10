@@ -1,6 +1,5 @@
 const EventEmitter = require('node:events')
 const plans = require('./plans')
-const { delay } = require('./tools')
 
 const events = {
   error: 'error'
@@ -27,24 +26,11 @@ class Boss extends EventEmitter {
 
   async onSupervise () {
     try {
-      if (this.maintaining) {
-        return
-      }
+      if (this.stopped) return
+      if (this.maintaining) return
+      if (this.config.__test__throw_maint) throw new Error(this.config.__test__throw_maint)
 
       this.maintaining = true
-
-      if (this.config.__test__delay_maintenance && !this.stopped) {
-        this.__testDelayPromise = delay(this.config.__test__delay_maintenance)
-        await this.__testDelayPromise
-      }
-
-      if (this.config.__test__throw_maint) {
-        throw new Error(this.config.__test__throw_maint)
-      }
-
-      if (this.stopped) {
-        return
-      }
 
       await this.maintain()
     } catch (err) {
@@ -69,7 +55,6 @@ class Boss extends EventEmitter {
 
   async stop () {
     if (!this.stopped) {
-      if (this.__testDelayPromise) this.__testDelayPromise.abort()
       if (this.superviseInterval) clearInterval(this.superviseInterval)
       if (this.monitorInterval) clearInterval(this.monitorInterval)
 

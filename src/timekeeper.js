@@ -114,10 +114,13 @@ class Timekeeper extends EventEmitter {
       this.timekeeping = true
 
       const sql = plans.trySetCronTime(this.config.schema, this.config.cronMonitorIntervalSeconds)
-      const { rows } = await this.db.executeSql(sql)
 
-      if (rows.length === 1 && !this.stopped) {
-        await this.cron()
+      if (!this.stopped) {
+        const { rows } = await this.db.executeSql(sql)
+
+        if (!this.stopped && rows.length === 1) {
+          await this.cron()
+        }
       }
     } catch (err) {
       this.emit(this.events.error, err)
