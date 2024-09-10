@@ -129,10 +129,6 @@ class PgBoss extends EventEmitter {
       await this.#boss.supervise()
     }
 
-    if (this.#config.monitorStateIntervalSeconds) {
-      await this.#boss.monitor()
-    }
-
     if (this.#config.schedule) {
       await this.#timekeeper.start()
     }

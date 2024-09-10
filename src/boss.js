@@ -3,9 +3,7 @@ const plans = require('./plans')
 const { delay } = require('./tools')
 
 const events = {
-  error: 'error',
-  monitorStates: 'monitor-states',
-  maintenance: 'maintenance'
+  error: 'error'
 }
 
 class Boss extends EventEmitter {
@@ -15,67 +13,16 @@ class Boss extends EventEmitter {
     this.db = db
     this.config = config
     this.manager = config.manager
-
-    this.maintenanceIntervalSeconds = config.maintenanceIntervalSeconds
-    this.monitorStateIntervalSeconds = config.monitorStateIntervalSeconds
-
     this.events = events
 
-    this.failJobsByTimeoutCommand = plans.locked(config.schema, plans.failJobsByTimeoutFn(config.schema)({ table: 'job' }))
-    this.archiveCommand = plans.locked(config.schema, plans.archive(config.schema, config.archiveInterval, config.archiveFailedInterval))
-    this.dropCommand = plans.locked(config.schema, plans.drop(config.schema, config.deleteAfter))
-    this.trySetMaintenanceTimeCommand = plans.trySetMaintenanceTime(config.schema)
-    this.trySetMonitorTimeCommand = plans.trySetMonitorTime(config.schema)
-    this.countStatesCommand = plans.countStates(config.schema)
-
     this.functions = [
-      this.expire,
-      this.archive,
       this.drop,
-      this.countStates,
       this.maintain
     ]
   }
 
   async supervise () {
-    this.maintenanceInterval = setInterval(() => this.onSupervise(), this.maintenanceIntervalSeconds * 1000)
-  }
-
-  async monitor () {
-    this.monitorInterval = setInterval(() => this.onMonitor(), this.monitorStateIntervalSeconds * 1000)
-  }
-
-  async onMonitor () {
-    try {
-      if (this.monitoring) {
-        return
-      }
-
-      this.monitoring = true
-
-      if (this.config.__test__delay_monitor) {
-        await delay(this.config.__test__delay_monitor)
-      }
-
-      if (this.config.__test__throw_monitor) {
-        throw new Error(this.config.__test__throw_monitor)
-      }
-
-      if (this.stopped) {
-        return
-      }
-
-      const { rows } = await this.db.executeSql(this.trySetMonitorTimeCommand, [this.config.monitorStateIntervalSeconds])
-
-      if (rows.length === 1 && !this.stopped) {
-        const states = await this.countStates()
-        this.emit(events.monitorStates, states)
-      }
-    } catch (err) {
-      this.emit(events.error, err)
-    } finally {
-      this.monitoring = false
-    }
+    this.superviseInterval = setInterval(() => this.onSupervise(), this.config.superviseIntervalSeconds * 1000)
   }
 
   async onSupervise () {
@@ -99,12 +46,7 @@ class Boss extends EventEmitter {
         return
       }
 
-      const { rows } = await this.db.executeSql(this.trySetMaintenanceTimeCommand, [this.config.maintenanceIntervalSeconds])
-
-      if (rows.length === 1 && !this.stopped) {
-        const result = await this.maintain()
-        this.emit(events.maintenance, result)
-      }
+      await this.maintain()
     } catch (err) {
       this.emit(events.error, err)
     } finally {
@@ -112,64 +54,60 @@ class Boss extends EventEmitter {
     }
   }
 
-  async maintain () {
-    const started = Date.now()
+  async maintain (queue) {
+    const queues = await this.manager.getQueues(queue)
 
-    !this.stopped && await this.expire()
-    !this.stopped && await this.archive()
+    for (const queue of queues) {
+      !this.stopped && await this.monitor(queue.name, queue.table)
+      !this.stopped && await this.archive(queue.name, queue.table, queue.archive)
+
+      if (this.stopped) break
+    }
+
     !this.stopped && await this.drop()
-
-    const ended = Date.now()
-
-    return { ms: ended - started }
   }
 
   async stop () {
     if (!this.stopped) {
       if (this.__testDelayPromise) this.__testDelayPromise.abort()
-      if (this.maintenanceInterval) clearInterval(this.maintenanceInterval)
+      if (this.superviseInterval) clearInterval(this.superviseInterval)
       if (this.monitorInterval) clearInterval(this.monitorInterval)
 
       this.stopped = true
     }
   }
 
-  async countStates () {
-    const stateCountDefault = { ...plans.JOB_STATES }
+  async monitor (queue, table) {
+    const command = plans.trySetQueueMonitorTime(this.config.schema, queue, this.config.monitorIntervalSeconds)
+    const { rows } = await this.db.executeSql(command)
 
-    for (const key of Object.keys(stateCountDefault)) {
-      stateCountDefault[key] = 0
+    if (rows.length) {
+      const sql = plans.failJobsByTimeout(this.config.schema, table)
+      await this.db.executeSql(sql)
+
+      const cacheStatsSql = plans.cacheQueueStats(this.config.schema, queue, table)
+      await this.db.executeSql(cacheStatsSql)
     }
-
-    const counts = await this.db.executeSql(this.countStatesCommand)
-
-    const states = counts.rows.reduce((acc, item) => {
-      if (item.name) {
-        acc.queues[item.name] = acc.queues[item.name] || { ...stateCountDefault }
-      }
-
-      const queue = item.name ? acc.queues[item.name] : acc
-      const state = item.state || 'all'
-
-      // parsing int64 since pg returns it as string
-      queue[state] = parseFloat(item.size)
-
-      return acc
-    }, { ...stateCountDefault, queues: {} })
-
-    return states
   }
 
-  async expire () {
-    await this.db.executeSql(this.failJobsByTimeoutCommand)
-  }
+  async archive (queue, table, archive) {
+    const command = plans.trySetQueueArchiveTime(this.config.schema, queue, this.config.archiveIntervalSeconds)
+    const { rows } = await this.db.executeSql(command)
 
-  async archive () {
-    await this.db.executeSql(this.archiveCommand)
+    if (rows.length) {
+      const sql = plans.archive(this.config.schema, table, archive, this.config.archiveInterval, this.config.archiveFailedInterval)
+      await this.db.executeSql(sql)
+    }
   }
 
   async drop () {
-    await this.db.executeSql(this.dropCommand)
+    const command = plans.trySetMaintenanceTime(this.config.schema, this.config.maintenanceIntervalSeconds)
+    const { rows } = await this.db.executeSql(command)
+
+    if (rows.length) {
+      const sql = plans.drop(this.config.schema, this.config.deleteAfter)
+      await this.db.executeSql(sql)
+    }
   }
 }
 

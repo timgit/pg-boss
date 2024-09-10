@@ -6,7 +6,8 @@ const { JOB_STATES } = require('../src/plans')
 describe('archive', function () {
   const defaults = {
     archiveCompletedAfterSeconds: 1,
-    supervise: true
+    archiveIntervalSeconds: 1,
+    supervise: false
   }
 
   it('should archive a completed job', async function () {
@@ -23,7 +24,7 @@ describe('archive', function () {
 
     await delay(1000)
 
-    await boss.maintain()
+    await boss.maintain(queue)
 
     const archivedJob = await helper.getArchivedJobById(config.schema, queue, jobId)
 
@@ -45,7 +46,7 @@ describe('archive', function () {
 
     await delay(1000)
 
-    await boss.maintain()
+    await boss.maintain(queue)
 
     const archivedJob = await boss.getJobById(queue, jobId, { includeArchive: true })
 
@@ -62,7 +63,7 @@ describe('archive', function () {
 
     await delay(1000)
 
-    await boss.maintain()
+    await boss.maintain(queue)
 
     const archivedJob = await helper.getArchivedJobById(config.schema, queue, jobId)
 
@@ -79,7 +80,7 @@ describe('archive', function () {
 
     await delay(1000)
 
-    await boss.maintain()
+    await boss.maintain(queue)
 
     const archivedJob = await helper.getArchivedJobById(config.schema, queue, jobId)
 
@@ -99,7 +100,7 @@ describe('archive', function () {
 
     await delay(1000)
 
-    await boss.maintain()
+    await boss.maintain(queue)
 
     const archivedJob = await helper.getArchivedJobById(config.schema, queue, jobId)
 
@@ -118,7 +119,7 @@ describe('archive', function () {
 
     await delay(1000)
 
-    await boss.maintain()
+    await boss.maintain(queue)
 
     const archivedJob = await helper.getArchivedJobById(config.schema, queue, jobId)
 

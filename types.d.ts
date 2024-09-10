@@ -35,11 +35,6 @@ declare namespace PgBoss {
     db?: Db;
   }
 
-  interface QueueOptions {
-    monitorStateIntervalSeconds?: number;
-    monitorStateIntervalMinutes?: number;
-  }
-
   interface SchedulingOptions {
     schedule?: boolean;
 
@@ -56,16 +51,12 @@ declare namespace PgBoss {
     deleteAfterHours?: number;
     deleteAfterDays?: number;
 
-    maintenanceIntervalSeconds?: number;
-    maintenanceIntervalMinutes?: number;
-
     archiveCompletedAfterSeconds?: number;
     archiveFailedAfterSeconds?: number;
   }
 
   type ConstructorOptions =
     DatabaseOptions
-    & QueueOptions
     & SchedulingOptions
     & MaintenanceOptions
     & ExpirationOptions
@@ -114,7 +105,13 @@ declare namespace PgBoss {
 
   type QueuePolicy = 'standard' | 'short' | 'singleton' | 'stately'
 
-  type Queue = RetryOptions & ExpirationOptions & RetentionOptions & { name: string, policy?: QueuePolicy, deadLetter?: string }
+  type Queue = {
+    name: string,
+    policy?: QueuePolicy,
+    archive?: boolean,
+    deadLetter?: string
+  } & RetryOptions & ExpirationOptions & RetentionOptions
+
   type QueueResult = Queue & { createdOn: Date, updatedOn: Date }
   type ScheduleOptions = SendOptions & { tz?: string }
 
@@ -276,17 +273,8 @@ declare class PgBoss extends EventEmitter {
   on(event: "error", handler: (error: Error) => void): this;
   off(event: "error", handler: (error: Error) => void): this;
 
-  on(event: "maintenance", handler: () => void): this;
-  off(event: "maintenance", handler: () => void): this;
-
-  on(event: "monitor-states", handler: (monitorStates: PgBoss.MonitorStates) => void): this;
-  off(event: "monitor-states", handler: (monitorStates: PgBoss.MonitorStates) => void): this;
-
   on(event: "wip", handler: (data: PgBoss.Worker[]) => void): this;
   off(event: "wip", handler: (data: PgBoss.Worker[]) => void): this;
-
-  on(event: "stopped", handler: () => void): this;
-  off(event: "stopped", handler: () => void): this;
 
   start(): Promise<PgBoss>;
   stop(options?: PgBoss.StopOptions): Promise<void>;
@@ -305,8 +293,8 @@ declare class PgBoss extends EventEmitter {
   sendDebounced(name: string, data: object, options: PgBoss.SendOptions, seconds: number): Promise<string | null>;
   sendDebounced(name: string, data: object, options: PgBoss.SendOptions, seconds: number, key: string): Promise<string | null>;
 
-  insert(jobs: PgBoss.JobInsert[]): Promise<void>;
-  insert(jobs: PgBoss.JobInsert[], options: PgBoss.InsertOptions): Promise<void>;
+  insert(name: string, jobs: PgBoss.JobInsert[]): Promise<void>;
+  insert(name: string, jobs: PgBoss.JobInsert[], options: PgBoss.InsertOptions): Promise<void>;
 
   fetch<T>(name: string): Promise<PgBoss.Job<T>[]>;
   fetch<T>(name: string, options: PgBoss.FetchOptions & { includeMetadata: true }): Promise<PgBoss.JobWithMetadata<T>[]>;
@@ -354,11 +342,8 @@ declare class PgBoss extends EventEmitter {
   getQueue(name: string): Promise<PgBoss.QueueResult | null>;
   getQueueSize(name: string, options?: { before: 'retry' | 'active' | 'completed' | 'cancelled' | 'failed' }): Promise<number>;
 
-  clearStorage(): Promise<void>;
-  archive(): Promise<void>;
-  purge(): Promise<void>;
-  expire(): Promise<void>;
   maintain(): Promise<void>;
+  maintain(name: string): Promise<void>;
   isInstalled(): Promise<Boolean>;
   schemaVersion(): Promise<Number>;
 

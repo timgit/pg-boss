@@ -87,9 +87,9 @@ async function findArchivedJobs (schema, where, values) {
   return result
 }
 
-async function countJobs (schema, where, values) {
+async function countJobs (schema, table, where, values) {
   const db = await getDb()
-  const result = await db.executeSql(`select count(*) as count from ${schema}.job where ${where}`, values)
+  const result = await db.executeSql(`select count(*) as count from ${schema}.${table} where ${where}`, values)
   await db.close()
   return parseFloat(result.rows[0].count)
 }

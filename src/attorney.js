@@ -33,8 +33,12 @@ const WARNINGS = {
   }
 }
 
-function checkQueueArgs (name, options = {}) {
-  assert(!('deadLetter' in options) || (typeof options.deadLetter === 'string'), 'deadLetter must be a string')
+function checkQueueArgs (options = {}) {
+  assert(!('deadLetter' in options) || options.deadLetter === null || (typeof options.deadLetter === 'string'), 'deadLetter must be a string')
+  assert(!('deadLetter' in options) || options.deadLetter === null || /[\w-]/.test(options.deadLetter), 'deadLetter can only contain alphanumeric characters, underscores, or hyphens')
+
+  assert(!('archive' in options) || typeof options.archive === 'boolean', 'archive must be a boolean')
+  options.archive = ('archive' in options) ? options.archive : true
 
   applyRetryConfig(options)
   applyExpirationConfig(options)
@@ -302,10 +306,24 @@ function applyMaintenanceConfig (config) {
     ? config.maintenanceIntervalMinutes * 60
     : ('maintenanceIntervalSeconds' in config)
         ? config.maintenanceIntervalSeconds
-        : 120
+        : POLICY.MAX_EXPIRATION_HOURS
 
-  assert(config.maintenanceIntervalSeconds / 60 / 60 < POLICY.MAX_EXPIRATION_HOURS,
+  assert(config.maintenanceIntervalSeconds / 60 / 60 <= POLICY.MAX_EXPIRATION_HOURS,
     `configuration assert: maintenance interval cannot exceed ${POLICY.MAX_EXPIRATION_HOURS} hours`)
+
+  assert(!('monitorIntervalSeconds' in config) || config.monitorIntervalSeconds >= 1,
+    'configuration assert: monitorIntervalSeconds must be at least every second')
+
+  config.monitorIntervalSeconds = ('monitorIntervalSeconds' in config)
+    ? config.monitorIntervalSeconds
+    : 60
+
+  assert(!('archiveIntervalSeconds' in config) || config.archiveIntervalSeconds >= 1,
+    'configuration assert: archiveIntervalSeconds must be at least every second')
+
+  config.archiveIntervalSeconds = ('archiveIntervalSeconds' in config)
+    ? config.archiveIntervalSeconds
+    : 60 * 60
 }
 
 function applyDeleteConfig (config) {
@@ -335,27 +353,7 @@ function applyDeleteConfig (config) {
 }
 
 function applyMonitoringConfig (config) {
-  assert(!('monitorStateIntervalSeconds' in config) || config.monitorStateIntervalSeconds >= 1,
-    'configuration assert: monitorStateIntervalSeconds must be at least every second')
-
-  assert(!('monitorStateIntervalMinutes' in config) || config.monitorStateIntervalMinutes >= 1,
-    'configuration assert: monitorStateIntervalMinutes must be at least every minute')
-
-  config.monitorStateIntervalSeconds =
-    ('monitorStateIntervalMinutes' in config)
-      ? config.monitorStateIntervalMinutes * 60
-      : ('monitorStateIntervalSeconds' in config)
-          ? config.monitorStateIntervalSeconds
-          : null
-
-  if (config.monitorStateIntervalSeconds) {
-    assert(config.monitorStateIntervalSeconds / 60 / 60 < POLICY.MAX_EXPIRATION_HOURS,
-      `configuration assert: state monitoring interval cannot exceed ${POLICY.MAX_EXPIRATION_HOURS} hours`)
-  }
-
-  const TEN_MINUTES_IN_SECONDS = 600
-
-  assert(!('clockMonitorIntervalSeconds' in config) || (config.clockMonitorIntervalSeconds >= 1 && config.clockMonitorIntervalSeconds <= TEN_MINUTES_IN_SECONDS),
+  assert(!('clockMonitorIntervalSeconds' in config) || (config.clockMonitorIntervalSeconds >= 1 && config.clockMonitorIntervalSeconds <= 600),
     'configuration assert: clockMonitorIntervalSeconds must be between 1 second and 10 minutes')
 
   assert(!('clockMonitorIntervalMinutes' in config) || (config.clockMonitorIntervalMinutes >= 1 && config.clockMonitorIntervalMinutes <= 10),
@@ -366,7 +364,7 @@ function applyMonitoringConfig (config) {
       ? config.clockMonitorIntervalMinutes * 60
       : ('clockMonitorIntervalSeconds' in config)
           ? config.clockMonitorIntervalSeconds
-          : TEN_MINUTES_IN_SECONDS
+          : 600
 
   assert(!('cronMonitorIntervalSeconds' in config) || (config.cronMonitorIntervalSeconds >= 1 && config.cronMonitorIntervalSeconds <= 45),
     'configuration assert: cronMonitorIntervalSeconds must be between 1 and 45 seconds')

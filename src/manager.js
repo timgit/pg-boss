@@ -44,29 +44,6 @@ class Manager extends EventEmitter {
     this.workers = new Map()
     this.queues = null
 
-    this.nextJobFn = plans.fetchNextJobFn(config.schema)
-    this.insertJobFn = plans.insertJobFn(config.schema)
-    // allow with obsolete warning?
-    this.insertJobsCommand = plans.insertJobs(config.schema)
-    this.completeJobsFn = plans.completeJobsFn(config.schema)
-    this.cancelJobsFn = plans.cancelJobsFn(config.schema)
-    this.resumeJobsFn = plans.resumeJobsFn(config.schema)
-    this.deleteJobsFn = plans.deleteJobsFn(config.schema)
-    this.failJobsByIdFn = plans.failJobsByIdFn(config.schema)
-    this.getJobByIdFn = plans.getJobById
-
-    this.getArchivedJobByIdCommand = plans.getArchivedJobById(config.schema)
-    this.subscribeCommand = plans.subscribe(config.schema)
-    this.unsubscribeCommand = plans.unsubscribe(config.schema)
-    this.getQueuesCommand = plans.getQueues(config.schema)
-    this.getQueueByNameCommand = plans.getQueueByName(config.schema)
-    this.getQueuesForEventCommand = plans.getQueuesForEvent(config.schema)
-    this.createQueueCommand = plans.createQueue(config.schema)
-    this.updateQueueCommand = plans.updateQueue(config.schema)
-    this.purgeQueueCommand = plans.purgeQueue(config.schema)
-    this.deleteQueueCommand = plans.deleteQueue(config.schema)
-    this.clearStorageCommand = plans.clearStorage(config.schema)
-
     // exported api to index
     this.functions = [
       this.complete,
@@ -93,7 +70,6 @@ class Manager extends EventEmitter {
       this.getQueueSize,
       this.getQueue,
       this.getQueues,
-      this.clearStorage,
       this.getJobById
     ]
   }
@@ -308,21 +284,21 @@ class Manager extends EventEmitter {
   async subscribe (event, name) {
     assert(event, 'Missing required argument')
     assert(name, 'Missing required argument')
-
-    return await this.db.executeSql(this.subscribeCommand, [event, name])
+    const sql = plans.subscribe(this.config.schema)
+    return await this.db.executeSql(sql, [event, name])
   }
 
   async unsubscribe (event, name) {
     assert(event, 'Missing required argument')
     assert(name, 'Missing required argument')
-
-    return await this.db.executeSql(this.unsubscribeCommand, [event, name])
+    const sql = plans.unsubscribe(this.config.schema)
+    return await this.db.executeSql(sql, [event, name])
   }
 
   async publish (event, ...args) {
     assert(event, 'Missing required argument')
-
-    const { rows } = await this.db.executeSql(this.getQueuesForEventCommand, [event])
+    const sql = plans.getQueuesForEvent(this.config.schema)
+    const { rows } = await this.db.executeSql(sql, [event])
 
     await Promise.allSettled(rows.map(({ name }) => this.send(name, ...args)))
   }
@@ -409,9 +385,9 @@ class Manager extends EventEmitter {
 
     const db = wrapper || this.db
 
-    const queue = await this.getQueueCache(name)
+    const { table } = await this.getQueueCache(name)
 
-    const sql = this.insertJobFn({ table: queue.partitionName })
+    const sql = plans.insertJob(this.config.schema, table)
 
     const { rows } = await db.executeSql(sql, values)
 
@@ -434,11 +410,10 @@ class Manager extends EventEmitter {
     return await this.createJob(name, data, options, singletonOffset)
   }
 
-  // todo: new API to replace insert()
-  // async sendBatch (name, jobs, options = {})
-
-  async insert (jobs, options = {}) {
+  async insert (name, jobs, options = {}) {
     assert(Array.isArray(jobs), 'jobs argument should be an array')
+
+    const { table } = await this.getQueueCache(name)
 
     const db = options.db || this.db
 
@@ -451,7 +426,7 @@ class Manager extends EventEmitter {
       this.config.retryBackoff // 6
     ]
 
-    const sql = this.insertJobsCommand
+    const sql = plans.insertJobs(this.config.schema, table, name)
 
     const { rows } = await db.executeSql(sql, params)
 
@@ -477,11 +452,12 @@ class Manager extends EventEmitter {
 
   async fetch (name, options = {}) {
     Attorney.checkFetchArgs(name, options)
+
     const db = options.db || this.db
 
-    const queue = await this.getQueueCache(name)
+    const { table } = await this.getQueueCache(name)
 
-    const sql = this.nextJobFn({ ...options, table: queue.partitionName, name, limit: options.batchSize })
+    const sql = plans.fetchNextJob({ ...options, schema: this.config.schema, table, name, limit: options.batchSize })
 
     let result
 
@@ -528,8 +504,8 @@ class Manager extends EventEmitter {
     Attorney.assertQueueName(name)
     const db = options.db || this.db
     const ids = this.mapCompletionIdArg(id, 'complete')
-    const queue = await this.getQueueCache(name)
-    const sql = this.completeJobsFn({ table: queue.partitionName })
+    const { table } = await this.getQueueCache(name)
+    const sql = plans.completeJobs(this.config.schema, table)
     const result = await db.executeSql(sql, [name, ids, this.mapCompletionDataArg(data)])
     return this.mapCommandResponse(ids, result)
   }
@@ -538,8 +514,8 @@ class Manager extends EventEmitter {
     Attorney.assertQueueName(name)
     const db = options.db || this.db
     const ids = this.mapCompletionIdArg(id, 'fail')
-    const queue = await this.getQueueCache(name)
-    const sql = this.failJobsByIdFn({ table: queue.partitionName })
+    const { table } = await this.getQueueCache(name)
+    const sql = plans.failJobsById(this.config.schema, table)
     const result = await db.executeSql(sql, [name, ids, this.mapCompletionDataArg(data)])
     return this.mapCommandResponse(ids, result)
   }
@@ -548,8 +524,8 @@ class Manager extends EventEmitter {
     Attorney.assertQueueName(name)
     const db = options.db || this.db
     const ids = this.mapCompletionIdArg(id, 'cancel')
-    const queue = await this.getQueueCache(name)
-    const sql = this.cancelJobsFn({ table: queue.partitionName })
+    const { table } = await this.getQueueCache(name)
+    const sql = plans.cancelJobs(this.config.schema, table)
     const result = await db.executeSql(sql, [name, ids])
     return this.mapCommandResponse(ids, result)
   }
@@ -558,8 +534,8 @@ class Manager extends EventEmitter {
     Attorney.assertQueueName(name)
     const db = options.db || this.db
     const ids = this.mapCompletionIdArg(id, 'deleteJob')
-    const queue = await this.getQueueCache(name)
-    const sql = this.deleteJobsFn({ table: queue.partitionName })
+    const { table } = await this.getQueueCache(name)
+    const sql = plans.deleteJobs(this.config.schema, table)
     const result = await db.executeSql(sql, [name, ids])
     return this.mapCommandResponse(ids, result)
   }
@@ -568,8 +544,8 @@ class Manager extends EventEmitter {
     Attorney.assertQueueName(name)
     const db = options.db || this.db
     const ids = this.mapCompletionIdArg(id, 'resume')
-    const queue = await this.getQueueCache(name)
-    const sql = this.resumeJobsFn({ table: queue.partitionName })
+    const { table } = await this.getQueueCache(name)
+    const sql = plans.resumeJobs(this.config.schema, table)
     const result = await db.executeSql(sql, [name, ids])
     return this.mapCommandResponse(ids, result)
   }
@@ -589,8 +565,9 @@ class Manager extends EventEmitter {
       retryBackoff,
       expireInSeconds,
       retentionMinutes,
+      archive,
       deadLetter
-    } = Attorney.checkQueueArgs(name, options)
+    } = Attorney.checkQueueArgs(options)
 
     if (deadLetter) {
       Attorney.assertQueueName(deadLetter)
@@ -604,14 +581,24 @@ class Manager extends EventEmitter {
       retryBackoff,
       expireInSeconds,
       retentionMinutes,
+      archive,
       deadLetter
     }
 
-    await this.db.executeSql(this.createQueueCommand, [name, data])
+    const sql = plans.createQueue(this.config.schema)
+    await this.db.executeSql(sql, [name, data])
   }
 
-  async getQueues () {
-    const { rows } = await this.db.executeSql(this.getQueuesCommand)
+  async getQueues (names) {
+    if (names) {
+      names = Array.isArray(names) ? names : [names]
+      for (const name of names) {
+        Attorney.assertQueueName(name)
+      }
+    }
+
+    const sql = plans.getQueues(this.config.schema, names)
+    const { rows } = await this.db.executeSql(sql)
     return rows
   }
 
@@ -622,6 +609,7 @@ class Manager extends EventEmitter {
 
     assert(policy in QUEUE_POLICIES, `${policy} is not a valid queue policy`)
 
+    //
     const {
       retryLimit,
       retryDelay,
@@ -629,7 +617,7 @@ class Manager extends EventEmitter {
       expireInSeconds,
       retentionMinutes,
       deadLetter
-    } = Attorney.checkQueueArgs(name, options)
+    } = Attorney.checkQueueArgs(options)
 
     const params = [
       name,
@@ -642,13 +630,16 @@ class Manager extends EventEmitter {
       deadLetter
     ]
 
-    await this.db.executeSql(this.updateQueueCommand, params)
+    const sql = plans.updateQueue(this.config.schema, { deadLetter })
+
+    await this.db.executeSql(sql, params)
   }
 
   async getQueue (name) {
     Attorney.assertQueueName(name)
 
-    const { rows } = await this.db.executeSql(this.getQueueByNameCommand, [name])
+    const sql = plans.getQueueByName(this.config.schema)
+    const { rows } = await this.db.executeSql(sql, [name])
 
     return rows[0] || null
   }
@@ -656,26 +647,26 @@ class Manager extends EventEmitter {
   async deleteQueue (name) {
     Attorney.assertQueueName(name)
 
-    const { rows } = await this.db.executeSql(this.getQueueByNameCommand, [name])
-
-    if (rows.length === 1) {
-      await this.db.executeSql(this.deleteQueueCommand, [name])
-    }
+    try {
+      await this.getQueueCache(name)
+      const sql = plans.deleteQueue(this.config.schema)
+      await this.db.executeSql(sql, [name])
+    } catch {}
   }
 
   async purgeQueue (name) {
     Attorney.assertQueueName(name)
-    await this.db.executeSql(this.purgeQueueCommand, [name])
-  }
-
-  async clearStorage () {
-    await this.db.executeSql(this.clearStorageCommand)
+    const { table } = await this.getQueueCache(name)
+    const sql = plans.purgeQueue(this.config.schema, table)
+    await this.db.executeSql(sql, [name])
   }
 
   async getQueueSize (name, options) {
     Attorney.assertQueueName(name)
 
-    const sql = plans.getQueueSize(this.config.schema, options)
+    const { table } = await this.getQueueCache(name)
+
+    const sql = plans.getQueueSize(this.config.schema, table, options?.before)
 
     const result = await this.db.executeSql(sql, [name])
 
@@ -687,15 +678,16 @@ class Manager extends EventEmitter {
 
     const db = options.db || this.db
 
-    const queue = await this.getQueueCache(name)
-    const sql = this.getJobByIdFn(this.config.schema, queue.partitionName)
+    const { table } = await this.getQueueCache(name)
+
+    const sql = plans.getJobById(this.config.schema, table)
 
     const result1 = await db.executeSql(sql, [name, id])
 
     if (result1?.rows?.length === 1) {
       return result1.rows[0]
     } else if (options.includeArchive) {
-      const result2 = await db.executeSql(this.getArchivedJobByIdCommand, [name, id])
+      const result2 = await db.executeSql(plans.getArchivedJobById(this.config.schema), [name, id])
       return result2?.rows[0] || null
     } else {
       return null

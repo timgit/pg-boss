@@ -2,8 +2,14 @@ const assert = require('node:assert')
 const helper = require('./testHelper')
 
 describe('delete', async function () {
-  it('should delete an archived via maintenance', async function () {
-    const config = { ...this.test.bossConfig, deleteAfterSeconds: 1 }
+  it('should delete an archived job via maintenance', async function () {
+    const config = {
+      ...this.test.bossConfig,
+      maintenanceIntervalSeconds: 1,
+      archiveIntervalSeconds: 1,
+      deleteAfterSeconds: 1
+    }
+
     const boss = this.test.boss = await helper.start(config)
     const queue = this.test.bossConfig.schema
 

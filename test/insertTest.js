@@ -9,7 +9,7 @@ describe('insert', function () {
 
     const input = [{ name: queue }, { name: queue }, { name: queue }]
 
-    await boss.insert(input)
+    await boss.insert(queue, input)
 
     const count = await boss.getQueueSize(queue)
 
@@ -38,7 +38,7 @@ describe('insert', function () {
       deadLetter
     }
 
-    await boss.insert([input])
+    await boss.insert(queue, [input])
 
     const job = await boss.getJobById(queue, input.id)
 
@@ -88,7 +88,7 @@ describe('insert', function () {
       }
     }
 
-    await boss.insert([input], options)
+    await boss.insert(queue, [input], options)
 
     const job = await boss.getJobById(queue, input.id)
 

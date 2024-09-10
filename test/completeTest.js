@@ -26,7 +26,9 @@ describe('complete', function () {
       boss.send(queue)
     ])
 
-    const countJobs = (state) => helper.countJobs(this.test.bossConfig.schema, 'name = $1 AND state = $2', [queue, state])
+    const { table } = await boss.getQueue(queue)
+
+    const countJobs = (state) => helper.countJobs(this.test.bossConfig.schema, table, 'name = $1 AND state = $2', [queue, state])
 
     const jobs = await boss.fetch(queue, { batchSize })
 
@@ -89,7 +91,9 @@ describe('complete', function () {
       boss.send(queue)
     ])
 
-    const countJobs = (state) => helper.countJobs(this.test.bossConfig.schema, 'name = $1 AND state = $2', [queue, state])
+    const { table } = await boss.getQueue(queue)
+
+    const countJobs = (state) => helper.countJobs(this.test.bossConfig.schema, table, 'name = $1 AND state = $2', [queue, state])
 
     const jobs = await boss.fetch(queue, { batchSize })
 

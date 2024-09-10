@@ -12,18 +12,16 @@ loadTest()
   })
 
 async function loadTest () {
-  
   const schemas = new Array(SCHEMA_COUNT).fill(null).map((_, index) => `schema${index}`)
 
-  for (const schema of schemas){
+  for (const schema of schemas) {
     setImmediate(() => init(schema))
   }
-  
 }
 
-async function init(schema) {
+async function init (schema) {
   const config = helper.getConfig()
-  const boss = new PgBoss({ ...config, schema, supervise: true })
+  const boss = new PgBoss({ ...config, schema, supervise: false, schedule: false })
 
   boss.on('error', console.error)
 
@@ -33,10 +31,10 @@ async function init(schema) {
 
   const queues = new Array(QUEUE_COUNT).fill(null).map((_, index) => `queue${index}`)
 
-  for (const queue of queues){
-      console.log(`creating queue ${schema}.${queue}`)
-      await boss.createQueue(queue)
-      await boss.work(queue, () => {})
+  for (const queue of queues) {
+    console.log(`creating queue ${schema}.${queue}`)
+    await boss.createQueue(queue)
+    await boss.work(queue, () => {})
   }
 
   console.log('created queues')

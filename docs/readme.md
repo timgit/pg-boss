@@ -10,7 +10,6 @@
   - [Job table](#job-table)
 - [Events](#events)
   - [`error`](#error)
-  - [`monitor-states`](#monitor-states)
   - [`wip`](#wip)
   - [`stopped`](#stopped)
 - [Static functions](#static-functions)
@@ -28,7 +27,7 @@
     - [`sendAfter(name, data, options, value)`](#sendaftername-data-options-value)
     - [`sendThrottled(name, data, options, seconds, key)`](#sendthrottledname-data-options-seconds-key)
     - [`sendDebounced(name, data, options, seconds, key)`](#senddebouncedname-data-options-seconds-key)
-  - [`insert(Job[])`](#insertjob)
+  - [`insert(name, Job[])`](#insertname-job)
   - [`fetch(name, options)`](#fetchname-options)
   - [`work()`](#work)
     - [`work(name, options, handler)`](#workname-options-handler)
@@ -174,46 +173,9 @@ Ideally, code similar to the following example would be used after creating your
 boss.on('error', error => logger.error(error));
 ```
 
-## `monitor-states`
-
-The `monitor-states` event is conditionally raised based on the `monitorStateInterval` configuration setting and only emitted from `start()`. If passed during instance creation, it will provide a count of jobs in each state per interval.  This could be useful for logging or even determining if the job system is handling its load.
-
-The payload of the event is an object with a key per queue and state, such as the  following example.
-
-```json
-{
-  "queues": {
-      "send-welcome-email": {
-        "created": 530,
-        "retry": 40,
-        "active": 26,
-        "completed": 3400,
-        "cancelled": 0,
-        "failed": 49,
-        "all": 4049
-      },
-      "archive-cleanup": {
-        "created": 0,
-        "retry": 0,
-        "active": 0,
-        "completed": 645,
-        "cancelled": 0,
-        "failed": 0,
-        "all": 645
-      }
-  },
-  "created": 530,
-  "retry": 40,
-  "active": 26,
-  "completed": 4045,
-  "cancelled": 0,
-  "failed": 4,
-  "all": 4694
-}
-```
 ## `wip`
 
-Emitted at most once every 2 seconds when workers are receiving jobs. The payload is an array that represents each worker in this instance of pg-boss.  If you'd rather monitor activity across all instances, use `monitor-states`.
+Emitted at most once every 2 seconds when workers are receiving jobs. The payload is an array that represents each worker in this instance of pg-boss.
 
 ```js
 [
@@ -339,18 +301,6 @@ Queue options contain the following constructor-only settings.
     Specifies how long in seconds failed jobs get archived. Note: a warning will be emitted if set to lower than 60s and cron processing will be disabled.
 
   Default: `archiveCompletedAfterSeconds`
-
-**Monitoring options**
-
-* **monitorStateIntervalSeconds** - int, default undefined
-
-    Specifies how often in seconds an instance will fire the `monitor-states` event. Must be >= 1.
-
-* **monitorStateIntervalMinutes** - int, default undefined
-
-    Specifies how often in minutes an instance will fire the `monitor-states` event. Must be >= 1.
-
-  > When a higher unit is is specified, lower unit configuration settings are ignored.
 
 
 **Maintenance options**
@@ -643,7 +593,7 @@ Like, `sendThrottled()`, but instead of rejecting if a job is already sent in th
 
 This is a convenience version of `send()` with the `singletonSeconds`, `singletonKey` and `singletonNextSlot` option assigned. The `key` argument is optional.
 
-## `insert(Job[])`
+## `insert(name, Job[])`
 
 Create multiple jobs in one request with an array of objects.
 

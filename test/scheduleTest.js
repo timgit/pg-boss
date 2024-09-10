@@ -2,7 +2,6 @@ const { delay } = require('../src/tools')
 const assert = require('node:assert')
 const { DateTime } = require('luxon')
 const helper = require('./testHelper')
-const plans = require('../src/plans')
 const PgBoss = require('../')
 
 const ASSERT_DELAY = 3000
@@ -13,25 +12,20 @@ describe('schedule', function () {
       ...this.test.bossConfig,
       cronMonitorIntervalSeconds: 1,
       cronWorkerIntervalSeconds: 1,
-      noDefault: true
+      schedule: true
     }
 
-    let boss = await helper.start(config)
+    const boss = await helper.start(config)
+
     const queue = this.test.bossConfig.schema
 
-    await boss.createQueue(queue)
     await boss.schedule(queue, '* * * * *')
-    await boss.stop({ graceful: false })
 
-    boss = await helper.start({ ...config, schedule: true })
-
-    await delay(2000)
+    await delay(4000)
 
     const [job] = await boss.fetch(queue)
 
     assert(job)
-
-    await boss.stop({ graceful: false })
   })
 
   it('should not enable scheduling if archive config is < 60s', async function () {
@@ -101,21 +95,13 @@ describe('schedule', function () {
     const queue = this.test.bossConfig.schema
 
     await boss.schedule(queue, '* * * * *')
-
     await boss.unschedule(queue)
-
-    await boss.stop({ graceful: false })
-
-    const db = await helper.getDb()
-    await db.executeSql(plans.clearStorage(this.test.bossConfig.schema))
-
-    await boss.start(config)
 
     await delay(ASSERT_DELAY)
 
-    const [job] = await boss.fetch(queue)
+    const scheduled = await boss.getSchedules()
 
-    assert(!job)
+    assert.strictEqual(scheduled.length, 0)
   })
 
   it('should send job based on current minute in UTC', async function () {
