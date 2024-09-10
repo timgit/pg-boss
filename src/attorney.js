@@ -79,8 +79,6 @@ function checkSendArgs (args, defaults) {
   assert(!('priority' in options) || (Number.isInteger(options.priority)), 'priority must be an integer')
   options.priority = options.priority || 0
 
-  assert(!('deadLetter' in options) || (typeof options.deadLetter === 'string'), 'deadLetter must be a string')
-
   applyRetryConfig(options, defaults)
   applyExpirationConfig(options, defaults)
   applyRetentionConfig(options, defaults)

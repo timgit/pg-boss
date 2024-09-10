@@ -348,7 +348,6 @@ class Manager extends EventEmitter {
       startAfter,
       singletonKey = null,
       singletonSeconds,
-      deadLetter = null,
       expireIn,
       expireInDefault,
       keepUntil,
@@ -370,17 +369,16 @@ class Manager extends EventEmitter {
       singletonKey, // 6
       singletonSeconds, // 7
       singletonOffset, // 8
-      deadLetter, // 9
-      expireIn, // 10
-      expireInDefault, // 11
-      keepUntil, // 12
-      keepUntilDefault, // 13
-      retryLimit, // 14
-      retryLimitDefault, // 15
-      retryDelay, // 16
-      retryDelayDefault, // 17
-      retryBackoff, // 18
-      retryBackoffDefault // 19
+      expireIn, // 9
+      expireInDefault, // 10
+      keepUntil, // 11
+      keepUntilDefault, // 12
+      retryLimit, // 13
+      retryLimitDefault, // 14
+      retryDelay, // 15
+      retryDelayDefault, // 16
+      retryBackoff, // 17
+      retryBackoffDefault // 18
     ]
 
     const db = wrapper || this.db
@@ -514,8 +512,8 @@ class Manager extends EventEmitter {
     Attorney.assertQueueName(name)
     const db = options.db || this.db
     const ids = this.mapCompletionIdArg(id, 'fail')
-    const { table } = await this.getQueueCache(name)
-    const sql = plans.failJobsById(this.config.schema, table)
+    const queue = await this.getQueueCache(name)
+    const sql = plans.failJobsById(this.config.schema, queue)
     const result = await db.executeSql(sql, [name, ids, this.mapCompletionDataArg(data)])
     return this.mapCommandResponse(ids, result)
   }
@@ -571,6 +569,7 @@ class Manager extends EventEmitter {
 
     if (deadLetter) {
       Attorney.assertQueueName(deadLetter)
+      assert.notStrictEqual(name, deadLetter, 'deadLetter cannot equal name')
     }
 
     // todo: pull in defaults from constructor config
@@ -619,6 +618,11 @@ class Manager extends EventEmitter {
       deadLetter
     } = Attorney.checkQueueArgs(options)
 
+    if (deadLetter) {
+      Attorney.assertQueueName(deadLetter)
+      assert.notStrictEqual(name, deadLetter, 'deadLetter cannot equal name')
+    }
+
     const params = [
       name,
       policy,
@@ -638,8 +642,8 @@ class Manager extends EventEmitter {
   async getQueue (name) {
     Attorney.assertQueueName(name)
 
-    const sql = plans.getQueueByName(this.config.schema)
-    const { rows } = await this.db.executeSql(sql, [name])
+    const sql = plans.getQueues(this.config.schema, [name])
+    const { rows } = await this.db.executeSql(sql)
 
     return rows[0] || null
   }

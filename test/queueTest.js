@@ -208,7 +208,6 @@ describe('queues', function () {
     assert.strictEqual(createProps.retryDelay, job.retryDelay)
     assert.strictEqual(createProps.expireInSeconds, job.expireIn.seconds)
     assert.strictEqual(createProps.retentionMinutes, retentionMinutes)
-    assert.strictEqual(createProps.deadLetter, job.deadLetter)
   })
 
   it('short policy only allows 1 job in queue', async function () {

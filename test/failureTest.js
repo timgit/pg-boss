@@ -174,10 +174,10 @@ describe('failure', function () {
     const queue = this.test.bossConfig.schema
     const deadLetter = `${queue}_dlq`
 
-    await boss.createQueue(queue)
     await boss.createQueue(deadLetter)
+    await boss.createQueue(queue, { deadLetter })
 
-    const jobId = await boss.send(queue, { key: queue }, { deadLetter })
+    const jobId = await boss.send(queue, { key: queue })
 
     await boss.fetch(queue)
     await boss.fail(queue, jobId)

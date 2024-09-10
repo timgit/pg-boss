@@ -150,7 +150,6 @@ CREATE TABLE pgboss.job (
   completed_on timestamp with time zone,
   keep_until timestamp with time zone NOT NULL default now() + interval '14 days',
   output jsonb,
-  dead_letter text,
   policy text,
   CONSTRAINT job_pkey PRIMARY KEY (name, id)
 ) PARTITION BY LIST (name)
@@ -524,12 +523,6 @@ Setting `singletonNextSlot` to true will cause the job to be scheduled to run af
 
 As with queue policies, using `singletonKey` will extend throttling to allow one job per key within the time slot.
 
-**Dead Letter Queues**
-
-* **deadLetter**, string
-
-When a job fails after all retries, if a `deadLetter` property exists, the job's payload will be copied into that queue,  copying the same retention and retry configuration as the original job.
-
 
 ```js
 const payload = {
@@ -614,7 +607,6 @@ interface JobInsert<T = object> {
   singletonKey?: string;
   expireInSeconds?: number;
   keepUntil?: Date | string;
-  deadLetter?: string;
 }
 ```
 
@@ -657,7 +649,6 @@ Returns an array of jobs from a queue
       createdOn: Date;
       completedOn: Date | null;
       keepUntil: Date;
-      deadLetter: string,
       policy: string,
       output: object
     }
@@ -935,6 +926,10 @@ Allowed policy values:
 | short | All standard features, but only allows 1 job to be queued, unlimited active. Can be extended with `singletonKey` |
 | singleton | All standard features, but only allows 1 job to be active, unlimited queued. Can be extended with `singletonKey` |
 | stately | Combination of short and singleton: Only allows 1 job per state, queued and/or active. Can be extended with `singletonKey` |
+
+* **deadLetter**, string
+
+When a job fails after all retries, if the queue has a `deadLetter` property, the job's payload will be copied into that queue, copying the same retention and retry configuration as the original job.
 
 ## `updateQueue(name, options)`
 

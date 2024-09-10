@@ -47,7 +47,6 @@ module.exports = {
   createQueue,
   deleteQueue,
   getQueues,
-  getQueueByName,
   getQueueSize,
   purgeQueue,
   trySetQueueMonitorTime,
@@ -197,7 +196,6 @@ function createTableJob (schema) {
       completed_on timestamp with time zone,
       keep_until timestamp with time zone NOT NULL default now() + interval '14 days',
       output jsonb,
-      dead_letter text,
       policy text      
     ) PARTITION BY LIST (name)
   `
@@ -221,7 +219,6 @@ const allJobColumns = `${baseJobColumns},
   created_on as "createdOn",
   completed_on as "completedOn",
   keep_until as "keepUntil",
-  dead_letter as "deadLetter",
   output
 `
 
@@ -273,7 +270,6 @@ function createQueueFunction (schema) {
       
       EXECUTE format('${formatPartitionCommand(createPrimaryKeyJob(schema))}', tablename);
       EXECUTE format('${formatPartitionCommand(createQueueForeignKeyJob(schema))}', tablename);
-      EXECUTE format('${formatPartitionCommand(createQueueForeignKeyJobDeadLetter(schema))}', tablename);
       EXECUTE format('${formatPartitionCommand(createIndexJobPolicyShort(schema))}', tablename);
       EXECUTE format('${formatPartitionCommand(createIndexJobPolicySingleton(schema))}', tablename);
       EXECUTE format('${formatPartitionCommand(createIndexJobPolicyStately(schema))}', tablename);
@@ -333,10 +329,6 @@ function createQueueForeignKeyJob (schema) {
   return `ALTER TABLE ${schema}.job ADD CONSTRAINT q_fkey FOREIGN KEY (name) REFERENCES ${schema}.queue (name) ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED`
 }
 
-function createQueueForeignKeyJobDeadLetter (schema) {
-  return `ALTER TABLE ${schema}.job ADD CONSTRAINT dlq_fkey FOREIGN KEY (dead_letter) REFERENCES ${schema}.queue (name) ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED`
-}
-
 function createPrimaryKeyArchive (schema) {
   return `ALTER TABLE ${schema}.archive ADD PRIMARY KEY (name, id)`
 }
@@ -373,12 +365,12 @@ function createIndexArchiveArchivedOn (schema) {
   return `CREATE INDEX archive_i1 ON ${schema}.archive(archived_on)`
 }
 
-function trySetQueueMonitorTime (schema, queue, seconds) {
-  return trySetQueueTimestamp(schema, queue, 'monitor_on', seconds)
+function trySetQueueMonitorTime (schema, queueName, seconds) {
+  return trySetQueueTimestamp(schema, queueName, 'monitor_on', seconds)
 }
 
-function trySetQueueArchiveTime (schema, queue, seconds) {
-  return trySetQueueTimestamp(schema, queue, 'archive_on', seconds)
+function trySetQueueArchiveTime (schema, queueName, seconds) {
+  return trySetQueueTimestamp(schema, queueName, 'archive_on', seconds)
 }
 
 function trySetMaintenanceTime (schema, seconds) {
@@ -398,11 +390,11 @@ function trySetTimestamp (schema, column, seconds) {
   `
 }
 
-function trySetQueueTimestamp (schema, queue, column, seconds) {
+function trySetQueueTimestamp (schema, queueName, column, seconds) {
   return `
     UPDATE ${schema}.queue
     SET ${column} = now()
-    WHERE name = '${queue}'
+    WHERE name = '${queueName}'
       AND EXTRACT( EPOCH FROM (now() - COALESCE(${column}, now() - interval '1 week') ) ) > ${seconds}
     RETURNING true
   `
@@ -430,28 +422,26 @@ function updateQueue (schema, { deadLetter } = {}) {
 function getQueues (schema, names) {
   return `
     SELECT 
-      name,
-      policy,
-      retry_limit as "retryLimit",
-      retry_delay as "retryDelay",
-      retry_backoff as "retryBackoff",
-      expire_seconds as "expireInSeconds",
-      retention_minutes as "retentionMinutes",
-      dead_letter as "deadLetter",
-      archive,
-      available_count as "availableCount",
-      active_count as "activeCount",
-      total_count as "totalCount",
-      table_name as "table",
-      created_on as "createdOn",
-      updated_on as "updatedOn"
-    FROM ${schema}.queue
-    ${names ? `WHERE name IN (${names.map(i => `'${i}'`)})` : ''}
+      q.name,
+      q.policy,
+      q.retry_limit as "retryLimit",
+      q.retry_delay as "retryDelay",
+      q.retry_backoff as "retryBackoff",
+      q.expire_seconds as "expireInSeconds",
+      q.retention_minutes as "retentionMinutes",
+      q.dead_letter as "deadLetter",
+      dlq.table_name as "deadLetterTable",
+      q.archive,
+      q.available_count as "availableCount",
+      q.active_count as "activeCount",
+      q.total_count as "totalCount",
+      q.table_name as "table",
+      q.created_on as "createdOn",
+      q.updated_on as "updatedOn"
+    FROM ${schema}.queue q
+      LEFT JOIN ${schema}.queue dlq ON q.dead_letter = dlq.name
+    ${names ? `WHERE q.name IN (${names.map(i => `'${i}'`)})` : ''}
    `
-}
-
-function getQueueByName (schema) {
-  return `${getQueues(schema)} WHERE name = $1`
 }
 
 function purgeQueue (schema, table) {
@@ -634,7 +624,6 @@ function insertJob (schema, table) {
       start_after,
       singleton_key,
       singleton_on,
-      dead_letter,
       expire_in,
       keep_until,
       retry_limit,
@@ -650,7 +639,6 @@ function insertJob (schema, table) {
       start_after,
       singleton_key,
       singleton_on,
-      COALESCE(j.dead_letter, q.dead_letter) as dead_letter,
       CASE
         WHEN expire_in IS NOT NULL THEN CAST(expire_in as interval)
         WHEN q.expire_seconds IS NOT NULL THEN q.expire_seconds * interval '1s'
@@ -684,24 +672,23 @@ function insertJob (schema, table) {
             WHEN $7::integer IS NOT NULL THEN 'epoch'::timestamp + '1 second'::interval * ($7 * floor((date_part('epoch', now()) + $8) / $7))
             ELSE NULL
             END as singleton_on,
-          $9 as dead_letter,
-          $10 as expire_in,
-          $11 as expire_in_default,
-          $12 as keep_until,
-          $13 as keep_until_default,
-          $14::int as retry_limit,
-          $15::int as retry_limit_default,
-          $16::int as retry_delay,
-          $17::int as retry_delay_default,
-          $18::bool as retry_backoff,
-          $19::bool as retry_backoff_default
+          $9 as expire_in,
+          $10 as expire_in_default,
+          $11 as keep_until,
+          $12 as keep_until_default,
+          $13::int as retry_limit,
+          $14::int as retry_limit_default,
+          $15::int as retry_delay,
+          $16::int as retry_delay_default,
+          $17::bool as retry_backoff,
+          $18::bool as retry_backoff_default
       ) j JOIN ${schema}.queue q ON j.name = q.name
     ON CONFLICT DO NOTHING
     RETURNING id
   `
 }
 
-function insertJobs (schema, table, queue) {
+function insertJobs (schema, table, queueName) {
   return `
     WITH defaults as (
       SELECT 
@@ -719,7 +706,6 @@ function insertJobs (schema, table, queue) {
       start_after,
       singleton_key,
       singleton_on,
-      dead_letter,
       expire_in,
       keep_until,
       retry_limit,
@@ -729,7 +715,7 @@ function insertJobs (schema, table, queue) {
     )
     SELECT
       COALESCE(id, gen_random_uuid()) as id,
-      '${queue}' as name,
+      '${queueName}' as name,
       data,
       COALESCE(priority, 0) as priority,
       j.start_after,
@@ -738,7 +724,6 @@ function insertJobs (schema, table, queue) {
         WHEN "singletonSeconds" IS NOT NULL THEN 'epoch'::timestamp + '1 second'::interval * ("singletonSeconds" * floor( date_part('epoch', now()) / "singletonSeconds" ))
         ELSE NULL
         END as singleton_on,
-      COALESCE("deadLetter", q.dead_letter) as dead_letter,
       CASE
         WHEN "expireInSeconds" IS NOT NULL THEN "expireInSeconds" *  interval '1s'
         WHEN q.expire_seconds IS NOT NULL THEN q.expire_seconds * interval '1s'
@@ -775,17 +760,34 @@ function insertJobs (schema, table, queue) {
         "singletonKey" text,
         "singletonSeconds" integer,
         "expireInSeconds" integer,
-        "keepUntil" timestamp with time zone,
-        "deadLetter" text
+        "keepUntil" timestamp with time zone
       ) 
     ) j
-    JOIN ${schema}.queue q ON q.name = '${queue}',
+    JOIN ${schema}.queue q ON q.name = '${queueName}',
       defaults
     ON CONFLICT DO NOTHING
   `
 }
 
-function failJobs (schema, table, where, output) {
+function failJobs (schema, queue, where, output) {
+  const { table, deadLetter, deadLetterTable } = queue
+
+  let dlqSql = ''
+
+  if (deadLetter && deadLetterTable) {
+    dlqSql = `, dlq_jobs as (
+      INSERT INTO ${schema}.${deadLetterTable} (name, data, output, retry_limit, keep_until)
+      SELECT
+        '${deadLetter}',
+        data,
+        output,
+        retry_limit,
+        keep_until + (keep_until - start_after)
+      FROM results
+      WHERE state = '${JOB_STATES.failed}'
+    )`
+  }
+
   return `
     WITH results AS (
       UPDATE ${schema}.${table} SET
@@ -808,40 +810,28 @@ function failJobs (schema, table, where, output) {
         output = ${output}
       WHERE ${where}
       RETURNING *
-    ), dlq_jobs as (
-      INSERT INTO ${schema}.job (name, data, output, retry_limit, keep_until)
-      SELECT
-        dead_letter,
-        data,
-        output,
-        retry_limit,
-        keep_until + (keep_until - start_after)
-      FROM results
-      WHERE state = '${JOB_STATES.failed}'
-        AND dead_letter IS NOT NULL
-        AND NOT name = dead_letter
-    )
+    ) ${dlqSql}
     SELECT COUNT(*) FROM results
   `
 }
 
-function failJobsById (schema, table) {
+function failJobsById (schema, queue) {
   const where = `name = $1 AND id IN (SELECT UNNEST($2::uuid[])) AND state < '${JOB_STATES.completed}'`
   const output = '$3::jsonb'
 
-  return failJobs(schema, table, where, output)
+  return failJobs(schema, queue, where, output)
 }
 
-function failJobsByTimeout (schema, table) {
+function failJobsByTimeout (schema, queue) {
   const where = `state = '${JOB_STATES.active}' AND (started_on + expire_in) < now()`
   const output = '\'{ "value": { "message": "job timed out" } }\'::jsonb'
 
-  return locked(schema, failJobs(schema, table, where, output), table + 'failJobsByTimeout')
+  return locked(schema, failJobs(schema, queue, where, output), queue.name + 'failJobsByTimeout')
 }
 
 function archive (schema, table, archive, completedInterval, failedInterval = completedInterval) {
   const columns =
-    'id, name, priority, data, state, retry_limit, retry_count, retry_delay, retry_backoff, start_after, started_on, singleton_key, singleton_on, expire_in, created_on, completed_on, keep_until, dead_letter, policy, output'
+    'id, name, priority, data, state, retry_limit, retry_count, retry_delay, retry_backoff, start_after, started_on, singleton_key, singleton_on, expire_in, created_on, completed_on, keep_until, policy, output'
 
   let sql = `
       DELETE FROM ${schema}.${table}
@@ -871,7 +861,9 @@ function drop (schema, interval) {
   return locked(schema, sql)
 }
 
-function cacheQueueStats (schema, queue, table) {
+function cacheQueueStats (schema, queue) {
+  const { name, table } = queue
+
   const sql = `
     WITH stats AS (
       SELECT
@@ -885,7 +877,7 @@ function cacheQueueStats (schema, queue, table) {
       active_count = stats.active_count,
       total_count = stats.total_count
     FROM stats
-      WHERE queue.name = '${queue}'
+      WHERE queue.name = '${name}'
   `
 
   return locked(schema, sql, queue + 'stats')

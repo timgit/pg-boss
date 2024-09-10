@@ -58,8 +58,8 @@ class Boss extends EventEmitter {
     const queues = await this.manager.getQueues(queue)
 
     for (const queue of queues) {
-      !this.stopped && await this.monitor(queue.name, queue.table)
-      !this.stopped && await this.archive(queue.name, queue.table, queue.archive)
+      !this.stopped && await this.monitor(queue)
+      !this.stopped && await this.archive(queue)
 
       if (this.stopped) break
     }
@@ -77,21 +77,23 @@ class Boss extends EventEmitter {
     }
   }
 
-  async monitor (queue, table) {
-    const command = plans.trySetQueueMonitorTime(this.config.schema, queue, this.config.monitorIntervalSeconds)
+  async monitor (queue) {
+    const command = plans.trySetQueueMonitorTime(this.config.schema, queue.name, this.config.monitorIntervalSeconds)
     const { rows } = await this.db.executeSql(command)
 
     if (rows.length) {
-      const sql = plans.failJobsByTimeout(this.config.schema, table)
+      const sql = plans.failJobsByTimeout(this.config.schema, queue)
       await this.db.executeSql(sql)
 
-      const cacheStatsSql = plans.cacheQueueStats(this.config.schema, queue, table)
+      const cacheStatsSql = plans.cacheQueueStats(this.config.schema, queue)
       await this.db.executeSql(cacheStatsSql)
     }
   }
 
-  async archive (queue, table, archive) {
-    const command = plans.trySetQueueArchiveTime(this.config.schema, queue, this.config.archiveIntervalSeconds)
+  async archive (queue) {
+    const { name, table, archive } = queue
+
+    const command = plans.trySetQueueArchiveTime(this.config.schema, name, this.config.archiveIntervalSeconds)
     const { rows } = await this.db.executeSql(command)
 
     if (rows.length) {

@@ -22,6 +22,7 @@ describe('insert', function () {
 
     const deadLetter = `${queue}_dlq`
     await boss.createQueue(deadLetter)
+    await boss.updateQueue(queue, { deadLetter })
 
     const input = {
       id: randomUUID(),
@@ -34,8 +35,7 @@ describe('insert', function () {
       startAfter: new Date().toISOString(),
       expireInSeconds: 5,
       singletonKey: '123',
-      keepUntil: new Date().toISOString(),
-      deadLetter
+      keepUntil: new Date().toISOString()
     }
 
     await boss.insert(queue, [input])
@@ -53,7 +53,6 @@ describe('insert', function () {
     assert.strictEqual(job.expireIn.seconds, input.expireInSeconds, `expireInSeconds input ${input.expireInSeconds} didn't match job ${job.expireIn}`)
     assert.strictEqual(job.singletonKey, input.singletonKey, `name input ${input.singletonKey} didn't match job ${job.singletonKey}`)
     assert.strictEqual(new Date(job.keepUntil).toISOString(), input.keepUntil, `keepUntil input ${input.keepUntil} didn't match job ${job.keepUntil}`)
-    assert.strictEqual(job.deadLetter, input.deadLetter, `deadLetter input ${input.deadLetter} didn't match job ${job.deadLetter}`)
   })
 
   it('should create jobs from an array with all properties and custom connection', async function () {
@@ -62,6 +61,7 @@ describe('insert', function () {
 
     const deadLetter = `${queue}_dlq`
     await boss.createQueue(deadLetter)
+    await boss.updateQueue(queue, { deadLetter })
 
     const input = {
       id: randomUUID(),
@@ -74,9 +74,9 @@ describe('insert', function () {
       startAfter: new Date().toISOString(),
       expireInSeconds: 5,
       singletonKey: '123',
-      keepUntil: new Date().toISOString(),
-      deadLetter
+      keepUntil: new Date().toISOString()
     }
+
     let called = false
     const db = await helper.getDb()
     const options = {
@@ -103,7 +103,6 @@ describe('insert', function () {
     assert.strictEqual(job.expireIn.seconds, input.expireInSeconds, `expireInSeconds input ${input.expireInSeconds} didn't match job ${job.expireIn}`)
     assert.strictEqual(job.singletonKey, input.singletonKey, `name input ${input.singletonKey} didn't match job ${job.singletonKey}`)
     assert.strictEqual(new Date(job.keepUntil).toISOString(), input.keepUntil, `keepUntil input ${input.keepUntil} didn't match job ${job.keepUntil}`)
-    assert.strictEqual(job.deadLetter, input.deadLetter, `deadLetter input ${input.deadLetter} didn't match job ${job.deadLetter}`)
     assert.strictEqual(called, true)
   })
 })

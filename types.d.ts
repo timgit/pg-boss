@@ -92,7 +92,6 @@ declare namespace PgBoss {
     singletonMinutes?: number;
     singletonHours?: number;
     singletonNextSlot?: boolean;
-    deadLetter?: string;
   }
 
   interface ConnectionOptions {
@@ -189,7 +188,6 @@ declare namespace PgBoss {
     createdOn: Date;
     completedOn: Date | null;
     keepUntil: Date;
-    deadLetter: string,
     policy: QueuePolicy,
     output: object
   }
@@ -207,7 +205,6 @@ declare namespace PgBoss {
     singletonSeconds?: number;
     expireInSeconds?: number;
     keepUntil?: Date | string;
-    deadLetter?: string;
   }
 
   interface MonitorState {
