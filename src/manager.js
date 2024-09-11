@@ -570,10 +570,9 @@ class Manager extends EventEmitter {
 
     if (deadLetter) {
       Attorney.assertQueueName(deadLetter)
-      assert.notStrictEqual(name, deadLetter, 'deadLetter cannot equal name')
+      assert.notStrictEqual(name, deadLetter, 'deadLetter cannot be itself')
     }
 
-    // todo: pull in defaults from constructor config
     const data = {
       policy,
       retryLimit,
@@ -605,8 +604,9 @@ class Manager extends EventEmitter {
   async updateQueue (name, options = {}) {
     Attorney.assertQueueName(name)
 
-    if('policy' in options) {
-      const { policy = QUEUE_POLICIES.standard } = options
+    const { policy = QUEUE_POLICIES.standard } = options
+
+    if ('policy' in options) {
       assert(policy in QUEUE_POLICIES, `${policy} is not a valid queue policy`)
     }
 
@@ -619,8 +619,6 @@ class Manager extends EventEmitter {
       retentionMinutes,
       deadLetter
     } = Attorney.checkQueueArgs(options)
-
-
 
     if (deadLetter) {
       Attorney.assertQueueName(deadLetter)

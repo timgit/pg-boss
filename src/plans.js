@@ -78,7 +78,7 @@ function create (schema, version) {
 
     createTableJob(schema),
     createPrimaryKeyJob(schema),
-    
+
     // todo: bring back optional provisioned storage + default partition
 
     createTableArchive(schema),

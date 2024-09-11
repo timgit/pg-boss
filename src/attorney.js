@@ -35,7 +35,7 @@ const WARNINGS = {
 
 function checkQueueArgs (options = {}) {
   options = { ...options }
-  
+
   assert(!('deadLetter' in options) || options.deadLetter === null || (typeof options.deadLetter === 'string'), 'deadLetter must be a string')
   assert(!('deadLetter' in options) || options.deadLetter === null || /[\w-]/.test(options.deadLetter), 'deadLetter can only contain alphanumeric characters, underscores, or hyphens')
 
