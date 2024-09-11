@@ -175,11 +175,7 @@ declare namespace PgBoss {
     expireInSeconds: number;
   }
 
-  interface JobWithMetadata<T = object> {
-    id: string;
-    name: string;
-    data: T;
-    expireInSeconds: number;
+  interface JobWithMetadata<T = object> extends Job<T> {
     priority: number;
     state: 'created' | 'retry' | 'active' | 'completed' | 'cancelled' | 'failed';
     retryLimit: number;
