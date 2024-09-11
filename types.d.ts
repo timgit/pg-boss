@@ -45,6 +45,9 @@ declare namespace PgBoss {
 
     clockMonitorIntervalSeconds?: number;
     clockMonitorIntervalMinutes?: number;
+
+    cronMonitorIntervalSeconds?: number;
+    cronWorkerIntervalSeconds?: number;
   }
 
   interface MaintenanceOptions {
