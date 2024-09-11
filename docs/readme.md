@@ -326,18 +326,6 @@ When jobs in the archive table become eligible for deletion.
 
     delete interval in seconds, must be >=1
 
-* **deleteAfterMinutes**, int
-
-    delete interval in minutes, must be >=1
-
-* **deleteAfterHours**, int
-
-    delete interval in hours, must be >=1
-
-* **deleteAfterDays**, int
-
-    delete interval in days, must be >=1
-
 * Default: 7 days
 
   > When a higher unit is is specified, lower unit configuration settings are ignored.
@@ -350,9 +338,6 @@ How often maintenance operations are run against the job and archive tables.
 
     maintenance interval in seconds, must be >=1
 
-* **maintenanceIntervalMinutes**, int
-
-    interval in minutes, must be >=1
 
 * Default: 1 minute
 
@@ -460,29 +445,13 @@ Available in constructor as a default, or overridden in send.
 
 * Default: 15 minutes
 
-  > When a higher unit is is specified, lower unit configuration settings are ignored.
-
 **Retention options**
 
 * **retentionSeconds**, number
 
     How many seconds a job may be in created or retry state before it's archived. Must be >=1
 
-* **retentionMinutes**, number
-
-    How many minutes a job may be in created or retry state before it's archived. Must be >=1
-
-* **retentionHours**, number
-
-    How many hours a job may be in created or retry state before it's archived. Must be >=1
-
-* **retentionDays**, number
-
-    How many days a job may be in created or retry state before it's archived. Must be >=1
-
 * Default: 30 days
-
-  > When a higher unit is is specified, lower unit configuration settings are ignored.
 
 **Connection options**
 
@@ -508,14 +477,12 @@ Available in constructor as a default, or overridden in send.
 **Throttle or debounce jobs**
 
 * **singletonSeconds**, int
-* **singletonMinutes**, int
-* **singletonHours**, int
 * **singletonNextSlot**, bool
 * **singletonKey** string
 
-Throttling jobs to 'one per time slot', where units could be seconds, minutes, or hours.  This option is set on the send side of the API since jobs may or may not be created based on the existence of other jobs.
+Throttling jobs to 'one per time slot'.  This option is set on the send side of the API since jobs may or may not be created based on the existence of other jobs.
 
-For example, if you set the `singletonMinutes` to 1, then submit 2 jobs within the same minute, only the first job will be accepted and resolve a job id.  The second request will resolve a null instead of a job id.
+For example, if you set the `singletonSeconds` to 60, then submit 2 jobs within the same minute, only the first job will be accepted and resolve a job id.  The second request will resolve a null instead of a job id.
 
 > When a higher unit is is specified, lower unit configuration settings are ignored.
 

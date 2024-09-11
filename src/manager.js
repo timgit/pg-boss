@@ -304,8 +304,7 @@ class Manager extends EventEmitter {
   }
 
   async send (...args) {
-    // this.config should be dropped in favor of using queue props
-    const { name, data, options } = Attorney.checkSendArgs(args, this.config)
+    const { name, data, options } = Attorney.checkSendArgs(args)
 
     return await this.createJob(name, data, options)
   }
@@ -314,7 +313,7 @@ class Manager extends EventEmitter {
     options = options ? { ...options } : {}
     options.startAfter = after
 
-    const result = Attorney.checkSendArgs([name, data, options], this.config)
+    const result = Attorney.checkSendArgs([name, data, options])
 
     return await this.createJob(result.name, result.data, result.options)
   }
@@ -325,7 +324,7 @@ class Manager extends EventEmitter {
     options.singletonNextSlot = false
     options.singletonKey = key
 
-    const result = Attorney.checkSendArgs([name, data, options], this.config)
+    const result = Attorney.checkSendArgs([name, data, options])
 
     return await this.createJob(result.name, result.data, result.options)
   }
@@ -336,7 +335,7 @@ class Manager extends EventEmitter {
     options.singletonNextSlot = true
     options.singletonKey = key
 
-    const result = Attorney.checkSendArgs([name, data, options], this.config)
+    const result = Attorney.checkSendArgs([name, data, options])
 
     return await this.createJob(result.name, result.data, result.options)
   }
@@ -565,7 +564,8 @@ class Manager extends EventEmitter {
       expireInSeconds,
       retentionMinutes,
       archive,
-      deadLetter
+      deadLetter,
+      provisioned
     } = Attorney.checkQueueArgs(options)
 
     if (deadLetter) {
@@ -581,7 +581,8 @@ class Manager extends EventEmitter {
       expireInSeconds,
       retentionMinutes,
       archive,
-      deadLetter
+      deadLetter,
+      provisioned
     }
 
     const sql = plans.createQueue(this.config.schema)
@@ -610,7 +611,8 @@ class Manager extends EventEmitter {
       assert(policy in QUEUE_POLICIES, `${policy} is not a valid queue policy`)
     }
 
-    // todo: only use props that were assigned
+    // only use props that were assigned
+    // don't allow changing provisioned?
     const {
       retryLimit,
       retryDelay,
@@ -622,7 +624,7 @@ class Manager extends EventEmitter {
 
     if (deadLetter) {
       Attorney.assertQueueName(deadLetter)
-      assert.notStrictEqual(name, deadLetter, 'deadLetter cannot equal name')
+      assert.notStrictEqual(name, deadLetter, 'deadLetter cannot be itself')
     }
 
     const params = [

@@ -168,7 +168,7 @@ class Timekeeper extends EventEmitter {
 
     cronParser.parseExpression(cron, { tz })
 
-    Attorney.checkSendArgs([name, data, options], this.config)
+    Attorney.checkSendArgs([name, data, options])
 
     try {
       const sql = plans.schedule(this.config.schema)

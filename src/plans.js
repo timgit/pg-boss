@@ -79,6 +79,7 @@ function create (schema, version) {
     createTableJob(schema),
     createPrimaryKeyJob(schema),
 
+    createTableJobDefault(schema),
     // todo: bring back optional provisioned storage + default partition
 
     createTableArchive(schema),
@@ -203,6 +204,23 @@ function createTableJob (schema) {
   `
 }
 
+function createTableJobDefault(schema) {
+
+  const table = 'job_default'
+
+  return `
+    CREATE TABLE ${schema}.${table} (LIKE ${schema}.job INCLUDING DEFAULTS);
+    ${createPrimaryKeyJob(schema).replaceAll('.job', `.${table}`)}
+    ${createQueueForeignKeyJob(schema).replaceAll('.job', `.${table}`)}
+    ${createIndexJobPolicyShort(schema).replaceAll('.job', `.${table}`)}
+    ${createIndexJobPolicySingleton(schema).replaceAll('.job', `.${table}`)}
+    ${createIndexJobPolicyStately(schema).replaceAll('.job', `.${table}`)}
+    ${createIndexJobThrottle(schema).replaceAll('.job', `.${table}`)}
+    ${createIndexJobFetch(schema).replaceAll('.job', `.${table}`)}
+    EXECUTE format('ALTER TABLE ${schema}.job ATTACH PARTITION ${schema}.${table} DEFAULT);
+  `
+}
+
 const baseJobColumns =
   'id, name, data, EXTRACT(epoch FROM expire_in) as "expireInSeconds"'
 const allJobColumns = `${baseJobColumns},
@@ -230,7 +248,10 @@ function createQueueFunction (schema) {
     RETURNS VOID AS
     $$
     DECLARE
-      tablename varchar := 'j' || encode(sha224(queue_name::bytea), 'hex');
+      tablename varchar := CASE WHEN options->>'provisioned' = 'true'
+                            THEN 'j' || encode(sha224(queue_name::bytea), 'hex')
+                            ELSE 'job'
+                            END;
       queue_created_on timestamptz;
     BEGIN
 
@@ -264,7 +285,7 @@ function createQueueFunction (schema) {
       )
       SELECT created_on into queue_created_on from q;
 
-      IF queue_created_on IS NULL THEN
+      IF queue_created_on IS NULL OR tablename = 'job' THEN
         RETURN;
       END IF;
 
@@ -279,7 +300,7 @@ function createQueueFunction (schema) {
       EXECUTE format('${formatPartitionCommand(createIndexJobFetch(schema))}', tablename);
 
       EXECUTE format('ALTER TABLE ${schema}.%I ADD CONSTRAINT cjc CHECK (name=%L)', tablename, queue_name);
-      --EXECUTE format('ALTER TABLE ${schema}.job ATTACH PARTITION ${schema}.%I FOR VALUES IN (%L)', tablename, queue_name);
+      EXECUTE format('ALTER TABLE ${schema}.job ATTACH PARTITION ${schema}.%I FOR VALUES IN (%L)', tablename, queue_name);
     END;
     $$
     LANGUAGE plpgsql;

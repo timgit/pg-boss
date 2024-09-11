@@ -39,7 +39,6 @@ declare namespace PgBoss {
     schedule?: boolean;
 
     clockMonitorIntervalSeconds?: number;
-    clockMonitorIntervalMinutes?: number;
   }
 
   interface MaintenanceOptions {
@@ -47,34 +46,18 @@ declare namespace PgBoss {
     migrate?: boolean;
 
     deleteAfterSeconds?: number;
-    deleteAfterMinutes?: number;
-    deleteAfterHours?: number;
-    deleteAfterDays?: number;
-
     archiveCompletedAfterSeconds?: number;
     archiveFailedAfterSeconds?: number;
   }
 
-  type ConstructorOptions =
-    DatabaseOptions
-    & SchedulingOptions
-    & MaintenanceOptions
-    & ExpirationOptions
-    & RetentionOptions
-    & RetryOptions
-    & JobPollingOptions
+  type ConstructorOptions = DatabaseOptions & SchedulingOptions & MaintenanceOptions
 
   interface ExpirationOptions {
     expireInSeconds?: number;
-    expireInMinutes?: number;
-    expireInHours?: number;
   }
 
   interface RetentionOptions {
     retentionSeconds?: number;
-    retentionMinutes?: number;
-    retentionHours?: number;
-    retentionDays?: number;
   }
 
   interface RetryOptions {
@@ -89,8 +72,6 @@ declare namespace PgBoss {
     startAfter?: number | string | Date;
     singletonKey?: string;
     singletonSeconds?: number;
-    singletonMinutes?: number;
-    singletonHours?: number;
     singletonNextSlot?: boolean;
   }
 
@@ -113,7 +94,7 @@ declare namespace PgBoss {
 
   
   // expireInSeconds
-  // retentionMinutes
+  // retentionSeconds
   // deadLetterTable
   // availableCount
   // activeCount
