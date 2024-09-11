@@ -172,6 +172,7 @@ declare namespace PgBoss {
     id: string;
     name: string;
     data: T;
+    expireInSeconds: number;
   }
 
   interface JobWithMetadata<T = object> {
