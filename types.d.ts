@@ -179,6 +179,7 @@ declare namespace PgBoss {
     id: string;
     name: string;
     data: T;
+    expireInSeconds: number;
     priority: number;
     state: 'created' | 'retry' | 'active' | 'completed' | 'cancelled' | 'failed';
     retryLimit: number;
