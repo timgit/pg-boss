@@ -135,7 +135,7 @@ function createTableQueue (schema) {
       retry_delay int,
       retry_backoff bool,
       expire_seconds int,
-      retention_minutes int,
+      retention_seconds int,
       dead_letter text REFERENCES ${schema}.queue (name),
       table_name text,
       available_count int,
@@ -263,8 +263,8 @@ function createQueueFunction (schema) {
         retry_delay,
         retry_backoff,
         expire_seconds,
-        retention_minutes,
-        archive,
+        retention_seconds,
+        archive_seconds,        
         dead_letter,
         table_name
       )
@@ -275,7 +275,7 @@ function createQueueFunction (schema) {
         (options->>'retryDelay')::int,
         (options->>'retryBackoff')::bool,
         (options->>'expireInSeconds')::int,
-        (options->>'retentionMinutes')::int,
+        (options->>'retentionSeconds')::int,
         (options->>'archive')::bool,
         options->>'deadLetter',
         tablename
@@ -431,7 +431,7 @@ function updateQueue (schema, { deadLetter } = {}) {
       retry_delay = COALESCE($4, retry_delay),
       retry_backoff = COALESCE($5, retry_backoff),
       expire_seconds = COALESCE($6, expire_seconds),
-      retention_minutes = COALESCE($7, retention_minutes),
+      retention_seconds = COALESCE($7, retention_seconds),
       ${
         deadLetter === undefined
           ? ''
@@ -451,7 +451,7 @@ function getQueues (schema, names) {
       q.retry_delay as "retryDelay",
       q.retry_backoff as "retryBackoff",
       q.expire_seconds as "expireInSeconds",
-      q.retention_minutes as "retentionMinutes",
+      q.retention_seconds as "retentionSeconds",
       q.dead_letter as "deadLetter",
       dlq.table_name as "deadLetterTable",
       q.archive,
@@ -670,7 +670,7 @@ function insertJob (schema, table) {
         END as expire_in,
       CASE
         WHEN right(keep_until, 1) = 'Z' THEN CAST(keep_until as timestamp with time zone)
-        ELSE start_after + CAST(COALESCE(keep_until, (q.retention_minutes * 60)::text, keep_until_default, '14 days') as interval)
+        ELSE start_after + CAST(COALESCE(keep_until, (q.retention_seconds * 60)::text, keep_until_default, '14 days') as interval)
         END as keep_until,
       COALESCE(j.retry_limit, q.retry_limit, retry_limit_default, 2) as retry_limit,
       CASE
@@ -755,7 +755,7 @@ function insertJobs (schema, table, queueName) {
         END as expire_in,
       CASE
         WHEN "keepUntil" IS NOT NULL THEN "keepUntil"
-        ELSE COALESCE(j.start_after, now()) + CAST(COALESCE((q.retention_minutes * 60)::text, defaults.keep_until, '14 days') as interval)
+        ELSE COALESCE(j.start_after, now()) + CAST(COALESCE((q.retention_seconds * 60)::text, defaults.keep_until, '14 days') as interval)
         END as keep_until,
       COALESCE("retryLimit", q.retry_limit, defaults.retry_limit, 2),
       CASE

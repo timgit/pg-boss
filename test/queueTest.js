@@ -134,7 +134,7 @@ describe('queues', function () {
       retryBackoff: false,
       retryDelay: 1,
       expireInSeconds: 1,
-      retentionMinutes: 1,
+      retentionSeconds: 1,
       deadLetter
     }
 
@@ -148,7 +148,7 @@ describe('queues', function () {
     assert.strictEqual(createProps.retryBackoff, queueObj.retryBackoff)
     assert.strictEqual(createProps.retryDelay, queueObj.retryDelay)
     assert.strictEqual(createProps.expireInSeconds, queueObj.expireInSeconds)
-    assert.strictEqual(createProps.retentionMinutes, queueObj.retentionMinutes)
+    assert.strictEqual(createProps.retentionSeconds, queueObj.retentionSeconds)
     assert.strictEqual(createProps.deadLetter, queueObj.deadLetter)
     assert(queueObj.createdOn)
     assert(queueObj.updatedOn)
@@ -162,7 +162,7 @@ describe('queues', function () {
       retryBackoff: true,
       retryDelay: 2,
       expireInSeconds: 2,
-      retentionMinutes: 2,
+      retentionSeconds: 2,
       deadLetter
     }
 
@@ -175,7 +175,7 @@ describe('queues', function () {
     assert.strictEqual(updateProps.retryBackoff, queueObj.retryBackoff)
     assert.strictEqual(updateProps.retryDelay, queueObj.retryDelay)
     assert.strictEqual(updateProps.expireInSeconds, queueObj.expireInSeconds)
-    assert.strictEqual(updateProps.retentionMinutes, queueObj.retentionMinutes)
+    assert.strictEqual(updateProps.retentionSeconds, queueObj.retentionSeconds)
     assert.strictEqual(updateProps.deadLetter, queueObj.deadLetter)
   })
 
@@ -191,7 +191,7 @@ describe('queues', function () {
       retryBackoff: true,
       retryDelay: 2,
       expireInSeconds: 3,
-      retentionMinutes: 4,
+      retentionSeconds: 4,
       deadLetter
     }
 
@@ -201,13 +201,13 @@ describe('queues', function () {
 
     const job = await boss.getJobById(queue, jobId)
 
-    const retentionMinutes = (new Date(job.keepUntil) - new Date(job.createdOn)) / 1000 / 60
+    const retentionSeconds = (new Date(job.keepUntil) - new Date(job.createdOn)) / 1000 / 60 /60
 
     assert.strictEqual(createProps.retryLimit, job.retryLimit)
     assert.strictEqual(createProps.retryBackoff, job.retryBackoff)
     assert.strictEqual(createProps.retryDelay, job.retryDelay)
     assert.strictEqual(createProps.expireInSeconds, job.expireIn.seconds)
-    assert.strictEqual(createProps.retentionMinutes, retentionMinutes)
+    assert.strictEqual(createProps.retentionSeconds, retentionSeconds)
   })
 
   it('short policy only allows 1 job in queue', async function () {

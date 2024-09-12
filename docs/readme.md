@@ -285,23 +285,6 @@ The following options can be set as properties in an object for additional confi
     Database schema that contains all required storage objects. Only alphanumeric and underscore allowed, length: <= 50 characters
 
 
-**Queue options**
-
-Queue options contain the following constructor-only settings.
-
-* **archiveCompletedAfterSeconds**
-
-    Specifies how long in seconds completed jobs get archived. Note: a warning will be emitted if set to lower than 60s and cron processing will be disabled.
-
-  Default: 12 hours
-
-* **archiveFailedAfterSeconds**
-
-    Specifies how long in seconds failed jobs get archived. Note: a warning will be emitted if set to lower than 60s and cron processing will be disabled.
-
-  Default: `archiveCompletedAfterSeconds`
-
-
 **Maintenance options**
 
 Maintenance operations include checking active jobs for expiration, archiving completed jobs from the primary job table, and deleting archived jobs from the archive table.
@@ -434,14 +417,6 @@ Available in constructor as a default, or overridden in send.
 * **expireInSeconds**, number
 
     How many seconds a job may be in active state before it is failed because of expiration. Must be >=1
-
-* **expireInMinutes**, number
-
-    How many minutes a job may be in active state before it is failed because of expiration. Must be >=1
-
-* **expireInHours**, number
-
-    How many hours a job may be in active state before it is failed because of expiration. Must be >=1
 
 * Default: 15 minutes
 
@@ -897,6 +872,22 @@ Allowed policy values:
 * **deadLetter**, string
 
 When a job fails after all retries, if the queue has a `deadLetter` property, the job's payload will be copied into that queue, copying the same retention and retry configuration as the original job.
+
+* **archive**, boolean
+
+  Default: true.  If the queue should move completed and failed items into the archive, using the following settings.
+
+* **archiveCompletedAfterSeconds**
+
+    Specifies how long in seconds completed jobs get archived. Note: a warning will be emitted if set to lower than 60s and cron processing will be disabled.
+
+  Default: 12 hours
+
+* **archiveFailedAfterSeconds**
+
+    Specifies how long in seconds failed jobs get archived. Note: a warning will be emitted if set to lower than 60s and cron processing will be disabled.
+
+  Default: `archiveCompletedAfterSeconds`
 
 ## `updateQueue(name, options)`
 

@@ -149,14 +149,15 @@ function getConfig (value) {
 
   applySchemaConfig(config)
   applyMaintenanceConfig(config)
-  applyArchiveConfig(config)
-  applyArchiveFailedConfig(config)
-  applyDeleteConfig(config)
   applyMonitoringConfig(config)
-
   applyPollingInterval(config)
-  applyExpirationConfig(config)
-  applyRetentionConfig(config)
+
+  // these don't really belong here
+  // applyArchiveConfig(config)
+  // applyArchiveFailedConfig(config)
+  // applyDeleteConfig(config)
+  // applyExpirationConfig(config)
+  // applyRetentionConfig(config)
 
   return config
 }
@@ -191,9 +192,11 @@ function applyArchiveConfig (config) {
   config.archiveSeconds = config.archiveCompletedAfterSeconds || ARCHIVE_DEFAULT
   config.archiveInterval = `${config.archiveSeconds} seconds`
 
-  if (config.archiveSeconds < 60) {
-    emitWarning(WARNINGS.CRON_DISABLED)
-  }
+
+  // block this from being a thing, since it will be per-queue, and this queue is system-controlled
+  // if (config.archiveSeconds < 60) {
+  //   emitWarning(WARNINGS.CRON_DISABLED)
+  // }
 }
 
 function applyArchiveFailedConfig (config) {
@@ -246,7 +249,7 @@ function applyMaintenanceConfig (config) {
   assert(!('maintenanceIntervalSeconds' in config) || config.maintenanceIntervalSeconds >= 1,
     'configuration assert: maintenanceIntervalSeconds must be at least every second')
 
-  config.maintenanceIntervalSeconds = config.maintenanceIntervalSeconds || POLICY.MAX_EXPIRATION_HOURS
+  config.maintenanceIntervalSeconds = config.maintenanceIntervalSeconds || POLICY.MAX_EXPIRATION_HOURS * 60 * 60
 
   assert(config.maintenanceIntervalSeconds / 60 / 60 <= POLICY.MAX_EXPIRATION_HOURS,
     `configuration assert: maintenance interval cannot exceed ${POLICY.MAX_EXPIRATION_HOURS} hours`)

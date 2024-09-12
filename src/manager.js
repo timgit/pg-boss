@@ -562,7 +562,7 @@ class Manager extends EventEmitter {
       retryDelay,
       retryBackoff,
       expireInSeconds,
-      retentionMinutes,
+      retentionSeconds,
       archive,
       deadLetter,
       provisioned
@@ -579,7 +579,7 @@ class Manager extends EventEmitter {
       retryDelay,
       retryBackoff,
       expireInSeconds,
-      retentionMinutes,
+      retentionSeconds,
       archive,
       deadLetter,
       provisioned
@@ -618,7 +618,7 @@ class Manager extends EventEmitter {
       retryDelay,
       retryBackoff,
       expireInSeconds,
-      retentionMinutes,
+      retentionSeconds,
       deadLetter
     } = Attorney.checkQueueArgs(options)
 
@@ -634,7 +634,7 @@ class Manager extends EventEmitter {
       retryDelay,
       retryBackoff,
       expireInSeconds,
-      retentionMinutes,
+      retentionSeconds,
       deadLetter
     ]
 
