@@ -154,7 +154,7 @@ class Timekeeper extends EventEmitter {
   }
 
   async onSendIt (jobs) {
-    await Promise.all(jobs.map(({ data }) => this.manager.send(data)))
+    await Promise.allSettled(jobs.map(({ data }) => this.manager.send(data)))
   }
 
   async getSchedules () {

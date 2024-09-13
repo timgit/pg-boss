@@ -34,6 +34,7 @@ function checkQueueArgs (config = {}) {
   applyRetryConfig(config)
   applyExpirationConfig(config)
   applyRetentionConfig(config)
+  applyDeleteConfig(config)
 
   return config
 }
@@ -210,11 +211,6 @@ function applyMaintenanceConfig (config) {
     'configuration assert: monitorIntervalSeconds must be at least every second')
 
   config.monitorIntervalSeconds = config.monitorIntervalSeconds || 60
-
-  assert(!('archiveIntervalSeconds' in config) || config.archiveIntervalSeconds >= 1,
-    'configuration assert: archiveIntervalSeconds must be at least every second')
-
-  config.archiveIntervalSeconds = config.archiveIntervalSeconds || 60 * 60
 }
 
 function applyDeleteConfig (config) {

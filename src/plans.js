@@ -217,7 +217,7 @@ const JOB_COLUMNS_ALL = `${JOB_COLUMNS_MIN},
 
 function createTableJobCommon (schema) {
   const table = 'job_common'
-  const format = command => command.replaceAll('.job', `.${table};`)
+  const format = command => command.replaceAll('.job', `.${table}`) + ';'
 
   return `
     CREATE TABLE ${schema}.${table} (LIKE ${schema}.job INCLUDING DEFAULTS);

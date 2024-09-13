@@ -49,7 +49,6 @@ class Manager extends EventEmitter {
       this.complete,
       this.cancel,
       this.resume,
-      this.deleteJob,
       this.fail,
       this.fetch,
       this.work,
@@ -66,10 +65,13 @@ class Manager extends EventEmitter {
       this.createQueue,
       this.updateQueue,
       this.deleteQueue,
-      this.purgeQueue,
       this.getQueueSize,
       this.getQueue,
       this.getQueues,
+      this.dropQueuedJobs,
+      this.dropStoredJobs,
+      this.dropAllJobs,
+      this.deleteJob,
       this.getJobById
     ]
   }
