@@ -54,7 +54,9 @@
   - [`getJobById(name, id, options)`](#getjobbyidname-id-options)
   - [`createQueue(name, Queue)`](#createqueuename-queue)
   - [`updateQueue(name, options)`](#updatequeuename-options)
-  - [`purgeQueue(name)`](#purgequeuename)
+  - [`dropQueuedJobs(name)`](#dropqueuedjobsname)
+  - [`dropStoredJobs(name)`](#dropstoredjobsname)
+  - [`dropAllJobs(name)`](#dropalljobsname)
   - [`deleteQueue(name)`](#deletequeuename)
   - [`getQueues()`](#getqueues)
   - [`getQueue(name)`](#getqueuename)
@@ -113,7 +115,6 @@ NOTE: If an existing schema was used during installation, created objects will n
 ```sql
 DROP TABLE pgboss.version;
 DROP TABLE pgboss.job;
-DROP TABLE pgboss.archive;
 DROP TYPE pgboss.job_state;
 DROP TABLE pgboss.subscription;
 DROP TABLE pgboss.schedule;
@@ -301,17 +302,6 @@ Maintenance operations include checking active jobs for expiration, archiving co
 
   If this is set to false, this instance will skip attempts to run schema migratations during `start()`. If schema migrations exist, `start()` will throw and error and block usage. This is an advanced use case when the configured user account does not have schema mutation privileges.
 
-**Archive options**
-
-When jobs in the archive table become eligible for deletion.
-
-* **deleteAfterSeconds**, int
-
-    delete interval in seconds, must be >=1
-
-* Default: 7 days
-
-  > When a higher unit is is specified, lower unit configuration settings are ignored.
 
 **Maintenance interval**
 
@@ -324,7 +314,6 @@ How often maintenance operations are run against the job and archive tables.
 
 * Default: 1 minute
 
-  > When a higher unit is is specified, lower unit configuration settings are ignored.
 
 
 ## `start()`
@@ -458,8 +447,6 @@ Available in constructor as a default, or overridden in send.
 Throttling jobs to 'one per time slot'.  This option is set on the send side of the API since jobs may or may not be created based on the existence of other jobs.
 
 For example, if you set the `singletonSeconds` to 60, then submit 2 jobs within the same minute, only the first job will be accepted and resolve a job id.  The second request will resolve a null instead of a job id.
-
-> When a higher unit is is specified, lower unit configuration settings are ignored.
 
 Setting `singletonNextSlot` to true will cause the job to be scheduled to run after the current time slot if and when a job is throttled. This option is set to true, for example, when calling the convenience function `sendDebounced()`.
 
@@ -873,29 +860,29 @@ Allowed policy values:
 
 When a job fails after all retries, if the queue has a `deadLetter` property, the job's payload will be copied into that queue, copying the same retention and retry configuration as the original job.
 
-* **archive**, boolean
+* **deleteAfterSeconds**, int
 
-  Default: true.  If the queue should move completed and failed items into the archive, using the following settings.
+  How long to keep jobs after processing.
 
-* **archiveCompletedAfterSeconds**
+* Default: 7 days
 
-    Specifies how long in seconds completed jobs get archived. Note: a warning will be emitted if set to lower than 60s and cron processing will be disabled.
-
-  Default: 12 hours
-
-* **archiveFailedAfterSeconds**
-
-    Specifies how long in seconds failed jobs get archived. Note: a warning will be emitted if set to lower than 60s and cron processing will be disabled.
-
-  Default: `archiveCompletedAfterSeconds`
 
 ## `updateQueue(name, options)`
 
 Updates options on an existing queue. The policy can be changed, but understand this won't impact existing jobs in flight and will only apply the new policy on new incoming jobs.
 
-## `purgeQueue(name)`
+## `dropQueuedJobs(name)`
 
 Deletes all queued jobs in a queue.
+
+## `dropStoredJobs(name)`
+
+Deletes all jobs in completed, failed, and cancelled state in a queue.
+
+## `dropAllJobs(name)`
+
+Deletes all jobs in a queue, including active jobs.
+
 
 ## `deleteQueue(name)`
 

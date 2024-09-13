@@ -1,5 +1,6 @@
 const assert = require('node:assert')
 const helper = require('./testHelper')
+const { states } = require('../src')
 
 describe('queues', function () {
   it('should create a queue', async function () {
@@ -91,12 +92,68 @@ describe('queues', function () {
     await boss.createQueue(queue)
   })
 
-  it('should purge a queue', async function () {
+  it('should delete an empty queue', async function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
     const queue = this.test.bossConfig.schema
 
     await boss.createQueue(queue)
+    await boss.send(queue)
     await boss.purgeQueue(queue)
+    assert(await boss.getQueue(queue))
+    await boss.deleteQueue(queue)
+  })
+
+  it('should not delete a non-empty queue', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
+    const queue = this.test.bossConfig.schema
+
+    await boss.createQueue(queue)
+    await boss.send(queue)
+
+    try {
+      await boss.deleteQueue(queue)
+      assert(false)
+    } catch {}
+  })
+
+  it('should delete all queued jobs from a queue', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const queue = this.test.bossConfig.schema
+
+    const getCount = () => helper.countJobs(this.test.bossConfig.schema, 'job', 'state = $1', states.created)
+
+    await boss.send(queue)
+
+    assert.strictEqual(await getCount(), 1)
+
+    await boss.dropQueuedJobs(queue)
+
+    assert.strictEqual(await getCount(), 0)
+  })
+
+  it('should delete all stored jobs from a queue', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const queue = this.test.bossConfig.schema
+
+    const { completed, failed, cancelled } = states
+    const inClause = [completed, failed, cancelled].map(s => `'${s}'`)
+    const getCount = () => helper.countJobs(this.test.bossConfig.schema, 'job', `state IN (${inClause})`)
+
+    await boss.send(queue)
+    const job1 = await boss.fetch(queue)
+    await boss.complete(queue, job1.id)
+
+    assert.strictEqual(await getCount(), 1)
+
+    await boss.send(queue)
+    const job2 = await boss.fetch(queue)
+    await boss.fail(queue, job2.id)
+
+    assert.strictEqual(await getCount(), 2)
+
+    await boss.dropStoredJobs(queue)
+
+    assert.strictEqual(await getCount(), 0)
   })
 
   it('getQueue() returns null when missing', async function () {
@@ -201,7 +258,7 @@ describe('queues', function () {
 
     const job = await boss.getJobById(queue, jobId)
 
-    const retentionSeconds = (new Date(job.keepUntil) - new Date(job.createdOn)) / 1000 / 60 /60
+    const retentionSeconds = (new Date(job.keepUntil) - new Date(job.createdOn)) / 1000 / 60 / 60
 
     assert.strictEqual(createProps.retryLimit, job.retryLimit)
     assert.strictEqual(createProps.retryBackoff, job.retryBackoff)

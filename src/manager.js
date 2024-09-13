@@ -129,7 +129,7 @@ class Manager extends EventEmitter {
   }
 
   async work (name, ...args) {
-    const { options, callback } = Attorney.checkWorkArgs(name, args, this.config)
+    const { options, callback } = Attorney.checkWorkArgs(name, args)
     return await this.watch(name, options, callback)
   }
 
@@ -340,7 +340,9 @@ class Manager extends EventEmitter {
     return await this.createJob(result.name, result.data, result.options)
   }
 
-  async createJob (name, data, options, singletonOffset = 0) {
+  async createJob (name, data, options) {
+    const singletonOffset = 0
+
     const {
       id = null,
       db: wrapper,
@@ -348,64 +350,55 @@ class Manager extends EventEmitter {
       startAfter,
       singletonKey = null,
       singletonSeconds,
+      singletonNextSlot,
       expireIn,
-      expireInDefault,
       keepUntil,
-      keepUntilDefault,
       retryLimit,
-      retryLimitDefault,
       retryDelay,
-      retryDelayDefault,
-      retryBackoff,
-      retryBackoffDefault
+      retryBackoff
     } = options
 
-    const values = [
-      id, // 1
-      name, // 2
-      data, // 3
-      priority, // 4
-      startAfter, // 5
-      singletonKey, // 6
-      singletonSeconds, // 7
-      singletonOffset, // 8
-      expireIn, // 9
-      expireInDefault, // 10
-      keepUntil, // 11
-      keepUntilDefault, // 12
-      retryLimit, // 13
-      retryLimitDefault, // 14
-      retryDelay, // 15
-      retryDelayDefault, // 16
-      retryBackoff, // 17
-      retryBackoffDefault // 18
-    ]
+    const job = {
+      id,
+      name,
+      data,
+      priority,
+      startAfter,
+      singletonKey,
+      singletonSeconds,
+      singletonOffset,
+      expireIn,
+      keepUntil,
+      retryLimit,
+      retryDelay,
+      retryBackoff
+    }
 
     const db = wrapper || this.db
 
     const { table } = await this.getQueueCache(name)
 
-    const sql = plans.insertJob(this.config.schema, table)
+    const sql = plans.insertJobs(this.config.schema, { table, name, returnId: true })
 
-    const { rows } = await db.executeSql(sql, values)
+    const { rows: try1 } = await db.executeSql(sql, [JSON.stringify([job])])
 
-    if (rows.length === 1) {
-      return rows[0].id
+    if (try1.length === 1) {
+      return try1[0].id
     }
 
-    if (!options.singletonNextSlot) {
-      return null
+    if (singletonNextSlot) {
+      // delay starting by the offset to honor throttling config
+      job.startAfter = this.getDebounceStartAfter(singletonSeconds, this.timekeeper.clockSkew)
+      job.singletonOffset = singletonSeconds
+
+      const { rows: try2 } = await db.executeSql(sql, [JSON.stringify([job])])
+
+      if (try2.length === 1) {
+        return try2[0].id
+      }
     }
 
-    // delay starting by the offset to honor throttling config
-    options.startAfter = this.getDebounceStartAfter(singletonSeconds, this.timekeeper.clockSkew)
-
-    // toggle off next slot config for round 2
-    options.singletonNextSlot = false
-
-    singletonOffset = singletonSeconds
-
-    return await this.createJob(name, data, options, singletonOffset)
+    return null
   }
 
   async insert (name, jobs, options = {}) {
@@ -415,18 +408,9 @@ class Manager extends EventEmitter {
 
     const db = options.db || this.db
 
-    const params = [
-      JSON.stringify(jobs), // 1
-      this.config.expireIn, // 2
-      this.config.keepUntil, // 3
-      this.config.retryLimit, // 4
-      this.config.retryDelay, // 5
-      this.config.retryBackoff // 6
-    ]
+    const sql = plans.insertJobs(this.config.schema, { table, queueName: name, returnId: false })
 
-    const sql = plans.insertJobs(this.config.schema, table, name)
-
-    const { rows } = await db.executeSql(sql, params)
+    const { rows } = await db.executeSql(sql, [JSON.stringify(jobs)])
 
     return (rows.length) ? rows.map(i => i.id) : null
   }
@@ -533,7 +517,7 @@ class Manager extends EventEmitter {
     const db = options.db || this.db
     const ids = this.mapCompletionIdArg(id, 'deleteJob')
     const { table } = await this.getQueueCache(name)
-    const sql = plans.deleteJobs(this.config.schema, table)
+    const sql = plans.deleteJobsById(this.config.schema, table)
     const result = await db.executeSql(sql, [name, ids])
     return this.mapCommandResponse(ids, result)
   }
@@ -561,11 +545,11 @@ class Manager extends EventEmitter {
       retryLimit,
       retryDelay,
       retryBackoff,
-      expireInSeconds,
+      expirationSeconds, // rename???
       retentionSeconds,
-      archive,
+      deletionSeconds,
       deadLetter,
-      provisioned
+      partition
     } = Attorney.checkQueueArgs(options)
 
     if (deadLetter) {
@@ -578,11 +562,11 @@ class Manager extends EventEmitter {
       retryLimit,
       retryDelay,
       retryBackoff,
-      expireInSeconds,
+      expirationSeconds,
       retentionSeconds,
-      archive,
+      deletionSeconds,
       deadLetter,
-      provisioned
+      partition
     }
 
     const sql = plans.createQueue(this.config.schema)
@@ -612,7 +596,7 @@ class Manager extends EventEmitter {
     }
 
     // only use props that were assigned
-    // don't allow changing provisioned?
+    // don't allow changing partition?
     const {
       retryLimit,
       retryDelay,
@@ -662,11 +646,25 @@ class Manager extends EventEmitter {
     } catch {}
   }
 
-  async purgeQueue (name) {
+  async dropQueuedJobs (name) {
     Attorney.assertQueueName(name)
     const { table } = await this.getQueueCache(name)
-    const sql = plans.purgeQueue(this.config.schema, table)
-    await this.db.executeSql(sql, [name])
+    const sql = plans.dropQueuedJobs(this.config.schema, table)
+    await this.db.executeSql(sql)
+  }
+
+  async dropStoredJobs (name) {
+    Attorney.assertQueueName(name)
+    const { table } = await this.getQueueCache(name)
+    const sql = plans.dropStoredJobs(this.config.schema, table)
+    await this.db.executeSql(sql)
+  }
+
+  async dropAllJobs (name) {
+    Attorney.assertQueueName(name)
+    const { table } = await this.getQueueCache(name)
+    const sql = plans.dropAllJobs(this.config.schema, table)
+    await this.db.executeSql(sql)
   }
 
   async getQueueSize (name, options) {

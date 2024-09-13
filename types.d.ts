@@ -37,17 +37,14 @@ declare namespace PgBoss {
 
   interface SchedulingOptions {
     schedule?: boolean;
-
+    clockMonitorIntervalSeconds?: number;
+    cronWorkerIntervalSeconds?: number;
     clockMonitorIntervalSeconds?: number;
   }
 
   interface MaintenanceOptions {
     supervise?: boolean;
     migrate?: boolean;
-
-    deleteAfterSeconds?: number;
-    archiveCompletedAfterSeconds?: number;
-    archiveFailedAfterSeconds?: number;
   }
 
   type ConstructorOptions = DatabaseOptions & SchedulingOptions & MaintenanceOptions
@@ -88,24 +85,21 @@ declare namespace PgBoss {
   type Queue = {
     name: string,
     policy?: QueuePolicy,
-    archive?: boolean,
-    deadLetter?: string
+    partition?: boolean,
+    deadLetter?: string,
+    deleteAfterSeconds?: number;
   } & RetryOptions & ExpirationOptions & RetentionOptions
 
-  
-  // expireInSeconds
-  // retentionSeconds
-  // deadLetterTable
-  // availableCount
-  // activeCount
-  // totalCount
-  // table
-  // createdOn
-  // updatedOn
+  type QueueResult = Queue & {
+    deadLetterTable: number,
+    queuedCount: number,
+    activeCount: number,
+    completedCunt: number,
+    table: number,
+    createdOn: Date,
+    updatedOn: Date
+  }
 
-
-
-  type QueueResult = Queue & { createdOn: Date, updatedOn: Date }
   type ScheduleOptions = SendOptions & { tz?: string }
 
   interface JobPollingOptions {
@@ -311,6 +305,10 @@ declare class PgBoss extends EventEmitter {
   deleteJob(name: string, id: string, options?: PgBoss.ConnectionOptions): Promise<void>;
   deleteJob(name: string, ids: string[], options?: PgBoss.ConnectionOptions): Promise<void>;
 
+  dropQueuedJobs(name: string): Promise<void>;
+  dropStoredJobs(name: string): Promise<void>;
+  dropAllJobs(name: string): Promise<void>;
+
   complete(name: string, id: string, options?: PgBoss.ConnectionOptions): Promise<void>;
   complete(name: string, id: string, data: object, options?: PgBoss.ConnectionOptions): Promise<void>;
   complete(name: string, ids: string[], options?: PgBoss.ConnectionOptions): Promise<void>;
@@ -324,7 +322,6 @@ declare class PgBoss extends EventEmitter {
   createQueue(name: string, options?: PgBoss.Queue): Promise<void>;
   updateQueue(name: string, options?: PgBoss.Queue): Promise<void>;
   deleteQueue(name: string): Promise<void>;
-  purgeQueue(name: string): Promise<void>;
   getQueues(): Promise<PgBoss.QueueResult[]>;
   getQueue(name: string): Promise<PgBoss.QueueResult | null>;
   getQueueSize(name: string, options?: { before: 'retry' | 'active' | 'completed' | 'cancelled' | 'failed' }): Promise<number>;

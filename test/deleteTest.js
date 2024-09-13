@@ -6,7 +6,7 @@ describe('delete', async function () {
     const config = {
       ...this.test.bossConfig,
       maintenanceIntervalSeconds: 1,
-      archiveIntervalSeconds: 1,
+
       deleteAfterSeconds: 1
     }
 
@@ -21,9 +21,9 @@ describe('delete', async function () {
 
     await boss.maintain()
 
-    const archivedJob = await helper.getArchivedJobById(config.schema, queue, jobId)
+    const job = await boss.getJobById(queue, jobId)
 
-    assert(!archivedJob)
+    assert(!job)
   })
 
   it('should delete a job via deleteJob()', async function () {

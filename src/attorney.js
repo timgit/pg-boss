@@ -21,15 +21,7 @@ module.exports = {
 const WARNINGS = {
   CLOCK_SKEW: {
     message: 'Timekeeper detected clock skew between this instance and the database server. This will not affect scheduling operations, but this warning is shown any time the skew exceeds 60 seconds.',
-    code: 'pg-boss-w02'
-  },
-  CRON_DISABLED: {
-    message: 'Archive interval is set less than 60s.  Cron processing is disabled.',
-    code: 'pg-boss-w03'
-  },
-  ON_COMPLETE_REMOVED: {
-    message: '\'onComplete\' option detected. This option has been removed. Consider deadLetter if needed.',
-    code: 'pg-boss-w04'
+    code: 'pg-boss-w01'
   }
 }
 
@@ -38,9 +30,6 @@ function checkQueueArgs (config = {}) {
 
   assert(!('deadLetter' in config) || config.deadLetter === null || (typeof config.deadLetter === 'string'), 'deadLetter must be a string')
   assert(!('deadLetter' in config) || config.deadLetter === null || /[\w-]/.test(config.deadLetter), 'deadLetter can only contain alphanumeric characters, underscores, or hyphens')
-
-  assert(!('archive' in config) || typeof config.archive === 'boolean', 'archive must be a boolean')
-  config.archive = ('archive' in config) ? config.archive : true
 
   applyRetryConfig(config)
   applyExpirationConfig(config)
@@ -96,7 +85,7 @@ function checkSendArgs (args) {
   return { name, data, options }
 }
 
-function checkWorkArgs (name, args, defaults) {
+function checkWorkArgs (name, args) {
   let options, callback
 
   assert(name, 'missing job name')
@@ -114,7 +103,7 @@ function checkWorkArgs (name, args, defaults) {
 
   options = { ...options }
 
-  applyPollingInterval(options, defaults)
+  applyPollingInterval(options)
 
   assert(!('batchSize' in options) || (Number.isInteger(options.batchSize) && options.batchSize >= 1), 'batchSize must be an integer > 0')
   assert(!('includeMetadata' in options) || typeof options.includeMetadata === 'boolean', 'includeMetadata must be a boolean')
@@ -150,14 +139,6 @@ function getConfig (value) {
   applySchemaConfig(config)
   applyMaintenanceConfig(config)
   applyMonitoringConfig(config)
-  applyPollingInterval(config)
-
-  // these don't really belong here
-  // applyArchiveConfig(config)
-  // applyArchiveFailedConfig(config)
-  // applyDeleteConfig(config)
-  // applyExpirationConfig(config)
-  // applyRetentionConfig(config)
 
   return config
 }
@@ -183,35 +164,6 @@ function assertQueueName (name) {
   assert(/[\w-]/.test(name), 'Name can only contain alphanumeric characters, underscores, or hyphens')
 }
 
-function applyArchiveConfig (config) {
-  const ARCHIVE_DEFAULT = 60 * 60 * 12
-
-  assert(!('archiveCompletedAfterSeconds' in config) || config.archiveCompletedAfterSeconds >= 1,
-    'configuration assert: archiveCompletedAfterSeconds must be at least every second and less than ')
-
-  config.archiveSeconds = config.archiveCompletedAfterSeconds || ARCHIVE_DEFAULT
-  config.archiveInterval = `${config.archiveSeconds} seconds`
-
-
-  // block this from being a thing, since it will be per-queue, and this queue is system-controlled
-  // if (config.archiveSeconds < 60) {
-  //   emitWarning(WARNINGS.CRON_DISABLED)
-  // }
-}
-
-function applyArchiveFailedConfig (config) {
-  assert(!('archiveFailedAfterSeconds' in config) || config.archiveFailedAfterSeconds >= 1,
-    'configuration assert: archiveFailedAfterSeconds must be at least every second and less than ')
-
-  config.archiveFailedSeconds = config.archiveFailedAfterSeconds || config.archiveSeconds
-  config.archiveFailedInterval = `${config.archiveFailedSeconds} seconds`
-
-  // Do not emit warning twice
-  if (config.archiveFailedSeconds < 60 && config.archiveSeconds >= 60) {
-    emitWarning(WARNINGS.CRON_DISABLED)
-  }
-}
-
 function applyRetentionConfig (config) {
   assert(!('retentionSeconds' in config) || config.retentionSeconds >= 1,
     'configuration assert: retentionSeconds must be at least every second')
@@ -227,7 +179,7 @@ function applyExpirationConfig (config) {
 
   assert(!config.expireInSeconds || config.expireInSeconds / 60 / 60 < POLICY.MAX_EXPIRATION_HOURS, `configuration assert: expiration cannot exceed ${POLICY.MAX_EXPIRATION_HOURS} hours`)
 
-  config.expireIn = expireIn
+  config.expireInSeconds = config.expireInSeconds || 60 * 15
 }
 
 function applyRetryConfig (config) {
