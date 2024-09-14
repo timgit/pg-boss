@@ -983,10 +983,12 @@ Allowed policy values:
 
 | Policy | Description |
 | - | - |
-| standard | (Default) Supports all standard features such as deferral, priority, and throttling |
-| short | All standard features, but only allows 1 job to be queued, unlimited active. Can be extended with `singletonKey` |
-| singleton | All standard features, but only allows 1 job to be active, unlimited queued. Can be extended with `singletonKey` |
-| stately | Combination of short and singleton: Only allows 1 job per state, queued and/or active. Can be extended with `singletonKey` |
+| `standard` | (Default) Supports all standard features such as deferral, priority, and throttling |
+| `short` | All standard features, but only allows 1 job to be queued, unlimited active. Can be extended with `singletonKey` |
+| `singleton` | All standard features, but only allows 1 job to be active, unlimited queued. Can be extended with `singletonKey` |
+| `stately` | Combination of short and singleton: Only allows 1 job per state, queued and/or active. Can be extended with `singletonKey` |
+
+> `stately` queues are special in how retries are handled. By definition, stately queues will not allow multiple jobs to occupy `retry` state. Once a job exists in `retry`, failing another `active` job will bypass the retry mechanism and force the job to `failed`. If this job requires retries, consider a custom retry implementation using a dead letter queue.
 
 ## `updateQueue(name, options)`
 

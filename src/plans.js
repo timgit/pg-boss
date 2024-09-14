@@ -194,7 +194,7 @@ function createTableJob (schema) {
       keep_until timestamp with time zone NOT NULL default now() + interval '14 days',
       output jsonb,
       dead_letter text,
-      policy text      
+      policy text
     ) PARTITION BY LIST (name)
   `
 }
@@ -555,28 +555,126 @@ function failJobsByTimeout (schema) {
 
 function failJobs (schema, where, output) {
   return `
-    WITH results AS (
-      UPDATE ${schema}.job SET
-        state = CASE
+    WITH deleted_jobs AS (
+      DELETE FROM ${schema}.job
+      WHERE ${where}
+      RETURNING *
+    ),
+    retried_jobs AS (
+      INSERT INTO ${schema}.job (
+        id,
+        name,
+        priority,
+        data,
+        state,
+        retry_limit,
+        retry_count,
+        retry_delay,
+        retry_backoff,
+        start_after,
+        started_on,
+        singleton_key,
+        singleton_on,
+        expire_in,
+        created_on,
+        completed_on,
+        keep_until,
+        dead_letter,
+        policy,
+        output
+      )
+      SELECT
+        id,
+        name,
+        priority,
+        data,
+        CASE
           WHEN retry_count < retry_limit THEN '${JOB_STATES.retry}'::${schema}.job_state
           ELSE '${JOB_STATES.failed}'::${schema}.job_state
-          END,
-        completed_on = CASE
-          WHEN retry_count < retry_limit THEN NULL
-          ELSE now()
-          END,
-        start_after = CASE
+          END as state,
+        retry_limit,
+        retry_count,
+        retry_delay,
+        retry_backoff,
+        CASE
           WHEN retry_count = retry_limit THEN start_after
           WHEN NOT retry_backoff THEN now() + retry_delay * interval '1'
           ELSE now() + (
                 retry_delay * 2 ^ LEAST(16, retry_count + 1) / 2 +
                 retry_delay * 2 ^ LEAST(16, retry_count + 1) / 2 * random()
             ) * interval '1'
-          END,
-        output = ${output}
-      WHERE ${where}
+          END as start_after,
+        started_on,
+        singleton_key,
+        singleton_on,
+        expire_in,
+        created_on,
+        CASE
+          WHEN retry_count < retry_limit THEN NULL
+          ELSE now()
+          END as completed_on,
+        keep_until,
+        dead_letter,
+        policy,        
+        ${output}
+      FROM deleted_jobs
+      ON CONFLICT DO NOTHING
       RETURNING *
-    ), dlq_jobs as (
+    ),
+    failed_jobs as (
+      INSERT INTO ${schema}.job (
+        id,
+        name,
+        priority,
+        data,
+        state,
+        retry_limit,
+        retry_count,
+        retry_delay,
+        retry_backoff,
+        start_after,
+        started_on,
+        singleton_key,
+        singleton_on,
+        expire_in,
+        created_on,
+        completed_on,
+        keep_until,
+        dead_letter,
+        policy,
+        output
+      )
+      SELECT
+        id,
+        name,
+        priority,
+        data,
+        '${JOB_STATES.failed}'::${schema}.job_state as state,
+        retry_limit,
+        retry_count,
+        retry_delay,
+        retry_backoff,
+        start_after,
+        started_on,
+        singleton_key,
+        singleton_on,
+        expire_in,
+        created_on,
+        now() as completed_on,
+        keep_until,
+        dead_letter,
+        policy,
+        ${output}
+      FROM deleted_jobs
+      WHERE id NOT IN (SELECT id from retried_jobs)
+      RETURNING *
+    ),
+    results as (
+      SELECT * FROM retried_jobs
+      UNION ALL
+      SELECT * FROM failed_jobs
+    ),
+    dlq_jobs as (
       INSERT INTO ${schema}.job (name, data, output, retry_limit, keep_until)
       SELECT
         dead_letter,
