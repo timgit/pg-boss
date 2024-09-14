@@ -39,7 +39,7 @@ declare namespace PgBoss {
     schedule?: boolean;
     clockMonitorIntervalSeconds?: number;
     cronWorkerIntervalSeconds?: number;
-    clockMonitorIntervalSeconds?: number;
+    cronMonitorIntervalSeconds?: number;
   }
 
   interface MaintenanceOptions {
@@ -156,12 +156,10 @@ declare namespace PgBoss {
     id: string;
     name: string;
     data: T;
+    expireInSeconds: number;
   }
 
-  interface JobWithMetadata<T = object> {
-    id: string;
-    name: string;
-    data: T;
+  interface JobWithMetadata<T = object> extends Job<T> {
     priority: number;
     state: 'created' | 'retry' | 'active' | 'completed' | 'cancelled' | 'failed';
     retryLimit: number;

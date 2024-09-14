@@ -406,6 +406,38 @@ describe('queues', function () {
     assert(!blockedSecondActive)
   })
 
+  it('stately policy fails a job without retry when others are active', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
+    const queue = this.test.bossConfig.schema
+    const deadLetter = queue + '_dlq'
+
+    await boss.createQueue(deadLetter)
+    await boss.createQueue(queue, { policy: 'stately', deadLetter, retryLimit: 3 })
+
+    const jobId1 = await boss.send(queue, null, { expireInSeconds: 1 })
+    await boss.fetch(queue)
+    await boss.fail(queue, jobId1)
+    const job1Data = await boss.getJobById(queue, jobId1)
+    assert.strictEqual(job1Data.state, 'retry')
+
+    // higher priority new job should be active next
+    const jobId2 = await boss.send(queue, null, { priority: 1, expireInSeconds: 1 })
+    await boss.fetch(queue)
+
+    const jobId3 = await boss.send(queue)
+    assert(jobId3)
+
+    await boss.fail(queue, jobId2)
+
+    const job2Data = await boss.getJobById(queue, jobId2)
+
+    assert.strictEqual(job2Data.state, 'failed')
+
+    const [job2Dlq] = await boss.fetch(deadLetter)
+
+    assert(job2Dlq)
+  })
+
   it('stately policy should be extended with singletonKey', async function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
     const queue = this.test.bossConfig.schema

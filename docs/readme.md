@@ -724,6 +724,8 @@ but **not** this format which is parsed as "only run exactly at 3:30:30 am every
 30 30 3 * * *
 ```
 
+To change how often schedules are checked, you can set `cronMonitorIntervalSeconds`. To change how often cron jobs are run, you can set `cronWorkerIntervalSeconds`.
+
 In order mitigate clock skew and drift, every 10 minutes the clocks of each instance are compared to the database server's clock. The skew, if any, is stored and used as an offset during cron evaluation to ensure all instances are synchronized. Internally, job throttling options are then used to make sure only 1 job is sent even if multiple instances are running.
 
 If needed, the default clock monitoring interval can be adjusted using `clockMonitorIntervalSeconds` or `clockMonitorIntervalMinutes`. Additionally, to disable scheduling on an instance completely, use the following in the constructor options.
@@ -851,10 +853,12 @@ Allowed policy values:
 
 | Policy | Description |
 | - | - |
-| standard | (Default) Supports all standard features such as deferral, priority, and throttling |
-| short | All standard features, but only allows 1 job to be queued, unlimited active. Can be extended with `singletonKey` |
-| singleton | All standard features, but only allows 1 job to be active, unlimited queued. Can be extended with `singletonKey` |
-| stately | Combination of short and singleton: Only allows 1 job per state, queued and/or active. Can be extended with `singletonKey` |
+| `standard` | (Default) Supports all standard features such as deferral, priority, and throttling |
+| `short` | All standard features, but only allows 1 job to be queued, unlimited active. Can be extended with `singletonKey` |
+| `singleton` | All standard features, but only allows 1 job to be active, unlimited queued. Can be extended with `singletonKey` |
+| `stately` | Combination of short and singleton: Only allows 1 job per state, queued and/or active. Can be extended with `singletonKey` |
+
+> `stately` queues are special in how retries are handled. By definition, stately queues will not allow multiple jobs to occupy `retry` state. Once a job exists in `retry`, failing another `active` job will bypass the retry mechanism and force the job to `failed`. If this job requires retries, consider a custom retry implementation using a dead letter queue.
 
 * **deadLetter**, string
 
