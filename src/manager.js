@@ -76,10 +76,10 @@ class Manager extends EventEmitter {
     ]
   }
 
-  start () {
+  async start () {
     this.stopped = false
     this.queueCacheInterval = setInterval(() => this.onCacheQueues(), 60 * 1000)
-    this.onCacheQueues()
+    await this.onCacheQueues()
   }
 
   async onCacheQueues () {
@@ -410,7 +410,7 @@ class Manager extends EventEmitter {
 
     const db = options.db || this.db
 
-    const sql = plans.insertJobs(this.config.schema, { table, queueName: name, returnId: false })
+    const sql = plans.insertJobs(this.config.schema, { table, name, returnId: false })
 
     const { rows } = await db.executeSql(sql, [JSON.stringify(jobs)])
 
@@ -539,46 +539,20 @@ class Manager extends EventEmitter {
 
     Attorney.assertQueueName(name)
 
-    const { policy = QUEUE_POLICIES.standard } = options
+    options.policy = options.policy || QUEUE_POLICIES.standard
 
-    assert(policy in QUEUE_POLICIES, `${policy} is not a valid queue policy`)
+    assert(options.policy in QUEUE_POLICIES, `${options.policy} is not a valid queue policy`)
 
     Attorney.validateQueueArgs(options)
 
-    const FIFTEEN_MINUTES = 15 * 60
-    const SEVEN_DAYS = 7 * 24 * 60 * 60
-
-    const {
-      retryLimit = 2,
-      retryDelay = 0,
-      retryBackoff = false,
-      expireInSeconds = FIFTEEN_MINUTES,
-      retentionSeconds = SEVEN_DAYS,
-      deletionSeconds = SEVEN_DAYS,
-      deadLetter,
-      partition = false      
-    } = options
-
-    if (deadLetter) {
-      Attorney.assertQueueName(deadLetter)
-      assert.notStrictEqual(name, deadLetter, 'deadLetter cannot be itself')
-      await this.getQueueCache(deadLetter)
-    }
-
-    const data = {
-      policy,
-      retryLimit,
-      retryDelay,
-      retryBackoff,
-      expireInSeconds,
-      retentionSeconds,
-      deletionSeconds,
-      deadLetter,
-      partition
+    if (options.deadLetter) {
+      Attorney.assertQueueName(options.deadLetter)
+      assert.notStrictEqual(name, options.deadLetter, 'deadLetter cannot be itself')
+      await this.getQueueCache(options.deadLetter)
     }
 
     const sql = plans.createQueue(this.config.schema)
-    await this.db.executeSql(sql, [name, data])
+    await this.db.executeSql(sql, [name, options])
   }
 
   async getQueues (names) {
@@ -597,42 +571,19 @@ class Manager extends EventEmitter {
   async updateQueue (name, options = {}) {
     Attorney.assertQueueName(name)
 
-    const { policy = QUEUE_POLICIES.standard } = options
-
     if ('policy' in options) {
-      assert(policy in QUEUE_POLICIES, `${policy} is not a valid queue policy`)
+      assert(options.policy in QUEUE_POLICIES, `${options.policy} is not a valid queue policy`)
     }
 
-    // only use props that were assigned
-    // don't allow changing partition?
-    const {
-      retryLimit,
-      retryDelay,
-      retryBackoff,
-      expireInSeconds,
-      retentionSeconds,
-      deadLetter
-    } = Attorney.validateQueueArgs(options)
+    Attorney.validateQueueArgs(options)
 
-    if (deadLetter) {
-      Attorney.assertQueueName(deadLetter)
-      assert.notStrictEqual(name, deadLetter, 'deadLetter cannot be itself')
+    if (options.deadLetter) {
+      Attorney.assertQueueName(options.deadLetter)
+      assert.notStrictEqual(name, options.deadLetter, 'deadLetter cannot be itself')
     }
 
-    const params = [
-      name,
-      policy,
-      retryLimit,
-      retryDelay,
-      retryBackoff,
-      expireInSeconds,
-      retentionSeconds,
-      deadLetter
-    ]
-
-    const sql = plans.updateQueue(this.config.schema, { deadLetter })
-
-    await this.db.executeSql(sql, params)
+    const sql = plans.updateQueue(this.config.schema)
+    await this.db.executeSql(sql, [ name, options ])
   }
 
   async getQueue (name) {

@@ -123,7 +123,7 @@ class PgBoss extends EventEmitter {
       await this.#contractor.check()
     }
 
-    this.#manager.start()
+    await this.#manager.start()
 
     if (this.#config.supervise) {
       await this.#boss.start()

@@ -78,7 +78,7 @@ const QUEUE_DEFAULTS = {
   retry_limit: 2,
   retry_delay: 0,
   retry_backoff: false,
-  partition: false,
+  partition: false
 }
 
 function create (schema, version) {
@@ -146,7 +146,7 @@ function createTableQueue (schema) {
       dead_letter text REFERENCES ${schema}.queue (name) CHECK (dead_letter IS DISTINCT FROM name),
       partition bool NOT NULL,
       table_name text NOT NULL,
-      available_count int NOT NULL default 0,
+      queued_count int NOT NULL default 0,
       active_count int NOT NULL default 0,
       total_count int NOT NULL default 0,
       monitor_on timestamp with time zone,
@@ -425,10 +425,11 @@ function updateQueue (schema, { deadLetter } = {}) {
       retry_backoff = COALESCE($5, retry_backoff),
       expire_seconds = COALESCE($6, expire_seconds),
       retention_seconds = COALESCE($7, retention_seconds),
+      deletion_seconds = COALESCE($8, deletion_seconds),
       ${
         deadLetter === undefined
           ? ''
-          : 'dead_letter = CASE WHEN $8 IS DISTINCT FROM dead_letter THEN $8 ELSE dead_letter END,'
+          : 'dead_letter = CASE WHEN $9 IS DISTINCT FROM dead_letter THEN $9 ELSE dead_letter END,'
       }
       updated_on = now()
     WHERE name = $1
@@ -445,6 +446,7 @@ function getQueues (schema, names) {
       q.retry_backoff as "retryBackoff",
       q.expire_seconds as "expireInSeconds",
       q.retention_seconds as "retentionSeconds",
+      q.deletion_seconds as "deletionSeconds",
       q.partition,
       q.dead_letter as "deadLetter",
       dlq.table_name as "deadLetterTable",
@@ -628,7 +630,7 @@ function resumeJobs (schema, table) {
   `
 }
 
-function insertJobs (schema, { table, queueName, returnId = true }) {
+function insertJobs (schema, { table, name, returnId = true }) {
   const sql = `
     INSERT INTO ${schema}.${table} (
       id,
@@ -647,30 +649,19 @@ function insertJobs (schema, { table, queueName, returnId = true }) {
     )
     SELECT
       COALESCE(id, gen_random_uuid()) as id,
-      '${queueName}' as name,
+      '${name}' as name,
       data,
       COALESCE(priority, 0) as priority,
       j.start_after,
-      "singletonKey" as singleton_key,
+      "singletonKey",
       CASE
         WHEN "singletonSeconds" IS NOT NULL THEN 'epoch'::timestamp + '1s'::interval * ("singletonSeconds" * floor(( date_part('epoch', now()) + "singletonOffset") / "singletonSeconds" ))
         ELSE NULL
         END as singleton_on,
-      CASE
-        WHEN "expireInSeconds" IS NOT NULL THEN "expireInSeconds" *  interval '1s'
-        WHEN q.expire_seconds IS NOT NULL THEN q.expire_seconds * interval '1s'
-        ELSE interval '15 minutes'
-        END as expire_in,
-      CASE
-        WHEN "keepUntil" IS NOT NULL THEN "keepUntil"
-        ELSE COALESCE(j.start_after, now()) + q.retention_seconds * interval '1s'
-        END as keep_until,
-      COALESCE("retryLimit", q.retry_limit, 2),
-      CASE
-        WHEN COALESCE("retryBackoff", q.retry_backoff, false)
-          THEN GREATEST(COALESCE("retryDelay", q.retry_delay), 1)
-        ELSE COALESCE("retryDelay", q.retry_delay, 0)
-        END as retry_delay,
+      COALESCE("expireInSeconds", q.expire_seconds) * interval '1s' as expire_in,
+      COALESCE("keepUntil", COALESCE(j.start_after, now()) + q.retention_seconds * interval '1s') as keep_until,
+      COALESCE("retryLimit", q.retry_limit) as retry_limit,
+      COALESCE("retryDelay", q.retry_delay) as retry_delay,
       COALESCE("retryBackoff", q.retry_backoff, false) as retry_backoff,
       q.policy
     FROM (
@@ -695,7 +686,7 @@ function insertJobs (schema, { table, queueName, returnId = true }) {
         "keepUntil" timestamp with time zone
       ) 
     ) j
-    JOIN ${schema}.queue q ON q.name = '${queueName}'
+    JOIN ${schema}.queue q ON q.name = '${name}'
     ON CONFLICT DO NOTHING
     ${returnId ? 'RETURNING id' : ''}
   `
@@ -871,13 +862,13 @@ function cacheQueueStats (schema, queue) {
   const sql = `
     WITH stats AS (
       SELECT
-        count(*) FILTER (WHERE state < '${JOB_STATES.active}') as available_count,
+        count(*) FILTER (WHERE state < '${JOB_STATES.active}') as queued_count,
         count(*) FILTER (WHERE state = '${JOB_STATES.active}') as active_count,
         count(*) as total_count
       FROM ${schema}.${table}
     )
     UPDATE ${schema}.queue SET
-      available_count = stats.available_count,
+      queued_count = stats.queued_count,
       active_count = stats.active_count,
       total_count = stats.total_count
     FROM stats

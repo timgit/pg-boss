@@ -6,9 +6,10 @@ describe('expire', function () {
   it('should expire a job', async function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
     const queue = this.test.bossConfig.schema
-    const key = this.test.bossConfig.schema
 
-    const jobId = await boss.send({ name: queue, data: { key }, options: { retryLimit: 0, expireInSeconds: 1 } })
+    const jobId = await boss.send(queue, null, { retryLimit: 0, expireInSeconds: 1 })
+
+    assert(jobId)
 
     const [job1] = await boss.fetch(queue)
 
@@ -16,7 +17,7 @@ describe('expire', function () {
 
     await delay(1000)
 
-    await boss.maintain()
+    await boss.maintain(queue)
 
     const job = await boss.getJobById(queue, jobId)
 
