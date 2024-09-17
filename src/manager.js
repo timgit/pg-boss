@@ -543,20 +543,26 @@ class Manager extends EventEmitter {
 
     assert(policy in QUEUE_POLICIES, `${policy} is not a valid queue policy`)
 
+    Attorney.validateQueueArgs(options)
+
+    const FIFTEEN_MINUTES = 15 * 60
+    const SEVEN_DAYS = 7 * 24 * 60 * 60
+
     const {
-      retryLimit,
-      retryDelay,
-      retryBackoff,
-      expirationSeconds, // rename???
-      retentionSeconds,
-      deletionSeconds,
+      retryLimit = 2,
+      retryDelay = 0,
+      retryBackoff = false,
+      expireInSeconds = FIFTEEN_MINUTES,
+      retentionSeconds = SEVEN_DAYS,
+      deletionSeconds = SEVEN_DAYS,
       deadLetter,
-      partition
-    } = Attorney.checkQueueArgs(options)
+      partition = false      
+    } = options
 
     if (deadLetter) {
       Attorney.assertQueueName(deadLetter)
       assert.notStrictEqual(name, deadLetter, 'deadLetter cannot be itself')
+      await this.getQueueCache(deadLetter)
     }
 
     const data = {
@@ -564,7 +570,7 @@ class Manager extends EventEmitter {
       retryLimit,
       retryDelay,
       retryBackoff,
-      expirationSeconds,
+      expireInSeconds,
       retentionSeconds,
       deletionSeconds,
       deadLetter,
@@ -606,7 +612,7 @@ class Manager extends EventEmitter {
       expireInSeconds,
       retentionSeconds,
       deadLetter
-    } = Attorney.checkQueueArgs(options)
+    } = Attorney.validateQueueArgs(options)
 
     if (deadLetter) {
       Attorney.assertQueueName(deadLetter)

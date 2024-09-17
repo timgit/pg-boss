@@ -49,15 +49,9 @@ declare namespace PgBoss {
 
   type ConstructorOptions = DatabaseOptions & SchedulingOptions & MaintenanceOptions
 
-  interface ExpirationOptions {
+  interface QueueOptions {
     expireInSeconds?: number;
-  }
-
-  interface RetentionOptions {
     retentionSeconds?: number;
-  }
-
-  interface RetryOptions {
     retryLimit?: number;
     retryDelay?: number;
     retryBackoff?: boolean;
@@ -78,7 +72,7 @@ declare namespace PgBoss {
 
   type InsertOptions = ConnectionOptions;
 
-  type SendOptions = JobOptions & ExpirationOptions & RetentionOptions & RetryOptions & ConnectionOptions;
+  type SendOptions = JobOptions & QueueOptions & ConnectionOptions;
 
   type QueuePolicy = 'standard' | 'short' | 'singleton' | 'stately'
 
@@ -87,8 +81,8 @@ declare namespace PgBoss {
     policy?: QueuePolicy,
     partition?: boolean,
     deadLetter?: string,
-    deleteAfterSeconds?: number;
-  } & RetryOptions & ExpirationOptions & RetentionOptions
+    deletionSeconds?: number;
+  } & QueueOptions
 
   type QueueResult = Queue & {
     deadLetterTable: number,

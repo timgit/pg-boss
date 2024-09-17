@@ -65,6 +65,22 @@ module.exports = {
 
 const assert = require('node:assert')
 
+const COMMON_JOB_TABLE = 'job_common'
+
+const FIFTEEN_MINUTES = 60 * 15
+const FORTEEN_DAYS = 60 * 60 * 24 * 14
+const SEVEN_DAYS = 60 * 60 * 24 * 7
+
+const QUEUE_DEFAULTS = {
+  expire_seconds: FIFTEEN_MINUTES,
+  retention_seconds: FORTEEN_DAYS,
+  deletion_seconds: SEVEN_DAYS,
+  retry_limit: 2,
+  retry_delay: 0,
+  retry_backoff: false,
+  partition: false,
+}
+
 function create (schema, version) {
   const commands = [
     createSchema(schema),
@@ -77,7 +93,7 @@ function create (schema, version) {
 
     createTableJob(schema),
     createPrimaryKeyJob(schema),
-    createTableJobCommon(schema),
+    createTableJobCommon(schema, COMMON_JOB_TABLE),
 
     createQueueFunction(schema),
     deleteQueueFunction(schema),
@@ -111,8 +127,6 @@ function createTableVersion (schema) {
   return `
     CREATE TABLE ${schema}.version (
       version int primary key,
-      maintained_on timestamp with time zone,
-      monitored_on timestamp with time zone,
       cron_on timestamp with time zone
     )
   `
@@ -121,20 +135,22 @@ function createTableVersion (schema) {
 function createTableQueue (schema) {
   return `
     CREATE TABLE ${schema}.queue (
-      name text,
-      policy text,
-      retry_limit int,
-      retry_delay int,
-      retry_backoff bool,
-      expire_seconds int,
-      retention_seconds int,
-      deletion_seconds int,
-      dead_letter text REFERENCES ${schema}.queue (name),
-      table_name text,
-      available_count int,
-      active_count int,
-      total_count int,
+      name text NOT NULL,
+      policy text NOT NULL,
+      retry_limit int NOT NULL,
+      retry_delay int NOT NULL,
+      retry_backoff bool NOT NULL,
+      expire_seconds int NOT NULL,
+      retention_seconds int NOT NULL,
+      deletion_seconds int NOT NULL,
+      dead_letter text REFERENCES ${schema}.queue (name) CHECK (dead_letter IS DISTINCT FROM name),
+      partition bool NOT NULL,
+      table_name text NOT NULL,
+      available_count int NOT NULL default 0,
+      active_count int NOT NULL default 0,
+      total_count int NOT NULL default 0,
       monitor_on timestamp with time zone,
+      maintain_on timestamp with time zone,
       created_on timestamp with time zone not null default now(),
       updated_on timestamp with time zone not null default now(),
       PRIMARY KEY (name)
@@ -215,8 +231,7 @@ const JOB_COLUMNS_ALL = `${JOB_COLUMNS_MIN},
   output
 `
 
-function createTableJobCommon (schema) {
-  const table = 'job_common'
+function createTableJobCommon (schema, table) {
   const format = command => command.replaceAll('.job', `.${table}`) + ';'
 
   return `
@@ -228,6 +243,7 @@ function createTableJobCommon (schema) {
     ${format(createIndexJobPolicyStately(schema))}
     ${format(createIndexJobThrottle(schema))}
     ${format(createIndexJobFetch(schema))}
+
     ALTER TABLE ${schema}.job ATTACH PARTITION ${schema}.${table} DEFAULT;
   `
 }
@@ -240,7 +256,7 @@ function createQueueFunction (schema) {
     DECLARE
       tablename varchar := CASE WHEN options->>'partition' = 'true'
                             THEN 'j' || encode(sha224(queue_name::bytea), 'hex')
-                            ELSE 'job'
+                            ELSE '${COMMON_JOB_TABLE}'
                             END;
       queue_created_on timestamptz;
     BEGIN
@@ -256,18 +272,20 @@ function createQueueFunction (schema) {
           retention_seconds,
           deletion_seconds,
           dead_letter,
+          partition,
           table_name
         )
         VALUES (
           queue_name,
           options->>'policy',
-          (options->>'retryLimit')::int,
-          (options->>'retryDelay')::int,
-          (options->>'retryBackoff')::bool,
-          (options->>'expireInSeconds')::int,
-          (options->>'retentionSeconds')::int,
-          (options->>'deletionSeconds')::bool,
+          COALESCE((options->>'retryLimit')::int, ${QUEUE_DEFAULTS.retry_limit}),
+          COALESCE((options->>'retryDelay')::int, ${QUEUE_DEFAULTS.retry_delay}),
+          COALESCE((options->>'retryBackoff')::bool, ${QUEUE_DEFAULTS.retry_backoff}),
+          COALESCE((options->>'expireInSeconds')::int, ${QUEUE_DEFAULTS.expire_seconds}),
+          COALESCE((options->>'retentionSeconds')::int, ${QUEUE_DEFAULTS.retention_seconds}),
+          COALESCE((options->>'deletionSeconds')::int, ${QUEUE_DEFAULTS.deletion_seconds}),
           options->>'deadLetter',
+          COALESCE((options->>'partition')::bool, ${QUEUE_DEFAULTS.partition}),
           tablename
         )
         ON CONFLICT DO NOTHING
@@ -275,7 +293,7 @@ function createQueueFunction (schema) {
       )
       SELECT created_on into queue_created_on from q;
 
-      IF queue_created_on IS NULL OR tablename = 'job' THEN
+      IF queue_created_on IS NULL OR options->>'partition' IS DISTINCT FROM 'true' THEN
         RETURN;
       END IF;
 
@@ -368,7 +386,7 @@ function trySetQueueMonitorTime (schema, queueName, seconds) {
 }
 
 function trySetQueueDeletionTime (schema, queueName, seconds) {
-  return trySetQueueTimestamp(schema, queueName, 'archive_on', seconds)
+  return trySetQueueTimestamp(schema, queueName, 'delete_on', seconds)
 }
 
 function trySetMaintenanceTime (schema, seconds) {
@@ -427,9 +445,9 @@ function getQueues (schema, names) {
       q.retry_backoff as "retryBackoff",
       q.expire_seconds as "expireInSeconds",
       q.retention_seconds as "retentionSeconds",
+      q.partition,
       q.dead_letter as "deadLetter",
       dlq.table_name as "deadLetterTable",
-      q.archive,
       q.queued_count as "queuedCount",
       q.active_count as "activeCount",
       q.total_count as "totalCount",
@@ -635,7 +653,7 @@ function insertJobs (schema, { table, queueName, returnId = true }) {
       j.start_after,
       "singletonKey" as singleton_key,
       CASE
-        WHEN "singletonSeconds" IS NOT NULL THEN 'epoch'::timestamp + '1 second'::interval * ("singletonSeconds" * floor(( date_part('epoch', now()) + "singletonOffset") / "singletonSeconds" ))
+        WHEN "singletonSeconds" IS NOT NULL THEN 'epoch'::timestamp + '1s'::interval * ("singletonSeconds" * floor(( date_part('epoch', now()) + "singletonOffset") / "singletonSeconds" ))
         ELSE NULL
         END as singleton_on,
       CASE
@@ -645,14 +663,14 @@ function insertJobs (schema, { table, queueName, returnId = true }) {
         END as expire_in,
       CASE
         WHEN "keepUntil" IS NOT NULL THEN "keepUntil"
-        ELSE COALESCE(j.start_after, now()) + CAST(COALESCE((q.retention_seconds * 60)::text, '14 days') as interval)
+        ELSE COALESCE(j.start_after, now()) + q.retention_seconds * interval '1s'
         END as keep_until,
       COALESCE("retryLimit", q.retry_limit, 2),
       CASE
         WHEN COALESCE("retryBackoff", q.retry_backoff, false)
           THEN GREATEST(COALESCE("retryDelay", q.retry_delay), 1)
         ELSE COALESCE("retryDelay", q.retry_delay, 0)
-        END as retry_delay,      
+        END as retry_delay,
       COALESCE("retryBackoff", q.retry_backoff, false) as retry_backoff,
       q.policy
     FROM (
@@ -692,14 +710,17 @@ function failJobs (schema, queue, where, output) {
 
   if (deadLetter && deadLetterTable) {
     dlqSql = `, dlq_jobs as (
-      INSERT INTO ${schema}.${deadLetterTable} (name, data, output, retry_limit, keep_until)
+      INSERT INTO ${schema}.${deadLetterTable} (name, data, output, retry_limit, retry_backoff, retry_delay, keep_until)
       SELECT
         '${deadLetter}',
         data,
         output,
-        retry_limit,
-        keep_until + (keep_until - start_after)
-      FROM results
+        q.retry_limit,
+        q.retry_backoff,
+        q.retry_delay,
+        now() + q.retention_seconds * interval '1s'
+      FROM results r
+        JOIN ${schema}.queue q ON q.name = '${deadLetter}'
       WHERE state = '${JOB_STATES.failed}'
     )`
   }
@@ -729,7 +750,6 @@ function failJobs (schema, queue, where, output) {
         created_on,
         completed_on,
         keep_until,
-        dead_letter,
         policy,
         output
       )
@@ -746,26 +766,21 @@ function failJobs (schema, queue, where, output) {
         retry_count,
         retry_delay,
         retry_backoff,
-        CASE
-          WHEN retry_count = retry_limit THEN start_after
-          WHEN NOT retry_backoff THEN now() + retry_delay * interval '1'
-          ELSE now() + (
-                retry_delay * 2 ^ LEAST(16, retry_count + 1) / 2 +
-                retry_delay * 2 ^ LEAST(16, retry_count + 1) / 2 * random()
-            ) * interval '1'
-          END as start_after,
+        CASE WHEN retry_count = retry_limit THEN start_after
+             WHEN NOT retry_backoff THEN now() + retry_delay * interval '1'
+             ELSE now() + retry_delay * interval '1s' + (
+              2 ^ LEAST(16, retry_count + 1) / 2 +
+              2 ^ LEAST(16, retry_count + 1) / 2 * random()
+             ) * interval '1s'
+        END as start_after,
         started_on,
         singleton_key,
         singleton_on,
         expire_in,
         created_on,
-        CASE
-          WHEN retry_count < retry_limit THEN NULL
-          ELSE now()
-          END as completed_on,
+        CASE WHEN retry_count < retry_limit THEN NULL ELSE now() END as completed_on,
         keep_until,
-        dead_letter,
-        policy,        
+        policy,
         ${output}
       FROM deleted_jobs
       ON CONFLICT DO NOTHING
@@ -790,7 +805,6 @@ function failJobs (schema, queue, where, output) {
         created_on,
         completed_on,
         keep_until,
-        dead_letter,
         policy,
         output
       )
@@ -812,7 +826,6 @@ function failJobs (schema, queue, where, output) {
         created_on,
         now() as completed_on,
         keep_until,
-        dead_letter,
         policy,
         ${output}
       FROM deleted_jobs
@@ -842,10 +855,10 @@ function failJobsByTimeout (schema, queue) {
   return locked(schema, failJobs(schema, queue, where, output), queue.name + 'failJobsByTimeout')
 }
 
-function deletion (schema, table, completedInterval) {
+function deletion (schema, table, deletionSeconds) {
   const sql = `
       DELETE FROM ${schema}.${table}
-      WHERE (completed_on < (now() - interval '${completedInterval}'))
+      WHERE (completed_on < (now() - interval '${deletionSeconds}'))
         OR (state < '${JOB_STATES.active}' AND keep_until < now())
   `
 

@@ -3,14 +3,15 @@ const { DEFAULT_SCHEMA } = require('./plans')
 
 const POLICY = {
   MAX_EXPIRATION_HOURS: 24,
-  MIN_POLLING_INTERVAL_MS: 500
+  MIN_POLLING_INTERVAL_MS: 500,
+  MAX_RETENTION_DAYS: 365
 }
 
 module.exports = {
   POLICY,
   getConfig,
   checkSendArgs,
-  checkQueueArgs,
+  validateQueueArgs,
   checkWorkArgs,
   checkFetchArgs,
   warnClockSkew,
@@ -25,18 +26,14 @@ const WARNINGS = {
   }
 }
 
-function checkQueueArgs (config = {}) {
-  config = { ...config }
-
+function validateQueueArgs (config = {}) {
   assert(!('deadLetter' in config) || config.deadLetter === null || (typeof config.deadLetter === 'string'), 'deadLetter must be a string')
   assert(!('deadLetter' in config) || config.deadLetter === null || /[\w-]/.test(config.deadLetter), 'deadLetter can only contain alphanumeric characters, underscores, or hyphens')
 
-  applyRetryConfig(config)
-  applyExpirationConfig(config)
-  applyRetentionConfig(config)
-  applyDeleteConfig(config)
-
-  return config
+  validateRetryConfig(config)
+  validateExpirationConfig(config)
+  validateRetentionConfig(config)
+  validateDeletionConfig(config)
 }
 
 function checkSendArgs (args) {
@@ -165,37 +162,31 @@ function assertQueueName (name) {
   assert(/[\w-]/.test(name), 'Name can only contain alphanumeric characters, underscores, or hyphens')
 }
 
-function applyRetentionConfig (config) {
+function validateRetentionConfig (config) {
   assert(!('retentionSeconds' in config) || config.retentionSeconds >= 1,
     'configuration assert: retentionSeconds must be at least every second')
-
-  const keepUntil = ('retentionSeconds' in config) ? `${config.retentionSeconds} seconds` : null
-
-  config.keepUntil = keepUntil
 }
 
-function applyExpirationConfig (config) {
+function validateExpirationConfig (config) {
   assert(!('expireInSeconds' in config) || config.expireInSeconds >= 1,
     'configuration assert: expireInSeconds must be at least every second')
 
   assert(!config.expireInSeconds || config.expireInSeconds / 60 / 60 < POLICY.MAX_EXPIRATION_HOURS, `configuration assert: expiration cannot exceed ${POLICY.MAX_EXPIRATION_HOURS} hours`)
-
-  config.expireInSeconds = config.expireInSeconds || 60 * 15
 }
 
-function applyRetryConfig (config) {
+function validateRetryConfig (config) {
   assert(!('retryDelay' in config) || (Number.isInteger(config.retryDelay) && config.retryDelay >= 0), 'retryDelay must be an integer >= 0')
   assert(!('retryLimit' in config) || (Number.isInteger(config.retryLimit) && config.retryLimit >= 0), 'retryLimit must be an integer >= 0')
   assert(!('retryBackoff' in config) || (config.retryBackoff === true || config.retryBackoff === false), 'retryBackoff must be either true or false')
 }
 
-function applyPollingInterval (config, defaults) {
+function applyPollingInterval (config) {
   assert(!('pollingIntervalSeconds' in config) || config.pollingIntervalSeconds >= POLICY.MIN_POLLING_INTERVAL_MS / 1000,
     `configuration assert: pollingIntervalSeconds must be at least every ${POLICY.MIN_POLLING_INTERVAL_MS}ms`)
 
   config.pollingInterval = ('pollingIntervalSeconds' in config)
     ? config.pollingIntervalSeconds * 1000
-    : defaults?.pollingInterval || 2000
+    : 2000
 }
 
 function applyMaintenanceConfig (config) {
@@ -213,11 +204,9 @@ function applyMaintenanceConfig (config) {
   config.monitorIntervalSeconds = config.monitorIntervalSeconds || 60
 }
 
-function applyDeleteConfig (config) {
+function validateDeletionConfig (config) {
   assert(!('deleteAfterSeconds' in config) || config.deleteAfterSeconds >= 1,
     'configuration assert: deleteAfterSeconds must be at least every second')
-
-  config.deleteAfter = config.deleteAfterSeconds ? `${config.deleteAfterSeconds} seconds` : '7 days'
 }
 
 function applyMonitoringConfig (config) {

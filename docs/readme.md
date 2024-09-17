@@ -405,7 +405,7 @@ Available in constructor as a default, or overridden in send.
 
 * **expireInSeconds**, number
 
-    How many seconds a job may be in active state before it is failed because of expiration. Must be >=1
+    How many seconds a job may be in active state before being retried or failed. Must be >=1
 
 * Default: 15 minutes
 

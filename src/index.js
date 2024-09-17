@@ -126,7 +126,7 @@ class PgBoss extends EventEmitter {
     this.#manager.start()
 
     if (this.#config.supervise) {
-      await this.#boss.supervise()
+      await this.#boss.start()
     }
 
     if (this.#config.schedule) {
