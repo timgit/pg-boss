@@ -4,7 +4,7 @@ const { delay } = require('../src/tools')
 
 describe('expire', function () {
   it('should expire a job', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, monitorIntervalSeconds: 1 })
     const queue = this.test.bossConfig.schema
 
     const jobId = await boss.send(queue, null, { retryLimit: 0, expireInSeconds: 1 })
@@ -25,9 +25,10 @@ describe('expire', function () {
   })
 
   it('should expire a job - cascaded config', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, expireInSeconds: 1, retryLimit: 0 })
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
     const queue = this.test.bossConfig.schema
 
+    await boss.createQueue(queue, { expireInSeconds: 1, retryLimit: 0 })
     const jobId = await boss.send(queue)
 
     // fetch the job but don't complete it

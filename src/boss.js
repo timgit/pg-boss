@@ -49,7 +49,11 @@ class Boss extends EventEmitter {
 
       this.#maintaining = true
 
-      await this.maintain()
+      const queues = await this.#manager.getQueues()
+
+      for (const queue of queues) {
+        !this.#stopped && await this.maintain(queue)
+      }
     } catch (err) {
       this.emit(events.error, err)
     } finally {
@@ -57,14 +61,20 @@ class Boss extends EventEmitter {
     }
   }
 
-  async maintain (queue) {
-    const queues = await this.#manager.getQueues(queue)
+  async maintain (value) {
+    let queues
+
+    if (!value) {
+      queues = await this.#manager.getQueues()
+    } if (typeof value === 'string') {
+      queues = await this.#manager.getQueues(value)
+    } else if (typeof value === 'object') {
+      queues = [value]
+    }
 
     for (const queue of queues) {
-      !this.#stopped && await this.#monitorActive(queue)
-      !this.#stopped && await this.#dropCompleted(queue)
-
-      if (this.#stopped) break
+      await this.#monitorActive(queue)
+      await this.#dropCompleted(queue)
     }
   }
 
@@ -82,7 +92,7 @@ class Boss extends EventEmitter {
   }
 
   async #dropCompleted (queue) {
-    const command = plans.trySetQueueDeletionTime(this.#config.schema, queue.name, this.#config.deleteIntervalSeconds)
+    const command = plans.trySetQueueDeletionTime(this.#config.schema, queue.name, this.#config.maintenanceIntervalSeconds)
     const { rows } = await this.#db.executeSql(command)
 
     if (rows.length) {

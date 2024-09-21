@@ -26,27 +26,6 @@ describe('schedule', function () {
     assert(job)
   })
 
-  it('should not enable scheduling if archive config is < 60s', async function () {
-    const config = {
-      ...this.test.bossConfig,
-      cronWorkerIntervalSeconds: 1,
-      cronMonitorIntervalSeconds: 1,
-      archiveCompletedAfterSeconds: 1,
-      schedule: true
-    }
-
-    const boss = this.test.boss = await helper.start(config)
-    const queue = this.test.bossConfig.schema
-
-    await boss.schedule(queue, '* * * * *')
-
-    await delay(4000)
-
-    const [job] = await boss.fetch(queue)
-
-    assert(!job)
-  })
-
   it('should fail to schedule a queue that does not exist', async function () {
     const boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
     const queue = this.test.bossConfig.schema

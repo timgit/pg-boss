@@ -21,7 +21,7 @@ describe('monitoring', function () {
     await boss.maintain()
     const result1 = await boss.getQueue(queue)
 
-    assert.strictEqual(2, result1.availableCount)
+    assert.strictEqual(2, result1.queuedCount)
     assert.strictEqual(1, result1.activeCount)
     assert.strictEqual(3, result1.totalCount)
 
@@ -32,7 +32,7 @@ describe('monitoring', function () {
     await boss.maintain()
     const result2 = await boss.getQueue(queue)
 
-    assert.strictEqual(1, result2.availableCount)
+    assert.strictEqual(1, result2.queuedCount)
     assert.strictEqual(1, result2.activeCount)
     assert.strictEqual(3, result2.totalCount)
   })

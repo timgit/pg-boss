@@ -98,8 +98,35 @@ describe('queues', function () {
 
     await boss.createQueue(queue)
     await boss.send(queue)
-    await boss.purgeQueue(queue)
-    assert(await boss.getQueue(queue))
+    await boss.dropAllJobs(queue)
+    await boss.deleteQueue(queue)
+  })
+
+  it('should truncate a partitioned queue and leave other queues alone', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
+    const queue = this.test.bossConfig.schema
+
+    const queue2 = `${queue}2`
+    await boss.createQueue(queue2)
+    await boss.send(queue2)
+
+    await boss.createQueue(queue, { partition: true })
+    await boss.send(queue)
+
+    await boss.dropAllJobs(queue)
+    await boss.deleteQueue(queue)
+
+    const count = await boss.getQueueSize(queue2)
+    assert(count)
+  })
+
+  it('should truncate a partitioned queue', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
+    const queue = this.test.bossConfig.schema
+
+    await boss.createQueue(queue, { partition: true })
+    await boss.send(queue)
+    await boss.dropAllJobs(queue)
     await boss.deleteQueue(queue)
   })
 
@@ -120,7 +147,7 @@ describe('queues', function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
     const queue = this.test.bossConfig.schema
 
-    const getCount = () => helper.countJobs(this.test.bossConfig.schema, 'job', 'state = $1', states.created)
+    const getCount = () => helper.countJobs(this.test.bossConfig.schema, 'job', 'state = $1', [states.created])
 
     await boss.send(queue)
 
@@ -140,13 +167,15 @@ describe('queues', function () {
     const getCount = () => helper.countJobs(this.test.bossConfig.schema, 'job', `state IN (${inClause})`)
 
     await boss.send(queue)
-    const job1 = await boss.fetch(queue)
+    const [job1] = await boss.fetch(queue)
+    assert(job1?.id)
+
     await boss.complete(queue, job1.id)
 
     assert.strictEqual(await getCount(), 1)
 
-    await boss.send(queue)
-    const job2 = await boss.fetch(queue)
+    await boss.send(queue, null, { retryLimit: 0 })
+    const [job2] = await boss.fetch(queue)
     await boss.fail(queue, job2.id)
 
     assert.strictEqual(await getCount(), 2)
@@ -217,9 +246,7 @@ describe('queues', function () {
       policy: 'short',
       retryLimit: 2,
       retryBackoff: true,
-      retryDelay: 2,
       expireInSeconds: 2,
-      retentionSeconds: 2,
       deadLetter
     }
 
@@ -230,9 +257,9 @@ describe('queues', function () {
     assert.strictEqual(updateProps.policy, queueObj.policy)
     assert.strictEqual(updateProps.retryLimit, queueObj.retryLimit)
     assert.strictEqual(updateProps.retryBackoff, queueObj.retryBackoff)
-    assert.strictEqual(updateProps.retryDelay, queueObj.retryDelay)
+    assert.strictEqual(createProps.retryDelay, queueObj.retryDelay)
     assert.strictEqual(updateProps.expireInSeconds, queueObj.expireInSeconds)
-    assert.strictEqual(updateProps.retentionSeconds, queueObj.retentionSeconds)
+    assert.strictEqual(createProps.retentionSeconds, queueObj.retentionSeconds)
     assert.strictEqual(updateProps.deadLetter, queueObj.deadLetter)
   })
 
@@ -258,7 +285,7 @@ describe('queues', function () {
 
     const job = await boss.getJobById(queue, jobId)
 
-    const retentionSeconds = (new Date(job.keepUntil) - new Date(job.createdOn)) / 1000 / 60 / 60
+    const retentionSeconds = (new Date(job.keepUntil) - new Date(job.createdOn)) / 1000
 
     assert.strictEqual(createProps.retryLimit, job.retryLimit)
     assert.strictEqual(createProps.retryBackoff, job.retryBackoff)
@@ -485,38 +512,5 @@ describe('queues', function () {
     const [jobA3] = await boss.fetch(queue)
 
     assert(!jobA3)
-  })
-
-  it('should clear a specific queue', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
-
-    const queue1 = `${this.test.bossConfig.schema}1`
-    const queue2 = `${this.test.bossConfig.schema}2`
-
-    await boss.createQueue(queue1)
-    await boss.send(queue1)
-
-    await boss.createQueue(queue2)
-    await boss.send(queue2)
-
-    const q1Count1 = await boss.getQueueSize(queue1)
-    const q2Count1 = await boss.getQueueSize(queue2)
-
-    assert.strictEqual(1, q1Count1)
-    assert.strictEqual(1, q2Count1)
-
-    await boss.purgeQueue(queue1)
-
-    const q1Count2 = await boss.getQueueSize(queue1)
-    const q2Count2 = await boss.getQueueSize(queue2)
-
-    assert.strictEqual(0, q1Count2)
-    assert.strictEqual(1, q2Count2)
-
-    await boss.purgeQueue(queue2)
-
-    const q2Count3 = await boss.getQueueSize(queue2)
-
-    assert.strictEqual(0, q2Count3)
   })
 })

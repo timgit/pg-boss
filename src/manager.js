@@ -353,7 +353,7 @@ class Manager extends EventEmitter {
       singletonKey = null,
       singletonSeconds,
       singletonNextSlot,
-      expireIn,
+      expireInSeconds,
       keepUntil,
       retryLimit,
       retryDelay,
@@ -369,7 +369,7 @@ class Manager extends EventEmitter {
       singletonKey,
       singletonSeconds,
       singletonOffset,
-      expireIn,
+      expireInSeconds,
       keepUntil,
       retryLimit,
       retryDelay,
@@ -571,19 +571,23 @@ class Manager extends EventEmitter {
   async updateQueue (name, options = {}) {
     Attorney.assertQueueName(name)
 
+    assert(Object.keys(options).length > 0, 'no properties found to update')
+
     if ('policy' in options) {
       assert(options.policy in QUEUE_POLICIES, `${options.policy} is not a valid queue policy`)
     }
 
     Attorney.validateQueueArgs(options)
 
-    if (options.deadLetter) {
-      Attorney.assertQueueName(options.deadLetter)
-      assert.notStrictEqual(name, options.deadLetter, 'deadLetter cannot be itself')
+    const { deadLetter } = options
+
+    if (deadLetter) {
+      Attorney.assertQueueName(deadLetter)
+      assert.notStrictEqual(name, deadLetter, 'deadLetter cannot be itself')
     }
 
-    const sql = plans.updateQueue(this.config.schema)
-    await this.db.executeSql(sql, [ name, options ])
+    const sql = plans.updateQueue(this.config.schema, { deadLetter })
+    await this.db.executeSql(sql, [name, options])
   }
 
   async getQueue (name) {
@@ -609,21 +613,27 @@ class Manager extends EventEmitter {
     Attorney.assertQueueName(name)
     const { table } = await this.getQueueCache(name)
     const sql = plans.dropQueuedJobs(this.config.schema, table)
-    await this.db.executeSql(sql)
+    await this.db.executeSql(sql, [name])
   }
 
   async dropStoredJobs (name) {
     Attorney.assertQueueName(name)
     const { table } = await this.getQueueCache(name)
     const sql = plans.dropStoredJobs(this.config.schema, table)
-    await this.db.executeSql(sql)
+    await this.db.executeSql(sql, [name])
   }
 
   async dropAllJobs (name) {
     Attorney.assertQueueName(name)
-    const { table } = await this.getQueueCache(name)
-    const sql = plans.dropAllJobs(this.config.schema, table)
-    await this.db.executeSql(sql)
+    const { table, partition } = await this.getQueueCache(name)
+
+    if (partition) {
+      const sql = plans.dropAllJobs(this.config.schema, table)
+      await this.db.executeSql(sql, [name])
+    } else {
+      const sql = plans.truncateTable(this.config.schema, table)
+      await this.db.executeSql(sql)
+    }
   }
 
   async getQueueSize (name, options) {

@@ -32,6 +32,7 @@ module.exports = {
   dropAllJobs,
   dropQueuedJobs,
   dropStoredJobs,
+  truncateTable,
   failJobsById,
   failJobsByTimeout,
   insertJobs,
@@ -51,7 +52,6 @@ module.exports = {
   getQueueSize,
   trySetQueueMonitorTime,
   trySetQueueDeletionTime,
-  trySetMaintenanceTime,
   trySetCronTime,
   locked,
   assertMigration,
@@ -386,11 +386,7 @@ function trySetQueueMonitorTime (schema, queueName, seconds) {
 }
 
 function trySetQueueDeletionTime (schema, queueName, seconds) {
-  return trySetQueueTimestamp(schema, queueName, 'delete_on', seconds)
-}
-
-function trySetMaintenanceTime (schema, seconds) {
-  return trySetTimestamp(schema, 'maintained_on', seconds)
+  return trySetQueueTimestamp(schema, queueName, 'maintain_on', seconds)
 }
 
 function trySetCronTime (schema, seconds) {
@@ -419,17 +415,17 @@ function trySetQueueTimestamp (schema, queueName, column, seconds) {
 function updateQueue (schema, { deadLetter } = {}) {
   return `
     UPDATE ${schema}.queue SET
-      policy = COALESCE($2, policy),
-      retry_limit = COALESCE($3, retry_limit),
-      retry_delay = COALESCE($4, retry_delay),
-      retry_backoff = COALESCE($5, retry_backoff),
-      expire_seconds = COALESCE($6, expire_seconds),
-      retention_seconds = COALESCE($7, retention_seconds),
-      deletion_seconds = COALESCE($8, deletion_seconds),
+      policy = COALESCE(($2::json)->>'policy', policy),
+      retry_limit = COALESCE((($2::json)->>'retryLimit')::int, retry_limit),
+      retry_delay = COALESCE((($2::json)->>'retryDelay')::int, retry_delay),
+      retry_backoff = COALESCE((($2::json)->>'retryBackoff')::bool, retry_backoff),
+      expire_seconds = COALESCE((($2::json)->>'expireInSeconds')::int, expire_seconds),
+      retention_seconds = COALESCE((($2::json)->>'retentionSeconds')::int, retention_seconds),
+      deletion_seconds = COALESCE((($2::json)->>'deletionSeconds')::int, deletion_seconds),
       ${
         deadLetter === undefined
           ? ''
-          : 'dead_letter = CASE WHEN $9 IS DISTINCT FROM dead_letter THEN $9 ELSE dead_letter END,'
+          : `dead_letter = CASE WHEN '${deadLetter}' IS DISTINCT FROM dead_letter THEN '${deadLetter}' ELSE dead_letter END,`
       }
       updated_on = now()
     WHERE name = $1
@@ -482,10 +478,12 @@ function dropStoredJobs (schema, table) {
   return `DELETE from ${schema}.${table} WHERE name = $1 and state > '${JOB_STATES.active}'`
 }
 
+function truncateTable (schema, table) {
+  return `TRUNCATE ${schema}.${table}`
+}
+
 function dropAllJobs (schema, table) {
-  return table === 'job'
-    ? `DELETE from ${schema}.${table} WHERE name = $1`
-    : `TRUNCATE ${schema}.${table}`
+  return `DELETE from ${schema}.${table} WHERE name = $1`
 }
 
 function getQueueSize (schema, table, before = JOB_STATES.active) {

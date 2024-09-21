@@ -6,7 +6,7 @@ describe('delete', async function () {
   it('should delete a completed job via maintenance', async function () {
     const config = {
       ...this.test.bossConfig,
-      maintenanceIntervalSeconds: 1,      
+      maintenanceIntervalSeconds: 1,
       noDefault: true
     }
 

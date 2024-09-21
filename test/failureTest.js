@@ -177,7 +177,7 @@ describe('failure', function () {
     await boss.createQueue(deadLetter)
     await boss.createQueue(queue, { deadLetter })
 
-    const jobId = await boss.send(queue, { key: queue })
+    const jobId = await boss.send(queue, { key: queue }, { retryLimit: 0 })
 
     await boss.fetch(queue)
     await boss.fail(queue, jobId)

@@ -136,7 +136,7 @@ function getConfig (value) {
 
   applySchemaConfig(config)
   applyMaintenanceConfig(config)
-  applyMonitoringConfig(config)
+  applyScheduleConfig(config)
 
   return config
 }
@@ -196,12 +196,15 @@ function applyMaintenanceConfig (config) {
   config.maintenanceIntervalSeconds = config.maintenanceIntervalSeconds || POLICY.MAX_EXPIRATION_HOURS * 60 * 60
 
   assert(config.maintenanceIntervalSeconds / 60 / 60 <= POLICY.MAX_EXPIRATION_HOURS,
-    `configuration assert: maintenance interval cannot exceed ${POLICY.MAX_EXPIRATION_HOURS} hours`)
+    `configuration assert: maintenanceIntervalSeconds cannot exceed ${POLICY.MAX_EXPIRATION_HOURS} hours`)
 
   assert(!('monitorIntervalSeconds' in config) || config.monitorIntervalSeconds >= 1,
     'configuration assert: monitorIntervalSeconds must be at least every second')
 
   config.monitorIntervalSeconds = config.monitorIntervalSeconds || 60
+
+  assert(config.monitorIntervalSeconds / 60 / 60 <= POLICY.MAX_EXPIRATION_HOURS,
+    `configuration assert: monitorIntervalSeconds cannot exceed ${POLICY.MAX_EXPIRATION_HOURS} hours`)
 }
 
 function validateDeletionConfig (config) {
@@ -209,7 +212,7 @@ function validateDeletionConfig (config) {
     'configuration assert: deleteAfterSeconds must be at least every second')
 }
 
-function applyMonitoringConfig (config) {
+function applyScheduleConfig (config) {
   assert(!('clockMonitorIntervalSeconds' in config) || (config.clockMonitorIntervalSeconds >= 1 && config.clockMonitorIntervalSeconds <= 600),
     'configuration assert: clockMonitorIntervalSeconds must be between 1 second and 10 minutes')
 
