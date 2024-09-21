@@ -32,11 +32,6 @@ class Timekeeper extends EventEmitter {
   }
 
   async start () {
-    // setting the archive config too low breaks the cron 60s debounce interval so don't even try
-    if (this.config.archiveSeconds < 60 || this.config.archiveFailedSeconds < 60) {
-      return
-    }
-
     this.stopped = false
 
     await this.cacheClockSkew()

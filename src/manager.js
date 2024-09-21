@@ -661,9 +661,6 @@ class Manager extends EventEmitter {
 
     if (result1?.rows?.length === 1) {
       return result1.rows[0]
-    } else if (options.includeArchive) {
-      const result2 = await db.executeSql(plans.getArchivedJobById(this.config.schema), [name, id])
-      return result2?.rows[0] || null
     } else {
       return null
     }

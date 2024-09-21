@@ -13,7 +13,7 @@ describe('schedule', function () {
       schedule: true
     }
 
-    const boss = await helper.start(config)
+    const boss = this.test.boss = await helper.start(config)
 
     const queue = this.test.bossConfig.schema
 
@@ -27,7 +27,7 @@ describe('schedule', function () {
   })
 
   it('should fail to schedule a queue that does not exist', async function () {
-    const boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
     const queue = this.test.bossConfig.schema
 
     try {

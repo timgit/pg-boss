@@ -61,7 +61,6 @@
   - [`getQueues()`](#getqueues)
   - [`getQueue(name)`](#getqueuename)
   - [`getQueueSize(name, options)`](#getqueuesizename-options)
-  - [`clearStorage()`](#clearstorage)
   - [`isInstalled()`](#isinstalled)
   - [`schemaVersion()`](#schemaversion)
 
@@ -86,7 +85,7 @@ In a worker, when your handler function completes, jobs will be marked `complete
 
 Uncompleted jobs may also be assigned to `cancelled` state via [`cancel(name, id)`](#cancelname-id-options), where they can be moved back into `created` via [`resume(name, id)`](#resumename-id-options).
 
-All jobs that are `completed`, `cancelled` or `failed` become eligible for archiving according to your configuration. Once archived, jobs will be automatically deleted after the configured retention period.
+All jobs that are not actively deleted during processing will remain in `completed`, `cancelled` or `failed` state until they are automatically removed.
 
 # Database install
 
@@ -288,7 +287,7 @@ The following options can be set as properties in an object for additional confi
 
 **Maintenance options**
 
-Maintenance operations include checking active jobs for expiration, archiving completed jobs from the primary job table, and deleting archived jobs from the archive table.
+Maintenance operations include checking active jobs for expiration, caching queue stats, and deleting completed jobs.
 
 * **supervise**, bool, default true
 
@@ -305,14 +304,14 @@ Maintenance operations include checking active jobs for expiration, archiving co
 
 **Maintenance interval**
 
-How often maintenance operations are run against the job and archive tables.
+How often maintenance operations are run.
 
 * **maintenanceIntervalSeconds**, int
 
     maintenance interval in seconds, must be >=1
 
 
-* Default: 1 minute
+* Default: 60 seconds
 
 
 
@@ -413,7 +412,7 @@ Available in constructor as a default, or overridden in send.
 
 * **retentionSeconds**, number
 
-    How many seconds a job may be in created or retry state before it's archived. Must be >=1
+    How many seconds a job may be in created or retry state before it's deleted. Must be >=1
 
 * Default: 30 days
 
@@ -828,9 +827,7 @@ Retrieves a job with all metadata by name and id
 
 **options**
 
-* `includeArchive`: bool, default: false
-
-  If `true`, it will search for the job in the archive if not found in the primary job storage.
+* **db**, object, see notes in `send()`
 
 ## `createQueue(name, Queue)`
 
@@ -887,10 +884,9 @@ Deletes all jobs in completed, failed, and cancelled state in a queue.
 
 Deletes all jobs in a queue, including active jobs.
 
-
 ## `deleteQueue(name)`
 
-Deletes a queue and all jobs from the active job table.  Any jobs in the archive table are retained.
+Deletes a queue and all jobs.
 
 ## `getQueues()`
 
@@ -917,10 +913,6 @@ As an example, the following options object include active jobs along with creat
   before: states.completed
 }
 ```
-
-## `clearStorage()`
-
-Utility function if and when needed to clear all job and archive storage tables. Internally, this issues a `TRUNCATE` command.
 
 ## `isInstalled()`
 

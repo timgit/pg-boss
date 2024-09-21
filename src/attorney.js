@@ -76,10 +76,6 @@ function checkSendArgs (args) {
             ? options.startAfter
             : null
 
-  if (options.onComplete) {
-    emitWarning(WARNINGS.ON_COMPLETE_REMOVED)
-  }
-
   return { name, data, options }
 }
 
