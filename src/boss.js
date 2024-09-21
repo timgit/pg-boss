@@ -73,6 +73,7 @@ class Boss extends EventEmitter {
     }
 
     for (const queue of queues) {
+      // todo: group queries by table
       await this.#monitorActive(queue)
       await this.#dropCompleted(queue)
     }
@@ -96,7 +97,7 @@ class Boss extends EventEmitter {
     const { rows } = await this.#db.executeSql(command)
 
     if (rows.length) {
-      const sql = plans.deletion(this.#config.schema, queue.table, queue.deletionSeconds)
+      const sql = plans.deletion(this.#config.schema, queue.table, queue.deleteAfterSeconds)
       await this.#db.executeSql(sql)
     }
   }

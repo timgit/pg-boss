@@ -29,11 +29,29 @@ describe('monitoring', function () {
     await boss.complete(queue, job.id)
 
     await delay(1000)
-    await boss.maintain()
+    await boss.maintain(queue)
     const result2 = await boss.getQueue(queue)
 
     assert.strictEqual(1, result2.queuedCount)
     assert.strictEqual(1, result2.activeCount)
     assert.strictEqual(3, result2.totalCount)
+  })
+
+  it('queue cache should emit error', async function () {
+    const config = {
+      ...this.test.bossConfig,
+      queueCacheIntervalSeconds: 1,
+      __test__throw_queueCache: true
+    }
+
+    let errorCount = 0
+
+    const boss = this.test.boss = await helper.start(config)
+
+    boss.on('error', () => errorCount++)
+
+    await delay(2000)
+
+    assert(errorCount > 0)
   })
 })

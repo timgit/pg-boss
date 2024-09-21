@@ -201,6 +201,14 @@ function applyMaintenanceConfig (config) {
 
   assert(config.monitorIntervalSeconds / 60 / 60 <= POLICY.MAX_EXPIRATION_HOURS,
     `configuration assert: monitorIntervalSeconds cannot exceed ${POLICY.MAX_EXPIRATION_HOURS} hours`)
+
+  assert(!('queueCacheIntervalSeconds' in config) || config.queueCacheIntervalSeconds >= 1,
+    'configuration assert: queueCacheIntervalSeconds must be at least every second')
+
+  config.queueCacheIntervalSeconds = config.queueCacheIntervalSeconds || 60
+
+  assert(config.queueCacheIntervalSeconds / 60 / 60 <= POLICY.MAX_EXPIRATION_HOURS,
+    `configuration assert: queueCacheIntervalSeconds cannot exceed ${POLICY.MAX_EXPIRATION_HOURS} hours`)
 }
 
 function validateDeletionConfig (config) {

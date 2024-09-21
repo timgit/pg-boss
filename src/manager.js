@@ -2,7 +2,7 @@ const assert = require('node:assert')
 const EventEmitter = require('node:events')
 const { randomUUID } = require('node:crypto')
 const { serializeError: stringify } = require('serialize-error')
-const { delay } = require('./tools')
+const { delay, resolveWithinSeconds } = require('./tools')
 const Attorney = require('./attorney')
 const Worker = require('./worker')
 const plans = require('./plans')
@@ -17,34 +17,17 @@ const events = {
   wip: 'wip'
 }
 
-const resolveWithinSeconds = async (promise, seconds) => {
-  const timeout = Math.max(1, seconds) * 1000
-  const reject = delay(timeout, `handler execution exceeded ${timeout}ms`)
-
-  let result
-
-  try {
-    result = await Promise.race([promise, reject])
-  } finally {
-    reject.abort()
-  }
-
-  return result
-}
-
 class Manager extends EventEmitter {
   constructor (db, config) {
     super()
 
     this.config = config
     this.db = db
-
-    this.events = events
     this.wipTs = Date.now()
     this.workers = new Map()
     this.queues = null
 
-    // exported api to index
+    this.events = events
     this.functions = [
       this.complete,
       this.cancel,
@@ -78,16 +61,17 @@ class Manager extends EventEmitter {
 
   async start () {
     this.stopped = false
-    this.queueCacheInterval = setInterval(() => this.onCacheQueues(), 60 * 1000)
+    this.queueCacheInterval = setInterval(() => this.onCacheQueues({ emit: true }), this.config.queueCacheIntervalSeconds * 1000)
     await this.onCacheQueues()
   }
 
-  async onCacheQueues () {
+  async onCacheQueues ({ emit = false } = {}) {
     try {
+      assert(!this.config.__test__throw_queueCache, 'test error')
       const queues = await this.getQueues()
       this.queues = queues.reduce((acc, i) => { acc[i.name] = i; return acc }, {})
     } catch (error) {
-      this.emit(events.error, { ...error, message: error.message, stack: error.stack })
+      emit && this.emit(events.error, { ...error, message: error.message, stack: error.stack })
     }
   }
 
@@ -223,7 +207,7 @@ class Manager extends EventEmitter {
       const jobIds = jobs.map(job => job.id)
 
       try {
-        const result = await resolveWithinSeconds(callback(jobs), maxExpiration)
+        const result = await resolveWithinSeconds(callback(jobs), maxExpiration, `handler execution exceeded ${maxExpiration}s`)
         this.complete(name, jobIds, jobIds.length === 1 ? result : undefined)
       } catch (err) {
         this.fail(name, jobIds, err)

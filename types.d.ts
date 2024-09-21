@@ -81,7 +81,7 @@ declare namespace PgBoss {
     policy?: QueuePolicy,
     partition?: boolean,
     deadLetter?: string,
-    deletionSeconds?: number;
+    deleteAfterSeconds?: number;
   } & QueueOptions
 
   type QueueResult = Queue & {

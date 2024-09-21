@@ -36,7 +36,31 @@ describe('expire', function () {
 
     await delay(1000)
 
-    await boss.maintain()
+    await boss.maintain(queue)
+
+    const job = await boss.getJobById(queue, jobId)
+
+    assert.strictEqual('failed', job.state)
+  })
+
+  it('should expire a job via supervise option', async function () {
+    const boss = this.test.boss = await helper.start({
+      ...this.test.bossConfig,
+      noDefault: true,
+      supervise: true,
+      monitorIntervalSeconds: 1,
+      superviseIntervalSeconds: 1
+    })
+
+    const queue = this.test.bossConfig.schema
+
+    await boss.createQueue(queue, { expireInSeconds: 1, retryLimit: 0 })
+    const jobId = await boss.send(queue)
+
+    // fetch the job but don't complete it
+    await boss.fetch(queue)
+
+    await delay(2000)
 
     const job = await boss.getJobById(queue, jobId)
 

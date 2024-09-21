@@ -13,7 +13,7 @@ describe('delete', async function () {
     const boss = this.test.boss = await helper.start(config)
     const queue = this.test.bossConfig.schema
 
-    await boss.createQueue(queue, { deletionSeconds: 1 })
+    await boss.createQueue(queue, { deleteAfterSeconds: 1 })
 
     const jobId = await boss.send(queue)
     await boss.fetch(queue)

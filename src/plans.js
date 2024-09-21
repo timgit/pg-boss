@@ -283,7 +283,7 @@ function createQueueFunction (schema) {
           COALESCE((options->>'retryBackoff')::bool, ${QUEUE_DEFAULTS.retry_backoff}),
           COALESCE((options->>'expireInSeconds')::int, ${QUEUE_DEFAULTS.expire_seconds}),
           COALESCE((options->>'retentionSeconds')::int, ${QUEUE_DEFAULTS.retention_seconds}),
-          COALESCE((options->>'deletionSeconds')::int, ${QUEUE_DEFAULTS.deletion_seconds}),
+          COALESCE((options->>'deleteAfterSeconds')::int, ${QUEUE_DEFAULTS.deletion_seconds}),
           options->>'deadLetter',
           COALESCE((options->>'partition')::bool, ${QUEUE_DEFAULTS.partition}),
           tablename
@@ -421,7 +421,7 @@ function updateQueue (schema, { deadLetter } = {}) {
       retry_backoff = COALESCE((($2::json)->>'retryBackoff')::bool, retry_backoff),
       expire_seconds = COALESCE((($2::json)->>'expireInSeconds')::int, expire_seconds),
       retention_seconds = COALESCE((($2::json)->>'retentionSeconds')::int, retention_seconds),
-      deletion_seconds = COALESCE((($2::json)->>'deletionSeconds')::int, deletion_seconds),
+      deletion_seconds = COALESCE((($2::json)->>'deleteAfterSeconds')::int, deletion_seconds),
       ${
         deadLetter === undefined
           ? ''
@@ -442,7 +442,7 @@ function getQueues (schema, names) {
       q.retry_backoff as "retryBackoff",
       q.expire_seconds as "expireInSeconds",
       q.retention_seconds as "retentionSeconds",
-      q.deletion_seconds as "deletionSeconds",
+      q.deletion_seconds as "deleteAfterSeconds",
       q.partition,
       q.dead_letter as "deadLetter",
       dlq.table_name as "deadLetterTable",
@@ -844,10 +844,10 @@ function failJobsByTimeout (schema, queue) {
   return locked(schema, failJobs(schema, queue, where, output), queue.name + 'failJobsByTimeout')
 }
 
-function deletion (schema, table, deletionSeconds) {
+function deletion (schema, table, deleteAfterSeconds) {
   const sql = `
       DELETE FROM ${schema}.${table}
-      WHERE (completed_on < (now() - interval '${deletionSeconds}'))
+      WHERE (completed_on < (now() - interval '${deleteAfterSeconds}'))
         OR (state < '${JOB_STATES.active}' AND keep_until < now())
   `
 
