@@ -9,6 +9,8 @@ class Db extends EventEmitter {
     // config.maxUses = config.maxUses || 1000
 
     this.config = config
+    this._pgbdb = true
+    this.opened = false
   }
 
   events = {

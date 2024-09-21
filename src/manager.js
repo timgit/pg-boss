@@ -392,7 +392,7 @@ class Manager extends EventEmitter {
 
     const { table } = await this.getQueueCache(name)
 
-    const db = options.db || this.db
+    const db = this.assertDb(options)
 
     const sql = plans.insertJobs(this.config.schema, { table, name, returnId: false })
 
@@ -421,7 +421,7 @@ class Manager extends EventEmitter {
   async fetch (name, options = {}) {
     Attorney.checkFetchArgs(name, options)
 
-    const db = options.db || this.db
+    const db = this.assertDb(options)
 
     const { table } = await this.getQueueCache(name)
 
@@ -470,7 +470,7 @@ class Manager extends EventEmitter {
 
   async complete (name, id, data, options = {}) {
     Attorney.assertQueueName(name)
-    const db = options.db || this.db
+    const db = this.assertDb(options)
     const ids = this.mapCompletionIdArg(id, 'complete')
     const { table } = await this.getQueueCache(name)
     const sql = plans.completeJobs(this.config.schema, table)
@@ -480,7 +480,7 @@ class Manager extends EventEmitter {
 
   async fail (name, id, data, options = {}) {
     Attorney.assertQueueName(name)
-    const db = options.db || this.db
+    const db = this.assertDb(options)
     const ids = this.mapCompletionIdArg(id, 'fail')
     const queue = await this.getQueueCache(name)
     const sql = plans.failJobsById(this.config.schema, queue)
@@ -490,7 +490,7 @@ class Manager extends EventEmitter {
 
   async cancel (name, id, options = {}) {
     Attorney.assertQueueName(name)
-    const db = options.db || this.db
+    const db = this.assertDb(options)
     const ids = this.mapCompletionIdArg(id, 'cancel')
     const { table } = await this.getQueueCache(name)
     const sql = plans.cancelJobs(this.config.schema, table)
@@ -500,7 +500,7 @@ class Manager extends EventEmitter {
 
   async deleteJob (name, id, options = {}) {
     Attorney.assertQueueName(name)
-    const db = options.db || this.db
+    const db = this.assertDb(options)
     const ids = this.mapCompletionIdArg(id, 'deleteJob')
     const { table } = await this.getQueueCache(name)
     const sql = plans.deleteJobsById(this.config.schema, table)
@@ -510,7 +510,7 @@ class Manager extends EventEmitter {
 
   async resume (name, id, options = {}) {
     Attorney.assertQueueName(name)
-    const db = options.db || this.db
+    const db = this.assertDb(options)
     const ids = this.mapCompletionIdArg(id, 'resume')
     const { table } = await this.getQueueCache(name)
     const sql = plans.resumeJobs(this.config.schema, table)
@@ -635,7 +635,7 @@ class Manager extends EventEmitter {
   async getJobById (name, id, options = {}) {
     Attorney.assertQueueName(name)
 
-    const db = options.db || this.db
+    const db = this.assertDb(options)
 
     const { table } = await this.getQueueCache(name)
 
@@ -648,6 +648,16 @@ class Manager extends EventEmitter {
     } else {
       return null
     }
+  }
+
+  assertDb (options) {
+    if (options.db) {
+      return options.db
+    }
+
+    assert(this.db._pgbdb && this.db.opened, 'Database connection is not opened')
+
+    return this.db
   }
 }
 
