@@ -77,6 +77,7 @@ const QUEUE_DEFAULTS = {
   deletion_seconds: SEVEN_DAYS,
   retry_limit: 2,
   retry_delay: 0,
+  queued_warning: 0,
   retry_backoff: false,
   partition: false
 }
@@ -148,6 +149,7 @@ function createTableQueue (schema) {
       table_name text NOT NULL,
       deferred_count int NOT NULL default 0,
       queued_count int NOT NULL default 0,
+      queued_warning int NOT NULL default 0,
       active_count int NOT NULL default 0,
       total_count int NOT NULL default 0,
       monitor_on timestamp with time zone,
@@ -276,6 +278,7 @@ function createQueueFunction (schema) {
           expire_seconds,
           retention_seconds,
           deletion_seconds,
+          queued_warning,
           dead_letter,
           partition,
           table_name
@@ -289,6 +292,7 @@ function createQueueFunction (schema) {
           COALESCE((options->>'expireInSeconds')::int, ${QUEUE_DEFAULTS.expire_seconds}),
           COALESCE((options->>'retentionSeconds')::int, ${QUEUE_DEFAULTS.retention_seconds}),
           COALESCE((options->>'deleteAfterSeconds')::int, ${QUEUE_DEFAULTS.deletion_seconds}),
+          COALESCE((options->>'queueSizeWarning')::int, ${QUEUE_DEFAULTS.queued_warning}),
           options->>'deadLetter',
           COALESCE((options->>'partition')::bool, ${QUEUE_DEFAULTS.partition}),
           tablename
@@ -424,6 +428,7 @@ function trySetQueueTimestamp (schema, queues, column, seconds) {
       AND EXTRACT( EPOCH FROM (now() - COALESCE(${column}, now() - interval '1 week') ) ) > ${seconds}
     RETURNING 
       name,
+      queued_warning as "queueSizeWarning",
       deferred_count as "deferredCount",
       queued_count as "queuedCount",
       active_count as "activeCount",
@@ -441,6 +446,7 @@ function updateQueue (schema, { deadLetter } = {}) {
       expire_seconds = COALESCE((($2::json)->>'expireInSeconds')::int, expire_seconds),
       retention_seconds = COALESCE((($2::json)->>'retentionSeconds')::int, retention_seconds),
       deletion_seconds = COALESCE((($2::json)->>'deleteAfterSeconds')::int, deletion_seconds),
+      queued_warning = COALESCE((($2::json)->>'queueSizeWarning')::int, queued_warning),
       ${
         deadLetter === undefined
           ? ''
@@ -465,6 +471,7 @@ function getQueues (schema, names) {
       q.partition,
       q.dead_letter as "deadLetter",
       q.deferred_count as "deferredCount",
+      q.queued_warning as "queueSizeWarning",
       q.queued_count as "queuedCount",
       q.active_count as "activeCount",
       q.total_count as "totalCount",

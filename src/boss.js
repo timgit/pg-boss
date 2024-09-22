@@ -32,11 +32,11 @@ class Boss extends EventEmitter {
       this.maintain
     ]
 
-    if(this.#config.warningSlowQuerySeconds) {
+    if (this.#config.warningSlowQuerySeconds) {
       WARNINGS.SLOW_QUERY.seconds = this.#config.warningSlowQuerySeconds
     }
 
-    if(this.#config.warningLargeQueueSize) {
+    if (this.#config.warningLargeQueueSize) {
       WARNINGS.LARGE_QUEUE.size = this.#config.warningLargeQueueSize
     }
   }
@@ -127,7 +127,7 @@ class Boss extends EventEmitter {
     const { rows } = await this.#executeSql(command)
 
     if (rows.length) {
-      const warnings = rows.filter(i => i.queuedCount > WARNINGS.LARGE_QUEUE.size)
+      const warnings = rows.filter(i => i.queuedCount > (i.queueSizeWarning || WARNINGS.LARGE_QUEUE.size))
 
       for (const warning of warnings) {
         this.emit(events.warn, { ...warning, message: WARNINGS.LARGE_QUEUE.mesasge })
