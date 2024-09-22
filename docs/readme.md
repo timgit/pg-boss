@@ -145,12 +145,13 @@ CREATE TABLE pgboss.job (
   started_on timestamp with time zone,
   singleton_key text,
   singleton_on timestamp without time zone,
-  expire_in interval not null default interval '15 minutes',
+  expire_seconds int not null default interval '15 minutes',
   created_on timestamp with time zone not null default now(),
   completed_on timestamp with time zone,
   keep_until timestamp with time zone NOT NULL default now() + interval '14 days',
   output jsonb,
   policy text,
+  dead_letter text,
   CONSTRAINT job_pkey PRIMARY KEY (name, id)
 ) PARTITION BY LIST (name)
 ```
@@ -573,11 +574,13 @@ Returns an array of jobs from a queue
       startedOn: Date;
       singletonKey: string | null;
       singletonOn: Date | null;
-      expireIn: PostgresInterval;
+      expireInSeconds: number;
+      deleteAfterSeconds: number;
       createdOn: Date;
       completedOn: Date | null;
       keepUntil: Date;
       policy: string,
+      deadLetter: string,
       output: object
     }
     ```

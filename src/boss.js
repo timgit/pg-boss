@@ -2,7 +2,8 @@ const EventEmitter = require('node:events')
 const plans = require('./plans')
 
 const events = {
-  error: 'error'
+  error: 'error',
+  warn: 'warn'
 }
 
 class Boss extends EventEmitter {
@@ -41,6 +42,23 @@ class Boss extends EventEmitter {
     }
   }
 
+  async #executeSql (sql, values) {
+    const started = Date.now()
+
+    const result = await this.#db.executeSql(sql, values)
+
+    const ended = Date.now()
+
+    const elapsed = (ended - started) / 1000
+
+    if (elapsed > 30 || this.#config.__test__warn_slow_query) {
+      const message = 'Warning: slow query. Your queues and/or database server should be reviewed'
+      this.emit(events.warn, { message, elapsed, sql, values })
+    }
+
+    return result
+  }
+
   async #onSupervise () {
     try {
       if (this.#stopped) return
@@ -72,33 +90,45 @@ class Boss extends EventEmitter {
       queues = [value]
     }
 
-    for (const queue of queues) {
-      // todo: group queries by table
-      await this.#monitorActive(queue)
-      await this.#dropCompleted(queue)
+    const queueGroups = queues.reduce((acc, q) => {
+      const { table } = q
+      acc[table] = acc[table] || { table, queues: [] }
+      acc[table].queues.push(q)
+      return acc
+    }, {})
+
+    for (const queueGroup of Object.values(queueGroups)) {
+      await this.#monitorActive(queueGroup)
+      await this.#dropCompleted(queueGroup)
     }
   }
 
-  async #monitorActive (queue) {
-    const command = plans.trySetQueueMonitorTime(this.#config.schema, queue.name, this.#config.monitorIntervalSeconds)
-    const { rows } = await this.#db.executeSql(command)
+  async #monitorActive (queueGroup) {
+    const { table, queues } = queueGroup
+    const names = queues.map(i => i.name)
+
+    const command = plans.trySetQueueMonitorTime(this.#config.schema, names, this.#config.monitorIntervalSeconds)
+    const { rows } = await this.#executeSql(command)
 
     if (rows.length) {
-      const sql = plans.failJobsByTimeout(this.#config.schema, queue)
-      await this.#db.executeSql(sql)
+      const sql = plans.failJobsByTimeout(this.#config.schema, table, names)
+      await this.#executeSql(sql)
 
-      const cacheStatsSql = plans.cacheQueueStats(this.#config.schema, queue)
-      await this.#db.executeSql(cacheStatsSql)
+      const cacheStatsSql = plans.cacheQueueStats(this.#config.schema, table, names)
+      await this.#executeSql(cacheStatsSql)
     }
   }
 
-  async #dropCompleted (queue) {
-    const command = plans.trySetQueueDeletionTime(this.#config.schema, queue.name, this.#config.maintenanceIntervalSeconds)
-    const { rows } = await this.#db.executeSql(command)
+  async #dropCompleted (queueGroup) {
+    const { table, queues } = queueGroup
+    const names = queues.map(i => i.name)
+
+    const command = plans.trySetQueueDeletionTime(this.#config.schema, names, this.#config.maintenanceIntervalSeconds)
+    const { rows } = await this.#executeSql(command)
 
     if (rows.length) {
-      const sql = plans.deletion(this.#config.schema, queue.table, queue.deleteAfterSeconds)
-      await this.#db.executeSql(sql)
+      const sql = plans.deletion(this.#config.schema, table)
+      await this.#executeSql(sql)
     }
   }
 }

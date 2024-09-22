@@ -34,6 +34,7 @@ describe('insert', function () {
       retryBackoff: true,
       startAfter: new Date().toISOString(),
       expireInSeconds: 5,
+      deleteAfterSeconds: 60,
       singletonKey: '123',
       keepUntil: new Date().toISOString()
     }
@@ -50,7 +51,8 @@ describe('insert', function () {
     assert.strictEqual(job.retryDelay, input.retryDelay, `retryDelay input ${input.retryDelay} didn't match job ${job.retryDelay}`)
     assert.strictEqual(job.retryBackoff, input.retryBackoff, `retryBackoff input ${input.retryBackoff} didn't match job ${job.retryBackoff}`)
     assert.strictEqual(new Date(job.startAfter).toISOString(), input.startAfter, `startAfter input ${input.startAfter} didn't match job ${job.startAfter}`)
-    assert.strictEqual(job.expireIn.seconds, input.expireInSeconds, `expireInSeconds input ${input.expireInSeconds} didn't match job ${job.expireIn}`)
+    assert.strictEqual(job.expireInSeconds, input.expireInSeconds, `expireInSeconds input ${input.expireInSeconds} didn't match job ${job.expireInSeconds}`)
+    assert.strictEqual(job.deleteAfterSeconds, input.deleteAfterSeconds, `deleteAfterSeconds input ${input.deleteAfterSeconds} didn't match job ${job.deleteAfterSeconds}`)
     assert.strictEqual(job.singletonKey, input.singletonKey, `name input ${input.singletonKey} didn't match job ${job.singletonKey}`)
     assert.strictEqual(new Date(job.keepUntil).toISOString(), input.keepUntil, `keepUntil input ${input.keepUntil} didn't match job ${job.keepUntil}`)
   })
@@ -73,6 +75,7 @@ describe('insert', function () {
       retryBackoff: true,
       startAfter: new Date().toISOString(),
       expireInSeconds: 5,
+      deleteAfterSeconds: 45,
       singletonKey: '123',
       keepUntil: new Date().toISOString()
     }
@@ -100,7 +103,8 @@ describe('insert', function () {
     assert.strictEqual(job.retryDelay, input.retryDelay, `retryDelay input ${input.retryDelay} didn't match job ${job.retryDelay}`)
     assert.strictEqual(job.retryBackoff, input.retryBackoff, `retryBackoff input ${input.retryBackoff} didn't match job ${job.retryBackoff}`)
     assert.strictEqual(new Date(job.startAfter).toISOString(), input.startAfter, `startAfter input ${input.startAfter} didn't match job ${job.startAfter}`)
-    assert.strictEqual(job.expireIn.seconds, input.expireInSeconds, `expireInSeconds input ${input.expireInSeconds} didn't match job ${job.expireIn}`)
+    assert.strictEqual(job.expireInSeconds, input.expireInSeconds, `expireInSeconds input ${input.expireInSeconds} didn't match job ${job.expireInSeconds}`)
+    assert.strictEqual(job.deleteAfterSeconds, input.deleteAfterSeconds, `deleteAfterSeconds input ${input.deleteAfterSeconds} didn't match job ${job.deleteAfterSeconds}`)
     assert.strictEqual(job.singletonKey, input.singletonKey, `name input ${input.singletonKey} didn't match job ${job.singletonKey}`)
     assert.strictEqual(new Date(job.keepUntil).toISOString(), input.keepUntil, `keepUntil input ${input.keepUntil} didn't match job ${job.keepUntil}`)
     assert.strictEqual(called, true)

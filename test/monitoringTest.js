@@ -54,4 +54,21 @@ describe('monitoring', function () {
 
     assert(errorCount > 0)
   })
+
+  it('slow maintenance should emit warn', async function () {
+    const config = {
+      ...this.test.bossConfig,
+      __test__warn_slow_query: true
+    }
+
+    const boss = this.test.boss = await helper.start(config)
+    const queue = this.test.bossConfig.schema
+
+    let eventCount = 0
+    boss.on('warn', () => eventCount++)
+
+    await boss.maintain(queue)
+
+    assert(eventCount > 0)
+  })
 })

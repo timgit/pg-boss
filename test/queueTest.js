@@ -290,7 +290,7 @@ describe('queues', function () {
     assert.strictEqual(createProps.retryLimit, job.retryLimit)
     assert.strictEqual(createProps.retryBackoff, job.retryBackoff)
     assert.strictEqual(createProps.retryDelay, job.retryDelay)
-    assert.strictEqual(createProps.expireInSeconds, job.expireIn.seconds)
+    assert.strictEqual(createProps.expireInSeconds, job.expireInSeconds)
     assert.strictEqual(createProps.retentionSeconds, retentionSeconds)
   })
 

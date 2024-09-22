@@ -63,10 +63,12 @@ describe('fetch', function () {
     assert(job.startedOn !== undefined)
     assert(job.singletonKey !== undefined)
     assert(job.singletonOn !== undefined)
-    assert(job.expireIn.minutes !== undefined)
+    assert(job.expireInSeconds !== undefined)
+    assert(job.deleteAfterSeconds !== undefined)
     assert(job.createdOn !== undefined)
     assert(job.completedOn !== undefined)
     assert(job.keepUntil !== undefined)
+    assert(job.deadLetter !== undefined)
   })
 
   it('should fetch all metadata for a batch of jobs when requested', async function () {
@@ -97,10 +99,12 @@ describe('fetch', function () {
       assert(job.startedOn !== undefined)
       assert(job.singletonKey !== undefined)
       assert(job.singletonOn !== undefined)
-      assert(job.expireIn.minutes !== undefined)
+      assert(job.expireInSeconds !== undefined)
+      assert(job.deleteAfterSeconds !== undefined)
       assert(job.createdOn !== undefined)
       assert(job.completedOn !== undefined)
       assert(job.keepUntil !== undefined)
+      assert(job.deadLetter !== undefined)
     }
   })
 

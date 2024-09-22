@@ -52,6 +52,7 @@ declare namespace PgBoss {
   interface QueueOptions {
     expireInSeconds?: number;
     retentionSeconds?: number;
+    deleteAfterSeconds?: number;
     retryLimit?: number;
     retryDelay?: number;
     retryBackoff?: boolean;
@@ -81,14 +82,13 @@ declare namespace PgBoss {
     policy?: QueuePolicy,
     partition?: boolean,
     deadLetter?: string,
-    deleteAfterSeconds?: number;
   } & QueueOptions
 
   type QueueResult = Queue & {
-    deadLetterTable: number,
+    deferredCount: number,
     queuedCount: number,
     activeCount: number,
-    completedCunt: number,
+    completedCount: number,
     table: number,
     createdOn: Date,
     updatedOn: Date
@@ -130,22 +130,6 @@ declare namespace PgBoss {
     options?: ScheduleOptions;
   }
 
-  // source (for now): https://github.com/bendrucker/postgres-interval/blob/master/index.d.ts
-  interface PostgresInterval {
-    years?: number;
-    months?: number;
-    days?: number;
-    hours?: number;
-    minutes?: number;
-    seconds?: number;
-    milliseconds?: number;
-
-    toPostgres(): string;
-
-    toISO(): string;
-    toISOString(): string;
-  }
-
   interface Job<T = object> {
     id: string;
     name: string;
@@ -164,11 +148,13 @@ declare namespace PgBoss {
     startedOn: Date;
     singletonKey: string | null;
     singletonOn: Date | null;
-    expireIn: PostgresInterval;
+    expireInSeconds: number;
+    deleteAfterSeconds: number;
     createdOn: Date;
     completedOn: Date | null;
     keepUntil: Date;
     policy: QueuePolicy,
+    deadLetter: string,
     output: object
   }
 

@@ -482,8 +482,8 @@ class Manager extends EventEmitter {
     Attorney.assertQueueName(name)
     const db = this.assertDb(options)
     const ids = this.mapCompletionIdArg(id, 'fail')
-    const queue = await this.getQueueCache(name)
-    const sql = plans.failJobsById(this.config.schema, queue)
+    const { table } = await this.getQueueCache(name)
+    const sql = plans.failJobsById(this.config.schema, table)
     const result = await db.executeSql(sql, [name, ids, this.mapCompletionDataArg(data)])
     return this.mapCommandResponse(ids, result)
   }
