@@ -422,7 +422,12 @@ function trySetQueueTimestamp (schema, queues, column, seconds) {
     SET ${column} = now()
     WHERE name IN(${getQueueInClause(queues)})
       AND EXTRACT( EPOCH FROM (now() - COALESCE(${column}, now() - interval '1 week') ) ) > ${seconds}
-    RETURNING true
+    RETURNING 
+      name,
+      deferred_count as "deferredCount",
+      queued_count as "queuedCount",
+      active_count as "activeCount",
+      total_count as "totalCount"
   `
 }
 
@@ -896,7 +901,7 @@ function cacheQueueStats (schema, table, queues) {
       active_count = stats.active_count,
       total_count = stats.total_count
     FROM stats
-      WHERE queue.name = stats.name
+      WHERE queue.name = stats.name    
   `
 
   return locked(schema, sql, 'queue-stats')
