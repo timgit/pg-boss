@@ -29,9 +29,9 @@ module.exports = {
   cancelJobs,
   resumeJobs,
   deleteJobsById,
-  dropAllJobs,
-  dropQueuedJobs,
-  dropStoredJobs,
+  deleteAllJobs,
+  deleteQueuedJobs,
+  deleteStoredJobs,
   truncateTable,
   failJobsById,
   failJobsByTimeout,
@@ -49,7 +49,7 @@ module.exports = {
   createQueue,
   deleteQueue,
   getQueues,
-  getQueueSize,
+  getQueueStats,
   trySetQueueMonitorTime,
   trySetQueueDeletionTime,
   trySetCronTime,
@@ -62,8 +62,6 @@ module.exports = {
   CREATE_RACE_MESSAGE,
   DEFAULT_SCHEMA
 }
-
-const assert = require('node:assert')
 
 const COMMON_JOB_TABLE = 'job_common'
 
@@ -495,11 +493,11 @@ function deleteJobsById (schema, table) {
   `
 }
 
-function dropQueuedJobs (schema, table) {
+function deleteQueuedJobs (schema, table) {
   return `DELETE from ${schema}.${table} WHERE name = $1 and state < '${JOB_STATES.active}'`
 }
 
-function dropStoredJobs (schema, table) {
+function deleteStoredJobs (schema, table) {
   return `DELETE from ${schema}.${table} WHERE name = $1 and state > '${JOB_STATES.active}'`
 }
 
@@ -507,13 +505,8 @@ function truncateTable (schema, table) {
   return `TRUNCATE ${schema}.${table}`
 }
 
-function dropAllJobs (schema, table) {
+function deleteAllJobs (schema, table) {
   return `DELETE from ${schema}.${table} WHERE name = $1`
-}
-
-function getQueueSize (schema, table, before = JOB_STATES.active) {
-  assert(before in JOB_STATES, `${before} is not a valid state`)
-  return `SELECT count(*) as count FROM ${schema}.${table} WHERE name = $1 AND state < '${before}'`
 }
 
 function getSchedules (schema) {
@@ -889,24 +882,28 @@ function deletion (schema, table) {
   return locked(schema, sql, table + 'deletion')
 }
 
-function cacheQueueStats (schema, table, queues) {
-  const sql = `
-    WITH stats AS (
-      SELECT
+function getQueueStats (schema, table, queues) {
+  return `
+    SELECT
         name, 
-        count(*) FILTER (WHERE start_after > now()) as deferred_count,
-        count(*) FILTER (WHERE state < '${JOB_STATES.active}') as queued_count,
-        count(*) FILTER (WHERE state = '${JOB_STATES.active}') as active_count,
-        count(*) as total_count
+        (count(*) FILTER (WHERE start_after > now()))::int as "deferredCount",
+        (count(*) FILTER (WHERE state < '${JOB_STATES.active}'))::int as "queuedCount",
+        (count(*) FILTER (WHERE state = '${JOB_STATES.active}'))::int as "activeCount",
+        count(*)::int as "totalCount"
       FROM ${schema}.${table}
       WHERE name IN (${getQueueInClause(queues)})
-      GROUP BY 1 
-    )
+      GROUP BY 1
+  `
+}
+
+function cacheQueueStats (schema, table, queues) {
+  const sql = `
+    WITH stats AS (${getQueueStats(schema, table, queues)})
     UPDATE ${schema}.queue SET
-      deferred_count = stats.deferred_count,
-      queued_count = stats.queued_count,
-      active_count = stats.active_count,
-      total_count = stats.total_count
+      deferred_count = "deferredCount",
+      queued_count = "queuedCount",
+      active_count = "activeCount",
+      total_count = "totalCount"
     FROM stats
       WHERE queue.name = stats.name    
   `

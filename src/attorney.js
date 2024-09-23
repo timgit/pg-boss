@@ -68,6 +68,11 @@ function checkSendArgs (args) {
             ? options.startAfter
             : null
 
+  validateRetryConfig(options)
+  validateExpirationConfig(options)
+  validateRetentionConfig(options)
+  validateDeletionConfig(options)
+
   return { name, data, options }
 }
 

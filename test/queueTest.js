@@ -98,7 +98,7 @@ describe('queues', function () {
 
     await boss.createQueue(queue)
     await boss.send(queue)
-    await boss.dropAllJobs(queue)
+    await boss.deleteAllJobs(queue)
     await boss.deleteQueue(queue)
   })
 
@@ -113,11 +113,11 @@ describe('queues', function () {
     await boss.createQueue(queue, { partition: true })
     await boss.send(queue)
 
-    await boss.dropAllJobs(queue)
+    await boss.deleteAllJobs(queue)
     await boss.deleteQueue(queue)
 
-    const count = await boss.getQueueSize(queue2)
-    assert(count)
+    const { queuedCount } = await boss.getQueueStats(queue2)
+    assert(queuedCount)
   })
 
   it('should truncate a partitioned queue', async function () {
@@ -126,7 +126,7 @@ describe('queues', function () {
 
     await boss.createQueue(queue, { partition: true })
     await boss.send(queue)
-    await boss.dropAllJobs(queue)
+    await boss.deleteAllJobs(queue)
     await boss.deleteQueue(queue)
   })
 
@@ -153,7 +153,7 @@ describe('queues', function () {
 
     assert.strictEqual(await getCount(), 1)
 
-    await boss.dropQueuedJobs(queue)
+    await boss.deleteQueuedJobs(queue)
 
     assert.strictEqual(await getCount(), 0)
   })
@@ -180,7 +180,7 @@ describe('queues', function () {
 
     assert.strictEqual(await getCount(), 2)
 
-    await boss.dropStoredJobs(queue)
+    await boss.deleteStoredJobs(queue)
 
     assert.strictEqual(await getCount(), 0)
   })

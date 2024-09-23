@@ -48,12 +48,12 @@ class Manager extends EventEmitter {
       this.createQueue,
       this.updateQueue,
       this.deleteQueue,
-      this.getQueueSize,
+      this.getQueueStats,
       this.getQueue,
       this.getQueues,
-      this.dropQueuedJobs,
-      this.dropStoredJobs,
-      this.dropAllJobs,
+      this.deleteQueuedJobs,
+      this.deleteStoredJobs,
+      this.deleteAllJobs,
       this.deleteJob,
       this.getJobById
     ]
@@ -338,6 +338,7 @@ class Manager extends EventEmitter {
       singletonSeconds,
       singletonNextSlot,
       expireInSeconds,
+      deleteAfterSeconds,
       keepUntil,
       retryLimit,
       retryDelay,
@@ -354,6 +355,7 @@ class Manager extends EventEmitter {
       singletonSeconds,
       singletonOffset,
       expireInSeconds,
+      deleteAfterSeconds,
       keepUntil,
       retryLimit,
       retryDelay,
@@ -593,26 +595,26 @@ class Manager extends EventEmitter {
     } catch {}
   }
 
-  async dropQueuedJobs (name) {
+  async deleteQueuedJobs (name) {
     Attorney.assertQueueName(name)
     const { table } = await this.getQueueCache(name)
-    const sql = plans.dropQueuedJobs(this.config.schema, table)
+    const sql = plans.deleteQueuedJobs(this.config.schema, table)
     await this.db.executeSql(sql, [name])
   }
 
-  async dropStoredJobs (name) {
+  async deleteStoredJobs (name) {
     Attorney.assertQueueName(name)
     const { table } = await this.getQueueCache(name)
-    const sql = plans.dropStoredJobs(this.config.schema, table)
+    const sql = plans.deleteStoredJobs(this.config.schema, table)
     await this.db.executeSql(sql, [name])
   }
 
-  async dropAllJobs (name) {
+  async deleteAllJobs (name) {
     Attorney.assertQueueName(name)
     const { table, partition } = await this.getQueueCache(name)
 
     if (partition) {
-      const sql = plans.dropAllJobs(this.config.schema, table)
+      const sql = plans.deleteAllJobs(this.config.schema, table)
       await this.db.executeSql(sql, [name])
     } else {
       const sql = plans.truncateTable(this.config.schema, table)
@@ -620,16 +622,16 @@ class Manager extends EventEmitter {
     }
   }
 
-  async getQueueSize (name, options) {
+  async getQueueStats (name) {
     Attorney.assertQueueName(name)
 
     const { table } = await this.getQueueCache(name)
 
-    const sql = plans.getQueueSize(this.config.schema, table, options?.before)
+    const sql = plans.getQueueStats(this.config.schema, table, [name])
 
-    const result = await this.db.executeSql(sql, [name])
+    const { rows } = await this.db.executeSql(sql)
 
-    return result ? parseFloat(result.rows[0].count) : null
+    return rows.at(0) || null
   }
 
   async getJobById (name, id, options = {}) {

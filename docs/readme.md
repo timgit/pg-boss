@@ -43,6 +43,9 @@
     - [`getSchedules()`](#getschedules)
   - [`deleteJob(name, id, options)`](#deletejobname-id-options)
   - [`deleteJob(name, [ids], options)`](#deletejobname-ids-options)
+  - [`deleteQueuedJobs(name)`](#deletequeuedjobsname)
+  - [`deleteStoredJobs(name)`](#deletestoredjobsname)
+  - [`deleteAllJobs(name)`](#deletealljobsname)
   - [`cancel(name, id, options)`](#cancelname-id-options)
   - [`cancel(name, [ids], options)`](#cancelname-ids-options)
   - [`resume(name, id, options)`](#resumename-id-options)
@@ -54,13 +57,10 @@
   - [`getJobById(name, id, options)`](#getjobbyidname-id-options)
   - [`createQueue(name, Queue)`](#createqueuename-queue)
   - [`updateQueue(name, options)`](#updatequeuename-options)
-  - [`dropQueuedJobs(name)`](#dropqueuedjobsname)
-  - [`dropStoredJobs(name)`](#dropstoredjobsname)
-  - [`dropAllJobs(name)`](#dropalljobsname)
   - [`deleteQueue(name)`](#deletequeuename)
   - [`getQueues()`](#getqueues)
   - [`getQueue(name)`](#getqueuename)
-  - [`getQueueSize(name, options)`](#getqueuesizename-options)
+  - [`getQueueStats(name)`](#getqueuestatsname)
   - [`isInstalled()`](#isinstalled)
   - [`schemaVersion()`](#schemaversion)
 
@@ -777,6 +777,18 @@ Deletes a job by id.
 
 Deletes a set of jobs by id.
 
+## `deleteQueuedJobs(name)`
+
+Deletes all queued jobs in a queue.
+
+## `deleteStoredJobs(name)`
+
+Deletes all jobs in completed, failed, and cancelled state in a queue.
+
+## `deleteAllJobs(name)`
+
+Deletes all jobs in a queue, including active jobs.
+
 ## `cancel(name, id, options)`
 
 Cancels a pending or active job.
@@ -875,18 +887,6 @@ When a job fails after all retries, if the queue has a `deadLetter` property, th
 
 Updates options on an existing queue. The policy can be changed, but understand this won't impact existing jobs in flight and will only apply the new policy on new incoming jobs.
 
-## `dropQueuedJobs(name)`
-
-Deletes all queued jobs in a queue.
-
-## `dropStoredJobs(name)`
-
-Deletes all jobs in completed, failed, and cancelled state in a queue.
-
-## `dropAllJobs(name)`
-
-Deletes all jobs in a queue, including active jobs.
-
 ## `deleteQueue(name)`
 
 Deletes a queue and all jobs.
@@ -899,23 +899,9 @@ Returns all queues
 
 Returns a queue by name
 
-## `getQueueSize(name, options)`
+## `getQueueStats(name)`
 
-Returns the number of pending jobs in a queue by name.
-
-`options`: Optional, object.
-
-| Prop | Type | Description | Default |
-| - | - | - | - |
-|`before`| string | count jobs in states before this state | states.active |
-
-As an example, the following options object include active jobs along with created and retry.
-
-```js
-{
-  before: states.completed
-}
-```
+Returns the number of jobs in various states in a queue.  The result matches the results from getQueue(), but ignores the cached data and forces the stats to be retrieved immediately.
 
 ## `isInstalled()`
 

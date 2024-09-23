@@ -280,10 +280,9 @@ declare class PgBoss extends EventEmitter {
 
   deleteJob(name: string, id: string, options?: PgBoss.ConnectionOptions): Promise<void>;
   deleteJob(name: string, ids: string[], options?: PgBoss.ConnectionOptions): Promise<void>;
-
-  dropQueuedJobs(name: string): Promise<void>;
-  dropStoredJobs(name: string): Promise<void>;
-  dropAllJobs(name: string): Promise<void>;
+  deleteQueuedJobs(name: string): Promise<void>;
+  deleteStoredJobs(name: string): Promise<void>;
+  deleteAllJobs(name: string): Promise<void>;
 
   complete(name: string, id: string, options?: PgBoss.ConnectionOptions): Promise<void>;
   complete(name: string, id: string, data: object, options?: PgBoss.ConnectionOptions): Promise<void>;
@@ -300,7 +299,7 @@ declare class PgBoss extends EventEmitter {
   deleteQueue(name: string): Promise<void>;
   getQueues(): Promise<PgBoss.QueueResult[]>;
   getQueue(name: string): Promise<PgBoss.QueueResult | null>;
-  getQueueSize(name: string, options?: { before: 'retry' | 'active' | 'completed' | 'cancelled' | 'failed' }): Promise<number>;
+  getQueueStats(name: string): Promise<number>;
 
   maintain(): Promise<void>;
   maintain(name: string): Promise<void>;

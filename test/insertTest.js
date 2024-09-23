@@ -11,9 +11,9 @@ describe('insert', function () {
 
     await boss.insert(queue, input)
 
-    const count = await boss.getQueueSize(queue)
+    const { queuedCount } = await boss.getQueueStats(queue)
 
-    assert.strictEqual(count, 3)
+    assert.strictEqual(queuedCount, 3)
   })
 
   it('should create jobs from an array with all properties', async function () {
