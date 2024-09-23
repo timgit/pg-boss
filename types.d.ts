@@ -17,6 +17,7 @@ declare namespace PgBoss {
     singleton: 'singleton',
     stately: 'stately'
   }
+  
   interface Db {
     executeSql(text: string, values: any[]): Promise<{ rows: any[] }>;
   }
@@ -45,6 +46,8 @@ declare namespace PgBoss {
   interface MaintenanceOptions {
     supervise?: boolean;
     migrate?: boolean;
+    warningSlowQuerySeconds?: number;
+    warningLargeQueueSize?: number;
   }
 
   type ConstructorOptions = DatabaseOptions & SchedulingOptions & MaintenanceOptions
@@ -59,7 +62,7 @@ declare namespace PgBoss {
   }
 
   interface JobOptions {
-    id?: string,
+    id?: string;
     priority?: number;
     startAfter?: number | string | Date;
     singletonKey?: string;
@@ -78,20 +81,21 @@ declare namespace PgBoss {
   type QueuePolicy = 'standard' | 'short' | 'singleton' | 'stately'
 
   type Queue = {
-    name: string,
-    policy?: QueuePolicy,
-    partition?: boolean,
-    deadLetter?: string,
+    name: string;
+    policy?: QueuePolicy;
+    partition?: boolean;
+    deadLetter?: string;
+    queueSizeWarning?: number;
   } & QueueOptions
 
   type QueueResult = Queue & {
-    deferredCount: number,
-    queuedCount: number,
-    activeCount: number,
-    completedCount: number,
-    table: number,
-    createdOn: Date,
-    updatedOn: Date
+    deferredCount: number;
+    queuedCount: number;
+    activeCount: number;
+    completedCount: number;
+    table: number;
+    createdOn: Date;
+    updatedOn: Date;
   }
 
   type ScheduleOptions = SendOptions & { tz?: string }
@@ -153,13 +157,13 @@ declare namespace PgBoss {
     createdOn: Date;
     completedOn: Date | null;
     keepUntil: Date;
-    policy: QueuePolicy,
-    deadLetter: string,
-    output: object
+    policy: QueuePolicy;
+    deadLetter: string;
+    output: object;
   }
 
   interface JobInsert<T = object> {
-    id?: string,
+    id?: string;
     name: string;
     data?: T;
     priority?: number;
@@ -170,39 +174,30 @@ declare namespace PgBoss {
     singletonKey?: string;
     singletonSeconds?: number;
     expireInSeconds?: number;
+    deleteAfterSeconds: number;
     keepUntil?: Date | string;
   }
 
-  interface MonitorState {
-    all: number;
-    created: number;
-    retry: number;
-    active: number;
-    completed: number;
-    cancelled: number;
-    failed: number;
-  }
-
   interface Worker {
-    id: string,
-    name: string,
-    options: WorkOptions,
-    state: 'created' | 'active' | 'stopping' | 'stopped'
-    count: number,
-    createdOn: Date,
-    lastFetchedOn: Date,
-    lastJobStartedOn: Date,
-    lastJobEndedOn: Date,
-    lastJobDuration: number,
-    lastError: object,
-    lastErrorOn: Date
+    id: string;
+    name: string;
+    options: WorkOptions;
+    state: 'created' | 'active' | 'stopping' | 'stopped';
+    count: number;
+    createdOn: Date;
+    lastFetchedOn: Date;
+    lastJobStartedOn: Date;
+    lastJobEndedOn: Date;
+    lastJobDuration: number;
+    lastError: object;
+    lastErrorOn: Date;
   }
 
   interface StopOptions {
-    close?: boolean,
-    graceful?: boolean,
-    timeout?: number,
-    wait?: boolean
+    close?: boolean;
+    graceful?: boolean;
+    timeout?: number;
+    wait?: boolean;
   }
 
   interface OffWorkOptions {
@@ -231,6 +226,9 @@ declare class PgBoss extends EventEmitter {
 
   on(event: "error", handler: (error: Error) => void): this;
   off(event: "error", handler: (error: Error) => void): this;
+
+  on(event: "warning", handler: (warning: { message: string, data: object }) => void): this;
+  off(event: "warning", handler: (warning: { message: string, data: object }) => void): this;
 
   on(event: "wip", handler: (data: PgBoss.Worker[]) => void): this;
   off(event: "wip", handler: (data: PgBoss.Worker[]) => void): this;

@@ -55,19 +55,52 @@ describe('monitoring', function () {
     assert(errorCount > 0)
   })
 
-  it('slow maintenance should emit warn', async function () {
+  it('slow maintenance should emit warning', async function () {
     const config = {
       ...this.test.bossConfig,
-      __test__warn_slow_query: true
+      __test__warn_slow_query: true,
+      warningSlowQuerySeconds: 1
     }
 
     const boss = this.test.boss = await helper.start(config)
     const queue = this.test.bossConfig.schema
 
     let eventCount = 0
-    boss.on('warn', () => eventCount++)
+    boss.on('warning', (event) => {
+      assert(event.message.includes('slow'))
+      eventCount++
+    })
 
     await boss.maintain(queue)
+
+    assert(eventCount > 0)
+  })
+
+  it('large queue should emit warning', async function () {
+    const config = {
+      ...this.test.bossConfig,
+      monitorIntervalSeconds: 1,
+      warningLargeQueueSize: 1,
+      superviseIntervalSeconds: 1,
+      supervise: true
+    }
+
+    const boss = this.test.boss = await helper.start(config)
+    const queue = this.test.bossConfig.schema
+
+    await boss.send(queue)
+    await boss.send(queue)
+
+    let eventCount = 0
+
+    boss.on('warning', (event) => {
+      assert(event.message.includes('queue'))
+      eventCount++
+    })
+
+    await boss.maintain(queue)
+
+    await delay(4000)
 
     assert(eventCount > 0)
   })

@@ -9,7 +9,14 @@ const QUEUES = {
 
 const EVENTS = {
   error: 'error',
-  schedule: 'schedule'
+  schedule: 'schedule',
+  warning: 'warning'
+}
+
+const WARNINGS = {
+  CLOCK_SKEW: {
+    message: 'Warning: Clock skew between this instance and the database server. This will not break scheduling, but is emitted any time the skew exceeds 60 seconds.'
+  }
 }
 
 class Timekeeper extends EventEmitter {
@@ -89,7 +96,7 @@ class Timekeeper extends EventEmitter {
       const skewSeconds = Math.abs(skew) / 1000
 
       if (skewSeconds >= 60 || this.config.__test__force_clock_skew_warning) {
-        Attorney.warnClockSkew(`Instance clock is ${skewSeconds}s ${skew > 0 ? 'slower' : 'faster'} than database.`)
+        this.emit(this.events.warning, { message: WARNINGS.CLOCK_SKEW.message, data: { seconds: skewSeconds, direction: skew > 0 ? 'slower' : 'faster' } })
       }
     } catch (err) {
       this.emit(this.events.error, err)

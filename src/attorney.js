@@ -14,16 +14,8 @@ module.exports = {
   validateQueueArgs,
   checkWorkArgs,
   checkFetchArgs,
-  warnClockSkew,
   assertPostgresObjectName,
   assertQueueName
-}
-
-const WARNINGS = {
-  CLOCK_SKEW: {
-    message: 'Timekeeper detected clock skew between this instance and the database server. This will not affect scheduling operations, but this warning is shown any time the skew exceeds 60 seconds.',
-    code: 'pg-boss-w01'
-  }
 }
 
 function validateQueueArgs (config = {}) {
@@ -133,6 +125,7 @@ function getConfig (value) {
   applySchemaConfig(config)
   applyMaintenanceConfig(config)
   applyScheduleConfig(config)
+  validateWarningConfig(config)
 
   return config
 }
@@ -143,6 +136,14 @@ function applySchemaConfig (config) {
   }
 
   config.schema = config.schema || DEFAULT_SCHEMA
+}
+
+function validateWarningConfig (config) {
+  assert(!('warningLargeQueueSize' in config) || config.warningLargeQueueSize >= 1,
+    'configuration assert: warningLargeQueueSize must be at least 1')
+
+  assert(!('warningSlowQuerySeconds' in config) || config.warningSlowQuerySeconds >= 1,
+    'configuration assert: warningSlowQuerySeconds must be at least 1')
 }
 
 function assertPostgresObjectName (name) {
@@ -231,18 +232,4 @@ function applyScheduleConfig (config) {
     'configuration assert: cronWorkerIntervalSeconds must be between 1 and 45 seconds')
 
   config.cronWorkerIntervalSeconds = config.cronWorkerIntervalSeconds || 5
-}
-
-function warnClockSkew (message) {
-  emitWarning(WARNINGS.CLOCK_SKEW, message, { force: true })
-}
-
-function emitWarning (warning, message, options = {}) {
-  const { force } = options
-
-  if (force || !warning.warned) {
-    warning.warned = true
-    message = `${warning.message} ${message || ''}`
-    process.emitWarning(message, warning.type, warning.code)
-  }
 }

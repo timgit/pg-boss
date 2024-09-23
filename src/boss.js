@@ -3,7 +3,7 @@ const plans = require('./plans')
 
 const events = {
   error: 'error',
-  warn: 'warn'
+  warning: 'warning'
 }
 
 const WARNINGS = {
@@ -32,12 +32,12 @@ class Boss extends EventEmitter {
       this.maintain
     ]
 
-    if (this.#config.warningSlowQuerySeconds) {
-      WARNINGS.SLOW_QUERY.seconds = this.#config.warningSlowQuerySeconds
+    if (config.warningSlowQuerySeconds) {
+      WARNINGS.SLOW_QUERY.seconds = config.warningSlowQuerySeconds
     }
 
-    if (this.#config.warningLargeQueueSize) {
-      WARNINGS.LARGE_QUEUE.size = this.#config.warningLargeQueueSize
+    if (config.warningLargeQueueSize) {
+      WARNINGS.LARGE_QUEUE.size = config.warningLargeQueueSize
     }
   }
 
@@ -65,7 +65,7 @@ class Boss extends EventEmitter {
     const elapsed = (ended - started) / 1000
 
     if (elapsed > WARNINGS.SLOW_QUERY.seconds || this.#config.__test__warn_slow_query) {
-      this.emit(events.warn, { message: WARNINGS.SLOW_QUERY.message, elapsed, sql, values })
+      this.emit(events.warning, { message: WARNINGS.SLOW_QUERY.message, data: { elapsed, sql, values } })
     }
 
     return result
@@ -114,6 +114,7 @@ class Boss extends EventEmitter {
       const names = queues.map(i => i.name)
 
       while (names.length) {
+        // todo: test
         const chunk = names.splice(0, 100)
 
         await this.#monitorActive(table, chunk)
@@ -130,7 +131,7 @@ class Boss extends EventEmitter {
       const warnings = rows.filter(i => i.queuedCount > (i.queueSizeWarning || WARNINGS.LARGE_QUEUE.size))
 
       for (const warning of warnings) {
-        this.emit(events.warn, { ...warning, message: WARNINGS.LARGE_QUEUE.mesasge })
+        this.emit(events.warning, { message: WARNINGS.LARGE_QUEUE.mesasge, data: warning })
       }
 
       const sql = plans.failJobsByTimeout(this.#config.schema, table, names)

@@ -60,7 +60,7 @@ describe('expire', function () {
     // fetch the job but don't complete it
     await boss.fetch(queue)
 
-    await delay(2000)
+    await delay(4000)
 
     const job = await boss.getJobById(queue, jobId)
 

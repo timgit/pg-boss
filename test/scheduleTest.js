@@ -164,18 +164,12 @@ describe('schedule', function () {
 
     let warningCount = 0
 
-    const warningEvent = 'warning'
-
-    const onWarning = (warning) => {
-      assert(warning.message.includes('clock skew'))
+    boss.once('warning', (warning) => {
+      assert(warning.message.includes('Clock skew'))
       warningCount++
-    }
-
-    process.on(warningEvent, onWarning)
+    })
 
     await boss.start()
-
-    process.removeListener(warningEvent, onWarning)
 
     assert.strictEqual(warningCount, 1)
   })
