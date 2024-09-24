@@ -99,8 +99,6 @@ If the CREATE privilege is not available or desired, you can use the included [s
 
 NOTE: Using an existing schema is supported for advanced use cases **but discouraged**, as this opens up the possibility that creation will fail on an object name collision, and it will add more steps to the uninstallation process.
 
-
-
 # Database uninstall
 
 If you need to uninstall pg-boss from a database, just run the following command.
