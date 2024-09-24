@@ -1039,3 +1039,5 @@ Utility function to see if pg-boss is installed in the configured database.
 ## `schemaVersion()`
 
 Utility function to get the database schema version.
+
+
