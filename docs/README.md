@@ -1,5 +1,3 @@
-# pg-boss Docs
-
 Queueing jobs in Postgres from Node.js like a boss.
 
 [![npm version](https://badge.fury.io/js/pg-boss.svg)](https://badge.fury.io/js/pg-boss)
@@ -42,7 +40,7 @@ pg-boss relies on [SKIP LOCKED](https://www.2ndquadrant.com/en/blog/what-is-sele
 This will likely cater the most to teams already familiar with the simplicity of relational database semantics and operations (SQL, querying, and backups). It will be especially useful to those already relying on PostgreSQL that want to limit how many systems are required to monitor and support in their architecture.
 
 
-## Summary
+## Summary <!-- {docsify-ignore-all} -->
 * Exactly-once job delivery
 * Create jobs within your existing database transaction
 * Backpressure-compatible polling workers
@@ -69,7 +67,7 @@ yarn add pg-boss
 ```
 
 ## Documentation
-* [Docs](docs/readme.md)
+* [Docs](https://timgit.github.io/pg-boss/)
 
 ## Contributing
 To setup a development environment for this library:
