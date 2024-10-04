@@ -357,7 +357,9 @@ declare class PgBoss extends EventEmitter {
 
   clearStorage(): Promise<void>;
   archive(): Promise<void>;
-  purge(): Promise<void>;
+  supervise(): Promise<void>;
+  monitor(): Promise<void>;
+  drop(): Promise<void>;
   expire(): Promise<void>;
   maintain(): Promise<void>;
   isInstalled(): Promise<Boolean>;
