@@ -109,7 +109,7 @@ describe('send', function () {
     const client = db.pool
     await client.query(`CREATE TABLE IF NOT EXISTS ${schema}.test (label VARCHAR(50))`)
 
-    const throwError = () => { throw new Error('Error!!') }
+    const throwError = () => { throw new Error('Error') }
 
     try {
       await client.query('BEGIN')

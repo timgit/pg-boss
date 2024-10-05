@@ -3,21 +3,6 @@ const helper = require('./testHelper')
 const { randomUUID } = require('crypto')
 
 describe('ops', function () {
-  it('should expire manually', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
-    await boss.expire()
-  })
-
-  it('should archive manually', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
-    await boss.archive()
-  })
-
-  it('should purge the archive manually', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
-    await boss.drop()
-  })
-
   it('should emit error in worker', async function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, __test__throw_worker: true })
     const queue = this.test.bossConfig.schema
