@@ -332,7 +332,7 @@ function createPrimaryKeyArchive (schema) {
 }
 
 function createIndexJobPolicyShort (schema) {
-  return `CREATE UNIQUE INDEX job_i1 ON ${schema}.job (name, COALESCE(singleton_key, '')) WHERE state = '${JOB_STATES.created}' AND policy = '${QUEUE_POLICIES.short}';`
+  return `CREATE UNIQUE INDEX job_i1 ON ${schema}.job (name, COALESCE(singleton_key, '')) WHERE state = '${JOB_STATES.created}' AND policy = '${QUEUE_POLICIES.short}'`
 }
 
 function createIndexJobPolicySingleton (schema) {

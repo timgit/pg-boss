@@ -1,6 +1,6 @@
 {
   "name": "pg-boss",
-  "version": "10.1.4",
+  "version": "10.1.5",
   "description": "Queueing jobs in Postgres from Node.js like a boss",
   "main": "./src/index.js",
   "engines": {
@@ -23,7 +23,8 @@
     "cover": "nyc npm test",
     "tsc": "tsc --noEmit types.d.ts",
     "readme": "node ./test/readme.js",
-    "migrate": "node -e 'console.log(require(\"./src\").getMigrationPlans())'"
+    "db:migrate": "node -e 'console.log(require(\"./src\").getMigrationPlans())'",
+    "db:construct": "node -e 'console.log(require(\"./src\").getConstructionPlans())'"
   },
   "mocha": {
     "timeout": 10000,
