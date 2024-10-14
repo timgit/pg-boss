@@ -17,4 +17,4 @@ In a worker, when your handler function completes, jobs will be marked `complete
 
 Uncompleted jobs may also be assigned to `cancelled` state via [`cancel(name, id)`](#cancelname-id-options), where they can be moved back into `created` via [`resume(name, id)`](#resumename-id-options).
 
-All jobs that are `completed`, `cancelled` or `failed` become eligible for archiving according to your configuration. Once archived, jobs will be automatically deleted after the configured retention period.
+All jobs that are not actively deleted during processing will remain in `completed`, `cancelled` or `failed` state until they are automatically removed.

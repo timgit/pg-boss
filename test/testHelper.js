@@ -7,7 +7,6 @@ module.exports = {
   dropSchema,
   start,
   getDb,
-  getArchivedJobById,
   countJobs,
   findJobs,
   getConfig,
@@ -75,21 +74,9 @@ async function findJobs (schema, where, values) {
   return jobs
 }
 
-async function getArchivedJobById (schema, name, id) {
-  const response = await findArchivedJobs(schema, 'name = $1 AND id = $2', [name, id])
-  return response.rows.length ? response.rows[0] : null
-}
-
-async function findArchivedJobs (schema, where, values) {
+async function countJobs (schema, table, where, values) {
   const db = await getDb()
-  const result = await db.executeSql(`select * from ${schema}.archive where ${where}`, values)
-  await db.close()
-  return result
-}
-
-async function countJobs (schema, where, values) {
-  const db = await getDb()
-  const result = await db.executeSql(`select count(*) as count from ${schema}.job where ${where}`, values)
+  const result = await db.executeSql(`select count(*) as count from ${schema}.${table} where ${where}`, values)
   await db.close()
   return parseFloat(result.rows[0].count)
 }
