@@ -27,7 +27,10 @@ class Db extends EventEmitter {
     }
   }
 
-  async executeSql (text, values) {
+  async executeSql (text, values, executeOptions) {
+    if (executeOptions?.pgClient) {
+      return await executeOptions.pgClient.query(text, values)
+    }
     if (this.opened) {
       // if (this.config.debug === true) {
       //   console.log(`${new Date().toISOString()}: DEBUG SQL`)
