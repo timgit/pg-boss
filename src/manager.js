@@ -333,6 +333,7 @@ class Manager extends EventEmitter {
     const {
       id = null,
       db: wrapper,
+      executeOptions,
       priority,
       startAfter,
       singletonKey = null,
@@ -373,7 +374,7 @@ class Manager extends EventEmitter {
     ]
 
     const db = wrapper || this.db
-    const { rows } = await db.executeSql(this.insertJobCommand, values)
+    const { rows } = await db.executeSql(this.insertJobCommand, values, executeOptions)
 
     if (rows.length === 1) {
       return rows[0].id

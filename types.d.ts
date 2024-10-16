@@ -1,4 +1,5 @@
 import { EventEmitter } from 'events'
+import { ClientBase } from 'pg'
 
 declare namespace PgBoss {
 
@@ -17,8 +18,13 @@ declare namespace PgBoss {
     singleton: 'singleton',
     stately: 'stately'
   }
+
+  interface ExecuteOptions {
+    pgClient?: ClientBase;
+  }
+
   interface Db {
-    executeSql(text: string, values: any[]): Promise<{ rows: any[] }>;
+    executeSql(text: string, values: any[], options?: ExecuteOptions): Promise<{ rows: any[] }>;
   }
 
   interface DatabaseOptions {
@@ -109,6 +115,7 @@ declare namespace PgBoss {
 
   interface ConnectionOptions {
     db?: Db;
+    executeOptions?: ExecuteOptions;
   }
 
   type InsertOptions = ConnectionOptions;
