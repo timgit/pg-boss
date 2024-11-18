@@ -34,6 +34,33 @@ describe('schedule', function () {
     await boss.stop({ graceful: false })
   })
 
+  it('should set job metadata correctly', async function () {
+    const config = {
+      ...this.test.bossConfig,
+      cronMonitorIntervalSeconds: 1,
+      cronWorkerIntervalSeconds: 1,
+      noDefault: true
+    }
+
+    let boss = await helper.start(config)
+    const queue = this.test.bossConfig.schema
+
+    await boss.createQueue(queue)
+    await boss.schedule(queue, '* * * * *', {}, { retryLimit: 42 })
+    await boss.stop({ graceful: false })
+
+    boss = await helper.start({ ...config, schedule: true })
+
+    await delay(2000)
+
+    const [job] = await boss.fetch(queue, { includeMetadata: true })
+
+    assert(job)
+
+    assert.strictEqual(job.retryLimit, 42)
+    await boss.stop({ graceful: false })
+  })
+
   it('should not enable scheduling if archive config is < 60s', async function () {
     const config = {
       ...this.test.bossConfig,
