@@ -212,7 +212,17 @@ class Manager extends EventEmitter {
 
       try {
         const result = await resolveWithinSeconds(callback(jobs), maxExpiration)
-        this.complete(name, jobIds, jobIds.length === 1 ? result : undefined)
+        const { successfulIds, errorsById } = result || {}
+        if (!successfulIds && !errorsById) {
+          this.complete(name, jobIds, jobIds.length === 1 ? result : undefined)
+        } else {
+          if (successfulIds?.length) {
+            this.complete(name, successfulIds, successfulIds.length === 1 ? result : undefined)
+          }
+          if (errorsById && errorsById.keys.length) {
+            errorsById.forEach((error, id) => this.fail(name, id, error))
+          }
+        }
       } catch (err) {
         this.fail(name, jobIds, err)
       }
