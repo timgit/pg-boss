@@ -144,7 +144,7 @@ class Timekeeper extends EventEmitter {
     const scheduled = schedules
       .filter(i => this.shouldSendIt(i.cron, i.timezone))
       .map(({ name, data, options }) =>
-        ({ name: QUEUES.SEND_IT, data: { name, data, options }, singletonKey: name, singletonSeconds: 60 }))
+        ({ name: QUEUES.SEND_IT, data: { name, data, ...options }, singletonKey: name, singletonSeconds: 60 }))
 
     if (scheduled.length > 0 && !this.stopped) {
       await this.manager.insert(scheduled)
