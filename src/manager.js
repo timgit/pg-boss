@@ -219,7 +219,7 @@ class Manager extends EventEmitter {
           if (successfulIds?.length) {
             this.complete(name, successfulIds, successfulIds.length === 1 ? result : undefined)
           }
-          if (errorsById && errorsById.keys.length) {
+          if (errorsById?.size) {
             errorsById.forEach((error, id) => this.fail(name, id, error))
           }
         }
