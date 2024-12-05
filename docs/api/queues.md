@@ -28,17 +28,24 @@ Allowed policy values:
 
 > `stately` queues are special in how retries are handled. By definition, stately queues will not allow multiple jobs to occupy `retry` state. Once a job exists in `retry`, failing another `active` job will bypass the retry mechanism and force the job to `failed`. If this job requires retries, consider a custom retry implementation using a dead letter queue.
 
+* **deadLetter**, string
+
+When a job fails after all retries, if the queue has a `deadLetter` property, the job's payload will be copied into that queue, copying the same retention and retry configuration as the original job.
+
+* **deleteAfterSeconds**, int
+
+  How long to keep jobs after processing.
+
+* Default: 7 days
+
+
 ### `updateQueue(name, options)`
 
 Updates options on an existing queue. The policy can be changed, but understand this won't impact existing jobs in flight and will only apply the new policy on new incoming jobs.
 
-### `purgeQueue(name)`
-
-Deletes all queued jobs in a queue.
-
 ### `deleteQueue(name)`
 
-Deletes a queue and all jobs from the active job table.  Any jobs in the archive table are retained.
+Deletes a queue and all jobs.
 
 ### `getQueues()`
 
@@ -48,20 +55,6 @@ Returns all queues
 
 Returns a queue by name
 
-### `getQueueSize(name, options)`
+### `getQueueStats(name)`
 
-Returns the number of pending jobs in a queue by name.
-
-`options`: Optional, object.
-
-| Prop | Type | Description | Default |
-| - | - | - | - |
-|`before`| string | count jobs in states before this state | states.active |
-
-As an example, the following options object include active jobs along with created and retry.
-
-```js
-{
-  before: states.completed
-}
-```
+Returns the number of jobs in various states in a queue.  The result matches the results from getQueue(), but ignores the cached data and forces the stats to be retrieved immediately.

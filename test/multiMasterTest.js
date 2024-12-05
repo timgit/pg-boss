@@ -28,7 +28,7 @@ describe('multi-master', function () {
     const config = {
       ...this.test.bossConfig,
       supervise: true,
-      maintenanceIntervalSeconds: 1,
+      superviseIntervalSeconds: 1,
       max: 2
     }
 
