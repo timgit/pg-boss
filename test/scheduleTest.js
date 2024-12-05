@@ -26,6 +26,28 @@ describe('schedule', function () {
     assert(job)
   })
 
+  it('should set job metadata correctly', async function () {
+    const config = {
+      ...this.test.bossConfig,
+      cronMonitorIntervalSeconds: 1,
+      cronWorkerIntervalSeconds: 1,
+      schedule: true
+    }
+
+    const boss = this.test.boss = await helper.start(config)
+    const queue = this.test.bossConfig.schema
+
+    await boss.schedule(queue, '* * * * *', {}, { retryLimit: 42 })
+
+    await delay(4000)
+
+    const [job] = await boss.fetch(queue, { includeMetadata: true })
+
+    assert(job)
+
+    assert.strictEqual(job.retryLimit, 42)
+  })
+
   it('should fail to schedule a queue that does not exist', async function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
     const queue = this.test.bossConfig.schema
