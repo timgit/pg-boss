@@ -21,7 +21,7 @@ The default options for `work()` is 1 job every 2 seconds.
 
   Same as in [`fetch()`](#fetch)
 
-* **includeMetadata**, bool, *(default=true)*
+* **includeMetadata**, bool, *(default=false)*
 
   Same as in [`fetch()`](#fetch)
 
