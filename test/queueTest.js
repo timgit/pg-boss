@@ -132,9 +132,10 @@ describe('queues', function () {
       policy: 'standard',
       retryLimit: 1,
       retryBackoff: false,
-      retryDelay: 1,
-      expireInSeconds: 1,
-      retentionMinutes: 1,
+      retryDelay: 2,
+      maxRetryDelay: 3,
+      expireInSeconds: 4,
+      retentionMinutes: 5,
       deadLetter
     }
 
@@ -147,6 +148,7 @@ describe('queues', function () {
     assert.strictEqual(createProps.retryLimit, queueObj.retryLimit)
     assert.strictEqual(createProps.retryBackoff, queueObj.retryBackoff)
     assert.strictEqual(createProps.retryDelay, queueObj.retryDelay)
+    assert.strictEqual(createProps.maxRetryDelay, queueObj.maxRetryDelay)
     assert.strictEqual(createProps.expireInSeconds, queueObj.expireInSeconds)
     assert.strictEqual(createProps.retentionMinutes, queueObj.retentionMinutes)
     assert.strictEqual(createProps.deadLetter, queueObj.deadLetter)
@@ -158,11 +160,12 @@ describe('queues', function () {
 
     const updateProps = {
       policy: 'short',
-      retryLimit: 2,
+      retryLimit: 1,
       retryBackoff: true,
       retryDelay: 2,
-      expireInSeconds: 2,
-      retentionMinutes: 2,
+      maxRetryDelay: 3,
+      expireInSeconds: 4,
+      retentionMinutes: 5,
       deadLetter
     }
 
@@ -174,6 +177,7 @@ describe('queues', function () {
     assert.strictEqual(updateProps.retryLimit, queueObj.retryLimit)
     assert.strictEqual(updateProps.retryBackoff, queueObj.retryBackoff)
     assert.strictEqual(updateProps.retryDelay, queueObj.retryDelay)
+    assert.strictEqual(updateProps.maxRetryDelay, queueObj.maxRetryDelay)
     assert.strictEqual(updateProps.expireInSeconds, queueObj.expireInSeconds)
     assert.strictEqual(updateProps.retentionMinutes, queueObj.retentionMinutes)
     assert.strictEqual(updateProps.deadLetter, queueObj.deadLetter)
@@ -190,8 +194,9 @@ describe('queues', function () {
       retryLimit: 1,
       retryBackoff: true,
       retryDelay: 2,
-      expireInSeconds: 3,
-      retentionMinutes: 4,
+      maxRetryDelay: 3,
+      expireInSeconds: 4,
+      retentionMinutes: 5,
       deadLetter
     }
 
@@ -206,6 +211,7 @@ describe('queues', function () {
     assert.strictEqual(createProps.retryLimit, job.retryLimit)
     assert.strictEqual(createProps.retryBackoff, job.retryBackoff)
     assert.strictEqual(createProps.retryDelay, job.retryDelay)
+    assert.strictEqual(createProps.maxRetryDelay, job.maxRetryDelay)
     assert.strictEqual(createProps.expireInSeconds, job.expireIn.seconds)
     assert.strictEqual(createProps.retentionMinutes, retentionMinutes)
     assert.strictEqual(createProps.deadLetter, job.deadLetter)

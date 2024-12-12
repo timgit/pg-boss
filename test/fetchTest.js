@@ -58,6 +58,7 @@ describe('fetch', function () {
     assert(job.retryCount === 0)
     assert(job.retryDelay === 0)
     assert(job.retryBackoff === false)
+    assert(job.maxRetryDelay === null)
     assert(job.startAfter !== undefined)
     assert(job.startedOn !== undefined)
     assert(job.singletonKey === null)
@@ -92,6 +93,70 @@ describe('fetch', function () {
       assert(job.retryCount === 0)
       assert(job.retryDelay === 0)
       assert(job.retryBackoff === false)
+      assert(job.maxRetryDelay === null)
+      assert(job.startAfter !== undefined)
+      assert(job.startedOn !== undefined)
+      assert(job.singletonKey === null)
+      assert(job.singletonOn === null)
+      assert(job.expireIn.minutes === 15)
+      assert(job.createdOn !== undefined)
+      assert(job.completedOn === null)
+      assert(job.keepUntil !== undefined)
+    }
+  })
+
+  it('should fetch all metadata for a single job with exponential backoff when requested', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const queue = this.test.bossConfig.schema
+
+    await boss.send(queue, null, { retryDelay: 1, retryBackoff: true, maxRetryDelay: 10 })
+    const [job] = await boss.fetch(queue, { includeMetadata: true })
+
+    assert(queue === job.name)
+    assert(job.priority === 0)
+    assert(job.state === 'active')
+    assert(job.policy !== undefined)
+    assert(job.retryLimit === 0)
+    assert(job.retryCount === 0)
+    assert(job.retryDelay === 1)
+    assert(job.retryBackoff === true)
+    assert(job.maxRetryDelay === 10)
+    assert(job.startAfter !== undefined)
+    assert(job.startedOn !== undefined)
+    assert(job.singletonKey === null)
+    assert(job.singletonOn === null)
+    assert(job.expireIn.minutes === 15)
+    assert(job.createdOn !== undefined)
+    assert(job.completedOn === null)
+    assert(job.keepUntil !== undefined)
+  })
+
+  it('should fetch all metadata for a batch of jobs with exponential backoff when requested', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const queue = this.test.bossConfig.schema
+    const options = { retryDelay: 1, retryBackoff: true, maxRetryDelay: 10 }
+    const batchSize = 4
+
+    await Promise.all([
+      boss.send(queue, null, options),
+      boss.send(queue, null, options),
+      boss.send(queue, null, options),
+      boss.send(queue, null, options),
+    ])
+
+    const jobs = await boss.fetch(queue, { batchSize, includeMetadata: true })
+    assert(jobs.length === batchSize)
+
+    for (const job of jobs) {
+      assert(queue === job.name)
+      assert(job.priority === 0)
+      assert(job.state === 'active')
+      assert(job.policy !== undefined)
+      assert(job.retryLimit === 0)
+      assert(job.retryCount === 0)
+      assert(job.retryDelay === 1)
+      assert(job.retryBackoff === true)
+      assert(job.maxRetryDelay === 10)
       assert(job.startAfter !== undefined)
       assert(job.startedOn !== undefined)
       assert(job.singletonKey === null)
