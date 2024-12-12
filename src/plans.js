@@ -134,13 +134,14 @@ function createTableQueue (schema) {
       retry_limit int,
       retry_delay int,
       retry_backoff bool,
+      max_retry_delay int,
       expire_seconds int,
       retention_minutes int,
       dead_letter text REFERENCES ${schema}.queue (name),
       partition_name text,
       created_on timestamp with time zone not null default now(),
       updated_on timestamp with time zone not null default now(),
-      PRIMARY KEY (name) 
+      PRIMARY KEY (name)
     )
   `
 }
@@ -184,6 +185,7 @@ function createTableJob (schema) {
       retry_count integer not null default(0),
       retry_delay integer not null default(0),
       retry_backoff boolean not null default false,
+      max_retry_delay integer,
       start_after timestamp with time zone not null default now(),
       started_on timestamp with time zone,
       singleton_key text,
@@ -208,7 +210,8 @@ const allJobColumns = `${baseJobColumns},
   retry_count as "retryCount",
   retry_delay as "retryDelay",
   retry_backoff as "retryBackoff",
-  start_after as "startAfter",  
+  max_retry_delay as "maxRetryDelay",
+  start_after as "startAfter",
   started_on as "startedOn",
   singleton_key as "singletonKey",
   singleton_on as "singletonOn",
@@ -237,6 +240,7 @@ function createQueueFunction (schema) {
         retry_limit,
         retry_delay,
         retry_backoff,
+        max_retry_delay,
         expire_seconds,
         retention_minutes,
         dead_letter,
@@ -248,6 +252,7 @@ function createQueueFunction (schema) {
         (options->>'retryLimit')::int,
         (options->>'retryDelay')::int,
         (options->>'retryBackoff')::bool,
+        (options->>'maxRetryDelay')::int,
         (options->>'expireInSeconds')::int,
         (options->>'retentionMinutes')::int,
         options->>'deadLetter',
@@ -263,7 +268,7 @@ function createQueueFunction (schema) {
       END IF;
 
       EXECUTE format('CREATE TABLE ${schema}.%I (LIKE ${schema}.job INCLUDING DEFAULTS)', table_name);
-      
+
       EXECUTE format('${formatPartitionCommand(createPrimaryKeyJob(schema))}', table_name);
       EXECUTE format('${formatPartitionCommand(createQueueForeignKeyJob(schema))}', table_name);
       EXECUTE format('${formatPartitionCommand(createQueueForeignKeyJobDeadLetter(schema))}', table_name);
@@ -292,7 +297,7 @@ function deleteQueueFunction (schema) {
     $$
     DECLARE
       table_name varchar;
-    BEGIN  
+    BEGIN
       WITH deleted as (
         DELETE FROM ${schema}.queue
         WHERE name = queue_name
@@ -390,9 +395,10 @@ function updateQueue (schema) {
       retry_limit = COALESCE($3, retry_limit),
       retry_delay = COALESCE($4, retry_delay),
       retry_backoff = COALESCE($5, retry_backoff),
-      expire_seconds = COALESCE($6, expire_seconds),
-      retention_minutes = COALESCE($7, retention_minutes),
-      dead_letter = COALESCE($8, dead_letter),
+      max_retry_delay = COALESCE($6, max_retry_delay),
+      expire_seconds = COALESCE($7, expire_seconds),
+      retention_minutes = COALESCE($8, retention_minutes),
+      dead_letter = COALESCE($9, dead_letter),
       updated_on = now()
     WHERE name = $1
   `
@@ -400,12 +406,13 @@ function updateQueue (schema) {
 
 function getQueues (schema) {
   return `
-    SELECT 
+    SELECT
       name,
       policy,
       retry_limit as "retryLimit",
       retry_delay as "retryDelay",
       retry_backoff as "retryBackoff",
+      max_retry_delay as "maxRetryDelay",
       expire_seconds as "expireInSeconds",
       retention_minutes as "retentionMinutes",
       dead_letter as "deadLetter",
@@ -520,7 +527,7 @@ function fetchNextJob (schema) {
       retry_count = CASE WHEN started_on IS NOT NULL THEN retry_count + 1 ELSE retry_count END
     FROM next
     WHERE name = $1 AND j.id = next.id
-    RETURNING j.${includeMetadata ? allJobColumns : baseJobColumns}      
+    RETURNING j.${includeMetadata ? allJobColumns : baseJobColumns}
   `
 }
 
@@ -571,6 +578,7 @@ function failJobs (schema, where, output) {
         retry_count,
         retry_delay,
         retry_backoff,
+        max_retry_delay,
         start_after,
         started_on,
         singleton_key,
@@ -596,12 +604,17 @@ function failJobs (schema, where, output) {
         retry_count,
         retry_delay,
         retry_backoff,
+        max_retry_delay,
         CASE
           WHEN retry_count = retry_limit THEN start_after
           WHEN NOT retry_backoff THEN now() + retry_delay * interval '1'
-          ELSE now() + (
+          ELSE now() +
+            LEAST(
+              (
                 retry_delay * 2 ^ LEAST(16, retry_count + 1) / 2 +
                 retry_delay * 2 ^ LEAST(16, retry_count + 1) / 2 * random()
+              ),
+              max_retry_delay
             ) * interval '1'
           END as start_after,
         started_on,
@@ -615,7 +628,7 @@ function failJobs (schema, where, output) {
           END as completed_on,
         keep_until,
         dead_letter,
-        policy,        
+        policy,
         ${output}
       FROM deleted_jobs
       ON CONFLICT DO NOTHING
@@ -632,6 +645,7 @@ function failJobs (schema, where, output) {
         retry_count,
         retry_delay,
         retry_backoff,
+        max_retry_delay,
         start_after,
         started_on,
         singleton_key,
@@ -654,6 +668,7 @@ function failJobs (schema, where, output) {
         retry_count,
         retry_delay,
         retry_backoff,
+        max_retry_delay,
         start_after,
         started_on,
         singleton_key,
@@ -726,7 +741,7 @@ function deleteJobs (schema) {
     with results as (
       DELETE FROM ${schema}.job
       WHERE name = $1
-        AND id IN (SELECT UNNEST($2::uuid[]))        
+        AND id IN (SELECT UNNEST($2::uuid[]))
       RETURNING 1
     )
     SELECT COUNT(*) from results
@@ -749,6 +764,7 @@ function insertJob (schema) {
       retry_limit,
       retry_delay,
       retry_backoff,
+      max_retry_delay,
       policy
     )
     SELECT
@@ -777,6 +793,11 @@ function insertJob (schema) {
         ELSE COALESCE(j.retry_delay, q.retry_delay, retry_delay_default, 0)
         END as retry_delay,
       COALESCE(j.retry_backoff, q.retry_backoff, retry_backoff_default, false) as retry_backoff,
+      CASE
+        WHEN COALESCE(j.retry_backoff, q.retry_backoff, retry_backoff_default, false)
+        THEN COALESCE(j.max_retry_delay, q.max_retry_delay, max_retry_delay_default)
+        ELSE NULL
+        END as max_retry_delay,
       q.policy
     FROM
       ( SELECT
@@ -803,7 +824,9 @@ function insertJob (schema) {
           $16::int as retry_delay,
           $17::int as retry_delay_default,
           $18::bool as retry_backoff,
-          $19::bool as retry_backoff_default
+          $19::bool as retry_backoff_default,
+          $20::int as max_retry_delay,
+          $21::int as max_retry_delay_default
       ) j JOIN ${schema}.queue q ON j.name = q.name
     ON CONFLICT DO NOTHING
     RETURNING id
@@ -813,12 +836,13 @@ function insertJob (schema) {
 function insertJobs (schema) {
   return `
     WITH defaults as (
-      SELECT 
+      SELECT
         $2 as expire_in,
         $3 as keep_until,
         $4::int as retry_limit,
         $5::int as retry_delay,
-        $6::bool as retry_backoff
+        $6::bool as retry_backoff,
+        $7::int as max_retry_delay
     )
     INSERT INTO ${schema}.job (
       id,
@@ -834,6 +858,7 @@ function insertJobs (schema) {
       retry_limit,
       retry_delay,
       retry_backoff,
+      max_retry_delay,
       policy
     )
     SELECT
@@ -863,8 +888,13 @@ function insertJobs (schema) {
         WHEN COALESCE("retryBackoff", q.retry_backoff, defaults.retry_backoff, false)
           THEN GREATEST(COALESCE("retryDelay", q.retry_delay, defaults.retry_delay), 1)
         ELSE COALESCE("retryDelay", q.retry_delay, defaults.retry_delay, 0)
-        END as retry_delay,      
+        END as retry_delay,
       COALESCE("retryBackoff", q.retry_backoff, defaults.retry_backoff, false) as retry_backoff,
+      CASE
+        WHEN COALESCE("retryBackoff", q.retry_backoff, defaults.retry_backoff, false)
+          THEN COALESCE("maxRetryDelay", q.max_retry_delay, defaults.max_retry_delay)
+        ELSE NULL
+        END as max_retry_delay,
       q.policy
     FROM (
       SELECT *,
@@ -881,12 +911,13 @@ function insertJobs (schema) {
         "retryLimit" integer,
         "retryDelay" integer,
         "retryBackoff" boolean,
+        "maxRetryDelay" integer,
         "singletonKey" text,
         "singletonSeconds" integer,
         "expireInSeconds" integer,
         "keepUntil" timestamp with time zone,
         "deadLetter" text
-      ) 
+      )
     ) j
     JOIN ${schema}.queue q ON j.name = q.name,
       defaults
@@ -902,7 +933,7 @@ function drop (schema, interval) {
 }
 
 function archive (schema, completedInterval, failedInterval = completedInterval) {
-  const columns = 'id, name, priority, data, state, retry_limit, retry_count, retry_delay, retry_backoff, start_after, started_on, singleton_key, singleton_on, expire_in, created_on, completed_on, keep_until, dead_letter, policy, output'
+  const columns = 'id, name, priority, data, state, retry_limit, retry_count, retry_delay, retry_backoff, max_retry_delay, start_after, started_on, singleton_key, singleton_on, expire_in, created_on, completed_on, keep_until, dead_letter, policy, output'
 
   return `
     WITH archived_rows AS (
