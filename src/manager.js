@@ -347,7 +347,9 @@ class Manager extends EventEmitter {
       retryDelay,
       retryDelayDefault,
       retryBackoff,
-      retryBackoffDefault
+      retryBackoffDefault,
+      maxRetryDelay,
+      maxRetryDelayDefault
     } = options
 
     const values = [
@@ -369,7 +371,9 @@ class Manager extends EventEmitter {
       retryDelay, // 16
       retryDelayDefault, // 17
       retryBackoff, // 18
-      retryBackoffDefault // 19
+      retryBackoffDefault, // 19
+      maxRetryDelay, // 20
+      maxRetryDelayDefault // 21
     ]
 
     const db = wrapper || this.db
@@ -405,7 +409,8 @@ class Manager extends EventEmitter {
       this.config.keepUntil, // 3
       this.config.retryLimit, // 4
       this.config.retryDelay, // 5
-      this.config.retryBackoff // 6
+      this.config.retryBackoff, // 6
+      this.config.maxRetryDelay // 7
     ]
 
     const { rows } = await db.executeSql(this.insertJobsCommand, params)
@@ -529,6 +534,7 @@ class Manager extends EventEmitter {
       retryLimit,
       retryDelay,
       retryBackoff,
+      maxRetryDelay,
       expireInSeconds,
       retentionMinutes,
       deadLetter
@@ -544,6 +550,7 @@ class Manager extends EventEmitter {
       retryLimit,
       retryDelay,
       retryBackoff,
+      maxRetryDelay,
       expireInSeconds,
       retentionMinutes,
       deadLetter
@@ -568,20 +575,22 @@ class Manager extends EventEmitter {
       retryLimit,
       retryDelay,
       retryBackoff,
+      maxRetryDelay,
       expireInSeconds,
       retentionMinutes,
       deadLetter
     } = Attorney.checkQueueArgs(name, options)
 
     const params = [
-      name,
-      policy,
-      retryLimit,
-      retryDelay,
-      retryBackoff,
-      expireInSeconds,
-      retentionMinutes,
-      deadLetter
+      name, // 1
+      policy, // 2
+      retryLimit, // 3
+      retryDelay, // 4
+      retryBackoff, // 5
+      maxRetryDelay, // 6
+      expireInSeconds, // 7
+      retentionMinutes, // 8
+      deadLetter // 9
     ]
 
     await this.db.executeSql(this.updateQueueCommand, params)
