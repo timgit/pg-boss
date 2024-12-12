@@ -131,7 +131,7 @@ describe('queues', function () {
     const createProps = {
       policy: 'standard',
       retryLimit: 1,
-      retryBackoff: false,
+      retryBackoff: true,
       retryDelay: 2,
       maxRetryDelay: 3,
       expireInSeconds: 4,
@@ -161,9 +161,9 @@ describe('queues', function () {
     const updateProps = {
       policy: 'short',
       retryLimit: 1,
-      retryBackoff: true,
+      retryBackoff: false,
       retryDelay: 2,
-      maxRetryDelay: 3,
+      maxRetryDelay: undefined,
       expireInSeconds: 4,
       retentionMinutes: 5,
       deadLetter
@@ -177,7 +177,7 @@ describe('queues', function () {
     assert.strictEqual(updateProps.retryLimit, queueObj.retryLimit)
     assert.strictEqual(updateProps.retryBackoff, queueObj.retryBackoff)
     assert.strictEqual(updateProps.retryDelay, queueObj.retryDelay)
-    assert.strictEqual(updateProps.maxRetryDelay, queueObj.maxRetryDelay)
+    assert.strictEqual(null, queueObj.maxRetryDelay)
     assert.strictEqual(updateProps.expireInSeconds, queueObj.expireInSeconds)
     assert.strictEqual(updateProps.retentionMinutes, queueObj.retentionMinutes)
     assert.strictEqual(updateProps.deadLetter, queueObj.deadLetter)

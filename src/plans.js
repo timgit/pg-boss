@@ -395,7 +395,7 @@ function updateQueue (schema) {
       retry_limit = COALESCE($3, retry_limit),
       retry_delay = COALESCE($4, retry_delay),
       retry_backoff = COALESCE($5, retry_backoff),
-      max_retry_delay = COALESCE($6, max_retry_delay),
+      max_retry_delay = $6,
       expire_seconds = COALESCE($7, expire_seconds),
       retention_minutes = COALESCE($8, retention_minutes),
       dead_letter = COALESCE($9, dead_letter),
