@@ -276,7 +276,8 @@ function applyRetryConfig (config, defaults) {
   assert(!('retryDelay' in config) || (Number.isInteger(config.retryDelay) && config.retryDelay >= 0), 'retryDelay must be an integer >= 0')
   assert(!('retryLimit' in config) || (Number.isInteger(config.retryLimit) && config.retryLimit >= 0), 'retryLimit must be an integer >= 0')
   assert(!('retryBackoff' in config) || (config.retryBackoff === true || config.retryBackoff === false), 'retryBackoff must be either true or false')
-  assert(!('maxRetryDelay' in config) || (Number.isInteger(config.maxRetryDelay) && config.maxRetryDelay >= 0), 'maxRetryDelay must be an integer >= 0')
+  assert(!('maxRetryDelay' in config) || config.maxRetryDelay === undefined || config.retryBackoff === true,'maxRetryDelay can only be set if retryBackoff is true')
+  assert(!('maxRetryDelay' in config) || config.maxRetryDelay === undefined || (Number.isInteger(config.maxRetryDelay) && config.maxRetryDelay >= 0), 'maxRetryDelay must be an integer >= 0')
 
   config.retryDelayDefault = defaults?.retryDelay
   config.retryLimitDefault = defaults?.retryLimit
