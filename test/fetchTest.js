@@ -141,7 +141,7 @@ describe('fetch', function () {
       boss.send(queue, null, options),
       boss.send(queue, null, options),
       boss.send(queue, null, options),
-      boss.send(queue, null, options),
+      boss.send(queue, null, options)
     ])
 
     const jobs = await boss.fetch(queue, { batchSize, includeMetadata: true })
