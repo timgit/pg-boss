@@ -1,0 +1,15 @@
+services:
+  db:
+    image: postgres:16
+    ports:
+      - 5432:5432
+    volumes:
+      - db_volume:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_DB=pgboss
+      - POSTGRES_NAME=pgboss
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+
+volumes:
+  db_volume:
