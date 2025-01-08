@@ -14,47 +14,15 @@ Ideally, code similar to the following example would be used after creating your
 ```js
 boss.on('error', error => logger.error(error));
 ```
+## `warning`
 
-## `monitor-states`
+During monitoring and maintenance, pg-boss may raise warning events.
 
-The `monitor-states` event is conditionally raised based on the `monitorStateInterval` configuration setting and only emitted from `start()`. If passed during instance creation, it will provide a count of jobs in each state per interval.  This could be useful for logging or even determining if the job system is handling its load.
+Examples are slow queries, large queues, and scheduling clock skew.
 
-The payload of the event is an object with a key per queue and state, such as the  following example.
-
-```json
-{
-  "queues": {
-      "send-welcome-email": {
-        "created": 530,
-        "retry": 40,
-        "active": 26,
-        "completed": 3400,
-        "cancelled": 0,
-        "failed": 49,
-        "all": 4049
-      },
-      "archive-cleanup": {
-        "created": 0,
-        "retry": 0,
-        "active": 0,
-        "completed": 645,
-        "cancelled": 0,
-        "failed": 0,
-        "all": 645
-      }
-  },
-  "created": 530,
-  "retry": 40,
-  "active": 26,
-  "completed": 4045,
-  "cancelled": 0,
-  "failed": 4,
-  "all": 4694
-}
-```
 ## `wip`
 
-Emitted at most once every 2 seconds when workers are receiving jobs. The payload is an array that represents each worker in this instance of pg-boss.  If you'd rather monitor activity across all instances, use `monitor-states`.
+Emitted at most once every 2 seconds when workers are receiving jobs. The payload is an array that represents each worker in this instance of pg-boss.
 
 ```js
 [
