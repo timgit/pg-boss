@@ -1,5 +1,6 @@
 const assert = require('node:assert')
 const helper = require('./testHelper')
+const pg = require('pg')
 
 describe('send', function () {
   it('should fail with no arguments', async function () {
@@ -135,5 +136,125 @@ describe('send', function () {
     const [job] = await boss.fetch(queue)
 
     assert(!job)
+  })
+
+  /** @type {pg.Client | null} */
+  let otherPgClient = null
+
+  afterEach(async function () {
+    if (otherPgClient) {
+      await otherPgClient.end()
+      otherPgClient = null
+    }
+  })
+
+  it('should accept job object with name and custom pg Client', async function () {
+    const pgBossOptions = { ...this.test.bossConfig }
+    const boss = this.test.boss = await helper.start(pgBossOptions)
+    const queue = this.test.bossConfig.schema
+
+    otherPgClient = new pg.Client(helper.getConnectionString(pgBossOptions))
+    await otherPgClient.connect()
+
+    let called = false
+    const options = {
+      executeOptions: {
+        // This is a mock to ensure the custom pg Client is used
+        pgClient: {
+          query: async (text, values) => {
+            called = true
+            return otherPgClient.query(text, values)
+          }
+        }
+      },
+      someCrazyOption: 'whatever'
+    }
+
+    await boss.send({ name: queue, options })
+
+    const [job] = await boss.fetch(queue)
+
+    assert.notEqual(job, null)
+    assert.strictEqual(job.data, null)
+    assert.strictEqual(called, true)
+  })
+
+  it('should create job if transaction succeed with custom pg Client', async function () {
+    const pgBossOptions = { ...this.test.bossConfig }
+    const boss = this.test.boss = await helper.start(pgBossOptions)
+    const { schema } = this.test.bossConfig
+    const queue = schema
+
+    otherPgClient = new pg.Client(helper.getConnectionString(pgBossOptions))
+    await otherPgClient.connect()
+    const otherSchema = `${schema}_test_external`
+    await otherPgClient.query(`CREATE SCHEMA IF NOT EXISTS ${otherSchema}`)
+    await otherPgClient.query(`CREATE TABLE IF NOT EXISTS ${otherSchema}.test (label VARCHAR(50))`)
+    await otherPgClient.query(`TRUNCATE ${otherSchema}.test RESTART IDENTITY`)
+
+    try {
+      await otherPgClient.query('BEGIN')
+      const options = {
+        executeOptions: {
+          pgClient: otherPgClient
+        },
+        someCrazyOption: 'whatever'
+      }
+      const queryText = `INSERT INTO ${otherSchema}.test(label) VALUES('Test')`
+      await otherPgClient.query(queryText)
+
+      await boss.send({ name: queue, options })
+
+      await otherPgClient.query('COMMIT')
+    } catch (e) {
+      await otherPgClient.query('ROLLBACK')
+    }
+
+    const [job] = await boss.fetch(queue)
+    const externalSchemaResult = await otherPgClient.query(`SELECT * FROM ${otherSchema}.test`)
+
+    assert(!!job)
+    assert(externalSchemaResult.rowCount === 1)
+  })
+
+  it('should not create job if transaction fails with custom pg Client', async function () {
+    const pgBossOptions = { ...this.test.bossConfig }
+    const boss = this.test.boss = await helper.start(pgBossOptions)
+    const { schema } = this.test.bossConfig
+    const queue = schema
+
+    otherPgClient = new pg.Client(helper.getConnectionString(pgBossOptions))
+    await otherPgClient.connect()
+    const otherSchema = `${schema}_test_external`
+    await otherPgClient.query(`CREATE SCHEMA IF NOT EXISTS ${otherSchema}`)
+    await otherPgClient.query(`CREATE TABLE IF NOT EXISTS ${otherSchema}.test (label VARCHAR(50))`)
+    await otherPgClient.query(`TRUNCATE ${otherSchema}.test RESTART IDENTITY`)
+
+    const throwError = () => { throw new Error('Error!!') }
+
+    try {
+      await otherPgClient.query('BEGIN')
+      const options = {
+        executeOptions: {
+          pgClient: otherPgClient
+        },
+        someCrazyOption: 'whatever'
+      }
+      const queryText = `INSERT INTO ${otherSchema}.test(label) VALUES('Test')`
+      await otherPgClient.query(queryText)
+
+      await boss.send({ name: queue, options })
+
+      throwError()
+      await otherPgClient.query('COMMIT')
+    } catch (e) {
+      await otherPgClient.query('ROLLBACK')
+    }
+
+    const [job] = await boss.fetch(queue)
+    const externalSchemaResult = await otherPgClient.query(`SELECT * FROM ${otherSchema}.test`)
+
+    assert(!job)
+    assert(externalSchemaResult.rowCount === 0)
   })
 })
