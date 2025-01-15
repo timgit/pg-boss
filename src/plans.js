@@ -504,15 +504,19 @@ function insertVersion (schema, version) {
 
 function fetchNextJob (schema) {
   return ({ includeMetadata, priority = true } = {}) => `
-    WITH next as (
-      SELECT id
+    WITH next_pool as (
+      SELECT id, singleton_key, name
       FROM ${schema}.job
       WHERE name = $1
         AND state < '${JOB_STATES.active}'
         AND start_after < now()
-      ORDER BY ${priority ? 'priority desc, ' : ''}created_on, id
+      ORDER BY ${priority ? 'priority desc, ' : ''}state desc, created_on, id
       LIMIT $2
       FOR UPDATE SKIP LOCKED
+    ),
+    next as (
+      SELECT DISTINCT ON (CASE WHEN q.policy = 'stately' THEN np.singleton_key ELSE np.id::TEXT END) np.id
+      FROM next_pool np JOIN ${schema}.queue q ON np.name = q.name
     )
     UPDATE ${schema}.job j SET
       state = '${JOB_STATES.active}',

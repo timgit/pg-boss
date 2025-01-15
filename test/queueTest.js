@@ -350,6 +350,47 @@ describe('queues', function () {
     assert(!blockedSecondActive)
   })
 
+  it('stately policy prioritizes job in retry state over created with the same singleton key', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
+    const queue = this.test.bossConfig.schema
+
+    await boss.createQueue(queue, { policy: 'stately' })
+
+    const jobId1 = await boss.send(queue, null, { retryLimit: 1, singletonKey: 'single' })
+
+    let [job1] = await boss.fetch(queue)
+
+    await boss.fail(queue, job1.id)
+
+    job1 = await boss.getJobById(queue, jobId1)
+
+    assert.strictEqual(job1.state, 'retry')
+
+    const jobId2 = await boss.send(queue, null, { retryLimit: 1, singletonKey: 'single' })
+    const jobId3 = await boss.send(queue, null, { retryLimit: 1, singletonKey: 'single2' })
+
+    let job2 = await boss.getJobById(queue, jobId2)
+    let job3 = await boss.getJobById(queue, jobId3)
+
+    assert.strictEqual(job2.state, 'created')
+    assert.strictEqual(job3.state, 'created')
+
+    const jobs = await boss.fetch(queue, { batchSize: 3 })
+
+    job1 = await boss.getJobById(queue, jobId1)
+    job2 = await boss.getJobById(queue, jobId2)
+    job3 = await boss.getJobById(queue, jobId3)
+
+    const fetchedJobIds = jobs.map(j => j.id)
+
+    assert.strictEqual(jobs.length, 2)
+    assert(fetchedJobIds.includes(jobId1))
+    assert(fetchedJobIds.includes(jobId3))
+    assert.strictEqual(job1.state, 'active')
+    assert.strictEqual(job2.state, 'created')
+    assert.strictEqual(job3.state, 'active')
+  })
+
   it('stately policy fails a job without retry when others are active', async function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
     const queue = this.test.bossConfig.schema
