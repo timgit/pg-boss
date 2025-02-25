@@ -140,7 +140,7 @@ function createTableQueue (schema) {
       partition_name text,
       created_on timestamp with time zone not null default now(),
       updated_on timestamp with time zone not null default now(),
-      PRIMARY KEY (name) 
+      PRIMARY KEY (name)
     )
   `
 }
@@ -208,7 +208,7 @@ const allJobColumns = `${baseJobColumns},
   retry_count as "retryCount",
   retry_delay as "retryDelay",
   retry_backoff as "retryBackoff",
-  start_after as "startAfter",  
+  start_after as "startAfter",
   started_on as "startedOn",
   singleton_key as "singletonKey",
   singleton_on as "singletonOn",
@@ -263,7 +263,7 @@ function createQueueFunction (schema) {
       END IF;
 
       EXECUTE format('CREATE TABLE ${schema}.%I (LIKE ${schema}.job INCLUDING DEFAULTS)', table_name);
-      
+
       EXECUTE format('${formatPartitionCommand(createPrimaryKeyJob(schema))}', table_name);
       EXECUTE format('${formatPartitionCommand(createQueueForeignKeyJob(schema))}', table_name);
       EXECUTE format('${formatPartitionCommand(createQueueForeignKeyJobDeadLetter(schema))}', table_name);
@@ -292,7 +292,7 @@ function deleteQueueFunction (schema) {
     $$
     DECLARE
       table_name varchar;
-    BEGIN  
+    BEGIN
       WITH deleted as (
         DELETE FROM ${schema}.queue
         WHERE name = queue_name
@@ -400,7 +400,7 @@ function updateQueue (schema) {
 
 function getQueues (schema) {
   return `
-    SELECT 
+    SELECT
       name,
       policy,
       retry_limit as "retryLimit",
@@ -503,13 +503,13 @@ function insertVersion (schema, version) {
 }
 
 function fetchNextJob (schema) {
-  return ({ includeMetadata, priority = true } = {}) => `
+  return ({ includeMetadata, priority = true, skipStartAfterNow = false } = {}) => `
     WITH next as (
       SELECT id
       FROM ${schema}.job
       WHERE name = $1
         AND state < '${JOB_STATES.active}'
-        AND start_after < now()
+        ${skipStartAfterNow ? '' : 'AND start_after < now()'}
       ORDER BY ${priority ? 'priority desc, ' : ''}created_on, id
       LIMIT $2
       FOR UPDATE SKIP LOCKED
@@ -520,7 +520,7 @@ function fetchNextJob (schema) {
       retry_count = CASE WHEN started_on IS NOT NULL THEN retry_count + 1 ELSE retry_count END
     FROM next
     WHERE name = $1 AND j.id = next.id
-    RETURNING j.${includeMetadata ? allJobColumns : baseJobColumns}      
+    RETURNING j.${includeMetadata ? allJobColumns : baseJobColumns}
   `
 }
 
@@ -615,7 +615,7 @@ function failJobs (schema, where, output) {
           END as completed_on,
         keep_until,
         dead_letter,
-        policy,        
+        policy,
         ${output}
       FROM deleted_jobs
       ON CONFLICT DO NOTHING
@@ -726,7 +726,7 @@ function deleteJobs (schema) {
     with results as (
       DELETE FROM ${schema}.job
       WHERE name = $1
-        AND id IN (SELECT UNNEST($2::uuid[]))        
+        AND id IN (SELECT UNNEST($2::uuid[]))
       RETURNING 1
     )
     SELECT COUNT(*) from results
@@ -813,7 +813,7 @@ function insertJob (schema) {
 function insertJobs (schema) {
   return `
     WITH defaults as (
-      SELECT 
+      SELECT
         $2 as expire_in,
         $3 as keep_until,
         $4::int as retry_limit,
@@ -863,7 +863,7 @@ function insertJobs (schema) {
         WHEN COALESCE("retryBackoff", q.retry_backoff, defaults.retry_backoff, false)
           THEN GREATEST(COALESCE("retryDelay", q.retry_delay, defaults.retry_delay), 1)
         ELSE COALESCE("retryDelay", q.retry_delay, defaults.retry_delay, 0)
-        END as retry_delay,      
+        END as retry_delay,
       COALESCE("retryBackoff", q.retry_backoff, defaults.retry_backoff, false) as retry_backoff,
       q.policy
     FROM (
@@ -886,7 +886,7 @@ function insertJobs (schema) {
         "expireInSeconds" integer,
         "keepUntil" timestamp with time zone,
         "deadLetter" text
-      ) 
+      )
     ) j
     JOIN ${schema}.queue q ON j.name = q.name,
       defaults
