@@ -141,7 +141,7 @@ describe('fetch', function () {
       }
     }
 
-    const jobs = await boss.fetch(queue, { ...options, skipStartAfterNow: true })
+    const jobs = await boss.fetch(queue, { ...options, ignoreStartAfter: true })
     assert(jobs.length === 1)
     assert(sqlStatements.length === 1)
     assert(!sqlStatements[0].includes('start_after < now()'))

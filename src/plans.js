@@ -503,13 +503,13 @@ function insertVersion (schema, version) {
 }
 
 function fetchNextJob (schema) {
-  return ({ includeMetadata, priority = true, skipStartAfterNow = false } = {}) => `
+  return ({ includeMetadata, priority = true, ignoreStartAfter = false } = {}) => `
     WITH next as (
       SELECT id
       FROM ${schema}.job
       WHERE name = $1
         AND state < '${JOB_STATES.active}'
-        ${skipStartAfterNow ? '' : 'AND start_after < now()'}
+        ${ignoreStartAfter ? '' : 'AND start_after < now()'}
       ORDER BY ${priority ? 'priority desc, ' : ''}created_on, id
       LIMIT $2
       FOR UPDATE SKIP LOCKED

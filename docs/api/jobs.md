@@ -234,7 +234,7 @@ Returns an array of jobs from a queue
 
     If `true`, all job metadata will be returned on the job object.
 
-  * `skipStartAfterNow`, bool, *default: false*
+  * `ignoreStartAfter`, bool, *default: false*
 
     If `true`, jobs with a `startAfter` timestamp in the future will be fetched. Useful for fetching jobs immediately without waiting for a retry delay.
 
