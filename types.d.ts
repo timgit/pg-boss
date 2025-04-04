@@ -129,6 +129,7 @@ declare namespace PgBoss {
     includeMetadata?: boolean;
     priority?: boolean;
     batchSize?: number;
+    ignoreStartAfter?: boolean;
   }
 
   type WorkOptions = JobFetchOptions & JobPollingOptions
