@@ -124,4 +124,26 @@ describe('fetch', function () {
     assert(job.startedOn === undefined)
     assert.strictEqual(calledCounter, 2)
   })
+
+  it('should allow fetching jobs that have a start_after in the future', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const queue = this.test.bossConfig.schema
+
+    await boss.send(queue, { startAfter: new Date(Date.now() + 1000) })
+    const db = await helper.getDb()
+    const sqlStatements = []
+    const options = {
+      db: {
+        async executeSql (sql, values) {
+          sqlStatements.push(sql)
+          return db.pool.query(sql, values)
+        }
+      }
+    }
+
+    const jobs = await boss.fetch(queue, { ...options, ignoreStartAfter: true })
+    assert(jobs.length === 1)
+    assert(sqlStatements.length === 1)
+    assert(!sqlStatements[0].includes('start_after < now()'))
+  })
 })
