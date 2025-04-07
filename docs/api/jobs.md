@@ -89,9 +89,35 @@ Available in constructor as a default, or overridden in send.
 
     ```ts
     interface Db {
-      executeSql(text: string, values: any[]): Promise<{ rows: any[] }>;
-  }
+      executeSql(text: string, values: any[], options?: ExecuteOptions): Promise<{ rows: any[] }>;
+    }
     ```
+
+**Execute options**
+
+* **executeOptions**, object
+  
+  This object allows you to pass options to the `executeSql` function of the underlying database adapter.
+
+  * **pgClient**, `pg.Client` object
+
+    You can provide a custom `pgClient` instance, so PGBoss can insert jobs in an already started database transaction.
+      ```ts
+      const pgClient = new pg.Client("postgres://...")
+      try {
+        await pgClient.query('BEGIN')
+        await pgClient.query(`INSERT INTO public.my_business_table (label) VALUES('My data')`)
+
+        boss.send('my-job', { someData: 'someValue' }, {
+          executeOptions: { pgClient }
+        })
+
+        await pgClient.query('COMMIT')
+      } catch (e) {
+        await pgClient.query('ROLLBACK')
+      }
+      ```
+      PostgreSQL supports cross-schema transactions, so this is a great way to provide strong consistency guarantees between your business data and PGBoss jobs.
 
 **Deferred jobs**
 
