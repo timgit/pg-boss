@@ -77,7 +77,7 @@ Available in constructor as a default, or overridden in send.
 
     How many days a job may be in created or retry state before it's archived. Must be >=1
 
-* Default: 30 days
+* Default: 14 days
 
   > When a higher unit is is specified, lower unit configuration settings are ignored.
 
