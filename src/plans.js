@@ -29,6 +29,7 @@ module.exports = {
   cancelJobs,
   resumeJobs,
   deleteJobs,
+  retryJobs,
   failJobsById,
   failJobsByTimeout,
   insertJob,
@@ -727,6 +728,21 @@ function deleteJobs (schema) {
       DELETE FROM ${schema}.job
       WHERE name = $1
         AND id IN (SELECT UNNEST($2::uuid[]))
+      RETURNING 1
+    )
+    SELECT COUNT(*) from results
+  `
+}
+
+function retryJobs (schema) {
+  return `
+    with results as (
+      UPDATE ${schema}.job
+      SET state = '${JOB_STATES.retry}',
+        retry_limit = retry_limit + 1
+      WHERE name = $1
+        AND id IN (SELECT UNNEST($2::uuid[]))
+        AND state = '${JOB_STATES.failed}'
       RETURNING 1
     )
     SELECT COUNT(*) from results
