@@ -312,6 +312,14 @@ Resumes a cancelled job.
 
 Resumes a set of cancelled jobs.
 
+### `retry(name, id, options)`
+
+Retries a faile job.
+
+### `retry(name, [ids], options)`
+
+Retries a set of failed jobs.
+
 ### `complete(name, id, data, options)`
 
 Completes an active job. This would likely only be used with `fetch()`. Accepts an optional `data` argument.
