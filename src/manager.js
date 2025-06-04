@@ -50,6 +50,7 @@ class Manager extends EventEmitter {
     this.cancelJobsCommand = plans.cancelJobs(config.schema)
     this.resumeJobsCommand = plans.resumeJobs(config.schema)
     this.deleteJobsCommand = plans.deleteJobs(config.schema)
+    this.retryJobsCommand = plans.retryJobs(config.schema)
     this.failJobsByIdCommand = plans.failJobsById(config.schema)
     this.getJobByIdCommand = plans.getJobById(config.schema)
     this.getArchivedJobByIdCommand = plans.getArchivedJobById(config.schema)
@@ -69,6 +70,7 @@ class Manager extends EventEmitter {
       this.complete,
       this.cancel,
       this.resume,
+      this.retry,
       this.deleteJob,
       this.fail,
       this.fetch,
@@ -513,6 +515,14 @@ class Manager extends EventEmitter {
     const db = options.db || this.db
     const ids = this.mapCompletionIdArg(id, 'resume')
     const result = await db.executeSql(this.resumeJobsCommand, [name, ids])
+    return this.mapCommandResponse(ids, result)
+  }
+
+  async retry (name, id, options = {}) {
+    Attorney.assertQueueName(name)
+    const db = options.db || this.db
+    const ids = this.mapCompletionIdArg(id, 'resume')
+    const result = await db.executeSql(this.retryJobsCommand, [name, ids])
     return this.mapCommandResponse(ids, result)
   }
 
