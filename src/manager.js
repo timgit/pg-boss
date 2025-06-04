@@ -521,7 +521,7 @@ class Manager extends EventEmitter {
   async retry (name, id, options = {}) {
     Attorney.assertQueueName(name)
     const db = options.db || this.db
-    const ids = this.mapCompletionIdArg(id, 'resume')
+    const ids = this.mapCompletionIdArg(id, 'retry')
     const result = await db.executeSql(this.retryJobsCommand, [name, ids])
     return this.mapCommandResponse(ids, result)
   }
