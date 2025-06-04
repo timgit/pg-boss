@@ -314,7 +314,7 @@ Resumes a set of cancelled jobs.
 
 ### `retry(name, id, options)`
 
-Retries a faile job.
+Retries a failed job.
 
 ### `retry(name, [ids], options)`
 
