@@ -1,5 +1,6 @@
 const assert = require('node:assert')
 const helper = require('./testHelper')
+const { states } = require('../src')
 
 describe('queues', function () {
   it('should create a queue', async function () {
@@ -91,12 +92,97 @@ describe('queues', function () {
     await boss.createQueue(queue)
   })
 
-  it('should purge a queue', async function () {
+  it('should delete an empty queue', async function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
     const queue = this.test.bossConfig.schema
 
     await boss.createQueue(queue)
-    await boss.purgeQueue(queue)
+    await boss.send(queue)
+    await boss.deleteAllJobs(queue)
+    await boss.deleteQueue(queue)
+  })
+
+  it('should truncate a partitioned queue and leave other queues alone', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
+    const queue = this.test.bossConfig.schema
+
+    const queue2 = `${queue}2`
+    await boss.createQueue(queue2)
+    await boss.send(queue2)
+
+    await boss.createQueue(queue, { partition: true })
+    await boss.send(queue)
+
+    await boss.deleteAllJobs(queue)
+    await boss.deleteQueue(queue)
+
+    const { queuedCount } = await boss.getQueueStats(queue2)
+    assert(queuedCount)
+  })
+
+  it('should truncate a partitioned queue', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
+    const queue = this.test.bossConfig.schema
+
+    await boss.createQueue(queue, { partition: true })
+    await boss.send(queue)
+    await boss.deleteAllJobs(queue)
+    await boss.deleteQueue(queue)
+  })
+
+  it('should not delete a non-empty queue', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
+    const queue = this.test.bossConfig.schema
+
+    await boss.createQueue(queue)
+    await boss.send(queue)
+
+    try {
+      await boss.deleteQueue(queue)
+      assert(false)
+    } catch {}
+  })
+
+  it('should delete all queued jobs from a queue', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const queue = this.test.bossConfig.schema
+
+    const getCount = () => helper.countJobs(this.test.bossConfig.schema, 'job', 'state = $1', [states.created])
+
+    await boss.send(queue)
+
+    assert.strictEqual(await getCount(), 1)
+
+    await boss.deleteQueuedJobs(queue)
+
+    assert.strictEqual(await getCount(), 0)
+  })
+
+  it('should delete all stored jobs from a queue', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const queue = this.test.bossConfig.schema
+
+    const { completed, failed, cancelled } = states
+    const inClause = [completed, failed, cancelled].map(s => `'${s}'`)
+    const getCount = () => helper.countJobs(this.test.bossConfig.schema, 'job', `state IN (${inClause})`)
+
+    await boss.send(queue)
+    const [job1] = await boss.fetch(queue)
+    assert(job1?.id)
+
+    await boss.complete(queue, job1.id)
+
+    assert.strictEqual(await getCount(), 1)
+
+    await boss.send(queue, null, { retryLimit: 0 })
+    const [job2] = await boss.fetch(queue)
+    await boss.fail(queue, job2.id)
+
+    assert.strictEqual(await getCount(), 2)
+
+    await boss.deleteStoredJobs(queue)
+
+    assert.strictEqual(await getCount(), 0)
   })
 
   it('getQueue() returns null when missing', async function () {
@@ -134,7 +220,7 @@ describe('queues', function () {
       retryBackoff: false,
       retryDelay: 1,
       expireInSeconds: 1,
-      retentionMinutes: 1,
+      retentionSeconds: 1,
       deadLetter
     }
 
@@ -148,7 +234,7 @@ describe('queues', function () {
     assert.strictEqual(createProps.retryBackoff, queueObj.retryBackoff)
     assert.strictEqual(createProps.retryDelay, queueObj.retryDelay)
     assert.strictEqual(createProps.expireInSeconds, queueObj.expireInSeconds)
-    assert.strictEqual(createProps.retentionMinutes, queueObj.retentionMinutes)
+    assert.strictEqual(createProps.retentionSeconds, queueObj.retentionSeconds)
     assert.strictEqual(createProps.deadLetter, queueObj.deadLetter)
     assert(queueObj.createdOn)
     assert(queueObj.updatedOn)
@@ -160,9 +246,7 @@ describe('queues', function () {
       policy: 'short',
       retryLimit: 2,
       retryBackoff: true,
-      retryDelay: 2,
       expireInSeconds: 2,
-      retentionMinutes: 2,
       deadLetter
     }
 
@@ -173,9 +257,9 @@ describe('queues', function () {
     assert.strictEqual(updateProps.policy, queueObj.policy)
     assert.strictEqual(updateProps.retryLimit, queueObj.retryLimit)
     assert.strictEqual(updateProps.retryBackoff, queueObj.retryBackoff)
-    assert.strictEqual(updateProps.retryDelay, queueObj.retryDelay)
+    assert.strictEqual(createProps.retryDelay, queueObj.retryDelay)
     assert.strictEqual(updateProps.expireInSeconds, queueObj.expireInSeconds)
-    assert.strictEqual(updateProps.retentionMinutes, queueObj.retentionMinutes)
+    assert.strictEqual(createProps.retentionSeconds, queueObj.retentionSeconds)
     assert.strictEqual(updateProps.deadLetter, queueObj.deadLetter)
   })
 
@@ -191,7 +275,7 @@ describe('queues', function () {
       retryBackoff: true,
       retryDelay: 2,
       expireInSeconds: 3,
-      retentionMinutes: 4,
+      retentionSeconds: 4,
       deadLetter
     }
 
@@ -201,14 +285,13 @@ describe('queues', function () {
 
     const job = await boss.getJobById(queue, jobId)
 
-    const retentionMinutes = (new Date(job.keepUntil) - new Date(job.createdOn)) / 1000 / 60
+    const retentionSeconds = (new Date(job.keepUntil) - new Date(job.createdOn)) / 1000
 
     assert.strictEqual(createProps.retryLimit, job.retryLimit)
     assert.strictEqual(createProps.retryBackoff, job.retryBackoff)
     assert.strictEqual(createProps.retryDelay, job.retryDelay)
-    assert.strictEqual(createProps.expireInSeconds, job.expireIn.seconds)
-    assert.strictEqual(createProps.retentionMinutes, retentionMinutes)
-    assert.strictEqual(createProps.deadLetter, job.deadLetter)
+    assert.strictEqual(createProps.expireInSeconds, job.expireInSeconds)
+    assert.strictEqual(createProps.retentionSeconds, retentionSeconds)
   })
 
   it('short policy only allows 1 job in queue', async function () {
@@ -429,38 +512,5 @@ describe('queues', function () {
     const [jobA3] = await boss.fetch(queue)
 
     assert(!jobA3)
-  })
-
-  it('should clear a specific queue', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
-
-    const queue1 = `${this.test.bossConfig.schema}1`
-    const queue2 = `${this.test.bossConfig.schema}2`
-
-    await boss.createQueue(queue1)
-    await boss.send(queue1)
-
-    await boss.createQueue(queue2)
-    await boss.send(queue2)
-
-    const q1Count1 = await boss.getQueueSize(queue1)
-    const q2Count1 = await boss.getQueueSize(queue2)
-
-    assert.strictEqual(1, q1Count1)
-    assert.strictEqual(1, q2Count1)
-
-    await boss.purgeQueue(queue1)
-
-    const q1Count2 = await boss.getQueueSize(queue1)
-    const q2Count2 = await boss.getQueueSize(queue2)
-
-    assert.strictEqual(0, q1Count2)
-    assert.strictEqual(1, q2Count2)
-
-    await boss.purgeQueue(queue2)
-
-    const q2Count3 = await boss.getQueueSize(queue2)
-
-    assert.strictEqual(0, q2Count3)
   })
 })

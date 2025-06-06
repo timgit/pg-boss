@@ -25,7 +25,6 @@ NOTE: If an existing schema was used during installation, created objects will n
 ```sql
 DROP TABLE pgboss.version;
 DROP TABLE pgboss.job;
-DROP TABLE pgboss.archive;
 DROP TYPE pgboss.job_state;
 DROP TABLE pgboss.subscription;
 DROP TABLE pgboss.schedule;
