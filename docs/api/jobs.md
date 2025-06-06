@@ -20,7 +20,7 @@ Creates a new job and returns the job id.
 * **priority**, int
 
     optional priority.  Higher numbers have, um, higher priority
-  
+
 * **id**, uuid
 
     optional id.  If not set, a uuid will automatically created
@@ -62,7 +62,7 @@ Available in constructor as a default, or overridden in send.
 **Connection options**
 
 * **db**, object
-  
+
   Instead of using pg-boss's default adapter, you can use your own, as long as it implements the following interface (the same as the pg module).
 
     ```ts
@@ -201,6 +201,10 @@ Returns an array of jobs from a queue
 
     If `true`, all job metadata will be returned on the job object.
 
+  * `ignoreStartAfter`, bool, *default: false*
+
+    If `true`, jobs with a `startAfter` timestamp in the future will be fetched. Useful for fetching jobs immediately without waiting for a retry delay.
+
     ```js
     interface JobWithMetadata<T = object> {
       id: string;
@@ -252,7 +256,7 @@ await Promise.allSettled(jobs.map(async job => {
 
 Deletes a job by id.
 
-> Job deletion is offered if desired for a "fetch then delete" workflow similar to SQS. This is not the default behavior for workers so "everything just works" by default, including job throttling and debouncing, which requires jobs to exist to enforce a unique constraint. For example, if you are debouncing a queue to "only allow 1 job per hour", deleting jobs after processing would re-open that time slot, breaking your throttling policy. 
+> Job deletion is offered if desired for a "fetch then delete" workflow similar to SQS. This is not the default behavior for workers so "everything just works" by default, including job throttling and debouncing, which requires jobs to exist to enforce a unique constraint. For example, if you are debouncing a queue to "only allow 1 job per hour", deleting jobs after processing would re-open that time slot, breaking your throttling policy.
 
 ### `deleteJob(name, [ids], options)`
 
@@ -278,7 +282,7 @@ Cancels a pending or active job.
 
 Cancels a set of pending or active jobs.
 
-When passing an array of ids, it's possible that the operation may partially succeed based on the state of individual jobs requested. Consider this a best-effort attempt. 
+When passing an array of ids, it's possible that the operation may partially succeed based on the state of individual jobs requested. Consider this a best-effort attempt.
 
 ### `resume(name, id, options)`
 
@@ -287,6 +291,14 @@ Resumes a cancelled job.
 ### `resume(name, [ids], options)`
 
 Resumes a set of cancelled jobs.
+
+### `retry(name, id, options)`
+
+Retries a failed job.
+
+### `retry(name, [ids], options)`
+
+Retries a set of failed jobs.
 
 ### `complete(name, id, data, options)`
 

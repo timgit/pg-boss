@@ -28,6 +28,7 @@ module.exports = {
   completeJobs,
   cancelJobs,
   resumeJobs,
+  retryJobs,
   deleteJobsById,
   deleteAllJobs,
   deleteQueuedJobs,
@@ -223,7 +224,7 @@ const JOB_COLUMNS_ALL = `${JOB_COLUMNS_MIN},
   retry_count as "retryCount",
   retry_delay as "retryDelay",
   retry_backoff as "retryBackoff",
-  start_after as "startAfter",  
+  start_after as "startAfter",
   started_on as "startedOn",
   singleton_key as "singletonKey",
   singleton_on as "singletonOn",
@@ -578,14 +579,14 @@ function insertVersion (schema, version) {
   return `INSERT INTO ${schema}.version(version) VALUES ('${version}')`
 }
 
-function fetchNextJob ({ schema, table, name, limit, includeMetadata, priority = true }) {
+function fetchNextJob ({ schema, table, name, limit, includeMetadata, priority = true, ignoreStartAfter = false }) {
   return `
     WITH next as (
       SELECT id
       FROM ${schema}.${table}
       WHERE name = '${name}'
         AND state < '${JOB_STATES.active}'
-        AND start_after < now()
+        ${ignoreStartAfter ? '' : 'AND start_after < now()'}
       ORDER BY ${priority ? 'priority desc, ' : ''}created_on, id
       LIMIT ${limit}
       FOR UPDATE SKIP LOCKED
@@ -880,6 +881,21 @@ function deletion (schema, table) {
   `
 
   return locked(schema, sql, table + 'deletion')
+}
+
+function retryJobs (schema) {
+  return `
+    with results as (
+      UPDATE ${schema}.job
+      SET state = '${JOB_STATES.retry}',
+        retry_limit = retry_limit + 1
+      WHERE name = $1
+        AND id IN (SELECT UNNEST($2::uuid[]))
+        AND state = '${JOB_STATES.failed}'
+      RETURNING 1
+    )
+    SELECT COUNT(*) from results
+  `
 }
 
 function getQueueStats (schema, table, queues) {

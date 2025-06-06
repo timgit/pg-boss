@@ -111,6 +111,7 @@ function checkFetchArgs (name, options) {
   assert(!('batchSize' in options) || (Number.isInteger(options.batchSize) && options.batchSize >= 1), 'batchSize must be an integer > 0')
   assert(!('includeMetadata' in options) || typeof options.includeMetadata === 'boolean', 'includeMetadata must be a boolean')
   assert(!('priority' in options) || typeof options.priority === 'boolean', 'priority must be a boolean')
+  assert(!('ignoreStartAfter' in options) || typeof options.ignoreStartAfter === 'boolean', 'ignoreStartAfter must be a boolean')
 
   options.batchSize = options.batchSize || 1
 }

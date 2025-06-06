@@ -32,6 +32,7 @@ class Manager extends EventEmitter {
       this.complete,
       this.cancel,
       this.resume,
+      this.retry,
       this.fail,
       this.fetch,
       this.work,
@@ -516,6 +517,16 @@ class Manager extends EventEmitter {
     const ids = this.mapCompletionIdArg(id, 'resume')
     const { table } = await this.getQueueCache(name)
     const sql = plans.resumeJobs(this.config.schema, table)
+    const result = await db.executeSql(sql, [name, ids])
+    return this.mapCommandResponse(ids, result)
+  }
+
+  async retry (name, id, options = {}) {
+    Attorney.assertQueueName(name)
+    const db = options.db || this.db
+    const ids = this.mapCompletionIdArg(id, 'retry')
+    const { table } = await this.getQueueCache(name)
+    const sql = plans.retryJobs(this.config.schema, table)
     const result = await db.executeSql(sql, [name, ids])
     return this.mapCommandResponse(ids, result)
   }

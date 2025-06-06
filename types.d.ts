@@ -108,6 +108,7 @@ declare namespace PgBoss {
     includeMetadata?: boolean;
     priority?: boolean;
     batchSize?: number;
+    ignoreStartAfter?: boolean;
   }
 
   type WorkOptions = JobFetchOptions & JobPollingOptions
@@ -277,6 +278,9 @@ declare class PgBoss extends EventEmitter {
 
   resume(name: string, id: string, options?: PgBoss.ConnectionOptions): Promise<void>;
   resume(name: string, ids: string[], options?: PgBoss.ConnectionOptions): Promise<void>;
+
+  retry(name: string, id: string, options?: PgBoss.ConnectionOptions): Promise<void>;
+  retry(name: string, ids: string[], options?: PgBoss.ConnectionOptions): Promise<void>;
 
   deleteJob(name: string, id: string, options?: PgBoss.ConnectionOptions): Promise<void>;
   deleteJob(name: string, ids: string[], options?: PgBoss.ConnectionOptions): Promise<void>;
