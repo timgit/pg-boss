@@ -174,10 +174,10 @@ describe('failure', function () {
     const queue = this.test.bossConfig.schema
     const deadLetter = `${queue}_dlq`
 
-    await boss.createQueue(queue)
     await boss.createQueue(deadLetter)
+    await boss.createQueue(queue, { deadLetter })
 
-    const jobId = await boss.send(queue, { key: queue }, { deadLetter })
+    const jobId = await boss.send(queue, { key: queue }, { retryLimit: 0 })
 
     await boss.fetch(queue)
     await boss.fail(queue, jobId)
@@ -191,13 +191,13 @@ describe('failure', function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
     const queue = this.test.bossConfig.schema
 
-    const jobId = await boss.send(queue, null, { retryLimit: 1, expireInSeconds: 60 })
+    const jobId = await boss.send(queue, null, { retryLimit: 1 })
 
-    await boss.work(queue, async () => await delay(10000))
+    await boss.work(queue, async () => await delay(4000))
 
-    await delay(1000)
+    await delay(500)
 
-    await boss.stop({ wait: true, timeout: 2000 })
+    await boss.stop({ timeout: 2000 })
 
     await boss.start()
 

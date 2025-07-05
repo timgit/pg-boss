@@ -26,7 +26,9 @@ describe('complete', function () {
       boss.send(queue)
     ])
 
-    const countJobs = (state) => helper.countJobs(this.test.bossConfig.schema, 'name = $1 AND state = $2', [queue, state])
+    const { table } = await boss.getQueue(queue)
+
+    const countJobs = (state) => helper.countJobs(this.test.bossConfig.schema, table, 'name = $1 AND state = $2', [queue, state])
 
     const jobs = await boss.fetch(queue, { batchSize })
 
@@ -89,7 +91,9 @@ describe('complete', function () {
       boss.send(queue)
     ])
 
-    const countJobs = (state) => helper.countJobs(this.test.bossConfig.schema, 'name = $1 AND state = $2', [queue, state])
+    const { table } = await boss.getQueue(queue)
+
+    const countJobs = (state) => helper.countJobs(this.test.bossConfig.schema, table, 'name = $1 AND state = $2', [queue, state])
 
     const jobs = await boss.fetch(queue, { batchSize })
 
@@ -110,28 +114,5 @@ describe('complete', function () {
 
     assert.strictEqual(batchSize, result.jobs.length)
     assert.strictEqual(called, true)
-  })
-
-  it('should warn with an old onComplete option only once', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
-    const queue = this.test.bossConfig.schema
-
-    let warningCount = 0
-
-    const warningEvent = 'warning'
-    const onWarning = (warning) => {
-      assert(warning.message.includes('onComplete'))
-      warningCount++
-    }
-
-    process.on(warningEvent, onWarning)
-
-    await boss.send({ name: queue, options: { onComplete: true } })
-    await boss.send({ name: queue, options: { onComplete: true } })
-    await boss.send({ name: queue, options: { onComplete: true } })
-
-    process.removeListener(warningEvent, onWarning)
-
-    assert.strictEqual(warningCount, 1)
   })
 })
