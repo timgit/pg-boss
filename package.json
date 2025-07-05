@@ -8,12 +8,12 @@
   },
   "dependencies": {
     "cron-parser": "^4.9.0",
-    "pg": "^8.13.1",
+    "pg": "^8.16.3",
     "serialize-error": "^8.1.0"
   },
   "devDependencies": {
-    "@types/node": "^20.17.9",
-    "luxon": "^3.5.0",
+    "@types/node": "^20.19.4",
+    "luxon": "^3.6.1",
     "mocha": "^10.8.2",
     "nyc": "^17.1.0",
     "standard": "^17.1.2"
