@@ -37,7 +37,7 @@ describe('schedule', function () {
     const boss = this.test.boss = await helper.start(config)
     const queue = this.test.bossConfig.schema
 
-    await boss.schedule(queue, '* * * * *', {}, { retryLimit: 42 })
+    await boss.schedule(queue, '* * * * *', {}, { retryLimit: 42, singletonSeconds: 5 })
 
     await delay(4000)
 
@@ -46,6 +46,7 @@ describe('schedule', function () {
     assert(job)
 
     assert.strictEqual(job.retryLimit, 42)
+    assert(job.singletonOn)
   })
 
   it('should fail to schedule a queue that does not exist', async function () {

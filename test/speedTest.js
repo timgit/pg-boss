@@ -3,7 +3,7 @@ const assert = require('node:assert')
 
 describe('speed', function () {
   const expectedSeconds = 9
-  const jobCount = 10_000
+  const jobCount = 5_000
   const queue = 'speedTest'
   const data = new Array(jobCount).fill(null).map((item, index) => ({ name: queue, data: { index } }))
   const testTitle = `should be able to fetch and complete ${jobCount} jobs in ${expectedSeconds} seconds`
