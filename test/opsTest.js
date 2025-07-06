@@ -51,4 +51,10 @@ describe('ops', function () {
 
     assert.strictEqual(jobId, job.id)
   })
+
+  it('should be able to run an arbitrary query via getDb()', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const { rows } = await boss.getDb().executeSql('select 1')
+    assert.strictEqual(1, rows.length)
+  })
 })
