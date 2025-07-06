@@ -37,7 +37,7 @@ CREATE TABLE pgboss.job (
 
 Queues can be created or deleted from SQL functions.
 
-`pgboss.create_queue(queue_name text, options jsonb)`
+`pgboss.create_queue(queue_name text, options json)`
 
 options: Same as options in [`createQueue()`](./api/queues?id=createqueuename-queue)
 

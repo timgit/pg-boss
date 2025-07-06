@@ -358,12 +358,14 @@ function deleteQueueFunction (schema) {
   `
 }
 
-function createQueue (schema) {
-  return `SELECT ${schema}.create_queue($1, $2)`
+function createQueue (schema, name, options) {
+  const sql = `SELECT ${schema}.create_queue('${name}', '${JSON.stringify(options)}'::json)`
+  return locked(schema, sql, 'create-queue')
 }
 
-function deleteQueue (schema) {
-  return `SELECT ${schema}.delete_queue($1)`
+function deleteQueue (schema, name) {
+  const sql = `SELECT ${schema}.delete_queue('${name}')`
+  return locked(schema, sql, 'delete-queue')
 }
 
 function createPrimaryKeyJob (schema) {

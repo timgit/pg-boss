@@ -130,7 +130,7 @@ describe('queues', function () {
     await boss.deleteQueue(queue)
   })
 
-  it('should not delete a non-empty queue', async function () {
+  it('should delete a non-empty queue', async function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
     const queue = this.test.bossConfig.schema
 
@@ -139,8 +139,9 @@ describe('queues', function () {
 
     try {
       await boss.deleteQueue(queue)
+    } catch {
       assert(false)
-    } catch {}
+    }
   })
 
   it('should delete all queued jobs from a queue', async function () {

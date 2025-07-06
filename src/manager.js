@@ -548,8 +548,8 @@ class Manager extends EventEmitter {
       await this.getQueueCache(options.deadLetter)
     }
 
-    const sql = plans.createQueue(this.config.schema)
-    await this.db.executeSql(sql, [name, options])
+    const sql = plans.createQueue(this.config.schema, name, options)
+    await this.db.executeSql(sql)
   }
 
   async getQueues (names) {
@@ -601,8 +601,8 @@ class Manager extends EventEmitter {
 
     try {
       await this.getQueueCache(name)
-      const sql = plans.deleteQueue(this.config.schema)
-      await this.db.executeSql(sql, [name])
+      const sql = plans.deleteQueue(this.config.schema, name)
+      await this.db.executeSql(sql)
     } catch {}
   }
 
