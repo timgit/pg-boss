@@ -59,6 +59,7 @@ declare namespace PgBoss {
     retryLimit?: number;
     retryDelay?: number;
     retryBackoff?: boolean;
+    maxRetryDelay?: number;
   }
 
   interface JobOptions {
@@ -149,6 +150,7 @@ declare namespace PgBoss {
     retryCount: number;
     retryDelay: number;
     retryBackoff: boolean;
+    maxRetryDelay?: number;
     startAfter: Date;
     startedOn: Date;
     singletonKey: string | null;
@@ -171,6 +173,7 @@ declare namespace PgBoss {
     retryLimit?: number;
     retryDelay?: number;
     retryBackoff?: boolean;
+    maxRetryDelay?: number;
     startAfter?: Date | string;
     singletonKey?: string;
     singletonSeconds?: number;

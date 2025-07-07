@@ -32,6 +32,7 @@ describe('insert', function () {
       retryLimit: 1,
       retryDelay: 2,
       retryBackoff: true,
+      maxRetryDelay: 3,
       startAfter: new Date().toISOString(),
       expireInSeconds: 5,
       deleteAfterSeconds: 60,
@@ -50,6 +51,7 @@ describe('insert', function () {
     assert.strictEqual(job.retryLimit, input.retryLimit, `retryLimit input ${input.retryLimit} didn't match job ${job.retryLimit}`)
     assert.strictEqual(job.retryDelay, input.retryDelay, `retryDelay input ${input.retryDelay} didn't match job ${job.retryDelay}`)
     assert.strictEqual(job.retryBackoff, input.retryBackoff, `retryBackoff input ${input.retryBackoff} didn't match job ${job.retryBackoff}`)
+    assert.strictEqual(job.maxRetryDelay, input.maxRetryDelay, `maxRetryDelay input ${input.maxRetryDelay} didn't match job ${job.maxRetryDelay}`)
     assert.strictEqual(new Date(job.startAfter).toISOString(), input.startAfter, `startAfter input ${input.startAfter} didn't match job ${job.startAfter}`)
     assert.strictEqual(job.expireInSeconds, input.expireInSeconds, `expireInSeconds input ${input.expireInSeconds} didn't match job ${job.expireInSeconds}`)
     assert.strictEqual(job.deleteAfterSeconds, input.deleteAfterSeconds, `deleteAfterSeconds input ${input.deleteAfterSeconds} didn't match job ${job.deleteAfterSeconds}`)
@@ -73,6 +75,7 @@ describe('insert', function () {
       retryLimit: 1,
       retryDelay: 2,
       retryBackoff: true,
+      maxRetryDelay: 3,
       startAfter: new Date().toISOString(),
       expireInSeconds: 5,
       deleteAfterSeconds: 45,
@@ -102,6 +105,7 @@ describe('insert', function () {
     assert.strictEqual(job.retryLimit, input.retryLimit, `retryLimit input ${input.retryLimit} didn't match job ${job.retryLimit}`)
     assert.strictEqual(job.retryDelay, input.retryDelay, `retryDelay input ${input.retryDelay} didn't match job ${job.retryDelay}`)
     assert.strictEqual(job.retryBackoff, input.retryBackoff, `retryBackoff input ${input.retryBackoff} didn't match job ${job.retryBackoff}`)
+    assert.strictEqual(job.maxRetryDelay, input.maxRetryDelay, `maxRetryDelay input ${input.maxRetryDelay} didn't match job ${job.maxRetryDelay}`)
     assert.strictEqual(new Date(job.startAfter).toISOString(), input.startAfter, `startAfter input ${input.startAfter} didn't match job ${job.startAfter}`)
     assert.strictEqual(job.expireInSeconds, input.expireInSeconds, `expireInSeconds input ${input.expireInSeconds} didn't match job ${job.expireInSeconds}`)
     assert.strictEqual(job.deleteAfterSeconds, input.deleteAfterSeconds, `deleteAfterSeconds input ${input.deleteAfterSeconds} didn't match job ${job.deleteAfterSeconds}`)
