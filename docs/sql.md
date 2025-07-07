@@ -21,7 +21,8 @@ CREATE TABLE pgboss.job (
   started_on timestamp with time zone,
   singleton_key text,
   singleton_on timestamp without time zone,
-  expire_in interval not null default interval '15 minutes',
+  expire_seconds integer not null default (900),
+  deletion_seconds integer not null default (60 * 60 * 24 * 7),
   created_on timestamp with time zone not null default now(),
   completed_on timestamp with time zone,
   keep_until timestamp with time zone NOT NULL default now() + interval '14 days',
@@ -36,7 +37,7 @@ CREATE TABLE pgboss.job (
 
 Queues can be created or deleted from SQL functions.
 
-`pgboss.create_queue(queue_name text, options jsonb)`
+`pgboss.create_queue(queue_name text, options json)`
 
 options: Same as options in [`createQueue()`](./api/queues?id=createqueuename-queue)
 

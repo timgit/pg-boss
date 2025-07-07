@@ -120,4 +120,16 @@ describe('retries', function () {
       assert(d < 4, `Expected delay to be less than 4 seconds, but got ${d}`)
     }
   }).timeout(15000)
+
+  it('should mark a failed job to be retried', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const queue = this.test.bossConfig.schema
+    const jobId = await boss.send(queue, null, { retryLimit: 0 })
+    await boss.fail(queue, jobId)
+    await boss.retry(queue, jobId)
+    const { state, retryLimit } = await boss.getJobById(queue, jobId)
+    assert(state === 'retry')
+    assert(retryLimit === 1)
+  })
+
 })

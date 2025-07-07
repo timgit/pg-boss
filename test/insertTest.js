@@ -9,11 +9,11 @@ describe('insert', function () {
 
     const input = [{ name: queue }, { name: queue }, { name: queue }]
 
-    await boss.insert(input)
+    await boss.insert(queue, input)
 
-    const count = await boss.getQueueSize(queue)
+    const { queuedCount } = await boss.getQueueStats(queue)
 
-    assert.strictEqual(count, 3)
+    assert.strictEqual(queuedCount, 3)
   })
 
   it('should create jobs from an array with all properties', async function () {
@@ -22,6 +22,7 @@ describe('insert', function () {
 
     const deadLetter = `${queue}_dlq`
     await boss.createQueue(deadLetter)
+    await boss.updateQueue(queue, { deadLetter })
 
     const input = {
       id: randomUUID(),
@@ -34,12 +35,12 @@ describe('insert', function () {
       maxRetryDelay: 3,
       startAfter: new Date().toISOString(),
       expireInSeconds: 5,
+      deleteAfterSeconds: 60,
       singletonKey: '123',
-      keepUntil: new Date().toISOString(),
-      deadLetter
+      keepUntil: new Date().toISOString()
     }
 
-    await boss.insert([input])
+    await boss.insert(queue, [input])
 
     const job = await boss.getJobById(queue, input.id)
 
@@ -52,10 +53,10 @@ describe('insert', function () {
     assert.strictEqual(job.retryBackoff, input.retryBackoff, `retryBackoff input ${input.retryBackoff} didn't match job ${job.retryBackoff}`)
     assert.strictEqual(job.maxRetryDelay, input.maxRetryDelay, `maxRetryDelay input ${input.maxRetryDelay} didn't match job ${job.maxRetryDelay}`)
     assert.strictEqual(new Date(job.startAfter).toISOString(), input.startAfter, `startAfter input ${input.startAfter} didn't match job ${job.startAfter}`)
-    assert.strictEqual(job.expireIn.seconds, input.expireInSeconds, `expireInSeconds input ${input.expireInSeconds} didn't match job ${job.expireIn}`)
+    assert.strictEqual(job.expireInSeconds, input.expireInSeconds, `expireInSeconds input ${input.expireInSeconds} didn't match job ${job.expireInSeconds}`)
+    assert.strictEqual(job.deleteAfterSeconds, input.deleteAfterSeconds, `deleteAfterSeconds input ${input.deleteAfterSeconds} didn't match job ${job.deleteAfterSeconds}`)
     assert.strictEqual(job.singletonKey, input.singletonKey, `name input ${input.singletonKey} didn't match job ${job.singletonKey}`)
     assert.strictEqual(new Date(job.keepUntil).toISOString(), input.keepUntil, `keepUntil input ${input.keepUntil} didn't match job ${job.keepUntil}`)
-    assert.strictEqual(job.deadLetter, input.deadLetter, `deadLetter input ${input.deadLetter} didn't match job ${job.deadLetter}`)
   })
 
   it('should create jobs from an array with all properties and custom connection', async function () {
@@ -64,6 +65,7 @@ describe('insert', function () {
 
     const deadLetter = `${queue}_dlq`
     await boss.createQueue(deadLetter)
+    await boss.updateQueue(queue, { deadLetter })
 
     const input = {
       id: randomUUID(),
@@ -76,10 +78,11 @@ describe('insert', function () {
       maxRetryDelay: 3,
       startAfter: new Date().toISOString(),
       expireInSeconds: 5,
+      deleteAfterSeconds: 45,
       singletonKey: '123',
-      keepUntil: new Date().toISOString(),
-      deadLetter
+      keepUntil: new Date().toISOString()
     }
+
     let called = false
     const db = await helper.getDb()
     const options = {
@@ -91,7 +94,7 @@ describe('insert', function () {
       }
     }
 
-    await boss.insert([input], options)
+    await boss.insert(queue, [input], options)
 
     const job = await boss.getJobById(queue, input.id)
 
@@ -104,10 +107,10 @@ describe('insert', function () {
     assert.strictEqual(job.retryBackoff, input.retryBackoff, `retryBackoff input ${input.retryBackoff} didn't match job ${job.retryBackoff}`)
     assert.strictEqual(job.maxRetryDelay, input.maxRetryDelay, `maxRetryDelay input ${input.maxRetryDelay} didn't match job ${job.maxRetryDelay}`)
     assert.strictEqual(new Date(job.startAfter).toISOString(), input.startAfter, `startAfter input ${input.startAfter} didn't match job ${job.startAfter}`)
-    assert.strictEqual(job.expireIn.seconds, input.expireInSeconds, `expireInSeconds input ${input.expireInSeconds} didn't match job ${job.expireIn}`)
+    assert.strictEqual(job.expireInSeconds, input.expireInSeconds, `expireInSeconds input ${input.expireInSeconds} didn't match job ${job.expireInSeconds}`)
+    assert.strictEqual(job.deleteAfterSeconds, input.deleteAfterSeconds, `deleteAfterSeconds input ${input.deleteAfterSeconds} didn't match job ${job.deleteAfterSeconds}`)
     assert.strictEqual(job.singletonKey, input.singletonKey, `name input ${input.singletonKey} didn't match job ${job.singletonKey}`)
     assert.strictEqual(new Date(job.keepUntil).toISOString(), input.keepUntil, `keepUntil input ${input.keepUntil} didn't match job ${job.keepUntil}`)
-    assert.strictEqual(job.deadLetter, input.deadLetter, `deadLetter input ${input.deadLetter} didn't match job ${job.deadLetter}`)
     assert.strictEqual(called, true)
   })
 })

@@ -1,175 +1,155 @@
 const EventEmitter = require('node:events')
 const plans = require('./plans')
-const { delay } = require('./tools')
 
 const events = {
   error: 'error',
-  monitorStates: 'monitor-states',
-  maintenance: 'maintenance'
+  warning: 'warning'
+}
+
+const WARNINGS = {
+  SLOW_QUERY: { seconds: 30, message: 'Warning: slow query. Your queues and/or database server should be reviewed' },
+  LARGE_QUEUE: { size: 10_000, mesasge: 'Warning: large queue. Your queue should be reviewed' }
 }
 
 class Boss extends EventEmitter {
+  #stopped
+  #maintaining
+  #superviseInterval
+  #db
+  #config
+  #manager
+
   constructor (db, config) {
     super()
 
-    this.db = db
-    this.config = config
-    this.manager = config.manager
-
-    this.maintenanceIntervalSeconds = config.maintenanceIntervalSeconds
-    this.monitorStateIntervalSeconds = config.monitorStateIntervalSeconds
+    this.#db = db
+    this.#config = config
+    this.#manager = config.manager
+    this.#stopped = true
 
     this.events = events
-
-    this.failJobsByTimeoutCommand = plans.locked(config.schema, plans.failJobsByTimeout(config.schema))
-    this.archiveCommand = plans.locked(config.schema, plans.archive(config.schema, config.archiveInterval, config.archiveFailedInterval))
-    this.dropCommand = plans.locked(config.schema, plans.drop(config.schema, config.deleteAfter))
-    this.trySetMaintenanceTimeCommand = plans.trySetMaintenanceTime(config.schema)
-    this.trySetMonitorTimeCommand = plans.trySetMonitorTime(config.schema)
-    this.countStatesCommand = plans.countStates(config.schema)
-
     this.functions = [
-      this.expire,
-      this.archive,
-      this.drop,
-      this.countStates,
       this.maintain
     ]
-  }
 
-  async supervise () {
-    this.maintenanceInterval = setInterval(() => this.onSupervise(), this.maintenanceIntervalSeconds * 1000)
-  }
+    if (config.warningSlowQuerySeconds) {
+      WARNINGS.SLOW_QUERY.seconds = config.warningSlowQuerySeconds
+    }
 
-  async monitor () {
-    this.monitorInterval = setInterval(() => this.onMonitor(), this.monitorStateIntervalSeconds * 1000)
-  }
-
-  async onMonitor () {
-    try {
-      if (this.monitoring) {
-        return
-      }
-
-      this.monitoring = true
-
-      if (this.config.__test__delay_monitor) {
-        await delay(this.config.__test__delay_monitor)
-      }
-
-      if (this.config.__test__throw_monitor) {
-        throw new Error(this.config.__test__throw_monitor)
-      }
-
-      if (this.stopped) {
-        return
-      }
-
-      const { rows } = await this.db.executeSql(this.trySetMonitorTimeCommand, [this.config.monitorStateIntervalSeconds])
-
-      if (rows.length === 1 && !this.stopped) {
-        const states = await this.countStates()
-        this.emit(events.monitorStates, states)
-      }
-    } catch (err) {
-      this.emit(events.error, err)
-    } finally {
-      this.monitoring = false
+    if (config.warningLargeQueueSize) {
+      WARNINGS.LARGE_QUEUE.size = config.warningLargeQueueSize
     }
   }
 
-  async onSupervise () {
-    try {
-      if (this.maintaining) {
-        return
-      }
-
-      this.maintaining = true
-
-      if (this.config.__test__delay_maintenance && !this.stopped) {
-        this.__testDelayPromise = delay(this.config.__test__delay_maintenance)
-        await this.__testDelayPromise
-      }
-
-      if (this.config.__test__throw_maint) {
-        throw new Error(this.config.__test__throw_maint)
-      }
-
-      if (this.stopped) {
-        return
-      }
-
-      const { rows } = await this.db.executeSql(this.trySetMaintenanceTimeCommand, [this.config.maintenanceIntervalSeconds])
-
-      if (rows.length === 1 && !this.stopped) {
-        const result = await this.maintain()
-        this.emit(events.maintenance, result)
-      }
-    } catch (err) {
-      this.emit(events.error, err)
-    } finally {
-      this.maintaining = false
+  async start () {
+    if (this.#stopped) {
+      this.#superviseInterval = setInterval(() => this.#onSupervise(), this.#config.superviseIntervalSeconds * 1000)
+      this.#stopped = false
     }
-  }
-
-  async maintain () {
-    const started = Date.now()
-
-    !this.stopped && await this.expire()
-    !this.stopped && await this.archive()
-    !this.stopped && await this.drop()
-
-    const ended = Date.now()
-
-    return { ms: ended - started }
   }
 
   async stop () {
-    if (!this.stopped) {
-      if (this.__testDelayPromise) this.__testDelayPromise.abort()
-      if (this.maintenanceInterval) clearInterval(this.maintenanceInterval)
-      if (this.monitorInterval) clearInterval(this.monitorInterval)
-
-      this.stopped = true
+    if (!this.#stopped) {
+      if (this.#superviseInterval) clearInterval(this.#superviseInterval)
+      this.#stopped = true
     }
   }
 
-  async countStates () {
-    const stateCountDefault = { ...plans.JOB_STATES }
+  async #executeSql (sql, values) {
+    const started = Date.now()
 
-    for (const key of Object.keys(stateCountDefault)) {
-      stateCountDefault[key] = 0
+    const result = await this.#db.executeSql(sql, values)
+
+    const ended = Date.now()
+
+    const elapsed = (ended - started) / 1000
+
+    if (elapsed > WARNINGS.SLOW_QUERY.seconds || this.#config.__test__warn_slow_query) {
+      this.emit(events.warning, { message: WARNINGS.SLOW_QUERY.message, data: { elapsed, sql, values } })
     }
 
-    const counts = await this.db.executeSql(this.countStatesCommand)
+    return result
+  }
 
-    const states = counts.rows.reduce((acc, item) => {
-      if (item.name) {
-        acc.queues[item.name] = acc.queues[item.name] || { ...stateCountDefault }
+  async #onSupervise () {
+    try {
+      if (this.#stopped) return
+      if (this.#maintaining) return
+      if (this.#config.__test__throw_maint) throw new Error(this.#config.__test__throw_maint)
+
+      this.#maintaining = true
+
+      const queues = await this.#manager.getQueues()
+
+      for (const queue of queues) {
+        !this.#stopped && await this.maintain(queue)
+      }
+    } catch (err) {
+      this.emit(events.error, err)
+    } finally {
+      this.#maintaining = false
+    }
+  }
+
+  async maintain (value) {
+    let queues
+
+    if (!value) {
+      queues = await this.#manager.getQueues()
+    } if (typeof value === 'string') {
+      queues = await this.#manager.getQueues(value)
+    } else if (typeof value === 'object') {
+      queues = [value]
+    }
+
+    const queueGroups = queues.reduce((acc, q) => {
+      const { table } = q
+      acc[table] = acc[table] || { table, queues: [] }
+      acc[table].queues.push(q)
+      return acc
+    }, {})
+
+    for (const queueGroup of Object.values(queueGroups)) {
+      const { table, queues } = queueGroup
+      const names = queues.map(i => i.name)
+
+      while (names.length) {
+        // todo: test
+        const chunk = names.splice(0, 100)
+
+        await this.#monitorActive(table, chunk)
+        await this.#dropCompleted(table, chunk)
+      }
+    }
+  }
+
+  async #monitorActive (table, names) {
+    const command = plans.trySetQueueMonitorTime(this.#config.schema, names, this.#config.monitorIntervalSeconds)
+    const { rows } = await this.#executeSql(command)
+
+    if (rows.length) {
+      const warnings = rows.filter(i => i.queuedCount > (i.queueSizeWarning || WARNINGS.LARGE_QUEUE.size))
+
+      for (const warning of warnings) {
+        this.emit(events.warning, { message: WARNINGS.LARGE_QUEUE.mesasge, data: warning })
       }
 
-      const queue = item.name ? acc.queues[item.name] : acc
-      const state = item.state || 'all'
+      const sql = plans.failJobsByTimeout(this.#config.schema, table, names)
+      await this.#executeSql(sql)
 
-      // parsing int64 since pg returns it as string
-      queue[state] = parseFloat(item.size)
-
-      return acc
-    }, { ...stateCountDefault, queues: {} })
-
-    return states
+      const cacheStatsSql = plans.cacheQueueStats(this.#config.schema, table, names)
+      await this.#executeSql(cacheStatsSql)
+    }
   }
 
-  async expire () {
-    await this.db.executeSql(this.failJobsByTimeoutCommand)
-  }
+  async #dropCompleted (table, names) {
+    const command = plans.trySetQueueDeletionTime(this.#config.schema, names, this.#config.maintenanceIntervalSeconds)
+    const { rows } = await this.#executeSql(command)
 
-  async archive () {
-    await this.db.executeSql(this.archiveCommand)
-  }
-
-  async drop () {
-    await this.db.executeSql(this.dropCommand)
+    if (rows.length) {
+      const sql = plans.deletion(this.#config.schema, table)
+      await this.#executeSql(sql)
+    }
   }
 }
 

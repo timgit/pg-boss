@@ -3,21 +3,6 @@ const helper = require('./testHelper')
 const { randomUUID } = require('crypto')
 
 describe('ops', function () {
-  it('should expire manually', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
-    await boss.expire()
-  })
-
-  it('should archive manually', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
-    await boss.archive()
-  })
-
-  it('should purge the archive manually', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
-    await boss.drop()
-  })
-
   it('should emit error in worker', async function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, __test__throw_worker: true })
     const queue = this.test.bossConfig.schema
@@ -65,5 +50,11 @@ describe('ops', function () {
     const [job] = await boss.fetch(queue)
 
     assert.strictEqual(jobId, job.id)
+  })
+
+  it('should be able to run an arbitrary query via getDb()', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const { rows } = await boss.getDb().executeSql('select 1')
+    assert.strictEqual(1, rows.length)
   })
 })

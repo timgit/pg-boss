@@ -49,41 +49,19 @@ Available in constructor as a default, or overridden in send.
 
 * **expireInSeconds**, number
 
-    How many seconds a job may be in active state before it is failed because of expiration. Must be >=1
-
-* **expireInMinutes**, number
-
-    How many minutes a job may be in active state before it is failed because of expiration. Must be >=1
-
-* **expireInHours**, number
-
-    How many hours a job may be in active state before it is failed because of expiration. Must be >=1
+    How many seconds a job may be in active state before being retried or failed. Must be >=1
 
 * Default: 15 minutes
 
-  > When a higher unit is is specified, lower unit configuration settings are ignored.
 
 **Retention options**
 
 * **retentionSeconds**, number
 
-    How many seconds a job may be in created or retry state before it's archived. Must be >=1
+    How many seconds a job may be in created or retry state before it's deleted. Must be >=1
 
-* **retentionMinutes**, number
+* Default: 14 days
 
-    How many minutes a job may be in created or retry state before it's archived. Must be >=1
-
-* **retentionHours**, number
-
-    How many hours a job may be in created or retry state before it's archived. Must be >=1
-
-* **retentionDays**, number
-
-    How many days a job may be in created or retry state before it's archived. Must be >=1
-
-* Default: 30 days
-
-  > When a higher unit is is specified, lower unit configuration settings are ignored.
 
 **Connection options**
 
@@ -109,27 +87,16 @@ Available in constructor as a default, or overridden in send.
 **Throttle or debounce jobs**
 
 * **singletonSeconds**, int
-* **singletonMinutes**, int
-* **singletonHours**, int
 * **singletonNextSlot**, bool
 * **singletonKey** string
 
-Throttling jobs to 'one per time slot', where units could be seconds, minutes, or hours.  This option is set on the send side of the API since jobs may or may not be created based on the existence of other jobs.
+Throttling jobs to 'one per time slot'.  This option is set on the send side of the API since jobs may or may not be created based on the existence of other jobs.
 
-For example, if you set the `singletonMinutes` to 1, then submit 2 jobs within the same minute, only the first job will be accepted and resolve a job id.  The second request will resolve a null instead of a job id.
-
-> When a higher unit is is specified, lower unit configuration settings are ignored.
+For example, if you set the `singletonSeconds` to 60, then submit 2 jobs within the same minute, only the first job will be accepted and resolve a job id.  The second request will resolve a null instead of a job id.
 
 Setting `singletonNextSlot` to true will cause the job to be scheduled to run after the current time slot if and when a job is throttled. This option is set to true, for example, when calling the convenience function `sendDebounced()`.
 
 As with queue policies, using `singletonKey` will extend throttling to allow one job per key within the time slot.
-
-**Dead Letter Queues**
-
-* **deadLetter**, string
-
-When a job fails after all retries, if a `deadLetter` property exists, the job's payload will be copied into that queue,  copying the same retention and retry configuration as the original job.
-
 
 ```js
 const payload = {
@@ -193,7 +160,7 @@ Like, `sendThrottled()`, but instead of rejecting if a job is already sent in th
 
 This is a convenience version of `send()` with the `singletonSeconds`, `singletonKey` and `singletonNextSlot` option assigned. The `key` argument is optional.
 
-### `insert(Job[])`
+### `insert(name, Job[])`
 
 Create multiple jobs in one request with an array of objects.
 
@@ -213,8 +180,8 @@ interface JobInsert<T = object> {
   startAfter?: Date | string;
   singletonKey?: string;
   expireInSeconds?: number;
+  deleteAfterSeconds?: number;
   keepUntil?: Date | string;
-  deadLetter?: string;
 }
 ```
 
@@ -238,6 +205,10 @@ Returns an array of jobs from a queue
 
     If `true`, all job metadata will be returned on the job object.
 
+  * `ignoreStartAfter`, bool, *default: false*
+
+    If `true`, jobs with a `startAfter` timestamp in the future will be fetched. Useful for fetching jobs immediately without waiting for a retry delay.
+
     ```js
     interface JobWithMetadata<T = object> {
       id: string;
@@ -253,7 +224,8 @@ Returns an array of jobs from a queue
       startedOn: Date;
       singletonKey: string | null;
       singletonOn: Date | null;
-      expireIn: PostgresInterval;
+      expireInSeconds: number;
+      deleteAfterSeconds: number;
       createdOn: Date;
       completedOn: Date | null;
       keepUntil: Date;
@@ -294,6 +266,18 @@ Deletes a job by id.
 
 Deletes a set of jobs by id.
 
+### `deleteQueuedJobs(name)`
+
+Deletes all queued jobs in a queue.
+
+### `deleteStoredJobs(name)`
+
+Deletes all jobs in completed, failed, and cancelled state in a queue.
+
+### `deleteAllJobs(name)`
+
+Deletes all jobs in a queue, including active jobs.
+
 ### `cancel(name, id, options)`
 
 Cancels a pending or active job.
@@ -311,6 +295,14 @@ Resumes a cancelled job.
 ### `resume(name, [ids], options)`
 
 Resumes a set of cancelled jobs.
+
+### `retry(name, id, options)`
+
+Retries a failed job.
+
+### `retry(name, [ids], options)`
+
+Retries a set of failed jobs.
 
 ### `complete(name, id, data, options)`
 
@@ -347,7 +339,4 @@ Retrieves a job with all metadata by name and id
 
 **options**
 
-* `includeArchive`: bool, default: false
-
-  If `true`, it will search for the job in the archive if not found in the primary job storage.
-
+* **db**, object, see notes in `send()`
