@@ -343,7 +343,8 @@ class Manager extends EventEmitter {
       keepUntil,
       retryLimit,
       retryDelay,
-      retryBackoff
+      retryBackoff,
+      retryDelayMax
     } = options
 
     const job = {
@@ -360,7 +361,8 @@ class Manager extends EventEmitter {
       keepUntil,
       retryLimit,
       retryDelay,
-      retryBackoff
+      retryBackoff,
+      retryDelayMax
     }
 
     const db = wrapper || this.db

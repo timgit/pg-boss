@@ -59,6 +59,7 @@ describe('fetch', function () {
     assert(job.retryCount !== undefined)
     assert(job.retryDelay !== undefined)
     assert(job.retryBackoff === false)
+    assert(job.retryDelayMax !== undefined)
     assert(job.startAfter !== undefined)
     assert(job.startedOn !== undefined)
     assert(job.singletonKey !== undefined)
@@ -95,6 +96,70 @@ describe('fetch', function () {
       assert(job.retryCount !== undefined)
       assert(job.retryDelay !== undefined)
       assert(job.retryBackoff === false)
+      assert(job.retryDelayMax !== undefined)
+      assert(job.startAfter !== undefined)
+      assert(job.startedOn !== undefined)
+      assert(job.singletonKey === null)
+      assert(job.singletonOn === null)
+      assert(job.expireInSeconds !== undefined)
+      assert(job.createdOn !== undefined)
+      assert(job.completedOn === null)
+      assert(job.keepUntil !== undefined)
+    }
+  })
+
+  it('should fetch all metadata for a single job with exponential backoff when requested', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const queue = this.test.bossConfig.schema
+
+    await boss.send(queue, null, { retryLimit: 1, retryDelay: 1, retryBackoff: true, retryDelayMax: 10 })
+    const [job] = await boss.fetch(queue, { includeMetadata: true })
+
+    assert.strictEqual(job.name, queue)
+    assert.strictEqual(job.priority, 0)
+    assert.strictEqual(job.state, 'active')
+    assert(job.policy !== undefined)
+    assert.strictEqual(job.retryLimit, 1)
+    assert.strictEqual(job.retryCount, 0)
+    assert.strictEqual(job.retryDelay, 1)
+    assert.strictEqual(job.retryBackoff, true)
+    assert.strictEqual(job.retryDelayMax, 10)
+    assert(job.startAfter !== undefined)
+    assert(job.startedOn !== undefined)
+    assert.strictEqual(job.singletonKey, null)
+    assert.strictEqual(job.singletonOn, null)
+    assert(job.expireInSeconds !== undefined)
+    assert(job.createdOn !== undefined)
+    assert.strictEqual(job.completedOn, null)
+    assert(job.keepUntil !== undefined)
+  })
+
+  it('should fetch all metadata for a batch of jobs with exponential backoff when requested', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const queue = this.test.bossConfig.schema
+    const options = { retryDelay: 1, retryBackoff: true, retryDelayMax: 10 }
+    const batchSize = 4
+
+    await Promise.all([
+      boss.send(queue, null, options),
+      boss.send(queue, null, options),
+      boss.send(queue, null, options),
+      boss.send(queue, null, options)
+    ])
+
+    const jobs = await boss.fetch(queue, { batchSize, includeMetadata: true })
+    assert(jobs.length === batchSize)
+
+    for (const job of jobs) {
+      assert(queue === job.name)
+      assert(job.priority === 0)
+      assert(job.state === 'active')
+      assert(job.policy !== undefined)
+      assert(job.retryLimit !== undefined)
+      assert(job.retryCount === 0)
+      assert(job.retryDelay === 1)
+      assert(job.retryBackoff === true)
+      assert(job.retryDelayMax === 10)
       assert(job.startAfter !== undefined)
       assert(job.startedOn !== undefined)
       assert(job.singletonKey !== undefined)

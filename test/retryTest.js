@@ -87,6 +87,36 @@ describe('retries', function () {
     assert(processCount < retryLimit)
   })
 
+  it('should limit retry delay with exponential backoff', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const queue = this.test.bossConfig.schema
+
+    const startAfters = []
+    const retryDelayMax = 3
+
+    await boss.work(queue, { pollingIntervalSeconds: 0.5, includeMetadata: true }, async ([job]) => {
+      startAfters.push(job.startAfter)
+      throw new Error('retry')
+    })
+
+    await boss.send(queue, null, {
+      retryLimit: 4,
+      retryDelay: 1,
+      retryBackoff: true,
+      retryDelayMax
+    })
+
+    await delay(13000)
+
+    const delays = startAfters.map((startAfter, index) =>
+      index === 0 ? 0 : (startAfter - startAfters[index - 1]) / 1000)
+
+    for (const d of delays) {
+      // the +1 eval here is to allow latency from the work() polling interval
+      assert(d < (retryDelayMax + 1), `Expected delay to be less than ${retryDelayMax + 1} seconds, but got ${d}`)
+    }
+  }).timeout(15000)
+
   it('should mark a failed job to be retried', async function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
     const queue = this.test.bossConfig.schema
