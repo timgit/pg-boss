@@ -293,13 +293,13 @@ describe('queues', function () {
 
     const retentionSeconds = (new Date(job.keepUntil) - new Date(job.createdOn)) / 1000
 
-    assert.strictEqual(createProps.retryLimit, job.retryLimit)
-    assert.strictEqual(createProps.retryBackoff, job.retryBackoff)
-    assert.strictEqual(createProps.retryDelay, job.retryDelay)
-    assert.strictEqual(createProps.maxRetryDelay, job.maxRetryDelay)
-    assert.strictEqual(createProps.deadLetter, job.deadLetter)
-    assert.strictEqual(createProps.expireInSeconds, job.expireInSeconds)
-    assert.strictEqual(createProps.retentionSeconds, retentionSeconds)
+    assert.strictEqual(job.retryLimit, createProps.retryLimit)
+    assert.strictEqual(job.retryBackoff, createProps.retryBackoff)
+    assert.strictEqual(job.retryDelay, createProps.retryDelay)
+    assert.strictEqual(job.maxRetryDelay, createProps.maxRetryDelay)
+    assert.strictEqual(job.deadLetter, createProps.deadLetter)
+    assert.strictEqual(job.expireInSeconds, createProps.expireInSeconds)
+    assert.strictEqual(retentionSeconds, createProps.retentionSeconds)
   })
 
   it('short policy only allows 1 job in queue', async function () {

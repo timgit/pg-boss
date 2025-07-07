@@ -91,33 +91,29 @@ describe('retries', function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
     const queue = this.test.bossConfig.schema
 
-    const retryLimit = 4
-
     const startAfters = []
+    const maxRetryDelay = 3
 
-    await boss.work(queue, { pollingIntervalSeconds: 1, includeMetadata: true }, async (jobs) => {
-      startAfters.push(jobs[0].startAfter)
+    await boss.work(queue, { pollingIntervalSeconds: 0.5, includeMetadata: true }, async ([job]) => {
+      startAfters.push(job.startAfter)
       throw new Error('retry')
     })
 
     await boss.send(queue, null, {
-      retryLimit,
+      retryLimit: 4,
       retryDelay: 1,
       retryBackoff: true,
-      maxRetryDelay: 3
+      maxRetryDelay
     })
 
-    await delay(12000)
+    await delay(13000)
 
-    const actualDelays = startAfters.map((startAfter, index) => {
-      if (index === 0) {
-        return 0
-      }
-      return (startAfter - startAfters[index - 1]) / 1000
-    })
+    const delays = startAfters.map((startAfter, index) =>
+      index === 0 ? 0 : (startAfter - startAfters[index - 1]) / 1000)
 
-    for (const d of actualDelays) {
-      assert(d < 4, `Expected delay to be less than 4 seconds, but got ${d}`)
+    for (const d of delays) {
+      // the +1 eval here is to allow latency from the work() polling interval
+      assert(d < (maxRetryDelay + 1), `Expected delay to be less than ${maxRetryDelay + 1} seconds, but got ${d}`)
     }
   }).timeout(15000)
 
@@ -131,5 +127,4 @@ describe('retries', function () {
     assert(state === 'retry')
     assert(retryLimit === 1)
   })
-
 })

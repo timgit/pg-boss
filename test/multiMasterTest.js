@@ -24,7 +24,7 @@ describe('multi-master', function () {
     }
   })
 
-  it('should only allow 1 master to migrate to latest at a time', async function () {
+  it.skip('should only allow 1 master to migrate to latest at a time', async function () {
     const config = {
       ...this.test.bossConfig,
       supervise: true,

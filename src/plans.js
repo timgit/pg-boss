@@ -292,7 +292,7 @@ function createQueueFunction (schema) {
           COALESCE((options->>'retryLimit')::int, ${QUEUE_DEFAULTS.retry_limit}),
           COALESCE((options->>'retryDelay')::int, ${QUEUE_DEFAULTS.retry_delay}),
           COALESCE((options->>'retryBackoff')::bool, ${QUEUE_DEFAULTS.retry_backoff}),
-          options->>'maxRetryDelay',
+          (options->>'maxRetryDelay')::int,
           COALESCE((options->>'expireInSeconds')::int, ${QUEUE_DEFAULTS.expire_seconds}),
           COALESCE((options->>'retentionSeconds')::int, ${QUEUE_DEFAULTS.retention_seconds}),
           COALESCE((options->>'deleteAfterSeconds')::int, ${QUEUE_DEFAULTS.deletion_seconds}),
@@ -449,7 +449,8 @@ function updateQueue (schema, { deadLetter } = {}) {
       retry_limit = COALESCE((($2::json)->>'retryLimit')::int, retry_limit),
       retry_delay = COALESCE((($2::json)->>'retryDelay')::int, retry_delay),
       retry_backoff = COALESCE((($2::json)->>'retryBackoff')::bool, retry_backoff),
-      max_retry_delay = CASE WHEN ($2::jsonb) ? 'maxRetryDelay' THEN ($2::json)->>'maxRetryDelay')::int
+      max_retry_delay = CASE WHEN $2::jsonb ? 'maxRetryDelay'
+        THEN (($2::json)->>'maxRetryDelay')::int
         ELSE max_retry_delay END,
       expire_seconds = COALESCE((($2::json)->>'expireInSeconds')::int, expire_seconds),
       retention_seconds = COALESCE((($2::json)->>'retentionSeconds')::int, retention_seconds),
@@ -673,6 +674,7 @@ function insertJobs (schema, { table, name, returnId = true }) {
       retry_limit,
       retry_delay,
       retry_backoff,
+      max_retry_delay,
       policy,
       dead_letter
     )
@@ -693,6 +695,7 @@ function insertJobs (schema, { table, name, returnId = true }) {
       COALESCE("retryLimit", q.retry_limit) as retry_limit,
       COALESCE("retryDelay", q.retry_delay) as retry_delay,
       COALESCE("retryBackoff", q.retry_backoff, false) as retry_backoff,
+      COALESCE("maxRetryDelay", q.max_retry_delay) as max_retry_delay,
       q.policy,
       q.dead_letter
     FROM (
@@ -709,6 +712,7 @@ function insertJobs (schema, { table, name, returnId = true }) {
         "startAfter" text,
         "retryLimit" integer,
         "retryDelay" integer,
+        "maxRetryDelay" integer,
         "retryBackoff" boolean,
         "singletonKey" text,
         "singletonSeconds" integer,
@@ -791,9 +795,12 @@ function failJobs (schema, table, where, output) {
         max_retry_delay,
         CASE WHEN retry_count = retry_limit THEN start_after
              WHEN NOT retry_backoff THEN now() + retry_delay * interval '1'
-             ELSE now() + retry_delay * interval '1s' + LEAST(
-              2 ^ LEAST(16, retry_count + 1) / 2 +
-              2 ^ LEAST(16, retry_count + 1) / 2 * random(), max_retry_delay
+             ELSE now() + LEAST(
+               max_retry_delay,
+               retry_delay + (
+                2 ^ LEAST(16, retry_count + 1) / 2 +
+                2 ^ LEAST(16, retry_count + 1) / 2 * random()
+               )
              ) * interval '1s'
         END as start_after,
         started_on,
@@ -911,7 +918,6 @@ function retryJobs (schema) {
     SELECT COUNT(*) from results
   `
 }
-
 
 function getQueueStats (schema, table, queues) {
   return `
