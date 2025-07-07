@@ -17,6 +17,7 @@ CREATE TABLE pgboss.job (
   retry_count integer not null default(0),
   retry_delay integer not null default(0),
   retry_backoff boolean not null default false,
+  retry_delay_max integer;
   start_after timestamp with time zone not null default now(),
   started_on timestamp with time zone,
   singleton_key text,
