@@ -259,7 +259,7 @@ function createTableJobCommon (schema, table) {
 
 function createQueueFunction (schema) {
   return `
-    CREATE FUNCTION ${schema}.create_queue(queue_name text, options json)
+    CREATE FUNCTION ${schema}.create_queue(queue_name text, options jsonb)
     RETURNS VOID AS
     $$
     DECLARE
@@ -364,7 +364,7 @@ function deleteQueueFunction (schema) {
 }
 
 function createQueue (schema, name, options) {
-  const sql = `SELECT ${schema}.create_queue('${name}', '${JSON.stringify(options)}'::json)`
+  const sql = `SELECT ${schema}.create_queue('${name}', '${JSON.stringify(options)}'::jsonb)`
   return locked(schema, sql, 'create-queue')
 }
 
@@ -444,24 +444,26 @@ function trySetQueueTimestamp (schema, queues, column, seconds) {
 
 function updateQueue (schema, { deadLetter } = {}) {
   return `
+    WITH options as (SELECT $2::jsonb as data)
     UPDATE ${schema}.queue SET
-      policy = COALESCE(($2::json)->>'policy', policy),
-      retry_limit = COALESCE((($2::json)->>'retryLimit')::int, retry_limit),
-      retry_delay = COALESCE((($2::json)->>'retryDelay')::int, retry_delay),
-      retry_backoff = COALESCE((($2::json)->>'retryBackoff')::bool, retry_backoff),
-      retry_delay_max = CASE WHEN $2::jsonb ? 'retryDelayMax'
-        THEN (($2::json)->>'retryDelayMax')::int
+      policy = COALESCE(o.data->>'policy', policy),
+      retry_limit = COALESCE((o.data->>'retryLimit')::int, retry_limit),
+      retry_delay = COALESCE((o.data->>'retryDelay')::int, retry_delay),
+      retry_backoff = COALESCE((o.data->>'retryBackoff')::bool, retry_backoff),
+      retry_delay_max = CASE WHEN o.data ? 'retryDelayMax'
+        THEN (o.data->>'retryDelayMax')::int
         ELSE retry_delay_max END,
-      expire_seconds = COALESCE((($2::json)->>'expireInSeconds')::int, expire_seconds),
-      retention_seconds = COALESCE((($2::json)->>'retentionSeconds')::int, retention_seconds),
-      deletion_seconds = COALESCE((($2::json)->>'deleteAfterSeconds')::int, deletion_seconds),
-      queued_warning = COALESCE((($2::json)->>'queueSizeWarning')::int, queued_warning),
+      expire_seconds = COALESCE((o.data->>'expireInSeconds')::int, expire_seconds),
+      retention_seconds = COALESCE((o.data->>'retentionSeconds')::int, retention_seconds),
+      deletion_seconds = COALESCE((o.data->>'deleteAfterSeconds')::int, deletion_seconds),
+      queued_warning = COALESCE((o.data->>'queueSizeWarning')::int, queued_warning),
       ${
         deadLetter === undefined
           ? ''
           : `dead_letter = CASE WHEN '${deadLetter}' IS DISTINCT FROM dead_letter THEN '${deadLetter}' ELSE dead_letter END,`
       }
       updated_on = now()
+    FROM options o
     WHERE name = $1
   `
 }
