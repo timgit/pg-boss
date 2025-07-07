@@ -240,7 +240,7 @@ function createTableJobCommon (schema, table) {
   const format = command => command.replaceAll('.job', `.${table}`) + ';'
 
   return `
-    CREATE TABLE ${schema}.${table} (LIKE ${schema}.job INCLUDING DEFAULTS);
+    CREATE TABLE ${schema}.${table} (LIKE ${schema}.job INCLUDING GENERATED INCLUDING DEFAULTS);
     ${format(createPrimaryKeyJob(schema))}
     ${format(createQueueForeignKeyJob(schema))}
     ${format(createQueueForeignKeyJobDeadLetter(schema))}
