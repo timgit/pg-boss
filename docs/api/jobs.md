@@ -41,7 +41,7 @@ Available in constructor as a default, or overridden in send.
 
     Default: false. Enables exponential backoff retries based on retryDelay instead of a fixed delay. Sets initial retryDelay to 1 if not set.
 
-* **maxRetryDelay**, int
+* **retryDelayMax**, int
 
     Default: no limit. Maximum delay between retries of failed jobs, in seconds. Only used when retryBackoff is true.
 

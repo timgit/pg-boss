@@ -59,7 +59,7 @@ describe('fetch', function () {
     assert(job.retryCount !== undefined)
     assert(job.retryDelay !== undefined)
     assert(job.retryBackoff === false)
-    assert(job.maxRetryDelay !== undefined)
+    assert(job.retryDelayMax !== undefined)
     assert(job.startAfter !== undefined)
     assert(job.startedOn !== undefined)
     assert(job.singletonKey !== undefined)
@@ -96,7 +96,7 @@ describe('fetch', function () {
       assert(job.retryCount !== undefined)
       assert(job.retryDelay !== undefined)
       assert(job.retryBackoff === false)
-      assert(job.maxRetryDelay !== undefined)
+      assert(job.retryDelayMax !== undefined)
       assert(job.startAfter !== undefined)
       assert(job.startedOn !== undefined)
       assert(job.singletonKey === null)
@@ -112,7 +112,7 @@ describe('fetch', function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
     const queue = this.test.bossConfig.schema
 
-    await boss.send(queue, null, { retryLimit: 1, retryDelay: 1, retryBackoff: true, maxRetryDelay: 10 })
+    await boss.send(queue, null, { retryLimit: 1, retryDelay: 1, retryBackoff: true, retryDelayMax: 10 })
     const [job] = await boss.fetch(queue, { includeMetadata: true })
 
     assert.strictEqual(job.name, queue)
@@ -123,7 +123,7 @@ describe('fetch', function () {
     assert.strictEqual(job.retryCount, 0)
     assert.strictEqual(job.retryDelay, 1)
     assert.strictEqual(job.retryBackoff, true)
-    assert.strictEqual(job.maxRetryDelay, 10)
+    assert.strictEqual(job.retryDelayMax, 10)
     assert(job.startAfter !== undefined)
     assert(job.startedOn !== undefined)
     assert.strictEqual(job.singletonKey, null)
@@ -137,7 +137,7 @@ describe('fetch', function () {
   it('should fetch all metadata for a batch of jobs with exponential backoff when requested', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
     const queue = this.test.bossConfig.schema
-    const options = { retryDelay: 1, retryBackoff: true, maxRetryDelay: 10 }
+    const options = { retryDelay: 1, retryBackoff: true, retryDelayMax: 10 }
     const batchSize = 4
 
     await Promise.all([
@@ -159,7 +159,7 @@ describe('fetch', function () {
       assert(job.retryCount === 0)
       assert(job.retryDelay === 1)
       assert(job.retryBackoff === true)
-      assert(job.maxRetryDelay === 10)
+      assert(job.retryDelayMax === 10)
       assert(job.startAfter !== undefined)
       assert(job.startedOn !== undefined)
       assert(job.singletonKey !== undefined)

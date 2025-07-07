@@ -92,7 +92,7 @@ describe('retries', function () {
     const queue = this.test.bossConfig.schema
 
     const startAfters = []
-    const maxRetryDelay = 3
+    const retryDelayMax = 3
 
     await boss.work(queue, { pollingIntervalSeconds: 0.5, includeMetadata: true }, async ([job]) => {
       startAfters.push(job.startAfter)
@@ -103,7 +103,7 @@ describe('retries', function () {
       retryLimit: 4,
       retryDelay: 1,
       retryBackoff: true,
-      maxRetryDelay
+      retryDelayMax
     })
 
     await delay(13000)
@@ -113,7 +113,7 @@ describe('retries', function () {
 
     for (const d of delays) {
       // the +1 eval here is to allow latency from the work() polling interval
-      assert(d < (maxRetryDelay + 1), `Expected delay to be less than ${maxRetryDelay + 1} seconds, but got ${d}`)
+      assert(d < (retryDelayMax + 1), `Expected delay to be less than ${retryDelayMax + 1} seconds, but got ${d}`)
     }
   }).timeout(15000)
 

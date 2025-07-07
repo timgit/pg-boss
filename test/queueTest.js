@@ -219,7 +219,7 @@ describe('queues', function () {
       policy: 'standard',
       retryLimit: 1,
       retryBackoff: true,
-      maxRetryDelay: 3,
+      retryDelayMax: 3,
       retryDelay: 1,
       expireInSeconds: 1,
       retentionSeconds: 1,
@@ -235,7 +235,7 @@ describe('queues', function () {
     assert.strictEqual(createProps.retryLimit, queueObj.retryLimit)
     assert.strictEqual(createProps.retryBackoff, queueObj.retryBackoff)
     assert.strictEqual(createProps.retryDelay, queueObj.retryDelay)
-    assert.strictEqual(createProps.maxRetryDelay, queueObj.maxRetryDelay)
+    assert.strictEqual(createProps.retryDelayMax, queueObj.retryDelayMax)
     assert.strictEqual(createProps.expireInSeconds, queueObj.expireInSeconds)
     assert.strictEqual(createProps.retentionSeconds, queueObj.retentionSeconds)
     assert.strictEqual(createProps.deadLetter, queueObj.deadLetter)
@@ -248,7 +248,7 @@ describe('queues', function () {
     const updateProps = {
       policy: 'short',
       retryDelay: 2,
-      maxRetryDelay: null,
+      retryDelayMax: null,
       retryLimit: 2,
       retryBackoff: false,
       expireInSeconds: 2,
@@ -263,7 +263,7 @@ describe('queues', function () {
     assert.strictEqual(updateProps.retryLimit, queueObj.retryLimit)
     assert.strictEqual(updateProps.retryBackoff, queueObj.retryBackoff)
     assert.strictEqual(updateProps.retryDelay, queueObj.retryDelay)
-    assert.strictEqual(updateProps.maxRetryDelay, queueObj.maxRetryDelay)
+    assert.strictEqual(updateProps.retryDelayMax, queueObj.retryDelayMax)
     assert.strictEqual(updateProps.expireInSeconds, queueObj.expireInSeconds)
     assert.strictEqual(updateProps.deadLetter, queueObj.deadLetter)
   })
@@ -279,7 +279,7 @@ describe('queues', function () {
       retryLimit: 1,
       retryBackoff: true,
       retryDelay: 2,
-      maxRetryDelay: 3,
+      retryDelayMax: 3,
       expireInSeconds: 4,
       retentionSeconds: 4,
       deadLetter
@@ -296,7 +296,7 @@ describe('queues', function () {
     assert.strictEqual(job.retryLimit, createProps.retryLimit)
     assert.strictEqual(job.retryBackoff, createProps.retryBackoff)
     assert.strictEqual(job.retryDelay, createProps.retryDelay)
-    assert.strictEqual(job.maxRetryDelay, createProps.maxRetryDelay)
+    assert.strictEqual(job.retryDelayMax, createProps.retryDelayMax)
     assert.strictEqual(job.deadLetter, createProps.deadLetter)
     assert.strictEqual(job.expireInSeconds, createProps.expireInSeconds)
     assert.strictEqual(retentionSeconds, createProps.retentionSeconds)
