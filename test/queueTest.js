@@ -67,6 +67,13 @@ describe('queues', function () {
     await boss.createQueue(queue, { policy: 'stately' })
   })
 
+  it('should create a queue with exactly_once policy', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
+    const queue = this.test.bossConfig.schema
+
+    await boss.createQueue(queue, { policy: 'exactly_once' })
+  })
+
   it('should create a queue with singleton policy', async function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
     const queue = this.test.bossConfig.schema
@@ -462,5 +469,99 @@ describe('queues', function () {
     const q2Count3 = await boss.getQueueSize(queue2)
 
     assert.strictEqual(0, q2Count3)
+  })
+
+  it('exactly_once policy only allows 1 active,retry,created job', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
+    const queue = this.test.bossConfig.schema
+
+    await boss.createQueue(queue, { policy: 'exactly_once' })
+
+    const jobId1 = await boss.send(queue, null, { retryLimit: 1 })
+
+    // it won't add a second job while the first is in created state
+    const blockedId = await boss.send(queue)
+
+    assert.strictEqual(blockedId, null)
+
+    let [job1] = await boss.fetch(queue)
+
+    await boss.fail(queue, job1.id)
+
+    job1 = await boss.getJobById(queue, jobId1)
+
+    assert.strictEqual(job1.state, 'retry')
+
+    // trying to send another job while one is in retry should not add the job
+    const jobId2 = await boss.send(queue, null, { retryLimit: 1 })
+
+    assert.strictEqual(jobId2, null)
+
+    await boss.fetch(queue)
+
+    const job1a = await boss.getJobById(queue, jobId1)
+
+    assert.strictEqual(job1a.state, 'active')
+
+    const [blockedSecondActive] = await boss.fetch(queue)
+
+    assert(!blockedSecondActive)
+
+    // We fail the job again, this time it goes to failed state
+    await boss.fail(queue, jobId1)
+
+    // sending a new job should work now that the first job is failed
+    const newJobId = await boss.send(queue)
+    assert(newJobId)
+  })
+
+  it('exactly_once policy should be extended with singletonKey', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
+    const queue = this.test.bossConfig.schema
+
+    await boss.createQueue(queue, { policy: 'exactly_once' })
+
+    const jobAId = await boss.send(queue, null, { singletonKey: 'a', retryLimit: 1 })
+
+    assert(jobAId)
+
+    const jobBId = await boss.send(queue, null, { singletonKey: 'b', retryLimit: 1 })
+
+    assert(jobBId)
+
+    const jobA2Id = await boss.send(queue, null, { singletonKey: 'a', retryLimit: 1 })
+
+    assert.strictEqual(jobA2Id, null)
+
+    let [jobA] = await boss.fetch(queue)
+
+    await boss.fail(queue, jobA.id)
+
+    jobA = await boss.getJobById(queue, jobAId)
+
+    assert.strictEqual(jobA.state, 'retry')
+
+    await boss.fetch(queue)
+
+    jobA = await boss.getJobById(queue, jobAId)
+
+    assert.strictEqual(jobA.state, 'active')
+
+    let [jobB] = await boss.fetch(queue)
+
+    assert(jobB)
+
+    jobB = await boss.getJobById(queue, jobBId)
+
+    assert.strictEqual(jobB.state, 'active')
+
+    // cannot send another 'a' job while one is active
+    const jobA3Id = await boss.send(queue, null, { singletonKey: 'a' })
+
+    assert(!jobA3Id)
+
+    const [jobA3] = await boss.fetch(queue)
+
+    assert(!jobA3)
   })
 })

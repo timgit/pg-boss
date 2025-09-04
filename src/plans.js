@@ -15,7 +15,8 @@ const QUEUE_POLICIES = Object.freeze({
   standard: 'standard',
   short: 'short',
   singleton: 'singleton',
-  stately: 'stately'
+  stately: 'stately',
+  exactly_once: 'exactly_once'
 })
 
 module.exports = {
@@ -271,6 +272,7 @@ function createQueueFunction (schema) {
       EXECUTE format('${formatPartitionCommand(createIndexJobPolicyShort(schema))}', table_name);
       EXECUTE format('${formatPartitionCommand(createIndexJobPolicySingleton(schema))}', table_name);
       EXECUTE format('${formatPartitionCommand(createIndexJobPolicyStately(schema))}', table_name);
+      EXECUTE format('${formatPartitionCommand(createIndexJobPolicyExactlyOnce(schema))}', table_name);
       EXECUTE format('${formatPartitionCommand(createIndexJobThrottle(schema))}', table_name);
       EXECUTE format('${formatPartitionCommand(createIndexJobFetch(schema))}', table_name);
 
@@ -350,6 +352,10 @@ function createIndexJobThrottle (schema) {
 
 function createIndexJobFetch (schema) {
   return `CREATE INDEX job_i5 ON ${schema}.job (name, start_after) INCLUDE (priority, created_on, id) WHERE state < '${JOB_STATES.active}'`
+}
+
+function createIndexJobPolicyExactlyOnce (schema) {
+  return `CREATE UNIQUE INDEX job_i6 ON ${schema}.job (name, COALESCE(singleton_key, '')) WHERE state <= '${JOB_STATES.active}' AND policy = '${QUEUE_POLICIES.exactly_once}'`
 }
 
 function createTableArchive (schema) {
