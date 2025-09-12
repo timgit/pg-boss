@@ -25,7 +25,7 @@ declare namespace PgBoss {
     application_name?: string;
     database?: string;
     user?: string;
-    password?: string;
+    password?: string | (() => string) | (() => Promise<string>);
     host?: string;
     port?: number;
     schema?: string;
