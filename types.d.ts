@@ -26,7 +26,7 @@ declare namespace PgBoss {
     application_name?: string;
     database?: string;
     user?: string;
-    password?: string;
+    password?: string | (() => string) | (() => Promise<string>);
     host?: string;
     port?: number;
     schema?: string;
@@ -316,6 +316,8 @@ declare class PgBoss extends EventEmitter {
   schedule(name: string, cron: string, data?: object, options?: PgBoss.ScheduleOptions): Promise<void>;
   unschedule(name: string): Promise<void>;
   getSchedules(): Promise<PgBoss.Schedule[]>;
+
+  getDb(): PgBoss.Db;
 }
 
 export = PgBoss;
