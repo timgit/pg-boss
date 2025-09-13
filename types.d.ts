@@ -115,7 +115,7 @@ declare namespace PgBoss {
 
   type SendOptions = JobOptions & ExpirationOptions & RetentionOptions & RetryOptions & ConnectionOptions;
 
-  type QueuePolicy = 'standard' | 'short' | 'singleton' | 'stately'
+  type QueuePolicy = 'standard' | 'short' | 'singleton' | 'stately' | 'exactly_once'
 
   type Queue = RetryOptions & ExpirationOptions & RetentionOptions & { name: string, policy?: QueuePolicy, deadLetter?: string }
   type QueueResult = Queue & { createdOn: Date, updatedOn: Date }
