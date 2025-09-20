@@ -209,9 +209,9 @@ class Manager extends EventEmitter {
 
       try {
         const result = await resolveWithinSeconds(callback(jobs), maxExpiration, `handler execution exceeded ${maxExpiration}s`)
-        this.complete(name, jobIds, jobIds.length === 1 ? result : undefined)
+        await this.complete(name, jobIds, jobIds.length === 1 ? result : undefined)
       } catch (err) {
-        this.fail(name, jobIds, err)
+        await this.fail(name, jobIds, err)
       }
 
       this.emitWip(name)
@@ -428,9 +428,18 @@ class Manager extends EventEmitter {
 
     const db = this.assertDb(options)
 
-    const { table } = await this.getQueueCache(name)
+    const { table, singletonsActive } = await this.getQueueCache(name)
 
-    const sql = plans.fetchNextJob({ ...options, schema: this.config.schema, table, name, limit: options.batchSize })
+    options = {
+      ...options,
+      schema: this.config.schema,
+      table,
+      name,
+      limit: options.batchSize,
+      ignoreSingletons: singletonsActive
+    }
+
+    const sql = plans.fetchNextJob(options)
 
     let result
 

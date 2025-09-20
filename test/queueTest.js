@@ -1,6 +1,7 @@
 const assert = require('node:assert')
 const helper = require('./testHelper')
 const { states } = require('../src')
+const { delay } = require('../src/tools')
 
 describe('queues', function () {
   it('should create a queue', async function () {
@@ -520,5 +521,75 @@ describe('queues', function () {
     const [jobA3] = await boss.fetch(queue)
 
     assert(!jobA3)
+  })
+
+  it('stately policy with singletonKey should not block other values if one is blocked', async function () {
+    const config = {
+      ...this.test.bossConfig,
+      noDefault: true,
+      queueCacheIntervalSeconds: 1,
+      monitorIntervalSeconds: 1
+    }
+    const boss = this.test.boss = await helper.start(config)
+    const queue = this.test.bossConfig.schema
+
+    await boss.createQueue(queue, { policy: 'stately' })
+
+    // put singleton key 'a' into active state
+    await boss.send(queue, null, { singletonKey: 'a', retryLimit: 1 })
+    const [jobA] = await boss.fetch(queue)
+    assert(jobA)
+
+    // then, create another job in the queue for 'a'
+    const jobA2Id = await boss.send(queue, null, { singletonKey: 'a', retryLimit: 1 })
+    assert(jobA2Id)
+
+    // now, queue a job for 'b', and attempt to fetch it
+    const jobBId = await boss.send(queue, null, { singletonKey: 'b', retryLimit: 1 })
+    assert(jobBId)
+
+    const [jobB1] = await boss.fetch(queue)
+    assert.strictEqual(jobB1, undefined)
+
+    await boss.maintain()
+    await delay(1500)
+
+    const [jobB] = await boss.fetch(queue)
+    assert(jobB)
+  })
+
+  it('singleton policy with singletonKey should not block other values if one is blocked', async function () {
+    const config = {
+      ...this.test.bossConfig,
+      noDefault: true,
+      queueCacheIntervalSeconds: 1,
+      monitorIntervalSeconds: 1
+    }
+    const boss = this.test.boss = await helper.start(config)
+    const queue = this.test.bossConfig.schema
+
+    await boss.createQueue(queue, { policy: 'singleton' })
+
+    // put singleton key 'a' into active state
+    await boss.send(queue, null, { singletonKey: 'a', retryLimit: 1 })
+    const [jobA] = await boss.fetch(queue)
+    assert(jobA)
+
+    // then, create another job in the queue for 'a'
+    const jobA2Id = await boss.send(queue, null, { singletonKey: 'a', retryLimit: 1 })
+    assert(jobA2Id)
+
+    // now, queue a job for 'b', and attempt to fetch it
+    const jobBId = await boss.send(queue, null, { singletonKey: 'b', retryLimit: 1 })
+    assert(jobBId)
+
+    const [jobB1] = await boss.fetch(queue)
+    assert.strictEqual(jobB1, undefined)
+
+    await boss.maintain()
+    await delay(1500)
+
+    const [jobB] = await boss.fetch(queue)
+    assert(jobB)
   })
 })

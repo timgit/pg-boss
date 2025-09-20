@@ -152,6 +152,7 @@ function createTableQueue (schema) {
       queued_warning int NOT NULL default 0,
       active_count int NOT NULL default 0,
       total_count int NOT NULL default 0,
+      singletons_active text[],
       monitor_on timestamp with time zone,
       maintain_on timestamp with time zone,
       created_on timestamp with time zone not null default now(),
@@ -487,6 +488,7 @@ function getQueues (schema, names) {
       q.queued_count as "queuedCount",
       q.active_count as "activeCount",
       q.total_count as "totalCount",
+      q.singletons_active as "singletonsActive",
       q.table_name as "table",
       q.created_on as "createdOn",
       q.updated_on as "updatedOn"
@@ -592,7 +594,7 @@ function insertVersion (schema, version) {
   return `INSERT INTO ${schema}.version(version) VALUES ('${version}')`
 }
 
-function fetchNextJob ({ schema, table, name, limit, includeMetadata, priority = true, ignoreStartAfter = false }) {
+function fetchNextJob ({ schema, table, name, limit, includeMetadata, priority = true, ignoreStartAfter = false, ignoreSingletons = null }) {
   return `
     WITH next as (
       SELECT id
@@ -600,6 +602,7 @@ function fetchNextJob ({ schema, table, name, limit, includeMetadata, priority =
       WHERE name = '${name}'
         AND state < '${JOB_STATES.active}'
         ${ignoreStartAfter ? '' : 'AND start_after < now()'}
+        ${ignoreSingletons?.length > 0 ? `AND singleton_key NOT IN (${ignoreSingletons.map(i => `'${i}'`).join()})` : ''}
       ORDER BY ${priority ? 'priority desc, ' : ''}created_on, id
       LIMIT ${limit}
       FOR UPDATE SKIP LOCKED
@@ -928,7 +931,8 @@ function getQueueStats (schema, table, queues) {
         (count(*) FILTER (WHERE start_after > now()))::int as "deferredCount",
         (count(*) FILTER (WHERE state < '${JOB_STATES.active}'))::int as "queuedCount",
         (count(*) FILTER (WHERE state = '${JOB_STATES.active}'))::int as "activeCount",
-        count(*)::int as "totalCount"
+        count(*)::int as "totalCount",
+        array_agg(singleton_key) FILTER (WHERE policy IN ('${QUEUE_POLICIES.singleton}','${QUEUE_POLICIES.stately}') AND state IN ('${JOB_STATES.retry}','${JOB_STATES.active}')) as "singletonsActive"
       FROM ${schema}.${table}
       WHERE name IN (${getQueueInClause(queues)})
       GROUP BY 1
@@ -942,7 +946,8 @@ function cacheQueueStats (schema, table, queues) {
       deferred_count = "deferredCount",
       queued_count = "queuedCount",
       active_count = "activeCount",
-      total_count = "totalCount"
+      total_count = "totalCount",
+      singletons_active = "singletonsActive"
     FROM stats
       WHERE queue.name = stats.name
   `
