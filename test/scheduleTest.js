@@ -93,8 +93,6 @@ describe('schedule', function () {
     await boss.schedule(queue, '* * * * *')
     await boss.unschedule(queue)
 
-    await delay(4000)
-
     const scheduled = await boss.getSchedules()
 
     assert.strictEqual(scheduled.length, 0)
@@ -268,4 +266,25 @@ describe('schedule', function () {
 
     assert.strictEqual(errorCount, 1)
   })
+
+
+  it('should return a schedule id that can be used to update', async function () {
+    const config = {
+      ...this.test.bossConfig,
+      cronMonitorIntervalSeconds: 1,
+      cronWorkerIntervalSeconds: 1,
+      schedule: true
+    }
+
+    const boss = this.test.boss = await helper.start(config)
+
+    const queue = this.test.bossConfig.schema
+
+    const id = await boss.schedule(queue, '* * * * *')
+
+    assert(id)
+
+
+  })
+
 })
