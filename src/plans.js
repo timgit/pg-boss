@@ -594,10 +594,13 @@ function insertVersion (schema, version) {
   return `INSERT INTO ${schema}.version(version) VALUES ('${version}')`
 }
 
-function fetchNextJob ({ schema, table, name, limit, includeMetadata, priority = true, ignoreStartAfter = false, ignoreSingletons = null }) {
+function fetchNextJob ({ schema, table, name, policy, limit, includeMetadata, priority = true, ignoreStartAfter = false, ignoreSingletons = null }) {
+  const singletonFetch = limit > 1 && (policy === QUEUE_POLICIES.singleton || policy === QUEUE_POLICIES.stately)
+  const cte = singletonFetch ? 'grouped' : 'next'
+
   return `
     WITH next as (
-      SELECT id
+      SELECT id ${singletonFetch ? ', singleton_key' : ''}
       FROM ${schema}.${table}
       WHERE name = '${name}'
         AND state < '${JOB_STATES.active}'
@@ -607,12 +610,14 @@ function fetchNextJob ({ schema, table, name, limit, includeMetadata, priority =
       LIMIT ${limit}
       FOR UPDATE SKIP LOCKED
     )
+    ${singletonFetch ? ', grouped as ( SELECT id, row_number() OVER (PARTITION BY singleton_key) FROM next)' : ''}
     UPDATE ${schema}.${table} j SET
       state = '${JOB_STATES.active}',
       started_on = now(),
       retry_count = CASE WHEN started_on IS NOT NULL THEN retry_count + 1 ELSE retry_count END
-    FROM next
-    WHERE name = '${name}' AND j.id = next.id
+    FROM ${cte}
+    WHERE name = '${name}' AND j.id = ${cte}.id
+      ${singletonFetch ? ` AND ${cte}.row_number = 1` : ''}
     RETURNING j.${includeMetadata ? JOB_COLUMNS_ALL : JOB_COLUMNS_MIN}      
   `
 }

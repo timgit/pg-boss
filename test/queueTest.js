@@ -592,4 +592,32 @@ describe('queues', function () {
     const [jobB] = await boss.fetch(queue)
     assert(jobB)
   })
+
+  it('singleton policy with multiple singletonKeys in the queue should only promote 1 of each keep up to the requested batch size', async function () {
+    const config = {
+      ...this.test.bossConfig,
+      noDefault: true
+    }
+
+    const boss = this.test.boss = await helper.start(config)
+    const queue = this.test.bossConfig.schema
+
+    await boss.createQueue(queue, { policy: 'singleton' })
+
+    await boss.send(queue, null)
+    await boss.send(queue, null, { singletonKey: 'a', retryLimit: 1 })
+    await boss.send(queue, null, { singletonKey: 'a', retryLimit: 1 })
+    await boss.send(queue, null, { singletonKey: 'b', retryLimit: 1 })
+
+    const jobs = await boss.fetch(queue, { batchSize: 4, includeMetadata: true })
+
+    assert.strictEqual(jobs.length, 3)
+    assert(jobs.find(i => i.singletonKey === 'a'))
+    assert(jobs.find(i => i.singletonKey === 'b'))
+
+    await boss.complete(queue, jobs.map(i => i.id))
+
+    const [job3] = await boss.fetch(queue, { includeMetadata: true })
+    assert.strictEqual(job3.singletonKey, 'a')
+  })
 })

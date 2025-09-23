@@ -428,13 +428,14 @@ class Manager extends EventEmitter {
 
     const db = this.assertDb(options)
 
-    const { table, singletonsActive } = await this.getQueueCache(name)
+    const { table, policy, singletonsActive } = await this.getQueueCache(name)
 
     options = {
       ...options,
       schema: this.config.schema,
       table,
       name,
+      policy,
       limit: options.batchSize,
       ignoreSingletons: singletonsActive
     }
