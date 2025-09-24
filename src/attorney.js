@@ -15,7 +15,8 @@ module.exports = {
   checkWorkArgs,
   checkFetchArgs,
   assertPostgresObjectName,
-  assertQueueName
+  assertQueueName,
+  assertKey
 }
 
 function validateQueueArgs (config = {}) {
@@ -163,6 +164,12 @@ function assertQueueName (name) {
   assert(name, 'Name is required')
   assert(typeof name === 'string', 'Name must be a string')
   assert(/[\w-]/.test(name), 'Name can only contain alphanumeric characters, underscores, or hyphens')
+}
+
+function assertKey (key) {
+  if (!key) return
+  assert(typeof key === 'string', 'Key must be a string')
+  assert(/[\w-]/.test(key), 'Key can only contain alphanumeric characters, underscores, or hyphens')
 }
 
 function validateRetentionConfig (config) {

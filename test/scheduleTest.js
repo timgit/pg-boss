@@ -267,24 +267,132 @@ describe('schedule', function () {
     assert.strictEqual(errorCount, 1)
   })
 
-
-  it('should return a schedule id that can be used to update', async function () {
+  it('should accept a unique key to have more than one schedule per queue', async function () {
     const config = {
-      ...this.test.bossConfig,
-      cronMonitorIntervalSeconds: 1,
-      cronWorkerIntervalSeconds: 1,
-      schedule: true
+      ...this.test.bossConfig
     }
 
     const boss = this.test.boss = await helper.start(config)
 
     const queue = this.test.bossConfig.schema
 
-    const id = await boss.schedule(queue, '* * * * *')
+    await boss.schedule(queue, '* * * * *', null, { key: 'a' })
+    await boss.schedule(queue, '* * * * *', null, { key: 'b' })
 
-    assert(id)
+    const schedules = await boss.getSchedules()
 
+    assert.strictEqual(schedules.length, 2)
+  })
 
+  it('should update a schedule with a unique key', async function () {
+    const config = {
+      ...this.test.bossConfig
+    }
+
+    const boss = this.test.boss = await helper.start(config)
+
+    const queue = this.test.bossConfig.schema
+
+    await boss.schedule(queue, '* * * * *', null, { key: 'a' })
+    await boss.schedule(queue, '0 1 * * *', null, { key: 'a' })
+
+    const schedules = await boss.getSchedules()
+
+    assert.strictEqual(schedules.length, 1)
+    assert.strictEqual(schedules[0].cron, '0 1 * * *')
+  })
+
+  it('should update a schedule without a unique key', async function () {
+    const config = {
+      ...this.test.bossConfig
+    }
+
+    const boss = this.test.boss = await helper.start(config)
+
+    const queue = this.test.bossConfig.schema
+
+    await boss.schedule(queue, '* * * * *')
+    await boss.schedule(queue, '0 1 * * *')
+
+    const schedules = await boss.getSchedules()
+
+    assert.strictEqual(schedules.length, 1)
+    assert.strictEqual(schedules[0].cron, '0 1 * * *')
+  })
+
+  it('should remove a schedule using a unique key', async function () {
+    const config = {
+      ...this.test.bossConfig
+    }
+
+    const boss = this.test.boss = await helper.start(config)
+
+    const queue = this.test.bossConfig.schema
+
+    await boss.schedule(queue, '* * * * *', null, { key: 'a' })
+    await boss.schedule(queue, '0 1 * * *', null, { key: 'b' })
+
+    let schedules = await boss.getSchedules()
+
+    assert.strictEqual(schedules.length, 2)
+
+    await boss.unschedule(queue, 'a')
+
+    schedules = await boss.getSchedules()
+
+    assert.strictEqual(schedules.length, 1)
+
+    assert.strictEqual(schedules[0].cron, '0 1 * * *')
+  })
+
+  it('should get schedules filtered by a queue name', async function () {
+    const config = {
+      ...this.test.bossConfig
+    }
+
+    const boss = this.test.boss = await helper.start(config)
+
+    const queue = this.test.bossConfig.schema
+    const queue2 = this.test.bossConfig.schema + '2'
+
+    await boss.createQueue(queue2)
+
+    await boss.schedule(queue, '* * * * *')
+    await boss.schedule(queue2, '0 1 * * *')
+
+    let schedules = await boss.getSchedules()
+    assert.strictEqual(schedules.length, 2)
+
+    schedules = await boss.getSchedules(queue2)
+
+    assert.strictEqual(schedules.length, 1)
+    assert.strictEqual(schedules[0].cron, '0 1 * * *')
+  })
+
+  it('should get schedules filtered by a queue name and key', async function () {
+    const config = {
+      ...this.test.bossConfig
+    }
+
+    const boss = this.test.boss = await helper.start(config)
+
+    const key = 'a'
+    const queue = this.test.bossConfig.schema
+    const queue2 = this.test.bossConfig.schema + '2'
+
+    await boss.createQueue(queue2)
+
+    await boss.schedule(queue, '* * * * *')
+    await boss.schedule(queue, '0 1 * * *', null, { key })
+    await boss.schedule(queue2, '0 2 * * *')
+
+    let schedules = await boss.getSchedules()
+    assert.strictEqual(schedules.length, 3)
+
+    schedules = await boss.getSchedules(queue, key)
+
+    assert.strictEqual(schedules.length, 1)
+    assert.strictEqual(schedules[0].cron, '0 1 * * *')
   })
 
 })

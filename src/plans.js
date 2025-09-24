@@ -39,6 +39,7 @@ module.exports = {
   insertJobs,
   getTime,
   getSchedules,
+  getSchedulesByQueue,
   schedule,
   unschedule,
   subscribe,
@@ -166,13 +167,14 @@ function createTableSchedule (schema) {
   return `
     CREATE TABLE ${schema}.schedule (
       name text REFERENCES ${schema}.queue ON DELETE CASCADE,
+      key text not null DEFAULT '',
       cron text not null,
       timezone text,
       data jsonb,
       options jsonb,
       created_on timestamp with time zone not null default now(),
       updated_on timestamp with time zone not null default now(),
-      PRIMARY KEY (name)
+      PRIMARY KEY (name, key)
     )
   `
 }
@@ -529,11 +531,15 @@ function getSchedules (schema) {
   return `SELECT * FROM ${schema}.schedule`
 }
 
+function getSchedulesByQueue (schema) {
+  return `SELECT * FROM ${schema}.schedule WHERE name = $1 AND COALESCE(key, '') = $2`
+}
+
 function schedule (schema) {
   return `
-    INSERT INTO ${schema}.schedule (name, cron, timezone, data, options)
-    VALUES ($1, $2, $3, $4, $5)
-    ON CONFLICT (name) DO UPDATE SET
+    INSERT INTO ${schema}.schedule (name, key, cron, timezone, data, options)
+    VALUES ($1, $2, $3, $4, $5, $6)
+    ON CONFLICT (name, key) DO UPDATE SET
       cron = EXCLUDED.cron,
       timezone = EXCLUDED.timezone,
       data = EXCLUDED.data,
@@ -546,6 +552,7 @@ function unschedule (schema) {
   return `
     DELETE FROM ${schema}.schedule
     WHERE name = $1
+      AND COALESCE(key, '') = $2
   `
 }
 

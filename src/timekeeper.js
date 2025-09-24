@@ -159,22 +159,31 @@ class Timekeeper extends EventEmitter {
     await Promise.allSettled(jobs.map(({ data }) => this.manager.send(data)))
   }
 
-  async getSchedules () {
-    const sql = plans.getSchedules(this.config.schema)
-    const { rows } = await this.db.executeSql(sql)
+  async getSchedules (name, key = '') {
+    let sql = plans.getSchedules(this.config.schema)
+    let params = []
+    
+    if(name) {
+      sql = plans.getSchedulesByQueue(this.config.schema)
+      params = [name, key]
+    }
+    
+    const { rows } = await this.db.executeSql(sql, params)
+
     return rows
   }
 
   async schedule (name, cron, data, options = {}) {
-    const { tz = 'UTC' } = options
+    const { tz = 'UTC', key = '', ...rest } = options
 
     cronParser.parseExpression(cron, { tz })
 
-    Attorney.checkSendArgs([name, data, options])
+    Attorney.checkSendArgs([name, data, { ...rest }])
+    Attorney.assertKey(key)
 
     try {
       const sql = plans.schedule(this.config.schema)
-      await this.db.executeSql(sql, [name, cron, tz, data, options])
+      await this.db.executeSql(sql, [name, key, cron, tz, data, options])
     } catch (err) {
       if (err.message.includes('foreign key')) {
         err.message = `Queue ${name} not found`
@@ -184,9 +193,9 @@ class Timekeeper extends EventEmitter {
     }
   }
 
-  async unschedule (name) {
+  async unschedule (name, key = '') {
     const sql = plans.unschedule(this.config.schema)
-    await this.db.executeSql(sql, [name])
+    await this.db.executeSql(sql, [name, key])
   }
 }
 

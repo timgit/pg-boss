@@ -99,7 +99,7 @@ declare namespace PgBoss {
     updatedOn: Date;
   }
 
-  type ScheduleOptions = SendOptions & { tz?: string }
+  type ScheduleOptions = SendOptions & { tz?: string, key?: string }
 
   interface JobPollingOptions {
     pollingIntervalSeconds?: number;
@@ -131,9 +131,11 @@ declare namespace PgBoss {
 
   interface Schedule {
     name: string;
+    key: string;
     cron: string;
+    timezone: string;
     data?: object;
-    options?: ScheduleOptions;
+    options?: SendOptions;
   }
 
   interface Job<T = object> {
@@ -314,8 +316,8 @@ declare class PgBoss extends EventEmitter {
   schemaVersion(): Promise<Number>;
 
   schedule(name: string, cron: string, data?: object, options?: PgBoss.ScheduleOptions): Promise<void>;
-  unschedule(name: string): Promise<void>;
-  getSchedules(): Promise<PgBoss.Schedule[]>;
+  unschedule(name: string, key?: string): Promise<void>;
+  getSchedules(name?: string, key?: string): Promise<PgBoss.Schedule[]>;
 
   getDb(): PgBoss.Db;
 }
