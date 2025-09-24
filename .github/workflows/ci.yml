@@ -10,10 +10,10 @@ name: CI
 jobs:
   container-job:
     runs-on: ubuntu-latest
-    container: node:20
+    container: node:22
     strategy:
       matrix:
-        node: [ 20 ]
+        node: [ 22 ]
     services:      
       postgres:
         image: postgres
