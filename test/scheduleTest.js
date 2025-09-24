@@ -394,5 +394,4 @@ describe('schedule', function () {
     assert.strictEqual(schedules.length, 1)
     assert.strictEqual(schedules[0].cron, '0 1 * * *')
   })
-
 })

@@ -162,12 +162,12 @@ class Timekeeper extends EventEmitter {
   async getSchedules (name, key = '') {
     let sql = plans.getSchedules(this.config.schema)
     let params = []
-    
-    if(name) {
+
+    if (name) {
       sql = plans.getSchedulesByQueue(this.config.schema)
       params = [name, key]
     }
-    
+
     const { rows } = await this.db.executeSql(sql, params)
 
     return rows
