@@ -48,6 +48,10 @@ declare namespace PgBoss {
     migrate?: boolean;
     warningSlowQuerySeconds?: number;
     warningLargeQueueSize?: number;
+    superviseIntervalSeconds?: number;
+    maintenanceIntervalSeconds?: number;
+    queueCacheIntervalSeconds?: number;
+    monitorIntervalSeconds?: number;
   }
 
   type ConstructorOptions = DatabaseOptions & SchedulingOptions & MaintenanceOptions

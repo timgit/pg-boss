@@ -73,13 +73,20 @@ Maintenance operations include checking active jobs for expiration, caching queu
 
   If this is set to false, this instance will skip attempts to run schema migratations during `start()`. If schema migrations exist, `start()` will throw and error and block usage. This is an advanced use case when the configured user account does not have schema mutation privileges.
 
+The following configuration options should not normally need to be changed, but are still available for special use cases.
 
-**Maintenance interval**
+* **superviseIntervalSeconds**, int, default 60 seconds
 
-How often maintenance operations are run.
+  Entry point for how often queues are both maintained and monitored.
 
-* **maintenanceIntervalSeconds**, int
+* **maintenanceIntervalSeconds**, int, default 1 day
 
-    maintenance interval in seconds, must be >=1
+  How often maintenance will be run against queue tables to drop completed jobs according to the queue deletion configuration.
 
-* Default: 60 seconds
+* **monitorIntervalSeconds**, int, default 60 seconds 
+
+  How often each queue is monitored for backlogs, expired jobs, and calculating stats.
+
+* **queueCacheIntervalSeconds**, int, default 60 seconds
+
+  How often queue metadata is refreshed in memory.
