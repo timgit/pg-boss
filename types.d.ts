@@ -60,6 +60,7 @@ declare namespace PgBoss {
     expireInSeconds?: number;
     retentionSeconds?: number;
     deleteAfterSeconds?: number;
+    queueSizeWarning?: number;
     retryLimit?: number;
     retryDelay?: number;
     retryBackoff?: boolean;
@@ -89,8 +90,7 @@ declare namespace PgBoss {
     name: string;
     policy?: QueuePolicy;
     partition?: boolean;
-    deadLetter?: string;
-    queueSizeWarning?: number;
+    deadLetter?: string;    
   } & QueueOptions
 
   type QueueResult = Queue & {

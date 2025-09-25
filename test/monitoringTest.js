@@ -76,7 +76,7 @@ describe('monitoring', function () {
     assert(eventCount > 0)
   })
 
-  it('large queue should emit warning', async function () {
+  it('large queue should emit warning using global default', async function () {
     const config = {
       ...this.test.bossConfig,
       monitorIntervalSeconds: 1,
@@ -85,6 +85,34 @@ describe('monitoring', function () {
 
     const boss = this.test.boss = await helper.start(config)
     const queue = this.test.bossConfig.schema
+
+    await boss.send(queue)
+    await boss.send(queue)
+
+    let eventCount = 0
+
+    boss.on('warning', (event) => {
+      assert(event.message.includes('queue'))
+      eventCount++
+    })
+
+    await boss.maintain(queue)
+
+    await delay(1000)
+
+    assert(eventCount > 0)
+  })
+
+  it('large queue should emit warning via queue config', async function () {
+    const config = {
+      ...this.test.bossConfig,
+      monitorIntervalSeconds: 1,
+      noDefault: true
+    }
+
+    const boss = this.test.boss = await helper.start(config)
+    const queue = this.test.bossConfig.schema
+    await boss.createQueue(queue, { queueSizeWarning: 1 })
 
     await boss.send(queue)
     await boss.send(queue)
