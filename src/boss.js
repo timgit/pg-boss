@@ -114,7 +114,6 @@ class Boss extends EventEmitter {
       const names = queues.map(i => i.name)
 
       while (names.length) {
-        // todo: test
         const chunk = names.splice(0, 100)
 
         await this.#monitorActive(table, chunk)
@@ -128,17 +127,20 @@ class Boss extends EventEmitter {
     const { rows } = await this.#executeSql(command)
 
     if (rows.length) {
-      const warnings = rows.filter(i => i.queuedCount > (i.queueSizeWarning || WARNINGS.LARGE_QUEUE.size))
+      const queues = rows.map(q => q.name)
+
+      const cacheStatsSql = plans.cacheQueueStats(this.#config.schema, table, queues)
+      const results = await this.#executeSql(cacheStatsSql)
+
+      const inter = results.flatMap(i => i.rows)
+      const warnings = inter.filter(i => i.queuedCount > (i.queueSizeWarning || WARNINGS.LARGE_QUEUE.size))
 
       for (const warning of warnings) {
         this.emit(events.warning, { message: WARNINGS.LARGE_QUEUE.mesasge, data: warning })
       }
 
-      const sql = plans.failJobsByTimeout(this.#config.schema, table, names)
+      const sql = plans.failJobsByTimeout(this.#config.schema, table, queues)
       await this.#executeSql(sql)
-
-      const cacheStatsSql = plans.cacheQueueStats(this.#config.schema, table, names)
-      await this.#executeSql(cacheStatsSql)
     }
   }
 
@@ -147,7 +149,8 @@ class Boss extends EventEmitter {
     const { rows } = await this.#executeSql(command)
 
     if (rows.length) {
-      const sql = plans.deletion(this.#config.schema, table)
+      const queues = rows.map(q => q.name)
+      const sql = plans.deletion(this.#config.schema, table, queues)
       await this.#executeSql(sql)
     }
   }

@@ -435,13 +435,7 @@ function trySetQueueTimestamp (schema, queues, column, seconds) {
     SET ${column} = now()
     WHERE name IN(${getQueueInClause(queues)})
       AND EXTRACT( EPOCH FROM (now() - COALESCE(${column}, now() - interval '1 week') ) ) > ${seconds}
-    RETURNING 
-      name,
-      queued_warning as "queueSizeWarning",
-      deferred_count as "deferredCount",
-      queued_count as "queuedCount",
-      active_count as "activeCount",
-      total_count as "totalCount"
+    RETURNING name    
   `
 }
 
@@ -911,11 +905,16 @@ function failJobs (schema, table, where, output) {
   `
 }
 
-function deletion (schema, table) {
+function deletion (schema, table, queues) {
   const sql = `
-      DELETE FROM ${schema}.${table}
-      WHERE (completed_on + deletion_seconds * interval '1s' < now())
-        OR (state < '${JOB_STATES.active}' AND keep_until < now())
+    DELETE FROM ${schema}.${table}
+    WHERE name IN (${getQueueInClause(queues)})
+      AND
+      (
+        completed_on + deletion_seconds * interval '1s' < now()
+        OR
+        (state < '${JOB_STATES.active}' AND keep_until < now())
+      )        
   `
 
   return locked(schema, sql, table + 'deletion')
@@ -923,7 +922,7 @@ function deletion (schema, table) {
 
 function retryJobs (schema) {
   return `
-    with results as (
+    WITH results as (
       UPDATE ${schema}.job
       SET state = '${JOB_STATES.retry}',
         retry_limit = retry_limit + 1
@@ -962,6 +961,10 @@ function cacheQueueStats (schema, table, queues) {
       singletons_active = "singletonsActive"
     FROM stats
       WHERE queue.name = stats.name
+    RETURNING
+      queue.name,
+      "queuedCount",
+      queued_warning as "queueSizeWarning"
   `
 
   return locked(schema, sql, 'queue-stats')

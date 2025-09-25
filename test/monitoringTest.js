@@ -80,9 +80,7 @@ describe('monitoring', function () {
     const config = {
       ...this.test.bossConfig,
       monitorIntervalSeconds: 1,
-      warningLargeQueueSize: 1,
-      superviseIntervalSeconds: 1,
-      supervise: true
+      warningLargeQueueSize: 1
     }
 
     const boss = this.test.boss = await helper.start(config)
@@ -100,7 +98,7 @@ describe('monitoring', function () {
 
     await boss.maintain(queue)
 
-    await delay(4000)
+    await delay(1000)
 
     assert(eventCount > 0)
   })
