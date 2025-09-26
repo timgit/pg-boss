@@ -30,7 +30,7 @@ By default, calling `stop()` without any arguments will gracefully wait for all 
 * `options`: object
 
   * `wait`, bool
-    Default: `true`. If `true`, the promise won't be resolved until all workers and maintenance jobs are finished.
+    Default: `true`. If `true`, the promise will resolve after all workers and maintenance jobs are finished.
 
   * `graceful`, bool
 

@@ -59,7 +59,7 @@ The following options can be set as properties in an object for additional confi
 
 **Maintenance options**
 
-Maintenance operations include checking active jobs for expiration, caching queue stats, and deleting completed jobs.
+Maintenance operations include checking jobs for expiration, deleting completed jobs, and updating queue metrics.
 
 * **supervise**, bool, default true
 
