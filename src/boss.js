@@ -29,7 +29,7 @@ class Boss extends EventEmitter {
 
     this.events = events
     this.functions = [
-      this.maintain
+      this.supervise
     ]
 
     if (config.warningSlowQuerySeconds) {
@@ -82,7 +82,7 @@ class Boss extends EventEmitter {
       const queues = await this.#manager.getQueues()
 
       for (const queue of queues) {
-        !this.#stopped && await this.maintain(queue)
+        !this.#stopped && await this.supervise(queue)
       }
     } catch (err) {
       this.emit(events.error, err)
@@ -91,7 +91,7 @@ class Boss extends EventEmitter {
     }
   }
 
-  async maintain (value) {
+  async supervise (value) {
     let queues
 
     if (!value) {
@@ -116,13 +116,13 @@ class Boss extends EventEmitter {
       while (names.length) {
         const chunk = names.splice(0, 100)
 
-        await this.#monitorActive(table, chunk)
-        await this.#dropCompleted(table, chunk)
+        await this.#monitor(table, chunk)
+        await this.#maintain(table, chunk)
       }
     }
   }
 
-  async #monitorActive (table, names) {
+  async #monitor (table, names) {
     const command = plans.trySetQueueMonitorTime(this.#config.schema, names, this.#config.monitorIntervalSeconds)
     const { rows } = await this.#executeSql(command)
 
@@ -144,7 +144,7 @@ class Boss extends EventEmitter {
     }
   }
 
-  async #dropCompleted (table, names) {
+  async #maintain (table, names) {
     const command = plans.trySetQueueDeletionTime(this.#config.schema, names, this.#config.maintenanceIntervalSeconds)
     const { rows } = await this.#executeSql(command)
 

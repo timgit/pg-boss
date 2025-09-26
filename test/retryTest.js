@@ -12,7 +12,7 @@ describe('retries', function () {
     const [try1] = await boss.fetch(queue)
 
     await delay(1000)
-    await boss.maintain()
+    await boss.supervise()
 
     const [try2] = await boss.fetch(queue)
 

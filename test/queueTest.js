@@ -551,7 +551,7 @@ describe('queues', function () {
     const [jobB1] = await boss.fetch(queue)
     assert.strictEqual(jobB1, undefined)
 
-    await boss.maintain()
+    await boss.supervise()
     await delay(1500)
 
     const [jobB] = await boss.fetch(queue)
@@ -586,7 +586,7 @@ describe('queues', function () {
     const [jobB1] = await boss.fetch(queue)
     assert.strictEqual(jobB1, undefined)
 
-    await boss.maintain()
+    await boss.supervise()
     await delay(1500)
 
     const [jobB] = await boss.fetch(queue)

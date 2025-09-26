@@ -220,16 +220,9 @@ declare class PgBoss extends EventEmitter {
   constructor(connectionString: string);
   constructor(options: PgBoss.ConstructorOptions);
 
-  static getConstructionPlans(schema: string): string;
-  static getConstructionPlans(): string;
-
-  static getMigrationPlans(schema: string, version: string): string;
-  static getMigrationPlans(schema: string): string;
-  static getMigrationPlans(): string;
-
-  static getRollbackPlans(schema: string, version: string): string;
-  static getRollbackPlans(schema: string): string;
-  static getRollbackPlans(): string;
+  static getConstructionPlans(schema?: string): string;
+  static getMigrationPlans(schema?: string, version?: string): string;
+  static getRollbackPlans(schema?: string, version?: string): string;
 
   static states: PgBoss.JobStates
   static policies: PgBoss.QueuePolicies
@@ -254,11 +247,8 @@ declare class PgBoss extends EventEmitter {
   sendAfter(name: string, data: object, options: PgBoss.SendOptions, dateString: string): Promise<string | null>;
   sendAfter(name: string, data: object, options: PgBoss.SendOptions, seconds: number): Promise<string | null>;
 
-  sendThrottled(name: string, data: object, options: PgBoss.SendOptions, seconds: number): Promise<string | null>;
-  sendThrottled(name: string, data: object, options: PgBoss.SendOptions, seconds: number, key: string): Promise<string | null>;
-
-  sendDebounced(name: string, data: object, options: PgBoss.SendOptions, seconds: number): Promise<string | null>;
-  sendDebounced(name: string, data: object, options: PgBoss.SendOptions, seconds: number, key: string): Promise<string | null>;
+  sendThrottled(name: string, data: object, options: PgBoss.SendOptions, seconds: number, key?: string): Promise<string | null>;
+  sendDebounced(name: string, data: object, options: PgBoss.SendOptions, seconds: number, key?: string): Promise<string | null>;
 
   insert(name: string, jobs: PgBoss.JobInsert[]): Promise<void>;
   insert(name: string, jobs: PgBoss.JobInsert[], options: PgBoss.InsertOptions): Promise<void>;
@@ -314,8 +304,7 @@ declare class PgBoss extends EventEmitter {
   getQueue(name: string): Promise<PgBoss.QueueResult | null>;
   getQueueStats(name: string): Promise<number>;
 
-  maintain(): Promise<void>;
-  maintain(name: string): Promise<void>;
+  supervise(name?: string): Promise<void>;
   isInstalled(): Promise<Boolean>;
   schemaVersion(): Promise<Number>;
 

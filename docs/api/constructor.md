@@ -63,7 +63,7 @@ Maintenance operations include checking jobs for expiration, deleting completed 
 
 * **supervise**, bool, default true
 
-  If this is set to false, maintenance and monitoring operations will be disabled on this instance.  This is an advanced use case, as bypassing maintenance operations is not something you would want to do under normal circumstances.
+  If this is set to false, maintenance and monitoring operations will be disabled on this instance. This is an advanced use case, as bypassing maintenance operations is not something you would want to do under normal circumstances.
 
 * **schedule**, bool, default true
 
@@ -77,7 +77,7 @@ The following configuration options should not normally need to be changed, but 
 
 * **superviseIntervalSeconds**, int, default 60 seconds
 
-  Entry point for how often queues are both maintained and monitored.
+  Entry point for how often queues are monitored and maintained.
 
 * **maintenanceIntervalSeconds**, int, default 1 day
 

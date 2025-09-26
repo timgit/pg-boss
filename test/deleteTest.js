@@ -18,7 +18,7 @@ describe('delete', async function () {
 
     await delay(1000)
 
-    await boss.maintain(queue)
+    await boss.supervise(queue)
 
     const job = await boss.getJobById(queue, jobId)
 
@@ -43,7 +43,7 @@ describe('delete', async function () {
 
     await delay(1000)
 
-    await boss.maintain(queue)
+    await boss.supervise(queue)
 
     const job = await boss.getJobById(queue, jobId)
 

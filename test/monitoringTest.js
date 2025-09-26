@@ -18,7 +18,7 @@ describe('monitoring', function () {
     await boss.fetch(queue)
 
     await delay(1000)
-    await boss.maintain()
+    await boss.supervise()
     const result1 = await boss.getQueue(queue)
 
     assert.strictEqual(2, result1.queuedCount)
@@ -29,7 +29,7 @@ describe('monitoring', function () {
     await boss.complete(queue, job.id)
 
     await delay(1000)
-    await boss.maintain(queue)
+    await boss.supervise(queue)
     const result2 = await boss.getQueue(queue)
 
     assert.strictEqual(1, result2.queuedCount)
@@ -71,7 +71,7 @@ describe('monitoring', function () {
       eventCount++
     })
 
-    await boss.maintain(queue)
+    await boss.supervise(queue)
 
     assert(eventCount > 0)
   })
@@ -96,7 +96,7 @@ describe('monitoring', function () {
       eventCount++
     })
 
-    await boss.maintain(queue)
+    await boss.supervise(queue)
 
     await delay(1000)
 
@@ -124,7 +124,7 @@ describe('monitoring', function () {
       eventCount++
     })
 
-    await boss.maintain(queue)
+    await boss.supervise(queue)
 
     await delay(1000)
 
