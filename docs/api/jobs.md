@@ -19,11 +19,11 @@ Creates a new job and returns the job id.
 
 * **priority**, int
 
-    optional priority.  Higher numbers have, um, higher priority
+  optional priority.  Higher numbers have, um, higher priority
 
 * **id**, uuid
 
-    optional id.  If not set, a uuid will automatically created
+  optional id.  If not set, a uuid will automatically created
 
 **Retry options**
 
@@ -31,25 +31,25 @@ Available in constructor as a default, or overridden in send.
 
 * **retryLimit**, int
 
-    Default: 0. Max number of retries of failed jobs. Default is no retries.
+  Default: 0. Max number of retries of failed jobs. Default is no retries.
 
 * **retryDelay**, int
 
-    Default: 0. Delay between retries of failed jobs, in seconds.
+  Default: 0. Delay between retries of failed jobs, in seconds.
 
 * **retryBackoff**, bool
 
-    Default: false. Enables exponential backoff retries based on retryDelay instead of a fixed delay. Sets initial retryDelay to 1 if not set.
+  Default: false. Enables exponential backoff retries based on retryDelay instead of a fixed delay. Sets initial retryDelay to 1 if not set.
 
 * **retryDelayMax**, int
 
-    Default: no limit. Maximum delay between retries of failed jobs, in seconds. Only used when retryBackoff is true.
+  Default: no limit. Maximum delay between retries of failed jobs, in seconds. Only used when retryBackoff is true.
 
 **Expiration options**
 
 * **expireInSeconds**, number
 
-    How many seconds a job may be in active state before being retried or failed. Must be >=1
+  How many seconds a job may be in active state before being retried or failed. Must be >=1
 
 * Default: 15 minutes
 
@@ -58,10 +58,15 @@ Available in constructor as a default, or overridden in send.
 
 * **retentionSeconds**, number
 
-    How many seconds a job may be in created or retry state before it's deleted. Must be >=1
+  How many seconds a job may be in created or retry state before it's deleted. Must be >=1
 
 * Default: 14 days
 
+* **deleteAfterSeconds**, int
+
+  How long a job should be retained in the database after it's completed.
+
+* Default: 7 days
 
 **Connection options**
 
@@ -113,22 +118,9 @@ const jobId = await boss.send('email-send-welcome', payload, options)
 console.log(`job ${jobId} submitted`)
 ```
 
-### `send(request)`
+### `send({ name, data, options })`
 
-**Arguments**
-
-- `request`: object
-
-The request object has the following properties.
-
-| Prop | Type | |
-| - | - | -|
-|`name`| string | *required*
-|`data`| object |
-|`options` | object |
-
-
-This overload is for conditionally including data or options based on keys in an object, such as the following.
+This overload supports sending an object with name, data, and options properties.
 
 ```js
 const jobId = await boss.send({

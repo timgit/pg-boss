@@ -39,7 +39,10 @@ Schedules a job to be sent to the specified queue based on a cron expression. If
 - `data`: object
 - `options`: object
 
-`options` supports all properties in `send()` and an optional `tz` property that specifies a time zone name. If not specified, the default is UTC.
+`options` supports all properties in `send()` as well as the following additional options.
+
+* **tz** An optional time zone name. If not specified, the default is UTC.
+* **key** An optional unique key if more than schedule is needed for this queue.
 
 For example, the following code will send a job at 3:00am in the US central time zone into the queue `notification-abc`.
 
@@ -49,8 +52,20 @@ await boss.schedule('notification-abc', `0 3 * * *`, null, { tz: 'America/Chicag
 
 ### `unschedule(name)`
 
-Removes a schedule by queue name.
+Removes all scheduled jobs for the specified queue name.
+
+### `unschedule(name, key)`
+
+Removes a schedule by queue name and unique key.
 
 ### `getSchedules()`
 
-Retrieves an array of all scheduled jobs currently being monitored.
+Returns all scheduled jobs.
+
+### `getSchedules(name)`
+
+Returns all scheduled jobs by queue name.
+
+### `getSchedules(name, key)`
+
+Returns all scheduled jobs by queue name and unique key.

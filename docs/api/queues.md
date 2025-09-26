@@ -4,17 +4,13 @@
 
 Creates a queue.
 
-Options: Same retry, expiration and retention as documented above. 
-
 ```ts
-type Queue = RetryOptions &
-             ExpirationOptions & 
-             RetentionOptions &
-             {
-              name: string, 
-              policy: QueuePolicy, 
-              deadLetter?: string
-             }
+  type Queue = {
+    name: string;
+    policy?: QueuePolicy;
+    partition?: boolean;
+    deadLetter?: string;    
+  } & QueueOptions
 ```
 
 Allowed policy values:
@@ -30,13 +26,13 @@ Allowed policy values:
 
 * **deadLetter**, string
 
-When a job fails after all retries, if the queue has a `deadLetter` property, the job's payload will be copied into that queue, copying the same retention and retry configuration as the original job.
+  When a job fails after all retries, if the queue has a `deadLetter` property, the job's payload will be copied into that queue, copying the same retention and retry configuration as the original job.
 
-* **deleteAfterSeconds**, int
+Options: Same options for retry, expiration and retention as jobs, as well as the additional options below. 
 
-  How long to keep jobs after processing.
+* **queueSizeWarning**, int
 
-* Default: 7 days
+  How many items can exist in the created or retry state before emitting a warning event.
 
 
 ### `updateQueue(name, options)`
