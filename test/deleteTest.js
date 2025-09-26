@@ -1,23 +1,53 @@
 const assert = require('node:assert')
 const helper = require('./testHelper')
+const { delay } = require('../src/tools')
 
 describe('delete', async function () {
-  it('should delete an archived via maintenance', async function () {
-    const config = { ...this.test.bossConfig, deleteAfterSeconds: 1 }
+  it('should delete a completed job via maintenance', async function () {
+    const config = {
+      ...this.test.bossConfig,
+      maintenanceIntervalSeconds: 1
+    }
+
     const boss = this.test.boss = await helper.start(config)
     const queue = this.test.bossConfig.schema
 
-    const jobId = await boss.send(queue)
-
+    const jobId = await boss.send(queue, null, { deleteAfterSeconds: 1 })
     await boss.fetch(queue)
-
     await boss.complete(queue, jobId)
 
-    await boss.maintain()
+    await delay(1000)
 
-    const archivedJob = await helper.getArchivedJobById(config.schema, queue, jobId)
+    await boss.supervise(queue)
 
-    assert(!archivedJob)
+    const job = await boss.getJobById(queue, jobId)
+
+    assert(!job)
+  })
+
+  it('should delete a completed job via maintenance - cascade config from queue', async function () {
+    const config = {
+      ...this.test.bossConfig,
+      maintenanceIntervalSeconds: 1,
+      noDefault: true
+    }
+
+    const boss = this.test.boss = await helper.start(config)
+    const queue = this.test.bossConfig.schema
+
+    await boss.createQueue(queue, { deleteAfterSeconds: 1 })
+
+    const jobId = await boss.send(queue)
+    await boss.fetch(queue)
+    await boss.complete(queue, jobId)
+
+    await delay(1000)
+
+    await boss.supervise(queue)
+
+    const job = await boss.getJobById(queue, jobId)
+
+    assert(!job)
   })
 
   it('should delete a job via deleteJob()', async function () {

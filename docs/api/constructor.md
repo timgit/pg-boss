@@ -57,42 +57,11 @@ The following options can be set as properties in an object for additional confi
     Database schema that contains all required storage objects. Only alphanumeric and underscore allowed, length: <= 50 characters
 
 
-**Queue options**
-
-Queue options contain the following constructor-only settings.
-
-* **archiveCompletedAfterSeconds**
-
-    Specifies how long in seconds completed jobs get archived. Note: a warning will be emitted if set to lower than 60s and cron processing will be disabled.
-
-  Default: 12 hours
-
-* **archiveFailedAfterSeconds**
-
-    Specifies how long in seconds failed jobs get archived. Note: a warning will be emitted if set to lower than 60s and cron processing will be disabled.
-
-  Default: `archiveCompletedAfterSeconds`
-
-**Monitoring options**
-
-* **monitorStateIntervalSeconds** - int, default undefined
-
-    Specifies how often in seconds an instance will fire the `monitor-states` event. Must be >= 1.
-
-* **monitorStateIntervalMinutes** - int, default undefined
-
-    Specifies how often in minutes an instance will fire the `monitor-states` event. Must be >= 1.
-
-  > When a higher unit is is specified, lower unit configuration settings are ignored.
-
-
-**Maintenance options**
-
-Maintenance operations include checking active jobs for expiration, archiving completed jobs from the primary job table, and deleting archived jobs from the archive table.
+**Operations options**
 
 * **supervise**, bool, default true
 
-  If this is set to false, maintenance and monitoring operations will be disabled on this instance.  This is an advanced use case, as bypassing maintenance operations is not something you would want to do under normal circumstances.
+  If this is set to false, maintenance and monitoring operations will be disabled on this instance. This is an advanced use case, as bypassing maintenance operations is not something you would want to do under normal circumstances.
 
 * **schedule**, bool, default true
 
@@ -102,42 +71,20 @@ Maintenance operations include checking active jobs for expiration, archiving co
 
   If this is set to false, this instance will skip attempts to run schema migratations during `start()`. If schema migrations exist, `start()` will throw and error and block usage. This is an advanced use case when the configured user account does not have schema mutation privileges.
 
-**Archive options**
+The following configuration options should not normally need to be changed, but are still available for special use cases.
 
-When jobs in the archive table become eligible for deletion.
+* **superviseIntervalSeconds**, int, default 60 seconds
 
-* **deleteAfterSeconds**, int
+  Entry point for how often queues are monitored and maintained.
 
-    delete interval in seconds, must be >=1
+* **maintenanceIntervalSeconds**, int, default 1 day
 
-* **deleteAfterMinutes**, int
+  How often maintenance will be run against queue tables to drop queued and completed jobs.
 
-    delete interval in minutes, must be >=1
+* **monitorIntervalSeconds**, int, default 60 seconds 
 
-* **deleteAfterHours**, int
+  How often each queue is monitored for backlogs, expired jobs, and calculating stats.
 
-    delete interval in hours, must be >=1
+* **queueCacheIntervalSeconds**, int, default 60 seconds
 
-* **deleteAfterDays**, int
-
-    delete interval in days, must be >=1
-
-* Default: 7 days
-
-  > When a higher unit is is specified, lower unit configuration settings are ignored.
-
-**Maintenance interval**
-
-How often maintenance operations are run against the job and archive tables.
-
-* **maintenanceIntervalSeconds**, int
-
-    maintenance interval in seconds, must be >=1
-
-* **maintenanceIntervalMinutes**, int
-
-    interval in minutes, must be >=1
-
-* Default: 1 minute
-
-  > When a higher unit is is specified, lower unit configuration settings are ignored.
+  How often queue metadata is refreshed in memory.

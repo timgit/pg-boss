@@ -18,7 +18,7 @@ To change how often schedules are checked, you can set `cronMonitorIntervalSecon
 
 In order mitigate clock skew and drift, every 10 minutes the clocks of each instance are compared to the database server's clock. The skew, if any, is stored and used as an offset during cron evaluation to ensure all instances are synchronized. Internally, job throttling options are then used to make sure only 1 job is sent even if multiple instances are running.
 
-If needed, the default clock monitoring interval can be adjusted using `clockMonitorIntervalSeconds` or `clockMonitorIntervalMinutes`. Additionally, to disable scheduling on an instance completely, use the following in the constructor options.
+If needed, the default clock monitoring interval can be adjusted using `clockMonitorIntervalSeconds`. Additionally, to disable scheduling on an instance completely, use the following in the constructor options.
 
 ```js
 {
@@ -39,7 +39,16 @@ Schedules a job to be sent to the specified queue based on a cron expression. If
 - `data`: object
 - `options`: object
 
-`options` supports all properties in `send()` and an optional `tz` property that specifies a time zone name. If not specified, the default is UTC.
+`options` supports all properties in `send()` as well as the following additional options.
+
+* **tz**
+
+  An optional time zone name. If not specified, the default is UTC.
+
+* **key**
+  
+  An optional unique key if more than schedule is needed for this queue.
+
 
 For example, the following code will send a job at 3:00am in the US central time zone into the queue `notification-abc`.
 
@@ -49,8 +58,20 @@ await boss.schedule('notification-abc', `0 3 * * *`, null, { tz: 'America/Chicag
 
 ### `unschedule(name)`
 
-Removes a schedule by queue name.
+Removes all scheduled jobs for the specified queue name.
+
+### `unschedule(name, key)`
+
+Removes a schedule by queue name and unique key.
 
 ### `getSchedules()`
 
-Retrieves an array of all scheduled jobs currently being monitored.
+Returns all scheduled jobs.
+
+### `getSchedules(name)`
+
+Returns all scheduled jobs by queue name.
+
+### `getSchedules(name, key)`
+
+Returns all scheduled jobs by queue name and unique key.

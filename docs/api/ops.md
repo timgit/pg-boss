@@ -30,7 +30,7 @@ By default, calling `stop()` without any arguments will gracefully wait for all 
 * `options`: object
 
   * `wait`, bool
-    Default: `true`. If `true`, the promise won't be resolved until all workers and maintenance jobs are finished.
+    Default: `true`. If `true`, the promise will resolve after all workers and maintenance jobs are finished.
 
   * `graceful`, bool
 
@@ -43,10 +43,6 @@ By default, calling `stop()` without any arguments will gracefully wait for all 
 
     Default: 30000. Maximum time (in milliseconds) to wait for workers to finish job processing before shutting down the PgBoss instance.
 
-
-### `clearStorage()`
-
-Utility function if and when needed to clear all job and archive storage tables. Internally, this issues a `TRUNCATE` command.
 
 ### `isInstalled()`
 
