@@ -18,7 +18,7 @@ To change how often schedules are checked, you can set `cronMonitorIntervalSecon
 
 In order mitigate clock skew and drift, every 10 minutes the clocks of each instance are compared to the database server's clock. The skew, if any, is stored and used as an offset during cron evaluation to ensure all instances are synchronized. Internally, job throttling options are then used to make sure only 1 job is sent even if multiple instances are running.
 
-If needed, the default clock monitoring interval can be adjusted using `clockMonitorIntervalSeconds` or `clockMonitorIntervalMinutes`. Additionally, to disable scheduling on an instance completely, use the following in the constructor options.
+If needed, the default clock monitoring interval can be adjusted using `clockMonitorIntervalSeconds`. Additionally, to disable scheduling on an instance completely, use the following in the constructor options.
 
 ```js
 {

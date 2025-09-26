@@ -27,11 +27,9 @@ Creates a new job and returns the job id.
 
 **Retry options**
 
-Available in constructor as a default, or overridden in send.
-
 * **retryLimit**, int
 
-  Default: 0. Max number of retries of failed jobs. Default is no retries.
+  Default: 2. Number of retries to complete a job.
 
 * **retryDelay**, int
 
@@ -49,25 +47,21 @@ Available in constructor as a default, or overridden in send.
 
 * **expireInSeconds**, number
 
-  How many seconds a job may be in active state before being retried or failed. Must be >=1
-
-* Default: 15 minutes
-
+  Default: 15 minutes.  How many seconds a job may be in active state before being retried or failed. Must be >=1
 
 **Retention options**
 
 * **retentionSeconds**, number
 
-  How many seconds a job may be in created or retry state before it's deleted. Must be >=1
-
-* Default: 14 days
+  Default: 14 days. How many seconds a job may be in created or retry state before it's deleted. Must be >=1
 
 * **deleteAfterSeconds**, int
 
-  How long a job should be retained in the database after it's completed.
+  Default: 7 days. How long a job should be retained in the database after it's completed.
 
-* Default: 7 days
 
+All retry, expiration, and retention options can also be set on the queue and will be inheritied for each job, unless they are overridden.
+  
 **Connection options**
 
 * **db**, object
