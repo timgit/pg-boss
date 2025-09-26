@@ -77,7 +77,7 @@ const QUEUE_DEFAULTS = {
   deletion_seconds: SEVEN_DAYS,
   retry_limit: 2,
   retry_delay: 0,
-  queued_warning: 0,
+  warning_queued: 0,
   retry_backoff: false,
   partition: false
 }
@@ -150,7 +150,7 @@ function createTableQueue (schema) {
       table_name text NOT NULL,
       deferred_count int NOT NULL default 0,
       queued_count int NOT NULL default 0,
-      queued_warning int NOT NULL default 0,
+      warning_queued int NOT NULL default 0,
       active_count int NOT NULL default 0,
       total_count int NOT NULL default 0,
       singletons_active text[],
@@ -284,7 +284,7 @@ function createQueueFunction (schema) {
           expire_seconds,
           retention_seconds,
           deletion_seconds,
-          queued_warning,
+          warning_queued,
           dead_letter,
           partition,
           table_name
@@ -299,7 +299,7 @@ function createQueueFunction (schema) {
           COALESCE((options->>'expireInSeconds')::int, ${QUEUE_DEFAULTS.expire_seconds}),
           COALESCE((options->>'retentionSeconds')::int, ${QUEUE_DEFAULTS.retention_seconds}),
           COALESCE((options->>'deleteAfterSeconds')::int, ${QUEUE_DEFAULTS.deletion_seconds}),
-          COALESCE((options->>'queueSizeWarning')::int, ${QUEUE_DEFAULTS.queued_warning}),
+          COALESCE((options->>'warningQueueSize')::int, ${QUEUE_DEFAULTS.warning_queued}),
           options->>'deadLetter',
           COALESCE((options->>'partition')::bool, ${QUEUE_DEFAULTS.partition}),
           tablename
@@ -453,7 +453,7 @@ function updateQueue (schema, { deadLetter } = {}) {
       expire_seconds = COALESCE((o.data->>'expireInSeconds')::int, expire_seconds),
       retention_seconds = COALESCE((o.data->>'retentionSeconds')::int, retention_seconds),
       deletion_seconds = COALESCE((o.data->>'deleteAfterSeconds')::int, deletion_seconds),
-      queued_warning = COALESCE((o.data->>'queueSizeWarning')::int, queued_warning),
+      warning_queued = COALESCE((o.data->>'warningQueueSize')::int, warning_queued),
       ${
         deadLetter === undefined
           ? ''
@@ -473,14 +473,14 @@ function getQueues (schema, names) {
       q.retry_limit as "retryLimit",
       q.retry_delay as "retryDelay",
       q.retry_backoff as "retryBackoff",
-      retry_delay_max as "retryDelayMax",
+      q.retry_delay_max as "retryDelayMax",
       q.expire_seconds as "expireInSeconds",
       q.retention_seconds as "retentionSeconds",
       q.deletion_seconds as "deleteAfterSeconds",
       q.partition,
       q.dead_letter as "deadLetter",
       q.deferred_count as "deferredCount",
-      q.queued_warning as "queueSizeWarning",
+      q.warning_queued as "warningQueueSize",
       q.queued_count as "queuedCount",
       q.active_count as "activeCount",
       q.total_count as "totalCount",
@@ -964,7 +964,7 @@ function cacheQueueStats (schema, table, queues) {
     RETURNING
       queue.name,
       "queuedCount",
-      queued_warning as "queueSizeWarning"
+      warning_queued as "warningQueueSize"
   `
 
   return locked(schema, sql, 'queue-stats')

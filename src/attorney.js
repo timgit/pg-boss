@@ -146,8 +146,8 @@ function applySchemaConfig (config) {
 }
 
 function validateWarningConfig (config) {
-  assert(!('warningLargeQueueSize' in config) || config.warningLargeQueueSize >= 1,
-    'configuration assert: warningLargeQueueSize must be at least 1')
+  assert(!('warningQueueSize' in config) || config.warningQueueSize >= 1,
+    'configuration assert: warningQueueSize must be at least 1')
 
   assert(!('warningSlowQuerySeconds' in config) || config.warningSlowQuerySeconds >= 1,
     'configuration assert: warningSlowQuerySeconds must be at least 1')

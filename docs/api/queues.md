@@ -34,7 +34,7 @@ Allowed policy values:
 
 Options: Same options for retry, expiration and retention as jobs, as well as the additional options below. 
 
-* **queueSizeWarning**, int
+* **warningQueueSize**, int
 
   How many items can exist in the created or retry state before emitting a warning event.
 

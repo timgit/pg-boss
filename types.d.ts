@@ -47,7 +47,7 @@ declare namespace PgBoss {
     supervise?: boolean;
     migrate?: boolean;
     warningSlowQuerySeconds?: number;
-    warningLargeQueueSize?: number;
+    warningQueueSize?: number;
     superviseIntervalSeconds?: number;
     maintenanceIntervalSeconds?: number;
     queueCacheIntervalSeconds?: number;
@@ -90,7 +90,7 @@ declare namespace PgBoss {
     policy?: QueuePolicy;
     partition?: boolean;
     deadLetter?: string;
-    queueSizeWarning?: number;
+    warningQueueSize?: number;
   } & QueueOptions
 
   type QueueResult = Queue & {

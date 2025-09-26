@@ -80,7 +80,7 @@ describe('monitoring', function () {
     const config = {
       ...this.test.bossConfig,
       monitorIntervalSeconds: 1,
-      warningLargeQueueSize: 1
+      warningQueueSize: 1
     }
 
     const boss = this.test.boss = await helper.start(config)
@@ -112,7 +112,7 @@ describe('monitoring', function () {
 
     const boss = this.test.boss = await helper.start(config)
     const queue = this.test.bossConfig.schema
-    await boss.createQueue(queue, { queueSizeWarning: 1 })
+    await boss.createQueue(queue, { warningQueueSize: 1 })
 
     await boss.send(queue)
     await boss.send(queue)

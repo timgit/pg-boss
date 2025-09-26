@@ -8,7 +8,7 @@ const events = {
 
 const WARNINGS = {
   SLOW_QUERY: { seconds: 30, message: 'Warning: slow query. Your queues and/or database server should be reviewed' },
-  LARGE_QUEUE: { size: 10_000, mesasge: 'Warning: large queue. Your queue should be reviewed' }
+  LARGE_QUEUE: { size: 10_000, mesasge: 'Warning: large queue backlog. Your queue should be reviewed' }
 }
 
 class Boss extends EventEmitter {
@@ -36,8 +36,8 @@ class Boss extends EventEmitter {
       WARNINGS.SLOW_QUERY.seconds = config.warningSlowQuerySeconds
     }
 
-    if (config.warningLargeQueueSize) {
-      WARNINGS.LARGE_QUEUE.size = config.warningLargeQueueSize
+    if (config.warningQueueSize) {
+      WARNINGS.LARGE_QUEUE.size = config.warningQueueSize
     }
   }
 
@@ -133,7 +133,7 @@ class Boss extends EventEmitter {
       const results = await this.#executeSql(cacheStatsSql)
 
       const inter = results.flatMap(i => i.rows)
-      const warnings = inter.filter(i => i.queuedCount > (i.queueSizeWarning || WARNINGS.LARGE_QUEUE.size))
+      const warnings = inter.filter(i => i.queuedCount > (i.warningQueueSize || WARNINGS.LARGE_QUEUE.size))
 
       for (const warning of warnings) {
         this.emit(events.warning, { message: WARNINGS.LARGE_QUEUE.mesasge, data: warning })
