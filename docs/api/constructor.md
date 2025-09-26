@@ -57,9 +57,7 @@ The following options can be set as properties in an object for additional confi
     Database schema that contains all required storage objects. Only alphanumeric and underscore allowed, length: <= 50 characters
 
 
-**Maintenance options**
-
-Maintenance operations include checking jobs for expiration, deleting completed jobs, and updating queue metrics.
+**Operations options**
 
 * **supervise**, bool, default true
 
@@ -81,7 +79,7 @@ The following configuration options should not normally need to be changed, but 
 
 * **maintenanceIntervalSeconds**, int, default 1 day
 
-  How often maintenance will be run against queue tables to drop completed jobs according to the queue deletion configuration.
+  How often maintenance will be run against queue tables to drop queued and completed jobs.
 
 * **monitorIntervalSeconds**, int, default 60 seconds 
 
