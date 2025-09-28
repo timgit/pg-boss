@@ -1,137 +1,147 @@
-const assert = require('node:assert')
-const helper = require('./testHelper')
-const PgBoss = require('../')
+import assert, { strictEqual } from "node:assert";
+import PGBoss from "../src/index.js";
+import { countJobs as _countJobs, getDb, start } from "./testHelper.js";
 
-describe('complete', function () {
-  it('should reject missing id argument', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+const states = PGBoss.states;
 
-    try {
-      await boss.complete()
-      assert(false)
-    } catch (err) {
-      assert(err)
-    }
-  })
+describe("complete", () => {
+	it("should reject missing id argument", async function () {
+		const boss = (this.test.boss = await start(this.test.bossConfig));
 
-  it('should complete a batch of jobs', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
-    const queue = this.test.bossConfig.schema
+		try {
+			await boss.complete();
+			assert(false);
+		} catch (err) {
+			assert(err);
+		}
+	});
 
-    const batchSize = 3
+	it("should complete a batch of jobs", async function () {
+		const boss = (this.test.boss = await start({ ...this.test.bossConfig }));
+		const queue = this.test.bossConfig.schema;
 
-    await Promise.all([
-      boss.send(queue),
-      boss.send(queue),
-      boss.send(queue)
-    ])
+		const batchSize = 3;
 
-    const countJobs = (state) => helper.countJobs(this.test.bossConfig.schema, 'name = $1 AND state = $2', [queue, state])
+		await Promise.all([boss.send(queue), boss.send(queue), boss.send(queue)]);
 
-    const jobs = await boss.fetch(queue, { batchSize })
+		const countJobs = (state) =>
+			_countJobs(this.test.bossConfig.schema, "name = $1 AND state = $2", [
+				queue,
+				state,
+			]);
 
-    const activeCount = await countJobs(PgBoss.states.active)
+		const jobs = await boss.fetch(queue, { batchSize });
 
-    assert.strictEqual(activeCount, batchSize)
+		const activeCount = await countJobs(states.active);
 
-    const result = await boss.complete(queue, jobs.map(job => job.id))
+		strictEqual(activeCount, batchSize);
 
-    assert.strictEqual(batchSize, result.jobs.length)
-  })
+		const result = await boss.complete(
+			queue,
+			jobs.map((job) => job.id),
+		);
 
-  it('should store job output in job.output from complete()', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
-    const queue = this.test.bossConfig.schema
+		strictEqual(batchSize, result.jobs.length);
+	});
 
-    const jobId = await boss.send(queue)
+	it("should store job output in job.output from complete()", async function () {
+		const boss = (this.test.boss = await start({ ...this.test.bossConfig }));
+		const queue = this.test.bossConfig.schema;
 
-    let [job] = await boss.fetch(queue)
+		const jobId = await boss.send(queue);
 
-    assert.strictEqual(jobId, job.id)
+		let [job] = await boss.fetch(queue);
 
-    const completionData = { msg: 'i am complete' }
+		strictEqual(jobId, job.id);
 
-    await boss.complete(queue, jobId, completionData)
+		const completionData = { msg: "i am complete" };
 
-    job = await boss.getJobById(queue, jobId)
+		await boss.complete(queue, jobId, completionData);
 
-    assert.strictEqual(job.output.msg, completionData.msg)
-  })
+		job = await boss.getJobById(queue, jobId);
 
-  it('should store job error in job.output from fail()', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
-    const queue = this.test.bossConfig.schema
+		strictEqual(job.output.msg, completionData.msg);
+	});
 
-    const jobId = await boss.send(queue)
+	it("should store job error in job.output from fail()", async function () {
+		const boss = (this.test.boss = await start({ ...this.test.bossConfig }));
+		const queue = this.test.bossConfig.schema;
 
-    let [job] = await boss.fetch(queue)
+		const jobId = await boss.send(queue);
 
-    assert.strictEqual(jobId, job.id)
+		let [job] = await boss.fetch(queue);
 
-    const completionError = new Error('i am complete')
+		strictEqual(jobId, job.id);
 
-    await boss.fail(queue, jobId, completionError)
+		const completionError = new Error("i am complete");
 
-    job = await boss.getJobById(queue, jobId)
+		await boss.fail(queue, jobId, completionError);
 
-    assert.strictEqual(job.output.message, completionError.message)
-  })
+		job = await boss.getJobById(queue, jobId);
 
-  it('should complete a batch of jobs with custom connection', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
-    const queue = this.test.bossConfig.schema
+		strictEqual(job.output.message, completionError.message);
+	});
 
-    const batchSize = 3
+	it("should complete a batch of jobs with custom connection", async function () {
+		const boss = (this.test.boss = await start({ ...this.test.bossConfig }));
+		const queue = this.test.bossConfig.schema;
 
-    await Promise.all([
-      boss.send(queue),
-      boss.send(queue),
-      boss.send(queue)
-    ])
+		const batchSize = 3;
 
-    const countJobs = (state) => helper.countJobs(this.test.bossConfig.schema, 'name = $1 AND state = $2', [queue, state])
+		await Promise.all([boss.send(queue), boss.send(queue), boss.send(queue)]);
 
-    const jobs = await boss.fetch(queue, { batchSize })
+		const countJobs = (state) =>
+			_countJobs(this.test.bossConfig.schema, "name = $1 AND state = $2", [
+				queue,
+				state,
+			]);
 
-    const activeCount = await countJobs(PgBoss.states.active)
+		const jobs = await boss.fetch(queue, { batchSize });
 
-    assert.strictEqual(activeCount, batchSize)
+		const activeCount = await countJobs(states.active);
 
-    let called = false
-    const _db = await helper.getDb()
-    const db = {
-      async executeSql (sql, values) {
-        called = true
-        return _db.pool.query(sql, values)
-      }
-    }
+		strictEqual(activeCount, batchSize);
 
-    const result = await boss.complete(queue, jobs.map(job => job.id), null, { db })
+		let called = false;
+		const _db = await getDb();
+		const db = {
+			async executeSql(sql, values) {
+				called = true;
+				return _db.pool.query(sql, values);
+			},
+		};
 
-    assert.strictEqual(batchSize, result.jobs.length)
-    assert.strictEqual(called, true)
-  })
+		const result = await boss.complete(
+			queue,
+			jobs.map((job) => job.id),
+			null,
+			{ db },
+		);
 
-  it('should warn with an old onComplete option only once', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
-    const queue = this.test.bossConfig.schema
+		strictEqual(batchSize, result.jobs.length);
+		strictEqual(called, true);
+	});
 
-    let warningCount = 0
+	it("should warn with an old onComplete option only once", async function () {
+		const boss = (this.test.boss = await start({ ...this.test.bossConfig }));
+		const queue = this.test.bossConfig.schema;
 
-    const warningEvent = 'warning'
-    const onWarning = (warning) => {
-      assert(warning.message.includes('onComplete'))
-      warningCount++
-    }
+		let warningCount = 0;
 
-    process.on(warningEvent, onWarning)
+		const warningEvent = "warning";
+		const onWarning = (warning) => {
+			assert(warning.message.includes("onComplete"));
+			warningCount++;
+		};
 
-    await boss.send({ name: queue, options: { onComplete: true } })
-    await boss.send({ name: queue, options: { onComplete: true } })
-    await boss.send({ name: queue, options: { onComplete: true } })
+		process.on(warningEvent, onWarning);
 
-    process.removeListener(warningEvent, onWarning)
+		await boss.send({ name: queue, options: { onComplete: true } });
+		await boss.send({ name: queue, options: { onComplete: true } });
+		await boss.send({ name: queue, options: { onComplete: true } });
 
-    assert.strictEqual(warningCount, 1)
-  })
-})
+		process.removeListener(warningEvent, onWarning);
+
+		strictEqual(warningCount, 1);
+	});
+});

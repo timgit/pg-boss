@@ -1,75 +1,73 @@
-const assert = require('node:assert')
-const plans = require('./plans')
+import assert from "node:assert";
+import { assertMigration, locked, setVersion } from "./plans.js";
 
-module.exports = {
-  rollback,
-  next,
-  migrate,
-  getAll
+export { rollback, next, migrate, getAll };
+
+function flatten(schema, commands, version) {
+	commands.unshift(assertMigration(schema, version));
+	commands.push(setVersion(schema, version));
+
+	return locked(schema, commands);
 }
 
-function flatten (schema, commands, version) {
-  commands.unshift(plans.assertMigration(schema, version))
-  commands.push(plans.setVersion(schema, version))
+function rollback(schema, version, migrations) {
+	migrations = migrations || getAll(schema);
 
-  return plans.locked(schema, commands)
+	const result = migrations.find((i) => i.version === version);
+
+	assert(result, `Version ${version} not found.`);
+
+	return flatten(schema, result.uninstall || [], result.previous);
 }
 
-function rollback (schema, version, migrations) {
-  migrations = migrations || getAll(schema)
+function next(schema, version, migrations) {
+	migrations = migrations || getAll(schema);
 
-  const result = migrations.find(i => i.version === version)
+	const result = migrations.find((i) => i.previous === version);
 
-  assert(result, `Version ${version} not found.`)
+	assert(result, `Version ${version} not found.`);
 
-  return flatten(schema, result.uninstall || [], result.previous)
+	return flatten(schema, result.install, result.version);
 }
 
-function next (schema, version, migrations) {
-  migrations = migrations || getAll(schema)
+function migrate(value, version, migrations) {
+	let schema, config;
 
-  const result = migrations.find(i => i.previous === version)
+	if (typeof value === "string") {
+		config = null;
+		schema = value;
+	} else {
+		config = value;
+		schema = config.schema;
+	}
 
-  assert(result, `Version ${version} not found.`)
+	migrations = migrations || getAll(schema, config);
 
-  return flatten(schema, result.install, result.version)
+	const result = migrations
+		.filter((i) => i.previous >= version)
+		.sort((a, b) => a.version - b.version)
+		.reduce(
+			(acc, i) => {
+				acc.install = acc.install.concat(i.install);
+				acc.version = i.version;
+				return acc;
+			},
+			{ install: [], version },
+		);
+
+	assert(result.install.length > 0, `Version ${version} not found.`);
+
+	return flatten(schema, result.install, result.version);
 }
 
-function migrate (value, version, migrations) {
-  let schema, config
-
-  if (typeof value === 'string') {
-    config = null
-    schema = value
-  } else {
-    config = value
-    schema = config.schema
-  }
-
-  migrations = migrations || getAll(schema, config)
-
-  const result = migrations
-    .filter(i => i.previous >= version)
-    .sort((a, b) => a.version - b.version)
-    .reduce((acc, i) => {
-      acc.install = acc.install.concat(i.install)
-      acc.version = i.version
-      return acc
-    }, { install: [], version })
-
-  assert(result.install.length > 0, `Version ${version} not found.`)
-
-  return flatten(schema, result.install, result.version)
-}
-
-function getAll (schema) {
-  return [
-    {
-      release: '10.1.5',
-      version: 24,
-      previous: 23,
-      install: [
-        `
+function getAll(schema) {
+	return [
+		{
+			release: "10.1.5",
+			version: 24,
+			previous: 23,
+			install: [
+				`
         CREATE OR REPLACE FUNCTION ${schema}.create_queue(queue_name text, options json)
         RETURNS VOID AS
         $$
@@ -126,31 +124,27 @@ function getAll (schema) {
         END;
         $$
         LANGUAGE plpgsql
-        `
-      ],
-      uninstall: []
-    },
-    {
-      release: '10.1.1',
-      version: 23,
-      previous: 22,
-      install: [
-        `ALTER TABLE ${schema}.job ADD PRIMARY KEY (name, id)`
-      ],
-      uninstall: [
-        `ALTER TABLE ${schema}.job DROP CONSTRAINT job_pkey`
-      ]
-    },
-    {
-      release: '10.0.6',
-      version: 22,
-      previous: 21,
-      install: [
-        `ALTER TABLE ${schema}.job ALTER COLUMN retry_limit SET DEFAULT 2`
-      ],
-      uninstall: [
-        `ALTER TABLE ${schema}.job ALTER COLUMN retry_limit SET DEFAULT 0`
-      ]
-    }
-  ]
+        `,
+			],
+			uninstall: [],
+		},
+		{
+			release: "10.1.1",
+			version: 23,
+			previous: 22,
+			install: [`ALTER TABLE ${schema}.job ADD PRIMARY KEY (name, id)`],
+			uninstall: [`ALTER TABLE ${schema}.job DROP CONSTRAINT job_pkey`],
+		},
+		{
+			release: "10.0.6",
+			version: 22,
+			previous: 21,
+			install: [
+				`ALTER TABLE ${schema}.job ALTER COLUMN retry_limit SET DEFAULT 2`,
+			],
+			uninstall: [
+				`ALTER TABLE ${schema}.job ALTER COLUMN retry_limit SET DEFAULT 0`,
+			],
+		},
+	];
 }

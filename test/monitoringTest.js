@@ -1,55 +1,103 @@
-const assert = require('node:assert')
-const helper = require('./testHelper')
+import { strictEqual } from "node:assert";
+import { start } from "./testHelper.js";
 
-describe('monitoring', function () {
-  it('should emit state counts', async function () {
-    const config = {
-      ...this.test.bossConfig,
-      monitorStateIntervalSeconds: 1
-    }
+describe("monitoring", () => {
+	it("should emit state counts", async function () {
+		const config = {
+			...this.test.bossConfig,
+			monitorStateIntervalSeconds: 1,
+		};
 
-    const boss = this.test.boss = await helper.start(config)
-    const queue = this.test.bossConfig.schema
+		const boss = (this.test.boss = await start(config));
+		const queue = this.test.bossConfig.schema;
 
-    await boss.send(queue)
-    await boss.send(queue)
+		await boss.send(queue);
+		await boss.send(queue);
 
-    const states1 = await boss.countStates()
+		const states1 = await boss.countStates();
 
-    assert.strictEqual(2, states1.queues[queue].created, 'created count is wrong after 2 sendes')
-    assert.strictEqual(0, states1.queues[queue].active, 'active count is wrong after 2 sendes')
+		strictEqual(
+			2,
+			states1.queues[queue].created,
+			"created count is wrong after 2 sendes",
+		);
+		strictEqual(
+			0,
+			states1.queues[queue].active,
+			"active count is wrong after 2 sendes",
+		);
 
-    await boss.send(queue)
-    await boss.fetch(queue)
+		await boss.send(queue);
+		await boss.fetch(queue);
 
-    const states2 = await boss.countStates()
+		const states2 = await boss.countStates();
 
-    assert.strictEqual(2, states2.queues[queue].created, 'created count is wrong after 3 sendes and 1 fetch')
-    assert.strictEqual(1, states2.queues[queue].active, 'active count is wrong after 3 sendes and 1 fetch')
+		strictEqual(
+			2,
+			states2.queues[queue].created,
+			"created count is wrong after 3 sendes and 1 fetch",
+		);
+		strictEqual(
+			1,
+			states2.queues[queue].active,
+			"active count is wrong after 3 sendes and 1 fetch",
+		);
 
-    await boss.fetch(queue)
-    const states3 = await boss.countStates()
+		await boss.fetch(queue);
+		const states3 = await boss.countStates();
 
-    assert.strictEqual(1, states3.queues[queue].created, 'created count is wrong after 3 sendes and 2 fetches')
-    assert.strictEqual(2, states3.queues[queue].active, 'active count is wrong after 3 sendes and 2 fetches')
+		strictEqual(
+			1,
+			states3.queues[queue].created,
+			"created count is wrong after 3 sendes and 2 fetches",
+		);
+		strictEqual(
+			2,
+			states3.queues[queue].active,
+			"active count is wrong after 3 sendes and 2 fetches",
+		);
 
-    const [job] = await boss.fetch(queue)
-    await boss.complete(queue, job.id)
+		const [job] = await boss.fetch(queue);
+		await boss.complete(queue, job.id);
 
-    const states4 = await boss.countStates()
+		const states4 = await boss.countStates();
 
-    assert.strictEqual(0, states4.queues[queue].created, 'created count is wrong after 3 sendes and 3 fetches and 1 complete')
-    assert.strictEqual(2, states4.queues[queue].active, 'active count is wrong after 3 sendes and 3 fetches and 1 complete')
-    assert.strictEqual(1, states4.queues[queue].completed, 'completed count is wrong after 3 sendes and 3 fetches and 1 complete')
+		strictEqual(
+			0,
+			states4.queues[queue].created,
+			"created count is wrong after 3 sendes and 3 fetches and 1 complete",
+		);
+		strictEqual(
+			2,
+			states4.queues[queue].active,
+			"active count is wrong after 3 sendes and 3 fetches and 1 complete",
+		);
+		strictEqual(
+			1,
+			states4.queues[queue].completed,
+			"completed count is wrong after 3 sendes and 3 fetches and 1 complete",
+		);
 
-    await new Promise((resolve) => {
-      boss.once('monitor-states', async states => {
-        assert.strictEqual(states4.queues[queue].created, states.queues[queue].created, 'created count from monitor-states doesn\'t match')
-        assert.strictEqual(states4.queues[queue].active, states.queues[queue].active, 'active count from monitor-states doesn\'t match')
-        assert.strictEqual(states4.queues[queue].completed, states.queues[queue].completed, 'completed count from monitor-states doesn\'t match')
+		await new Promise((resolve) => {
+			boss.once("monitor-states", async (states) => {
+				strictEqual(
+					states4.queues[queue].created,
+					states.queues[queue].created,
+					"created count from monitor-states doesn't match",
+				);
+				strictEqual(
+					states4.queues[queue].active,
+					states.queues[queue].active,
+					"active count from monitor-states doesn't match",
+				);
+				strictEqual(
+					states4.queues[queue].completed,
+					states.queues[queue].completed,
+					"completed count from monitor-states doesn't match",
+				);
 
-        resolve()
-      })
-    })
-  })
-})
+				resolve();
+			});
+		});
+	});
+});

@@ -1,124 +1,146 @@
-const Db = require('../src/db')
-const PgBoss = require('../')
-const crypto = require('crypto')
-const sha1 = (value) => crypto.createHash('sha1').update(value).digest('hex')
+import crypto from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
+import Db from "../src/db.js";
+import PgBoss from "../src/index.js";
 
-module.exports = {
-  dropSchema,
-  start,
-  getDb,
-  getArchivedJobById,
-  countJobs,
-  findJobs,
-  getConfig,
-  getConnectionString,
-  tryCreateDb,
-  init
+const sha1 = (value) => crypto.createHash("sha1").update(value).digest("hex");
+
+export {
+	dropSchema,
+	start,
+	getDb,
+	getArchivedJobById,
+	countJobs,
+	findJobs,
+	getConfig,
+	getConnectionString,
+	tryCreateDb,
+	init,
+};
+
+function getConnectionString() {
+	const config = getConfig();
+
+	return `postgres://${config.user}:${config.password}@${config.host}:${config.port}/${config.database}`;
 }
 
-function getConnectionString () {
-  const config = getConfig()
+function getConfig(options = {}) {
+	// read fresh each call to avoid cross-test mutation
+	const configPath = path.join(
+		path.dirname(new URL(import.meta.url).pathname),
+		"config.json",
+	);
+	const raw = fs.readFileSync(configPath, "utf8");
+	const config = JSON.parse(raw);
 
-  return `postgres://${config.user}:${config.password}@${config.host}:${config.port}/${config.database}`
+	config.host = process.env.POSTGRES_HOST || config.host;
+	config.port = process.env.POSTGRES_PORT || config.port;
+	config.password = process.env.POSTGRES_PASSWORD || config.password;
+
+	if (options.testKey) {
+		config.schema = `pgboss${sha1(options.testKey)}`;
+	}
+
+	config.schema = config.schema || "pgboss";
+
+	config.supervise = false;
+	config.schedule = false;
+	config.retryLimit = 0;
+
+	const result = { ...config };
+
+	return Object.assign(result, options);
 }
 
-function getConfig (options = {}) {
-  const config = require('./config.json')
+async function init() {
+	const { database } = getConfig();
 
-  config.host = process.env.POSTGRES_HOST || config.host
-  config.port = process.env.POSTGRES_PORT || config.port
-  config.password = process.env.POSTGRES_PASSWORD || config.password
-
-  if (options.testKey) {
-    config.schema = `pgboss${sha1(options.testKey)}`
-  }
-
-  config.schema = config.schema || 'pgboss'
-
-  config.supervise = false
-  config.schedule = false
-  config.retryLimit = 0
-
-  const result = { ...config }
-
-  return Object.assign(result, options)
+	await tryCreateDb(database);
 }
 
-async function init () {
-  const { database } = getConfig()
+async function getDb({ database, debug } = {}) {
+	const config = getConfig();
 
-  await tryCreateDb(database)
+	config.database = database || config.database;
+
+	const db = new Db({ ...config, debug });
+
+	await db.open();
+
+	return db;
 }
 
-async function getDb ({ database, debug } = {}) {
-  const config = getConfig()
-
-  config.database = database || config.database
-
-  const db = new Db({ ...config, debug })
-
-  await db.open()
-
-  return db
+async function dropSchema(schema) {
+	const db = await getDb();
+	await db.executeSql(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
+	await db.close();
 }
 
-async function dropSchema (schema) {
-  const db = await getDb()
-  await db.executeSql(`DROP SCHEMA IF EXISTS ${schema} CASCADE`)
-  await db.close()
+async function findJobs(schema, where, values) {
+	const db = await getDb();
+	const jobs = await db.executeSql(
+		`select * from ${schema}.job where ${where}`,
+		values,
+	);
+	await db.close();
+	return jobs;
 }
 
-async function findJobs (schema, where, values) {
-  const db = await getDb()
-  const jobs = await db.executeSql(`select * from ${schema}.job where ${where}`, values)
-  await db.close()
-  return jobs
+async function getArchivedJobById(schema, name, id) {
+	const response = await findArchivedJobs(schema, "name = $1 AND id = $2", [
+		name,
+		id,
+	]);
+	return response.rows.length ? response.rows[0] : null;
 }
 
-async function getArchivedJobById (schema, name, id) {
-  const response = await findArchivedJobs(schema, 'name = $1 AND id = $2', [name, id])
-  return response.rows.length ? response.rows[0] : null
+async function findArchivedJobs(schema, where, values) {
+	const db = await getDb();
+	const result = await db.executeSql(
+		`select * from ${schema}.archive where ${where}`,
+		values,
+	);
+	await db.close();
+	return result;
 }
 
-async function findArchivedJobs (schema, where, values) {
-  const db = await getDb()
-  const result = await db.executeSql(`select * from ${schema}.archive where ${where}`, values)
-  await db.close()
-  return result
+async function countJobs(schema, where, values) {
+	const db = await getDb();
+	const result = await db.executeSql(
+		`select count(*) as count from ${schema}.job where ${where}`,
+		values,
+	);
+	await db.close();
+	return parseFloat(result.rows[0].count);
 }
 
-async function countJobs (schema, where, values) {
-  const db = await getDb()
-  const result = await db.executeSql(`select count(*) as count from ${schema}.job where ${where}`, values)
-  await db.close()
-  return parseFloat(result.rows[0].count)
+async function tryCreateDb(database) {
+	const db = await getDb({ database: "postgres" });
+
+	try {
+		await db.executeSql(`CREATE DATABASE ${database}`);
+	} catch {
+	} finally {
+		await db.close();
+	}
 }
 
-async function tryCreateDb (database) {
-  const db = await getDb({ database: 'postgres' })
-
-  try {
-    await db.executeSql(`CREATE DATABASE ${database}`)
-  } catch {} finally {
-    await db.close()
-  }
-}
-
-async function start (options) {
-  try {
-    options = getConfig(options)
-    const boss = new PgBoss(options)
-    // boss.on('error', err => console.log({ schema: options.schema, message: err.message }))
-    await boss.start()
-    // auto-create queue for tests
-    if (!options.noDefault) {
-      await boss.createQueue(options.schema)
-    }
-    return boss
-  } catch (err) {
-    // this is nice for occaisional debugging, Mr. Linter
-    if (err) {
-      throw err
-    }
-  }
+async function start(options) {
+	try {
+		options = getConfig(options);
+		const boss = new PgBoss(options);
+		// boss.on('error', err => console.log({ schema: options.schema, message: err.message }))
+		await boss.start();
+		// auto-create queue for tests
+		if (!options.noDefault) {
+			await boss.createQueue(options.schema);
+		}
+		return boss;
+	} catch (err) {
+		// this is nice for occaisional debugging, Mr. Linter
+		if (err) {
+			throw err;
+		}
+	}
 }

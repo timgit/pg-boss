@@ -1,129 +1,139 @@
-const assert = require('node:assert')
-const helper = require('./testHelper')
-const { delay } = require('../src/tools')
-const { JOB_STATES } = require('../src/plans')
+import { strictEqual } from "node:assert";
+import { JOB_STATES } from "../src/plans.js";
+import { delay } from "../src/tools.js";
+import { getArchivedJobById, start } from "./testHelper.js";
 
-describe('archive', function () {
-  const defaults = {
-    archiveCompletedAfterSeconds: 1,
-    supervise: true
-  }
+describe("archive", () => {
+	const defaults = {
+		archiveCompletedAfterSeconds: 1,
+		supervise: true,
+	};
 
-  it('should archive a completed job', async function () {
-    const config = { ...this.test.bossConfig, ...defaults }
-    const boss = this.test.boss = await helper.start(config)
-    const queue = this.test.bossConfig.schema
+	it("should archive a completed job", async function () {
+		const config = { ...this.test.bossConfig, ...defaults };
+		const boss = (this.test.boss = await start(config));
+		const queue = this.test.bossConfig.schema;
 
-    const jobId = await boss.send(queue)
-    const [job] = await boss.fetch(queue)
+		const jobId = await boss.send(queue);
+		const [job] = await boss.fetch(queue);
 
-    assert.strictEqual(job.id, jobId)
+		strictEqual(job.id, jobId);
 
-    await boss.complete(queue, jobId)
+		await boss.complete(queue, jobId);
 
-    await delay(1000)
+		await delay(1000);
 
-    await boss.maintain()
+		await boss.maintain();
 
-    const archivedJob = await helper.getArchivedJobById(config.schema, queue, jobId)
+		const archivedJob = await getArchivedJobById(config.schema, queue, jobId);
 
-    assert.strictEqual(jobId, archivedJob.id)
-    assert.strictEqual(queue, archivedJob.name)
-  })
+		strictEqual(jobId, archivedJob.id);
+		strictEqual(queue, archivedJob.name);
+	});
 
-  it('should retrieve an archived job via getJobById()', async function () {
-    const config = { ...this.test.bossConfig, ...defaults }
-    const boss = this.test.boss = await helper.start(config)
-    const queue = this.test.bossConfig.schema
+	it("should retrieve an archived job via getJobById()", async function () {
+		const config = { ...this.test.bossConfig, ...defaults };
+		const boss = (this.test.boss = await start(config));
+		const queue = this.test.bossConfig.schema;
 
-    const jobId = await boss.send(queue)
-    const [job] = await boss.fetch(queue)
+		const jobId = await boss.send(queue);
+		const [job] = await boss.fetch(queue);
 
-    assert.strictEqual(job.id, jobId)
+		strictEqual(job.id, jobId);
 
-    await boss.complete(queue, jobId)
+		await boss.complete(queue, jobId);
 
-    await delay(1000)
+		await delay(1000);
 
-    await boss.maintain()
+		await boss.maintain();
 
-    const archivedJob = await boss.getJobById(queue, jobId, { includeArchive: true })
+		const archivedJob = await boss.getJobById(queue, jobId, {
+			includeArchive: true,
+		});
 
-    assert.strictEqual(jobId, archivedJob.id)
-    assert.strictEqual(queue, archivedJob.name)
-  })
+		strictEqual(jobId, archivedJob.id);
+		strictEqual(queue, archivedJob.name);
+	});
 
-  it('should archive a created job', async function () {
-    const config = { ...this.test.bossConfig, ...defaults }
-    const boss = this.test.boss = await helper.start(config)
-    const queue = this.test.bossConfig.schema
+	it("should archive a created job", async function () {
+		const config = { ...this.test.bossConfig, ...defaults };
+		const boss = (this.test.boss = await start(config));
+		const queue = this.test.bossConfig.schema;
 
-    const jobId = await boss.send(queue, null, { retentionSeconds: 1 })
+		const jobId = await boss.send(queue, null, { retentionSeconds: 1 });
 
-    await delay(1000)
+		await delay(1000);
 
-    await boss.maintain()
+		await boss.maintain();
 
-    const archivedJob = await helper.getArchivedJobById(config.schema, queue, jobId)
+		const archivedJob = await getArchivedJobById(config.schema, queue, jobId);
 
-    assert.strictEqual(jobId, archivedJob.id)
-    assert.strictEqual(queue, archivedJob.name)
-  })
+		strictEqual(jobId, archivedJob.id);
+		strictEqual(queue, archivedJob.name);
+	});
 
-  it('should archive a created job - cascaded config', async function () {
-    const config = { ...this.test.bossConfig, ...defaults, retentionSeconds: 1 }
-    const boss = this.test.boss = await helper.start(config)
-    const queue = this.test.bossConfig.schema
+	it("should archive a created job - cascaded config", async function () {
+		const config = {
+			...this.test.bossConfig,
+			...defaults,
+			retentionSeconds: 1,
+		};
+		const boss = (this.test.boss = await start(config));
+		const queue = this.test.bossConfig.schema;
 
-    const jobId = await boss.send(queue)
+		const jobId = await boss.send(queue);
 
-    await delay(1000)
+		await delay(1000);
 
-    await boss.maintain()
+		await boss.maintain();
 
-    const archivedJob = await helper.getArchivedJobById(config.schema, queue, jobId)
+		const archivedJob = await getArchivedJobById(config.schema, queue, jobId);
 
-    assert.strictEqual(jobId, archivedJob.id)
-    assert.strictEqual(queue, archivedJob.name)
-  })
+		strictEqual(jobId, archivedJob.id);
+		strictEqual(queue, archivedJob.name);
+	});
 
-  it('should not archive a failed job before the config setting', async function () {
-    const config = { ...this.test.bossConfig, ...defaults, archiveFailedAfterSeconds: 10 }
-    const boss = this.test.boss = await helper.start(config)
-    const queue = this.test.bossConfig.schema
+	it("should not archive a failed job before the config setting", async function () {
+		const config = {
+			...this.test.bossConfig,
+			...defaults,
+			archiveFailedAfterSeconds: 10,
+		};
+		const boss = (this.test.boss = await start(config));
+		const queue = this.test.bossConfig.schema;
 
-    const failPayload = { someReason: 'nuna' }
-    const jobId = await boss.send(queue, null, { retentionSeconds: 1 })
+		const failPayload = { someReason: "nuna" };
+		const jobId = await boss.send(queue, null, { retentionSeconds: 1 });
 
-    await boss.fail(queue, jobId, failPayload)
+		await boss.fail(queue, jobId, failPayload);
 
-    await delay(1000)
+		await delay(1000);
 
-    await boss.maintain()
+		await boss.maintain();
 
-    const archivedJob = await helper.getArchivedJobById(config.schema, queue, jobId)
+		const archivedJob = await getArchivedJobById(config.schema, queue, jobId);
 
-    assert.strictEqual(archivedJob, null)
-  })
+		strictEqual(archivedJob, null);
+	});
 
-  it('should archive a failed job', async function () {
-    const config = { ...this.test.bossConfig, archiveFailedAfterSeconds: 1 }
-    const boss = this.test.boss = await helper.start(config)
-    const queue = this.test.bossConfig.schema
+	it("should archive a failed job", async function () {
+		const config = { ...this.test.bossConfig, archiveFailedAfterSeconds: 1 };
+		const boss = (this.test.boss = await start(config));
+		const queue = this.test.bossConfig.schema;
 
-    const failPayload = { someReason: 'nuna' }
-    const jobId = await boss.send(queue, null, { retentionSeconds: 1 })
+		const failPayload = { someReason: "nuna" };
+		const jobId = await boss.send(queue, null, { retentionSeconds: 1 });
 
-    await boss.fail(queue, jobId, failPayload)
+		await boss.fail(queue, jobId, failPayload);
 
-    await delay(1000)
+		await delay(1000);
 
-    await boss.maintain()
+		await boss.maintain();
 
-    const archivedJob = await helper.getArchivedJobById(config.schema, queue, jobId)
+		const archivedJob = await getArchivedJobById(config.schema, queue, jobId);
 
-    assert.strictEqual(jobId, archivedJob.id)
-    assert.strictEqual(queue, archivedJob.name)
-    assert.strictEqual(JOB_STATES.failed, archivedJob.state)
-  })
-})
+		strictEqual(jobId, archivedJob.id);
+		strictEqual(queue, archivedJob.name);
+		strictEqual(JOB_STATES.failed, archivedJob.state);
+	});
+});

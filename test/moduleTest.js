@@ -1,14 +1,15 @@
-const assert = require('node:assert')
+import assert from "node:assert";
+import PGBoss from "../src/index.js";
 
-describe('module', function () {
-  it('should export states object', function () {
-    const { states } = require('../')
+describe("module", () => {
+	it("should export states object", () => {
+		const states = PGBoss.states;
 
-    assert(states.created)
-    assert(states.retry)
-    assert(states.active)
-    assert(states.completed)
-    assert(states.cancelled)
-    assert(states.failed)
-  })
-})
+		assert(states.created);
+		assert(states.retry);
+		assert(states.active);
+		assert(states.completed);
+		assert(states.cancelled);
+		assert(states.failed);
+	});
+});

@@ -1,49 +1,53 @@
-const assert = require('node:assert')
-const PgBoss = require('../')
-const currentSchemaVersion = require('../version.json').schema
+import assert from "node:assert";
+import PGBoss from "../src/index.js";
+import version from "../version.json" with { type: "json" };
 
-describe('export', function () {
-  it('should export commands to manually build schema', function () {
-    const schema = 'custom'
-    const plans = PgBoss.getConstructionPlans(schema)
+const currentSchemaVersion = version.schema;
 
-    assert(plans.includes(`${schema}.job`))
-    assert(plans.includes(`${schema}.version`))
-  })
+const { getConstructionPlans, getMigrationPlans, getRollbackPlans } = PGBoss;
 
-  it('should fail to export migration using current version', function () {
-    const schema = 'custom'
+describe("export", () => {
+	it("should export commands to manually build schema", () => {
+		const schema = "custom";
+		const plans = getConstructionPlans(schema);
 
-    try {
-      PgBoss.getMigrationPlans(schema, currentSchemaVersion)
-      assert(false, 'migration plans should fail on current version')
-    } catch {
-      assert(true)
-    }
-  })
+		assert(plans.includes(`${schema}.job`));
+		assert(plans.includes(`${schema}.version`));
+	});
 
-  it('should export commands to migrate', function () {
-    const schema = 'custom'
-    const plans = PgBoss.getMigrationPlans(schema, currentSchemaVersion - 1)
+	it("should fail to export migration using current version", () => {
+		const schema = "custom";
 
-    assert(plans, 'migration plans not found')
-  })
+		try {
+			getMigrationPlans(schema, currentSchemaVersion);
+			assert(false, "migration plans should fail on current version");
+		} catch {
+			assert(true);
+		}
+	});
 
-  it('should fail to export commands to roll back from invalid version', function () {
-    const schema = 'custom'
+	it("should export commands to migrate", () => {
+		const schema = "custom";
+		const plans = getMigrationPlans(schema, currentSchemaVersion - 1);
 
-    try {
-      PgBoss.getRollbackPlans(schema, -1)
-      assert(false, 'migration plans should fail on current version')
-    } catch {
-      assert(true)
-    }
-  })
+		assert(plans, "migration plans not found");
+	});
 
-  it('should export commands to roll back', function () {
-    const schema = 'custom'
-    const plans = PgBoss.getRollbackPlans(schema, currentSchemaVersion)
+	it("should fail to export commands to roll back from invalid version", () => {
+		const schema = "custom";
 
-    assert(plans, 'rollback plans not found')
-  })
-})
+		try {
+			getRollbackPlans(schema, -1);
+			assert(false, "migration plans should fail on current version");
+		} catch {
+			assert(true);
+		}
+	});
+
+	it("should export commands to roll back", () => {
+		const schema = "custom";
+		const plans = getRollbackPlans(schema, currentSchemaVersion);
+
+		assert(plans, "rollback plans not found");
+	});
+});

@@ -1,63 +1,69 @@
-const assert = require('node:assert')
-const helper = require('./testHelper')
-const PgBoss = require('../')
-const Contractor = require('../src/contractor')
-const migrationStore = require('../src/migrationStore')
-const currentSchemaVersion = require('../version.json').schema
+import assert, { notStrictEqual } from "node:assert";
+import Contractor from "../src/contractor.js";
+import PgBoss from "../src/index.js";
+import { getAll } from "../src/migrationStore.js";
+import version from "../version.json" with { type: "json" };
+import { getDb } from "./testHelper.js";
 
-describe('multi-master', function () {
-  it('should only allow 1 master to start at a time', async function () {
-    const replicaCount = 20
-    const config = { ...this.test.bossConfig, supervise: false, max: 2 }
-    const instances = []
+const currentSchemaVersion = version.schema;
 
-    for (let i = 0; i < replicaCount; i++) {
-      instances.push(new PgBoss(config))
-    }
+describe("multi-master", () => {
+	it("should only allow 1 master to start at a time", async function () {
+		const replicaCount = 20;
+		const config = { ...this.test.bossConfig, supervise: false, max: 2 };
+		const instances = [];
 
-    try {
-      await Promise.all(instances.map(i => i.start()))
-    } catch (err) {
-      assert(false, err.message)
-    } finally {
-      await Promise.all(instances.map(i => i.stop({ graceful: false, wait: false })))
-    }
-  })
+		for (let i = 0; i < replicaCount; i++) {
+			instances.push(new PgBoss(config));
+		}
 
-  it('should only allow 1 master to migrate to latest at a time', async function () {
-    const config = {
-      ...this.test.bossConfig,
-      supervise: true,
-      maintenanceIntervalSeconds: 1,
-      max: 2
-    }
+		try {
+			await Promise.all(instances.map((i) => i.start()));
+		} catch (err) {
+			assert(false, err.message);
+		} finally {
+			await Promise.all(
+				instances.map((i) => i.stop({ graceful: false, wait: false })),
+			);
+		}
+	});
 
-    const db = await helper.getDb()
-    const contractor = new Contractor(db, config)
+	it("should only allow 1 master to migrate to latest at a time", async function () {
+		const config = {
+			...this.test.bossConfig,
+			supervise: true,
+			maintenanceIntervalSeconds: 1,
+			max: 2,
+		};
 
-    await contractor.create()
+		const db = await getDb();
+		const contractor = new Contractor(db, config);
 
-    await contractor.rollback(currentSchemaVersion)
+		await contractor.create();
 
-    const oldVersion = await contractor.schemaVersion()
+		await contractor.rollback(currentSchemaVersion);
 
-    assert.notStrictEqual(oldVersion, currentSchemaVersion)
+		const oldVersion = await contractor.schemaVersion();
 
-    config.migrations = migrationStore.getAll(config.schema)
-    config.migrations[0].install.push('select pg_sleep(1)')
+		notStrictEqual(oldVersion, currentSchemaVersion);
 
-    const instances = []
+		config.migrations = getAll(config.schema);
+		config.migrations[0].install.push("select pg_sleep(1)");
 
-    for (let i = 0; i < 5; i++) {
-      instances.push(new PgBoss(config))
-    }
+		const instances = [];
 
-    try {
-      await Promise.all(instances.map(i => i.start()))
-    } catch (err) {
-      assert(false)
-    } finally {
-      await Promise.all(instances.map(i => i.stop({ graceful: false, wait: false })))
-    }
-  })
-})
+		for (let i = 0; i < 5; i++) {
+			instances.push(new PgBoss(config));
+		}
+
+		try {
+			await Promise.all(instances.map((i) => i.start()));
+		} catch (_err) {
+			assert(false);
+		} finally {
+			await Promise.all(
+				instances.map((i) => i.stop({ graceful: false, wait: false })),
+			);
+		}
+	});
+});

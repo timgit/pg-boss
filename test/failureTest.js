@@ -1,208 +1,220 @@
-const { delay } = require('../src/tools')
-const assert = require('node:assert')
-const helper = require('./testHelper')
+import assert, { strictEqual } from "node:assert";
+import { delay } from "../src/tools.js";
+import { getDb, start } from "./testHelper.js";
 
-describe('failure', function () {
-  it('should reject missing id argument', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+describe("failure", () => {
+	it("should reject missing id argument", async function () {
+		const boss = (this.test.boss = await start(this.test.bossConfig));
 
-    try {
-      await boss.fail()
-      assert(false)
-    } catch (err) {
-      assert(err)
-    }
-  })
+		try {
+			await boss.fail();
+			assert(false);
+		} catch (err) {
+			assert(err);
+		}
+	});
 
-  it('should fail a job when requested', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
-    const queue = this.test.bossConfig.schema
+	it("should fail a job when requested", async function () {
+		const boss = (this.test.boss = await start(this.test.bossConfig));
+		const queue = this.test.bossConfig.schema;
 
-    await boss.send(queue)
+		await boss.send(queue);
 
-    const [job] = await boss.fetch(queue)
+		const [job] = await boss.fetch(queue);
 
-    await boss.fail(queue, job.id)
-  })
+		await boss.fail(queue, job.id);
+	});
 
-  it('should fail a batch of jobs', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
-    const queue = this.test.bossConfig.schema
+	it("should fail a batch of jobs", async function () {
+		const boss = (this.test.boss = await start(this.test.bossConfig));
+		const queue = this.test.bossConfig.schema;
 
-    await Promise.all([
-      boss.send(queue),
-      boss.send(queue),
-      boss.send(queue)
-    ])
+		await Promise.all([boss.send(queue), boss.send(queue), boss.send(queue)]);
 
-    const jobs = await boss.fetch(queue, { batchSize: 3 })
+		const jobs = await boss.fetch(queue, { batchSize: 3 });
 
-    const result = await boss.fail(queue, jobs.map(job => job.id))
+		const result = await boss.fail(
+			queue,
+			jobs.map((job) => job.id),
+		);
 
-    assert.strictEqual(result.jobs.length, 3)
-  })
+		strictEqual(result.jobs.length, 3);
+	});
 
-  it('should fail a batch of jobs with a data arg', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
-    const queue = this.test.bossConfig.schema
-    const message = 'some error'
+	it("should fail a batch of jobs with a data arg", async function () {
+		const boss = (this.test.boss = await start(this.test.bossConfig));
+		const queue = this.test.bossConfig.schema;
+		const message = "some error";
 
-    await Promise.all([
-      boss.send(queue),
-      boss.send(queue),
-      boss.send(queue)
-    ])
+		await Promise.all([boss.send(queue), boss.send(queue), boss.send(queue)]);
 
-    const jobs = await boss.fetch(queue, { batchSize: 3 })
+		const jobs = await boss.fetch(queue, { batchSize: 3 });
 
-    await boss.fail(queue, jobs.map(job => job.id), new Error(message))
+		await boss.fail(
+			queue,
+			jobs.map((job) => job.id),
+			new Error(message),
+		);
 
-    const results = await Promise.all(jobs.map(job => boss.getJobById(queue, job.id)))
+		const results = await Promise.all(
+			jobs.map((job) => boss.getJobById(queue, job.id)),
+		);
 
-    assert(results.every(i => i.output.message === message))
-  })
+		assert(results.every((i) => i.output.message === message));
+	});
 
-  it('should preserve nested objects within a payload that is an instance of Error', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
-    const queue = this.test.bossConfig.schema
+	it("should preserve nested objects within a payload that is an instance of Error", async function () {
+		const boss = (this.test.boss = await start(this.test.bossConfig));
+		const queue = this.test.bossConfig.schema;
 
-    const failPayload = new Error('Something went wrong')
-    failPayload.some = { deeply: { nested: { reason: 'nuna' } } }
+		const failPayload = new Error("Something went wrong");
+		failPayload.some = { deeply: { nested: { reason: "nuna" } } };
 
-    const jobId = await boss.send(queue)
+		const jobId = await boss.send(queue);
 
-    await boss.fail(queue, jobId, failPayload)
+		await boss.fail(queue, jobId, failPayload);
 
-    const job = await boss.getJobById(queue, jobId)
+		const job = await boss.getJobById(queue, jobId);
 
-    assert.strictEqual(job.output.some.deeply.nested.reason, failPayload.some.deeply.nested.reason)
-  })
+		strictEqual(
+			job.output.some.deeply.nested.reason,
+			failPayload.some.deeply.nested.reason,
+		);
+	});
 
-  it('failure via Promise reject() should pass string wrapped in value prop', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
-    const queue = this.test.bossConfig.schema
-    const failPayload = 'mah error'
+	it("failure via Promise reject() should pass string wrapped in value prop", async function () {
+		const boss = (this.test.boss = await start(this.test.bossConfig));
+		const queue = this.test.bossConfig.schema;
+		const failPayload = "mah error";
 
-    const jobId = await boss.send(queue)
-    await boss.work(queue, () => Promise.reject(failPayload))
+		const jobId = await boss.send(queue);
+		await boss.work(queue, () => Promise.reject(failPayload));
 
-    await delay(1000)
+		await delay(1000);
 
-    const job = await boss.getJobById(queue, jobId)
+		const job = await boss.getJobById(queue, jobId);
 
-    assert.strictEqual(job.output.value, failPayload)
-  })
+		strictEqual(job.output.value, failPayload);
+	});
 
-  it('failure via Promise reject() should pass object payload', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
-    const queue = this.test.bossConfig.schema
-    const something = 'clever'
+	it("failure via Promise reject() should pass object payload", async function () {
+		const boss = (this.test.boss = await start(this.test.bossConfig));
+		const queue = this.test.bossConfig.schema;
+		const something = "clever";
 
-    const errorResponse = new Error('custom error')
-    errorResponse.something = something
+		const errorResponse = new Error("custom error");
+		errorResponse.something = something;
 
-    const jobId = await boss.send(queue)
-    await boss.work(queue, () => Promise.reject(errorResponse))
+		const jobId = await boss.send(queue);
+		await boss.work(queue, () => Promise.reject(errorResponse));
 
-    await delay(1000)
+		await delay(1000);
 
-    const job = await boss.getJobById(queue, jobId)
+		const job = await boss.getJobById(queue, jobId);
 
-    assert.strictEqual(job.output.something, something)
-  })
+		strictEqual(job.output.something, something);
+	});
 
-  it('failure with Error object should be saved in the job', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
-    const queue = this.test.bossConfig.schema
-    const message = 'a real error!'
+	it("failure with Error object should be saved in the job", async function () {
+		const boss = (this.test.boss = await start(this.test.bossConfig));
+		const queue = this.test.bossConfig.schema;
+		const message = "a real error!";
 
-    const jobId = await boss.send(queue)
-    await boss.work(queue, async () => { throw new Error(message) })
+		const jobId = await boss.send(queue);
+		await boss.work(queue, async () => {
+			throw new Error(message);
+		});
 
-    await delay(1000)
+		await delay(1000);
 
-    const job = await boss.getJobById(queue, jobId)
+		const job = await boss.getJobById(queue, jobId);
 
-    assert(job.output.message.includes(message))
-  })
+		assert(job.output.message.includes(message));
+	});
 
-  it('should fail a job with custom connection', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
-    const queue = this.test.bossConfig.schema
+	it("should fail a job with custom connection", async function () {
+		const boss = (this.test.boss = await start(this.test.bossConfig));
+		const queue = this.test.bossConfig.schema;
 
-    await boss.send(queue)
+		await boss.send(queue);
 
-    const [job] = await boss.fetch(queue)
+		const [job] = await boss.fetch(queue);
 
-    let called = false
-    const _db = await helper.getDb()
-    const db = {
-      async executeSql (sql, values) {
-        called = true
-        return _db.pool.query(sql, values)
-      }
-    }
+		let called = false;
+		const _db = await getDb();
+		const db = {
+			async executeSql(sql, values) {
+				called = true;
+				return _db.pool.query(sql, values);
+			},
+		};
 
-    await boss.fail(queue, job.id, null, { db })
+		await boss.fail(queue, job.id, null, { db });
 
-    assert.strictEqual(called, true)
-  })
+		strictEqual(called, true);
+	});
 
-  it('failure with circular payload should be safely serialized', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
-    const queue = this.test.bossConfig.schema
+	it("failure with circular payload should be safely serialized", async function () {
+		const boss = (this.test.boss = await start(this.test.bossConfig));
+		const queue = this.test.bossConfig.schema;
 
-    const jobId = await boss.send(queue)
-    const message = 'mhmm'
+		const jobId = await boss.send(queue);
+		const message = "mhmm";
 
-    await boss.work(queue, { pollingIntervalSeconds: 0.5 }, async () => {
-      const err = { message }
-      err.myself = err
-      throw err
-    })
+		await boss.work(queue, { pollingIntervalSeconds: 0.5 }, async () => {
+			const err = { message };
+			err.myself = err;
+			throw err;
+		});
 
-    await delay(2000)
+		await delay(2000);
 
-    const job = await boss.getJobById(queue, jobId)
+		const job = await boss.getJobById(queue, jobId);
 
-    assert.strictEqual(job.output.message, message)
-  })
+		strictEqual(job.output.message, message);
+	});
 
-  it('dead letter queues are working', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
+	it("dead letter queues are working", async function () {
+		const boss = (this.test.boss = await start({
+			...this.test.bossConfig,
+			noDefault: true,
+		}));
 
-    const queue = this.test.bossConfig.schema
-    const deadLetter = `${queue}_dlq`
+		const queue = this.test.bossConfig.schema;
+		const deadLetter = `${queue}_dlq`;
 
-    await boss.createQueue(queue)
-    await boss.createQueue(deadLetter)
+		await boss.createQueue(queue);
+		await boss.createQueue(deadLetter);
 
-    const jobId = await boss.send(queue, { key: queue }, { deadLetter })
+		const jobId = await boss.send(queue, { key: queue }, { deadLetter });
 
-    await boss.fetch(queue)
-    await boss.fail(queue, jobId)
+		await boss.fetch(queue);
+		await boss.fail(queue, jobId);
 
-    const [job] = await boss.fetch(deadLetter)
+		const [job] = await boss.fetch(deadLetter);
 
-    assert.strictEqual(job.data.key, queue)
-  })
+		strictEqual(job.data.key, queue);
+	});
 
-  it('should fail active jobs in a worker during shutdown', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
-    const queue = this.test.bossConfig.schema
+	it("should fail active jobs in a worker during shutdown", async function () {
+		const boss = (this.test.boss = await start({ ...this.test.bossConfig }));
+		const queue = this.test.bossConfig.schema;
 
-    const jobId = await boss.send(queue, null, { retryLimit: 1, expireInSeconds: 60 })
+		const jobId = await boss.send(queue, null, {
+			retryLimit: 1,
+			expireInSeconds: 60,
+		});
 
-    await boss.work(queue, async () => await delay(10000))
+		await boss.work(queue, async () => await delay(10000));
 
-    await delay(1000)
+		await delay(1000);
 
-    await boss.stop({ wait: true, timeout: 2000 })
+		await boss.stop({ wait: true, timeout: 2000 });
 
-    await boss.start()
+		await boss.start();
 
-    const [job] = await boss.fetch(queue)
+		const [job] = await boss.fetch(queue);
 
-    assert.strictEqual(job?.id, jobId)
-  })
-})
+		strictEqual(job?.id, jobId);
+	});
+});

@@ -1,466 +1,552 @@
-const assert = require('node:assert')
-const helper = require('./testHelper')
-
-describe('queues', function () {
-  it('should create a queue', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
-    const queue = this.test.bossConfig.schema
-
-    await boss.createQueue(queue)
-  })
-
-  it('createQueue should work if queue already exists', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
-    const queue = this.test.bossConfig.schema
-
-    await boss.createQueue(queue)
-    await boss.createQueue(queue)
-  })
-
-  it('should reject a queue with invalid characters', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
-    const queue = `*${this.test.bossConfig.schema}`
-
-    try {
-      await boss.createQueue(queue)
-      assert(false)
-    } catch (err) {
-      assert(true)
-    }
-  })
-
-  it('should reject a queue that starts with a number', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
-    const queue = `4${this.test.bossConfig.schema}`
-
-    try {
-      await boss.createQueue(queue)
-      assert(false)
-    } catch (err) {
-      assert(true)
-    }
-  })
-
-  it('should reject a queue with invalid policy', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
-    const queue = this.test.bossConfig.schema
-
-    try {
-      await boss.createQueue(queue, { policy: 'something' })
-      assert(false)
-    } catch (err) {
-      assert(true)
-    }
-  })
-
-  it('should create a queue with standard policy', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
-    const queue = this.test.bossConfig.schema
-
-    await boss.createQueue(queue, { policy: 'standard' })
-  })
-
-  it('should create a queue with stately policy', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
-    const queue = this.test.bossConfig.schema
-
-    await boss.createQueue(queue, { policy: 'stately' })
-  })
-
-  it('should create a queue with singleton policy', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
-    const queue = this.test.bossConfig.schema
-
-    await boss.createQueue(queue, { policy: 'singleton' })
-  })
-
-  it('should create a queue with short policy', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
-    const queue = this.test.bossConfig.schema
-
-    await boss.createQueue(queue, { policy: 'short' })
-  })
-
-  it('should delete and then create a queue', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
-    const queue = this.test.bossConfig.schema
-
-    await boss.createQueue(queue)
-    assert(await boss.getQueue(queue))
-    await boss.deleteQueue(queue)
-    await boss.createQueue(queue)
-  })
-
-  it('should purge a queue', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
-    const queue = this.test.bossConfig.schema
-
-    await boss.createQueue(queue)
-    await boss.purgeQueue(queue)
-  })
-
-  it('getQueue() returns null when missing', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
-    const queue = await boss.getQueue(this.test.bossConfig.schema)
-    assert.strictEqual(queue, null)
-  })
-
-  it('getQueues() returns queues array', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
-    const queue1 = `${this.test.bossConfig.schema}_1`
-    const queue2 = `${this.test.bossConfig.schema}_2`
-
-    await boss.createQueue(queue1)
-    await boss.createQueue(queue2)
-
-    const queues = await boss.getQueues()
-
-    assert.strictEqual(queues.length, 2)
-
-    assert(queues.some(q => q.name === queue1))
-    assert(queues.some(q => q.name === queue2))
-  })
-
-  it('should update queue properties', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
-    const queue = this.test.bossConfig.schema
-
-    let deadLetter = `${queue}_dlq1`
-    await boss.createQueue(deadLetter)
+import assert, { strictEqual } from "node:assert";
+import { start } from "./testHelper.js";
+
+describe("queues", () => {
+	it("should create a queue", async function () {
+		const boss = (this.test.boss = await start({
+			...this.test.bossConfig,
+			noDefault: true,
+		}));
+		const queue = this.test.bossConfig.schema;
+
+		await boss.createQueue(queue);
+	});
+
+	it("createQueue should work if queue already exists", async function () {
+		const boss = (this.test.boss = await start({
+			...this.test.bossConfig,
+			noDefault: true,
+		}));
+		const queue = this.test.bossConfig.schema;
+
+		await boss.createQueue(queue);
+		await boss.createQueue(queue);
+	});
+
+	it("should reject a queue with invalid characters", async function () {
+		const boss = (this.test.boss = await start({
+			...this.test.bossConfig,
+			noDefault: true,
+		}));
+		const queue = `*${this.test.bossConfig.schema}`;
+
+		try {
+			await boss.createQueue(queue);
+			assert(false);
+		} catch (_err) {
+			assert(true);
+		}
+	});
+
+	it("should reject a queue that starts with a number", async function () {
+		const boss = (this.test.boss = await start({
+			...this.test.bossConfig,
+			noDefault: true,
+		}));
+		const queue = `4${this.test.bossConfig.schema}`;
+
+		try {
+			await boss.createQueue(queue);
+			assert(false);
+		} catch (_err) {
+			assert(true);
+		}
+	});
+
+	it("should reject a queue with invalid policy", async function () {
+		const boss = (this.test.boss = await start({
+			...this.test.bossConfig,
+			noDefault: true,
+		}));
+		const queue = this.test.bossConfig.schema;
+
+		try {
+			await boss.createQueue(queue, { policy: "something" });
+			assert(false);
+		} catch (_err) {
+			assert(true);
+		}
+	});
+
+	it("should create a queue with standard policy", async function () {
+		const boss = (this.test.boss = await start({
+			...this.test.bossConfig,
+			noDefault: true,
+		}));
+		const queue = this.test.bossConfig.schema;
+
+		await boss.createQueue(queue, { policy: "standard" });
+	});
+
+	it("should create a queue with stately policy", async function () {
+		const boss = (this.test.boss = await start({
+			...this.test.bossConfig,
+			noDefault: true,
+		}));
+		const queue = this.test.bossConfig.schema;
+
+		await boss.createQueue(queue, { policy: "stately" });
+	});
+
+	it("should create a queue with singleton policy", async function () {
+		const boss = (this.test.boss = await start({
+			...this.test.bossConfig,
+			noDefault: true,
+		}));
+		const queue = this.test.bossConfig.schema;
+
+		await boss.createQueue(queue, { policy: "singleton" });
+	});
+
+	it("should create a queue with short policy", async function () {
+		const boss = (this.test.boss = await start({
+			...this.test.bossConfig,
+			noDefault: true,
+		}));
+		const queue = this.test.bossConfig.schema;
+
+		await boss.createQueue(queue, { policy: "short" });
+	});
+
+	it("should delete and then create a queue", async function () {
+		const boss = (this.test.boss = await start({
+			...this.test.bossConfig,
+			noDefault: true,
+		}));
+		const queue = this.test.bossConfig.schema;
+
+		await boss.createQueue(queue);
+		assert(await boss.getQueue(queue));
+		await boss.deleteQueue(queue);
+		await boss.createQueue(queue);
+	});
+
+	it("should purge a queue", async function () {
+		const boss = (this.test.boss = await start({
+			...this.test.bossConfig,
+			noDefault: true,
+		}));
+		const queue = this.test.bossConfig.schema;
+
+		await boss.createQueue(queue);
+		await boss.purgeQueue(queue);
+	});
+
+	it("getQueue() returns null when missing", async function () {
+		const boss = (this.test.boss = await start({
+			...this.test.bossConfig,
+			noDefault: true,
+		}));
+		const queue = await boss.getQueue(this.test.bossConfig.schema);
+		strictEqual(queue, null);
+	});
+
+	it("getQueues() returns queues array", async function () {
+		const boss = (this.test.boss = await start({
+			...this.test.bossConfig,
+			noDefault: true,
+		}));
+		const queue1 = `${this.test.bossConfig.schema}_1`;
+		const queue2 = `${this.test.bossConfig.schema}_2`;
+
+		await boss.createQueue(queue1);
+		await boss.createQueue(queue2);
+
+		const queues = await boss.getQueues();
+
+		strictEqual(queues.length, 2);
+
+		assert(queues.some((q) => q.name === queue1));
+		assert(queues.some((q) => q.name === queue2));
+	});
+
+	it("should update queue properties", async function () {
+		const boss = (this.test.boss = await start({
+			...this.test.bossConfig,
+			noDefault: true,
+		}));
+		const queue = this.test.bossConfig.schema;
+
+		let deadLetter = `${queue}_dlq1`;
+		await boss.createQueue(deadLetter);
+
+		const createProps = {
+			policy: "standard",
+			retryLimit: 1,
+			retryBackoff: false,
+			retryDelay: 1,
+			expireInSeconds: 1,
+			retentionMinutes: 1,
+			deadLetter,
+		};
+
+		await boss.createQueue(queue, createProps);
+
+		let queueObj = await boss.getQueue(queue);
+
+		strictEqual(queue, queueObj.name);
+		strictEqual(createProps.policy, queueObj.policy);
+		strictEqual(createProps.retryLimit, queueObj.retryLimit);
+		strictEqual(createProps.retryBackoff, queueObj.retryBackoff);
+		strictEqual(createProps.retryDelay, queueObj.retryDelay);
+		strictEqual(createProps.expireInSeconds, queueObj.expireInSeconds);
+		strictEqual(createProps.retentionMinutes, queueObj.retentionMinutes);
+		strictEqual(createProps.deadLetter, queueObj.deadLetter);
+		assert(queueObj.createdOn);
+		assert(queueObj.updatedOn);
+
+		deadLetter = `${queue}_dlq2`;
+		await boss.createQueue(deadLetter);
+
+		const updateProps = {
+			policy: "short",
+			retryLimit: 2,
+			retryBackoff: true,
+			retryDelay: 2,
+			expireInSeconds: 2,
+			retentionMinutes: 2,
+			deadLetter,
+		};
+
+		await boss.updateQueue(queue, updateProps);
+
+		queueObj = await boss.getQueue(queue);
+
+		strictEqual(updateProps.policy, queueObj.policy);
+		strictEqual(updateProps.retryLimit, queueObj.retryLimit);
+		strictEqual(updateProps.retryBackoff, queueObj.retryBackoff);
+		strictEqual(updateProps.retryDelay, queueObj.retryDelay);
+		strictEqual(updateProps.expireInSeconds, queueObj.expireInSeconds);
+		strictEqual(updateProps.retentionMinutes, queueObj.retentionMinutes);
+		strictEqual(updateProps.deadLetter, queueObj.deadLetter);
+	});
+
+	it("jobs should inherit properties from queue", async function () {
+		const boss = (this.test.boss = await start({
+			...this.test.bossConfig,
+			noDefault: true,
+		}));
+		const queue = this.test.bossConfig.schema;
+
+		const deadLetter = `${queue}_dlq`;
+		await boss.createQueue(deadLetter);
 
-    const createProps = {
-      policy: 'standard',
-      retryLimit: 1,
-      retryBackoff: false,
-      retryDelay: 1,
-      expireInSeconds: 1,
-      retentionMinutes: 1,
-      deadLetter
-    }
+		const createProps = {
+			retryLimit: 1,
+			retryBackoff: true,
+			retryDelay: 2,
+			expireInSeconds: 3,
+			retentionMinutes: 4,
+			deadLetter,
+		};
 
-    await boss.createQueue(queue, createProps)
+		await boss.createQueue(queue, createProps);
 
-    let queueObj = await boss.getQueue(queue)
+		const jobId = await boss.send(queue);
 
-    assert.strictEqual(queue, queueObj.name)
-    assert.strictEqual(createProps.policy, queueObj.policy)
-    assert.strictEqual(createProps.retryLimit, queueObj.retryLimit)
-    assert.strictEqual(createProps.retryBackoff, queueObj.retryBackoff)
-    assert.strictEqual(createProps.retryDelay, queueObj.retryDelay)
-    assert.strictEqual(createProps.expireInSeconds, queueObj.expireInSeconds)
-    assert.strictEqual(createProps.retentionMinutes, queueObj.retentionMinutes)
-    assert.strictEqual(createProps.deadLetter, queueObj.deadLetter)
-    assert(queueObj.createdOn)
-    assert(queueObj.updatedOn)
+		const job = await boss.getJobById(queue, jobId);
 
-    deadLetter = `${queue}_dlq2`
-    await boss.createQueue(deadLetter)
+		const retentionMinutes =
+			(new Date(job.keepUntil) - new Date(job.createdOn)) / 1000 / 60;
 
-    const updateProps = {
-      policy: 'short',
-      retryLimit: 2,
-      retryBackoff: true,
-      retryDelay: 2,
-      expireInSeconds: 2,
-      retentionMinutes: 2,
-      deadLetter
-    }
+		strictEqual(createProps.retryLimit, job.retryLimit);
+		strictEqual(createProps.retryBackoff, job.retryBackoff);
+		strictEqual(createProps.retryDelay, job.retryDelay);
+		strictEqual(createProps.expireInSeconds, job.expireIn.seconds);
+		strictEqual(createProps.retentionMinutes, retentionMinutes);
+		strictEqual(createProps.deadLetter, job.deadLetter);
+	});
 
-    await boss.updateQueue(queue, updateProps)
+	it("short policy only allows 1 job in queue", async function () {
+		const boss = (this.test.boss = await start({
+			...this.test.bossConfig,
+			noDefault: true,
+		}));
+		const queue = this.test.bossConfig.schema;
 
-    queueObj = await boss.getQueue(queue)
+		await boss.createQueue(queue, { policy: "short" });
 
-    assert.strictEqual(updateProps.policy, queueObj.policy)
-    assert.strictEqual(updateProps.retryLimit, queueObj.retryLimit)
-    assert.strictEqual(updateProps.retryBackoff, queueObj.retryBackoff)
-    assert.strictEqual(updateProps.retryDelay, queueObj.retryDelay)
-    assert.strictEqual(updateProps.expireInSeconds, queueObj.expireInSeconds)
-    assert.strictEqual(updateProps.retentionMinutes, queueObj.retentionMinutes)
-    assert.strictEqual(updateProps.deadLetter, queueObj.deadLetter)
-  })
+		const jobId = await boss.send(queue);
 
-  it('jobs should inherit properties from queue', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
-    const queue = this.test.bossConfig.schema
+		assert(jobId);
 
-    const deadLetter = `${queue}_dlq`
-    await boss.createQueue(deadLetter)
+		const jobId2 = await boss.send(queue);
 
-    const createProps = {
-      retryLimit: 1,
-      retryBackoff: true,
-      retryDelay: 2,
-      expireInSeconds: 3,
-      retentionMinutes: 4,
-      deadLetter
-    }
+		strictEqual(jobId2, null);
 
-    await boss.createQueue(queue, createProps)
+		const [job] = await boss.fetch(queue);
 
-    const jobId = await boss.send(queue)
+		strictEqual(job.id, jobId);
 
-    const job = await boss.getJobById(queue, jobId)
+		const jobId3 = await boss.send(queue);
 
-    const retentionMinutes = (new Date(job.keepUntil) - new Date(job.createdOn)) / 1000 / 60
+		assert(jobId3);
+	});
 
-    assert.strictEqual(createProps.retryLimit, job.retryLimit)
-    assert.strictEqual(createProps.retryBackoff, job.retryBackoff)
-    assert.strictEqual(createProps.retryDelay, job.retryDelay)
-    assert.strictEqual(createProps.expireInSeconds, job.expireIn.seconds)
-    assert.strictEqual(createProps.retentionMinutes, retentionMinutes)
-    assert.strictEqual(createProps.deadLetter, job.deadLetter)
-  })
+	it("short policy should be extended with singletonKey", async function () {
+		const boss = (this.test.boss = await start({
+			...this.test.bossConfig,
+			noDefault: true,
+		}));
+		const queue = this.test.bossConfig.schema;
 
-  it('short policy only allows 1 job in queue', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
-    const queue = this.test.bossConfig.schema
+		await boss.createQueue(queue, { policy: "short" });
 
-    await boss.createQueue(queue, { policy: 'short' })
+		const jobId = await boss.send(queue, null, { singletonKey: "a" });
 
-    const jobId = await boss.send(queue)
+		assert(jobId);
 
-    assert(jobId)
+		const jobId2 = await boss.send(queue, null, { singletonKey: "a" });
 
-    const jobId2 = await boss.send(queue)
+		strictEqual(jobId2, null);
 
-    assert.strictEqual(jobId2, null)
+		const jobId3 = await boss.send(queue, null, { singletonKey: "b" });
 
-    const [job] = await boss.fetch(queue)
+		assert(jobId3);
 
-    assert.strictEqual(job.id, jobId)
+		const [job] = await boss.fetch(queue);
 
-    const jobId3 = await boss.send(queue)
+		strictEqual(job.id, jobId);
 
-    assert(jobId3)
-  })
+		const jobId4 = await boss.send(queue, null, { singletonKey: "a" });
 
-  it('short policy should be extended with singletonKey', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
-    const queue = this.test.bossConfig.schema
+		assert(jobId4);
+	});
 
-    await boss.createQueue(queue, { policy: 'short' })
+	it("singleton policy only allows 1 active job", async function () {
+		const boss = (this.test.boss = await start({
+			...this.test.bossConfig,
+			noDefault: true,
+		}));
+		const queue = this.test.bossConfig.schema;
 
-    const jobId = await boss.send(queue, null, { singletonKey: 'a' })
+		await boss.createQueue(queue, { policy: "singleton" });
 
-    assert(jobId)
+		await boss.send(queue);
 
-    const jobId2 = await boss.send(queue, null, { singletonKey: 'a' })
+		await boss.send(queue);
 
-    assert.strictEqual(jobId2, null)
+		const [job1] = await boss.fetch(queue);
 
-    const jobId3 = await boss.send(queue, null, { singletonKey: 'b' })
+		const [job2] = await boss.fetch(queue);
 
-    assert(jobId3)
+		assert(!job2);
 
-    const [job] = await boss.fetch(queue)
+		await boss.complete(queue, job1.id);
 
-    assert.strictEqual(job.id, jobId)
+		const [job3] = await boss.fetch(queue);
 
-    const jobId4 = await boss.send(queue, null, { singletonKey: 'a' })
+		assert(job3);
+	});
 
-    assert(jobId4)
-  })
+	it("singleton policy should be extended with singletonKey", async function () {
+		const boss = (this.test.boss = await start({
+			...this.test.bossConfig,
+			noDefault: true,
+		}));
+		const queue = this.test.bossConfig.schema;
 
-  it('singleton policy only allows 1 active job', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
-    const queue = this.test.bossConfig.schema
+		await boss.createQueue(queue, { policy: "singleton" });
 
-    await boss.createQueue(queue, { policy: 'singleton' })
+		await boss.send(queue, null, { singletonKey: "a" });
 
-    await boss.send(queue)
+		await boss.send(queue, null, { singletonKey: "b" });
 
-    await boss.send(queue)
+		const [job1] = await boss.fetch(queue);
 
-    const [job1] = await boss.fetch(queue)
+		assert(job1);
 
-    const [job2] = await boss.fetch(queue)
+		const [job2] = await boss.fetch(queue);
 
-    assert(!job2)
+		assert(job2);
 
-    await boss.complete(queue, job1.id)
+		await boss.send(queue, null, { singletonKey: "b" });
 
-    const [job3] = await boss.fetch(queue)
+		const [job3] = await boss.fetch(queue);
 
-    assert(job3)
-  })
+		assert(!job3);
 
-  it('singleton policy should be extended with singletonKey', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
-    const queue = this.test.bossConfig.schema
+		await boss.complete(queue, job2.id);
 
-    await boss.createQueue(queue, { policy: 'singleton' })
+		const [job3b] = await boss.fetch(queue);
 
-    await boss.send(queue, null, { singletonKey: 'a' })
+		assert(job3b);
+	});
 
-    await boss.send(queue, null, { singletonKey: 'b' })
+	it("stately policy only allows 1 job per state up to active", async function () {
+		const boss = (this.test.boss = await start({
+			...this.test.bossConfig,
+			noDefault: true,
+		}));
+		const queue = this.test.bossConfig.schema;
 
-    const [job1] = await boss.fetch(queue)
+		await boss.createQueue(queue, { policy: "stately" });
 
-    assert(job1)
+		const jobId1 = await boss.send(queue, null, { retryLimit: 1 });
 
-    const [job2] = await boss.fetch(queue)
+		const blockedId = await boss.send(queue);
 
-    assert(job2)
+		strictEqual(blockedId, null);
 
-    await boss.send(queue, null, { singletonKey: 'b' })
+		let [job1] = await boss.fetch(queue);
 
-    const [job3] = await boss.fetch(queue)
+		await boss.fail(queue, job1.id);
 
-    assert(!job3)
+		job1 = await boss.getJobById(queue, jobId1);
 
-    await boss.complete(queue, job2.id)
+		strictEqual(job1.state, "retry");
 
-    const [job3b] = await boss.fetch(queue)
+		const jobId2 = await boss.send(queue, null, { retryLimit: 1 });
 
-    assert(job3b)
-  })
+		assert(jobId2);
 
-  it('stately policy only allows 1 job per state up to active', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
-    const queue = this.test.bossConfig.schema
+		await boss.fetch(queue);
 
-    await boss.createQueue(queue, { policy: 'stately' })
+		const job1a = await boss.getJobById(queue, jobId1);
 
-    const jobId1 = await boss.send(queue, null, { retryLimit: 1 })
+		strictEqual(job1a.state, "active");
 
-    const blockedId = await boss.send(queue)
+		const [blockedSecondActive] = await boss.fetch(queue);
 
-    assert.strictEqual(blockedId, null)
+		assert(!blockedSecondActive);
+	});
 
-    let [job1] = await boss.fetch(queue)
+	it("stately policy fails a job without retry when others are active", async function () {
+		const boss = (this.test.boss = await start({
+			...this.test.bossConfig,
+			noDefault: true,
+		}));
+		const queue = this.test.bossConfig.schema;
+		const deadLetter = `${queue}_dlq`;
 
-    await boss.fail(queue, job1.id)
+		await boss.createQueue(deadLetter);
+		await boss.createQueue(queue, {
+			policy: "stately",
+			deadLetter,
+			retryLimit: 3,
+		});
 
-    job1 = await boss.getJobById(queue, jobId1)
+		const jobId1 = await boss.send(queue, null, { expireInSeconds: 1 });
+		await boss.fetch(queue);
+		await boss.fail(queue, jobId1);
+		const job1Data = await boss.getJobById(queue, jobId1);
+		strictEqual(job1Data.state, "retry");
 
-    assert.strictEqual(job1.state, 'retry')
+		// higher priority new job should be active next
+		const jobId2 = await boss.send(queue, null, {
+			priority: 1,
+			expireInSeconds: 1,
+		});
+		await boss.fetch(queue);
 
-    const jobId2 = await boss.send(queue, null, { retryLimit: 1 })
+		const jobId3 = await boss.send(queue);
+		assert(jobId3);
 
-    assert(jobId2)
+		await boss.fail(queue, jobId2);
 
-    await boss.fetch(queue)
+		const job2Data = await boss.getJobById(queue, jobId2);
 
-    const job1a = await boss.getJobById(queue, jobId1)
+		strictEqual(job2Data.state, "failed");
 
-    assert.strictEqual(job1a.state, 'active')
+		const [job2Dlq] = await boss.fetch(deadLetter);
 
-    const [blockedSecondActive] = await boss.fetch(queue)
+		assert(job2Dlq);
+	});
 
-    assert(!blockedSecondActive)
-  })
+	it("stately policy should be extended with singletonKey", async function () {
+		const boss = (this.test.boss = await start({
+			...this.test.bossConfig,
+			noDefault: true,
+		}));
+		const queue = this.test.bossConfig.schema;
 
-  it('stately policy fails a job without retry when others are active', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
-    const queue = this.test.bossConfig.schema
-    const deadLetter = queue + '_dlq'
+		await boss.createQueue(queue, { policy: "stately" });
 
-    await boss.createQueue(deadLetter)
-    await boss.createQueue(queue, { policy: 'stately', deadLetter, retryLimit: 3 })
+		const jobAId = await boss.send(queue, null, {
+			singletonKey: "a",
+			retryLimit: 1,
+		});
 
-    const jobId1 = await boss.send(queue, null, { expireInSeconds: 1 })
-    await boss.fetch(queue)
-    await boss.fail(queue, jobId1)
-    const job1Data = await boss.getJobById(queue, jobId1)
-    assert.strictEqual(job1Data.state, 'retry')
+		assert(jobAId);
 
-    // higher priority new job should be active next
-    const jobId2 = await boss.send(queue, null, { priority: 1, expireInSeconds: 1 })
-    await boss.fetch(queue)
+		const jobBId = await boss.send(queue, null, {
+			singletonKey: "b",
+			retryLimit: 1,
+		});
 
-    const jobId3 = await boss.send(queue)
-    assert(jobId3)
+		assert(jobBId);
 
-    await boss.fail(queue, jobId2)
+		const jobA2Id = await boss.send(queue, null, {
+			singletonKey: "a",
+			retryLimit: 1,
+		});
 
-    const job2Data = await boss.getJobById(queue, jobId2)
+		strictEqual(jobA2Id, null);
 
-    assert.strictEqual(job2Data.state, 'failed')
+		let [jobA] = await boss.fetch(queue);
 
-    const [job2Dlq] = await boss.fetch(deadLetter)
+		await boss.fail(queue, jobA.id);
 
-    assert(job2Dlq)
-  })
+		jobA = await boss.getJobById(queue, jobAId);
 
-  it('stately policy should be extended with singletonKey', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
-    const queue = this.test.bossConfig.schema
+		strictEqual(jobA.state, "retry");
 
-    await boss.createQueue(queue, { policy: 'stately' })
+		await boss.fetch(queue);
 
-    const jobAId = await boss.send(queue, null, { singletonKey: 'a', retryLimit: 1 })
+		jobA = await boss.getJobById(queue, jobAId);
 
-    assert(jobAId)
+		strictEqual(jobA.state, "active");
 
-    const jobBId = await boss.send(queue, null, { singletonKey: 'b', retryLimit: 1 })
+		let [jobB] = await boss.fetch(queue);
 
-    assert(jobBId)
+		assert(jobB);
 
-    const jobA2Id = await boss.send(queue, null, { singletonKey: 'a', retryLimit: 1 })
+		jobB = await boss.getJobById(queue, jobBId);
 
-    assert.strictEqual(jobA2Id, null)
+		strictEqual(jobB.state, "active");
 
-    let [jobA] = await boss.fetch(queue)
+		const jobA3Id = await boss.send(queue, null, { singletonKey: "a" });
 
-    await boss.fail(queue, jobA.id)
+		assert(jobA3Id);
 
-    jobA = await boss.getJobById(queue, jobAId)
+		const [jobA3] = await boss.fetch(queue);
 
-    assert.strictEqual(jobA.state, 'retry')
+		assert(!jobA3);
+	});
 
-    await boss.fetch(queue)
+	it("should clear a specific queue", async function () {
+		const boss = (this.test.boss = await start({
+			...this.test.bossConfig,
+			noDefault: true,
+		}));
 
-    jobA = await boss.getJobById(queue, jobAId)
+		const queue1 = `${this.test.bossConfig.schema}1`;
+		const queue2 = `${this.test.bossConfig.schema}2`;
 
-    assert.strictEqual(jobA.state, 'active')
+		await boss.createQueue(queue1);
+		await boss.send(queue1);
 
-    let [jobB] = await boss.fetch(queue)
+		await boss.createQueue(queue2);
+		await boss.send(queue2);
 
-    assert(jobB)
+		const q1Count1 = await boss.getQueueSize(queue1);
+		const q2Count1 = await boss.getQueueSize(queue2);
 
-    jobB = await boss.getJobById(queue, jobBId)
+		strictEqual(1, q1Count1);
+		strictEqual(1, q2Count1);
 
-    assert.strictEqual(jobB.state, 'active')
+		await boss.purgeQueue(queue1);
 
-    const jobA3Id = await boss.send(queue, null, { singletonKey: 'a' })
+		const q1Count2 = await boss.getQueueSize(queue1);
+		const q2Count2 = await boss.getQueueSize(queue2);
 
-    assert(jobA3Id)
+		strictEqual(0, q1Count2);
+		strictEqual(1, q2Count2);
 
-    const [jobA3] = await boss.fetch(queue)
+		await boss.purgeQueue(queue2);
 
-    assert(!jobA3)
-  })
+		const q2Count3 = await boss.getQueueSize(queue2);
 
-  it('should clear a specific queue', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
-
-    const queue1 = `${this.test.bossConfig.schema}1`
-    const queue2 = `${this.test.bossConfig.schema}2`
-
-    await boss.createQueue(queue1)
-    await boss.send(queue1)
-
-    await boss.createQueue(queue2)
-    await boss.send(queue2)
-
-    const q1Count1 = await boss.getQueueSize(queue1)
-    const q2Count1 = await boss.getQueueSize(queue2)
-
-    assert.strictEqual(1, q1Count1)
-    assert.strictEqual(1, q2Count1)
-
-    await boss.purgeQueue(queue1)
-
-    const q1Count2 = await boss.getQueueSize(queue1)
-    const q2Count2 = await boss.getQueueSize(queue2)
-
-    assert.strictEqual(0, q1Count2)
-    assert.strictEqual(1, q2Count2)
-
-    await boss.purgeQueue(queue2)
-
-    const q2Count3 = await boss.getQueueSize(queue2)
-
-    assert.strictEqual(0, q2Count3)
-  })
-})
+		strictEqual(0, q2Count3);
+	});
+});
