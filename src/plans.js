@@ -715,7 +715,7 @@ function insertJobs (schema, { table, name, returnId = true }) {
           WHEN right("startAfter", 1) = 'Z' THEN CAST("startAfter" as timestamp with time zone)
           ELSE now() + CAST(COALESCE("startAfter",'0') as interval)
           END as start_after
-      FROM json_to_recordset($1) as x (
+      FROM json_to_recordset($1::json) as x (
         id uuid,
         name text,
         priority integer,
