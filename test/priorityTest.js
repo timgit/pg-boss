@@ -1,9 +1,9 @@
-const assert = require('node:assert')
-const helper = require('./testHelper')
+import { strictEqual } from 'node:assert'
+import { start } from './testHelper.js'
 
-describe('priority', function () {
+describe('priority', () => {
   it('higher priority job', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const boss = (this.test.boss = await start(this.test.bossConfig))
     const queue = this.test.bossConfig.schema
 
     await boss.send(queue)
@@ -12,11 +12,11 @@ describe('priority', function () {
 
     const [job] = await boss.fetch(queue)
 
-    assert.strictEqual(job.id, high)
+    strictEqual(job.id, high)
   })
 
   it('descending priority order', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const boss = (this.test.boss = await start({ ...this.test.bossConfig }))
     const queue = this.test.bossConfig.schema
 
     const low = await boss.send(queue, null, { priority: 1 })
@@ -27,13 +27,13 @@ describe('priority', function () {
     const [job2] = await boss.fetch(queue)
     const [job3] = await boss.fetch(queue)
 
-    assert.strictEqual(job1.id, high)
-    assert.strictEqual(job2.id, medium)
-    assert.strictEqual(job3.id, low)
+    strictEqual(job1.id, high)
+    strictEqual(job2.id, medium)
+    strictEqual(job3.id, low)
   })
 
   it('bypasses priority when priority option used in fetch', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const boss = (this.test.boss = await start({ ...this.test.bossConfig }))
     const queue = this.test.bossConfig.schema
 
     const low = await boss.send(queue, null, { priority: 1 })
@@ -44,8 +44,8 @@ describe('priority', function () {
     const [job2] = await boss.fetch(queue, { priority: false })
     const [job3] = await boss.fetch(queue, { priority: false })
 
-    assert.strictEqual(job1.id, low)
-    assert.strictEqual(job2.id, medium)
-    assert.strictEqual(job3.id, high)
+    strictEqual(job1.id, low)
+    strictEqual(job2.id, medium)
+    strictEqual(job3.id, high)
   })
 })

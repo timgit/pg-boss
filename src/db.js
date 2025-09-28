@@ -1,7 +1,7 @@
-const EventEmitter = require('node:events')
-const pg = require('pg')
+import EventEmitter from 'node:events'
+import { Pool } from 'pg'
 
-class Db extends EventEmitter {
+export default class Db extends EventEmitter {
   constructor (config) {
     super()
 
@@ -18,8 +18,8 @@ class Db extends EventEmitter {
   }
 
   async open () {
-    this.pool = new pg.Pool(this.config)
-    this.pool.on('error', error => this.emit('error', error))
+    this.pool = new Pool(this.config)
+    this.pool.on('error', (error) => this.emit('error', error))
     this.opened = true
   }
 
@@ -46,5 +46,3 @@ class Db extends EventEmitter {
     }
   }
 }
-
-module.exports = Db

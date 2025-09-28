@@ -1,10 +1,10 @@
-const { delay } = require('../src/tools')
-const assert = require('node:assert')
-const { DateTime } = require('luxon')
-const helper = require('./testHelper')
-const PgBoss = require('../')
+import assert, { strictEqual } from 'node:assert'
+import { DateTime } from 'luxon'
+import PgBoss from '../src/index.js'
+import { delay } from '../src/tools.ts'
+import { start } from './testHelper.js'
 
-describe('schedule', function () {
+describe('schedule', () => {
   it('should send job based on every minute expression', async function () {
     const config = {
       ...this.test.bossConfig,
@@ -13,7 +13,7 @@ describe('schedule', function () {
       schedule: true
     }
 
-    const boss = this.test.boss = await helper.start(config)
+    const boss = (this.test.boss = await start(config))
 
     const queue = this.test.bossConfig.schema
 
@@ -34,10 +34,15 @@ describe('schedule', function () {
       schedule: true
     }
 
-    const boss = this.test.boss = await helper.start(config)
+    const boss = (this.test.boss = await start(config))
     const queue = this.test.bossConfig.schema
 
-    await boss.schedule(queue, '* * * * *', {}, { retryLimit: 42, singletonSeconds: 5 })
+    await boss.schedule(
+      queue,
+      '* * * * *',
+      {},
+      { retryLimit: 42, singletonSeconds: 5 }
+    )
 
     await delay(4000)
 
@@ -45,24 +50,27 @@ describe('schedule', function () {
 
     assert(job)
 
-    assert.strictEqual(job.retryLimit, 42)
+    strictEqual(job.retryLimit, 42)
     assert(job.singletonOn)
   })
 
   it('should fail to schedule a queue that does not exist', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
+    const boss = (this.test.boss = await start({
+      ...this.test.bossConfig,
+      noDefault: true
+    }))
     const queue = this.test.bossConfig.schema
 
     try {
       await boss.schedule(queue, '* * * * *')
       assert(false)
-    } catch (err) {
+    } catch (_err) {
       assert(true)
     }
   })
 
   it('should send job based on every minute expression after a restart', async function () {
-    let boss = await helper.start({ ...this.test.bossConfig, schedule: false })
+    let boss = await start({ ...this.test.bossConfig, schedule: false })
 
     const queue = this.test.bossConfig.schema
 
@@ -70,7 +78,11 @@ describe('schedule', function () {
 
     await boss.stop({ graceful: false })
 
-    boss = await helper.start({ ...this.test.bossConfig, cronWorkerIntervalSeconds: 1, schedule: true })
+    boss = await start({
+      ...this.test.bossConfig,
+      cronWorkerIntervalSeconds: 1,
+      schedule: true
+    })
 
     await delay(4000)
 
@@ -86,7 +98,7 @@ describe('schedule', function () {
       ...this.test.bossConfig,
       cronWorkerIntervalSeconds: 1
     }
-    const boss = this.test.boss = await helper.start(config)
+    const boss = (this.test.boss = await start(config))
 
     const queue = this.test.bossConfig.schema
 
@@ -95,7 +107,7 @@ describe('schedule', function () {
 
     const scheduled = await boss.getSchedules()
 
-    assert.strictEqual(scheduled.length, 0)
+    strictEqual(scheduled.length, 0)
   })
 
   it('should send job based on current minute in UTC', async function () {
@@ -106,7 +118,7 @@ describe('schedule', function () {
       schedule: true
     }
 
-    const boss = this.test.boss = await helper.start(config)
+    const boss = (this.test.boss = await start(config))
 
     const queue = this.test.bossConfig.schema
 
@@ -143,7 +155,7 @@ describe('schedule', function () {
       schedule: true
     }
 
-    const boss = this.test.boss = await helper.start(config)
+    const boss = (this.test.boss = await start(config))
 
     const queue = this.test.bossConfig.schema
 
@@ -181,7 +193,7 @@ describe('schedule', function () {
       __test__force_clock_skew_warning: true
     }
 
-    const boss = this.test.boss = new PgBoss(config)
+    const boss = (this.test.boss = new PgBoss(config))
 
     let warningCount = 0
 
@@ -192,7 +204,7 @@ describe('schedule', function () {
 
     await boss.start()
 
-    assert.strictEqual(warningCount, 1)
+    strictEqual(warningCount, 1)
   })
 
   it('errors during clock skew monitoring should emit', async function () {
@@ -200,15 +212,16 @@ describe('schedule', function () {
       ...this.test.bossConfig,
       clockMonitorIntervalSeconds: 1,
       schedule: true,
-      __test__force_clock_monitoring_error: 'pg-boss mock error: clock skew monitoring'
+      __test__force_clock_monitoring_error:
+        'pg-boss mock error: clock skew monitoring'
     }
 
     let errorCount = 0
 
-    const boss = this.test.boss = new PgBoss(config)
+    const boss = (this.test.boss = new PgBoss(config))
 
-    boss.once('error', error => {
-      assert.strictEqual(error.message, config.__test__force_clock_monitoring_error)
+    boss.once('error', (error) => {
+      strictEqual(error.message, config.__test__force_clock_monitoring_error)
       errorCount++
     })
 
@@ -216,7 +229,7 @@ describe('schedule', function () {
 
     await delay(2000)
 
-    assert.strictEqual(errorCount, 1)
+    strictEqual(errorCount, 1)
   })
 
   it('errors during cron monitoring should emit', async function () {
@@ -224,15 +237,16 @@ describe('schedule', function () {
       ...this.test.bossConfig,
       cronMonitorIntervalSeconds: 1,
       schedule: true,
-      __test__force_cron_monitoring_error: 'pg-boss mock error: cron monitoring'
+      __test__force_cron_monitoring_error:
+        'pg-boss mock error: cron monitoring'
     }
 
     let errorCount = 0
 
-    const boss = this.test.boss = new PgBoss(config)
+    const boss = (this.test.boss = new PgBoss(config))
 
-    boss.once('error', error => {
-      assert.strictEqual(error.message, config.__test__force_cron_monitoring_error)
+    boss.once('error', (error) => {
+      strictEqual(error.message, config.__test__force_cron_monitoring_error)
       errorCount++
     })
 
@@ -240,7 +254,7 @@ describe('schedule', function () {
 
     await delay(2000)
 
-    assert.strictEqual(errorCount, 1)
+    strictEqual(errorCount, 1)
   })
 
   it('clock monitoring error handling works', async function () {
@@ -248,15 +262,16 @@ describe('schedule', function () {
       ...this.test.bossConfig,
       schedule: true,
       clockMonitorIntervalSeconds: 1,
-      __test__force_clock_monitoring_error: 'pg-boss mock error: clock monitoring'
+      __test__force_clock_monitoring_error:
+        'pg-boss mock error: clock monitoring'
     }
 
     let errorCount = 0
 
-    const boss = this.test.boss = new PgBoss(config)
+    const boss = (this.test.boss = new PgBoss(config))
 
     boss.once('error', (error) => {
-      assert.strictEqual(error.message, config.__test__force_clock_monitoring_error)
+      strictEqual(error.message, config.__test__force_clock_monitoring_error)
       errorCount++
     })
 
@@ -264,7 +279,7 @@ describe('schedule', function () {
 
     await delay(4000)
 
-    assert.strictEqual(errorCount, 1)
+    strictEqual(errorCount, 1)
   })
 
   it('should accept a unique key to have more than one schedule per queue', async function () {
@@ -272,7 +287,7 @@ describe('schedule', function () {
       ...this.test.bossConfig
     }
 
-    const boss = this.test.boss = await helper.start(config)
+    const boss = (this.test.boss = await start(config))
 
     const queue = this.test.bossConfig.schema
 
@@ -281,7 +296,7 @@ describe('schedule', function () {
 
     const schedules = await boss.getSchedules()
 
-    assert.strictEqual(schedules.length, 2)
+    strictEqual(schedules.length, 2)
   })
 
   it('should update a schedule with a unique key', async function () {
@@ -289,7 +304,7 @@ describe('schedule', function () {
       ...this.test.bossConfig
     }
 
-    const boss = this.test.boss = await helper.start(config)
+    const boss = (this.test.boss = await start(config))
 
     const queue = this.test.bossConfig.schema
 
@@ -298,8 +313,8 @@ describe('schedule', function () {
 
     const schedules = await boss.getSchedules()
 
-    assert.strictEqual(schedules.length, 1)
-    assert.strictEqual(schedules[0].cron, '0 1 * * *')
+    strictEqual(schedules.length, 1)
+    strictEqual(schedules[0].cron, '0 1 * * *')
   })
 
   it('should update a schedule without a unique key', async function () {
@@ -307,7 +322,7 @@ describe('schedule', function () {
       ...this.test.bossConfig
     }
 
-    const boss = this.test.boss = await helper.start(config)
+    const boss = (this.test.boss = await start(config))
 
     const queue = this.test.bossConfig.schema
 
@@ -316,8 +331,8 @@ describe('schedule', function () {
 
     const schedules = await boss.getSchedules()
 
-    assert.strictEqual(schedules.length, 1)
-    assert.strictEqual(schedules[0].cron, '0 1 * * *')
+    strictEqual(schedules.length, 1)
+    strictEqual(schedules[0].cron, '0 1 * * *')
   })
 
   it('should remove a schedule using a unique key', async function () {
@@ -325,7 +340,7 @@ describe('schedule', function () {
       ...this.test.bossConfig
     }
 
-    const boss = this.test.boss = await helper.start(config)
+    const boss = (this.test.boss = await start(config))
 
     const queue = this.test.bossConfig.schema
 
@@ -334,15 +349,15 @@ describe('schedule', function () {
 
     let schedules = await boss.getSchedules()
 
-    assert.strictEqual(schedules.length, 2)
+    strictEqual(schedules.length, 2)
 
     await boss.unschedule(queue, 'a')
 
     schedules = await boss.getSchedules()
 
-    assert.strictEqual(schedules.length, 1)
+    strictEqual(schedules.length, 1)
 
-    assert.strictEqual(schedules[0].cron, '0 1 * * *')
+    strictEqual(schedules[0].cron, '0 1 * * *')
   })
 
   it('should get schedules filtered by a queue name', async function () {
@@ -350,10 +365,10 @@ describe('schedule', function () {
       ...this.test.bossConfig
     }
 
-    const boss = this.test.boss = await helper.start(config)
+    const boss = (this.test.boss = await start(config))
 
     const queue = this.test.bossConfig.schema
-    const queue2 = this.test.bossConfig.schema + '2'
+    const queue2 = `${this.test.bossConfig.schema}2`
 
     await boss.createQueue(queue2)
 
@@ -361,12 +376,12 @@ describe('schedule', function () {
     await boss.schedule(queue2, '0 1 * * *')
 
     let schedules = await boss.getSchedules()
-    assert.strictEqual(schedules.length, 2)
+    strictEqual(schedules.length, 2)
 
     schedules = await boss.getSchedules(queue2)
 
-    assert.strictEqual(schedules.length, 1)
-    assert.strictEqual(schedules[0].cron, '0 1 * * *')
+    strictEqual(schedules.length, 1)
+    strictEqual(schedules[0].cron, '0 1 * * *')
   })
 
   it('should get schedules filtered by a queue name and key', async function () {
@@ -374,11 +389,11 @@ describe('schedule', function () {
       ...this.test.bossConfig
     }
 
-    const boss = this.test.boss = await helper.start(config)
+    const boss = (this.test.boss = await start(config))
 
     const key = 'a'
     const queue = this.test.bossConfig.schema
-    const queue2 = this.test.bossConfig.schema + '2'
+    const queue2 = `${this.test.bossConfig.schema}2`
 
     await boss.createQueue(queue2)
 
@@ -387,11 +402,11 @@ describe('schedule', function () {
     await boss.schedule(queue2, '0 2 * * *')
 
     let schedules = await boss.getSchedules()
-    assert.strictEqual(schedules.length, 3)
+    strictEqual(schedules.length, 3)
 
     schedules = await boss.getSchedules(queue, key)
 
-    assert.strictEqual(schedules.length, 1)
-    assert.strictEqual(schedules[0].cron, '0 1 * * *')
+    strictEqual(schedules.length, 1)
+    strictEqual(schedules[0].cron, '0 1 * * *')
   })
 })

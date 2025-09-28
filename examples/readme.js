@@ -1,8 +1,8 @@
-const helper = require('../test/testHelper')
+import { getConnectionString } from '../test/testHelper.js'
+import PgBoss from '../src/index.js'
 
 async function readme () {
-  const PgBoss = require('../src')
-  const boss = new PgBoss(helper.getConnectionString())
+  const boss = new PgBoss(getConnectionString())
 
   boss.on('error', console.error)
 
@@ -21,8 +21,7 @@ async function readme () {
   })
 }
 
-readme()
-  .catch(err => {
-    console.log(err)
-    process.exit(1)
-  })
+readme().catch((err) => {
+  console.log(err)
+  process.exit(1)
+})

@@ -1,8 +1,8 @@
-const assert = require('node:assert')
-const PgBoss = require('../')
-const { delay } = require('../src/tools')
+import assert, { strictEqual } from 'node:assert'
+import PgBoss from '../src/index.js'
+import { delay } from '../src/tools.ts'
 
-describe('background processing error handling', function () {
+describe('background processing error handling', () => {
   it('maintenance error handling works', async function () {
     const defaults = {
       superviseIntervalSeconds: 1,
@@ -11,12 +11,12 @@ describe('background processing error handling', function () {
     }
 
     const config = { ...this.test.bossConfig, ...defaults }
-    const boss = this.test.boss = new PgBoss(config)
+    const boss = (this.test.boss = new PgBoss(config))
 
     let errorCount = 0
 
     boss.once('error', (error) => {
-      assert.strictEqual(error.message, config.__test__throw_maint)
+      strictEqual(error.message, config.__test__throw_maint)
       errorCount++
     })
 
@@ -24,7 +24,7 @@ describe('background processing error handling', function () {
 
     await delay(3000)
 
-    assert.strictEqual(errorCount, 1)
+    strictEqual(errorCount, 1)
   })
 
   it('shutdown error handling works', async function () {
@@ -33,12 +33,12 @@ describe('background processing error handling', function () {
       __test__throw_shutdown: 'shutdown error'
     }
 
-    const boss = this.test.boss = new PgBoss(config)
+    const boss = (this.test.boss = new PgBoss(config))
 
     let errorCount = 0
 
     boss.once('error', (error) => {
-      assert.strictEqual(error.message, config.__test__throw_shutdown)
+      strictEqual(error.message, config.__test__throw_shutdown)
       errorCount++
     })
 
@@ -48,7 +48,7 @@ describe('background processing error handling', function () {
 
     await delay(1000)
 
-    assert.strictEqual(errorCount, 1)
+    strictEqual(errorCount, 1)
   })
 
   it('shutdown monitoring error handling works', async function () {
@@ -57,14 +57,14 @@ describe('background processing error handling', function () {
       __test__throw_stop_monitor: 'monitor error'
     }
 
-    const boss = this.test.boss = new PgBoss(config)
+    const boss = (this.test.boss = new PgBoss(config))
 
     await boss.start()
 
     try {
       await boss.stop({ wait: false })
       assert(false)
-    } catch (err) {
+    } catch (_err) {
       assert(true)
     }
   })

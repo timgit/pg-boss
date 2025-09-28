@@ -1,8 +1,8 @@
-const helper = require('./testHelper')
+import { start } from './testHelper.js'
 
-describe('error', function () {
+describe('error', () => {
   it('should handle an error in a worker and not blow up', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const boss = (this.test.boss = await start(this.test.bossConfig))
     const queue = this.test.bossConfig.schema
 
     let processCount = 0

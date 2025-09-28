@@ -1,5 +1,11 @@
-const EventEmitter = require('node:events')
-const plans = require('./plans')
+import EventEmitter from 'node:events'
+import {
+  cacheQueueStats,
+  deletion,
+  failJobsByTimeout,
+  trySetQueueDeletionTime,
+  trySetQueueMonitorTime
+} from './plans.js'
 
 const events = {
   error: 'error',
@@ -7,11 +13,18 @@ const events = {
 }
 
 const WARNINGS = {
-  SLOW_QUERY: { seconds: 30, message: 'Warning: slow query. Your queues and/or database server should be reviewed' },
-  LARGE_QUEUE: { size: 10_000, mesasge: 'Warning: large queue backlog. Your queue should be reviewed' }
+  SLOW_QUERY: {
+    seconds: 30,
+    message:
+      'Warning: slow query. Your queues and/or database server should be reviewed'
+  },
+  LARGE_QUEUE: {
+    size: 10_000,
+    mesasge: 'Warning: large queue backlog. Your queue should be reviewed'
+  }
 }
 
-class Boss extends EventEmitter {
+export default class Boss extends EventEmitter {
   #stopped
   #maintaining
   #superviseInterval
@@ -28,9 +41,7 @@ class Boss extends EventEmitter {
     this.#stopped = true
 
     this.events = events
-    this.functions = [
-      this.supervise
-    ]
+    this.functions = [this.supervise]
 
     if (config.warningSlowQuerySeconds) {
       WARNINGS.SLOW_QUERY.seconds = config.warningSlowQuerySeconds
@@ -43,7 +54,10 @@ class Boss extends EventEmitter {
 
   async start () {
     if (this.#stopped) {
-      this.#superviseInterval = setInterval(() => this.#onSupervise(), this.#config.superviseIntervalSeconds * 1000)
+      this.#superviseInterval = setInterval(
+        () => this.#onSupervise(),
+        this.#config.superviseIntervalSeconds * 1000
+      )
       this.#stopped = false
     }
   }
@@ -64,8 +78,14 @@ class Boss extends EventEmitter {
 
     const elapsed = (ended - started) / 1000
 
-    if (elapsed > WARNINGS.SLOW_QUERY.seconds || this.#config.__test__warn_slow_query) {
-      this.emit(events.warning, { message: WARNINGS.SLOW_QUERY.message, data: { elapsed, sql, values } })
+    if (
+      elapsed > WARNINGS.SLOW_QUERY.seconds ||
+      this.#config.__test__warn_slow_query
+    ) {
+      this.emit(events.warning, {
+        message: WARNINGS.SLOW_QUERY.message,
+        data: { elapsed, sql, values }
+      })
     }
 
     return result
@@ -75,14 +95,14 @@ class Boss extends EventEmitter {
     try {
       if (this.#stopped) return
       if (this.#maintaining) return
-      if (this.#config.__test__throw_maint) throw new Error(this.#config.__test__throw_maint)
+      if (this.#config.__test__throw_maint) { throw new Error(this.#config.__test__throw_maint) }
 
       this.#maintaining = true
 
       const queues = await this.#manager.getQueues()
 
       for (const queue of queues) {
-        !this.#stopped && await this.supervise(queue)
+        !this.#stopped && (await this.supervise(queue))
       }
     } catch (err) {
       this.emit(events.error, err)
@@ -96,7 +116,8 @@ class Boss extends EventEmitter {
 
     if (!value) {
       queues = await this.#manager.getQueues()
-    } if (typeof value === 'string') {
+    }
+    if (typeof value === 'string') {
       queues = await this.#manager.getQueues(value)
     } else if (typeof value === 'object') {
       queues = [value]
@@ -111,7 +132,7 @@ class Boss extends EventEmitter {
 
     for (const queueGroup of Object.values(queueGroups)) {
       const { table, queues } = queueGroup
-      const names = queues.map(i => i.name)
+      const names = queues.map((i) => i.name)
 
       while (names.length) {
         const chunk = names.splice(0, 100)
@@ -123,37 +144,49 @@ class Boss extends EventEmitter {
   }
 
   async #monitor (table, names) {
-    const command = plans.trySetQueueMonitorTime(this.#config.schema, names, this.#config.monitorIntervalSeconds)
+    const command = trySetQueueMonitorTime(
+      this.#config.schema,
+      names,
+      this.#config.monitorIntervalSeconds
+    )
     const { rows } = await this.#executeSql(command)
 
     if (rows.length) {
-      const queues = rows.map(q => q.name)
+      const queues = rows.map((q) => q.name)
 
-      const cacheStatsSql = plans.cacheQueueStats(this.#config.schema, table, queues)
+      const cacheStatsSql = cacheQueueStats(this.#config.schema, table, queues)
       const results = await this.#executeSql(cacheStatsSql)
 
-      const inter = results.flatMap(i => i.rows)
-      const warnings = inter.filter(i => i.queuedCount > (i.warningQueueSize || WARNINGS.LARGE_QUEUE.size))
+      const inter = results.flatMap((i) => i.rows)
+      const warnings = inter.filter(
+        (i) =>
+          i.queuedCount > (i.warningQueueSize || WARNINGS.LARGE_QUEUE.size)
+      )
 
       for (const warning of warnings) {
-        this.emit(events.warning, { message: WARNINGS.LARGE_QUEUE.mesasge, data: warning })
+        this.emit(events.warning, {
+          message: WARNINGS.LARGE_QUEUE.mesasge,
+          data: warning
+        })
       }
 
-      const sql = plans.failJobsByTimeout(this.#config.schema, table, queues)
+      const sql = failJobsByTimeout(this.#config.schema, table, queues)
       await this.#executeSql(sql)
     }
   }
 
   async #maintain (table, names) {
-    const command = plans.trySetQueueDeletionTime(this.#config.schema, names, this.#config.maintenanceIntervalSeconds)
+    const command = trySetQueueDeletionTime(
+      this.#config.schema,
+      names,
+      this.#config.maintenanceIntervalSeconds
+    )
     const { rows } = await this.#executeSql(command)
 
     if (rows.length) {
-      const queues = rows.map(q => q.name)
-      const sql = plans.deletion(this.#config.schema, table, queues)
+      const queues = rows.map((q) => q.name)
+      const sql = deletion(this.#config.schema, table, queues)
       await this.#executeSql(sql)
     }
   }
 }
-
-module.exports = Boss

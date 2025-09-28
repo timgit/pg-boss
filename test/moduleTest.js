@@ -1,9 +1,10 @@
-const assert = require('node:assert')
+import assert from 'node:assert'
+import PgBoss from '../src/index.js'
 
-describe('module', function () {
-  it('should export states object', function () {
-    const { states } = require('../')
+const states = PgBoss.states
 
+describe('module', () => {
+  it('should export states object', () => {
     assert(states.created)
     assert(states.retry)
     assert(states.active)

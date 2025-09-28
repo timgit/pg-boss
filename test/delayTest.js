@@ -1,10 +1,10 @@
-const assert = require('node:assert')
-const helper = require('./testHelper')
-const { delay } = require('../src/tools')
+import assert from 'node:assert'
+import { delay } from '../src/tools.ts'
+import { start } from './testHelper.js'
 
-describe('delayed jobs', function () {
+describe('delayed jobs', () => {
   it('should wait until after an int (in seconds)', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const boss = (this.test.boss = await start(this.test.bossConfig))
     const queue = this.test.bossConfig.schema
 
     const startAfter = 2
@@ -23,7 +23,7 @@ describe('delayed jobs', function () {
   })
 
   it('should wait until after a date time string', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const boss = (this.test.boss = await start({ ...this.test.bossConfig }))
     const queue = this.test.bossConfig.schema
 
     const date = new Date()
@@ -46,7 +46,7 @@ describe('delayed jobs', function () {
   })
 
   it('should wait until after a date object', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const boss = (this.test.boss = await start({ ...this.test.bossConfig }))
     const queue = this.test.bossConfig.schema
 
     const date = new Date()
@@ -68,7 +68,7 @@ describe('delayed jobs', function () {
   })
 
   it('should work with sendAfter() and a date object', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const boss = (this.test.boss = await start({ ...this.test.bossConfig }))
     const queue = this.test.bossConfig.schema
 
     const date = new Date()
@@ -76,7 +76,12 @@ describe('delayed jobs', function () {
 
     const startAfter = date
 
-    await boss.sendAfter(queue, { something: 1 }, { retryLimit: 0 }, startAfter)
+    await boss.sendAfter(
+      queue,
+      { something: 1 },
+      { retryLimit: 0 },
+      startAfter
+    )
 
     const [job] = await boss.fetch(queue)
 

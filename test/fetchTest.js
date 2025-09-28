@@ -1,9 +1,9 @@
-const assert = require('node:assert')
-const helper = require('./testHelper')
+import assert, { strictEqual } from 'node:assert'
+import { getDb, start } from './testHelper.js'
 
-describe('fetch', function () {
+describe('fetch', () => {
   it('should reject missing queue argument', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const boss = (this.test.boss = await start(this.test.bossConfig))
 
     try {
       await boss.fetch()
@@ -14,7 +14,7 @@ describe('fetch', function () {
   })
 
   it('should fetch a job by name manually', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const boss = (this.test.boss = await start(this.test.bossConfig))
     const queue = this.test.bossConfig.schema
 
     await boss.send(queue)
@@ -25,7 +25,7 @@ describe('fetch', function () {
   })
 
   it('should get a batch of jobs as an array', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const boss = (this.test.boss = await start(this.test.bossConfig))
     const queue = this.test.bossConfig.schema
     const batchSize = 4
 
@@ -44,7 +44,7 @@ describe('fetch', function () {
   })
 
   it('should fetch all metadata for a single job when requested', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const boss = (this.test.boss = await start(this.test.bossConfig))
     const queue = this.test.bossConfig.schema
 
     await boss.send(queue)
@@ -73,7 +73,7 @@ describe('fetch', function () {
   })
 
   it('should fetch all metadata for a batch of jobs when requested', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const boss = (this.test.boss = await start(this.test.bossConfig))
     const queue = this.test.bossConfig.schema
     const batchSize = 4
 
@@ -109,33 +109,38 @@ describe('fetch', function () {
   })
 
   it('should fetch all metadata for a single job with exponential backoff when requested', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const boss = (this.test.boss = await start(this.test.bossConfig))
     const queue = this.test.bossConfig.schema
 
-    await boss.send(queue, null, { retryLimit: 1, retryDelay: 1, retryBackoff: true, retryDelayMax: 10 })
+    await boss.send(queue, null, {
+      retryLimit: 1,
+      retryDelay: 1,
+      retryBackoff: true,
+      retryDelayMax: 10
+    })
     const [job] = await boss.fetch(queue, { includeMetadata: true })
 
-    assert.strictEqual(job.name, queue)
-    assert.strictEqual(job.priority, 0)
-    assert.strictEqual(job.state, 'active')
+    strictEqual(job.name, queue)
+    strictEqual(job.priority, 0)
+    strictEqual(job.state, 'active')
     assert(job.policy !== undefined)
-    assert.strictEqual(job.retryLimit, 1)
-    assert.strictEqual(job.retryCount, 0)
-    assert.strictEqual(job.retryDelay, 1)
-    assert.strictEqual(job.retryBackoff, true)
-    assert.strictEqual(job.retryDelayMax, 10)
+    strictEqual(job.retryLimit, 1)
+    strictEqual(job.retryCount, 0)
+    strictEqual(job.retryDelay, 1)
+    strictEqual(job.retryBackoff, true)
+    strictEqual(job.retryDelayMax, 10)
     assert(job.startAfter !== undefined)
     assert(job.startedOn !== undefined)
-    assert.strictEqual(job.singletonKey, null)
-    assert.strictEqual(job.singletonOn, null)
+    strictEqual(job.singletonKey, null)
+    strictEqual(job.singletonOn, null)
     assert(job.expireInSeconds !== undefined)
     assert(job.createdOn !== undefined)
-    assert.strictEqual(job.completedOn, null)
+    strictEqual(job.completedOn, null)
     assert(job.keepUntil !== undefined)
   })
 
   it('should fetch all metadata for a batch of jobs with exponential backoff when requested', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const boss = (this.test.boss = await start(this.test.bossConfig))
     const queue = this.test.bossConfig.schema
     const options = { retryDelay: 1, retryBackoff: true, retryDelayMax: 10 }
     const batchSize = 4
@@ -174,11 +179,11 @@ describe('fetch', function () {
   })
 
   it('should fetch a job with custom connection', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const boss = (this.test.boss = await start(this.test.bossConfig))
     const queue = this.test.bossConfig.schema
 
     let calledCounter = 0
-    const db = await helper.getDb()
+    const db = await getDb()
     const options = {
       db: {
         async executeSql (sql, values) {
@@ -192,15 +197,15 @@ describe('fetch', function () {
     const [job] = await boss.fetch(queue, { ...options, batchSize: 10 })
     assert(queue === job.name)
     assert(job.startedOn === undefined)
-    assert.strictEqual(calledCounter, 2)
+    strictEqual(calledCounter, 2)
   })
 
   it('should allow fetching jobs that have a start_after in the future', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const boss = (this.test.boss = await start(this.test.bossConfig))
     const queue = this.test.bossConfig.schema
 
     await boss.send(queue, { startAfter: new Date(Date.now() + 1000) })
-    const db = await helper.getDb()
+    const db = await getDb()
     const sqlStatements = []
     const options = {
       db: {
@@ -211,7 +216,10 @@ describe('fetch', function () {
       }
     }
 
-    const jobs = await boss.fetch(queue, { ...options, ignoreStartAfter: true })
+    const jobs = await boss.fetch(queue, {
+      ...options,
+      ignoreStartAfter: true
+    })
     assert(jobs.length === 1)
     assert(sqlStatements.length === 1)
     assert(!sqlStatements[0].includes('start_after < now()'))

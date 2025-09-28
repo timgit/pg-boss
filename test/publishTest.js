@@ -1,9 +1,9 @@
-const assert = require('node:assert')
-const helper = require('./testHelper')
+import assert, { strictEqual } from 'node:assert'
+import { start } from './testHelper.js'
 
-describe('pubsub', function () {
+describe('pubsub', () => {
   it('should fail with no arguments', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const boss = (this.test.boss = await start({ ...this.test.bossConfig }))
 
     try {
       await boss.publish()
@@ -14,7 +14,7 @@ describe('pubsub', function () {
   })
 
   it('should fail with a function for data', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const boss = (this.test.boss = await start({ ...this.test.bossConfig }))
     const queue = this.test.bossConfig.schema
 
     try {
@@ -26,7 +26,7 @@ describe('pubsub', function () {
   })
 
   it('should fail with a function for options', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const boss = (this.test.boss = await start({ ...this.test.bossConfig }))
     const queue = this.test.bossConfig.schema
 
     try {
@@ -38,19 +38,19 @@ describe('pubsub', function () {
   })
 
   it('should accept single string argument', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const boss = (this.test.boss = await start({ ...this.test.bossConfig }))
     const queue = this.test.bossConfig.schema
     await boss.publish(queue)
   })
 
   it('should accept job object argument with only name', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const boss = (this.test.boss = await start({ ...this.test.bossConfig }))
     const queue = this.test.bossConfig.schema
     await boss.publish(queue)
   })
 
   it('should not send to the same named queue', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const boss = (this.test.boss = await start({ ...this.test.bossConfig }))
     const queue = this.test.bossConfig.schema
 
     const message = 'hi'
@@ -63,7 +63,7 @@ describe('pubsub', function () {
   })
 
   it('should use subscriptions to map to a single queue', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const boss = (this.test.boss = await start({ ...this.test.bossConfig }))
     const queue = this.test.bossConfig.schema
 
     const event = 'event'
@@ -74,11 +74,14 @@ describe('pubsub', function () {
 
     const [job] = await boss.fetch(queue)
 
-    assert.strictEqual(message, job.data.message)
+    strictEqual(message, job.data.message)
   })
 
   it('should use subscriptions to map to more than one queue', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
+    const boss = (this.test.boss = await start({
+      ...this.test.bossConfig,
+      noDefault: true
+    }))
 
     const queue1 = 'subqueue1'
     const queue2 = 'subqueue2'
@@ -96,13 +99,13 @@ describe('pubsub', function () {
     const [job1] = await boss.fetch(queue1)
     const [job2] = await boss.fetch(queue2)
 
-    assert.strictEqual(message, job1.data.message)
-    assert.strictEqual(message, job2.data.message)
+    strictEqual(message, job1.data.message)
+    strictEqual(message, job2.data.message)
   })
 })
 
 it('should fail if unsubscribe is called without args', async function () {
-  const boss = this.test.boss = await helper.start(this.test.bossConfig)
+  const boss = (this.test.boss = await start(this.test.bossConfig))
 
   try {
     await boss.unsubscribe()
@@ -113,7 +116,7 @@ it('should fail if unsubscribe is called without args', async function () {
 })
 
 it('should fail if unsubscribe is called without both args', async function () {
-  const boss = this.test.boss = await helper.start(this.test.bossConfig)
+  const boss = (this.test.boss = await start(this.test.bossConfig))
 
   try {
     await boss.unsubscribe('foo')
@@ -124,7 +127,10 @@ it('should fail if unsubscribe is called without both args', async function () {
 })
 
 it('unsubscribe works', async function () {
-  const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
+  const boss = (this.test.boss = await start({
+    ...this.test.bossConfig,
+    noDefault: true
+  }))
 
   const event = 'foo'
 

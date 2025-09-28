@@ -1,15 +1,15 @@
-const assert = require('node:assert')
-const helper = require('./testHelper')
-const { delay } = require('../src/tools')
+import assert, { strictEqual } from 'node:assert'
+import { delay } from '../src/tools.ts'
+import { start } from './testHelper.js'
 
-describe('monitoring', function () {
+describe('monitoring', () => {
   it('should cache job counts into queue', async function () {
     const config = {
       ...this.test.bossConfig,
       monitorIntervalSeconds: 1
     }
 
-    const boss = this.test.boss = await helper.start(config)
+    const boss = (this.test.boss = await start(config))
     const queue = this.test.bossConfig.schema
 
     await boss.send(queue)
@@ -21,9 +21,9 @@ describe('monitoring', function () {
     await boss.supervise()
     const result1 = await boss.getQueue(queue)
 
-    assert.strictEqual(2, result1.queuedCount)
-    assert.strictEqual(1, result1.activeCount)
-    assert.strictEqual(3, result1.totalCount)
+    strictEqual(2, result1.queuedCount)
+    strictEqual(1, result1.activeCount)
+    strictEqual(3, result1.totalCount)
 
     const [job] = await boss.fetch(queue)
     await boss.complete(queue, job.id)
@@ -32,9 +32,9 @@ describe('monitoring', function () {
     await boss.supervise(queue)
     const result2 = await boss.getQueue(queue)
 
-    assert.strictEqual(1, result2.queuedCount)
-    assert.strictEqual(1, result2.activeCount)
-    assert.strictEqual(3, result2.totalCount)
+    strictEqual(1, result2.queuedCount)
+    strictEqual(1, result2.activeCount)
+    strictEqual(3, result2.totalCount)
   })
 
   it('queue cache should emit error', async function () {
@@ -46,7 +46,7 @@ describe('monitoring', function () {
 
     let errorCount = 0
 
-    const boss = this.test.boss = await helper.start(config)
+    const boss = (this.test.boss = await start(config))
 
     boss.on('error', () => errorCount++)
 
@@ -62,7 +62,7 @@ describe('monitoring', function () {
       warningSlowQuerySeconds: 1
     }
 
-    const boss = this.test.boss = await helper.start(config)
+    const boss = (this.test.boss = await start(config))
     const queue = this.test.bossConfig.schema
 
     let eventCount = 0
@@ -83,7 +83,7 @@ describe('monitoring', function () {
       warningQueueSize: 1
     }
 
-    const boss = this.test.boss = await helper.start(config)
+    const boss = (this.test.boss = await start(config))
     const queue = this.test.bossConfig.schema
 
     await boss.send(queue)
@@ -110,7 +110,7 @@ describe('monitoring', function () {
       noDefault: true
     }
 
-    const boss = this.test.boss = await helper.start(config)
+    const boss = (this.test.boss = await start(config))
     const queue = this.test.bossConfig.schema
     await boss.createQueue(queue, { warningQueueSize: 1 })
 
