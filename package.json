@@ -2,7 +2,14 @@
 	"name": "pg-boss",
 	"version": "10.3.3",
 	"description": "Queueing jobs in Postgres from Node.js like a boss",
-	"main": "./src/index.js",
+	"main": "./dist/index.cjs",
+	"module": "./src/index.js",
+	"types": "./types.d.ts",
+	"exports": {
+		"import": "./src/index.js",
+		"require": "./dist/index.cjs",
+		"types": "./types.d.ts"
+	},
 	"engines": {
 		"node": ">=20"
 	},
@@ -17,9 +24,12 @@
 		"@types/node": "^20.19.13",
 		"luxon": "^3.7.2",
 		"mocha": "^10.8.2",
-		"nyc": "^17.1.0"
+		"nyc": "^17.1.0",
+		"tsup": "^8.5.0",
+		"typescript": "^5.9.2"
 	},
 	"scripts": {
+		"build": "tsup src/index.js --treeshake --sourcemap --format cjs --out-dir dist --clean && cp types.d.ts dist/",
 		"test": "npx @biomejs/biome check && mocha",
 		"cover": "nyc npm test",
 		"tsc": "tsc --noEmit types.d.ts",
@@ -62,5 +72,4 @@
 		"url": "https://github.com/timgit/pg-boss/issues"
 	},
 	"homepage": "https://github.com/timgit/pg-boss#readme",
-	"types": "./types.d.ts"
 }
