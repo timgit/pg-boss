@@ -1,6 +1,6 @@
 Queueing jobs in Postgres from Node.js like a boss.
 
-[![npm version](https://badge.fury.io/js/pg-boss.svg)](https://badge.fury.io/js/pg-boss)
+[![npm version](https://badge.fury.io/js/pg-boss.svg?icon=si%3Anpm)](https://badge.fury.io/js/pg-boss)
 [![Build](https://github.com/timgit/pg-boss/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/timgit/pg-boss/actions/workflows/ci.yml)
 [![Coverage Status](https://coveralls.io/repos/github/timgit/pg-boss/badge.svg?branch=master)](https://coveralls.io/github/timgit/pg-boss?branch=master)
 
