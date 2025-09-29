@@ -130,7 +130,7 @@ function getConfig (value) {
   config.migrate = ('migrate' in config) ? config.migrate : true
 
   applySchemaConfig(config)
-  applyMaintenanceConfig(config)
+  applyOpsConfig(config)
   applyScheduleConfig(config)
   validateWarningConfig(config)
 
@@ -201,7 +201,15 @@ function applyPollingInterval (config) {
     : 2000
 }
 
-function applyMaintenanceConfig (config) {
+function applyOpsConfig (config) {
+  assert(!('superviseIntervalSeconds' in config) || config.superviseIntervalSeconds >= 1,
+    'configuration assert: superviseIntervalSeconds must be at least every second')
+
+  config.superviseIntervalSeconds = config.superviseIntervalSeconds || 60
+
+  assert(config.superviseIntervalSeconds / 60 / 60 <= POLICY.MAX_EXPIRATION_HOURS,
+    `configuration assert: superviseIntervalSeconds cannot exceed ${POLICY.MAX_EXPIRATION_HOURS} hours`)
+
   assert(!('maintenanceIntervalSeconds' in config) || config.maintenanceIntervalSeconds >= 1,
     'configuration assert: maintenanceIntervalSeconds must be at least every second')
 
