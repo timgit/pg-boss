@@ -1,18 +1,23 @@
-const assert = require('node:assert')
-const PgBoss = require('../')
-const helper = require('./testHelper')
-const Contractor = require('../src/contractor')
-const migrationStore = require('../src/migrationStore')
-const currentSchemaVersion = require('../version.json').schema
-const plans = require('../src/plans')
+import assert, { notStrictEqual, strictEqual } from 'node:assert'
+import Contractor from '../src/contractor.js'
+import PgBoss from '../src/index.js'
+import { getAll } from '../src/migrationStore.js'
+import { setVersion } from '../src/plans.js'
+import verison from '../version.json'
+import { getDb } from './testHelper.js'
 
-describe.skip('migration', function () {
+const currentSchemaVersion = verison.schema
+
+describe.skip('migration', () => {
   beforeEach(async function () {
-    const db = await helper.getDb({ debug: false })
-    this.currentTest.contractor = new Contractor(db, this.currentTest.bossConfig)
+    const db = await getDb({ debug: false })
+    this.currentTest.contractor = new Contractor(
+      db,
+      this.currentTest.bossConfig
+    )
   })
 
-  it('should export commands to manually build schema', function () {
+  it('should export commands to manually build schema', () => {
     const schema = 'custom'
     const plans = PgBoss.getConstructionPlans(schema)
 
@@ -20,7 +25,7 @@ describe.skip('migration', function () {
     assert(plans.includes(`${schema}.version`))
   })
 
-  it('should fail to export migration using current version', function () {
+  it('should fail to export migration using current version', () => {
     const schema = 'custom'
 
     try {
@@ -31,14 +36,14 @@ describe.skip('migration', function () {
     }
   })
 
-  it('should export commands to migrate', function () {
+  it('should export commands to migrate', () => {
     const schema = 'custom'
     const plans = PgBoss.getMigrationPlans(schema, currentSchemaVersion - 1)
 
     assert(plans, 'migration plans not found')
   })
 
-  it('should fail to export commands to roll back from invalid version', function () {
+  it('should fail to export commands to roll back from invalid version', () => {
     const schema = 'custom'
 
     try {
@@ -49,7 +54,7 @@ describe.skip('migration', function () {
     }
   })
 
-  it('should export commands to roll back', function () {
+  it('should export commands to roll back', () => {
     const schema = 'custom'
     const plans = PgBoss.getRollbackPlans(schema, currentSchemaVersion)
 
@@ -62,11 +67,11 @@ describe.skip('migration', function () {
 
     await contractor.create()
 
-    const db = await helper.getDb()
+    const db = await getDb()
     // version 20 was v9 and dropped from the migration store with v10
-    await db.executeSql(plans.setVersion(config.schema, 20))
+    await db.executeSql(setVersion(config.schema, 20))
 
-    const boss = this.test.boss = new PgBoss(config)
+    const boss = (this.test.boss = new PgBoss(config))
 
     try {
       await boss.start()
@@ -84,12 +89,12 @@ describe.skip('migration', function () {
     await contractor.rollback(currentSchemaVersion)
     const oldVersion = await contractor.schemaVersion()
 
-    assert.notStrictEqual(oldVersion, currentSchemaVersion)
+    notStrictEqual(oldVersion, currentSchemaVersion)
 
     await contractor.migrate(oldVersion)
     const newVersion = await contractor.schemaVersion()
 
-    assert.strictEqual(newVersion, currentSchemaVersion)
+    strictEqual(newVersion, currentSchemaVersion)
   })
 
   it('should install next version via contractor', async function () {
@@ -105,7 +110,7 @@ describe.skip('migration', function () {
 
     const version = await contractor.schemaVersion()
 
-    assert.strictEqual(version, currentSchemaVersion)
+    strictEqual(version, currentSchemaVersion)
   })
 
   it('should migrate to latest during start if on previous schema version', async function () {
@@ -117,13 +122,13 @@ describe.skip('migration', function () {
 
     const config = { ...this.test.bossConfig }
 
-    const boss = this.test.boss = new PgBoss(config)
+    const boss = (this.test.boss = new PgBoss(config))
 
     await boss.start()
 
     const version = await contractor.schemaVersion()
 
-    assert.strictEqual(version, currentSchemaVersion)
+    strictEqual(version, currentSchemaVersion)
   })
 
   it('should migrate through 2 versions back and forth', async function () {
@@ -133,7 +138,7 @@ describe.skip('migration', function () {
 
     const config = { ...this.test.bossConfig }
 
-    const boss = this.test.boss = new PgBoss(config)
+    const boss = (this.test.boss = new PgBoss(config))
 
     await boss.start()
 
@@ -151,22 +156,22 @@ describe.skip('migration', function () {
     await contractor.rollback(currentSchemaVersion)
     const oneVersionAgo = await contractor.schemaVersion()
 
-    assert.notStrictEqual(oneVersionAgo, currentSchemaVersion)
+    notStrictEqual(oneVersionAgo, currentSchemaVersion)
 
     await contractor.rollback(oneVersionAgo)
     const twoVersionsAgo = await contractor.schemaVersion()
 
-    assert.notStrictEqual(twoVersionsAgo, oneVersionAgo)
+    notStrictEqual(twoVersionsAgo, oneVersionAgo)
 
     await contractor.next(twoVersionsAgo)
     const oneVersionAgoPart2 = await contractor.schemaVersion()
 
-    assert.strictEqual(oneVersionAgo, oneVersionAgoPart2)
+    strictEqual(oneVersionAgo, oneVersionAgoPart2)
 
     await contractor.next(oneVersionAgo)
     const version = await contractor.schemaVersion()
 
-    assert.strictEqual(version, currentSchemaVersion)
+    strictEqual(version, currentSchemaVersion)
 
     await boss.send(queue)
     const [job2] = await boss.fetch(queue)
@@ -180,19 +185,19 @@ describe.skip('migration', function () {
 
     await contractor.rollback(currentSchemaVersion)
     const oneVersionAgo = await contractor.schemaVersion()
-    assert.strictEqual(oneVersionAgo, currentSchemaVersion - 1)
+    strictEqual(oneVersionAgo, currentSchemaVersion - 1)
 
     await contractor.rollback(oneVersionAgo)
     const twoVersionsAgo = await contractor.schemaVersion()
-    assert.strictEqual(twoVersionsAgo, currentSchemaVersion - 2)
+    strictEqual(twoVersionsAgo, currentSchemaVersion - 2)
 
     const config = { ...this.test.bossConfig }
-    const boss = this.test.boss = new PgBoss(config)
+    const boss = (this.test.boss = new PgBoss(config))
     await boss.start()
 
     const version = await contractor.schemaVersion()
 
-    assert.strictEqual(version, currentSchemaVersion)
+    strictEqual(version, currentSchemaVersion)
   })
 
   it('migrating to non-existent version fails gracefully', async function () {
@@ -212,7 +217,7 @@ describe.skip('migration', function () {
 
     const config = { ...this.test.bossConfig }
 
-    config.migrations = migrationStore.getAll(config.schema)
+    config.migrations = getAll(config.schema)
 
     // add invalid sql statement
     config.migrations[0].install.push('wat')
@@ -233,7 +238,7 @@ describe.skip('migration', function () {
 
     const version1 = await contractor.schemaVersion()
 
-    assert.strictEqual(version1, oneVersionAgo)
+    strictEqual(version1, oneVersionAgo)
 
     // remove bad sql statement
     config.migrations[0].install.pop()
@@ -244,18 +249,18 @@ describe.skip('migration', function () {
 
     const version2 = await contractor.schemaVersion()
 
-    assert.strictEqual(version2, currentSchemaVersion)
+    strictEqual(version2, currentSchemaVersion)
 
     await boss2.stop({ graceful: false, wait: false })
   })
 
   it('should not install if migrate option is false', async function () {
     const config = { ...this.test.bossConfig, migrate: false }
-    const boss = this.test.boss = new PgBoss(config)
+    const boss = (this.test.boss = new PgBoss(config))
     try {
       await boss.start()
       assert(false)
-    } catch (err) {
+    } catch (_err) {
       assert(true)
     }
   })
@@ -268,12 +273,12 @@ describe.skip('migration', function () {
     await contractor.rollback(currentSchemaVersion)
 
     const config = { ...this.test.bossConfig, migrate: false }
-    const boss = this.test.boss = new PgBoss(config)
+    const boss = (this.test.boss = new PgBoss(config))
 
     try {
       await boss.start()
       assert(false)
-    } catch (err) {
+    } catch (_err) {
       assert(true)
     }
   })
@@ -286,7 +291,7 @@ describe.skip('migration', function () {
     const config = { ...this.test.bossConfig, migrate: false }
     const queue = this.test.bossConfig.schema
 
-    const boss = this.test.boss = new PgBoss(config)
+    const boss = (this.test.boss = new PgBoss(config))
 
     try {
       await boss.start()
@@ -295,7 +300,7 @@ describe.skip('migration', function () {
       await boss.complete(queue, job.id)
 
       assert(false)
-    } catch (err) {
+    } catch (_err) {
       assert(true)
     }
   })

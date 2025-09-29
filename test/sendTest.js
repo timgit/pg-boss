@@ -1,9 +1,9 @@
-const assert = require('node:assert')
-const helper = require('./testHelper')
+import assert, { notEqual, strictEqual } from 'node:assert'
+import { getDb, start } from './testHelper.js'
 
-describe('send', function () {
+describe('send', () => {
   it('should fail with no arguments', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const boss = (this.test.boss = await start(this.test.bossConfig))
 
     try {
       await boss.send()
@@ -14,7 +14,7 @@ describe('send', function () {
   })
 
   it('should fail with a function for data', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const boss = (this.test.boss = await start(this.test.bossConfig))
 
     try {
       await boss.send('job', () => true)
@@ -25,7 +25,7 @@ describe('send', function () {
   })
 
   it('should fail with a function for options', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const boss = (this.test.boss = await start(this.test.bossConfig))
 
     try {
       await boss.send('job', 'data', () => true)
@@ -36,21 +36,21 @@ describe('send', function () {
   })
 
   it('should accept single string argument', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const boss = (this.test.boss = await start({ ...this.test.bossConfig }))
     const queue = this.test.bossConfig.schema
 
     await boss.send(queue)
   })
 
   it('should accept job object argument with only name', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const boss = (this.test.boss = await start({ ...this.test.bossConfig }))
     const queue = this.test.bossConfig.schema
 
     await boss.send({ name: queue })
   })
 
   it('should accept job object with name and data only', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const boss = (this.test.boss = await start({ ...this.test.bossConfig }))
     const queue = this.test.bossConfig.schema
 
     const message = 'hi'
@@ -59,11 +59,11 @@ describe('send', function () {
 
     const [job] = await boss.fetch(queue)
 
-    assert.strictEqual(message, job.data.message)
+    strictEqual(message, job.data.message)
   })
 
   it('should accept job object with name and options only', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const boss = (this.test.boss = await start({ ...this.test.bossConfig }))
     const queue = this.test.bossConfig.schema
 
     const options = { someCrazyOption: 'whatever' }
@@ -72,15 +72,15 @@ describe('send', function () {
 
     const [job] = await boss.fetch(queue)
 
-    assert.strictEqual(job.data, null)
+    strictEqual(job.data, null)
   })
 
   it('should accept job object with name and custom connection', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const boss = (this.test.boss = await start({ ...this.test.bossConfig }))
     const queue = this.test.bossConfig.schema
 
     let called = false
-    const db = await helper.getDb()
+    const db = await getDb()
     const options = {
       db: {
         async executeSql (sql, values) {
@@ -95,21 +95,25 @@ describe('send', function () {
 
     const [job] = await boss.fetch(queue)
 
-    assert.notEqual(job, null)
-    assert.strictEqual(job.data, null)
-    assert.strictEqual(called, true)
+    notEqual(job, null)
+    strictEqual(job.data, null)
+    strictEqual(called, true)
   })
 
   it('should not create job if transaction fails', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const boss = (this.test.boss = await start({ ...this.test.bossConfig }))
     const { schema } = this.test.bossConfig
     const queue = schema
 
-    const db = await helper.getDb()
+    const db = await getDb()
     const client = db.pool
-    await client.query(`CREATE TABLE IF NOT EXISTS ${schema}.test (label VARCHAR(50))`)
+    await client.query(
+      `CREATE TABLE IF NOT EXISTS ${schema}.test (label VARCHAR(50))`
+    )
 
-    const throwError = () => { throw new Error('Error') }
+    const throwError = () => {
+      throw new Error('Error')
+    }
 
     try {
       await client.query('BEGIN')
@@ -128,7 +132,7 @@ describe('send', function () {
 
       throwError()
       await client.query('COMMIT')
-    } catch (e) {
+    } catch (_e) {
       await client.query('ROLLBACK')
     }
 

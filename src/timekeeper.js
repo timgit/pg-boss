@@ -1,9 +1,9 @@
-const EventEmitter = require('node:events')
-const plans = require('./plans')
-const cronParser = require('cron-parser')
-const Attorney = require('./attorney')
+import EventEmitter from 'node:events'
+import cronParser from 'cron-parser'
+import { assertKey, checkSendArgs } from './attorney.js'
+import * as plans from './plans.js'
 
-const QUEUES = {
+export const QUEUES = {
   SEND_IT: '__pgboss__send-it'
 }
 
@@ -15,11 +15,12 @@ const EVENTS = {
 
 const WARNINGS = {
   CLOCK_SKEW: {
-    message: 'Warning: Clock skew between this instance and the database server. This will not break scheduling, but is emitted any time the skew exceeds 60 seconds.'
+    message:
+      'Warning: Clock skew between this instance and the database server. This will not break scheduling, but is emitted any time the skew exceeds 60 seconds.'
   }
 }
 
-class Timekeeper extends EventEmitter {
+export default class Timekeeper extends EventEmitter {
   constructor (db, config) {
     super()
 
@@ -29,11 +30,7 @@ class Timekeeper extends EventEmitter {
     this.clockSkew = 0
     this.events = EVENTS
 
-    this.functions = [
-      this.schedule,
-      this.unschedule,
-      this.getSchedules
-    ]
+    this.functions = [this.schedule, this.unschedule, this.getSchedules]
 
     this.stopped = true
   }
@@ -49,12 +46,20 @@ class Timekeeper extends EventEmitter {
       batchSize: 50
     }
 
-    await this.manager.work(QUEUES.SEND_IT, options, (jobs) => this.onSendIt(jobs))
+    await this.manager.work(QUEUES.SEND_IT, options, (jobs) =>
+      this.onSendIt(jobs)
+    )
 
     setImmediate(() => this.onCron())
 
-    this.cronMonitorInterval = setInterval(async () => await this.onCron(), this.config.cronMonitorIntervalSeconds * 1000)
-    this.skewMonitorInterval = setInterval(async () => await this.cacheClockSkew(), this.config.clockMonitorIntervalSeconds * 1000)
+    this.cronMonitorInterval = setInterval(
+      async () => await this.onCron(),
+      this.config.cronMonitorIntervalSeconds * 1000
+    )
+    this.skewMonitorInterval = setInterval(
+      async () => await this.cacheClockSkew(),
+      this.config.clockMonitorIntervalSeconds * 1000
+    )
   }
 
   async stop () {
@@ -96,7 +101,13 @@ class Timekeeper extends EventEmitter {
       const skewSeconds = Math.abs(skew) / 1000
 
       if (skewSeconds >= 60 || this.config.__test__force_clock_skew_warning) {
-        this.emit(this.events.warning, { message: WARNINGS.CLOCK_SKEW.message, data: { seconds: skewSeconds, direction: skew > 0 ? 'slower' : 'faster' } })
+        this.emit(this.events.warning, {
+          message: WARNINGS.CLOCK_SKEW.message,
+          data: {
+            seconds: skewSeconds,
+            direction: skew > 0 ? 'slower' : 'faster'
+          }
+        })
       }
     } catch (err) {
       this.emit(this.events.error, err)
@@ -115,7 +126,10 @@ class Timekeeper extends EventEmitter {
 
       this.timekeeping = true
 
-      const sql = plans.trySetCronTime(this.config.schema, this.config.cronMonitorIntervalSeconds)
+      const sql = plans.trySetCronTime(
+        this.config.schema,
+        this.config.cronMonitorIntervalSeconds
+      )
 
       if (!this.stopped) {
         const { rows } = await this.db.executeSql(sql)
@@ -135,8 +149,12 @@ class Timekeeper extends EventEmitter {
     const schedules = await this.getSchedules()
 
     const scheduled = schedules
-      .filter(i => this.shouldSendIt(i.cron, i.timezone))
-      .map(({ name, data, options }) => ({ data: { name, data, options }, singletonKey: name, singletonSeconds: 60 }))
+      .filter((i) => this.shouldSendIt(i.cron, i.timezone))
+      .map(({ name, data, options }) => ({
+        data: { name, data, options },
+        singletonKey: name,
+        singletonSeconds: 60
+      }))
 
     if (scheduled.length > 0 && !this.stopped) {
       await this.manager.insert(QUEUES.SEND_IT, scheduled)
@@ -178,8 +196,8 @@ class Timekeeper extends EventEmitter {
 
     cronParser.parseExpression(cron, { tz })
 
-    Attorney.checkSendArgs([name, data, { ...rest }])
-    Attorney.assertKey(key)
+    checkSendArgs([name, data, { ...rest }])
+    assertKey(key)
 
     try {
       const sql = plans.schedule(this.config.schema)
@@ -199,5 +217,4 @@ class Timekeeper extends EventEmitter {
   }
 }
 
-module.exports = Timekeeper
-module.exports.QUEUES = QUEUES
+export const _QUEUES = QUEUES

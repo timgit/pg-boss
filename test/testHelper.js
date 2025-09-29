@@ -1,29 +1,17 @@
-const Db = require('../src/db')
-const PgBoss = require('../')
-const crypto = require('crypto')
-const sha1 = (value) => crypto.createHash('sha1').update(value).digest('hex')
+import { createHash } from 'node:crypto'
+import Db from '../src/db.js'
+import PgBoss from '../src/index.js'
+import config from './config.json'
 
-module.exports = {
-  dropSchema,
-  start,
-  getDb,
-  countJobs,
-  findJobs,
-  getConfig,
-  getConnectionString,
-  tryCreateDb,
-  init
-}
+const sha1 = (value) => createHash('sha1').update(value).digest('hex')
 
-function getConnectionString () {
+export function getConnectionString () {
   const config = getConfig()
 
   return `postgres://${config.user}:${config.password}@${config.host}:${config.port}/${config.database}`
 }
 
-function getConfig (options = {}) {
-  const config = require('./config.json')
-
+export function getConfig (options = {}) {
   config.host = process.env.POSTGRES_HOST || config.host
   config.port = process.env.POSTGRES_PORT || config.port
   config.password = process.env.POSTGRES_PASSWORD || config.password
@@ -43,13 +31,13 @@ function getConfig (options = {}) {
   return Object.assign(result, options)
 }
 
-async function init () {
+export async function init () {
   const { database } = getConfig()
 
   await tryCreateDb(database)
 }
 
-async function getDb ({ database, debug } = {}) {
+export async function getDb ({ database, debug } = {}) {
   const config = getConfig()
 
   config.database = database || config.database
@@ -61,20 +49,20 @@ async function getDb ({ database, debug } = {}) {
   return db
 }
 
-async function dropSchema (schema) {
+export async function dropSchema (schema) {
   const db = await getDb()
   await db.executeSql(`DROP SCHEMA IF EXISTS ${schema} CASCADE`)
   await db.close()
 }
 
-async function findJobs (schema, where, values) {
+export async function findJobs (schema, where, values) {
   const db = await getDb()
   const jobs = await db.executeSql(`select * from ${schema}.job where ${where}`, values)
   await db.close()
   return jobs
 }
 
-async function countJobs (schema, table, where, values) {
+export async function countJobs (schema, table, where, values) {
   const db = await getDb()
   const result = await db.executeSql(`select count(*) as count from ${schema}.${table} where ${where}`, values)
   await db.close()
@@ -86,12 +74,13 @@ async function tryCreateDb (database) {
 
   try {
     await db.executeSql(`CREATE DATABASE ${database}`)
-  } catch {} finally {
+  } catch {
+  } finally {
     await db.close()
   }
 }
 
-async function start (options) {
+export async function start (options) {
   try {
     options = getConfig(options)
     const boss = new PgBoss(options)

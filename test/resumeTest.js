@@ -1,9 +1,9 @@
-const assert = require('node:assert')
-const helper = require('./testHelper')
+import assert, { strictEqual } from 'node:assert'
+import { getDb, start } from './testHelper.js'
 
-describe('cancel', function () {
+describe('cancel', () => {
   it('should reject missing id argument', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const boss = (this.test.boss = await start(this.test.bossConfig))
 
     try {
       await boss.resume()
@@ -14,7 +14,7 @@ describe('cancel', function () {
   })
 
   it('should cancel and resume a pending job', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const boss = (this.test.boss = await start({ ...this.test.bossConfig }))
     const queue = this.test.bossConfig.schema
 
     const jobId = await boss.send(queue, null, { startAfter: 1 })
@@ -33,13 +33,13 @@ describe('cancel', function () {
   })
 
   it('should cancel and resume a pending job with custom connection', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const boss = (this.test.boss = await start({ ...this.test.bossConfig }))
     const queue = this.test.bossConfig.schema
 
     const jobId = await boss.send(queue, null, { startAfter: 1 })
 
     let callCount = 0
-    const _db = await helper.getDb()
+    const _db = await getDb()
     const db = {
       async executeSql (sql, values) {
         callCount++
@@ -58,6 +58,6 @@ describe('cancel', function () {
     const job2 = await boss.getJobById(queue, jobId, { db })
 
     assert(job2 && job2.state === 'created')
-    assert.strictEqual(callCount, 4)
+    strictEqual(callCount, 4)
   })
 })

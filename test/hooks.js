@@ -1,20 +1,20 @@
-const helper = require('./testHelper')
+import { dropSchema, getConfig, init } from './testHelper.js'
 
-exports.mochaHooks = {
+export const mochaHooks = {
   beforeAll,
   beforeEach,
   afterEach
 }
 
 async function beforeAll () {
-  await helper.init()
+  await init()
 }
 
 async function beforeEach () {
   this.timeout(2000)
-  const config = helper.getConfig({ testKey: getTestKey(this.currentTest) })
+  const config = getConfig({ testKey: getTestKey(this.currentTest) })
   console.log(`      ${this.currentTest.title} (schema: ${config.schema})...`)
-  await helper.dropSchema(config.schema)
+  await dropSchema(config.schema)
   this.currentTest.bossConfig = config
 }
 
@@ -28,8 +28,8 @@ async function afterEach () {
   }
 
   if (state === 'passed') {
-    const config = helper.getConfig({ testKey: getTestKey(this.currentTest) })
-    await helper.dropSchema(config.schema)
+    const config = getConfig({ testKey: getTestKey(this.currentTest) })
+    await dropSchema(config.schema)
   }
 }
 

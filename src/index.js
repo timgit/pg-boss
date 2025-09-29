@@ -1,18 +1,19 @@
-const EventEmitter = require('node:events')
-const plans = require('./plans')
-const Attorney = require('./attorney')
-const Contractor = require('./contractor')
-const Manager = require('./manager')
-const Timekeeper = require('./timekeeper')
-const Boss = require('./boss')
-const Db = require('./db')
-const { delay } = require('./tools')
+import EventEmitter from 'node:events'
+import { getConfig } from './attorney.js'
+import Boss from './boss.js'
+import Contractor from './contractor.js'
+import Db from './db.js'
+import Manager from './manager.js'
+import { JOB_STATES, QUEUE_POLICIES } from './plans.js'
+import Timekeeper from './timekeeper.js'
+import { delay } from './tools.ts'
 
 const events = {
   error: 'error',
   stopped: 'stopped'
 }
-class PgBoss extends EventEmitter {
+
+export default class PgBoss extends EventEmitter {
   #stoppingOn
   #stopped
   #starting
@@ -36,8 +37,8 @@ class PgBoss extends EventEmitter {
     return Contractor.rollbackPlans(schema, version)
   }
 
-  static states = plans.JOB_STATES
-  static policies = plans.QUEUE_POLICIES
+  static states = JOB_STATES
+  static policies = QUEUE_POLICIES
 
   constructor (value) {
     super()
@@ -45,7 +46,7 @@ class PgBoss extends EventEmitter {
     this.#stoppingOn = null
     this.#stopped = true
 
-    const config = Attorney.getConfig(value)
+    const config = getConfig(value)
     this.#config = config
 
     const db = this.getDb()
@@ -94,7 +95,7 @@ class PgBoss extends EventEmitter {
 
   #promoteEvents (emitter) {
     for (const event of Object.values(emitter?.events)) {
-      emitter.on(event, arg => this.emit(event, arg))
+      emitter.on(event, (arg) => this.emit(event, arg))
     }
   }
 
@@ -143,7 +144,12 @@ class PgBoss extends EventEmitter {
       return
     }
 
-    let { close = true, graceful = true, timeout = 30000, wait = true } = options
+    let {
+      close = true,
+      graceful = true,
+      timeout = 30000,
+      wait = true
+    } = options
 
     timeout = Math.max(timeout, 1000)
 
@@ -192,9 +198,10 @@ class PgBoss extends EventEmitter {
             throw new Error(this.#config.__test__throw_stop_monitor)
           }
 
-          const isWip = () => this.#manager.getWipData({ includeInternal: false }).length > 0
+          const isWip = () =>
+            this.#manager.getWipData({ includeInternal: false }).length > 0
 
-          while ((Date.now() - this.#stoppingOn) < timeout && isWip()) {
+          while (Date.now() - this.#stoppingOn < timeout && isWip()) {
             await delay(500)
           }
 
@@ -207,5 +214,3 @@ class PgBoss extends EventEmitter {
     })
   }
 }
-
-module.exports = PgBoss

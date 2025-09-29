@@ -1,41 +1,34 @@
-const assert = require('node:assert')
-const plans = require('./plans')
-
-module.exports = {
-  rollback,
-  next,
-  migrate,
-  getAll
-}
+import assert from 'node:assert'
+import { assertMigration, locked, setVersion } from './plans.js'
 
 function flatten (schema, commands, version) {
-  commands.unshift(plans.assertMigration(schema, version))
-  commands.push(plans.setVersion(schema, version))
+  commands.unshift(assertMigration(schema, version))
+  commands.push(setVersion(schema, version))
 
-  return plans.locked(schema, commands)
+  return locked(schema, commands)
 }
 
-function rollback (schema, version, migrations) {
+export function rollback (schema, version, migrations) {
   migrations = migrations || getAll(schema)
 
-  const result = migrations.find(i => i.version === version)
+  const result = migrations.find((i) => i.version === version)
 
   assert(result, `Version ${version} not found.`)
 
   return flatten(schema, result.uninstall || [], result.previous)
 }
 
-function next (schema, version, migrations) {
+export function next (schema, version, migrations) {
   migrations = migrations || getAll(schema)
 
-  const result = migrations.find(i => i.previous === version)
+  const result = migrations.find((i) => i.previous === version)
 
   assert(result, `Version ${version} not found.`)
 
   return flatten(schema, result.install, result.version)
 }
 
-function migrate (value, version, migrations) {
+export function migrate (value, version, migrations) {
   let schema, config
 
   if (typeof value === 'string') {
@@ -49,20 +42,22 @@ function migrate (value, version, migrations) {
   migrations = migrations || getAll(schema, config)
 
   const result = migrations
-    .filter(i => i.previous >= version)
+    .filter((i) => i.previous >= version)
     .sort((a, b) => a.version - b.version)
-    .reduce((acc, i) => {
-      acc.install = acc.install.concat(i.install)
-      acc.version = i.version
-      return acc
-    }, { install: [], version })
+    .reduce(
+      (acc, i) => {
+        acc.install = acc.install.concat(i.install)
+        acc.version = i.version
+        return acc
+      },
+      { install: [], version }
+    )
 
   assert(result.install.length > 0, `Version ${version} not found.`)
 
   return flatten(schema, result.install, result.version)
 }
 
-function getAll (schema) {
-  return [
-  ]
+export function getAll (_schema) {
+  return []
 }

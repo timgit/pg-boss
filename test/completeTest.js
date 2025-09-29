@@ -1,10 +1,12 @@
-const assert = require('node:assert')
-const helper = require('./testHelper')
-const PgBoss = require('../')
+import assert, { strictEqual } from 'node:assert'
+import PgBoss from '../src/index.js'
+import { countJobs as _countJobs, getDb, start } from './testHelper.js'
 
-describe('complete', function () {
+const states = PgBoss.states
+
+describe('complete', () => {
   it('should reject missing id argument', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const boss = (this.test.boss = await start(this.test.bossConfig))
 
     try {
       await boss.complete()
@@ -15,41 +17,46 @@ describe('complete', function () {
   })
 
   it('should complete a batch of jobs', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const boss = (this.test.boss = await start({ ...this.test.bossConfig }))
     const queue = this.test.bossConfig.schema
 
     const batchSize = 3
 
-    await Promise.all([
-      boss.send(queue),
-      boss.send(queue),
-      boss.send(queue)
-    ])
+    await Promise.all([boss.send(queue), boss.send(queue), boss.send(queue)])
 
     const { table } = await boss.getQueue(queue)
 
-    const countJobs = (state) => helper.countJobs(this.test.bossConfig.schema, table, 'name = $1 AND state = $2', [queue, state])
+    const countJobs = (state) =>
+      _countJobs(
+        this.test.bossConfig.schema,
+        table,
+        'name = $1 AND state = $2',
+        [queue, state]
+      )
 
     const jobs = await boss.fetch(queue, { batchSize })
 
-    const activeCount = await countJobs(PgBoss.states.active)
+    const activeCount = await countJobs(states.active)
 
-    assert.strictEqual(activeCount, batchSize)
+    strictEqual(activeCount, batchSize)
 
-    const result = await boss.complete(queue, jobs.map(job => job.id))
+    const result = await boss.complete(
+      queue,
+      jobs.map((job) => job.id)
+    )
 
-    assert.strictEqual(batchSize, result.jobs.length)
+    strictEqual(batchSize, result.jobs.length)
   })
 
   it('should store job output in job.output from complete()', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const boss = (this.test.boss = await start({ ...this.test.bossConfig }))
     const queue = this.test.bossConfig.schema
 
     const jobId = await boss.send(queue)
 
     let [job] = await boss.fetch(queue)
 
-    assert.strictEqual(jobId, job.id)
+    strictEqual(jobId, job.id)
 
     const completionData = { msg: 'i am complete' }
 
@@ -57,18 +64,18 @@ describe('complete', function () {
 
     job = await boss.getJobById(queue, jobId)
 
-    assert.strictEqual(job.output.msg, completionData.msg)
+    strictEqual(job.output.msg, completionData.msg)
   })
 
   it('should store job error in job.output from fail()', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const boss = (this.test.boss = await start({ ...this.test.bossConfig }))
     const queue = this.test.bossConfig.schema
 
     const jobId = await boss.send(queue)
 
     let [job] = await boss.fetch(queue)
 
-    assert.strictEqual(jobId, job.id)
+    strictEqual(jobId, job.id)
 
     const completionError = new Error('i am complete')
 
@@ -76,33 +83,35 @@ describe('complete', function () {
 
     job = await boss.getJobById(queue, jobId)
 
-    assert.strictEqual(job.output.message, completionError.message)
+    strictEqual(job.output.message, completionError.message)
   })
 
   it('should complete a batch of jobs with custom connection', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const boss = (this.test.boss = await start({ ...this.test.bossConfig }))
     const queue = this.test.bossConfig.schema
 
     const batchSize = 3
 
-    await Promise.all([
-      boss.send(queue),
-      boss.send(queue),
-      boss.send(queue)
-    ])
+    await Promise.all([boss.send(queue), boss.send(queue), boss.send(queue)])
 
     const { table } = await boss.getQueue(queue)
 
-    const countJobs = (state) => helper.countJobs(this.test.bossConfig.schema, table, 'name = $1 AND state = $2', [queue, state])
+    const countJobs = (state) =>
+      _countJobs(
+        this.test.bossConfig.schema,
+        table,
+        'name = $1 AND state = $2',
+        [queue, state]
+      )
 
     const jobs = await boss.fetch(queue, { batchSize })
 
-    const activeCount = await countJobs(PgBoss.states.active)
+    const activeCount = await countJobs(states.active)
 
-    assert.strictEqual(activeCount, batchSize)
+    strictEqual(activeCount, batchSize)
 
     let called = false
-    const _db = await helper.getDb()
+    const _db = await getDb()
     const db = {
       async executeSql (sql, values) {
         called = true
@@ -110,9 +119,14 @@ describe('complete', function () {
       }
     }
 
-    const result = await boss.complete(queue, jobs.map(job => job.id), null, { db })
+    const result = await boss.complete(
+      queue,
+      jobs.map((job) => job.id),
+      null,
+      { db }
+    )
 
-    assert.strictEqual(batchSize, result.jobs.length)
-    assert.strictEqual(called, true)
+    strictEqual(batchSize, result.jobs.length)
+    strictEqual(called, true)
   })
 })

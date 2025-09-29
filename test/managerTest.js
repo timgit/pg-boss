@@ -1,10 +1,10 @@
-const { delay } = require('../src/tools')
-const assert = require('node:assert')
-const helper = require('./testHelper')
+import assert from 'node:assert'
+import { delay } from '../src/tools.ts'
+import { start } from './testHelper.js'
 
-describe('manager', function () {
+describe('manager', () => {
   it('should reject multiple simultaneous start requests', async function () {
-    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const boss = (this.test.boss = await start(this.test.bossConfig))
 
     await boss.start()
 
@@ -13,7 +13,7 @@ describe('manager', function () {
     try {
       await boss.start()
       assert(false)
-    } catch (error) {
+    } catch (_error) {
       assert(true)
     }
   })

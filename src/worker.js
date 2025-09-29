@@ -1,4 +1,4 @@
-const { delay } = require('./tools')
+import { delay } from './tools.ts'
 
 const WORKER_STATES = {
   created: 'created',
@@ -7,7 +7,7 @@ const WORKER_STATES = {
   stopped: 'stopped'
 }
 
-class Worker {
+export default class Worker {
   constructor ({ id, name, options, interval, fetch, onFetch, onError }) {
     this.id = id
     this.name = name
@@ -74,7 +74,11 @@ class Worker {
 
       this.lastJobDuration = duration
 
-      if (!this.stopping && !this.beenNotified && (this.interval - duration) > 100) {
+      if (
+        !this.stopping &&
+        !this.beenNotified &&
+        this.interval - duration > 100
+      ) {
         this.loopDelayPromise = delay(this.interval - duration)
         await this.loopDelayPromise
         this.loopDelayPromise = null
@@ -95,5 +99,3 @@ class Worker {
     }
   }
 }
-
-module.exports = Worker

@@ -1,13 +1,19 @@
-const assert = require('node:assert')
-const helper = require('./testHelper')
-const { delay } = require('../src/tools')
+import assert, { strictEqual } from 'node:assert'
+import { delay } from '../src/tools.ts'
+import { start } from './testHelper.js'
 
-describe('expire', function () {
+describe('expire', () => {
   it('should expire a job', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, monitorIntervalSeconds: 1 })
+    const boss = (this.test.boss = await start({
+      ...this.test.bossConfig,
+      monitorIntervalSeconds: 1
+    }))
     const queue = this.test.bossConfig.schema
 
-    const jobId = await boss.send(queue, null, { retryLimit: 0, expireInSeconds: 1 })
+    const jobId = await boss.send(queue, null, {
+      retryLimit: 0,
+      expireInSeconds: 1
+    })
 
     assert(jobId)
 
@@ -21,11 +27,14 @@ describe('expire', function () {
 
     const job = await boss.getJobById(queue, jobId)
 
-    assert.strictEqual('failed', job.state)
+    strictEqual('failed', job.state)
   })
 
   it('should expire a job - cascaded config', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
+    const boss = (this.test.boss = await start({
+      ...this.test.bossConfig,
+      noDefault: true
+    }))
     const queue = this.test.bossConfig.schema
 
     await boss.createQueue(queue, { expireInSeconds: 1, retryLimit: 0 })
@@ -40,17 +49,17 @@ describe('expire', function () {
 
     const job = await boss.getJobById(queue, jobId)
 
-    assert.strictEqual('failed', job.state)
+    strictEqual('failed', job.state)
   })
 
   it('should expire a job via supervise option', async function () {
-    const boss = this.test.boss = await helper.start({
+    const boss = (this.test.boss = await start({
       ...this.test.bossConfig,
       noDefault: true,
       supervise: true,
       monitorIntervalSeconds: 1,
       superviseIntervalSeconds: 1
-    })
+    }))
 
     const queue = this.test.bossConfig.schema
 
@@ -64,6 +73,6 @@ describe('expire', function () {
 
     const job = await boss.getJobById(queue, jobId)
 
-    assert.strictEqual('failed', job.state)
+    strictEqual('failed', job.state)
   })
 })

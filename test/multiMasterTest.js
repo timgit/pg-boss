@@ -1,11 +1,13 @@
-const assert = require('node:assert')
-const helper = require('./testHelper')
-const PgBoss = require('../')
-const Contractor = require('../src/contractor')
-const migrationStore = require('../src/migrationStore')
-const currentSchemaVersion = require('../version.json').schema
+import assert, { notStrictEqual } from 'node:assert'
+import Contractor from '../src/contractor.js'
+import PgBoss from '../src/index.js'
+import { getAll } from '../src/migrationStore.js'
+import version from '../version.json'
+import { getDb } from './testHelper.js'
 
-describe('multi-master', function () {
+const currentSchemaVersion = version.schema
+
+describe('multi-master', () => {
   it('should only allow 1 master to start at a time', async function () {
     const replicaCount = 20
     const config = { ...this.test.bossConfig, supervise: false, max: 2 }
@@ -16,11 +18,13 @@ describe('multi-master', function () {
     }
 
     try {
-      await Promise.all(instances.map(i => i.start()))
+      await Promise.all(instances.map((i) => i.start()))
     } catch (err) {
       assert(false, err.message)
     } finally {
-      await Promise.all(instances.map(i => i.stop({ graceful: false, wait: false })))
+      await Promise.all(
+        instances.map((i) => i.stop({ graceful: false, wait: false }))
+      )
     }
   })
 
@@ -32,7 +36,7 @@ describe('multi-master', function () {
       max: 2
     }
 
-    const db = await helper.getDb()
+    const db = await getDb()
     const contractor = new Contractor(db, config)
 
     await contractor.create()
@@ -41,9 +45,9 @@ describe('multi-master', function () {
 
     const oldVersion = await contractor.schemaVersion()
 
-    assert.notStrictEqual(oldVersion, currentSchemaVersion)
+    notStrictEqual(oldVersion, currentSchemaVersion)
 
-    config.migrations = migrationStore.getAll(config.schema)
+    config.migrations = getAll(config.schema)
     config.migrations[0].install.push('select pg_sleep(1)')
 
     const instances = []
@@ -53,11 +57,13 @@ describe('multi-master', function () {
     }
 
     try {
-      await Promise.all(instances.map(i => i.start()))
-    } catch (err) {
+      await Promise.all(instances.map((i) => i.start()))
+    } catch (_err) {
       assert(false)
     } finally {
-      await Promise.all(instances.map(i => i.stop({ graceful: false, wait: false })))
+      await Promise.all(
+        instances.map((i) => i.stop({ graceful: false, wait: false }))
+      )
     }
   })
 })
