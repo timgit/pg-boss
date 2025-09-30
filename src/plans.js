@@ -697,7 +697,7 @@ function insertJobs (schema, { table, name, returnId = true }) {
       j.start_after,
       "singletonKey",
       CASE
-        WHEN "singletonSeconds" IS NOT NULL THEN 'epoch'::timestamp + '1s'::interval * ("singletonSeconds" * floor(( date_part('epoch', now()) + "singletonOffset") / "singletonSeconds" ))
+        WHEN "singletonSeconds" IS NOT NULL THEN 'epoch'::timestamp + '1s'::interval * ("singletonSeconds" * floor(( date_part('epoch', now()) + COALESCE("singletonOffset",0)) / "singletonSeconds" ))
         ELSE NULL
         END as singleton_on,
       COALESCE("expireInSeconds", q.expire_seconds) as expire_seconds,
