@@ -326,3 +326,15 @@ Retrieves a job with all metadata by name and id
 **options**
 
 * **db**, object, see notes in `send()`
+
+### `getJobsBySingletonKey(name, key, options)`
+
+Retrieves all jobs (with all their metadata) which singleton key is `key`.
+
+**options**
+
+* **db**, object, see notes in `send()`
+
+* **onlyQueued**, bool
+
+  Default: true. Returns only queued jobs (in `active` or `retry` state)
