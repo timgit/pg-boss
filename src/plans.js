@@ -1001,8 +1001,8 @@ function getJobById (schema, table) {
   return `SELECT ${JOB_COLUMNS_ALL} FROM ${schema}.${table} WHERE name = $1 AND id = $2`
 }
 
-function getJobsByData (schema, table) {
-  return `SELECT ${JOB_COLUMNS_ALL} FROM ${schema}.${table} WHERE name = $1 AND data @> $2`
+function getJobsByData (schema, table, onlyQueued) {
+  return `SELECT ${JOB_COLUMNS_ALL} FROM ${schema}.${table} WHERE name = $1 AND data @> $2 ${onlyQueued ? ` AND state < '${JOB_STATES.active}'` : ''}`
 }
 
 function getQueueInClause (queues) {

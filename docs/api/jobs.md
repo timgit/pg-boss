@@ -336,3 +336,7 @@ Example: If job's data is `{"foo": "bar", "baz": 1}` and `data` is `{"foo": "bar
 **options**
 
 * **db**, object, see notes in `send()`
+
+* **onlyQueued**, bool
+
+  Default: true. Returns only queued jobs (in `active` or `retry` state)

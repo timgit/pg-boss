@@ -677,13 +677,15 @@ class Manager extends EventEmitter {
   }
 
   async getJobsByData (name, data, options = {}) {
+    const { onlyQueued = true } = options
+
     Attorney.assertQueueName(name)
 
     const db = this.assertDb(options)
 
     const { table } = await this.getQueueCache(name)
 
-    const sql = plans.getJobsByData(this.config.schema, table)
+    const sql = plans.getJobsByData(this.config.schema, table, onlyQueued)
 
     const result = await db.executeSql(sql, [name, data])
 
