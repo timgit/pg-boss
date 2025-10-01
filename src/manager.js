@@ -637,11 +637,11 @@ class Manager extends EventEmitter {
     const { table, partition } = await this.getQueueCache(name)
 
     if (partition) {
-      const sql = plans.deleteAllJobs(this.config.schema, table)
-      await this.db.executeSql(sql, [name])
-    } else {
       const sql = plans.truncateTable(this.config.schema, table)
       await this.db.executeSql(sql)
+    } else {
+      const sql = plans.deleteAllJobs(this.config.schema, table)
+      await this.db.executeSql(sql, [name])
     }
   }
 
