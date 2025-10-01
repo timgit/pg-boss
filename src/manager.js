@@ -56,7 +56,8 @@ class Manager extends EventEmitter {
       this.deleteStoredJobs,
       this.deleteAllJobs,
       this.deleteJob,
-      this.getJobById
+      this.getJobById,
+      this.getJobsByData
     ]
   }
 
@@ -673,6 +674,20 @@ class Manager extends EventEmitter {
     } else {
       return null
     }
+  }
+
+  async getJobsByData (name, data, options = {}) {
+    Attorney.assertQueueName(name)
+
+    const db = this.assertDb(options)
+
+    const { table } = await this.getQueueCache(name)
+
+    const sql = plans.getJobsByData(this.config.schema, table)
+
+    const result = await db.executeSql(sql, [name, data])
+
+    return result.rows
   }
 
   assertDb (options) {
