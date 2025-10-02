@@ -17,7 +17,7 @@ declare namespace PgBoss {
     singleton: 'singleton',
     stately: 'stately'
   }
-  
+
   interface Db {
     executeSql(text: string, values: any[]): Promise<{ rows: any[] }>;
   }
@@ -59,7 +59,7 @@ declare namespace PgBoss {
   interface QueueOptions {
     expireInSeconds?: number;
     retentionSeconds?: number;
-    deleteAfterSeconds?: number;    
+    deleteAfterSeconds?: number;
     retryLimit?: number;
     retryDelay?: number;
     retryBackoff?: boolean;
@@ -297,16 +297,18 @@ declare class PgBoss extends EventEmitter {
 
   getJobById<T>(name: string, id: string, options?: PgBoss.ConnectionOptions): Promise<PgBoss.JobWithMetadata<T> | null>;
 
-  createQueue(name: string, options?: PgBoss.Queue): Promise<void>;
-  updateQueue(name: string, options?: PgBoss.Queue): Promise<void>;
+  createQueue(name: string, options?: Omit<PgBoss.Queue, 'name'>): Promise<void>;
+  createQueue(options: PgBoss.Queue): Promise<void>;
+  updateQueue(name: string, options?: Omit<PgBoss.Queue, 'name'>): Promise<void>;
+  updateQueue(options: PgBoss.Queue): Promise<void>;
   deleteQueue(name: string): Promise<void>;
   getQueues(): Promise<PgBoss.QueueResult[]>;
   getQueue(name: string): Promise<PgBoss.QueueResult | null>;
   getQueueStats(name: string): Promise<number>;
 
   supervise(name?: string): Promise<void>;
-  isInstalled(): Promise<Boolean>;
-  schemaVersion(): Promise<Number>;
+  isInstalled(): Promise<boolean>;
+  schemaVersion(): Promise<number>;
 
   schedule(name: string, cron: string, data?: object, options?: PgBoss.ScheduleOptions): Promise<void>;
   unschedule(name: string, key?: string): Promise<void>;
