@@ -3,7 +3,7 @@ import { EventEmitter } from 'events'
 declare namespace PgBoss {
 
   type JobStates = {
-    created : 'created',
+    created: 'created',
     retry: 'retry',
     active: 'active',
     completed: 'completed',
@@ -79,9 +79,9 @@ declare namespace PgBoss {
     db?: Db;
   }
 
-  type InsertOptions = ConnectionOptions;
+  type InsertOptions = ConnectionOptions
 
-  type SendOptions = JobOptions & QueueOptions & ConnectionOptions;
+  type SendOptions = JobOptions & QueueOptions & ConnectionOptions
 
   type QueuePolicy = 'standard' | 'short' | 'singleton' | 'stately'
 
@@ -117,7 +117,7 @@ declare namespace PgBoss {
   }
 
   type WorkOptions = JobFetchOptions & JobPollingOptions
-  type FetchOptions = JobFetchOptions & ConnectionOptions;
+  type FetchOptions = JobFetchOptions & ConnectionOptions
 
   interface WorkHandler<ReqData> {
     (job: PgBoss.Job<ReqData>[]): Promise<any>;
@@ -217,107 +217,107 @@ declare namespace PgBoss {
 }
 
 declare class PgBoss extends EventEmitter {
-  constructor(connectionString: string);
-  constructor(options: PgBoss.ConstructorOptions);
+  constructor (connectionString: string)
+  constructor (options: PgBoss.ConstructorOptions)
 
-  static getConstructionPlans(schema?: string): string;
-  static getMigrationPlans(schema?: string, version?: string): string;
-  static getRollbackPlans(schema?: string, version?: string): string;
+  static getConstructionPlans (schema?: string): string
+  static getMigrationPlans (schema?: string, version?: string): string
+  static getRollbackPlans (schema?: string, version?: string): string
 
   static states: PgBoss.JobStates
   static policies: PgBoss.QueuePolicies
 
-  on(event: "error", handler: (error: Error) => void): this;
-  off(event: "error", handler: (error: Error) => void): this;
+  on (event: 'error', handler: (error: Error) => void): this
+  off (event: 'error', handler: (error: Error) => void): this
 
-  on(event: "warning", handler: (warning: { message: string, data: object }) => void): this;
-  off(event: "warning", handler: (warning: { message: string, data: object }) => void): this;
+  on (event: 'warning', handler: (warning: { message: string, data: object }) => void): this
+  off (event: 'warning', handler: (warning: { message: string, data: object }) => void): this
 
-  on(event: "wip", handler: (data: PgBoss.Worker[]) => void): this;
-  off(event: "wip", handler: (data: PgBoss.Worker[]) => void): this;
+  on (event: 'wip', handler: (data: PgBoss.Worker[]) => void): this
+  off (event: 'wip', handler: (data: PgBoss.Worker[]) => void): this
 
-  on(event: "stopped", handler: () => void): this;
-  off(event: "stopped", handler: () => void): this;
+  on (event: 'stopped', handler: () => void): this
+  off (event: 'stopped', handler: () => void): this
 
-  start(): Promise<PgBoss>;
-  stop(options?: PgBoss.StopOptions): Promise<void>;
+  start (): Promise<PgBoss>
+  stop (options?: PgBoss.StopOptions): Promise<void>
 
-  send(request: PgBoss.Request): Promise<string | null>;
-  send(name: string, data: object): Promise<string | null>;
-  send(name: string, data: object, options: PgBoss.SendOptions): Promise<string | null>;
+  send (request: PgBoss.Request): Promise<string | null>
+  send (name: string, data: object): Promise<string | null>
+  send (name: string, data: object, options: PgBoss.SendOptions): Promise<string | null>
 
-  sendAfter(name: string, data: object, options: PgBoss.SendOptions, date: Date): Promise<string | null>;
-  sendAfter(name: string, data: object, options: PgBoss.SendOptions, dateString: string): Promise<string | null>;
-  sendAfter(name: string, data: object, options: PgBoss.SendOptions, seconds: number): Promise<string | null>;
+  sendAfter (name: string, data: object, options: PgBoss.SendOptions, date: Date): Promise<string | null>
+  sendAfter (name: string, data: object, options: PgBoss.SendOptions, dateString: string): Promise<string | null>
+  sendAfter (name: string, data: object, options: PgBoss.SendOptions, seconds: number): Promise<string | null>
 
-  sendThrottled(name: string, data: object, options: PgBoss.SendOptions, seconds: number, key?: string): Promise<string | null>;
-  sendDebounced(name: string, data: object, options: PgBoss.SendOptions, seconds: number, key?: string): Promise<string | null>;
+  sendThrottled (name: string, data: object, options: PgBoss.SendOptions, seconds: number, key?: string): Promise<string | null>
+  sendDebounced (name: string, data: object, options: PgBoss.SendOptions, seconds: number, key?: string): Promise<string | null>
 
-  insert(name: string, jobs: PgBoss.JobInsert[]): Promise<void>;
-  insert(name: string, jobs: PgBoss.JobInsert[], options: PgBoss.InsertOptions): Promise<void>;
+  insert (name: string, jobs: PgBoss.JobInsert[]): Promise<void>
+  insert (name: string, jobs: PgBoss.JobInsert[], options: PgBoss.InsertOptions): Promise<void>
 
-  fetch<T>(name: string): Promise<PgBoss.Job<T>[]>;
-  fetch<T>(name: string, options: PgBoss.FetchOptions & { includeMetadata: true }): Promise<PgBoss.JobWithMetadata<T>[]>;
-  fetch<T>(name: string, options: PgBoss.FetchOptions): Promise<PgBoss.Job<T>[]>;
+  fetch<T>(name: string): Promise<PgBoss.Job<T>[]>
+  fetch<T>(name: string, options: PgBoss.FetchOptions & { includeMetadata: true }): Promise<PgBoss.JobWithMetadata<T>[]>
+  fetch<T>(name: string, options: PgBoss.FetchOptions): Promise<PgBoss.Job<T>[]>
 
-  work<ReqData>(name: string, handler: PgBoss.WorkHandler<ReqData>): Promise<string>;
-  work<ReqData>(name: string, options: PgBoss.WorkOptions & { includeMetadata: true }, handler: PgBoss.WorkWithMetadataHandler<ReqData>): Promise<string>;
-  work<ReqData>(name: string, options: PgBoss.WorkOptions, handler: PgBoss.WorkHandler<ReqData>): Promise<string>;
+  work<ReqData>(name: string, handler: PgBoss.WorkHandler<ReqData>): Promise<string>
+  work<ReqData>(name: string, options: PgBoss.WorkOptions & { includeMetadata: true }, handler: PgBoss.WorkWithMetadataHandler<ReqData>): Promise<string>
+  work<ReqData>(name: string, options: PgBoss.WorkOptions, handler: PgBoss.WorkHandler<ReqData>): Promise<string>
 
-  offWork(name: string): Promise<void>;
-  offWork(options: PgBoss.OffWorkOptions): Promise<void>;
+  offWork (name: string): Promise<void>
+  offWork (options: PgBoss.OffWorkOptions): Promise<void>
 
-  notifyWorker(workerId: string): void;
+  notifyWorker (workerId: string): void
 
-  subscribe(event: string, name: string): Promise<void>;
-  unsubscribe(event: string, name: string): Promise<void>;
-  publish(event: string): Promise<void>;
-  publish(event: string, data: object): Promise<void>;
-  publish(event: string, data: object, options: PgBoss.SendOptions): Promise<void>;
+  subscribe (event: string, name: string): Promise<void>
+  unsubscribe (event: string, name: string): Promise<void>
+  publish (event: string): Promise<void>
+  publish (event: string, data: object): Promise<void>
+  publish (event: string, data: object, options: PgBoss.SendOptions): Promise<void>
 
-  cancel(name: string, id: string, options?: PgBoss.ConnectionOptions): Promise<void>;
-  cancel(name: string, ids: string[], options?: PgBoss.ConnectionOptions): Promise<void>;
+  cancel (name: string, id: string, options?: PgBoss.ConnectionOptions): Promise<void>
+  cancel (name: string, ids: string[], options?: PgBoss.ConnectionOptions): Promise<void>
 
-  resume(name: string, id: string, options?: PgBoss.ConnectionOptions): Promise<void>;
-  resume(name: string, ids: string[], options?: PgBoss.ConnectionOptions): Promise<void>;
+  resume (name: string, id: string, options?: PgBoss.ConnectionOptions): Promise<void>
+  resume (name: string, ids: string[], options?: PgBoss.ConnectionOptions): Promise<void>
 
-  retry(name: string, id: string, options?: PgBoss.ConnectionOptions): Promise<void>;
-  retry(name: string, ids: string[], options?: PgBoss.ConnectionOptions): Promise<void>;
+  retry (name: string, id: string, options?: PgBoss.ConnectionOptions): Promise<void>
+  retry (name: string, ids: string[], options?: PgBoss.ConnectionOptions): Promise<void>
 
-  deleteJob(name: string, id: string, options?: PgBoss.ConnectionOptions): Promise<void>;
-  deleteJob(name: string, ids: string[], options?: PgBoss.ConnectionOptions): Promise<void>;
-  deleteQueuedJobs(name: string): Promise<void>;
-  deleteStoredJobs(name: string): Promise<void>;
-  deleteAllJobs(name: string): Promise<void>;
+  deleteJob (name: string, id: string, options?: PgBoss.ConnectionOptions): Promise<void>
+  deleteJob (name: string, ids: string[], options?: PgBoss.ConnectionOptions): Promise<void>
+  deleteQueuedJobs (name: string): Promise<void>
+  deleteStoredJobs (name: string): Promise<void>
+  deleteAllJobs (name: string): Promise<void>
 
-  complete(name: string, id: string, options?: PgBoss.ConnectionOptions): Promise<void>;
-  complete(name: string, id: string, data: object, options?: PgBoss.ConnectionOptions): Promise<void>;
-  complete(name: string, ids: string[], options?: PgBoss.ConnectionOptions): Promise<void>;
+  complete (name: string, id: string, options?: PgBoss.ConnectionOptions): Promise<void>
+  complete (name: string, id: string, data: object, options?: PgBoss.ConnectionOptions): Promise<void>
+  complete (name: string, ids: string[], options?: PgBoss.ConnectionOptions): Promise<void>
 
-  fail(name: string, id: string, options?: PgBoss.ConnectionOptions): Promise<void>;
-  fail(name: string, id: string, data: object, options?: PgBoss.ConnectionOptions): Promise<void>;
-  fail(name: string, ids: string[], options?: PgBoss.ConnectionOptions): Promise<void>;
+  fail (name: string, id: string, options?: PgBoss.ConnectionOptions): Promise<void>
+  fail (name: string, id: string, data: object, options?: PgBoss.ConnectionOptions): Promise<void>
+  fail (name: string, ids: string[], options?: PgBoss.ConnectionOptions): Promise<void>
 
-  getJobById<T>(name: string, id: string, options?: PgBoss.ConnectionOptions): Promise<PgBoss.JobWithMetadata<T> | null>;
+  getJobById<T>(name: string, id: string, options?: PgBoss.ConnectionOptions): Promise<PgBoss.JobWithMetadata<T> | null>
 
-  createQueue(name: string, options?: Omit<PgBoss.Queue, 'name'>): Promise<void>;
-  createQueue(options: PgBoss.Queue): Promise<void>;
-  updateQueue(name: string, options?: Omit<PgBoss.Queue, 'name'>): Promise<void>;
-  updateQueue(options: PgBoss.Queue): Promise<void>;
-  deleteQueue(name: string): Promise<void>;
-  getQueues(): Promise<PgBoss.QueueResult[]>;
-  getQueue(name: string): Promise<PgBoss.QueueResult | null>;
-  getQueueStats(name: string): Promise<PgBoss.QueueResult>;
+  createQueue (name: string, options?: Omit<PgBoss.Queue, 'name'>): Promise<void>
+  createQueue (options: PgBoss.Queue): Promise<void>
+  updateQueue (name: string, options?: Omit<PgBoss.Queue, 'name'>): Promise<void>
+  updateQueue (options: PgBoss.Queue): Promise<void>
+  deleteQueue (name: string): Promise<void>
+  getQueues (): Promise<PgBoss.QueueResult[]>
+  getQueue (name: string): Promise<PgBoss.QueueResult | null>
+  getQueueStats (name: string): Promise<PgBoss.QueueResult>
 
-  supervise(name?: string): Promise<void>;
-  isInstalled(): Promise<boolean>;
-  schemaVersion(): Promise<number>;
+  supervise (name?: string): Promise<void>
+  isInstalled (): Promise<boolean>
+  schemaVersion (): Promise<number>
 
-  schedule(name: string, cron: string, data?: object, options?: PgBoss.ScheduleOptions): Promise<void>;
-  unschedule(name: string, key?: string): Promise<void>;
-  getSchedules(name?: string, key?: string): Promise<PgBoss.Schedule[]>;
+  schedule (name: string, cron: string, data?: object, options?: PgBoss.ScheduleOptions): Promise<void>
+  unschedule (name: string, key?: string): Promise<void>
+  getSchedules (name?: string, key?: string): Promise<PgBoss.Schedule[]>
 
-  getDb(): PgBoss.Db;
+  getDb (): PgBoss.Db
 }
 
-export = PgBoss;
+export = PgBoss
