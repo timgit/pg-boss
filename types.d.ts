@@ -103,6 +103,14 @@ declare namespace PgBoss {
     updatedOn: Date;
   }
 
+  type QueueStatsResult = {
+      name: string,
+      deferredCount: number,
+      queuedCount: number,
+      activeCount: number,
+      totalCount: number
+  }
+
   type ScheduleOptions = SendOptions & { tz?: string, key?: string }
 
   interface JobPollingOptions {
@@ -307,7 +315,7 @@ declare class PgBoss extends EventEmitter {
   deleteQueue(name: string): Promise<void>;
   getQueues(): Promise<PgBoss.QueueResult[]>;
   getQueue(name: string): Promise<PgBoss.QueueResult | null>;
-  getQueueStats(name: string): Promise<number>;
+  getQueueStats(name: string): Promise<PgBoss.QueueStatsResult>;
 
   supervise(name?: string): Promise<void>;
   isInstalled(): Promise<boolean>;

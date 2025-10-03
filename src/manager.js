@@ -654,7 +654,13 @@ class Manager extends EventEmitter {
 
     const { rows } = await this.db.executeSql(sql)
 
-    return rows.at(0) || null
+    return rows.at(0) || {
+      name,
+      deferredCount: 0,
+      queuedCount: 0,
+      activeCount: 0,
+      totalCount: 0
+    }
   }
 
   async getJobById (name, id, options = {}) {
