@@ -680,7 +680,9 @@ class Manager extends EventEmitter {
       return options.db
     }
 
-    assert(this.db._pgbdb && this.db.opened, 'Database connection is not opened')
+    // Custom db objects (without _pgbdb flag) are assumed to be ready
+    // Only check opened flag for pg-boss managed db instances
+    assert(!this.db._pgbdb || (this.db._pgbdb && this.db.opened), 'Database connection is not opened')
 
     return this.db
   }
