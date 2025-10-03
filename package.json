@@ -3,6 +3,7 @@
   "version": "11.0.5",
   "description": "Queueing jobs in Postgres from Node.js like a boss",
   "main": "./src/index.js",
+  "type": "commonjs",
   "engines": {
     "node": ">=22"
   },

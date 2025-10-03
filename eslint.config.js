@@ -1,9 +1,12 @@
-import neostandard, { resolveIgnoresFromGitignore } from 'neostandard'
+const neostandard = require('neostandard')
+const { resolveIgnoresFromGitignore } = neostandard
 
-export default neostandard({
+const config = neostandard({
   ts: true,
   env: ['mocha'],
   ignores: [
     ...resolveIgnoresFromGitignore(),
   ],
 })
+
+module.exports = config
