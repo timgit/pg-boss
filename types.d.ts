@@ -97,7 +97,7 @@ declare namespace PgBoss {
     deferredCount: number;
     queuedCount: number;
     activeCount: number;
-    completedCount: number;
+    totalCount: number
     table: number;
     createdOn: Date;
     updatedOn: Date;
@@ -307,7 +307,7 @@ declare class PgBoss extends EventEmitter {
   deleteQueue(name: string): Promise<void>;
   getQueues(): Promise<PgBoss.QueueResult[]>;
   getQueue(name: string): Promise<PgBoss.QueueResult | null>;
-  getQueueStats(name: string): Promise<number>;
+  getQueueStats(name: string): Promise<PgBoss.QueueResult>;
 
   supervise(name?: string): Promise<void>;
   isInstalled(): Promise<boolean>;
