@@ -8,7 +8,7 @@
     "node": ">=22"
   },
   "dependencies": {
-    "cron-parser": "^4.9.0",
+    "cron-parser": "^5.4.0",
     "pg": "^8.16.3",
     "serialize-error": "^8.1.0"
   },

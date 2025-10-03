@@ -1,6 +1,6 @@
 const EventEmitter = require('node:events')
 const plans = require('./plans')
-const cronParser = require('cron-parser')
+const { CronExpressionParser } = require('cron-parser')
 const Attorney = require('./attorney')
 
 const QUEUES = {
@@ -144,7 +144,7 @@ class Timekeeper extends EventEmitter {
   }
 
   shouldSendIt (cron, tz) {
-    const interval = cronParser.parseExpression(cron, { tz })
+    const interval = CronExpressionParser.parse(cron, { tz, strict: false })
 
     const prevTime = interval.prev()
 
@@ -176,7 +176,7 @@ class Timekeeper extends EventEmitter {
   async schedule (name, cron, data, options = {}) {
     const { tz = 'UTC', key = '', ...rest } = options
 
-    cronParser.parseExpression(cron, { tz })
+    CronExpressionParser.parse(cron, { tz, strict: false })
 
     Attorney.checkSendArgs([name, data, { ...rest }])
     Attorney.assertKey(key)

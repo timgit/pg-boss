@@ -121,8 +121,8 @@ describe('schedule', function () {
     const nextHour = nextUtc.hour
 
     // using current and next minute because the clock is ticking
-    const minute = `${currentMinute},${nextMinute}`
-    const hour = `${currentHour},${nextHour}`
+    const minute = currentMinute === nextMinute ? currentMinute : `${currentMinute},${nextMinute}`
+    const hour = currentHour === nextHour ? currentHour : `${currentHour},${nextHour}`
 
     const cron = `${minute} ${hour} * * *`
 
@@ -160,8 +160,8 @@ describe('schedule', function () {
     const nextHour = nextLocal.hour
 
     // using current and next minute because the clock is ticking
-    const minute = `${currentMinute},${nextMinute}`
-    const hour = `${currentHour},${nextHour}`
+    const minute = currentMinute === nextMinute ? currentMinute : `${currentMinute},${nextMinute}`
+    const hour = currentHour === nextHour ? currentHour : `${currentHour},${nextHour}`
 
     const cron = `${minute} ${hour} * * *`
 
