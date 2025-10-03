@@ -648,19 +648,13 @@ class Manager extends EventEmitter {
   async getQueueStats (name) {
     Attorney.assertQueueName(name)
 
-    const { table } = await this.getQueueCache(name)
+    const queue = await this.getQueueCache(name)
 
-    const sql = plans.getQueueStats(this.config.schema, table, [name])
+    const sql = plans.getQueueStats(this.config.schema, queue.table, [name])
 
     const { rows } = await this.db.executeSql(sql)
 
-    return rows.at(0) || {
-      name,
-      deferredCount: 0,
-      queuedCount: 0,
-      activeCount: 0,
-      totalCount: 0
-    }
+    return Object.assign(queue, rows.at(0) || {})
   }
 
   async getJobById (name, id, options = {}) {
