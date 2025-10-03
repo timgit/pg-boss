@@ -236,6 +236,9 @@ declare class PgBoss extends EventEmitter {
   on(event: "wip", handler: (data: PgBoss.Worker[]) => void): this;
   off(event: "wip", handler: (data: PgBoss.Worker[]) => void): this;
 
+  on(event: "stopped", handler: () => void): this;
+  off(event: "stopped", handler: () => void): this;
+
   start(): Promise<PgBoss>;
   stop(options?: PgBoss.StopOptions): Promise<void>;
 
