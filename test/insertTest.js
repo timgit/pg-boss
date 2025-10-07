@@ -37,8 +37,10 @@ describe('insert', function () {
       expireInSeconds: 5,
       deleteAfterSeconds: 60,
       singletonKey: '123',
-      keepUntil: new Date().toISOString()
+      retentionSeconds: 60
     }
+
+    const keepUntil = new Date(new Date(input.startAfter).getTime() + (input.retentionSeconds * 1000)).toISOString()
 
     await boss.insert(queue, [input])
 
@@ -56,7 +58,7 @@ describe('insert', function () {
     assert.strictEqual(job.expireInSeconds, input.expireInSeconds, `expireInSeconds input ${input.expireInSeconds} didn't match job ${job.expireInSeconds}`)
     assert.strictEqual(job.deleteAfterSeconds, input.deleteAfterSeconds, `deleteAfterSeconds input ${input.deleteAfterSeconds} didn't match job ${job.deleteAfterSeconds}`)
     assert.strictEqual(job.singletonKey, input.singletonKey, `name input ${input.singletonKey} didn't match job ${job.singletonKey}`)
-    assert.strictEqual(new Date(job.keepUntil).toISOString(), input.keepUntil, `keepUntil input ${input.keepUntil} didn't match job ${job.keepUntil}`)
+    assert.strictEqual(new Date(job.keepUntil).toISOString(), keepUntil, `keepUntil input ${keepUntil} didn't match job ${job.keepUntil}`)
   })
 
   it('should create jobs from an array with all properties and custom connection', async function () {
@@ -80,8 +82,10 @@ describe('insert', function () {
       expireInSeconds: 5,
       deleteAfterSeconds: 45,
       singletonKey: '123',
-      keepUntil: new Date().toISOString()
+      retentionSeconds: 60
     }
+
+    const keepUntil = new Date(new Date(input.startAfter).getTime() + (input.retentionSeconds * 1000)).toISOString()
 
     let called = false
     const db = await helper.getDb()
@@ -110,7 +114,7 @@ describe('insert', function () {
     assert.strictEqual(job.expireInSeconds, input.expireInSeconds, `expireInSeconds input ${input.expireInSeconds} didn't match job ${job.expireInSeconds}`)
     assert.strictEqual(job.deleteAfterSeconds, input.deleteAfterSeconds, `deleteAfterSeconds input ${input.deleteAfterSeconds} didn't match job ${job.deleteAfterSeconds}`)
     assert.strictEqual(job.singletonKey, input.singletonKey, `name input ${input.singletonKey} didn't match job ${job.singletonKey}`)
-    assert.strictEqual(new Date(job.keepUntil).toISOString(), input.keepUntil, `keepUntil input ${input.keepUntil} didn't match job ${job.keepUntil}`)
+    assert.strictEqual(new Date(job.keepUntil).toISOString(), keepUntil, `keepUntil input ${keepUntil} didn't match job ${job.keepUntil}`)
     assert.strictEqual(called, true)
   })
 })
