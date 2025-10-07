@@ -702,7 +702,7 @@ function insertJobs (schema, { table, name, returnId = true }) {
         END as singleton_on,
       COALESCE("expireInSeconds", q.expire_seconds) as expire_seconds,
       COALESCE("deleteAfterSeconds", q.deletion_seconds) as deletion_seconds,
-      COALESCE("keepUntil", COALESCE(j.start_after, now()) + q.retention_seconds * interval '1s') as keep_until,
+      j.start_after + (COALESCE("retentionSeconds", q.retention_seconds) * interval '1s') as keep_until,
       COALESCE("retryLimit", q.retry_limit) as retry_limit,
       COALESCE("retryDelay", q.retry_delay) as retry_delay,
       COALESCE("retryBackoff", q.retry_backoff, false) as retry_backoff,
@@ -730,7 +730,7 @@ function insertJobs (schema, { table, name, returnId = true }) {
         "singletonOffset" integer,
         "expireInSeconds" integer,
         "deleteAfterSeconds" integer,
-        "keepUntil" timestamp with time zone        
+        "retentionSeconds" integer
       ) 
     ) j
     JOIN ${schema}.queue q ON q.name = '${name}'

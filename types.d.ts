@@ -184,8 +184,8 @@ declare namespace PgBoss {
     singletonKey?: string;
     singletonSeconds?: number;
     expireInSeconds?: number;
-    deleteAfterSeconds: number;
-    keepUntil?: Date | string;
+    deleteAfterSeconds?: number;
+    retentionSeconds?: number;
   }
 
   interface Worker {
