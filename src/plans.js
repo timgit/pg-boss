@@ -943,7 +943,7 @@ function getQueueStats (schema, table, queues) {
         (count(*) FILTER (WHERE state < '${JOB_STATES.active}'))::int as "queuedCount",
         (count(*) FILTER (WHERE state = '${JOB_STATES.active}'))::int as "activeCount",
         count(*)::int as "totalCount",
-        array_agg(singleton_key) FILTER (WHERE policy IN ('${QUEUE_POLICIES.singleton}','${QUEUE_POLICIES.stately}') AND state IN ('${JOB_STATES.retry}','${JOB_STATES.active}')) as "singletonsActive"
+        array_agg(singleton_key) FILTER (WHERE policy IN ('${QUEUE_POLICIES.singleton}','${QUEUE_POLICIES.stately}') AND state = '${JOB_STATES.active}') as "singletonsActive"
       FROM ${schema}.${table}
       WHERE name IN (${getQueueInClause(queues)})
       GROUP BY 1

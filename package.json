@@ -1,6 +1,6 @@
 {
   "name": "pg-boss",
-  "version": "11.0.7",
+  "version": "11.0.8",
   "description": "Queueing jobs in Postgres from Node.js like a boss",
   "main": "./src/index.js",
   "type": "commonjs",
@@ -62,6 +62,6 @@
   "bugs": {
     "url": "https://github.com/timgit/pg-boss/issues"
   },
-  "homepage": "https://github.com/timgit/pg-boss#readme",
+  "homepage": "https://timgit.github.io/pg-boss",
   "types": "./types.d.ts"
 }
