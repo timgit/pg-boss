@@ -255,7 +255,6 @@ describe('queues', function () {
     await boss.createQueue(deadLetter)
 
     const updateProps = {
-      policy: 'short',
       retryDelay: 2,
       retryDelayMax: null,
       retryLimit: 2,
@@ -268,13 +267,38 @@ describe('queues', function () {
 
     queueObj = await boss.getQueue(queue)
 
-    assert.strictEqual(updateProps.policy, queueObj.policy)
     assert.strictEqual(updateProps.retryLimit, queueObj.retryLimit)
     assert.strictEqual(updateProps.retryBackoff, queueObj.retryBackoff)
     assert.strictEqual(updateProps.retryDelay, queueObj.retryDelay)
     assert.strictEqual(updateProps.retryDelayMax, queueObj.retryDelayMax)
     assert.strictEqual(updateProps.expireInSeconds, queueObj.expireInSeconds)
     assert.strictEqual(updateProps.deadLetter, queueObj.deadLetter)
+  })
+
+  it('should fail to change queue policy', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
+    const queue = this.test.bossConfig.schema
+
+    await boss.createQueue(queue, { policy: 'standard' })
+
+    try {
+      await boss.updateQueue(queue, { policy: 'exclusive' })
+      assert(false)
+    } catch (err) {
+      assert(true)
+    }
+  })
+
+  it('should fail to change queue partitioning', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
+    const queue = this.test.bossConfig.schema
+    await boss.createQueue(queue, { partition: true })
+    try {
+      await boss.updateQueue(queue, { partition: false })
+      assert(false)
+    } catch (err) {
+      assert(true)
+    }
   })
 
   it('jobs should inherit properties from queue', async function () {

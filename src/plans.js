@@ -320,12 +320,19 @@ function createQueueFunction (schema) {
       EXECUTE format('${formatPartitionCommand(createPrimaryKeyJob(schema))}', tablename);
       EXECUTE format('${formatPartitionCommand(createQueueForeignKeyJob(schema))}', tablename);
       EXECUTE format('${formatPartitionCommand(createQueueForeignKeyJobDeadLetter(schema))}', tablename);
-      EXECUTE format('${formatPartitionCommand(createIndexJobPolicyShort(schema))}', tablename);
-      EXECUTE format('${formatPartitionCommand(createIndexJobPolicySingleton(schema))}', tablename);
-      EXECUTE format('${formatPartitionCommand(createIndexJobPolicyStately(schema))}', tablename);
-      EXECUTE format('${formatPartitionCommand(createIndexJobThrottle(schema))}', tablename);
+
       EXECUTE format('${formatPartitionCommand(createIndexJobFetch(schema))}', tablename);
-      EXECUTE format('${formatPartitionCommand(createIndexJobPolicyExclusive(schema))}', tablename);
+      EXECUTE format('${formatPartitionCommand(createIndexJobThrottle(schema))}', tablename);
+      
+      IF options->>'policy' = 'short' THEN
+        EXECUTE format('${formatPartitionCommand(createIndexJobPolicyShort(schema))}', tablename);
+      ELSIF options->>'policy' = 'singleton' THEN
+        EXECUTE format('${formatPartitionCommand(createIndexJobPolicySingleton(schema))}', tablename);
+      ELSIF options->>'policy' = 'stately' THEN
+        EXECUTE format('${formatPartitionCommand(createIndexJobPolicyStately(schema))}', tablename);
+      ELSIF options->>'policy' = 'exclusive' THEN
+        EXECUTE format('${formatPartitionCommand(createIndexJobPolicyExclusive(schema))}', tablename);
+      END IF;
 
       EXECUTE format('ALTER TABLE ${schema}.%I ADD CONSTRAINT cjc CHECK (name=%L)', tablename, queue_name);
       EXECUTE format('ALTER TABLE ${schema}.job ATTACH PARTITION ${schema}.%I FOR VALUES IN (%L)', tablename, queue_name);
@@ -450,7 +457,6 @@ function updateQueue (schema, { deadLetter } = {}) {
   return `
     WITH options as (SELECT $2::jsonb as data)
     UPDATE ${schema}.queue SET
-      policy = COALESCE(o.data->>'policy', policy),
       retry_limit = COALESCE((o.data->>'retryLimit')::int, retry_limit),
       retry_delay = COALESCE((o.data->>'retryDelay')::int, retry_delay),
       retry_backoff = COALESCE((o.data->>'retryBackoff')::bool, retry_backoff),

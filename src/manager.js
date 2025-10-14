@@ -585,7 +585,11 @@ class Manager extends EventEmitter {
     assert(Object.keys(options).length > 0, 'no properties found to update')
 
     if ('policy' in options) {
-      assert(options.policy in QUEUE_POLICIES, `${options.policy} is not a valid queue policy`)
+      throw new Error('queue policy cannot be changed after creation')
+    }
+
+    if ('partition' in options) {
+      throw new Error('queue partitioning cannot be changed after creation')
     }
 
     Attorney.validateQueueArgs(options)
