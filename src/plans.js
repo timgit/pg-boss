@@ -1,6 +1,9 @@
 const DEFAULT_SCHEMA = 'pgboss'
 const MIGRATE_RACE_MESSAGE = 'division by zero'
 const CREATE_RACE_MESSAGE = 'already exists'
+const FIFTEEN_MINUTES = 60 * 15
+const FORTEEN_DAYS = 60 * 60 * 24 * 14
+const SEVEN_DAYS = 60 * 60 * 24 * 7
 
 const JOB_STATES = Object.freeze({
   created: 'created',
@@ -16,8 +19,19 @@ const QUEUE_POLICIES = Object.freeze({
   short: 'short',
   singleton: 'singleton',
   stately: 'stately',
-  exactly_once: 'exactly_once'
+  exclusive: 'exclusive'
 })
+
+const QUEUE_DEFAULTS = {
+  expire_seconds: FIFTEEN_MINUTES,
+  retention_seconds: FORTEEN_DAYS,
+  deletion_seconds: SEVEN_DAYS,
+  retry_limit: 2,
+  retry_delay: 0,
+  warning_queued: 0,
+  retry_backoff: false,
+  partition: false
+}
 
 module.exports = {
   create,
@@ -63,25 +77,11 @@ module.exports = {
   JOB_STATES,
   MIGRATE_RACE_MESSAGE,
   CREATE_RACE_MESSAGE,
-  DEFAULT_SCHEMA
+  DEFAULT_SCHEMA,
+  QUEUE_DEFAULTS
 }
 
 const COMMON_JOB_TABLE = 'job_common'
-
-const FIFTEEN_MINUTES = 60 * 15
-const FORTEEN_DAYS = 60 * 60 * 24 * 14
-const SEVEN_DAYS = 60 * 60 * 24 * 7
-
-const QUEUE_DEFAULTS = {
-  expire_seconds: FIFTEEN_MINUTES,
-  retention_seconds: FORTEEN_DAYS,
-  deletion_seconds: SEVEN_DAYS,
-  retry_limit: 2,
-  retry_delay: 0,
-  warning_queued: 0,
-  retry_backoff: false,
-  partition: false
-}
 
 function create (schema, version) {
   const commands = [
@@ -322,6 +322,7 @@ function createQueueFunction (schema) {
       EXECUTE format('${formatPartitionCommand(createIndexJobPolicyShort(schema))}', tablename);
       EXECUTE format('${formatPartitionCommand(createIndexJobPolicySingleton(schema))}', tablename);
       EXECUTE format('${formatPartitionCommand(createIndexJobPolicyStately(schema))}', tablename);
+      EXECUTE format('${formatPartitionCommand(createIndexJobPolicyExclusive(schema))}', tablename);
       EXECUTE format('${formatPartitionCommand(createIndexJobThrottle(schema))}', tablename);
       EXECUTE format('${formatPartitionCommand(createIndexJobFetch(schema))}', tablename);
 
@@ -409,8 +410,8 @@ function createIndexJobFetch (schema) {
   return `CREATE INDEX job_i5 ON ${schema}.job (name, start_after) INCLUDE (priority, created_on, id) WHERE state < '${JOB_STATES.active}'`
 }
 
-function createIndexJobPolicyExactlyOnce (schema) {
-  return `CREATE UNIQUE INDEX job_i6 ON ${schema}.job (name, COALESCE(singleton_key, '')) WHERE state <= '${JOB_STATES.active}' AND policy = '${QUEUE_POLICIES.exactly_once}'`
+function createIndexJobPolicyExclusive (schema) {
+  return `CREATE UNIQUE INDEX job_i6 ON ${schema}.job (name, COALESCE(singleton_key, '')) WHERE state <= '${JOB_STATES.active}' AND policy = '${QUEUE_POLICIES.exclusive}'`
 }
 
 function trySetQueueMonitorTime (schema, queues, seconds) {

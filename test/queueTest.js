@@ -70,11 +70,11 @@ describe('queues', function () {
     await boss.createQueue(queue, { policy: 'stately' })
   })
 
-  it('should create a queue with exactly_once policy', async function () {
+  it('should create a queue with exclusive policy', async function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
     const queue = this.test.bossConfig.schema
 
-    await boss.createQueue(queue, { policy: 'exactly_once' })
+    await boss.createQueue(queue, { policy: 'exclusive' })
   })
 
   it('should create a queue with singleton policy', async function () {
@@ -688,11 +688,11 @@ describe('queues', function () {
     })
   })
 
-  it('exactly_once policy only allows 1 active,retry,created job', async function () {
+  it('exclusive policy only allows 1 active,retry,created job', async function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
     const queue = this.test.bossConfig.schema
 
-    await boss.createQueue(queue, { policy: 'exactly_once' })
+    await boss.createQueue(queue, { policy: 'exclusive' })
 
     const jobId1 = await boss.send(queue, null, { retryLimit: 1 })
 
@@ -732,11 +732,11 @@ describe('queues', function () {
     assert(newJobId)
   })
 
-  it('exactly_once policy should be extended with singletonKey', async function () {
+  it('exclusive policy should be extended with singletonKey', async function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
     const queue = this.test.bossConfig.schema
 
-    await boss.createQueue(queue, { policy: 'exactly_once' })
+    await boss.createQueue(queue, { policy: 'exclusive' })
 
     const jobAId = await boss.send(queue, null, { singletonKey: 'a', retryLimit: 1 })
 

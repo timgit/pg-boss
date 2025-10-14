@@ -83,7 +83,7 @@ declare namespace PgBoss {
 
   type SendOptions = JobOptions & QueueOptions & ConnectionOptions
 
-  type QueuePolicy = 'standard' | 'short' | 'singleton' | 'stately' | 'exactly_once'
+  type QueuePolicy = 'standard' | 'short' | 'singleton' | 'stately' | 'exclusive'
 
   type Queue = {
     name: string;
