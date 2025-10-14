@@ -254,6 +254,7 @@ function createTableJobCommon (schema, table) {
     ${format(createIndexJobPolicyShort(schema))}
     ${format(createIndexJobPolicySingleton(schema))}
     ${format(createIndexJobPolicyStately(schema))}
+    ${format(createIndexJobPolicyExclusive(schema))}
     ${format(createIndexJobThrottle(schema))}
     ${format(createIndexJobFetch(schema))}
 
@@ -322,9 +323,9 @@ function createQueueFunction (schema) {
       EXECUTE format('${formatPartitionCommand(createIndexJobPolicyShort(schema))}', tablename);
       EXECUTE format('${formatPartitionCommand(createIndexJobPolicySingleton(schema))}', tablename);
       EXECUTE format('${formatPartitionCommand(createIndexJobPolicyStately(schema))}', tablename);
-      EXECUTE format('${formatPartitionCommand(createIndexJobPolicyExclusive(schema))}', tablename);
       EXECUTE format('${formatPartitionCommand(createIndexJobThrottle(schema))}', tablename);
       EXECUTE format('${formatPartitionCommand(createIndexJobFetch(schema))}', tablename);
+      EXECUTE format('${formatPartitionCommand(createIndexJobPolicyExclusive(schema))}', tablename);
 
       EXECUTE format('ALTER TABLE ${schema}.%I ADD CONSTRAINT cjc CHECK (name=%L)', tablename, queue_name);
       EXECUTE format('ALTER TABLE ${schema}.job ATTACH PARTITION ${schema}.%I FOR VALUES IN (%L)', tablename, queue_name);

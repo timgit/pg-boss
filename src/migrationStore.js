@@ -70,11 +70,14 @@ function getAll (schema) {
       previous: 25,
       install: [
         `
-        CREATE OR REPLACE FUNCTION ${schema}.create_queue(queue_name text, options json)
+        CREATE OR REPLACE FUNCTION ${schema}.create_queue(queue_name text, options jsonb)
         RETURNS VOID AS
         $$
         DECLARE
-          table_name varchar := 'j' || encode(sha224(queue_name::bytea), 'hex');
+          tablename varchar := CASE WHEN options->>'partition' = 'true'
+                                THEN 'j' || encode(sha224(queue_name::bytea), 'hex')
+                                ELSE 'job_common'
+                                END;
           queue_created_on timestamptz;
         BEGIN
 
@@ -85,50 +88,61 @@ function getAll (schema) {
               retry_limit,
               retry_delay,
               retry_backoff,
+              retry_delay_max,
               expire_seconds,
-              retention_minutes,
+              retention_seconds,
+              deletion_seconds,
+              warning_queued,
               dead_letter,
-              partition_name
+              partition,
+              table_name
             )
             VALUES (
               queue_name,
               options->>'policy',
-              (options->>'retryLimit')::int,
-              (options->>'retryDelay')::int,
-              (options->>'retryBackoff')::bool,
-              (options->>'expireInSeconds')::int,
-              (options->>'retentionMinutes')::int,
+              COALESCE((options->>'retryLimit')::int, 2),
+              COALESCE((options->>'retryDelay')::int, 0),
+              COALESCE((options->>'retryBackoff')::bool, false),
+              (options->>'retryDelayMax')::int,
+              COALESCE((options->>'expireInSeconds')::int, 900),
+              COALESCE((options->>'retentionSeconds')::int, 1209600),
+              COALESCE((options->>'deleteAfterSeconds')::int, 604800),
+              COALESCE((options->>'warningQueueSize')::int, 0),
               options->>'deadLetter',
-              table_name
+              COALESCE((options->>'partition')::bool, false),
+              tablename
             )
             ON CONFLICT DO NOTHING
             RETURNING created_on
           )
           SELECT created_on into queue_created_on from q;
 
-          IF queue_created_on IS NULL THEN
+          IF queue_created_on IS NULL OR options->>'partition' IS DISTINCT FROM 'true' THEN
             RETURN;
           END IF;
 
-          EXECUTE format('CREATE TABLE ${schema}.%I (LIKE ${schema}.job INCLUDING DEFAULTS)', table_name);
+          EXECUTE format('CREATE TABLE ${schema}.%I (LIKE ${schema}.job INCLUDING DEFAULTS)', tablename);
+          
+          EXECUTE format('ALTER TABLE ${schema}.%1$I ADD PRIMARY KEY (name, id)', tablename);
+          EXECUTE format('ALTER TABLE ${schema}.%1$I ADD CONSTRAINT q_fkey FOREIGN KEY (name) REFERENCES ${schema}.queue (name) ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED', tablename);
+          EXECUTE format('ALTER TABLE ${schema}.%1$I ADD CONSTRAINT dlq_fkey FOREIGN KEY (dead_letter) REFERENCES ${schema}.queue (name) ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED', tablename);
+          EXECUTE format('CREATE UNIQUE INDEX %1$s_i1 ON ${schema}.%1$I (name, COALESCE(singleton_key, '''')) WHERE state = ''created'' AND policy = ''short''', tablename);
+          EXECUTE format('CREATE UNIQUE INDEX %1$s_i2 ON ${schema}.%1$I (name, COALESCE(singleton_key, '''')) WHERE state = ''active'' AND policy = ''singleton''', tablename);
+          EXECUTE format('CREATE UNIQUE INDEX %1$s_i3 ON ${schema}.%1$I (name, state, COALESCE(singleton_key, '''')) WHERE state <= ''active'' AND policy = ''stately''', tablename);
+          EXECUTE format('CREATE UNIQUE INDEX %1$s_i4 ON ${schema}.%1$I (name, singleton_on, COALESCE(singleton_key, '''')) WHERE state <> ''cancelled'' AND singleton_on IS NOT NULL', tablename);
+          EXECUTE format('CREATE INDEX %1$s_i5 ON ${schema}.%1$I (name, start_after) INCLUDE (priority, created_on, id) WHERE state < ''active''', tablename);
+          EXECUTE format('CREATE UNIQUE INDEX %1$s_i6 ON ${schema}.%1$I (name, COALESCE(singleton_key, '''')) WHERE state <= ''active'' AND policy = ''exclusive''', tablename);
 
-          EXECUTE format('ALTER TABLE ${schema}.%1$I ADD PRIMARY KEY (name, id)', table_name);
-          EXECUTE format('ALTER TABLE ${schema}.%1$I ADD CONSTRAINT q_fkey FOREIGN KEY (name) REFERENCES ${schema}.queue (name) ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED', table_name);
-          EXECUTE format('ALTER TABLE ${schema}.%1$I ADD CONSTRAINT dlq_fkey FOREIGN KEY (dead_letter) REFERENCES ${schema}.queue (name) ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED', table_name);
-          EXECUTE format('CREATE UNIQUE INDEX %1$s_i1 ON ${schema}.%1$I (name, COALESCE(singleton_key, '''')) WHERE state = ''created'' AND policy = ''short''', table_name);
-          EXECUTE format('CREATE UNIQUE INDEX %1$s_i2 ON ${schema}.%1$I (name, COALESCE(singleton_key, '''')) WHERE state = ''active'' AND policy = ''singleton''', table_name);
-          EXECUTE format('CREATE UNIQUE INDEX %1$s_i3 ON ${schema}.%1$I (name, state, COALESCE(singleton_key, '''')) WHERE state <= ''active'' AND policy = ''stately''', table_name);
-          EXECUTE format('CREATE UNIQUE INDEX %1$s_i4 ON ${schema}.%1$I (name, singleton_on, COALESCE(singleton_key, '''')) WHERE state <> ''cancelled'' AND singleton_on IS NOT NULL', table_name);
-          EXECUTE format('CREATE INDEX %1$s_i5 ON ${schema}.%1$I (name, start_after) INCLUDE (priority, created_on, id) WHERE state < ''active''', table_name);
-          EXECUTE format('CREATE INDEX %1$s_i6 ON ${schema}.%1$I (name, COALESCE(singleton_key, '')) WHERE state <= ''active'' AND policy = ''exclusive''', table_name);
-
-          EXECUTE format('ALTER TABLE ${schema}.%I ADD CONSTRAINT cjc CHECK (name=%L)', table_name, queue_name);
-          EXECUTE format('ALTER TABLE ${schema}.job ATTACH PARTITION ${schema}.%I FOR VALUES IN (%L)', table_name, queue_name);
+          EXECUTE format('ALTER TABLE ${schema}.%I ADD CONSTRAINT cjc CHECK (name=%L)', tablename, queue_name);
+          EXECUTE format('ALTER TABLE ${schema}.job ATTACH PARTITION ${schema}.%I FOR VALUES IN (%L)', tablename, queue_name);
         END;
         $$
-        LANGUAGE plpgsql
-        `
+        LANGUAGE plpgsql;
+        `,
+        `CREATE UNIQUE INDEX job_i6 ON ${schema}.job_common (name, COALESCE(singleton_key, '')) WHERE state <= 'active' AND policy = 'exclusive'`
       ],
-      uninstall: []
+      uninstall: [
+        `DROP INDEX ${schema}.job_i6`
+      ]
     },]
 }

@@ -6,7 +6,7 @@ const migrationStore = require('../src/migrationStore')
 const currentSchemaVersion = require('../version.json').schema
 const plans = require('../src/plans')
 
-describe.skip('migration', function () {
+describe('migration', function () {
   beforeEach(async function () {
     const db = await helper.getDb({ debug: false })
     this.currentTest.contractor = new Contractor(db, this.currentTest.bossConfig)
@@ -76,7 +76,7 @@ describe.skip('migration', function () {
     }
   })
 
-  it('should migrate to previous version and back again', async function () {
+  it.skip('should migrate to previous version and back again', async function () {
     const { contractor } = this.test
 
     await contractor.create()
@@ -126,7 +126,7 @@ describe.skip('migration', function () {
     assert.strictEqual(version, currentSchemaVersion)
   })
 
-  it('should migrate through 2 versions back and forth', async function () {
+  it.skip('should migrate through 2 versions back and forth', async function () {
     const { contractor } = this.test
 
     const queue = 'migrate-back-2-and-forward'
@@ -173,7 +173,7 @@ describe.skip('migration', function () {
     await boss.complete(queue, job2.id)
   })
 
-  it('should migrate to latest during start if on previous 2 schema versions', async function () {
+  it.skip('should migrate to latest during start if on previous 2 schema versions', async function () {
     const { contractor } = this.test
 
     await contractor.create()
