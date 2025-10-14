@@ -33,6 +33,8 @@ const QUEUE_DEFAULTS = {
   partition: false
 }
 
+const COMMON_JOB_TABLE = 'job_common'
+
 module.exports = {
   create,
   insertVersion,
@@ -78,10 +80,7 @@ module.exports = {
   MIGRATE_RACE_MESSAGE,
   CREATE_RACE_MESSAGE,
   DEFAULT_SCHEMA,
-  QUEUE_DEFAULTS
 }
-
-const COMMON_JOB_TABLE = 'job_common'
 
 function create (schema, version) {
   const commands = [
