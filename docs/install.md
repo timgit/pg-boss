@@ -1,6 +1,6 @@
 # Database install <!-- {docsify-ignore-all} -->
 
-pg-boss will automatically create a dedicated schema (`pgboss` is the default name) in the target database. This will require the user in database connection to have the [CREATE](http://www.postgresql.org/docs/13/static/sql-grant.html) privilege.
+pg-boss will automatically create a dedicated schema (`pgboss` is the default name) in the target database. This will require the user in database connection to have the [CREATE](http://www.postgresql.org/docs/current/static/sql-grant.html) privilege.
 
 ```sql
 GRANT CREATE ON DATABASE db1 TO leastprivuser;
@@ -25,7 +25,6 @@ NOTE: If an existing schema was used during installation, created objects will n
 ```sql
 DROP TABLE pgboss.version;
 DROP TABLE pgboss.job;
-DROP TABLE pgboss.archive;
 DROP TYPE pgboss.job_state;
 DROP TABLE pgboss.subscription;
 DROP TABLE pgboss.schedule;

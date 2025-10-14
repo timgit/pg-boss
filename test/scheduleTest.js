@@ -2,10 +2,7 @@ const { delay } = require('../src/tools')
 const assert = require('node:assert')
 const { DateTime } = require('luxon')
 const helper = require('./testHelper')
-const plans = require('../src/plans')
 const PgBoss = require('../')
-
-const ASSERT_DELAY = 3000
 
 describe('schedule', function () {
   it('should send job based on every minute expression', async function () {
@@ -13,25 +10,20 @@ describe('schedule', function () {
       ...this.test.bossConfig,
       cronMonitorIntervalSeconds: 1,
       cronWorkerIntervalSeconds: 1,
-      noDefault: true
+      schedule: true
     }
 
-    let boss = await helper.start(config)
+    const boss = this.test.boss = await helper.start(config)
+
     const queue = this.test.bossConfig.schema
 
-    await boss.createQueue(queue)
     await boss.schedule(queue, '* * * * *')
-    await boss.stop({ graceful: false })
 
-    boss = await helper.start({ ...config, schedule: true })
-
-    await delay(2000)
+    await delay(4000)
 
     const [job] = await boss.fetch(queue)
 
     assert(job)
-
-    await boss.stop({ graceful: false })
   })
 
   it('should set job metadata correctly', async function () {
@@ -39,51 +31,26 @@ describe('schedule', function () {
       ...this.test.bossConfig,
       cronMonitorIntervalSeconds: 1,
       cronWorkerIntervalSeconds: 1,
-      noDefault: true
-    }
-
-    let boss = await helper.start(config)
-    const queue = this.test.bossConfig.schema
-
-    await boss.createQueue(queue)
-    await boss.schedule(queue, '* * * * *', {}, { retryLimit: 42 })
-    await boss.stop({ graceful: false })
-
-    boss = await helper.start({ ...config, schedule: true })
-
-    await delay(2000)
-
-    const [job] = await boss.fetch(queue, { includeMetadata: true })
-
-    assert(job)
-
-    assert.strictEqual(job.retryLimit, 42)
-    await boss.stop({ graceful: false })
-  })
-
-  it('should not enable scheduling if archive config is < 60s', async function () {
-    const config = {
-      ...this.test.bossConfig,
-      cronWorkerIntervalSeconds: 1,
-      cronMonitorIntervalSeconds: 1,
-      archiveCompletedAfterSeconds: 1,
       schedule: true
     }
 
     const boss = this.test.boss = await helper.start(config)
     const queue = this.test.bossConfig.schema
 
-    await boss.schedule(queue, '* * * * *')
+    await boss.schedule(queue, '* * * * *', {}, { retryLimit: 42, singletonSeconds: 5 })
 
-    await delay(ASSERT_DELAY)
+    await delay(4000)
 
-    const [job] = await boss.fetch(queue)
+    const [job] = await boss.fetch(queue, { includeMetadata: true })
 
-    assert(!job)
+    assert(job)
+
+    assert.strictEqual(job.retryLimit, 42)
+    assert(job.singletonOn)
   })
 
   it('should fail to schedule a queue that does not exist', async function () {
-    const boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
     const queue = this.test.bossConfig.schema
 
     try {
@@ -95,21 +62,17 @@ describe('schedule', function () {
   })
 
   it('should send job based on every minute expression after a restart', async function () {
-    let boss = await helper.start({ ...this.test.bossConfig, schedule: false, noDefault: true })
+    let boss = await helper.start({ ...this.test.bossConfig, schedule: false })
 
     const queue = this.test.bossConfig.schema
 
-    await boss.createQueue(queue)
-
     await boss.schedule(queue, '* * * * *')
-
-    await delay(ASSERT_DELAY)
 
     await boss.stop({ graceful: false })
 
-    boss = await helper.start({ ...this.test.bossConfig, cronWorkerIntervalSeconds: 1, schedule: true, noDefault: true })
+    boss = await helper.start({ ...this.test.bossConfig, cronWorkerIntervalSeconds: 1, schedule: true })
 
-    await delay(ASSERT_DELAY)
+    await delay(4000)
 
     const [job] = await boss.fetch(queue)
 
@@ -128,21 +91,11 @@ describe('schedule', function () {
     const queue = this.test.bossConfig.schema
 
     await boss.schedule(queue, '* * * * *')
-
     await boss.unschedule(queue)
 
-    await boss.stop({ graceful: false })
+    const scheduled = await boss.getSchedules()
 
-    const db = await helper.getDb()
-    await db.executeSql(plans.clearStorage(this.test.bossConfig.schema))
-
-    await boss.start(config)
-
-    await delay(ASSERT_DELAY)
-
-    const [job] = await boss.fetch(queue)
-
-    assert(!job)
+    assert.strictEqual(scheduled.length, 0)
   })
 
   it('should send job based on current minute in UTC', async function () {
@@ -168,8 +121,8 @@ describe('schedule', function () {
     const nextHour = nextUtc.hour
 
     // using current and next minute because the clock is ticking
-    const minute = `${currentMinute},${nextMinute}`
-    const hour = `${currentHour},${nextHour}`
+    const minute = currentMinute === nextMinute ? currentMinute : `${currentMinute},${nextMinute}`
+    const hour = currentHour === nextHour ? currentHour : `${currentHour},${nextHour}`
 
     const cron = `${minute} ${hour} * * *`
 
@@ -207,14 +160,14 @@ describe('schedule', function () {
     const nextHour = nextLocal.hour
 
     // using current and next minute because the clock is ticking
-    const minute = `${currentMinute},${nextMinute}`
-    const hour = `${currentHour},${nextHour}`
+    const minute = currentMinute === nextMinute ? currentMinute : `${currentMinute},${nextMinute}`
+    const hour = currentHour === nextHour ? currentHour : `${currentHour},${nextHour}`
 
     const cron = `${minute} ${hour} * * *`
 
     await boss.schedule(queue, cron, null, { tz })
 
-    await delay(ASSERT_DELAY)
+    await delay(6000)
 
     const [job] = await boss.fetch(queue)
 
@@ -232,18 +185,12 @@ describe('schedule', function () {
 
     let warningCount = 0
 
-    const warningEvent = 'warning'
-
-    const onWarning = (warning) => {
-      assert(warning.message.includes('clock skew'))
+    boss.once('warning', (warning) => {
+      assert(warning.message.includes('Clock skew'))
       warningCount++
-    }
-
-    process.on(warningEvent, onWarning)
+    })
 
     await boss.start()
-
-    process.removeListener(warningEvent, onWarning)
 
     assert.strictEqual(warningCount, 1)
   })
@@ -318,5 +265,133 @@ describe('schedule', function () {
     await delay(4000)
 
     assert.strictEqual(errorCount, 1)
+  })
+
+  it('should accept a unique key to have more than one schedule per queue', async function () {
+    const config = {
+      ...this.test.bossConfig
+    }
+
+    const boss = this.test.boss = await helper.start(config)
+
+    const queue = this.test.bossConfig.schema
+
+    await boss.schedule(queue, '* * * * *', null, { key: 'a' })
+    await boss.schedule(queue, '* * * * *', null, { key: 'b' })
+
+    const schedules = await boss.getSchedules()
+
+    assert.strictEqual(schedules.length, 2)
+  })
+
+  it('should update a schedule with a unique key', async function () {
+    const config = {
+      ...this.test.bossConfig
+    }
+
+    const boss = this.test.boss = await helper.start(config)
+
+    const queue = this.test.bossConfig.schema
+
+    await boss.schedule(queue, '* * * * *', null, { key: 'a' })
+    await boss.schedule(queue, '0 1 * * *', null, { key: 'a' })
+
+    const schedules = await boss.getSchedules()
+
+    assert.strictEqual(schedules.length, 1)
+    assert.strictEqual(schedules[0].cron, '0 1 * * *')
+  })
+
+  it('should update a schedule without a unique key', async function () {
+    const config = {
+      ...this.test.bossConfig
+    }
+
+    const boss = this.test.boss = await helper.start(config)
+
+    const queue = this.test.bossConfig.schema
+
+    await boss.schedule(queue, '* * * * *')
+    await boss.schedule(queue, '0 1 * * *')
+
+    const schedules = await boss.getSchedules()
+
+    assert.strictEqual(schedules.length, 1)
+    assert.strictEqual(schedules[0].cron, '0 1 * * *')
+  })
+
+  it('should remove a schedule using a unique key', async function () {
+    const config = {
+      ...this.test.bossConfig
+    }
+
+    const boss = this.test.boss = await helper.start(config)
+
+    const queue = this.test.bossConfig.schema
+
+    await boss.schedule(queue, '* * * * *', null, { key: 'a' })
+    await boss.schedule(queue, '0 1 * * *', null, { key: 'b' })
+
+    let schedules = await boss.getSchedules()
+
+    assert.strictEqual(schedules.length, 2)
+
+    await boss.unschedule(queue, 'a')
+
+    schedules = await boss.getSchedules()
+
+    assert.strictEqual(schedules.length, 1)
+
+    assert.strictEqual(schedules[0].cron, '0 1 * * *')
+  })
+
+  it('should get schedules filtered by a queue name', async function () {
+    const config = {
+      ...this.test.bossConfig
+    }
+
+    const boss = this.test.boss = await helper.start(config)
+
+    const queue = this.test.bossConfig.schema
+    const queue2 = this.test.bossConfig.schema + '2'
+
+    await boss.createQueue(queue2)
+
+    await boss.schedule(queue, '* * * * *')
+    await boss.schedule(queue2, '0 1 * * *')
+
+    let schedules = await boss.getSchedules()
+    assert.strictEqual(schedules.length, 2)
+
+    schedules = await boss.getSchedules(queue2)
+
+    assert.strictEqual(schedules.length, 1)
+    assert.strictEqual(schedules[0].cron, '0 1 * * *')
+  })
+
+  it('should get schedules filtered by a queue name and key', async function () {
+    const config = {
+      ...this.test.bossConfig
+    }
+
+    const boss = this.test.boss = await helper.start(config)
+
+    const key = 'a'
+    const queue = this.test.bossConfig.schema
+    const queue2 = this.test.bossConfig.schema + '2'
+
+    await boss.createQueue(queue2)
+
+    await boss.schedule(queue, '* * * * *')
+    await boss.schedule(queue, '0 1 * * *', null, { key })
+    await boss.schedule(queue2, '0 2 * * *')
+
+    let schedules = await boss.getSchedules()
+    assert.strictEqual(schedules.length, 3)
+
+    schedules = await boss.getSchedules(queue, key)
+
+    assert.strictEqual(schedules.length, 1)
+    assert.strictEqual(schedules[0].cron, '0 1 * * *')
   })
 })

@@ -1,5 +1,8 @@
 const assert = require('node:assert')
 const helper = require('./testHelper')
+const { states } = require('../src')
+const { delay } = require('../src/tools')
+const { randomUUID } = require('node:crypto')
 
 describe('queues', function () {
   it('should create a queue', async function () {
@@ -98,12 +101,98 @@ describe('queues', function () {
     await boss.createQueue(queue)
   })
 
-  it('should purge a queue', async function () {
+  it('should delete an empty queue', async function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
     const queue = this.test.bossConfig.schema
 
     await boss.createQueue(queue)
-    await boss.purgeQueue(queue)
+    await boss.send(queue)
+    await boss.deleteAllJobs(queue)
+    await boss.deleteQueue(queue)
+  })
+
+  it('should truncate a partitioned queue and leave other queues alone', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
+    const queue = this.test.bossConfig.schema
+
+    const queue2 = `${queue}2`
+    await boss.createQueue(queue2)
+    await boss.send(queue2)
+
+    await boss.createQueue(queue, { partition: true })
+    await boss.send(queue)
+
+    await boss.deleteAllJobs(queue)
+    await boss.deleteQueue(queue)
+
+    const { queuedCount } = await boss.getQueueStats(queue2)
+    assert(queuedCount)
+  })
+
+  it('should truncate a partitioned queue', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
+    const queue = this.test.bossConfig.schema
+
+    await boss.createQueue(queue, { partition: true })
+    await boss.send(queue)
+    await boss.deleteAllJobs(queue)
+    await boss.deleteQueue(queue)
+  })
+
+  it('should delete a non-empty queue', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
+    const queue = this.test.bossConfig.schema
+
+    await boss.createQueue(queue)
+    await boss.send(queue)
+
+    try {
+      await boss.deleteQueue(queue)
+    } catch {
+      assert(false)
+    }
+  })
+
+  it('should delete all queued jobs from a queue', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const queue = this.test.bossConfig.schema
+
+    const getCount = () => helper.countJobs(this.test.bossConfig.schema, 'job', 'state = $1', [states.created])
+
+    await boss.send(queue)
+
+    assert.strictEqual(await getCount(), 1)
+
+    await boss.deleteQueuedJobs(queue)
+
+    assert.strictEqual(await getCount(), 0)
+  })
+
+  it('should delete all stored jobs from a queue', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
+    const queue = this.test.bossConfig.schema
+
+    const { completed, failed, cancelled } = states
+    const inClause = [completed, failed, cancelled].map(s => `'${s}'`)
+    const getCount = () => helper.countJobs(this.test.bossConfig.schema, 'job', `state IN (${inClause})`)
+
+    await boss.send(queue)
+    const [job1] = await boss.fetch(queue)
+    assert(job1?.id)
+
+    await boss.complete(queue, job1.id)
+
+    assert.strictEqual(await getCount(), 1)
+
+    await boss.send(queue, null, { retryLimit: 0 })
+    const [job2] = await boss.fetch(queue)
+    await boss.fail(queue, job2.id)
+
+    assert.strictEqual(await getCount(), 2)
+
+    await boss.deleteStoredJobs(queue)
+
+    assert.strictEqual(await getCount(), 0)
   })
 
   it('getQueue() returns null when missing', async function () {
@@ -138,10 +227,11 @@ describe('queues', function () {
     const createProps = {
       policy: 'standard',
       retryLimit: 1,
-      retryBackoff: false,
+      retryBackoff: true,
+      retryDelayMax: 3,
       retryDelay: 1,
       expireInSeconds: 1,
-      retentionMinutes: 1,
+      retentionSeconds: 1,
       deadLetter
     }
 
@@ -154,8 +244,9 @@ describe('queues', function () {
     assert.strictEqual(createProps.retryLimit, queueObj.retryLimit)
     assert.strictEqual(createProps.retryBackoff, queueObj.retryBackoff)
     assert.strictEqual(createProps.retryDelay, queueObj.retryDelay)
+    assert.strictEqual(createProps.retryDelayMax, queueObj.retryDelayMax)
     assert.strictEqual(createProps.expireInSeconds, queueObj.expireInSeconds)
-    assert.strictEqual(createProps.retentionMinutes, queueObj.retentionMinutes)
+    assert.strictEqual(createProps.retentionSeconds, queueObj.retentionSeconds)
     assert.strictEqual(createProps.deadLetter, queueObj.deadLetter)
     assert(queueObj.createdOn)
     assert(queueObj.updatedOn)
@@ -165,11 +256,11 @@ describe('queues', function () {
 
     const updateProps = {
       policy: 'short',
-      retryLimit: 2,
-      retryBackoff: true,
       retryDelay: 2,
+      retryDelayMax: null,
+      retryLimit: 2,
+      retryBackoff: false,
       expireInSeconds: 2,
-      retentionMinutes: 2,
       deadLetter
     }
 
@@ -181,8 +272,8 @@ describe('queues', function () {
     assert.strictEqual(updateProps.retryLimit, queueObj.retryLimit)
     assert.strictEqual(updateProps.retryBackoff, queueObj.retryBackoff)
     assert.strictEqual(updateProps.retryDelay, queueObj.retryDelay)
+    assert.strictEqual(updateProps.retryDelayMax, queueObj.retryDelayMax)
     assert.strictEqual(updateProps.expireInSeconds, queueObj.expireInSeconds)
-    assert.strictEqual(updateProps.retentionMinutes, queueObj.retentionMinutes)
     assert.strictEqual(updateProps.deadLetter, queueObj.deadLetter)
   })
 
@@ -197,8 +288,9 @@ describe('queues', function () {
       retryLimit: 1,
       retryBackoff: true,
       retryDelay: 2,
-      expireInSeconds: 3,
-      retentionMinutes: 4,
+      retryDelayMax: 3,
+      expireInSeconds: 4,
+      retentionSeconds: 4,
       deadLetter
     }
 
@@ -208,14 +300,15 @@ describe('queues', function () {
 
     const job = await boss.getJobById(queue, jobId)
 
-    const retentionMinutes = (new Date(job.keepUntil) - new Date(job.createdOn)) / 1000 / 60
+    const retentionSeconds = (new Date(job.keepUntil) - new Date(job.createdOn)) / 1000
 
-    assert.strictEqual(createProps.retryLimit, job.retryLimit)
-    assert.strictEqual(createProps.retryBackoff, job.retryBackoff)
-    assert.strictEqual(createProps.retryDelay, job.retryDelay)
-    assert.strictEqual(createProps.expireInSeconds, job.expireIn.seconds)
-    assert.strictEqual(createProps.retentionMinutes, retentionMinutes)
-    assert.strictEqual(createProps.deadLetter, job.deadLetter)
+    assert.strictEqual(job.retryLimit, createProps.retryLimit)
+    assert.strictEqual(job.retryBackoff, createProps.retryBackoff)
+    assert.strictEqual(job.retryDelay, createProps.retryDelay)
+    assert.strictEqual(job.retryDelayMax, createProps.retryDelayMax)
+    assert.strictEqual(job.deadLetter, createProps.deadLetter)
+    assert.strictEqual(job.expireInSeconds, createProps.expireInSeconds)
+    assert.strictEqual(retentionSeconds, createProps.retentionSeconds)
   })
 
   it('short policy only allows 1 job in queue', async function () {
@@ -438,37 +531,161 @@ describe('queues', function () {
     assert(!jobA3)
   })
 
-  it('should clear a specific queue', async function () {
-    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
+  it('stately policy with singletonKey should not block other values if one is blocked', async function () {
+    const config = {
+      ...this.test.bossConfig,
+      noDefault: true,
+      queueCacheIntervalSeconds: 1,
+      monitorIntervalSeconds: 1
+    }
+    const boss = this.test.boss = await helper.start(config)
+    const queue = this.test.bossConfig.schema
 
-    const queue1 = `${this.test.bossConfig.schema}1`
-    const queue2 = `${this.test.bossConfig.schema}2`
+    await boss.createQueue(queue, { policy: 'stately' })
 
-    await boss.createQueue(queue1)
-    await boss.send(queue1)
+    // put singleton key 'a' into active state
+    await boss.send(queue, null, { singletonKey: 'a', retryLimit: 1 })
+    const [jobA] = await boss.fetch(queue)
+    assert(jobA)
 
-    await boss.createQueue(queue2)
-    await boss.send(queue2)
+    // then, create another job in the queue for 'a'
+    const jobA2Id = await boss.send(queue, null, { singletonKey: 'a', retryLimit: 1 })
+    assert(jobA2Id)
 
-    const q1Count1 = await boss.getQueueSize(queue1)
-    const q2Count1 = await boss.getQueueSize(queue2)
+    // now, queue a job for 'b', and attempt to fetch it
+    const jobBId = await boss.send(queue, null, { singletonKey: 'b', retryLimit: 1 })
+    assert(jobBId)
 
-    assert.strictEqual(1, q1Count1)
-    assert.strictEqual(1, q2Count1)
+    const [jobB1] = await boss.fetch(queue)
+    assert.strictEqual(jobB1, undefined)
 
-    await boss.purgeQueue(queue1)
+    await boss.supervise()
+    await delay(1500)
 
-    const q1Count2 = await boss.getQueueSize(queue1)
-    const q2Count2 = await boss.getQueueSize(queue2)
+    const [jobB] = await boss.fetch(queue)
+    assert(jobB)
+  })
 
-    assert.strictEqual(0, q1Count2)
-    assert.strictEqual(1, q2Count2)
+  it('singleton policy with singletonKey should not block other values if one is blocked', async function () {
+    const config = {
+      ...this.test.bossConfig,
+      noDefault: true,
+      queueCacheIntervalSeconds: 1,
+      monitorIntervalSeconds: 1
+    }
+    const boss = this.test.boss = await helper.start(config)
+    const queue = this.test.bossConfig.schema
 
-    await boss.purgeQueue(queue2)
+    await boss.createQueue(queue, { policy: 'singleton' })
 
-    const q2Count3 = await boss.getQueueSize(queue2)
+    // put singleton key 'a' into active state
+    await boss.send(queue, null, { singletonKey: 'a', retryLimit: 1 })
+    const [jobA] = await boss.fetch(queue)
+    assert(jobA)
 
-    assert.strictEqual(0, q2Count3)
+    // then, create another job in the queue for 'a'
+    const jobA2Id = await boss.send(queue, null, { singletonKey: 'a', retryLimit: 1 })
+    assert(jobA2Id)
+
+    // now, queue a job for 'b', and attempt to fetch it
+    const jobBId = await boss.send(queue, null, { singletonKey: 'b', retryLimit: 1 })
+    assert(jobBId)
+
+    const [jobB1] = await boss.fetch(queue)
+    assert.strictEqual(jobB1, undefined)
+
+    await boss.supervise()
+    await delay(1500)
+
+    const [jobB] = await boss.fetch(queue)
+    assert(jobB)
+  })
+
+  it('singleton policy with multiple singletonKeys in the queue should only promote 1 of each keep up to the requested batch size', async function () {
+    const config = {
+      ...this.test.bossConfig,
+      noDefault: true
+    }
+
+    const boss = this.test.boss = await helper.start(config)
+    const queue = this.test.bossConfig.schema
+
+    await boss.createQueue(queue, { policy: 'singleton' })
+
+    await boss.send(queue, null)
+    await boss.send(queue, null, { singletonKey: 'a', retryLimit: 1 })
+    await boss.send(queue, null, { singletonKey: 'a', retryLimit: 1 })
+    await boss.send(queue, null, { singletonKey: 'b', retryLimit: 1 })
+
+    const jobs = await boss.fetch(queue, { batchSize: 4, includeMetadata: true })
+
+    assert.strictEqual(jobs.length, 3)
+    assert(jobs.find(i => i.singletonKey === 'a'))
+    assert(jobs.find(i => i.singletonKey === 'b'))
+
+    await boss.complete(queue, jobs.map(i => i.id))
+
+    const [job3] = await boss.fetch(queue, { includeMetadata: true })
+    assert.strictEqual(job3.singletonKey, 'a')
+  })
+
+  describe('stats', function () {
+    let boss
+    const queue1 = randomUUID()
+    const queue2 = randomUUID()
+
+    before(async function () {
+      boss = this.test.boss = await helper.start(this.test.bossConfig)
+
+      await boss.createQueue(queue1)
+      await boss.createQueue(queue2)
+
+      await boss.send(queue1)
+      await boss.send(queue1)
+      await boss.send(queue2)
+      await boss.send(queue2)
+    })
+
+    it('should get accurate stats', async function () {
+      const queueData = await boss.getQueueStats(queue1)
+      assert.notEqual(queueData, undefined)
+
+      const {
+        name,
+        deferredCount,
+        queuedCount,
+        activeCount,
+        totalCount
+      } = queueData
+
+      assert.equal(name, queue1)
+      assert.equal(deferredCount, 0)
+      assert.equal(queuedCount, 2)
+      assert.equal(activeCount, 0)
+      assert.equal(totalCount, 2)
+    })
+
+    it('should get accurate stats on an empty queue', async function () {
+      const queue3 = randomUUID()
+      await boss.createQueue(queue3)
+
+      const queueData = await boss.getQueueStats(queue3)
+      assert.notEqual(queueData, undefined)
+
+      const {
+        name,
+        deferredCount,
+        queuedCount,
+        activeCount,
+        totalCount
+      } = queueData
+
+      assert.equal(name, queue3)
+      assert.equal(deferredCount, 0)
+      assert.equal(queuedCount, 0)
+      assert.equal(activeCount, 0)
+      assert.equal(totalCount, 0)
+    })
   })
 
   it('exactly_once policy only allows 1 active,retry,created job', async function () {

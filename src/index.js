@@ -51,7 +51,7 @@ class PgBoss extends EventEmitter {
     const db = this.getDb()
     this.#db = db
 
-    if (db.isOurs) {
+    if (db._pgbdb) {
       this.#promoteEvents(db)
     }
 
@@ -89,9 +89,7 @@ class PgBoss extends EventEmitter {
       return this.#config.db
     }
 
-    const db = new Db(this.#config)
-    db.isOurs = true
-    return db
+    return new Db(this.#config)
   }
 
   #promoteEvents (emitter) {
@@ -113,7 +111,7 @@ class PgBoss extends EventEmitter {
 
     this.#starting = true
 
-    if (this.#db.isOurs && !this.#db.opened) {
+    if (this.#db._pgbdb && !this.#db.opened) {
       await this.#db.open()
     }
 
@@ -123,14 +121,10 @@ class PgBoss extends EventEmitter {
       await this.#contractor.check()
     }
 
-    this.#manager.start()
+    await this.#manager.start()
 
     if (this.#config.supervise) {
-      await this.#boss.supervise()
-    }
-
-    if (this.#config.monitorStateIntervalSeconds) {
-      await this.#boss.monitor()
+      await this.#boss.start()
     }
 
     if (this.#config.schedule) {
@@ -168,7 +162,7 @@ class PgBoss extends EventEmitter {
 
           await this.#manager.failWip()
 
-          if (this.#db.isOurs && this.#db.opened && close) {
+          if (this.#db._pgbdb && this.#db.opened && close) {
             await this.#db.close()
           }
 

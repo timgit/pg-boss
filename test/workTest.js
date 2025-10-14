@@ -262,7 +262,7 @@ describe('work', function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, supervise: false })
     const queue = this.test.bossConfig.schema
 
-    const jobId = await boss.send(queue, null, { expireInSeconds: 1 })
+    const jobId = await boss.send(queue, null, { retryLimit: 0, expireInSeconds: 1 })
 
     await boss.work(queue, () => delay(2000))
 
@@ -278,8 +278,8 @@ describe('work', function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, supervise: false })
     const queue = this.test.bossConfig.schema
 
-    const jobId1 = await boss.send(queue, null, { expireInSeconds: 1 })
-    const jobId2 = await boss.send(queue, null, { expireInSeconds: 1 })
+    const jobId1 = await boss.send(queue, null, { retryLimit: 0, expireInSeconds: 1 })
+    const jobId2 = await boss.send(queue, null, { retryLimit: 0, expireInSeconds: 1 })
 
     await boss.work(queue, { batchSize: 2 }, () => delay(2000))
 
@@ -336,7 +336,7 @@ describe('work', function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
     const queue = this.test.bossConfig.schema
 
-    boss.stop({ wait: true })
+    boss.stop({ wait: true, close: false })
 
     await boss.send(queue)
   })

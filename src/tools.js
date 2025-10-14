@@ -1,9 +1,11 @@
+const { setTimeout } = require('node:timers/promises')
+
 module.exports = {
-  delay
+  delay,
+  resolveWithinSeconds
 }
 
 function delay (ms, error) {
-  const { setTimeout } = require('node:timers/promises')
   const ac = new AbortController()
 
   const promise = new Promise((resolve, reject) => {
@@ -25,4 +27,19 @@ function delay (ms, error) {
   }
 
   return promise
+}
+
+async function resolveWithinSeconds (promise, seconds, message) {
+  const timeout = Math.max(1, seconds) * 1000
+  const reject = delay(timeout, message)
+
+  let result
+
+  try {
+    result = await Promise.race([promise, reject])
+  } finally {
+    reject.abort()
+  }
+
+  return result
 }

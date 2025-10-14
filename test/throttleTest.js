@@ -48,11 +48,11 @@ describe('throttle', function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
     const queue = this.test.bossConfig.schema
 
-    const jobId = await boss.send(queue, null, { singletonHours: 1 })
+    const jobId = await boss.send(queue, null, { singletonSeconds: 300 })
 
     assert(jobId)
 
-    const jobId2 = await boss.send(queue, null, { singletonHours: 1, singletonNextSlot: true })
+    const jobId2 = await boss.send(queue, null, { singletonSeconds: 300, singletonNextSlot: true })
 
     assert(jobId2)
   })
@@ -80,11 +80,11 @@ describe('throttle', function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
     const queue = this.test.bossConfig.schema
 
-    const jobId1 = await boss.send(queue, null, { singletonHours: 1 })
+    const jobId1 = await boss.send(queue, null, { singletonSeconds: 300 })
 
     assert(jobId1)
 
-    const jobId2 = await boss.send(queue, null, { singletonHours: 1 })
+    const jobId2 = await boss.send(queue, null, { singletonSeconds: 300 })
 
     assert.strictEqual(jobId2, null)
   })
@@ -109,14 +109,14 @@ describe('throttle', function () {
     const queue = this.test.bossConfig.schema
 
     const singletonKey = 'a'
-    const singletonMinutes = 1
+    const singletonSeconds = 60
 
-    await boss.send(queue, null, { singletonKey, singletonMinutes })
+    await boss.send(queue, null, { singletonKey, singletonSeconds })
     const [job] = await boss.fetch(queue)
 
     await boss.complete(queue, job.id)
 
-    const jobId = await boss.send(queue, null, { singletonKey, singletonMinutes })
+    const jobId = await boss.send(queue, null, { singletonKey, singletonSeconds })
 
     assert.strictEqual(jobId, null)
   })

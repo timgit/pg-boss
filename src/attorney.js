@@ -3,47 +3,33 @@ const { DEFAULT_SCHEMA } = require('./plans')
 
 const POLICY = {
   MAX_EXPIRATION_HOURS: 24,
-  MIN_POLLING_INTERVAL_MS: 500
+  MIN_POLLING_INTERVAL_MS: 500,
+  MAX_RETENTION_DAYS: 365
 }
 
 module.exports = {
   POLICY,
   getConfig,
   checkSendArgs,
-  checkQueueArgs,
+  validateQueueArgs,
   checkWorkArgs,
   checkFetchArgs,
-  warnClockSkew,
   assertPostgresObjectName,
-  assertQueueName
+  assertQueueName,
+  assertKey
 }
 
-const WARNINGS = {
-  CLOCK_SKEW: {
-    message: 'Timekeeper detected clock skew between this instance and the database server. This will not affect scheduling operations, but this warning is shown any time the skew exceeds 60 seconds.',
-    code: 'pg-boss-w02'
-  },
-  CRON_DISABLED: {
-    message: 'Archive interval is set less than 60s.  Cron processing is disabled.',
-    code: 'pg-boss-w03'
-  },
-  ON_COMPLETE_REMOVED: {
-    message: '\'onComplete\' option detected. This option has been removed. Consider deadLetter if needed.',
-    code: 'pg-boss-w04'
-  }
+function validateQueueArgs (config = {}) {
+  assert(!('deadLetter' in config) || config.deadLetter === null || (typeof config.deadLetter === 'string'), 'deadLetter must be a string')
+  assert(!('deadLetter' in config) || config.deadLetter === null || /[\w-]/.test(config.deadLetter), 'deadLetter can only contain alphanumeric characters, underscores, or hyphens')
+
+  validateRetryConfig(config)
+  validateExpirationConfig(config)
+  validateRetentionConfig(config)
+  validateDeletionConfig(config)
 }
 
-function checkQueueArgs (name, options = {}) {
-  assert(!('deadLetter' in options) || (typeof options.deadLetter === 'string'), 'deadLetter must be a string')
-
-  applyRetryConfig(options)
-  applyExpirationConfig(options)
-  applyRetentionConfig(options)
-
-  return options
-}
-
-function checkSendArgs (args, defaults) {
+function checkSendArgs (args) {
   let name, data, options
 
   if (typeof args[0] === 'string') {
@@ -75,40 +61,23 @@ function checkSendArgs (args, defaults) {
   assert(!('priority' in options) || (Number.isInteger(options.priority)), 'priority must be an integer')
   options.priority = options.priority || 0
 
-  assert(!('deadLetter' in options) || (typeof options.deadLetter === 'string'), 'deadLetter must be a string')
-
-  applyRetryConfig(options, defaults)
-  applyExpirationConfig(options, defaults)
-  applyRetentionConfig(options, defaults)
-
-  const { startAfter, singletonSeconds, singletonMinutes, singletonHours } = options
-
-  options.startAfter = (startAfter instanceof Date && typeof startAfter.toISOString === 'function')
-    ? startAfter.toISOString()
-    : (startAfter > 0)
-        ? '' + startAfter
-        : (typeof startAfter === 'string')
-            ? startAfter
+  options.startAfter = (options.startAfter instanceof Date && typeof options.startAfter.toISOString === 'function')
+    ? options.startAfter.toISOString()
+    : (options.startAfter > 0)
+        ? '' + options.startAfter
+        : (typeof options.startAfter === 'string')
+            ? options.startAfter
             : null
 
-  options.singletonSeconds = (singletonHours > 0)
-    ? singletonHours * 60 * 60
-    : (singletonMinutes > 0)
-        ? singletonMinutes * 60
-        : (singletonSeconds > 0)
-            ? singletonSeconds
-            : null
-
-  assert(!singletonSeconds || singletonSeconds <= defaults.archiveSeconds, `throttling interval ${singletonSeconds}s cannot exceed archive interval ${defaults.archiveSeconds}s`)
-
-  if (options.onComplete) {
-    emitWarning(WARNINGS.ON_COMPLETE_REMOVED)
-  }
+  validateRetryConfig(options)
+  validateExpirationConfig(options)
+  validateRetentionConfig(options)
+  validateDeletionConfig(options)
 
   return { name, data, options }
 }
 
-function checkWorkArgs (name, args, defaults) {
+function checkWorkArgs (name, args) {
   let options, callback
 
   assert(name, 'missing job name')
@@ -126,7 +95,7 @@ function checkWorkArgs (name, args, defaults) {
 
   options = { ...options }
 
-  applyPollingInterval(options, defaults)
+  applyPollingInterval(options)
 
   assert(!('batchSize' in options) || (Number.isInteger(options.batchSize) && options.batchSize >= 1), 'batchSize must be an integer > 0')
   assert(!('includeMetadata' in options) || typeof options.includeMetadata === 'boolean', 'includeMetadata must be a boolean')
@@ -161,15 +130,9 @@ function getConfig (value) {
   config.migrate = ('migrate' in config) ? config.migrate : true
 
   applySchemaConfig(config)
-  applyMaintenanceConfig(config)
-  applyArchiveConfig(config)
-  applyArchiveFailedConfig(config)
-  applyDeleteConfig(config)
-  applyMonitoringConfig(config)
-
-  applyPollingInterval(config)
-  applyExpirationConfig(config)
-  applyRetentionConfig(config)
+  applyOpsConfig(config)
+  applyScheduleConfig(config)
+  validateWarningConfig(config)
 
   return config
 }
@@ -180,6 +143,14 @@ function applySchemaConfig (config) {
   }
 
   config.schema = config.schema || DEFAULT_SCHEMA
+}
+
+function validateWarningConfig (config) {
+  assert(!('warningQueueSize' in config) || config.warningQueueSize >= 1,
+    'configuration assert: warningQueueSize must be at least 1')
+
+  assert(!('warningSlowQuerySeconds' in config) || config.warningSlowQuerySeconds >= 1,
+    'configuration assert: warningSlowQuerySeconds must be at least 1')
 }
 
 function assertPostgresObjectName (name) {
@@ -195,207 +166,93 @@ function assertQueueName (name) {
   assert(/[\w-]/.test(name), 'Name can only contain alphanumeric characters, underscores, or hyphens')
 }
 
-function applyArchiveConfig (config) {
-  const ARCHIVE_DEFAULT = 60 * 60 * 12
-
-  assert(!('archiveCompletedAfterSeconds' in config) || config.archiveCompletedAfterSeconds >= 1,
-    'configuration assert: archiveCompletedAfterSeconds must be at least every second and less than ')
-
-  config.archiveSeconds = config.archiveCompletedAfterSeconds || ARCHIVE_DEFAULT
-  config.archiveInterval = `${config.archiveSeconds} seconds`
-
-  if (config.archiveSeconds < 60) {
-    emitWarning(WARNINGS.CRON_DISABLED)
-  }
+function assertKey (key) {
+  if (!key) return
+  assert(typeof key === 'string', 'Key must be a string')
+  assert(/[\w-]/.test(key), 'Key can only contain alphanumeric characters, underscores, or hyphens')
 }
 
-function applyArchiveFailedConfig (config) {
-  assert(!('archiveFailedAfterSeconds' in config) || config.archiveFailedAfterSeconds >= 1,
-    'configuration assert: archiveFailedAfterSeconds must be at least every second and less than ')
-
-  config.archiveFailedSeconds = config.archiveFailedAfterSeconds || config.archiveSeconds
-  config.archiveFailedInterval = `${config.archiveFailedSeconds} seconds`
-
-  // Do not emit warning twice
-  if (config.archiveFailedSeconds < 60 && config.archiveSeconds >= 60) {
-    emitWarning(WARNINGS.CRON_DISABLED)
-  }
-}
-
-function applyRetentionConfig (config, defaults = {}) {
+function validateRetentionConfig (config) {
   assert(!('retentionSeconds' in config) || config.retentionSeconds >= 1,
     'configuration assert: retentionSeconds must be at least every second')
-
-  assert(!('retentionMinutes' in config) || config.retentionMinutes >= 1,
-    'configuration assert: retentionMinutes must be at least every minute')
-
-  assert(!('retentionHours' in config) || config.retentionHours >= 1,
-    'configuration assert: retentionHours must be at least every hour')
-
-  assert(!('retentionDays' in config) || config.retentionDays >= 1,
-    'configuration assert: retentionDays must be at least every day')
-
-  const keepUntil = ('retentionDays' in config)
-    ? `${config.retentionDays} days`
-    : ('retentionHours' in config)
-        ? `${config.retentionHours} hours`
-        : ('retentionMinutes' in config)
-            ? `${config.retentionMinutes} minutes`
-            : ('retentionSeconds' in config)
-                ? `${config.retentionSeconds} seconds`
-                : null
-
-  config.keepUntil = keepUntil
-  config.keepUntilDefault = defaults?.keepUntil
 }
 
-function applyExpirationConfig (config, defaults = {}) {
+function validateExpirationConfig (config) {
   assert(!('expireInSeconds' in config) || config.expireInSeconds >= 1,
     'configuration assert: expireInSeconds must be at least every second')
 
-  assert(!('expireInMinutes' in config) || config.expireInMinutes >= 1,
-    'configuration assert: expireInMinutes must be at least every minute')
-
-  assert(!('expireInHours' in config) || config.expireInHours >= 1,
-    'configuration assert: expireInHours must be at least every hour')
-
-  const expireIn = ('expireInHours' in config)
-    ? config.expireInHours * 60 * 60
-    : ('expireInMinutes' in config)
-        ? config.expireInMinutes * 60
-        : ('expireInSeconds' in config)
-            ? config.expireInSeconds
-            : null
-
-  assert(!expireIn || expireIn / 60 / 60 < POLICY.MAX_EXPIRATION_HOURS, `configuration assert: expiration cannot exceed ${POLICY.MAX_EXPIRATION_HOURS} hours`)
-
-  config.expireIn = expireIn
-  config.expireInDefault = defaults?.expireIn
+  assert(!config.expireInSeconds || config.expireInSeconds / 60 / 60 < POLICY.MAX_EXPIRATION_HOURS, `configuration assert: expiration cannot exceed ${POLICY.MAX_EXPIRATION_HOURS} hours`)
 }
 
-function applyRetryConfig (config, defaults) {
+function validateRetryConfig (config) {
   assert(!('retryDelay' in config) || (Number.isInteger(config.retryDelay) && config.retryDelay >= 0), 'retryDelay must be an integer >= 0')
   assert(!('retryLimit' in config) || (Number.isInteger(config.retryLimit) && config.retryLimit >= 0), 'retryLimit must be an integer >= 0')
   assert(!('retryBackoff' in config) || (config.retryBackoff === true || config.retryBackoff === false), 'retryBackoff must be either true or false')
-
-  config.retryDelayDefault = defaults?.retryDelay
-  config.retryLimitDefault = defaults?.retryLimit
-  config.retryBackoffDefault = defaults?.retryBackoff
+  assert(!('retryDelayMax' in config) || config.retryDelayMax === null || config.retryBackoff === true, 'retryDelayMax can only be set if retryBackoff is true')
+  assert(!('retryDelayMax' in config) || config.retryDelayMax === null || (Number.isInteger(config.retryDelayMax) && config.retryDelayMax >= 0), 'retryDelayMax must be an integer >= 0')
 }
 
-function applyPollingInterval (config, defaults) {
+function applyPollingInterval (config) {
   assert(!('pollingIntervalSeconds' in config) || config.pollingIntervalSeconds >= POLICY.MIN_POLLING_INTERVAL_MS / 1000,
     `configuration assert: pollingIntervalSeconds must be at least every ${POLICY.MIN_POLLING_INTERVAL_MS}ms`)
 
   config.pollingInterval = ('pollingIntervalSeconds' in config)
     ? config.pollingIntervalSeconds * 1000
-    : defaults?.pollingInterval || 2000
+    : 2000
 }
 
-function applyMaintenanceConfig (config) {
+function applyOpsConfig (config) {
+  assert(!('superviseIntervalSeconds' in config) || config.superviseIntervalSeconds >= 1,
+    'configuration assert: superviseIntervalSeconds must be at least every second')
+
+  config.superviseIntervalSeconds = config.superviseIntervalSeconds || 60
+
+  assert(config.superviseIntervalSeconds / 60 / 60 <= POLICY.MAX_EXPIRATION_HOURS,
+    `configuration assert: superviseIntervalSeconds cannot exceed ${POLICY.MAX_EXPIRATION_HOURS} hours`)
+
   assert(!('maintenanceIntervalSeconds' in config) || config.maintenanceIntervalSeconds >= 1,
     'configuration assert: maintenanceIntervalSeconds must be at least every second')
 
-  assert(!('maintenanceIntervalMinutes' in config) || config.maintenanceIntervalMinutes >= 1,
-    'configuration assert: maintenanceIntervalMinutes must be at least every minute')
+  config.maintenanceIntervalSeconds = config.maintenanceIntervalSeconds || POLICY.MAX_EXPIRATION_HOURS * 60 * 60
 
-  config.maintenanceIntervalSeconds = ('maintenanceIntervalMinutes' in config)
-    ? config.maintenanceIntervalMinutes * 60
-    : ('maintenanceIntervalSeconds' in config)
-        ? config.maintenanceIntervalSeconds
-        : 120
+  assert(config.maintenanceIntervalSeconds / 60 / 60 <= POLICY.MAX_EXPIRATION_HOURS,
+    `configuration assert: maintenanceIntervalSeconds cannot exceed ${POLICY.MAX_EXPIRATION_HOURS} hours`)
 
-  assert(config.maintenanceIntervalSeconds / 60 / 60 < POLICY.MAX_EXPIRATION_HOURS,
-    `configuration assert: maintenance interval cannot exceed ${POLICY.MAX_EXPIRATION_HOURS} hours`)
+  assert(!('monitorIntervalSeconds' in config) || config.monitorIntervalSeconds >= 1,
+    'configuration assert: monitorIntervalSeconds must be at least every second')
+
+  config.monitorIntervalSeconds = config.monitorIntervalSeconds || 60
+
+  assert(config.monitorIntervalSeconds / 60 / 60 <= POLICY.MAX_EXPIRATION_HOURS,
+    `configuration assert: monitorIntervalSeconds cannot exceed ${POLICY.MAX_EXPIRATION_HOURS} hours`)
+
+  assert(!('queueCacheIntervalSeconds' in config) || config.queueCacheIntervalSeconds >= 1,
+    'configuration assert: queueCacheIntervalSeconds must be at least every second')
+
+  config.queueCacheIntervalSeconds = config.queueCacheIntervalSeconds || 60
+
+  assert(config.queueCacheIntervalSeconds / 60 / 60 <= POLICY.MAX_EXPIRATION_HOURS,
+    `configuration assert: queueCacheIntervalSeconds cannot exceed ${POLICY.MAX_EXPIRATION_HOURS} hours`)
 }
 
-function applyDeleteConfig (config) {
+function validateDeletionConfig (config) {
   assert(!('deleteAfterSeconds' in config) || config.deleteAfterSeconds >= 1,
     'configuration assert: deleteAfterSeconds must be at least every second')
-
-  assert(!('deleteAfterMinutes' in config) || config.deleteAfterMinutes >= 1,
-    'configuration assert: deleteAfterMinutes must be at least every minute')
-
-  assert(!('deleteAfterHours' in config) || config.deleteAfterHours >= 1,
-    'configuration assert: deleteAfterHours must be at least every hour')
-
-  assert(!('deleteAfterDays' in config) || config.deleteAfterDays >= 1,
-    'configuration assert: deleteAfterDays must be at least every day')
-
-  const deleteAfter = ('deleteAfterDays' in config)
-    ? `${config.deleteAfterDays} days`
-    : ('deleteAfterHours' in config)
-        ? `${config.deleteAfterHours} hours`
-        : ('deleteAfterMinutes' in config)
-            ? `${config.deleteAfterMinutes} minutes`
-            : ('deleteAfterSeconds' in config)
-                ? `${config.deleteAfterSeconds} seconds`
-                : '7 days'
-
-  config.deleteAfter = deleteAfter
 }
 
-function applyMonitoringConfig (config) {
-  assert(!('monitorStateIntervalSeconds' in config) || config.monitorStateIntervalSeconds >= 1,
-    'configuration assert: monitorStateIntervalSeconds must be at least every second')
-
-  assert(!('monitorStateIntervalMinutes' in config) || config.monitorStateIntervalMinutes >= 1,
-    'configuration assert: monitorStateIntervalMinutes must be at least every minute')
-
-  config.monitorStateIntervalSeconds =
-    ('monitorStateIntervalMinutes' in config)
-      ? config.monitorStateIntervalMinutes * 60
-      : ('monitorStateIntervalSeconds' in config)
-          ? config.monitorStateIntervalSeconds
-          : null
-
-  if (config.monitorStateIntervalSeconds) {
-    assert(config.monitorStateIntervalSeconds / 60 / 60 < POLICY.MAX_EXPIRATION_HOURS,
-      `configuration assert: state monitoring interval cannot exceed ${POLICY.MAX_EXPIRATION_HOURS} hours`)
-  }
-
-  const TEN_MINUTES_IN_SECONDS = 600
-
-  assert(!('clockMonitorIntervalSeconds' in config) || (config.clockMonitorIntervalSeconds >= 1 && config.clockMonitorIntervalSeconds <= TEN_MINUTES_IN_SECONDS),
+function applyScheduleConfig (config) {
+  assert(!('clockMonitorIntervalSeconds' in config) || (config.clockMonitorIntervalSeconds >= 1 && config.clockMonitorIntervalSeconds <= 600),
     'configuration assert: clockMonitorIntervalSeconds must be between 1 second and 10 minutes')
 
-  assert(!('clockMonitorIntervalMinutes' in config) || (config.clockMonitorIntervalMinutes >= 1 && config.clockMonitorIntervalMinutes <= 10),
-    'configuration assert: clockMonitorIntervalMinutes must be between 1 and 10')
-
-  config.clockMonitorIntervalSeconds =
-    ('clockMonitorIntervalMinutes' in config)
-      ? config.clockMonitorIntervalMinutes * 60
-      : ('clockMonitorIntervalSeconds' in config)
-          ? config.clockMonitorIntervalSeconds
-          : TEN_MINUTES_IN_SECONDS
+  config.clockMonitorIntervalSeconds = config.clockMonitorIntervalSeconds || 600
 
   assert(!('cronMonitorIntervalSeconds' in config) || (config.cronMonitorIntervalSeconds >= 1 && config.cronMonitorIntervalSeconds <= 45),
     'configuration assert: cronMonitorIntervalSeconds must be between 1 and 45 seconds')
 
-  config.cronMonitorIntervalSeconds =
-    ('cronMonitorIntervalSeconds' in config)
-      ? config.cronMonitorIntervalSeconds
-      : 30
+  config.cronMonitorIntervalSeconds = config.cronMonitorIntervalSeconds || 30
 
   assert(!('cronWorkerIntervalSeconds' in config) || (config.cronWorkerIntervalSeconds >= 1 && config.cronWorkerIntervalSeconds <= 45),
     'configuration assert: cronWorkerIntervalSeconds must be between 1 and 45 seconds')
 
-  config.cronWorkerIntervalSeconds =
-    ('cronWorkerIntervalSeconds' in config)
-      ? config.cronWorkerIntervalSeconds
-      : 5
-}
-
-function warnClockSkew (message) {
-  emitWarning(WARNINGS.CLOCK_SKEW, message, { force: true })
-}
-
-function emitWarning (warning, message, options = {}) {
-  const { force } = options
-
-  if (force || !warning.warned) {
-    warning.warned = true
-    message = `${warning.message} ${message || ''}`
-    process.emitWarning(message, warning.type, warning.code)
-  }
+  config.cronWorkerIntervalSeconds = config.cronWorkerIntervalSeconds || 5
 }
