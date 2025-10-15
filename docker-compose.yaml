@@ -1,10 +1,10 @@
 services:
   db:
-    image: postgres:17
+    image: postgres:18
     ports:
       - 5432:5432
     volumes:
-      - db_volume:/var/lib/postgresql/data
+      - db_volume:/var/lib/postgresql/data18
     environment:
       - POSTGRES_DB=pgboss
       - POSTGRES_NAME=pgboss
