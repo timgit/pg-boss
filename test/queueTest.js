@@ -81,6 +81,45 @@ describe('queues', function () {
     await boss.deleteQueue(queue)
   })
 
+  it('should truncate queue and leave other queues alone', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
+    const queue = this.test.bossConfig.schema
+
+    const queue2 = `${queue}2`
+    await boss.createQueue(queue2)
+    await boss.send(queue2)
+
+    await boss.createQueue(queue)
+    await boss.send(queue)
+
+    await boss.deleteAllJobs(queue)
+    await boss.deleteQueue(queue)
+
+    const { queuedCount } = await boss.getQueueStats(queue)
+    assert.strictEqual(queuedCount, 0)
+    const { queuedCount: queued2Count } = await boss.getQueueStats(queue2)
+    assert.strictEqual(queued2Count, 1)
+  })
+
+  it('should truncate all queues', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
+    const queue = this.test.bossConfig.schema
+
+    const queue2 = `${queue}2`
+    await boss.createQueue(queue2)
+    await boss.send(queue2)
+
+    await boss.createQueue(queue)
+    await boss.send(queue)
+
+    await boss.deleteAllJobs()
+
+    const { queuedCount } = await boss.getQueueStats(queue)
+    assert.strictEqual(queuedCount, 0)
+    const { queuedCount: queued2Count } = await boss.getQueueStats(queue2)
+    assert.strictEqual(queued2Count, 0)
+  })
+
   it('should truncate a partitioned queue and leave other queues alone', async function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
     const queue = this.test.bossConfig.schema
