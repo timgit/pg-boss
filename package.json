@@ -1,25 +1,27 @@
 {
   "name": "pg-boss",
-  "version": "11.0.3",
+  "version": "11.1.1",
   "description": "Queueing jobs in Postgres from Node.js like a boss",
   "main": "./src/index.js",
+  "type": "commonjs",
   "engines": {
     "node": ">=22"
   },
   "dependencies": {
-    "cron-parser": "^4.9.0",
+    "cron-parser": "^5.4.0",
     "pg": "^8.16.3",
     "serialize-error": "^8.1.0"
   },
   "devDependencies": {
-    "@types/node": "^22",
+    "@types/node": "^22.18.8",
+    "eslint": "^9.37.0",
     "luxon": "^3.7.2",
-    "mocha": "^10.8.2",
-    "nyc": "^17.1.0",
-    "standard": "^17.1.2"
+    "mocha": "^11.7.4",
+    "neostandard": "^0.12.2",
+    "nyc": "^17.1.0"
   },
   "scripts": {
-    "test": "standard && mocha",
+    "test": "eslint . && mocha",
     "cover": "nyc npm test",
     "tsc": "tsc --noEmit types.d.ts",
     "readme": "node ./test/readme.js",
@@ -45,17 +47,6 @@
       "text"
     ]
   },
-  "standard": {
-    "globals": [
-      "describe",
-      "it",
-      "before",
-      "after",
-      "before",
-      "beforeEach",
-      "afterEach"
-    ]
-  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/timgit/pg-boss.git"
@@ -71,6 +62,6 @@
   "bugs": {
     "url": "https://github.com/timgit/pg-boss/issues"
   },
-  "homepage": "https://github.com/timgit/pg-boss#readme",
+  "homepage": "https://timgit.github.io/pg-boss",
   "types": "./types.d.ts"
 }

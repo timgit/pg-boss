@@ -1,6 +1,9 @@
 const DEFAULT_SCHEMA = 'pgboss'
 const MIGRATE_RACE_MESSAGE = 'division by zero'
 const CREATE_RACE_MESSAGE = 'already exists'
+const FIFTEEN_MINUTES = 60 * 15
+const FORTEEN_DAYS = 60 * 60 * 24 * 14
+const SEVEN_DAYS = 60 * 60 * 24 * 7
 
 const JOB_STATES = Object.freeze({
   created: 'created',
@@ -15,8 +18,22 @@ const QUEUE_POLICIES = Object.freeze({
   standard: 'standard',
   short: 'short',
   singleton: 'singleton',
-  stately: 'stately'
+  stately: 'stately',
+  exclusive: 'exclusive'
 })
+
+const QUEUE_DEFAULTS = {
+  expire_seconds: FIFTEEN_MINUTES,
+  retention_seconds: FORTEEN_DAYS,
+  deletion_seconds: SEVEN_DAYS,
+  retry_limit: 2,
+  retry_delay: 0,
+  warning_queued: 0,
+  retry_backoff: false,
+  partition: false
+}
+
+const COMMON_JOB_TABLE = 'job_common'
 
 module.exports = {
   create,
@@ -63,24 +80,7 @@ module.exports = {
   JOB_STATES,
   MIGRATE_RACE_MESSAGE,
   CREATE_RACE_MESSAGE,
-  DEFAULT_SCHEMA
-}
-
-const COMMON_JOB_TABLE = 'job_common'
-
-const FIFTEEN_MINUTES = 60 * 15
-const FORTEEN_DAYS = 60 * 60 * 24 * 14
-const SEVEN_DAYS = 60 * 60 * 24 * 7
-
-const QUEUE_DEFAULTS = {
-  expire_seconds: FIFTEEN_MINUTES,
-  retention_seconds: FORTEEN_DAYS,
-  deletion_seconds: SEVEN_DAYS,
-  retry_limit: 2,
-  retry_delay: 0,
-  warning_queued: 0,
-  retry_backoff: false,
-  partition: false
+  DEFAULT_SCHEMA,
 }
 
 function create (schema, version) {
@@ -254,6 +254,7 @@ function createTableJobCommon (schema, table) {
     ${format(createIndexJobPolicyShort(schema))}
     ${format(createIndexJobPolicySingleton(schema))}
     ${format(createIndexJobPolicyStately(schema))}
+    ${format(createIndexJobPolicyExclusive(schema))}
     ${format(createIndexJobThrottle(schema))}
     ${format(createIndexJobFetch(schema))}
 
@@ -319,11 +320,19 @@ function createQueueFunction (schema) {
       EXECUTE format('${formatPartitionCommand(createPrimaryKeyJob(schema))}', tablename);
       EXECUTE format('${formatPartitionCommand(createQueueForeignKeyJob(schema))}', tablename);
       EXECUTE format('${formatPartitionCommand(createQueueForeignKeyJobDeadLetter(schema))}', tablename);
-      EXECUTE format('${formatPartitionCommand(createIndexJobPolicyShort(schema))}', tablename);
-      EXECUTE format('${formatPartitionCommand(createIndexJobPolicySingleton(schema))}', tablename);
-      EXECUTE format('${formatPartitionCommand(createIndexJobPolicyStately(schema))}', tablename);
-      EXECUTE format('${formatPartitionCommand(createIndexJobThrottle(schema))}', tablename);
+
       EXECUTE format('${formatPartitionCommand(createIndexJobFetch(schema))}', tablename);
+      EXECUTE format('${formatPartitionCommand(createIndexJobThrottle(schema))}', tablename);
+      
+      IF options->>'policy' = 'short' THEN
+        EXECUTE format('${formatPartitionCommand(createIndexJobPolicyShort(schema))}', tablename);
+      ELSIF options->>'policy' = 'singleton' THEN
+        EXECUTE format('${formatPartitionCommand(createIndexJobPolicySingleton(schema))}', tablename);
+      ELSIF options->>'policy' = 'stately' THEN
+        EXECUTE format('${formatPartitionCommand(createIndexJobPolicyStately(schema))}', tablename);
+      ELSIF options->>'policy' = 'exclusive' THEN
+        EXECUTE format('${formatPartitionCommand(createIndexJobPolicyExclusive(schema))}', tablename);
+      END IF;
 
       EXECUTE format('ALTER TABLE ${schema}.%I ADD CONSTRAINT cjc CHECK (name=%L)', tablename, queue_name);
       EXECUTE format('ALTER TABLE ${schema}.job ATTACH PARTITION ${schema}.%I FOR VALUES IN (%L)', tablename, queue_name);
@@ -409,6 +418,10 @@ function createIndexJobFetch (schema) {
   return `CREATE INDEX job_i5 ON ${schema}.job (name, start_after) INCLUDE (priority, created_on, id) WHERE state < '${JOB_STATES.active}'`
 }
 
+function createIndexJobPolicyExclusive (schema) {
+  return `CREATE UNIQUE INDEX job_i6 ON ${schema}.job (name, COALESCE(singleton_key, '')) WHERE state <= '${JOB_STATES.active}' AND policy = '${QUEUE_POLICIES.exclusive}'`
+}
+
 function trySetQueueMonitorTime (schema, queues, seconds) {
   return trySetQueueTimestamp(schema, queues, 'monitor_on', seconds)
 }
@@ -444,7 +457,6 @@ function updateQueue (schema, { deadLetter } = {}) {
   return `
     WITH options as (SELECT $2::jsonb as data)
     UPDATE ${schema}.queue SET
-      policy = COALESCE(o.data->>'policy', policy),
       retry_limit = COALESCE((o.data->>'retryLimit')::int, retry_limit),
       retry_delay = COALESCE((o.data->>'retryDelay')::int, retry_delay),
       retry_backoff = COALESCE((o.data->>'retryBackoff')::bool, retry_backoff),
@@ -703,7 +715,7 @@ function insertJobs (schema, { table, name, returnId = true }) {
         END as singleton_on,
       COALESCE("expireInSeconds", q.expire_seconds) as expire_seconds,
       COALESCE("deleteAfterSeconds", q.deletion_seconds) as deletion_seconds,
-      COALESCE("keepUntil", COALESCE(j.start_after, now()) + q.retention_seconds * interval '1s') as keep_until,
+      j.start_after + (COALESCE("retentionSeconds", q.retention_seconds) * interval '1s') as keep_until,
       COALESCE("retryLimit", q.retry_limit) as retry_limit,
       COALESCE("retryDelay", q.retry_delay) as retry_delay,
       COALESCE("retryBackoff", q.retry_backoff, false) as retry_backoff,
@@ -731,7 +743,7 @@ function insertJobs (schema, { table, name, returnId = true }) {
         "singletonOffset" integer,
         "expireInSeconds" integer,
         "deleteAfterSeconds" integer,
-        "keepUntil" timestamp with time zone        
+        "retentionSeconds" integer
       ) 
     ) j
     JOIN ${schema}.queue q ON q.name = '${name}'
@@ -944,7 +956,7 @@ function getQueueStats (schema, table, queues) {
         (count(*) FILTER (WHERE state < '${JOB_STATES.active}'))::int as "queuedCount",
         (count(*) FILTER (WHERE state = '${JOB_STATES.active}'))::int as "activeCount",
         count(*)::int as "totalCount",
-        array_agg(singleton_key) FILTER (WHERE policy IN ('${QUEUE_POLICIES.singleton}','${QUEUE_POLICIES.stately}') AND state IN ('${JOB_STATES.retry}','${JOB_STATES.active}')) as "singletonsActive"
+        array_agg(singleton_key) FILTER (WHERE policy IN ('${QUEUE_POLICIES.singleton}','${QUEUE_POLICIES.stately}') AND state = '${JOB_STATES.active}') as "singletonsActive"
       FROM ${schema}.${table}
       WHERE name IN (${getQueueInClause(queues)})
       GROUP BY 1

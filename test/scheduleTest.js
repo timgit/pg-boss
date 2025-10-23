@@ -121,8 +121,8 @@ describe('schedule', function () {
     const nextHour = nextUtc.hour
 
     // using current and next minute because the clock is ticking
-    const minute = `${currentMinute},${nextMinute}`
-    const hour = `${currentHour},${nextHour}`
+    const minute = currentMinute === nextMinute ? currentMinute : `${currentMinute},${nextMinute}`
+    const hour = currentHour === nextHour ? currentHour : `${currentHour},${nextHour}`
 
     const cron = `${minute} ${hour} * * *`
 
@@ -160,8 +160,8 @@ describe('schedule', function () {
     const nextHour = nextLocal.hour
 
     // using current and next minute because the clock is ticking
-    const minute = `${currentMinute},${nextMinute}`
-    const hour = `${currentHour},${nextHour}`
+    const minute = currentMinute === nextMinute ? currentMinute : `${currentMinute},${nextMinute}`
+    const hour = currentHour === nextHour ? currentHour : `${currentHour},${nextHour}`
 
     const cron = `${minute} ${hour} * * *`
 
@@ -282,6 +282,28 @@ describe('schedule', function () {
     const schedules = await boss.getSchedules()
 
     assert.strictEqual(schedules.length, 2)
+  })
+
+  it('should send jobs per unique key on the same cron', async function () {
+    const config = {
+      ...this.test.bossConfig,
+      cronMonitorIntervalSeconds: 1,
+      cronWorkerIntervalSeconds: 1,
+      schedule: true
+    }
+
+    const boss = this.test.boss = await helper.start(config)
+
+    const queue = this.test.bossConfig.schema
+
+    await boss.schedule(queue, '* * * * *', null, { key: 'a' })
+    await boss.schedule(queue, '* * * * *', null, { key: 'b' })
+
+    await delay(4000)
+
+    const jobs = await boss.fetch(queue, { batchSize: 2 })
+
+    assert.strictEqual(jobs.length, 2)
   })
 
   it('should update a schedule with a unique key', async function () {
