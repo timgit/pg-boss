@@ -221,8 +221,8 @@ declare class PgBoss extends EventEmitter {
   constructor (options: PgBoss.ConstructorOptions)
 
   static getConstructionPlans (schema?: string): string
-  static getMigrationPlans (schema?: string, version?: string): string
-  static getRollbackPlans (schema?: string, version?: string): string
+  static getMigrationPlans (schema?: string, version?: number): string
+  static getRollbackPlans (schema?: string, version?: number): string
 
   static states: PgBoss.JobStates
   static policies: PgBoss.QueuePolicies
