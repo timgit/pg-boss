@@ -341,6 +341,7 @@ class Manager extends EventEmitter {
       singletonNextSlot,
       expireInSeconds,
       deleteAfterSeconds,
+      retentionSeconds,
       keepUntil,
       retryLimit,
       retryDelay,
@@ -359,6 +360,7 @@ class Manager extends EventEmitter {
       singletonOffset,
       expireInSeconds,
       deleteAfterSeconds,
+      retentionSeconds,
       keepUntil,
       retryLimit,
       retryDelay,
@@ -584,7 +586,11 @@ class Manager extends EventEmitter {
     assert(Object.keys(options).length > 0, 'no properties found to update')
 
     if ('policy' in options) {
-      assert(options.policy in QUEUE_POLICIES, `${options.policy} is not a valid queue policy`)
+      throw new Error('queue policy cannot be changed after creation')
+    }
+
+    if ('partition' in options) {
+      throw new Error('queue partitioning cannot be changed after creation')
     }
 
     Attorney.validateQueueArgs(options)
@@ -638,24 +644,24 @@ class Manager extends EventEmitter {
     const { table, partition } = await this.getQueueCache(name)
 
     if (partition) {
-      const sql = plans.deleteAllJobs(this.config.schema, table)
-      await this.db.executeSql(sql, [name])
-    } else {
       const sql = plans.truncateTable(this.config.schema, table)
       await this.db.executeSql(sql)
+    } else {
+      const sql = plans.deleteAllJobs(this.config.schema, table)
+      await this.db.executeSql(sql, [name])
     }
   }
 
   async getQueueStats (name) {
     Attorney.assertQueueName(name)
 
-    const { table } = await this.getQueueCache(name)
+    const queue = await this.getQueueCache(name)
 
-    const sql = plans.getQueueStats(this.config.schema, table, [name])
+    const sql = plans.getQueueStats(this.config.schema, queue.table, [name])
 
     const { rows } = await this.db.executeSql(sql)
 
-    return rows.at(0) || null
+    return Object.assign(queue, rows.at(0) || {})
   }
 
   async getJobById (name, id, options = {}) {
@@ -697,7 +703,9 @@ class Manager extends EventEmitter {
       return options.db
     }
 
-    assert(this.db._pgbdb && this.db.opened, 'Database connection is not opened')
+    if (this.db._pgbdb) {
+      assert(this.db.opened, 'Database connection is not opened')
+    }
 
     return this.db
   }

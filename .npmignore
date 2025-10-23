@@ -1,9 +1,9 @@
 .github
 .nyc_output
 .vscode
-docs
-test
-.editorconfig
-*.tgz
 coverage
+docs
 examples
+test
+*.tgz
+eslint.config.js
