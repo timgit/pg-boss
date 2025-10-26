@@ -1,19 +1,20 @@
-const assert = require('node:assert')
-const plans = require('./plans')
-const { DEFAULT_SCHEMA } = plans
-const migrationStore = require('./migrationStore')
-const schemaVersion = require('../version.json').schema
+import assert from 'node:assert'
+import * as plans from './plans.js'
+import * as migrationStore from './migrationStore.js'
+import versionMod from '../version.json' with { type: 'json' }
+
+const schemaVersion = versionMod.schema
 
 class Contractor {
-  static constructionPlans (schema = DEFAULT_SCHEMA) {
+  static constructionPlans (schema = plans.DEFAULT_SCHEMA) {
     return plans.create(schema, schemaVersion)
   }
 
-  static migrationPlans (schema = DEFAULT_SCHEMA, version = schemaVersion - 1) {
+  static migrationPlans (schema = plans.DEFAULT_SCHEMA, version = schemaVersion - 1) {
     return migrationStore.migrate(schema, version)
   }
 
-  static rollbackPlans (schema = DEFAULT_SCHEMA, version = schemaVersion) {
+  static rollbackPlans (schema = plans.DEFAULT_SCHEMA, version = schemaVersion) {
     return migrationStore.rollback(schema, version)
   }
 
@@ -96,4 +97,4 @@ class Contractor {
   }
 }
 
-module.exports = Contractor
+export default Contractor

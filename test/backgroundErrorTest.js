@@ -1,5 +1,5 @@
 const assert = require('node:assert')
-const PgBoss = require('../')
+const PgBoss = require('../src/index.js').default
 const { delay } = require('../src/tools')
 
 describe('background processing error handling', function () {

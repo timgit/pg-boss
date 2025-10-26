@@ -1,6 +1,6 @@
-const { setTimeout } = require('node:timers/promises')
+import { setTimeout } from 'node:timers/promises'
 
-module.exports = {
+export {
   delay,
   resolveWithinSeconds,
   unwrapSQLResult

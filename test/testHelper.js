@@ -1,9 +1,10 @@
-const Db = require('../src/db')
-const PgBoss = require('../')
-const crypto = require('crypto')
+import Db from '../src/db.js'
+import PgBoss from '../src/index.js'
+import crypto from 'node:crypto'
+
 const sha1 = (value) => crypto.createHash('sha1').update(value).digest('hex')
 
-module.exports = {
+export {
   dropSchema,
   start,
   getDb,

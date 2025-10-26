@@ -1,5 +1,5 @@
-const EventEmitter = require('node:events')
-const pg = require('pg')
+import EventEmitter from 'node:events'
+import pg from 'pg'
 
 class Db extends EventEmitter {
   constructor (config) {
@@ -47,4 +47,4 @@ class Db extends EventEmitter {
   }
 }
 
-module.exports = Db
+export default Db

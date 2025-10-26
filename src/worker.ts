@@ -1,4 +1,4 @@
-const { delay } = require('./tools')
+import { delay } from './tools.js'
 
 const WORKER_STATES = {
   created: 'created',
@@ -96,4 +96,4 @@ class Worker {
   }
 }
 
-module.exports = Worker
+export default Worker
