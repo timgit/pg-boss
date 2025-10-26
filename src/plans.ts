@@ -1,3 +1,5 @@
+import { UpdateQueueOptions } from './types.ts'
+
 const DEFAULT_SCHEMA = 'pgboss'
 const MIGRATE_RACE_MESSAGE = 'division by zero'
 const CREATE_RACE_MESSAGE = 'already exists'
@@ -35,54 +37,7 @@ const QUEUE_DEFAULTS = {
 
 const COMMON_JOB_TABLE = 'job_common'
 
-module.exports = {
-  create,
-  insertVersion,
-  getVersion,
-  setVersion,
-  versionTableExists,
-  fetchNextJob,
-  completeJobs,
-  cancelJobs,
-  resumeJobs,
-  retryJobs,
-  deleteJobsById,
-  deleteAllJobs,
-  deleteQueuedJobs,
-  deleteStoredJobs,
-  truncateTable,
-  failJobsById,
-  failJobsByTimeout,
-  insertJobs,
-  getTime,
-  getSchedules,
-  getSchedulesByQueue,
-  schedule,
-  unschedule,
-  subscribe,
-  unsubscribe,
-  getQueuesForEvent,
-  deletion,
-  cacheQueueStats,
-  updateQueue,
-  createQueue,
-  deleteQueue,
-  getQueues,
-  getQueueStats,
-  trySetQueueMonitorTime,
-  trySetQueueDeletionTime,
-  trySetCronTime,
-  locked,
-  assertMigration,
-  getJobById,
-  QUEUE_POLICIES,
-  JOB_STATES,
-  MIGRATE_RACE_MESSAGE,
-  CREATE_RACE_MESSAGE,
-  DEFAULT_SCHEMA,
-}
-
-function create (schema, version) {
+function create (schema: string, version: number) {
   const commands = [
     createSchema(schema),
     createEnumJobState(schema),
@@ -105,11 +60,11 @@ function create (schema, version) {
   return locked(schema, commands)
 }
 
-function createSchema (schema) {
+function createSchema (schema: string) {
   return `CREATE SCHEMA IF NOT EXISTS ${schema}`
 }
 
-function createEnumJobState (schema) {
+function createEnumJobState (schema: string) {
   // ENUM definition order is important
   // base type is numeric and first values are less than last values
   return `
@@ -124,7 +79,7 @@ function createEnumJobState (schema) {
   `
 }
 
-function createTableVersion (schema) {
+function createTableVersion (schema: string) {
   return `
     CREATE TABLE ${schema}.version (
       version int primary key,
@@ -133,7 +88,7 @@ function createTableVersion (schema) {
   `
 }
 
-function createTableQueue (schema) {
+function createTableQueue (schema: string) {
   return `
     CREATE TABLE ${schema}.queue (
       name text NOT NULL,
@@ -163,7 +118,7 @@ function createTableQueue (schema) {
   `
 }
 
-function createTableSchedule (schema) {
+function createTableSchedule (schema: string) {
   return `
     CREATE TABLE ${schema}.schedule (
       name text REFERENCES ${schema}.queue ON DELETE CASCADE,
@@ -179,7 +134,7 @@ function createTableSchedule (schema) {
   `
 }
 
-function createTableSubscription (schema) {
+function createTableSubscription (schema: string) {
   return `
     CREATE TABLE ${schema}.subscription (
       event text not null,
@@ -191,7 +146,7 @@ function createTableSubscription (schema) {
   `
 }
 
-function createTableJob (schema) {
+function createTableJob (schema: string) {
   return `
     CREATE TABLE ${schema}.job (
       id uuid not null default gen_random_uuid(),
@@ -242,8 +197,8 @@ const JOB_COLUMNS_ALL = `${JOB_COLUMNS_MIN},
   output
 `
 
-function createTableJobCommon (schema, table) {
-  const format = command => command.replaceAll('.job', `.${table}`) + ';'
+function createTableJobCommon (schema: string, table: string) {
+  const format = (command: string) => command.replaceAll('.job', `.${table}`) + ';'
 
   return `
     CREATE TABLE ${schema}.${table} (LIKE ${schema}.job INCLUDING GENERATED INCLUDING DEFAULTS);
@@ -261,7 +216,7 @@ function createTableJobCommon (schema, table) {
   `
 }
 
-function createQueueFunction (schema) {
+function createQueueFunction (schema: string) {
   return `
     CREATE FUNCTION ${schema}.create_queue(queue_name text, options jsonb)
     RETURNS VOID AS
@@ -341,14 +296,14 @@ function createQueueFunction (schema) {
   `
 }
 
-function formatPartitionCommand (command) {
+function formatPartitionCommand (command: string) {
   return command
     .replace('.job', '.%1$I')
     .replace('job_i', '%1$s_i')
     .replaceAll("'", "''")
 }
 
-function deleteQueueFunction (schema) {
+function deleteQueueFunction (schema: string) {
   return `
     CREATE FUNCTION ${schema}.delete_queue(queue_name text)
     RETURNS VOID AS
@@ -375,65 +330,65 @@ function deleteQueueFunction (schema) {
   `
 }
 
-function createQueue (schema, name, options) {
+function createQueue (schema: string, name: string, options: unknown) {
   const sql = `SELECT ${schema}.create_queue('${name}', '${JSON.stringify(options)}'::jsonb)`
   return locked(schema, sql, 'create-queue')
 }
 
-function deleteQueue (schema, name) {
+function deleteQueue (schema: string, name: string) {
   const sql = `SELECT ${schema}.delete_queue('${name}')`
   return locked(schema, sql, 'delete-queue')
 }
 
-function createPrimaryKeyJob (schema) {
+function createPrimaryKeyJob (schema: string) {
   return `ALTER TABLE ${schema}.job ADD PRIMARY KEY (name, id)`
 }
 
-function createQueueForeignKeyJob (schema) {
+function createQueueForeignKeyJob (schema: string) {
   return `ALTER TABLE ${schema}.job ADD CONSTRAINT q_fkey FOREIGN KEY (name) REFERENCES ${schema}.queue (name) ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED`
 }
 
-function createQueueForeignKeyJobDeadLetter (schema) {
+function createQueueForeignKeyJobDeadLetter (schema: string) {
   return `ALTER TABLE ${schema}.job ADD CONSTRAINT dlq_fkey FOREIGN KEY (dead_letter) REFERENCES ${schema}.queue (name) ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED`
 }
 
-function createIndexJobPolicyShort (schema) {
+function createIndexJobPolicyShort (schema: string) {
   return `CREATE UNIQUE INDEX job_i1 ON ${schema}.job (name, COALESCE(singleton_key, '')) WHERE state = '${JOB_STATES.created}' AND policy = '${QUEUE_POLICIES.short}'`
 }
 
-function createIndexJobPolicySingleton (schema) {
+function createIndexJobPolicySingleton (schema: string) {
   return `CREATE UNIQUE INDEX job_i2 ON ${schema}.job (name, COALESCE(singleton_key, '')) WHERE state = '${JOB_STATES.active}' AND policy = '${QUEUE_POLICIES.singleton}'`
 }
 
-function createIndexJobPolicyStately (schema) {
+function createIndexJobPolicyStately (schema: string) {
   return `CREATE UNIQUE INDEX job_i3 ON ${schema}.job (name, state, COALESCE(singleton_key, '')) WHERE state <= '${JOB_STATES.active}' AND policy = '${QUEUE_POLICIES.stately}'`
 }
 
-function createIndexJobThrottle (schema) {
+function createIndexJobThrottle (schema: string) {
   return `CREATE UNIQUE INDEX job_i4 ON ${schema}.job (name, singleton_on, COALESCE(singleton_key, '')) WHERE state <> '${JOB_STATES.cancelled}' AND singleton_on IS NOT NULL`
 }
 
-function createIndexJobFetch (schema) {
+function createIndexJobFetch (schema: string) {
   return `CREATE INDEX job_i5 ON ${schema}.job (name, start_after) INCLUDE (priority, created_on, id) WHERE state < '${JOB_STATES.active}'`
 }
 
-function createIndexJobPolicyExclusive (schema) {
+function createIndexJobPolicyExclusive (schema: string) {
   return `CREATE UNIQUE INDEX job_i6 ON ${schema}.job (name, COALESCE(singleton_key, '')) WHERE state <= '${JOB_STATES.active}' AND policy = '${QUEUE_POLICIES.exclusive}'`
 }
 
-function trySetQueueMonitorTime (schema, queues, seconds) {
+function trySetQueueMonitorTime (schema: string, queues: string[], seconds: number) {
   return trySetQueueTimestamp(schema, queues, 'monitor_on', seconds)
 }
 
-function trySetQueueDeletionTime (schema, queues, seconds) {
+function trySetQueueDeletionTime (schema: string, queues: string[], seconds: number) {
   return trySetQueueTimestamp(schema, queues, 'maintain_on', seconds)
 }
 
-function trySetCronTime (schema, seconds) {
+function trySetCronTime (schema: string, seconds: number) {
   return trySetTimestamp(schema, 'cron_on', seconds)
 }
 
-function trySetTimestamp (schema, column, seconds) {
+function trySetTimestamp (schema: string, column: string, seconds: number) {
   return `
     UPDATE ${schema}.version
     SET ${column} = now()
@@ -442,7 +397,7 @@ function trySetTimestamp (schema, column, seconds) {
   `
 }
 
-function trySetQueueTimestamp (schema, queues, column, seconds) {
+function trySetQueueTimestamp (schema: string, queues: string[], column: string, seconds: number) {
   return `
     UPDATE ${schema}.queue
     SET ${column} = now()
@@ -452,7 +407,7 @@ function trySetQueueTimestamp (schema, queues, column, seconds) {
   `
 }
 
-function updateQueue (schema, { deadLetter } = {}) {
+function updateQueue (schema: string, { deadLetter }: UpdateQueueOptions = {}) {
   return `
     WITH options as (SELECT $2::jsonb as data)
     UPDATE ${schema}.queue SET
@@ -477,7 +432,7 @@ function updateQueue (schema, { deadLetter } = {}) {
   `
 }
 
-function getQueues (schema, names) {
+function getQueues (schema: string, names?: string[]) {
   return `
     SELECT 
       q.name,
@@ -505,7 +460,7 @@ function getQueues (schema, names) {
    `
 }
 
-function deleteJobsById (schema, table) {
+function deleteJobsById (schema: string, table: string) {
   return `
     WITH results as (
       DELETE FROM ${schema}.${table}
@@ -517,31 +472,31 @@ function deleteJobsById (schema, table) {
   `
 }
 
-function deleteQueuedJobs (schema, table) {
+function deleteQueuedJobs (schema: string, table: string) {
   return `DELETE from ${schema}.${table} WHERE name = $1 and state < '${JOB_STATES.active}'`
 }
 
-function deleteStoredJobs (schema, table) {
+function deleteStoredJobs (schema: string, table: string) {
   return `DELETE from ${schema}.${table} WHERE name = $1 and state > '${JOB_STATES.active}'`
 }
 
-function truncateTable (schema, table) {
+function truncateTable (schema: string, table: string) {
   return `TRUNCATE ${schema}.${table}`
 }
 
-function deleteAllJobs (schema, table) {
+function deleteAllJobs (schema: string, table: string) {
   return `DELETE from ${schema}.${table} WHERE name = $1`
 }
 
-function getSchedules (schema) {
+function getSchedules (schema: string) {
   return `SELECT * FROM ${schema}.schedule`
 }
 
-function getSchedulesByQueue (schema) {
+function getSchedulesByQueue (schema: string) {
   return `SELECT * FROM ${schema}.schedule WHERE name = $1 AND COALESCE(key, '') = $2`
 }
 
-function schedule (schema) {
+function schedule (schema: string) {
   return `
     INSERT INTO ${schema}.schedule (name, key, cron, timezone, data, options)
     VALUES ($1, $2, $3, $4, $5, $6)
@@ -554,7 +509,7 @@ function schedule (schema) {
   `
 }
 
-function unschedule (schema) {
+function unschedule (schema: string) {
   return `
     DELETE FROM ${schema}.schedule
     WHERE name = $1
@@ -562,7 +517,7 @@ function unschedule (schema) {
   `
 }
 
-function subscribe (schema) {
+function subscribe (schema: string) {
   return `
     INSERT INTO ${schema}.subscription (event, name)
     VALUES ($1, $2)
@@ -573,14 +528,14 @@ function subscribe (schema) {
   `
 }
 
-function unsubscribe (schema) {
+function unsubscribe (schema: string) {
   return `
     DELETE FROM ${schema}.subscription
     WHERE event = $1 and name = $2
   `
 }
 
-function getQueuesForEvent (schema) {
+function getQueuesForEvent (schema: string) {
   return `
     SELECT name FROM ${schema}.subscription
     WHERE event = $1
@@ -591,23 +546,35 @@ function getTime () {
   return "SELECT round(date_part('epoch', now()) * 1000) as time"
 }
 
-function getVersion (schema) {
+function getVersion (schema: string) {
   return `SELECT version from ${schema}.version`
 }
 
-function setVersion (schema, version) {
+function setVersion (schema: string, version: number) {
   return `UPDATE ${schema}.version SET version = '${version}'`
 }
 
-function versionTableExists (schema) {
+function versionTableExists (schema: string) {
   return `SELECT to_regclass('${schema}.version') as name`
 }
 
-function insertVersion (schema, version) {
+function insertVersion (schema: string, version: number) {
   return `INSERT INTO ${schema}.version(version) VALUES ('${version}')`
 }
 
-function fetchNextJob ({ schema, table, name, policy, limit, includeMetadata, priority = true, ignoreStartAfter = false, ignoreSingletons = null }) {
+interface FetchJobOptions {
+  schema: string
+  table: string
+  name: string
+  policy: string | undefined
+  limit: number
+  includeMetadata?: boolean
+  priority?: boolean
+  ignoreStartAfter?: boolean
+  ignoreSingletons: string[] | null
+}
+
+function fetchNextJob ({ schema, table, name, policy, limit, includeMetadata, priority = true, ignoreStartAfter = false, ignoreSingletons = null }: FetchJobOptions) {
   const singletonFetch = limit > 1 && (policy === QUEUE_POLICIES.singleton || policy === QUEUE_POLICIES.stately)
   const cte = singletonFetch ? 'grouped' : 'next'
 
@@ -618,7 +585,7 @@ function fetchNextJob ({ schema, table, name, policy, limit, includeMetadata, pr
       WHERE name = '${name}'
         AND state < '${JOB_STATES.active}'
         ${ignoreStartAfter ? '' : 'AND start_after < now()'}
-        ${ignoreSingletons?.length > 0 ? `AND singleton_key NOT IN (${ignoreSingletons.map(i => `'${i}'`).join()})` : ''}
+        ${ignoreSingletons != null && ignoreSingletons?.length > 0 ? `AND singleton_key NOT IN (${ignoreSingletons.map(i => `'${i}'`).join()})` : ''}
       ORDER BY ${priority ? 'priority desc, ' : ''}created_on, id
       LIMIT ${limit}
       FOR UPDATE SKIP LOCKED
@@ -635,7 +602,7 @@ function fetchNextJob ({ schema, table, name, policy, limit, includeMetadata, pr
   `
 }
 
-function completeJobs (schema, table) {
+function completeJobs (schema: string, table: string) {
   return `
     WITH results AS (
       UPDATE ${schema}.${table}
@@ -651,7 +618,7 @@ function completeJobs (schema, table) {
   `
 }
 
-function cancelJobs (schema, table) {
+function cancelJobs (schema: string, table: string) {
   return `
     WITH results as (
       UPDATE ${schema}.${table}
@@ -666,7 +633,7 @@ function cancelJobs (schema, table) {
   `
 }
 
-function resumeJobs (schema, table) {
+function resumeJobs (schema: string, table: string) {
   return `
     WITH results as (
       UPDATE ${schema}.${table}
@@ -681,7 +648,13 @@ function resumeJobs (schema, table) {
   `
 }
 
-function insertJobs (schema, { table, name, returnId = true }) {
+interface InsertJobsOptions {
+  table: string
+  name: string
+  returnId?: boolean
+}
+
+function insertJobs (schema: string, { table, name, returnId = true }: InsertJobsOptions) {
   const sql = `
     INSERT INTO ${schema}.${table} (
       id,
@@ -753,14 +726,14 @@ function insertJobs (schema, { table, name, returnId = true }) {
   return sql
 }
 
-function failJobsById (schema, table) {
+function failJobsById (schema: string, table: string) {
   const where = `name = $1 AND id IN (SELECT UNNEST($2::uuid[])) AND state < '${JOB_STATES.completed}'`
   const output = '$3::jsonb'
 
   return failJobs(schema, table, where, output)
 }
 
-function failJobsByTimeout (schema, table, queues) {
+function failJobsByTimeout (schema: string, table: string, queues: string[]) {
   const where = `state = '${JOB_STATES.active}'
             AND (started_on + expire_seconds * interval '1s') < now()
             AND name IN (${getQueueInClause(queues)})`
@@ -770,7 +743,7 @@ function failJobsByTimeout (schema, table, queues) {
   return locked(schema, failJobs(schema, table, where, output), table + 'failJobsByTimeout')
 }
 
-function failJobs (schema, table, where, output) {
+function failJobs (schema: string, table: string, where: string, output: string) {
   return `
     WITH deleted_jobs AS (
       DELETE FROM ${schema}.${table}
@@ -917,7 +890,7 @@ function failJobs (schema, table, where, output) {
   `
 }
 
-function deletion (schema, table, queues) {
+function deletion (schema: string, table: string, queues: string[]) {
   const sql = `
     DELETE FROM ${schema}.${table}
     WHERE name IN (${getQueueInClause(queues)})
@@ -932,7 +905,7 @@ function deletion (schema, table, queues) {
   return locked(schema, sql, table + 'deletion')
 }
 
-function retryJobs (schema) {
+function retryJobs (schema: string) {
   return `
     WITH results as (
       UPDATE ${schema}.job
@@ -947,7 +920,7 @@ function retryJobs (schema) {
   `
 }
 
-function getQueueStats (schema, table, queues) {
+function getQueueStats (schema: string, table: string, queues: string[]) {
   return `
     SELECT
         name, 
@@ -962,7 +935,7 @@ function getQueueStats (schema, table, queues) {
   `
 }
 
-function cacheQueueStats (schema, table, queues) {
+function cacheQueueStats (schema: string, table: string, queues: string[]) {
   const sql = `
     WITH stats AS (${getQueueStats(schema, table, queues)})
     UPDATE ${schema}.queue SET
@@ -982,7 +955,7 @@ function cacheQueueStats (schema, table, queues) {
   return locked(schema, sql, 'queue-stats')
 }
 
-function locked (schema, query, key) {
+function locked (schema: string, query: string | string[], key?: string) {
   if (Array.isArray(query)) {
     query = query.join(';\n')
   }
@@ -997,21 +970,68 @@ function locked (schema, query, key) {
   `
 }
 
-function advisoryLock (schema, key) {
+function advisoryLock (schema: string, key?: string) {
   return `SELECT pg_advisory_xact_lock(
       ('x' || encode(sha224((current_database() || '.pgboss.${schema}${key || ''}')::bytea), 'hex'))::bit(64)::bigint
   )`
 }
 
-function assertMigration (schema, version) {
+function assertMigration (schema: string, version: number) {
   // raises 'division by zero' if already on desired schema version
   return `SELECT version::int/(version::int-${version}) from ${schema}.version`
 }
 
-function getJobById (schema, table) {
+function getJobById (schema: string, table: string) {
   return `SELECT ${JOB_COLUMNS_ALL} FROM ${schema}.${table} WHERE name = $1 AND id = $2`
 }
 
-function getQueueInClause (queues) {
+function getQueueInClause (queues: string[]) {
   return queues.map(i => `'${i}'`).join(',')
+}
+
+export {
+  create,
+  insertVersion,
+  getVersion,
+  setVersion,
+  versionTableExists,
+  fetchNextJob,
+  completeJobs,
+  cancelJobs,
+  resumeJobs,
+  retryJobs,
+  deleteJobsById,
+  deleteAllJobs,
+  deleteQueuedJobs,
+  deleteStoredJobs,
+  truncateTable,
+  failJobsById,
+  failJobsByTimeout,
+  insertJobs,
+  getTime,
+  getSchedules,
+  getSchedulesByQueue,
+  schedule,
+  unschedule,
+  subscribe,
+  unsubscribe,
+  getQueuesForEvent,
+  deletion,
+  cacheQueueStats,
+  updateQueue,
+  createQueue,
+  deleteQueue,
+  getQueues,
+  getQueueStats,
+  trySetQueueMonitorTime,
+  trySetQueueDeletionTime,
+  trySetCronTime,
+  locked,
+  assertMigration,
+  getJobById,
+  QUEUE_POLICIES,
+  JOB_STATES,
+  MIGRATE_RACE_MESSAGE,
+  CREATE_RACE_MESSAGE,
+  DEFAULT_SCHEMA,
 }

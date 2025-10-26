@@ -1,6 +1,6 @@
-const assert = require('node:assert')
-const PgBoss = require('../')
-const helper = require('./testHelper')
+import assert from 'node:assert'
+import PgBoss from '../src/index.js'
+import * as helper from './testHelper'
 
 describe('config', function () {
   it('should allow a 50 character custom schema name', async function () {

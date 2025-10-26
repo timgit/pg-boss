@@ -1,13 +1,13 @@
-const assert = require('node:assert')
-const EventEmitter = require('node:events')
-const { randomUUID } = require('node:crypto')
-const { serializeError: stringify } = require('serialize-error')
-const { delay, resolveWithinSeconds } = require('./tools')
-const Attorney = require('./attorney')
-const Worker = require('./worker')
-const plans = require('./plans')
+import assert from 'node:assert'
+import EventEmitter from 'node:events'
+import crypto from 'node:crypto'
+import { serializeError as stringify } from 'serialize-error'
+import { delay, resolveWithinSeconds } from './tools.ts'
+import * as Attorney from './attorney.ts'
+import Worker from './worker.ts'
+import * as plans from './plans.ts'
 
-const { QUEUES: TIMEKEEPER_QUEUES } = require('./timekeeper')
+import { QUEUES as TIMEKEEPER_QUEUES } from './timekeeper.ts'
 const { QUEUE_POLICIES } = plans
 
 const INTERNAL_QUEUES = Object.values(TIMEKEEPER_QUEUES).reduce((acc, i) => ({ ...acc, [i]: i }), {})
@@ -189,7 +189,7 @@ class Manager extends EventEmitter {
       priority = true
     } = options
 
-    const id = randomUUID({ disableEntropyCache: true })
+    const id = crypto.randomUUID({ disableEntropyCache: true })
 
     const fetch = () => this.fetch(name, { batchSize, includeMetadata, priority })
 
@@ -694,4 +694,4 @@ class Manager extends EventEmitter {
   }
 }
 
-module.exports = Manager
+export default Manager

@@ -1,0 +1,15 @@
+{
+  "extends": "@tsconfig/node22/tsconfig.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    "sourceMap": true,
+    "noEmit": true,
+    "declaration": true,
+    "declarationMap": true,
+    "allowJs": true,
+    "stripInternal": true
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts", "version.json"],
+  "exclude": ["node_modules", "dist"]
+}

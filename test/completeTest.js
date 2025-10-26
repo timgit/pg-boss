@@ -1,6 +1,6 @@
 const assert = require('node:assert')
 const helper = require('./testHelper')
-const PgBoss = require('../')
+const PgBoss = require('../src/index.js').default
 
 describe('complete', function () {
   it('should reject missing id argument', async function () {

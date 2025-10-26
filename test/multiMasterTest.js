@@ -1,9 +1,9 @@
-const assert = require('node:assert')
-const helper = require('./testHelper')
-const PgBoss = require('../')
-const Contractor = require('../src/contractor')
-const migrationStore = require('../src/migrationStore')
-const currentSchemaVersion = require('../version.json').schema
+import assert from 'node:assert'
+import { getDb } from './testHelper'
+import PgBoss from '../src/index.js'
+import Contractor from '../src/contractor'
+import { getAll } from '../src/migrationStore'
+import { schema as currentSchemaVersion } from '../version.json'
 
 describe('multi-master', function () {
   it('should only allow 1 master to start at a time', async function () {
@@ -32,7 +32,7 @@ describe('multi-master', function () {
       max: 2
     }
 
-    const db = await helper.getDb()
+    const db = await getDb()
     const contractor = new Contractor(db, config)
 
     await contractor.create()
@@ -43,7 +43,7 @@ describe('multi-master', function () {
 
     assert.notStrictEqual(oldVersion, currentSchemaVersion)
 
-    config.migrations = migrationStore.getAll(config.schema)
+    config.migrations = getAll(config.schema)
     config.migrations[0].install.push('select pg_sleep(1)')
 
     const instances = []

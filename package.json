@@ -2,38 +2,57 @@
   "name": "pg-boss",
   "version": "11.1.1",
   "description": "Queueing jobs in Postgres from Node.js like a boss",
-  "main": "./src/index.js",
-  "type": "commonjs",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.cts",
   "engines": {
     "node": ">=22"
+  },
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./package.json": "./package.json"
   },
   "dependencies": {
     "cron-parser": "^5.4.0",
     "pg": "^8.16.3",
-    "serialize-error": "^8.1.0"
+    "serialize-error": "^12.0.0"
   },
   "devDependencies": {
-    "@types/node": "^22.18.8",
-    "eslint": "^9.37.0",
+    "@tsconfig/node22": "^22.0.2",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^22.18.12",
+    "@types/pg": "^8.15.5",
+    "eslint": "^9.38.0",
     "luxon": "^3.7.2",
     "mocha": "^11.7.4",
     "neostandard": "^0.12.2",
-    "nyc": "^17.1.0"
+    "nyc": "^17.1.0",
+    "tsdown": "^0.15.9",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
   },
   "scripts": {
+    "build": "tsdown",
     "test": "eslint . && mocha",
     "cover": "nyc npm test",
-    "tsc": "tsc --noEmit types.d.ts",
+    "tsc": "tsc --noEmit",
     "readme": "node ./test/readme.js",
-    "db:migrate": "node -e 'console.log(require(\"./src\").getMigrationPlans())'",
-    "db:construct": "node -e 'console.log(require(\"./src\").getConstructionPlans())'"
+    "db:migrate": "node --import=tsx -e 'console.log(require(\"./src\").getMigrationPlans())'",
+    "db:construct": "node --import=tsx -e 'console.log(require(\"./src\").getConstructionPlans())'"
   },
   "mocha": {
     "timeout": 10000,
     "slow": 10000,
     "bail": true,
     "parallel": true,
-    "require": "./test/hooks"
+    "require": "./test/hooks.js",
+    "node-option": [
+      "import=tsx"
+    ]
   },
   "nyc": {
     "include": [
@@ -62,6 +81,5 @@
   "bugs": {
     "url": "https://github.com/timgit/pg-boss/issues"
   },
-  "homepage": "https://timgit.github.io/pg-boss",
-  "types": "./types.d.ts"
+  "homepage": "https://timgit.github.io/pg-boss"
 }

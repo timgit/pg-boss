@@ -1,5 +1,5 @@
-const EventEmitter = require('node:events')
-const plans = require('./plans')
+import EventEmitter from 'node:events'
+import * as plans from './plans.js'
 
 const events = {
   error: 'error',
@@ -19,12 +19,12 @@ class Boss extends EventEmitter {
   #config
   #manager
 
-  constructor (db, config) {
+  constructor (db, manager, config) {
     super()
 
     this.#db = db
     this.#config = config
-    this.#manager = config.manager
+    this.#manager = manager
     this.#stopped = true
 
     this.events = events
@@ -156,4 +156,4 @@ class Boss extends EventEmitter {
   }
 }
 
-module.exports = Boss
+export default Boss

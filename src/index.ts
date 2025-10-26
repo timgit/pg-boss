@@ -1,12 +1,12 @@
-const EventEmitter = require('node:events')
-const plans = require('./plans')
-const Attorney = require('./attorney')
-const Contractor = require('./contractor')
-const Manager = require('./manager')
-const Timekeeper = require('./timekeeper')
-const Boss = require('./boss')
-const Db = require('./db')
-const { delay } = require('./tools')
+import EventEmitter from 'node:events'
+import * as plans from './plans.js'
+import * as Attorney from './attorney.js'
+import Contractor from './contractor.js'
+import Manager from './manager.js'
+import Timekeeper from './timekeeper.js'
+import Boss from './boss.js'
+import Db from './db.js'
+import { delay } from './tools.js'
 
 const events = {
   error: 'error',
@@ -58,11 +58,10 @@ class PgBoss extends EventEmitter {
     const contractor = new Contractor(db, config)
 
     const manager = new Manager(db, config)
-    const bossConfig = { ...config, manager }
 
-    const boss = new Boss(db, bossConfig)
+    const boss = new Boss(db, manager, config)
 
-    const timekeeper = new Timekeeper(db, bossConfig)
+    const timekeeper = new Timekeeper(db, manager, config)
     manager.timekeeper = timekeeper
 
     this.#promoteEvents(manager)
@@ -208,4 +207,4 @@ class PgBoss extends EventEmitter {
   }
 }
 
-module.exports = PgBoss
+export default PgBoss

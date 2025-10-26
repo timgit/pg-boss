@@ -2,7 +2,7 @@ const { delay } = require('../src/tools')
 const assert = require('node:assert')
 const { DateTime } = require('luxon')
 const helper = require('./testHelper')
-const PgBoss = require('../')
+const PgBoss = require('../src/index.js').default
 
 describe('schedule', function () {
   it('should send job based on every minute expression', async function () {

@@ -1,7 +1,7 @@
-const EventEmitter = require('node:events')
-const plans = require('./plans')
-const { CronExpressionParser } = require('cron-parser')
-const Attorney = require('./attorney')
+import EventEmitter from 'node:events'
+import * as plans from './plans.ts'
+import { CronExpressionParser } from 'cron-parser'
+import * as Attorney from './attorney.ts'
 
 const QUEUES = {
   SEND_IT: '__pgboss__send-it'
@@ -20,12 +20,12 @@ const WARNINGS = {
 }
 
 class Timekeeper extends EventEmitter {
-  constructor (db, config) {
+  constructor (db, manager, config) {
     super()
 
     this.db = db
     this.config = config
-    this.manager = config.manager
+    this.manager = manager
     this.clockSkew = 0
     this.events = EVENTS
 
@@ -199,5 +199,6 @@ class Timekeeper extends EventEmitter {
   }
 }
 
-module.exports = Timekeeper
-module.exports.QUEUES = QUEUES
+export default Timekeeper
+const _QUEUES = QUEUES
+export { _QUEUES as QUEUES }
