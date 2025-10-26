@@ -2,7 +2,7 @@ import assert from 'node:assert'
 import * as plans from './plans.js'
 import * as types from './types.js'
 
-function flatten (schema: string, commands: string[], version: number | null) {
+function flatten (schema: string, commands: string[], version: number) {
   commands.unshift(plans.assertMigration(schema, version))
   commands.push(plans.setVersion(schema, version))
 
@@ -43,7 +43,7 @@ function migrate (schema: string, version: number | null = null, migrations?: ty
 
   assert(result.install.length > 0, `Version ${version} not found.`)
 
-  return flatten(schema, result.install, result.version)
+  return flatten(schema, result.install, result.version!)
 }
 
 function getAll (schema: string): types.Migration[] {
