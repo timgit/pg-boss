@@ -78,5 +78,12 @@
   "bugs": {
     "url": "https://github.com/timgit/pg-boss/issues"
   },
-  "homepage": "https://timgit.github.io/pg-boss"
+  "homepage": "https://timgit.github.io/pg-boss",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "package.json",
+    "version.json"
+  ]
 }
