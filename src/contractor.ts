@@ -2,6 +2,7 @@ import assert from 'node:assert'
 import * as plans from './plans.js'
 import * as migrationStore from './migrationStore.js'
 import versionMod from '../version.json' with { type: 'json' }
+import type * as types from './types.js'
 
 const schemaVersion = versionMod.schema
 
@@ -18,16 +19,14 @@ class Contractor {
     return migrationStore.rollback(schema, version)
   }
 
-  constructor (db, config) {
+  private config: types.ResolvedConstructorOptions
+  private db: types.IDatabase
+  private migrations: types.Migration[]
+
+  constructor (db: types.IDatabase, config: types.ResolvedConstructorOptions) {
     this.config = config
     this.db = db
     this.migrations = this.config.migrations || migrationStore.getAll(this.config.schema)
-
-    // exported api to index
-    this.functions = [
-      this.schemaVersion,
-      this.isInstalled
-    ]
   }
 
   async schemaVersion () {
@@ -46,7 +45,7 @@ class Contractor {
     if (installed) {
       const version = await this.schemaVersion()
 
-      if (schemaVersion > version) {
+      if (version === null || schemaVersion > version) {
         await this.migrate(version)
       }
     } else {
@@ -72,26 +71,26 @@ class Contractor {
     try {
       const commands = plans.create(this.config.schema, schemaVersion)
       await this.db.executeSql(commands)
-    } catch (err) {
+    } catch (err: any) {
       assert(err.message.includes(plans.CREATE_RACE_MESSAGE), err)
     }
   }
 
-  async migrate (version) {
+  async migrate (version: number | null) {
     try {
-      const commands = migrationStore.migrate(this.config, version, this.migrations)
+      const commands = migrationStore.migrate(this.config.schema, version, this.migrations)
       await this.db.executeSql(commands)
-    } catch (err) {
+    } catch (err: any) {
       assert(err.message.includes(plans.MIGRATE_RACE_MESSAGE), err)
     }
   }
 
-  async next (version) {
+  async next (version: number | null) {
     const commands = migrationStore.next(this.config.schema, version, this.migrations)
     await this.db.executeSql(commands)
   }
 
-  async rollback (version) {
+  async rollback (version: number | null) {
     const commands = migrationStore.rollback(this.config.schema, version, this.migrations)
     await this.db.executeSql(commands)
   }

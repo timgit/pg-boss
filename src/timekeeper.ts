@@ -1,9 +1,12 @@
-import EventEmitter from 'node:events'
-import * as plans from './plans.ts'
 import { CronExpressionParser } from 'cron-parser'
-import * as Attorney from './attorney.ts'
+import EventEmitter from 'node:events'
 
-const QUEUES = {
+import * as Attorney from './attorney.js'
+import type Manager from './manager.js'
+import * as plans from './plans.js'
+import * as types from './types.js'
+
+export const QUEUES = {
   SEND_IT: '__pgboss__send-it'
 }
 
@@ -19,23 +22,25 @@ const WARNINGS = {
   }
 }
 
-class Timekeeper extends EventEmitter {
-  constructor (db, manager, config) {
+class Timekeeper extends EventEmitter implements types.EventsMixin {
+  db: types.IDatabase
+  config: types.ResolvedConstructorOptions
+  manager: Manager
+
+  private stopped = true
+  private cronMonitorInterval: NodeJS.Timeout | null | undefined
+  private skewMonitorInterval: NodeJS.Timeout | null | undefined
+  private timekeeping: boolean | undefined
+
+  clockSkew = 0
+  events = EVENTS
+
+  constructor (db: types.IDatabase, manager: Manager, config: types.ResolvedConstructorOptions) {
     super()
 
     this.db = db
     this.config = config
     this.manager = manager
-    this.clockSkew = 0
-    this.events = EVENTS
-
-    this.functions = [
-      this.schedule,
-      this.unschedule,
-      this.getSchedules
-    ]
-
-    this.stopped = true
   }
 
   async start () {
@@ -49,12 +54,12 @@ class Timekeeper extends EventEmitter {
       batchSize: 50
     }
 
-    await this.manager.work(QUEUES.SEND_IT, options, (jobs) => this.onSendIt(jobs))
+    await this.manager.work<types.Request>(QUEUES.SEND_IT, options, (jobs) => this.onSendIt(jobs))
 
     setImmediate(() => this.onCron())
 
-    this.cronMonitorInterval = setInterval(async () => await this.onCron(), this.config.cronMonitorIntervalSeconds * 1000)
-    this.skewMonitorInterval = setInterval(async () => await this.cacheClockSkew(), this.config.clockMonitorIntervalSeconds * 1000)
+    this.cronMonitorInterval = setInterval(async () => await this.onCron(), this.config.cronMonitorIntervalSeconds! * 1000)
+    this.skewMonitorInterval = setInterval(async () => await this.cacheClockSkew(), this.config.clockMonitorIntervalSeconds! * 1000)
   }
 
   async stop () {
@@ -136,14 +141,14 @@ class Timekeeper extends EventEmitter {
 
     const scheduled = schedules
       .filter(i => this.shouldSendIt(i.cron, i.timezone))
-      .map(({ name, key, data, options }) => ({ data: { name, data, options }, singletonKey: `${name}__${key}`, singletonSeconds: 60 }))
+      .map(({ name, key, data, options }): types.JobInsert => ({ data: { name, data, options }, singletonKey: `${name}__${key}`, singletonSeconds: 60 }))
 
     if (scheduled.length > 0 && !this.stopped) {
       await this.manager.insert(QUEUES.SEND_IT, scheduled)
     }
   }
 
-  shouldSendIt (cron, tz) {
+  shouldSendIt (cron: string, tz: string) {
     const interval = CronExpressionParser.parse(cron, { tz, strict: false })
 
     const prevTime = interval.prev()
@@ -155,13 +160,13 @@ class Timekeeper extends EventEmitter {
     return prevDiff < 60
   }
 
-  async onSendIt (jobs) {
+  private async onSendIt (jobs: types.Job<types.Request>[]): Promise<void> {
     await Promise.allSettled(jobs.map(({ data }) => this.manager.send(data)))
   }
 
-  async getSchedules (name, key = '') {
+  async getSchedules (name?: string, key = '') : Promise<types.Schedule[]> {
     let sql = plans.getSchedules(this.config.schema)
-    let params = []
+    let params: unknown[] = []
 
     if (name) {
       sql = plans.getSchedulesByQueue(this.config.schema)
@@ -173,7 +178,7 @@ class Timekeeper extends EventEmitter {
     return rows
   }
 
-  async schedule (name, cron, data, options = {}) {
+  async schedule (name: string, cron: string, data?: unknown, options: types.ScheduleOptions = {}): Promise<void> {
     const { tz = 'UTC', key = '', ...rest } = options
 
     CronExpressionParser.parse(cron, { tz, strict: false })
@@ -184,7 +189,7 @@ class Timekeeper extends EventEmitter {
     try {
       const sql = plans.schedule(this.config.schema)
       await this.db.executeSql(sql, [name, key, cron, tz, data, options])
-    } catch (err) {
+    } catch (err: any) {
       if (err.message.includes('foreign key')) {
         err.message = `Queue ${name} not found`
       }
@@ -193,12 +198,10 @@ class Timekeeper extends EventEmitter {
     }
   }
 
-  async unschedule (name, key = '') {
+  async unschedule (name: string, key = ''): Promise<void> {
     const sql = plans.unschedule(this.config.schema)
     await this.db.executeSql(sql, [name, key])
   }
 }
 
 export default Timekeeper
-const _QUEUES = QUEUES
-export { _QUEUES as QUEUES }

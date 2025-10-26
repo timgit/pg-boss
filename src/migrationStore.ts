@@ -1,6 +1,6 @@
 import assert from 'node:assert'
-import * as plans from './plans.ts'
-import * as types from './types.ts'
+import * as plans from './plans.js'
+import * as types from './types.js'
 
 function flatten (schema: string, commands: string[], version: number | null) {
   commands.unshift(plans.assertMigration(schema, version))

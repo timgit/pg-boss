@@ -1,8 +1,16 @@
 import EventEmitter from 'node:events'
 import pg from 'pg'
+import assert from 'node:assert'
+import type * as types from './types.js'
 
-class Db extends EventEmitter {
-  constructor (config) {
+class Db extends EventEmitter implements types.IDatabase, types.EventsMixin {
+  private pool!: pg.Pool
+  private config: types.DatabaseOptions
+  /** @internal */
+  readonly _pgbdb: boolean
+  opened: boolean
+
+  constructor (config: types.DatabaseOptions) {
     super()
 
     config.application_name = config.application_name || 'pgboss'
@@ -30,20 +38,20 @@ class Db extends EventEmitter {
     }
   }
 
-  async executeSql (text, values) {
-    if (this.opened) {
-      // if (this.config.debug === true) {
-      //   console.log(`${new Date().toISOString()}: DEBUG SQL`)
-      //   console.log(text)
+  async executeSql (text: string, values?: unknown[]) {
+    assert(this.opened, 'Database not opened. Call open() before executing SQL.')
 
-      //   if (values) {
-      //     console.log(`${new Date().toISOString()}: DEBUG VALUES`)
-      //     console.log(values)
-      //   }
-      // }
+    // if (this.config.debug === true) {
+    //   console.log(`${new Date().toISOString()}: DEBUG SQL`)
+    //   console.log(text)
 
-      return await this.pool.query(text, values)
-    }
+    //   if (values) {
+    //     console.log(`${new Date().toISOString()}: DEBUG VALUES`)
+    //     console.log(values)
+    //   }
+    // }
+
+    return await this.pool.query(text, values)
   }
 }
 
