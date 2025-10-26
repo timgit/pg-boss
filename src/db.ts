@@ -7,7 +7,7 @@ class Db extends EventEmitter implements types.IDatabase, types.EventsMixin {
   private pool!: pg.Pool
   private config: types.DatabaseOptions
   /** @internal */
-  readonly _pgbdb: boolean
+  readonly _pgbdb: true
   opened: boolean
 
   constructor (config: types.DatabaseOptions) {

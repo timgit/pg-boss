@@ -905,7 +905,7 @@ function deletion (schema: string, table: string, queues: string[]) {
   return locked(schema, sql, table + 'deletion')
 }
 
-function retryJobs (schema: string) {
+function retryJobs (schema: string, table: string) {
   return `
     WITH results as (
       UPDATE ${schema}.job
