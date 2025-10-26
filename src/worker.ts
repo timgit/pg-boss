@@ -1,14 +1,47 @@
-import { delay } from './tools.js'
+import { AbortablePromise, delay } from './tools.js'
+import type * as types from './types.js'
 
 const WORKER_STATES = {
   created: 'created',
   active: 'active',
   stopping: 'stopping',
   stopped: 'stopped'
+} as const
+
+interface WorkerOptions<T> {
+  id: string
+  name: string
+  options: types.WorkOptions
+  interval: number
+  fetch: () => Promise<types.Job<T>[]>
+  onFetch: (jobs: types.Job<T>[]) => Promise<void>
+  onError: (err: any) => void
 }
 
-class Worker {
-  constructor ({ id, name, options, interval, fetch, onFetch, onError }) {
+class Worker<T = unknown> {
+  readonly id: string
+  readonly name: string
+  readonly options: types.WorkOptions
+  readonly fetch: () => Promise<types.Job<T>[]>
+  readonly onFetch: (jobs: types.Job<T>[]) => Promise<void>
+  readonly onError: (err: any) => void
+  readonly interval: number
+
+  jobs: types.Job<T>[] = []
+  createdOn = Date.now()
+  state: types.WorkerState = WORKER_STATES.created
+  lastFetchedOn: number | null = null
+  lastJobStartedOn: number | null = null
+  lastJobEndedOn: number | null = null
+  lastJobDuration: number | null = null
+  lastError: any = null
+  lastErrorOn: number | null = null
+  stopping = false
+  stopped = false
+  private loopDelayPromise: AbortablePromise<void> | null = null
+  private beenNotified = false
+
+  constructor ({ id, name, options, interval, fetch, onFetch, onError }: WorkerOptions<T>) {
     this.id = id
     this.name = name
     this.options = options
@@ -16,18 +49,6 @@ class Worker {
     this.onFetch = onFetch
     this.onError = onError
     this.interval = interval
-    this.jobs = []
-    this.createdOn = Date.now()
-    this.lastFetchedOn = null
-    this.lastJobStartedOn = null
-    this.lastJobEndedOn = null
-    this.lastError = null
-    this.lastErrorOn = null
-    this.state = WORKER_STATES.created
-    this.stopping = false
-    this.stopped = false
-    this.loopDelayPromise = null
-    this.beenNotified = false
   }
 
   notify () {
@@ -61,7 +82,7 @@ class Worker {
 
           this.jobs = []
         }
-      } catch (err) {
+      } catch (err: any) {
         this.lastErrorOn = Date.now()
         this.lastError = err
 
@@ -92,6 +113,23 @@ class Worker {
 
     if (this.loopDelayPromise) {
       this.loopDelayPromise.abort()
+    }
+  }
+
+  toWipData (): types.WipData {
+    return {
+      id: this.id,
+      name: this.name,
+      options: this.options,
+      state: this.state,
+      count: this.jobs.length,
+      createdOn: this.createdOn,
+      lastFetchedOn: this.lastFetchedOn,
+      lastJobStartedOn: this.lastJobStartedOn,
+      lastJobEndedOn: this.lastJobEndedOn,
+      lastError: this.lastError,
+      lastErrorOn: this.lastErrorOn,
+      lastJobDuration: this.lastJobDuration
     }
   }
 }
