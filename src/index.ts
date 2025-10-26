@@ -82,8 +82,8 @@ class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return Contractor.rollbackPlans(schema, version)
   }
 
-  static states = plans.JOB_STATES
-  static policies = plans.QUEUE_POLICIES
+  static states: types.JobStates = plans.JOB_STATES
+  static policies: types.QueuePolicies = plans.QUEUE_POLICIES
 
   async start (): Promise<this> {
     if (this.#starting || this.#started) {
@@ -364,16 +364,18 @@ export { PgBoss }
 export type {
   ConnectionOptions,
   ConstructorOptions,
-  IDatabase as Db,
   FetchOptions,
+  IDatabase as Db,
   Job,
   JobFetchOptions,
   JobInsert,
   JobPollingOptions,
+  JobStates,
   JobWithMetadata,
   MaintenanceOptions,
   OffWorkOptions,
   Queue,
+  QueuePolicies,
   QueueResult,
   Request,
   Schedule,
