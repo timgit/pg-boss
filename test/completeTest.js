@@ -1,6 +1,6 @@
-const assert = require('node:assert')
-const helper = require('./testHelper')
-const PgBoss = require('../src/index.js').default
+import assert from 'node:assert'
+import * as helper from './testHelper.js'
+import { PgBoss } from '../src/index.ts'
 
 describe('complete', function () {
   it('should reject missing id argument', async function () {

@@ -1,6 +1,6 @@
-const assert = require('node:assert')
-const helper = require('./testHelper')
-const { states } = require('../src')
+import assert from 'node:assert'
+import * as helper from './testHelper.js'
+import { states } from '../src/index.ts'
 
 describe('queues', function () {
   it('should create a queue', async function () {

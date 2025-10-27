@@ -1,13 +1,13 @@
 import EventEmitter from 'node:events'
-import * as plans from './plans.js'
-import * as Attorney from './attorney.js'
-import Contractor from './contractor.js'
-import Manager from './manager.js'
-import Timekeeper from './timekeeper.js'
-import Boss from './boss.js'
-import { delay } from './tools.js'
-import type * as types from './types.js'
-import DbDefault from './db.js'
+import * as plans from './plans.ts'
+import * as Attorney from './attorney.ts'
+import Contractor from './contractor.ts'
+import Manager from './manager.ts'
+import Timekeeper from './timekeeper.ts'
+import Boss from './boss.ts'
+import { delay } from './tools.ts'
+import type * as types from './types.ts'
+import DbDefault from './db.ts'
 
 const events = {
   error: 'error',
@@ -386,4 +386,4 @@ export type {
   WorkHandler,
   WorkOptions,
   WorkWithMetadataHandler,
-} from './types.js'
+} from './types.ts'

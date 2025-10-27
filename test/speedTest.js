@@ -1,5 +1,5 @@
-const helper = require('./testHelper')
-const assert = require('node:assert')
+import * as helper from './testHelper.js'
+import assert from 'node:assert'
 
 describe('speed', function () {
   const expectedSeconds = 9

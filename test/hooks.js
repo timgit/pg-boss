@@ -1,4 +1,4 @@
-import * as helper from './testHelper'
+import * as helper from './testHelper.js'
 
 export const mochaHooks = {
   beforeAll,

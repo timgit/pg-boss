@@ -1,7 +1,7 @@
 import EventEmitter from 'node:events'
 import pg from 'pg'
 import assert from 'node:assert'
-import type * as types from './types.js'
+import type * as types from './types.ts'
 
 class Db extends EventEmitter implements types.IDatabase, types.EventsMixin {
   private pool!: pg.Pool

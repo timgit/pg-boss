@@ -1,5 +1,5 @@
-import { AbortablePromise, delay } from './tools.js'
-import type * as types from './types.js'
+import { type AbortablePromise, delay } from './tools.ts'
+import type * as types from './types.ts'
 
 const WORKER_STATES = {
   created: 'created',

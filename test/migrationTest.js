@@ -1,10 +1,10 @@
 import assert from 'node:assert'
-import PgBoss from '../src/index.js'
-import { getDb } from './testHelper'
-import Contractor from '../src/contractor'
-import { getAll } from '../src/migrationStore'
-import { schema as currentSchemaVersion } from '../version.json'
-import { setVersion } from '../src/plans'
+import PgBoss from '../src/index.ts'
+import { getDb } from './testHelper.js'
+import Contractor from '../src/contractor.ts'
+import { getAll } from '../src/migrationStore.ts'
+import { schema as currentSchemaVersion } from '../version.json' with { type: 'json' }
+import { setVersion } from '../src/plans.ts'
 
 describe('migration', function () {
   beforeEach(async function () {

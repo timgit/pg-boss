@@ -8,7 +8,8 @@
     "declaration": true,
     "declarationMap": true,
     "allowJs": true,
-    "stripInternal": true
+    "stripInternal": true,
+    "allowImportingTsExtensions": true
   },
   "include": ["src/**/*.ts", "test/**/*.ts", "version.json"],
   "exclude": ["node_modules", "dist"]

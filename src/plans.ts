@@ -1,4 +1,4 @@
-import { UpdateQueueOptions } from './types.js'
+import type { UpdateQueueOptions } from './types.ts'
 
 const DEFAULT_SCHEMA = 'pgboss'
 const MIGRATE_RACE_MESSAGE = 'division by zero'

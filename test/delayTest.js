@@ -1,6 +1,6 @@
-const assert = require('node:assert')
-const helper = require('./testHelper')
-const { delay } = require('../src/tools')
+import assert from 'node:assert'
+import * as helper from './testHelper.js'
+import { delay } from '../src/tools.ts'
 
 describe('delayed jobs', function () {
   it('should wait until after an int (in seconds)', async function () {

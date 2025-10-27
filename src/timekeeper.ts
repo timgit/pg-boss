@@ -1,10 +1,10 @@
 import { CronExpressionParser } from 'cron-parser'
 import EventEmitter from 'node:events'
 
-import * as Attorney from './attorney.js'
-import type Manager from './manager.js'
-import * as plans from './plans.js'
-import * as types from './types.js'
+import * as Attorney from './attorney.ts'
+import type Manager from './manager.ts'
+import * as plans from './plans.ts'
+import * as types from './types.ts'
 
 export const QUEUES = {
   SEND_IT: '__pgboss__send-it'

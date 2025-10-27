@@ -1,6 +1,6 @@
 import assert from 'node:assert'
-import { DEFAULT_SCHEMA } from './plans.js'
-import type * as types from './types.js'
+import { DEFAULT_SCHEMA } from './plans.ts'
+import type * as types from './types.ts'
 
 const POLICY = {
   MAX_EXPIRATION_HOURS: 24,

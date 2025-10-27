@@ -1,6 +1,6 @@
-const assert = require('node:assert')
-const PgBoss = require('../src/index.js').default
-const { delay } = require('../src/tools')
+import assert, { strictEqual } from 'node:assert'
+import PgBoss from '../src/index.ts'
+import { delay } from '../src/tools.ts'
 
 describe('background processing error handling', function () {
   it('maintenance error handling works', async function () {
@@ -16,7 +16,7 @@ describe('background processing error handling', function () {
     let errorCount = 0
 
     boss.once('error', (error) => {
-      assert.strictEqual(error.message, config.__test__throw_maint)
+      strictEqual(error.message, config.__test__throw_maint)
       errorCount++
     })
 
@@ -24,7 +24,7 @@ describe('background processing error handling', function () {
 
     await delay(3000)
 
-    assert.strictEqual(errorCount, 1)
+    strictEqual(errorCount, 1)
   })
 
   it('shutdown error handling works', async function () {
@@ -38,7 +38,7 @@ describe('background processing error handling', function () {
     let errorCount = 0
 
     boss.once('error', (error) => {
-      assert.strictEqual(error.message, config.__test__throw_shutdown)
+      strictEqual(error.message, config.__test__throw_shutdown)
       errorCount++
     })
 
@@ -48,7 +48,7 @@ describe('background processing error handling', function () {
 
     await delay(1000)
 
-    assert.strictEqual(errorCount, 1)
+    strictEqual(errorCount, 1)
   })
 
   it('shutdown monitoring error handling works', async function () {
