@@ -1,4 +1,4 @@
-const helper = require('./testHelper')
+import * as helper from './testHelper.js'
 
 describe('error', function () {
   it('should handle an error in a worker and not blow up', async function () {

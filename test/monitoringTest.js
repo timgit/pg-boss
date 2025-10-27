@@ -1,6 +1,6 @@
-const assert = require('node:assert')
-const helper = require('./testHelper')
-const { delay } = require('../src/tools')
+import assert from 'node:assert'
+import * as helper from './testHelper.js'
+import { delay } from '../src/tools.ts'
 
 describe('monitoring', function () {
   it('should cache job counts into queue', async function () {

@@ -19,6 +19,7 @@
     "serialize-error": "^12.0.0"
   },
   "devDependencies": {
+    "@istanbuljs/nyc-config-typescript": "^1.0.2",
     "@tsconfig/node22": "^22.0.2",
     "@types/mocha": "^10.0.10",
     "@types/node": "^22.18.12",
@@ -28,6 +29,7 @@
     "mocha": "^11.7.4",
     "neostandard": "^0.12.2",
     "nyc": "^17.1.0",
+    "source-map-support": "^0.5.21",
     "tsdown": "^0.15.9",
     "tsx": "^4.20.6",
     "typescript": "^5.9.3"
@@ -46,16 +48,19 @@
     "slow": 10000,
     "bail": true,
     "parallel": true,
-    "require": "./test/hooks.js",
+    "require": [
+      "./test/hooks.js"
+    ],
     "node-option": [
       "import=tsx"
     ]
   },
   "nyc": {
+    "extends": "@istanbuljs/nyc-config-typescript",
     "include": [
-      "src/**/*.js"
+      "src/**/*.ts"
     ],
-    "sourceMap": false,
+    "sourceMap": true,
     "instrument": true,
     "reporter": [
       "lcov",

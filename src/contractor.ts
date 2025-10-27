@@ -1,8 +1,8 @@
 import assert from 'node:assert'
-import * as plans from './plans.js'
-import * as migrationStore from './migrationStore.js'
+import * as plans from './plans.ts'
+import * as migrationStore from './migrationStore.ts'
 import versionMod from '../version.json' with { type: 'json' }
-import type * as types from './types.js'
+import type * as types from './types.ts'
 
 const schemaVersion = versionMod.schema
 
@@ -45,7 +45,7 @@ class Contractor {
     if (installed) {
       const version = await this.schemaVersion()
 
-      if (version === null || schemaVersion > version) {
+      if (version !== null && schemaVersion > version) {
         await this.migrate(version)
       }
     } else {
@@ -76,7 +76,7 @@ class Contractor {
     }
   }
 
-  async migrate (version: number | null) {
+  async migrate (version: number) {
     try {
       const commands = migrationStore.migrate(this.config.schema, version, this.migrations)
       await this.db.executeSql(commands)
@@ -85,12 +85,12 @@ class Contractor {
     }
   }
 
-  async next (version: number | null) {
+  async next (version: number) {
     const commands = migrationStore.next(this.config.schema, version, this.migrations)
     await this.db.executeSql(commands)
   }
 
-  async rollback (version: number | null) {
+  async rollback (version: number) {
     const commands = migrationStore.rollback(this.config.schema, version, this.migrations)
     await this.db.executeSql(commands)
   }

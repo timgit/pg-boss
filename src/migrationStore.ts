@@ -1,6 +1,6 @@
 import assert from 'node:assert'
-import * as plans from './plans.js'
-import * as types from './types.js'
+import * as plans from './plans.ts'
+import * as types from './types.ts'
 
 function flatten (schema: string, commands: string[], version: number) {
   commands.unshift(plans.assertMigration(schema, version))
@@ -9,7 +9,7 @@ function flatten (schema: string, commands: string[], version: number) {
   return plans.locked(schema, commands)
 }
 
-function rollback (schema: string, version: number | null = null, migrations?: types.Migration[]) {
+function rollback (schema: string, version: number, migrations?: types.Migration[]) {
   migrations = migrations || getAll(schema)
 
   const result = migrations.find(i => i.version === version)
@@ -19,7 +19,7 @@ function rollback (schema: string, version: number | null = null, migrations?: t
   return flatten(schema, result.uninstall || [], result.previous)
 }
 
-function next (schema: string, version: number | null, migrations: types.Migration[] | undefined) {
+function next (schema: string, version: number, migrations: types.Migration[] | undefined) {
   migrations = migrations || getAll(schema)
 
   const result = migrations.find(i => i.previous === version)
@@ -29,7 +29,7 @@ function next (schema: string, version: number | null, migrations: types.Migrati
   return flatten(schema, result.install, result.version)
 }
 
-function migrate (schema: string, version: number | null = null, migrations?: types.Migration[]) {
+function migrate (schema: string, version: number, migrations?: types.Migration[]) {
   migrations = migrations || getAll(schema)
 
   const result = migrations
