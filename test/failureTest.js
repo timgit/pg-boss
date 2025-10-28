@@ -1,6 +1,6 @@
-const { delay } = require('../src/tools')
-const assert = require('node:assert')
-const helper = require('./testHelper')
+import { delay } from '../src/tools.ts'
+import assert from 'node:assert'
+import * as helper from './testHelper.js'
 
 describe('failure', function () {
   it('should reject missing id argument', async function () {

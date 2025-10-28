@@ -1,8 +1,8 @@
-const { delay } = require('../src/tools')
-const assert = require('node:assert')
-const { DateTime } = require('luxon')
-const helper = require('./testHelper')
-const PgBoss = require('../')
+import { delay } from '../src/tools.ts'
+import assert from 'node:assert'
+import { DateTime } from 'luxon'
+import * as helper from './testHelper.js'
+import { PgBoss } from '../src/index.ts'
 
 describe('schedule', function () {
   it('should send job based on every minute expression', async function () {

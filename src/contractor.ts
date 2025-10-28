@@ -1,32 +1,32 @@
-const assert = require('node:assert')
-const plans = require('./plans')
-const { DEFAULT_SCHEMA } = plans
-const migrationStore = require('./migrationStore')
-const schemaVersion = require('../version.json').schema
+import assert from 'node:assert'
+import * as plans from './plans.ts'
+import * as migrationStore from './migrationStore.ts'
+import versionMod from '../version.json' with { type: 'json' }
+import type * as types from './types.ts'
+
+const schemaVersion = versionMod.schema
 
 class Contractor {
-  static constructionPlans (schema = DEFAULT_SCHEMA) {
+  static constructionPlans (schema = plans.DEFAULT_SCHEMA) {
     return plans.create(schema, schemaVersion)
   }
 
-  static migrationPlans (schema = DEFAULT_SCHEMA, version = schemaVersion - 1) {
+  static migrationPlans (schema = plans.DEFAULT_SCHEMA, version = schemaVersion - 1) {
     return migrationStore.migrate(schema, version)
   }
 
-  static rollbackPlans (schema = DEFAULT_SCHEMA, version = schemaVersion) {
+  static rollbackPlans (schema = plans.DEFAULT_SCHEMA, version = schemaVersion) {
     return migrationStore.rollback(schema, version)
   }
 
-  constructor (db, config) {
+  private config: types.ResolvedConstructorOptions
+  private db: types.IDatabase
+  private migrations: types.Migration[]
+
+  constructor (db: types.IDatabase, config: types.ResolvedConstructorOptions) {
     this.config = config
     this.db = db
     this.migrations = this.config.migrations || migrationStore.getAll(this.config.schema)
-
-    // exported api to index
-    this.functions = [
-      this.schemaVersion,
-      this.isInstalled
-    ]
   }
 
   async schemaVersion () {
@@ -45,7 +45,7 @@ class Contractor {
     if (installed) {
       const version = await this.schemaVersion()
 
-      if (schemaVersion > version) {
+      if (version !== null && schemaVersion > version) {
         await this.migrate(version)
       }
     } else {
@@ -71,29 +71,29 @@ class Contractor {
     try {
       const commands = plans.create(this.config.schema, schemaVersion)
       await this.db.executeSql(commands)
-    } catch (err) {
+    } catch (err: any) {
       assert(err.message.includes(plans.CREATE_RACE_MESSAGE), err)
     }
   }
 
-  async migrate (version) {
+  async migrate (version: number) {
     try {
-      const commands = migrationStore.migrate(this.config, version, this.migrations)
+      const commands = migrationStore.migrate(this.config.schema, version, this.migrations)
       await this.db.executeSql(commands)
-    } catch (err) {
+    } catch (err: any) {
       assert(err.message.includes(plans.MIGRATE_RACE_MESSAGE), err)
     }
   }
 
-  async next (version) {
+  async next (version: number) {
     const commands = migrationStore.next(this.config.schema, version, this.migrations)
     await this.db.executeSql(commands)
   }
 
-  async rollback (version) {
+  async rollback (version: number) {
     const commands = migrationStore.rollback(this.config.schema, version, this.migrations)
     await this.db.executeSql(commands)
   }
 }
 
-module.exports = Contractor
+export default Contractor

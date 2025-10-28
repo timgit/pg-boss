@@ -1,9 +1,11 @@
-const Db = require('../src/db')
-const PgBoss = require('../')
-const crypto = require('crypto')
+import Db from '../src/db.ts'
+import PgBoss from '../src/index.ts'
+import crypto from 'node:crypto'
+import configJson from './config.json' with { type: 'json' }
+
 const sha1 = (value) => crypto.createHash('sha1').update(value).digest('hex')
 
-module.exports = {
+export {
   dropSchema,
   start,
   getDb,
@@ -22,7 +24,7 @@ function getConnectionString () {
 }
 
 function getConfig (options = {}) {
-  const config = require('./config.json')
+  const config = { ...configJson }
 
   config.host = process.env.POSTGRES_HOST || config.host
   config.port = process.env.POSTGRES_PORT || config.port
@@ -38,9 +40,7 @@ function getConfig (options = {}) {
   config.schedule = false
   config.retryLimit = 0
 
-  const result = { ...config }
-
-  return Object.assign(result, options)
+  return Object.assign(config, options)
 }
 
 async function init () {

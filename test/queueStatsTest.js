@@ -1,6 +1,6 @@
-const assert = require('node:assert')
-const helper = require('./testHelper')
-const { randomUUID } = require('node:crypto')
+import assert from 'node:assert'
+import * as helper from './testHelper.js'
+import { randomUUID } from 'node:crypto'
 
 describe('queueStats', function () {
   let boss

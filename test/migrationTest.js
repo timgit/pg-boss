@@ -1,14 +1,14 @@
-const assert = require('node:assert')
-const PgBoss = require('../')
-const helper = require('./testHelper')
-const Contractor = require('../src/contractor')
-const migrationStore = require('../src/migrationStore')
-const currentSchemaVersion = require('../version.json').schema
-const plans = require('../src/plans')
+import assert from 'node:assert'
+import PgBoss from '../src/index.ts'
+import { getDb } from './testHelper.js'
+import Contractor from '../src/contractor.ts'
+import { getAll } from '../src/migrationStore.ts'
+import { schema as currentSchemaVersion } from '../version.json' with { type: 'json' }
+import { setVersion } from '../src/plans.ts'
 
 describe('migration', function () {
   beforeEach(async function () {
-    const db = await helper.getDb({ debug: false })
+    const db = await getDb({ debug: false })
     this.currentTest.contractor = new Contractor(db, this.currentTest.bossConfig)
   })
 
@@ -62,9 +62,9 @@ describe('migration', function () {
 
     await contractor.create()
 
-    const db = await helper.getDb()
+    const db = await getDb()
     // version 20 was v9 and dropped from the migration store with v10
-    await db.executeSql(plans.setVersion(config.schema, 20))
+    await db.executeSql(setVersion(config.schema, 20))
 
     const boss = this.test.boss = new PgBoss(config)
 
@@ -212,7 +212,7 @@ describe('migration', function () {
 
     const config = { ...this.test.bossConfig }
 
-    config.migrations = migrationStore.getAll(config.schema)
+    config.migrations = getAll(config.schema)
 
     // add invalid sql statement
     config.migrations[0].install.push('wat')

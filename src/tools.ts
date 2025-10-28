@@ -1,14 +1,13 @@
-const { setTimeout } = require('node:timers/promises')
+import { setTimeout } from 'node:timers/promises'
 
-module.exports = {
-  delay,
-  resolveWithinSeconds
+export interface AbortablePromise<T> extends Promise<T> {
+  abort: () => void
 }
 
-function delay (ms, error) {
+function delay (ms: number, error?: string): AbortablePromise<void> {
   const ac = new AbortController()
 
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<void>((resolve, reject) => {
     setTimeout(ms, null, { signal: ac.signal })
       .then(() => {
         if (error) {
@@ -18,7 +17,7 @@ function delay (ms, error) {
         }
       })
       .catch(resolve)
-  })
+  }) as AbortablePromise<void>
 
   promise.abort = () => {
     if (!ac.signal.aborted) {
@@ -29,7 +28,7 @@ function delay (ms, error) {
   return promise
 }
 
-async function resolveWithinSeconds (promise, seconds, message) {
+async function resolveWithinSeconds<T> (promise: Promise<T>, seconds: number, message?: string): Promise<T | void> {
   const timeout = Math.max(1, seconds) * 1000
   const reject = delay(timeout, message)
 
@@ -42,4 +41,9 @@ async function resolveWithinSeconds (promise, seconds, message) {
   }
 
   return result
+}
+
+export {
+  delay,
+  resolveWithinSeconds
 }

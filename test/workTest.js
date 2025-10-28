@@ -1,6 +1,6 @@
-const { delay } = require('../src/tools')
-const assert = require('node:assert')
-const helper = require('./testHelper')
+import { delay } from '../src/tools.ts'
+import assert from 'node:assert'
+import * as helper from './testHelper.js'
 
 describe('work', function () {
   it('should fail with no arguments', async function () {

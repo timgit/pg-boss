@@ -1,5 +1,5 @@
-const assert = require('node:assert')
-const PgBoss = require('../')
+import assert from 'node:assert'
+import PgBoss from '../src/index.ts'
 
 describe('database', function () {
   it('should fail on invalid database host', async function () {

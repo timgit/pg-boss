@@ -1,6 +1,6 @@
-const assert = require('node:assert')
-const helper = require('./testHelper')
-const { randomUUID } = require('crypto')
+import assert from 'node:assert'
+import * as helper from './testHelper.js'
+import { randomUUID } from 'node:crypto'
 
 describe('ops', function () {
   it('should emit error in worker', async function () {

@@ -1,6 +1,6 @@
-const assert = require('node:assert')
-const { randomUUID } = require('crypto')
-const helper = require('./testHelper')
+import assert from 'node:assert'
+import { randomUUID } from 'node:crypto'
+import * as helper from './testHelper.js'
 
 describe('insert', function () {
   it('should create jobs from an array with name only', async function () {
