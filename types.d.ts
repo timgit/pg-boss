@@ -119,12 +119,12 @@ declare namespace PgBoss {
   type WorkOptions = JobFetchOptions & JobPollingOptions
   type FetchOptions = JobFetchOptions & ConnectionOptions
 
-  interface WorkHandler<ReqData> {
-    (job: PgBoss.Job<ReqData>[]): Promise<any>;
+  interface WorkHandler<ReqData, ResData = any> {
+    (job: PgBoss.Job<ReqData>[]): Promise<ResData>;
   }
 
-  interface WorkWithMetadataHandler<ReqData> {
-    (job: PgBoss.JobWithMetadata<ReqData>[]): Promise<any>;
+  interface WorkWithMetadataHandler<ReqData, ResData = any> {
+    (job: PgBoss.JobWithMetadata<ReqData>[]): Promise<ResData>;
   }
 
   interface Request {
@@ -260,9 +260,9 @@ declare class PgBoss extends EventEmitter {
   fetch<T>(name: string, options: PgBoss.FetchOptions & { includeMetadata: true }): Promise<PgBoss.JobWithMetadata<T>[]>
   fetch<T>(name: string, options: PgBoss.FetchOptions): Promise<PgBoss.Job<T>[]>
 
-  work<ReqData>(name: string, handler: PgBoss.WorkHandler<ReqData>): Promise<string>
-  work<ReqData>(name: string, options: PgBoss.WorkOptions & { includeMetadata: true }, handler: PgBoss.WorkWithMetadataHandler<ReqData>): Promise<string>
-  work<ReqData>(name: string, options: PgBoss.WorkOptions, handler: PgBoss.WorkHandler<ReqData>): Promise<string>
+  work<ReqData, ResData = any>(name: string, handler: PgBoss.WorkHandler<ReqData, ResData>): Promise<string>
+  work<ReqData, ResData = any>(name: string, options: PgBoss.WorkOptions & { includeMetadata: true }, handler: PgBoss.WorkWithMetadataHandler<ReqData, ResData>): Promise<string>
+  work<ReqData, ResData = any>(name: string, options: PgBoss.WorkOptions, handler: PgBoss.WorkHandler<ReqData, ResData>): Promise<string>
 
   offWork (name: string): Promise<void>
   offWork (options: PgBoss.OffWorkOptions): Promise<void>
