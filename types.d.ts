@@ -302,8 +302,8 @@ declare class PgBoss extends EventEmitter {
 
   createQueue (name: string, options?: Omit<PgBoss.Queue, 'name'>): Promise<void>
   createQueue (options: PgBoss.Queue): Promise<void>
-  updateQueue (name: string, options?: Omit<PgBoss.Queue, 'name', 'partition', 'policy'>): Promise<void>
-  updateQueue (options: Omit<PgBoss.Queue, 'partition', 'policy'>): Promise<void>
+  updateQueue (name: string, options?: Omit<PgBoss.Queue, 'name' | 'partition' | 'policy'>): Promise<void>
+  updateQueue (options: Omit<PgBoss.Queue, 'partition' | 'policy'>): Promise<void>
   deleteQueue (name: string): Promise<void>
   getQueues (): Promise<PgBoss.QueueResult[]>
   getQueue (name: string): Promise<PgBoss.QueueResult | null>
