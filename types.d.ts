@@ -18,6 +18,8 @@ declare namespace PgBoss {
     stately: 'stately'
   }
 
+  type StartAfter = number | string | Date
+
   interface Db {
     executeSql(text: string, values: any[]): Promise<{ rows: any[] }>;
   }
@@ -69,7 +71,7 @@ declare namespace PgBoss {
   interface JobOptions {
     id?: string;
     priority?: number;
-    startAfter?: number | string | Date;
+    startAfter?: StartAfter;
     singletonKey?: string;
     singletonSeconds?: number;
     singletonNextSlot?: boolean;
@@ -180,7 +182,7 @@ declare namespace PgBoss {
     retryDelay?: number;
     retryBackoff?: boolean;
     retryDelayMax?: number;
-    startAfter?: Date | string;
+    startAfter?: StartAfter;
     singletonKey?: string;
     singletonSeconds?: number;
     expireInSeconds?: number;
