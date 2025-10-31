@@ -2,7 +2,22 @@ const { setTimeout } = require('node:timers/promises')
 
 module.exports = {
   delay,
-  resolveWithinSeconds
+  resolveWithinSeconds,
+  unwrapSQLResult
+}
+
+/**
+ * When sql contains multiple queries, result is an array of objects with rows property
+ * This function unwraps the result into a single object with rows property
+ * @param {{rows: Array<Object>} | Array<{rows: Array<Object>}>} result
+ * @returns {{rows: Array<Object>}}
+*/
+function unwrapSQLResult (result) {
+  if (result instanceof Array) {
+    return { rows: result.flatMap(i => i.rows) }
+  }
+
+  return result
 }
 
 function delay (ms, error) {

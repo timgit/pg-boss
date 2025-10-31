@@ -1,5 +1,6 @@
 const EventEmitter = require('node:events')
 const plans = require('./plans')
+const { unwrapSQLResult } = require('./tools')
 
 const events = {
   error: 'error',
@@ -58,7 +59,7 @@ class Boss extends EventEmitter {
   async #executeSql (sql, values) {
     const started = Date.now()
 
-    const result = await this.#db.executeSql(sql, values)
+    const result = unwrapSQLResult(await this.#db.executeSql(sql, values))
 
     const ended = Date.now()
 
@@ -130,10 +131,8 @@ class Boss extends EventEmitter {
       const queues = rows.map(q => q.name)
 
       const cacheStatsSql = plans.cacheQueueStats(this.#config.schema, table, queues)
-      const results = await this.#executeSql(cacheStatsSql)
-
-      const inter = results.flatMap(i => i.rows)
-      const warnings = inter.filter(i => i.queuedCount > (i.warningQueueSize || WARNINGS.LARGE_QUEUE.size))
+      const { rows: rowsCacheStats } = await this.#executeSql(cacheStatsSql)
+      const warnings = rowsCacheStats.filter(i => i.queuedCount > (i.warningQueueSize || WARNINGS.LARGE_QUEUE.size))
 
       for (const warning of warnings) {
         this.emit(events.warning, { message: WARNINGS.LARGE_QUEUE.mesasge, data: warning })
