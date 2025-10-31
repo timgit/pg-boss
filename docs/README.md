@@ -82,9 +82,9 @@ To run the test suite, linter and code coverage:
 npm run cover
 ```
 
-The test suite will try and create a new database named pgboss. The [config.json](https://github.com/timgit/pg-boss/test/config.json) file has the default credentials to connect to postgres.
+The test suite will try and create a new database named pgboss. The [config.json](https://github.com/timgit/pg-boss/blob/master/test/config.json) file has the default credentials to connect to postgres.
 
-The [Docker Compose](https://github.com/timgit/pg-boss/docker-compose.yaml) file can be used to start a local postgres instance for testing:
+The [Docker Compose](https://github.com/timgit/pg-boss/blob/master/docker-compose.yaml) file can be used to start a local postgres instance for testing:
 
 ```bash
 docker compose up

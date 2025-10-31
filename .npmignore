@@ -7,3 +7,4 @@ examples
 test
 *.tgz
 eslint.config.js
+docker-compose.yaml
