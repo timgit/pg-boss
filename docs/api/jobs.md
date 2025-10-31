@@ -260,9 +260,10 @@ Deletes all queued jobs in a queue.
 
 Deletes all jobs in completed, failed, and cancelled state in a queue.
 
-### `deleteAllJobs(name)`
+### `deleteAllJobs(name?)`
 
 Deletes all jobs in a queue, including active jobs.
+If no queue is given, deletes all jobs in all queues.
 
 ### `cancel(name, id, options)`
 
