@@ -18,6 +18,8 @@ declare namespace PgBoss {
     stately: 'stately'
   }
 
+  type StartAfter = number | string | Date
+
   interface Db {
     executeSql(text: string, values: any[]): Promise<{ rows: any[] }>;
   }
@@ -69,7 +71,7 @@ declare namespace PgBoss {
   interface JobOptions {
     id?: string;
     priority?: number;
-    startAfter?: number | string | Date;
+    startAfter?: StartAfter;
     singletonKey?: string;
     singletonSeconds?: number;
     singletonNextSlot?: boolean;
@@ -180,7 +182,7 @@ declare namespace PgBoss {
     retryDelay?: number;
     retryBackoff?: boolean;
     retryDelayMax?: number;
-    startAfter?: Date | string;
+    startAfter?: StartAfter;
     singletonKey?: string;
     singletonSeconds?: number;
     expireInSeconds?: number;
@@ -302,8 +304,8 @@ declare class PgBoss extends EventEmitter {
 
   createQueue (name: string, options?: Omit<PgBoss.Queue, 'name'>): Promise<void>
   createQueue (options: PgBoss.Queue): Promise<void>
-  updateQueue (name: string, options?: Omit<PgBoss.Queue, 'name', 'partition', 'policy'>): Promise<void>
-  updateQueue (options: Omit<PgBoss.Queue, 'partition', 'policy'>): Promise<void>
+  updateQueue (name: string, options?: Omit<PgBoss.Queue, 'name' | 'partition' | 'policy'>): Promise<void>
+  updateQueue (options: Omit<PgBoss.Queue, 'partition' | 'policy'>): Promise<void>
   deleteQueue (name: string): Promise<void>
   getQueues (): Promise<PgBoss.QueueResult[]>
   getQueue (name: string): Promise<PgBoss.QueueResult | null>
