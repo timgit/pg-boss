@@ -147,6 +147,7 @@ declare namespace PgBoss {
     name: string;
     data: T;
     expireInSeconds: number;
+    signal: AbortSignal;
   }
 
   interface JobWithMetadata<T = object> extends Job<T> {

@@ -47,6 +47,23 @@ describe('work', function () {
     }
   })
 
+  it('should provide abort signal to job handler', async function () {
+    const boss = this.test.boss = await helper.start(this.test.bossConfig)
+    const queue = this.test.bossConfig.schema
+
+    let receivedSignal
+
+    await boss.send(queue)
+
+    await boss.work(queue, async ([job]) => {
+      receivedSignal = job.signal
+    })
+
+    await delay(1000)
+
+    assert(receivedSignal instanceof AbortSignal)
+  })
+
   it('should honor a custom polling interval', async function () {
     const boss = this.test.boss = await helper.start(this.test.bossConfig)
     const queue = this.test.bossConfig.schema

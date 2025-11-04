@@ -20,8 +20,8 @@ function unwrapSQLResult (result) {
   return result
 }
 
-function delay (ms, error) {
-  const ac = new AbortController()
+function delay (ms, error, abortController) {
+  const ac = abortController || new AbortController()
 
   const promise = new Promise((resolve, reject) => {
     setTimeout(ms, null, { signal: ac.signal })
@@ -44,9 +44,9 @@ function delay (ms, error) {
   return promise
 }
 
-async function resolveWithinSeconds (promise, seconds, message) {
+async function resolveWithinSeconds (promise, seconds, message, abortController) {
   const timeout = Math.max(1, seconds) * 1000
-  const reject = delay(timeout, message)
+  const reject = delay(timeout, message, abortController)
 
   let result
 
