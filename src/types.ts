@@ -221,7 +221,7 @@ export interface JobInsert<T = object> {
   retryDelay?: number;
   retryBackoff?: boolean;
   retryDelayMax?: number;
-  startAfter?: Date | number | string;
+  startAfter?: number | string | Date;
   singletonKey?: string;
   singletonSeconds?: number;
   expireInSeconds?: number;
