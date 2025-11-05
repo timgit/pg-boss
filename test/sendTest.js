@@ -1,5 +1,5 @@
-const assert = require('node:assert')
-const helper = require('./testHelper')
+import assert from 'node:assert'
+import * as helper from './testHelper.js'
 
 describe('send', function () {
   it('should fail with no arguments', async function () {

@@ -1,21 +1,15 @@
-const assert = require('node:assert')
-const plans = require('./plans')
+import assert from 'node:assert'
+import * as plans from './plans.ts'
+import * as types from './types.ts'
 
-module.exports = {
-  rollback,
-  next,
-  migrate,
-  getAll
-}
-
-function flatten (schema, commands, version) {
+function flatten (schema: string, commands: string[], version: number) {
   commands.unshift(plans.assertMigration(schema, version))
   commands.push(plans.setVersion(schema, version))
 
   return plans.locked(schema, commands)
 }
 
-function rollback (schema, version, migrations) {
+function rollback (schema: string, version: number, migrations?: types.Migration[]) {
   migrations = migrations || getAll(schema)
 
   const result = migrations.find(i => i.version === version)
@@ -25,7 +19,7 @@ function rollback (schema, version, migrations) {
   return flatten(schema, result.uninstall || [], result.previous)
 }
 
-function next (schema, version, migrations) {
+function next (schema: string, version: number, migrations: types.Migration[] | undefined) {
   migrations = migrations || getAll(schema)
 
   const result = migrations.find(i => i.previous === version)
@@ -35,34 +29,24 @@ function next (schema, version, migrations) {
   return flatten(schema, result.install, result.version)
 }
 
-function migrate (value, version, migrations) {
-  let schema, config
-
-  if (typeof value === 'string') {
-    config = null
-    schema = value
-  } else {
-    config = value
-    schema = config.schema
-  }
-
-  migrations = migrations || getAll(schema, config)
+function migrate (schema: string, version: number, migrations?: types.Migration[]) {
+  migrations = migrations || getAll(schema)
 
   const result = migrations
-    .filter(i => i.previous >= version)
+    .filter(i => i.previous >= version!)
     .sort((a, b) => a.version - b.version)
     .reduce((acc, i) => {
       acc.install = acc.install.concat(i.install)
       acc.version = i.version
       return acc
-    }, { install: [], version })
+    }, { install: [] as string[], version })
 
   assert(result.install.length > 0, `Version ${version} not found.`)
 
-  return flatten(schema, result.install, result.version)
+  return flatten(schema, result.install, result.version!)
 }
 
-function getAll (schema) {
+function getAll (schema: string): types.Migration[] {
   return [
     {
       release: '11.1.0',
@@ -122,14 +106,14 @@ function getAll (schema) {
           END IF;
 
           EXECUTE format('CREATE TABLE ${schema}.%I (LIKE ${schema}.job INCLUDING DEFAULTS)', tablename);
-          
+
           EXECUTE format('ALTER TABLE ${schema}.%1$I ADD PRIMARY KEY (name, id)', tablename);
           EXECUTE format('ALTER TABLE ${schema}.%1$I ADD CONSTRAINT q_fkey FOREIGN KEY (name) REFERENCES ${schema}.queue (name) ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED', tablename);
           EXECUTE format('ALTER TABLE ${schema}.%1$I ADD CONSTRAINT dlq_fkey FOREIGN KEY (dead_letter) REFERENCES ${schema}.queue (name) ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED', tablename);
 
           EXECUTE format('CREATE INDEX %1$s_i5 ON ${schema}.%1$I (name, start_after) INCLUDE (priority, created_on, id) WHERE state < ''active''', tablename);
           EXECUTE format('CREATE UNIQUE INDEX %1$s_i4 ON ${schema}.%1$I (name, singleton_on, COALESCE(singleton_key, '''')) WHERE state <> ''cancelled'' AND singleton_on IS NOT NULL', tablename);
-          
+
           IF options->>'policy' = 'short' THEN
             EXECUTE format('CREATE UNIQUE INDEX %1$s_i1 ON ${schema}.%1$I (name, COALESCE(singleton_key, '''')) WHERE state = ''created'' AND policy = ''short''', tablename);
           ELSIF options->>'policy' = 'singleton' THEN
@@ -152,4 +136,11 @@ function getAll (schema) {
         `DROP INDEX ${schema}.job_i6`
       ]
     },]
+}
+
+export {
+  rollback,
+  next,
+  migrate,
+  getAll,
 }

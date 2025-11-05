@@ -1,6 +1,6 @@
-const helper = require('./testHelper')
+import * as helper from './testHelper.js'
 
-exports.mochaHooks = {
+export const mochaHooks = {
   beforeAll,
   beforeEach,
   afterEach
