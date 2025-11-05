@@ -22,36 +22,27 @@ describe('queues', function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
     const queue = `*${this.test.bossConfig.schema}`
 
-    try {
-      await boss.createQueue(queue)
-      assert(false)
-    } catch (err) {
-      assert(true)
-    }
+    await assert.rejects(
+      () => boss.createQueue(queue),
+      { message: 'Name can only contain alphanumeric characters, underscores, or hyphens' }
+    )
   })
 
   it('should reject a queue that starts with a number', async function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
     const queue = `4${this.test.bossConfig.schema}`
 
-    try {
-      await boss.createQueue(queue)
-      assert(false)
-    } catch (err) {
-      assert(true)
-    }
+    await assert.rejects(
+      () => boss.createQueue(queue),
+      { message: 'Name cannot start with a number' }
+    )
   })
 
   it('should reject a queue with invalid policy', async function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
     const queue = this.test.bossConfig.schema
 
-    try {
-      await boss.createQueue(queue, { policy: 'something' })
-      assert(false)
-    } catch (err) {
-      assert(true)
-    }
+    await assert.rejects(() => boss.createQueue(queue, { policy: 'something' }))
   })
 
   it('should create a queue with standard policy', async function () {
@@ -251,24 +242,15 @@ describe('queues', function () {
 
     await boss.createQueue(queue, { policy: 'standard' })
 
-    try {
-      await boss.updateQueue(queue, { policy: 'exclusive' })
-      assert(false)
-    } catch (err) {
-      assert(true)
-    }
+    await assert.rejects(() => boss.updateQueue(queue, { policy: 'exclusive' }))
   })
 
   it('should fail to change queue partitioning', async function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
     const queue = this.test.bossConfig.schema
     await boss.createQueue(queue, { partition: true })
-    try {
-      await boss.updateQueue(queue, { partition: false })
-      assert(false)
-    } catch (err) {
-      assert(true)
-    }
+
+    await assert.rejects(() => boss.updateQueue(queue, { partition: true }))
   })
 
   it('jobs should inherit properties from queue', async function () {

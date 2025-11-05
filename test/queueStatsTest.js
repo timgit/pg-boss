@@ -1,11 +1,10 @@
 import assert from 'node:assert'
 import * as helper from './testHelper.js'
-import { randomUUID } from 'node:crypto'
 
 describe('queueStats', function () {
   let boss
-  const queue1 = randomUUID()
-  const queue2 = randomUUID()
+  const queue1 = helper.randomQueueName()
+  const queue2 = helper.randomQueueName()
 
   before(async function () {
     boss = this.test.boss = await helper.start(this.test.bossConfig)
@@ -39,7 +38,7 @@ describe('queueStats', function () {
   })
 
   it('should get accurate stats on an empty queue', async function () {
-    const queue3 = randomUUID()
+    const queue3 = helper.randomQueueName()
     await boss.createQueue(queue3)
 
     const queueData = await boss.getQueueStats(queue3)

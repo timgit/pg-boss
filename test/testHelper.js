@@ -109,3 +109,7 @@ async function start (options) {
     }
   }
 }
+
+export function randomQueueName () {
+  return '_' + crypto.randomUUID()
+}

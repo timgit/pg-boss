@@ -53,12 +53,7 @@ describe('schedule', function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
     const queue = this.test.bossConfig.schema
 
-    try {
-      await boss.schedule(queue, '* * * * *')
-      assert(false)
-    } catch (err) {
-      assert(true)
-    }
+    await assert.rejects(() => boss.schedule(queue, '* * * * *'))
   })
 
   it('should send job based on every minute expression after a restart', async function () {

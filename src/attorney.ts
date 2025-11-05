@@ -10,7 +10,7 @@ const POLICY = {
 
 function validateQueueArgs (config: any = {}) {
   assert(!('deadLetter' in config) || config.deadLetter === null || (typeof config.deadLetter === 'string'), 'deadLetter must be a string')
-  assert(!('deadLetter' in config) || config.deadLetter === null || /[\w-]/.test(config.deadLetter), 'deadLetter can only contain alphanumeric characters, underscores, or hyphens')
+  assert(!('deadLetter' in config) || config.deadLetter === null || /^[\w-]+$/.test(config.deadLetter), 'deadLetter can only contain alphanumeric characters, underscores, or hyphens')
 
   validateRetryConfig(config)
   validateExpirationConfig(config)
@@ -155,13 +155,14 @@ function assertPostgresObjectName (name: string) {
 function assertQueueName (name: string) {
   assert(name, 'Name is required')
   assert(typeof name === 'string', 'Name must be a string')
-  assert(/[\w-]/.test(name), 'Name can only contain alphanumeric characters, underscores, or hyphens')
+  assert(/^[\w-]+$/.test(name), 'Name can only contain alphanumeric characters, underscores, or hyphens')
+  assert(!/^\d/.test(name), 'Name cannot start with a number')
 }
 
 function assertKey (key: string) {
   if (!key) return
   assert(typeof key === 'string', 'Key must be a string')
-  assert(/[\w-]/.test(key), 'Key can only contain alphanumeric characters, underscores, or hyphens')
+  assert(/^[\w-]+$/.test(key), 'Key can only contain alphanumeric characters, underscores, or hyphens')
 }
 
 function validateRetentionConfig (config: any) {

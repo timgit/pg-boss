@@ -324,12 +324,7 @@ describe('work', function () {
 
     await boss.stop({ wait: true })
 
-    try {
-      await boss.work(queue, () => {})
-      assert(false)
-    } catch (err) {
-      assert(true)
-    }
+    await assert.rejects(() => boss.work(queue, () => {}))
   })
 
   it('should allow send() after stopping', async function () {
