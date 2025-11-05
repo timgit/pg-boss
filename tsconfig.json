@@ -11,6 +11,6 @@
     "stripInternal": true,
     "allowImportingTsExtensions": true
   },
-  "include": ["src/**/*.ts", "test/**/*.ts", "version.json"],
+  "include": ["src/**/*.ts", "test/**/*.ts"],
   "exclude": ["node_modules", "dist"]
 }

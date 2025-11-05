@@ -1,10 +1,10 @@
 import assert from 'node:assert'
 import * as plans from './plans.ts'
 import * as migrationStore from './migrationStore.ts'
-import versionMod from '../version.json' with { type: 'json' }
+import packageJson from '../package.json' with { type: 'json' }
 import type * as types from './types.ts'
 
-const schemaVersion = versionMod.schema
+const schemaVersion = packageJson.pgboss.schema as number
 
 class Contractor {
   static constructionPlans (schema = plans.DEFAULT_SCHEMA) {

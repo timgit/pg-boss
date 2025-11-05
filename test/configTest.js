@@ -2,7 +2,7 @@ import assert from 'node:assert'
 import Db from '../src/db.ts'
 import PgBoss from '../src/index.ts'
 import * as helper from './testHelper.js'
-import versionJson from '../version.json' with { type: 'json' }
+import packageJson from '../package.json' with { type: 'json' }
 
 describe('config', function () {
   it('should allow a 50 character custom schema name', async function () {
@@ -67,6 +67,6 @@ describe('config', function () {
   it('schemaVersion() should return current version', async function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig })
     const version = await boss.schemaVersion()
-    assert.strictEqual(version, versionJson.schema)
+    assert.strictEqual(version, packageJson.pgboss.schema)
   })
 })

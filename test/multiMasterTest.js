@@ -3,7 +3,9 @@ import { getDb } from './testHelper.js'
 import PgBoss from '../src/index.ts'
 import Contractor from '../src/contractor.ts'
 import { getAll } from '../src/migrationStore.ts'
-import { schema as currentSchemaVersion } from '../version.json' with { type: 'json' }
+import packageJson from '../package.json' with { type: 'json' }
+
+const currentSchemaVersion = packageJson.pgboss.schema
 
 describe('multi-master', function () {
   it('should only allow 1 master to start at a time', async function () {

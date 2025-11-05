@@ -3,8 +3,10 @@ import PgBoss from '../src/index.ts'
 import { getDb } from './testHelper.js'
 import Contractor from '../src/contractor.ts'
 import { getAll } from '../src/migrationStore.ts'
-import { schema as currentSchemaVersion } from '../version.json' with { type: 'json' }
+import packageJson from '../package.json' with { type: 'json' }
 import { setVersion } from '../src/plans.ts'
+
+const currentSchemaVersion = packageJson.pgboss.schema
 
 describe('migration', function () {
   beforeEach(async function () {
