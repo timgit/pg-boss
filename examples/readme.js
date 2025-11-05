@@ -1,4 +1,4 @@
-const { PgBoss } = require('../dist/index.mjs')
+const PgBoss = require('../')
 
 async function readme () {
   const boss = new PgBoss('postgres://postgres:postgres@localhost/pgboss')

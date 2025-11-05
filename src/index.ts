@@ -349,17 +349,17 @@ class PgBoss extends EventEmitter<types.PgBossEventMap> {
   }
 }
 
-export const {
-  states,
-  policies,
-  getConstructionPlans,
-  getMigrationPlans,
-  getRollbackPlans,
-} = PgBoss
+// export const {
+//   states,
+//   policies,
+//   //getConstructionPlans,
+//   //getMigrationPlans,
+//   //getRollbackPlans,
+// } = PgBoss
+
+// export { PgBoss }
 
 export default PgBoss
-
-export { PgBoss }
 
 export type {
   ConnectionOptions,
