@@ -37,9 +37,9 @@ const QUEUE_DEFAULTS = {
 
 const COMMON_JOB_TABLE = 'job_common'
 
-function create (schema: string, version: number) {
+function create (schema: string, version: number, options?: { createSchema?: boolean }) {
   const commands = [
-    createSchema(schema),
+    ...((options?.createSchema ?? true) ? [createSchema(schema)] : []),
     createEnumJobState(schema),
 
     createTableVersion(schema),

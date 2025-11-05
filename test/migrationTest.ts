@@ -14,6 +14,18 @@ describe('migration', function () {
     this.contractor = new Contractor(db, this.bossConfig)
   })
 
+  it('should include create schema by default ', function () {
+    const schema = 'custom'
+    const plans = Contractor.constructionPlans(schema)
+    assert(plans.includes('CREATE SCHEMA'))
+  })
+
+  it('should not include create schema if createSchema=false', function () {
+    const schema = 'custom'
+    const plans = Contractor.constructionPlans(schema, { createSchema: false })
+    assert(!plans.includes('CREATE SCHEMA'))
+  })
+
   it('should export commands to manually build schema', function () {
     const schema = 'custom'
     const plans = getConstructionPlans(schema)

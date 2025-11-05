@@ -7,8 +7,8 @@ import type * as types from './types.ts'
 const schemaVersion = packageJson.pgboss.schema as number
 
 class Contractor {
-  static constructionPlans (schema = plans.DEFAULT_SCHEMA) {
-    return plans.create(schema, schemaVersion)
+  static constructionPlans (schema = plans.DEFAULT_SCHEMA, options = { createSchema: true }) {
+    return plans.create(schema, schemaVersion, options)
   }
 
   static migrationPlans (schema = plans.DEFAULT_SCHEMA, version = schemaVersion - 1) {
@@ -69,7 +69,7 @@ class Contractor {
 
   async create () {
     try {
-      const commands = plans.create(this.config.schema, schemaVersion)
+      const commands = plans.create(this.config.schema, schemaVersion, this.config)
       await this.db.executeSql(commands)
     } catch (err: any) {
       assert(err.message.includes(plans.CREATE_RACE_MESSAGE), err)
