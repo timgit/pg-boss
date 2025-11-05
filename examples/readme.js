@@ -1,8 +1,7 @@
-import PgBoss from '../dist/index.mjs'
-import * as helper from '../test/testHelper.js'
+const { PgBoss } = require('../dist/index.mjs')
 
 async function readme () {
-  const boss = new PgBoss(helper.getConnectionString())
+  const boss = new PgBoss('postgres://postgres:postgres@localhost/pgboss')
 
   boss.on('error', console.error)
 

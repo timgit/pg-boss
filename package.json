@@ -3,7 +3,6 @@
   "version": "12.0.0-beta1",
   "description": "Queueing jobs in Postgres from Node.js like a boss",
   "type": "module",
-  "main": "./dist/index.mjs",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.mts",
   "engines": {
@@ -39,7 +38,7 @@
     "test": "eslint . && mocha",
     "cover": "nyc npm test",
     "tsc": "tsc --noEmit",
-    "readme": "node --import=tsx ./examples/readme.js",
+    "readme": "node ./examples/readme.js",
     "db:migrate": "node --import=tsx -e 'console.log(require(\"./src\").getMigrationPlans())'",
     "db:construct": "node --import=tsx -e 'console.log(require(\"./src\").getConstructionPlans())'",
     "prepublishOnly": "npm test && npm run build"
