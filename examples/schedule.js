@@ -1,7 +1,7 @@
-const helper = require('../test/testHelper')
+import PgBoss from '../dist/index.mjs'
+import * as helper from '../test/testHelper.js'
 
 async function schedule () {
-  const PgBoss = require('../src')
   const boss = new PgBoss(helper.getConnectionString())
 
   boss.on('error', console.error)

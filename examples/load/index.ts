@@ -1,6 +1,6 @@
-const helper = require('../../test/testHelper')
-const { delay } = require('../../src/tools')
-const PgBoss = require('../../src')
+import PgBoss from '../../dist/index.mjs'
+import * as helper from '../../test/testHelper.js'
+import { delay } from '../../src/tools.ts'
 
 const SCHEMA_COUNT = 60
 const QUEUE_COUNT = 200
@@ -19,7 +19,7 @@ async function loadTest () {
   }
 }
 
-async function init (schema) {
+async function init (schema: string) {
   const config = helper.getConfig()
   const boss = new PgBoss({ ...config, schema, supervise: false, schedule: false })
 
@@ -34,7 +34,7 @@ async function init (schema) {
   for (const queue of queues) {
     console.log(`creating queue ${schema}.${queue}`)
     await boss.createQueue(queue)
-    await boss.work(queue, () => {})
+    await boss.work(queue, async () => {})
   }
 
   console.log('created queues')

@@ -39,9 +39,10 @@
     "test": "eslint . && mocha",
     "cover": "nyc npm test",
     "tsc": "tsc --noEmit",
-    "readme": "node ./test/readme.js",
+    "readme": "node --import=tsx ./examples/readme.js",
     "db:migrate": "node --import=tsx -e 'console.log(require(\"./src\").getMigrationPlans())'",
-    "db:construct": "node --import=tsx -e 'console.log(require(\"./src\").getConstructionPlans())'"
+    "db:construct": "node --import=tsx -e 'console.log(require(\"./src\").getConstructionPlans())'",
+    "prepublishOnly": "npm test && npm run build"
   },
   "pgboss": {
     "schema": 26
