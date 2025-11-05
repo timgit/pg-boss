@@ -639,15 +639,20 @@ class Manager extends EventEmitter {
   }
 
   async deleteAllJobs (name) {
-    Attorney.assertQueueName(name)
-    const { table, partition } = await this.getQueueCache(name)
-
-    if (partition) {
-      const sql = plans.truncateTable(this.config.schema, table)
-      await this.db.executeSql(sql)
+    if (!name) {
+      const queues = await this.getQueues()
+      await Promise.all(queues.map((queue) => this.deleteAllJobs(queue.name)))
     } else {
-      const sql = plans.deleteAllJobs(this.config.schema, table)
-      await this.db.executeSql(sql, [name])
+      Attorney.assertQueueName(name)
+      const { table, partition } = await this.getQueueCache(name)
+
+      if (partition) {
+        const sql = plans.truncateTable(this.config.schema, table)
+        await this.db.executeSql(sql)
+      } else {
+        const sql = plans.deleteAllJobs(this.config.schema, table)
+        await this.db.executeSql(sql, [name])
+      }
     }
   }
 
