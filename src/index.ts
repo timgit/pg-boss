@@ -189,7 +189,7 @@ class PgBoss extends EventEmitter<types.PgBossEventMap> {
   }
 
   send (request: types.Request): Promise<string | null>
-  send (name: string, data?: object, options?: types.SendOptions): Promise<string | null>
+  send (name: string, data?: object | null, options?: types.SendOptions): Promise<string | null>
   async send (...args: any[]): Promise<string | null> {
     return await this.#manager.send(...args as Parameters<Manager['send']>)
   }
@@ -349,17 +349,10 @@ class PgBoss extends EventEmitter<types.PgBossEventMap> {
   }
 }
 
-// export const {
-//   states,
-//   policies,
-//   //getConstructionPlans,
-//   //getMigrationPlans,
-//   //getRollbackPlans,
-// } = PgBoss
-
-// export { PgBoss }
-
 export default PgBoss
+
+export const states = PgBoss.states
+export const policies = PgBoss.policies
 
 export type {
   ConnectionOptions,

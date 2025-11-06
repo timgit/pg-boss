@@ -250,7 +250,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
   }
 
   send (request: types.Request): Promise<string | null>
-  send (name: string, data?: object, options?: types.SendOptions): Promise<string | null>
+  send (name: string, data?: object | null, options?: types.SendOptions): Promise<string | null>
   async send (...args: any[]): Promise<string | null> {
     const result = Attorney.checkSendArgs(args)
 

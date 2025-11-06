@@ -54,11 +54,12 @@
     "bail": true,
     "parallel": true,
     "require": [
-      "./test/hooks.js"
+      "./test/hooks.ts"
     ],
     "node-option": [
       "import=tsx"
-    ]
+    ],
+    "spec": "test/**/*.ts"
   },
   "nyc": {
     "extends": "@istanbuljs/nyc-config-typescript",
