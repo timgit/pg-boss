@@ -326,3 +326,17 @@ Retrieves a job with all metadata by name and id
 **options**
 
 * **db**, object, see notes in `send()`
+
+### `getJobsByData(name, data, options)`
+
+Retrieves all jobs (with all their metadata) which data includes data given in params.
+
+Example: If job's data is `{"foo": "bar", "baz": 1}` and `data` is `{"foo": "bar"}`, the row will match.
+
+**options**
+
+* **db**, object, see notes in `send()`
+
+* **onlyQueued**, bool
+
+  Default: true. Returns only queued jobs (in `active` or `retry` state)
