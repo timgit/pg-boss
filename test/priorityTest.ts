@@ -15,7 +15,7 @@ describe('priority', function () {
   })
 
   it('descending priority order', async function () {
-    this.boss = await helper.start({ ...this.bossConfig })
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     const low = await this.boss.send(this.schema, null, { priority: 1 })
     const medium = await this.boss.send(this.schema, null, { priority: 5 })
@@ -31,7 +31,7 @@ describe('priority', function () {
   })
 
   it('bypasses priority when priority option used in fetch', async function () {
-    this.boss = await helper.start({ ...this.bossConfig })
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     const low = await this.boss.send(this.schema, null, { priority: 1 })
     const medium = await this.boss.send(this.schema, null, { priority: 5 })

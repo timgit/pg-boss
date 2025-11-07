@@ -13,7 +13,7 @@ describe('cancel', function () {
   })
 
   it('should cancel a pending job', async function (this: TestContext) {
-    this.boss = await helper.start({ ...this.bossConfig })
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     const jobId = await this.boss.send(this.schema, {}, { startAfter: 1 })
 
@@ -25,7 +25,7 @@ describe('cancel', function () {
   })
 
   it('should not cancel a completed job', async function (this: TestContext) {
-    this.boss = await helper.start({ ...this.bossConfig })
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     await this.boss.send(this.schema)
 
@@ -41,7 +41,7 @@ describe('cancel', function () {
   })
 
   it('should cancel a batch of jobs', async function (this: TestContext) {
-    this.boss = await helper.start({ ...this.bossConfig })
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     const jobs = await Promise.all([
       this.boss.send(this.schema),
@@ -53,7 +53,7 @@ describe('cancel', function () {
   })
 
   it('should cancel a pending job with custom connection', async function (this: TestContext) {
-    this.boss = await helper.start({ ...this.bossConfig })
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     let called = false
     const _db = await helper.getDb()

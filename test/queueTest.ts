@@ -42,6 +42,14 @@ describe('queues', function () {
     })
   })
 
+  it('should reject using a queue if not created', async function () {
+    this.boss = await helper.start({ ...this.bossConfig, noDefault: true }) as PgBoss
+
+    assert.rejects(async () => {
+      await this.boss.send(this.schema)
+    })
+  })
+
   it('should create a queue with standard policy', async function () {
     this.boss = await helper.start({ ...this.bossConfig, noDefault: true }) as PgBoss
 
@@ -104,7 +112,7 @@ describe('queues', function () {
   })
 
   it('should delete all queued jobs from a queue', async function () {
-    this.boss = await helper.start({ ...this.bossConfig })
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     const getCount = () => helper.countJobs(this.bossConfig.schema, 'job', 'state = $1', [states.created])
 
@@ -118,7 +126,7 @@ describe('queues', function () {
   })
 
   it('should delete all stored jobs from a queue', async function () {
-    this.boss = await helper.start({ ...this.bossConfig })
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     const { completed, failed, cancelled } = states
     const inClause = [completed, failed, cancelled].map(s => `'${s}'`)

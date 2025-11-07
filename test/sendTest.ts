@@ -29,19 +29,19 @@ describe('send', function () {
   })
 
   it('should accept single string argument', async function () {
-    this.boss = await helper.start({ ...this.bossConfig })
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     await this.boss.send(this.schema)
   })
 
   it('should accept job object argument with only name', async function () {
-    this.boss = await helper.start({ ...this.bossConfig })
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     await this.boss.send({ name: this.schema })
   })
 
   it('should accept job object with name and data only', async function () {
-    this.boss = await helper.start({ ...this.bossConfig })
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     const message = 'hi'
 
@@ -53,7 +53,7 @@ describe('send', function () {
   })
 
   it('should accept job object with name and options only', async function () {
-    this.boss = await helper.start({ ...this.bossConfig })
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     const options = { someCrazyOption: 'whatever' }
 
@@ -65,7 +65,7 @@ describe('send', function () {
   })
 
   it('should accept job object with name and custom connection', async function () {
-    this.boss = await helper.start({ ...this.bossConfig })
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     let called = false
     const db = await helper.getDb()
@@ -89,7 +89,7 @@ describe('send', function () {
   })
 
   it('should not create job if transaction fails', async function (this: TestContext) {
-    this.boss = await helper.start({ ...this.bossConfig })
+    this.boss = await helper.start(this.bossConfig) as PgBoss
     const { schema } = this.bossConfig
 
     const db = await helper.getDb()

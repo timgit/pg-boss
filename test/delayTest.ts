@@ -23,7 +23,7 @@ describe('delayed jobs', function () {
   })
 
   it('should wait until after a date time string', async function () {
-    this.boss = await helper.start({ ...this.bossConfig })
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     const date = new Date()
 
@@ -45,7 +45,7 @@ describe('delayed jobs', function () {
   })
 
   it('should wait until after a date object', async function () {
-    this.boss = await helper.start({ ...this.bossConfig })
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     const date = new Date()
     date.setUTCSeconds(date.getUTCSeconds() + 2)
@@ -66,7 +66,7 @@ describe('delayed jobs', function () {
   })
 
   it('should work with sendAfter() and a date object', async function () {
-    this.boss = await helper.start({ ...this.bossConfig })
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     const date = new Date()
     date.setUTCSeconds(date.getUTCSeconds() + 2)

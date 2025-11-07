@@ -18,17 +18,6 @@ export const events: types.Events = {
   stopped: 'stopped'
 } as const
 
-export function getConstructionPlans (schema?: string) {
-  return Contractor.constructionPlans(schema)
-}
-
-export function getMigrationPlans (schema?: string, version?: number) {
-  return Contractor.migrationPlans(schema, version)
-}
-
-export function getRollbackPlans (schema?: string, version?: number) {
-  return Contractor.rollbackPlans(schema, version)
-}
 export class PgBoss extends EventEmitter<types.PgBossEventMap> {
   #stoppingOn: number | null
   #stopped: boolean
@@ -40,7 +29,6 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
   #contractor: Contractor
   #manager: Manager
   #timekeeper: Timekeeper
-  #events: { readonly error: 'error'; readonly stopped: 'stopped' }
 
   constructor (connectionString: string)
   constructor (options: types.ConstructorOptions)
@@ -76,11 +64,6 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     this.#contractor = contractor
     this.#manager = manager
     this.#timekeeper = timekeeper
-
-    this.#events = {
-      error: 'error',
-      stopped: 'stopped'
-    } as const
   }
 
   #promoteEvents (emitter: types.EventsMixin) {
@@ -170,10 +153,10 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
           this.#stoppingOn = null
           this.#started = false
 
-          this.emit(this.#events.stopped)
+          this.emit(events.stopped)
           resolve()
         } catch (err: any) {
-          this.emit(this.#events.error, err)
+          this.emit(events.error, err)
           reject(err)
         }
       }
@@ -201,7 +184,7 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
           await shutdown()
         } catch (err: any) {
           reject(err)
-          this.emit(this.#events.error, err)
+          this.emit(events.error, err)
         }
       })
     })

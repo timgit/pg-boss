@@ -143,7 +143,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     }
 
     const {
-      pollingInterval: interval = this.config.pollingInterval,
+      pollingInterval: interval,
       batchSize,
       includeMetadata = false,
       priority = true

@@ -49,7 +49,7 @@ describe('config', function () {
   })
 
   it('start() should return instance after', async function () {
-    this.boss = await helper.start({ ...this.bossConfig })
+    this.boss = await helper.start(this.bossConfig) as PgBoss
     const result2 = await this.boss.start()
     assert(result2)
   })
@@ -65,7 +65,7 @@ describe('config', function () {
   })
 
   it('schemaVersion() should return current version', async function () {
-    this.boss = await helper.start({ ...this.bossConfig })
+    this.boss = await helper.start(this.bossConfig) as PgBoss
     const version = await this.boss.schemaVersion()
     assert.strictEqual(version, packageJson.pgboss.schema)
   })

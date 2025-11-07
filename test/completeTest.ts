@@ -14,7 +14,7 @@ describe('complete', function () {
   })
 
   it('should complete a batch of jobs', async function (this: TestContext) {
-    this.boss = await helper.start({ ...this.bossConfig })
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     const batchSize = 3
 
@@ -40,7 +40,7 @@ describe('complete', function () {
   })
 
   it('should store job output in job.output from complete()', async function (this: TestContext) {
-    this.boss = await helper.start({ ...this.bossConfig })
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     const jobId = await this.boss.send(this.schema)
 
@@ -59,7 +59,7 @@ describe('complete', function () {
   })
 
   it('should store job error in job.output from fail()', async function (this: TestContext) {
-    this.boss = await helper.start({ ...this.bossConfig })
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     const jobId = await this.boss.send(this.schema)
 
@@ -78,7 +78,7 @@ describe('complete', function () {
   })
 
   it('should complete a batch of jobs with custom connection', async function (this: TestContext) {
-    this.boss = await helper.start({ ...this.bossConfig })
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     const batchSize = 3
 

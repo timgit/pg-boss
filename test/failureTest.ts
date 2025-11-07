@@ -176,7 +176,7 @@ describe('failure', function () {
   })
 
   it('should fail active jobs in a worker during shutdown', async function () {
-    this.boss = await helper.start({ ...this.bossConfig })
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     const jobId = await this.boss.send(this.schema, null, { retryLimit: 1 })
 

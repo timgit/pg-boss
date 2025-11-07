@@ -11,7 +11,7 @@ describe('cancel', function () {
   })
 
   it('should cancel and resume a pending job', async function () {
-    this.boss = await helper.start({ ...this.bossConfig })
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     const jobId = await this.boss.send(this.schema, null, { startAfter: 1 })
 
@@ -29,7 +29,7 @@ describe('cancel', function () {
   })
 
   it('should cancel and resume a pending job with custom connection', async function () {
-    this.boss = await helper.start({ ...this.bossConfig })
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     const jobId = await this.boss.send(this.schema, null, { startAfter: 1 })
 

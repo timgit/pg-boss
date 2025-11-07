@@ -173,7 +173,7 @@ describe('work', function () {
   })
 
   it('completion should pass string wrapped in value prop', async function () {
-    this.boss = await helper.start({ ...this.bossConfig })
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     const result = 'success'
 
@@ -190,7 +190,7 @@ describe('work', function () {
   })
 
   it('handler result should be stored in output', async function () {
-    this.boss = await helper.start({ ...this.bossConfig })
+    this.boss = await helper.start(this.bossConfig) as PgBoss
     const something = 'clever'
 
     const jobId = await this.boss.send(this.schema)
@@ -205,7 +205,7 @@ describe('work', function () {
   })
 
   it('job cab be deleted in handler', async function () {
-    this.boss = await helper.start({ ...this.bossConfig })
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     const jobId = await this.boss.send(this.schema)
     await this.boss.work(this.schema, async ([job]) => this.boss.deleteJob(this.schema, job.id))
