@@ -7,7 +7,7 @@ const cjsOutput = './dist/index.cjs'
 
 // This wrapper re-exports the default export cleanly to require().
 const cjsWrapper = `
-// Auto-generated cjs wrapper for build
+// Auto-generated cjs wrapper for require(esm) for Node 22.12 and higher
 module.exports = require("./index.mjs").default;
 `
 
