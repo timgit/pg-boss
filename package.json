@@ -1,17 +1,17 @@
 {
   "name": "pg-boss",
-  "version": "12.0.0-beta1",
+  "version": "12.0.0-beta3",
   "description": "Queueing jobs in Postgres from Node.js like a boss",
   "type": "module",
-  "main": "./dist/index.cjs",
+  "main": "./dist/index.mjs",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.mts",
   "engines": {
     "node": ">=22.12.0"
   },
   "exports": {
-    "import": "./dist/index.mjs",
-    "require": "./dist/index.cjs"
+    ".": "./dist/index.mjs",
+    "./package.json": "./package.json"
   },
   "dependencies": {
     "cron-parser": "^5.4.0",
@@ -36,7 +36,6 @@
   },
   "scripts": {
     "build": "tsdown",
-    "postbuild": "node scripts/cjs-shim.js",
     "prepublishOnly": "npm test && npm run build",
     "test": "eslint . && mocha test/**/*.ts",
     "cover": "nyc npm test",

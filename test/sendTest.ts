@@ -1,29 +1,30 @@
 import assert from 'node:assert'
 import * as helper from './testHelper.ts'
 import type { TestContext } from './hooks.ts'
+import { type PgBoss } from '../src/index.ts'
 
 describe('send', function () {
   it('should fail with no arguments', async function (this: TestContext) {
-    this.boss = await helper.start(this.bossConfig)
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     assert.rejects(async () => {
-      await this.boss!.send()
+      await this.boss.send()
     })
   })
 
   it('should fail with a function for data', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     assert.rejects(async () => {
-      await this.boss!.send('job', () => true)
+      await this.boss.send('job', () => true)
     })
   })
 
   it('should fail with a function for options', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     assert.rejects(async () => {
-      await this.boss!.send('job', 'data', () => true)
+      await this.boss.send('job', 'data', () => true)
     })
   })
 
@@ -124,7 +125,7 @@ describe('send', function () {
   })
 
   it('should create job with all properties', async function (this: TestContext) {
-    this.boss = await helper.start(this.bossConfig)
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     const deadLetter = `${this.schema}_dlq`
     await this.boss.createQueue(deadLetter)

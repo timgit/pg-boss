@@ -1,42 +1,43 @@
 import { delay } from '../src/tools.ts'
 import assert from 'node:assert'
 import * as helper from './testHelper.ts'
+import { type PgBoss } from '../src/index.ts'
 
 describe('work', function () {
   it('should fail with no arguments', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     assert.rejects(async () => {
-      await this.boss!.work()
+      await this.boss.work()
     })
   })
 
   it('should fail if no callback provided', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     assert.rejects(async () => {
-      await this.boss!.work('foo')
+      await this.boss.work('foo')
     })
   })
 
   it('should fail if options is not an object', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     assert.rejects(async () => {
-      await this.boss!.work('foo', () => {}, 'nope')
+      await this.boss.work('foo', () => {}, 'nope')
     })
   })
 
   it('offWork should fail without a name', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     assert.rejects(async () => {
-      await this.boss!.offWork()
+      await this.boss.offWork()
     })
   })
 
   it('should honor a custom polling interval', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     const pollingIntervalSeconds = 1
     const timeout = 5000
@@ -47,7 +48,7 @@ describe('work', function () {
       await this.boss.send(this.schema)
     }
 
-    await this.boss!.work(this.schema, { pollingIntervalSeconds }, async () => {
+    await this.boss.work(this.schema, { pollingIntervalSeconds }, async () => {
       processCount++
     })
 
@@ -57,7 +58,7 @@ describe('work', function () {
   })
 
   it('should honor when a worker is notified', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     let processCount = 0
 
@@ -79,7 +80,7 @@ describe('work', function () {
   })
 
   it('should remove a worker', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     let receivedCount = 0
 
@@ -97,7 +98,7 @@ describe('work', function () {
   })
 
   it('should remove a worker by id', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     let receivedCount = 0
 
@@ -115,7 +116,7 @@ describe('work', function () {
   })
 
   it('should handle a batch of jobs via batchSize', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     const batchSize = 4
 
@@ -132,7 +133,7 @@ describe('work', function () {
   })
 
   it('batchSize should auto-complete the jobs', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     const jobId = await this.boss.send(this.schema)
 
@@ -151,7 +152,7 @@ describe('work', function () {
   })
 
   it('returning promise applies backpressure', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     const jobCount = 4
     let processCount = 0
@@ -217,19 +218,19 @@ describe('work', function () {
   })
 
   it('should allow multiple workers to the same this.schema per instance', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     await this.boss.work(this.schema, async () => {})
     await this.boss.work(this.schema, async () => {})
   })
 
   it('should honor the includeMetadata option', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     await this.boss.send(this.schema)
 
     return new Promise((resolve) => {
-      this.boss!.work(this.schema, { includeMetadata: true }, async ([job]) => {
+      this.boss.work(this.schema, { includeMetadata: true }, async ([job]) => {
         assert(job.startedOn !== undefined)
         resolve()
       })
@@ -272,7 +273,7 @@ describe('work', function () {
   })
 
   it('should emit wip event every 2s for workers', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     const firstWipEvent = new Promise(resolve => this.boss.once('wip', resolve))
 
@@ -286,7 +287,7 @@ describe('work', function () {
 
     assert.strictEqual(wip1.length, 1)
 
-    const secondWipEvent = new Promise(resolve => this.boss!.once('wip', resolve))
+    const secondWipEvent = new Promise(resolve => this.boss.once('wip', resolve))
 
     const wip2 = await secondWipEvent
 
@@ -294,17 +295,17 @@ describe('work', function () {
   })
 
   it('should reject work() after stopping', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     await this.boss.stop({ wait: true })
 
     assert.rejects(async () => {
-      await this.boss!.work(this.schema, async () => {})
+      await this.boss.work(this.schema, async () => {})
     })
   })
 
   it('should allow send() after stopping', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     this.boss.stop({ wait: true, close: false })
 

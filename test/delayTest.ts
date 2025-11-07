@@ -1,10 +1,11 @@
 import assert from 'node:assert'
 import * as helper from './testHelper.ts'
 import { delay } from '../src/tools.ts'
+import { type PgBoss } from '../src/index.ts'
 
 describe('delayed jobs', function () {
   it('should wait until after an int (in seconds)', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     const startAfter = 2
 

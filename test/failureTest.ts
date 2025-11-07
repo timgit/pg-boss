@@ -1,18 +1,19 @@
 import { delay } from '../src/tools.ts'
 import assert from 'node:assert'
 import * as helper from './testHelper.ts'
+import { type PgBoss } from '../src/index.ts'
 
 describe('failure', function () {
   it('should reject missing id argument', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     assert.rejects(async () => {
-      await this.boss!.fail()
+      await this.boss.fail()
     })
   })
 
   it('should fail a job when requested', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     await this.boss.send(this.schema)
 
@@ -22,7 +23,7 @@ describe('failure', function () {
   })
 
   it('should fail a batch of jobs', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     await Promise.all([
       this.boss.send(this.schema),
@@ -38,7 +39,7 @@ describe('failure', function () {
   })
 
   it('should fail a batch of jobs with a data arg', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    this.boss = await helper.start(this.bossConfig) as PgBoss
     const message = 'some error'
 
     await Promise.all([
@@ -57,7 +58,7 @@ describe('failure', function () {
   })
 
   it('should preserve nested objects within a payload that is an instance of Error', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     const failPayload = new Error('Something went wrong')
     failPayload.some = { deeply: { nested: { reason: 'nuna' } } }
@@ -72,7 +73,7 @@ describe('failure', function () {
   })
 
   it('failure via Promise reject() should pass string wrapped in value prop', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    this.boss = await helper.start(this.bossConfig) as PgBoss
     const failPayload = 'mah error'
 
     const jobId = await this.boss.send(this.schema)
@@ -86,7 +87,7 @@ describe('failure', function () {
   })
 
   it('failure via Promise reject() should pass object payload', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    this.boss = await helper.start(this.bossConfig) as PgBoss
     const something = 'clever'
 
     const errorResponse = new Error('custom error')
@@ -103,7 +104,7 @@ describe('failure', function () {
   })
 
   it('failure with Error object should be saved in the job', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    this.boss = await helper.start(this.bossConfig) as PgBoss
     const message = 'a real error!'
 
     const jobId = await this.boss.send(this.schema)
@@ -117,7 +118,7 @@ describe('failure', function () {
   })
 
   it('should fail a job with custom connection', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     await this.boss.send(this.schema)
 
@@ -138,7 +139,7 @@ describe('failure', function () {
   })
 
   it('failure with circular payload should be safely serialized', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     const jobId = await this.boss.send(this.schema)
     const message = 'mhmm'

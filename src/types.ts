@@ -14,6 +14,13 @@ export type QueuePolicies = {
   stately: 'stately'
 }
 
+export type Events = {
+  error: 'error',
+  warning: 'warning',
+  wip: 'wip',
+  stopped: 'stopped'
+}
+
 export interface IDatabase {
   executeSql(text: string, values?: unknown[]): Promise<{ rows: any[] }>;
 }
@@ -86,7 +93,6 @@ export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, 
 
 export interface ResolvedConstructorOptions extends ConstructorOptions {
   schema: string;
-  pollingInterval: number;
   monitorIntervalSeconds: number;
   cronMonitorIntervalSeconds: number;
   maintenanceIntervalSeconds: number;
@@ -215,6 +221,7 @@ export interface JobWithMetadata<T = object> extends Job<T> {
 
 export interface JobInsert<T = object> {
   id?: string;
+  name: string;
   data?: T;
   priority?: number;
   retryLimit?: number;

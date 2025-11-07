@@ -1,5 +1,5 @@
 import assert from 'node:assert'
-import PgBoss from '../src/index.ts'
+import { PgBoss } from '../src/index.ts'
 import { getDb } from './testHelper.ts'
 import Contractor from '../src/contractor.ts'
 import { getAll } from '../src/migrationStore.ts'
@@ -65,7 +65,7 @@ describe('migration', function () {
     this.boss = new PgBoss(config)
 
     assert.rejects(async () => {
-      await this.boss!.start()
+      await this.boss.start()
     })
   })
 
@@ -248,7 +248,7 @@ describe('migration', function () {
     const config = { ...this.bossConfig, migrate: false }
     this.boss = new PgBoss(config)
     assert.rejects(async () => {
-      await this.boss!.start()
+      await this.boss.start()
     })
   })
 
@@ -263,7 +263,7 @@ describe('migration', function () {
     this.boss = new PgBoss(config)
 
     assert.rejects(async () => {
-      await this.boss!.start()
+      await this.boss.start()
     })
   })
 

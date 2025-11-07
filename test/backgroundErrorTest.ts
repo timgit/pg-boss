@@ -1,5 +1,5 @@
 import assert, { strictEqual } from 'node:assert'
-import PgBoss from '../src/index.ts'
+import { PgBoss } from '../src/index.ts'
 import { delay } from '../src/tools.ts'
 
 describe('background processing error handling', function () {
@@ -62,7 +62,7 @@ describe('background processing error handling', function () {
     await this.boss.start()
 
     assert.rejects(async () => {
-      await this.boss!.stop({ wait: false })
+      await this.boss.stop({ wait: false })
     })
   })
 })

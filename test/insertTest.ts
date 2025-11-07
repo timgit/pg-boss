@@ -1,10 +1,11 @@
 import assert from 'node:assert'
 import { randomUUID } from 'node:crypto'
 import * as helper from './testHelper.ts'
+import { type PgBoss } from '../src/index.ts'
 
 describe('insert', function () {
   it('should create jobs from an array with name only', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     const input = [{ name: this.schema }, { name: this.schema }, { name: this.schema }]
 
@@ -16,7 +17,7 @@ describe('insert', function () {
   })
 
   it('should create jobs from an array with all properties', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     const deadLetter = `${this.schema}_dlq`
     await this.boss.createQueue(deadLetter)
@@ -60,7 +61,7 @@ describe('insert', function () {
   })
 
   it('should create jobs from an array with all properties and custom connection', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     const deadLetter = `${this.schema}_dlq`
     await this.boss.createQueue(deadLetter)

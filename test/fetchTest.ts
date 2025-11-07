@@ -1,17 +1,18 @@
 import assert from 'node:assert'
 import * as helper from './testHelper.ts'
+import { type PgBoss } from '../src/index.ts'
 
 describe('fetch', function () {
   it('should reject missing queue argument', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     assert.rejects(async () => {
-      await this.boss!.fetch()
+      await this.boss.fetch()
     })
   })
 
   it('should fetch a job by name manually', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     await this.boss.send(this.schema)
     const [job] = await this.boss.fetch(this.schema)
@@ -21,7 +22,7 @@ describe('fetch', function () {
   })
 
   it('should get a batch of jobs as an array', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    this.boss = await helper.start(this.bossConfig) as PgBoss
     const batchSize = 4
 
     await Promise.all([
@@ -39,7 +40,7 @@ describe('fetch', function () {
   })
 
   it('should fetch all metadata for a single job when requested', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     await this.boss.send(this.schema)
     const [job] = await this.boss.fetch(this.schema, { includeMetadata: true })
@@ -67,7 +68,7 @@ describe('fetch', function () {
   })
 
   it('should fetch all metadata for a batch of jobs when requested', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    this.boss = await helper.start(this.bossConfig) as PgBoss
     const batchSize = 4
 
     await Promise.all([
@@ -102,7 +103,7 @@ describe('fetch', function () {
   })
 
   it('should fetch all metadata for a single job with exponential backoff when requested', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     await this.boss.send(this.schema, null, { retryLimit: 1, retryDelay: 1, retryBackoff: true, retryDelayMax: 10 })
     const [job] = await this.boss.fetch(this.schema, { includeMetadata: true })
@@ -127,7 +128,7 @@ describe('fetch', function () {
   })
 
   it('should fetch all metadata for a batch of jobs with exponential backoff when requested', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    this.boss = await helper.start(this.bossConfig) as PgBoss
     const options = { retryDelay: 1, retryBackoff: true, retryDelayMax: 10 }
     const batchSize = 4
 
@@ -165,7 +166,7 @@ describe('fetch', function () {
   })
 
   it('should fetch a job with custom connection', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     let calledCounter = 0
     const db = await helper.getDb()
@@ -186,7 +187,7 @@ describe('fetch', function () {
   })
 
   it('should allow fetching jobs that have a start_after in the future', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     await this.boss.send(this.schema, { startAfter: new Date(Date.now() + 1000) })
     const db = await helper.getDb()

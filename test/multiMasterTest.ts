@@ -1,6 +1,6 @@
 import assert from 'node:assert'
 import { getDb } from './testHelper.ts'
-import PgBoss from '../src/index.ts'
+import { PgBoss } from '../src/index.ts'
 import Contractor from '../src/contractor.ts'
 import { getAll } from '../src/migrationStore.ts'
 import packageJson from '../package.json' with { type: 'json' }

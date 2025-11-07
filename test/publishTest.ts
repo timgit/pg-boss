@@ -1,43 +1,44 @@
 import assert from 'node:assert'
 import * as helper from './testHelper.ts'
+import { type PgBoss } from '../src/index.ts'
 
 describe('pubsub', function () {
   it('should fail with no arguments', async function () {
-    this.boss = await helper.start({ ...this.bossConfig })
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     assert.rejects(async () => {
-      await this.boss!.publish()
+      await this.boss.publish()
     })
   })
 
   it('should fail with a function for data', async function () {
-    this.boss = await helper.start({ ...this.bossConfig })
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     assert.rejects(async () => {
-      await this.boss!.publish(this.schema, () => true)
+      await this.boss.publish(this.schema, () => true)
     })
   })
 
   it('should fail with a function for options', async function () {
-    this.boss = await helper.start({ ...this.bossConfig })
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     assert.rejects(async () => {
-      await this.boss!.publish(this.schema, 'data', () => true)
+      await this.boss.publish(this.schema, 'data', () => true)
     })
   })
 
   it('should accept single string argument', async function () {
-    this.boss = await helper.start({ ...this.bossConfig })
+    this.boss = await helper.start(this.bossConfig) as PgBoss
     await this.boss.publish(this.schema)
   })
 
   it('should accept job object argument with only name', async function () {
-    this.boss = await helper.start({ ...this.bossConfig })
+    this.boss = await helper.start(this.bossConfig) as PgBoss
     await this.boss.publish(this.schema)
   })
 
   it('should not send to the same named queue', async function () {
-    this.boss = await helper.start({ ...this.bossConfig })
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     const message = 'hi'
 
@@ -49,7 +50,7 @@ describe('pubsub', function () {
   })
 
   it('should use subscriptions to map to a single queue', async function () {
-    this.boss = await helper.start({ ...this.bossConfig })
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     const event = 'event'
     const message = 'hi'
@@ -87,18 +88,18 @@ describe('pubsub', function () {
 })
 
 it('should fail if unsubscribe is called without args', async function () {
-  this.boss = await helper.start(this.bossConfig)
+  this.boss = await helper.start(this.bossConfig) as PgBoss
 
   assert.rejects(async () => {
-    await this.boss!.unsubscribe()
+    await this.boss.unsubscribe()
   })
 })
 
 it('should fail if unsubscribe is called without both args', async function () {
-  this.boss = await helper.start(this.bossConfig)
+  this.boss = await helper.start(this.bossConfig) as PgBoss
 
   assert.rejects(async () => {
-    await this.boss!.unsubscribe('foo')
+    await this.boss.unsubscribe('foo')
   })
 })
 

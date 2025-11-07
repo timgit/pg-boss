@@ -2,13 +2,14 @@ import assert from 'node:assert'
 import * as helper from './testHelper.ts'
 import { states } from '../src/index.ts'
 import type { TestContext } from './hooks.ts'
+import { type PgBoss } from '../src/index.ts'
 
 describe('complete', function () {
   it('should reject missing id argument', async function (this: TestContext) {
-    this.boss = await helper.start(this.bossConfig)
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     assert.rejects(async () => {
-      await this.boss!.complete(this.schema)
+      await this.boss.complete(this.schema)
     })
   })
 

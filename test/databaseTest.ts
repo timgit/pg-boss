@@ -1,5 +1,5 @@
 import assert from 'node:assert'
-import PgBoss from '../src/index.ts'
+import { PgBoss } from '../src/index.ts'
 
 describe('database', function () {
   it('should fail on invalid database host', async function () {

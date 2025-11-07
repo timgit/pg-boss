@@ -1,8 +1,9 @@
 import * as helper from './testHelper.ts'
+import { type PgBoss } from '../src/index.ts'
 
 describe('error', function () {
   it('should handle an error in a worker and not blow up', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     let processCount = 0
 

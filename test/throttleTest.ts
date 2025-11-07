@@ -99,7 +99,7 @@ describe('throttle', function () {
   })
 
   it('should not allow more than 1 complete job with the same key with an interval', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     const singletonKey = 'a'
     const singletonSeconds = 60

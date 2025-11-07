@@ -3,7 +3,7 @@ import * as helper from './testHelper.ts'
 
 describe('priority', function () {
   it('higher priority job', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     await this.boss.send(this.schema)
 

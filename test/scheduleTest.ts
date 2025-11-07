@@ -2,7 +2,7 @@ import { delay } from '../src/tools.ts'
 import assert from 'node:assert'
 import { DateTime } from 'luxon'
 import * as helper from './testHelper.ts'
-import PgBoss from '../src/index.ts'
+import { PgBoss } from '../src/index.ts'
 
 describe('schedule', function () {
   it('should send job based on every minute expression', async function () {

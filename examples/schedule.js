@@ -1,4 +1,4 @@
-import PgBoss from '../dist/index.mjs'
+import { PgBoss } from '../dist/index.mjs'
 import * as helper from '../test/testHelper.js'
 
 async function schedule () {

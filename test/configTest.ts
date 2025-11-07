@@ -1,6 +1,6 @@
 import assert from 'node:assert'
 import Db from '../src/db.ts'
-import PgBoss from '../src/index.ts'
+import { PgBoss } from '../src/index.ts'
 import * as helper from './testHelper.ts'
 import packageJson from '../package.json' with { type: 'json' }
 

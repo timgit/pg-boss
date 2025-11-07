@@ -1,10 +1,11 @@
 import assert from 'node:assert'
 import * as helper from './testHelper.ts'
 import type { TestContext } from './hooks.ts'
+import { type PgBoss } from '../src/index.ts'
 
 describe('cancel', function () {
   it('should reject missing arguments', async function (this: TestContext) {
-    this.boss = await helper.start(this.bossConfig)
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     assert.rejects(async () => {
       await this.boss.cancel(null as any, null as any)

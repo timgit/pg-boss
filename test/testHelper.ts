@@ -1,5 +1,5 @@
 import Db from '../src/db.ts'
-import PgBoss from '../src/index.ts'
+import { PgBoss } from '../src/index.ts'
 import crypto from 'node:crypto'
 import configJson from './config.json' with { type: 'json' }
 import type { ConstructorOptions } from '../src/types.ts'

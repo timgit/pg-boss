@@ -3,7 +3,7 @@ import * as helper from './testHelper.ts'
 
 describe('cancel', function () {
   it('should reject missing id argument', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    this.boss = await helper.start(this.bossConfig) as PgBoss
 
     assert.rejects(async () => {
       await this.boss.resume()

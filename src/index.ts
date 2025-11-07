@@ -9,12 +9,27 @@ import { delay } from './tools.ts'
 import type * as types from './types.ts'
 import DbDefault from './db.ts'
 
-const events = {
+export const states: types.JobStates = plans.JOB_STATES
+export const policies: types.QueuePolicies = plans.QUEUE_POLICIES
+export const events: types.Events = {
   error: 'error',
+  warning: 'warning',
+  wip: 'wip',
   stopped: 'stopped'
 } as const
 
-class PgBoss extends EventEmitter<types.PgBossEventMap> {
+export function getConstructionPlans (schema?: string) {
+  return Contractor.constructionPlans(schema)
+}
+
+export function getMigrationPlans (schema?: string, version?: number) {
+  return Contractor.migrationPlans(schema, version)
+}
+
+export function getRollbackPlans (schema?: string, version?: number) {
+  return Contractor.rollbackPlans(schema, version)
+}
+export class PgBoss extends EventEmitter<types.PgBossEventMap> {
   #stoppingOn: number | null
   #stopped: boolean
   #starting: boolean | undefined
@@ -25,6 +40,7 @@ class PgBoss extends EventEmitter<types.PgBossEventMap> {
   #contractor: Contractor
   #manager: Manager
   #timekeeper: Timekeeper
+  #events: { readonly error: 'error'; readonly stopped: 'stopped' }
 
   constructor (connectionString: string)
   constructor (options: types.ConstructorOptions)
@@ -60,6 +76,11 @@ class PgBoss extends EventEmitter<types.PgBossEventMap> {
     this.#contractor = contractor
     this.#manager = manager
     this.#timekeeper = timekeeper
+
+    this.#events = {
+      error: 'error',
+      stopped: 'stopped'
+    } as const
   }
 
   #promoteEvents (emitter: types.EventsMixin) {
@@ -67,8 +88,6 @@ class PgBoss extends EventEmitter<types.PgBossEventMap> {
       emitter.on(event, arg => this.emit(event, arg))
     }
   }
-
-  // Public API
 
   static getConstructionPlans (schema?: string) {
     return Contractor.constructionPlans(schema)
@@ -151,10 +170,10 @@ class PgBoss extends EventEmitter<types.PgBossEventMap> {
           this.#stoppingOn = null
           this.#started = false
 
-          this.emit(events.stopped)
+          this.emit(this.#events.stopped)
           resolve()
         } catch (err: any) {
-          this.emit(events.error, err)
+          this.emit(this.#events.error, err)
           reject(err)
         }
       }
@@ -182,7 +201,7 @@ class PgBoss extends EventEmitter<types.PgBossEventMap> {
           await shutdown()
         } catch (err: any) {
           reject(err)
-          this.emit(events.error, err)
+          this.emit(this.#events.error, err)
         }
       })
     })
@@ -349,11 +368,6 @@ class PgBoss extends EventEmitter<types.PgBossEventMap> {
   }
 }
 
-export default PgBoss
-
-export const states = PgBoss.states
-export const policies = PgBoss.policies
-
 export type {
   ConnectionOptions,
   ConstructorOptions,
@@ -364,6 +378,7 @@ export type {
   JobInsert,
   JobPollingOptions,
   JobStates,
+  Events,
   JobWithMetadata,
   MaintenanceOptions,
   OffWorkOptions,
