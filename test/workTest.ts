@@ -1,37 +1,33 @@
 import { delay } from '../src/tools.ts'
 import assert from 'node:assert'
 import * as helper from './testHelper.ts'
-import { type PgBoss } from '../src/index.ts'
+import { JobWithMetadata, type PgBoss } from '../src/index.ts'
 
 describe('work', function () {
   it('should fail with no arguments', async function () {
-    this.boss = await helper.start(this.bossConfig) as PgBoss
-
     assert.rejects(async () => {
+      this.boss = await helper.start(this.bossConfig) as PgBoss
       await this.boss.work()
     })
   })
 
   it('should fail if no callback provided', async function () {
-    this.boss = await helper.start(this.bossConfig) as PgBoss
-
     assert.rejects(async () => {
+      this.boss = await helper.start(this.bossConfig) as PgBoss
       await this.boss.work('foo')
     })
   })
 
   it('should fail if options is not an object', async function () {
-    this.boss = await helper.start(this.bossConfig) as PgBoss
-
     assert.rejects(async () => {
-      await this.boss.work('foo', () => {}, 'nope')
+      this.boss = await helper.start(this.bossConfig) as PgBoss
+      await this.boss.work('foo', async () => {}, 'nope')
     })
   })
 
   it('offWork should fail without a name', async function () {
-    this.boss = await helper.start(this.bossConfig) as PgBoss
-
     assert.rejects(async () => {
+      this.boss = await helper.start(this.bossConfig) as PgBoss
       await this.boss.offWork()
     })
   })
@@ -64,7 +60,7 @@ describe('work', function () {
 
     await this.boss.send(this.schema)
 
-    const workerId = await this.boss.work(this.schema, { pollingIntervalSeconds: 5 }, () => processCount++)
+    const workerId = await this.boss.work(this.schema, { pollingIntervalSeconds: 5 }, async () => processCount++)
 
     await delay(500)
 
@@ -86,7 +82,7 @@ describe('work', function () {
 
     this.boss.work(this.schema, async () => {
       receivedCount++
-      await this.boss.offWork(this.schema)
+      await this.boss!.offWork(this.schema)
     })
 
     await this.boss.send(this.schema)
@@ -107,7 +103,7 @@ describe('work', function () {
 
     const id = await this.boss.work(this.schema, { pollingIntervalSeconds: 0.5 }, async () => {
       receivedCount++
-      await this.boss.offWork({ id })
+      await this.boss!.offWork({ id })
     })
 
     await delay(2000)
@@ -125,7 +121,7 @@ describe('work', function () {
     }
 
     return new Promise((resolve) => {
-      this.boss.work(this.schema, { batchSize }, async jobs => {
+      this.boss!.work(this.schema, { batchSize }, async jobs => {
         assert.strictEqual(jobs.length, batchSize)
         resolve()
       })
@@ -138,7 +134,7 @@ describe('work', function () {
     const jobId = await this.boss.send(this.schema)
 
     await new Promise((resolve) => {
-      this.boss.work(this.schema, { batchSize: 1 }, async jobs => {
+      this.boss!.work(this.schema, { batchSize: 1 }, async jobs => {
         assert.strictEqual(jobs.length, 1)
         resolve()
       })
@@ -146,9 +142,9 @@ describe('work', function () {
 
     await delay(500)
 
-    const job = await this.boss.getJobById(this.schema, jobId)
+    const job = await this.boss.getJobById(this.schema, jobId!)
 
-    assert.strictEqual(job.state, 'completed')
+    assert.strictEqual(job!.state, 'completed')
   })
 
   it('returning promise applies backpressure', async function () {
@@ -183,10 +179,10 @@ describe('work', function () {
 
     await delay(1000)
 
-    const job = await this.boss.getJobById(this.schema, jobId)
+    const job = await this.boss.getJobById(this.schema, jobId!)
 
-    assert.strictEqual(job.state, 'completed')
-    assert.strictEqual(job.output.value, result)
+    assert.strictEqual(job!.state, 'completed')
+    assert.strictEqual(job!.output.value, result)
   })
 
   it('handler result should be stored in output', async function () {
@@ -198,10 +194,10 @@ describe('work', function () {
 
     await delay(1000)
 
-    const job = await this.boss.getJobById(this.schema, jobId)
+    const job = await this.boss.getJobById(this.schema, jobId!)
 
-    assert.strictEqual(job.state, 'completed')
-    assert.strictEqual(job.output.something, something)
+    assert.strictEqual(job!.state, 'completed')
+    assert.strictEqual(job!.output.something, something)
   })
 
   it('job cab be deleted in handler', async function () {
@@ -230,7 +226,7 @@ describe('work', function () {
     await this.boss.send(this.schema)
 
     return new Promise((resolve) => {
-      this.boss.work(this.schema, { includeMetadata: true }, async ([job]) => {
+      this.boss!.work(this.schema, { includeMetadata: true }, async ([job]) => {
         assert(job.startedOn !== undefined)
         resolve()
       })
@@ -262,8 +258,8 @@ describe('work', function () {
 
     await delay(2000)
 
-    const job1 = await this.boss.getJobById(this.schema, jobId1)
-    const job2 = await this.boss.getJobById(this.schema, jobId2)
+    const job1 = await this.boss.getJobById(this.schema, jobId1!) as JobWithMetadata
+    const job2 = await this.boss.getJobById(this.schema, jobId2!) as JobWithMetadata
 
     assert.strictEqual(job1.state, 'failed')
     assert(job1.output.message.includes('handler execution exceeded'))
@@ -275,7 +271,7 @@ describe('work', function () {
   it('should emit wip event every 2s for workers', async function () {
     this.boss = await helper.start(this.bossConfig) as PgBoss
 
-    const firstWipEvent = new Promise(resolve => this.boss.once('wip', resolve))
+    const firstWipEvent = new Promise(resolve => this.boss!.once('wip', resolve))
 
     await this.boss.send(this.schema)
 
@@ -287,7 +283,7 @@ describe('work', function () {
 
     assert.strictEqual(wip1.length, 1)
 
-    const secondWipEvent = new Promise(resolve => this.boss.once('wip', resolve))
+    const secondWipEvent = new Promise(resolve => this.boss!.once('wip', resolve))
 
     const wip2 = await secondWipEvent
 
@@ -300,7 +296,7 @@ describe('work', function () {
     await this.boss.stop({ wait: true })
 
     assert.rejects(async () => {
-      await this.boss.work(this.schema, async () => {})
+      await this.boss!.work(this.schema, async () => {})
     })
   })
 

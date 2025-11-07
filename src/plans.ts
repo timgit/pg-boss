@@ -702,7 +702,6 @@ function insertJobs (schema: string, { table, name, returnId = true }: InsertJob
           END as start_after
       FROM json_to_recordset($1::json) as x (
         id uuid,
-        name text,
         priority integer,
         data jsonb,
         "startAfter" text,

@@ -4,10 +4,10 @@ import * as helper from './testHelper.ts'
 import { type PgBoss } from '../src/index.ts'
 
 describe('insert', function () {
-  it('should create jobs from an array with name only', async function () {
+  it('should create jobs from an array', async function () {
     this.boss = await helper.start(this.bossConfig) as PgBoss
 
-    const input = [{ name: this.schema }, { name: this.schema }, { name: this.schema }]
+    const input = [{}, {}, {}]
 
     await this.boss.insert(this.schema, input)
 
@@ -25,7 +25,6 @@ describe('insert', function () {
 
     const input = {
       id: randomUUID(),
-      name: this.schema,
       priority: 1,
       data: { some: 'data' },
       retryLimit: 1,
@@ -46,7 +45,6 @@ describe('insert', function () {
     const job = await this.boss.getJobById(this.schema, input.id)
 
     assert.strictEqual(job.id, input.id, `id input ${input.id} didn't match job ${job.id}`)
-    assert.strictEqual(job.name, input.name, `name input ${input.name} didn't match job ${job.name}`)
     assert.strictEqual(job.priority, input.priority, `priority input ${input.priority} didn't match job ${job.priority}`)
     assert.strictEqual(JSON.stringify(job.data), JSON.stringify(input.data), `data input ${input.data} didn't match job ${job.data}`)
     assert.strictEqual(job.retryLimit, input.retryLimit, `retryLimit input ${input.retryLimit} didn't match job ${job.retryLimit}`)
@@ -69,7 +67,6 @@ describe('insert', function () {
 
     const input = {
       id: randomUUID(),
-      name: this.schema,
       priority: 1,
       data: { some: 'data' },
       retryLimit: 1,
@@ -101,7 +98,6 @@ describe('insert', function () {
     const job = await this.boss.getJobById(this.schema, input.id)
 
     assert.strictEqual(job.id, input.id, `id input ${input.id} didn't match job ${job.id}`)
-    assert.strictEqual(job.name, input.name, `name input ${input.name} didn't match job ${job.name}`)
     assert.strictEqual(job.priority, input.priority, `priority input ${input.priority} didn't match job ${job.priority}`)
     assert.strictEqual(JSON.stringify(job.data), JSON.stringify(input.data), `data input ${input.data} didn't match job ${job.data}`)
     assert.strictEqual(job.retryLimit, input.retryLimit, `retryLimit input ${input.retryLimit} didn't match job ${job.retryLimit}`)

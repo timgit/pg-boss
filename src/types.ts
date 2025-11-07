@@ -221,7 +221,6 @@ export interface JobWithMetadata<T = object> extends Job<T> {
 
 export interface JobInsert<T = object> {
   id?: string;
-  name: string;
   data?: T;
   priority?: number;
   retryLimit?: number;

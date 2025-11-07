@@ -1,4 +1,4 @@
-import type PgBoss from '../src/index.ts'
+import { type PgBoss } from '../src/index.ts'
 import type { ConstructorOptions } from '../src/types.ts'
 
 // Extend Mocha's interfaces to include custom properties directly on 'this'
