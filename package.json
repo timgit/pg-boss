@@ -38,7 +38,7 @@
     "build": "tsdown",
     "postbuild": "node scripts/cjs-shim.js",
     "prepublishOnly": "npm test && npm run build",
-    "test": "eslint . && mocha",
+    "test": "eslint . && mocha test/**/*.ts",
     "cover": "nyc npm test",
     "tsc": "tsc --noEmit",
     "readme": "node ./examples/readme.js",
@@ -58,8 +58,7 @@
     ],
     "node-option": [
       "import=tsx"
-    ],
-    "spec": "test/**/*.ts"
+    ]
   },
   "nyc": {
     "extends": "@istanbuljs/nyc-config-typescript",
