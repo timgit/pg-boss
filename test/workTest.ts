@@ -6,45 +6,33 @@ describe('work', function () {
   it('should fail with no arguments', async function () {
     this.boss = await helper.start(this.bossConfig)
 
-    try {
-      await this.boss.work()
-      assert(false)
-    } catch (err) {
-      assert(err)
-    }
+    assert.rejects(async () => {
+      await this.boss!.work()
+    })
   })
 
   it('should fail if no callback provided', async function () {
     this.boss = await helper.start(this.bossConfig)
 
-    try {
-      await this.boss.work('foo')
-      assert(false)
-    } catch (err) {
-      assert(err)
-    }
+    assert.rejects(async () => {
+      await this.boss!.work('foo')
+    })
   })
 
   it('should fail if options is not an object', async function () {
     this.boss = await helper.start(this.bossConfig)
 
-    try {
-      await this.boss.work('foo', () => {}, 'nope')
-      assert(false)
-    } catch (err) {
-      assert(err)
-    }
+    assert.rejects(async () => {
+      await this.boss!.work('foo', () => {}, 'nope')
+    })
   })
 
   it('offWork should fail without a name', async function () {
     this.boss = await helper.start(this.bossConfig)
 
-    try {
-      await this.boss.offWork()
-      assert(false)
-    } catch (err) {
-      assert(err)
-    }
+    assert.rejects(async () => {
+      await this.boss!.offWork()
+    })
   })
 
   it('should honor a custom polling interval', async function () {
@@ -59,7 +47,9 @@ describe('work', function () {
       await this.boss.send(this.schema)
     }
 
-    await this.boss.work(this.schema, { pollingIntervalSeconds }, () => processCount++)
+    await this.boss!.work(this.schema, { pollingIntervalSeconds }, async () => {
+      processCount++
+    })
 
     await delay(timeout)
 
@@ -229,8 +219,8 @@ describe('work', function () {
   it('should allow multiple workers to the same this.schema per instance', async function () {
     this.boss = await helper.start(this.bossConfig)
 
-    await this.boss.work(this.schema, () => {})
-    await this.boss.work(this.schema, () => {})
+    await this.boss.work(this.schema, async () => {})
+    await this.boss.work(this.schema, async () => {})
   })
 
   it('should honor the includeMetadata option', async function () {
@@ -239,7 +229,7 @@ describe('work', function () {
     await this.boss.send(this.schema)
 
     return new Promise((resolve) => {
-      this.boss.work(this.schema, { includeMetadata: true }, async ([job]) => {
+      this.boss!.work(this.schema, { includeMetadata: true }, async ([job]) => {
         assert(job.startedOn !== undefined)
         resolve()
       })
@@ -255,10 +245,10 @@ describe('work', function () {
 
     await delay(2000)
 
-    const job = await this.boss.getJobById(this.schema, jobId)
+    const job = await this.boss.getJobById(this.schema, jobId!)
 
-    assert.strictEqual(job.state, 'failed')
-    assert(job.output.message.includes('handler execution exceeded'))
+    assert.strictEqual(job!.state, 'failed')
+    assert(job!.output!.message!.includes('handler execution exceeded'))
   })
 
   it('should fail a batch of jobs at expiration in worker', async function () {
@@ -296,7 +286,7 @@ describe('work', function () {
 
     assert.strictEqual(wip1.length, 1)
 
-    const secondWipEvent = new Promise(resolve => this.boss.once('wip', resolve))
+    const secondWipEvent = new Promise(resolve => this.boss!.once('wip', resolve))
 
     const wip2 = await secondWipEvent
 
@@ -308,12 +298,9 @@ describe('work', function () {
 
     await this.boss.stop({ wait: true })
 
-    try {
-      await this.boss.work(this.schema, () => {})
-      assert(false)
-    } catch (err) {
-      assert(true)
-    }
+    assert.rejects(async () => {
+      await this.boss!.work(this.schema, async () => {})
+    })
   })
 
   it('should allow send() after stopping', async function () {

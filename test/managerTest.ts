@@ -10,11 +10,8 @@ describe('manager', function () {
 
     await delay(2000)
 
-    try {
-      await this.boss.start()
-      assert(false)
-    } catch (error) {
-      assert(true)
-    }
+    assert.rejects(async () => {
+      await this.boss!.start()
+    })
   })
 })

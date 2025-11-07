@@ -5,12 +5,9 @@ describe('fetch', function () {
   it('should reject missing queue argument', async function () {
     this.boss = await helper.start(this.bossConfig)
 
-    try {
-      await this.boss.fetch()
-      assert(false)
-    } catch (err) {
-      assert(err)
-    }
+    assert.rejects(async () => {
+      await this.boss!.fetch()
+    })
   })
 
   it('should fetch a job by name manually', async function () {

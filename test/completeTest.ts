@@ -7,12 +7,9 @@ describe('complete', function () {
   it('should reject missing id argument', async function (this: TestContext) {
     this.boss = await helper.start(this.bossConfig)
 
-    try {
-      await this.boss.complete(null as any, null as any)
-      assert(false)
-    } catch (err) {
-      assert(err)
-    }
+    assert.rejects(async () => {
+      await this.boss!.complete(this.schema)
+    })
   })
 
   it('should complete a batch of jobs', async function (this: TestContext) {

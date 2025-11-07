@@ -25,30 +25,24 @@ describe('migration', function () {
   it('should fail to export migration using current version', function () {
     const schema = 'custom'
 
-    try {
+    assert.throws(() => {
       PgBoss.getMigrationPlans(schema, currentSchemaVersion)
-      assert(false, 'migration plans should fail on current version')
-    } catch {
-      assert(true)
-    }
+    })
   })
 
   it('should export commands to migrate', function () {
     const schema = 'custom'
     const plans = PgBoss.getMigrationPlans(schema, currentSchemaVersion - 1)
 
-    assert(plans, 'migration plans not found')
+    assert(plans)
   })
 
   it('should fail to export commands to roll back from invalid version', function () {
     const schema = 'custom'
 
-    try {
+    assert.throws(() => {
       PgBoss.getRollbackPlans(schema, -1)
-      assert(false, 'migration plans should fail on current version')
-    } catch {
-      assert(true)
-    }
+    })
   })
 
   it('should export commands to roll back', function () {
@@ -70,12 +64,9 @@ describe('migration', function () {
 
     this.boss = new PgBoss(config)
 
-    try {
-      await this.boss.start()
-      assert(false)
-    } catch {
-      assert(true)
-    }
+    assert.rejects(async () => {
+      await this.boss!.start()
+    })
   })
 
   it.skip('should migrate to previous version and back again', async function () {
@@ -256,12 +247,9 @@ describe('migration', function () {
   it('should not install if migrate option is false', async function () {
     const config = { ...this.bossConfig, migrate: false }
     this.boss = new PgBoss(config)
-    try {
-      await this.boss.start()
-      assert(false)
-    } catch (err) {
-      assert(true)
-    }
+    assert.rejects(async () => {
+      await this.boss!.start()
+    })
   })
 
   it('should not migrate if migrate option is false', async function () {
@@ -274,12 +262,9 @@ describe('migration', function () {
     const config = { ...this.bossConfig, migrate: false }
     this.boss = new PgBoss(config)
 
-    try {
-      await this.boss.start()
-      assert(false)
-    } catch (err) {
-      assert(true)
-    }
+    assert.rejects(async () => {
+      await this.boss!.start()
+    })
   })
 
   it('should still work if migrate option is false', async function () {
@@ -291,15 +276,10 @@ describe('migration', function () {
 
     this.boss = new PgBoss(config)
 
-    try {
-      await this.boss.start()
-      await this.boss.send(this.schema)
-      const [job] = await this.boss.fetch(this.schema)
-      await this.boss.complete(this.schema, job.id)
-
-      assert(false)
-    } catch (err) {
-      assert(true)
-    }
+    await this.boss.start()
+    await this.boss.createQueue(this.schema)
+    await this.boss.send(this.schema)
+    const [job] = await this.boss.fetch(this.schema)
+    await this.boss.complete(this.schema, job.id)
   })
 })

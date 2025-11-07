@@ -6,34 +6,25 @@ describe('send', function () {
   it('should fail with no arguments', async function (this: TestContext) {
     this.boss = await helper.start(this.bossConfig)
 
-    try {
-      await this.boss.send()
-      assert(false)
-    } catch (err) {
-      assert(err)
-    }
+    assert.rejects(async () => {
+      await this.boss!.send()
+    })
   })
 
   it('should fail with a function for data', async function () {
     this.boss = await helper.start(this.bossConfig)
 
-    try {
-      await this.boss.send('job', () => true)
-      assert(false)
-    } catch (err) {
-      assert(err)
-    }
+    assert.rejects(async () => {
+      await this.boss!.send('job', () => true)
+    })
   })
 
   it('should fail with a function for options', async function () {
     this.boss = await helper.start(this.bossConfig)
 
-    try {
-      await this.boss.send('job', 'data', () => true)
-      assert(false)
-    } catch (err) {
-      assert(err)
-    }
+    assert.rejects(async () => {
+      await this.boss!.send('job', 'data', () => true)
+    })
   })
 
   it('should accept single string argument', async function () {

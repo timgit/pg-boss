@@ -6,12 +6,9 @@ describe('cancel', function () {
   it('should reject missing arguments', async function (this: TestContext) {
     this.boss = await helper.start(this.bossConfig)
 
-    try {
+    assert.rejects(async () => {
       await this.boss.cancel(null as any, null as any)
-      assert(false)
-    } catch (err) {
-      assert(err)
-    }
+    })
   })
 
   it('should cancel a pending job', async function (this: TestContext) {

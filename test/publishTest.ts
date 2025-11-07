@@ -5,34 +5,25 @@ describe('pubsub', function () {
   it('should fail with no arguments', async function () {
     this.boss = await helper.start({ ...this.bossConfig })
 
-    try {
-      await this.boss.publish()
-      assert(false)
-    } catch (err) {
-      assert(err)
-    }
+    assert.rejects(async () => {
+      await this.boss!.publish()
+    })
   })
 
   it('should fail with a function for data', async function () {
     this.boss = await helper.start({ ...this.bossConfig })
 
-    try {
-      await this.boss.publish(this.schema, () => true)
-      assert(false)
-    } catch (err) {
-      assert(err)
-    }
+    assert.rejects(async () => {
+      await this.boss!.publish(this.schema, () => true)
+    })
   })
 
   it('should fail with a function for options', async function () {
     this.boss = await helper.start({ ...this.bossConfig })
 
-    try {
-      await this.boss.publish(this.schema, 'data', () => true)
-      assert(false)
-    } catch (err) {
-      assert(err)
-    }
+    assert.rejects(async () => {
+      await this.boss!.publish(this.schema, 'data', () => true)
+    })
   })
 
   it('should accept single string argument', async function () {
@@ -98,23 +89,17 @@ describe('pubsub', function () {
 it('should fail if unsubscribe is called without args', async function () {
   this.boss = await helper.start(this.bossConfig)
 
-  try {
-    await this.boss.unsubscribe()
-    assert(false)
-  } catch (err) {
-    assert(err)
-  }
+  assert.rejects(async () => {
+    await this.boss!.unsubscribe()
+  })
 })
 
 it('should fail if unsubscribe is called without both args', async function () {
   this.boss = await helper.start(this.bossConfig)
 
-  try {
-    await this.boss.unsubscribe('foo')
-    assert(false)
-  } catch (err) {
-    assert(err)
-  }
+  assert.rejects(async () => {
+    await this.boss!.unsubscribe('foo')
+  })
 })
 
 it('unsubscribe works', async function () {

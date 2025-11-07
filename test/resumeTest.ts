@@ -5,12 +5,9 @@ describe('cancel', function () {
   it('should reject missing id argument', async function () {
     this.boss = await helper.start(this.bossConfig)
 
-    try {
+    assert.rejects(async () => {
       await this.boss.resume()
-      assert(false)
-    } catch (err) {
-      assert(err)
-    }
+    })
   })
 
   it('should cancel and resume a pending job', async function () {

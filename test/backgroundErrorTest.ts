@@ -61,11 +61,8 @@ describe('background processing error handling', function () {
 
     await this.boss.start()
 
-    try {
-      await this.boss.stop({ wait: false })
-      assert(false)
-    } catch (err) {
-      assert(true)
-    }
+    assert.rejects(async () => {
+      await this.boss!.stop({ wait: false })
+    })
   })
 })

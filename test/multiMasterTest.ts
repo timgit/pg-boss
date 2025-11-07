@@ -10,20 +10,15 @@ const currentSchemaVersion = packageJson.pgboss.schema
 describe('multi-master', function () {
   it('should only allow 1 master to start at a time', async function () {
     const replicaCount = 20
-    const config = { ...this.bossConfig, supervise: false, max: 2 }
+    const config = { ...this.bossConfig, supervise: true, max: 2 }
     const instances = []
 
     for (let i = 0; i < replicaCount; i++) {
       instances.push(new PgBoss(config))
     }
 
-    try {
-      await Promise.all(instances.map(i => i.start()))
-    } catch (err) {
-      assert(false, err.message)
-    } finally {
-      await Promise.all(instances.map(i => i.stop({ graceful: false, wait: false })))
-    }
+    await Promise.all(instances.map(i => i.start()))
+    await Promise.all(instances.map(i => i.stop({ graceful: false, wait: false })))
   })
 
   it.skip('should only allow 1 master to migrate to latest at a time', async function () {
@@ -54,12 +49,7 @@ describe('multi-master', function () {
       instances.push(new PgBoss(config))
     }
 
-    try {
-      await Promise.all(instances.map(i => i.start()))
-    } catch (err) {
-      assert(false)
-    } finally {
-      await Promise.all(instances.map(i => i.stop({ graceful: false, wait: false })))
-    }
+    await Promise.all(instances.map(i => i.start()))
+    await Promise.all(instances.map(i => i.stop({ graceful: false, wait: false })))
   })
 })

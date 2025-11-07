@@ -6,12 +6,9 @@ describe('failure', function () {
   it('should reject missing id argument', async function () {
     this.boss = await helper.start(this.bossConfig)
 
-    try {
-      await this.boss.fail()
-      assert(false)
-    } catch (err) {
-      assert(err)
-    }
+    assert.rejects(async () => {
+      await this.boss!.fail()
+    })
   })
 
   it('should fail a job when requested', async function () {

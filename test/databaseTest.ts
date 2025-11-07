@@ -5,12 +5,9 @@ describe('database', function () {
   it('should fail on invalid database host', async function () {
     const boss = new PgBoss('postgres://bobby:tables@wat:12345/northwind')
 
-    try {
+    assert.rejects(async () => {
       await boss.start()
-      assert(false)
-    } catch (err) {
-      assert(true)
-    }
+    })
   })
 
   it('can be swapped out via BYODB', async function () {

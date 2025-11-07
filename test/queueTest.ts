@@ -20,35 +20,26 @@ describe('queues', function () {
     this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
     const queue = `*${this.bossConfig.schema}`
 
-    try {
-      await this.boss.createQueue(queue)
-      assert(false)
-    } catch (err) {
-      assert(true)
-    }
+    assert.rejects(async () => {
+      await this.boss!.createQueue(queue)
+    })
   })
 
   it('should reject a queue that starts with a number', async function () {
     this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
     const queue = `4${this.bossConfig.schema}`
 
-    try {
-      await this.boss.createQueue(queue)
-      assert(false)
-    } catch (err) {
-      assert(true)
-    }
+    assert.rejects(async () => {
+      await this.boss!.createQueue(queue)
+    })
   })
 
   it('should reject a queue with invalid policy', async function () {
     this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
 
-    try {
-      await this.boss.createQueue(this.schema, { policy: 'something' })
-      assert(false)
-    } catch (err) {
-      assert(true)
-    }
+    assert.rejects(async () => {
+      await this.boss!.createQueue(this.schema, { policy: 'something' })
+    })
   })
 
   it('should create a queue with standard policy', async function () {
@@ -107,11 +98,9 @@ describe('queues', function () {
     await this.boss.createQueue(this.schema)
     await this.boss.send(this.schema)
 
-    try {
-      await this.boss.deleteQueue(this.schema)
-    } catch {
-      assert(false)
-    }
+    assert.rejects(async () => {
+      await this.boss!.deleteQueue(this.schema)
+    })
   })
 
   it('should delete all queued jobs from a queue', async function () {
@@ -225,12 +214,12 @@ describe('queues', function () {
 
     queueObj = await this.boss.getQueue(this.schema)
 
-    assert.strictEqual(updateProps.retryLimit, queueObj.retryLimit)
-    assert.strictEqual(updateProps.retryBackoff, queueObj.retryBackoff)
-    assert.strictEqual(updateProps.retryDelay, queueObj.retryDelay)
-    assert.strictEqual(updateProps.retryDelayMax, queueObj.retryDelayMax)
-    assert.strictEqual(updateProps.expireInSeconds, queueObj.expireInSeconds)
-    assert.strictEqual(updateProps.deadLetter, queueObj.deadLetter)
+    assert.strictEqual(updateProps.retryLimit, queueObj!.retryLimit)
+    assert.strictEqual(updateProps.retryBackoff, queueObj!.retryBackoff)
+    assert.strictEqual(updateProps.retryDelay, queueObj!.retryDelay)
+    assert.strictEqual(updateProps.retryDelayMax, queueObj!.retryDelayMax)
+    assert.strictEqual(updateProps.expireInSeconds, queueObj!.expireInSeconds)
+    assert.strictEqual(updateProps.deadLetter, queueObj!.deadLetter)
   })
 
   it('should fail to change queue policy', async function () {
@@ -238,23 +227,18 @@ describe('queues', function () {
 
     await this.boss.createQueue(this.schema, { policy: 'standard' })
 
-    try {
-      await this.boss.updateQueue(this.schema, { policy: 'exclusive' })
-      assert(false)
-    } catch (err) {
-      assert(true)
-    }
+    assert.rejects(async () => {
+      await this.boss!.updateQueue(this.schema, { policy: 'exclusive' })
+    })
   })
 
   it('should fail to change queue partitioning', async function () {
     this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
     await this.boss.createQueue(this.schema, { partition: true })
-    try {
-      await this.boss.updateQueue(this.schema, { partition: false })
-      assert(false)
-    } catch (err) {
-      assert(true)
-    }
+
+    assert.rejects(async () => {
+      await this.boss!.updateQueue(this.schema, { partition: false })
+    })
   })
 
   it('jobs should inherit properties from queue', async function () {
