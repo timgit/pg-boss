@@ -1,11 +1,10 @@
 import assert from 'node:assert'
 import * as helper from './testHelper.ts'
 import type { TestContext } from './hooks.ts'
-import { type PgBoss } from '../src/index.ts'
 
 describe('send', function () {
   it('should fail with no arguments', async function (this: TestContext) {
-    this.boss = await helper.start(this.bossConfig) as PgBoss
+    this.boss = await helper.start(this.bossConfig)
 
     await assert.rejects(async () => {
       await this.boss.send()
@@ -13,7 +12,7 @@ describe('send', function () {
   })
 
   it('should fail with a function for data', async function () {
-    this.boss = await helper.start(this.bossConfig) as PgBoss
+    this.boss = await helper.start(this.bossConfig)
 
     await assert.rejects(async () => {
       await this.boss.send('job', () => true)
@@ -21,7 +20,7 @@ describe('send', function () {
   })
 
   it('should fail with a function for options', async function () {
-    this.boss = await helper.start(this.bossConfig) as PgBoss
+    this.boss = await helper.start(this.bossConfig)
 
     await assert.rejects(async () => {
       await this.boss.send('job', 'data', () => true)
@@ -29,19 +28,19 @@ describe('send', function () {
   })
 
   it('should accept single string argument', async function () {
-    this.boss = await helper.start(this.bossConfig) as PgBoss
+    this.boss = await helper.start(this.bossConfig)
 
     await this.boss.send(this.schema)
   })
 
   it('should accept job object argument with only name', async function () {
-    this.boss = await helper.start(this.bossConfig) as PgBoss
+    this.boss = await helper.start(this.bossConfig)
 
     await this.boss.send({ name: this.schema })
   })
 
   it('should accept job object with name and data only', async function () {
-    this.boss = await helper.start(this.bossConfig) as PgBoss
+    this.boss = await helper.start(this.bossConfig)
 
     const message = 'hi'
 
@@ -53,7 +52,7 @@ describe('send', function () {
   })
 
   it('should accept job object with name and options only', async function () {
-    this.boss = await helper.start(this.bossConfig) as PgBoss
+    this.boss = await helper.start(this.bossConfig)
 
     const options = { someCrazyOption: 'whatever' }
 
@@ -65,7 +64,7 @@ describe('send', function () {
   })
 
   it('should accept job object with name and custom connection', async function () {
-    this.boss = await helper.start(this.bossConfig) as PgBoss
+    this.boss = await helper.start(this.bossConfig)
 
     let called = false
     const db = await helper.getDb()
@@ -89,7 +88,7 @@ describe('send', function () {
   })
 
   it('should not create job if transaction fails', async function (this: TestContext) {
-    this.boss = await helper.start(this.bossConfig) as PgBoss
+    this.boss = await helper.start(this.bossConfig)
     const { schema } = this.bossConfig
 
     const db = await helper.getDb()
@@ -125,7 +124,7 @@ describe('send', function () {
   })
 
   it('should create job with all properties', async function (this: TestContext) {
-    this.boss = await helper.start(this.bossConfig) as PgBoss
+    this.boss = await helper.start(this.bossConfig)
 
     const deadLetter = `${this.schema}_dlq`
     await this.boss.createQueue(deadLetter)

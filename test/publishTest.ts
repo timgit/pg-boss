@@ -1,6 +1,5 @@
 import assert from 'node:assert'
 import * as helper from './testHelper.ts'
-import { type PgBoss } from '../src/index.ts'
 
 describe('pubsub', function () {
   it('should fail with no arguments', async function () {
@@ -11,12 +10,12 @@ describe('pubsub', function () {
   })
 
   it('should accept single string argument', async function () {
-    this.boss = await helper.start(this.bossConfig) as PgBoss
+    this.boss = await helper.start(this.bossConfig)
     await this.boss.publish(this.schema)
   })
 
   it('should not send to the same named queue', async function () {
-    this.boss = await helper.start(this.bossConfig) as PgBoss
+    this.boss = await helper.start(this.bossConfig)
 
     const message = 'hi'
 
@@ -28,7 +27,7 @@ describe('pubsub', function () {
   })
 
   it('should use subscriptions to map to a single queue', async function () {
-    this.boss = await helper.start(this.bossConfig) as PgBoss
+    this.boss = await helper.start(this.bossConfig)
 
     const event = 'event'
     const message = 'hi'

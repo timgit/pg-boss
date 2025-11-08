@@ -1,6 +1,6 @@
 import assert from 'node:assert'
 import * as helper from './testHelper.ts'
-import { PgBoss, states } from '../src/index.ts'
+import { states } from '../src/index.ts'
 
 describe('queues', function () {
   it('should create a queue', async function () {
@@ -97,7 +97,7 @@ describe('queues', function () {
   })
 
   it('should delete all queued jobs from a queue', async function () {
-    this.boss = await helper.start(this.bossConfig) as PgBoss
+    this.boss = await helper.start(this.bossConfig)
 
     const getCount = () => helper.countJobs(this.bossConfig.schema, 'job', 'state = $1', [states.created])
 
@@ -137,13 +137,13 @@ describe('queues', function () {
   })
 
   it('getQueue() returns null when missing', async function () {
-    this.boss = await helper.start({ ...this.bossConfig, noDefault: true }) as PgBoss
+    this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
     const queue = await this.boss.getQueue(this.bossConfig.schema)
     assert.strictEqual(queue, null)
   })
 
   it('getQueues() returns queues array', async function () {
-    this.boss = await helper.start({ ...this.bossConfig, noDefault: true }) as PgBoss
+    this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
     const queue1 = `${this.bossConfig.schema}_1`
     const queue2 = `${this.bossConfig.schema}_2`
 
@@ -159,7 +159,7 @@ describe('queues', function () {
   })
 
   it('should update queue properties', async function () {
-    this.boss = await helper.start({ ...this.bossConfig, noDefault: true }) as PgBoss
+    this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
 
     let deadLetter = `${this.schema}_dlq1`
     await this.boss.createQueue(deadLetter)
@@ -216,7 +216,7 @@ describe('queues', function () {
   })
 
   it('should fail to change queue policy', async function () {
-    this.boss = await helper.start({ ...this.bossConfig, noDefault: true }) as PgBoss
+    this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
 
     await this.boss.createQueue(this.schema, { policy: 'standard' })
 
@@ -226,7 +226,7 @@ describe('queues', function () {
   })
 
   it('should fail to change queue partitioning', async function () {
-    this.boss = await helper.start({ ...this.bossConfig, noDefault: true }) as PgBoss
+    this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
     await this.boss.createQueue(this.schema, { partition: true })
 
     await assert.rejects(async () => {
@@ -235,7 +235,7 @@ describe('queues', function () {
   })
 
   it('jobs should inherit properties from queue', async function () {
-    this.boss = await helper.start({ ...this.bossConfig, noDefault: true }) as PgBoss
+    this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
 
     const deadLetter = `${this.schema}_dlq`
     await this.boss.createQueue(deadLetter)

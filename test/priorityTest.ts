@@ -3,7 +3,7 @@ import * as helper from './testHelper.ts'
 
 describe('priority', function () {
   it('higher priority job', async function () {
-    this.boss = await helper.start(this.bossConfig) as PgBoss
+    this.boss = await helper.start(this.bossConfig)
 
     await this.boss.send(this.schema)
 
@@ -15,7 +15,7 @@ describe('priority', function () {
   })
 
   it('descending priority order', async function () {
-    this.boss = await helper.start(this.bossConfig) as PgBoss
+    this.boss = await helper.start(this.bossConfig)
 
     const low = await this.boss.send(this.schema, null, { priority: 1 })
     const medium = await this.boss.send(this.schema, null, { priority: 5 })
@@ -31,7 +31,7 @@ describe('priority', function () {
   })
 
   it('bypasses priority when priority option used in fetch', async function () {
-    this.boss = await helper.start(this.bossConfig) as PgBoss
+    this.boss = await helper.start(this.bossConfig)
 
     const low = await this.boss.send(this.schema, null, { priority: 1 })
     const medium = await this.boss.send(this.schema, null, { priority: 5 })

@@ -2,19 +2,17 @@ import assert from 'node:assert'
 import * as helper from './testHelper.ts'
 import { states } from '../src/index.ts'
 import type { TestContext } from './hooks.ts'
-import { type PgBoss } from '../src/index.ts'
 
 describe('complete', function () {
   it('should reject missing id argument', async function (this: TestContext) {
-    this.boss = await helper.start(this.bossConfig) as PgBoss
-
     await assert.rejects(async () => {
+      this.boss = await helper.start(this.bossConfig)
       await this.boss.complete(this.schema)
     })
   })
 
   it('should complete a batch of jobs', async function (this: TestContext) {
-    this.boss = await helper.start(this.bossConfig) as PgBoss
+    this.boss = await helper.start(this.bossConfig)
 
     const batchSize = 3
 
@@ -40,7 +38,7 @@ describe('complete', function () {
   })
 
   it('should store job output in job.output from complete()', async function (this: TestContext) {
-    this.boss = await helper.start(this.bossConfig) as PgBoss
+    this.boss = await helper.start(this.bossConfig)
 
     const jobId = await this.boss.send(this.schema)
 
@@ -59,7 +57,7 @@ describe('complete', function () {
   })
 
   it('should store job error in job.output from fail()', async function (this: TestContext) {
-    this.boss = await helper.start(this.bossConfig) as PgBoss
+    this.boss = await helper.start(this.bossConfig)
 
     const jobId = await this.boss.send(this.schema)
 
@@ -78,7 +76,7 @@ describe('complete', function () {
   })
 
   it('should complete a batch of jobs with custom connection', async function (this: TestContext) {
-    this.boss = await helper.start(this.bossConfig) as PgBoss
+    this.boss = await helper.start(this.bossConfig)
 
     const batchSize = 3
 

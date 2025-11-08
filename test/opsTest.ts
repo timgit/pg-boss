@@ -13,7 +13,7 @@ describe('ops', function () {
   })
 
   it('should return null from getJobById if not found', async function () {
-    this.boss = await helper.start(this.bossConfig) as PgBoss
+    this.boss = await helper.start(this.bossConfig)
 
     const jobId = await this.boss.getJobById(this.schema, randomUUID())
 
@@ -21,26 +21,26 @@ describe('ops', function () {
   })
 
   it('should force stop', async function () {
-    this.boss = await helper.start(this.bossConfig) as PgBoss
+    this.boss = await helper.start(this.bossConfig)
     await this.boss.stop({ graceful: false, wait: true })
   })
 
   it('should close the connection pool', async function () {
-    this.boss = await helper.start(this.bossConfig) as PgBoss
+    this.boss = await helper.start(this.bossConfig)
     await this.boss.stop({ graceful: false, wait: true })
 
     assert(this.boss.getDb().pool.totalCount === 0)
   })
 
   it('should close the connection pool gracefully', async function () {
-    this.boss = await helper.start(this.bossConfig) as PgBoss
+    this.boss = await helper.start(this.bossConfig)
     await this.boss.stop({ wait: true })
 
     assert(this.boss.getDb().pool.totalCount === 0)
   })
 
   it('should not close the connection pool after stop with close option', async function () {
-    this.boss = await helper.start(this.bossConfig) as PgBoss
+    this.boss = await helper.start(this.bossConfig)
     await this.boss.stop({ close: false, wait: true })
 
     const jobId = await this.boss.send(this.schema)
@@ -50,7 +50,7 @@ describe('ops', function () {
   })
 
   it('should be able to run an arbitrary query via getDb()', async function () {
-    this.boss = await helper.start(this.bossConfig) as PgBoss
+    this.boss = await helper.start(this.bossConfig)
     const { rows } = await this.boss.getDb().executeSql('select 1')
     assert.strictEqual(1, rows.length)
   })

@@ -4,7 +4,7 @@ import { delay } from '../src/tools.ts'
 
 describe('retries', function () {
   it('should retry a job that didn\'t complete', async function () {
-    this.boss = await helper.start(this.bossConfig) as PgBoss
+    this.boss = await helper.start(this.bossConfig)
 
     const jobId = await this.boss.send({ name: this.schema, options: { expireInSeconds: 1, retryLimit: 1 } })
 
@@ -20,7 +20,7 @@ describe('retries', function () {
   })
 
   it('should retry a job that failed', async function () {
-    this.boss = await helper.start(this.bossConfig) as PgBoss
+    this.boss = await helper.start(this.bossConfig)
 
     const jobId = await this.boss.send(this.schema, null, { retryLimit: 1 })
 
@@ -33,7 +33,7 @@ describe('retries', function () {
   })
 
   it('should retry with a fixed delay', async function () {
-    this.boss = await helper.start(this.bossConfig) as PgBoss
+    this.boss = await helper.start(this.bossConfig)
 
     const jobId = await this.boss.send(this.schema, null, { retryLimit: 1, retryDelay: 1 })
 
@@ -52,7 +52,7 @@ describe('retries', function () {
   })
 
   it('should retry with a exponential backoff', async function () {
-    this.boss = await helper.start(this.bossConfig) as PgBoss
+    this.boss = await helper.start(this.bossConfig)
 
     let processCount = 0
     const retryLimit = 4
@@ -70,7 +70,7 @@ describe('retries', function () {
   })
 
   it('should limit retry delay with exponential backoff', async function () {
-    this.boss = await helper.start(this.bossConfig) as PgBoss
+    this.boss = await helper.start(this.bossConfig)
 
     const startAfters = []
     const retryDelayMax = 3
@@ -99,7 +99,7 @@ describe('retries', function () {
   }).timeout(15000)
 
   it('should mark a failed job to be retried', async function () {
-    this.boss = await helper.start(this.bossConfig) as PgBoss
+    this.boss = await helper.start(this.bossConfig)
     const jobId = await this.boss.send(this.schema, null, { retryLimit: 0 })
     await this.boss.fail(this.schema, jobId!)
     await this.boss.retry(this.schema, jobId!)

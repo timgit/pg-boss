@@ -1,19 +1,17 @@
 import { delay } from '../src/tools.ts'
 import assert from 'node:assert'
 import * as helper from './testHelper.ts'
-import { type PgBoss } from '../src/index.ts'
 
 describe('failure', function () {
   it('should reject missing id argument', async function () {
-    this.boss = await helper.start(this.bossConfig) as PgBoss
-
     await assert.rejects(async () => {
+      this.boss = await helper.start(this.bossConfig)
       await this.boss.fail()
     })
   })
 
   it('should fail a job when requested', async function () {
-    this.boss = await helper.start(this.bossConfig) as PgBoss
+    this.boss = await helper.start(this.bossConfig)
 
     await this.boss.send(this.schema)
 
@@ -23,7 +21,7 @@ describe('failure', function () {
   })
 
   it('should fail a batch of jobs', async function () {
-    this.boss = await helper.start(this.bossConfig) as PgBoss
+    this.boss = await helper.start(this.bossConfig)
 
     await Promise.all([
       this.boss.send(this.schema),
@@ -39,7 +37,7 @@ describe('failure', function () {
   })
 
   it('should fail a batch of jobs with a data arg', async function () {
-    this.boss = await helper.start(this.bossConfig) as PgBoss
+    this.boss = await helper.start(this.bossConfig)
     const message = 'some error'
 
     await Promise.all([
@@ -52,13 +50,13 @@ describe('failure', function () {
 
     await this.boss.fail(this.schema, jobs.map(job => job.id), new Error(message))
 
-    const results = await Promise.all(jobs.map(job => this.boss.getJobById(this.schema, job.id)))
+    const results = await Promise.all(jobs.map(job => this.boss!.getJobById(this.schema, job.id)))
 
-    assert(results.every(i => i.output.message === message))
+    assert(results.every(i => i!.output.message === message))
   })
 
   it('should preserve nested objects within a payload that is an instance of Error', async function () {
-    this.boss = await helper.start(this.bossConfig) as PgBoss
+    this.boss = await helper.start(this.bossConfig)
 
     const failPayload = new Error('Something went wrong')
     failPayload.some = { deeply: { nested: { reason: 'nuna' } } }
@@ -73,7 +71,7 @@ describe('failure', function () {
   })
 
   it('failure via Promise reject() should pass string wrapped in value prop', async function () {
-    this.boss = await helper.start(this.bossConfig) as PgBoss
+    this.boss = await helper.start(this.bossConfig)
     const failPayload = 'mah error'
 
     const jobId = await this.boss.send(this.schema)
@@ -87,7 +85,7 @@ describe('failure', function () {
   })
 
   it('failure via Promise reject() should pass object payload', async function () {
-    this.boss = await helper.start(this.bossConfig) as PgBoss
+    this.boss = await helper.start(this.bossConfig)
     const something = 'clever'
 
     const errorResponse = new Error('custom error')
@@ -104,7 +102,7 @@ describe('failure', function () {
   })
 
   it('failure with Error object should be saved in the job', async function () {
-    this.boss = await helper.start(this.bossConfig) as PgBoss
+    this.boss = await helper.start(this.bossConfig)
     const message = 'a real error!'
 
     const jobId = await this.boss.send(this.schema)
@@ -118,7 +116,7 @@ describe('failure', function () {
   })
 
   it('should fail a job with custom connection', async function () {
-    this.boss = await helper.start(this.bossConfig) as PgBoss
+    this.boss = await helper.start(this.bossConfig)
 
     await this.boss.send(this.schema)
 
@@ -139,7 +137,7 @@ describe('failure', function () {
   })
 
   it('failure with circular payload should be safely serialized', async function () {
-    this.boss = await helper.start(this.bossConfig) as PgBoss
+    this.boss = await helper.start(this.bossConfig)
 
     const jobId = await this.boss.send(this.schema)
     const message = 'mhmm'
@@ -176,7 +174,7 @@ describe('failure', function () {
   })
 
   it('should fail active jobs in a worker during shutdown', async function () {
-    this.boss = await helper.start(this.bossConfig) as PgBoss
+    this.boss = await helper.start(this.bossConfig)
 
     const jobId = await this.boss.send(this.schema, null, { retryLimit: 1 })
 

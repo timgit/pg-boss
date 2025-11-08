@@ -4,7 +4,7 @@ import { delay } from '../src/tools.ts'
 
 describe('throttle', function () {
   it('should only create 1 job for interval', async function () {
-    this.boss = await helper.start(this.bossConfig) as PgBoss
+    this.boss = await helper.start(this.bossConfig)
 
     const singletonSeconds = 2
     const sendCount = 4
@@ -20,7 +20,7 @@ describe('throttle', function () {
   })
 
   it('should process at most 1 job per second', async function () {
-    this.boss = await helper.start(this.bossConfig) as PgBoss
+    this.boss = await helper.start(this.bossConfig)
 
     const singletonSeconds = 1
     const jobCount = 3
@@ -43,7 +43,7 @@ describe('throttle', function () {
   })
 
   it('should debounce', async function () {
-    this.boss = await helper.start(this.bossConfig) as PgBoss
+    this.boss = await helper.start(this.bossConfig)
 
     const jobId = await this.boss.send(this.schema, null, { singletonSeconds: 300 })
 
@@ -55,7 +55,7 @@ describe('throttle', function () {
   })
 
   it('should debounce via sendDebounced()', async function () {
-    this.boss = await helper.start(this.bossConfig) as PgBoss
+    this.boss = await helper.start(this.bossConfig)
 
     const seconds = 60
 
@@ -73,7 +73,7 @@ describe('throttle', function () {
   })
 
   it('should reject 2nd request in the same time slot', async function () {
-    this.boss = await helper.start(this.bossConfig) as PgBoss
+    this.boss = await helper.start(this.bossConfig)
 
     const jobId1 = await this.boss.send(this.schema, null, { singletonSeconds: 300 })
 
@@ -85,7 +85,7 @@ describe('throttle', function () {
   })
 
   it('should throttle via sendThrottled()', async function () {
-    this.boss = await helper.start(this.bossConfig) as PgBoss
+    this.boss = await helper.start(this.bossConfig)
 
     const seconds = 60
 
@@ -99,7 +99,7 @@ describe('throttle', function () {
   })
 
   it('should not allow more than 1 complete job with the same key with an interval', async function () {
-    this.boss = await helper.start(this.bossConfig) as PgBoss
+    this.boss = await helper.start(this.bossConfig)
 
     const singletonKey = 'a'
     const singletonSeconds = 60

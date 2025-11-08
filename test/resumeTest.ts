@@ -3,7 +3,7 @@ import * as helper from './testHelper.ts'
 
 describe('cancel', function () {
   it('should reject missing id argument', async function () {
-    this.boss = await helper.start(this.bossConfig) as PgBoss
+    this.boss = await helper.start(this.bossConfig)
 
     await assert.rejects(async () => {
       await this.boss.resume()
@@ -11,7 +11,7 @@ describe('cancel', function () {
   })
 
   it('should cancel and resume a pending job', async function () {
-    this.boss = await helper.start(this.bossConfig) as PgBoss
+    this.boss = await helper.start(this.bossConfig)
 
     const jobId = await this.boss.send(this.schema, null, { startAfter: 1 })
 
@@ -29,7 +29,7 @@ describe('cancel', function () {
   })
 
   it('should cancel and resume a pending job with custom connection', async function () {
-    this.boss = await helper.start(this.bossConfig) as PgBoss
+    this.boss = await helper.start(this.bossConfig)
 
     const jobId = await this.boss.send(this.schema, null, { startAfter: 1 })
 
