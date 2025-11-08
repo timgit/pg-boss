@@ -4,8 +4,8 @@ import type { TestContext } from './hooks.ts'
 
 describe('cancel', function () {
   it('should reject missing arguments', async function (this: TestContext) {
+    this.boss = await helper.start(this.bossConfig)
     await assert.rejects(async () => {
-      this.boss = await helper.start(this.bossConfig)
       await this.boss.cancel(null as any, null as any)
     })
   })

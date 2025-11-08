@@ -3,8 +3,8 @@ import * as helper from './testHelper.ts'
 
 describe('pubsub', function () {
   it('should fail with no arguments', async function () {
+    this.boss = await helper.start(this.bossConfig)
     await assert.rejects(async () => {
-      this.boss = await helper.start(this.bossConfig)
       await this.boss.publish()
     })
   })
@@ -65,15 +65,15 @@ describe('pubsub', function () {
 })
 
 it('should fail if unsubscribe is called without args', async function () {
+  this.boss = await helper.start(this.bossConfig)
   await assert.rejects(async () => {
-    this.boss = await helper.start(this.bossConfig)
     await this.boss.unsubscribe()
   })
 })
 
 it('should fail if unsubscribe is called without both args', async function () {
+  this.boss = await helper.start(this.bossConfig)
   await assert.rejects(async () => {
-    this.boss = await helper.start(this.bossConfig)
     await this.boss.unsubscribe('foo')
   })
 })

@@ -4,8 +4,8 @@ import * as helper from './testHelper.ts'
 
 describe('failure', function () {
   it('should reject missing id argument', async function () {
+    this.boss = await helper.start(this.bossConfig)
     await assert.rejects(async () => {
-      this.boss = await helper.start(this.bossConfig)
       await this.boss.fail()
     })
   })

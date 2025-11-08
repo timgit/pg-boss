@@ -4,29 +4,29 @@ import * as helper from './testHelper.ts'
 
 describe('work', function () {
   it('should fail with no arguments', async function () {
+    this.boss = await helper.start(this.bossConfig)
     await assert.rejects(async () => {
-      this.boss = await helper.start(this.bossConfig)
       await this.boss.work()
     })
   })
 
   it('should fail if no callback provided', async function () {
+    this.boss = await helper.start(this.bossConfig)
     await assert.rejects(async () => {
-      this.boss = await helper.start(this.bossConfig)
       await this.boss.work('foo')
     })
   })
 
   it('should fail if options is not an object', async function () {
+    this.boss = await helper.start(this.bossConfig)
     await assert.rejects(async () => {
-      this.boss = await helper.start(this.bossConfig)
       await this.boss.work('foo', async () => {}, 'nope')
     })
   })
 
   it('offWork should fail without a name', async function () {
+    this.boss = await helper.start(this.bossConfig)
     await assert.rejects(async () => {
-      this.boss = await helper.start(this.bossConfig)
       await this.boss.offWork()
     })
   })

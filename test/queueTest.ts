@@ -17,23 +17,23 @@ describe('queues', function () {
   })
 
   it('should reject a queue with invalid characters', async function () {
+    this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
+    const queue = `*${this.bossConfig.schema}`
     await assert.rejects(async () => {
-      this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
-      const queue = `*${this.bossConfig.schema}`
       await this.boss.createQueue(queue)
     })
   })
 
   it('should reject a queue with invalid policy', async function () {
+    this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
     await assert.rejects(async () => {
-      this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
       await this.boss.createQueue(this.schema, { policy: 'something' })
     })
   })
 
   it('should reject using a queue if not created', async function () {
+    this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
     await assert.rejects(async () => {
-      this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
       await this.boss.send(this.schema)
     })
   })
@@ -179,6 +179,8 @@ describe('queues', function () {
 
     let queueObj = await this.boss.getQueue(this.schema)
 
+    assert(queueObj)
+
     assert.strictEqual(this.schema, queueObj.name)
     assert.strictEqual(createProps.policy, queueObj.policy)
     assert.strictEqual(createProps.retryLimit, queueObj.retryLimit)
@@ -254,9 +256,11 @@ describe('queues', function () {
 
     const jobId = await this.boss.send(this.schema)
 
-    const job = await this.boss.getJobById(this.schema, jobId)
+    const job = await this.boss.getJobById(this.schema, jobId!)
 
-    const retentionSeconds = (new Date(job.keepUntil) - new Date(job.createdOn)) / 1000
+    assert(job)
+
+    const retentionSeconds = (new Date(job.keepUntil).getTime() - new Date(job.createdOn).getTime()) / 1000
 
     assert.strictEqual(job.retryLimit, createProps.retryLimit)
     assert.strictEqual(job.retryBackoff, createProps.retryBackoff)

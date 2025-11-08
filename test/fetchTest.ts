@@ -3,8 +3,8 @@ import * as helper from './testHelper.ts'
 
 describe('fetch', function () {
   it('should reject missing queue argument', async function () {
+    this.boss = await helper.start(this.bossConfig)
     await assert.rejects(async () => {
-      this.boss = await helper.start(this.bossConfig)
       await this.boss.fetch()
     })
   })
