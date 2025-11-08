@@ -7,7 +7,7 @@ describe('cancel', function () {
   it('should reject missing arguments', async function (this: TestContext) {
     this.boss = await helper.start(this.bossConfig) as PgBoss
 
-    assert.rejects(async () => {
+    await assert.rejects(async () => {
       await this.boss.cancel(null as any, null as any)
     })
   })

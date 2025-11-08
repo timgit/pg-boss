@@ -5,7 +5,7 @@ describe('database', function () {
   it('should fail on invalid database host', async function () {
     const boss = new PgBoss('postgres://bobby:tables@wat:12345/northwind')
 
-    assert.rejects(async () => {
+    await assert.rejects(async () => {
       await boss.start()
     })
   })

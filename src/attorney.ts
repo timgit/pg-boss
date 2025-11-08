@@ -8,9 +8,16 @@ const POLICY = {
   MAX_RETENTION_DAYS: 365
 }
 
+function assertObjectName (value: string, name: string = 'Name') {
+  assert(/^[\w.-]+$/.test(value), `${name} can only contain alphanumeric characters, underscores, hyphens, or periods`)
+}
+
 function validateQueueArgs (config: any = {}) {
   assert(!('deadLetter' in config) || config.deadLetter === null || (typeof config.deadLetter === 'string'), 'deadLetter must be a string')
-  assert(!('deadLetter' in config) || config.deadLetter === null || /[\w-]/.test(config.deadLetter), 'deadLetter can only contain alphanumeric characters, underscores, or hyphens')
+
+  if (config.deadLetter) {
+    assertObjectName(config.deadLetter, 'deadLetter')
+  }
 
   validateRetryConfig(config)
   validateExpirationConfig(config)
@@ -155,13 +162,13 @@ function assertPostgresObjectName (name: string) {
 function assertQueueName (name: string) {
   assert(name, 'Name is required')
   assert(typeof name === 'string', 'Name must be a string')
-  assert(/[\w-]/.test(name), 'Name can only contain alphanumeric characters, underscores, or hyphens')
+  assertObjectName(name)
 }
 
 function assertKey (key: string) {
   if (!key) return
   assert(typeof key === 'string', 'Key must be a string')
-  assert(/[\w-]/.test(key), 'Key can only contain alphanumeric characters, underscores, or hyphens')
+  assertObjectName(key, 'Key')
 }
 
 function validateRetentionConfig (config: any) {
@@ -250,6 +257,13 @@ function applyScheduleConfig (config: any) {
 }
 
 export {
-  assertKey, assertPostgresObjectName,
-  assertQueueName, checkFetchArgs, checkSendArgs, checkWorkArgs, getConfig, POLICY, validateQueueArgs
+  assertKey,
+  assertPostgresObjectName,
+  assertQueueName,
+  checkFetchArgs,
+  checkSendArgs,
+  checkWorkArgs,
+  getConfig,
+  POLICY,
+  validateQueueArgs
 }

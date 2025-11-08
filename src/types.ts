@@ -78,10 +78,6 @@ export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, 
   /** @internal */
   __test__throw_worker?: boolean;
   /** @internal */
-  __test__throw_stop_monitor?: string;
-  /** @internal */
-  __test__throw_shutdown?: string;
-  /** @internal */
   __test__force_cron_monitoring_error?: string;
   /** @internal */
   __test__force_clock_skew_warning?: string;

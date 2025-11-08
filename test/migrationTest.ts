@@ -64,7 +64,7 @@ describe('migration', function () {
 
     this.boss = new PgBoss(config)
 
-    assert.rejects(async () => {
+    await assert.rejects(async () => {
       await this.boss.start()
     })
   })
@@ -247,7 +247,7 @@ describe('migration', function () {
   it('should not install if migrate option is false', async function () {
     const config = { ...this.bossConfig, migrate: false }
     this.boss = new PgBoss(config)
-    assert.rejects(async () => {
+    await assert.rejects(async () => {
       await this.boss.start()
     })
   })
@@ -262,7 +262,7 @@ describe('migration', function () {
     const config = { ...this.bossConfig, migrate: false }
     this.boss = new PgBoss(config)
 
-    assert.rejects(async () => {
+    await assert.rejects(async () => {
       await this.boss.start()
     })
   })

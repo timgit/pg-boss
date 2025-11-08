@@ -126,7 +126,7 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
       return
     }
 
-    let { close = true, graceful = true, timeout = 30000, wait = true } = options
+    let { close = true, graceful = true, timeout = 30000 } = options
 
     timeout = Math.max(timeout, 1000)
 
@@ -136,58 +136,31 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     await this.#timekeeper.stop()
     await this.#boss.stop()
 
-    await new Promise<void>((resolve, reject) => {
-      const shutdown = async () => {
-        try {
-          if (this.#config.__test__throw_shutdown) {
-            throw new Error(this.#config.__test__throw_shutdown)
-          }
+    const shutdown = async () => {
+      await this.#manager.failWip()
 
-          await this.#manager.failWip()
-
-          if (this.#db._pgbdb && this.#db.opened && close) {
-            await this.#db.close()
-          }
-
-          this.#stopped = true
-          this.#stoppingOn = null
-          this.#started = false
-
-          this.emit(events.stopped)
-          resolve()
-        } catch (err: any) {
-          this.emit(events.error, err)
-          reject(err)
-        }
+      if (this.#db._pgbdb && this.#db.opened && close) {
+        await this.#db.close()
       }
 
-      if (!graceful) {
-        return shutdown()
-      }
+      this.#stopped = true
+      this.#stoppingOn = null
+      this.#started = false
 
-      if (!wait) {
-        resolve()
-      }
+      this.emit(events.stopped)
+    }
 
-      setImmediate(async () => {
-        try {
-          if (this.#config.__test__throw_stop_monitor) {
-            throw new Error(this.#config.__test__throw_stop_monitor)
-          }
+    if (!graceful) {
+      return await shutdown()
+    }
 
-          const isWip = () => this.#manager.getWipData({ includeInternal: false }).length > 0
+    const isWip = () => this.#manager.getWipData({ includeInternal: false }).length > 0
 
-          while ((Date.now() - this.#stoppingOn!) < timeout && isWip()) {
-            await delay(500)
-          }
+    while ((Date.now() - this.#stoppingOn!) < timeout && isWip()) {
+      await delay(500)
+    }
 
-          await shutdown()
-        } catch (err: any) {
-          reject(err)
-          this.emit(events.error, err)
-        }
-      })
-    })
+    await shutdown()
   }
 
   send (request: types.Request): Promise<string | null>

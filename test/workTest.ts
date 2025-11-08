@@ -5,28 +5,28 @@ import { JobWithMetadata, type PgBoss } from '../src/index.ts'
 
 describe('work', function () {
   it('should fail with no arguments', async function () {
-    assert.rejects(async () => {
+    await assert.rejects(async () => {
       this.boss = await helper.start(this.bossConfig) as PgBoss
       await this.boss.work()
     })
   })
 
   it('should fail if no callback provided', async function () {
-    assert.rejects(async () => {
+    await assert.rejects(async () => {
       this.boss = await helper.start(this.bossConfig) as PgBoss
       await this.boss.work('foo')
     })
   })
 
   it('should fail if options is not an object', async function () {
-    assert.rejects(async () => {
+    await assert.rejects(async () => {
       this.boss = await helper.start(this.bossConfig) as PgBoss
       await this.boss.work('foo', async () => {}, 'nope')
     })
   })
 
   it('offWork should fail without a name', async function () {
-    assert.rejects(async () => {
+    await assert.rejects(async () => {
       this.boss = await helper.start(this.bossConfig) as PgBoss
       await this.boss.offWork()
     })
@@ -295,7 +295,7 @@ describe('work', function () {
 
     await this.boss.stop({ wait: true })
 
-    assert.rejects(async () => {
+    await assert.rejects(async () => {
       await this.boss!.work(this.schema, async () => {})
     })
   })

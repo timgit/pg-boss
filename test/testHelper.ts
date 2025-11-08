@@ -83,10 +83,12 @@ async function tryCreateDb (database: string): Promise<void> {
 async function start (options?: Partial<ConstructorOptions> & { testKey?: string; noDefault?: boolean }): Promise<PgBoss> {
   try {
     const config = getConfig(options)
+
     const boss = new PgBoss(config)
     // boss.on('error', err => console.log({ schema: config.schema, message: err.message }))
+
     await boss.start()
-    // auto-create queue for tests
+
     if (!options?.noDefault) {
       await boss.createQueue(config.schema!)
     }

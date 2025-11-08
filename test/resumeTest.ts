@@ -5,7 +5,7 @@ describe('cancel', function () {
   it('should reject missing id argument', async function () {
     this.boss = await helper.start(this.bossConfig) as PgBoss
 
-    assert.rejects(async () => {
+    await assert.rejects(async () => {
       await this.boss.resume()
     })
   })

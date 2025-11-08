@@ -7,7 +7,7 @@ describe('send', function () {
   it('should fail with no arguments', async function (this: TestContext) {
     this.boss = await helper.start(this.bossConfig) as PgBoss
 
-    assert.rejects(async () => {
+    await assert.rejects(async () => {
       await this.boss.send()
     })
   })
@@ -15,7 +15,7 @@ describe('send', function () {
   it('should fail with a function for data', async function () {
     this.boss = await helper.start(this.bossConfig) as PgBoss
 
-    assert.rejects(async () => {
+    await assert.rejects(async () => {
       await this.boss.send('job', () => true)
     })
   })
@@ -23,7 +23,7 @@ describe('send', function () {
   it('should fail with a function for options', async function () {
     this.boss = await helper.start(this.bossConfig) as PgBoss
 
-    assert.rejects(async () => {
+    await assert.rejects(async () => {
       await this.boss.send('job', 'data', () => true)
     })
   })
