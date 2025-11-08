@@ -30,7 +30,7 @@
     "neostandard": "^0.12.2",
     "nyc": "^17.1.0",
     "source-map-support": "^0.5.21",
-    "tsdown": "^0.16.1",
+    "tsdown": "^0.16.0",
     "tsx": "^4.20.6",
     "typescript": "^5.9.3"
   },
@@ -46,31 +46,6 @@
   },
   "pgboss": {
     "schema": 26
-  },
-  "mocha": {
-    "timeout": 10000,
-    "slow": 10000,
-    "bail": true,
-    "parallel": true,
-    "require": [
-      "./test/hooks.ts"
-    ],
-    "node-option": [
-      "import=tsx"
-    ]
-  },
-  "nyc": {
-    "extends": "@istanbuljs/nyc-config-typescript",
-    "include": [
-      "src/**/*.ts"
-    ],
-    "sourceMap": true,
-    "instrument": true,
-    "reporter": [
-      "lcov",
-      "text-summary",
-      "text"
-    ]
   },
   "repository": {
     "type": "git",
