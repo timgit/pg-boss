@@ -56,16 +56,6 @@ This will likely cater the most to teams already familiar with the simplicity of
 * Node 22.12 or higher for CommonJS's require(esm)
 * PostgreSQL 13 or higher
 
-## Installation
-
-```bash
-# npm
-npm install pg-boss
-
-# yarn
-yarn add pg-boss
-```
-
 ## Documentation
 * [Docs](https://timgit.github.io/pg-boss/)
 
