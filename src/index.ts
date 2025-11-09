@@ -11,12 +11,24 @@ import DbDefault from './db.ts'
 
 export const states: types.JobStates = plans.JOB_STATES
 export const policies: types.QueuePolicies = plans.QUEUE_POLICIES
-export const events: types.Events = {
+export const events: types.Events = Object.freeze({
   error: 'error',
   warning: 'warning',
   wip: 'wip',
   stopped: 'stopped'
-} as const
+})
+
+export function getConstructionPlans (schema?: string) {
+  return Contractor.constructionPlans(schema)
+}
+
+export function getMigrationPlans (schema?: string, version?: number) {
+  return Contractor.migrationPlans(schema, version)
+}
+
+export function getRollbackPlans (schema?: string, version?: number) {
+  return Contractor.rollbackPlans(schema, version)
+}
 
 export class PgBoss extends EventEmitter<types.PgBossEventMap> {
   #stoppingOn: number | null
@@ -71,21 +83,6 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
       emitter.on(event, arg => this.emit(event, arg))
     }
   }
-
-  static getConstructionPlans (schema?: string) {
-    return Contractor.constructionPlans(schema)
-  }
-
-  static getMigrationPlans (schema?: string, version?: number) {
-    return Contractor.migrationPlans(schema, version)
-  }
-
-  static getRollbackPlans (schema?: string, version?: number) {
-    return Contractor.rollbackPlans(schema, version)
-  }
-
-  static states: types.JobStates = plans.JOB_STATES
-  static policies: types.QueuePolicies = plans.QUEUE_POLICIES
 
   async start (): Promise<this> {
     if (this.#starting || this.#started) {

@@ -1,5 +1,5 @@
 import assert from 'node:assert'
-import { PgBoss } from '../src/index.ts'
+import { PgBoss, getConstructionPlans, getMigrationPlans, getRollbackPlans } from '../src/index.ts'
 import { getDb } from './testHelper.ts'
 import Contractor from '../src/contractor.ts'
 import { getAll } from '../src/migrationStore.ts'
@@ -16,7 +16,7 @@ describe('migration', function () {
 
   it('should export commands to manually build schema', function () {
     const schema = 'custom'
-    const plans = PgBoss.getConstructionPlans(schema)
+    const plans = getConstructionPlans(schema)
 
     assert(plans.includes(`${schema}.job`))
     assert(plans.includes(`${schema}.version`))
@@ -26,13 +26,13 @@ describe('migration', function () {
     const schema = 'custom'
 
     assert.throws(() => {
-      PgBoss.getMigrationPlans(schema, currentSchemaVersion)
+      getMigrationPlans(schema, currentSchemaVersion)
     })
   })
 
   it('should export commands to migrate', function () {
     const schema = 'custom'
-    const plans = PgBoss.getMigrationPlans(schema, currentSchemaVersion - 1)
+    const plans = getMigrationPlans(schema, currentSchemaVersion - 1)
 
     assert(plans)
   })
@@ -41,13 +41,13 @@ describe('migration', function () {
     const schema = 'custom'
 
     assert.throws(() => {
-      PgBoss.getRollbackPlans(schema, -1)
+      getRollbackPlans(schema, -1)
     })
   })
 
   it('should export commands to roll back', function () {
     const schema = 'custom'
-    const plans = PgBoss.getRollbackPlans(schema, currentSchemaVersion)
+    const plans = getRollbackPlans(schema, currentSchemaVersion)
 
     assert(plans, 'rollback plans not found')
   })
@@ -65,7 +65,7 @@ describe('migration', function () {
     this.boss = new PgBoss(config)
 
     await assert.rejects(async () => {
-      await this.boss.start()
+      await this.boss!.start()
     })
   })
 
@@ -263,7 +263,7 @@ describe('migration', function () {
     this.boss = new PgBoss(config)
 
     await assert.rejects(async () => {
-      await this.boss.start()
+      await this.boss!.start()
     })
   })
 
