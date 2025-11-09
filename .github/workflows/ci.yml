@@ -8,7 +8,7 @@ on:
 name: CI
 
 jobs:
-  container-job:
+  test:
     runs-on: ubuntu-latest
     container: node:22
     strategy:
@@ -48,8 +48,8 @@ jobs:
         flag-name: run-${{ join(matrix.*, '-') }}
         parallel: true
 
-  finish:
-    needs: container-job
+  coverage:
+    needs: test
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
