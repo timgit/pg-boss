@@ -6,7 +6,7 @@ Queueing jobs in Postgres from Node.js like a boss.
 
 ```js
 async function readme() {
-  const PgBoss = require('pg-boss');
+  const { PgBoss } = require('pg-boss');
   const boss = new PgBoss('postgres://user:pass@host/database');
 
   boss.on('error', console.error)
@@ -53,7 +53,7 @@ This will likely cater the most to teams already familiar with the simplicity of
 * Multi-master compatible (for example, in a Kubernetes ReplicaSet)
 
 ## Requirements
-* Node 22 or higher
+* Node 22.12 or higher for CommonJS's require(esm)
 * PostgreSQL 13 or higher
 
 ## Installation

@@ -1,0 +1,115 @@
+import Db from '../src/db.ts'
+import { PgBoss } from '../src/index.ts'
+import crypto from 'node:crypto'
+import configJson from './config.json' with { type: 'json' }
+import type { ConstructorOptions } from '../src/types.ts'
+
+const sha1 = (value: string): string => crypto.createHash('sha1').update(value).digest('hex')
+
+function getConnectionString (): string {
+  const config = getConfig()
+
+  return `postgres://${config.user}:${config.password}@${config.host}:${config.port}/${config.database}`
+}
+
+function getConfig (options: Partial<ConstructorOptions> & { testKey?: string } = {}): ConstructorOptions {
+  const config: any = { ...configJson }
+
+  config.host = process.env.POSTGRES_HOST || config.host
+  config.port = process.env.POSTGRES_PORT || config.port
+  config.password = process.env.POSTGRES_PASSWORD || config.password
+
+  if (options.testKey) {
+    config.schema = `pgboss${sha1(options.testKey)}`
+  }
+
+  config.schema = config.schema || 'pgboss'
+
+  config.supervise = false
+  config.schedule = false
+  config.retryLimit = 0
+
+  return Object.assign(config, options)
+}
+
+async function init (): Promise<void> {
+  const { database } = getConfig()
+
+  await tryCreateDb(database!)
+}
+
+async function getDb ({ database, debug }: { database?: string; debug?: boolean } = {}): Promise<Db> {
+  const config = getConfig()
+
+  config.database = database || config.database
+
+  const db = new Db({ ...config, debug })
+
+  await db.open()
+
+  return db
+}
+
+async function dropSchema (schema: string): Promise<void> {
+  const db = await getDb()
+  await db.executeSql(`DROP SCHEMA IF EXISTS ${schema} CASCADE`)
+  await db.close()
+}
+
+async function findJobs (schema: string, where: string, values?: any[]): Promise<any> {
+  const db = await getDb()
+  const jobs = await db.executeSql(`select * from ${schema}.job where ${where}`, values)
+  await db.close()
+  return jobs
+}
+
+async function countJobs (schema: string, table: string, where: string, values?: any[]): Promise<number> {
+  const db = await getDb()
+  const result = await db.executeSql(`select count(*) as count from ${schema}.${table} where ${where}`, values)
+  await db.close()
+  return parseFloat(result.rows[0].count)
+}
+
+async function tryCreateDb (database: string): Promise<void> {
+  const db = await getDb({ database: 'postgres' })
+
+  try {
+    await db.executeSql(`CREATE DATABASE ${database}`)
+  } catch {} finally {
+    await db.close()
+  }
+}
+
+async function start (options?: Partial<ConstructorOptions> & { testKey?: string; noDefault?: boolean }): Promise<PgBoss> {
+  try {
+    const config = getConfig(options)
+
+    const boss = new PgBoss(config)
+    // boss.on('error', err => console.log({ schema: config.schema, message: err.message }))
+
+    await boss.start()
+
+    if (!options?.noDefault) {
+      await boss.createQueue(config.schema!)
+    }
+    return boss
+  } catch (err) {
+    // this is nice for occaisional debugging, Mr. Linter
+    if (err) {
+      throw err
+    }
+    throw new Error('Unexpected error')
+  }
+}
+
+export {
+  dropSchema,
+  start,
+  getDb,
+  countJobs,
+  findJobs,
+  getConfig,
+  getConnectionString,
+  tryCreateDb,
+  init
+}

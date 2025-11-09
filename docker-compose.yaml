@@ -10,6 +10,7 @@ services:
       - POSTGRES_NAME=pgboss
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
+    command: -c 'max_connections=400'
 
 volumes:
   db_volume:
