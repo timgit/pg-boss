@@ -1,5 +1,4 @@
 import EventEmitter from 'node:events'
-import * as plans from './plans.ts'
 import * as Attorney from './attorney.ts'
 import Contractor from './contractor.ts'
 import Manager from './manager.ts'
@@ -9,7 +8,8 @@ import { delay } from './tools.ts'
 import type * as types from './types.ts'
 import DbDefault from './db.ts'
 
-export const states: types.JobStates = plans.JOB_STATES
+export { JOB_STATES as states } from './plans.ts'
+export { QUEUE_POLICIES as policies } from './plans.ts'
 export const events: types.Events = Object.freeze({
   error: 'error',
   warning: 'warning',
