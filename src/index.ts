@@ -342,6 +342,7 @@ export type {
   Schedule,
   ScheduleOptions,
   SchedulingOptions,
+  SendOptions,
   StopOptions,
   WipData,
   WorkHandler,
