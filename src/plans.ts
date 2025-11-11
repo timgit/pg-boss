@@ -39,7 +39,7 @@ const COMMON_JOB_TABLE = 'job_common'
 
 function create (schema: string, version: number, options?: { createSchema?: boolean }) {
   const commands = [
-    ...((options?.createSchema ?? true) ? [createSchema(schema)] : []),
+    options?.createSchema ? createSchema(schema) : '',
     createEnumJobState(schema),
 
     createTableVersion(schema),

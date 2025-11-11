@@ -74,7 +74,8 @@ The following options can be set as properties in an object for additional confi
 The following configuration options should not normally need to be changed, but are still available for special use cases.
 
 * **createSchema**, bool, default true
-  If set to false, the migration will not issue a CREATE SCHEMA statement. In some databases (for example, PostgreSQL), executing CREATE SCHEMA can fail even if the schema already exists, when the user lacks the required privileges to create schemas. Disabling this option prevents such errors.
+  
+  If set to false, the `CREATE SCHEMA` statement will not be issued during installation. This may be useful if this privilege is not granted to the role.
 
 * **superviseIntervalSeconds**, int, default 60 seconds
 

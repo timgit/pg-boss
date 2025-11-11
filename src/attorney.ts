@@ -127,6 +127,7 @@ function getConfig (value: string | types.ConstructorOptions): types.ResolvedCon
   config.schedule = ('schedule' in config) ? config.schedule : true
   config.supervise = ('supervise' in config) ? config.supervise : true
   config.migrate = ('migrate' in config) ? config.migrate : true
+  config.createSchema = ('createSchema' in config) ? config.createSchema : true
 
   applySchemaConfig(config)
   applyOpsConfig(config)

@@ -26,6 +26,14 @@ describe('migration', function () {
     assert(!plans.includes('CREATE SCHEMA'))
   })
 
+  it('should not install if createSchema option is false and schema is missing', async function () {
+    const config = { ...this.bossConfig, createSchema: false }
+    this.boss = new PgBoss(config)
+    await assert.rejects(async () => {
+      await this.boss.start()
+    })
+  })
+
   it('should export commands to manually build schema', function () {
     const schema = 'custom'
     const plans = getConstructionPlans(schema)

@@ -27,6 +27,7 @@ function getConfig (options: Partial<ConstructorOptions> & { testKey?: string } 
 
   config.supervise = false
   config.schedule = false
+  config.createSchema = true
   config.retryLimit = 0
 
   return Object.assign(config, options)
