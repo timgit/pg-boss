@@ -69,9 +69,12 @@ The following options can be set as properties in an object for additional confi
 
 * **migrate**, bool, default true
 
-  If this is set to false, this instance will skip attempts to run schema migratations during `start()`. If schema migrations exist, `start()` will throw and error and block usage. This is an advanced use case when the configured user account does not have schema mutation privileges.
+  If this is set to false, this instance will skip attempts to run schema migrations during `start()`. If schema migrations exist, `start()` will throw and error and block usage. This is an advanced use case when the configured user account does not have schema mutation privileges.
 
 The following configuration options should not normally need to be changed, but are still available for special use cases.
+
+* **createSchema**, bool, default true
+  If set to false, the migration will not issue a CREATE SCHEMA statement. In some databases (for example, PostgreSQL), executing CREATE SCHEMA can fail even if the schema already exists, when the user lacks the required privileges to create schemas. Disabling this option prevents such errors.
 
 * **superviseIntervalSeconds**, int, default 60 seconds
 

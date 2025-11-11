@@ -52,6 +52,7 @@ export interface SchedulingOptions {
 export interface MaintenanceOptions {
   supervise?: boolean;
   migrate?: boolean;
+  createSchema?: boolean;
   warningSlowQuerySeconds?: number;
   warningQueueSize?: number;
   superviseIntervalSeconds?: number;
