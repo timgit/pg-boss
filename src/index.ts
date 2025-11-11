@@ -10,7 +10,6 @@ import type * as types from './types.ts'
 import DbDefault from './db.ts'
 
 export const states: types.JobStates = plans.JOB_STATES
-export const policies: types.QueuePolicies = plans.QUEUE_POLICIES
 export const events: types.Events = Object.freeze({
   error: 'error',
   warning: 'warning',
@@ -336,7 +335,7 @@ export type {
   MaintenanceOptions,
   OffWorkOptions,
   Queue,
-  QueuePolicies,
+  QueuePolicy,
   QueueResult,
   Request,
   Schedule,

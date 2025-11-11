@@ -7,13 +7,6 @@ export type JobStates = {
   failed: 'failed'
 }
 
-export type QueuePolicies = {
-  standard: 'standard'
-  short: 'short',
-  singleton: 'singleton',
-  stately: 'stately'
-}
-
 export type Events = {
   error: 'error',
   warning: 'warning',
