@@ -197,14 +197,12 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#manager.work(...args as Parameters<Manager['work']>)
   }
 
-  offWork (name: string): Promise<void>
-  offWork (options: types.OffWorkOptions): Promise<void>
-  offWork (value: string | types.OffWorkOptions): Promise<void> {
-    return this.#manager.offWork(value)
+  offWork (name: string, options?: types.OffWorkOptions): Promise<void> {
+    return this.#manager.offWork(name, options)
   }
 
   notifyWorker (workerId: string): void {
-    this.#manager.notifyWorker(workerId)
+    return this.#manager.notifyWorker(workerId)
   }
 
   subscribe (event: string, name: string): Promise<void> {

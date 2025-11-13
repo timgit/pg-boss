@@ -102,7 +102,7 @@ describe('work', function () {
 
     const id = await this.boss.work(this.schema, { pollingIntervalSeconds: 0.5 }, async () => {
       receivedCount++
-      await this.boss!.offWork({ id })
+      await this.boss!.offWork(this.schema, { id })
     })
 
     await delay(2000)

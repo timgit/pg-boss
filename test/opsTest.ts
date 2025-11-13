@@ -1,6 +1,7 @@
 import assert from 'node:assert'
 import * as helper from './testHelper.ts'
 import { randomUUID } from 'node:crypto'
+import { PgBoss } from '../src/index.ts'
 
 describe('ops', function () {
   it('should emit error in worker', async function () {
@@ -53,5 +54,11 @@ describe('ops', function () {
     this.boss = await helper.start(this.bossConfig)
     const { rows } = await this.boss.getDb().executeSql('select 1')
     assert.strictEqual(1, rows.length)
+  })
+
+  it('should start and stop immediately', async function () {
+    const boss = new PgBoss(this.bossConfig)
+    await boss.start()
+    await boss.stop()
   })
 })

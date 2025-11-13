@@ -250,7 +250,8 @@ export interface StopOptions {
 }
 
 export interface OffWorkOptions {
-  id: string
+  id?: string,
+  wait?: boolean
 }
 
 export interface EventsMixin extends NodeJS.EventEmitter {

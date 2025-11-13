@@ -80,17 +80,18 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     clearInterval(this.queueCacheInterval)
 
-    for (const worker of this.workers.values()) {
-      if (!INTERNAL_QUEUES[worker.name]) {
-        await this.offWork(worker.name)
-      }
-    }
+    await Promise.allSettled(
+      [...this.workers.values()]
+        .filter(worker => !INTERNAL_QUEUES[worker.name])
+        .map(async worker => await this.offWork(worker.name, { wait: false }))
+    )
   }
 
   async failWip () {
     for (const worker of this.workers.values()) {
       const jobIds = worker.jobs.map(j => j.id)
       if (jobIds.length) {
+        console.log(`Failing ${jobIds.length} active jobs in worker ${worker.id} for queue ${worker.name}`)
         await this.fail(worker.name, jobIds, 'pg-boss shut down while active')
       }
     }
@@ -190,18 +191,13 @@ class Manager extends EventEmitter implements types.EventsMixin {
     return id
   }
 
-  async offWork (value: string | types.OffWorkOptions): Promise<void> {
-    assert(value, 'Missing required argument')
+  async offWork (name: string, options: types.OffWorkOptions = { wait: true }): Promise<void> {
+    assert(name, 'queue name is required')
+    assert(typeof name === 'string', 'queue name must be a string')
 
-    const query = (typeof value === 'string')
-      ? { filter: (i: Worker<any>) => i.name === value }
-      : (typeof value === 'object' && value.id)
-          ? { filter: (i: Worker<any>) => i.id === value.id }
-          : null
+    const query = (i: Worker<any>) => options?.id ? i.id === options.id : i.name === name
 
-    assert(query, 'Invalid argument. Expected string or object: { id }')
-
-    const workers = this.getWorkers().filter(i => query.filter(i) && !i.stopping && !i.stopped)
+    const workers = this.getWorkers().filter(i => query(i) && !i.stopping && !i.stopped)
 
     if (workers.length === 0) {
       return
@@ -211,7 +207,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       worker.stop()
     }
 
-    setImmediate(async () => {
+    const finish = async () => {
       while (!workers.every(w => w.stopped)) {
         await delay(1000)
       }
@@ -219,7 +215,15 @@ class Manager extends EventEmitter implements types.EventsMixin {
       for (const worker of workers) {
         this.removeWorker(worker)
       }
-    })
+    }
+
+    if (options.wait) {
+      await finish()
+    } else {
+      setImmediate(async () => {
+        await finish()
+      })
+    }
   }
 
   notifyWorker (workerId: string): void {

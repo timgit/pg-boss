@@ -83,11 +83,20 @@ await boss.work(queue, async ([ job ]) => {
 Notifies a worker by id to bypass the job polling interval (see `pollingIntervalSeconds`) for this iteration in the loop.
 
 
-### `offWork(value)`
+### `offWork(name, options)`
 
 Removes a worker by name or id and stops polling.
 
 ** Arguments **
-- value: string or object
+- name: string
+- options: object
 
-  If a string, removes all workers found matching the name.  If an object, only the worker with a matching `id` will be removed.
+**Options**
+
+* **wait**, boolean, *(default=true)*
+
+  If the promise should wait until current jobs finish
+
+* **id**, string
+
+  Only stop polling by worker id
