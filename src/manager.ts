@@ -93,7 +93,6 @@ class Manager extends EventEmitter implements types.EventsMixin {
     for (const worker of this.workers.values()) {
       const jobIds = worker.jobs.map(j => j.id)
       if (jobIds.length) {
-        console.log(`Failing ${jobIds.length} active jobs in worker ${worker.id} for queue ${worker.name}`)
         await this.fail(worker.name, jobIds, 'pg-boss shut down while active')
       }
     }
