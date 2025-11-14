@@ -241,7 +241,7 @@ describe('migration', function () {
     } catch (error) {
       assert(error.message.includes('wat'))
     } finally {
-      await boss1.stop({ graceful: false, wait: false })
+      await boss1.stop({ graceful: false })
     }
 
     const version1 = await contractor.schemaVersion()
@@ -260,7 +260,7 @@ describe('migration', function () {
 
       assert.strictEqual(version2, currentSchemaVersion)
     } finally {
-      await boss2.stop({ graceful: false, wait: false })
+      await boss2.stop({ graceful: false })
     }
   })
 

@@ -292,7 +292,7 @@ describe('work', function () {
   it('should reject work() after stopping', async function () {
     this.boss = await helper.start(this.bossConfig)
 
-    await this.boss.stop({ wait: true })
+    await this.boss.stop()
 
     await assert.rejects(async () => {
       await this.boss!.work(this.schema, async () => {})
@@ -302,7 +302,7 @@ describe('work', function () {
   it('should allow send() after stopping', async function () {
     this.boss = await helper.start(this.bossConfig)
 
-    this.boss.stop({ wait: true, close: false })
+    this.boss.stop({ close: false })
 
     await this.boss.send(this.schema)
   })

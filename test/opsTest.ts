@@ -1,4 +1,3 @@
-// import whyIsNodeRunning from 'why-is-node-running'
 import assert from 'node:assert'
 import * as helper from './testHelper.ts'
 import { randomUUID } from 'node:crypto'
@@ -24,26 +23,26 @@ describe('ops', function () {
 
   it('should force stop', async function () {
     this.boss = await helper.start(this.bossConfig)
-    await this.boss.stop({ graceful: false, wait: true })
+    await this.boss.stop({ graceful: false })
   })
 
   it('should close the connection pool', async function () {
     this.boss = await helper.start(this.bossConfig)
-    await this.boss.stop({ graceful: false, wait: true })
+    await this.boss.stop({ graceful: false })
 
     assert(this.boss.getDb().pool.totalCount === 0)
   })
 
   it('should close the connection pool gracefully', async function () {
     this.boss = await helper.start(this.bossConfig)
-    await this.boss.stop({ wait: true })
+    await this.boss.stop()
 
     assert(this.boss.getDb().pool.totalCount === 0)
   })
 
   it('should not close the connection pool after stop with close option', async function () {
     this.boss = await helper.start(this.bossConfig)
-    await this.boss.stop({ close: false, wait: true })
+    await this.boss.stop({ close: false })
 
     const jobId = await this.boss.send(this.schema)
     const [job] = await this.boss.fetch(this.schema)
@@ -63,33 +62,17 @@ describe('ops', function () {
     await boss.stop()
   })
 
-  it.only('should not leave open handles after starting and stopping', async function () {
-    const handlesBefore = (process as any)._getActiveHandles?.() || []
-    const requestsBefore = (process as any)._getActiveRequests?.() || []
-
-    // console.log('checking handles before test:')
-    // whyIsNodeRunning()
+  it('should not leave open handles after starting and stopping', async function () {
+    const resourcesBefore = process.getActiveResourcesInfo()
 
     const boss = new PgBoss({ ...this.bossConfig, supervise: true, schedule: true })
     await boss.start()
     await boss.createQueue(this.schema)
     await boss.work(this.schema, async () => {})
-    await boss.stop({ timeout: 5000 })
+    await boss.stop()
 
-    // console.log('checking handles after test:')
-    // whyIsNodeRunning()
+    const resourcesAfter = process.getActiveResourcesInfo()
 
-    const handlesAfter = (process as any)._getActiveHandles?.() || []
-    const requestsAfter = (process as any)._getActiveRequests?.() || []
-
-    if (handlesAfter.length !== handlesBefore.length) {
-      console.log('Handles before')
-      console.log(handlesBefore)
-      console.log('\n\nHandles after')
-      console.log(handlesAfter)
-    }
-
-    assert.strictEqual(handlesAfter.length, handlesBefore.length, `Should not leave open handles. Before: ${handlesBefore.length}, After: ${handlesAfter.length}`)
-    assert.strictEqual(requestsAfter.length, requestsBefore.length, `Should not leave open requests. Before: ${requestsBefore.length}, After: ${requestsAfter.length}`)
+    assert.strictEqual(resourcesAfter.length, resourcesBefore.length, `Should not leave open async resources. Before: ${resourcesBefore.length}, After: ${resourcesAfter.length}`)
   })
 })

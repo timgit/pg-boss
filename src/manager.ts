@@ -28,6 +28,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
   queueCacheInterval: NodeJS.Timeout | undefined
   timekeeper: Timekeeper | undefined
   queues: Record<string, types.QueueResult> | null
+  pendingOffWorkCleanups: Set<Promise<void>>
 
   constructor (db: types.IDatabase, config: types.ResolvedConstructorOptions) {
     super()
@@ -37,6 +38,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     this.wipTs = Date.now()
     this.workers = new Map()
     this.queues = null
+    this.pendingOffWorkCleanups = new Set()
   }
 
   async start () {
@@ -138,6 +140,10 @@ class Manager extends EventEmitter implements types.EventsMixin {
     return data
   }
 
+  hasPendingCleanups (): boolean {
+    return this.pendingOffWorkCleanups.size > 0
+  }
+
   private async watch<T> (name: string, options: types.ResolvedWorkOptions, callback: types.WorkHandler<T>): Promise<string> {
     if (this.stopped) {
       throw new Error('Workers are disabled. pg-boss is stopped')
@@ -207,7 +213,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       worker.stop()
     }
 
-    const finish = async () => {
+    const cleanupPromise = (async () => {
       while (!workers.every(w => w.stopped)) {
         await delay(1000)
       }
@@ -215,14 +221,13 @@ class Manager extends EventEmitter implements types.EventsMixin {
       for (const worker of workers) {
         this.removeWorker(worker)
       }
-    }
+    })()
 
     if (options.wait) {
-      await finish()
+      await cleanupPromise
     } else {
-      setImmediate(async () => {
-        await finish()
-      })
+      this.pendingOffWorkCleanups.add(cleanupPromise)
+      cleanupPromise.finally(() => this.pendingOffWorkCleanups.delete(cleanupPromise))
     }
   }
 

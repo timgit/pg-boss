@@ -137,6 +137,9 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
 
       if (this.#db._pgbdb && this.#db.opened && close) {
         await this.#db.close()
+
+        // Give event loop time to process socket closes
+        await delay(10)
       }
 
       this.#stopped = true
@@ -150,9 +153,7 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
       return await shutdown()
     }
 
-    const isWip = () => this.#manager.getWipData({ includeInternal: false }).length > 0
-
-    while ((Date.now() - this.#stoppingOn!) < timeout && isWip()) {
+    while ((Date.now() - this.#stoppingOn!) < timeout && this.#manager.hasPendingCleanups()) {
       await delay(500)
     }
 

@@ -246,7 +246,6 @@ export interface StopOptions {
   close?: boolean;
   graceful?: boolean;
   timeout?: number;
-  wait?: boolean;
 }
 
 export interface OffWorkOptions {
