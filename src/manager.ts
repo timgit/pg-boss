@@ -28,6 +28,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
   queueCacheInterval: NodeJS.Timeout | undefined
   timekeeper: Timekeeper | undefined
   queues: Record<string, types.QueueResult> | null
+  pendingOffWorkCleanups: Set<Promise<void>>
 
   constructor (db: types.IDatabase, config: types.ResolvedConstructorOptions) {
     super()
@@ -37,6 +38,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     this.wipTs = Date.now()
     this.workers = new Map()
     this.queues = null
+    this.pendingOffWorkCleanups = new Set()
   }
 
   async start () {
@@ -80,11 +82,11 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     clearInterval(this.queueCacheInterval)
 
-    for (const worker of this.workers.values()) {
-      if (!INTERNAL_QUEUES[worker.name]) {
-        await this.offWork(worker.name)
-      }
-    }
+    await Promise.allSettled(
+      [...this.workers.values()]
+        .filter(worker => !INTERNAL_QUEUES[worker.name])
+        .map(async worker => await this.offWork(worker.name, { wait: false }))
+    )
   }
 
   async failWip () {
@@ -132,9 +134,13 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     const data = this.getWorkers()
       .map(i => i.toWipData())
-      .filter(i => i.count > 0 && (!INTERNAL_QUEUES[i.name] || includeInternal))
+      .filter(i => i.state !== 'stopped' && (!INTERNAL_QUEUES[i.name] || includeInternal))
 
     return data
+  }
+
+  hasPendingCleanups (): boolean {
+    return this.pendingOffWorkCleanups.size > 0
   }
 
   private async watch<T> (name: string, options: types.ResolvedWorkOptions, callback: types.WorkHandler<T>): Promise<string> {
@@ -190,18 +196,13 @@ class Manager extends EventEmitter implements types.EventsMixin {
     return id
   }
 
-  async offWork (value: string | types.OffWorkOptions): Promise<void> {
-    assert(value, 'Missing required argument')
+  async offWork (name: string, options: types.OffWorkOptions = { wait: true }): Promise<void> {
+    assert(name, 'queue name is required')
+    assert(typeof name === 'string', 'queue name must be a string')
 
-    const query = (typeof value === 'string')
-      ? { filter: (i: Worker<any>) => i.name === value }
-      : (typeof value === 'object' && value.id)
-          ? { filter: (i: Worker<any>) => i.id === value.id }
-          : null
+    const query = (i: Worker<any>) => options?.id ? i.id === options.id : i.name === name
 
-    assert(query, 'Invalid argument. Expected string or object: { id }')
-
-    const workers = this.getWorkers().filter(i => query.filter(i) && !i.stopping && !i.stopped)
+    const workers = this.getWorkers().filter(i => query(i) && !i.stopping && !i.stopped)
 
     if (workers.length === 0) {
       return
@@ -211,7 +212,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       worker.stop()
     }
 
-    setImmediate(async () => {
+    const cleanupPromise = (async () => {
       while (!workers.every(w => w.stopped)) {
         await delay(1000)
       }
@@ -219,7 +220,14 @@ class Manager extends EventEmitter implements types.EventsMixin {
       for (const worker of workers) {
         this.removeWorker(worker)
       }
-    })
+    })()
+
+    if (options.wait) {
+      await cleanupPromise
+    } else {
+      this.pendingOffWorkCleanups.add(cleanupPromise)
+      cleanupPromise.finally(() => this.pendingOffWorkCleanups.delete(cleanupPromise))
+    }
   }
 
   notifyWorker (workerId: string): void {

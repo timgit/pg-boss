@@ -137,6 +137,9 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
 
       if (this.#db._pgbdb && this.#db.opened && close) {
         await this.#db.close()
+
+        // Give event loop time to process socket closes
+        await delay(10)
       }
 
       this.#stopped = true
@@ -150,9 +153,7 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
       return await shutdown()
     }
 
-    const isWip = () => this.#manager.getWipData({ includeInternal: false }).length > 0
-
-    while ((Date.now() - this.#stoppingOn!) < timeout && isWip()) {
+    while ((Date.now() - this.#stoppingOn!) < timeout && this.#manager.hasPendingCleanups()) {
       await delay(500)
     }
 
@@ -197,14 +198,12 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#manager.work(...args as Parameters<Manager['work']>)
   }
 
-  offWork (name: string): Promise<void>
-  offWork (options: types.OffWorkOptions): Promise<void>
-  offWork (value: string | types.OffWorkOptions): Promise<void> {
-    return this.#manager.offWork(value)
+  offWork (name: string, options?: types.OffWorkOptions): Promise<void> {
+    return this.#manager.offWork(name, options)
   }
 
   notifyWorker (workerId: string): void {
-    this.#manager.notifyWorker(workerId)
+    return this.#manager.notifyWorker(workerId)
   }
 
   subscribe (event: string, name: string): Promise<void> {

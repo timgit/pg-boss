@@ -14,6 +14,7 @@ class Db extends EventEmitter implements types.IDatabase, types.EventsMixin {
     super()
 
     config.application_name = config.application_name || 'pgboss'
+    config.connectionTimeoutMillis = config.connectionTimeoutMillis || 10000
     // config.maxUses = config.maxUses || 1000
 
     this.config = config

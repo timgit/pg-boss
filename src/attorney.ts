@@ -79,7 +79,7 @@ function checkWorkArgs (name: string, args: any[]): {
 } {
   let options, callback
 
-  assert(name, 'missing job name')
+  assert(name, 'queue name is required')
 
   if (args.length === 1) {
     callback = args[0]

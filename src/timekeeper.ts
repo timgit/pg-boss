@@ -69,7 +69,7 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
 
     this.stopped = true
 
-    await this.manager.offWork(QUEUES.SEND_IT)
+    await this.manager.offWork(QUEUES.SEND_IT, { wait: true })
 
     if (this.skewMonitorInterval) {
       clearInterval(this.skewMonitorInterval)

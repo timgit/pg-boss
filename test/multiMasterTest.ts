@@ -18,7 +18,7 @@ describe('multi-master', function () {
     }
 
     await Promise.all(instances.map(i => i.start()))
-    await Promise.all(instances.map(i => i.stop({ graceful: false, wait: false })))
+    await Promise.all(instances.map(i => i.stop({ graceful: false })))
   })
 
   it.skip('should only allow 1 master to migrate to latest at a time', async function () {
@@ -50,6 +50,6 @@ describe('multi-master', function () {
     }
 
     await Promise.all(instances.map(i => i.start()))
-    await Promise.all(instances.map(i => i.stop({ graceful: false, wait: false })))
+    await Promise.all(instances.map(i => i.stop({ graceful: false })))
   })
 })

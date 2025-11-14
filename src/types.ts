@@ -30,7 +30,7 @@ export interface DatabaseOptions {
   connectionString?: string;
   max?: number;
   db?: IDatabase;
-
+  connectionTimeoutMillis?: number;
   /** @internal */
   debug?: boolean;
 }
@@ -246,11 +246,11 @@ export interface StopOptions {
   close?: boolean;
   graceful?: boolean;
   timeout?: number;
-  wait?: boolean;
 }
 
 export interface OffWorkOptions {
-  id: string
+  id?: string,
+  wait?: boolean
 }
 
 export interface EventsMixin extends NodeJS.EventEmitter {
