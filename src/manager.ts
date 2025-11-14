@@ -133,7 +133,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     const data = this.getWorkers()
       .map(i => i.toWipData())
-      .filter(i => i.count > 0 && (!INTERNAL_QUEUES[i.name] || includeInternal))
+      .filter(i => i.state !== 'stopped' && (!INTERNAL_QUEUES[i.name] || includeInternal))
 
     return data
   }

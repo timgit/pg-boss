@@ -1,3 +1,4 @@
+// import whyIsNodeRunning from 'why-is-node-running'
 import assert from 'node:assert'
 import * as helper from './testHelper.ts'
 import { randomUUID } from 'node:crypto'
@@ -60,5 +61,35 @@ describe('ops', function () {
     const boss = new PgBoss(this.bossConfig)
     await boss.start()
     await boss.stop()
+  })
+
+  it.only('should not leave open handles after starting and stopping', async function () {
+    const handlesBefore = (process as any)._getActiveHandles?.() || []
+    const requestsBefore = (process as any)._getActiveRequests?.() || []
+
+    // console.log('checking handles before test:')
+    // whyIsNodeRunning()
+
+    const boss = new PgBoss({ ...this.bossConfig, supervise: true, schedule: true })
+    await boss.start()
+    await boss.createQueue(this.schema)
+    await boss.work(this.schema, async () => {})
+    await boss.stop({ timeout: 5000 })
+
+    // console.log('checking handles after test:')
+    // whyIsNodeRunning()
+
+    const handlesAfter = (process as any)._getActiveHandles?.() || []
+    const requestsAfter = (process as any)._getActiveRequests?.() || []
+
+    if (handlesAfter.length !== handlesBefore.length) {
+      console.log('Handles before')
+      console.log(handlesBefore)
+      console.log('\n\nHandles after')
+      console.log(handlesAfter)
+    }
+
+    assert.strictEqual(handlesAfter.length, handlesBefore.length, `Should not leave open handles. Before: ${handlesBefore.length}, After: ${handlesAfter.length}`)
+    assert.strictEqual(requestsAfter.length, requestsBefore.length, `Should not leave open requests. Before: ${requestsBefore.length}, After: ${requestsAfter.length}`)
   })
 })
