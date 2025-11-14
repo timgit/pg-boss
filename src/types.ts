@@ -30,7 +30,7 @@ export interface DatabaseOptions {
   connectionString?: string;
   max?: number;
   db?: IDatabase;
-
+  connectionTimeoutMillis?: number;
   /** @internal */
   debug?: boolean;
 }
