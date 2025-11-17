@@ -29,9 +29,6 @@ By default, calling `stop()` without any arguments will gracefully wait for all 
 
 * `options`: object
 
-  * `wait`, bool
-    Default: `true`. If `true`, the promise will resolve after all workers and maintenance jobs are finished.
-
   * `graceful`, bool
 
     Default: `true`. If `true`, the PgBoss instance will wait for any workers that are currently processing jobs to finish, up to the specified timeout. During this period, new jobs will not be processed, but active jobs will be allowed to finish.
@@ -42,6 +39,8 @@ By default, calling `stop()` without any arguments will gracefully wait for all 
   * `timeout`, int
 
     Default: 30000. Maximum time (in milliseconds) to wait for workers to finish job processing before shutting down the PgBoss instance.
+
+    Note: This option is ignored when `graceful` is set to `false`.
 
 
 ### `isInstalled()`
