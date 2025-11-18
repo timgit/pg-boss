@@ -315,6 +315,31 @@ describe('queues', function () {
     assert(job3b)
   })
 
+  it('singleton policy should only promote one per singletonKey in a batch', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
+    const queue = this.test.bossConfig.schema
+
+    await boss.createQueue(queue, { policy: 'singleton' })
+
+    await boss.send(queue) // no singletonKey
+    await boss.send(queue, null, { singletonKey: 'a', retryLimit: 1 })
+    await boss.send(queue, null, { singletonKey: 'a', retryLimit: 1 })
+    await boss.send(queue, null, { singletonKey: 'b', retryLimit: 1 })
+
+    const jobs = await boss.fetch(queue, { batchSize: 4, includeMetadata: true })
+
+    assert.strictEqual(jobs.length, 3)
+    const keys = jobs.map(j => j.singletonKey)
+    assert(keys.filter(k => k === null).length === 1)
+    assert(keys.filter(k => k === 'a').length === 1)
+    assert(keys.filter(k => k === 'b').length === 1)
+
+    await boss.complete(queue, jobs.map(i => i.id))
+
+    const [job3] = await boss.fetch(queue, { includeMetadata: true })
+    assert.strictEqual(job3.singletonKey, 'a')
+  })
+
   it('stately policy only allows 1 job per state up to active', async function () {
     const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
     const queue = this.test.bossConfig.schema
@@ -429,6 +454,55 @@ describe('queues', function () {
     const [jobA3] = await boss.fetch(queue)
 
     assert(!jobA3)
+  })
+
+  it('stately policy should not activate two jobs with the same singletonKey in one batch', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
+    const queue = this.test.bossConfig.schema
+
+    await boss.createQueue(queue, { policy: 'stately' })
+
+    const jobAId = await boss.send(queue, null, { singletonKey: 'a', retryLimit: 1 })
+
+    const [jobA] = await boss.fetch(queue, { batchSize: 10 })
+    assert(jobA)
+    assert.strictEqual(jobA.id, jobAId)
+
+    await boss.fail(queue, jobA.id)
+
+    const jobBId = await boss.send(queue, null, { singletonKey: 'a', retryLimit: 1 })
+    assert(jobBId)
+
+    const jobs = await boss.fetch(queue, { batchSize: 10 })
+
+    assert.strictEqual(jobs.length, 1)
+    const returnedIds = jobs.map(job => job.id)
+    assert(returnedIds.includes(jobAId) || returnedIds.includes(jobBId))
+
+    // ensure the other job can be fetched next, still respecting singleton key gating per fetch
+    await boss.complete(queue, jobs[0].id)
+    const nextJobs = await boss.fetch(queue, { batchSize: 10 })
+    assert.strictEqual(nextJobs.length, 1)
+  })
+
+  it('stately policy should return different singletonKeys together in a batch', async function () {
+    const boss = this.test.boss = await helper.start({ ...this.test.bossConfig, noDefault: true })
+    const queue = this.test.bossConfig.schema
+
+    await boss.createQueue(queue, { policy: 'stately' })
+
+    const jobAId = await boss.send(queue, null, { singletonKey: 'a', retryLimit: 1 })
+    const [jobA] = await boss.fetch(queue)
+    await boss.fail(queue, jobA.id) // moves A to retry
+
+    const jobBId = await boss.send(queue, null, { singletonKey: 'b', retryLimit: 1 })
+    assert(jobAId && jobBId)
+
+    const jobs = await boss.fetch(queue, { batchSize: 2, includeMetadata: true })
+
+    assert.strictEqual(jobs.length, 2)
+    const keys = jobs.map(j => j.singletonKey).sort()
+    assert.deepStrictEqual(keys, ['a', 'b'])
   })
 
   it('should clear a specific queue', async function () {

@@ -506,7 +506,7 @@ function insertVersion (schema, version) {
 function fetchNextJob (schema) {
   return ({ includeMetadata, priority = true, ignoreStartAfter = false } = {}) => `
     WITH next as (
-      SELECT id
+      SELECT id, singleton_key, policy
       FROM ${schema}.job
       WHERE name = $1
         AND state < '${JOB_STATES.active}'
@@ -514,13 +514,28 @@ function fetchNextJob (schema) {
       ORDER BY ${priority ? 'priority desc, ' : ''}created_on, id
       LIMIT $2
       FOR UPDATE SKIP LOCKED
+    ), grouped as (
+      SELECT
+        n.id,
+        n.policy as grouped_policy,
+        row_number() OVER (
+          PARTITION BY CASE
+            WHEN $2 > 1 AND n.policy in ('${QUEUE_POLICIES.singleton}', '${QUEUE_POLICIES.stately}') THEN n.singleton_key -- gate singleton/stately by key per batch
+            ELSE n.id::text
+          END
+        ) as row_number
+      FROM next n
     )
     UPDATE ${schema}.job j SET
       state = '${JOB_STATES.active}',
       started_on = now(),
       retry_count = CASE WHEN started_on IS NOT NULL THEN retry_count + 1 ELSE retry_count END
-    FROM next
-    WHERE name = $1 AND j.id = next.id
+    FROM grouped
+    WHERE name = $1 AND j.id = grouped.id
+      AND (
+        (grouped.grouped_policy IN ('${QUEUE_POLICIES.singleton}', '${QUEUE_POLICIES.stately}') AND grouped.row_number = 1) -- only one per singleton key
+        OR COALESCE(grouped.grouped_policy, '') NOT IN ('${QUEUE_POLICIES.singleton}', '${QUEUE_POLICIES.stately}') -- other policies unaffected
+      )
     RETURNING j.${includeMetadata ? allJobColumns : baseJobColumns}
   `
 }
