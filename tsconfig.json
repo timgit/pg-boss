@@ -2,10 +2,10 @@
   "extends": "@tsconfig/node22/tsconfig.json",
   "compilerOptions": {
     "outDir": "dist",
-    "sourceMap": true,
+    "sourceMap": false,
     "noEmit": true,
     "declaration": true,
-    "declarationMap": true,
+    "declarationMap": false,
     "allowJs": true,
     "stripInternal": true,
     "allowImportingTsExtensions": true,
