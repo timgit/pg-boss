@@ -4,5 +4,6 @@ export default defineConfig({
   entry: ['./src/index.ts'],
   format: 'es',
   dts: true,
-  exports: true
+  exports: true,
+  noExternal: ['serialize-error'],
 })
