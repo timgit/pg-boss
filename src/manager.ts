@@ -172,9 +172,11 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
       const maxExpiration = jobs.reduce((acc, i) => Math.max(acc, i.expireInSeconds), 0)
       const jobIds = jobs.map(job => job.id)
+      const ac = new AbortController()
+      jobs.forEach(job => { job.signal = ac.signal })
 
       try {
-        const result = await resolveWithinSeconds(callback(jobs), maxExpiration, `handler execution exceeded ${maxExpiration}s`)
+        const result = await resolveWithinSeconds(callback(jobs), maxExpiration, `handler execution exceeded ${maxExpiration}s`, ac)
         await this.complete(name, jobIds, jobIds.length === 1 ? result : undefined)
       } catch (err: any) {
         await this.fail(name, jobIds, err)

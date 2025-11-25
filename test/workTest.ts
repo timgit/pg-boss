@@ -52,6 +52,22 @@ describe('work', function () {
     assert.strictEqual(processCount, timeout / 1000 / pollingIntervalSeconds)
   })
 
+  it('should provide abort signal to job handler', async function () {
+    this.boss = await helper.start(this.bossConfig)
+
+    let receivedSignal
+
+    await this.boss.send(this.schema)
+
+    await this.boss.work(this.schema, async ([job]) => {
+      receivedSignal = job.signal
+    })
+
+    await delay(1000)
+
+    assert(receivedSignal instanceof AbortSignal)
+  })
+
   it('should honor when a worker is notified', async function () {
     this.boss = await helper.start(this.bossConfig)
 

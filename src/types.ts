@@ -185,6 +185,7 @@ export interface Job<T = object> {
   name: string;
   data: T;
   expireInSeconds: number;
+  signal: AbortSignal;
 }
 
 export interface JobWithMetadata<T = object> extends Job<T> {
