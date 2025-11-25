@@ -157,12 +157,12 @@ export interface ResolvedWorkOptions extends WorkOptions {
   pollingInterval: number;
 }
 
-export interface WorkHandler<ReqData> {
-  (job: Job<ReqData>[]): Promise<any>;
+export interface WorkHandler<ReqData, ResData = any> {
+  (job: Job<ReqData>[]): Promise<ResData>;
 }
 
-export interface WorkWithMetadataHandler<ReqData> {
-  (job: JobWithMetadata<ReqData>[]): Promise<any>;
+export interface WorkWithMetadataHandler<ReqData, ResData = any> {
+  (job: JobWithMetadata<ReqData>[]): Promise<ResData>;
 }
 
 export interface Request {

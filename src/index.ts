@@ -191,9 +191,9 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#manager.fetch<T>(name, options)
   }
 
-  work<ReqData>(name: string, handler: types.WorkHandler<ReqData>): Promise<string>
-  work<ReqData>(name: string, options: types.WorkOptions & { includeMetadata: true }, handler: types.WorkWithMetadataHandler<ReqData>): Promise<string>
-  work<ReqData>(name: string, options: types.WorkOptions, handler: types.WorkHandler<ReqData>): Promise<string>
+  work<ReqData, ResData = any>(name: string, handler: types.WorkHandler<ReqData, ResData>): Promise<string>
+  work<ReqData, ResData = any>(name: string, options: types.WorkOptions & { includeMetadata: true }, handler: types.WorkWithMetadataHandler<ReqData, ResData>): Promise<string>
+  work<ReqData, ResData = any>(name: string, options: types.WorkOptions, handler: types.WorkHandler<ReqData, ResData>): Promise<string>
   work (...args: any[]): Promise<string> {
     return this.#manager.work(...args as Parameters<Manager['work']>)
   }
