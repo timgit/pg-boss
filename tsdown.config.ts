@@ -5,6 +5,5 @@ export default defineConfig({
   format: 'es',
   dts: true,
   exports: true,
-  noExternal: ['serialize-error'],
   unbundle: true
 })
