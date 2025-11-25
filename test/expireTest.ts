@@ -62,4 +62,25 @@ describe('expire', function () {
 
     assert.strictEqual('failed', job.state)
   })
+
+  it('should abort signal when job handler times out', async function () {
+    this.boss = await helper.start({ ...this.bossConfig, monitorIntervalSeconds: 1 })
+
+    const jobId = await this.boss.send(this.schema, null, { retryLimit: 0, expireInSeconds: 1 })
+
+    assert(jobId)
+
+    let signalAborted = false
+
+    await this.boss.work(this.schema, async ([job]) => {
+      job.signal.addEventListener('abort', () => {
+        signalAborted = true
+      })
+      await delay(2000)
+    })
+
+    await delay(3000)
+
+    assert.strictEqual(signalAborted, true)
+  })
 })

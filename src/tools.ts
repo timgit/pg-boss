@@ -16,8 +16,8 @@ export interface AbortablePromise<T> extends Promise<T> {
   abort: () => void
 }
 
-function delay (ms: number, error?: string): AbortablePromise<void> {
-  const ac = new AbortController()
+function delay (ms: number, error?: string, abortController?: AbortController): AbortablePromise<void> {
+  const ac = abortController || new AbortController()
 
   const promise = new Promise<void>((resolve, reject) => {
     setTimeout(ms, null, { signal: ac.signal })
@@ -40,9 +40,9 @@ function delay (ms: number, error?: string): AbortablePromise<void> {
   return promise
 }
 
-async function resolveWithinSeconds<T> (promise: Promise<T>, seconds: number, message?: string): Promise<T | void> {
+async function resolveWithinSeconds<T> (promise: Promise<T>, seconds: number, message?: string, abortController?: AbortController): Promise<T | void> {
   const timeout = Math.max(1, seconds) * 1000
-  const reject = delay(timeout, message)
+  const reject = delay(timeout, message, abortController)
 
   let result
 

@@ -45,6 +45,7 @@ The jobs argument is an array of jobs with the following properties.
 |`id`| string, uuid |
 |`name`| string |
 |`data`| object |
+|`signal`| AbortSignal |
 
 
 An example of a worker that checks for a job every 10 seconds.
@@ -75,6 +76,14 @@ const queue = 'email-welcome'
 await boss.work(queue, async ([ job ]) => {
   await emailer.sendWelcomeEmail(job.data)
   await boss.deleteJob(queue, job.id)
+})
+```
+
+work() with abort signal
+
+```js
+await boss.work('process-video', async ([ job ]) => {
+  const result = await fetch('https://api.example.com/process', { signal: job.signal })
 })
 ```
 
