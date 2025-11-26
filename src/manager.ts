@@ -101,9 +101,61 @@ class Manager extends EventEmitter implements types.EventsMixin {
   work<ReqData>(name: string, handler: types.WorkHandler<ReqData>): Promise<string>
   work<ReqData>(name: string, options: types.WorkOptions & { includeMetadata: true }, handler: types.WorkWithMetadataHandler<ReqData>): Promise<string>
   work<ReqData>(name: string, options: types.WorkOptions, handler: types.WorkHandler<ReqData>): Promise<string>
-  async work (name: string, ...args: unknown[]): Promise<string> {
+  async work<ReqData> (name: string, ...args: unknown[]): Promise<string> {
     const { options, callback } = Attorney.checkWorkArgs(name, args)
-    return await this.watch(name, options, callback)
+
+    if (this.stopped) {
+      throw new Error('Workers are disabled. pg-boss is stopped')
+    }
+
+    const {
+      pollingInterval: interval,
+      batchSize = 1,
+      includeMetadata = false,
+      priority = true
+    } = options
+
+    const id = randomUUID({ disableEntropyCache: true })
+
+    const fetch = () => this.fetch<ReqData>(name, { batchSize, includeMetadata, priority })
+
+    const onFetch = async (jobs: types.Job<ReqData>[]) => {
+      if (!jobs.length) {
+        return
+      }
+
+      if (this.config.__test__throw_worker) {
+        throw new Error('__test__throw_worker')
+      }
+
+      this.emitWip(name)
+
+      const maxExpiration = jobs.reduce((acc, i) => Math.max(acc, i.expireInSeconds), 0)
+      const jobIds = jobs.map(job => job.id)
+      const ac = new AbortController()
+      jobs.forEach(job => { job.signal = ac.signal })
+
+      try {
+        const result = await resolveWithinSeconds(callback(jobs), maxExpiration, `handler execution exceeded ${maxExpiration}s`, ac)
+        await this.complete(name, jobIds, jobIds.length === 1 ? result : undefined)
+      } catch (err: any) {
+        await this.fail(name, jobIds, err)
+      }
+
+      this.emitWip(name)
+    }
+
+    const onError = (error: any) => {
+      this.emit(events.error, { ...error, message: error.message, stack: error.stack, queue: name, worker: id })
+    }
+
+    const worker = new Worker<ReqData>({ id, name, options, interval, fetch, onFetch, onError })
+
+    this.addWorker(worker)
+
+    worker.start()
+
+    return id
   }
 
   private addWorker (worker: Worker<any>) {
@@ -141,61 +193,6 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
   hasPendingCleanups (): boolean {
     return this.pendingOffWorkCleanups.size > 0
-  }
-
-  private async watch<T> (name: string, options: types.ResolvedWorkOptions, callback: types.WorkHandler<T>): Promise<string> {
-    if (this.stopped) {
-      throw new Error('Workers are disabled. pg-boss is stopped')
-    }
-
-    const {
-      pollingInterval: interval,
-      batchSize,
-      includeMetadata = false,
-      priority = true
-    } = options
-
-    const id = randomUUID({ disableEntropyCache: true })
-
-    const fetch = () => this.fetch<T>(name, { batchSize, includeMetadata, priority })
-
-    const onFetch = async (jobs: types.Job<T>[]) => {
-      if (!jobs.length) {
-        return
-      }
-
-      if (this.config.__test__throw_worker) {
-        throw new Error('__test__throw_worker')
-      }
-
-      this.emitWip(name)
-
-      const maxExpiration = jobs.reduce((acc, i) => Math.max(acc, i.expireInSeconds), 0)
-      const jobIds = jobs.map(job => job.id)
-      const ac = new AbortController()
-      jobs.forEach(job => { job.signal = ac.signal })
-
-      try {
-        const result = await resolveWithinSeconds(callback(jobs), maxExpiration, `handler execution exceeded ${maxExpiration}s`, ac)
-        await this.complete(name, jobIds, jobIds.length === 1 ? result : undefined)
-      } catch (err: any) {
-        await this.fail(name, jobIds, err)
-      }
-
-      this.emitWip(name)
-    }
-
-    const onError = (error: any) => {
-      this.emit(events.error, { ...error, message: error.message, stack: error.stack, queue: name, worker: id })
-    }
-
-    const worker = new Worker<T>({ id, name, options, interval, fetch, onFetch, onError })
-
-    this.addWorker(worker)
-
-    worker.start()
-
-    return id
   }
 
   async offWork (name: string, options: types.OffWorkOptions = { wait: true }): Promise<void> {
@@ -411,7 +408,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       table,
       name,
       policy,
-      limit: options.batchSize!,
+      limit: options.batchSize || 1,
       ignoreSingletons: singletonsActive
     }
 

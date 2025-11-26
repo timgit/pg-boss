@@ -100,8 +100,6 @@ function checkWorkArgs (name: string, args: any[]): {
   assert(!('includeMetadata' in options) || typeof options.includeMetadata === 'boolean', 'includeMetadata must be a boolean')
   assert(!('priority' in options) || typeof options.priority === 'boolean', 'priority must be a boolean')
 
-  options.batchSize = options.batchSize || 1
-
   return { options, callback }
 }
 
@@ -112,8 +110,6 @@ function checkFetchArgs (name: string, options: any) {
   assert(!('includeMetadata' in options) || typeof options.includeMetadata === 'boolean', 'includeMetadata must be a boolean')
   assert(!('priority' in options) || typeof options.priority === 'boolean', 'priority must be a boolean')
   assert(!('ignoreStartAfter' in options) || typeof options.ignoreStartAfter === 'boolean', 'ignoreStartAfter must be a boolean')
-
-  options.batchSize = options.batchSize || 1
 }
 
 function getConfig (value: string | types.ConstructorOptions): types.ResolvedConstructorOptions {
