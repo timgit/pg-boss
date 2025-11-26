@@ -1,4 +1,4 @@
-import { PgBoss } from '../../dist/index.mjs'
+import { PgBoss } from '../../dist/index.js'
 import * as helper from '../../test/testHelper.js'
 import { delay } from '../../src/tools.ts'
 

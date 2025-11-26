@@ -4,5 +4,4 @@ node_modules
 *.tgz
 *.log
 coverage
-
 dist

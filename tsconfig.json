@@ -1,16 +1,15 @@
 {
-  "extends": "@tsconfig/node22/tsconfig.json",
+  "extends": [
+    "@tsconfig/node22/tsconfig.json",
+    "@tsconfig/node-ts/tsconfig.json"
+  ],
   "compilerOptions": {
+    "rootDir": "src",
     "outDir": "dist",
-    "sourceMap": false,
-    "noEmit": true,
     "declaration": true,
-    "declarationMap": false,
-    "allowJs": true,
+    "declarationMap": true,
     "stripInternal": true,
-    "allowImportingTsExtensions": true,
-    "typeRoots": ["./node_modules/@types", "./test"]
+    "resolveJsonModule": true
   },
-  "include": ["src/**/*.ts", "test/**/*.ts"],
-  "exclude": ["node_modules", "dist"]
+  "include": ["src"]
 }
