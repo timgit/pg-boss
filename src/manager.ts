@@ -7,7 +7,7 @@ import type Db from './db.ts'
 import * as plans from './plans.ts'
 import type Timekeeper from './timekeeper.ts'
 import * as timekeeper from './timekeeper.ts'
-import { delay, resolveWithinSeconds } from './tools.ts'
+import { resolveWithinSeconds } from './tools.ts'
 import * as types from './types.ts'
 import Worker from './worker.ts'
 
@@ -28,7 +28,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
   queueCacheInterval: NodeJS.Timeout | undefined
   timekeeper: Timekeeper | undefined
   queues: Record<string, types.QueueResult> | null
-  pendingOffWorkCleanups: Set<Promise<void>>
+  pendingOffWorkCleanups: Set<Promise<any>>
 
   constructor (db: types.IDatabase, config: types.ResolvedConstructorOptions) {
     super()
@@ -207,19 +207,11 @@ class Manager extends EventEmitter implements types.EventsMixin {
       return
     }
 
-    for (const worker of workers) {
-      worker.stop()
-    }
-
-    const cleanupPromise = (async () => {
-      while (!workers.every(w => w.stopped)) {
-        await delay(1000)
-      }
-
-      for (const worker of workers) {
+    const cleanupPromise = Promise.allSettled(
+      workers.map(async worker => {
+        await worker.stop()
         this.removeWorker(worker)
-      }
-    })()
+      }))
 
     if (options.wait) {
       await cleanupPromise

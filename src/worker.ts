@@ -40,6 +40,7 @@ class Worker<T = unknown> {
   stopped = false
   private loopDelayPromise: AbortablePromise<void> | null = null
   private beenNotified = false
+  private runPromise: Promise<void> | null = null
 
   constructor ({ id, name, options, interval, fetch, onFetch, onError }: WorkerOptions<T>) {
     this.id = id
@@ -51,15 +52,11 @@ class Worker<T = unknown> {
     this.interval = interval
   }
 
-  notify () {
-    this.beenNotified = true
-
-    if (this.loopDelayPromise) {
-      this.loopDelayPromise.abort()
-    }
+  start () {
+    this.runPromise = this.run()
   }
 
-  async start () {
+  private async run () {
     this.state = WORKER_STATES.active
 
     while (!this.stopping) {
@@ -107,13 +104,23 @@ class Worker<T = unknown> {
     this.state = WORKER_STATES.stopped
   }
 
-  stop () {
+  notify () {
+    this.beenNotified = true
+
+    if (this.loopDelayPromise) {
+      this.loopDelayPromise.abort()
+    }
+  }
+
+  async stop (): Promise<void> {
     this.stopping = true
     this.state = WORKER_STATES.stopping
 
     if (this.loopDelayPromise) {
       this.loopDelayPromise.abort()
     }
+
+    await this.runPromise
   }
 
   toWipData (): types.WipData {
