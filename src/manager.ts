@@ -523,9 +523,9 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     Attorney.assertQueueName(name)
 
-    options.policy = options.policy || plans.QUEUE_POLICIES.standard
+    const policy = options.policy || plans.QUEUE_POLICIES.standard
 
-    assert(options.policy in plans.QUEUE_POLICIES, `${options.policy} is not a valid queue policy`)
+    assert(policy in plans.QUEUE_POLICIES, `${policy} is not a valid queue policy`)
 
     Attorney.validateQueueArgs(options)
 
@@ -535,7 +535,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       await this.getQueueCache(options.deadLetter)
     }
 
-    const sql = plans.createQueue(this.config.schema, name, options)
+    const sql = plans.createQueue(this.config.schema, name, { ...options, policy })
     await this.db.executeSql(sql)
   }
 

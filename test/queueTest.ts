@@ -9,6 +9,16 @@ describe('queues', function () {
     await this.boss.createQueue(this.schema)
   })
 
+  it('should not add a policy property when creating a queue if it is missing', async function () {
+    this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
+
+    const options = {}
+
+    await this.boss.createQueue(this.schema, options)
+
+    assert.strictEqual(Object.keys(options).length, 0)
+  })
+
   it('createQueue should work if queue already exists', async function () {
     this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
 
