@@ -5,4 +5,10 @@ node_modules
 *.log
 coverage
 
-dist
+# Generated types
+*.d.ts
+*.d.ts.map
+# Generated js
+*.js
+# eslint
+!*.config.js

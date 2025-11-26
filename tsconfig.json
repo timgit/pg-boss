@@ -1,16 +1,16 @@
 {
-  "extends": "@tsconfig/node22/tsconfig.json",
+  "extends": [
+    "@tsconfig/node22/tsconfig.json",
+    "@tsconfig/node-ts/tsconfig.json"
+  ],
   "compilerOptions": {
-    "outDir": "dist",
-    "sourceMap": false,
-    "noEmit": true,
-    "declaration": true,
-    "declarationMap": false,
-    "allowJs": true,
-    "stripInternal": true,
+    "typeRoots": ["./node_modules/@types", "./test"],
+    // Required by https://nodejs.org/docs/latest-v22.x/api/typescript.html#type-stripping
+    "erasableSyntaxOnly": true,
     "allowImportingTsExtensions": true,
-    "typeRoots": ["./node_modules/@types", "./test"]
+    "rewriteRelativeImportExtensions": true,
+    "verbatimModuleSyntax": true
   },
-  "include": ["src/**/*.ts", "test/**/*.ts"],
-  "exclude": ["node_modules", "dist"]
+  "include": ["**/*.ts"],
+  "exclude": ["**/*.js", "node_modules", ".github"]
 }
