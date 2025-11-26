@@ -3,15 +3,10 @@
   "version": "12.3.1",
   "description": "Queueing jobs in Postgres from Node.js like a boss",
   "type": "module",
-  "main": "./dist/index.mjs",
-  "module": "./dist/index.mjs",
-  "types": "./dist/index.d.mts",
+  "main": "./src/index.js",
+  "types": "./src/index.d.ts",
   "engines": {
     "node": ">=22.12.0"
-  },
-  "exports": {
-    ".": "./dist/index.mjs",
-    "./package.json": "./package.json"
   },
   "dependencies": {
     "cron-parser": "^5.4.0",
@@ -20,6 +15,7 @@
   },
   "devDependencies": {
     "@istanbuljs/nyc-config-typescript": "^1.0.2",
+    "@tsconfig/node-ts": "^23.6.2",
     "@tsconfig/node22": "^22.0.5",
     "@types/mocha": "^10.0.10",
     "@types/node": "^22.19.1",
@@ -30,13 +26,14 @@
     "neostandard": "^0.12.2",
     "nyc": "^17.1.0",
     "source-map-support": "^0.5.21",
-    "tsdown": "^0.16.6",
     "tsx": "^4.20.6",
     "typescript": "^5.9.3"
   },
   "scripts": {
-    "build": "tsdown",
+    "build": "npm run clean && tsc -p tsconfig.declaration.json",
+    "clean": "rm -rf $(find src -type f -name '*.d.ts*' ! -name '*-types.d.ts') && rm -rf $(find src -type f -name '*.js')",
     "prepublishOnly": "npm test && npm run build",
+    "postpublish": "npm run clean",
     "test": "eslint . && mocha test/**/*.ts",
     "cover": "nyc npm test",
     "tsc": "tsc --noEmit",
@@ -64,7 +61,9 @@
   },
   "homepage": "https://timgit.github.io/pg-boss",
   "files": [
-    "dist",
+    "src/**.d.ts",
+    "src/**.d.ts.map",
+    "src/**.js",
     "README.md",
     "LICENSE",
     "package.json"
