@@ -1,4 +1,4 @@
-import { PgBoss } from '../dist/index.mjs'
+import { PgBoss } from '../dist/index.js'
 
 async function readme () {
   const boss = new PgBoss('postgres://postgres:postgres@localhost/pgboss')

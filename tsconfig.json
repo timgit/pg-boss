@@ -4,13 +4,10 @@
     "@tsconfig/node-ts/tsconfig.json"
   ],
   "compilerOptions": {
-    "typeRoots": ["./node_modules/@types", "./test"],
-    // Required by https://nodejs.org/docs/latest-v22.x/api/typescript.html#type-stripping
-    "erasableSyntaxOnly": true,
-    "allowImportingTsExtensions": true,
-    "rewriteRelativeImportExtensions": true,
-    "verbatimModuleSyntax": true
+    "isolatedModules": true,
+    "sourceMap": true,
+    "outDir": "dist",
+    "rootDir": "src"
   },
-  "include": ["**/*.ts"],
-  "exclude": ["**/*.js", "node_modules", ".github"]
+  "include": ["src"]
 }
