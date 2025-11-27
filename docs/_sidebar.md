@@ -10,5 +10,6 @@
 * * [Scheduling](./api/scheduling.md)
 * * [PubSub](./api/pubsub.md)
 * * [Workers](./api/workers.md)
+* * [Testing](./api/testing.md)
 * * [Utils](./api/utils.md)
 * [SQL](sql.md)
