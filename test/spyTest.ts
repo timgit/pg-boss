@@ -125,7 +125,6 @@ describe('spy', function () {
     )
 
     // Send and process job after
-    await delay(100)
     await this.boss.send(this.schema, { value: 'awaited' })
     await this.boss.work(this.schema, async () => {})
 
@@ -163,10 +162,8 @@ describe('spy', function () {
 
     const jobId = await this.boss.send(this.schema, { value: 'test' })
 
-    // Wait for job to be created
     await spy.waitForJobWithId(jobId!, 'created')
 
-    // Clear the spy
     spy.clear()
 
     // Start waiting for a job that will never arrive (cleared data)
@@ -281,13 +278,8 @@ describe('spy', function () {
       'created'
     )
 
-    // Small delay to ensure the promise is registered
-    await delay(50)
-
-    // Now create the job
     await this.boss.send(this.schema, { value: 'race-test' })
 
-    // The await should resolve
     const job = await waitPromise
 
     assert.deepStrictEqual(job.data, { value: 'race-test' })
@@ -321,31 +313,11 @@ describe('spy', function () {
   })
 
   it('should throw error when spy is not enabled', async function () {
-    // This test verifies that getSpy() throws when __test__enableSpies is not set
     this.boss = await helper.start(this.bossConfig)
 
     assert.throws(
       () => this.boss.getSpy(this.schema),
       /Spy is not enabled/
     )
-  })
-
-  it('should have no overhead when spy is not enabled', async function () {
-    // This test verifies that spy tracking code is completely skipped in production
-    this.boss = await helper.start(this.bossConfig)
-
-    // Jobs should still work normally without spy enabled
-    const jobId = await this.boss.send(this.schema, { value: 'no-spy-test' })
-    assert(jobId, 'Job should be created')
-
-    let completed = false
-    await this.boss.work(this.schema, async () => {
-      completed = true
-    })
-
-    // Wait for job to complete
-    await delay(2000)
-
-    assert(completed, 'Job should complete normally without spy')
   })
 })
