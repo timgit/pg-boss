@@ -320,4 +320,26 @@ describe('spy', function () {
       /Spy is not enabled/
     )
   })
+
+  it('should track job creation via singletonNextSlot retry path', async function () {
+    this.boss = await helper.start({ ...this.bossConfig, __test__enableSpies: true })
+
+    const spy = this.boss.getSpy(this.schema)
+
+    // First job creates the singleton slot
+    const jobId1 = await this.boss.send(this.schema, { value: 'first' }, { singletonSeconds: 300 })
+    assert.ok(jobId1)
+
+    const job1 = await spy.waitForJobWithId(jobId1!, 'created')
+    assert.strictEqual(job1.id, jobId1)
+
+    // Second job with singletonNextSlot triggers the retry path (try2)
+    // because the first insert conflicts with the existing singleton
+    const jobId2 = await this.boss.send(this.schema, { value: 'second' }, { singletonSeconds: 300, singletonNextSlot: true })
+    assert.ok(jobId2)
+
+    const job2 = await spy.waitForJobWithId(jobId2!, 'created')
+    assert.strictEqual(job2.id, jobId2)
+    assert.deepStrictEqual(job2.data, { value: 'second' })
+  })
 })
