@@ -6,7 +6,8 @@ describe('cancel', function () {
   it('should reject missing arguments', async function (this: TestContext) {
     this.boss = await helper.start(this.bossConfig)
     await assert.rejects(async () => {
-      await this.boss.cancel(null as any, null as any)
+      // @ts-ignore
+      await this.boss.cancel()
     })
   })
 

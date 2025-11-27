@@ -50,7 +50,7 @@ describe('schedule', function () {
     this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
 
     await assert.rejects(async () => {
-      await this.boss.schedule(this.schema, '* * * * *')
+      await this.boss!.schedule(this.schema, '* * * * *')
     })
   })
 
@@ -166,6 +166,7 @@ describe('schedule', function () {
       __test__force_clock_skew_warning: true
     }
 
+    // @ts-ignore
     this.boss = new PgBoss(config)
 
     let warningCount = 0

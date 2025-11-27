@@ -6,6 +6,7 @@ describe('cancel', function () {
     this.boss = await helper.start(this.bossConfig)
 
     await assert.rejects(async () => {
+      // @ts-ignore
       await this.boss.resume()
     })
   })
@@ -14,6 +15,8 @@ describe('cancel', function () {
     this.boss = await helper.start(this.bossConfig)
 
     const jobId = await this.boss.send(this.schema, null, { startAfter: 1 })
+
+    assert(jobId)
 
     await this.boss.cancel(this.schema, jobId)
 
@@ -33,11 +36,15 @@ describe('cancel', function () {
 
     const jobId = await this.boss.send(this.schema, null, { startAfter: 1 })
 
+    assert(jobId)
+
     let callCount = 0
     const _db = await helper.getDb()
     const db = {
+      // @ts-ignore
       async executeSql (sql, values) {
         callCount++
+        // @ts-ignore
         return _db.pool.query(sql, values)
       }
     }

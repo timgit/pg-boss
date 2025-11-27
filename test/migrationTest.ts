@@ -11,6 +11,7 @@ const currentSchemaVersion = packageJson.pgboss.schema
 describe('migration', function () {
   beforeEach(async function () {
     const db = await getDb({ debug: false })
+    // @ts-ignore
     this.contractor = new Contractor(db, this.bossConfig)
   })
 
@@ -30,7 +31,7 @@ describe('migration', function () {
     const config = { ...this.bossConfig, createSchema: false }
     this.boss = new PgBoss(config)
     await assert.rejects(async () => {
-      await this.boss.start()
+      await this.boss!.start()
     })
   })
 
@@ -215,7 +216,7 @@ describe('migration', function () {
 
     try {
       await contractor.migrate('¯\\_(ツ)_//¯')
-    } catch (error) {
+    } catch (error: any) {
       assert(error.message.includes('not found'))
     }
   })
@@ -238,7 +239,7 @@ describe('migration', function () {
 
     try {
       await boss1.start()
-    } catch (error) {
+    } catch (error: any) {
       assert(error.message.includes('wat'))
     } finally {
       await boss1.stop({ graceful: false })
@@ -268,7 +269,7 @@ describe('migration', function () {
     const config = { ...this.bossConfig, migrate: false }
     this.boss = new PgBoss(config)
     await assert.rejects(async () => {
-      await this.boss.start()
+      await this.boss!.start()
     })
   })
 

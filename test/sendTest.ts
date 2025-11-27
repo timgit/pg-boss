@@ -7,6 +7,7 @@ describe('send', function () {
     this.boss = await helper.start(this.bossConfig)
 
     await assert.rejects(async () => {
+      // @ts-ignore
       await this.boss.send()
     })
   })
@@ -15,6 +16,7 @@ describe('send', function () {
     this.boss = await helper.start(this.bossConfig)
 
     await assert.rejects(async () => {
+      // @ts-ignore
       await this.boss.send('job', () => true)
     })
   })
@@ -23,6 +25,7 @@ describe('send', function () {
     this.boss = await helper.start(this.bossConfig)
 
     await assert.rejects(async () => {
+      // @ts-ignore
       await this.boss.send('job', 'data', () => true)
     })
   })
@@ -46,7 +49,7 @@ describe('send', function () {
 
     await this.boss.send({ name: this.schema, data: { message } })
 
-    const [job] = await this.boss.fetch(this.schema)
+    const [job] = await this.boss.fetch<{ message: string }>(this.schema)
 
     assert.strictEqual(message, job.data.message)
   })
@@ -54,7 +57,7 @@ describe('send', function () {
   it('should accept job object with name and options only', async function () {
     this.boss = await helper.start(this.bossConfig)
 
-    const options = { someCrazyOption: 'whatever' }
+    const options = { retryLimit: 1 }
 
     await this.boss.send({ name: this.schema, options })
 
@@ -70,8 +73,10 @@ describe('send', function () {
     const db = await helper.getDb()
     const options = {
       db: {
+        // @ts-ignore
         async executeSql (sql, values) {
           called = true
+          // @ts-ignore
           return db.pool.query(sql, values)
         }
       },

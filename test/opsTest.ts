@@ -8,9 +8,9 @@ describe('ops', function () {
     this.boss = await helper.start({ ...this.bossConfig, __test__throw_worker: true })
 
     await this.boss.send(this.schema)
-    await this.boss.work(this.schema, () => {})
+    await this.boss.work(this.schema, async () => {})
 
-    await new Promise(resolve => this.boss.once('error', resolve))
+    await new Promise(resolve => this.boss!.once('error', resolve))
   })
 
   it('should return null from getJobById if not found', async function () {
@@ -30,6 +30,7 @@ describe('ops', function () {
     this.boss = await helper.start(this.bossConfig)
     await this.boss.stop({ graceful: false })
 
+    // @ts-ignore
     assert(this.boss.getDb().pool.totalCount === 0)
   })
 
@@ -37,6 +38,7 @@ describe('ops', function () {
     this.boss = await helper.start(this.bossConfig)
     await this.boss.stop()
 
+    // @ts-ignore
     assert(this.boss.getDb().pool.totalCount === 0)
   })
 

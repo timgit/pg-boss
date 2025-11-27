@@ -4,12 +4,12 @@
     "@tsconfig/node-ts/tsconfig.json"
   ],
   "compilerOptions": {
+    "rootDir": "src",
     "outDir": "dist",
     "declaration": true,
     "declarationMap": true,
     "stripInternal": true,
-    "resolveJsonModule": true,
-    "noEmit": true
+    "resolveJsonModule": true
   },
-  "include": ["src", "test"]
+  "include": ["src"]
 }

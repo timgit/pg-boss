@@ -6,6 +6,7 @@ describe('failure', function () {
   it('should reject missing id argument', async function () {
     this.boss = await helper.start(this.bossConfig)
     await assert.rejects(async () => {
+      // @ts-ignore
       await this.boss.fail()
     })
   })
@@ -52,6 +53,7 @@ describe('failure', function () {
 
     const results = await Promise.all(jobs.map(job => this.boss!.getJobById(this.schema, job.id)))
 
+    // @ts-ignore
     assert(results.every(i => i!.output.message === message))
   })
 
@@ -59,14 +61,20 @@ describe('failure', function () {
     this.boss = await helper.start(this.bossConfig)
 
     const failPayload = new Error('Something went wrong')
+    // @ts-ignore
     failPayload.some = { deeply: { nested: { reason: 'nuna' } } }
 
     const jobId = await this.boss.send(this.schema)
+
+    assert(jobId)
 
     await this.boss.fail(this.schema, jobId, failPayload)
 
     const job = await this.boss.getJobById(this.schema, jobId)
 
+    assert(job?.output)
+
+    // @ts-ignore
     assert.strictEqual(job.output.some.deeply.nested.reason, failPayload.some.deeply.nested.reason)
   })
 
@@ -75,13 +83,17 @@ describe('failure', function () {
     const failPayload = 'mah error'
 
     const jobId = await this.boss.send(this.schema)
+
+    assert(jobId)
+
     await this.boss.work(this.schema, () => Promise.reject(failPayload))
 
     await delay(1000)
 
     const job = await this.boss.getJobById(this.schema, jobId)
 
-    assert.strictEqual(job.output.value, failPayload)
+    // @ts-ignore
+    assert.strictEqual(job!.output!.value, failPayload)
   })
 
   it('failure via Promise reject() should pass object payload', async function () {
@@ -89,16 +101,21 @@ describe('failure', function () {
     const something = 'clever'
 
     const errorResponse = new Error('custom error')
+    // @ts-ignore
     errorResponse.something = something
 
     const jobId = await this.boss.send(this.schema)
+
+    assert(jobId)
+
     await this.boss.work(this.schema, () => Promise.reject(errorResponse))
 
     await delay(1000)
 
     const job = await this.boss.getJobById(this.schema, jobId)
 
-    assert.strictEqual(job.output.something, something)
+    // @ts-ignore
+    assert.strictEqual(job!.output.something, something)
   })
 
   it('failure with Error object should be saved in the job', async function () {
@@ -106,13 +123,17 @@ describe('failure', function () {
     const message = 'a real error!'
 
     const jobId = await this.boss.send(this.schema)
+
+    assert(jobId)
+
     await this.boss.work(this.schema, async () => { throw new Error(message) })
 
     await delay(1000)
 
     const job = await this.boss.getJobById(this.schema, jobId)
 
-    assert(job.output.message.includes(message))
+    // @ts-ignore
+    assert(job!.output.message.includes(message))
   })
 
   it('should fail a job with custom connection', async function () {
@@ -125,8 +146,10 @@ describe('failure', function () {
     let called = false
     const _db = await helper.getDb()
     const db = {
+      // @ts-ignore
       async executeSql (sql, values) {
         called = true
+        // @ts-ignore
         return _db.pool.query(sql, values)
       }
     }
@@ -140,10 +163,14 @@ describe('failure', function () {
     this.boss = await helper.start(this.bossConfig)
 
     const jobId = await this.boss.send(this.schema)
+
+    assert(jobId)
+
     const message = 'mhmm'
 
     await this.boss.work(this.schema, { pollingIntervalSeconds: 0.5 }, async () => {
       const err = { message }
+      // @ts-ignore
       err.myself = err
       throw err
     })
@@ -152,6 +179,7 @@ describe('failure', function () {
 
     const job = await this.boss.getJobById(this.schema, jobId)
 
+    // @ts-ignore
     assert.strictEqual(job.output.message, message)
   })
 
@@ -165,10 +193,12 @@ describe('failure', function () {
 
     const jobId = await this.boss.send(this.schema, { key: this.schema }, { retryLimit: 0 })
 
+    assert(jobId)
+
     await this.boss.fetch(this.schema)
     await this.boss.fail(this.schema, jobId)
 
-    const [job] = await this.boss.fetch(deadLetter)
+    const [job] = await this.boss.fetch<{ key: string }>(deadLetter)
 
     assert.strictEqual(job.data.key, this.schema)
   })

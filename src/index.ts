@@ -166,18 +166,18 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return await this.#manager.send(...args as Parameters<Manager['send']>)
   }
 
-  sendAfter (name: string, data: object, options: types.SendOptions, date: Date): Promise<string | null>
-  sendAfter (name: string, data: object, options: types.SendOptions, dateString: string): Promise<string | null>
-  sendAfter (name: string, data: object, options: types.SendOptions, seconds: number): Promise<string | null>
-  async sendAfter (name: string, data: object, options: types.SendOptions, after: Date | string | number): Promise<string | null> {
+  sendAfter (name: string, data: object | null, options: types.SendOptions | null, date: Date): Promise<string | null>
+  sendAfter (name: string, data: object | null, options: types.SendOptions | null, dateString: string): Promise<string | null>
+  sendAfter (name: string, data: object | null, options: types.SendOptions | null, seconds: number): Promise<string | null>
+  async sendAfter (name: string, data: object | null, options: types.SendOptions | null, after: Date | string | number): Promise<string | null> {
     return this.#manager.sendAfter(name, data, options, after)
   }
 
-  sendThrottled (name: string, data: object, options: types.SendOptions, seconds: number, key?: string): Promise<string | null> {
+  sendThrottled (name: string, data: object | null, options: types.SendOptions | null, seconds: number, key?: string): Promise<string | null> {
     return this.#manager.sendThrottled(name, data, options, seconds, key)
   }
 
-  sendDebounced (name: string, data: object, options: types.SendOptions, seconds: number, key?: string): Promise<string | null> {
+  sendDebounced (name: string, data: object | null, options: types.SendOptions | null, seconds: number, key?: string): Promise<string | null> {
     return this.#manager.sendDebounced(name, data, options, seconds, key)
   }
 
@@ -242,15 +242,15 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#manager.deleteStoredJobs(name)
   }
 
-  deleteAllJobs (name: string): Promise<void> {
+  deleteAllJobs (name?: string): Promise<void> {
     return this.#manager.deleteAllJobs(name)
   }
 
-  complete (name: string, id: string | string[], data?: object, options?: types.ConnectionOptions): Promise<types.CommandResponse> {
+  complete (name: string, id: string | string[], data?: object | null, options?: types.ConnectionOptions): Promise<types.CommandResponse> {
     return this.#manager.complete(name, id, data, options)
   }
 
-  fail (name: string, id: string | string[], data?: object, options?: types.ConnectionOptions): Promise<types.CommandResponse> {
+  fail (name: string, id: string | string[], data?: object | null, options?: types.ConnectionOptions): Promise<types.CommandResponse> {
     return this.#manager.fail(name, id, data, options)
   }
 
@@ -294,7 +294,7 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#contractor.schemaVersion()
   }
 
-  schedule (name: string, cron: string, data?: object, options?: types.ScheduleOptions): Promise<void> {
+  schedule (name: string, cron: string, data?: object | null, options?: types.ScheduleOptions): Promise<void> {
     return this.#timekeeper.schedule(name, cron, data, options)
   }
 

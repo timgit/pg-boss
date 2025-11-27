@@ -249,14 +249,14 @@ class Manager extends EventEmitter implements types.EventsMixin {
   }
 
   send (request: types.Request): Promise<string | null>
-  send (name: string, data?: object | null, options?: types.SendOptions): Promise<string | null>
+  send (name: string, data?: object | null, options?: types.SendOptions | null): Promise<string | null>
   async send (...args: any[]): Promise<string | null> {
     const result = Attorney.checkSendArgs(args)
 
     return await this.createJob(result)
   }
 
-  async sendAfter (name: string, data: object, options: types.SendOptions, after: Date | string | number): Promise<string | null> {
+  async sendAfter (name: string, data: object | null, options: types.SendOptions | null, after: Date | string | number): Promise<string | null> {
     options = options ? { ...options } : {}
     options.startAfter = after
 
@@ -265,7 +265,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     return await this.createJob(result)
   }
 
-  async sendThrottled (name: string, data: object, options: types.SendOptions, seconds: number, key?: string): Promise<string | null> {
+  async sendThrottled (name: string, data: object | null, options: types.SendOptions | null, seconds: number, key?: string): Promise<string | null> {
     options = options ? { ...options } : {}
     options.singletonSeconds = seconds
     options.singletonNextSlot = false
@@ -276,7 +276,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     return await this.createJob(result)
   }
 
-  async sendDebounced (name: string, data: object, options: types.SendOptions, seconds: number, key?: string): Promise<string | null> {
+  async sendDebounced (name: string, data: object | null, options: types.SendOptions | null, seconds: number, key?: string): Promise<string | null> {
     options = options ? { ...options } : {}
     options.singletonSeconds = seconds
     options.singletonNextSlot = true
@@ -429,7 +429,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     return ids
   }
 
-  private mapCompletionDataArg (data: object | undefined) {
+  private mapCompletionDataArg (data?: object | null) {
     if (data === null || typeof data === 'undefined' || typeof data === 'function') { return null }
 
     const result = (typeof data === 'object' && !Array.isArray(data))
@@ -447,7 +447,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     }
   }
 
-  async complete (name: string, id: string | string[], data?: object, options: types.ConnectionOptions = {}) {
+  async complete (name: string, id: string | string[], data?: object | null, options: types.ConnectionOptions = {}) {
     Attorney.assertQueueName(name)
     const db = this.assertDb(options)
     const ids = this.mapCompletionIdArg(id, 'complete')
@@ -600,7 +600,13 @@ class Manager extends EventEmitter implements types.EventsMixin {
     await this.db.executeSql(sql, [name])
   }
 
-  async deleteAllJobs (name: string) {
+  async deleteAllJobs (name?: string) {
+    if (!name) {
+      const sql = plans.truncateTable(this.config.schema, 'job')
+      await this.db.executeSql(sql)
+      return
+    }
+
     Attorney.assertQueueName(name)
     const { table, partition } = await this.getQueueCache(name)
 

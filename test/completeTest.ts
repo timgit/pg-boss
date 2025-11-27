@@ -7,6 +7,7 @@ describe('complete', function () {
   it('should reject missing id argument', async function (this: TestContext) {
     this.boss = await helper.start(this.bossConfig)
     await assert.rejects(async () => {
+      // @ts-ignore
       await this.boss.complete(this.schema)
     })
   })

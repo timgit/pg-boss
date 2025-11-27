@@ -12,6 +12,9 @@ describe('delete', async function () {
     this.boss = await helper.start(config)
 
     const jobId = await this.boss.send(this.schema, null, { deleteAfterSeconds: 1 })
+
+    assert(jobId)
+
     await this.boss.fetch(this.schema)
     await this.boss.complete(this.schema, jobId)
 
@@ -36,6 +39,7 @@ describe('delete', async function () {
     await this.boss.createQueue(this.schema, { deleteAfterSeconds: 1 })
 
     const jobId = await this.boss.send(this.schema)
+    assert(jobId)
     await this.boss.fetch(this.schema)
     await this.boss.complete(this.schema, jobId)
 
@@ -53,6 +57,8 @@ describe('delete', async function () {
     this.boss = await helper.start(config)
 
     const jobId = await this.boss.send(this.schema)
+
+    assert(jobId)
 
     await this.boss.fetch(this.schema)
 

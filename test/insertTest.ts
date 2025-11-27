@@ -43,6 +43,8 @@ describe('insert', function () {
 
     const job = await this.boss.getJobById(this.schema, input.id)
 
+    assert(job)
+
     assert.strictEqual(job.id, input.id, `id input ${input.id} didn't match job ${job.id}`)
     assert.strictEqual(job.priority, input.priority, `priority input ${input.priority} didn't match job ${job.priority}`)
     assert.strictEqual(JSON.stringify(job.data), JSON.stringify(input.data), `data input ${input.data} didn't match job ${job.data}`)
@@ -85,8 +87,10 @@ describe('insert', function () {
     const db = await helper.getDb()
     const options = {
       db: {
+        // @ts-ignore
         async executeSql (sql, values) {
           called = true
+          // @ts-ignore
           return db.pool.query(sql, values)
         }
       }
@@ -95,6 +99,8 @@ describe('insert', function () {
     await this.boss.insert(this.schema, [input], options)
 
     const job = await this.boss.getJobById(this.schema, input.id)
+
+    assert(job)
 
     assert.strictEqual(job.id, input.id, `id input ${input.id} didn't match job ${job.id}`)
     assert.strictEqual(job.priority, input.priority, `priority input ${input.priority} didn't match job ${job.priority}`)

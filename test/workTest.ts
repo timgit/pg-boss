@@ -6,6 +6,7 @@ describe('work', function () {
   it('should fail with no arguments', async function () {
     this.boss = await helper.start(this.bossConfig)
     await assert.rejects(async () => {
+      // @ts-ignore
       await this.boss.work()
     })
   })
@@ -13,6 +14,7 @@ describe('work', function () {
   it('should fail if no callback provided', async function () {
     this.boss = await helper.start(this.bossConfig)
     await assert.rejects(async () => {
+      // @ts-ignore
       await this.boss.work('foo')
     })
   })
@@ -20,6 +22,7 @@ describe('work', function () {
   it('should fail if options is not an object', async function () {
     this.boss = await helper.start(this.bossConfig)
     await assert.rejects(async () => {
+      // @ts-ignore
       await this.boss.work('foo', async () => {}, 'nope')
     })
   })
@@ -27,6 +30,7 @@ describe('work', function () {
   it('offWork should fail without a name', async function () {
     this.boss = await helper.start(this.bossConfig)
     await assert.rejects(async () => {
+      // @ts-ignore
       await this.boss.offWork()
     })
   })
@@ -55,7 +59,7 @@ describe('work', function () {
   it('should provide abort signal to job handler', async function () {
     this.boss = await helper.start(this.bossConfig)
 
-    let receivedSignal
+    let receivedSignal = {}
 
     await this.boss.send(this.schema)
 
@@ -148,7 +152,7 @@ describe('work', function () {
 
     const jobId = await this.boss.send(this.schema)
 
-    await new Promise((resolve) => {
+    await new Promise<void>((resolve) => {
       this.boss!.work(this.schema, { batchSize: 1 }, async jobs => {
         assert.strictEqual(jobs.length, 1)
         resolve()
@@ -197,7 +201,7 @@ describe('work', function () {
     const job = await this.boss.getJobById(this.schema, jobId!)
 
     assert.strictEqual(job!.state, 'completed')
-    assert.strictEqual(job!.output.value, result)
+    assert.strictEqual((job!.output as any).value, result)
   })
 
   it('handler result should be stored in output', async function () {
@@ -212,14 +216,17 @@ describe('work', function () {
     const job = await this.boss.getJobById(this.schema, jobId!)
 
     assert.strictEqual(job!.state, 'completed')
-    assert.strictEqual(job!.output.something, something)
+    assert.strictEqual((job!.output as any).something, something)
   })
 
   it('job cab be deleted in handler', async function () {
     this.boss = await helper.start(this.bossConfig)
 
     const jobId = await this.boss.send(this.schema)
-    await this.boss.work(this.schema, async ([job]) => this.boss.deleteJob(this.schema, job.id))
+
+    assert(jobId)
+
+    await this.boss.work(this.schema, async ([job]) => this.boss!.deleteJob(this.schema, job.id))
 
     await delay(1000)
 
@@ -260,7 +267,7 @@ describe('work', function () {
     const job = await this.boss.getJobById(this.schema, jobId!)
 
     assert.strictEqual(job!.state, 'failed')
-    assert(job!.output!.message!.includes('handler execution exceeded'))
+    assert((job!.output as any).message!.includes('handler execution exceeded'))
   })
 
   it('should fail a batch of jobs at expiration in worker', async function () {
@@ -277,16 +284,16 @@ describe('work', function () {
     const job2 = await this.boss.getJobById(this.schema, jobId2!)
 
     assert.strictEqual(job1!.state, 'failed')
-    assert(job1!.output.message.includes('handler execution exceeded'))
+    assert((job1!.output as any).message.includes('handler execution exceeded'))
 
     assert.strictEqual(job2!.state, 'failed')
-    assert(job2!.output.message.includes('handler execution exceeded'))
+    assert((job2!.output as any).message.includes('handler execution exceeded'))
   })
 
   it('should emit wip event every 2s for workers', async function () {
     this.boss = await helper.start(this.bossConfig)
 
-    const firstWipEvent = new Promise(resolve => this.boss!.once('wip', resolve))
+    const firstWipEvent = new Promise<Array<any>>(resolve => this.boss!.once('wip', resolve))
 
     await this.boss.send(this.schema)
 
@@ -298,7 +305,7 @@ describe('work', function () {
 
     assert.strictEqual(wip1.length, 1)
 
-    const secondWipEvent = new Promise(resolve => this.boss!.once('wip', resolve))
+    const secondWipEvent = new Promise<Array<any>>(resolve => this.boss!.once('wip', resolve))
 
     const wip2 = await secondWipEvent
 

@@ -116,7 +116,7 @@ export type InsertOptions = ConnectionOptions
 
 export type SendOptions = JobOptions & QueueOptions & ConnectionOptions
 
-export type QueuePolicy = 'standard' | 'short' | 'singleton' | 'stately' | 'exclusive'
+export type QueuePolicy = 'standard' | 'short' | 'singleton' | 'stately' | 'exclusive' | (string & {})
 
 export interface Queue extends QueueOptions {
   name: string;

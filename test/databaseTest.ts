@@ -26,6 +26,7 @@ describe('database', function () {
     const boss = new PgBoss({ db: mydb })
     const response = await boss.getDb().executeSql(query)
 
+    // @ts-ignore
     assert(response.text === query)
   })
 })

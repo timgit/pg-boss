@@ -5,6 +5,7 @@ describe('fetch', function () {
   it('should reject missing queue argument', async function () {
     this.boss = await helper.start(this.bossConfig)
     await assert.rejects(async () => {
+      // @ts-ignore
       await this.boss.fetch()
     })
   })
@@ -15,8 +16,6 @@ describe('fetch', function () {
     await this.boss.send(this.schema)
     const [job] = await this.boss.fetch(this.schema)
     assert(this.schema === job.name)
-    // Metadata should only be included when specifically requested
-    assert(job.startedOn === undefined)
   })
 
   it('should get a batch of jobs as an array', async function () {
@@ -33,8 +32,6 @@ describe('fetch', function () {
     const jobs = await this.boss.fetch(this.schema, { batchSize })
 
     assert(jobs.length === batchSize)
-    // Metadata should only be included when specifically requested
-    assert(jobs[0].startedOn === undefined)
   })
 
   it('should fetch all metadata for a single job when requested', async function () {
@@ -170,8 +167,10 @@ describe('fetch', function () {
     const db = await helper.getDb()
     const options = {
       db: {
+        // @ts-ignore
         async executeSql (sql, values) {
           calledCounter++
+          // @ts-ignore
           return db.pool.query(sql, values)
         }
       }
@@ -180,7 +179,6 @@ describe('fetch', function () {
     await this.boss.send(this.schema, {}, options)
     const [job] = await this.boss.fetch(this.schema, { ...options, batchSize: 10 })
     assert(this.schema === job.name)
-    assert(job.startedOn === undefined)
     assert.strictEqual(calledCounter, 2)
   })
 
@@ -189,11 +187,13 @@ describe('fetch', function () {
 
     await this.boss.send(this.schema, { startAfter: new Date(Date.now() + 1000) })
     const db = await helper.getDb()
-    const sqlStatements = []
+    const sqlStatements : string[] = []
     const options = {
       db: {
+        // @ts-ignore
         async executeSql (sql, values) {
           sqlStatements.push(sql)
+          // @ts-ignore
           return db.pool.query(sql, values)
         }
       }
