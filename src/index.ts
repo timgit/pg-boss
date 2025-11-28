@@ -333,6 +333,7 @@ export type {
   ConstructorOptions,
   FetchOptions,
   IDatabase as Db,
+  InsertOptions,
   Job,
   JobFetchOptions,
   JobInsert,
