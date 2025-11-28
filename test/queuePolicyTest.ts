@@ -111,17 +111,19 @@ describe('queuePolicy', function () {
 
       const jobId1 = await this.boss.send(this.schema, null, { retryLimit: 1 })
 
+      assert(jobId1)
+
       const blockedId = await this.boss.send(this.schema)
 
       assert.strictEqual(blockedId, null)
 
-      let [job1] = await this.boss.fetch(this.schema)
+      const [job1] = await this.boss.fetch(this.schema)
 
       await this.boss.fail(this.schema, job1.id)
 
-      job1 = await this.boss.getJobById(this.schema, jobId1)
+      const job1WithData = await this.boss.getJobById(this.schema, jobId1)
 
-      assert.strictEqual(job1.state, 'retry')
+      assert.strictEqual(job1WithData!.state, 'retry')
 
       const jobId2 = await this.boss.send(this.schema, null, { retryLimit: 1 })
 
@@ -131,7 +133,7 @@ describe('queuePolicy', function () {
 
       const job1a = await this.boss.getJobById(this.schema, jobId1)
 
-      assert.strictEqual(job1a.state, 'active')
+      assert.strictEqual(job1a!.state, 'active')
 
       const [blockedSecondActive] = await this.boss.fetch(this.schema)
 
@@ -146,13 +148,15 @@ describe('queuePolicy', function () {
       await this.boss.createQueue(this.schema, { policy: 'stately', deadLetter, retryLimit: 3, partition })
 
       const jobId1 = await this.boss.send(this.schema, null, { expireInSeconds: 1 })
+      assert(jobId1)
       await this.boss.fetch(this.schema)
       await this.boss.fail(this.schema, jobId1)
       const job1Data = await this.boss.getJobById(this.schema, jobId1)
-      assert.strictEqual(job1Data.state, 'retry')
+      assert.strictEqual(job1Data!.state, 'retry')
 
       // higher priority new job should be active next
       const jobId2 = await this.boss.send(this.schema, null, { priority: 1, expireInSeconds: 1 })
+      assert(jobId2)
       await this.boss.fetch(this.schema)
 
       const jobId3 = await this.boss.send(this.schema)
@@ -162,7 +166,7 @@ describe('queuePolicy', function () {
 
       const job2Data = await this.boss.getJobById(this.schema, jobId2)
 
-      assert.strictEqual(job2Data.state, 'failed')
+      assert.strictEqual(job2Data!.state, 'failed')
 
       const [job2Dlq] = await this.boss.fetch(deadLetter)
 
@@ -186,27 +190,27 @@ describe('queuePolicy', function () {
 
       assert.strictEqual(jobA2Id, null)
 
-      let [jobA] = await this.boss.fetch(this.schema)
+      const [jobA] = await this.boss.fetch(this.schema)
 
       await this.boss.fail(this.schema, jobA.id)
 
-      jobA = await this.boss.getJobById(this.schema, jobAId)
+      let jobAWithData = await this.boss.getJobById(this.schema, jobAId)
 
-      assert.strictEqual(jobA.state, 'retry')
+      assert.strictEqual(jobAWithData!.state, 'retry')
 
       await this.boss.fetch(this.schema)
 
-      jobA = await this.boss.getJobById(this.schema, jobAId)
+      jobAWithData = await this.boss.getJobById(this.schema, jobAId)
 
-      assert.strictEqual(jobA.state, 'active')
+      assert.strictEqual(jobAWithData!.state, 'active')
 
-      let [jobB] = await this.boss.fetch(this.schema)
+      const [jobB] = await this.boss.fetch(this.schema)
 
       assert(jobB)
 
-      jobB = await this.boss.getJobById(this.schema, jobBId)
+      const jobBWithData = await this.boss.getJobById(this.schema, jobBId)
 
-      assert.strictEqual(jobB.state, 'active')
+      assert.strictEqual(jobBWithData!.state, 'active')
 
       const jobA3Id = await this.boss.send(this.schema, null, { singletonKey: 'a' })
 
@@ -319,18 +323,20 @@ describe('queuePolicy', function () {
 
       const jobId1 = await this.boss.send(this.schema, null, { retryLimit: 1 })
 
+      assert(jobId1)
+
       // it won't add a second job while the first is in created state
       const blockedId = await this.boss.send(this.schema)
 
       assert.strictEqual(blockedId, null)
 
-      let [job1] = await this.boss.fetch(this.schema)
+      const [job1] = await this.boss.fetch(this.schema)
 
       await this.boss.fail(this.schema, job1.id)
 
-      job1 = await this.boss.getJobById(this.schema, jobId1)
+      const job1WithData = await this.boss.getJobById(this.schema, jobId1)
 
-      assert.strictEqual(job1.state, 'retry')
+      assert.strictEqual(job1WithData!.state, 'retry')
 
       // trying to send another job while one is in retry should not add the job
       const jobId2 = await this.boss.send(this.schema, null, { retryLimit: 1 })
@@ -341,7 +347,7 @@ describe('queuePolicy', function () {
 
       const job1a = await this.boss.getJobById(this.schema, jobId1)
 
-      assert.strictEqual(job1a.state, 'active')
+      assert.strictEqual(job1a!.state, 'active')
 
       const [blockedSecondActive] = await this.boss.fetch(this.schema)
 
@@ -372,27 +378,27 @@ describe('queuePolicy', function () {
 
       assert.strictEqual(jobA2Id, null)
 
-      let [jobA] = await this.boss.fetch(this.schema)
+      const [jobA] = await this.boss.fetch(this.schema)
 
       await this.boss.fail(this.schema, jobA.id)
 
-      jobA = await this.boss.getJobById(this.schema, jobAId)
+      let jobAWithData = await this.boss.getJobById(this.schema, jobAId)
 
-      assert.strictEqual(jobA.state, 'retry')
+      assert.strictEqual(jobAWithData!.state, 'retry')
 
       await this.boss.fetch(this.schema)
 
-      jobA = await this.boss.getJobById(this.schema, jobAId)
+      jobAWithData = await this.boss.getJobById(this.schema, jobAId)
 
-      assert.strictEqual(jobA.state, 'active')
+      assert.strictEqual(jobAWithData!.state, 'active')
 
-      let [jobB] = await this.boss.fetch(this.schema)
+      const [jobB] = await this.boss.fetch(this.schema)
 
       assert(jobB)
 
-      jobB = await this.boss.getJobById(this.schema, jobBId)
+      const jobBWithData = await this.boss.getJobById(this.schema, jobBId)
 
-      assert.strictEqual(jobB.state, 'active')
+      assert.strictEqual(jobBWithData!.state, 'active')
 
       // cannot send another 'a' job while one is active
       const jobA3Id = await this.boss.send(this.schema, null, { singletonKey: 'a' })

@@ -20,6 +20,8 @@ describe('monitoring', function () {
     await this.boss.supervise()
     const result1 = await this.boss.getQueue(this.schema)
 
+    assert(result1)
+
     assert.strictEqual(2, result1.queuedCount)
     assert.strictEqual(1, result1.activeCount)
     assert.strictEqual(3, result1.totalCount)
@@ -30,6 +32,8 @@ describe('monitoring', function () {
     await delay(1000)
     await this.boss.supervise(this.schema)
     const result2 = await this.boss.getQueue(this.schema)
+
+    assert(result2)
 
     assert.strictEqual(1, result2.queuedCount)
     assert.strictEqual(1, result2.activeCount)

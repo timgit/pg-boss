@@ -49,7 +49,7 @@ describe('spy', function () {
 
     assert.strictEqual(job.id, jobId)
     assert.strictEqual(job.state, 'failed')
-    assert.strictEqual(job.output!.message, 'test error')
+    assert.strictEqual((job.output as any).message, 'test error')
   })
 
   it('should track job as active', async function () {
@@ -316,7 +316,7 @@ describe('spy', function () {
     this.boss = await helper.start(this.bossConfig)
 
     assert.throws(
-      () => this.boss.getSpy(this.schema),
+      () => this.boss!.getSpy(this.schema),
       /Spy is not enabled/
     )
   })

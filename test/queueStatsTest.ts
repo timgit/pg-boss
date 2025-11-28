@@ -1,7 +1,7 @@
 import assert from 'node:assert'
 import * as helper from './testHelper.ts'
 import { randomUUID } from 'node:crypto'
-import { ConstructorOptions } from '../src/types.ts'
+import type { ConstructorOptions } from '../src/types.ts'
 
 describe('queueStats', function () {
   const queue1 = `q${randomUUID().replaceAll('-', '')}`

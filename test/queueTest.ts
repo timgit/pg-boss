@@ -30,13 +30,14 @@ describe('queues', function () {
     this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
     const queue = `*${this.bossConfig.schema}`
     await assert.rejects(async () => {
-      await this.boss.createQueue(queue)
+      await this.boss!.createQueue(queue)
     })
   })
 
   it('should reject a queue with invalid policy', async function () {
     this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
     await assert.rejects(async () => {
+      // @ts-ignore
       await this.boss.createQueue(this.schema, { policy: 'something' })
     })
   })
@@ -44,7 +45,7 @@ describe('queues', function () {
   it('should reject using a queue if not created', async function () {
     this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
     await assert.rejects(async () => {
-      await this.boss.send(this.schema)
+      await this.boss!.send(this.schema)
     })
   })
 
@@ -96,6 +97,24 @@ describe('queues', function () {
     await this.boss.send(this.schema)
     await this.boss.deleteAllJobs(this.schema)
     await this.boss.deleteQueue(this.schema)
+  })
+
+  it('should delete all jobs from all queues, included partitioned', async function () {
+    this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
+
+    await this.boss.createQueue(this.schema, { partition: true })
+    await this.boss.send(this.schema)
+
+    const queue2 = `${this.schema}2`
+    await this.boss.createQueue(queue2)
+    await this.boss.send(queue2)
+
+    await this.boss.deleteAllJobs()
+
+    const { queuedCount: count1 } = await this.boss.getQueueStats(this.schema)
+    const { queuedCount: count2 } = await this.boss.getQueueStats(queue2)
+
+    assert.strictEqual(count1 + count2, 0)
   })
 
   it('should delete a non-empty queue', async function () {
@@ -208,7 +227,6 @@ describe('queues', function () {
 
     const updateProps = {
       retryDelay: 2,
-      retryDelayMax: null,
       retryLimit: 2,
       retryBackoff: false,
       expireInSeconds: 2,
@@ -222,7 +240,6 @@ describe('queues', function () {
     assert.strictEqual(updateProps.retryLimit, queueObj!.retryLimit)
     assert.strictEqual(updateProps.retryBackoff, queueObj!.retryBackoff)
     assert.strictEqual(updateProps.retryDelay, queueObj!.retryDelay)
-    assert.strictEqual(updateProps.retryDelayMax, queueObj!.retryDelayMax)
     assert.strictEqual(updateProps.expireInSeconds, queueObj!.expireInSeconds)
     assert.strictEqual(updateProps.deadLetter, queueObj!.deadLetter)
   })
@@ -233,6 +250,7 @@ describe('queues', function () {
     await this.boss.createQueue(this.schema, { policy: 'standard' })
 
     await assert.rejects(async () => {
+      // @ts-ignore
       await this.boss.updateQueue(this.schema, { policy: 'exclusive' })
     })
   })
@@ -242,6 +260,7 @@ describe('queues', function () {
     await this.boss.createQueue(this.schema, { partition: true })
 
     await assert.rejects(async () => {
+      // @ts-ignore
       await this.boss.updateQueue(this.schema, { partition: false })
     })
   })

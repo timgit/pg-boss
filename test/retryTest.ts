@@ -72,7 +72,7 @@ describe('retries', function () {
   it('should limit retry delay with exponential backoff', async function () {
     this.boss = await helper.start(this.bossConfig)
 
-    const startAfters = []
+    const startAfters: Date[] = []
     const retryDelayMax = 3
 
     await this.boss.work(this.schema, { pollingIntervalSeconds: 0.5, includeMetadata: true }, async ([job]) => {
@@ -90,7 +90,7 @@ describe('retries', function () {
     await delay(13000)
 
     const delays = startAfters.map((startAfter, index) =>
-      index === 0 ? 0 : (startAfter - startAfters[index - 1]) / 1000)
+      index === 0 ? 0 : (startAfter.getTime() - startAfters[index - 1].getTime()) / 1000)
 
     for (const d of delays) {
       // the +1 eval here is to allow latency from the work() polling interval
@@ -103,7 +103,9 @@ describe('retries', function () {
     const jobId = await this.boss.send(this.schema, null, { retryLimit: 0 })
     await this.boss.fail(this.schema, jobId!)
     await this.boss.retry(this.schema, jobId!)
-    const { state, retryLimit } = await this.boss.getJobById(this.schema, jobId!)
+    const job = await this.boss.getJobById(this.schema, jobId!)
+    assert(job)
+    const { state, retryLimit } = job
     assert(state === 'retry')
     assert(retryLimit === 1)
   })

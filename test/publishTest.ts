@@ -5,6 +5,7 @@ describe('pubsub', function () {
   it('should fail with no arguments', async function () {
     this.boss = await helper.start(this.bossConfig)
     await assert.rejects(async () => {
+      // @ts-ignore
       await this.boss.publish()
     })
   })
@@ -35,13 +36,17 @@ describe('pubsub', function () {
     await this.boss.subscribe(event, this.schema)
     await this.boss.publish(event, { message })
 
-    const [job] = await this.boss.fetch(this.schema)
+    const [job] = await this.boss.fetch<{ message: string }>(this.schema)
 
     assert.strictEqual(message, job.data.message)
   })
 
   it('should use subscriptions to map to more than one queue', async function () {
     this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
+
+    interface Message {
+      message: string
+    }
 
     const queue1 = 'subqueue1'
     const queue2 = 'subqueue2'
@@ -56,8 +61,8 @@ describe('pubsub', function () {
     await this.boss.subscribe(event, queue2)
     await this.boss.publish(event, { message })
 
-    const [job1] = await this.boss.fetch(queue1)
-    const [job2] = await this.boss.fetch(queue2)
+    const [job1] = await this.boss.fetch<Message>(queue1)
+    const [job2] = await this.boss.fetch<Message>(queue2)
 
     assert.strictEqual(message, job1.data.message)
     assert.strictEqual(message, job2.data.message)
@@ -67,6 +72,7 @@ describe('pubsub', function () {
 it('should fail if unsubscribe is called without args', async function () {
   this.boss = await helper.start(this.bossConfig)
   await assert.rejects(async () => {
+    // @ts-ignore
     await this.boss.unsubscribe()
   })
 })
@@ -74,6 +80,7 @@ it('should fail if unsubscribe is called without args', async function () {
 it('should fail if unsubscribe is called without both args', async function () {
   this.boss = await helper.start(this.bossConfig)
   await assert.rejects(async () => {
+    // @ts-ignore
     await this.boss.unsubscribe('foo')
   })
 })

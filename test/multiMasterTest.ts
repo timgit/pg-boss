@@ -30,6 +30,7 @@ describe('multi-master', function () {
     }
 
     const db = await getDb()
+    // @ts-ignore
     const contractor = new Contractor(db, config)
 
     await contractor.create()

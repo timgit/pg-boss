@@ -20,7 +20,7 @@ describe('expire', function () {
 
     const job = await this.boss.getJobById(this.schema, jobId)
 
-    assert.strictEqual('failed', job.state)
+    assert.strictEqual('failed', job!.state)
   })
 
   it('should expire a job - cascaded config', async function () {
@@ -28,6 +28,8 @@ describe('expire', function () {
 
     await this.boss.createQueue(this.schema, { expireInSeconds: 1, retryLimit: 0 })
     const jobId = await this.boss.send(this.schema)
+
+    assert(jobId)
 
     // fetch the job but don't complete it
     await this.boss.fetch(this.schema)
@@ -38,7 +40,7 @@ describe('expire', function () {
 
     const job = await this.boss.getJobById(this.schema, jobId)
 
-    assert.strictEqual('failed', job.state)
+    assert.strictEqual('failed', job!.state)
   })
 
   it('should expire a job via supervise option', async function () {
@@ -53,6 +55,8 @@ describe('expire', function () {
     await this.boss.createQueue(this.schema, { expireInSeconds: 1, retryLimit: 0 })
     const jobId = await this.boss.send(this.schema)
 
+    assert(jobId)
+
     // fetch the job but don't complete it
     await this.boss.fetch(this.schema)
 
@@ -60,7 +64,7 @@ describe('expire', function () {
 
     const job = await this.boss.getJobById(this.schema, jobId)
 
-    assert.strictEqual('failed', job.state)
+    assert.strictEqual('failed', job!.state)
   })
 
   it('should abort signal when job handler times out', async function () {
