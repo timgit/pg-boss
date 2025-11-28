@@ -205,18 +205,18 @@ describe('work', function () {
   })
 
   it('handler result should be stored in output', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    this.boss = await helper.start({ ...this.bossConfig, __test__enableSpies: true })
     const something = 'clever'
+
+    const spy = this.boss.getSpy(this.schema)
 
     const jobId = await this.boss.send(this.schema)
     await this.boss.work(this.schema, async () => ({ something }))
 
-    await delay(1000)
+    const job = await spy.waitForJobWithId(jobId!, 'completed')
 
-    const job = await this.boss.getJobById(this.schema, jobId!)
-
-    assert.strictEqual(job!.state, 'completed')
-    assert.strictEqual((job!.output as any).something, something)
+    assert.strictEqual(job.state, 'completed')
+    assert.strictEqual((job.output as any).something, something)
   })
 
   it('job cab be deleted in handler', async function () {

@@ -7,6 +7,7 @@ import Boss from './boss.ts'
 import { delay } from './tools.ts'
 import type * as types from './types.ts'
 import DbDefault from './db.ts'
+import type { JobSpyInterface } from './spy.ts'
 
 export { JOB_STATES as states } from './plans.ts'
 export { QUEUE_POLICIES as policies } from './plans.ts'
@@ -286,6 +287,14 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#boss.supervise(name)
   }
 
+  getSpy<T = object> (name: string): JobSpyInterface<T> {
+    return this.#manager.getSpy<T>(name)
+  }
+
+  clearSpies (): void {
+    this.#manager.clearSpies()
+  }
+
   isInstalled (): Promise<boolean> {
     return this.#contractor.isInstalled()
   }
@@ -347,3 +356,11 @@ export type {
   WorkOptions,
   WorkWithMetadataHandler,
 } from './types.ts'
+
+export type {
+  JobSpyInterface,
+  JobSpyState,
+  JobDataSelector,
+  JobSelector,
+  SpyJob,
+} from './spy.ts'

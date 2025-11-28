@@ -10,6 +10,7 @@ import * as timekeeper from './timekeeper.ts'
 import { resolveWithinSeconds } from './tools.ts'
 import * as types from './types.ts'
 import Worker from './worker.ts'
+import { JobSpy, type JobSpyInterface } from './spy.ts'
 
 const INTERNAL_QUEUES = Object.values(timekeeper.QUEUES).reduce<Record<string, string | undefined>>((acc, i) => ({ ...acc, [i]: i }), {})
 
@@ -29,6 +30,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
   timekeeper: Timekeeper | undefined
   queues: Record<string, types.QueueResult> | null
   pendingOffWorkCleanups: Set<Promise<any>>
+  #spies: Map<string, JobSpy>
 
   constructor (db: types.IDatabase, config: types.ResolvedConstructorOptions) {
     super()
@@ -39,6 +41,26 @@ class Manager extends EventEmitter implements types.EventsMixin {
     this.workers = new Map()
     this.queues = null
     this.pendingOffWorkCleanups = new Set()
+    this.#spies = new Map()
+  }
+
+  getSpy<T = object> (name: string): JobSpyInterface<T> {
+    if (!this.config.__test__enableSpies) {
+      throw new Error('Spy is not enabled. Set __test__enableSpies: true in constructor options to use spies.')
+    }
+    let spy = this.#spies.get(name)
+    if (!spy) {
+      spy = new JobSpy()
+      this.#spies.set(name, spy)
+    }
+    return spy as unknown as JobSpyInterface<T>
+  }
+
+  clearSpies (): void {
+    for (const spy of this.#spies.values()) {
+      spy.clear()
+    }
+    this.#spies.clear()
   }
 
   async start () {
@@ -130,6 +152,14 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
       this.emitWip(name)
 
+      const spy = this.config.__test__enableSpies ? this.#spies.get(name) : undefined
+
+      if (spy) {
+        for (const job of jobs) {
+          spy.addJob(job.id, name, job.data as object, 'active')
+        }
+      }
+
       const maxExpiration = jobs.reduce((acc, i) => Math.max(acc, i.expireInSeconds), 0)
       const jobIds = jobs.map(job => job.id)
       const ac = new AbortController()
@@ -138,8 +168,20 @@ class Manager extends EventEmitter implements types.EventsMixin {
       try {
         const result = await resolveWithinSeconds(callback(jobs), maxExpiration, `handler execution exceeded ${maxExpiration}s`, ac)
         await this.complete(name, jobIds, jobIds.length === 1 ? result : undefined)
+
+        if (spy) {
+          for (const job of jobs) {
+            spy.addJob(job.id, name, job.data as object, 'completed', jobIds.length === 1 ? result : undefined)
+          }
+        }
       } catch (err: any) {
         await this.fail(name, jobIds, err)
+
+        if (spy) {
+          for (const job of jobs) {
+            spy.addJob(job.id, name, job.data as object, 'failed', { message: err?.message, stack: err?.stack })
+          }
+        }
       }
 
       this.emitWip(name)
@@ -335,7 +377,14 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const { rows: try1 } = await db.executeSql(sql, [JSON.stringify([job])])
 
     if (try1.length === 1) {
-      return try1[0].id
+      const jobId = try1[0].id
+      if (this.config.__test__enableSpies) {
+        const spy = this.#spies.get(name)
+        if (spy) {
+          spy.addJob(jobId, name, data || {}, 'created')
+        }
+      }
+      return jobId
     }
 
     if (singletonNextSlot) {
@@ -346,7 +395,14 @@ class Manager extends EventEmitter implements types.EventsMixin {
       const { rows: try2 } = await db.executeSql(sql, [JSON.stringify([job])])
 
       if (try2.length === 1) {
-        return try2[0].id
+        const jobId = try2[0].id
+        if (this.config.__test__enableSpies) {
+          const spy = this.#spies.get(name)
+          if (spy) {
+            spy.addJob(jobId, name, data || {}, 'created')
+          }
+        }
+        return jobId
       }
     }
 
@@ -360,11 +416,25 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     const db = this.assertDb(options)
 
-    const sql = plans.insertJobs(this.config.schema, { table, name, returnId: false })
+    const spy = this.config.__test__enableSpies ? this.#spies.get(name) : undefined
+
+    // Return IDs if spy is active for this queue (needed for job tracking)
+    const returnId = !!spy
+
+    const sql = plans.insertJobs(this.config.schema, { table, name, returnId })
 
     const { rows } = await db.executeSql(sql, [JSON.stringify(jobs)])
 
-    return (rows.length) ? rows.map((i): string => i.id) : null
+    if (rows.length) {
+      if (spy) {
+        for (let i = 0; i < rows.length; i++) {
+          spy.addJob(rows[i].id, name, jobs[i].data || {}, 'created')
+        }
+      }
+      return rows.map((i): string => i.id)
+    }
+
+    return null
   }
 
   getDebounceStartAfter (singletonSeconds: number, clockOffset: number) {
