@@ -62,14 +62,12 @@ class Boss extends EventEmitter implements types.EventsMixin {
     }
   }
 
-  async #executeSql (sql: string, values?: unknown[]) {
+  async #executeSql (sql: string) {
     const started = Date.now()
 
-    const result = unwrapSQLResult(await this.#db.executeSql(sql, values))
+    const result = unwrapSQLResult(await this.#db.executeSql(sql))
 
-    const ended = Date.now()
-
-    const elapsed = (ended - started) / 1000
+    const elapsed = (Date.now() - started) / 1000
 
     if (
       elapsed > WARNINGS.SLOW_QUERY.seconds ||
@@ -77,7 +75,27 @@ class Boss extends EventEmitter implements types.EventsMixin {
     ) {
       this.emit(events.warning, {
         message: WARNINGS.SLOW_QUERY.message,
-        data: { elapsed, sql, values },
+        data: { elapsed, sql },
+      })
+    }
+
+    return result
+  }
+
+  async #executeQuery (query: plans.SqlQuery) {
+    const started = Date.now()
+
+    const result = unwrapSQLResult(await this.#db.executeSql(query.text, query.values))
+
+    const elapsed = (Date.now() - started) / 1000
+
+    if (
+      elapsed > WARNINGS.SLOW_QUERY.seconds ||
+      this.#config.__test__warn_slow_query
+    ) {
+      this.emit(events.warning, {
+        message: WARNINGS.SLOW_QUERY.message,
+        data: { elapsed, sql: query.text, values: query.values },
       })
     }
 
@@ -94,9 +112,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
 
       const queues = await this.#manager.getQueues()
 
-      for (const queue of queues) {
-        !this.#stopped && (await this.supervise(queue))
-      }
+      !this.#stopped && (await this.supervise(queues))
     } catch (err) {
       this.emit(events.error, err)
     } finally {
@@ -104,11 +120,11 @@ class Boss extends EventEmitter implements types.EventsMixin {
     }
   }
 
-  async supervise (value?: string | types.QueueResult) {
-    let queues
+  async supervise (value?: string | types.QueueResult[]) {
+    let queues: types.QueueResult[]
 
-    if (typeof value === 'object') {
-      queues = [value]
+    if (Array.isArray(value)) {
+      queues = value
     } else {
       queues = await this.#manager.getQueues(value)
     }
@@ -129,8 +145,10 @@ class Boss extends EventEmitter implements types.EventsMixin {
       while (names.length) {
         const chunk = names.splice(0, 100)
 
-        await this.#monitor(table, chunk)
-        await this.#maintain(table, chunk)
+        await Promise.all([
+          this.#monitor(table, chunk),
+          this.#maintain(table, chunk)
+        ])
       }
     }
   }
@@ -141,7 +159,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
       names,
       this.#config.monitorIntervalSeconds
     )
-    const { rows } = await this.#executeSql(command)
+    const { rows } = await this.#executeQuery(command)
 
     if (rows.length) {
       const queues = rows.map((q) => q.name)
@@ -168,7 +186,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
       names,
       this.#config.maintenanceIntervalSeconds
     )
-    const { rows } = await this.#executeSql(command)
+    const { rows } = await this.#executeQuery(command)
 
     if (rows.length) {
       const queues = rows.map((q) => q.name)

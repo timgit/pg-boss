@@ -474,12 +474,12 @@ class Manager extends EventEmitter implements types.EventsMixin {
       ignoreSingletons: singletonsActive
     }
 
-    const sql = plans.fetchNextJob(fetchOptions)
+    const query = plans.fetchNextJob(fetchOptions)
 
     let result
 
     try {
-      result = await db.executeSql(sql)
+      result = await db.executeSql(query.text, query.values)
     } catch (err) {
       // errors from fetchquery should only be unique constraint violations
     }
@@ -606,8 +606,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
       }
     }
 
-    const sql = plans.getQueues(this.config.schema, names)
-    const { rows } = await this.db.executeSql(sql)
+    const query = plans.getQueues(this.config.schema, names)
+    const { rows } = await this.db.executeSql(query.text, query.values)
     return rows
   }
 
@@ -640,8 +640,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
   async getQueue (name: string) {
     Attorney.assertQueueName(name)
 
-    const sql = plans.getQueues(this.config.schema, [name])
-    const { rows } = await this.db.executeSql(sql)
+    const query = plans.getQueues(this.config.schema, [name])
+    const { rows } = await this.db.executeSql(query.text, query.values)
 
     return rows[0] || null
   }
@@ -694,9 +694,9 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     const queue = await this.getQueueCache(name)
 
-    const sql = plans.getQueueStats(this.config.schema, queue.table, [name])
+    const query = plans.getQueueStats(this.config.schema, queue.table, [name])
 
-    const { rows } = await this.db.executeSql(sql)
+    const { rows } = await this.db.executeSql(query.text, query.values)
 
     return Object.assign(queue, rows.at(0) || {})
   }
