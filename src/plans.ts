@@ -751,14 +751,11 @@ function failJobsById (schema: string, table: string) {
 function failJobsByTimeout (schema: string, table: string, queues: string[]): string {
   const where = `state = '${JOB_STATES.active}'
             AND (started_on + expire_seconds * interval '1s') < now()
-            AND name = ANY($1::text[])`
+            AND name = ANY(${serializeArrayParam(queues)})`
 
   const output = '\'{ "value": { "message": "job timed out" } }\'::jsonb'
 
-  return locked(schema, {
-    text: failJobs(schema, table, where, output),
-    values: [queues]
-  }, table + 'failJobsByTimeout')
+  return locked(schema, failJobs(schema, table, where, output), table + 'failJobsByTimeout')
 }
 
 function failJobs (schema: string, table: string, where: string, output: string) {
@@ -911,7 +908,7 @@ function failJobs (schema: string, table: string, where: string, output: string)
 function deletion (schema: string, table: string, queues: string[]): string {
   const sql = `
     DELETE FROM ${schema}.${table}
-    WHERE name = ANY($1::text[])
+    WHERE name = ANY(${serializeArrayParam(queues)})
       AND
       (
         completed_on + deletion_seconds * interval '1s' < now()
@@ -920,7 +917,7 @@ function deletion (schema: string, table: string, queues: string[]): string {
       )
   `
 
-  return locked(schema, { text: sql, values: [queues] }, table + 'deletion')
+  return locked(schema, sql, table + 'deletion')
 }
 
 function retryJobs (schema: string, table: string) {
@@ -957,9 +954,19 @@ function getQueueStats (schema: string, table: string, queues: string[]): SqlQue
 }
 
 function cacheQueueStats (schema: string, table: string, queues: string[]): string {
-  const statsQuery = getQueueStats(schema, table, queues)
   const sql = `
-    WITH stats AS (${statsQuery.text})
+    WITH stats AS (
+    SELECT
+        name,
+        (count(*) FILTER (WHERE start_after > now()))::int as "deferredCount",
+        (count(*) FILTER (WHERE state < '${JOB_STATES.active}'))::int as "queuedCount",
+        (count(*) FILTER (WHERE state = '${JOB_STATES.active}'))::int as "activeCount",
+        count(*)::int as "totalCount",
+        array_agg(singleton_key) FILTER (WHERE policy IN ('${QUEUE_POLICIES.singleton}','${QUEUE_POLICIES.stately}') AND state = '${JOB_STATES.active}') as "singletonsActive"
+      FROM ${schema}.${table}
+      WHERE name = ANY(${serializeArrayParam(queues)})
+      GROUP BY 1
+  )
     UPDATE ${schema}.queue SET
       deferred_count = "deferredCount",
       queued_count = "queuedCount",
@@ -974,54 +981,17 @@ function cacheQueueStats (schema: string, table: string, queues: string[]): stri
       warning_queued as "warningQueueSize"
   `
 
-  return locked(schema, { text: sql, values: statsQuery.values }, 'queue-stats')
+  return locked(schema, sql, 'queue-stats')
 }
 
-// Serialize a value for embedding directly in SQL (used by locked() wrapper)
-function serializeSqlValue (value: unknown): string {
-  if (Array.isArray(value)) {
-    // Format as PostgreSQL array literal: ARRAY['a','b','c']
-    const escaped = value.map(v => {
-      if (typeof v === 'string') {
-        return `'${v.replace(/'/g, "''")}'`
-      }
-      return String(v)
-    })
-    return `ARRAY[${escaped.join(',')}]`
-  }
-  if (typeof value === 'string') {
-    return `'${value.replace(/'/g, "''")}'`
-  }
-  if (value === null || value === undefined) {
-    return 'NULL'
-  }
-  return String(value)
+// Serialize a string array for embedding directly in SQL as PostgreSQL array literal
+function serializeArrayParam (values: string[]): string {
+  const escaped = values.map(v => `'${v.replace(/'/g, "''")}'`)
+  return `ARRAY[${escaped.join(',')}]::text[]`
 }
 
-// Replace $1, $2, etc. placeholders with serialized values
-function interpolateSqlParams (text: string, values: unknown[]): string {
-  let result = text
-  for (let i = values.length; i >= 1; i--) {
-    // Replace $N::type or just $N, working backwards to avoid $1 matching $10
-    const pattern = new RegExp(`\\$${i}(::text\\[\\])?`, 'g')
-    result = result.replace(pattern, serializeSqlValue(values[i - 1]))
-  }
-  return result
-}
-
-function locked (schema: string, query: string | string[], key?: string): string
-function locked (schema: string, query: SqlQuery, key?: string): string
-function locked (schema: string, query: string | string[] | SqlQuery, key?: string): string {
-  let sql: string
-
-  if (typeof query === 'object' && 'text' in query) {
-    // Serialize parameters into the SQL text for multi-statement execution
-    sql = interpolateSqlParams(query.text, query.values)
-  } else if (Array.isArray(query)) {
-    sql = query.join(';\n')
-  } else {
-    sql = query
-  }
+function locked (schema: string, query: string | string[], key?: string): string {
+  const sql = Array.isArray(query) ? query.join(';\n') : query
 
   return `
     BEGIN;
