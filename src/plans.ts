@@ -8,6 +8,7 @@ export interface SqlQuery {
 const DEFAULT_SCHEMA = 'pgboss'
 const MIGRATE_RACE_MESSAGE = 'division by zero'
 const CREATE_RACE_MESSAGE = 'already exists'
+const SINGLE_QUOTE_REGEX = /'/g
 const FIFTEEN_MINUTES = 60 * 15
 const FORTEEN_DAYS = 60 * 60 * 24 * 14
 const SEVEN_DAYS = 60 * 60 * 24 * 7
@@ -954,19 +955,12 @@ function getQueueStats (schema: string, table: string, queues: string[]): SqlQue
 }
 
 function cacheQueueStats (schema: string, table: string, queues: string[]): string {
+  const statsQuery = getQueueStats(schema, table, queues)
+  // Serialize the $1 parameter for use in locked() multi-statement query
+  const statsText = statsQuery.text.replace('$1::text[]', serializeArrayParam(queues))
+
   const sql = `
-    WITH stats AS (
-    SELECT
-        name,
-        (count(*) FILTER (WHERE start_after > now()))::int as "deferredCount",
-        (count(*) FILTER (WHERE state < '${JOB_STATES.active}'))::int as "queuedCount",
-        (count(*) FILTER (WHERE state = '${JOB_STATES.active}'))::int as "activeCount",
-        count(*)::int as "totalCount",
-        array_agg(singleton_key) FILTER (WHERE policy IN ('${QUEUE_POLICIES.singleton}','${QUEUE_POLICIES.stately}') AND state = '${JOB_STATES.active}') as "singletonsActive"
-      FROM ${schema}.${table}
-      WHERE name = ANY(${serializeArrayParam(queues)})
-      GROUP BY 1
-  )
+    WITH stats AS (${statsText})
     UPDATE ${schema}.queue SET
       deferred_count = "deferredCount",
       queued_count = "queuedCount",
@@ -986,7 +980,7 @@ function cacheQueueStats (schema: string, table: string, queues: string[]): stri
 
 // Serialize a string array for embedding directly in SQL as PostgreSQL array literal
 function serializeArrayParam (values: string[]): string {
-  const escaped = values.map(v => `'${v.replace(/'/g, "''")}'`)
+  const escaped = values.map(v => `'${v.replace(SINGLE_QUOTE_REGEX, "''")}'`)
   return `ARRAY[${escaped.join(',')}]::text[]`
 }
 
