@@ -120,13 +120,11 @@ class Boss extends EventEmitter implements types.EventsMixin {
     }
   }
 
-  async supervise (value?: string | types.QueueResult | types.QueueResult[]) {
+  async supervise (value?: string | types.QueueResult[]) {
     let queues: types.QueueResult[]
 
     if (Array.isArray(value)) {
       queues = value
-    } else if (typeof value === 'object') {
-      queues = [value]
     } else {
       queues = await this.#manager.getQueues(value)
     }
