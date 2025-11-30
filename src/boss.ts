@@ -145,10 +145,8 @@ class Boss extends EventEmitter implements types.EventsMixin {
       while (names.length) {
         const chunk = names.splice(0, 100)
 
-        await Promise.all([
-          this.#monitor(table, chunk),
-          this.#maintain(table, chunk)
-        ])
+        await this.#monitor(table, chunk)
+        await this.#maintain(table, chunk)
       }
     }
   }
