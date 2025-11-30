@@ -1,8 +1,14 @@
 import type { UpdateQueueOptions } from './types.ts'
 
+export interface SqlQuery {
+  text: string
+  values: unknown[]
+}
+
 const DEFAULT_SCHEMA = 'pgboss'
 const MIGRATE_RACE_MESSAGE = 'division by zero'
 const CREATE_RACE_MESSAGE = 'already exists'
+const SINGLE_QUOTE_REGEX = /'/g
 const FIFTEEN_MINUTES = 60 * 15
 const FORTEEN_DAYS = 60 * 60 * 24 * 14
 const SEVEN_DAYS = 60 * 60 * 24 * 7
@@ -376,11 +382,11 @@ function createIndexJobPolicyExclusive (schema: string) {
   return `CREATE UNIQUE INDEX job_i6 ON ${schema}.job (name, COALESCE(singleton_key, '')) WHERE state <= '${JOB_STATES.active}' AND policy = '${QUEUE_POLICIES.exclusive}'`
 }
 
-function trySetQueueMonitorTime (schema: string, queues: string[], seconds: number) {
+function trySetQueueMonitorTime (schema: string, queues: string[], seconds: number): SqlQuery {
   return trySetQueueTimestamp(schema, queues, 'monitor_on', seconds)
 }
 
-function trySetQueueDeletionTime (schema: string, queues: string[], seconds: number) {
+function trySetQueueDeletionTime (schema: string, queues: string[], seconds: number): SqlQuery {
   return trySetQueueTimestamp(schema, queues, 'maintain_on', seconds)
 }
 
@@ -397,14 +403,17 @@ function trySetTimestamp (schema: string, column: string, seconds: number) {
   `
 }
 
-function trySetQueueTimestamp (schema: string, queues: string[], column: string, seconds: number) {
-  return `
+function trySetQueueTimestamp (schema: string, queues: string[], column: string, seconds: number): SqlQuery {
+  return {
+    text: `
     UPDATE ${schema}.queue
     SET ${column} = now()
-    WHERE name IN(${getQueueInClause(queues)})
+    WHERE name = ANY($1::text[])
       AND EXTRACT( EPOCH FROM (now() - COALESCE(${column}, now() - interval '1 week') ) ) > ${seconds}
-    RETURNING name    
-  `
+    RETURNING name
+  `,
+    values: [queues]
+  }
 }
 
 function updateQueue (schema: string, { deadLetter }: UpdateQueueOptions = {}) {
@@ -432,9 +441,11 @@ function updateQueue (schema: string, { deadLetter }: UpdateQueueOptions = {}) {
   `
 }
 
-function getQueues (schema: string, names?: string[]) {
-  return `
-    SELECT 
+function getQueues (schema: string, names?: string[]): SqlQuery {
+  const hasNames = names && names.length > 0
+  return {
+    text: `
+    SELECT
       q.name,
       q.policy,
       q.retry_limit as "retryLimit",
@@ -456,8 +467,10 @@ function getQueues (schema: string, names?: string[]) {
       q.created_on as "createdOn",
       q.updated_on as "updatedOn"
     FROM ${schema}.queue q
-    ${names ? `WHERE q.name IN (${names.map(i => `'${i}'`)})` : ''}
-   `
+    ${hasNames ? 'WHERE q.name = ANY($1::text[])' : ''}
+   `,
+    values: hasNames ? [names] : []
+  }
 }
 
 function deleteJobsById (schema: string, table: string) {
@@ -574,18 +587,20 @@ interface FetchJobOptions {
   ignoreSingletons: string[] | null
 }
 
-function fetchNextJob ({ schema, table, name, policy, limit, includeMetadata, priority = true, ignoreStartAfter = false, ignoreSingletons = null }: FetchJobOptions) {
+function fetchNextJob ({ schema, table, name, policy, limit, includeMetadata, priority = true, ignoreStartAfter = false, ignoreSingletons = null }: FetchJobOptions): SqlQuery {
   const singletonFetch = limit > 1 && (policy === QUEUE_POLICIES.singleton || policy === QUEUE_POLICIES.stately)
   const cte = singletonFetch ? 'grouped' : 'next'
+  const hasIgnoreSingletons = ignoreSingletons != null && ignoreSingletons.length > 0
 
-  return `
+  return {
+    text: `
     WITH next as (
       SELECT id ${singletonFetch ? ', singleton_key' : ''}
       FROM ${schema}.${table}
       WHERE name = '${name}'
         AND state < '${JOB_STATES.active}'
         ${ignoreStartAfter ? '' : 'AND start_after < now()'}
-        ${ignoreSingletons != null && ignoreSingletons?.length > 0 ? `AND singleton_key NOT IN (${ignoreSingletons.map(i => `'${i}'`).join()})` : ''}
+        ${hasIgnoreSingletons ? 'AND singleton_key <> ALL($1::text[])' : ''}
       ORDER BY ${priority ? 'priority desc, ' : ''}created_on, id
       LIMIT ${limit}
       FOR UPDATE SKIP LOCKED
@@ -598,8 +613,10 @@ function fetchNextJob ({ schema, table, name, policy, limit, includeMetadata, pr
     FROM ${cte}
     WHERE name = '${name}' AND j.id = ${cte}.id
       ${singletonFetch ? ` AND ${cte}.row_number = 1` : ''}
-    RETURNING j.${includeMetadata ? JOB_COLUMNS_ALL : JOB_COLUMNS_MIN}      
-  `
+    RETURNING j.${includeMetadata ? JOB_COLUMNS_ALL : JOB_COLUMNS_MIN}
+  `,
+    values: hasIgnoreSingletons ? [ignoreSingletons] : []
+  }
 }
 
 function completeJobs (schema: string, table: string) {
@@ -732,10 +749,10 @@ function failJobsById (schema: string, table: string) {
   return failJobs(schema, table, where, output)
 }
 
-function failJobsByTimeout (schema: string, table: string, queues: string[]) {
+function failJobsByTimeout (schema: string, table: string, queues: string[]): string {
   const where = `state = '${JOB_STATES.active}'
             AND (started_on + expire_seconds * interval '1s') < now()
-            AND name IN (${getQueueInClause(queues)})`
+            AND name = ANY(${serializeArrayParam(queues)})`
 
   const output = '\'{ "value": { "message": "job timed out" } }\'::jsonb'
 
@@ -889,16 +906,16 @@ function failJobs (schema: string, table: string, where: string, output: string)
   `
 }
 
-function deletion (schema: string, table: string, queues: string[]) {
+function deletion (schema: string, table: string, queues: string[]): string {
   const sql = `
     DELETE FROM ${schema}.${table}
-    WHERE name IN (${getQueueInClause(queues)})
+    WHERE name = ANY(${serializeArrayParam(queues)})
       AND
       (
         completed_on + deletion_seconds * interval '1s' < now()
         OR
         (state < '${JOB_STATES.active}' AND keep_until < now())
-      )        
+      )
   `
 
   return locked(schema, sql, table + 'deletion')
@@ -919,24 +936,31 @@ function retryJobs (schema: string, table: string) {
   `
 }
 
-function getQueueStats (schema: string, table: string, queues: string[]) {
-  return `
+function getQueueStats (schema: string, table: string, queues: string[]): SqlQuery {
+  return {
+    text: `
     SELECT
-        name, 
+        name,
         (count(*) FILTER (WHERE start_after > now()))::int as "deferredCount",
         (count(*) FILTER (WHERE state < '${JOB_STATES.active}'))::int as "queuedCount",
         (count(*) FILTER (WHERE state = '${JOB_STATES.active}'))::int as "activeCount",
         count(*)::int as "totalCount",
         array_agg(singleton_key) FILTER (WHERE policy IN ('${QUEUE_POLICIES.singleton}','${QUEUE_POLICIES.stately}') AND state = '${JOB_STATES.active}') as "singletonsActive"
       FROM ${schema}.${table}
-      WHERE name IN (${getQueueInClause(queues)})
+      WHERE name = ANY($1::text[])
       GROUP BY 1
-  `
+  `,
+    values: [queues]
+  }
 }
 
-function cacheQueueStats (schema: string, table: string, queues: string[]) {
+function cacheQueueStats (schema: string, table: string, queues: string[]): string {
+  const statsQuery = getQueueStats(schema, table, queues)
+  // Serialize the $1 parameter for use in locked() multi-statement query
+  const statsText = statsQuery.text.replace('$1::text[]', serializeArrayParam(queues))
+
   const sql = `
-    WITH stats AS (${getQueueStats(schema, table, queues)})
+    WITH stats AS (${statsText})
     UPDATE ${schema}.queue SET
       deferred_count = "deferredCount",
       queued_count = "queuedCount",
@@ -954,17 +978,21 @@ function cacheQueueStats (schema: string, table: string, queues: string[]) {
   return locked(schema, sql, 'queue-stats')
 }
 
-function locked (schema: string, query: string | string[], key?: string) {
-  if (Array.isArray(query)) {
-    query = query.join(';\n')
-  }
+// Serialize a string array for embedding directly in SQL as PostgreSQL array literal
+function serializeArrayParam (values: string[]): string {
+  const escaped = values.map(v => `'${v.replace(SINGLE_QUOTE_REGEX, "''")}'`)
+  return `ARRAY[${escaped.join(',')}]::text[]`
+}
+
+function locked (schema: string, query: string | string[], key?: string): string {
+  const sql = Array.isArray(query) ? query.join(';\n') : query
 
   return `
     BEGIN;
     SET LOCAL lock_timeout = 30000;
     SET LOCAL idle_in_transaction_session_timeout = 30000;
     ${advisoryLock(schema, key)};
-    ${query};
+    ${sql};
     COMMIT;
   `
 }
@@ -982,10 +1010,6 @@ function assertMigration (schema: string, version: number) {
 
 function getJobById (schema: string, table: string) {
   return `SELECT ${JOB_COLUMNS_ALL} FROM ${schema}.${table} WHERE name = $1 AND id = $2`
-}
-
-function getQueueInClause (queues: string[]) {
-  return queues.map(i => `'${i}'`).join(',')
 }
 
 export {
