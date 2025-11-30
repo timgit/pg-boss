@@ -79,27 +79,28 @@ describe('failure', function () {
   })
 
   it('failure via Promise reject() should pass string wrapped in value prop', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    this.boss = await helper.start({ ...this.bossConfig, __test__enableSpies: true })
     const failPayload = 'mah error'
 
+    const spy = this.boss.getSpy(this.schema)
     const jobId = await this.boss.send(this.schema)
 
     assert(jobId)
 
     await this.boss.work(this.schema, () => Promise.reject(failPayload))
 
-    await delay(1000)
+    await spy.waitForJobWithId(jobId, 'failed')
 
     const job = await this.boss.getJobById(this.schema, jobId)
 
-    // @ts-ignore
-    assert.strictEqual(job!.output!.value, failPayload)
+    assert.strictEqual((job!.output as { value: string }).value, failPayload)
   })
 
   it('failure via Promise reject() should pass object payload', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    this.boss = await helper.start({ ...this.bossConfig, __test__enableSpies: true })
     const something = 'clever'
 
+    const spy = this.boss.getSpy(this.schema)
     const errorResponse = new Error('custom error')
     // @ts-ignore
     errorResponse.something = something
@@ -110,30 +111,29 @@ describe('failure', function () {
 
     await this.boss.work(this.schema, () => Promise.reject(errorResponse))
 
-    await delay(1000)
+    await spy.waitForJobWithId(jobId, 'failed')
 
     const job = await this.boss.getJobById(this.schema, jobId)
 
-    // @ts-ignore
-    assert.strictEqual(job!.output.something, something)
+    assert.strictEqual((job!.output as { something: string }).something, something)
   })
 
   it('failure with Error object should be saved in the job', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    this.boss = await helper.start({ ...this.bossConfig, __test__enableSpies: true })
     const message = 'a real error!'
 
+    const spy = this.boss.getSpy(this.schema)
     const jobId = await this.boss.send(this.schema)
 
     assert(jobId)
 
     await this.boss.work(this.schema, async () => { throw new Error(message) })
 
-    await delay(1000)
+    await spy.waitForJobWithId(jobId, 'failed')
 
     const job = await this.boss.getJobById(this.schema, jobId)
 
-    // @ts-ignore
-    assert(job!.output.message.includes(message))
+    assert((job!.output as { message: string }).message.includes(message))
   })
 
   it('should fail a job with custom connection', async function () {
@@ -160,8 +160,9 @@ describe('failure', function () {
   })
 
   it('failure with circular payload should be safely serialized', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    this.boss = await helper.start({ ...this.bossConfig, __test__enableSpies: true })
 
+    const spy = this.boss.getSpy(this.schema)
     const jobId = await this.boss.send(this.schema)
 
     assert(jobId)
@@ -175,12 +176,11 @@ describe('failure', function () {
       throw err
     })
 
-    await delay(2000)
+    await spy.waitForJobWithId(jobId, 'failed')
 
     const job = await this.boss.getJobById(this.schema, jobId)
 
-    // @ts-ignore
-    assert.strictEqual(job.output.message, message)
+    assert.strictEqual((job!.output as { message: string }).message, message)
   })
 
   it('dead letter queues are working', async function () {

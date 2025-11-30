@@ -1,6 +1,6 @@
-import { delay } from '../src/tools.ts'
 import assert from 'node:assert'
 import * as helper from './testHelper.ts'
+import { delay } from '../src/tools.ts'
 
 describe('work', function () {
   it('should fail with no arguments', async function () {
@@ -36,60 +36,65 @@ describe('work', function () {
   })
 
   it('should honor a custom polling interval', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    this.boss = await helper.start({ ...this.bossConfig, __test__enableSpies: true })
 
+    const spy = this.boss.getSpy(this.schema)
     const pollingIntervalSeconds = 1
-    const timeout = 5000
     let processCount = 0
-    const jobCount = 10
+    const expectedProcessCount = 5
 
-    for (let i = 0; i < jobCount; i++) {
-      await this.boss.send(this.schema)
+    const jobIds: string[] = []
+    for (let i = 0; i < expectedProcessCount; i++) {
+      const jobId = await this.boss.send(this.schema)
+      jobIds.push(jobId!)
     }
 
     await this.boss.work(this.schema, { pollingIntervalSeconds }, async () => {
       processCount++
     })
 
-    await delay(timeout)
+    // Wait for all jobs to complete
+    await Promise.all(jobIds.map(id => spy.waitForJobWithId(id, 'completed')))
 
-    assert.strictEqual(processCount, timeout / 1000 / pollingIntervalSeconds)
+    assert.strictEqual(processCount, expectedProcessCount)
   })
 
   it('should provide abort signal to job handler', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    this.boss = await helper.start({ ...this.bossConfig, __test__enableSpies: true })
 
+    const spy = this.boss.getSpy(this.schema)
     let receivedSignal = {}
 
-    await this.boss.send(this.schema)
+    const jobId = await this.boss.send(this.schema)
 
     await this.boss.work(this.schema, async ([job]) => {
       receivedSignal = job.signal
     })
 
-    await delay(1000)
+    await spy.waitForJobWithId(jobId!, 'completed')
 
     assert(receivedSignal instanceof AbortSignal)
   })
 
   it('should honor when a worker is notified', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    this.boss = await helper.start({ ...this.bossConfig, __test__enableSpies: true })
 
+    const spy = this.boss.getSpy(this.schema)
     let processCount = 0
 
-    await this.boss.send(this.schema)
+    const jobId1 = await this.boss.send(this.schema)
 
     const workerId = await this.boss.work(this.schema, { pollingIntervalSeconds: 5 }, async () => processCount++)
 
-    await delay(500)
+    await spy.waitForJobWithId(jobId1!, 'completed')
 
     assert.strictEqual(processCount, 1)
 
-    await this.boss.send(this.schema)
+    const jobId2 = await this.boss.send(this.schema)
 
     this.boss.notifyWorker(workerId)
 
-    await delay(500)
+    await spy.waitForJobWithId(jobId2!, 'completed')
 
     assert.strictEqual(processCount, 2)
   })
@@ -148,22 +153,18 @@ describe('work', function () {
   })
 
   it('batchSize should auto-complete the jobs', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    this.boss = await helper.start({ ...this.bossConfig, __test__enableSpies: true })
 
+    const spy = this.boss.getSpy(this.schema)
     const jobId = await this.boss.send(this.schema)
 
-    await new Promise<void>((resolve) => {
-      this.boss!.work(this.schema, { batchSize: 1 }, async jobs => {
-        assert.strictEqual(jobs.length, 1)
-        resolve()
-      })
+    await this.boss.work(this.schema, { batchSize: 1 }, async jobs => {
+      assert.strictEqual(jobs.length, 1)
     })
 
-    await delay(500)
+    const job = await spy.waitForJobWithId(jobId!, 'completed')
 
-    const job = await this.boss.getJobById(this.schema, jobId!)
-
-    assert.strictEqual(job!.state, 'completed')
+    assert.strictEqual(job.state, 'completed')
   })
 
   it('returning promise applies backpressure', async function () {
@@ -188,20 +189,21 @@ describe('work', function () {
   })
 
   it('completion should pass string wrapped in value prop', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    this.boss = await helper.start({ ...this.bossConfig, __test__enableSpies: true })
 
+    const spy = this.boss.getSpy(this.schema)
     const result = 'success'
 
     const jobId = await this.boss.send(this.schema)
 
     await this.boss.work(this.schema, async () => result)
 
-    await delay(1000)
+    await spy.waitForJobWithId(jobId!, 'completed')
 
     const job = await this.boss.getJobById(this.schema, jobId!)
 
     assert.strictEqual(job!.state, 'completed')
-    assert.strictEqual((job!.output as any).value, result)
+    assert.strictEqual((job!.output as { value: string }).value, result)
   })
 
   it('handler result should be stored in output', async function () {
@@ -216,19 +218,20 @@ describe('work', function () {
     const job = await spy.waitForJobWithId(jobId!, 'completed')
 
     assert.strictEqual(job.state, 'completed')
-    assert.strictEqual((job.output as any).something, something)
+    assert.strictEqual((job.output as { something: string }).something, something)
   })
 
-  it('job cab be deleted in handler', async function () {
-    this.boss = await helper.start(this.bossConfig)
+  it('job can be deleted in handler', async function () {
+    this.boss = await helper.start({ ...this.bossConfig, __test__enableSpies: true })
 
+    const spy = this.boss.getSpy(this.schema)
     const jobId = await this.boss.send(this.schema)
 
     assert(jobId)
 
     await this.boss.work(this.schema, async ([job]) => this.boss!.deleteJob(this.schema, job.id))
 
-    await delay(1000)
+    await spy.waitForJobWithId(jobId, 'completed')
 
     const job = await this.boss.getJobById(this.schema, jobId)
 
