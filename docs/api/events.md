@@ -46,3 +46,40 @@ Emitted at most once every 2 seconds when workers are receiving jobs. The payloa
 ## `stopped`
 
 Emitted after `stop()` once all workers have completed their work and maintenance has been shut down.
+
+## `heartbeat`
+
+Emitted when a heartbeat successfully extends a job's expiration time. Only emitted when `heartbeat` option is enabled in `work()`.
+
+```js
+boss.on('heartbeat', ({ name, jobIds }) => {
+  console.log(`Heartbeat sent for ${jobIds.length} jobs in queue ${name}`)
+})
+```
+
+**Payload:**
+| Prop | Type | Description |
+| - | - | - |
+| `name` | string | Queue name |
+| `jobIds` | string[] | Array of job IDs that were touched |
+
+## `heartbeat-failed`
+
+Emitted when a heartbeat fails to extend a job's expiration time. This occurs when:
+- The job was completed, failed, or cancelled externally
+- The job was expired by the supervisor before the heartbeat could extend it
+
+Note: Database connection errors emit `error` instead, and the heartbeat will retry on the next interval.
+
+```js
+boss.on('heartbeat-failed', ({ name, jobIds, touchedCount }) => {
+  console.log(`Heartbeat failed: only ${touchedCount}/${jobIds.length} jobs still active in ${name}`)
+})
+```
+
+**Payload:**
+| Prop | Type | Description |
+| - | - | - |
+| `name` | string | Queue name |
+| `jobIds` | string[] | Array of job IDs that were attempted |
+| `touchedCount` | number | Number of jobs that were successfully touched (less than `jobIds.length`) |

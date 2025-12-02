@@ -619,6 +619,25 @@ function fetchNextJob ({ schema, table, name, policy, limit, includeMetadata, pr
   }
 }
 
+/**
+ * Extends the expiration time for active jobs by adding seconds to expire_seconds.
+ * @param schema
+ * @param table
+ */
+function touchJobs (schema: string, table: string) {
+  return `
+    WITH results AS (
+      UPDATE ${schema}.${table}
+      SET expire_seconds = expire_seconds + $3
+      WHERE name = $1
+        AND id IN (SELECT UNNEST($2::uuid[]))
+        AND state = '${JOB_STATES.active}'
+      RETURNING id
+    )
+    SELECT COUNT(*) FROM results
+  `
+}
+
 function completeJobs (schema: string, table: string) {
   return `
     WITH results AS (
@@ -1019,6 +1038,7 @@ export {
   setVersion,
   versionTableExists,
   fetchNextJob,
+  touchJobs,
   completeJobs,
   cancelJobs,
   resumeJobs,

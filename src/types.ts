@@ -152,7 +152,31 @@ export interface JobFetchOptions {
   ignoreStartAfter?: boolean;
 }
 
-export type WorkOptions = JobFetchOptions & JobPollingOptions
+export interface HeartbeatOptions {
+  /**
+   * Interval in seconds between heartbeats.
+   * Default: maxExpiration / 2 (half of the longest job timeout in the batch)
+   */
+  intervalSeconds?: number;
+
+  /**
+   * Whether to abort the job's signal if heartbeat fails.
+   * Default: true
+   */
+  abortOnFailure?: boolean;
+}
+
+export interface JobHeartbeatOptions {
+  /**
+   * Enable automatic heartbeat to extend job timeout during processing.
+   * - true: Enable with default interval (maxExpiration / 2)
+   * - HeartbeatOptions: Enable with custom configuration
+   * - false/undefined: Disabled (default)
+   */
+  heartbeat?: boolean | HeartbeatOptions;
+}
+
+export type WorkOptions = JobFetchOptions & JobPollingOptions & JobHeartbeatOptions
 export type FetchOptions = JobFetchOptions & ConnectionOptions
 
 export interface ResolvedWorkOptions extends WorkOptions {
@@ -277,9 +301,23 @@ export interface CommandResponse {
   affected: number;
 }
 
+export interface HeartbeatEvent {
+  name: string
+  jobIds: string[]
+}
+
+export interface HeartbeatFailedEvent {
+  name: string
+  jobIds: string[]
+  touchedCount: number
+  error?: Error
+}
+
 export type PgBossEventMap = {
   error: [error: Error]
   warning: [warning: Warning]
   wip: [data: WipData[]]
   stopped: []
+  heartbeat: [data: HeartbeatEvent]
+  'heartbeat-failed': [data: HeartbeatFailedEvent]
 }
