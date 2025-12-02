@@ -784,7 +784,6 @@ class Manager extends EventEmitter implements types.EventsMixin {
           }
         }
       } catch (error: any) {
-        /* c8 ignore next */
         this.emit(events.error, { ...error, message: error.message, stack: error.stack })
       }
     }, intervalMs)

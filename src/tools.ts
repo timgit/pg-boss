@@ -15,9 +15,6 @@ export interface ExtendableAbortablePromise<T> extends Promise<T> {
   extend: (newDurationMs: number) => void
 }
 
-// Keep backward compatibility
-export type AbortablePromise<T> = ExtendableAbortablePromise<T>
-
 function delay (ms: number, error?: string, abortController?: AbortController): ExtendableAbortablePromise<void> {
   const ac = abortController || new AbortController()
   let currentTimeoutId: ReturnType<typeof setTimeout>

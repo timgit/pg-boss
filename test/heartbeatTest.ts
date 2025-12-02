@@ -148,6 +148,35 @@ describe('heartbeat', function () {
     assert.strictEqual(heartbeatFailedEvent!.touchedCount, 0)
   })
 
+  it('should abort signal when heartbeat fails with abortOnFailure', async function () {
+    this.timeout(6000)
+
+    this.boss = await helper.start({ ...this.bossConfig, monitorIntervalSeconds: 1 })
+
+    const jobId = await this.boss.send(this.schema, null, { expireInSeconds: 10 })
+    assert(jobId)
+
+    let signalAborted = false
+
+    await this.boss.work(this.schema, {
+      heartbeat: { intervalSeconds: 1 } // abortOnFailure defaults to true
+    }, async (jobs) => {
+      const job = jobs[0]
+      job.signal.addEventListener('abort', () => {
+        signalAborted = true
+      })
+      // Complete the job externally while handler is running
+      await delay(500)
+      await this.boss.complete(this.schema, jobId)
+      // Wait for heartbeat to fire and abort the signal
+      await delay(1500)
+    })
+
+    await delay(3000)
+
+    assert.strictEqual(signalAborted, true, 'Expected signal to be aborted when heartbeat fails')
+  })
+
   it('should cleanup heartbeat timers on stop', async function () {
     this.timeout(6000)
 
@@ -193,25 +222,39 @@ describe('heartbeat', function () {
     assert(jobId)
 
     let errorEmitted = false
+    const testError = new Error('Mock database error')
 
     this.boss.on('error', (error) => {
-      if (error.message?.includes('does not exist') || error.code === '42P01') {
+      if (error.message === 'Mock database error') {
         errorEmitted = true
       }
     })
 
-    await this.boss.work(this.schema, {
-      heartbeat: { intervalSeconds: 1 }
-    }, async () => {
-      // Delete the queue while job is running - this will cause heartbeat to fail
-      await delay(500)
-      await this.boss.deleteQueue(this.schema)
-      // Wait for heartbeat to fire and hit the error
-      await delay(1500)
-    })
+    const db = this.boss.getDb()
+    const originalExecuteSql = db.executeSql.bind(db)
 
-    await delay(3000)
+    try {
+      await this.boss.work(this.schema, {
+        heartbeat: { intervalSeconds: 1 }
+      }, async () => {
+        // Wait a bit then mock the database to throw on next call
+        await delay(500)
+        db.executeSql = async (...args: any[]) => {
+          // Check if this is a touchJobs query (heartbeat)
+          if (args[0]?.includes?.('expire_seconds')) {
+            throw testError
+          }
+          return originalExecuteSql(...args)
+        }
+        // Wait for heartbeat to fire and hit the error
+        await delay(1500)
+      })
 
-    assert.strictEqual(errorEmitted, true, 'Expected error event from heartbeat DB failure')
+      await delay(3000)
+
+      assert.strictEqual(errorEmitted, true, 'Expected error event from heartbeat DB failure')
+    } finally {
+      db.executeSql = originalExecuteSql
+    }
   })
 })
