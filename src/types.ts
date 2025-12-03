@@ -152,31 +152,31 @@ export interface JobFetchOptions {
   ignoreStartAfter?: boolean;
 }
 
-export interface HeartbeatOptions {
+export interface ExpirationExtensionOptions {
   /**
-   * Interval in seconds between heartbeats.
+   * Interval in seconds between expiration extensions.
    * Default: maxExpiration / 2 (half of the longest job timeout in the batch)
    */
   intervalSeconds?: number;
 
   /**
-   * Whether to abort the job's signal if heartbeat fails.
+   * Whether to abort the job's signal if expiration extension fails.
    * Default: true
    */
   abortOnFailure?: boolean;
 }
 
-export interface JobHeartbeatOptions {
+export interface JobExpirationExtensionOptions {
   /**
-   * Enable automatic heartbeat to extend job timeout during processing.
+   * Enable automatic expiration extension to extend job timeout during processing.
    * - true: Enable with default interval (maxExpiration / 2)
-   * - HeartbeatOptions: Enable with custom configuration
+   * - ExpirationExtensionOptions: Enable with custom configuration
    * - false/undefined: Disabled (default)
    */
-  heartbeat?: boolean | HeartbeatOptions;
+  expirationExtension?: boolean | ExpirationExtensionOptions;
 }
 
-export type WorkOptions = JobFetchOptions & JobPollingOptions & JobHeartbeatOptions
+export type WorkOptions = JobFetchOptions & JobPollingOptions & JobExpirationExtensionOptions
 export type FetchOptions = JobFetchOptions & ConnectionOptions
 
 export interface ResolvedWorkOptions extends WorkOptions {
@@ -301,12 +301,12 @@ export interface CommandResponse {
   affected: number;
 }
 
-export interface HeartbeatEvent {
+export interface ExpirationExtensionEvent {
   name: string
   jobIds: string[]
 }
 
-export interface HeartbeatFailedEvent {
+export interface ExpirationExtensionFailedEvent {
   name: string
   jobIds: string[]
   touchedCount: number
@@ -318,6 +318,6 @@ export type PgBossEventMap = {
   warning: [warning: Warning]
   wip: [data: WipData[]]
   stopped: []
-  heartbeat: [data: HeartbeatEvent]
-  'heartbeat-failed': [data: HeartbeatFailedEvent]
+  'expiration-extension': [data: ExpirationExtensionEvent]
+  'expiration-extension-failed': [data: ExpirationExtensionFailedEvent]
 }

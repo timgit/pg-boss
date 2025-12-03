@@ -17,8 +17,8 @@ const INTERNAL_QUEUES = Object.values(timekeeper.QUEUES).reduce<Record<string, s
 const events = {
   error: 'error',
   wip: 'wip',
-  heartbeat: 'heartbeat',
-  'heartbeat-failed': 'heartbeat-failed'
+  'expiration-extension': 'expiration-extension',
+  'expiration-extension-failed': 'expiration-extension-failed'
 }
 
 class Manager extends EventEmitter implements types.EventsMixin {
@@ -33,7 +33,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
   queues: Record<string, types.QueueResult> | null
   pendingOffWorkCleanups: Set<Promise<any>>
   #spies: Map<string, JobSpy>
-  #activeHeartbeats: Map<string, ReturnType<typeof setInterval>>
+  #activeExpirationExtensions: Map<string, ReturnType<typeof setInterval>>
 
   constructor (db: types.IDatabase, config: types.ResolvedConstructorOptions) {
     super()
@@ -45,7 +45,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     this.queues = null
     this.pendingOffWorkCleanups = new Set()
     this.#spies = new Map()
-    this.#activeHeartbeats = new Map()
+    this.#activeExpirationExtensions = new Map()
   }
 
   getSpy<T = object> (name: string): JobSpyInterface<T> {
@@ -108,7 +108,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     clearInterval(this.queueCacheInterval)
 
-    this.stopAllHeartbeats()
+    this.stopAllExpirationExtensions()
 
     await Promise.allSettled(
       [...this.workers.values()]
@@ -141,11 +141,11 @@ class Manager extends EventEmitter implements types.EventsMixin {
       batchSize = 1,
       includeMetadata = false,
       priority = true,
-      heartbeat
+      expirationExtension
     } = options
 
-    const heartbeatOptions: types.HeartbeatOptions | null = heartbeat
-      ? (typeof heartbeat === 'object' ? heartbeat : {})
+    const extensionOptions: types.ExpirationExtensionOptions | null = expirationExtension
+      ? (typeof expirationExtension === 'object' ? expirationExtension : {})
       : null
 
     const id = randomUUID({ disableEntropyCache: true })
@@ -179,8 +179,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
       const fetchId = randomUUID({ disableEntropyCache: true })
       const extendableTimeout = resolveWithinSeconds(callback(jobs), maxExpiration, `handler execution exceeded ${maxExpiration}s`, ac)
 
-      if (heartbeatOptions) {
-        this.startHeartbeat(fetchId, name, jobIds, extendableTimeout, ac, heartbeatOptions, maxExpiration)
+      if (extensionOptions) {
+        this.startExpirationExtension(fetchId, name, jobIds, extendableTimeout, ac, extensionOptions, maxExpiration)
       }
 
       try {
@@ -201,7 +201,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
           }
         }
       } finally {
-        this.stopHeartbeat(fetchId)
+        this.stopExpirationExtension(fetchId)
         extendableTimeout.abort()
       }
 
@@ -752,19 +752,19 @@ class Manager extends EventEmitter implements types.EventsMixin {
     return this.db
   }
 
-  private startHeartbeat (
+  private startExpirationExtension (
     fetchId: string,
     name: string,
     jobIds: string[],
     timeout: ExtendableTimeout<unknown>,
     ac: AbortController,
-    heartbeatOptions: types.HeartbeatOptions,
+    extensionOptions: types.ExpirationExtensionOptions,
     maxExpiration: number
   ) {
-    const intervalSeconds = heartbeatOptions.intervalSeconds ?? maxExpiration / 2
+    const intervalSeconds = extensionOptions.intervalSeconds ?? maxExpiration / 2
     const intervalMs = Math.max(1, intervalSeconds) * 1000
     const extensionMs = maxExpiration * 1000
-    const abortOnFailure = heartbeatOptions.abortOnFailure ?? true
+    const abortOnFailure = extensionOptions.abortOnFailure ?? true
 
     const timer = setInterval(async () => {
       try {
@@ -775,12 +775,12 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
         if (touchedCount === jobIds.length) {
           timeout.extend(extensionMs)
-          this.emit(events.heartbeat, { name, jobIds })
+          this.emit(events['expiration-extension'], { name, jobIds })
         } else {
-          this.emit(events['heartbeat-failed'], { name, jobIds, touchedCount })
+          this.emit(events['expiration-extension-failed'], { name, jobIds, touchedCount })
           if (abortOnFailure) {
-            this.stopHeartbeat(fetchId)
-            ac.abort(new Error(`Heartbeat failed - only ${touchedCount}/${jobIds.length} jobs touched`))
+            this.stopExpirationExtension(fetchId)
+            ac.abort(new Error(`Expiration extension failed - only ${touchedCount}/${jobIds.length} jobs touched`))
           }
         }
       } catch (error: any) {
@@ -788,22 +788,22 @@ class Manager extends EventEmitter implements types.EventsMixin {
       }
     }, intervalMs)
 
-    this.#activeHeartbeats.set(fetchId, timer)
+    this.#activeExpirationExtensions.set(fetchId, timer)
   }
 
-  private stopHeartbeat (fetchId: string) {
-    const timer = this.#activeHeartbeats.get(fetchId)
+  private stopExpirationExtension (fetchId: string) {
+    const timer = this.#activeExpirationExtensions.get(fetchId)
     if (timer) {
       clearInterval(timer)
-      this.#activeHeartbeats.delete(fetchId)
+      this.#activeExpirationExtensions.delete(fetchId)
     }
   }
 
-  stopAllHeartbeats () {
-    for (const timer of this.#activeHeartbeats.values()) {
+  stopAllExpirationExtensions () {
+    for (const timer of this.#activeExpirationExtensions.values()) {
       clearInterval(timer)
     }
-    this.#activeHeartbeats.clear()
+    this.#activeExpirationExtensions.clear()
   }
 }
 

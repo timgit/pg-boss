@@ -2,20 +2,20 @@ import assert from 'node:assert'
 import * as helper from './testHelper.ts'
 import { delay } from '../src/tools.ts'
 
-describe('heartbeat', function () {
-  it('should extend job timeout with heartbeat enabled', async function () {
+describe('expiration extension', function () {
+  it('should extend job timeout with expiration extension enabled', async function () {
     this.timeout(6000)
 
     this.boss = await helper.start({ ...this.bossConfig, monitorIntervalSeconds: 1 })
 
-    // expireInSeconds: 2, handler takes 3s - heartbeat at 1s keeps it alive
+    // expireInSeconds: 2, handler takes 3s - expiration extension at 1s keeps it alive
     const jobId = await this.boss.send(this.schema, null, { retryLimit: 0, expireInSeconds: 2 })
     assert(jobId)
 
     let jobCompleted = false
 
     await this.boss.work(this.schema, {
-      heartbeat: { intervalSeconds: 1 }
+      expirationExtension: { intervalSeconds: 1 }
     }, async () => {
       await delay(3000)
       jobCompleted = true
@@ -30,7 +30,7 @@ describe('heartbeat', function () {
     assert.strictEqual(job!.state, 'completed')
   })
 
-  it('should emit heartbeat events', async function () {
+  it('should emit expiration-extension events', async function () {
     this.timeout(6000)
 
     this.boss = await helper.start({ ...this.bossConfig, monitorIntervalSeconds: 1 })
@@ -38,39 +38,39 @@ describe('heartbeat', function () {
     const jobId = await this.boss.send(this.schema, null, { expireInSeconds: 4 })
     assert(jobId)
 
-    const heartbeatEvents: { name: string, jobIds: string[] }[] = []
+    const extensionEvents: { name: string, jobIds: string[] }[] = []
 
-    this.boss.on('heartbeat', (data) => {
-      heartbeatEvents.push(data)
+    this.boss.on('expiration-extension', (data) => {
+      extensionEvents.push(data)
     })
 
     await this.boss.work(this.schema, {
-      heartbeat: { intervalSeconds: 1 }
+      expirationExtension: { intervalSeconds: 1 }
     }, async () => {
       await delay(2500)
     })
 
     await delay(3000)
 
-    // Should have received at least 2 heartbeat events (at 1s interval over 2.5s)
-    assert(heartbeatEvents.length >= 2, `Expected at least 2 heartbeat events, got ${heartbeatEvents.length}`)
-    assert.strictEqual(heartbeatEvents[0].name, this.schema)
-    assert(heartbeatEvents[0].jobIds.includes(jobId))
+    // Should have received at least 2 expiration extension events (at 1s interval over 2.5s)
+    assert(extensionEvents.length >= 2, `Expected at least 2 expiration extension events, got ${extensionEvents.length}`)
+    assert.strictEqual(extensionEvents[0].name, this.schema)
+    assert(extensionEvents[0].jobIds.includes(jobId))
   })
 
-  it('should work with heartbeat: true shorthand', async function () {
+  it('should work with expirationExtension: true shorthand', async function () {
     this.timeout(6000)
 
     this.boss = await helper.start({ ...this.bossConfig, monitorIntervalSeconds: 1 })
 
-    // With heartbeat: true, interval defaults to expireInSeconds/2 = 1s
+    // With expirationExtension: true, interval defaults to expireInSeconds/2 = 1s
     const jobId = await this.boss.send(this.schema, null, { expireInSeconds: 2 })
     assert(jobId)
 
     let jobCompleted = false
 
     await this.boss.work(this.schema, {
-      heartbeat: true
+      expirationExtension: true
     }, async () => {
       await delay(3000)
       jobCompleted = true
@@ -81,7 +81,7 @@ describe('heartbeat', function () {
     assert.strictEqual(jobCompleted, true)
   })
 
-  it('should handle batch jobs with heartbeat', async function () {
+  it('should handle batch jobs with expiration extension', async function () {
     this.timeout(6000)
 
     this.boss = await helper.start({ ...this.bossConfig, monitorIntervalSeconds: 1 })
@@ -96,7 +96,7 @@ describe('heartbeat', function () {
 
     await this.boss.work(this.schema, {
       batchSize: 3,
-      heartbeat: { intervalSeconds: 1 }
+      expirationExtension: { intervalSeconds: 1 }
     }, async (jobs) => {
       assert.strictEqual(jobs.length, 3)
       await delay(3000)
@@ -116,7 +116,7 @@ describe('heartbeat', function () {
     assert.strictEqual(job3!.state, 'completed')
   })
 
-  it('should emit heartbeat-failed when job is externally completed', async function () {
+  it('should emit expiration-extension-failed when job is externally completed', async function () {
     this.timeout(6000)
 
     this.boss = await helper.start({ ...this.bossConfig, monitorIntervalSeconds: 1 })
@@ -124,31 +124,31 @@ describe('heartbeat', function () {
     const jobId = await this.boss.send(this.schema, null, { expireInSeconds: 10 })
     assert(jobId)
 
-    let heartbeatFailedEvent: { name: string, jobIds: string[], touchedCount: number } | null = null
+    let extensionFailedEvent: { name: string, jobIds: string[], touchedCount: number } | null = null
 
-    this.boss.on('heartbeat-failed', (data) => {
-      heartbeatFailedEvent = data
+    this.boss.on('expiration-extension-failed', (data) => {
+      extensionFailedEvent = data
     })
 
     await this.boss.work(this.schema, {
-      heartbeat: { intervalSeconds: 1, abortOnFailure: false }
+      expirationExtension: { intervalSeconds: 1, abortOnFailure: false }
     }, async () => {
       // Complete the job externally while handler is running
       await delay(500)
       await this.boss.complete(this.schema, jobId)
-      // Wait for heartbeat to fire and detect the job is no longer active
+      // Wait for expiration extension to fire and detect the job is no longer active
       await delay(1500)
     })
 
     await delay(3000)
 
-    assert(heartbeatFailedEvent, 'Expected heartbeat-failed event')
-    assert.strictEqual(heartbeatFailedEvent!.name, this.schema)
-    assert(heartbeatFailedEvent!.jobIds.includes(jobId))
-    assert.strictEqual(heartbeatFailedEvent!.touchedCount, 0)
+    assert(extensionFailedEvent, 'Expected expiration-extension-failed event')
+    assert.strictEqual(extensionFailedEvent!.name, this.schema)
+    assert(extensionFailedEvent!.jobIds.includes(jobId))
+    assert.strictEqual(extensionFailedEvent!.touchedCount, 0)
   })
 
-  it('should abort signal when heartbeat fails with abortOnFailure', async function () {
+  it('should abort signal when expiration extension fails with abortOnFailure', async function () {
     this.timeout(6000)
 
     this.boss = await helper.start({ ...this.bossConfig, monitorIntervalSeconds: 1 })
@@ -159,7 +159,7 @@ describe('heartbeat', function () {
     let signalAborted = false
 
     await this.boss.work(this.schema, {
-      heartbeat: { intervalSeconds: 1 } // abortOnFailure defaults to true
+      expirationExtension: { intervalSeconds: 1 } // abortOnFailure defaults to true
     }, async (jobs) => {
       const job = jobs[0]
       job.signal.addEventListener('abort', () => {
@@ -168,16 +168,16 @@ describe('heartbeat', function () {
       // Complete the job externally while handler is running
       await delay(500)
       await this.boss.complete(this.schema, jobId)
-      // Wait for heartbeat to fire and abort the signal
+      // Wait for expiration extension to fire and abort the signal
       await delay(1500)
     })
 
     await delay(3000)
 
-    assert.strictEqual(signalAborted, true, 'Expected signal to be aborted when heartbeat fails')
+    assert.strictEqual(signalAborted, true, 'Expected signal to be aborted when expiration extension fails')
   })
 
-  it('should cleanup heartbeat timers on stop', async function () {
+  it('should cleanup expiration extension timers on stop', async function () {
     this.timeout(6000)
 
     this.boss = await helper.start({ ...this.bossConfig, monitorIntervalSeconds: 1 })
@@ -185,35 +185,35 @@ describe('heartbeat', function () {
     const jobId = await this.boss.send(this.schema, null, { expireInSeconds: 10 })
     assert(jobId)
 
-    let heartbeatCount = 0
+    let extensionCount = 0
 
-    this.boss.on('heartbeat', () => {
-      heartbeatCount++
+    this.boss.on('expiration-extension', () => {
+      extensionCount++
     })
 
     await this.boss.work(this.schema, {
-      heartbeat: { intervalSeconds: 1 }
+      expirationExtension: { intervalSeconds: 1 }
     }, async () => {
       // Long running job
       await delay(10000)
     })
 
-    // Wait for at least one heartbeat
+    // Wait for at least one expiration extension
     await delay(1500)
-    const countBeforeStop = heartbeatCount
+    const countBeforeStop = extensionCount
 
-    assert(countBeforeStop >= 1, 'Expected at least 1 heartbeat before stop')
+    assert(countBeforeStop >= 1, 'Expected at least 1 expiration extension before stop')
 
-    // Stop should cleanup heartbeat timers
+    // Stop should cleanup expiration extension timers
     await this.boss.stop({ graceful: false, timeout: 1000 })
 
-    // Wait and verify no more heartbeats fire
+    // Wait and verify no more expiration extensions fire
     await delay(2000)
 
-    assert.strictEqual(heartbeatCount, countBeforeStop, 'No heartbeats should fire after stop')
+    assert.strictEqual(extensionCount, countBeforeStop, 'No expiration extensions should fire after stop')
   })
 
-  it('should emit error event on heartbeat database error', async function () {
+  it('should emit error event on expiration extension database error', async function () {
     this.timeout(6000)
 
     this.boss = await helper.start({ ...this.bossConfig, monitorIntervalSeconds: 1 })
@@ -235,24 +235,24 @@ describe('heartbeat', function () {
 
     try {
       await this.boss.work(this.schema, {
-        heartbeat: { intervalSeconds: 1 }
+        expirationExtension: { intervalSeconds: 1 }
       }, async () => {
         // Wait a bit then mock the database to throw on next call
         await delay(500)
         db.executeSql = async (...args: any[]) => {
-          // Check if this is a touchJobs query (heartbeat)
+          // Check if this is a touchJobs query (expiration extension)
           if (args[0]?.includes?.('expire_seconds')) {
             throw testError
           }
           return originalExecuteSql(...args)
         }
-        // Wait for heartbeat to fire and hit the error
+        // Wait for expiration extension to fire and hit the error
         await delay(1500)
       })
 
       await delay(3000)
 
-      assert.strictEqual(errorEmitted, true, 'Expected error event from heartbeat DB failure')
+      assert.strictEqual(errorEmitted, true, 'Expected error event from expiration extension DB failure')
     } finally {
       db.executeSql = originalExecuteSql
     }
