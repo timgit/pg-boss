@@ -33,6 +33,37 @@ The default options for `work()` is 1 job every 2 seconds.
 
   Interval to check for new jobs in seconds, must be >=0.5 (500ms)
 
+* **expirationExtension**, bool | object, *(default=undefined)*
+
+  Enables automatic expiration extension to keep long-running jobs alive by periodically extending their expiration time. When enabled, pg-boss will periodically update the job's `expire_seconds` in the database and extend the local handler timeout.
+
+  - `true`: Enable with default interval (`expireInSeconds / 2`)
+  - `object`: Enable with custom options:
+    - `intervalSeconds`: Extension interval in seconds (default: `expireInSeconds / 2`)
+    - `abortOnFailure`: Abort the job's signal if expiration extension fails (default: `true`)
+
+  **When expiration extension fails:**
+  - If the job is no longer active (completed, failed, cancelled, or expired by supervisor), the `expiration-extension-failed` event is emitted
+  - If `abortOnFailure` is `true` (default), the job's `AbortSignal` is aborted
+  - If a database connection error occurs, the `error` event is emitted but the expiration extension continues retrying on the next interval
+
+  **Example with expiration extension:**
+  ```js
+  // Job has 30s expiration but processing takes 2 minutes
+  // Expiration extension extends expiration every 15s (half of 30s)
+  await boss.work('long-task', { expirationExtension: true }, async ([job]) => {
+    await processLargeFile(job.data, { signal: job.signal })
+  })
+  ```
+
+  **Example with custom expiration extension interval:**
+  ```js
+  await boss.work('long-task', {
+    expirationExtension: { intervalSeconds: 10, abortOnFailure: true }
+  }, async ([job]) => {
+    await processLargeFile(job.data, { signal: job.signal })
+  })
+  ```
 
 **Handler function**
 

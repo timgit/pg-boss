@@ -46,3 +46,40 @@ Emitted at most once every 2 seconds when workers are receiving jobs. The payloa
 ## `stopped`
 
 Emitted after `stop()` once all workers have completed their work and maintenance has been shut down.
+
+## `expiration-extension`
+
+Emitted when an expiration extension successfully extends a job's expiration time. Only emitted when `expirationExtension` option is enabled in `work()`.
+
+```js
+boss.on('expiration-extension', ({ name, jobIds }) => {
+  console.log(`Expiration extended for ${jobIds.length} jobs in queue ${name}`)
+})
+```
+
+**Payload:**
+| Prop | Type | Description |
+| - | - | - |
+| `name` | string | Queue name |
+| `jobIds` | string[] | Array of job IDs that were touched |
+
+## `expiration-extension-failed`
+
+Emitted when an expiration extension fails to extend a job's expiration time. This occurs when:
+- The job was completed, failed, or cancelled externally
+- The job was expired by the supervisor before the expiration extension could extend it
+
+Note: Database connection errors emit `error` instead, and the expiration extension will retry on the next interval.
+
+```js
+boss.on('expiration-extension-failed', ({ name, jobIds, touchedCount }) => {
+  console.log(`Expiration extension failed: only ${touchedCount}/${jobIds.length} jobs still active in ${name}`)
+})
+```
+
+**Payload:**
+| Prop | Type | Description |
+| - | - | - |
+| `name` | string | Queue name |
+| `jobIds` | string[] | Array of job IDs that were attempted |
+| `touchedCount` | number | Number of jobs that were successfully touched (less than `jobIds.length`) |

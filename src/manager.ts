@@ -7,7 +7,7 @@ import type Db from './db.ts'
 import * as plans from './plans.ts'
 import type Timekeeper from './timekeeper.ts'
 import * as timekeeper from './timekeeper.ts'
-import { resolveWithinSeconds } from './tools.ts'
+import { resolveWithinSeconds, type ExtendableTimeout } from './tools.ts'
 import * as types from './types.ts'
 import Worker from './worker.ts'
 import { JobSpy, type JobSpyInterface } from './spy.ts'
@@ -16,7 +16,9 @@ const INTERNAL_QUEUES = Object.values(timekeeper.QUEUES).reduce<Record<string, s
 
 const events = {
   error: 'error',
-  wip: 'wip'
+  wip: 'wip',
+  'expiration-extension': 'expiration-extension',
+  'expiration-extension-failed': 'expiration-extension-failed'
 }
 
 class Manager extends EventEmitter implements types.EventsMixin {
@@ -31,6 +33,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
   queues: Record<string, types.QueueResult> | null
   pendingOffWorkCleanups: Set<Promise<any>>
   #spies: Map<string, JobSpy>
+  #activeExpirationExtensions: Map<string, ReturnType<typeof setInterval>>
 
   constructor (db: types.IDatabase, config: types.ResolvedConstructorOptions) {
     super()
@@ -42,6 +45,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     this.queues = null
     this.pendingOffWorkCleanups = new Set()
     this.#spies = new Map()
+    this.#activeExpirationExtensions = new Map()
   }
 
   getSpy<T = object> (name: string): JobSpyInterface<T> {
@@ -104,6 +108,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     clearInterval(this.queueCacheInterval)
 
+    this.stopAllExpirationExtensions()
+
     await Promise.allSettled(
       [...this.workers.values()]
         .filter(worker => !INTERNAL_QUEUES[worker.name])
@@ -134,8 +140,13 @@ class Manager extends EventEmitter implements types.EventsMixin {
       pollingInterval: interval,
       batchSize = 1,
       includeMetadata = false,
-      priority = true
+      priority = true,
+      expirationExtension
     } = options
+
+    const extensionOptions: types.ExpirationExtensionOptions | null = expirationExtension
+      ? (typeof expirationExtension === 'object' ? expirationExtension : {})
+      : null
 
     const id = randomUUID({ disableEntropyCache: true })
 
@@ -165,8 +176,15 @@ class Manager extends EventEmitter implements types.EventsMixin {
       const ac = new AbortController()
       jobs.forEach(job => { job.signal = ac.signal })
 
+      const fetchId = randomUUID({ disableEntropyCache: true })
+      const extendableTimeout = resolveWithinSeconds(callback(jobs), maxExpiration, `handler execution exceeded ${maxExpiration}s`, ac)
+
+      if (extensionOptions) {
+        this.startExpirationExtension(fetchId, name, jobIds, extendableTimeout, ac, extensionOptions, maxExpiration)
+      }
+
       try {
-        const result = await resolveWithinSeconds(callback(jobs), maxExpiration, `handler execution exceeded ${maxExpiration}s`, ac)
+        const result = await extendableTimeout.promise
         await this.complete(name, jobIds, jobIds.length === 1 ? result : undefined)
 
         if (spy) {
@@ -182,6 +200,9 @@ class Manager extends EventEmitter implements types.EventsMixin {
             spy.addJob(job.id, name, job.data as object, 'failed', { message: err?.message, stack: err?.stack })
           }
         }
+      } finally {
+        this.stopExpirationExtension(fetchId)
+        extendableTimeout.abort()
       }
 
       this.emitWip(name)
@@ -729,6 +750,60 @@ class Manager extends EventEmitter implements types.EventsMixin {
     }
 
     return this.db
+  }
+
+  private startExpirationExtension (
+    fetchId: string,
+    name: string,
+    jobIds: string[],
+    timeout: ExtendableTimeout<unknown>,
+    ac: AbortController,
+    extensionOptions: types.ExpirationExtensionOptions,
+    maxExpiration: number
+  ) {
+    const intervalSeconds = extensionOptions.intervalSeconds ?? maxExpiration / 2
+    const intervalMs = Math.max(1, intervalSeconds) * 1000
+    const extensionMs = maxExpiration * 1000
+    const abortOnFailure = extensionOptions.abortOnFailure ?? true
+
+    const timer = setInterval(async () => {
+      try {
+        const { table } = await this.getQueueCache(name)
+        const sql = plans.touchJobs(this.config.schema, table)
+        const result = await this.db.executeSql(sql, [name, jobIds, maxExpiration])
+        const touchedCount = result?.rows ? parseInt(result.rows[0].count) : 0
+
+        if (touchedCount === jobIds.length) {
+          timeout.extend(extensionMs)
+          this.emit(events['expiration-extension'], { name, jobIds })
+        } else {
+          this.emit(events['expiration-extension-failed'], { name, jobIds, touchedCount })
+          if (abortOnFailure) {
+            this.stopExpirationExtension(fetchId)
+            ac.abort(new Error(`Expiration extension failed - only ${touchedCount}/${jobIds.length} jobs touched`))
+          }
+        }
+      } catch (error: any) {
+        this.emit(events.error, { ...error, message: error.message, stack: error.stack })
+      }
+    }, intervalMs)
+
+    this.#activeExpirationExtensions.set(fetchId, timer)
+  }
+
+  private stopExpirationExtension (fetchId: string) {
+    const timer = this.#activeExpirationExtensions.get(fetchId)
+    if (timer) {
+      clearInterval(timer)
+      this.#activeExpirationExtensions.delete(fetchId)
+    }
+  }
+
+  stopAllExpirationExtensions () {
+    for (const timer of this.#activeExpirationExtensions.values()) {
+      clearInterval(timer)
+    }
+    this.#activeExpirationExtensions.clear()
   }
 }
 
