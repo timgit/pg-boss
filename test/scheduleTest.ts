@@ -24,6 +24,50 @@ describe('schedule', function () {
     assert(job)
   })
 
+  it('should send jobs based on every one second expression', async function () {
+    const config = {
+      ...this.bossConfig,
+      cronMonitorIntervalSeconds: 1,
+      cronWorkerIntervalSeconds: 1,
+      schedule: true
+    }
+
+    this.boss = await helper.start(config)
+
+    await this.boss.schedule(this.schema, '* * * * * *')
+
+    await delay(4000)
+
+    const jobs = await this.boss.fetch(this.schema, { batchSize: 2 })
+
+    assert.equal(jobs.length, 2)
+  })
+
+  it('should send jobs based on every one five seconds expression', async function () {
+    const config = {
+      ...this.bossConfig,
+      cronMonitorIntervalSeconds: 1,
+      cronWorkerIntervalSeconds: 1,
+      schedule: true
+    }
+
+    this.boss = await helper.start(config)
+
+    await this.boss.schedule(this.schema, '*/5 * * * * *')
+
+    await delay(2000)
+
+    const jobsAfter2Seconds = await this.boss.fetch(this.schema, { batchSize: 2 })
+
+    assert.equal(jobsAfter2Seconds.length, 1)
+
+    await delay(5000)
+
+    const jobsAfter7Seconds = await this.boss.fetch(this.schema, { batchSize: 2 })
+
+    assert.equal(jobsAfter7Seconds.length, 2)
+  }).timeout(15000)
+
   it('should set job metadata correctly', async function () {
     const config = {
       ...this.bossConfig,
