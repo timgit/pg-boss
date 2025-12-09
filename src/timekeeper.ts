@@ -161,7 +161,7 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
         ({ name, key, data, options, cron, timezone }): types.JobInsert => ({
           data: { name, data, options },
           singletonKey: `${name}__${key}`,
-          singletonSeconds: Math.min(this.secondsUntilNextCron(cron, timezone), 60),
+          singletonSeconds: Math.min(this.getCronIntervalInSeconds(cron, timezone), 60),
         })
       )
 
@@ -182,12 +182,14 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
     return prevDiff < 60
   }
 
-  secondsUntilNextCron (cron: string, tz: string) {
+  getCronIntervalInSeconds (cron: string, tz: string) {
     const interval = CronExpressionParser.parse(cron, { tz, strict: false })
+
+    const prevTime = interval.prev()
 
     const nextTime = interval.next()
 
-    return Math.round((nextTime.getTime() - Date.now()) / 1000)
+    return Math.round((nextTime.getTime() - prevTime.getTime()) / 1000)
   }
 
   private async onSendIt (jobs: types.Job<types.Request>[]): Promise<void> {
