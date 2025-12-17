@@ -63,4 +63,32 @@ describe('queueStats', function () {
     assert.equal(activeCount, 0)
     assert.equal(totalCount, 0)
   })
+
+  it('should properly get queue stats when all jobs are deleted', async function () {
+    this.boss = await helper.start({ ...this.bossConfig, monitorIntervalSeconds: 1, queueCacheIntervalSeconds: 1 })
+
+    const queue4 = randomUUID()
+    await this.boss.createQueue(queue4)
+
+    await this.boss.send(queue4)
+    await this.boss.send(queue4)
+    await this.boss.send(queue4)
+
+    await this.boss.supervise(queue4)
+
+    await this.boss.deleteAllJobs(queue4)
+
+    await this.boss.supervise(queue4)
+
+    // wait for a second for queueCache to update
+    await new Promise(resolve => setTimeout(resolve, 1000))
+
+    const queueData = await this.boss.getQueueStats(queue4)
+    assert(queueData)
+
+    assert.equal(queueData.deferredCount, 0)
+    assert.equal(queueData.queuedCount, 0)
+    assert.equal(queueData.activeCount, 0)
+    assert.equal(queueData.totalCount, 0)
+  })
 })

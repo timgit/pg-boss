@@ -698,7 +698,14 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     const { rows } = await this.db.executeSql(query.text, query.values)
 
-    return Object.assign(queue, rows.at(0) || {})
+    return Object.assign(queue, rows.at(0) ||
+            {
+              deferredCount: 0,
+              queuedCount: 0,
+              activeCount: 0,
+              totalCount: 0
+            }
+    )
   }
 
   async getJobById<T>(name: string, id: string, options: types.ConnectionOptions = {}): Promise<types.JobWithMetadata<T> | null> {
