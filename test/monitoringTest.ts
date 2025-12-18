@@ -130,4 +130,31 @@ describe('monitoring', function () {
 
     assert(eventCount > 0)
   })
+
+  it('should reset cached counts to zero when all jobs are deleted for given queue', async function () {
+    const config = {
+      ...this.bossConfig,
+      monitorIntervalSeconds: 1
+    }
+
+    this.boss = await helper.start(config)
+
+    await this.boss.send(this.schema)
+    await this.boss.send(this.schema)
+    await this.boss.send(this.schema)
+
+    await this.boss.supervise()
+
+    await this.boss.deleteAllJobs(this.schema)
+
+    await delay(1000)
+    await this.boss.supervise()
+    const result = await this.boss.getQueue(this.schema)
+    assert(result)
+
+    assert.strictEqual(0, result.queuedCount)
+    assert.strictEqual(0, result.activeCount)
+    assert.strictEqual(0, result.deferredCount)
+    assert.strictEqual(0, result.totalCount)
+  })
 })

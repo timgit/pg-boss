@@ -962,17 +962,21 @@ function cacheQueueStats (schema: string, table: string, queues: string[]): stri
   const sql = `
     WITH stats AS (${statsText})
     UPDATE ${schema}.queue SET
-      deferred_count = "deferredCount",
-      queued_count = "queuedCount",
-      active_count = "activeCount",
-      total_count = "totalCount",
-      singletons_active = "singletonsActive"
-    FROM stats
-      WHERE queue.name = stats.name
+      deferred_count = COALESCE(stats."deferredCount", 0),
+      queued_count = COALESCE(stats."queuedCount", 0),
+      active_count = COALESCE(stats."activeCount", 0),
+      total_count = COALESCE(stats."totalCount", 0),
+      singletons_active = stats."singletonsActive"
+    FROM (
+      SELECT q.name
+      FROM unnest(${serializeArrayParam(queues)}) AS q(name)
+    ) q
+    LEFT JOIN stats ON stats.name = q.name
+    WHERE queue.name = q.name
     RETURNING
       queue.name,
-      "queuedCount",
-      warning_queued as "warningQueueSize"
+      queue.queued_count as "queuedCount",
+      queue.warning_queued as "warningQueueSize"
   `
 
   return locked(schema, sql, 'queue-stats')
