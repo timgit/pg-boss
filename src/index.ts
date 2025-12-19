@@ -344,6 +344,7 @@ export type {
   MaintenanceOptions,
   OffWorkOptions,
   Queue,
+  QueueOptions,
   QueuePolicy,
   QueueResult,
   Request,
