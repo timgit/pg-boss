@@ -1,5 +1,5 @@
 import { delay } from '../src/tools.ts'
-import assert from 'node:assert'
+import { expect } from 'vitest'
 import * as helper from './testHelper.ts'
 import { testContext } from './hooks.ts'
 
@@ -13,10 +13,10 @@ describe('spy', function () {
 
     const job = await spy.waitForJobWithId(jobId!, 'created')
 
-    assert.strictEqual(job.id, jobId)
-    assert.strictEqual(job.name, testContext.schema)
-    assert.deepStrictEqual(job.data, { value: 'test' })
-    assert.strictEqual(job.state, 'created')
+    expect(job.id).toBe(jobId)
+    expect(job.name).toBe(testContext.schema)
+    expect(job.data).toEqual({ value: 'test' })
+    expect(job.state).toBe('created')
   })
 
   it('should track job completion', async function () {
@@ -30,9 +30,9 @@ describe('spy', function () {
 
     const job = await spy.waitForJobWithId(jobId!, 'completed')
 
-    assert.strictEqual(job.id, jobId)
-    assert.strictEqual(job.state, 'completed')
-    assert.deepStrictEqual(job.output, { result: 'success' })
+    expect(job.id).toBe(jobId)
+    expect(job.state).toBe('completed')
+    expect(job.output).toEqual({ result: 'success' })
   })
 
   it('should track job failure', async function () {
@@ -48,9 +48,9 @@ describe('spy', function () {
 
     const job = await spy.waitForJobWithId(jobId!, 'failed')
 
-    assert.strictEqual(job.id, jobId)
-    assert.strictEqual(job.state, 'failed')
-    assert.strictEqual((job.output as any).message, 'test error')
+    expect(job.id).toBe(jobId)
+    expect(job.state).toBe('failed')
+    expect((job.output as any).message).toBe('test error')
   })
 
   it('should track job as active', async function () {
@@ -72,8 +72,8 @@ describe('spy', function () {
 
     const job = await spy.waitForJobWithId(jobId!, 'active')
 
-    assert.strictEqual(job.id, jobId)
-    assert.strictEqual(job.state, 'active')
+    expect(job.id).toBe(jobId)
+    expect(job.state).toBe('active')
   })
 
   it('should resolve immediately if job already in requested state', async function () {
@@ -91,8 +91,8 @@ describe('spy', function () {
     const job = await spy.waitForJobWithId(jobId!, 'created')
     const duration = Date.now() - start
 
-    assert.strictEqual(job.id, jobId)
-    assert(duration < 100, 'Should resolve immediately for already-tracked job')
+    expect(job.id).toBe(jobId)
+    expect(duration < 100).toBeTruthy()
   })
 
   it('should support waitForJob with data selector', async function () {
@@ -110,8 +110,8 @@ describe('spy', function () {
       'completed'
     )
 
-    assert.deepStrictEqual(job.data, { value: 'second' })
-    assert.strictEqual(job.state, 'completed')
+    expect(job.data).toEqual({ value: 'second' })
+    expect(job.state).toBe('completed')
   })
 
   it('should await job that completes after calling waitForJob', async function () {
@@ -131,8 +131,8 @@ describe('spy', function () {
 
     const job = await waitPromise
 
-    assert.deepStrictEqual(job.data, { value: 'awaited' })
-    assert.strictEqual(job.state, 'completed')
+    expect(job.data).toEqual({ value: 'awaited' })
+    expect(job.state).toBe('completed')
   })
 
   it('should track multiple jobs independently', async function () {
@@ -150,10 +150,10 @@ describe('spy', function () {
       spy.waitForJobWithId(jobId2!, 'completed')
     ])
 
-    assert.strictEqual(job1.id, jobId1)
-    assert.strictEqual(job2.id, jobId2)
-    assert.deepStrictEqual(job1.data, { value: 'job1' })
-    assert.deepStrictEqual(job2.data, { value: 'job2' })
+    expect(job1.id).toBe(jobId1)
+    expect(job2.id).toBe(jobId2)
+    expect(job1.data).toEqual({ value: 'job1' })
+    expect(job2.data).toEqual({ value: 'job2' })
   })
 
   it('should clear spy data', async function () {
@@ -175,7 +175,7 @@ describe('spy', function () {
 
     const result = await timeoutPromise
 
-    assert.strictEqual(result, 'timeout', 'Should timeout since data was cleared')
+    expect(result).toBe('timeout')
   })
 
   it('should work with insert (bulk send)', async function () {
@@ -202,9 +202,9 @@ describe('spy', function () {
       spy.waitForJobWithId(id3, 'created')
     ])
 
-    assert.deepStrictEqual(jobs[0].data, { value: 'bulk1' })
-    assert.deepStrictEqual(jobs[1].data, { value: 'bulk2' })
-    assert.deepStrictEqual(jobs[2].data, { value: 'bulk3' })
+    expect(jobs[0].data).toEqual({ value: 'bulk1' })
+    expect(jobs[1].data).toEqual({ value: 'bulk2' })
+    expect(jobs[2].data).toEqual({ value: 'bulk3' })
   })
 
   it('should protect against data mutation', async function () {
@@ -219,7 +219,7 @@ describe('spy', function () {
 
     const job2 = await spy.waitForJobWithId(jobId!, 'created')
 
-    assert.strictEqual(job2.data.value, 'original', 'Data should be cloned and protected from mutation')
+    expect(job2.data.value).toBe('original')
   })
 
   it('should work with separate spies per queue', async function () {
@@ -240,8 +240,8 @@ describe('spy', function () {
     const jobA = await spyA.waitForJobWithId(jobIdA!, 'created')
     const jobB = await spyB.waitForJobWithId(jobIdB!, 'created')
 
-    assert.deepStrictEqual(jobA.data, { queue: 'A' })
-    assert.deepStrictEqual(jobB.data, { queue: 'B' })
+    expect(jobA.data).toEqual({ queue: 'A' })
+    expect(jobB.data).toEqual({ queue: 'B' })
   })
 
   it('should clearSpies on boss instance', async function () {
@@ -265,7 +265,7 @@ describe('spy', function () {
 
     const result = await timeoutPromise
 
-    assert.strictEqual(result, 'timeout', 'Should timeout since spies were cleared')
+    expect(result).toBe('timeout')
   })
 
   it('should handle race condition - await before job creation', async function () {
@@ -283,7 +283,7 @@ describe('spy', function () {
 
     const job = await waitPromise
 
-    assert.deepStrictEqual(job.data, { value: 'race-test' })
+    expect(job.data).toEqual({ value: 'race-test' })
   })
 
   it('should handle batch processing with spy', async function () {
@@ -307,19 +307,18 @@ describe('spy', function () {
       jobIds.map(id => spy.waitForJobWithId(id, 'completed'))
     )
 
-    assert.strictEqual(jobs.length, batchSize)
+    expect(jobs.length).toBe(batchSize)
     for (const job of jobs) {
-      assert.strictEqual(job.state, 'completed')
+      expect(job.state).toBe('completed')
     }
   })
 
   it('should throw error when spy is not enabled', async function () {
     testContext.boss = await helper.start(testContext.bossConfig)
 
-    assert.throws(
-      () => testContext.boss!.getSpy(testContext.schema),
-      /Spy is not enabled/
-    )
+    expect(
+      () => testContext.boss!.getSpy(testContext.schema)
+    ).toThrow(/Spy is not enabled/)
   })
 
   it('should track job creation via singletonNextSlot retry path', async function () {
@@ -329,18 +328,18 @@ describe('spy', function () {
 
     // First job creates the singleton slot
     const jobId1 = await testContext.boss.send(testContext.schema, { value: 'first' }, { singletonSeconds: 300 })
-    assert.ok(jobId1)
+    expect(jobId1).toBeTruthy()
 
     const job1 = await spy.waitForJobWithId(jobId1!, 'created')
-    assert.strictEqual(job1.id, jobId1)
+    expect(job1.id).toBe(jobId1)
 
     // Second job with singletonNextSlot triggers the retry path (try2)
     // because the first insert conflicts with the existing singleton
     const jobId2 = await testContext.boss.send(testContext.schema, { value: 'second' }, { singletonSeconds: 300, singletonNextSlot: true })
-    assert.ok(jobId2)
+    expect(jobId2).toBeTruthy()
 
     const job2 = await spy.waitForJobWithId(jobId2!, 'created')
-    assert.strictEqual(job2.id, jobId2)
-    assert.deepStrictEqual(job2.data, { value: 'second' })
+    expect(job2.id).toBe(jobId2)
+    expect(job2.data).toEqual({ value: 'second' })
   })
 })

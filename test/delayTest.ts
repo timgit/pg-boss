@@ -1,4 +1,4 @@
-import assert from 'node:assert'
+import { expect } from 'vitest'
 import * as helper from './testHelper.ts'
 import { delay } from '../src/tools.ts'
 import { testContext } from './hooks.ts'
@@ -13,13 +13,13 @@ describe('delayed jobs', function () {
 
     const [job] = await testContext.boss.fetch(testContext.schema)
 
-    assert(!job)
+    expect(job).toBeFalsy()
 
     await delay(startAfter * 1000)
 
     const [job2] = await testContext.boss.fetch(testContext.schema)
 
-    assert(job2)
+    expect(job2).toBeTruthy()
   })
 
   it('should wait until after a date time string', async function () {
@@ -35,13 +35,13 @@ describe('delayed jobs', function () {
 
     const [job] = await testContext.boss.fetch(testContext.schema)
 
-    assert(!job)
+    expect(job).toBeFalsy()
 
     await delay(5000)
 
     const job2 = await testContext.boss.fetch(testContext.schema)
 
-    assert(job2)
+    expect(job2).toBeTruthy()
   })
 
   it('should wait until after a date object', async function () {
@@ -56,13 +56,13 @@ describe('delayed jobs', function () {
 
     const [job] = await testContext.boss.fetch(testContext.schema)
 
-    assert(!job)
+    expect(job).toBeFalsy()
 
     await delay(2000)
 
     const [job2] = await testContext.boss.fetch(testContext.schema)
 
-    assert(job2)
+    expect(job2).toBeTruthy()
   })
 
   it('should work with sendAfter() and a date object', async function () {
@@ -77,12 +77,12 @@ describe('delayed jobs', function () {
 
     const [job] = await testContext.boss.fetch(testContext.schema)
 
-    assert(!job)
+    expect(job).toBeFalsy()
 
     await delay(2000)
 
     const [job2] = await testContext.boss.fetch(testContext.schema)
 
-    assert(job2)
+    expect(job2).toBeTruthy()
   })
 })

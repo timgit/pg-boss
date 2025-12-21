@@ -1,4 +1,4 @@
-import assert from 'node:assert'
+import { expect } from 'vitest'
 import Db from '../src/db.ts'
 import { PgBoss } from '../src/index.ts'
 import * as helper from './testHelper.ts'
@@ -13,7 +13,7 @@ describe('config', function () {
 
     await helper.dropSchema(config.schema)
 
-    assert.strictEqual(config.schema.length, 50)
+    expect(config.schema.length).toBe(50)
 
     testContext.boss = new PgBoss(config)
 
@@ -29,9 +29,9 @@ describe('config', function () {
 
     await helper.dropSchema(config.schema)
 
-    assert(config.schema.length > 50)
+    expect(config.schema.length > 50).toBeTruthy()
 
-    assert.throws(() => new PgBoss(config))
+    expect(() => new PgBoss(config)).toThrow()
   })
 
   it('should accept a connectionString property', async function () {
@@ -44,15 +44,15 @@ describe('config', function () {
   it('should not allow calling job instance functions if not started', async function () {
     const boss = new PgBoss(testContext.bossConfig)
 
-    await assert.rejects(async () => {
+    await expect(async () => {
       await boss.send('queue1')
-    })
+    }).rejects.toThrow()
   })
 
   it('start() should return instance after', async function () {
     testContext.boss = await helper.start(testContext.bossConfig)
     const result2 = await testContext.boss.start()
-    assert(result2)
+    expect(result2).toBeTruthy()
   })
 
   it('isInstalled() should indicate whether db schema is installed', async function () {
@@ -60,14 +60,14 @@ describe('config', function () {
     await db.open()
 
     testContext.boss = new PgBoss({ ...testContext.bossConfig, db })
-    assert.strictEqual(await testContext.boss.isInstalled(), false)
+    expect(await testContext.boss.isInstalled()).toBe(false)
     await testContext.boss.start()
-    assert.strictEqual(await testContext.boss.isInstalled(), true)
+    expect(await testContext.boss.isInstalled()).toBe(true)
   })
 
   it('schemaVersion() should return current version', async function () {
     testContext.boss = await helper.start(testContext.bossConfig)
     const version = await testContext.boss.schemaVersion()
-    assert.strictEqual(version, packageJson.pgboss.schema)
+    expect(version).toBe(packageJson.pgboss.schema)
   })
 })

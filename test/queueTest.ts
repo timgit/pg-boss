@@ -1,4 +1,4 @@
-import assert from 'node:assert'
+import { expect } from 'vitest'
 import * as helper from './testHelper.ts'
 import { states } from '../src/index.ts'
 import { testContext } from './hooks.ts'
@@ -17,7 +17,7 @@ describe('queues', function () {
 
     await testContext.boss.createQueue(testContext.schema, options)
 
-    assert.strictEqual(Object.keys(options).length, 0)
+    expect(Object.keys(options).length).toBe(0)
   })
 
   it('createQueue should work if queue already exists', async function () {
@@ -30,24 +30,24 @@ describe('queues', function () {
   it('should reject a queue with invalid characters', async function () {
     testContext.boss = await helper.start({ ...testContext.bossConfig, noDefault: true })
     const queue = `*${testContext.bossConfig.schema}`
-    await assert.rejects(async () => {
+    await expect(async () => {
       await testContext.boss!.createQueue(queue)
-    })
+    }).rejects.toThrow()
   })
 
   it('should reject a queue with invalid policy', async function () {
     testContext.boss = await helper.start({ ...testContext.bossConfig, noDefault: true })
-    await assert.rejects(async () => {
+    await expect(async () => {
       // @ts-ignore
       await testContext.boss.createQueue(testContext.schema, { policy: 'something' })
-    })
+    }).rejects.toThrow()
   })
 
   it('should reject using a queue if not created', async function () {
     testContext.boss = await helper.start({ ...testContext.bossConfig, noDefault: true })
-    await assert.rejects(async () => {
+    await expect(async () => {
       await testContext.boss!.send(testContext.schema)
-    })
+    }).rejects.toThrow()
   })
 
   it('should create a queue with standard policy', async function () {
@@ -60,7 +60,7 @@ describe('queues', function () {
     testContext.boss = await helper.start({ ...testContext.bossConfig, noDefault: true })
 
     await testContext.boss.createQueue(testContext.schema)
-    assert(await testContext.boss.getQueue(testContext.schema))
+    expect(await testContext.boss.getQueue(testContext.schema)).toBeTruthy()
     await testContext.boss.deleteQueue(testContext.schema)
     await testContext.boss.createQueue(testContext.schema)
   })
@@ -88,7 +88,7 @@ describe('queues', function () {
     await testContext.boss.deleteQueue(testContext.schema)
 
     const { queuedCount } = await testContext.boss.getQueueStats(queue2)
-    assert(queuedCount)
+    expect(queuedCount).toBeTruthy()
   })
 
   it('should truncate a partitioned queue', async function () {
@@ -115,7 +115,7 @@ describe('queues', function () {
     const { queuedCount: count1 } = await testContext.boss.getQueueStats(testContext.schema)
     const { queuedCount: count2 } = await testContext.boss.getQueueStats(queue2)
 
-    assert.strictEqual(count1 + count2, 0)
+    expect(count1 + count2).toBe(0)
   })
 
   it('should delete a non-empty queue', async function () {
@@ -133,11 +133,11 @@ describe('queues', function () {
 
     await testContext.boss.send(testContext.schema)
 
-    assert.strictEqual(await getCount(), 1)
+    expect(await getCount()).toBe(1)
 
     await testContext.boss.deleteQueuedJobs(testContext.schema)
 
-    assert.strictEqual(await getCount(), 0)
+    expect(await getCount()).toBe(0)
   })
 
   it('should delete all stored jobs from a queue', async function () {
@@ -149,27 +149,27 @@ describe('queues', function () {
 
     await testContext.boss.send(testContext.schema)
     const [job1] = await testContext.boss.fetch(testContext.schema)
-    assert(job1?.id)
+    expect(job1?.id).toBeTruthy()
 
     await testContext.boss.complete(testContext.schema, job1.id)
 
-    assert.strictEqual(await getCount(), 1)
+    expect(await getCount()).toBe(1)
 
     await testContext.boss.send(testContext.schema, null, { retryLimit: 0 })
     const [job2] = await testContext.boss.fetch(testContext.schema)
     await testContext.boss.fail(testContext.schema, job2.id)
 
-    assert.strictEqual(await getCount(), 2)
+    expect(await getCount()).toBe(2)
 
     await testContext.boss.deleteStoredJobs(testContext.schema)
 
-    assert.strictEqual(await getCount(), 0)
+    expect(await getCount()).toBe(0)
   })
 
   it('getQueue() returns null when missing', async function () {
     testContext.boss = await helper.start({ ...testContext.bossConfig, noDefault: true })
     const queue = await testContext.boss.getQueue(testContext.bossConfig.schema)
-    assert.strictEqual(queue, null)
+    expect(queue).toBe(null)
   })
 
   it('getQueues() returns queues array', async function () {
@@ -182,10 +182,10 @@ describe('queues', function () {
 
     const queues = await testContext.boss.getQueues()
 
-    assert.strictEqual(queues.length, 2)
+    expect(queues.length).toBe(2)
 
-    assert(queues.some(q => q.name === queue1))
-    assert(queues.some(q => q.name === queue2))
+    expect(queues.some(q => q.name === queue1)).toBeTruthy()
+    expect(queues.some(q => q.name === queue2)).toBeTruthy()
   })
 
   it('should update queue properties', async function () {
@@ -209,19 +209,19 @@ describe('queues', function () {
 
     let queueObj = await testContext.boss.getQueue(testContext.schema)
 
-    assert(queueObj)
+    expect(queueObj).toBeTruthy()
 
-    assert.strictEqual(testContext.schema, queueObj.name)
-    assert.strictEqual(createProps.policy, queueObj.policy)
-    assert.strictEqual(createProps.retryLimit, queueObj.retryLimit)
-    assert.strictEqual(createProps.retryBackoff, queueObj.retryBackoff)
-    assert.strictEqual(createProps.retryDelay, queueObj.retryDelay)
-    assert.strictEqual(createProps.retryDelayMax, queueObj.retryDelayMax)
-    assert.strictEqual(createProps.expireInSeconds, queueObj.expireInSeconds)
-    assert.strictEqual(createProps.retentionSeconds, queueObj.retentionSeconds)
-    assert.strictEqual(createProps.deadLetter, queueObj.deadLetter)
-    assert(queueObj.createdOn)
-    assert(queueObj.updatedOn)
+    expect(queueObj!.name).toBe(testContext.schema)
+    expect(queueObj!.policy).toBe(createProps.policy)
+    expect(queueObj!.retryLimit).toBe(createProps.retryLimit)
+    expect(queueObj!.retryBackoff).toBe(createProps.retryBackoff)
+    expect(queueObj!.retryDelay).toBe(createProps.retryDelay)
+    expect(queueObj!.retryDelayMax).toBe(createProps.retryDelayMax)
+    expect(queueObj!.expireInSeconds).toBe(createProps.expireInSeconds)
+    expect(queueObj!.retentionSeconds).toBe(createProps.retentionSeconds)
+    expect(queueObj!.deadLetter).toBe(createProps.deadLetter)
+    expect(queueObj!.createdOn).toBeTruthy()
+    expect(queueObj!.updatedOn).toBeTruthy()
 
     deadLetter = `${testContext.schema}_dlq2`
     await testContext.boss.createQueue(deadLetter)
@@ -238,11 +238,11 @@ describe('queues', function () {
 
     queueObj = await testContext.boss.getQueue(testContext.schema)
 
-    assert.strictEqual(updateProps.retryLimit, queueObj!.retryLimit)
-    assert.strictEqual(updateProps.retryBackoff, queueObj!.retryBackoff)
-    assert.strictEqual(updateProps.retryDelay, queueObj!.retryDelay)
-    assert.strictEqual(updateProps.expireInSeconds, queueObj!.expireInSeconds)
-    assert.strictEqual(updateProps.deadLetter, queueObj!.deadLetter)
+    expect(queueObj!.retryLimit).toBe(updateProps.retryLimit)
+    expect(queueObj!.retryBackoff).toBe(updateProps.retryBackoff)
+    expect(queueObj!.retryDelay).toBe(updateProps.retryDelay)
+    expect(queueObj!.expireInSeconds).toBe(updateProps.expireInSeconds)
+    expect(queueObj!.deadLetter).toBe(updateProps.deadLetter)
   })
 
   it('should fail to change queue policy', async function () {
@@ -250,20 +250,20 @@ describe('queues', function () {
 
     await testContext.boss.createQueue(testContext.schema, { policy: 'standard' })
 
-    await assert.rejects(async () => {
+    await expect(async () => {
       // @ts-ignore
       await testContext.boss.updateQueue(testContext.schema, { policy: 'exclusive' })
-    })
+    }).rejects.toThrow()
   })
 
   it('should fail to change queue partitioning', async function () {
     testContext.boss = await helper.start({ ...testContext.bossConfig, noDefault: true })
     await testContext.boss.createQueue(testContext.schema, { partition: true })
 
-    await assert.rejects(async () => {
+    await expect(async () => {
       // @ts-ignore
       await testContext.boss.updateQueue(testContext.schema, { partition: false })
-    })
+    }).rejects.toThrow()
   })
 
   it('jobs should inherit properties from queue', async function () {
@@ -288,16 +288,16 @@ describe('queues', function () {
 
     const job = await testContext.boss.getJobById(testContext.schema, jobId!)
 
-    assert(job)
+    expect(job).toBeTruthy()
 
-    const retentionSeconds = (new Date(job.keepUntil).getTime() - new Date(job.createdOn).getTime()) / 1000
+    const retentionSeconds = (new Date(job!.keepUntil).getTime() - new Date(job!.createdOn).getTime()) / 1000
 
-    assert.strictEqual(job.retryLimit, createProps.retryLimit)
-    assert.strictEqual(job.retryBackoff, createProps.retryBackoff)
-    assert.strictEqual(job.retryDelay, createProps.retryDelay)
-    assert.strictEqual(job.retryDelayMax, createProps.retryDelayMax)
-    assert.strictEqual(job.deadLetter, createProps.deadLetter)
-    assert.strictEqual(job.expireInSeconds, createProps.expireInSeconds)
-    assert.strictEqual(retentionSeconds, createProps.retentionSeconds)
+    expect(job!.retryLimit).toBe(createProps.retryLimit)
+    expect(job!.retryBackoff).toBe(createProps.retryBackoff)
+    expect(job!.retryDelay).toBe(createProps.retryDelay)
+    expect(job!.retryDelayMax).toBe(createProps.retryDelayMax)
+    expect(job!.deadLetter).toBe(createProps.deadLetter)
+    expect(job!.expireInSeconds).toBe(createProps.expireInSeconds)
+    expect(retentionSeconds).toBe(createProps.retentionSeconds)
   })
 })

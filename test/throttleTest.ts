@@ -1,4 +1,4 @@
-import assert from 'node:assert'
+import { expect } from 'vitest'
 import * as helper from './testHelper.ts'
 import { delay } from '../src/tools.ts'
 import { testContext } from './hooks.ts'
@@ -17,7 +17,7 @@ describe('throttle', function () {
 
     const { length } = await testContext.boss.fetch(testContext.schema, { batchSize: sendCount })
 
-    assert(length < sendCount)
+    expect(length < sendCount).toBeTruthy()
   })
 
   it('should process at most 1 job per second', async function () {
@@ -40,7 +40,7 @@ describe('throttle', function () {
 
     await delay(assertTimeout)
 
-    assert(processCount <= jobCount + 1)
+    expect(processCount <= jobCount + 1).toBeTruthy()
   })
 
   it('should debounce', async function () {
@@ -48,11 +48,11 @@ describe('throttle', function () {
 
     const jobId = await testContext.boss.send(testContext.schema, null, { singletonSeconds: 300 })
 
-    assert(jobId)
+    expect(jobId).toBeTruthy()
 
     const jobId2 = await testContext.boss.send(testContext.schema, null, { singletonSeconds: 300, singletonNextSlot: true })
 
-    assert(jobId2)
+    expect(jobId2).toBeTruthy()
   })
 
   it('should debounce via sendDebounced()', async function () {
@@ -62,15 +62,15 @@ describe('throttle', function () {
 
     const jobId = await testContext.boss.sendDebounced(testContext.schema, null, null, seconds)
 
-    assert(jobId)
+    expect(jobId).toBeTruthy()
 
     const jobId2 = await testContext.boss.sendDebounced(testContext.schema, null, null, seconds)
 
-    assert(jobId2)
+    expect(jobId2).toBeTruthy()
 
     const jobId3 = await testContext.boss.sendDebounced(testContext.schema, null, null, seconds)
 
-    assert.strictEqual(jobId3, null)
+    expect(jobId3).toBe(null)
   })
 
   it('should reject 2nd request in the same time slot', async function () {
@@ -78,11 +78,11 @@ describe('throttle', function () {
 
     const jobId1 = await testContext.boss.send(testContext.schema, null, { singletonSeconds: 300 })
 
-    assert(jobId1)
+    expect(jobId1).toBeTruthy()
 
     const jobId2 = await testContext.boss.send(testContext.schema, null, { singletonSeconds: 300 })
 
-    assert.strictEqual(jobId2, null)
+    expect(jobId2).toBe(null)
   })
 
   it('should throttle via sendThrottled()', async function () {
@@ -92,11 +92,11 @@ describe('throttle', function () {
 
     const jobId1 = await testContext.boss.sendThrottled(testContext.schema, null, null, seconds)
 
-    assert(jobId1)
+    expect(jobId1).toBeTruthy()
 
     const jobId2 = await testContext.boss.sendThrottled(testContext.schema, null, null, seconds)
 
-    assert.strictEqual(jobId2, null)
+    expect(jobId2).toBe(null)
   })
 
   it('should not allow more than 1 complete job with the same key with an interval', async function () {
@@ -112,6 +112,6 @@ describe('throttle', function () {
 
     const jobId = await testContext.boss.send(testContext.schema, null, { singletonKey, singletonSeconds })
 
-    assert.strictEqual(jobId, null)
+    expect(jobId).toBe(null)
   })
 })

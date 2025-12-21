@@ -1,14 +1,14 @@
-import assert from 'node:assert'
+import { expect } from 'vitest'
 import * as helper from './testHelper.ts'
 import { testContext } from './hooks.ts'
 
 describe('cancel', function () {
   it('should reject missing arguments', async function () {
     testContext.boss = await helper.start(testContext.bossConfig)
-    await assert.rejects(async () => {
+    await expect(async () => {
       // @ts-ignore
       await testContext.boss.cancel()
-    })
+    }).rejects.toThrow()
   })
 
   it('should cancel a pending job', async function () {
@@ -20,7 +20,7 @@ describe('cancel', function () {
 
     const job = await testContext.boss.getJobById(testContext.schema, jobId!)
 
-    assert(job && job.state === 'cancelled')
+    expect(job && job.state === 'cancelled').toBeTruthy()
   })
 
   it('should not cancel a completed job', async function () {
@@ -32,11 +32,11 @@ describe('cancel', function () {
 
     const completeResult = await testContext.boss.complete(testContext.schema, job.id)
 
-    assert.strictEqual(completeResult.affected, 1)
+    expect(completeResult.affected).toBe(1)
 
     const cancelResult = await testContext.boss.cancel(testContext.schema, job.id)
 
-    assert.strictEqual(cancelResult.affected, 0)
+    expect(cancelResult.affected).toBe(0)
   })
 
   it('should cancel a batch of jobs', async function () {
@@ -69,7 +69,7 @@ describe('cancel', function () {
 
     const job = await testContext.boss.getJobById(testContext.schema, jobId!)
 
-    assert(job && job.state === 'cancelled')
-    assert.strictEqual(called, true)
+    expect(job && job.state === 'cancelled').toBeTruthy()
+    expect(called).toBe(true)
   })
 })

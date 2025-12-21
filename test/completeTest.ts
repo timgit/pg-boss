@@ -1,4 +1,4 @@
-import assert from 'node:assert'
+import { expect } from 'vitest'
 import * as helper from './testHelper.ts'
 import { states } from '../src/index.ts'
 import { testContext } from './hooks.ts'
@@ -6,10 +6,10 @@ import { testContext } from './hooks.ts'
 describe('complete', function () {
   it('should reject missing id argument', async function () {
     testContext.boss = await helper.start(testContext.bossConfig)
-    await assert.rejects(async () => {
+    await expect(async () => {
       // @ts-ignore
       await testContext.boss.complete(testContext.schema)
-    })
+    }).rejects.toThrow()
   })
 
   it('should complete a batch of jobs', async function () {
@@ -31,11 +31,11 @@ describe('complete', function () {
 
     const activeCount = await countJobs(states.active)
 
-    assert.strictEqual(activeCount, batchSize)
+    expect(activeCount).toBe(batchSize)
 
     const result = await testContext.boss.complete(testContext.schema, jobs.map(job => job.id))
 
-    assert.strictEqual(batchSize, result.jobs.length)
+    expect(result.jobs.length).toBe(batchSize)
   })
 
   it('should store job output in job.output from complete()', async function () {
@@ -45,16 +45,16 @@ describe('complete', function () {
 
     const [job] = await testContext.boss.fetch(testContext.schema)
 
-    assert.strictEqual(jobId, job.id)
+    expect(job.id).toBe(jobId)
 
     const completionData = { msg: 'i am complete' }
 
     await testContext.boss.complete(testContext.schema, jobId, completionData)
 
     const jobWithMetadata = await testContext.boss.getJobById(testContext.schema, jobId)
-    assert(jobWithMetadata)
+    expect(jobWithMetadata).toBeTruthy()
 
-    assert.strictEqual((jobWithMetadata as any).output.msg, completionData.msg)
+    expect((jobWithMetadata as any).output.msg).toBe(completionData.msg)
   })
 
   it('should store job error in job.output from fail()', async function () {
@@ -64,16 +64,16 @@ describe('complete', function () {
 
     const [job] = await testContext.boss.fetch(testContext.schema)
 
-    assert.strictEqual(jobId, job.id)
+    expect(job.id).toBe(jobId)
 
     const completionError = new Error('i am complete')
 
     await testContext.boss.fail(testContext.schema, jobId, completionError)
 
     const jobWithMetadata = await testContext.boss.getJobById(testContext.schema, jobId)
-    assert(jobWithMetadata)
+    expect(jobWithMetadata).toBeTruthy()
 
-    assert.strictEqual((jobWithMetadata as any).output.message, completionError.message)
+    expect((jobWithMetadata as any).output.message).toBe(completionError.message)
   })
 
   it('should complete a batch of jobs with custom connection', async function () {
@@ -95,7 +95,7 @@ describe('complete', function () {
 
     const activeCount = await countJobs(states.active)
 
-    assert.strictEqual(activeCount, batchSize)
+    expect(activeCount).toBe(batchSize)
 
     let called = false
     const _db = await helper.getDb()
@@ -108,7 +108,7 @@ describe('complete', function () {
 
     const result = await testContext.boss.complete(testContext.schema, jobs.map(job => job.id), undefined, { db })
 
-    assert.strictEqual(batchSize, result.jobs.length)
-    assert.strictEqual(called, true)
+    expect(result.jobs.length).toBe(batchSize)
+    expect(called).toBe(true)
   })
 })

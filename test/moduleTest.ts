@@ -1,13 +1,13 @@
-import assert from 'node:assert'
+import { expect } from 'vitest'
 import { states } from '../src/index.ts'
 
 describe('module', function () {
   it('should export states object', function () {
-    assert(states.created)
-    assert(states.retry)
-    assert(states.active)
-    assert(states.completed)
-    assert(states.cancelled)
-    assert(states.failed)
+    expect(states.created).toBeTruthy()
+    expect(states.retry).toBeTruthy()
+    expect(states.active).toBeTruthy()
+    expect(states.completed).toBeTruthy()
+    expect(states.cancelled).toBeTruthy()
+    expect(states.failed).toBeTruthy()
   })
 })

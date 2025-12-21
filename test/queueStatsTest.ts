@@ -1,4 +1,4 @@
-import assert from 'node:assert'
+import { expect } from 'vitest'
 import * as helper from './testHelper.ts'
 import { randomUUID } from 'node:crypto'
 import type { ConstructorOptions } from '../src/types.ts'
@@ -25,7 +25,7 @@ describe('queueStats', function () {
   it('should get accurate stats', async function () {
     testContext.boss = await init(testContext.bossConfig)
     const queueData = await testContext.boss.getQueueStats(queue1)
-    assert.notEqual(queueData, undefined)
+    expect(queueData).not.toBe(undefined)
 
     const {
       name,
@@ -35,11 +35,11 @@ describe('queueStats', function () {
       totalCount
     } = queueData!
 
-    assert.equal(name, queue1)
-    assert.equal(deferredCount, 0)
-    assert.equal(queuedCount, 2)
-    assert.equal(activeCount, 0)
-    assert.equal(totalCount, 2)
+    expect(name).toBe(queue1)
+    expect(deferredCount).toBe(0)
+    expect(queuedCount).toBe(2)
+    expect(activeCount).toBe(0)
+    expect(totalCount).toBe(2)
   })
 
   it('should get accurate stats on an empty queue', async function () {
@@ -48,7 +48,7 @@ describe('queueStats', function () {
     await testContext.boss.createQueue(queue3)
 
     const queueData = await testContext.boss.getQueueStats(queue3)
-    assert.notEqual(queueData, undefined)
+    expect(queueData).not.toBe(undefined)
 
     const {
       name,
@@ -58,11 +58,11 @@ describe('queueStats', function () {
       totalCount
     } = queueData
 
-    assert.equal(name, queue3)
-    assert.equal(deferredCount, 0)
-    assert.equal(queuedCount, 0)
-    assert.equal(activeCount, 0)
-    assert.equal(totalCount, 0)
+    expect(name).toBe(queue3)
+    expect(deferredCount).toBe(0)
+    expect(queuedCount).toBe(0)
+    expect(activeCount).toBe(0)
+    expect(totalCount).toBe(0)
   })
 
   it('should properly get queue stats when all jobs are deleted', async function () {
@@ -85,11 +85,11 @@ describe('queueStats', function () {
     await new Promise(resolve => setTimeout(resolve, 1000))
 
     const queueData = await testContext.boss.getQueueStats(queue4)
-    assert(queueData)
+    expect(queueData).toBeTruthy()
 
-    assert.equal(queueData.deferredCount, 0)
-    assert.equal(queueData.queuedCount, 0)
-    assert.equal(queueData.activeCount, 0)
-    assert.equal(queueData.totalCount, 0)
+    expect(queueData.deferredCount).toBe(0)
+    expect(queueData.queuedCount).toBe(0)
+    expect(queueData.activeCount).toBe(0)
+    expect(queueData.totalCount).toBe(0)
   })
 })

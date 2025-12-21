@@ -1,4 +1,4 @@
-import assert from 'node:assert'
+import { expect } from 'vitest'
 import * as helper from './testHelper.ts'
 import { testContext } from './hooks.ts'
 
@@ -6,28 +6,28 @@ describe('send', function () {
   it('should fail with no arguments', async function () {
     testContext.boss = await helper.start(testContext.bossConfig)
 
-    await assert.rejects(async () => {
+    await expect(async () => {
       // @ts-ignore
       await testContext.boss.send()
-    })
+    }).rejects.toThrow()
   })
 
   it('should fail with a function for data', async function () {
     testContext.boss = await helper.start(testContext.bossConfig)
 
-    await assert.rejects(async () => {
+    await expect(async () => {
       // @ts-ignore
       await testContext.boss.send('job', () => true)
-    })
+    }).rejects.toThrow()
   })
 
   it('should fail with a function for options', async function () {
     testContext.boss = await helper.start(testContext.bossConfig)
 
-    await assert.rejects(async () => {
+    await expect(async () => {
       // @ts-ignore
       await testContext.boss.send('job', 'data', () => true)
-    })
+    }).rejects.toThrow()
   })
 
   it('should accept single string argument', async function () {
@@ -51,7 +51,7 @@ describe('send', function () {
 
     const [job] = await testContext.boss.fetch<{ message: string }>(testContext.schema)
 
-    assert.strictEqual(message, job.data.message)
+    expect(job.data.message).toBe(message)
   })
 
   it('should accept job object with name and options only', async function () {
@@ -63,7 +63,7 @@ describe('send', function () {
 
     const [job] = await testContext.boss.fetch(testContext.schema)
 
-    assert.strictEqual(job.data, null)
+    expect(job.data).toBe(null)
   })
 
   it('should accept job object with name and custom connection', async function () {
@@ -87,9 +87,9 @@ describe('send', function () {
 
     const [job] = await testContext.boss.fetch(testContext.schema)
 
-    assert.notEqual(job, null)
-    assert.strictEqual(job.data, null)
-    assert.strictEqual(called, true)
+    expect(job).not.toBe(null)
+    expect(job.data).toBe(null)
+    expect(called).toBe(true)
   })
 
   it('should not create job if transaction fails', async function () {
@@ -125,7 +125,7 @@ describe('send', function () {
 
     const [job] = await testContext.boss.fetch(testContext.schema)
 
-    assert(!job)
+    expect(job).toBeFalsy()
   })
 
   it('should create job with all properties', async function () {
@@ -153,17 +153,17 @@ describe('send', function () {
     const id = await testContext.boss.send(testContext.schema, {}, options)
 
     const job = await testContext.boss.getJobById(testContext.schema, id!)
-    assert(job)
+    expect(job).toBeTruthy()
 
-    assert.strictEqual(job.priority, options.priority, `priority input ${options.priority} didn't match job ${job.priority}`)
-    assert.strictEqual(job.retryLimit, options.retryLimit, `retryLimit input ${options.retryLimit} didn't match job ${job.retryLimit}`)
-    assert.strictEqual(job.retryDelay, options.retryDelay, `retryDelay input ${options.retryDelay} didn't match job ${job.retryDelay}`)
-    assert.strictEqual(job.retryBackoff, options.retryBackoff, `retryBackoff input ${options.retryBackoff} didn't match job ${job.retryBackoff}`)
-    assert.strictEqual(job.retryDelayMax, options.retryDelayMax, `retryDelayMax input ${options.retryDelayMax} didn't match job ${job.retryDelayMax}`)
-    assert.strictEqual(new Date(job.startAfter).toISOString(), options.startAfter, `startAfter input ${options.startAfter} didn't match job ${job.startAfter}`)
-    assert.strictEqual(job.expireInSeconds, options.expireInSeconds, `expireInSeconds input ${options.expireInSeconds} didn't match job ${job.expireInSeconds}`)
-    assert.strictEqual(job.deleteAfterSeconds, options.deleteAfterSeconds, `deleteAfterSeconds input ${options.deleteAfterSeconds} didn't match job ${job.deleteAfterSeconds}`)
-    assert.strictEqual(job.singletonKey, options.singletonKey, `name input ${options.singletonKey} didn't match job ${job.singletonKey}`)
-    assert.strictEqual(new Date(job.keepUntil).toISOString(), keepUntil, `keepUntil input ${keepUntil} didn't match job ${job.keepUntil}`)
+    expect(job!.priority).toBe(options.priority)
+    expect(job!.retryLimit).toBe(options.retryLimit)
+    expect(job!.retryDelay).toBe(options.retryDelay)
+    expect(job!.retryBackoff).toBe(options.retryBackoff)
+    expect(job!.retryDelayMax).toBe(options.retryDelayMax)
+    expect(new Date(job!.startAfter).toISOString()).toBe(options.startAfter)
+    expect(job!.expireInSeconds).toBe(options.expireInSeconds)
+    expect(job!.deleteAfterSeconds).toBe(options.deleteAfterSeconds)
+    expect(job!.singletonKey).toBe(options.singletonKey)
+    expect(new Date(job!.keepUntil).toISOString()).toBe(keepUntil)
   })
 })

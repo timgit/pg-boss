@@ -1,8 +1,7 @@
-import { beforeAll, beforeEach, afterEach } from 'vitest'
+import { beforeAll, beforeEach, afterEach, expect } from 'vitest'
 import * as helper from './testHelper.ts'
 import type { ConstructorOptions } from '../src/types.ts'
 import type { PgBoss } from '../src/index.ts'
-import { expect } from 'vitest'
 import crypto from 'node:crypto'
 
 export interface TestContext {

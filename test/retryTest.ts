@@ -1,4 +1,4 @@
-import assert from 'node:assert'
+import { expect } from 'vitest'
 import * as helper from './testHelper.ts'
 import { delay } from '../src/tools.ts'
 import { testContext } from './hooks.ts'
@@ -17,8 +17,8 @@ describe('retries', function () {
 
     const [try2] = await testContext.boss.fetch(testContext.schema)
 
-    assert.strictEqual(try1.id, jobId)
-    assert.strictEqual(try2.id, jobId)
+    expect(try1.id).toBe(jobId)
+    expect(try2.id).toBe(jobId)
   })
 
   it('should retry a job that failed', async function () {
@@ -31,7 +31,7 @@ describe('retries', function () {
 
     const [job] = await testContext.boss.fetch(testContext.schema)
 
-    assert.strictEqual(job.id, jobId)
+    expect(job.id).toBe(jobId)
   })
 
   it('should retry with a fixed delay', async function () {
@@ -44,13 +44,13 @@ describe('retries', function () {
 
     const [job1] = await testContext.boss.fetch(testContext.schema)
 
-    assert(!job1)
+    expect(job1).toBeFalsy()
 
     await delay(1000)
 
     const [job2] = await testContext.boss.fetch(testContext.schema)
 
-    assert(job2)
+    expect(job2).toBeTruthy()
   })
 
   it('should retry with a exponential backoff', async function () {
@@ -68,7 +68,7 @@ describe('retries', function () {
 
     await delay(8000)
 
-    assert(processCount < retryLimit)
+    expect(processCount < retryLimit).toBeTruthy()
   })
 
   it('should limit retry delay with exponential backoff', { timeout: 15000 }, async function () {
@@ -96,7 +96,7 @@ describe('retries', function () {
 
     for (const d of delays) {
       // the +1 eval here is to allow latency from the work() polling interval
-      assert(d < (retryDelayMax + 1), `Expected delay to be less than ${retryDelayMax + 1} seconds, but got ${d}`)
+      expect(d < (retryDelayMax + 1)).toBeTruthy()
     }
   })
 
@@ -106,9 +106,9 @@ describe('retries', function () {
     await testContext.boss.fail(testContext.schema, jobId!)
     await testContext.boss.retry(testContext.schema, jobId!)
     const job = await testContext.boss.getJobById(testContext.schema, jobId!)
-    assert(job)
-    const { state, retryLimit } = job
-    assert(state === 'retry')
-    assert(retryLimit === 1)
+    expect(job).toBeTruthy()
+    const { state, retryLimit } = job!
+    expect(state === 'retry').toBeTruthy()
+    expect(retryLimit === 1).toBeTruthy()
   })
 })

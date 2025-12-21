@@ -1,14 +1,14 @@
-import assert from 'node:assert'
+import { expect } from 'vitest'
 import * as helper from './testHelper.ts'
 import { testContext } from './hooks.ts'
 
 describe('pubsub', function () {
   it('should fail with no arguments', async function () {
     testContext.boss = await helper.start(testContext.bossConfig)
-    await assert.rejects(async () => {
+    await expect(async () => {
       // @ts-ignore
       await testContext.boss.publish()
-    })
+    }).rejects.toThrow()
   })
 
   it('should accept single string argument', async function () {
@@ -25,7 +25,7 @@ describe('pubsub', function () {
 
     const [job] = await testContext.boss.fetch(testContext.schema)
 
-    assert(!job)
+    expect(job).toBeFalsy()
   })
 
   it('should use subscriptions to map to a single queue', async function () {
@@ -39,7 +39,7 @@ describe('pubsub', function () {
 
     const [job] = await testContext.boss.fetch<{ message: string }>(testContext.schema)
 
-    assert.strictEqual(message, job.data.message)
+    expect(job.data.message).toBe(message)
   })
 
   it('should use subscriptions to map to more than one queue', async function () {
@@ -65,25 +65,25 @@ describe('pubsub', function () {
     const [job1] = await testContext.boss.fetch<Message>(queue1)
     const [job2] = await testContext.boss.fetch<Message>(queue2)
 
-    assert.strictEqual(message, job1.data.message)
-    assert.strictEqual(message, job2.data.message)
+    expect(job1.data.message).toBe(message)
+    expect(job2.data.message).toBe(message)
   })
 })
 
 it('should fail if unsubscribe is called without args', async function () {
   testContext.boss = await helper.start(testContext.bossConfig)
-  await assert.rejects(async () => {
+  await expect(async () => {
     // @ts-ignore
     await testContext.boss.unsubscribe()
-  })
+  }).rejects.toThrow()
 })
 
 it('should fail if unsubscribe is called without both args', async function () {
   testContext.boss = await helper.start(testContext.bossConfig)
-  await assert.rejects(async () => {
+  await expect(async () => {
     // @ts-ignore
     await testContext.boss.unsubscribe('foo')
-  })
+  }).rejects.toThrow()
 })
 
 it('unsubscribe works', async function () {
@@ -104,11 +104,11 @@ it('unsubscribe works', async function () {
 
   const [job1] = await testContext.boss.fetch(queue1)
 
-  assert(job1)
+  expect(job1).toBeTruthy()
 
   const [job2] = await testContext.boss.fetch(queue2)
 
-  assert(job2)
+  expect(job2).toBeTruthy()
 
   await testContext.boss.unsubscribe(event, queue2)
 
@@ -116,16 +116,16 @@ it('unsubscribe works', async function () {
 
   const [job3] = await testContext.boss.fetch(queue1)
 
-  assert(job3)
+  expect(job3).toBeTruthy()
 
   const [job4] = await testContext.boss.fetch(queue2)
 
-  assert(!job4)
+  expect(job4).toBeFalsy()
 
   await testContext.boss.unsubscribe(event, queue1)
 
   await testContext.boss.publish(event)
 
   const [job5] = await testContext.boss.fetch(queue1)
-  assert(!job5)
+  expect(job5).toBeFalsy()
 })

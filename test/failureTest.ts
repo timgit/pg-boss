@@ -1,15 +1,15 @@
 import { delay } from '../src/tools.ts'
-import assert from 'node:assert'
+import { expect } from 'vitest'
 import * as helper from './testHelper.ts'
 import { testContext } from './hooks.ts'
 
 describe('failure', function () {
   it('should reject missing id argument', async function () {
     testContext.boss = await helper.start(testContext.bossConfig)
-    await assert.rejects(async () => {
+    await expect(async () => {
       // @ts-ignore
       await testContext.boss.fail()
-    })
+    }).rejects.toThrow()
   })
 
   it('should fail a job when requested', async function () {
@@ -35,7 +35,7 @@ describe('failure', function () {
 
     const result = await testContext.boss.fail(testContext.schema, jobs.map(job => job.id))
 
-    assert.strictEqual(result.jobs.length, 3)
+    expect(result.jobs.length).toBe(3)
   })
 
   it('should fail a batch of jobs with a data arg', async function () {
@@ -55,7 +55,7 @@ describe('failure', function () {
     const results = await Promise.all(jobs.map(job => testContext.boss!.getJobById(testContext.schema, job.id)))
 
     // @ts-ignore
-    assert(results.every(i => i!.output.message === message))
+    expect(results.every(i => i!.output.message === message)).toBeTruthy()
   })
 
   it('should preserve nested objects within a payload that is an instance of Error', async function () {
@@ -67,16 +67,16 @@ describe('failure', function () {
 
     const jobId = await testContext.boss.send(testContext.schema)
 
-    assert(jobId)
+    expect(jobId).toBeTruthy()
 
     await testContext.boss.fail(testContext.schema, jobId, failPayload)
 
     const job = await testContext.boss.getJobById(testContext.schema, jobId)
 
-    assert(job?.output)
+    expect(job?.output).toBeTruthy()
 
     // @ts-ignore
-    assert.strictEqual(job.output.some.deeply.nested.reason, failPayload.some.deeply.nested.reason)
+    expect(job.output.some.deeply.nested.reason).toBe(failPayload.some.deeply.nested.reason)
   })
 
   it('failure via Promise reject() should pass string wrapped in value prop', async function () {
@@ -86,7 +86,7 @@ describe('failure', function () {
     const spy = testContext.boss.getSpy(testContext.schema)
     const jobId = await testContext.boss.send(testContext.schema)
 
-    assert(jobId)
+    expect(jobId).toBeTruthy()
 
     await testContext.boss.work(testContext.schema, () => Promise.reject(failPayload))
 
@@ -94,7 +94,7 @@ describe('failure', function () {
 
     const job = await testContext.boss.getJobById(testContext.schema, jobId)
 
-    assert.strictEqual((job!.output as { value: string }).value, failPayload)
+    expect((job!.output as { value: string }).value).toBe(failPayload)
   })
 
   it('failure via Promise reject() should pass object payload', async function () {
@@ -108,7 +108,7 @@ describe('failure', function () {
 
     const jobId = await testContext.boss.send(testContext.schema)
 
-    assert(jobId)
+    expect(jobId).toBeTruthy()
 
     await testContext.boss.work(testContext.schema, () => Promise.reject(errorResponse))
 
@@ -116,7 +116,7 @@ describe('failure', function () {
 
     const job = await testContext.boss.getJobById(testContext.schema, jobId)
 
-    assert.strictEqual((job!.output as { something: string }).something, something)
+    expect((job!.output as { something: string }).something).toBe(something)
   })
 
   it('failure with Error object should be saved in the job', async function () {
@@ -126,7 +126,7 @@ describe('failure', function () {
     const spy = testContext.boss.getSpy(testContext.schema)
     const jobId = await testContext.boss.send(testContext.schema)
 
-    assert(jobId)
+    expect(jobId).toBeTruthy()
 
     await testContext.boss.work(testContext.schema, async () => { throw new Error(message) })
 
@@ -134,7 +134,7 @@ describe('failure', function () {
 
     const job = await testContext.boss.getJobById(testContext.schema, jobId)
 
-    assert((job!.output as { message: string }).message.includes(message))
+    expect((job!.output as { message: string }).message.includes(message)).toBeTruthy()
   })
 
   it('should fail a job with custom connection', async function () {
@@ -157,7 +157,7 @@ describe('failure', function () {
 
     await testContext.boss.fail(testContext.schema, job.id, null, { db })
 
-    assert.strictEqual(called, true)
+    expect(called).toBe(true)
   })
 
   it('failure with circular payload should be safely serialized', async function () {
@@ -166,7 +166,7 @@ describe('failure', function () {
     const spy = testContext.boss.getSpy(testContext.schema)
     const jobId = await testContext.boss.send(testContext.schema)
 
-    assert(jobId)
+    expect(jobId).toBeTruthy()
 
     const message = 'mhmm'
 
@@ -181,7 +181,7 @@ describe('failure', function () {
 
     const job = await testContext.boss.getJobById(testContext.schema, jobId)
 
-    assert.strictEqual((job!.output as { message: string }).message, message)
+    expect((job!.output as { message: string }).message).toBe(message)
   })
 
   it('dead letter queues are working', async function () {
@@ -194,14 +194,14 @@ describe('failure', function () {
 
     const jobId = await testContext.boss.send(testContext.schema, { key: testContext.schema }, { retryLimit: 0 })
 
-    assert(jobId)
+    expect(jobId).toBeTruthy()
 
     await testContext.boss.fetch(testContext.schema)
     await testContext.boss.fail(testContext.schema, jobId)
 
     const [job] = await testContext.boss.fetch<{ key: string }>(deadLetter)
 
-    assert.strictEqual(job.data.key, testContext.schema)
+    expect(job.data.key).toBe(testContext.schema)
   })
 
   it('should fail active jobs in a worker during shutdown', async function () {
@@ -219,6 +219,6 @@ describe('failure', function () {
 
     const [job] = await testContext.boss.fetch(testContext.schema)
 
-    assert.strictEqual(job?.id, jobId)
+    expect(job?.id).toBe(jobId)
   })
 })

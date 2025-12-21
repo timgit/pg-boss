@@ -1,4 +1,4 @@
-import assert from 'node:assert'
+import { expect } from 'vitest'
 import * as helper from './testHelper.ts'
 import { delay } from '../src/tools.ts'
 import { testContext } from './hooks.ts'
@@ -9,11 +9,11 @@ describe('expire', function () {
 
     const jobId = await testContext.boss.send(testContext.schema, null, { retryLimit: 0, expireInSeconds: 1 })
 
-    assert(jobId)
+    expect(jobId).toBeTruthy()
 
     const [job1] = await testContext.boss.fetch(testContext.schema)
 
-    assert(job1)
+    expect(job1).toBeTruthy()
 
     await delay(1000)
 
@@ -21,7 +21,7 @@ describe('expire', function () {
 
     const job = await testContext.boss.getJobById(testContext.schema, jobId)
 
-    assert.strictEqual('failed', job!.state)
+    expect(job!.state).toBe('failed')
   })
 
   it('should expire a job - cascaded config', async function () {
@@ -30,7 +30,7 @@ describe('expire', function () {
     await testContext.boss.createQueue(testContext.schema, { expireInSeconds: 1, retryLimit: 0 })
     const jobId = await testContext.boss.send(testContext.schema)
 
-    assert(jobId)
+    expect(jobId).toBeTruthy()
 
     // fetch the job but don't complete it
     await testContext.boss.fetch(testContext.schema)
@@ -41,7 +41,7 @@ describe('expire', function () {
 
     const job = await testContext.boss.getJobById(testContext.schema, jobId)
 
-    assert.strictEqual('failed', job!.state)
+    expect(job!.state).toBe('failed')
   })
 
   it('should expire a job via supervise option', async function () {
@@ -56,7 +56,7 @@ describe('expire', function () {
     await testContext.boss.createQueue(testContext.schema, { expireInSeconds: 1, retryLimit: 0 })
     const jobId = await testContext.boss.send(testContext.schema)
 
-    assert(jobId)
+    expect(jobId).toBeTruthy()
 
     // fetch the job but don't complete it
     await testContext.boss.fetch(testContext.schema)
@@ -65,7 +65,7 @@ describe('expire', function () {
 
     const job = await testContext.boss.getJobById(testContext.schema, jobId)
 
-    assert.strictEqual('failed', job!.state)
+    expect(job!.state).toBe('failed')
   })
 
   it('should abort signal when job handler times out', async function () {
@@ -73,7 +73,7 @@ describe('expire', function () {
 
     const jobId = await testContext.boss.send(testContext.schema, null, { retryLimit: 0, expireInSeconds: 1 })
 
-    assert(jobId)
+    expect(jobId).toBeTruthy()
 
     let signalAborted = false
 
@@ -86,6 +86,6 @@ describe('expire', function () {
 
     await delay(3000)
 
-    assert.strictEqual(signalAborted, true)
+    expect(signalAborted).toBe(true)
   })
 })

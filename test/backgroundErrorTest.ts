@@ -1,4 +1,4 @@
-import { strictEqual } from 'node:assert'
+import { expect } from 'vitest'
 import { PgBoss } from '../src/index.ts'
 import { delay } from '../src/tools.ts'
 import { testContext } from './hooks.ts'
@@ -17,7 +17,7 @@ describe('background processing error handling', function () {
     let errorCount = 0
 
     testContext.boss.on('error', (error) => {
-      strictEqual(error.message, config.__test__throw_maint)
+      expect(error.message).toBe(config.__test__throw_maint)
       errorCount++
     })
 
@@ -25,6 +25,6 @@ describe('background processing error handling', function () {
 
     await delay(3000)
 
-    strictEqual(errorCount >= 1, true)
+    expect(errorCount).toBeGreaterThanOrEqual(1)
   })
 })

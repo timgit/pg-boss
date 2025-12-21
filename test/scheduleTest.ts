@@ -1,5 +1,5 @@
 import { delay } from '../src/tools.ts'
-import assert from 'node:assert'
+import { expect } from 'vitest'
 import { DateTime } from 'luxon'
 import * as helper from './testHelper.ts'
 import { PgBoss } from '../src/index.ts'
@@ -22,7 +22,7 @@ describe('schedule', function () {
 
     const [job] = await testContext.boss.fetch(testContext.schema)
 
-    assert(job)
+    expect(job).toBeTruthy()
   })
 
   it('should set job metadata correctly', async function () {
@@ -41,18 +41,17 @@ describe('schedule', function () {
 
     const [job] = await testContext.boss.fetch(testContext.schema, { includeMetadata: true })
 
-    assert(job)
-
-    assert.strictEqual(job.retryLimit, 42)
-    assert(job.singletonOn)
+    expect(job).toBeTruthy()
+    expect(job.retryLimit).toBe(42)
+    expect(job.singletonOn).toBeTruthy()
   })
 
   it('should fail to schedule a queue that does not exist', async function () {
     testContext.boss = await helper.start({ ...testContext.bossConfig, noDefault: true })
 
-    await assert.rejects(async () => {
+    await expect(async () => {
       await testContext.boss!.schedule(testContext.schema, '* * * * *')
-    })
+    }).rejects.toThrow()
   })
 
   it('should send job based on every minute expression after a restart', async function () {
@@ -68,7 +67,7 @@ describe('schedule', function () {
 
     const [job] = await testContext.boss.fetch(testContext.schema)
 
-    assert(job)
+    expect(job).toBeTruthy()
 
     await testContext.boss.stop({ graceful: false })
   })
@@ -85,7 +84,7 @@ describe('schedule', function () {
 
     const scheduled = await testContext.boss.getSchedules()
 
-    assert.strictEqual(scheduled.length, 0)
+    expect(scheduled.length).toBe(0)
   })
 
   it('should send job based on current minute in UTC', async function () {
@@ -120,7 +119,7 @@ describe('schedule', function () {
 
     const [job] = await testContext.boss.fetch(testContext.schema)
 
-    assert(job)
+    expect(job).toBeTruthy()
   })
 
   it('should send job based on current minute in a specified time zone', async function () {
@@ -157,7 +156,7 @@ describe('schedule', function () {
 
     const [job] = await testContext.boss.fetch(testContext.schema)
 
-    assert(job)
+    expect(job).toBeTruthy()
   })
 
   it('should force a clock skew warning', async function () {
@@ -173,13 +172,13 @@ describe('schedule', function () {
     let warningCount = 0
 
     testContext.boss.once('warning', (warning) => {
-      assert(warning.message.includes('Clock skew'))
+      expect(warning.message).toContain('Clock skew')
       warningCount++
     })
 
     await testContext.boss.start()
 
-    assert.strictEqual(warningCount, 1)
+    expect(warningCount).toBe(1)
   })
 
   it('errors during clock skew monitoring should emit', async function () {
@@ -195,7 +194,7 @@ describe('schedule', function () {
     testContext.boss = new PgBoss(config)
 
     testContext.boss.on('error', error => {
-      assert.strictEqual(error.message, config.__test__force_clock_monitoring_error)
+      expect(error.message).toBe(config.__test__force_clock_monitoring_error)
       errorCount++
     })
 
@@ -203,7 +202,7 @@ describe('schedule', function () {
 
     await delay(2000)
 
-    assert(errorCount >= 1)
+    expect(errorCount).toBeGreaterThanOrEqual(1)
   })
 
   it('errors during cron monitoring should emit', async function () {
@@ -219,7 +218,7 @@ describe('schedule', function () {
     testContext.boss = new PgBoss(config)
 
     testContext.boss.on('error', error => {
-      assert.strictEqual(error.message, config.__test__force_cron_monitoring_error)
+      expect(error.message).toBe(config.__test__force_cron_monitoring_error)
       errorCount++
     })
 
@@ -227,7 +226,7 @@ describe('schedule', function () {
 
     await delay(2000)
 
-    assert(errorCount >= 1)
+    expect(errorCount).toBeGreaterThanOrEqual(1)
   })
 
   it('clock monitoring error handling works', async function () {
@@ -243,7 +242,7 @@ describe('schedule', function () {
     testContext.boss = new PgBoss(config)
 
     testContext.boss.on('error', (error) => {
-      assert.strictEqual(error.message, config.__test__force_clock_monitoring_error)
+      expect(error.message).toBe(config.__test__force_clock_monitoring_error)
       errorCount++
     })
 
@@ -251,7 +250,7 @@ describe('schedule', function () {
 
     await delay(4000)
 
-    assert(errorCount >= 1)
+    expect(errorCount).toBeGreaterThanOrEqual(1)
   })
 
   it('should accept a unique key to have more than one schedule per queue', async function () {
@@ -266,7 +265,7 @@ describe('schedule', function () {
 
     const schedules = await testContext.boss.getSchedules()
 
-    assert.strictEqual(schedules.length, 2)
+    expect(schedules.length).toBe(2)
   })
 
   it('should send jobs per unique key on the same cron', async function () {
@@ -286,7 +285,7 @@ describe('schedule', function () {
 
     const jobs = await testContext.boss.fetch(testContext.schema, { batchSize: 2 })
 
-    assert.strictEqual(jobs.length, 2)
+    expect(jobs.length).toBe(2)
   })
 
   it('should update a schedule with a unique key', async function () {
@@ -301,8 +300,8 @@ describe('schedule', function () {
 
     const schedules = await testContext.boss.getSchedules()
 
-    assert.strictEqual(schedules.length, 1)
-    assert.strictEqual(schedules[0].cron, '0 1 * * *')
+    expect(schedules.length).toBe(1)
+    expect(schedules[0].cron).toBe('0 1 * * *')
   })
 
   it('should update a schedule without a unique key', async function () {
@@ -317,8 +316,8 @@ describe('schedule', function () {
 
     const schedules = await testContext.boss.getSchedules()
 
-    assert.strictEqual(schedules.length, 1)
-    assert.strictEqual(schedules[0].cron, '0 1 * * *')
+    expect(schedules.length).toBe(1)
+    expect(schedules[0].cron).toBe('0 1 * * *')
   })
 
   it('should remove a schedule using a unique key', async function () {
@@ -333,15 +332,14 @@ describe('schedule', function () {
 
     let schedules = await testContext.boss.getSchedules()
 
-    assert.strictEqual(schedules.length, 2)
+    expect(schedules.length).toBe(2)
 
     await testContext.boss.unschedule(testContext.schema, 'a')
 
     schedules = await testContext.boss.getSchedules()
 
-    assert.strictEqual(schedules.length, 1)
-
-    assert.strictEqual(schedules[0].cron, '0 1 * * *')
+    expect(schedules.length).toBe(1)
+    expect(schedules[0].cron).toBe('0 1 * * *')
   })
 
   it('should get schedules filtered by a queue name', async function () {
@@ -359,12 +357,12 @@ describe('schedule', function () {
     await testContext.boss.schedule(queue2, '0 1 * * *')
 
     let schedules = await testContext.boss.getSchedules()
-    assert.strictEqual(schedules.length, 2)
+    expect(schedules.length).toBe(2)
 
     schedules = await testContext.boss.getSchedules(queue2)
 
-    assert.strictEqual(schedules.length, 1)
-    assert.strictEqual(schedules[0].cron, '0 1 * * *')
+    expect(schedules.length).toBe(1)
+    expect(schedules[0].cron).toBe('0 1 * * *')
   })
 
   it('should get schedules filtered by a queue name and key', async function () {
@@ -384,11 +382,11 @@ describe('schedule', function () {
     await testContext.boss.schedule(queue2, '0 2 * * *')
 
     let schedules = await testContext.boss.getSchedules()
-    assert.strictEqual(schedules.length, 3)
+    expect(schedules.length).toBe(3)
 
     schedules = await testContext.boss.getSchedules(testContext.schema, key)
 
-    assert.strictEqual(schedules.length, 1)
-    assert.strictEqual(schedules[0].cron, '0 1 * * *')
+    expect(schedules.length).toBe(1)
+    expect(schedules[0].cron).toBe('0 1 * * *')
   })
 })

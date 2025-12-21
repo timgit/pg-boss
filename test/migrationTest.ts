@@ -1,4 +1,4 @@
-import assert from 'node:assert'
+import { expect } from 'vitest'
 import { beforeEach } from 'vitest'
 import { PgBoss, getConstructionPlans, getMigrationPlans, getRollbackPlans } from '../src/index.ts'
 import { getDb } from './testHelper.ts'
@@ -22,59 +22,59 @@ describe('migration', function () {
   it('should include create schema by default ', function () {
     const schema = 'custom'
     const plans = Contractor.constructionPlans(schema)
-    assert(plans.includes('CREATE SCHEMA'))
+    expect(plans).toContain('CREATE SCHEMA')
   })
 
   it('should not include create schema if createSchema=false', function () {
     const schema = 'custom'
     const plans = Contractor.constructionPlans(schema, { createSchema: false })
-    assert(!plans.includes('CREATE SCHEMA'))
+    expect(plans).not.toContain('CREATE SCHEMA')
   })
 
   it('should not install if createSchema option is false and schema is missing', async function () {
     const config = { ...testContext.bossConfig, createSchema: false }
     testContext.boss = new PgBoss(config)
-    await assert.rejects(async () => {
+    await expect(async () => {
       await testContext.boss!.start()
-    })
+    }).rejects.toThrow()
   })
 
   it('should export commands to manually build schema', function () {
     const schema = 'custom'
     const plans = getConstructionPlans(schema)
 
-    assert(plans.includes(`${schema}.job`))
-    assert(plans.includes(`${schema}.version`))
+    expect(plans).toContain(`${schema}.job`)
+    expect(plans).toContain(`${schema}.version`)
   })
 
   it('should fail to export migration using current version', function () {
     const schema = 'custom'
 
-    assert.throws(() => {
+    expect(() => {
       getMigrationPlans(schema, currentSchemaVersion)
-    })
+    }).toThrow()
   })
 
   it('should export commands to migrate', function () {
     const schema = 'custom'
     const plans = getMigrationPlans(schema, currentSchemaVersion - 1)
 
-    assert(plans)
+    expect(plans).toBeTruthy()
   })
 
   it('should fail to export commands to roll back from invalid version', function () {
     const schema = 'custom'
 
-    assert.throws(() => {
+    expect(() => {
       getRollbackPlans(schema, -1)
-    })
+    }).toThrow()
   })
 
   it('should export commands to roll back', function () {
     const schema = 'custom'
     const plans = getRollbackPlans(schema, currentSchemaVersion)
 
-    assert(plans, 'rollback plans not found')
+    expect(plans).toBeTruthy()
   })
 
   it('should not migrate when current version is not found in migration store', async function () {
@@ -88,9 +88,9 @@ describe('migration', function () {
 
     testContext.boss = new PgBoss(config)
 
-    await assert.rejects(async () => {
+    await expect(async () => {
       await testContext.boss!.start()
-    })
+    }).rejects.toThrow()
   })
 
   it.skip('should migrate to previous version and back again', async function () {
@@ -99,12 +99,13 @@ describe('migration', function () {
     await contractor.rollback(currentSchemaVersion)
     const oldVersion = await contractor.schemaVersion()
 
-    assert.notStrictEqual(oldVersion, currentSchemaVersion)
+    expect(oldVersion).not.toBe(currentSchemaVersion)
+    expect(oldVersion).not.toBeNull()
 
-    await contractor.migrate(oldVersion)
+    await contractor.migrate(oldVersion!)
     const newVersion = await contractor.schemaVersion()
 
-    assert.strictEqual(newVersion, currentSchemaVersion)
+    expect(newVersion).toBe(currentSchemaVersion)
   })
 
   it('should install next version via contractor', async function () {
@@ -118,7 +119,7 @@ describe('migration', function () {
 
     const version = await contractor.schemaVersion()
 
-    assert.strictEqual(version, currentSchemaVersion)
+    expect(version).toBe(currentSchemaVersion)
   })
 
   it('should migrate to latest during start if on previous schema version', async function () {
@@ -134,7 +135,7 @@ describe('migration', function () {
 
     const version = await contractor.schemaVersion()
 
-    assert.strictEqual(version, currentSchemaVersion)
+    expect(version).toBe(currentSchemaVersion)
   })
 
   it.skip('should migrate through 2 versions back and forth', async function () {
@@ -160,22 +161,22 @@ describe('migration', function () {
     await contractor.rollback(currentSchemaVersion)
     const oneVersionAgo = await contractor.schemaVersion()
 
-    assert.notStrictEqual(oneVersionAgo, currentSchemaVersion)
+    expect(oneVersionAgo).not.toBe(currentSchemaVersion)
 
     await contractor.rollback(oneVersionAgo)
     const twoVersionsAgo = await contractor.schemaVersion()
 
-    assert.notStrictEqual(twoVersionsAgo, oneVersionAgo)
+    expect(twoVersionsAgo).not.toBe(oneVersionAgo)
 
     await contractor.next(twoVersionsAgo)
     const oneVersionAgoPart2 = await contractor.schemaVersion()
 
-    assert.strictEqual(oneVersionAgo, oneVersionAgoPart2)
+    expect(oneVersionAgo).toBe(oneVersionAgoPart2)
 
     await contractor.next(oneVersionAgo)
     const version = await contractor.schemaVersion()
 
-    assert.strictEqual(version, currentSchemaVersion)
+    expect(version).toBe(currentSchemaVersion)
 
     await testContext.boss.send(queue)
     const [job2] = await testContext.boss.fetch(queue)
@@ -187,11 +188,11 @@ describe('migration', function () {
 
     await contractor.rollback(currentSchemaVersion)
     const oneVersionAgo = await contractor.schemaVersion()
-    assert.strictEqual(oneVersionAgo, currentSchemaVersion - 1)
+    expect(oneVersionAgo).toBe(currentSchemaVersion - 1)
 
     await contractor.rollback(oneVersionAgo)
     const twoVersionsAgo = await contractor.schemaVersion()
-    assert.strictEqual(twoVersionsAgo, currentSchemaVersion - 2)
+    expect(twoVersionsAgo).toBe(currentSchemaVersion - 2)
 
     const config = { ...testContext.bossConfig }
     testContext.boss = new PgBoss(config)
@@ -199,7 +200,7 @@ describe('migration', function () {
 
     const version = await contractor.schemaVersion()
 
-    assert.strictEqual(version, currentSchemaVersion)
+    expect(version).toBe(currentSchemaVersion)
   })
 
   it('migrating to non-existent version fails gracefully', async function () {
@@ -208,7 +209,7 @@ describe('migration', function () {
     try {
       await contractor.migrate('¯\\_(ツ)_//¯')
     } catch (error: any) {
-      assert(error.message.includes('not found'))
+      expect(error.message).toContain('not found')
     }
   })
 
@@ -229,14 +230,14 @@ describe('migration', function () {
     try {
       await boss1.start()
     } catch (error: any) {
-      assert(error.message.includes('wat'))
+      expect(error.message).toContain('wat')
     } finally {
       await boss1.stop({ graceful: false })
     }
 
     const version1 = await contractor.schemaVersion()
 
-    assert.strictEqual(version1, oneVersionAgo)
+    expect(version1).toBe(oneVersionAgo)
 
     // remove bad sql statement
     config.migrations[0].install.pop()
@@ -248,7 +249,7 @@ describe('migration', function () {
 
       const version2 = await contractor.schemaVersion()
 
-      assert.strictEqual(version2, currentSchemaVersion)
+      expect(version2).toBe(currentSchemaVersion)
     } finally {
       await boss2.stop({ graceful: false })
     }
@@ -257,9 +258,9 @@ describe('migration', function () {
   it('should not install if migrate option is false', async function () {
     const config = { ...testContext.bossConfig, migrate: false }
     testContext.boss = new PgBoss(config)
-    await assert.rejects(async () => {
+    await expect(async () => {
       await testContext.boss!.start()
-    })
+    }).rejects.toThrow()
   })
 
   it('should not migrate if migrate option is false', async function () {
@@ -270,9 +271,9 @@ describe('migration', function () {
     const config = { ...testContext.bossConfig, migrate: false }
     testContext.boss = new PgBoss(config)
 
-    await assert.rejects(async () => {
+    await expect(async () => {
       await testContext.boss!.start()
-    })
+    }).rejects.toThrow()
   })
 
   it('should still work if migrate option is false', async function () {

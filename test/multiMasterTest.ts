@@ -1,4 +1,4 @@
-import assert from 'node:assert'
+import { expect } from 'vitest'
 import { getDb } from './testHelper.ts'
 import { PgBoss } from '../src/index.ts'
 import Contractor from '../src/contractor.ts'
@@ -40,7 +40,7 @@ describe('multi-master', function () {
 
     const oldVersion = await contractor.schemaVersion()
 
-    assert.notStrictEqual(oldVersion, currentSchemaVersion)
+    expect(oldVersion).not.toBe(currentSchemaVersion)
 
     config.migrations = getAll(config.schema)
     config.migrations[0].install.push('select pg_sleep(1)')

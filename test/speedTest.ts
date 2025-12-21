@@ -1,5 +1,5 @@
 import * as helper from './testHelper.ts'
-import assert from 'node:assert'
+import { expect } from 'vitest'
 import { testContext } from './hooks.ts'
 import { it } from 'vitest'
 
@@ -15,7 +15,7 @@ describe('speed', function () {
     await testContext.boss.insert(queue, data)
     const jobs = await testContext.boss.fetch(queue, { batchSize: jobCount })
 
-    assert.strictEqual(jobCount, jobs.length)
+    expect(jobs.length).toBe(jobCount)
 
     await testContext.boss.complete(queue, jobs.map(job => job.id))
   })

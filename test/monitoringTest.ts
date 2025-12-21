@@ -1,4 +1,4 @@
-import assert from 'node:assert'
+import { expect } from 'vitest'
 import * as helper from './testHelper.ts'
 import { delay } from '../src/tools.ts'
 import { testContext } from './hooks.ts'
@@ -21,11 +21,11 @@ describe('monitoring', function () {
     await testContext.boss.supervise()
     const result1 = await testContext.boss.getQueue(testContext.schema)
 
-    assert(result1)
+    expect(result1).toBeTruthy()
 
-    assert.strictEqual(2, result1.queuedCount)
-    assert.strictEqual(1, result1.activeCount)
-    assert.strictEqual(3, result1.totalCount)
+    expect(result1!.queuedCount).toBe(2)
+    expect(result1!.activeCount).toBe(1)
+    expect(result1!.totalCount).toBe(3)
 
     const [job] = await testContext.boss.fetch(testContext.schema)
     await testContext.boss.complete(testContext.schema, job.id)
@@ -34,11 +34,11 @@ describe('monitoring', function () {
     await testContext.boss.supervise(testContext.schema)
     const result2 = await testContext.boss.getQueue(testContext.schema)
 
-    assert(result2)
+    expect(result2).toBeTruthy()
 
-    assert.strictEqual(1, result2.queuedCount)
-    assert.strictEqual(1, result2.activeCount)
-    assert.strictEqual(3, result2.totalCount)
+    expect(result2!.queuedCount).toBe(1)
+    expect(result2!.activeCount).toBe(1)
+    expect(result2!.totalCount).toBe(3)
   })
 
   it('queue cache should emit error', async function () {
@@ -56,7 +56,7 @@ describe('monitoring', function () {
 
     await delay(2000)
 
-    assert(errorCount > 0)
+    expect(errorCount > 0).toBeTruthy()
   })
 
   it('slow maintenance should emit warning', async function () {
@@ -70,13 +70,13 @@ describe('monitoring', function () {
 
     let eventCount = 0
     testContext.boss.on('warning', (event) => {
-      assert(event.message.includes('slow'))
+      expect(event.message.includes('slow')).toBeTruthy()
       eventCount++
     })
 
     await testContext.boss.supervise(testContext.schema)
 
-    assert(eventCount > 0)
+    expect(eventCount > 0).toBeTruthy()
   })
 
   it('large queue should emit warning using global default', async function () {
@@ -94,7 +94,7 @@ describe('monitoring', function () {
     let eventCount = 0
 
     testContext.boss.on('warning', (event) => {
-      assert(event.message.includes('queue'))
+      expect(event.message.includes('queue')).toBeTruthy()
       eventCount++
     })
 
@@ -102,7 +102,7 @@ describe('monitoring', function () {
 
     await delay(1000)
 
-    assert(eventCount > 0)
+    expect(eventCount > 0).toBeTruthy()
   })
 
   it('large queue should emit warning via queue config', async function () {
@@ -121,7 +121,7 @@ describe('monitoring', function () {
     let eventCount = 0
 
     testContext.boss.on('warning', (event) => {
-      assert(event.message.includes('queue'))
+      expect(event.message.includes('queue')).toBeTruthy()
       eventCount++
     })
 
@@ -129,7 +129,7 @@ describe('monitoring', function () {
 
     await delay(1000)
 
-    assert(eventCount > 0)
+    expect(eventCount > 0).toBeTruthy()
   })
 
   it('should reset cached counts to zero when all jobs are deleted for given queue', async function () {
@@ -151,11 +151,11 @@ describe('monitoring', function () {
     await delay(1000)
     await testContext.boss.supervise()
     const result = await testContext.boss.getQueue(testContext.schema)
-    assert(result)
+    expect(result).toBeTruthy()
 
-    assert.strictEqual(0, result.queuedCount)
-    assert.strictEqual(0, result.activeCount)
-    assert.strictEqual(0, result.deferredCount)
-    assert.strictEqual(0, result.totalCount)
+    expect(result!.queuedCount).toBe(0)
+    expect(result!.activeCount).toBe(0)
+    expect(result!.deferredCount).toBe(0)
+    expect(result!.totalCount).toBe(0)
   })
 })

@@ -1,4 +1,4 @@
-import assert from 'node:assert'
+import { expect } from 'vitest'
 import { randomUUID } from 'node:crypto'
 import * as helper from './testHelper.ts'
 import { testContext } from './hooks.ts'
@@ -13,7 +13,7 @@ describe('insert', function () {
 
     const { queuedCount } = await testContext.boss.getQueueStats(testContext.schema)
 
-    assert.strictEqual(queuedCount, 3)
+    expect(queuedCount).toBe(3)
   })
 
   it('should create jobs from an array with all properties', async function () {
@@ -44,20 +44,20 @@ describe('insert', function () {
 
     const job = await testContext.boss.getJobById(testContext.schema, input.id)
 
-    assert(job)
+    expect(job).toBeTruthy()
 
-    assert.strictEqual(job.id, input.id, `id input ${input.id} didn't match job ${job.id}`)
-    assert.strictEqual(job.priority, input.priority, `priority input ${input.priority} didn't match job ${job.priority}`)
-    assert.strictEqual(JSON.stringify(job.data), JSON.stringify(input.data), `data input ${input.data} didn't match job ${job.data}`)
-    assert.strictEqual(job.retryLimit, input.retryLimit, `retryLimit input ${input.retryLimit} didn't match job ${job.retryLimit}`)
-    assert.strictEqual(job.retryDelay, input.retryDelay, `retryDelay input ${input.retryDelay} didn't match job ${job.retryDelay}`)
-    assert.strictEqual(job.retryBackoff, input.retryBackoff, `retryBackoff input ${input.retryBackoff} didn't match job ${job.retryBackoff}`)
-    assert.strictEqual(job.retryDelayMax, input.retryDelayMax, `retryDelayMax input ${input.retryDelayMax} didn't match job ${job.retryDelayMax}`)
-    assert.strictEqual(new Date(job.startAfter).toISOString(), input.startAfter, `startAfter input ${input.startAfter} didn't match job ${job.startAfter}`)
-    assert.strictEqual(job.expireInSeconds, input.expireInSeconds, `expireInSeconds input ${input.expireInSeconds} didn't match job ${job.expireInSeconds}`)
-    assert.strictEqual(job.deleteAfterSeconds, input.deleteAfterSeconds, `deleteAfterSeconds input ${input.deleteAfterSeconds} didn't match job ${job.deleteAfterSeconds}`)
-    assert.strictEqual(job.singletonKey, input.singletonKey, `name input ${input.singletonKey} didn't match job ${job.singletonKey}`)
-    assert.strictEqual(new Date(job.keepUntil).toISOString(), keepUntil, `keepUntil input ${keepUntil} didn't match job ${job.keepUntil}`)
+    expect(job!.id).toBe(input.id)
+    expect(job!.priority).toBe(input.priority)
+    expect(JSON.stringify(job!.data)).toBe(JSON.stringify(input.data))
+    expect(job!.retryLimit).toBe(input.retryLimit)
+    expect(job!.retryDelay).toBe(input.retryDelay)
+    expect(job!.retryBackoff).toBe(input.retryBackoff)
+    expect(job!.retryDelayMax).toBe(input.retryDelayMax)
+    expect(new Date(job!.startAfter).toISOString()).toBe(input.startAfter)
+    expect(job!.expireInSeconds).toBe(input.expireInSeconds)
+    expect(job!.deleteAfterSeconds).toBe(input.deleteAfterSeconds)
+    expect(job!.singletonKey).toBe(input.singletonKey)
+    expect(new Date(job!.keepUntil).toISOString()).toBe(keepUntil)
   })
 
   it('should create jobs from an array with all properties and custom connection', async function () {
@@ -101,20 +101,20 @@ describe('insert', function () {
 
     const job = await testContext.boss.getJobById(testContext.schema, input.id)
 
-    assert(job)
+    expect(job).toBeTruthy()
 
-    assert.strictEqual(job.id, input.id, `id input ${input.id} didn't match job ${job.id}`)
-    assert.strictEqual(job.priority, input.priority, `priority input ${input.priority} didn't match job ${job.priority}`)
-    assert.strictEqual(JSON.stringify(job.data), JSON.stringify(input.data), `data input ${input.data} didn't match job ${job.data}`)
-    assert.strictEqual(job.retryLimit, input.retryLimit, `retryLimit input ${input.retryLimit} didn't match job ${job.retryLimit}`)
-    assert.strictEqual(job.retryDelay, input.retryDelay, `retryDelay input ${input.retryDelay} didn't match job ${job.retryDelay}`)
-    assert.strictEqual(job.retryBackoff, input.retryBackoff, `retryBackoff input ${input.retryBackoff} didn't match job ${job.retryBackoff}`)
-    assert.strictEqual(job.retryDelayMax, input.retryDelayMax, `retryDelayMax input ${input.retryDelayMax} didn't match job ${job.retryDelayMax}`)
-    assert.strictEqual(new Date(job.startAfter).toISOString(), input.startAfter, `startAfter input ${input.startAfter} didn't match job ${job.startAfter}`)
-    assert.strictEqual(job.expireInSeconds, input.expireInSeconds, `expireInSeconds input ${input.expireInSeconds} didn't match job ${job.expireInSeconds}`)
-    assert.strictEqual(job.deleteAfterSeconds, input.deleteAfterSeconds, `deleteAfterSeconds input ${input.deleteAfterSeconds} didn't match job ${job.deleteAfterSeconds}`)
-    assert.strictEqual(job.singletonKey, input.singletonKey, `name input ${input.singletonKey} didn't match job ${job.singletonKey}`)
-    assert.strictEqual(new Date(job.keepUntil).toISOString(), keepUntil, `keepUntil input ${keepUntil} didn't match job ${job.keepUntil}`)
-    assert.strictEqual(called, true)
+    expect(job!.id).toBe(input.id)
+    expect(job!.priority).toBe(input.priority)
+    expect(JSON.stringify(job!.data)).toBe(JSON.stringify(input.data))
+    expect(job!.retryLimit).toBe(input.retryLimit)
+    expect(job!.retryDelay).toBe(input.retryDelay)
+    expect(job!.retryBackoff).toBe(input.retryBackoff)
+    expect(job!.retryDelayMax).toBe(input.retryDelayMax)
+    expect(new Date(job!.startAfter).toISOString()).toBe(input.startAfter)
+    expect(job!.expireInSeconds).toBe(input.expireInSeconds)
+    expect(job!.deleteAfterSeconds).toBe(input.deleteAfterSeconds)
+    expect(job!.singletonKey).toBe(input.singletonKey)
+    expect(new Date(job!.keepUntil).toISOString()).toBe(keepUntil)
+    expect(called).toBe(true)
   })
 })

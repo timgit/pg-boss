@@ -1,4 +1,4 @@
-import assert from 'node:assert'
+import { expect } from 'vitest'
 import * as helper from './testHelper.ts'
 import { delay } from '../src/tools.ts'
 import { testContext } from './hooks.ts'
@@ -14,7 +14,7 @@ describe('delete', function () {
 
     const jobId = await testContext.boss.send(testContext.schema, null, { deleteAfterSeconds: 1 })
 
-    assert(jobId)
+    expect(jobId).toBeTruthy()
 
     await testContext.boss.fetch(testContext.schema)
     await testContext.boss.complete(testContext.schema, jobId)
@@ -25,7 +25,7 @@ describe('delete', function () {
 
     const job = await testContext.boss.getJobById(testContext.schema, jobId)
 
-    assert(!job)
+    expect(job).toBeFalsy()
   })
 
   it('should delete a completed job via maintenance - cascade config from queue', async function () {
@@ -40,7 +40,7 @@ describe('delete', function () {
     await testContext.boss.createQueue(testContext.schema, { deleteAfterSeconds: 1 })
 
     const jobId = await testContext.boss.send(testContext.schema)
-    assert(jobId)
+    expect(jobId).toBeTruthy()
     await testContext.boss.fetch(testContext.schema)
     await testContext.boss.complete(testContext.schema, jobId)
 
@@ -50,7 +50,7 @@ describe('delete', function () {
 
     const job = await testContext.boss.getJobById(testContext.schema, jobId)
 
-    assert(!job)
+    expect(job).toBeFalsy()
   })
 
   it('should delete a job via deleteJob()', async function () {
@@ -59,7 +59,7 @@ describe('delete', function () {
 
     const jobId = await testContext.boss.send(testContext.schema)
 
-    assert(jobId)
+    expect(jobId).toBeTruthy()
 
     await testContext.boss.fetch(testContext.schema)
 
@@ -67,6 +67,6 @@ describe('delete', function () {
 
     const job = await testContext.boss.getJobById(testContext.schema, jobId)
 
-    assert(!job)
+    expect(job).toBeFalsy()
   })
 })

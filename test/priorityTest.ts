@@ -1,4 +1,4 @@
-import assert from 'node:assert'
+import { expect } from 'vitest'
 import * as helper from './testHelper.ts'
 import { testContext } from './hooks.ts'
 
@@ -12,7 +12,7 @@ describe('priority', function () {
 
     const [job] = await testContext.boss.fetch(testContext.schema)
 
-    assert.strictEqual(job.id, high)
+    expect(job.id).toBe(high)
   })
 
   it('descending priority order', async function () {
@@ -26,9 +26,9 @@ describe('priority', function () {
     const [job2] = await testContext.boss.fetch(testContext.schema)
     const [job3] = await testContext.boss.fetch(testContext.schema)
 
-    assert.strictEqual(job1.id, high)
-    assert.strictEqual(job2.id, medium)
-    assert.strictEqual(job3.id, low)
+    expect(job1.id).toBe(high)
+    expect(job2.id).toBe(medium)
+    expect(job3.id).toBe(low)
   })
 
   it('bypasses priority when priority option used in fetch', async function () {
@@ -42,8 +42,8 @@ describe('priority', function () {
     const [job2] = await testContext.boss.fetch(testContext.schema, { priority: false })
     const [job3] = await testContext.boss.fetch(testContext.schema, { priority: false })
 
-    assert.strictEqual(job1.id, low)
-    assert.strictEqual(job2.id, medium)
-    assert.strictEqual(job3.id, high)
+    expect(job1.id).toBe(low)
+    expect(job2.id).toBe(medium)
+    expect(job3.id).toBe(high)
   })
 })
