@@ -2,6 +2,7 @@ import assert from 'node:assert'
 import * as helper from './testHelper.ts'
 import { randomUUID } from 'node:crypto'
 import type { ConstructorOptions } from '../src/types.ts'
+import { testContext } from './hooks.ts'
 
 describe('queueStats', function () {
   const queue1 = `q${randomUUID().replaceAll('-', '')}`
@@ -22,8 +23,8 @@ describe('queueStats', function () {
   }
 
   it('should get accurate stats', async function () {
-    this.boss = await init(this.bossConfig)
-    const queueData = await this.boss.getQueueStats(queue1)
+    testContext.boss = await init(testContext.bossConfig)
+    const queueData = await testContext.boss.getQueueStats(queue1)
     assert.notEqual(queueData, undefined)
 
     const {
@@ -42,11 +43,11 @@ describe('queueStats', function () {
   })
 
   it('should get accurate stats on an empty queue', async function () {
-    this.boss = await init(this.bossConfig)
+    testContext.boss = await init(testContext.bossConfig)
     const queue3 = randomUUID()
-    await this.boss.createQueue(queue3)
+    await testContext.boss.createQueue(queue3)
 
-    const queueData = await this.boss.getQueueStats(queue3)
+    const queueData = await testContext.boss.getQueueStats(queue3)
     assert.notEqual(queueData, undefined)
 
     const {
@@ -65,25 +66,25 @@ describe('queueStats', function () {
   })
 
   it('should properly get queue stats when all jobs are deleted', async function () {
-    this.boss = await helper.start({ ...this.bossConfig, monitorIntervalSeconds: 1, queueCacheIntervalSeconds: 1 })
+    testContext.boss = await helper.start({ ...testContext.bossConfig, monitorIntervalSeconds: 1, queueCacheIntervalSeconds: 1 })
 
     const queue4 = randomUUID()
-    await this.boss.createQueue(queue4)
+    await testContext.boss.createQueue(queue4)
 
-    await this.boss.send(queue4)
-    await this.boss.send(queue4)
-    await this.boss.send(queue4)
+    await testContext.boss.send(queue4)
+    await testContext.boss.send(queue4)
+    await testContext.boss.send(queue4)
 
-    await this.boss.supervise(queue4)
+    await testContext.boss.supervise(queue4)
 
-    await this.boss.deleteAllJobs(queue4)
+    await testContext.boss.deleteAllJobs(queue4)
 
-    await this.boss.supervise(queue4)
+    await testContext.boss.supervise(queue4)
 
     // wait for a second for queueCache to update
     await new Promise(resolve => setTimeout(resolve, 1000))
 
-    const queueData = await this.boss.getQueueStats(queue4)
+    const queueData = await testContext.boss.getQueueStats(queue4)
     assert(queueData)
 
     assert.equal(queueData.deferredCount, 0)

@@ -1,82 +1,83 @@
 import assert from 'node:assert'
 import * as helper from './testHelper.ts'
 import { delay } from '../src/tools.ts'
+import { testContext } from './hooks.ts'
 
 describe('expire', function () {
   it('should expire a job', async function () {
-    this.boss = await helper.start({ ...this.bossConfig, monitorIntervalSeconds: 1 })
+    testContext.boss = await helper.start({ ...testContext.bossConfig, monitorIntervalSeconds: 1 })
 
-    const jobId = await this.boss.send(this.schema, null, { retryLimit: 0, expireInSeconds: 1 })
+    const jobId = await testContext.boss.send(testContext.schema, null, { retryLimit: 0, expireInSeconds: 1 })
 
     assert(jobId)
 
-    const [job1] = await this.boss.fetch(this.schema)
+    const [job1] = await testContext.boss.fetch(testContext.schema)
 
     assert(job1)
 
     await delay(1000)
 
-    await this.boss.supervise(this.schema)
+    await testContext.boss.supervise(testContext.schema)
 
-    const job = await this.boss.getJobById(this.schema, jobId)
+    const job = await testContext.boss.getJobById(testContext.schema, jobId)
 
     assert.strictEqual('failed', job!.state)
   })
 
   it('should expire a job - cascaded config', async function () {
-    this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
+    testContext.boss = await helper.start({ ...testContext.bossConfig, noDefault: true })
 
-    await this.boss.createQueue(this.schema, { expireInSeconds: 1, retryLimit: 0 })
-    const jobId = await this.boss.send(this.schema)
+    await testContext.boss.createQueue(testContext.schema, { expireInSeconds: 1, retryLimit: 0 })
+    const jobId = await testContext.boss.send(testContext.schema)
 
     assert(jobId)
 
     // fetch the job but don't complete it
-    await this.boss.fetch(this.schema)
+    await testContext.boss.fetch(testContext.schema)
 
     await delay(1000)
 
-    await this.boss.supervise(this.schema)
+    await testContext.boss.supervise(testContext.schema)
 
-    const job = await this.boss.getJobById(this.schema, jobId)
+    const job = await testContext.boss.getJobById(testContext.schema, jobId)
 
     assert.strictEqual('failed', job!.state)
   })
 
   it('should expire a job via supervise option', async function () {
-    this.boss = await helper.start({
-      ...this.bossConfig,
+    testContext.boss = await helper.start({
+      ...testContext.bossConfig,
       noDefault: true,
       supervise: true,
       monitorIntervalSeconds: 1,
       superviseIntervalSeconds: 1
     })
 
-    await this.boss.createQueue(this.schema, { expireInSeconds: 1, retryLimit: 0 })
-    const jobId = await this.boss.send(this.schema)
+    await testContext.boss.createQueue(testContext.schema, { expireInSeconds: 1, retryLimit: 0 })
+    const jobId = await testContext.boss.send(testContext.schema)
 
     assert(jobId)
 
     // fetch the job but don't complete it
-    await this.boss.fetch(this.schema)
+    await testContext.boss.fetch(testContext.schema)
 
     await delay(4000)
 
-    const job = await this.boss.getJobById(this.schema, jobId)
+    const job = await testContext.boss.getJobById(testContext.schema, jobId)
 
     assert.strictEqual('failed', job!.state)
   })
 
   it('should abort signal when job handler times out', async function () {
-    this.boss = await helper.start({ ...this.bossConfig, monitorIntervalSeconds: 1 })
+    testContext.boss = await helper.start({ ...testContext.bossConfig, monitorIntervalSeconds: 1 })
 
-    const jobId = await this.boss.send(this.schema, null, { retryLimit: 0, expireInSeconds: 1 })
+    const jobId = await testContext.boss.send(testContext.schema, null, { retryLimit: 0, expireInSeconds: 1 })
 
     assert(jobId)
 
     let signalAborted = false
 
-    await this.boss.work(this.schema, async ([job]) => {
+    await testContext.boss.work(testContext.schema, async ([job]) => {
       job.signal.addEventListener('abort', () => {
         signalAborted = true
       })

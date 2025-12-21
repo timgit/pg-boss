@@ -1,26 +1,27 @@
 import assert from 'node:assert'
 import { randomUUID } from 'node:crypto'
 import * as helper from './testHelper.ts'
+import { testContext } from './hooks.ts'
 
 describe('insert', function () {
   it('should create jobs from an array', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    testContext.boss = await helper.start(testContext.bossConfig)
 
     const input = [{}, {}, {}]
 
-    await this.boss.insert(this.schema, input)
+    await testContext.boss.insert(testContext.schema, input)
 
-    const { queuedCount } = await this.boss.getQueueStats(this.schema)
+    const { queuedCount } = await testContext.boss.getQueueStats(testContext.schema)
 
     assert.strictEqual(queuedCount, 3)
   })
 
   it('should create jobs from an array with all properties', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    testContext.boss = await helper.start(testContext.bossConfig)
 
-    const deadLetter = `${this.schema}_dlq`
-    await this.boss.createQueue(deadLetter)
-    await this.boss.updateQueue(this.schema, { deadLetter })
+    const deadLetter = `${testContext.schema}_dlq`
+    await testContext.boss.createQueue(deadLetter)
+    await testContext.boss.updateQueue(testContext.schema, { deadLetter })
 
     const input = {
       id: randomUUID(),
@@ -39,9 +40,9 @@ describe('insert', function () {
 
     const keepUntil = new Date(new Date(input.startAfter).getTime() + (input.retentionSeconds * 1000)).toISOString()
 
-    await this.boss.insert(this.schema, [input])
+    await testContext.boss.insert(testContext.schema, [input])
 
-    const job = await this.boss.getJobById(this.schema, input.id)
+    const job = await testContext.boss.getJobById(testContext.schema, input.id)
 
     assert(job)
 
@@ -60,11 +61,11 @@ describe('insert', function () {
   })
 
   it('should create jobs from an array with all properties and custom connection', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    testContext.boss = await helper.start(testContext.bossConfig)
 
-    const deadLetter = `${this.schema}_dlq`
-    await this.boss.createQueue(deadLetter)
-    await this.boss.updateQueue(this.schema, { deadLetter })
+    const deadLetter = `${testContext.schema}_dlq`
+    await testContext.boss.createQueue(deadLetter)
+    await testContext.boss.updateQueue(testContext.schema, { deadLetter })
 
     const input = {
       id: randomUUID(),
@@ -96,9 +97,9 @@ describe('insert', function () {
       }
     }
 
-    await this.boss.insert(this.schema, [input], options)
+    await testContext.boss.insert(testContext.schema, [input], options)
 
-    const job = await this.boss.getJobById(this.schema, input.id)
+    const job = await testContext.boss.getJobById(testContext.schema, input.id)
 
     assert(job)
 

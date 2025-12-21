@@ -1,44 +1,74 @@
+import { beforeAll, beforeEach, afterEach } from 'vitest'
 import * as helper from './testHelper.ts'
-import type { Context, Test } from 'mocha'
 import type { ConstructorOptions } from '../src/types.ts'
+import type { PgBoss } from '../src/index.ts'
+import { expect } from 'vitest'
+import crypto from 'node:crypto'
 
-export type { Context as TestContext }
-
-export const mochaHooks = {
-  beforeAll,
-  beforeEach,
-  afterEach
+export interface TestContext {
+  boss?: PgBoss
+  bossConfig: ConstructorOptions & { schema: string }
+  schema: string
 }
 
-async function beforeAll (this: Context): Promise<void> {
+// Shared test context - each test file gets its own module scope in vitest
+export const testContext: TestContext = {
+  boss: undefined,
+  bossConfig: {} as ConstructorOptions & { schema: string },
+  schema: ''
+}
+
+// Track current test info for schema generation
+let currentTestFile: string = ''
+let currentTestName: string = ''
+
+export function setCurrentTest (file: string, name: string): void {
+  currentTestFile = file
+  currentTestName = name
+}
+
+function getTestKey (): string {
+  return currentTestFile + currentTestName
+}
+
+const sha1 = (value: string): string => crypto.createHash('sha1').update(value).digest('hex')
+
+beforeAll(async () => {
   await helper.init()
-}
+})
 
-async function beforeEach (this: Context): Promise<void> {
-  this.timeout(2000)
-  const config = helper.getConfig({ testKey: getTestKey(this.currentTest!) })
-  console.log(`      ${this.currentTest!.title} (schema: ${config.schema})...`)
+beforeEach(async (context) => {
+  // Use vitest's task info for unique schema generation
+  const testFile = context.task.file?.name || 'unknown'
+  const testName = context.task.name || 'unknown'
+  currentTestFile = testFile
+  currentTestName = testName
+
+  const testKey = getTestKey()
+  const schema = `pgboss${sha1(testKey)}`
+
+  const config = helper.getConfig({ schema })
+  console.log(`      ${testName} (schema: ${config.schema})...`)
   await helper.dropSchema(config.schema!)
 
-  // Set properties directly on context for easy access in tests
-  this.bossConfig = config as ConstructorOptions & { schema: string }
-  this.schema = config.schema!
-}
+  testContext.bossConfig = config as ConstructorOptions & { schema: string }
+  testContext.schema = config.schema!
+  testContext.boss = undefined
+})
 
-async function afterEach (this: Context): Promise<void> {
-  this.timeout(10000)
-
-  const { boss } = this.currentTest!.ctx!
+afterEach(async (context) => {
+  const { boss } = testContext
 
   if (boss) {
     await boss.stop({ timeout: 2000 })
   }
 
-  if (this.currentTest!.state === 'passed') {
-    await helper.dropSchema(this.schema)
+  // Only drop schema if test passed
+  const state = context.task.result?.state
+  if (state === 'pass') {
+    await helper.dropSchema(testContext.schema)
   }
-}
+})
 
-function getTestKey (ctx: Test): string {
-  return ctx.file! + ctx.parent!.title + ctx.title
-}
+// Re-export expect for convenience
+export { expect }

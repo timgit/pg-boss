@@ -1,29 +1,30 @@
 import assert from 'node:assert'
 import * as helper from './testHelper.ts'
+import { testContext } from './hooks.ts'
 
 describe('priority', function () {
   it('higher priority job', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    testContext.boss = await helper.start(testContext.bossConfig)
 
-    await this.boss.send(this.schema)
+    await testContext.boss.send(testContext.schema)
 
-    const high = await this.boss.send(this.schema, null, { priority: 1 })
+    const high = await testContext.boss.send(testContext.schema, null, { priority: 1 })
 
-    const [job] = await this.boss.fetch(this.schema)
+    const [job] = await testContext.boss.fetch(testContext.schema)
 
     assert.strictEqual(job.id, high)
   })
 
   it('descending priority order', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    testContext.boss = await helper.start(testContext.bossConfig)
 
-    const low = await this.boss.send(this.schema, null, { priority: 1 })
-    const medium = await this.boss.send(this.schema, null, { priority: 5 })
-    const high = await this.boss.send(this.schema, null, { priority: 10 })
+    const low = await testContext.boss.send(testContext.schema, null, { priority: 1 })
+    const medium = await testContext.boss.send(testContext.schema, null, { priority: 5 })
+    const high = await testContext.boss.send(testContext.schema, null, { priority: 10 })
 
-    const [job1] = await this.boss.fetch(this.schema)
-    const [job2] = await this.boss.fetch(this.schema)
-    const [job3] = await this.boss.fetch(this.schema)
+    const [job1] = await testContext.boss.fetch(testContext.schema)
+    const [job2] = await testContext.boss.fetch(testContext.schema)
+    const [job3] = await testContext.boss.fetch(testContext.schema)
 
     assert.strictEqual(job1.id, high)
     assert.strictEqual(job2.id, medium)
@@ -31,15 +32,15 @@ describe('priority', function () {
   })
 
   it('bypasses priority when priority option used in fetch', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    testContext.boss = await helper.start(testContext.bossConfig)
 
-    const low = await this.boss.send(this.schema, null, { priority: 1 })
-    const medium = await this.boss.send(this.schema, null, { priority: 5 })
-    const high = await this.boss.send(this.schema, null, { priority: 10 })
+    const low = await testContext.boss.send(testContext.schema, null, { priority: 1 })
+    const medium = await testContext.boss.send(testContext.schema, null, { priority: 5 })
+    const high = await testContext.boss.send(testContext.schema, null, { priority: 10 })
 
-    const [job1] = await this.boss.fetch(this.schema, { priority: false })
-    const [job2] = await this.boss.fetch(this.schema, { priority: false })
-    const [job3] = await this.boss.fetch(this.schema, { priority: false })
+    const [job1] = await testContext.boss.fetch(testContext.schema, { priority: false })
+    const [job2] = await testContext.boss.fetch(testContext.schema, { priority: false })
+    const [job3] = await testContext.boss.fetch(testContext.schema, { priority: false })
 
     assert.strictEqual(job1.id, low)
     assert.strictEqual(job2.id, medium)

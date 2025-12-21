@@ -1,73 +1,73 @@
 import assert from 'node:assert'
 import * as helper from './testHelper.ts'
-import type { TestContext } from './hooks.ts'
+import { testContext } from './hooks.ts'
 
 describe('send', function () {
-  it('should fail with no arguments', async function (this: TestContext) {
-    this.boss = await helper.start(this.bossConfig)
+  it('should fail with no arguments', async function () {
+    testContext.boss = await helper.start(testContext.bossConfig)
 
     await assert.rejects(async () => {
       // @ts-ignore
-      await this.boss.send()
+      await testContext.boss.send()
     })
   })
 
   it('should fail with a function for data', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    testContext.boss = await helper.start(testContext.bossConfig)
 
     await assert.rejects(async () => {
       // @ts-ignore
-      await this.boss.send('job', () => true)
+      await testContext.boss.send('job', () => true)
     })
   })
 
   it('should fail with a function for options', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    testContext.boss = await helper.start(testContext.bossConfig)
 
     await assert.rejects(async () => {
       // @ts-ignore
-      await this.boss.send('job', 'data', () => true)
+      await testContext.boss.send('job', 'data', () => true)
     })
   })
 
   it('should accept single string argument', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    testContext.boss = await helper.start(testContext.bossConfig)
 
-    await this.boss.send(this.schema)
+    await testContext.boss.send(testContext.schema)
   })
 
   it('should accept job object argument with only name', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    testContext.boss = await helper.start(testContext.bossConfig)
 
-    await this.boss.send({ name: this.schema })
+    await testContext.boss.send({ name: testContext.schema })
   })
 
   it('should accept job object with name and data only', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    testContext.boss = await helper.start(testContext.bossConfig)
 
     const message = 'hi'
 
-    await this.boss.send({ name: this.schema, data: { message } })
+    await testContext.boss.send({ name: testContext.schema, data: { message } })
 
-    const [job] = await this.boss.fetch<{ message: string }>(this.schema)
+    const [job] = await testContext.boss.fetch<{ message: string }>(testContext.schema)
 
     assert.strictEqual(message, job.data.message)
   })
 
   it('should accept job object with name and options only', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    testContext.boss = await helper.start(testContext.bossConfig)
 
     const options = { retryLimit: 1 }
 
-    await this.boss.send({ name: this.schema, options })
+    await testContext.boss.send({ name: testContext.schema, options })
 
-    const [job] = await this.boss.fetch(this.schema)
+    const [job] = await testContext.boss.fetch(testContext.schema)
 
     assert.strictEqual(job.data, null)
   })
 
   it('should accept job object with name and custom connection', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    testContext.boss = await helper.start(testContext.bossConfig)
 
     let called = false
     const db = await helper.getDb()
@@ -83,18 +83,18 @@ describe('send', function () {
       someCrazyOption: 'whatever'
     }
 
-    await this.boss.send({ name: this.schema, options })
+    await testContext.boss.send({ name: testContext.schema, options })
 
-    const [job] = await this.boss.fetch(this.schema)
+    const [job] = await testContext.boss.fetch(testContext.schema)
 
     assert.notEqual(job, null)
     assert.strictEqual(job.data, null)
     assert.strictEqual(called, true)
   })
 
-  it('should not create job if transaction fails', async function (this: TestContext) {
-    this.boss = await helper.start(this.bossConfig)
-    const { schema } = this.bossConfig
+  it('should not create job if transaction fails', async function () {
+    testContext.boss = await helper.start(testContext.bossConfig)
+    const { schema } = testContext.bossConfig
 
     const db = await helper.getDb()
     const client = (db as any).pool
@@ -115,7 +115,7 @@ describe('send', function () {
       const queryText = `INSERT INTO ${schema}.test(label) VALUES('Test')`
       await client.query(queryText)
 
-      await this.boss.send({ name: this.schema, options })
+      await testContext.boss.send({ name: testContext.schema, options })
 
       throwError()
       await client.query('COMMIT')
@@ -123,17 +123,17 @@ describe('send', function () {
       await client.query('ROLLBACK')
     }
 
-    const [job] = await this.boss.fetch(this.schema)
+    const [job] = await testContext.boss.fetch(testContext.schema)
 
     assert(!job)
   })
 
-  it('should create job with all properties', async function (this: TestContext) {
-    this.boss = await helper.start(this.bossConfig)
+  it('should create job with all properties', async function () {
+    testContext.boss = await helper.start(testContext.bossConfig)
 
-    const deadLetter = `${this.schema}_dlq`
-    await this.boss.createQueue(deadLetter)
-    await this.boss.updateQueue(this.schema, { deadLetter })
+    const deadLetter = `${testContext.schema}_dlq`
+    await testContext.boss.createQueue(deadLetter)
+    await testContext.boss.updateQueue(testContext.schema, { deadLetter })
 
     const options = {
       priority: 1,
@@ -150,9 +150,9 @@ describe('send', function () {
 
     const keepUntil = new Date(new Date(options.startAfter).getTime() + (options.retentionSeconds * 1000)).toISOString()
 
-    const id = await this.boss.send(this.schema, {}, options)
+    const id = await testContext.boss.send(testContext.schema, {}, options)
 
-    const job = await this.boss.getJobById(this.schema, id!)
+    const job = await testContext.boss.getJobById(testContext.schema, id!)
     assert(job)
 
     assert.strictEqual(job.priority, options.priority, `priority input ${options.priority} didn't match job ${job.priority}`)

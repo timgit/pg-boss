@@ -1,185 +1,186 @@
 import assert from 'node:assert'
 import * as helper from './testHelper.ts'
 import { states } from '../src/index.ts'
+import { testContext } from './hooks.ts'
 
 describe('queues', function () {
   it('should create a queue', async function () {
-    this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
+    testContext.boss = await helper.start({ ...testContext.bossConfig, noDefault: true })
 
-    await this.boss.createQueue(this.schema)
+    await testContext.boss.createQueue(testContext.schema)
   })
 
   it('should not add a policy property when creating a queue if it is missing', async function () {
-    this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
+    testContext.boss = await helper.start({ ...testContext.bossConfig, noDefault: true })
 
     const options = {}
 
-    await this.boss.createQueue(this.schema, options)
+    await testContext.boss.createQueue(testContext.schema, options)
 
     assert.strictEqual(Object.keys(options).length, 0)
   })
 
   it('createQueue should work if queue already exists', async function () {
-    this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
+    testContext.boss = await helper.start({ ...testContext.bossConfig, noDefault: true })
 
-    await this.boss.createQueue(this.schema)
-    await this.boss.createQueue(this.schema)
+    await testContext.boss.createQueue(testContext.schema)
+    await testContext.boss.createQueue(testContext.schema)
   })
 
   it('should reject a queue with invalid characters', async function () {
-    this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
-    const queue = `*${this.bossConfig.schema}`
+    testContext.boss = await helper.start({ ...testContext.bossConfig, noDefault: true })
+    const queue = `*${testContext.bossConfig.schema}`
     await assert.rejects(async () => {
-      await this.boss!.createQueue(queue)
+      await testContext.boss!.createQueue(queue)
     })
   })
 
   it('should reject a queue with invalid policy', async function () {
-    this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
+    testContext.boss = await helper.start({ ...testContext.bossConfig, noDefault: true })
     await assert.rejects(async () => {
       // @ts-ignore
-      await this.boss.createQueue(this.schema, { policy: 'something' })
+      await testContext.boss.createQueue(testContext.schema, { policy: 'something' })
     })
   })
 
   it('should reject using a queue if not created', async function () {
-    this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
+    testContext.boss = await helper.start({ ...testContext.bossConfig, noDefault: true })
     await assert.rejects(async () => {
-      await this.boss!.send(this.schema)
+      await testContext.boss!.send(testContext.schema)
     })
   })
 
   it('should create a queue with standard policy', async function () {
-    this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
+    testContext.boss = await helper.start({ ...testContext.bossConfig, noDefault: true })
 
-    await this.boss.createQueue(this.schema, { policy: 'standard' })
+    await testContext.boss.createQueue(testContext.schema, { policy: 'standard' })
   })
 
   it('should delete and then create a queue', async function () {
-    this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
+    testContext.boss = await helper.start({ ...testContext.bossConfig, noDefault: true })
 
-    await this.boss.createQueue(this.schema)
-    assert(await this.boss.getQueue(this.schema))
-    await this.boss.deleteQueue(this.schema)
-    await this.boss.createQueue(this.schema)
+    await testContext.boss.createQueue(testContext.schema)
+    assert(await testContext.boss.getQueue(testContext.schema))
+    await testContext.boss.deleteQueue(testContext.schema)
+    await testContext.boss.createQueue(testContext.schema)
   })
 
   it('should delete an empty queue', async function () {
-    this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
+    testContext.boss = await helper.start({ ...testContext.bossConfig, noDefault: true })
 
-    await this.boss.createQueue(this.schema)
-    await this.boss.send(this.schema)
-    await this.boss.deleteAllJobs(this.schema)
-    await this.boss.deleteQueue(this.schema)
+    await testContext.boss.createQueue(testContext.schema)
+    await testContext.boss.send(testContext.schema)
+    await testContext.boss.deleteAllJobs(testContext.schema)
+    await testContext.boss.deleteQueue(testContext.schema)
   })
 
   it('should truncate a partitioned queue and leave other queues alone', async function () {
-    this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
+    testContext.boss = await helper.start({ ...testContext.bossConfig, noDefault: true })
 
-    const queue2 = `${this.schema}2`
-    await this.boss.createQueue(queue2)
-    await this.boss.send(queue2)
+    const queue2 = `${testContext.schema}2`
+    await testContext.boss.createQueue(queue2)
+    await testContext.boss.send(queue2)
 
-    await this.boss.createQueue(this.schema, { partition: true })
-    await this.boss.send(this.schema)
+    await testContext.boss.createQueue(testContext.schema, { partition: true })
+    await testContext.boss.send(testContext.schema)
 
-    await this.boss.deleteAllJobs(this.schema)
-    await this.boss.deleteQueue(this.schema)
+    await testContext.boss.deleteAllJobs(testContext.schema)
+    await testContext.boss.deleteQueue(testContext.schema)
 
-    const { queuedCount } = await this.boss.getQueueStats(queue2)
+    const { queuedCount } = await testContext.boss.getQueueStats(queue2)
     assert(queuedCount)
   })
 
   it('should truncate a partitioned queue', async function () {
-    this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
+    testContext.boss = await helper.start({ ...testContext.bossConfig, noDefault: true })
 
-    await this.boss.createQueue(this.schema, { partition: true })
-    await this.boss.send(this.schema)
-    await this.boss.deleteAllJobs(this.schema)
-    await this.boss.deleteQueue(this.schema)
+    await testContext.boss.createQueue(testContext.schema, { partition: true })
+    await testContext.boss.send(testContext.schema)
+    await testContext.boss.deleteAllJobs(testContext.schema)
+    await testContext.boss.deleteQueue(testContext.schema)
   })
 
   it('should delete all jobs from all queues, included partitioned', async function () {
-    this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
+    testContext.boss = await helper.start({ ...testContext.bossConfig, noDefault: true })
 
-    await this.boss.createQueue(this.schema, { partition: true })
-    await this.boss.send(this.schema)
+    await testContext.boss.createQueue(testContext.schema, { partition: true })
+    await testContext.boss.send(testContext.schema)
 
-    const queue2 = `${this.schema}2`
-    await this.boss.createQueue(queue2)
-    await this.boss.send(queue2)
+    const queue2 = `${testContext.schema}2`
+    await testContext.boss.createQueue(queue2)
+    await testContext.boss.send(queue2)
 
-    await this.boss.deleteAllJobs()
+    await testContext.boss.deleteAllJobs()
 
-    const { queuedCount: count1 } = await this.boss.getQueueStats(this.schema)
-    const { queuedCount: count2 } = await this.boss.getQueueStats(queue2)
+    const { queuedCount: count1 } = await testContext.boss.getQueueStats(testContext.schema)
+    const { queuedCount: count2 } = await testContext.boss.getQueueStats(queue2)
 
     assert.strictEqual(count1 + count2, 0)
   })
 
   it('should delete a non-empty queue', async function () {
-    this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
+    testContext.boss = await helper.start({ ...testContext.bossConfig, noDefault: true })
 
-    await this.boss.createQueue(this.schema)
-    await this.boss.send(this.schema)
-    await this.boss.deleteQueue(this.schema)
+    await testContext.boss.createQueue(testContext.schema)
+    await testContext.boss.send(testContext.schema)
+    await testContext.boss.deleteQueue(testContext.schema)
   })
 
   it('should delete all queued jobs from a queue', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    testContext.boss = await helper.start(testContext.bossConfig)
 
-    const getCount = () => helper.countJobs(this.bossConfig.schema, 'job', 'state = $1', [states.created])
+    const getCount = () => helper.countJobs(testContext.bossConfig.schema, 'job', 'state = $1', [states.created])
 
-    await this.boss.send(this.schema)
+    await testContext.boss.send(testContext.schema)
 
     assert.strictEqual(await getCount(), 1)
 
-    await this.boss.deleteQueuedJobs(this.schema)
+    await testContext.boss.deleteQueuedJobs(testContext.schema)
 
     assert.strictEqual(await getCount(), 0)
   })
 
   it('should delete all stored jobs from a queue', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    testContext.boss = await helper.start(testContext.bossConfig)
 
     const { completed, failed, cancelled } = states
     const inClause = [completed, failed, cancelled].map(s => `'${s}'`)
-    const getCount = () => helper.countJobs(this.bossConfig.schema, 'job', `state IN (${inClause})`)
+    const getCount = () => helper.countJobs(testContext.bossConfig.schema, 'job', `state IN (${inClause})`)
 
-    await this.boss.send(this.schema)
-    const [job1] = await this.boss.fetch(this.schema)
+    await testContext.boss.send(testContext.schema)
+    const [job1] = await testContext.boss.fetch(testContext.schema)
     assert(job1?.id)
 
-    await this.boss.complete(this.schema, job1.id)
+    await testContext.boss.complete(testContext.schema, job1.id)
 
     assert.strictEqual(await getCount(), 1)
 
-    await this.boss.send(this.schema, null, { retryLimit: 0 })
-    const [job2] = await this.boss.fetch(this.schema)
-    await this.boss.fail(this.schema, job2.id)
+    await testContext.boss.send(testContext.schema, null, { retryLimit: 0 })
+    const [job2] = await testContext.boss.fetch(testContext.schema)
+    await testContext.boss.fail(testContext.schema, job2.id)
 
     assert.strictEqual(await getCount(), 2)
 
-    await this.boss.deleteStoredJobs(this.schema)
+    await testContext.boss.deleteStoredJobs(testContext.schema)
 
     assert.strictEqual(await getCount(), 0)
   })
 
   it('getQueue() returns null when missing', async function () {
-    this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
-    const queue = await this.boss.getQueue(this.bossConfig.schema)
+    testContext.boss = await helper.start({ ...testContext.bossConfig, noDefault: true })
+    const queue = await testContext.boss.getQueue(testContext.bossConfig.schema)
     assert.strictEqual(queue, null)
   })
 
   it('getQueues() returns queues array', async function () {
-    this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
-    const queue1 = `${this.bossConfig.schema}_1`
-    const queue2 = `${this.bossConfig.schema}_2`
+    testContext.boss = await helper.start({ ...testContext.bossConfig, noDefault: true })
+    const queue1 = `${testContext.bossConfig.schema}_1`
+    const queue2 = `${testContext.bossConfig.schema}_2`
 
-    await this.boss.createQueue(queue1)
-    await this.boss.createQueue(queue2)
+    await testContext.boss.createQueue(queue1)
+    await testContext.boss.createQueue(queue2)
 
-    const queues = await this.boss.getQueues()
+    const queues = await testContext.boss.getQueues()
 
     assert.strictEqual(queues.length, 2)
 
@@ -188,10 +189,10 @@ describe('queues', function () {
   })
 
   it('should update queue properties', async function () {
-    this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
+    testContext.boss = await helper.start({ ...testContext.bossConfig, noDefault: true })
 
-    let deadLetter = `${this.schema}_dlq1`
-    await this.boss.createQueue(deadLetter)
+    let deadLetter = `${testContext.schema}_dlq1`
+    await testContext.boss.createQueue(deadLetter)
 
     const createProps = {
       policy: 'standard',
@@ -204,13 +205,13 @@ describe('queues', function () {
       deadLetter
     }
 
-    await this.boss.createQueue(this.schema, createProps)
+    await testContext.boss.createQueue(testContext.schema, createProps)
 
-    let queueObj = await this.boss.getQueue(this.schema)
+    let queueObj = await testContext.boss.getQueue(testContext.schema)
 
     assert(queueObj)
 
-    assert.strictEqual(this.schema, queueObj.name)
+    assert.strictEqual(testContext.schema, queueObj.name)
     assert.strictEqual(createProps.policy, queueObj.policy)
     assert.strictEqual(createProps.retryLimit, queueObj.retryLimit)
     assert.strictEqual(createProps.retryBackoff, queueObj.retryBackoff)
@@ -222,8 +223,8 @@ describe('queues', function () {
     assert(queueObj.createdOn)
     assert(queueObj.updatedOn)
 
-    deadLetter = `${this.schema}_dlq2`
-    await this.boss.createQueue(deadLetter)
+    deadLetter = `${testContext.schema}_dlq2`
+    await testContext.boss.createQueue(deadLetter)
 
     const updateProps = {
       retryDelay: 2,
@@ -233,9 +234,9 @@ describe('queues', function () {
       deadLetter
     }
 
-    await this.boss.updateQueue(this.schema, updateProps)
+    await testContext.boss.updateQueue(testContext.schema, updateProps)
 
-    queueObj = await this.boss.getQueue(this.schema)
+    queueObj = await testContext.boss.getQueue(testContext.schema)
 
     assert.strictEqual(updateProps.retryLimit, queueObj!.retryLimit)
     assert.strictEqual(updateProps.retryBackoff, queueObj!.retryBackoff)
@@ -245,31 +246,31 @@ describe('queues', function () {
   })
 
   it('should fail to change queue policy', async function () {
-    this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
+    testContext.boss = await helper.start({ ...testContext.bossConfig, noDefault: true })
 
-    await this.boss.createQueue(this.schema, { policy: 'standard' })
+    await testContext.boss.createQueue(testContext.schema, { policy: 'standard' })
 
     await assert.rejects(async () => {
       // @ts-ignore
-      await this.boss.updateQueue(this.schema, { policy: 'exclusive' })
+      await testContext.boss.updateQueue(testContext.schema, { policy: 'exclusive' })
     })
   })
 
   it('should fail to change queue partitioning', async function () {
-    this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
-    await this.boss.createQueue(this.schema, { partition: true })
+    testContext.boss = await helper.start({ ...testContext.bossConfig, noDefault: true })
+    await testContext.boss.createQueue(testContext.schema, { partition: true })
 
     await assert.rejects(async () => {
       // @ts-ignore
-      await this.boss.updateQueue(this.schema, { partition: false })
+      await testContext.boss.updateQueue(testContext.schema, { partition: false })
     })
   })
 
   it('jobs should inherit properties from queue', async function () {
-    this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
+    testContext.boss = await helper.start({ ...testContext.bossConfig, noDefault: true })
 
-    const deadLetter = `${this.schema}_dlq`
-    await this.boss.createQueue(deadLetter)
+    const deadLetter = `${testContext.schema}_dlq`
+    await testContext.boss.createQueue(deadLetter)
 
     const createProps = {
       retryLimit: 1,
@@ -281,11 +282,11 @@ describe('queues', function () {
       deadLetter
     }
 
-    await this.boss.createQueue(this.schema, createProps)
+    await testContext.boss.createQueue(testContext.schema, createProps)
 
-    const jobId = await this.boss.send(this.schema)
+    const jobId = await testContext.boss.send(testContext.schema)
 
-    const job = await this.boss.getJobById(this.schema, jobId!)
+    const job = await testContext.boss.getJobById(testContext.schema, jobId!)
 
     assert(job)
 
