@@ -2,7 +2,7 @@ import { expect, beforeEach } from 'vitest'
 import { PgBoss, getConstructionPlans, getMigrationPlans, getRollbackPlans } from '../src/index.ts'
 import { getDb } from './testHelper.ts'
 import Contractor from '../src/contractor.ts'
-import { getAll } from '../src/migrationStore.ts'
+import { getAll, migrate } from '../src/migrationStore.ts'
 import packageJson from '../package.json' with { type: 'json' }
 import { setVersion } from '../src/plans.ts'
 import { testContext } from './hooks.ts'
@@ -288,5 +288,23 @@ describe('migration', function () {
     await testContext.boss.send(testContext.schema)
     const [job] = await testContext.boss.fetch(testContext.schema)
     await testContext.boss.complete(testContext.schema, job.id)
+  })
+
+  it('should apply multiple migrations in version order', function () {
+    const schema = 'test_schema'
+    const mockMigrations = [
+      { release: '1.2.0', version: 12, previous: 11, install: ['sql_v12'], uninstall: [] },
+      { release: '1.1.0', version: 11, previous: 10, install: ['sql_v11'], uninstall: [] },
+      { release: '1.3.0', version: 13, previous: 12, install: ['sql_v13'], uninstall: [] }
+    ]
+
+    const result = migrate(schema, 10, mockMigrations)
+
+    expect(result).toContain('sql_v11')
+    expect(result).toContain('sql_v12')
+    expect(result).toContain('sql_v13')
+    // Verify order: v11 should come before v12, v12 before v13
+    expect(result.indexOf('sql_v11')).toBeLessThan(result.indexOf('sql_v12'))
+    expect(result.indexOf('sql_v12')).toBeLessThan(result.indexOf('sql_v13'))
   })
 })
