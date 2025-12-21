@@ -49,9 +49,9 @@ describe('complete', function () {
 
     const completionData = { msg: 'i am complete' }
 
-    await testContext.boss.complete(testContext.schema, jobId, completionData)
+    await testContext.boss.complete(testContext.schema, jobId!, completionData)
 
-    const jobWithMetadata = await testContext.boss.getJobById(testContext.schema, jobId)
+    const jobWithMetadata = await testContext.boss.getJobById(testContext.schema, jobId!)
     expect(jobWithMetadata).toBeTruthy()
 
     expect((jobWithMetadata as any).output.msg).toBe(completionData.msg)
@@ -68,9 +68,9 @@ describe('complete', function () {
 
     const completionError = new Error('i am complete')
 
-    await testContext.boss.fail(testContext.schema, jobId, completionError)
+    await testContext.boss.fail(testContext.schema, jobId!, completionError)
 
-    const jobWithMetadata = await testContext.boss.getJobById(testContext.schema, jobId)
+    const jobWithMetadata = await testContext.boss.getJobById(testContext.schema, jobId!)
     expect(jobWithMetadata).toBeTruthy()
 
     expect((jobWithMetadata as any).output.message).toBe(completionError.message)

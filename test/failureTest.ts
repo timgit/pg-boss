@@ -69,9 +69,9 @@ describe('failure', function () {
 
     expect(jobId).toBeTruthy()
 
-    await testContext.boss.fail(testContext.schema, jobId, failPayload)
+    await testContext.boss.fail(testContext.schema, jobId!, failPayload)
 
-    const job = await testContext.boss.getJobById(testContext.schema, jobId)
+    const job = await testContext.boss.getJobById(testContext.schema, jobId!)
 
     expect(job?.output).toBeTruthy()
 
@@ -90,9 +90,9 @@ describe('failure', function () {
 
     await testContext.boss.work(testContext.schema, () => Promise.reject(failPayload))
 
-    await spy.waitForJobWithId(jobId, 'failed')
+    await spy.waitForJobWithId(jobId!, 'failed')
 
-    const job = await testContext.boss.getJobById(testContext.schema, jobId)
+    const job = await testContext.boss.getJobById(testContext.schema, jobId!)
 
     expect((job!.output as { value: string }).value).toBe(failPayload)
   })
@@ -112,9 +112,9 @@ describe('failure', function () {
 
     await testContext.boss.work(testContext.schema, () => Promise.reject(errorResponse))
 
-    await spy.waitForJobWithId(jobId, 'failed')
+    await spy.waitForJobWithId(jobId!, 'failed')
 
-    const job = await testContext.boss.getJobById(testContext.schema, jobId)
+    const job = await testContext.boss.getJobById(testContext.schema, jobId!)
 
     expect((job!.output as { something: string }).something).toBe(something)
   })
@@ -130,9 +130,9 @@ describe('failure', function () {
 
     await testContext.boss.work(testContext.schema, async () => { throw new Error(message) })
 
-    await spy.waitForJobWithId(jobId, 'failed')
+    await spy.waitForJobWithId(jobId!, 'failed')
 
-    const job = await testContext.boss.getJobById(testContext.schema, jobId)
+    const job = await testContext.boss.getJobById(testContext.schema, jobId!)
 
     expect((job!.output as { message: string }).message.includes(message)).toBeTruthy()
   })
@@ -177,9 +177,9 @@ describe('failure', function () {
       throw err
     })
 
-    await spy.waitForJobWithId(jobId, 'failed')
+    await spy.waitForJobWithId(jobId!, 'failed')
 
-    const job = await testContext.boss.getJobById(testContext.schema, jobId)
+    const job = await testContext.boss.getJobById(testContext.schema, jobId!)
 
     expect((job!.output as { message: string }).message).toBe(message)
   })
@@ -197,7 +197,7 @@ describe('failure', function () {
     expect(jobId).toBeTruthy()
 
     await testContext.boss.fetch(testContext.schema)
-    await testContext.boss.fail(testContext.schema, jobId)
+    await testContext.boss.fail(testContext.schema, jobId!)
 
     const [job] = await testContext.boss.fetch<{ key: string }>(deadLetter)
 

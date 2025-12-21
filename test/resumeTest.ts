@@ -19,15 +19,15 @@ describe('cancel', function () {
 
     expect(jobId).toBeTruthy()
 
-    await testContext.boss.cancel(testContext.schema, jobId)
+    await testContext.boss.cancel(testContext.schema, jobId!)
 
-    const job = await testContext.boss.getJobById(testContext.schema, jobId)
+    const job = await testContext.boss.getJobById(testContext.schema, jobId!)
 
     expect(job && job.state === 'cancelled').toBeTruthy()
 
-    await testContext.boss.resume(testContext.schema, jobId)
+    await testContext.boss.resume(testContext.schema, jobId!)
 
-    const job2 = await testContext.boss.getJobById(testContext.schema, jobId)
+    const job2 = await testContext.boss.getJobById(testContext.schema, jobId!)
 
     expect(job2 && job2.state === 'created').toBeTruthy()
   })
@@ -50,15 +50,15 @@ describe('cancel', function () {
       }
     }
 
-    await testContext.boss.cancel(testContext.schema, jobId, { db })
+    await testContext.boss.cancel(testContext.schema, jobId!, { db })
 
-    const job = await testContext.boss.getJobById(testContext.schema, jobId, { db })
+    const job = await testContext.boss.getJobById(testContext.schema, jobId!, { db })
 
     expect(job && job.state === 'cancelled').toBeTruthy()
 
-    await testContext.boss.resume(testContext.schema, jobId, { db })
+    await testContext.boss.resume(testContext.schema, jobId!, { db })
 
-    const job2 = await testContext.boss.getJobById(testContext.schema, jobId, { db })
+    const job2 = await testContext.boss.getJobById(testContext.schema, jobId!, { db })
 
     expect(job2 && job2.state === 'created').toBeTruthy()
     expect(callCount).toBe(4)

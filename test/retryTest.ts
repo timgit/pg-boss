@@ -1,8 +1,7 @@
-import { expect } from 'vitest'
+import { expect, it } from 'vitest'
 import * as helper from './testHelper.ts'
 import { delay } from '../src/tools.ts'
 import { testContext } from './hooks.ts'
-import { it } from 'vitest'
 
 describe('retries', function () {
   it('should retry a job that didn\'t complete', async function () {

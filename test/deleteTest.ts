@@ -17,13 +17,13 @@ describe('delete', function () {
     expect(jobId).toBeTruthy()
 
     await testContext.boss.fetch(testContext.schema)
-    await testContext.boss.complete(testContext.schema, jobId)
+    await testContext.boss.complete(testContext.schema, jobId!)
 
     await delay(1000)
 
     await testContext.boss.supervise(testContext.schema)
 
-    const job = await testContext.boss.getJobById(testContext.schema, jobId)
+    const job = await testContext.boss.getJobById(testContext.schema, jobId!)
 
     expect(job).toBeFalsy()
   })
@@ -42,13 +42,13 @@ describe('delete', function () {
     const jobId = await testContext.boss.send(testContext.schema)
     expect(jobId).toBeTruthy()
     await testContext.boss.fetch(testContext.schema)
-    await testContext.boss.complete(testContext.schema, jobId)
+    await testContext.boss.complete(testContext.schema, jobId!)
 
     await delay(1000)
 
     await testContext.boss.supervise(testContext.schema)
 
-    const job = await testContext.boss.getJobById(testContext.schema, jobId)
+    const job = await testContext.boss.getJobById(testContext.schema, jobId!)
 
     expect(job).toBeFalsy()
   })
@@ -63,9 +63,9 @@ describe('delete', function () {
 
     await testContext.boss.fetch(testContext.schema)
 
-    await testContext.boss.deleteJob(testContext.schema, jobId)
+    await testContext.boss.deleteJob(testContext.schema, jobId!)
 
-    const job = await testContext.boss.getJobById(testContext.schema, jobId)
+    const job = await testContext.boss.getJobById(testContext.schema, jobId!)
 
     expect(job).toBeFalsy()
   })

@@ -122,7 +122,7 @@ describe('queuePolicy', function () {
 
       await testContext.boss.fail(testContext.schema, job1.id)
 
-      const job1WithData = await testContext.boss.getJobById(testContext.schema, jobId1)
+      const job1WithData = await testContext.boss.getJobById(testContext.schema, jobId1!)
 
       expect(job1WithData!.state).toBe('retry')
 
@@ -132,7 +132,7 @@ describe('queuePolicy', function () {
 
       await testContext.boss.fetch(testContext.schema)
 
-      const job1a = await testContext.boss.getJobById(testContext.schema, jobId1)
+      const job1a = await testContext.boss.getJobById(testContext.schema, jobId1!)
 
       expect(job1a!.state).toBe('active')
 
@@ -151,8 +151,8 @@ describe('queuePolicy', function () {
       const jobId1 = await testContext.boss.send(testContext.schema, null, { expireInSeconds: 1 })
       expect(jobId1).toBeTruthy()
       await testContext.boss.fetch(testContext.schema)
-      await testContext.boss.fail(testContext.schema, jobId1)
-      const job1Data = await testContext.boss.getJobById(testContext.schema, jobId1)
+      await testContext.boss.fail(testContext.schema, jobId1!)
+      const job1Data = await testContext.boss.getJobById(testContext.schema, jobId1!)
       expect(job1Data!.state).toBe('retry')
 
       // higher priority new job should be active next
@@ -163,9 +163,9 @@ describe('queuePolicy', function () {
       const jobId3 = await testContext.boss.send(testContext.schema)
       expect(jobId3).toBeTruthy()
 
-      await testContext.boss.fail(testContext.schema, jobId2)
+      await testContext.boss.fail(testContext.schema, jobId2!)
 
-      const job2Data = await testContext.boss.getJobById(testContext.schema, jobId2)
+      const job2Data = await testContext.boss.getJobById(testContext.schema, jobId2!)
 
       expect(job2Data!.state).toBe('failed')
 
@@ -195,13 +195,13 @@ describe('queuePolicy', function () {
 
       await testContext.boss.fail(testContext.schema, jobA.id)
 
-      let jobAWithData = await testContext.boss.getJobById(testContext.schema, jobAId)
+      let jobAWithData = await testContext.boss.getJobById(testContext.schema, jobAId!)
 
       expect(jobAWithData!.state).toBe('retry')
 
       await testContext.boss.fetch(testContext.schema)
 
-      jobAWithData = await testContext.boss.getJobById(testContext.schema, jobAId)
+      jobAWithData = await testContext.boss.getJobById(testContext.schema, jobAId!)
 
       expect(jobAWithData!.state).toBe('active')
 
@@ -209,7 +209,7 @@ describe('queuePolicy', function () {
 
       expect(jobB).toBeTruthy()
 
-      const jobBWithData = await testContext.boss.getJobById(testContext.schema, jobBId)
+      const jobBWithData = await testContext.boss.getJobById(testContext.schema, jobBId!)
 
       expect(jobBWithData!.state).toBe('active')
 
@@ -335,7 +335,7 @@ describe('queuePolicy', function () {
 
       await testContext.boss.fail(testContext.schema, job1.id)
 
-      const job1WithData = await testContext.boss.getJobById(testContext.schema, jobId1)
+      const job1WithData = await testContext.boss.getJobById(testContext.schema, jobId1!)
 
       expect(job1WithData!.state).toBe('retry')
 
@@ -346,7 +346,7 @@ describe('queuePolicy', function () {
 
       await testContext.boss.fetch(testContext.schema)
 
-      const job1a = await testContext.boss.getJobById(testContext.schema, jobId1)
+      const job1a = await testContext.boss.getJobById(testContext.schema, jobId1!)
 
       expect(job1a!.state).toBe('active')
 
@@ -355,7 +355,7 @@ describe('queuePolicy', function () {
       expect(blockedSecondActive).toBeFalsy()
 
       // We fail the job again, this time it goes to failed state
-      await testContext.boss.fail(testContext.schema, jobId1)
+      await testContext.boss.fail(testContext.schema, jobId1!)
 
       // sending a new job should work now that the first job is failed
       const newJobId = await testContext.boss.send(testContext.schema)
@@ -383,13 +383,13 @@ describe('queuePolicy', function () {
 
       await testContext.boss.fail(testContext.schema, jobA.id)
 
-      let jobAWithData = await testContext.boss.getJobById(testContext.schema, jobAId)
+      let jobAWithData = await testContext.boss.getJobById(testContext.schema, jobAId!)
 
       expect(jobAWithData!.state).toBe('retry')
 
       await testContext.boss.fetch(testContext.schema)
 
-      jobAWithData = await testContext.boss.getJobById(testContext.schema, jobAId)
+      jobAWithData = await testContext.boss.getJobById(testContext.schema, jobAId!)
 
       expect(jobAWithData!.state).toBe('active')
 
@@ -397,7 +397,7 @@ describe('queuePolicy', function () {
 
       expect(jobB).toBeTruthy()
 
-      const jobBWithData = await testContext.boss.getJobById(testContext.schema, jobBId)
+      const jobBWithData = await testContext.boss.getJobById(testContext.schema, jobBId!)
 
       expect(jobBWithData!.state).toBe('active')
 

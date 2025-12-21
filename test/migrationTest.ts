@@ -1,5 +1,4 @@
-import { expect } from 'vitest'
-import { beforeEach } from 'vitest'
+import { expect, beforeEach } from 'vitest'
 import { PgBoss, getConstructionPlans, getMigrationPlans, getRollbackPlans } from '../src/index.ts'
 import { getDb } from './testHelper.ts'
 import Contractor from '../src/contractor.ts'
@@ -115,7 +114,7 @@ describe('migration', function () {
 
     const oneVersionAgo = await contractor.schemaVersion()
 
-    await contractor.next(oneVersionAgo)
+    await contractor.next(oneVersionAgo!)
 
     const version = await contractor.schemaVersion()
 
@@ -163,17 +162,17 @@ describe('migration', function () {
 
     expect(oneVersionAgo).not.toBe(currentSchemaVersion)
 
-    await contractor.rollback(oneVersionAgo)
+    await contractor.rollback(oneVersionAgo!)
     const twoVersionsAgo = await contractor.schemaVersion()
 
     expect(twoVersionsAgo).not.toBe(oneVersionAgo)
 
-    await contractor.next(twoVersionsAgo)
+    await contractor.next(twoVersionsAgo!)
     const oneVersionAgoPart2 = await contractor.schemaVersion()
 
     expect(oneVersionAgo).toBe(oneVersionAgoPart2)
 
-    await contractor.next(oneVersionAgo)
+    await contractor.next(oneVersionAgo!)
     const version = await contractor.schemaVersion()
 
     expect(version).toBe(currentSchemaVersion)
@@ -190,7 +189,7 @@ describe('migration', function () {
     const oneVersionAgo = await contractor.schemaVersion()
     expect(oneVersionAgo).toBe(currentSchemaVersion - 1)
 
-    await contractor.rollback(oneVersionAgo)
+    await contractor.rollback(oneVersionAgo!)
     const twoVersionsAgo = await contractor.schemaVersion()
     expect(twoVersionsAgo).toBe(currentSchemaVersion - 2)
 
@@ -207,6 +206,7 @@ describe('migration', function () {
     await contractor.create()
 
     try {
+      // @ts-expect-error testing invalid version type
       await contractor.migrate('¯\\_(ツ)_//¯')
     } catch (error: any) {
       expect(error.message).toContain('not found')

@@ -19,7 +19,7 @@ describe('expire', function () {
 
     await testContext.boss.supervise(testContext.schema)
 
-    const job = await testContext.boss.getJobById(testContext.schema, jobId)
+    const job = await testContext.boss.getJobById(testContext.schema, jobId!)
 
     expect(job!.state).toBe('failed')
   })
@@ -39,7 +39,7 @@ describe('expire', function () {
 
     await testContext.boss.supervise(testContext.schema)
 
-    const job = await testContext.boss.getJobById(testContext.schema, jobId)
+    const job = await testContext.boss.getJobById(testContext.schema, jobId!)
 
     expect(job!.state).toBe('failed')
   })
@@ -63,7 +63,7 @@ describe('expire', function () {
 
     await delay(4000)
 
-    const job = await testContext.boss.getJobById(testContext.schema, jobId)
+    const job = await testContext.boss.getJobById(testContext.schema, jobId!)
 
     expect(job!.state).toBe('failed')
   })

@@ -1,7 +1,6 @@
+import { expect, it } from 'vitest'
 import * as helper from './testHelper.ts'
-import { expect } from 'vitest'
 import { testContext } from './hooks.ts'
-import { it } from 'vitest'
 
 describe('speed', function () {
   const jobCount = 5_000
