@@ -24,6 +24,87 @@ describe('schedule', function () {
     assert(job)
   })
 
+  it('should send jobs based on every one second expression', async function () {
+    const config = {
+      ...this.bossConfig,
+      cronMonitorIntervalSeconds: 1,
+      cronWorkerIntervalSeconds: 1,
+      schedule: true
+    }
+
+    this.boss = await helper.start(config)
+
+    await this.boss.schedule(this.schema, '* * * * * *')
+
+    let numJobs = 0
+    await this.boss.work(this.schema, async () => {
+      numJobs++
+    })
+
+    await delay(4000)
+
+    assert(numJobs > 1)
+  })
+
+  it('should send jobs based on every one five seconds expression', async function () {
+    const config = {
+      ...this.bossConfig,
+      cronMonitorIntervalSeconds: 1,
+      cronWorkerIntervalSeconds: 1,
+      schedule: true
+    }
+
+    this.boss = await helper.start(config)
+
+    await this.boss.schedule(this.schema, '*/5 * * * * *')
+
+    let numJobs = 0
+    await this.boss.work(this.schema, async () => {
+      numJobs++
+    })
+
+    await delay(3000)
+
+    assert.equal(numJobs, 1)
+
+    await delay(6000)
+
+    assert.equal(numJobs, 2)
+  }).timeout(15000)
+
+  it("in case of restart, jobs shouldn't be overscheduled", async function () {
+    const config = {
+      ...this.bossConfig,
+      cronMonitorIntervalSeconds: 1,
+      cronWorkerIntervalSeconds: 1,
+      schedule: true
+    }
+
+    this.boss = await helper.start(config)
+
+    await this.boss.schedule(this.schema, '*/59 * * * * *')
+
+    let numJobs = 0
+    this.boss.work(this.schema, async () => {
+      numJobs++
+    })
+
+    await delay(4000)
+
+    assert.equal(numJobs, 1)
+
+    // simulate restart
+    await this.boss.stop({ graceful: true })
+    await this.boss.start()
+    await this.boss.work(this.schema, async () => {
+      numJobs++
+    })
+
+    await delay(4000)
+
+    assert.equal(numJobs, 1)
+  })
+
   it('should set job metadata correctly', async function () {
     const config = {
       ...this.bossConfig,
