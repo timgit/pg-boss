@@ -7,8 +7,6 @@ export default defineConfig({
     include: ['test/**/*Test.ts'],
     setupFiles: ['./test/hooks.ts'],
     globals: true,
-    maxWorkers: 1,
-    minWorkers: 1,
     coverage: {
       reporter: ['lcov', 'text-summary', 'text'],
       include: ['src/**/*.ts']
