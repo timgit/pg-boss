@@ -37,27 +37,24 @@ describe('work', function () {
   })
 
   it('should honor a custom polling interval', async function () {
-    testContext.boss = await helper.start({ ...testContext.bossConfig, __test__enableSpies: true })
+    testContext.boss = await helper.start(testContext.bossConfig)
 
-    const spy = testContext.boss.getSpy(testContext.schema)
     const pollingIntervalSeconds = 1
+    const timeout = 5000
     let processCount = 0
-    const expectedProcessCount = 5
+    const jobCount = 10
 
-    const jobIds: string[] = []
-    for (let i = 0; i < expectedProcessCount; i++) {
-      const jobId = await testContext.boss.send(testContext.schema)
-      jobIds.push(jobId!)
+    for (let i = 0; i < jobCount; i++) {
+      await testContext.boss.send(testContext.schema)
     }
 
     await testContext.boss.work(testContext.schema, { pollingIntervalSeconds }, async () => {
       processCount++
     })
 
-    // Wait for all jobs to complete
-    await Promise.all(jobIds.map(id => spy.waitForJobWithId(id, 'completed')))
+    await delay(timeout)
 
-    expect(processCount).toBe(expectedProcessCount)
+    expect(processCount).toBe(timeout / 1000 / pollingIntervalSeconds)
   })
 
   it('should provide abort signal to job handler', async function () {
