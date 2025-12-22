@@ -1,41 +1,43 @@
 import { expect } from 'vitest'
 import * as helper from './testHelper.ts'
-import { testContext } from './hooks.ts'
+import { assertTruthy } from './testHelper.ts'
+import { ctx } from './hooks.ts'
 
 describe('cancel', function () {
   it('should reject missing id argument', async function () {
-    testContext.boss = await helper.start(testContext.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
 
     await expect(async () => {
       // @ts-ignore
-      await testContext.boss.resume()
+      await ctx.boss.resume()
     }).rejects.toThrow()
   })
 
   it('should cancel and resume a pending job', async function () {
-    testContext.boss = await helper.start(testContext.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
 
-    const jobId = await testContext.boss.send(testContext.schema, null, { startAfter: 1 })
+    const jobId = await ctx.boss.send(ctx.schema, null, { startAfter: 1 })
 
     expect(jobId).toBeTruthy()
 
-    await testContext.boss.cancel(testContext.schema, jobId!)
+    assertTruthy(jobId)
+    await ctx.boss.cancel(ctx.schema, jobId)
 
-    const job = await testContext.boss.getJobById(testContext.schema, jobId!)
+    const job = await ctx.boss.getJobById(ctx.schema, jobId)
 
     expect(job && job.state === 'cancelled').toBeTruthy()
 
-    await testContext.boss.resume(testContext.schema, jobId!)
+    await ctx.boss.resume(ctx.schema, jobId)
 
-    const job2 = await testContext.boss.getJobById(testContext.schema, jobId!)
+    const job2 = await ctx.boss.getJobById(ctx.schema, jobId)
 
     expect(job2 && job2.state === 'created').toBeTruthy()
   })
 
   it('should cancel and resume a pending job with custom connection', async function () {
-    testContext.boss = await helper.start(testContext.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
 
-    const jobId = await testContext.boss.send(testContext.schema, null, { startAfter: 1 })
+    const jobId = await ctx.boss.send(ctx.schema, null, { startAfter: 1 })
 
     expect(jobId).toBeTruthy()
 
@@ -50,15 +52,16 @@ describe('cancel', function () {
       }
     }
 
-    await testContext.boss.cancel(testContext.schema, jobId!, { db })
+    assertTruthy(jobId)
+    await ctx.boss.cancel(ctx.schema, jobId, { db })
 
-    const job = await testContext.boss.getJobById(testContext.schema, jobId!, { db })
+    const job = await ctx.boss.getJobById(ctx.schema, jobId, { db })
 
     expect(job && job.state === 'cancelled').toBeTruthy()
 
-    await testContext.boss.resume(testContext.schema, jobId!, { db })
+    await ctx.boss.resume(ctx.schema, jobId, { db })
 
-    const job2 = await testContext.boss.getJobById(testContext.schema, jobId!, { db })
+    const job2 = await ctx.boss.getJobById(ctx.schema, jobId, { db })
 
     expect(job2 && job2.state === 'created').toBeTruthy()
     expect(callCount).toBe(4)

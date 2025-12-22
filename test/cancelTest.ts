@@ -1,58 +1,60 @@
 import { expect } from 'vitest'
 import * as helper from './testHelper.ts'
-import { testContext } from './hooks.ts'
+import { assertTruthy } from './testHelper.ts'
+import { ctx } from './hooks.ts'
 
 describe('cancel', function () {
   it('should reject missing arguments', async function () {
-    testContext.boss = await helper.start(testContext.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
     await expect(async () => {
       // @ts-ignore
-      await testContext.boss.cancel()
+      await ctx.boss.cancel()
     }).rejects.toThrow()
   })
 
   it('should cancel a pending job', async function () {
-    testContext.boss = await helper.start(testContext.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
 
-    const jobId = await testContext.boss.send(testContext.schema, {}, { startAfter: 1 })
+    const jobId = await ctx.boss.send(ctx.schema, {}, { startAfter: 1 })
 
-    await testContext.boss.cancel(testContext.schema, jobId!)
+    assertTruthy(jobId)
+    await ctx.boss.cancel(ctx.schema, jobId)
 
-    const job = await testContext.boss.getJobById(testContext.schema, jobId!)
+    const job = await ctx.boss.getJobById(ctx.schema, jobId)
 
     expect(job && job.state === 'cancelled').toBeTruthy()
   })
 
   it('should not cancel a completed job', async function () {
-    testContext.boss = await helper.start(testContext.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
 
-    await testContext.boss.send(testContext.schema)
+    await ctx.boss.send(ctx.schema)
 
-    const [job] = await testContext.boss.fetch(testContext.schema)
+    const [job] = await ctx.boss.fetch(ctx.schema)
 
-    const completeResult = await testContext.boss.complete(testContext.schema, job.id)
+    const completeResult = await ctx.boss.complete(ctx.schema, job.id)
 
     expect(completeResult.affected).toBe(1)
 
-    const cancelResult = await testContext.boss.cancel(testContext.schema, job.id)
+    const cancelResult = await ctx.boss.cancel(ctx.schema, job.id)
 
     expect(cancelResult.affected).toBe(0)
   })
 
   it('should cancel a batch of jobs', async function () {
-    testContext.boss = await helper.start(testContext.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
 
     const jobs = await Promise.all([
-      testContext.boss.send(testContext.schema),
-      testContext.boss.send(testContext.schema),
-      testContext.boss.send(testContext.schema)
+      ctx.boss.send(ctx.schema),
+      ctx.boss.send(ctx.schema),
+      ctx.boss.send(ctx.schema)
     ])
 
-    await testContext.boss.cancel(testContext.schema, jobs as string[])
+    await ctx.boss.cancel(ctx.schema, jobs as string[])
   })
 
   it('should cancel a pending job with custom connection', async function () {
-    testContext.boss = await helper.start(testContext.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
 
     let called = false
     const _db = await helper.getDb()
@@ -63,11 +65,12 @@ describe('cancel', function () {
       }
     }
 
-    const jobId = await testContext.boss.send(testContext.schema, {}, { startAfter: 1 })
+    const jobId = await ctx.boss.send(ctx.schema, {}, { startAfter: 1 })
 
-    await testContext.boss.cancel(testContext.schema, jobId!, { db })
+    assertTruthy(jobId)
+    await ctx.boss.cancel(ctx.schema, jobId, { db })
 
-    const job = await testContext.boss.getJobById(testContext.schema, jobId!)
+    const job = await ctx.boss.getJobById(ctx.schema, jobId)
 
     expect(job && job.state === 'cancelled').toBeTruthy()
     expect(called).toBe(true)

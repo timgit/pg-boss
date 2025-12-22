@@ -1,7 +1,7 @@
 import { expect } from 'vitest'
 import { PgBoss } from '../src/index.ts'
 import { delay } from '../src/tools.ts'
-import { testContext } from './hooks.ts'
+import { ctx } from './hooks.ts'
 
 describe('background processing error handling', function () {
   it('maintenance error handling works', async function () {
@@ -11,17 +11,17 @@ describe('background processing error handling', function () {
       __test__throw_maint: 'my maintenance error'
     }
 
-    const config = { ...testContext.bossConfig, ...defaults }
-    testContext.boss = new PgBoss(config)
+    const config = { ...ctx.bossConfig, ...defaults }
+    ctx.boss = new PgBoss(config)
 
     let errorCount = 0
 
-    testContext.boss.on('error', (error) => {
+    ctx.boss.on('error', (error) => {
       expect(error.message).toBe(config.__test__throw_maint)
       errorCount++
     })
 
-    await testContext.boss.start()
+    await ctx.boss.start()
 
     await delay(3000)
 

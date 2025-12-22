@@ -1,11 +1,11 @@
 import { expect, beforeEach } from 'vitest'
 import { PgBoss, getConstructionPlans, getMigrationPlans, getRollbackPlans } from '../src/index.ts'
-import { getDb } from './testHelper.ts'
+import { getDb, assertTruthy } from './testHelper.ts'
 import Contractor from '../src/contractor.ts'
 import { getAll, migrate } from '../src/migrationStore.ts'
 import packageJson from '../package.json' with { type: 'json' }
 import { setVersion } from '../src/plans.ts'
-import { testContext } from './hooks.ts'
+import { ctx } from './hooks.ts'
 
 const currentSchemaVersion = packageJson.pgboss.schema
 
@@ -15,7 +15,7 @@ describe('migration', function () {
   beforeEach(async function () {
     const db = await getDb({ debug: false })
     // @ts-ignore
-    contractor = new Contractor(db, testContext.bossConfig)
+    contractor = new Contractor(db, ctx.bossConfig)
   })
 
   it('should include create schema by default ', function () {
@@ -31,10 +31,10 @@ describe('migration', function () {
   })
 
   it('should not install if createSchema option is false and schema is missing', async function () {
-    const config = { ...testContext.bossConfig, createSchema: false }
-    testContext.boss = new PgBoss(config)
+    const config = { ...ctx.bossConfig, createSchema: false }
+    ctx.boss = new PgBoss(config)
     await expect(async () => {
-      await testContext.boss!.start()
+      await ctx.boss!.start()
     }).rejects.toThrow()
   })
 
@@ -77,7 +77,7 @@ describe('migration', function () {
   })
 
   it('should not migrate when current version is not found in migration store', async function () {
-    const config = { ...testContext.bossConfig }
+    const config = { ...ctx.bossConfig }
 
     await contractor.create()
 
@@ -85,10 +85,10 @@ describe('migration', function () {
     // version 20 was v9 and dropped from the migration store with v10
     await db.executeSql(setVersion(config.schema, 20))
 
-    testContext.boss = new PgBoss(config)
+    ctx.boss = new PgBoss(config)
 
     await expect(async () => {
-      await testContext.boss!.start()
+      await ctx.boss!.start()
     }).rejects.toThrow()
   })
 
@@ -101,7 +101,8 @@ describe('migration', function () {
     expect(oldVersion).not.toBe(currentSchemaVersion)
     expect(oldVersion).not.toBeNull()
 
-    await contractor.migrate(oldVersion!)
+    assertTruthy(oldVersion)
+    await contractor.migrate(oldVersion)
     const newVersion = await contractor.schemaVersion()
 
     expect(newVersion).toBe(currentSchemaVersion)
@@ -114,7 +115,8 @@ describe('migration', function () {
 
     const oneVersionAgo = await contractor.schemaVersion()
 
-    await contractor.next(oneVersionAgo!)
+    assertTruthy(oneVersionAgo)
+    await contractor.next(oneVersionAgo)
 
     const version = await contractor.schemaVersion()
 
@@ -126,11 +128,11 @@ describe('migration', function () {
 
     await contractor.rollback(currentSchemaVersion)
 
-    const config = { ...testContext.bossConfig }
+    const config = { ...ctx.bossConfig }
 
-    testContext.boss = new PgBoss(config)
+    ctx.boss = new PgBoss(config)
 
-    await testContext.boss.start()
+    await ctx.boss.start()
 
     const version = await contractor.schemaVersion()
 
@@ -140,46 +142,48 @@ describe('migration', function () {
   it.skip('should migrate through 2 versions back and forth', async function () {
     const queue = 'migrate-back-2-and-forward'
 
-    const config = { ...testContext.bossConfig }
+    const config = { ...ctx.bossConfig }
 
-    testContext.boss = new PgBoss(config)
+    ctx.boss = new PgBoss(config)
 
-    await testContext.boss.start()
+    await ctx.boss.start()
 
     // creating jobs in 3 states to have data to migrate back and forth
 
     // completed job
-    await testContext.boss.createQueue(queue)
-    await testContext.boss.send(queue)
-    const [job] = await testContext.boss.fetch(queue)
-    await testContext.boss.complete(queue, job.id)
+    await ctx.boss.createQueue(queue)
+    await ctx.boss.send(queue)
+    const [job] = await ctx.boss.fetch(queue)
+    await ctx.boss.complete(queue, job.id)
 
     // created job
-    await testContext.boss.send(queue)
+    await ctx.boss.send(queue)
 
     await contractor.rollback(currentSchemaVersion)
     const oneVersionAgo = await contractor.schemaVersion()
 
     expect(oneVersionAgo).not.toBe(currentSchemaVersion)
 
-    await contractor.rollback(oneVersionAgo!)
+    assertTruthy(oneVersionAgo)
+    await contractor.rollback(oneVersionAgo)
     const twoVersionsAgo = await contractor.schemaVersion()
 
     expect(twoVersionsAgo).not.toBe(oneVersionAgo)
 
-    await contractor.next(twoVersionsAgo!)
+    assertTruthy(twoVersionsAgo)
+    await contractor.next(twoVersionsAgo)
     const oneVersionAgoPart2 = await contractor.schemaVersion()
 
     expect(oneVersionAgo).toBe(oneVersionAgoPart2)
 
-    await contractor.next(oneVersionAgo!)
+    await contractor.next(oneVersionAgo)
     const version = await contractor.schemaVersion()
 
     expect(version).toBe(currentSchemaVersion)
 
-    await testContext.boss.send(queue)
-    const [job2] = await testContext.boss.fetch(queue)
-    await testContext.boss.complete(queue, job2.id)
+    await ctx.boss.send(queue)
+    const [job2] = await ctx.boss.fetch(queue)
+    await ctx.boss.complete(queue, job2.id)
   })
 
   it.skip('should migrate to latest during start if on previous 2 schema versions', async function () {
@@ -189,13 +193,14 @@ describe('migration', function () {
     const oneVersionAgo = await contractor.schemaVersion()
     expect(oneVersionAgo).toBe(currentSchemaVersion - 1)
 
-    await contractor.rollback(oneVersionAgo!)
+    assertTruthy(oneVersionAgo)
+    await contractor.rollback(oneVersionAgo)
     const twoVersionsAgo = await contractor.schemaVersion()
     expect(twoVersionsAgo).toBe(currentSchemaVersion - 2)
 
-    const config = { ...testContext.bossConfig }
-    testContext.boss = new PgBoss(config)
-    await testContext.boss.start()
+    const config = { ...ctx.bossConfig }
+    ctx.boss = new PgBoss(config)
+    await ctx.boss.start()
 
     const version = await contractor.schemaVersion()
 
@@ -214,7 +219,7 @@ describe('migration', function () {
   })
 
   it('should roll back an error during a migration', async function () {
-    const config = { ...testContext.bossConfig }
+    const config = { ...ctx.bossConfig }
 
     config.migrations = getAll(config.schema)
 
@@ -256,10 +261,10 @@ describe('migration', function () {
   })
 
   it('should not install if migrate option is false', async function () {
-    const config = { ...testContext.bossConfig, migrate: false }
-    testContext.boss = new PgBoss(config)
+    const config = { ...ctx.bossConfig, migrate: false }
+    ctx.boss = new PgBoss(config)
     await expect(async () => {
-      await testContext.boss!.start()
+      await ctx.boss!.start()
     }).rejects.toThrow()
   })
 
@@ -268,26 +273,26 @@ describe('migration', function () {
 
     await contractor.rollback(currentSchemaVersion)
 
-    const config = { ...testContext.bossConfig, migrate: false }
-    testContext.boss = new PgBoss(config)
+    const config = { ...ctx.bossConfig, migrate: false }
+    ctx.boss = new PgBoss(config)
 
     await expect(async () => {
-      await testContext.boss!.start()
+      await ctx.boss!.start()
     }).rejects.toThrow()
   })
 
   it('should still work if migrate option is false', async function () {
     await contractor.create()
 
-    const config = { ...testContext.bossConfig, migrate: false }
+    const config = { ...ctx.bossConfig, migrate: false }
 
-    testContext.boss = new PgBoss(config)
+    ctx.boss = new PgBoss(config)
 
-    await testContext.boss.start()
-    await testContext.boss.createQueue(testContext.schema)
-    await testContext.boss.send(testContext.schema)
-    const [job] = await testContext.boss.fetch(testContext.schema)
-    await testContext.boss.complete(testContext.schema, job.id)
+    await ctx.boss.start()
+    await ctx.boss.createQueue(ctx.schema)
+    await ctx.boss.send(ctx.schema)
+    const [job] = await ctx.boss.fetch(ctx.schema)
+    await ctx.boss.complete(ctx.schema, job.id)
   })
 
   it('should apply multiple migrations in version order', function () {

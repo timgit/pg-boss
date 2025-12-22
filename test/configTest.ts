@@ -3,11 +3,11 @@ import Db from '../src/db.ts'
 import { PgBoss } from '../src/index.ts'
 import * as helper from './testHelper.ts'
 import packageJson from '../package.json' with { type: 'json' }
-import { testContext } from './hooks.ts'
+import { ctx } from './hooks.ts'
 
 describe('config', function () {
   it('should allow a 50 character custom schema name', async function () {
-    const config = testContext.bossConfig
+    const config = ctx.bossConfig
 
     config.schema = 'thisisareallylongschemanamefortestingmaximumlength'
 
@@ -15,15 +15,15 @@ describe('config', function () {
 
     expect(config.schema.length).toBe(50)
 
-    testContext.boss = new PgBoss(config)
+    ctx.boss = new PgBoss(config)
 
-    await testContext.boss.start()
+    await ctx.boss.start()
 
     await helper.dropSchema(config.schema)
   })
 
   it('should not allow more than 50 characters in schema name', async function () {
-    const config = testContext.bossConfig
+    const config = ctx.bossConfig
 
     config.schema = 'thisisareallylongschemanamefortestingmaximumlengthb'
 
@@ -36,13 +36,13 @@ describe('config', function () {
 
   it('should accept a connectionString property', async function () {
     const connectionString = helper.getConnectionString()
-    testContext.boss = new PgBoss({ connectionString, schema: testContext.bossConfig.schema })
+    ctx.boss = new PgBoss({ connectionString, schema: ctx.bossConfig.schema })
 
-    await testContext.boss.start()
+    await ctx.boss.start()
   })
 
   it('should not allow calling job instance functions if not started', async function () {
-    const boss = new PgBoss(testContext.bossConfig)
+    const boss = new PgBoss(ctx.bossConfig)
 
     await expect(async () => {
       await boss.send('queue1')
@@ -50,24 +50,24 @@ describe('config', function () {
   })
 
   it('start() should return instance after', async function () {
-    testContext.boss = await helper.start(testContext.bossConfig)
-    const result2 = await testContext.boss.start()
+    ctx.boss = await helper.start(ctx.bossConfig)
+    const result2 = await ctx.boss.start()
     expect(result2).toBeTruthy()
   })
 
   it('isInstalled() should indicate whether db schema is installed', async function () {
-    const db = new Db(testContext.bossConfig)
+    const db = new Db(ctx.bossConfig)
     await db.open()
 
-    testContext.boss = new PgBoss({ ...testContext.bossConfig, db })
-    expect(await testContext.boss.isInstalled()).toBe(false)
-    await testContext.boss.start()
-    expect(await testContext.boss.isInstalled()).toBe(true)
+    ctx.boss = new PgBoss({ ...ctx.bossConfig, db })
+    expect(await ctx.boss.isInstalled()).toBe(false)
+    await ctx.boss.start()
+    expect(await ctx.boss.isInstalled()).toBe(true)
   })
 
   it('schemaVersion() should return current version', async function () {
-    testContext.boss = await helper.start(testContext.bossConfig)
-    const version = await testContext.boss.schemaVersion()
+    ctx.boss = await helper.start(ctx.bossConfig)
+    const version = await ctx.boss.schemaVersion()
     expect(version).toBe(packageJson.pgboss.schema)
   })
 })

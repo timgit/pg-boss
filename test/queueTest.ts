@@ -1,186 +1,187 @@
 import { expect } from 'vitest'
 import * as helper from './testHelper.ts'
+import { assertTruthy } from './testHelper.ts'
 import { states } from '../src/index.ts'
-import { testContext } from './hooks.ts'
+import { ctx } from './hooks.ts'
 
 describe('queues', function () {
   it('should create a queue', async function () {
-    testContext.boss = await helper.start({ ...testContext.bossConfig, noDefault: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
-    await testContext.boss.createQueue(testContext.schema)
+    await ctx.boss.createQueue(ctx.schema)
   })
 
   it('should not add a policy property when creating a queue if it is missing', async function () {
-    testContext.boss = await helper.start({ ...testContext.bossConfig, noDefault: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
     const options = {}
 
-    await testContext.boss.createQueue(testContext.schema, options)
+    await ctx.boss.createQueue(ctx.schema, options)
 
     expect(Object.keys(options).length).toBe(0)
   })
 
   it('createQueue should work if queue already exists', async function () {
-    testContext.boss = await helper.start({ ...testContext.bossConfig, noDefault: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
-    await testContext.boss.createQueue(testContext.schema)
-    await testContext.boss.createQueue(testContext.schema)
+    await ctx.boss.createQueue(ctx.schema)
+    await ctx.boss.createQueue(ctx.schema)
   })
 
   it('should reject a queue with invalid characters', async function () {
-    testContext.boss = await helper.start({ ...testContext.bossConfig, noDefault: true })
-    const queue = `*${testContext.bossConfig.schema}`
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+    const queue = `*${ctx.bossConfig.schema}`
     await expect(async () => {
-      await testContext.boss!.createQueue(queue)
+      await ctx.boss!.createQueue(queue)
     }).rejects.toThrow()
   })
 
   it('should reject a queue with invalid policy', async function () {
-    testContext.boss = await helper.start({ ...testContext.bossConfig, noDefault: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
     await expect(async () => {
       // @ts-ignore
-      await testContext.boss.createQueue(testContext.schema, { policy: 'something' })
+      await ctx.boss.createQueue(ctx.schema, { policy: 'something' })
     }).rejects.toThrow()
   })
 
   it('should reject using a queue if not created', async function () {
-    testContext.boss = await helper.start({ ...testContext.bossConfig, noDefault: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
     await expect(async () => {
-      await testContext.boss!.send(testContext.schema)
+      await ctx.boss!.send(ctx.schema)
     }).rejects.toThrow()
   })
 
   it('should create a queue with standard policy', async function () {
-    testContext.boss = await helper.start({ ...testContext.bossConfig, noDefault: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
-    await testContext.boss.createQueue(testContext.schema, { policy: 'standard' })
+    await ctx.boss.createQueue(ctx.schema, { policy: 'standard' })
   })
 
   it('should delete and then create a queue', async function () {
-    testContext.boss = await helper.start({ ...testContext.bossConfig, noDefault: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
-    await testContext.boss.createQueue(testContext.schema)
-    expect(await testContext.boss.getQueue(testContext.schema)).toBeTruthy()
-    await testContext.boss.deleteQueue(testContext.schema)
-    await testContext.boss.createQueue(testContext.schema)
+    await ctx.boss.createQueue(ctx.schema)
+    expect(await ctx.boss.getQueue(ctx.schema)).toBeTruthy()
+    await ctx.boss.deleteQueue(ctx.schema)
+    await ctx.boss.createQueue(ctx.schema)
   })
 
   it('should delete an empty queue', async function () {
-    testContext.boss = await helper.start({ ...testContext.bossConfig, noDefault: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
-    await testContext.boss.createQueue(testContext.schema)
-    await testContext.boss.send(testContext.schema)
-    await testContext.boss.deleteAllJobs(testContext.schema)
-    await testContext.boss.deleteQueue(testContext.schema)
+    await ctx.boss.createQueue(ctx.schema)
+    await ctx.boss.send(ctx.schema)
+    await ctx.boss.deleteAllJobs(ctx.schema)
+    await ctx.boss.deleteQueue(ctx.schema)
   })
 
   it('should truncate a partitioned queue and leave other queues alone', async function () {
-    testContext.boss = await helper.start({ ...testContext.bossConfig, noDefault: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
-    const queue2 = `${testContext.schema}2`
-    await testContext.boss.createQueue(queue2)
-    await testContext.boss.send(queue2)
+    const queue2 = `${ctx.schema}2`
+    await ctx.boss.createQueue(queue2)
+    await ctx.boss.send(queue2)
 
-    await testContext.boss.createQueue(testContext.schema, { partition: true })
-    await testContext.boss.send(testContext.schema)
+    await ctx.boss.createQueue(ctx.schema, { partition: true })
+    await ctx.boss.send(ctx.schema)
 
-    await testContext.boss.deleteAllJobs(testContext.schema)
-    await testContext.boss.deleteQueue(testContext.schema)
+    await ctx.boss.deleteAllJobs(ctx.schema)
+    await ctx.boss.deleteQueue(ctx.schema)
 
-    const { queuedCount } = await testContext.boss.getQueueStats(queue2)
+    const { queuedCount } = await ctx.boss.getQueueStats(queue2)
     expect(queuedCount).toBeTruthy()
   })
 
   it('should truncate a partitioned queue', async function () {
-    testContext.boss = await helper.start({ ...testContext.bossConfig, noDefault: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
-    await testContext.boss.createQueue(testContext.schema, { partition: true })
-    await testContext.boss.send(testContext.schema)
-    await testContext.boss.deleteAllJobs(testContext.schema)
-    await testContext.boss.deleteQueue(testContext.schema)
+    await ctx.boss.createQueue(ctx.schema, { partition: true })
+    await ctx.boss.send(ctx.schema)
+    await ctx.boss.deleteAllJobs(ctx.schema)
+    await ctx.boss.deleteQueue(ctx.schema)
   })
 
   it('should delete all jobs from all queues, included partitioned', async function () {
-    testContext.boss = await helper.start({ ...testContext.bossConfig, noDefault: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
-    await testContext.boss.createQueue(testContext.schema, { partition: true })
-    await testContext.boss.send(testContext.schema)
+    await ctx.boss.createQueue(ctx.schema, { partition: true })
+    await ctx.boss.send(ctx.schema)
 
-    const queue2 = `${testContext.schema}2`
-    await testContext.boss.createQueue(queue2)
-    await testContext.boss.send(queue2)
+    const queue2 = `${ctx.schema}2`
+    await ctx.boss.createQueue(queue2)
+    await ctx.boss.send(queue2)
 
-    await testContext.boss.deleteAllJobs()
+    await ctx.boss.deleteAllJobs()
 
-    const { queuedCount: count1 } = await testContext.boss.getQueueStats(testContext.schema)
-    const { queuedCount: count2 } = await testContext.boss.getQueueStats(queue2)
+    const { queuedCount: count1 } = await ctx.boss.getQueueStats(ctx.schema)
+    const { queuedCount: count2 } = await ctx.boss.getQueueStats(queue2)
 
     expect(count1 + count2).toBe(0)
   })
 
   it('should delete a non-empty queue', async function () {
-    testContext.boss = await helper.start({ ...testContext.bossConfig, noDefault: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
-    await testContext.boss.createQueue(testContext.schema)
-    await testContext.boss.send(testContext.schema)
-    await testContext.boss.deleteQueue(testContext.schema)
+    await ctx.boss.createQueue(ctx.schema)
+    await ctx.boss.send(ctx.schema)
+    await ctx.boss.deleteQueue(ctx.schema)
   })
 
   it('should delete all queued jobs from a queue', async function () {
-    testContext.boss = await helper.start(testContext.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
 
-    const getCount = () => helper.countJobs(testContext.bossConfig.schema, 'job', 'state = $1', [states.created])
+    const getCount = () => helper.countJobs(ctx.bossConfig.schema, 'job', 'state = $1', [states.created])
 
-    await testContext.boss.send(testContext.schema)
+    await ctx.boss.send(ctx.schema)
 
     expect(await getCount()).toBe(1)
 
-    await testContext.boss.deleteQueuedJobs(testContext.schema)
+    await ctx.boss.deleteQueuedJobs(ctx.schema)
 
     expect(await getCount()).toBe(0)
   })
 
   it('should delete all stored jobs from a queue', async function () {
-    testContext.boss = await helper.start(testContext.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
 
     const { completed, failed, cancelled } = states
     const inClause = [completed, failed, cancelled].map(s => `'${s}'`)
-    const getCount = () => helper.countJobs(testContext.bossConfig.schema, 'job', `state IN (${inClause})`)
+    const getCount = () => helper.countJobs(ctx.bossConfig.schema, 'job', `state IN (${inClause})`)
 
-    await testContext.boss.send(testContext.schema)
-    const [job1] = await testContext.boss.fetch(testContext.schema)
+    await ctx.boss.send(ctx.schema)
+    const [job1] = await ctx.boss.fetch(ctx.schema)
     expect(job1?.id).toBeTruthy()
 
-    await testContext.boss.complete(testContext.schema, job1.id)
+    await ctx.boss.complete(ctx.schema, job1.id)
 
     expect(await getCount()).toBe(1)
 
-    await testContext.boss.send(testContext.schema, null, { retryLimit: 0 })
-    const [job2] = await testContext.boss.fetch(testContext.schema)
-    await testContext.boss.fail(testContext.schema, job2.id)
+    await ctx.boss.send(ctx.schema, null, { retryLimit: 0 })
+    const [job2] = await ctx.boss.fetch(ctx.schema)
+    await ctx.boss.fail(ctx.schema, job2.id)
 
     expect(await getCount()).toBe(2)
 
-    await testContext.boss.deleteStoredJobs(testContext.schema)
+    await ctx.boss.deleteStoredJobs(ctx.schema)
 
     expect(await getCount()).toBe(0)
   })
 
   it('getQueue() returns null when missing', async function () {
-    testContext.boss = await helper.start({ ...testContext.bossConfig, noDefault: true })
-    const queue = await testContext.boss.getQueue(testContext.bossConfig.schema)
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+    const queue = await ctx.boss.getQueue(ctx.bossConfig.schema)
     expect(queue).toBe(null)
   })
 
   it('getQueues() returns queues array', async function () {
-    testContext.boss = await helper.start({ ...testContext.bossConfig, noDefault: true })
-    const queue1 = `${testContext.bossConfig.schema}_1`
-    const queue2 = `${testContext.bossConfig.schema}_2`
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+    const queue1 = `${ctx.bossConfig.schema}_1`
+    const queue2 = `${ctx.bossConfig.schema}_2`
 
-    await testContext.boss.createQueue(queue1)
-    await testContext.boss.createQueue(queue2)
+    await ctx.boss.createQueue(queue1)
+    await ctx.boss.createQueue(queue2)
 
-    const queues = await testContext.boss.getQueues()
+    const queues = await ctx.boss.getQueues()
 
     expect(queues.length).toBe(2)
 
@@ -189,10 +190,10 @@ describe('queues', function () {
   })
 
   it('should update queue properties', async function () {
-    testContext.boss = await helper.start({ ...testContext.bossConfig, noDefault: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
-    let deadLetter = `${testContext.schema}_dlq1`
-    await testContext.boss.createQueue(deadLetter)
+    let deadLetter = `${ctx.schema}_dlq1`
+    await ctx.boss.createQueue(deadLetter)
 
     const createProps = {
       policy: 'standard',
@@ -205,13 +206,13 @@ describe('queues', function () {
       deadLetter
     }
 
-    await testContext.boss.createQueue(testContext.schema, createProps)
+    await ctx.boss.createQueue(ctx.schema, createProps)
 
-    let queueObj = await testContext.boss.getQueue(testContext.schema)
+    let queueObj = await ctx.boss.getQueue(ctx.schema)
 
     expect(queueObj).toBeTruthy()
 
-    expect(queueObj!.name).toBe(testContext.schema)
+    expect(queueObj!.name).toBe(ctx.schema)
     expect(queueObj!.policy).toBe(createProps.policy)
     expect(queueObj!.retryLimit).toBe(createProps.retryLimit)
     expect(queueObj!.retryBackoff).toBe(createProps.retryBackoff)
@@ -223,8 +224,8 @@ describe('queues', function () {
     expect(queueObj!.createdOn).toBeTruthy()
     expect(queueObj!.updatedOn).toBeTruthy()
 
-    deadLetter = `${testContext.schema}_dlq2`
-    await testContext.boss.createQueue(deadLetter)
+    deadLetter = `${ctx.schema}_dlq2`
+    await ctx.boss.createQueue(deadLetter)
 
     const updateProps = {
       retryDelay: 2,
@@ -234,9 +235,9 @@ describe('queues', function () {
       deadLetter
     }
 
-    await testContext.boss.updateQueue(testContext.schema, updateProps)
+    await ctx.boss.updateQueue(ctx.schema, updateProps)
 
-    queueObj = await testContext.boss.getQueue(testContext.schema)
+    queueObj = await ctx.boss.getQueue(ctx.schema)
 
     expect(queueObj!.retryLimit).toBe(updateProps.retryLimit)
     expect(queueObj!.retryBackoff).toBe(updateProps.retryBackoff)
@@ -246,31 +247,31 @@ describe('queues', function () {
   })
 
   it('should fail to change queue policy', async function () {
-    testContext.boss = await helper.start({ ...testContext.bossConfig, noDefault: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
-    await testContext.boss.createQueue(testContext.schema, { policy: 'standard' })
+    await ctx.boss.createQueue(ctx.schema, { policy: 'standard' })
 
     await expect(async () => {
       // @ts-ignore
-      await testContext.boss.updateQueue(testContext.schema, { policy: 'exclusive' })
+      await ctx.boss.updateQueue(ctx.schema, { policy: 'exclusive' })
     }).rejects.toThrow()
   })
 
   it('should fail to change queue partitioning', async function () {
-    testContext.boss = await helper.start({ ...testContext.bossConfig, noDefault: true })
-    await testContext.boss.createQueue(testContext.schema, { partition: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+    await ctx.boss.createQueue(ctx.schema, { partition: true })
 
     await expect(async () => {
       // @ts-ignore
-      await testContext.boss.updateQueue(testContext.schema, { partition: false })
+      await ctx.boss.updateQueue(ctx.schema, { partition: false })
     }).rejects.toThrow()
   })
 
   it('jobs should inherit properties from queue', async function () {
-    testContext.boss = await helper.start({ ...testContext.bossConfig, noDefault: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
-    const deadLetter = `${testContext.schema}_dlq`
-    await testContext.boss.createQueue(deadLetter)
+    const deadLetter = `${ctx.schema}_dlq`
+    await ctx.boss.createQueue(deadLetter)
 
     const createProps = {
       retryLimit: 1,
@@ -282,22 +283,23 @@ describe('queues', function () {
       deadLetter
     }
 
-    await testContext.boss.createQueue(testContext.schema, createProps)
+    await ctx.boss.createQueue(ctx.schema, createProps)
 
-    const jobId = await testContext.boss.send(testContext.schema)
+    const jobId = await ctx.boss.send(ctx.schema)
 
-    const job = await testContext.boss.getJobById(testContext.schema, jobId!)
+    assertTruthy(jobId)
+    const job = await ctx.boss.getJobById(ctx.schema, jobId)
 
-    expect(job).toBeTruthy()
+    assertTruthy(job)
 
-    const retentionSeconds = (new Date(job!.keepUntil).getTime() - new Date(job!.createdOn).getTime()) / 1000
+    const retentionSeconds = (new Date(job.keepUntil).getTime() - new Date(job.createdOn).getTime()) / 1000
 
-    expect(job!.retryLimit).toBe(createProps.retryLimit)
-    expect(job!.retryBackoff).toBe(createProps.retryBackoff)
-    expect(job!.retryDelay).toBe(createProps.retryDelay)
-    expect(job!.retryDelayMax).toBe(createProps.retryDelayMax)
-    expect(job!.deadLetter).toBe(createProps.deadLetter)
-    expect(job!.expireInSeconds).toBe(createProps.expireInSeconds)
+    expect(job.retryLimit).toBe(createProps.retryLimit)
+    expect(job.retryBackoff).toBe(createProps.retryBackoff)
+    expect(job.retryDelay).toBe(createProps.retryDelay)
+    expect(job.retryDelayMax).toBe(createProps.retryDelayMax)
+    expect(job.deadLetter).toBe(createProps.deadLetter)
+    expect(job.expireInSeconds).toBe(createProps.expireInSeconds)
     expect(retentionSeconds).toBe(createProps.retentionSeconds)
   })
 })

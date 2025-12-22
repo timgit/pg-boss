@@ -1,47 +1,47 @@
 import { expect } from 'vitest'
 import * as helper from './testHelper.ts'
-import { testContext } from './hooks.ts'
+import { ctx } from './hooks.ts'
 
 describe('fetch', function () {
   it('should reject missing queue argument', async function () {
-    testContext.boss = await helper.start(testContext.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
     await expect(async () => {
       // @ts-ignore
-      await testContext.boss.fetch()
+      await ctx.boss.fetch()
     }).rejects.toThrow()
   })
 
   it('should fetch a job by name manually', async function () {
-    testContext.boss = await helper.start(testContext.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
 
-    await testContext.boss.send(testContext.schema)
-    const [job] = await testContext.boss.fetch(testContext.schema)
-    expect(job.name).toBe(testContext.schema)
+    await ctx.boss.send(ctx.schema)
+    const [job] = await ctx.boss.fetch(ctx.schema)
+    expect(job.name).toBe(ctx.schema)
   })
 
   it('should get a batch of jobs as an array', async function () {
-    testContext.boss = await helper.start(testContext.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
     const batchSize = 4
 
     await Promise.all([
-      testContext.boss.send(testContext.schema),
-      testContext.boss.send(testContext.schema),
-      testContext.boss.send(testContext.schema),
-      testContext.boss.send(testContext.schema)
+      ctx.boss.send(ctx.schema),
+      ctx.boss.send(ctx.schema),
+      ctx.boss.send(ctx.schema),
+      ctx.boss.send(ctx.schema)
     ])
 
-    const jobs = await testContext.boss.fetch(testContext.schema, { batchSize })
+    const jobs = await ctx.boss.fetch(ctx.schema, { batchSize })
 
     expect(jobs.length === batchSize).toBeTruthy()
   })
 
   it('should fetch all metadata for a single job when requested', async function () {
-    testContext.boss = await helper.start(testContext.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
 
-    await testContext.boss.send(testContext.schema)
-    const [job] = await testContext.boss.fetch(testContext.schema, { includeMetadata: true })
+    await ctx.boss.send(ctx.schema)
+    const [job] = await ctx.boss.fetch(ctx.schema, { includeMetadata: true })
 
-    expect(job.name).toBe(testContext.schema)
+    expect(job.name).toBe(ctx.schema)
     expect(job.state).toBe('active')
 
     expect(job.priority !== undefined).toBeTruthy()
@@ -64,21 +64,21 @@ describe('fetch', function () {
   })
 
   it('should fetch all metadata for a batch of jobs when requested', async function () {
-    testContext.boss = await helper.start(testContext.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
     const batchSize = 4
 
     await Promise.all([
-      testContext.boss.send(testContext.schema),
-      testContext.boss.send(testContext.schema),
-      testContext.boss.send(testContext.schema),
-      testContext.boss.send(testContext.schema)
+      ctx.boss.send(ctx.schema),
+      ctx.boss.send(ctx.schema),
+      ctx.boss.send(ctx.schema),
+      ctx.boss.send(ctx.schema)
     ])
 
-    const jobs = await testContext.boss.fetch(testContext.schema, { batchSize, includeMetadata: true })
+    const jobs = await ctx.boss.fetch(ctx.schema, { batchSize, includeMetadata: true })
     expect(jobs.length === batchSize).toBeTruthy()
 
     for (const job of jobs) {
-      expect(job.name).toBe(testContext.schema)
+      expect(job.name).toBe(ctx.schema)
       expect(job.state).toBe('active')
       expect(job.priority !== undefined).toBeTruthy()
       expect(job.policy !== undefined).toBeTruthy()
@@ -99,12 +99,12 @@ describe('fetch', function () {
   })
 
   it('should fetch all metadata for a single job with exponential backoff when requested', async function () {
-    testContext.boss = await helper.start(testContext.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
 
-    await testContext.boss.send(testContext.schema, null, { retryLimit: 1, retryDelay: 1, retryBackoff: true, retryDelayMax: 10 })
-    const [job] = await testContext.boss.fetch(testContext.schema, { includeMetadata: true })
+    await ctx.boss.send(ctx.schema, null, { retryLimit: 1, retryDelay: 1, retryBackoff: true, retryDelayMax: 10 })
+    const [job] = await ctx.boss.fetch(ctx.schema, { includeMetadata: true })
 
-    expect(job.name).toBe(testContext.schema)
+    expect(job.name).toBe(ctx.schema)
     expect(job.priority).toBe(0)
     expect(job.state).toBe('active')
     expect(job.policy !== undefined).toBeTruthy()
@@ -124,22 +124,22 @@ describe('fetch', function () {
   })
 
   it('should fetch all metadata for a batch of jobs with exponential backoff when requested', async function () {
-    testContext.boss = await helper.start(testContext.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
     const options = { retryDelay: 1, retryBackoff: true, retryDelayMax: 10 }
     const batchSize = 4
 
     await Promise.all([
-      testContext.boss.send(testContext.schema, null, options),
-      testContext.boss.send(testContext.schema, null, options),
-      testContext.boss.send(testContext.schema, null, options),
-      testContext.boss.send(testContext.schema, null, options)
+      ctx.boss.send(ctx.schema, null, options),
+      ctx.boss.send(ctx.schema, null, options),
+      ctx.boss.send(ctx.schema, null, options),
+      ctx.boss.send(ctx.schema, null, options)
     ])
 
-    const jobs = await testContext.boss.fetch(testContext.schema, { batchSize, includeMetadata: true })
+    const jobs = await ctx.boss.fetch(ctx.schema, { batchSize, includeMetadata: true })
     expect(jobs.length === batchSize).toBeTruthy()
 
     for (const job of jobs) {
-      expect(job.name).toBe(testContext.schema)
+      expect(job.name).toBe(ctx.schema)
       expect(job.priority).toBe(0)
       expect(job.state).toBe('active')
       expect(job.policy !== undefined).toBeTruthy()
@@ -162,7 +162,7 @@ describe('fetch', function () {
   })
 
   it('should fetch a job with custom connection', async function () {
-    testContext.boss = await helper.start(testContext.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
 
     let calledCounter = 0
     const db = await helper.getDb()
@@ -177,16 +177,16 @@ describe('fetch', function () {
       }
     }
 
-    await testContext.boss.send(testContext.schema, {}, options)
-    const [job] = await testContext.boss.fetch(testContext.schema, { ...options, batchSize: 10 })
-    expect(job.name).toBe(testContext.schema)
+    await ctx.boss.send(ctx.schema, {}, options)
+    const [job] = await ctx.boss.fetch(ctx.schema, { ...options, batchSize: 10 })
+    expect(job.name).toBe(ctx.schema)
     expect(calledCounter).toBe(2)
   })
 
   it('should allow fetching jobs that have a start_after in the future', async function () {
-    testContext.boss = await helper.start(testContext.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
 
-    await testContext.boss.send(testContext.schema, { startAfter: new Date(Date.now() + 1000) })
+    await ctx.boss.send(ctx.schema, { startAfter: new Date(Date.now() + 1000) })
     const db = await helper.getDb()
     const sqlStatements : string[] = []
     const options = {
@@ -200,7 +200,7 @@ describe('fetch', function () {
       }
     }
 
-    const jobs = await testContext.boss.fetch(testContext.schema, { ...options, ignoreStartAfter: true })
+    const jobs = await ctx.boss.fetch(ctx.schema, { ...options, ignoreStartAfter: true })
     expect(jobs.length).toBe(1)
     expect(sqlStatements.length).toBe(1)
     expect(!sqlStatements[0].includes('start_after < now()')).toBeTruthy()

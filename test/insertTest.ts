@@ -1,27 +1,27 @@
 import { expect } from 'vitest'
 import { randomUUID } from 'node:crypto'
 import * as helper from './testHelper.ts'
-import { testContext } from './hooks.ts'
+import { ctx } from './hooks.ts'
 
 describe('insert', function () {
   it('should create jobs from an array', async function () {
-    testContext.boss = await helper.start(testContext.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
 
     const input = [{}, {}, {}]
 
-    await testContext.boss.insert(testContext.schema, input)
+    await ctx.boss.insert(ctx.schema, input)
 
-    const { queuedCount } = await testContext.boss.getQueueStats(testContext.schema)
+    const { queuedCount } = await ctx.boss.getQueueStats(ctx.schema)
 
     expect(queuedCount).toBe(3)
   })
 
   it('should create jobs from an array with all properties', async function () {
-    testContext.boss = await helper.start(testContext.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
 
-    const deadLetter = `${testContext.schema}_dlq`
-    await testContext.boss.createQueue(deadLetter)
-    await testContext.boss.updateQueue(testContext.schema, { deadLetter })
+    const deadLetter = `${ctx.schema}_dlq`
+    await ctx.boss.createQueue(deadLetter)
+    await ctx.boss.updateQueue(ctx.schema, { deadLetter })
 
     const input = {
       id: randomUUID(),
@@ -40,9 +40,9 @@ describe('insert', function () {
 
     const keepUntil = new Date(new Date(input.startAfter).getTime() + (input.retentionSeconds * 1000)).toISOString()
 
-    await testContext.boss.insert(testContext.schema, [input])
+    await ctx.boss.insert(ctx.schema, [input])
 
-    const job = await testContext.boss.getJobById(testContext.schema, input.id)
+    const job = await ctx.boss.getJobById(ctx.schema, input.id)
 
     expect(job).toBeTruthy()
 
@@ -61,11 +61,11 @@ describe('insert', function () {
   })
 
   it('should create jobs from an array with all properties and custom connection', async function () {
-    testContext.boss = await helper.start(testContext.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
 
-    const deadLetter = `${testContext.schema}_dlq`
-    await testContext.boss.createQueue(deadLetter)
-    await testContext.boss.updateQueue(testContext.schema, { deadLetter })
+    const deadLetter = `${ctx.schema}_dlq`
+    await ctx.boss.createQueue(deadLetter)
+    await ctx.boss.updateQueue(ctx.schema, { deadLetter })
 
     const input = {
       id: randomUUID(),
@@ -97,9 +97,9 @@ describe('insert', function () {
       }
     }
 
-    await testContext.boss.insert(testContext.schema, [input], options)
+    await ctx.boss.insert(ctx.schema, [input], options)
 
-    const job = await testContext.boss.getJobById(testContext.schema, input.id)
+    const job = await ctx.boss.getJobById(ctx.schema, input.id)
 
     expect(job).toBeTruthy()
 

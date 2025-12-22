@@ -1,43 +1,44 @@
 import { expect } from 'vitest'
 import * as helper from './testHelper.ts'
+import { assertTruthy } from './testHelper.ts'
 import { delay } from '../src/tools.ts'
-import { testContext } from './hooks.ts'
+import { ctx } from './hooks.ts'
 
 describe('work', function () {
   it('should fail with no arguments', async function () {
-    testContext.boss = await helper.start(testContext.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
     await expect(async () => {
       // @ts-ignore
-      await testContext.boss.work()
+      await ctx.boss.work()
     }).rejects.toThrow()
   })
 
   it('should fail if no callback provided', async function () {
-    testContext.boss = await helper.start(testContext.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
     await expect(async () => {
       // @ts-ignore
-      await testContext.boss.work('foo')
+      await ctx.boss.work('foo')
     }).rejects.toThrow()
   })
 
   it('should fail if options is not an object', async function () {
-    testContext.boss = await helper.start(testContext.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
     await expect(async () => {
       // @ts-ignore
-      await testContext.boss.work('foo', async () => {}, 'nope')
+      await ctx.boss.work('foo', async () => {}, 'nope')
     }).rejects.toThrow()
   })
 
   it('offWork should fail without a name', async function () {
-    testContext.boss = await helper.start(testContext.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
     await expect(async () => {
       // @ts-ignore
-      await testContext.boss.offWork()
+      await ctx.boss.offWork()
     }).rejects.toThrow()
   })
 
   it('should honor a custom polling interval', async function () {
-    testContext.boss = await helper.start(testContext.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
 
     const pollingIntervalSeconds = 1
     const timeout = 5000
@@ -45,10 +46,10 @@ describe('work', function () {
     const jobCount = 10
 
     for (let i = 0; i < jobCount; i++) {
-      await testContext.boss.send(testContext.schema)
+      await ctx.boss.send(ctx.schema)
     }
 
-    await testContext.boss.work(testContext.schema, { pollingIntervalSeconds }, async () => {
+    await ctx.boss.work(ctx.schema, { pollingIntervalSeconds }, async () => {
       processCount++
     })
 
@@ -58,57 +59,60 @@ describe('work', function () {
   })
 
   it('should provide abort signal to job handler', async function () {
-    testContext.boss = await helper.start({ ...testContext.bossConfig, __test__enableSpies: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
 
-    const spy = testContext.boss.getSpy(testContext.schema)
+    const spy = ctx.boss.getSpy(ctx.schema)
     let receivedSignal = {}
 
-    const jobId = await testContext.boss.send(testContext.schema)
+    const jobId = await ctx.boss.send(ctx.schema)
 
-    await testContext.boss.work(testContext.schema, async ([job]) => {
+    await ctx.boss.work(ctx.schema, async ([job]) => {
       receivedSignal = job.signal
     })
 
-    await spy.waitForJobWithId(jobId!, 'completed')
+    assertTruthy(jobId)
+    await spy.waitForJobWithId(jobId, 'completed')
 
     expect(receivedSignal).toBeInstanceOf(AbortSignal)
   })
 
   it('should honor when a worker is notified', async function () {
-    testContext.boss = await helper.start({ ...testContext.bossConfig, __test__enableSpies: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
 
-    const spy = testContext.boss.getSpy(testContext.schema)
+    const spy = ctx.boss.getSpy(ctx.schema)
     let processCount = 0
 
-    const jobId1 = await testContext.boss.send(testContext.schema)
+    const jobId1 = await ctx.boss.send(ctx.schema)
 
-    const workerId = await testContext.boss.work(testContext.schema, { pollingIntervalSeconds: 5 }, async () => processCount++)
+    const workerId = await ctx.boss.work(ctx.schema, { pollingIntervalSeconds: 5 }, async () => processCount++)
 
-    await spy.waitForJobWithId(jobId1!, 'completed')
+    assertTruthy(jobId1)
+    await spy.waitForJobWithId(jobId1, 'completed')
 
     expect(processCount).toBe(1)
 
-    const jobId2 = await testContext.boss.send(testContext.schema)
+    const jobId2 = await ctx.boss.send(ctx.schema)
 
-    testContext.boss.notifyWorker(workerId)
+    ctx.boss.notifyWorker(workerId)
 
-    await spy.waitForJobWithId(jobId2!, 'completed')
+    assertTruthy(jobId2)
+    await spy.waitForJobWithId(jobId2, 'completed')
 
     expect(processCount).toBe(2)
   })
 
   it('should remove a worker', async function () {
-    testContext.boss = await helper.start(testContext.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
 
     let receivedCount = 0
 
-    testContext.boss.work(testContext.schema, async () => {
+    ctx.boss.work(ctx.schema, async () => {
       receivedCount++
-      await testContext.boss!.offWork(testContext.schema)
+      await ctx.boss!.offWork(ctx.schema)
     })
 
-    await testContext.boss.send(testContext.schema)
-    await testContext.boss.send(testContext.schema)
+    await ctx.boss.send(ctx.schema)
+    await ctx.boss.send(ctx.schema)
 
     await delay(5000)
 
@@ -116,16 +120,16 @@ describe('work', function () {
   })
 
   it('should remove a worker by id', async function () {
-    testContext.boss = await helper.start(testContext.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
 
     let receivedCount = 0
 
-    await testContext.boss.send(testContext.schema)
-    await testContext.boss.send(testContext.schema)
+    await ctx.boss.send(ctx.schema)
+    await ctx.boss.send(ctx.schema)
 
-    const id = await testContext.boss.work(testContext.schema, { pollingIntervalSeconds: 0.5 }, async () => {
+    const id = await ctx.boss.work(ctx.schema, { pollingIntervalSeconds: 0.5 }, async () => {
       receivedCount++
-      await testContext.boss!.offWork(testContext.schema, { id })
+      await ctx.boss!.offWork(ctx.schema, { id })
     })
 
     await delay(2000)
@@ -134,16 +138,16 @@ describe('work', function () {
   })
 
   it('should handle a batch of jobs via batchSize', async function () {
-    testContext.boss = await helper.start(testContext.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
 
     const batchSize = 4
 
     for (let i = 0; i < batchSize; i++) {
-      await testContext.boss.send(testContext.schema)
+      await ctx.boss.send(ctx.schema)
     }
 
     return new Promise<void>((resolve) => {
-      testContext.boss!.work(testContext.schema, { batchSize }, async jobs => {
+      ctx.boss!.work(ctx.schema, { batchSize }, async jobs => {
         expect(jobs.length).toBe(batchSize)
         resolve()
       })
@@ -151,31 +155,32 @@ describe('work', function () {
   })
 
   it('batchSize should auto-complete the jobs', async function () {
-    testContext.boss = await helper.start({ ...testContext.bossConfig, __test__enableSpies: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
 
-    const spy = testContext.boss.getSpy(testContext.schema)
-    const jobId = await testContext.boss.send(testContext.schema)
+    const spy = ctx.boss.getSpy(ctx.schema)
+    const jobId = await ctx.boss.send(ctx.schema)
 
-    await testContext.boss.work(testContext.schema, { batchSize: 1 }, async jobs => {
+    await ctx.boss.work(ctx.schema, { batchSize: 1 }, async jobs => {
       expect(jobs.length).toBe(1)
     })
 
-    const job = await spy.waitForJobWithId(jobId!, 'completed')
+    assertTruthy(jobId)
+    const job = await spy.waitForJobWithId(jobId, 'completed')
 
     expect(job.state).toBe('completed')
   })
 
   it('returning promise applies backpressure', async function () {
-    testContext.boss = await helper.start(testContext.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
 
     const jobCount = 4
     let processCount = 0
 
     for (let i = 0; i < jobCount; i++) {
-      await testContext.boss.send(testContext.schema)
+      await ctx.boss.send(ctx.schema)
     }
 
-    await testContext.boss.work(testContext.schema, async () => {
+    await ctx.boss.work(ctx.schema, async () => {
       // delay slows down process fetch
       await delay(2000)
       processCount++
@@ -187,69 +192,73 @@ describe('work', function () {
   })
 
   it('completion should pass string wrapped in value prop', async function () {
-    testContext.boss = await helper.start({ ...testContext.bossConfig, __test__enableSpies: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
 
-    const spy = testContext.boss.getSpy(testContext.schema)
+    const spy = ctx.boss.getSpy(ctx.schema)
     const result = 'success'
 
-    const jobId = await testContext.boss.send(testContext.schema)
+    const jobId = await ctx.boss.send(ctx.schema)
 
-    await testContext.boss.work(testContext.schema, async () => result)
+    await ctx.boss.work(ctx.schema, async () => result)
 
-    await spy.waitForJobWithId(jobId!, 'completed')
+    assertTruthy(jobId)
+    await spy.waitForJobWithId(jobId, 'completed')
 
-    const job = await testContext.boss.getJobById(testContext.schema, jobId!)
+    const job = await ctx.boss.getJobById(ctx.schema, jobId)
 
-    expect(job!.state).toBe('completed')
-    expect((job!.output as { value: string }).value).toBe(result)
+    assertTruthy(job)
+    expect(job.state).toBe('completed')
+    expect((job.output as { value: string }).value).toBe(result)
   })
 
   it('handler result should be stored in output', async function () {
-    testContext.boss = await helper.start({ ...testContext.bossConfig, __test__enableSpies: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
     const something = 'clever'
 
-    const spy = testContext.boss.getSpy(testContext.schema)
+    const spy = ctx.boss.getSpy(ctx.schema)
 
-    const jobId = await testContext.boss.send(testContext.schema)
-    await testContext.boss.work(testContext.schema, async () => ({ something }))
+    const jobId = await ctx.boss.send(ctx.schema)
+    await ctx.boss.work(ctx.schema, async () => ({ something }))
 
-    const job = await spy.waitForJobWithId(jobId!, 'completed')
+    assertTruthy(jobId)
+    const job = await spy.waitForJobWithId(jobId, 'completed')
 
     expect(job.state).toBe('completed')
     expect((job.output as { something: string }).something).toBe(something)
   })
 
   it('job can be deleted in handler', async function () {
-    testContext.boss = await helper.start({ ...testContext.bossConfig, __test__enableSpies: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
 
-    const spy = testContext.boss.getSpy(testContext.schema)
-    const jobId = await testContext.boss.send(testContext.schema)
+    const spy = ctx.boss.getSpy(ctx.schema)
+    const jobId = await ctx.boss.send(ctx.schema)
 
     expect(jobId).toBeTruthy()
 
-    await testContext.boss.work(testContext.schema, async ([job]) => testContext.boss!.deleteJob(testContext.schema, job.id))
+    await ctx.boss.work(ctx.schema, async ([job]) => ctx.boss!.deleteJob(ctx.schema, job.id))
 
-    await spy.waitForJobWithId(jobId!, 'completed')
+    assertTruthy(jobId)
+    await spy.waitForJobWithId(jobId, 'completed')
 
-    const job = await testContext.boss.getJobById(testContext.schema, jobId!)
+    const job = await ctx.boss.getJobById(ctx.schema, jobId)
 
     expect(job).toBeFalsy()
   })
 
-  it('should allow multiple workers to the same testContext.schema per instance', async function () {
-    testContext.boss = await helper.start(testContext.bossConfig)
+  it('should allow multiple workers to the same ctx.schema per instance', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
 
-    await testContext.boss.work(testContext.schema, async () => {})
-    await testContext.boss.work(testContext.schema, async () => {})
+    await ctx.boss.work(ctx.schema, async () => {})
+    await ctx.boss.work(ctx.schema, async () => {})
   })
 
   it('should honor the includeMetadata option', async function () {
-    testContext.boss = await helper.start(testContext.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
 
-    await testContext.boss.send(testContext.schema)
+    await ctx.boss.send(ctx.schema)
 
     return new Promise<void>((resolve) => {
-      testContext.boss!.work(testContext.schema, { includeMetadata: true }, async ([job]) => {
+      ctx.boss!.work(ctx.schema, { includeMetadata: true }, async ([job]) => {
         expect(job.startedOn).toBeDefined()
         resolve()
       })
@@ -257,56 +266,62 @@ describe('work', function () {
   })
 
   it('should fail job at expiration in worker', async function () {
-    testContext.boss = await helper.start({ ...testContext.bossConfig, supervise: false })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, supervise: false })
 
-    const jobId = await testContext.boss.send(testContext.schema, null, { retryLimit: 0, expireInSeconds: 1 })
+    const jobId = await ctx.boss.send(ctx.schema, null, { retryLimit: 0, expireInSeconds: 1 })
 
-    await testContext.boss.work(testContext.schema, () => delay(2000))
+    await ctx.boss.work(ctx.schema, () => delay(2000))
 
     await delay(2000)
 
-    const job = await testContext.boss.getJobById(testContext.schema, jobId!)
+    assertTruthy(jobId)
+    const job = await ctx.boss.getJobById(ctx.schema, jobId)
 
-    expect(job!.state).toBe('failed')
-    expect((job!.output as any).message).toContain('handler execution exceeded')
+    assertTruthy(job)
+    expect(job.state).toBe('failed')
+    expect((job.output as any).message).toContain('handler execution exceeded')
   })
 
   it('should fail a batch of jobs at expiration in worker', async function () {
-    testContext.boss = await helper.start({ ...testContext.bossConfig, supervise: false })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, supervise: false })
 
-    const jobId1 = await testContext.boss.send(testContext.schema, null, { retryLimit: 0, expireInSeconds: 1 })
-    const jobId2 = await testContext.boss.send(testContext.schema, null, { retryLimit: 0, expireInSeconds: 1 })
+    const jobId1 = await ctx.boss.send(ctx.schema, null, { retryLimit: 0, expireInSeconds: 1 })
+    const jobId2 = await ctx.boss.send(ctx.schema, null, { retryLimit: 0, expireInSeconds: 1 })
 
-    await testContext.boss.work(testContext.schema, { batchSize: 2 }, () => delay(2000))
+    await ctx.boss.work(ctx.schema, { batchSize: 2 }, () => delay(2000))
 
     await delay(2000)
 
-    const job1 = await testContext.boss.getJobById(testContext.schema, jobId1!)
-    const job2 = await testContext.boss.getJobById(testContext.schema, jobId2!)
+    assertTruthy(jobId1)
+    assertTruthy(jobId2)
+    const job1 = await ctx.boss.getJobById(ctx.schema, jobId1)
+    const job2 = await ctx.boss.getJobById(ctx.schema, jobId2)
 
-    expect(job1!.state).toBe('failed')
-    expect((job1!.output as any).message).toContain('handler execution exceeded')
+    assertTruthy(job1)
+    expect(job1.state).toBe('failed')
+    expect((job1.output as any).message).toContain('handler execution exceeded')
 
-    expect(job2!.state).toBe('failed')
-    expect((job2!.output as any).message).toContain('handler execution exceeded')
+    assertTruthy(job2)
+    expect(job2.state).toBe('failed')
+    expect((job2.output as any).message).toContain('handler execution exceeded')
   })
 
   it('should emit wip event every 2s for workers', async function () {
-    testContext.boss = await helper.start(testContext.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
 
-    const firstWipEvent = new Promise<Array<any>>(resolve => testContext.boss!.once('wip', resolve))
+    const firstWipEvent = new Promise<Array<any>>(resolve => ctx.boss!.once('wip', resolve))
 
-    await testContext.boss.send(testContext.schema)
+    await ctx.boss.send(ctx.schema)
 
-    await testContext.boss.work(testContext.schema, { pollingIntervalSeconds: 1 }, () => delay(2000))
+    await ctx.boss.work(ctx.schema, { pollingIntervalSeconds: 1 }, () => delay(2000))
 
     const wip1 = await firstWipEvent
 
-    await testContext.boss.send(testContext.schema)
+    await ctx.boss.send(ctx.schema)
 
     expect(wip1.length).toBe(1)
 
-    const secondWipEvent = new Promise<Array<any>>(resolve => testContext.boss!.once('wip', resolve))
+    const secondWipEvent = new Promise<Array<any>>(resolve => ctx.boss!.once('wip', resolve))
 
     const wip2 = await secondWipEvent
 
@@ -314,20 +329,20 @@ describe('work', function () {
   })
 
   it('should reject work() after stopping', async function () {
-    testContext.boss = await helper.start(testContext.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
 
-    await testContext.boss.stop()
+    await ctx.boss.stop()
 
     await expect(async () => {
-      await testContext.boss!.work(testContext.schema, async () => {})
+      await ctx.boss!.work(ctx.schema, async () => {})
     }).rejects.toThrow()
   })
 
   it('should allow send() after stopping', async function () {
-    testContext.boss = await helper.start(testContext.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
 
-    testContext.boss.stop({ close: false })
+    ctx.boss.stop({ close: false })
 
-    await testContext.boss.send(testContext.schema)
+    await ctx.boss.send(ctx.schema)
   })
 })

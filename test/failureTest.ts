@@ -1,77 +1,79 @@
 import { delay } from '../src/tools.ts'
 import { expect } from 'vitest'
 import * as helper from './testHelper.ts'
-import { testContext } from './hooks.ts'
+import { assertTruthy } from './testHelper.ts'
+import { ctx } from './hooks.ts'
 
 describe('failure', function () {
   it('should reject missing id argument', async function () {
-    testContext.boss = await helper.start(testContext.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
     await expect(async () => {
       // @ts-ignore
-      await testContext.boss.fail()
+      await ctx.boss.fail()
     }).rejects.toThrow()
   })
 
   it('should fail a job when requested', async function () {
-    testContext.boss = await helper.start(testContext.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
 
-    await testContext.boss.send(testContext.schema)
+    await ctx.boss.send(ctx.schema)
 
-    const [job] = await testContext.boss.fetch(testContext.schema)
+    const [job] = await ctx.boss.fetch(ctx.schema)
 
-    await testContext.boss.fail(testContext.schema, job.id)
+    await ctx.boss.fail(ctx.schema, job.id)
   })
 
   it('should fail a batch of jobs', async function () {
-    testContext.boss = await helper.start(testContext.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
 
     await Promise.all([
-      testContext.boss.send(testContext.schema),
-      testContext.boss.send(testContext.schema),
-      testContext.boss.send(testContext.schema)
+      ctx.boss.send(ctx.schema),
+      ctx.boss.send(ctx.schema),
+      ctx.boss.send(ctx.schema)
     ])
 
-    const jobs = await testContext.boss.fetch(testContext.schema, { batchSize: 3 })
+    const jobs = await ctx.boss.fetch(ctx.schema, { batchSize: 3 })
 
-    const result = await testContext.boss.fail(testContext.schema, jobs.map(job => job.id))
+    const result = await ctx.boss.fail(ctx.schema, jobs.map(job => job.id))
 
     expect(result.jobs.length).toBe(3)
   })
 
   it('should fail a batch of jobs with a data arg', async function () {
-    testContext.boss = await helper.start(testContext.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
     const message = 'some error'
 
     await Promise.all([
-      testContext.boss.send(testContext.schema),
-      testContext.boss.send(testContext.schema),
-      testContext.boss.send(testContext.schema)
+      ctx.boss.send(ctx.schema),
+      ctx.boss.send(ctx.schema),
+      ctx.boss.send(ctx.schema)
     ])
 
-    const jobs = await testContext.boss.fetch(testContext.schema, { batchSize: 3 })
+    const jobs = await ctx.boss.fetch(ctx.schema, { batchSize: 3 })
 
-    await testContext.boss.fail(testContext.schema, jobs.map(job => job.id), new Error(message))
+    await ctx.boss.fail(ctx.schema, jobs.map(job => job.id), new Error(message))
 
-    const results = await Promise.all(jobs.map(job => testContext.boss!.getJobById(testContext.schema, job.id)))
+    const results = await Promise.all(jobs.map(job => ctx.boss!.getJobById(ctx.schema, job.id)))
 
     // @ts-ignore
     expect(results.every(i => i!.output.message === message)).toBeTruthy()
   })
 
   it('should preserve nested objects within a payload that is an instance of Error', async function () {
-    testContext.boss = await helper.start(testContext.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
 
     const failPayload = new Error('Something went wrong')
     // @ts-ignore
     failPayload.some = { deeply: { nested: { reason: 'nuna' } } }
 
-    const jobId = await testContext.boss.send(testContext.schema)
+    const jobId = await ctx.boss.send(ctx.schema)
 
     expect(jobId).toBeTruthy()
 
-    await testContext.boss.fail(testContext.schema, jobId!, failPayload)
+    assertTruthy(jobId)
+    await ctx.boss.fail(ctx.schema, jobId, failPayload)
 
-    const job = await testContext.boss.getJobById(testContext.schema, jobId!)
+    const job = await ctx.boss.getJobById(ctx.schema, jobId)
 
     expect(job?.output).toBeTruthy()
 
@@ -80,69 +82,75 @@ describe('failure', function () {
   })
 
   it('failure via Promise reject() should pass string wrapped in value prop', async function () {
-    testContext.boss = await helper.start({ ...testContext.bossConfig, __test__enableSpies: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
     const failPayload = 'mah error'
 
-    const spy = testContext.boss.getSpy(testContext.schema)
-    const jobId = await testContext.boss.send(testContext.schema)
+    const spy = ctx.boss.getSpy(ctx.schema)
+    const jobId = await ctx.boss.send(ctx.schema)
 
     expect(jobId).toBeTruthy()
 
-    await testContext.boss.work(testContext.schema, () => Promise.reject(failPayload))
+    await ctx.boss.work(ctx.schema, () => Promise.reject(failPayload))
 
-    await spy.waitForJobWithId(jobId!, 'failed')
+    assertTruthy(jobId)
+    await spy.waitForJobWithId(jobId, 'failed')
 
-    const job = await testContext.boss.getJobById(testContext.schema, jobId!)
+    const job = await ctx.boss.getJobById(ctx.schema, jobId)
 
-    expect((job!.output as { value: string }).value).toBe(failPayload)
+    assertTruthy(job)
+    expect((job.output as { value: string }).value).toBe(failPayload)
   })
 
   it('failure via Promise reject() should pass object payload', async function () {
-    testContext.boss = await helper.start({ ...testContext.bossConfig, __test__enableSpies: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
     const something = 'clever'
 
-    const spy = testContext.boss.getSpy(testContext.schema)
+    const spy = ctx.boss.getSpy(ctx.schema)
     const errorResponse = new Error('custom error')
     // @ts-ignore
     errorResponse.something = something
 
-    const jobId = await testContext.boss.send(testContext.schema)
+    const jobId = await ctx.boss.send(ctx.schema)
 
     expect(jobId).toBeTruthy()
 
-    await testContext.boss.work(testContext.schema, () => Promise.reject(errorResponse))
+    await ctx.boss.work(ctx.schema, () => Promise.reject(errorResponse))
 
-    await spy.waitForJobWithId(jobId!, 'failed')
+    assertTruthy(jobId)
+    await spy.waitForJobWithId(jobId, 'failed')
 
-    const job = await testContext.boss.getJobById(testContext.schema, jobId!)
+    const job = await ctx.boss.getJobById(ctx.schema, jobId)
 
-    expect((job!.output as { something: string }).something).toBe(something)
+    assertTruthy(job)
+    expect((job.output as { something: string }).something).toBe(something)
   })
 
   it('failure with Error object should be saved in the job', async function () {
-    testContext.boss = await helper.start({ ...testContext.bossConfig, __test__enableSpies: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
     const message = 'a real error!'
 
-    const spy = testContext.boss.getSpy(testContext.schema)
-    const jobId = await testContext.boss.send(testContext.schema)
+    const spy = ctx.boss.getSpy(ctx.schema)
+    const jobId = await ctx.boss.send(ctx.schema)
 
     expect(jobId).toBeTruthy()
 
-    await testContext.boss.work(testContext.schema, async () => { throw new Error(message) })
+    await ctx.boss.work(ctx.schema, async () => { throw new Error(message) })
 
-    await spy.waitForJobWithId(jobId!, 'failed')
+    assertTruthy(jobId)
+    await spy.waitForJobWithId(jobId, 'failed')
 
-    const job = await testContext.boss.getJobById(testContext.schema, jobId!)
+    const job = await ctx.boss.getJobById(ctx.schema, jobId)
 
-    expect((job!.output as { message: string }).message.includes(message)).toBeTruthy()
+    assertTruthy(job)
+    expect((job.output as { message: string }).message.includes(message)).toBeTruthy()
   })
 
   it('should fail a job with custom connection', async function () {
-    testContext.boss = await helper.start(testContext.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
 
-    await testContext.boss.send(testContext.schema)
+    await ctx.boss.send(ctx.schema)
 
-    const [job] = await testContext.boss.fetch(testContext.schema)
+    const [job] = await ctx.boss.fetch(ctx.schema)
 
     let called = false
     const _db = await helper.getDb()
@@ -155,69 +163,72 @@ describe('failure', function () {
       }
     }
 
-    await testContext.boss.fail(testContext.schema, job.id, null, { db })
+    await ctx.boss.fail(ctx.schema, job.id, null, { db })
 
     expect(called).toBe(true)
   })
 
   it('failure with circular payload should be safely serialized', async function () {
-    testContext.boss = await helper.start({ ...testContext.bossConfig, __test__enableSpies: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
 
-    const spy = testContext.boss.getSpy(testContext.schema)
-    const jobId = await testContext.boss.send(testContext.schema)
+    const spy = ctx.boss.getSpy(ctx.schema)
+    const jobId = await ctx.boss.send(ctx.schema)
 
     expect(jobId).toBeTruthy()
 
     const message = 'mhmm'
 
-    await testContext.boss.work(testContext.schema, { pollingIntervalSeconds: 0.5 }, async () => {
+    await ctx.boss.work(ctx.schema, { pollingIntervalSeconds: 0.5 }, async () => {
       const err = { message }
       // @ts-ignore
       err.myself = err
       throw err
     })
 
-    await spy.waitForJobWithId(jobId!, 'failed')
+    assertTruthy(jobId)
+    await spy.waitForJobWithId(jobId, 'failed')
 
-    const job = await testContext.boss.getJobById(testContext.schema, jobId!)
+    const job = await ctx.boss.getJobById(ctx.schema, jobId)
 
-    expect((job!.output as { message: string }).message).toBe(message)
+    assertTruthy(job)
+    expect((job.output as { message: string }).message).toBe(message)
   })
 
   it('dead letter queues are working', async function () {
-    testContext.boss = await helper.start({ ...testContext.bossConfig, noDefault: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
-    const deadLetter = `${testContext.schema}_dlq`
+    const deadLetter = `${ctx.schema}_dlq`
 
-    await testContext.boss.createQueue(deadLetter)
-    await testContext.boss.createQueue(testContext.schema, { deadLetter })
+    await ctx.boss.createQueue(deadLetter)
+    await ctx.boss.createQueue(ctx.schema, { deadLetter })
 
-    const jobId = await testContext.boss.send(testContext.schema, { key: testContext.schema }, { retryLimit: 0 })
+    const jobId = await ctx.boss.send(ctx.schema, { key: ctx.schema }, { retryLimit: 0 })
 
     expect(jobId).toBeTruthy()
 
-    await testContext.boss.fetch(testContext.schema)
-    await testContext.boss.fail(testContext.schema, jobId!)
+    await ctx.boss.fetch(ctx.schema)
+    assertTruthy(jobId)
+    await ctx.boss.fail(ctx.schema, jobId)
 
-    const [job] = await testContext.boss.fetch<{ key: string }>(deadLetter)
+    const [job] = await ctx.boss.fetch<{ key: string }>(deadLetter)
 
-    expect(job.data.key).toBe(testContext.schema)
+    expect(job.data.key).toBe(ctx.schema)
   })
 
   it('should fail active jobs in a worker during shutdown', async function () {
-    testContext.boss = await helper.start(testContext.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
 
-    const jobId = await testContext.boss.send(testContext.schema, null, { retryLimit: 1 })
+    const jobId = await ctx.boss.send(ctx.schema, null, { retryLimit: 1 })
 
-    await testContext.boss.work(testContext.schema, async () => await delay(4000))
+    await ctx.boss.work(ctx.schema, async () => await delay(4000))
 
     await delay(500)
 
-    await testContext.boss.stop({ timeout: 2000 })
+    await ctx.boss.stop({ timeout: 2000 })
 
-    await testContext.boss.start()
+    await ctx.boss.start()
 
-    const [job] = await testContext.boss.fetch(testContext.schema)
+    const [job] = await ctx.boss.fetch(ctx.schema)
 
     expect(job?.id).toBe(jobId)
   })

@@ -1,83 +1,90 @@
 import { expect } from 'vitest'
 import * as helper from './testHelper.ts'
+import { assertTruthy } from './testHelper.ts'
 import { delay } from '../src/tools.ts'
-import { testContext } from './hooks.ts'
+import { ctx } from './hooks.ts'
 
 describe('expire', function () {
   it('should expire a job', async function () {
-    testContext.boss = await helper.start({ ...testContext.bossConfig, monitorIntervalSeconds: 1 })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, monitorIntervalSeconds: 1 })
 
-    const jobId = await testContext.boss.send(testContext.schema, null, { retryLimit: 0, expireInSeconds: 1 })
+    const jobId = await ctx.boss.send(ctx.schema, null, { retryLimit: 0, expireInSeconds: 1 })
 
     expect(jobId).toBeTruthy()
 
-    const [job1] = await testContext.boss.fetch(testContext.schema)
+    const [job1] = await ctx.boss.fetch(ctx.schema)
 
     expect(job1).toBeTruthy()
 
     await delay(1000)
 
-    await testContext.boss.supervise(testContext.schema)
+    await ctx.boss.supervise(ctx.schema)
 
-    const job = await testContext.boss.getJobById(testContext.schema, jobId!)
+    assertTruthy(jobId)
+    const job = await ctx.boss.getJobById(ctx.schema, jobId)
 
-    expect(job!.state).toBe('failed')
+    assertTruthy(job)
+    expect(job.state).toBe('failed')
   })
 
   it('should expire a job - cascaded config', async function () {
-    testContext.boss = await helper.start({ ...testContext.bossConfig, noDefault: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
-    await testContext.boss.createQueue(testContext.schema, { expireInSeconds: 1, retryLimit: 0 })
-    const jobId = await testContext.boss.send(testContext.schema)
+    await ctx.boss.createQueue(ctx.schema, { expireInSeconds: 1, retryLimit: 0 })
+    const jobId = await ctx.boss.send(ctx.schema)
 
     expect(jobId).toBeTruthy()
 
     // fetch the job but don't complete it
-    await testContext.boss.fetch(testContext.schema)
+    await ctx.boss.fetch(ctx.schema)
 
     await delay(1000)
 
-    await testContext.boss.supervise(testContext.schema)
+    await ctx.boss.supervise(ctx.schema)
 
-    const job = await testContext.boss.getJobById(testContext.schema, jobId!)
+    assertTruthy(jobId)
+    const job = await ctx.boss.getJobById(ctx.schema, jobId)
 
-    expect(job!.state).toBe('failed')
+    assertTruthy(job)
+    expect(job.state).toBe('failed')
   })
 
   it('should expire a job via supervise option', async function () {
-    testContext.boss = await helper.start({
-      ...testContext.bossConfig,
+    ctx.boss = await helper.start({
+      ...ctx.bossConfig,
       noDefault: true,
       supervise: true,
       monitorIntervalSeconds: 1,
       superviseIntervalSeconds: 1
     })
 
-    await testContext.boss.createQueue(testContext.schema, { expireInSeconds: 1, retryLimit: 0 })
-    const jobId = await testContext.boss.send(testContext.schema)
+    await ctx.boss.createQueue(ctx.schema, { expireInSeconds: 1, retryLimit: 0 })
+    const jobId = await ctx.boss.send(ctx.schema)
 
     expect(jobId).toBeTruthy()
 
     // fetch the job but don't complete it
-    await testContext.boss.fetch(testContext.schema)
+    await ctx.boss.fetch(ctx.schema)
 
     await delay(4000)
 
-    const job = await testContext.boss.getJobById(testContext.schema, jobId!)
+    assertTruthy(jobId)
+    const job = await ctx.boss.getJobById(ctx.schema, jobId)
 
-    expect(job!.state).toBe('failed')
+    assertTruthy(job)
+    expect(job.state).toBe('failed')
   })
 
   it('should abort signal when job handler times out', async function () {
-    testContext.boss = await helper.start({ ...testContext.bossConfig, monitorIntervalSeconds: 1 })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, monitorIntervalSeconds: 1 })
 
-    const jobId = await testContext.boss.send(testContext.schema, null, { retryLimit: 0, expireInSeconds: 1 })
+    const jobId = await ctx.boss.send(ctx.schema, null, { retryLimit: 0, expireInSeconds: 1 })
 
     expect(jobId).toBeTruthy()
 
     let signalAborted = false
 
-    await testContext.boss.work(testContext.schema, async ([job]) => {
+    await ctx.boss.work(ctx.schema, async ([job]) => {
       job.signal.addEventListener('abort', () => {
         signalAborted = true
       })

@@ -2,7 +2,7 @@ import { expect } from 'vitest'
 import * as helper from './testHelper.ts'
 import { randomUUID } from 'node:crypto'
 import type { ConstructorOptions } from '../src/types.ts'
-import { testContext } from './hooks.ts'
+import { ctx } from './hooks.ts'
 
 describe('queueStats', function () {
   const queue1 = `q${randomUUID().replaceAll('-', '')}`
@@ -23,8 +23,8 @@ describe('queueStats', function () {
   }
 
   it('should get accurate stats', async function () {
-    testContext.boss = await init(testContext.bossConfig)
-    const queueData = await testContext.boss.getQueueStats(queue1)
+    ctx.boss = await init(ctx.bossConfig)
+    const queueData = await ctx.boss.getQueueStats(queue1)
     expect(queueData).not.toBe(undefined)
 
     const {
@@ -43,11 +43,11 @@ describe('queueStats', function () {
   })
 
   it('should get accurate stats on an empty queue', async function () {
-    testContext.boss = await init(testContext.bossConfig)
+    ctx.boss = await init(ctx.bossConfig)
     const queue3 = randomUUID()
-    await testContext.boss.createQueue(queue3)
+    await ctx.boss.createQueue(queue3)
 
-    const queueData = await testContext.boss.getQueueStats(queue3)
+    const queueData = await ctx.boss.getQueueStats(queue3)
     expect(queueData).not.toBe(undefined)
 
     const {
@@ -66,25 +66,25 @@ describe('queueStats', function () {
   })
 
   it('should properly get queue stats when all jobs are deleted', async function () {
-    testContext.boss = await helper.start({ ...testContext.bossConfig, monitorIntervalSeconds: 1, queueCacheIntervalSeconds: 1 })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, monitorIntervalSeconds: 1, queueCacheIntervalSeconds: 1 })
 
     const queue4 = randomUUID()
-    await testContext.boss.createQueue(queue4)
+    await ctx.boss.createQueue(queue4)
 
-    await testContext.boss.send(queue4)
-    await testContext.boss.send(queue4)
-    await testContext.boss.send(queue4)
+    await ctx.boss.send(queue4)
+    await ctx.boss.send(queue4)
+    await ctx.boss.send(queue4)
 
-    await testContext.boss.supervise(queue4)
+    await ctx.boss.supervise(queue4)
 
-    await testContext.boss.deleteAllJobs(queue4)
+    await ctx.boss.deleteAllJobs(queue4)
 
-    await testContext.boss.supervise(queue4)
+    await ctx.boss.supervise(queue4)
 
     // wait for a second for queueCache to update
     await new Promise(resolve => setTimeout(resolve, 1000))
 
-    const queueData = await testContext.boss.getQueueStats(queue4)
+    const queueData = await ctx.boss.getQueueStats(queue4)
     expect(queueData).toBeTruthy()
 
     expect(queueData.deferredCount).toBe(0)

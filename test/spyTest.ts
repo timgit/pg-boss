@@ -1,34 +1,37 @@
 import { delay } from '../src/tools.ts'
 import { expect } from 'vitest'
 import * as helper from './testHelper.ts'
-import { testContext } from './hooks.ts'
+import { assertTruthy } from './testHelper.ts'
+import { ctx } from './hooks.ts'
 
 describe('spy', function () {
   it('should track job creation', async function () {
-    testContext.boss = await helper.start({ ...testContext.bossConfig, __test__enableSpies: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
 
-    const spy = testContext.boss.getSpy(testContext.schema)
+    const spy = ctx.boss.getSpy(ctx.schema)
 
-    const jobId = await testContext.boss.send(testContext.schema, { value: 'test' })
+    const jobId = await ctx.boss.send(ctx.schema, { value: 'test' })
 
-    const job = await spy.waitForJobWithId(jobId!, 'created')
+    assertTruthy(jobId)
+    const job = await spy.waitForJobWithId(jobId, 'created')
 
     expect(job.id).toBe(jobId)
-    expect(job.name).toBe(testContext.schema)
+    expect(job.name).toBe(ctx.schema)
     expect(job.data).toEqual({ value: 'test' })
     expect(job.state).toBe('created')
   })
 
   it('should track job completion', async function () {
-    testContext.boss = await helper.start({ ...testContext.bossConfig, __test__enableSpies: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
 
-    const spy = testContext.boss.getSpy(testContext.schema)
+    const spy = ctx.boss.getSpy(ctx.schema)
 
-    const jobId = await testContext.boss.send(testContext.schema, { value: 'test' })
+    const jobId = await ctx.boss.send(ctx.schema, { value: 'test' })
 
-    await testContext.boss.work(testContext.schema, async () => ({ result: 'success' }))
+    await ctx.boss.work(ctx.schema, async () => ({ result: 'success' }))
 
-    const job = await spy.waitForJobWithId(jobId!, 'completed')
+    assertTruthy(jobId)
+    const job = await spy.waitForJobWithId(jobId, 'completed')
 
     expect(job.id).toBe(jobId)
     expect(job.state).toBe('completed')
@@ -36,17 +39,18 @@ describe('spy', function () {
   })
 
   it('should track job failure', async function () {
-    testContext.boss = await helper.start({ ...testContext.bossConfig, __test__enableSpies: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
 
-    const spy = testContext.boss.getSpy(testContext.schema)
+    const spy = ctx.boss.getSpy(ctx.schema)
 
-    const jobId = await testContext.boss.send(testContext.schema, { value: 'test' })
+    const jobId = await ctx.boss.send(ctx.schema, { value: 'test' })
 
-    await testContext.boss.work(testContext.schema, async () => {
+    await ctx.boss.work(ctx.schema, async () => {
       throw new Error('test error')
     })
 
-    const job = await spy.waitForJobWithId(jobId!, 'failed')
+    assertTruthy(jobId)
+    const job = await spy.waitForJobWithId(jobId, 'failed')
 
     expect(job.id).toBe(jobId)
     expect(job.state).toBe('failed')
@@ -54,41 +58,43 @@ describe('spy', function () {
   })
 
   it('should track job as active', async function () {
-    testContext.boss = await helper.start({ ...testContext.bossConfig, __test__enableSpies: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
 
-    const spy = testContext.boss.getSpy(testContext.schema)
+    const spy = ctx.boss.getSpy(ctx.schema)
 
-    const jobId = await testContext.boss.send(testContext.schema, { value: 'test' })
+    const jobId = await ctx.boss.send(ctx.schema, { value: 'test' })
 
     let resolveWorker!: () => void
     const workerBlocked = new Promise<void>(resolve => { resolveWorker = resolve })
 
-    await testContext.boss.work(testContext.schema, async () => {
+    await ctx.boss.work(ctx.schema, async () => {
       resolveWorker()
       await delay(1000)
     })
 
     await workerBlocked
 
-    const job = await spy.waitForJobWithId(jobId!, 'active')
+    assertTruthy(jobId)
+    const job = await spy.waitForJobWithId(jobId, 'active')
 
     expect(job.id).toBe(jobId)
     expect(job.state).toBe('active')
   })
 
   it('should resolve immediately if job already in requested state', async function () {
-    testContext.boss = await helper.start({ ...testContext.bossConfig, __test__enableSpies: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
 
-    const spy = testContext.boss.getSpy(testContext.schema)
+    const spy = ctx.boss.getSpy(ctx.schema)
 
-    const jobId = await testContext.boss.send(testContext.schema, { value: 'test' })
+    const jobId = await ctx.boss.send(ctx.schema, { value: 'test' })
 
     // Wait for job to be created first
-    await spy.waitForJobWithId(jobId!, 'created')
+    assertTruthy(jobId)
+    await spy.waitForJobWithId(jobId, 'created')
 
     // Now request the same state again - should resolve immediately
     const start = Date.now()
-    const job = await spy.waitForJobWithId(jobId!, 'created')
+    const job = await spy.waitForJobWithId(jobId, 'created')
     const duration = Date.now() - start
 
     expect(job.id).toBe(jobId)
@@ -96,14 +102,14 @@ describe('spy', function () {
   })
 
   it('should support waitForJob with data selector', async function () {
-    testContext.boss = await helper.start({ ...testContext.bossConfig, __test__enableSpies: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
 
-    const spy = testContext.boss.getSpy<{ value: string }>(testContext.schema)
+    const spy = ctx.boss.getSpy<{ value: string }>(ctx.schema)
 
-    await testContext.boss.send(testContext.schema, { value: 'first' })
-    await testContext.boss.send(testContext.schema, { value: 'second' })
+    await ctx.boss.send(ctx.schema, { value: 'first' })
+    await ctx.boss.send(ctx.schema, { value: 'second' })
 
-    await testContext.boss.work(testContext.schema, async () => {})
+    await ctx.boss.work(ctx.schema, async () => {})
 
     const job = await spy.waitForJob(
       (data) => data.value === 'second',
@@ -115,9 +121,9 @@ describe('spy', function () {
   })
 
   it('should await job that completes after calling waitForJob', async function () {
-    testContext.boss = await helper.start({ ...testContext.bossConfig, __test__enableSpies: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
 
-    const spy = testContext.boss.getSpy<{ value: string }>(testContext.schema)
+    const spy = ctx.boss.getSpy<{ value: string }>(ctx.schema)
 
     // Start waiting before job exists
     const waitPromise = spy.waitForJob(
@@ -126,8 +132,8 @@ describe('spy', function () {
     )
 
     // Send and process job after
-    await testContext.boss.send(testContext.schema, { value: 'awaited' })
-    await testContext.boss.work(testContext.schema, async () => {})
+    await ctx.boss.send(ctx.schema, { value: 'awaited' })
+    await ctx.boss.work(ctx.schema, async () => {})
 
     const job = await waitPromise
 
@@ -136,18 +142,20 @@ describe('spy', function () {
   })
 
   it('should track multiple jobs independently', async function () {
-    testContext.boss = await helper.start({ ...testContext.bossConfig, __test__enableSpies: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
 
-    const spy = testContext.boss.getSpy(testContext.schema)
+    const spy = ctx.boss.getSpy(ctx.schema)
 
-    const jobId1 = await testContext.boss.send(testContext.schema, { value: 'job1' })
-    const jobId2 = await testContext.boss.send(testContext.schema, { value: 'job2' })
+    const jobId1 = await ctx.boss.send(ctx.schema, { value: 'job1' })
+    const jobId2 = await ctx.boss.send(ctx.schema, { value: 'job2' })
 
-    await testContext.boss.work(testContext.schema, async () => {})
+    await ctx.boss.work(ctx.schema, async () => {})
 
+    assertTruthy(jobId1)
+    assertTruthy(jobId2)
     const [job1, job2] = await Promise.all([
-      spy.waitForJobWithId(jobId1!, 'completed'),
-      spy.waitForJobWithId(jobId2!, 'completed')
+      spy.waitForJobWithId(jobId1, 'completed'),
+      spy.waitForJobWithId(jobId2, 'completed')
     ])
 
     expect(job1.id).toBe(jobId1)
@@ -157,19 +165,20 @@ describe('spy', function () {
   })
 
   it('should clear spy data', async function () {
-    testContext.boss = await helper.start({ ...testContext.bossConfig, __test__enableSpies: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
 
-    const spy = testContext.boss.getSpy(testContext.schema)
+    const spy = ctx.boss.getSpy(ctx.schema)
 
-    const jobId = await testContext.boss.send(testContext.schema, { value: 'test' })
+    const jobId = await ctx.boss.send(ctx.schema, { value: 'test' })
 
-    await spy.waitForJobWithId(jobId!, 'created')
+    assertTruthy(jobId)
+    await spy.waitForJobWithId(jobId, 'created')
 
     spy.clear()
 
     // Start waiting for a job that will never arrive (cleared data)
     const timeoutPromise = Promise.race([
-      spy.waitForJobWithId(jobId!, 'created'),
+      spy.waitForJobWithId(jobId, 'created'),
       delay(500).then(() => 'timeout')
     ])
 
@@ -179,9 +188,9 @@ describe('spy', function () {
   })
 
   it('should work with insert (bulk send)', async function () {
-    testContext.boss = await helper.start({ ...testContext.bossConfig, __test__enableSpies: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
 
-    const spy = testContext.boss.getSpy<{ value: string }>(testContext.schema)
+    const spy = ctx.boss.getSpy<{ value: string }>(ctx.schema)
 
     // Use explicit IDs for bulk insert
     const { randomUUID } = await import('node:crypto')
@@ -189,7 +198,7 @@ describe('spy', function () {
     const id2 = randomUUID()
     const id3 = randomUUID()
 
-    await testContext.boss.insert(testContext.schema, [
+    await ctx.boss.insert(ctx.schema, [
       { id: id1, data: { value: 'bulk1' } },
       { id: id2, data: { value: 'bulk2' } },
       { id: id3, data: { value: 'bulk3' } }
@@ -208,58 +217,62 @@ describe('spy', function () {
   })
 
   it('should protect against data mutation', async function () {
-    testContext.boss = await helper.start({ ...testContext.bossConfig, __test__enableSpies: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
 
-    const spy = testContext.boss.getSpy<{ value: string }>(testContext.schema)
+    const spy = ctx.boss.getSpy<{ value: string }>(ctx.schema)
 
-    const jobId = await testContext.boss.send(testContext.schema, { value: 'original' })
+    const jobId = await ctx.boss.send(ctx.schema, { value: 'original' })
 
-    const job1 = await spy.waitForJobWithId(jobId!, 'created')
+    assertTruthy(jobId)
+    const job1 = await spy.waitForJobWithId(jobId, 'created')
     job1.data.value = 'mutated'
 
-    const job2 = await spy.waitForJobWithId(jobId!, 'created')
+    const job2 = await spy.waitForJobWithId(jobId, 'created')
 
     expect(job2.data.value).toBe('original')
   })
 
   it('should work with separate spies per queue', async function () {
-    testContext.boss = await helper.start({ ...testContext.bossConfig, __test__enableSpies: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
 
-    const queueA = testContext.schema + '_a'
-    const queueB = testContext.schema + '_b'
+    const queueA = ctx.schema + '_a'
+    const queueB = ctx.schema + '_b'
 
-    await testContext.boss.createQueue(queueA)
-    await testContext.boss.createQueue(queueB)
+    await ctx.boss.createQueue(queueA)
+    await ctx.boss.createQueue(queueB)
 
-    const spyA = testContext.boss.getSpy(queueA)
-    const spyB = testContext.boss.getSpy(queueB)
+    const spyA = ctx.boss.getSpy(queueA)
+    const spyB = ctx.boss.getSpy(queueB)
 
-    const jobIdA = await testContext.boss.send(queueA, { queue: 'A' })
-    const jobIdB = await testContext.boss.send(queueB, { queue: 'B' })
+    const jobIdA = await ctx.boss.send(queueA, { queue: 'A' })
+    const jobIdB = await ctx.boss.send(queueB, { queue: 'B' })
 
-    const jobA = await spyA.waitForJobWithId(jobIdA!, 'created')
-    const jobB = await spyB.waitForJobWithId(jobIdB!, 'created')
+    assertTruthy(jobIdA)
+    assertTruthy(jobIdB)
+    const jobA = await spyA.waitForJobWithId(jobIdA, 'created')
+    const jobB = await spyB.waitForJobWithId(jobIdB, 'created')
 
     expect(jobA.data).toEqual({ queue: 'A' })
     expect(jobB.data).toEqual({ queue: 'B' })
   })
 
   it('should clearSpies on boss instance', async function () {
-    testContext.boss = await helper.start({ ...testContext.bossConfig, __test__enableSpies: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
 
-    const spy = testContext.boss.getSpy(testContext.schema)
+    const spy = ctx.boss.getSpy(ctx.schema)
 
-    const jobId = await testContext.boss.send(testContext.schema, { value: 'test' })
+    const jobId = await ctx.boss.send(ctx.schema, { value: 'test' })
 
-    await spy.waitForJobWithId(jobId!, 'created')
+    assertTruthy(jobId)
+    await spy.waitForJobWithId(jobId, 'created')
 
-    testContext.boss.clearSpies()
+    ctx.boss.clearSpies()
 
     // After clearSpies, getting spy again should return a fresh one
-    const newSpy = testContext.boss.getSpy(testContext.schema)
+    const newSpy = ctx.boss.getSpy(ctx.schema)
 
     const timeoutPromise = Promise.race([
-      newSpy.waitForJobWithId(jobId!, 'created'),
+      newSpy.waitForJobWithId(jobId, 'created'),
       delay(500).then(() => 'timeout')
     ])
 
@@ -269,9 +282,9 @@ describe('spy', function () {
   })
 
   it('should handle race condition - await before job creation', async function () {
-    testContext.boss = await helper.start({ ...testContext.bossConfig, __test__enableSpies: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
 
-    const spy = testContext.boss.getSpy<{ value: string }>(testContext.schema)
+    const spy = ctx.boss.getSpy<{ value: string }>(ctx.schema)
 
     // Start awaiting before job is even created
     const waitPromise = spy.waitForJob(
@@ -279,7 +292,7 @@ describe('spy', function () {
       'created'
     )
 
-    await testContext.boss.send(testContext.schema, { value: 'race-test' })
+    await ctx.boss.send(ctx.schema, { value: 'race-test' })
 
     const job = await waitPromise
 
@@ -287,18 +300,19 @@ describe('spy', function () {
   })
 
   it('should handle batch processing with spy', async function () {
-    testContext.boss = await helper.start({ ...testContext.bossConfig, __test__enableSpies: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
 
-    const spy = testContext.boss.getSpy(testContext.schema)
+    const spy = ctx.boss.getSpy(ctx.schema)
     const batchSize = 3
 
     const jobIds: string[] = []
     for (let i = 0; i < batchSize; i++) {
-      const id = await testContext.boss.send(testContext.schema, { index: i })
-      jobIds.push(id!)
+      const id: string | null = await ctx.boss.send(ctx.schema, { index: i })
+      assertTruthy(id)
+      jobIds.push(id)
     }
 
-    await testContext.boss.work(testContext.schema, { batchSize }, async () => {
+    await ctx.boss.work(ctx.schema, { batchSize }, async () => {
       return { batch: true }
     })
 
@@ -314,31 +328,33 @@ describe('spy', function () {
   })
 
   it('should throw error when spy is not enabled', async function () {
-    testContext.boss = await helper.start(testContext.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
 
     expect(
-      () => testContext.boss!.getSpy(testContext.schema)
+      () => ctx.boss!.getSpy(ctx.schema)
     ).toThrow(/Spy is not enabled/)
   })
 
   it('should track job creation via singletonNextSlot retry path', async function () {
-    testContext.boss = await helper.start({ ...testContext.bossConfig, __test__enableSpies: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
 
-    const spy = testContext.boss.getSpy(testContext.schema)
+    const spy = ctx.boss.getSpy(ctx.schema)
 
     // First job creates the singleton slot
-    const jobId1 = await testContext.boss.send(testContext.schema, { value: 'first' }, { singletonSeconds: 300 })
+    const jobId1 = await ctx.boss.send(ctx.schema, { value: 'first' }, { singletonSeconds: 300 })
     expect(jobId1).toBeTruthy()
 
-    const job1 = await spy.waitForJobWithId(jobId1!, 'created')
+    assertTruthy(jobId1)
+    const job1 = await spy.waitForJobWithId(jobId1, 'created')
     expect(job1.id).toBe(jobId1)
 
     // Second job with singletonNextSlot triggers the retry path (try2)
     // because the first insert conflicts with the existing singleton
-    const jobId2 = await testContext.boss.send(testContext.schema, { value: 'second' }, { singletonSeconds: 300, singletonNextSlot: true })
+    const jobId2 = await ctx.boss.send(ctx.schema, { value: 'second' }, { singletonSeconds: 300, singletonNextSlot: true })
     expect(jobId2).toBeTruthy()
 
-    const job2 = await spy.waitForJobWithId(jobId2!, 'created')
+    assertTruthy(jobId2)
+    const job2 = await spy.waitForJobWithId(jobId2, 'created')
     expect(job2.id).toBe(jobId2)
     expect(job2.data).toEqual({ value: 'second' })
   })

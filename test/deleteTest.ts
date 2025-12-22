@@ -1,71 +1,75 @@
 import { expect } from 'vitest'
 import * as helper from './testHelper.ts'
+import { assertTruthy } from './testHelper.ts'
 import { delay } from '../src/tools.ts'
-import { testContext } from './hooks.ts'
+import { ctx } from './hooks.ts'
 
 describe('delete', function () {
   it('should delete a completed job via maintenance', async function () {
     const config = {
-      ...testContext.bossConfig,
+      ...ctx.bossConfig,
       maintenanceIntervalSeconds: 1
     }
 
-    testContext.boss = await helper.start(config)
+    ctx.boss = await helper.start(config)
 
-    const jobId = await testContext.boss.send(testContext.schema, null, { deleteAfterSeconds: 1 })
+    const jobId = await ctx.boss.send(ctx.schema, null, { deleteAfterSeconds: 1 })
 
     expect(jobId).toBeTruthy()
 
-    await testContext.boss.fetch(testContext.schema)
-    await testContext.boss.complete(testContext.schema, jobId!)
+    await ctx.boss.fetch(ctx.schema)
+    assertTruthy(jobId)
+    await ctx.boss.complete(ctx.schema, jobId)
 
     await delay(1000)
 
-    await testContext.boss.supervise(testContext.schema)
+    await ctx.boss.supervise(ctx.schema)
 
-    const job = await testContext.boss.getJobById(testContext.schema, jobId!)
+    const job = await ctx.boss.getJobById(ctx.schema, jobId)
 
     expect(job).toBeFalsy()
   })
 
   it('should delete a completed job via maintenance - cascade config from queue', async function () {
     const config = {
-      ...testContext.bossConfig,
+      ...ctx.bossConfig,
       maintenanceIntervalSeconds: 1,
       noDefault: true
     }
 
-    testContext.boss = await helper.start(config)
+    ctx.boss = await helper.start(config)
 
-    await testContext.boss.createQueue(testContext.schema, { deleteAfterSeconds: 1 })
+    await ctx.boss.createQueue(ctx.schema, { deleteAfterSeconds: 1 })
 
-    const jobId = await testContext.boss.send(testContext.schema)
+    const jobId = await ctx.boss.send(ctx.schema)
     expect(jobId).toBeTruthy()
-    await testContext.boss.fetch(testContext.schema)
-    await testContext.boss.complete(testContext.schema, jobId!)
+    await ctx.boss.fetch(ctx.schema)
+    assertTruthy(jobId)
+    await ctx.boss.complete(ctx.schema, jobId)
 
     await delay(1000)
 
-    await testContext.boss.supervise(testContext.schema)
+    await ctx.boss.supervise(ctx.schema)
 
-    const job = await testContext.boss.getJobById(testContext.schema, jobId!)
+    const job = await ctx.boss.getJobById(ctx.schema, jobId)
 
     expect(job).toBeFalsy()
   })
 
   it('should delete a job via deleteJob()', async function () {
-    const config = { ...testContext.bossConfig }
-    testContext.boss = await helper.start(config)
+    const config = { ...ctx.bossConfig }
+    ctx.boss = await helper.start(config)
 
-    const jobId = await testContext.boss.send(testContext.schema)
+    const jobId = await ctx.boss.send(ctx.schema)
 
     expect(jobId).toBeTruthy()
 
-    await testContext.boss.fetch(testContext.schema)
+    await ctx.boss.fetch(ctx.schema)
 
-    await testContext.boss.deleteJob(testContext.schema, jobId!)
+    assertTruthy(jobId)
+    await ctx.boss.deleteJob(ctx.schema, jobId)
 
-    const job = await testContext.boss.getJobById(testContext.schema, jobId!)
+    const job = await ctx.boss.getJobById(ctx.schema, jobId)
 
     expect(job).toBeFalsy()
   })

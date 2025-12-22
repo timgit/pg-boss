@@ -1,73 +1,74 @@
 import { expect } from 'vitest'
 import * as helper from './testHelper.ts'
-import { testContext } from './hooks.ts'
+import { assertTruthy } from './testHelper.ts'
+import { ctx } from './hooks.ts'
 
 describe('send', function () {
   it('should fail with no arguments', async function () {
-    testContext.boss = await helper.start(testContext.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
 
     await expect(async () => {
       // @ts-ignore
-      await testContext.boss.send()
+      await ctx.boss.send()
     }).rejects.toThrow()
   })
 
   it('should fail with a function for data', async function () {
-    testContext.boss = await helper.start(testContext.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
 
     await expect(async () => {
       // @ts-ignore
-      await testContext.boss.send('job', () => true)
+      await ctx.boss.send('job', () => true)
     }).rejects.toThrow()
   })
 
   it('should fail with a function for options', async function () {
-    testContext.boss = await helper.start(testContext.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
 
     await expect(async () => {
       // @ts-ignore
-      await testContext.boss.send('job', 'data', () => true)
+      await ctx.boss.send('job', 'data', () => true)
     }).rejects.toThrow()
   })
 
   it('should accept single string argument', async function () {
-    testContext.boss = await helper.start(testContext.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
 
-    await testContext.boss.send(testContext.schema)
+    await ctx.boss.send(ctx.schema)
   })
 
   it('should accept job object argument with only name', async function () {
-    testContext.boss = await helper.start(testContext.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
 
-    await testContext.boss.send({ name: testContext.schema })
+    await ctx.boss.send({ name: ctx.schema })
   })
 
   it('should accept job object with name and data only', async function () {
-    testContext.boss = await helper.start(testContext.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
 
     const message = 'hi'
 
-    await testContext.boss.send({ name: testContext.schema, data: { message } })
+    await ctx.boss.send({ name: ctx.schema, data: { message } })
 
-    const [job] = await testContext.boss.fetch<{ message: string }>(testContext.schema)
+    const [job] = await ctx.boss.fetch<{ message: string }>(ctx.schema)
 
     expect(job.data.message).toBe(message)
   })
 
   it('should accept job object with name and options only', async function () {
-    testContext.boss = await helper.start(testContext.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
 
     const options = { retryLimit: 1 }
 
-    await testContext.boss.send({ name: testContext.schema, options })
+    await ctx.boss.send({ name: ctx.schema, options })
 
-    const [job] = await testContext.boss.fetch(testContext.schema)
+    const [job] = await ctx.boss.fetch(ctx.schema)
 
     expect(job.data).toBe(null)
   })
 
   it('should accept job object with name and custom connection', async function () {
-    testContext.boss = await helper.start(testContext.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
 
     let called = false
     const db = await helper.getDb()
@@ -83,9 +84,9 @@ describe('send', function () {
       someCrazyOption: 'whatever'
     }
 
-    await testContext.boss.send({ name: testContext.schema, options })
+    await ctx.boss.send({ name: ctx.schema, options })
 
-    const [job] = await testContext.boss.fetch(testContext.schema)
+    const [job] = await ctx.boss.fetch(ctx.schema)
 
     expect(job).not.toBe(null)
     expect(job.data).toBe(null)
@@ -93,8 +94,8 @@ describe('send', function () {
   })
 
   it('should not create job if transaction fails', async function () {
-    testContext.boss = await helper.start(testContext.bossConfig)
-    const { schema } = testContext.bossConfig
+    ctx.boss = await helper.start(ctx.bossConfig)
+    const { schema } = ctx.bossConfig
 
     const db = await helper.getDb()
     const client = (db as any).pool
@@ -115,7 +116,7 @@ describe('send', function () {
       const queryText = `INSERT INTO ${schema}.test(label) VALUES('Test')`
       await client.query(queryText)
 
-      await testContext.boss.send({ name: testContext.schema, options })
+      await ctx.boss.send({ name: ctx.schema, options })
 
       throwError()
       await client.query('COMMIT')
@@ -123,17 +124,17 @@ describe('send', function () {
       await client.query('ROLLBACK')
     }
 
-    const [job] = await testContext.boss.fetch(testContext.schema)
+    const [job] = await ctx.boss.fetch(ctx.schema)
 
     expect(job).toBeFalsy()
   })
 
   it('should create job with all properties', async function () {
-    testContext.boss = await helper.start(testContext.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
 
-    const deadLetter = `${testContext.schema}_dlq`
-    await testContext.boss.createQueue(deadLetter)
-    await testContext.boss.updateQueue(testContext.schema, { deadLetter })
+    const deadLetter = `${ctx.schema}_dlq`
+    await ctx.boss.createQueue(deadLetter)
+    await ctx.boss.updateQueue(ctx.schema, { deadLetter })
 
     const options = {
       priority: 1,
@@ -150,20 +151,21 @@ describe('send', function () {
 
     const keepUntil = new Date(new Date(options.startAfter).getTime() + (options.retentionSeconds * 1000)).toISOString()
 
-    const id = await testContext.boss.send(testContext.schema, {}, options)
+    const id = await ctx.boss.send(ctx.schema, {}, options)
 
-    const job = await testContext.boss.getJobById(testContext.schema, id!)
-    expect(job).toBeTruthy()
+    assertTruthy(id)
+    const job = await ctx.boss.getJobById(ctx.schema, id)
+    assertTruthy(job)
 
-    expect(job!.priority).toBe(options.priority)
-    expect(job!.retryLimit).toBe(options.retryLimit)
-    expect(job!.retryDelay).toBe(options.retryDelay)
-    expect(job!.retryBackoff).toBe(options.retryBackoff)
-    expect(job!.retryDelayMax).toBe(options.retryDelayMax)
-    expect(new Date(job!.startAfter).toISOString()).toBe(options.startAfter)
-    expect(job!.expireInSeconds).toBe(options.expireInSeconds)
-    expect(job!.deleteAfterSeconds).toBe(options.deleteAfterSeconds)
-    expect(job!.singletonKey).toBe(options.singletonKey)
-    expect(new Date(job!.keepUntil).toISOString()).toBe(keepUntil)
+    expect(job.priority).toBe(options.priority)
+    expect(job.retryLimit).toBe(options.retryLimit)
+    expect(job.retryDelay).toBe(options.retryDelay)
+    expect(job.retryBackoff).toBe(options.retryBackoff)
+    expect(job.retryDelayMax).toBe(options.retryDelayMax)
+    expect(new Date(job.startAfter).toISOString()).toBe(options.startAfter)
+    expect(job.expireInSeconds).toBe(options.expireInSeconds)
+    expect(job.deleteAfterSeconds).toBe(options.deleteAfterSeconds)
+    expect(job.singletonKey).toBe(options.singletonKey)
+    expect(new Date(job.keepUntil).toISOString()).toBe(keepUntil)
   })
 })

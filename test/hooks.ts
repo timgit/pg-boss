@@ -1,5 +1,6 @@
 import { beforeAll, beforeEach, afterEach, expect } from 'vitest'
 import * as helper from './testHelper.ts'
+import { assertTruthy } from './testHelper.ts'
 import type { ConstructorOptions } from '../src/types.ts'
 import type { PgBoss } from '../src/index.ts'
 import crypto from 'node:crypto'
@@ -11,7 +12,7 @@ export interface TestContext {
 }
 
 // Shared test context - each test file gets its own module scope in vitest
-export const testContext: TestContext = {
+export const ctx: TestContext = {
   boss: undefined,
   bossConfig: {} as ConstructorOptions & { schema: string },
   schema: ''
@@ -47,16 +48,17 @@ beforeEach(async (context) => {
   const schema = `pgboss${sha1(testKey)}`
 
   const config = helper.getConfig({ schema })
+  assertTruthy(config.schema)
   console.log(`      ${testName} (schema: ${config.schema})...`)
-  await helper.dropSchema(config.schema!)
+  await helper.dropSchema(config.schema)
 
-  testContext.bossConfig = config as ConstructorOptions & { schema: string }
-  testContext.schema = config.schema!
-  testContext.boss = undefined
+  ctx.bossConfig = config as ConstructorOptions & { schema: string }
+  ctx.schema = config.schema
+  ctx.boss = undefined
 })
 
 afterEach(async (context) => {
-  const { boss } = testContext
+  const { boss } = ctx
 
   if (boss) {
     await boss.stop({ timeout: 2000 })
@@ -65,7 +67,7 @@ afterEach(async (context) => {
   // Only drop schema if test passed
   const state = context.task.result?.state
   if (state === 'pass') {
-    await helper.dropSchema(testContext.schema)
+    await helper.dropSchema(ctx.schema)
   }
 })
 
