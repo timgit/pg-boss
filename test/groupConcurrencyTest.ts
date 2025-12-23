@@ -579,4 +579,49 @@ describe('localGroupConcurrency', function () {
     // All jobs should be processed
     expect(processedCount).toBe(3)
   })
+
+  it('should cleanup local group tracking when offWork is called', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
+
+    const groupId = 'cleanup-test-group'
+    const localGroupConcurrency = 2
+
+    // Send and process some grouped jobs
+    for (let i = 0; i < 3; i++) {
+      await ctx.boss.send(ctx.schema, { index: i }, {
+        group: { id: groupId }
+      })
+    }
+
+    await ctx.boss.work(ctx.schema, {
+      localConcurrency: 2,
+      localGroupConcurrency,
+      pollingIntervalSeconds: 0.5
+    }, async () => {
+      await delay(100)
+    })
+
+    await delay(2000)
+
+    // Stop the worker - this should trigger cleanup
+    await ctx.boss.offWork(ctx.schema)
+
+    // Start a new worker - should work without issues (proves cleanup happened)
+    let newProcessedCount = 0
+    await ctx.boss.send(ctx.schema, { newJob: true }, { group: { id: groupId } })
+
+    await ctx.boss.work(ctx.schema, {
+      localConcurrency: 2,
+      localGroupConcurrency,
+      pollingIntervalSeconds: 0.5
+    }, async () => {
+      newProcessedCount++
+      await delay(100)
+    })
+
+    await delay(1500)
+
+    // New job should be processed, confirming fresh state
+    expect(newProcessedCount).toBe(1)
+  })
 })

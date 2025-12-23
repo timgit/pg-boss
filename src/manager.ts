@@ -151,6 +151,15 @@ class Manager extends EventEmitter implements types.EventsMixin {
     this.#localGroupConfig.set(name, config)
   }
 
+  #cleanupLocalGroupTracking (name: string): void {
+    // Only cleanup if no more workers exist for this queue
+    const hasWorkersForQueue = this.getWorkers().some(w => w.name === name && !w.stopping && !w.stopped)
+    if (!hasWorkersForQueue) {
+      this.#localGroupConfig.delete(name)
+      this.#localGroupActive.delete(name)
+    }
+  }
+
   #trackLocalGroupStart<T> (
     name: string,
     jobs: types.Job<T>[],
@@ -260,6 +269,10 @@ class Manager extends EventEmitter implements types.EventsMixin {
         .filter(worker => !INTERNAL_QUEUES[worker.name])
         .map(async worker => await this.offWork(worker.name, { wait: false }))
     )
+
+    // Clean up all local group tracking on full stop
+    this.#localGroupConfig.clear()
+    this.#localGroupActive.clear()
   }
 
   async failWip () {
@@ -417,9 +430,13 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     if (options.wait) {
       await cleanupPromise
+      this.#cleanupLocalGroupTracking(name)
     } else {
       this.pendingOffWorkCleanups.add(cleanupPromise)
-      cleanupPromise.finally(() => this.pendingOffWorkCleanups.delete(cleanupPromise))
+      cleanupPromise.finally(() => {
+        this.pendingOffWorkCleanups.delete(cleanupPromise)
+        this.#cleanupLocalGroupTracking(name)
+      })
     }
   }
 
