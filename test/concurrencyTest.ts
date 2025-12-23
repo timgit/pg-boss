@@ -4,11 +4,11 @@ import { assertTruthy } from './testHelper.ts'
 import { delay } from '../src/tools.ts'
 import { ctx } from './hooks.ts'
 
-describe('concurrency', function () {
-  it('should spawn multiple workers when concurrency > 1', async function () {
+describe('localConcurrency', function () {
+  it('should spawn multiple workers when localConcurrency > 1', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
 
-    const concurrency = 3
+    const localConcurrency = 3
     const processedBy: string[] = []
     const jobCount = 6
 
@@ -16,8 +16,8 @@ describe('concurrency', function () {
       await ctx.boss.send(ctx.schema)
     }
 
-    // Create worker with concurrency
-    await ctx.boss.work(ctx.schema, { concurrency, pollingIntervalSeconds: 0.5 }, async () => {
+    // Create worker with localConcurrency
+    await ctx.boss.work(ctx.schema, { localConcurrency, pollingIntervalSeconds: 0.5 }, async () => {
       processedBy.push('worker')
       await delay(500) // Simulate some work
     })
@@ -27,10 +27,10 @@ describe('concurrency', function () {
     expect(processedBy.length).toBe(jobCount)
   })
 
-  it('should process jobs in parallel with concurrency', async function () {
+  it('should process jobs in parallel with localConcurrency', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
 
-    const concurrency = 3
+    const localConcurrency = 3
     let maxConcurrent = 0
     let currentConcurrent = 0
     const jobCount = 9
@@ -39,7 +39,7 @@ describe('concurrency', function () {
       await ctx.boss.send(ctx.schema)
     }
 
-    await ctx.boss.work(ctx.schema, { concurrency, pollingIntervalSeconds: 0.5 }, async () => {
+    await ctx.boss.work(ctx.schema, { localConcurrency, pollingIntervalSeconds: 0.5 }, async () => {
       currentConcurrent++
       maxConcurrent = Math.max(maxConcurrent, currentConcurrent)
       await delay(1000)
@@ -51,17 +51,17 @@ describe('concurrency', function () {
 
     // With 3 concurrent workers, we should see up to 3 jobs processed in parallel
     expect(maxConcurrent).toBeGreaterThan(1)
-    expect(maxConcurrent).toBeLessThanOrEqual(concurrency)
+    expect(maxConcurrent).toBeLessThanOrEqual(localConcurrency)
   })
 
-  it('should stop all workers created by concurrency option when calling offWork', async function () {
+  it('should stop all workers created by localConcurrency option when calling offWork', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 
-    const concurrency = 3
+    const localConcurrency = 3
     let processCount = 0
 
-    // Create worker with concurrency
-    await ctx.boss.work(ctx.schema, { concurrency, pollingIntervalSeconds: 0.5 }, async () => {
+    // Create worker with localConcurrency
+    await ctx.boss.work(ctx.schema, { localConcurrency, pollingIntervalSeconds: 0.5 }, async () => {
       processCount++
     })
 
@@ -82,11 +82,11 @@ describe('concurrency', function () {
     expect(processCount).toBe(countBefore)
   })
 
-  it('should track all jobs via spy when using concurrency', async function () {
+  it('should track all jobs via spy when using localConcurrency', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
 
     const spy = ctx.boss.getSpy(ctx.schema)
-    const concurrency = 3
+    const localConcurrency = 3
     const jobCount = 6
 
     const jobIds: string[] = []
@@ -96,7 +96,7 @@ describe('concurrency', function () {
       jobIds.push(jobId)
     }
 
-    await ctx.boss.work(ctx.schema, { concurrency, pollingIntervalSeconds: 0.5 }, async ([job]) => {
+    await ctx.boss.work(ctx.schema, { localConcurrency, pollingIntervalSeconds: 0.5 }, async ([job]) => {
       await delay(200) // Simulate some work
       return { processed: true, index: (job.data as { index: number }).index }
     })
@@ -114,11 +114,11 @@ describe('concurrency', function () {
     }
   })
 
-  it('should track active state via spy when using concurrency', async function () {
+  it('should track active state via spy when using localConcurrency', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
 
     const spy = ctx.boss.getSpy(ctx.schema)
-    const concurrency = 2
+    const localConcurrency = 2
 
     // Send jobs
     const jobId1 = await ctx.boss.send(ctx.schema, { index: 1 })
@@ -131,8 +131,8 @@ describe('concurrency', function () {
     const workersStarted = new Promise<void>(resolve => { resolveWorker = resolve })
     let workersStartedCount = 0
 
-    // Create worker with concurrency that blocks until we release it
-    await ctx.boss.work(ctx.schema, { concurrency, pollingIntervalSeconds: 0.5 }, async () => {
+    // Create worker with localConcurrency that blocks until we release it
+    await ctx.boss.work(ctx.schema, { localConcurrency, pollingIntervalSeconds: 0.5 }, async () => {
       workersStartedCount++
       if (workersStartedCount >= 2) {
         resolveWorker()
@@ -153,11 +153,11 @@ describe('concurrency', function () {
     expect(activeJob2.state).toBe('active')
   })
 
-  it('should track job failures via spy when using concurrency', async function () {
+  it('should track job failures via spy when using localConcurrency', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
 
     const spy = ctx.boss.getSpy(ctx.schema)
-    const concurrency = 2
+    const localConcurrency = 2
 
     // Send jobs that will fail
     const jobId1 = await ctx.boss.send(ctx.schema, { shouldFail: true }, { retryLimit: 0 })
@@ -166,8 +166,8 @@ describe('concurrency', function () {
     assertTruthy(jobId1)
     assertTruthy(jobId2)
 
-    // Create worker with concurrency that throws errors
-    await ctx.boss.work(ctx.schema, { concurrency, pollingIntervalSeconds: 0.5 }, async () => {
+    // Create worker with localConcurrency that throws errors
+    await ctx.boss.work(ctx.schema, { localConcurrency, pollingIntervalSeconds: 0.5 }, async () => {
       throw new Error('intentional failure')
     })
 

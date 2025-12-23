@@ -83,23 +83,36 @@ function validateGroupConfig (config: any) {
   assert(!('tier' in config.group) || (typeof config.group.tier === 'string' && config.group.tier.length > 0), 'group.tier must be a non-empty string if provided')
 }
 
-function validateGroupConcurrencyConfig (config: any) {
-  if (!('groupConcurrency' in config) || config.groupConcurrency === undefined || config.groupConcurrency === null) {
+function validateGroupConcurrencyValue (value: any, optionName: string) {
+  if (value === undefined || value === null) {
     return
   }
-  if (typeof config.groupConcurrency === 'number') {
-    assert(Number.isInteger(config.groupConcurrency) && config.groupConcurrency >= 1, 'groupConcurrency must be an integer >= 1')
+  if (typeof value === 'number') {
+    assert(Number.isInteger(value) && value >= 1, `${optionName} must be an integer >= 1`)
     return
   }
-  assert(typeof config.groupConcurrency === 'object', 'groupConcurrency must be a number or an object with { default, tiers? }')
-  assert(Number.isInteger(config.groupConcurrency.default) && config.groupConcurrency.default >= 1, 'groupConcurrency.default must be an integer >= 1')
-  if ('tiers' in config.groupConcurrency && config.groupConcurrency.tiers) {
-    assert(typeof config.groupConcurrency.tiers === 'object', 'groupConcurrency.tiers must be an object')
-    for (const [tier, limit] of Object.entries(config.groupConcurrency.tiers)) {
-      assert(typeof tier === 'string' && tier.length > 0, 'groupConcurrency tier keys must be non-empty strings')
-      assert(Number.isInteger(limit) && (limit as number) >= 1, `groupConcurrency.tiers["${tier}"] must be an integer >= 1`)
+  assert(typeof value === 'object', `${optionName} must be a number or an object with { default, tiers? }`)
+  assert(Number.isInteger(value.default) && value.default >= 1, `${optionName}.default must be an integer >= 1`)
+  if ('tiers' in value && value.tiers) {
+    assert(typeof value.tiers === 'object', `${optionName}.tiers must be an object`)
+    for (const [tier, limit] of Object.entries(value.tiers)) {
+      assert(typeof tier === 'string' && tier.length > 0, `${optionName} tier keys must be non-empty strings`)
+      assert(Number.isInteger(limit) && (limit as number) >= 1, `${optionName}.tiers["${tier}"] must be an integer >= 1`)
     }
   }
+}
+
+function validateGroupConcurrencyConfig (config: any) {
+  const hasGlobal = config.groupConcurrency != null
+  const hasLocal = config.localGroupConcurrency != null
+
+  assert(
+    !(hasGlobal && hasLocal),
+    'cannot specify both groupConcurrency and localGroupConcurrency - choose one'
+  )
+
+  if (hasGlobal) validateGroupConcurrencyValue(config.groupConcurrency, 'groupConcurrency')
+  if (hasLocal) validateGroupConcurrencyValue(config.localGroupConcurrency, 'localGroupConcurrency')
 }
 
 function checkWorkArgs (name: string, args: any[]): {
@@ -128,7 +141,7 @@ function checkWorkArgs (name: string, args: any[]): {
   assert(!('batchSize' in options) || (Number.isInteger(options.batchSize) && options.batchSize >= 1), 'batchSize must be an integer > 0')
   assert(!('includeMetadata' in options) || typeof options.includeMetadata === 'boolean', 'includeMetadata must be a boolean')
   assert(!('priority' in options) || typeof options.priority === 'boolean', 'priority must be a boolean')
-  assert(!('concurrency' in options) || (Number.isInteger(options.concurrency) && options.concurrency >= 1), 'concurrency must be an integer >= 1')
+  assert(!('localConcurrency' in options) || (Number.isInteger(options.localConcurrency) && options.localConcurrency >= 1), 'localConcurrency must be an integer >= 1')
   validateGroupConcurrencyConfig(options)
 
   return { options, callback }

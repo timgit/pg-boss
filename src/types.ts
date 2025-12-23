@@ -164,13 +164,27 @@ export interface JobFetchOptions {
 }
 
 export interface WorkConcurrencyOptions {
-  concurrency?: number;
+  /**
+   * Number of workers to spawn for this queue (per-node).
+   * Each worker polls and processes jobs independently.
+   */
+  localConcurrency?: number;
+  /**
+   * Limit concurrent jobs per group within this node (in-memory tracking).
+   * No database overhead. Does not coordinate across nodes.
+   */
+  localGroupConcurrency?: number | GroupConcurrencyConfig;
+  /**
+   * Limit concurrent jobs per group globally across all nodes (database tracking).
+   * Coordinates across distributed deployments via database queries.
+   */
   groupConcurrency?: number | GroupConcurrencyConfig;
 }
 
 export type WorkOptions = JobFetchOptions & JobPollingOptions & WorkConcurrencyOptions
 export interface FetchGroupConcurrencyOptions {
   groupConcurrency?: number | GroupConcurrencyConfig;
+  ignoreGroups?: string[] | null;
 }
 
 export type FetchOptions = JobFetchOptions & ConnectionOptions & FetchGroupConcurrencyOptions
@@ -208,6 +222,8 @@ export interface Job<T = object> {
   data: T;
   expireInSeconds: number;
   signal: AbortSignal;
+  groupId?: string | null;
+  groupTier?: string | null;
 }
 
 export interface JobWithMetadata<T = object> extends Job<T> {
@@ -222,8 +238,6 @@ export interface JobWithMetadata<T = object> extends Job<T> {
   startedOn: Date;
   singletonKey: string | null;
   singletonOn: Date | null;
-  groupId: string | null;
-  groupTier: string | null;
   expireInSeconds: number;
   deleteAfterSeconds: number;
   createdOn: Date;

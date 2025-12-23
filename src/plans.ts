@@ -183,7 +183,7 @@ function createTableJob (schema: string) {
   `
 }
 
-const JOB_COLUMNS_MIN = 'id, name, data, expire_seconds as "expireInSeconds"'
+const JOB_COLUMNS_MIN = 'id, name, data, expire_seconds as "expireInSeconds", group_id as "groupId", group_tier as "groupTier"'
 const JOB_COLUMNS_ALL = `${JOB_COLUMNS_MIN},
   policy,
   state,
@@ -197,8 +197,6 @@ const JOB_COLUMNS_ALL = `${JOB_COLUMNS_MIN},
   started_on as "startedOn",
   singleton_key as "singletonKey",
   singleton_on as "singletonOn",
-  group_id as "groupId",
-  group_tier as "groupTier",
   deletion_seconds as "deleteAfterSeconds",
   created_on as "createdOn",
   completed_on as "completedOn",
@@ -600,30 +598,32 @@ interface FetchJobOptions {
   priority?: boolean
   ignoreStartAfter?: boolean
   ignoreSingletons: string[] | null
+  ignoreGroups?: string[] | null
   groupConcurrency?: number | GroupConcurrencyConfig
 }
 
-function fetchNextJob ({ schema, table, name, policy, limit, includeMetadata, priority = true, ignoreStartAfter = false, ignoreSingletons = null, groupConcurrency }: FetchJobOptions): SqlQuery {
-  const singletonFetch = limit > 1 && (policy === QUEUE_POLICIES.singleton || policy === QUEUE_POLICIES.stately)
-  const hasIgnoreSingletons = ignoreSingletons != null && ignoreSingletons.length > 0
+interface FetchQueryParams {
+  values: unknown[]
+  ignoreSingletonsParam: string
+  ignoreGroupsParam: string
+  defaultLimitParam: string
+  tiersParam: string
+}
 
-  // Normalize groupConcurrency to a config object
+function buildFetchParams (options: FetchJobOptions): FetchQueryParams {
+  const { ignoreSingletons, ignoreGroups, groupConcurrency } = options
+  const hasIgnoreSingletons = ignoreSingletons != null && ignoreSingletons.length > 0
+  const hasIgnoreGroups = ignoreGroups != null && ignoreGroups.length > 0
   const hasGroupConcurrency = groupConcurrency != null
-  const groupConcurrencyConfig: GroupConcurrencyConfig | null = hasGroupConcurrency
+  const groupConcurrencyConfig = hasGroupConcurrency
     ? (typeof groupConcurrency === 'number' ? { default: groupConcurrency } : groupConcurrency)
     : null
   const hasTiers = groupConcurrencyConfig?.tiers && Object.keys(groupConcurrencyConfig.tiers).length > 0
 
-  // Determine which CTE to use for the final UPDATE
-  // Priority: group_filtered > grouped > next
-  let finalCte = 'next'
-  if (singletonFetch) finalCte = 'grouped'
-  if (hasGroupConcurrency) finalCte = 'group_filtered'
-
-  // Build parameter values array
   const values: unknown[] = []
   let paramIndex = 0
   let ignoreSingletonsParam = ''
+  let ignoreGroupsParam = ''
   let defaultLimitParam = ''
   let tiersParam = ''
 
@@ -631,6 +631,12 @@ function fetchNextJob ({ schema, table, name, policy, limit, includeMetadata, pr
     paramIndex++
     ignoreSingletonsParam = `$${paramIndex}::text[]`
     values.push(ignoreSingletons)
+  }
+
+  if (hasIgnoreGroups) {
+    paramIndex++
+    ignoreGroupsParam = `$${paramIndex}::text[]`
+    values.push(ignoreGroups)
   }
 
   if (hasGroupConcurrency && groupConcurrencyConfig) {
@@ -645,66 +651,122 @@ function fetchNextJob ({ schema, table, name, policy, limit, includeMetadata, pr
     }
   }
 
-  // Build the limit expression for group concurrency
-  // If tiers are defined, look up the limit based on group_tier, falling back to default
+  return { values, ignoreSingletonsParam, ignoreGroupsParam, defaultLimitParam, tiersParam }
+}
+
+function buildGroupConcurrencyCtes (
+  schema: string,
+  table: string,
+  name: string,
+  singletonFetch: boolean,
+  getLimitExpr: string
+): string {
+  const alias = singletonFetch ? 'g' : 'n'
+  const source = singletonFetch ? 'grouped g' : 'next n'
+  const selectCols = singletonFetch
+    ? 'g.id, g.group_id, g.group_tier, g.singleton_rn'
+    : 'n.id, n.group_id, n.group_tier'
+
+  return `
+    , with_group_ranking AS (
+      SELECT ${selectCols},
+        ROW_NUMBER() OVER (PARTITION BY ${alias}.group_id ORDER BY ${alias}.id) as group_rn,
+        COALESCE(agc.active_cnt, 0) as active_cnt
+      FROM ${source}
+      LEFT JOIN active_group_counts agc ON ${alias}.group_id = agc.group_id
+      ${singletonFetch ? 'WHERE g.singleton_rn = 1' : ''}
+    ),
+    group_filtered AS (
+      SELECT id FROM with_group_ranking
+      WHERE group_id IS NULL OR (active_cnt + group_rn) <= ${getLimitExpr}
+    )`
+}
+
+function fetchNextJob (options: FetchJobOptions): SqlQuery {
+  const { schema, table, name, policy, limit, includeMetadata, priority = true, ignoreStartAfter = false, groupConcurrency } = options
+
+  const singletonFetch = limit > 1 && (policy === QUEUE_POLICIES.singleton || policy === QUEUE_POLICIES.stately)
+  const hasIgnoreSingletons = options.ignoreSingletons != null && options.ignoreSingletons.length > 0
+  const hasIgnoreGroups = options.ignoreGroups != null && options.ignoreGroups.length > 0
+  const hasGroupConcurrency = groupConcurrency != null
+  const hasTiers = hasGroupConcurrency &&
+    typeof groupConcurrency === 'object' &&
+    groupConcurrency.tiers &&
+    Object.keys(groupConcurrency.tiers).length > 0
+
+  // Determine final CTE for UPDATE
+  let finalCte = 'next'
+  if (singletonFetch) finalCte = 'grouped'
+  if (hasGroupConcurrency) finalCte = 'group_filtered'
+
+  const params = buildFetchParams(options)
   const getLimitExpr = hasTiers
-    ? `COALESCE((${tiersParam} ->> group_tier)::int, ${defaultLimitParam})`
-    : defaultLimitParam
+    ? `COALESCE((${params.tiersParam} ->> group_tier)::int, ${params.defaultLimitParam})`
+    : params.defaultLimitParam
+
+  // Build WHERE clause conditions
+  const whereConditions = [
+    `name = '${name}'`,
+    `state < '${JOB_STATES.active}'`,
+    !ignoreStartAfter ? 'start_after < now()' : '',
+    hasIgnoreSingletons ? `singleton_key <> ALL(${params.ignoreSingletonsParam})` : '',
+    hasIgnoreGroups ? `(group_id IS NULL OR group_id <> ALL(${params.ignoreGroupsParam}))` : ''
+  ].filter(Boolean).join(' AND ')
+
+  // Build SELECT columns
+  const selectCols = [
+    'id',
+    singletonFetch ? 'singleton_key' : '',
+    hasGroupConcurrency ? 'group_id, group_tier' : ''
+  ].filter(Boolean).join(', ')
+
+  // Build the query
+  const activeGroupCountsCte = hasGroupConcurrency
+    ? `WITH active_group_counts AS (
+        SELECT group_id, COUNT(*)::int as active_cnt
+        FROM ${schema}.${table}
+        WHERE name = '${name}' AND state = '${JOB_STATES.active}' AND group_id IS NOT NULL
+        GROUP BY group_id
+      ), next AS (`
+    : 'WITH next AS ('
+
+  const groupedCte = singletonFetch
+    ? `, grouped AS (
+        SELECT id, ${hasGroupConcurrency ? 'group_id, group_tier, ' : ''}
+          row_number() OVER (PARTITION BY singleton_key) as singleton_rn
+        FROM next
+      )`
+    : ''
+
+  const groupConcurrencyCtes = hasGroupConcurrency
+    ? buildGroupConcurrencyCtes(schema, table, name, singletonFetch, getLimitExpr)
+    : ''
+
+  const singletonFilter = singletonFetch && !hasGroupConcurrency
+    ? ` AND ${finalCte}.singleton_rn = 1`
+    : ''
 
   return {
     text: `
-    ${hasGroupConcurrency
-      ? `WITH active_group_counts AS (
-          -- Count currently active jobs per group (uses index job_i7)
-          SELECT group_id, COUNT(*)::int as active_cnt
-          FROM ${schema}.${table}
-          WHERE name = '${name}' AND state = '${JOB_STATES.active}' AND group_id IS NOT NULL
-          GROUP BY group_id
-        ),
-        next AS (`
-      : 'WITH next as ('}
-      SELECT id ${singletonFetch ? ', singleton_key' : ''} ${hasGroupConcurrency ? ', group_id, group_tier' : ''}
-      FROM ${schema}.${table}
-      WHERE name = '${name}'
-        AND state < '${JOB_STATES.active}'
-        ${ignoreStartAfter ? '' : 'AND start_after < now()'}
-        ${hasIgnoreSingletons ? `AND singleton_key <> ALL(${ignoreSingletonsParam})` : ''}
-      ORDER BY ${priority ? 'priority desc, ' : ''}created_on, id
-      LIMIT ${limit}
-      FOR UPDATE SKIP LOCKED
-    )
-    ${singletonFetch ? `, grouped as ( SELECT id, ${hasGroupConcurrency ? 'group_id, group_tier, ' : ''}row_number() OVER (PARTITION BY singleton_key) as singleton_rn FROM next)` : ''}
-    ${hasGroupConcurrency
-      ? `, with_group_ranking AS (
-          -- Rank jobs within each group and get current active count
-          SELECT
-            ${singletonFetch ? 'g.id, g.group_id, g.group_tier, g.singleton_rn' : 'n.id, n.group_id, n.group_tier'},
-            ROW_NUMBER() OVER (PARTITION BY ${singletonFetch ? 'g' : 'n'}.group_id ORDER BY ${singletonFetch ? 'g' : 'n'}.id) as group_rn,
-            COALESCE(agc.active_cnt, 0) as active_cnt
-          FROM ${singletonFetch ? 'grouped g' : 'next n'}
-          LEFT JOIN active_group_counts agc ON ${singletonFetch ? 'g' : 'n'}.group_id = agc.group_id
-          ${singletonFetch ? 'WHERE g.singleton_rn = 1' : ''}
-        ),
-        group_filtered AS (
-          -- Only include jobs that won't exceed group concurrency limit
-          -- Jobs with NULL group_id are always included
-          -- Tier-based limits: look up the limit from tiers config, or use default
-          SELECT id
-          FROM with_group_ranking
-          WHERE group_id IS NULL
-             OR (active_cnt + group_rn) <= ${getLimitExpr}
-        )`
-      : ''}
-    UPDATE ${schema}.${table} j SET
-      state = '${JOB_STATES.active}',
-      started_on = now(),
-      retry_count = CASE WHEN started_on IS NOT NULL THEN retry_count + 1 ELSE retry_count END
-    FROM ${finalCte}
-    WHERE name = '${name}' AND j.id = ${finalCte}.id
-      ${singletonFetch && !hasGroupConcurrency ? ` AND ${finalCte}.singleton_rn = 1` : ''}
-    RETURNING j.${includeMetadata ? JOB_COLUMNS_ALL : JOB_COLUMNS_MIN}
-  `,
-    values
+      ${activeGroupCountsCte}
+        SELECT ${selectCols}
+        FROM ${schema}.${table}
+        WHERE ${whereConditions}
+        ORDER BY ${priority ? 'priority desc, ' : ''}created_on, id
+        LIMIT ${limit}
+        FOR UPDATE SKIP LOCKED
+      )
+      ${groupedCte}
+      ${groupConcurrencyCtes}
+      UPDATE ${schema}.${table} j SET
+        state = '${JOB_STATES.active}',
+        started_on = now(),
+        retry_count = CASE WHEN started_on IS NOT NULL THEN retry_count + 1 ELSE retry_count END
+      FROM ${finalCte}
+      WHERE name = '${name}' AND j.id = ${finalCte}.id${singletonFilter}
+      RETURNING j.${includeMetadata ? JOB_COLUMNS_ALL : JOB_COLUMNS_MIN}
+    `,
+    values: params.values
   }
 }
 
@@ -877,6 +939,8 @@ function failJobs (schema: string, table: string, where: string, output: string)
         started_on,
         singleton_key,
         singleton_on,
+        group_id,
+        group_tier,
         expire_seconds,
         deletion_seconds,
         created_on,
@@ -913,6 +977,8 @@ function failJobs (schema: string, table: string, where: string, output: string)
         started_on,
         singleton_key,
         singleton_on,
+        group_id,
+        group_tier,
         expire_seconds,
         deletion_seconds,
         created_on,
@@ -941,6 +1007,8 @@ function failJobs (schema: string, table: string, where: string, output: string)
         started_on,
         singleton_key,
         singleton_on,
+        group_id,
+        group_tier,
         expire_seconds,
         deletion_seconds,
         created_on,
@@ -965,6 +1033,8 @@ function failJobs (schema: string, table: string, where: string, output: string)
         started_on,
         singleton_key,
         singleton_on,
+        group_id,
+        group_tier,
         expire_seconds,
         deletion_seconds,
         created_on,

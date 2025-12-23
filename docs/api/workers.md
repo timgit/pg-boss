@@ -33,25 +33,45 @@ The default options for `work()` is 1 job every 2 seconds.
 
   Interval to check for new jobs in seconds, must be >=0.5 (500ms)
 
-* **concurrency**, int, *(default=1)*
+* **localConcurrency**, int, *(default=1)*
 
-  Number of workers to spawn for this queue. Each worker polls and processes jobs independently, enabling parallel job processing within a single `work()` call.
+  Number of workers to spawn for this queue within the current Node.js process. Each worker polls and processes jobs independently, enabling parallel job processing within a single `work()` call.
 
-  > **Note**: The `concurrency` option controls how many workers are spawned within the current Node.js process. In a distributed deployment with multiple nodes, each node manages its own workers independently. For example, if you have 3 nodes each calling `work()` with `concurrency: 5`, you'll have 15 total workers across your cluster.
+  > **Note**: This is a per-node setting. In a distributed deployment with multiple nodes, each node manages its own workers independently. For example, if you have 3 nodes each calling `work()` with `localConcurrency: 5`, you'll have 15 total workers across your cluster.
 
   ```js
   // Create 5 workers that can each process jobs in parallel
-  await boss.work('email-welcome', { concurrency: 5 }, async ([job]) => {
+  await boss.work('email-welcome', { localConcurrency: 5 }, async ([job]) => {
     await sendEmail(job.data)
+  })
+  ```
+
+* **localGroupConcurrency**, int | object
+
+  Limits how many jobs from the same group can be processed simultaneously **within the current Node.js process**. This is tracked in-memory with no database overhead.
+
+  Can be specified as:
+  - A simple number: `localGroupConcurrency: 2` - limits all groups to 2 concurrent jobs per node
+  - An object with tier-based limits (see `groupConcurrency` below for format)
+
+  > **Note**: This is a per-node limit. In a distributed deployment, each node enforces its own limit independently. Use `groupConcurrency` instead if you need global coordination across nodes.
+
+  ```js
+  // Limit each tenant to 2 concurrent jobs on this node (no DB overhead)
+  await boss.work('process-data', {
+    localConcurrency: 10,
+    localGroupConcurrency: 2
+  }, async ([job]) => {
+    await processData(job.data)
   })
   ```
 
 * **groupConcurrency**, int | object
 
-  Limits how many jobs from the same group can be processed simultaneously. This is useful for preventing any single tenant/customer/project from monopolizing resources.
+  Limits how many jobs from the same group can be processed simultaneously **globally across all nodes**. This is enforced via database queries.
 
   Can be specified as:
-  - A simple number: `groupConcurrency: 2` - limits all groups to 2 concurrent jobs
+  - A simple number: `groupConcurrency: 2` - limits all groups to 2 concurrent jobs globally
   - An object with tier-based limits:
     ```js
     groupConcurrency: {
@@ -65,12 +85,12 @@ The default options for `work()` is 1 job every 2 seconds.
 
   Jobs are assigned to groups using the `group` option in `send()`. Jobs without a group are not limited by groupConcurrency.
 
-  > **Note**: Unlike `concurrency`, the `groupConcurrency` limit is enforced globally across all nodes in a distributed deployment by tracking active jobs in the database. However, due to the optimistic locking nature of job fetching, there may be brief moments where the limit is slightly exceeded during race conditions when multiple workers fetch jobs simultaneously.
+  > **Note**: The `groupConcurrency` limit is enforced globally across all nodes by tracking active jobs in the database. However, due to the optimistic locking nature of job fetching, there may be brief moments where the limit is slightly exceeded during race conditions when multiple workers fetch jobs simultaneously.
 
   ```js
-  // Limit each tenant to 2 concurrent jobs
+  // Limit each tenant to 2 concurrent jobs globally across all nodes
   await boss.work('process-data', {
-    concurrency: 10,
+    localConcurrency: 10,
     groupConcurrency: 2
   }, async ([job]) => {
     await processData(job.data)
