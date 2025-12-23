@@ -37,7 +37,7 @@ describe('groupConcurrency', function () {
     // Send jobs for the same group
     const jobIds: string[] = []
     for (let i = 0; i < jobCount; i++) {
-      const jobId = await ctx.boss.send(ctx.schema, { index: i }, {
+      const jobId: string | null = await ctx.boss.send(ctx.schema, { index: i }, {
         group: { id: groupId }
       })
       assertTruthy(jobId)
@@ -52,7 +52,6 @@ describe('groupConcurrency', function () {
       currentActive--
     })
 
-    // Wait for jobs to complete
     await delay(5000)
 
     // The group concurrency limit should have been respected
@@ -95,7 +94,6 @@ describe('groupConcurrency', function () {
       activeGroups[groupId]--
     })
 
-    // Wait for jobs to complete
     await delay(6000)
 
     // Both groups should have been able to run jobs simultaneously
@@ -119,7 +117,6 @@ describe('groupConcurrency', function () {
     const activeByGroup: Record<string, number> = {}
     const maxByGroup: Record<string, number> = {}
 
-    // Send enterprise jobs
     for (let i = 0; i < 6; i++) {
       await ctx.boss.send(ctx.schema, { group: enterpriseGroup }, {
         group: { id: enterpriseGroup, tier: 'enterprise' }
@@ -150,7 +147,6 @@ describe('groupConcurrency', function () {
       activeByGroup[groupId]--
     })
 
-    // Wait for jobs to complete
     await delay(5000)
 
     // With single worker, both should see concurrency of 1
@@ -173,17 +169,14 @@ describe('groupConcurrency', function () {
     let groupJobsProcessed = 0
     let noGroupJobsProcessed = 0
 
-    // Send jobs with group
     for (let i = 0; i < 3; i++) {
       await ctx.boss.send(ctx.schema, { hasGroup: true }, { group: { id: groupId } })
     }
 
-    // Send jobs without group
     for (let i = 0; i < 3; i++) {
       await ctx.boss.send(ctx.schema, { hasGroup: false })
     }
 
-    // Create worker with groupConcurrency
     await ctx.boss.work(ctx.schema, {
       concurrency: 2,
       groupConcurrency,
@@ -198,7 +191,6 @@ describe('groupConcurrency', function () {
       await delay(200)
     })
 
-    // Wait for jobs to complete
     await delay(4000)
 
     // All jobs should have been processed
@@ -217,12 +209,12 @@ describe('groupConcurrency', function () {
 
     // Invalid group.id (empty string)
     await expect(async () => {
-      await ctx.boss.send(ctx.schema, {}, { group: { id: '' } })
+      await ctx.boss!.send(ctx.schema, {}, { group: { id: '' } })
     }).rejects.toThrow('group.id must be a non-empty string')
 
     // Invalid group.tier (empty string when provided)
     await expect(async () => {
-      await ctx.boss.send(ctx.schema, {}, { group: { id: 'test', tier: '' } })
+      await ctx.boss!.send(ctx.schema, {}, { group: { id: 'test', tier: '' } })
     }).rejects.toThrow('group.tier must be a non-empty string if provided')
   })
 
@@ -231,18 +223,18 @@ describe('groupConcurrency', function () {
 
     // Invalid groupConcurrency (0)
     await expect(async () => {
-      await ctx.boss.work(ctx.schema, { groupConcurrency: 0 }, async () => {})
+      await ctx.boss!.work(ctx.schema, { groupConcurrency: 0 }, async () => {})
     }).rejects.toThrow('groupConcurrency must be an integer >= 1')
 
     // Invalid groupConcurrency object (missing default)
     await expect(async () => {
       // @ts-ignore
-      await ctx.boss.work(ctx.schema, { groupConcurrency: { tiers: {} } }, async () => {})
+      await ctx.boss!.work(ctx.schema, { groupConcurrency: { tiers: {} } }, async () => {})
     }).rejects.toThrow('groupConcurrency.default must be an integer >= 1')
 
     // Invalid tier limit
     await expect(async () => {
-      await ctx.boss.work(ctx.schema, {
+      await ctx.boss!.work(ctx.schema, {
         groupConcurrency: { default: 1, tiers: { invalid: 0 } }
       }, async () => {})
     }).rejects.toThrow('groupConcurrency.tiers["invalid"] must be an integer >= 1')

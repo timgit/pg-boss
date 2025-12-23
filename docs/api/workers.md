@@ -37,6 +37,8 @@ The default options for `work()` is 1 job every 2 seconds.
 
   Number of workers to spawn for this queue. Each worker polls and processes jobs independently, enabling parallel job processing within a single `work()` call.
 
+  > **Note**: The `concurrency` option controls how many workers are spawned within the current Node.js process. In a distributed deployment with multiple nodes, each node manages its own workers independently. For example, if you have 3 nodes each calling `work()` with `concurrency: 5`, you'll have 15 total workers across your cluster.
+
   ```js
   // Create 5 workers that can each process jobs in parallel
   await boss.work('email-welcome', { concurrency: 5 }, async ([job]) => {
@@ -46,7 +48,7 @@ The default options for `work()` is 1 job every 2 seconds.
 
 * **groupConcurrency**, int | object
 
-  Limits how many jobs from the same group can be processed simultaneously across all workers. This is useful for preventing any single tenant/customer/project from monopolizing resources.
+  Limits how many jobs from the same group can be processed simultaneously. This is useful for preventing any single tenant/customer/project from monopolizing resources.
 
   Can be specified as:
   - A simple number: `groupConcurrency: 2` - limits all groups to 2 concurrent jobs
@@ -63,7 +65,7 @@ The default options for `work()` is 1 job every 2 seconds.
 
   Jobs are assigned to groups using the `group` option in `send()`. Jobs without a group are not limited by groupConcurrency.
 
-  > **Note**: Group concurrency is enforced on a best-effort basis. Due to the nature of concurrent workers, there may be brief moments where the limit is slightly exceeded during race conditions.
+  > **Note**: Unlike `concurrency`, the `groupConcurrency` limit is enforced globally across all nodes in a distributed deployment by tracking active jobs in the database. However, due to the optimistic locking nature of job fetching, there may be brief moments where the limit is slightly exceeded during race conditions when multiple workers fetch jobs simultaneously.
 
   ```js
   // Limit each tenant to 2 concurrent jobs
