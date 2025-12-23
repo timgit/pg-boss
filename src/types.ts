@@ -100,6 +100,16 @@ export interface QueueOptions {
   retryDelayMax?: number;
 }
 
+export interface GroupOptions {
+  id: string;
+  tier?: string;
+}
+
+export interface GroupConcurrencyConfig {
+  default: number;
+  tiers?: Record<string, number>;
+}
+
 export interface JobOptions {
   id?: string;
   priority?: number;
@@ -108,6 +118,7 @@ export interface JobOptions {
   singletonSeconds?: number;
   singletonNextSlot?: boolean;
   keepUntil?: number | string | Date;
+  group?: GroupOptions;
 }
 
 export interface ConnectionOptions {
@@ -152,8 +163,31 @@ export interface JobFetchOptions {
   ignoreStartAfter?: boolean;
 }
 
-export type WorkOptions = JobFetchOptions & JobPollingOptions
-export type FetchOptions = JobFetchOptions & ConnectionOptions
+export interface WorkConcurrencyOptions {
+  /**
+   * Number of workers to spawn for this queue (per-node).
+   * Each worker polls and processes jobs independently.
+   */
+  localConcurrency?: number;
+  /**
+   * Limit concurrent jobs per group within this node (in-memory tracking).
+   * No database overhead. Does not coordinate across nodes.
+   */
+  localGroupConcurrency?: number | GroupConcurrencyConfig;
+  /**
+   * Limit concurrent jobs per group globally across all nodes (database tracking).
+   * Coordinates across distributed deployments via database queries.
+   */
+  groupConcurrency?: number | GroupConcurrencyConfig;
+}
+
+export type WorkOptions = JobFetchOptions & JobPollingOptions & WorkConcurrencyOptions
+export interface FetchGroupConcurrencyOptions {
+  groupConcurrency?: number | GroupConcurrencyConfig;
+  ignoreGroups?: string[] | null;
+}
+
+export type FetchOptions = JobFetchOptions & ConnectionOptions & FetchGroupConcurrencyOptions
 
 export interface ResolvedWorkOptions extends WorkOptions {
   pollingInterval: number;
@@ -188,6 +222,8 @@ export interface Job<T = object> {
   data: T;
   expireInSeconds: number;
   signal: AbortSignal;
+  groupId?: string | null;
+  groupTier?: string | null;
 }
 
 export interface JobWithMetadata<T = object> extends Job<T> {
@@ -226,6 +262,7 @@ export interface JobInsert<T = object> {
   expireInSeconds?: number;
   deleteAfterSeconds?: number;
   retentionSeconds?: number;
+  group?: GroupOptions;
 }
 
 export type WorkerState = 'created' | 'active' | 'stopping' | 'stopped'

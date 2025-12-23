@@ -33,6 +33,106 @@ The default options for `work()` is 1 job every 2 seconds.
 
   Interval to check for new jobs in seconds, must be >=0.5 (500ms)
 
+* **localConcurrency**, int, *(default=1)*
+
+  Number of workers to spawn for this queue within the current Node.js process. Each worker polls and processes jobs independently, enabling parallel job processing within a single `work()` call.
+
+  > **Note**: This is a per-node setting. In a distributed deployment with multiple nodes, each node manages its own workers independently. For example, if you have 3 nodes each calling `work()` with `localConcurrency: 5`, you'll have 15 total workers across your cluster.
+
+  ```js
+  // Create 5 workers that can each process jobs in parallel
+  await boss.work('email-welcome', { localConcurrency: 5 }, async ([job]) => {
+    await sendEmail(job.data)
+  })
+  ```
+
+* **localGroupConcurrency**, int | object
+
+  Limits how many jobs from the same group can be processed simultaneously **within the current Node.js process**. This is tracked in-memory with no database overhead.
+
+  Can be specified as:
+  - A simple number: `localGroupConcurrency: 2` - limits all groups to 2 concurrent jobs per node
+  - An object with tier-based limits (see `groupConcurrency` below for format)
+
+  > **Note**: This is a per-node limit. In a distributed deployment, each node enforces its own limit independently. Use `groupConcurrency` instead if you need global coordination across nodes.
+
+  ```js
+  // Limit each tenant to 2 concurrent jobs on this node (no DB overhead)
+  await boss.work('process-data', {
+    localConcurrency: 10,
+    localGroupConcurrency: 2
+  }, async ([job]) => {
+    await processData(job.data)
+  })
+  ```
+
+* **groupConcurrency**, int | object
+
+  Limits how many jobs from the same group can be processed simultaneously **globally across all nodes**. This is enforced via database queries.
+
+  Can be specified as:
+  - A simple number: `groupConcurrency: 2` - limits all groups to 2 concurrent jobs globally
+  - An object with tier-based limits:
+    ```js
+    groupConcurrency: {
+      default: 1,           // Default limit for groups without a tier
+      tiers: {
+        enterprise: 5,      // Enterprise tier can have 5 concurrent jobs
+        pro: 2              // Pro tier can have 2 concurrent jobs
+      }
+    }
+    ```
+
+  Jobs are assigned to groups using the `group` option in `send()`. Jobs without a group are not limited by groupConcurrency.
+
+  > **Note**: The `groupConcurrency` limit is enforced globally across all nodes by tracking active jobs in the database. However, due to the optimistic locking nature of job fetching, there may be brief moments where the limit is slightly exceeded during race conditions when multiple workers fetch jobs simultaneously.
+
+  ```js
+  // Limit each tenant to 2 concurrent jobs globally across all nodes
+  await boss.work('process-data', {
+    localConcurrency: 10,
+    groupConcurrency: 2
+  }, async ([job]) => {
+    await processData(job.data)
+  })
+  ```
+
+#### Understanding concurrency options
+
+The three concurrency options work together to control job processing at different levels:
+
+| Option | Scope | Tracking | Use case |
+| - | - | - | - |
+| `localConcurrency` | Per-node | N/A (worker count) | Control total parallel processing capacity per node |
+| `localGroupConcurrency` | Per-node, per-group | In-memory | Limit group concurrency without DB overhead |
+| `groupConcurrency` | Global, per-group | Database | Coordinate group limits across distributed nodes |
+
+**Key relationships:**
+
+- `localConcurrency` sets the maximum number of jobs a single node can process simultaneously (limited by worker count)
+- `localGroupConcurrency` must be ≤ `localConcurrency` (you can't process more jobs from a group than you have workers)
+- `groupConcurrency` can exceed `localConcurrency` because it's a global limit across all nodes
+
+**Example: Multi-node deployment**
+
+```js
+// 3 nodes, each running:
+await boss.work('process-tenant-data', {
+  localConcurrency: 5,      // Each node has 5 workers (15 total across cluster)
+  groupConcurrency: 10      // Max 10 jobs from same tenant globally
+}, handler)
+```
+
+In this setup:
+- Each node can process up to 5 jobs simultaneously (limited by `localConcurrency`)
+- Across all 3 nodes, at most 10 jobs from the same group/tenant can be active (enforced by `groupConcurrency` via DB)
+- This ensures predictable load on external resources (APIs, databases) per tenant
+
+**Choosing between `localGroupConcurrency` and `groupConcurrency`:**
+
+- Use `localGroupConcurrency` when you only need per-node fairness and want zero database overhead
+- Use `groupConcurrency` when you need strict global limits across a distributed deployment
+- You cannot use both simultaneously - choose one based on your requirements
 
 **Handler function**
 
