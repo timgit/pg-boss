@@ -134,70 +134,81 @@ class Manager extends EventEmitter implements types.EventsMixin {
       pollingInterval: interval,
       batchSize = 1,
       includeMetadata = false,
-      priority = true
+      priority = true,
+      concurrency = 1,
+      groupConcurrency
     } = options
 
-    const id = randomUUID({ disableEntropyCache: true })
+    // Create the first worker ID (this is what we return for backward compatibility)
+    const firstWorkerId = randomUUID({ disableEntropyCache: true })
 
-    const fetch = () => this.fetch<ReqData>(name, { batchSize, includeMetadata, priority })
+    // Create fetch and handler functions that are shared by all workers
+    const createWorker = (workerId: string) => {
+      const fetch = () => this.fetch<ReqData>(name, { batchSize, includeMetadata, priority, groupConcurrency })
 
-    const onFetch = async (jobs: types.Job<ReqData>[]) => {
-      if (!jobs.length) {
-        return
-      }
-
-      if (this.config.__test__throw_worker) {
-        throw new Error('__test__throw_worker')
-      }
-
-      this.emitWip(name)
-
-      const spy = this.config.__test__enableSpies ? this.#spies.get(name) : undefined
-
-      if (spy) {
-        for (const job of jobs) {
-          spy.addJob(job.id, name, job.data as object, 'active')
+      const onFetch = async (jobs: types.Job<ReqData>[]) => {
+        if (!jobs.length) {
+          return
         }
-      }
 
-      const maxExpiration = jobs.reduce((acc, i) => Math.max(acc, i.expireInSeconds), 0)
-      const jobIds = jobs.map(job => job.id)
-      const ac = new AbortController()
-      jobs.forEach(job => { job.signal = ac.signal })
+        if (this.config.__test__throw_worker) {
+          throw new Error('__test__throw_worker')
+        }
 
-      try {
-        const result = await resolveWithinSeconds(callback(jobs), maxExpiration, `handler execution exceeded ${maxExpiration}s`, ac)
-        await this.complete(name, jobIds, jobIds.length === 1 ? result : undefined)
+        this.emitWip(name)
+
+        const spy = this.config.__test__enableSpies ? this.#spies.get(name) : undefined
 
         if (spy) {
           for (const job of jobs) {
-            spy.addJob(job.id, name, job.data as object, 'completed', jobIds.length === 1 ? result : undefined)
+            spy.addJob(job.id, name, job.data as object, 'active')
           }
         }
-      } catch (err: any) {
-        await this.fail(name, jobIds, err)
 
-        if (spy) {
-          for (const job of jobs) {
-            spy.addJob(job.id, name, job.data as object, 'failed', { message: err?.message, stack: err?.stack })
+        const maxExpiration = jobs.reduce((acc, i) => Math.max(acc, i.expireInSeconds), 0)
+        const jobIds = jobs.map(job => job.id)
+        const ac = new AbortController()
+        jobs.forEach(job => { job.signal = ac.signal })
+
+        try {
+          const result = await resolveWithinSeconds(callback(jobs), maxExpiration, `handler execution exceeded ${maxExpiration}s`, ac)
+          await this.complete(name, jobIds, jobIds.length === 1 ? result : undefined)
+
+          if (spy) {
+            for (const job of jobs) {
+              spy.addJob(job.id, name, job.data as object, 'completed', jobIds.length === 1 ? result : undefined)
+            }
+          }
+        } catch (err: any) {
+          await this.fail(name, jobIds, err)
+
+          if (spy) {
+            for (const job of jobs) {
+              spy.addJob(job.id, name, job.data as object, 'failed', { message: err?.message, stack: err?.stack })
+            }
           }
         }
+
+        this.emitWip(name)
       }
 
-      this.emitWip(name)
+      const onError = (error: any) => {
+        this.emit(events.error, { ...error, message: error.message, stack: error.stack, queue: name, worker: workerId })
+      }
+
+      return new Worker<ReqData>({ id: workerId, name, options, interval, fetch, onFetch, onError })
     }
 
-    const onError = (error: any) => {
-      this.emit(events.error, { ...error, message: error.message, stack: error.stack, queue: name, worker: id })
+    // Spawn workers based on concurrency setting
+    for (let i = 0; i < concurrency; i++) {
+      const workerId = i === 0 ? firstWorkerId : randomUUID({ disableEntropyCache: true })
+      const worker = createWorker(workerId)
+
+      this.addWorker(worker)
+      worker.start()
     }
 
-    const worker = new Worker<ReqData>({ id, name, options, interval, fetch, onFetch, onError })
-
-    this.addWorker(worker)
-
-    worker.start()
-
-    return id
+    return firstWorkerId
   }
 
   private addWorker (worker: Worker<any>) {
@@ -346,7 +357,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
       retryLimit,
       retryDelay,
       retryBackoff,
-      retryDelayMax
+      retryDelayMax,
+      group
     } = options
 
     const job = {
@@ -358,6 +370,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
       singletonKey,
       singletonSeconds,
       singletonOffset: 0 as number | undefined,
+      groupId: group?.id ?? null,
+      groupTier: group?.tier ?? null,
       expireInSeconds,
       deleteAfterSeconds,
       retentionSeconds,

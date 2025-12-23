@@ -100,6 +100,16 @@ export interface QueueOptions {
   retryDelayMax?: number;
 }
 
+export interface GroupOptions {
+  id: string;
+  tier?: string;
+}
+
+export interface GroupConcurrencyConfig {
+  default: number;
+  tiers?: Record<string, number>;
+}
+
 export interface JobOptions {
   id?: string;
   priority?: number;
@@ -108,6 +118,7 @@ export interface JobOptions {
   singletonSeconds?: number;
   singletonNextSlot?: boolean;
   keepUntil?: number | string | Date;
+  group?: GroupOptions;
 }
 
 export interface ConnectionOptions {
@@ -152,8 +163,17 @@ export interface JobFetchOptions {
   ignoreStartAfter?: boolean;
 }
 
-export type WorkOptions = JobFetchOptions & JobPollingOptions
-export type FetchOptions = JobFetchOptions & ConnectionOptions
+export interface WorkConcurrencyOptions {
+  concurrency?: number;
+  groupConcurrency?: number | GroupConcurrencyConfig;
+}
+
+export type WorkOptions = JobFetchOptions & JobPollingOptions & WorkConcurrencyOptions
+export interface FetchGroupConcurrencyOptions {
+  groupConcurrency?: number | GroupConcurrencyConfig;
+}
+
+export type FetchOptions = JobFetchOptions & ConnectionOptions & FetchGroupConcurrencyOptions
 
 export interface ResolvedWorkOptions extends WorkOptions {
   pollingInterval: number;
@@ -202,6 +222,8 @@ export interface JobWithMetadata<T = object> extends Job<T> {
   startedOn: Date;
   singletonKey: string | null;
   singletonOn: Date | null;
+  groupId: string | null;
+  groupTier: string | null;
   expireInSeconds: number;
   deleteAfterSeconds: number;
   createdOn: Date;
@@ -226,6 +248,7 @@ export interface JobInsert<T = object> {
   expireInSeconds?: number;
   deleteAfterSeconds?: number;
   retentionSeconds?: number;
+  group?: GroupOptions;
 }
 
 export type WorkerState = 'created' | 'active' | 'stopping' | 'stopped'

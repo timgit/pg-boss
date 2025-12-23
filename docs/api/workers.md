@@ -33,6 +33,47 @@ The default options for `work()` is 1 job every 2 seconds.
 
   Interval to check for new jobs in seconds, must be >=0.5 (500ms)
 
+* **concurrency**, int, *(default=1)*
+
+  Number of workers to spawn for this queue. Each worker polls and processes jobs independently, enabling parallel job processing within a single `work()` call.
+
+  ```js
+  // Create 5 workers that can each process jobs in parallel
+  await boss.work('email-welcome', { concurrency: 5 }, async ([job]) => {
+    await sendEmail(job.data)
+  })
+  ```
+
+* **groupConcurrency**, int | object
+
+  Limits how many jobs from the same group can be processed simultaneously across all workers. This is useful for preventing any single tenant/customer/project from monopolizing resources.
+
+  Can be specified as:
+  - A simple number: `groupConcurrency: 2` - limits all groups to 2 concurrent jobs
+  - An object with tier-based limits:
+    ```js
+    groupConcurrency: {
+      default: 1,           // Default limit for groups without a tier
+      tiers: {
+        enterprise: 5,      // Enterprise tier can have 5 concurrent jobs
+        pro: 2              // Pro tier can have 2 concurrent jobs
+      }
+    }
+    ```
+
+  Jobs are assigned to groups using the `group` option in `send()`. Jobs without a group are not limited by groupConcurrency.
+
+  > **Note**: Group concurrency is enforced on a best-effort basis. Due to the nature of concurrent workers, there may be brief moments where the limit is slightly exceeded during race conditions.
+
+  ```js
+  // Limit each tenant to 2 concurrent jobs
+  await boss.work('process-data', {
+    concurrency: 10,
+    groupConcurrency: 2
+  }, async ([job]) => {
+    await processData(job.data)
+  })
+  ```
 
 **Handler function**
 

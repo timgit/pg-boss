@@ -69,8 +69,37 @@ function checkSendArgs (args: any): types.Request {
   validateExpirationConfig(options)
   validateRetentionConfig(options)
   validateDeletionConfig(options)
+  validateGroupConfig(options)
 
   return { name, data, options }
+}
+
+function validateGroupConfig (config: any) {
+  if (!('group' in config) || config.group === undefined || config.group === null) {
+    return
+  }
+  assert(typeof config.group === 'object', 'group must be an object')
+  assert(typeof config.group.id === 'string' && config.group.id.length > 0, 'group.id must be a non-empty string')
+  assert(!('tier' in config.group) || (typeof config.group.tier === 'string' && config.group.tier.length > 0), 'group.tier must be a non-empty string if provided')
+}
+
+function validateGroupConcurrencyConfig (config: any) {
+  if (!('groupConcurrency' in config) || config.groupConcurrency === undefined || config.groupConcurrency === null) {
+    return
+  }
+  if (typeof config.groupConcurrency === 'number') {
+    assert(Number.isInteger(config.groupConcurrency) && config.groupConcurrency >= 1, 'groupConcurrency must be an integer >= 1')
+    return
+  }
+  assert(typeof config.groupConcurrency === 'object', 'groupConcurrency must be a number or an object with { default, tiers? }')
+  assert(Number.isInteger(config.groupConcurrency.default) && config.groupConcurrency.default >= 1, 'groupConcurrency.default must be an integer >= 1')
+  if ('tiers' in config.groupConcurrency && config.groupConcurrency.tiers) {
+    assert(typeof config.groupConcurrency.tiers === 'object', 'groupConcurrency.tiers must be an object')
+    for (const [tier, limit] of Object.entries(config.groupConcurrency.tiers)) {
+      assert(typeof tier === 'string' && tier.length > 0, 'groupConcurrency tier keys must be non-empty strings')
+      assert(Number.isInteger(limit) && (limit as number) >= 1, `groupConcurrency.tiers["${tier}"] must be an integer >= 1`)
+    }
+  }
 }
 
 function checkWorkArgs (name: string, args: any[]): {
@@ -99,6 +128,8 @@ function checkWorkArgs (name: string, args: any[]): {
   assert(!('batchSize' in options) || (Number.isInteger(options.batchSize) && options.batchSize >= 1), 'batchSize must be an integer > 0')
   assert(!('includeMetadata' in options) || typeof options.includeMetadata === 'boolean', 'includeMetadata must be a boolean')
   assert(!('priority' in options) || typeof options.priority === 'boolean', 'priority must be a boolean')
+  assert(!('concurrency' in options) || (Number.isInteger(options.concurrency) && options.concurrency >= 1), 'concurrency must be an integer >= 1')
+  validateGroupConcurrencyConfig(options)
 
   return { options, callback }
 }
