@@ -624,4 +624,89 @@ describe('localGroupConcurrency', function () {
     // New job should be processed, confirming fresh state
     expect(newProcessedCount).toBe(1)
   })
+
+  it('should exclude groups at local capacity from fetch', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
+
+    const groupId = 'capacity-test-group'
+    const localGroupConcurrency = 1
+    const localConcurrency = 4
+
+    let maxConcurrentForGroup = 0
+    let currentConcurrentForGroup = 0
+    let totalProcessed = 0
+
+    // Send many jobs for the same group
+    for (let i = 0; i < 6; i++) {
+      await ctx.boss.send(ctx.schema, { index: i }, {
+        group: { id: groupId }
+      })
+    }
+
+    // Use multiple workers with localGroupConcurrency to trigger capacity check
+    // The pollingInterval is fast so fetches happen while jobs are processing
+    await ctx.boss.work(ctx.schema, {
+      localConcurrency,
+      localGroupConcurrency,
+      pollingIntervalSeconds: 0.5 // Min allowed polling interval
+    }, async () => {
+      currentConcurrentForGroup++
+      maxConcurrentForGroup = Math.max(maxConcurrentForGroup, currentConcurrentForGroup)
+
+      await delay(800) // Hold the job to ensure capacity tracking kicks in
+      currentConcurrentForGroup--
+      totalProcessed++
+    })
+
+    await delay(8000)
+
+    // Should respect localGroupConcurrency limit
+    expect(maxConcurrentForGroup).toBeLessThanOrEqual(localGroupConcurrency)
+    // All jobs should eventually be processed
+    expect(totalProcessed).toBe(6)
+  })
+
+  it('should handle multiple groups reaching capacity simultaneously', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
+
+    const group1 = 'capacity-group-1'
+    const group2 = 'capacity-group-2'
+    const localGroupConcurrency = 1
+    const localConcurrency = 4
+
+    const concurrentByGroup: Record<string, number> = { [group1]: 0, [group2]: 0 }
+    const maxByGroup: Record<string, number> = { [group1]: 0, [group2]: 0 }
+    let totalProcessed = 0
+
+    // Send jobs for both groups
+    for (let i = 0; i < 4; i++) {
+      await ctx.boss.send(ctx.schema, { group: group1, index: i }, { group: { id: group1 } })
+      await ctx.boss.send(ctx.schema, { group: group2, index: i }, { group: { id: group2 } })
+    }
+
+    await ctx.boss.work(ctx.schema, {
+      localConcurrency,
+      localGroupConcurrency,
+      pollingIntervalSeconds: 0.5
+    }, async (jobs) => {
+      const job = jobs[0]
+      const groupId = (job.data as { group: string }).group
+
+      concurrentByGroup[groupId]++
+      maxByGroup[groupId] = Math.max(maxByGroup[groupId], concurrentByGroup[groupId])
+
+      await delay(600)
+
+      concurrentByGroup[groupId]--
+      totalProcessed++
+    })
+
+    await delay(8000)
+
+    // Each group should respect its limit individually
+    expect(maxByGroup[group1]).toBeLessThanOrEqual(localGroupConcurrency)
+    expect(maxByGroup[group2]).toBeLessThanOrEqual(localGroupConcurrency)
+    // All jobs should be processed
+    expect(totalProcessed).toBe(8)
+  })
 })

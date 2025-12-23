@@ -162,13 +162,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
   #trackLocalGroupStart<T> (
     name: string,
-    jobs: types.Job<T>[],
-    localGroupConcurrency: number | types.GroupConcurrencyConfig | undefined
+    jobs: types.Job<T>[]
   ): { allowed: types.Job<T>[], excess: types.Job<T>[], groupedJobs: types.Job<T>[] } {
-    if (localGroupConcurrency == null) {
-      return { allowed: jobs, excess: [], groupedJobs: [] }
-    }
-
     const allowed: types.Job<T>[] = []
     const excess: types.Job<T>[] = []
     const groupedJobs: types.Job<T>[] = []
@@ -329,7 +324,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
         if (localGroupConcurrency == null) {
           await this.#processJobs(name, jobs, callback)
         } else {
-          const { allowed, excess, groupedJobs } = this.#trackLocalGroupStart(name, jobs, localGroupConcurrency)
+          const { allowed, excess, groupedJobs } = this.#trackLocalGroupStart(name, jobs)
 
           // Put excess jobs back in the queue without consuming retry attempts.
           // We use cancel+resume instead of fail() because these jobs haven't actually

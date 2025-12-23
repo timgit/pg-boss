@@ -84,9 +84,6 @@ function validateGroupConfig (config: any) {
 }
 
 function validateGroupConcurrencyValue (value: any, optionName: string) {
-  if (value === undefined || value === null) {
-    return
-  }
   if (typeof value === 'number') {
     assert(Number.isInteger(value) && value >= 1, `${optionName} must be an integer >= 1`)
     return
