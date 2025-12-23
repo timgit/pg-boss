@@ -97,6 +97,43 @@ The default options for `work()` is 1 job every 2 seconds.
   })
   ```
 
+#### Understanding concurrency options
+
+The three concurrency options work together to control job processing at different levels:
+
+| Option | Scope | Tracking | Use case |
+| - | - | - | - |
+| `localConcurrency` | Per-node | N/A (worker count) | Control total parallel processing capacity per node |
+| `localGroupConcurrency` | Per-node, per-group | In-memory | Limit group concurrency without DB overhead |
+| `groupConcurrency` | Global, per-group | Database | Coordinate group limits across distributed nodes |
+
+**Key relationships:**
+
+- `localConcurrency` sets the maximum number of jobs a single node can process simultaneously (limited by worker count)
+- `localGroupConcurrency` must be ≤ `localConcurrency` (you can't process more jobs from a group than you have workers)
+- `groupConcurrency` can exceed `localConcurrency` because it's a global limit across all nodes
+
+**Example: Multi-node deployment**
+
+```js
+// 3 nodes, each running:
+await boss.work('process-tenant-data', {
+  localConcurrency: 5,      // Each node has 5 workers (15 total across cluster)
+  groupConcurrency: 10      // Max 10 jobs from same tenant globally
+}, handler)
+```
+
+In this setup:
+- Each node can process up to 5 jobs simultaneously (limited by `localConcurrency`)
+- Across all 3 nodes, at most 10 jobs from the same group/tenant can be active (enforced by `groupConcurrency` via DB)
+- This ensures predictable load on external resources (APIs, databases) per tenant
+
+**Choosing between `localGroupConcurrency` and `groupConcurrency`:**
+
+- Use `localGroupConcurrency` when you only need per-node fairness and want zero database overhead
+- Use `groupConcurrency` when you need strict global limits across a distributed deployment
+- You cannot use both simultaneously - choose one based on your requirements
+
 **Handler function**
 
 `handler` should return a promise (Usually this is an `async` function). If an unhandled error occurs in a handler, `fail()` will automatically be called for the jobs, storing the error in the `output` property, making the job or jobs available for retry.

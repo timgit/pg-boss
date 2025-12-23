@@ -112,7 +112,34 @@ function validateGroupConcurrencyConfig (config: any) {
   )
 
   if (hasGlobal) validateGroupConcurrencyValue(config.groupConcurrency, 'groupConcurrency')
-  if (hasLocal) validateGroupConcurrencyValue(config.localGroupConcurrency, 'localGroupConcurrency')
+  if (hasLocal) {
+    validateGroupConcurrencyValue(config.localGroupConcurrency, 'localGroupConcurrency')
+    validateLocalGroupConcurrencyLimit(config.localGroupConcurrency, config.localConcurrency)
+  }
+}
+
+function validateLocalGroupConcurrencyLimit (localGroupConcurrency: any, localConcurrency: number | undefined) {
+  const effectiveLocalConcurrency = localConcurrency ?? 1
+
+  if (typeof localGroupConcurrency === 'number') {
+    assert(
+      localGroupConcurrency <= effectiveLocalConcurrency,
+      `localGroupConcurrency (${localGroupConcurrency}) cannot exceed localConcurrency (${effectiveLocalConcurrency})`
+    )
+  } else if (typeof localGroupConcurrency === 'object') {
+    assert(
+      localGroupConcurrency.default <= effectiveLocalConcurrency,
+      `localGroupConcurrency.default (${localGroupConcurrency.default}) cannot exceed localConcurrency (${effectiveLocalConcurrency})`
+    )
+    if (localGroupConcurrency.tiers) {
+      for (const [tier, limit] of Object.entries(localGroupConcurrency.tiers)) {
+        assert(
+          (limit as number) <= effectiveLocalConcurrency,
+          `localGroupConcurrency.tiers["${tier}"] (${limit}) cannot exceed localConcurrency (${effectiveLocalConcurrency})`
+        )
+      }
+    }
+  }
 }
 
 function checkWorkArgs (name: string, args: any[]): {

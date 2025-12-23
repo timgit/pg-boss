@@ -246,7 +246,8 @@ describe('localGroupConcurrency', function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
 
     const groupId = 'tenant-123'
-    const localGroupConcurrency = 2
+    const localConcurrency = 4
+    const localGroupConcurrency = 2 // Must be <= localConcurrency
     const jobCount = 6
 
     // Track concurrent jobs per group
@@ -262,11 +263,8 @@ describe('localGroupConcurrency', function () {
     }
 
     // Create worker with localGroupConcurrency limit
-    // Note: Using localConcurrency: 1 to test limiting behavior without race conditions
-    // from multiple workers polling simultaneously before counts are updated.
-    // The "different groups process independently" test covers multi-worker scenarios.
     await ctx.boss.work(ctx.schema, {
-      localConcurrency: 1,
+      localConcurrency,
       localGroupConcurrency,
       pollingIntervalSeconds: 0.5,
       batchSize: 4 // Fetch multiple jobs at once to test limiting
@@ -443,9 +441,38 @@ describe('localGroupConcurrency', function () {
 
     await expect(async () => {
       await ctx.boss!.work(ctx.schema, {
+        localConcurrency: 2,
         groupConcurrency: 2,
         localGroupConcurrency: 2
       }, async () => {})
     }).rejects.toThrow('cannot specify both groupConcurrency and localGroupConcurrency')
+  })
+
+  it('should not allow localGroupConcurrency to exceed localConcurrency', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    // Simple number exceeds localConcurrency
+    await expect(async () => {
+      await ctx.boss!.work(ctx.schema, {
+        localConcurrency: 2,
+        localGroupConcurrency: 5
+      }, async () => {})
+    }).rejects.toThrow('localGroupConcurrency (5) cannot exceed localConcurrency (2)')
+
+    // Default value exceeds localConcurrency
+    await expect(async () => {
+      await ctx.boss!.work(ctx.schema, {
+        localConcurrency: 2,
+        localGroupConcurrency: { default: 5 }
+      }, async () => {})
+    }).rejects.toThrow('localGroupConcurrency.default (5) cannot exceed localConcurrency (2)')
+
+    // Tier value exceeds localConcurrency
+    await expect(async () => {
+      await ctx.boss!.work(ctx.schema, {
+        localConcurrency: 2,
+        localGroupConcurrency: { default: 1, tiers: { enterprise: 5 } }
+      }, async () => {})
+    }).rejects.toThrow('localGroupConcurrency.tiers["enterprise"] (5) cannot exceed localConcurrency (2)')
   })
 })
