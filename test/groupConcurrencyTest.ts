@@ -475,4 +475,108 @@ describe('localGroupConcurrency', function () {
       }, async () => {})
     }).rejects.toThrow('localGroupConcurrency.tiers["enterprise"] (5) cannot exceed localConcurrency (2)')
   })
+
+  it('should use tier-specific limits when job has a tier in localGroupConcurrency', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
+
+    const premiumGroup = 'premium-tenant'
+    const localGroupConcurrencyConfig = {
+      default: 1,
+      tiers: {
+        premium: 2
+      }
+    }
+
+    let maxActive = 0
+    let currentActive = 0
+
+    // Send premium tier jobs (should use limit of 2)
+    for (let i = 0; i < 4; i++) {
+      await ctx.boss.send(ctx.schema, { tier: 'premium', index: i }, {
+        group: { id: premiumGroup, tier: 'premium' }
+      })
+    }
+
+    await ctx.boss.work(ctx.schema, {
+      localConcurrency: 4,
+      localGroupConcurrency: localGroupConcurrencyConfig,
+      pollingIntervalSeconds: 0.5
+    }, async () => {
+      currentActive++
+      maxActive = Math.max(maxActive, currentActive)
+      await delay(300)
+      currentActive--
+    })
+
+    await delay(4000)
+
+    // Premium tier should allow up to 2 concurrent jobs per group
+    expect(maxActive).toBeLessThanOrEqual(2)
+  })
+
+  it('should handle mixed grouped and ungrouped jobs with localGroupConcurrency', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
+
+    const groupId = 'test-group'
+    const localGroupConcurrency = 1
+    const processedJobs: string[] = []
+
+    // Send grouped jobs
+    for (let i = 0; i < 2; i++) {
+      await ctx.boss.send(ctx.schema, { type: 'grouped', index: i }, {
+        group: { id: groupId }
+      })
+    }
+
+    // Send ungrouped jobs
+    for (let i = 0; i < 2; i++) {
+      await ctx.boss.send(ctx.schema, { type: 'ungrouped', index: i })
+    }
+
+    await ctx.boss.work(ctx.schema, {
+      localConcurrency: 4,
+      localGroupConcurrency,
+      pollingIntervalSeconds: 0.5
+    }, async (jobs) => {
+      const job = jobs[0]
+      const type = (job.data as { type: string }).type
+      processedJobs.push(type)
+      await delay(100)
+    })
+
+    await delay(3000)
+
+    // All 4 jobs should be processed
+    expect(processedJobs.length).toBe(4)
+    expect(processedJobs.filter(t => t === 'grouped').length).toBe(2)
+    expect(processedJobs.filter(t => t === 'ungrouped').length).toBe(2)
+  })
+
+  it('should process grouped jobs without localGroupConcurrency bypassing local tracking', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
+
+    const groupId = 'test-group'
+    let processedCount = 0
+
+    // Send jobs with group (but no localGroupConcurrency configured)
+    for (let i = 0; i < 3; i++) {
+      await ctx.boss.send(ctx.schema, { index: i }, {
+        group: { id: groupId }
+      })
+    }
+
+    // Work without localGroupConcurrency - should process normally without local tracking
+    await ctx.boss.work(ctx.schema, {
+      localConcurrency: 2,
+      pollingIntervalSeconds: 0.5
+    }, async () => {
+      processedCount++
+      await delay(100)
+    })
+
+    await delay(2000)
+
+    // All jobs should be processed
+    expect(processedCount).toBe(3)
+  })
 })

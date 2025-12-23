@@ -5,6 +5,63 @@ import { delay } from '../src/tools.ts'
 import { ctx } from './hooks.ts'
 
 describe('localConcurrency', function () {
+  it('should notify worker and interrupt delay when new job is sent', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
+
+    let jobProcessed = false
+    let processingStartTime: number | null = null
+
+    // Create worker with long polling interval
+    const workerId = await ctx.boss.work(ctx.schema, { pollingIntervalSeconds: 10 }, async () => {
+      processingStartTime = Date.now()
+      jobProcessed = true
+    })
+
+    // Wait a bit for the worker to start and enter delay state
+    await delay(500)
+
+    // Record when we send the job and notify
+    const sendTime = Date.now()
+
+    // Send job - this should notify the worker
+    await ctx.boss.send(ctx.schema)
+
+    // Notify the worker to interrupt its delay
+    ctx.boss.notifyWorker(workerId)
+
+    // Wait for job to be processed
+    await delay(2000)
+
+    // Job should have been processed much faster than 10 second polling interval
+    expect(jobProcessed).toBe(true)
+    assertTruthy(processingStartTime)
+    // Processing should have started within 2 seconds of sending, not waiting for 10s interval
+    expect(processingStartTime - sendTime).toBeLessThan(2000)
+  })
+
+  it('should handle worker notification when no delay is active', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    let processedCount = 0
+
+    // Create worker that processes quickly
+    const workerId = await ctx.boss.work(ctx.schema, { pollingIntervalSeconds: 0.5 }, async () => {
+      processedCount++
+      await delay(100)
+    })
+
+    // Notify immediately (before worker enters delay state)
+    ctx.boss.notifyWorker(workerId)
+
+    // Send job
+    await ctx.boss.send(ctx.schema)
+
+    await delay(1500)
+
+    // Job should still be processed normally
+    expect(processedCount).toBe(1)
+  })
+
   it('should spawn multiple workers when localConcurrency > 1', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
 
