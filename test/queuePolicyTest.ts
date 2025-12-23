@@ -1,413 +1,435 @@
-import assert from 'node:assert'
+import { expect } from 'vitest'
 import * as helper from './testHelper.ts'
+import { assertTruthy } from './testHelper.ts'
 import { delay } from '../src/tools.ts'
+import { ctx } from './hooks.ts'
 
 describe('queuePolicy', function () {
   [{ partition: false }, { partition: true }].forEach(({ partition }) => {
-    it(`short policy only allows 1 job in this.schema using partition=${partition}`, async function () {
-      this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
+    it(`short policy only allows 1 job in ctx.schema using partition=${partition}`, async function () {
+      ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
-      await this.boss.createQueue(this.schema, { policy: 'short', partition })
+      await ctx.boss.createQueue(ctx.schema, { policy: 'short', partition })
 
-      const jobId = await this.boss.send(this.schema)
+      const jobId = await ctx.boss.send(ctx.schema)
 
-      assert(jobId)
+      expect(jobId).toBeTruthy()
 
-      const jobId2 = await this.boss.send(this.schema)
+      const jobId2 = await ctx.boss.send(ctx.schema)
 
-      assert.strictEqual(jobId2, null)
+      expect(jobId2).toBe(null)
 
-      const [job] = await this.boss.fetch(this.schema)
+      const [job] = await ctx.boss.fetch(ctx.schema)
 
-      assert.strictEqual(job.id, jobId)
+      expect(job.id).toBe(jobId)
 
-      const jobId3 = await this.boss.send(this.schema)
+      const jobId3 = await ctx.boss.send(ctx.schema)
 
-      assert(jobId3)
+      expect(jobId3).toBeTruthy()
     })
 
     it(`short policy should be extended with singletonKey using partition=${partition}`, async function () {
-      this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
+      ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
-      await this.boss.createQueue(this.schema, { policy: 'short', partition })
+      await ctx.boss.createQueue(ctx.schema, { policy: 'short', partition })
 
-      const jobId = await this.boss.send(this.schema, null, { singletonKey: 'a' })
+      const jobId = await ctx.boss.send(ctx.schema, null, { singletonKey: 'a' })
 
-      assert(jobId)
+      expect(jobId).toBeTruthy()
 
-      const jobId2 = await this.boss.send(this.schema, null, { singletonKey: 'a' })
+      const jobId2 = await ctx.boss.send(ctx.schema, null, { singletonKey: 'a' })
 
-      assert.strictEqual(jobId2, null)
+      expect(jobId2).toBe(null)
 
-      const jobId3 = await this.boss.send(this.schema, null, { singletonKey: 'b' })
+      const jobId3 = await ctx.boss.send(ctx.schema, null, { singletonKey: 'b' })
 
-      assert(jobId3)
+      expect(jobId3).toBeTruthy()
 
-      const [job] = await this.boss.fetch(this.schema)
+      const [job] = await ctx.boss.fetch(ctx.schema)
 
-      assert.strictEqual(job.id, jobId)
+      expect(job.id).toBe(jobId)
 
-      const jobId4 = await this.boss.send(this.schema, null, { singletonKey: 'a' })
+      const jobId4 = await ctx.boss.send(ctx.schema, null, { singletonKey: 'a' })
 
-      assert(jobId4)
+      expect(jobId4).toBeTruthy()
     })
 
     it(`singleton policy only allows 1 active job using partition=${partition}`, async function () {
-      this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
+      ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
-      await this.boss.createQueue(this.schema, { policy: 'singleton', partition })
+      await ctx.boss.createQueue(ctx.schema, { policy: 'singleton', partition })
 
-      await this.boss.send(this.schema)
+      await ctx.boss.send(ctx.schema)
 
-      await this.boss.send(this.schema)
+      await ctx.boss.send(ctx.schema)
 
-      const [job1] = await this.boss.fetch(this.schema)
+      const [job1] = await ctx.boss.fetch(ctx.schema)
 
-      const [job2] = await this.boss.fetch(this.schema)
+      const [job2] = await ctx.boss.fetch(ctx.schema)
 
-      assert(!job2)
+      expect(job2).toBeFalsy()
 
-      await this.boss.complete(this.schema, job1.id)
+      await ctx.boss.complete(ctx.schema, job1.id)
 
-      const [job3] = await this.boss.fetch(this.schema)
+      const [job3] = await ctx.boss.fetch(ctx.schema)
 
-      assert(job3)
+      expect(job3).toBeTruthy()
     })
 
     it(`singleton policy should be extended with singletonKey using partition=${partition}`, async function () {
-      this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
+      ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
-      await this.boss.createQueue(this.schema, { policy: 'singleton', partition })
+      await ctx.boss.createQueue(ctx.schema, { policy: 'singleton', partition })
 
-      await this.boss.send(this.schema, null, { singletonKey: 'a' })
+      await ctx.boss.send(ctx.schema, null, { singletonKey: 'a' })
 
-      await this.boss.send(this.schema, null, { singletonKey: 'b' })
+      await ctx.boss.send(ctx.schema, null, { singletonKey: 'b' })
 
-      const [job1] = await this.boss.fetch(this.schema)
+      const [job1] = await ctx.boss.fetch(ctx.schema)
 
-      assert(job1)
+      expect(job1).toBeTruthy()
 
-      const [job2] = await this.boss.fetch(this.schema)
+      const [job2] = await ctx.boss.fetch(ctx.schema)
 
-      assert(job2)
+      expect(job2).toBeTruthy()
 
-      await this.boss.send(this.schema, null, { singletonKey: 'b' })
+      await ctx.boss.send(ctx.schema, null, { singletonKey: 'b' })
 
-      const [job3] = await this.boss.fetch(this.schema)
+      const [job3] = await ctx.boss.fetch(ctx.schema)
 
-      assert(!job3)
+      expect(job3).toBeFalsy()
 
-      await this.boss.complete(this.schema, job2.id)
+      await ctx.boss.complete(ctx.schema, job2.id)
 
-      const [job3b] = await this.boss.fetch(this.schema)
+      const [job3b] = await ctx.boss.fetch(ctx.schema)
 
-      assert(job3b)
+      expect(job3b).toBeTruthy()
     })
 
     it(`stately policy only allows 1 job per state up to active using partition=${partition}`, async function () {
-      this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
+      ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
-      await this.boss.createQueue(this.schema, { policy: 'stately', partition })
+      await ctx.boss.createQueue(ctx.schema, { policy: 'stately', partition })
 
-      const jobId1 = await this.boss.send(this.schema, null, { retryLimit: 1 })
+      const jobId1 = await ctx.boss.send(ctx.schema, null, { retryLimit: 1 })
 
-      assert(jobId1)
+      expect(jobId1).toBeTruthy()
 
-      const blockedId = await this.boss.send(this.schema)
+      const blockedId = await ctx.boss.send(ctx.schema)
 
-      assert.strictEqual(blockedId, null)
+      expect(blockedId).toBe(null)
 
-      const [job1] = await this.boss.fetch(this.schema)
+      const [job1] = await ctx.boss.fetch(ctx.schema)
 
-      await this.boss.fail(this.schema, job1.id)
+      await ctx.boss.fail(ctx.schema, job1.id)
 
-      const job1WithData = await this.boss.getJobById(this.schema, jobId1)
+      assertTruthy(jobId1)
+      const job1WithData = await ctx.boss.getJobById(ctx.schema, jobId1)
 
-      assert.strictEqual(job1WithData!.state, 'retry')
+      assertTruthy(job1WithData)
+      expect(job1WithData.state).toBe('retry')
 
-      const jobId2 = await this.boss.send(this.schema, null, { retryLimit: 1 })
+      const jobId2 = await ctx.boss.send(ctx.schema, null, { retryLimit: 1 })
 
-      assert(jobId2)
+      expect(jobId2).toBeTruthy()
 
-      await this.boss.fetch(this.schema)
+      await ctx.boss.fetch(ctx.schema)
 
-      const job1a = await this.boss.getJobById(this.schema, jobId1)
+      const job1a = await ctx.boss.getJobById(ctx.schema, jobId1)
 
-      assert.strictEqual(job1a!.state, 'active')
+      assertTruthy(job1a)
+      expect(job1a.state).toBe('active')
 
-      const [blockedSecondActive] = await this.boss.fetch(this.schema)
+      const [blockedSecondActive] = await ctx.boss.fetch(ctx.schema)
 
-      assert(!blockedSecondActive)
+      expect(blockedSecondActive).toBeFalsy()
     })
 
     it(`stately policy fails a job without retry when others are active using partition=${partition}`, async function () {
-      this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
-      const deadLetter = this.schema + '_dlq'
+      ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+      const deadLetter = ctx.schema + '_dlq'
 
-      await this.boss.createQueue(deadLetter)
-      await this.boss.createQueue(this.schema, { policy: 'stately', deadLetter, retryLimit: 3, partition })
+      await ctx.boss.createQueue(deadLetter)
+      await ctx.boss.createQueue(ctx.schema, { policy: 'stately', deadLetter, retryLimit: 3, partition })
 
-      const jobId1 = await this.boss.send(this.schema, null, { expireInSeconds: 1 })
-      assert(jobId1)
-      await this.boss.fetch(this.schema)
-      await this.boss.fail(this.schema, jobId1)
-      const job1Data = await this.boss.getJobById(this.schema, jobId1)
-      assert.strictEqual(job1Data!.state, 'retry')
+      const jobId1 = await ctx.boss.send(ctx.schema, null, { expireInSeconds: 1 })
+      expect(jobId1).toBeTruthy()
+      await ctx.boss.fetch(ctx.schema)
+      assertTruthy(jobId1)
+      await ctx.boss.fail(ctx.schema, jobId1)
+      const job1Data = await ctx.boss.getJobById(ctx.schema, jobId1)
+      assertTruthy(job1Data)
+      expect(job1Data.state).toBe('retry')
 
       // higher priority new job should be active next
-      const jobId2 = await this.boss.send(this.schema, null, { priority: 1, expireInSeconds: 1 })
-      assert(jobId2)
-      await this.boss.fetch(this.schema)
+      const jobId2 = await ctx.boss.send(ctx.schema, null, { priority: 1, expireInSeconds: 1 })
+      expect(jobId2).toBeTruthy()
+      await ctx.boss.fetch(ctx.schema)
 
-      const jobId3 = await this.boss.send(this.schema)
-      assert(jobId3)
+      const jobId3 = await ctx.boss.send(ctx.schema)
+      expect(jobId3).toBeTruthy()
 
-      await this.boss.fail(this.schema, jobId2)
+      assertTruthy(jobId2)
+      await ctx.boss.fail(ctx.schema, jobId2)
 
-      const job2Data = await this.boss.getJobById(this.schema, jobId2)
+      const job2Data = await ctx.boss.getJobById(ctx.schema, jobId2)
 
-      assert.strictEqual(job2Data!.state, 'failed')
+      assertTruthy(job2Data)
+      expect(job2Data.state).toBe('failed')
 
-      const [job2Dlq] = await this.boss.fetch(deadLetter)
+      const [job2Dlq] = await ctx.boss.fetch(deadLetter)
 
-      assert(job2Dlq)
+      expect(job2Dlq).toBeTruthy()
     })
 
     it(`stately policy should be extended with singletonKey using partition=${partition}`, async function () {
-      this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
+      ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
-      await this.boss.createQueue(this.schema, { policy: 'stately', partition })
+      await ctx.boss.createQueue(ctx.schema, { policy: 'stately', partition })
 
-      const jobAId = await this.boss.send(this.schema, null, { singletonKey: 'a', retryLimit: 1 })
+      const jobAId = await ctx.boss.send(ctx.schema, null, { singletonKey: 'a', retryLimit: 1 })
 
-      assert(jobAId)
+      expect(jobAId).toBeTruthy()
 
-      const jobBId = await this.boss.send(this.schema, null, { singletonKey: 'b', retryLimit: 1 })
+      const jobBId = await ctx.boss.send(ctx.schema, null, { singletonKey: 'b', retryLimit: 1 })
 
-      assert(jobBId)
+      expect(jobBId).toBeTruthy()
 
-      const jobA2Id = await this.boss.send(this.schema, null, { singletonKey: 'a', retryLimit: 1 })
+      const jobA2Id = await ctx.boss.send(ctx.schema, null, { singletonKey: 'a', retryLimit: 1 })
 
-      assert.strictEqual(jobA2Id, null)
+      expect(jobA2Id).toBe(null)
 
-      const [jobA] = await this.boss.fetch(this.schema)
+      const [jobA] = await ctx.boss.fetch(ctx.schema)
 
-      await this.boss.fail(this.schema, jobA.id)
+      await ctx.boss.fail(ctx.schema, jobA.id)
 
-      let jobAWithData = await this.boss.getJobById(this.schema, jobAId)
+      assertTruthy(jobAId)
+      let jobAWithData = await ctx.boss.getJobById(ctx.schema, jobAId)
 
-      assert.strictEqual(jobAWithData!.state, 'retry')
+      assertTruthy(jobAWithData)
+      expect(jobAWithData.state).toBe('retry')
 
-      await this.boss.fetch(this.schema)
+      await ctx.boss.fetch(ctx.schema)
 
-      jobAWithData = await this.boss.getJobById(this.schema, jobAId)
+      jobAWithData = await ctx.boss.getJobById(ctx.schema, jobAId)
 
-      assert.strictEqual(jobAWithData!.state, 'active')
+      assertTruthy(jobAWithData)
+      expect(jobAWithData.state).toBe('active')
 
-      const [jobB] = await this.boss.fetch(this.schema)
+      const [jobB] = await ctx.boss.fetch(ctx.schema)
 
-      assert(jobB)
+      expect(jobB).toBeTruthy()
 
-      const jobBWithData = await this.boss.getJobById(this.schema, jobBId)
+      assertTruthy(jobBId)
+      const jobBWithData = await ctx.boss.getJobById(ctx.schema, jobBId)
 
-      assert.strictEqual(jobBWithData!.state, 'active')
+      assertTruthy(jobBWithData)
+      expect(jobBWithData.state).toBe('active')
 
-      const jobA3Id = await this.boss.send(this.schema, null, { singletonKey: 'a' })
+      const jobA3Id = await ctx.boss.send(ctx.schema, null, { singletonKey: 'a' })
 
-      assert(jobA3Id)
+      expect(jobA3Id).toBeTruthy()
 
-      const [jobA3] = await this.boss.fetch(this.schema)
+      const [jobA3] = await ctx.boss.fetch(ctx.schema)
 
-      assert(!jobA3)
+      expect(jobA3).toBeFalsy()
     })
 
     it(`stately policy with singletonKey should not block other values if one is blocked using partition=${partition}`, async function () {
       const config = {
-        ...this.bossConfig,
+        ...ctx.bossConfig,
         noDefault: true,
         queueCacheIntervalSeconds: 1,
         monitorIntervalSeconds: 1
       }
-      this.boss = await helper.start(config)
+      ctx.boss = await helper.start(config)
 
-      await this.boss.createQueue(this.schema, { policy: 'stately', partition })
+      await ctx.boss.createQueue(ctx.schema, { policy: 'stately', partition })
 
       // put singleton key 'a' into active state
-      await this.boss.send(this.schema, null, { singletonKey: 'a', retryLimit: 1 })
-      const [jobA] = await this.boss.fetch(this.schema)
-      assert(jobA)
+      await ctx.boss.send(ctx.schema, null, { singletonKey: 'a', retryLimit: 1 })
+      const [jobA] = await ctx.boss.fetch(ctx.schema)
+      expect(jobA).toBeTruthy()
 
-      // then, create another job in the this.schema for 'a'
-      const jobA2Id = await this.boss.send(this.schema, null, { singletonKey: 'a', retryLimit: 1 })
-      assert(jobA2Id)
+      // then, create another job in the ctx.schema for 'a'
+      const jobA2Id = await ctx.boss.send(ctx.schema, null, { singletonKey: 'a', retryLimit: 1 })
+      expect(jobA2Id).toBeTruthy()
 
-      // now, this.schema a job for 'b', and attempt to fetch it
-      const jobBId = await this.boss.send(this.schema, null, { singletonKey: 'b', retryLimit: 1 })
-      assert(jobBId)
+      // now, ctx.schema a job for 'b', and attempt to fetch it
+      const jobBId = await ctx.boss.send(ctx.schema, null, { singletonKey: 'b', retryLimit: 1 })
+      expect(jobBId).toBeTruthy()
 
-      const [jobB1] = await this.boss.fetch(this.schema)
-      assert.strictEqual(jobB1, undefined)
+      const [jobB1] = await ctx.boss.fetch(ctx.schema)
+      expect(jobB1).toBe(undefined)
 
-      await this.boss.supervise()
+      await ctx.boss.supervise()
       await delay(1500)
 
-      const [jobB] = await this.boss.fetch(this.schema)
-      assert(jobB)
+      const [jobB] = await ctx.boss.fetch(ctx.schema)
+      expect(jobB).toBeTruthy()
     })
 
     it(`singleton policy with singletonKey should not block other values if one is blocked using partition=${partition}`, async function () {
       const config = {
-        ...this.bossConfig,
+        ...ctx.bossConfig,
         noDefault: true,
         queueCacheIntervalSeconds: 1,
         monitorIntervalSeconds: 1
       }
-      this.boss = await helper.start(config)
+      ctx.boss = await helper.start(config)
 
-      await this.boss.createQueue(this.schema, { policy: 'singleton', partition })
+      await ctx.boss.createQueue(ctx.schema, { policy: 'singleton', partition })
 
       // put singleton key 'a' into active state
-      await this.boss.send(this.schema, null, { singletonKey: 'a', retryLimit: 1 })
-      const [jobA] = await this.boss.fetch(this.schema)
-      assert(jobA)
+      await ctx.boss.send(ctx.schema, null, { singletonKey: 'a', retryLimit: 1 })
+      const [jobA] = await ctx.boss.fetch(ctx.schema)
+      expect(jobA).toBeTruthy()
 
-      // then, create another job in the this.schema for 'a'
-      const jobA2Id = await this.boss.send(this.schema, null, { singletonKey: 'a', retryLimit: 1 })
-      assert(jobA2Id)
+      // then, create another job in the ctx.schema for 'a'
+      const jobA2Id = await ctx.boss.send(ctx.schema, null, { singletonKey: 'a', retryLimit: 1 })
+      expect(jobA2Id).toBeTruthy()
 
-      // now, this.schema a job for 'b', and attempt to fetch it
-      const jobBId = await this.boss.send(this.schema, null, { singletonKey: 'b', retryLimit: 1 })
-      assert(jobBId)
+      // now, ctx.schema a job for 'b', and attempt to fetch it
+      const jobBId = await ctx.boss.send(ctx.schema, null, { singletonKey: 'b', retryLimit: 1 })
+      expect(jobBId).toBeTruthy()
 
-      const [jobB1] = await this.boss.fetch(this.schema)
-      assert.strictEqual(jobB1, undefined)
+      const [jobB1] = await ctx.boss.fetch(ctx.schema)
+      expect(jobB1).toBe(undefined)
 
-      await this.boss.supervise()
+      await ctx.boss.supervise()
       await delay(1500)
 
-      const [jobB] = await this.boss.fetch(this.schema)
-      assert(jobB)
+      const [jobB] = await ctx.boss.fetch(ctx.schema)
+      expect(jobB).toBeTruthy()
     })
 
-    it(`singleton policy with multiple singletonKeys in the this.schema should only promote 1 of each keep up to the requested batch size using partition=${partition}`, async function () {
+    it(`singleton policy with multiple singletonKeys in the ctx.schema should only promote 1 of each keep up to the requested batch size using partition=${partition}`, async function () {
       const config = {
-        ...this.bossConfig,
+        ...ctx.bossConfig,
         noDefault: true
       }
 
-      this.boss = await helper.start(config)
+      ctx.boss = await helper.start(config)
 
-      await this.boss.createQueue(this.schema, { policy: 'singleton', partition })
+      await ctx.boss.createQueue(ctx.schema, { policy: 'singleton', partition })
 
-      await this.boss.send(this.schema, null)
-      await this.boss.send(this.schema, null, { singletonKey: 'a', retryLimit: 1 })
-      await this.boss.send(this.schema, null, { singletonKey: 'a', retryLimit: 1 })
-      await this.boss.send(this.schema, null, { singletonKey: 'b', retryLimit: 1 })
+      await ctx.boss.send(ctx.schema, null)
+      await ctx.boss.send(ctx.schema, null, { singletonKey: 'a', retryLimit: 1 })
+      await ctx.boss.send(ctx.schema, null, { singletonKey: 'a', retryLimit: 1 })
+      await ctx.boss.send(ctx.schema, null, { singletonKey: 'b', retryLimit: 1 })
 
-      const jobs = await this.boss.fetch(this.schema, { batchSize: 4, includeMetadata: true })
+      const jobs = await ctx.boss.fetch(ctx.schema, { batchSize: 4, includeMetadata: true })
 
-      assert.strictEqual(jobs.length, 3)
-      assert(jobs.find(i => i.singletonKey === 'a'))
-      assert(jobs.find(i => i.singletonKey === 'b'))
+      expect(jobs.length).toBe(3)
+      expect(jobs.find(i => i.singletonKey === 'a')).toBeTruthy()
+      expect(jobs.find(i => i.singletonKey === 'b')).toBeTruthy()
 
-      await this.boss.complete(this.schema, jobs.map(i => i.id))
+      await ctx.boss.complete(ctx.schema, jobs.map(i => i.id))
 
-      const [job3] = await this.boss.fetch(this.schema, { includeMetadata: true })
-      assert.strictEqual(job3.singletonKey, 'a')
+      const [job3] = await ctx.boss.fetch(ctx.schema, { includeMetadata: true })
+      expect(job3.singletonKey).toBe('a')
     })
 
     it(`exclusive policy only allows 1 active,retry,created job using partition=${partition}`, async function () {
-      this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
+      ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
-      await this.boss.createQueue(this.schema, { policy: 'exclusive', partition })
+      await ctx.boss.createQueue(ctx.schema, { policy: 'exclusive', partition })
 
-      const jobId1 = await this.boss.send(this.schema, null, { retryLimit: 1 })
+      const jobId1 = await ctx.boss.send(ctx.schema, null, { retryLimit: 1 })
 
-      assert(jobId1)
+      expect(jobId1).toBeTruthy()
 
       // it won't add a second job while the first is in created state
-      const blockedId = await this.boss.send(this.schema)
+      const blockedId = await ctx.boss.send(ctx.schema)
 
-      assert.strictEqual(blockedId, null)
+      expect(blockedId).toBe(null)
 
-      const [job1] = await this.boss.fetch(this.schema)
+      const [job1] = await ctx.boss.fetch(ctx.schema)
 
-      await this.boss.fail(this.schema, job1.id)
+      await ctx.boss.fail(ctx.schema, job1.id)
 
-      const job1WithData = await this.boss.getJobById(this.schema, jobId1)
+      assertTruthy(jobId1)
+      const job1WithData = await ctx.boss.getJobById(ctx.schema, jobId1)
 
-      assert.strictEqual(job1WithData!.state, 'retry')
+      assertTruthy(job1WithData)
+      expect(job1WithData.state).toBe('retry')
 
       // trying to send another job while one is in retry should not add the job
-      const jobId2 = await this.boss.send(this.schema, null, { retryLimit: 1 })
+      const jobId2 = await ctx.boss.send(ctx.schema, null, { retryLimit: 1 })
 
-      assert.strictEqual(jobId2, null)
+      expect(jobId2).toBe(null)
 
-      await this.boss.fetch(this.schema)
+      await ctx.boss.fetch(ctx.schema)
 
-      const job1a = await this.boss.getJobById(this.schema, jobId1)
+      const job1a = await ctx.boss.getJobById(ctx.schema, jobId1)
 
-      assert.strictEqual(job1a!.state, 'active')
+      assertTruthy(job1a)
+      expect(job1a.state).toBe('active')
 
-      const [blockedSecondActive] = await this.boss.fetch(this.schema)
+      const [blockedSecondActive] = await ctx.boss.fetch(ctx.schema)
 
-      assert(!blockedSecondActive)
+      expect(blockedSecondActive).toBeFalsy()
 
       // We fail the job again, this time it goes to failed state
-      await this.boss.fail(this.schema, jobId1)
+      await ctx.boss.fail(ctx.schema, jobId1)
 
       // sending a new job should work now that the first job is failed
-      const newJobId = await this.boss.send(this.schema)
-      assert(newJobId)
+      const newJobId = await ctx.boss.send(ctx.schema)
+      expect(newJobId).toBeTruthy()
     })
 
     it(`exclusive policy should be extended with singletonKey using partition=${partition}`, async function () {
-      this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
+      ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
-      await this.boss.createQueue(this.schema, { policy: 'exclusive', partition })
+      await ctx.boss.createQueue(ctx.schema, { policy: 'exclusive', partition })
 
-      const jobAId = await this.boss.send(this.schema, null, { singletonKey: 'a', retryLimit: 1 })
+      const jobAId = await ctx.boss.send(ctx.schema, null, { singletonKey: 'a', retryLimit: 1 })
 
-      assert(jobAId)
+      expect(jobAId).toBeTruthy()
 
-      const jobBId = await this.boss.send(this.schema, null, { singletonKey: 'b', retryLimit: 1 })
+      const jobBId = await ctx.boss.send(ctx.schema, null, { singletonKey: 'b', retryLimit: 1 })
 
-      assert(jobBId)
+      expect(jobBId).toBeTruthy()
 
-      const jobA2Id = await this.boss.send(this.schema, null, { singletonKey: 'a', retryLimit: 1 })
+      const jobA2Id = await ctx.boss.send(ctx.schema, null, { singletonKey: 'a', retryLimit: 1 })
 
-      assert.strictEqual(jobA2Id, null)
+      expect(jobA2Id).toBe(null)
 
-      const [jobA] = await this.boss.fetch(this.schema)
+      const [jobA] = await ctx.boss.fetch(ctx.schema)
 
-      await this.boss.fail(this.schema, jobA.id)
+      await ctx.boss.fail(ctx.schema, jobA.id)
 
-      let jobAWithData = await this.boss.getJobById(this.schema, jobAId)
+      assertTruthy(jobAId)
+      let jobAWithData = await ctx.boss.getJobById(ctx.schema, jobAId)
 
-      assert.strictEqual(jobAWithData!.state, 'retry')
+      assertTruthy(jobAWithData)
+      expect(jobAWithData.state).toBe('retry')
 
-      await this.boss.fetch(this.schema)
+      await ctx.boss.fetch(ctx.schema)
 
-      jobAWithData = await this.boss.getJobById(this.schema, jobAId)
+      jobAWithData = await ctx.boss.getJobById(ctx.schema, jobAId)
 
-      assert.strictEqual(jobAWithData!.state, 'active')
+      assertTruthy(jobAWithData)
+      expect(jobAWithData.state).toBe('active')
 
-      const [jobB] = await this.boss.fetch(this.schema)
+      const [jobB] = await ctx.boss.fetch(ctx.schema)
 
-      assert(jobB)
+      expect(jobB).toBeTruthy()
 
-      const jobBWithData = await this.boss.getJobById(this.schema, jobBId)
+      assertTruthy(jobBId)
+      const jobBWithData = await ctx.boss.getJobById(ctx.schema, jobBId)
 
-      assert.strictEqual(jobBWithData!.state, 'active')
+      assertTruthy(jobBWithData)
+      expect(jobBWithData.state).toBe('active')
 
       // cannot send another 'a' job while one is active
-      const jobA3Id = await this.boss.send(this.schema, null, { singletonKey: 'a' })
+      const jobA3Id = await ctx.boss.send(ctx.schema, null, { singletonKey: 'a' })
 
-      assert(!jobA3Id)
+      expect(jobA3Id).toBeFalsy()
 
-      const [jobA3] = await this.boss.fetch(this.schema)
+      const [jobA3] = await ctx.boss.fetch(ctx.schema)
 
-      assert(!jobA3)
+      expect(jobA3).toBeFalsy()
     })
   })
 })

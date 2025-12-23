@@ -1,42 +1,45 @@
-import assert from 'node:assert'
+import { expect } from 'vitest'
 import * as helper from './testHelper.ts'
+import { assertTruthy } from './testHelper.ts'
+import { ctx } from './hooks.ts'
 
 describe('cancel', function () {
   it('should reject missing id argument', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
 
-    await assert.rejects(async () => {
+    await expect(async () => {
       // @ts-ignore
-      await this.boss.resume()
-    })
+      await ctx.boss.resume()
+    }).rejects.toThrow()
   })
 
   it('should cancel and resume a pending job', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
 
-    const jobId = await this.boss.send(this.schema, null, { startAfter: 1 })
+    const jobId = await ctx.boss.send(ctx.schema, null, { startAfter: 1 })
 
-    assert(jobId)
+    expect(jobId).toBeTruthy()
 
-    await this.boss.cancel(this.schema, jobId)
+    assertTruthy(jobId)
+    await ctx.boss.cancel(ctx.schema, jobId)
 
-    const job = await this.boss.getJobById(this.schema, jobId)
+    const job = await ctx.boss.getJobById(ctx.schema, jobId)
 
-    assert(job && job.state === 'cancelled')
+    expect(job && job.state === 'cancelled').toBeTruthy()
 
-    await this.boss.resume(this.schema, jobId)
+    await ctx.boss.resume(ctx.schema, jobId)
 
-    const job2 = await this.boss.getJobById(this.schema, jobId)
+    const job2 = await ctx.boss.getJobById(ctx.schema, jobId)
 
-    assert(job2 && job2.state === 'created')
+    expect(job2 && job2.state === 'created').toBeTruthy()
   })
 
   it('should cancel and resume a pending job with custom connection', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
 
-    const jobId = await this.boss.send(this.schema, null, { startAfter: 1 })
+    const jobId = await ctx.boss.send(ctx.schema, null, { startAfter: 1 })
 
-    assert(jobId)
+    expect(jobId).toBeTruthy()
 
     let callCount = 0
     const _db = await helper.getDb()
@@ -49,17 +52,18 @@ describe('cancel', function () {
       }
     }
 
-    await this.boss.cancel(this.schema, jobId, { db })
+    assertTruthy(jobId)
+    await ctx.boss.cancel(ctx.schema, jobId, { db })
 
-    const job = await this.boss.getJobById(this.schema, jobId, { db })
+    const job = await ctx.boss.getJobById(ctx.schema, jobId, { db })
 
-    assert(job && job.state === 'cancelled')
+    expect(job && job.state === 'cancelled').toBeTruthy()
 
-    await this.boss.resume(this.schema, jobId, { db })
+    await ctx.boss.resume(ctx.schema, jobId, { db })
 
-    const job2 = await this.boss.getJobById(this.schema, jobId, { db })
+    const job2 = await ctx.boss.getJobById(ctx.schema, jobId, { db })
 
-    assert(job2 && job2.state === 'created')
-    assert.strictEqual(callCount, 4)
+    expect(job2 && job2.state === 'created').toBeTruthy()
+    expect(callCount).toBe(4)
   })
 })

@@ -4,6 +4,7 @@
     "@tsconfig/node-ts/tsconfig.json"
   ],
   "compilerOptions": {
+    "types": ["vitest/globals"],
     "outDir": "dist",
     "declaration": true,
     "declarationMap": true,

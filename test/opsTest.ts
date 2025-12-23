@@ -1,65 +1,66 @@
-import assert from 'node:assert'
+import { expect } from 'vitest'
 import * as helper from './testHelper.ts'
 import { randomUUID } from 'node:crypto'
 import { PgBoss } from '../src/index.ts'
+import { ctx } from './hooks.ts'
 
 describe('ops', function () {
   it('should emit error in worker', async function () {
-    this.boss = await helper.start({ ...this.bossConfig, __test__throw_worker: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__throw_worker: true })
 
-    await this.boss.send(this.schema)
-    await this.boss.work(this.schema, async () => {})
+    await ctx.boss.send(ctx.schema)
+    await ctx.boss.work(ctx.schema, async () => {})
 
-    await new Promise(resolve => this.boss!.once('error', resolve))
+    await new Promise(resolve => ctx.boss!.once('error', resolve))
   })
 
   it('should return null from getJobById if not found', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
 
-    const jobId = await this.boss.getJobById(this.schema, randomUUID())
+    const jobId = await ctx.boss.getJobById(ctx.schema, randomUUID())
 
-    assert(!jobId)
+    expect(jobId).toBeFalsy()
   })
 
   it('should force stop', async function () {
-    this.boss = await helper.start(this.bossConfig)
-    await this.boss.stop({ graceful: false })
+    ctx.boss = await helper.start(ctx.bossConfig)
+    await ctx.boss.stop({ graceful: false })
   })
 
   it('should close the connection pool', async function () {
-    this.boss = await helper.start(this.bossConfig)
-    await this.boss.stop({ graceful: false })
+    ctx.boss = await helper.start(ctx.bossConfig)
+    await ctx.boss.stop({ graceful: false })
 
     // @ts-ignore
-    assert(this.boss.getDb().pool.totalCount === 0)
+    expect(ctx.boss.getDb().pool.totalCount).toBe(0)
   })
 
   it('should close the connection pool gracefully', async function () {
-    this.boss = await helper.start(this.bossConfig)
-    await this.boss.stop()
+    ctx.boss = await helper.start(ctx.bossConfig)
+    await ctx.boss.stop()
 
     // @ts-ignore
-    assert(this.boss.getDb().pool.totalCount === 0)
+    expect(ctx.boss.getDb().pool.totalCount).toBe(0)
   })
 
   it('should not close the connection pool after stop with close option', async function () {
-    this.boss = await helper.start(this.bossConfig)
-    await this.boss.stop({ close: false })
+    ctx.boss = await helper.start(ctx.bossConfig)
+    await ctx.boss.stop({ close: false })
 
-    const jobId = await this.boss.send(this.schema)
-    const [job] = await this.boss.fetch(this.schema)
+    const jobId = await ctx.boss.send(ctx.schema)
+    const [job] = await ctx.boss.fetch(ctx.schema)
 
-    assert.strictEqual(jobId, job.id)
+    expect(jobId).toBe(job.id)
   })
 
   it('should be able to run an arbitrary query via getDb()', async function () {
-    this.boss = await helper.start(this.bossConfig)
-    const { rows } = await this.boss.getDb().executeSql('select 1')
-    assert.strictEqual(1, rows.length)
+    ctx.boss = await helper.start(ctx.bossConfig)
+    const { rows } = await ctx.boss.getDb().executeSql('select 1')
+    expect(rows.length).toBe(1)
   })
 
   it('should start and stop immediately', async function () {
-    const boss = new PgBoss(this.bossConfig)
+    const boss = new PgBoss(ctx.bossConfig)
     await boss.start()
     await boss.stop()
   })
@@ -67,14 +68,18 @@ describe('ops', function () {
   it('should not leave open handles after starting and stopping', async function () {
     const resourcesBefore = process.getActiveResourcesInfo()
 
-    const boss = new PgBoss({ ...this.bossConfig, supervise: true, schedule: true })
+    const boss = new PgBoss({ ...ctx.bossConfig, supervise: true, schedule: true })
     await boss.start()
-    await boss.createQueue(this.schema)
-    await boss.work(this.schema, async () => {})
+    await boss.createQueue(ctx.schema)
+    await boss.work(ctx.schema, async () => {})
     await boss.stop()
+
+    // Allow a tick for cleanup
+    await new Promise(resolve => setImmediate(resolve))
 
     const resourcesAfter = process.getActiveResourcesInfo()
 
-    assert.strictEqual(resourcesAfter.length, resourcesBefore.length, `Should not leave open async resources. Before: ${resourcesBefore.length}, After: ${resourcesAfter.length}`)
+    // Check that resources didn't increase (no leaks)
+    expect(resourcesAfter.length).toBeLessThanOrEqual(resourcesBefore.length)
   })
 })

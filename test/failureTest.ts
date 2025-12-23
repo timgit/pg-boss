@@ -1,147 +1,156 @@
 import { delay } from '../src/tools.ts'
-import assert from 'node:assert'
+import { expect } from 'vitest'
 import * as helper from './testHelper.ts'
+import { assertTruthy } from './testHelper.ts'
+import { ctx } from './hooks.ts'
 
 describe('failure', function () {
   it('should reject missing id argument', async function () {
-    this.boss = await helper.start(this.bossConfig)
-    await assert.rejects(async () => {
+    ctx.boss = await helper.start(ctx.bossConfig)
+    await expect(async () => {
       // @ts-ignore
-      await this.boss.fail()
-    })
+      await ctx.boss.fail()
+    }).rejects.toThrow()
   })
 
   it('should fail a job when requested', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
 
-    await this.boss.send(this.schema)
+    await ctx.boss.send(ctx.schema)
 
-    const [job] = await this.boss.fetch(this.schema)
+    const [job] = await ctx.boss.fetch(ctx.schema)
 
-    await this.boss.fail(this.schema, job.id)
+    await ctx.boss.fail(ctx.schema, job.id)
   })
 
   it('should fail a batch of jobs', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
 
     await Promise.all([
-      this.boss.send(this.schema),
-      this.boss.send(this.schema),
-      this.boss.send(this.schema)
+      ctx.boss.send(ctx.schema),
+      ctx.boss.send(ctx.schema),
+      ctx.boss.send(ctx.schema)
     ])
 
-    const jobs = await this.boss.fetch(this.schema, { batchSize: 3 })
+    const jobs = await ctx.boss.fetch(ctx.schema, { batchSize: 3 })
 
-    const result = await this.boss.fail(this.schema, jobs.map(job => job.id))
+    const result = await ctx.boss.fail(ctx.schema, jobs.map(job => job.id))
 
-    assert.strictEqual(result.jobs.length, 3)
+    expect(result.jobs.length).toBe(3)
   })
 
   it('should fail a batch of jobs with a data arg', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
     const message = 'some error'
 
     await Promise.all([
-      this.boss.send(this.schema),
-      this.boss.send(this.schema),
-      this.boss.send(this.schema)
+      ctx.boss.send(ctx.schema),
+      ctx.boss.send(ctx.schema),
+      ctx.boss.send(ctx.schema)
     ])
 
-    const jobs = await this.boss.fetch(this.schema, { batchSize: 3 })
+    const jobs = await ctx.boss.fetch(ctx.schema, { batchSize: 3 })
 
-    await this.boss.fail(this.schema, jobs.map(job => job.id), new Error(message))
+    await ctx.boss.fail(ctx.schema, jobs.map(job => job.id), new Error(message))
 
-    const results = await Promise.all(jobs.map(job => this.boss!.getJobById(this.schema, job.id)))
+    const results = await Promise.all(jobs.map(job => ctx.boss!.getJobById(ctx.schema, job.id)))
 
     // @ts-ignore
-    assert(results.every(i => i!.output.message === message))
+    expect(results.every(i => i!.output.message === message)).toBeTruthy()
   })
 
   it('should preserve nested objects within a payload that is an instance of Error', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
 
     const failPayload = new Error('Something went wrong')
     // @ts-ignore
     failPayload.some = { deeply: { nested: { reason: 'nuna' } } }
 
-    const jobId = await this.boss.send(this.schema)
+    const jobId = await ctx.boss.send(ctx.schema)
 
-    assert(jobId)
+    expect(jobId).toBeTruthy()
 
-    await this.boss.fail(this.schema, jobId, failPayload)
+    assertTruthy(jobId)
+    await ctx.boss.fail(ctx.schema, jobId, failPayload)
 
-    const job = await this.boss.getJobById(this.schema, jobId)
+    const job = await ctx.boss.getJobById(ctx.schema, jobId)
 
-    assert(job?.output)
+    expect(job?.output).toBeTruthy()
 
     // @ts-ignore
-    assert.strictEqual(job.output.some.deeply.nested.reason, failPayload.some.deeply.nested.reason)
+    expect(job.output.some.deeply.nested.reason).toBe(failPayload.some.deeply.nested.reason)
   })
 
   it('failure via Promise reject() should pass string wrapped in value prop', async function () {
-    this.boss = await helper.start({ ...this.bossConfig, __test__enableSpies: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
     const failPayload = 'mah error'
 
-    const spy = this.boss.getSpy(this.schema)
-    const jobId = await this.boss.send(this.schema)
+    const spy = ctx.boss.getSpy(ctx.schema)
+    const jobId = await ctx.boss.send(ctx.schema)
 
-    assert(jobId)
+    expect(jobId).toBeTruthy()
 
-    await this.boss.work(this.schema, () => Promise.reject(failPayload))
+    await ctx.boss.work(ctx.schema, () => Promise.reject(failPayload))
 
+    assertTruthy(jobId)
     await spy.waitForJobWithId(jobId, 'failed')
 
-    const job = await this.boss.getJobById(this.schema, jobId)
+    const job = await ctx.boss.getJobById(ctx.schema, jobId)
 
-    assert.strictEqual((job!.output as { value: string }).value, failPayload)
+    assertTruthy(job)
+    expect((job.output as { value: string }).value).toBe(failPayload)
   })
 
   it('failure via Promise reject() should pass object payload', async function () {
-    this.boss = await helper.start({ ...this.bossConfig, __test__enableSpies: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
     const something = 'clever'
 
-    const spy = this.boss.getSpy(this.schema)
+    const spy = ctx.boss.getSpy(ctx.schema)
     const errorResponse = new Error('custom error')
     // @ts-ignore
     errorResponse.something = something
 
-    const jobId = await this.boss.send(this.schema)
+    const jobId = await ctx.boss.send(ctx.schema)
 
-    assert(jobId)
+    expect(jobId).toBeTruthy()
 
-    await this.boss.work(this.schema, () => Promise.reject(errorResponse))
+    await ctx.boss.work(ctx.schema, () => Promise.reject(errorResponse))
 
+    assertTruthy(jobId)
     await spy.waitForJobWithId(jobId, 'failed')
 
-    const job = await this.boss.getJobById(this.schema, jobId)
+    const job = await ctx.boss.getJobById(ctx.schema, jobId)
 
-    assert.strictEqual((job!.output as { something: string }).something, something)
+    assertTruthy(job)
+    expect((job.output as { something: string }).something).toBe(something)
   })
 
   it('failure with Error object should be saved in the job', async function () {
-    this.boss = await helper.start({ ...this.bossConfig, __test__enableSpies: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
     const message = 'a real error!'
 
-    const spy = this.boss.getSpy(this.schema)
-    const jobId = await this.boss.send(this.schema)
+    const spy = ctx.boss.getSpy(ctx.schema)
+    const jobId = await ctx.boss.send(ctx.schema)
 
-    assert(jobId)
+    expect(jobId).toBeTruthy()
 
-    await this.boss.work(this.schema, async () => { throw new Error(message) })
+    await ctx.boss.work(ctx.schema, async () => { throw new Error(message) })
 
+    assertTruthy(jobId)
     await spy.waitForJobWithId(jobId, 'failed')
 
-    const job = await this.boss.getJobById(this.schema, jobId)
+    const job = await ctx.boss.getJobById(ctx.schema, jobId)
 
-    assert((job!.output as { message: string }).message.includes(message))
+    assertTruthy(job)
+    expect((job.output as { message: string }).message.includes(message)).toBeTruthy()
   })
 
   it('should fail a job with custom connection', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
 
-    await this.boss.send(this.schema)
+    await ctx.boss.send(ctx.schema)
 
-    const [job] = await this.boss.fetch(this.schema)
+    const [job] = await ctx.boss.fetch(ctx.schema)
 
     let called = false
     const _db = await helper.getDb()
@@ -154,70 +163,73 @@ describe('failure', function () {
       }
     }
 
-    await this.boss.fail(this.schema, job.id, null, { db })
+    await ctx.boss.fail(ctx.schema, job.id, null, { db })
 
-    assert.strictEqual(called, true)
+    expect(called).toBe(true)
   })
 
   it('failure with circular payload should be safely serialized', async function () {
-    this.boss = await helper.start({ ...this.bossConfig, __test__enableSpies: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
 
-    const spy = this.boss.getSpy(this.schema)
-    const jobId = await this.boss.send(this.schema)
+    const spy = ctx.boss.getSpy(ctx.schema)
+    const jobId = await ctx.boss.send(ctx.schema)
 
-    assert(jobId)
+    expect(jobId).toBeTruthy()
 
     const message = 'mhmm'
 
-    await this.boss.work(this.schema, { pollingIntervalSeconds: 0.5 }, async () => {
+    await ctx.boss.work(ctx.schema, { pollingIntervalSeconds: 0.5 }, async () => {
       const err = { message }
       // @ts-ignore
       err.myself = err
       throw err
     })
 
+    assertTruthy(jobId)
     await spy.waitForJobWithId(jobId, 'failed')
 
-    const job = await this.boss.getJobById(this.schema, jobId)
+    const job = await ctx.boss.getJobById(ctx.schema, jobId)
 
-    assert.strictEqual((job!.output as { message: string }).message, message)
+    assertTruthy(job)
+    expect((job.output as { message: string }).message).toBe(message)
   })
 
   it('dead letter queues are working', async function () {
-    this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
-    const deadLetter = `${this.schema}_dlq`
+    const deadLetter = `${ctx.schema}_dlq`
 
-    await this.boss.createQueue(deadLetter)
-    await this.boss.createQueue(this.schema, { deadLetter })
+    await ctx.boss.createQueue(deadLetter)
+    await ctx.boss.createQueue(ctx.schema, { deadLetter })
 
-    const jobId = await this.boss.send(this.schema, { key: this.schema }, { retryLimit: 0 })
+    const jobId = await ctx.boss.send(ctx.schema, { key: ctx.schema }, { retryLimit: 0 })
 
-    assert(jobId)
+    expect(jobId).toBeTruthy()
 
-    await this.boss.fetch(this.schema)
-    await this.boss.fail(this.schema, jobId)
+    await ctx.boss.fetch(ctx.schema)
+    assertTruthy(jobId)
+    await ctx.boss.fail(ctx.schema, jobId)
 
-    const [job] = await this.boss.fetch<{ key: string }>(deadLetter)
+    const [job] = await ctx.boss.fetch<{ key: string }>(deadLetter)
 
-    assert.strictEqual(job.data.key, this.schema)
+    expect(job.data.key).toBe(ctx.schema)
   })
 
   it('should fail active jobs in a worker during shutdown', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
 
-    const jobId = await this.boss.send(this.schema, null, { retryLimit: 1 })
+    const jobId = await ctx.boss.send(ctx.schema, null, { retryLimit: 1 })
 
-    await this.boss.work(this.schema, async () => await delay(4000))
+    await ctx.boss.work(ctx.schema, async () => await delay(4000))
 
     await delay(500)
 
-    await this.boss.stop({ timeout: 2000 })
+    await ctx.boss.stop({ timeout: 2000 })
 
-    await this.boss.start()
+    await ctx.boss.start()
 
-    const [job] = await this.boss.fetch(this.schema)
+    const [job] = await ctx.boss.fetch(ctx.schema)
 
-    assert.strictEqual(job?.id, jobId)
+    expect(job?.id).toBe(jobId)
   })
 })
