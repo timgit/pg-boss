@@ -30,10 +30,12 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
   private stopped = true
   private cronMonitorInterval: NodeJS.Timeout | null | undefined
   private skewMonitorInterval: NodeJS.Timeout | null | undefined
+  private cacheSchedulesInterval: NodeJS.Timeout | null | undefined
   private timekeeping: boolean | undefined
 
   clockSkew = 0
   events = EVENTS
+  schedules: types.Schedule[] = []
 
   constructor (db: types.IDatabase, manager: Manager, config: types.ResolvedConstructorOptions) {
     super()
@@ -56,10 +58,21 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
 
     await this.manager.work<types.Request>(QUEUES.SEND_IT, options, (jobs) => this.onSendIt(jobs))
 
+    await this.cacheSchedules()
     setImmediate(() => this.onCron())
 
-    this.cronMonitorInterval = setInterval(async () => await this.onCron(), this.config.cronMonitorIntervalSeconds! * 1000)
-    this.skewMonitorInterval = setInterval(async () => await this.cacheClockSkew(), this.config.clockMonitorIntervalSeconds! * 1000)
+    this.cronMonitorInterval = setInterval(
+      async () => await this.onCron(),
+      this.config.cronMonitorIntervalSeconds! * 1000
+    )
+    this.skewMonitorInterval = setInterval(
+      async () => await this.cacheClockSkew(),
+      this.config.clockMonitorIntervalSeconds! * 1000
+    )
+    this.cacheSchedulesInterval = setInterval(
+      async () => await this.cacheSchedules(),
+      this.config.scheduleCacheIntervalSeconds! * 1000
+    )
   }
 
   async stop () {
@@ -79,6 +92,11 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
     if (this.cronMonitorInterval) {
       clearInterval(this.cronMonitorInterval)
       this.cronMonitorInterval = null
+    }
+
+    if (this.cacheSchedulesInterval) {
+      clearInterval(this.cacheSchedulesInterval)
+      this.cacheSchedulesInterval = null
     }
   }
 
@@ -137,11 +155,15 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
   }
 
   async cron () {
-    const schedules = await this.getSchedules()
-
-    const scheduled = schedules
-      .filter(i => this.shouldSendIt(i.cron, i.timezone))
-      .map(({ name, key, data, options }): types.JobInsert => ({ data: { name, data, options }, singletonKey: `${name}__${key}`, singletonSeconds: 60 }))
+    const scheduled = this.schedules
+      .filter((i) => this.shouldSendIt(i.cron, i.timezone))
+      .map(
+        ({ name, key, data, options, cron, timezone }): types.JobInsert => ({
+          data: { name, data, options },
+          singletonKey: `${name}__${key}`,
+          singletonSeconds: Math.min(this.getCronIntervalInSeconds(cron, timezone), 60),
+        })
+      )
 
     if (scheduled.length > 0 && !this.stopped) {
       await this.manager.insert(QUEUES.SEND_IT, scheduled)
@@ -160,11 +182,26 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
     return prevDiff < 60
   }
 
+  getCronIntervalInSeconds (cron: string, tz: string) {
+    const interval = CronExpressionParser.parse(cron, { tz, strict: false })
+
+    const prevTime = interval.prev()
+
+    const nextTime = interval.next()
+
+    return Math.round((nextTime.getTime() - prevTime.getTime()) / 1000)
+  }
+
   private async onSendIt (jobs: types.Job<types.Request>[]): Promise<void> {
     await Promise.allSettled(jobs.map(({ data }) => this.manager.send(data)))
   }
 
-  async getSchedules (name?: string, key = '') : Promise<types.Schedule[]> {
+  async cacheSchedules () {
+    const schedules = await this.getSchedules()
+    this.schedules = schedules
+  }
+
+  async getSchedules (name?: string, key = ''): Promise<types.Schedule[]> {
     let sql = plans.getSchedules(this.config.schema)
     let params: unknown[] = []
 
@@ -189,6 +226,7 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
     try {
       const sql = plans.schedule(this.config.schema)
       await this.db.executeSql(sql, [name, key, cron, tz, data, options])
+      await this.cacheSchedules()
     } catch (err: any) {
       if (err.message.includes('foreign key')) {
         err.message = `Queue ${name} not found`
