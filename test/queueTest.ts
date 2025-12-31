@@ -1,197 +1,199 @@
-import assert from 'node:assert'
+import { expect } from 'vitest'
 import * as helper from './testHelper.ts'
+import { assertTruthy } from './testHelper.ts'
 import { states } from '../src/index.ts'
+import { ctx } from './hooks.ts'
 
 describe('queues', function () {
   it('should create a queue', async function () {
-    this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
-    await this.boss.createQueue(this.schema)
+    await ctx.boss.createQueue(ctx.schema)
   })
 
   it('should not add a policy property when creating a queue if it is missing', async function () {
-    this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
     const options = {}
 
-    await this.boss.createQueue(this.schema, options)
+    await ctx.boss.createQueue(ctx.schema, options)
 
-    assert.strictEqual(Object.keys(options).length, 0)
+    expect(Object.keys(options).length).toBe(0)
   })
 
   it('createQueue should work if queue already exists', async function () {
-    this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
-    await this.boss.createQueue(this.schema)
-    await this.boss.createQueue(this.schema)
+    await ctx.boss.createQueue(ctx.schema)
+    await ctx.boss.createQueue(ctx.schema)
   })
 
   it('should reject a queue with invalid characters', async function () {
-    this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
-    const queue = `*${this.bossConfig.schema}`
-    await assert.rejects(async () => {
-      await this.boss!.createQueue(queue)
-    })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+    const queue = `*${ctx.bossConfig.schema}`
+    await expect(async () => {
+      await ctx.boss!.createQueue(queue)
+    }).rejects.toThrow()
   })
 
   it('should reject a queue with invalid policy', async function () {
-    this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
-    await assert.rejects(async () => {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+    await expect(async () => {
       // @ts-ignore
-      await this.boss.createQueue(this.schema, { policy: 'something' })
-    })
+      await ctx.boss.createQueue(ctx.schema, { policy: 'something' })
+    }).rejects.toThrow()
   })
 
   it('should reject using a queue if not created', async function () {
-    this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
-    await assert.rejects(async () => {
-      await this.boss!.send(this.schema)
-    })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+    await expect(async () => {
+      await ctx.boss!.send(ctx.schema)
+    }).rejects.toThrow()
   })
 
   it('should create a queue with standard policy', async function () {
-    this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
-    await this.boss.createQueue(this.schema, { policy: 'standard' })
+    await ctx.boss.createQueue(ctx.schema, { policy: 'standard' })
   })
 
   it('should delete and then create a queue', async function () {
-    this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
-    await this.boss.createQueue(this.schema)
-    assert(await this.boss.getQueue(this.schema))
-    await this.boss.deleteQueue(this.schema)
-    await this.boss.createQueue(this.schema)
+    await ctx.boss.createQueue(ctx.schema)
+    expect(await ctx.boss.getQueue(ctx.schema)).toBeTruthy()
+    await ctx.boss.deleteQueue(ctx.schema)
+    await ctx.boss.createQueue(ctx.schema)
   })
 
   it('should delete an empty queue', async function () {
-    this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
-    await this.boss.createQueue(this.schema)
-    await this.boss.send(this.schema)
-    await this.boss.deleteAllJobs(this.schema)
-    await this.boss.deleteQueue(this.schema)
+    await ctx.boss.createQueue(ctx.schema)
+    await ctx.boss.send(ctx.schema)
+    await ctx.boss.deleteAllJobs(ctx.schema)
+    await ctx.boss.deleteQueue(ctx.schema)
   })
 
   it('should truncate a partitioned queue and leave other queues alone', async function () {
-    this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
-    const queue2 = `${this.schema}2`
-    await this.boss.createQueue(queue2)
-    await this.boss.send(queue2)
+    const queue2 = `${ctx.schema}2`
+    await ctx.boss.createQueue(queue2)
+    await ctx.boss.send(queue2)
 
-    await this.boss.createQueue(this.schema, { partition: true })
-    await this.boss.send(this.schema)
+    await ctx.boss.createQueue(ctx.schema, { partition: true })
+    await ctx.boss.send(ctx.schema)
 
-    await this.boss.deleteAllJobs(this.schema)
-    await this.boss.deleteQueue(this.schema)
+    await ctx.boss.deleteAllJobs(ctx.schema)
+    await ctx.boss.deleteQueue(ctx.schema)
 
-    const { queuedCount } = await this.boss.getQueueStats(queue2)
-    assert(queuedCount)
+    const { queuedCount } = await ctx.boss.getQueueStats(queue2)
+    expect(queuedCount).toBeTruthy()
   })
 
   it('should truncate a partitioned queue', async function () {
-    this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
-    await this.boss.createQueue(this.schema, { partition: true })
-    await this.boss.send(this.schema)
-    await this.boss.deleteAllJobs(this.schema)
-    await this.boss.deleteQueue(this.schema)
+    await ctx.boss.createQueue(ctx.schema, { partition: true })
+    await ctx.boss.send(ctx.schema)
+    await ctx.boss.deleteAllJobs(ctx.schema)
+    await ctx.boss.deleteQueue(ctx.schema)
   })
 
   it('should delete all jobs from all queues, included partitioned', async function () {
-    this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
-    await this.boss.createQueue(this.schema, { partition: true })
-    await this.boss.send(this.schema)
+    await ctx.boss.createQueue(ctx.schema, { partition: true })
+    await ctx.boss.send(ctx.schema)
 
-    const queue2 = `${this.schema}2`
-    await this.boss.createQueue(queue2)
-    await this.boss.send(queue2)
+    const queue2 = `${ctx.schema}2`
+    await ctx.boss.createQueue(queue2)
+    await ctx.boss.send(queue2)
 
-    await this.boss.deleteAllJobs()
+    await ctx.boss.deleteAllJobs()
 
-    const { queuedCount: count1 } = await this.boss.getQueueStats(this.schema)
-    const { queuedCount: count2 } = await this.boss.getQueueStats(queue2)
+    const { queuedCount: count1 } = await ctx.boss.getQueueStats(ctx.schema)
+    const { queuedCount: count2 } = await ctx.boss.getQueueStats(queue2)
 
-    assert.strictEqual(count1 + count2, 0)
+    expect(count1 + count2).toBe(0)
   })
 
   it('should delete a non-empty queue', async function () {
-    this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
-    await this.boss.createQueue(this.schema)
-    await this.boss.send(this.schema)
-    await this.boss.deleteQueue(this.schema)
+    await ctx.boss.createQueue(ctx.schema)
+    await ctx.boss.send(ctx.schema)
+    await ctx.boss.deleteQueue(ctx.schema)
   })
 
   it('should delete all queued jobs from a queue', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
 
-    const getCount = () => helper.countJobs(this.bossConfig.schema, 'job', 'state = $1', [states.created])
+    const getCount = () => helper.countJobs(ctx.bossConfig.schema, 'job', 'state = $1', [states.created])
 
-    await this.boss.send(this.schema)
+    await ctx.boss.send(ctx.schema)
 
-    assert.strictEqual(await getCount(), 1)
+    expect(await getCount()).toBe(1)
 
-    await this.boss.deleteQueuedJobs(this.schema)
+    await ctx.boss.deleteQueuedJobs(ctx.schema)
 
-    assert.strictEqual(await getCount(), 0)
+    expect(await getCount()).toBe(0)
   })
 
   it('should delete all stored jobs from a queue', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
 
     const { completed, failed, cancelled } = states
     const inClause = [completed, failed, cancelled].map(s => `'${s}'`)
-    const getCount = () => helper.countJobs(this.bossConfig.schema, 'job', `state IN (${inClause})`)
+    const getCount = () => helper.countJobs(ctx.bossConfig.schema, 'job', `state IN (${inClause})`)
 
-    await this.boss.send(this.schema)
-    const [job1] = await this.boss.fetch(this.schema)
-    assert(job1?.id)
+    await ctx.boss.send(ctx.schema)
+    const [job1] = await ctx.boss.fetch(ctx.schema)
+    expect(job1?.id).toBeTruthy()
 
-    await this.boss.complete(this.schema, job1.id)
+    await ctx.boss.complete(ctx.schema, job1.id)
 
-    assert.strictEqual(await getCount(), 1)
+    expect(await getCount()).toBe(1)
 
-    await this.boss.send(this.schema, null, { retryLimit: 0 })
-    const [job2] = await this.boss.fetch(this.schema)
-    await this.boss.fail(this.schema, job2.id)
+    await ctx.boss.send(ctx.schema, null, { retryLimit: 0 })
+    const [job2] = await ctx.boss.fetch(ctx.schema)
+    await ctx.boss.fail(ctx.schema, job2.id)
 
-    assert.strictEqual(await getCount(), 2)
+    expect(await getCount()).toBe(2)
 
-    await this.boss.deleteStoredJobs(this.schema)
+    await ctx.boss.deleteStoredJobs(ctx.schema)
 
-    assert.strictEqual(await getCount(), 0)
+    expect(await getCount()).toBe(0)
   })
 
   it('getQueue() returns null when missing', async function () {
-    this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
-    const queue = await this.boss.getQueue(this.bossConfig.schema)
-    assert.strictEqual(queue, null)
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+    const queue = await ctx.boss.getQueue(ctx.bossConfig.schema)
+    expect(queue).toBe(null)
   })
 
   it('getQueues() returns queues array', async function () {
-    this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
-    const queue1 = `${this.bossConfig.schema}_1`
-    const queue2 = `${this.bossConfig.schema}_2`
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+    const queue1 = `${ctx.bossConfig.schema}_1`
+    const queue2 = `${ctx.bossConfig.schema}_2`
 
-    await this.boss.createQueue(queue1)
-    await this.boss.createQueue(queue2)
+    await ctx.boss.createQueue(queue1)
+    await ctx.boss.createQueue(queue2)
 
-    const queues = await this.boss.getQueues()
+    const queues = await ctx.boss.getQueues()
 
-    assert.strictEqual(queues.length, 2)
+    expect(queues.length).toBe(2)
 
-    assert(queues.some(q => q.name === queue1))
-    assert(queues.some(q => q.name === queue2))
+    expect(queues.some(q => q.name === queue1)).toBeTruthy()
+    expect(queues.some(q => q.name === queue2)).toBeTruthy()
   })
 
   it('should update queue properties', async function () {
-    this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
-    let deadLetter = `${this.schema}_dlq1`
-    await this.boss.createQueue(deadLetter)
+    let deadLetter = `${ctx.schema}_dlq1`
+    await ctx.boss.createQueue(deadLetter)
 
     const createProps = {
       policy: 'standard',
@@ -204,26 +206,26 @@ describe('queues', function () {
       deadLetter
     }
 
-    await this.boss.createQueue(this.schema, createProps)
+    await ctx.boss.createQueue(ctx.schema, createProps)
 
-    let queueObj = await this.boss.getQueue(this.schema)
+    let queueObj = await ctx.boss.getQueue(ctx.schema)
 
-    assert(queueObj)
+    expect(queueObj).toBeTruthy()
 
-    assert.strictEqual(this.schema, queueObj.name)
-    assert.strictEqual(createProps.policy, queueObj.policy)
-    assert.strictEqual(createProps.retryLimit, queueObj.retryLimit)
-    assert.strictEqual(createProps.retryBackoff, queueObj.retryBackoff)
-    assert.strictEqual(createProps.retryDelay, queueObj.retryDelay)
-    assert.strictEqual(createProps.retryDelayMax, queueObj.retryDelayMax)
-    assert.strictEqual(createProps.expireInSeconds, queueObj.expireInSeconds)
-    assert.strictEqual(createProps.retentionSeconds, queueObj.retentionSeconds)
-    assert.strictEqual(createProps.deadLetter, queueObj.deadLetter)
-    assert(queueObj.createdOn)
-    assert(queueObj.updatedOn)
+    expect(queueObj!.name).toBe(ctx.schema)
+    expect(queueObj!.policy).toBe(createProps.policy)
+    expect(queueObj!.retryLimit).toBe(createProps.retryLimit)
+    expect(queueObj!.retryBackoff).toBe(createProps.retryBackoff)
+    expect(queueObj!.retryDelay).toBe(createProps.retryDelay)
+    expect(queueObj!.retryDelayMax).toBe(createProps.retryDelayMax)
+    expect(queueObj!.expireInSeconds).toBe(createProps.expireInSeconds)
+    expect(queueObj!.retentionSeconds).toBe(createProps.retentionSeconds)
+    expect(queueObj!.deadLetter).toBe(createProps.deadLetter)
+    expect(queueObj!.createdOn).toBeTruthy()
+    expect(queueObj!.updatedOn).toBeTruthy()
 
-    deadLetter = `${this.schema}_dlq2`
-    await this.boss.createQueue(deadLetter)
+    deadLetter = `${ctx.schema}_dlq2`
+    await ctx.boss.createQueue(deadLetter)
 
     const updateProps = {
       retryDelay: 2,
@@ -233,43 +235,43 @@ describe('queues', function () {
       deadLetter
     }
 
-    await this.boss.updateQueue(this.schema, updateProps)
+    await ctx.boss.updateQueue(ctx.schema, updateProps)
 
-    queueObj = await this.boss.getQueue(this.schema)
+    queueObj = await ctx.boss.getQueue(ctx.schema)
 
-    assert.strictEqual(updateProps.retryLimit, queueObj!.retryLimit)
-    assert.strictEqual(updateProps.retryBackoff, queueObj!.retryBackoff)
-    assert.strictEqual(updateProps.retryDelay, queueObj!.retryDelay)
-    assert.strictEqual(updateProps.expireInSeconds, queueObj!.expireInSeconds)
-    assert.strictEqual(updateProps.deadLetter, queueObj!.deadLetter)
+    expect(queueObj!.retryLimit).toBe(updateProps.retryLimit)
+    expect(queueObj!.retryBackoff).toBe(updateProps.retryBackoff)
+    expect(queueObj!.retryDelay).toBe(updateProps.retryDelay)
+    expect(queueObj!.expireInSeconds).toBe(updateProps.expireInSeconds)
+    expect(queueObj!.deadLetter).toBe(updateProps.deadLetter)
   })
 
   it('should fail to change queue policy', async function () {
-    this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
-    await this.boss.createQueue(this.schema, { policy: 'standard' })
+    await ctx.boss.createQueue(ctx.schema, { policy: 'standard' })
 
-    await assert.rejects(async () => {
+    await expect(async () => {
       // @ts-ignore
-      await this.boss.updateQueue(this.schema, { policy: 'exclusive' })
-    })
+      await ctx.boss.updateQueue(ctx.schema, { policy: 'exclusive' })
+    }).rejects.toThrow()
   })
 
   it('should fail to change queue partitioning', async function () {
-    this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
-    await this.boss.createQueue(this.schema, { partition: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+    await ctx.boss.createQueue(ctx.schema, { partition: true })
 
-    await assert.rejects(async () => {
+    await expect(async () => {
       // @ts-ignore
-      await this.boss.updateQueue(this.schema, { partition: false })
-    })
+      await ctx.boss.updateQueue(ctx.schema, { partition: false })
+    }).rejects.toThrow()
   })
 
   it('jobs should inherit properties from queue', async function () {
-    this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
-    const deadLetter = `${this.schema}_dlq`
-    await this.boss.createQueue(deadLetter)
+    const deadLetter = `${ctx.schema}_dlq`
+    await ctx.boss.createQueue(deadLetter)
 
     const createProps = {
       retryLimit: 1,
@@ -281,22 +283,23 @@ describe('queues', function () {
       deadLetter
     }
 
-    await this.boss.createQueue(this.schema, createProps)
+    await ctx.boss.createQueue(ctx.schema, createProps)
 
-    const jobId = await this.boss.send(this.schema)
+    const jobId = await ctx.boss.send(ctx.schema)
 
-    const job = await this.boss.getJobById(this.schema, jobId!)
+    assertTruthy(jobId)
+    const job = await ctx.boss.getJobById(ctx.schema, jobId)
 
-    assert(job)
+    assertTruthy(job)
 
     const retentionSeconds = (new Date(job.keepUntil).getTime() - new Date(job.createdOn).getTime()) / 1000
 
-    assert.strictEqual(job.retryLimit, createProps.retryLimit)
-    assert.strictEqual(job.retryBackoff, createProps.retryBackoff)
-    assert.strictEqual(job.retryDelay, createProps.retryDelay)
-    assert.strictEqual(job.retryDelayMax, createProps.retryDelayMax)
-    assert.strictEqual(job.deadLetter, createProps.deadLetter)
-    assert.strictEqual(job.expireInSeconds, createProps.expireInSeconds)
-    assert.strictEqual(retentionSeconds, createProps.retentionSeconds)
+    expect(job.retryLimit).toBe(createProps.retryLimit)
+    expect(job.retryBackoff).toBe(createProps.retryBackoff)
+    expect(job.retryDelay).toBe(createProps.retryDelay)
+    expect(job.retryDelayMax).toBe(createProps.retryDelayMax)
+    expect(job.deadLetter).toBe(createProps.deadLetter)
+    expect(job.expireInSeconds).toBe(createProps.expireInSeconds)
+    expect(retentionSeconds).toBe(createProps.retentionSeconds)
   })
 })

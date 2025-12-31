@@ -1,73 +1,74 @@
-import assert from 'node:assert'
+import { expect } from 'vitest'
 import * as helper from './testHelper.ts'
-import type { TestContext } from './hooks.ts'
+import { assertTruthy } from './testHelper.ts'
+import { ctx } from './hooks.ts'
 
 describe('send', function () {
-  it('should fail with no arguments', async function (this: TestContext) {
-    this.boss = await helper.start(this.bossConfig)
+  it('should fail with no arguments', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
 
-    await assert.rejects(async () => {
+    await expect(async () => {
       // @ts-ignore
-      await this.boss.send()
-    })
+      await ctx.boss.send()
+    }).rejects.toThrow()
   })
 
   it('should fail with a function for data', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
 
-    await assert.rejects(async () => {
+    await expect(async () => {
       // @ts-ignore
-      await this.boss.send('job', () => true)
-    })
+      await ctx.boss.send('job', () => true)
+    }).rejects.toThrow()
   })
 
   it('should fail with a function for options', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
 
-    await assert.rejects(async () => {
+    await expect(async () => {
       // @ts-ignore
-      await this.boss.send('job', 'data', () => true)
-    })
+      await ctx.boss.send('job', 'data', () => true)
+    }).rejects.toThrow()
   })
 
   it('should accept single string argument', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
 
-    await this.boss.send(this.schema)
+    await ctx.boss.send(ctx.schema)
   })
 
   it('should accept job object argument with only name', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
 
-    await this.boss.send({ name: this.schema })
+    await ctx.boss.send({ name: ctx.schema })
   })
 
   it('should accept job object with name and data only', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
 
     const message = 'hi'
 
-    await this.boss.send({ name: this.schema, data: { message } })
+    await ctx.boss.send({ name: ctx.schema, data: { message } })
 
-    const [job] = await this.boss.fetch<{ message: string }>(this.schema)
+    const [job] = await ctx.boss.fetch<{ message: string }>(ctx.schema)
 
-    assert.strictEqual(message, job.data.message)
+    expect(job.data.message).toBe(message)
   })
 
   it('should accept job object with name and options only', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
 
     const options = { retryLimit: 1 }
 
-    await this.boss.send({ name: this.schema, options })
+    await ctx.boss.send({ name: ctx.schema, options })
 
-    const [job] = await this.boss.fetch(this.schema)
+    const [job] = await ctx.boss.fetch(ctx.schema)
 
-    assert.strictEqual(job.data, null)
+    expect(job.data).toBe(null)
   })
 
   it('should accept job object with name and custom connection', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
 
     let called = false
     const db = await helper.getDb()
@@ -83,18 +84,18 @@ describe('send', function () {
       someCrazyOption: 'whatever'
     }
 
-    await this.boss.send({ name: this.schema, options })
+    await ctx.boss.send({ name: ctx.schema, options })
 
-    const [job] = await this.boss.fetch(this.schema)
+    const [job] = await ctx.boss.fetch(ctx.schema)
 
-    assert.notEqual(job, null)
-    assert.strictEqual(job.data, null)
-    assert.strictEqual(called, true)
+    expect(job).not.toBe(null)
+    expect(job.data).toBe(null)
+    expect(called).toBe(true)
   })
 
-  it('should not create job if transaction fails', async function (this: TestContext) {
-    this.boss = await helper.start(this.bossConfig)
-    const { schema } = this.bossConfig
+  it('should not create job if transaction fails', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+    const { schema } = ctx.bossConfig
 
     const db = await helper.getDb()
     const client = (db as any).pool
@@ -115,7 +116,7 @@ describe('send', function () {
       const queryText = `INSERT INTO ${schema}.test(label) VALUES('Test')`
       await client.query(queryText)
 
-      await this.boss.send({ name: this.schema, options })
+      await ctx.boss.send({ name: ctx.schema, options })
 
       throwError()
       await client.query('COMMIT')
@@ -123,17 +124,17 @@ describe('send', function () {
       await client.query('ROLLBACK')
     }
 
-    const [job] = await this.boss.fetch(this.schema)
+    const [job] = await ctx.boss.fetch(ctx.schema)
 
-    assert(!job)
+    expect(job).toBeFalsy()
   })
 
-  it('should create job with all properties', async function (this: TestContext) {
-    this.boss = await helper.start(this.bossConfig)
+  it('should create job with all properties', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
 
-    const deadLetter = `${this.schema}_dlq`
-    await this.boss.createQueue(deadLetter)
-    await this.boss.updateQueue(this.schema, { deadLetter })
+    const deadLetter = `${ctx.schema}_dlq`
+    await ctx.boss.createQueue(deadLetter)
+    await ctx.boss.updateQueue(ctx.schema, { deadLetter })
 
     const options = {
       priority: 1,
@@ -150,20 +151,21 @@ describe('send', function () {
 
     const keepUntil = new Date(new Date(options.startAfter).getTime() + (options.retentionSeconds * 1000)).toISOString()
 
-    const id = await this.boss.send(this.schema, {}, options)
+    const id = await ctx.boss.send(ctx.schema, {}, options)
 
-    const job = await this.boss.getJobById(this.schema, id!)
-    assert(job)
+    assertTruthy(id)
+    const job = await ctx.boss.getJobById(ctx.schema, id)
+    assertTruthy(job)
 
-    assert.strictEqual(job.priority, options.priority, `priority input ${options.priority} didn't match job ${job.priority}`)
-    assert.strictEqual(job.retryLimit, options.retryLimit, `retryLimit input ${options.retryLimit} didn't match job ${job.retryLimit}`)
-    assert.strictEqual(job.retryDelay, options.retryDelay, `retryDelay input ${options.retryDelay} didn't match job ${job.retryDelay}`)
-    assert.strictEqual(job.retryBackoff, options.retryBackoff, `retryBackoff input ${options.retryBackoff} didn't match job ${job.retryBackoff}`)
-    assert.strictEqual(job.retryDelayMax, options.retryDelayMax, `retryDelayMax input ${options.retryDelayMax} didn't match job ${job.retryDelayMax}`)
-    assert.strictEqual(new Date(job.startAfter).toISOString(), options.startAfter, `startAfter input ${options.startAfter} didn't match job ${job.startAfter}`)
-    assert.strictEqual(job.expireInSeconds, options.expireInSeconds, `expireInSeconds input ${options.expireInSeconds} didn't match job ${job.expireInSeconds}`)
-    assert.strictEqual(job.deleteAfterSeconds, options.deleteAfterSeconds, `deleteAfterSeconds input ${options.deleteAfterSeconds} didn't match job ${job.deleteAfterSeconds}`)
-    assert.strictEqual(job.singletonKey, options.singletonKey, `name input ${options.singletonKey} didn't match job ${job.singletonKey}`)
-    assert.strictEqual(new Date(job.keepUntil).toISOString(), keepUntil, `keepUntil input ${keepUntil} didn't match job ${job.keepUntil}`)
+    expect(job.priority).toBe(options.priority)
+    expect(job.retryLimit).toBe(options.retryLimit)
+    expect(job.retryDelay).toBe(options.retryDelay)
+    expect(job.retryBackoff).toBe(options.retryBackoff)
+    expect(job.retryDelayMax).toBe(options.retryDelayMax)
+    expect(new Date(job.startAfter).toISOString()).toBe(options.startAfter)
+    expect(job.expireInSeconds).toBe(options.expireInSeconds)
+    expect(job.deleteAfterSeconds).toBe(options.deleteAfterSeconds)
+    expect(job.singletonKey).toBe(options.singletonKey)
+    expect(new Date(job.keepUntil).toISOString()).toBe(keepUntil)
   })
 })

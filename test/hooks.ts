@@ -1,44 +1,75 @@
+import { beforeAll, beforeEach, afterEach, expect } from 'vitest'
 import * as helper from './testHelper.ts'
-import type { Context, Test } from 'mocha'
+import { assertTruthy } from './testHelper.ts'
 import type { ConstructorOptions } from '../src/types.ts'
+import type { PgBoss } from '../src/index.ts'
+import crypto from 'node:crypto'
 
-export type { Context as TestContext }
-
-export const mochaHooks = {
-  beforeAll,
-  beforeEach,
-  afterEach
+export interface TestContext {
+  boss?: PgBoss
+  bossConfig: ConstructorOptions & { schema: string }
+  schema: string
 }
 
-async function beforeAll (this: Context): Promise<void> {
+// Shared test context - each test file gets its own module scope in vitest
+export const ctx: TestContext = {
+  boss: undefined,
+  bossConfig: {} as ConstructorOptions & { schema: string },
+  schema: ''
+}
+
+// Track current test info for schema generation
+let currentTestFile: string = ''
+let currentTestName: string = ''
+
+export function setCurrentTest (file: string, name: string): void {
+  currentTestFile = file
+  currentTestName = name
+}
+
+function getTestKey (): string {
+  return currentTestFile + currentTestName
+}
+
+const sha1 = (value: string): string => crypto.createHash('sha1').update(value).digest('hex')
+
+beforeAll(async () => {
   await helper.init()
-}
+})
 
-async function beforeEach (this: Context): Promise<void> {
-  this.timeout(2000)
-  const config = helper.getConfig({ testKey: getTestKey(this.currentTest!) })
-  console.log(`      ${this.currentTest!.title} (schema: ${config.schema})...`)
-  await helper.dropSchema(config.schema!)
+beforeEach(async (context) => {
+  // Use vitest's task info for unique schema generation
+  const testFile = context.task.file?.name || 'unknown'
+  const testName = context.task.name || 'unknown'
+  currentTestFile = testFile
+  currentTestName = testName
 
-  // Set properties directly on context for easy access in tests
-  this.bossConfig = config as ConstructorOptions & { schema: string }
-  this.schema = config.schema!
-}
+  const testKey = getTestKey()
+  const schema = `pgboss${sha1(testKey)}`
 
-async function afterEach (this: Context): Promise<void> {
-  this.timeout(10000)
+  const config = helper.getConfig({ schema })
+  assertTruthy(config.schema)
+  console.log(`      ${testName} (schema: ${config.schema})...`)
+  await helper.dropSchema(config.schema)
 
-  const { boss } = this.currentTest!.ctx!
+  ctx.bossConfig = config as ConstructorOptions & { schema: string }
+  ctx.schema = config.schema
+  ctx.boss = undefined
+})
+
+afterEach(async (context) => {
+  const { boss } = ctx
 
   if (boss) {
     await boss.stop({ timeout: 2000 })
   }
 
-  if (this.currentTest!.state === 'passed') {
-    await helper.dropSchema(this.schema)
+  // Only drop schema if test passed
+  const state = context.task.result?.state
+  if (state === 'pass') {
+    await helper.dropSchema(ctx.schema)
   }
-}
+})
 
-function getTestKey (ctx: Test): string {
-  return ctx.file! + ctx.parent!.title + ctx.title
-}
+// Re-export expect for convenience
+export { expect }

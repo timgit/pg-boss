@@ -1,44 +1,45 @@
 import { delay } from '../src/tools.ts'
-import assert from 'node:assert'
+import { describe, expect, it } from 'vitest'
 import { DateTime } from 'luxon'
 import * as helper from './testHelper.ts'
 import { PgBoss } from '../src/index.ts'
 import { CronExpressionParser } from 'cron-parser'
+import { ctx } from './hooks.ts'
 
 describe('schedule', function () {
   it('should send job based on every minute expression', async function () {
     const config = {
-      ...this.bossConfig,
+      ...ctx.bossConfig,
       cronMonitorIntervalSeconds: 1,
       cronWorkerIntervalSeconds: 1,
       schedule: true
     }
 
-    this.boss = await helper.start(config)
+    ctx.boss = await helper.start(config)
 
-    await this.boss.schedule(this.schema, '* * * * *')
+    await ctx.boss.schedule(ctx.schema, '* * * * *')
 
     await delay(4000)
 
-    const [job] = await this.boss.fetch(this.schema)
+    const [job] = await ctx.boss.fetch(ctx.schema)
 
-    assert(job)
+    expect(job).toBeTruthy()
   })
 
   it('should send jobs based on every one second expression', async function () {
     const config = {
-      ...this.bossConfig,
+      ...ctx.bossConfig,
       cronMonitorIntervalSeconds: 1,
       cronWorkerIntervalSeconds: 1,
       schedule: true
     }
 
-    this.boss = await helper.start(config)
+    ctx.boss = await helper.start(config)
 
-    await this.boss.schedule(this.schema, '* * * * * *')
+    await ctx.boss.schedule(ctx.schema, '* * * * * *')
 
     let numJobs = 0
-    await this.boss.work(this.schema, async () => {
+    await ctx.boss.work(ctx.schema, async () => {
       numJobs++
     })
 
@@ -49,16 +50,16 @@ describe('schedule', function () {
 
   it('should send jobs based on every one five seconds expression', async function () {
     const config = {
-      ...this.bossConfig,
+      ...ctx.bossConfig,
       cronMonitorIntervalSeconds: 1,
       cronWorkerIntervalSeconds: 1,
       schedule: true
     }
 
-    this.boss = await helper.start(config)
+    ctx.boss = await helper.start(config)
 
     let numJobs = 0
-    await this.boss.work(this.schema, async () => {
+    await ctx.boss.work(ctx.schema, async () => {
       numJobs++
     })
 
@@ -66,7 +67,7 @@ describe('schedule', function () {
     const cronString = '*/5 * * * * *'
     const timeOfNextRun = CronExpressionParser.parse(cronString).next().getTime()
     await new Promise(resolve => setTimeout(resolve, timeOfNextRun - Date.now()))
-    await this.boss.schedule(this.schema, cronString)
+    await ctx.boss.schedule(ctx.schema, cronString)
 
     await delay(3000)
 
@@ -75,20 +76,20 @@ describe('schedule', function () {
     await delay(5000)
 
     assert.equal(numJobs, 2)
-  }).timeout(20000)
+  }, 20000)
 
   it("in case of restart, jobs shouldn't be overscheduled", async function () {
     const config = {
-      ...this.bossConfig,
+      ...ctx.bossConfig,
       cronMonitorIntervalSeconds: 1,
       cronWorkerIntervalSeconds: 1,
       schedule: true
     }
 
-    this.boss = await helper.start(config)
+    ctx.boss = await helper.start(config)
 
     let numJobs = 0
-    this.boss.work(this.schema, async () => {
+    ctx.boss.work(ctx.schema, async () => {
       numJobs++
     })
 
@@ -96,7 +97,7 @@ describe('schedule', function () {
     const cronString = '*/11 * * * * *'
     const timeOfNextRun = CronExpressionParser.parse(cronString).next().getTime()
     await new Promise(resolve => setTimeout(resolve, timeOfNextRun - Date.now()))
-    await this.boss.schedule(this.schema, cronString)
+    await ctx.boss.schedule(ctx.schema, cronString)
 
     // wait for first job
     await new Promise<void>(resolve => {
@@ -109,89 +110,88 @@ describe('schedule', function () {
     })
 
     // simulate restart
-    await this.boss.stop({ graceful: true })
-    await this.boss.start()
-    await this.boss.work(this.schema, async () => {
+    await ctx.boss.stop({ graceful: true })
+    await ctx.boss.start()
+    await ctx.boss.work(ctx.schema, async () => {
       numJobs++
     })
 
     await delay(5000)
 
     assert.equal(numJobs, 1)
-  }).timeout(25000)
+  }, 25000)
 
   it('should set job metadata correctly', async function () {
     const config = {
-      ...this.bossConfig,
+      ...ctx.bossConfig,
       cronMonitorIntervalSeconds: 1,
       cronWorkerIntervalSeconds: 1,
       schedule: true
     }
 
-    this.boss = await helper.start(config)
+    ctx.boss = await helper.start(config)
 
-    await this.boss.schedule(this.schema, '* * * * *', {}, { retryLimit: 42, singletonSeconds: 5 })
+    await ctx.boss.schedule(ctx.schema, '* * * * *', {}, { retryLimit: 42, singletonSeconds: 5 })
 
     await delay(4000)
 
-    const [job] = await this.boss.fetch(this.schema, { includeMetadata: true })
+    const [job] = await ctx.boss.fetch(ctx.schema, { includeMetadata: true })
 
-    assert(job)
-
-    assert.strictEqual(job.retryLimit, 42)
-    assert(job.singletonOn)
+    expect(job).toBeTruthy()
+    expect(job.retryLimit).toBe(42)
+    expect(job.singletonOn).toBeTruthy()
   })
 
   it('should fail to schedule a queue that does not exist', async function () {
-    this.boss = await helper.start({ ...this.bossConfig, noDefault: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
-    await assert.rejects(async () => {
-      await this.boss!.schedule(this.schema, '* * * * *')
-    })
+    await expect(async () => {
+      await ctx.boss!.schedule(ctx.schema, '* * * * *')
+    }).rejects.toThrow()
   })
 
   it('should send job based on every minute expression after a restart', async function () {
-    this.boss = await helper.start({ ...this.bossConfig, schedule: false })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, schedule: false })
 
-    await this.boss.schedule(this.schema, '* * * * *')
+    await ctx.boss.schedule(ctx.schema, '* * * * *')
 
-    await this.boss.stop({ graceful: false })
+    await ctx.boss.stop({ graceful: false })
 
-    this.boss = await helper.start({ ...this.bossConfig, cronWorkerIntervalSeconds: 1, schedule: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, cronWorkerIntervalSeconds: 1, schedule: true })
 
     await delay(4000)
 
-    const [job] = await this.boss.fetch(this.schema)
+    const [job] = await ctx.boss.fetch(ctx.schema)
 
-    assert(job)
+    expect(job).toBeTruthy()
 
-    await this.boss.stop({ graceful: false })
+    await ctx.boss.stop({ graceful: false })
   })
 
   it('should remove previously scheduled job', async function () {
     const config = {
-      ...this.bossConfig,
+      ...ctx.bossConfig,
       cronWorkerIntervalSeconds: 1
     }
-    this.boss = await helper.start(config)
+    ctx.boss = await helper.start(config)
 
-    await this.boss.schedule(this.schema, '* * * * *')
-    await this.boss.unschedule(this.schema)
+    await ctx.boss.schedule(ctx.schema, '* * * * *')
+    await ctx.boss.unschedule(ctx.schema)
 
-    const scheduled = await this.boss.getSchedules()
+    const scheduled = await ctx.boss.getSchedules()
 
-    assert.strictEqual(scheduled.length, 0)
+    expect(scheduled.length).toBe(0)
   })
 
   it('should send job based on current minute in UTC', async function () {
     const config = {
-      ...this.bossConfig,
+      ...ctx.bossConfig,
       cronMonitorIntervalSeconds: 1,
       cronWorkerIntervalSeconds: 1,
       schedule: true
     }
 
-    this.boss = await helper.start(config)
+    ctx.boss = await helper.start(config)
 
     const nowUtc = DateTime.utc()
 
@@ -209,24 +209,24 @@ describe('schedule', function () {
 
     const cron = `${minute} ${hour} * * *`
 
-    await this.boss.schedule(this.schema, cron)
+    await ctx.boss.schedule(ctx.schema, cron)
 
     await delay(6000)
 
-    const [job] = await this.boss.fetch(this.schema)
+    const [job] = await ctx.boss.fetch(ctx.schema)
 
-    assert(job)
+    expect(job).toBeTruthy()
   })
 
   it('should send job based on current minute in a specified time zone', async function () {
     const config = {
-      ...this.bossConfig,
+      ...ctx.bossConfig,
       cronMonitorIntervalSeconds: 1,
       cronWorkerIntervalSeconds: 1,
       schedule: true
     }
 
-    this.boss = await helper.start(config)
+    ctx.boss = await helper.start(config)
 
     const tz = 'America/Los_Angeles'
 
@@ -246,40 +246,40 @@ describe('schedule', function () {
 
     const cron = `${minute} ${hour} * * *`
 
-    await this.boss.schedule(this.schema, cron, null, { tz })
+    await ctx.boss.schedule(ctx.schema, cron, null, { tz })
 
     await delay(6000)
 
-    const [job] = await this.boss.fetch(this.schema)
+    const [job] = await ctx.boss.fetch(ctx.schema)
 
-    assert(job)
+    expect(job).toBeTruthy()
   })
 
   it('should force a clock skew warning', async function () {
     const config = {
-      ...this.bossConfig,
+      ...ctx.bossConfig,
       schedule: true,
       __test__force_clock_skew_warning: true
     }
 
     // @ts-ignore
-    this.boss = new PgBoss(config)
+    ctx.boss = new PgBoss(config)
 
     let warningCount = 0
 
-    this.boss.once('warning', (warning) => {
-      assert(warning.message.includes('Clock skew'))
+    ctx.boss.once('warning', (warning) => {
+      expect(warning.message).toContain('Clock skew')
       warningCount++
     })
 
-    await this.boss.start()
+    await ctx.boss.start()
 
-    assert.strictEqual(warningCount, 1)
+    expect(warningCount).toBe(1)
   })
 
   it('errors during clock skew monitoring should emit', async function () {
     const config = {
-      ...this.bossConfig,
+      ...ctx.bossConfig,
       clockMonitorIntervalSeconds: 1,
       schedule: true,
       __test__force_clock_monitoring_error: 'pg-boss mock error: clock skew monitoring'
@@ -287,23 +287,23 @@ describe('schedule', function () {
 
     let errorCount = 0
 
-    this.boss = new PgBoss(config)
+    ctx.boss = new PgBoss(config)
 
-    this.boss.once('error', error => {
-      assert.strictEqual(error.message, config.__test__force_clock_monitoring_error)
+    ctx.boss.on('error', error => {
+      expect(error.message).toBe(config.__test__force_clock_monitoring_error)
       errorCount++
     })
 
-    await this.boss.start()
+    await ctx.boss.start()
 
     await delay(2000)
 
-    assert.strictEqual(errorCount, 1)
+    expect(errorCount).toBeGreaterThanOrEqual(1)
   })
 
   it('errors during cron monitoring should emit', async function () {
     const config = {
-      ...this.bossConfig,
+      ...ctx.bossConfig,
       cronMonitorIntervalSeconds: 1,
       schedule: true,
       __test__force_cron_monitoring_error: 'pg-boss mock error: cron monitoring'
@@ -311,23 +311,23 @@ describe('schedule', function () {
 
     let errorCount = 0
 
-    this.boss = new PgBoss(config)
+    ctx.boss = new PgBoss(config)
 
-    this.boss.once('error', error => {
-      assert.strictEqual(error.message, config.__test__force_cron_monitoring_error)
+    ctx.boss.on('error', error => {
+      expect(error.message).toBe(config.__test__force_cron_monitoring_error)
       errorCount++
     })
 
-    await this.boss.start()
+    await ctx.boss.start()
 
     await delay(2000)
 
-    assert.strictEqual(errorCount, 1)
+    expect(errorCount).toBeGreaterThanOrEqual(1)
   })
 
   it('clock monitoring error handling works', async function () {
     const config = {
-      ...this.bossConfig,
+      ...ctx.bossConfig,
       schedule: true,
       clockMonitorIntervalSeconds: 1,
       __test__force_clock_monitoring_error: 'pg-boss mock error: clock monitoring'
@@ -335,155 +335,154 @@ describe('schedule', function () {
 
     let errorCount = 0
 
-    this.boss = new PgBoss(config)
+    ctx.boss = new PgBoss(config)
 
-    this.boss.once('error', (error) => {
-      assert.strictEqual(error.message, config.__test__force_clock_monitoring_error)
+    ctx.boss.on('error', (error) => {
+      expect(error.message).toBe(config.__test__force_clock_monitoring_error)
       errorCount++
     })
 
-    await this.boss.start()
+    await ctx.boss.start()
 
     await delay(4000)
 
-    assert.strictEqual(errorCount, 1)
+    expect(errorCount).toBeGreaterThanOrEqual(1)
   })
 
   it('should accept a unique key to have more than one schedule per queue', async function () {
     const config = {
-      ...this.bossConfig
+      ...ctx.bossConfig
     }
 
-    this.boss = await helper.start(config)
+    ctx.boss = await helper.start(config)
 
-    await this.boss.schedule(this.schema, '* * * * *', null, { key: 'a' })
-    await this.boss.schedule(this.schema, '* * * * *', null, { key: 'b' })
+    await ctx.boss.schedule(ctx.schema, '* * * * *', null, { key: 'a' })
+    await ctx.boss.schedule(ctx.schema, '* * * * *', null, { key: 'b' })
 
-    const schedules = await this.boss.getSchedules()
+    const schedules = await ctx.boss.getSchedules()
 
-    assert.strictEqual(schedules.length, 2)
+    expect(schedules.length).toBe(2)
   })
 
   it('should send jobs per unique key on the same cron', async function () {
     const config = {
-      ...this.bossConfig,
+      ...ctx.bossConfig,
       cronMonitorIntervalSeconds: 1,
       cronWorkerIntervalSeconds: 1,
       schedule: true
     }
 
-    this.boss = await helper.start(config)
+    ctx.boss = await helper.start(config)
 
-    await this.boss.schedule(this.schema, '* * * * *', null, { key: 'a' })
-    await this.boss.schedule(this.schema, '* * * * *', null, { key: 'b' })
+    await ctx.boss.schedule(ctx.schema, '* * * * *', null, { key: 'a' })
+    await ctx.boss.schedule(ctx.schema, '* * * * *', null, { key: 'b' })
 
     await delay(4000)
 
-    const jobs = await this.boss.fetch(this.schema, { batchSize: 2 })
+    const jobs = await ctx.boss.fetch(ctx.schema, { batchSize: 2 })
 
-    assert.strictEqual(jobs.length, 2)
+    expect(jobs.length).toBe(2)
   })
 
   it('should update a schedule with a unique key', async function () {
     const config = {
-      ...this.bossConfig
+      ...ctx.bossConfig
     }
 
-    this.boss = await helper.start(config)
+    ctx.boss = await helper.start(config)
 
-    await this.boss.schedule(this.schema, '* * * * *', null, { key: 'a' })
-    await this.boss.schedule(this.schema, '0 1 * * *', null, { key: 'a' })
+    await ctx.boss.schedule(ctx.schema, '* * * * *', null, { key: 'a' })
+    await ctx.boss.schedule(ctx.schema, '0 1 * * *', null, { key: 'a' })
 
-    const schedules = await this.boss.getSchedules()
+    const schedules = await ctx.boss.getSchedules()
 
-    assert.strictEqual(schedules.length, 1)
-    assert.strictEqual(schedules[0].cron, '0 1 * * *')
+    expect(schedules.length).toBe(1)
+    expect(schedules[0].cron).toBe('0 1 * * *')
   })
 
   it('should update a schedule without a unique key', async function () {
     const config = {
-      ...this.bossConfig
+      ...ctx.bossConfig
     }
 
-    this.boss = await helper.start(config)
+    ctx.boss = await helper.start(config)
 
-    await this.boss.schedule(this.schema, '* * * * *')
-    await this.boss.schedule(this.schema, '0 1 * * *')
+    await ctx.boss.schedule(ctx.schema, '* * * * *')
+    await ctx.boss.schedule(ctx.schema, '0 1 * * *')
 
-    const schedules = await this.boss.getSchedules()
+    const schedules = await ctx.boss.getSchedules()
 
-    assert.strictEqual(schedules.length, 1)
-    assert.strictEqual(schedules[0].cron, '0 1 * * *')
+    expect(schedules.length).toBe(1)
+    expect(schedules[0].cron).toBe('0 1 * * *')
   })
 
   it('should remove a schedule using a unique key', async function () {
     const config = {
-      ...this.bossConfig
+      ...ctx.bossConfig
     }
 
-    this.boss = await helper.start(config)
+    ctx.boss = await helper.start(config)
 
-    await this.boss.schedule(this.schema, '* * * * *', null, { key: 'a' })
-    await this.boss.schedule(this.schema, '0 1 * * *', null, { key: 'b' })
+    await ctx.boss.schedule(ctx.schema, '* * * * *', null, { key: 'a' })
+    await ctx.boss.schedule(ctx.schema, '0 1 * * *', null, { key: 'b' })
 
-    let schedules = await this.boss.getSchedules()
+    let schedules = await ctx.boss.getSchedules()
 
-    assert.strictEqual(schedules.length, 2)
+    expect(schedules.length).toBe(2)
 
-    await this.boss.unschedule(this.schema, 'a')
+    await ctx.boss.unschedule(ctx.schema, 'a')
 
-    schedules = await this.boss.getSchedules()
+    schedules = await ctx.boss.getSchedules()
 
-    assert.strictEqual(schedules.length, 1)
-
-    assert.strictEqual(schedules[0].cron, '0 1 * * *')
+    expect(schedules.length).toBe(1)
+    expect(schedules[0].cron).toBe('0 1 * * *')
   })
 
   it('should get schedules filtered by a queue name', async function () {
     const config = {
-      ...this.bossConfig
+      ...ctx.bossConfig
     }
 
-    this.boss = await helper.start(config)
+    ctx.boss = await helper.start(config)
 
-    const queue2 = this.bossConfig.schema + '2'
+    const queue2 = ctx.bossConfig.schema + '2'
 
-    await this.boss.createQueue(queue2)
+    await ctx.boss.createQueue(queue2)
 
-    await this.boss.schedule(this.schema, '* * * * *')
-    await this.boss.schedule(queue2, '0 1 * * *')
+    await ctx.boss.schedule(ctx.schema, '* * * * *')
+    await ctx.boss.schedule(queue2, '0 1 * * *')
 
-    let schedules = await this.boss.getSchedules()
-    assert.strictEqual(schedules.length, 2)
+    let schedules = await ctx.boss.getSchedules()
+    expect(schedules.length).toBe(2)
 
-    schedules = await this.boss.getSchedules(queue2)
+    schedules = await ctx.boss.getSchedules(queue2)
 
-    assert.strictEqual(schedules.length, 1)
-    assert.strictEqual(schedules[0].cron, '0 1 * * *')
+    expect(schedules.length).toBe(1)
+    expect(schedules[0].cron).toBe('0 1 * * *')
   })
 
   it('should get schedules filtered by a queue name and key', async function () {
     const config = {
-      ...this.bossConfig
+      ...ctx.bossConfig
     }
 
-    this.boss = await helper.start(config)
+    ctx.boss = await helper.start(config)
 
     const key = 'a'
-    const queue2 = this.bossConfig.schema + '2'
+    const queue2 = ctx.bossConfig.schema + '2'
 
-    await this.boss.createQueue(queue2)
+    await ctx.boss.createQueue(queue2)
 
-    await this.boss.schedule(this.schema, '* * * * *')
-    await this.boss.schedule(this.schema, '0 1 * * *', null, { key })
-    await this.boss.schedule(queue2, '0 2 * * *')
+    await ctx.boss.schedule(ctx.schema, '* * * * *')
+    await ctx.boss.schedule(ctx.schema, '0 1 * * *', null, { key })
+    await ctx.boss.schedule(queue2, '0 2 * * *')
 
-    let schedules = await this.boss.getSchedules()
-    assert.strictEqual(schedules.length, 3)
+    let schedules = await ctx.boss.getSchedules()
+    expect(schedules.length).toBe(3)
 
-    schedules = await this.boss.getSchedules(this.schema, key)
+    schedules = await ctx.boss.getSchedules(ctx.schema, key)
 
-    assert.strictEqual(schedules.length, 1)
-    assert.strictEqual(schedules[0].cron, '0 1 * * *')
+    expect(schedules.length).toBe(1)
+    expect(schedules[0].cron).toBe('0 1 * * *')
   })
 })

@@ -1,48 +1,49 @@
-import assert from 'node:assert'
+import { expect } from 'vitest'
 import * as helper from './testHelper.ts'
+import { ctx } from './hooks.ts'
 
 describe('priority', function () {
   it('higher priority job', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
 
-    await this.boss.send(this.schema)
+    await ctx.boss.send(ctx.schema)
 
-    const high = await this.boss.send(this.schema, null, { priority: 1 })
+    const high = await ctx.boss.send(ctx.schema, null, { priority: 1 })
 
-    const [job] = await this.boss.fetch(this.schema)
+    const [job] = await ctx.boss.fetch(ctx.schema)
 
-    assert.strictEqual(job.id, high)
+    expect(job.id).toBe(high)
   })
 
   it('descending priority order', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
 
-    const low = await this.boss.send(this.schema, null, { priority: 1 })
-    const medium = await this.boss.send(this.schema, null, { priority: 5 })
-    const high = await this.boss.send(this.schema, null, { priority: 10 })
+    const low = await ctx.boss.send(ctx.schema, null, { priority: 1 })
+    const medium = await ctx.boss.send(ctx.schema, null, { priority: 5 })
+    const high = await ctx.boss.send(ctx.schema, null, { priority: 10 })
 
-    const [job1] = await this.boss.fetch(this.schema)
-    const [job2] = await this.boss.fetch(this.schema)
-    const [job3] = await this.boss.fetch(this.schema)
+    const [job1] = await ctx.boss.fetch(ctx.schema)
+    const [job2] = await ctx.boss.fetch(ctx.schema)
+    const [job3] = await ctx.boss.fetch(ctx.schema)
 
-    assert.strictEqual(job1.id, high)
-    assert.strictEqual(job2.id, medium)
-    assert.strictEqual(job3.id, low)
+    expect(job1.id).toBe(high)
+    expect(job2.id).toBe(medium)
+    expect(job3.id).toBe(low)
   })
 
   it('bypasses priority when priority option used in fetch', async function () {
-    this.boss = await helper.start(this.bossConfig)
+    ctx.boss = await helper.start(ctx.bossConfig)
 
-    const low = await this.boss.send(this.schema, null, { priority: 1 })
-    const medium = await this.boss.send(this.schema, null, { priority: 5 })
-    const high = await this.boss.send(this.schema, null, { priority: 10 })
+    const low = await ctx.boss.send(ctx.schema, null, { priority: 1 })
+    const medium = await ctx.boss.send(ctx.schema, null, { priority: 5 })
+    const high = await ctx.boss.send(ctx.schema, null, { priority: 10 })
 
-    const [job1] = await this.boss.fetch(this.schema, { priority: false })
-    const [job2] = await this.boss.fetch(this.schema, { priority: false })
-    const [job3] = await this.boss.fetch(this.schema, { priority: false })
+    const [job1] = await ctx.boss.fetch(ctx.schema, { priority: false })
+    const [job2] = await ctx.boss.fetch(ctx.schema, { priority: false })
+    const [job3] = await ctx.boss.fetch(ctx.schema, { priority: false })
 
-    assert.strictEqual(job1.id, low)
-    assert.strictEqual(job2.id, medium)
-    assert.strictEqual(job3.id, high)
+    expect(job1.id).toBe(low)
+    expect(job2.id).toBe(medium)
+    expect(job3.id).toBe(high)
   })
 })

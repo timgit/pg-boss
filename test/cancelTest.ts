@@ -1,58 +1,60 @@
-import assert from 'node:assert'
+import { expect } from 'vitest'
 import * as helper from './testHelper.ts'
-import type { TestContext } from './hooks.ts'
+import { assertTruthy } from './testHelper.ts'
+import { ctx } from './hooks.ts'
 
 describe('cancel', function () {
-  it('should reject missing arguments', async function (this: TestContext) {
-    this.boss = await helper.start(this.bossConfig)
-    await assert.rejects(async () => {
+  it('should reject missing arguments', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+    await expect(async () => {
       // @ts-ignore
-      await this.boss.cancel()
-    })
+      await ctx.boss.cancel()
+    }).rejects.toThrow()
   })
 
-  it('should cancel a pending job', async function (this: TestContext) {
-    this.boss = await helper.start(this.bossConfig)
+  it('should cancel a pending job', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
 
-    const jobId = await this.boss.send(this.schema, {}, { startAfter: 1 })
+    const jobId = await ctx.boss.send(ctx.schema, {}, { startAfter: 1 })
 
-    await this.boss.cancel(this.schema, jobId!)
+    assertTruthy(jobId)
+    await ctx.boss.cancel(ctx.schema, jobId)
 
-    const job = await this.boss.getJobById(this.schema, jobId!)
+    const job = await ctx.boss.getJobById(ctx.schema, jobId)
 
-    assert(job && job.state === 'cancelled')
+    expect(job && job.state === 'cancelled').toBeTruthy()
   })
 
-  it('should not cancel a completed job', async function (this: TestContext) {
-    this.boss = await helper.start(this.bossConfig)
+  it('should not cancel a completed job', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
 
-    await this.boss.send(this.schema)
+    await ctx.boss.send(ctx.schema)
 
-    const [job] = await this.boss.fetch(this.schema)
+    const [job] = await ctx.boss.fetch(ctx.schema)
 
-    const completeResult = await this.boss.complete(this.schema, job.id)
+    const completeResult = await ctx.boss.complete(ctx.schema, job.id)
 
-    assert.strictEqual(completeResult.affected, 1)
+    expect(completeResult.affected).toBe(1)
 
-    const cancelResult = await this.boss.cancel(this.schema, job.id)
+    const cancelResult = await ctx.boss.cancel(ctx.schema, job.id)
 
-    assert.strictEqual(cancelResult.affected, 0)
+    expect(cancelResult.affected).toBe(0)
   })
 
-  it('should cancel a batch of jobs', async function (this: TestContext) {
-    this.boss = await helper.start(this.bossConfig)
+  it('should cancel a batch of jobs', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
 
     const jobs = await Promise.all([
-      this.boss.send(this.schema),
-      this.boss.send(this.schema),
-      this.boss.send(this.schema)
+      ctx.boss.send(ctx.schema),
+      ctx.boss.send(ctx.schema),
+      ctx.boss.send(ctx.schema)
     ])
 
-    await this.boss.cancel(this.schema, jobs as string[])
+    await ctx.boss.cancel(ctx.schema, jobs as string[])
   })
 
-  it('should cancel a pending job with custom connection', async function (this: TestContext) {
-    this.boss = await helper.start(this.bossConfig)
+  it('should cancel a pending job with custom connection', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
 
     let called = false
     const _db = await helper.getDb()
@@ -63,13 +65,14 @@ describe('cancel', function () {
       }
     }
 
-    const jobId = await this.boss.send(this.schema, {}, { startAfter: 1 })
+    const jobId = await ctx.boss.send(ctx.schema, {}, { startAfter: 1 })
 
-    await this.boss.cancel(this.schema, jobId!, { db })
+    assertTruthy(jobId)
+    await ctx.boss.cancel(ctx.schema, jobId, { db })
 
-    const job = await this.boss.getJobById(this.schema, jobId!)
+    const job = await ctx.boss.getJobById(ctx.schema, jobId)
 
-    assert(job && job.state === 'cancelled')
-    assert.strictEqual(called, true)
+    expect(job && job.state === 'cancelled').toBeTruthy()
+    expect(called).toBe(true)
   })
 })

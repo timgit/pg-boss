@@ -1,4 +1,4 @@
-import assert from 'node:assert'
+import { expect } from 'vitest'
 import { PgBoss } from '../src/index.ts'
 
 describe('database', function () {
@@ -8,9 +8,9 @@ describe('database', function () {
       connectionTimeoutMillis: 3000
     })
 
-    await assert.rejects(async () => {
+    await expect(async () => {
       await boss.start()
-    })
+    }).rejects.toThrow()
   })
 
   it('can be swapped out via BYODB', async function () {
@@ -18,7 +18,7 @@ describe('database', function () {
 
     const mydb = {
       executeSql: async (text: string, values: []): Promise<{ rows: any[]; text: string }> => {
-        assert.strictEqual(text, query)
+        expect(text).toBe(query)
         return { rows: [], text }
       }
     }
@@ -27,6 +27,6 @@ describe('database', function () {
     const response = await boss.getDb().executeSql(query)
 
     // @ts-ignore
-    assert(response.text === query)
+    expect(response.text).toBe(query)
   })
 })

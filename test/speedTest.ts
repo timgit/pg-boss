@@ -1,25 +1,21 @@
+import { expect, it } from 'vitest'
 import * as helper from './testHelper.ts'
-import assert from 'node:assert'
+import { ctx } from './hooks.ts'
 
 describe('speed', function () {
-  const expectedSeconds = 9
   const jobCount = 5_000
   const queue = 'speedTest'
   const data = new Array(jobCount).fill(null).map((item, index) => ({ name: queue, data: { index } }))
-  const testTitle = `should be able to fetch and complete ${jobCount} jobs in ${expectedSeconds} seconds`
 
-  it(testTitle, async function () {
-    this.timeout(expectedSeconds * 1000)
-    this.slow(0)
+  it(`should be able to fetch and complete ${jobCount} jobs in 9 seconds`, { timeout: 9000 }, async function () {
+    const config = { ...ctx.bossConfig, min: 10, max: 10, noDefault: true }
+    ctx.boss = await helper.start(config)
+    await ctx.boss.createQueue(queue)
+    await ctx.boss.insert(queue, data)
+    const jobs = await ctx.boss.fetch(queue, { batchSize: jobCount })
 
-    const config = { ...this.bossConfig, min: 10, max: 10, noDefault: true }
-    this.boss = await helper.start(config)
-    await this.boss.createQueue(queue)
-    await this.boss.insert(queue, data)
-    const jobs = await this.boss.fetch(queue, { batchSize: jobCount })
+    expect(jobs.length).toBe(jobCount)
 
-    assert.strictEqual(jobCount, jobs.length)
-
-    await this.boss.complete(queue, jobs.map(job => job.id))
+    await ctx.boss.complete(queue, jobs.map(job => job.id))
   })
 })

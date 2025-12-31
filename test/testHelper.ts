@@ -6,6 +6,12 @@ import type { ConstructorOptions } from '../src/types.ts'
 
 const sha1 = (value: string): string => crypto.createHash('sha1').update(value).digest('hex')
 
+function assertTruthy<T> (value: T, message?: string): asserts value is NonNullable<T> {
+  if (value == null) {
+    throw new Error(message ?? 'Expected value to be defined')
+  }
+}
+
 function getConnectionString (): string {
   const config = getConfig()
 
@@ -35,7 +41,8 @@ function getConfig (options: Partial<ConstructorOptions> & { testKey?: string } 
 async function init (): Promise<void> {
   const { database } = getConfig()
 
-  await tryCreateDb(database!)
+  assertTruthy(database)
+  await tryCreateDb(database)
 }
 
 async function getDb ({ database, debug }: { database?: string; debug?: boolean } = {}): Promise<Db> {
@@ -90,7 +97,8 @@ async function start (options?: Partial<ConstructorOptions> & { testKey?: string
     await boss.start()
 
     if (!options?.noDefault) {
-      await boss.createQueue(config.schema!)
+      assertTruthy(config.schema)
+      await boss.createQueue(config.schema)
     }
     return boss
   } catch (err) {
@@ -103,6 +111,7 @@ async function start (options?: Partial<ConstructorOptions> & { testKey?: string
 }
 
 export {
+  assertTruthy,
   dropSchema,
   start,
   getDb,
