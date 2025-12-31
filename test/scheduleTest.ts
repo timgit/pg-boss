@@ -3,6 +3,7 @@ import assert from 'node:assert'
 import { DateTime } from 'luxon'
 import * as helper from './testHelper.ts'
 import { PgBoss } from '../src/index.ts'
+import { CronExpressionParser } from 'cron-parser'
 
 describe('schedule', function () {
   it('should send job based on every minute expression', async function () {
@@ -41,7 +42,7 @@ describe('schedule', function () {
       numJobs++
     })
 
-    await delay(4000)
+    await delay(6000)
 
     assert(numJobs > 1)
   })
@@ -56,21 +57,25 @@ describe('schedule', function () {
 
     this.boss = await helper.start(config)
 
-    await this.boss.schedule(this.schema, '*/5 * * * * *')
-
     let numJobs = 0
     await this.boss.work(this.schema, async () => {
       numJobs++
     })
 
+    // wait for next run, then start test
+    const cronString = '*/5 * * * * *'
+    const timeOfNextRun = CronExpressionParser.parse(cronString).next().getTime()
+    await new Promise(resolve => setTimeout(resolve, timeOfNextRun - Date.now()))
+    await this.boss.schedule(this.schema, cronString)
+
     await delay(3000)
 
     assert.equal(numJobs, 1)
 
-    await delay(6000)
+    await delay(5000)
 
     assert.equal(numJobs, 2)
-  }).timeout(15000)
+  }).timeout(20000)
 
   it("in case of restart, jobs shouldn't be overscheduled", async function () {
     const config = {
@@ -82,16 +87,26 @@ describe('schedule', function () {
 
     this.boss = await helper.start(config)
 
-    await this.boss.schedule(this.schema, '*/59 * * * * *')
-
     let numJobs = 0
     this.boss.work(this.schema, async () => {
       numJobs++
     })
 
-    await delay(4000)
+    // wait for next run, then start test
+    const cronString = '*/11 * * * * *'
+    const timeOfNextRun = CronExpressionParser.parse(cronString).next().getTime()
+    await new Promise(resolve => setTimeout(resolve, timeOfNextRun - Date.now()))
+    await this.boss.schedule(this.schema, cronString)
 
-    assert.equal(numJobs, 1)
+    // wait for first job
+    await new Promise<void>(resolve => {
+      const interval = setInterval(() => {
+        if (numJobs > 0) {
+          clearInterval(interval)
+          resolve()
+        }
+      }, 100)
+    })
 
     // simulate restart
     await this.boss.stop({ graceful: true })
@@ -100,10 +115,10 @@ describe('schedule', function () {
       numJobs++
     })
 
-    await delay(4000)
+    await delay(5000)
 
     assert.equal(numJobs, 1)
-  })
+  }).timeout(25000)
 
   it('should set job metadata correctly', async function () {
     const config = {

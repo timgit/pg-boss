@@ -40,7 +40,6 @@ export interface SchedulingOptions {
   clockMonitorIntervalSeconds?: number;
   cronWorkerIntervalSeconds?: number;
   cronMonitorIntervalSeconds?: number;
-  scheduleCacheIntervalSeconds?: number;
 }
 
 export interface MaintenanceOptions {
