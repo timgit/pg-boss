@@ -345,4 +345,103 @@ describe('work', function () {
 
     await ctx.boss.send(ctx.schema)
   })
+
+  it('should abort signal when graceful shutdown timeout expires', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    let signalAborted = false
+
+    const jobId = await ctx.boss.send(ctx.schema, null, { retryLimit: 0 })
+
+    await ctx.boss.work(ctx.schema, async ([job]) => {
+      // Job checks signal every 100ms for up to 10 seconds
+      for (let i = 0; i < 100; i++) {
+        if (job.signal.aborted) {
+          signalAborted = true
+          return
+        }
+        await delay(100)
+      }
+    })
+
+    await delay(500)
+
+    // Stop with 1 second timeout - job takes 10s, so timeout will expire
+    await ctx.boss.stop({ timeout: 1000 })
+
+    await ctx.boss.start()
+
+    assertTruthy(jobId)
+    const job = await ctx.boss.getJobById(ctx.schema, jobId)
+
+    assertTruthy(job)
+    expect(signalAborted).toBe(true)
+    expect(job.state).toBe('failed')
+    expect(job.output).toBeTruthy()
+  })
+
+  it('should complete job successfully when finished within graceful shutdown period', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    let signalAborted = false
+
+    const jobId = await ctx.boss.send(ctx.schema, null, { retryLimit: 0 })
+
+    await ctx.boss.work(ctx.schema, async ([job]) => {
+      // Job takes 500ms to complete
+      await delay(500)
+      signalAborted = job.signal.aborted
+    })
+
+    await delay(100)
+
+    // Stop with 5 second timeout - job completes in 500ms, will complete during grace period
+    await ctx.boss.stop({ timeout: 5000 })
+
+    await ctx.boss.start()
+
+    assertTruthy(jobId)
+    const job = await ctx.boss.getJobById(ctx.schema, jobId)
+
+    assertTruthy(job)
+    expect(signalAborted).toBe(false)
+    expect(job.state).toBe('completed')
+  })
+
+  it('should abort signal immediately when graceful is false', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    let signalAborted = false
+    let handlerStarted = false
+
+    const jobId = await ctx.boss.send(ctx.schema, null, { retryLimit: 0 })
+
+    await ctx.boss.work(ctx.schema, async ([job]) => {
+      handlerStarted = true
+      // Job takes 2 seconds to complete
+      await delay(2000)
+      signalAborted = job.signal.aborted
+    })
+
+    await delay(500)
+    expect(handlerStarted).toBe(true)
+
+    // Non-graceful shutdown - should fail job immediately, no grace period
+    await ctx.boss.stop({ graceful: false, close: false })
+
+    // Give handler time to complete
+    await delay(2000)
+
+    await ctx.boss.start()
+
+    assertTruthy(jobId)
+    const job = await ctx.boss.getJobById<{}>(ctx.schema, jobId)
+
+    assertTruthy(job)
+    expect(job.state).toBe('failed')
+    // @ts-expect-error untyped object
+    expect((job.output)?.value).toBe('pg-boss shut down while active')
+    // Signal should be aborted immediately in non-graceful shutdown
+    expect(signalAborted).toBe(true)
+  })
 })
