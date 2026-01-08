@@ -142,8 +142,6 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     const fetch = () => this.fetch<ReqData>(name, { batchSize, includeMetadata, priority })
 
-    let workerRef: Worker<ReqData> | null = null
-
     const onFetch = async (jobs: types.Job<ReqData>[]) => {
       if (!jobs.length) {
         return
@@ -169,8 +167,9 @@ class Manager extends EventEmitter implements types.EventsMixin {
       jobs.forEach(job => { job.signal = ac.signal })
 
       // Store AbortController on worker so it can be aborted after graceful shutdown
-      if (workerRef) {
-        workerRef.abortController = ac
+      const worker = this.workers.get(id)
+      if (worker) {
+        worker.abortController = ac
       }
 
       try {
@@ -191,8 +190,9 @@ class Manager extends EventEmitter implements types.EventsMixin {
           }
         }
       } finally {
-        if (workerRef) {
-          workerRef.abortController = null
+        if (worker) {
+          // Clear between jobs
+          worker.abortController = null
         }
       }
 
@@ -204,7 +204,6 @@ class Manager extends EventEmitter implements types.EventsMixin {
     }
 
     const worker = new Worker<ReqData>({ id, name, options, interval, fetch, onFetch, onError })
-    workerRef = worker
 
     this.addWorker(worker)
 
