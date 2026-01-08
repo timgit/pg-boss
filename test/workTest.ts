@@ -345,4 +345,154 @@ describe('work', function () {
 
     await ctx.boss.send(ctx.schema)
   })
+
+  it('should abort signal when graceful shutdown timeout expires', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    let signalAborted = false
+
+    const jobId = await ctx.boss.send(ctx.schema, null, { retryLimit: 0 })
+
+    await ctx.boss.work(ctx.schema, async ([job]) => {
+      // Job checks signal every 100ms for up to 10 seconds
+      for (let i = 0; i < 100; i++) {
+        if (job.signal.aborted) {
+          signalAborted = true
+          return
+        }
+        await delay(100)
+      }
+    })
+
+    await delay(500)
+
+    // Stop with 1 second timeout - job takes 10s, so timeout will expire
+    await ctx.boss.stop({ timeout: 1000 })
+
+    await ctx.boss.start()
+
+    assertTruthy(jobId)
+    const job = await ctx.boss.getJobById(ctx.schema, jobId)
+
+    assertTruthy(job)
+    expect(signalAborted).toBe(true)
+    expect(job.state).toBe('failed')
+    expect(job.output).toBeTruthy()
+  })
+
+  it('should complete job successfully when finished within graceful shutdown period', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    let signalAborted = false
+
+    const jobId = await ctx.boss.send(ctx.schema, null, { retryLimit: 0 })
+
+    await ctx.boss.work(ctx.schema, async ([job]) => {
+      // Job takes 500ms to complete
+      await delay(500)
+      signalAborted = job.signal.aborted
+    })
+
+    await delay(100)
+
+    // Stop with 5 second timeout - job completes in 500ms, will complete during grace period
+    await ctx.boss.stop({ timeout: 5000 })
+
+    await ctx.boss.start()
+
+    assertTruthy(jobId)
+    const job = await ctx.boss.getJobById(ctx.schema, jobId)
+
+    assertTruthy(job)
+    expect(signalAborted).toBe(false)
+    expect(job.state).toBe('completed')
+  })
+
+  it('should abort signal immediately when graceful is false', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    let signalAborted = false
+    let handlerStarted = false
+
+    const jobId = await ctx.boss.send(ctx.schema, null, { retryLimit: 0 })
+
+    await ctx.boss.work(ctx.schema, async ([job]) => {
+      handlerStarted = true
+      // Job takes 2 seconds to complete
+      await delay(2000)
+      signalAborted = job.signal.aborted
+    })
+
+    await delay(500)
+    expect(handlerStarted).toBe(true)
+
+    // Non-graceful shutdown - should fail job immediately, no grace period
+    await ctx.boss.stop({ graceful: false, close: false })
+
+    // Give handler time to complete
+    await delay(2000)
+
+    await ctx.boss.start()
+
+    assertTruthy(jobId)
+    const job = await ctx.boss.getJobById<{}>(ctx.schema, jobId)
+
+    assertTruthy(job)
+    expect(job.state).toBe('failed')
+    // @ts-expect-error untyped object
+    expect((job.output)?.value).toBe('pg-boss shut down while active')
+    // Signal should be aborted immediately in non-graceful shutdown
+    expect(signalAborted).toBe(true)
+  })
+
+  it('should fire abort signal with multiple workers (localConcurrency)', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    const localConcurrency = 3
+    const abortedJobs: string[] = []
+    const jobIds: (string | null)[] = []
+
+    // Send 3 jobs
+    for (let i = 0; i < 3; i++) {
+      const jobId = await ctx.boss.send(ctx.schema, { index: i }, { retryLimit: 0 })
+      jobIds.push(jobId)
+    }
+
+    await ctx.boss.work(ctx.schema, { localConcurrency, pollingIntervalSeconds: 0.5 }, async ([job]) => {
+      // All jobs check for abort signal
+      for (let i = 0; i < 100; i++) {
+        if (job.signal.aborted) {
+          abortedJobs.push(job.id)
+          return // Return to complete the job
+        }
+        await delay(100)
+      }
+    })
+
+    // Wait for all workers to start
+    await delay(500)
+
+    // Stop with short timeout - jobs take 10s, so timeout will expire
+    await ctx.boss.stop({ timeout: 1000 })
+
+    // Wait for handlers to detect abort
+    await delay(500)
+
+    // All 3 jobs should have detected the abort signal
+    // This verifies abort signal works with multiple workers (localConcurrency)
+    expect(abortedJobs.length).toBe(3)
+
+    await ctx.boss.start()
+
+    // All 3 jobs should be marked as failed
+    for (let i = 0; i < 3; i++) {
+      const jobId = jobIds[i]
+      assertTruthy(jobId)
+      // @ts-ignore
+      const job = await ctx.boss.getJobById(ctx.schema, jobId)
+      assertTruthy(job)
+      expect(job.state).toBe('failed')
+      expect(job.output).toBeTruthy()
+    }
+  })
 })
