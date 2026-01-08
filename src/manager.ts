@@ -113,6 +113,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
   async failWip () {
     for (const worker of this.workers.values()) {
+      worker.abort()
       const jobIds = worker.jobs.map(j => j.id)
       if (jobIds.length) {
         await this.fail(worker.name, jobIds, 'pg-boss shut down while active')
@@ -141,6 +142,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     const fetch = () => this.fetch<ReqData>(name, { batchSize, includeMetadata, priority })
 
+    let workerRef: Worker<ReqData> | null = null
+
     const onFetch = async (jobs: types.Job<ReqData>[]) => {
       if (!jobs.length) {
         return
@@ -165,6 +168,11 @@ class Manager extends EventEmitter implements types.EventsMixin {
       const ac = new AbortController()
       jobs.forEach(job => { job.signal = ac.signal })
 
+      // Store AbortController on worker so it can be aborted after graceful shutdown
+      if (workerRef) {
+        workerRef.abortController = ac
+      }
+
       try {
         const result = await resolveWithinSeconds(callback(jobs), maxExpiration, `handler execution exceeded ${maxExpiration}s`, ac)
         await this.complete(name, jobIds, jobIds.length === 1 ? result : undefined)
@@ -182,6 +190,10 @@ class Manager extends EventEmitter implements types.EventsMixin {
             spy.addJob(job.id, name, job.data as object, 'failed', { message: err?.message, stack: err?.stack })
           }
         }
+      } finally {
+        if (workerRef) {
+          workerRef.abortController = null
+        }
       }
 
       this.emitWip(name)
@@ -192,6 +204,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     }
 
     const worker = new Worker<ReqData>({ id, name, options, interval, fetch, onFetch, onError })
+    workerRef = worker
 
     this.addWorker(worker)
 
