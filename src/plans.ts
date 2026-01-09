@@ -583,11 +583,12 @@ interface FetchJobOptions {
   limit: number
   includeMetadata?: boolean
   priority?: boolean
+  orderByCreatedOn?: boolean
   ignoreStartAfter?: boolean
   ignoreSingletons: string[] | null
 }
 
-function fetchNextJob ({ schema, table, name, policy, limit, includeMetadata, priority = true, ignoreStartAfter = false, ignoreSingletons = null }: FetchJobOptions): SqlQuery {
+function fetchNextJob ({ schema, table, name, policy, limit, includeMetadata, priority = true, orderByCreatedOn = true, ignoreStartAfter = false, ignoreSingletons = null }: FetchJobOptions): SqlQuery {
   const singletonFetch = limit > 1 && (policy === QUEUE_POLICIES.singleton || policy === QUEUE_POLICIES.stately)
   const cte = singletonFetch ? 'grouped' : 'next'
   const hasIgnoreSingletons = ignoreSingletons != null && ignoreSingletons.length > 0
@@ -601,7 +602,7 @@ function fetchNextJob ({ schema, table, name, policy, limit, includeMetadata, pr
         AND state < '${JOB_STATES.active}'
         ${ignoreStartAfter ? '' : 'AND start_after < now()'}
         ${hasIgnoreSingletons ? 'AND singleton_key <> ALL($1::text[])' : ''}
-      ORDER BY ${priority ? 'priority desc, ' : ''}created_on, id
+      ORDER BY ${priority ? 'priority desc, ' : ''}${orderByCreatedOn ? 'created_on, ' : ''}id
       LIMIT ${limit}
       FOR UPDATE SKIP LOCKED
     )

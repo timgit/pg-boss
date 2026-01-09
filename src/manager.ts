@@ -134,12 +134,13 @@ class Manager extends EventEmitter implements types.EventsMixin {
       pollingInterval: interval,
       batchSize = 1,
       includeMetadata = false,
-      priority = true
+      priority = true,
+      orderByCreatedOn = true
     } = options
 
     const id = randomUUID({ disableEntropyCache: true })
 
-    const fetch = () => this.fetch<ReqData>(name, { batchSize, includeMetadata, priority })
+    const fetch = () => this.fetch<ReqData>(name, { batchSize, includeMetadata, priority, orderByCreatedOn })
 
     const onFetch = async (jobs: types.Job<ReqData>[]) => {
       if (!jobs.length) {
