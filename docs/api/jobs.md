@@ -146,18 +146,17 @@ Like, `sendThrottled()`, but instead of rejecting if a job is already sent in th
 
 This is a convenience version of `send()` with the `singletonSeconds`, `singletonKey` and `singletonNextSlot` option assigned. The `key` argument is optional.
 
-### `insert(name, Job[])`
+### `insert(name, Job[], options)`
 
 Create multiple jobs in one request with an array of objects.
 
-The contract and supported features are slightly different than `send()`, which is why this function is named independently.  For example, debouncing is not supported.
+The contract and supported features are slightly different than `send()`, which is why this function is named independently. For example, debouncing is not supported, and it doesn't return job IDs unless spies are enabled or `options.returnId` is set to `true`.
 
-The following contract is a typescript defintion of the expected object. Only `name` is required, but most other properties can be set. This will likely be enhanced later with more support for deferral and retention by an offset. For now, calculate any desired timestamps for these features before insertion.
+The following contract is a typescript defintion of the expected object. This will likely be enhanced later with more support for deferral and retention by an offset. For now, calculate any desired timestamps for these features before insertion.
 
 ```ts
 interface JobInsert<T = object> {
   id?: string,
-  name: string;
   data?: T;
   priority?: number;
   retryLimit?: number;
