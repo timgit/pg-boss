@@ -166,6 +166,7 @@ export interface JobPollingOptions {
 export interface JobFetchOptions {
   includeMetadata?: boolean;
   priority?: boolean;
+  orderByCreatedOn?: boolean;
   batchSize?: number;
   ignoreStartAfter?: boolean;
 }

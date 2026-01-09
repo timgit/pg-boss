@@ -296,7 +296,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
       priority = true,
       localConcurrency = 1,
       localGroupConcurrency,
-      groupConcurrency
+      groupConcurrency,
+      orderByCreatedOn = true
     } = options
 
     if (localGroupConcurrency != null) {

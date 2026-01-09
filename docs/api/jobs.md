@@ -209,6 +209,10 @@ Returns an array of jobs from a queue
 
     If true, allow jobs with a higher priority to be fetched before jobs with lower or no priority
 
+  * `orderByCreatedOn`, bool, *default: true*
+
+    If true, jobs are fetched in the order they were created. Set to false to disable this sorting for improved performance when order doesn't matter.
+
   * `includeMetadata`, bool, *default: false*
 
     If `true`, all job metadata will be returned on the job object.
