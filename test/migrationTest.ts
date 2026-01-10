@@ -223,8 +223,8 @@ describe('migration', function () {
 
     config.migrations = getAll(config.schema)
 
-    // add invalid sql statement
-    config.migrations[0].install.push('wat')
+    // add invalid sql statement to the latest migration
+    config.migrations[config.migrations.length - 1].install.push('wat')
 
     await contractor.create()
     await contractor.rollback(currentSchemaVersion)
@@ -244,8 +244,8 @@ describe('migration', function () {
 
     expect(version1).toBe(oneVersionAgo)
 
-    // remove bad sql statement
-    config.migrations[0].install.pop()
+    // remove bad sql statement from the latest migration
+    config.migrations[config.migrations.length - 1].install.pop()
 
     const boss2 = new PgBoss(config)
 

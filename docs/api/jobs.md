@@ -83,6 +83,27 @@ All retry, expiration, and retention options can also be set on the queue and wi
 
     Default: 0
 
+**Group options**
+
+* **group**, object
+
+  Assigns a job to a group for use with `groupConcurrency` in `work()`. This allows you to limit how many jobs from the same group can be processed simultaneously.
+
+  - **id**, string, *required*: The group identifier (e.g., tenant ID, project ID, customer ID)
+  - **tier**, string, *optional*: A tier identifier for tier-based concurrency limits
+
+  ```js
+  // Assign job to a tenant group
+  await boss.send('process-data', data, {
+    group: { id: 'tenant-123' }
+  })
+
+  // Assign job to a group with a tier for tier-based limits
+  await boss.send('process-data', data, {
+    group: { id: 'tenant-456', tier: 'enterprise' }
+  })
+  ```
+
 **Throttle or debounce jobs**
 
 * **singletonSeconds**, int
@@ -168,6 +189,7 @@ interface JobInsert<T = object> {
   expireInSeconds?: number;
   deleteAfterSeconds?: number;
   keepUntil?: Date | string;
+  group?: { id: string; tier?: string };
 }
 ```
 
@@ -210,6 +232,8 @@ Returns an array of jobs from a queue
       startedOn: Date;
       singletonKey: string | null;
       singletonOn: Date | null;
+      groupId: string | null;
+      groupTier: string | null;
       expireInSeconds: number;
       deleteAfterSeconds: number;
       createdOn: Date;
