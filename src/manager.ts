@@ -326,15 +326,9 @@ class Manager extends EventEmitter implements types.EventsMixin {
         } else {
           const { allowed, excess, groupedJobs } = this.#trackLocalGroupStart(name, jobs)
 
-          // Put excess jobs back in the queue without consuming retry attempts.
-          // We use cancel+resume instead of fail() because these jobs haven't actually
-          // failed - they were fetched but not executed due to local concurrency limits.
-          // Using fail() would increment retry_count on each fetch cycle, eventually
-          // exhausting retry_limit and permanently failing jobs that never ran.
           if (excess.length > 0) {
             const excessIds = excess.map(job => job.id)
-            await this.cancel(name, excessIds)
-            await this.resume(name, excessIds)
+            await this.restore(name, excessIds)
           }
 
           if (allowed.length > 0) {
@@ -712,22 +706,22 @@ class Manager extends EventEmitter implements types.EventsMixin {
     return this.mapCommandResponse(ids, result)
   }
 
-  async cancel (name: string, id: string | string[], options: types.ConnectionOptions = {}) {
-    Attorney.assertQueueName(name)
-    const db = this.assertDb(options)
-    const ids = this.mapCompletionIdArg(id, 'cancel')
-    const { table } = await this.getQueueCache(name)
-    const sql = plans.cancelJobs(this.config.schema, table)
-    const result = await db.executeSql(sql, [name, ids])
-    return this.mapCommandResponse(ids, result)
-  }
-
   async deleteJob (name: string, id: string | string[], options: types.ConnectionOptions = {}) {
     Attorney.assertQueueName(name)
     const db = this.assertDb(options)
     const ids = this.mapCompletionIdArg(id, 'deleteJob')
     const { table } = await this.getQueueCache(name)
     const sql = plans.deleteJobsById(this.config.schema, table)
+    const result = await db.executeSql(sql, [name, ids])
+    return this.mapCommandResponse(ids, result)
+  }
+
+  async cancel (name: string, id: string | string[], options: types.ConnectionOptions = {}) {
+    Attorney.assertQueueName(name)
+    const db = this.assertDb(options)
+    const ids = this.mapCompletionIdArg(id, 'cancel')
+    const { table } = await this.getQueueCache(name)
+    const sql = plans.cancelJobs(this.config.schema, table)
     const result = await db.executeSql(sql, [name, ids])
     return this.mapCommandResponse(ids, result)
   }
@@ -740,6 +734,15 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const sql = plans.resumeJobs(this.config.schema, table)
     const result = await db.executeSql(sql, [name, ids])
     return this.mapCommandResponse(ids, result)
+  }
+
+  async restore (name: string, id: string | string[], options: types.ConnectionOptions = {}) {
+    Attorney.assertQueueName(name)
+    const db = this.assertDb(options)
+    const ids = this.mapCompletionIdArg(id, 'restore')
+    const { table } = await this.getQueueCache(name)
+    const sql = plans.restoreJobs(this.config.schema, table)
+    await db.executeSql(sql, [name, ids])
   }
 
   async retry (name: string, id: string | string[], options: types.ConnectionOptions = {}) {
