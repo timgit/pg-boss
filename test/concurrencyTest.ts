@@ -79,7 +79,7 @@ describe('localConcurrency', function () {
       await delay(500) // Simulate some work
     })
 
-    await delay(5000)
+    await delay(4000)
 
     expect(processedBy.length).toBe(jobCount)
   })
