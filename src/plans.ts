@@ -169,6 +169,8 @@ function createTableJob (schema: string) {
       deletion_seconds int not null default ${QUEUE_DEFAULTS.deletion_seconds},
       singleton_key text,
       singleton_on timestamp without time zone,
+      group_id text,
+      group_tier text,
       start_after timestamp with time zone not null default now(),
       created_on timestamp with time zone not null default now(),
       started_on timestamp with time zone,
@@ -181,7 +183,7 @@ function createTableJob (schema: string) {
   `
 }
 
-const JOB_COLUMNS_MIN = 'id, name, data, expire_seconds as "expireInSeconds"'
+const JOB_COLUMNS_MIN = 'id, name, data, expire_seconds as "expireInSeconds", group_id as "groupId", group_tier as "groupTier"'
 const JOB_COLUMNS_ALL = `${JOB_COLUMNS_MIN},
   policy,
   state,
@@ -217,6 +219,7 @@ function createTableJobCommon (schema: string, table: string) {
     ${format(createIndexJobPolicyExclusive(schema))}
     ${format(createIndexJobThrottle(schema))}
     ${format(createIndexJobFetch(schema))}
+    ${format(createIndexJobGroupConcurrency(schema))}
 
     ALTER TABLE ${schema}.job ATTACH PARTITION ${schema}.${table} DEFAULT;
   `
@@ -283,7 +286,8 @@ function createQueueFunction (schema: string) {
 
       EXECUTE format('${formatPartitionCommand(createIndexJobFetch(schema))}', tablename);
       EXECUTE format('${formatPartitionCommand(createIndexJobThrottle(schema))}', tablename);
-      
+      EXECUTE format('${formatPartitionCommand(createIndexJobGroupConcurrency(schema))}', tablename);
+
       IF options->>'policy' = 'short' THEN
         EXECUTE format('${formatPartitionCommand(createIndexJobPolicyShort(schema))}', tablename);
       ELSIF options->>'policy' = 'singleton' THEN
@@ -380,6 +384,10 @@ function createIndexJobFetch (schema: string) {
 
 function createIndexJobPolicyExclusive (schema: string) {
   return `CREATE UNIQUE INDEX job_i6 ON ${schema}.job (name, COALESCE(singleton_key, '')) WHERE state <= '${JOB_STATES.active}' AND policy = '${QUEUE_POLICIES.exclusive}'`
+}
+
+function createIndexJobGroupConcurrency (schema: string) {
+  return `CREATE INDEX job_i7 ON ${schema}.job (name, group_id) WHERE state = '${JOB_STATES.active}' AND group_id IS NOT NULL`
 }
 
 function trySetQueueMonitorTime (schema: string, queues: string[], seconds: number): SqlQuery {
@@ -575,6 +583,11 @@ function insertVersion (schema: string, version: number) {
   return `INSERT INTO ${schema}.version(version) VALUES ('${version}')`
 }
 
+interface GroupConcurrencyConfig {
+  default: number
+  tiers?: Record<string, number>
+}
+
 interface FetchJobOptions {
   schema: string
   table: string
@@ -585,37 +598,162 @@ interface FetchJobOptions {
   priority?: boolean
   ignoreStartAfter?: boolean
   ignoreSingletons: string[] | null
+  ignoreGroups?: string[] | null
+  groupConcurrency?: number | GroupConcurrencyConfig
 }
 
-function fetchNextJob ({ schema, table, name, policy, limit, includeMetadata, priority = true, ignoreStartAfter = false, ignoreSingletons = null }: FetchJobOptions): SqlQuery {
-  const singletonFetch = limit > 1 && (policy === QUEUE_POLICIES.singleton || policy === QUEUE_POLICIES.stately)
-  const cte = singletonFetch ? 'grouped' : 'next'
+interface FetchQueryParams {
+  values: unknown[]
+  ignoreSingletonsParam: string
+  ignoreGroupsParam: string
+  defaultGroupLimitParam: string
+  tiersParam: string
+}
+
+function buildFetchParams (options: FetchJobOptions): FetchQueryParams {
+  const { ignoreSingletons, ignoreGroups, groupConcurrency } = options
   const hasIgnoreSingletons = ignoreSingletons != null && ignoreSingletons.length > 0
+  const hasIgnoreGroups = ignoreGroups != null && ignoreGroups.length > 0
+  const hasGroupConcurrency = groupConcurrency != null
+  const groupConcurrencyConfig = hasGroupConcurrency
+    ? (typeof groupConcurrency === 'number' ? { default: groupConcurrency } : groupConcurrency)
+    : null
+  const hasTiers = groupConcurrencyConfig?.tiers && Object.keys(groupConcurrencyConfig.tiers).length > 0
+
+  const values: unknown[] = []
+  let paramIndex = 0
+  let ignoreSingletonsParam = ''
+  let ignoreGroupsParam = ''
+  let defaultGroupLimitParam = ''
+  let tiersParam = ''
+
+  if (hasIgnoreSingletons) {
+    paramIndex++
+    ignoreSingletonsParam = `$${paramIndex}::text[]`
+    values.push(ignoreSingletons)
+  }
+
+  if (hasIgnoreGroups) {
+    paramIndex++
+    ignoreGroupsParam = `$${paramIndex}::text[]`
+    values.push(ignoreGroups)
+  }
+
+  if (hasGroupConcurrency && groupConcurrencyConfig) {
+    paramIndex++
+    defaultGroupLimitParam = `$${paramIndex}::int`
+    values.push(groupConcurrencyConfig.default)
+
+    if (hasTiers) {
+      paramIndex++
+      tiersParam = `$${paramIndex}::jsonb`
+      values.push(JSON.stringify(groupConcurrencyConfig.tiers))
+    }
+  }
+
+  return { values, ignoreSingletonsParam, ignoreGroupsParam, defaultGroupLimitParam, tiersParam }
+}
+
+function fetchNextJob (options: FetchJobOptions): SqlQuery {
+  const { schema, table, name, policy, limit, includeMetadata, priority = true, ignoreStartAfter = false, groupConcurrency } = options
+
+  const singletonFetch = limit > 1 && (policy === QUEUE_POLICIES.singleton || policy === QUEUE_POLICIES.stately)
+  const hasIgnoreSingletons = options.ignoreSingletons != null && options.ignoreSingletons.length > 0
+  const hasIgnoreGroups = options.ignoreGroups != null && options.ignoreGroups.length > 0
+  const hasGroupConcurrency = groupConcurrency != null
+  const hasTiers = hasGroupConcurrency &&
+    typeof groupConcurrency === 'object' &&
+    groupConcurrency.tiers &&
+    Object.keys(groupConcurrency.tiers).length > 0
+
+  const params = buildFetchParams(options)
+
+  const whereConditions = [
+    `name = '${name}'`,
+    `state < '${JOB_STATES.active}'`,
+    !ignoreStartAfter ? 'start_after < now()' : '',
+    hasIgnoreSingletons ? `singleton_key <> ALL(${params.ignoreSingletonsParam})` : '',
+    hasIgnoreGroups ? `(group_id IS NULL OR group_id <> ALL(${params.ignoreGroupsParam}))` : ''
+  ].filter(Boolean).join(' AND ')
+
+  const selectCols = [
+    'id',
+    singletonFetch ? 'singleton_key' : '',
+    hasGroupConcurrency ? 'group_id, group_tier' : ''
+  ].filter(Boolean).join(', ')
+
+  const activeGroupCountsCte = hasGroupConcurrency
+    ? `active_group_counts AS (
+        SELECT group_id, COUNT(*)::int as active_cnt
+        FROM ${schema}.${table}
+        WHERE name = '${name}' AND state = '${JOB_STATES.active}' AND group_id IS NOT NULL
+        GROUP BY group_id
+      ), `
+    : ''
+
+  const nextCte = `
+      next AS (
+        SELECT ${selectCols}
+        FROM ${schema}.${table}
+        WHERE ${whereConditions}
+        ORDER BY ${priority ? 'priority desc, ' : ''}created_on, id
+        LIMIT ${limit}
+        FOR UPDATE SKIP LOCKED
+      )`
+
+  const singletonCte = singletonFetch
+    ? `, singleton_ranking AS (
+        SELECT id, ${hasGroupConcurrency ? 'group_id, group_tier, ' : ''}
+          row_number() OVER (PARTITION BY singleton_key) as singleton_rn
+        FROM next
+      )`
+    : ''
+
+  const groupConcurrencyCtes = hasGroupConcurrency
+    ? `,
+      group_ranking AS (
+        SELECT t.id
+          , t.group_id
+          , t.group_tier
+          ${singletonFetch ? ', singleton_rn' : ''}
+          , ROW_NUMBER() OVER (PARTITION BY t.group_id ORDER BY t.id) as group_rn
+          , COALESCE(agc.active_cnt, 0) as active_cnt
+        FROM ${singletonFetch ? 'singleton_ranking' : 'next'} t
+        LEFT JOIN active_group_counts agc ON t.group_id = agc.group_id
+        ${singletonFetch ? 'WHERE singleton_rn = 1' : ''}
+      ),
+      group_filtered AS (
+        SELECT id FROM group_ranking
+        WHERE group_id IS NULL
+          OR (active_cnt + group_rn) <= ${hasTiers
+          ? `COALESCE((${params.tiersParam} ->> group_tier)::int, ${params.defaultGroupLimitParam})`
+          : params.defaultGroupLimitParam}
+      )`
+    : ''
+
+  const finalCte = (hasGroupConcurrency)
+    ? 'group_filtered'
+    : (singletonFetch)
+        ? 'singleton_ranking'
+        : 'next'
 
   return {
     text: `
-    WITH next as (
-      SELECT id ${singletonFetch ? ', singleton_key' : ''}
-      FROM ${schema}.${table}
-      WHERE name = '${name}'
-        AND state < '${JOB_STATES.active}'
-        ${ignoreStartAfter ? '' : 'AND start_after < now()'}
-        ${hasIgnoreSingletons ? 'AND singleton_key <> ALL($1::text[])' : ''}
-      ORDER BY ${priority ? 'priority desc, ' : ''}created_on, id
-      LIMIT ${limit}
-      FOR UPDATE SKIP LOCKED
-    )
-    ${singletonFetch ? ', grouped as ( SELECT id, row_number() OVER (PARTITION BY singleton_key) FROM next)' : ''}
-    UPDATE ${schema}.${table} j SET
-      state = '${JOB_STATES.active}',
-      started_on = now(),
-      retry_count = CASE WHEN started_on IS NOT NULL THEN retry_count + 1 ELSE retry_count END
-    FROM ${cte}
-    WHERE name = '${name}' AND j.id = ${cte}.id
-      ${singletonFetch ? ` AND ${cte}.row_number = 1` : ''}
-    RETURNING j.${includeMetadata ? JOB_COLUMNS_ALL : JOB_COLUMNS_MIN}
-  `,
-    values: hasIgnoreSingletons ? [ignoreSingletons] : []
+      WITH
+      ${activeGroupCountsCte}
+      ${nextCte}
+      ${singletonCte}
+      ${groupConcurrencyCtes}
+      UPDATE ${schema}.${table} j SET
+        state = '${JOB_STATES.active}',
+        started_on = now(),
+        retry_count = CASE WHEN started_on IS NOT NULL THEN retry_count + 1 ELSE retry_count END
+      FROM ${finalCte}
+      WHERE name = '${name}' AND j.id = ${finalCte}.id
+      ${singletonFetch && !hasGroupConcurrency ? 'AND singleton_rn = 1' : ''}
+      RETURNING j.${includeMetadata ? JOB_COLUMNS_ALL : JOB_COLUMNS_MIN}
+    `,
+    values: params.values
   }
 }
 
@@ -665,6 +803,15 @@ function resumeJobs (schema: string, table: string) {
   `
 }
 
+function restoreJobs (schema: string, table: string) {
+  return `
+    UPDATE ${schema}.${table}
+    SET state = '${JOB_STATES.created}'
+    WHERE name = $1
+      AND id IN (SELECT UNNEST($2::uuid[]))
+  `
+}
+
 interface InsertJobsOptions {
   table: string
   name: string
@@ -681,6 +828,8 @@ function insertJobs (schema: string, { table, name, returnId = true }: InsertJob
       start_after,
       singleton_key,
       singleton_on,
+      group_id,
+      group_tier,
       expire_seconds,
       deletion_seconds,
       keep_until,
@@ -702,6 +851,8 @@ function insertJobs (schema: string, { table, name, returnId = true }: InsertJob
         WHEN "singletonSeconds" IS NOT NULL THEN 'epoch'::timestamp + '1s'::interval * ("singletonSeconds" * floor(( date_part('epoch', now()) + COALESCE("singletonOffset",0)) / "singletonSeconds" ))
         ELSE NULL
         END as singleton_on,
+      "groupId" as group_id,
+      "groupTier" as group_tier,
       COALESCE("expireInSeconds", q.expire_seconds) as expire_seconds,
       COALESCE("deleteAfterSeconds", q.deletion_seconds) as deletion_seconds,
       j.start_after + (COALESCE("retentionSeconds", q.retention_seconds) * interval '1s') as keep_until,
@@ -729,10 +880,12 @@ function insertJobs (schema: string, { table, name, returnId = true }: InsertJob
         "singletonKey" text,
         "singletonSeconds" integer,
         "singletonOffset" integer,
+        "groupId" text,
+        "groupTier" text,
         "expireInSeconds" integer,
         "deleteAfterSeconds" integer,
         "retentionSeconds" integer
-      ) 
+      )
     ) j
     JOIN ${schema}.queue q ON q.name = '${name}'
     ON CONFLICT DO NOTHING
@@ -782,6 +935,8 @@ function failJobs (schema: string, table: string, where: string, output: string)
         started_on,
         singleton_key,
         singleton_on,
+        group_id,
+        group_tier,
         expire_seconds,
         deletion_seconds,
         created_on,
@@ -818,6 +973,8 @@ function failJobs (schema: string, table: string, where: string, output: string)
         started_on,
         singleton_key,
         singleton_on,
+        group_id,
+        group_tier,
         expire_seconds,
         deletion_seconds,
         created_on,
@@ -846,6 +1003,8 @@ function failJobs (schema: string, table: string, where: string, output: string)
         started_on,
         singleton_key,
         singleton_on,
+        group_id,
+        group_tier,
         expire_seconds,
         deletion_seconds,
         created_on,
@@ -870,6 +1029,8 @@ function failJobs (schema: string, table: string, where: string, output: string)
         started_on,
         singleton_key,
         singleton_on,
+        group_id,
+        group_tier,
         expire_seconds,
         deletion_seconds,
         created_on,
@@ -1026,6 +1187,7 @@ export {
   completeJobs,
   cancelJobs,
   resumeJobs,
+  restoreJobs,
   retryJobs,
   deleteJobsById,
   deleteAllJobs,

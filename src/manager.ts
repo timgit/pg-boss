@@ -31,6 +31,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
   queues: Record<string, types.QueueResult> | null
   pendingOffWorkCleanups: Set<Promise<any>>
   #spies: Map<string, JobSpy>
+  #localGroupActive: Map<string, Map<string, number>>
+  #localGroupConfig: Map<string, types.GroupConcurrencyConfig>
 
   constructor (db: types.IDatabase, config: types.ResolvedConstructorOptions) {
     super()
@@ -42,6 +44,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
     this.queues = null
     this.pendingOffWorkCleanups = new Set()
     this.#spies = new Map()
+    this.#localGroupActive = new Map()
+    this.#localGroupConfig = new Map()
   }
 
   getSpy<T = object> (name: string): JobSpyInterface<T> {
@@ -61,6 +65,157 @@ class Manager extends EventEmitter implements types.EventsMixin {
       spy.clear()
     }
     this.#spies.clear()
+  }
+
+  #getLocalGroupLimit (queueName: string, groupTier?: string | null): number {
+    const config = this.#localGroupConfig.get(queueName)
+    if (!config) return Infinity
+    if (groupTier && config.tiers && groupTier in config.tiers) {
+      return config.tiers[groupTier]
+    }
+    return config.default
+  }
+
+  #getGroupsAtLocalCapacity (queueName: string): string[] {
+    const config = this.#localGroupConfig.get(queueName)
+    if (!config) return []
+
+    const queueGroups = this.#localGroupActive.get(queueName)
+    if (!queueGroups) return []
+
+    const atCapacity: string[] = []
+    for (const [groupId, activeCount] of queueGroups.entries()) {
+      // We don't have tier info here, so use default limit
+      // Jobs with tiers will be checked individually after fetch
+      const limit = config.default
+      if (activeCount >= limit) {
+        atCapacity.push(groupId)
+      }
+    }
+    return atCapacity
+  }
+
+  #incrementLocalGroupCount (queueName: string, groupId: string): void {
+    let queueGroups = this.#localGroupActive.get(queueName)
+    if (!queueGroups) {
+      queueGroups = new Map()
+      this.#localGroupActive.set(queueName, queueGroups)
+    }
+    const current = queueGroups.get(groupId) || 0
+    queueGroups.set(groupId, current + 1)
+  }
+
+  #decrementLocalGroupCount (queueName: string, groupId: string): void {
+    const queueGroups = this.#localGroupActive.get(queueName)
+    if (!queueGroups) return
+    const current = queueGroups.get(groupId) || 0
+    if (current <= 1) {
+      queueGroups.delete(groupId)
+    } else {
+      queueGroups.set(groupId, current - 1)
+    }
+  }
+
+  #trackJobsActive<T> (name: string, jobs: types.Job<T>[]): void {
+    const spy = this.config.__test__enableSpies ? this.#spies.get(name) : undefined
+    if (spy) {
+      for (const job of jobs) {
+        spy.addJob(job.id, name, job.data as object, 'active')
+      }
+    }
+  }
+
+  #trackJobsCompleted<T> (name: string, jobs: types.Job<T>[], result: unknown): void {
+    const spy = this.config.__test__enableSpies ? this.#spies.get(name) : undefined
+    if (spy) {
+      const output = jobs.length === 1 ? result as object : undefined
+      for (const job of jobs) {
+        spy.addJob(job.id, name, job.data as object, 'completed', output)
+      }
+    }
+  }
+
+  #trackJobsFailed<T> (name: string, jobs: types.Job<T>[], err: Error): void {
+    const spy = this.config.__test__enableSpies ? this.#spies.get(name) : undefined
+    if (spy) {
+      for (const job of jobs) {
+        spy.addJob(job.id, name, job.data as object, 'failed', { message: err?.message, stack: err?.stack })
+      }
+    }
+  }
+
+  #storeLocalGroupConfig (name: string, localGroupConcurrency: number | types.GroupConcurrencyConfig): void {
+    const config: types.GroupConcurrencyConfig = typeof localGroupConcurrency === 'number'
+      ? { default: localGroupConcurrency }
+      : localGroupConcurrency
+    this.#localGroupConfig.set(name, config)
+  }
+
+  #cleanupLocalGroupTracking (name: string): void {
+    // Only cleanup if no more workers exist for this queue
+    const hasWorkersForQueue = this.getWorkers().some(w => w.name === name && !w.stopping && !w.stopped)
+    if (!hasWorkersForQueue) {
+      this.#localGroupConfig.delete(name)
+      this.#localGroupActive.delete(name)
+    }
+  }
+
+  #trackLocalGroupStart<T> (
+    name: string,
+    jobs: types.Job<T>[]
+  ): { allowed: types.Job<T>[], excess: types.Job<T>[], groupedJobs: types.Job<T>[] } {
+    const allowed: types.Job<T>[] = []
+    const excess: types.Job<T>[] = []
+    const groupedJobs: types.Job<T>[] = []
+
+    for (const job of jobs) {
+      if (!job.groupId) {
+        // Jobs without group bypass local group limits
+        allowed.push(job)
+        continue
+      }
+
+      const currentCount = this.#localGroupActive.get(name)?.get(job.groupId) || 0
+      const limit = this.#getLocalGroupLimit(name, job.groupTier)
+
+      if (currentCount < limit) {
+        this.#incrementLocalGroupCount(name, job.groupId)
+        allowed.push(job)
+        groupedJobs.push(job)
+      } else {
+        excess.push(job)
+      }
+    }
+
+    return { allowed, excess, groupedJobs }
+  }
+
+  #trackLocalGroupEnd<T> (name: string, groupedJobs: types.Job<T>[]): void {
+    for (const job of groupedJobs) {
+      if (job.groupId) {
+        this.#decrementLocalGroupCount(name, job.groupId)
+      }
+    }
+  }
+
+  async #processJobs<T> (
+    name: string,
+    jobs: types.Job<T>[],
+    callback: types.WorkHandler<T>
+  ): Promise<void> {
+    const jobIds = jobs.map(job => job.id)
+    const maxExpiration = jobs.reduce((acc, i) => Math.max(acc, i.expireInSeconds), 0)
+    const ac = new AbortController()
+    jobs.forEach(job => { job.signal = ac.signal })
+
+    try {
+      const result = await resolveWithinSeconds(callback(jobs), maxExpiration, `handler execution exceeded ${maxExpiration}s`, ac)
+      await this.complete(name, jobIds, jobIds.length === 1 ? result : undefined)
+      this.#trackJobsCompleted(name, jobs, result)
+    } catch (err: any) {
+      await this.fail(name, jobIds, err)
+      this.#trackJobsFailed(name, jobs, err)
+    }
   }
 
   async start () {
@@ -109,6 +264,10 @@ class Manager extends EventEmitter implements types.EventsMixin {
         .filter(worker => !INTERNAL_QUEUES[worker.name])
         .map(async worker => await this.offWork(worker.name, { wait: false }))
     )
+
+    // Clean up all local group tracking on full stop
+    this.#localGroupConfig.clear()
+    this.#localGroupActive.clear()
   }
 
   async failWip () {
@@ -134,70 +293,73 @@ class Manager extends EventEmitter implements types.EventsMixin {
       pollingInterval: interval,
       batchSize = 1,
       includeMetadata = false,
-      priority = true
+      priority = true,
+      localConcurrency = 1,
+      localGroupConcurrency,
+      groupConcurrency
     } = options
 
-    const id = randomUUID({ disableEntropyCache: true })
-
-    const fetch = () => this.fetch<ReqData>(name, { batchSize, includeMetadata, priority })
-
-    const onFetch = async (jobs: types.Job<ReqData>[]) => {
-      if (!jobs.length) {
-        return
-      }
-
-      if (this.config.__test__throw_worker) {
-        throw new Error('__test__throw_worker')
-      }
-
-      this.emitWip(name)
-
-      const spy = this.config.__test__enableSpies ? this.#spies.get(name) : undefined
-
-      if (spy) {
-        for (const job of jobs) {
-          spy.addJob(job.id, name, job.data as object, 'active')
-        }
-      }
-
-      const maxExpiration = jobs.reduce((acc, i) => Math.max(acc, i.expireInSeconds), 0)
-      const jobIds = jobs.map(job => job.id)
-      const ac = new AbortController()
-      jobs.forEach(job => { job.signal = ac.signal })
-
-      try {
-        const result = await resolveWithinSeconds(callback(jobs), maxExpiration, `handler execution exceeded ${maxExpiration}s`, ac)
-        await this.complete(name, jobIds, jobIds.length === 1 ? result : undefined)
-
-        if (spy) {
-          for (const job of jobs) {
-            spy.addJob(job.id, name, job.data as object, 'completed', jobIds.length === 1 ? result : undefined)
-          }
-        }
-      } catch (err: any) {
-        await this.fail(name, jobIds, err)
-
-        if (spy) {
-          for (const job of jobs) {
-            spy.addJob(job.id, name, job.data as object, 'failed', { message: err?.message, stack: err?.stack })
-          }
-        }
-      }
-
-      this.emitWip(name)
+    if (localGroupConcurrency != null) {
+      this.#storeLocalGroupConfig(name, localGroupConcurrency)
     }
 
-    const onError = (error: any) => {
-      this.emit(events.error, { ...error, message: error.message, stack: error.stack, queue: name, worker: id })
+    const firstWorkerId = randomUUID({ disableEntropyCache: true })
+
+    const createWorker = (workerId: string) => {
+      const fetch = () => {
+        const ignoreGroups = localGroupConcurrency != null
+          ? this.#getGroupsAtLocalCapacity(name)
+          : undefined
+        return this.fetch<ReqData>(name, { batchSize, includeMetadata, priority, groupConcurrency, ignoreGroups })
+      }
+
+      const onFetch = async (jobs: types.Job<ReqData>[]) => {
+        if (!jobs.length) return
+        if (this.config.__test__throw_worker) throw new Error('__test__throw_worker')
+
+        this.emitWip(name)
+        this.#trackJobsActive(name, jobs)
+
+        // Skip all in-memory group tracking when localGroupConcurrency is not enabled
+        if (localGroupConcurrency == null) {
+          await this.#processJobs(name, jobs, callback)
+        } else {
+          const { allowed, excess, groupedJobs } = this.#trackLocalGroupStart(name, jobs)
+
+          if (excess.length > 0) {
+            const excessIds = excess.map(job => job.id)
+            await this.restore(name, excessIds)
+          }
+
+          if (allowed.length > 0) {
+            try {
+              await this.#processJobs(name, allowed, callback)
+            } finally {
+              this.#trackLocalGroupEnd(name, groupedJobs)
+            }
+          }
+        }
+
+        this.emitWip(name)
+      }
+
+      const onError = (error: any) => {
+        this.emit(events.error, { ...error, message: error.message, stack: error.stack, queue: name, worker: workerId })
+      }
+
+      return new Worker<ReqData>({ id: workerId, name, options, interval, fetch, onFetch, onError })
     }
 
-    const worker = new Worker<ReqData>({ id, name, options, interval, fetch, onFetch, onError })
+    // Spawn workers based on localConcurrency setting
+    for (let i = 0; i < localConcurrency; i++) {
+      const workerId = i === 0 ? firstWorkerId : randomUUID({ disableEntropyCache: true })
+      const worker = createWorker(workerId)
 
-    this.addWorker(worker)
+      this.addWorker(worker)
+      worker.start()
+    }
 
-    worker.start()
-
-    return id
+    return firstWorkerId
   }
 
   private addWorker (worker: Worker<any>) {
@@ -257,9 +419,13 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     if (options.wait) {
       await cleanupPromise
+      this.#cleanupLocalGroupTracking(name)
     } else {
       this.pendingOffWorkCleanups.add(cleanupPromise)
-      cleanupPromise.finally(() => this.pendingOffWorkCleanups.delete(cleanupPromise))
+      cleanupPromise.finally(() => {
+        this.pendingOffWorkCleanups.delete(cleanupPromise)
+        this.#cleanupLocalGroupTracking(name)
+      })
     }
   }
 
@@ -346,7 +512,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
       retryLimit,
       retryDelay,
       retryBackoff,
-      retryDelayMax
+      retryDelayMax,
+      group
     } = options
 
     const job = {
@@ -358,6 +525,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
       singletonKey,
       singletonSeconds,
       singletonOffset: 0 as number | undefined,
+      groupId: group?.id ?? null,
+      groupTier: group?.tier ?? null,
       expireInSeconds,
       deleteAfterSeconds,
       retentionSeconds,
@@ -537,22 +706,22 @@ class Manager extends EventEmitter implements types.EventsMixin {
     return this.mapCommandResponse(ids, result)
   }
 
-  async cancel (name: string, id: string | string[], options: types.ConnectionOptions = {}) {
-    Attorney.assertQueueName(name)
-    const db = this.assertDb(options)
-    const ids = this.mapCompletionIdArg(id, 'cancel')
-    const { table } = await this.getQueueCache(name)
-    const sql = plans.cancelJobs(this.config.schema, table)
-    const result = await db.executeSql(sql, [name, ids])
-    return this.mapCommandResponse(ids, result)
-  }
-
   async deleteJob (name: string, id: string | string[], options: types.ConnectionOptions = {}) {
     Attorney.assertQueueName(name)
     const db = this.assertDb(options)
     const ids = this.mapCompletionIdArg(id, 'deleteJob')
     const { table } = await this.getQueueCache(name)
     const sql = plans.deleteJobsById(this.config.schema, table)
+    const result = await db.executeSql(sql, [name, ids])
+    return this.mapCommandResponse(ids, result)
+  }
+
+  async cancel (name: string, id: string | string[], options: types.ConnectionOptions = {}) {
+    Attorney.assertQueueName(name)
+    const db = this.assertDb(options)
+    const ids = this.mapCompletionIdArg(id, 'cancel')
+    const { table } = await this.getQueueCache(name)
+    const sql = plans.cancelJobs(this.config.schema, table)
     const result = await db.executeSql(sql, [name, ids])
     return this.mapCommandResponse(ids, result)
   }
@@ -565,6 +734,15 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const sql = plans.resumeJobs(this.config.schema, table)
     const result = await db.executeSql(sql, [name, ids])
     return this.mapCommandResponse(ids, result)
+  }
+
+  async restore (name: string, id: string | string[], options: types.ConnectionOptions = {}) {
+    Attorney.assertQueueName(name)
+    const db = this.assertDb(options)
+    const ids = this.mapCompletionIdArg(id, 'restore')
+    const { table } = await this.getQueueCache(name)
+    const sql = plans.restoreJobs(this.config.schema, table)
+    await db.executeSql(sql, [name, ids])
   }
 
   async retry (name: string, id: string | string[], options: types.ConnectionOptions = {}) {
