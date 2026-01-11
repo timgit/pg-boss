@@ -606,7 +606,7 @@ interface FetchQueryParams {
   values: unknown[]
   ignoreSingletonsParam: string
   ignoreGroupsParam: string
-  defaultLimitParam: string
+  defaultGroupLimitParam: string
   tiersParam: string
 }
 
@@ -624,7 +624,7 @@ function buildFetchParams (options: FetchJobOptions): FetchQueryParams {
   let paramIndex = 0
   let ignoreSingletonsParam = ''
   let ignoreGroupsParam = ''
-  let defaultLimitParam = ''
+  let defaultGroupLimitParam = ''
   let tiersParam = ''
 
   if (hasIgnoreSingletons) {
@@ -641,7 +641,7 @@ function buildFetchParams (options: FetchJobOptions): FetchQueryParams {
 
   if (hasGroupConcurrency && groupConcurrencyConfig) {
     paramIndex++
-    defaultLimitParam = `$${paramIndex}::int`
+    defaultGroupLimitParam = `$${paramIndex}::int`
     values.push(groupConcurrencyConfig.default)
 
     if (hasTiers) {
@@ -651,7 +651,7 @@ function buildFetchParams (options: FetchJobOptions): FetchQueryParams {
     }
   }
 
-  return { values, ignoreSingletonsParam, ignoreGroupsParam, defaultLimitParam, tiersParam }
+  return { values, ignoreSingletonsParam, ignoreGroupsParam, defaultGroupLimitParam, tiersParam }
 }
 
 function fetchNextJob (options: FetchJobOptions): SqlQuery {
@@ -666,16 +666,7 @@ function fetchNextJob (options: FetchJobOptions): SqlQuery {
     groupConcurrency.tiers &&
     Object.keys(groupConcurrency.tiers).length > 0
 
-  const finalCte = (hasGroupConcurrency)
-    ? 'group_filtered'
-    : (singletonFetch)
-        ? 'singleton_ranking'
-        : 'next'
-
   const params = buildFetchParams(options)
-  const getLimitExpr = hasTiers
-    ? `COALESCE((${params.tiersParam} ->> group_tier)::int, ${params.defaultLimitParam})`
-    : params.defaultLimitParam
 
   const whereConditions = [
     `name = '${name}'`,
@@ -700,6 +691,16 @@ function fetchNextJob (options: FetchJobOptions): SqlQuery {
       ), `
     : ''
 
+  const nextCte = `
+      next AS (
+        SELECT ${selectCols}
+        FROM ${schema}.${table}
+        WHERE ${whereConditions}
+        ORDER BY ${priority ? 'priority desc, ' : ''}created_on, id
+        LIMIT ${limit}
+        FOR UPDATE SKIP LOCKED
+      )`
+
   const singletonCte = singletonFetch
     ? `, singleton_ranking AS (
         SELECT id, ${hasGroupConcurrency ? 'group_id, group_tier, ' : ''}
@@ -723,22 +724,24 @@ function fetchNextJob (options: FetchJobOptions): SqlQuery {
       ),
       group_filtered AS (
         SELECT id FROM group_ranking
-        WHERE group_id IS NULL OR (active_cnt + group_rn) <= ${getLimitExpr}
+        WHERE group_id IS NULL
+          OR (active_cnt + group_rn) <= ${hasTiers
+          ? `COALESCE((${params.tiersParam} ->> group_tier)::int, ${params.defaultGroupLimitParam})`
+          : params.defaultGroupLimitParam}
       )`
     : ''
+
+  const finalCte = (hasGroupConcurrency)
+    ? 'group_filtered'
+    : (singletonFetch)
+        ? 'singleton_ranking'
+        : 'next'
 
   return {
     text: `
       WITH
       ${activeGroupCountsCte}
-      next AS (
-        SELECT ${selectCols}
-        FROM ${schema}.${table}
-        WHERE ${whereConditions}
-        ORDER BY ${priority ? 'priority desc, ' : ''}created_on, id
-        LIMIT ${limit}
-        FOR UPDATE SKIP LOCKED
-      )
+      ${nextCte}
       ${singletonCte}
       ${groupConcurrencyCtes}
       UPDATE ${schema}.${table} j SET
