@@ -51,6 +51,7 @@ This will likely cater the most to teams already familiar with the simplicity of
 * SQL support for non-Node.js runtimes for most operations
 * Serverless function compatible
 * Multi-master compatible (for example, in a Kubernetes ReplicaSet)
+* [Distributed database support](https://timgit.github.io/pg-boss/docs/distributed-databases) for CockroachDB and other distributed SQL databases
 
 ## Requirements
 * Node 22.12 or higher for CommonJS's require(esm)

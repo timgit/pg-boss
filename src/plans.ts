@@ -654,7 +654,23 @@ function buildFetchParams (options: FetchJobOptions): FetchQueryParams {
   return { values, ignoreSingletonsParam, ignoreGroupsParam, defaultGroupLimitParam, tiersParam }
 }
 
-function fetchNextJob (options: FetchJobOptions): SqlQuery {
+/**
+ * Builds the fetch query for claiming jobs from the queue.
+ *
+ * In standard mode (distributed=false), uses SELECT FOR UPDATE SKIP LOCKED
+ * which allows multiple workers to efficiently fetch different jobs simultaneously.
+ *
+ * In distributed mode (distributed=true), omits FOR UPDATE SKIP LOCKED and adds
+ * an additional state check in the WHERE clause. This pattern works better with
+ * distributed databases like CockroachDB where SKIP LOCKED has performance issues
+ * and can unexpectedly skip unlocked rows.
+ *
+ * Trade-off in distributed mode: Under high contention, workers may receive fewer
+ * jobs per fetch as concurrent updates to the same rows will result in some workers
+ * getting empty results. This is acceptable for job queues where processing time
+ * exceeds fetch time.
+ */
+function fetchNextJob (options: FetchJobOptions, distributed = false): SqlQuery {
   const { schema, table, name, policy, limit, includeMetadata, priority = true, ignoreStartAfter = false, groupConcurrency } = options
 
   const singletonFetch = limit > 1 && (policy === QUEUE_POLICIES.singleton || policy === QUEUE_POLICIES.stately)
@@ -691,6 +707,10 @@ function fetchNextJob (options: FetchJobOptions): SqlQuery {
       ), `
     : ''
 
+  // In distributed mode, omit FOR UPDATE SKIP LOCKED as it performs poorly
+  // in distributed databases like CockroachDB
+  const lockClause = distributed ? '' : 'FOR UPDATE SKIP LOCKED'
+
   const nextCte = `
       next AS (
         SELECT ${selectCols}
@@ -698,7 +718,7 @@ function fetchNextJob (options: FetchJobOptions): SqlQuery {
         WHERE ${whereConditions}
         ORDER BY ${priority ? 'priority desc, ' : ''}created_on, id
         LIMIT ${limit}
-        FOR UPDATE SKIP LOCKED
+        ${lockClause}
       )`
 
   const singletonCte = singletonFetch
@@ -737,6 +757,10 @@ function fetchNextJob (options: FetchJobOptions): SqlQuery {
         ? 'singleton_ranking'
         : 'next'
 
+  // In distributed mode, add state check to prevent duplicate processing
+  // when multiple workers try to claim the same jobs concurrently
+  const distributedStateCheck = distributed ? `AND j.state < '${JOB_STATES.active}'` : ''
+
   return {
     text: `
       WITH
@@ -751,6 +775,7 @@ function fetchNextJob (options: FetchJobOptions): SqlQuery {
       FROM ${finalCte}
       WHERE name = '${name}' AND j.id = ${finalCte}.id
       ${singletonFetch && !hasGroupConcurrency ? 'AND singleton_rn = 1' : ''}
+      ${distributedStateCheck}
       RETURNING j.${includeMetadata ? JOB_COLUMNS_ALL : JOB_COLUMNS_MIN}
     `,
     values: params.values

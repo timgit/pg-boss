@@ -92,3 +92,14 @@ The following configuration options should not normally need to be changed, but 
 * **queueCacheIntervalSeconds**, int, default 60 seconds
 
   How often queue metadata is refreshed in memory.
+
+* **distributedDatabaseMode**, bool, default false
+
+  Enable distributed database mode for use with CockroachDB, YugabyteDB, TiDB, and other distributed SQL databases. Uses atomic `UPDATE...RETURNING` instead of `SELECT FOR UPDATE SKIP LOCKED` for job fetching.
+
+  - **CockroachDB**: Recommended. Fixes known performance and correctness issues with `SKIP LOCKED`.
+  - **YugabyteDB/Citus**: Optional. Test both modes to determine which performs better for your workload.
+  - **TiDB**: Necessary until `SKIP LOCKED` support is implemented.
+  - **PostgreSQL**: Not recommended. Standard mode with `SKIP LOCKED` is more efficient.
+
+  See [Distributed Databases](../distributed-databases.md) for details.

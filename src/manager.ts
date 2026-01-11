@@ -643,7 +643,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       ignoreSingletons: singletonsActive
     }
 
-    const query = plans.fetchNextJob(fetchOptions)
+    const query = plans.fetchNextJob(fetchOptions, this.config.distributedDatabaseMode)
 
     let result
 

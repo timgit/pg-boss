@@ -52,6 +52,28 @@ export interface MaintenanceOptions {
   maintenanceIntervalSeconds?: number;
   queueCacheIntervalSeconds?: number;
   monitorIntervalSeconds?: number;
+  /**
+   * Enable distributed database mode for use with CockroachDB, YugabyteDB, TiDB,
+   * and other distributed SQL databases. Uses atomic UPDATE instead of
+   * SELECT FOR UPDATE SKIP LOCKED for job fetching.
+   *
+   * When to use:
+   * - CockroachDB: Recommended (fixes performance and correctness issues with SKIP LOCKED)
+   * - YugabyteDB/Citus: Optional (test both modes for your workload)
+   * - TiDB: Necessary until SKIP LOCKED support is implemented
+   * - PostgreSQL: Not recommended (standard mode is more efficient)
+   *
+   * Trade-off: Under high contention, some workers may receive empty results
+   * as concurrent updates to the same rows will fail the state check.
+   *
+   * CockroachDB known issues with SKIP LOCKED:
+   * - Performance degradation: https://github.com/cockroachdb/cockroach/issues/97135
+   * - Unexpected row skipping: https://github.com/cockroachdb/cockroach/issues/121917
+   *
+   * @see https://timgit.github.io/pg-boss/docs/distributed-databases
+   * @default false
+   */
+  distributedDatabaseMode?: boolean;
 }
 
 export interface Migration {

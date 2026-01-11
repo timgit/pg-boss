@@ -1,0 +1,52 @@
+on:
+  push:
+    branches: [master]
+    tags-ignore: ['**']
+  pull_request:
+    branches: [master]
+
+name: CI (CockroachDB)
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 22
+
+    - name: Start CockroachDB
+      run: |
+        docker run -d --name cockroachdb \
+          -p 26257:26257 -p 8080:8080 \
+          cockroachdb/cockroach:latest \
+          start-single-node --insecure --advertise-addr=localhost
+
+    - name: Wait for CockroachDB
+      run: |
+        for i in {1..30}; do
+          if curl -sf http://localhost:8080/health?ready=1; then
+            echo "CockroachDB is ready"
+            break
+          fi
+          echo "Waiting for CockroachDB... ($i/30)"
+          sleep 2
+        done
+
+    - name: Create database
+      run: |
+        docker exec cockroachdb cockroach sql --insecure -e "CREATE DATABASE IF NOT EXISTS pgboss"
+
+    - name: Install
+      run: npm install
+
+    - name: Test distributed database mode
+      run: npm test -- test/distributedDatabaseTest.ts
+      env:
+        DB_TYPE: cockroachdb
+        COCKROACH_HOST: localhost

@@ -192,11 +192,13 @@ function getConfig (value: string | types.ConstructorOptions): types.ResolvedCon
   config.supervise = ('supervise' in config) ? config.supervise : true
   config.migrate = ('migrate' in config) ? config.migrate : true
   config.createSchema = ('createSchema' in config) ? config.createSchema : true
+  config.distributedDatabaseMode = ('distributedDatabaseMode' in config) ? config.distributedDatabaseMode : false
 
   applySchemaConfig(config)
   applyOpsConfig(config)
   applyScheduleConfig(config)
   validateWarningConfig(config)
+  validateDistributedDatabaseMode(config)
 
   return config as types.ResolvedConstructorOptions
 }
@@ -215,6 +217,11 @@ function validateWarningConfig (config: any) {
 
   assert(!('warningSlowQuerySeconds' in config) || config.warningSlowQuerySeconds >= 1,
     'configuration assert: warningSlowQuerySeconds must be at least 1')
+}
+
+function validateDistributedDatabaseMode (config: any) {
+  assert(!('distributedDatabaseMode' in config) || typeof config.distributedDatabaseMode === 'boolean',
+    'configuration assert: distributedDatabaseMode must be a boolean')
 }
 
 function assertPostgresObjectName (name: string) {

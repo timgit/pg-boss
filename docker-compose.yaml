@@ -12,5 +12,15 @@ services:
       - POSTGRES_PASSWORD=postgres
     command: -c 'max_connections=400'
 
+  cockroachdb:
+    image: cockroachdb/cockroach:latest
+    ports:
+      - 26257:26257
+      - 8080:8080
+    volumes:
+      - cockroach_volume:/cockroach/cockroach-data
+    command: start-single-node --insecure --advertise-addr=localhost
+
 volumes:
   db_volume:
+  cockroach_volume:
