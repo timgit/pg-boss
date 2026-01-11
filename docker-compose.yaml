@@ -20,6 +20,11 @@ services:
     volumes:
       - cockroach_volume:/cockroach/cockroach-data
     command: start-single-node --insecure --advertise-addr=localhost
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/health?ready=1"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
 
 volumes:
   db_volume:

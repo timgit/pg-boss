@@ -21,26 +21,11 @@ jobs:
         node-version: 22
 
     - name: Start CockroachDB
-      run: |
-        docker run -d --name cockroachdb \
-          -p 26257:26257 -p 8080:8080 \
-          cockroachdb/cockroach:latest \
-          start-single-node --insecure --advertise-addr=localhost
-
-    - name: Wait for CockroachDB
-      run: |
-        for i in {1..30}; do
-          if curl -sf http://localhost:8080/health?ready=1; then
-            echo "CockroachDB is ready"
-            break
-          fi
-          echo "Waiting for CockroachDB... ($i/30)"
-          sleep 2
-        done
+      run: docker compose up -d --wait cockroachdb
 
     - name: Create database
       run: |
-        docker exec cockroachdb cockroach sql --insecure -e "CREATE DATABASE IF NOT EXISTS pgboss"
+        docker compose exec cockroachdb cockroach sql --insecure -e "CREATE DATABASE IF NOT EXISTS pgboss"
 
     - name: Install
       run: npm install
