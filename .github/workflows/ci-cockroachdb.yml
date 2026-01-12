@@ -21,7 +21,12 @@ jobs:
         node-version: 22
 
     - name: Start CockroachDB cluster
-      run: docker compose --profile cluster up -d --wait
+      run: |
+        docker compose --profile cluster up -d
+        # Wait for setup container to complete (it creates the database)
+        docker wait pg-boss-cockroachdb-setup-1 || true
+        # Verify database was created
+        docker compose --profile cluster exec -T cockroachdb-1 cockroach sql --insecure -e "SHOW DATABASES" | grep -q pgboss
 
     - name: Install
       run: npm install
