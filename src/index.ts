@@ -255,8 +255,15 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#manager.fail(name, id, data, options)
   }
 
+  /**
+   * @deprecated Use findJobs() instead
+   */
   getJobById<T>(name: string, id: string, options?: types.ConnectionOptions): Promise<types.JobWithMetadata<T> | null> {
     return this.#manager.getJobById<T>(name, id, options)
+  }
+
+  findJobs<T>(name: string, options?: types.FindJobsOptions): Promise<types.JobWithMetadata<T>[]> {
+    return this.#manager.findJobs<T>(name, options)
   }
 
   createQueue (name: string, options?: Omit<types.Queue, 'name'>): Promise<void> {
@@ -332,6 +339,7 @@ export type {
   ConnectionOptions,
   ConstructorOptions,
   FetchOptions,
+  FindJobsOptions,
   IDatabase as Db,
   InsertOptions,
   Job,

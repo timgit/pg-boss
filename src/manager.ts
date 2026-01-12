@@ -904,6 +904,32 @@ class Manager extends EventEmitter implements types.EventsMixin {
     }
   }
 
+  async findJobs<T>(name: string, options: types.FindJobsOptions = {}): Promise<types.JobWithMetadata<T>[]> {
+    Attorney.assertQueueName(name)
+
+    const db = this.assertDb(options)
+
+    const { table } = await this.getQueueCache(name)
+
+    const { id, key, data, queued = false } = options
+
+    const sql = plans.findJobs(this.config.schema, table, {
+      byId: id !== undefined,
+      byKey: key !== undefined,
+      byData: data !== undefined,
+      queued
+    })
+
+    const values: unknown[] = [name]
+    if (id !== undefined) values.push(id)
+    if (key !== undefined) values.push(key)
+    if (data !== undefined) values.push(JSON.stringify(data))
+
+    const result = await db.executeSql(sql, values)
+
+    return result?.rows || []
+  }
+
   private assertDb (options: types.ConnectionOptions) {
     if (options.db) {
       return options.db
