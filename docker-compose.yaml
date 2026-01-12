@@ -12,20 +12,74 @@ services:
       - POSTGRES_PASSWORD=postgres
     command: -c 'max_connections=400'
 
-  cockroachdb:
+  # Three-node CockroachDB cluster
+  # Usage: docker compose --profile cluster up -d --wait
+  cockroachdb-1:
+    profiles: ["cluster"]
     image: cockroachdb/cockroach:latest
     ports:
       - 26257:26257
       - 8080:8080
     volumes:
-      - cockroach_volume:/cockroach/cockroach-data
-    command: start-single-node --insecure --advertise-addr=localhost
+      - cockroach_volume_1:/cockroach/cockroach-data
+    command: start --insecure --advertise-addr=cockroachdb-1 --join=cockroachdb-1,cockroachdb-2,cockroachdb-3
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:8080/health?ready=1"]
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/health"]
       interval: 2s
       timeout: 5s
       retries: 30
+      start_period: 10s
+
+  cockroachdb-2:
+    profiles: ["cluster"]
+    image: cockroachdb/cockroach:latest
+    volumes:
+      - cockroach_volume_2:/cockroach/cockroach-data
+    command: start --insecure --advertise-addr=cockroachdb-2 --join=cockroachdb-1,cockroachdb-2,cockroachdb-3
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/health"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
+  cockroachdb-3:
+    profiles: ["cluster"]
+    image: cockroachdb/cockroach:latest
+    volumes:
+      - cockroach_volume_3:/cockroach/cockroach-data
+    command: start --insecure --advertise-addr=cockroachdb-3 --join=cockroachdb-1,cockroachdb-2,cockroachdb-3
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/health"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
+  cockroachdb-init:
+    profiles: ["cluster"]
+    image: cockroachdb/cockroach:latest
+    depends_on:
+      cockroachdb-1:
+        condition: service_healthy
+      cockroachdb-2:
+        condition: service_healthy
+      cockroachdb-3:
+        condition: service_healthy
+    command: init --insecure --host=cockroachdb-1
+    restart: "no"
+
+  cockroachdb-setup:
+    profiles: ["cluster"]
+    image: cockroachdb/cockroach:latest
+    depends_on:
+      cockroachdb-init:
+        condition: service_completed_successfully
+    command: sql --insecure --host=cockroachdb-1 -e "CREATE DATABASE IF NOT EXISTS pgboss"
+    restart: "no"
 
 volumes:
   db_volume:
-  cockroach_volume:
+  cockroach_volume_1:
+  cockroach_volume_2:
+  cockroach_volume_3:

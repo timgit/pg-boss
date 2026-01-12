@@ -84,30 +84,30 @@ With standard PostgreSQL or YugabyteDB's default READ COMMITTED isolation level,
 
 pg-boss uses PostgreSQL's declarative table partitioning (`PARTITION BY LIST`) for queue management. This requires full PostgreSQL syntax compatibility:
 
-| Database | Compatible | Required Options |
-|----------|------------|------------------|
-| PostgreSQL | Yes | None |
-| YugabyteDB | Yes | `distributedDatabaseMode` (optional) |
-| Citus | Yes | `distributedDatabaseMode` (optional) |
-| CockroachDB | Yes | `distributedDatabaseMode` + `noTablePartitioning` |
-| Spanner | Untested | Likely `distributedDatabaseMode` + `noTablePartitioning` |
+| Database | Status | Required Options |
+|----------|--------|------------------|
+| PostgreSQL | Tested | None |
+| CockroachDB | Tested | `distributedDatabaseMode` + `noTablePartitioning` + `noDeferrableConstraints` + `noAdvisoryLocks` + `noCoveringIndexes` |
+| YugabyteDB | Untested (likely compatible) | `distributedDatabaseMode` (optional) |
+| Citus | Untested (likely compatible) | `distributedDatabaseMode` (optional) |
+| Spanner | Untested (uncertain) | Likely `distributedDatabaseMode` + `noTablePartitioning` + `noDeferrableConstraints` + `noAdvisoryLocks` + `noCoveringIndexes` |
 
-### Full Compatibility (PostgreSQL, YugabyteDB, Citus)
+### Tested: PostgreSQL
 
-These databases support all pg-boss features including PostgreSQL-style table partitioning:
+PostgreSQL is the primary supported database with full feature support.
 
-- **YugabyteDB** - PostgreSQL-compatible distributed database with [native job queue support](https://docs.yugabyte.com/stable/develop/data-modeling/common-patterns/jobqueue/). Supports both `SKIP LOCKED` and `distributedDatabaseMode`. Test both to determine which performs better for your workload.
-- **Citus** - Distributed PostgreSQL extension. May benefit from `distributedDatabaseMode` under high worker concurrency across shards.
+### Tested: CockroachDB
 
-### Limited Compatibility (CockroachDB)
-
-CockroachDB requires both `distributedDatabaseMode` and `noTablePartitioning`:
+CockroachDB requires several compatibility options:
 
 ```typescript
 const boss = new PgBoss({
   connectionString: 'postgresql://root@localhost:26257/pgboss',
-  distributedDatabaseMode: true,  // Use atomic UPDATE instead of SKIP LOCKED
-  noTablePartitioning: true       // Disable PostgreSQL-style partitioning
+  distributedDatabaseMode: true,     // Use atomic UPDATE instead of SKIP LOCKED
+  noTablePartitioning: true,         // Disable PostgreSQL-style partitioning
+  noDeferrableConstraints: true,     // Disable DEFERRABLE foreign key constraints
+  noAdvisoryLocks: true,             // Disable pg_advisory_xact_lock
+  noCoveringIndexes: true            // Disable INCLUDE clause in indexes
 })
 ```
 
@@ -117,9 +117,18 @@ const boss = new PgBoss({
 
 CockroachDB uses a [different partitioning model](https://www.cockroachlabs.com/docs/stable/partitioning) that requires partition columns in the PRIMARY KEY and partitions defined inline at table creation.
 
-### Untested Databases
+### Untested: YugabyteDB and Citus (likely compatible)
 
-- **Spanner (with PGAdapter)** - Google Cloud Spanner provides PostgreSQL wire compatibility via [PGAdapter](https://cloud.google.com/spanner/docs/pgadapter). It likely requires `distributedDatabaseMode` and `noTablePartitioning` like CockroachDB. If you test pg-boss with Spanner, please report your findings.
+These databases have high PostgreSQL compatibility and are expected to work well with pg-boss, but have not been tested in CI:
+
+- **YugabyteDB** - PostgreSQL-compatible distributed database with [native job queue support](https://docs.yugabyte.com/stable/develop/data-modeling/common-patterns/jobqueue/). Should support both `SKIP LOCKED` and `distributedDatabaseMode`. Test both to determine which performs better for your workload.
+- **Citus** - Distributed PostgreSQL extension. May benefit from `distributedDatabaseMode` under high worker concurrency across shards.
+
+If you use pg-boss with YugabyteDB or Citus, please report your findings.
+
+### Untested: Spanner (uncertain)
+
+- **Spanner (with PGAdapter)** - Google Cloud Spanner provides PostgreSQL wire compatibility via [PGAdapter](https://cloud.google.com/spanner/docs/pgadapter). Compatibility is uncertain due to Spanner's more limited PostgreSQL support. It likely requires `distributedDatabaseMode`, `noTablePartitioning`, `noDeferrableConstraints`, and `noAdvisoryLocks` like CockroachDB, but may have other incompatibilities. If you test pg-boss with Spanner, please report your findings.
 
 ## Scaling Beyond Distributed Mode
 
@@ -198,3 +207,77 @@ This is the documented trade-off. For job queues where processing time >> fetch 
 
 - All pg-boss features (priorities, groups, singletons, retries, etc.) work in distributed mode
 - You can enable `distributedDatabaseMode` on standard PostgreSQL for testing, but it offers no benefit - under contention, workers will receive empty results instead of efficiently skipping to unlocked rows
+
+## Compatibility Options Reference
+
+pg-boss provides several options to work with databases that don't support all PostgreSQL features:
+
+### `distributedDatabaseMode`
+
+**Default:** `false`
+
+Enables an alternative job fetching pattern optimized for distributed databases.
+
+- **Standard mode:** Uses `SELECT FOR UPDATE SKIP LOCKED` for efficient concurrent job fetching
+- **Distributed mode:** Uses atomic `UPDATE...RETURNING` with a JOIN, adding an extra `state < 'active'` check
+
+**When to use:**
+- CockroachDB: Required (SKIP LOCKED has performance/correctness issues)
+- YugabyteDB/Citus: Optional (test both modes for your workload)
+- PostgreSQL: Not recommended (standard mode is more efficient)
+
+**Trade-off:** Under high contention, some workers may receive empty results instead of efficiently claiming different jobs.
+
+### `noTablePartitioning`
+
+**Default:** `false`
+
+Disables PostgreSQL-style declarative table partitioning (`PARTITION BY LIST`).
+
+**When to use:**
+- CockroachDB: Required (uses a different partitioning model)
+- Spanner: Likely required
+
+**Trade-off:** Queue-level partitioning (`partition: true` on `createQueue`) is not available. All jobs are stored in a single table.
+
+### `noDeferrableConstraints`
+
+**Default:** `false`
+
+Disables `DEFERRABLE INITIALLY DEFERRED` on foreign key constraints.
+
+PostgreSQL's deferrable constraints allow constraint checks to be postponed until transaction commit, which is useful for certain operations. Some distributed databases don't support this syntax.
+
+**When to use:**
+- CockroachDB: Required (syntax not supported)
+- Spanner: Likely required
+
+**Trade-off:** Foreign key constraints are checked immediately rather than at transaction commit. This shouldn't affect normal pg-boss operations.
+
+### `noAdvisoryLocks`
+
+**Default:** `false`
+
+Disables PostgreSQL advisory locks (`pg_advisory_xact_lock`).
+
+pg-boss uses advisory locks for leader election and coordination in maintenance operations. Some distributed databases don't support advisory locks.
+
+**When to use:**
+- CockroachDB: Required (`pg_advisory_xact_lock` not available)
+- Spanner: Likely required
+
+**Trade-off:** Multiple pg-boss instances may occasionally perform redundant maintenance operations. This is a performance consideration, not a correctness issue.
+
+### `noCoveringIndexes`
+
+**Default:** `false`
+
+Disables the `INCLUDE` clause in covering indexes.
+
+PostgreSQL 11+ supports covering indexes that include additional columns for index-only scans. CockroachDB supports `INCLUDE` but automatically includes primary key columns, causing errors when those columns are explicitly specified.
+
+**When to use:**
+- CockroachDB: Required (implicitly includes PK columns, causing "already contains column" errors)
+- Spanner: Likely required
+
+**Trade-off:** Slightly less efficient index-only scans for job fetching. The performance impact is minimal for most workloads.

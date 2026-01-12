@@ -5,5 +5,5 @@
   "user": "root",
   "password": "",
   "max": 3,
-  "debug": false
+  "debug": true
 }

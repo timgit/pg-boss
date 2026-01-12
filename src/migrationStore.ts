@@ -2,34 +2,34 @@ import assert from 'node:assert'
 import * as plans from './plans.ts'
 import * as types from './types.ts'
 
-function flatten (schema: string, commands: string[], version: number) {
+function flatten (schema: string, commands: string[], version: number, noAdvisoryLocks?: boolean) {
   commands.unshift(plans.assertMigration(schema, version))
   commands.push(plans.setVersion(schema, version))
 
-  return plans.locked(schema, commands)
+  return plans.locked(schema, commands, undefined, noAdvisoryLocks)
 }
 
-function rollback (schema: string, version: number, migrations?: types.Migration[]) {
+function rollback (schema: string, version: number, migrations?: types.Migration[], noAdvisoryLocks?: boolean) {
   migrations = migrations || getAll(schema)
 
   const result = migrations.find(i => i.version === version)
 
   assert(result, `Version ${version} not found.`)
 
-  return flatten(schema, result.uninstall || [], result.previous)
+  return flatten(schema, result.uninstall || [], result.previous, noAdvisoryLocks)
 }
 
-function next (schema: string, version: number, migrations: types.Migration[] | undefined) {
+function next (schema: string, version: number, migrations: types.Migration[] | undefined, noAdvisoryLocks?: boolean) {
   migrations = migrations || getAll(schema)
 
   const result = migrations.find(i => i.previous === version)
 
   assert(result, `Version ${version} not found.`)
 
-  return flatten(schema, result.install, result.version)
+  return flatten(schema, result.install, result.version, noAdvisoryLocks)
 }
 
-function migrate (schema: string, version: number, migrations?: types.Migration[]) {
+function migrate (schema: string, version: number, migrations?: types.Migration[], noAdvisoryLocks?: boolean) {
   migrations = migrations || getAll(schema)
 
   const result = migrations
@@ -43,7 +43,7 @@ function migrate (schema: string, version: number, migrations?: types.Migration[
 
   assert(result.install.length > 0, `Version ${version} not found.`)
 
-  return flatten(schema, result.install, result.version!)
+  return flatten(schema, result.install, result.version!, noAdvisoryLocks)
 }
 
 function getAll (schema: string): types.Migration[] {

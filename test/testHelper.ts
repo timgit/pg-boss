@@ -43,6 +43,9 @@ function getConfig (options: Partial<ConstructorOptions> & { testKey?: string } 
   if (isCockroachDb) {
     config.distributedDatabaseMode = true
     config.noTablePartitioning = true
+    config.noDeferrableConstraints = true
+    config.noAdvisoryLocks = true
+    config.noCoveringIndexes = true
   }
 
   return Object.assign(config, options)

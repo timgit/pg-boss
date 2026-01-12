@@ -20,18 +20,11 @@ jobs:
       with:
         node-version: 22
 
-    - name: Start CockroachDB
-      run: docker compose up -d --wait cockroachdb
-
-    - name: Create database
-      run: |
-        docker compose exec cockroachdb cockroach sql --insecure -e "CREATE DATABASE IF NOT EXISTS pgboss"
+    - name: Start CockroachDB cluster
+      run: docker compose --profile cluster up -d --wait
 
     - name: Install
       run: npm install
 
     - name: Test distributed database mode
-      run: npm test -- test/distributedDatabaseTest.ts
-      env:
-        DB_TYPE: cockroachdb
-        COCKROACH_HOST: localhost
+      run: npm run test:cockroachdb

@@ -46,10 +46,16 @@ const COMMON_JOB_TABLE = 'job_common'
 interface CreateOptions {
   createSchema?: boolean
   noTablePartitioning?: boolean
+  noDeferrableConstraints?: boolean
+  noAdvisoryLocks?: boolean
+  noCoveringIndexes?: boolean
 }
 
 function create (schema: string, version: number, options?: CreateOptions) {
   const noPartitioning = options?.noTablePartitioning ?? false
+  const noDeferrable = options?.noDeferrableConstraints ?? false
+  const noLocks = options?.noAdvisoryLocks ?? false
+  const noCovering = options?.noCoveringIndexes ?? false
 
   const commands = [
     options?.createSchema ? createSchema(schema) : '',
@@ -62,7 +68,7 @@ function create (schema: string, version: number, options?: CreateOptions) {
 
     createTableJob(schema, noPartitioning),
     createPrimaryKeyJob(schema),
-    noPartitioning ? createTableJobIndexes(schema) : createTableJobCommon(schema, COMMON_JOB_TABLE),
+    noPartitioning ? createTableJobIndexes(schema, noDeferrable, noCovering) : createTableJobCommon(schema, COMMON_JOB_TABLE),
 
     createQueueFunction(schema, noPartitioning),
     deleteQueueFunction(schema, noPartitioning),
@@ -70,7 +76,7 @@ function create (schema: string, version: number, options?: CreateOptions) {
     insertVersion(schema, version)
   ]
 
-  return locked(schema, commands)
+  return locked(schema, commands, undefined, noLocks)
 }
 
 function createSchema (schema: string) {
@@ -234,16 +240,16 @@ function createTableJobCommon (schema: string, table: string) {
 }
 
 // Creates indexes directly on job table when partitioning is disabled
-function createTableJobIndexes (schema: string) {
+function createTableJobIndexes (schema: string, noDeferrableConstraints = false, noCoveringIndex = false) {
   return `
-    ${createQueueForeignKeyJob(schema)};
-    ${createQueueForeignKeyJobDeadLetter(schema)};
+    ${createQueueForeignKeyJob(schema, noDeferrableConstraints)};
+    ${createQueueForeignKeyJobDeadLetter(schema, noDeferrableConstraints)};
     ${createIndexJobPolicyShort(schema)};
     ${createIndexJobPolicySingleton(schema)};
     ${createIndexJobPolicyStately(schema)};
     ${createIndexJobPolicyExclusive(schema)};
     ${createIndexJobThrottle(schema)};
-    ${createIndexJobFetch(schema)};
+    ${createIndexJobFetch(schema, noCoveringIndex)};
     ${createIndexJobGroupConcurrency(schema)};
   `
 }
@@ -416,26 +422,28 @@ function deleteQueueFunction (schema: string, noPartitioning = false) {
   `
 }
 
-function createQueue (schema: string, name: string, options: unknown) {
+function createQueue (schema: string, name: string, options: unknown, noAdvisoryLocks?: boolean) {
   const sql = `SELECT ${schema}.create_queue('${name}', '${JSON.stringify(options)}'::jsonb)`
-  return locked(schema, sql, 'create-queue')
+  return locked(schema, sql, 'create-queue', noAdvisoryLocks)
 }
 
-function deleteQueue (schema: string, name: string) {
+function deleteQueue (schema: string, name: string, noAdvisoryLocks?: boolean) {
   const sql = `SELECT ${schema}.delete_queue('${name}')`
-  return locked(schema, sql, 'delete-queue')
+  return locked(schema, sql, 'delete-queue', noAdvisoryLocks)
 }
 
 function createPrimaryKeyJob (schema: string) {
   return `ALTER TABLE ${schema}.job ADD PRIMARY KEY (name, id)`
 }
 
-function createQueueForeignKeyJob (schema: string) {
-  return `ALTER TABLE ${schema}.job ADD CONSTRAINT q_fkey FOREIGN KEY (name) REFERENCES ${schema}.queue (name) ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED`
+function createQueueForeignKeyJob (schema: string, noPartitioning = false) {
+  const deferrable = noPartitioning ? '' : ' DEFERRABLE INITIALLY DEFERRED'
+  return `ALTER TABLE ${schema}.job ADD CONSTRAINT q_fkey FOREIGN KEY (name) REFERENCES ${schema}.queue (name) ON DELETE RESTRICT${deferrable}`
 }
 
-function createQueueForeignKeyJobDeadLetter (schema: string) {
-  return `ALTER TABLE ${schema}.job ADD CONSTRAINT dlq_fkey FOREIGN KEY (dead_letter) REFERENCES ${schema}.queue (name) ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED`
+function createQueueForeignKeyJobDeadLetter (schema: string, noPartitioning = false) {
+  const deferrable = noPartitioning ? '' : ' DEFERRABLE INITIALLY DEFERRED'
+  return `ALTER TABLE ${schema}.job ADD CONSTRAINT dlq_fkey FOREIGN KEY (dead_letter) REFERENCES ${schema}.queue (name) ON DELETE RESTRICT${deferrable}`
 }
 
 function createIndexJobPolicyShort (schema: string) {
@@ -454,8 +462,11 @@ function createIndexJobThrottle (schema: string) {
   return `CREATE UNIQUE INDEX job_i4 ON ${schema}.job (name, singleton_on, COALESCE(singleton_key, '')) WHERE state <> '${JOB_STATES.cancelled}' AND singleton_on IS NOT NULL`
 }
 
-function createIndexJobFetch (schema: string) {
-  return `CREATE INDEX job_i5 ON ${schema}.job (name, start_after) INCLUDE (priority, created_on, id) WHERE state < '${JOB_STATES.active}'`
+function createIndexJobFetch (schema: string, noCoveringIndex = false) {
+  // CockroachDB implicitly includes primary key columns (id) in all indexes,
+  // so we can't explicitly INCLUDE them - it causes "already contains column" error
+  const includeClause = noCoveringIndex ? '' : 'INCLUDE (priority, created_on, id) '
+  return `CREATE INDEX job_i5 ON ${schema}.job (name, start_after) ${includeClause}WHERE state < '${JOB_STATES.active}'`
 }
 
 function createIndexJobPolicyExclusive (schema: string) {
@@ -949,7 +960,7 @@ function insertJobs (schema: string, { table, name, returnId = true }: InsertJob
       j.start_after,
       "singletonKey",
       CASE
-        WHEN "singletonSeconds" IS NOT NULL THEN 'epoch'::timestamp + '1s'::interval * ("singletonSeconds" * floor(( date_part('epoch', now()) + COALESCE("singletonOffset",0)) / "singletonSeconds" ))
+        WHEN "singletonSeconds" IS NOT NULL THEN 'epoch'::timestamp + '1s'::interval * ("singletonSeconds"::float8 * floor(( date_part('epoch', now()) + COALESCE("singletonOffset",0)::float8) / "singletonSeconds"::float8 ))
         ELSE NULL
         END as singleton_on,
       "groupId" as group_id,
@@ -1003,14 +1014,14 @@ function failJobsById (schema: string, table: string) {
   return failJobs(schema, table, where, output)
 }
 
-function failJobsByTimeout (schema: string, table: string, queues: string[]): string {
+function failJobsByTimeout (schema: string, table: string, queues: string[], noAdvisoryLocks?: boolean): string {
   const where = `state = '${JOB_STATES.active}'
             AND (started_on + expire_seconds * interval '1s') < now()
             AND name = ANY(${serializeArrayParam(queues)})`
 
   const output = '\'{ "value": { "message": "job timed out" } }\'::jsonb'
 
-  return locked(schema, failJobs(schema, table, where, output), table + 'failJobsByTimeout')
+  return locked(schema, failJobs(schema, table, where, output), table + 'failJobsByTimeout', noAdvisoryLocks)
 }
 
 function failJobs (schema: string, table: string, where: string, output: string) {
@@ -1168,7 +1179,43 @@ function failJobs (schema: string, table: string, where: string, output: string)
   `
 }
 
-function deletion (schema: string, table: string, queues: string[]): string {
+// Distributed mode: separate queries to avoid CockroachDB's multi-mutation CTE limitation
+function selectJobsToFailById (schema: string, table: string): SqlQuery {
+  return {
+    text: `SELECT * FROM ${schema}.${table} WHERE name = $1 AND id IN (SELECT UNNEST($2::uuid[])) AND state < '${JOB_STATES.completed}'`,
+    values: []
+  }
+}
+
+function deleteJobsToFail (schema: string, table: string): SqlQuery {
+  return {
+    text: `DELETE FROM ${schema}.${table} WHERE name = $1 AND id IN (SELECT UNNEST($2::uuid[]))`,
+    values: []
+  }
+}
+
+function insertRetryJob (schema: string, table: string): string {
+  return `
+    INSERT INTO ${schema}.${table} (
+      id, name, priority, data, state, retry_limit, retry_count, retry_delay,
+      retry_backoff, retry_delay_max, start_after, started_on, singleton_key, singleton_on,
+      group_id, group_tier, expire_seconds, deletion_seconds, created_on, completed_on,
+      keep_until, policy, output, dead_letter
+    ) VALUES (
+      $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24
+    ) ON CONFLICT DO NOTHING
+  `
+}
+
+function insertDeadLetterJob (schema: string): string {
+  return `
+    INSERT INTO ${schema}.job (name, data, output, retry_limit, retry_backoff, retry_delay, keep_until, deletion_seconds)
+    SELECT $1, $2, $3, q.retry_limit, q.retry_backoff, q.retry_delay, now() + q.retention_seconds * interval '1s', q.deletion_seconds
+    FROM ${schema}.queue q WHERE q.name = $1
+  `
+}
+
+function deletion (schema: string, table: string, queues: string[], noAdvisoryLocks?: boolean): string {
   const sql = `
     DELETE FROM ${schema}.${table}
     WHERE name = ANY(${serializeArrayParam(queues)})
@@ -1180,7 +1227,7 @@ function deletion (schema: string, table: string, queues: string[]): string {
       )
   `
 
-  return locked(schema, sql, table + 'deletion')
+  return locked(schema, sql, table + 'deletion', noAdvisoryLocks)
 }
 
 function retryJobs (schema: string, table: string) {
@@ -1216,7 +1263,7 @@ function getQueueStats (schema: string, table: string, queues: string[]): SqlQue
   }
 }
 
-function cacheQueueStats (schema: string, table: string, queues: string[]): string {
+function cacheQueueStats (schema: string, table: string, queues: string[], noAdvisoryLocks?: boolean): string {
   const statsQuery = getQueueStats(schema, table, queues)
   // Serialize the $1 parameter for use in locked() multi-statement query
   const statsText = statsQuery.text.replace('$1::text[]', serializeArrayParam(queues))
@@ -1241,7 +1288,7 @@ function cacheQueueStats (schema: string, table: string, queues: string[]): stri
       queue.warning_queued as "warningQueueSize"
   `
 
-  return locked(schema, sql, 'queue-stats')
+  return locked(schema, sql, 'queue-stats', noAdvisoryLocks)
 }
 
 // Serialize a string array for embedding directly in SQL as PostgreSQL array literal
@@ -1250,14 +1297,15 @@ function serializeArrayParam (values: string[]): string {
   return `ARRAY[${escaped.join(',')}]::text[]`
 }
 
-function locked (schema: string, query: string | string[], key?: string): string {
+function locked (schema: string, query: string | string[], key?: string, noAdvisoryLocks?: boolean): string {
   const sql = Array.isArray(query) ? query.join(';\n') : query
+  const lockSql = noAdvisoryLocks ? '' : `${advisoryLock(schema, key)};`
 
   return `
     BEGIN;
     SET LOCAL lock_timeout = 30000;
     SET LOCAL idle_in_transaction_session_timeout = 30000;
-    ${advisoryLock(schema, key)};
+    ${lockSql}
     ${sql};
     COMMIT;
   `
@@ -1297,6 +1345,10 @@ export {
   truncateTable,
   failJobsById,
   failJobsByTimeout,
+  selectJobsToFailById,
+  deleteJobsToFail,
+  insertRetryJob,
+  insertDeadLetterJob,
   insertJobs,
   getTime,
   getSchedules,
