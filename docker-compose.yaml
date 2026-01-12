@@ -66,7 +66,8 @@ services:
         condition: service_healthy
       cockroachdb-3:
         condition: service_healthy
-    command: init --insecure --host=cockroachdb-1
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["cockroach init --insecure --host=cockroachdb-1 || true"]
     restart: "no"
 
   cockroachdb-setup:
