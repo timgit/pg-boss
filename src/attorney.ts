@@ -319,6 +319,8 @@ function applyScheduleConfig (config: any) {
     'configuration assert: cronWorkerIntervalSeconds must be between 1 and 45 seconds')
 
   config.cronWorkerIntervalSeconds = config.cronWorkerIntervalSeconds || 5
+
+  config.scheduleCacheIntervalSeconds = 10
 }
 
 export {

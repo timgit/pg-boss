@@ -88,6 +88,7 @@ export interface ResolvedConstructorOptions extends ConstructorOptions {
   monitorIntervalSeconds: number;
   cronMonitorIntervalSeconds: number;
   maintenanceIntervalSeconds: number;
+  scheduleCacheIntervalSeconds: number;
 }
 
 export interface QueueOptions {

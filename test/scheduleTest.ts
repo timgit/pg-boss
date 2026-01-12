@@ -1,8 +1,9 @@
 import { delay } from '../src/tools.ts'
-import { expect } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { DateTime } from 'luxon'
 import * as helper from './testHelper.ts'
 import { PgBoss } from '../src/index.ts'
+import { CronExpressionParser } from 'cron-parser'
 import { ctx } from './hooks.ts'
 
 describe('schedule', function () {
@@ -24,6 +25,101 @@ describe('schedule', function () {
 
     expect(job).toBeTruthy()
   })
+
+  it('should send jobs based on every one second expression', async function () {
+    const config = {
+      ...ctx.bossConfig,
+      cronMonitorIntervalSeconds: 1,
+      cronWorkerIntervalSeconds: 1,
+      schedule: true
+    }
+
+    ctx.boss = await helper.start(config)
+
+    await ctx.boss.schedule(ctx.schema, '* * * * * *')
+
+    let numJobs = 0
+    await ctx.boss.work(ctx.schema, async () => {
+      numJobs++
+    })
+
+    await delay(6000)
+
+    assert(numJobs > 1)
+  })
+
+  it('should send jobs based on every one five seconds expression', async function () {
+    const config = {
+      ...ctx.bossConfig,
+      cronMonitorIntervalSeconds: 1,
+      cronWorkerIntervalSeconds: 1,
+      schedule: true
+    }
+
+    ctx.boss = await helper.start(config)
+
+    let numJobs = 0
+    await ctx.boss.work(ctx.schema, async () => {
+      numJobs++
+    })
+
+    // wait for next run, then start test
+    const cronString = '*/5 * * * * *'
+    const timeOfNextRun = CronExpressionParser.parse(cronString).next().getTime()
+    await new Promise(resolve => setTimeout(resolve, timeOfNextRun - Date.now()))
+    await ctx.boss.schedule(ctx.schema, cronString)
+
+    await delay(3000)
+
+    assert.equal(numJobs, 1)
+
+    await delay(5000)
+
+    assert.equal(numJobs, 2)
+  }, 20000)
+
+  it("in case of restart, jobs shouldn't be overscheduled", async function () {
+    const config = {
+      ...ctx.bossConfig,
+      cronMonitorIntervalSeconds: 1,
+      cronWorkerIntervalSeconds: 1,
+      schedule: true
+    }
+
+    ctx.boss = await helper.start(config)
+
+    let numJobs = 0
+    ctx.boss.work(ctx.schema, async () => {
+      numJobs++
+    })
+
+    // wait for next run, then start test
+    const cronString = '*/11 * * * * *'
+    const timeOfNextRun = CronExpressionParser.parse(cronString).next().getTime()
+    await new Promise(resolve => setTimeout(resolve, timeOfNextRun - Date.now()))
+    await ctx.boss.schedule(ctx.schema, cronString)
+
+    // wait for first job
+    await new Promise<void>(resolve => {
+      const interval = setInterval(() => {
+        if (numJobs > 0) {
+          clearInterval(interval)
+          resolve()
+        }
+      }, 100)
+    })
+
+    // simulate restart
+    await ctx.boss.stop({ graceful: true })
+    await ctx.boss.start()
+    await ctx.boss.work(ctx.schema, async () => {
+      numJobs++
+    })
+
+    await delay(5000)
+
+    assert.equal(numJobs, 1)
+  }, 25000)
 
   it('should set job metadata correctly', async function () {
     const config = {
