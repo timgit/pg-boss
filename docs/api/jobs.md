@@ -348,8 +348,61 @@ The promise will resolve on a successful failure state assignment, or reject if 
 
 ### `getJobById(name, id, options)`
 
+> **Deprecated:** Use `findJobs()` instead.
+
 Retrieves a job with all metadata by name and id
 
 **options**
 
 * **db**, object, see notes in `send()`
+
+### `findJobs(name, options)`
+
+Finds jobs in a queue by id, singleton key, and/or data. Returns an array of jobs with all metadata.
+
+**Arguments**
+- `name`: string, *required*
+- `options`: object
+
+**options**
+
+* **id**, string
+
+  Find a job by its id
+
+* **key**, string
+
+  Find jobs by their singletonKey
+
+* **data**, object
+
+  Find jobs where the job data contains the specified key-value pairs (top-level matching only)
+
+* **queued**, bool, *default: false*
+
+  If `true`, only return jobs in queued state (created or retry). If `false`, return jobs in any state.
+
+* **db**, object, see notes in `send()`
+
+**Examples**
+
+```js
+// Find by id
+const jobs = await boss.findJobs('my-queue', { id: 'abc-123' })
+
+// Find by singletonKey
+const jobs = await boss.findJobs('my-queue', { key: 'user-123' })
+
+// Find by data
+const jobs = await boss.findJobs('my-queue', { data: { type: 'email' } })
+
+// Find queued jobs only
+const jobs = await boss.findJobs('my-queue', { key: 'user-123', queued: true })
+
+// Combine filters
+const jobs = await boss.findJobs('my-queue', {
+  key: 'user-123',
+  data: { type: 'email' },
+  queued: true
+})
+```

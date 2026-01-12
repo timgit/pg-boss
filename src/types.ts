@@ -125,6 +125,13 @@ export interface ConnectionOptions {
   db?: IDatabase;
 }
 
+export interface FindJobsOptions extends ConnectionOptions {
+  id?: string;
+  key?: string;
+  data?: object;
+  queued?: boolean;
+}
+
 export type InsertOptions = ConnectionOptions
 
 export type SendOptions = JobOptions & QueueOptions & ConnectionOptions

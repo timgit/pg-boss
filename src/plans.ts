@@ -1173,8 +1173,46 @@ function assertMigration (schema: string, version: number) {
   return `SELECT version::int/(version::int-${version}) from ${schema}.version`
 }
 
+function findJobs (schema: string, table: string, options: { queued: boolean, byKey: boolean, byData: boolean, byId: boolean }) {
+  const { queued, byKey, byData, byId } = options
+
+  let paramIndex = 1
+  const whereConditions = []
+
+  if (byId) {
+    ++paramIndex
+    whereConditions.push(`AND id = $${paramIndex}`)
+  }
+
+  if (byKey) {
+    ++paramIndex
+    whereConditions.push(`AND singleton_key = $${paramIndex}`)
+  }
+
+  if (byData) {
+    ++paramIndex
+    whereConditions.push(`AND data @> $${paramIndex}`)
+  }
+
+  if (queued) {
+    whereConditions.push(`AND state < '${JOB_STATES.active}'`)
+  }
+
+  return `
+    SELECT ${JOB_COLUMNS_ALL}
+    FROM ${schema}.${table}
+    WHERE name = $1
+      ${whereConditions.join('\n      ')}
+    `
+}
+
 function getJobById (schema: string, table: string) {
-  return `SELECT ${JOB_COLUMNS_ALL} FROM ${schema}.${table} WHERE name = $1 AND id = $2`
+  return `
+    SELECT ${JOB_COLUMNS_ALL}
+    FROM ${schema}.${table}
+    WHERE name = $1
+      AND id = $2
+    `
 }
 
 export {
@@ -1189,6 +1227,7 @@ export {
   resumeJobs,
   restoreJobs,
   retryJobs,
+  findJobs,
   deleteJobsById,
   deleteAllJobs,
   deleteQueuedJobs,
