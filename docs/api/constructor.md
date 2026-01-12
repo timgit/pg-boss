@@ -95,11 +95,25 @@ The following configuration options should not normally need to be changed, but 
 
 * **distributedDatabaseMode**, bool, default false
 
-  Enable distributed database mode for use with CockroachDB, YugabyteDB, TiDB, and other distributed SQL databases. Uses atomic `UPDATE...RETURNING` instead of `SELECT FOR UPDATE SKIP LOCKED` for job fetching.
+  Enable distributed database mode for use with distributed SQL databases. Uses atomic `UPDATE...RETURNING` instead of `SELECT FOR UPDATE SKIP LOCKED` for job fetching.
 
-  - **CockroachDB**: Recommended. Fixes known performance and correctness issues with `SKIP LOCKED`.
+  - **CockroachDB**: Required (also requires `noTablePartitioning`)
   - **YugabyteDB/Citus**: Optional. Test both modes to determine which performs better for your workload.
-  - **TiDB**: Necessary until `SKIP LOCKED` support is implemented.
   - **PostgreSQL**: Not recommended. Standard mode with `SKIP LOCKED` is more efficient.
+
+  See [Distributed Databases](../distributed-databases.md) for details.
+
+* **noTablePartitioning**, bool, default false
+
+  Disable PostgreSQL-style table partitioning for databases that don't support it.
+
+  - **CockroachDB**: Required (different partitioning model)
+  - **Spanner via PGAdapter**: Untested, likely required
+  - **PostgreSQL/YugabyteDB/Citus**: Not needed (full partitioning support)
+
+  When enabled:
+  - Creates job table without `PARTITION BY LIST`
+  - All jobs stored in single table instead of partitions
+  - Queue-level partitioning (`partition: true`) is not supported
 
   See [Distributed Databases](../distributed-databases.md) for details.

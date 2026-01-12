@@ -39,9 +39,10 @@ function getConfig (options: Partial<ConstructorOptions> & { testKey?: string } 
   config.schedule = false
   config.createSchema = true
 
-  // Enable distributed database mode for CockroachDB
+  // Enable distributed database mode and disable partitioning for CockroachDB
   if (isCockroachDb) {
     config.distributedDatabaseMode = true
+    config.noTablePartitioning = true
   }
 
   return Object.assign(config, options)

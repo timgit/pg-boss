@@ -43,7 +43,14 @@ const QUEUE_DEFAULTS = {
 
 const COMMON_JOB_TABLE = 'job_common'
 
-function create (schema: string, version: number, options?: { createSchema?: boolean }) {
+interface CreateOptions {
+  createSchema?: boolean
+  noTablePartitioning?: boolean
+}
+
+function create (schema: string, version: number, options?: CreateOptions) {
+  const noPartitioning = options?.noTablePartitioning ?? false
+
   const commands = [
     options?.createSchema ? createSchema(schema) : '',
     createEnumJobState(schema),
@@ -53,12 +60,12 @@ function create (schema: string, version: number, options?: { createSchema?: boo
     createTableSchedule(schema),
     createTableSubscription(schema),
 
-    createTableJob(schema),
+    createTableJob(schema, noPartitioning),
     createPrimaryKeyJob(schema),
-    createTableJobCommon(schema, COMMON_JOB_TABLE),
+    noPartitioning ? createTableJobIndexes(schema) : createTableJobCommon(schema, COMMON_JOB_TABLE),
 
-    createQueueFunction(schema),
-    deleteQueueFunction(schema),
+    createQueueFunction(schema, noPartitioning),
+    deleteQueueFunction(schema, noPartitioning),
 
     insertVersion(schema, version)
   ]
@@ -152,7 +159,8 @@ function createTableSubscription (schema: string) {
   `
 }
 
-function createTableJob (schema: string) {
+function createTableJob (schema: string, noPartitioning = false) {
+  const partitionClause = noPartitioning ? '' : 'PARTITION BY LIST (name)'
   return `
     CREATE TABLE ${schema}.job (
       id uuid not null default gen_random_uuid(),
@@ -179,7 +187,7 @@ function createTableJob (schema: string) {
       output jsonb,
       dead_letter text,
       policy text
-    ) PARTITION BY LIST (name)
+    ) ${partitionClause}
   `
 }
 
@@ -225,7 +233,66 @@ function createTableJobCommon (schema: string, table: string) {
   `
 }
 
-function createQueueFunction (schema: string) {
+// Creates indexes directly on job table when partitioning is disabled
+function createTableJobIndexes (schema: string) {
+  return `
+    ${createQueueForeignKeyJob(schema)};
+    ${createQueueForeignKeyJobDeadLetter(schema)};
+    ${createIndexJobPolicyShort(schema)};
+    ${createIndexJobPolicySingleton(schema)};
+    ${createIndexJobPolicyStately(schema)};
+    ${createIndexJobPolicyExclusive(schema)};
+    ${createIndexJobThrottle(schema)};
+    ${createIndexJobFetch(schema)};
+    ${createIndexJobGroupConcurrency(schema)};
+  `
+}
+
+function createQueueFunction (schema: string, noPartitioning = false) {
+  if (noPartitioning) {
+    // Simplified version without table partitioning support
+    return `
+      CREATE FUNCTION ${schema}.create_queue(queue_name text, options jsonb)
+      RETURNS VOID AS
+      $$
+      BEGIN
+        INSERT INTO ${schema}.queue (
+          name,
+          policy,
+          retry_limit,
+          retry_delay,
+          retry_backoff,
+          retry_delay_max,
+          expire_seconds,
+          retention_seconds,
+          deletion_seconds,
+          warning_queued,
+          dead_letter,
+          partition,
+          table_name
+        )
+        VALUES (
+          queue_name,
+          options->>'policy',
+          COALESCE((options->>'retryLimit')::int, ${QUEUE_DEFAULTS.retry_limit}),
+          COALESCE((options->>'retryDelay')::int, ${QUEUE_DEFAULTS.retry_delay}),
+          COALESCE((options->>'retryBackoff')::bool, ${QUEUE_DEFAULTS.retry_backoff}),
+          (options->>'retryDelayMax')::int,
+          COALESCE((options->>'expireInSeconds')::int, ${QUEUE_DEFAULTS.expire_seconds}),
+          COALESCE((options->>'retentionSeconds')::int, ${QUEUE_DEFAULTS.retention_seconds}),
+          COALESCE((options->>'deleteAfterSeconds')::int, ${QUEUE_DEFAULTS.deletion_seconds}),
+          COALESCE((options->>'warningQueueSize')::int, ${QUEUE_DEFAULTS.warning_queued}),
+          options->>'deadLetter',
+          false,
+          'job'
+        )
+        ON CONFLICT DO NOTHING;
+      END;
+      $$
+      LANGUAGE plpgsql;
+    `
+  }
+
   return `
     CREATE FUNCTION ${schema}.create_queue(queue_name text, options jsonb)
     RETURNS VOID AS
@@ -279,7 +346,7 @@ function createQueueFunction (schema: string) {
       END IF;
 
       EXECUTE format('CREATE TABLE ${schema}.%I (LIKE ${schema}.job INCLUDING DEFAULTS)', tablename);
-      
+
       EXECUTE format('${formatPartitionCommand(createPrimaryKeyJob(schema))}', tablename);
       EXECUTE format('${formatPartitionCommand(createQueueForeignKeyJob(schema))}', tablename);
       EXECUTE format('${formatPartitionCommand(createQueueForeignKeyJobDeadLetter(schema))}', tablename);
@@ -313,15 +380,10 @@ function formatPartitionCommand (command: string) {
     .replaceAll("'", "''")
 }
 
-function deleteQueueFunction (schema: string) {
-  return `
-    CREATE FUNCTION ${schema}.delete_queue(queue_name text)
-    RETURNS VOID AS
-    $$
-    DECLARE
-      v_table varchar;
-      v_partition bool;
-    BEGIN
+function deleteQueueFunction (schema: string, noPartitioning = false) {
+  const deleteJobsSql = noPartitioning
+    ? `DELETE FROM ${schema}.job WHERE name = queue_name;`
+    : `
       SELECT table_name, partition
       FROM ${schema}.queue
       WHERE name = queue_name
@@ -332,7 +394,19 @@ function deleteQueueFunction (schema: string) {
       ELSE
         EXECUTE format('DELETE FROM ${schema}.%I WHERE name = %L', v_table, queue_name);
       END IF;
+    `
 
+  const declareBlock = noPartitioning ? '' : `
+    DECLARE
+      v_table varchar;
+      v_partition bool;`
+
+  return `
+    CREATE FUNCTION ${schema}.delete_queue(queue_name text)
+    RETURNS VOID AS
+    $$${declareBlock}
+    BEGIN
+      ${deleteJobsSql}
       DELETE FROM ${schema}.queue WHERE name = queue_name;
     END;
     $$

@@ -53,27 +53,43 @@ export interface MaintenanceOptions {
   queueCacheIntervalSeconds?: number;
   monitorIntervalSeconds?: number;
   /**
-   * Enable distributed database mode for use with CockroachDB, YugabyteDB, TiDB,
-   * and other distributed SQL databases. Uses atomic UPDATE instead of
-   * SELECT FOR UPDATE SKIP LOCKED for job fetching.
+   * Enable distributed database mode for use with distributed SQL databases
+   * like CockroachDB, YugabyteDB, and Citus.
+   *
+   * When enabled:
+   * - Uses atomic UPDATE instead of SELECT FOR UPDATE SKIP LOCKED for job fetching
    *
    * When to use:
-   * - CockroachDB: Recommended (fixes performance and correctness issues with SKIP LOCKED)
+   * - CockroachDB: Required along with noTablePartitioning
    * - YugabyteDB/Citus: Optional (test both modes for your workload)
-   * - TiDB: Necessary until SKIP LOCKED support is implemented
    * - PostgreSQL: Not recommended (standard mode is more efficient)
    *
    * Trade-off: Under high contention, some workers may receive empty results
    * as concurrent updates to the same rows will fail the state check.
    *
-   * CockroachDB known issues with SKIP LOCKED:
-   * - Performance degradation: https://github.com/cockroachdb/cockroach/issues/97135
-   * - Unexpected row skipping: https://github.com/cockroachdb/cockroach/issues/121917
-   *
    * @see https://timgit.github.io/pg-boss/docs/distributed-databases
    * @default false
    */
   distributedDatabaseMode?: boolean;
+  /**
+   * Disable PostgreSQL-style table partitioning for databases that don't support it.
+   *
+   * When enabled:
+   * - Creates job table without PARTITION BY LIST
+   * - All jobs stored in single table instead of partitions
+   * - Queue-level partitioning (partition: true) is not supported
+   *
+   * Required for:
+   * - CockroachDB (different partitioning model)
+   * - Spanner via PGAdapter (no declarative partitioning support)
+   *
+   * Not needed for:
+   * - PostgreSQL, YugabyteDB, Citus (full partitioning support)
+   *
+   * @see https://timgit.github.io/pg-boss/docs/distributed-databases
+   * @default false
+   */
+  noTablePartitioning?: boolean;
 }
 
 export interface Migration {

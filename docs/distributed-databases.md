@@ -1,16 +1,16 @@
 # Distributed Database Support
 
-pg-boss includes a `distributedDatabaseMode` option for use with distributed SQL databases like CockroachDB, YugabyteDB, and TiDB.
+pg-boss includes a `distributedDatabaseMode` option for use with PostgreSQL-compatible distributed SQL databases like YugabyteDB and Citus.
 
 ## Background
 
-By default, pg-boss uses `SELECT FOR UPDATE SKIP LOCKED` for job fetching. This approach works well with PostgreSQL but has known issues with distributed databases:
+By default, pg-boss uses `SELECT FOR UPDATE SKIP LOCKED` for job fetching. This approach works well with PostgreSQL but may have issues in distributed databases:
 
-### CockroachDB Issues with SKIP LOCKED
+### Known Issues with SKIP LOCKED in Distributed Databases
 
-1. **Performance degradation under concurrency**: In tests with 500 workers, mean latency for `SELECT FOR UPDATE SKIP LOCKED` reached 311ms - far higher than expected. ([cockroachdb/cockroach#97135](https://github.com/cockroachdb/cockroach/issues/97135))
+1. **Performance degradation under concurrency**: In distributed database tests with 500 workers, mean latency for `SELECT FOR UPDATE SKIP LOCKED` can reach 311ms or higher. ([example from CockroachDB](https://github.com/cockroachdb/cockroach/issues/97135))
 
-2. **Unexpected row skipping**: `SELECT FOR UPDATE SKIP LOCKED` can sometimes skip unlocked rows unexpectedly, causing workers to miss available work items. ([cockroachdb/cockroach#121917](https://github.com/cockroachdb/cockroach/issues/121917))
+2. **Unexpected row skipping**: `SELECT FOR UPDATE SKIP LOCKED` can sometimes skip unlocked rows unexpectedly, causing workers to miss available work items. ([example](https://github.com/cockroachdb/cockroach/issues/121917))
 
 ## The Solution: Atomic UPDATE Pattern
 
@@ -37,10 +37,10 @@ RETURNING j.*
 
 Key differences from standard mode:
 - No `FOR UPDATE SKIP LOCKED` clause in the CTE
-- Uses `FROM next` JOIN instead of `WHERE id IN (subquery)` for better performance in CockroachDB
+- Uses `FROM next` JOIN instead of `WHERE id IN (subquery)` for better performance in distributed databases
 - Additional `state < 'active'` check in the UPDATE to prevent duplicate claims under concurrent execution
 
-This pattern is recommended by CockroachDB engineers for distributed work queues. See [Andrew Werner's article on distributed work queues](https://dev.to/ajwerner/quick-and-easy-exactly-once-distributed-work-queues-using-serializable-transactions-jdp) for more details.
+This pattern is recommended for distributed work queues. See [Andrew Werner's article on distributed work queues](https://dev.to/ajwerner/quick-and-easy-exactly-once-distributed-work-queues-using-serializable-transactions-jdp) for more details.
 
 ## Usage
 
@@ -48,7 +48,7 @@ This pattern is recommended by CockroachDB engineers for distributed work queues
 import PgBoss from 'pg-boss'
 
 const boss = new PgBoss({
-  connectionString: 'postgresql://root@localhost:26257/pgboss',
+  connectionString: 'postgresql://localhost:5433/pgboss', // YugabyteDB
   distributedDatabaseMode: true
 })
 
@@ -72,32 +72,62 @@ await boss.start()
 
 ## Recommendations
 
-- **Always enable `distributedDatabaseMode` when using CockroachDB** - The standard `SKIP LOCKED` approach has documented issues.
+- **Test both modes with your distributed database** - Performance can vary based on your specific workload and cluster configuration.
 
 ## Transaction Isolation
 
-For optimal correctness in distributed mode, CockroachDB defaults to SERIALIZABLE isolation which ensures exactly-once job processing. This is the recommended isolation level for distributed work queues.
+For optimal correctness in distributed mode, SERIALIZABLE isolation ensures exactly-once job processing. This is the recommended isolation level for distributed work queues.
 
-If using distributed mode with standard PostgreSQL, the default READ COMMITTED isolation level is sufficient since the `state < 'active'` check in the UPDATE prevents duplicate claims.
+With standard PostgreSQL or YugabyteDB's default READ COMMITTED isolation level, the `state < 'active'` check in the UPDATE prevents duplicate claims.
 
-## Other Distributed Databases
+## Database Compatibility
 
-While the documented issues are specific to CockroachDB, `distributedDatabaseMode` may also benefit other distributed SQL databases that have suboptimal performance or correctness issues with `SELECT FOR UPDATE SKIP LOCKED`:
+pg-boss uses PostgreSQL's declarative table partitioning (`PARTITION BY LIST`) for queue management. This requires full PostgreSQL syntax compatibility:
 
-- **YugabyteDB** - PostgreSQL-compatible distributed database with [native job queue support](https://docs.yugabyte.com/stable/develop/data-modeling/common-patterns/jobqueue/). Supports `SKIP LOCKED` but may benefit from distributed mode under high contention.
-- **TiDB** - MySQL-compatible distributed database. `SKIP LOCKED` support is [not yet implemented](https://github.com/pingcap/tidb/issues/18207). Distributed mode is necessary until support is added.
-- **Citus** - Distributed PostgreSQL extension. May benefit under high worker concurrency across shards.
-- **Spanner (with PGAdapter)** - Google Cloud Spanner with PostgreSQL interface.
+| Database | Compatible | Required Options |
+|----------|------------|------------------|
+| PostgreSQL | Yes | None |
+| YugabyteDB | Yes | `distributedDatabaseMode` (optional) |
+| Citus | Yes | `distributedDatabaseMode` (optional) |
+| CockroachDB | Yes | `distributedDatabaseMode` + `noTablePartitioning` |
+| Spanner | Untested | Likely `distributedDatabaseMode` + `noTablePartitioning` |
 
-When using any distributed database, we recommend testing with `distributedDatabaseMode` enabled to compare performance and correctness under your specific workload.
+### Full Compatibility (PostgreSQL, YugabyteDB, Citus)
+
+These databases support all pg-boss features including PostgreSQL-style table partitioning:
+
+- **YugabyteDB** - PostgreSQL-compatible distributed database with [native job queue support](https://docs.yugabyte.com/stable/develop/data-modeling/common-patterns/jobqueue/). Supports both `SKIP LOCKED` and `distributedDatabaseMode`. Test both to determine which performs better for your workload.
+- **Citus** - Distributed PostgreSQL extension. May benefit from `distributedDatabaseMode` under high worker concurrency across shards.
+
+### Limited Compatibility (CockroachDB)
+
+CockroachDB requires both `distributedDatabaseMode` and `noTablePartitioning`:
+
+```typescript
+const boss = new PgBoss({
+  connectionString: 'postgresql://root@localhost:26257/pgboss',
+  distributedDatabaseMode: true,  // Use atomic UPDATE instead of SKIP LOCKED
+  noTablePartitioning: true       // Disable PostgreSQL-style partitioning
+})
+```
+
+**Limitations when using `noTablePartitioning`:**
+- Queue-level partitioning (`partition: true` on createQueue) is not supported
+- All jobs stored in a single table instead of per-queue partitions
+
+CockroachDB uses a [different partitioning model](https://www.cockroachlabs.com/docs/stable/partitioning) that requires partition columns in the PRIMARY KEY and partitions defined inline at table creation.
+
+### Untested Databases
+
+- **Spanner (with PGAdapter)** - Google Cloud Spanner provides PostgreSQL wire compatibility via [PGAdapter](https://cloud.google.com/spanner/docs/pgadapter). It likely requires `distributedDatabaseMode` and `noTablePartitioning` like CockroachDB. If you test pg-boss with Spanner, please report your findings.
 
 ## Scaling Beyond Distributed Mode
 
 For very high-throughput workloads (thousands of jobs per second), `distributedDatabaseMode` alone may not be sufficient. At scale, contention on the job table becomes a bottleneck regardless of the fetch strategy.
 
-### Partitioning by Worker
+### Application-Level Sharding
 
-A more scalable approach is to partition work at the application level:
+A more scalable approach is to shard work at the application level using singletonKey:
 
 ```typescript
 // Each worker claims a partition (e.g., via consistent hashing or assignment)
