@@ -643,7 +643,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       ignoreSingletons: singletonsActive
     }
 
-    const query = plans.fetchNextJob(fetchOptions)
+    const query = plans.fetchNextJob(fetchOptions, this.config.distributedDatabaseMode)
 
     let result
 
@@ -653,7 +653,20 @@ class Manager extends EventEmitter implements types.EventsMixin {
       // errors from fetchquery should only be unique constraint violations
     }
 
-    return result?.rows || []
+    const rows = result?.rows || []
+
+    // CockroachDB returns numeric fields as strings; normalize them
+    if (this.config.distributedDatabaseMode && options.includeMetadata) {
+      for (const row of rows) {
+        if (row.priority !== undefined) row.priority = Number(row.priority)
+        if (row.retry_limit !== undefined) row.retryLimit = Number(row.retry_limit)
+        if (row.retry_count !== undefined) row.retryCount = Number(row.retry_count)
+        if (row.retry_delay !== undefined) row.retryDelay = Number(row.retry_delay)
+        if (row.expire_seconds !== undefined) row.expireSeconds = Number(row.expire_seconds)
+      }
+    }
+
+    return rows
   }
 
   private mapCompletionIdArg (id: string | string[], funcName: string) {
@@ -701,9 +714,84 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const db = this.assertDb(options)
     const ids = this.mapCompletionIdArg(id, 'fail')
     const { table } = await this.getQueueCache(name)
+    const outputData = this.mapCompletionDataArg(data)
+
+    // Distributed mode: use separate queries to avoid CockroachDB's multi-mutation CTE limitation
+    // Note: This is not atomic - jobs could be lost if the process crashes between delete and re-insert
+    if (this.config.distributedDatabaseMode) {
+      return this.failDistributed(name, ids, outputData, table, db)
+    }
+
     const sql = plans.failJobsById(this.config.schema, table)
-    const result = await db.executeSql(sql, [name, ids, this.mapCompletionDataArg(data)])
+    const result = await db.executeSql(sql, [name, ids, outputData])
     return this.mapCommandResponse(ids, result)
+  }
+
+  private async failDistributed (name: string, ids: string[], outputData: any, table: string, db: types.IDatabase) {
+    // Use a transaction to ensure atomicity
+    // CockroachDB doesn't support multi-mutation CTEs, but does support transactions
+    await db.executeSql('BEGIN')
+
+    try {
+      // Step 1: Select jobs to fail
+      const selectQuery = plans.selectJobsToFailById(this.config.schema, table)
+      const { rows: jobs } = await db.executeSql(selectQuery.text, [name, ids])
+
+      if (jobs.length === 0) {
+        await db.executeSql('COMMIT')
+        return 0
+      }
+
+      // Step 2: Delete the jobs
+      const deleteQuery = plans.deleteJobsToFail(this.config.schema, table)
+      await db.executeSql(deleteQuery.text, [name, ids])
+
+      // Step 3: Re-insert jobs with updated state
+      const insertSql = plans.insertRetryJob(this.config.schema, table)
+      const dlqSql = plans.insertDeadLetterJob(this.config.schema)
+      let count = 0
+
+      for (const job of jobs) {
+        const canRetry = job.retry_count < job.retry_limit
+        const state = canRetry ? 'retry' : 'failed'
+        const completedOn = canRetry ? null : new Date()
+
+        // Calculate start_after for retry
+        let startAfter = job.start_after
+        if (canRetry) {
+          if (!job.retry_backoff) {
+            startAfter = new Date(Date.now() + job.retry_delay * 1000)
+          } else {
+            const retryCount = job.retry_count + 1
+            const exp = Math.min(16, retryCount)
+            const delay = job.retry_delay * (Math.pow(2, exp) / 2 + Math.pow(2, exp) / 2 * Math.random())
+            const cappedDelay = job.retry_delay_max ? Math.min(job.retry_delay_max, delay) : delay
+            startAfter = new Date(Date.now() + cappedDelay * 1000)
+          }
+        }
+
+        await db.executeSql(insertSql, [
+          job.id, job.name, job.priority, job.data, state, job.retry_limit, job.retry_count,
+          job.retry_delay, job.retry_backoff, job.retry_delay_max, startAfter, job.started_on,
+          job.singleton_key, job.singleton_on, job.group_id, job.group_tier, job.expire_seconds,
+          job.deletion_seconds, job.created_on, completedOn, job.keep_until, job.policy,
+          outputData, job.dead_letter
+        ])
+
+        // Insert to dead letter queue if failed and has dead_letter configured
+        if (!canRetry && job.dead_letter) {
+          await db.executeSql(dlqSql, [job.dead_letter, job.data, outputData])
+        }
+
+        count++
+      }
+
+      await db.executeSql('COMMIT')
+      return count
+    } catch (err) {
+      await db.executeSql('ROLLBACK')
+      throw err
+    }
   }
 
   async deleteJob (name: string, id: string | string[], options: types.ConnectionOptions = {}) {
@@ -772,7 +860,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       await this.getQueueCache(options.deadLetter)
     }
 
-    const sql = plans.createQueue(this.config.schema, name, { ...options, policy })
+    const sql = plans.createQueue(this.config.schema, name, { ...options, policy }, this.config.noAdvisoryLocks)
     await this.db.executeSql(sql)
   }
 
@@ -829,7 +917,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     try {
       await this.getQueueCache(name)
-      const sql = plans.deleteQueue(this.config.schema, name)
+      const sql = plans.deleteQueue(this.config.schema, name, this.config.noAdvisoryLocks)
       await this.db.executeSql(sql)
     } catch { }
   }

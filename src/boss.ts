@@ -162,7 +162,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
     if (rows.length) {
       const queues = rows.map((q) => q.name)
 
-      const cacheStatsSql = plans.cacheQueueStats(this.#config.schema, table, queues)
+      const cacheStatsSql = plans.cacheQueueStats(this.#config.schema, table, queues, this.#config.noAdvisoryLocks)
       const { rows: rowsCacheStats } = await this.#executeSql(cacheStatsSql)
       const warnings = rowsCacheStats.filter(i => i.queuedCount > (i.warningQueueSize || WARNINGS.LARGE_QUEUE.size))
 
@@ -173,7 +173,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
         })
       }
 
-      const sql = plans.failJobsByTimeout(this.#config.schema, table, queues)
+      const sql = plans.failJobsByTimeout(this.#config.schema, table, queues, this.#config.noAdvisoryLocks)
       await this.#executeSql(sql)
     }
   }
@@ -188,7 +188,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
 
     if (rows.length) {
       const queues = rows.map((q) => q.name)
-      const sql = plans.deletion(this.#config.schema, table, queues)
+      const sql = plans.deletion(this.#config.schema, table, queues, this.#config.noAdvisoryLocks)
       await this.#executeSql(sql)
     }
   }

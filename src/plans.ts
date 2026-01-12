@@ -43,7 +43,20 @@ const QUEUE_DEFAULTS = {
 
 const COMMON_JOB_TABLE = 'job_common'
 
-function create (schema: string, version: number, options?: { createSchema?: boolean }) {
+interface CreateOptions {
+  createSchema?: boolean
+  noTablePartitioning?: boolean
+  noDeferrableConstraints?: boolean
+  noAdvisoryLocks?: boolean
+  noCoveringIndexes?: boolean
+}
+
+function create (schema: string, version: number, options?: CreateOptions) {
+  const noPartitioning = options?.noTablePartitioning ?? false
+  const noDeferrable = options?.noDeferrableConstraints ?? false
+  const noLocks = options?.noAdvisoryLocks ?? false
+  const noCovering = options?.noCoveringIndexes ?? false
+
   const commands = [
     options?.createSchema ? createSchema(schema) : '',
     createEnumJobState(schema),
@@ -53,17 +66,17 @@ function create (schema: string, version: number, options?: { createSchema?: boo
     createTableSchedule(schema),
     createTableSubscription(schema),
 
-    createTableJob(schema),
+    createTableJob(schema, noPartitioning),
     createPrimaryKeyJob(schema),
-    createTableJobCommon(schema, COMMON_JOB_TABLE),
+    noPartitioning ? createTableJobIndexes(schema, noDeferrable, noCovering) : createTableJobCommon(schema, COMMON_JOB_TABLE),
 
-    createQueueFunction(schema),
-    deleteQueueFunction(schema),
+    createQueueFunction(schema, noPartitioning),
+    deleteQueueFunction(schema, noPartitioning),
 
     insertVersion(schema, version)
   ]
 
-  return locked(schema, commands)
+  return locked(schema, commands, undefined, noLocks)
 }
 
 function createSchema (schema: string) {
@@ -152,7 +165,8 @@ function createTableSubscription (schema: string) {
   `
 }
 
-function createTableJob (schema: string) {
+function createTableJob (schema: string, noPartitioning = false) {
+  const partitionClause = noPartitioning ? '' : 'PARTITION BY LIST (name)'
   return `
     CREATE TABLE ${schema}.job (
       id uuid not null default gen_random_uuid(),
@@ -179,7 +193,7 @@ function createTableJob (schema: string) {
       output jsonb,
       dead_letter text,
       policy text
-    ) PARTITION BY LIST (name)
+    ) ${partitionClause}
   `
 }
 
@@ -225,7 +239,66 @@ function createTableJobCommon (schema: string, table: string) {
   `
 }
 
-function createQueueFunction (schema: string) {
+// Creates indexes directly on job table when partitioning is disabled
+function createTableJobIndexes (schema: string, noDeferrableConstraints = false, noCoveringIndex = false) {
+  return `
+    ${createQueueForeignKeyJob(schema, noDeferrableConstraints)};
+    ${createQueueForeignKeyJobDeadLetter(schema, noDeferrableConstraints)};
+    ${createIndexJobPolicyShort(schema)};
+    ${createIndexJobPolicySingleton(schema)};
+    ${createIndexJobPolicyStately(schema)};
+    ${createIndexJobPolicyExclusive(schema)};
+    ${createIndexJobThrottle(schema)};
+    ${createIndexJobFetch(schema, noCoveringIndex)};
+    ${createIndexJobGroupConcurrency(schema)};
+  `
+}
+
+function createQueueFunction (schema: string, noPartitioning = false) {
+  if (noPartitioning) {
+    // Simplified version without table partitioning support
+    return `
+      CREATE FUNCTION ${schema}.create_queue(queue_name text, options jsonb)
+      RETURNS VOID AS
+      $$
+      BEGIN
+        INSERT INTO ${schema}.queue (
+          name,
+          policy,
+          retry_limit,
+          retry_delay,
+          retry_backoff,
+          retry_delay_max,
+          expire_seconds,
+          retention_seconds,
+          deletion_seconds,
+          warning_queued,
+          dead_letter,
+          partition,
+          table_name
+        )
+        VALUES (
+          queue_name,
+          options->>'policy',
+          COALESCE((options->>'retryLimit')::int, ${QUEUE_DEFAULTS.retry_limit}),
+          COALESCE((options->>'retryDelay')::int, ${QUEUE_DEFAULTS.retry_delay}),
+          COALESCE((options->>'retryBackoff')::bool, ${QUEUE_DEFAULTS.retry_backoff}),
+          (options->>'retryDelayMax')::int,
+          COALESCE((options->>'expireInSeconds')::int, ${QUEUE_DEFAULTS.expire_seconds}),
+          COALESCE((options->>'retentionSeconds')::int, ${QUEUE_DEFAULTS.retention_seconds}),
+          COALESCE((options->>'deleteAfterSeconds')::int, ${QUEUE_DEFAULTS.deletion_seconds}),
+          COALESCE((options->>'warningQueueSize')::int, ${QUEUE_DEFAULTS.warning_queued}),
+          options->>'deadLetter',
+          false,
+          'job'
+        )
+        ON CONFLICT DO NOTHING;
+      END;
+      $$
+      LANGUAGE plpgsql;
+    `
+  }
+
   return `
     CREATE FUNCTION ${schema}.create_queue(queue_name text, options jsonb)
     RETURNS VOID AS
@@ -279,7 +352,7 @@ function createQueueFunction (schema: string) {
       END IF;
 
       EXECUTE format('CREATE TABLE ${schema}.%I (LIKE ${schema}.job INCLUDING DEFAULTS)', tablename);
-      
+
       EXECUTE format('${formatPartitionCommand(createPrimaryKeyJob(schema))}', tablename);
       EXECUTE format('${formatPartitionCommand(createQueueForeignKeyJob(schema))}', tablename);
       EXECUTE format('${formatPartitionCommand(createQueueForeignKeyJobDeadLetter(schema))}', tablename);
@@ -313,15 +386,10 @@ function formatPartitionCommand (command: string) {
     .replaceAll("'", "''")
 }
 
-function deleteQueueFunction (schema: string) {
-  return `
-    CREATE FUNCTION ${schema}.delete_queue(queue_name text)
-    RETURNS VOID AS
-    $$
-    DECLARE
-      v_table varchar;
-      v_partition bool;
-    BEGIN
+function deleteQueueFunction (schema: string, noPartitioning = false) {
+  const deleteJobsSql = noPartitioning
+    ? `DELETE FROM ${schema}.job WHERE name = queue_name;`
+    : `
       SELECT table_name, partition
       FROM ${schema}.queue
       WHERE name = queue_name
@@ -332,7 +400,21 @@ function deleteQueueFunction (schema: string) {
       ELSE
         EXECUTE format('DELETE FROM ${schema}.%I WHERE name = %L', v_table, queue_name);
       END IF;
+    `
 
+  const declareBlock = noPartitioning
+    ? ''
+    : `
+    DECLARE
+      v_table varchar;
+      v_partition bool;`
+
+  return `
+    CREATE FUNCTION ${schema}.delete_queue(queue_name text)
+    RETURNS VOID AS
+    $$${declareBlock}
+    BEGIN
+      ${deleteJobsSql}
       DELETE FROM ${schema}.queue WHERE name = queue_name;
     END;
     $$
@@ -340,26 +422,28 @@ function deleteQueueFunction (schema: string) {
   `
 }
 
-function createQueue (schema: string, name: string, options: unknown) {
+function createQueue (schema: string, name: string, options: unknown, noAdvisoryLocks?: boolean) {
   const sql = `SELECT ${schema}.create_queue('${name}', '${JSON.stringify(options)}'::jsonb)`
-  return locked(schema, sql, 'create-queue')
+  return locked(schema, sql, 'create-queue', noAdvisoryLocks)
 }
 
-function deleteQueue (schema: string, name: string) {
+function deleteQueue (schema: string, name: string, noAdvisoryLocks?: boolean) {
   const sql = `SELECT ${schema}.delete_queue('${name}')`
-  return locked(schema, sql, 'delete-queue')
+  return locked(schema, sql, 'delete-queue', noAdvisoryLocks)
 }
 
 function createPrimaryKeyJob (schema: string) {
   return `ALTER TABLE ${schema}.job ADD PRIMARY KEY (name, id)`
 }
 
-function createQueueForeignKeyJob (schema: string) {
-  return `ALTER TABLE ${schema}.job ADD CONSTRAINT q_fkey FOREIGN KEY (name) REFERENCES ${schema}.queue (name) ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED`
+function createQueueForeignKeyJob (schema: string, noPartitioning = false) {
+  const deferrable = noPartitioning ? '' : ' DEFERRABLE INITIALLY DEFERRED'
+  return `ALTER TABLE ${schema}.job ADD CONSTRAINT q_fkey FOREIGN KEY (name) REFERENCES ${schema}.queue (name) ON DELETE RESTRICT${deferrable}`
 }
 
-function createQueueForeignKeyJobDeadLetter (schema: string) {
-  return `ALTER TABLE ${schema}.job ADD CONSTRAINT dlq_fkey FOREIGN KEY (dead_letter) REFERENCES ${schema}.queue (name) ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED`
+function createQueueForeignKeyJobDeadLetter (schema: string, noPartitioning = false) {
+  const deferrable = noPartitioning ? '' : ' DEFERRABLE INITIALLY DEFERRED'
+  return `ALTER TABLE ${schema}.job ADD CONSTRAINT dlq_fkey FOREIGN KEY (dead_letter) REFERENCES ${schema}.queue (name) ON DELETE RESTRICT${deferrable}`
 }
 
 function createIndexJobPolicyShort (schema: string) {
@@ -378,8 +462,11 @@ function createIndexJobThrottle (schema: string) {
   return `CREATE UNIQUE INDEX job_i4 ON ${schema}.job (name, singleton_on, COALESCE(singleton_key, '')) WHERE state <> '${JOB_STATES.cancelled}' AND singleton_on IS NOT NULL`
 }
 
-function createIndexJobFetch (schema: string) {
-  return `CREATE INDEX job_i5 ON ${schema}.job (name, start_after) INCLUDE (priority, created_on, id) WHERE state < '${JOB_STATES.active}'`
+function createIndexJobFetch (schema: string, noCoveringIndex = false) {
+  // CockroachDB implicitly includes primary key columns (id) in all indexes,
+  // so we can't explicitly INCLUDE them - it causes "already contains column" error
+  const includeClause = noCoveringIndex ? '' : 'INCLUDE (priority, created_on, id) '
+  return `CREATE INDEX job_i5 ON ${schema}.job (name, start_after) ${includeClause}WHERE state < '${JOB_STATES.active}'`
 }
 
 function createIndexJobPolicyExclusive (schema: string) {
@@ -654,7 +741,23 @@ function buildFetchParams (options: FetchJobOptions): FetchQueryParams {
   return { values, ignoreSingletonsParam, ignoreGroupsParam, defaultGroupLimitParam, tiersParam }
 }
 
-function fetchNextJob (options: FetchJobOptions): SqlQuery {
+/**
+ * Builds the fetch query for claiming jobs from the queue.
+ *
+ * In standard mode (distributed=false), uses SELECT FOR UPDATE SKIP LOCKED
+ * which allows multiple workers to efficiently fetch different jobs simultaneously.
+ *
+ * In distributed mode (distributed=true), omits FOR UPDATE SKIP LOCKED and adds
+ * an additional state check in the WHERE clause. This pattern works better with
+ * distributed databases like CockroachDB where SKIP LOCKED has performance issues
+ * and can unexpectedly skip unlocked rows.
+ *
+ * Trade-off in distributed mode: Under high contention, workers may receive fewer
+ * jobs per fetch as concurrent updates to the same rows will result in some workers
+ * getting empty results. This is acceptable for job queues where processing time
+ * exceeds fetch time.
+ */
+function fetchNextJob (options: FetchJobOptions, distributed = false): SqlQuery {
   const { schema, table, name, policy, limit, includeMetadata, priority = true, ignoreStartAfter = false, groupConcurrency } = options
 
   const singletonFetch = limit > 1 && (policy === QUEUE_POLICIES.singleton || policy === QUEUE_POLICIES.stately)
@@ -691,6 +794,10 @@ function fetchNextJob (options: FetchJobOptions): SqlQuery {
       ), `
     : ''
 
+  // In distributed mode, omit FOR UPDATE SKIP LOCKED as it performs poorly
+  // in distributed databases like CockroachDB
+  const lockClause = distributed ? '' : 'FOR UPDATE SKIP LOCKED'
+
   const nextCte = `
       next AS (
         SELECT ${selectCols}
@@ -698,7 +805,7 @@ function fetchNextJob (options: FetchJobOptions): SqlQuery {
         WHERE ${whereConditions}
         ORDER BY ${priority ? 'priority desc, ' : ''}created_on, id
         LIMIT ${limit}
-        FOR UPDATE SKIP LOCKED
+        ${lockClause}
       )`
 
   const singletonCte = singletonFetch
@@ -737,6 +844,10 @@ function fetchNextJob (options: FetchJobOptions): SqlQuery {
         ? 'singleton_ranking'
         : 'next'
 
+  // In distributed mode, add state check to prevent duplicate processing
+  // when multiple workers try to claim the same jobs concurrently
+  const distributedStateCheck = distributed ? `AND j.state < '${JOB_STATES.active}'` : ''
+
   return {
     text: `
       WITH
@@ -751,6 +862,7 @@ function fetchNextJob (options: FetchJobOptions): SqlQuery {
       FROM ${finalCte}
       WHERE name = '${name}' AND j.id = ${finalCte}.id
       ${singletonFetch && !hasGroupConcurrency ? 'AND singleton_rn = 1' : ''}
+      ${distributedStateCheck}
       RETURNING j.${includeMetadata ? JOB_COLUMNS_ALL : JOB_COLUMNS_MIN}
     `,
     values: params.values
@@ -848,7 +960,7 @@ function insertJobs (schema: string, { table, name, returnId = true }: InsertJob
       j.start_after,
       "singletonKey",
       CASE
-        WHEN "singletonSeconds" IS NOT NULL THEN 'epoch'::timestamp + '1s'::interval * ("singletonSeconds" * floor(( date_part('epoch', now()) + COALESCE("singletonOffset",0)) / "singletonSeconds" ))
+        WHEN "singletonSeconds" IS NOT NULL THEN 'epoch'::timestamp + '1s'::interval * ("singletonSeconds"::float8 * floor(( date_part('epoch', now()) + COALESCE("singletonOffset",0)::float8) / "singletonSeconds"::float8 ))
         ELSE NULL
         END as singleton_on,
       "groupId" as group_id,
@@ -902,14 +1014,14 @@ function failJobsById (schema: string, table: string) {
   return failJobs(schema, table, where, output)
 }
 
-function failJobsByTimeout (schema: string, table: string, queues: string[]): string {
+function failJobsByTimeout (schema: string, table: string, queues: string[], noAdvisoryLocks?: boolean): string {
   const where = `state = '${JOB_STATES.active}'
             AND (started_on + expire_seconds * interval '1s') < now()
             AND name = ANY(${serializeArrayParam(queues)})`
 
   const output = '\'{ "value": { "message": "job timed out" } }\'::jsonb'
 
-  return locked(schema, failJobs(schema, table, where, output), table + 'failJobsByTimeout')
+  return locked(schema, failJobs(schema, table, where, output), table + 'failJobsByTimeout', noAdvisoryLocks)
 }
 
 function failJobs (schema: string, table: string, where: string, output: string) {
@@ -1067,7 +1179,43 @@ function failJobs (schema: string, table: string, where: string, output: string)
   `
 }
 
-function deletion (schema: string, table: string, queues: string[]): string {
+// Distributed mode: separate queries to avoid CockroachDB's multi-mutation CTE limitation
+function selectJobsToFailById (schema: string, table: string): SqlQuery {
+  return {
+    text: `SELECT * FROM ${schema}.${table} WHERE name = $1 AND id IN (SELECT UNNEST($2::uuid[])) AND state < '${JOB_STATES.completed}'`,
+    values: []
+  }
+}
+
+function deleteJobsToFail (schema: string, table: string): SqlQuery {
+  return {
+    text: `DELETE FROM ${schema}.${table} WHERE name = $1 AND id IN (SELECT UNNEST($2::uuid[]))`,
+    values: []
+  }
+}
+
+function insertRetryJob (schema: string, table: string): string {
+  return `
+    INSERT INTO ${schema}.${table} (
+      id, name, priority, data, state, retry_limit, retry_count, retry_delay,
+      retry_backoff, retry_delay_max, start_after, started_on, singleton_key, singleton_on,
+      group_id, group_tier, expire_seconds, deletion_seconds, created_on, completed_on,
+      keep_until, policy, output, dead_letter
+    ) VALUES (
+      $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24
+    ) ON CONFLICT DO NOTHING
+  `
+}
+
+function insertDeadLetterJob (schema: string): string {
+  return `
+    INSERT INTO ${schema}.job (name, data, output, retry_limit, retry_backoff, retry_delay, keep_until, deletion_seconds)
+    SELECT $1, $2, $3, q.retry_limit, q.retry_backoff, q.retry_delay, now() + q.retention_seconds * interval '1s', q.deletion_seconds
+    FROM ${schema}.queue q WHERE q.name = $1
+  `
+}
+
+function deletion (schema: string, table: string, queues: string[], noAdvisoryLocks?: boolean): string {
   const sql = `
     DELETE FROM ${schema}.${table}
     WHERE name = ANY(${serializeArrayParam(queues)})
@@ -1079,7 +1227,7 @@ function deletion (schema: string, table: string, queues: string[]): string {
       )
   `
 
-  return locked(schema, sql, table + 'deletion')
+  return locked(schema, sql, table + 'deletion', noAdvisoryLocks)
 }
 
 function retryJobs (schema: string, table: string) {
@@ -1115,7 +1263,7 @@ function getQueueStats (schema: string, table: string, queues: string[]): SqlQue
   }
 }
 
-function cacheQueueStats (schema: string, table: string, queues: string[]): string {
+function cacheQueueStats (schema: string, table: string, queues: string[], noAdvisoryLocks?: boolean): string {
   const statsQuery = getQueueStats(schema, table, queues)
   // Serialize the $1 parameter for use in locked() multi-statement query
   const statsText = statsQuery.text.replace('$1::text[]', serializeArrayParam(queues))
@@ -1140,7 +1288,7 @@ function cacheQueueStats (schema: string, table: string, queues: string[]): stri
       queue.warning_queued as "warningQueueSize"
   `
 
-  return locked(schema, sql, 'queue-stats')
+  return locked(schema, sql, 'queue-stats', noAdvisoryLocks)
 }
 
 // Serialize a string array for embedding directly in SQL as PostgreSQL array literal
@@ -1149,14 +1297,15 @@ function serializeArrayParam (values: string[]): string {
   return `ARRAY[${escaped.join(',')}]::text[]`
 }
 
-function locked (schema: string, query: string | string[], key?: string): string {
+function locked (schema: string, query: string | string[], key?: string, noAdvisoryLocks?: boolean): string {
   const sql = Array.isArray(query) ? query.join(';\n') : query
+  const lockSql = noAdvisoryLocks ? '' : `${advisoryLock(schema, key)};`
 
   return `
     BEGIN;
     SET LOCAL lock_timeout = 30000;
     SET LOCAL idle_in_transaction_session_timeout = 30000;
-    ${advisoryLock(schema, key)};
+    ${lockSql}
     ${sql};
     COMMIT;
   `
@@ -1235,6 +1384,10 @@ export {
   truncateTable,
   failJobsById,
   failJobsByTimeout,
+  selectJobsToFailById,
+  deleteJobsToFail,
+  insertRetryJob,
+  insertDeadLetterJob,
   insertJobs,
   getTime,
   getSchedules,

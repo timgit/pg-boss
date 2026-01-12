@@ -13,3 +13,4 @@
 * * [Testing](./api/testing.md)
 * * [Utils](./api/utils.md)
 * [SQL](sql.md)
+* [Distributed Databases](distributed-databases.md)

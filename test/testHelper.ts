@@ -2,9 +2,12 @@ import Db from '../src/db.ts'
 import { PgBoss } from '../src/index.ts'
 import crypto from 'node:crypto'
 import configJson from './config.json' with { type: 'json' }
+import cockroachConfigJson from './config.cockroachdb.json' with { type: 'json' }
 import type { ConstructorOptions } from '../src/types.ts'
 
 const sha1 = (value: string): string => crypto.createHash('sha1').update(value).digest('hex')
+
+const isCockroachDb = process.env.DB_TYPE === 'cockroachdb'
 
 function assertTruthy<T> (value: T, message?: string): asserts value is NonNullable<T> {
   if (value == null) {
@@ -19,10 +22,11 @@ function getConnectionString (): string {
 }
 
 function getConfig (options: Partial<ConstructorOptions> & { testKey?: string } = {}): ConstructorOptions {
-  const config: any = { ...configJson }
+  const baseConfig = isCockroachDb ? cockroachConfigJson : configJson
+  const config: any = { ...baseConfig }
 
-  config.host = process.env.POSTGRES_HOST || config.host
-  config.port = process.env.POSTGRES_PORT || config.port
+  config.host = (isCockroachDb ? process.env.COCKROACH_HOST : process.env.POSTGRES_HOST) || config.host
+  config.port = (isCockroachDb ? process.env.COCKROACH_PORT : process.env.POSTGRES_PORT) || config.port
   config.password = process.env.POSTGRES_PASSWORD || config.password
 
   if (options.testKey) {
@@ -34,6 +38,15 @@ function getConfig (options: Partial<ConstructorOptions> & { testKey?: string } 
   config.supervise = false
   config.schedule = false
   config.createSchema = true
+
+  // Enable distributed database mode and disable partitioning for CockroachDB
+  if (isCockroachDb) {
+    config.distributedDatabaseMode = true
+    config.noTablePartitioning = true
+    config.noDeferrableConstraints = true
+    config.noAdvisoryLocks = true
+    config.noCoveringIndexes = true
+  }
 
   return Object.assign(config, options)
 }
@@ -120,5 +133,6 @@ export {
   getConfig,
   getConnectionString,
   tryCreateDb,
-  init
+  init,
+  isCockroachDb
 }
