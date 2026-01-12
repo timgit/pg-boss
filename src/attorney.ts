@@ -300,8 +300,8 @@ function applyOpsConfig (config: any) {
 }
 
 function validateDeletionConfig (config: any) {
-  assert(!('deleteAfterSeconds' in config) || config.deleteAfterSeconds >= 1,
-    'configuration assert: deleteAfterSeconds must be at least every second')
+  assert(!('deleteAfterSeconds' in config) || config.deleteAfterSeconds >= 0,
+    'configuration assert: deleteAfterSeconds must be at least 0 (0 disables deletion)')
 }
 
 function applyScheduleConfig (config: any) {

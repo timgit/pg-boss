@@ -57,7 +57,7 @@ Creates a new job and returns the job id.
 
 * **deleteAfterSeconds**, int
 
-  Default: 7 days. How long a job should be retained in the database after it's completed.
+  Default: 7 days. How long a job should be retained in the database after it's completed. Set to 0 to never delete completed jobs.
 
 
 All retry, expiration, and retention options can also be set on the queue and will be inheritied for each job, unless they are overridden.
