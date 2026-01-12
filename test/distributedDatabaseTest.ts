@@ -386,4 +386,126 @@ describe('distributed database mode', function () {
     expect(values.filter(v => v.startsWith('std')).length).toBe(1)
     expect(values.filter(v => v.startsWith('prem')).length).toBe(2)
   })
+
+  it('should return 0 when failing non-existent job ids in distributed mode', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, distributedDatabaseMode: true })
+
+    // Try to fail a job that doesn't exist (using a valid UUID format)
+    const result = await ctx.boss.fail(ctx.schema, '00000000-0000-0000-0000-000000000000')
+    expect(result).toBe(0)
+  })
+
+  it('should use retry backoff when failing jobs in distributed mode', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, distributedDatabaseMode: true })
+
+    // Send a job with retryBackoff enabled
+    const jobId = await ctx.boss.send(ctx.schema, { test: 'backoff' }, {
+      retryLimit: 3,
+      retryDelay: 1,
+      retryBackoff: true
+    })
+    helper.assertTruthy(jobId)
+
+    // Fetch and fail the job
+    const [job] = await ctx.boss.fetch(ctx.schema)
+    expect(job).toBeTruthy()
+    expect(job.id).toBe(jobId)
+
+    const failedAt = Date.now()
+    await ctx.boss.fail(ctx.schema, jobId)
+
+    // Job should be in retry state with backoff delay applied
+    const jobData = await ctx.boss.getJobById(ctx.schema, jobId, { includeArchive: true })
+    helper.assertTruthy(jobData)
+    expect(jobData.state).toBe('retry')
+
+    // startAfter should be in the future (backoff applied)
+    const startAfter = new Date(jobData.startAfter).getTime()
+    expect(startAfter).toBeGreaterThan(failedAt)
+  })
+
+  it('should insert to dead letter queue when failing without retries in distributed mode', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, distributedDatabaseMode: true, noDefault: true })
+
+    const deadLetter = `${ctx.schema}_dlq`
+
+    await ctx.boss.createQueue(deadLetter)
+    await ctx.boss.createQueue(ctx.schema, { deadLetter })
+
+    // Send a job with no retries
+    const jobId = await ctx.boss.send(ctx.schema, { key: ctx.schema }, { retryLimit: 0 })
+    helper.assertTruthy(jobId)
+
+    // Fetch and fail the job
+    await ctx.boss.fetch(ctx.schema)
+    await ctx.boss.fail(ctx.schema, jobId, { error: 'test error' })
+
+    // Should have a job in the dead letter queue
+    const [dlqJob] = await ctx.boss.fetch<{ key: string }>(deadLetter)
+    expect(dlqJob).toBeTruthy()
+    expect(dlqJob.data.key).toBe(ctx.schema)
+  })
+
+  it('should rollback transaction on error in distributed mode fail', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, distributedDatabaseMode: true })
+
+    // Send a job
+    const jobId = await ctx.boss.send(ctx.schema, { test: 'rollback' }, { retryLimit: 1 })
+    helper.assertTruthy(jobId)
+
+    // Fetch the job
+    const [job] = await ctx.boss.fetch(ctx.schema)
+    expect(job).toBeTruthy()
+
+    // Create a custom db that throws an error during the INSERT step
+    const _db = await helper.getDb()
+    let callCount = 0
+    const db = {
+      // @ts-ignore
+      async executeSql (sql: string, values: any[]) {
+        callCount++
+        // Throw error after SELECT and DELETE (calls 3 and 4), during INSERT
+        if (callCount === 5) {
+          throw new Error('Simulated database error')
+        }
+        // @ts-ignore
+        return _db.pool.query(sql, values)
+      }
+    }
+
+    // The fail should throw due to the simulated error
+    await expect(async () => {
+      await ctx.boss.fail(ctx.schema, jobId, null, { db })
+    }).rejects.toThrow('Simulated database error')
+
+    // Job should still be in active state (transaction was rolled back)
+    const jobData = await ctx.boss.getJobById(ctx.schema, jobId)
+    helper.assertTruthy(jobData)
+    expect(jobData.state).toBe('active')
+
+    await _db.close()
+  })
+
+  it('should work with noTablePartitioning mode', async function () {
+    // This test covers the noPartitioning path in plans.ts (lines 244, 260)
+    ctx.boss = await helper.start({
+      ...ctx.bossConfig,
+      noTablePartitioning: true
+    })
+
+    // Basic send/fetch to verify everything works
+    const jobId = await ctx.boss.send(ctx.schema, { test: 'noPartitioning' })
+    helper.assertTruthy(jobId)
+
+    const [job] = await ctx.boss.fetch(ctx.schema)
+    expect(job).toBeTruthy()
+    expect(job.id).toBe(jobId)
+
+    await ctx.boss.complete(ctx.schema, jobId)
+
+    // Verify job is completed
+    const completedJob = await ctx.boss.getJobById(ctx.schema, jobId)
+    helper.assertTruthy(completedJob)
+    expect(completedJob.state).toBe('completed')
+  })
 })
