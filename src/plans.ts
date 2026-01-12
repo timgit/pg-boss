@@ -396,7 +396,9 @@ function deleteQueueFunction (schema: string, noPartitioning = false) {
       END IF;
     `
 
-  const declareBlock = noPartitioning ? '' : `
+  const declareBlock = noPartitioning
+    ? ''
+    : `
     DECLARE
       v_table varchar;
       v_partition bool;`
