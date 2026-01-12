@@ -72,7 +72,11 @@ await boss.start()
 
 ## Recommendations
 
-- **Test both modes with your distributed database** - Performance can vary based on your specific workload and cluster configuration.
+- **CockroachDB**: Use `distributedDatabaseMode` + `noTablePartitioning` + `noDeferrableConstraints` + `noAdvisoryLocks` + `noCoveringIndexes`
+- **YugabyteDB**: Use `noAdvisoryLocks` (unless preview feature enabled). Standard fetch mode works well.
+- **Citus**: Use `distributedDatabaseMode` if job table is distributed; standard mode if using reference tables
+- **Aurora DSQL**: Use `distributedDatabaseMode` + `noTablePartitioning` + `noDeferrableConstraints` + `noAdvisoryLocks`. Compatibility uncertain due to OCC and async-only indexes.
+- **PostgreSQL**: Use standard mode (no special options needed)
 
 ## Transaction Isolation
 
@@ -88,8 +92,9 @@ pg-boss uses PostgreSQL's declarative table partitioning (`PARTITION BY LIST`) f
 |----------|--------|------------------|
 | PostgreSQL | Tested | None |
 | CockroachDB | Tested | `distributedDatabaseMode` + `noTablePartitioning` + `noDeferrableConstraints` + `noAdvisoryLocks` + `noCoveringIndexes` |
-| YugabyteDB | Untested (likely compatible) | `distributedDatabaseMode` (optional) |
-| Citus | Untested (likely compatible) | `distributedDatabaseMode` (optional) |
+| YugabyteDB | Untested (likely compatible) | `noAdvisoryLocks` (unless preview feature enabled) |
+| Citus | Untested (likely compatible) | `distributedDatabaseMode` if job table is distributed across shards |
+| Aurora DSQL | Untested (uncertain) | Likely `distributedDatabaseMode` + `noTablePartitioning` + `noDeferrableConstraints` + `noAdvisoryLocks` (see notes) |
 | Spanner | Untested (uncertain) | Likely `distributedDatabaseMode` + `noTablePartitioning` + `noDeferrableConstraints` + `noAdvisoryLocks` + `noCoveringIndexes` |
 
 ### Tested: PostgreSQL
@@ -117,14 +122,66 @@ const boss = new PgBoss({
 
 CockroachDB uses a [different partitioning model](https://www.cockroachlabs.com/docs/stable/partitioning) that requires partition columns in the PRIMARY KEY and partitions defined inline at table creation.
 
-### Untested: YugabyteDB and Citus (likely compatible)
+### Untested: YugabyteDB (likely compatible)
 
-These databases have high PostgreSQL compatibility and are expected to work well with pg-boss, but have not been tested in CI:
+YugabyteDB is a PostgreSQL-compatible distributed database with [native job queue support](https://docs.yugabyte.com/stable/develop/data-modeling/common-patterns/jobqueue/). YugabyteDB [recommends](https://www.yugabyte.com/blog/distributed-fifo-job-queue/) using `SELECT FOR UPDATE SKIP LOCKED` for job queues, and has optimizations for single-row transactions that make this pattern efficient.
 
-- **YugabyteDB** - PostgreSQL-compatible distributed database with [native job queue support](https://docs.yugabyte.com/stable/develop/data-modeling/common-patterns/jobqueue/). Should support both `SKIP LOCKED` and `distributedDatabaseMode`. Test both to determine which performs better for your workload.
-- **Citus** - Distributed PostgreSQL extension. May benefit from `distributedDatabaseMode` under high worker concurrency across shards.
+**Feature support:**
+- Table partitioning: ✅ Fully supported
+- Deferrable constraints: ✅ Supported for foreign keys
+- Covering indexes (INCLUDE): ✅ Fully supported
+- Advisory locks: ⚠️ [Tech Preview](https://github.com/yugabyte/yugabyte-db/issues/3642) - requires enabling GFlags
 
-If you use pg-boss with YugabyteDB or Citus, please report your findings.
+**Recommendation:** Use `noAdvisoryLocks: true` unless you have enabled the advisory locks preview feature (requires setting `ysql_yb_enable_advisory_locks=true`). Standard fetch mode works well - YugabyteDB does not have the `SKIP LOCKED` issues that CockroachDB has.
+
+```typescript
+const boss = new PgBoss({
+  connectionString: 'postgresql://localhost:5433/pgboss',
+  noAdvisoryLocks: true  // Required unless preview feature enabled
+})
+```
+
+If you use pg-boss with YugabyteDB, please report your findings.
+
+### Untested: Citus (likely compatible)
+
+Citus is a distributed PostgreSQL extension that shards tables across multiple nodes. However, `SELECT FOR UPDATE` [only works for single-shard queries](https://docs.citusdata.com/en/stable/develop/reference_workarounds.html) in Citus - cross-shard locking is not supported.
+
+**Recommendation:**
+- If the pg-boss job table is a **reference table** (replicated to all nodes): Standard mode works fine.
+- If the pg-boss job table is **distributed across shards**: `distributedDatabaseMode: true` is required since `SELECT FOR UPDATE SKIP LOCKED` will error on cross-shard queries.
+
+If you use pg-boss with Citus, please report your findings.
+
+### Untested: Aurora DSQL (uncertain)
+
+[Amazon Aurora DSQL](https://docs.aws.amazon.com/aurora-dsql/latest/userguide/working-with-postgresql-compatibility.html) is a serverless distributed SQL database with PostgreSQL compatibility. However, it uses [optimistic concurrency control (OCC)](https://aws.amazon.com/blogs/database/concurrency-control-in-amazon-aurora-dsql/) instead of traditional pessimistic locking, which fundamentally changes how locking works.
+
+**Feature support:**
+- Table partitioning: ❌ [Not supported](https://docs.aws.amazon.com/aurora-dsql/latest/userguide/working-with-postgresql-compatibility-migration-guide.html) - Aurora DSQL auto-manages distribution
+- Foreign key constraints: ❌ Not supported
+- Deferrable constraints: ❌ N/A (no FK constraints)
+- Advisory locks: ❌ Not supported (OCC model)
+- Covering indexes (INCLUDE): ✅ Supported
+- Synchronous CREATE INDEX: ❌ Only [`CREATE INDEX ASYNC`](https://docs.aws.amazon.com/aurora-dsql/latest/userguide/working-with-create-index-async.html) supported
+
+**Key concerns:**
+1. **OCC vs pessimistic locking**: `SELECT FOR UPDATE` in Aurora DSQL doesn't lock rows - it flags them for conflict detection at commit time. `SKIP LOCKED` is not meaningful in this model.
+2. **Async-only index creation**: pg-boss uses synchronous `CREATE INDEX` during schema migrations. Aurora DSQL only supports `CREATE INDEX ASYNC`, which may cause migration failures.
+3. **Retry logic required**: OCC returns serialization errors on conflict instead of blocking. Applications must implement retry logic.
+
+**Recommendation:** If attempting to use Aurora DSQL, you would need:
+```typescript
+const boss = new PgBoss({
+  connectionString: 'postgresql://...',
+  distributedDatabaseMode: true,   // OCC doesn't support SKIP LOCKED semantics
+  noTablePartitioning: true,       // Not supported
+  noDeferrableConstraints: true,   // No FK constraints
+  noAdvisoryLocks: true            // Not supported with OCC
+})
+```
+
+⚠️ **Compatibility is uncertain** due to async-only index creation and OCC behavior. If you test pg-boss with Aurora DSQL, please report your findings.
 
 ### Untested: Spanner (uncertain)
 
@@ -223,7 +280,9 @@ Enables an alternative job fetching pattern optimized for distributed databases.
 
 **When to use:**
 - CockroachDB: Required (SKIP LOCKED has performance/correctness issues)
-- YugabyteDB/Citus: Optional (test both modes for your workload)
+- YugabyteDB: Not recommended (supports SKIP LOCKED well)
+- Citus: Required if job table is distributed across shards (SKIP LOCKED only works for single-shard queries)
+- Aurora DSQL: Required (uses OCC, SKIP LOCKED semantics don't apply)
 - PostgreSQL: Not recommended (standard mode is more efficient)
 
 **Trade-off:** Under high contention, some workers may receive empty results instead of efficiently claiming different jobs.
@@ -236,6 +295,7 @@ Disables PostgreSQL-style declarative table partitioning (`PARTITION BY LIST`).
 
 **When to use:**
 - CockroachDB: Required (uses a different partitioning model)
+- Aurora DSQL: Required (auto-manages distribution)
 - Spanner: Likely required
 
 **Trade-off:** Queue-level partitioning (`partition: true` on `createQueue`) is not available. All jobs are stored in a single table.
@@ -250,6 +310,7 @@ PostgreSQL's deferrable constraints allow constraint checks to be postponed unti
 
 **When to use:**
 - CockroachDB: Required (syntax not supported)
+- Aurora DSQL: Required (FK constraints not supported)
 - Spanner: Likely required
 
 **Trade-off:** Foreign key constraints are checked immediately rather than at transaction commit. This shouldn't affect normal pg-boss operations.
@@ -264,6 +325,8 @@ pg-boss uses advisory locks for leader election and coordination in maintenance 
 
 **When to use:**
 - CockroachDB: Required (`pg_advisory_xact_lock` not available)
+- YugabyteDB: Required unless advisory locks preview feature is enabled (requires GFlags)
+- Aurora DSQL: Required (not supported with OCC model)
 - Spanner: Likely required
 
 **Trade-off:** Multiple pg-boss instances may occasionally perform redundant maintenance operations. This is a performance consideration, not a correctness issue.
