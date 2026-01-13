@@ -53,6 +53,7 @@ export interface MaintenanceOptions {
   queueCacheIntervalSeconds?: number;
   monitorIntervalSeconds?: number;
   persistWarnings?: boolean;
+  warningRetentionDays?: number;
 }
 
 export interface Migration {

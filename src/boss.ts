@@ -132,11 +132,21 @@ class Boss extends EventEmitter implements types.EventsMixin {
       const queues = await this.#manager.getQueues()
 
       !this.#stopped && (await this.supervise(queues))
+      !this.#stopped && (await this.#maintainWarnings())
     } catch (err) {
       this.emit(events.error, err)
     } finally {
       this.#maintaining = false
     }
+  }
+
+  async #maintainWarnings () {
+    if (!this.#config.persistWarnings || !this.#config.warningRetentionDays) {
+      return
+    }
+
+    const sql = plans.deleteOldWarnings(this.#config.schema, this.#config.warningRetentionDays)
+    await this.#executeSql(sql)
   }
 
   async supervise (value?: string | types.QueueResult[]) {

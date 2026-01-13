@@ -613,6 +613,13 @@ function getWarningsCount (schema: string): string {
   `
 }
 
+function deleteOldWarnings (schema: string, days: number): string {
+  return `
+    DELETE FROM ${schema}.warning
+    WHERE created_on < now() - interval '${days} days'
+  `
+}
+
 function getVersion (schema: string) {
   return `SELECT version from ${schema}.version`
 }
@@ -1306,6 +1313,7 @@ export {
   insertWarning,
   getWarnings,
   getWarningsCount,
+  deleteOldWarnings,
   createTableWarning,
   createIndexWarning,
   QUEUE_POLICIES,

@@ -92,3 +92,11 @@ The following configuration options should not normally need to be changed, but 
 * **queueCacheIntervalSeconds**, int, default 60 seconds
 
   How often queue metadata is refreshed in memory.
+
+* **persistWarnings**, bool, default false
+
+  If set to true, warnings emitted during monitoring and maintenance (slow queries, queue backlogs, clock skew) will be persisted to the `warning` table in addition to being emitted as events. This enables historical tracking of warnings for debugging and monitoring purposes. See [Events](./events.md#warning) for more details on warning types.
+
+* **warningRetentionDays**, int
+
+  When `persistWarnings` is enabled, this option controls automatic cleanup of old warnings. Warnings older than the specified number of days will be deleted during maintenance. If not set, warnings are retained indefinitely. Maximum: 365 days.
