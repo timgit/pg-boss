@@ -1,4 +1,5 @@
-import { Link, useFetcher, useSearchParams } from "react-router";
+import { useFetcher, useSearchParams } from "react-router";
+import { DbLink } from "~/components/db-link";
 import type { Route } from "./+types/queues.$name";
 import {
   getQueue,
@@ -162,9 +163,9 @@ export default function QueueDetail({ loaderData }: Route.ComponentProps) {
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-2 text-sm text-gray-500">
-        <Link to="/queues" className="hover:text-gray-700">
+        <DbLink to="/queues" className="hover:text-gray-700">
           Queues
-        </Link>
+        </DbLink>
         <span>/</span>
         <span className="text-gray-900 font-medium">{queue.name}</span>
       </div>

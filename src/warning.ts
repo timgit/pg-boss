@@ -1,6 +1,6 @@
 import type EventEmitter from 'node:events'
-import * as plans from './plans.js'
-import type * as types from './types.js'
+import * as plans from './plans.ts'
+import type * as types from './types.ts'
 
 export interface WarningContext {
   emitter: EventEmitter

@@ -9,6 +9,7 @@ A web-based dashboard for monitoring and managing [pg-boss](https://github.com/t
 - **Job Browser**: View and manage individual jobs with filtering by state
 - **Job Actions**: Cancel, retry, or delete jobs directly from the UI
 - **Warning History**: Track slow queries, queue backlogs, and clock skew issues
+- **Multi-Database Support**: Monitor multiple pg-boss instances from a single dashboard
 - **Pagination**: Efficiently browse large datasets
 
 ## Requirements
@@ -39,9 +40,33 @@ The dashboard is configured via environment variables:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `DATABASE_URL` | PostgreSQL connection string | `postgres://localhost/pgboss` |
-| `PGBOSS_SCHEMA` | pg-boss schema name | `pgboss` |
+| `DATABASE_URL` | PostgreSQL connection string(s) | `postgres://localhost/pgboss` |
+| `PGBOSS_SCHEMA` | pg-boss schema name(s) | `pgboss` |
 | `PORT` | Server port | `3000` |
+
+### Multi-Database Configuration
+
+To monitor multiple pg-boss instances, separate connection strings with a pipe (`|`):
+
+```bash
+DATABASE_URL="postgres://host1/db1|postgres://host2/db2" npx pg-boss-dashboard
+```
+
+You can optionally name each database for better identification in the UI:
+
+```bash
+DATABASE_URL="Production=postgres://prod/db|Staging=postgres://stage/db" npx pg-boss-dashboard
+```
+
+If your databases use different schemas, specify them with matching pipe separation:
+
+```bash
+DATABASE_URL="postgres://host1/db1|postgres://host2/db2" \
+PGBOSS_SCHEMA="pgboss|jobs" \
+npx pg-boss-dashboard
+```
+
+When multiple databases are configured, a database selector appears in the sidebar. The selected database is persisted in the URL via the `db` query parameter, making it easy to share links to specific database views.
 
 ## Production Deployment
 
@@ -204,6 +229,9 @@ cd pg-boss/packages/dashboard
 # Install dependencies
 npm install
 
+# Initialize local database with pg-boss schema and test queues
+npm run dev:init-db
+
 # Start development server with hot reloading
 npm run dev
 
@@ -213,6 +241,8 @@ npm run build
 # Run production build
 npm start
 ```
+
+The `dev:init-db` script creates the pg-boss schema and populates it with sample queues and jobs for testing. It connects to `postgres://postgres:postgres@127.0.0.1:5432/pgboss` by default.
 
 ### Project Structure
 

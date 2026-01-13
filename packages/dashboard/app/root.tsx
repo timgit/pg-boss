@@ -9,6 +9,14 @@ import {
 import type { Route } from "./+types/root";
 import "./app.css";
 import { Sidebar } from "~/components/layout/sidebar";
+import { LoadingBar } from "~/components/loading-bar";
+
+export async function loader({ context }: Route.LoaderArgs) {
+  return {
+    databases: context.databases,
+    currentDb: context.currentDb,
+  };
+}
 
 export function Layout({ children }: { children: React.ReactNode }) {
   return (
@@ -20,6 +28,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <Links />
       </head>
       <body>
+        <LoadingBar />
         <div className="flex min-h-screen">
           <Sidebar />
           <main className="flex-1 p-6 lg:p-8 pt-20 lg:pt-8">
@@ -70,5 +79,18 @@ export function meta() {
   return [
     { title: "pg-boss Dashboard" },
     { name: "description", content: "Monitor and manage pg-boss job queues" },
+  ];
+}
+
+// SVG favicon matching the sidebar logo
+const faviconSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="6" fill="%234f46e5"/><text x="16" y="22" text-anchor="middle" font-family="system-ui,sans-serif" font-size="14" font-weight="bold" fill="white">PG</text></svg>`;
+
+export function links() {
+  return [
+    {
+      rel: "icon",
+      type: "image/svg+xml",
+      href: `data:image/svg+xml,${faviconSvg}`,
+    },
   ];
 }

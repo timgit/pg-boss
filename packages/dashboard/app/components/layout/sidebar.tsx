@@ -1,5 +1,17 @@
-import { NavLink } from "react-router";
+import { NavLink, useRouteLoaderData, useSearchParams, useNavigate } from "react-router";
 import { useState } from "react";
+
+interface DatabaseConfig {
+  id: string;
+  name: string;
+  url: string;
+  schema: string;
+}
+
+interface RootLoaderData {
+  databases: DatabaseConfig[];
+  currentDb: DatabaseConfig;
+}
 
 const navigation = [
   { name: "Overview", href: "/", icon: HomeIcon },
@@ -31,6 +43,14 @@ function WarningIcon({ className }: { className?: string }) {
   );
 }
 
+function DatabaseIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375m16.5 0v3.75m-16.5-3.75v3.75m16.5 0v3.75C20.25 16.153 16.556 18 12 18s-8.25-1.847-8.25-4.125v-3.75m16.5 0c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125" />
+    </svg>
+  );
+}
+
 function MenuIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
@@ -47,7 +67,100 @@ function CloseIcon({ className }: { className?: string }) {
   );
 }
 
-function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
+function ChevronIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+    </svg>
+  );
+}
+
+function DatabaseSelector({
+  databases,
+  currentDb,
+  onSelect,
+}: {
+  databases: DatabaseConfig[];
+  currentDb: DatabaseConfig;
+  onSelect: (db: DatabaseConfig) => void;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+
+  if (databases.length <= 1) {
+    return null;
+  }
+
+  return (
+    <div className="px-3 py-3 border-b border-gray-200">
+      <div className="relative">
+        <button
+          type="button"
+          onClick={() => setIsOpen(!isOpen)}
+          className="w-full flex items-center justify-between px-3 py-2 text-sm bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100 transition-colors"
+        >
+          <div className="flex items-center gap-2 min-w-0">
+            <DatabaseIcon className="w-4 h-4 text-gray-500 flex-shrink-0" />
+            <span className="font-medium text-gray-900 truncate">{currentDb.name}</span>
+          </div>
+          <ChevronIcon className={`w-4 h-4 text-gray-400 flex-shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+        </button>
+
+        {isOpen && (
+          <>
+            {/* Backdrop */}
+            <div
+              className="fixed inset-0 z-10"
+              onClick={() => setIsOpen(false)}
+            />
+            {/* Dropdown */}
+            <div className="absolute left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-20 py-1">
+              {databases.map((db) => (
+                <button
+                  key={db.id}
+                  type="button"
+                  onClick={() => {
+                    onSelect(db);
+                    setIsOpen(false);
+                  }}
+                  className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-gray-50 ${
+                    db.id === currentDb.id ? 'bg-primary-50 text-primary-700' : 'text-gray-700'
+                  }`}
+                >
+                  <DatabaseIcon className={`w-4 h-4 flex-shrink-0 ${
+                    db.id === currentDb.id ? 'text-primary-600' : 'text-gray-400'
+                  }`} />
+                  <span className="truncate">{db.name}</span>
+                  {db.schema !== 'pgboss' && (
+                    <span className="ml-auto text-xs text-gray-400">({db.schema})</span>
+                  )}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SidebarContent({
+  databases,
+  currentDb,
+  onDatabaseSelect,
+  onNavigate,
+  dbParam,
+}: {
+  databases?: DatabaseConfig[];
+  currentDb?: DatabaseConfig;
+  onDatabaseSelect?: (db: DatabaseConfig) => void;
+  onNavigate?: () => void;
+  dbParam?: string | null;
+}) {
+  // Build href with db param preserved
+  const buildHref = (path: string) => {
+    if (!dbParam) return path;
+    return `${path}?db=${dbParam}`;
+  };
   return (
     <>
       <div className="flex items-center h-16 px-6 border-b border-gray-200">
@@ -58,11 +171,20 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
           <span className="font-semibold text-gray-900">pg-boss</span>
         </div>
       </div>
+
+      {databases && currentDb && onDatabaseSelect && databases.length > 1 && (
+        <DatabaseSelector
+          databases={databases}
+          currentDb={currentDb}
+          onSelect={onDatabaseSelect}
+        />
+      )}
+
       <nav className="flex-1 px-3 py-4 space-y-1">
         {navigation.map((item) => (
           <NavLink
             key={item.name}
-            to={item.href}
+            to={buildHref(item.href)}
             end={item.href === "/"}
             onClick={onNavigate}
             className={({ isActive }) =>
@@ -88,6 +210,11 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
       </nav>
       <div className="p-4 border-t border-gray-200">
         <p className="text-xs text-gray-500">pg-boss Dashboard</p>
+        {currentDb && databases && databases.length > 1 && (
+          <p className="text-xs text-gray-400 mt-1 truncate" title={currentDb.schema}>
+            Schema: {currentDb.schema}
+          </p>
+        )}
       </div>
     </>
   );
@@ -95,6 +222,29 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
 
 export function Sidebar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const rootData = useRouteLoaderData("root") as RootLoaderData | undefined;
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+
+  const databases = rootData?.databases || [];
+  const currentDb = rootData?.currentDb;
+  const dbParam = searchParams.get("db");
+
+  const handleDatabaseSelect = (db: DatabaseConfig) => {
+    // Navigate to same path with new db param
+    const params = new URLSearchParams(searchParams);
+    if (db.id === databases[0]?.id) {
+      // Remove db param for default database
+      params.delete('db');
+    } else {
+      params.set('db', db.id);
+    }
+    const newSearch = params.toString();
+    navigate({
+      pathname: window.location.pathname,
+      search: newSearch ? `?${newSearch}` : '',
+    });
+  };
 
   return (
     <>
@@ -113,6 +263,9 @@ export function Sidebar() {
             <span className="text-white font-bold text-xs">PG</span>
           </div>
           <span className="font-semibold text-gray-900">pg-boss</span>
+          {currentDb && databases.length > 1 && (
+            <span className="text-xs text-gray-400 ml-1">({currentDb.name})</span>
+          )}
         </div>
       </div>
 
@@ -137,7 +290,13 @@ export function Sidebar() {
                 <CloseIcon className="h-6 w-6" />
               </button>
             </div>
-            <SidebarContent onNavigate={() => setMobileMenuOpen(false)} />
+            <SidebarContent
+              databases={databases}
+              currentDb={currentDb}
+              onDatabaseSelect={handleDatabaseSelect}
+              onNavigate={() => setMobileMenuOpen(false)}
+              dbParam={dbParam}
+            />
           </div>
         </div>
       )}
@@ -145,7 +304,12 @@ export function Sidebar() {
       {/* Desktop sidebar */}
       <div className="hidden lg:flex lg:flex-shrink-0">
         <div className="flex flex-col w-64 border-r border-gray-200 bg-white">
-          <SidebarContent />
+          <SidebarContent
+            databases={databases}
+            currentDb={currentDb}
+            onDatabaseSelect={handleDatabaseSelect}
+            dbParam={dbParam}
+          />
         </div>
       </div>
     </>

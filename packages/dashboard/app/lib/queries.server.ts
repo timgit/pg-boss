@@ -211,6 +211,7 @@ export async function getJob (
 }
 
 // Get warnings with pagination and filtering
+// Returns empty array if warning table doesn't exist (persistWarnings not enabled)
 export async function getWarnings (
   dbUrl: string,
   schema: string,
@@ -235,7 +236,15 @@ export async function getWarnings (
     ORDER BY created_on DESC
     LIMIT $2 OFFSET $3
   `
-  return query<WarningResult>(dbUrl, sql, [type, limit, offset])
+  try {
+    return await query<WarningResult>(dbUrl, sql, [type, limit, offset])
+  } catch (err: unknown) {
+    // Table doesn't exist - persistWarnings not enabled
+    if (err && typeof err === 'object' && 'code' in err && err.code === '42P01') {
+      return []
+    }
+    throw err
+  }
 }
 
 // Delete warnings older than specified days
@@ -259,7 +268,7 @@ export async function deleteOldWarnings (
 }
 
 // Get warning count (for pagination)
-// Warning table is expected to be small, so COUNT(*) is acceptable
+// Returns 0 if warning table doesn't exist (persistWarnings not enabled)
 export async function getWarningCount (
   dbUrl: string,
   schema: string,
@@ -271,8 +280,16 @@ export async function getWarningCount (
     FROM ${s}.warning
     WHERE ($1::text IS NULL OR type = $1)
   `
-  const result = await queryOne<{ count: number }>(dbUrl, sql, [type ?? null])
-  return result?.count ?? 0
+  try {
+    const result = await queryOne<{ count: number }>(dbUrl, sql, [type ?? null])
+    return result?.count ?? 0
+  } catch (err: unknown) {
+    // Table doesn't exist - persistWarnings not enabled
+    if (err && typeof err === 'object' && 'code' in err && err.code === '42P01') {
+      return 0
+    }
+    throw err
+  }
 }
 
 // Get aggregate stats across all queues (uses cached stats, no COUNT(*))

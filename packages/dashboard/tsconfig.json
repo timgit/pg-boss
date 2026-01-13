@@ -8,6 +8,7 @@
     "types": ["node", "vite/client"],
     "target": "ES2022",
     "module": "ES2022",
+    "allowImportingTsExtensions": true,
     "moduleResolution": "bundler",
     "jsx": "react-jsx",
     "strict": true,

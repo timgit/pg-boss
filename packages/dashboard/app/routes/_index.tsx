@@ -1,4 +1,4 @@
-import { Link } from "react-router";
+import { DbLink } from "~/components/db-link";
 import type { Route } from "./+types/_index";
 import {
   getQueues,
@@ -62,7 +62,7 @@ export default function Overview({ loaderData }: Route.ComponentProps) {
               <ul className="space-y-3">
                 {problemQueues.map((queue: QueueResult) => (
                   <li key={queue.name}>
-                    <Link
+                    <DbLink
                       to={`/queues/${encodeURIComponent(queue.name)}`}
                       className="flex items-center justify-between p-3 bg-error-50 rounded-lg hover:bg-error-100 transition-colors"
                     >
@@ -73,7 +73,7 @@ export default function Overview({ loaderData }: Route.ComponentProps) {
                         </p>
                       </div>
                       <Badge variant="error">High Backlog</Badge>
-                    </Link>
+                    </DbLink>
                   </li>
                 ))}
               </ul>
@@ -85,12 +85,12 @@ export default function Overview({ loaderData }: Route.ComponentProps) {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle>Recent Warnings</CardTitle>
-            <Link
+            <DbLink
               to="/warnings"
               className="text-sm font-medium text-primary-600 hover:text-primary-700"
             >
               View all
-            </Link>
+            </DbLink>
           </CardHeader>
           <CardContent>
             {warnings.length === 0 ? (
@@ -133,12 +133,12 @@ export default function Overview({ loaderData }: Route.ComponentProps) {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>All Queues ({stats.queueCount})</CardTitle>
-          <Link
+          <DbLink
             to="/queues"
             className="text-sm font-medium text-primary-600 hover:text-primary-700"
           >
             View all
-          </Link>
+          </DbLink>
         </CardHeader>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
@@ -166,12 +166,12 @@ export default function Overview({ loaderData }: Route.ComponentProps) {
                 {queues.map((queue: QueueResult) => (
                   <tr key={queue.name} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <Link
+                      <DbLink
                         to={`/queues/${encodeURIComponent(queue.name)}`}
                         className="text-sm font-medium text-primary-600 hover:text-primary-700"
                       >
                         {queue.name}
-                      </Link>
+                      </DbLink>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <Badge variant="gray" size="sm">

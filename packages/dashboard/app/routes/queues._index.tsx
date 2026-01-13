@@ -1,4 +1,5 @@
-import { Link, useSearchParams } from "react-router";
+import { useSearchParams } from "react-router";
+import { DbLink } from "~/components/db-link";
 import type { Route } from "./+types/queues._index";
 import { getQueues, getQueueCount } from "~/lib/queries.server";
 import { Card, CardHeader, CardTitle, CardContent } from "~/components/ui/card";
@@ -42,12 +43,12 @@ export function ErrorBoundary() {
           <p className="text-gray-500 text-sm mt-1">
             Please check your database connection and try again.
           </p>
-          <Link
+          <DbLink
             to="/"
             className="inline-block mt-4 text-primary-600 hover:text-primary-700"
           >
             Back to Dashboard
-          </Link>
+          </DbLink>
         </CardContent>
       </Card>
     </div>
@@ -104,12 +105,12 @@ export default function QueuesIndex({ loaderData }: Route.ComponentProps) {
                   return (
                     <TableRow key={queue.name}>
                       <TableCell>
-                        <Link
+                        <DbLink
                           to={`/queues/${encodeURIComponent(queue.name)}`}
                           className="font-medium text-primary-600 hover:text-primary-700"
                         >
                           {queue.name}
-                        </Link>
+                        </DbLink>
                       </TableCell>
                       <TableCell>
                         <Badge variant="gray" size="sm">

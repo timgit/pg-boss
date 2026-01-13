@@ -1,4 +1,4 @@
-import { Link } from "react-router";
+import { DbLink } from "./db-link";
 import { Card, CardContent } from "./ui/card";
 
 interface ErrorCardProps {
@@ -22,12 +22,12 @@ export function ErrorCard({
           <p className="text-error-600 font-medium">{title}</p>
           <p className="text-gray-500 text-sm mt-1">{message}</p>
           {backTo && (
-            <Link
+            <DbLink
               to={backTo.href}
               className="inline-block mt-4 text-primary-600 hover:text-primary-700"
             >
               {backTo.label}
-            </Link>
+            </DbLink>
           )}
         </CardContent>
       </Card>
