@@ -264,7 +264,7 @@ export async function getWarnings (
 }
 
 // Delete warnings older than specified days
-// Returns the number of deleted warnings
+// Returns the number of deleted warnings, or 0 if warning table doesn't exist
 export async function deleteOldWarnings (
   dbUrl: string,
   schema: string,
@@ -279,8 +279,16 @@ export async function deleteOldWarnings (
     )
     SELECT COUNT(*)::int as count FROM deleted
   `
-  const result = await queryOne<{ count: number }>(dbUrl, sql, [olderThanDays])
-  return result?.count ?? 0
+  try {
+    const result = await queryOne<{ count: number }>(dbUrl, sql, [olderThanDays])
+    return result?.count ?? 0
+  } catch (err: unknown) {
+    // Table doesn't exist - persistWarnings not enabled
+    if (err && typeof err === 'object' && 'code' in err && err.code === '42P01') {
+      return 0
+    }
+    throw err
+  }
 }
 
 // Get warning count (for pagination)

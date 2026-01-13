@@ -57,6 +57,9 @@ function create (schema: string, version: number, options?: { createSchema?: boo
     createPrimaryKeyJob(schema),
     createTableJobCommon(schema, COMMON_JOB_TABLE),
 
+    createTableWarning(schema),
+    createIndexWarning(schema),
+
     createQueueFunction(schema),
     deleteQueueFunction(schema),
 

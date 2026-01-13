@@ -27,9 +27,12 @@
     "build": "react-router build",
     "start": "node ./build/server/index.js",
     "prepublishOnly": "npm run build",
-    "test": "vitest",
-    "test:db": "vitest --config vitest.config.db.ts",
-    "test:all": "vitest && vitest --config vitest.config.db.ts",
+    "test": "vitest run",
+    "test:server": "vitest run --config vitest.config.server.ts",
+    "test:all": "npm run test && npm run test:server",
+    "cover:frontend": "vitest run --coverage",
+    "cover:server": "vitest run --coverage --config vitest.config.server.ts",
+    "cover:all": "npm run cover && npm run cover:server",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -56,6 +59,7 @@
     "@types/react": "^19.2.8",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^4.7.0",
+    "@vitest/coverage-v8": "^4.0.17",
     "cross-env": "^10.1.0",
     "jsdom": "^25.0.1",
     "tailwindcss": "^4.1.18",
