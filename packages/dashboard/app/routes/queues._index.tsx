@@ -13,6 +13,7 @@ import {
   TableCell,
 } from "~/components/ui/table";
 import { formatTimeAgo, parsePageNumber } from "~/lib/utils";
+import type { QueueResult } from "~/lib/types";
 
 export async function loader({ request, context }: Route.LoaderArgs) {
   const url = new URL(request.url);
@@ -95,7 +96,7 @@ export default function QueuesIndex({ loaderData }: Route.ComponentProps) {
                   </TableCell>
                 </TableRow>
               ) : (
-                queues.map((queue) => {
+                queues.map((queue: QueueResult) => {
                   const hasBacklog =
                     queue.warningQueued > 0 &&
                     queue.queuedCount > queue.warningQueued;

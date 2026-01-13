@@ -9,7 +9,13 @@ import {
 import { StatsCards } from "~/components/stats-cards";
 import { Card, CardHeader, CardTitle, CardContent } from "~/components/ui/card";
 import { Badge } from "~/components/ui/badge";
-import { formatTimeAgo } from "~/lib/utils";
+import { ErrorCard } from "~/components/error-card";
+import {
+  formatTimeAgo,
+  WARNING_TYPE_VARIANTS,
+  WARNING_TYPE_LABELS,
+} from "~/lib/utils";
+import type { WarningType, QueueResult, WarningResult } from "~/lib/types";
 
 export async function loader({ context }: Route.LoaderArgs) {
   // Fetch data in parallel, limiting queues to what we'll display
@@ -24,18 +30,7 @@ export async function loader({ context }: Route.LoaderArgs) {
 }
 
 export function ErrorBoundary() {
-  return (
-    <div className="p-6">
-      <Card>
-        <CardContent className="py-8 text-center">
-          <p className="text-error-600 font-medium">Failed to load dashboard</p>
-          <p className="text-gray-500 text-sm mt-1">
-            Please check your database connection and try again.
-          </p>
-        </CardContent>
-      </Card>
-    </div>
-  );
+  return <ErrorCard title="Failed to load dashboard" />;
 }
 
 export default function Overview({ loaderData }: Route.ComponentProps) {
@@ -65,7 +60,7 @@ export default function Overview({ loaderData }: Route.ComponentProps) {
               </p>
             ) : (
               <ul className="space-y-3">
-                {problemQueues.map((queue) => (
+                {problemQueues.map((queue: QueueResult) => (
                   <li key={queue.name}>
                     <Link
                       to={`/queues/${encodeURIComponent(queue.name)}`}
@@ -104,7 +99,7 @@ export default function Overview({ loaderData }: Route.ComponentProps) {
               </p>
             ) : (
               <ul className="space-y-3">
-                {warnings.map((warning) => (
+                {warnings.map((warning: WarningResult) => (
                   <li
                     key={warning.id}
                     className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg"
@@ -113,16 +108,10 @@ export default function Overview({ loaderData }: Route.ComponentProps) {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
                         <Badge
-                          variant={
-                            warning.type === "slow_query"
-                              ? "warning"
-                              : warning.type === "queue_backlog"
-                                ? "error"
-                                : "gray"
-                          }
+                          variant={WARNING_TYPE_VARIANTS[warning.type as WarningType]}
                           size="sm"
                         >
-                          {warning.type.replace("_", " ")}
+                          {WARNING_TYPE_LABELS[warning.type as WarningType]}
                         </Badge>
                         <span className="text-xs text-gray-400">
                           {formatTimeAgo(new Date(warning.createdOn))}
@@ -174,7 +163,7 @@ export default function Overview({ loaderData }: Route.ComponentProps) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200 bg-white">
-                {queues.map((queue) => (
+                {queues.map((queue: QueueResult) => (
                   <tr key={queue.name} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap">
                       <Link

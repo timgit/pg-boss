@@ -20,18 +20,17 @@ import {
   TableHead,
   TableCell,
 } from "~/components/ui/table";
+import { Pagination } from "~/components/ui/pagination";
+import { FilterSelect } from "~/components/ui/filter-select";
+import { ErrorCard } from "~/components/error-card";
 import type { JobState, JobResult } from "~/lib/types";
-import { parsePageNumber, isValidJobState, JOB_STATES, formatDate } from "~/lib/utils";
-
-const JOB_STATE_OPTIONS: { value: string | null; label: string }[] = [
-  { value: null, label: "All States" },
-  { value: "created", label: "Created" },
-  { value: "retry", label: "Retry" },
-  { value: "active", label: "Active" },
-  { value: "completed", label: "Completed" },
-  { value: "cancelled", label: "Cancelled" },
-  { value: "failed", label: "Failed" },
-];
+import {
+  parsePageNumber,
+  isValidJobState,
+  formatDate,
+  JOB_STATE_OPTIONS,
+  JOB_STATE_VARIANTS,
+} from "~/lib/utils";
 
 export async function loader({ params, request, context }: Route.LoaderArgs) {
   const url = new URL(request.url);
@@ -123,22 +122,10 @@ export async function action({ params, request, context }: Route.ActionArgs) {
 
 export function ErrorBoundary() {
   return (
-    <div className="p-6">
-      <Card>
-        <CardContent className="py-8 text-center">
-          <p className="text-error-600 font-medium">Failed to load queue</p>
-          <p className="text-gray-500 text-sm mt-1">
-            Please check your database connection and try again.
-          </p>
-          <Link
-            to="/queues"
-            className="inline-block mt-4 text-primary-600 hover:text-primary-700"
-          >
-            Back to Queues
-          </Link>
-        </CardContent>
-      </Card>
-    </div>
+    <ErrorCard
+      title="Failed to load queue"
+      backTo={{ href: "/queues", label: "Back to Queues" }}
+    />
   );
 }
 
@@ -155,12 +142,12 @@ export default function QueueDetail({ loaderData }: Route.ComponentProps) {
   } = loaderData;
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const handleStateChange = (value: string | null) => {
+  const handleFilterChange = (key: string, value: string | null) => {
     const params = new URLSearchParams(searchParams);
     if (value) {
-      params.set("state", value);
+      params.set(key, value);
     } else {
-      params.delete("state");
+      params.delete(key);
     }
     params.delete("page");
     setSearchParams(params);
@@ -207,19 +194,11 @@ export default function QueueDetail({ loaderData }: Route.ComponentProps) {
             Jobs
             {totalCount !== null && ` (${totalCount.toLocaleString()})`}
           </CardTitle>
-          <div className="flex items-center gap-2">
-            <select
-              value={stateFilter || ""}
-              onChange={(e) => handleStateChange(e.target.value || null)}
-              className="px-3 py-2 text-sm bg-white border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-primary-600 focus:ring-offset-2"
-            >
-              {JOB_STATE_OPTIONS.map((state) => (
-                <option key={state.label} value={state.value || ""}>
-                  {state.label}
-                </option>
-              ))}
-            </select>
-          </div>
+          <FilterSelect
+            value={stateFilter}
+            options={JOB_STATE_OPTIONS}
+            onChange={(value) => handleFilterChange("state", value)}
+          />
         </CardHeader>
         <CardContent className="p-0">
           <Table>
@@ -241,7 +220,7 @@ export default function QueueDetail({ loaderData }: Route.ComponentProps) {
                   </TableCell>
                 </TableRow>
               ) : (
-                jobs.map((job) => (
+                jobs.map((job: JobResult) => (
                   <JobRow key={job.id} job={job} queueName={queue.name} />
                 ))
               )}
@@ -249,33 +228,13 @@ export default function QueueDetail({ loaderData }: Route.ComponentProps) {
           </Table>
         </CardContent>
 
-        {/* Pagination */}
-        {(hasPrevPage || hasNextPage) && (
-          <div className="flex items-center justify-between px-6 py-4 border-t border-gray-200">
-            <div className="text-sm text-gray-500">
-              Page {page}
-              {totalPages !== null && ` of ${totalPages}`}
-            </div>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onPress={() => handlePageChange(page - 1)}
-                isDisabled={!hasPrevPage}
-              >
-                Previous
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onPress={() => handlePageChange(page + 1)}
-                isDisabled={!hasNextPage}
-              >
-                Next
-              </Button>
-            </div>
-          </div>
-        )}
+        <Pagination
+          page={page}
+          totalPages={totalPages}
+          hasNextPage={hasNextPage}
+          hasPrevPage={hasPrevPage}
+          onPageChange={handlePageChange}
+        />
       </Card>
     </div>
   );
@@ -371,17 +330,8 @@ function JobRow({
 }
 
 function JobStateBadge({ state }: { state: JobState }) {
-  const variants: Record<JobState, "gray" | "primary" | "success" | "warning" | "error"> = {
-    created: "gray",
-    retry: "warning",
-    active: "primary",
-    completed: "success",
-    cancelled: "gray",
-    failed: "error",
-  };
-
   return (
-    <Badge variant={variants[state]} size="sm">
+    <Badge variant={JOB_STATE_VARIANTS[state]} size="sm">
       {state}
     </Badge>
   );

@@ -68,6 +68,27 @@ export function isValidJobState (value: string | null): value is JobStateValue |
   return JOB_STATES.includes(value as JobStateValue)
 }
 
+// Badge variant mappings for job states
+type BadgeVariant = 'gray' | 'primary' | 'success' | 'warning' | 'error'
+
+export const JOB_STATE_VARIANTS: Record<JobStateValue, BadgeVariant> = {
+  created: 'gray',
+  retry: 'warning',
+  active: 'primary',
+  completed: 'success',
+  cancelled: 'gray',
+  failed: 'error',
+}
+
+// Filter options for job states (for dropdowns)
+export const JOB_STATE_OPTIONS: { value: JobStateValue | null; label: string }[] = [
+  { value: null, label: 'All States' },
+  ...JOB_STATES.map((state) => ({
+    value: state,
+    label: state.charAt(0).toUpperCase() + state.slice(1),
+  })),
+]
+
 // Valid warning types
 export const WARNING_TYPES = [
   'slow_query',
@@ -83,4 +104,49 @@ export type WarningTypeValue = (typeof WARNING_TYPES)[number]
 export function isValidWarningType (value: string | null): value is WarningTypeValue | null {
   if (value === null) return true
   return WARNING_TYPES.includes(value as WarningTypeValue)
+}
+
+// Badge variant mappings for warning types
+export const WARNING_TYPE_VARIANTS: Record<WarningTypeValue, BadgeVariant> = {
+  slow_query: 'warning',
+  queue_backlog: 'error',
+  clock_skew: 'gray',
+}
+
+// Human-readable labels for warning types
+export const WARNING_TYPE_LABELS: Record<WarningTypeValue, string> = {
+  slow_query: 'Slow Query',
+  queue_backlog: 'Queue Backlog',
+  clock_skew: 'Clock Skew',
+}
+
+// Filter options for warning types (for dropdowns)
+export const WARNING_TYPE_OPTIONS: { value: WarningTypeValue | null; label: string }[] = [
+  { value: null, label: 'All Types' },
+  ...WARNING_TYPES.map((type) => ({
+    value: type,
+    label: WARNING_TYPE_LABELS[type],
+  })),
+]
+
+/**
+ * Format warning data for display
+ */
+export function formatWarningData (data: unknown): string {
+  if (!data) return '-'
+  if (typeof data === 'string') return data
+  try {
+    const obj = data as Record<string, unknown>
+    const parts: string[] = []
+
+    if (obj.elapsed) parts.push(`${(obj.elapsed as number).toFixed(2)}s`)
+    if (obj.name) parts.push(`queue: ${obj.name}`)
+    if (obj.queuedCount) parts.push(`queued: ${obj.queuedCount}`)
+    if (obj.seconds) parts.push(`skew: ${(obj.seconds as number).toFixed(1)}s`)
+    if (obj.direction) parts.push(`(${obj.direction})`)
+
+    return parts.length > 0 ? parts.join(', ') : JSON.stringify(data)
+  } catch {
+    return String(data)
+  }
 }
