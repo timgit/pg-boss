@@ -1,7 +1,6 @@
 import { DbLink } from "~/components/db-link";
 import type { Route } from "./+types/_index";
 import {
-  getQueues,
   getWarnings,
   getAggregateStats,
   getProblemQueues,
@@ -18,15 +17,13 @@ import {
 import type { WarningType, QueueResult, WarningResult } from "~/lib/types";
 
 export async function loader({ context }: Route.LoaderArgs) {
-  // Fetch data in parallel, limiting queues to what we'll display
-  const [queues, warnings, stats, problemQueues] = await Promise.all([
-    getQueues(context.DB_URL, context.SCHEMA, { limit: 10 }), // Only fetch first 10 for overview
+  const [warnings, stats, problemQueues] = await Promise.all([
     getWarnings(context.DB_URL, context.SCHEMA, { limit: 5 }),
     getAggregateStats(context.DB_URL, context.SCHEMA),
-    getProblemQueues(context.DB_URL, context.SCHEMA, 5), // Get top 5 problem queues
+    getProblemQueues(context.DB_URL, context.SCHEMA, 5),
   ]);
 
-  return { stats, queues, warnings, problemQueues };
+  return { stats, warnings, problemQueues };
 }
 
 export function ErrorBoundary() {
@@ -34,7 +31,7 @@ export function ErrorBoundary() {
 }
 
 export default function Overview({ loaderData }: Route.ComponentProps) {
-  const { stats, queues, warnings, problemQueues } = loaderData;
+  const { stats, warnings, problemQueues } = loaderData;
 
   return (
     <div className="space-y-8">
@@ -128,72 +125,6 @@ export default function Overview({ loaderData }: Route.ComponentProps) {
           </CardContent>
         </Card>
       </div>
-
-      {/* Queues Overview */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>All Queues ({stats.queueCount})</CardTitle>
-          <DbLink
-            to="/queues"
-            className="text-sm font-medium text-primary-600 hover:text-primary-700"
-          >
-            View all
-          </DbLink>
-        </CardHeader>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                    Name
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                    Policy
-                  </th>
-                  <th className="px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                    Queued
-                  </th>
-                  <th className="px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                    Active
-                  </th>
-                  <th className="px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                    Total
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200 bg-white">
-                {queues.map((queue: QueueResult) => (
-                  <tr key={queue.name} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <DbLink
-                        to={`/queues/${encodeURIComponent(queue.name)}`}
-                        className="text-sm font-medium text-primary-600 hover:text-primary-700"
-                      >
-                        {queue.name}
-                      </DbLink>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <Badge variant="gray" size="sm">
-                        {queue.policy}
-                      </Badge>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm text-gray-700">
-                      {queue.queuedCount.toLocaleString()}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm text-gray-700">
-                      {queue.activeCount.toLocaleString()}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm text-gray-700">
-                      {queue.totalCount.toLocaleString()}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </CardContent>
-      </Card>
     </div>
   );
 }

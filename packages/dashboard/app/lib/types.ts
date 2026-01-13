@@ -34,24 +34,25 @@ export type JobState =
 export interface JobResult {
   id: string;
   name: string;
-  data: unknown;
   state: JobState;
   priority: number;
   retryCount: number;
   retryLimit: number;
-  retryDelay: number;
-  retryBackoff: boolean;
   startAfter: Date;
   startedOn: Date | null;
   completedOn: Date | null;
   createdOn: Date;
-  keepUntil: Date;
-  output: unknown;
   singletonKey: string | null;
-  groupId: string | null;
-  groupTier: string | null;
-  deadLetter: string | null;
-  policy: string | null;
+  // Fields only included in detail view (fetched on demand)
+  data?: unknown;
+  output?: unknown;
+  retryDelay?: number;
+  retryBackoff?: boolean;
+  keepUntil?: Date;
+  groupId?: string | null;
+  groupTier?: string | null;
+  deadLetter?: string | null;
+  policy?: string | null;
 }
 
 export type WarningType = 'slow_query' | 'queue_backlog' | 'clock_skew'

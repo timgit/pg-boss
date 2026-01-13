@@ -1,12 +1,15 @@
+import { useState } from "react";
 import { useFetcher, useSearchParams } from "react-router";
 import { DbLink } from "~/components/db-link";
 import type { Route } from "./+types/queues.$name";
 import {
   getQueue,
   getJobs,
+  getJob,
   getJobCountFromQueue,
   cancelJob,
   retryJob,
+  resumeJob,
   deleteJob,
   isValidIntent,
 } from "~/lib/queries.server";
@@ -23,6 +26,8 @@ import {
 } from "~/components/ui/table";
 import { Pagination } from "~/components/ui/pagination";
 import { FilterSelect } from "~/components/ui/filter-select";
+import { ConfirmDialog } from "~/components/ui/confirm-dialog";
+import { JobDetailDialog } from "~/components/job-detail-dialog";
 import { ErrorCard } from "~/components/error-card";
 import type { JobState, JobResult } from "~/lib/types";
 import {
@@ -90,6 +95,19 @@ export async function action({ params, request, context }: Route.ActionArgs) {
     return { error: "Invalid action", affected: 0 };
   }
 
+  // Handle view intent separately - returns job data instead of affected count
+  if (intent === "view") {
+    try {
+      const job = await getJob(context.DB_URL, context.SCHEMA, params.name, jobId);
+      if (!job) {
+        return { error: "Job not found", job: null };
+      }
+      return { job };
+    } catch (err) {
+      return { error: "Database error occurred", job: null };
+    }
+  }
+
   let affected = 0;
   let message = "";
 
@@ -106,6 +124,12 @@ export async function action({ params, request, context }: Route.ActionArgs) {
         message = affected > 0
           ? "Job queued for retry"
           : "Job could not be retried (only failed jobs can be retried)";
+        break;
+      case "resume":
+        affected = await resumeJob(context.DB_URL, context.SCHEMA, params.name, jobId);
+        message = affected > 0
+          ? "Job resumed"
+          : "Job could not be resumed (only cancelled jobs can be resumed)";
         break;
       case "delete":
         affected = await deleteJob(context.DB_URL, context.SCHEMA, params.name, jobId);
@@ -250,15 +274,32 @@ function JobRow({
 }) {
   const fetcher = useFetcher<{ success?: boolean; affected?: number; message?: string; error?: string }>();
   const isLoading = fetcher.state !== "idle";
+  const [copied, setCopied] = useState(false);
 
   // Show feedback after action completes
   const actionResult = fetcher.data;
   const showError = actionResult && !actionResult.success && actionResult.affected === 0;
 
+  const submitAction = (intent: string) => {
+    fetcher.submit({ jobId: job.id, intent }, { method: "post" });
+  };
+
+  const copyId = async () => {
+    await navigator.clipboard.writeText(job.id);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   return (
     <TableRow>
-      <TableCell className="font-mono text-xs text-gray-600">
-        {job.id.slice(0, 8)}...
+      <TableCell>
+        <button
+          onClick={copyId}
+          className="font-mono text-xs text-gray-600 hover:text-primary-600 cursor-pointer"
+          title="Click to copy full ID"
+        >
+          {copied ? "Copied!" : `${job.id.slice(0, 8)}...`}
+        </button>
       </TableCell>
       <TableCell>
         <JobStateBadge state={job.state} />
@@ -272,57 +313,61 @@ function JobRow({
       </TableCell>
       <TableCell>
         <div className="flex items-center gap-2">
+          {/* View job details */}
+          <JobDetailDialog jobId={job.id} jobState={job.state} />
           {/* Show error message if action failed */}
           {showError && (
             <span className="text-xs text-warning-600" title={actionResult.message}>
               Action failed
             </span>
           )}
+          {/* Cancel - for created, retry, or active jobs */}
           {(job.state === "created" ||
             job.state === "retry" ||
             job.state === "active") && (
-            <fetcher.Form method="post">
-              <input type="hidden" name="jobId" value={job.id} />
-              <input type="hidden" name="intent" value="cancel" />
-              <Button
-                type="submit"
-                variant="ghost"
-                size="sm"
-                isDisabled={isLoading}
-              >
-                Cancel
-              </Button>
-            </fetcher.Form>
+            <ConfirmDialog
+              title="Cancel Job"
+              description={`Are you sure you want to cancel job ${job.id.slice(0, 8)}...? This will stop the job from being processed.`}
+              confirmLabel="Cancel Job"
+              confirmVariant="danger"
+              trigger="Cancel"
+              onConfirm={() => submitAction("cancel")}
+              isDisabled={isLoading}
+            />
           )}
+          {/* Retry - for failed jobs */}
           {job.state === "failed" && (
-            <fetcher.Form method="post">
-              <input type="hidden" name="jobId" value={job.id} />
-              <input type="hidden" name="intent" value="retry" />
-              <Button
-                type="submit"
-                variant="ghost"
-                size="sm"
-                isDisabled={isLoading}
-              >
-                Retry
-              </Button>
-            </fetcher.Form>
+            <Button
+              variant="ghost"
+              size="sm"
+              isDisabled={isLoading}
+              onPress={() => submitAction("retry")}
+            >
+              Retry
+            </Button>
           )}
-          {/* Only show delete for non-active jobs */}
+          {/* Resume - for cancelled jobs */}
+          {job.state === "cancelled" && (
+            <Button
+              variant="ghost"
+              size="sm"
+              isDisabled={isLoading}
+              onPress={() => submitAction("resume")}
+            >
+              Resume
+            </Button>
+          )}
+          {/* Delete - for non-active jobs */}
           {job.state !== "active" && (
-            <fetcher.Form method="post">
-              <input type="hidden" name="jobId" value={job.id} />
-              <input type="hidden" name="intent" value="delete" />
-              <Button
-                type="submit"
-                variant="ghost"
-                size="sm"
-                className="text-error-600 hover:text-error-700 hover:bg-error-50"
-                isDisabled={isLoading}
-              >
-                Delete
-              </Button>
-            </fetcher.Form>
+            <ConfirmDialog
+              title="Delete Job"
+              description={`Are you sure you want to delete job ${job.id.slice(0, 8)}...? This action cannot be undone.`}
+              confirmLabel="Delete"
+              confirmVariant="danger"
+              trigger="Delete"
+              onConfirm={() => submitAction("delete")}
+              isDisabled={isLoading}
+            />
           )}
         </div>
       </TableCell>

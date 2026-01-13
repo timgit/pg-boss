@@ -40,6 +40,7 @@ const QUEUE_COLUMNS = `
   updated_on as "updatedOn"
 `
 
+// Full job columns for single job detail view
 const JOB_COLUMNS = `
   id,
   name,
@@ -61,6 +62,21 @@ const JOB_COLUMNS = `
   group_tier as "groupTier",
   dead_letter as "deadLetter",
   policy
+`
+
+// Lightweight columns for job list (excludes data and output to save memory)
+const JOB_LIST_COLUMNS = `
+  id,
+  name,
+  state,
+  priority,
+  retry_count as "retryCount",
+  retry_limit as "retryLimit",
+  start_after as "startAfter",
+  started_on as "startedOn",
+  completed_on as "completedOn",
+  created_on as "createdOn",
+  singleton_key as "singletonKey"
 `
 
 // Get queues with cached stats, with optional pagination
@@ -141,7 +157,7 @@ export async function getQueue (
 }
 
 // Get jobs for a queue with pagination and filtering
-// NOTE: We intentionally query the job table here because we need the actual job data.
+// Uses lightweight columns to avoid loading large payloads
 // For counts, we use cached stats from the queue table instead of COUNT(*).
 export async function getJobs (
   dbUrl: string,
@@ -157,7 +173,7 @@ export async function getJobs (
   const { state = null, limit = 50, offset = 0 } = options
 
   const sql = `
-    SELECT ${JOB_COLUMNS}
+    SELECT ${JOB_LIST_COLUMNS}
     FROM ${s}.job
     WHERE name = $1
     AND ($2::text IS NULL OR state = $2::${s}.job_state)
@@ -320,7 +336,7 @@ export async function getAggregateStats (
 }
 
 // Valid intents for job actions
-const VALID_INTENTS = ['cancel', 'retry', 'delete'] as const
+const VALID_INTENTS = ['cancel', 'retry', 'resume', 'delete', 'view'] as const
 type JobActionIntent = (typeof VALID_INTENTS)[number]
 
 export function isValidIntent (intent: unknown): intent is JobActionIntent {
@@ -378,6 +394,35 @@ export async function retryJob (
       WHERE name = $1
         AND id = $2
         AND state = 'failed'
+      RETURNING 1
+    )
+    SELECT COUNT(*)::int as count FROM results
+  `
+  const result = await queryOne<{ count: number }>(dbUrl, sql, [
+    queueName,
+    jobId,
+  ])
+  return result?.count ?? 0
+}
+
+// Resume a cancelled job
+// Sets state back to 'created' so it will be picked up again
+export async function resumeJob (
+  dbUrl: string,
+  schema: string,
+  queueName: string,
+  jobId: string
+): Promise<number> {
+  const s = validateIdentifier(schema)
+  const sql = `
+    WITH results as (
+      UPDATE ${s}.job
+      SET state = 'created',
+        completed_on = NULL,
+        started_on = NULL
+      WHERE name = $1
+        AND id = $2
+        AND state = 'cancelled'
       RETURNING 1
     )
     SELECT COUNT(*)::int as count FROM results

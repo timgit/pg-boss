@@ -1,6 +1,7 @@
 /**
  * Initialize development database with pg-boss schema and test queues
  */
+import { setTimeout } from 'node:timers/promises'
 import { PgBoss } from '../../../src/index.ts'
 
 const connectionString = process.env.DATABASE_URL || 'postgres://postgres:postgres@127.0.0.1:5432/pgboss'
@@ -12,6 +13,9 @@ async function main () {
   const boss = new PgBoss({
     connectionString,
     schema,
+    supervise: true,
+    superviseIntervalSeconds: 1, // Fast supervisor loop for dev setup
+    monitorIntervalSeconds: 1, // Fast monitoring for dev setup
   })
 
   boss.on('error', (err) => console.error('pg-boss error:', err.message))
@@ -25,6 +29,7 @@ async function main () {
     { name: 'report-generation', options: { policy: 'singleton' } },
     { name: 'user-sync', options: { policy: 'stately' } },
     { name: 'cleanup-tasks', options: { policy: 'short', expireInSeconds: 60 } },
+    { name: 'tenant-jobs', options: { policy: 'standard' } },
   ]
 
   for (const { name, options } of queues) {
@@ -39,7 +44,19 @@ async function main () {
   await boss.send('report-generation', { reportType: 'monthly', month: 'January' })
   await boss.send('cleanup-tasks', { target: 'temp-files' })
 
-  console.log('  Added sample jobs to queues')
+  // Add grouped jobs (jobs belonging to different tenants/groups)
+  await boss.send('tenant-jobs', { action: 'sync-users' }, { group: { id: 'tenant-acme' } })
+  await boss.send('tenant-jobs', { action: 'sync-products' }, { group: { id: 'tenant-acme' } })
+  await boss.send('tenant-jobs', { action: 'generate-invoice' }, { group: { id: 'tenant-acme', tier: 'premium' } })
+  await boss.send('tenant-jobs', { action: 'sync-users' }, { group: { id: 'tenant-globex' } })
+  await boss.send('tenant-jobs', { action: 'sync-inventory' }, { group: { id: 'tenant-globex', tier: 'standard' } })
+  await boss.send('tenant-jobs', { action: 'backup-data' }, { group: { id: 'tenant-initech', tier: 'basic' } })
+
+  console.log('  Added sample jobs to queues (including grouped jobs)')
+
+  // Wait for monitor to update queue stats (monitor runs every 1s, need at least one cycle)
+  console.log('  Waiting for stats to update...')
+  await setTimeout(3000)
 
   await boss.stop()
 
