@@ -52,6 +52,7 @@ export interface MaintenanceOptions {
   maintenanceIntervalSeconds?: number;
   queueCacheIntervalSeconds?: number;
   monitorIntervalSeconds?: number;
+  persistWarnings?: boolean;
 }
 
 export interface Migration {
@@ -311,6 +312,16 @@ export interface FunctionsMixin {
 export type UpdateQueueOptions = Omit<Queue, 'name' | 'partition' | 'policy'>
 
 export interface Warning { message: string, data: object }
+
+export type WarningType = 'slow_query' | 'queue_backlog' | 'clock_skew'
+
+export interface PersistedWarning {
+  id: number;
+  type: WarningType;
+  message: string;
+  data: object;
+  createdOn: Date;
+}
 
 export interface CommandResponse {
   /** @internal */

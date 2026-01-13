@@ -1,0 +1,187 @@
+import { Link, useSearchParams } from "react-router";
+import type { Route } from "./+types/queues._index";
+import { getQueues, getQueueCount } from "~/lib/queries.server";
+import { Card, CardHeader, CardTitle, CardContent } from "~/components/ui/card";
+import { Badge } from "~/components/ui/badge";
+import { Button } from "~/components/ui/button";
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from "~/components/ui/table";
+import { formatTimeAgo, parsePageNumber } from "~/lib/utils";
+
+export async function loader({ request, context }: Route.LoaderArgs) {
+  const url = new URL(request.url);
+  const page = parsePageNumber(url.searchParams.get("page"));
+  const limit = 50;
+  const offset = (page - 1) * limit;
+
+  const [queues, totalCount] = await Promise.all([
+    getQueues(context.DB_URL, context.SCHEMA, { limit, offset }),
+    getQueueCount(context.DB_URL, context.SCHEMA),
+  ]);
+
+  const totalPages = Math.ceil(totalCount / limit);
+  const hasNextPage = queues.length === limit;
+  const hasPrevPage = page > 1;
+
+  return { queues, totalCount, page, totalPages, hasNextPage, hasPrevPage };
+}
+
+export function ErrorBoundary() {
+  return (
+    <div className="p-6">
+      <Card>
+        <CardContent className="py-8 text-center">
+          <p className="text-error-600 font-medium">Failed to load queues</p>
+          <p className="text-gray-500 text-sm mt-1">
+            Please check your database connection and try again.
+          </p>
+          <Link
+            to="/"
+            className="inline-block mt-4 text-primary-600 hover:text-primary-700"
+          >
+            Back to Dashboard
+          </Link>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+export default function QueuesIndex({ loaderData }: Route.ComponentProps) {
+  const { queues, totalCount, page, totalPages, hasNextPage, hasPrevPage } = loaderData;
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const handlePageChange = (newPage: number) => {
+    const params = new URLSearchParams(searchParams);
+    params.set("page", newPage.toString());
+    setSearchParams(params);
+  };
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold text-gray-900">Queues</h1>
+        <p className="mt-1 text-sm text-gray-500">
+          {totalCount.toLocaleString()} queue{totalCount !== 1 ? "s" : ""} configured
+        </p>
+      </div>
+
+      <Card>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Name</TableHead>
+                <TableHead>Policy</TableHead>
+                <TableHead className="text-right">Queued</TableHead>
+                <TableHead className="text-right">Active</TableHead>
+                <TableHead className="text-right">Deferred</TableHead>
+                <TableHead className="text-right">Total</TableHead>
+                <TableHead>Last Monitored</TableHead>
+                <TableHead>Status</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {queues.length === 0 ? (
+                <TableRow>
+                  <TableCell className="text-center text-gray-500 py-8" colSpan={8}>
+                    No queues found
+                  </TableCell>
+                </TableRow>
+              ) : (
+                queues.map((queue) => {
+                  const hasBacklog =
+                    queue.warningQueued > 0 &&
+                    queue.queuedCount > queue.warningQueued;
+
+                  return (
+                    <TableRow key={queue.name}>
+                      <TableCell>
+                        <Link
+                          to={`/queues/${encodeURIComponent(queue.name)}`}
+                          className="font-medium text-primary-600 hover:text-primary-700"
+                        >
+                          {queue.name}
+                        </Link>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="gray" size="sm">
+                          {queue.policy}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right text-gray-700">
+                        {queue.queuedCount.toLocaleString()}
+                      </TableCell>
+                      <TableCell className="text-right text-gray-700">
+                        {queue.activeCount.toLocaleString()}
+                      </TableCell>
+                      <TableCell className="text-right text-gray-700">
+                        {queue.deferredCount.toLocaleString()}
+                      </TableCell>
+                      <TableCell className="text-right text-gray-700">
+                        {queue.totalCount.toLocaleString()}
+                      </TableCell>
+                      <TableCell className="text-gray-500">
+                        {queue.monitorOn
+                          ? formatTimeAgo(new Date(queue.monitorOn))
+                          : "Never"}
+                      </TableCell>
+                      <TableCell>
+                        {hasBacklog ? (
+                          <Badge variant="error" size="sm" dot>
+                            High Backlog
+                          </Badge>
+                        ) : queue.activeCount > 0 ? (
+                          <Badge variant="success" size="sm" dot>
+                            Active
+                          </Badge>
+                        ) : (
+                          <Badge variant="gray" size="sm" dot>
+                            Idle
+                          </Badge>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between px-6 py-4 border-t border-gray-200">
+            <div className="text-sm text-gray-500">
+              Page {page} of {totalPages}
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onPress={() => handlePageChange(page - 1)}
+                isDisabled={!hasPrevPage}
+              >
+                Previous
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onPress={() => handlePageChange(page + 1)}
+                isDisabled={!hasNextPage}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}

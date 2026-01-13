@@ -1,0 +1,69 @@
+{
+  "name": "@pg-boss/dashboard",
+  "version": "0.1.0",
+  "description": "Web dashboard for monitoring and managing pg-boss job queues",
+  "keywords": [
+    "pg-boss",
+    "job-queue",
+    "background-jobs",
+    "postgresql",
+    "postgres",
+    "dashboard",
+    "monitoring",
+    "admin",
+    "task-queue",
+    "queue"
+  ],
+  "type": "module",
+  "bin": {
+    "pg-boss-dashboard": "./build/server/index.js"
+  },
+  "files": [
+    "build"
+  ],
+  "scripts": {
+    "dev": "react-router dev",
+    "build": "react-router build",
+    "start": "node ./build/server/index.js",
+    "prepublishOnly": "npm run build",
+    "test": "vitest",
+    "test:db": "vitest --config vitest.config.db.ts",
+    "test:all": "vitest && vitest --config vitest.config.db.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.19.9",
+    "@react-router/node": "^7.12.0",
+    "hono": "^4.11.4",
+    "isbot": "^5.1.32",
+    "pg": "^8.16.3",
+    "react": "^19.2.3",
+    "react-aria-components": "^1.14.0",
+    "react-dom": "^19.2.3",
+    "react-router": "^7.12.0",
+    "react-router-hono-server": "^2.22.0"
+  },
+  "devDependencies": {
+    "@react-router/dev": "^7.12.0",
+    "@tailwindcss/vite": "^4.1.18",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.1",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/node": "^22.19.6",
+    "@types/pg": "^8.16.0",
+    "@types/react": "^19.2.8",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^4.7.0",
+    "jsdom": "^25.0.1",
+    "tailwindcss": "^4.1.18",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.1",
+    "vitest": "^4.0.17"
+  },
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/timgit/pg-boss/issues"
+  },
+  "homepage": "https://timgit.github.io/pg-boss"
+}

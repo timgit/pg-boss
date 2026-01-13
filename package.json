@@ -33,6 +33,7 @@
     "prepublishOnly": "npm test && npm run build",
     "postpublish": "npm run clean",
     "test": "eslint . && vitest run",
+    "lint:fix": "eslint . --fix",
     "cover": "vitest run --coverage",
     "tsc": "tsc --noEmit",
     "readme": "node ./examples/readme.js",
@@ -40,7 +41,7 @@
     "db:construct": "node --import=tsx -e 'console.log(require(\"./src\").getConstructionPlans())'"
   },
   "pgboss": {
-    "schema": 27
+    "schema": 28
   },
   "repository": {
     "type": "git",
