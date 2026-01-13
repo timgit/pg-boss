@@ -792,9 +792,9 @@ function insertJob (schema) {
       singleton_on,
       COALESCE(j.dead_letter, q.dead_letter) as dead_letter,
       CASE
-        WHEN expire_in IS NOT NULL THEN CAST(expire_in as interval)
+        WHEN expire_in IS NOT NULL THEN expire_in::numeric * interval '1s'
         WHEN q.expire_seconds IS NOT NULL THEN q.expire_seconds * interval '1s'
-        WHEN expire_in_default IS NOT NULL THEN CAST(expire_in_default as interval)
+        WHEN expire_in_default IS NOT NULL THEN expire_in_default::numeric * interval '1s'
         ELSE interval '15 minutes'
         END as expire_in,
       CASE
@@ -880,9 +880,9 @@ function insertJobs (schema) {
         END as singleton_on,
       COALESCE("deadLetter", q.dead_letter) as dead_letter,
       CASE
-        WHEN "expireInSeconds" IS NOT NULL THEN "expireInSeconds" *  interval '1s'
+        WHEN "expireInSeconds" IS NOT NULL THEN "expireInSeconds"::numeric * interval '1s'
         WHEN q.expire_seconds IS NOT NULL THEN q.expire_seconds * interval '1s'
-        WHEN defaults.expire_in IS NOT NULL THEN CAST(defaults.expire_in as interval)
+        WHEN defaults.expire_in IS NOT NULL THEN defaults.expire_in::numeric * interval '1s'
         ELSE interval '15 minutes'
         END as expire_in,
       CASE
