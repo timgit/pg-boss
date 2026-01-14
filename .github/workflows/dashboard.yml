@@ -1,0 +1,61 @@
+on:
+  push:
+    branches: [master]
+    tags-ignore: ['**']
+    paths:
+      - 'packages/dashboard/**'
+      - 'src/**'
+      - '.github/workflows/dashboard.yml'
+  pull_request:
+    branches: [master]
+    paths:
+      - 'packages/dashboard/**'
+      - 'src/**'
+      - '.github/workflows/dashboard.yml'
+
+name: Dashboard CI
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    container: node:22
+    services:
+      postgres:
+        image: postgres
+        env:
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 22
+
+    - name: Install root dependencies
+      run: npm install
+
+    - name: Install dashboard dependencies
+      run: npm install
+      working-directory: packages/dashboard
+
+    - name: Typecheck
+      run: npm run typecheck
+      working-directory: packages/dashboard
+
+    - name: Frontend tests with coverage
+      run: npm run cover:frontend
+      working-directory: packages/dashboard
+
+    - name: Server tests with coverage
+      run: npm run cover:server
+      working-directory: packages/dashboard
+      env:
+        DATABASE_URL: postgres://postgres:postgres@postgres:5432/postgres
