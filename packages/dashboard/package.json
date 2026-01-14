@@ -33,7 +33,8 @@
     "cover": "vitest run --coverage --config vitest.config.frontend.ts && vitest run --coverage --config vitest.config.server.ts",
     "cover:frontend": "vitest run --coverage --config vitest.config.frontend.ts",
     "cover:server": "vitest run --coverage --config vitest.config.server.ts",
-    "typecheck": "tsc --noEmit"
+    "typegen": "react-router typegen",
+    "typecheck": "react-router typegen && tsc --noEmit"
   },
   "dependencies": {
     "@hono/node-server": "^1.19.9",

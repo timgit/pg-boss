@@ -154,7 +154,7 @@ beforeEach(async (context) => {
 afterEach(async (context) => {
   // Stop pg-boss first
   if (currentBoss) {
-    await currentBoss.stop({ destroy: true })
+    await currentBoss.stop({ close: true })
     currentBoss = null
   }
 

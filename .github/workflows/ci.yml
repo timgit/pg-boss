@@ -14,7 +14,7 @@ jobs:
     strategy:
       matrix:
         node: [ 22 ]
-    services:
+    services:      
       postgres:
         image: postgres
         env:
@@ -24,11 +24,11 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-
+          
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-
+    
     - name: Set up Node.js
       uses: actions/setup-node@v4
       with:
@@ -36,16 +36,16 @@ jobs:
 
     - name: Install
       run: npm install
-
+      
     - name: Test
       run: npm run cover
       env:
         POSTGRES_HOST: postgres
-
+      
     - name: Coveralls
       uses: coverallsapp/github-action@v2
       with:
-        flag-name: pg-boss-${{ matrix.node }}
+        flag-name: run-${{ join(matrix.*, '-') }}
         parallel: true
 
   coverage:
@@ -57,4 +57,4 @@ jobs:
       uses: coverallsapp/github-action@v2
       with:
         parallel-finished: true
-        carryforward: "pg-boss-22"
+        carryforward: "run-1,run-2"
