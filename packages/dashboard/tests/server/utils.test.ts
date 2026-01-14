@@ -115,10 +115,15 @@ describe('utils', () => {
       }
     })
 
+    it('returns true for special filters (pending, all)', () => {
+      expect(isValidJobState('pending')).toBe(true)
+      expect(isValidJobState('all')).toBe(true)
+    })
+
     it('returns false for invalid states', () => {
       expect(isValidJobState('invalid')).toBe(false)
       expect(isValidJobState('CREATED')).toBe(false)
-      expect(isValidJobState('pending')).toBe(false)
+      expect(isValidJobState('PENDING')).toBe(false)
       expect(isValidJobState('')).toBe(false)
     })
   })
