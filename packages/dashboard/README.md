@@ -266,27 +266,33 @@ packages/dashboard/
 │   ├── routes.ts           # Route configuration
 │   └── server.ts           # Hono server setup
 ├── tests/
-│   ├── components/         # Component tests
-│   ├── db/                 # Database integration tests
-│   ├── setup.ts            # Test setup (jsdom)
-│   └── *.test.ts           # Unit tests
+│   ├── frontend/           # React component tests
+│   ├── server/             # Server-side tests (queries, utils)
+│   └── setup.ts            # Test setup (jsdom, mocks)
 ├── package.json
 ├── vite.config.ts
-├── vitest.config.ts        # Unit test config
-└── vitest.config.db.ts     # Database test config
+├── vitest.config.frontend.ts # Frontend test config
+└── vitest.config.server.ts   # Server test config
 ```
 
 ### Running Tests
 
 ```bash
-# Unit tests (components, utilities)
+# All tests (frontend + server)
 npm test
 
-# Database integration tests (requires PostgreSQL)
-npm run test:db
+# Frontend tests only (React components)
+npm run test:frontend
 
-# All tests
-npm run test:all
+# Server tests only (queries, utils - requires PostgreSQL)
+npm run test:server
+
+# All tests with coverage
+npm run cover
+
+# Individual coverage reports
+npm run cover:frontend
+npm run cover:server
 ```
 
 ### Type Checking

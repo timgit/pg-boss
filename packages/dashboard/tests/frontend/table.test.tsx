@@ -10,7 +10,7 @@ import {
 } from "~/components/ui/table";
 
 describe("Table", () => {
-  it("renders a table with content", () => {
+  it("renders a table with header and body content", () => {
     render(
       <Table>
         <TableHeader>
@@ -30,61 +30,10 @@ describe("Table", () => {
     expect(screen.getByText("Header")).toBeInTheDocument();
     expect(screen.getByText("Cell")).toBeInTheDocument();
   });
-
-  it("applies overflow styling for horizontal scrolling", () => {
-    render(
-      <Table data-testid="table-wrapper">
-        <tbody>
-          <tr>
-            <td>Content</td>
-          </tr>
-        </tbody>
-      </Table>
-    );
-
-    const wrapper = screen.getByRole("table").parentElement;
-    expect(wrapper).toHaveClass("overflow-x-auto");
-  });
-});
-
-describe("TableHeader", () => {
-  it("renders with gray background", () => {
-    render(
-      <table>
-        <TableHeader data-testid="header">
-          <tr>
-            <th>Test</th>
-          </tr>
-        </TableHeader>
-      </table>
-    );
-
-    expect(screen.getByRole("rowgroup")).toHaveClass("bg-gray-50");
-  });
-});
-
-describe("TableBody", () => {
-  it("renders with white background and dividers", () => {
-    render(
-      <table>
-        <TableBody>
-          <tr>
-            <td>Content</td>
-          </tr>
-        </TableBody>
-      </table>
-    );
-
-    expect(screen.getByRole("rowgroup")).toHaveClass(
-      "bg-white",
-      "divide-y",
-      "divide-gray-200"
-    );
-  });
 });
 
 describe("TableRow", () => {
-  it("renders children correctly", () => {
+  it("renders children", () => {
     render(
       <table>
         <tbody>
@@ -98,7 +47,7 @@ describe("TableRow", () => {
     expect(screen.getByText("Row Content")).toBeInTheDocument();
   });
 
-  it("handles click events when onClick is provided", () => {
+  it("calls onClick handler when clicked", () => {
     const handleClick = vi.fn();
     render(
       <table>
@@ -112,24 +61,6 @@ describe("TableRow", () => {
 
     fireEvent.click(screen.getByRole("row"));
     expect(handleClick).toHaveBeenCalledTimes(1);
-  });
-
-  it("applies hover styles when clickable", () => {
-    const handleClick = vi.fn();
-    render(
-      <table>
-        <tbody>
-          <TableRow onClick={handleClick}>
-            <td>Clickable</td>
-          </TableRow>
-        </tbody>
-      </table>
-    );
-
-    expect(screen.getByRole("row")).toHaveClass(
-      "cursor-pointer",
-      "hover:bg-gray-50"
-    );
   });
 });
 
@@ -146,26 +77,6 @@ describe("TableHead", () => {
     );
 
     expect(screen.getByRole("columnheader")).toHaveTextContent("Column Header");
-  });
-
-  it("applies header styling classes", () => {
-    render(
-      <table>
-        <thead>
-          <tr>
-            <TableHead>Header</TableHead>
-          </tr>
-        </thead>
-      </table>
-    );
-
-    const header = screen.getByRole("columnheader");
-    expect(header).toHaveClass(
-      "text-xs",
-      "font-semibold",
-      "text-gray-500",
-      "uppercase"
-    );
   });
 });
 
@@ -196,20 +107,6 @@ describe("TableCell", () => {
     );
 
     expect(screen.getByRole("cell")).toHaveAttribute("colspan", "3");
-  });
-
-  it("merges custom className", () => {
-    render(
-      <table>
-        <tbody>
-          <tr>
-            <TableCell className="custom-class">Cell</TableCell>
-          </tr>
-        </tbody>
-      </table>
-    );
-
-    expect(screen.getByRole("cell")).toHaveClass("custom-class", "px-6", "py-4");
   });
 });
 

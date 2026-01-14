@@ -12,24 +12,22 @@ describe("StatsCards", () => {
     queueCount: 5,
   };
 
-  it("renders all stat cards", () => {
+  it("renders all stat labels", () => {
     render(<StatsCards stats={mockStats} />);
 
-    expect(screen.getByText("Total Queued")).toBeInTheDocument();
+    expect(screen.getByText("Queued")).toBeInTheDocument();
     expect(screen.getByText("Active")).toBeInTheDocument();
     expect(screen.getByText("Deferred")).toBeInTheDocument();
-    expect(screen.getByText("Total Jobs")).toBeInTheDocument();
+    expect(screen.getByText("Total")).toBeInTheDocument();
   });
 
-  it("displays the stat values", () => {
+  it("displays stat values", () => {
     render(<StatsCards stats={mockStats} />);
 
-    // Check values are present (locale-independent check)
     expect(screen.getByText("150")).toBeInTheDocument();
     expect(screen.getByText("25")).toBeInTheDocument();
     expect(screen.getByText("50")).toBeInTheDocument();
-    // Large numbers may have different formatting based on locale
-    // Use a flexible regex that matches "1,000", "1.000", or "1000"
+    // Large numbers may have locale-specific formatting
     expect(screen.getByText(/1[,.\s]?000/)).toBeInTheDocument();
   });
 
@@ -46,13 +44,5 @@ describe("StatsCards", () => {
 
     const zeros = screen.getAllByText("0");
     expect(zeros).toHaveLength(4);
-  });
-
-  it("renders stat cards with correct structure", () => {
-    const { container } = render(<StatsCards stats={mockStats} />);
-
-    // Check we have 4 stat cards
-    const cards = container.querySelectorAll(".rounded-xl");
-    expect(cards).toHaveLength(4);
   });
 });

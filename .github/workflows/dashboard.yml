@@ -51,7 +51,7 @@ jobs:
       working-directory: packages/dashboard
 
     - name: Frontend tests with coverage
-      run: npm run cover
+      run: npm run cover:frontend
       working-directory: packages/dashboard
 
     - name: Server tests with coverage
@@ -59,21 +59,3 @@ jobs:
       working-directory: packages/dashboard
       env:
         DATABASE_URL: postgres://postgres:postgres@postgres:5432/postgres
-
-    - name: Upload coverage to Coveralls
-      uses: coverallsapp/github-action@v2
-      with:
-        flag-name: dashboard
-        parallel: true
-        base-path: packages/dashboard
-
-  coverage:
-    needs: test
-    if: ${{ always() }}
-    runs-on: ubuntu-latest
-    steps:
-    - name: Coveralls Finished
-      uses: coverallsapp/github-action@v2
-      with:
-        parallel-finished: true
-        carryforward: "dashboard"

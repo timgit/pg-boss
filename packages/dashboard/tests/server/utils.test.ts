@@ -4,6 +4,7 @@ import {
   formatTimeAgo,
   formatDate,
   formatDateWithSeconds,
+  formatWarningData,
   isValidJobState,
   isValidWarningType,
   JOB_STATES,
@@ -159,6 +160,43 @@ describe('utils', () => {
       expect(WARNING_TYPES).toContain('queue_backlog')
       expect(WARNING_TYPES).toContain('clock_skew')
       expect(WARNING_TYPES).toHaveLength(3)
+    })
+  })
+
+  describe('formatWarningData', () => {
+    it('returns dash for null/undefined', () => {
+      expect(formatWarningData(null)).toBe('-')
+      expect(formatWarningData(undefined)).toBe('-')
+    })
+
+    it('returns string as-is', () => {
+      expect(formatWarningData('some message')).toBe('some message')
+    })
+
+    it('formats elapsed time', () => {
+      expect(formatWarningData({ elapsed: 1.234 })).toBe('1.23s')
+    })
+
+    it('formats queue name', () => {
+      expect(formatWarningData({ name: 'my-queue' })).toBe('queue: my-queue')
+    })
+
+    it('formats queued count', () => {
+      expect(formatWarningData({ queuedCount: 100 })).toBe('queued: 100')
+    })
+
+    it('formats clock skew', () => {
+      expect(formatWarningData({ seconds: 5.678, direction: 'ahead' })).toBe('skew: 5.7s, (ahead)')
+    })
+
+    it('combines multiple fields', () => {
+      const data = { elapsed: 2.5, name: 'test-queue', queuedCount: 50 }
+      expect(formatWarningData(data)).toBe('2.50s, queue: test-queue, queued: 50')
+    })
+
+    it('returns JSON for unknown object structure', () => {
+      const data = { unknownField: 'value' }
+      expect(formatWarningData(data)).toBe('{"unknownField":"value"}')
     })
   })
 })

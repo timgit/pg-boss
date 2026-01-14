@@ -6,7 +6,7 @@ interface StatsCardsProps {
 
 const statCards = [
   {
-    name: "Total Queued",
+    name: "Queued",
     key: "totalQueued" as const,
     description: "Jobs waiting to be processed",
     color: "text-primary-600",
@@ -27,7 +27,7 @@ const statCards = [
     bgColor: "bg-warning-50",
   },
   {
-    name: "Total Jobs",
+    name: "Total",
     key: "totalJobs" as const,
     description: "All jobs across queues",
     color: "text-gray-600",

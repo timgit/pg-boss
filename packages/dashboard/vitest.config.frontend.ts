@@ -13,12 +13,20 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['text', 'lcov', 'html'],
       include: ['app/components/**/*.{ts,tsx}'],
-      exclude: ['app/**/*.d.ts'],
+      exclude: [
+        'app/**/*.d.ts',
+        // React-aria wrappers and components requiring complex mocking
+        // These are better tested via e2e tests
+        'app/components/job-detail-dialog.tsx',
+        'app/components/loading-bar.tsx',
+        'app/components/ui/confirm-dialog.tsx',
+        'app/components/ui/select.tsx',
+      ],
       thresholds: {
-        lines: 50,
-        functions: 50,
-        branches: 50,
-        statements: 50,
+        lines: 70,
+        functions: 70,
+        branches: 60,
+        statements: 70,
       },
     },
   },

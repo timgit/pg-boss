@@ -24,6 +24,7 @@ import {
   getAggregateStats,
   cancelJob,
   retryJob,
+  resumeJob,
   deleteJob,
   isValidIntent,
 } from '~/lib/queries.server'
@@ -450,6 +451,49 @@ describe('Job Actions', () => {
     })
   })
 
+  describe('resumeJob', () => {
+    it('resumes a cancelled job', async () => {
+      await createTestQueue('test-queue')
+      const jobId = await sendTestJob('test-queue', { task: 'test' })
+
+      // Cancel the job first
+      await cancelJob(ctx.connectionString, ctx.schema, 'test-queue', jobId!)
+
+      const result = await resumeJob(ctx.connectionString, ctx.schema, 'test-queue', jobId!)
+
+      expect(result).toBe(1)
+
+      const job = await getJob(ctx.connectionString, ctx.schema, 'test-queue', jobId!)
+      expect(job!.state).toBe('created')
+    })
+
+    it('does not resume a non-cancelled job', async () => {
+      await createTestQueue('test-queue')
+      const jobId = await sendTestJob('test-queue', { task: 'test' })
+
+      // Job is in 'created' state, not 'cancelled'
+      const result = await resumeJob(ctx.connectionString, ctx.schema, 'test-queue', jobId!)
+
+      expect(result).toBe(0)
+
+      const job = await getJob(ctx.connectionString, ctx.schema, 'test-queue', jobId!)
+      expect(job!.state).toBe('created')
+    })
+
+    it('returns 0 for non-existent job', async () => {
+      await createTestQueue('test-queue')
+
+      const result = await resumeJob(
+        ctx.connectionString,
+        ctx.schema,
+        'test-queue',
+        '00000000-0000-0000-0000-000000000000'
+      )
+
+      expect(result).toBe(0)
+    })
+  })
+
   describe('concurrent operations', () => {
     it('handles concurrent cancellation attempts gracefully', async () => {
       await createTestQueue('test-queue')
@@ -471,6 +515,18 @@ describe('Job Actions', () => {
 
 describe('Warning Queries', () => {
   describe('getWarnings', () => {
+    it('returns empty array when warning table does not exist', async () => {
+      // Create a minimal schema without the warning table
+      const testSchema = 'pgboss_no_warning_table'
+      const pool = new Pool({ connectionString: ctx.connectionString })
+      await pool.query(`DROP SCHEMA IF EXISTS ${testSchema} CASCADE`)
+      await pool.query(`CREATE SCHEMA ${testSchema}`)
+      await pool.end()
+
+      const warnings = await getWarnings(ctx.connectionString, testSchema)
+      expect(warnings).toEqual([])
+    })
+
     it('returns empty array when no warnings exist', async () => {
       const warnings = await getWarnings(ctx.connectionString, ctx.schema)
       expect(warnings).toEqual([])
@@ -520,6 +576,18 @@ describe('Warning Queries', () => {
   })
 
   describe('getWarningCount', () => {
+    it('returns 0 when warning table does not exist', async () => {
+      // Create a minimal schema without the warning table
+      const testSchema = 'pgboss_no_warning_count'
+      const pool = new Pool({ connectionString: ctx.connectionString })
+      await pool.query(`DROP SCHEMA IF EXISTS ${testSchema} CASCADE`)
+      await pool.query(`CREATE SCHEMA ${testSchema}`)
+      await pool.end()
+
+      const count = await getWarningCount(ctx.connectionString, testSchema)
+      expect(count).toBe(0)
+    })
+
     it('returns 0 when no warnings exist', async () => {
       const count = await getWarningCount(ctx.connectionString, ctx.schema)
       expect(count).toBe(0)
@@ -545,6 +613,18 @@ describe('Warning Queries', () => {
   })
 
   describe('deleteOldWarnings', () => {
+    it('returns 0 when warning table does not exist', async () => {
+      // Create a minimal schema without the warning table
+      const testSchema = 'pgboss_no_warning_delete'
+      const pool = new Pool({ connectionString: ctx.connectionString })
+      await pool.query(`DROP SCHEMA IF EXISTS ${testSchema} CASCADE`)
+      await pool.query(`CREATE SCHEMA ${testSchema}`)
+      await pool.end()
+
+      const deleted = await deleteOldWarnings(ctx.connectionString, testSchema, 30)
+      expect(deleted).toBe(0)
+    })
+
     it('returns 0 when no old warnings exist', async () => {
       await insertTestWarning(ctx.schema, 'slow_query', 'Recent warning')
 

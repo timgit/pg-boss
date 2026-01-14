@@ -27,12 +27,12 @@
     "build": "react-router build",
     "start": "node ./build/server/index.js",
     "prepublishOnly": "npm run build",
-    "test": "vitest run",
+    "test": "vitest run --config vitest.config.frontend.ts && vitest run --config vitest.config.server.ts",
+    "test:frontend": "vitest run --config vitest.config.frontend.ts",
     "test:server": "vitest run --config vitest.config.server.ts",
-    "test:all": "npm run test && npm run test:server",
-    "cover:frontend": "vitest run --coverage",
+    "cover": "vitest run --coverage --config vitest.config.frontend.ts && vitest run --coverage --config vitest.config.server.ts",
+    "cover:frontend": "vitest run --coverage --config vitest.config.frontend.ts",
     "cover:server": "vitest run --coverage --config vitest.config.server.ts",
-    "cover:all": "npm run cover && npm run cover:server",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

@@ -42,7 +42,12 @@ export default function Overview({ loaderData }: Route.ComponentProps) {
         </p>
       </div>
 
-      <StatsCards stats={stats} />
+      <section>
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">
+          Jobs Overview
+        </h2>
+        <StatsCards stats={stats} />
+      </section>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Problem Queues */}
