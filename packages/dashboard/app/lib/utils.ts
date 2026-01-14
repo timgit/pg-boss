@@ -60,11 +60,21 @@ export const JOB_STATES = [
 
 export type JobStateValue = (typeof JOB_STATES)[number]
 
+// Special filters
+export const PENDING_FILTER = 'pending' as const // Non-final states (created, retry, active)
+export const ALL_STATES_FILTER = 'all' as const // All states (no filter)
+export const DEFAULT_STATE_FILTER = PENDING_FILTER // Default filter when none specified
+
+export type JobStateFilter = JobStateValue | typeof PENDING_FILTER | typeof ALL_STATES_FILTER
+
 /**
  * Validate a job state filter value
+ * Accepts individual states, 'pending' for non-final states, or 'all' for all states
  */
-export function isValidJobState (value: string | null): value is JobStateValue | null {
+export function isValidJobState (value: string | null): value is JobStateFilter | null {
   if (value === null) return true
+  if (value === PENDING_FILTER) return true
+  if (value === ALL_STATES_FILTER) return true
   return JOB_STATES.includes(value as JobStateValue)
 }
 
@@ -81,8 +91,9 @@ export const JOB_STATE_VARIANTS: Record<JobStateValue, BadgeVariant> = {
 }
 
 // Filter options for job states (for dropdowns)
-export const JOB_STATE_OPTIONS: { value: JobStateValue | null; label: string }[] = [
-  { value: null, label: 'All States' },
+export const JOB_STATE_OPTIONS: { value: JobStateFilter; label: string }[] = [
+  { value: ALL_STATES_FILTER, label: 'All States' },
+  { value: PENDING_FILTER, label: 'Pending' },
   ...JOB_STATES.map((state) => ({
     value: state,
     label: state.charAt(0).toUpperCase() + state.slice(1),

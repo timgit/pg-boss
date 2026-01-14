@@ -159,6 +159,8 @@ export async function getQueue (
 // Get jobs for a queue with pagination and filtering
 // Uses lightweight columns to avoid loading large payloads
 // For counts, we use cached stats from the queue table instead of COUNT(*).
+// Supports 'pending' filter for non-final states (created, retry, active)
+// Supports 'all' filter for all states (no filtering)
 export async function getJobs (
   dbUrl: string,
   schema: string,
@@ -172,11 +174,37 @@ export async function getJobs (
   const s = validateIdentifier(schema)
   const { state = null, limit = 50, offset = 0 } = options
 
+  // Handle 'pending' filter for non-final states
+  if (state === 'pending') {
+    const sql = `
+      SELECT ${JOB_LIST_COLUMNS}
+      FROM ${s}.job
+      WHERE name = $1
+      AND state < 'completed'
+      ORDER BY created_on DESC
+      LIMIT $2 OFFSET $3
+    `
+    return query<JobResult>(dbUrl, sql, [queueName, limit, offset])
+  }
+
+  // Handle 'all' filter or null - no state filtering
+  if (state === 'all' || state === null) {
+    const sql = `
+      SELECT ${JOB_LIST_COLUMNS}
+      FROM ${s}.job
+      WHERE name = $1
+      ORDER BY created_on DESC
+      LIMIT $2 OFFSET $3
+    `
+    return query<JobResult>(dbUrl, sql, [queueName, limit, offset])
+  }
+
+  // Filter by specific state
   const sql = `
     SELECT ${JOB_LIST_COLUMNS}
     FROM ${s}.job
     WHERE name = $1
-    AND ($2::text IS NULL OR state = $2::${s}.job_state)
+    AND state = $2::${s}.job_state
     ORDER BY created_on DESC
     LIMIT $3 OFFSET $4
   `
@@ -190,13 +218,16 @@ export function getJobCountFromQueue (
   queue: QueueResult,
   stateFilter: string | null
 ): number | null {
-  if (!stateFilter) {
-    return queue.totalCount
-  }
-
   // Map state filters to cached counts where available
   // Note: created and retry are combined in queuedCount
   switch (stateFilter) {
+    case null:
+    case 'all':
+      return queue.totalCount
+    case 'pending':
+      // Pending = all non-final states (created + retry + active)
+      // queuedCount includes created + retry, activeCount includes active
+      return queue.queuedCount + queue.activeCount
     case 'created':
     case 'retry':
       // queuedCount includes both created and retry states

@@ -6,11 +6,14 @@ A web-based dashboard for monitoring and managing [pg-boss](https://github.com/t
 
 - **Overview Dashboard**: Aggregate statistics, problem queues, and recent warnings at a glance
 - **Queue Management**: Browse all queues with real-time stats (queued, active, deferred, total)
-- **Job Browser**: View and manage individual jobs with filtering by state
-- **Job Actions**: Cancel, retry, or delete jobs directly from the UI
+- **Job Browser**: View and manage individual jobs with smart filtering (defaults to pending jobs)
+- **Job Detail Inspector**: View full job payloads, output data, and metadata
+- **Job Actions**: Cancel, retry, resume, or delete jobs directly from the UI
 - **Warning History**: Track slow queries, queue backlogs, and clock skew issues
 - **Multi-Database Support**: Monitor multiple pg-boss instances from a single dashboard
-- **Pagination**: Efficiently browse large datasets
+- **Pagination**: Efficiently browse large datasets with cached statistics
+- **Mobile Responsive**: Full functionality on mobile devices with collapsible sidebar
+- **Shareable URLs**: Database selection and filters are preserved in URLs for easy sharing
 
 ## Requirements
 
@@ -161,21 +164,48 @@ Paginated list of all queues showing:
 
 Detailed view of a single queue:
 
-- **Stats**: Queued, Active, Deferred, Total counts
-- **Jobs Table**: Paginated list of jobs with:
-  - Job ID (truncated UUID)
+- **Stats Cards**: Queued, Active, Deferred, Total counts
+- **Queue Info**: Policy type badge and partition indicator
+- **Jobs Table**: Paginated list of jobs (50 per page) with:
+  - Job ID (truncated UUID, click to copy full ID)
   - State (created, retry, active, completed, cancelled, failed)
   - Priority
   - Retry count / limit
   - Created timestamp
-  - Actions (Cancel, Retry, Delete)
+  - Actions (View, Cancel, Retry, Resume, Delete - availability depends on job state)
 
-**Filtering**: Use the state dropdown to filter jobs by state.
+**Job Detail Dialog**: Click "View" on any job to open a modal with complete job information:
 
-**Job Actions**:
-- **Cancel**: Cancels jobs in `created`, `retry`, or `active` state
-- **Retry**: Re-queues `failed` jobs for another attempt
-- **Delete**: Removes jobs (not available for `active` jobs)
+- Full Job ID (with copy button)
+- Priority, retry count/limit
+- All timestamps (created, started, completed)
+- Singleton key (if applicable)
+- Group ID and tier (for grouped jobs)
+- Dead letter queue (if configured)
+- **Job Data**: Full JSON payload submitted with the job
+- **Job Output**: Result data returned by the worker (if completed)
+
+**Filtering**: Use the state dropdown to filter jobs by state. Available filters:
+
+| Filter | Description |
+|--------|-------------|
+| **Pending** (default) | Shows only non-final state jobs: `created`, `retry`, and `active`. This is the default view to handle queues with large job history efficiently. |
+| **All States** | Shows all jobs including completed, cancelled, and failed. Use with caution on queues with many historical jobs. |
+| **Individual states** | Filter by specific state: Created, Retry, Active, Completed, Cancelled, or Failed |
+
+> **Performance Note**: The "Pending" filter is the default because queues can accumulate large numbers of completed/failed jobs over time. Showing all jobs by default could cause performance issues and make it harder to find actionable jobs.
+
+> **Pagination Note**: Job counts are displayed when available from cached statistics. For some filters (Created, Retry, Completed, Cancelled, Failed), exact counts require database queries and are not shown to maintain performance.
+
+**Job Actions** (shown based on job state):
+
+| Action | Available States | Description |
+|--------|------------------|-------------|
+| **View** | All states | Opens job detail dialog with full job information |
+| **Cancel** | created, retry, active | Stops the job from being processed |
+| **Retry** | failed | Re-queues the job for another attempt |
+| **Resume** | cancelled | Restores a cancelled job back to `created` state |
+| **Delete** | All except active | Permanently removes the job |
 
 ### Warnings (`/warnings`)
 
@@ -324,14 +354,16 @@ The dashboard reads directly from pg-boss database tables:
 
 ### Job States
 
-| State | Description |
-|-------|-------------|
-| `created` | Job is queued and waiting |
-| `retry` | Job failed and is scheduled for retry |
-| `active` | Job is currently being processed |
-| `completed` | Job finished successfully |
-| `cancelled` | Job was cancelled |
-| `failed` | Job failed after exhausting retries |
+| State | Description | Category |
+|-------|-------------|----------|
+| `created` | Job is queued and waiting | Pending (non-final) |
+| `retry` | Job failed and is scheduled for retry | Pending (non-final) |
+| `active` | Job is currently being processed | Pending (non-final) |
+| `completed` | Job finished successfully | Final |
+| `cancelled` | Job was cancelled | Final |
+| `failed` | Job failed after exhausting retries | Final |
+
+**Pending vs Final States**: Jobs in pending states (`created`, `retry`, `active`) are still being processed or waiting to be processed. Jobs in final states (`completed`, `cancelled`, `failed`) have finished processing. The dashboard's default "Pending" filter shows only non-final state jobs.
 
 ## Troubleshooting
 

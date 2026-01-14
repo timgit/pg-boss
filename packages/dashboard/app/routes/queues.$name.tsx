@@ -36,14 +36,18 @@ import {
   formatDate,
   JOB_STATE_OPTIONS,
   JOB_STATE_VARIANTS,
+  DEFAULT_STATE_FILTER,
 } from "~/lib/utils";
 
 export async function loader({ params, request, context }: Route.LoaderArgs) {
   const url = new URL(request.url);
   const stateParam = url.searchParams.get("state");
 
-  // Validate state filter - invalid values are treated as no filter
-  const stateFilter = isValidJobState(stateParam) ? stateParam : null;
+  // Default to 'pending' filter to avoid showing completed/failed jobs in large queues
+  // Users can explicitly select 'all' to see all jobs
+  const stateFilter = stateParam !== null && isValidJobState(stateParam)
+    ? stateParam
+    : DEFAULT_STATE_FILTER;
 
   const page = parsePageNumber(url.searchParams.get("page"));
   const limit = 50;
