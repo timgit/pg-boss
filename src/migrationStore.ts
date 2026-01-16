@@ -35,9 +35,17 @@ function migrate (schema: string, version: number, migrations?: types.Migration[
   const result = migrations
     .filter(i => i.previous >= version!)
     .sort((a, b) => a.version - b.version)
-    .reduce((acc, i) => {
-      acc.install = acc.install.concat(i.install)
-      acc.version = i.version
+    .reduce((acc, migration) => {
+      acc.install = acc.install.concat(migration.install)
+
+      if (migration.bam) {
+        const bamCommands = migration.bam.map(cmd =>
+          cmd.replace(/\$VERSION\$/g, String(migration.version))
+        )
+        acc.install = acc.install.concat(bamCommands)
+      }
+
+      acc.version = migration.version
       return acc
     }, { install: [] as string[], version })
 
@@ -230,6 +238,50 @@ function getAll (schema: string): types.Migration[] {
         `DROP INDEX IF EXISTS ${schema}.job_i7`,
         `ALTER TABLE ${schema}.job DROP COLUMN IF EXISTS group_tier`,
         `ALTER TABLE ${schema}.job DROP COLUMN IF EXISTS group_id`
+      ]
+    },
+    {
+      release: '12.7.0',
+      version: 28,
+      previous: 27,
+      install: [
+        `ALTER TABLE ${schema}.version ADD COLUMN IF NOT EXISTS bam_on timestamp with time zone`,
+        `
+        CREATE TABLE IF NOT EXISTS ${schema}.bam (
+          id text PRIMARY KEY,
+          version int NOT NULL,
+          status text NOT NULL DEFAULT 'pending',
+          target_table text NOT NULL,
+          command text NOT NULL,
+          error text,
+          created_on timestamp with time zone NOT NULL DEFAULT now(),
+          started_on timestamp with time zone,
+          completed_on timestamp with time zone
+        )
+        `,
+        `
+        CREATE OR REPLACE FUNCTION ${schema}.bam_queue_table_run(command_id text, version int, command_template text)
+        RETURNS VOID AS
+        $$
+        BEGIN
+          INSERT INTO ${schema}.bam (id, version, status, target_table, command)
+          SELECT
+            command_id || '_' || table_name,
+            version,
+            'pending',
+            table_name,
+            REPLACE(command_template, '%TABLE%', table_name)
+          FROM ${schema}.queue
+          WHERE partition = true;
+        END;
+        $$
+        LANGUAGE plpgsql;
+        `
+      ],
+      uninstall: [
+        `DROP FUNCTION IF EXISTS ${schema}.bam_queue_table_run(text, int, text)`,
+        `DROP TABLE IF EXISTS ${schema}.bam`,
+        `ALTER TABLE ${schema}.version DROP COLUMN IF EXISTS bam_on`
       ]
     }
   ]

@@ -52,6 +52,7 @@ function create (schema: string, version: number, options?: { createSchema?: boo
     createTableQueue(schema),
     createTableSchedule(schema),
     createTableSubscription(schema),
+    createTableBam(schema),
 
     createTableJob(schema),
     createPrimaryKeyJob(schema),
@@ -59,6 +60,7 @@ function create (schema: string, version: number, options?: { createSchema?: boo
 
     createQueueFunction(schema),
     deleteQueueFunction(schema),
+    bamQueueTableRun(schema),
 
     insertVersion(schema, version)
   ]
@@ -89,7 +91,8 @@ function createTableVersion (schema: string) {
   return `
     CREATE TABLE ${schema}.version (
       version int primary key,
-      cron_on timestamp with time zone
+      cron_on timestamp with time zone,
+      bam_on timestamp with time zone
     )
   `
 }
@@ -149,6 +152,43 @@ function createTableSubscription (schema: string) {
       updated_on timestamp with time zone not null default now(),
       PRIMARY KEY(event, name)
     )
+  `
+}
+
+function createTableBam (schema: string) {
+  return `
+    CREATE TABLE ${schema}.bam (
+      id text PRIMARY KEY,
+      version int NOT NULL,
+      status text NOT NULL DEFAULT 'pending',
+      target_table text NOT NULL,
+      command text NOT NULL,
+      error text,
+      created_on timestamp with time zone NOT NULL DEFAULT now(),
+      started_on timestamp with time zone,
+      completed_on timestamp with time zone
+    )
+  `
+}
+
+function bamQueueTableRun (schema: string) {
+  return `
+    CREATE FUNCTION ${schema}.bam_queue_table_run(command_id text, version int, command_template text)
+    RETURNS VOID AS
+    $$
+    BEGIN
+      INSERT INTO ${schema}.bam (id, version, status, target_table, command)
+      SELECT
+        command_id || '_' || table_name,
+        version,
+        'pending',
+        table_name,
+        REPLACE(command_template, '%TABLE%', table_name)
+      FROM ${schema}.queue
+      WHERE partition = true;
+    END;
+    $$
+    LANGUAGE plpgsql;
   `
 }
 
@@ -400,6 +440,10 @@ function trySetQueueDeletionTime (schema: string, queues: string[], seconds: num
 
 function trySetCronTime (schema: string, seconds: number) {
   return trySetTimestamp(schema, 'cron_on', seconds)
+}
+
+function trySetBamTime (schema: string, seconds: number) {
+  return trySetTimestamp(schema, 'bam_on', seconds)
 }
 
 function trySetTimestamp (schema: string, column: string, seconds: number) {
@@ -1215,6 +1259,45 @@ function getJobById (schema: string, table: string) {
     `
 }
 
+function getNextBamCommand (schema: string) {
+  return `
+    SELECT id, version, status, target_table as "targetTable", command, error,
+           created_on as "createdOn", started_on as "startedOn", completed_on as "completedOn"
+    FROM ${schema}.bam
+    WHERE status IN ('pending', 'failed')
+    ORDER BY version, created_on
+    LIMIT 1
+    FOR UPDATE SKIP LOCKED
+  `
+}
+
+function setBamStatus (schema: string, id: string, status: string) {
+  const timestampCol = status === 'in_progress' ? 'started_on' : 'completed_on'
+  return `
+    UPDATE ${schema}.bam
+    SET status = '${status}', ${timestampCol} = now()
+    WHERE id = '${id}'
+  `
+}
+
+function setBamFailed (schema: string, id: string, error: string) {
+  const escapedError = error.replace(/'/g, "''")
+  return `
+    UPDATE ${schema}.bam
+    SET status = 'failed', error = '${escapedError}', completed_on = now()
+    WHERE id = '${id}'
+  `
+}
+
+function getBamStatus (schema: string) {
+  return `
+    SELECT id, version, status, target_table as "targetTable", command, error,
+           created_on as "createdOn", started_on as "startedOn", completed_on as "completedOn"
+    FROM ${schema}.bam
+    ORDER BY version, created_on
+  `
+}
+
 export {
   create,
   insertVersion,
@@ -1254,9 +1337,14 @@ export {
   trySetQueueMonitorTime,
   trySetQueueDeletionTime,
   trySetCronTime,
+  trySetBamTime,
   locked,
   assertMigration,
   getJobById,
+  getNextBamCommand,
+  setBamStatus,
+  setBamFailed,
+  getBamStatus,
   QUEUE_POLICIES,
   JOB_STATES,
   MIGRATE_RACE_MESSAGE,

@@ -192,10 +192,12 @@ function getConfig (value: string | types.ConstructorOptions): types.ResolvedCon
   config.supervise = ('supervise' in config) ? config.supervise : true
   config.migrate = ('migrate' in config) ? config.migrate : true
   config.createSchema = ('createSchema' in config) ? config.createSchema : true
+  config.bam = ('bam' in config) ? config.bam : true
 
   applySchemaConfig(config)
   applyOpsConfig(config)
   applyScheduleConfig(config)
+  applyBamConfig(config)
   validateWarningConfig(config)
 
   return config as types.ResolvedConstructorOptions
@@ -319,6 +321,13 @@ function applyScheduleConfig (config: any) {
     'configuration assert: cronWorkerIntervalSeconds must be between 1 and 45 seconds')
 
   config.cronWorkerIntervalSeconds = config.cronWorkerIntervalSeconds || 5
+}
+
+function applyBamConfig (config: any) {
+  assert(!('bamIntervalSeconds' in config) || config.bamIntervalSeconds >= 10,
+    'configuration assert: bamIntervalSeconds must be at least 10 seconds')
+
+  config.bamIntervalSeconds = config.bamIntervalSeconds || 300 // 5 minutes
 }
 
 export {

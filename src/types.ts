@@ -11,7 +11,8 @@ export type Events = {
   error: 'error',
   warning: 'warning',
   wip: 'wip',
-  stopped: 'stopped'
+  stopped: 'stopped',
+  bam: 'bam'
 }
 
 export interface IDatabase {
@@ -52,6 +53,8 @@ export interface MaintenanceOptions {
   maintenanceIntervalSeconds?: number;
   queueCacheIntervalSeconds?: number;
   monitorIntervalSeconds?: number;
+  bam?: boolean;
+  bamIntervalSeconds?: number;
 }
 
 export interface Migration {
@@ -59,7 +62,8 @@ export interface Migration {
   version: number
   previous: number
   install: string[]
-  uninstall: string[]
+  bam?: string[]
+  uninstall?: string[]
 }
 
 export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, MaintenanceOptions {
@@ -88,6 +92,7 @@ export interface ResolvedConstructorOptions extends ConstructorOptions {
   monitorIntervalSeconds: number;
   cronMonitorIntervalSeconds: number;
   maintenanceIntervalSeconds: number;
+  bamIntervalSeconds: number;
 }
 
 export interface QueueOptions {
@@ -321,9 +326,29 @@ export interface CommandResponse {
   affected: number;
 }
 
+export interface BamEntry {
+  id: string
+  version: number
+  status: 'pending' | 'in_progress' | 'completed' | 'failed'
+  targetTable: string
+  command: string
+  error?: string
+  createdOn: Date
+  startedOn?: Date
+  completedOn?: Date
+}
+
+export interface BamEvent {
+  id: string
+  status: string
+  targetTable: string
+  error?: string
+}
+
 export type PgBossEventMap = {
   error: [error: Error]
   warning: [warning: Warning]
   wip: [data: WipData[]]
   stopped: []
+  bam: [data: BamEvent]
 }

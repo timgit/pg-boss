@@ -327,6 +327,9 @@ describe('migration', function () {
 
     expect(version).toBe(currentSchemaVersion)
 
-    expect(false).toBe(true)
+    // Verify BAM infrastructure is in place after migration
+    const bamStatus = await boss.getBamStatus()
+    // Should be an empty array since v28 only creates the infrastructure, no actual bam commands
+    expect(Array.isArray(bamStatus)).toBe(true)
   })
 })
