@@ -49,12 +49,12 @@ Options:
   --dry-run               Output SQL without executing (for plans command)
 
 Environment Variables:
-  DATABASE_URL            Full connection string
-  PGHOST                  Database host
-  PGPORT                  Database port
-  PGDATABASE              Database name
-  PGUSER                  Database user
-  PGPASSWORD              Database password
+  PGBOSS_DATABASE_URL     Full connection string
+  PGBOSS_HOST             Database host
+  PGBOSS_PORT             Database port
+  PGBOSS_DATABASE         Database name
+  PGBOSS_USER             Database user
+  PGBOSS_PASSWORD         Database password
   PGBOSS_SCHEMA           Schema name (default: pgboss)
 
 Config File (pgboss.json):
@@ -74,7 +74,7 @@ Examples:
   pg-boss create --connection-string postgres://user:pass@localhost/db
   pg-boss plans migrate --dry-run
   pg-boss version
-  DATABASE_URL=postgres://localhost/mydb pg-boss migrate
+  PGBOSS_DATABASE_URL=postgres://localhost/mydb pg-boss migrate
 `)
 }
 
@@ -108,12 +108,12 @@ function getConnectionConfig (args: ReturnType<typeof parseCliArgs>): types.Data
   const fileConfig = loadConfigFile(args.config)
 
   const config: types.DatabaseOptions = {
-    connectionString: args.connectionString || process.env.DATABASE_URL || fileConfig.connectionString,
-    host: args.host || process.env.PGHOST || fileConfig.host,
-    port: args.port ? parseInt(args.port, 10) : (process.env.PGPORT ? parseInt(process.env.PGPORT, 10) : fileConfig.port),
-    database: args.database || process.env.PGDATABASE || fileConfig.database,
-    user: args.user || process.env.PGUSER || fileConfig.user,
-    password: args.password || process.env.PGPASSWORD || fileConfig.password,
+    connectionString: args.connectionString || process.env.PGBOSS_DATABASE_URL || fileConfig.connectionString,
+    host: args.host || process.env.PGBOSS_HOST || fileConfig.host,
+    port: args.port ? parseInt(args.port, 10) : (process.env.PGBOSS_PORT ? parseInt(process.env.PGBOSS_PORT, 10) : fileConfig.port),
+    database: args.database || process.env.PGBOSS_DATABASE || fileConfig.database,
+    user: args.user || process.env.PGBOSS_USER || fileConfig.user,
+    password: args.password || process.env.PGBOSS_PASSWORD || fileConfig.password,
     schema: args.schema || process.env.PGBOSS_SCHEMA || fileConfig.schema || plans.DEFAULT_SCHEMA
   }
 

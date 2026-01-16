@@ -94,10 +94,12 @@ The CLI supports multiple ways to configure the database connection, in order of
 
 2. **Environment variables**
    ```bash
-   DATABASE_URL=postgres://user:pass@host/database pg-boss migrate
+   PGBOSS_DATABASE_URL=postgres://user:pass@host/database pg-boss migrate
    # or individual variables
-   PGHOST=localhost PGPORT=5432 PGDATABASE=mydb PGUSER=postgres PGPASSWORD=secret pg-boss migrate
+   PGBOSS_HOST=localhost PGBOSS_PORT=5432 PGBOSS_DATABASE=mydb PGBOSS_USER=postgres PGBOSS_PASSWORD=secret pg-boss migrate
    ```
+
+   This allows admin credentials for migrations to coexist with regular application database credentials (e.g., `DATABASE_URL` for the app, `PGBOSS_DATABASE_URL` for migrations).
 
 3. **Config file** (pgboss.json or .pgbossrc in current directory, or specify with `--config`)
    ```bash
@@ -137,7 +139,7 @@ The CLI supports multiple ways to configure the database connection, in order of
 pg-boss create --connection-string postgres://localhost/myapp
 
 # Run migrations in CI/CD pipeline
-DATABASE_URL=$DATABASE_URL pg-boss migrate
+PGBOSS_DATABASE_URL=$PGBOSS_DATABASE_URL pg-boss migrate
 
 # Preview migration SQL before running
 pg-boss migrate --connection-string postgres://localhost/myapp --dry-run

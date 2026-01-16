@@ -52,10 +52,10 @@ describe('cli', function () {
 
     it('should show environment variables documentation', async function () {
       await execCommand(`node ${cliPath} --help`, {
-        expectedOutput: 'DATABASE_URL'
+        expectedOutput: 'PGBOSS_DATABASE_URL'
       })
       await execCommand(`node ${cliPath} --help`, {
-        expectedOutput: 'PGHOST'
+        expectedOutput: 'PGBOSS_HOST'
       })
     })
   })
@@ -337,16 +337,16 @@ describe('cli', function () {
         await dropSchema(schema)
       })
 
-      it('should read connection from DATABASE_URL env var', async function () {
+      it('should read connection from PGBOSS_DATABASE_URL env var', async function () {
         await execCommand(`node ${cliPath} version`, {
-          env: { DATABASE_URL: connectionString, PGBOSS_SCHEMA: schema },
+          env: { PGBOSS_DATABASE_URL: connectionString, PGBOSS_SCHEMA: schema },
           expectedOutput: 'not installed'
         })
       })
 
       it('should read schema from PGBOSS_SCHEMA env var', async function () {
         await execCommand(`node ${cliPath} plans create`, {
-          env: { DATABASE_URL: connectionString, PGBOSS_SCHEMA: 'env_test_schema' },
+          env: { PGBOSS_DATABASE_URL: connectionString, PGBOSS_SCHEMA: 'env_test_schema' },
           expectedOutput: 'env_test_schema'
         })
       })
