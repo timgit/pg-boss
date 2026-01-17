@@ -38,6 +38,7 @@ class Worker<T = unknown> {
   lastErrorOn: number | null = null
   stopping = false
   stopped = false
+  abortController: AbortController | null = null
   private loopDelayPromise: AbortablePromise<void> | null = null
   private beenNotified = false
   private runPromise: Promise<void> | null = null
@@ -121,6 +122,12 @@ class Worker<T = unknown> {
     }
 
     await this.runPromise
+  }
+
+  abort (): void {
+    if (this.abortController && !this.abortController.signal.aborted) {
+      this.abortController.abort()
+    }
   }
 
   toWipData (): types.WipData {

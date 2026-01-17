@@ -201,12 +201,18 @@ class Manager extends EventEmitter implements types.EventsMixin {
   async #processJobs<T> (
     name: string,
     jobs: types.Job<T>[],
-    callback: types.WorkHandler<T>
+    callback: types.WorkHandler<T>,
+    worker?: Worker<T>
   ): Promise<void> {
     const jobIds = jobs.map(job => job.id)
     const maxExpiration = jobs.reduce((acc, i) => Math.max(acc, i.expireInSeconds), 0)
     const ac = new AbortController()
     jobs.forEach(job => { job.signal = ac.signal })
+
+    // Store AbortController on worker so it can be aborted after graceful shutdown
+    if (worker) {
+      worker.abortController = ac
+    }
 
     try {
       const result = await resolveWithinSeconds(callback(jobs), maxExpiration, `handler execution exceeded ${maxExpiration}s`, ac)
@@ -215,6 +221,11 @@ class Manager extends EventEmitter implements types.EventsMixin {
     } catch (err: any) {
       await this.fail(name, jobIds, err)
       this.#trackJobsFailed(name, jobs, err)
+    } finally {
+      if (worker) {
+        // Clear between jobs
+        worker.abortController = null
+      }
     }
   }
 
@@ -276,6 +287,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       if (jobIds.length) {
         await this.fail(worker.name, jobIds, 'pg-boss shut down while active')
       }
+      worker.abort()
     }
   }
 
@@ -320,9 +332,12 @@ class Manager extends EventEmitter implements types.EventsMixin {
         this.emitWip(name)
         this.#trackJobsActive(name, jobs)
 
+        // Get the worker instance for abort controller tracking
+        const worker = this.workers.get(workerId)
+
         // Skip all in-memory group tracking when localGroupConcurrency is not enabled
         if (localGroupConcurrency == null) {
-          await this.#processJobs(name, jobs, callback)
+          await this.#processJobs(name, jobs, callback, worker)
         } else {
           const { allowed, excess, groupedJobs } = this.#trackLocalGroupStart(name, jobs)
 
@@ -333,7 +348,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
           if (allowed.length > 0) {
             try {
-              await this.#processJobs(name, allowed, callback)
+              await this.#processJobs(name, allowed, callback, worker)
             } finally {
               this.#trackLocalGroupEnd(name, groupedJobs)
             }
