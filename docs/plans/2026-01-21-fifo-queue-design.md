@@ -1,4 +1,4 @@
-# FIFO Queue Design
+# Singleton Strict FIFO Queue Design
 
 ## Problem
 
@@ -13,7 +13,7 @@ pg-boss needs to handle FIFO queues where jobs with the same `singletonKey` are 
 
 ### New Queue Policy
 
-Add `'fifo'` to `QUEUE_POLICIES`:
+Add `'singleton_strict_fifo'` to `QUEUE_POLICIES`:
 
 ```typescript
 const QUEUE_POLICIES = Object.freeze({
@@ -22,7 +22,7 @@ const QUEUE_POLICIES = Object.freeze({
   singleton: 'singleton',
   stately: 'stately',
   exclusive: 'exclusive',
-  fifo: 'fifo'
+  singleton_strict_fifo: 'singleton_strict_fifo'
 })
 ```
 
@@ -31,9 +31,9 @@ const QUEUE_POLICIES = Object.freeze({
 A partial unique index enforces the blocking behavior atomically:
 
 ```sql
-CREATE UNIQUE INDEX job_i_fifo ON pgboss.job (name, singleton_key)
+CREATE UNIQUE INDEX job_i8 ON pgboss.job (name, singleton_key)
 WHERE state IN ('active', 'retry', 'failed')
-  AND policy = 'fifo'
+  AND policy = 'singleton_strict_fifo'
 ```
 
 This ensures:
@@ -53,14 +53,15 @@ created → active → completed (success, unblocks next job)
              failed (blocks queue until manual intervention)
 ```
 
-### API Changes
+### API
 
-#### 1. `createFifoQueue(name, options?)`
+#### 1. `createQueue(name, { policy: 'singleton_strict_fifo' })`
 
-Creates a queue with `policy: 'fifo'`. Options are the standard queue options minus retry settings (those are per-job).
+Creates a queue with the singleton_strict_fifo policy using the standard `createQueue()` method:
 
 ```typescript
-await boss.createFifoQueue('order-processing', {
+await boss.createQueue('order-processing', {
+  policy: 'singleton_strict_fifo',
   expireInSeconds: 60 * 5,
   retentionSeconds: 60 * 60 * 24 * 7
 })
@@ -68,7 +69,7 @@ await boss.createFifoQueue('order-processing', {
 
 #### 2. `send()` Validation
 
-When sending to a FIFO queue, `singletonKey` is required. Throws an error if missing:
+When sending to a singleton_strict_fifo queue, `singletonKey` is required. Throws an error if missing:
 
 ```typescript
 // Valid
@@ -79,11 +80,28 @@ await boss.send('order-processing', { orderId: '456' }, {
   retryBackoff: true
 })
 
-// Throws: "FIFO queues require a singletonKey"
+// Throws: "singleton_strict_fifo queues require a singletonKey"
 await boss.send('order-processing', { orderId: '456' }, {})
 ```
 
-#### 3. `getBlockedKeys(queue)`
+#### 3. `insert()` Validation
+
+Batch inserts also require `singletonKey` for each job:
+
+```typescript
+// Valid
+await boss.insert('order-processing', [
+  { data: { order: 1 }, singletonKey: 'order-123' },
+  { data: { order: 2 }, singletonKey: 'order-456' }
+])
+
+// Throws: "singleton_strict_fifo queues require a singletonKey"
+await boss.insert('order-processing', [
+  { data: { order: 1 } }
+])
+```
+
+#### 4. `getBlockedKeys(queue)`
 
 Returns an array of `singletonKey` values that are blocked by permanently failed jobs:
 
@@ -98,27 +116,70 @@ SELECT DISTINCT singleton_key as "singletonKey"
 FROM pgboss.job
 WHERE name = $1
   AND state = 'failed'
-  AND policy = 'fifo'
+  AND policy = 'singleton_strict_fifo'
 ```
 
-#### 4. Unblocking Operations
+Note: This method throws an error if called on a non-singleton_strict_fifo queue.
+
+#### 5. Unblocking Operations
 
 Existing methods work for unblocking:
 
 - `deleteJob(queue, id)` - Removes the failed job, allows next job to proceed
-- `retryJob(queue, id)` - Puts failed job back to `retry` state with incremented retry_limit, it gets picked up next
+- `retry(queue, id)` - Puts failed job back to `retry` state with incremented retry_limit, it gets picked up next
 
-#### 5. `work()` / `fetch()`
+#### 6. `work()` / `fetch()`
 
 No changes needed. The unique index handles blocking at the database level. Workers that try to fetch a blocked job will simply get 0 rows affected and move on.
 
-## Implementation Tasks
+### Parallel Processing of Different singletonKeys
 
-1. Add `'fifo'` to `QUEUE_POLICIES` in `src/plans.ts`
-2. Create the FIFO index function `createIndexJobPolicyFifo()` in `src/plans.ts`
-3. Add index creation to `createTableJobCommon()` and `createQueueFunction()`
-4. Add migration for existing databases
-5. Add `createFifoQueue()` method to manager
-6. Add `singletonKey` validation in `send()` for FIFO queues
-7. Add `getBlockedKeys()` method
-8. Add tests for FIFO behavior
+Jobs with different `singletonKey` values can be processed in parallel. The blocking only applies within the same `singletonKey`:
+
+```typescript
+// These two jobs can be processed concurrently
+await boss.send('orders', { id: 1 }, { singletonKey: 'customer-A' })
+await boss.send('orders', { id: 2 }, { singletonKey: 'customer-B' })
+```
+
+## Implementation
+
+### Files Modified
+
+1. **src/plans.ts**
+   - Added `singleton_strict_fifo` to `QUEUE_POLICIES`
+   - Added `createIndexJobPolicySingletonStrictFifo()` function
+   - Added index creation to `createTableJobCommon()` and `createQueueFunction()`
+   - Added `getBlockedKeys()` SQL function
+
+2. **src/manager.ts**
+   - Added `singletonKey` validation in `createJob()` for singleton_strict_fifo queues
+   - Added `singletonKey` validation in `insert()` for singleton_strict_fifo queues
+   - Added `getBlockedKeys()` method
+
+3. **src/index.ts**
+   - Exposed `getBlockedKeys()` on PgBoss class
+
+4. **src/types.ts**
+   - Added `'singleton_strict_fifo'` to `QueuePolicy` type
+
+5. **src/migrationStore.ts**
+   - Added migration version 28 with the FIFO index
+
+6. **package.json**
+   - Updated schema version to 28
+
+### Tests
+
+Tests are in `test/fifoTest.ts` covering:
+- singletonKey requirement for send() and insert()
+- Blocking during active state
+- Blocking during retry state
+- Blocking on permanent failure
+- Parallel processing of different singletonKeys
+- getBlockedKeys() API
+- Unblocking via deleteJob() and retry()
+
+### Example
+
+See `examples/singleton/test-fifo-queue-policy.ts` for a comprehensive example demonstrating all behaviors.
