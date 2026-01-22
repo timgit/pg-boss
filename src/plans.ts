@@ -27,7 +27,8 @@ const QUEUE_POLICIES = Object.freeze({
   short: 'short',
   singleton: 'singleton',
   stately: 'stately',
-  exclusive: 'exclusive'
+  exclusive: 'exclusive',
+  singleton_strict_fifo: 'singleton_strict_fifo'
 })
 
 const QUEUE_DEFAULTS = {
@@ -217,6 +218,7 @@ function createTableJobCommon (schema: string, table: string) {
     ${format(createIndexJobPolicySingleton(schema))}
     ${format(createIndexJobPolicyStately(schema))}
     ${format(createIndexJobPolicyExclusive(schema))}
+    ${format(createIndexJobPolicySingletonStrictFifo(schema))}
     ${format(createIndexJobThrottle(schema))}
     ${format(createIndexJobFetch(schema))}
     ${format(createIndexJobGroupConcurrency(schema))}
@@ -296,6 +298,8 @@ function createQueueFunction (schema: string) {
         EXECUTE format('${formatPartitionCommand(createIndexJobPolicyStately(schema))}', tablename);
       ELSIF options->>'policy' = 'exclusive' THEN
         EXECUTE format('${formatPartitionCommand(createIndexJobPolicyExclusive(schema))}', tablename);
+      ELSIF options->>'policy' = 'singleton_strict_fifo' THEN
+        EXECUTE format('${formatPartitionCommand(createIndexJobPolicySingletonStrictFifo(schema))}', tablename);
       END IF;
 
       EXECUTE format('ALTER TABLE ${schema}.%I ADD CONSTRAINT cjc CHECK (name=%L)', tablename, queue_name);
@@ -384,6 +388,10 @@ function createIndexJobFetch (schema: string) {
 
 function createIndexJobPolicyExclusive (schema: string) {
   return `CREATE UNIQUE INDEX job_i6 ON ${schema}.job (name, COALESCE(singleton_key, '')) WHERE state <= '${JOB_STATES.active}' AND policy = '${QUEUE_POLICIES.exclusive}'`
+}
+
+function createIndexJobPolicySingletonStrictFifo (schema: string) {
+  return `CREATE UNIQUE INDEX job_i8 ON ${schema}.job (name, singleton_key) WHERE state IN ('${JOB_STATES.active}', '${JOB_STATES.retry}', '${JOB_STATES.failed}') AND policy = '${QUEUE_POLICIES.singleton_strict_fifo}'`
 }
 
 function createIndexJobGroupConcurrency (schema: string) {
@@ -1215,6 +1223,16 @@ function getJobById (schema: string, table: string) {
     `
 }
 
+function getBlockedKeys (schema: string, table: string) {
+  return `
+    SELECT DISTINCT singleton_key as "singletonKey"
+    FROM ${schema}.${table}
+    WHERE name = $1
+      AND state = '${JOB_STATES.failed}'
+      AND policy = '${QUEUE_POLICIES.singleton_strict_fifo}'
+    `
+}
+
 export {
   create,
   insertVersion,
@@ -1257,6 +1275,7 @@ export {
   locked,
   assertMigration,
   getJobById,
+  getBlockedKeys,
   QUEUE_POLICIES,
   JOB_STATES,
   MIGRATE_RACE_MESSAGE,

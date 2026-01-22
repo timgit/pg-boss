@@ -270,6 +270,10 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#manager.createQueue(name, options)
   }
 
+  getBlockedKeys (name: string): Promise<string[]> {
+    return this.#manager.getBlockedKeys(name)
+  }
+
   updateQueue (name: string, options?: types.UpdateQueueOptions): Promise<void> {
     return this.#manager.updateQueue(name, options)
   }

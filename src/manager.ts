@@ -539,7 +539,11 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     const db = wrapper || this.db
 
-    const { table } = await this.getQueueCache(name)
+    const { table, policy } = await this.getQueueCache(name)
+
+    if (policy === plans.QUEUE_POLICIES.singleton_strict_fifo && !singletonKey) {
+      throw new Error('singleton_strict_fifo queues require a singletonKey')
+    }
 
     const sql = plans.insertJobs(this.config.schema, { table, name, returnId: true })
 
@@ -581,7 +585,15 @@ class Manager extends EventEmitter implements types.EventsMixin {
   async insert (name: string, jobs: types.JobInsert[], options: types.InsertOptions = {}) {
     assert(Array.isArray(jobs), 'jobs argument should be an array')
 
-    const { table } = await this.getQueueCache(name)
+    const { table, policy } = await this.getQueueCache(name)
+
+    if (policy === plans.QUEUE_POLICIES.singleton_strict_fifo) {
+      for (const job of jobs) {
+        if (!job.singletonKey) {
+          throw new Error('singleton_strict_fifo queues require a singletonKey')
+        }
+      }
+    }
 
     const db = this.assertDb(options)
 
@@ -774,6 +786,21 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     const sql = plans.createQueue(this.config.schema, name, { ...options, policy })
     await this.db.executeSql(sql)
+  }
+
+  async getBlockedKeys (name: string): Promise<string[]> {
+    Attorney.assertQueueName(name)
+
+    const { table, policy } = await this.getQueueCache(name)
+
+    if (policy !== plans.QUEUE_POLICIES.singleton_strict_fifo) {
+      throw new Error('getBlockedKeys is only available for singleton_strict_fifo queues')
+    }
+
+    const sql = plans.getBlockedKeys(this.config.schema, table)
+    const { rows } = await this.db.executeSql(sql, [name])
+
+    return rows.map(row => row.singletonKey)
   }
 
   async getQueues (names?: string | string[]): Promise<types.QueueResult[]> {
