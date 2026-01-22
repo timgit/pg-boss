@@ -4,9 +4,9 @@ import { assertTruthy } from './testHelper.ts'
 import { delay } from '../src/tools.ts'
 import { ctx } from './hooks.ts'
 
-describe('fifo', function () {
+describe('singleton_strict_fifo', function () {
   [{ partition: false }, { partition: true }].forEach(({ partition }) => {
-    it(`fifo policy requires singletonKey using partition=${partition}`, async function () {
+    it(`singleton_strict_fifo policy requires singletonKey using partition=${partition}`, async function () {
       ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
       await ctx.boss.createQueue(ctx.schema, { policy: 'singleton_strict_fifo', partition })
@@ -15,7 +15,7 @@ describe('fifo', function () {
         .rejects.toThrow('singleton_strict_fifo queues require a singletonKey')
     })
 
-    it(`fifo policy allows sending with singletonKey using partition=${partition}`, async function () {
+    it(`singleton_strict_fifo policy allows sending with singletonKey using partition=${partition}`, async function () {
       ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
       await ctx.boss.createQueue(ctx.schema, { policy: 'singleton_strict_fifo', partition })
@@ -25,7 +25,7 @@ describe('fifo', function () {
       expect(jobId).toBeTruthy()
     })
 
-    it(`fifo policy blocks queue during active state using partition=${partition}`, async function () {
+    it(`singleton_strict_fifo policy blocks queue during active state using partition=${partition}`, async function () {
       ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
       await ctx.boss.createQueue(ctx.schema, { policy: 'singleton_strict_fifo', partition })
@@ -54,7 +54,7 @@ describe('fifo', function () {
       expect(job2AfterComplete.id).toBe(jobId2)
     })
 
-    it(`fifo policy allows parallel processing of different singletonKeys using partition=${partition}`, async function () {
+    it(`singleton_strict_fifo policy allows parallel processing of different singletonKeys using partition=${partition}`, async function () {
       ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
       await ctx.boss.createQueue(ctx.schema, { policy: 'singleton_strict_fifo', partition })
@@ -71,7 +71,7 @@ describe('fifo', function () {
       expect(jobs.length).toBe(2)
     })
 
-    it(`fifo policy blocks queue during retry state using partition=${partition}`, async function () {
+    it(`singleton_strict_fifo policy blocks queue during retry state using partition=${partition}`, async function () {
       ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
       await ctx.boss.createQueue(ctx.schema, { policy: 'singleton_strict_fifo', partition })
@@ -117,7 +117,7 @@ describe('fifo', function () {
       expect(job2AfterComplete.id).toBe(jobId2)
     })
 
-    it(`fifo policy blocks queue permanently on failure using partition=${partition}`, async function () {
+    it(`singleton_strict_fifo policy blocks queue permanently on failure using partition=${partition}`, async function () {
       ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
       await ctx.boss.createQueue(ctx.schema, { policy: 'singleton_strict_fifo', partition })
@@ -148,7 +148,7 @@ describe('fifo', function () {
       expect(job2).toBeFalsy()
     })
 
-    it(`fifo policy unblocks queue when failed job is deleted using partition=${partition}`, async function () {
+    it(`singleton_strict_fifo policy unblocks queue when failed job is deleted using partition=${partition}`, async function () {
       ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
       await ctx.boss.createQueue(ctx.schema, { policy: 'singleton_strict_fifo', partition })
@@ -178,7 +178,7 @@ describe('fifo', function () {
       expect(job2.id).toBe(jobId2)
     })
 
-    it(`fifo policy unblocks queue when failed job is retried using partition=${partition}`, async function () {
+    it(`singleton_strict_fifo policy unblocks queue when failed job is retried using partition=${partition}`, async function () {
       ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
       await ctx.boss.createQueue(ctx.schema, { policy: 'singleton_strict_fifo', partition })
@@ -261,7 +261,7 @@ describe('fifo', function () {
       expect(blockedKeys4).toContain('order-456')
     })
 
-    it(`getBlockedKeys throws for non-FIFO queues using partition=${partition}`, async function () {
+    it(`getBlockedKeys throws for non-singleton_strict_fifo queues using partition=${partition}`, async function () {
       ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
       await ctx.boss.createQueue(ctx.schema, { policy: 'standard', partition })
@@ -270,7 +270,7 @@ describe('fifo', function () {
         .rejects.toThrow('getBlockedKeys is only available for singleton_strict_fifo queues')
     })
 
-    it(`fifo policy insert requires singletonKey using partition=${partition}`, async function () {
+    it(`singleton_strict_fifo policy insert requires singletonKey using partition=${partition}`, async function () {
       ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
       await ctx.boss.createQueue(ctx.schema, { policy: 'singleton_strict_fifo', partition })
@@ -279,7 +279,7 @@ describe('fifo', function () {
         .rejects.toThrow('singleton_strict_fifo queues require a singletonKey')
     })
 
-    it(`fifo policy insert works with singletonKey using partition=${partition}`, async function () {
+    it(`singleton_strict_fifo policy insert works with singletonKey using partition=${partition}`, async function () {
       ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
       await ctx.boss.createQueue(ctx.schema, { policy: 'singleton_strict_fifo', partition })
