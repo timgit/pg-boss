@@ -53,6 +53,10 @@ class Bam extends EventEmitter implements types.EventsMixin {
 
     this.#working = true
     try {
+      if (this.#config.__test__throw_bam) {
+        throw new Error(this.#config.__test__throw_bam)
+      }
+
       const sql = plans.trySetBamTime(
         this.#config.schema,
         this.#config.bamIntervalSeconds

@@ -324,8 +324,9 @@ function applyScheduleConfig (config: any) {
 }
 
 function applyBamConfig (config: any) {
-  assert(!('bamIntervalSeconds' in config) || config.bamIntervalSeconds >= 10,
-    'configuration assert: bamIntervalSeconds must be at least 10 seconds')
+  const minInterval = config.__test__bypass_bam_interval_check ? 1 : 10
+  assert(!('bamIntervalSeconds' in config) || config.bamIntervalSeconds >= minInterval,
+    `configuration assert: bamIntervalSeconds must be at least ${minInterval} seconds`)
 
   config.bamIntervalSeconds = config.bamIntervalSeconds || 300 // 5 minutes
 }
