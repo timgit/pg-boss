@@ -49,7 +49,7 @@ class Bam extends EventEmitter implements types.EventsMixin {
   }
 
   async #onPoll () {
-    if (this.#stopped || this.#working) return
+    if (this.#stopped || this.#working || !this.#config.migrate) return
 
     this.#working = true
     try {

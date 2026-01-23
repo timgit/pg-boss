@@ -62,7 +62,7 @@ export interface Migration {
   version: number
   previous: number
   install: string[]
-  bam?: string[]
+  async?: string[]
   uninstall?: string[]
 }
 

@@ -38,8 +38,8 @@ function migrate (schema: string, version: number, migrations?: types.Migration[
     .reduce((acc, migration) => {
       acc.install = acc.install.concat(migration.install)
 
-      if (migration.bam) {
-        const bamCommands = migration.bam.map(cmd =>
+      if (migration.async) {
+        const bamCommands = migration.async.map(cmd =>
           cmd.replace(/\$VERSION\$/g, String(migration.version))
         )
         acc.install = acc.install.concat(bamCommands)
@@ -149,11 +149,94 @@ function getAll (schema: string): types.Migration[] {
       version: 27,
       previous: 26,
       install: [
-        // Add group_id and group_tier columns to the job table (parent table for partitions)
+        `ALTER TABLE ${schema}.version ADD COLUMN IF NOT EXISTS bam_on timestamp with time zone`,
+        `
+        CREATE TABLE IF NOT EXISTS ${schema}.bam (
+          id text PRIMARY KEY,
+          version int NOT NULL,
+          status text NOT NULL DEFAULT 'pending',
+          target_table text NOT NULL,
+          command text NOT NULL,
+          error text,
+          created_on timestamp with time zone NOT NULL DEFAULT now(),
+          started_on timestamp with time zone,
+          completed_on timestamp with time zone
+        )
+        `,
+        `CREATE FUNCTION ${schema}.job_table_format(command text, table_name text)
+          RETURNS text AS
+          $$
+            SELECT format(
+              replace(
+                replace(command, '.job', '.%1$I'),
+                'job_i', '%1$s_i'
+              ),
+              table_name
+            );
+          $$
+          LANGUAGE sql IMMUTABLE;
+        `,
+        `
+        CREATE OR REPLACE FUNCTION ${schema}.job_table_run_async(command_id text, version int, command_template text, target_table text DEFAULT NULL)
+        RETURNS VOID AS
+        $$
+        BEGIN
+          IF target_table IS NOT NULL THEN
+            INSERT INTO ${schema}.bam (id, version, status, target_table, command)
+            VALUES (
+              command_id || '_' || target_table,
+              version,
+              'pending',
+              target_table,
+              ${schema}.job_table_format(command_template, target_table)
+            );
+            RETURN;
+          END IF;
+
+          INSERT INTO ${schema}.bam (id, version, status, target_table, command)
+          SELECT
+            command_id || '_job_common',
+            version,
+            'pending',
+            'job_common',
+            ${schema}.job_table_format(command_template, 'job_common')
+          UNION ALL
+          SELECT
+            command_id || '_' || table_name,
+            version,
+            'pending',
+            table_name,
+            ${schema}.job_table_format(command_template, table_name)
+          FROM ${schema}.queue
+          WHERE partition = true;
+        END;
+        $$
+        LANGUAGE plpgsql;
+        `,
+        `
+        CREATE OR REPLACE FUNCTION ${schema}.job_table_run(command_template text, target_table text DEFAULT NULL)
+        RETURNS VOID AS
+        $$
+        DECLARE
+          tbl RECORD;
+        BEGIN
+          IF target_table IS NOT NULL THEN
+            EXECUTE ${schema}.job_table_format(command_template, target_table);
+            RETURN;
+          END IF;
+
+          EXECUTE ${schema}.job_table_format(command_template, 'job_common');
+
+          FOR tbl IN SELECT table_name FROM ${schema}.queue WHERE partition = true
+          LOOP
+            EXECUTE ${schema}.job_table_format(command_template, tbl.table_name);
+          END LOOP;
+        END;
+        $$
+        LANGUAGE plpgsql;
+        `,
         `ALTER TABLE ${schema}.job ADD COLUMN IF NOT EXISTS group_id text`,
         `ALTER TABLE ${schema}.job ADD COLUMN IF NOT EXISTS group_tier text`,
-        // Create index for group concurrency on job_common (the default partition)
-        `CREATE INDEX job_i7 ON ${schema}.job_common (name, group_id) WHERE state = 'active' AND group_id IS NOT NULL`,
         // Update create_queue function to include the group concurrency index for partitioned tables
         `
         CREATE OR REPLACE FUNCTION ${schema}.create_queue(queue_name text, options jsonb)
@@ -209,22 +292,22 @@ function getAll (schema: string): types.Migration[] {
 
           EXECUTE format('CREATE TABLE ${schema}.%I (LIKE ${schema}.job INCLUDING DEFAULTS)', tablename);
 
-          EXECUTE format('ALTER TABLE ${schema}.%1$I ADD PRIMARY KEY (name, id)', tablename);
-          EXECUTE format('ALTER TABLE ${schema}.%1$I ADD CONSTRAINT q_fkey FOREIGN KEY (name) REFERENCES ${schema}.queue (name) ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED', tablename);
-          EXECUTE format('ALTER TABLE ${schema}.%1$I ADD CONSTRAINT dlq_fkey FOREIGN KEY (dead_letter) REFERENCES ${schema}.queue (name) ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED', tablename);
+          EXECUTE ${schema}.job_table_format($cmd$ALTER TABLE ${schema}.job ADD PRIMARY KEY (name, id)$cmd$, tablename);
+          EXECUTE ${schema}.job_table_format($cmd$ALTER TABLE ${schema}.job ADD CONSTRAINT q_fkey FOREIGN KEY (name) REFERENCES ${schema}.queue (name) ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED$cmd$, tablename);
+          EXECUTE ${schema}.job_table_format($cmd$ALTER TABLE ${schema}.job ADD CONSTRAINT dlq_fkey FOREIGN KEY (dead_letter) REFERENCES ${schema}.queue (name) ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED$cmd$, tablename);
 
-          EXECUTE format('CREATE INDEX %1$s_i5 ON ${schema}.%1$I (name, start_after) INCLUDE (priority, created_on, id) WHERE state < ''active''', tablename);
-          EXECUTE format('CREATE UNIQUE INDEX %1$s_i4 ON ${schema}.%1$I (name, singleton_on, COALESCE(singleton_key, '''')) WHERE state <> ''cancelled'' AND singleton_on IS NOT NULL', tablename);
-          EXECUTE format('CREATE INDEX %1$s_i7 ON ${schema}.%1$I (name, group_id) WHERE state = ''active'' AND group_id IS NOT NULL', tablename);
+          EXECUTE ${schema}.job_table_format($cmd$CREATE INDEX job_i5 ON ${schema}.job (name, start_after) INCLUDE (priority, created_on, id) WHERE state < 'active'$cmd$, tablename);
+          EXECUTE ${schema}.job_table_format($cmd$CREATE UNIQUE INDEX job_i4 ON ${schema}.job (name, singleton_on, COALESCE(singleton_key, '')) WHERE state <> 'cancelled' AND singleton_on IS NOT NULL$cmd$, tablename);
+          EXECUTE ${schema}.job_table_format($cmd$CREATE INDEX job_i7 ON ${schema}.job (name, group_id) WHERE state = 'active' AND group_id IS NOT NULL$cmd$, tablename);
 
           IF options->>'policy' = 'short' THEN
-            EXECUTE format('CREATE UNIQUE INDEX %1$s_i1 ON ${schema}.%1$I (name, COALESCE(singleton_key, '''')) WHERE state = ''created'' AND policy = ''short''', tablename);
+            EXECUTE ${schema}.job_table_format($cmd$CREATE UNIQUE INDEX job_i1 ON ${schema}.job (name, COALESCE(singleton_key, '')) WHERE state = 'created' AND policy = 'short'$cmd$, tablename);
           ELSIF options->>'policy' = 'singleton' THEN
-            EXECUTE format('CREATE UNIQUE INDEX %1$s_i2 ON ${schema}.%1$I (name, COALESCE(singleton_key, '''')) WHERE state = ''active'' AND policy = ''singleton''', tablename);
+            EXECUTE ${schema}.job_table_format($cmd$CREATE UNIQUE INDEX job_i2 ON ${schema}.job (name, COALESCE(singleton_key, '')) WHERE state = 'active' AND policy = 'singleton'$cmd$, tablename);
           ELSIF options->>'policy' = 'stately' THEN
-            EXECUTE format('CREATE UNIQUE INDEX %1$s_i3 ON ${schema}.%1$I (name, state, COALESCE(singleton_key, '''')) WHERE state <= ''active'' AND policy = ''stately''', tablename);
+            EXECUTE ${schema}.job_table_format($cmd$CREATE UNIQUE INDEX job_i3 ON ${schema}.job (name, state, COALESCE(singleton_key, '')) WHERE state <= 'active' AND policy = 'stately'$cmd$, tablename);
           ELSIF options->>'policy' = 'exclusive' THEN
-            EXECUTE format('CREATE UNIQUE INDEX %1$s_i6 ON ${schema}.%1$I (name, COALESCE(singleton_key, '''')) WHERE state <= ''active'' AND policy = ''exclusive''', tablename);
+            EXECUTE ${schema}.job_table_format($cmd$CREATE UNIQUE INDEX job_i6 ON ${schema}.job (name, COALESCE(singleton_key, '')) WHERE state <= 'active' AND policy = 'exclusive'$cmd$, tablename);
           END IF;
 
           EXECUTE format('ALTER TABLE ${schema}.%I ADD CONSTRAINT cjc CHECK (name=%L)', tablename, queue_name);
@@ -232,56 +315,39 @@ function getAll (schema: string): types.Migration[] {
         END;
         $$
         LANGUAGE plpgsql;
-        `
+        `,
+        `ALTER INDEX IF EXISTS ${schema}.job_i1 RENAME TO job_common_i1`,
+        `ALTER INDEX IF EXISTS ${schema}.job_i2 RENAME TO job_common_i2`,
+        `ALTER INDEX IF EXISTS ${schema}.job_i3 RENAME TO job_common_i3`,
+        `ALTER INDEX IF EXISTS ${schema}.job_i4 RENAME TO job_common_i4`,
+        `ALTER INDEX IF EXISTS ${schema}.job_i5 RENAME TO job_common_i5`,
+        `ALTER INDEX IF EXISTS ${schema}.job_i6 RENAME TO job_common_i6`,
+        `ALTER INDEX IF EXISTS ${schema}.job_i7 RENAME TO job_common_i7`
+      ],
+      async: [
+        `SELECT ${schema}.job_table_run_async(
+          'group_concurency_index',
+          $VERSION$,
+          $$
+          CREATE INDEX CONCURRENTLY job_i7 ON ${schema}.job (name, group_id) WHERE state = 'active' AND group_id IS NOT NULL
+          $$
+        )`
       ],
       uninstall: [
-        `DROP INDEX IF EXISTS ${schema}.job_i7`,
+        `ALTER INDEX IF EXISTS ${schema}.job_common_i6 RENAME TO job_i6`,
+        `ALTER INDEX IF EXISTS ${schema}.job_common_i5 RENAME TO job_i5`,
+        `ALTER INDEX IF EXISTS ${schema}.job_common_i4 RENAME TO job_i4`,
+        `ALTER INDEX IF EXISTS ${schema}.job_common_i3 RENAME TO job_i3`,
+        `ALTER INDEX IF EXISTS ${schema}.job_common_i2 RENAME TO job_i2`,
+        `ALTER INDEX IF EXISTS ${schema}.job_common_i1 RENAME TO job_i1`,
+        `SELECT ${schema}.job_table_run('DROP INDEX IF EXISTS ${schema}.job_i7')`,
+        `DROP FUNCTION IF EXISTS ${schema}.job_table_run(text)`,
+        `DROP FUNCTION IF EXISTS ${schema}.job_table_run_async(text, int, text)`,
+        `DROP FUNCTION IF EXISTS ${schema}.job_table_format(text, text)`,
+        `DROP TABLE IF EXISTS ${schema}.bam`,
+        `ALTER TABLE ${schema}.version DROP COLUMN IF EXISTS bam_on`,
         `ALTER TABLE ${schema}.job DROP COLUMN IF EXISTS group_tier`,
         `ALTER TABLE ${schema}.job DROP COLUMN IF EXISTS group_id`
-      ]
-    },
-    {
-      release: '12.7.0',
-      version: 28,
-      previous: 27,
-      install: [
-        `ALTER TABLE ${schema}.version ADD COLUMN IF NOT EXISTS bam_on timestamp with time zone`,
-        `
-        CREATE TABLE IF NOT EXISTS ${schema}.bam (
-          id text PRIMARY KEY,
-          version int NOT NULL,
-          status text NOT NULL DEFAULT 'pending',
-          target_table text NOT NULL,
-          command text NOT NULL,
-          error text,
-          created_on timestamp with time zone NOT NULL DEFAULT now(),
-          started_on timestamp with time zone,
-          completed_on timestamp with time zone
-        )
-        `,
-        `
-        CREATE OR REPLACE FUNCTION ${schema}.bam_queue_table_run(command_id text, version int, command_template text)
-        RETURNS VOID AS
-        $$
-        BEGIN
-          INSERT INTO ${schema}.bam (id, version, status, target_table, command)
-          SELECT
-            command_id || '_' || table_name,
-            version,
-            'pending',
-            table_name,
-            REPLACE(command_template, '%TABLE%', table_name)
-          FROM ${schema}.queue
-          WHERE partition = true;
-        END;
-        $$
-        LANGUAGE plpgsql;
-        `
-      ],
-      uninstall: [
-        `DROP FUNCTION IF EXISTS ${schema}.bam_queue_table_run(text, int, text)`,
-        `DROP TABLE IF EXISTS ${schema}.bam`,
-        `ALTER TABLE ${schema}.version DROP COLUMN IF EXISTS bam_on`
       ]
     }
   ]

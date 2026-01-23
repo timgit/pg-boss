@@ -54,13 +54,17 @@ function create (schema: string, version: number, options?: { createSchema?: boo
     createTableSubscription(schema),
     createTableBam(schema),
 
+    jobTableFormatFunction(schema),
+    jobTableRunFunction(schema),
+    jobTableRunAsyncFunction(schema),
+
     createTableJob(schema),
     createPrimaryKeyJob(schema),
-    createTableJobCommon(schema, COMMON_JOB_TABLE),
+
+    createTableJobCommon(schema),
 
     createQueueFunction(schema),
     deleteQueueFunction(schema),
-    bamQueueTableRun(schema),
 
     insertVersion(schema, version)
   ]
@@ -171,19 +175,80 @@ function createTableBam (schema: string) {
   `
 }
 
-function bamQueueTableRun (schema: string) {
+function jobTableFormatFunction (schema: string) {
   return `
-    CREATE FUNCTION ${schema}.bam_queue_table_run(command_id text, version int, command_template text)
+    CREATE FUNCTION ${schema}.job_table_format(command text, table_name text)
+    RETURNS text AS
+    $$
+      SELECT format(
+        replace(
+          replace(command, '.job', '.%1$I'),
+          'job_i', '%1$s_i'
+        ),
+        table_name
+      );
+    $$
+    LANGUAGE sql IMMUTABLE;
+  `
+}
+
+function jobTableRunFunction (schema: string) {
+  return `
+    CREATE FUNCTION ${schema}.job_table_run(command_template text, target_table text DEFAULT NULL)
+    RETURNS VOID AS
+    $$
+    DECLARE
+      tbl RECORD;
+    BEGIN
+      IF target_table IS NOT NULL THEN
+        EXECUTE ${schema}.job_table_format(command_template, target_table);
+        RETURN;
+      END IF;
+
+      EXECUTE ${schema}.job_table_format(command_template, '${COMMON_JOB_TABLE}');
+
+      FOR tbl IN SELECT table_name FROM ${schema}.queue WHERE partition = true
+      LOOP
+        EXECUTE ${schema}.job_table_format(command_template, tbl.table_name);
+      END LOOP;
+    END;
+    $$
+    LANGUAGE plpgsql;
+  `
+}
+
+function jobTableRunAsyncFunction (schema: string) {
+  return `
+    CREATE FUNCTION ${schema}.job_table_run_async(command_id text, version int, command_template text, target_table text DEFAULT NULL)
     RETURNS VOID AS
     $$
     BEGIN
+      IF target_table IS NOT NULL THEN
+        INSERT INTO ${schema}.bam (id, version, status, target_table, command)
+        VALUES (
+          command_id || '_' || target_table,
+          version,
+          'pending',
+          target_table,
+          ${schema}.job_table_format(command_template, target_table)
+        );
+        RETURN;
+      END IF;
+
       INSERT INTO ${schema}.bam (id, version, status, target_table, command)
+      SELECT
+        command_id || '_' || '${COMMON_JOB_TABLE}',
+        version,
+        'pending',
+        '${COMMON_JOB_TABLE}',
+        ${schema}.job_table_format(command_template, '${COMMON_JOB_TABLE}')
+      UNION ALL
       SELECT
         command_id || '_' || table_name,
         version,
         'pending',
         table_name,
-        REPLACE(command_template, '%TABLE%', table_name)
+        ${schema}.job_table_format(command_template, table_name)
       FROM ${schema}.queue
       WHERE partition = true;
     END;
@@ -245,23 +310,22 @@ const JOB_COLUMNS_ALL = `${JOB_COLUMNS_MIN},
   output
 `
 
-function createTableJobCommon (schema: string, table: string) {
-  const format = (command: string) => command.replaceAll('.job', `.${table}`) + ';'
-
+function createTableJobCommon (schema: string) {
   return `
-    CREATE TABLE ${schema}.${table} (LIKE ${schema}.job INCLUDING GENERATED INCLUDING DEFAULTS);
-    ${format(createPrimaryKeyJob(schema))}
-    ${format(createQueueForeignKeyJob(schema))}
-    ${format(createQueueForeignKeyJobDeadLetter(schema))}
-    ${format(createIndexJobPolicyShort(schema))}
-    ${format(createIndexJobPolicySingleton(schema))}
-    ${format(createIndexJobPolicyStately(schema))}
-    ${format(createIndexJobPolicyExclusive(schema))}
-    ${format(createIndexJobThrottle(schema))}
-    ${format(createIndexJobFetch(schema))}
-    ${format(createIndexJobGroupConcurrency(schema))}
+    CREATE TABLE ${schema}.${COMMON_JOB_TABLE} (LIKE ${schema}.job INCLUDING GENERATED INCLUDING DEFAULTS);
 
-    ALTER TABLE ${schema}.job ATTACH PARTITION ${schema}.${table} DEFAULT;
+    SELECT ${schema}.job_table_run($cmd$${createPrimaryKeyJob(schema)}$cmd$, '${COMMON_JOB_TABLE}');
+    SELECT ${schema}.job_table_run($cmd$${createQueueForeignKeyJob(schema)}$cmd$, '${COMMON_JOB_TABLE}');
+    SELECT ${schema}.job_table_run($cmd$${createQueueForeignKeyJobDeadLetter(schema)}$cmd$, '${COMMON_JOB_TABLE}');
+    SELECT ${schema}.job_table_run($cmd$${createIndexJobPolicyShort(schema)}$cmd$, '${COMMON_JOB_TABLE}');
+    SELECT ${schema}.job_table_run($cmd$${createIndexJobPolicySingleton(schema)}$cmd$, '${COMMON_JOB_TABLE}');
+    SELECT ${schema}.job_table_run($cmd$${createIndexJobPolicyStately(schema)}$cmd$, '${COMMON_JOB_TABLE}');
+    SELECT ${schema}.job_table_run($cmd$${createIndexJobPolicyExclusive(schema)}$cmd$, '${COMMON_JOB_TABLE}');
+    SELECT ${schema}.job_table_run($cmd$${createIndexJobThrottle(schema)}$cmd$, '${COMMON_JOB_TABLE}');
+    SELECT ${schema}.job_table_run($cmd$${createIndexJobFetch(schema)}$cmd$, '${COMMON_JOB_TABLE}');
+    SELECT ${schema}.job_table_run($cmd$${createIndexJobGroupConcurrency(schema)}$cmd$, '${COMMON_JOB_TABLE}');
+
+    ALTER TABLE ${schema}.job ATTACH PARTITION ${schema}.${COMMON_JOB_TABLE} DEFAULT;
   `
 }
 
@@ -319,23 +383,23 @@ function createQueueFunction (schema: string) {
       END IF;
 
       EXECUTE format('CREATE TABLE ${schema}.%I (LIKE ${schema}.job INCLUDING DEFAULTS)', tablename);
-      
-      EXECUTE format('${formatPartitionCommand(createPrimaryKeyJob(schema))}', tablename);
-      EXECUTE format('${formatPartitionCommand(createQueueForeignKeyJob(schema))}', tablename);
-      EXECUTE format('${formatPartitionCommand(createQueueForeignKeyJobDeadLetter(schema))}', tablename);
 
-      EXECUTE format('${formatPartitionCommand(createIndexJobFetch(schema))}', tablename);
-      EXECUTE format('${formatPartitionCommand(createIndexJobThrottle(schema))}', tablename);
-      EXECUTE format('${formatPartitionCommand(createIndexJobGroupConcurrency(schema))}', tablename);
+      EXECUTE ${schema}.job_table_format($cmd$${createPrimaryKeyJob(schema)}$cmd$, tablename);
+      EXECUTE ${schema}.job_table_format($cmd$${createQueueForeignKeyJob(schema)}$cmd$, tablename);
+      EXECUTE ${schema}.job_table_format($cmd$${createQueueForeignKeyJobDeadLetter(schema)}$cmd$, tablename);
+
+      EXECUTE ${schema}.job_table_format($cmd$${createIndexJobFetch(schema)}$cmd$, tablename);
+      EXECUTE ${schema}.job_table_format($cmd$${createIndexJobThrottle(schema)}$cmd$, tablename);
+      EXECUTE ${schema}.job_table_format($cmd$${createIndexJobGroupConcurrency(schema)}$cmd$, tablename);
 
       IF options->>'policy' = 'short' THEN
-        EXECUTE format('${formatPartitionCommand(createIndexJobPolicyShort(schema))}', tablename);
+        EXECUTE ${schema}.job_table_format($cmd$${createIndexJobPolicyShort(schema)}$cmd$, tablename);
       ELSIF options->>'policy' = 'singleton' THEN
-        EXECUTE format('${formatPartitionCommand(createIndexJobPolicySingleton(schema))}', tablename);
+        EXECUTE ${schema}.job_table_format($cmd$${createIndexJobPolicySingleton(schema)}$cmd$, tablename);
       ELSIF options->>'policy' = 'stately' THEN
-        EXECUTE format('${formatPartitionCommand(createIndexJobPolicyStately(schema))}', tablename);
+        EXECUTE ${schema}.job_table_format($cmd$${createIndexJobPolicyStately(schema)}$cmd$, tablename);
       ELSIF options->>'policy' = 'exclusive' THEN
-        EXECUTE format('${formatPartitionCommand(createIndexJobPolicyExclusive(schema))}', tablename);
+        EXECUTE ${schema}.job_table_format($cmd$${createIndexJobPolicyExclusive(schema)}$cmd$, tablename);
       END IF;
 
       EXECUTE format('ALTER TABLE ${schema}.%I ADD CONSTRAINT cjc CHECK (name=%L)', tablename, queue_name);
@@ -344,13 +408,6 @@ function createQueueFunction (schema: string) {
     $$
     LANGUAGE plpgsql;
   `
-}
-
-function formatPartitionCommand (command: string) {
-  return command
-    .replace('.job', '.%1$I')
-    .replace('job_i', '%1$s_i')
-    .replaceAll("'", "''")
 }
 
 function deleteQueueFunction (schema: string) {
