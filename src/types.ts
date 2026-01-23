@@ -332,9 +332,10 @@ export interface CommandResponse {
 
 export interface BamEntry {
   id: string
+  name: string
   version: number
   status: 'pending' | 'in_progress' | 'completed' | 'failed'
-  targetTable: string
+  table: string
   command: string
   error?: string
   createdOn: Date
@@ -344,8 +345,9 @@ export interface BamEntry {
 
 export interface BamEvent {
   id: string
+  name: string
   status: string
-  targetTable: string
+  table: string
   error?: string
 }
 

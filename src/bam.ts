@@ -83,8 +83,9 @@ class Bam extends EventEmitter implements types.EventsMixin {
       await this.#markInProgress(entry.id)
       this.emit(events.bam, {
         id: entry.id,
+        name: entry.name,
         status: 'in_progress',
-        targetTable: entry.targetTable
+        table: entry.table
       })
 
       if (this.#stopped) return
@@ -96,8 +97,9 @@ class Bam extends EventEmitter implements types.EventsMixin {
       await this.#markCompleted(entry.id)
       this.emit(events.bam, {
         id: entry.id,
+        name: entry.name,
         status: 'completed',
-        targetTable: entry.targetTable
+        table: entry.table
       })
     } catch (err) {
       if (this.#stopped) return
@@ -106,8 +108,9 @@ class Bam extends EventEmitter implements types.EventsMixin {
       this.emit(events.error, err)
       this.emit(events.bam, {
         id: entry.id,
+        name: entry.name,
         status: 'failed',
-        targetTable: entry.targetTable,
+        table: entry.table,
         error: String(err)
       })
     }

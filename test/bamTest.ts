@@ -10,12 +10,12 @@ const bamConfig = {
   __test__bypass_bam_interval_check: true
 }
 
-async function insertBamCommand (schema: string, id: string, command: string) {
+async function insertBamCommand (schema: string, name: string, command: string) {
   const db = await helper.getDb()
   await db.executeSql(`
-    INSERT INTO ${schema}.bam (id, version, status, target_table, command)
+    INSERT INTO ${schema}.bam (name, version, status, table_name, command)
     VALUES ($1, 27, 'pending', 'job_common', $2)
-  `, [id, command])
+  `, [name, command])
   await db.close()
 }
 
@@ -26,15 +26,15 @@ async function triggerBamPoll (schema: string) {
   await db.close()
 }
 
-function waitForBamEvent (boss: any, id: string, status: string, timeoutMs = 5000): Promise<any> {
+function waitForBamEvent (boss: any, name: string, status: string, timeoutMs = 5000): Promise<any> {
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
       boss.off('bam', handler)
-      reject(new Error(`Timeout waiting for bam event: ${id} ${status}`))
+      reject(new Error(`Timeout waiting for bam event: ${name} ${status}`))
     }, timeoutMs)
 
     const handler = (event: any) => {
-      if (event.id === id && event.status === status) {
+      if (event.name === name && event.status === status) {
         clearTimeout(timeout)
         boss.off('bam', handler)
         resolve(event)
@@ -93,7 +93,7 @@ describe('bam', function () {
       await bamEventPromise
 
       const bamStatus = await boss.getBamStatus()
-      const failedEntry = bamStatus.find((e: any) => e.id === 'test_error_1')
+      const failedEntry = bamStatus.find((e: any) => e.name === 'test_error_1')
 
       expect(failedEntry).toBeDefined()
       expect(failedEntry.status).toBe('failed')
@@ -139,14 +139,14 @@ describe('bam', function () {
       await triggerBamPoll(ctx.schema)
       await bamEventPromise
 
-      const inProgressEvent = bamEvents.find(e => e.id === 'test_bam_event' && e.status === 'in_progress')
-      const failedEvent = bamEvents.find(e => e.id === 'test_bam_event' && e.status === 'failed')
+      const inProgressEvent = bamEvents.find(e => e.name === 'test_bam_event' && e.status === 'in_progress')
+      const failedEvent = bamEvents.find(e => e.name === 'test_bam_event' && e.status === 'failed')
 
       expect(inProgressEvent).toBeDefined()
-      expect(inProgressEvent.targetTable).toBe('job_common')
+      expect(inProgressEvent.table).toBe('job_common')
 
       expect(failedEvent).toBeDefined()
-      expect(failedEvent.targetTable).toBe('job_common')
+      expect(failedEvent.table).toBe('job_common')
       expect(failedEvent.error).toBeDefined()
     }, 10000)
 
@@ -156,7 +156,7 @@ describe('bam', function () {
 
       const db = await helper.getDb()
       await db.executeSql(`
-        INSERT INTO ${ctx.schema}.bam (id, version, status, target_table, command)
+        INSERT INTO ${ctx.schema}.bam (name, version, status, table_name, command)
         VALUES
           ('test_fail', 27, 'pending', 'job_common', 'SELECT 1/0'),
           ('test_success', 27, 'pending', 'job_common', 'SELECT 1')
@@ -174,8 +174,8 @@ describe('bam', function () {
       await successPromise
 
       const bamStatus = await boss.getBamStatus()
-      const failedEntry = bamStatus.find((e: any) => e.id === 'test_fail')
-      const successEntry = bamStatus.find((e: any) => e.id === 'test_success')
+      const failedEntry = bamStatus.find((e: any) => e.name === 'test_fail')
+      const successEntry = bamStatus.find((e: any) => e.name === 'test_success')
 
       expect(failedEntry).toBeDefined()
       expect(failedEntry.status).toBe('failed')
@@ -195,7 +195,7 @@ describe('bam', function () {
       await bamEventPromise
 
       const bamStatus = await boss.getBamStatus()
-      const entry = bamStatus.find((e: any) => e.id === 'test_cast_error')
+      const entry = bamStatus.find((e: any) => e.name === 'test_cast_error')
 
       expect(entry).toBeDefined()
       expect(entry.status).toBe('failed')
@@ -216,7 +216,7 @@ describe('bam', function () {
       await bamEventPromise
 
       const bamStatus = await boss.getBamStatus()
-      const entry = bamStatus.find((e: any) => e.id === 'test_success_1')
+      const entry = bamStatus.find((e: any) => e.name === 'test_success_1')
 
       expect(entry).toBeDefined()
       expect(entry.status).toBe('completed')
@@ -238,8 +238,8 @@ describe('bam', function () {
       await triggerBamPoll(ctx.schema)
       await bamEventPromise
 
-      const inProgressEvent = bamEvents.find(e => e.id === 'test_events' && e.status === 'in_progress')
-      const completedEvent = bamEvents.find(e => e.id === 'test_events' && e.status === 'completed')
+      const inProgressEvent = bamEvents.find(e => e.name === 'test_events' && e.status === 'in_progress')
+      const completedEvent = bamEvents.find(e => e.name === 'test_events' && e.status === 'completed')
 
       expect(inProgressEvent).toBeDefined()
       expect(completedEvent).toBeDefined()

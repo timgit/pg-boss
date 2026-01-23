@@ -152,10 +152,11 @@ function getAll (schema: string): types.Migration[] {
         `ALTER TABLE ${schema}.version ADD COLUMN IF NOT EXISTS bam_on timestamp with time zone`,
         `
         CREATE TABLE IF NOT EXISTS ${schema}.bam (
-          id text PRIMARY KEY,
+          id uuid PRIMARY KEY default gen_random_uuid(),
+          name text NOT NULL,
           version int NOT NULL,
           status text NOT NULL DEFAULT 'pending',
-          target_table text NOT NULL,
+          table_name text NOT NULL,
           command text NOT NULL,
           error text,
           created_on timestamp with time zone NOT NULL DEFAULT now(),
@@ -177,36 +178,36 @@ function getAll (schema: string): types.Migration[] {
           LANGUAGE sql IMMUTABLE;
         `,
         `
-        CREATE OR REPLACE FUNCTION ${schema}.job_table_run_async(command_id text, version int, command_template text, target_table text DEFAULT NULL)
+        CREATE OR REPLACE FUNCTION ${schema}.job_table_run_async(command_name text, version int, command text, tbl_name text DEFAULT NULL)
         RETURNS VOID AS
         $$
         BEGIN
-          IF target_table IS NOT NULL THEN
-            INSERT INTO ${schema}.bam (id, version, status, target_table, command)
+          IF tbl_name IS NOT NULL THEN
+            INSERT INTO ${schema}.bam (name, version, status, table_name, command)
             VALUES (
-              command_id || '_' || target_table,
+              command_name,
               version,
               'pending',
-              target_table,
-              ${schema}.job_table_format(command_template, target_table)
+              tbl_name,
+              ${schema}.job_table_format(command, tbl_name)
             );
             RETURN;
           END IF;
 
-          INSERT INTO ${schema}.bam (id, version, status, target_table, command)
+          INSERT INTO ${schema}.bam (name, version, status, table_name, command)
           SELECT
-            command_id || '_job_common',
+            command_name,
             version,
             'pending',
             'job_common',
-            ${schema}.job_table_format(command_template, 'job_common')
+            ${schema}.job_table_format(command, 'job_common')
           UNION ALL
           SELECT
-            command_id || '_' || table_name,
+            command_name,
             version,
             'pending',
-            table_name,
-            ${schema}.job_table_format(command_template, table_name)
+            queue.table_name,
+            ${schema}.job_table_format(command, queue.table_name)
           FROM ${schema}.queue
           WHERE partition = true;
         END;
@@ -214,22 +215,22 @@ function getAll (schema: string): types.Migration[] {
         LANGUAGE plpgsql;
         `,
         `
-        CREATE OR REPLACE FUNCTION ${schema}.job_table_run(command_template text, target_table text DEFAULT NULL)
+        CREATE OR REPLACE FUNCTION ${schema}.job_table_run(command text, tbl_name text DEFAULT NULL)
         RETURNS VOID AS
         $$
         DECLARE
           tbl RECORD;
         BEGIN
-          IF target_table IS NOT NULL THEN
-            EXECUTE ${schema}.job_table_format(command_template, target_table);
+          IF tbl_name IS NOT NULL THEN
+            EXECUTE ${schema}.job_table_format(command, tbl_name);
             RETURN;
           END IF;
 
-          EXECUTE ${schema}.job_table_format(command_template, 'job_common');
+          EXECUTE ${schema}.job_table_format(command, 'job_common');
 
           FOR tbl IN SELECT table_name FROM ${schema}.queue WHERE partition = true
           LOOP
-            EXECUTE ${schema}.job_table_format(command_template, tbl.table_name);
+            EXECUTE ${schema}.job_table_format(command, tbl.table_name);
           END LOOP;
         END;
         $$

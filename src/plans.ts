@@ -162,10 +162,11 @@ function createTableSubscription (schema: string) {
 function createTableBam (schema: string) {
   return `
     CREATE TABLE ${schema}.bam (
-      id text PRIMARY KEY,
+      id uuid PRIMARY KEY default gen_random_uuid(),
+      name text NOT NULL,
       version int NOT NULL,
       status text NOT NULL DEFAULT 'pending',
-      target_table text NOT NULL,
+      table_name text NOT NULL,
       command text NOT NULL,
       error text,
       created_on timestamp with time zone NOT NULL DEFAULT now(),
@@ -194,22 +195,22 @@ function jobTableFormatFunction (schema: string) {
 
 function jobTableRunFunction (schema: string) {
   return `
-    CREATE FUNCTION ${schema}.job_table_run(command_template text, target_table text DEFAULT NULL)
+    CREATE FUNCTION ${schema}.job_table_run(command text, tbl_name text DEFAULT NULL)
     RETURNS VOID AS
     $$
     DECLARE
       tbl RECORD;
     BEGIN
-      IF target_table IS NOT NULL THEN
-        EXECUTE ${schema}.job_table_format(command_template, target_table);
+      IF tbl_name IS NOT NULL THEN
+        EXECUTE ${schema}.job_table_format(command, tbl_name);
         RETURN;
       END IF;
 
-      EXECUTE ${schema}.job_table_format(command_template, '${COMMON_JOB_TABLE}');
+      EXECUTE ${schema}.job_table_format(command, '${COMMON_JOB_TABLE}');
 
       FOR tbl IN SELECT table_name FROM ${schema}.queue WHERE partition = true
       LOOP
-        EXECUTE ${schema}.job_table_format(command_template, tbl.table_name);
+        EXECUTE ${schema}.job_table_format(command, tbl.table_name);
       END LOOP;
     END;
     $$
@@ -219,36 +220,36 @@ function jobTableRunFunction (schema: string) {
 
 function jobTableRunAsyncFunction (schema: string) {
   return `
-    CREATE FUNCTION ${schema}.job_table_run_async(command_id text, version int, command_template text, target_table text DEFAULT NULL)
+    CREATE FUNCTION ${schema}.job_table_run_async(command_name text, version int, command text, tbl_name text DEFAULT NULL)
     RETURNS VOID AS
     $$
     BEGIN
-      IF target_table IS NOT NULL THEN
-        INSERT INTO ${schema}.bam (id, version, status, target_table, command)
+      IF tbl_name IS NOT NULL THEN
+        INSERT INTO ${schema}.bam (name, version, status, table_name, command)
         VALUES (
-          command_id || '_' || target_table,
+          command_name,
           version,
           'pending',
-          target_table,
-          ${schema}.job_table_format(command_template, target_table)
+          tbl_name,
+          ${schema}.job_table_format(command, tbl_name)
         );
         RETURN;
       END IF;
 
-      INSERT INTO ${schema}.bam (id, version, status, target_table, command)
+      INSERT INTO ${schema}.bam (name, version, status, table_name, command)
       SELECT
-        command_id || '_' || '${COMMON_JOB_TABLE}',
+        command_name,
         version,
         'pending',
         '${COMMON_JOB_TABLE}',
-        ${schema}.job_table_format(command_template, '${COMMON_JOB_TABLE}')
+        ${schema}.job_table_format(command, '${COMMON_JOB_TABLE}')
       UNION ALL
       SELECT
-        command_id || '_' || table_name,
+        command_name,
         version,
         'pending',
-        table_name,
-        ${schema}.job_table_format(command_template, table_name)
+        queue.table_name,
+        ${schema}.job_table_format(command, queue.table_name)
       FROM ${schema}.queue
       WHERE partition = true;
     END;
@@ -1318,7 +1319,7 @@ function getJobById (schema: string, table: string) {
 
 function getNextBamCommand (schema: string) {
   return `
-    SELECT id, version, status, target_table as "targetTable", command, error,
+    SELECT id, name, version, status, table_name as "table", command, error,
            created_on as "createdOn", started_on as "startedOn", completed_on as "completedOn"
     FROM ${schema}.bam
     WHERE status IN ('pending', 'failed')
@@ -1348,7 +1349,7 @@ function setBamFailed (schema: string, id: string, error: string) {
 
 function getBamStatus (schema: string) {
   return `
-    SELECT id, version, status, target_table as "targetTable", command, error,
+    SELECT id, name, version, status, table_name as "table", command, error,
            created_on as "createdOn", started_on as "startedOn", completed_on as "completedOn"
     FROM ${schema}.bam
     ORDER BY version, created_on
