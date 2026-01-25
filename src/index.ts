@@ -119,7 +119,7 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
       await this.#timekeeper.start()
     }
 
-    if (this.#config.bam) {
+    if (this.#config.migrate) {
       await this.#bam.start()
     }
 

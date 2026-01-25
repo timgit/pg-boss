@@ -192,7 +192,6 @@ function getConfig (value: string | types.ConstructorOptions): types.ResolvedCon
   config.supervise = ('supervise' in config) ? config.supervise : true
   config.migrate = ('migrate' in config) ? config.migrate : true
   config.createSchema = ('createSchema' in config) ? config.createSchema : true
-  config.bam = ('bam' in config) ? config.bam : true
 
   applySchemaConfig(config)
   applyOpsConfig(config)
