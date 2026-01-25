@@ -334,6 +334,7 @@ export interface BamEntry {
   name: string
   version: number
   status: 'pending' | 'in_progress' | 'completed' | 'failed'
+  queue?: string
   table: string
   command: string
   error?: string
@@ -342,10 +343,17 @@ export interface BamEntry {
   completedOn?: Date
 }
 
+export interface BamStatusSummary {
+  status: 'pending' | 'in_progress' | 'completed' | 'failed'
+  count: number
+  lastCreatedOn: Date
+}
+
 export interface BamEvent {
   id: string
   name: string
   status: string
+  queue?: string
   table: string
   error?: string
 }

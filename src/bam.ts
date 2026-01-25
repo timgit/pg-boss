@@ -84,6 +84,7 @@ class Bam extends EventEmitter implements types.EventsMixin {
       id: entry.id,
       name: entry.name,
       status: 'in_progress',
+      queue: entry.queue,
       table: entry.table
     })
 
@@ -98,6 +99,7 @@ class Bam extends EventEmitter implements types.EventsMixin {
         id: entry.id,
         name: entry.name,
         status: 'completed',
+        queue: entry.queue,
         table: entry.table
       })
     } catch (err) {
@@ -111,6 +113,7 @@ class Bam extends EventEmitter implements types.EventsMixin {
         id: entry.id,
         name: entry.name,
         status: 'failed',
+        queue: entry.queue,
         table: entry.table,
         error: String(err)
       })

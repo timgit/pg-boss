@@ -166,6 +166,7 @@ function createTableBam (schema: string) {
       name text NOT NULL,
       version int NOT NULL,
       status text NOT NULL DEFAULT 'pending',
+      queue text,
       table_name text NOT NULL,
       command text NOT NULL,
       error text,
@@ -195,12 +196,16 @@ function jobTableFormatFunction (schema: string) {
 
 function jobTableRunFunction (schema: string) {
   return `
-    CREATE FUNCTION ${schema}.job_table_run(command text, tbl_name text DEFAULT NULL)
+    CREATE FUNCTION ${schema}.job_table_run(command text, tbl_name text DEFAULT NULL, queue_name text DEFAULT NULL)
     RETURNS VOID AS
     $$
     DECLARE
       tbl RECORD;
     BEGIN
+      IF queue_name IS NOT NULL THEN
+        SELECT table_name INTO tbl_name FROM ${schema}.queue WHERE name = queue_name;
+      END IF;
+
       IF tbl_name IS NOT NULL THEN
         EXECUTE ${schema}.job_table_format(command, tbl_name);
         RETURN;
@@ -220,27 +225,33 @@ function jobTableRunFunction (schema: string) {
 
 function jobTableRunAsyncFunction (schema: string) {
   return `
-    CREATE FUNCTION ${schema}.job_table_run_async(command_name text, version int, command text, tbl_name text DEFAULT NULL)
+    CREATE FUNCTION ${schema}.job_table_run_async(command_name text, version int, command text, tbl_name text DEFAULT NULL, queue_name text DEFAULT NULL)
     RETURNS VOID AS
     $$
     BEGIN
+      IF queue_name IS NOT NULL THEN
+        SELECT table_name INTO tbl_name FROM ${schema}.queue WHERE name = queue_name;
+      END IF;
+
       IF tbl_name IS NOT NULL THEN
-        INSERT INTO ${schema}.bam (name, version, status, table_name, command)
+        INSERT INTO ${schema}.bam (name, version, status, queue, table_name, command)
         VALUES (
           command_name,
           version,
           'pending',
+          queue_name,
           tbl_name,
           ${schema}.job_table_format(command, tbl_name)
         );
         RETURN;
       END IF;
 
-      INSERT INTO ${schema}.bam (name, version, status, table_name, command)
+      INSERT INTO ${schema}.bam (name, version, status, queue, table_name, command)
       SELECT
         command_name,
         version,
         'pending',
+        NULL,
         '${COMMON_JOB_TABLE}',
         ${schema}.job_table_format(command, '${COMMON_JOB_TABLE}')
       UNION ALL
@@ -248,6 +259,7 @@ function jobTableRunAsyncFunction (schema: string) {
         command_name,
         version,
         'pending',
+        queue.name,
         queue.table_name,
         ${schema}.job_table_format(command, queue.table_name)
       FROM ${schema}.queue
@@ -1328,7 +1340,7 @@ function getNextBamCommand (schema: string) {
       ORDER BY created_on
       LIMIT 1
     )
-    RETURNING id, name, version, status, table_name as "table", command, error,
+    RETURNING id, name, version, status, queue, table_name as "table", command, error,
               created_on as "createdOn", started_on as "startedOn", completed_on as "completedOn"
   `
 }
@@ -1352,7 +1364,15 @@ function setBamFailed (schema: string, id: string, error: string) {
 
 function getBamStatus (schema: string) {
   return `
-    SELECT id, name, version, status, table_name as "table", command, error,
+    SELECT status, count(*)::int as count, max(created_on) as "lastCreatedOn"
+    FROM ${schema}.bam
+    GROUP BY status
+  `
+}
+
+function getBamEntries (schema: string) {
+  return `
+    SELECT id, name, version, status, queue, table_name as "table", command, error,
            created_on as "createdOn", started_on as "startedOn", completed_on as "completedOn"
     FROM ${schema}.bam
     ORDER BY version, created_on
@@ -1406,6 +1426,7 @@ export {
   setBamCompleted,
   setBamFailed,
   getBamStatus,
+  getBamEntries,
   QUEUE_POLICIES,
   JOB_STATES,
   MIGRATE_RACE_MESSAGE,

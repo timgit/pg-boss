@@ -335,8 +335,14 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#timekeeper.getSchedules(name, key)
   }
 
-  async getBamStatus (): Promise<types.BamEntry[]> {
+  async getBamStatus (): Promise<types.BamStatusSummary[]> {
     const sql = plans.getBamStatus(this.#config.schema)
+    const { rows } = await this.#db.executeSql(sql)
+    return rows
+  }
+
+  async getBamEntries (): Promise<types.BamEntry[]> {
+    const sql = plans.getBamEntries(this.#config.schema)
     const { rows } = await this.#db.executeSql(sql)
     return rows
   }
@@ -357,6 +363,7 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
 export type {
   BamEntry,
   BamEvent,
+  BamStatusSummary,
   ConnectionOptions,
   ConstructorOptions,
   FetchOptions,

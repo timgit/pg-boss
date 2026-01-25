@@ -92,7 +92,7 @@ describe('bam', function () {
       await triggerBamPoll(ctx.schema)
       await bamEventPromise
 
-      const bamStatus = await boss.getBamStatus()
+      const bamStatus = await boss.getBamEntries()
       const failedEntry = bamStatus.find((e: any) => e.name === 'test_error_1')
 
       expect(failedEntry).toBeDefined()
@@ -173,7 +173,7 @@ describe('bam', function () {
       await triggerBamPoll(ctx.schema)
       await successPromise
 
-      const bamStatus = await boss.getBamStatus()
+      const bamStatus = await boss.getBamEntries()
       const failedEntry = bamStatus.find((e: any) => e.name === 'test_fail')
       const successEntry = bamStatus.find((e: any) => e.name === 'test_success')
 
@@ -194,7 +194,7 @@ describe('bam', function () {
       await triggerBamPoll(ctx.schema)
       await bamEventPromise
 
-      const bamStatus = await boss.getBamStatus()
+      const bamStatus = await boss.getBamEntries()
       const entry = bamStatus.find((e: any) => e.name === 'test_cast_error')
 
       expect(entry).toBeDefined()
@@ -215,7 +215,7 @@ describe('bam', function () {
       await triggerBamPoll(ctx.schema)
       await bamEventPromise
 
-      const bamStatus = await boss.getBamStatus()
+      const bamStatus = await boss.getBamEntries()
       const entry = bamStatus.find((e: any) => e.name === 'test_success_1')
 
       expect(entry).toBeDefined()

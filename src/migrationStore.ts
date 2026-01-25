@@ -156,6 +156,7 @@ function getAll (schema: string): types.Migration[] {
           name text NOT NULL,
           version int NOT NULL,
           status text NOT NULL DEFAULT 'pending',
+          queue text,
           table_name text NOT NULL,
           command text NOT NULL,
           error text,
@@ -178,27 +179,33 @@ function getAll (schema: string): types.Migration[] {
           LANGUAGE sql IMMUTABLE;
         `,
         `
-        CREATE OR REPLACE FUNCTION ${schema}.job_table_run_async(command_name text, version int, command text, tbl_name text DEFAULT NULL)
+        CREATE OR REPLACE FUNCTION ${schema}.job_table_run_async(command_name text, version int, command text, tbl_name text DEFAULT NULL, queue_name text DEFAULT NULL)
         RETURNS VOID AS
         $$
         BEGIN
+          IF queue_name IS NOT NULL THEN
+            SELECT table_name INTO tbl_name FROM ${schema}.queue WHERE name = queue_name;
+          END IF;
+
           IF tbl_name IS NOT NULL THEN
-            INSERT INTO ${schema}.bam (name, version, status, table_name, command)
+            INSERT INTO ${schema}.bam (name, version, status, queue, table_name, command)
             VALUES (
               command_name,
               version,
               'pending',
+              queue_name,
               tbl_name,
               ${schema}.job_table_format(command, tbl_name)
             );
             RETURN;
           END IF;
 
-          INSERT INTO ${schema}.bam (name, version, status, table_name, command)
+          INSERT INTO ${schema}.bam (name, version, status, queue, table_name, command)
           SELECT
             command_name,
             version,
             'pending',
+            NULL,
             'job_common',
             ${schema}.job_table_format(command, 'job_common')
           UNION ALL
@@ -206,6 +213,7 @@ function getAll (schema: string): types.Migration[] {
             command_name,
             version,
             'pending',
+            queue.name,
             queue.table_name,
             ${schema}.job_table_format(command, queue.table_name)
           FROM ${schema}.queue
@@ -215,12 +223,16 @@ function getAll (schema: string): types.Migration[] {
         LANGUAGE plpgsql;
         `,
         `
-        CREATE OR REPLACE FUNCTION ${schema}.job_table_run(command text, tbl_name text DEFAULT NULL)
+        CREATE OR REPLACE FUNCTION ${schema}.job_table_run(command text, tbl_name text DEFAULT NULL, queue_name text DEFAULT NULL)
         RETURNS VOID AS
         $$
         DECLARE
           tbl RECORD;
         BEGIN
+          IF queue_name IS NOT NULL THEN
+            SELECT table_name INTO tbl_name FROM ${schema}.queue WHERE name = queue_name;
+          END IF;
+
           IF tbl_name IS NOT NULL THEN
             EXECUTE ${schema}.job_table_format(command, tbl_name);
             RETURN;
