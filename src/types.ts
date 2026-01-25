@@ -53,7 +53,6 @@ export interface MaintenanceOptions {
   maintenanceIntervalSeconds?: number;
   queueCacheIntervalSeconds?: number;
   monitorIntervalSeconds?: number;
-  bam?: boolean;
   bamIntervalSeconds?: number;
 }
 

@@ -328,7 +328,7 @@ function applyBamConfig (config: any) {
   assert(!('bamIntervalSeconds' in config) || config.bamIntervalSeconds >= minInterval,
     `configuration assert: bamIntervalSeconds must be at least ${minInterval} seconds`)
 
-  config.bamIntervalSeconds = config.bamIntervalSeconds || 300 // 5 minutes
+  config.bamIntervalSeconds = config.bamIntervalSeconds || 60
 }
 
 export {

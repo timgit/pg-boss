@@ -1319,21 +1319,24 @@ function getJobById (schema: string, table: string) {
 
 function getNextBamCommand (schema: string) {
   return `
-    SELECT id, name, version, status, table_name as "table", command, error,
-           created_on as "createdOn", started_on as "startedOn", completed_on as "completedOn"
-    FROM ${schema}.bam
-    WHERE status IN ('pending', 'failed')
-    ORDER BY version, created_on
-    LIMIT 1
-    FOR UPDATE SKIP LOCKED
+    UPDATE ${schema}.bam
+    SET status = 'in_progress', started_on = now()
+    WHERE id = (
+      SELECT id FROM ${schema}.bam
+      WHERE status IN ('pending', 'failed')
+        AND NOT EXISTS (SELECT 1 FROM ${schema}.bam WHERE status = 'in_progress')
+      ORDER BY created_on
+      LIMIT 1
+    )
+    RETURNING id, name, version, status, table_name as "table", command, error,
+              created_on as "createdOn", started_on as "startedOn", completed_on as "completedOn"
   `
 }
 
-function setBamStatus (schema: string, id: string, status: string) {
-  const timestampCol = status === 'in_progress' ? 'started_on' : 'completed_on'
+function setBamCompleted (schema: string, id: string) {
   return `
     UPDATE ${schema}.bam
-    SET status = '${status}', ${timestampCol} = now()
+    SET status = 'completed', completed_on = now()
     WHERE id = '${id}'
   `
 }
@@ -1400,7 +1403,7 @@ export {
   assertMigration,
   getJobById,
   getNextBamCommand,
-  setBamStatus,
+  setBamCompleted,
   setBamFailed,
   getBamStatus,
   QUEUE_POLICIES,

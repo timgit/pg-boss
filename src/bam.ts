@@ -52,6 +52,7 @@ class Bam extends EventEmitter implements types.EventsMixin {
     if (this.#stopped || this.#working || !this.#config.migrate) return
 
     this.#working = true
+
     try {
       if (this.#config.__test__throw_bam) {
         throw new Error(this.#config.__test__throw_bam)
@@ -79,22 +80,20 @@ class Bam extends EventEmitter implements types.EventsMixin {
     const entry = await this.#getNextCommand()
     if (!entry || this.#stopped) return
 
+    this.emit(events.bam, {
+      id: entry.id,
+      name: entry.name,
+      status: 'in_progress',
+      table: entry.table
+    })
+
     try {
-      await this.#markInProgress(entry.id)
-      this.emit(events.bam, {
-        id: entry.id,
-        name: entry.name,
-        status: 'in_progress',
-        table: entry.table
-      })
-
-      if (this.#stopped) return
-
       await this.#db.executeSql(entry.command)
 
       if (this.#stopped) return
 
       await this.#markCompleted(entry.id)
+
       this.emit(events.bam, {
         id: entry.id,
         name: entry.name,
@@ -105,7 +104,9 @@ class Bam extends EventEmitter implements types.EventsMixin {
       if (this.#stopped) return
 
       await this.#markFailed(entry.id, err)
+
       this.emit(events.error, err)
+
       this.emit(events.bam, {
         id: entry.id,
         name: entry.name,
@@ -122,13 +123,8 @@ class Bam extends EventEmitter implements types.EventsMixin {
     return rows[0] || null
   }
 
-  async #markInProgress (id: string): Promise<void> {
-    const sql = plans.setBamStatus(this.#config.schema, id, 'in_progress')
-    await this.#db.executeSql(sql)
-  }
-
   async #markCompleted (id: string): Promise<void> {
-    const sql = plans.setBamStatus(this.#config.schema, id, 'completed')
+    const sql = plans.setBamCompleted(this.#config.schema, id)
     await this.#db.executeSql(sql)
   }
 
