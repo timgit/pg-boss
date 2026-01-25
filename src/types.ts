@@ -11,7 +11,8 @@ export type Events = {
   error: 'error',
   warning: 'warning',
   wip: 'wip',
-  stopped: 'stopped'
+  stopped: 'stopped',
+  bam: 'bam'
 }
 
 export interface IDatabase {
@@ -52,6 +53,7 @@ export interface MaintenanceOptions {
   maintenanceIntervalSeconds?: number;
   queueCacheIntervalSeconds?: number;
   monitorIntervalSeconds?: number;
+  bamIntervalSeconds?: number;
 }
 
 export interface Migration {
@@ -59,7 +61,8 @@ export interface Migration {
   version: number
   previous: number
   install: string[]
-  uninstall: string[]
+  async?: string[]
+  uninstall?: string[]
 }
 
 export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, MaintenanceOptions {
@@ -71,6 +74,10 @@ export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, 
   __test__throw_queueCache?: boolean;
   /** @internal */
   __test__throw_worker?: boolean;
+  /** @internal */
+  __test__throw_bam?: string;
+  /** @internal */
+  __test__bypass_bam_interval_check?: boolean;
   /** @internal */
   __test__force_cron_monitoring_error?: string;
   /** @internal */
@@ -88,6 +95,7 @@ export interface ResolvedConstructorOptions extends ConstructorOptions {
   monitorIntervalSeconds: number;
   cronMonitorIntervalSeconds: number;
   maintenanceIntervalSeconds: number;
+  bamIntervalSeconds: number;
 }
 
 export interface QueueOptions {
@@ -321,9 +329,39 @@ export interface CommandResponse {
   affected: number;
 }
 
+export interface BamEntry {
+  id: string
+  name: string
+  version: number
+  status: 'pending' | 'in_progress' | 'completed' | 'failed'
+  queue?: string
+  table: string
+  command: string
+  error?: string
+  createdOn: Date
+  startedOn?: Date
+  completedOn?: Date
+}
+
+export interface BamStatusSummary {
+  status: 'pending' | 'in_progress' | 'completed' | 'failed'
+  count: number
+  lastCreatedOn: Date
+}
+
+export interface BamEvent {
+  id: string
+  name: string
+  status: string
+  queue?: string
+  table: string
+  error?: string
+}
+
 export type PgBossEventMap = {
   error: [error: Error]
   warning: [warning: Warning]
   wip: [data: WipData[]]
   stopped: []
+  bam: [data: BamEvent]
 }

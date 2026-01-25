@@ -16,6 +16,7 @@ const WARNINGS = {
 
 class Boss extends EventEmitter implements types.EventsMixin {
   #stopped: boolean
+  #stopping: boolean
   #maintaining: boolean | undefined
   #superviseInterval: NodeJS.Timeout | undefined
   #db: types.IDatabase
@@ -35,6 +36,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
     this.#config = config
     this.#manager = manager
     this.#stopped = true
+    this.#stopping = false
 
     if (config.warningSlowQuerySeconds) {
       WARNINGS.SLOW_QUERY.seconds = config.warningSlowQuerySeconds
@@ -47,6 +49,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
 
   async start () {
     if (this.#stopped) {
+      this.#stopping = false
       this.#superviseInterval = setInterval(
         () => this.#onSupervise(),
         this.#config.superviseIntervalSeconds! * 1000
@@ -57,6 +60,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
 
   async stop () {
     if (!this.#stopped) {
+      this.#stopping = true
       if (this.#superviseInterval) clearInterval(this.#superviseInterval)
       this.#stopped = true
     }
@@ -139,10 +143,14 @@ class Boss extends EventEmitter implements types.EventsMixin {
     }, {})
 
     for (const queueGroup of Object.values(queueGroups)) {
+      if (this.#stopping) return
+
       const { table, queues } = queueGroup
       const names = queues.map((i) => i.name)
 
       while (names.length) {
+        if (this.#stopping) return
+
         const chunk = names.splice(0, 100)
 
         await this.#monitor(table, chunk)
@@ -152,6 +160,8 @@ class Boss extends EventEmitter implements types.EventsMixin {
   }
 
   async #monitor (table: string, names: string[]) {
+    if (this.#stopping) return
+
     const command = plans.trySetQueueMonitorTime(
       this.#config.schema,
       names,
@@ -159,11 +169,16 @@ class Boss extends EventEmitter implements types.EventsMixin {
     )
     const { rows } = await this.#executeQuery(command)
 
+    if (this.#stopping) return
+
     if (rows.length) {
       const queues = rows.map((q) => q.name)
 
       const cacheStatsSql = plans.cacheQueueStats(this.#config.schema, table, queues)
       const { rows: rowsCacheStats } = await this.#executeSql(cacheStatsSql)
+
+      if (this.#stopping) return
+
       const warnings = rowsCacheStats.filter(i => i.queuedCount > (i.warningQueueSize || WARNINGS.LARGE_QUEUE.size))
 
       for (const warning of warnings) {
@@ -179,12 +194,16 @@ class Boss extends EventEmitter implements types.EventsMixin {
   }
 
   async #maintain (table: string, names: string[]) {
+    if (this.#stopping) return
+
     const command = plans.trySetQueueDeletionTime(
       this.#config.schema,
       names,
       this.#config.maintenanceIntervalSeconds
     )
     const { rows } = await this.#executeQuery(command)
+
+    if (this.#stopping) return
 
     if (rows.length) {
       const queues = rows.map((q) => q.name)

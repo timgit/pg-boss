@@ -312,4 +312,39 @@ describe('migration', function () {
     expect(result.indexOf('sql_v11')).toBeLessThan(result.indexOf('sql_v12'))
     expect(result.indexOf('sql_v12')).toBeLessThan(result.indexOf('sql_v13'))
   })
+
+  it('should add migrations for partitioned tables', async function () {
+    const boss = ctx.boss = new PgBoss(ctx.bossConfig)
+    await boss.start()
+    await boss.createQueue(ctx.schema, { partition: true })
+    await boss.stop()
+
+    await contractor.rollback(currentSchemaVersion)
+
+    await boss.start()
+
+    const version = await contractor.schemaVersion()
+
+    expect(version).toBe(currentSchemaVersion)
+
+    const bamEntries = await boss.getBamEntries()
+    expect(bamEntries.length).toBe(2)
+  })
+
+  it('should return bam status grouped by status', async function () {
+    const boss = ctx.boss = new PgBoss(ctx.bossConfig)
+    await boss.start()
+    await boss.createQueue(ctx.schema, { partition: true })
+    await boss.stop()
+
+    await contractor.rollback(currentSchemaVersion)
+
+    await boss.start()
+
+    const bamStatus = await boss.getBamStatus()
+    expect(bamStatus.length).toBeGreaterThan(0)
+    expect(bamStatus[0]).toHaveProperty('status')
+    expect(bamStatus[0]).toHaveProperty('count')
+    expect(bamStatus[0]).toHaveProperty('lastCreatedOn')
+  })
 })
