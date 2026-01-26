@@ -34,7 +34,7 @@
   "scripts": {
     "build": "npm run clean && tsc --project tsconfig.build.json",
     "clean": "node -e \"fs.rmSync('dist',{recursive:true,force:true})\"",
-    "prepublishOnly": "npm test && npm run build",
+    "prepublishOnly": "npm install && npm test && npm run build",
     "test": "eslint . && vitest run",
     "lint:fix": "eslint . --fix",
     "cover": "vitest run --coverage",
