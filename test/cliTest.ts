@@ -4,8 +4,10 @@ import { resolve } from 'node:path'
 import { writeFileSync, unlinkSync, existsSync } from 'node:fs'
 import crypto from 'node:crypto'
 import { getConnectionString, dropSchema, getDb } from './testHelper.ts'
+import packageJson from '../package.json' with { type: 'json' }
 
 const cliPath = resolve(import.meta.dirname, '../src/cli.ts')
+const currentSchemaVersion = packageJson.pgboss.schema
 const sha1 = (value: string): string => crypto.createHash('sha1').update(value).digest('hex')
 
 function getTestSchema (testName: string): string {
@@ -444,7 +446,7 @@ describe('cli', function () {
         const result = await db.executeSql(`SELECT version FROM ${schema}.version`)
         await db.close()
 
-        expect(result.rows[0].version).toBe(27)
+        expect(result.rows[0].version).toBe(currentSchemaVersion)
       })
 
       it('should decrement schema version after rollback', async function () {
