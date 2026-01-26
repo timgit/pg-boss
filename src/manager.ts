@@ -594,7 +594,11 @@ class Manager extends EventEmitter implements types.EventsMixin {
     return null
   }
 
-  async insert (name: string, jobs: types.JobInsert[], options: types.InsertOptions = {}) {
+  async insert (
+    name: string,
+    jobs: types.JobInsert[],
+    options: types.InsertOptions & { returnId?: boolean } = {}
+  ) {
     assert(Array.isArray(jobs), 'jobs argument should be an array')
 
     const { table } = await this.getQueueCache(name)
@@ -604,7 +608,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const spy = this.config.__test__enableSpies ? this.#spies.get(name) : undefined
 
     // Return IDs if spy is active for this queue (needed for job tracking)
-    const returnId = !!spy
+    const returnId = !!spy || !!options.returnId
 
     const sql = plans.insertJobs(this.config.schema, { table, name, returnId })
 
