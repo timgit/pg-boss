@@ -6,7 +6,13 @@ pg-boss will automatically create a dedicated schema (`pgboss` is the default na
 GRANT CREATE ON DATABASE db1 TO leastprivuser;
 ```
 
-If the CREATE privilege is not available or desired, you can use the included [static functions](#static-functions) to export the SQL commands to manually create or upgrade the required database schema.  **This means you will also need to monitor future releases for schema changes**.
+If the CREATE privilege is not available or desired, you have two options:
+
+1. **CLI (recommended)** - Use the pg-boss CLI to manage schema creation and migrations. The CLI can output SQL without executing it (`--dry-run` or `plans` command), allowing DBAs to review and run the commands manually. See the [CLI documentation](https://github.com/timgit/pg-boss#cli) for details.
+
+2. **Static functions** - Use the included [utility functions](./api/utils) to export the SQL commands programmatically.
+
+**Note:** When managing schema manually, you will need to monitor future releases for schema changes.
 
 NOTE: Using an existing schema is supported for advanced use cases **but discouraged**, as this opens up the possibility that creation will fail on an object name collision, and it will add more steps to the uninstallation process.
 

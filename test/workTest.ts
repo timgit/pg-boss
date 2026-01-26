@@ -353,14 +353,16 @@ describe('work', function () {
 
     const jobId = await ctx.boss.send(ctx.schema, null, { retryLimit: 0 })
 
+    assertTruthy(jobId)
+
     await ctx.boss.work(ctx.schema, async ([job]) => {
-      // Job checks signal every 100ms for up to 10 seconds
+      // Job checks signal every 50ms for up to 5 seconds
       for (let i = 0; i < 100; i++) {
         if (job.signal.aborted) {
           signalAborted = true
           return
         }
-        await delay(100)
+        await delay(50)
       }
     })
 
@@ -371,10 +373,10 @@ describe('work', function () {
 
     await ctx.boss.start()
 
-    assertTruthy(jobId)
-    const job = await ctx.boss.getJobById(ctx.schema, jobId)
+    const [job] = await ctx.boss.findJobs(ctx.schema, { id: jobId })
 
     assertTruthy(job)
+
     expect(signalAborted).toBe(true)
     expect(job.state).toBe('failed')
     expect(job.output).toBeTruthy()

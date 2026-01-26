@@ -5,6 +5,9 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "bin": {
+    "pg-boss": "./dist/cli.js"
+  },
   "engines": {
     "node": ">=22.12.0"
   },
@@ -20,6 +23,7 @@
     "@types/node": "^22.19.3",
     "@types/pg": "^8.16.0",
     "@vitest/coverage-v8": "^4.0.16",
+    "cli-testlab": "^5.1.0",
     "eslint": "^9.39.2",
     "luxon": "^3.7.2",
     "neostandard": "^0.12.2",
