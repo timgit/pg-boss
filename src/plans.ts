@@ -1188,7 +1188,7 @@ function deletion (schema: string, table: string, queues: string[]): string {
     WHERE name = ANY(${serializeArrayParam(queues)})
       AND
       (
-        completed_on + deletion_seconds * interval '1s' < now()
+        (deletion_seconds > 0 AND completed_on + deletion_seconds * interval '1s' < now())
         OR
         (state < '${JOB_STATES.active}' AND keep_until < now())
       )

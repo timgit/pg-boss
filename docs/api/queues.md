@@ -70,7 +70,7 @@ Allowed policy values:
 
 * **deleteAfterSeconds**, int
 
-  Default: 7 days. How long a job should be retained in the database after it's completed.
+  Default: 7 days. How long a job should be retained in the database after it's completed. Set to 0 to never delete completed jobs.
 
 * All retry, expiration, and retention options set on the queue will be inheritied for each job, unless they are overridden.
 
