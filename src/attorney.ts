@@ -196,6 +196,7 @@ function getConfig (value: string | types.ConstructorOptions): types.ResolvedCon
   applySchemaConfig(config)
   applyOpsConfig(config)
   applyScheduleConfig(config)
+  applyBamConfig(config)
   validateWarningConfig(config)
 
   return config as types.ResolvedConstructorOptions
@@ -306,8 +307,8 @@ function applyOpsConfig (config: any) {
 }
 
 function validateDeletionConfig (config: any) {
-  assert(!('deleteAfterSeconds' in config) || config.deleteAfterSeconds >= 1,
-    'configuration assert: deleteAfterSeconds must be at least every second')
+  assert(!('deleteAfterSeconds' in config) || config.deleteAfterSeconds >= 0,
+    'configuration assert: deleteAfterSeconds must be at least 0 (0 disables deletion)')
 }
 
 function applyScheduleConfig (config: any) {
@@ -325,6 +326,14 @@ function applyScheduleConfig (config: any) {
     'configuration assert: cronWorkerIntervalSeconds must be between 1 and 45 seconds')
 
   config.cronWorkerIntervalSeconds = config.cronWorkerIntervalSeconds || 5
+}
+
+function applyBamConfig (config: any) {
+  const minInterval = config.__test__bypass_bam_interval_check ? 1 : 10
+  assert(!('bamIntervalSeconds' in config) || config.bamIntervalSeconds >= minInterval,
+    `configuration assert: bamIntervalSeconds must be at least ${minInterval} seconds`)
+
+  config.bamIntervalSeconds = config.bamIntervalSeconds || 60
 }
 
 export {

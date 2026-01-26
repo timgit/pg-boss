@@ -52,10 +52,16 @@ function create (schema: string, version: number, options?: { createSchema?: boo
     createTableQueue(schema),
     createTableSchedule(schema),
     createTableSubscription(schema),
+    createTableBam(schema),
+
+    jobTableFormatFunction(schema),
+    jobTableRunFunction(schema),
+    jobTableRunAsyncFunction(schema),
 
     createTableJob(schema),
     createPrimaryKeyJob(schema),
-    createTableJobCommon(schema, COMMON_JOB_TABLE),
+
+    createTableJobCommon(schema),
 
     createTableWarning(schema),
     createIndexWarning(schema),
@@ -92,7 +98,8 @@ function createTableVersion (schema: string) {
   return `
     CREATE TABLE ${schema}.version (
       version int primary key,
-      cron_on timestamp with time zone
+      cron_on timestamp with time zone,
+      bam_on timestamp with time zone
     )
   `
 }
@@ -155,6 +162,24 @@ function createTableSubscription (schema: string) {
   `
 }
 
+function createTableBam (schema: string) {
+  return `
+    CREATE TABLE ${schema}.bam (
+      id uuid PRIMARY KEY default gen_random_uuid(),
+      name text NOT NULL,
+      version int NOT NULL,
+      status text NOT NULL DEFAULT 'pending',
+      queue text,
+      table_name text NOT NULL,
+      command text NOT NULL,
+      error text,
+      created_on timestamp with time zone NOT NULL DEFAULT now(),
+      started_on timestamp with time zone,
+      completed_on timestamp with time zone
+    )
+  `
+}
+
 function createTableWarning (schema: string) {
   return `
     CREATE TABLE ${schema}.warning (
@@ -169,6 +194,99 @@ function createTableWarning (schema: string) {
 
 function createIndexWarning (schema: string) {
   return `CREATE INDEX warning_i1 ON ${schema}.warning (created_on DESC)`
+}
+
+function jobTableFormatFunction (schema: string) {
+  return `
+    CREATE FUNCTION ${schema}.job_table_format(command text, table_name text)
+    RETURNS text AS
+    $$
+      SELECT format(
+        replace(
+          replace(command, '.job', '.%1$I'),
+          'job_i', '%1$s_i'
+        ),
+        table_name
+      );
+    $$
+    LANGUAGE sql IMMUTABLE;
+  `
+}
+
+function jobTableRunFunction (schema: string) {
+  return `
+    CREATE FUNCTION ${schema}.job_table_run(command text, tbl_name text DEFAULT NULL, queue_name text DEFAULT NULL)
+    RETURNS VOID AS
+    $$
+    DECLARE
+      tbl RECORD;
+    BEGIN
+      IF queue_name IS NOT NULL THEN
+        SELECT table_name INTO tbl_name FROM ${schema}.queue WHERE name = queue_name;
+      END IF;
+
+      IF tbl_name IS NOT NULL THEN
+        EXECUTE ${schema}.job_table_format(command, tbl_name);
+        RETURN;
+      END IF;
+
+      EXECUTE ${schema}.job_table_format(command, '${COMMON_JOB_TABLE}');
+
+      FOR tbl IN SELECT table_name FROM ${schema}.queue WHERE partition = true
+      LOOP
+        EXECUTE ${schema}.job_table_format(command, tbl.table_name);
+      END LOOP;
+    END;
+    $$
+    LANGUAGE plpgsql;
+  `
+}
+
+function jobTableRunAsyncFunction (schema: string) {
+  return `
+    CREATE FUNCTION ${schema}.job_table_run_async(command_name text, version int, command text, tbl_name text DEFAULT NULL, queue_name text DEFAULT NULL)
+    RETURNS VOID AS
+    $$
+    BEGIN
+      IF queue_name IS NOT NULL THEN
+        SELECT table_name INTO tbl_name FROM ${schema}.queue WHERE name = queue_name;
+      END IF;
+
+      IF tbl_name IS NOT NULL THEN
+        INSERT INTO ${schema}.bam (name, version, status, queue, table_name, command)
+        VALUES (
+          command_name,
+          version,
+          'pending',
+          queue_name,
+          tbl_name,
+          ${schema}.job_table_format(command, tbl_name)
+        );
+        RETURN;
+      END IF;
+
+      INSERT INTO ${schema}.bam (name, version, status, queue, table_name, command)
+      SELECT
+        command_name,
+        version,
+        'pending',
+        NULL,
+        '${COMMON_JOB_TABLE}',
+        ${schema}.job_table_format(command, '${COMMON_JOB_TABLE}')
+      UNION ALL
+      SELECT
+        command_name,
+        version,
+        'pending',
+        queue.name,
+        queue.table_name,
+        ${schema}.job_table_format(command, queue.table_name)
+      FROM ${schema}.queue
+      WHERE partition = true;
+    END;
+    $$
+    LANGUAGE plpgsql;
+  `
 }
 
 function createTableJob (schema: string) {
@@ -224,23 +342,22 @@ const JOB_COLUMNS_ALL = `${JOB_COLUMNS_MIN},
   output
 `
 
-function createTableJobCommon (schema: string, table: string) {
-  const format = (command: string) => command.replaceAll('.job', `.${table}`) + ';'
-
+function createTableJobCommon (schema: string) {
   return `
-    CREATE TABLE ${schema}.${table} (LIKE ${schema}.job INCLUDING GENERATED INCLUDING DEFAULTS);
-    ${format(createPrimaryKeyJob(schema))}
-    ${format(createQueueForeignKeyJob(schema))}
-    ${format(createQueueForeignKeyJobDeadLetter(schema))}
-    ${format(createIndexJobPolicyShort(schema))}
-    ${format(createIndexJobPolicySingleton(schema))}
-    ${format(createIndexJobPolicyStately(schema))}
-    ${format(createIndexJobPolicyExclusive(schema))}
-    ${format(createIndexJobThrottle(schema))}
-    ${format(createIndexJobFetch(schema))}
-    ${format(createIndexJobGroupConcurrency(schema))}
+    CREATE TABLE ${schema}.${COMMON_JOB_TABLE} (LIKE ${schema}.job INCLUDING GENERATED INCLUDING DEFAULTS);
 
-    ALTER TABLE ${schema}.job ATTACH PARTITION ${schema}.${table} DEFAULT;
+    SELECT ${schema}.job_table_run($cmd$${createPrimaryKeyJob(schema)}$cmd$, '${COMMON_JOB_TABLE}');
+    SELECT ${schema}.job_table_run($cmd$${createQueueForeignKeyJob(schema)}$cmd$, '${COMMON_JOB_TABLE}');
+    SELECT ${schema}.job_table_run($cmd$${createQueueForeignKeyJobDeadLetter(schema)}$cmd$, '${COMMON_JOB_TABLE}');
+    SELECT ${schema}.job_table_run($cmd$${createIndexJobPolicyShort(schema)}$cmd$, '${COMMON_JOB_TABLE}');
+    SELECT ${schema}.job_table_run($cmd$${createIndexJobPolicySingleton(schema)}$cmd$, '${COMMON_JOB_TABLE}');
+    SELECT ${schema}.job_table_run($cmd$${createIndexJobPolicyStately(schema)}$cmd$, '${COMMON_JOB_TABLE}');
+    SELECT ${schema}.job_table_run($cmd$${createIndexJobPolicyExclusive(schema)}$cmd$, '${COMMON_JOB_TABLE}');
+    SELECT ${schema}.job_table_run($cmd$${createIndexJobThrottle(schema)}$cmd$, '${COMMON_JOB_TABLE}');
+    SELECT ${schema}.job_table_run($cmd$${createIndexJobFetch(schema)}$cmd$, '${COMMON_JOB_TABLE}');
+    SELECT ${schema}.job_table_run($cmd$${createIndexJobGroupConcurrency(schema)}$cmd$, '${COMMON_JOB_TABLE}');
+
+    ALTER TABLE ${schema}.job ATTACH PARTITION ${schema}.${COMMON_JOB_TABLE} DEFAULT;
   `
 }
 
@@ -298,23 +415,23 @@ function createQueueFunction (schema: string) {
       END IF;
 
       EXECUTE format('CREATE TABLE ${schema}.%I (LIKE ${schema}.job INCLUDING DEFAULTS)', tablename);
-      
-      EXECUTE format('${formatPartitionCommand(createPrimaryKeyJob(schema))}', tablename);
-      EXECUTE format('${formatPartitionCommand(createQueueForeignKeyJob(schema))}', tablename);
-      EXECUTE format('${formatPartitionCommand(createQueueForeignKeyJobDeadLetter(schema))}', tablename);
 
-      EXECUTE format('${formatPartitionCommand(createIndexJobFetch(schema))}', tablename);
-      EXECUTE format('${formatPartitionCommand(createIndexJobThrottle(schema))}', tablename);
-      EXECUTE format('${formatPartitionCommand(createIndexJobGroupConcurrency(schema))}', tablename);
+      EXECUTE ${schema}.job_table_format($cmd$${createPrimaryKeyJob(schema)}$cmd$, tablename);
+      EXECUTE ${schema}.job_table_format($cmd$${createQueueForeignKeyJob(schema)}$cmd$, tablename);
+      EXECUTE ${schema}.job_table_format($cmd$${createQueueForeignKeyJobDeadLetter(schema)}$cmd$, tablename);
+
+      EXECUTE ${schema}.job_table_format($cmd$${createIndexJobFetch(schema)}$cmd$, tablename);
+      EXECUTE ${schema}.job_table_format($cmd$${createIndexJobThrottle(schema)}$cmd$, tablename);
+      EXECUTE ${schema}.job_table_format($cmd$${createIndexJobGroupConcurrency(schema)}$cmd$, tablename);
 
       IF options->>'policy' = 'short' THEN
-        EXECUTE format('${formatPartitionCommand(createIndexJobPolicyShort(schema))}', tablename);
+        EXECUTE ${schema}.job_table_format($cmd$${createIndexJobPolicyShort(schema)}$cmd$, tablename);
       ELSIF options->>'policy' = 'singleton' THEN
-        EXECUTE format('${formatPartitionCommand(createIndexJobPolicySingleton(schema))}', tablename);
+        EXECUTE ${schema}.job_table_format($cmd$${createIndexJobPolicySingleton(schema)}$cmd$, tablename);
       ELSIF options->>'policy' = 'stately' THEN
-        EXECUTE format('${formatPartitionCommand(createIndexJobPolicyStately(schema))}', tablename);
+        EXECUTE ${schema}.job_table_format($cmd$${createIndexJobPolicyStately(schema)}$cmd$, tablename);
       ELSIF options->>'policy' = 'exclusive' THEN
-        EXECUTE format('${formatPartitionCommand(createIndexJobPolicyExclusive(schema))}', tablename);
+        EXECUTE ${schema}.job_table_format($cmd$${createIndexJobPolicyExclusive(schema)}$cmd$, tablename);
       END IF;
 
       EXECUTE format('ALTER TABLE ${schema}.%I ADD CONSTRAINT cjc CHECK (name=%L)', tablename, queue_name);
@@ -323,13 +440,6 @@ function createQueueFunction (schema: string) {
     $$
     LANGUAGE plpgsql;
   `
-}
-
-function formatPartitionCommand (command: string) {
-  return command
-    .replace('.job', '.%1$I')
-    .replace('job_i', '%1$s_i')
-    .replaceAll("'", "''")
 }
 
 function deleteQueueFunction (schema: string) {
@@ -419,6 +529,10 @@ function trySetQueueDeletionTime (schema: string, queues: string[], seconds: num
 
 function trySetCronTime (schema: string, seconds: number) {
   return trySetTimestamp(schema, 'cron_on', seconds)
+}
+
+function trySetBamTime (schema: string, seconds: number) {
+  return trySetTimestamp(schema, 'bam_on', seconds)
 }
 
 function trySetTimestamp (schema: string, column: string, seconds: number) {
@@ -652,6 +766,7 @@ interface FetchJobOptions {
   limit: number
   includeMetadata?: boolean
   priority?: boolean
+  orderByCreatedOn?: boolean
   ignoreStartAfter?: boolean
   ignoreSingletons: string[] | null
   ignoreGroups?: string[] | null
@@ -711,7 +826,7 @@ function buildFetchParams (options: FetchJobOptions): FetchQueryParams {
 }
 
 function fetchNextJob (options: FetchJobOptions): SqlQuery {
-  const { schema, table, name, policy, limit, includeMetadata, priority = true, ignoreStartAfter = false, groupConcurrency } = options
+  const { schema, table, name, policy, limit, includeMetadata, priority = true, orderByCreatedOn = true, ignoreStartAfter = false, groupConcurrency } = options
 
   const singletonFetch = limit > 1 && (policy === QUEUE_POLICIES.singleton || policy === QUEUE_POLICIES.stately)
   const hasIgnoreSingletons = options.ignoreSingletons != null && options.ignoreSingletons.length > 0
@@ -752,7 +867,7 @@ function fetchNextJob (options: FetchJobOptions): SqlQuery {
         SELECT ${selectCols}
         FROM ${schema}.${table}
         WHERE ${whereConditions}
-        ORDER BY ${priority ? 'priority desc, ' : ''}created_on, id
+        ORDER BY ${priority ? 'priority desc, ' : ''}${orderByCreatedOn ? 'created_on, ' : ''}id
         LIMIT ${limit}
         FOR UPDATE SKIP LOCKED
       )`
@@ -1129,7 +1244,7 @@ function deletion (schema: string, table: string, queues: string[]): string {
     WHERE name = ANY(${serializeArrayParam(queues)})
       AND
       (
-        completed_on + deletion_seconds * interval '1s' < now()
+        (deletion_seconds > 0 AND completed_on + deletion_seconds * interval '1s' < now())
         OR
         (state < '${JOB_STATES.active}' AND keep_until < now())
       )
@@ -1271,6 +1386,56 @@ function getJobById (schema: string, table: string) {
     `
 }
 
+function getNextBamCommand (schema: string) {
+  return `
+    UPDATE ${schema}.bam
+    SET status = 'in_progress', started_on = now()
+    WHERE id = (
+      SELECT id FROM ${schema}.bam
+      WHERE status IN ('pending', 'failed')
+        AND NOT EXISTS (SELECT 1 FROM ${schema}.bam WHERE status = 'in_progress')
+      ORDER BY created_on
+      LIMIT 1
+    )
+    RETURNING id, name, version, status, queue, table_name as "table", command, error,
+              created_on as "createdOn", started_on as "startedOn", completed_on as "completedOn"
+  `
+}
+
+function setBamCompleted (schema: string, id: string) {
+  return `
+    UPDATE ${schema}.bam
+    SET status = 'completed', completed_on = now()
+    WHERE id = '${id}'
+  `
+}
+
+function setBamFailed (schema: string, id: string, error: string) {
+  const escapedError = error.replace(/'/g, "''")
+  return `
+    UPDATE ${schema}.bam
+    SET status = 'failed', error = '${escapedError}', completed_on = now()
+    WHERE id = '${id}'
+  `
+}
+
+function getBamStatus (schema: string) {
+  return `
+    SELECT status, count(*)::int as count, max(created_on) as "lastCreatedOn"
+    FROM ${schema}.bam
+    GROUP BY status
+  `
+}
+
+function getBamEntries (schema: string) {
+  return `
+    SELECT id, name, version, status, queue, table_name as "table", command, error,
+           created_on as "createdOn", started_on as "startedOn", completed_on as "completedOn"
+    FROM ${schema}.bam
+    ORDER BY version, created_on
+  `
+}
+
 export {
   create,
   insertVersion,
@@ -1310,6 +1475,7 @@ export {
   trySetQueueMonitorTime,
   trySetQueueDeletionTime,
   trySetCronTime,
+  trySetBamTime,
   locked,
   assertMigration,
   getJobById,
@@ -1319,6 +1485,11 @@ export {
   deleteOldWarnings,
   createTableWarning,
   createIndexWarning,
+  getNextBamCommand,
+  setBamCompleted,
+  setBamFailed,
+  getBamStatus,
+  getBamEntries,
   QUEUE_POLICIES,
   JOB_STATES,
   MIGRATE_RACE_MESSAGE,

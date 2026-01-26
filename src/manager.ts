@@ -201,12 +201,18 @@ class Manager extends EventEmitter implements types.EventsMixin {
   async #processJobs<T> (
     name: string,
     jobs: types.Job<T>[],
-    callback: types.WorkHandler<T>
+    callback: types.WorkHandler<T>,
+    worker?: Worker<T>
   ): Promise<void> {
     const jobIds = jobs.map(job => job.id)
     const maxExpiration = jobs.reduce((acc, i) => Math.max(acc, i.expireInSeconds), 0)
     const ac = new AbortController()
     jobs.forEach(job => { job.signal = ac.signal })
+
+    // Store AbortController on worker so it can be aborted after graceful shutdown
+    if (worker) {
+      worker.abortController = ac
+    }
 
     try {
       const result = await resolveWithinSeconds(callback(jobs), maxExpiration, `handler execution exceeded ${maxExpiration}s`, ac)
@@ -215,6 +221,11 @@ class Manager extends EventEmitter implements types.EventsMixin {
     } catch (err: any) {
       await this.fail(name, jobIds, err)
       this.#trackJobsFailed(name, jobs, err)
+    } finally {
+      if (worker) {
+        // Clear between jobs
+        worker.abortController = null
+      }
     }
   }
 
@@ -276,6 +287,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       if (jobIds.length) {
         await this.fail(worker.name, jobIds, 'pg-boss shut down while active')
       }
+      worker.abort()
     }
   }
 
@@ -296,7 +308,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
       priority = true,
       localConcurrency = 1,
       localGroupConcurrency,
-      groupConcurrency
+      groupConcurrency,
+      orderByCreatedOn = true
     } = options
 
     if (localGroupConcurrency != null) {
@@ -320,9 +333,12 @@ class Manager extends EventEmitter implements types.EventsMixin {
         this.emitWip(name)
         this.#trackJobsActive(name, jobs)
 
+        // Get the worker instance for abort controller tracking
+        const worker = this.workers.get(workerId)
+
         // Skip all in-memory group tracking when localGroupConcurrency is not enabled
         if (localGroupConcurrency == null) {
-          await this.#processJobs(name, jobs, callback)
+          await this.#processJobs(name, jobs, callback, worker)
         } else {
           const { allowed, excess, groupedJobs } = this.#trackLocalGroupStart(name, jobs)
 
@@ -333,7 +349,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
           if (allowed.length > 0) {
             try {
-              await this.#processJobs(name, allowed, callback)
+              await this.#processJobs(name, allowed, callback, worker)
             } finally {
               this.#trackLocalGroupEnd(name, groupedJobs)
             }
@@ -578,7 +594,11 @@ class Manager extends EventEmitter implements types.EventsMixin {
     return null
   }
 
-  async insert (name: string, jobs: types.JobInsert[], options: types.InsertOptions = {}) {
+  async insert (
+    name: string,
+    jobs: types.JobInsert[],
+    options: types.InsertOptions & { returnId?: boolean } = {}
+  ) {
     assert(Array.isArray(jobs), 'jobs argument should be an array')
 
     const { table } = await this.getQueueCache(name)
@@ -588,7 +608,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const spy = this.config.__test__enableSpies ? this.#spies.get(name) : undefined
 
     // Return IDs if spy is active for this queue (needed for job tracking)
-    const returnId = !!spy
+    const returnId = !!spy || !!options.returnId
 
     const sql = plans.insertJobs(this.config.schema, { table, name, returnId })
 
