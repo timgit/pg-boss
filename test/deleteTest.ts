@@ -126,5 +126,4 @@ describe('delete', function () {
     expect(job).toBeTruthy()
     expect(job?.state).toBe('completed')
   })
-
 })
