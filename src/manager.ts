@@ -323,7 +323,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
         const ignoreGroups = localGroupConcurrency != null
           ? this.#getGroupsAtLocalCapacity(name)
           : undefined
-        return this.fetch<ReqData>(name, { batchSize, includeMetadata, priority, groupConcurrency, ignoreGroups })
+        return this.fetch<ReqData>(name, { batchSize, includeMetadata, priority, orderByCreatedOn, groupConcurrency, ignoreGroups })
       }
 
       const onFetch = async (jobs: types.Job<ReqData>[]) => {
