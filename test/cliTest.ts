@@ -6,9 +6,10 @@ import crypto from 'node:crypto'
 import { getConnectionString, dropSchema, getDb } from './testHelper.ts'
 import packageJson from '../package.json' with { type: 'json' }
 
-const cliPath = resolve(import.meta.dirname, '../src/cli.ts')
-const currentSchemaVersion = packageJson.pgboss.schema
+const cliOptions = '--import=tsx '
+const cliPath = cliOptions + resolve(import.meta.dirname, '../src/cli.ts')
 const sha1 = (value: string): string => crypto.createHash('sha1').update(value).digest('hex')
+const currentSchemaVersion = packageJson.pgboss.schema
 
 function getTestSchema (testName: string): string {
   return `pgboss${sha1('cliTest' + testName)}`
