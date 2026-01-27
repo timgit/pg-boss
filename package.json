@@ -29,7 +29,7 @@
     "neostandard": "^0.12.2",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
-    "vitest": "^4.0.16"
+    "vitest": "^4.0.18"
   },
   "scripts": {
     "build": "npm run clean && tsc --project tsconfig.build.json",
