@@ -139,7 +139,7 @@ export interface FindJobsOptions extends ConnectionOptions {
   queued?: boolean;
 }
 
-export type InsertOptions = ConnectionOptions
+export type InsertOptions = ConnectionOptions & { returnId?: boolean }
 
 export type SendOptions = JobOptions & QueueOptions & ConnectionOptions
 
