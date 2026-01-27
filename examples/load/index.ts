@@ -1,5 +1,5 @@
-import { PgBoss } from '../../dist/index.js'
-import * as helper from '../../test/testHelper.js'
+import { PgBoss } from '../../src/index.ts'
+import * as helper from '../../test/testHelper.ts'
 import { delay } from '../../src/tools.ts'
 
 const SCHEMA_COUNT = 60

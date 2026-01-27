@@ -1,8 +1,8 @@
 import EventEmitter from 'node:events'
-import type Manager from './manager.js'
-import * as plans from './plans.js'
-import { unwrapSQLResult } from './tools.js'
-import * as types from './types.js'
+import type Manager from './manager.ts'
+import * as plans from './plans.ts'
+import { unwrapSQLResult } from './tools.ts'
+import * as types from './types.ts'
 
 const events = {
   error: 'error',

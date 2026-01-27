@@ -1,6 +1,6 @@
 import EventEmitter from 'node:events'
-import * as plans from './plans.js'
-import * as types from './types.js'
+import * as plans from './plans.ts'
+import * as types from './types.ts'
 
 const events = {
   error: 'error',
