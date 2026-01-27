@@ -8,6 +8,8 @@ import { setVersion } from '../src/plans.ts'
 import { ctx } from './hooks.ts'
 
 const currentSchemaVersion = packageJson.pgboss.schema
+// Version 27 has async migrations that create BAM entries for partitioned tables
+const versionWithAsyncMigrations = 27
 
 describe('migration', function () {
   let contractor: Contractor
@@ -319,7 +321,11 @@ describe('migration', function () {
     await boss.createQueue(ctx.schema, { partition: true })
     await boss.stop()
 
-    await contractor.rollback(currentSchemaVersion)
+    // Rollback through each version to properly uninstall (e.g., drop warning table in v28)
+    // then rollback to version with async migrations to test BAM entry creation
+    for (let v = currentSchemaVersion; v > versionWithAsyncMigrations - 1; v--) {
+      await contractor.rollback(v)
+    }
 
     await boss.start()
 
@@ -337,7 +343,11 @@ describe('migration', function () {
     await boss.createQueue(ctx.schema, { partition: true })
     await boss.stop()
 
-    await contractor.rollback(currentSchemaVersion)
+    // Rollback through each version to properly uninstall (e.g., drop warning table in v28)
+    // then rollback to version with async migrations to test BAM status
+    for (let v = currentSchemaVersion; v > versionWithAsyncMigrations - 1; v--) {
+      await contractor.rollback(v)
+    }
 
     await boss.start()
 

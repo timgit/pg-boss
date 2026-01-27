@@ -3,6 +3,7 @@ import type Manager from './manager.ts'
 import * as plans from './plans.ts'
 import { unwrapSQLResult } from './tools.ts'
 import * as types from './types.ts'
+import { emitAndPersistWarning, type WarningContext } from './warning.ts'
 
 const events = {
   error: 'error',
@@ -13,6 +14,11 @@ const WARNINGS = {
   SLOW_QUERY: { seconds: 30, message: 'Warning: slow query. Your queues and/or database server should be reviewed' },
   LARGE_QUEUE: { size: 10_000, message: 'Warning: large queue backlog. Your queue should be reviewed' }
 }
+
+const WARNING_TYPES = {
+  SLOW_QUERY: 'slow_query',
+  QUEUE_BACKLOG: 'queue_backlog'
+} as const
 
 class Boss extends EventEmitter implements types.EventsMixin {
   #stopped: boolean
@@ -66,6 +72,17 @@ class Boss extends EventEmitter implements types.EventsMixin {
     }
   }
 
+  get #warningContext (): WarningContext {
+    return {
+      emitter: this,
+      db: this.#db,
+      schema: this.#config.schema,
+      persistWarnings: this.#config.persistWarnings,
+      warningEvent: events.warning,
+      errorEvent: events.error
+    }
+  }
+
   async #executeSql (sql: string) {
     const started = Date.now()
 
@@ -77,10 +94,11 @@ class Boss extends EventEmitter implements types.EventsMixin {
       elapsed > WARNINGS.SLOW_QUERY.seconds ||
       this.#config.__test__warn_slow_query
     ) {
-      this.emit(events.warning, {
-        message: WARNINGS.SLOW_QUERY.message,
-        data: { elapsed, sql },
-      })
+      await emitAndPersistWarning(this.#warningContext,
+        WARNING_TYPES.SLOW_QUERY,
+        WARNINGS.SLOW_QUERY.message,
+        { elapsed, sql }
+      )
     }
 
     return result
@@ -97,10 +115,11 @@ class Boss extends EventEmitter implements types.EventsMixin {
       elapsed > WARNINGS.SLOW_QUERY.seconds ||
       this.#config.__test__warn_slow_query
     ) {
-      this.emit(events.warning, {
-        message: WARNINGS.SLOW_QUERY.message,
-        data: { elapsed, sql: query.text, values: query.values },
-      })
+      await emitAndPersistWarning(this.#warningContext,
+        WARNING_TYPES.SLOW_QUERY,
+        WARNINGS.SLOW_QUERY.message,
+        { elapsed, sql: query.text, values: query.values }
+      )
     }
 
     return result
@@ -117,11 +136,21 @@ class Boss extends EventEmitter implements types.EventsMixin {
       const queues = await this.#manager.getQueues()
 
       !this.#stopped && (await this.supervise(queues))
+      !this.#stopped && (await this.#maintainWarnings())
     } catch (err) {
       this.emit(events.error, err)
     } finally {
       this.#maintaining = false
     }
+  }
+
+  async #maintainWarnings () {
+    if (!this.#config.persistWarnings || !this.#config.warningRetentionDays) {
+      return
+    }
+
+    const sql = plans.deleteOldWarnings(this.#config.schema, this.#config.warningRetentionDays)
+    await this.#executeSql(sql)
   }
 
   async supervise (value?: string | types.QueueResult[]) {
@@ -182,10 +211,11 @@ class Boss extends EventEmitter implements types.EventsMixin {
       const warnings = rowsCacheStats.filter(i => i.queuedCount > (i.warningQueueSize || WARNINGS.LARGE_QUEUE.size))
 
       for (const warning of warnings) {
-        this.emit(events.warning, {
-          message: WARNINGS.LARGE_QUEUE.message,
-          data: warning,
-        })
+        await emitAndPersistWarning(this.#warningContext,
+          WARNING_TYPES.QUEUE_BACKLOG,
+          WARNINGS.LARGE_QUEUE.message,
+          warning
+        )
       }
 
       const sql = plans.failJobsByTimeout(this.#config.schema, table, queues)
