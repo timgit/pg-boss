@@ -7,3 +7,4 @@ test
 *.tgz
 coverage
 examples
+dist
