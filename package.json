@@ -1,6 +1,6 @@
 {
   "name": "pg-boss",
-  "version": "12.7.0",
+  "version": "12.7.1",
   "description": "Queueing jobs in Postgres from Node.js like a boss",
   "type": "module",
   "main": "./dist/index.js",
@@ -34,7 +34,7 @@
   "scripts": {
     "build": "npm run clean && tsc --project tsconfig.build.json",
     "clean": "node -e \"fs.rmSync('dist',{recursive:true,force:true})\"",
-    "prepublishOnly": "npm test && npm run build",
+    "prepublishOnly": "npm install && npm test && npm run build",
     "test": "eslint . && vitest run",
     "lint:fix": "eslint . --fix",
     "cover": "vitest run --coverage",

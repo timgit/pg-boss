@@ -356,19 +356,17 @@ describe('work', function () {
     assertTruthy(jobId)
 
     await ctx.boss.work(ctx.schema, async ([job]) => {
-      // Job checks signal every 50ms for up to 5 seconds
-      for (let i = 0; i < 100; i++) {
-        if (job.signal.aborted) {
+      await new Promise<void>(resolve => {
+        job.signal.addEventListener('abort', () => {
           signalAborted = true
-          return
-        }
-        await delay(50)
-      }
+          resolve()
+        }, { once: true })
+      })
     })
 
     await delay(500)
 
-    // Stop with 1 second timeout - job takes 10s, so timeout will expire
+    // Stop with 1 second timeout - handler waits for abort event
     await ctx.boss.stop({ timeout: 1000 })
 
     await ctx.boss.start()
