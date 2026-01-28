@@ -161,6 +161,16 @@ pg-boss plans create --schema myapp_jobs
 ## Documentation
 * [Docs](https://timgit.github.io/pg-boss/)
 
+## UI Dashboards
+
+Community-built dashboards for visualizing and managing pg-boss queues:
+
+| Project | Job Management | Features |
+|---------|----------------|----------|
+| [pg-boss-admin-dashboard](https://github.com/lpetrov/pg-boss-admin-dashboard) | Retry, Cancel | Real-time stats, time-series charts, advanced filtering |
+| [pg-boss-dashboard](https://github.com/yogsma/pg-boss-dashboard) | Read-only | Queue overview, job history |
+| [pg-bossman](https://github.com/ludicroushq/pg-bossman) | Read-only | Built-in dashboard for pg-bossman wrapper library |
+
 ## Contributing
 To setup a development environment for this library:
 
