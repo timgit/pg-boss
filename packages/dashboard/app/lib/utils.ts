@@ -1,5 +1,12 @@
 // Shared utility functions for the dashboard
 
+import { type ClassValue, clsx } from 'clsx'
+import { twMerge } from 'tailwind-merge'
+
+export function cn (...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs))
+}
+
 /**
  * Parse and validate a page number from URL search params
  * Returns 1 for invalid/missing values

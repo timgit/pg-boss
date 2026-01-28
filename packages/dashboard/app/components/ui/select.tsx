@@ -1,83 +1,137 @@
-import {
-  Select as AriaSelect,
-  SelectValue,
-  Button,
-  Popover,
-  ListBox,
-  ListBoxItem,
-  type SelectProps as AriaSelectProps,
-  type Key,
-} from "react-aria-components";
+import * as SelectPrimitive from '@radix-ui/react-select'
+import { Check, ChevronDown } from 'lucide-react'
+import { forwardRef, type ComponentPropsWithoutRef, type ElementRef } from 'react'
+import { cn } from '~/lib/utils'
 
-interface SelectOption {
-  value: string;
-  label: string;
-}
+const Select = SelectPrimitive.Root
 
-interface SelectProps
-  extends Omit<AriaSelectProps<SelectOption>, "children" | "className"> {
-  options: SelectOption[];
-  placeholder?: string;
-  className?: string;
-  label?: string;
-}
+const SelectGroup = SelectPrimitive.Group
 
-export function Select({
-  options,
-  placeholder = "Select...",
-  className = "",
-  label,
-  ...props
-}: SelectProps) {
-  return (
-    <AriaSelect {...props} className={`group ${className}`}>
-      {label && (
-        <label className="block text-sm font-medium text-gray-700 mb-1.5">
-          {label}
-        </label>
+const SelectValue = SelectPrimitive.Value
+
+const SelectTrigger = forwardRef<
+  ElementRef<typeof SelectPrimitive.Trigger>,
+  ComponentPropsWithoutRef<typeof SelectPrimitive.Trigger>
+>(({ className, children, ...props }, ref) => (
+  <SelectPrimitive.Trigger
+    ref={ref}
+    className={cn(
+      'flex items-center justify-between w-full px-3 py-2 text-sm rounded-lg shadow-sm',
+      'bg-white border border-gray-300 text-gray-900',
+      'dark:bg-gray-900 dark:border-gray-700 dark:text-gray-100',
+      'hover:bg-gray-50 dark:hover:bg-gray-800',
+      'focus:outline-none focus:ring-2 focus:ring-primary-600 focus:ring-offset-2',
+      'dark:focus:ring-offset-gray-900',
+      'disabled:cursor-not-allowed disabled:opacity-50',
+      'placeholder:text-gray-500 dark:placeholder:text-gray-400',
+      '[&>span]:truncate [&>span]:text-left',
+      className
+    )}
+    {...props}
+  >
+    {children}
+    <SelectPrimitive.Icon asChild>
+      <ChevronDown className="h-4 w-4 opacity-50 ml-2 shrink-0" />
+    </SelectPrimitive.Icon>
+  </SelectPrimitive.Trigger>
+))
+SelectTrigger.displayName = SelectPrimitive.Trigger.displayName
+
+const SelectContent = forwardRef<
+  ElementRef<typeof SelectPrimitive.Content>,
+  ComponentPropsWithoutRef<typeof SelectPrimitive.Content>
+>(({ className, children, position = 'popper', ...props }, ref) => (
+  <SelectPrimitive.Portal>
+    <SelectPrimitive.Content
+      ref={ref}
+      className={cn(
+        'relative z-50 max-h-96 min-w-[8rem] overflow-hidden rounded-lg border shadow-lg',
+        'bg-white border-gray-200',
+        'dark:bg-gray-900 dark:border-gray-800',
+        'data-[state=open]:animate-in data-[state=closed]:animate-out',
+        'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
+        'data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95',
+        'data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2',
+        'data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2',
+        position === 'popper' &&
+          'data-[side=bottom]:translate-y-1 data-[side=left]:-translate-x-1 data-[side=right]:translate-x-1 data-[side=top]:-translate-y-1',
+        className
       )}
-      <Button className="flex items-center justify-between w-full px-3 py-2 text-sm bg-white border border-gray-300 rounded-lg shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary-600 focus:ring-offset-2">
-        <SelectValue className="flex-1 text-left text-gray-900 truncate">
-          {({ selectedText }) => (
-            <span className={selectedText ? "" : "text-gray-500"}>
-              {selectedText || placeholder}
-            </span>
-          )}
-        </SelectValue>
-        <ChevronIcon className="w-5 h-5 text-gray-400 ml-2" />
-      </Button>
-      <Popover className="w-[--trigger-width] mt-1 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden z-50">
-        <ListBox className="max-h-60 overflow-auto py-1 focus:outline-none">
-          {options.map((option) => (
-            <ListBoxItem
-              key={option.value}
-              id={option.value}
-              textValue={option.label}
-              className="px-3 py-2 text-sm text-gray-900 cursor-pointer hover:bg-gray-100 focus:bg-primary-50 focus:text-primary-900 focus:outline-none selected:bg-primary-50 selected:text-primary-900"
-            >
-              {option.label}
-            </ListBoxItem>
-          ))}
-        </ListBox>
-      </Popover>
-    </AriaSelect>
-  );
-}
-
-function ChevronIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      className={className}
-      fill="none"
-      viewBox="0 0 24 24"
-      strokeWidth={1.5}
-      stroke="currentColor"
+      position={position}
+      {...props}
     >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        d="m19.5 8.25-7.5 7.5-7.5-7.5"
-      />
-    </svg>
-  );
+      <SelectPrimitive.Viewport
+        className={cn(
+          'p-1',
+          position === 'popper' &&
+            'h-[var(--radix-select-trigger-height)] w-full min-w-[var(--radix-select-trigger-width)]'
+        )}
+      >
+        {children}
+      </SelectPrimitive.Viewport>
+    </SelectPrimitive.Content>
+  </SelectPrimitive.Portal>
+))
+SelectContent.displayName = SelectPrimitive.Content.displayName
+
+const SelectLabel = forwardRef<
+  ElementRef<typeof SelectPrimitive.Label>,
+  ComponentPropsWithoutRef<typeof SelectPrimitive.Label>
+>(({ className, ...props }, ref) => (
+  <SelectPrimitive.Label
+    ref={ref}
+    className={cn('py-1.5 pl-8 pr-2 text-sm font-semibold', className)}
+    {...props}
+  />
+))
+SelectLabel.displayName = SelectPrimitive.Label.displayName
+
+const SelectItem = forwardRef<
+  ElementRef<typeof SelectPrimitive.Item>,
+  ComponentPropsWithoutRef<typeof SelectPrimitive.Item>
+>(({ className, children, ...props }, ref) => (
+  <SelectPrimitive.Item
+    ref={ref}
+    className={cn(
+      'relative flex w-full cursor-pointer select-none items-center rounded-sm py-2 pl-8 pr-2 text-sm outline-none',
+      'text-gray-900 dark:text-gray-100',
+      'focus:bg-primary-50 focus:text-primary-900',
+      'dark:focus:bg-primary-950 dark:focus:text-primary-100',
+      'data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
+      className
+    )}
+    {...props}
+  >
+    <span className="absolute left-2 flex h-3.5 w-3.5 items-center justify-center">
+      <SelectPrimitive.ItemIndicator>
+        <Check className="h-4 w-4" />
+      </SelectPrimitive.ItemIndicator>
+    </span>
+
+    <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
+  </SelectPrimitive.Item>
+))
+SelectItem.displayName = SelectPrimitive.Item.displayName
+
+const SelectSeparator = forwardRef<
+  ElementRef<typeof SelectPrimitive.Separator>,
+  ComponentPropsWithoutRef<typeof SelectPrimitive.Separator>
+>(({ className, ...props }, ref) => (
+  <SelectPrimitive.Separator
+    ref={ref}
+    className={cn('-mx-1 my-1 h-px bg-gray-200 dark:bg-gray-800', className)}
+    {...props}
+  />
+))
+SelectSeparator.displayName = SelectPrimitive.Separator.displayName
+
+export {
+  Select,
+  SelectGroup,
+  SelectValue,
+  SelectTrigger,
+  SelectContent,
+  SelectLabel,
+  SelectItem,
+  SelectSeparator,
 }

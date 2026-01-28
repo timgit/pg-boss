@@ -1,14 +1,15 @@
-import { Button } from "./button";
+import { Button } from './button'
+import { cn } from '~/lib/utils'
 
 interface PaginationProps {
-  page: number;
-  totalPages?: number | null;
-  hasNextPage: boolean;
-  hasPrevPage: boolean;
-  onPageChange: (page: number) => void;
+  page: number
+  totalPages?: number | null
+  hasNextPage: boolean
+  hasPrevPage: boolean
+  onPageChange: (page: number) => void
 }
 
-export function Pagination({
+export function Pagination ({
   page,
   totalPages,
   hasNextPage,
@@ -16,12 +17,17 @@ export function Pagination({
   onPageChange,
 }: PaginationProps) {
   if (!hasPrevPage && !hasNextPage) {
-    return null;
+    return null
   }
 
   return (
-    <div className="flex items-center justify-between px-6 py-4 border-t border-gray-200">
-      <div className="text-sm text-gray-500">
+    <div
+      className={cn(
+        'flex items-center justify-between px-6 py-4 border-t',
+        'border-gray-200 dark:border-gray-800'
+      )}
+    >
+      <div className="text-sm text-gray-500 dark:text-gray-400">
         Page {page}
         {totalPages != null && ` of ${totalPages}`}
       </div>
@@ -29,20 +35,20 @@ export function Pagination({
         <Button
           variant="outline"
           size="sm"
-          onPress={() => onPageChange(page - 1)}
-          isDisabled={!hasPrevPage}
+          onClick={() => onPageChange(page - 1)}
+          disabled={!hasPrevPage}
         >
           Previous
         </Button>
         <Button
           variant="outline"
           size="sm"
-          onPress={() => onPageChange(page + 1)}
-          isDisabled={!hasNextPage}
+          onClick={() => onPageChange(page + 1)}
+          disabled={!hasNextPage}
         >
           Next
         </Button>
       </div>
     </div>
-  );
+  )
 }

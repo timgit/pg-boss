@@ -6,3 +6,4 @@ node_modules
 coverage
 dist
 .react-router
+build

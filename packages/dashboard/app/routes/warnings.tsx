@@ -1,8 +1,8 @@
-import { useSearchParams } from "react-router";
-import type { Route } from "./+types/warnings";
-import { getWarnings, getWarningCount } from "~/lib/queries.server";
-import { Card, CardHeader, CardTitle, CardContent } from "~/components/ui/card";
-import { Badge } from "~/components/ui/badge";
+import { useSearchParams } from 'react-router'
+import type { Route } from './+types/warnings'
+import { getWarnings, getWarningCount } from '~/lib/queries.server'
+import { Card, CardHeader, CardTitle, CardContent } from '~/components/ui/card'
+import { Badge } from '~/components/ui/badge'
 import {
   Table,
   TableHeader,
@@ -10,11 +10,11 @@ import {
   TableRow,
   TableHead,
   TableCell,
-} from "~/components/ui/table";
-import { Pagination } from "~/components/ui/pagination";
-import { FilterSelect } from "~/components/ui/filter-select";
-import { ErrorCard } from "~/components/error-card";
-import type { WarningType, WarningResult } from "~/lib/types";
+} from '~/components/ui/table'
+import { Pagination } from '~/components/ui/pagination'
+import { FilterSelect } from '~/components/ui/filter-select'
+import { ErrorCard } from '~/components/error-card'
+import type { WarningType, WarningResult } from '~/lib/types'
 import {
   parsePageNumber,
   isValidWarningType,
@@ -23,18 +23,18 @@ import {
   WARNING_TYPE_OPTIONS,
   WARNING_TYPE_VARIANTS,
   WARNING_TYPE_LABELS,
-} from "~/lib/utils";
+} from '~/lib/utils'
 
-export async function loader({ request, context }: Route.LoaderArgs) {
-  const url = new URL(request.url);
-  const typeParam = url.searchParams.get("type");
+export async function loader ({ request, context }: Route.LoaderArgs) {
+  const url = new URL(request.url)
+  const typeParam = url.searchParams.get('type')
 
   // Validate warning type filter - invalid values are treated as no filter
-  const typeFilter = isValidWarningType(typeParam) ? typeParam : null;
+  const typeFilter = isValidWarningType(typeParam) ? typeParam : null
 
-  const page = parsePageNumber(url.searchParams.get("page"));
-  const limit = 50;
-  const offset = (page - 1) * limit;
+  const page = parsePageNumber(url.searchParams.get('page'))
+  const limit = 50
+  const offset = (page - 1) * limit
 
   const [warnings, totalCount] = await Promise.all([
     getWarnings(context.DB_URL, context.SCHEMA, {
@@ -43,49 +43,49 @@ export async function loader({ request, context }: Route.LoaderArgs) {
       offset,
     }),
     getWarningCount(context.DB_URL, context.SCHEMA, typeFilter),
-  ]);
+  ])
 
-  const totalPages = Math.ceil(totalCount / limit);
+  const totalPages = Math.ceil(totalCount / limit)
 
-  return { warnings, totalCount, page, totalPages, typeFilter };
+  return { warnings, totalCount, page, totalPages, typeFilter }
 }
 
-export function ErrorBoundary() {
+export function ErrorBoundary () {
   return (
     <ErrorCard
       title="Failed to load warnings"
-      backTo={{ href: "/", label: "Back to Dashboard" }}
+      backTo={{ href: '/', label: 'Back to Dashboard' }}
     />
-  );
+  )
 }
 
-export default function Warnings({ loaderData }: Route.ComponentProps) {
-  const { warnings, totalCount, page, totalPages, typeFilter } = loaderData;
-  const [searchParams, setSearchParams] = useSearchParams();
+export default function Warnings ({ loaderData }: Route.ComponentProps) {
+  const { warnings, totalCount, page, totalPages, typeFilter } = loaderData
+  const [searchParams, setSearchParams] = useSearchParams()
 
   const handleFilterChange = (key: string, value: string | null) => {
-    const params = new URLSearchParams(searchParams);
+    const params = new URLSearchParams(searchParams)
     if (value) {
-      params.set(key, value);
+      params.set(key, value)
     } else {
-      params.delete(key);
+      params.delete(key)
     }
-    params.delete("page");
-    setSearchParams(params);
-  };
+    params.delete('page')
+    setSearchParams(params)
+  }
 
   const handlePageChange = (newPage: number) => {
-    const params = new URLSearchParams(searchParams);
-    params.set("page", newPage.toString());
-    setSearchParams(params);
-  };
+    const params = new URLSearchParams(searchParams)
+    params.set('page', newPage.toString())
+    setSearchParams(params)
+  }
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Warnings</h1>
-        <p className="mt-1 text-sm text-gray-500">
-          {totalCount.toLocaleString()} warning{totalCount !== 1 ? "s" : ""} recorded
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Warnings</h1>
+        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+          {totalCount.toLocaleString()} warning{totalCount !== 1 ? 's' : ''} recorded
         </p>
       </div>
 
@@ -95,7 +95,7 @@ export default function Warnings({ loaderData }: Route.ComponentProps) {
           <FilterSelect
             value={typeFilter}
             options={WARNING_TYPE_OPTIONS}
-            onChange={(value) => handleFilterChange("type", value)}
+            onChange={(value) => handleFilterChange('type', value)}
           />
         </CardHeader>
         <CardContent className="p-0">
@@ -111,10 +111,10 @@ export default function Warnings({ loaderData }: Route.ComponentProps) {
             <TableBody>
               {warnings.length === 0 ? (
                 <TableRow>
-                  <TableCell className="text-center text-gray-500 py-8" colSpan={4}>
+                  <TableCell className="text-center text-gray-500 dark:text-gray-400 py-8" colSpan={4}>
                     {typeFilter
-                      ? `No ${typeFilter.replace("_", " ")} warnings found`
-                      : "No warnings recorded. Enable persistWarnings in pg-boss config to capture warnings."}
+                      ? `No ${typeFilter.replace('_', ' ')} warnings found`
+                      : 'No warnings recorded. Enable persistWarnings in pg-boss config to capture warnings.'}
                   </TableCell>
                 </TableRow>
               ) : (
@@ -123,13 +123,13 @@ export default function Warnings({ loaderData }: Route.ComponentProps) {
                     <TableCell>
                       <WarningTypeBadge type={warning.type} />
                     </TableCell>
-                    <TableCell className="text-gray-900 max-w-md truncate">
+                    <TableCell className="text-gray-900 dark:text-gray-100 max-w-md truncate">
                       {warning.message}
                     </TableCell>
-                    <TableCell className="font-mono text-xs text-gray-500 max-w-xs truncate">
+                    <TableCell className="font-mono text-xs text-gray-500 dark:text-gray-400 max-w-xs truncate">
                       {formatWarningData(warning.data)}
                     </TableCell>
-                    <TableCell className="text-gray-500 whitespace-nowrap">
+                    <TableCell className="text-gray-500 dark:text-gray-400 whitespace-nowrap">
                       {formatDateWithSeconds(new Date(warning.createdOn))}
                     </TableCell>
                   </TableRow>
@@ -148,13 +148,13 @@ export default function Warnings({ loaderData }: Route.ComponentProps) {
         />
       </Card>
     </div>
-  );
+  )
 }
 
-function WarningTypeBadge({ type }: { type: WarningType }) {
+function WarningTypeBadge ({ type }: { type: WarningType }) {
   return (
     <Badge variant={WARNING_TYPE_VARIANTS[type]} size="sm">
       {WARNING_TYPE_LABELS[type]}
     </Badge>
-  );
+  )
 }

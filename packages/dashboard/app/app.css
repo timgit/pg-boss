@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* Configure class-based dark mode for Tailwind v4 */
+@variant dark (&:where(.dark, .dark *));
+
 /* Custom theme using Untitled UI color palette */
 @theme {
   /* Primary colors - Purple */
@@ -29,6 +32,14 @@
   --color-gray-800: #182230;
   --color-gray-900: #101828;
   --color-gray-950: #0c111d;
+
+  /* Sidebar semantic colors (will be swapped in dark mode) */
+  --color-sidebar: white;
+  --color-sidebar-foreground: var(--color-gray-900);
+  --color-sidebar-accent: var(--color-gray-100);
+  --color-sidebar-accent-foreground: var(--color-gray-900);
+  --color-sidebar-border: var(--color-gray-100);
+  --color-sidebar-ring: var(--color-primary-500);
 
   /* Success colors */
   --color-success-25: #f6fef9;
@@ -83,8 +94,7 @@
   --spacing-4xl: 2.5rem;
 
   /* Font family */
-  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
-
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
   /* Font sizes */
   --text-xs: 0.75rem;
   --text-sm: 0.875rem;
@@ -114,11 +124,21 @@
   --shadow-2xl: 0px 24px 48px -12px rgba(16, 24, 40, 0.18);
 }
 
+/* Update sidebar colors for dark mode */
+.dark {
+  --color-sidebar: #000000;
+  --color-sidebar-foreground: var(--color-gray-300);
+  --color-sidebar-accent: var(--color-gray-900);
+  --color-sidebar-accent-foreground: var(--color-gray-100);
+  --color-sidebar-border: var(--color-gray-950);
+  --color-sidebar-ring: var(--color-gray-600);
+}
+
 /* Base styles */
 body {
   font-family: var(--font-sans);
-  background-color: var(--color-gray-50);
-  color: var(--color-gray-900);
+  background-color: var(--color-background);
+  color: var(--color-foreground);
 }
 
 /* Custom utility classes for common patterns */
@@ -127,9 +147,17 @@ body {
   box-shadow: 0 0 0 4px var(--color-primary-100);
 }
 
+.dark .focus-ring {
+  box-shadow: 0 0 0 4px var(--color-gray-800);
+}
+
 @utility focus-ring-error {
   outline: none;
   box-shadow: 0 0 0 4px var(--color-error-100);
+}
+
+.dark .focus-ring-error {
+  box-shadow: 0 0 0 4px var(--color-error-900);
 }
 
 /* Loading bar animation */
