@@ -4,8 +4,12 @@ import {
   getWarnings,
   getAggregateStats,
   getProblemQueues,
+  getQueueCount,
+  getProblemQueuesCount,
+  getPartitionedQueuesCount,
 } from '~/lib/queries.server'
 import { StatsCards } from '~/components/stats-cards'
+import { QueueStatsCards } from '~/components/queue-stats-cards'
 import { Card, CardHeader, CardTitle, CardContent } from '~/components/ui/card'
 import { Badge } from '~/components/ui/badge'
 import { ErrorCard } from '~/components/error-card'
@@ -18,13 +22,25 @@ import {
 import type { WarningType, QueueResult, WarningResult } from '~/lib/types'
 
 export async function loader ({ context }: Route.LoaderArgs) {
-  const [warnings, stats, problemQueues] = await Promise.all([
+  const [warnings, stats, problemQueues, totalQueues, problemQueuesCount, partitionedQueues] = await Promise.all([
     getWarnings(context.DB_URL, context.SCHEMA, { limit: 5 }),
     getAggregateStats(context.DB_URL, context.SCHEMA),
     getProblemQueues(context.DB_URL, context.SCHEMA, 5),
+    getQueueCount(context.DB_URL, context.SCHEMA),
+    getProblemQueuesCount(context.DB_URL, context.SCHEMA),
+    getPartitionedQueuesCount(context.DB_URL, context.SCHEMA),
   ])
 
-  return { stats, warnings, problemQueues }
+  return {
+    stats,
+    warnings,
+    problemQueues,
+    queueStats: {
+      totalQueues,
+      problemQueues: problemQueuesCount,
+      partitionedQueues,
+    },
+  }
 }
 
 export function ErrorBoundary () {
@@ -32,7 +48,7 @@ export function ErrorBoundary () {
 }
 
 export default function Overview ({ loaderData }: Route.ComponentProps) {
-  const { stats, warnings, problemQueues } = loaderData
+  const { stats, warnings, problemQueues, queueStats } = loaderData
 
   return (
     <div className="space-y-8">
@@ -42,6 +58,17 @@ export default function Overview ({ loaderData }: Route.ComponentProps) {
           Monitor your pg-boss job queues
         </p>
       </div>
+
+      <section>
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
+          Queues
+        </h2>
+        <QueueStatsCards
+          totalQueues={queueStats.totalQueues}
+          problemQueues={queueStats.problemQueues}
+          partitionedQueues={queueStats.partitionedQueues}
+        />
+      </section>
 
       <section>
         <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">

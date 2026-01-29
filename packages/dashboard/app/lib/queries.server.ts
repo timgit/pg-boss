@@ -79,45 +79,128 @@ const JOB_LIST_COLUMNS = `
   singleton_key as "singletonKey"
 `
 
-// Get queues with cached stats, with optional pagination
+// Get queues with cached stats, with optional pagination, filtering, and search
 export async function getQueues (
   dbUrl: string,
   schema: string,
   options: {
     limit?: number;
     offset?: number;
+    filter?: 'all' | 'problems' | 'partitioned';
+    search?: string;
   } = {}
 ): Promise<QueueResult[]> {
   const s = validateIdentifier(schema)
-  const { limit, offset } = options
+  const { limit, offset, filter = 'all', search } = options
+
+  // Build WHERE conditions
+  const conditions: string[] = []
+  const params: unknown[] = []
+  let paramIndex = 1
+
+  // Add filter conditions
+  if (filter === 'problems') {
+    conditions.push('warning_queued > 0 AND queued_count > warning_queued')
+  } else if (filter === 'partitioned') {
+    conditions.push('partition = true')
+  }
+
+  // Add search condition
+  if (search && search.trim()) {
+    conditions.push(`name ILIKE $${paramIndex}`)
+    params.push(`%${search.trim()}%`)
+    paramIndex++
+  }
+
+  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
 
   // If no pagination, return all queues
   if (limit === undefined) {
     const sql = `
       SELECT ${QUEUE_COLUMNS}
       FROM ${s}.queue
+      ${whereClause}
       ORDER BY name
     `
-    return query<QueueResult>(dbUrl, sql)
+    return query<QueueResult>(dbUrl, sql, params)
   }
 
   // With pagination
+  params.push(limit, offset ?? 0)
   const sql = `
     SELECT ${QUEUE_COLUMNS}
     FROM ${s}.queue
+    ${whereClause}
     ORDER BY name
-    LIMIT $1 OFFSET $2
+    LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
   `
-  return query<QueueResult>(dbUrl, sql, [limit, offset ?? 0])
+  return query<QueueResult>(dbUrl, sql, params)
 }
 
-// Get total count of queues
+// Get total count of queues with optional filtering and search
 export async function getQueueCount (
+  dbUrl: string,
+  schema: string,
+  options: {
+    filter?: 'all' | 'problems' | 'partitioned';
+    search?: string;
+  } = {}
+): Promise<number> {
+  const s = validateIdentifier(schema)
+  const { filter = 'all', search } = options
+
+  // Build WHERE conditions
+  const conditions: string[] = []
+  const params: unknown[] = []
+  let paramIndex = 1
+
+  // Add filter conditions
+  if (filter === 'problems') {
+    conditions.push('warning_queued > 0 AND queued_count > warning_queued')
+  } else if (filter === 'partitioned') {
+    conditions.push('partition = true')
+  }
+
+  // Add search condition
+  if (search && search.trim()) {
+    conditions.push(`name ILIKE $${paramIndex}`)
+    params.push(`%${search.trim()}%`)
+    paramIndex++
+  }
+
+  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
+
+  const sql = `SELECT COUNT(*)::int as count FROM ${s}.queue ${whereClause}`
+  const result = await queryOne<{ count: number }>(dbUrl, sql, params)
+  return result?.count ?? 0
+}
+
+// Get count of queues needing attention (backlog exceeding warning threshold)
+export async function getProblemQueuesCount (
   dbUrl: string,
   schema: string
 ): Promise<number> {
   const s = validateIdentifier(schema)
-  const sql = `SELECT COUNT(*)::int as count FROM ${s}.queue`
+  const sql = `
+    SELECT COUNT(*)::int as count
+    FROM ${s}.queue
+    WHERE warning_queued > 0 AND queued_count > warning_queued
+  `
+  const result = await queryOne<{ count: number }>(dbUrl, sql)
+  return result?.count ?? 0
+}
+
+// Get count of partitioned queues
+export async function getPartitionedQueuesCount (
+  dbUrl: string,
+  schema: string
+): Promise<number> {
+  const s = validateIdentifier(schema)
+  const sql = `
+    SELECT COUNT(*)::int as count
+    FROM ${s}.queue
+    WHERE partition = true
+  `
   const result = await queryOne<{ count: number }>(dbUrl, sql)
   return result?.count ?? 0
 }
