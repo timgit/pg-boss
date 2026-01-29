@@ -507,7 +507,7 @@ function createIndexJobPolicyKeyStrictFifo (schema: string) {
 }
 
 function createCheckConstraintKeyStrictFifo (schema: string) {
-  return `ALTER TABLE ${schema}.job ADD CONSTRAINT job_key_strict_fifo_singleton_key_check CHECK (policy <> '${QUEUE_POLICIES.key_strict_fifo}' OR singleton_key IS NOT NULL)`
+  return `ALTER TABLE ${schema}.job ADD CONSTRAINT job_key_strict_fifo_singleton_key_check CHECK (NOT (policy = '${QUEUE_POLICIES.key_strict_fifo}' AND singleton_key IS NULL))`
 }
 
 function createIndexJobGroupConcurrency (schema: string) {
