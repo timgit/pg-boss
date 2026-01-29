@@ -201,19 +201,21 @@ export function AppSidebar () {
             <SidebarMenu>
               {navigation.map((item) => (
                 <SidebarMenuItem key={item.name}>
-                  <SidebarMenuButton asChild>
-                    <NavLink
-                      to={buildHref(item.href)}
-                      end={item.href === '/'}
-                      onClick={() => setOpenMobile(false)}
-                    >
-                      {({ isActive }) => (
-                        <>
-                          <item.icon className="h-5 w-5 flex-shrink-0" />
-                          <span className="group-data-[state=collapsed]:hidden">{item.name}</span>
-                        </>
-                      )}
-                    </NavLink>
+                  <SidebarMenuButton
+                    render={
+                      <NavLink
+                        to={buildHref(item.href)}
+                        end={item.href === '/'}
+                        onClick={() => setOpenMobile(false)}
+                      />
+                    }
+                  >
+                    {({ isActive }) => (
+                      <>
+                        <item.icon className="h-5 w-5 flex-shrink-0" />
+                        <span className="group-data-[state=collapsed]:hidden">{item.name}</span>
+                      </>
+                    )}
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}

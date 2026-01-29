@@ -1,8 +1,8 @@
 import * as React from 'react'
-import { Slot } from '@radix-ui/react-slot'
 import { cva, type VariantProps } from 'class-variance-authority'
 import { PanelLeft } from 'lucide-react'
 import { cn } from '~/lib/utils'
+import { useRender, mergeProps } from '~/lib/use-render'
 
 const SIDEBAR_COOKIE_NAME = 'sidebar:state'
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7 // 7 days
@@ -310,53 +310,57 @@ const sidebarMenuButtonVariants = cva(
 const SidebarMenuButton = React.forwardRef<
   HTMLButtonElement,
   React.ComponentProps<'button'> & {
-    asChild?: boolean
+    render?: React.ReactElement
     isActive?: boolean
     tooltip?: string | React.ComponentProps<'div'>
   } & VariantProps<typeof sidebarMenuButtonVariants>
->(({ asChild = false, isActive = false, variant = 'default', size = 'default', tooltip, className, ...props }, ref) => {
-  const Comp = asChild ? Slot : 'button'
-
-  return (
-    <Comp
-      ref={ref}
-      data-sidebar="menu-button"
-      data-active={isActive}
-      className={cn(
-        sidebarMenuButtonVariants({ variant, size }),
-        isActive && 'bg-sidebar-accent font-medium text-sidebar-accent-foreground',
-        className
-      )}
-      {...props}
-    />
-  )
+>(({ render, isActive = false, variant = 'default', size = 'default', tooltip, className, ...props }, ref) => {
+  return useRender({
+    defaultTagName: 'button',
+    render,
+    props: mergeProps(
+      {
+        'data-sidebar': 'menu-button',
+        'data-active': isActive,
+        className: cn(
+          sidebarMenuButtonVariants({ variant, size }),
+          isActive && 'bg-sidebar-accent font-medium text-sidebar-accent-foreground',
+          className
+        ),
+      },
+      props
+    ),
+    ref,
+  })
 })
 SidebarMenuButton.displayName = 'SidebarMenuButton'
 
 const SidebarMenuAction = React.forwardRef<
   HTMLButtonElement,
   React.ComponentProps<'button'> & {
-    asChild?: boolean
+    render?: React.ReactElement
     showOnHover?: boolean
   }
->(({ className, asChild = false, showOnHover = false, ...props }, ref) => {
-  const Comp = asChild ? Slot : 'button'
-
-  return (
-    <Comp
-      ref={ref}
-      data-sidebar="menu-action"
-      className={cn(
-        'absolute right-1 top-1.5 flex aspect-square w-5 items-center justify-center rounded-md p-0 text-sidebar-foreground outline-none ring-sidebar-ring transition-transform hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 [&>svg]:size-4 [&>svg]:shrink-0',
-        'after:absolute after:-inset-2 after:md:hidden',
-        'peer-hover/menu-button:text-sidebar-accent-foreground',
-        showOnHover &&
-          'peer-data-[active=true]/menu-button:text-sidebar-accent-foreground group-focus-within/menu-item:opacity-100 group-hover/menu-item:opacity-100 data-[state=open]:opacity-100 md:opacity-0',
-        className
-      )}
-      {...props}
-    />
-  )
+>(({ className, render, showOnHover = false, ...props }, ref) => {
+  return useRender({
+    defaultTagName: 'button',
+    render,
+    props: mergeProps(
+      {
+        'data-sidebar': 'menu-action',
+        className: cn(
+          'absolute right-1 top-1.5 flex aspect-square w-5 items-center justify-center rounded-md p-0 text-sidebar-foreground outline-none ring-sidebar-ring transition-transform hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 [&>svg]:size-4 [&>svg]:shrink-0',
+          'after:absolute after:-inset-2 after:md:hidden',
+          'peer-hover/menu-button:text-sidebar-accent-foreground',
+          showOnHover &&
+            'peer-data-[active=true]/menu-button:text-sidebar-accent-foreground group-focus-within/menu-item:opacity-100 group-hover/menu-item:opacity-100 data-[state=open]:opacity-100 md:opacity-0',
+          className
+        ),
+      },
+      props
+    ),
+    ref,
+  })
 })
 SidebarMenuAction.displayName = 'SidebarMenuAction'
 
@@ -384,29 +388,31 @@ SidebarMenuSubItem.displayName = 'SidebarMenuSubItem'
 const SidebarMenuSubButton = React.forwardRef<
   HTMLAnchorElement,
   React.ComponentProps<'a'> & {
-    asChild?: boolean
+    render?: React.ReactElement
     size?: 'sm' | 'md'
     isActive?: boolean
   }
->(({ asChild = false, size = 'md', isActive, className, ...props }, ref) => {
-  const Comp = asChild ? Slot : 'a'
-
-  return (
-    <Comp
-      ref={ref}
-      data-sidebar="menu-sub-button"
-      data-size={size}
-      data-active={isActive}
-      className={cn(
-        'flex h-7 min-w-0 -translate-x-px items-center gap-2 overflow-hidden rounded-md px-2 text-sidebar-foreground outline-none ring-sidebar-ring hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 [&>span:last-child]:truncate [&>svg]:size-4 [&>svg]:shrink-0 [&>svg]:text-sidebar-accent-foreground',
-        'data-[active=true]:bg-sidebar-accent data-[active=true]:text-sidebar-accent-foreground',
-        size === 'sm' && 'text-xs',
-        size === 'md' && 'text-sm',
-        className
-      )}
-      {...props}
-    />
-  )
+>(({ render, size = 'md', isActive, className, ...props }, ref) => {
+  return useRender({
+    defaultTagName: 'a',
+    render,
+    props: mergeProps(
+      {
+        'data-sidebar': 'menu-sub-button',
+        'data-size': size,
+        'data-active': isActive,
+        className: cn(
+          'flex h-7 min-w-0 -translate-x-px items-center gap-2 overflow-hidden rounded-md px-2 text-sidebar-foreground outline-none ring-sidebar-ring hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 [&>span:last-child]:truncate [&>svg]:size-4 [&>svg]:shrink-0 [&>svg]:text-sidebar-accent-foreground',
+          'data-[active=true]:bg-sidebar-accent data-[active=true]:text-sidebar-accent-foreground',
+          size === 'sm' && 'text-xs',
+          size === 'md' && 'text-sm',
+          className
+        ),
+      },
+      props
+    ),
+    ref,
+  })
 })
 SidebarMenuSubButton.displayName = 'SidebarMenuSubButton'
 

@@ -1,7 +1,7 @@
-import { Slot } from '@radix-ui/react-slot'
 import { cva, type VariantProps } from 'class-variance-authority'
-import { forwardRef, type ButtonHTMLAttributes } from 'react'
+import { forwardRef, type ButtonHTMLAttributes, type ReactElement } from 'react'
 import { cn } from '~/lib/utils'
+import { useRender, mergeProps } from '~/lib/use-render'
 
 const buttonVariants = cva(
   'inline-flex items-center justify-center font-semibold rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed dark:focus:ring-offset-gray-900',
@@ -35,31 +35,33 @@ const buttonVariants = cva(
 export interface ButtonProps
   extends ButtonHTMLAttributes<HTMLButtonElement>,
     VariantProps<typeof buttonVariants> {
-  asChild?: boolean
+  render?: ReactElement
   // Backward compatibility with React Aria
   isDisabled?: boolean
   onPress?: () => void
 }
 
 const Button = forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, asChild = false, isDisabled, onPress, onClick, disabled, ...props }, ref) => {
-    const Comp = asChild ? Slot : 'button'
-
+  ({ className, variant, size, render, isDisabled, onPress, onClick, disabled, ...props }, ref) => {
     // Support both isDisabled (React Aria) and disabled (native)
     const isButtonDisabled = isDisabled ?? disabled
 
     // Support both onPress (React Aria) and onClick (native)
     const handleClick = onPress ?? onClick
 
-    return (
-      <Comp
-        className={cn(buttonVariants({ variant, size, className }))}
-        ref={ref}
-        disabled={isButtonDisabled}
-        onClick={handleClick}
-        {...props}
-      />
-    )
+    return useRender({
+      defaultTagName: 'button',
+      render,
+      props: mergeProps(
+        {
+          className: cn(buttonVariants({ variant, size, className })),
+          disabled: isButtonDisabled,
+          onClick: handleClick,
+        },
+        props
+      ),
+      ref,
+    })
   }
 )
 Button.displayName = 'Button'
