@@ -1,25 +1,29 @@
 {
   "name": "pg-boss",
-  "version": "12.5.4",
+  "version": "12.7.2",
   "description": "Queueing jobs in Postgres from Node.js like a boss",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "bin": {
+    "pg-boss": "./dist/cli.js"
+  },
   "engines": {
     "node": ">=22.12.0"
   },
   "dependencies": {
-    "cron-parser": "^5.4.0",
-    "pg": "^8.16.3",
-    "serialize-error": "^12.0.0"
+    "cron-parser": "^5.5.0",
+    "pg": "^8.17.2",
+    "serialize-error": "^13.0.1"
   },
   "devDependencies": {
     "@tsconfig/node-ts": "^23.6.2",
     "@tsconfig/node22": "^22.0.5",
     "@types/luxon": "^3.7.1",
-    "@types/node": "^22.19.3",
+    "@types/node": "^22.19.7",
     "@types/pg": "^8.16.0",
-    "@vitest/coverage-v8": "^4.0.16",
+    "@vitest/coverage-v8": "^4.0.18",
+    "cli-testlab": "^5.1.0",
     "eslint": "^9.39.2",
     "luxon": "^3.7.2",
     "neostandard": "^0.12.2",
@@ -30,9 +34,9 @@
   "scripts": {
     "build": "npm run clean && tsc --project tsconfig.build.json",
     "clean": "node -e \"fs.rmSync('dist',{recursive:true,force:true})\"",
-    "prepublishOnly": "npm test && npm run build",
-    "postpublish": "npm run clean",
+    "prepublishOnly": "npm install && npm test && npm run build",
     "test": "eslint . && vitest run",
+    "lint:fix": "eslint . --fix",
     "cover": "vitest run --coverage",
     "tsc": "tsc --noEmit",
     "readme": "node ./examples/readme.js",

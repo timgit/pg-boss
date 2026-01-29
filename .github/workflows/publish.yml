@@ -5,17 +5,27 @@ on:
     tags:
       - '*'
 
-permissions:
-  id-token: write  # Required for OIDC
-  contents: read
-
 jobs:
   publish:
     runs-on: ubuntu-latest
+    container: node:24
+    permissions:
+      id-token: write
+    services:
+      postgres:
+        image: postgres
+        env:
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-          registry-url: 'https://registry.npmjs.org'
-      - run: npm publish
+      - run: npm publish --provenance
+        env:
+          POSTGRES_HOST: postgres

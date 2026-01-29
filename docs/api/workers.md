@@ -29,6 +29,10 @@ The default options for `work()` is 1 job every 2 seconds.
 
   Same as in [`fetch()`](#fetch)
 
+* **orderByCreatedOn**, bool, *(default=true)*
+
+  Same as in [`fetch()`](#fetch)
+
 * **pollingIntervalSeconds**, int, *(default=2)*
 
   Interval to check for new jobs in seconds, must be >=0.5 (500ms)

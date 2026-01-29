@@ -46,3 +46,28 @@ Emitted at most once every 2 seconds when workers are receiving jobs. The payloa
 ## `stopped`
 
 Emitted after `stop()` once all workers have completed their work and maintenance has been shut down.
+
+## `bam`
+
+Emitted when a boss async migration (BAM) command changes status. BAM commands are database operations that run asynchronously after schema migrations, such as creating indexes on partitioned tables.
+
+```js
+boss.on('bam', event => {
+  console.log(`BAM ${event.name}: ${event.status}`)
+})
+```
+
+The event payload contains:
+
+```js
+{
+  id: '550e8400-e29b-41d4-a716-446655440000',
+  name: 'create-index',
+  status: 'completed',  // 'in_progress', 'completed', or 'failed'
+  queue: 'my-queue',    // queue name if applicable
+  table: 'j1a2b3c4...', // target table name
+  error: undefined      // error message if status is 'failed'
+}
+```
+
+This event is useful for monitoring migration progress in production environments or for logging purposes.

@@ -4,8 +4,10 @@ import Contractor from './contractor.ts'
 import Manager from './manager.ts'
 import Timekeeper from './timekeeper.ts'
 import Boss from './boss.ts'
+import Bam from './bam.ts'
 import { delay } from './tools.ts'
 import type * as types from './types.ts'
+import * as plans from './plans.ts'
 import DbDefault from './db.ts'
 import type { JobSpyInterface } from './spy.ts'
 
@@ -15,7 +17,8 @@ export const events: types.Events = Object.freeze({
   error: 'error',
   warning: 'warning',
   wip: 'wip',
-  stopped: 'stopped'
+  stopped: 'stopped',
+  bam: 'bam'
 })
 
 export function getConstructionPlans (schema?: string) {
@@ -41,6 +44,7 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
   #contractor: Contractor
   #manager: Manager
   #timekeeper: Timekeeper
+  #bam: Bam
 
   constructor (connectionString: string)
   constructor (options: types.ConstructorOptions)
@@ -68,14 +72,18 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     const timekeeper = new Timekeeper(db, manager, config)
     manager.timekeeper = timekeeper
 
+    const bam = new Bam(db, config)
+
     this.#promoteEvents(manager)
     this.#promoteEvents(boss)
     this.#promoteEvents(timekeeper)
+    this.#promoteEvents(bam)
 
     this.#boss = boss
     this.#contractor = contractor
     this.#manager = manager
     this.#timekeeper = timekeeper
+    this.#bam = bam
   }
 
   #promoteEvents (emitter: types.EventsMixin) {
@@ -111,6 +119,10 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
       await this.#timekeeper.start()
     }
 
+    if (this.#config.migrate) {
+      await this.#bam.start()
+    }
+
     this.#starting = false
     this.#started = true
     this.#stopped = false
@@ -132,6 +144,7 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     await this.#manager.stop()
     await this.#timekeeper.stop()
     await this.#boss.stop()
+    await this.#bam.stop()
 
     const shutdown = async () => {
       await this.#manager.failWip()
@@ -326,6 +339,18 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#timekeeper.getSchedules(name, key)
   }
 
+  async getBamStatus (): Promise<types.BamStatusSummary[]> {
+    const sql = plans.getBamStatus(this.#config.schema)
+    const { rows } = await this.#db.executeSql(sql)
+    return rows
+  }
+
+  async getBamEntries (): Promise<types.BamEntry[]> {
+    const sql = plans.getBamEntries(this.#config.schema)
+    const { rows } = await this.#db.executeSql(sql)
+    return rows
+  }
+
   getDb (): types.IDatabase {
     if (this.#db) {
       return this.#db
@@ -340,6 +365,9 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
 }
 
 export type {
+  BamEntry,
+  BamEvent,
+  BamStatusSummary,
   ConnectionOptions,
   ConstructorOptions,
   FetchOptions,
