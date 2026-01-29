@@ -143,7 +143,7 @@ export type InsertOptions = ConnectionOptions & { returnId?: boolean }
 
 export type SendOptions = JobOptions & QueueOptions & ConnectionOptions
 
-export type QueuePolicy = 'standard' | 'short' | 'singleton' | 'stately' | 'exclusive' | 'singleton_strict_fifo' | (string & {})
+export type QueuePolicy = 'standard' | 'short' | 'singleton' | 'stately' | 'exclusive' | 'key_strict_fifo' | (string & {})
 
 export interface Queue extends QueueOptions {
   name: string;

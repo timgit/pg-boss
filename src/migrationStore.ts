@@ -444,8 +444,9 @@ function getAll (schema: string): types.Migration[] {
       version: 28,
       previous: 27,
       install: [
-        // Create singleton_strict_fifo index on job_common (the default partition)
-        `CREATE UNIQUE INDEX IF NOT EXISTS job_i8 ON ${schema}.job_common (name, singleton_key) WHERE state IN ('active', 'retry', 'failed') AND policy = 'singleton_strict_fifo'`,
+        // Create key_strict_fifo index and CHECK constraint on job_common (the default partition)
+        `CREATE UNIQUE INDEX IF NOT EXISTS job_i8 ON ${schema}.job_common (name, singleton_key) WHERE state IN ('active', 'retry', 'failed') AND policy = '${plans.QUEUE_POLICIES.key_strict_fifo}'`,
+        `ALTER TABLE ${schema}.job_common ADD CONSTRAINT job_key_strict_fifo_singleton_key_check CHECK (policy <> '${plans.QUEUE_POLICIES.key_strict_fifo}' OR singleton_key IS NOT NULL)`,
         // Update create_queue function to include the FIFO index for partitioned tables
         `
         CREATE OR REPLACE FUNCTION ${schema}.create_queue(queue_name text, options jsonb)
@@ -517,8 +518,9 @@ function getAll (schema: string): types.Migration[] {
             EXECUTE format('CREATE UNIQUE INDEX %1$s_i3 ON ${schema}.%1$I (name, state, COALESCE(singleton_key, '''')) WHERE state <= ''active'' AND policy = ''stately''', tablename);
           ELSIF options->>'policy' = 'exclusive' THEN
             EXECUTE format('CREATE UNIQUE INDEX %1$s_i6 ON ${schema}.%1$I (name, COALESCE(singleton_key, '''')) WHERE state <= ''active'' AND policy = ''exclusive''', tablename);
-          ELSIF options->>'policy' = 'singleton_strict_fifo' THEN
-            EXECUTE format('CREATE UNIQUE INDEX %1$s_i8 ON ${schema}.%1$I (name, singleton_key) WHERE state IN (''active'', ''retry'', ''failed'') AND policy = ''singleton_strict_fifo''', tablename);
+          ELSIF options->>'policy' = '${plans.QUEUE_POLICIES.key_strict_fifo}' THEN
+            EXECUTE format('CREATE UNIQUE INDEX %1$s_i8 ON ${schema}.%1$I (name, singleton_key) WHERE state IN (''active'', ''retry'', ''failed'') AND policy = ''${plans.QUEUE_POLICIES.key_strict_fifo}''', tablename);
+            EXECUTE format('ALTER TABLE ${schema}.%1$I ADD CONSTRAINT %1$s_key_strict_fifo_singleton_key_check CHECK (policy <> ''${plans.QUEUE_POLICIES.key_strict_fifo}'' OR singleton_key IS NOT NULL)', tablename);
           END IF;
 
           EXECUTE format('ALTER TABLE ${schema}.%I ADD CONSTRAINT cjc CHECK (name=%L)', tablename, queue_name);
@@ -529,7 +531,8 @@ function getAll (schema: string): types.Migration[] {
         `
       ],
       uninstall: [
-        `DROP INDEX IF EXISTS ${schema}.job_i8`
+        `DROP INDEX IF EXISTS ${schema}.job_i8`,
+        `ALTER TABLE ${schema}.job_common DROP CONSTRAINT IF EXISTS job_key_strict_fifo_singleton_key_check`
       ]
     }
   ]

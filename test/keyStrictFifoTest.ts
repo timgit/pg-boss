@@ -4,31 +4,31 @@ import { assertTruthy } from './testHelper.ts'
 import { delay } from '../src/tools.ts'
 import { ctx } from './hooks.ts'
 
-describe('singleton_strict_fifo', function () {
+describe('key_strict_fifo', function () {
   [{ partition: false }, { partition: true }].forEach(({ partition }) => {
-    it(`singleton_strict_fifo policy requires singletonKey using partition=${partition}`, async function () {
+    it(`key_strict_fifo policy requires singletonKey using partition=${partition}`, async function () {
       ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
-      await ctx.boss.createQueue(ctx.schema, { policy: 'singleton_strict_fifo', partition })
+      await ctx.boss.createQueue(ctx.schema, { policy: 'key_strict_fifo', partition })
 
       await expect(ctx.boss.send(ctx.schema, { test: 'data' }))
-        .rejects.toThrow('singleton_strict_fifo queues require a singletonKey')
+        .rejects.toThrow('key_strict_fifo queues require a singletonKey')
     })
 
-    it(`singleton_strict_fifo policy allows sending with singletonKey using partition=${partition}`, async function () {
+    it(`key_strict_fifo policy allows sending with singletonKey using partition=${partition}`, async function () {
       ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
-      await ctx.boss.createQueue(ctx.schema, { policy: 'singleton_strict_fifo', partition })
+      await ctx.boss.createQueue(ctx.schema, { policy: 'key_strict_fifo', partition })
 
       const jobId = await ctx.boss.send(ctx.schema, { test: 'data' }, { singletonKey: 'key-1' })
 
       expect(jobId).toBeTruthy()
     })
 
-    it(`singleton_strict_fifo policy blocks queue during active state using partition=${partition}`, async function () {
+    it(`key_strict_fifo policy blocks queue during active state using partition=${partition}`, async function () {
       ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
-      await ctx.boss.createQueue(ctx.schema, { policy: 'singleton_strict_fifo', partition })
+      await ctx.boss.createQueue(ctx.schema, { policy: 'key_strict_fifo', partition })
 
       // Send two jobs with the same singletonKey
       const jobId1 = await ctx.boss.send(ctx.schema, { order: 1 }, { singletonKey: 'order-123' })
@@ -54,10 +54,10 @@ describe('singleton_strict_fifo', function () {
       expect(job2AfterComplete.id).toBe(jobId2)
     })
 
-    it(`singleton_strict_fifo policy allows parallel processing of different singletonKeys using partition=${partition}`, async function () {
+    it(`key_strict_fifo policy allows parallel processing of different singletonKeys using partition=${partition}`, async function () {
       ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
-      await ctx.boss.createQueue(ctx.schema, { policy: 'singleton_strict_fifo', partition })
+      await ctx.boss.createQueue(ctx.schema, { policy: 'key_strict_fifo', partition })
 
       // Send jobs with different singletonKeys
       const jobId1 = await ctx.boss.send(ctx.schema, { order: 1 }, { singletonKey: 'order-123' })
@@ -71,10 +71,10 @@ describe('singleton_strict_fifo', function () {
       expect(jobs.length).toBe(2)
     })
 
-    it(`singleton_strict_fifo policy blocks queue during retry state using partition=${partition}`, async function () {
+    it(`key_strict_fifo policy blocks queue during retry state using partition=${partition}`, async function () {
       ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
-      await ctx.boss.createQueue(ctx.schema, { policy: 'singleton_strict_fifo', partition })
+      await ctx.boss.createQueue(ctx.schema, { policy: 'key_strict_fifo', partition })
 
       // Send two jobs with the same singletonKey, first with retry enabled
       const jobId1 = await ctx.boss.send(ctx.schema, { order: 1 }, {
@@ -117,10 +117,10 @@ describe('singleton_strict_fifo', function () {
       expect(job2AfterComplete.id).toBe(jobId2)
     })
 
-    it(`singleton_strict_fifo policy blocks queue permanently on failure using partition=${partition}`, async function () {
+    it(`key_strict_fifo policy blocks queue permanently on failure using partition=${partition}`, async function () {
       ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
-      await ctx.boss.createQueue(ctx.schema, { policy: 'singleton_strict_fifo', partition })
+      await ctx.boss.createQueue(ctx.schema, { policy: 'key_strict_fifo', partition })
 
       // Send two jobs with the same singletonKey, first with no retries
       const jobId1 = await ctx.boss.send(ctx.schema, { order: 1 }, {
@@ -148,10 +148,10 @@ describe('singleton_strict_fifo', function () {
       expect(job2).toBeFalsy()
     })
 
-    it(`singleton_strict_fifo policy unblocks queue when failed job is deleted using partition=${partition}`, async function () {
+    it(`key_strict_fifo policy unblocks queue when failed job is deleted using partition=${partition}`, async function () {
       ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
-      await ctx.boss.createQueue(ctx.schema, { policy: 'singleton_strict_fifo', partition })
+      await ctx.boss.createQueue(ctx.schema, { policy: 'key_strict_fifo', partition })
 
       // Send two jobs with the same singletonKey
       const jobId1 = await ctx.boss.send(ctx.schema, { order: 1 }, {
@@ -178,10 +178,10 @@ describe('singleton_strict_fifo', function () {
       expect(job2.id).toBe(jobId2)
     })
 
-    it(`singleton_strict_fifo policy unblocks queue when failed job is retried using partition=${partition}`, async function () {
+    it(`key_strict_fifo policy unblocks queue when failed job is retried using partition=${partition}`, async function () {
       ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
-      await ctx.boss.createQueue(ctx.schema, { policy: 'singleton_strict_fifo', partition })
+      await ctx.boss.createQueue(ctx.schema, { policy: 'key_strict_fifo', partition })
 
       // Send two jobs with the same singletonKey
       const jobId1 = await ctx.boss.send(ctx.schema, { order: 1 }, {
@@ -219,7 +219,7 @@ describe('singleton_strict_fifo', function () {
     it(`getBlockedKeys returns blocked singletonKeys using partition=${partition}`, async function () {
       ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
-      await ctx.boss.createQueue(ctx.schema, { policy: 'singleton_strict_fifo', partition })
+      await ctx.boss.createQueue(ctx.schema, { policy: 'key_strict_fifo', partition })
 
       // Initially no blocked keys
       const blockedKeys1 = await ctx.boss.getBlockedKeys(ctx.schema)
@@ -261,28 +261,28 @@ describe('singleton_strict_fifo', function () {
       expect(blockedKeys4).toContain('order-456')
     })
 
-    it(`getBlockedKeys throws for non-singleton_strict_fifo queues using partition=${partition}`, async function () {
+    it(`getBlockedKeys throws for non-key_strict_fifo queues using partition=${partition}`, async function () {
       ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
       await ctx.boss.createQueue(ctx.schema, { policy: 'standard', partition })
 
       await expect(ctx.boss.getBlockedKeys(ctx.schema))
-        .rejects.toThrow('getBlockedKeys is only available for singleton_strict_fifo queues')
+        .rejects.toThrow('getBlockedKeys is only available for key_strict_fifo queues')
     })
 
-    it(`singleton_strict_fifo policy insert requires singletonKey using partition=${partition}`, async function () {
+    it(`key_strict_fifo policy insert requires singletonKey using partition=${partition}`, async function () {
       ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
-      await ctx.boss.createQueue(ctx.schema, { policy: 'singleton_strict_fifo', partition })
+      await ctx.boss.createQueue(ctx.schema, { policy: 'key_strict_fifo', partition })
 
       await expect(ctx.boss.insert(ctx.schema, [{ data: { test: 'data' } }]))
-        .rejects.toThrow('singleton_strict_fifo queues require a singletonKey')
+        .rejects.toThrow('key_strict_fifo queues require a singletonKey')
     })
 
-    it(`singleton_strict_fifo policy insert works with singletonKey using partition=${partition}`, async function () {
+    it(`key_strict_fifo policy insert works with singletonKey using partition=${partition}`, async function () {
       ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
-      await ctx.boss.createQueue(ctx.schema, { policy: 'singleton_strict_fifo', partition })
+      await ctx.boss.createQueue(ctx.schema, { policy: 'key_strict_fifo', partition })
 
       // Insert should not throw when singletonKeys are provided
       await ctx.boss.insert(ctx.schema, [
@@ -294,5 +294,21 @@ describe('singleton_strict_fifo', function () {
       const jobs = await ctx.boss.fetch(ctx.schema, { batchSize: 2 })
       expect(jobs).toHaveLength(2)
     })
+  })
+
+  it('key_strict_fifo policy rejects direct SQL insert with NULL singleton_key', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+
+    await ctx.boss.createQueue(ctx.schema, { policy: 'key_strict_fifo' })
+
+    // Direct SQL insert with NULL singleton_key should be rejected by CHECK constraint
+    const db = ctx.boss.getDb()
+    const schema = ctx.bossConfig.schema || 'pgboss'
+
+    await expect(db.executeSql(`
+      INSERT INTO ${schema}.job_common (name, data, policy)
+      VALUES ($1, $2, 'key_strict_fifo')
+    `, [ctx.schema, JSON.stringify({ test: 'data' })]))
+      .rejects.toThrow(/singleton_key/)
   })
 })

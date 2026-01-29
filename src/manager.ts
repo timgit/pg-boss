@@ -557,8 +557,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     const { table, policy } = await this.getQueueCache(name)
 
-    if (policy === plans.QUEUE_POLICIES.singleton_strict_fifo && !singletonKey) {
-      throw new Error('singleton_strict_fifo queues require a singletonKey')
+    if (policy === plans.QUEUE_POLICIES.key_strict_fifo && !singletonKey) {
+      throw new Error(`${plans.QUEUE_POLICIES.key_strict_fifo} queues require a singletonKey`)
     }
 
     const sql = plans.insertJobs(this.config.schema, { table, name, returnId: true })
@@ -607,10 +607,10 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     const { table, policy } = await this.getQueueCache(name)
 
-    if (policy === plans.QUEUE_POLICIES.singleton_strict_fifo) {
+    if (policy === plans.QUEUE_POLICIES.key_strict_fifo) {
       for (const job of jobs) {
         if (!job.singletonKey) {
-          throw new Error('singleton_strict_fifo queues require a singletonKey')
+          throw new Error(`${plans.QUEUE_POLICIES.key_strict_fifo} queues require a singletonKey`)
         }
       }
     }
@@ -813,8 +813,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     const { table, policy } = await this.getQueueCache(name)
 
-    if (policy !== plans.QUEUE_POLICIES.singleton_strict_fifo) {
-      throw new Error('getBlockedKeys is only available for singleton_strict_fifo queues')
+    if (policy !== plans.QUEUE_POLICIES.key_strict_fifo) {
+      throw new Error(`getBlockedKeys is only available for ${plans.QUEUE_POLICIES.key_strict_fifo} queues`)
     }
 
     const sql = plans.getBlockedKeys(this.config.schema, table)
