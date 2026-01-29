@@ -597,7 +597,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
   async insert (
     name: string,
     jobs: types.JobInsert[],
-    options: types.InsertOptions & { returnId?: boolean } = {}
+    options: types.InsertOptions = {}
   ) {
     assert(Array.isArray(jobs), 'jobs argument should be an array')
 
