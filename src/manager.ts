@@ -529,7 +529,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
       retryDelay,
       retryBackoff,
       retryDelayMax,
-      group
+      group,
+      deadLetter = null
     } = options
 
     const job = {
@@ -550,7 +551,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
       retryLimit,
       retryDelay,
       retryBackoff,
-      retryDelayMax
+      retryDelayMax,
+      deadLetter
     }
 
     const db = wrapper || this.db

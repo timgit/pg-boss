@@ -126,6 +126,7 @@ export interface JobOptions {
   singletonNextSlot?: boolean;
   keepUntil?: number | string | Date;
   group?: GroupOptions;
+  deadLetter?: string;
 }
 
 export interface ConnectionOptions {
@@ -278,6 +279,7 @@ export interface JobInsert<T = object> {
   deleteAfterSeconds?: number;
   retentionSeconds?: number;
   group?: GroupOptions;
+  deadLetter?: string;
 }
 
 export type WorkerState = 'created' | 'active' | 'stopping' | 'stopped'
