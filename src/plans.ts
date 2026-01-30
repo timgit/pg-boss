@@ -990,7 +990,7 @@ function insertJobs (schema: string, { table, name, returnId = true }: InsertJob
       COALESCE("retryBackoff", q.retry_backoff, false) as retry_backoff,
       COALESCE("retryDelayMax", q.retry_delay_max) as retry_delay_max,
       q.policy,
-      q.dead_letter
+      COALESCE("deadLetter", q.dead_letter) as dead_letter
     FROM (
       SELECT *,
         CASE
@@ -1013,7 +1013,8 @@ function insertJobs (schema: string, { table, name, returnId = true }: InsertJob
         "groupTier" text,
         "expireInSeconds" integer,
         "deleteAfterSeconds" integer,
-        "retentionSeconds" integer
+        "retentionSeconds" integer,
+        "deadLetter" text
       )
     ) j
     JOIN ${schema}.queue q ON q.name = '${name}'
