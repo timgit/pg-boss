@@ -720,12 +720,12 @@ class Manager extends EventEmitter implements types.EventsMixin {
     }
   }
 
-  async complete (name: string, id: string | string[], data?: object | null, options: types.ConnectionOptions = {}) {
+  async complete (name: string, id: string | string[], data?: object | null, options: types.CompleteOptions = {}) {
     Attorney.assertQueueName(name)
     const db = this.assertDb(options)
     const ids = this.mapCompletionIdArg(id, 'complete')
     const { table } = await this.getQueueCache(name)
-    const sql = plans.completeJobs(this.config.schema, table)
+    const sql = plans.completeJobs(this.config.schema, table, options.includeQueued)
     const result = await db.executeSql(sql, [name, ids, this.mapCompletionDataArg(data)])
     return this.mapCommandResponse(ids, result)
   }

@@ -114,4 +114,96 @@ describe('complete', function () {
     expect(result.jobs.length).toBe(batchSize)
     expect(called).toBe(true)
   })
+
+  it('should complete a created job with includeQueued option', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    const jobId = await ctx.boss.send(ctx.schema)
+
+    assertTruthy(jobId)
+
+    const completionData = { msg: 'completed without fetching' }
+    const result = await ctx.boss.complete(ctx.schema, jobId, completionData, { includeQueued: true })
+
+    expect(result.affected).toBe(1)
+
+    const jobWithMetadata = await ctx.boss.getJobById(ctx.schema, jobId)
+    expect(jobWithMetadata).toBeTruthy()
+    expect(jobWithMetadata?.state).toBe(states.completed)
+    expect((jobWithMetadata as any).output.msg).toBe(completionData.msg)
+  })
+
+  it('should complete a retry job with includeQueued option', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    const jobId = await ctx.boss.send(ctx.schema, {}, { retryLimit: 2 })
+    assertTruthy(jobId)
+
+    // Fetch and fail the job to move it to retry state
+    await ctx.boss.fetch(ctx.schema)
+    await ctx.boss.fail(ctx.schema, jobId, new Error('test failure'))
+
+    const jobWithMetadata = await ctx.boss.getJobById(ctx.schema, jobId)
+    expect(jobWithMetadata?.state).toBe(states.retry)
+
+    // Complete the job in retry state
+    const completionData = { msg: 'completed from retry' }
+    const result = await ctx.boss.complete(ctx.schema, jobId, completionData, { includeQueued: true })
+
+    expect(result.affected).toBe(1)
+
+    const completedJob = await ctx.boss.getJobById(ctx.schema, jobId)
+    expect(completedJob?.state).toBe(states.completed)
+    expect((completedJob as any).output.msg).toBe(completionData.msg)
+  })
+
+  it('should not complete created job without includeQueued option', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    const jobId = await ctx.boss.send(ctx.schema)
+    assertTruthy(jobId)
+
+    // Try to complete without fetching (default behavior)
+    const result = await ctx.boss.complete(ctx.schema, jobId)
+
+    expect(result.affected).toBe(0)
+
+    const jobWithMetadata = await ctx.boss.getJobById(ctx.schema, jobId)
+    expect(jobWithMetadata?.state).toBe(states.created)
+  })
+
+  it('should complete batch with mixed states when includeQueued is true', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    // Create 3 jobs
+    const jobId1 = await ctx.boss.send(ctx.schema, {}, { retryLimit: 2 })
+    const jobId2 = await ctx.boss.send(ctx.schema, {}, { retryLimit: 2 })
+    const jobId3 = await ctx.boss.send(ctx.schema)
+
+    assertTruthy(jobId1)
+    assertTruthy(jobId2)
+    assertTruthy(jobId3)
+
+    // Fetch and fail first job to move it to retry state
+    const [job1] = await ctx.boss.fetch(ctx.schema)
+    await ctx.boss.fail(ctx.schema, job1.id, new Error('test'))
+
+    // Fetch second job to move it to active state
+    await ctx.boss.fetch(ctx.schema)
+
+    // Third job remains in created state
+
+    // Complete all three with includeQueued
+    const result = await ctx.boss.complete(ctx.schema, [jobId1, jobId2, jobId3], undefined, { includeQueued: true })
+
+    expect(result.affected).toBe(3)
+
+    const job1Final = await ctx.boss.getJobById(ctx.schema, jobId1)
+    const job2Final = await ctx.boss.getJobById(ctx.schema, jobId2)
+    const job3Final = await ctx.boss.getJobById(ctx.schema, jobId3)
+
+    expect(job1Final?.state).toBe(states.completed) // was retry
+    expect(job2Final?.state).toBe(states.completed) // was active
+    expect(job3Final?.state).toBe(states.completed) // was created
+  })
 })

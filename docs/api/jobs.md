@@ -322,13 +322,26 @@ Retries a set of failed jobs.
 
 ### `complete(name, id, data, options)`
 
-Completes an active job. This would likely only be used with `fetch()`. Accepts an optional `data` argument.
+Completes an active job. This would likely only be used with `fetch()`. Accepts an optional `data` argument for job output and an optional `options` object.
+
+**options**
+
+* **includeQueued**, bool
+
+  Default: false. When false (default), only jobs in `active` state can be completed. When true, jobs in `created`, `retry`, or `active` states can be completed. This is useful for completing jobs that haven't been fetched yet, or for marking failed jobs as complete without retrying them.
+
+  ```js
+  // Complete a job without fetching it first
+  await boss.complete('my-queue', jobId, { result: 'done' }, { includeQueued: true })
+  ```
+
+* **db**, object, see notes in `send()`
 
 The promise will resolve on a successful completion, or reject if the job could not be completed.
 
 ### `complete(name, [ids], options)`
 
-Completes a set of active jobs.
+Completes a set of active jobs (or queued jobs when `includeQueued: true` is specified).
 
 The promise will resolve on a successful completion, or reject if not all of the requested jobs could not be marked as completed.
 
