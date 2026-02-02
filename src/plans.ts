@@ -872,7 +872,11 @@ function fetchNextJob (options: FetchJobOptions): SqlQuery {
   }
 }
 
-function completeJobs (schema: string, table: string) {
+function completeJobs (schema: string, table: string, includeQueued?: boolean) {
+  const stateFilter = includeQueued
+    ? `state < '${JOB_STATES.completed}'`
+    : `state = '${JOB_STATES.active}'`
+
   return `
     WITH results AS (
       UPDATE ${schema}.${table}
@@ -881,7 +885,7 @@ function completeJobs (schema: string, table: string) {
         output = $3::jsonb
       WHERE name = $1
         AND id IN (SELECT UNNEST($2::uuid[]))
-        AND state = '${JOB_STATES.active}'
+        AND ${stateFilter}
       RETURNING *
     )
     SELECT COUNT(*) FROM results

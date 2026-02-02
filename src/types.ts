@@ -132,6 +132,10 @@ export interface ConnectionOptions {
   db?: IDatabase;
 }
 
+export interface CompleteOptions extends ConnectionOptions {
+  includeQueued?: boolean;
+}
+
 export interface FindJobsOptions extends ConnectionOptions {
   id?: string;
   key?: string;
