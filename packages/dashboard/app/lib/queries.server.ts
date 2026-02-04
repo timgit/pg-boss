@@ -458,7 +458,7 @@ export async function getAggregateStats (
 }
 
 // Valid intents for job actions
-const VALID_INTENTS = ['cancel', 'retry', 'resume', 'delete', 'view'] as const
+const VALID_INTENTS = ['cancel', 'retry', 'resume', 'delete'] as const
 type JobActionIntent = (typeof VALID_INTENTS)[number]
 
 export function isValidIntent (intent: unknown): intent is JobActionIntent {

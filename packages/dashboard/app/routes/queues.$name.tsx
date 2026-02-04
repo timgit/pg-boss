@@ -1,11 +1,9 @@
-import { useState } from 'react'
 import { useFetcher, useSearchParams } from 'react-router'
 import { DbLink } from '~/components/db-link'
 import type { Route } from './+types/queues.$name'
 import {
   getQueue,
   getJobs,
-  getJob,
   getJobCountFromQueue,
   cancelJob,
   retryJob,
@@ -27,7 +25,6 @@ import {
 import { Pagination } from '~/components/ui/pagination'
 import { FilterSelect } from '~/components/ui/filter-select'
 import { ConfirmDialog } from '~/components/ui/confirm-dialog'
-import { JobDetailDialog } from '~/components/job-detail-dialog'
 import { ErrorCard } from '~/components/error-card'
 import type { JobState, JobResult } from '~/lib/types'
 import {
@@ -98,19 +95,6 @@ export async function action ({ params, request, context }: Route.ActionArgs) {
 
   if (!isValidIntent(intent)) {
     return { error: 'Invalid action', affected: 0 }
-  }
-
-  // Handle view intent separately - returns job data instead of affected count
-  if (intent === 'view') {
-    try {
-      const job = await getJob(context.DB_URL, context.SCHEMA, params.name, jobId)
-      if (!job) {
-        return { error: 'Job not found', job: null }
-      }
-      return { job }
-    } catch (err) {
-      return { error: 'Database error occurred', job: null }
-    }
   }
 
   let affected = 0
@@ -279,7 +263,6 @@ function JobRow ({
 }) {
   const fetcher = useFetcher<{ success?: boolean; affected?: number; message?: string; error?: string }>()
   const isLoading = fetcher.state !== 'idle'
-  const [copied, setCopied] = useState(false)
 
   // Show feedback after action completes
   const actionResult = fetcher.data
@@ -289,22 +272,15 @@ function JobRow ({
     fetcher.submit({ jobId: job.id, intent }, { method: 'post' })
   }
 
-  const copyId = async () => {
-    await navigator.clipboard.writeText(job.id)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-  }
-
   return (
     <TableRow>
       <TableCell>
-        <button
-          onClick={copyId}
-          className="font-mono text-xs text-gray-600 hover:text-primary-600 dark:text-gray-400 dark:hover:text-gray-300 cursor-pointer"
-          title="Click to copy full ID"
+        <DbLink
+          to={`/queues/${queueName}/jobs/${job.id}`}
+          className="font-mono text-xs text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
         >
-          {copied ? 'Copied!' : `${job.id.slice(0, 8)}...`}
-        </button>
+          {job.id.slice(0, 8)}...
+        </DbLink>
       </TableCell>
       <TableCell>
         <JobStateBadge state={job.state} />
@@ -318,8 +294,6 @@ function JobRow ({
       </TableCell>
       <TableCell>
         <div className="flex items-center gap-2">
-          {/* View job details */}
-          <JobDetailDialog jobId={job.id} jobState={job.state} />
           {/* Show error message if action failed */}
           {showError && (
             <span className="text-xs text-warning-600 dark:text-warning-400" title={actionResult.message}>
