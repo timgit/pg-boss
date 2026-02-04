@@ -529,7 +529,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
       retryDelay,
       retryBackoff,
       retryDelayMax,
-      group
+      group,
+      deadLetter = null
     } = options
 
     const job = {
@@ -550,7 +551,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
       retryLimit,
       retryDelay,
       retryBackoff,
-      retryDelayMax
+      retryDelayMax,
+      deadLetter
     }
 
     const db = wrapper || this.db
@@ -597,7 +599,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
   async insert (
     name: string,
     jobs: types.JobInsert[],
-    options: types.InsertOptions & { returnId?: boolean } = {}
+    options: types.InsertOptions = {}
   ) {
     assert(Array.isArray(jobs), 'jobs argument should be an array')
 
@@ -706,12 +708,12 @@ class Manager extends EventEmitter implements types.EventsMixin {
     }
   }
 
-  async complete (name: string, id: string | string[], data?: object | null, options: types.ConnectionOptions = {}) {
+  async complete (name: string, id: string | string[], data?: object | null, options: types.CompleteOptions = {}) {
     Attorney.assertQueueName(name)
     const db = this.assertDb(options)
     const ids = this.mapCompletionIdArg(id, 'complete')
     const { table } = await this.getQueueCache(name)
-    const sql = plans.completeJobs(this.config.schema, table)
+    const sql = plans.completeJobs(this.config.schema, table, options.includeQueued)
     const result = await db.executeSql(sql, [name, ids, this.mapCompletionDataArg(data)])
     return this.mapCommandResponse(ids, result)
   }

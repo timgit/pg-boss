@@ -128,10 +128,15 @@ export interface JobOptions {
   singletonNextSlot?: boolean;
   keepUntil?: number | string | Date;
   group?: GroupOptions;
+  deadLetter?: string;
 }
 
 export interface ConnectionOptions {
   db?: IDatabase;
+}
+
+export interface CompleteOptions extends ConnectionOptions {
+  includeQueued?: boolean;
 }
 
 export interface FindJobsOptions extends ConnectionOptions {
@@ -141,7 +146,7 @@ export interface FindJobsOptions extends ConnectionOptions {
   queued?: boolean;
 }
 
-export type InsertOptions = ConnectionOptions
+export type InsertOptions = ConnectionOptions & { returnId?: boolean }
 
 export type SendOptions = JobOptions & QueueOptions & ConnectionOptions
 
@@ -280,6 +285,7 @@ export interface JobInsert<T = object> {
   deleteAfterSeconds?: number;
   retentionSeconds?: number;
   group?: GroupOptions;
+  deadLetter?: string;
 }
 
 export type WorkerState = 'created' | 'active' | 'stopping' | 'stopped'

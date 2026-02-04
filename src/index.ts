@@ -260,7 +260,7 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#manager.deleteAllJobs(name)
   }
 
-  complete (name: string, id: string | string[], data?: object | null, options?: types.ConnectionOptions): Promise<types.CommandResponse> {
+  complete (name: string, id: string | string[], data?: object | null, options?: types.CompleteOptions): Promise<types.CommandResponse> {
     return this.#manager.complete(name, id, data, options)
   }
 
@@ -364,6 +364,7 @@ export type {
   BamEntry,
   BamEvent,
   BamStatusSummary,
+  CompleteOptions,
   ConnectionOptions,
   ConstructorOptions,
   FetchOptions,

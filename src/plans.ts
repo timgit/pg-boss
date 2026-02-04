@@ -928,7 +928,11 @@ function fetchNextJob (options: FetchJobOptions): SqlQuery {
   }
 }
 
-function completeJobs (schema: string, table: string) {
+function completeJobs (schema: string, table: string, includeQueued?: boolean) {
+  const stateFilter = includeQueued
+    ? `state < '${JOB_STATES.completed}'`
+    : `state = '${JOB_STATES.active}'`
+
   return `
     WITH results AS (
       UPDATE ${schema}.${table}
@@ -937,7 +941,7 @@ function completeJobs (schema: string, table: string) {
         output = $3::jsonb
       WHERE name = $1
         AND id IN (SELECT UNNEST($2::uuid[]))
-        AND state = '${JOB_STATES.active}'
+        AND ${stateFilter}
       RETURNING *
     )
     SELECT COUNT(*) FROM results
@@ -1032,7 +1036,7 @@ function insertJobs (schema: string, { table, name, returnId = true }: InsertJob
       COALESCE("retryBackoff", q.retry_backoff, false) as retry_backoff,
       COALESCE("retryDelayMax", q.retry_delay_max) as retry_delay_max,
       q.policy,
-      q.dead_letter
+      COALESCE("deadLetter", q.dead_letter) as dead_letter
     FROM (
       SELECT *,
         CASE
@@ -1055,7 +1059,8 @@ function insertJobs (schema: string, { table, name, returnId = true }: InsertJob
         "groupTier" text,
         "expireInSeconds" integer,
         "deleteAfterSeconds" integer,
-        "retentionSeconds" integer
+        "retentionSeconds" integer,
+        "deadLetter" text
       )
     ) j
     JOIN ${schema}.queue q ON q.name = '${name}'
