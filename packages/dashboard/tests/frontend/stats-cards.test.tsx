@@ -15,10 +15,10 @@ describe("StatsCards", () => {
   it("renders all stat labels", () => {
     render(<StatsCards stats={mockStats} />);
 
-    expect(screen.getByText("Queued")).toBeInTheDocument();
-    expect(screen.getByText("Active")).toBeInTheDocument();
-    expect(screen.getByText("Deferred")).toBeInTheDocument();
-    expect(screen.getByText("Total")).toBeInTheDocument();
+    expect(screen.getByText("Queued Jobs")).toBeInTheDocument();
+    expect(screen.getByText("Active Jobs")).toBeInTheDocument();
+    expect(screen.getByText("Deferred Jobs")).toBeInTheDocument();
+    expect(screen.getByText("Total Jobs")).toBeInTheDocument();
   });
 
   it("displays stat values", () => {

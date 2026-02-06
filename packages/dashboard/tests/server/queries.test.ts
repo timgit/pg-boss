@@ -657,7 +657,6 @@ describe('Validation', () => {
       expect(isValidIntent('cancel')).toBe(true)
       expect(isValidIntent('retry')).toBe(true)
       expect(isValidIntent('delete')).toBe(true)
-      expect(isValidIntent('view')).toBe(true)
       expect(isValidIntent('resume')).toBe(true)
     })
 

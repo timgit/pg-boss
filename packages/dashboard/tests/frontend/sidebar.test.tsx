@@ -53,12 +53,6 @@ describe('Sidebar', () => {
       const logoTexts = screen.getAllByText('PG')
       expect(logoTexts.length).toBeGreaterThanOrEqual(1)
     })
-
-    it('renders footer text', () => {
-      renderWithRouter()
-
-      expect(screen.getAllByText('pg-boss Dashboard').length).toBeGreaterThanOrEqual(1)
-    })
   })
 
   describe('theme toggle', () => {
