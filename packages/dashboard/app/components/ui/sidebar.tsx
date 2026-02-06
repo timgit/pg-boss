@@ -167,20 +167,14 @@ const Sidebar = React.forwardRef<HTMLDivElement, React.ComponentProps<'div'> & {
         ref={ref}
         data-state={state}
         className={cn(
-          'group peer hidden md:block text-sidebar-foreground',
+          'group peer hidden md:flex fixed inset-y-0 left-0 z-30 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground overflow-y-auto overflow-x-hidden',
           'transition-[width] duration-200 ease-linear',
-          'relative overflow-hidden',
-          state === 'expanded' ? 'w-[--sidebar-width]' : 'w-[--sidebar-width-icon]'
+          state === 'expanded' ? 'w-[--sidebar-width]' : 'w-[--sidebar-width-icon]',
+          className
         )}
         {...props}
       >
-        <div className={cn(
-          'flex h-full flex-col border-r border-sidebar-border bg-sidebar overflow-hidden',
-          state === 'expanded' ? 'w-[--sidebar-width]' : 'w-[--sidebar-width-icon]',
-          className
-        )}>
-          {children}
-        </div>
+        {children}
       </div>
     )
   }
@@ -203,7 +197,7 @@ const SidebarTrigger = React.forwardRef<HTMLButtonElement, React.ComponentProps<
           }
         }}
         className={cn(
-          'inline-flex items-center justify-center rounded-md p-2',
+          'inline-flex items-center justify-center rounded-md p-2 cursor-pointer',
           'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
           'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
           className

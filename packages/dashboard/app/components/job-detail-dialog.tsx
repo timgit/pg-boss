@@ -80,7 +80,7 @@ export function JobDetailDialog ({ jobId, jobState }: JobDetailDialogProps) {
           )}
 
           {error && (
-            <div className="text-center py-8 text-error-600 dark:text-error-400">
+            <div className="text-center py-8 text-red-600 dark:text-red-400">
               {error}
             </div>
           )}
@@ -157,10 +157,9 @@ export function JobDetailDialog ({ jobId, jobState }: JobDetailDialogProps) {
                 )}
               </div>
 
-              {/* Job Data (Payload) */}
               <div>
                 <label className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">
-                  Data (Payload)
+                  Data
                 </label>
                 <pre className={cn(
                   'text-sm px-3 py-2 rounded border font-mono overflow-x-auto max-h-48',

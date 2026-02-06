@@ -4,6 +4,7 @@ import type {
   JobResult,
   WarningResult,
   AggregateStats,
+  ScheduleResult,
 } from './types'
 
 // Validate schema name to prevent SQL injection
@@ -86,7 +87,7 @@ export async function getQueues (
   options: {
     limit?: number;
     offset?: number;
-    filter?: 'all' | 'problems' | 'partitioned';
+    filter?: 'all' | 'attention' | 'partitioned';
     search?: string;
   } = {}
 ): Promise<QueueResult[]> {
@@ -99,7 +100,7 @@ export async function getQueues (
   let paramIndex = 1
 
   // Add filter conditions
-  if (filter === 'problems') {
+  if (filter === 'attention') {
     conditions.push('warning_queued > 0 AND queued_count > warning_queued')
   } else if (filter === 'partitioned') {
     conditions.push('partition = true')
@@ -142,7 +143,7 @@ export async function getQueueCount (
   dbUrl: string,
   schema: string,
   options: {
-    filter?: 'all' | 'problems' | 'partitioned';
+    filter?: 'all' | 'attention' | 'partitioned';
     search?: string;
   } = {}
 ): Promise<number> {
@@ -155,7 +156,7 @@ export async function getQueueCount (
   let paramIndex = 1
 
   // Add filter conditions
-  if (filter === 'problems') {
+  if (filter === 'attention') {
     conditions.push('warning_queued > 0 AND queued_count > warning_queued')
   } else if (filter === 'partitioned') {
     conditions.push('partition = true')
@@ -223,6 +224,22 @@ export async function getProblemQueues (
   return query<QueueResult>(dbUrl, sql, [limit])
 }
 
+// Get top queues by total job count
+export async function getTopQueues (
+  dbUrl: string,
+  schema: string,
+  limit: number = 5
+): Promise<QueueResult[]> {
+  const s = validateIdentifier(schema)
+  const sql = `
+    SELECT ${QUEUE_COLUMNS}
+    FROM ${s}.queue
+    ORDER BY total_count DESC
+    LIMIT $1
+  `
+  return query<QueueResult>(dbUrl, sql, [limit])
+}
+
 // Get a single queue by name
 export async function getQueue (
   dbUrl: string,
@@ -237,6 +254,54 @@ export async function getQueue (
     WHERE name = $1
   `
   return queryOne<QueueResult>(dbUrl, sql, [name])
+}
+
+// Get recent jobs across all queues with pagination
+// Uses lightweight columns and includes queue name
+export async function getRecentJobs (
+  dbUrl: string,
+  schema: string,
+  options: {
+    state?: string | null;
+    limit?: number;
+    offset?: number;
+  } = {}
+): Promise<JobResult[]> {
+  const s = validateIdentifier(schema)
+  const { state = null, limit = 20, offset = 0 } = options
+
+  // Handle 'pending' filter for non-final states
+  if (state === 'pending') {
+    const sql = `
+      SELECT ${JOB_LIST_COLUMNS}
+      FROM ${s}.job
+      WHERE state < 'completed'
+      ORDER BY created_on DESC
+      LIMIT $1 OFFSET $2
+    `
+    return query<JobResult>(dbUrl, sql, [limit, offset])
+  }
+
+  // Handle 'all' filter or null - no state filtering
+  if (state === 'all' || state === null) {
+    const sql = `
+      SELECT ${JOB_LIST_COLUMNS}
+      FROM ${s}.job
+      ORDER BY created_on DESC
+      LIMIT $1 OFFSET $2
+    `
+    return query<JobResult>(dbUrl, sql, [limit, offset])
+  }
+
+  // Filter by specific state
+  const sql = `
+    SELECT ${JOB_LIST_COLUMNS}
+    FROM ${s}.job
+    WHERE state = $1::${s}.job_state
+    ORDER BY created_on DESC
+    LIMIT $2 OFFSET $3
+  `
+  return query<JobResult>(dbUrl, sql, [state, limit, offset])
 }
 
 // Get jobs for a queue with pagination and filtering
@@ -580,4 +645,119 @@ export async function deleteJob (
     jobId,
   ])
   return result?.count ?? 0
+}
+
+// Get all schedules with pagination
+export async function getSchedules (
+  dbUrl: string,
+  schema: string,
+  options: {
+    limit?: number;
+    offset?: number;
+  } = {}
+): Promise<ScheduleResult[]> {
+  const s = validateIdentifier(schema)
+  const { limit, offset } = options
+
+  // If no pagination, return all schedules
+  if (limit === undefined) {
+    const sql = `
+      SELECT
+        name,
+        key,
+        cron,
+        timezone,
+        data,
+        options,
+        created_on as "createdOn",
+        updated_on as "updatedOn"
+      FROM ${s}.schedule
+      ORDER BY name, key
+    `
+    try {
+      return await query<ScheduleResult>(dbUrl, sql)
+    } catch (err: unknown) {
+      // Table doesn't exist
+      if (err && typeof err === 'object' && 'code' in err && err.code === '42P01') {
+        return []
+      }
+      throw err
+    }
+  }
+
+  // With pagination
+  const sql = `
+    SELECT
+      name,
+      key,
+      cron,
+      timezone,
+      data,
+      options,
+      created_on as "createdOn",
+      updated_on as "updatedOn"
+    FROM ${s}.schedule
+    ORDER BY name, key
+    LIMIT $1 OFFSET $2
+  `
+  try {
+    return await query<ScheduleResult>(dbUrl, sql, [limit, offset ?? 0])
+  } catch (err: unknown) {
+    // Table doesn't exist
+    if (err && typeof err === 'object' && 'code' in err && err.code === '42P01') {
+      return []
+    }
+    throw err
+  }
+}
+
+// Get total count of schedules
+export async function getScheduleCount (
+  dbUrl: string,
+  schema: string
+): Promise<number> {
+  const s = validateIdentifier(schema)
+  const sql = `SELECT COUNT(*)::int as count FROM ${s}.schedule`
+  try {
+    const result = await queryOne<{ count: number }>(dbUrl, sql)
+    return result?.count ?? 0
+  } catch (err: unknown) {
+    // Table doesn't exist
+    if (err && typeof err === 'object' && 'code' in err && err.code === '42P01') {
+      return 0
+    }
+    throw err
+  }
+}
+
+// Get a single schedule by name and key
+export async function getSchedule (
+  dbUrl: string,
+  schema: string,
+  name: string,
+  key: string
+): Promise<ScheduleResult | null> {
+  const s = validateIdentifier(schema)
+  const sql = `
+    SELECT
+      name,
+      key,
+      cron,
+      timezone,
+      data,
+      options,
+      created_on as "createdOn",
+      updated_on as "updatedOn"
+    FROM ${s}.schedule
+    WHERE name = $1 AND key = $2
+  `
+  try {
+    return await queryOne<ScheduleResult>(dbUrl, sql, [name, key])
+  } catch (err: unknown) {
+    // Table doesn't exist
+    if (err && typeof err === 'object' && 'code' in err && err.code === '42P01') {
+      return null
+    }
+    throw err
+  }
 }

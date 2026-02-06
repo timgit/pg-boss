@@ -72,3 +72,14 @@ export interface AggregateStats {
   totalJobs: number;
   queueCount: number;
 }
+
+export interface ScheduleResult {
+  name: string;
+  key: string;
+  cron: string;
+  timezone: string | null;
+  data: unknown;
+  options: unknown;
+  createdOn: Date;
+  updatedOn: Date;
+}

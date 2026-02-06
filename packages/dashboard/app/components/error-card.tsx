@@ -19,12 +19,12 @@ export function ErrorCard ({
     <div className="p-6">
       <Card>
         <CardContent className="py-8 text-center">
-          <p className="text-error-600 dark:text-error-400 font-medium">{title}</p>
+          <p className="text-red-600 dark:text-red-400 font-medium">{title}</p>
           <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">{message}</p>
           {backTo && (
             <DbLink
               to={backTo.href}
-              className="inline-block mt-4 text-primary-600 hover:text-primary-700 dark:text-gray-400 dark:hover:text-gray-300"
+              className="inline-block mt-4 text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
             >
               {backTo.label}
             </DbLink>

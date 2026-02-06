@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { useFetcher } from 'react-router'
+import { useFetcher, redirect } from 'react-router'
+import { Copy, Check } from 'lucide-react'
 import { DbLink } from '~/components/db-link'
 import type { Route } from './+types/queues.$name.jobs.$jobId'
 import { getJob, cancelJob, retryJob, resumeJob, deleteJob, isValidIntent } from '~/lib/queries.server'
@@ -57,6 +58,16 @@ export async function action ({ params, request, context }: Route.ActionArgs) {
         message = affected > 0
           ? 'Job deleted'
           : 'Job could not be deleted (may be active or already deleted)'
+
+        // Redirect to queue jobs list after successful delete
+        if (affected > 0) {
+          const url = new URL(request.url)
+          const dbParam = url.searchParams.get('db')
+          const redirectUrl = dbParam
+            ? `/queues/${params.name}?db=${encodeURIComponent(dbParam)}`
+            : `/queues/${params.name}`
+          return redirect(redirectUrl)
+        }
         break
     }
   } catch (err) {
@@ -105,186 +116,233 @@ export default function JobDetail ({ loaderData }: Route.ComponentProps) {
           {queueName}
         </DbLink>
         <span>/</span>
-        <span className="text-gray-900 dark:text-gray-100 font-medium font-mono text-xs">
+        <span>
           {job.id.slice(0, 8)}...
         </span>
       </div>
 
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Job Details</h1>
-          <div className="mt-2 flex items-center gap-3">
-            <Badge variant={JOB_STATE_VARIANTS[job.state]} size="sm">
-              {job.state}
-            </Badge>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          {showError && (
-            <span className="text-xs text-warning-600 dark:text-warning-400" title={actionResult.message}>
-              Action failed
-            </span>
-          )}
-          {(job.state === 'created' || job.state === 'retry' || job.state === 'active') && (
-            <ConfirmDialog
-              title="Cancel Job"
-              description={`Are you sure you want to cancel job ${job.id.slice(0, 8)}...? This will stop the job from being processed.`}
-              confirmLabel="Cancel Job"
-              confirmVariant="danger"
-              trigger="Cancel"
-              onConfirm={() => submitAction('cancel')}
-              isDisabled={isLoading}
-            />
-          )}
-          {job.state === 'failed' && (
-            <Button variant="ghost" size="sm" disabled={isLoading} onClick={() => submitAction('retry')}>
-              Retry
-            </Button>
-          )}
-          {job.state === 'cancelled' && (
-            <Button variant="ghost" size="sm" disabled={isLoading} onClick={() => submitAction('resume')}>
-              Resume
-            </Button>
-          )}
-          {job.state !== 'active' && (
-            <ConfirmDialog
-              title="Delete Job"
-              description={`Are you sure you want to delete job ${job.id.slice(0, 8)}...? This action cannot be undone.`}
-              confirmLabel="Delete"
-              confirmVariant="danger"
-              trigger="Delete"
-              onConfirm={() => submitAction('delete')}
-              isDisabled={isLoading}
-            />
-          )}
-        </div>
+      <div>
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+          Job Details - {queueName}
+        </h1>
       </div>
 
+      {/* Details Card */}
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Details</CardTitle>
+          <div className="flex items-center gap-2">
+            {showError && (
+              <span className="text-xs text-amber-600 dark:text-amber-400" title={actionResult.message}>
+                Action failed
+              </span>
+            )}
+            {job.state === 'failed' && (
+              <Button variant="outline" size="sm" disabled={isLoading} onClick={() => submitAction('retry')}>
+                Retry
+              </Button>
+            )}
+            {job.state === 'cancelled' && (
+              <Button variant="outline" size="sm" disabled={isLoading} onClick={() => submitAction('resume')}>
+                Resume
+              </Button>
+            )}
+            {(job.state === 'created' || job.state === 'retry' || job.state === 'active') && (
+              <ConfirmDialog
+                title="Cancel Job"
+                description={`Are you sure you want to cancel job ${job.id.slice(0, 8)}...? This will prevent the job from being processed.`}
+                confirmLabel="Cancel Job"
+                confirmVariant="danger"
+                triggerVariant="outline"
+                trigger="Cancel"
+                onConfirm={() => submitAction('cancel')}
+                isDisabled={isLoading}
+              />
+            )}
+            {job.state !== 'active' && (
+              <ConfirmDialog
+                title="Delete Job"
+                description={`Are you sure you want to delete job ${job.id.slice(0, 8)}...? This action cannot be undone.`}
+                confirmLabel="Delete"
+                confirmVariant="danger"
+                triggerVariant="danger"
+                trigger="Delete"
+                onConfirm={() => submitAction('delete')}
+                isDisabled={isLoading}
+              />
+            )}
+          </div>
         </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Job ID */}
+        <CardContent className="space-y-6">
+          {/* Queue */}
           <div>
-            <label className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">
-              Job ID
-            </label>
-            <div className="flex items-center gap-2">
-              <code className={cn(
-                'flex-1 text-sm px-3 py-2 rounded border font-mono break-all',
+            <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Queue</dt>
+            <dd className="mt-1 text-sm text-gray-900 dark:text-gray-100 flex items-center gap-2">
+              <DbLink
+                to={`/queues/${encodeURIComponent(queueName)}`}
+                className="text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
+              >
+                {queueName}
+              </DbLink>
+              {job.policy && (
+                <Badge variant="gray" size="sm">
+                  {job.policy}
+                </Badge>
+              )}
+            </dd>
+          </div>
+
+          {/* Job ID and State */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+            <div>
+              <label className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">
+                Job ID
+              </label>
+              <div className="flex items-center gap-1.5">
+                <code className="text-sm font-mono break-all text-gray-900 dark:text-gray-100">
+                  {job.id}
+                </code>
+                <button
+                  onClick={copyId}
+                  className={cn(
+                    'p-1 rounded-md transition-colors cursor-pointer flex-shrink-0',
+                    'text-gray-500 hover:text-gray-900 hover:bg-gray-100',
+                    'dark:text-gray-400 dark:hover:text-gray-100 dark:hover:bg-gray-800'
+                  )}
+                  title={copied ? 'Copied!' : 'Copy to clipboard'}
+                >
+                  {copied ? (
+                    <Check className="h-4 w-4 text-green-600 dark:text-green-400" />
+                  ) : (
+                    <Copy className="h-4 w-4" />
+                  )}
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">
+                State
+              </label>
+              <div className="text-sm text-gray-900 dark:text-gray-100">
+                {job.state}
+              </div>
+            </div>
+          </div>
+
+          {/* Data and Output */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">
+                Data
+              </label>
+              <pre className={cn(
+                'text-sm px-3 py-2 rounded border font-mono overflow-auto max-h-32',
                 'bg-gray-50 border-gray-200',
                 'dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100'
               )}>
-                {job.id}
-              </code>
-              <Button variant="outline" size="sm" onClick={copyId}>
-                {copied ? 'Copied!' : 'Copy'}
-              </Button>
+                {job.data ? JSON.stringify(job.data, null, 2) : 'null'}
+              </pre>
             </div>
-          </div>
 
-          {/* Basic Info */}
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">
-                Priority
-              </label>
-              <p className="text-sm text-gray-900 dark:text-gray-100">{job.priority}</p>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">
-                Retries
-              </label>
-              <p className="text-sm text-gray-900 dark:text-gray-100">
-                {job.retryCount} / {job.retryLimit}
-              </p>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">
-                Created
-              </label>
-              <p className="text-sm text-gray-900 dark:text-gray-100">
-                {formatDate(new Date(job.createdOn))}
-              </p>
-            </div>
-            {job.startedOn && (
-              <div>
-                <label className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">
-                  Started
-                </label>
-                <p className="text-sm text-gray-900 dark:text-gray-100">
-                  {formatDate(new Date(job.startedOn))}
-                </p>
-              </div>
-            )}
-            {job.completedOn && (
-              <div>
-                <label className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">
-                  Completed
-                </label>
-                <p className="text-sm text-gray-900 dark:text-gray-100">
-                  {formatDate(new Date(job.completedOn))}
-                </p>
-              </div>
-            )}
-            {job.singletonKey && (
-              <div>
-                <label className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">
-                  Singleton Key
-                </label>
-                <p className="text-sm text-gray-900 dark:text-gray-100 font-mono">{job.singletonKey}</p>
-              </div>
-            )}
-            {job.groupId && (
-              <div>
-                <label className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">
-                  Group ID
-                </label>
-                <p className="text-sm text-gray-900 dark:text-gray-100 font-mono">{job.groupId}</p>
-              </div>
-            )}
-            {job.groupTier && (
-              <div>
-                <label className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">
-                  Group Tier
-                </label>
-                <p className="text-sm text-gray-900 dark:text-gray-100">{job.groupTier}</p>
-              </div>
-            )}
-          </div>
-
-          {/* Job Data (Payload) */}
-          <div>
-            <label className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">
-              Data (Payload)
-            </label>
-            <pre className={cn(
-              'text-sm px-3 py-2 rounded border font-mono overflow-x-auto max-h-48',
-              'bg-gray-50 border-gray-200',
-              'dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100'
-            )}>
-              {job.data ? JSON.stringify(job.data, null, 2) : 'null'}
-            </pre>
-          </div>
-
-          {/* Job Output */}
-          {job.output !== undefined && job.output !== null && (
             <div>
               <label className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">
                 Output
               </label>
               <pre className={cn(
-                'text-sm px-3 py-2 rounded border font-mono overflow-x-auto max-h-48',
+                'text-sm px-3 py-2 rounded border font-mono overflow-auto max-h-32',
                 'bg-gray-50 border-gray-200',
                 'dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100'
               )}>
-                {JSON.stringify(job.output, null, 2)}
+                {job.output !== undefined && job.output !== null ? JSON.stringify(job.output, null, 2) : '—'}
               </pre>
             </div>
-          )}
+          </div>
+
+          {/* Configuration */}
+          <div>
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-4">
+                <ConfigItem label="Priority" value={job.priority} />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-4">
+                <ConfigItem label="Retry Count" value={job.retryCount} />
+                <ConfigItem label="Retry Limit" value={job.retryLimit} />
+                <ConfigItem label="Retry Delay" value={job.retryDelay ? `${job.retryDelay}ms` : '—'} />
+                <ConfigItem label="Retry Backoff" value={job.retryBackoff ? 'Enabled' : 'Disabled'} />
+              </div>
+
+              {(job.singletonKey || job.groupId || job.groupTier || job.deadLetter) && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-4">
+                  {job.singletonKey && (
+                    <ConfigItem label="Singleton Key" value={job.singletonKey} />
+                  )}
+                  {job.groupId && (
+                    <ConfigItem label="Group ID" value={job.groupId} />
+                  )}
+                  {job.groupTier && (
+                    <ConfigItem label="Group Tier" value={job.groupTier} />
+                  )}
+                  {job.deadLetter && (
+                    <div>
+                      <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Dead Letter</dt>
+                      <dd className="mt-1 text-sm text-gray-900 dark:text-gray-100">
+                        <DbLink
+                          to={`/queues/${job.deadLetter}`}
+                          className="text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
+                        >
+                          {job.deadLetter}
+                        </DbLink>
+                      </dd>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-x-6 gap-y-4">
+                <ConfigItem
+                  label="Created"
+                  value={formatDate(new Date(job.createdOn))}
+                />
+                <ConfigItem
+                  label="Start After"
+                  value={job.startAfter ? formatDate(new Date(job.startAfter)) : '—'}
+                />
+                <ConfigItem
+                  label="Started"
+                  value={job.startedOn ? formatDate(new Date(job.startedOn)) : '—'}
+                />
+                <ConfigItem
+                  label="Completed"
+                  value={job.completedOn ? formatDate(new Date(job.completedOn)) : '—'}
+                />
+                <ConfigItem
+                  label="Keep Until"
+                  value={job.keepUntil ? formatDate(new Date(job.keepUntil)) : '—'}
+                />
+              </div>
+            </div>
+          </div>
         </CardContent>
       </Card>
+    </div>
+  )
+}
+
+function ConfigItem ({
+  label,
+  value,
+}: {
+  label: string
+  value: string | number | boolean | null
+}) {
+  return (
+    <div>
+      <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">{label}</dt>
+      <dd className="mt-1 text-sm text-gray-900 dark:text-gray-100">
+        {value?.toString() || '—'}
+      </dd>
     </div>
   )
 }

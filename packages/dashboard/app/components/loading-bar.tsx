@@ -14,7 +14,7 @@ export function LoadingBar () {
 
   return (
     <div className="fixed top-0 left-0 right-0 z-50 h-1 bg-gray-200 dark:bg-gray-800">
-      <div className="h-full bg-primary-600 dark:bg-gray-400 animate-loading-bar" />
+      <div className="h-full bg-primary-600 dark:bg-primary-400 animate-loading-bar" />
     </div>
   )
 }

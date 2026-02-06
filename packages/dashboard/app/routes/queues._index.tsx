@@ -26,8 +26,8 @@ export async function loader ({ request, context }: Route.LoaderArgs) {
   const offset = (page - 1) * limit
 
   // Validate filter
-  const validFilter = ['all', 'problems', 'partitioned'].includes(filter)
-    ? (filter as 'all' | 'problems' | 'partitioned')
+  const validFilter = ['all', 'attention', 'partitioned'].includes(filter)
+    ? (filter as 'all' | 'attention' | 'partitioned')
     : 'all'
 
   const [queues, totalCount] = await Promise.all([
@@ -64,13 +64,13 @@ export function ErrorBoundary () {
     <div className="p-6">
       <Card>
         <CardContent className="py-8 text-center">
-          <p className="text-error-600 dark:text-error-400 font-medium">Failed to load queues</p>
+          <p className="text-red-600 dark:text-red-400 font-medium">Failed to load queues</p>
           <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">
             Please check your database connection and try again.
           </p>
           <DbLink
             to="/"
-            className="inline-block mt-4 text-primary-600 hover:text-primary-700 dark:text-gray-400 dark:hover:text-gray-300"
+            className="inline-block mt-4 text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
           >
             Back to Dashboard
           </DbLink>
@@ -127,7 +127,7 @@ export default function QueuesIndex ({ loaderData }: Route.ComponentProps) {
 
   const filterLabels: Record<string, string> = {
     all: 'All Queues',
-    problems: 'Needing Attention',
+    attention: 'Needing Attention',
     partitioned: 'Partitioned',
   }
 
@@ -185,11 +185,11 @@ export default function QueuesIndex ({ loaderData }: Route.ComponentProps) {
             All
           </Button>
           <Button
-            variant={filter === 'problems' ? 'primary' : 'outline'}
+            variant={filter === 'attention' ? 'primary' : 'outline'}
             size="md"
-            onClick={() => handleFilterChange('problems')}
+            onClick={() => handleFilterChange('attention')}
           >
-            Problems
+            Attention
           </Button>
           <Button
             variant={filter === 'partitioned' ? 'primary' : 'outline'}
@@ -229,7 +229,7 @@ export default function QueuesIndex ({ loaderData }: Route.ComponentProps) {
           )}
           <button
             onClick={clearFilters}
-            className="text-sm text-primary-600 hover:text-primary-700 dark:text-gray-400 dark:hover:text-gray-300"
+            className="text-sm text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
           >
             Clear all
           </button>
@@ -243,18 +243,19 @@ export default function QueuesIndex ({ loaderData }: Route.ComponentProps) {
               <TableRow>
                 <TableHead>Name</TableHead>
                 <TableHead>Policy</TableHead>
+                <TableHead>Storage</TableHead>
                 <TableHead className="text-right">Queued</TableHead>
                 <TableHead className="text-right">Active</TableHead>
                 <TableHead className="text-right">Deferred</TableHead>
                 <TableHead className="text-right">Total</TableHead>
-                <TableHead>Last Monitored</TableHead>
+                <TableHead>Dead Letter</TableHead>
                 <TableHead>Status</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {queues.length === 0 ? (
                 <TableRow>
-                  <TableCell className="text-center text-gray-500 dark:text-gray-400 py-8" colSpan={8}>
+                  <TableCell className="text-center text-gray-500 dark:text-gray-400 py-8" colSpan={9}>
                     No queues found
                   </TableCell>
                 </TableRow>
@@ -269,7 +270,7 @@ export default function QueuesIndex ({ loaderData }: Route.ComponentProps) {
                       <TableCell>
                         <DbLink
                           to={`/queues/${encodeURIComponent(queue.name)}`}
-                          className="font-medium text-primary-600 hover:text-primary-700 dark:text-gray-400 dark:hover:text-gray-300"
+                          className="font-medium text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
                         >
                           {queue.name}
                         </DbLink>
@@ -278,6 +279,9 @@ export default function QueuesIndex ({ loaderData }: Route.ComponentProps) {
                         <Badge variant="gray" size="sm">
                           {queue.policy}
                         </Badge>
+                      </TableCell>
+                      <TableCell className="text-gray-700 dark:text-gray-300">
+                        {queue.partition ? 'Partitioned' : 'Shared'}
                       </TableCell>
                       <TableCell className="text-right text-gray-700 dark:text-gray-300">
                         {queue.queuedCount.toLocaleString()}
@@ -291,19 +295,26 @@ export default function QueuesIndex ({ loaderData }: Route.ComponentProps) {
                       <TableCell className="text-right text-gray-700 dark:text-gray-300">
                         {queue.totalCount.toLocaleString()}
                       </TableCell>
-                      <TableCell className="text-gray-500 dark:text-gray-400">
-                        {queue.monitorOn
-                          ? formatTimeAgo(new Date(queue.monitorOn))
-                          : 'Never'}
+                      <TableCell>
+                        {queue.deadLetter ? (
+                          <DbLink
+                            to={`/queues/${encodeURIComponent(queue.deadLetter)}`}
+                            className="text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
+                          >
+                            {queue.deadLetter}
+                          </DbLink>
+                        ) : (
+                          <span className="text-gray-400 dark:text-gray-500">—</span>
+                        )}
                       </TableCell>
                       <TableCell>
                         {hasBacklog ? (
                           <Badge variant="error" size="sm" dot>
-                            High Backlog
+                            Backlogged
                           </Badge>
                         ) : queue.activeCount > 0 ? (
                           <Badge variant="success" size="sm" dot>
-                            Active
+                            Processing
                           </Badge>
                         ) : (
                           <Badge variant="gray" size="sm" dot>

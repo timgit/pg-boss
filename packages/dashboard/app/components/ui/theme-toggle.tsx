@@ -3,6 +3,12 @@ import { Menu } from '@base-ui/react/menu'
 import { useTheme } from '~/components/theme-provider'
 import { cn } from '~/lib/utils'
 
+const themeLabels = {
+  light: 'Light',
+  dark: 'Dark',
+  system: 'System',
+}
+
 export function ThemeToggle () {
   const { theme, setTheme, resolvedTheme } = useTheme()
 
@@ -10,27 +16,26 @@ export function ThemeToggle () {
     <Menu.Root>
       <Menu.Trigger
         className={cn(
-          'inline-flex items-center justify-center rounded-md p-2',
-          'text-gray-500 hover:text-gray-900 hover:bg-gray-100',
-          'dark:text-gray-400 dark:hover:text-gray-100 dark:hover:bg-gray-800',
-          'focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
-          'dark:focus:ring-offset-gray-900',
+          'flex items-center gap-2 rounded-md p-2 w-full cursor-pointer',
+          'text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent',
+          'focus:outline-none',
           'transition-colors'
         )}
         aria-label="Toggle theme"
       >
         {resolvedTheme === 'dark' ? (
-          <Moon className="h-5 w-5" />
+          <Moon className="h-5 w-5 shrink-0" />
         ) : (
-          <Sun className="h-5 w-5" />
+          <Sun className="h-5 w-5 shrink-0" />
         )}
+        <span className="text-sm group-data-[state=collapsed]:hidden">{themeLabels[theme]}</span>
       </Menu.Trigger>
 
-      <Menu.Portal>
-        <Menu.Positioner>
+      <Menu.Portal container={() => typeof document !== 'undefined' ? document.body : null}>
+        <Menu.Positioner className="z-[100]">
           <Menu.Popup
             className={cn(
-              'min-w-[8rem] rounded-md border p-1 shadow-md',
+              'min-w-[8rem] rounded-md border p-1 shadow-md z-[100]',
               'bg-white border-gray-200',
               'dark:bg-gray-900 dark:border-gray-800',
               'animate-in fade-in-0 zoom-in-95'

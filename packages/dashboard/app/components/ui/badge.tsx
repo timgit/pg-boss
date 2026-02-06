@@ -8,10 +8,10 @@ const badgeVariants = cva(
     variants: {
       variant: {
         gray: 'bg-gray-100 text-gray-700 ring-gray-500/10 dark:bg-gray-800 dark:text-gray-300 dark:ring-gray-500/20',
-        primary: 'bg-primary-50 text-primary-700 ring-primary-600/10 dark:bg-gray-800 dark:text-gray-300 dark:ring-gray-500/20',
-        success: 'bg-success-50 text-success-700 ring-success-600/10 dark:bg-success-950 dark:text-success-300 dark:ring-success-400/20',
-        warning: 'bg-warning-50 text-warning-700 ring-warning-600/10 dark:bg-warning-950 dark:text-warning-300 dark:ring-warning-400/20',
-        error: 'bg-error-50 text-error-700 ring-error-600/10 dark:bg-error-950 dark:text-error-300 dark:ring-error-400/20',
+        primary: 'bg-primary-50 text-primary-700 ring-primary-600/10 dark:bg-primary-950 dark:text-primary-300 dark:ring-primary-400/20',
+        success: 'bg-green-50 text-green-700 ring-green-600/10 dark:bg-green-950 dark:text-green-300 dark:ring-green-400/20',
+        warning: 'bg-warning-50 text-amber-700 ring-warning-600/10 dark:bg-warning-950 dark:text-amber-300 dark:ring-warning-400/20',
+        error: 'bg-red-50 text-red-700 ring-red-600/10 dark:bg-red-950 dark:text-red-300 dark:ring-red-400/20',
       },
       size: {
         sm: 'px-2 py-0.5 text-xs',
@@ -28,10 +28,10 @@ const badgeVariants = cva(
 
 const dotVariants: Record<NonNullable<VariantProps<typeof badgeVariants>['variant']>, string> = {
   gray: 'bg-gray-500',
-  primary: 'bg-primary-500 dark:bg-gray-400',
-  success: 'bg-success-500',
+  primary: 'bg-primary-500 dark:bg-primary-400',
+  success: 'bg-green-500',
   warning: 'bg-warning-500',
-  error: 'bg-error-500',
+  error: 'bg-red-500',
 }
 
 interface BadgeProps extends VariantProps<typeof badgeVariants> {

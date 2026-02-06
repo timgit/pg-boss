@@ -158,7 +158,7 @@ Paginated list of all queues showing:
 - Policy type (standard, short, singleton, stately)
 - Job counts: Queued, Active, Deferred, Total
 - Last monitored timestamp
-- Status indicator (Active, Idle, High Backlog)
+- Status indicator (Backlogged, Processing, Idle)
 
 ### Queue Detail (`/queues/:name`)
 

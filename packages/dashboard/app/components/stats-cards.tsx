@@ -7,28 +7,28 @@ interface StatsCardsProps {
 
 const statCards = [
   {
-    name: 'Queued',
+    name: 'Queued Jobs',
     key: 'totalQueued' as const,
     description: 'Jobs waiting to be processed',
-    color: 'text-primary-600 dark:text-gray-400',
-    bgColor: 'bg-primary-50 dark:bg-gray-800',
+    color: 'text-gray-600 dark:text-gray-400',
+    bgColor: 'bg-gray-50 dark:bg-gray-800',
   },
   {
-    name: 'Active',
+    name: 'Active Jobs',
     key: 'totalActive' as const,
     description: 'Jobs currently processing',
-    color: 'text-success-600 dark:text-success-400',
-    bgColor: 'bg-success-50 dark:bg-success-950',
+    color: 'text-gray-600 dark:text-gray-400',
+    bgColor: 'bg-gray-50 dark:bg-gray-800',
   },
   {
-    name: 'Deferred',
+    name: 'Deferred Jobs',
     key: 'totalDeferred' as const,
     description: 'Jobs scheduled for later',
-    color: 'text-warning-600 dark:text-warning-400',
-    bgColor: 'bg-warning-50 dark:bg-warning-950',
+    color: 'text-gray-600 dark:text-gray-400',
+    bgColor: 'bg-gray-50 dark:bg-gray-800',
   },
   {
-    name: 'Total',
+    name: 'Total Jobs',
     key: 'totalJobs' as const,
     description: 'All jobs across queues',
     color: 'text-gray-600 dark:text-gray-400',
@@ -38,7 +38,7 @@ const statCards = [
 
 export function StatsCards ({ stats }: StatsCardsProps) {
   return (
-    <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+    <>
       {statCards.map((stat) => (
         <div
           key={stat.key}
@@ -65,7 +65,7 @@ export function StatsCards ({ stats }: StatsCardsProps) {
           </div>
         </div>
       ))}
-    </div>
+    </>
   )
 }
 

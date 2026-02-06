@@ -14,6 +14,7 @@ interface ConfirmDialogProps {
   description: string
   confirmLabel: string
   confirmVariant?: 'primary' | 'danger'
+  triggerVariant?: 'ghost' | 'outline' | 'danger'
   trigger: React.ReactNode
   onConfirm: () => void
   isDisabled?: boolean
@@ -24,6 +25,7 @@ export function ConfirmDialog ({
   description,
   confirmLabel,
   confirmVariant = 'primary',
+  triggerVariant = 'ghost',
   trigger,
   onConfirm,
   isDisabled,
@@ -38,11 +40,11 @@ export function ConfirmDialog ({
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <Button
-        variant="ghost"
+        variant={triggerVariant}
         size="sm"
         disabled={isDisabled}
         onClick={() => setIsOpen(true)}
-        className={confirmVariant === 'danger' ? 'text-error-600 hover:text-error-700 hover:bg-error-50 dark:text-error-400 dark:hover:text-error-300 dark:hover:bg-error-950' : ''}
+        className="cursor-pointer"
       >
         {trigger}
       </Button>
@@ -52,12 +54,13 @@ export function ConfirmDialog ({
           <DialogDescription className="mt-2">{description}</DialogDescription>
         </DialogHeader>
         <DialogFooter className="mt-6 flex justify-end gap-3">
-          <Button variant="outline" size="sm" onClick={() => setIsOpen(false)}>
+          <Button variant="outline" size="sm" className="cursor-pointer" onClick={() => setIsOpen(false)}>
             Cancel
           </Button>
           <Button
             variant={confirmVariant === 'danger' ? 'danger' : 'primary'}
             size="sm"
+            className="cursor-pointer"
             onClick={handleConfirm}
           >
             {confirmLabel}

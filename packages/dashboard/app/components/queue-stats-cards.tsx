@@ -4,78 +4,53 @@ import { cn } from '~/lib/utils'
 interface QueueStatsCardsProps {
   totalQueues: number
   problemQueues: number
-  partitionedQueues: number
 }
 
-const statCards = [
-  {
-    name: 'Total Queues',
-    key: 'totalQueues' as const,
-    description: 'All registered queues',
-    color: 'text-primary-600 dark:text-gray-400',
-    bgColor: 'bg-primary-50 dark:bg-gray-800',
-    icon: 'queue',
-    filter: 'all',
-  },
-  {
-    name: 'Needing Attention',
-    key: 'problemQueues' as const,
-    description: 'Queues with high backlog',
-    color: 'text-warning-600 dark:text-warning-400',
-    bgColor: 'bg-warning-50 dark:bg-warning-950',
-    icon: 'warning',
-    filter: 'problems',
-  },
-  {
-    name: 'Partitioned',
-    key: 'partitionedQueues' as const,
-    description: 'Queues with partitioning enabled',
-    color: 'text-success-600 dark:text-success-400',
-    bgColor: 'bg-success-50 dark:bg-success-950',
-    icon: 'partition',
-    filter: 'partitioned',
-  },
-]
-
-export function QueueStatsCards ({ totalQueues, problemQueues, partitionedQueues }: QueueStatsCardsProps) {
-  const stats = {
-    totalQueues,
-    problemQueues,
-    partitionedQueues,
-  }
-
+export function QueueStatsCards ({ totalQueues, problemQueues }: QueueStatsCardsProps) {
   return (
-    <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-      {statCards.map((stat) => (
-        <DbLink
-          key={stat.key}
-          to={`/queues?filter=${stat.filter}`}
-          className={cn(
-            'block overflow-hidden rounded-xl border shadow-sm transition-all',
-            'bg-white border-gray-200 hover:shadow-md hover:border-gray-300',
-            'dark:bg-gray-900 dark:border-gray-800 dark:hover:border-gray-700'
-          )}
-        >
-          <div className="p-5">
+    <DbLink
+      to="/queues"
+      className={cn(
+        'block overflow-hidden rounded-xl border shadow-sm transition-all',
+        'bg-white border-gray-200 hover:shadow-md hover:border-gray-300',
+        'dark:bg-gray-900 dark:border-gray-800 dark:hover:border-gray-700',
+        'sm:col-span-2'
+      )}
+    >
+      <div className="p-5">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center">
+            <div className="flex-shrink-0 rounded-lg p-3 bg-gray-50 dark:bg-gray-800">
+              <QueueIcon className="h-6 w-6 text-gray-600 dark:text-gray-400" />
+            </div>
+            <div className="ml-4">
+              <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
+                Queues
+              </p>
+              <p className="text-2xl font-semibold text-gray-600 dark:text-gray-400">
+                {totalQueues.toLocaleString()}
+              </p>
+            </div>
+          </div>
+
+          {problemQueues > 0 && (
             <div className="flex items-center">
-              <div className={cn('flex-shrink-0 rounded-lg p-3', stat.bgColor)}>
-                {stat.icon === 'queue' && <QueueIcon className={cn('h-6 w-6', stat.color)} />}
-                {stat.icon === 'warning' && <WarningIcon className={cn('h-6 w-6', stat.color)} />}
-                {stat.icon === 'partition' && <PartitionIcon className={cn('h-6 w-6', stat.color)} />}
+              <div className="flex-shrink-0 rounded-lg p-3 bg-gray-50 dark:bg-gray-800">
+                <WarningIcon className="h-6 w-6 text-amber-600 dark:text-amber-400" />
               </div>
-              <div className="ml-4 flex-1">
-                <p className="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">
-                  {stat.name}
+              <div className="ml-4 text-right">
+                <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
+                  Needing Attention
                 </p>
-                <p className={cn('text-2xl font-semibold', stat.color)}>
-                  {stats[stat.key].toLocaleString()}
+                <p className="text-2xl font-semibold text-amber-600 dark:text-amber-400">
+                  {problemQueues.toLocaleString()}
                 </p>
               </div>
             </div>
-          </div>
-        </DbLink>
-      ))}
-    </div>
+          )}
+        </div>
+      </div>
+    </DbLink>
   )
 }
 
@@ -115,20 +90,3 @@ function WarningIcon ({ className }: { className?: string }) {
   )
 }
 
-function PartitionIcon ({ className }: { className?: string }) {
-  return (
-    <svg
-      className={className}
-      fill="none"
-      viewBox="0 0 24 24"
-      strokeWidth={1.5}
-      stroke="currentColor"
-    >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        d="M9 4.5v15m6-15v15m-10.875 0h15.75c.621 0 1.125-.504 1.125-1.125V5.625c0-.621-.504-1.125-1.125-1.125H4.125C3.504 4.5 3 5.004 3 5.625v13.5c0 .621.504 1.125 1.125 1.125Z"
-      />
-    </svg>
-  )
-}
