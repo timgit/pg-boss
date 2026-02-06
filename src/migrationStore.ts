@@ -531,7 +531,7 @@ function getAll (schema: string): types.Migration[] {
         `
       ],
       uninstall: [
-        `DROP INDEX IF EXISTS ${schema}.job_i8`,
+        `SELECT ${schema}.job_table_run('DROP INDEX IF EXISTS ${schema}.job_i8')`,
         `ALTER TABLE ${schema}.job_common DROP CONSTRAINT IF EXISTS job_key_strict_fifo_singleton_key_check`
       ]
     }
