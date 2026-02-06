@@ -23,8 +23,16 @@ Allowed policy values:
 | `singleton` | Only allows 1 job to be active, unlimited queued. Can be extended with `singletonKey` |
 | `stately` | Combination of short and singleton: Only allows 1 job per state, queued and/or active. Can be extended with `singletonKey` |
 | `exclusive` | Only allows 1 job to be queued or active. Can be extended with `singletonKey` |
+| `key_strict_fifo` | Strict FIFO ordering per `singletonKey`. Requires `singletonKey` on every job. Blocks processing of jobs with the same key while any job with that key is active, in retry, or failed. |
 
 > `stately` queues are special in how retries are handled. By definition, stately queues will not allow multiple jobs to occupy `retry` state. Once a job exists in `retry`, failing another `active` job will bypass the retry mechanism and force the job to `failed`. If this job requires retries, consider a custom retry implementation using a dead letter queue.
+
+> `key_strict_fifo` queues enforce strict FIFO (First-In-First-Out) ordering per `singletonKey`. This is useful when you need to ensure jobs for the same entity (e.g., the same order, customer, or resource) are processed sequentially in the order they were created. The queue will block processing of subsequent jobs with the same `singletonKey` while any job with that key is:
+> - **active**: currently being processed
+> - **retry**: waiting to be retried after a failure
+> - **failed**: permanently failed (exhausted all retries)
+>
+> To unblock a key after a permanent failure, you can either delete the failed job using `deleteJob()` or retry it using `retry()`. Use `getBlockedKeys()` to discover which keys are currently blocked due to failed jobs.
 
 * **partition**, boolean, default false
 
@@ -93,3 +101,14 @@ Returns a queue by name
 ### `getQueueStats(name)`
 
 Returns the number of jobs in various states in a queue.  The result matches the results from getQueue(), but ignores the cached data and forces the stats to be retrieved immediately.
+
+### `getBlockedKeys(name)`
+
+Returns an array of `singletonKey` values that are currently blocked due to failed jobs. This is only available for queues with the `key_strict_fifo` policy.
+
+```js
+const blockedKeys = await boss.getBlockedKeys('my-queue')
+// ['order-123', 'order-456']
+```
+
+This is useful for monitoring and alerting on queues that have stalled due to failed jobs. You can then decide to either delete the failed jobs or retry them to unblock processing.

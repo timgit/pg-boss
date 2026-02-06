@@ -445,7 +445,7 @@ describe('cli', function () {
         const result = await db.executeSql(`SELECT version FROM ${schema}.version`)
         await db.close()
 
-        expect(result.rows[0].version).toBe(27)
+        expect(result.rows[0].version).toBe(28)
       })
 
       it('should decrement schema version after rollback', async function () {
