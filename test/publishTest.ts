@@ -37,7 +37,7 @@ describe('pubsub', function () {
     await ctx.boss.subscribe(event, ctx.schema)
     await ctx.boss.publish(event, { message })
 
-    const [job] = await ctx.boss.fetch<{ message: string }>(ctx.schema)
+    const [job] = await ctx.boss.fetch<typeof ctx.schema, { message: string }>(ctx.schema)
 
     expect(job.data.message).toBe(message)
   })
@@ -49,8 +49,8 @@ describe('pubsub', function () {
       message: string
     }
 
-    const queue1 = 'subqueue1'
-    const queue2 = 'subqueue2'
+    const queue1 = 'subqueue1' as const
+    const queue2 = 'subqueue2' as const
 
     await ctx.boss.createQueue(queue1)
     await ctx.boss.createQueue(queue2)
@@ -62,8 +62,8 @@ describe('pubsub', function () {
     await ctx.boss.subscribe(event, queue2)
     await ctx.boss.publish(event, { message })
 
-    const [job1] = await ctx.boss.fetch<Message>(queue1)
-    const [job2] = await ctx.boss.fetch<Message>(queue2)
+    const [job1] = await ctx.boss.fetch<typeof queue1, Message>(queue1)
+    const [job2] = await ctx.boss.fetch<typeof queue2, Message>(queue2)
 
     expect(job1.data.message).toBe(message)
     expect(job2.data.message).toBe(message)

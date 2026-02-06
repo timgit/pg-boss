@@ -50,7 +50,7 @@ describe('send', function () {
 
     await ctx.boss.send({ name: ctx.schema, data: { message } })
 
-    const [job] = await ctx.boss.fetch<{ message: string }>(ctx.schema)
+    const [job] = await ctx.boss.fetch<typeof ctx.schema, { message: string }>(ctx.schema)
 
     expect(job.data.message).toBe(message)
   })

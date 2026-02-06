@@ -435,7 +435,7 @@ describe('work', function () {
     await ctx.boss.start()
 
     assertTruthy(jobId)
-    const job = await ctx.boss.getJobById<{}>(ctx.schema, jobId)
+    const job = await ctx.boss.getJobById<typeof ctx.schema, {}>(ctx.schema, jobId)
 
     assertTruthy(job)
     expect(job.state).toBe('failed')

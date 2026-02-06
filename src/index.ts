@@ -2,7 +2,7 @@ import EventEmitter from 'node:events'
 import * as Attorney from './attorney.ts'
 import Contractor from './contractor.ts'
 import Manager from './manager.ts'
-import Timekeeper from './timekeeper.ts'
+import Timekeeper, { type JobConfig as TimekeeperJobConfig } from './timekeeper.ts'
 import Boss from './boss.ts'
 import Bam from './bam.ts'
 import { delay } from './tools.ts'
@@ -33,17 +33,20 @@ export function getRollbackPlans (schema?: string, version?: number) {
   return Contractor.rollbackPlans(schema, version)
 }
 
-export class PgBoss extends EventEmitter<types.PgBossEventMap> {
+export class PgBoss<
+  Config extends types.JobsConfig = types.DefaultJobsConfig,
+  C extends types.JobsConfig & TimekeeperJobConfig = Config & TimekeeperJobConfig
+> extends EventEmitter<types.PgBossEventMap> {
   #stoppingOn: number | null
   #stopped: boolean
   #starting: boolean | undefined
   #started: boolean | undefined
   #config: types.ResolvedConstructorOptions
   #db: (types.IDatabase & { _pgbdb?: false }) | DbDefault
-  #boss: Boss
+  #boss: Boss<C>
   #contractor: Contractor
-  #manager: Manager
-  #timekeeper: Timekeeper
+  #manager: Manager<C>
+  #timekeeper: Timekeeper<C>
   #bam: Bam
 
   constructor (connectionString: string)
@@ -65,7 +68,7 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
 
     const contractor = new Contractor(db, config)
 
-    const manager = new Manager(db, config)
+    const manager = new Manager<C>(db, config)
 
     const boss = new Boss(db, manager, config)
 
@@ -174,45 +177,45 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     await shutdown()
   }
 
-  send (request: types.Request): Promise<string | null>
-  send (name: string, data?: object | null, options?: types.SendOptions): Promise<string | null>
+  send<N extends types.JobNames<C>>(request: types.Request<N>): Promise<string | null>
+  send<N extends types.JobNames<C>>(name: N, data?: object | null, options?: types.SendOptions): Promise<string | null>
   async send (...args: any[]): Promise<string | null> {
-    return await this.#manager.send(...args as Parameters<Manager['send']>)
+    return await this.#manager.send(...args as Parameters<Manager<C>['send']>)
   }
 
-  sendAfter (name: string, data: object | null, options: types.SendOptions | null, date: Date): Promise<string | null>
-  sendAfter (name: string, data: object | null, options: types.SendOptions | null, dateString: string): Promise<string | null>
-  sendAfter (name: string, data: object | null, options: types.SendOptions | null, seconds: number): Promise<string | null>
-  async sendAfter (name: string, data: object | null, options: types.SendOptions | null, after: Date | string | number): Promise<string | null> {
+  sendAfter<N extends types.JobNames<C>>(name: N, data: object | null, options: types.SendOptions | null, date: Date): Promise<string | null>
+  sendAfter<N extends types.JobNames<C>>(name: N, data: object | null, options: types.SendOptions | null, dateString: string): Promise<string | null>
+  sendAfter<N extends types.JobNames<C>>(name: N, data: object | null, options: types.SendOptions | null, seconds: number): Promise<string | null>
+  async sendAfter<N extends types.JobNames<C>>(name: N, data: object | null, options: types.SendOptions | null, after: Date | string | number): Promise<string | null> {
     return this.#manager.sendAfter(name, data, options, after)
   }
 
-  sendThrottled (name: string, data: object | null, options: types.SendOptions | null, seconds: number, key?: string): Promise<string | null> {
+  sendThrottled<N extends types.JobNames<C>>(name: N, data: object | null, options: types.SendOptions | null, seconds: number, key?: string): Promise<string | null> {
     return this.#manager.sendThrottled(name, data, options, seconds, key)
   }
 
-  sendDebounced (name: string, data: object | null, options: types.SendOptions | null, seconds: number, key?: string): Promise<string | null> {
+  sendDebounced<N extends types.JobNames<C>>(name: N, data: object | null, options: types.SendOptions | null, seconds: number, key?: string): Promise<string | null> {
     return this.#manager.sendDebounced(name, data, options, seconds, key)
   }
 
-  insert (name: string, jobs: types.JobInsert[], options?: types.InsertOptions): Promise<string[] | null> {
+  insert<N extends types.JobNames<C>>(name: N, jobs: types.JobInsert[], options?: types.InsertOptions): Promise<string[] | null> {
     return this.#manager.insert(name, jobs, options)
   }
 
-  fetch<T>(name: string, options: types.FetchOptions & { includeMetadata: true }): Promise<types.JobWithMetadata<T>[]>
-  fetch<T>(name: string, options?: types.FetchOptions): Promise<types.Job<T>[]>
-  fetch<T>(name: string, options: types.FetchOptions = {}): Promise<types.Job<T>[] | types.JobWithMetadata<T>[]> {
-    return this.#manager.fetch<T>(name, options)
+  fetch<N extends types.JobNames<C>, T>(name: N, options: types.FetchOptions & { includeMetadata: true }): Promise<types.JobWithMetadata<T>[]>
+  fetch<N extends types.JobNames<C>, T>(name: N, options?: types.FetchOptions): Promise<types.Job<T>[]>
+  fetch<N extends types.JobNames<C>, T>(name: N, options: types.FetchOptions = {}): Promise<types.Job<T>[] | types.JobWithMetadata<T>[]> {
+    return this.#manager.fetch<N, T>(name, options)
   }
 
-  work<ReqData, ResData = any>(name: string, handler: types.WorkHandler<ReqData, ResData>): Promise<string>
-  work<ReqData, ResData = any>(name: string, options: types.WorkOptions & { includeMetadata: true }, handler: types.WorkWithMetadataHandler<ReqData, ResData>): Promise<string>
-  work<ReqData, ResData = any>(name: string, options: types.WorkOptions, handler: types.WorkHandler<ReqData, ResData>): Promise<string>
+  work<N extends types.JobNames<C>, ReqData, ResData = any>(name: N, handler: types.WorkHandler<ReqData, ResData>): Promise<string>
+  work<N extends types.JobNames<C>, ReqData, ResData = any>(name: N, options: types.WorkOptions & { includeMetadata: true }, handler: types.WorkWithMetadataHandler<ReqData, ResData>): Promise<string>
+  work<N extends types.JobNames<C>, ReqData, ResData = any>(name: N, options: types.WorkOptions, handler: types.WorkHandler<ReqData, ResData>): Promise<string>
   work (...args: any[]): Promise<string> {
-    return this.#manager.work(...args as Parameters<Manager['work']>)
+    return this.#manager.work(...args as Parameters<Manager<C>['work']>)
   }
 
-  offWork (name: string, options?: types.OffWorkOptions): Promise<void> {
+  offWork<N extends types.JobNames<C>>(name: N, options?: types.OffWorkOptions): Promise<void> {
     return this.#manager.offWork(name, options)
   }
 
@@ -220,11 +223,11 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#manager.notifyWorker(workerId)
   }
 
-  subscribe (event: string, name: string): Promise<void> {
+  subscribe<N extends types.JobNames<C>>(event: string, name: N): Promise<void> {
     return this.#manager.subscribe(event, name)
   }
 
-  unsubscribe (event: string, name: string): Promise<void> {
+  unsubscribe<N extends types.JobNames<C>>(event: string, name: N): Promise<void> {
     return this.#manager.unsubscribe(event, name)
   }
 
@@ -232,74 +235,74 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#manager.publish(event, data, options)
   }
 
-  cancel (name: string, id: string | string[], options?: types.ConnectionOptions): Promise<types.CommandResponse> {
+  cancel<N extends types.JobNames<C>>(name: N, id: string | string[], options?: types.ConnectionOptions): Promise<types.CommandResponse> {
     return this.#manager.cancel(name, id, options)
   }
 
-  resume (name: string, id: string | string[], options?: types.ConnectionOptions): Promise<types.CommandResponse> {
+  resume<N extends types.JobNames<C>>(name: N, id: string | string[], options?: types.ConnectionOptions): Promise<types.CommandResponse> {
     return this.#manager.resume(name, id, options)
   }
 
-  retry (name: string, id: string | string[], options?: types.ConnectionOptions): Promise<types.CommandResponse> {
+  retry<N extends types.JobNames<C>>(name: N, id: string | string[], options?: types.ConnectionOptions): Promise<types.CommandResponse> {
     return this.#manager.retry(name, id, options)
   }
 
-  deleteJob (name: string, id: string | string[], options?: types.ConnectionOptions): Promise<types.CommandResponse> {
+  deleteJob<N extends types.JobNames<C>>(name: N, id: string | string[], options?: types.ConnectionOptions): Promise<types.CommandResponse> {
     return this.#manager.deleteJob(name, id, options)
   }
 
-  deleteQueuedJobs (name: string): Promise<void> {
+  deleteQueuedJobs<N extends types.JobNames<C>>(name: N): Promise<void> {
     return this.#manager.deleteQueuedJobs(name)
   }
 
-  deleteStoredJobs (name: string): Promise<void> {
+  deleteStoredJobs<N extends types.JobNames<C>>(name: N): Promise<void> {
     return this.#manager.deleteStoredJobs(name)
   }
 
-  deleteAllJobs (name?: string): Promise<void> {
+  deleteAllJobs<N extends types.JobNames<C>>(name?: N): Promise<void> {
     return this.#manager.deleteAllJobs(name)
   }
 
-  complete (name: string, id: string | string[], data?: object | null, options?: types.CompleteOptions): Promise<types.CommandResponse> {
+  complete<N extends types.JobNames<C>>(name: N, id: string | string[], data?: object | null, options?: types.CompleteOptions): Promise<types.CommandResponse> {
     return this.#manager.complete(name, id, data, options)
   }
 
-  fail (name: string, id: string | string[], data?: object | null, options?: types.ConnectionOptions): Promise<types.CommandResponse> {
+  fail<N extends types.JobNames<C>>(name: N, id: string | string[], data?: object | null, options?: types.ConnectionOptions): Promise<types.CommandResponse> {
     return this.#manager.fail(name, id, data, options)
   }
 
   /**
    * @deprecated Use findJobs() instead
    */
-  getJobById<T>(name: string, id: string, options?: types.ConnectionOptions): Promise<types.JobWithMetadata<T> | null> {
-    return this.#manager.getJobById<T>(name, id, options)
+  getJobById<N extends types.JobNames<C>, T>(name: N, id: string, options?: types.ConnectionOptions): Promise<types.JobWithMetadata<T> | null> {
+    return this.#manager.getJobById<N, T>(name, id, options)
   }
 
-  findJobs<T>(name: string, options?: types.FindJobsOptions): Promise<types.JobWithMetadata<T>[]> {
-    return this.#manager.findJobs<T>(name, options)
+  findJobs<N extends types.JobNames<C>, T = any>(name: N, options?: types.FindJobsOptions): Promise<types.JobWithMetadata<T>[]> {
+    return this.#manager.findJobs<N, T>(name, options)
   }
 
-  createQueue (name: string, options?: Omit<types.Queue, 'name'>): Promise<void> {
+  createQueue<N extends types.JobNames<C>>(name: N, options?: Omit<types.Queue<N>, 'name'>): Promise<void> {
     return this.#manager.createQueue(name, options)
   }
 
-  updateQueue (name: string, options?: types.UpdateQueueOptions): Promise<void> {
+  updateQueue<N extends types.JobNames<C>>(name: N, options?: types.UpdateQueueOptions): Promise<void> {
     return this.#manager.updateQueue(name, options)
   }
 
-  deleteQueue (name: string): Promise<void> {
+  deleteQueue<N extends types.JobNames<C>>(name: N): Promise<void> {
     return this.#manager.deleteQueue(name)
   }
 
-  getQueues (names?: string[]): Promise<types.QueueResult[]> {
+  getQueues<N extends types.JobNames<C>>(names?: N[]): Promise<types.QueueResult<N>[]> {
     return this.#manager.getQueues()
   }
 
-  getQueue (name: string): Promise<types.QueueResult | null> {
+  getQueue<N extends types.JobNames<C>>(name: N): Promise<types.QueueResult<N> | null> {
     return this.#manager.getQueue(name)
   }
 
-  getQueueStats (name: string): Promise<types.QueueResult> {
+  getQueueStats<N extends types.JobNames<C>>(name: N): Promise<types.QueueResult<N>> {
     return this.#manager.getQueueStats(name)
   }
 
@@ -307,7 +310,7 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#boss.supervise(name)
   }
 
-  getSpy<T = object> (name: string): JobSpyInterface<T> {
+  getSpy<N extends types.JobNames<C>, T = object> (name: N): JobSpyInterface<T> {
     return this.#manager.getSpy<T>(name)
   }
 
@@ -323,15 +326,15 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#contractor.schemaVersion()
   }
 
-  schedule (name: string, cron: string, data?: object | null, options?: types.ScheduleOptions): Promise<void> {
+  schedule<N extends types.JobNames<C>>(name: N, cron: string, data?: object | null, options?: types.ScheduleOptions): Promise<void> {
     return this.#timekeeper.schedule(name, cron, data, options)
   }
 
-  unschedule (name: string, key?: string): Promise<void> {
+  unschedule<N extends types.JobNames<C>>(name: N, key?: string): Promise<void> {
     return this.#timekeeper.unschedule(name, key)
   }
 
-  getSchedules (name?: string, key?: string): Promise<types.Schedule[]> {
+  getSchedules<N extends types.JobNames<C>>(name?: N, key?: string): Promise<types.Schedule[]> {
     return this.#timekeeper.getSchedules(name, key)
   }
 

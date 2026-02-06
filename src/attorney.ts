@@ -25,7 +25,7 @@ function validateQueueArgs (config: any = {}) {
   validateDeletionConfig(config)
 }
 
-function checkSendArgs (args: any): types.Request {
+function checkSendArgs<C extends types.JobsConfig, N extends types.JobNames<C>> (args: any): types.Request<N> {
   let name, data, options
 
   if (typeof args[0] === 'string') {
@@ -139,7 +139,7 @@ function validateLocalGroupConcurrencyLimit (localGroupConcurrency: any, localCo
   }
 }
 
-function checkWorkArgs (name: string, args: any[]): {
+function checkWorkArgs<C extends types.JobsConfig, N extends types.JobNames<C>> (name: N, args: any[]): {
   options: types.ResolvedWorkOptions
   callback: types.WorkHandler<any>
 } {

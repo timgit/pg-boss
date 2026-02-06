@@ -65,6 +65,14 @@ export interface Migration {
   uninstall?: string[]
 }
 
+export type JobsConfig = Record<string, {
+}>
+export type DefaultJobsConfig = Record<string, {
+}>
+
+// Helper types which should be used in the library.
+export type JobNames<C extends JobsConfig> = keyof C & string
+
 export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, MaintenanceOptions {
   /** @internal */
   __test__warn_slow_query?: boolean;
@@ -150,15 +158,15 @@ export type SendOptions = JobOptions & QueueOptions & ConnectionOptions
 
 export type QueuePolicy = 'standard' | 'short' | 'singleton' | 'stately' | 'exclusive' | (string & {})
 
-export interface Queue extends QueueOptions {
-  name: string;
+export interface Queue<N extends string> extends QueueOptions {
+  name: N;
   policy?: QueuePolicy;
   partition?: boolean;
   deadLetter?: string;
   warningQueueSize?: number;
 }
 
-export interface QueueResult extends Queue {
+export interface QueueResult<N extends string> extends Queue<N> {
   deferredCount: number;
   queuedCount: number;
   activeCount: number;
@@ -221,8 +229,8 @@ export interface WorkWithMetadataHandler<ReqData, ResData = any> {
   (job: JobWithMetadata<ReqData>[]): Promise<ResData>;
 }
 
-export interface Request {
-  name: string;
+export interface Request<N extends string> {
+  name: N;
   data?: object;
   options?: SendOptions;
 }
@@ -322,7 +330,7 @@ export interface FunctionsMixin {
   functions: Function[];
 }
 
-export type UpdateQueueOptions = Omit<Queue, 'name' | 'partition' | 'policy'>
+export type UpdateQueueOptions = Omit<Queue<string>, 'name' | 'partition' | 'policy'>
 
 export interface Warning { message: string, data: object }
 

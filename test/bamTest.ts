@@ -96,8 +96,8 @@ describe('bam', function () {
       const failedEntry = bamStatus.find((e: any) => e.name === 'test_error_1')
 
       expect(failedEntry).toBeDefined()
-      expect(failedEntry.status).toBe('failed')
-      expect(failedEntry.error).toContain(errorMessage)
+      expect(failedEntry!.status).toBe('failed')
+      expect(failedEntry!.error).toContain(errorMessage)
     }, 10000)
 
     it('should emit error event when command fails', async function () {
@@ -178,10 +178,10 @@ describe('bam', function () {
       const successEntry = bamStatus.find((e: any) => e.name === 'test_success')
 
       expect(failedEntry).toBeDefined()
-      expect(failedEntry.status).toBe('failed')
+      expect(failedEntry!.status).toBe('failed')
 
       expect(successEntry).toBeDefined()
-      expect(successEntry.status).toBe('completed')
+      expect(successEntry!.status).toBe('completed')
     }, 15000)
 
     it('should capture error message for type cast errors', async function () {
@@ -198,9 +198,9 @@ describe('bam', function () {
       const entry = bamStatus.find((e: any) => e.name === 'test_cast_error')
 
       expect(entry).toBeDefined()
-      expect(entry.status).toBe('failed')
-      expect(entry.error).toBeDefined()
-      expect(entry.error.length).toBeGreaterThan(0)
+      expect(entry!.status).toBe('failed')
+      expect(entry!.error).toBeDefined()
+      expect(entry!.error!.length).toBeGreaterThan(0)
     }, 10000)
   })
 
@@ -219,8 +219,8 @@ describe('bam', function () {
       const entry = bamStatus.find((e: any) => e.name === 'test_success_1')
 
       expect(entry).toBeDefined()
-      expect(entry.status).toBe('completed')
-      expect(entry.completedOn).toBeDefined()
+      expect(entry!.status).toBe('completed')
+      expect(entry!.completedOn).toBeDefined()
     }, 10000)
 
     it('should emit bam events for in_progress and completed', async function () {

@@ -210,7 +210,7 @@ describe('failure', function () {
     assertTruthy(jobId)
     await ctx.boss.fail(ctx.schema, jobId)
 
-    const [job] = await ctx.boss.fetch<{ key: string }>(deadLetter)
+    const [job] = await ctx.boss.fetch<typeof ctx.schema, { key: string }>(deadLetter)
 
     expect(job.data.key).toBe(ctx.schema)
   })

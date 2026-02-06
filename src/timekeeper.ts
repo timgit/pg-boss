@@ -7,7 +7,7 @@ import * as plans from './plans.ts'
 import * as types from './types.ts'
 
 export const QUEUES = {
-  SEND_IT: '__pgboss__send-it'
+  SEND_IT: '__pgboss__send-it' as const
 }
 
 const EVENTS = {
@@ -22,10 +22,15 @@ const WARNINGS = {
   }
 }
 
-class Timekeeper extends EventEmitter implements types.EventsMixin {
+export type JobConfig = {
+  [QUEUES.SEND_IT]: {
+  }
+}
+
+class Timekeeper<C extends types.JobsConfig & JobConfig> extends EventEmitter implements types.EventsMixin {
   db: types.IDatabase
   config: types.ResolvedConstructorOptions
-  manager: Manager
+  manager: Manager<C>
 
   private stopped = true
   private cronMonitorInterval: NodeJS.Timeout | null | undefined
@@ -35,7 +40,7 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
   clockSkew = 0
   events = EVENTS
 
-  constructor (db: types.IDatabase, manager: Manager, config: types.ResolvedConstructorOptions) {
+  constructor (db: types.IDatabase, manager: Manager<C>, config: types.ResolvedConstructorOptions) {
     super()
 
     this.db = db
@@ -54,7 +59,7 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
       batchSize: 50
     }
 
-    await this.manager.work<types.Request>(QUEUES.SEND_IT, options, (jobs) => this.onSendIt(jobs))
+    await this.manager.work<typeof QUEUES.SEND_IT, types.Request<string>>(QUEUES.SEND_IT, options, (jobs) => this.onSendIt(jobs))
 
     setImmediate(() => this.onCron())
 
@@ -160,7 +165,7 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
     return prevDiff < 60
   }
 
-  private async onSendIt (jobs: types.Job<types.Request>[]): Promise<void> {
+  private async onSendIt (jobs: types.Job<types.Request<string>>[]): Promise<void> {
     await Promise.allSettled(jobs.map(({ data }) => this.manager.send(data)))
   }
 
