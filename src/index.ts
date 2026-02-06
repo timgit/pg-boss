@@ -35,6 +35,7 @@ export function getRollbackPlans (schema?: string, version?: number) {
 
 export class PgBoss<
   Config extends types.JobsConfig = types.DefaultJobsConfig,
+  EC extends types.EventConfig<C> = Record<string, types.JobNames<Config>>,
   C extends types.JobsConfig & TimekeeperJobConfig = Config & TimekeeperJobConfig
 > extends EventEmitter<types.PgBossEventMap> {
   #stoppingOn: number | null
@@ -43,10 +44,10 @@ export class PgBoss<
   #started: boolean | undefined
   #config: types.ResolvedConstructorOptions
   #db: (types.IDatabase & { _pgbdb?: false }) | DbDefault
-  #boss: Boss<C>
+  #boss: Boss<C, EC>
   #contractor: Contractor
-  #manager: Manager<C>
-  #timekeeper: Timekeeper<C>
+  #manager: Manager<C, EC>
+  #timekeeper: Timekeeper<C, EC>
   #bam: Bam
 
   constructor (connectionString: string)
@@ -68,7 +69,7 @@ export class PgBoss<
 
     const contractor = new Contractor(db, config)
 
-    const manager = new Manager<C>(db, config)
+    const manager = new Manager<C, EC>(db, config)
 
     const boss = new Boss(db, manager, config)
 
@@ -180,7 +181,7 @@ export class PgBoss<
   send<N extends types.JobNames<C>>(request: types.Request<N>): Promise<string | null>
   send<N extends types.JobNames<C>>(name: N, data?: object | null, options?: types.SendOptions): Promise<string | null>
   async send (...args: any[]): Promise<string | null> {
-    return await this.#manager.send(...args as Parameters<Manager<C>['send']>)
+    return await this.#manager.send(...args as Parameters<Manager<C, EC>['send']>)
   }
 
   sendAfter<N extends types.JobNames<C>>(name: N, data: object | null, options: types.SendOptions | null, date: Date): Promise<string | null>
@@ -212,7 +213,7 @@ export class PgBoss<
   work<N extends types.JobNames<C>, ReqData, ResData = any>(name: N, options: types.WorkOptions & { includeMetadata: true }, handler: types.WorkWithMetadataHandler<ReqData, ResData>): Promise<string>
   work<N extends types.JobNames<C>, ReqData, ResData = any>(name: N, options: types.WorkOptions, handler: types.WorkHandler<ReqData, ResData>): Promise<string>
   work (...args: any[]): Promise<string> {
-    return this.#manager.work(...args as Parameters<Manager<C>['work']>)
+    return this.#manager.work(...args as Parameters<Manager<C, EC>['work']>)
   }
 
   offWork<N extends types.JobNames<C>>(name: N, options?: types.OffWorkOptions): Promise<void> {
@@ -223,15 +224,15 @@ export class PgBoss<
     return this.#manager.notifyWorker(workerId)
   }
 
-  subscribe<N extends types.JobNames<C>>(event: string, name: N): Promise<void> {
+  subscribe<EventName extends types.EventNames<C, EC>>(event: EventName, name: EC[EventName]): Promise<void> {
     return this.#manager.subscribe(event, name)
   }
 
-  unsubscribe<N extends types.JobNames<C>>(event: string, name: N): Promise<void> {
+  unsubscribe<EventName extends types.EventNames<C, EC>>(event: EventName, name: EC[EventName]): Promise<void> {
     return this.#manager.unsubscribe(event, name)
   }
 
-  publish (event: string, data?: object, options?: types.SendOptions): Promise<void> {
+  publish<EventName extends types.EventNames<C, EC>>(event: EventName, data?: object, options?: types.SendOptions): Promise<void> {
     return this.#manager.publish(event, data, options)
   }
 

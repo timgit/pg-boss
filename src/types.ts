@@ -72,6 +72,8 @@ export type DefaultJobsConfig = Record<string, {
 
 // Helper types which should be used in the library.
 export type JobNames<C extends JobsConfig> = keyof C & string
+export type EventConfig<C extends JobsConfig> = Record<string, JobNames<C>>
+export type EventNames<C extends JobsConfig, EC extends EventConfig<C>> = keyof EC & string
 
 export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, MaintenanceOptions {
   /** @internal */

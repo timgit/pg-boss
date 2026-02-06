@@ -23,7 +23,7 @@ type QueuesRecord<C extends types.JobsConfig> = {
   [N in types.JobNames<C>]: Record<N, types.QueueResult<N>>;
 }[types.JobNames<C>]
 
-class Manager<C extends types.JobsConfig & timekeeper.JobConfig> extends EventEmitter implements types.EventsMixin {
+class Manager<C extends types.JobsConfig & timekeeper.JobConfig, EC extends types.EventConfig<C>> extends EventEmitter implements types.EventsMixin {
   events = events
   db: (types.IDatabase & { _pgbdb?: false }) | Db
   config: types.ResolvedConstructorOptions
@@ -31,7 +31,7 @@ class Manager<C extends types.JobsConfig & timekeeper.JobConfig> extends EventEm
   workers: Map<string, Worker>
   stopped: boolean | undefined
   queueCacheInterval: NodeJS.Timeout | undefined
-  timekeeper: Timekeeper<C> | undefined
+  timekeeper: Timekeeper<C, EC> | undefined
   queues: QueuesRecord<C> | null
   pendingOffWorkCleanups: Set<Promise<any>>
   #spies: Map<string, JobSpy>
@@ -453,22 +453,22 @@ class Manager<C extends types.JobsConfig & timekeeper.JobConfig> extends EventEm
     this.workers.get(workerId)?.notify()
   }
 
-  async subscribe<N extends types.JobNames<C>>(event: string, name: N): Promise<void> {
+  async subscribe<EventName extends types.EventNames<C, EC>>(event: EventName, name: EC[EventName]): Promise<void> {
     assert(event, 'Missing required argument')
     assert(name, 'Missing required argument')
     const sql = plans.subscribe(this.config.schema)
     await this.db.executeSql(sql, [event, name])
   }
 
-  async unsubscribe<N extends types.JobNames<C>>(event: string, name: N): Promise<void> {
+  async unsubscribe<EventName extends types.EventNames<C, EC>>(event: EventName, name: EC[EventName]): Promise<void> {
     assert(event, 'Missing required argument')
     assert(name, 'Missing required argument')
     const sql = plans.unsubscribe(this.config.schema)
     await this.db.executeSql(sql, [event, name])
   }
 
-  publish (event: string, data?: object, options?: types.SendOptions): Promise<void>
-  async publish (event: string, data?: object, options?: types.SendOptions): Promise<void> {
+  publish<EventName extends types.EventNames<C, EC>>(event: EventName, data?: object, options?: types.SendOptions): Promise<void>
+  async publish<EventName extends types.EventNames<C, EC>>(event: EventName, data?: object, options?: types.SendOptions): Promise<void> {
     assert(event, 'Missing required argument')
     const sql = plans.getQueuesForEvent(this.config.schema)
     const { rows } = await this.db.executeSql(sql, [event])

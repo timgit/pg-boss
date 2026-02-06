@@ -27,10 +27,10 @@ export type JobConfig = {
   }
 }
 
-class Timekeeper<C extends types.JobsConfig & JobConfig> extends EventEmitter implements types.EventsMixin {
+class Timekeeper<C extends types.JobsConfig & JobConfig, EC extends types.EventConfig<C>> extends EventEmitter implements types.EventsMixin {
   db: types.IDatabase
   config: types.ResolvedConstructorOptions
-  manager: Manager<C>
+  manager: Manager<C, EC>
 
   private stopped = true
   private cronMonitorInterval: NodeJS.Timeout | null | undefined
@@ -40,7 +40,7 @@ class Timekeeper<C extends types.JobsConfig & JobConfig> extends EventEmitter im
   clockSkew = 0
   events = EVENTS
 
-  constructor (db: types.IDatabase, manager: Manager<C>, config: types.ResolvedConstructorOptions) {
+  constructor (db: types.IDatabase, manager: Manager<C, EC>, config: types.ResolvedConstructorOptions) {
     super()
 
     this.db = db

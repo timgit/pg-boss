@@ -15,20 +15,20 @@ const WARNINGS = {
   LARGE_QUEUE: { size: 10_000, message: 'Warning: large queue backlog. Your queue should be reviewed' }
 }
 
-class Boss<C extends types.JobsConfig & TimekeeperJobConfig> extends EventEmitter implements types.EventsMixin {
+class Boss<C extends types.JobsConfig & TimekeeperJobConfig, EC extends types.EventConfig<C>> extends EventEmitter implements types.EventsMixin {
   #stopped: boolean
   #stopping: boolean
   #maintaining: boolean | undefined
   #superviseInterval: NodeJS.Timeout | undefined
   #db: types.IDatabase
   #config: types.ResolvedConstructorOptions
-  #manager: Manager<C>
+  #manager: Manager<C, EC>
 
   events = events
 
   constructor (
     db: types.IDatabase,
-    manager: Manager<C>,
+    manager: Manager<C, EC>,
     config: types.ResolvedConstructorOptions
   ) {
     super()
