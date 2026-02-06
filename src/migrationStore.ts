@@ -440,7 +440,7 @@ function getAll (schema: string): types.Migration[] {
       ]
     },
     {
-      release: '12.7.0',
+      release: '12.10.0',
       version: 28,
       previous: 27,
       install: [
