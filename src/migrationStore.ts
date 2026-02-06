@@ -438,6 +438,20 @@ function getAll (schema: string): types.Migration[] {
         `ALTER TABLE ${schema}.job DROP COLUMN group_tier`,
         `ALTER TABLE ${schema}.job DROP COLUMN group_id`
       ]
+    },
+    {
+      release: '12.7.0',
+      version: 28,
+      previous: 27,
+      install: [
+        // Create warning table for optional warning persistence (opt-in via persistWarnings config)
+        plans.createTableWarning(schema),
+        plans.createIndexWarning(schema)
+      ],
+      uninstall: [
+        `DROP INDEX IF EXISTS ${schema}.warning_i1`,
+        `DROP TABLE IF EXISTS ${schema}.warning`
+      ]
     }
   ]
 }

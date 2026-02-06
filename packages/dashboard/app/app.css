@@ -1,0 +1,193 @@
+@import "tailwindcss";
+
+@variant dark (&:where(.dark, .dark *));
+
+@theme inline {
+  --color-primary-50: var(--primary-50);
+  --color-primary-100: var(--primary-100);
+  --color-primary-200: var(--primary-200);
+  --color-primary-300: var(--primary-300);
+  --color-primary-400: var(--primary-400);
+  --color-primary-500: var(--primary-500);
+  --color-primary-600: var(--primary-600);
+  --color-primary-700: var(--primary-700);
+  --color-primary-800: var(--primary-800);
+  --color-primary-900: var(--primary-900);
+  --color-primary-950: var(--primary-950);
+}
+
+/* Default primary colors (violet) */
+:root {
+  --primary-50: var(--color-violet-50);
+  --primary-100: var(--color-violet-100);
+  --primary-200: var(--color-violet-200);
+  --primary-300: var(--color-violet-300);
+  --primary-400: var(--color-violet-400);
+  --primary-500: var(--color-violet-500);
+  --primary-600: var(--color-violet-600);
+  --primary-700: var(--color-violet-700);
+  --primary-800: var(--color-violet-800);
+  --primary-900: var(--color-violet-900);
+  --primary-950: var(--color-violet-950);
+}
+
+/* Color theme overrides */
+[data-color-theme="emerald"] {
+  --primary-50: var(--color-emerald-50);
+  --primary-100: var(--color-emerald-100);
+  --primary-200: var(--color-emerald-200);
+  --primary-300: var(--color-emerald-300);
+  --primary-400: var(--color-emerald-400);
+  --primary-500: var(--color-emerald-500);
+  --primary-600: var(--color-emerald-600);
+  --primary-700: var(--color-emerald-700);
+  --primary-800: var(--color-emerald-800);
+  --primary-900: var(--color-emerald-900);
+  --primary-950: var(--color-emerald-950);
+}
+
+[data-color-theme="teal"] {
+  --primary-50: var(--color-teal-50);
+  --primary-100: var(--color-teal-100);
+  --primary-200: var(--color-teal-200);
+  --primary-300: var(--color-teal-300);
+  --primary-400: var(--color-teal-400);
+  --primary-500: var(--color-teal-500);
+  --primary-600: var(--color-teal-600);
+  --primary-700: var(--color-teal-700);
+  --primary-800: var(--color-teal-800);
+  --primary-900: var(--color-teal-900);
+  --primary-950: var(--color-teal-950);
+}
+
+[data-color-theme="cyan"] {
+  --primary-50: var(--color-cyan-50);
+  --primary-100: var(--color-cyan-100);
+  --primary-200: var(--color-cyan-200);
+  --primary-300: var(--color-cyan-300);
+  --primary-400: var(--color-cyan-400);
+  --primary-500: var(--color-cyan-500);
+  --primary-600: var(--color-cyan-600);
+  --primary-700: var(--color-cyan-700);
+  --primary-800: var(--color-cyan-800);
+  --primary-900: var(--color-cyan-900);
+  --primary-950: var(--color-cyan-950);
+}
+
+[data-color-theme="sky"] {
+  --primary-50: var(--color-sky-50);
+  --primary-100: var(--color-sky-100);
+  --primary-200: var(--color-sky-200);
+  --primary-300: var(--color-sky-300);
+  --primary-400: var(--color-sky-400);
+  --primary-500: var(--color-sky-500);
+  --primary-600: var(--color-sky-600);
+  --primary-700: var(--color-sky-700);
+  --primary-800: var(--color-sky-800);
+  --primary-900: var(--color-sky-900);
+  --primary-950: var(--color-sky-950);
+}
+
+[data-color-theme="blue"] {
+  --primary-50: var(--color-blue-50);
+  --primary-100: var(--color-blue-100);
+  --primary-200: var(--color-blue-200);
+  --primary-300: var(--color-blue-300);
+  --primary-400: var(--color-blue-400);
+  --primary-500: var(--color-blue-500);
+  --primary-600: var(--color-blue-600);
+  --primary-700: var(--color-blue-700);
+  --primary-800: var(--color-blue-800);
+  --primary-900: var(--color-blue-900);
+  --primary-950: var(--color-blue-950);
+}
+
+[data-color-theme="indigo"] {
+  --primary-50: var(--color-indigo-50);
+  --primary-100: var(--color-indigo-100);
+  --primary-200: var(--color-indigo-200);
+  --primary-300: var(--color-indigo-300);
+  --primary-400: var(--color-indigo-400);
+  --primary-500: var(--color-indigo-500);
+  --primary-600: var(--color-indigo-600);
+  --primary-700: var(--color-indigo-700);
+  --primary-800: var(--color-indigo-800);
+  --primary-900: var(--color-indigo-900);
+  --primary-950: var(--color-indigo-950);
+}
+
+[data-color-theme="violet"] {
+  --primary-50: var(--color-violet-50);
+  --primary-100: var(--color-violet-100);
+  --primary-200: var(--color-violet-200);
+  --primary-300: var(--color-violet-300);
+  --primary-400: var(--color-violet-400);
+  --primary-500: var(--color-violet-500);
+  --primary-600: var(--color-violet-600);
+  --primary-700: var(--color-violet-700);
+  --primary-800: var(--color-violet-800);
+  --primary-900: var(--color-violet-900);
+  --primary-950: var(--color-violet-950);
+}
+
+[data-color-theme="purple"] {
+  --primary-50: var(--color-purple-50);
+  --primary-100: var(--color-purple-100);
+  --primary-200: var(--color-purple-200);
+  --primary-300: var(--color-purple-300);
+  --primary-400: var(--color-purple-400);
+  --primary-500: var(--color-purple-500);
+  --primary-600: var(--color-purple-600);
+  --primary-700: var(--color-purple-700);
+  --primary-800: var(--color-purple-800);
+  --primary-900: var(--color-purple-900);
+  --primary-950: var(--color-purple-950);
+}
+
+@theme {
+  --color-sidebar: white;
+  --color-sidebar-foreground: var(--color-gray-900);
+  --color-sidebar-accent: var(--color-gray-100);
+  --color-sidebar-accent-foreground: var(--color-gray-900);
+  --color-sidebar-border: var(--color-gray-100);
+  --color-sidebar-ring: var(--color-primary-500);
+
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+}
+
+/* Update sidebar colors for dark mode */
+.dark {
+  --color-sidebar: #000000;
+  --color-sidebar-foreground: var(--color-gray-300);
+  --color-sidebar-accent: var(--color-gray-900);
+  --color-sidebar-accent-foreground: var(--color-gray-100);
+  --color-sidebar-border: var(--color-gray-950);
+  --color-sidebar-ring: var(--color-gray-600);
+}
+
+/* Base styles */
+body {
+  font-family: var(--font-sans);
+  background-color: var(--color-background);
+  color: var(--color-foreground);
+}
+
+/* Loading bar animation */
+@keyframes loading-bar {
+  0% {
+    width: 0%;
+    margin-left: 0%;
+  }
+  50% {
+    width: 30%;
+    margin-left: 40%;
+  }
+  100% {
+    width: 0%;
+    margin-left: 100%;
+  }
+}
+
+.animate-loading-bar {
+  animation: loading-bar 1s ease-in-out infinite;
+}

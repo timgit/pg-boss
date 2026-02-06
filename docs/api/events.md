@@ -16,9 +16,44 @@ boss.on('error', error => logger.error(error));
 ```
 ## `warning`
 
-During monitoring and maintenance, pg-boss may raise warning events.
+During monitoring and maintenance, pg-boss may raise warning events. The payload contains `message` and `data` properties with details about the warning.
 
-Examples are slow queries, large queues, and scheduling clock skew.
+```js
+boss.on('warning', ({ message, data }) => {
+  console.log('pg-boss warning:', message, data);
+});
+```
+
+### Warning Types
+
+| Type | Description | Data Properties |
+|------|-------------|-----------------|
+| `slow_query` | A maintenance query exceeded the slow query threshold | `elapsed` (seconds) |
+| `queue_backlog` | A queue has exceeded its warning threshold | `name`, `queuedCount`, `warningQueued` |
+| `clock_skew` | Database clock is out of sync with application server | `seconds`, `direction` |
+
+### Warning Persistence
+
+Warnings are emitted as events by default. To also persist warnings to the database for historical tracking, enable the `persistWarnings` option:
+
+```js
+const boss = new PgBoss({
+  connectionString: 'postgres://...',
+  persistWarnings: true
+});
+```
+
+When enabled, warnings are stored in the `warning` table and can be queried directly or viewed in the [pg-boss dashboard](https://www.npmjs.com/package/@pg-boss/dashboard). See [SQL](../sql.md#warning-table) for the table schema.
+
+To automatically prune old warnings, set the `warningRetentionDays` option:
+
+```js
+const boss = new PgBoss({
+  connectionString: 'postgres://...',
+  persistWarnings: true,
+  warningRetentionDays: 30  // Auto-delete warnings older than 30 days
+});
+```
 
 ## `wip`
 
