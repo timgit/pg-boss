@@ -445,8 +445,8 @@ function getAll (schema: string): types.Migration[] {
       previous: 27,
       install: [
         // Create key_strict_fifo index and CHECK constraint on job_common (the default partition)
-        `CREATE UNIQUE INDEX IF NOT EXISTS job_i8 ON ${schema}.job_common (name, singleton_key) WHERE state IN ('active', 'retry', 'failed') AND policy = '${plans.QUEUE_POLICIES.key_strict_fifo}'`,
-        `ALTER TABLE ${schema}.job_common ADD CONSTRAINT job_key_strict_fifo_singleton_key_check CHECK (NOT (policy = '${plans.QUEUE_POLICIES.key_strict_fifo}' AND singleton_key IS NULL))`,
+        `SELECT ${schema}.job_table_run($cmd$CREATE UNIQUE INDEX IF NOT EXISTS job_i8 ON ${schema}.job (name, singleton_key) WHERE state IN ('active', 'retry', 'failed') AND policy = 'key_strict_fifo'$cmd$, 'job_common')`,
+        `SELECT ${schema}.job_table_run($cmd$ALTER TABLE ${schema}.job ADD CONSTRAINT job_key_strict_fifo_singleton_key_check CHECK (NOT (policy = 'key_strict_fifo' AND singleton_key IS NULL))$cmd$, 'job_common')`,
         // Update create_queue function to include the FIFO index for partitioned tables
         `
         CREATE OR REPLACE FUNCTION ${schema}.create_queue(queue_name text, options jsonb)
