@@ -3,6 +3,7 @@ import type Manager from './manager.ts'
 import * as plans from './plans.ts'
 import { unwrapSQLResult } from './tools.ts'
 import * as types from './types.ts'
+import { type JobConfig as TimekeeperJobConfig } from './timekeeper.ts'
 
 const events = {
   error: 'error',
@@ -14,20 +15,20 @@ const WARNINGS = {
   LARGE_QUEUE: { size: 10_000, message: 'Warning: large queue backlog. Your queue should be reviewed' }
 }
 
-class Boss extends EventEmitter implements types.EventsMixin {
+class Boss<C extends types.JobsConfig & TimekeeperJobConfig, EC extends types.EventConfig<C>> extends EventEmitter implements types.EventsMixin {
   #stopped: boolean
   #stopping: boolean
   #maintaining: boolean | undefined
   #superviseInterval: NodeJS.Timeout | undefined
   #db: types.IDatabase
   #config: types.ResolvedConstructorOptions
-  #manager: Manager
+  #manager: Manager<C, EC>
 
   events = events
 
   constructor (
     db: types.IDatabase,
-    manager: Manager,
+    manager: Manager<C, EC>,
     config: types.ResolvedConstructorOptions
   ) {
     super()
@@ -124,8 +125,8 @@ class Boss extends EventEmitter implements types.EventsMixin {
     }
   }
 
-  async supervise (value?: string | types.QueueResult[]) {
-    let queues: types.QueueResult[]
+  async supervise<N extends types.JobNames<C>>(value?: N | types.QueueResult<N>[]) {
+    let queues: types.QueueResult<N>[]
 
     if (Array.isArray(value)) {
       queues = value
@@ -134,7 +135,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
     }
 
     const queueGroups = queues.reduce<
-      Record<string, { table: string; queues: types.Queue[] }>
+      Record<string, { table: string; queues: types.Queue<N>[] }>
     >((acc, q) => {
       const { table } = q
       acc[table] = acc[table] || { table, queues: [] }

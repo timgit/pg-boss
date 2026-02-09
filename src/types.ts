@@ -1,3 +1,14 @@
+import type { ErrorObject } from 'serialize-error'
+
+// Source: https://www.typescriptlang.org/docs/handbook/release-notes/typescript-3-7.html#more-recursive-type-aliases
+type Json =
+  | string
+  | number
+  | boolean
+  | null
+  | { [property: string]: Json }
+  | Json[]
+
 export type JobStates = {
   created: 'created',
   retry: 'retry',
@@ -64,6 +75,35 @@ export interface Migration {
   async?: string[]
   uninstall?: string[]
 }
+
+// Types which are used internally by this library. Regardless of what the user will provide, these types are part of the possible outputs in the given state.
+type InternalJobOutput = {
+  created: never;
+  retry: never;
+  active: never;
+  completed: never;
+  cancelled: never;
+  failed: ErrorObject | string;
+}
+export type JobsConfig = Record<string, {
+  input: object | null | undefined;
+  output: {
+    [S in JobStates[keyof JobStates]]?: unknown;
+  }
+}>
+export type DefaultJobsConfig = Record<string, {
+  input: object | null | undefined,
+  output: {
+    [S in JobStates[keyof JobStates]]: Json | undefined | void;
+  }
+}>
+
+// Helper types which should be used in the library.
+export type JobNames<C extends JobsConfig> = keyof C & string
+export type JobInput<C extends JobsConfig, N extends JobNames<C>> = C[N]['input']
+export type JobOutput<C extends JobsConfig, N extends JobNames<C>, S extends keyof JobStates> = InternalJobOutput[S] | (C[N]['output'][S] extends undefined ? void | undefined : C[N]['output'][S])
+export type EventConfig<C extends JobsConfig> = Record<string, JobNames<C>>
+export type EventNames<C extends JobsConfig, EC extends EventConfig<C>> = keyof EC & string
 
 export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, MaintenanceOptions {
   /** @internal */
@@ -137,10 +177,10 @@ export interface CompleteOptions extends ConnectionOptions {
   includeQueued?: boolean;
 }
 
-export interface FindJobsOptions extends ConnectionOptions {
+export interface FindJobsOptions<T extends object> extends ConnectionOptions {
   id?: string;
   key?: string;
-  data?: object;
+  data?: Partial<T>;
   queued?: boolean;
 }
 
@@ -150,15 +190,15 @@ export type SendOptions = JobOptions & QueueOptions & ConnectionOptions
 
 export type QueuePolicy = 'standard' | 'short' | 'singleton' | 'stately' | 'exclusive' | (string & {})
 
-export interface Queue extends QueueOptions {
-  name: string;
+export interface Queue<N extends string> extends QueueOptions {
+  name: N;
   policy?: QueuePolicy;
   partition?: boolean;
   deadLetter?: string;
   warningQueueSize?: number;
 }
 
-export interface QueueResult extends Queue {
+export interface QueueResult<N extends string> extends Queue<N> {
   deferredCount: number;
   queuedCount: number;
   activeCount: number;
@@ -213,26 +253,25 @@ export interface ResolvedWorkOptions extends WorkOptions {
   pollingInterval: number;
 }
 
-export interface WorkHandler<ReqData, ResData = any> {
-  (job: Job<ReqData>[]): Promise<ResData>;
+export interface WorkHandler<C extends JobsConfig, N extends JobNames<C>> {
+  (job: Job<JobInput<C, N>>[]): Promise<JobOutput<C, N, 'completed'>>;
 }
 
-export interface WorkWithMetadataHandler<ReqData, ResData = any> {
-  (job: JobWithMetadata<ReqData>[]): Promise<ResData>;
+export interface WorkWithMetadataHandler<C extends JobsConfig, N extends JobNames<C>> {
+  (job: JobWithMetadata<C, N>[]): Promise<JobOutput<C, N, 'completed'>>;
 }
-
-export interface Request {
-  name: string;
-  data?: object;
+export interface Request<C extends JobsConfig, N extends JobNames<C>> {
+  name: N;
+  data?: JobInput<C, N>;
   options?: SendOptions;
 }
 
-export interface Schedule {
-  name: string;
+export interface Schedule<C extends JobsConfig, N extends string> {
+  name: N;
   key: string;
   cron: string;
   timezone: string;
-  data?: object;
+  data?: JobInput<C, N>;
   options?: SendOptions;
 }
 
@@ -246,9 +285,13 @@ export interface Job<T = object> {
   groupTier?: string | null;
 }
 
-export interface JobWithMetadata<T = object> extends Job<T> {
+export type JobWithMetadata<C extends JobsConfig, N extends JobNames<C>> = {
+  [S in JobStates[keyof JobStates]]: JobWithMetadataAndState<C, N, S>;
+}[JobStates[keyof JobStates]]
+
+export interface JobWithMetadataAndState<C extends JobsConfig, N extends JobNames<C>, S extends JobStates[keyof JobStates]> extends Job<JobInput<C, N>> {
   priority: number;
-  state: 'created' | 'retry' | 'active' | 'completed' | 'cancelled' | 'failed';
+  state: S;
   retryLimit: number;
   retryCount: number;
   retryDelay: number;
@@ -265,10 +308,10 @@ export interface JobWithMetadata<T = object> extends Job<T> {
   keepUntil: Date;
   policy: QueuePolicy;
   deadLetter: string;
-  output: object;
+  output: JobOutput<C, N, S>;
 }
 
-export interface JobInsert<T = object> {
+export interface JobInsert<T> {
   id?: string;
   data?: T;
   priority?: number;
@@ -322,7 +365,7 @@ export interface FunctionsMixin {
   functions: Function[];
 }
 
-export type UpdateQueueOptions = Omit<Queue, 'name' | 'partition' | 'policy'>
+export type UpdateQueueOptions = Omit<Queue<string>, 'name' | 'partition' | 'policy'>
 
 export interface Warning { message: string, data: object }
 
@@ -335,11 +378,13 @@ export interface CommandResponse {
   affected: number;
 }
 
+type BamStatus = 'pending' | 'in_progress' | 'completed' | 'failed'
+
 export interface BamEntry {
   id: string
   name: string
   version: number
-  status: 'pending' | 'in_progress' | 'completed' | 'failed'
+  status: BamStatus
   queue?: string
   table: string
   command: string
@@ -350,7 +395,7 @@ export interface BamEntry {
 }
 
 export interface BamStatusSummary {
-  status: 'pending' | 'in_progress' | 'completed' | 'failed'
+  status: BamStatus
   count: number
   lastCreatedOn: Date
 }

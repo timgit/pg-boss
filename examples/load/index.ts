@@ -16,6 +16,7 @@ async function loadTest () {
 
   for (const schema of schemas) {
     setImmediate(() => init(schema))
+    setImmediate(() => typedInit(schema))
   }
 }
 
@@ -43,7 +44,65 @@ async function init (schema: string) {
     console.log(`${schema}: sending a job to each one: ${new Date()}`)
 
     await Promise.all(queues.map(async queue => {
-      await boss.send(queue)
+      await boss.send(queue, null)
+      await boss.fetch(queue)
+    }))
+
+    await delay(1000)
+  }
+}
+
+async function typedInit (schema: string) {
+  const config = helper.getConfig()
+  const boss = new PgBoss<{
+    queue1: { input: { arg1: string }, output: { completed: { result: string } } }
+    queue2: { input: { arg2: number }, output: { completed: { result: number } } }
+    queue3: { input: { arg3: object }, output: { completed: { result: object } } }
+    queue4: { input: undefined, output: { completed: { result: object } } }
+  }>({ ...config, schema, supervise: false, schedule: false })
+
+  boss.on('error', console.error)
+
+  await boss.start()
+
+  console.log('creating queues')
+
+  const queues = [
+    'queue1',
+    'queue2',
+    'queue3',
+  ] as const
+
+  for (const queue of queues) {
+    console.log(`creating queue ${schema}.${queue}`)
+    await boss.createQueue(queue)
+    await boss.work(queue, async () => { throw new Error('test') })
+  }
+
+  console.log('created queues')
+
+  await boss.send('queue1', { arg1: 'hello' })
+  await boss.send('queue2', { arg2: 42 })
+  await boss.send('queue3', { arg3: { foo: 'bar' } })
+  await boss.send('queue4')
+
+  const job = (await boss.findJobs('queue1'))[0]!
+  switch (job.state) {
+    case 'completed':
+      console.log(job.output.result)
+      break
+    case 'failed':
+      console.log(job.output)
+      break
+  }
+
+  while (true) {
+    console.log(`${schema}: sending a job to each one: ${new Date()}`)
+
+    await Promise.all(queues.map(async queue => {
+      // await boss.send(queue) <-- fails since input-type does not allow `undefined`.
+      // await boss.schedule(queue, '* * * * *') <-- fails since input-type does not allow `undefined`.
+      await boss.send('queue4')
       await boss.fetch(queue)
     }))
 

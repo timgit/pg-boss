@@ -102,14 +102,18 @@ describe('spy', function () {
   })
 
   it('should support waitForJob with data selector', async function () {
-    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
+    const boss = await helper.start<{
+      name: { input: { value: string }, output: {} },
+    }>({ ...ctx.bossConfig, __test__enableSpies: true })
+    ctx.boss = boss
+    const schema = ctx.schema as 'name'
 
-    const spy = ctx.boss.getSpy<{ value: string }>(ctx.schema)
+    const spy = boss.getSpy(schema)
 
-    await ctx.boss.send(ctx.schema, { value: 'first' })
-    await ctx.boss.send(ctx.schema, { value: 'second' })
+    await boss.send(schema, { value: 'first' })
+    await boss.send(schema, { value: 'second' })
 
-    await ctx.boss.work(ctx.schema, async () => {})
+    await boss.work(schema, async () => {})
 
     const job = await spy.waitForJob(
       (data) => data.value === 'second',
@@ -121,9 +125,13 @@ describe('spy', function () {
   })
 
   it('should await job that completes after calling waitForJob', async function () {
-    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
+    const boss = await helper.start<{
+      name: { input: { value: string }, output: {} },
+    }>({ ...ctx.bossConfig, __test__enableSpies: true })
+    ctx.boss = boss
+    const schema = ctx.schema as 'name'
 
-    const spy = ctx.boss.getSpy<{ value: string }>(ctx.schema)
+    const spy = boss.getSpy(schema)
 
     // Start waiting before job exists
     const waitPromise = spy.waitForJob(
@@ -132,8 +140,8 @@ describe('spy', function () {
     )
 
     // Send and process job after
-    await ctx.boss.send(ctx.schema, { value: 'awaited' })
-    await ctx.boss.work(ctx.schema, async () => {})
+    await boss.send(schema, { value: 'awaited' })
+    await boss.work(schema, async () => {})
 
     const job = await waitPromise
 
@@ -188,9 +196,13 @@ describe('spy', function () {
   })
 
   it('should work with insert (bulk send)', async function () {
-    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
+    const boss = await helper.start<{
+      name: { input: { value: string }, output: {} },
+    }>({ ...ctx.bossConfig, __test__enableSpies: true })
+    ctx.boss = boss
+    const schema = ctx.schema as 'name'
 
-    const spy = ctx.boss.getSpy<{ value: string }>(ctx.schema)
+    const spy = boss.getSpy(schema)
 
     // Use explicit IDs for bulk insert
     const { randomUUID } = await import('node:crypto')
@@ -198,7 +210,7 @@ describe('spy', function () {
     const id2 = randomUUID()
     const id3 = randomUUID()
 
-    await ctx.boss.insert(ctx.schema, [
+    await boss.insert(schema, [
       { id: id1, data: { value: 'bulk1' } },
       { id: id2, data: { value: 'bulk2' } },
       { id: id3, data: { value: 'bulk3' } }
@@ -217,11 +229,15 @@ describe('spy', function () {
   })
 
   it('should protect against data mutation', async function () {
-    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
+    const boss = await helper.start<{
+      name: { input: { value: string }, output: {} },
+    }>({ ...ctx.bossConfig, __test__enableSpies: true })
+    ctx.boss = boss
+    const schema = ctx.schema as 'name'
 
-    const spy = ctx.boss.getSpy<{ value: string }>(ctx.schema)
+    const spy = boss.getSpy(schema)
 
-    const jobId = await ctx.boss.send(ctx.schema, { value: 'original' })
+    const jobId = await boss.send(schema, { value: 'original' })
 
     assertTruthy(jobId)
     const job1 = await spy.waitForJobWithId(jobId, 'created')
@@ -282,9 +298,13 @@ describe('spy', function () {
   })
 
   it('should handle race condition - await before job creation', async function () {
-    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
+    const boss = await helper.start<{
+      name: { input: { value: string }, output: {} },
+    }>({ ...ctx.bossConfig, __test__enableSpies: true })
+    ctx.boss = boss
+    const schema = ctx.schema as 'name'
 
-    const spy = ctx.boss.getSpy<{ value: string }>(ctx.schema)
+    const spy = boss.getSpy(schema)
 
     // Start awaiting before job is even created
     const waitPromise = spy.waitForJob(
@@ -292,7 +312,7 @@ describe('spy', function () {
       'created'
     )
 
-    await ctx.boss.send(ctx.schema, { value: 'race-test' })
+    await boss.send(schema, { value: 'race-test' })
 
     const job = await waitPromise
 

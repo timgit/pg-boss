@@ -7,7 +7,7 @@ import * as plans from './plans.ts'
 import * as types from './types.ts'
 
 export const QUEUES = {
-  SEND_IT: '__pgboss__send-it'
+  SEND_IT: '__pgboss__send-it' as const
 }
 
 const EVENTS = {
@@ -22,10 +22,24 @@ const WARNINGS = {
   }
 }
 
-class Timekeeper extends EventEmitter implements types.EventsMixin {
+export type JobConfig = {
+  [QUEUES.SEND_IT]: {
+    input: types.Request<types.JobsConfig, string>
+    output: {
+      created: void;
+      retry: void;
+      active: void;
+      completed: void;
+      cancelled: void;
+      failed: void;
+    }
+  }
+}
+
+class Timekeeper<C extends types.JobsConfig & JobConfig, EC extends types.EventConfig<C>> extends EventEmitter implements types.EventsMixin {
   db: types.IDatabase
   config: types.ResolvedConstructorOptions
-  manager: Manager
+  manager: Manager<C, EC>
 
   private stopped = true
   private cronMonitorInterval: NodeJS.Timeout | null | undefined
@@ -35,7 +49,7 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
   clockSkew = 0
   events = EVENTS
 
-  constructor (db: types.IDatabase, manager: Manager, config: types.ResolvedConstructorOptions) {
+  constructor (db: types.IDatabase, manager: Manager<C, EC>, config: types.ResolvedConstructorOptions) {
     super()
 
     this.db = db
@@ -54,7 +68,7 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
       batchSize: 50
     }
 
-    await this.manager.work<types.Request>(QUEUES.SEND_IT, options, (jobs) => this.onSendIt(jobs))
+    await this.manager.work(QUEUES.SEND_IT, options, (jobs) => this.onSendIt(jobs))
 
     setImmediate(() => this.onCron())
 
@@ -141,7 +155,7 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
 
     const scheduled = schedules
       .filter(i => this.shouldSendIt(i.cron, i.timezone))
-      .map(({ name, key, data, options }): types.JobInsert => ({ data: { name, data, options }, singletonKey: `${name}__${key}`, singletonSeconds: 60 }))
+      .map(({ name, key, data, options }): types.JobInsert<NonNullable<types.JobInput<C, typeof QUEUES.SEND_IT>>> => ({ data: { name, data, options }, singletonKey: `${name}__${key}`, singletonSeconds: 60 }))
 
     if (scheduled.length > 0 && !this.stopped) {
       await this.manager.insert(QUEUES.SEND_IT, scheduled)
@@ -160,11 +174,11 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
     return prevDiff < 60
   }
 
-  private async onSendIt (jobs: types.Job<types.Request>[]): Promise<void> {
-    await Promise.allSettled(jobs.map(({ data }) => this.manager.send(data)))
+  private async onSendIt (jobs: types.Job<types.Request<types.JobsConfig, string>>[]): Promise<void> {
+    await Promise.allSettled(jobs.map(({ data }) => this.manager.send(data as types.Job<types.Request<types.JobsConfig, string>>))) // The type safety is partially ensured at the `schedule` function. The developer using this library will have to ensure that types are backwards compatible.
   }
 
-  async getSchedules (name?: string, key = '') : Promise<types.Schedule[]> {
+  async getSchedules<N extends types.JobNames<C>>(name?: N, key = '') : Promise<types.Schedule<C, N>[]> {
     let sql = plans.getSchedules(this.config.schema)
     let params: unknown[] = []
 
@@ -178,7 +192,7 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
     return rows
   }
 
-  async schedule (name: string, cron: string, data?: unknown, options: types.ScheduleOptions = {}): Promise<void> {
+  async schedule<N extends types.JobNames<C>>(name: N, cron: string, data?: types.JobInput<C, N>, options: types.ScheduleOptions = {}): Promise<void> {
     const { tz = 'UTC', key = '', ...rest } = options
 
     CronExpressionParser.parse(cron, { tz, strict: false })
@@ -198,7 +212,7 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
     }
   }
 
-  async unschedule (name: string, key = ''): Promise<void> {
+  async unschedule<N extends types.JobNames<C>>(name: N, key = ''): Promise<void> {
     const sql = plans.unschedule(this.config.schema)
     await this.db.executeSql(sql, [name, key])
   }

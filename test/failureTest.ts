@@ -195,24 +195,29 @@ describe('failure', function () {
   })
 
   it('dead letter queues are working', async function () {
-    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+    const boss = await helper.start<{
+      name: { input: { key: string }, output: {} },
+      name_dlq: { input: { key: string }, output: {} }
+    }>({ ...ctx.bossConfig, noDefault: true })
+    ctx.boss = boss
+    const schema = ctx.schema as 'name'
 
-    const deadLetter = `${ctx.schema}_dlq`
+    const deadLetter = `${schema}_dlq` as const
 
-    await ctx.boss.createQueue(deadLetter)
-    await ctx.boss.createQueue(ctx.schema, { deadLetter })
+    await boss.createQueue(deadLetter)
+    await boss.createQueue(schema, { deadLetter })
 
-    const jobId = await ctx.boss.send(ctx.schema, { key: ctx.schema }, { retryLimit: 0 })
+    const jobId = await boss.send(schema, { key: schema }, { retryLimit: 0 })
 
     expect(jobId).toBeTruthy()
 
-    await ctx.boss.fetch(ctx.schema)
+    await boss.fetch(schema)
     assertTruthy(jobId)
-    await ctx.boss.fail(ctx.schema, jobId)
+    await boss.fail(schema, jobId)
 
-    const [job] = await ctx.boss.fetch<{ key: string }>(deadLetter)
+    const [job] = await boss.fetch(deadLetter)
 
-    expect(job.data.key).toBe(ctx.schema)
+    expect(job.data.key).toBe(schema)
   })
 
   it('should fail active jobs in a worker during shutdown', async function () {

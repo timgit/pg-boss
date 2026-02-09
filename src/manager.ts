@@ -19,7 +19,11 @@ const events = {
   wip: 'wip'
 }
 
-class Manager extends EventEmitter implements types.EventsMixin {
+type QueuesRecord<C extends types.JobsConfig> = {
+  [N in types.JobNames<C>]: Record<N, types.QueueResult<N>>;
+}[types.JobNames<C>]
+
+class Manager<C extends types.JobsConfig & timekeeper.JobConfig, EC extends types.EventConfig<C>> extends EventEmitter implements types.EventsMixin {
   events = events
   db: (types.IDatabase & { _pgbdb?: false }) | Db
   config: types.ResolvedConstructorOptions
@@ -27,8 +31,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
   workers: Map<string, Worker>
   stopped: boolean | undefined
   queueCacheInterval: NodeJS.Timeout | undefined
-  timekeeper: Timekeeper | undefined
-  queues: Record<string, types.QueueResult> | null
+  timekeeper: Timekeeper<C, EC> | undefined
+  queues: QueuesRecord<C> | null
   pendingOffWorkCleanups: Set<Promise<any>>
   #spies: Map<string, JobSpy>
   #localGroupActive: Map<string, Map<string, number>>
@@ -198,11 +202,11 @@ class Manager extends EventEmitter implements types.EventsMixin {
     }
   }
 
-  async #processJobs<T> (
-    name: string,
-    jobs: types.Job<T>[],
-    callback: types.WorkHandler<T>,
-    worker?: Worker<T>
+  async #processJobs<N extends types.JobNames<C>> (
+    name: N,
+    jobs: types.Job<types.JobInput<C, N>>[],
+    callback: types.WorkHandler<C, N>,
+    worker?: Worker<types.JobInput<C, N>>
   ): Promise<void> {
     const jobIds = jobs.map(job => job.id)
     const maxExpiration = jobs.reduce((acc, i) => Math.max(acc, i.expireInSeconds), 0)
@@ -239,19 +243,19 @@ class Manager extends EventEmitter implements types.EventsMixin {
     try {
       assert(!this.config.__test__throw_queueCache, 'test error')
       const queues = await this.getQueues()
-      this.queues = queues.reduce<Record<string, types.QueueResult>>((acc, i) => { acc[i.name] = i; return acc }, {})
+      this.queues = queues.reduce<Record<string, types.QueueResult<types.JobNames<C>>>>((acc, i) => { acc[i.name] = i; return acc }, {})
     } catch (error: any) {
       emit && this.emit(events.error, { ...error, message: error.message, stack: error.stack })
     }
   }
 
-  async getQueueCache (name: string): Promise<types.QueueResult> {
+  async getQueueCache<N extends types.JobNames<C>>(name: N): Promise<types.QueueResult<N>> {
     assert(this.queues, 'Queue cache is not initialized')
 
     let queue = this.queues[name]
 
     if (queue) {
-      return queue
+      return queue as types.QueueResult<N>
     }
 
     queue = await this.getQueue(name)
@@ -262,7 +266,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     this.queues[name] = queue
 
-    return queue
+    return queue as types.QueueResult<N>
   }
 
   async stop () {
@@ -291,11 +295,11 @@ class Manager extends EventEmitter implements types.EventsMixin {
     }
   }
 
-  work<ReqData>(name: string, handler: types.WorkHandler<ReqData>): Promise<string>
-  work<ReqData>(name: string, options: types.WorkOptions & { includeMetadata: true }, handler: types.WorkWithMetadataHandler<ReqData>): Promise<string>
-  work<ReqData>(name: string, options: types.WorkOptions, handler: types.WorkHandler<ReqData>): Promise<string>
-  async work<ReqData> (name: string, ...args: unknown[]): Promise<string> {
-    const { options, callback } = Attorney.checkWorkArgs(name, args)
+  work<N extends types.JobNames<C>>(name: N, handler: types.WorkHandler<C, N>): Promise<string>
+  work<N extends types.JobNames<C>>(name: N, options: types.WorkOptions & { includeMetadata: true }, handler: types.WorkWithMetadataHandler<C, N>): Promise<string>
+  work<N extends types.JobNames<C>>(name: N, options: types.WorkOptions, handler: types.WorkHandler<C, N>): Promise<string>
+  async work<N extends types.JobNames<C>> (name: N, ...args: unknown[]): Promise<string> {
+    const { options, callback } = Attorney.checkWorkArgs<C, N>(name, args)
 
     if (this.stopped) {
       throw new Error('Workers are disabled. pg-boss is stopped')
@@ -323,10 +327,10 @@ class Manager extends EventEmitter implements types.EventsMixin {
         const ignoreGroups = localGroupConcurrency != null
           ? this.#getGroupsAtLocalCapacity(name)
           : undefined
-        return this.fetch<ReqData>(name, { batchSize, includeMetadata, priority, orderByCreatedOn, groupConcurrency, ignoreGroups })
+        return this.fetch(name, { batchSize, includeMetadata, priority, orderByCreatedOn, groupConcurrency, ignoreGroups })
       }
 
-      const onFetch = async (jobs: types.Job<ReqData>[]) => {
+      const onFetch = async (jobs: types.Job<types.JobInput<C, N>>[]) => {
         if (!jobs.length) return
         if (this.config.__test__throw_worker) throw new Error('__test__throw_worker')
 
@@ -334,7 +338,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
         this.#trackJobsActive(name, jobs)
 
         // Get the worker instance for abort controller tracking
-        const worker = this.workers.get(workerId)
+        const worker = this.workers.get(workerId) as Worker<types.JobInput<C, N>> // Types are ensured by logic. The ids are only used for a single job-type.
 
         // Skip all in-memory group tracking when localGroupConcurrency is not enabled
         if (localGroupConcurrency == null) {
@@ -363,7 +367,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
         this.emit(events.error, { ...error, message: error.message, stack: error.stack, queue: name, worker: workerId })
       }
 
-      return new Worker<ReqData>({ id: workerId, name, options, interval, fetch, onFetch, onError })
+      return new Worker<types.JobInput<C, N>>({ id: workerId, name, options, interval, fetch, onFetch, onError })
     }
 
     // Spawn workers based on localConcurrency setting
@@ -415,7 +419,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     return this.pendingOffWorkCleanups.size > 0
   }
 
-  async offWork (name: string, options: types.OffWorkOptions = { wait: true }): Promise<void> {
+  async offWork<N extends types.JobNames<C>>(name: N, options: types.OffWorkOptions = { wait: true }): Promise<void> {
     assert(name, 'queue name is required')
     assert(typeof name === 'string', 'queue name must be a string')
 
@@ -449,22 +453,22 @@ class Manager extends EventEmitter implements types.EventsMixin {
     this.workers.get(workerId)?.notify()
   }
 
-  async subscribe (event: string, name: string): Promise<void> {
+  async subscribe<EventName extends types.EventNames<C, EC>>(event: EventName, name: EC[EventName]): Promise<void> {
     assert(event, 'Missing required argument')
     assert(name, 'Missing required argument')
     const sql = plans.subscribe(this.config.schema)
     await this.db.executeSql(sql, [event, name])
   }
 
-  async unsubscribe (event: string, name: string): Promise<void> {
+  async unsubscribe<EventName extends types.EventNames<C, EC>>(event: EventName, name: EC[EventName]): Promise<void> {
     assert(event, 'Missing required argument')
     assert(name, 'Missing required argument')
     const sql = plans.unsubscribe(this.config.schema)
     await this.db.executeSql(sql, [event, name])
   }
 
-  publish (event: string, data?: object, options?: types.SendOptions): Promise<void>
-  async publish (event: string, data?: object, options?: types.SendOptions): Promise<void> {
+  publish<EventName extends types.EventNames<C, EC>>(event: EventName, data?: types.JobInput<C, EC[EventName]>, options?: types.SendOptions): Promise<void>
+  async publish<EventName extends types.EventNames<C, EC>>(event: EventName, data?: types.JobInput<C, EC[EventName]>, options?: types.SendOptions): Promise<void> {
     assert(event, 'Missing required argument')
     const sql = plans.getQueuesForEvent(this.config.schema)
     const { rows } = await this.db.executeSql(sql, [event])
@@ -472,46 +476,46 @@ class Manager extends EventEmitter implements types.EventsMixin {
     await Promise.allSettled(rows.map(({ name }) => this.send(name, data, options)))
   }
 
-  send (request: types.Request): Promise<string | null>
-  send (name: string, data?: object | null, options?: types.SendOptions | null): Promise<string | null>
-  async send (...args: any[]): Promise<string | null> {
-    const result = Attorney.checkSendArgs(args)
+  send<N extends types.JobNames<C>>(request: types.Request<C, N>): Promise<string | null>
+  send<N extends types.JobNames<C>>(name: N, data?: types.JobInput<C, N>, options?: types.SendOptions | null): Promise<string | null>
+  async send<N extends types.JobNames<C>>(...args: any[]): Promise<string | null> {
+    const result = Attorney.checkSendArgs<C, N>(args)
 
     return await this.createJob(result)
   }
 
-  async sendAfter (name: string, data: object | null, options: types.SendOptions | null, after: Date | string | number): Promise<string | null> {
+  async sendAfter<N extends types.JobNames<C>>(name: N, data: types.JobInput<C, N>, options: types.SendOptions | null, after: Date | string | number): Promise<string | null> {
     options = options ? { ...options } : {}
     options.startAfter = after
 
-    const result = Attorney.checkSendArgs([name, data, options])
+    const result = Attorney.checkSendArgs<C, N>([name, data, options])
 
     return await this.createJob(result)
   }
 
-  async sendThrottled (name: string, data: object | null, options: types.SendOptions | null, seconds: number, key?: string): Promise<string | null> {
+  async sendThrottled<N extends types.JobNames<C>>(name: N, data: types.JobInput<C, N>, options: types.SendOptions | null, seconds: number, key?: string): Promise<string | null> {
     options = options ? { ...options } : {}
     options.singletonSeconds = seconds
     options.singletonNextSlot = false
     options.singletonKey = key
 
-    const result = Attorney.checkSendArgs([name, data, options])
+    const result = Attorney.checkSendArgs<C, N>([name, data, options])
 
     return await this.createJob(result)
   }
 
-  async sendDebounced (name: string, data: object | null, options: types.SendOptions | null, seconds: number, key?: string): Promise<string | null> {
+  async sendDebounced<N extends types.JobNames<C>>(name: N, data: types.JobInput<C, N>, options: types.SendOptions | null, seconds: number, key?: string): Promise<string | null> {
     options = options ? { ...options } : {}
     options.singletonSeconds = seconds
     options.singletonNextSlot = true
     options.singletonKey = key
 
-    const result = Attorney.checkSendArgs([name, data, options])
+    const result = Attorney.checkSendArgs<C, N>([name, data, options])
 
     return await this.createJob(result)
   }
 
-  async createJob (request: types.Request): Promise<string | null> {
+  async createJob<N extends types.JobNames<C>>(request: types.Request<C, N>): Promise<string | null> {
     const { name, data = null, options = {} } = request
     const {
       id = null,
@@ -596,9 +600,9 @@ class Manager extends EventEmitter implements types.EventsMixin {
     return null
   }
 
-  async insert (
-    name: string,
-    jobs: types.JobInsert[],
+  async insert<N extends types.JobNames<C>>(
+    name: N,
+    jobs: types.JobInsert<types.JobInput<C, N>>[],
     options: types.InsertOptions = {}
   ) {
     assert(Array.isArray(jobs), 'jobs argument should be an array')
@@ -645,10 +649,10 @@ class Manager extends EventEmitter implements types.EventsMixin {
     return startAfter
   }
 
-  fetch<T>(name: string): Promise<types.Job<T>[]>
-  fetch<T>(name: string, options: types.FetchOptions & { includeMetadata: true }): Promise<types.JobWithMetadata<T>[]>
-  fetch<T>(name: string, options: types.FetchOptions): Promise<types.Job<T>[]>
-  async fetch (name: string, options: types.FetchOptions = {}) {
+  fetch<N extends types.JobNames<C>>(name: N): Promise<types.Job<types.JobInput<C, N>>[]>
+  fetch<N extends types.JobNames<C>>(name: N, options: types.FetchOptions & { includeMetadata: true }): Promise<types.JobWithMetadata<C, N>[]>
+  fetch<N extends types.JobNames<C>>(name: N, options: types.FetchOptions): Promise<types.Job<types.JobInput<C, N>>[]>
+  async fetch<N extends types.JobNames<C>>(name: N, options: types.FetchOptions = {}) {
     Attorney.checkFetchArgs(name, options)
 
     const db = this.assertDb(options)
@@ -690,7 +694,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     return ids
   }
 
-  private mapCompletionDataArg (data?: object | null) {
+  private mapCompletionDataArg<N extends types.JobNames<C>>(data?: types.JobOutput<C, N, 'failed'> | types.JobOutput<C, N, 'completed'> | Error) {
     if (data === null || typeof data === 'undefined' || typeof data === 'function') { return null }
 
     const result = (typeof data === 'object' && !Array.isArray(data))
@@ -708,7 +712,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     }
   }
 
-  async complete (name: string, id: string | string[], data?: object | null, options: types.CompleteOptions = {}) {
+  async complete<N extends types.JobNames<C>>(name: N, id: string | string[], data?: types.JobOutput<C, N, 'completed'> | Error, options: types.CompleteOptions = {}) {
     Attorney.assertQueueName(name)
     const db = this.assertDb(options)
     const ids = this.mapCompletionIdArg(id, 'complete')
@@ -718,7 +722,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     return this.mapCommandResponse(ids, result)
   }
 
-  async fail (name: string, id: string | string[], data?: any, options: types.ConnectionOptions = {}) {
+  async fail<N extends types.JobNames<C>>(name: N, id: string | string[], data?: types.JobOutput<C, N, 'failed'> | Error, options: types.ConnectionOptions = {}) {
     Attorney.assertQueueName(name)
     const db = this.assertDb(options)
     const ids = this.mapCompletionIdArg(id, 'fail')
@@ -728,7 +732,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     return this.mapCommandResponse(ids, result)
   }
 
-  async deleteJob (name: string, id: string | string[], options: types.ConnectionOptions = {}) {
+  async deleteJob<N extends types.JobNames<C>>(name: N, id: string | string[], options: types.ConnectionOptions = {}) {
     Attorney.assertQueueName(name)
     const db = this.assertDb(options)
     const ids = this.mapCompletionIdArg(id, 'deleteJob')
@@ -738,7 +742,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     return this.mapCommandResponse(ids, result)
   }
 
-  async cancel (name: string, id: string | string[], options: types.ConnectionOptions = {}) {
+  async cancel<N extends types.JobNames<C>>(name: N, id: string | string[], options: types.ConnectionOptions = {}) {
     Attorney.assertQueueName(name)
     const db = this.assertDb(options)
     const ids = this.mapCompletionIdArg(id, 'cancel')
@@ -748,7 +752,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     return this.mapCommandResponse(ids, result)
   }
 
-  async resume (name: string, id: string | string[], options: types.ConnectionOptions = {}) {
+  async resume<N extends types.JobNames<C>>(name: N, id: string | string[], options: types.ConnectionOptions = {}) {
     Attorney.assertQueueName(name)
     const db = this.assertDb(options)
     const ids = this.mapCompletionIdArg(id, 'resume')
@@ -758,7 +762,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     return this.mapCommandResponse(ids, result)
   }
 
-  async restore (name: string, id: string | string[], options: types.ConnectionOptions = {}) {
+  async restore<N extends types.JobNames<C>>(name: N, id: string | string[], options: types.ConnectionOptions = {}) {
     Attorney.assertQueueName(name)
     const db = this.assertDb(options)
     const ids = this.mapCompletionIdArg(id, 'restore')
@@ -767,7 +771,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     await db.executeSql(sql, [name, ids])
   }
 
-  async retry (name: string, id: string | string[], options: types.ConnectionOptions = {}) {
+  async retry<N extends types.JobNames<C>>(name: N, id: string | string[], options: types.ConnectionOptions = {}) {
     Attorney.assertQueueName(name)
     const db = options.db || this.db
     const ids = this.mapCompletionIdArg(id, 'retry')
@@ -777,7 +781,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     return this.mapCommandResponse(ids, result)
   }
 
-  async createQueue (name: string, options: Omit<types.Queue, 'name'> & { name?: string } = {}) {
+  async createQueue<N extends types.JobNames<C>>(name: N, options: Omit<types.Queue<N>, 'name'> & { name?: N } = {}) {
     name = name || options.name!
 
     Attorney.assertQueueName(name)
@@ -798,7 +802,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     await this.db.executeSql(sql)
   }
 
-  async getQueues (names?: string | string[]): Promise<types.QueueResult[]> {
+  async getQueues<N extends types.JobNames<C>>(names?: N | N[]): Promise<types.QueueResult<N>[]> {
     names = Array.isArray(names) ? names : typeof names === 'string' ? [names] : undefined
     if (names) {
       for (const name of names) {
@@ -811,7 +815,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     return rows
   }
 
-  async updateQueue (name: string, options: types.UpdateQueueOptions = {}) {
+  async updateQueue<N extends types.JobNames<C>>(name: N, options: types.UpdateQueueOptions = {}) {
     Attorney.assertQueueName(name)
 
     assert(Object.keys(options).length > 0, 'no properties found to update')
@@ -837,7 +841,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     await this.db.executeSql(sql, [name, options])
   }
 
-  async getQueue (name: string) {
+  async getQueue<N extends types.JobNames<C>>(name: N) {
     Attorney.assertQueueName(name)
 
     const query = plans.getQueues(this.config.schema, [name])
@@ -846,7 +850,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     return rows[0] || null
   }
 
-  async deleteQueue (name: string) {
+  async deleteQueue<N extends types.JobNames<C>>(name: N) {
     Attorney.assertQueueName(name)
 
     try {
@@ -856,21 +860,21 @@ class Manager extends EventEmitter implements types.EventsMixin {
     } catch { }
   }
 
-  async deleteQueuedJobs (name: string) {
+  async deleteQueuedJobs<N extends types.JobNames<C>>(name: N) {
     Attorney.assertQueueName(name)
     const { table } = await this.getQueueCache(name)
     const sql = plans.deleteQueuedJobs(this.config.schema, table)
     await this.db.executeSql(sql, [name])
   }
 
-  async deleteStoredJobs (name: string) {
+  async deleteStoredJobs<N extends types.JobNames<C>>(name: N) {
     Attorney.assertQueueName(name)
     const { table } = await this.getQueueCache(name)
     const sql = plans.deleteStoredJobs(this.config.schema, table)
     await this.db.executeSql(sql, [name])
   }
 
-  async deleteAllJobs (name?: string) {
+  async deleteAllJobs<N extends types.JobNames<C>>(name?: N) {
     if (!name) {
       const sql = plans.truncateTable(this.config.schema, 'job')
       await this.db.executeSql(sql)
@@ -889,7 +893,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     }
   }
 
-  async getQueueStats (name: string) {
+  async getQueueStats<N extends types.JobNames<C>>(name: N) {
     Attorney.assertQueueName(name)
 
     const queue = await this.getQueueCache(name)
@@ -908,7 +912,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     )
   }
 
-  async getJobById<T>(name: string, id: string, options: types.ConnectionOptions = {}): Promise<types.JobWithMetadata<T> | null> {
+  async getJobById<N extends types.JobNames<C>>(name: N, id: string, options: types.ConnectionOptions = {}): Promise<types.JobWithMetadata<C, N> | null> {
     Attorney.assertQueueName(name)
 
     const db = this.assertDb(options)
@@ -926,7 +930,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     }
   }
 
-  async findJobs<T>(name: string, options: types.FindJobsOptions = {}): Promise<types.JobWithMetadata<T>[]> {
+  async findJobs<N extends types.JobNames<C>>(name: N, options: types.FindJobsOptions<NonNullable<types.JobInput<C, N>>> = {}): Promise<types.JobWithMetadata<C, N>[]> {
     Attorney.assertQueueName(name)
 
     const db = this.assertDb(options)
