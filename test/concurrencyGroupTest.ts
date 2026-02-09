@@ -258,7 +258,7 @@ describe('groupConcurrency', function () {
 
     // Invalid groupConcurrency object (missing default)
     await expect(async () => {
-      // @ts-ignore
+      // @ts-expect-error
       await ctx.boss!.work(ctx.schema, { groupConcurrency: { tiers: {} } }, async () => {})
     }).rejects.toThrow('groupConcurrency.default must be an integer >= 1')
 
