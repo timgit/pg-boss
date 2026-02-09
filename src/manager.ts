@@ -28,7 +28,7 @@ class Manager<C extends types.JobsConfig & timekeeper.JobConfig, EC extends type
   db: (types.IDatabase & { _pgbdb?: false }) | Db
   config: types.ResolvedConstructorOptions
   wipTs: number
-  workers: Map<string, Worker>
+  workers: Map<string, Worker<C, types.JobNames<C>>>
   stopped: boolean | undefined
   queueCacheInterval: NodeJS.Timeout | undefined
   timekeeper: Timekeeper<C, EC> | undefined
@@ -120,7 +120,7 @@ class Manager<C extends types.JobsConfig & timekeeper.JobConfig, EC extends type
     }
   }
 
-  #trackJobsActive<T> (name: string, jobs: types.Job<T>[]): void {
+  #trackJobsActive<N extends types.JobNames<C>> (name: string, jobs: types.Job<C, N>[]): void {
     const spy = this.config.__test__enableSpies ? this.#spies.get(name) : undefined
     if (spy) {
       for (const job of jobs) {
@@ -129,7 +129,7 @@ class Manager<C extends types.JobsConfig & timekeeper.JobConfig, EC extends type
     }
   }
 
-  #trackJobsCompleted<T> (name: string, jobs: types.Job<T>[], result: unknown): void {
+  #trackJobsCompleted<N extends types.JobNames<C>> (name: string, jobs: types.Job<C, N>[], result: unknown): void {
     const spy = this.config.__test__enableSpies ? this.#spies.get(name) : undefined
     if (spy) {
       const output = jobs.length === 1 ? result as object : undefined
@@ -139,7 +139,7 @@ class Manager<C extends types.JobsConfig & timekeeper.JobConfig, EC extends type
     }
   }
 
-  #trackJobsFailed<T> (name: string, jobs: types.Job<T>[], err: Error): void {
+  #trackJobsFailed<N extends types.JobNames<C>> (name: string, jobs: types.Job<C, N>[], err: Error): void {
     const spy = this.config.__test__enableSpies ? this.#spies.get(name) : undefined
     if (spy) {
       for (const job of jobs) {
@@ -164,13 +164,13 @@ class Manager<C extends types.JobsConfig & timekeeper.JobConfig, EC extends type
     }
   }
 
-  #trackLocalGroupStart<T> (
-    name: string,
-    jobs: types.Job<T>[]
-  ): { allowed: types.Job<T>[], excess: types.Job<T>[], groupedJobs: types.Job<T>[] } {
-    const allowed: types.Job<T>[] = []
-    const excess: types.Job<T>[] = []
-    const groupedJobs: types.Job<T>[] = []
+  #trackLocalGroupStart<N extends types.JobNames<C>> (
+    name: N,
+    jobs: types.Job<C, N>[]
+  ): { allowed: types.Job<C, N>[], excess: types.Job<C, N>[], groupedJobs: types.Job<C, N>[] } {
+    const allowed: types.Job<C, N>[] = []
+    const excess: types.Job<C, N>[] = []
+    const groupedJobs: types.Job<C, N>[] = []
 
     for (const job of jobs) {
       if (!job.groupId) {
@@ -194,7 +194,7 @@ class Manager<C extends types.JobsConfig & timekeeper.JobConfig, EC extends type
     return { allowed, excess, groupedJobs }
   }
 
-  #trackLocalGroupEnd<T> (name: string, groupedJobs: types.Job<T>[]): void {
+  #trackLocalGroupEnd<N extends types.JobNames<C>> (name: N, groupedJobs: types.Job<C, N>[]): void {
     for (const job of groupedJobs) {
       if (job.groupId) {
         this.#decrementLocalGroupCount(name, job.groupId)
@@ -204,9 +204,9 @@ class Manager<C extends types.JobsConfig & timekeeper.JobConfig, EC extends type
 
   async #processJobs<N extends types.JobNames<C>> (
     name: N,
-    jobs: types.Job<types.JobInput<C, N>>[],
+    jobs: types.Job<C, N>[],
     callback: types.WorkHandler<C, N>,
-    worker?: Worker<types.JobInput<C, N>>
+    worker?: Worker<C, N>
   ): Promise<void> {
     const jobIds = jobs.map(job => job.id)
     const maxExpiration = jobs.reduce((acc, i) => Math.max(acc, i.expireInSeconds), 0)
@@ -330,7 +330,7 @@ class Manager<C extends types.JobsConfig & timekeeper.JobConfig, EC extends type
         return this.fetch(name, { batchSize, includeMetadata, priority, orderByCreatedOn, groupConcurrency, ignoreGroups })
       }
 
-      const onFetch = async (jobs: types.Job<types.JobInput<C, N>>[]) => {
+      const onFetch = async (jobs: types.Job<C, N>[]) => {
         if (!jobs.length) return
         if (this.config.__test__throw_worker) throw new Error('__test__throw_worker')
 
@@ -338,7 +338,7 @@ class Manager<C extends types.JobsConfig & timekeeper.JobConfig, EC extends type
         this.#trackJobsActive(name, jobs)
 
         // Get the worker instance for abort controller tracking
-        const worker = this.workers.get(workerId) as Worker<types.JobInput<C, N>> // Types are ensured by logic. The ids are only used for a single job-type.
+        const worker = this.workers.get(workerId) as unknown as Worker<C, N> // Types are ensured by logic. The ids are only used for a single job-type.
 
         // Skip all in-memory group tracking when localGroupConcurrency is not enabled
         if (localGroupConcurrency == null) {
@@ -367,7 +367,7 @@ class Manager<C extends types.JobsConfig & timekeeper.JobConfig, EC extends type
         this.emit(events.error, { ...error, message: error.message, stack: error.stack, queue: name, worker: workerId })
       }
 
-      return new Worker<types.JobInput<C, N>>({ id: workerId, name, options, interval, fetch, onFetch, onError })
+      return new Worker<C, N>({ id: workerId, name, options, interval, fetch, onFetch, onError })
     }
 
     // Spawn workers based on localConcurrency setting
@@ -382,11 +382,11 @@ class Manager<C extends types.JobsConfig & timekeeper.JobConfig, EC extends type
     return firstWorkerId
   }
 
-  private addWorker (worker: Worker<any>) {
-    this.workers.set(worker.id, worker)
+  private addWorker<N extends types.JobNames<C>>(worker: Worker<C, N>) {
+    this.workers.set(worker.id, worker as unknown as Worker<C, types.JobNames<C>>) // If I understand it correctly, this type cannot be different.
   }
 
-  private removeWorker (worker: Worker<any>) {
+  private removeWorker (worker: Worker<C, types.JobNames<C>>) {
     this.workers.delete(worker.id)
   }
 
@@ -423,7 +423,7 @@ class Manager<C extends types.JobsConfig & timekeeper.JobConfig, EC extends type
     assert(name, 'queue name is required')
     assert(typeof name === 'string', 'queue name must be a string')
 
-    const query = (i: Worker<any>) => options?.id ? i.id === options.id : i.name === name
+    const query = (i: Worker<C, types.JobNames<C>>) => options?.id ? i.id === options.id : i.name === name
 
     const workers = this.getWorkers().filter(i => query(i) && !i.stopping && !i.stopped)
 
@@ -649,9 +649,9 @@ class Manager<C extends types.JobsConfig & timekeeper.JobConfig, EC extends type
     return startAfter
   }
 
-  fetch<N extends types.JobNames<C>>(name: N): Promise<types.Job<types.JobInput<C, N>>[]>
+  fetch<N extends types.JobNames<C>>(name: N): Promise<types.Job<C, N>[]>
   fetch<N extends types.JobNames<C>>(name: N, options: types.FetchOptions & { includeMetadata: true }): Promise<types.JobWithMetadata<C, N>[]>
-  fetch<N extends types.JobNames<C>>(name: N, options: types.FetchOptions): Promise<types.Job<types.JobInput<C, N>>[]>
+  fetch<N extends types.JobNames<C>>(name: N, options: types.FetchOptions): Promise<types.Job<C, N>[]>
   async fetch<N extends types.JobNames<C>>(name: N, options: types.FetchOptions = {}) {
     Attorney.checkFetchArgs(name, options)
 

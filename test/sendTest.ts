@@ -2,6 +2,8 @@ import { expect } from 'vitest'
 import * as helper from './testHelper.ts'
 import { assertTruthy } from './testHelper.ts'
 import { ctx } from './hooks.ts'
+import type { JobsConfig } from '../src/types.ts'
+import { PgBoss } from '../src/index.ts'
 
 describe('send', function () {
   it('should fail with no arguments', async function () {
@@ -47,7 +49,7 @@ describe('send', function () {
     const boss = await helper.start<{
       name: { input: { message: string }, output: {} },
     }>(ctx.bossConfig)
-    ctx.boss = boss
+    ctx.boss = boss as unknown as PgBoss<JobsConfig>
     const schema = ctx.schema as 'name'
 
     const message = 'hi'

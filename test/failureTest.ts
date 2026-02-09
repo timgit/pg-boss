@@ -3,6 +3,8 @@ import { expect } from 'vitest'
 import * as helper from './testHelper.ts'
 import { assertTruthy } from './testHelper.ts'
 import { ctx } from './hooks.ts'
+import type { JobsConfig } from '../src/types.ts'
+import { PgBoss } from '../src/index.ts'
 
 describe('failure', function () {
   it('should reject missing id argument', async function () {
@@ -199,7 +201,7 @@ describe('failure', function () {
       name: { input: { key: string }, output: {} },
       name_dlq: { input: { key: string }, output: {} }
     }>({ ...ctx.bossConfig, noDefault: true })
-    ctx.boss = boss
+    ctx.boss = boss as unknown as PgBoss<JobsConfig>
     const schema = ctx.schema as 'name'
 
     const deadLetter = `${schema}_dlq` as const

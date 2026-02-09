@@ -205,8 +205,8 @@ export class PgBoss<
   }
 
   fetch<N extends types.JobNames<C>>(name: N, options: types.FetchOptions & { includeMetadata: true }): Promise<types.JobWithMetadata<C, N>[]>
-  fetch<N extends types.JobNames<C>>(name: N, options?: types.FetchOptions): Promise<types.Job<types.JobInput<C, N>>[]>
-  fetch<N extends types.JobNames<C>>(name: N, options: types.FetchOptions = {}): Promise<types.Job<types.JobInput<C, N>>[] | types.JobWithMetadata<C, N>[]> {
+  fetch<N extends types.JobNames<C>>(name: N, options?: types.FetchOptions): Promise<types.Job<C, N>[]>
+  fetch<N extends types.JobNames<C>>(name: N, options: types.FetchOptions = {}): Promise<types.Job<C, N>[] | types.JobWithMetadata<C, N>[]> {
     return this.#manager.fetch<N>(name, options)
   }
 

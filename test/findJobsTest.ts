@@ -1,6 +1,8 @@
 import { expect } from 'vitest'
 import * as helper from './testHelper.ts'
 import { ctx } from './hooks.ts'
+import type { JobsConfig } from '../src/types.ts'
+import { PgBoss } from '../src/index.ts'
 
 describe('findJobs', function () {
   it('should reject missing queue argument', async function () {
@@ -44,7 +46,7 @@ describe('findJobs', function () {
     const boss = await helper.start<{
       name: { input: { type: string, to: string }, output: {} },
     }>(ctx.bossConfig)
-    ctx.boss = boss
+    ctx.boss = boss as unknown as PgBoss<JobsConfig>
     const schema = ctx.schema as 'name'
 
     await boss.send(schema, { type: 'email', to: 'user1@test.com' })
@@ -129,7 +131,7 @@ describe('findJobs', function () {
     const boss = await helper.start<{
       name: { input: { category: string, value: number }, output: {} },
     }>(ctx.bossConfig)
-    ctx.boss = boss
+    ctx.boss = boss as unknown as PgBoss<JobsConfig>
     const schema = ctx.schema as 'name'
 
     await boss.send(schema, { category: 'A', value: 1 }, { singletonKey: 'key-1' })

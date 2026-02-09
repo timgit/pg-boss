@@ -1,6 +1,8 @@
 import { expect } from 'vitest'
 import * as helper from './testHelper.ts'
 import { ctx } from './hooks.ts'
+import type { JobsConfig } from '../src/types.ts'
+import { PgBoss } from '../src/index.ts'
 
 describe('pubsub', function () {
   it('should fail with no arguments', async function () {
@@ -32,7 +34,7 @@ describe('pubsub', function () {
     const boss = await helper.start<{
       name: { input: { message: string }, output: {} },
     }>(ctx.bossConfig)
-    ctx.boss = boss
+    ctx.boss = boss as unknown as PgBoss<JobsConfig>
     const schema = ctx.schema as 'name'
 
     const event = 'event'
@@ -55,7 +57,7 @@ describe('pubsub', function () {
       subqueue1: { input: Message, output: {} },
       subqueue2: { input: Message, output: {} },
     }>({ ...ctx.bossConfig, noDefault: true })
-    ctx.boss = boss
+    ctx.boss = boss as unknown as PgBoss<JobsConfig>
 
     const queue1 = 'subqueue1' as const
     const queue2 = 'subqueue2' as const

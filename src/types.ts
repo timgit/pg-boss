@@ -254,7 +254,7 @@ export interface ResolvedWorkOptions extends WorkOptions {
 }
 
 export interface WorkHandler<C extends JobsConfig, N extends JobNames<C>> {
-  (job: Job<JobInput<C, N>>[]): Promise<JobOutput<C, N, 'completed'>>;
+  (job: Job<C, N>[]): Promise<JobOutput<C, N, 'completed'>>;
 }
 
 export interface WorkWithMetadataHandler<C extends JobsConfig, N extends JobNames<C>> {
@@ -275,10 +275,10 @@ export interface Schedule<C extends JobsConfig, N extends string> {
   options?: SendOptions;
 }
 
-export interface Job<T = object> {
+export interface Job<C extends JobsConfig, N extends string> {
   id: string;
-  name: string;
-  data: T;
+  name: N;
+  data: JobInput<C, N>;
   expireInSeconds: number;
   signal: AbortSignal;
   groupId?: string | null;
@@ -289,7 +289,7 @@ export type JobWithMetadata<C extends JobsConfig, N extends JobNames<C>> = {
   [S in JobStates[keyof JobStates]]: JobWithMetadataAndState<C, N, S>;
 }[JobStates[keyof JobStates]]
 
-export interface JobWithMetadataAndState<C extends JobsConfig, N extends JobNames<C>, S extends JobStates[keyof JobStates]> extends Job<JobInput<C, N>> {
+export interface JobWithMetadataAndState<C extends JobsConfig, N extends JobNames<C>, S extends JobStates[keyof JobStates]> extends Job<C, N> {
   priority: number;
   state: S;
   retryLimit: number;

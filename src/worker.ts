@@ -8,26 +8,26 @@ const WORKER_STATES = {
   stopped: 'stopped'
 } as const
 
-interface WorkerOptions<T> {
+interface WorkerOptions<C extends types.JobsConfig, N extends types.JobNames<C>> {
   id: string
   name: string
   options: types.WorkOptions
   interval: number
-  fetch: () => Promise<types.Job<T>[]>
-  onFetch: (jobs: types.Job<T>[]) => Promise<void>
+  fetch: () => Promise<types.Job<C, N>[]>
+  onFetch: (jobs: types.Job<C, N>[]) => Promise<void>
   onError: (err: any) => void
 }
 
-class Worker<T = unknown> {
+class Worker<C extends types.JobsConfig, N extends types.JobNames<C>> {
   readonly id: string
   readonly name: string
   readonly options: types.WorkOptions
-  readonly fetch: () => Promise<types.Job<T>[]>
-  readonly onFetch: (jobs: types.Job<T>[]) => Promise<void>
+  readonly fetch: () => Promise<types.Job<C, N>[]>
+  readonly onFetch: (jobs: types.Job<C, N>[]) => Promise<void>
   readonly onError: (err: any) => void
   readonly interval: number
 
-  jobs: types.Job<T>[] = []
+  jobs: types.Job<C, N>[] = []
   createdOn = Date.now()
   state: types.WorkerState = WORKER_STATES.created
   lastFetchedOn: number | null = null
@@ -43,7 +43,7 @@ class Worker<T = unknown> {
   private beenNotified = false
   private runPromise: Promise<void> | null = null
 
-  constructor ({ id, name, options, interval, fetch, onFetch, onError }: WorkerOptions<T>) {
+  constructor ({ id, name, options, interval, fetch, onFetch, onError }: WorkerOptions<C, N>) {
     this.id = id
     this.name = name
     this.options = options

@@ -174,8 +174,8 @@ class Timekeeper<C extends types.JobsConfig & JobConfig, EC extends types.EventC
     return prevDiff < 60
   }
 
-  private async onSendIt (jobs: types.Job<types.Request<types.JobsConfig, string>>[]): Promise<void> {
-    await Promise.allSettled(jobs.map(({ data }) => this.manager.send(data as types.Job<types.Request<types.JobsConfig, string>>))) // The type safety is partially ensured at the `schedule` function. The developer using this library will have to ensure that types are backwards compatible.
+  private async onSendIt (jobs: types.Job<C, string>[]): Promise<void> {
+    await Promise.allSettled(jobs.map(({ data }) => this.manager.send(data as types.Job<C, string>))) // The type safety is partially ensured at the `schedule` function. The developer using this library will have to ensure that types are backwards compatible.
   }
 
   async getSchedules<N extends types.JobNames<C>>(name?: N, key = '') : Promise<types.Schedule<C, N>[]> {

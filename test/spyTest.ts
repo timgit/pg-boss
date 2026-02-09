@@ -3,6 +3,8 @@ import { expect } from 'vitest'
 import * as helper from './testHelper.ts'
 import { assertTruthy } from './testHelper.ts'
 import { ctx } from './hooks.ts'
+import type { JobsConfig } from '../src/types.ts'
+import { PgBoss } from '../src/index.ts'
 
 describe('spy', function () {
   it('should track job creation', async function () {
@@ -105,7 +107,7 @@ describe('spy', function () {
     const boss = await helper.start<{
       name: { input: { value: string }, output: {} },
     }>({ ...ctx.bossConfig, __test__enableSpies: true })
-    ctx.boss = boss
+    ctx.boss = boss as unknown as PgBoss<JobsConfig>
     const schema = ctx.schema as 'name'
 
     const spy = boss.getSpy(schema)
@@ -128,7 +130,7 @@ describe('spy', function () {
     const boss = await helper.start<{
       name: { input: { value: string }, output: {} },
     }>({ ...ctx.bossConfig, __test__enableSpies: true })
-    ctx.boss = boss
+    ctx.boss = boss as unknown as PgBoss<JobsConfig>
     const schema = ctx.schema as 'name'
 
     const spy = boss.getSpy(schema)
@@ -199,7 +201,7 @@ describe('spy', function () {
     const boss = await helper.start<{
       name: { input: { value: string }, output: {} },
     }>({ ...ctx.bossConfig, __test__enableSpies: true })
-    ctx.boss = boss
+    ctx.boss = boss as unknown as PgBoss<JobsConfig>
     const schema = ctx.schema as 'name'
 
     const spy = boss.getSpy(schema)
@@ -232,7 +234,7 @@ describe('spy', function () {
     const boss = await helper.start<{
       name: { input: { value: string }, output: {} },
     }>({ ...ctx.bossConfig, __test__enableSpies: true })
-    ctx.boss = boss
+    ctx.boss = boss as unknown as PgBoss<JobsConfig>
     const schema = ctx.schema as 'name'
 
     const spy = boss.getSpy(schema)
@@ -301,7 +303,7 @@ describe('spy', function () {
     const boss = await helper.start<{
       name: { input: { value: string }, output: {} },
     }>({ ...ctx.bossConfig, __test__enableSpies: true })
-    ctx.boss = boss
+    ctx.boss = boss as unknown as PgBoss<JobsConfig>
     const schema = ctx.schema as 'name'
 
     const spy = boss.getSpy(schema)

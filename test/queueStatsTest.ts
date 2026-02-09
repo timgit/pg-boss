@@ -1,8 +1,9 @@
 import { expect } from 'vitest'
 import * as helper from './testHelper.ts'
 import { randomUUID } from 'node:crypto'
-import type { ConstructorOptions } from '../src/types.ts'
+import type { ConstructorOptions, JobsConfig } from '../src/types.ts'
 import { ctx } from './hooks.ts'
+import { PgBoss } from '../src/index.ts'
 
 describe('queueStats', function () {
   const queue1 = `q${randomUUID().replaceAll('-', '')}`
@@ -23,7 +24,7 @@ describe('queueStats', function () {
   }
 
   it('should get accurate stats', async function () {
-    ctx.boss = await init(ctx.bossConfig)
+    ctx.boss = await init(ctx.bossConfig) as unknown as PgBoss<JobsConfig>
     const queueData = await ctx.boss.getQueueStats(queue1)
     expect(queueData).not.toBe(undefined)
 
@@ -43,7 +44,7 @@ describe('queueStats', function () {
   })
 
   it('should get accurate stats on an empty queue', async function () {
-    ctx.boss = await init(ctx.bossConfig)
+    ctx.boss = await init(ctx.bossConfig) as unknown as PgBoss<JobsConfig>
     const queue3 = randomUUID()
     await ctx.boss.createQueue(queue3)
 
