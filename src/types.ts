@@ -1,3 +1,14 @@
+import type { ErrorObject } from 'serialize-error'
+
+// Source: https://www.typescriptlang.org/docs/handbook/release-notes/typescript-3-7.html#more-recursive-type-aliases
+type Json =
+  | string
+  | number
+  | boolean
+  | null
+  | { [property: string]: Json }
+  | Json[]
+
 export type JobStates = {
   created: 'created',
   retry: 'retry',
@@ -65,16 +76,32 @@ export interface Migration {
   uninstall?: string[]
 }
 
+// Types which are used internally by this library. Regardless of what the user will provide, these types are part of the possible outputs in the given state.
+type InternalJobOutput = {
+  created: never;
+  retry: never;
+  active: never;
+  completed: never;
+  cancelled: never;
+  failed: ErrorObject | string;
+}
 export type JobsConfig = Record<string, {
   input: object | null;
+  output: {
+    [S in JobStates[keyof JobStates]]?: unknown;
+  }
 }>
 export type DefaultJobsConfig = Record<string, {
   input: object | null,
+  output: {
+    [S in JobStates[keyof JobStates]]: Json | undefined | void;
+  }
 }>
 
 // Helper types which should be used in the library.
 export type JobNames<C extends JobsConfig> = keyof C & string
 export type JobInput<C extends JobsConfig, N extends JobNames<C>> = C[N]['input']
+export type JobOutput<C extends JobsConfig, N extends JobNames<C>, S extends keyof JobStates> = InternalJobOutput[S] | (C[N]['output'][S] extends undefined ? void | undefined : C[N]['output'][S])
 export type EventConfig<C extends JobsConfig> = Record<string, JobNames<C>>
 export type EventNames<C extends JobsConfig, EC extends EventConfig<C>> = keyof EC & string
 
@@ -226,12 +253,12 @@ export interface ResolvedWorkOptions extends WorkOptions {
   pollingInterval: number;
 }
 
-export interface WorkHandler<C extends JobsConfig, N extends JobNames<C>, ResData = any> {
-  (job: Job<JobInput<C, N>>[]): Promise<ResData>;
+export interface WorkHandler<C extends JobsConfig, N extends JobNames<C>> {
+  (job: Job<JobInput<C, N>>[]): JobOutput<C, N, 'completed'> | Promise<JobOutput<C, N, 'completed'>>;
 }
 
-export interface WorkWithMetadataHandler<C extends JobsConfig, N extends JobNames<C>, ResData = any> {
-  (job: JobWithMetadata<JobInput<C, N>>[]): Promise<ResData>;
+export interface WorkWithMetadataHandler<C extends JobsConfig, N extends JobNames<C>> {
+  (job: JobWithMetadata<C, N>[]): JobOutput<C, N, 'completed'> | Promise<JobOutput<C, N, 'completed'>>;
 }
 
 export interface Request<C extends JobsConfig, N extends JobNames<C>> {
@@ -259,9 +286,13 @@ export interface Job<T = object> {
   groupTier?: string | null;
 }
 
-export interface JobWithMetadata<T = object> extends Job<T> {
+export type JobWithMetadata<C extends JobsConfig, N extends JobNames<C>> = {
+  [S in JobStates[keyof JobStates]]: JobWithMetadataAndState<C, N, S>;
+}[JobStates[keyof JobStates]]
+
+export interface JobWithMetadataAndState<C extends JobsConfig, N extends JobNames<C>, S extends JobStates[keyof JobStates]> extends Job<JobInput<C, N>> {
   priority: number;
-  state: 'created' | 'retry' | 'active' | 'completed' | 'cancelled' | 'failed';
+  state: S;
   retryLimit: number;
   retryCount: number;
   retryDelay: number;
@@ -278,7 +309,7 @@ export interface JobWithMetadata<T = object> extends Job<T> {
   keepUntil: Date;
   policy: QueuePolicy;
   deadLetter: string;
-  output: object;
+  output: JobOutput<C, N, S>;
 }
 
 export interface JobInsert<T = object> {

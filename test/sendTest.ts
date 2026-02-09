@@ -44,13 +44,17 @@ describe('send', function () {
   })
 
   it('should accept job object with name and data only', async function () {
-    ctx.boss = await helper.start(ctx.bossConfig)
+    const boss = await helper.start<{
+      name: { input: { message: string }, output: {} },
+    }>(ctx.bossConfig)
+    ctx.boss = boss
+    const schema = ctx.schema as 'name'
 
     const message = 'hi'
 
-    await ctx.boss.send({ name: ctx.schema, data: { message } })
+    await boss.send({ name: schema, data: { message } })
 
-    const [job] = await ctx.boss.fetch<typeof ctx.schema, { message: string }>(ctx.schema)
+    const [job] = await boss.fetch(schema)
 
     expect(job.data.message).toBe(message)
   })

@@ -299,7 +299,7 @@ class Manager<C extends types.JobsConfig & timekeeper.JobConfig, EC extends type
   work<N extends types.JobNames<C>>(name: N, options: types.WorkOptions & { includeMetadata: true }, handler: types.WorkWithMetadataHandler<C, N>): Promise<string>
   work<N extends types.JobNames<C>>(name: N, options: types.WorkOptions, handler: types.WorkHandler<C, N>): Promise<string>
   async work<N extends types.JobNames<C>> (name: N, ...args: unknown[]): Promise<string> {
-    const { options, callback } = Attorney.checkWorkArgs(name, args)
+    const { options, callback } = Attorney.checkWorkArgs<C, N>(name, args)
 
     if (this.stopped) {
       throw new Error('Workers are disabled. pg-boss is stopped')
@@ -327,7 +327,7 @@ class Manager<C extends types.JobsConfig & timekeeper.JobConfig, EC extends type
         const ignoreGroups = localGroupConcurrency != null
           ? this.#getGroupsAtLocalCapacity(name)
           : undefined
-        return this.fetch<N, types.JobInput<C, N>>(name, { batchSize, includeMetadata, priority, orderByCreatedOn, groupConcurrency, ignoreGroups })
+        return this.fetch(name, { batchSize, includeMetadata, priority, orderByCreatedOn, groupConcurrency, ignoreGroups })
       }
 
       const onFetch = async (jobs: types.Job<types.JobInput<C, N>>[]) => {
@@ -649,9 +649,9 @@ class Manager<C extends types.JobsConfig & timekeeper.JobConfig, EC extends type
     return startAfter
   }
 
-  fetch<N extends types.JobNames<C>, T>(name: N): Promise<types.Job<T>[]>
-  fetch<N extends types.JobNames<C>, T>(name: N, options: types.FetchOptions & { includeMetadata: true }): Promise<types.JobWithMetadata<T>[]>
-  fetch<N extends types.JobNames<C>, T>(name: N, options: types.FetchOptions): Promise<types.Job<T>[]>
+  fetch<N extends types.JobNames<C>>(name: N): Promise<types.Job<types.JobInput<C, N>>[]>
+  fetch<N extends types.JobNames<C>>(name: N, options: types.FetchOptions & { includeMetadata: true }): Promise<types.JobWithMetadata<C, N>[]>
+  fetch<N extends types.JobNames<C>>(name: N, options: types.FetchOptions): Promise<types.Job<types.JobInput<C, N>>[]>
   async fetch<N extends types.JobNames<C>>(name: N, options: types.FetchOptions = {}) {
     Attorney.checkFetchArgs(name, options)
 
@@ -694,7 +694,7 @@ class Manager<C extends types.JobsConfig & timekeeper.JobConfig, EC extends type
     return ids
   }
 
-  private mapCompletionDataArg (data?: object | null) {
+  private mapCompletionDataArg<N extends types.JobNames<C>>(data?: types.JobOutput<C, N, 'failed'> | types.JobOutput<C, N, 'completed'> | Error) {
     if (data === null || typeof data === 'undefined' || typeof data === 'function') { return null }
 
     const result = (typeof data === 'object' && !Array.isArray(data))
@@ -712,7 +712,7 @@ class Manager<C extends types.JobsConfig & timekeeper.JobConfig, EC extends type
     }
   }
 
-  async complete<N extends types.JobNames<C>>(name: N, id: string | string[], data?: object | null, options: types.CompleteOptions = {}) {
+  async complete<N extends types.JobNames<C>>(name: N, id: string | string[], data?: types.JobOutput<C, N, 'completed'> | Error, options: types.CompleteOptions = {}) {
     Attorney.assertQueueName(name)
     const db = this.assertDb(options)
     const ids = this.mapCompletionIdArg(id, 'complete')
@@ -722,7 +722,7 @@ class Manager<C extends types.JobsConfig & timekeeper.JobConfig, EC extends type
     return this.mapCommandResponse(ids, result)
   }
 
-  async fail<N extends types.JobNames<C>>(name: N, id: string | string[], data?: any, options: types.ConnectionOptions = {}) {
+  async fail<N extends types.JobNames<C>>(name: N, id: string | string[], data?: types.JobOutput<C, N, 'failed'> | Error, options: types.ConnectionOptions = {}) {
     Attorney.assertQueueName(name)
     const db = this.assertDb(options)
     const ids = this.mapCompletionIdArg(id, 'fail')
@@ -912,7 +912,7 @@ class Manager<C extends types.JobsConfig & timekeeper.JobConfig, EC extends type
     )
   }
 
-  async getJobById<N extends types.JobNames<C>, T>(name: N, id: string, options: types.ConnectionOptions = {}): Promise<types.JobWithMetadata<T> | null> {
+  async getJobById<N extends types.JobNames<C>>(name: N, id: string, options: types.ConnectionOptions = {}): Promise<types.JobWithMetadata<C, N> | null> {
     Attorney.assertQueueName(name)
 
     const db = this.assertDb(options)
@@ -930,7 +930,7 @@ class Manager<C extends types.JobsConfig & timekeeper.JobConfig, EC extends type
     }
   }
 
-  async findJobs<N extends types.JobNames<C>, T>(name: N, options: types.FindJobsOptions<NonNullable<types.JobInput<C, N>>> = {}): Promise<types.JobWithMetadata<T>[]> {
+  async findJobs<N extends types.JobNames<C>>(name: N, options: types.FindJobsOptions<NonNullable<types.JobInput<C, N>>> = {}): Promise<types.JobWithMetadata<C, N>[]> {
     Attorney.assertQueueName(name)
 
     const db = this.assertDb(options)

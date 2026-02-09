@@ -203,15 +203,15 @@ export class PgBoss<
     return this.#manager.insert(name, jobs, options)
   }
 
-  fetch<N extends types.JobNames<C>, T>(name: N, options: types.FetchOptions & { includeMetadata: true }): Promise<types.JobWithMetadata<T>[]>
-  fetch<N extends types.JobNames<C>, T>(name: N, options?: types.FetchOptions): Promise<types.Job<T>[]>
-  fetch<N extends types.JobNames<C>, T>(name: N, options: types.FetchOptions = {}): Promise<types.Job<T>[] | types.JobWithMetadata<T>[]> {
-    return this.#manager.fetch<N, T>(name, options)
+  fetch<N extends types.JobNames<C>>(name: N, options: types.FetchOptions & { includeMetadata: true }): Promise<types.JobWithMetadata<C, N>[]>
+  fetch<N extends types.JobNames<C>>(name: N, options?: types.FetchOptions): Promise<types.Job<types.JobInput<C, N>>[]>
+  fetch<N extends types.JobNames<C>>(name: N, options: types.FetchOptions = {}): Promise<types.Job<types.JobInput<C, N>>[] | types.JobWithMetadata<C, N>[]> {
+    return this.#manager.fetch<N>(name, options)
   }
 
-  work<N extends types.JobNames<C>, ResData = any>(name: N, handler: types.WorkHandler<C, N, ResData>): Promise<string>
-  work<N extends types.JobNames<C>, ResData = any>(name: N, options: types.WorkOptions & { includeMetadata: true }, handler: types.WorkWithMetadataHandler<C, N, ResData>): Promise<string>
-  work<N extends types.JobNames<C>, ResData = any>(name: N, options: types.WorkOptions, handler: types.WorkHandler<C, N, ResData>): Promise<string>
+  work<N extends types.JobNames<C>>(name: N, handler: types.WorkHandler<C, N>): Promise<string>
+  work<N extends types.JobNames<C>>(name: N, options: types.WorkOptions & { includeMetadata: true }, handler: types.WorkWithMetadataHandler<C, N>): Promise<string>
+  work<N extends types.JobNames<C>>(name: N, options: types.WorkOptions, handler: types.WorkHandler<C, N>): Promise<string>
   work (...args: any[]): Promise<string> {
     return this.#manager.work(...args as Parameters<Manager<C, EC>['work']>)
   }
@@ -264,23 +264,23 @@ export class PgBoss<
     return this.#manager.deleteAllJobs(name)
   }
 
-  complete<N extends types.JobNames<C>>(name: N, id: string | string[], data?: object | null, options?: types.CompleteOptions): Promise<types.CommandResponse> {
+  complete<N extends types.JobNames<C>>(name: N, id: string | string[], data?: types.JobOutput<C, N, 'completed'> | Error, options?: types.CompleteOptions): Promise<types.CommandResponse> {
     return this.#manager.complete(name, id, data, options)
   }
 
-  fail<N extends types.JobNames<C>>(name: N, id: string | string[], data?: object | null, options?: types.ConnectionOptions): Promise<types.CommandResponse> {
+  fail<N extends types.JobNames<C>>(name: N, id: string | string[], data?: types.JobOutput<C, N, 'failed'> | Error, options?: types.ConnectionOptions): Promise<types.CommandResponse> {
     return this.#manager.fail(name, id, data, options)
   }
 
   /**
    * @deprecated Use findJobs() instead
    */
-  getJobById<N extends types.JobNames<C>, T>(name: N, id: string, options?: types.ConnectionOptions): Promise<types.JobWithMetadata<T> | null> {
-    return this.#manager.getJobById<N, T>(name, id, options)
+  getJobById<N extends types.JobNames<C>>(name: N, id: string, options?: types.ConnectionOptions): Promise<types.JobWithMetadata<C, N> | null> {
+    return this.#manager.getJobById<N>(name, id, options)
   }
 
-  findJobs<N extends types.JobNames<C>, T = any>(name: N, options?: types.FindJobsOptions<NonNullable<types.JobInput<C, N>>>): Promise<types.JobWithMetadata<T>[]> {
-    return this.#manager.findJobs<N, T>(name, options)
+  findJobs<N extends types.JobNames<C>>(name: N, options?: types.FindJobsOptions<NonNullable<types.JobInput<C, N>>>): Promise<types.JobWithMetadata<C, N>[]> {
+    return this.#manager.findJobs<N>(name, options)
   }
 
   createQueue<N extends types.JobNames<C>>(name: N, options?: Omit<types.Queue<N>, 'name'>): Promise<void> {

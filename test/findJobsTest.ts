@@ -41,13 +41,17 @@ describe('findJobs', function () {
   })
 
   it('should find jobs by data', async function () {
-    ctx.boss = await helper.start(ctx.bossConfig)
+    const boss = await helper.start<{
+      name: { input: { type: string, to: string }, output: {} },
+    }>(ctx.bossConfig)
+    ctx.boss = boss
+    const schema = ctx.schema as 'name'
 
-    await ctx.boss.send(ctx.schema, { type: 'email', to: 'user1@test.com' })
-    await ctx.boss.send(ctx.schema, { type: 'email', to: 'user2@test.com' })
-    await ctx.boss.send(ctx.schema, { type: 'sms', to: '555-1234' })
+    await boss.send(schema, { type: 'email', to: 'user1@test.com' })
+    await boss.send(schema, { type: 'email', to: 'user2@test.com' })
+    await boss.send(schema, { type: 'sms', to: '555-1234' })
 
-    const emailJobs = await ctx.boss.findJobs(ctx.schema, { data: { type: 'email' } })
+    const emailJobs = await boss.findJobs(schema, { data: { type: 'email' } })
 
     expect(emailJobs.length).toBe(2)
     expect(emailJobs.every(j => j.data?.type === 'email')).toBe(true)
@@ -122,13 +126,17 @@ describe('findJobs', function () {
   })
 
   it('should combine key and data filters', async function () {
-    ctx.boss = await helper.start(ctx.bossConfig)
+    const boss = await helper.start<{
+      name: { input: { category: string, value: number }, output: {} },
+    }>(ctx.bossConfig)
+    ctx.boss = boss
+    const schema = ctx.schema as 'name'
 
-    await ctx.boss.send(ctx.schema, { category: 'A', value: 1 }, { singletonKey: 'key-1' })
-    await ctx.boss.send(ctx.schema, { category: 'B', value: 2 }, { singletonKey: 'key-1' })
-    await ctx.boss.send(ctx.schema, { category: 'A', value: 3 }, { singletonKey: 'key-2' })
+    await boss.send(schema, { category: 'A', value: 1 }, { singletonKey: 'key-1' })
+    await boss.send(schema, { category: 'B', value: 2 }, { singletonKey: 'key-1' })
+    await boss.send(schema, { category: 'A', value: 3 }, { singletonKey: 'key-2' })
 
-    const jobs = await ctx.boss.findJobs(ctx.schema, {
+    const jobs = await boss.findJobs(schema, {
       key: 'key-1',
       data: { category: 'A' }
     })

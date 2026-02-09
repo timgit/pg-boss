@@ -1,12 +1,12 @@
 import { beforeAll, beforeEach, afterEach, expect } from 'vitest'
 import * as helper from './testHelper.ts'
 import { assertTruthy } from './testHelper.ts'
-import type { ConstructorOptions } from '../src/types.ts'
+import type { ConstructorOptions, JobsConfig } from '../src/types.ts'
 import type { PgBoss } from '../src/index.ts'
 import crypto from 'node:crypto'
 
 export interface TestContext {
-  boss?: PgBoss
+  boss?: PgBoss<JobsConfig>
   bossConfig: ConstructorOptions & { schema: string }
   schema: string
 }

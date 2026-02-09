@@ -29,41 +29,49 @@ describe('pubsub', function () {
   })
 
   it('should use subscriptions to map to a single queue', async function () {
-    ctx.boss = await helper.start(ctx.bossConfig)
+    const boss = await helper.start<{
+      name: { input: { message: string }, output: {} },
+    }>(ctx.bossConfig)
+    ctx.boss = boss
+    const schema = ctx.schema as 'name'
 
     const event = 'event'
     const message = 'hi'
 
-    await ctx.boss.subscribe(event, ctx.schema)
-    await ctx.boss.publish(event, { message })
+    await boss.subscribe(event, schema)
+    await boss.publish(event, { message })
 
-    const [job] = await ctx.boss.fetch<typeof ctx.schema, { message: string }>(ctx.schema)
+    const [job] = await boss.fetch(schema)
 
     expect(job.data.message).toBe(message)
   })
 
   it('should use subscriptions to map to more than one queue', async function () {
-    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
-
     interface Message {
       message: string
     }
 
+    const boss = await helper.start<{
+      subqueue1: { input: Message, output: {} },
+      subqueue2: { input: Message, output: {} },
+    }>({ ...ctx.bossConfig, noDefault: true })
+    ctx.boss = boss
+
     const queue1 = 'subqueue1' as const
     const queue2 = 'subqueue2' as const
 
-    await ctx.boss.createQueue(queue1)
-    await ctx.boss.createQueue(queue2)
+    await boss.createQueue(queue1)
+    await boss.createQueue(queue2)
 
     const event = 'event'
     const message = 'hi'
 
-    await ctx.boss.subscribe(event, queue1)
-    await ctx.boss.subscribe(event, queue2)
-    await ctx.boss.publish(event, { message })
+    await boss.subscribe(event, queue1)
+    await boss.subscribe(event, queue2)
+    await boss.publish(event, { message })
 
-    const [job1] = await ctx.boss.fetch<typeof queue1, Message>(queue1)
-    const [job2] = await ctx.boss.fetch<typeof queue2, Message>(queue2)
+    const [job1] = await boss.fetch(queue1)
+    const [job2] = await boss.fetch(queue2)
 
     expect(job1.data.message).toBe(message)
     expect(job2.data.message).toBe(message)

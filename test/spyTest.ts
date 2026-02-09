@@ -103,7 +103,7 @@ describe('spy', function () {
 
   it('should support waitForJob with data selector', async function () {
     const boss = await helper.start<{
-      name: { input: { value: string } },
+      name: { input: { value: string }, output: {} },
     }>({ ...ctx.bossConfig, __test__enableSpies: true })
     ctx.boss = boss
     const schema = ctx.schema as 'name'
@@ -126,7 +126,7 @@ describe('spy', function () {
 
   it('should await job that completes after calling waitForJob', async function () {
     const boss = await helper.start<{
-      name: { input: { value: string } },
+      name: { input: { value: string }, output: {} },
     }>({ ...ctx.bossConfig, __test__enableSpies: true })
     ctx.boss = boss
     const schema = ctx.schema as 'name'
@@ -226,7 +226,7 @@ describe('spy', function () {
 
   it('should protect against data mutation', async function () {
     const boss = await helper.start<{
-      name: { input: { value: string } },
+      name: { input: { value: string }, output: {} },
     }>({ ...ctx.bossConfig, __test__enableSpies: true })
     ctx.boss = boss
     const schema = ctx.schema as 'name'
@@ -295,7 +295,7 @@ describe('spy', function () {
 
   it('should handle race condition - await before job creation', async function () {
     const boss = await helper.start<{
-      name: { input: { value: string } },
+      name: { input: { value: string }, output: {} },
     }>({ ...ctx.bossConfig, __test__enableSpies: true })
     ctx.boss = boss
     const schema = ctx.schema as 'name'

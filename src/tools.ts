@@ -40,7 +40,7 @@ function delay (ms: number, error?: string, abortController?: AbortController): 
   return promise
 }
 
-async function resolveWithinSeconds<T> (promise: Promise<T>, seconds: number, message?: string, abortController?: AbortController): Promise<T | void> {
+async function resolveWithinSeconds<T, M extends string | undefined> (promise: Promise<T> | T, seconds: number, message?: M, abortController?: AbortController): Promise<M extends string ? T : T | undefined> {
   const timeout = Math.max(1, seconds) * 1000
   const reject = delay(timeout, message, abortController)
 
@@ -52,7 +52,8 @@ async function resolveWithinSeconds<T> (promise: Promise<T>, seconds: number, me
     reject.abort()
   }
 
-  return result
+  // The type assertion is justified by the implementation above. If a message is given, the `reject` promise will throw and therefore never return.
+  return result as M extends string ? T : undefined | T
 }
 
 export {

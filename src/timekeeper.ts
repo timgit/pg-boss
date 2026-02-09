@@ -25,6 +25,14 @@ const WARNINGS = {
 export type JobConfig = {
   [QUEUES.SEND_IT]: {
     input: types.Request<types.JobsConfig, string>
+    output: {
+      created: void;
+      retry: void;
+      active: void;
+      completed: void;
+      cancelled: void;
+      failed: void;
+    }
   }
 }
 
