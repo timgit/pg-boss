@@ -177,10 +177,10 @@ export interface CompleteOptions extends ConnectionOptions {
   includeQueued?: boolean;
 }
 
-export interface FindJobsOptions<T extends object> extends ConnectionOptions {
+export interface FindJobsOptions<C extends JobsConfig, N extends JobNames<C>> extends ConnectionOptions {
   id?: string;
   key?: string;
-  data?: Partial<T>;
+  data?: Partial<NonNullable<JobInput<C, N>>>;
   queued?: boolean;
 }
 
@@ -311,9 +311,9 @@ export interface JobWithMetadataAndState<C extends JobsConfig, N extends JobName
   output: JobOutput<C, N, S>;
 }
 
-export interface JobInsert<T> {
+export interface JobInsert<C extends JobsConfig, N extends JobNames<C>> {
   id?: string;
-  data?: T;
+  data?: JobInput<C, N>;
   priority?: number;
   retryLimit?: number;
   retryDelay?: number;

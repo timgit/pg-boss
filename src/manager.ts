@@ -602,7 +602,7 @@ class Manager<C extends types.JobsConfig & timekeeper.JobConfig, EC extends type
 
   async insert<N extends types.JobNames<C>>(
     name: N,
-    jobs: types.JobInsert<types.JobInput<C, N>>[],
+    jobs: types.JobInsert<C, N>[],
     options: types.InsertOptions = {}
   ) {
     assert(Array.isArray(jobs), 'jobs argument should be an array')
@@ -930,7 +930,7 @@ class Manager<C extends types.JobsConfig & timekeeper.JobConfig, EC extends type
     }
   }
 
-  async findJobs<N extends types.JobNames<C>>(name: N, options: types.FindJobsOptions<NonNullable<types.JobInput<C, N>>> = {}): Promise<types.JobWithMetadata<C, N>[]> {
+  async findJobs<N extends types.JobNames<C>>(name: N, options: types.FindJobsOptions<C, N> = {}): Promise<types.JobWithMetadata<C, N>[]> {
     Attorney.assertQueueName(name)
 
     const db = this.assertDb(options)

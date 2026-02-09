@@ -155,7 +155,7 @@ class Timekeeper<C extends types.JobsConfig & JobConfig, EC extends types.EventC
 
     const scheduled = schedules
       .filter(i => this.shouldSendIt(i.cron, i.timezone))
-      .map(({ name, key, data, options }): types.JobInsert<NonNullable<types.JobInput<C, typeof QUEUES.SEND_IT>>> => ({ data: { name, data, options }, singletonKey: `${name}__${key}`, singletonSeconds: 60 }))
+      .map(({ name, key, data, options }): types.JobInsert<C, typeof QUEUES.SEND_IT> => ({ data: { name, data, options }, singletonKey: `${name}__${key}`, singletonSeconds: 60 }))
 
     if (scheduled.length > 0 && !this.stopped) {
       await this.manager.insert(QUEUES.SEND_IT, scheduled)

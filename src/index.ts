@@ -200,7 +200,7 @@ export class PgBoss<
     return this.#manager.sendDebounced(name, data, options, seconds, key)
   }
 
-  insert<N extends types.JobNames<C>>(name: N, jobs: types.JobInsert<types.JobInput<C, N>>[], options?: types.InsertOptions): Promise<string[] | null> {
+  insert<N extends types.JobNames<C>>(name: N, jobs: types.JobInsert<C, N>[], options?: types.InsertOptions): Promise<string[] | null> {
     return this.#manager.insert(name, jobs, options)
   }
 
@@ -286,7 +286,7 @@ export class PgBoss<
     return this.#manager.getJobById<N>(name, id, options)
   }
 
-  findJobs<N extends types.JobNames<C>>(name: N, options?: types.FindJobsOptions<NonNullable<types.JobInput<C, N>>>): Promise<types.JobWithMetadata<C, N>[]> {
+  findJobs<N extends types.JobNames<C>>(name: N, options?: types.FindJobsOptions<C, N>): Promise<types.JobWithMetadata<C, N>[]> {
     return this.#manager.findJobs<N>(name, options)
   }
 
