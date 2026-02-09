@@ -202,11 +202,11 @@ class Manager<C extends types.JobsConfig & timekeeper.JobConfig, EC extends type
     }
   }
 
-  async #processJobs<N extends types.JobNames<C>, T> (
+  async #processJobs<N extends types.JobNames<C>> (
     name: N,
-    jobs: types.Job<T>[],
-    callback: types.WorkHandler<T>,
-    worker?: Worker<T>
+    jobs: types.Job<types.JobInput<C, N>>[],
+    callback: types.WorkHandler<C, N>,
+    worker?: Worker<types.JobInput<C, N>>
   ): Promise<void> {
     const jobIds = jobs.map(job => job.id)
     const maxExpiration = jobs.reduce((acc, i) => Math.max(acc, i.expireInSeconds), 0)
@@ -295,10 +295,10 @@ class Manager<C extends types.JobsConfig & timekeeper.JobConfig, EC extends type
     }
   }
 
-  work<N extends types.JobNames<C>, ReqData>(name: N, handler: types.WorkHandler<ReqData>): Promise<string>
-  work<N extends types.JobNames<C>, ReqData>(name: N, options: types.WorkOptions & { includeMetadata: true }, handler: types.WorkWithMetadataHandler<ReqData>): Promise<string>
-  work<N extends types.JobNames<C>, ReqData>(name: N, options: types.WorkOptions, handler: types.WorkHandler<ReqData>): Promise<string>
-  async work<N extends types.JobNames<C>, ReqData> (name: N, ...args: unknown[]): Promise<string> {
+  work<N extends types.JobNames<C>>(name: N, handler: types.WorkHandler<C, N>): Promise<string>
+  work<N extends types.JobNames<C>>(name: N, options: types.WorkOptions & { includeMetadata: true }, handler: types.WorkWithMetadataHandler<C, N>): Promise<string>
+  work<N extends types.JobNames<C>>(name: N, options: types.WorkOptions, handler: types.WorkHandler<C, N>): Promise<string>
+  async work<N extends types.JobNames<C>> (name: N, ...args: unknown[]): Promise<string> {
     const { options, callback } = Attorney.checkWorkArgs(name, args)
 
     if (this.stopped) {
@@ -327,10 +327,10 @@ class Manager<C extends types.JobsConfig & timekeeper.JobConfig, EC extends type
         const ignoreGroups = localGroupConcurrency != null
           ? this.#getGroupsAtLocalCapacity(name)
           : undefined
-        return this.fetch<N, ReqData>(name, { batchSize, includeMetadata, priority, orderByCreatedOn, groupConcurrency, ignoreGroups })
+        return this.fetch<N, types.JobInput<C, N>>(name, { batchSize, includeMetadata, priority, orderByCreatedOn, groupConcurrency, ignoreGroups })
       }
 
-      const onFetch = async (jobs: types.Job<ReqData>[]) => {
+      const onFetch = async (jobs: types.Job<types.JobInput<C, N>>[]) => {
         if (!jobs.length) return
         if (this.config.__test__throw_worker) throw new Error('__test__throw_worker')
 
@@ -338,7 +338,7 @@ class Manager<C extends types.JobsConfig & timekeeper.JobConfig, EC extends type
         this.#trackJobsActive(name, jobs)
 
         // Get the worker instance for abort controller tracking
-        const worker = this.workers.get(workerId)
+        const worker = this.workers.get(workerId) as Worker<types.JobInput<C, N>> // Types are ensured by logic. The ids are only used for a single job-type.
 
         // Skip all in-memory group tracking when localGroupConcurrency is not enabled
         if (localGroupConcurrency == null) {
@@ -367,7 +367,7 @@ class Manager<C extends types.JobsConfig & timekeeper.JobConfig, EC extends type
         this.emit(events.error, { ...error, message: error.message, stack: error.stack, queue: name, worker: workerId })
       }
 
-      return new Worker<ReqData>({ id: workerId, name, options, interval, fetch, onFetch, onError })
+      return new Worker<types.JobInput<C, N>>({ id: workerId, name, options, interval, fetch, onFetch, onError })
     }
 
     // Spawn workers based on localConcurrency setting
@@ -467,8 +467,8 @@ class Manager<C extends types.JobsConfig & timekeeper.JobConfig, EC extends type
     await this.db.executeSql(sql, [event, name])
   }
 
-  publish<EventName extends types.EventNames<C, EC>>(event: EventName, data?: object, options?: types.SendOptions): Promise<void>
-  async publish<EventName extends types.EventNames<C, EC>>(event: EventName, data?: object, options?: types.SendOptions): Promise<void> {
+  publish<EventName extends types.EventNames<C, EC>>(event: EventName, data?: types.JobInput<C, EC[EventName]>, options?: types.SendOptions): Promise<void>
+  async publish<EventName extends types.EventNames<C, EC>>(event: EventName, data?: types.JobInput<C, EC[EventName]>, options?: types.SendOptions): Promise<void> {
     assert(event, 'Missing required argument')
     const sql = plans.getQueuesForEvent(this.config.schema)
     const { rows } = await this.db.executeSql(sql, [event])
@@ -476,46 +476,46 @@ class Manager<C extends types.JobsConfig & timekeeper.JobConfig, EC extends type
     await Promise.allSettled(rows.map(({ name }) => this.send(name, data, options)))
   }
 
-  send<N extends types.JobNames<C>>(request: types.Request<N>): Promise<string | null>
-  send<N extends types.JobNames<C>>(name: N, data?: object | null, options?: types.SendOptions | null): Promise<string | null>
-  async send (...args: any[]): Promise<string | null> {
-    const result = Attorney.checkSendArgs(args)
+  send<N extends types.JobNames<C>>(request: types.Request<C, N>): Promise<string | null>
+  send<N extends types.JobNames<C>>(name: N, data?: types.JobInput<C, N>, options?: types.SendOptions | null): Promise<string | null>
+  async send<N extends types.JobNames<C>>(...args: any[]): Promise<string | null> {
+    const result = Attorney.checkSendArgs<C, N>(args)
 
     return await this.createJob(result)
   }
 
-  async sendAfter<N extends types.JobNames<C>>(name: N, data: object | null, options: types.SendOptions | null, after: Date | string | number): Promise<string | null> {
+  async sendAfter<N extends types.JobNames<C>>(name: N, data: types.JobInput<C, N>, options: types.SendOptions | null, after: Date | string | number): Promise<string | null> {
     options = options ? { ...options } : {}
     options.startAfter = after
 
-    const result = Attorney.checkSendArgs([name, data, options])
+    const result = Attorney.checkSendArgs<C, N>([name, data, options])
 
     return await this.createJob(result)
   }
 
-  async sendThrottled<N extends types.JobNames<C>>(name: N, data: object | null, options: types.SendOptions | null, seconds: number, key?: string): Promise<string | null> {
+  async sendThrottled<N extends types.JobNames<C>>(name: N, data: types.JobInput<C, N>, options: types.SendOptions | null, seconds: number, key?: string): Promise<string | null> {
     options = options ? { ...options } : {}
     options.singletonSeconds = seconds
     options.singletonNextSlot = false
     options.singletonKey = key
 
-    const result = Attorney.checkSendArgs([name, data, options])
+    const result = Attorney.checkSendArgs<C, N>([name, data, options])
 
     return await this.createJob(result)
   }
 
-  async sendDebounced<N extends types.JobNames<C>>(name: N, data: object | null, options: types.SendOptions | null, seconds: number, key?: string): Promise<string | null> {
+  async sendDebounced<N extends types.JobNames<C>>(name: N, data: types.JobInput<C, N>, options: types.SendOptions | null, seconds: number, key?: string): Promise<string | null> {
     options = options ? { ...options } : {}
     options.singletonSeconds = seconds
     options.singletonNextSlot = true
     options.singletonKey = key
 
-    const result = Attorney.checkSendArgs([name, data, options])
+    const result = Attorney.checkSendArgs<C, N>([name, data, options])
 
     return await this.createJob(result)
   }
 
-  async createJob<N extends types.JobNames<C>>(request: types.Request<N>): Promise<string | null> {
+  async createJob<N extends types.JobNames<C>>(request: types.Request<C, N>): Promise<string | null> {
     const { name, data = null, options = {} } = request
     const {
       id = null,
@@ -930,7 +930,7 @@ class Manager<C extends types.JobsConfig & timekeeper.JobConfig, EC extends type
     }
   }
 
-  async findJobs<N extends types.JobNames<C>, T>(name: N, options: types.FindJobsOptions = {}): Promise<types.JobWithMetadata<T>[]> {
+  async findJobs<N extends types.JobNames<C>, T>(name: N, options: types.FindJobsOptions<NonNullable<types.JobInput<C, N>>> = {}): Promise<types.JobWithMetadata<T>[]> {
     Attorney.assertQueueName(name)
 
     const db = this.assertDb(options)

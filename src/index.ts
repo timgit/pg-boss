@@ -178,24 +178,24 @@ export class PgBoss<
     await shutdown()
   }
 
-  send<N extends types.JobNames<C>>(request: types.Request<N>): Promise<string | null>
-  send<N extends types.JobNames<C>>(name: N, data?: object | null, options?: types.SendOptions): Promise<string | null>
+  send<N extends types.JobNames<C>>(request: types.Request<C, N>): Promise<string | null>
+  send<N extends types.JobNames<C>>(name: N, data?: types.JobInput<C, N>, options?: types.SendOptions): Promise<string | null>
   async send (...args: any[]): Promise<string | null> {
     return await this.#manager.send(...args as Parameters<Manager<C, EC>['send']>)
   }
 
-  sendAfter<N extends types.JobNames<C>>(name: N, data: object | null, options: types.SendOptions | null, date: Date): Promise<string | null>
-  sendAfter<N extends types.JobNames<C>>(name: N, data: object | null, options: types.SendOptions | null, dateString: string): Promise<string | null>
-  sendAfter<N extends types.JobNames<C>>(name: N, data: object | null, options: types.SendOptions | null, seconds: number): Promise<string | null>
-  async sendAfter<N extends types.JobNames<C>>(name: N, data: object | null, options: types.SendOptions | null, after: Date | string | number): Promise<string | null> {
+  sendAfter<N extends types.JobNames<C>>(name: N, data: types.JobInput<C, N>, options: types.SendOptions | null, date: Date): Promise<string | null>
+  sendAfter<N extends types.JobNames<C>>(name: N, data: types.JobInput<C, N>, options: types.SendOptions | null, dateString: string): Promise<string | null>
+  sendAfter<N extends types.JobNames<C>>(name: N, data: types.JobInput<C, N>, options: types.SendOptions | null, seconds: number): Promise<string | null>
+  async sendAfter<N extends types.JobNames<C>>(name: N, data: types.JobInput<C, N>, options: types.SendOptions | null, after: Date | string | number): Promise<string | null> {
     return this.#manager.sendAfter(name, data, options, after)
   }
 
-  sendThrottled<N extends types.JobNames<C>>(name: N, data: object | null, options: types.SendOptions | null, seconds: number, key?: string): Promise<string | null> {
+  sendThrottled<N extends types.JobNames<C>>(name: N, data: types.JobInput<C, N>, options: types.SendOptions | null, seconds: number, key?: string): Promise<string | null> {
     return this.#manager.sendThrottled(name, data, options, seconds, key)
   }
 
-  sendDebounced<N extends types.JobNames<C>>(name: N, data: object | null, options: types.SendOptions | null, seconds: number, key?: string): Promise<string | null> {
+  sendDebounced<N extends types.JobNames<C>>(name: N, data: types.JobInput<C, N>, options: types.SendOptions | null, seconds: number, key?: string): Promise<string | null> {
     return this.#manager.sendDebounced(name, data, options, seconds, key)
   }
 
@@ -209,9 +209,9 @@ export class PgBoss<
     return this.#manager.fetch<N, T>(name, options)
   }
 
-  work<N extends types.JobNames<C>, ReqData, ResData = any>(name: N, handler: types.WorkHandler<ReqData, ResData>): Promise<string>
-  work<N extends types.JobNames<C>, ReqData, ResData = any>(name: N, options: types.WorkOptions & { includeMetadata: true }, handler: types.WorkWithMetadataHandler<ReqData, ResData>): Promise<string>
-  work<N extends types.JobNames<C>, ReqData, ResData = any>(name: N, options: types.WorkOptions, handler: types.WorkHandler<ReqData, ResData>): Promise<string>
+  work<N extends types.JobNames<C>, ResData = any>(name: N, handler: types.WorkHandler<C, N, ResData>): Promise<string>
+  work<N extends types.JobNames<C>, ResData = any>(name: N, options: types.WorkOptions & { includeMetadata: true }, handler: types.WorkWithMetadataHandler<C, N, ResData>): Promise<string>
+  work<N extends types.JobNames<C>, ResData = any>(name: N, options: types.WorkOptions, handler: types.WorkHandler<C, N, ResData>): Promise<string>
   work (...args: any[]): Promise<string> {
     return this.#manager.work(...args as Parameters<Manager<C, EC>['work']>)
   }
@@ -232,7 +232,7 @@ export class PgBoss<
     return this.#manager.unsubscribe(event, name)
   }
 
-  publish<EventName extends types.EventNames<C, EC>>(event: EventName, data?: object, options?: types.SendOptions): Promise<void> {
+  publish<EventName extends types.EventNames<C, EC>>(event: EventName, data?: types.JobInput<C, EC[EventName]>, options?: types.SendOptions): Promise<void> {
     return this.#manager.publish(event, data, options)
   }
 
@@ -279,7 +279,7 @@ export class PgBoss<
     return this.#manager.getJobById<N, T>(name, id, options)
   }
 
-  findJobs<N extends types.JobNames<C>, T = any>(name: N, options?: types.FindJobsOptions): Promise<types.JobWithMetadata<T>[]> {
+  findJobs<N extends types.JobNames<C>, T = any>(name: N, options?: types.FindJobsOptions<NonNullable<types.JobInput<C, N>>>): Promise<types.JobWithMetadata<T>[]> {
     return this.#manager.findJobs<N, T>(name, options)
   }
 
@@ -327,7 +327,7 @@ export class PgBoss<
     return this.#contractor.schemaVersion()
   }
 
-  schedule<N extends types.JobNames<C>>(name: N, cron: string, data?: object | null, options?: types.ScheduleOptions): Promise<void> {
+  schedule<N extends types.JobNames<C>>(name: N, cron: string, data?: types.JobInput<C, N>, options?: types.ScheduleOptions): Promise<void> {
     return this.#timekeeper.schedule(name, cron, data, options)
   }
 
@@ -335,7 +335,7 @@ export class PgBoss<
     return this.#timekeeper.unschedule(name, key)
   }
 
-  getSchedules<N extends types.JobNames<C>>(name?: N, key?: string): Promise<types.Schedule<N>[]> {
+  getSchedules<N extends types.JobNames<C>>(name?: N, key?: string): Promise<types.Schedule<C, N>[]> {
     return this.#timekeeper.getSchedules(name, key)
   }
 

@@ -24,6 +24,7 @@ const WARNINGS = {
 
 export type JobConfig = {
   [QUEUES.SEND_IT]: {
+    input: types.Request<types.JobsConfig, string>
   }
 }
 
@@ -59,7 +60,7 @@ class Timekeeper<C extends types.JobsConfig & JobConfig, EC extends types.EventC
       batchSize: 50
     }
 
-    await this.manager.work<typeof QUEUES.SEND_IT, types.Request<string>>(QUEUES.SEND_IT, options, (jobs) => this.onSendIt(jobs))
+    await this.manager.work(QUEUES.SEND_IT, options, (jobs) => this.onSendIt(jobs))
 
     setImmediate(() => this.onCron())
 
@@ -165,11 +166,11 @@ class Timekeeper<C extends types.JobsConfig & JobConfig, EC extends types.EventC
     return prevDiff < 60
   }
 
-  private async onSendIt (jobs: types.Job<types.Request<string>>[]): Promise<void> {
-    await Promise.allSettled(jobs.map(({ data }) => this.manager.send(data)))
+  private async onSendIt (jobs: types.Job<types.Request<types.JobsConfig, string>>[]): Promise<void> {
+    await Promise.allSettled(jobs.map(({ data }) => this.manager.send(data as types.Job<types.Request<types.JobsConfig, string>>))) // The type safety is partially ensured at the `schedule` function. The developer using this library will have to ensure that types are backwards compatible.
   }
 
-  async getSchedules<N extends types.JobNames<C>>(name?: N, key = '') : Promise<types.Schedule<N>[]> {
+  async getSchedules<N extends types.JobNames<C>>(name?: N, key = '') : Promise<types.Schedule<C, N>[]> {
     let sql = plans.getSchedules(this.config.schema)
     let params: unknown[] = []
 
@@ -183,7 +184,7 @@ class Timekeeper<C extends types.JobsConfig & JobConfig, EC extends types.EventC
     return rows
   }
 
-  async schedule<N extends types.JobNames<C>>(name: N, cron: string, data?: unknown, options: types.ScheduleOptions = {}): Promise<void> {
+  async schedule<N extends types.JobNames<C>>(name: N, cron: string, data?: types.JobInput<C, N>, options: types.ScheduleOptions = {}): Promise<void> {
     const { tz = 'UTC', key = '', ...rest } = options
 
     CronExpressionParser.parse(cron, { tz, strict: false })

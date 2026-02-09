@@ -66,12 +66,15 @@ export interface Migration {
 }
 
 export type JobsConfig = Record<string, {
+  input: object | null;
 }>
 export type DefaultJobsConfig = Record<string, {
+  input: object | null,
 }>
 
 // Helper types which should be used in the library.
 export type JobNames<C extends JobsConfig> = keyof C & string
+export type JobInput<C extends JobsConfig, N extends JobNames<C>> = C[N]['input']
 export type EventConfig<C extends JobsConfig> = Record<string, JobNames<C>>
 export type EventNames<C extends JobsConfig, EC extends EventConfig<C>> = keyof EC & string
 
@@ -147,10 +150,10 @@ export interface CompleteOptions extends ConnectionOptions {
   includeQueued?: boolean;
 }
 
-export interface FindJobsOptions extends ConnectionOptions {
+export interface FindJobsOptions<T extends object> extends ConnectionOptions {
   id?: string;
   key?: string;
-  data?: object;
+  data?: Partial<T>;
   queued?: boolean;
 }
 
@@ -223,26 +226,26 @@ export interface ResolvedWorkOptions extends WorkOptions {
   pollingInterval: number;
 }
 
-export interface WorkHandler<ReqData, ResData = any> {
-  (job: Job<ReqData>[]): Promise<ResData>;
+export interface WorkHandler<C extends JobsConfig, N extends JobNames<C>, ResData = any> {
+  (job: Job<JobInput<C, N>>[]): Promise<ResData>;
 }
 
-export interface WorkWithMetadataHandler<ReqData, ResData = any> {
-  (job: JobWithMetadata<ReqData>[]): Promise<ResData>;
+export interface WorkWithMetadataHandler<C extends JobsConfig, N extends JobNames<C>, ResData = any> {
+  (job: JobWithMetadata<JobInput<C, N>>[]): Promise<ResData>;
 }
 
-export interface Request<N extends string> {
+export interface Request<C extends JobsConfig, N extends JobNames<C>> {
   name: N;
-  data?: object;
+  data?: JobInput<C, N>;
   options?: SendOptions;
 }
 
-export interface Schedule<N extends string> {
+export interface Schedule<C extends JobsConfig, N extends string> {
   name: N;
   key: string;
   cron: string;
   timezone: string;
-  data?: object;
+  data?: JobInput<C, N>;
   options?: SendOptions;
 }
 
