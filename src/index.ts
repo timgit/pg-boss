@@ -311,8 +311,8 @@ export class PgBoss<
     return this.#boss.supervise(name)
   }
 
-  getSpy<N extends types.JobNames<C>, T = object> (name: N): JobSpyInterface<T> {
-    return this.#manager.getSpy<T>(name)
+  getSpy<N extends types.JobNames<C>> (name: N): JobSpyInterface<types.JobInput<C, N>> {
+    return this.#manager.getSpy<types.JobInput<C, N>>(name)
   }
 
   clearSpies (): void {

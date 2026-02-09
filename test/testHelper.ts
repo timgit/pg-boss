@@ -2,7 +2,7 @@ import Db from '../src/db.ts'
 import { PgBoss } from '../src/index.ts'
 import crypto from 'node:crypto'
 import configJson from './config.json' with { type: 'json' }
-import type { ConstructorOptions } from '../src/types.ts'
+import type { ConstructorOptions, JobsConfig, DefaultJobsConfig } from '../src/types.ts'
 
 const sha1 = (value: string): string => crypto.createHash('sha1').update(value).digest('hex')
 
@@ -87,11 +87,13 @@ async function tryCreateDb (database: string): Promise<void> {
   }
 }
 
-async function start (options?: Partial<ConstructorOptions> & { testKey?: string; noDefault?: boolean }): Promise<PgBoss> {
+async function start<
+  C extends JobsConfig = DefaultJobsConfig
+> (options?: Partial<ConstructorOptions> & { testKey?: string; noDefault?: boolean }): Promise<PgBoss<C>> {
   try {
     const config = getConfig(options)
 
-    const boss = new PgBoss(config)
+    const boss = new PgBoss<C>(config)
     // boss.on('error', err => console.log({ schema: config.schema, message: err.message }))
 
     await boss.start()
