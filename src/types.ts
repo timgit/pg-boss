@@ -86,13 +86,13 @@ type InternalJobOutput = {
   failed: ErrorObject | string;
 }
 export type JobsConfig = Record<string, {
-  input: object | null;
+  input: object | null | undefined;
   output: {
     [S in JobStates[keyof JobStates]]?: unknown;
   }
 }>
 export type DefaultJobsConfig = Record<string, {
-  input: object | null,
+  input: object | null | undefined,
   output: {
     [S in JobStates[keyof JobStates]]: Json | undefined | void;
   }

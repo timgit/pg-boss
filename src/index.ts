@@ -179,7 +179,8 @@ export class PgBoss<
   }
 
   send<N extends types.JobNames<C>>(request: types.Request<C, N>): Promise<string | null>
-  send<N extends types.JobNames<C>>(name: N, data?: types.JobInput<C, N>, options?: types.SendOptions): Promise<string | null>
+  send<N extends types.JobNames<C>>(name: undefined extends types.JobInput<C, N> ? N : never, options?: types.SendOptions): Promise<string | null> // Type override for data possibly being undefined.
+  send<N extends types.JobNames<C>>(name: N, data: Exclude<types.JobInput<C, N>, undefined>, options?: types.SendOptions): Promise<string | null> // Type override for required data.
   async send (...args: any[]): Promise<string | null> {
     return await this.#manager.send(...args as Parameters<Manager<C, EC>['send']>)
   }
@@ -232,6 +233,8 @@ export class PgBoss<
     return this.#manager.unsubscribe(event, name)
   }
 
+  publish<EventName extends types.EventNames<C, EC>>(event: undefined extends types.JobInput<C, EC[EventName]> ? EventName : never, options?: types.SendOptions): Promise<void> // Type override for data possibly being undefined.
+  publish<EventName extends types.EventNames<C, EC>>(event: EventName, data: Exclude<types.JobInput<C, EC[EventName]>, undefined>, options?: types.SendOptions): Promise<void> // Type override for required data.
   publish<EventName extends types.EventNames<C, EC>>(event: EventName, data?: types.JobInput<C, EC[EventName]>, options?: types.SendOptions): Promise<void> {
     return this.#manager.publish(event, data, options)
   }
@@ -264,10 +267,14 @@ export class PgBoss<
     return this.#manager.deleteAllJobs(name)
   }
 
+  complete<N extends types.JobNames<C>>(name: undefined extends types.JobOutput<C, N, 'completed'> | Error ? N : never, id: string | string[], data?: undefined, options?: types.CompleteOptions): Promise<types.CommandResponse> // Type override for data possibly being undefined.
+  complete<N extends types.JobNames<C>>(name: N, id: string | string[], data: Exclude<types.JobOutput<C, N, 'completed'> | Error, undefined>, options?: types.CompleteOptions): Promise<types.CommandResponse> // Type override for required data.
   complete<N extends types.JobNames<C>>(name: N, id: string | string[], data?: types.JobOutput<C, N, 'completed'> | Error, options?: types.CompleteOptions): Promise<types.CommandResponse> {
     return this.#manager.complete(name, id, data, options)
   }
 
+  fail<N extends types.JobNames<C>>(name: undefined extends types.JobOutput<C, N, 'failed'> ? N : never, id: string | string[], data?: undefined, options?: types.ConnectionOptions): Promise<types.CommandResponse> // Type override for data possibly being undefined.
+  fail<N extends types.JobNames<C>>(name: N, id: string | string[], data: Exclude<types.JobOutput<C, N, 'failed'>, undefined>, options?: types.ConnectionOptions): Promise<types.CommandResponse> // Type override for required data.
   fail<N extends types.JobNames<C>>(name: N, id: string | string[], data?: types.JobOutput<C, N, 'failed'> | Error, options?: types.ConnectionOptions): Promise<types.CommandResponse> {
     return this.#manager.fail(name, id, data, options)
   }
@@ -327,6 +334,8 @@ export class PgBoss<
     return this.#contractor.schemaVersion()
   }
 
+  schedule<N extends types.JobNames<C>>(name: undefined extends types.JobInput<C, N> ? N : never, cron: string): Promise<void> // Type override for data possibly being undefined.
+  schedule<N extends types.JobNames<C>>(name: N, cron: string, data: types.JobInput<C, N>, options?: types.ScheduleOptions): Promise<void> // Type override for required data.
   schedule<N extends types.JobNames<C>>(name: N, cron: string, data?: types.JobInput<C, N>, options?: types.ScheduleOptions): Promise<void> {
     return this.#timekeeper.schedule(name, cron, data, options)
   }
