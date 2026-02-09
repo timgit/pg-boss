@@ -183,7 +183,7 @@ function createTableBam (schema: string) {
 function createTableWarning (schema: string) {
   return `
     CREATE TABLE ${schema}.warning (
-      id serial PRIMARY KEY,
+      id uuid PRIMARY KEY default gen_random_uuid(),
       type text NOT NULL,
       message text NOT NULL,
       data jsonb,
@@ -1495,6 +1495,7 @@ export {
   setBamFailed,
   getBamStatus,
   getBamEntries,
+  serializeArrayParam,
   QUEUE_POLICIES,
   JOB_STATES,
   MIGRATE_RACE_MESSAGE,

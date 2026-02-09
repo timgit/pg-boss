@@ -8,7 +8,7 @@ A web-based dashboard for monitoring and managing [pg-boss](https://github.com/t
 - **Queue Management**: Browse all queues with real-time stats (queued, active, deferred, total)
 - **Job Browser**: View and manage individual jobs with smart filtering (defaults to pending jobs)
 - **Job Detail Inspector**: View full job payloads, output data, and metadata
-- **Job Actions**: Cancel, retry, resume, or delete jobs directly from the UI
+- **Job Actions**: Create, cancel, retry, resume, or delete jobs directly from the UI
 - **Warning History**: Track slow queries, queue backlogs, and clock skew issues
 - **Multi-Database Support**: Monitor multiple pg-boss instances from a single dashboard
 - **Pagination**: Efficiently browse large datasets with cached statistics
@@ -19,7 +19,7 @@ A web-based dashboard for monitoring and managing [pg-boss](https://github.com/t
 
 - Node.js 18+
 - PostgreSQL database with pg-boss schema
-- pg-boss v10+ (uses the `queue` table for cached statistics)
+- pg-boss v12+
 
 ## Installation
 

@@ -444,13 +444,18 @@ function getAll (schema: string): types.Migration[] {
       version: 28,
       previous: 27,
       install: [
-        // Create warning table for optional warning persistence (opt-in via persistWarnings config)
-        plans.createTableWarning(schema),
-        plans.createIndexWarning(schema)
+        `CREATE TABLE ${schema}.warning (
+          id uuid PRIMARY KEY default gen_random_uuid(),
+          type text NOT NULL,
+          message text NOT NULL,
+          data jsonb,
+          created_on timestamp with time zone NOT NULL DEFAULT now()
+        )`,
+        `CREATE INDEX warning_i1 ON ${schema}.warning (created_on DESC)`
       ],
       uninstall: [
-        `DROP INDEX IF EXISTS ${schema}.warning_i1`,
-        `DROP TABLE IF EXISTS ${schema}.warning`
+        `DROP INDEX ${schema}.warning_i1`,
+        `DROP TABLE ${schema}.warning`
       ]
     }
   ]
