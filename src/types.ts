@@ -379,11 +379,13 @@ export interface CommandResponse {
   affected: number;
 }
 
+type BamStatus = 'pending' | 'in_progress' | 'completed' | 'failed'
+
 export interface BamEntry {
   id: string
   name: string
   version: number
-  status: 'pending' | 'in_progress' | 'completed' | 'failed'
+  status: BamStatus
   queue?: string
   table: string
   command: string
@@ -394,7 +396,7 @@ export interface BamEntry {
 }
 
 export interface BamStatusSummary {
-  status: 'pending' | 'in_progress' | 'completed' | 'failed'
+  status: BamStatus
   count: number
   lastCreatedOn: Date
 }
