@@ -254,13 +254,12 @@ export interface ResolvedWorkOptions extends WorkOptions {
 }
 
 export interface WorkHandler<C extends JobsConfig, N extends JobNames<C>> {
-  (job: Job<JobInput<C, N>>[]): JobOutput<C, N, 'completed'> | Promise<JobOutput<C, N, 'completed'>>;
+  (job: Job<JobInput<C, N>>[]): Promise<JobOutput<C, N, 'completed'>>;
 }
 
 export interface WorkWithMetadataHandler<C extends JobsConfig, N extends JobNames<C>> {
-  (job: JobWithMetadata<C, N>[]): JobOutput<C, N, 'completed'> | Promise<JobOutput<C, N, 'completed'>>;
+  (job: JobWithMetadata<C, N>[]): Promise<JobOutput<C, N, 'completed'>>;
 }
-
 export interface Request<C extends JobsConfig, N extends JobNames<C>> {
   name: N;
   data?: JobInput<C, N>;
@@ -312,7 +311,7 @@ export interface JobWithMetadataAndState<C extends JobsConfig, N extends JobName
   output: JobOutput<C, N, S>;
 }
 
-export interface JobInsert<T = object> {
+export interface JobInsert<T> {
   id?: string;
   data?: T;
   priority?: number;

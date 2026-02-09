@@ -602,7 +602,7 @@ class Manager<C extends types.JobsConfig & timekeeper.JobConfig, EC extends type
 
   async insert<N extends types.JobNames<C>>(
     name: N,
-    jobs: types.JobInsert[],
+    jobs: types.JobInsert<types.JobInput<C, N>>[],
     options: types.InsertOptions = {}
   ) {
     assert(Array.isArray(jobs), 'jobs argument should be an array')

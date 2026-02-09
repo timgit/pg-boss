@@ -199,7 +199,7 @@ export class PgBoss<
     return this.#manager.sendDebounced(name, data, options, seconds, key)
   }
 
-  insert<N extends types.JobNames<C>>(name: N, jobs: types.JobInsert[], options?: types.InsertOptions): Promise<string[] | null> {
+  insert<N extends types.JobNames<C>>(name: N, jobs: types.JobInsert<types.JobInput<C, N>>[], options?: types.InsertOptions): Promise<string[] | null> {
     return this.#manager.insert(name, jobs, options)
   }
 
