@@ -169,7 +169,7 @@ class Timekeeper<C extends types.JobsConfig & JobConfig> extends EventEmitter im
     await Promise.allSettled(jobs.map(({ data }) => this.manager.send(data)))
   }
 
-  async getSchedules (name?: string, key = '') : Promise<types.Schedule[]> {
+  async getSchedules<N extends types.JobNames<C>>(name?: N, key = '') : Promise<types.Schedule<N>[]> {
     let sql = plans.getSchedules(this.config.schema)
     let params: unknown[] = []
 
@@ -183,7 +183,7 @@ class Timekeeper<C extends types.JobsConfig & JobConfig> extends EventEmitter im
     return rows
   }
 
-  async schedule (name: string, cron: string, data?: unknown, options: types.ScheduleOptions = {}): Promise<void> {
+  async schedule<N extends types.JobNames<C>>(name: N, cron: string, data?: unknown, options: types.ScheduleOptions = {}): Promise<void> {
     const { tz = 'UTC', key = '', ...rest } = options
 
     CronExpressionParser.parse(cron, { tz, strict: false })
@@ -203,7 +203,7 @@ class Timekeeper<C extends types.JobsConfig & JobConfig> extends EventEmitter im
     }
   }
 
-  async unschedule (name: string, key = ''): Promise<void> {
+  async unschedule<N extends types.JobNames<C>>(name: N, key = ''): Promise<void> {
     const sql = plans.unschedule(this.config.schema)
     await this.db.executeSql(sql, [name, key])
   }

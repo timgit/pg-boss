@@ -235,8 +235,8 @@ export interface Request<N extends string> {
   options?: SendOptions;
 }
 
-export interface Schedule {
-  name: string;
+export interface Schedule<N extends string> {
+  name: N;
   key: string;
   cron: string;
   timezone: string;

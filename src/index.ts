@@ -334,7 +334,7 @@ export class PgBoss<
     return this.#timekeeper.unschedule(name, key)
   }
 
-  getSchedules<N extends types.JobNames<C>>(name?: N, key?: string): Promise<types.Schedule[]> {
+  getSchedules<N extends types.JobNames<C>>(name?: N, key?: string): Promise<types.Schedule<N>[]> {
     return this.#timekeeper.getSchedules(name, key)
   }
 
