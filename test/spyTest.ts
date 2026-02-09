@@ -196,9 +196,13 @@ describe('spy', function () {
   })
 
   it('should work with insert (bulk send)', async function () {
-    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
+    const boss = await helper.start<{
+      name: { input: { value: string }, output: {} },
+    }>({ ...ctx.bossConfig, __test__enableSpies: true })
+    ctx.boss = boss
+    const schema = ctx.schema as 'name'
 
-    const spy = ctx.boss.getSpy(ctx.schema)
+    const spy = boss.getSpy(schema)
 
     // Use explicit IDs for bulk insert
     const { randomUUID } = await import('node:crypto')
@@ -206,7 +210,7 @@ describe('spy', function () {
     const id2 = randomUUID()
     const id3 = randomUUID()
 
-    await ctx.boss.insert(ctx.schema, [
+    await boss.insert(schema, [
       { id: id1, data: { value: 'bulk1' } },
       { id: id2, data: { value: 'bulk2' } },
       { id: id3, data: { value: 'bulk3' } }
