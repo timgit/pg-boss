@@ -216,6 +216,12 @@ function validateWarningConfig (config: any) {
 
   assert(!('warningSlowQuerySeconds' in config) || config.warningSlowQuerySeconds >= 1,
     'configuration assert: warningSlowQuerySeconds must be at least 1')
+
+  assert(!('warningRetentionDays' in config) || (Number.isInteger(config.warningRetentionDays) && config.warningRetentionDays >= 1),
+    'configuration assert: warningRetentionDays must be an integer >= 1')
+
+  assert(!('warningRetentionDays' in config) || config.warningRetentionDays <= POLICY.MAX_RETENTION_DAYS,
+    `configuration assert: warningRetentionDays cannot exceed ${POLICY.MAX_RETENTION_DAYS} days`)
 }
 
 function assertPostgresObjectName (name: string) {

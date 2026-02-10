@@ -621,6 +621,25 @@ function getAll (schema: string): types.Migration[] {
         LANGUAGE plpgsql;
         `
       ]
+    },
+    {
+      release: '12.11.0',
+      version: 29,
+      previous: 28,
+      install: [
+        `CREATE TABLE ${schema}.warning (
+          id uuid PRIMARY KEY default gen_random_uuid(),
+          type text NOT NULL,
+          message text NOT NULL,
+          data jsonb,
+          created_on timestamp with time zone NOT NULL DEFAULT now()
+        )`,
+        `CREATE INDEX warning_i1 ON ${schema}.warning (created_on DESC)`
+      ],
+      uninstall: [
+        `DROP INDEX ${schema}.warning_i1`,
+        `DROP TABLE ${schema}.warning`
+      ]
     }
   ]
 }

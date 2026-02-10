@@ -1,6 +1,6 @@
 import { expect, beforeEach } from 'vitest'
 import { PgBoss, getConstructionPlans, getMigrationPlans, getRollbackPlans } from '../src/index.ts'
-import { getDb, assertTruthy } from './testHelper.ts'
+import { getDb, assertTruthy, getSchemaDefs } from './testHelper.ts'
 import Contractor from '../src/contractor.ts'
 import { getAll, migrate } from '../src/migrationStore.ts'
 import packageJson from '../package.json' with { type: 'json' }
@@ -8,6 +8,8 @@ import { setVersion } from '../src/plans.ts'
 import { ctx } from './hooks.ts'
 
 const currentSchemaVersion = packageJson.pgboss.schema
+// Version 27 has async migrations that create BAM entries for partitioned tables
+const versionWithAsyncMigrations = 27
 
 describe('migration', function () {
   let contractor: Contractor
@@ -319,7 +321,9 @@ describe('migration', function () {
     await boss.createQueue(ctx.schema, { partition: true })
     await boss.stop()
 
-    await contractor.rollback(currentSchemaVersion)
+    for (let v = currentSchemaVersion; v > versionWithAsyncMigrations - 1; v--) {
+      await contractor.rollback(v)
+    }
 
     await boss.start()
 
@@ -336,9 +340,295 @@ describe('migration', function () {
   it('should return bam status grouped by status', async function () {
     const boss = ctx.boss = new PgBoss(ctx.bossConfig)
     await boss.start()
+    await boss.createQueue(ctx.schema, { partition: true })
+    await boss.stop()
+
+    // Rollback through each version to properly uninstall (e.g., drop warning table in v28)
+    // then rollback to version with async migrations to test BAM status
+    for (let v = currentSchemaVersion; v > versionWithAsyncMigrations - 1; v--) {
+      await contractor.rollback(v)
+    }
+
+    await boss.start()
 
     // getBamStatus returns aggregated status counts - empty array if no BAM entries exist
     const bamStatus = await boss.getBamStatus()
     expect(Array.isArray(bamStatus)).toBe(true)
+  })
+
+  it('should have identical schema after rollback and forward migration', async function () {
+    const config = { ...ctx.bossConfig }
+
+    // Create initial schema
+    await contractor.create()
+
+    // Capture initial schema state
+    const initialSchema = await getSchemaDefs([config.schema])
+
+    // Rollback to previous version
+    await contractor.rollback(currentSchemaVersion)
+    const rolledBackVersion = await contractor.schemaVersion()
+
+    assertTruthy(rolledBackVersion)
+    expect(rolledBackVersion).toBe(currentSchemaVersion - 1)
+
+    await contractor.migrate(rolledBackVersion)
+    const migratedVersion = await contractor.schemaVersion()
+
+    expect(migratedVersion).toBe(currentSchemaVersion)
+
+    // Capture final schema state
+    const finalSchema = await getSchemaDefs([config.schema])
+
+    // Compare initial and final schemas - they should be identical
+    expect(finalSchema.columns.rows.length).toBe(initialSchema.columns.rows.length)
+    expect(finalSchema.indexes.rows.length).toBe(initialSchema.indexes.rows.length)
+    expect(finalSchema.constraints.rows.length).toBe(initialSchema.constraints.rows.length)
+    expect(finalSchema.functions.rows.length).toBe(initialSchema.functions.rows.length)
+
+    // Deep comparison of actual schema objects
+    expect(finalSchema.columns.rows).toEqual(initialSchema.columns.rows)
+    expect(finalSchema.indexes.rows).toEqual(initialSchema.indexes.rows)
+    expect(finalSchema.constraints.rows).toEqual(initialSchema.constraints.rows)
+    expect(finalSchema.functions.rows).toEqual(initialSchema.functions.rows)
+  })
+
+  it('should detect function modification when migration has incomplete uninstall', async function () {
+    const config = { ...ctx.bossConfig }
+
+    // Get all real migrations
+    config.migrations = getAll(config.schema)
+
+    // Create contractor and schema
+    const db = await getDb()
+    // @ts-ignore
+    const contractor = new Contractor(db, config)
+    await contractor.create()
+
+    // Capture the original schema state
+    const originalSchema = await getSchemaDefs([config.schema])
+
+    // Create a fake migration that modifies an existing function
+    // This simulates changing business logic without properly restoring it on rollback
+    const fakeMigrationVersion = currentSchemaVersion + 1
+
+    const fakeMigration = {
+      release: '99.0.0-test',
+      version: fakeMigrationVersion,
+      previous: currentSchemaVersion,
+      install: [
+        // Modify the job_table_format function to return something different
+        `CREATE OR REPLACE FUNCTION ${config.schema}.job_table_format(command text, table_name text)
+        RETURNS text AS
+        $$
+          -- MODIFIED VERSION: This now returns a hardcoded string instead of formatting
+          SELECT 'modified_function_output'::text;
+        $$
+        LANGUAGE SQL IMMUTABLE`
+      ],
+      uninstall: [
+      ]
+    }
+
+    config.migrations.push(fakeMigration)
+    // @ts-ignore
+    const modifiedContractor = new Contractor(db, config)
+
+    await modifiedContractor.migrate(currentSchemaVersion)
+    let version = await modifiedContractor.schemaVersion()
+    expect(version).toBe(fakeMigrationVersion)
+
+    await modifiedContractor.rollback(fakeMigrationVersion)
+    version = await modifiedContractor.schemaVersion()
+    expect(version).toBe(currentSchemaVersion)
+
+    // Capture schema after rollback
+    const rolledBackSchema = await getSchemaDefs([config.schema])
+
+    await db.close()
+
+    expect(rolledBackSchema.functions.rows).not.toEqual(originalSchema.functions.rows)
+  })
+
+  it('should reject index creation that is not completely removed', async function () {
+    const config = { ...ctx.bossConfig }
+    const schema = config.schema
+
+    config.migrations = getAll(schema)
+
+    const db = await getDb()
+    // @ts-ignore
+    const contractor = new Contractor(db, config)
+    await contractor.create()
+
+    const originalSchema = await getSchemaDefs([schema])
+
+    const fakeMigrationVersion = currentSchemaVersion + 1
+
+    const fakeMigration = {
+      release: '99.0.0-test',
+      version: fakeMigrationVersion,
+      previous: currentSchemaVersion,
+      install: [
+        // indexes that have the naming convention job_i* are expected to be created by the job_table_run() function in the migration scripts.
+        `SELECT ${schema}.job_table_run($cmd$CREATE INDEX job_i99 ON ${schema}.job (name, created_on)$cmd$, 'job_common')`
+      ],
+      uninstall: [
+        // BUG: The uninstall should use job_table_run() as well to guarantee the index name matches.
+        // In this case, IF EXISTS will bypass dropping it since then name doesn't match
+        `DROP INDEX IF EXISTS ${schema}.job_i99`,
+      ]
+    }
+
+    config.migrations.push(fakeMigration)
+    // @ts-ignore
+    const modifiedContractor = new Contractor(db, config)
+
+    await modifiedContractor.migrate(currentSchemaVersion)
+    let version = await modifiedContractor.schemaVersion()
+    expect(version).toBe(fakeMigrationVersion)
+
+    const intermediateSchema = await getSchemaDefs([schema])
+    expect(intermediateSchema.indexes.rows.length).toBeGreaterThan(originalSchema.indexes.rows.length)
+
+    await modifiedContractor.rollback(fakeMigrationVersion)
+    version = await modifiedContractor.schemaVersion()
+    expect(version).toBe(currentSchemaVersion)
+
+    const rolledBackSchema = await getSchemaDefs([schema])
+
+    await db.close()
+
+    expect(rolledBackSchema.indexes.rows).not.toEqual(originalSchema.indexes.rows)
+  })
+
+  it('should remove indexes created on the job table that follow the standard naming convention', async function () {
+    const config = { ...ctx.bossConfig }
+    const schema = config.schema
+
+    // Get all real migrations
+    config.migrations = getAll(schema)
+
+    // Create contractor and schema
+    const db = await getDb()
+    // @ts-ignore
+    const contractor = new Contractor(db, config)
+    await contractor.create()
+
+    const originalSchema = await getSchemaDefs([schema])
+
+    const fakeMigrationVersion = currentSchemaVersion + 1
+
+    const fakeMigration = {
+      release: '99.0.0-test',
+      version: fakeMigrationVersion,
+      previous: currentSchemaVersion,
+      install: [
+        // indexes that have the naming convention job_i* are expected to be created by the job_table_run() function in the migration scripts.
+        `SELECT ${schema}.job_table_run($cmd$CREATE INDEX job_i99 ON ${schema}.job (name, created_on)$cmd$, 'job_common')`
+      ],
+      uninstall: [
+        `SELECT ${schema}.job_table_run($cmd$DROP INDEX ${schema}.job_i99$cmd$, 'job_common')`,
+      ]
+    }
+
+    config.migrations.push(fakeMigration)
+    // @ts-ignore
+    const modifiedContractor = new Contractor(db, config)
+
+    await modifiedContractor.migrate(currentSchemaVersion)
+    let version = await modifiedContractor.schemaVersion()
+    expect(version).toBe(fakeMigrationVersion)
+
+    const intermediateSchema = await getSchemaDefs([schema])
+    expect(intermediateSchema.indexes.rows.length).toBeGreaterThan(originalSchema.indexes.rows.length)
+
+    await modifiedContractor.rollback(fakeMigrationVersion)
+    version = await modifiedContractor.schemaVersion()
+    expect(version).toBe(currentSchemaVersion)
+
+    const rolledBackSchema = await getSchemaDefs([schema])
+
+    await db.close()
+
+    expect(rolledBackSchema.indexes.rows).toEqual(originalSchema.indexes.rows)
+  })
+
+  it('should have identical schema after rolling back all migrations and replaying them', async function () {
+    const config = { ...ctx.bossConfig }
+    const schema = config.schema
+
+    config.migrations = getAll(schema)
+
+    const db = await getDb()
+    // @ts-ignore
+    const contractor = new Contractor(db, config)
+
+    // Helper function to wait for BAM completion
+    const waitForBamCompletion = async (boss: PgBoss, timeoutMs = 10000): Promise<void> => {
+      const startTime = Date.now()
+      while (true) {
+        const bamStatus = await boss.getBamStatus()
+        const pending = bamStatus.find(s => s.status === 'pending' || s.status === 'in_progress')
+
+        if (!pending) {
+          break  // All BAM migrations complete
+        }
+
+        if (Date.now() - startTime > timeoutMs) {
+          throw new Error(`Timeout waiting for BAM completion. Status: ${JSON.stringify(bamStatus)}`)
+        }
+
+        await new Promise(resolve => setTimeout(resolve, 500))  // Poll every 500ms
+      }
+    }
+
+    await contractor.create()
+
+    // Start PgBoss with BAM enabled to process any async migrations in baseline
+    const bamConfig = {
+      noDefault: true,
+      bamIntervalSeconds: 1,
+      __test__bypass_bam_interval_check: true
+    }
+    const baselineBoss = new PgBoss({ ...config, ...bamConfig })
+    await baselineBoss.start()
+    await waitForBamCompletion(baselineBoss)
+    await baselineBoss.stop()
+
+    const baselineSchema = await getSchemaDefs([schema])
+
+    // Find the earliest migration version
+    const migrations = config.migrations
+    const earliestMigration = migrations.reduce((min, m) => m.version < min.version ? m : min, migrations[0])
+
+    for (let v = currentSchemaVersion; v > earliestMigration.version; v--) {
+      await contractor.rollback(v)
+    }
+
+    const earliestVersion = await contractor.schemaVersion()
+    expect(earliestVersion).toBe(earliestMigration.version)
+
+    for (let v = earliestMigration.version; v < currentSchemaVersion; v++) {
+      await contractor.migrate(v)
+    }
+
+    const finalVersion = await contractor.schemaVersion()
+    expect(finalVersion).toBe(currentSchemaVersion)
+
+    // Start PgBoss with BAM enabled to process any async migrations after replay
+    const finalBoss = new PgBoss({ ...config, ...bamConfig })
+    await finalBoss.start()
+    await waitForBamCompletion(finalBoss)
+    await finalBoss.stop()
+
+    const finalSchema = await getSchemaDefs([schema])
+
+    await db.close()
+
+    expect(finalSchema.columns.rows).toEqual(baselineSchema.columns.rows)
+    expect(finalSchema.indexes.rows).toEqual(baselineSchema.indexes.rows)
+    expect(finalSchema.constraints.rows).toEqual(baselineSchema.constraints.rows)
+    expect(finalSchema.functions.rows).toEqual(baselineSchema.functions.rows)
   })
 })

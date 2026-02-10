@@ -64,6 +64,9 @@ function create (schema: string, version: number, options?: { createSchema?: boo
 
     createTableJobCommon(schema),
 
+    createTableWarning(schema),
+    createIndexWarning(schema),
+
     createQueueFunction(schema),
     deleteQueueFunction(schema),
 
@@ -176,6 +179,22 @@ function createTableBam (schema: string) {
       completed_on timestamp with time zone
     )
   `
+}
+
+function createTableWarning (schema: string) {
+  return `
+    CREATE TABLE ${schema}.warning (
+      id uuid PRIMARY KEY default gen_random_uuid(),
+      type text NOT NULL,
+      message text NOT NULL,
+      data jsonb,
+      created_on timestamp with time zone NOT NULL DEFAULT now()
+    )
+  `
+}
+
+function createIndexWarning (schema: string) {
+  return `CREATE INDEX warning_i1 ON ${schema}.warning (created_on DESC)`
 }
 
 function jobTableFormatFunction (schema: string) {
@@ -638,7 +657,7 @@ function deleteAllJobs (schema: string, table: string) {
 }
 
 function getSchedules (schema: string) {
-  return `SELECT * FROM ${schema}.schedule`
+  return `SELECT * FROM ${schema}.schedule ORDER BY name, key`
 }
 
 function getSchedulesByQueue (schema: string) {
@@ -693,6 +712,43 @@ function getQueuesForEvent (schema: string) {
 
 function getTime () {
   return "SELECT round(date_part('epoch', now()) * 1000) as time"
+}
+
+function insertWarning (schema: string) {
+  return `
+    INSERT INTO ${schema}.warning (type, message, data)
+    VALUES ($1, $2, $3)
+  `
+}
+
+function getWarnings (schema: string): string {
+  return `
+    SELECT
+      id,
+      type,
+      message,
+      data,
+      created_on as "createdOn"
+    FROM ${schema}.warning
+    WHERE ($1::text IS NULL OR type = $1)
+    ORDER BY created_on DESC
+    LIMIT $2 OFFSET $3
+  `
+}
+
+function getWarningsCount (schema: string): string {
+  return `
+    SELECT COUNT(*)::int as count
+    FROM ${schema}.warning
+    WHERE ($1::text IS NULL OR type = $1)
+  `
+}
+
+function deleteOldWarnings (schema: string, days: number): string {
+  return `
+    DELETE FROM ${schema}.warning
+    WHERE created_on < now() - interval '${days} days'
+  `
 }
 
 function getVersion (schema: string) {
@@ -1452,12 +1508,19 @@ export {
   locked,
   assertMigration,
   getJobById,
+  insertWarning,
+  getWarnings,
+  getWarningsCount,
+  deleteOldWarnings,
+  createTableWarning,
+  createIndexWarning,
   getBlockedKeys,
   getNextBamCommand,
   setBamCompleted,
   setBamFailed,
   getBamStatus,
   getBamEntries,
+  serializeArrayParam,
   QUEUE_POLICIES,
   JOB_STATES,
   MIGRATE_RACE_MESSAGE,

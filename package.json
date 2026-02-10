@@ -1,6 +1,6 @@
 {
   "name": "pg-boss",
-  "version": "12.10.0",
+  "version": "12.11.0",
   "description": "Queueing jobs in Postgres from Node.js like a boss",
   "type": "module",
   "main": "./dist/index.js",
@@ -29,7 +29,7 @@
     "neostandard": "^0.12.2",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
-    "vitest": "^4.0.16"
+    "vitest": "^4.0.18"
   },
   "scripts": {
     "build": "npm run clean && tsc --project tsconfig.build.json",
@@ -44,7 +44,7 @@
     "db:construct": "node --import=tsx -e 'console.log(require(\"./src\").getConstructionPlans())'"
   },
   "pgboss": {
-    "schema": 28
+    "schema": 29
   },
   "repository": {
     "type": "git",
