@@ -35,7 +35,10 @@ jobs:
         with:
           node-version: '24'
 
-      - name: Install dependencies
+      - name: Install root dependencies
+        run: npm install
+
+      - name: Install dashboard dependencies
         working-directory: packages/dashboard
         run: npm install
 
