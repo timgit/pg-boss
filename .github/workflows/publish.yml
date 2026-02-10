@@ -2,8 +2,8 @@ name: Publish Package
 
 on:
   push:
-    tags:
-      - '*'
+    tags-ignore:
+      - 'dashboard-*'
 
 jobs:
   publish:
