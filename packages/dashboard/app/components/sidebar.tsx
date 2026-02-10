@@ -226,7 +226,7 @@ export function AppSidebar () {
                     onClick={() => setOpenMobile(false)}
                   >
                     {({ isActive }: { isActive: boolean }) => (
-                      <SidebarMenuButton isActive={isActive}>
+                      <SidebarMenuButton isActive={isActive} tooltip={item.name}>
                         <item.icon className="h-5 w-5 flex-shrink-0" />
                         <span className="group-data-[state=collapsed]:hidden">{item.name}</span>
                       </SidebarMenuButton>

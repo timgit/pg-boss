@@ -3,6 +3,7 @@ import { cva, type VariantProps } from 'class-variance-authority'
 import { PanelLeft } from 'lucide-react'
 import { useRender, mergeProps } from '@base-ui/react'
 import { cn } from '~/lib/utils'
+import { Tooltip } from '~/components/ui/tooltip'
 
 const SIDEBAR_COOKIE_NAME = 'sidebar:state'
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7 // 7 days
@@ -309,7 +310,9 @@ const SidebarMenuButton = React.forwardRef<
     tooltip?: string | React.ComponentProps<'div'>
   } & VariantProps<typeof sidebarMenuButtonVariants>
 >(({ render, isActive = false, variant = 'default', size = 'default', tooltip, className, ...props }, ref) => {
-  return useRender({
+  const { state } = useSidebar()
+
+  const button = useRender({
     defaultTagName: 'button',
     render,
     props: mergeProps(
@@ -326,6 +329,13 @@ const SidebarMenuButton = React.forwardRef<
     ),
     ref,
   })
+
+  // Show tooltip only when sidebar is collapsed and tooltip is provided
+  if (state === 'collapsed' && tooltip && typeof tooltip === 'string') {
+    return <Tooltip content={tooltip}>{button}</Tooltip>
+  }
+
+  return button
 })
 SidebarMenuButton.displayName = 'SidebarMenuButton'
 

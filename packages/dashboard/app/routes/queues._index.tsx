@@ -6,6 +6,7 @@ import { getQueues, getQueueCount } from '~/lib/queries.server'
 import { Card, CardContent } from '~/components/ui/card'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
+import { FilterSelect } from '~/components/ui/filter-select'
 import {
   Table,
   TableHeader,
@@ -181,29 +182,15 @@ export default function QueuesIndex ({ loaderData }: Route.ComponentProps) {
             )}
           </div>
         </div>
-        <div className="flex gap-2">
-          <Button
-            variant={filter === 'all' ? 'primary' : 'outline'}
-            size="md"
-            onClick={() => handleFilterChange('all')}
-          >
-            All
-          </Button>
-          <Button
-            variant={filter === 'attention' ? 'primary' : 'outline'}
-            size="md"
-            onClick={() => handleFilterChange('attention')}
-          >
-            Attention
-          </Button>
-          <Button
-            variant={filter === 'partitioned' ? 'primary' : 'outline'}
-            size="md"
-            onClick={() => handleFilterChange('partitioned')}
-          >
-            Partitioned
-          </Button>
-        </div>
+        <FilterSelect
+          value={filter}
+          options={[
+            { value: 'all', label: 'All Queues' },
+            { value: 'attention', label: 'Needing Attention' },
+            { value: 'partitioned', label: 'Partitioned' },
+          ]}
+          onChange={(value) => handleFilterChange(value)}
+        />
       </div>
 
       {/* Active filters */}

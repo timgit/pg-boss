@@ -30,10 +30,8 @@ export function Breadcrumbs() {
   } else if (pathSegments[0] === 'schedules') {
     breadcrumbs.push({ label: 'Schedules', href: '/schedules' })
 
-    if (pathSegments.length === 1 || pathSegments[1] === 'new') {
-      if (pathSegments[1] === 'new') {
-        breadcrumbs.push({ label: 'Schedule Job' })
-      }
+    if (pathSegments.length > 1 && pathSegments[1] === 'new') {
+      breadcrumbs.push({ label: 'New Schedule' })
     } else if (pathSegments.length > 1) {
       const scheduleName = decodeURIComponent(pathSegments[1])
       breadcrumbs.push({ label: scheduleName })

@@ -196,15 +196,7 @@ export default function CreateSchedule ({ loaderData, actionData }: any) {
         </div>
       )}
 
-      <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
-        <DbLink to="/schedules" className="hover:text-gray-700 dark:hover:text-gray-300">
-          Schedules
-        </DbLink>
-        <span>/</span>
-        <span className="text-gray-900 dark:text-gray-100 font-medium">Schedule Job</span>
-      </div>
-
-      <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Schedule Job</h1>
+      <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">New Schedule</h1>
 
       <Card>
         <CardHeader>

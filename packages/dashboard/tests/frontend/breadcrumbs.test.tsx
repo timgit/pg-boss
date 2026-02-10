@@ -107,7 +107,7 @@ describe("Breadcrumbs", () => {
     );
 
     expect(screen.getByText("Schedules")).toBeInTheDocument();
-    expect(screen.getByText("Schedule Job")).toBeInTheDocument();
+    expect(screen.getByText("New Schedule")).toBeInTheDocument();
   });
 
   it("renders breadcrumbs for specific schedule", () => {
