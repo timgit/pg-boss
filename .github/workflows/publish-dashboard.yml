@@ -33,7 +33,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-          registry-url: 'https://registry.npmjs.org'
 
       - name: Install dependencies
         working-directory: packages/dashboard
@@ -45,12 +44,6 @@ jobs:
         env:
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/pgboss
 
-      - name: Build package
-        working-directory: packages/dashboard
-        run: npm run build
-
       - name: Publish to npm
         working-directory: packages/dashboard
         run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
