@@ -52,6 +52,16 @@ This will likely cater the most to teams already familiar with the simplicity of
 * Serverless function compatible
 * Multi-master compatible (for example, in a Kubernetes ReplicaSet)
 
+## Dashboard
+
+A web-based dashboard is available for monitoring and managing pg-boss job queues. It provides an overview of queue statistics, job browsing and filtering, job actions (create, cancel, retry, resume, delete), warning history, and multi-database support.
+
+```bash
+DATABASE_URL="postgres://user:password@localhost:5432/mydb" npx pg-boss-dashboard
+```
+
+See the [Dashboard](dashboard.md) page for more details.
+
 ## Requirements
 * Node 22.12 or higher for CommonJS's require(esm)
 * PostgreSQL 13 or higher

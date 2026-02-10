@@ -1,6 +1,7 @@
 * [Home](/)
 * [Introduction](introduction.md)
 * [Install](install.md)
+* [Dashboard](dashboard.md)
 * API
 * * [Constructor](./api/constructor.md)
 * * [Events](./api/events.md)
