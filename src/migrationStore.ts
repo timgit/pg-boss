@@ -444,8 +444,7 @@ function getAll (schema: string): types.Migration[] {
       version: 28,
       previous: 27,
       install: [
-        // Create key_strict_fifo index and CHECK constraint on job_common (the default partition)
-        `SELECT ${schema}.job_table_run($cmd$CREATE UNIQUE INDEX IF NOT EXISTS job_i8 ON ${schema}.job (name, singleton_key) WHERE state IN ('active', 'retry', 'failed') AND policy = 'key_strict_fifo'$cmd$, 'job_common')`,
+        // Create key_strict_fifo CHECK constraint on job_common (the default partition)
         `SELECT ${schema}.job_table_run($cmd$ALTER TABLE ${schema}.job ADD CONSTRAINT job_key_strict_fifo_singleton_key_check CHECK (NOT (policy = 'key_strict_fifo' AND singleton_key IS NULL))$cmd$, 'job_common')`,
         // Update create_queue function to include the FIFO index for partitioned tables
         `
@@ -518,9 +517,9 @@ function getAll (schema: string): types.Migration[] {
             EXECUTE ${schema}.job_table_format($cmd$CREATE UNIQUE INDEX job_i3 ON ${schema}.job (name, state, COALESCE(singleton_key, '')) WHERE state <= 'active' AND policy = 'stately'$cmd$, tablename);
           ELSIF options->>'policy' = 'exclusive' THEN
             EXECUTE ${schema}.job_table_format($cmd$CREATE UNIQUE INDEX job_i6 ON ${schema}.job (name, COALESCE(singleton_key, '')) WHERE state <= 'active' AND policy = 'exclusive'$cmd$, tablename);
-          ELSIF options->>'policy' = '${plans.QUEUE_POLICIES.key_strict_fifo}' THEN
-            EXECUTE ${schema}.job_table_format($cmd$CREATE UNIQUE INDEX job_i8 ON ${schema}.job (name, singleton_key) WHERE state IN ('active', 'retry', 'failed') AND policy = '${plans.QUEUE_POLICIES.key_strict_fifo}'$cmd$, tablename);
-            EXECUTE ${schema}.job_table_format($cmd$ALTER TABLE ${schema}.job ADD CONSTRAINT job_key_strict_fifo_singleton_key_check CHECK (NOT (policy = '${plans.QUEUE_POLICIES.key_strict_fifo}' AND singleton_key IS NULL))$cmd$, tablename);
+          ELSIF options->>'policy' = 'key_strict_fifo' THEN
+            EXECUTE ${schema}.job_table_format($cmd$CREATE UNIQUE INDEX job_i8 ON ${schema}.job (name, singleton_key) WHERE state IN ('active', 'retry', 'failed') AND policy = 'key_strict_fifo'$cmd$, tablename);
+            EXECUTE ${schema}.job_table_format($cmd$ALTER TABLE ${schema}.job ADD CONSTRAINT job_key_strict_fifo_singleton_key_check CHECK (NOT (policy = 'key_strict_fifo' AND singleton_key IS NULL))$cmd$, tablename);
           END IF;
 
           EXECUTE format('ALTER TABLE ${schema}.%I ADD CONSTRAINT cjc CHECK (name=%L)', tablename, queue_name);
@@ -529,6 +528,15 @@ function getAll (schema: string): types.Migration[] {
         $$
         LANGUAGE plpgsql;
         `
+      ],
+      async: [
+        `SELECT ${schema}.job_table_run_async(
+          'key_strict_fifo_index',
+          $VERSION$,
+          $$
+          CREATE UNIQUE INDEX CONCURRENTLY job_i8 ON ${schema}.job (name, singleton_key) WHERE state IN ('active', 'retry', 'failed') AND policy = 'key_strict_fifo'
+          $$
+        , 'job_common')`
       ],
       uninstall: [
         `SELECT ${schema}.job_table_run('DROP INDEX IF EXISTS ${schema}.job_i8')`,
