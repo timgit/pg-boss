@@ -17,7 +17,7 @@ interface ConfirmDialogProps {
   triggerVariant?: 'ghost' | 'outline' | 'danger'
   trigger: React.ReactNode
   onConfirm: () => void
-  isDisabled?: boolean
+  disabled?: boolean
 }
 
 export function ConfirmDialog ({
@@ -28,7 +28,7 @@ export function ConfirmDialog ({
   triggerVariant = 'ghost',
   trigger,
   onConfirm,
-  isDisabled,
+  disabled,
 }: ConfirmDialogProps) {
   const [isOpen, setIsOpen] = useState(false)
 
@@ -42,7 +42,7 @@ export function ConfirmDialog ({
       <Button
         variant={triggerVariant}
         size="sm"
-        disabled={isDisabled}
+        disabled={disabled}
         onClick={() => setIsOpen(true)}
         className="cursor-pointer"
       >

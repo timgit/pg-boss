@@ -17,9 +17,9 @@ A web-based dashboard for monitoring and managing [pg-boss](https://github.com/t
 
 ## Requirements
 
-- Node.js 18+
+- Node.js 22.12+
 - PostgreSQL database with pg-boss schema
-- pg-boss v12+
+- pg-boss 12.10+
 
 ## Installation
 
@@ -243,7 +243,7 @@ This creates a `warning` table in your pg-boss schema that stores:
 - **Framework**: [React Router 7](https://reactrouter.com/) (framework mode)
 - **Server**: [Hono](https://hono.dev/) via [react-router-hono-server](https://github.com/rphlmr/react-router-hono-server)
 - **Styling**: [Tailwind CSS v4](https://tailwindcss.com/)
-- **Components**: [React Aria Components](https://react-spectrum.adobe.com/react-aria/components.html)
+- **Components**: [Base UI](https://base-ui.com/)
 - **Database**: [pg](https://node-postgres.com/) (PostgreSQL client)
 - **Testing**: [Vitest](https://vitest.dev/) + [Testing Library](https://testing-library.com/)
 

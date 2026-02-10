@@ -36,27 +36,16 @@ export interface ButtonProps
   extends ButtonHTMLAttributes<HTMLButtonElement>,
     VariantProps<typeof buttonVariants> {
   render?: ReactElement
-  // Backward compatibility with React Aria
-  isDisabled?: boolean
-  onPress?: () => void
 }
 
 const Button = forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, render, isDisabled, onPress, onClick, disabled, ...props }, ref) => {
-    // Support both isDisabled (React Aria) and disabled (native)
-    const isButtonDisabled = isDisabled ?? disabled
-
-    // Support both onPress (React Aria) and onClick (native)
-    const handleClick = onPress ?? onClick
-
+  ({ className, variant, size, render, ...props }, ref) => {
     return useRender({
       defaultTagName: 'button',
       render,
       props: mergeProps(
         {
           className: cn(buttonVariants({ variant, size, className })),
-          disabled: isButtonDisabled,
-          onClick: handleClick,
         },
         props
       ),

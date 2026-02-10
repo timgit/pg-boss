@@ -9,20 +9,20 @@ describe("Button", () => {
     expect(screen.getByRole("button")).toHaveTextContent("Click Me");
   });
 
-  it("calls onPress when clicked", async () => {
+  it("calls onClick when clicked", async () => {
     const user = userEvent.setup();
-    const handlePress = vi.fn();
-    render(<Button onPress={handlePress}>Click</Button>);
+    const handleClick = vi.fn();
+    render(<Button onClick={handleClick}>Click</Button>);
 
     await user.click(screen.getByRole("button"));
-    expect(handlePress).toHaveBeenCalledTimes(1);
+    expect(handleClick).toHaveBeenCalledTimes(1);
   });
 
-  it("does not call onPress when disabled", async () => {
+  it("does not call onClick when disabled", async () => {
     const user = userEvent.setup();
-    const handlePress = vi.fn();
+    const handleClick = vi.fn();
     render(
-      <Button isDisabled onPress={handlePress}>
+      <Button disabled onClick={handleClick}>
         Disabled
       </Button>
     );
@@ -31,7 +31,7 @@ describe("Button", () => {
     expect(button).toBeDisabled();
 
     await user.click(button);
-    expect(handlePress).not.toHaveBeenCalled();
+    expect(handleClick).not.toHaveBeenCalled();
   });
 
   it("supports type attribute for form submission", () => {

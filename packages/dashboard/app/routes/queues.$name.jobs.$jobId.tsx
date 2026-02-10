@@ -142,7 +142,7 @@ export default function JobDetail ({ loaderData }: Route.ComponentProps) {
                 triggerVariant="outline"
                 trigger="Cancel"
                 onConfirm={() => submitAction('cancel')}
-                isDisabled={isLoading}
+                disabled={isLoading}
               />
             )}
             {job.state !== 'active' && (
@@ -154,7 +154,7 @@ export default function JobDetail ({ loaderData }: Route.ComponentProps) {
                 triggerVariant="danger"
                 trigger="Delete"
                 onConfirm={() => submitAction('delete')}
-                isDisabled={isLoading}
+                disabled={isLoading}
               />
             )}
           </div>
