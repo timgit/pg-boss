@@ -20,6 +20,8 @@ export default defineConfig({
         'app/components/loading-bar.tsx',
         'app/components/ui/confirm-dialog.tsx',
         'app/components/ui/select.tsx',
+        // Base-UI wrapper with minimal custom logic - primarily style configuration
+        'app/components/ui/dropdown-menu.tsx',
       ],
       thresholds: {
         lines: 70,

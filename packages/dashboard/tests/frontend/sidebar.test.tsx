@@ -23,7 +23,9 @@ describe('Sidebar', () => {
       renderWithRouter()
 
       expect(screen.getByText('Overview')).toBeInTheDocument()
+      expect(screen.getByText('Jobs')).toBeInTheDocument()
       expect(screen.getByText('Queues')).toBeInTheDocument()
+      expect(screen.getByText('Schedules')).toBeInTheDocument()
       expect(screen.getByText('Warnings')).toBeInTheDocument()
     })
 
@@ -34,8 +36,26 @@ describe('Sidebar', () => {
       const hrefs = links.map((link) => link.getAttribute('href'))
 
       expect(hrefs).toContain('/')
+      expect(hrefs).toContain('/jobs')
       expect(hrefs).toContain('/queues')
+      expect(hrefs).toContain('/schedules')
       expect(hrefs).toContain('/warnings')
+    })
+
+    it('renders icons for all navigation items', () => {
+      const { container } = renderWithRouter()
+
+      // Each nav item should have an SVG icon
+      const navLinks = screen.getAllByRole('link')
+      const iconsInNav = navLinks.filter(link =>
+        link.querySelector('svg')
+      )
+      expect(iconsInNav.length).toBeGreaterThanOrEqual(5)
+    })
+
+    it('renders navigation items for queues route', () => {
+      renderWithRouter('/queues')
+      expect(screen.getByText('Queues')).toBeInTheDocument()
     })
   })
 

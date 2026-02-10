@@ -3,6 +3,7 @@ import { ctx, createTestQueue, getBoss } from './helpers'
 import { action as sendJobAction } from '~/routes/send'
 import { action as createQueueAction } from '~/routes/queues.create'
 import { getQueue } from '~/lib/queries.server'
+import { schedule, unschedule } from '~/lib/boss.server'
 
 describe('Send Job Action', () => {
   it('creates a job with basic options', async () => {
@@ -526,5 +527,41 @@ describe('Create Queue Action', () => {
     })
 
     expect(result).toHaveProperty('error', 'Delete after seconds must be a non-negative integer (0 = never delete)')
+  })
+})
+
+describe('Schedule Functions', () => {
+  it('creates a schedule', async () => {
+    await createTestQueue('scheduled-queue')
+
+    await schedule(
+      ctx.connectionString,
+      ctx.schema,
+      'scheduled-queue',
+      '0 * * * *', // Every hour
+      { task: 'scheduled-task' }
+    )
+
+    const boss = getBoss()
+    const schedules = await boss.getSchedules()
+    expect(schedules.some(s => s.name === 'scheduled-queue')).toBe(true)
+  })
+
+  it('removes a schedule', async () => {
+    await createTestQueue('scheduled-queue')
+
+    await schedule(
+      ctx.connectionString,
+      ctx.schema,
+      'scheduled-queue',
+      '0 * * * *',
+      { task: 'scheduled-task' }
+    )
+
+    await unschedule(ctx.connectionString, ctx.schema, 'scheduled-queue')
+
+    const boss = getBoss()
+    const schedules = await boss.getSchedules()
+    expect(schedules.some(s => s.name === 'scheduled-queue')).toBe(false)
   })
 })

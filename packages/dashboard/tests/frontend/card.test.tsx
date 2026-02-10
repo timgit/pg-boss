@@ -4,6 +4,7 @@ import {
   Card,
   CardHeader,
   CardTitle,
+  CardDescription,
   CardContent,
 } from "~/components/ui/card";
 
@@ -33,6 +34,13 @@ describe("CardTitle", () => {
   });
 });
 
+describe("CardDescription", () => {
+  it("renders description text", () => {
+    render(<CardDescription>Description text</CardDescription>);
+    expect(screen.getByText("Description text")).toBeInTheDocument();
+  });
+});
+
 describe("CardContent", () => {
   it("renders children", () => {
     render(<CardContent>Content Area</CardContent>);
@@ -46,6 +54,7 @@ describe("Card composition", () => {
       <Card>
         <CardHeader>
           <CardTitle>Test Card</CardTitle>
+          <CardDescription>Card subtitle</CardDescription>
         </CardHeader>
         <CardContent>
           <p>This is the card content.</p>
@@ -54,6 +63,7 @@ describe("Card composition", () => {
     );
 
     expect(screen.getByRole("heading", { level: 3 })).toHaveTextContent("Test Card");
+    expect(screen.getByText("Card subtitle")).toBeInTheDocument();
     expect(screen.getByText("This is the card content.")).toBeInTheDocument();
   });
 });

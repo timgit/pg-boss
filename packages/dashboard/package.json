@@ -35,7 +35,8 @@
     "cover:frontend": "vitest run --coverage --config vitest.config.frontend.ts",
     "cover:server": "vitest run --coverage --config vitest.config.server.ts",
     "typegen": "react-router typegen",
-    "typecheck": "react-router typegen && tsc --noEmit"
+    "typecheck": "react-router typegen && tsc --noEmit",
+    "ci": "npm run typecheck && npm run cover:frontend && cross-env DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/pgboss npm run cover:server"
   },
   "dependencies": {
     "@base-ui/react": "^1.1.0",
