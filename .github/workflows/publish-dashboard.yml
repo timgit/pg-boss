@@ -8,6 +8,7 @@ on:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    container: node:24
     permissions:
       id-token: write  # Required for OIDC trusted publishing
       contents: read
@@ -37,12 +38,6 @@ jobs:
       - name: Install dependencies
         working-directory: packages/dashboard
         run: npm install
-
-      - name: Run tests
-        working-directory: packages/dashboard
-        run: npm run ci
-        env:
-          DATABASE_URL: postgres://postgres:postgres@localhost:5432/pgboss
 
       - name: Publish to npm
         working-directory: packages/dashboard

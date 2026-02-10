@@ -28,7 +28,7 @@
     "dev:worker": "cross-env DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/pgboss tsx scripts/worker.ts",
     "build": "react-router build",
     "start": "node ./build/server/index.js",
-    "prepublishOnly": "npm run build",
+    "prepublishOnly": "npm run typecheck && npm run test && npm run build",
     "test": "vitest run --config vitest.config.frontend.ts && vitest run --config vitest.config.server.ts",
     "test:frontend": "vitest run --config vitest.config.frontend.ts",
     "test:server": "vitest run --config vitest.config.server.ts",

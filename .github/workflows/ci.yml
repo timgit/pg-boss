@@ -2,8 +2,12 @@ on:
   push:
     branches: [master]
     tags-ignore: ['**']
+    paths-ignore:
+      - 'packages/dashboard/**'
   pull_request:
     branches: [master]
+    paths-ignore:
+      - 'packages/dashboard/**'
 
 name: CI
 
