@@ -19,7 +19,7 @@ A web-based dashboard for monitoring and managing [pg-boss](https://github.com/t
 
 - Node.js 22.12+
 - PostgreSQL database with pg-boss schema
-- pg-boss 12.10+
+- pg-boss 12.11+
 
 ## Installation
 
