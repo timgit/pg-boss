@@ -29,6 +29,18 @@ The dashboard is configured via environment variables:
 | `DATABASE_URL` | PostgreSQL connection string(s) | `postgres://localhost/pgboss` |
 | `PGBOSS_SCHEMA` | pg-boss schema name(s) | `pgboss` |
 | `PORT` | Server port | `3000` |
+| `PGBOSS_DASHBOARD_AUTH_USERNAME` | Basic auth username (optional) | - |
+| `PGBOSS_DASHBOARD_AUTH_PASSWORD` | Basic auth password (optional) | - |
+
+### Basic Authentication
+
+To protect the dashboard with basic authentication, set both environment variables:
+
+```bash
+PGBOSS_DASHBOARD_AUTH_USERNAME=admin PGBOSS_DASHBOARD_AUTH_PASSWORD=secret DATABASE_URL="postgres://localhost/mydb" npx pg-boss-dashboard
+```
+
+When both `PGBOSS_DASHBOARD_AUTH_USERNAME` and `PGBOSS_DASHBOARD_AUTH_PASSWORD` are set, the dashboard will require credentials before granting access. If either variable is missing, the dashboard runs without authentication.
 
 ### Multi-Database Configuration
 
