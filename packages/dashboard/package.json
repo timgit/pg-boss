@@ -16,10 +16,11 @@
   ],
   "type": "module",
   "bin": {
-    "pg-boss-dashboard": "./build/server/index.js"
+    "pg-boss-dashboard": "./bin/cli.js"
   },
   "files": [
-    "build"
+    "build",
+    "bin"
   ],
   "scripts": {
     "dev": "cross-env DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/pgboss react-router dev",
