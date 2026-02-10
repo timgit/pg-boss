@@ -1,21 +1,15 @@
 #!/usr/bin/env node
-import { serve } from '@hono/node-server'
+import { fileURLToPath } from 'url'
+import { dirname, join } from 'path'
+import process from 'process'
 
-const port = process.env.PORT || 3000
-const host = process.env.HOST || '0.0.0.0'
+// Set PORT and HOST before importing the server
+if (!process.env.PORT) process.env.PORT = '3000'
+if (!process.env.HOST) process.env.HOST = '0.0.0.0'
 
-// Import the built server
-const { default: server } = await import('../build/server/index.js')
+// Change to package directory so relative paths in the build resolve correctly
+const packageRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
+process.chdir(packageRoot)
 
-// Start the server
-serve(
-  {
-    fetch: server.fetch,
-    port: parseInt(String(port), 10),
-    hostname: host,
-  },
-  (info) => {
-    console.log(`pg-boss dashboard server running at http://${info.address}:${info.port}`)
-    console.log('Open your browser to view the dashboard')
-  }
-)
+// Import the built server - it will auto-start in production mode
+await import('../build/server/index.js')

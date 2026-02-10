@@ -156,9 +156,10 @@ pg-boss plans create --schema myapp_jobs
 
 ## Dashboard
 
-A web-based dashboard is available for monitoring and managing pg-boss job queues. It provides an overview of queue statistics, job browsing and filtering, job actions (create, cancel, retry, resume, delete), warning history, and multi-database support.
+A [web-based dashboard](https://www.npmjs.com/package/@pg-boss/dashboard) is available for monitoring and managing pg-boss job queues. It provides an overview of queue statistics, job browsing and filtering, job actions (create, cancel, retry, resume, delete), warning history, and multi-database support.
 
 ```bash
+npm i @pg-boss/dashboard
 DATABASE_URL="postgres://user:password@localhost:5432/mydb" npx pg-boss-dashboard
 ```
 
