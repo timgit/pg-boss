@@ -77,6 +77,11 @@
     "vite": "^7.3.1",
     "vitest": "^4.0.18"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/timgit/pg-boss.git"
+  },
+  "author": "timgit",
   "license": "MIT",
   "bugs": {
     "url": "https://github.com/timgit/pg-boss/issues"

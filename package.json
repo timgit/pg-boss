@@ -50,18 +50,18 @@
     "type": "git",
     "url": "git+https://github.com/timgit/pg-boss.git"
   },
-  "keywords": [
-    "postgresql",
-    "postgres",
-    "queue",
-    "job"
-  ],
   "author": "timgit",
   "license": "MIT",
   "bugs": {
     "url": "https://github.com/timgit/pg-boss/issues"
   },
   "homepage": "https://timgit.github.io/pg-boss",
+  "keywords": [
+    "postgresql",
+    "postgres",
+    "queue",
+    "job"
+  ],
   "files": [
     "dist",
     "README.md",
