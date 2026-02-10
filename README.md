@@ -154,6 +154,16 @@ pg-boss migrate -c postgres://localhost/myapp --schema myapp_jobs
 pg-boss plans create --schema myapp_jobs
 ```
 
+## Dashboard
+
+A web-based dashboard is available for monitoring and managing pg-boss job queues. It provides an overview of queue statistics, job browsing and filtering, job actions (create, cancel, retry, resume, delete), warning history, and multi-database support.
+
+```bash
+DATABASE_URL="postgres://user:password@localhost:5432/mydb" npx pg-boss-dashboard
+```
+
+See the [dashboard documentation](packages/dashboard/README.md) for full configuration and deployment options.
+
 ## Requirements
 * Node 22.12 or higher for CommonJS's require(esm)
 * PostgreSQL 13 or higher
