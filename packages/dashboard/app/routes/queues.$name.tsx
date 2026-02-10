@@ -290,16 +290,11 @@ export default function QueueDetail ({ loaderData }: Route.ComponentProps) {
             Jobs
             {totalCount !== null && ` (${totalCount.toLocaleString()})`}
           </CardTitle>
-          <div className="flex items-center gap-3">
-            <FilterSelect
-              value={stateFilter}
-              options={JOB_STATE_OPTIONS}
-              onChange={(value) => handleFilterChange('state', value)}
-            />
-            <DbLink to={`/send?queue=${encodeURIComponent(queue.name)}`}>
-              <Button variant="primary" size="sm">Send Job</Button>
-            </DbLink>
-          </div>
+          <FilterSelect
+            value={stateFilter}
+            options={JOB_STATE_OPTIONS}
+            onChange={(value) => handleFilterChange('state', value)}
+          />
         </CardHeader>
         <CardContent className="p-0">
           <Table>
