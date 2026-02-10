@@ -27,7 +27,8 @@ const QUEUE_POLICIES = Object.freeze({
   short: 'short',
   singleton: 'singleton',
   stately: 'stately',
-  exclusive: 'exclusive'
+  exclusive: 'exclusive',
+  key_strict_fifo: 'key_strict_fifo'
 })
 
 const QUEUE_DEFAULTS = {
@@ -353,6 +354,8 @@ function createTableJobCommon (schema: string) {
     SELECT ${schema}.job_table_run($cmd$${createIndexJobPolicySingleton(schema)}$cmd$, '${COMMON_JOB_TABLE}');
     SELECT ${schema}.job_table_run($cmd$${createIndexJobPolicyStately(schema)}$cmd$, '${COMMON_JOB_TABLE}');
     SELECT ${schema}.job_table_run($cmd$${createIndexJobPolicyExclusive(schema)}$cmd$, '${COMMON_JOB_TABLE}');
+    SELECT ${schema}.job_table_run($cmd$${createIndexJobPolicyKeyStrictFifo(schema)}$cmd$, '${COMMON_JOB_TABLE}');
+    SELECT ${schema}.job_table_run($cmd$${createCheckConstraintKeyStrictFifo(schema)}$cmd$, '${COMMON_JOB_TABLE}');
     SELECT ${schema}.job_table_run($cmd$${createIndexJobThrottle(schema)}$cmd$, '${COMMON_JOB_TABLE}');
     SELECT ${schema}.job_table_run($cmd$${createIndexJobFetch(schema)}$cmd$, '${COMMON_JOB_TABLE}');
     SELECT ${schema}.job_table_run($cmd$${createIndexJobGroupConcurrency(schema)}$cmd$, '${COMMON_JOB_TABLE}');
@@ -432,6 +435,9 @@ function createQueueFunction (schema: string) {
         EXECUTE ${schema}.job_table_format($cmd$${createIndexJobPolicyStately(schema)}$cmd$, tablename);
       ELSIF options->>'policy' = 'exclusive' THEN
         EXECUTE ${schema}.job_table_format($cmd$${createIndexJobPolicyExclusive(schema)}$cmd$, tablename);
+      ELSIF options->>'policy' = '${QUEUE_POLICIES.key_strict_fifo}' THEN
+        EXECUTE ${schema}.job_table_format($cmd$${createIndexJobPolicyKeyStrictFifo(schema)}$cmd$, tablename);
+        EXECUTE ${schema}.job_table_format($cmd$${createCheckConstraintKeyStrictFifo(schema)}$cmd$, tablename);
       END IF;
 
       EXECUTE format('ALTER TABLE ${schema}.%I ADD CONSTRAINT cjc CHECK (name=%L)', tablename, queue_name);
@@ -513,6 +519,14 @@ function createIndexJobFetch (schema: string) {
 
 function createIndexJobPolicyExclusive (schema: string) {
   return `CREATE UNIQUE INDEX job_i6 ON ${schema}.job (name, COALESCE(singleton_key, '')) WHERE state <= '${JOB_STATES.active}' AND policy = '${QUEUE_POLICIES.exclusive}'`
+}
+
+function createIndexJobPolicyKeyStrictFifo (schema: string) {
+  return `CREATE UNIQUE INDEX job_i8 ON ${schema}.job (name, singleton_key) WHERE state IN ('${JOB_STATES.active}', '${JOB_STATES.retry}', '${JOB_STATES.failed}') AND policy = '${QUEUE_POLICIES.key_strict_fifo}'`
+}
+
+function createCheckConstraintKeyStrictFifo (schema: string) {
+  return `ALTER TABLE ${schema}.job ADD CONSTRAINT job_key_strict_fifo_singleton_key_check CHECK (NOT (policy = '${QUEUE_POLICIES.key_strict_fifo}' AND singleton_key IS NULL))`
 }
 
 function createIndexJobGroupConcurrency (schema: string) {
@@ -1391,6 +1405,16 @@ function getJobById (schema: string, table: string) {
     `
 }
 
+function getBlockedKeys (schema: string, table: string) {
+  return `
+    SELECT DISTINCT singleton_key as "singletonKey"
+    FROM ${schema}.${table}
+    WHERE name = $1
+      AND state = '${JOB_STATES.failed}'
+      AND policy = '${QUEUE_POLICIES.key_strict_fifo}'
+    `
+}
+
 function getNextBamCommand (schema: string) {
   return `
     UPDATE ${schema}.bam
@@ -1490,6 +1514,7 @@ export {
   deleteOldWarnings,
   createTableWarning,
   createIndexWarning,
+  getBlockedKeys,
   getNextBamCommand,
   setBamCompleted,
   setBamFailed,
