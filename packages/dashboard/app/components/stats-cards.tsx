@@ -1,8 +1,8 @@
-import type { AggregateStats } from '~/lib/types'
+import type { QueueStats } from '~/lib/types'
 import { cn } from '~/lib/utils'
 
 interface StatsCardsProps {
-  stats: AggregateStats
+  stats: QueueStats
 }
 
 const statCards = [

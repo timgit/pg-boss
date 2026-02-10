@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
-import { AppSidebar } from '~/components/layout/sidebar'
+import { AppSidebar } from '~/components/sidebar'
 import { ThemeProvider } from '~/components/theme-provider'
 import { SidebarProvider } from '~/components/ui/sidebar'
 

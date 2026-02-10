@@ -146,7 +146,7 @@ server {
 The overview page displays:
 
 - **Stats Cards**: Total queues, total jobs, active jobs, and failed jobs
-- **Problem Queues**: Queues exceeding their `warningQueued` threshold
+- **Problem Queues**: Queues exceeding their `warningQueueSize` threshold
 - **Recent Warnings**: Latest 5 warnings (requires `persistWarnings: true` in pg-boss config)
 - **Queue Summary**: Table of first 10 queues with quick stats
 
@@ -265,6 +265,10 @@ npm run dev:init-db
 # Start development server with hot reloading
 npm run dev
 
+# (Optional) Start a worker to process jobs
+# Run this in a separate terminal to see jobs being processed
+npm run dev:worker
+
 # Build for production
 npm run build
 
@@ -273,6 +277,8 @@ npm start
 ```
 
 The `dev:init-db` script creates the pg-boss schema and populates it with sample queues and jobs for testing. It connects to `postgres://postgres:postgres@127.0.0.1:5432/pgboss` by default.
+
+The `dev:worker` script starts a worker that processes jobs from the same pg-boss instance as the dashboard. This is useful for testing the dashboard while jobs are being processed. The worker will stay running until you stop it with Ctrl+C.
 
 ### Project Structure
 

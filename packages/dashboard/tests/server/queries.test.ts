@@ -17,11 +17,11 @@ import {
   getProblemQueues,
   getJobs,
   getJobCountFromQueue,
-  getJob,
+  getJobById,
   getWarnings,
   getWarningCount,
   deleteOldWarnings,
-  getAggregateStats,
+  getQueueStats,
   cancelJob,
   retryJob,
   resumeJob,
@@ -181,9 +181,9 @@ describe('Queue Queries', () => {
     })
   })
 
-  describe('getAggregateStats', () => {
+  describe('getQueueStats', () => {
     it('returns zeros when no queues exist', async () => {
-      const stats = await getAggregateStats(ctx.connectionString, ctx.schema)
+      const stats = await getQueueStats(ctx.connectionString, ctx.schema)
 
       expect(stats.totalDeferred).toBe(0)
       expect(stats.totalQueued).toBe(0)
@@ -207,7 +207,7 @@ describe('Queue Queries', () => {
         totalCount: 100,
       })
 
-      const stats = await getAggregateStats(ctx.connectionString, ctx.schema)
+      const stats = await getQueueStats(ctx.connectionString, ctx.schema)
 
       expect(stats.totalQueued).toBe(30)
       expect(stats.totalActive).toBe(15)
@@ -310,7 +310,7 @@ describe('Job Queries', () => {
     it('returns null when job does not exist', async () => {
       await createTestQueue('test-queue')
 
-      const job = await getJob(
+      const job = await getJobById(
         ctx.connectionString,
         ctx.schema,
         'test-queue',
@@ -323,7 +323,7 @@ describe('Job Queries', () => {
       await createTestQueue('test-queue')
       const jobId = await sendTestJob('test-queue', { foo: 'bar' }, { priority: 5 })
 
-      const job = await getJob(ctx.connectionString, ctx.schema, 'test-queue', jobId!)
+      const job = await getJobById(ctx.connectionString, ctx.schema, 'test-queue', jobId!)
 
       expect(job).not.toBeNull()
       expect(job!.id).toBe(jobId)
@@ -343,7 +343,7 @@ describe('Job Actions', () => {
 
       expect(result).toBe(1)
 
-      const job = await getJob(ctx.connectionString, ctx.schema, 'test-queue', jobId!)
+      const job = await getJobById(ctx.connectionString, ctx.schema, 'test-queue', jobId!)
       expect(job!.state).toBe('cancelled')
     })
 
@@ -359,7 +359,7 @@ describe('Job Actions', () => {
 
       expect(result).toBe(0)
 
-      const job = await getJob(ctx.connectionString, ctx.schema, 'test-queue', jobId!)
+      const job = await getJobById(ctx.connectionString, ctx.schema, 'test-queue', jobId!)
       expect(job!.state).toBe('completed')
     })
 
@@ -391,7 +391,7 @@ describe('Job Actions', () => {
 
       expect(result).toBe(1)
 
-      const job = await getJob(ctx.connectionString, ctx.schema, 'test-queue', jobId!)
+      const job = await getJobById(ctx.connectionString, ctx.schema, 'test-queue', jobId!)
       expect(job!.state).toBe('retry')
     })
 
@@ -403,7 +403,7 @@ describe('Job Actions', () => {
 
       expect(result).toBe(0)
 
-      const job = await getJob(ctx.connectionString, ctx.schema, 'test-queue', jobId!)
+      const job = await getJobById(ctx.connectionString, ctx.schema, 'test-queue', jobId!)
       expect(job!.state).toBe('created')
     })
   })
@@ -417,7 +417,7 @@ describe('Job Actions', () => {
 
       expect(result).toBe(1)
 
-      const job = await getJob(ctx.connectionString, ctx.schema, 'test-queue', jobId!)
+      const job = await getJobById(ctx.connectionString, ctx.schema, 'test-queue', jobId!)
       expect(job).toBeNull()
     })
 
@@ -432,7 +432,7 @@ describe('Job Actions', () => {
 
       expect(result).toBe(0)
 
-      const job = await getJob(ctx.connectionString, ctx.schema, 'test-queue', jobId!)
+      const job = await getJobById(ctx.connectionString, ctx.schema, 'test-queue', jobId!)
       expect(job).not.toBeNull()
       expect(job!.state).toBe('active')
     })
@@ -463,7 +463,7 @@ describe('Job Actions', () => {
 
       expect(result).toBe(1)
 
-      const job = await getJob(ctx.connectionString, ctx.schema, 'test-queue', jobId!)
+      const job = await getJobById(ctx.connectionString, ctx.schema, 'test-queue', jobId!)
       expect(job!.state).toBe('created')
     })
 
@@ -476,7 +476,7 @@ describe('Job Actions', () => {
 
       expect(result).toBe(0)
 
-      const job = await getJob(ctx.connectionString, ctx.schema, 'test-queue', jobId!)
+      const job = await getJobById(ctx.connectionString, ctx.schema, 'test-queue', jobId!)
       expect(job!.state).toBe('created')
     })
 
@@ -507,7 +507,7 @@ describe('Job Actions', () => {
       // One should succeed, one should fail
       expect(result1 + result2).toBe(1)
 
-      const job = await getJob(ctx.connectionString, ctx.schema, 'test-queue', jobId!)
+      const job = await getJobById(ctx.connectionString, ctx.schema, 'test-queue', jobId!)
       expect(job!.state).toBe('cancelled')
     })
   })

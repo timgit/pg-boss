@@ -1,7 +1,7 @@
 import { beforeAll, beforeEach, afterEach, afterAll } from 'vitest'
 import pg from 'pg'
 import crypto from 'node:crypto'
-import { PgBoss } from '../../../../src/index.ts'
+import { PgBoss } from 'pg-boss'
 
 const { Pool } = pg
 
@@ -143,6 +143,7 @@ beforeEach(async (context) => {
     supervise: false,
     schedule: false,
     migrate: true,
+    persistWarnings: true,
   })
 
   // Suppress error events during tests

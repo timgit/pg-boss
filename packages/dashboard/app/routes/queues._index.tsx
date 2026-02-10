@@ -133,11 +133,16 @@ export default function QueuesIndex ({ loaderData }: Route.ComponentProps) {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Queues</h1>
-        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-          {totalCount.toLocaleString()} queue{totalCount !== 1 ? 's' : ''} {hasActiveFilters ? 'found' : 'configured'}
-        </p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Queues</h1>
+          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+            {totalCount.toLocaleString()} queue{totalCount !== 1 ? 's' : ''} {hasActiveFilters ? 'found' : 'configured'}
+          </p>
+        </div>
+        <DbLink to="/queues/create">
+          <Button variant="primary" size="md">Create Queue</Button>
+        </DbLink>
       </div>
 
       {/* Search and Filters */}
@@ -169,7 +174,7 @@ export default function QueuesIndex ({ loaderData }: Route.ComponentProps) {
                   setSearchInput('')
                   handleSearch('')
                 }}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 cursor-pointer"
               >
                 <XIcon className="h-5 w-5" />
               </button>
@@ -210,7 +215,7 @@ export default function QueuesIndex ({ loaderData }: Route.ComponentProps) {
               {filterLabels[filter]}
               <button
                 onClick={() => handleFilterChange('all')}
-                className="ml-1 hover:text-primary-700"
+                className="ml-1 hover:text-primary-700 cursor-pointer"
               >
                 ×
               </button>
@@ -221,7 +226,7 @@ export default function QueuesIndex ({ loaderData }: Route.ComponentProps) {
               Search: {search}
               <button
                 onClick={() => handleSearch('')}
-                className="ml-1 hover:text-primary-700"
+                className="ml-1 hover:text-primary-700 cursor-pointer"
               >
                 ×
               </button>
@@ -229,7 +234,7 @@ export default function QueuesIndex ({ loaderData }: Route.ComponentProps) {
           )}
           <button
             onClick={clearFilters}
-            className="text-sm text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
+            className="text-sm text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300 cursor-pointer"
           >
             Clear all
           </button>
@@ -262,8 +267,8 @@ export default function QueuesIndex ({ loaderData }: Route.ComponentProps) {
               ) : (
                 queues.map((queue: QueueResult) => {
                   const hasBacklog =
-                    queue.warningQueued > 0 &&
-                    queue.queuedCount > queue.warningQueued
+                    (queue.warningQueueSize ?? 0) > 0 &&
+                    queue.queuedCount > (queue.warningQueueSize ?? 0)
 
                   return (
                     <TableRow key={queue.name}>

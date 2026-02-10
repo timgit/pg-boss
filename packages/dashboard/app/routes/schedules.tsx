@@ -73,7 +73,7 @@ export default function Schedules ({ loaderData }: Route.ComponentProps) {
           </p>
         </div>
         <DbLink to="/schedules/new">
-          <Button variant="primary" size="md">Schedule Job</Button>
+          <Button variant="primary" size="md" className='cursor-pointer'>Schedule Job</Button>
         </DbLink>
       </div>
 

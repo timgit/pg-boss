@@ -31,7 +31,7 @@ export function ThemeToggle () {
         <span className="text-sm group-data-[state=collapsed]:hidden">{themeLabels[theme]}</span>
       </Menu.Trigger>
 
-      <Menu.Portal container={() => typeof document !== 'undefined' ? document.body : null}>
+      <Menu.Portal container={typeof document !== 'undefined' ? document.body : undefined}>
         <Menu.Positioner className="z-[100]">
           <Menu.Popup
             className={cn(

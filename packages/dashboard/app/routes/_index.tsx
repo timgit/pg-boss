@@ -2,7 +2,7 @@ import { DbLink } from '~/components/db-link'
 import type { Route } from './+types/_index'
 import {
   getWarnings,
-  getAggregateStats,
+  getQueueStats,
   getTopQueues,
   getQueueCount,
   getProblemQueuesCount,
@@ -11,6 +11,7 @@ import { StatsCards } from '~/components/stats-cards'
 import { QueueStatsCards } from '~/components/queue-stats-cards'
 import { Card, CardHeader, CardTitle, CardContent } from '~/components/ui/card'
 import { Badge } from '~/components/ui/badge'
+import { Button } from '~/components/ui/button'
 import {
   Table,
   TableHeader,
@@ -31,7 +32,7 @@ import type { WarningType, QueueResult, WarningResult } from '~/lib/types'
 export async function loader ({ context }: Route.LoaderArgs) {
   const [warnings, stats, topQueues, totalQueues, problemQueuesCount] = await Promise.all([
     getWarnings(context.DB_URL, context.SCHEMA, { limit: 5 }),
-    getAggregateStats(context.DB_URL, context.SCHEMA),
+    getQueueStats(context.DB_URL, context.SCHEMA),
     getTopQueues(context.DB_URL, context.SCHEMA, 5),
     getQueueCount(context.DB_URL, context.SCHEMA),
     getProblemQueuesCount(context.DB_URL, context.SCHEMA),
@@ -57,23 +58,32 @@ export default function Overview ({ loaderData }: Route.ComponentProps) {
 
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Dashboard</h1>
-        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-          Monitor your pg-boss job queues
-        </p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Dashboard</h1>
+          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+            Monitor your pg-boss job queues
+          </p>
+        </div>
+        <DbLink to="/send">
+          <Button variant="primary" size="md">Send Job</Button>
+        </DbLink>
       </div>
 
       <section>
         <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
           Overview
         </h2>
-        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
-          <StatsCards stats={stats} />
-          <QueueStatsCards
-            totalQueues={queueStats.totalQueues}
-            problemQueues={queueStats.problemQueues}
-          />
+        <div className="space-y-5">
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+            <QueueStatsCards
+              totalQueues={queueStats.totalQueues}
+              problemQueues={queueStats.problemQueues}
+            />
+          </div>
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+            <StatsCards stats={stats} />
+          </div>
         </div>
       </section>
 

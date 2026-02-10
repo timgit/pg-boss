@@ -13,8 +13,7 @@ export function QueueStatsCards ({ totalQueues, problemQueues }: QueueStatsCards
       className={cn(
         'block overflow-hidden rounded-xl border shadow-sm transition-all',
         'bg-white border-gray-200 hover:shadow-md hover:border-gray-300',
-        'dark:bg-gray-900 dark:border-gray-800 dark:hover:border-gray-700',
-        'sm:col-span-2'
+        'dark:bg-gray-900 dark:border-gray-800 dark:hover:border-gray-700'
       )}
     >
       <div className="p-5">

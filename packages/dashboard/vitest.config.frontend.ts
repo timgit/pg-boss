@@ -17,7 +17,6 @@ export default defineConfig({
         'app/**/*.d.ts',
         // React-aria wrappers and components requiring complex mocking
         // These are better tested via e2e tests
-        'app/components/job-detail-dialog.tsx',
         'app/components/loading-bar.tsx',
         'app/components/ui/confirm-dialog.tsx',
         'app/components/ui/select.tsx',
@@ -33,6 +32,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '~': resolve(__dirname, './app'),
+      'pg-boss': resolve(__dirname, '../../src'),
     },
   },
 })

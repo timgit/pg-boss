@@ -2,7 +2,7 @@
  * Initialize development database with pg-boss schema and test queues
  */
 import { setTimeout } from 'node:timers/promises'
-import { PgBoss } from '../../../src/index.ts'
+import { PgBoss } from 'pg-boss'
 
 const connectionString = process.env.DATABASE_URL || 'postgres://postgres:postgres@127.0.0.1:5432/pgboss'
 const schema = process.env.PGBOSS_SCHEMA || 'pgboss'

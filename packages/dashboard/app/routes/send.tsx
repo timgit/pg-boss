@@ -1,27 +1,23 @@
 import { useState, useEffect } from 'react'
-import { redirect, useActionData, useNavigation, useBlocker } from 'react-router'
+import { redirect, useActionData, useNavigation, useBlocker, useSearchParams } from 'react-router'
 import { DbLink } from '~/components/db-link'
-import type { Route } from './+types/queues.$name.send'
-import { getQueue } from '~/lib/queries.server'
+import type { Route } from './+types/send'
+import { getQueues } from '~/lib/queries.server'
 import { sendJob } from '~/lib/boss.server'
 import { Card, CardHeader, CardTitle, CardContent } from '~/components/ui/card'
 import { Button } from '~/components/ui/button'
 import { ErrorCard } from '~/components/error-card'
 import { cn } from '~/lib/utils'
 
-export async function loader ({ params, context }: Route.LoaderArgs) {
-  const queue = await getQueue(context.DB_URL, context.SCHEMA, params.name)
-
-  if (!queue) {
-    throw new Response('Queue not found', { status: 404 })
-  }
-
-  return { queueName: queue.name }
+export async function loader ({ context }: Route.LoaderArgs) {
+  const queues = await getQueues(context.DB_URL, context.SCHEMA)
+  return { queues }
 }
 
-export async function action ({ params, request, context }: Route.ActionArgs) {
+export async function action ({ request, context }: Route.ActionArgs) {
   const formData = await request.formData()
 
+  const queueName = formData.get('queueName') as string | null
   const dataStr = formData.get('data') as string | null
   const priority = formData.get('priority') as string | null
   const startAfter = formData.get('startAfter') as string | null
@@ -29,20 +25,23 @@ export async function action ({ params, request, context }: Route.ActionArgs) {
   const retryLimit = formData.get('retryLimit') as string | null
   const expireInSeconds = formData.get('expireInSeconds') as string | null
 
-  // Validate JSON data
-  if (!dataStr || !dataStr.trim()) {
-    return { error: 'Data payload is required' }
+  // Validate queue name
+  if (!queueName || !queueName.trim()) {
+    return { error: 'Queue name is required' }
   }
 
-  let parsedData: object
-  try {
-    parsedData = JSON.parse(dataStr)
-  } catch {
-    return { error: 'Invalid JSON in data payload' }
-  }
+  // Validate JSON data if provided
+  let parsedData: object | undefined
+  if (dataStr && dataStr.trim()) {
+    try {
+      parsedData = JSON.parse(dataStr)
+    } catch {
+      return { error: 'Invalid JSON in data payload' }
+    }
 
-  if (typeof parsedData !== 'object' || parsedData === null || Array.isArray(parsedData)) {
-    return { error: 'Data payload must be a JSON object' }
+    if (typeof parsedData !== 'object' || parsedData === null || Array.isArray(parsedData)) {
+      return { error: 'Data payload must be a JSON object' }
+    }
   }
 
   // Build send options
@@ -84,8 +83,8 @@ export async function action ({ params, request, context }: Route.ActionArgs) {
     await sendJob(
       context.DB_URL,
       context.SCHEMA,
-      params.name,
-      parsedData,
+      queueName.trim(),
+      parsedData || null,
       Object.keys(options).length > 0 ? options : undefined
     )
   } catch (err) {
@@ -97,8 +96,8 @@ export async function action ({ params, request, context }: Route.ActionArgs) {
   const url = new URL(request.url)
   const dbParam = url.searchParams.get('db')
   const redirectUrl = dbParam
-    ? `/queues/${params.name}?db=${encodeURIComponent(dbParam)}`
-    : `/queues/${params.name}`
+    ? `/queues/${encodeURIComponent(queueName.trim())}?db=${encodeURIComponent(dbParam)}`
+    : `/queues/${encodeURIComponent(queueName.trim())}`
 
   return redirect(redirectUrl)
 }
@@ -106,18 +105,36 @@ export async function action ({ params, request, context }: Route.ActionArgs) {
 export function ErrorBoundary () {
   return (
     <ErrorCard
-      title="Failed to load queue"
+      title="Failed to load job sending page"
       backTo={{ href: '/queues', label: 'Back to Queues' }}
     />
   )
 }
 
 export default function SendJob ({ loaderData }: Route.ComponentProps) {
-  const { queueName } = loaderData
+  const { queues } = loaderData
+  const [searchParams] = useSearchParams()
   const actionData = useActionData<typeof action>()
   const navigation = useNavigation()
   const isSubmitting = navigation.state === 'submitting'
   const [isDirty, setIsDirty] = useState(false)
+
+  // Queue autocomplete state
+  const initialQueue = searchParams.get('queue') || ''
+  const [queueSearch, setQueueSearch] = useState(initialQueue)
+  const [selectedQueue, setSelectedQueue] = useState(initialQueue)
+  const [showDropdown, setShowDropdown] = useState(false)
+
+  const filteredQueues = queues.filter((q: any) =>
+    q.name.toLowerCase().includes(queueSearch.toLowerCase())
+  )
+
+  const handleQueueSelect = (queueName: string) => {
+    setSelectedQueue(queueName)
+    setQueueSearch(queueName)
+    setShowDropdown(false)
+    setIsDirty(true)
+  }
 
   const blocker = useBlocker(
     ({ currentLocation, nextLocation }) =>
@@ -171,26 +188,21 @@ export default function SendJob ({ loaderData }: Route.ComponentProps) {
         </div>
       )}
 
-      <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
-        <DbLink to="/queues" className="hover:text-gray-700 dark:hover:text-gray-300">
-          Queues
-        </DbLink>
-        <span>/</span>
-        <DbLink to={`/queues/${queueName}`} className="hover:text-gray-700 dark:hover:text-gray-300">
-          {queueName}
-        </DbLink>
-        <span>/</span>
-        <span className="text-gray-900 dark:text-gray-100 font-medium">Send Job</span>
-      </div>
-
-      <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Send Job</h1>
+      <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+        Send Job
+      </h1>
 
       <Card>
         <CardHeader>
           <CardTitle>Job Details</CardTitle>
         </CardHeader>
         <CardContent>
-          <form method="post" className="space-y-5" onChange={() => setIsDirty(true)}>
+          <form
+            method="post"
+            className="space-y-5"
+            onChange={() => setIsDirty(true)}
+            onSubmit={() => setIsDirty(false)}
+          >
             {actionData && 'error' in actionData && (
               <div className={cn(
                 'rounded-lg border px-4 py-3 text-sm',
@@ -202,14 +214,61 @@ export default function SendJob ({ loaderData }: Route.ComponentProps) {
             )}
 
             <div>
+              <label htmlFor="queueSearch" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Queue Name <span className="text-red-500">*</span>
+              </label>
+              <div className="relative">
+                <input
+                  type="text"
+                  id="queueSearch"
+                  value={queueSearch}
+                  onChange={(e) => {
+                    setQueueSearch(e.target.value)
+                    setShowDropdown(true)
+                  }}
+                  onFocus={() => setShowDropdown(true)}
+                  onBlur={() => setTimeout(() => setShowDropdown(false), 200)}
+                  placeholder="Search for a queue..."
+                  autoComplete="off"
+                  className={cn(
+                    'w-full rounded-lg border px-3 py-2 text-sm',
+                    'bg-white border-gray-300 text-gray-900 placeholder-gray-400',
+                    'dark:bg-gray-900 dark:border-gray-700 dark:text-gray-100 dark:placeholder-gray-500',
+                    'focus:outline-none focus:ring-2 focus:ring-primary-600 focus:border-transparent'
+                  )}
+                />
+                <input type="hidden" name="queueName" value={selectedQueue} required />
+
+                {showDropdown && filteredQueues.length > 0 && (
+                  <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-md shadow-lg max-h-60 overflow-auto">
+                    {filteredQueues.map((queue: any) => (
+                      <button
+                        key={queue.name}
+                        type="button"
+                        onClick={() => handleQueueSelect(queue.name)}
+                        className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-900 dark:text-gray-100 cursor-pointer text-sm"
+                      >
+                        {queue.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {selectedQueue && (
+                <p className="mt-1 text-xs text-green-600 dark:text-green-400">
+                  Selected: {selectedQueue}
+                </p>
+              )}
+            </div>
+
+            <div>
               <label htmlFor="data" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Data <span className="text-red-500">*</span>
+                Data
               </label>
               <textarea
                 id="data"
                 name="data"
                 rows={6}
-                required
                 placeholder='{"key": "value"}'
                 className={cn(
                   'w-full rounded-lg border px-3 py-2 text-sm font-mono',
@@ -218,6 +277,9 @@ export default function SendJob ({ loaderData }: Route.ComponentProps) {
                   'focus:outline-none focus:ring-2 focus:ring-primary-600 focus:border-transparent'
                 )}
               />
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                Optional: JSON object to pass as job data
+              </p>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -319,7 +381,7 @@ export default function SendJob ({ loaderData }: Route.ComponentProps) {
                 {isSubmitting ? 'Sending...' : 'Send Job'}
               </Button>
               <DbLink
-                to={`/queues/${queueName}`}
+                to="/queues"
                 className="text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
               >
                 Cancel

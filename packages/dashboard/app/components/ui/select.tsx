@@ -1,127 +1,111 @@
-import { Select } from '@base-ui/react/select'
-import { Check, ChevronDown } from 'lucide-react'
-import { forwardRef, type ComponentPropsWithoutRef, type ElementRef } from 'react'
+import { useState, useRef, useEffect, type ReactNode } from 'react'
+import { ChevronDown } from 'lucide-react'
 import { cn } from '~/lib/utils'
 
-const SelectRoot = Select.Root
-
-const SelectGroup = Select.Group
-
-const SelectValue = Select.Value
-
-const SelectTrigger = forwardRef<
-  ElementRef<typeof Select.Trigger>,
-  ComponentPropsWithoutRef<typeof Select.Trigger>
->(({ className, children, ...props }, ref) => (
-  <Select.Trigger
-    ref={ref}
-    className={cn(
-      'flex items-center justify-between w-full px-3 py-2 text-sm rounded-lg shadow-sm',
-      'bg-white border border-gray-300 text-gray-900',
-      'dark:bg-gray-900 dark:border-gray-700 dark:text-gray-100',
-      'hover:bg-gray-50 dark:hover:bg-gray-800',
-      'focus:outline-none focus:ring-2 focus:ring-primary-600 focus:ring-offset-2',
-      'dark:focus:ring-offset-gray-900',
-      'disabled:cursor-not-allowed disabled:opacity-50',
-      'placeholder:text-gray-500 dark:placeholder:text-gray-400',
-      '[&>span]:truncate [&>span]:text-left',
-      className
-    )}
-    {...props}
-  >
-    {children}
-    <Select.Icon>
-      <ChevronDown className="h-4 w-4 opacity-50 ml-2 shrink-0" />
-    </Select.Icon>
-  </Select.Trigger>
-))
-SelectTrigger.displayName = 'SelectTrigger'
-
-const SelectContent = forwardRef<
-  ElementRef<typeof Select.Popup>,
-  ComponentPropsWithoutRef<typeof Select.Popup>
->(({ className, children, ...props }, ref) => (
-  <Select.Portal>
-    <Select.Positioner>
-      <Select.Popup
-        ref={ref}
-        className={cn(
-          'relative z-50 max-h-96 min-w-[8rem] overflow-hidden rounded-lg border shadow-lg',
-          'bg-white border-gray-200',
-          'dark:bg-gray-900 dark:border-gray-800',
-          'data-open:animate-in data-closed:animate-out',
-          'data-closed:fade-out-0 data-open:fade-in-0',
-          'data-closed:zoom-out-95 data-open:zoom-in-95',
-          'data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2',
-          'data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2',
-          className
-        )}
-        {...props}
-      >
-        <Select.List className="p-1">
-          {children}
-        </Select.List>
-      </Select.Popup>
-    </Select.Positioner>
-  </Select.Portal>
-))
-SelectContent.displayName = 'SelectContent'
-
-const SelectLabel = forwardRef<
-  HTMLDivElement,
-  React.HTMLAttributes<HTMLDivElement>
->(({ className, ...props }, ref) => (
-  <div
-    ref={ref}
-    className={cn('py-1.5 pl-8 pr-2 text-sm font-semibold', className)}
-    {...props}
-  />
-))
-SelectLabel.displayName = 'SelectLabel'
-
-const SelectItem = forwardRef<
-  ElementRef<typeof Select.Item>,
-  ComponentPropsWithoutRef<typeof Select.Item>
->(({ className, children, ...props }, ref) => (
-  <Select.Item
-    ref={ref}
-    className={cn(
-      'relative flex w-full cursor-pointer select-none items-center rounded-sm py-2 pl-8 pr-2 text-sm outline-none',
-      'text-gray-900 dark:text-gray-100',
-      'data-highlighted:bg-primary-50 data-highlighted:text-primary-900',
-      'dark:data-highlighted:bg-primary-950 dark:data-highlighted:text-primary-100',
-      'data-disabled:pointer-events-none data-disabled:opacity-50',
-      className
-    )}
-    {...props}
-  >
-    <Select.ItemIndicator className="absolute left-2 flex h-3.5 w-3.5 items-center justify-center">
-      <Check className="h-4 w-4" />
-    </Select.ItemIndicator>
-    <Select.ItemText>{children}</Select.ItemText>
-  </Select.Item>
-))
-SelectItem.displayName = 'SelectItem'
-
-const SelectSeparator = forwardRef<
-  HTMLDivElement,
-  React.HTMLAttributes<HTMLDivElement>
->(({ className, ...props }, ref) => (
-  <div
-    ref={ref}
-    className={cn('-mx-1 my-1 h-px bg-gray-200 dark:bg-gray-800', className)}
-    {...props}
-  />
-))
-SelectSeparator.displayName = 'SelectSeparator'
-
-export {
-  SelectRoot as Select,
-  SelectGroup,
-  SelectValue,
-  SelectTrigger,
-  SelectContent,
-  SelectLabel,
-  SelectItem,
-  SelectSeparator,
+interface SelectProps {
+  value: string
+  onValueChange: (value: string) => void
+  children: ReactNode
+  className?: string
 }
+
+interface SelectItemProps {
+  value: string
+  children: ReactNode
+}
+
+export function Select({ value, onValueChange, children, className }: SelectProps) {
+  const [isOpen, setIsOpen] = useState(false)
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setIsOpen(false)
+      }
+    }
+
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside)
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [isOpen])
+
+  // Extract items from children
+  const items: { value: string; label: ReactNode }[] = []
+
+  const extractItems = (children: ReactNode) => {
+    if (Array.isArray(children)) {
+      children.forEach(extractItems)
+    } else if (children && typeof children === 'object' && 'props' in children) {
+      const child = children as any
+      if (child.type === SelectItem) {
+        items.push({ value: child.props.value, label: child.props.children })
+      } else if (child.props?.children) {
+        extractItems(child.props.children)
+      }
+    }
+  }
+
+  extractItems(children)
+
+  const selectedItem = items.find(item => item.value === value)
+
+  return (
+    <div ref={containerRef} className={cn('relative', className)}>
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className={cn(
+          'flex items-center justify-between w-full px-3 py-2 text-sm rounded-lg shadow-sm',
+          'bg-white border border-gray-300 text-gray-900',
+          'dark:bg-gray-900 dark:border-gray-700 dark:text-gray-100',
+          'hover:bg-gray-50 dark:hover:bg-gray-800',
+          'focus:outline-none focus:ring-2 focus:ring-primary-600 focus:border-transparent',
+          'cursor-pointer'
+        )}
+      >
+        <span className="truncate text-left">{selectedItem?.label || 'Select...'}</span>
+        <ChevronDown className="h-4 w-4 opacity-50 ml-2 shrink-0" />
+      </button>
+
+      {isOpen && items.length > 0 && (
+        <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-md shadow-lg max-h-60 overflow-auto">
+          {items.map((item) => (
+            <button
+              key={item.value}
+              type="button"
+              onClick={() => {
+                onValueChange(item.value)
+                setIsOpen(false)
+              }}
+              className={cn(
+                'w-full text-left px-3 py-2 text-sm',
+                'hover:bg-gray-100 dark:hover:bg-gray-800',
+                'text-gray-900 dark:text-gray-100',
+                'cursor-pointer',
+                item.value === value && 'bg-gray-50 dark:bg-gray-800'
+              )}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+export function SelectItem({ value, children }: SelectItemProps) {
+  return null // This is just a marker component for the Select to extract items from
+}
+
+export const SelectTrigger = () => null
+export const SelectValue = () => null
+export const SelectContent = ({ children }: { children: ReactNode }) => <>{children}</>
+export const SelectGroup = ({ children }: { children: ReactNode }) => <>{children}</>
+export const SelectLabel = () => null
+export const SelectSeparator = () => null

@@ -3,7 +3,7 @@ import type {
   QueueResult,
   JobResult,
   WarningResult,
-  AggregateStats,
+  QueueStats,
   ScheduleResult,
 } from './types'
 
@@ -26,43 +26,20 @@ const QUEUE_COLUMNS = `
   retry_delay as "retryDelay",
   retry_backoff as "retryBackoff",
   retry_delay_max as "retryDelayMax",
-  expire_seconds as "expireSeconds",
+  expire_seconds as "expireInSeconds",
   retention_seconds as "retentionSeconds",
-  deletion_seconds as "deletionSeconds",
+  deletion_seconds as "deleteAfterSeconds",
   deferred_count as "deferredCount",
   queued_count as "queuedCount",
   active_count as "activeCount",
   total_count as "totalCount",
-  warning_queued as "warningQueued",
+  warning_queued as "warningQueueSize",
   singletons_active as "singletonsActive",
+  table_name as "table",
   monitor_on as "monitorOn",
   maintain_on as "maintainOn",
   created_on as "createdOn",
   updated_on as "updatedOn"
-`
-
-// Full job columns for single job detail view
-const JOB_COLUMNS = `
-  id,
-  name,
-  data,
-  state,
-  priority,
-  retry_count as "retryCount",
-  retry_limit as "retryLimit",
-  retry_delay as "retryDelay",
-  retry_backoff as "retryBackoff",
-  start_after as "startAfter",
-  started_on as "startedOn",
-  completed_on as "completedOn",
-  created_on as "createdOn",
-  keep_until as "keepUntil",
-  output,
-  singleton_key as "singletonKey",
-  group_id as "groupId",
-  group_tier as "groupTier",
-  dead_letter as "deadLetter",
-  policy
 `
 
 // Lightweight columns for job list (excludes data and output to save memory)
@@ -191,21 +168,6 @@ export async function getProblemQueuesCount (
   return result?.count ?? 0
 }
 
-// Get count of partitioned queues
-export async function getPartitionedQueuesCount (
-  dbUrl: string,
-  schema: string
-): Promise<number> {
-  const s = validateIdentifier(schema)
-  const sql = `
-    SELECT COUNT(*)::int as count
-    FROM ${s}.queue
-    WHERE partition = true
-  `
-  const result = await queryOne<{ count: number }>(dbUrl, sql)
-  return result?.count ?? 0
-}
-
 // Get queues that have a backlog exceeding their warning threshold
 // This is more efficient than fetching all queues and filtering client-side
 export async function getProblemQueues (
@@ -248,8 +210,7 @@ export async function getQueue (
 ): Promise<QueueResult | null> {
   const s = validateIdentifier(schema)
   const sql = `
-    SELECT ${QUEUE_COLUMNS},
-      table_name as "tableName"
+    SELECT ${QUEUE_COLUMNS}
     FROM ${s}.queue
     WHERE name = $1
   `
@@ -389,22 +350,6 @@ export function getJobCountFromQueue (
   }
 }
 
-// Get a single job by ID
-export async function getJob (
-  dbUrl: string,
-  schema: string,
-  queueName: string,
-  jobId: string
-): Promise<JobResult | null> {
-  const s = validateIdentifier(schema)
-  const sql = `
-    SELECT ${JOB_COLUMNS}
-    FROM ${s}.job
-    WHERE name = $1 AND id = $2
-  `
-  return queryOne<JobResult>(dbUrl, sql, [queueName, jobId])
-}
-
 // Get warnings with pagination and filtering
 // Returns empty array if warning table doesn't exist (persistWarnings not enabled)
 export async function getWarnings (
@@ -495,11 +440,10 @@ export async function getWarningCount (
   }
 }
 
-// Get aggregate stats across all queues (uses cached stats, no COUNT(*))
-export async function getAggregateStats (
+export async function getQueueStats (
   dbUrl: string,
   schema: string
-): Promise<AggregateStats> {
+): Promise<QueueStats> {
   const s = validateIdentifier(schema)
   const sql = `
     SELECT
@@ -510,7 +454,7 @@ export async function getAggregateStats (
       COUNT(*)::int as "queueCount"
     FROM ${s}.queue
   `
-  const result = await queryOne<AggregateStats>(dbUrl, sql)
+  const result = await queryOne<QueueStats>(dbUrl, sql)
   return (
     result ?? {
       totalDeferred: 0,
@@ -522,49 +466,13 @@ export async function getAggregateStats (
   )
 }
 
-// Valid intents for job actions
-const VALID_INTENTS = ['cancel', 'retry', 'resume', 'delete'] as const
-type JobActionIntent = (typeof VALID_INTENTS)[number]
+const JOB_INTENTS = ['cancel', 'retry', 'resume', 'delete'] as const
+type JobActionIntent = (typeof JOB_INTENTS)[number]
 
 export function isValidIntent (intent: unknown): intent is JobActionIntent {
-  return typeof intent === 'string' && VALID_INTENTS.includes(intent as JobActionIntent)
+  return typeof intent === 'string' && JOB_INTENTS.includes(intent as JobActionIntent)
 }
 
-// Cancel a job
-export async function cancelJob (
-  dbUrl: string,
-  schema: string,
-  queueName: string,
-  jobId: string
-): Promise<number> {
-  const s = validateIdentifier(schema)
-  const sql = `
-    WITH results as (
-      UPDATE ${s}.job
-      SET completed_on = now(),
-        state = 'cancelled'
-      WHERE name = $1
-        AND id = $2
-        AND state < 'completed'
-      RETURNING 1
-    )
-    SELECT COUNT(*)::int as count FROM results
-  `
-  const result = await queryOne<{ count: number }>(dbUrl, sql, [
-    queueName,
-    jobId,
-  ])
-  return result?.count ?? 0
-}
-
-// Retry a failed job manually via dashboard
-// Sets state to 'retry' and clears completed_on/started_on timestamps
-//
-// IMPORTANT: This is a manual override that allows one more attempt regardless of retry_limit.
-// The retry_count is NOT reset or incremented - we're simply giving the job another chance.
-// If the job was already at retry_limit, it may fail immediately again when picked up
-// if it encounters the same error. This is intentional - the user is explicitly requesting
-// a retry, presumably after fixing the underlying issue or for debugging purposes.
 export async function retryJob (
   dbUrl: string,
   schema: string,
@@ -576,66 +484,12 @@ export async function retryJob (
     WITH results as (
       UPDATE ${s}.job
       SET state = 'retry',
+        retry_limit = retry_count + 1,
         completed_on = NULL,
         started_on = NULL
       WHERE name = $1
         AND id = $2
         AND state = 'failed'
-      RETURNING 1
-    )
-    SELECT COUNT(*)::int as count FROM results
-  `
-  const result = await queryOne<{ count: number }>(dbUrl, sql, [
-    queueName,
-    jobId,
-  ])
-  return result?.count ?? 0
-}
-
-// Resume a cancelled job
-// Sets state back to 'created' so it will be picked up again
-export async function resumeJob (
-  dbUrl: string,
-  schema: string,
-  queueName: string,
-  jobId: string
-): Promise<number> {
-  const s = validateIdentifier(schema)
-  const sql = `
-    WITH results as (
-      UPDATE ${s}.job
-      SET state = 'created',
-        completed_on = NULL,
-        started_on = NULL
-      WHERE name = $1
-        AND id = $2
-        AND state = 'cancelled'
-      RETURNING 1
-    )
-    SELECT COUNT(*)::int as count FROM results
-  `
-  const result = await queryOne<{ count: number }>(dbUrl, sql, [
-    queueName,
-    jobId,
-  ])
-  return result?.count ?? 0
-}
-
-// Delete a job
-// Only allows deleting jobs that are not currently active
-// Active jobs should be cancelled first to ensure workers aren't affected
-export async function deleteJob (
-  dbUrl: string,
-  schema: string,
-  queueName: string,
-  jobId: string
-): Promise<number> {
-  const s = validateIdentifier(schema)
-  const sql = `
-    WITH results as (
-      DELETE FROM ${s}.job
-      WHERE name = $1 AND id = $2
-        AND state <> 'active'
       RETURNING 1
     )
     SELECT COUNT(*)::int as count FROM results
@@ -659,33 +513,6 @@ export async function getSchedules (
   const s = validateIdentifier(schema)
   const { limit, offset } = options
 
-  // If no pagination, return all schedules
-  if (limit === undefined) {
-    const sql = `
-      SELECT
-        name,
-        key,
-        cron,
-        timezone,
-        data,
-        options,
-        created_on as "createdOn",
-        updated_on as "updatedOn"
-      FROM ${s}.schedule
-      ORDER BY name, key
-    `
-    try {
-      return await query<ScheduleResult>(dbUrl, sql)
-    } catch (err: unknown) {
-      // Table doesn't exist
-      if (err && typeof err === 'object' && 'code' in err && err.code === '42P01') {
-        return []
-      }
-      throw err
-    }
-  }
-
-  // With pagination
   const sql = `
     SELECT
       name,
@@ -698,39 +525,22 @@ export async function getSchedules (
       updated_on as "updatedOn"
     FROM ${s}.schedule
     ORDER BY name, key
-    LIMIT $1 OFFSET $2
+    ${limit !== undefined ? 'LIMIT $1 OFFSET $2' : ''}
   `
-  try {
-    return await query<ScheduleResult>(dbUrl, sql, [limit, offset ?? 0])
-  } catch (err: unknown) {
-    // Table doesn't exist
-    if (err && typeof err === 'object' && 'code' in err && err.code === '42P01') {
-      return []
-    }
-    throw err
-  }
+
+  const params: unknown[] = (limit !== undefined) ? [limit, offset ?? 0] : []
+
+  return await query<ScheduleResult>(dbUrl, sql, params)
 }
 
-// Get total count of schedules
-export async function getScheduleCount (
-  dbUrl: string,
-  schema: string
-): Promise<number> {
+export async function getScheduleCount (dbUrl: string, schema: string): Promise<number> {
   const s = validateIdentifier(schema)
   const sql = `SELECT COUNT(*)::int as count FROM ${s}.schedule`
-  try {
-    const result = await queryOne<{ count: number }>(dbUrl, sql)
-    return result?.count ?? 0
-  } catch (err: unknown) {
-    // Table doesn't exist
-    if (err && typeof err === 'object' && 'code' in err && err.code === '42P01') {
-      return 0
-    }
-    throw err
-  }
+
+  const result = await queryOne<{ count: number }>(dbUrl, sql)
+  return result?.count ?? 0
 }
 
-// Get a single schedule by name and key
 export async function getSchedule (
   dbUrl: string,
   schema: string,
@@ -751,13 +561,9 @@ export async function getSchedule (
     FROM ${s}.schedule
     WHERE name = $1 AND key = $2
   `
-  try {
-    return await queryOne<ScheduleResult>(dbUrl, sql, [name, key])
-  } catch (err: unknown) {
-    // Table doesn't exist
-    if (err && typeof err === 'object' && 'code' in err && err.code === '42P01') {
-      return null
-    }
-    throw err
-  }
+
+  return await queryOne<ScheduleResult>(dbUrl, sql, [name, key])
 }
+
+// Re-export job action methods from boss.server
+export { getJobById, cancelJob, resumeJob, deleteJob } from './boss.server'

@@ -1,8 +1,8 @@
 import * as React from 'react'
 import { cva, type VariantProps } from 'class-variance-authority'
 import { PanelLeft } from 'lucide-react'
+import { useRender, mergeProps } from '@base-ui/react'
 import { cn } from '~/lib/utils'
-import { useRender, mergeProps } from '~/lib/use-render'
 
 const SIDEBAR_COOKIE_NAME = 'sidebar:state'
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7 // 7 days
@@ -183,7 +183,7 @@ Sidebar.displayName = 'Sidebar'
 
 const SidebarTrigger = React.forwardRef<HTMLButtonElement, React.ComponentProps<'button'>>(
   ({ className, onClick, ...props }, ref) => {
-    const { toggleSidebar, isMobile, setOpenMobile } = useSidebar()
+    const { toggleSidebar, isMobile, openMobile, setOpenMobile } = useSidebar()
 
     return (
       <button
@@ -191,7 +191,7 @@ const SidebarTrigger = React.forwardRef<HTMLButtonElement, React.ComponentProps<
         onClick={(event) => {
           onClick?.(event)
           if (isMobile) {
-            setOpenMobile((open) => !open)
+            setOpenMobile(!openMobile)
           } else {
             toggleSidebar()
           }
@@ -281,7 +281,7 @@ const SidebarMenuItem = React.forwardRef<HTMLLIElement, React.ComponentProps<'li
 SidebarMenuItem.displayName = 'SidebarMenuItem'
 
 const sidebarMenuButtonVariants = cva(
-  'peer/menu-button flex w-full items-center gap-2 overflow-hidden rounded-md p-2 text-left text-sm outline-none ring-sidebar-ring transition-[width,height,padding] hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 group-has-[[data-sidebar=menu-action]]/menu-item:pr-8 group-data-[state=collapsed]:justify-center',
+  'peer/menu-button flex w-full items-center gap-2 overflow-hidden rounded-md p-2 text-left text-sm outline-none ring-sidebar-ring transition-[width,height,padding] hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 cursor-pointer group-has-[[data-sidebar=menu-action]]/menu-item:pr-8 group-data-[state=collapsed]:justify-center',
   {
     variants: {
       variant: {

@@ -643,7 +643,7 @@ function deleteAllJobs (schema: string, table: string) {
 }
 
 function getSchedules (schema: string) {
-  return `SELECT * FROM ${schema}.schedule`
+  return `SELECT * FROM ${schema}.schedule ORDER BY name, key`
 }
 
 function getSchedulesByQueue (schema: string) {

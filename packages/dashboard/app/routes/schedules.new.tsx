@@ -211,7 +211,12 @@ export default function CreateSchedule ({ loaderData, actionData }: any) {
           <CardTitle>Details</CardTitle>
         </CardHeader>
         <CardContent>
-          <form method="post" className="space-y-5" onChange={() => setIsDirty(true)}>
+          <form
+            method="post"
+            className="space-y-5"
+            onChange={() => setIsDirty(true)}
+            onSubmit={() => setIsDirty(false)}
+          >
             {actionDataResult && 'error' in actionDataResult && (
               <div className={cn(
                 'rounded-lg border px-4 py-3 text-sm',
@@ -417,7 +422,7 @@ export default function CreateSchedule ({ loaderData, actionData }: any) {
             </div>
 
             <div className="flex items-center gap-3 pt-2">
-              <Button type="submit" disabled={isSubmitting}>
+              <Button type="submit" disabled={isSubmitting} className='cursor-pointer'>
                 {isSubmitting ? 'Creating...' : 'Schedule Job'}
               </Button>
               <DbLink

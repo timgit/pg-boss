@@ -3,7 +3,7 @@ import { useFetcher, redirect } from 'react-router'
 import { Copy, Check } from 'lucide-react'
 import { DbLink } from '~/components/db-link'
 import type { Route } from './+types/queues.$name.jobs.$jobId'
-import { getJob, cancelJob, retryJob, resumeJob, deleteJob, isValidIntent } from '~/lib/queries.server'
+import { getJobById, cancelJob, retryJob, resumeJob, deleteJob, isValidIntent } from '~/lib/queries.server'
 import { Card, CardHeader, CardTitle, CardContent } from '~/components/ui/card'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
@@ -12,7 +12,7 @@ import { ErrorCard } from '~/components/error-card'
 import { formatDate, JOB_STATE_VARIANTS, cn } from '~/lib/utils'
 
 export async function loader ({ params, context }: Route.LoaderArgs) {
-  const job = await getJob(context.DB_URL, context.SCHEMA, params.name, params.jobId)
+  const job = await getJobById(context.DB_URL, context.SCHEMA, params.name, params.jobId)
 
   if (!job) {
     throw new Response('Job not found', { status: 404 })
@@ -107,20 +107,6 @@ export default function JobDetail ({ loaderData }: Route.ComponentProps) {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
-        <DbLink to="/queues" className="hover:text-gray-700 dark:hover:text-gray-300">
-          Queues
-        </DbLink>
-        <span>/</span>
-        <DbLink to={`/queues/${queueName}`} className="hover:text-gray-700 dark:hover:text-gray-300">
-          {queueName}
-        </DbLink>
-        <span>/</span>
-        <span>
-          {job.id.slice(0, 8)}...
-        </span>
-      </div>
-
       <div>
         <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
           Job Details - {queueName}

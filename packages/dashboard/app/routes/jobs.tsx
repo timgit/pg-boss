@@ -6,6 +6,7 @@ import {
 } from '~/lib/queries.server'
 import { Card, CardHeader, CardTitle, CardContent } from '~/components/ui/card'
 import { Badge } from '~/components/ui/badge'
+import { Button } from '~/components/ui/button'
 import {
   Table,
   TableHeader,
@@ -86,11 +87,16 @@ export default function Jobs ({ loaderData }: Route.ComponentProps) {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Jobs</h1>
-        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-          Recently created jobs across all queues
-        </p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Jobs</h1>
+          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+            Recently created jobs across all queues
+          </p>
+        </div>
+        <DbLink to="/send">
+          <Button variant="primary" size="md">Send Job</Button>
+        </DbLink>
       </div>
 
       <Card>

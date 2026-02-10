@@ -62,14 +62,6 @@ export default function ScheduleDetail ({ loaderData, actionData }: Route.Compon
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
-        <DbLink to="/schedules" className="hover:text-gray-700 dark:hover:text-gray-300">
-          Schedules
-        </DbLink>
-        <span>/</span>
-        <span className="text-gray-900 dark:text-gray-100 font-medium">{schedule.name}</span>
-      </div>
-
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">

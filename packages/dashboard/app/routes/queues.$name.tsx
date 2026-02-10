@@ -186,14 +186,6 @@ export default function QueueDetail ({ loaderData }: Route.ComponentProps) {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
-        <DbLink to="/queues" className="hover:text-gray-700 dark:hover:text-gray-300">
-          Queues
-        </DbLink>
-        <span>/</span>
-        <span className="text-gray-900 dark:text-gray-100 font-medium">{queue.name}</span>
-      </div>
-
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{queue.name}</h1>
@@ -202,7 +194,7 @@ export default function QueueDetail ({ loaderData }: Route.ComponentProps) {
             {queue.partition && <Badge variant="primary">Partitioned</Badge>}
           </div>
         </div>
-        <DbLink to={`/queues/${queue.name}/send`}>
+        <DbLink to={`/send?queue=${encodeURIComponent(queue.name)}`}>
           <Button variant="primary" size="md">Send Job</Button>
         </DbLink>
       </div>
@@ -239,7 +231,7 @@ export default function QueueDetail ({ loaderData }: Route.ComponentProps) {
           <CardContent className="border-t border-gray-200 dark:border-gray-800">
             <div className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-4">
-                <ConfigItem label="Policy" value={queue.policy} />
+                <ConfigItem label="Policy" value={queue.policy || '—'} />
                 <ConfigItem label="Storage" value={queue.partition ? 'Partitioned' : 'Shared'} />
                 <div>
                   <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Dead Letter</dt>
@@ -256,20 +248,20 @@ export default function QueueDetail ({ loaderData }: Route.ComponentProps) {
                     )}
                   </dd>
                 </div>
-                <ConfigItem label="Warning Threshold" value={queue.warningQueued || '—'} />
+                <ConfigItem label="Warning Threshold" value={queue.warningQueueSize || '—'} />
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-4">
-                <ConfigItem label="Retry Limit" value={queue.retryLimit} />
+                <ConfigItem label="Retry Limit" value={queue.retryLimit ?? 0} />
                 <ConfigItem label="Retry Delay" value={queue.retryDelay ? `${queue.retryDelay}ms` : '—'} />
                 <ConfigItem label="Retry Delay Max" value={queue.retryDelayMax ? `${queue.retryDelayMax}ms` : '—'} />
                 <ConfigItem label="Retry Backoff" value={queue.retryBackoff ? 'Enabled' : 'Disabled'} />
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-4">
-                <ConfigItem label="Expiration" value={formatDuration(queue.expireSeconds)} />
+                <ConfigItem label="Expiration" value={formatDuration(queue.expireInSeconds)} />
                 <ConfigItem label="Retention" value={formatDuration(queue.retentionSeconds)} />
-                <ConfigItem label="Deletion" value={formatDuration(queue.deletionSeconds)} />
+                <ConfigItem label="Deletion" value={formatDuration(queue.deleteAfterSeconds)} />
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-4">
@@ -298,11 +290,16 @@ export default function QueueDetail ({ loaderData }: Route.ComponentProps) {
             Jobs
             {totalCount !== null && ` (${totalCount.toLocaleString()})`}
           </CardTitle>
-          <FilterSelect
-            value={stateFilter}
-            options={JOB_STATE_OPTIONS}
-            onChange={(value) => handleFilterChange('state', value)}
-          />
+          <div className="flex items-center gap-3">
+            <FilterSelect
+              value={stateFilter}
+              options={JOB_STATE_OPTIONS}
+              onChange={(value) => handleFilterChange('state', value)}
+            />
+            <DbLink to={`/send?queue=${encodeURIComponent(queue.name)}`}>
+              <Button variant="primary" size="sm">Send Job</Button>
+            </DbLink>
+          </div>
         </CardHeader>
         <CardContent className="p-0">
           <Table>

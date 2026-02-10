@@ -113,7 +113,7 @@ function DatabaseSelector ({
         type="button"
         onClick={() => setIsOpen(!isOpen)}
         className={cn(
-          'w-full flex items-center justify-between px-3 py-2 text-sm rounded-lg transition-colors',
+          'w-full flex items-center justify-between px-3 py-2 text-sm rounded-lg transition-colors cursor-pointer',
           'hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
         )}
       >
@@ -145,7 +145,7 @@ function DatabaseSelector ({
                   setIsOpen(false)
                 }}
                 className={cn(
-                  'w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors',
+                  'w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors cursor-pointer',
                   db.id === currentDb.id
                     ? 'bg-sidebar-accent text-sidebar-accent-foreground font-medium'
                     : 'hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
@@ -220,22 +220,18 @@ export function AppSidebar () {
             <SidebarMenu>
               {navigation.map((item) => (
                 <SidebarMenuItem key={item.name}>
-                  <SidebarMenuButton
-                    render={
-                      <NavLink
-                        to={buildHref(item.href)}
-                        end={item.href === '/'}
-                        onClick={() => setOpenMobile(false)}
-                      />
-                    }
+                  <NavLink
+                    to={buildHref(item.href)}
+                    end={item.href === '/'}
+                    onClick={() => setOpenMobile(false)}
                   >
-                    {({ isActive }) => (
-                      <>
+                    {({ isActive }: { isActive: boolean }) => (
+                      <SidebarMenuButton isActive={isActive}>
                         <item.icon className="h-5 w-5 flex-shrink-0" />
                         <span className="group-data-[state=collapsed]:hidden">{item.name}</span>
-                      </>
+                      </SidebarMenuButton>
                     )}
-                  </SidebarMenuButton>
+                  </NavLink>
                 </SidebarMenuItem>
               ))}
             </SidebarMenu>

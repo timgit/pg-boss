@@ -34,6 +34,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '~': resolve(__dirname, './app'),
+      'pg-boss': resolve(__dirname, '../../src'),
     },
   },
 })

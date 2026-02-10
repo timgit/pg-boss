@@ -1,5 +1,6 @@
 import { Link, useSearchParams } from "react-router";
 import type { ComponentProps } from "react";
+import { cn } from "~/lib/utils";
 
 type LinkProps = ComponentProps<typeof Link>;
 
@@ -7,7 +8,7 @@ type LinkProps = ComponentProps<typeof Link>;
  * A Link component that preserves the current database selection (db query param)
  * when navigating to other pages in the dashboard.
  */
-export function DbLink({ to, children, ...props }: LinkProps) {
+export function DbLink({ to, children, className, ...props }: LinkProps) {
   const [searchParams] = useSearchParams();
   const dbParam = searchParams.get("db");
 
@@ -36,7 +37,7 @@ export function DbLink({ to, children, ...props }: LinkProps) {
   }
 
   return (
-    <Link to={href} {...props}>
+    <Link to={href} className={cn("cursor-pointer", className)} {...props}>
       {children}
     </Link>
   );
