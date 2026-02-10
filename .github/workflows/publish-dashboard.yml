@@ -42,3 +42,5 @@ jobs:
       - name: Publish to npm
         working-directory: packages/dashboard
         run: npm publish --provenance --access public
+        env:
+          DATABASE_URL: postgres://postgres:postgres@postgres:5432/pgboss
