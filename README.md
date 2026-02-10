@@ -162,7 +162,7 @@ A web-based dashboard is available for monitoring and managing pg-boss job queue
 DATABASE_URL="postgres://user:password@localhost:5432/mydb" npx pg-boss-dashboard
 ```
 
-See the [dashboard documentation](packages/dashboard/README.md) for full configuration and deployment options.
+See the [dashboard documentation](https://github.com/timgit/pg-boss/blob/master/packages/dashboard/README.md) for full configuration and deployment options.
 
 ## Requirements
 * Node 22.12 or higher for CommonJS's require(esm)
