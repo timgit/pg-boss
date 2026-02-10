@@ -103,9 +103,9 @@ export function SelectItem({ value, children }: SelectItemProps) {
   return null // This is just a marker component for the Select to extract items from
 }
 
-export const SelectTrigger = () => null
-export const SelectValue = () => null
+export const SelectTrigger = ({ children }: { children?: ReactNode }) => null
+export const SelectValue = ({ children }: { children?: ReactNode } = {}) => null
 export const SelectContent = ({ children }: { children: ReactNode }) => <>{children}</>
 export const SelectGroup = ({ children }: { children: ReactNode }) => <>{children}</>
-export const SelectLabel = () => null
+export const SelectLabel = ({ children }: { children?: ReactNode } = {}) => null
 export const SelectSeparator = () => null
