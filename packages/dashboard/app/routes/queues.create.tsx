@@ -292,6 +292,7 @@ export default function CreateQueue ({ loaderData }: Route.ComponentProps) {
                     <SelectItem value="singleton">Singleton</SelectItem>
                     <SelectItem value="stately">Stately</SelectItem>
                     <SelectItem value="exclusive">Exclusive</SelectItem>
+                    <SelectItem value="key_strict_fifo">Key Strict FIFO</SelectItem>
                   </SelectContent>
                 </Select>
                 <input type="hidden" name="policy" value={policy} />

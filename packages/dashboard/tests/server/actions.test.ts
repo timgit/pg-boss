@@ -280,6 +280,26 @@ describe('Create Queue Action', () => {
     expect(queue!.policy).toBe('singleton')
   })
 
+  it('creates a queue with key_strict_fifo policy', async () => {
+    const formData = new FormData()
+    formData.set('queueName', 'key-strict-fifo-queue')
+    formData.set('policy', 'key_strict_fifo')
+
+    const request = new Request('http://localhost/queues/create', {
+      method: 'POST',
+      body: formData,
+    })
+
+    await createQueueAction({
+      request,
+      context: { DB_URL: ctx.connectionString, SCHEMA: ctx.schema },
+      params: {},
+    })
+
+    const queue = await getQueue(ctx.connectionString, ctx.schema, 'key-strict-fifo-queue')
+    expect(queue!.policy).toBe('key_strict_fifo')
+  })
+
   it('creates a partitioned queue', async () => {
     const formData = new FormData()
     formData.set('queueName', 'partitioned-queue')
