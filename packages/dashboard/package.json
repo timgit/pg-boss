@@ -16,7 +16,7 @@
   ],
   "type": "module",
   "bin": {
-    "pg-boss-dashboard": "./bin/cli.js"
+    "pg-boss-dashboard": "bin/cli.js"
   },
   "files": [
     "build",
