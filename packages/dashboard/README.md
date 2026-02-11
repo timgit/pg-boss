@@ -4,14 +4,13 @@ A web-based dashboard for monitoring and managing [pg-boss](https://github.com/t
 
 ## Features
 
-- **Overview Dashboard**: Aggregate statistics, problem queues, and recent warnings at a glance
-- **Queue Management**: Browse all queues with real-time stats (queued, active, deferred, total)
-- **Job Browser**: View and manage individual jobs with smart filtering (defaults to pending jobs)
-- **Job Detail Inspector**: View full job payloads, output data, and metadata
+- **Overview**: Aggregate statistics, problem queues, and recent warnings at a glance
+- **Queue Management**: View all queues with cached statistics and create new queues
+- **Job List**: View jobs with state and queue filtering
+- **Job Details**: View full job payloads, output data, and metadata
 - **Job Actions**: Create, cancel, retry, resume, or delete jobs directly from the UI
-- **Warning History**: Track slow queries, queue backlogs, and clock skew issues
-- **Multi-Database Support**: Monitor multiple pg-boss instances from a single dashboard
-- **Pagination**: Efficiently browse large datasets with cached statistics
+- **Warning History**: When `persistWarnings` is enabled, browse through previously emitted warning events. 
+- **Multi-Schema Support**: Monitor multiple pg-boss instances from a single dashboard
 - **Mobile Responsive**: Full functionality on mobile devices with collapsible sidebar
 - **Shareable URLs**: Database selection and filters are preserved in URLs for easy sharing
 
@@ -154,87 +153,6 @@ server {
 }
 ```
 
-## Pages
-
-### Dashboard (`/`)
-
-The overview page displays:
-
-- **Stats Cards**: Total queues, total jobs, active jobs, and failed jobs
-- **Problem Queues**: Queues exceeding their `warningQueueSize` threshold
-- **Recent Warnings**: Latest 5 warnings (requires `persistWarnings: true` in pg-boss config)
-- **Queue Summary**: Table of first 10 queues with quick stats
-
-### Queues List (`/queues`)
-
-Paginated list of all queues showing:
-
-- Queue name (links to detail page)
-- Policy type (standard, short, singleton, stately)
-- Job counts: Queued, Active, Deferred, Total
-- Last monitored timestamp
-- Status indicator (Backlogged, Processing, Idle)
-
-### Queue Detail (`/queues/:name`)
-
-Detailed view of a single queue:
-
-- **Stats Cards**: Queued, Active, Deferred, Total counts
-- **Queue Info**: Policy type badge and partition indicator
-- **Jobs Table**: Paginated list of jobs (50 per page) with:
-  - Job ID (truncated UUID, click to copy full ID)
-  - State (created, retry, active, completed, cancelled, failed)
-  - Priority
-  - Retry count / limit
-  - Created timestamp
-  - Actions (View, Cancel, Retry, Resume, Delete - availability depends on job state)
-
-**Job Detail Dialog**: Click "View" on any job to open a modal with complete job information:
-
-- Full Job ID (with copy button)
-- Priority, retry count/limit
-- All timestamps (created, started, completed)
-- Singleton key (if applicable)
-- Group ID and tier (for grouped jobs)
-- Dead letter queue (if configured)
-- **Job Data**: Full JSON payload submitted with the job
-- **Job Output**: Result data returned by the worker (if completed)
-
-**Filtering**: Use the state dropdown to filter jobs by state. Available filters:
-
-| Filter | Description |
-|--------|-------------|
-| **Pending** (default) | Shows only non-final state jobs: `created`, `retry`, and `active`. This is the default view to handle queues with large job history efficiently. |
-| **All States** | Shows all jobs including completed, cancelled, and failed. Use with caution on queues with many historical jobs. |
-| **Individual states** | Filter by specific state: Created, Retry, Active, Completed, Cancelled, or Failed |
-
-> **Performance Note**: The "Pending" filter is the default because queues can accumulate large numbers of completed/failed jobs over time. Showing all jobs by default could cause performance issues and make it harder to find actionable jobs.
-
-> **Pagination Note**: Job counts are displayed when available from cached statistics. For some filters (Created, Retry, Completed, Cancelled, Failed), exact counts require database queries and are not shown to maintain performance.
-
-**Job Actions** (shown based on job state):
-
-| Action | Available States | Description |
-|--------|------------------|-------------|
-| **View** | All states | Opens job detail dialog with full job information |
-| **Cancel** | created, retry, active | Stops the job from being processed |
-| **Retry** | failed | Re-queues the job for another attempt |
-| **Resume** | cancelled | Restores a cancelled job back to `created` state |
-| **Delete** | All except active | Permanently removes the job |
-
-### Warnings (`/warnings`)
-
-History of pg-boss warnings with:
-
-- Warning type (Slow Query, Queue Backlog, Clock Skew)
-- Message
-- Additional details (elapsed time, queue name, etc.)
-- Timestamp
-
-**Filtering**: Use the type dropdown to filter by warning type.
-
-> **Note**: Warnings are only recorded when pg-boss is configured with `persistWarnings: true`.
-
 ## Enabling Warning Persistence
 
 To capture warnings in the dashboard, enable warning persistence in your pg-boss configuration:
@@ -248,7 +166,7 @@ const boss = new PgBoss({
 });
 ```
 
-This creates a `warning` table in your pg-boss schema that stores:
+Warnings correlate to `warning` events already emitted by pg-boss:
 - `slow_query`: Queries taking longer than expected
 - `queue_backlog`: Queues exceeding their warning threshold
 - `clock_skew`: Database clock drift detection
@@ -295,96 +213,15 @@ The `dev:init-db` script creates the pg-boss schema and populates it with sample
 
 The `dev:worker` script starts a worker that processes jobs from the same pg-boss instance as the dashboard. This is useful for testing the dashboard while jobs are being processed. The worker will stay running until you stop it with Ctrl+C.
 
-### Project Structure
-
-```
-packages/dashboard/
-├── app/
-│   ├── components/
-│   │   ├── layout/         # Sidebar, page layout
-│   │   └── ui/             # Reusable UI components
-│   ├── lib/
-│   │   ├── db.server.ts    # Database connection pool
-│   │   ├── queries.server.ts # SQL queries
-│   │   ├── types.ts        # TypeScript types
-│   │   └── utils.ts        # Shared utilities
-│   ├── routes/
-│   │   ├── _index.tsx      # Dashboard overview
-│   │   ├── queues._index.tsx # Queues list
-│   │   ├── queues.$name.tsx  # Queue detail
-│   │   └── warnings.tsx    # Warnings history
-│   ├── root.tsx            # Root layout
-│   ├── routes.ts           # Route configuration
-│   └── server.ts           # Hono server setup
-├── tests/
-│   ├── frontend/           # React component tests
-│   ├── server/             # Server-side tests (queries, utils)
-│   └── setup.ts            # Test setup (jsdom, mocks)
-├── package.json
-├── vite.config.ts
-├── vitest.config.frontend.ts # Frontend test config
-└── vitest.config.server.ts   # Server test config
-```
-
-### Running Tests
+### Testing
 
 ```bash
 # All tests (frontend + server)
 npm test
 
-# Frontend tests only (React components)
-npm run test:frontend
-
-# Server tests only (queries, utils - requires PostgreSQL)
-npm run test:server
-
-# All tests with coverage
-npm run cover
-
-# Individual coverage reports
-npm run cover:frontend
-npm run cover:server
+# Full CI test (used by GitHub Actions)
+npm run ci
 ```
-
-### Type Checking
-
-```bash
-npm run typecheck
-```
-
-## API Reference
-
-The dashboard reads directly from pg-boss database tables:
-
-- `{schema}.queue` - Queue metadata and cached job counts
-- `{schema}.job` - Individual jobs
-- `{schema}.warning` - Warning history (when `persistWarnings` is enabled)
-
-### Queue Table Fields Used
-
-| Field | Description |
-|-------|-------------|
-| `name` | Queue name |
-| `policy` | Queue policy (standard, short, singleton, stately) |
-| `queued_count` | Number of jobs waiting to be processed |
-| `active_count` | Number of jobs currently being processed |
-| `deferred_count` | Number of jobs scheduled for later |
-| `total_count` | Total job count |
-| `warning_queued` | Threshold for backlog warnings |
-| `monitor_on` | Last monitoring timestamp |
-
-### Job States
-
-| State | Description | Category |
-|-------|-------------|----------|
-| `created` | Job is queued and waiting | Pending (non-final) |
-| `retry` | Job failed and is scheduled for retry | Pending (non-final) |
-| `active` | Job is currently being processed | Pending (non-final) |
-| `completed` | Job finished successfully | Final |
-| `cancelled` | Job was cancelled | Final |
-| `failed` | Job failed after exhausting retries | Final |
-
-**Pending vs Final States**: Jobs in pending states (`created`, `retry`, `active`) are still being processed or waiting to be processed. Jobs in final states (`completed`, `cancelled`, `failed`) have finished processing. The dashboard's default "Pending" filter shows only non-final state jobs.
 
 ## Troubleshooting
 
