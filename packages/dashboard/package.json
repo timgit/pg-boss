@@ -24,6 +24,7 @@
   ],
   "scripts": {
     "dev": "cross-env DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/pgboss react-router dev",
+    "dev:auth": "cross-env DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/pgboss PGBOSS_DASHBOARD_AUTH_USERNAME=admin PGBOSS_DASHBOARD_AUTH_PASSWORD=admin react-router dev",
     "dev:init-db": "cross-env DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/pgboss tsx scripts/init-dev-db.ts",
     "dev:worker": "cross-env DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/pgboss tsx scripts/worker.ts",
     "build": "react-router build",

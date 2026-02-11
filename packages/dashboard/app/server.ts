@@ -1,4 +1,5 @@
 import { createHonoServer } from 'react-router-hono-server/node'
+import { configureAuth } from './lib/auth.server'
 import { getDatabaseConfigs, findDatabaseById, type DatabaseConfig } from './lib/config.server'
 
 declare module 'react-router' {
@@ -12,6 +13,9 @@ declare module 'react-router' {
 }
 
 export default createHonoServer({
+  beforeAll (app) {
+    configureAuth(app)
+  },
   getLoadContext (c) {
     const databases = getDatabaseConfigs()
 
