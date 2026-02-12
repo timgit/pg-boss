@@ -7,6 +7,10 @@ export const nullableJsonRecordSchema = jsonRecordSchema.nullable();
 
 export const dateInputSchema = z.union([z.string(), z.number()]);
 
+export const queueNameSchema = z.string().min(1);
+
+export const eventNameSchema = z.string().min(1);
+
 export const errorResultSchema = z.object({
     ok: z.literal(false),
     error: z.object({
@@ -36,10 +40,6 @@ export const queueOptionsSchema = z.object({
     retryDelayMax: z.number().optional()
 });
 
-export const connectionOptionsSchema = z.object({
-    db: z.unknown().optional()
-});
-
 export const jobOptionsSchema = z.object({
     id: z.string().optional(),
     priority: z.number().optional(),
@@ -52,7 +52,7 @@ export const jobOptionsSchema = z.object({
     deadLetter: z.string().optional()
 });
 
-export const sendOptionsSchema = jobOptionsSchema.and(queueOptionsSchema).and(connectionOptionsSchema);
+export const sendOptionsSchema = jobOptionsSchema.and(queueOptionsSchema);
 
 export const scheduleOptionsSchema = sendOptionsSchema.and(z.object({
     tz: z.string().optional(),
@@ -66,21 +66,18 @@ export const fetchOptionsSchema = z.object({
     batchSize: z.number().optional(),
     ignoreStartAfter: z.boolean().optional(),
     groupConcurrency: z.union([z.number(), groupConcurrencyConfigSchema]).optional(),
-    ignoreGroups: z.array(z.string()).optional().nullable(),
-    db: z.unknown().optional()
+    ignoreGroups: z.array(z.string()).optional().nullable()
 });
 
 export const findJobsOptionsSchema = z.object({
     id: z.string().optional(),
     key: z.string().optional(),
     data: jsonRecordSchema.optional(),
-    queued: z.boolean().optional(),
-    db: z.unknown().optional()
+    queued: z.boolean().optional()
 });
 
 export const insertOptionsSchema = z.object({
-    returnId: z.boolean().optional(),
-    db: z.unknown().optional()
+    returnId: z.boolean().optional()
 });
 
 export const updateQueueOptionsSchema = queueOptionsSchema.and(z.object({
@@ -168,7 +165,7 @@ export const metaResponseSchema = z.object({
 });
 
 export const sendRequestSchema = z.object({
-    name: z.string(),
+    name: queueNameSchema,
     data: nullableJsonRecordSchema.optional(),
     options: sendOptionsSchema.optional()
 });
@@ -179,7 +176,7 @@ export const sendResponseSchema = z.object({
 });
 
 export const sendAfterRequestSchema = z.object({
-    name: z.string(),
+    name: queueNameSchema,
     data: nullableJsonRecordSchema.optional(),
     options: sendOptionsSchema.optional().nullable(),
     after: dateInputSchema
@@ -191,7 +188,7 @@ export const sendAfterResponseSchema = z.object({
 });
 
 export const sendThrottledRequestSchema = z.object({
-    name: z.string(),
+    name: queueNameSchema,
     data: nullableJsonRecordSchema.optional(),
     options: sendOptionsSchema.optional().nullable(),
     seconds: z.number(),
@@ -204,7 +201,7 @@ export const sendThrottledResponseSchema = z.object({
 });
 
 export const sendDebouncedRequestSchema = z.object({
-    name: z.string(),
+    name: queueNameSchema,
     data: nullableJsonRecordSchema.optional(),
     options: sendOptionsSchema.optional().nullable(),
     seconds: z.number(),
@@ -240,7 +237,7 @@ export const insertResponseSchema = z.object({
 });
 
 export const fetchRequestSchema = z.object({
-    name: z.string(),
+    name: queueNameSchema,
     options: fetchOptionsSchema.optional()
 });
 
@@ -250,8 +247,8 @@ export const fetchResponseSchema = z.object({
 });
 
 export const subscribeRequestSchema = z.object({
-    event: z.string(),
-    name: z.string()
+    event: eventNameSchema,
+    name: queueNameSchema
 });
 
 export const subscribeResponseSchema = z.object({
@@ -260,8 +257,8 @@ export const subscribeResponseSchema = z.object({
 });
 
 export const unsubscribeRequestSchema = z.object({
-    event: z.string(),
-    name: z.string()
+    event: eventNameSchema,
+    name: queueNameSchema
 });
 
 export const unsubscribeResponseSchema = z.object({
@@ -270,7 +267,7 @@ export const unsubscribeResponseSchema = z.object({
 });
 
 export const publishRequestSchema = z.object({
-    event: z.string(),
+    event: eventNameSchema,
     data: nullableJsonRecordSchema.optional(),
     options: sendOptionsSchema.optional()
 });
@@ -281,9 +278,8 @@ export const publishResponseSchema = z.object({
 });
 
 export const cancelRequestSchema = z.object({
-    name: z.string(),
-    id: z.union([z.string(), z.array(z.string())]),
-    options: connectionOptionsSchema.optional()
+    name: queueNameSchema,
+    id: z.union([z.string(), z.array(z.string())])
 });
 
 export const cancelResponseSchema = z.object({
@@ -292,9 +288,8 @@ export const cancelResponseSchema = z.object({
 });
 
 export const resumeRequestSchema = z.object({
-    name: z.string(),
-    id: z.union([z.string(), z.array(z.string())]),
-    options: connectionOptionsSchema.optional()
+    name: queueNameSchema,
+    id: z.union([z.string(), z.array(z.string())])
 });
 
 export const resumeResponseSchema = z.object({
@@ -303,9 +298,8 @@ export const resumeResponseSchema = z.object({
 });
 
 export const retryRequestSchema = z.object({
-    name: z.string(),
-    id: z.union([z.string(), z.array(z.string())]),
-    options: connectionOptionsSchema.optional()
+    name: queueNameSchema,
+    id: z.union([z.string(), z.array(z.string())])
 });
 
 export const retryResponseSchema = z.object({
@@ -314,9 +308,8 @@ export const retryResponseSchema = z.object({
 });
 
 export const deleteJobRequestSchema = z.object({
-    name: z.string(),
-    id: z.union([z.string(), z.array(z.string())]),
-    options: connectionOptionsSchema.optional()
+    name: queueNameSchema,
+    id: z.union([z.string(), z.array(z.string())])
 });
 
 export const deleteJobResponseSchema = z.object({
@@ -325,7 +318,7 @@ export const deleteJobResponseSchema = z.object({
 });
 
 export const deleteQueuedJobsRequestSchema = z.object({
-    name: z.string()
+    name: queueNameSchema
 });
 
 export const deleteQueuedJobsResponseSchema = z.object({
@@ -334,7 +327,7 @@ export const deleteQueuedJobsResponseSchema = z.object({
 });
 
 export const deleteStoredJobsRequestSchema = z.object({
-    name: z.string()
+    name: queueNameSchema
 });
 
 export const deleteStoredJobsResponseSchema = z.object({
@@ -343,7 +336,7 @@ export const deleteStoredJobsResponseSchema = z.object({
 });
 
 export const deleteAllJobsRequestSchema = z.object({
-    name: z.string().optional()
+    name: queueNameSchema.optional()
 });
 
 export const deleteAllJobsResponseSchema = z.object({
@@ -351,12 +344,12 @@ export const deleteAllJobsResponseSchema = z.object({
     result: z.null()
 });
 
-export const completeOptionsSchema = connectionOptionsSchema.and(z.object({
+export const completeOptionsSchema = z.object({
     includeQueued: z.boolean().optional()
-}));
+});
 
 export const completeRequestSchema = z.object({
-    name: z.string(),
+    name: queueNameSchema,
     id: z.union([z.string(), z.array(z.string())]),
     data: nullableJsonRecordSchema.optional(),
     options: completeOptionsSchema.optional()
@@ -368,20 +361,14 @@ export const completeResponseSchema = z.object({
 });
 
 export const failRequestSchema = z.object({
-    name: z.string(),
+    name: queueNameSchema,
     id: z.union([z.string(), z.array(z.string())]),
-    data: nullableJsonRecordSchema.optional(),
-    options: connectionOptionsSchema.optional()
+    data: nullableJsonRecordSchema.optional()
 });
 
 export const failResponseSchema = z.object({
     ok: z.literal(true),
     result: commandResponseSchema
-});
-
-export const findJobsRequestSchema = z.object({
-    name: z.string(),
-    options: findJobsOptionsSchema.optional()
 });
 
 export const findJobsResponseSchema = z.object({
@@ -390,7 +377,7 @@ export const findJobsResponseSchema = z.object({
 });
 
 export const createQueueRequestSchema = z.object({
-    name: z.string(),
+    name: queueNameSchema,
     options: queueOptionsSchema.and(z.object({
         policy: z.string().optional(),
         partition: z.boolean().optional(),
@@ -404,17 +391,13 @@ export const createQueueResponseSchema = z.object({
     result: z.null()
 });
 
-export const getBlockedKeysRequestSchema = z.object({
-    name: z.string()
-});
-
 export const getBlockedKeysResponseSchema = z.object({
     ok: z.literal(true),
     result: z.array(z.string())
 });
 
 export const updateQueueRequestSchema = z.object({
-    name: z.string(),
+    name: queueNameSchema,
     options: updateQueueOptionsSchema.optional()
 });
 
@@ -424,7 +407,7 @@ export const updateQueueResponseSchema = z.object({
 });
 
 export const deleteQueueRequestSchema = z.object({
-    name: z.string()
+    name: queueNameSchema
 });
 
 export const deleteQueueResponseSchema = z.object({
@@ -432,26 +415,14 @@ export const deleteQueueResponseSchema = z.object({
     result: z.null()
 });
 
-export const getQueuesRequestSchema = z.object({
-    names: z.array(z.string()).optional()
-});
-
 export const getQueuesResponseSchema = z.object({
     ok: z.literal(true),
     result: z.array(queueResultSchema)
 });
 
-export const getQueueRequestSchema = z.object({
-    name: z.string()
-});
-
 export const getQueueResponseSchema = z.object({
     ok: z.literal(true),
     result: queueResultSchema.nullable()
-});
-
-export const getQueueStatsRequestSchema = z.object({
-    name: z.string()
 });
 
 export const getQueueStatsResponseSchema = z.object({
@@ -460,7 +431,7 @@ export const getQueueStatsResponseSchema = z.object({
 });
 
 export const superviseRequestSchema = z.object({
-    name: z.string().optional()
+    name: queueNameSchema.optional()
 });
 
 export const superviseResponseSchema = z.object({
@@ -479,7 +450,7 @@ export const schemaVersionResponseSchema = z.object({
 });
 
 export const scheduleRequestSchema = z.object({
-    name: z.string(),
+    name: queueNameSchema,
     cron: z.string(),
     data: nullableJsonRecordSchema.optional(),
     options: scheduleOptionsSchema.optional()
@@ -491,18 +462,13 @@ export const scheduleResponseSchema = z.object({
 });
 
 export const unscheduleRequestSchema = z.object({
-    name: z.string(),
+    name: queueNameSchema,
     key: z.string().optional()
 });
 
 export const unscheduleResponseSchema = z.object({
     ok: z.literal(true),
     result: z.null()
-});
-
-export const getSchedulesRequestSchema = z.object({
-    name: z.string().optional(),
-    key: z.string().optional()
 });
 
 export const getSchedulesResponseSchema = z.object({
@@ -516,7 +482,7 @@ export const getBamStatusResponseSchema = z.object({
 });
 
 export const insertRequestSchema = z.object({
-    name: z.string(),
+    name: queueNameSchema,
     jobs: z.array(jobInsertSchema),
     options: insertOptionsSchema.optional()
 });

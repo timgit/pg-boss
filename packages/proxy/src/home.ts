@@ -1,12 +1,21 @@
 import { html, raw } from 'hono/html'
 
-type HomeParams = {
-  base: string
-  methods: string[]
+type MethodInfo = {
+  method: string
+  httpMethod: 'get' | 'post'
 }
 
-export const renderHome = ({ base, methods }: HomeParams) => {
-  const methodList = raw(methods.map((method) => `<li><code>${base}/${method}</code></li>`).join(''))
+type HomeParams = {
+  base: string
+  openapiPath: string
+  docsPath: string
+  methods: MethodInfo[]
+}
+
+export const renderHome = ({ base, openapiPath, docsPath, methods }: HomeParams) => {
+  const methodList = raw(methods.map((m) =>
+    `<li><code><span class="http-method ${m.httpMethod}">${m.httpMethod.toUpperCase()}</span> ${base}/${m.method}</code></li>`
+  ).join(''))
 
   return html`<!doctype html>
 <html lang="en">
@@ -91,6 +100,13 @@ export const renderHome = ({ base, methods }: HomeParams) => {
         border-radius: 4px;
         font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
       }
+      .http-method {
+        font-weight: 700;
+        font-size: 0.85em;
+        margin-right: 4px;
+      }
+      .http-method.get { color: #0e5966; }
+      .http-method.post { color: #b63b2e; }
       ul {
         padding-left: 18px;
         columns: 2;
@@ -123,11 +139,11 @@ export const renderHome = ({ base, methods }: HomeParams) => {
       <section class="cards">
         <div class="card">
           <h3>OpenAPI JSON</h3>
-          <a href="/openapi.json">/openapi.json</a>
+          <a href="${openapiPath}">${openapiPath}</a>
         </div>
         <div class="card">
           <h3>Interactive docs</h3>
-          <a href="/docs">/docs</a>
+          <a href="${docsPath}">${docsPath}</a>
         </div>
         <div class="card">
           <h3>Meta payload</h3>

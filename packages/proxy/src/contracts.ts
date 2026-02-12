@@ -2,6 +2,16 @@ export type JsonRecord = Record<string, unknown>
 export type NullableJsonRecord = JsonRecord | null
 export type DateInput = string | number
 
+/**
+ * @minLength 1
+ */
+export type QueueName = string
+
+/**
+ * @minLength 1
+ */
+export type EventName = string
+
 export type ErrorResult = {
   ok: false
   error: { message: string }
@@ -29,10 +39,6 @@ export type QueueOptions = {
   retryDelayMax?: number
 }
 
-export type ConnectionOptions = {
-  db?: unknown
-}
-
 export type JobOptions = {
   id?: string
   priority?: number
@@ -45,7 +51,7 @@ export type JobOptions = {
   deadLetter?: string
 }
 
-export type SendOptions = JobOptions & QueueOptions & ConnectionOptions
+export type SendOptions = JobOptions & QueueOptions
 
 export type ScheduleOptions = SendOptions & {
   tz?: string
@@ -60,7 +66,6 @@ export type FetchOptions = {
   ignoreStartAfter?: boolean
   groupConcurrency?: number | GroupConcurrencyConfig
   ignoreGroups?: string[] | null
-  db?: unknown
 }
 
 export type FindJobsOptions = {
@@ -68,12 +73,10 @@ export type FindJobsOptions = {
   key?: string
   data?: JsonRecord
   queued?: boolean
-  db?: unknown
 }
 
 export type InsertOptions = {
   returnId?: boolean
-  db?: unknown
 }
 
 export type UpdateQueueOptions = QueueOptions & {
@@ -161,7 +164,7 @@ export type MetaResponse = {
 }
 
 export type SendRequest = {
-  name: string
+  name: QueueName
   data?: NullableJsonRecord
   options?: SendOptions
 }
@@ -172,7 +175,7 @@ export type SendResponse = {
 }
 
 export type SendAfterRequest = {
-  name: string
+  name: QueueName
   data?: NullableJsonRecord
   options?: SendOptions | null
   after: DateInput
@@ -184,7 +187,7 @@ export type SendAfterResponse = {
 }
 
 export type SendThrottledRequest = {
-  name: string
+  name: QueueName
   data?: NullableJsonRecord
   options?: SendOptions | null
   seconds: number
@@ -197,7 +200,7 @@ export type SendThrottledResponse = {
 }
 
 export type SendDebouncedRequest = {
-  name: string
+  name: QueueName
   data?: NullableJsonRecord
   options?: SendOptions | null
   seconds: number
@@ -210,7 +213,7 @@ export type SendDebouncedResponse = {
 }
 
 export type InsertRequest = {
-  name: string
+  name: QueueName
   jobs: JobInsert[]
   options?: InsertOptions
 }
@@ -239,7 +242,7 @@ export type JobInsert = {
 }
 
 export type FetchRequest = {
-  name: string
+  name: QueueName
   options?: FetchOptions
 }
 
@@ -249,8 +252,8 @@ export type FetchResponse = {
 }
 
 export type SubscribeRequest = {
-  event: string
-  name: string
+  event: EventName
+  name: QueueName
 }
 
 export type SubscribeResponse = {
@@ -259,8 +262,8 @@ export type SubscribeResponse = {
 }
 
 export type UnsubscribeRequest = {
-  event: string
-  name: string
+  event: EventName
+  name: QueueName
 }
 
 export type UnsubscribeResponse = {
@@ -269,7 +272,7 @@ export type UnsubscribeResponse = {
 }
 
 export type PublishRequest = {
-  event: string
+  event: EventName
   data?: NullableJsonRecord
   options?: SendOptions
 }
@@ -280,9 +283,8 @@ export type PublishResponse = {
 }
 
 export type CancelRequest = {
-  name: string
+  name: QueueName
   id: string | string[]
-  options?: ConnectionOptions
 }
 
 export type CancelResponse = {
@@ -291,9 +293,8 @@ export type CancelResponse = {
 }
 
 export type ResumeRequest = {
-  name: string
+  name: QueueName
   id: string | string[]
-  options?: ConnectionOptions
 }
 
 export type ResumeResponse = {
@@ -302,9 +303,8 @@ export type ResumeResponse = {
 }
 
 export type RetryRequest = {
-  name: string
+  name: QueueName
   id: string | string[]
-  options?: ConnectionOptions
 }
 
 export type RetryResponse = {
@@ -313,9 +313,8 @@ export type RetryResponse = {
 }
 
 export type DeleteJobRequest = {
-  name: string
+  name: QueueName
   id: string | string[]
-  options?: ConnectionOptions
 }
 
 export type DeleteJobResponse = {
@@ -324,7 +323,7 @@ export type DeleteJobResponse = {
 }
 
 export type DeleteQueuedJobsRequest = {
-  name: string
+  name: QueueName
 }
 
 export type DeleteQueuedJobsResponse = {
@@ -333,7 +332,7 @@ export type DeleteQueuedJobsResponse = {
 }
 
 export type DeleteStoredJobsRequest = {
-  name: string
+  name: QueueName
 }
 
 export type DeleteStoredJobsResponse = {
@@ -342,7 +341,7 @@ export type DeleteStoredJobsResponse = {
 }
 
 export type DeleteAllJobsRequest = {
-  name?: string
+  name?: QueueName
 }
 
 export type DeleteAllJobsResponse = {
@@ -350,12 +349,12 @@ export type DeleteAllJobsResponse = {
   result: null
 }
 
-export type CompleteOptions = ConnectionOptions & {
+export type CompleteOptions = {
   includeQueued?: boolean
 }
 
 export type CompleteRequest = {
-  name: string
+  name: QueueName
   id: string | string[]
   data?: NullableJsonRecord
   options?: CompleteOptions
@@ -367,20 +366,14 @@ export type CompleteResponse = {
 }
 
 export type FailRequest = {
-  name: string
+  name: QueueName
   id: string | string[]
   data?: NullableJsonRecord
-  options?: ConnectionOptions
 }
 
 export type FailResponse = {
   ok: true
   result: CommandResponse
-}
-
-export type FindJobsRequest = {
-  name: string
-  options?: FindJobsOptions
 }
 
 export type FindJobsResponse = {
@@ -389,7 +382,7 @@ export type FindJobsResponse = {
 }
 
 export type CreateQueueRequest = {
-  name: string
+  name: QueueName
   options?: QueueOptions & {
     policy?: string
     partition?: boolean
@@ -403,17 +396,13 @@ export type CreateQueueResponse = {
   result: null
 }
 
-export type GetBlockedKeysRequest = {
-  name: string
-}
-
 export type GetBlockedKeysResponse = {
   ok: true
   result: string[]
 }
 
 export type UpdateQueueRequest = {
-  name: string
+  name: QueueName
   options?: UpdateQueueOptions
 }
 
@@ -423,7 +412,7 @@ export type UpdateQueueResponse = {
 }
 
 export type DeleteQueueRequest = {
-  name: string
+  name: QueueName
 }
 
 export type DeleteQueueResponse = {
@@ -431,26 +420,14 @@ export type DeleteQueueResponse = {
   result: null
 }
 
-export type GetQueuesRequest = {
-  names?: string[]
-}
-
 export type GetQueuesResponse = {
   ok: true
   result: QueueResult[]
 }
 
-export type GetQueueRequest = {
-  name: string
-}
-
 export type GetQueueResponse = {
   ok: true
   result: QueueResult | null
-}
-
-export type GetQueueStatsRequest = {
-  name: string
 }
 
 export type GetQueueStatsResponse = {
@@ -459,7 +436,7 @@ export type GetQueueStatsResponse = {
 }
 
 export type SuperviseRequest = {
-  name?: string
+  name?: QueueName
 }
 
 export type SuperviseResponse = {
@@ -478,7 +455,7 @@ export type SchemaVersionResponse = {
 }
 
 export type ScheduleRequest = {
-  name: string
+  name: QueueName
   cron: string
   data?: NullableJsonRecord
   options?: ScheduleOptions
@@ -490,18 +467,13 @@ export type ScheduleResponse = {
 }
 
 export type UnscheduleRequest = {
-  name: string
+  name: QueueName
   key?: string
 }
 
 export type UnscheduleResponse = {
   ok: true
   result: null
-}
-
-export type GetSchedulesRequest = {
-  name?: string
-  key?: string
 }
 
 export type GetSchedulesResponse = {

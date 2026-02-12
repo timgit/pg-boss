@@ -1,38 +1,39 @@
 import type { ConstructorOptions } from 'pg-boss'
-import { createProxyApp, createProxyService, type ProxyApp, type ProxyService } from './index.js'
+import { createProxyApp, createProxyService, type ProxyApp, type ProxyOptions, type ProxyService } from './index.js'
 
-type ProxyNodeOptions = {
+type ProxyNodeOptions = Omit<ProxyOptions, 'options'> & {
   connectionString?: string
   options?: ConstructorOptions
-  prefix?: string
 }
 
 const resolveOptions = (options: ProxyNodeOptions): ConstructorOptions => {
-  let args = {} as ConstructorOptions
+  if (options.connectionString && options.options) {
+    throw new Error('Provide either connectionString or options, not both.')
+  }
 
   if (options.connectionString) {
-    args.connectionString = options.connectionString
-  } else if (options.options) {
-    args = options.options
-  } else if (process.env.DATABASE_URL) {
-    args.connectionString = process.env.DATABASE_URL
+    return { connectionString: options.connectionString }
   }
 
-  if (Object.keys(args).length === 0) {
-    throw new Error('Proxy requires PgBoss constructor options or DATABASE_URL.')
+  if (options.options) {
+    return options.options
   }
 
-  return args
+  if (process.env.DATABASE_URL) {
+    return { connectionString: process.env.DATABASE_URL }
+  }
+
+  throw new Error('Proxy requires PgBoss constructor options or DATABASE_URL.')
 }
 
 export const createProxyAppNode = (options: ProxyNodeOptions = {}): ProxyApp => {
-  const resolvedOptions = resolveOptions(options)
-  return createProxyApp({ options: resolvedOptions, prefix: options.prefix })
+  const { connectionString: _, options: __, ...rest } = options
+  return createProxyApp({ ...rest, options: resolveOptions(options) })
 }
 
 export const createProxyServiceNode = (options: ProxyNodeOptions = {}): ProxyService => {
-  const resolvedOptions = resolveOptions(options)
-  return createProxyService({ options: resolvedOptions, prefix: options.prefix })
+  const { connectionString: _, options: __, ...rest } = options
+  return createProxyService({ ...rest, options: resolveOptions(options) })
 }
 
 export type { ProxyNodeOptions }
