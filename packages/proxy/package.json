@@ -1,0 +1,63 @@
+{
+  "name": "@pg-boss/proxy",
+  "version": "0.1.0",
+  "description": "Hono-based HTTP proxy for pg-boss",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./node": {
+      "types": "./dist/node.d.ts",
+      "import": "./dist/node.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "dev": "cross-env DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/pgboss tsx src/server.ts",
+    "gen:schemas": "ts-to-zod src/contracts.ts src/contracts.zod.ts",
+    "build": "npm run gen:schemas && tsc -p tsconfig.build.json",
+    "test": "vitest run -c vitest.config.ts",
+    "start": "node ./dist/server.js",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run typecheck && npm run build"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.19.9",
+    "@hono/swagger-ui": "^0.5.3",
+    "@hono/zod-openapi": "^1.2.1",
+    "hono": "^4.11.9",
+    "pg-boss": "^12.11.1",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.11",
+    "cross-env": "^10.1.0",
+    "ts-to-zod": "^5.1.0",
+    "tsx": "^4.21.0",
+    "vitest": "^4.0.18",
+    "typescript": "^5.9.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/timgit/pg-boss.git"
+  },
+  "author": "timgit",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/timgit/pg-boss/issues"
+  },
+  "homepage": "https://timgit.github.io/pg-boss",
+  "keywords": [
+    "pg-boss",
+    "job-queue",
+    "proxy",
+    "http",
+    "hono"
+  ]
+}

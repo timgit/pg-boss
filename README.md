@@ -156,7 +156,7 @@ pg-boss plans create --schema myapp_jobs
 
 ## Dashboard
 
-A [web-based dashboard](https://www.npmjs.com/package/@pg-boss/dashboard) is available for monitoring and managing pg-boss job queues. It provides an overview of queue statistics, job browsing and filtering, job actions (create, cancel, retry, resume, delete), warning history, and multi-database support.
+A [web-based dashboard](https://www.npmjs.com/package/@pg-boss/dashboard) is available in `@pg-boss/dashboard` for monitoring and managing pg-boss job queues. It provides an overview of queue statistics, job browsing and filtering, job actions (create, cancel, retry, resume, delete), warning history, and multi-database support.
 
 ```bash
 npm i @pg-boss/dashboard
@@ -164,6 +164,11 @@ DATABASE_URL="postgres://user:password@localhost:5432/mydb" npx pg-boss-dashboar
 ```
 
 See the [dashboard documentation](https://github.com/timgit/pg-boss/blob/master/packages/dashboard/README.md) for full configuration and deployment options.
+
+## Proxy
+
+An HTTP proxy is available in `@pg-boss/proxy`.
+See `packages/proxy/README.md` for usage.
 
 ## Requirements
 * Node 22.12 or higher for CommonJS's require(esm)

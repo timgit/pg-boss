@@ -4,7 +4,10 @@ import { defineConfig } from 'eslint/config'
 const config = neostandard({
   ts: true,
   env: ['mocha'],
-  ignores: neostandard.resolveIgnoresFromGitignore(),
+  ignores: [
+    ...neostandard.resolveIgnoresFromGitignore(),
+    'packages/proxy/src/contracts.zod.ts',
+  ],
   noJsx: true,
 })
 
