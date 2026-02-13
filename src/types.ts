@@ -263,14 +263,40 @@ export interface QueueResult extends Queue {
 export type ScheduleOptions = SendOptions & { tz?: string, key?: string }
 
 export interface JobPollingOptions {
+  /**
+   * Interval to check for new jobs, in seconds. Must be >= `0.5` (500 ms).
+   * @default 2
+   */
   pollingIntervalSeconds?: number;
 }
 
 export interface JobFetchOptions {
+  /**
+   * If `true`, all job metadata will be included in the returned job object.
+   * @default false
+   */
   includeMetadata?: boolean;
+  /**
+   * Allow jobs with a higher priority to be fetched before jobs with lower or
+   * no priority.
+   * @default true
+   */
   priority?: boolean;
+  /**
+   * Fetch jobs in the order they were created. Set to `false` to disable this
+   * sorting and improve performance when the order of jobs does not matter.
+   * @default true
+   */
   orderByCreatedOn?: boolean;
+  /**
+   * The number of jobs to fetch.
+   * @default 1
+   */
   batchSize?: number;
+  /**
+   * Fetch jobs even if they have a `startAfter` timestamp in the future.
+   * @default false
+   */
   ignoreStartAfter?: boolean;
 }
 
