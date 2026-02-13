@@ -8,3 +8,8 @@ test
 coverage
 examples
 dist
+node_modules
+.react-router
+.claude
+build
+docker-compose.yaml
