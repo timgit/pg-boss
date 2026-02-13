@@ -111,7 +111,7 @@ attachShutdownListeners(['SIGINT', 'SIGTERM'], bunShutdownAdapter, stop)
 
 ### Long-lived runtimes only
 
-`pg-boss` maintains a PostgreSQL connection pool via `pg`, so the proxy should be deployed on long-lived runtimes (Node, Deno, Bun). Edge/serverless runtimes are not suitable for maintaining pooled connections.
+`pg-boss` maintains a PostgreSQL connection pool via `pg`, so the proxy should be deployed on long-lived runtimes (Node, Deno, Bun).
 
 ## Running the proxy server (Node)
 
