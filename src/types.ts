@@ -99,13 +99,58 @@ export interface ResolvedConstructorOptions extends ConstructorOptions {
   bamIntervalSeconds: number;
 }
 
+/**
+ * Options for a queue. All retry, expiration, and retention options set on a
+ * queue will be inherited by each job in the queue unless they are overridden.
+ */
 export interface QueueOptions {
+  /**
+   * How many seconds a job may be in active state before being retried or
+   * failed. Must be >=1. The default is 15 minutes.
+   * @default 900
+   */
   expireInSeconds?: number;
+  /**
+   * How many seconds a job may be in created or retry state before it's
+   * deleted. Must be >=1. The default is 14 days.
+   * @default 1209600
+   */
   retentionSeconds?: number;
+  /**
+   * How long a job should be retained in the database after it's completed. Set
+   * to `0` to never delete completed jobs. The default is 7 days.
+   * @default 604800
+   */
   deleteAfterSeconds?: number;
+  /**
+   * Number of times a job is allowed to be retried before it is marked as
+   * failed.
+   * @default 2
+   */
   retryLimit?: number;
+  /**
+   * Delay between retries of failed jobs, in seconds.
+   * @default 0
+   */
   retryDelay?: number;
+  /**
+   * Enables exponential backoff retries based on `retryDelay` instead of a
+   * fixed delay. Sets initial `retryDelay` to 1 if not set.
+   *
+   * A simplified function to get the delay between runs is: `retryDelay * 2 ^ retryCount`
+   * with some jitter.
+   *
+   * The function used to determine the backoff delay is:
+   * ```js
+   * Math.min(retryDelayMax, retryDelay * (2 ** Math.Min(16, retryCount) / 2 + 2 Math.Min(16, retryCount) / 2 * Math.random()))
+   * ```
+   * @default false
+   */
   retryBackoff?: boolean;
+  /**
+   * Maximum delay between retries of failed jobs, in seconds. Only used when
+   * `retryBackoff` is `true`. The default is no limit.
+   */
   retryDelayMax?: number;
 }
 
@@ -150,13 +195,57 @@ export type InsertOptions = ConnectionOptions & { returnId?: boolean }
 
 export type SendOptions = JobOptions & QueueOptions & ConnectionOptions
 
+/**
+ * The queue policy dictates how jobs are allowed to be queued and processed.
+ *
+ * - `standard` supports all standard features such as deferral, priority, and
+ *   throttling.
+ *
+ * - `short` only allows 1 job to be queued, unlimited active. Can be extended
+ *   with `singletonKey`.
+ *
+ * - `singleton` only allows 1 job to be active, unlimited queued. Can be
+ *   extended with `singletonKey`.
+ *
+ * - `stately` offers a combination of `short` and `singleton`; only allows 1
+ *   job per state, queued and/or active. Can be extended with `singletonKey`.
+ *
+ * - `exclusive` only allows 1 job to be queued or active. Can be extended with
+ *   singletonKey`.
+ *
+ * - `key_strict_fifo` ensures strict FIFO ordering per `singletonKey`. Requires
+ *   `singletonKey` on every job. Blocks processing of jobs with the same key
+ *   while any job with that key is active, in retry, or failed.
+ */
 export type QueuePolicy = 'standard' | 'short' | 'singleton' | 'stately' | 'exclusive' | 'key_strict_fifo' | (string & {})
 
 export interface Queue extends QueueOptions {
+  /**
+   * The name of the queue.
+   */
   name: string;
+  /**
+   * The policy for the queue.
+   * @default 'standard'
+   */
   policy?: QueuePolicy;
+  /**
+   * If set to true, a dedicated table will be created in the partition scheme.
+   * This is more useful for a large queue in order to keep it from being a
+   * "noisy neighbor".
+   * @default false
+   */
   partition?: boolean;
+  /**
+   * The name of the queue's dead letter queue. When a job fails after all
+   * retries, the job's payload will be copied into said queue, copying the same
+   * retention and retry configuration as the original job.
+   */
   deadLetter?: string;
+  /**
+   * The number of jobs allowed to exist in the created or retry state before
+   * emitting a warning event.
+   */
   warningQueueSize?: number;
 }
 
