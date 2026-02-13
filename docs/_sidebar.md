@@ -1,6 +1,7 @@
 * [Home](/)
 * [Introduction](introduction.md)
 * [Install](install.md)
+* [CLI](cli.md)
 * [Dashboard](dashboard.md)
 * API
 * * [Constructor](./api/constructor.md)
