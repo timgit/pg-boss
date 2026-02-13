@@ -11,17 +11,6 @@ This package ships a runtime-neutral entry point and a Node-only entry point.
 Use this when you want a runtime-neutral entry point. Provide PgBoss constructor options.
 
 ```ts
-import { createProxyApp } from '@pg-boss/proxy'
-
-const { app } = createProxyApp({
-  options: { connectionString: 'postgres://user:pass@host/database' },
-  prefix: '/api'
-})
-```
-
-If you want standardized lifecycle hooks, use the service wrapper:
-
-```ts
 import { createProxyService } from '@pg-boss/proxy'
 
 const { app, start, stop } = createProxyService({
@@ -32,6 +21,17 @@ const { app, start, stop } = createProxyService({
 await start()
 // later
 await stop()
+```
+
+If you only need the Hono app and will manage lifecycle yourself, use `createProxyApp`:
+
+```ts
+import { createProxyApp } from '@pg-boss/proxy'
+
+const { app } = createProxyApp({
+  options: { connectionString: 'postgres://user:pass@host/database' },
+  prefix: '/api'
+})
 ```
 
 ### Node convenience entry point
@@ -51,6 +51,15 @@ await start()
 await stop()
 ```
 
+If you want a ready-to-listen Node server with signal wiring:
+
+```ts
+import { createProxyServerNode } from '@pg-boss/proxy/node'
+
+const proxy = createProxyServerNode()
+await proxy.start()
+```
+
 ## Lifecycle wiring by runtime
 
 You can reuse the same shutdown wiring API across runtimes by passing the local signal adapter.
@@ -58,7 +67,7 @@ You can reuse the same shutdown wiring API across runtimes by passing the local 
 ### Node
 
 ```ts
-import { attachShutdownListeners, createProxyService } from '@pg-boss/proxy'
+import { attachShutdownListeners, createProxyService, nodeShutdownAdapter } from '@pg-boss/proxy'
 
 const { app, start, stop } = createProxyService({
   options: { connectionString: process.env.DATABASE_URL },
@@ -67,13 +76,13 @@ const { app, start, stop } = createProxyService({
 
 await start()
 
-attachShutdownListeners(['SIGINT', 'SIGTERM'], process, stop)
+attachShutdownListeners(['SIGINT', 'SIGTERM'], nodeShutdownAdapter, stop)
 ```
 
 ### Deno
 
 ```ts
-import { attachShutdownListeners, createProxyService } from '@pg-boss/proxy'
+import { attachShutdownListeners, createDenoShutdownAdapter, createProxyService } from '@pg-boss/proxy'
 
 const { start, stop } = createProxyService({
   options: { connectionString: Deno.env.get('DATABASE_URL') },
@@ -82,16 +91,13 @@ const { start, stop } = createProxyService({
 
 await start()
 
-attachShutdownListeners(['SIGINT', 'SIGTERM'], {
-  on: (signal, handler) => Deno.addSignalListener(signal, handler),
-  off: (signal, handler) => Deno.removeSignalListener(signal, handler)
-}, stop)
+attachShutdownListeners(['SIGINT', 'SIGTERM'], createDenoShutdownAdapter(), stop)
 ```
 
 ### Bun
 
 ```ts
-import { attachShutdownListeners, createProxyService } from '@pg-boss/proxy'
+import { attachShutdownListeners, createProxyService, bunShutdownAdapter } from '@pg-boss/proxy'
 
 const { start, stop } = createProxyService({
   options: { connectionString: process.env.DATABASE_URL },
@@ -100,7 +106,7 @@ const { start, stop } = createProxyService({
 
 await start()
 
-attachShutdownListeners(['SIGINT', 'SIGTERM'], process, stop)
+attachShutdownListeners(['SIGINT', 'SIGTERM'], bunShutdownAdapter, stop)
 ```
 
 ### Long-lived runtimes only

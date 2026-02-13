@@ -22,11 +22,12 @@
     "dev": "cross-env DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/pgboss tsx src/server.ts",
     "gen:schemas": "ts-to-zod src/contracts.ts src/contracts.zod.ts",
     "check:schemas": "ts-to-zod src/contracts.ts src/contracts.zod.check.ts && diff src/contracts.zod.ts src/contracts.zod.check.ts && rm src/contracts.zod.check.ts || (rm -f src/contracts.zod.check.ts && echo 'Schema drift detected. Run: npm run gen:schemas' && exit 1)",
-    "build": "npm run gen:schemas && tsc -p tsconfig.build.json",
+    "gen:version": "tsx scripts/gen-version.ts",
+    "build": "npm run gen:version && npm run gen:schemas && tsc -p tsconfig.build.json",
     "test": "vitest run -c vitest.config.ts",
     "start": "node ./dist/server.js",
     "typecheck": "tsc --noEmit",
-    "prepublishOnly": "npm run typecheck && npm run build"
+    "prepublishOnly": "npm run gen:version && npm run typecheck && npm run build"
   },
   "dependencies": {
     "@hono/node-server": "^1.19.9",

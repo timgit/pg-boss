@@ -16,8 +16,7 @@ import {
   metaResponseSchema
 } from './contracts.zod.js'
 import { renderHome } from './home.js'
-import { allRoutes, bossMethodNames, bossMethodInfos, type RouteEntry } from './routes.js'
-import { attachShutdownListeners, type ShutdownHandler, type ShutdownAdapter } from './shutdown.js'
+import { allRoutes, bossMethodInfos, type RouteEntry } from './routes.js'
 
 type ProxyOptions = {
   options: ConstructorOptions
@@ -123,8 +122,9 @@ export const createProxyApp = (options: ProxyOptions): ProxyApp => {
     }
   })
 
+  const homeHtml = renderHome({ base, openapiPath, docsPath, methods: bossMethodInfos })
   app.openapi(homeRoute, (context) => {
-    return context.html(renderHome({ base, openapiPath, docsPath, methods: bossMethodInfos }))
+    return context.html(homeHtml)
   })
 
   const maxBodySize = options.bodyLimit ?? 1024 * 1024
@@ -292,6 +292,13 @@ export const createProxyService = (options: ProxyOptions): ProxyService => {
   }
 }
 
-export { attachShutdownListeners, bossMethodNames, bossMethodInfos }
+export { bossMethodNames, bossMethodInfos } from './routes.js'
+export {
+  attachShutdownListeners,
+  nodeShutdownAdapter,
+  bunShutdownAdapter,
+  createDenoShutdownAdapter
+} from './shutdown.js'
 
-export type { ProxyApp, ProxyOptions, ProxyService, ShutdownHandler, ShutdownAdapter }
+export type { ProxyApp, ProxyOptions, ProxyService }
+export type { ShutdownHandler, ShutdownAdapter } from './shutdown.js'

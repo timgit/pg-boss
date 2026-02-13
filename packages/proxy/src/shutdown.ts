@@ -5,6 +5,31 @@ export type ShutdownAdapter<Signal> = {
   off?: (signal: Signal, handler: () => void) => void
 }
 
+type DenoSignal = 'SIGINT' | 'SIGTERM' | string
+
+type DenoLike = {
+  addSignalListener: (signal: DenoSignal, handler: () => void) => void
+  removeSignalListener: (signal: DenoSignal, handler: () => void) => void
+}
+
+export const nodeShutdownAdapter: ShutdownAdapter<NodeJS.Signals> = {
+  on: (signal, handler) => process.on(signal, handler),
+  off: (signal, handler) => process.off(signal, handler)
+}
+
+export const bunShutdownAdapter = nodeShutdownAdapter
+
+export const createDenoShutdownAdapter = (): ShutdownAdapter<DenoSignal> => {
+  const deno = (globalThis as unknown as { Deno?: DenoLike }).Deno
+  if (!deno) {
+    throw new Error('Deno global is not available in this runtime.')
+  }
+  return {
+    on: (signal, handler) => deno.addSignalListener(signal, handler),
+    off: (signal, handler) => deno.removeSignalListener(signal, handler)
+  }
+}
+
 export const attachShutdownListeners = <Signal>(
   signals: Signal[],
   adapter: ShutdownAdapter<Signal>,
