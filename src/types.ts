@@ -152,6 +152,12 @@ export interface QueueOptions {
    * `retryBackoff` is `true`. The default is no limit.
    */
   retryDelayMax?: number;
+  /**
+   * Expected heartbeat interval in seconds. When set, workers must send periodic
+   * heartbeats. If no heartbeat is received within this interval, the monitor will
+   * fail/retry the job. Must be >= 10. NULL = heartbeat disabled (default).
+   */
+  heartbeatSeconds?: number;
 }
 
 export interface GroupOptions {
@@ -247,6 +253,11 @@ export interface Queue extends QueueOptions {
    * emitting a warning event.
    */
   warningQueueSize?: number;
+  /**
+   * Expected heartbeat interval in seconds for jobs in this queue.
+   * When set, workers must send periodic heartbeats. NULL = heartbeat disabled (default).
+   */
+  heartbeatSeconds?: number;
 }
 
 export interface QueueResult extends Queue {
@@ -318,7 +329,13 @@ export interface WorkConcurrencyOptions {
   groupConcurrency?: number | GroupConcurrencyConfig;
 }
 
-export type WorkOptions = JobFetchOptions & JobPollingOptions & WorkConcurrencyOptions
+export type WorkOptions = JobFetchOptions & JobPollingOptions & WorkConcurrencyOptions & {
+  /**
+   * Custom heartbeat refresh interval in seconds. Defaults to `heartbeatSeconds / 2`.
+   * Must be strictly less than `heartbeatSeconds`.
+   */
+  heartbeatRefreshSeconds?: number;
+}
 export interface FetchGroupConcurrencyOptions {
   groupConcurrency?: number | GroupConcurrencyConfig;
   ignoreGroups?: string[] | null;
@@ -358,6 +375,7 @@ export interface Job<T = object> {
   name: string;
   data: T;
   expireInSeconds: number;
+  heartbeatSeconds: number | null;
   signal: AbortSignal;
   groupId?: string | null;
   groupTier?: string | null;
@@ -381,6 +399,8 @@ export interface JobWithMetadata<T = object> extends Job<T> {
   completedOn: Date | null;
   keepUntil: Date;
   policy: QueuePolicy;
+  heartbeatOn: Date | null;
+  heartbeatSeconds: number | null;
   deadLetter: string;
   output: object;
 }
@@ -399,6 +419,7 @@ export interface JobInsert<T = object> {
   expireInSeconds?: number;
   deleteAfterSeconds?: number;
   retentionSeconds?: number;
+  heartbeatSeconds?: number;
   group?: GroupOptions;
   deadLetter?: string;
 }

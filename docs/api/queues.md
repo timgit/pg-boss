@@ -64,6 +64,16 @@ Allowed policy values:
 
   Default: no limit. Maximum delay between retries of failed jobs, in seconds. Only used when retryBackoff is true.
 
+**Heartbeat options**
+
+* **heartbeatSeconds**, int
+
+  Default: none (disabled). Expected heartbeat interval in seconds. When set, workers using `work()` will automatically send periodic heartbeats. If no heartbeat is received within this interval, the monitor will fail/retry the job. This provides fast dead-worker detection independent of the overall expiration time. Must be >= 10.
+
+  Both mechanisms coexist and operate independently:
+  - **Heartbeat**: detects crashed workers quickly (e.g., 30 seconds)
+  - **Expiration**: detects hung/stuck workers (e.g., 2 hours)
+
 **Expiration options**
 
 * **expireInSeconds**, number

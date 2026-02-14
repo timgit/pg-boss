@@ -23,6 +23,7 @@ function validateQueueArgs (config: any = {}) {
   validateExpirationConfig(config)
   validateRetentionConfig(config)
   validateDeletionConfig(config)
+  validateHeartbeatConfig(config)
 }
 
 function checkSendArgs (args: any): types.Request {
@@ -70,6 +71,7 @@ function checkSendArgs (args: any): types.Request {
   validateRetentionConfig(options)
   validateDeletionConfig(options)
   validateGroupConfig(options)
+  validateHeartbeatConfig(options)
 
   return { name, data, options }
 }
@@ -167,6 +169,7 @@ function checkWorkArgs (name: string, args: any[]): {
   assert(!('priority' in options) || typeof options.priority === 'boolean', 'priority must be a boolean')
   assert(!('localConcurrency' in options) || (Number.isInteger(options.localConcurrency) && options.localConcurrency >= 1), 'localConcurrency must be an integer >= 1')
   validateGroupConcurrencyConfig(options)
+  validateHeartbeatRefreshConfig(options)
 
   return { options, callback }
 }
@@ -261,6 +264,18 @@ function validateRetryConfig (config: any) {
   assert(!('retryBackoff' in config) || (config.retryBackoff === true || config.retryBackoff === false), 'retryBackoff must be either true or false')
   assert(!('retryDelayMax' in config) || config.retryDelayMax === null || config.retryBackoff === true, 'retryDelayMax can only be set if retryBackoff is true')
   assert(!('retryDelayMax' in config) || config.retryDelayMax === null || (Number.isInteger(config.retryDelayMax) && config.retryDelayMax >= 0), 'retryDelayMax must be an integer >= 0')
+}
+
+function validateHeartbeatConfig (config: any) {
+  assert(!('heartbeatSeconds' in config) || config.heartbeatSeconds === null || (Number.isInteger(config.heartbeatSeconds) && config.heartbeatSeconds >= 10),
+    'heartbeatSeconds must be an integer >= 10')
+}
+
+function validateHeartbeatRefreshConfig (config: any) {
+  if (!('heartbeatRefreshSeconds' in config) || config.heartbeatRefreshSeconds == null) return
+
+  assert(typeof config.heartbeatRefreshSeconds === 'number' && config.heartbeatRefreshSeconds > 0,
+    'heartbeatRefreshSeconds must be a number > 0')
 }
 
 function applyPollingInterval (config: any) {
