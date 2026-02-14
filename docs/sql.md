@@ -30,6 +30,8 @@ CREATE TABLE pgboss.job (
   output jsonb,
   dead_letter text,
   policy text,
+  heartbeat_on timestamp with time zone,
+  heartbeat_seconds int,
   CONSTRAINT job_pkey PRIMARY KEY (name, id)
 ) PARTITION BY LIST (name)
 ```

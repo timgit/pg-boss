@@ -125,6 +125,7 @@ function createTableQueue (schema: string) {
       warning_queued int NOT NULL default 0,
       active_count int NOT NULL default 0,
       total_count int NOT NULL default 0,
+      heartbeat_seconds int,
       singletons_active text[],
       monitor_on timestamp with time zone,
       maintain_on timestamp with time zone,
@@ -316,12 +317,14 @@ function createTableJob (schema: string) {
       keep_until timestamp with time zone NOT NULL default now() + interval '${QUEUE_DEFAULTS.retention_seconds}',
       output jsonb,
       dead_letter text,
-      policy text
+      policy text,
+      heartbeat_on timestamp with time zone,
+      heartbeat_seconds int
     ) PARTITION BY LIST (name)
   `
 }
 
-const JOB_COLUMNS_MIN = 'id, name, data, expire_seconds as "expireInSeconds", group_id as "groupId", group_tier as "groupTier"'
+const JOB_COLUMNS_MIN = 'id, name, data, expire_seconds as "expireInSeconds", heartbeat_seconds as "heartbeatSeconds", group_id as "groupId", group_tier as "groupTier"'
 const JOB_COLUMNS_ALL = `${JOB_COLUMNS_MIN},
   policy,
   state,
@@ -336,6 +339,7 @@ const JOB_COLUMNS_ALL = `${JOB_COLUMNS_MIN},
   singleton_key as "singletonKey",
   singleton_on as "singletonOn",
   deletion_seconds as "deleteAfterSeconds",
+  heartbeat_on as "heartbeatOn",
   created_on as "createdOn",
   completed_on as "completedOn",
   keep_until as "keepUntil",
@@ -391,7 +395,8 @@ function createQueueFunction (schema: string) {
           warning_queued,
           dead_letter,
           partition,
-          table_name
+          table_name,
+          heartbeat_seconds
         )
         VALUES (
           queue_name,
@@ -406,7 +411,8 @@ function createQueueFunction (schema: string) {
           COALESCE((options->>'warningQueueSize')::int, ${QUEUE_DEFAULTS.warning_queued}),
           options->>'deadLetter',
           COALESCE((options->>'partition')::bool, ${QUEUE_DEFAULTS.partition}),
-          tablename
+          tablename,
+          (options->>'heartbeatSeconds')::int
         )
         ON CONFLICT DO NOTHING
         RETURNING created_on
@@ -585,6 +591,9 @@ function updateQueue (schema: string, { deadLetter }: UpdateQueueOptions = {}) {
       retention_seconds = COALESCE((o.data->>'retentionSeconds')::int, retention_seconds),
       deletion_seconds = COALESCE((o.data->>'deleteAfterSeconds')::int, deletion_seconds),
       warning_queued = COALESCE((o.data->>'warningQueueSize')::int, warning_queued),
+      heartbeat_seconds = CASE WHEN o.data ? 'heartbeatSeconds'
+        THEN (o.data->>'heartbeatSeconds')::int
+        ELSE heartbeat_seconds END,
       ${
         deadLetter === undefined
           ? ''
@@ -611,6 +620,7 @@ function getQueues (schema: string, names?: string[]): SqlQuery {
       q.retention_seconds as "retentionSeconds",
       q.deletion_seconds as "deleteAfterSeconds",
       q.partition,
+      q.heartbeat_seconds as "heartbeatSeconds",
       q.dead_letter as "deadLetter",
       q.deferred_count as "deferredCount",
       q.warning_queued as "warningQueueSize",
@@ -932,6 +942,7 @@ function fetchNextJob (options: FetchJobOptions): SqlQuery {
       UPDATE ${schema}.${table} j SET
         state = '${JOB_STATES.active}',
         started_on = now(),
+        heartbeat_on = now(),
         retry_count = CASE WHEN started_on IS NOT NULL THEN retry_count + 1 ELSE retry_count END
       FROM ${finalCte}
       WHERE name = '${name}' AND j.id = ${finalCte}.id
@@ -1027,7 +1038,8 @@ function insertJobs (schema: string, { table, name, returnId = true }: InsertJob
       retry_backoff,
       retry_delay_max,
       policy,
-      dead_letter
+      dead_letter,
+      heartbeat_seconds
     )
     SELECT
       COALESCE(id, gen_random_uuid()) as id,
@@ -1050,7 +1062,8 @@ function insertJobs (schema: string, { table, name, returnId = true }: InsertJob
       COALESCE("retryBackoff", q.retry_backoff, false) as retry_backoff,
       COALESCE("retryDelayMax", q.retry_delay_max) as retry_delay_max,
       q.policy,
-      COALESCE("deadLetter", q.dead_letter) as dead_letter
+      COALESCE("deadLetter", q.dead_letter) as dead_letter,
+      COALESCE("heartbeatSeconds", q.heartbeat_seconds) as heartbeat_seconds
     FROM (
       SELECT *,
         CASE
@@ -1074,7 +1087,8 @@ function insertJobs (schema: string, { table, name, returnId = true }: InsertJob
         "expireInSeconds" integer,
         "deleteAfterSeconds" integer,
         "retentionSeconds" integer,
-        "deadLetter" text
+        "deadLetter" text,
+        "heartbeatSeconds" integer
       )
     ) j
     JOIN ${schema}.queue q ON q.name = '${name}'
@@ -1100,6 +1114,31 @@ function failJobsByTimeout (schema: string, table: string, queues: string[]): st
   const output = '\'{ "value": { "message": "job timed out" } }\'::jsonb'
 
   return locked(schema, failJobs(schema, table, where, output), table + 'failJobsByTimeout')
+}
+
+function failJobsByHeartbeat (schema: string, table: string, queues: string[]): string {
+  const where = `state = '${JOB_STATES.active}'
+            AND heartbeat_seconds IS NOT NULL
+            AND (heartbeat_on + heartbeat_seconds * interval '1s') < now()
+            AND name = ANY(${serializeArrayParam(queues)})`
+
+  const output = '\'{ "value": { "message": "job heartbeat timeout" } }\'::jsonb'
+
+  return locked(schema, failJobs(schema, table, where, output), table + 'failJobsByHeartbeat')
+}
+
+function touchJobs (schema: string, table: string) {
+  return `
+    WITH results AS (
+      UPDATE ${schema}.${table}
+      SET heartbeat_on = now()
+      WHERE name = $1
+        AND id IN (SELECT UNNEST($2::uuid[]))
+        AND state = '${JOB_STATES.active}'
+      RETURNING 1
+    )
+    SELECT COUNT(*) FROM results
+  `
 }
 
 function failJobs (schema: string, table: string, where: string, output: string) {
@@ -1134,7 +1173,9 @@ function failJobs (schema: string, table: string, where: string, output: string)
         keep_until,
         policy,
         output,
-        dead_letter
+        dead_letter,
+        heartbeat_on,
+        heartbeat_seconds
       )
       SELECT
         id,
@@ -1172,7 +1213,9 @@ function failJobs (schema: string, table: string, where: string, output: string)
         keep_until,
         policy,
         ${output},
-        dead_letter
+        dead_letter,
+        NULL as heartbeat_on,
+        heartbeat_seconds
       FROM deleted_jobs
       ON CONFLICT DO NOTHING
       RETURNING *
@@ -1202,7 +1245,9 @@ function failJobs (schema: string, table: string, where: string, output: string)
         keep_until,
         policy,
         output,
-        dead_letter
+        dead_letter,
+        heartbeat_on,
+        heartbeat_seconds
       )
       SELECT
         id,
@@ -1228,7 +1273,9 @@ function failJobs (schema: string, table: string, where: string, output: string)
         keep_until,
         policy,
         ${output},
-        dead_letter
+        dead_letter,
+        NULL as heartbeat_on,
+        heartbeat_seconds
       FROM deleted_jobs
       WHERE id NOT IN (SELECT id from retried_jobs)
       RETURNING *
@@ -1485,6 +1532,8 @@ export {
   truncateTable,
   failJobsById,
   failJobsByTimeout,
+  failJobsByHeartbeat,
+  touchJobs,
   insertJobs,
   getTime,
   getSchedules,

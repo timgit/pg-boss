@@ -202,16 +202,32 @@ class Manager extends EventEmitter implements types.EventsMixin {
     name: string,
     jobs: types.Job<T>[],
     callback: types.WorkHandler<T>,
-    worker?: Worker<T>
+    worker?: Worker<T>,
+    heartbeatRefreshSeconds?: number
   ): Promise<void> {
     const jobIds = jobs.map(job => job.id)
     const maxExpiration = jobs.reduce((acc, i) => Math.max(acc, i.expireInSeconds), 0)
+    const heartbeatSeconds = jobs.reduce((acc, j) => Math.max(acc, j.heartbeatSeconds || 0), 0)
     const ac = new AbortController()
     jobs.forEach(job => { job.signal = ac.signal })
 
     // Store AbortController on worker so it can be aborted after graceful shutdown
     if (worker) {
       worker.abortController = ac
+    }
+
+    let heartbeatTimer: ReturnType<typeof setInterval> | null = null
+
+    if (heartbeatSeconds > 0) {
+      const refreshSeconds = heartbeatRefreshSeconds ?? (heartbeatSeconds / 2)
+      const intervalMs = refreshSeconds * 1000
+      heartbeatTimer = setInterval(async () => {
+        try {
+          await this.touchJobs(name, jobIds)
+        } catch (err) {
+          this.emit(events.error, err)
+        }
+      }, intervalMs)
     }
 
     try {
@@ -222,6 +238,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       await this.fail(name, jobIds, err)
       this.#trackJobsFailed(name, jobs, err)
     } finally {
+      if (heartbeatTimer) clearInterval(heartbeatTimer)
       if (worker) {
         // Clear between jobs
         worker.abortController = null
@@ -309,7 +326,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
       localConcurrency = 1,
       localGroupConcurrency,
       groupConcurrency,
-      orderByCreatedOn = true
+      orderByCreatedOn = true,
+      heartbeatRefreshSeconds
     } = options
 
     if (localGroupConcurrency != null) {
@@ -338,7 +356,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
         // Skip all in-memory group tracking when localGroupConcurrency is not enabled
         if (localGroupConcurrency == null) {
-          await this.#processJobs(name, jobs, callback, worker)
+          await this.#processJobs(name, jobs, callback, worker, heartbeatRefreshSeconds)
         } else {
           const { allowed, excess, groupedJobs } = this.#trackLocalGroupStart(name, jobs)
 
@@ -349,7 +367,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
           if (allowed.length > 0) {
             try {
-              await this.#processJobs(name, allowed, callback, worker)
+              await this.#processJobs(name, allowed, callback, worker, heartbeatRefreshSeconds)
             } finally {
               this.#trackLocalGroupEnd(name, groupedJobs)
             }
@@ -529,6 +547,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       retryDelay,
       retryBackoff,
       retryDelayMax,
+      heartbeatSeconds,
       group,
       deadLetter = null
     } = options
@@ -552,6 +571,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       retryDelay,
       retryBackoff,
       retryDelayMax,
+      heartbeatSeconds,
       deadLetter
     }
 
@@ -787,6 +807,24 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const sql = plans.retryJobs(this.config.schema, table)
     const result = await db.executeSql(sql, [name, ids])
     return this.mapCommandResponse(ids, result)
+  }
+
+  async touchJob (name: string, id: string, options: types.ConnectionOptions = {}): Promise<boolean> {
+    Attorney.assertQueueName(name)
+    const db = this.assertDb(options)
+    const { table } = await this.getQueueCache(name)
+    const sql = plans.touchJobs(this.config.schema, table)
+    const result = await db.executeSql(sql, [name, [id]])
+    return parseInt(result.rows[0].count) === 1
+  }
+
+  async touchJobs (name: string, ids: string[], options: types.ConnectionOptions = {}): Promise<number> {
+    Attorney.assertQueueName(name)
+    const db = this.assertDb(options)
+    const { table } = await this.getQueueCache(name)
+    const sql = plans.touchJobs(this.config.schema, table)
+    const result = await db.executeSql(sql, [name, ids])
+    return parseInt(result.rows[0].count)
   }
 
   async createQueue (name: string, options: Omit<types.Queue, 'name'> & { name?: string } = {}) {
