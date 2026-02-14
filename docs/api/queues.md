@@ -68,11 +68,38 @@ Allowed policy values:
 
 * **heartbeatSeconds**, int
 
-  Default: none (disabled). Expected heartbeat interval in seconds. When set, workers using `work()` will automatically send periodic heartbeats. If no heartbeat is received within this interval, the monitor will fail/retry the job. This provides fast dead-worker detection independent of the overall expiration time. Must be >= 10.
+  Default: none (disabled). Expected heartbeat interval in seconds. When set, workers using `work()` will automatically send periodic heartbeats. If no heartbeat is received within this interval, the monitor will fail/retry the job. Must be >= 10. Can be overridden per-job via `send()` options.
 
-  Both mechanisms coexist and operate independently:
-  - **Heartbeat**: detects crashed workers quickly (e.g., 30 seconds)
-  - **Expiration**: detects hung/stuck workers (e.g., 2 hours)
+#### Heartbeat vs expiration
+
+Heartbeat and expiration are two independent failure detection mechanisms that solve different problems:
+
+| | Heartbeat | Expiration |
+| - | - | - |
+| **Detects** | Crashed/dead workers | Hung/stuck workers |
+| **How it works** | Worker periodically updates `heartbeat_on` timestamp; monitor fails the job if no update within `heartbeatSeconds` | Monitor fails the job if it has been in `active` state longer than `expireInSeconds` |
+| **Failure scenario** | Worker process crashes, OOM kill, network partition, node shutdown | Worker is alive but stuck in an infinite loop, deadlock, or blocked on an unresponsive external service |
+| **Detection speed** | Fast (seconds to minutes) | Slow (typically minutes to hours, matching expected job duration) |
+| **Default** | Disabled | 15 minutes |
+
+Both mechanisms operate independently and can be used together. When a job fails via either mechanism, it follows the same retry logic (`retryLimit`, `retryDelay`, etc.).
+
+**When to use heartbeat:** Long-running jobs where you want to detect a dead worker much sooner than the job's expected duration. Without heartbeat, a 2-hour video processing job with `expireInSeconds: 7200` won't be detected as failed until 2 hours after it started, even if the worker crashed immediately.
+
+**When expiration alone is sufficient:** Short-lived jobs (seconds to a few minutes) where the expiration time is already close to the expected duration. Adding heartbeat would provide little benefit.
+
+#### Recommended values
+
+As a general guideline, set `heartbeatSeconds` to roughly 1/10th to 1/4th of `expireInSeconds`, depending on how quickly you need to detect failures:
+
+| Job type | `expireInSeconds` | `heartbeatSeconds` | Detection speed |
+| - | - | - | - |
+| Quick tasks (email, notifications) | 60 | not needed | Expiration is fast enough |
+| Medium tasks (report generation) | 600 (10 min) | 30-60 | ~30-60s |
+| Long tasks (video processing, ML) | 7200 (2 hr) | 60-300 | ~1-5 min |
+| Very long tasks (data migration) | 86400 (24 hr) | 300-600 | ~5-10 min |
+
+There is no benefit to setting `heartbeatSeconds` lower than the monitor interval (`monitorIntervalSeconds`, default 60s), since the monitor must run to detect stale heartbeats. For faster detection, lower `monitorIntervalSeconds` as well.
 
 **Expiration options**
 
