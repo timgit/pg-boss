@@ -10,9 +10,10 @@ import {
   type ProxyService
 } from './index.js'
 
-type ProxyNodeOptions = Omit<ProxyOptions, 'options'> & {
+type ProxyNodeOptions = Omit<ProxyOptions, 'options' | 'env'> & {
   connectionString?: string
   options?: ConstructorOptions
+  env?: Record<string, string | undefined>
 }
 
 type ProxyServerNodeOptions = ProxyNodeOptions & {
@@ -33,40 +34,39 @@ type ProxyServerNode = Omit<ProxyService, 'start' | 'stop'> & {
 }
 
 const resolveOptions = (options: ProxyNodeOptions): ConstructorOptions => {
-  if (options.connectionString && options.options) {
-    throw new Error('Provide either connectionString or options, not both.')
+  if (options.options) {
+    return options.options
   }
 
   if (options.connectionString) {
     return { connectionString: options.connectionString }
   }
 
-  if (options.options) {
-    return options.options
-  }
-
-  if (process.env.DATABASE_URL) {
-    return { connectionString: process.env.DATABASE_URL }
+  if (options.env?.DATABASE_URL) {
+    return { connectionString: options.env.DATABASE_URL }
   }
 
   throw new Error('Proxy requires PgBoss constructor options or DATABASE_URL.')
 }
 
 export const createProxyAppNode = (options: ProxyNodeOptions = {}): ProxyApp => {
-  const { connectionString: _, options: __, ...rest } = options
-  return createProxyApp({ ...rest, options: resolveOptions(options) })
+  const { options: __, ...rest } = options
+  const env = options.env ?? process.env
+  return createProxyApp({ ...rest, options: resolveOptions({ ...options, env }), env })
 }
 
 export const createProxyServiceNode = (options: ProxyNodeOptions = {}): ProxyService => {
-  const { connectionString: _, options: __, ...rest } = options
-  return createProxyService({ ...rest, options: resolveOptions(options) })
+  const { options: __, ...rest } = options
+  const env = options.env ?? process.env
+  return createProxyService({ ...rest, options: resolveOptions({ ...options, env }), env })
 }
 
 export const createProxyServerNode = (options: ProxyServerNodeOptions = {}): ProxyServerNode => {
-  const { connectionString: _, options: __, ...rest } = options
-  const service = createProxyService({ ...rest, options: resolveOptions(options) })
-  const hostname = options.hostname ?? process.env.HOST ?? 'localhost'
-  const port = options.port ?? Number(process.env.PORT ?? 3000)
+  const { options: __, ...rest } = options
+  const env = options.env ?? process.env
+  const service = createProxyService({ ...rest, options: resolveOptions({ ...options, env }), env })
+  const hostname = options.hostname ?? env.HOST ?? 'localhost'
+  const port = options.port ?? Number(env.PORT ?? 3000)
   const signals = options.shutdownSignals ?? ['SIGINT', 'SIGTERM']
 
   let server: ReturnType<typeof serve> | null = null

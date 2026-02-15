@@ -18,10 +18,13 @@ import {
 import { renderHome } from './home.js'
 import { allRoutes, bossMethodInfos, type RouteEntry } from './routes.js'
 
+type ProxyEnv = Record<string, string | undefined>
+
 type ProxyOptions = {
-  options: ConstructorOptions
+  options?: ConstructorOptions
   bossFactory?: (options: ConstructorOptions) => PgBoss
   prefix?: string
+  env?: ProxyEnv
   middleware?: MiddlewareHandler | MiddlewareHandler[]
   exposeErrors?: boolean
   bodyLimit?: number
@@ -43,6 +46,10 @@ const normalizePrefix = (prefix: string): string => {
   return normalized === '/' ? '' : normalized.replace(/\/$/, '')
 }
 
+const resolvePrefix = (prefix: string | undefined, env?: ProxyEnv) => {
+  return normalizePrefix(prefix ?? env?.PGBOSS_PROXY_PREFIX ?? '/api')
+}
+
 const errorResponse = <Status extends ContentfulStatusCode>(
   context: Context,
   status: Status,
@@ -56,7 +63,10 @@ const resultResponse = (context: Context, result: unknown) => {
 }
 
 export const createProxyApp = (options: ProxyOptions): ProxyApp => {
-  const providedOptions = options.options ?? {}
+  const envOptions = options.env?.DATABASE_URL
+    ? { connectionString: options.env.DATABASE_URL }
+    : undefined
+  const providedOptions = options.options ?? envOptions ?? {}
   const exposeErrors = options.exposeErrors ?? false
   const resolvedOptions: ConstructorOptions = {
     ...providedOptions,
@@ -75,7 +85,7 @@ export const createProxyApp = (options: ProxyOptions): ProxyApp => {
     }
     boss = new PgBoss(resolvedOptions)
   }
-  const prefix = normalizePrefix(options.prefix ?? '/api')
+  const prefix = resolvePrefix(options.prefix, options.env)
   const app = new OpenAPIHono({
     defaultHook: (result, context) => {
       if (!result.success) {

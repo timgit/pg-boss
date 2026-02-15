@@ -185,7 +185,6 @@ describe('proxy api routes', () => {
       { method: 'schemaVersion', expected: [] },
       { method: 'getBamStatus', expected: [] },
       { method: 'getQueue', query: 'name=queue', expected: ['queue'] },
-      { method: 'getQueueStats', query: 'name=queue', expected: ['queue'] },
       { method: 'getBlockedKeys', query: 'name=queue', expected: ['queue'] },
       { method: 'getQueues', query: 'names=a&names=b', expected: [['a', 'b']] },
       { method: 'getQueues', expected: [] },

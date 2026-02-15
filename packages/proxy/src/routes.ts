@@ -24,7 +24,6 @@ import {
   getBamStatusResponseSchema,
   getBlockedKeysResponseSchema,
   getQueueResponseSchema,
-  getQueueStatsResponseSchema,
   getQueuesResponseSchema,
   getSchedulesResponseSchema,
   insertRequestSchema,
@@ -163,11 +162,7 @@ export const postMethods: RouteEntry[] = [
   post('jobs', 'insert', insertRequestSchema, insertResponseSchema, (body) => withOptionalOptions([body.name, body.jobs], body.options)),
   post('jobs', 'fetch', fetchRequestSchema, fetchResponseSchema, (body) => withOptionalOptions([body.name], body.options)),
   post('jobs', 'complete', completeRequestSchema, completeResponseSchema, (body) => withOptionalDataOptions([body.name, body.id], body.data, body.options)),
-  post('jobs', 'fail', failRequestSchema, failResponseSchema, (body) => {
-    const args: unknown[] = [body.name, body.id]
-    if (body.data !== undefined) args.push(body.data ?? null)
-    return args
-  }),
+  post('jobs', 'fail', failRequestSchema, failResponseSchema, (body) => withOptionalDataOptions([body.name, body.id], body.data)),
   post('jobs', 'cancel', cancelRequestSchema, cancelResponseSchema, (body) => [body.name, body.id]),
   post('jobs', 'resume', resumeRequestSchema, resumeResponseSchema, (body) => [body.name, body.id]),
   post('jobs', 'retry', retryRequestSchema, retryResponseSchema, (body) => [body.name, body.id]),
@@ -191,7 +186,6 @@ export const getMethods: RouteEntry[] = [
   get('system', 'schemaVersion', schemaVersionResponseSchema),
   get('system', 'getBamStatus', getBamStatusResponseSchema),
   get('queues', 'getQueue', getQueueResponseSchema, nameQuerySchema, (q) => [q.name]),
-  get('queues', 'getQueueStats', getQueueStatsResponseSchema, nameQuerySchema, (q) => [q.name]),
   get('queues', 'getBlockedKeys', getBlockedKeysResponseSchema, blockedKeysQuerySchema, (q) => [q.name]),
   get('queues', 'getQueues', getQueuesResponseSchema, namesQuerySchema, (q) => (q.names ? [q.names] : [])),
   get('schedules', 'getSchedules', getSchedulesResponseSchema, schedulesQuerySchema, (q) => {
