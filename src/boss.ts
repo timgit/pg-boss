@@ -83,28 +83,11 @@ class Boss extends EventEmitter implements types.EventsMixin {
     }
   }
 
-  async #executeSql (sql: string) {
-    const started = Date.now()
-
-    const result = unwrapSQLResult(await this.#db.executeSql(sql))
-
-    const elapsed = (Date.now() - started) / 1000
-
-    if (
-      elapsed > WARNINGS.SLOW_QUERY.seconds ||
-      this.#config.__test__warn_slow_query
-    ) {
-      await emitAndPersistWarning(this.#warningContext,
-        WARNING_TYPES.SLOW_QUERY,
-        WARNINGS.SLOW_QUERY.message,
-        { elapsed, sql }
-      )
+  async #executeQuery (query: plans.SqlQuery | string) {
+    if (typeof (query) === 'string') {
+      query = { text: query, values: [] }
     }
 
-    return result
-  }
-
-  async #executeQuery (query: plans.SqlQuery) {
     const started = Date.now()
 
     const result = unwrapSQLResult(await this.#db.executeSql(query.text, query.values))
@@ -150,7 +133,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
     }
 
     const sql = plans.deleteOldWarnings(this.#config.schema, this.#config.warningRetentionDays)
-    await this.#executeSql(sql)
+    await this.#executeQuery(sql)
   }
 
   async supervise (value?: string | types.QueueResult[]) {
@@ -204,7 +187,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
       const queues = rows.map((q) => q.name)
 
       const cacheStatsSql = plans.cacheQueueStats(this.#config.schema, table, queues)
-      const { rows: rowsCacheStats } = await this.#executeSql(cacheStatsSql)
+      const { rows: rowsCacheStats } = await this.#executeQuery(cacheStatsSql)
 
       if (this.#stopping) return
 
@@ -219,7 +202,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
       }
 
       const sql = plans.failJobsByTimeout(this.#config.schema, table, queues)
-      await this.#executeSql(sql)
+      await this.#executeQuery(sql)
     }
   }
 
@@ -238,7 +221,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
     if (rows.length) {
       const queues = rows.map((q) => q.name)
       const sql = plans.deletion(this.#config.schema, table, queues)
-      await this.#executeSql(sql)
+      await this.#executeQuery(sql)
     }
   }
 }
