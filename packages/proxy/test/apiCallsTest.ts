@@ -605,7 +605,7 @@ describe('proxy api routes', () => {
     const { boss } = createBossMock()
 
     createProxyApp({
-      options: { connectionString: 'postgres://localhost/test' } as any,
+      env: { DATABASE_URL: 'postgres://localhost/test' },
       bossFactory: (opts) => {
         receivedOptions = opts as unknown as Record<string, unknown>
         return boss as any
@@ -651,24 +651,6 @@ describe('node.ts resolveOptions', () => {
     }
   })
 
-  it('uses connectionString when provided', async () => {
-    const { createProxyAppNode } = await import('../src/node.js')
-    const { boss } = createBossMock()
-    let receivedOptions: Record<string, unknown> = {}
-
-    // Monkey-patch createProxyApp via bossFactory isn't available on node.ts,
-    // but we can test resolveOptions indirectly through the thrown error path
-    // Actually, createProxyAppNode calls createProxyApp which calls new PgBoss
-    // We need to test the options resolution. Let's just test error cases and
-    // verify the function works by checking it doesn't throw for valid inputs.
-
-    // We can't easily unit test resolveOptions directly since it's not exported,
-    // but we can test the public API behavior.
-
-    // connectionString should work (will throw at PgBoss construction, not at resolve)
-    expect(() => createProxyAppNode({ connectionString: 'postgres://localhost/test' })).not.toThrow()
-  })
-
   it('uses options when provided', async () => {
     const { createProxyAppNode } = await import('../src/node.js')
     expect(() => createProxyAppNode({ options: { connectionString: 'postgres://localhost/test' } as any })).not.toThrow()
@@ -678,14 +660,6 @@ describe('node.ts resolveOptions', () => {
     const { createProxyAppNode } = await import('../src/node.js')
     process.env.DATABASE_URL = 'postgres://localhost/test'
     expect(() => createProxyAppNode()).not.toThrow()
-  })
-
-  it('throws when both connectionString and options are provided', async () => {
-    const { createProxyAppNode } = await import('../src/node.js')
-    expect(() => createProxyAppNode({
-      connectionString: 'postgres://localhost/test',
-      options: { connectionString: 'postgres://localhost/other' } as any
-    })).toThrow('Provide either connectionString or options, not both.')
   })
 
   it('throws when no connection info is available', async () => {

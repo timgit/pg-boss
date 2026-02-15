@@ -11,7 +11,6 @@ import {
 } from './index.js'
 
 type ProxyNodeOptions = Omit<ProxyOptions, 'options' | 'env'> & {
-  connectionString?: string
   options?: ConstructorOptions
   env?: Record<string, string | undefined>
 }
@@ -36,10 +35,6 @@ type ProxyServerNode = Omit<ProxyService, 'start' | 'stop'> & {
 const resolveOptions = (options: ProxyNodeOptions): ConstructorOptions => {
   if (options.options) {
     return options.options
-  }
-
-  if (options.connectionString) {
-    return { connectionString: options.connectionString }
   }
 
   if (options.env?.DATABASE_URL) {
