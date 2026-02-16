@@ -70,6 +70,23 @@ The default options for `work()` is 1 job every 2 seconds.
   })
   ```
 
+* **heartbeatRefreshSeconds**, number
+
+  Custom interval in seconds at which the worker sends heartbeats for active jobs. Defaults to `heartbeatSeconds / 2` (derived from the job's heartbeat configuration). Must be strictly less than `heartbeatSeconds`. This is a worker-level setting only — it is not available on queue or job configuration.
+
+  The distinction between `heartbeatSeconds` and `heartbeatRefreshSeconds`:
+  - `heartbeatSeconds` (queue/job level) defines the **contract**: how long before a missing heartbeat is considered a failure
+  - `heartbeatRefreshSeconds` (worker level) controls the **implementation**: how often the worker sends heartbeats to fulfill that contract
+
+  This option only applies when jobs have `heartbeatSeconds` configured (either on the queue or per-job). Heartbeats are sent automatically by `work()` — no user action is needed unless a custom refresh interval is desired. When using `fetch()` for manual processing, call `touch()` directly instead.
+
+  ```js
+  // Queue configured with 60s heartbeat, worker sends heartbeats every 10s
+  await boss.work('video-processing', { heartbeatRefreshSeconds: 10 }, async ([job]) => {
+    await processVideo(job.data)
+  })
+  ```
+
 * **groupConcurrency**, int | object
 
   Limits how many jobs from the same group can be processed simultaneously **globally across all nodes**. This is enforced via database queries.
@@ -149,6 +166,7 @@ The jobs argument is an array of jobs with the following properties.
 |`id`| string, uuid |
 |`name`| string |
 |`data`| object |
+|`heartbeatSeconds`| number \| null | Heartbeat interval configured for this job, or null if not configured |
 |`signal`| AbortSignal |
 
 
