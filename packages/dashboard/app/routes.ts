@@ -10,6 +10,7 @@ export default [
   route('schedules', 'routes/schedules.tsx'),
   route('schedules/:name/:key', 'routes/schedules.$name.$key.tsx'),
   route('schedules/new', 'routes/schedules.new.tsx'),
+  route('search', 'routes/search.tsx'),
   route('send', 'routes/send.tsx'),
   route('warnings', 'routes/warnings.tsx'),
 ] satisfies RouteConfig
