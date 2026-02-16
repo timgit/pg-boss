@@ -268,6 +268,10 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#manager.fail(name, id, data, options)
   }
 
+  touch (name: string, id: string | string[], options?: types.ConnectionOptions): Promise<types.CommandResponse> {
+    return this.#manager.touch(name, id, options)
+  }
+
   /**
    * @deprecated Use findJobs() instead
    */

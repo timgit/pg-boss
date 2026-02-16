@@ -43,6 +43,12 @@ Creates a new job and returns the job id.
 
   Default: no limit. Maximum delay between retries of failed jobs, in seconds. Only used when retryBackoff is true.
 
+**Heartbeat options**
+
+* **heartbeatSeconds**, int
+
+  Default: none (disabled). Expected heartbeat interval in seconds. Overrides the queue-level `heartbeatSeconds` for this specific job. When set, workers using `work()` will automatically send periodic heartbeats. If no heartbeat is received within this interval, the monitor will fail/retry the job. Must be >= 10. See [Heartbeat vs expiration](queues?id=heartbeat-vs-expiration) for guidance on when to use this and recommended values.
+
 **Expiration options**
 
 * **expireInSeconds**, number
@@ -186,6 +192,7 @@ interface JobInsert<T = object> {
   startAfter?: Date | string;
   singletonKey?: string;
   expireInSeconds?: number;
+  heartbeatSeconds?: number;
   deleteAfterSeconds?: number;
   keepUntil?: Date | string;
   group?: { id: string; tier?: string };
@@ -238,6 +245,8 @@ Returns an array of jobs from a queue
       groupId: string | null;
       groupTier: string | null;
       expireInSeconds: number;
+      heartbeatSeconds: number | null;
+      heartbeatOn: Date | null;
       deleteAfterSeconds: number;
       createdOn: Date;
       completedOn: Date | null;
@@ -361,6 +370,38 @@ The promise will resolve on a successful failure state assignment, or reject if 
 
 > See comments above on `cancel([ids])` regarding when the promise will resolve or reject because of a batch operation.
 
+
+### `touch(name, id, options)`
+
+Updates the heartbeat timestamp for an active job, signaling that the worker is still alive.
+
+This is useful when using `fetch()` for manual job processing. Workers using `work()` send heartbeats automatically when `heartbeatSeconds` is configured.
+
+```js
+const [job] = await boss.fetch('long-running-queue')
+
+const interval = setInterval(async () => {
+  await boss.touch('long-running-queue', job.id)
+}, 5000)
+
+try {
+  await processJob(job)
+  await boss.complete('long-running-queue', job.id)
+} finally {
+  clearInterval(interval)
+}
+```
+
+### `touch(name, [ids], options)`
+
+Updates the heartbeat timestamp for a set of active jobs.
+
+```js
+const jobs = await boss.fetch('long-running-queue', { batchSize: 10 })
+const ids = jobs.map(j => j.id)
+
+const result = await boss.touch('long-running-queue', ids)
+```
 
 ### `getJobById(name, id, options)`
 

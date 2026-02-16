@@ -64,6 +64,47 @@ Allowed policy values:
 
   Default: no limit. Maximum delay between retries of failed jobs, in seconds. Only used when retryBackoff is true.
 
+**Heartbeat options**
+
+* **heartbeatSeconds**, int
+
+  Default: none (disabled). Expected heartbeat interval in seconds. When set, workers using `work()` will automatically send periodic heartbeats. If no heartbeat is received within this interval, the monitor will fail/retry the job. Must be >= 10. Can be overridden per-job via `send()` options.
+
+#### Heartbeat vs expiration
+
+Heartbeat and expiration are two independent mechanisms that address different failure modes:
+
+- **Expiration** (`expireInSeconds`) is the maximum time a job is allowed to remain active. After this period, the job attempt is considered stale — regardless of whether the worker is alive or dead, the attempt has taken too long and is no longer relevant. Set this to the upper bound of how long the job should ever take.
+
+- **Heartbeat** (`heartbeatSeconds`) is a worker liveness check. The worker periodically signals "I'm still alive and working on this job." If the signal stops, it means the worker has died (crash, OOM, network partition, node shutdown) — but the job itself may still be perfectly valid and should be retried on another worker as soon as possible.
+
+| | Heartbeat | Expiration |
+| - | - | - |
+| **Purpose** | Detect dead workers quickly | Abandon stale job attempts |
+| **What it means** | The worker stopped responding — the job is still valid, retry it elsewhere | The job has been active too long — this attempt is no longer relevant |
+| **Failure scenario** | Worker crash, OOM kill, network partition, node shutdown | Infinite loop, deadlock, unresponsive external dependency, or simply exceeding the time budget |
+| **Detection speed** | Fast (seconds to minutes) | Matches expected job duration |
+| **Default** | Disabled | 15 minutes |
+
+Both mechanisms operate independently and can be used together. When a job fails via either mechanism, it follows the same retry logic (`retryLimit`, `retryDelay`, etc.).
+
+**When to use heartbeat:** Long-running jobs where the gap between "worker died" and "job expired" would be unacceptably large. For example, a 2-hour video processing job with `expireInSeconds: 7200` won't be detected as failed until 2 hours after it started, even if the worker crashed immediately. Adding `heartbeatSeconds: 60` means a dead worker is detected within a minute.
+
+**When expiration alone is sufficient:** Only when the expiration time is already short enough that waiting for it to trigger a retry is acceptable. In practice, `expireInSeconds` is set conservatively — well above the typical job duration — to account for slowdowns, rate limiting, and transient issues. The default is 15 minutes. This means even a quick task like sending an email could wait 15 minutes before a dead worker is detected via expiration. Heartbeat closes this gap by detecting the dead worker in seconds, regardless of how long the expiration is set.
+
+#### Recommended values
+
+Set `expireInSeconds` to the maximum time a job should ever take (accounting for worst-case conditions). Set `heartbeatSeconds` based on how quickly you need to detect a dead worker and retry.
+
+Actual detection time is `heartbeatSeconds` + up to `monitorIntervalSeconds` (default 60s), since the monitor must run to observe a stale heartbeat. There is no benefit to setting `heartbeatSeconds` below `monitorIntervalSeconds`.
+
+| Job type | `expireInSeconds` | `heartbeatSeconds` | Dead worker detected in |
+| - | - | - | - |
+| Quick tasks (email, notifications) | 900 (default) | 30-60 | ~1-2 min |
+| Medium tasks (report generation) | 900-1800 | 30-60 | ~1-2 min |
+| Long tasks (video processing, ML) | 7200 (2 hr) | 60-300 | ~2-6 min |
+| Very long tasks (data migration) | 86400 (24 hr) | 300-600 | ~6-11 min |
+
 **Expiration options**
 
 * **expireInSeconds**, number

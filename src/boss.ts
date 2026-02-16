@@ -154,6 +154,10 @@ class Boss extends EventEmitter implements types.EventsMixin {
       return acc
     }, {})
 
+    const heartbeatQueueNames = new Set(
+      queues.filter(q => q.heartbeatSeconds != null).map(q => q.name)
+    )
+
     for (const queueGroup of Object.values(queueGroups)) {
       if (this.#stopping) return
 
@@ -165,13 +169,13 @@ class Boss extends EventEmitter implements types.EventsMixin {
 
         const chunk = names.splice(0, 100)
 
-        await this.#monitor(table, chunk)
+        await this.#monitor(table, chunk, heartbeatQueueNames)
         await this.#maintain(table, chunk)
       }
     }
   }
 
-  async #monitor (table: string, names: string[]) {
+  async #monitor (table: string, names: string[], heartbeatQueueNames: Set<string>) {
     if (this.#stopping) return
 
     const command = plans.trySetQueueMonitorTime(
@@ -203,6 +207,15 @@ class Boss extends EventEmitter implements types.EventsMixin {
 
       const sql = plans.failJobsByTimeout(this.#config.schema, table, queues)
       await this.#executeQuery(sql)
+
+      if (this.#stopping) return
+
+      const heartbeatQueues = queues.filter(q => heartbeatQueueNames.has(q))
+
+      if (heartbeatQueues.length) {
+        const heartbeatSql = plans.failJobsByHeartbeat(this.#config.schema, table, heartbeatQueues)
+        await this.#executeQuery(heartbeatSql)
+      }
     }
   }
 
