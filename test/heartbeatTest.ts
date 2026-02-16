@@ -77,7 +77,7 @@ describe('heartbeat', function () {
     expect(failedJob.output).toEqual({ value: { message: 'job heartbeat timeout' } })
   })
 
-  it('should extend heartbeat via manual touchJob', async function () {
+  it('should extend heartbeat via manual touch', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
     await ctx.boss.createQueue(ctx.schema, { heartbeatSeconds: 10 })
@@ -88,8 +88,8 @@ describe('heartbeat', function () {
     const [job] = await ctx.boss.fetch(ctx.schema)
     assertTruthy(job)
 
-    const result = await ctx.boss.touchJob(ctx.schema, jobId)
-    expect(result).toBe(true)
+    const result = await ctx.boss.touch(ctx.schema, jobId)
+    expect(result.affected).toBe(1)
 
     // Verify heartbeat_on was updated
     const db = await helper.getDb()
@@ -151,7 +151,7 @@ describe('heartbeat', function () {
     expect(job.heartbeatSeconds).toBe(60)
   })
 
-  it('should return correct count from touchJobs', async function () {
+  it('should return correct count from touch with multiple ids', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
     await ctx.boss.createQueue(ctx.schema, { heartbeatSeconds: 10 })
@@ -164,11 +164,11 @@ describe('heartbeat', function () {
     const jobs = await ctx.boss.fetch(ctx.schema, { batchSize: 2 })
     expect(jobs.length).toBe(2)
 
-    const count = await ctx.boss.touchJobs(ctx.schema, [id1, id2])
-    expect(count).toBe(2)
+    const result = await ctx.boss.touch(ctx.schema, [id1, id2])
+    expect(result.affected).toBe(2)
   })
 
-  it('touchJob should return false for non-active job', async function () {
+  it('touch should return 0 affected for non-active job', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
     await ctx.boss.createQueue(ctx.schema, { heartbeatSeconds: 10 })
@@ -177,8 +177,8 @@ describe('heartbeat', function () {
     assertTruthy(jobId)
 
     // Job is in created state, not active
-    const result = await ctx.boss.touchJob(ctx.schema, jobId)
-    expect(result).toBe(false)
+    const result = await ctx.boss.touch(ctx.schema, jobId)
+    expect(result.affected).toBe(0)
   })
 
   it('should retry job on heartbeat timeout and preserve heartbeat config', async function () {
@@ -244,7 +244,7 @@ describe('heartbeat', function () {
     const errors: any[] = []
     ctx.boss.on('error', (err: any) => errors.push(err))
 
-    const spy = vi.spyOn(Manager.prototype, 'touchJobs').mockRejectedValue(new Error('touchJobs test error'))
+    const spy = vi.spyOn(Manager.prototype, 'touch').mockRejectedValue(new Error('touch test error'))
 
     await ctx.boss.work(ctx.schema, { heartbeatRefreshSeconds: 0.5 }, async ([job]) => {
       await delay(1000)

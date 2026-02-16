@@ -78,7 +78,7 @@ The default options for `work()` is 1 job every 2 seconds.
   - `heartbeatSeconds` (queue/job level) defines the **contract**: how long before a missing heartbeat is considered a failure
   - `heartbeatRefreshSeconds` (worker level) controls the **implementation**: how often the worker sends heartbeats to fulfill that contract
 
-  This option only applies when jobs have `heartbeatSeconds` configured (either on the queue or per-job). Heartbeats are sent automatically by `work()` — no user action is needed unless a custom refresh interval is desired. When using `fetch()` for manual processing, call `touchJob()` or `touchJobs()` directly instead.
+  This option only applies when jobs have `heartbeatSeconds` configured (either on the queue or per-job). Heartbeats are sent automatically by `work()` — no user action is needed unless a custom refresh interval is desired. When using `fetch()` for manual processing, call `touch()` directly instead.
 
   ```js
   // Queue configured with 60s heartbeat, worker sends heartbeats every 10s

@@ -268,12 +268,8 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#manager.fail(name, id, data, options)
   }
 
-  touchJob (name: string, id: string, options?: types.ConnectionOptions): Promise<boolean> {
-    return this.#manager.touchJob(name, id, options)
-  }
-
-  touchJobs (name: string, ids: string[], options?: types.ConnectionOptions): Promise<number> {
-    return this.#manager.touchJobs(name, ids, options)
+  touch (name: string, id: string | string[], options?: types.ConnectionOptions): Promise<types.CommandResponse> {
+    return this.#manager.touch(name, id, options)
   }
 
   /**

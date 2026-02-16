@@ -223,7 +223,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       const intervalMs = refreshSeconds * 1000
       heartbeatTimer = setInterval(async () => {
         try {
-          await this.touchJobs(name, jobIds)
+          await this.touch(name, jobIds)
         } catch (err) {
           this.emit(events.error, err)
         }
@@ -809,22 +809,14 @@ class Manager extends EventEmitter implements types.EventsMixin {
     return this.mapCommandResponse(ids, result)
   }
 
-  async touchJob (name: string, id: string, options: types.ConnectionOptions = {}): Promise<boolean> {
+  async touch (name: string, id: string | string[], options: types.ConnectionOptions = {}): Promise<types.CommandResponse> {
     Attorney.assertQueueName(name)
     const db = this.assertDb(options)
-    const { table } = await this.getQueueCache(name)
-    const sql = plans.touchJobs(this.config.schema, table)
-    const result = await db.executeSql(sql, [name, [id]])
-    return parseInt(result.rows[0].count) === 1
-  }
-
-  async touchJobs (name: string, ids: string[], options: types.ConnectionOptions = {}): Promise<number> {
-    Attorney.assertQueueName(name)
-    const db = this.assertDb(options)
+    const ids = this.mapCompletionIdArg(id, 'touch')
     const { table } = await this.getQueueCache(name)
     const sql = plans.touchJobs(this.config.schema, table)
     const result = await db.executeSql(sql, [name, ids])
-    return parseInt(result.rows[0].count)
+    return this.mapCommandResponse(ids, result)
   }
 
   async createQueue (name: string, options: Omit<types.Queue, 'name'> & { name?: string } = {}) {

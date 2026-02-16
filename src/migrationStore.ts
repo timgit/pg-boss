@@ -646,9 +646,9 @@ function getAll (schema: string): types.Migration[] {
       version: 30,
       previous: 29,
       install: [
-        `ALTER TABLE ${schema}.job ADD COLUMN IF NOT EXISTS heartbeat_on timestamp with time zone`,
-        `ALTER TABLE ${schema}.job ADD COLUMN IF NOT EXISTS heartbeat_seconds int`,
-        `ALTER TABLE ${schema}.queue ADD COLUMN IF NOT EXISTS heartbeat_seconds int`,
+        `ALTER TABLE ${schema}.job ADD COLUMN heartbeat_on timestamp with time zone`,
+        `ALTER TABLE ${schema}.job ADD COLUMN heartbeat_seconds int`,
+        `ALTER TABLE ${schema}.queue ADD COLUMN heartbeat_seconds int`,
         `
         CREATE OR REPLACE FUNCTION ${schema}.create_queue(queue_name text, options jsonb)
         RETURNS VOID AS

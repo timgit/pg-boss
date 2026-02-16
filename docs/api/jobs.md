@@ -371,9 +371,9 @@ The promise will resolve on a successful failure state assignment, or reject if 
 > See comments above on `cancel([ids])` regarding when the promise will resolve or reject because of a batch operation.
 
 
-### `touchJob(name, id, options)`
+### `touch(name, id, options)`
 
-Updates the heartbeat timestamp for an active job, signaling that the worker is still alive. Returns `true` if the job was touched, `false` if the job was not found or not in `active` state.
+Updates the heartbeat timestamp for an active job, signaling that the worker is still alive.
 
 This is useful when using `fetch()` for manual job processing. Workers using `work()` send heartbeats automatically when `heartbeatSeconds` is configured.
 
@@ -381,7 +381,7 @@ This is useful when using `fetch()` for manual job processing. Workers using `wo
 const [job] = await boss.fetch('long-running-queue')
 
 const interval = setInterval(async () => {
-  await boss.touchJob('long-running-queue', job.id)
+  await boss.touch('long-running-queue', job.id)
 }, 5000)
 
 try {
@@ -392,15 +392,15 @@ try {
 }
 ```
 
-### `touchJobs(name, [ids], options)`
+### `touch(name, [ids], options)`
 
-Updates the heartbeat timestamp for a set of active jobs. Returns the number of jobs that were touched.
+Updates the heartbeat timestamp for a set of active jobs.
 
 ```js
 const jobs = await boss.fetch('long-running-queue', { batchSize: 10 })
 const ids = jobs.map(j => j.id)
 
-const count = await boss.touchJobs('long-running-queue', ids)
+const result = await boss.touch('long-running-queue', ids)
 ```
 
 ### `getJobById(name, id, options)`
