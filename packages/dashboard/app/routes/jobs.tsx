@@ -67,6 +67,7 @@ export function ErrorBoundary () {
 export default function Jobs ({ loaderData }: Route.ComponentProps) {
   const { recentJobs, page, stateFilter, hasNextPage, hasPrevPage } = loaderData
   const [searchParams, setSearchParams] = useSearchParams()
+  const dbParam = searchParams.get('db')
 
   const handleFilterChange = (key: string, value: string | null) => {
     const params = new URLSearchParams(searchParams)
@@ -96,7 +97,7 @@ export default function Jobs ({ loaderData }: Route.ComponentProps) {
         </div>
         <div className="flex items-center gap-3">
           <form action="/search" method="get" className="flex items-center">
-            {searchParams.get('db') && <input type="hidden" name="db" value={searchParams.get('db')!} />}
+            {dbParam && <input type="hidden" name="db" value={dbParam} />}
             <input
               type="text"
               name="jobId"
