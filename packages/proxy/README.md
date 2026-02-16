@@ -134,6 +134,20 @@ const { app } = createProxyApp({
 })
 ```
 
+### Route filtering
+
+You can allowlist or denylist pg-boss methods to control which API routes are exposed. `allow` is applied first, then `deny`.
+
+```ts
+const { app } = createProxyApp({
+  env: { DATABASE_URL: 'postgres://user:pass@host/database' },
+  routes: {
+    allow: ['send', 'fetch', 'complete'],
+    deny: ['deleteAllJobs']
+  }
+})
+```
+
 ## Running the proxy server (Node)
 
 ```bash
