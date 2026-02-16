@@ -28,6 +28,10 @@ type ProxyOptions = {
   middleware?: MiddlewareHandler | MiddlewareHandler[]
   exposeErrors?: boolean
   bodyLimit?: number
+  routes?: {
+    allow?: string[]
+    deny?: string[]
+  }
 }
 
 type ProxyApp = {
@@ -132,7 +136,23 @@ export const createProxyApp = (options: ProxyOptions): ProxyApp => {
     }
   })
 
-  const homeHtml = renderHome({ base, openapiPath, docsPath, methods: bossMethodInfos })
+  const applyRouteFilter = (routes: RouteEntry[]) => {
+    let result = routes
+    const allow = options.routes?.allow
+    const deny = options.routes?.deny
+    if (allow && allow.length > 0) {
+      result = result.filter((entry) => allow.includes(entry.method))
+    }
+    if (deny && deny.length > 0) {
+      result = result.filter((entry) => !deny.includes(entry.method))
+    }
+    return result
+  }
+
+  const enabledRoutes = applyRouteFilter(allRoutes)
+  const enabledMethodInfos = enabledRoutes.map(({ method, httpMethod }) => ({ method, httpMethod }))
+
+  const homeHtml = renderHome({ base, openapiPath, docsPath, methods: enabledMethodInfos })
   app.openapi(homeRoute, (context) => {
     return context.html(homeHtml)
   })
@@ -282,7 +302,7 @@ export const createProxyApp = (options: ProxyOptions): ProxyApp => {
     })
   }
 
-  for (const entry of allRoutes) {
+  for (const entry of enabledRoutes) {
     registerRoute(entry)
   }
 

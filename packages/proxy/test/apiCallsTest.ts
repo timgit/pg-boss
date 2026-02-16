@@ -579,6 +579,62 @@ describe('proxy api routes', () => {
     expect(html).toContain('GET')
   })
 
+  it('can deny specific routes via options', async () => {
+    const { boss } = createBossMock()
+    const { app } = createProxyApp({
+      options: {},
+      bossFactory: () => boss as any,
+      routes: { deny: ['deleteAllJobs'] }
+    })
+
+    const denyReq = await postJson('http://local/api/deleteAllJobs', {})
+    const denyRes = await app.fetch(denyReq)
+    expect(denyRes.status).toBe(404)
+
+    const okReq = await postJson('http://local/api/send', { name: 'queue' })
+    const okRes = await app.fetch(okReq)
+    expect(okRes.status).toBe(200)
+
+    const openapiReq = new Request('http://local/api/openapi.json', { method: 'GET' })
+    const openapiRes = await app.fetch(openapiReq)
+    const spec = await openapiRes.json()
+    expect(spec.paths['/api/deleteAllJobs']).toBeUndefined()
+
+    const homeReq = new Request('http://local/', { method: 'GET' })
+    const homeRes = await app.fetch(homeReq)
+    const html = await homeRes.text()
+    expect(html).not.toContain('/api/deleteAllJobs')
+  })
+
+  it('can allow specific routes via options', async () => {
+    const { boss } = createBossMock()
+    const { app } = createProxyApp({
+      options: {},
+      bossFactory: () => boss as any,
+      routes: { allow: ['send'] }
+    })
+
+    const okReq = await postJson('http://local/api/send', { name: 'queue' })
+    const okRes = await app.fetch(okReq)
+    expect(okRes.status).toBe(200)
+
+    const denyReq = await postJson('http://local/api/deleteAllJobs', {})
+    const denyRes = await app.fetch(denyReq)
+    expect(denyRes.status).toBe(404)
+
+    const openapiReq = new Request('http://local/api/openapi.json', { method: 'GET' })
+    const openapiRes = await app.fetch(openapiReq)
+    const spec = await openapiRes.json()
+    expect(spec.paths['/api/send']).toBeDefined()
+    expect(spec.paths['/api/deleteAllJobs']).toBeUndefined()
+
+    const homeReq = new Request('http://local/', { method: 'GET' })
+    const homeRes = await app.fetch(homeReq)
+    const html = await homeRes.text()
+    expect(html).toContain('/api/send')
+    expect(html).not.toContain('/api/deleteAllJobs')
+  })
+
   it('OpenAPI spec includes tags and operationId', async () => {
     const { boss } = createBossMock()
     const { app } = createProxyApp({ options: {}, bossFactory: () => boss as any })
