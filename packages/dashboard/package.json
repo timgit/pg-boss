@@ -41,7 +41,7 @@
     "ci": "npm run typecheck && npm run cover:frontend && cross-env DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/pgboss npm run cover:server"
   },
   "dependencies": {
-    "@base-ui/react": "^1.1.0",
+    "@base-ui/react": "1.1.0",
     "@hono/node-server": "^1.19.9",
     "@react-router/node": "^7.13.0",
     "class-variance-authority": "^0.7.1",
