@@ -23,15 +23,15 @@ export const htmlResponseSchema: z.ZodType<types.HttpHtmlResponse> = z.string()
 
 // ============== pg-boss Types ==============
 
-export const groupOptionsSchema: z.ZodType<types.HttpGroupOptions> = z.object({
+export const groupOptionsSchema = z.object({
   id: z.string(),
   tier: z.string().optional()
-})
+}) satisfies z.ZodType<types.HttpGroupOptions>
 
-export const groupConcurrencyConfigSchema: z.ZodType<types.HttpGroupConcurrencyConfig> = z.object({
+export const groupConcurrencyConfigSchema = z.object({
   default: z.number(),
   tiers: z.record(z.string(), z.number()).optional()
-})
+}) satisfies z.ZodType<types.HttpGroupConcurrencyConfig>
 
 const sendOptionsSchemaBase = z.object({
   id: z.string().optional(),
@@ -53,9 +53,9 @@ const sendOptionsSchemaBase = z.object({
   heartbeatSeconds: z.number().optional(),
 })
 
-export const sendOptionsSchema: z.ZodType<types.HttpSendOptions> = sendOptionsSchemaBase
+export const sendOptionsSchema = sendOptionsSchemaBase satisfies z.ZodType<types.HttpSendOptions>
 
-export const queueOptionsSchema: z.ZodType<types.HttpQueueOptions> = z.object({
+export const queueOptionsSchema = z.object({
   expireInSeconds: z.number().optional(),
   retentionSeconds: z.number().optional(),
   deleteAfterSeconds: z.number().optional(),
@@ -64,14 +64,14 @@ export const queueOptionsSchema: z.ZodType<types.HttpQueueOptions> = z.object({
   retryBackoff: z.boolean().optional(),
   retryDelayMax: z.number().optional(),
   heartbeatSeconds: z.number().optional(),
-})
+}) satisfies z.ZodType<types.HttpQueueOptions>
 
-export const scheduleOptionsSchema: z.ZodType<types.HttpScheduleOptions> = sendOptionsSchemaBase.extend({
+export const scheduleOptionsSchema = sendOptionsSchemaBase.extend({
   tz: z.string().optional(),
   key: z.string().optional(),
-})
+}) satisfies z.ZodType<types.HttpScheduleOptions>
 
-export const fetchOptionsSchema: z.ZodType<types.HttpFetchOptions> = z.object({
+export const fetchOptionsSchema = z.object({
   includeMetadata: z.boolean().optional(),
   priority: z.boolean().optional(),
   orderByCreatedOn: z.boolean().optional(),
@@ -79,24 +79,24 @@ export const fetchOptionsSchema: z.ZodType<types.HttpFetchOptions> = z.object({
   ignoreStartAfter: z.boolean().optional(),
   groupConcurrency: z.union([z.number(), groupConcurrencyConfigSchema]).optional(),
   ignoreGroups: z.array(z.string()).nullable().optional(),
-})
+}) satisfies z.ZodType<types.HttpFetchOptions>
 
-export const findJobsOptionsSchema: z.ZodType<types.HttpFindJobsOptions> = z.object({
+export const findJobsOptionsSchema = z.object({
   id: z.string().optional(),
   key: z.string().optional(),
   data: jsonRecordSchema.optional(),
   queued: z.boolean().optional(),
-})
+}) satisfies z.ZodType<types.HttpFindJobsOptions>
 
-export const insertOptionsSchema: z.ZodType<types.HttpInsertOptions> = z.object({
+export const insertOptionsSchema = z.object({
   returnId: z.boolean().optional(),
-})
+}) satisfies z.ZodType<types.HttpInsertOptions>
 
-export const completeOptionsSchema: z.ZodType<types.HttpCompleteOptions> = z.object({
+export const completeOptionsSchema = z.object({
   includeQueued: z.boolean().optional(),
-})
+}) satisfies z.ZodType<types.HttpCompleteOptions>
 
-export const jobInsertSchema: z.ZodType<types.HttpJobInsert> = z.object({
+export const jobInsertSchema = z.object({
   id: z.string().optional(),
   data: jsonRecordSchema.optional(),
   priority: z.number().optional(),
@@ -113,7 +113,7 @@ export const jobInsertSchema: z.ZodType<types.HttpJobInsert> = z.object({
   heartbeatSeconds: z.number().optional(),
   group: groupOptionsSchema.optional(),
   deadLetter: z.string().optional(),
-})
+}) satisfies z.ZodType<types.HttpJobInsert>
 
 const jobSchemaBase = z.object({
   id: z.string(),
@@ -125,9 +125,9 @@ const jobSchemaBase = z.object({
   groupTier: z.string().optional().nullable(),
 })
 
-export const jobSchema: z.ZodType<types.HttpJob> = jobSchemaBase
+export const jobSchema = jobSchemaBase satisfies z.ZodType<types.HttpJob>
 
-export const jobWithMetadataSchema: z.ZodType<types.HttpJobWithMetadata> = jobSchemaBase.extend({
+export const jobWithMetadataSchema = jobSchemaBase.extend({
   priority: z.number(),
   state: z.enum(['created', 'retry', 'active', 'completed', 'cancelled', 'failed']),
   retryLimit: z.number(),
@@ -146,15 +146,15 @@ export const jobWithMetadataSchema: z.ZodType<types.HttpJobWithMetadata> = jobSc
   policy: z.string(),
   deadLetter: z.string(),
   output: jsonRecordSchema,
-})
+}) satisfies z.ZodType<types.HttpJobWithMetadata>
 
-export const commandResponseSchema: z.ZodType<types.HttpCommandResponse> = z.object({
+export const commandResponseSchema = z.object({
   jobs: z.array(z.string()),
   requested: z.number(),
   affected: z.number(),
-})
+}) satisfies z.ZodType<types.HttpCommandResponse>
 
-export const queueResultSchema: z.ZodType<types.HttpQueueResult> = z.object({
+export const queueResultSchema = z.object({
   name: z.string(),
   expireInSeconds: z.number().optional(),
   retentionSeconds: z.number().optional(),
@@ -176,22 +176,22 @@ export const queueResultSchema: z.ZodType<types.HttpQueueResult> = z.object({
   createdOn: z.iso.datetime().transform((val) => new Date(val)),
   updatedOn: z.iso.datetime().transform((val) => new Date(val)),
   singletonsActive: z.array(z.string()).nullable(),
-})
+}) satisfies z.ZodType<types.HttpQueueResult>
 
-export const scheduleSchema: z.ZodType<types.HttpSchedule> = z.object({
+export const scheduleSchema = z.object({
   name: z.string(),
   key: z.string(),
   cron: z.string(),
   timezone: z.string(),
   data: jsonRecordSchema.optional(),
   options: sendOptionsSchema.optional(),
-})
+}) satisfies z.ZodType<types.HttpSchedule>
 
-export const bamStatusSummarySchema: z.ZodType<types.HttpBamStatusSummary> = z.object({
+export const bamStatusSummarySchema = z.object({
   status: z.enum(['pending', 'in_progress', 'completed', 'failed']),
   count: z.number(),
   lastCreatedOn: z.iso.datetime().transform((val) => new Date(val)),
-})
+}) satisfies z.ZodType<types.HttpBamStatusSummary>
 
 // ============== Request/Response Types ==============
 

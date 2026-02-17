@@ -261,7 +261,7 @@ describe('proxy api routes', () => {
     const response = await app.fetch(request)
     expect(response.status).toBe(413)
 
-    const body = await response.json()
+    const body = await response.json() as any
     expect(body.ok).toBe(false)
   })
 
@@ -274,7 +274,7 @@ describe('proxy api routes', () => {
     const response = await app.fetch(request)
     expect(response.status).toBe(400)
 
-    const body = await response.json()
+    const body = await response.json() as any
     expect(body.ok).toBe(false)
     expect(body.error.message).toBeTruthy()
   })
@@ -293,7 +293,7 @@ describe('proxy api routes', () => {
     const response = await app.fetch(request)
     expect(response.status).toBe(400)
 
-    const body = await response.json()
+    const body = await response.json() as any
     expect(body.ok).toBe(false)
   })
 
@@ -306,7 +306,7 @@ describe('proxy api routes', () => {
     const response = await app.fetch(request)
     expect(response.status).toBe(500)
 
-    const body = await response.json()
+    const body = await response.json() as any
     expect(body.ok).toBe(false)
     expect(body.error.message).toBe('Internal server error')
   })
@@ -320,7 +320,7 @@ describe('proxy api routes', () => {
     const response = await app.fetch(request)
     expect(response.status).toBe(500)
 
-    const body = await response.json()
+    const body = await response.json() as any
     expect(body.ok).toBe(false)
     expect(body.error.message).toBe('db connection lost')
   })
@@ -334,7 +334,7 @@ describe('proxy api routes', () => {
     const response = await app.fetch(request)
     expect(response.status).toBe(500)
 
-    const body = await response.json()
+    const body = await response.json() as any
     expect(body.error.message).toBe('Internal server error')
   })
 
@@ -396,7 +396,7 @@ describe('proxy api routes', () => {
     const response = await app.fetch(request)
     expect(response.status).toBe(200)
 
-    const body = await response.json()
+    const body = await response.json() as any
     expect(body.ok).toBe(true)
     expect(body.result.states).toBeDefined()
     expect(body.result.policies).toBeDefined()
@@ -478,7 +478,7 @@ describe('proxy api routes', () => {
     const response = await app.fetch(request)
     expect(response.status).toBe(400)
 
-    const body = await response.json()
+    const body = await response.json() as any
     expect(body.ok).toBe(false)
   })
 
@@ -490,7 +490,7 @@ describe('proxy api routes', () => {
     const response = await app.fetch(request)
     expect(response.status).toBe(400)
 
-    const body = await response.json()
+    const body = await response.json() as any
     expect(body.ok).toBe(false)
   })
 
@@ -502,7 +502,7 @@ describe('proxy api routes', () => {
     const response = await app.fetch(request)
     expect(response.status).toBe(400)
 
-    const body = await response.json()
+    const body = await response.json() as any
     expect(body.ok).toBe(false)
   })
 
@@ -528,7 +528,7 @@ describe('proxy api routes', () => {
     const openapiReq = new Request('http://local/v1/openapi.json', { method: 'GET' })
     const openapiRes = await app.fetch(openapiReq)
     expect(openapiRes.status).toBe(200)
-    const spec = await openapiRes.json()
+    const spec = await openapiRes.json() as any
     expect(spec.openapi).toBe('3.1.0')
 
     const docsReq = new Request('http://local/v1/docs', { method: 'GET' })
@@ -597,7 +597,7 @@ describe('proxy api routes', () => {
 
     const openapiReq = new Request('http://local/api/openapi.json', { method: 'GET' })
     const openapiRes = await app.fetch(openapiReq)
-    const spec = await openapiRes.json()
+    const spec = await openapiRes.json() as any
     expect(spec.paths['/api/deleteAllJobs']).toBeUndefined()
 
     const homeReq = new Request('http://local/', { method: 'GET' })
@@ -624,7 +624,7 @@ describe('proxy api routes', () => {
 
     const openapiReq = new Request('http://local/api/openapi.json', { method: 'GET' })
     const openapiRes = await app.fetch(openapiReq)
-    const spec = await openapiRes.json()
+    const spec = await openapiRes.json() as any
     expect(spec.paths['/api/send']).toBeDefined()
     expect(spec.paths['/api/deleteAllJobs']).toBeUndefined()
 
@@ -641,7 +641,7 @@ describe('proxy api routes', () => {
 
     const request = new Request('http://local/api/openapi.json', { method: 'GET' })
     const response = await app.fetch(request)
-    const spec = await response.json()
+    const spec = await response.json() as any
 
     const sendRoute = spec.paths['/api/send']?.post
     expect(sendRoute.tags).toEqual(['jobs'])
