@@ -20,10 +20,8 @@
   ],
   "scripts": {
     "dev": "cross-env DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/pgboss tsx src/server.ts",
-    "gen:schemas": "ts-to-zod src/contracts.ts src/contracts.zod.ts",
-    "check:schemas": "ts-to-zod src/contracts.ts src/contracts.zod.check.ts && diff src/contracts.zod.ts src/contracts.zod.check.ts && rm src/contracts.zod.check.ts || (rm -f src/contracts.zod.check.ts && echo 'Schema drift detected. Run: npm run gen:schemas' && exit 1)",
     "gen:version": "tsx scripts/gen-version.ts",
-    "build": "npm run gen:version && npm run gen:schemas && tsc -p tsconfig.build.json",
+    "build": "npm run gen:version && tsc -p tsconfig.build.json",
     "test": "vitest run -c vitest.config.ts",
     "start": "node ./dist/server.js",
     "typecheck": "tsc --noEmit",
@@ -40,7 +38,6 @@
   "devDependencies": {
     "@types/node": "^22.19.11",
     "cross-env": "^10.1.0",
-    "ts-to-zod": "^5.1.0",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
     "vitest": "^4.0.18"

@@ -450,7 +450,7 @@ describe('proxy api routes', () => {
   })
 
   it('supports array of middleware', async () => {
-    const { boss, calls } = createBossMock()
+    const { boss } = createBossMock()
     const log: string[] = []
 
     const mw1: MiddlewareHandler = async (_c, next) => {

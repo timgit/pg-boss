@@ -56,7 +56,7 @@ import {
   unscheduleResponseSchema,
   updateQueueRequestSchema,
   updateQueueResponseSchema
-} from './contracts.zod.js'
+} from './contracts.js'
 
 export const withOptionalDataOptions = (args: unknown[], data?: unknown, options?: unknown) => {
   if (data !== undefined || options !== undefined) {

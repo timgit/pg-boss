@@ -1,5 +1,5 @@
 import { version } from './version.js'
-import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi'
+import { OpenAPIHono, createRoute } from '@hono/zod-openapi'
 import { swaggerUI } from '@hono/swagger-ui'
 import {
   PgBoss,
@@ -14,9 +14,9 @@ import {
   errorResultSchema,
   htmlResponseSchema,
   metaResponseSchema
-} from './contracts.zod.js'
+} from './contracts.js'
 import { renderHome } from './home.js'
-import { allRoutes, bossMethodInfos, type RouteEntry } from './routes.js'
+import { allRoutes, type RouteEntry } from './routes.js'
 
 type ProxyEnv = Record<string, string | undefined>
 
