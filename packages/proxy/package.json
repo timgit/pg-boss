@@ -1,7 +1,7 @@
 {
   "name": "@pg-boss/proxy",
   "version": "0.1.0",
-  "description": "Hono-based HTTP proxy for pg-boss",
+  "description": "HTTP proxy for pg-boss",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -21,7 +21,8 @@
   "scripts": {
     "dev": "cross-env DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/pgboss tsx src/server.ts",
     "gen:version": "tsx scripts/gen-version.ts",
-    "build": "npm run gen:version && tsc -p tsconfig.build.json",
+    "clean": "node -e \"fs.rmSync('dist',{recursive:true,force:true})\"",
+    "build": "npm run clean && npm run gen:version && tsc -p tsconfig.build.json",
     "test": "vitest run -c vitest.config.ts",
     "start": "node ./dist/server.js",
     "typecheck": "tsc --noEmit",
