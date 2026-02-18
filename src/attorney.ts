@@ -9,7 +9,7 @@ const POLICY = {
 }
 
 function assertObjectName (value: string, name: string = 'Name') {
-  assert(/^[\w.-]+$/.test(value), `${name} can only contain alphanumeric characters, underscores, hyphens, or periods`)
+  assert(/^[\w.\-/]+$/.test(value), `${name} can only contain alphanumeric characters, underscores, hyphens, periods, or forward slashes`)
 }
 
 function validateQueueArgs (config: any = {}) {
