@@ -26,7 +26,7 @@
     "test": "vitest run -c vitest.config.ts",
     "start": "node ./dist/server.js",
     "typecheck": "tsc --noEmit",
-    "prepublishOnly": "npm run gen:version && npm run typecheck && npm run build"
+    "prepublishOnly": "npm run typecheck && npm run build && npm test"
   },
   "dependencies": {
     "@hono/node-server": "^1.19.9",
