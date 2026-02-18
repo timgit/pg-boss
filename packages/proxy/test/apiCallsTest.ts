@@ -521,17 +521,17 @@ describe('proxy api routes', () => {
     expect(args?.length).toBe(4)
   })
 
-  it('OpenAPI and docs paths respect prefix', async () => {
+  it('OpenAPI and docs are always at root regardless of prefix', async () => {
     const { boss } = createBossMock()
     const { app } = createProxyApp({ options: {}, bossFactory: () => boss as any, prefix: '/v1' })
 
-    const openapiReq = new Request('http://local/v1/openapi.json', { method: 'GET' })
+    const openapiReq = new Request('http://local/openapi.json', { method: 'GET' })
     const openapiRes = await app.fetch(openapiReq)
     expect(openapiRes.status).toBe(200)
     const spec = await openapiRes.json() as any
     expect(spec.openapi).toBe('3.1.0')
 
-    const docsReq = new Request('http://local/v1/docs', { method: 'GET' })
+    const docsReq = new Request('http://local/docs', { method: 'GET' })
     const docsRes = await app.fetch(docsReq)
     expect(docsRes.status).toBe(200)
   })
@@ -573,8 +573,8 @@ describe('proxy api routes', () => {
     const html = await response.text()
     expect(html).toContain('pg-boss proxy')
     expect(html).toContain('/api/send')
-    expect(html).toContain('/api/openapi.json')
-    expect(html).toContain('/api/docs')
+    expect(html).toContain('/openapi.json')
+    expect(html).toContain('/docs')
     expect(html).toContain('POST')
     expect(html).toContain('GET')
   })
@@ -595,7 +595,7 @@ describe('proxy api routes', () => {
     const okRes = await app.fetch(okReq)
     expect(okRes.status).toBe(200)
 
-    const openapiReq = new Request('http://local/api/openapi.json', { method: 'GET' })
+    const openapiReq = new Request('http://local/openapi.json', { method: 'GET' })
     const openapiRes = await app.fetch(openapiReq)
     const spec = await openapiRes.json() as any
     expect(spec.paths['/api/deleteAllJobs']).toBeUndefined()
@@ -622,7 +622,7 @@ describe('proxy api routes', () => {
     const denyRes = await app.fetch(denyReq)
     expect(denyRes.status).toBe(404)
 
-    const openapiReq = new Request('http://local/api/openapi.json', { method: 'GET' })
+    const openapiReq = new Request('http://local/openapi.json', { method: 'GET' })
     const openapiRes = await app.fetch(openapiReq)
     const spec = await openapiRes.json() as any
     expect(spec.paths['/api/send']).toBeDefined()
@@ -639,7 +639,7 @@ describe('proxy api routes', () => {
     const { boss } = createBossMock()
     const { app } = createProxyApp({ options: {}, bossFactory: () => boss as any })
 
-    const request = new Request('http://local/api/openapi.json', { method: 'GET' })
+    const request = new Request('http://local/openapi.json', { method: 'GET' })
     const response = await app.fetch(request)
     const spec = await response.json() as any
 

@@ -1,6 +1,7 @@
 import { version } from './version.js'
 import { OpenAPIHono, createRoute } from '@hono/zod-openapi'
 import { swaggerUI } from '@hono/swagger-ui'
+import { logger } from 'hono/logger'
 import {
   PgBoss,
   events,
@@ -56,8 +57,8 @@ const normalizePrefix = (prefix: string): string => {
   return normalized === '/' ? '' : normalized.replace(/\/$/, '')
 }
 
-const resolvePrefix = (prefix: string | undefined, env?: ProxyEnv) => {
-  return normalizePrefix(prefix ?? env?.PGBOSS_PROXY_PREFIX ?? '/api')
+const resolvePrefix = (prefix: string | undefined) => {
+  return normalizePrefix(prefix ?? '/api')
 }
 
 const errorResponse = <Status extends ContentfulStatusCode>(
@@ -78,11 +79,17 @@ export const createProxyApp = (options: ProxyOptions): ProxyApp => {
     : undefined
   const providedOptions = options.options ?? envOptions ?? {}
   const exposeErrors = options.exposeErrors ?? false
-  const resolvedOptions: ConstructorOptions = {
-    ...providedOptions,
-    supervise: false,
-    migrate: false,
-    schedule: false
+
+  const resolvedOptions: ConstructorOptions = { ...providedOptions }
+
+  if (!('supervise' in providedOptions)) {
+    resolvedOptions.supervise = false
+  }
+  if (!('migrate' in providedOptions)) {
+    resolvedOptions.migrate = false
+  }
+  if (!('schedule' in providedOptions)) {
+    resolvedOptions.schedule = false
   }
 
   let boss: PgBoss
@@ -95,7 +102,7 @@ export const createProxyApp = (options: ProxyOptions): ProxyApp => {
     }
     boss = new PgBoss(resolvedOptions)
   }
-  const prefix = resolvePrefix(options.prefix, options.env)
+  const prefix = resolvePrefix(options.prefix)
   const app = new OpenAPIHono({
     defaultHook: (result, context) => {
       if (!result.success) {
@@ -104,12 +111,13 @@ export const createProxyApp = (options: ProxyOptions): ProxyApp => {
       }
     }
   })
+  app.use('*', logger())
 
   configureAuth(app, options.env ?? process.env, prefix)
   const base = prefix || '/'
 
-  const openapiPath = `${prefix}/openapi.json`
-  const docsPath = `${prefix}/docs`
+  const openapiPath = '/openapi.json'
+  const docsPath = '/docs'
 
   const pages = options.pages ?? {}
 
