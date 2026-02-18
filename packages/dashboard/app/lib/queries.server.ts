@@ -565,5 +565,21 @@ export async function getSchedule (
   return await queryOne<ScheduleResult>(dbUrl, sql, [name, key])
 }
 
+// Find a job by ID across all queues (scans all partitions)
+export async function findJobById (
+  dbUrl: string,
+  schema: string,
+  id: string
+): Promise<{ id: string; name: string } | null> {
+  const s = validateIdentifier(schema)
+  const sql = `
+    SELECT id, name
+    FROM ${s}.job
+    WHERE id = $1
+    LIMIT 1
+  `
+  return queryOne<{ id: string; name: string }>(dbUrl, sql, [id])
+}
+
 // Re-export job action methods from boss.server
 export { getJobById, cancelJob, resumeJob, deleteJob } from './boss.server'

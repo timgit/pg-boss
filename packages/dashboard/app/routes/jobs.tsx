@@ -67,6 +67,7 @@ export function ErrorBoundary () {
 export default function Jobs ({ loaderData }: Route.ComponentProps) {
   const { recentJobs, page, stateFilter, hasNextPage, hasPrevPage } = loaderData
   const [searchParams, setSearchParams] = useSearchParams()
+  const dbParam = searchParams.get('db')
 
   const handleFilterChange = (key: string, value: string | null) => {
     const params = new URLSearchParams(searchParams)
@@ -94,9 +95,20 @@ export default function Jobs ({ loaderData }: Route.ComponentProps) {
             Recently created jobs across all queues
           </p>
         </div>
-        <DbLink to="/send">
-          <Button variant="primary" size="md">Send Job</Button>
-        </DbLink>
+        <div className="flex items-center gap-3">
+          <form action="/search" method="get" className="flex items-center">
+            {dbParam && <input type="hidden" name="db" value={dbParam} />}
+            <input
+              type="text"
+              name="jobId"
+              placeholder="Search job by ID..."
+              className="h-9 w-48 lg:w-64 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 text-sm text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+            />
+          </form>
+          <DbLink to="/send">
+            <Button variant="primary" size="md">Send Job</Button>
+          </DbLink>
+        </div>
       </div>
 
       <Card>
