@@ -17,6 +17,7 @@ import {
 } from './contracts.js'
 import { renderHome } from './home.js'
 import { allRoutes, type RouteEntry } from './routes.js'
+import { configureAuth } from './auth.js'
 
 type ProxyEnv = Record<string, string | undefined>
 
@@ -31,6 +32,11 @@ type ProxyOptions = {
   routes?: {
     allow?: string[]
     deny?: string[]
+  }
+  pages?: {
+    root?: boolean
+    docs?: boolean
+    openapi?: boolean
   }
 }
 
@@ -98,21 +104,29 @@ export const createProxyApp = (options: ProxyOptions): ProxyApp => {
       }
     }
   })
+
+  configureAuth(app, options.env ?? process.env, prefix)
   const base = prefix || '/'
 
   const openapiPath = `${prefix}/openapi.json`
   const docsPath = `${prefix}/docs`
 
-  app.doc31(openapiPath, {
-    openapi: '3.1.0',
-    info: {
-      title: 'pg-boss proxy',
-      version,
-      description: 'HTTP proxy for pg-boss methods.'
-    }
-  })
+  const pages = options.pages ?? {}
 
-  app.get(docsPath, swaggerUI({ url: openapiPath }))
+  if (pages.openapi !== false) {
+    app.doc31(openapiPath, {
+      openapi: '3.1.0',
+      info: {
+        title: 'pg-boss proxy',
+        version,
+        description: 'HTTP proxy for pg-boss methods.'
+      }
+    })
+  }
+
+  if (pages.docs !== false) {
+    app.get(docsPath, swaggerUI({ url: openapiPath }))
+  }
 
   app.onError((error, context) => {
     const message = exposeErrors && error instanceof Error
@@ -153,9 +167,12 @@ export const createProxyApp = (options: ProxyOptions): ProxyApp => {
   const enabledMethodInfos = enabledRoutes.map(({ method, httpMethod }) => ({ method, httpMethod }))
 
   const homeHtml = renderHome({ base, openapiPath, docsPath, methods: enabledMethodInfos })
-  app.openapi(homeRoute, (context) => {
-    return context.html(homeHtml)
-  })
+
+  if (pages.root !== false) {
+    app.openapi(homeRoute, (context) => {
+      return context.html(homeHtml)
+    })
+  }
 
   const maxBodySize = options.bodyLimit ?? 1024 * 1024
   app.use(`${prefix}/*`, async (context, next) => {
@@ -323,6 +340,7 @@ export const createProxyService = (options: ProxyOptions): ProxyService => {
 }
 
 export { bossMethodNames, bossMethodInfos } from './routes.js'
+export { configureAuth } from './auth.js'
 export {
   attachShutdownListeners,
   nodeShutdownAdapter,
