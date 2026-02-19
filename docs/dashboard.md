@@ -1,6 +1,6 @@
 # Dashboard
 
-A web-based dashboard is available for monitoring and managing pg-boss job queues.
+A web-based dashboard is available in the [`@pg-boss/dashboard`](https://www.npmjs.com/package/@pg-boss/dashboard) package for monitoring and managing jobs, queues and schedules.
 
 ## Features
 
