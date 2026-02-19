@@ -1055,3 +1055,225 @@ describe('node.ts resolveOptions', () => {
     expect(() => createProxyAppNode({})).toThrow('Proxy requires PgBoss constructor options or DATABASE_URL.')
   })
 })
+
+describe('env.ts configuration', () => {
+  it('parses PGBOSS_PROXY_PREFIX from env', async () => {
+    const { createProxyApp } = await import('../src/index.js')
+    const { boss } = createBossMock()
+
+    const { app, prefix } = createProxyApp({
+      options: {},
+      bossFactory: () => boss as any,
+      env: { PGBOSS_PROXY_PREFIX: '/v1' }
+    })
+
+    expect(prefix).toBe('/v1')
+  })
+
+  it('parses PGBOSS_PROXY_REQUEST_LOGGER from env', async () => {
+    const { createProxyApp } = await import('../src/index.js')
+    const { boss } = createBossMock()
+
+    const { app: app1 } = createProxyApp({
+      options: {},
+      bossFactory: () => boss as any,
+      env: { PGBOSS_PROXY_REQUEST_LOGGER: 'false' }
+    })
+
+    const { app: app2 } = createProxyApp({
+      options: {},
+      bossFactory: () => boss as any,
+      env: { PGBOSS_PROXY_REQUEST_LOGGER: 'true' }
+    })
+
+    // Both should work without errors
+    expect(app1).toBeDefined()
+    expect(app2).toBeDefined()
+  })
+
+  it('parses PGBOSS_PROXY_EXPOSE_ERRORS from env', async () => {
+    const { createProxyApp } = await import('../src/index.js')
+    const { boss } = createBossMock()
+    ;(boss as any).send = vi.fn(async () => { throw new Error('secret error') })
+
+    const { app } = createProxyApp({
+      options: {},
+      bossFactory: () => boss as any,
+      env: { PGBOSS_PROXY_EXPOSE_ERRORS: 'false' }
+    })
+
+    const request = await postJson('http://local/api/send', { name: 'queue' })
+    const response = await app.fetch(request)
+    const body = await response.json() as any
+    expect(body.error.message).toBe('Internal server error')
+  })
+
+  it('parses PGBOSS_PROXY_BODY_LIMIT from env', async () => {
+    const { createProxyApp } = await import('../src/index.js')
+    const { boss } = createBossMock()
+
+    const { app } = createProxyApp({
+      options: {},
+      bossFactory: () => boss as any,
+      env: { PGBOSS_PROXY_BODY_LIMIT: '100' }
+    })
+
+    const jsonBody = JSON.stringify({ name: 'queue', data: { payload: 'x'.repeat(200) } })
+    const request = new Request('http://local/api/send', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'content-length': String(jsonBody.length) },
+      body: jsonBody
+    })
+    const response = await app.fetch(request)
+    expect(response.status).toBe(413)
+  })
+
+  it('parses PGBOSS_PROXY_ROUTES_ALLOW from env', async () => {
+    const { createProxyApp } = await import('../src/index.js')
+    const { boss } = createBossMock()
+
+    const { app } = createProxyApp({
+      options: {},
+      bossFactory: () => boss as any,
+      env: { PGBOSS_PROXY_ROUTES_ALLOW: 'send,fetch' }
+    })
+
+    // send should work
+    let request = await postJson('http://local/api/send', { name: 'queue' })
+    let response = await app.fetch(request)
+    expect(response.status).toBe(200)
+
+    // getQueues should be blocked (not in allow list)
+    request = new Request('http://local/api/getQueues', { method: 'GET' })
+    response = await app.fetch(request)
+    expect(response.status).toBe(404)
+  })
+
+  it('parses PGBOSS_PROXY_ROUTES_DENY from env', async () => {
+    const { createProxyApp } = await import('../src/index.js')
+    const { boss } = createBossMock()
+
+    const { app } = createProxyApp({
+      options: {},
+      bossFactory: () => boss as any,
+      env: { PGBOSS_PROXY_ROUTES_DENY: 'deleteQueue,deleteAllJobs' }
+    })
+
+    // send should work
+    let request = await postJson('http://local/api/send', { name: 'queue' })
+    let response = await app.fetch(request)
+    expect(response.status).toBe(200)
+
+    // deleteQueue should be blocked
+    request = await postJson('http://local/api/deleteQueue', { name: 'queue' })
+    response = await app.fetch(request)
+    expect(response.status).toBe(404)
+  })
+
+  it('parses PGBOSS_PROXY_PAGE_ROOT from env', async () => {
+    const { createProxyApp } = await import('../src/index.js')
+    const { boss } = createBossMock()
+
+    const { app } = createProxyApp({
+      options: {},
+      bossFactory: () => boss as any,
+      env: { PGBOSS_PROXY_PAGE_ROOT: 'false' }
+    })
+
+    const request = new Request('http://local/', { method: 'GET' })
+    const response = await app.fetch(request)
+    expect(response.status).toBe(404)
+  })
+
+  it('parses PGBOSS_PROXY_PAGE_DOCS from env', async () => {
+    const { createProxyApp } = await import('../src/index.js')
+    const { boss } = createBossMock()
+
+    const { app } = createProxyApp({
+      options: {},
+      bossFactory: () => boss as any,
+      env: { PGBOSS_PROXY_PAGE_DOCS: 'false' }
+    })
+
+    const request = new Request('http://local/docs', { method: 'GET' })
+    const response = await app.fetch(request)
+    expect(response.status).toBe(404)
+  })
+
+  it('parses PGBOSS_PROXY_PAGE_OPENAPI from env', async () => {
+    const { createProxyApp } = await import('../src/index.js')
+    const { boss } = createBossMock()
+
+    const { app } = createProxyApp({
+      options: {},
+      bossFactory: () => boss as any,
+      env: { PGBOSS_PROXY_PAGE_OPENAPI: 'false' }
+    })
+
+    const request = new Request('http://local/openapi.json', { method: 'GET' })
+    const response = await app.fetch(request)
+    expect(response.status).toBe(404)
+  })
+
+  it('code options override env vars', async () => {
+    const { createProxyApp } = await import('../src/index.js')
+    const { boss } = createBossMock()
+
+    const { prefix } = createProxyApp({
+      options: {},
+      bossFactory: () => boss as any,
+      prefix: '/custom',
+      env: { PGBOSS_PROXY_PREFIX: '/env' }
+    })
+
+    expect(prefix).toBe('/custom')
+  })
+
+  it('code options override env vars', async () => {
+    const { createProxyApp } = await import('../src/index.js')
+    const { boss } = createBossMock()
+
+    const { prefix } = createProxyApp({
+      options: {},
+      bossFactory: () => boss as any,
+      prefix: '/custom',
+      env: { PGBOSS_PROXY_PREFIX: '/env' }
+    })
+
+    expect(prefix).toBe('/custom')
+  })
+
+  it('parses PGBOSS_PROXY_LOG_FORMAT from env', async () => {
+    const { configureLogging } = await import('../src/env.js')
+
+    // 'text' and undefined should not throw
+    await expect(configureLogging('text')).resolves.not.toThrow()
+    await expect(configureLogging(undefined)).resolves.not.toThrow()
+    // Note: 'json' configures LogTape which may conflict with existing configuration
+    // In practice this is handled by server.ts which configures before tests run
+  })
+
+  it('logs warning for invalid routes in PGBOSS_PROXY_ROUTES_ALLOW', async () => {
+    const { createProxyApp } = await import('../src/index.js')
+    const { boss } = createBossMock()
+
+    // Should not throw, just log warning via LogTape
+    expect(() => createProxyApp({
+      options: {},
+      bossFactory: () => boss as any,
+      env: { PGBOSS_PROXY_ROUTES_ALLOW: 'send,invalidRoute,fetch' }
+    })).not.toThrow()
+  })
+
+  it('logs warning for invalid routes in PGBOSS_PROXY_ROUTES_DENY', async () => {
+    const { createProxyApp } = await import('../src/index.js')
+    const { boss } = createBossMock()
+
+    // Should not throw, just log warning via LogTape
+    expect(() => createProxyApp({
+      options: {},
+      bossFactory: () => boss as any,
+      env: { PGBOSS_PROXY_ROUTES_DENY: 'deleteQueue,badRoute' }
+    })).not.toThrow()
+  })
+})

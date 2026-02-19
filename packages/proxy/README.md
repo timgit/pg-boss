@@ -19,7 +19,7 @@ await proxy.start()
 **From source** (clone the repo and run the built-in dev server):
 
 ```bash
-DATABASE_URL=postgres://user:pass@host/database npm run dev
+npm run dev
 ```
 
 Then visit:
@@ -166,15 +166,51 @@ attachShutdownListeners(['SIGINT', 'SIGTERM'], bunShutdownAdapter, stop)
 
 ## Configuration
 
+You can configure the proxy using either **code options** or **environment variables**. Code options take precedence over environment variables if both are set.
+
+### Code Options
+
 The proxy accepts the following options:
+
+```ts
+import { createProxyApp } from '@pg-boss/proxy'
+
+const { app, boss } = createProxyApp({
+  options: { connectionString: process.env.DATABASE_URL },
+  prefix: '/api',
+  requestLogger: true,
+  logFormat: 'text', // 'text' or 'json'
+  exposeErrors: false,
+  bodyLimit: 1024 * 1024,
+  routes: {
+    allow: ['send', 'fetch'],
+    deny: ['deleteQueue']
+  },
+  pages: {
+    root: true,
+    docs: true,
+    openapi: true
+  },
+  auth: {
+    username: 'admin',
+    password: 'secret'
+  },
+  cors: {
+    origin: 'https://example.com',
+    methods: 'GET,POST',
+    credentials: true
+  }
+})
+```
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `options` | `ConstructorOptions` | - | PgBoss constructor options (see below) |
+| `options` | `ConstructorOptions` | - | PgBoss constructor options |
 | `prefix` | `string` | `/api` | URL prefix for all API routes |
 | `env` | `Record<string, string>` | `process.env` | Environment variables |
 | `middleware` | `MiddlewareHandler \| MiddlewareHandler[]` | - | Hono middleware to apply to API routes |
 | `requestLogger` | `boolean` | `true` | Enable/disable default request logging middleware |
+| `logFormat` | `'text' \| 'json'` | `text` | Log output format |
 | `exposeErrors` | `boolean` | `false` | Return actual error messages to clients |
 | `bodyLimit` | `number` | `1048576` (1MB) | Max request body size in bytes |
 | `routes.allow` | `string[]` | all | List of pg-boss methods to expose |
@@ -182,16 +218,35 @@ The proxy accepts the following options:
 | `pages.root` | `boolean` | `true` | Enable/disable the root page (`/`) |
 | `pages.docs` | `boolean` | `true` | Enable/disable Swagger docs (`/docs`) |
 | `pages.openapi` | `boolean` | `true` | Enable/disable OpenAPI spec (`/openapi.json`) |
+| `auth.username` | `string` | - | Basic auth username |
+| `auth.password` | `string` | - | Basic auth password |
+| `cors.origin` | `string` | - | CORS allowed origins |
+| `cors.methods` | `string` | `GET,POST,PUT,DELETE,PATCH,OPTIONS` | CORS allowed methods |
+| `cors.headers` | `string` | `Content-Type,Authorization` | CORS allowed headers |
 
 ### Environment Variables
+
+Alternatively, configure everything via environment variables:
 
 | Variable | Default | Description |
 |---|---|---|
 | `DATABASE_URL` | - | PostgreSQL connection string |
-| `PORT` | `3000` | Listening port (Node entry point only) |
-| `HOST` | `localhost` | Listening hostname (Node entry point only) |
+| `PORT` | `3000` | Listening port |
+| `HOST` | `localhost` | Listening hostname |
+| `PGBOSS_PROXY_PREFIX` | `/api` | URL prefix for API routes |
+| `PGBOSS_PROXY_REQUEST_LOGGER` | `true` | Enable request logging |
+| `PGBOSS_PROXY_LOG_FORMAT` | `text` | Log format: `text` or `json` |
+| `PGBOSS_PROXY_EXPOSE_ERRORS` | `false` | Return actual error messages to clients |
+| `PGBOSS_PROXY_BODY_LIMIT` | `1048576` | Max request body size in bytes |
+| `PGBOSS_PROXY_ROUTES_ALLOW` | all | Comma-separated list of routes to expose |
+| `PGBOSS_PROXY_ROUTES_DENY` | none | Comma-separated list of routes to exclude |
+| `PGBOSS_PROXY_PAGE_ROOT` | `true` | Enable root page |
+| `PGBOSS_PROXY_PAGE_DOCS` | `true` | Enable Swagger docs |
+| `PGBOSS_PROXY_PAGE_OPENAPI` | `true` | Enable OpenAPI spec |
+| **Authentication** | | |
 | `PGBOSS_PROXY_AUTH_USERNAME` | - | Basic auth username (must be set with password) |
 | `PGBOSS_PROXY_AUTH_PASSWORD` | - | Basic auth password (must be set with username) |
+| **CORS** | | |
 | `PGBOSS_PROXY_CORS_ORIGIN` | - | CORS allowed origins (comma-separated or `*`) |
 | `PGBOSS_PROXY_CORS_METHODS` | `GET,POST,PUT,DELETE,PATCH,OPTIONS` | CORS allowed methods |
 | `PGBOSS_PROXY_CORS_HEADERS` | `Content-Type,Authorization` | CORS allowed headers |
@@ -431,6 +486,60 @@ npm run build
 
 # Start production server
 npm start
+```
+
+### Docker
+
+```dockerfile
+FROM node:24
+WORKDIR /app
+RUN npm install -g @pg-boss/proxy
+ENV PORT=3000
+EXPOSE 3000
+CMD ["pg-boss-proxy"]
+```
+
+```bash
+docker build -t pgboss-proxy .
+docker run -d \
+  -e DATABASE_URL="postgres://user:pass@host:5432/db" \
+  -e PGBOSS_PROXY_AUTH_USERNAME=admin \
+  -e PGBOSS_PROXY_AUTH_PASSWORD=secret \
+  -e PGBOSS_PROXY_CORS_ORIGIN="https://myapp.com" \
+  -p 3000:3000 \
+  pgboss-proxy
+```
+
+### Docker Compose
+
+```yaml
+services:
+  proxy:
+    image: node:24
+    working_dir: /app
+    command: sh -c "npm install -g @pg-boss/proxy && pgboss-proxy"
+    environment:
+      DATABASE_URL: postgres://user:pass@db:5432/mydb
+      PGBOSS_SCHEMA: pgboss
+      PORT: 3000
+      PGBOSS_PROXY_REQUEST_LOGGER: "true"
+      PGBOSS_PROXY_LOG_FORMAT: "json"
+      PGBOSS_PROXY_AUTH_USERNAME: admin
+      PGBOSS_PROXY_AUTH_PASSWORD: secret
+      PGBOSS_PROXY_CORS_ORIGIN: "https://myapp.com"
+    ports:
+      - "3000:3000"
+    depends_on:
+      - db
+
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: pass
+      POSTGRES_DB: mydb
+    ports:
+      - "5432:5432"
 ```
 
 ## API Reference

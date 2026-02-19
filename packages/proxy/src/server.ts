@@ -1,13 +1,9 @@
 import { createProxyServerNode } from './node.js'
-import { configure, getConsoleSink, getLogger } from '@logtape/logtape'
+import { configureLogging } from './env.js'
+import { getLogger } from '@logtape/logtape'
 
-await configure({
-  sinks: { console: getConsoleSink() },
-  loggers: [
-    { category: ['pg-boss', 'proxy'], lowestLevel: 'info', sinks: ['console'] },
-    { category: ['logtape', 'meta'], lowestLevel: 'error', sinks: ['console'] }
-  ]
-})
+const logFormat = process.env.PGBOSS_PROXY_LOG_FORMAT as 'text' | 'json' | undefined
+await configureLogging(logFormat)
 
 const logger = getLogger(['pg-boss', 'proxy'])
 const proxy = createProxyServerNode()

@@ -17,8 +17,7 @@ import {
 } from './contracts.js'
 import { renderHome } from './home.js'
 import { allRoutes, type RouteEntry } from './routes.js'
-import { configureAuth } from './auth.js'
-import { configureCors } from './cors.js'
+import { configureFromEnv, mergeEnvConfig, configureAuth, configureCors, configureLogging, setupBasicLogging } from './env.js'
 import { getLogger } from '@logtape/logtape'
 import { honoLogger } from '@logtape/hono'
 
@@ -31,6 +30,7 @@ type ProxyOptions = {
   env?: ProxyEnv
   middleware?: MiddlewareHandler | MiddlewareHandler[]
   requestLogger?: boolean
+  logFormat?: 'text' | 'json'
   exposeErrors?: boolean
   bodyLimit?: number
   routes?: {
@@ -41,6 +41,18 @@ type ProxyOptions = {
     root?: boolean
     docs?: boolean
     openapi?: boolean
+  }
+  auth?: {
+    username?: string
+    password?: string
+  }
+  cors?: {
+    origin?: string
+    methods?: string
+    headers?: string
+    exposeHeaders?: string
+    credentials?: boolean
+    maxAge?: string
   }
 }
 
@@ -77,11 +89,18 @@ const resultResponse = (context: Context, result: unknown) => {
 }
 
 export const createProxyApp = (options: ProxyOptions): ProxyApp => {
-  const envOptions = options.env?.DATABASE_URL
-    ? { connectionString: options.env.DATABASE_URL }
+  const providedEnv = options.env ?? process.env
+  setupBasicLogging()
+  const envConfig = configureFromEnv(providedEnv)
+  const config = mergeEnvConfig(options, envConfig)
+
+  configureLogging(config.logFormat).catch(() => {})
+
+  const envOptions = providedEnv.DATABASE_URL
+    ? { connectionString: providedEnv.DATABASE_URL }
     : undefined
   const providedOptions = options.options ?? envOptions ?? {}
-  const exposeErrors = options.exposeErrors ?? false
+  const exposeErrors = config.exposeErrors ?? false
 
   const resolvedOptions: ConstructorOptions = { ...providedOptions }
 
@@ -95,7 +114,7 @@ export const createProxyApp = (options: ProxyOptions): ProxyApp => {
     resolvedOptions.schedule = false
   }
 
-  const prefix = resolvePrefix(options.prefix)
+  const prefix = resolvePrefix(config.prefix)
 
   const app = new OpenAPIHono({
     defaultHook: (result, context) => {
@@ -106,7 +125,7 @@ export const createProxyApp = (options: ProxyOptions): ProxyApp => {
     }
   })
 
-  const requestLogger = options.requestLogger ?? true
+  const requestLogger = config.requestLogger ?? true
 
   if (requestLogger) {
     app.use('*', honoLogger())
@@ -128,15 +147,15 @@ export const createProxyApp = (options: ProxyOptions): ProxyApp => {
     logger.error(error as Error)
   })
 
-  configureAuth(app, options.env ?? process.env, prefix)
-  configureCors(app, options.env ?? process.env, prefix)
+  configureAuth(app, config.auth, prefix)
+  configureCors(app, config.cors, prefix)
 
   const base = prefix || '/'
 
   const openapiPath = '/openapi.json'
   const docsPath = '/docs'
 
-  const pages = options.pages ?? {}
+  const pages = config.pages ?? {}
 
   if (pages.openapi !== false) {
     app.doc31(openapiPath, {
@@ -177,8 +196,8 @@ export const createProxyApp = (options: ProxyOptions): ProxyApp => {
 
   const applyRouteFilter = (routes: RouteEntry[]) => {
     let result = routes
-    const allow = options.routes?.allow
-    const deny = options.routes?.deny
+    const allow = config.routes?.allow
+    const deny = config.routes?.deny
     if (allow && allow.length > 0) {
       result = result.filter((entry) => allow.includes(entry.method))
     }
@@ -199,7 +218,7 @@ export const createProxyApp = (options: ProxyOptions): ProxyApp => {
     })
   }
 
-  const maxBodySize = options.bodyLimit ?? 1024 * 1024
+  const maxBodySize = config.bodyLimit ?? 1024 * 1024
   app.use(`${prefix}/*`, async (context, next) => {
     if (context.req.method === 'POST') {
       const contentLength = context.req.header('content-length')
@@ -365,8 +384,7 @@ export const createProxyService = (options: ProxyOptions): ProxyService => {
 }
 
 export { bossMethodNames, bossMethodInfos } from './routes.js'
-export { configureAuth } from './auth.js'
-export { configureCors } from './cors.js'
+export { configureAuth, configureCors, configureLogging } from './env.js'
 export { honoLogger } from '@logtape/hono'
 export {
   attachShutdownListeners,
@@ -377,3 +395,4 @@ export {
 
 export type { ProxyApp, ProxyOptions, ProxyService }
 export type { ShutdownHandler, ShutdownAdapter } from './shutdown.js'
+export type { EnvConfig, AuthConfig, CorsConfig } from './env.js'
