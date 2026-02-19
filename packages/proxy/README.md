@@ -90,6 +90,7 @@ If you only need the Hono app and will manage lifecycle yourself:
 
 ```ts
 import { createProxyApp } from '@pg-boss/proxy'
+import { serve } from '@hono/node-server'
 
 const { app, boss } = createProxyApp({
   options: {
@@ -104,16 +105,6 @@ serve({ fetch: app.fetch, port: 3000 })
 
 ### Node Convenience Entry Point
 
-```ts
-import { createProxyServiceNode } from '@pg-boss/proxy/node'
-
-const { app, start, stop } = createProxyServiceNode()
-
-await start()
-// later
-await stop()
-```
-
 If you want a ready-to-listen Node server with automatic shutdown signal wiring:
 
 ```ts
@@ -121,28 +112,6 @@ import { createProxyServerNode } from '@pg-boss/proxy/node'
 
 const proxy = createProxyServerNode()
 await proxy.start()
-```
-
-`createProxyServerNode` accepts all `ProxyOptions` plus the following Node-specific options:
-
-| Option | Type | Default | Description |
-|---|---|---|---|
-| `port` | `number` | `PORT` env or `3000` | Port to listen on |
-| `hostname` | `string` | `HOST` env or `localhost` | Hostname to bind |
-| `shutdownSignals` | `NodeJS.Signals[]` | `['SIGINT', 'SIGTERM']` | Signals that trigger graceful shutdown |
-| `attachSignals` | `boolean` | `true` | Auto-attach shutdown signal handlers |
-| `onListen` | `(info: { port: number }) => void` | - | Called after the server starts listening |
-
-You can override environment lookups by passing an `env` object:
-
-```ts
-const proxy = createProxyServerNode({
-  env: {
-    DATABASE_URL: 'postgres://user:pass@host/database',
-    HOST: '0.0.0.0',
-    PORT: '8080'
-  }
-})
 ```
 
 ## Lifecycle Wiring by Runtime
@@ -205,6 +174,7 @@ The proxy accepts the following options:
 | `prefix` | `string` | `/api` | URL prefix for all API routes |
 | `env` | `Record<string, string>` | `process.env` | Environment variables |
 | `middleware` | `MiddlewareHandler \| MiddlewareHandler[]` | - | Hono middleware to apply to API routes |
+| `requestLogger` | `boolean` | `true` | Enable/disable default request logging middleware |
 | `exposeErrors` | `boolean` | `false` | Return actual error messages to clients |
 | `bodyLimit` | `number` | `1048576` (1MB) | Max request body size in bytes |
 | `routes.allow` | `string[]` | all | List of pg-boss methods to expose |
@@ -222,6 +192,12 @@ The proxy accepts the following options:
 | `HOST` | `localhost` | Listening hostname (Node entry point only) |
 | `PGBOSS_PROXY_AUTH_USERNAME` | - | Basic auth username (must be set with password) |
 | `PGBOSS_PROXY_AUTH_PASSWORD` | - | Basic auth password (must be set with username) |
+| `PGBOSS_PROXY_CORS_ORIGIN` | - | CORS allowed origins (comma-separated or `*`) |
+| `PGBOSS_PROXY_CORS_METHODS` | `GET,POST,PUT,DELETE,PATCH,OPTIONS` | CORS allowed methods |
+| `PGBOSS_PROXY_CORS_HEADERS` | `Content-Type,Authorization` | CORS allowed headers |
+| `PGBOSS_PROXY_CORS_EXPOSE_HEADERS` | - | CORS exposed headers |
+| `PGBOSS_PROXY_CORS_CREDENTIALS` | `false` | CORS allow credentials |
+| `PGBOSS_PROXY_CORS_MAX_AGE` | - | CORS preflight cache duration (seconds) |
 
 ### PgBoss Constructor Options
 
@@ -233,17 +209,13 @@ const { app, boss } = createProxyApp({
     connectionString: 'postgres://user:pass@host/database',
     schema: 'custom',
     supervise: true,    // enable job supervision (disabled by default)
-    schedule: true,     // enable job scheduling (disabled by default)
-    migrate: true       // run migrations on startup (disabled by default)
+    schedule: true,     // enable job creation by monitoring cron schedules (disabled by default)
+    migrate: true       // run migrations on startup if needed (disabled by default)
   }
 })
 ```
 
 By default, `supervise`, `schedule`, and `migrate` are set to `false` to run the proxy in a stateless manner. Set any of these to `true` to enable that functionality.
-
-### Request Logging
-
-All requests are logged to stdout via the built-in `hono/logger` middleware.
 
 ### Authentication
 
@@ -256,22 +228,116 @@ PGBOSS_PROXY_AUTH_PASSWORD=secret
 
 Both variables must be set together. When enabled, auth is applied to all routes under the prefix (e.g., `/api/*`). The root page (`/`), Swagger docs (`/docs`), and OpenAPI spec (`/openapi.json`) sit outside the prefix and remain publicly accessible.
 
+### CORS
+
+CORS can be enabled via environment variables:
+
+```bash
+# Required: comma-separated list of allowed origins (use "*" for any)
+PGBOSS_PROXY_CORS_ORIGIN=https://example.com,https://app.example.com
+
+# Optional: allowed HTTP methods (default: GET, POST, PUT, DELETE, PATCH, OPTIONS)
+PGBOSS_PROXY_CORS_METHODS=GET,POST,PUT,DELETE
+
+# Optional: allowed request headers (default: Content-Type, Authorization)
+PGBOSS_PROXY_CORS_HEADERS=Content-Type,Authorization,X-Custom-Header
+
+# Optional: headers exposed to the client (default: none)
+PGBOSS_PROXY_CORS_EXPOSE_HEADERS=X-Request-Id
+
+# Optional: allow credentials (default: false)
+PGBOSS_PROXY_CORS_CREDENTIALS=true
+
+# Optional: preflight cache duration in seconds (default: none)
+PGBOSS_PROXY_CORS_MAX_AGE=3600
+```
+
+When `PGBOSS_PROXY_CORS_ORIGIN` is set, CORS middleware is applied to all routes under the prefix. The root page and docs remain unaffected.
+
+### Request Logging
+
+The proxy uses [LogTape](https://logtape.org/) for request and application logging.
+
+`packages/proxy/src/server.ts` shows a complete example using a console sink:
+
+```ts
+import { createProxyServerNode } from '@pg-boss/proxy/node'
+import { configure, getConsoleSink, getLogger } from '@logtape/logtape'
+
+await configure({
+  sinks: { console: getConsoleSink() },
+  loggers: [
+    { category: ['pg-boss', 'proxy'], lowestLevel: 'info', sinks: ['console'] },
+    { category: ['logtape', 'meta'], lowestLevel: 'error', sinks: ['console'] }
+  ]
+})
+
+const logger = getLogger(['pg-boss', 'proxy'])
+const proxy = createProxyServerNode()
+
+const info = await proxy.start()
+logger.info(`pg-boss proxy listening on http://${proxy.hostname}:${info.port}`)
+```
+
+#### JSON Logging
+
+For structured logging (e.g., when using log aggregation tools), use the JSON Lines formatter:
+
+```ts
+import { createProxyServerNode } from '@pg-boss/proxy/node'
+import { configure, getConsoleSink, getLogger, jsonLinesFormatter } from '@logtape/logtape'
+
+await configure({
+  sinks: {
+    console: getConsoleSink({ formatter: jsonLinesFormatter() })
+  },
+  loggers: [
+    { category: ['pg-boss', 'proxy'], lowestLevel: 'info', sinks: ['console'] },
+    { category: ['logtape', 'meta'], lowestLevel: 'error', sinks: ['console'] }
+  ]
+})
+
+const logger = getLogger(['pg-boss', 'proxy'])
+const proxy = createProxyServerNode()
+
+await proxy.start()
+logger.info('server started', { port: 3000 })
+```
+
+Output:
+```json
+{"timestamp":"2025-01-15T10:30:00.000Z","level":"info","message":"server started","properties":{"port":3000},"context":{}}
+```
+
+You can also log to a file with JSON Lines format:
+
+```ts
+import { getFileSink } from '@logtape/file'
+
+await configure({
+  sinks: {
+    file: getFileSink('logs/proxy.jsonl', { formatter: jsonLinesFormatter() })
+  },
+  loggers: [
+    { category: ['pg-boss', 'proxy'], lowestLevel: 'info', sinks: ['file'] }
+  ]
+})
+```
+
 ### Custom Middleware
 
 You can add custom Hono middleware to the API routes:
 
 ```ts
-import { cors } from 'hono/cors'
+import { secureHeaders } from 'hono/secure-headers'
 
 const { app, boss } = createProxyApp({
   options: { connectionString: 'postgres://user:pass@host/database' },
   middleware: [
-    // Add CORS headers
-    cors({
-      origin: ['https://myapp.com'],
-      credentials: true
-    }),
-    // Add any other Hono-compatible middleware here
+    secureHeaders({
+      xFrameOptions: false,
+      xXssProtection: false
+    })
   ]
 })
 ```
@@ -343,51 +409,6 @@ const { app, boss } = createProxyApp({
     openapi: false    // Disable OpenAPI JSON endpoint
   }
 })
-```
-
-## Complete Production Example
-
-Here's a production-ready setup with authentication, CORS, and restricted routes:
-
-```ts
-import { createProxyServerNode } from '@pg-boss/proxy/node'
-import { cors } from 'hono/cors'
-
-const proxy = createProxyServerNode({
-  options: {
-    connectionString: process.env.DATABASE_URL,
-    schema: 'pgboss'
-  },
-  prefix: '/api',
-  middleware: [
-    cors({ origin: process.env.ALLOWED_ORIGINS?.split(',') ?? [] })
-  ],
-  routes: {
-    // Only expose safe operations
-    allow: [
-      'send',
-      'sendAfter',
-      'sendDebounced',
-      'sendThrottled',
-      'fetch',
-      'complete',
-      'fail',
-      'cancel',
-      'retry',
-      'getQueue',
-      'getQueues',
-      'getSchedules',
-      'findJobs'
-    ]
-  },
-  bodyLimit: 1024 * 1024, // 1MB
-  exposeErrors: false
-})
-
-// Server will use HOST and PORT from env (defaults: localhost:3000)
-await proxy.start()
-
-console.log(`pg-boss proxy running at http://${proxy.hostname}:${proxy.port}`)
 ```
 
 ## Running from Source

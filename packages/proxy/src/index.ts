@@ -1,7 +1,6 @@
 import { version } from './version.js'
 import { OpenAPIHono, createRoute } from '@hono/zod-openapi'
 import { swaggerUI } from '@hono/swagger-ui'
-import { logger } from 'hono/logger'
 import {
   PgBoss,
   events,
@@ -19,6 +18,9 @@ import {
 import { renderHome } from './home.js'
 import { allRoutes, type RouteEntry } from './routes.js'
 import { configureAuth } from './auth.js'
+import { configureCors } from './cors.js'
+import { getLogger } from '@logtape/logtape'
+import { honoLogger } from '@logtape/hono'
 
 type ProxyEnv = Record<string, string | undefined>
 
@@ -28,6 +30,7 @@ type ProxyOptions = {
   prefix?: string
   env?: ProxyEnv
   middleware?: MiddlewareHandler | MiddlewareHandler[]
+  requestLogger?: boolean
   exposeErrors?: boolean
   bodyLimit?: number
   routes?: {
@@ -92,6 +95,23 @@ export const createProxyApp = (options: ProxyOptions): ProxyApp => {
     resolvedOptions.schedule = false
   }
 
+  const prefix = resolvePrefix(options.prefix)
+
+  const app = new OpenAPIHono({
+    defaultHook: (result, context) => {
+      if (!result.success) {
+        const message = result.error instanceof Error ? result.error.message : 'Validation error'
+        return context.json({ ok: false, error: { message } }, 400)
+      }
+    }
+  })
+
+  const requestLogger = options.requestLogger ?? true
+
+  if (requestLogger) {
+    app.use('*', honoLogger())
+  }
+
   let boss: PgBoss
 
   if (options.bossFactory) {
@@ -102,18 +122,15 @@ export const createProxyApp = (options: ProxyOptions): ProxyApp => {
     }
     boss = new PgBoss(resolvedOptions)
   }
-  const prefix = resolvePrefix(options.prefix)
-  const app = new OpenAPIHono({
-    defaultHook: (result, context) => {
-      if (!result.success) {
-        const message = result.error instanceof Error ? result.error.message : 'Validation error'
-        return context.json({ ok: false, error: { message } }, 400)
-      }
-    }
+
+  boss.on('error', (error) => {
+    const logger = getLogger(['pg-boss', 'proxy'])
+    logger.error(error as Error)
   })
-  app.use('*', logger())
 
   configureAuth(app, options.env ?? process.env, prefix)
+  configureCors(app, options.env ?? process.env, prefix)
+
   const base = prefix || '/'
 
   const openapiPath = '/openapi.json'
@@ -349,6 +366,8 @@ export const createProxyService = (options: ProxyOptions): ProxyService => {
 
 export { bossMethodNames, bossMethodInfos } from './routes.js'
 export { configureAuth } from './auth.js'
+export { configureCors } from './cors.js'
+export { honoLogger } from '@logtape/hono'
 export {
   attachShutdownListeners,
   nodeShutdownAdapter,

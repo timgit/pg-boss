@@ -6,7 +6,9 @@ import type { MiddlewareHandler } from 'hono'
 type BossMethod = string
 
 const createBossMock = () => {
-  const boss = {} as Record<string, unknown>
+  const boss = {
+    on: vi.fn(),
+  } as Record<string, unknown>
   const calls = new Map<string, unknown[][]>()
 
   for (const method of bossMethodNames) {
@@ -30,6 +32,335 @@ const postJson = async (url: string, body?: unknown) => {
 }
 
 describe('proxy api routes', () => {
+  describe('CORS', () => {
+    it('does not add CORS headers when PGBOSS_PROXY_CORS_ORIGIN is not set', async () => {
+      const { boss } = createBossMock()
+      const { app } = createProxyApp({ options: {}, bossFactory: () => boss as any })
+
+      const request = new Request('http://local/api/send', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', origin: 'https://example.com' },
+        body: JSON.stringify({ name: 'queue' })
+      })
+      const response = await app.fetch(request)
+      expect(response.status).toBe(200)
+      expect(response.headers.get('access-control-allow-origin')).toBeNull()
+    })
+
+    it('adds CORS headers when PGBOSS_PROXY_CORS_ORIGIN is set', async () => {
+      const { boss } = createBossMock()
+      const { app } = createProxyApp({
+        options: {},
+        bossFactory: () => boss as any,
+        env: { PGBOSS_PROXY_CORS_ORIGIN: 'https://example.com' }
+      })
+
+      const request = new Request('http://local/api/send', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', origin: 'https://example.com' },
+        body: JSON.stringify({ name: 'queue' })
+      })
+      const response = await app.fetch(request)
+      expect(response.status).toBe(200)
+      expect(response.headers.get('access-control-allow-origin')).toBe('https://example.com')
+    })
+
+    it('adds CORS headers on preflight request', async () => {
+      const { boss } = createBossMock()
+      const { app } = createProxyApp({
+        options: {},
+        bossFactory: () => boss as any,
+        env: { PGBOSS_PROXY_CORS_ORIGIN: 'https://example.com' }
+      })
+
+      const request = new Request('http://local/api/send', {
+        method: 'OPTIONS',
+        headers: {
+          origin: 'https://example.com',
+          'access-control-request-method': 'POST',
+          'access-control-request-headers': 'Content-Type,Authorization'
+        }
+      })
+      const response = await app.fetch(request)
+      expect(response.status).toBe(204)
+      expect(response.headers.get('access-control-allow-origin')).toBe('https://example.com')
+      expect(response.headers.get('access-control-allow-methods')).toBe('GET,POST,PUT,DELETE,PATCH,OPTIONS')
+      expect(response.headers.get('access-control-allow-headers')).toBe('Content-Type,Authorization')
+    })
+
+    it('handles wildcard CORS origin', async () => {
+      const { boss } = createBossMock()
+      const { app } = createProxyApp({
+        options: {},
+        bossFactory: () => boss as any,
+        env: { PGBOSS_PROXY_CORS_ORIGIN: '*' }
+      })
+
+      const request = new Request('http://local/api/send', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', origin: 'https://any-site.com' },
+        body: JSON.stringify({ name: 'queue' })
+      })
+      const response = await app.fetch(request)
+      expect(response.headers.get('access-control-allow-origin')).toBe('*')
+    })
+
+    it('handles multiple CORS origins', async () => {
+      const { boss } = createBossMock()
+      const { app } = createProxyApp({
+        options: {},
+        bossFactory: () => boss as any,
+        env: { PGBOSS_PROXY_CORS_ORIGIN: 'https://example.com,https://app.example.com' }
+      })
+
+      // Request from first origin
+      let request = new Request('http://local/api/send', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', origin: 'https://example.com' },
+        body: JSON.stringify({ name: 'queue' })
+      })
+      let response = await app.fetch(request)
+      expect(response.headers.get('access-control-allow-origin')).toBe('https://example.com')
+
+      // Request from second origin
+      request = new Request('http://local/api/send', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', origin: 'https://app.example.com' },
+        body: JSON.stringify({ name: 'queue' })
+      })
+      response = await app.fetch(request)
+      expect(response.headers.get('access-control-allow-origin')).toBe('https://app.example.com')
+
+      // Request from disallowed origin
+      request = new Request('http://local/api/send', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', origin: 'https://evil.com' },
+        body: JSON.stringify({ name: 'queue' })
+      })
+      response = await app.fetch(request)
+      expect(response.headers.get('access-control-allow-origin')).toBeNull()
+    })
+
+    it('handles CORS credentials option', async () => {
+      const { boss } = createBossMock()
+      const { app } = createProxyApp({
+        options: {},
+        bossFactory: () => boss as any,
+        env: {
+          PGBOSS_PROXY_CORS_ORIGIN: 'https://example.com',
+          PGBOSS_PROXY_CORS_CREDENTIALS: 'true'
+        }
+      })
+
+      const request = new Request('http://local/api/send', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', origin: 'https://example.com' },
+        body: JSON.stringify({ name: 'queue' })
+      })
+      const response = await app.fetch(request)
+      expect(response.headers.get('access-control-allow-origin')).toBe('https://example.com')
+      expect(response.headers.get('access-control-allow-credentials')).toBe('true')
+    })
+
+    it('handles custom CORS methods and headers via env vars', async () => {
+      const { boss } = createBossMock()
+      const { app } = createProxyApp({
+        options: {},
+        bossFactory: () => boss as any,
+        env: {
+          PGBOSS_PROXY_CORS_ORIGIN: 'https://example.com',
+          PGBOSS_PROXY_CORS_METHODS: 'GET,POST',
+          PGBOSS_PROXY_CORS_HEADERS: 'Content-Type,X-Custom-Header',
+          PGBOSS_PROXY_CORS_EXPOSE_HEADERS: 'X-Request-Id'
+        }
+      })
+
+      const request = new Request('http://local/api/send', {
+        method: 'OPTIONS',
+        headers: {
+          origin: 'https://example.com',
+          'access-control-request-method': 'POST',
+          'access-control-request-headers': 'X-Custom-Header'
+        }
+      })
+      const response = await app.fetch(request)
+      expect(response.headers.get('access-control-allow-methods')).toBe('GET,POST')
+      expect(response.headers.get('access-control-allow-headers')).toBe('Content-Type,X-Custom-Header')
+      expect(response.headers.get('access-control-expose-headers')).toBe('X-Request-Id')
+    })
+
+    it('handles CORS max-age option', async () => {
+      const { boss } = createBossMock()
+      const { app } = createProxyApp({
+        options: {},
+        bossFactory: () => boss as any,
+        env: {
+          PGBOSS_PROXY_CORS_ORIGIN: 'https://example.com',
+          PGBOSS_PROXY_CORS_MAX_AGE: '3600'
+        }
+      })
+
+      const request = new Request('http://local/api/send', {
+        method: 'OPTIONS',
+        headers: {
+          origin: 'https://example.com',
+          'access-control-request-method': 'POST'
+        }
+      })
+      const response = await app.fetch(request)
+      expect(response.headers.get('access-control-max-age')).toBe('3600')
+    })
+
+    it('CORS is applied to API routes but not home page', async () => {
+      const { boss } = createBossMock()
+      const { app } = createProxyApp({
+        options: {},
+        bossFactory: () => boss as any,
+        env: { PGBOSS_PROXY_CORS_ORIGIN: 'https://example.com' }
+      })
+
+      // API route should have CORS
+      const apiRequest = new Request('http://local/api/send', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', origin: 'https://example.com' },
+        body: JSON.stringify({ name: 'queue' })
+      })
+      const apiResponse = await app.fetch(apiRequest)
+      expect(apiResponse.headers.get('access-control-allow-origin')).toBe('https://example.com')
+
+      // Home page should not have CORS
+      const homeRequest = new Request('http://local/', {
+        method: 'GET',
+        headers: { origin: 'https://example.com' }
+      })
+      const homeResponse = await app.fetch(homeRequest)
+      expect(homeResponse.headers.get('access-control-allow-origin')).toBeNull()
+    })
+  })
+
+  describe('Basic Auth', () => {
+    it('does not add auth when credentials are not set', async () => {
+      const { boss } = createBossMock()
+      const { app } = createProxyApp({ options: {}, bossFactory: () => boss as any })
+
+      const request = await postJson('http://local/api/send', { name: 'queue' })
+      const response = await app.fetch(request)
+      expect(response.status).toBe(200)
+    })
+
+    it('requires authentication when credentials are set', async () => {
+      const { boss } = createBossMock()
+      const { app } = createProxyApp({
+        options: {},
+        bossFactory: () => boss as any,
+        env: { PGBOSS_PROXY_AUTH_USERNAME: 'admin', PGBOSS_PROXY_AUTH_PASSWORD: 'secret' }
+      })
+
+      // Request without auth header should be rejected
+      const request = await postJson('http://local/api/send', { name: 'queue' })
+      const response = await app.fetch(request)
+      // Auth is enforced (may return 401, 403, or 500 if middleware throws)
+      expect(response.status).not.toBe(200)
+    })
+
+    it('rejects requests with wrong credentials', async () => {
+      const { boss } = createBossMock()
+      const { app } = createProxyApp({
+        options: {},
+        bossFactory: () => boss as any,
+        env: { PGBOSS_PROXY_AUTH_USERNAME: 'admin', PGBOSS_PROXY_AUTH_PASSWORD: 'secret' }
+      })
+
+      const request = new Request('http://local/api/send', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: 'Basic ' + btoa('admin:wrongpassword')
+        },
+        body: JSON.stringify({ name: 'queue' })
+      })
+      const response = await app.fetch(request)
+      expect(response.status).not.toBe(200)
+    })
+
+    it('accepts requests with correct credentials', async () => {
+      const { boss } = createBossMock()
+      const { app } = createProxyApp({
+        options: {},
+        bossFactory: () => boss as any,
+        env: { PGBOSS_PROXY_AUTH_USERNAME: 'admin', PGBOSS_PROXY_AUTH_PASSWORD: 'secret' }
+      })
+
+      const request = new Request('http://local/api/send', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: 'Basic ' + btoa('admin:secret')
+        },
+        body: JSON.stringify({ name: 'queue' })
+      })
+      const response = await app.fetch(request)
+      expect(response.status).toBe(200)
+    })
+
+    it('auth is applied to API routes but not home page', async () => {
+      const { boss } = createBossMock()
+      const { app } = createProxyApp({
+        options: {},
+        bossFactory: () => boss as any,
+        env: { PGBOSS_PROXY_AUTH_USERNAME: 'admin', PGBOSS_PROXY_AUTH_PASSWORD: 'secret' }
+      })
+
+      // Home page should be accessible without auth
+      const homeRequest = new Request('http://local/', { method: 'GET' })
+      const homeResponse = await app.fetch(homeRequest)
+      expect(homeResponse.status).toBe(200)
+
+      // API route should require auth
+      const apiRequest = await postJson('http://local/api/send', { name: 'queue' })
+      const apiResponse = await app.fetch(apiRequest)
+      expect(apiResponse.status).not.toBe(200)
+    })
+
+    it('auth works with custom prefix', async () => {
+      const { boss } = createBossMock()
+      const { app } = createProxyApp({
+        options: {},
+        bossFactory: () => boss as any,
+        prefix: '/v1',
+        env: { PGBOSS_PROXY_AUTH_USERNAME: 'admin', PGBOSS_PROXY_AUTH_PASSWORD: 'secret' }
+      })
+
+      // API route under custom prefix should require auth
+      const apiRequest = await postJson('http://local/v1/send', { name: 'queue' })
+      const apiResponse = await app.fetch(apiRequest)
+      expect(apiResponse.status).not.toBe(200)
+
+      // Root should still be accessible
+      const rootRequest = new Request('http://local/', { method: 'GET' })
+      const rootResponse = await app.fetch(rootRequest)
+      expect(rootResponse.status).toBe(200)
+    })
+
+    it('throws when only username is set', () => {
+      const { boss } = createBossMock()
+      expect(() => createProxyApp({
+        options: {},
+        bossFactory: () => boss as any,
+        env: { PGBOSS_PROXY_AUTH_USERNAME: 'admin' }
+      })).toThrow('PGBOSS_PROXY_AUTH_PASSWORD is required when PGBOSS_PROXY_AUTH_USERNAME is set')
+    })
+
+    it('throws when only password is set', () => {
+      const { boss } = createBossMock()
+      expect(() => createProxyApp({
+        options: {},
+        bossFactory: () => boss as any,
+        env: { PGBOSS_PROXY_AUTH_PASSWORD: 'secret' }
+      })).toThrow('PGBOSS_PROXY_AUTH_USERNAME is required when PGBOSS_PROXY_AUTH_PASSWORD is set')
+    })
+  })
+
   it('calls the expected pg-boss methods with args (POST)', async () => {
     const { boss, calls } = createBossMock()
     const { app } = createProxyApp({ options: {}, bossFactory: () => boss as any })

@@ -32,6 +32,8 @@
     "@hono/node-server": "^1.19.9",
     "@hono/swagger-ui": "^0.5.3",
     "@hono/zod-openapi": "^1.2.2",
+    "@logtape/hono": "^2.0.2",
+    "@logtape/logtape": "^2.0.2",
     "hono": "^4.11.10",
     "pg-boss": "^12.13.0",
     "zod": "^4.3.6"
