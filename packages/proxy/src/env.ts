@@ -2,7 +2,7 @@ import type { MiddlewareHandler } from 'hono'
 import type { OpenAPIHono } from '@hono/zod-openapi'
 import { basicAuth } from 'hono/basic-auth'
 import { cors } from 'hono/cors'
-import { configure, getConsoleSink, getLogger } from '@logtape/logtape'
+import { configure, getConsoleSink, getLogger, getJsonLinesFormatter, getTextFormatter } from '@logtape/logtape'
 import { bossMethodNames } from './routes.js'
 
 type ProxyEnv = Record<string, string | undefined>
@@ -25,6 +25,8 @@ type LogFormat = 'text' | 'json'
 
 type EnvConfig = {
   prefix?: string
+  port?: number
+  hostname?: string
   env?: ProxyEnv
   middleware?: MiddlewareHandler | MiddlewareHandler[]
   requestLogger?: boolean
@@ -75,10 +77,10 @@ const parseLogFormat = (value: string | undefined): LogFormat | undefined => {
   return undefined
 }
 
-const validateRoutes = (allowed?: string[], denied?: string[]): void => {
+export function validateRoutes (allowed?: string[], denied?: string[]): void {
   const validRoutes = new Set(bossMethodNames)
   const validRouteList = bossMethodNames.join(', ')
-  const logger = getLogger(['pg-boss', 'proxy'])
+  const logger = getLogger(['proxy'])
 
   if (allowed) {
     for (const route of allowed) {
@@ -97,7 +99,7 @@ const validateRoutes = (allowed?: string[], denied?: string[]): void => {
   }
 }
 
-export const configureFromEnv = (env: ProxyEnv): EnvConfig => {
+export function configureFromEnv (env: ProxyEnv): EnvConfig {
   const prefix = parseString(env.PGBOSS_PROXY_PREFIX, '/api')
   const requestLogger = parseBoolean(env.PGBOSS_PROXY_REQUEST_LOGGER, true)
   const logFormat = parseLogFormat(env.PGBOSS_PROXY_LOG_FORMAT)
@@ -106,8 +108,6 @@ export const configureFromEnv = (env: ProxyEnv): EnvConfig => {
   const routesAllow = parseStringArray(env.PGBOSS_PROXY_ROUTES_ALLOW)
   const routesDeny = parseStringArray(env.PGBOSS_PROXY_ROUTES_DENY)
 
-  validateRoutes(routesAllow, routesDeny)
-
   const pageRoot = parseBooleanOrUndefined(env.PGBOSS_PROXY_PAGE_ROOT)
   const pageDocs = parseBooleanOrUndefined(env.PGBOSS_PROXY_PAGE_DOCS)
   const pageOpenapi = parseBooleanOrUndefined(env.PGBOSS_PROXY_PAGE_OPENAPI)
@@ -115,8 +115,13 @@ export const configureFromEnv = (env: ProxyEnv): EnvConfig => {
   const authUsername = env.PGBOSS_PROXY_AUTH_USERNAME
   const authPassword = env.PGBOSS_PROXY_AUTH_PASSWORD
 
+  const port = parseNumber(env.PORT, 3000)
+  const hostname = parseString(env.HOST, 'localhost')
+
   const config: EnvConfig = {
     prefix,
+    port,
+    hostname,
     requestLogger,
     logFormat,
     exposeErrors,
@@ -168,12 +173,14 @@ export const configureFromEnv = (env: ProxyEnv): EnvConfig => {
   return config
 }
 
-export const mergeEnvConfig = (
+export function mergeEnvConfig (
   options: EnvConfig,
   envConfig: EnvConfig
-): EnvConfig => {
+): EnvConfig {
   const merged = {
     prefix: options.prefix ?? envConfig.prefix,
+    port: options.port ?? envConfig.port,
+    hostname: options.hostname ?? envConfig.hostname,
     requestLogger: options.requestLogger ?? envConfig.requestLogger,
     logFormat: options.logFormat ?? envConfig.logFormat,
     exposeErrors: options.exposeErrors ?? envConfig.exposeErrors,
@@ -201,40 +208,29 @@ export const mergeEnvConfig = (
     }
   }
 
-  validateRoutes(merged.routes?.allow, merged.routes?.deny)
-
   return merged
 }
 
-export const configureLogging = async (logFormat: LogFormat | undefined): Promise<void> => {
-  if (logFormat === 'json') {
-    await configure({
-      sinks: { console: getConsoleSink() },
-      loggers: [
-        { category: ['pg-boss', 'proxy'], lowestLevel: 'info', sinks: ['console'] },
-        { category: ['logtape', 'meta'], lowestLevel: 'error', sinks: ['console'] }
-      ]
-    })
-    const logger = getLogger(['pg-boss', 'proxy'])
-    logger.info('JSON logging enabled - configure LogTape manually for custom JSON formatting')
-  }
-}
+let loggingConfigured = false
 
-export const setupBasicLogging = (): void => {
-  const logger = getLogger(['pg-boss', 'proxy']) as any
-  if (logger.sinks?.length > 0 || logger.parentSinks !== 'inherit' || (logger.parent?.sinks?.length > 0)) {
-    return
-  }
-  configure({
-    sinks: { console: getConsoleSink() },
+export async function configureLogging (logFormat: LogFormat | undefined): Promise<void> {
+  if (loggingConfigured) return
+
+  const formatter = (logFormat === 'json') ? getJsonLinesFormatter() : getTextFormatter()
+
+  await configure({
+    sinks: { console: getConsoleSink({ formatter }) },
     loggers: [
-      { category: ['pg-boss', 'proxy'], lowestLevel: 'info', sinks: ['console'] },
+      { category: ['proxy'], lowestLevel: 'info', sinks: ['console'] },
+      { category: ['pg-boss'], lowestLevel: 'info', sinks: ['console'] },
       { category: ['logtape', 'meta'], lowestLevel: 'error', sinks: ['console'] }
     ]
-  }).catch(() => {})
+  })
+
+  loggingConfigured = true
 }
 
-export const configureAuth = (app: OpenAPIHono, auth: AuthConfig | undefined, prefix: string): void => {
+export function configureAuth (app: OpenAPIHono, auth: AuthConfig | undefined, prefix: string): void {
   const username = auth?.username
   const password = auth?.password
 
@@ -251,7 +247,7 @@ export const configureAuth = (app: OpenAPIHono, auth: AuthConfig | undefined, pr
   }
 }
 
-export const configureCors = (app: OpenAPIHono, corsConfig: CorsConfig | undefined, prefix: string): void => {
+export function configureCors (app: OpenAPIHono, corsConfig: CorsConfig | undefined, prefix: string): void {
   const origin = corsConfig?.origin
 
   if (!origin) {

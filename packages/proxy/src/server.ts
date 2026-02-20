@@ -1,12 +1,8 @@
 import { createProxyServerNode } from './node.js'
-import { configureLogging } from './env.js'
 import { getLogger } from '@logtape/logtape'
 
-const logFormat = process.env.PGBOSS_PROXY_LOG_FORMAT as 'text' | 'json' | undefined
-await configureLogging(logFormat)
-
-const logger = getLogger(['pg-boss', 'proxy'])
-const proxy = createProxyServerNode()
+const proxy = await createProxyServerNode()
+const logger = getLogger(['proxy'])
 
 try {
   const info = await proxy.start()

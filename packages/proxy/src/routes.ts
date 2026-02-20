@@ -58,7 +58,7 @@ import {
   updateQueueResponseSchema
 } from './contracts.js'
 
-export const withOptionalDataOptions = (args: unknown[], data?: unknown, options?: unknown) => {
+export function withOptionalDataOptions (args: unknown[], data?: unknown, options?: unknown) {
   if (data !== undefined || options !== undefined) {
     args.push(data ?? null)
   }
@@ -68,7 +68,7 @@ export const withOptionalDataOptions = (args: unknown[], data?: unknown, options
   return args
 }
 
-export const withFixedDataOptions = (args: unknown[], data?: unknown, options?: unknown, tail: unknown[] = []) => {
+export function withFixedDataOptions (args: unknown[], data?: unknown, options?: unknown, tail: unknown[] = []) {
   const result = [...args, data ?? null, options ?? null, ...tail]
   while (result.length > 0 && result[result.length - 1] === undefined) {
     result.pop()
@@ -76,7 +76,7 @@ export const withFixedDataOptions = (args: unknown[], data?: unknown, options?: 
   return result
 }
 
-export const withOptionalOptions = (args: unknown[], options?: unknown) => {
+export function withOptionalOptions (args: unknown[], options?: unknown) {
   if (options !== undefined) {
     args.push(options)
   }

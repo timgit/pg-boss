@@ -19,7 +19,7 @@ export const nodeShutdownAdapter: ShutdownAdapter<NodeJS.Signals> = {
 
 export const bunShutdownAdapter = nodeShutdownAdapter
 
-export const createDenoShutdownAdapter = (): ShutdownAdapter<DenoSignal> => {
+export function createDenoShutdownAdapter (): ShutdownAdapter<DenoSignal> {
   const deno = (globalThis as unknown as { Deno?: DenoLike }).Deno
   if (!deno) {
     throw new Error('Deno global is not available in this runtime.')
@@ -30,11 +30,11 @@ export const createDenoShutdownAdapter = (): ShutdownAdapter<DenoSignal> => {
   }
 }
 
-export const attachShutdownListeners = <Signal>(
+export function attachShutdownListeners <Signal>(
   signals: Signal[],
   adapter: ShutdownAdapter<Signal>,
   handler: ShutdownHandler
-) => {
+) {
   let called = false
   const wrapped = () => {
     if (called) return

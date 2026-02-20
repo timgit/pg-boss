@@ -17,7 +17,7 @@ import {
 } from './contracts.js'
 import { renderHome } from './home.js'
 import { allRoutes, type RouteEntry } from './routes.js'
-import { configureFromEnv, mergeEnvConfig, configureAuth, configureCors, configureLogging, setupBasicLogging } from './env.js'
+import { configureFromEnv, mergeEnvConfig, configureAuth, configureCors, configureLogging, validateRoutes, type EnvConfig } from './env.js'
 import { getLogger } from '@logtape/logtape'
 import { honoLogger } from '@logtape/hono'
 
@@ -27,6 +27,8 @@ type ProxyOptions = {
   options?: ConstructorOptions
   bossFactory?: (options: ConstructorOptions) => PgBoss
   prefix?: string
+  port?: number
+  hostname?: string
   env?: ProxyEnv
   middleware?: MiddlewareHandler | MiddlewareHandler[]
   requestLogger?: boolean
@@ -56,13 +58,11 @@ type ProxyOptions = {
   }
 }
 
-type ProxyApp = {
+type ProxyService = {
   app: OpenAPIHono
   boss: PgBoss
+  config: EnvConfig
   prefix: string
-}
-
-type ProxyService = ProxyApp & {
   start: () => Promise<void>
   stop: () => Promise<void>
 }
@@ -88,13 +88,14 @@ const resultResponse = (context: Context, result: unknown) => {
   return context.json({ ok: true, result: result ?? null }, 200)
 }
 
-export const createProxyApp = (options: ProxyOptions): ProxyApp => {
+export async function createProxyService (options: ProxyOptions): Promise<ProxyService> {
   const providedEnv = options.env ?? process.env
-  setupBasicLogging()
   const envConfig = configureFromEnv(providedEnv)
   const config = mergeEnvConfig(options, envConfig)
 
-  configureLogging(config.logFormat).catch(() => {})
+  await configureLogging(config.logFormat)
+
+  validateRoutes(config.routes?.allow, config.routes?.deny)
 
   const envOptions = providedEnv.DATABASE_URL
     ? { connectionString: providedEnv.DATABASE_URL }
@@ -128,7 +129,7 @@ export const createProxyApp = (options: ProxyOptions): ProxyApp => {
   const requestLogger = config.requestLogger ?? true
 
   if (requestLogger) {
-    app.use('*', honoLogger())
+    app.use('*', honoLogger({ category: ['proxy'] }))
   }
 
   let boss: PgBoss
@@ -143,7 +144,7 @@ export const createProxyApp = (options: ProxyOptions): ProxyApp => {
   }
 
   boss.on('error', (error) => {
-    const logger = getLogger(['pg-boss', 'proxy'])
+    const logger = getLogger(['pg-boss'])
     logger.error(error as Error)
   })
 
@@ -367,18 +368,16 @@ export const createProxyApp = (options: ProxyOptions): ProxyApp => {
     registerRoute(entry)
   }
 
-  return { app, boss, prefix }
-}
-
-export const createProxyService = (options: ProxyOptions): ProxyService => {
-  const proxy = createProxyApp(options)
   return {
-    ...proxy,
+    app,
+    boss,
+    config,
+    prefix,
     start: async () => {
-      await proxy.boss.start()
+      await boss.start()
     },
     stop: async () => {
-      await proxy.boss.stop()
+      await boss.stop()
     }
   }
 }
@@ -393,6 +392,6 @@ export {
   createDenoShutdownAdapter
 } from './shutdown.js'
 
-export type { ProxyApp, ProxyOptions, ProxyService }
+export type { ProxyOptions, ProxyService }
 export type { ShutdownHandler, ShutdownAdapter } from './shutdown.js'
 export type { EnvConfig, AuthConfig, CorsConfig } from './env.js'

@@ -1,23 +1,13 @@
 import { serve } from '@hono/node-server'
-import type { ConstructorOptions } from 'pg-boss'
 import {
   attachShutdownListeners,
-  createProxyApp,
   createProxyService,
   nodeShutdownAdapter,
-  type ProxyApp,
   type ProxyOptions,
   type ProxyService
 } from './index.js'
 
-type ProxyNodeOptions = Omit<ProxyOptions, 'options' | 'env'> & {
-  options?: ConstructorOptions
-  env?: Record<string, string | undefined>
-}
-
-type ProxyServerNodeOptions = ProxyNodeOptions & {
-  port?: number
-  hostname?: string
+type ProxyNodeOptions = ProxyOptions & {
   shutdownSignals?: NodeJS.Signals[]
   attachSignals?: boolean
   onListen?: (info: { port: number }) => void
@@ -32,36 +22,9 @@ type ProxyServerNode = Omit<ProxyService, 'start' | 'stop'> & {
   detachSignals?: () => void
 }
 
-const resolveOptions = (options: ProxyNodeOptions): ConstructorOptions => {
-  if (options.options) {
-    return options.options
-  }
-
-  if (options.env?.DATABASE_URL) {
-    return { connectionString: options.env.DATABASE_URL }
-  }
-
-  throw new Error('Proxy requires PgBoss constructor options or DATABASE_URL.')
-}
-
-export const createProxyAppNode = (options: ProxyNodeOptions = {}): ProxyApp => {
-  const { options: __, ...rest } = options
-  const env = options.env ?? process.env
-  return createProxyApp({ ...rest, options: resolveOptions({ ...options, env }), env })
-}
-
-export const createProxyServiceNode = (options: ProxyNodeOptions = {}): ProxyService => {
-  const { options: __, ...rest } = options
-  const env = options.env ?? process.env
-  return createProxyService({ ...rest, options: resolveOptions({ ...options, env }), env })
-}
-
-export const createProxyServerNode = (options: ProxyServerNodeOptions = {}): ProxyServerNode => {
-  const { options: __, ...rest } = options
-  const env = options.env ?? process.env
-  const service = createProxyService({ ...rest, options: resolveOptions({ ...options, env }), env })
-  const hostname = options.hostname ?? env.HOST ?? 'localhost'
-  const port = options.port ?? Number(env.PORT ?? 3000)
+export async function createProxyServerNode (options: ProxyNodeOptions = {}): Promise<ProxyServerNode> {
+  const service = await createProxyService(options)
+  const { hostname, port } = service.config as { hostname: string; port: number }
   const signals = options.shutdownSignals ?? ['SIGINT', 'SIGTERM']
 
   let server: ReturnType<typeof serve> | null = null
@@ -122,4 +85,4 @@ export const createProxyServerNode = (options: ProxyServerNodeOptions = {}): Pro
   return proxy
 }
 
-export type { ProxyNodeOptions, ProxyServerNodeOptions, ProxyServerNode }
+export type { ProxyNodeOptions, ProxyServerNode }

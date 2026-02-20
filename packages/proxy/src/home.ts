@@ -12,7 +12,7 @@ type HomeParams = {
   methods: MethodInfo[]
 }
 
-export const renderHome = ({ base, openapiPath, docsPath, methods }: HomeParams) => {
+export function renderHome ({ base, openapiPath, docsPath, methods }: HomeParams) {
   const methodList = raw(methods.map((m) =>
     `<li><code><span class="http-method ${m.httpMethod}">${m.httpMethod.toUpperCase()}</span> ${base}/${m.method}</code></li>`
   ).join(''))

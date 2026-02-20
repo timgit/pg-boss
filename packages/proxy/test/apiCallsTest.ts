@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createProxyApp } from '../src/index.js'
+import { createProxyService } from '../src/index.js'
 import { bossMethodNames } from '../src/routes.js'
 import type { MiddlewareHandler } from 'hono'
 
@@ -35,7 +35,7 @@ describe('proxy api routes', () => {
   describe('CORS', () => {
     it('does not add CORS headers when PGBOSS_PROXY_CORS_ORIGIN is not set', async () => {
       const { boss } = createBossMock()
-      const { app } = createProxyApp({ options: {}, bossFactory: () => boss as any })
+      const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any })
 
       const request = new Request('http://local/api/send', {
         method: 'POST',
@@ -49,7 +49,7 @@ describe('proxy api routes', () => {
 
     it('adds CORS headers when PGBOSS_PROXY_CORS_ORIGIN is set', async () => {
       const { boss } = createBossMock()
-      const { app } = createProxyApp({
+      const { app } = await createProxyService({
         options: {},
         bossFactory: () => boss as any,
         env: { PGBOSS_PROXY_CORS_ORIGIN: 'https://example.com' }
@@ -67,7 +67,7 @@ describe('proxy api routes', () => {
 
     it('adds CORS headers on preflight request', async () => {
       const { boss } = createBossMock()
-      const { app } = createProxyApp({
+      const { app } = await createProxyService({
         options: {},
         bossFactory: () => boss as any,
         env: { PGBOSS_PROXY_CORS_ORIGIN: 'https://example.com' }
@@ -90,7 +90,7 @@ describe('proxy api routes', () => {
 
     it('handles wildcard CORS origin', async () => {
       const { boss } = createBossMock()
-      const { app } = createProxyApp({
+      const { app } = await createProxyService({
         options: {},
         bossFactory: () => boss as any,
         env: { PGBOSS_PROXY_CORS_ORIGIN: '*' }
@@ -107,7 +107,7 @@ describe('proxy api routes', () => {
 
     it('handles multiple CORS origins', async () => {
       const { boss } = createBossMock()
-      const { app } = createProxyApp({
+      const { app } = await createProxyService({
         options: {},
         bossFactory: () => boss as any,
         env: { PGBOSS_PROXY_CORS_ORIGIN: 'https://example.com,https://app.example.com' }
@@ -143,7 +143,7 @@ describe('proxy api routes', () => {
 
     it('handles CORS credentials option', async () => {
       const { boss } = createBossMock()
-      const { app } = createProxyApp({
+      const { app } = await createProxyService({
         options: {},
         bossFactory: () => boss as any,
         env: {
@@ -164,7 +164,7 @@ describe('proxy api routes', () => {
 
     it('handles custom CORS methods and headers via env vars', async () => {
       const { boss } = createBossMock()
-      const { app } = createProxyApp({
+      const { app } = await createProxyService({
         options: {},
         bossFactory: () => boss as any,
         env: {
@@ -191,7 +191,7 @@ describe('proxy api routes', () => {
 
     it('handles CORS max-age option', async () => {
       const { boss } = createBossMock()
-      const { app } = createProxyApp({
+      const { app } = await createProxyService({
         options: {},
         bossFactory: () => boss as any,
         env: {
@@ -213,7 +213,7 @@ describe('proxy api routes', () => {
 
     it('CORS is applied to API routes but not home page', async () => {
       const { boss } = createBossMock()
-      const { app } = createProxyApp({
+      const { app } = await createProxyService({
         options: {},
         bossFactory: () => boss as any,
         env: { PGBOSS_PROXY_CORS_ORIGIN: 'https://example.com' }
@@ -241,7 +241,7 @@ describe('proxy api routes', () => {
   describe('Basic Auth', () => {
     it('does not add auth when credentials are not set', async () => {
       const { boss } = createBossMock()
-      const { app } = createProxyApp({ options: {}, bossFactory: () => boss as any })
+      const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any })
 
       const request = await postJson('http://local/api/send', { name: 'queue' })
       const response = await app.fetch(request)
@@ -250,7 +250,7 @@ describe('proxy api routes', () => {
 
     it('requires authentication when credentials are set', async () => {
       const { boss } = createBossMock()
-      const { app } = createProxyApp({
+      const { app } = await createProxyService({
         options: {},
         bossFactory: () => boss as any,
         env: { PGBOSS_PROXY_AUTH_USERNAME: 'admin', PGBOSS_PROXY_AUTH_PASSWORD: 'secret' }
@@ -265,7 +265,7 @@ describe('proxy api routes', () => {
 
     it('rejects requests with wrong credentials', async () => {
       const { boss } = createBossMock()
-      const { app } = createProxyApp({
+      const { app } = await createProxyService({
         options: {},
         bossFactory: () => boss as any,
         env: { PGBOSS_PROXY_AUTH_USERNAME: 'admin', PGBOSS_PROXY_AUTH_PASSWORD: 'secret' }
@@ -285,7 +285,7 @@ describe('proxy api routes', () => {
 
     it('accepts requests with correct credentials', async () => {
       const { boss } = createBossMock()
-      const { app } = createProxyApp({
+      const { app } = await createProxyService({
         options: {},
         bossFactory: () => boss as any,
         env: { PGBOSS_PROXY_AUTH_USERNAME: 'admin', PGBOSS_PROXY_AUTH_PASSWORD: 'secret' }
@@ -305,7 +305,7 @@ describe('proxy api routes', () => {
 
     it('auth is applied to API routes but not home page', async () => {
       const { boss } = createBossMock()
-      const { app } = createProxyApp({
+      const { app } = await createProxyService({
         options: {},
         bossFactory: () => boss as any,
         env: { PGBOSS_PROXY_AUTH_USERNAME: 'admin', PGBOSS_PROXY_AUTH_PASSWORD: 'secret' }
@@ -324,7 +324,7 @@ describe('proxy api routes', () => {
 
     it('auth works with custom prefix', async () => {
       const { boss } = createBossMock()
-      const { app } = createProxyApp({
+      const { app } = await createProxyService({
         options: {},
         bossFactory: () => boss as any,
         prefix: '/v1',
@@ -342,28 +342,28 @@ describe('proxy api routes', () => {
       expect(rootResponse.status).toBe(200)
     })
 
-    it('throws when only username is set', () => {
+    it('throws when only username is set', async () => {
       const { boss } = createBossMock()
-      expect(() => createProxyApp({
+      await expect(createProxyService({
         options: {},
         bossFactory: () => boss as any,
         env: { PGBOSS_PROXY_AUTH_USERNAME: 'admin' }
-      })).toThrow('PGBOSS_PROXY_AUTH_PASSWORD is required when PGBOSS_PROXY_AUTH_USERNAME is set')
+      })).rejects.toThrow('PGBOSS_PROXY_AUTH_PASSWORD is required when PGBOSS_PROXY_AUTH_USERNAME is set')
     })
 
-    it('throws when only password is set', () => {
+    it('throws when only password is set', async () => {
       const { boss } = createBossMock()
-      expect(() => createProxyApp({
+      await expect(createProxyService({
         options: {},
         bossFactory: () => boss as any,
         env: { PGBOSS_PROXY_AUTH_PASSWORD: 'secret' }
-      })).toThrow('PGBOSS_PROXY_AUTH_USERNAME is required when PGBOSS_PROXY_AUTH_PASSWORD is set')
+      })).rejects.toThrow('PGBOSS_PROXY_AUTH_USERNAME is required when PGBOSS_PROXY_AUTH_PASSWORD is set')
     })
   })
 
   it('calls the expected pg-boss methods with args (POST)', async () => {
     const { boss, calls } = createBossMock()
-    const { app } = createProxyApp({ options: {}, bossFactory: () => boss as any })
+    const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any })
 
     const cases: Array<{
       method: BossMethod
@@ -505,7 +505,7 @@ describe('proxy api routes', () => {
 
   it('calls the expected pg-boss methods via GET routes', async () => {
     const { boss, calls } = createBossMock()
-    const { app } = createProxyApp({ options: {}, bossFactory: () => boss as any })
+    const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any })
 
     const getCases: Array<{
       method: string
@@ -541,7 +541,7 @@ describe('proxy api routes', () => {
 
   it('GET findJobs passes flattened options as query params', async () => {
     const { boss, calls } = createBossMock()
-    const { app } = createProxyApp({ options: {}, bossFactory: () => boss as any })
+    const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any })
 
     const findReq = new Request('http://local/api/findJobs?name=queue&id=1&queued=true', { method: 'GET' })
     const findRes = await app.fetch(findReq)
@@ -551,7 +551,7 @@ describe('proxy api routes', () => {
 
   it('GET findJobs with dataKey and dataValue builds data filter', async () => {
     const { boss, calls } = createBossMock()
-    const { app } = createProxyApp({ options: {}, bossFactory: () => boss as any })
+    const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any })
 
     const findReq = new Request('http://local/api/findJobs?name=queue&dataKey=status&dataValue=pending', { method: 'GET' })
     const findRes = await app.fetch(findReq)
@@ -561,7 +561,7 @@ describe('proxy api routes', () => {
 
   it('GET findJobs with dataKey only uses null as value', async () => {
     const { boss, calls } = createBossMock()
-    const { app } = createProxyApp({ options: {}, bossFactory: () => boss as any })
+    const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any })
 
     const findReq = new Request('http://local/api/findJobs?name=queue&dataKey=status', { method: 'GET' })
     const findRes = await app.fetch(findReq)
@@ -571,7 +571,7 @@ describe('proxy api routes', () => {
 
   it('GET findJobs works without options', async () => {
     const { boss, calls } = createBossMock()
-    const { app } = createProxyApp({ options: {}, bossFactory: () => boss as any })
+    const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any })
 
     const findReq = new Request('http://local/api/findJobs?name=queue', { method: 'GET' })
     const findRes = await app.fetch(findReq)
@@ -581,7 +581,7 @@ describe('proxy api routes', () => {
 
   it('rejects oversized request bodies', async () => {
     const { boss } = createBossMock()
-    const { app } = createProxyApp({ options: {}, bossFactory: () => boss as any, bodyLimit: 100 })
+    const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any, bodyLimit: 100 })
 
     const jsonBody = JSON.stringify({ name: 'queue', data: { payload: 'x'.repeat(200) } })
     const request = new Request('http://local/api/send', {
@@ -598,7 +598,7 @@ describe('proxy api routes', () => {
 
   it('returns 400 for malformed POST body', async () => {
     const { boss } = createBossMock()
-    const { app } = createProxyApp({ options: {}, bossFactory: () => boss as any })
+    const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any })
 
     // Missing required 'name' field
     const request = await postJson('http://local/api/send', { data: { foo: 'bar' } })
@@ -612,7 +612,7 @@ describe('proxy api routes', () => {
 
   it('returns 400 for wrong types in POST body', async () => {
     const { boss } = createBossMock()
-    const { app } = createProxyApp({ options: {}, bossFactory: () => boss as any })
+    const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any })
 
     // 'seconds' should be a number
     const request = await postJson('http://local/api/sendThrottled', {
@@ -631,7 +631,7 @@ describe('proxy api routes', () => {
   it('returns 500 with generic message when method throws (exposeErrors: false)', async () => {
     const { boss } = createBossMock()
     ;(boss as any).send = vi.fn(async () => { throw new Error('db connection lost') })
-    const { app } = createProxyApp({ options: {}, bossFactory: () => boss as any })
+    const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any })
 
     const request = await postJson('http://local/api/send', { name: 'queue' })
     const response = await app.fetch(request)
@@ -645,7 +645,7 @@ describe('proxy api routes', () => {
   it('returns 500 with real message when method throws (exposeErrors: true)', async () => {
     const { boss } = createBossMock()
     ;(boss as any).send = vi.fn(async () => { throw new Error('db connection lost') })
-    const { app } = createProxyApp({ options: {}, bossFactory: () => boss as any, exposeErrors: true })
+    const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any, exposeErrors: true })
 
     const request = await postJson('http://local/api/send', { name: 'queue' })
     const response = await app.fetch(request)
@@ -659,7 +659,7 @@ describe('proxy api routes', () => {
   it('returns 500 with generic message for GET method throws (exposeErrors: false)', async () => {
     const { boss } = createBossMock()
     ;(boss as any).isInstalled = vi.fn(async () => { throw new Error('secret error') })
-    const { app } = createProxyApp({ options: {}, bossFactory: () => boss as any })
+    const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any })
 
     const request = new Request('http://local/api/isInstalled', { method: 'GET' })
     const response = await app.fetch(request)
@@ -671,7 +671,7 @@ describe('proxy api routes', () => {
 
   it('edge case: send with only name (no data/options)', async () => {
     const { boss, calls } = createBossMock()
-    const { app } = createProxyApp({ options: {}, bossFactory: () => boss as any })
+    const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any })
 
     const request = await postJson('http://local/api/send', { name: 'queue' })
     const response = await app.fetch(request)
@@ -681,7 +681,7 @@ describe('proxy api routes', () => {
 
   it('edge case: deleteAllJobs with no name', async () => {
     const { boss, calls } = createBossMock()
-    const { app } = createProxyApp({ options: {}, bossFactory: () => boss as any })
+    const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any })
 
     const request = await postJson('http://local/api/deleteAllJobs', {})
     const response = await app.fetch(request)
@@ -691,7 +691,7 @@ describe('proxy api routes', () => {
 
   it('edge case: unschedule without key', async () => {
     const { boss, calls } = createBossMock()
-    const { app } = createProxyApp({ options: {}, bossFactory: () => boss as any })
+    const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any })
 
     const request = await postJson('http://local/api/unschedule', { name: 'queue' })
     const response = await app.fetch(request)
@@ -701,7 +701,7 @@ describe('proxy api routes', () => {
 
   it('edge case: supervise with no name', async () => {
     const { boss, calls } = createBossMock()
-    const { app } = createProxyApp({ options: {}, bossFactory: () => boss as any })
+    const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any })
 
     const request = await postJson('http://local/api/supervise', {})
     const response = await app.fetch(request)
@@ -711,7 +711,7 @@ describe('proxy api routes', () => {
 
   it('edge case: getQueues with single name query param', async () => {
     const { boss, calls } = createBossMock()
-    const { app } = createProxyApp({ options: {}, bossFactory: () => boss as any })
+    const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any })
 
     const request = new Request('http://local/api/getQueues?names=single', { method: 'GET' })
     const response = await app.fetch(request)
@@ -721,7 +721,7 @@ describe('proxy api routes', () => {
 
   it('GET /api/meta returns states/policies/events', async () => {
     const { boss } = createBossMock()
-    const { app } = createProxyApp({ options: {}, bossFactory: () => boss as any })
+    const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any })
 
     const request = new Request('http://local/api/meta', { method: 'GET' })
     const response = await app.fetch(request)
@@ -744,7 +744,7 @@ describe('proxy api routes', () => {
       await next()
     }
 
-    const { app } = createProxyApp({ options: {}, bossFactory: () => boss as any, middleware: authMiddleware })
+    const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any, middleware: authMiddleware })
 
     // Request without auth header should be rejected
     const noAuthReq = await postJson('http://local/api/send', { name: 'queue' })
@@ -767,7 +767,7 @@ describe('proxy api routes', () => {
       return c.json({ ok: false, error: { message: 'Forbidden' } }, 403)
     }
 
-    const { app } = createProxyApp({ options: {}, bossFactory: () => boss as any, middleware: rejectAll })
+    const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any, middleware: rejectAll })
 
     // Home page should still be accessible
     const homeReq = new Request('http://local/', { method: 'GET' })
@@ -793,7 +793,7 @@ describe('proxy api routes', () => {
       await next()
     }
 
-    const { app } = createProxyApp({ options: {}, bossFactory: () => boss as any, middleware: [mw1, mw2] })
+    const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any, middleware: [mw1, mw2] })
 
     const request = new Request('http://local/api/isInstalled', { method: 'GET' })
     const response = await app.fetch(request)
@@ -803,7 +803,7 @@ describe('proxy api routes', () => {
 
   it('rejects empty name with 400', async () => {
     const { boss } = createBossMock()
-    const { app } = createProxyApp({ options: {}, bossFactory: () => boss as any })
+    const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any })
 
     const request = await postJson('http://local/api/send', { name: '' })
     const response = await app.fetch(request)
@@ -815,7 +815,7 @@ describe('proxy api routes', () => {
 
   it('rejects empty event name with 400', async () => {
     const { boss } = createBossMock()
-    const { app } = createProxyApp({ options: {}, bossFactory: () => boss as any })
+    const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any })
 
     const request = await postJson('http://local/api/subscribe', { event: '', name: 'queue' })
     const response = await app.fetch(request)
@@ -827,7 +827,7 @@ describe('proxy api routes', () => {
 
   it('rejects empty name in GET query with 400', async () => {
     const { boss } = createBossMock()
-    const { app } = createProxyApp({ options: {}, bossFactory: () => boss as any })
+    const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any })
 
     const request = new Request('http://local/api/getQueue?name=', { method: 'GET' })
     const response = await app.fetch(request)
@@ -839,7 +839,7 @@ describe('proxy api routes', () => {
 
   it('sendThrottled without key does not pass trailing undefined', async () => {
     const { boss, calls } = createBossMock()
-    const { app } = createProxyApp({ options: {}, bossFactory: () => boss as any })
+    const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any })
 
     const request = await postJson('http://local/api/sendThrottled', {
       name: 'queue', data: null, options: null, seconds: 5
@@ -854,7 +854,7 @@ describe('proxy api routes', () => {
 
   it('OpenAPI and docs are always at root regardless of prefix', async () => {
     const { boss } = createBossMock()
-    const { app } = createProxyApp({ options: {}, bossFactory: () => boss as any, prefix: '/v1' })
+    const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any, prefix: '/v1' })
 
     const openapiReq = new Request('http://local/openapi.json', { method: 'GET' })
     const openapiRes = await app.fetch(openapiReq)
@@ -869,7 +869,7 @@ describe('proxy api routes', () => {
 
   it('custom prefix routes work correctly', async () => {
     const { boss, calls } = createBossMock()
-    const { app } = createProxyApp({ options: {}, bossFactory: () => boss as any, prefix: '/v1' })
+    const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any, prefix: '/v1' })
 
     const request = await postJson('http://local/v1/send', { name: 'queue' })
     const response = await app.fetch(request)
@@ -881,21 +881,21 @@ describe('proxy api routes', () => {
     const { boss } = createBossMock()
 
     // prefix "/" normalizes to "" (root)
-    const { prefix: p1 } = createProxyApp({ options: {}, bossFactory: () => boss as any, prefix: '/' })
+    const { prefix: p1 } = await createProxyService({ options: {}, bossFactory: () => boss as any, prefix: '/' })
     expect(p1).toBe('')
 
     // prefix without leading slash gets one added
-    const { prefix: p2 } = createProxyApp({ options: {}, bossFactory: () => boss as any, prefix: 'api' })
+    const { prefix: p2 } = await createProxyService({ options: {}, bossFactory: () => boss as any, prefix: 'api' })
     expect(p2).toBe('/api')
 
     // trailing slash stripped
-    const { prefix: p3 } = createProxyApp({ options: {}, bossFactory: () => boss as any, prefix: '/api/' })
+    const { prefix: p3 } = await createProxyService({ options: {}, bossFactory: () => boss as any, prefix: '/api/' })
     expect(p3).toBe('/api')
   })
 
   it('home page renders method list and links', async () => {
     const { boss } = createBossMock()
-    const { app } = createProxyApp({ options: {}, bossFactory: () => boss as any })
+    const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any })
 
     const request = new Request('http://local/', { method: 'GET' })
     const response = await app.fetch(request)
@@ -912,7 +912,7 @@ describe('proxy api routes', () => {
 
   it('can deny specific routes via options', async () => {
     const { boss } = createBossMock()
-    const { app } = createProxyApp({
+    const { app } = await createProxyService({
       options: {},
       bossFactory: () => boss as any,
       routes: { deny: ['deleteAllJobs'] }
@@ -939,7 +939,7 @@ describe('proxy api routes', () => {
 
   it('can allow specific routes via options', async () => {
     const { boss } = createBossMock()
-    const { app } = createProxyApp({
+    const { app } = await createProxyService({
       options: {},
       bossFactory: () => boss as any,
       routes: { allow: ['send'] }
@@ -968,7 +968,7 @@ describe('proxy api routes', () => {
 
   it('OpenAPI spec includes tags and operationId', async () => {
     const { boss } = createBossMock()
-    const { app } = createProxyApp({ options: {}, bossFactory: () => boss as any })
+    const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any })
 
     const request = new Request('http://local/openapi.json', { method: 'GET' })
     const response = await app.fetch(request)
@@ -991,7 +991,7 @@ describe('proxy api routes', () => {
     let receivedOptions: Record<string, unknown> = {}
     const { boss } = createBossMock()
 
-    createProxyApp({
+    await createProxyService({
       env: { DATABASE_URL: 'postgres://localhost/test' },
       bossFactory: (opts) => {
         receivedOptions = opts as unknown as Record<string, unknown>
@@ -1027,7 +1027,7 @@ describe('proxy api routes', () => {
   })
 })
 
-describe('node.ts resolveOptions', () => {
+describe('node.ts createProxyServerNode', () => {
   const originalEnv = process.env.DATABASE_URL
 
   afterEach(() => {
@@ -1039,29 +1039,29 @@ describe('node.ts resolveOptions', () => {
   })
 
   it('uses options when provided', async () => {
-    const { createProxyAppNode } = await import('../src/node.js')
-    expect(() => createProxyAppNode({ options: { connectionString: 'postgres://localhost/test' } as any })).not.toThrow()
+    const { createProxyServerNode } = await import('../src/node.js')
+    await expect(createProxyServerNode({ options: { connectionString: 'postgres://localhost/test' } as any })).resolves.not.toThrow()
   })
 
   it('falls back to DATABASE_URL', async () => {
-    const { createProxyAppNode } = await import('../src/node.js')
+    const { createProxyServerNode } = await import('../src/node.js')
     process.env.DATABASE_URL = 'postgres://localhost/test'
-    expect(() => createProxyAppNode()).not.toThrow()
+    await expect(createProxyServerNode()).resolves.not.toThrow()
   })
 
   it('throws when no connection info is available', async () => {
-    const { createProxyAppNode } = await import('../src/node.js')
+    const { createProxyServerNode } = await import('../src/node.js')
     delete process.env.DATABASE_URL
-    expect(() => createProxyAppNode({})).toThrow('Proxy requires PgBoss constructor options or DATABASE_URL.')
+    await expect(createProxyServerNode({})).rejects.toThrow('Proxy requires PgBoss constructor options.')
   })
 })
 
 describe('env.ts configuration', () => {
   it('parses PGBOSS_PROXY_PREFIX from env', async () => {
-    const { createProxyApp } = await import('../src/index.js')
+    const { createProxyService } = await import('../src/index.js')
     const { boss } = createBossMock()
 
-    const { app, prefix } = createProxyApp({
+    const { app, prefix } = await createProxyService({
       options: {},
       bossFactory: () => boss as any,
       env: { PGBOSS_PROXY_PREFIX: '/v1' }
@@ -1071,16 +1071,16 @@ describe('env.ts configuration', () => {
   })
 
   it('parses PGBOSS_PROXY_REQUEST_LOGGER from env', async () => {
-    const { createProxyApp } = await import('../src/index.js')
+    const { createProxyService } = await import('../src/index.js')
     const { boss } = createBossMock()
 
-    const { app: app1 } = createProxyApp({
+    const { app: app1 } = await createProxyService({
       options: {},
       bossFactory: () => boss as any,
       env: { PGBOSS_PROXY_REQUEST_LOGGER: 'false' }
     })
 
-    const { app: app2 } = createProxyApp({
+    const { app: app2 } = await createProxyService({
       options: {},
       bossFactory: () => boss as any,
       env: { PGBOSS_PROXY_REQUEST_LOGGER: 'true' }
@@ -1092,11 +1092,11 @@ describe('env.ts configuration', () => {
   })
 
   it('parses PGBOSS_PROXY_EXPOSE_ERRORS from env', async () => {
-    const { createProxyApp } = await import('../src/index.js')
+    const { createProxyService } = await import('../src/index.js')
     const { boss } = createBossMock()
     ;(boss as any).send = vi.fn(async () => { throw new Error('secret error') })
 
-    const { app } = createProxyApp({
+    const { app } = await createProxyService({
       options: {},
       bossFactory: () => boss as any,
       env: { PGBOSS_PROXY_EXPOSE_ERRORS: 'false' }
@@ -1109,10 +1109,10 @@ describe('env.ts configuration', () => {
   })
 
   it('parses PGBOSS_PROXY_BODY_LIMIT from env', async () => {
-    const { createProxyApp } = await import('../src/index.js')
+    const { createProxyService } = await import('../src/index.js')
     const { boss } = createBossMock()
 
-    const { app } = createProxyApp({
+    const { app } = await createProxyService({
       options: {},
       bossFactory: () => boss as any,
       env: { PGBOSS_PROXY_BODY_LIMIT: '100' }
@@ -1129,10 +1129,10 @@ describe('env.ts configuration', () => {
   })
 
   it('parses PGBOSS_PROXY_ROUTES_ALLOW from env', async () => {
-    const { createProxyApp } = await import('../src/index.js')
+    const { createProxyService } = await import('../src/index.js')
     const { boss } = createBossMock()
 
-    const { app } = createProxyApp({
+    const { app } = await createProxyService({
       options: {},
       bossFactory: () => boss as any,
       env: { PGBOSS_PROXY_ROUTES_ALLOW: 'send,fetch' }
@@ -1150,10 +1150,10 @@ describe('env.ts configuration', () => {
   })
 
   it('parses PGBOSS_PROXY_ROUTES_DENY from env', async () => {
-    const { createProxyApp } = await import('../src/index.js')
+    const { createProxyService } = await import('../src/index.js')
     const { boss } = createBossMock()
 
-    const { app } = createProxyApp({
+    const { app } = await createProxyService({
       options: {},
       bossFactory: () => boss as any,
       env: { PGBOSS_PROXY_ROUTES_DENY: 'deleteQueue,deleteAllJobs' }
@@ -1171,10 +1171,10 @@ describe('env.ts configuration', () => {
   })
 
   it('parses PGBOSS_PROXY_PAGE_ROOT from env', async () => {
-    const { createProxyApp } = await import('../src/index.js')
+    const { createProxyService } = await import('../src/index.js')
     const { boss } = createBossMock()
 
-    const { app } = createProxyApp({
+    const { app } = await createProxyService({
       options: {},
       bossFactory: () => boss as any,
       env: { PGBOSS_PROXY_PAGE_ROOT: 'false' }
@@ -1186,10 +1186,10 @@ describe('env.ts configuration', () => {
   })
 
   it('parses PGBOSS_PROXY_PAGE_DOCS from env', async () => {
-    const { createProxyApp } = await import('../src/index.js')
+    const { createProxyService } = await import('../src/index.js')
     const { boss } = createBossMock()
 
-    const { app } = createProxyApp({
+    const { app } = await createProxyService({
       options: {},
       bossFactory: () => boss as any,
       env: { PGBOSS_PROXY_PAGE_DOCS: 'false' }
@@ -1201,10 +1201,10 @@ describe('env.ts configuration', () => {
   })
 
   it('parses PGBOSS_PROXY_PAGE_OPENAPI from env', async () => {
-    const { createProxyApp } = await import('../src/index.js')
+    const { createProxyService } = await import('../src/index.js')
     const { boss } = createBossMock()
 
-    const { app } = createProxyApp({
+    const { app } = await createProxyService({
       options: {},
       bossFactory: () => boss as any,
       env: { PGBOSS_PROXY_PAGE_OPENAPI: 'false' }
@@ -1216,10 +1216,10 @@ describe('env.ts configuration', () => {
   })
 
   it('code options override env vars', async () => {
-    const { createProxyApp } = await import('../src/index.js')
+    const { createProxyService } = await import('../src/index.js')
     const { boss } = createBossMock()
 
-    const { prefix } = createProxyApp({
+    const { prefix } = await createProxyService({
       options: {},
       bossFactory: () => boss as any,
       prefix: '/custom',
@@ -1230,10 +1230,10 @@ describe('env.ts configuration', () => {
   })
 
   it('code options override env vars', async () => {
-    const { createProxyApp } = await import('../src/index.js')
+    const { createProxyService } = await import('../src/index.js')
     const { boss } = createBossMock()
 
-    const { prefix } = createProxyApp({
+    const { prefix } = await createProxyService({
       options: {},
       bossFactory: () => boss as any,
       prefix: '/custom',
@@ -1246,34 +1246,31 @@ describe('env.ts configuration', () => {
   it('parses PGBOSS_PROXY_LOG_FORMAT from env', async () => {
     const { configureLogging } = await import('../src/env.js')
 
-    // 'text' and undefined should not throw
+    // should not throw
     await expect(configureLogging('text')).resolves.not.toThrow()
-    await expect(configureLogging(undefined)).resolves.not.toThrow()
-    // Note: 'json' configures LogTape which may conflict with existing configuration
-    // In practice this is handled by server.ts which configures before tests run
   })
 
   it('logs warning for invalid routes in PGBOSS_PROXY_ROUTES_ALLOW', async () => {
-    const { createProxyApp } = await import('../src/index.js')
+    const { createProxyService } = await import('../src/index.js')
     const { boss } = createBossMock()
 
     // Should not throw, just log warning via LogTape
-    expect(() => createProxyApp({
+    await expect(createProxyService({
       options: {},
       bossFactory: () => boss as any,
       env: { PGBOSS_PROXY_ROUTES_ALLOW: 'send,invalidRoute,fetch' }
-    })).not.toThrow()
+    })).resolves.not.toThrow()
   })
 
   it('logs warning for invalid routes in PGBOSS_PROXY_ROUTES_DENY', async () => {
-    const { createProxyApp } = await import('../src/index.js')
+    const { createProxyService } = await import('../src/index.js')
     const { boss } = createBossMock()
 
     // Should not throw, just log warning via LogTape
-    expect(() => createProxyApp({
+    await expect(createProxyService({
       options: {},
       bossFactory: () => boss as any,
       env: { PGBOSS_PROXY_ROUTES_DENY: 'deleteQueue,badRoute' }
-    })).not.toThrow()
+    })).resolves.not.toThrow()
   })
 })

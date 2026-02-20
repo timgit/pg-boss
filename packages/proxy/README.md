@@ -11,7 +11,7 @@ All background processing is disabled by default (the opposite of how pg-boss no
 ```ts
 import { createProxyServerNode } from '@pg-boss/proxy/node'
 
-const proxy = createProxyServerNode()
+const proxy = await createProxyServerNode()
 await proxy.start()
 // Reads DATABASE_URL from process.env, listens on PORT (default 3000)
 ```
@@ -75,7 +75,7 @@ Use this when you want a runtime-neutral entry point:
 ```ts
 import { createProxyService } from '@pg-boss/proxy'
 
-const { app, start, stop } = createProxyService({
+const { app, start, stop } = await createProxyService({
   options: {
     connectionString: 'postgres://user:pass@host/database'
   }
@@ -86,23 +86,6 @@ await start()
 await stop()
 ```
 
-If you only need the Hono app and will manage lifecycle yourself:
-
-```ts
-import { createProxyApp } from '@pg-boss/proxy'
-import { serve } from '@hono/node-server'
-
-const { app, boss } = createProxyApp({
-  options: {
-    connectionString: 'postgres://user:pass@host/database'
-  }
-})
-
-await boss.start()
-// Use with any Hono-compatible server
-serve({ fetch: app.fetch, port: 3000 })
-```
-
 ### Node Convenience Entry Point
 
 If you want a ready-to-listen Node server with automatic shutdown signal wiring:
@@ -110,7 +93,7 @@ If you want a ready-to-listen Node server with automatic shutdown signal wiring:
 ```ts
 import { createProxyServerNode } from '@pg-boss/proxy/node'
 
-const proxy = createProxyServerNode()
+const proxy = await createProxyServerNode()
 await proxy.start()
 ```
 
@@ -118,14 +101,14 @@ await proxy.start()
 
 `createProxyServerNode` automatically attaches `SIGINT` and `SIGTERM` handlers. Set `attachSignals: false` to opt out and manage shutdown yourself.
 
-For `createProxyService` and `createProxyApp` (runtime-neutral), or for non-Node runtimes, wire shutdown manually using `attachShutdownListeners` and the appropriate adapter:
+For `createProxyService` (runtime-neutral), or for non-Node runtimes, wire shutdown manually using `attachShutdownListeners` and the appropriate adapter:
 
 ### Node
 
 ```ts
 import { attachShutdownListeners, createProxyService, nodeShutdownAdapter } from '@pg-boss/proxy'
 
-const { app, start, stop } = createProxyService({
+const { app, start, stop } = await createProxyService({
   options: { connectionString: process.env.DATABASE_URL }
 })
 
@@ -139,7 +122,7 @@ attachShutdownListeners(['SIGINT', 'SIGTERM'], nodeShutdownAdapter, stop)
 ```ts
 import { attachShutdownListeners, createDenoShutdownAdapter, createProxyService } from '@pg-boss/proxy'
 
-const { start, stop } = createProxyService({
+const { start, stop } = await createProxyService({
   options: {
     connectionString: Deno.env.get('DATABASE_URL')
   }
@@ -155,7 +138,7 @@ attachShutdownListeners(['SIGINT', 'SIGTERM'], createDenoShutdownAdapter(), stop
 ```ts
 import { attachShutdownListeners, createProxyService, bunShutdownAdapter } from '@pg-boss/proxy'
 
-const { start, stop } = createProxyService({
+const { start, stop } = await createProxyService({
   options: { connectionString: process.env.DATABASE_URL }
 })
 
@@ -173,9 +156,9 @@ You can configure the proxy using either **code options** or **environment varia
 The proxy accepts the following options:
 
 ```ts
-import { createProxyApp } from '@pg-boss/proxy'
+import { createProxyService } from '@pg-boss/proxy'
 
-const { app, boss } = createProxyApp({
+const { app, boss } = await createProxyService({
   options: { connectionString: process.env.DATABASE_URL },
   prefix: '/api',
   requestLogger: true,
@@ -207,6 +190,8 @@ const { app, boss } = createProxyApp({
 |--------|------|---------|-------------|
 | `options` | `ConstructorOptions` | - | PgBoss constructor options |
 | `prefix` | `string` | `/api` | URL prefix for all API routes |
+| `port` | `number` | `3000` | Listening port |
+| `hostname` | `string` | `localhost` | Listening hostname |
 | `env` | `Record<string, string>` | `process.env` | Environment variables |
 | `middleware` | `MiddlewareHandler \| MiddlewareHandler[]` | - | Hono middleware to apply to API routes |
 | `requestLogger` | `boolean` | `true` | Enable/disable default request logging middleware |
@@ -259,7 +244,7 @@ Alternatively, configure everything via environment variables:
 You can pass any PgBoss constructor options via the `options` object:
 
 ```ts
-const { app, boss } = createProxyApp({
+const { app, boss } = await createProxyService({
   options: {
     connectionString: 'postgres://user:pass@host/database',
     schema: 'custom',
@@ -309,76 +294,6 @@ PGBOSS_PROXY_CORS_MAX_AGE=3600
 
 When `PGBOSS_PROXY_CORS_ORIGIN` is set, CORS middleware is applied to all routes under the prefix. The root page and docs remain unaffected.
 
-### Request Logging
-
-The proxy uses [LogTape](https://logtape.org/) for request and application logging.
-
-`packages/proxy/src/server.ts` shows a complete example using a console sink:
-
-```ts
-import { createProxyServerNode } from '@pg-boss/proxy/node'
-import { configure, getConsoleSink, getLogger } from '@logtape/logtape'
-
-await configure({
-  sinks: { console: getConsoleSink() },
-  loggers: [
-    { category: ['pg-boss', 'proxy'], lowestLevel: 'info', sinks: ['console'] },
-    { category: ['logtape', 'meta'], lowestLevel: 'error', sinks: ['console'] }
-  ]
-})
-
-const logger = getLogger(['pg-boss', 'proxy'])
-const proxy = createProxyServerNode()
-
-const info = await proxy.start()
-logger.info(`pg-boss proxy listening on http://${proxy.hostname}:${info.port}`)
-```
-
-#### JSON Logging
-
-For structured logging (e.g., when using log aggregation tools), use the JSON Lines formatter:
-
-```ts
-import { createProxyServerNode } from '@pg-boss/proxy/node'
-import { configure, getConsoleSink, getLogger, jsonLinesFormatter } from '@logtape/logtape'
-
-await configure({
-  sinks: {
-    console: getConsoleSink({ formatter: jsonLinesFormatter() })
-  },
-  loggers: [
-    { category: ['pg-boss', 'proxy'], lowestLevel: 'info', sinks: ['console'] },
-    { category: ['logtape', 'meta'], lowestLevel: 'error', sinks: ['console'] }
-  ]
-})
-
-const logger = getLogger(['pg-boss', 'proxy'])
-const proxy = createProxyServerNode()
-
-await proxy.start()
-logger.info('server started', { port: 3000 })
-```
-
-Output:
-```json
-{"timestamp":"2025-01-15T10:30:00.000Z","level":"info","message":"server started","properties":{"port":3000},"context":{}}
-```
-
-You can also log to a file with JSON Lines format:
-
-```ts
-import { getFileSink } from '@logtape/file'
-
-await configure({
-  sinks: {
-    file: getFileSink('logs/proxy.jsonl', { formatter: jsonLinesFormatter() })
-  },
-  loggers: [
-    { category: ['pg-boss', 'proxy'], lowestLevel: 'info', sinks: ['file'] }
-  ]
-})
-```
-
 ### Custom Middleware
 
 You can add custom Hono middleware to the API routes:
@@ -386,7 +301,7 @@ You can add custom Hono middleware to the API routes:
 ```ts
 import { secureHeaders } from 'hono/secure-headers'
 
-const { app, boss } = createProxyApp({
+const { app, boss } = await createProxyService({
   options: { connectionString: 'postgres://user:pass@host/database' },
   middleware: [
     secureHeaders({
@@ -404,7 +319,7 @@ For advanced customization, you can provide a custom `bossFactory` function to w
 ```ts
 import { PgBoss } from 'pg-boss'
 
-const { app, boss } = createProxyApp({
+const { app, boss } = await createProxyService({
   bossFactory: (options) => {
     const instance = new PgBoss({
       ...options,
@@ -430,7 +345,7 @@ await boss.start()
 You can allowlist or denylist pg-boss methods to control which API routes are exposed:
 
 ```ts
-const { app, boss } = createProxyApp({
+const { app, boss } = await createProxyService({
   options: { connectionString: 'postgres://user:pass@host/database' },
   routes: {
     // Only expose safe operations (default: all methods are exposed)
@@ -442,7 +357,7 @@ const { app, boss } = createProxyApp({
 Or deny specific methods:
 
 ```ts
-const { app, boss } = createProxyApp({
+const { app, boss } = await createProxyService({
   options: { connectionString: 'postgres://user:pass@host/database' },
   routes: {
     // Exclude destructive operations
@@ -456,7 +371,7 @@ const { app, boss } = createProxyApp({
 You can disable the root page, docs, or OpenAPI spec:
 
 ```ts
-const { app, boss } = createProxyApp({
+const { app, boss } = await createProxyService({
   options: { connectionString: 'postgres://user:pass@host/database' },
   pages: {
     root: false,      // Disable the home page
