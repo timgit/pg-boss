@@ -10,7 +10,7 @@ const proxy = createProxyServerNode()
 
 try {
   const info = await proxy.start()
-  logger.info(`pg-boss proxy listening on http://${proxy.hostname}:${info.port}`)
+  logger.info(`listening on http://${proxy.hostname}:${info.port}`)
 } catch (err) {
   logger.error(err as Error)
   process.exit(1)

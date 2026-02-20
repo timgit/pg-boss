@@ -221,17 +221,17 @@ export const configureLogging = async (logFormat: LogFormat | undefined): Promis
 }
 
 export const setupBasicLogging = (): void => {
-  try {
-    getLogger(['pg-boss', 'proxy'])
-  } catch {
-    configure({
-      sinks: { console: getConsoleSink() },
-      loggers: [
-        { category: ['pg-boss', 'proxy'], lowestLevel: 'info', sinks: ['console'] },
-        { category: ['logtape', 'meta'], lowestLevel: 'error', sinks: ['console'] }
-      ]
-    }).catch(() => {})
+  const logger = getLogger(['pg-boss', 'proxy']) as any
+  if (logger.sinks?.length > 0 || logger.parentSinks !== 'inherit' || (logger.parent?.sinks?.length > 0)) {
+    return
   }
+  configure({
+    sinks: { console: getConsoleSink() },
+    loggers: [
+      { category: ['pg-boss', 'proxy'], lowestLevel: 'info', sinks: ['console'] },
+      { category: ['logtape', 'meta'], lowestLevel: 'error', sinks: ['console'] }
+    ]
+  }).catch(() => {})
 }
 
 export const configureAuth = (app: OpenAPIHono, auth: AuthConfig | undefined, prefix: string): void => {
