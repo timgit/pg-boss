@@ -58,7 +58,7 @@ async function typedInit (schema: string) {
     queue1: { input: { arg1: string }, output: { completed: { result: string } } }
     queue2: { input: { arg2: number }, output: { completed: { result: number } } }
     queue3: { input: { arg3: object }, output: { completed: { result: object } } }
-    queue4: { input: undefined, output: { completed: { result: object } } }
+    queue4: { input: undefined }
   }>({ ...config, schema, supervise: false, schedule: false })
 
   boss.on('error', console.error)
@@ -93,6 +93,16 @@ async function typedInit (schema: string) {
       break
     case 'failed':
       console.log(job.output)
+      break
+  }
+
+  const job4 = (await boss.findJobs('queue4'))[0]!
+  switch (job4.state) {
+    case 'completed':
+      console.log(job4.output)
+      break
+    case 'failed':
+      console.log(job4.output)
       break
   }
 

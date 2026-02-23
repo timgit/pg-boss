@@ -87,7 +87,7 @@ type InternalJobOutput = {
 }
 export type JobsConfig = Record<string, {
   input: object | null | undefined;
-  output: {
+  output?: {
     [S in JobStates[keyof JobStates]]?: unknown;
   }
 }>
@@ -101,7 +101,7 @@ export type DefaultJobsConfig = Record<string, {
 // Helper types which should be used in the library.
 export type JobNames<C extends JobsConfig> = keyof C & string
 export type JobInput<C extends JobsConfig, N extends JobNames<C>> = C[N]['input']
-export type JobOutput<C extends JobsConfig, N extends JobNames<C>, S extends keyof JobStates> = InternalJobOutput[S] | (C[N]['output'][S] extends undefined ? void | undefined : C[N]['output'][S])
+export type JobOutput<C extends JobsConfig, N extends JobNames<C>, S extends keyof JobStates> = InternalJobOutput[S] | (C[N]['output'] extends undefined ? void | undefined : (NonNullable<C[N]['output']>[S] extends undefined ? void | undefined : NonNullable<C[N]['output']>[S]))
 export type EventConfig<C extends JobsConfig> = Record<string, JobNames<C>>
 export type EventNames<C extends JobsConfig, EC extends EventConfig<C>> = keyof EC & string
 
