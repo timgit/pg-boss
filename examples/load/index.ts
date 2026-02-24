@@ -110,8 +110,8 @@ async function typedInit (schema: string) {
     console.log(`${schema}: sending a job to each one: ${new Date()}`)
 
     await Promise.all(queues.map(async queue => {
-      // await boss.send(queue) <-- fails since input-type does not allow `undefined`.
-      // await boss.schedule(queue, '* * * * *') <-- fails since input-type does not allow `undefined`.
+      // await boss.send(queue) // <-- fails since input-type does not allow `undefined`.
+      // await boss.schedule(queue, '* * * * *') // <-- fails since input-type does not allow `undefined`.
       await boss.send('queue4')
       await boss.fetch(queue)
     }))
