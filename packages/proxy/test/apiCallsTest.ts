@@ -1061,7 +1061,7 @@ describe('env.ts configuration', () => {
     const { createProxyService } = await import('../src/index.js')
     const { boss } = createBossMock()
 
-    const { app, prefix } = await createProxyService({
+    const { prefix } = await createProxyService({
       options: {},
       bossFactory: () => boss as any,
       env: { PGBOSS_PROXY_PREFIX: '/v1' }

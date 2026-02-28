@@ -30,7 +30,7 @@ export function createDenoShutdownAdapter (): ShutdownAdapter<DenoSignal> {
   }
 }
 
-export function attachShutdownListeners <Signal>(
+export function attachShutdownListeners <Signal> (
   signals: Signal[],
   adapter: ShutdownAdapter<Signal>,
   handler: ShutdownHandler
