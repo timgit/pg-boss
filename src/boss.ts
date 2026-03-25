@@ -73,6 +73,9 @@ class Boss extends EventEmitter implements types.EventsMixin {
       this.#stopping = true
       if (this.#superviseInterval) clearInterval(this.#superviseInterval)
       this.#stopped = true
+      while (this.#maintaining) {
+        await delay(10)
+      }
     }
   }
 
