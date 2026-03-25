@@ -311,6 +311,10 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#manager.getQueueStats(name)
   }
 
+  isMaintaining (): boolean {
+    return this.#boss.maintaining
+  }
+
   supervise (name?: string): Promise<void> {
     return this.#boss.supervise(name)
   }
