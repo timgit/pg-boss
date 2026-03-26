@@ -1,5 +1,6 @@
 import EventEmitter from 'node:events'
 import * as plans from './plans.ts'
+import { delay } from './tools.ts'
 import * as types from './types.ts'
 
 const events = {
@@ -28,6 +29,10 @@ class Bam extends EventEmitter implements types.EventsMixin {
     this.#working = false
   }
 
+  get working (): boolean {
+    return this.#working
+  }
+
   async start () {
     if (!this.#stopped) return
     this.#stopped = false
@@ -46,6 +51,9 @@ class Bam extends EventEmitter implements types.EventsMixin {
       clearInterval(this.#pollInterval)
       this.#pollInterval = undefined
     }
+    while (this.#working) {
+      await delay(10)
+    }
   }
 
   async #onPoll () {
@@ -56,6 +64,10 @@ class Bam extends EventEmitter implements types.EventsMixin {
     try {
       if (this.#config.__test__throw_bam) {
         throw new Error(this.#config.__test__throw_bam)
+      }
+
+      if (this.#config.__test__delay_bam_ms) {
+        await delay(this.#config.__test__delay_bam_ms)
       }
 
       const sql = plans.trySetBamTime(

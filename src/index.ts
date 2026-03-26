@@ -315,6 +315,14 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#boss.maintaining
   }
 
+  isBamWorking (): boolean {
+    return this.#bam.working
+  }
+
+  isCheckingSkew (): boolean {
+    return this.#timekeeper.checkingSkew
+  }
+
   supervise (name?: string): Promise<void> {
     return this.#boss.supervise(name)
   }
