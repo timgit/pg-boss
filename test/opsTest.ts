@@ -85,6 +85,45 @@ describe('ops', function () {
     expect(ctx.boss.isMaintaining()).toBe(false)
   })
 
+  it('should stop bam work before stop resolves', async function () {
+    ctx.boss = await helper.start({
+      ...ctx.bossConfig,
+      noDefault: true,
+      bamIntervalSeconds: 1,
+      __test__bypass_bam_interval_check: true,
+      __test__delay_bam_ms: 2000
+    })
+
+    // Wait for bam to start working
+    while (!ctx.boss.isBamWorking()) {
+      await delay(100)
+    }
+
+    // Stop while bam is in progress
+    await ctx.boss.stop()
+
+    expect(ctx.boss.isBamWorking()).toBe(false)
+  })
+
+  it('should stop clock skew check before stop resolves', async function () {
+    ctx.boss = await helper.start({
+      ...ctx.bossConfig,
+      schedule: true,
+      clockMonitorIntervalSeconds: 1,
+      __test__delay_clock_skew_ms: 2000
+    })
+
+    // Wait for clock skew check to start
+    while (!ctx.boss.isCheckingSkew()) {
+      await delay(100)
+    }
+
+    // Stop while clock skew check is in progress
+    await ctx.boss.stop()
+
+    expect(ctx.boss.isCheckingSkew()).toBe(false)
+  })
+
   it('should not leave open handles after starting and stopping', async function () {
     const resourcesBefore = process.getActiveResourcesInfo()
 
