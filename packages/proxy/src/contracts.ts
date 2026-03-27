@@ -79,6 +79,8 @@ export const fetchOptionsSchema = z.object({
   ignoreStartAfter: z.boolean().optional(),
   groupConcurrency: z.union([z.number(), groupConcurrencyConfigSchema]).optional(),
   ignoreGroups: z.array(z.string()).nullable().optional(),
+  minPriority: z.number().int().optional(),
+  maxPriority: z.number().int().optional(),
 }) satisfies z.ZodType<types.HttpFetchOptions>
 
 export const findJobsOptionsSchema = z.object({
