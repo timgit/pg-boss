@@ -327,7 +327,9 @@ class Manager extends EventEmitter implements types.EventsMixin {
       localGroupConcurrency,
       groupConcurrency,
       orderByCreatedOn = true,
-      heartbeatRefreshSeconds
+      heartbeatRefreshSeconds,
+      minPriority,
+      maxPriority,
     } = options
 
     if (localGroupConcurrency != null) {
@@ -341,7 +343,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
         const ignoreGroups = localGroupConcurrency != null
           ? this.#getGroupsAtLocalCapacity(name)
           : undefined
-        return this.fetch<ReqData>(name, { batchSize, includeMetadata, priority, orderByCreatedOn, groupConcurrency, ignoreGroups })
+        return this.fetch<ReqData>(name, { batchSize, includeMetadata, priority, orderByCreatedOn, groupConcurrency, ignoreGroups, minPriority, maxPriority })
       }
 
       const onFetch = async (jobs: types.Job<ReqData>[]) => {
