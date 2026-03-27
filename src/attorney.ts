@@ -101,6 +101,18 @@ function validateGroupConcurrencyValue (value: any, optionName: string) {
   }
 }
 
+function validatePriorityRangeConfig (config: any) {
+  if (config.minPriority != null) {
+    assert(Number.isInteger(config.minPriority), 'minPriority must be an integer')
+  }
+  if (config.maxPriority != null) {
+    assert(Number.isInteger(config.maxPriority), 'maxPriority must be an integer')
+  }
+  if (config.minPriority != null && config.maxPriority != null) {
+    assert(config.minPriority <= config.maxPriority, 'minPriority must be <= maxPriority')
+  }
+}
+
 function validateGroupConcurrencyConfig (config: any) {
   const hasGlobal = config.groupConcurrency != null
   const hasLocal = config.localGroupConcurrency != null
@@ -168,9 +180,7 @@ function checkWorkArgs (name: string, args: any[]): {
   assert(!('includeMetadata' in options) || typeof options.includeMetadata === 'boolean', 'includeMetadata must be a boolean')
   assert(!('priority' in options) || typeof options.priority === 'boolean', 'priority must be a boolean')
   assert(!('localConcurrency' in options) || (Number.isInteger(options.localConcurrency) && options.localConcurrency >= 1), 'localConcurrency must be an integer >= 1')
-  assert(!('minPriority' in options) || Number.isInteger(options.minPriority), 'minPriority must be an integer')
-  assert(!('maxPriority' in options) || Number.isInteger(options.maxPriority), 'maxPriority must be an integer')
-  assert(!('minPriority' in options) || !('maxPriority' in options) || options.minPriority <= options.maxPriority, 'minPriority must be <= maxPriority')
+  validatePriorityRangeConfig(options)
   validateGroupConcurrencyConfig(options)
   validateHeartbeatRefreshConfig(options)
 
@@ -184,9 +194,7 @@ function checkFetchArgs (name: string, options: any) {
   assert(!('includeMetadata' in options) || typeof options.includeMetadata === 'boolean', 'includeMetadata must be a boolean')
   assert(!('priority' in options) || typeof options.priority === 'boolean', 'priority must be a boolean')
   assert(!('ignoreStartAfter' in options) || typeof options.ignoreStartAfter === 'boolean', 'ignoreStartAfter must be a boolean')
-  assert(!('minPriority' in options) || Number.isInteger(options.minPriority), 'minPriority must be an integer')
-  assert(!('maxPriority' in options) || Number.isInteger(options.maxPriority), 'maxPriority must be an integer')
-  assert(!('minPriority' in options) || !('maxPriority' in options) || options.minPriority <= options.maxPriority, 'minPriority must be <= maxPriority')
+  validatePriorityRangeConfig(options)
 }
 
 function getConfig (value: string | types.ConstructorOptions): types.ResolvedConstructorOptions {
