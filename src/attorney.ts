@@ -102,13 +102,13 @@ function validateGroupConcurrencyValue (value: any, optionName: string) {
 }
 
 function validatePriorityRangeConfig (config: any) {
-  if (config.minPriority != null) {
+  if (config.minPriority !== undefined) {
     assert(Number.isInteger(config.minPriority), 'minPriority must be an integer')
   }
-  if (config.maxPriority != null) {
+  if (config.maxPriority !== undefined) {
     assert(Number.isInteger(config.maxPriority), 'maxPriority must be an integer')
   }
-  if (config.minPriority != null && config.maxPriority != null) {
+  if (config.minPriority !== undefined && config.maxPriority !== undefined) {
     assert(config.minPriority <= config.maxPriority, 'minPriority must be <= maxPriority')
   }
 }
