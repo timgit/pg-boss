@@ -795,6 +795,8 @@ interface FetchJobOptions {
   ignoreSingletons: string[] | null
   ignoreGroups?: string[] | null
   groupConcurrency?: number | GroupConcurrencyConfig
+  minPriority?: number
+  maxPriority?: number
 }
 
 interface FetchQueryParams {
@@ -803,6 +805,8 @@ interface FetchQueryParams {
   ignoreGroupsParam: string
   defaultGroupLimitParam: string
   tiersParam: string
+  minPriorityParam: string
+  maxPriorityParam: string
 }
 
 function buildFetchParams (options: FetchJobOptions): FetchQueryParams {
@@ -846,11 +850,26 @@ function buildFetchParams (options: FetchJobOptions): FetchQueryParams {
     }
   }
 
-  return { values, ignoreSingletonsParam, ignoreGroupsParam, defaultGroupLimitParam, tiersParam }
+  let minPriorityParam = ''
+  let maxPriorityParam = ''
+
+  if (options.minPriority !== undefined) {
+    paramIndex++
+    minPriorityParam = `$${paramIndex}::int`
+    values.push(options.minPriority)
+  }
+
+  if (options.maxPriority !== undefined) {
+    paramIndex++
+    maxPriorityParam = `$${paramIndex}::int`
+    values.push(options.maxPriority)
+  }
+
+  return { values, ignoreSingletonsParam, ignoreGroupsParam, defaultGroupLimitParam, tiersParam, minPriorityParam, maxPriorityParam }
 }
 
 function fetchNextJob (options: FetchJobOptions): SqlQuery {
-  const { schema, table, name, policy, limit, includeMetadata, priority = true, orderByCreatedOn = true, ignoreStartAfter = false, groupConcurrency } = options
+  const { schema, table, name, policy, limit, includeMetadata, priority = true, orderByCreatedOn = true, ignoreStartAfter = false, groupConcurrency, minPriority, maxPriority } = options
 
   const singletonFetch = limit > 1 && (policy === QUEUE_POLICIES.singleton || policy === QUEUE_POLICIES.stately)
   const hasIgnoreSingletons = options.ignoreSingletons != null && options.ignoreSingletons.length > 0
@@ -868,7 +887,9 @@ function fetchNextJob (options: FetchJobOptions): SqlQuery {
     `state < '${JOB_STATES.active}'`,
     !ignoreStartAfter ? 'start_after < now()' : '',
     hasIgnoreSingletons ? `singleton_key <> ALL(${params.ignoreSingletonsParam})` : '',
-    hasIgnoreGroups ? `(group_id IS NULL OR group_id <> ALL(${params.ignoreGroupsParam}))` : ''
+    hasIgnoreGroups ? `(group_id IS NULL OR group_id <> ALL(${params.ignoreGroupsParam}))` : '',
+    minPriority !== undefined ? `priority >= ${params.minPriorityParam}` : '',
+    maxPriority !== undefined ? `priority <= ${params.maxPriorityParam}` : ''
   ].filter(Boolean).join(' AND ')
 
   const selectCols = [

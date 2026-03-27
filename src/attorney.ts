@@ -168,6 +168,9 @@ function checkWorkArgs (name: string, args: any[]): {
   assert(!('includeMetadata' in options) || typeof options.includeMetadata === 'boolean', 'includeMetadata must be a boolean')
   assert(!('priority' in options) || typeof options.priority === 'boolean', 'priority must be a boolean')
   assert(!('localConcurrency' in options) || (Number.isInteger(options.localConcurrency) && options.localConcurrency >= 1), 'localConcurrency must be an integer >= 1')
+  assert(!('minPriority' in options) || Number.isInteger(options.minPriority), 'minPriority must be an integer')
+  assert(!('maxPriority' in options) || Number.isInteger(options.maxPriority), 'maxPriority must be an integer')
+  assert(!('minPriority' in options) || !('maxPriority' in options) || options.minPriority <= options.maxPriority, 'minPriority must be <= maxPriority')
   validateGroupConcurrencyConfig(options)
   validateHeartbeatRefreshConfig(options)
 
@@ -181,6 +184,9 @@ function checkFetchArgs (name: string, options: any) {
   assert(!('includeMetadata' in options) || typeof options.includeMetadata === 'boolean', 'includeMetadata must be a boolean')
   assert(!('priority' in options) || typeof options.priority === 'boolean', 'priority must be a boolean')
   assert(!('ignoreStartAfter' in options) || typeof options.ignoreStartAfter === 'boolean', 'ignoreStartAfter must be a boolean')
+  assert(!('minPriority' in options) || Number.isInteger(options.minPriority), 'minPriority must be an integer')
+  assert(!('maxPriority' in options) || Number.isInteger(options.maxPriority), 'maxPriority must be an integer')
+  assert(!('minPriority' in options) || !('maxPriority' in options) || options.minPriority <= options.maxPriority, 'minPriority must be <= maxPriority')
 }
 
 function getConfig (value: string | types.ConstructorOptions): types.ResolvedConstructorOptions {

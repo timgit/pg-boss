@@ -309,6 +309,20 @@ export interface JobFetchOptions {
    * @default false
    */
   ignoreStartAfter?: boolean;
+  /**
+   * Only fetch jobs with a priority greater than or equal to this value.
+   * Useful for reserving worker capacity exclusively for higher-priority jobs.
+   * Must be an integer. If both `minPriority` and `maxPriority` are set,
+   * `minPriority` must be less than or equal to `maxPriority`.
+   */
+  minPriority?: number;
+  /**
+   * Only fetch jobs with a priority less than or equal to this value.
+   * Useful for workers dedicated to lower-priority background work.
+   * Must be an integer. If both `minPriority` and `maxPriority` are set,
+   * `minPriority` must be less than or equal to `maxPriority`.
+   */
+  maxPriority?: number;
 }
 
 export interface WorkConcurrencyOptions {

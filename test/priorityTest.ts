@@ -46,4 +46,60 @@ describe('priority', function () {
     expect(job2.id).toBe(medium)
     expect(job3.id).toBe(high)
   })
+
+  it('minPriority skips jobs below threshold', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    await ctx.boss.send(ctx.schema, null, { priority: -10 })
+    const normal = await ctx.boss.send(ctx.schema, null, { priority: 0 })
+
+    const [job] = await ctx.boss.fetch(ctx.schema, { minPriority: 0 })
+
+    expect(job.id).toBe(normal)
+  })
+
+  it('minPriority returns nothing when all jobs are below threshold', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    await ctx.boss.send(ctx.schema, null, { priority: -10 })
+    await ctx.boss.send(ctx.schema, null, { priority: -5 })
+
+    const jobs = await ctx.boss.fetch(ctx.schema, { minPriority: 0 })
+
+    expect(jobs.length).toBe(0)
+  })
+
+  it('maxPriority skips jobs above threshold', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    const low = await ctx.boss.send(ctx.schema, null, { priority: -10 })
+    await ctx.boss.send(ctx.schema, null, { priority: 5 })
+
+    const [job] = await ctx.boss.fetch(ctx.schema, { maxPriority: 0 })
+
+    expect(job.id).toBe(low)
+  })
+
+  it('maxPriority returns nothing when all jobs are above threshold', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    await ctx.boss.send(ctx.schema, null, { priority: 5 })
+    await ctx.boss.send(ctx.schema, null, { priority: 10 })
+
+    const jobs = await ctx.boss.fetch(ctx.schema, { maxPriority: 0 })
+
+    expect(jobs.length).toBe(0)
+  })
+
+  it('minPriority and maxPriority together fetch only jobs in range', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    await ctx.boss.send(ctx.schema, null, { priority: -10 })
+    const inRange = await ctx.boss.send(ctx.schema, null, { priority: 5 })
+    await ctx.boss.send(ctx.schema, null, { priority: 20 })
+
+    const [job] = await ctx.boss.fetch(ctx.schema, { minPriority: 1, maxPriority: 10 })
+
+    expect(job.id).toBe(inRange)
+  })
 })
