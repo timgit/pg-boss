@@ -227,6 +227,14 @@ Returns an array of jobs from a queue
 
     If `true`, jobs with a `startAfter` timestamp in the future will be fetched. Useful for fetching jobs immediately without waiting for a retry delay.
 
+  * `minPriority`, int
+
+    If set, only fetch jobs with a priority greater than or equal to this value. If used together with `maxPriority`, `minPriority` must be less than or equal to `maxPriority`.
+
+  * `maxPriority`, int
+
+    If set, only fetch jobs with a priority less than or equal to this value. If used together with `minPriority`, `minPriority` must be less than or equal to `maxPriority`.
+
     ```js
     interface JobWithMetadata<T = object> {
       id: string;

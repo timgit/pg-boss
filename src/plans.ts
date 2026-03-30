@@ -795,6 +795,8 @@ interface FetchJobOptions {
   ignoreSingletons: string[] | null
   ignoreGroups?: string[] | null
   groupConcurrency?: number | GroupConcurrencyConfig
+  minPriority?: number
+  maxPriority?: number
 }
 
 interface FetchQueryParams {
@@ -803,13 +805,17 @@ interface FetchQueryParams {
   ignoreGroupsParam: string
   defaultGroupLimitParam: string
   tiersParam: string
+  minPriorityParam: string
+  maxPriorityParam: string
 }
 
 function buildFetchParams (options: FetchJobOptions): FetchQueryParams {
-  const { ignoreSingletons, ignoreGroups, groupConcurrency } = options
+  const { ignoreSingletons, ignoreGroups, groupConcurrency, minPriority, maxPriority } = options
   const hasIgnoreSingletons = ignoreSingletons != null && ignoreSingletons.length > 0
   const hasIgnoreGroups = ignoreGroups != null && ignoreGroups.length > 0
   const hasGroupConcurrency = groupConcurrency != null
+  const hasMinPriority = minPriority != null
+  const hasMaxPriority = maxPriority != null
   const groupConcurrencyConfig = hasGroupConcurrency
     ? (typeof groupConcurrency === 'number' ? { default: groupConcurrency } : groupConcurrency)
     : null
@@ -821,6 +827,8 @@ function buildFetchParams (options: FetchJobOptions): FetchQueryParams {
   let ignoreGroupsParam = ''
   let defaultGroupLimitParam = ''
   let tiersParam = ''
+  let minPriorityParam = ''
+  let maxPriorityParam = ''
 
   if (hasIgnoreSingletons) {
     paramIndex++
@@ -846,16 +854,30 @@ function buildFetchParams (options: FetchJobOptions): FetchQueryParams {
     }
   }
 
-  return { values, ignoreSingletonsParam, ignoreGroupsParam, defaultGroupLimitParam, tiersParam }
+  if (hasMinPriority) {
+    paramIndex++
+    minPriorityParam = `$${paramIndex}::int`
+    values.push(minPriority)
+  }
+
+  if (hasMaxPriority) {
+    paramIndex++
+    maxPriorityParam = `$${paramIndex}::int`
+    values.push(maxPriority)
+  }
+
+  return { values, ignoreSingletonsParam, ignoreGroupsParam, defaultGroupLimitParam, tiersParam, minPriorityParam, maxPriorityParam }
 }
 
 function fetchNextJob (options: FetchJobOptions): SqlQuery {
-  const { schema, table, name, policy, limit, includeMetadata, priority = true, orderByCreatedOn = true, ignoreStartAfter = false, groupConcurrency } = options
+  const { schema, table, name, policy, limit, includeMetadata, priority = true, orderByCreatedOn = true, ignoreStartAfter = false, groupConcurrency, minPriority, maxPriority } = options
 
   const singletonFetch = limit > 1 && (policy === QUEUE_POLICIES.singleton || policy === QUEUE_POLICIES.stately)
   const hasIgnoreSingletons = options.ignoreSingletons != null && options.ignoreSingletons.length > 0
   const hasIgnoreGroups = options.ignoreGroups != null && options.ignoreGroups.length > 0
   const hasGroupConcurrency = groupConcurrency != null
+  const hasMinPriority = minPriority != null
+  const hasMaxPriority = maxPriority != null
   const hasTiers = hasGroupConcurrency &&
     typeof groupConcurrency === 'object' &&
     groupConcurrency.tiers &&
@@ -868,7 +890,9 @@ function fetchNextJob (options: FetchJobOptions): SqlQuery {
     `state < '${JOB_STATES.active}'`,
     !ignoreStartAfter ? 'start_after < now()' : '',
     hasIgnoreSingletons ? `singleton_key <> ALL(${params.ignoreSingletonsParam})` : '',
-    hasIgnoreGroups ? `(group_id IS NULL OR group_id <> ALL(${params.ignoreGroupsParam}))` : ''
+    hasIgnoreGroups ? `(group_id IS NULL OR group_id <> ALL(${params.ignoreGroupsParam}))` : '',
+    hasMinPriority ? `priority >= ${params.minPriorityParam}` : '',
+    hasMaxPriority ? `priority <= ${params.maxPriorityParam}` : ''
   ].filter(Boolean).join(' AND ')
 
   const selectCols = [

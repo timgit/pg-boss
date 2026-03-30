@@ -79,7 +79,12 @@ export const fetchOptionsSchema = z.object({
   ignoreStartAfter: z.boolean().optional(),
   groupConcurrency: z.union([z.number(), groupConcurrencyConfigSchema]).optional(),
   ignoreGroups: z.array(z.string()).nullable().optional(),
-}) satisfies z.ZodType<types.HttpFetchOptions>
+  minPriority: z.number().int().optional(),
+  maxPriority: z.number().int().optional(),
+}).refine(
+  data => data.minPriority == null || data.maxPriority == null || data.minPriority <= data.maxPriority,
+  { message: 'minPriority must be <= maxPriority' }
+) satisfies z.ZodType<types.HttpFetchOptions>
 
 export const findJobsOptionsSchema = z.object({
   id: z.string().optional(),
