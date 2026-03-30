@@ -4,13 +4,14 @@
     "@tsconfig/node-ts/tsconfig.json"
   ],
   "compilerOptions": {
-    "types": ["vitest/globals"],
+    "types": ["node", "vitest/globals"],
     "outDir": "dist",
     "declaration": true,
     "declarationMap": true,
     "stripInternal": true,
     "resolveJsonModule": true,
-    "noEmit": true
+    "noEmit": true,
+    "rootDir": "./src",
   },
   "include": ["src", "test"]
 }

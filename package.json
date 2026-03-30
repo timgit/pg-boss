@@ -26,9 +26,9 @@
     "cli-testlab": "^6.0.1",
     "eslint": "^9.39.4",
     "luxon": "^3.7.2",
-    "neostandard": "^0.12.2",
+    "neostandard": "^0.13.0",
     "tsx": "^4.21.0",
-    "typescript": "^5.9.3",
+    "typescript": "^6.0.2",
     "vitest": "^4.0.18"
   },
   "scripts": {
