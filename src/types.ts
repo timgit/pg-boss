@@ -88,6 +88,12 @@ export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, 
   __test__force_clock_monitoring_error?: string;
   __test__enableSpies?: boolean;
   /** @internal */
+  __test__delay_maint_ms?: number;
+  /** @internal */
+  __test__delay_bam_ms?: number;
+  /** @internal */
+  __test__delay_clock_skew_ms?: number;
+  /** @internal */
   migrations?: Migration[];
 }
 
