@@ -291,6 +291,14 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#manager.getBlockedKeys(name)
   }
 
+  getDependencies (name: string, id: string, options?: types.ConnectionOptions): Promise<types.DependencyRef[]> {
+    return this.#manager.getDependencies(name, id, options)
+  }
+
+  getDependents (name: string, id: string, options?: types.ConnectionOptions): Promise<types.DependencyRef[]> {
+    return this.#manager.getDependents(name, id, options)
+  }
+
   updateQueue (name: string, options?: types.UpdateQueueOptions): Promise<void> {
     return this.#manager.updateQueue(name, options)
   }
@@ -388,6 +396,7 @@ export type {
   CompleteOptions,
   ConnectionOptions,
   ConstructorOptions,
+  DependencyRef,
   FetchOptions,
   FindJobsOptions,
   GroupConcurrencyConfig,
