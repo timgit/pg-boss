@@ -110,6 +110,29 @@ All retry, expiration, and retention options can also be set on the queue and wi
   })
   ```
 
+**Dependency options**
+
+* **dependsOn**, array of `{ name, id }`
+
+  Declares that this job depends on one or more parent jobs. The job will be created in a `blocked` state and won't be eligible for fetching until all parent jobs have completed. This enables fan-in and sequential pipeline patterns directly in pg-boss.
+
+  If a parent job fails or is cancelled, the child remains blocked. You can explicitly `cancel` or `fail` the blocked child if needed.
+
+  When combined with `startAfter`, both conditions must be met: all dependencies completed AND `startAfter` has passed.
+
+  ```js
+  const jobA = await boss.send('process-data', { file: '1.csv' })
+  const jobB = await boss.send('process-data', { file: '2.csv' })
+
+  // jobC won't start until both jobA and jobB complete
+  const jobC = await boss.send('aggregate-results', { output: 'report.csv' }, {
+    dependsOn: [
+      { name: 'process-data', id: jobA },
+      { name: 'process-data', id: jobB }
+    ]
+  })
+  ```
+
 **Throttle or debounce jobs**
 
 * **singletonSeconds**, int
@@ -196,7 +219,19 @@ interface JobInsert<T = object> {
   deleteAfterSeconds?: number;
   keepUntil?: Date | string;
   group?: { id: string; tier?: string };
+  dependsOn?: { name: string; id: string }[];
 }
+```
+
+```js
+const [idA, idB] = await boss.insert('etl', [
+  { data: { step: 'extract' } },
+  { data: { step: 'transform' } }
+], { returnId: true })
+
+await boss.insert('etl', [
+  { data: { step: 'load' }, dependsOn: [{ name: 'etl', id: idA }, { name: 'etl', id: idB }] }
+])
 ```
 
 ### `fetch(name, options)`
@@ -259,6 +294,8 @@ Returns an array of jobs from a queue
       createdOn: Date;
       completedOn: Date | null;
       keepUntil: Date;
+      blocked: boolean,
+      blocking: boolean,
       deadLetter: string,
       policy: string,
       output: object
@@ -470,4 +507,22 @@ const jobs = await boss.findJobs('my-queue', {
   data: { type: 'email' },
   queued: true
 })
+```
+
+### `getDependencies(name, id, options)`
+
+Returns an array of parent job references that the specified job depends on.
+
+```js
+const parents = await boss.getDependencies('aggregate-results', jobId)
+// [{ name: 'process-data', id: '...' }, { name: 'process-data', id: '...' }]
+```
+
+### `getDependents(name, id, options)`
+
+Returns an array of child job references that depend on the specified job.
+
+```js
+const children = await boss.getDependents('process-data', parentJobId)
+// [{ name: 'aggregate-results', id: '...' }]
 ```

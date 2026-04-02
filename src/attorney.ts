@@ -72,6 +72,7 @@ function checkSendArgs (args: any): types.Request {
   validateDeletionConfig(options)
   validateGroupConfig(options)
   validateHeartbeatConfig(options)
+  validateDependsOnConfig(options)
 
   return { name, data, options }
 }
@@ -83,6 +84,19 @@ function validateGroupConfig (config: any) {
   assert(typeof config.group === 'object', 'group must be an object')
   assert(typeof config.group.id === 'string' && config.group.id.length > 0, 'group.id must be a non-empty string')
   assert(!('tier' in config.group) || (typeof config.group.tier === 'string' && config.group.tier.length > 0), 'group.tier must be a non-empty string if provided')
+}
+
+function validateDependsOnConfig (config: any) {
+  if (!('dependsOn' in config) || config.dependsOn === undefined || config.dependsOn === null) {
+    return
+  }
+  assert(Array.isArray(config.dependsOn), 'dependsOn must be an array')
+  assert(config.dependsOn.length > 0, 'dependsOn must not be empty when provided')
+  for (const dep of config.dependsOn) {
+    assert(typeof dep === 'object' && dep !== null, 'each dependency must be an object with name and id')
+    assert(typeof dep.name === 'string' && dep.name.length > 0, 'dependency name must be a non-empty string')
+    assert(typeof dep.id === 'string' && dep.id.length > 0, 'dependency id must be a non-empty string')
+  }
 }
 
 function validateGroupConcurrencyValue (value: any, optionName: string) {
