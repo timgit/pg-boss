@@ -21,15 +21,15 @@ export const events: types.Events = Object.freeze({
   bam: 'bam'
 })
 
-export function getConstructionPlans (schema?: string) {
+export function getConstructionPlans(schema?: string) {
   return Contractor.constructionPlans(schema)
 }
 
-export function getMigrationPlans (schema?: string, version?: number) {
+export function getMigrationPlans(schema?: string, version?: number) {
   return Contractor.migrationPlans(schema, version)
 }
 
-export function getRollbackPlans (schema?: string, version?: number) {
+export function getRollbackPlans(schema?: string, version?: number) {
   return Contractor.rollbackPlans(schema, version)
 }
 
@@ -46,9 +46,9 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
   #timekeeper: Timekeeper
   #bam: Bam
 
-  constructor (connectionString: string)
-  constructor (options: types.ConstructorOptions)
-  constructor (value: string | types.ConstructorOptions) {
+  constructor(connectionString: string)
+  constructor(options: types.ConstructorOptions)
+  constructor(value: string | types.ConstructorOptions) {
     super()
     this.#stoppingOn = null
     this.#stopped = true
@@ -86,13 +86,13 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     this.#bam = bam
   }
 
-  #promoteEvents (emitter: types.EventsMixin) {
+  #promoteEvents(emitter: types.EventsMixin) {
     for (const event of Object.values(emitter?.events) as (keyof types.PgBossEventMap)[]) {
       emitter.on(event, arg => this.emit(event, arg))
     }
   }
 
-  async start (): Promise<this> {
+  async start(): Promise<this> {
     if (this.#starting || this.#started) {
       return this
     }
@@ -130,7 +130,7 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this
   }
 
-  async stop (options: types.StopOptions = {}): Promise<void> {
+  async stop(options: types.StopOptions = {}): Promise<void> {
     if (this.#stoppingOn || this.#stopped) {
       return
     }
@@ -174,29 +174,33 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     await shutdown()
   }
 
-  send (request: types.Request): Promise<string | null>
-  send (name: string, data?: object | null, options?: types.SendOptions): Promise<string | null>
-  async send (...args: any[]): Promise<string | null> {
+  send(request: types.Request): Promise<string | null>
+  send(name: string, data?: object | null, options?: types.SendOptions): Promise<string | null>
+  async send(...args: any[]): Promise<string | null> {
     return await this.#manager.send(...args as Parameters<Manager['send']>)
   }
 
-  sendAfter (name: string, data: object | null, options: types.SendOptions | null, date: Date): Promise<string | null>
-  sendAfter (name: string, data: object | null, options: types.SendOptions | null, dateString: string): Promise<string | null>
-  sendAfter (name: string, data: object | null, options: types.SendOptions | null, seconds: number): Promise<string | null>
-  async sendAfter (name: string, data: object | null, options: types.SendOptions | null, after: Date | string | number): Promise<string | null> {
+  sendAfter(name: string, data: object | null, options: types.SendOptions | null, date: Date): Promise<string | null>
+  sendAfter(name: string, data: object | null, options: types.SendOptions | null, dateString: string): Promise<string | null>
+  sendAfter(name: string, data: object | null, options: types.SendOptions | null, seconds: number): Promise<string | null>
+  async sendAfter(name: string, data: object | null, options: types.SendOptions | null, after: Date | string | number): Promise<string | null> {
     return this.#manager.sendAfter(name, data, options, after)
   }
 
-  sendThrottled (name: string, data: object | null, options: types.SendOptions | null, seconds: number, key?: string): Promise<string | null> {
+  sendThrottled(name: string, data: object | null, options: types.SendOptions | null, seconds: number, key?: string): Promise<string | null> {
     return this.#manager.sendThrottled(name, data, options, seconds, key)
   }
 
-  sendDebounced (name: string, data: object | null, options: types.SendOptions | null, seconds: number, key?: string): Promise<string | null> {
+  sendDebounced(name: string, data: object | null, options: types.SendOptions | null, seconds: number, key?: string): Promise<string | null> {
     return this.#manager.sendDebounced(name, data, options, seconds, key)
   }
 
-  insert (name: string, jobs: types.JobInsert[], options?: types.InsertOptions): Promise<string[] | null> {
+  insert(name: string, jobs: types.JobInsert[], options?: types.InsertOptions): Promise<string[] | null> {
     return this.#manager.insert(name, jobs, options)
+  }
+
+  createFlow(jobs: types.FlowJob[], options?: types.ConnectionOptions): Promise<Record<string, string>> {
+    return this.#manager.createFlow(jobs, options)
   }
 
   fetch<T>(name: string, options: types.FetchOptions & { includeMetadata: true }): Promise<types.JobWithMetadata<T>[]>
@@ -208,67 +212,67 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
   work<ReqData, ResData = any>(name: string, handler: types.WorkHandler<ReqData, ResData>): Promise<string>
   work<ReqData, ResData = any>(name: string, options: types.WorkOptions & { includeMetadata: true }, handler: types.WorkWithMetadataHandler<ReqData, ResData>): Promise<string>
   work<ReqData, ResData = any>(name: string, options: types.WorkOptions, handler: types.WorkHandler<ReqData, ResData>): Promise<string>
-  work (...args: any[]): Promise<string> {
+  work(...args: any[]): Promise<string> {
     return this.#manager.work(...args as Parameters<Manager['work']>)
   }
 
-  offWork (name: string, options?: types.OffWorkOptions): Promise<void> {
+  offWork(name: string, options?: types.OffWorkOptions): Promise<void> {
     return this.#manager.offWork(name, options)
   }
 
-  notifyWorker (workerId: string): void {
+  notifyWorker(workerId: string): void {
     return this.#manager.notifyWorker(workerId)
   }
 
-  subscribe (event: string, name: string): Promise<void> {
+  subscribe(event: string, name: string): Promise<void> {
     return this.#manager.subscribe(event, name)
   }
 
-  unsubscribe (event: string, name: string): Promise<void> {
+  unsubscribe(event: string, name: string): Promise<void> {
     return this.#manager.unsubscribe(event, name)
   }
 
-  publish (event: string, data?: object, options?: types.SendOptions): Promise<void> {
+  publish(event: string, data?: object, options?: types.SendOptions): Promise<void> {
     return this.#manager.publish(event, data, options)
   }
 
-  cancel (name: string, id: string | string[], options?: types.ConnectionOptions): Promise<types.CommandResponse> {
+  cancel(name: string, id: string | string[], options?: types.ConnectionOptions): Promise<types.CommandResponse> {
     return this.#manager.cancel(name, id, options)
   }
 
-  resume (name: string, id: string | string[], options?: types.ConnectionOptions): Promise<types.CommandResponse> {
+  resume(name: string, id: string | string[], options?: types.ConnectionOptions): Promise<types.CommandResponse> {
     return this.#manager.resume(name, id, options)
   }
 
-  retry (name: string, id: string | string[], options?: types.ConnectionOptions): Promise<types.CommandResponse> {
+  retry(name: string, id: string | string[], options?: types.ConnectionOptions): Promise<types.CommandResponse> {
     return this.#manager.retry(name, id, options)
   }
 
-  deleteJob (name: string, id: string | string[], options?: types.ConnectionOptions): Promise<types.CommandResponse> {
+  deleteJob(name: string, id: string | string[], options?: types.ConnectionOptions): Promise<types.CommandResponse> {
     return this.#manager.deleteJob(name, id, options)
   }
 
-  deleteQueuedJobs (name: string): Promise<void> {
+  deleteQueuedJobs(name: string): Promise<void> {
     return this.#manager.deleteQueuedJobs(name)
   }
 
-  deleteStoredJobs (name: string): Promise<void> {
+  deleteStoredJobs(name: string): Promise<void> {
     return this.#manager.deleteStoredJobs(name)
   }
 
-  deleteAllJobs (name?: string): Promise<void> {
+  deleteAllJobs(name?: string): Promise<void> {
     return this.#manager.deleteAllJobs(name)
   }
 
-  complete (name: string, id: string | string[], data?: object | null, options?: types.CompleteOptions): Promise<types.CommandResponse> {
+  complete(name: string, id: string | string[], data?: object | null, options?: types.CompleteOptions): Promise<types.CommandResponse> {
     return this.#manager.complete(name, id, data, options)
   }
 
-  fail (name: string, id: string | string[], data?: object | null, options?: types.ConnectionOptions): Promise<types.CommandResponse> {
+  fail(name: string, id: string | string[], data?: object | null, options?: types.ConnectionOptions): Promise<types.CommandResponse> {
     return this.#manager.fail(name, id, data, options)
   }
 
-  touch (name: string, id: string | string[], options?: types.ConnectionOptions): Promise<types.CommandResponse> {
+  touch(name: string, id: string | string[], options?: types.ConnectionOptions): Promise<types.CommandResponse> {
     return this.#manager.touch(name, id, options)
   }
 
@@ -283,95 +287,103 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#manager.findJobs<T>(name, options)
   }
 
-  createQueue (name: string, options?: Omit<types.Queue, 'name'>): Promise<void> {
+  createQueue(name: string, options?: Omit<types.Queue, 'name'>): Promise<void> {
     return this.#manager.createQueue(name, options)
   }
 
-  getBlockedKeys (name: string): Promise<string[]> {
+  getBlockedKeys(name: string): Promise<string[]> {
     return this.#manager.getBlockedKeys(name)
   }
 
-  updateQueue (name: string, options?: types.UpdateQueueOptions): Promise<void> {
+  getDependencies(name: string, id: string, options?: types.ConnectionOptions): Promise<types.DependencyRef[]> {
+    return this.#manager.getDependencies(name, id, options)
+  }
+
+  getDependents(name: string, id: string, options?: types.ConnectionOptions): Promise<types.DependencyRef[]> {
+    return this.#manager.getDependents(name, id, options)
+  }
+
+  updateQueue(name: string, options?: types.UpdateQueueOptions): Promise<void> {
     return this.#manager.updateQueue(name, options)
   }
 
-  deleteQueue (name: string): Promise<void> {
+  deleteQueue(name: string): Promise<void> {
     return this.#manager.deleteQueue(name)
   }
 
-  getQueues (names?: string[]): Promise<types.QueueResult[]> {
+  getQueues(names?: string[]): Promise<types.QueueResult[]> {
     return this.#manager.getQueues()
   }
 
-  getQueue (name: string): Promise<types.QueueResult | null> {
+  getQueue(name: string): Promise<types.QueueResult | null> {
     return this.#manager.getQueue(name)
   }
 
-  getQueueStats (name: string): Promise<types.QueueResult> {
+  getQueueStats(name: string): Promise<types.QueueResult> {
     return this.#manager.getQueueStats(name)
   }
 
-  isMaintaining (): boolean {
+  isMaintaining(): boolean {
     return this.#boss.maintaining
   }
 
-  isBamWorking (): boolean {
+  isBamWorking(): boolean {
     return this.#bam.working
   }
 
-  isCheckingSkew (): boolean {
+  isCheckingSkew(): boolean {
     return this.#timekeeper.checkingSkew
   }
 
-  supervise (name?: string): Promise<void> {
+  supervise(name?: string): Promise<void> {
     return this.#boss.supervise(name)
   }
 
-  getWipData (options?: { includeInternal?: boolean }): types.WipData[] {
+  getWipData(options?: { includeInternal?: boolean }): types.WipData[] {
     return this.#manager.getWipData(options)
   }
 
-  getSpy<T = object> (name: string): JobSpyInterface<T> {
+  getSpy<T = object>(name: string): JobSpyInterface<T> {
     return this.#manager.getSpy<T>(name)
   }
 
-  clearSpies (): void {
+  clearSpies(): void {
     this.#manager.clearSpies()
   }
 
-  isInstalled (): Promise<boolean> {
+  isInstalled(): Promise<boolean> {
     return this.#contractor.isInstalled()
   }
 
-  schemaVersion (): Promise<number | null> {
+  schemaVersion(): Promise<number | null> {
     return this.#contractor.schemaVersion()
   }
 
-  schedule (name: string, cron: string, data?: object | null, options?: types.ScheduleOptions): Promise<void> {
+  schedule(name: string, cron: string, data?: object | null, options?: types.ScheduleOptions): Promise<void> {
     return this.#timekeeper.schedule(name, cron, data, options)
   }
 
-  unschedule (name: string, key?: string): Promise<void> {
+  unschedule(name: string, key?: string): Promise<void> {
     return this.#timekeeper.unschedule(name, key)
   }
 
-  getSchedules (name?: string, key?: string): Promise<types.Schedule[]> {
+  getSchedules(name?: string, key?: string): Promise<types.Schedule[]> {
     return this.#timekeeper.getSchedules(name, key)
   }
 
-  async getBamStatus (): Promise<types.BamStatusSummary[]> {
+  async getBamStatus(): Promise<types.BamStatusSummary[]> {
     const sql = plans.getBamStatus(this.#config.schema)
     const { rows } = await this.#db.executeSql(sql)
     return rows
   }
 
-  async getBamEntries (): Promise<types.BamEntry[]> {
+  async getBamEntries(): Promise<types.BamEntry[]> {
     const sql = plans.getBamEntries(this.#config.schema)
     const { rows } = await this.#db.executeSql(sql)
     return rows
   }
 
-  getDb (): types.IDatabase {
+  getDb(): types.IDatabase {
     if (this.#db) {
       return this.#db
     }
@@ -394,8 +406,10 @@ export type {
   ConstructorOptions,
   DatabaseOptions,
   FetchGroupConcurrencyOptions,
+  DependencyRef,
   FetchOptions,
   FindJobsOptions,
+  FlowJob,
   GroupConcurrencyConfig,
   GroupOptions,
   IDatabase as Db,
