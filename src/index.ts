@@ -199,6 +199,10 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#manager.insert(name, jobs, options)
   }
 
+  createFlow (jobs: types.FlowJob[], options?: types.ConnectionOptions): Promise<Record<string, string>> {
+    return this.#manager.createFlow(jobs, options)
+  }
+
   fetch<T>(name: string, options: types.FetchOptions & { includeMetadata: true }): Promise<types.JobWithMetadata<T>[]>
   fetch<T>(name: string, options?: types.FetchOptions): Promise<types.Job<T>[]>
   fetch<T>(name: string, options: types.FetchOptions = {}): Promise<types.Job<T>[] | types.JobWithMetadata<T>[]> {
@@ -289,6 +293,14 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
 
   getBlockedKeys (name: string): Promise<string[]> {
     return this.#manager.getBlockedKeys(name)
+  }
+
+  getDependencies (name: string, id: string, options?: types.ConnectionOptions): Promise<types.DependencyRef[]> {
+    return this.#manager.getDependencies(name, id, options)
+  }
+
+  getDependents (name: string, id: string, options?: types.ConnectionOptions): Promise<types.DependencyRef[]> {
+    return this.#manager.getDependents(name, id, options)
   }
 
   updateQueue (name: string, options?: types.UpdateQueueOptions): Promise<void> {
@@ -392,8 +404,10 @@ export type {
   CompleteOptions,
   ConnectionOptions,
   ConstructorOptions,
+  DependencyRef,
   FetchOptions,
   FindJobsOptions,
+  FlowJob,
   GroupConcurrencyConfig,
   GroupOptions,
   IDatabase as Db,
