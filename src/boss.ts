@@ -1,7 +1,7 @@
 import EventEmitter from 'node:events'
 import type Manager from './manager.ts'
 import * as plans from './plans.ts'
-import { unwrapSQLResult } from './tools.ts'
+import { delay, unwrapSQLResult } from './tools.ts'
 import * as types from './types.ts'
 import { emitAndPersistWarning, type WarningContext } from './warning.ts'
 
@@ -53,6 +53,10 @@ class Boss extends EventEmitter implements types.EventsMixin {
     }
   }
 
+  get maintaining (): boolean {
+    return !!this.#maintaining
+  }
+
   async start () {
     if (this.#stopped) {
       this.#stopping = false
@@ -69,6 +73,9 @@ class Boss extends EventEmitter implements types.EventsMixin {
       this.#stopping = true
       if (this.#superviseInterval) clearInterval(this.#superviseInterval)
       this.#stopped = true
+      while (this.#maintaining) {
+        await delay(10)
+      }
     }
   }
 
@@ -115,6 +122,10 @@ class Boss extends EventEmitter implements types.EventsMixin {
       if (this.#config.__test__throw_maint) { throw new Error(this.#config.__test__throw_maint) }
 
       this.#maintaining = true
+
+      if (this.#config.__test__delay_maint_ms) {
+        await delay(this.#config.__test__delay_maint_ms)
+      }
 
       const queues = await this.#manager.getQueues()
 

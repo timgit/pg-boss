@@ -1,6 +1,6 @@
 {
   "name": "pg-boss",
-  "version": "12.12.0",
+  "version": "12.15.0",
   "description": "Queueing jobs in Postgres from Node.js like a boss",
   "type": "module",
   "main": "./dist/index.js",
@@ -13,22 +13,22 @@
   },
   "dependencies": {
     "cron-parser": "^5.5.0",
-    "pg": "^8.18.0",
+    "pg": "^8.20.0",
     "serialize-error": "^13.0.1"
   },
   "devDependencies": {
-    "@tsconfig/node-ts": "^23.6.3",
+    "@tsconfig/node-ts": "^23.6.4",
     "@tsconfig/node22": "^22.0.5",
     "@types/luxon": "^3.7.1",
-    "@types/node": "^22.19.11",
-    "@types/pg": "^8.16.0",
-    "@vitest/coverage-v8": "^4.0.18",
-    "cli-testlab": "^5.1.0",
-    "eslint": "^9.39.2",
+    "@types/node": "^22.19.15",
+    "@types/pg": "^8.20.0",
+    "@vitest/coverage-v8": "^4.1.2",
+    "cli-testlab": "^6.0.1",
+    "eslint": "^9.39.4",
     "luxon": "^3.7.2",
-    "neostandard": "^0.12.2",
+    "neostandard": "^0.13.0",
     "tsx": "^4.21.0",
-    "typescript": "^5.9.3",
+    "typescript": "^6.0.2",
     "vitest": "^4.0.18"
   },
   "scripts": {

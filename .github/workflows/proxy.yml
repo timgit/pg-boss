@@ -3,17 +3,17 @@ on:
     branches: [master]
     tags-ignore: ['**']
     paths:
-      - 'packages/dashboard/**'
+      - 'packages/proxy/**'
       - 'src/**'
-      - '.github/workflows/dashboard.yml'
+      - '.github/workflows/proxy.yml'
   pull_request:
     branches: [master]
     paths:
-      - 'packages/dashboard/**'
+      - 'packages/proxy/**'
       - 'src/**'
-      - '.github/workflows/dashboard.yml'
+      - '.github/workflows/proxy.yml'
 
-name: Dashboard CI
+name: Proxy CI
 
 jobs:
   test:
@@ -42,20 +42,14 @@ jobs:
     - name: Install root dependencies
       run: npm install
 
-    - name: Install dashboard dependencies
+    - name: Install proxy dependencies
       run: npm install
-      working-directory: packages/dashboard
+      working-directory: packages/proxy
 
     - name: Typecheck
       run: npm run typecheck
-      working-directory: packages/dashboard
+      working-directory: packages/proxy
 
-    - name: Frontend tests with coverage
-      run: npm run cover:frontend
-      working-directory: packages/dashboard
-
-    - name: Server tests with coverage
-      run: npm run cover:server
-      working-directory: packages/dashboard
-      env:
-        DATABASE_URL: postgres://postgres:postgres@postgres:5432/postgres
+    - name: Run tests
+      run: npm test
+      working-directory: packages/proxy
