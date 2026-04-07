@@ -92,6 +92,21 @@ describe('kysely adapter', () => {
     expect(jobId).toBeDefined()
   })
 
+  it('should execute parameterless sql through kysely transaction', async () => {
+    ctx.boss = await helper.start(ctx.bossConfig)
+    if (!db) {
+      const pool = new pg.Pool({ connectionString: connString })
+      db = new Kysely({ dialect: new PostgresDialect({ pool }) })
+    }
+
+    const result = await db.transaction().execute(async (trx) => {
+      const adapter = fromKysely(trx)
+      return adapter.executeSql('SELECT 1 as val')
+    })
+
+    expect(result.rows[0]?.val).toBe(1)
+  })
+
   it('should rollback on kysely transaction failure', async () => {
     ctx.boss = await helper.start(ctx.bossConfig)
     if (!db) {
@@ -144,6 +159,19 @@ describe('drizzle adapter', () => {
     })
 
     expect(jobId).toBeDefined()
+  })
+
+  it('should execute parameterless sql through drizzle transaction', async () => {
+    ctx.boss = await helper.start(ctx.bossConfig)
+    if (!pool) pool = new pg.Pool({ connectionString: connString })
+    const db = drizzle({ client: pool })
+
+    const result = await db.transaction(async (tx) => {
+      const adapter = fromDrizzle(tx, drizzleSql)
+      return adapter.executeSql('SELECT 1 as val')
+    })
+
+    expect(result.rows[0]?.val).toBe(1)
   })
 
   it('should rollback on drizzle transaction failure', async () => {
@@ -199,6 +227,22 @@ describe('prisma adapter', () => {
     })
 
     expect(jobId).toBeDefined()
+  })
+
+  it('should execute parameterless sql through prisma transaction', async () => {
+    ctx.boss = await helper.start(ctx.bossConfig)
+    if (!pool) pool = new pg.Pool({ connectionString: connString })
+    if (!prisma) {
+      const adapter = new PrismaPg(pool)
+      prisma = new PrismaClient({ adapter })
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      const db = fromPrisma(tx)
+      return db.executeSql('SELECT 1 as val')
+    })
+
+    expect(result.rows[0]?.val).toBe(1)
   })
 
   it('should rollback on prisma transaction failure', async () => {
