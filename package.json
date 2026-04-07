@@ -41,7 +41,7 @@
     "build": "npm run clean && tsc --project tsconfig.build.json",
     "clean": "node -e \"fs.rmSync('dist',{recursive:true,force:true})\"",
     "prepublishOnly": "npm install && npm test && npm run build",
-    "test": "eslint . && vitest run",
+    "test": "prisma generate --schema=test/prisma/schema.prisma && eslint . && vitest run",
     "lint:fix": "eslint . --fix",
     "cover": "vitest run --coverage",
     "tsc": "tsc --noEmit",
