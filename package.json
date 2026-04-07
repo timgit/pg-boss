@@ -17,6 +17,8 @@
     "serialize-error": "^13.0.1"
   },
   "devDependencies": {
+    "@prisma/adapter-pg": "^7.6.0",
+    "@prisma/client": "^7.6.0",
     "@tsconfig/node-ts": "^23.6.4",
     "@tsconfig/node22": "^22.0.5",
     "@types/luxon": "^3.7.1",
@@ -24,9 +26,13 @@
     "@types/pg": "^8.20.0",
     "@vitest/coverage-v8": "^4.1.2",
     "cli-testlab": "^6.0.1",
+    "drizzle-orm": "^1.0.0-beta.20",
     "eslint": "^9.39.4",
+    "knex": "^3.2.9",
+    "kysely": "^0.28.15",
     "luxon": "^3.7.2",
     "neostandard": "^0.13.0",
+    "prisma": "^7.6.0",
     "tsx": "^4.21.0",
     "typescript": "^6.0.2",
     "vitest": "^4.0.18"
