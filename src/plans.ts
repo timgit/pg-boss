@@ -938,7 +938,7 @@ function fetchNextJob (options: FetchJobOptions): SqlQuery {
           )
         ORDER BY ${priority ? 'j.priority desc, ' : ''}${orderByCreatedOn ? 'j.created_on, ' : ''}j.id
         LIMIT ${limit}
-        FOR UPDATE SKIP LOCKED
+        FOR UPDATE OF j SKIP LOCKED
       )`
     : `
       next AS (
