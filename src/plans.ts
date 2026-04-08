@@ -886,9 +886,9 @@ function fetchNextJob (options: FetchJobOptions): SqlQuery {
   const params = buildFetchParams(options)
 
   const selectCols = [
-    'id',
-    singletonFetch ? 'singleton_key' : '',
-    hasGroupConcurrency ? 'group_id, group_tier' : ''
+    'j.id',
+    singletonFetch ? 'j.singleton_key' : '',
+    hasGroupConcurrency ? 'j.group_id, j.group_tier' : ''
   ].filter(Boolean).join(', ')
 
   const activeGroupCountsCte = hasGroupConcurrency
@@ -900,56 +900,35 @@ function fetchNextJob (options: FetchJobOptions): SqlQuery {
       ), `
     : ''
 
-  // When groupConcurrency is active, active_group_counts is joined directly into
-  // the next CTE so that fully-saturated groups are excluded BEFORE LIMIT is
-  // applied. Without this, LIMIT 1 (the default batchSize) would always pick the
-  // oldest queued job — which may belong to a saturated group — leaving every
-  // other group permanently unreachable (head-of-line blocking).
-  // Column references are qualified with j. to avoid ambiguity with the join.
-  const whereConditions = hasGroupConcurrency
-    ? [
-        `j.name = '${name}'`,
-        `j.state < '${JOB_STATES.active}'`,
-        !ignoreStartAfter ? 'j.start_after < now()' : '',
-        hasIgnoreSingletons ? `j.singleton_key <> ALL(${params.ignoreSingletonsParam})` : '',
-        hasIgnoreGroups ? `(j.group_id IS NULL OR j.group_id <> ALL(${params.ignoreGroupsParam}))` : '',
-        hasMinPriority ? `j.priority >= ${params.minPriorityParam}` : '',
-        hasMaxPriority ? `j.priority <= ${params.maxPriorityParam}` : '',
-        `(j.group_id IS NULL
+  // Column references are qualified with j. throughout so both the base case and
+  // the groupConcurrency branch (which joins active_group_counts) share one set of
+  // expressions. The join introduces agc.group_id which would otherwise be ambiguous.
+  const whereConditions = [
+    `j.name = '${name}'`,
+    `j.state < '${JOB_STATES.active}'`,
+    !ignoreStartAfter ? 'j.start_after < now()' : '',
+    hasIgnoreSingletons ? `j.singleton_key <> ALL(${params.ignoreSingletonsParam})` : '',
+    hasIgnoreGroups ? `(j.group_id IS NULL OR j.group_id <> ALL(${params.ignoreGroupsParam}))` : '',
+    hasMinPriority ? `j.priority >= ${params.minPriorityParam}` : '',
+    hasMaxPriority ? `j.priority <= ${params.maxPriorityParam}` : '',
+    hasGroupConcurrency
+      ? `(j.group_id IS NULL
             OR agc.active_cnt IS NULL
             OR agc.active_cnt < ${hasTiers
               ? `COALESCE((${params.tiersParam} ->> j.group_tier)::int, ${params.defaultGroupLimitParam})`
               : params.defaultGroupLimitParam})`
-      ].filter(Boolean).join('\n          AND ')
-    : [
-        `name = '${name}'`,
-        `state < '${JOB_STATES.active}'`,
-        !ignoreStartAfter ? 'start_after < now()' : '',
-        hasIgnoreSingletons ? `singleton_key <> ALL(${params.ignoreSingletonsParam})` : '',
-        hasIgnoreGroups ? `(group_id IS NULL OR group_id <> ALL(${params.ignoreGroupsParam}))` : '',
-        hasMinPriority ? `priority >= ${params.minPriorityParam}` : '',
-        hasMaxPriority ? `priority <= ${params.maxPriorityParam}` : ''
-      ].filter(Boolean).join(' AND ')
+      : ''
+  ].filter(Boolean).join('\n          AND ')
 
-  const nextCte = hasGroupConcurrency
-    ? `
+  const nextCte = `
       next AS (
-        SELECT j.id${singletonFetch ? ', j.singleton_key' : ''}, j.group_id, j.group_tier
+        SELECT ${selectCols}
         FROM ${schema}.${table} j
-        LEFT JOIN active_group_counts agc ON j.group_id = agc.group_id
+        ${hasGroupConcurrency ? 'LEFT JOIN active_group_counts agc ON j.group_id = agc.group_id' : ''}
         WHERE ${whereConditions}
         ORDER BY ${priority ? 'j.priority desc, ' : ''}${orderByCreatedOn ? 'j.created_on, ' : ''}j.id
         LIMIT ${limit}
         FOR UPDATE OF j SKIP LOCKED
-      )`
-    : `
-      next AS (
-        SELECT ${selectCols}
-        FROM ${schema}.${table}
-        WHERE ${whereConditions}
-        ORDER BY ${priority ? 'priority desc, ' : ''}${orderByCreatedOn ? 'created_on, ' : ''}id
-        LIMIT ${limit}
-        FOR UPDATE SKIP LOCKED
       )`
 
   const singletonCte = singletonFetch
