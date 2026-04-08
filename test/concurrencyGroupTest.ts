@@ -249,7 +249,8 @@ describe('groupConcurrency', function () {
   })
 
   it('should process available group jobs when saturated group dominates the front of the queue', async function () {
-    ctx.boss = await helper.start(ctx.bossConfig)
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
+    const spy = ctx.boss.getSpy(ctx.schema)
 
     const groupA = 'group-saturated'
     const groupB = 'group-available'
@@ -274,36 +275,22 @@ describe('groupConcurrency', function () {
     // Step 3: Enqueue one group B job. It is fully eligible (0 active, under its
     // concurrency limit), but created last so it sits at position 6 in queue order,
     // behind all of the group A queued jobs.
-    await ctx.boss.send(ctx.schema, {}, { group: { id: groupB } })
+    const groupBJobId = await ctx.boss.send(ctx.schema, {}, { group: { id: groupB } })
+    assertTruthy(groupBJobId)
 
     // Step 4: Start a single worker with groupConcurrency: 1.
-    // With the bug, every poll executes:
-    //   next CTE  →  LIMIT 1  →  picks the oldest queued job (a group A job)
-    //   group_filtered  →  active_cnt(1) + group_rn(1) = 2 > 1  →  discarded
-    //   UPDATE affects 0 rows  →  worker sleeps 500 ms  →  repeat forever.
-    // The group B job is never reached because it sits behind the group A pile.
-    let groupBProcessed = false
-
+    // Regression: previously the next CTE applied LIMIT 1 before the group
+    // concurrency check, so a saturated group at the front of the queue would
+    // starve all other groups. The group B job should be reached on the first
+    // poll now that saturated groups are pre-filtered in the WHERE clause.
     await ctx.boss.work(ctx.schema, {
       groupConcurrency,
       localConcurrency: 1,
       pollingIntervalSeconds: 0.5
-    }, async ([job]) => {
-      if (job.groupId === groupB) {
-        groupBProcessed = true
-      }
-    })
+    }, async () => {})
 
-    // 10 polling cycles at 500 ms — more than enough for a correct implementation
-    // to find the group B job on its very first fetch (group A is pre-filtered out).
-    // With the bug, the worker starves indefinitely on group A jobs.
-    await delay(5000)
-
-    // BUG: this assertion fails. groupBProcessed is false because the group B job
-    // is starved behind the group A queued jobs. The `next` CTE applies LIMIT 1
-    // before the group concurrency check in `group_filtered`, so a saturated group
-    // dominating the front of the queue blocks every other group from being reached.
-    expect(groupBProcessed).toBe(true)
+    const completedJob = await spy.waitForJobWithId(groupBJobId, 'completed')
+    expect(completedJob.state).toBe('completed')
   })
 
   it('should validate groupConcurrency option in work', async function () {
