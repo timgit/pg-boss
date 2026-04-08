@@ -902,7 +902,7 @@ function fetchNextJob (options: FetchJobOptions): SqlQuery {
   ].filter(Boolean).join(', ')
 
   const activeGroupCountsCte = hasGroupConcurrency
-    ? `active_group_counts AS (
+    ? `active_group_counts AS MATERIALIZED (
         SELECT group_id, COUNT(*)::int as active_cnt
         FROM ${schema}.${table}
         WHERE name = '${name}' AND state = '${JOB_STATES.active}' AND group_id IS NOT NULL
@@ -910,7 +910,37 @@ function fetchNextJob (options: FetchJobOptions): SqlQuery {
       ), `
     : ''
 
-  const nextCte = `
+  // When groupConcurrency is active, active_group_counts is joined directly into
+  // the next CTE so that fully-saturated groups are excluded BEFORE LIMIT is
+  // applied. Without this, LIMIT 1 (the default batchSize) would always pick the
+  // oldest queued job — which may belong to a saturated group — leaving every
+  // other group permanently unreachable (head-of-line blocking).
+  // Column references are qualified with j. to avoid ambiguity with the join.
+  const nextCte = hasGroupConcurrency
+    ? `
+      next AS (
+        SELECT j.id${singletonFetch ? ', j.singleton_key' : ''}, j.group_id, j.group_tier
+        FROM ${schema}.${table} j
+        LEFT JOIN active_group_counts agc ON j.group_id = agc.group_id
+        WHERE j.name = '${name}'
+          AND j.state < '${JOB_STATES.active}'
+          ${!ignoreStartAfter ? 'AND j.start_after < now()' : ''}
+          ${hasIgnoreSingletons ? `AND j.singleton_key <> ALL(${params.ignoreSingletonsParam})` : ''}
+          ${hasIgnoreGroups ? `AND (j.group_id IS NULL OR j.group_id <> ALL(${params.ignoreGroupsParam}))` : ''}
+          ${hasMinPriority ? `AND j.priority >= ${params.minPriorityParam}` : ''}
+          ${hasMaxPriority ? `AND j.priority <= ${params.maxPriorityParam}` : ''}
+          AND (
+            j.group_id IS NULL
+            OR agc.active_cnt IS NULL
+            OR agc.active_cnt < ${hasTiers
+              ? `COALESCE((${params.tiersParam} ->> j.group_tier)::int, ${params.defaultGroupLimitParam})`
+              : params.defaultGroupLimitParam}
+          )
+        ORDER BY ${priority ? 'j.priority desc, ' : ''}${orderByCreatedOn ? 'j.created_on, ' : ''}j.id
+        LIMIT ${limit}
+        FOR UPDATE SKIP LOCKED
+      )`
+    : `
       next AS (
         SELECT ${selectCols}
         FROM ${schema}.${table}
