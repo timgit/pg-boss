@@ -266,15 +266,17 @@ describe('groupConcurrency', function () {
     // test, keeping group A permanently saturated (active_cnt = 1 = groupConcurrency).
 
     // Step 2: Flood the front of the queue with group A jobs.
-    // Sent AFTER the active job, so they occupy positions 1–5 in
-    // ORDER BY created_on, id — ahead of group B in queue order.
+    // All jobs in this test use the same default priority, so after the
+    // priority desc sort key, created_on and id determine queue position.
+    // Sent after the active job, these group A jobs occupy positions 1-5
+    // ahead of group B.
     for (let i = 0; i < 5; i++) {
       await ctx.boss.send(ctx.schema, { index: i }, { group: { id: groupA } })
     }
 
     // Step 3: Enqueue one group B job. It is fully eligible (0 active, under its
-    // concurrency limit), but created last so it sits at position 6 in queue order,
-    // behind all of the group A queued jobs.
+    // concurrency limit), but with the same default priority and a later
+    // created_on/id it sits at position 6 behind all of the group A queued jobs.
     const groupBJobId = await ctx.boss.send(ctx.schema, {}, { group: { id: groupB } })
     assertTruthy(groupBJobId)
 

@@ -885,15 +885,20 @@ function fetchNextJob (options: FetchJobOptions): SqlQuery {
 
   const params = buildFetchParams(options)
 
-  const whereConditions = [
-    `name = '${name}'`,
-    `state < '${JOB_STATES.active}'`,
-    !ignoreStartAfter ? 'start_after < now()' : '',
-    hasIgnoreSingletons ? `singleton_key <> ALL(${params.ignoreSingletonsParam})` : '',
-    hasIgnoreGroups ? `(group_id IS NULL OR group_id <> ALL(${params.ignoreGroupsParam}))` : '',
-    hasMinPriority ? `priority >= ${params.minPriorityParam}` : '',
-    hasMaxPriority ? `priority <= ${params.maxPriorityParam}` : ''
-  ].filter(Boolean).join(' AND ')
+  // Build the base WHERE conditions shared by both nextCte branches. The alias
+  // parameter (e.g. 'j.') qualifies column references for the groupConcurrency
+  // branch which introduces a LEFT JOIN that would otherwise make group_id ambiguous.
+  const buildBaseConditions = (alias = '') => [
+    `${alias}name = '${name}'`,
+    `${alias}state < '${JOB_STATES.active}'`,
+    !ignoreStartAfter ? `${alias}start_after < now()` : '',
+    hasIgnoreSingletons ? `${alias}singleton_key <> ALL(${params.ignoreSingletonsParam})` : '',
+    hasIgnoreGroups ? `(${alias}group_id IS NULL OR ${alias}group_id <> ALL(${params.ignoreGroupsParam}))` : '',
+    hasMinPriority ? `${alias}priority >= ${params.minPriorityParam}` : '',
+    hasMaxPriority ? `${alias}priority <= ${params.maxPriorityParam}` : ''
+  ].filter(Boolean)
+
+  const whereConditions = buildBaseConditions().join(' AND ')
 
   const selectCols = [
     'id',
@@ -922,20 +927,14 @@ function fetchNextJob (options: FetchJobOptions): SqlQuery {
         SELECT j.id${singletonFetch ? ', j.singleton_key' : ''}, j.group_id, j.group_tier
         FROM ${schema}.${table} j
         LEFT JOIN active_group_counts agc ON j.group_id = agc.group_id
-        WHERE j.name = '${name}'
-          AND j.state < '${JOB_STATES.active}'
-          ${!ignoreStartAfter ? 'AND j.start_after < now()' : ''}
-          ${hasIgnoreSingletons ? `AND j.singleton_key <> ALL(${params.ignoreSingletonsParam})` : ''}
-          ${hasIgnoreGroups ? `AND (j.group_id IS NULL OR j.group_id <> ALL(${params.ignoreGroupsParam}))` : ''}
-          ${hasMinPriority ? `AND j.priority >= ${params.minPriorityParam}` : ''}
-          ${hasMaxPriority ? `AND j.priority <= ${params.maxPriorityParam}` : ''}
-          AND (
-            j.group_id IS NULL
+        WHERE ${[
+          ...buildBaseConditions('j.'),
+          `(j.group_id IS NULL
             OR agc.active_cnt IS NULL
             OR agc.active_cnt < ${hasTiers
               ? `COALESCE((${params.tiersParam} ->> j.group_tier)::int, ${params.defaultGroupLimitParam})`
-              : params.defaultGroupLimitParam}
-          )
+              : params.defaultGroupLimitParam})`
+        ].join('\n          AND ')}
         ORDER BY ${priority ? 'j.priority desc, ' : ''}${orderByCreatedOn ? 'j.created_on, ' : ''}j.id
         LIMIT ${limit}
         FOR UPDATE OF j SKIP LOCKED
