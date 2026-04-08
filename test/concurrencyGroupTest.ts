@@ -248,6 +248,64 @@ describe('groupConcurrency', function () {
     }).rejects.toThrow('group.tier must be a non-empty string if provided')
   })
 
+  it('should process available group jobs when saturated group dominates the front of the queue', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    const groupA = 'group-saturated'
+    const groupB = 'group-available'
+    const groupConcurrency = 1
+
+    // Step 1: Send one group A job and fetch it directly to make it "active",
+    // holding group A at its concurrency limit for the entire duration of the test.
+    // This simulates a long-running job consuming the one allowed slot.
+    await ctx.boss.send(ctx.schema, {}, { group: { id: groupA } })
+    const [activeJob] = await ctx.boss.fetch(ctx.schema)
+    assertTruthy(activeJob)
+    // activeJob is now in "active" state and will never be completed during this
+    // test, keeping group A permanently saturated (active_cnt = 1 = groupConcurrency).
+
+    // Step 2: Flood the front of the queue with group A jobs.
+    // Sent AFTER the active job, so they occupy positions 1–5 in
+    // ORDER BY created_on, id — ahead of group B in queue order.
+    for (let i = 0; i < 5; i++) {
+      await ctx.boss.send(ctx.schema, { index: i }, { group: { id: groupA } })
+    }
+
+    // Step 3: Enqueue one group B job. It is fully eligible (0 active, under its
+    // concurrency limit), but created last so it sits at position 6 in queue order,
+    // behind all of the group A queued jobs.
+    await ctx.boss.send(ctx.schema, {}, { group: { id: groupB } })
+
+    // Step 4: Start a single worker with groupConcurrency: 1.
+    // With the bug, every poll executes:
+    //   next CTE  →  LIMIT 1  →  picks the oldest queued job (a group A job)
+    //   group_filtered  →  active_cnt(1) + group_rn(1) = 2 > 1  →  discarded
+    //   UPDATE affects 0 rows  →  worker sleeps 500 ms  →  repeat forever.
+    // The group B job is never reached because it sits behind the group A pile.
+    let groupBProcessed = false
+
+    await ctx.boss.work(ctx.schema, {
+      groupConcurrency,
+      localConcurrency: 1,
+      pollingIntervalSeconds: 0.5
+    }, async ([job]) => {
+      if (job.groupId === groupB) {
+        groupBProcessed = true
+      }
+    })
+
+    // 10 polling cycles at 500 ms — more than enough for a correct implementation
+    // to find the group B job on its very first fetch (group A is pre-filtered out).
+    // With the bug, the worker starves indefinitely on group A jobs.
+    await delay(5000)
+
+    // BUG: this assertion fails. groupBProcessed is false because the group B job
+    // is starved behind the group A queued jobs. The `next` CTE applies LIMIT 1
+    // before the group concurrency check in `group_filtered`, so a saturated group
+    // dominating the front of the queue blocks every other group from being reached.
+    expect(groupBProcessed).toBe(true)
+  })
+
   it('should validate groupConcurrency option in work', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 
