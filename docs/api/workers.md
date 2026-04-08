@@ -13,7 +13,7 @@ The default options for `work()` is 1 job every 2 seconds.
 **Arguments**
 - `name`: string, *required*
 - `options`: object
-- `handler`: function(jobs), *required*
+- `handler`: function(jobs): Promise<any>, *required*
 
 **Options**
 
@@ -165,7 +165,7 @@ In this setup:
 
 **Handler function**
 
-`handler` should return a promise (Usually this is an `async` function). If an unhandled error occurs in a handler, `fail()` will automatically be called for the jobs, storing the error in the `output` property, making the job or jobs available for retry.
+`handler` should return a promise (Usually this is an `async` function). If the `handler` returns a value or an object, it will be stored in the `output` property. If an unhandled error occurs in a handler, `fail()` will automatically be called for the jobs, storing the error in the `output` property, making the job or jobs available for retry.
 
 The jobs argument is an array of jobs with the following properties.
 
