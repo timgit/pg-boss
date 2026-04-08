@@ -472,4 +472,47 @@ describe('localGroupConcurrency', function () {
     // All jobs should be processed
     expect(totalProcessed).toBe(8)
   })
+
+  it('should fetch enterprise-tier jobs for a group that is at its default limit', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    const groupId = 'test-group'
+    const localGroupConcurrency = { default: 1, tiers: { enterprise: 3 } }
+
+    let enterpriseJobsProcessed = 0
+
+    // Start the worker before sending jobs so we can control ordering precisely.
+    await ctx.boss.work(ctx.schema, {
+      localConcurrency: 3,
+      localGroupConcurrency,
+      pollingIntervalSeconds: 0.5
+    }, async ([job]) => {
+      if ((job.data as { tier: string }).tier === 'default') {
+        await delay(5000) // hold active for the full test window
+      } else {
+        enterpriseJobsProcessed++
+      }
+    })
+
+    // Send the default-tier job and wait long enough for the worker to pick it
+    // up and increment the in-memory count to 1.
+    await ctx.boss.send(ctx.schema, { tier: 'default' }, { group: { id: groupId } })
+    await delay(1000)
+
+    // Now queue enterprise-tier jobs. The group is at its default limit (count=1),
+    // but the enterprise limit is 3, so these should still be fetchable.
+    // #getGroupsAtLocalCapacity uses config.default for all groups regardless of
+    // tier, so it adds the group to ignoreGroups and these jobs are never reached.
+    await ctx.boss.send(ctx.schema, { tier: 'enterprise' }, { group: { id: groupId, tier: 'enterprise' } })
+    await ctx.boss.send(ctx.schema, { tier: 'enterprise' }, { group: { id: groupId, tier: 'enterprise' } })
+
+    // Several polling cycles for the second worker to pick up enterprise jobs.
+    await delay(3000)
+
+    // BUG: enterpriseJobsProcessed is 0. #getGroupsAtLocalCapacity checks
+    // activeCount >= config.default (1 >= 1) and adds the group to ignoreGroups,
+    // excluding all its jobs from the fetch query regardless of their tier.
+    // The enterprise limit of 3 is never consulted.
+    expect(enterpriseJobsProcessed).toBeGreaterThan(0)
+  })
 })
