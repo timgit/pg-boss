@@ -643,7 +643,7 @@ function deleteJobsById (schema: string, table: string) {
     WITH results as (
       DELETE FROM ${schema}.${table}
       WHERE name = $1
-        AND id IN (SELECT UNNEST($2::uuid[]))        
+        AND id IN (SELECT UNNEST($2::uuid[]))
       RETURNING 1
     )
     SELECT COUNT(*) from results
@@ -885,21 +885,6 @@ function fetchNextJob (options: FetchJobOptions): SqlQuery {
 
   const params = buildFetchParams(options)
 
-  // Build the base WHERE conditions shared by both nextCte branches. The alias
-  // parameter (e.g. 'j.') qualifies column references for the groupConcurrency
-  // branch which introduces a LEFT JOIN that would otherwise make group_id ambiguous.
-  const buildBaseConditions = (alias = '') => [
-    `${alias}name = '${name}'`,
-    `${alias}state < '${JOB_STATES.active}'`,
-    !ignoreStartAfter ? `${alias}start_after < now()` : '',
-    hasIgnoreSingletons ? `${alias}singleton_key <> ALL(${params.ignoreSingletonsParam})` : '',
-    hasIgnoreGroups ? `(${alias}group_id IS NULL OR ${alias}group_id <> ALL(${params.ignoreGroupsParam}))` : '',
-    hasMinPriority ? `${alias}priority >= ${params.minPriorityParam}` : '',
-    hasMaxPriority ? `${alias}priority <= ${params.maxPriorityParam}` : ''
-  ].filter(Boolean)
-
-  const whereConditions = buildBaseConditions().join(' AND ')
-
   const selectCols = [
     'id',
     singletonFetch ? 'singleton_key' : '',
@@ -921,20 +906,38 @@ function fetchNextJob (options: FetchJobOptions): SqlQuery {
   // oldest queued job — which may belong to a saturated group — leaving every
   // other group permanently unreachable (head-of-line blocking).
   // Column references are qualified with j. to avoid ambiguity with the join.
+  const whereConditions = hasGroupConcurrency
+    ? [
+        `j.name = '${name}'`,
+        `j.state < '${JOB_STATES.active}'`,
+        !ignoreStartAfter ? 'j.start_after < now()' : '',
+        hasIgnoreSingletons ? `j.singleton_key <> ALL(${params.ignoreSingletonsParam})` : '',
+        hasIgnoreGroups ? `(j.group_id IS NULL OR j.group_id <> ALL(${params.ignoreGroupsParam}))` : '',
+        hasMinPriority ? `j.priority >= ${params.minPriorityParam}` : '',
+        hasMaxPriority ? `j.priority <= ${params.maxPriorityParam}` : '',
+        `(j.group_id IS NULL
+            OR agc.active_cnt IS NULL
+            OR agc.active_cnt < ${hasTiers
+              ? `COALESCE((${params.tiersParam} ->> j.group_tier)::int, ${params.defaultGroupLimitParam})`
+              : params.defaultGroupLimitParam})`
+      ].filter(Boolean).join('\n          AND ')
+    : [
+        `name = '${name}'`,
+        `state < '${JOB_STATES.active}'`,
+        !ignoreStartAfter ? 'start_after < now()' : '',
+        hasIgnoreSingletons ? `singleton_key <> ALL(${params.ignoreSingletonsParam})` : '',
+        hasIgnoreGroups ? `(group_id IS NULL OR group_id <> ALL(${params.ignoreGroupsParam}))` : '',
+        hasMinPriority ? `priority >= ${params.minPriorityParam}` : '',
+        hasMaxPriority ? `priority <= ${params.maxPriorityParam}` : ''
+      ].filter(Boolean).join(' AND ')
+
   const nextCte = hasGroupConcurrency
     ? `
       next AS (
         SELECT j.id${singletonFetch ? ', j.singleton_key' : ''}, j.group_id, j.group_tier
         FROM ${schema}.${table} j
         LEFT JOIN active_group_counts agc ON j.group_id = agc.group_id
-        WHERE ${[
-          ...buildBaseConditions('j.'),
-          `(j.group_id IS NULL
-            OR agc.active_cnt IS NULL
-            OR agc.active_cnt < ${hasTiers
-              ? `COALESCE((${params.tiersParam} ->> j.group_tier)::int, ${params.defaultGroupLimitParam})`
-              : params.defaultGroupLimitParam})`
-        ].join('\n          AND ')}
+        WHERE ${whereConditions}
         ORDER BY ${priority ? 'j.priority desc, ' : ''}${orderByCreatedOn ? 'j.created_on, ' : ''}j.id
         LIMIT ${limit}
         FOR UPDATE OF j SKIP LOCKED
