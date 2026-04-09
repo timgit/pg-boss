@@ -891,6 +891,11 @@ function fetchNextJob (options: FetchJobOptions): SqlQuery {
     hasGroupConcurrency ? 'j.group_id, j.group_tier' : ''
   ].filter(Boolean).join(', ')
 
+  // MATERIALIZED forces Postgres to compute this aggregation once and cache the
+  // result. Without it, Postgres 12+ may inline the CTE and re-evaluate the
+  // COUNT query at each reference site. active_group_counts is referenced twice:
+  // once in the next CTE join (to pre-filter saturated groups before LIMIT) and
+  // once in group_ranking (to enforce the per-batch concurrency limit).
   const activeGroupCountsCte = hasGroupConcurrency
     ? `active_group_counts AS MATERIALIZED (
         SELECT group_id, COUNT(*)::int as active_cnt
