@@ -481,6 +481,11 @@ describe('localGroupConcurrency', function () {
 
     let enterpriseJobsProcessed = 0
 
+    // Resolved from inside the handler the moment the default-tier job starts,
+    // giving a hard synchronisation point before enterprise jobs are enqueued.
+    let signalDefaultJobActive: () => void
+    const defaultJobActive = new Promise<void>(resolve => { signalDefaultJobActive = resolve })
+
     // Start the worker before sending jobs so we can control ordering precisely.
     await ctx.boss.work(ctx.schema, {
       localConcurrency: 3,
@@ -488,31 +493,30 @@ describe('localGroupConcurrency', function () {
       pollingIntervalSeconds: 0.5
     }, async ([job]) => {
       if ((job.data as { tier: string }).tier === 'default') {
+        signalDefaultJobActive() // in-memory count is now 1
         await delay(5000) // hold active for the full test window
       } else {
         enterpriseJobsProcessed++
       }
     })
 
-    // Send the default-tier job and wait long enough for the worker to pick it
-    // up and increment the in-memory count to 1.
+    // Send the default-tier job and wait for a hard signal that it is active and
+    // the in-memory count has been incremented before enqueueing enterprise jobs.
     await ctx.boss.send(ctx.schema, { tier: 'default' }, { group: { id: groupId } })
-    await delay(1000)
+    await defaultJobActive
 
-    // Now queue enterprise-tier jobs. The group is at its default limit (count=1),
-    // but the enterprise limit is 3, so these should still be fetchable.
-    // #getGroupsAtLocalCapacity uses config.default for all groups regardless of
-    // tier, so it adds the group to ignoreGroups and these jobs are never reached.
+    // Regression coverage: previously #getGroupsAtLocalCapacity compared against
+    // config.default only, so once the group had one active job it was added to
+    // ignoreGroups and all its enterprise-tier jobs were excluded from fetching
+    // entirely, even though the enterprise limit of 3 had capacity remaining.
     await ctx.boss.send(ctx.schema, { tier: 'enterprise' }, { group: { id: groupId, tier: 'enterprise' } })
     await ctx.boss.send(ctx.schema, { tier: 'enterprise' }, { group: { id: groupId, tier: 'enterprise' } })
 
-    // Several polling cycles for the second worker to pick up enterprise jobs.
+    // Several polling cycles for the available workers to pick up enterprise jobs.
     await delay(3000)
 
-    // BUG: enterpriseJobsProcessed is 0. #getGroupsAtLocalCapacity checks
-    // activeCount >= config.default (1 >= 1) and adds the group to ignoreGroups,
-    // excluding all its jobs from the fetch query regardless of their tier.
-    // The enterprise limit of 3 is never consulted.
-    expect(enterpriseJobsProcessed).toBeGreaterThan(0)
+    // Both enterprise jobs should be processed — the group is at its default limit
+    // but the enterprise tier still has capacity.
+    expect(enterpriseJobsProcessed).toBe(2)
   })
 })
