@@ -438,8 +438,8 @@ describe('localGroupConcurrency', function () {
     // Send 2 jobs for the same group. With batchSize: 2 and a single worker,
     // both jobs are fetched in the same query and both are set to active in the
     // DB. localGroupConcurrency: 1 then allows the first and marks the second
-    // as excess. restoreJobs resets its state to 'created' but leaves started_on
-    // set from the initial activation.
+    // as excess. Before the fix, restoreJobs only reset state to 'created' and
+    // left started_on set, causing retry_count to be inflated on re-fetch.
     const jobId1 = await ctx.boss.send(ctx.schema, {}, { group: { id: groupId }, retryLimit: 0 })
     const jobId2 = await ctx.boss.send(ctx.schema, {}, { group: { id: groupId }, retryLimit: 0 })
     assertTruthy(jobId1)
@@ -456,11 +456,11 @@ describe('localGroupConcurrency', function () {
     await spy.waitForJobWithId(jobId2, 'completed')
 
     const result = await helper.findJobs(ctx.schema, 'id = ANY($1::uuid[])', [[jobId1, jobId2]])
+    expect(result.rows.length).toBe(2)
     for (const row of result.rows) {
-      // BUG: the excess-restored job has retry_count = 1 even though neither
-      // job was actually retried. restoreJobs leaves started_on set, so the
-      // next fetch sees started_on IS NOT NULL and incorrectly increments
-      // retry_count via CASE WHEN started_on IS NOT NULL THEN retry_count + 1.
+      // Regression: the excess-restored job previously had retry_count = 1 even
+      // though neither job was actually retried. restoreJobs now clears started_on
+      // so the next fetch sees started_on IS NULL and does not increment retry_count.
       expect(row.retry_count).toBe(0)
     }
   })
