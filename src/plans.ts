@@ -67,6 +67,9 @@ function create (schema: string, version: number, options?: { createSchema?: boo
     createTableWarning(schema),
     createIndexWarning(schema),
 
+    createTableJobDependency(schema),
+    createIndexJobDependencyParent(schema),
+
     createQueueFunction(schema),
     deleteQueueFunction(schema),
 
@@ -198,6 +201,22 @@ function createIndexWarning (schema: string) {
   return `CREATE INDEX warning_i1 ON ${schema}.warning (created_on DESC)`
 }
 
+function createTableJobDependency (schema: string) {
+  return `
+    CREATE TABLE ${schema}.job_dependency (
+      child_name text NOT NULL,
+      child_id uuid NOT NULL,
+      parent_name text NOT NULL,
+      parent_id uuid NOT NULL,
+      PRIMARY KEY (child_name, child_id, parent_name, parent_id)
+    )
+  `
+}
+
+function createIndexJobDependencyParent (schema: string) {
+  return `CREATE INDEX job_dep_parent_idx ON ${schema}.job_dependency (parent_name, parent_id)`
+}
+
 function jobTableFormatFunction (schema: string) {
   return `
     CREATE FUNCTION ${schema}.job_table_format(command text, table_name text)
@@ -319,7 +338,9 @@ function createTableJob (schema: string) {
       dead_letter text,
       policy text,
       heartbeat_on timestamp with time zone,
-      heartbeat_seconds int
+      heartbeat_seconds int,
+      blocked boolean not null default false,
+      blocking boolean not null default false
     ) PARTITION BY LIST (name)
   `
 }
@@ -344,6 +365,8 @@ const JOB_COLUMNS_ALL = `${JOB_COLUMNS_MIN},
   completed_on as "completedOn",
   keep_until as "keepUntil",
   dead_letter as "deadLetter",
+  blocked,
+  blocking,
   output
 `
 
@@ -520,7 +543,7 @@ function createIndexJobThrottle (schema: string) {
 }
 
 function createIndexJobFetch (schema: string) {
-  return `CREATE INDEX job_i5 ON ${schema}.job (name, start_after) INCLUDE (priority, created_on, id) WHERE state < '${JOB_STATES.active}'`
+  return `CREATE INDEX job_i5 ON ${schema}.job (name, start_after) INCLUDE (priority, created_on, id) WHERE state < '${JOB_STATES.active}' AND NOT blocked`
 }
 
 function createIndexJobPolicyExclusive (schema: string) {
@@ -888,6 +911,7 @@ function fetchNextJob (options: FetchJobOptions): SqlQuery {
   const whereConditions = [
     `name = '${name}'`,
     `state < '${JOB_STATES.active}'`,
+    'NOT blocked',
     !ignoreStartAfter ? 'start_after < now()' : '',
     hasIgnoreSingletons ? `singleton_key <> ALL(${params.ignoreSingletonsParam})` : '',
     hasIgnoreGroups ? `(group_id IS NULL OR group_id <> ALL(${params.ignoreGroupsParam}))` : '',
@@ -992,6 +1016,30 @@ function completeJobs (schema: string, table: string, includeQueued?: boolean) {
         AND id IN (SELECT UNNEST($2::uuid[]))
         AND ${stateFilter}
       RETURNING *
+    ),
+    children_to_check AS (
+      SELECT DISTINCT d.child_name, d.child_id
+      FROM ${schema}.job_dependency d
+      JOIN results c ON c.name = d.parent_name AND c.id = d.parent_id
+      WHERE c.blocking = true
+    ),
+    unblocked AS (
+      UPDATE ${schema}.job j
+      SET blocked = false
+      FROM children_to_check ct
+      WHERE j.name = ct.child_name
+        AND j.id = ct.child_id
+        AND j.blocked = true
+        AND NOT EXISTS (
+          SELECT 1
+          FROM ${schema}.job_dependency d2
+          JOIN ${schema}.job p ON p.name = d2.parent_name AND p.id = d2.parent_id
+          LEFT JOIN results r ON r.name = p.name AND r.id = p.id
+          WHERE d2.child_name = ct.child_name
+            AND d2.child_id = ct.child_id
+            AND p.state <> '${JOB_STATES.completed}'
+            AND r.id IS NULL
+        )
     )
     SELECT COUNT(*) FROM results
   `
@@ -1063,7 +1111,9 @@ function insertJobs (schema: string, { table, name, returnId = true }: InsertJob
       retry_delay_max,
       policy,
       dead_letter,
-      heartbeat_seconds
+      heartbeat_seconds,
+      blocked,
+      blocking
     )
     SELECT
       COALESCE(id, gen_random_uuid()) as id,
@@ -1087,7 +1137,9 @@ function insertJobs (schema: string, { table, name, returnId = true }: InsertJob
       COALESCE("retryDelayMax", q.retry_delay_max) as retry_delay_max,
       q.policy,
       COALESCE("deadLetter", q.dead_letter) as dead_letter,
-      COALESCE("heartbeatSeconds", q.heartbeat_seconds) as heartbeat_seconds
+      COALESCE("heartbeatSeconds", q.heartbeat_seconds) as heartbeat_seconds,
+      COALESCE(blocked, false) as blocked,
+      COALESCE(blocking, false) as blocking
     FROM (
       SELECT *,
         CASE
@@ -1112,7 +1164,9 @@ function insertJobs (schema: string, { table, name, returnId = true }: InsertJob
         "deleteAfterSeconds" integer,
         "retentionSeconds" integer,
         "deadLetter" text,
-        "heartbeatSeconds" integer
+        "heartbeatSeconds" integer,
+        blocked boolean,
+        blocking boolean
       )
     ) j
     JOIN ${schema}.queue q ON q.name = '${name}'
@@ -1199,7 +1253,9 @@ function failJobs (schema: string, table: string, where: string, output: string)
         output,
         dead_letter,
         heartbeat_on,
-        heartbeat_seconds
+        heartbeat_seconds,
+        blocked,
+        blocking
       )
       SELECT
         id,
@@ -1239,7 +1295,9 @@ function failJobs (schema: string, table: string, where: string, output: string)
         ${output},
         dead_letter,
         NULL as heartbeat_on,
-        heartbeat_seconds
+        heartbeat_seconds,
+        blocked,
+        blocking
       FROM deleted_jobs
       ON CONFLICT DO NOTHING
       RETURNING *
@@ -1271,7 +1329,9 @@ function failJobs (schema: string, table: string, where: string, output: string)
         output,
         dead_letter,
         heartbeat_on,
-        heartbeat_seconds
+        heartbeat_seconds,
+        blocked,
+        blocking
       )
       SELECT
         id,
@@ -1299,7 +1359,9 @@ function failJobs (schema: string, table: string, where: string, output: string)
         ${output},
         dead_letter,
         NULL as heartbeat_on,
-        heartbeat_seconds
+        heartbeat_seconds,
+        blocked,
+        blocking
       FROM deleted_jobs
       WHERE id NOT IN (SELECT id from retried_jobs)
       RETURNING *
@@ -1476,6 +1538,72 @@ function getJobById (schema: string, table: string) {
     `
 }
 
+function insertDependencies (schema: string) {
+  return `
+    INSERT INTO ${schema}.job_dependency (child_name, child_id, parent_name, parent_id)
+    SELECT child_name, child_id, parent_name, parent_id
+    FROM json_to_recordset($1::json) AS x (
+      child_name text,
+      child_id uuid,
+      parent_name text,
+      parent_id uuid
+    )
+    ON CONFLICT DO NOTHING
+  `
+}
+
+function markJobsBlocking (schema: string): SqlQuery {
+  return {
+    text: `
+      UPDATE ${schema}.job
+      SET blocking = true
+      WHERE (name, id) IN (
+        SELECT parent_name, parent_id
+        FROM json_to_recordset($1::json) AS x (
+          parent_name text,
+          parent_id uuid
+        )
+      )
+      AND NOT blocking
+    `,
+    values: []
+  }
+}
+
+function getDependencies (schema: string) {
+  return `
+    SELECT parent_name as "parentName", parent_id as "parentId"
+    FROM ${schema}.job_dependency
+    WHERE child_name = $1 AND child_id = $2
+  `
+}
+
+function getDependents (schema: string) {
+  return `
+    SELECT child_name as "childName", child_id as "childId"
+    FROM ${schema}.job_dependency
+    WHERE parent_name = $1 AND parent_id = $2
+  `
+}
+
+function cleanupDependencies (schema: string, table: string, queues: string[]): string {
+  const sql = `
+    DELETE FROM ${schema}.job_dependency
+    WHERE (child_name = ANY(${serializeArrayParam(queues)})
+      AND NOT EXISTS (
+        SELECT 1 FROM ${schema}.${table} j
+        WHERE j.name = child_name AND j.id = child_id
+      ))
+    OR (parent_name = ANY(${serializeArrayParam(queues)})
+      AND NOT EXISTS (
+        SELECT 1 FROM ${schema}.${table} j
+        WHERE j.name = parent_name AND j.id = parent_id
+      ))
+  `
+
+  return locked(schema, sql, table + 'cleanupDependencies')
+}
+
 function getBlockedKeys (schema: string, table: string) {
   return `
     SELECT DISTINCT singleton_key as "singletonKey"
@@ -1588,6 +1716,13 @@ export {
   createTableWarning,
   createIndexWarning,
   getBlockedKeys,
+  insertDependencies,
+  markJobsBlocking,
+  getDependencies,
+  getDependents,
+  cleanupDependencies,
+  createTableJobDependency,
+  createIndexJobDependencyParent,
   getNextBamCommand,
   setBamCompleted,
   setBamFailed,

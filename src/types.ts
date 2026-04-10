@@ -171,6 +171,11 @@ export interface GroupOptions {
   tier?: string;
 }
 
+export interface DependencyRef {
+  name: string;
+  id: string;
+}
+
 export interface GroupConcurrencyConfig {
   default: number;
   tiers?: Record<string, number>;
@@ -186,6 +191,7 @@ export interface JobOptions {
   keepUntil?: number | string | Date;
   group?: GroupOptions;
   deadLetter?: string;
+  dependsOn?: DependencyRef[];
 }
 
 export interface ConnectionOptions {
@@ -421,6 +427,8 @@ export interface JobWithMetadata<T = object> extends Job<T> {
   policy: QueuePolicy;
   heartbeatOn: Date | null;
   heartbeatSeconds: number | null;
+  blocked: boolean;
+  blocking: boolean;
   deadLetter: string;
   output: object;
 }
@@ -442,6 +450,7 @@ export interface JobInsert<T = object> {
   heartbeatSeconds?: number;
   group?: GroupOptions;
   deadLetter?: string;
+  dependsOn?: DependencyRef[];
 }
 
 export type WorkerState = 'created' | 'active' | 'stopping' | 'stopped'

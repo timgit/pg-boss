@@ -33,6 +33,11 @@ export const groupConcurrencyConfigSchema = z.object({
   tiers: z.record(z.string(), z.number()).optional()
 }) satisfies z.ZodType<types.HttpGroupConcurrencyConfig>
 
+export const dependencyRefSchema = z.object({
+  name: z.string(),
+  id: z.string()
+})
+
 const sendOptionsSchemaBase = z.object({
   id: z.string().optional(),
   priority: z.number().optional(),
@@ -51,6 +56,7 @@ const sendOptionsSchemaBase = z.object({
   retryBackoff: z.boolean().optional(),
   retryDelayMax: z.number().optional(),
   heartbeatSeconds: z.number().optional(),
+  dependsOn: z.array(dependencyRefSchema).optional(),
 })
 
 export const sendOptionsSchema = sendOptionsSchemaBase satisfies z.ZodType<types.HttpSendOptions>
@@ -118,6 +124,7 @@ export const jobInsertSchema = z.object({
   heartbeatSeconds: z.number().optional(),
   group: groupOptionsSchema.optional(),
   deadLetter: z.string().optional(),
+  dependsOn: z.array(dependencyRefSchema).optional(),
 }) satisfies z.ZodType<types.HttpJobInsert>
 
 const jobSchemaBase = z.object({
@@ -148,6 +155,8 @@ export const jobWithMetadataSchema = jobSchemaBase.extend({
   createdOn: z.iso.datetime().transform((val) => new Date(val)),
   completedOn: z.iso.datetime().nullable().transform((val) => val ? new Date(val) : null),
   keepUntil: z.iso.datetime().transform((val) => new Date(val)),
+  blocked: z.boolean(),
+  blocking: z.boolean(),
   policy: z.string(),
   deadLetter: z.string(),
   output: jsonRecordSchema,
