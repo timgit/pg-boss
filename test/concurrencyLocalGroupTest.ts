@@ -472,4 +472,51 @@ describe('localGroupConcurrency', function () {
     // All jobs should be processed
     expect(totalProcessed).toBe(8)
   })
+
+  it('should fetch enterprise-tier jobs for a group that is at its default limit', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    const groupId = 'test-group'
+    const localGroupConcurrency = { default: 1, tiers: { enterprise: 3 } }
+
+    let enterpriseJobsProcessed = 0
+
+    // Resolved from inside the handler the moment the default-tier job starts,
+    // giving a hard synchronisation point before enterprise jobs are enqueued.
+    let signalDefaultJobActive: () => void
+    const defaultJobActive = new Promise<void>(resolve => { signalDefaultJobActive = resolve })
+
+    // Start the worker before sending jobs so we can control ordering precisely.
+    await ctx.boss.work(ctx.schema, {
+      localConcurrency: 3,
+      localGroupConcurrency,
+      pollingIntervalSeconds: 0.5
+    }, async ([job]) => {
+      if ((job.data as { tier: string }).tier === 'default') {
+        signalDefaultJobActive() // in-memory count is now 1
+        await delay(5000) // hold active for the full test window
+      } else {
+        enterpriseJobsProcessed++
+      }
+    })
+
+    // Send the default-tier job and wait for a hard signal that it is active and
+    // the in-memory count has been incremented before enqueueing enterprise jobs.
+    await ctx.boss.send(ctx.schema, { tier: 'default' }, { group: { id: groupId } })
+    await defaultJobActive
+
+    // Regression coverage: previously #getGroupsAtLocalCapacity compared against
+    // config.default only, so once the group had one active job it was added to
+    // ignoreGroups and all its enterprise-tier jobs were excluded from fetching
+    // entirely, even though the enterprise limit of 3 had capacity remaining.
+    await ctx.boss.send(ctx.schema, { tier: 'enterprise' }, { group: { id: groupId, tier: 'enterprise' } })
+    await ctx.boss.send(ctx.schema, { tier: 'enterprise' }, { group: { id: groupId, tier: 'enterprise' } })
+
+    // Several polling cycles for the available workers to pick up enterprise jobs.
+    await delay(3000)
+
+    // Both enterprise jobs should be processed — the group is at its default limit
+    // but the enterprise tier still has capacity.
+    expect(enterpriseJobsProcessed).toBe(2)
+  })
 })
