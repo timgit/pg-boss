@@ -328,6 +328,21 @@ describe('work', function () {
     expect(wip2.length).toBe(1)
   })
 
+  it('should correlate wip entries to work() call via workId', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    const firstWipEvent = new Promise<Array<any>>(resolve => ctx.boss!.once('wip', resolve))
+
+    await ctx.boss.send(ctx.schema)
+
+    const workId = await ctx.boss.work(ctx.schema, { localConcurrency: 3, pollingIntervalSeconds: 1 }, () => delay(2000))
+
+    const wip = await firstWipEvent
+
+    expect(wip.every((w: any) => w.workId === workId)).toBe(true)
+    expect(wip.length).toBe(3)
+  })
+
   it('should reject work() after stopping', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 

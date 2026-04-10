@@ -338,7 +338,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     const firstWorkerId = randomUUID({ disableEntropyCache: true })
 
-    const createWorker = (workerId: string) => {
+    const createWorker = (workerId: string, workId: string) => {
       const fetch = () => {
         const ignoreGroups = localGroupConcurrency != null
           ? this.#getGroupsAtLocalCapacity(name)
@@ -383,13 +383,13 @@ class Manager extends EventEmitter implements types.EventsMixin {
         this.emit(events.error, { ...error, message: error.message, stack: error.stack, queue: name, worker: workerId })
       }
 
-      return new Worker<ReqData>({ id: workerId, name, options, interval, fetch, onFetch, onError })
+      return new Worker<ReqData>({ id: workerId, workId, name, options, interval, fetch, onFetch, onError })
     }
 
     // Spawn workers based on localConcurrency setting
     for (let i = 0; i < localConcurrency; i++) {
       const workerId = i === 0 ? firstWorkerId : randomUUID({ disableEntropyCache: true })
-      const worker = createWorker(workerId)
+      const worker = createWorker(workerId, firstWorkerId)
 
       this.addWorker(worker)
       worker.start()
