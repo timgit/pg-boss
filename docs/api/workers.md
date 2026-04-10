@@ -4,7 +4,7 @@
 
 Adds a new polling worker for a queue and executes the provided callback function when jobs are found. Each call to work() will add a new worker and resolve a unqiue worker id.
 
-Workers can be stopped via `offWork()` all at once by queue name or individually by using the worker id. Worker activity may be monitored by listening to the `wip` event.
+Workers can be stopped via `offWork()` all at once by queue name or individually by using the worker id. Worker activity may be monitored by listening to the `wip` event or by polling [`getWipData()`](#getwipdata).
 
 The default options for `work()` is 1 job every 2 seconds.
 
@@ -215,6 +215,33 @@ work() with abort signal
 await boss.work('process-video', async ([ job ]) => {
   const result = await fetch('https://api.example.com/process', { signal: job.signal })
 })
+```
+
+### `getWipData(options)`
+
+Returns a snapshot of all active workers in this instance of pg-boss. This is the same data payload emitted by the `wip` event, but available on-demand without waiting for a job transition.
+
+Use this for continuous monitoring of worker utilization — for example, driving metrics or autoscaling signals when jobs are long-running and the `wip` event may not fire frequently enough.
+
+**Arguments**
+- `options`: object *(optional)*
+
+**Options**
+
+* **includeInternal**, bool, *(default=false)*
+
+  If true, includes workers for pg-boss internal queues (e.g., scheduling).
+
+**Returns**: `WipData[]`
+
+```js
+// Poll worker utilization every 2 seconds for metrics
+setInterval(() => {
+  const workers = boss.getWipData()
+  const working = workers.filter(w => w.state === 'active' && w.count > 0).length
+  const idle = workers.filter(w => w.state === 'active' && w.count === 0).length
+  console.log(`working: ${working}, idle: ${idle}`)
+}, 2000)
 ```
 
 ### `notifyWorker(id)`
