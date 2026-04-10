@@ -429,6 +429,42 @@ describe('localGroupConcurrency', function () {
     expect(totalProcessed).toBe(6)
   })
 
+  it('excess jobs restored by localGroupConcurrency should not have retry_count inflated on re-fetch', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
+    const spy = ctx.boss.getSpy(ctx.schema)
+
+    const groupId = 'test-group'
+
+    // Send 2 jobs for the same group. With batchSize: 2 and a single worker,
+    // both jobs are fetched in the same query and both are set to active in the
+    // DB. localGroupConcurrency: 1 then allows the first and marks the second
+    // as excess. Before the fix, restoreJobs only reset state to 'created' and
+    // left started_on set, causing retry_count to be inflated on re-fetch.
+    const jobId1 = await ctx.boss.send(ctx.schema, {}, { group: { id: groupId }, retryLimit: 0 })
+    const jobId2 = await ctx.boss.send(ctx.schema, {}, { group: { id: groupId }, retryLimit: 0 })
+    assertTruthy(jobId1)
+    assertTruthy(jobId2)
+
+    await ctx.boss.work(ctx.schema, {
+      localConcurrency: 1,
+      localGroupConcurrency: 1,
+      batchSize: 2,
+      pollingIntervalSeconds: 0.5
+    }, async () => {})
+
+    await spy.waitForJobWithId(jobId1, 'completed')
+    await spy.waitForJobWithId(jobId2, 'completed')
+
+    const result = await helper.findJobs(ctx.schema, 'id = ANY($1::uuid[])', [[jobId1, jobId2]])
+    expect(result.rows.length).toBe(2)
+    for (const row of result.rows) {
+      // Regression: the excess-restored job previously had retry_count = 1 even
+      // though neither job was actually retried. restoreJobs now clears started_on
+      // so the next fetch sees started_on IS NULL and does not increment retry_count.
+      expect(row.retry_count).toBe(0)
+    }
+  })
+
   it('should handle multiple groups reaching capacity simultaneously', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
 
