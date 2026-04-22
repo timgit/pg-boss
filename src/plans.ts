@@ -643,7 +643,7 @@ function deleteJobsById (schema: string, table: string) {
     WITH results as (
       DELETE FROM ${schema}.${table}
       WHERE name = $1
-        AND id IN (SELECT UNNEST($2::uuid[]))        
+        AND id IN (SELECT UNNEST($2::uuid[]))
       RETURNING 1
     )
     SELECT COUNT(*) from results
@@ -885,24 +885,19 @@ function fetchNextJob (options: FetchJobOptions): SqlQuery {
 
   const params = buildFetchParams(options)
 
-  const whereConditions = [
-    `name = '${name}'`,
-    `state < '${JOB_STATES.active}'`,
-    !ignoreStartAfter ? 'start_after < now()' : '',
-    hasIgnoreSingletons ? `singleton_key <> ALL(${params.ignoreSingletonsParam})` : '',
-    hasIgnoreGroups ? `(group_id IS NULL OR group_id <> ALL(${params.ignoreGroupsParam}))` : '',
-    hasMinPriority ? `priority >= ${params.minPriorityParam}` : '',
-    hasMaxPriority ? `priority <= ${params.maxPriorityParam}` : ''
-  ].filter(Boolean).join(' AND ')
-
   const selectCols = [
-    'id',
-    singletonFetch ? 'singleton_key' : '',
-    hasGroupConcurrency ? 'group_id, group_tier' : ''
+    'j.id',
+    singletonFetch ? 'j.singleton_key' : '',
+    hasGroupConcurrency ? 'j.group_id, j.group_tier' : ''
   ].filter(Boolean).join(', ')
 
+  // MATERIALIZED forces Postgres to compute this aggregation once and cache the
+  // result. Without it, Postgres 12+ may inline the CTE and re-evaluate the
+  // COUNT query at each reference site. active_group_counts is referenced twice:
+  // once in the next CTE join (to pre-filter saturated groups before LIMIT) and
+  // once in group_ranking (to enforce the per-batch concurrency limit).
   const activeGroupCountsCte = hasGroupConcurrency
-    ? `active_group_counts AS (
+    ? `active_group_counts AS MATERIALIZED (
         SELECT group_id, COUNT(*)::int as active_cnt
         FROM ${schema}.${table}
         WHERE name = '${name}' AND state = '${JOB_STATES.active}' AND group_id IS NOT NULL
@@ -910,14 +905,35 @@ function fetchNextJob (options: FetchJobOptions): SqlQuery {
       ), `
     : ''
 
+  // Column references are qualified with j. throughout so both the base case and
+  // the groupConcurrency branch (which joins active_group_counts) share one set of
+  // expressions. The join introduces agc.group_id which would otherwise be ambiguous.
+  const whereConditions = [
+    `j.name = '${name}'`,
+    `j.state < '${JOB_STATES.active}'`,
+    !ignoreStartAfter ? 'j.start_after < now()' : '',
+    hasIgnoreSingletons ? `j.singleton_key <> ALL(${params.ignoreSingletonsParam})` : '',
+    hasIgnoreGroups ? `(j.group_id IS NULL OR j.group_id <> ALL(${params.ignoreGroupsParam}))` : '',
+    hasMinPriority ? `j.priority >= ${params.minPriorityParam}` : '',
+    hasMaxPriority ? `j.priority <= ${params.maxPriorityParam}` : '',
+    hasGroupConcurrency
+      ? `(j.group_id IS NULL
+            OR agc.active_cnt IS NULL
+            OR agc.active_cnt < ${hasTiers
+              ? `COALESCE((${params.tiersParam} ->> j.group_tier)::int, ${params.defaultGroupLimitParam})`
+              : params.defaultGroupLimitParam})`
+      : ''
+  ].filter(Boolean).join('\n          AND ')
+
   const nextCte = `
       next AS (
         SELECT ${selectCols}
-        FROM ${schema}.${table}
+        FROM ${schema}.${table} j
+        ${hasGroupConcurrency ? 'LEFT JOIN active_group_counts agc ON j.group_id = agc.group_id' : ''}
         WHERE ${whereConditions}
-        ORDER BY ${priority ? 'priority desc, ' : ''}${orderByCreatedOn ? 'created_on, ' : ''}id
+        ORDER BY ${priority ? 'j.priority desc, ' : ''}${orderByCreatedOn ? 'j.created_on, ' : ''}j.id
         LIMIT ${limit}
-        FOR UPDATE SKIP LOCKED
+        FOR UPDATE OF j SKIP LOCKED
       )`
 
   const singletonCte = singletonFetch
