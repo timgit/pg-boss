@@ -35,7 +35,7 @@
     "@logtape/hono": "^2.0.5",
     "@logtape/logtape": "^2.0.5",
     "hono": "^4.12.14",
-    "pg-boss": "^12.15.0",
+    "pg-boss": "^12.16.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
