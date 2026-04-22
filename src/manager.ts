@@ -41,7 +41,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     this.db = db
     this.wipTs = Date.now()
     this.workers = new Map()
-    this.queues = null
+    this.queues = {}
     this.pendingOffWorkCleanups = new Set()
     this.#spies = new Map()
     this.#localGroupActive = new Map()
