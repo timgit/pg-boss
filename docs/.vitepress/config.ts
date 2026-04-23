@@ -4,6 +4,9 @@ export default defineConfig({
   title: 'pg-boss',
   description: 'Queueing jobs in Postgres from Node.js like a boss',
   themeConfig: {
+    search: {
+      provider: 'local'
+    },
     nav: [
       { text: 'Guide', link: '/introduction' },
       { text: 'API', link: '/api/constructor' },

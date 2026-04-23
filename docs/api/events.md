@@ -43,7 +43,7 @@ const boss = new PgBoss({
 });
 ```
 
-When enabled, warnings are stored in the `warning` table and can be queried directly or viewed in the [pg-boss dashboard](https://www.npmjs.com/package/@pg-boss/dashboard). See [SQL](../sql.md#warning-table) for the table schema.
+When enabled, warnings are stored in the `warning` table and can be queried directly or viewed in the [pg-boss dashboard](https://www.npmjs.com/package/@pg-boss/dashboard). See [SQL](/sql/warning-table) for the table schema.
 
 To automatically prune old warnings, set the `warningRetentionDays` option:
 
