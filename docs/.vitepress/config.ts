@@ -9,7 +9,7 @@ export default defineConfig({
       provider: 'local'
     },
     nav: [
-      { text: 'Guide', link: '/introduction' },
+      { text: 'Get Started', link: '/introduction' },
       { text: 'API', link: '/api/constructor' },
       {
         text: pkg.version,
@@ -17,8 +17,7 @@ export default defineConfig({
           { text: 'Releases', link: 'https://github.com/timgit/pg-boss/releases' },
           { text: 'npm', link: 'https://www.npmjs.com/package/pg-boss' }
         ]
-      },
-      { text: 'GitHub', link: 'https://github.com/timgit/pg-boss' }
+      }
     ],
     sidebar: [
       { text: 'Introduction', link: '/introduction' },
