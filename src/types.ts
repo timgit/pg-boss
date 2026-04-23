@@ -23,7 +23,7 @@ export interface DatabaseOptions {
   application_name?: string;
   database?: string;
   user?: string;
-  password?: string | (() => string) | (() => Promise<string>);
+  password?: string | (() => string | Promise<string>);
   host?: string;
   port?: number;
   schema?: string;
