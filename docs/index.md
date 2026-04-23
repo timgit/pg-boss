@@ -13,11 +13,6 @@ hero:
       link: /api/constructor
 
 ---
-Queueing jobs in Postgres from Node.js like a boss.
-
-[![NPM](https://nodei.co/npm/pg-boss.svg?style=shields&color=blue)](https://nodei.co/npm/pg-boss/)
-[![Build](https://github.com/timgit/pg-boss/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/timgit/pg-boss/actions/workflows/ci.yml)
-[![Coverage Status](https://coveralls.io/repos/github/timgit/pg-boss/badge.svg?branch=master)](https://coveralls.io/github/timgit/pg-boss?branch=master)
 
 ```js
 async function readme() {
