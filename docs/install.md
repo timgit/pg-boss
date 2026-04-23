@@ -1,4 +1,4 @@
-# Database install <!-- {docsify-ignore-all} -->
+# Database install
 
 pg-boss will automatically create a dedicated schema (`pgboss` is the default name) in the target database. This will require the user in database connection to have the [CREATE](http://www.postgresql.org/docs/current/static/sql-grant.html) privilege.
 

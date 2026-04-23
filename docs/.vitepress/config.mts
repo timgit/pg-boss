@@ -1,28 +1,45 @@
 import { defineConfig } from 'vitepress'
 
-// https://vitepress.dev/reference/site-config
 export default defineConfig({
-  title: "pg-boss",
-  description: "Queueing jobs in Postgres from Node.js like a boss.",
+  title: 'pg-boss',
+  description: 'Queueing jobs in Postgres from Node.js like a boss',
   themeConfig: {
-    // https://vitepress.dev/reference/default-theme-config
     nav: [
-      { text: 'Home', link: '/' },
-      { text: 'Examples', link: '/markdown-examples' }
+      { text: 'Guide', link: '/introduction' },
+      { text: 'API', link: '/api/constructor' },
+      { text: 'GitHub', link: 'https://github.com/timgit/pg-boss' }
     ],
-
     sidebar: [
+      { text: 'Introduction', link: '/introduction' },
+      { text: 'Install', link: '/install' },
+      { text: 'CLI', link: '/cli' },
+      { text: 'Dashboard', link: '/dashboard' },
       {
-        text: 'Examples',
+        text: 'API',
         items: [
-          { text: 'Markdown Examples', link: '/markdown-examples' },
-          { text: 'Runtime API Examples', link: '/api-examples' }
+          { text: 'Constructor', link: '/api/constructor' },
+          { text: 'Events', link: '/api/events' },
+          { text: 'Operations', link: '/api/ops' },
+          { text: 'Queues', link: '/api/queues' },
+          { text: 'Jobs', link: '/api/jobs' },
+          { text: 'Scheduling', link: '/api/scheduling' },
+          { text: 'PubSub', link: '/api/pubsub' },
+          { text: 'Workers', link: '/api/workers' },
+          { text: 'Testing', link: '/api/testing' },
+          { text: 'Utils', link: '/api/utils' }
+        ]
+      },
+      {
+        text: 'SQL',
+        items: [
+          { text: 'Job Table', link: '/sql/job-table' },
+          { text: 'Queue Functions', link: '/sql/queue-functions' },
+          { text: 'Warning Table', link: '/sql/warning-table' }
         ]
       }
     ],
-
     socialLinks: [
-      { icon: 'github', link: 'https://github.com/vuejs/vitepress' }
+      { icon: 'github', link: 'https://github.com/timgit/pg-boss' }
     ]
   }
 })
