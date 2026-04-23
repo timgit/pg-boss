@@ -1,4 +1,5 @@
 import { defineConfig } from 'vitepress'
+import pkg from '../../package.json'
 
 export default defineConfig({
   title: 'pg-boss',
@@ -10,6 +11,13 @@ export default defineConfig({
     nav: [
       { text: 'Guide', link: '/introduction' },
       { text: 'API', link: '/api/constructor' },
+      {
+        text: pkg.version,
+        items: [
+          { text: 'Releases', link: 'https://github.com/timgit/pg-boss/releases' },
+          { text: 'npm', link: 'https://www.npmjs.com/package/pg-boss' }
+        ]
+      },
       { text: 'GitHub', link: 'https://github.com/timgit/pg-boss' }
     ],
     sidebar: [
