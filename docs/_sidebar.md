@@ -13,5 +13,6 @@
 * * [PubSub](./api/pubsub.md)
 * * [Workers](./api/workers.md)
 * * [Testing](./api/testing.md)
+* * [Adapters](./api/adapters.md)
 * * [Utils](./api/utils.md)
 * [SQL](sql.md)

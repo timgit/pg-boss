@@ -351,6 +351,24 @@ describe('work', function () {
     await handlerCompleted
   })
 
+  it('getWipData() should return current worker state', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    await ctx.boss.send(ctx.schema)
+
+    await ctx.boss.work(ctx.schema, { pollingIntervalSeconds: 1 }, () => delay(2000))
+
+    // Wait for the job to be picked up
+    const firstWipEvent = new Promise<void>(resolve => ctx.boss!.once('wip', () => resolve()))
+    await firstWipEvent
+
+    const wip = ctx.boss.getWipData()
+
+    expect(wip.length).toBe(1)
+    expect(wip[0].name).toBe(ctx.schema)
+    expect(wip[0].state).toBe('active')
+  })
+
   it('should reject work() after stopping', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 
