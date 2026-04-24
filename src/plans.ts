@@ -1046,7 +1046,9 @@ function resumeJobs (schema: string, table: string) {
 function restoreJobs (schema: string, table: string) {
   return `
     UPDATE ${schema}.${table}
-    SET state = '${JOB_STATES.created}'
+    SET state = '${JOB_STATES.created}',
+        started_on = NULL,
+        heartbeat_on = NULL
     WHERE name = $1
       AND id IN (SELECT UNNEST($2::uuid[]))
   `
