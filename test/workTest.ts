@@ -328,6 +328,29 @@ describe('work', function () {
     expect(wip2.length).toBe(1)
   })
 
+  it('should correlate wip entries to work() call via workId', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    const firstWipEvent = new Promise<Array<any>>(resolve => ctx.boss!.once('wip', resolve))
+
+    let handlerCompletedResolve: () => void
+    const handlerCompleted = new Promise<void>(resolve => { handlerCompletedResolve = resolve })
+
+    await ctx.boss.send(ctx.schema)
+
+    const workId = await ctx.boss.work(ctx.schema, { localConcurrency: 3, pollingIntervalSeconds: 1 }, async () => {
+      handlerCompletedResolve()
+      await delay(3000)
+    })
+
+    const wip = await firstWipEvent
+
+    expect(wip.every((w: any) => w.workId === workId)).toBe(true)
+    expect(wip.length).toBe(3)
+
+    await handlerCompleted
+  })
+
   it('getWipData() should return current worker state', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 

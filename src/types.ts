@@ -440,6 +440,7 @@ export type WorkerState = 'created' | 'active' | 'stopping' | 'stopped'
 
 export interface WipData {
   id: string;
+  workId: string;
   name: string;
   options: WorkOptions;
   state: WorkerState;

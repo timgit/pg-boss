@@ -10,6 +10,7 @@ const WORKER_STATES = {
 
 interface WorkerOptions<T> {
   id: string
+  workId: string
   name: string
   options: types.WorkOptions
   interval: number
@@ -20,6 +21,7 @@ interface WorkerOptions<T> {
 
 class Worker<T = unknown> {
   readonly id: string
+  readonly workId: string
   readonly name: string
   readonly options: types.WorkOptions
   readonly fetch: () => Promise<types.Job<T>[]>
@@ -43,8 +45,9 @@ class Worker<T = unknown> {
   private beenNotified = false
   private runPromise: Promise<void> | null = null
 
-  constructor ({ id, name, options, interval, fetch, onFetch, onError }: WorkerOptions<T>) {
+  constructor ({ id, workId, name, options, interval, fetch, onFetch, onError }: WorkerOptions<T>) {
     this.id = id
+    this.workId = workId
     this.name = name
     this.options = options
     this.fetch = fetch
@@ -133,6 +136,7 @@ class Worker<T = unknown> {
   toWipData (): types.WipData {
     return {
       id: this.id,
+      workId: this.workId,
       name: this.name,
       options: this.options,
       state: this.state,
