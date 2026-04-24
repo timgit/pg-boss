@@ -427,3 +427,18 @@ export type {
   JobSelector,
   SpyJob,
 } from './spy.ts'
+
+export {
+  fromKnex,
+  fromKysely,
+  fromDrizzle,
+  fromPrisma,
+} from './adapters/index.ts'
+
+export type {
+  KnexTransactionLike,
+  KyselyTransactionLike,
+  DrizzleTransactionLike,
+  DrizzleSqlTagLike,
+  PrismaTransactionLike,
+} from './adapters/index.ts'

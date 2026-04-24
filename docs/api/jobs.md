@@ -80,6 +80,8 @@ All retry, expiration, and retention options can also be set on the queue and wi
   }
     ```
 
+  pg-boss ships with built-in adapters for popular ORMs. See [ORM Transaction Adapters](./api/adapters.md) for details.
+
 **Deferred jobs**
 
 * **startAfter** int, string, or Date

@@ -70,6 +70,48 @@ A HTTP proxy is available in the [`@pg-boss/proxy`](https://www.npmjs.com/packag
 
 See the [proxy documentation](https://github.com/timgit/pg-boss/blob/master/packages/proxy/README.md) for full configuration and deployment options.
 
+## ORM Transaction Adapters
+
+pg-boss ships adapters for running operations inside ORM-managed transactions.  Each adapter wraps the ORM's transaction object as an `IDatabase` you can pass via the `db` option on `send()`, `insert()`, `fetch()`, `complete()`, and other methods.
+
+### Knex / Kysely / Prisma
+
+```ts
+import { fromKnex, fromKysely, fromPrisma } from 'pg-boss'
+```
+
+```ts
+// Knex
+await knex.transaction(async (trx) => {
+  await boss.send('my-queue', data, { db: fromKnex(trx) })
+})
+
+// Kysely
+await db.transaction().execute(async (trx) => {
+  await boss.send('my-queue', data, { db: fromKysely(trx) })
+})
+
+// Prisma (v7+ with @prisma/adapter-pg)
+await prisma.$transaction(async (tx) => {
+  await boss.send('my-queue', data, { db: fromPrisma(tx) })
+})
+```
+
+### Drizzle
+
+The Drizzle adapter accepts the `sql` tagged-template function from `drizzle-orm` as a second argument so it can construct parameterised queries without a runtime dependency on `drizzle-orm`.
+
+```ts
+import { fromDrizzle } from 'pg-boss'
+import { sql } from 'drizzle-orm'
+```
+
+```ts
+await db.transaction(async (tx) => {
+  await boss.send('my-queue', data, { db: fromDrizzle(tx, sql) })
+})
+```
+
 ## Requirements
 * Node 22.12 or higher for CommonJS's require(esm)
 * PostgreSQL 13 or higher

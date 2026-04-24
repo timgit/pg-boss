@@ -7,6 +7,11 @@ export default defineConfig({
     include: ['test/**/*Test.ts'],
     setupFiles: ['./test/hooks.ts'],
     globals: true,
+    typecheck: {
+      enabled: true,
+      include: ['test/**/*TypeTest.ts'],
+      tsconfig: './tsconfig.typecheck.json'
+    },
     coverage: {
       reporter: ['lcov', 'text-summary', 'text'],
       include: ['src/**/*.ts'],
