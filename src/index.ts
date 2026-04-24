@@ -327,6 +327,10 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#boss.supervise(name)
   }
 
+  getWipData (options?: { includeInternal?: boolean }): types.WipData[] {
+    return this.#manager.getWipData(options)
+  }
+
   getSpy<T = object> (name: string): JobSpyInterface<T> {
     return this.#manager.getSpy<T>(name)
   }
