@@ -39,7 +39,8 @@ export default defineConfig({
           { text: 'PubSub', link: '/api/pubsub' },
           { text: 'Workers', link: '/api/workers' },
           { text: 'Testing', link: '/api/testing' },
-          { text: 'Utils', link: '/api/utils' }
+          { text: 'Utils', link: '/api/utils' },
+          { text: 'Adapters', link: '/api/adapters' }
         ]
       },
       {
