@@ -13,7 +13,7 @@ The default options for `work()` is 1 job every 2 seconds.
 **Arguments**
 - `name`: string, *required*
 - `options`: object
-- `handler`: function(jobs): Promise<any>, *required*
+- `handler`: function(jobs): `Promise<any>`, *required*
 
 **Options**
 

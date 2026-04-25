@@ -1,4 +1,4 @@
-# Intro <!-- {docsify-ignore-all} -->
+# Introduction
 pg-boss is a job queue powered by Postgres, operated by 1 or more Node.js instances.
 
 pg-boss relies on [SKIP LOCKED](https://www.postgresql.org/docs/current/sql-select.html#SQL-FOR-UPDATE-SHARE), a feature built specifically for message queues to resolve record locking challenges inherent with relational databases. This provides exactly-once delivery and the safety of guaranteed atomic commits to asynchronous job processing.
