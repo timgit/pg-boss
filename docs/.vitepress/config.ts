@@ -4,6 +4,8 @@ import pkg from '../../package.json'
 export default defineConfig({
   title: 'pg-boss',
   description: 'Queueing jobs in Postgres from Node.js like a boss',
+  base: '/pg-boss/',
+  lastUpdated: true,
   themeConfig: {
     search: {
       provider: 'local'
@@ -24,6 +26,7 @@ export default defineConfig({
       { text: 'Install', link: '/install' },
       { text: 'CLI', link: '/cli' },
       { text: 'Dashboard', link: '/dashboard' },
+      { text: 'Proxy', link: '/proxy' },
       {
         text: 'API',
         items: [
@@ -48,6 +51,13 @@ export default defineConfig({
         ]
       }
     ],
+    editLink: {
+      pattern: 'https://github.com/timgit/pg-boss/edit/master/docs/:path',
+      text: 'Edit this page on GitHub'
+    },
+    lastUpdated: {
+      text: 'Last updated'
+    },
     socialLinks: [
       { icon: 'github', link: 'https://github.com/timgit/pg-boss' }
     ]
