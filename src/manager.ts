@@ -27,6 +27,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
   workers: Map<string, Worker>
   stopped: boolean | undefined
   queueCacheInterval: NodeJS.Timeout | undefined
+  wipInterval: NodeJS.Timeout | undefined
   timekeeper: Timekeeper | undefined
   queues: Record<string, types.QueueResult> | null
   pendingOffWorkCleanups: Set<Promise<any>>
@@ -260,6 +261,18 @@ class Manager extends EventEmitter implements types.EventsMixin {
   async start () {
     this.stopped = false
     this.queueCacheInterval = setInterval(() => this.onCacheQueues({ emit: true }), this.config.queueCacheIntervalSeconds! * 1000)
+    this.wipInterval = setInterval(() => {
+      const now = Date.now()
+      if ((now - this.wipTs) < 2000) {
+        return
+      }
+
+      const wip = this.getWipData()
+      if (wip.some(w => w.count > 0)) {
+        this.emit(events.wip, wip)
+        this.wipTs = now
+      }
+    }, 2000)
     await this.onCacheQueues()
   }
 
@@ -297,6 +310,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     this.stopped = true
 
     clearInterval(this.queueCacheInterval)
+    clearInterval(this.wipInterval)
 
     await Promise.allSettled(
       [...this.workers.values()]
