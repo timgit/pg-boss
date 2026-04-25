@@ -328,6 +328,47 @@ describe('work', function () {
     expect(wip2.length).toBe(1)
   })
 
+  it('should correlate wip entries to work() call via workId', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    const firstWipEvent = new Promise<Array<any>>(resolve => ctx.boss!.once('wip', resolve))
+
+    let handlerCompletedResolve: () => void
+    const handlerCompleted = new Promise<void>(resolve => { handlerCompletedResolve = resolve })
+
+    await ctx.boss.send(ctx.schema)
+
+    const workId = await ctx.boss.work(ctx.schema, { localConcurrency: 3, pollingIntervalSeconds: 1 }, async () => {
+      handlerCompletedResolve()
+      await delay(3000)
+    })
+
+    const wip = await firstWipEvent
+
+    expect(wip.every((w: any) => w.workId === workId)).toBe(true)
+    expect(wip.length).toBe(3)
+
+    await handlerCompleted
+  })
+
+  it('getWipData() should return current worker state', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    await ctx.boss.send(ctx.schema)
+
+    await ctx.boss.work(ctx.schema, { pollingIntervalSeconds: 1 }, () => delay(2000))
+
+    // Wait for the job to be picked up
+    const firstWipEvent = new Promise<void>(resolve => ctx.boss!.once('wip', () => resolve()))
+    await firstWipEvent
+
+    const wip = ctx.boss.getWipData()
+
+    expect(wip.length).toBe(1)
+    expect(wip[0].name).toBe(ctx.schema)
+    expect(wip[0].state).toBe('active')
+  })
+
   it('should reject work() after stopping', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 

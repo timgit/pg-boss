@@ -63,6 +63,7 @@ Emitted at most once every 2 seconds when workers are receiving jobs. The payloa
 [
   {
     id: 'fc738fb0-1de5-4947-b138-40d6a790749e',
+    workId: 'a1b2c3d4-5678-90ab-cdef-1234567890ab',
     name: 'my-queue',
     options: { pollingInterval: 2000 },
     state: 'active',
@@ -76,6 +77,19 @@ Emitted at most once every 2 seconds when workers are receiving jobs. The payloa
     lastErrorOn: null
   }
 ]
+```
+
+`workId` is the value returned by `work()`. When using `localConcurrency`, multiple worker entries in the array will share the same `workId`, allowing you to correlate them back to a specific `work()` call.
+
+```js
+const workId = await boss.work('my-queue', { localConcurrency: 5 }, handler)
+
+boss.on('wip', workers => {
+  const myWorkers = workers.filter(w => w.workId === workId)
+  const working = myWorkers.filter(w => w.count > 0).length
+  const idle = myWorkers.length - working
+  console.log(`working: ${working}/${myWorkers.length}, idle: ${idle}`)
+})
 ```
 
 ## `stopped`
