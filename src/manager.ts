@@ -33,6 +33,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
   #spies: Map<string, JobSpy>
   #localGroupActive: Map<string, Map<string, number>>
   #localGroupConfig: Map<string, types.GroupConcurrencyConfig>
+  #localGroupMaxLimit: Map<string, number>
 
   constructor (db: types.IDatabase, config: types.ResolvedConstructorOptions) {
     super()
@@ -41,11 +42,12 @@ class Manager extends EventEmitter implements types.EventsMixin {
     this.db = db
     this.wipTs = Date.now()
     this.workers = new Map()
-    this.queues = null
+    this.queues = {}
     this.pendingOffWorkCleanups = new Set()
     this.#spies = new Map()
     this.#localGroupActive = new Map()
     this.#localGroupConfig = new Map()
+    this.#localGroupMaxLimit = new Map()
   }
 
   getSpy<T = object> (name: string): JobSpyInterface<T> {
@@ -83,12 +85,17 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const queueGroups = this.#localGroupActive.get(queueName)
     if (!queueGroups) return []
 
+    // Only exclude a group from fetching when it has no remaining capacity for
+    // any tier. Using config.default alone would exclude groups that still have
+    // room for higher tier jobs. Those jobs never reach the per tier check in
+    // #trackLocalGroupStart because ignoreGroups filters them out of the fetch
+    // query before that point. maxLimit is precomputed once at setup time so
+    // Object.values is not called on every fetch cycle.
+    const maxLimit = this.#localGroupMaxLimit.get(queueName) ?? config.default
+
     const atCapacity: string[] = []
     for (const [groupId, activeCount] of queueGroups.entries()) {
-      // We don't have tier info here, so use default limit
-      // Jobs with tiers will be checked individually after fetch
-      const limit = config.default
-      if (activeCount >= limit) {
+      if (activeCount >= maxLimit) {
         atCapacity.push(groupId)
       }
     }
@@ -149,6 +156,9 @@ class Manager extends EventEmitter implements types.EventsMixin {
       ? { default: localGroupConcurrency }
       : localGroupConcurrency
     this.#localGroupConfig.set(name, config)
+    this.#localGroupMaxLimit.set(name, config.tiers
+      ? Math.max(config.default, ...Object.values(config.tiers))
+      : config.default)
   }
 
   #cleanupLocalGroupTracking (name: string): void {
@@ -157,6 +167,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     if (!hasWorkersForQueue) {
       this.#localGroupConfig.delete(name)
       this.#localGroupActive.delete(name)
+      this.#localGroupMaxLimit.delete(name)
     }
   }
 
@@ -296,6 +307,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     // Clean up all local group tracking on full stop
     this.#localGroupConfig.clear()
     this.#localGroupActive.clear()
+    this.#localGroupMaxLimit.clear()
   }
 
   async failWip () {
@@ -338,7 +350,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     const firstWorkerId = randomUUID({ disableEntropyCache: true })
 
-    const createWorker = (workerId: string) => {
+    const createWorker = (workerId: string, workId: string) => {
       const fetch = () => {
         const ignoreGroups = localGroupConcurrency != null
           ? this.#getGroupsAtLocalCapacity(name)
@@ -383,13 +395,13 @@ class Manager extends EventEmitter implements types.EventsMixin {
         this.emit(events.error, { ...error, message: error.message, stack: error.stack, queue: name, worker: workerId })
       }
 
-      return new Worker<ReqData>({ id: workerId, name, options, interval, fetch, onFetch, onError })
+      return new Worker<ReqData>({ id: workerId, workId, name, options, interval, fetch, onFetch, onError })
     }
 
     // Spawn workers based on localConcurrency setting
     for (let i = 0; i < localConcurrency; i++) {
       const workerId = i === 0 ? firstWorkerId : randomUUID({ disableEntropyCache: true })
-      const worker = createWorker(workerId)
+      const worker = createWorker(workerId, firstWorkerId)
 
       this.addWorker(worker)
       worker.start()
