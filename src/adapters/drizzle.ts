@@ -1,4 +1,5 @@
 import type { IDatabase } from '../types.ts'
+import { parsePlaceholders } from './placeholders.ts'
 
 export interface DrizzleTransactionLike {
   execute(query: unknown): Promise<{ rows: any[] }>
@@ -28,16 +29,9 @@ export interface DrizzleSqlTagLike {
 export function fromDrizzle (tx: DrizzleTransactionLike, sql: DrizzleSqlTagLike): IDatabase {
   return {
     async executeSql (text: string, values?: unknown[]) {
-      if (!values || values.length === 0) {
-        const strings = Object.assign([text], { raw: [text] }) as TemplateStringsArray
-        return tx.execute(sql(strings))
-      }
-
-      // Split on $1, $2, … to get the literal parts, then call sql
-      // as a tagged template with those parts and the values.
-      const parts = text.split(/\$\d+/)
+      const { parts, reordered } = parsePlaceholders(text, values)
       const strings = Object.assign([...parts], { raw: [...parts] }) as TemplateStringsArray
-      return tx.execute(sql(strings, ...values))
+      return tx.execute(sql(strings, ...reordered))
     }
   }
 }
