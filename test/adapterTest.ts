@@ -64,6 +64,40 @@ describe('knex adapter', () => {
     const check = await helper.findJobs(ctx.schema, 'id = $1', [jobId])
     expect(check.rows.length).toBe(0)
   })
+
+  it('should handle repeated parameter placeholders', async () => {
+    ctx.boss = await helper.start(ctx.bossConfig)
+    if (!db) db = knex({ client: 'pg', connection: connString })
+
+    const result = await db.transaction(async (trx) => {
+      const adapter = fromKnex(trx)
+      return adapter.executeSql(
+        'SELECT $1::int as a, $2::int as b, $1::int as c',
+        [7, 9]
+      )
+    })
+
+    expect(result.rows[0]?.a).toBe(7)
+    expect(result.rows[0]?.b).toBe(9)
+    expect(result.rows[0]?.c).toBe(7)
+  })
+
+  it('should handle out-of-order repeated placeholders', async () => {
+    ctx.boss = await helper.start(ctx.bossConfig)
+    if (!db) db = knex({ client: 'pg', connection: connString })
+
+    const result = await db.transaction(async (trx) => {
+      const adapter = fromKnex(trx)
+      return adapter.executeSql(
+        'SELECT $2::int as a, $1::int as b, $2::int as c',
+        [10, 20]
+      )
+    })
+
+    expect(result.rows[0]?.a).toBe(20)
+    expect(result.rows[0]?.b).toBe(10)
+    expect(result.rows[0]?.c).toBe(20)
+  })
 })
 
 describe('kysely adapter', () => {
@@ -133,6 +167,26 @@ describe('kysely adapter', () => {
     const check = await helper.findJobs(ctx.schema, 'id = $1', [jobId])
     expect(check.rows.length).toBe(0)
   })
+
+  it('should handle repeated parameter placeholders', async () => {
+    ctx.boss = await helper.start(ctx.bossConfig)
+    if (!db) {
+      const pool = new pg.Pool({ connectionString: connString })
+      db = new Kysely({ dialect: new PostgresDialect({ pool }) })
+    }
+
+    const result = await db.transaction().execute(async (trx) => {
+      const adapter = fromKysely(trx)
+      return adapter.executeSql(
+        'SELECT $1::int as a, $2::int as b, $1::int as c',
+        [7, 9]
+      )
+    })
+
+    expect(result.rows[0]?.a).toBe(7)
+    expect(result.rows[0]?.b).toBe(9)
+    expect(result.rows[0]?.c).toBe(7)
+  })
 })
 
 describe('drizzle adapter', () => {
@@ -197,6 +251,42 @@ describe('drizzle adapter', () => {
     expect(jobId).toBeDefined()
     const check = await helper.findJobs(ctx.schema, 'id = $1', [jobId])
     expect(check.rows.length).toBe(0)
+  })
+
+  it('should handle repeated parameter placeholders', async () => {
+    ctx.boss = await helper.start(ctx.bossConfig)
+    if (!pool) pool = new pg.Pool({ connectionString: connString })
+    const db = drizzle({ client: pool })
+
+    const result = await db.transaction(async (tx) => {
+      const adapter = fromDrizzle(tx, drizzleSql)
+      return adapter.executeSql(
+        'SELECT $1::int as a, $2::int as b, $1::int as c',
+        [7, 9]
+      )
+    })
+
+    expect(result.rows[0]?.a).toBe(7)
+    expect(result.rows[0]?.b).toBe(9)
+    expect(result.rows[0]?.c).toBe(7)
+  })
+
+  it('should handle out-of-order repeated placeholders', async () => {
+    ctx.boss = await helper.start(ctx.bossConfig)
+    if (!pool) pool = new pg.Pool({ connectionString: connString })
+    const db = drizzle({ client: pool })
+
+    const result = await db.transaction(async (tx) => {
+      const adapter = fromDrizzle(tx, drizzleSql)
+      return adapter.executeSql(
+        'SELECT $2::int as a, $1::int as b, $2::int as c',
+        [10, 20]
+      )
+    })
+
+    expect(result.rows[0]?.a).toBe(20)
+    expect(result.rows[0]?.b).toBe(10)
+    expect(result.rows[0]?.c).toBe(20)
   })
 })
 
@@ -271,5 +361,26 @@ describe('prisma adapter', () => {
     expect(jobId).toBeDefined()
     const check = await helper.findJobs(ctx.schema, 'id = $1', [jobId])
     expect(check.rows.length).toBe(0)
+  })
+
+  it('should handle repeated parameter placeholders', async () => {
+    ctx.boss = await helper.start(ctx.bossConfig)
+    if (!pool) pool = new pg.Pool({ connectionString: connString })
+    if (!prisma) {
+      const adapter = new PrismaPg(pool)
+      prisma = new PrismaClient({ adapter })
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      const db = fromPrisma(tx)
+      return db.executeSql(
+        'SELECT $1::int as a, $2::int as b, $1::int as c',
+        [7, 9]
+      )
+    })
+
+    expect(result.rows[0]?.a).toBe(7)
+    expect(result.rows[0]?.b).toBe(9)
+    expect(result.rows[0]?.c).toBe(7)
   })
 })
