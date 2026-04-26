@@ -1,11 +1,8 @@
-import { useState } from 'react'
-import { useSearchParams, redirect, useFetcher } from 'react-router'
+import { useSearchParams } from 'react-router'
 import { DbLink } from '~/components/db-link'
 import type { Route } from './+types/jobs'
 import {
   getRecentJobs,
-  getQueues,
-  searchJobById,
 } from '~/lib/queries.server'
 import { Card, CardHeader, CardTitle, CardContent } from '~/components/ui/card'
 import { Badge } from '~/components/ui/badge'
@@ -29,7 +26,6 @@ import {
   JOB_STATE_OPTIONS,
   isValidJobState,
   DEFAULT_STATE_FILTER,
-  cn,
 } from '~/lib/utils'
 
 export async function loader ({ request, context }: Route.LoaderArgs) {
@@ -46,21 +42,17 @@ export async function loader ({ request, context }: Route.LoaderArgs) {
   const limit = 20
   const offset = (page - 1) * limit
 
-  const [recentJobs, queues] = await Promise.all([
-    getRecentJobs(context.DB_URL, context.SCHEMA, {
-      state: stateFilter,
-      limit,
-      offset,
-    }),
-    getQueues(context.DB_URL, context.SCHEMA),
-  ])
+  const recentJobs = await getRecentJobs(context.DB_URL, context.SCHEMA, {
+    state: stateFilter,
+    limit,
+    offset,
+  })
 
   const hasNextPage = recentJobs.length === limit
   const hasPrevPage = page > 1
 
   return {
     recentJobs,
-    queues,
     page,
     stateFilter,
     hasNextPage,
@@ -68,41 +60,13 @@ export async function loader ({ request, context }: Route.LoaderArgs) {
   }
 }
 
-export async function action ({ request, context }: Route.ActionArgs) {
-  const formData = await request.formData()
-  const jobId = (formData.get('jobId') as string | null)?.trim()
-  const queueName = (formData.get('queueName') as string | null)?.trim() || null
-
-  if (!jobId) {
-    return { searchError: 'Job ID is required' }
-  }
-
-  const result = await searchJobById(context.DB_URL, context.SCHEMA, jobId, queueName)
-
-  if (!result) {
-    return { searchError: 'Job not found' }
-  }
-
-  const url = new URL(request.url)
-  const dbParam = url.searchParams.get('db')
-  const redirectUrl = dbParam
-    ? `/queues/${encodeURIComponent(result.name)}/jobs/${encodeURIComponent(jobId)}?db=${encodeURIComponent(dbParam)}`
-    : `/queues/${encodeURIComponent(result.name)}/jobs/${encodeURIComponent(jobId)}`
-
-  return redirect(redirectUrl)
-}
-
 export function ErrorBoundary () {
   return <ErrorCard title="Failed to load jobs" />
 }
 
 export default function Jobs ({ loaderData }: Route.ComponentProps) {
-  const { recentJobs, queues, page, stateFilter, hasNextPage, hasPrevPage } = loaderData
+  const { recentJobs, page, stateFilter, hasNextPage, hasPrevPage } = loaderData
   const [searchParams, setSearchParams] = useSearchParams()
-  const fetcher = useFetcher<{ searchError?: string }>()
-  const isSearching = fetcher.state !== 'idle'
-
-  const [selectedQueue, setSelectedQueue] = useState('')
 
   const handleFilterChange = (key: string, value: string | null) => {
     const params = new URLSearchParams(searchParams)
@@ -134,73 +98,6 @@ export default function Jobs ({ loaderData }: Route.ComponentProps) {
           <Button variant="primary" size="md">Send Job</Button>
         </DbLink>
       </div>
-
-      {/* Search by Job ID */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Search by Job ID</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <fetcher.Form method="post" className="space-y-3">
-            <div className="flex flex-col sm:flex-row gap-3">
-              <div className="flex-1">
-                <input
-                  type="text"
-                  name="jobId"
-                  placeholder="Enter job ID (UUID)"
-                  className={cn(
-                    'w-full rounded-lg border px-3 py-2 text-sm font-mono',
-                    'bg-white border-gray-300 text-gray-900 placeholder-gray-400',
-                    'dark:bg-gray-900 dark:border-gray-700 dark:text-gray-100 dark:placeholder-gray-500',
-                    'focus:outline-none focus:ring-2 focus:ring-primary-600 focus:border-transparent'
-                  )}
-                />
-              </div>
-              <div className="sm:w-56">
-                <select
-                  name="queueName"
-                  value={selectedQueue}
-                  onChange={(e) => setSelectedQueue(e.target.value)}
-                  className={cn(
-                    'w-full rounded-lg border px-3 py-2 text-sm',
-                    'bg-white border-gray-300 text-gray-900',
-                    'dark:bg-gray-900 dark:border-gray-700 dark:text-gray-100',
-                    'focus:outline-none focus:ring-2 focus:ring-primary-600 focus:border-transparent'
-                  )}
-                >
-                  <option value="">All queues (global)</option>
-                  {queues.map((q: any) => (
-                    <option key={q.name} value={q.name}>{q.name}</option>
-                  ))}
-                </select>
-              </div>
-              <Button type="submit" variant="primary" size="md" disabled={isSearching}>
-                {isSearching ? 'Searching...' : 'Search'}
-              </Button>
-            </div>
-
-            {!selectedQueue && (
-              <p className={cn(
-                'text-xs px-3 py-2 rounded-lg',
-                'bg-amber-50 border border-amber-200 text-amber-700',
-                'dark:bg-amber-950 dark:border-amber-800 dark:text-amber-400'
-              )}>
-                Searching across all queues can be very slow on large projects. Selecting a specific queue is strongly recommended.
-              </p>
-            )}
-
-            {fetcher.data?.searchError && (
-              <p className={cn(
-                'text-xs px-3 py-2 rounded-lg',
-                'bg-red-50 border border-red-200 text-red-700',
-                'dark:bg-red-950 dark:border-red-800 dark:text-red-400'
-              )}>
-                {fetcher.data.searchError}
-              </p>
-            )}
-          </fetcher.Form>
-        </CardContent>
-      </Card>
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">

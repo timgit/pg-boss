@@ -565,26 +565,5 @@ export async function getSchedule (
   return await queryOne<ScheduleResult>(dbUrl, sql, [name, key])
 }
 
-// Search for a job by ID, optionally scoped to a specific queue.
-// When queueName is provided, the query uses the composite index on (name, id) and is fast.
-// When queueName is omitted (global search), a primary key lookup on id is used, which
-// can be slow on large partitioned tables.
-export async function searchJobById (
-  dbUrl: string,
-  schema: string,
-  jobId: string,
-  queueName?: string | null
-): Promise<{ name: string } | null> {
-  const s = validateIdentifier(schema)
-
-  if (queueName) {
-    const sql = `SELECT name FROM ${s}.job WHERE name = $1 AND id = $2 LIMIT 1`
-    return queryOne<{ name: string }>(dbUrl, sql, [queueName, jobId])
-  }
-
-  const sql = `SELECT name FROM ${s}.job WHERE id = $1 LIMIT 1`
-  return queryOne<{ name: string }>(dbUrl, sql, [jobId])
-}
-
 // Re-export job action methods from boss.server
 export { getJobById, cancelJob, resumeJob, deleteJob } from './boss.server'
