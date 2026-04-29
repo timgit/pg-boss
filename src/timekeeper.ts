@@ -28,6 +28,17 @@ const WARNING_TYPES = {
   CLOCK_SKEW: 'clock_skew'
 } as const
 
+function isSubMinuteCron (cron: string): boolean {
+  return cron.trim().split(/\s+/).length === 6
+}
+
+function getCronIntervalSeconds (cron: string, tz: string): number {
+  const interval = CronExpressionParser.parse(cron, { tz, strict: false })
+  const prev = interval.prev()
+  const next = interval.next()
+  return Math.round((next.getTime() - prev.getTime()) / 1000)
+}
+
 class Timekeeper extends EventEmitter implements types.EventsMixin {
   db: types.IDatabase
   config: types.ResolvedConstructorOptions
@@ -38,6 +49,8 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
   private skewMonitorInterval: NodeJS.Timeout | null | undefined
   private timekeeping: boolean | undefined
   private _checkingSkew = false
+  private schedules: types.Schedule[] = []
+  private secondTickInterval: NodeJS.Timeout | null | undefined
 
   clockSkew = 0
   events = EVENTS
@@ -78,10 +91,12 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
 
     await this.manager.work<types.Request>(QUEUES.SEND_IT, options, (jobs) => this.onSendIt(jobs))
 
+    await this.refreshScheduleCache()
     setImmediate(() => this.onCron())
 
     this.cronMonitorInterval = setInterval(async () => await this.onCron(), this.config.cronMonitorIntervalSeconds! * 1000)
     this.skewMonitorInterval = setInterval(async () => await this.cacheClockSkew(), this.config.clockMonitorIntervalSeconds! * 1000)
+    this.secondTickInterval = setInterval(async () => await this.onSecondTick(), 1000)
   }
 
   async stop () {
@@ -101,6 +116,11 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
     if (this.cronMonitorInterval) {
       clearInterval(this.cronMonitorInterval)
       this.cronMonitorInterval = null
+    }
+
+    if (this.secondTickInterval) {
+      clearInterval(this.secondTickInterval)
+      this.secondTickInterval = null
     }
 
     while (this.timekeeping || this._checkingSkew) {
@@ -134,10 +154,10 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
 
       if (skewSeconds >= 60 || this.config.__test__force_clock_skew_warning) {
         await emitAndPersistWarning(
-          this.warningContext,
-          WARNING_TYPES.CLOCK_SKEW,
-          WARNINGS.CLOCK_SKEW.message,
-          { seconds: skewSeconds, direction: skew > 0 ? 'slower' : 'faster' }
+            this.warningContext,
+            WARNING_TYPES.CLOCK_SKEW,
+            WARNINGS.CLOCK_SKEW.message,
+            { seconds: skewSeconds, direction: skew > 0 ? 'slower' : 'faster' }
         )
       }
     } catch (err) {
@@ -158,6 +178,8 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
 
       this.timekeeping = true
 
+      await this.refreshScheduleCache()
+
       const sql = plans.trySetCronTime(this.config.schema, this.config.cronMonitorIntervalSeconds)
 
       if (!this.stopped) {
@@ -175,18 +197,39 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
   }
 
   async cron () {
-    const schedules = await this.getSchedules()
-
-    const scheduled = schedules
-      .filter(i => this.shouldSendIt(i.cron, i.timezone))
-      .map(({ name, key, data, options }): types.JobInsert => ({ data: { name, data, options }, singletonKey: `${name}__${key}`, singletonSeconds: 60 }))
+    const scheduled = this.schedules
+        .filter(i => !isSubMinuteCron(i.cron) && this.shouldSendIt(i.cron, i.timezone))
+        .map(({ name, key, data, options }): types.JobInsert => ({ data: { name, data, options }, singletonKey: `${name}__${key}`, singletonSeconds: 60 }))
 
     if (scheduled.length > 0 && !this.stopped) {
       await this.manager.insert(QUEUES.SEND_IT, scheduled)
     }
   }
 
-  shouldSendIt (cron: string, tz: string) {
+  async onSecondTick () {
+    if (this.stopped) return
+
+    try {
+      const scheduled = this.schedules
+          .filter(i => isSubMinuteCron(i.cron) && this.shouldSendIt(i.cron, i.timezone, 1.5))
+          .map(({ name, key, data, options, cron, timezone }): types.JobInsert => {
+            const intervalSeconds = getCronIntervalSeconds(cron, timezone)
+            return {
+              data: { name, data, options },
+              singletonKey: `${name}__${key}`,
+              ...(intervalSeconds > 1 ? { singletonSeconds: Math.min(intervalSeconds, 60) } : {})
+            }
+          })
+
+      if (scheduled.length > 0) {
+        await this.manager.insert(QUEUES.SEND_IT, scheduled)
+      }
+    } catch (err) {
+      this.emit(this.events.error, err)
+    }
+  }
+
+  shouldSendIt (cron: string, tz: string, windowSeconds = 60) {
     const interval = CronExpressionParser.parse(cron, { tz, strict: false })
 
     const prevTime = interval.prev()
@@ -195,7 +238,15 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
 
     const prevDiff = (databaseTime - prevTime.getTime()) / 1000
 
-    return prevDiff < 60
+    return prevDiff < windowSeconds
+  }
+
+  async refreshScheduleCache (): Promise<void> {
+    try {
+      this.schedules = await this.getSchedules()
+    } catch (err) {
+      this.emit(this.events.error, err)
+    }
   }
 
   private async onSendIt (jobs: types.Job<types.Request>[]): Promise<void> {
@@ -227,6 +278,7 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
     try {
       const sql = plans.schedule(this.config.schema)
       await this.db.executeSql(sql, [name, key, cron, tz, data, options])
+      await this.refreshScheduleCache()
     } catch (err: any) {
       if (err.message.includes('foreign key')) {
         err.message = `Queue ${name} not found`
@@ -239,6 +291,7 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
   async unschedule (name: string, key = ''): Promise<void> {
     const sql = plans.unschedule(this.config.schema)
     await this.db.executeSql(sql, [name, key])
+    await this.refreshScheduleCache()
   }
 }
 

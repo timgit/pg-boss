@@ -365,6 +365,72 @@ describe('schedule', function () {
     expect(schedules[0].cron).toBe('0 1 * * *')
   })
 
+  it('should send jobs based on every one second expression', async function () {
+    const config = {
+      ...ctx.bossConfig,
+      cronWorkerIntervalSeconds: 1,
+      schedule: true
+    }
+
+    ctx.boss = await helper.start(config)
+
+    await ctx.boss.schedule(ctx.schema, '* * * * * *')
+
+    let numJobs = 0
+    await ctx.boss.work(ctx.schema, async () => { numJobs++ })
+
+    await delay(3000)
+
+    expect(numJobs).toBeGreaterThan(1)
+  })
+
+  it('should send jobs based on every five seconds expression', async function () {
+    const config = {
+      ...ctx.bossConfig,
+      cronWorkerIntervalSeconds: 1,
+      schedule: true
+    }
+
+    ctx.boss = await helper.start(config)
+
+    await ctx.boss.schedule(ctx.schema, '*/5 * * * * *')
+
+    let numJobs = 0
+    await ctx.boss.work(ctx.schema, async () => { numJobs++ })
+
+    await delay(7000)
+
+    expect(numJobs).toBeGreaterThanOrEqual(1)
+  })
+
+  it('in case of restart, jobs should not be overscheduled', async function () {
+    const config = {
+      ...ctx.bossConfig,
+      cronWorkerIntervalSeconds: 1,
+      schedule: true
+    }
+
+    ctx.boss = await helper.start(config)
+
+    await ctx.boss.schedule(ctx.schema, '*/5 * * * * *')
+
+    let numJobs = 0
+    await ctx.boss.work(ctx.schema, async () => { numJobs++ })
+
+    await delay(6000)
+
+    await ctx.boss.stop({ graceful: false })
+
+    ctx.boss = await helper.start(config)
+    await ctx.boss.work(ctx.schema, async () => { numJobs++ })
+
+    await delay(1500)
+
+    // 7.5s total: */5 * * * * * fires at most 2 times in any 7.5s window
+    // a restart that re-fires the same occurrence would push the count to 3+
+    expect(numJobs).toBeLessThanOrEqual(2)
+  })
+
   it('should get schedules filtered by a queue name and key', async function () {
     const config = {
       ...ctx.bossConfig
