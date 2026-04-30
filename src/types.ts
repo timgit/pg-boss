@@ -1,5 +1,3 @@
-import type pg from 'pg'
-
 export type JobStates = {
   created: 'created',
   retry: 'retry',
@@ -21,9 +19,19 @@ export interface IDatabase {
   executeSql(text: string, values?: unknown[]): Promise<{ rows: any[] }>;
 }
 
-export interface DatabaseOptions extends pg.PoolConfig {
+export interface DatabaseOptions {
+  application_name?: string;
+  database?: string;
+  user?: string;
+  password?: string | (() => string | Promise<string>);
+  host?: string;
+  port?: number;
   schema?: string;
+  ssl?: any;
+  connectionString?: string;
+  max?: number;
   db?: IDatabase;
+  connectionTimeoutMillis?: number;
   /** @internal */
   debug?: boolean;
 }
