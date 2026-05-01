@@ -18,6 +18,8 @@ import {
   getProblemQueuesCount,
   getTopQueues,
   getRecentJobs,
+  getRecentJobsCount,
+  getQueueNames,
   getJobs,
   getJobCountFromQueue,
   getJobById,
@@ -424,6 +426,183 @@ describe('Job Queries', () => {
 
       const secondPage = await getRecentJobs(ctx.connectionString, ctx.schema, { limit: 2, offset: 2 })
       expect(secondPage).toHaveLength(1)
+    })
+
+    describe('filters', () => {
+      it('filters by exact job id', async () => {
+        await createTestQueue('test-queue')
+        const targetId = await sendTestJob('test-queue', { task: 'target' })
+        await sendTestJob('test-queue', { task: 'other' })
+
+        const jobs = await getRecentJobs(ctx.connectionString, ctx.schema, { id: targetId })
+        expect(jobs).toHaveLength(1)
+        expect(jobs[0].id).toBe(targetId)
+      })
+
+      it('returns empty when id is not a valid UUID without hitting Postgres', async () => {
+        await createTestQueue('test-queue')
+        await sendTestJob('test-queue', { task: 'whatever' })
+
+        const jobs = await getRecentJobs(ctx.connectionString, ctx.schema, { id: 'not-a-uuid' })
+        expect(jobs).toEqual([])
+      })
+
+      it('filters by a list of queue names', async () => {
+        await createTestQueue('alpha')
+        await createTestQueue('beta')
+        await createTestQueue('gamma')
+        await sendTestJob('alpha', { task: 'a' })
+        await sendTestJob('beta', { task: 'b' })
+        await sendTestJob('gamma', { task: 'c' })
+
+        const jobs = await getRecentJobs(ctx.connectionString, ctx.schema, { queues: ['alpha', 'beta'] })
+        expect(jobs).toHaveLength(2)
+        expect(jobs.map((j) => j.name).sort()).toEqual(['alpha', 'beta'])
+      })
+
+      it('filters by minimum retry count', async () => {
+        await createTestQueue('test-queue')
+        const flakyId = await sendTestJob('test-queue', { task: 'flaky' })
+        await sendTestJob('test-queue', { task: 'fresh' })
+
+        // Manually bump retry_count to simulate a job that has been retried.
+        // We can't easily trigger the real retry flow inside a single test, but
+        // the SQL check is just retry_count >= N regardless of how it got there.
+        const { Pool } = pg
+        const pool = new Pool({ connectionString: ctx.connectionString })
+        try {
+          await pool.query(`UPDATE ${ctx.schema}.job SET retry_count = 2 WHERE id = $1`, [flakyId])
+        } finally {
+          await pool.end()
+        }
+
+        const jobs = await getRecentJobs(ctx.connectionString, ctx.schema, { minRetries: 1 })
+        expect(jobs).toHaveLength(1)
+        expect(jobs[0].id).toBe(flakyId)
+      })
+
+      it('filters by data containment with object payload', async () => {
+        await createTestQueue('test-queue')
+        const sessionId = '6dff4e1b-9c74-4d53-9969-1991d887e7ca'
+        const targetId = await sendTestJob('test-queue', { sessionId, extension: 'webm' })
+        await sendTestJob('test-queue', { sessionId: 'something-else', extension: 'webm' })
+
+        const jobs = await getRecentJobs(ctx.connectionString, ctx.schema, {
+          data: { sessionId },
+        })
+        expect(jobs).toHaveLength(1)
+        expect(jobs[0].id).toBe(targetId)
+      })
+
+      it('filters by output containment', async () => {
+        await createTestQueue('test-queue')
+        await sendTestJob('test-queue', { task: 'one' })
+        await sendTestJob('test-queue', { task: 'two' })
+
+        const fetched1 = await fetchTestJob('test-queue')
+        const fetched2 = await fetchTestJob('test-queue')
+        if (!fetched1 || !fetched2) throw new Error('expected fetched jobs')
+
+        await completeTestJob('test-queue', fetched1.id, { status: 'ok' })
+        await completeTestJob('test-queue', fetched2.id, { status: 'fail' })
+
+        const jobs = await getRecentJobs(ctx.connectionString, ctx.schema, {
+          state: 'all',
+          output: { status: 'ok' },
+        })
+        expect(jobs).toHaveLength(1)
+        expect(jobs[0].id).toBe(fetched1.id)
+      })
+
+      it('filters by output containment for primitive return values (wrapped as {value})', async () => {
+        await createTestQueue('test-queue')
+        await sendTestJob('test-queue', { task: 'one' })
+        await sendTestJob('test-queue', { task: 'two' })
+
+        const fetched1 = await fetchTestJob('test-queue')
+        const fetched2 = await fetchTestJob('test-queue')
+        if (!fetched1 || !fetched2) throw new Error('expected fetched jobs')
+
+        // pg-boss wraps primitive output as {"value": x} (manager.ts
+        // mapCompletionDataArg). The dashboard relies on this so users can
+        // filter by `value=42` and still find jobs whose handler returned 42.
+        await completeTestJob('test-queue', fetched1.id, 42 as unknown as object)
+        await completeTestJob('test-queue', fetched2.id, 99 as unknown as object)
+
+        const jobs = await getRecentJobs(ctx.connectionString, ctx.schema, {
+          state: 'all',
+          output: { value: 42 },
+        })
+        expect(jobs).toHaveLength(1)
+        expect(jobs[0].id).toBe(fetched1.id)
+      })
+
+      it('combines multiple filters with AND', async () => {
+        await createTestQueue('queue-a')
+        await createTestQueue('queue-b')
+        const targetId = await sendTestJob('queue-a', { sessionId: 'abc', priority: 'high' })
+        await sendTestJob('queue-a', { sessionId: 'def', priority: 'high' })
+        await sendTestJob('queue-b', { sessionId: 'abc', priority: 'high' })
+
+        const jobs = await getRecentJobs(ctx.connectionString, ctx.schema, {
+          queues: ['queue-a'],
+          data: { sessionId: 'abc' },
+        })
+        expect(jobs).toHaveLength(1)
+        expect(jobs[0].id).toBe(targetId)
+      })
+    })
+  })
+
+  describe('getRecentJobsCount', () => {
+    it('returns 0 when no jobs exist', async () => {
+      const count = await getRecentJobsCount(ctx.connectionString, ctx.schema)
+      expect(count).toBe(0)
+    })
+
+    it('counts all jobs when no filters are set', async () => {
+      await createTestQueue('test-queue')
+      await sendTestJob('test-queue', { task: '1' })
+      await sendTestJob('test-queue', { task: '2' })
+      await sendTestJob('test-queue', { task: '3' })
+
+      const count = await getRecentJobsCount(ctx.connectionString, ctx.schema)
+      expect(count).toBe(3)
+    })
+
+    it('respects filters', async () => {
+      await createTestQueue('alpha')
+      await createTestQueue('beta')
+      await sendTestJob('alpha', { task: 'a1' })
+      await sendTestJob('alpha', { task: 'a2' })
+      await sendTestJob('beta', { task: 'b1' })
+
+      const count = await getRecentJobsCount(ctx.connectionString, ctx.schema, { queues: ['alpha'] })
+      expect(count).toBe(2)
+    })
+
+    it('returns 0 when id filter is malformed', async () => {
+      await createTestQueue('test-queue')
+      await sendTestJob('test-queue', { task: '1' })
+
+      const count = await getRecentJobsCount(ctx.connectionString, ctx.schema, { id: 'nope' })
+      expect(count).toBe(0)
+    })
+  })
+
+  describe('getQueueNames', () => {
+    it('returns an empty list when no queues exist', async () => {
+      const names = await getQueueNames(ctx.connectionString, ctx.schema)
+      expect(names).toEqual([])
+    })
+
+    it('returns queue names sorted alphabetically', async () => {
+      await createTestQueue('charlie')
+      await createTestQueue('alpha')
+      await createTestQueue('bravo')
+
+      const names = await getQueueNames(ctx.connectionString, ctx.schema)
+      expect(names).toEqual(['alpha', 'bravo', 'charlie'])
     })
   })
 
