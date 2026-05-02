@@ -1,6 +1,6 @@
 {
   "name": "pg-boss",
-  "version": "12.17.0",
+  "version": "12.18.1",
   "description": "Queueing jobs in Postgres from Node.js like a boss",
   "type": "module",
   "main": "./dist/index.js",
@@ -26,7 +26,7 @@
     "@types/pg": "^8.20.0",
     "@vitest/coverage-v8": "^4.1.2",
     "cli-testlab": "^6.0.1",
-    "drizzle-orm": "^1.0.0-beta.20",
+    "drizzle-orm": "^1.0.0-beta.22",
     "eslint": "^9.39.4",
     "knex": "^3.2.9",
     "kysely": "^0.28.15",
