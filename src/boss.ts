@@ -246,6 +246,9 @@ class Boss extends EventEmitter implements types.EventsMixin {
       const queues = rows.map((q) => q.name)
       const sql = plans.deletion(this.#config.schema, table, queues)
       await this.#executeQuery(sql)
+
+      const depSql = plans.cleanupDependencies(this.#config.schema, table, queues)
+      await this.#executeQuery(depSql)
     }
   }
 }

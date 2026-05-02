@@ -495,7 +495,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     await this.db.executeSql(sql, [event, name])
   }
 
-  publish (event: string, data?: object, options?: types.SendOptions): Promise<void>
+  publish(event: string, data?: object, options?: types.SendOptions): Promise<void>
   async publish (event: string, data?: object, options?: types.SendOptions): Promise<void> {
     assert(event, 'Missing required argument')
     const sql = plans.getQueuesForEvent(this.config.schema)
@@ -504,8 +504,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
     await Promise.allSettled(rows.map(({ name }) => this.send(name, data, options)))
   }
 
-  send (request: types.Request): Promise<string | null>
-  send (name: string, data?: object | null, options?: types.SendOptions | null): Promise<string | null>
+  send(request: types.Request): Promise<string | null>
+  send(name: string, data?: object | null, options?: types.SendOptions | null): Promise<string | null>
   async send (...args: any[]): Promise<string | null> {
     const result = Attorney.checkSendArgs(args)
 
@@ -613,7 +613,6 @@ class Manager extends EventEmitter implements types.EventsMixin {
     }
 
     if (singletonNextSlot) {
-      // delay starting by the offset to honor throttling config
       job.startAfter = this.getDebounceStartAfter(singletonSeconds!, this.timekeeper!.clockSkew)
       job.singletonOffset = singletonSeconds
 
@@ -634,6 +633,13 @@ class Manager extends EventEmitter implements types.EventsMixin {
     return null
   }
 
+  async #markParentsBlocking (db: types.IDatabase, deps: types.DependencyRef[]) {
+    const uniqueParents = [...new Map(deps.map(d => [`${d.name}:${d.id}`, d])).values()]
+    const query = plans.markJobsBlocking(this.config.schema)
+    const parentRefs = uniqueParents.map(d => ({ parent_name: d.name, parent_id: d.id }))
+    await db.executeSql(query.text, [JSON.stringify(parentRefs)])
+  }
+
   async insert (
     name: string,
     jobs: types.JobInsert[],
@@ -651,16 +657,24 @@ class Manager extends EventEmitter implements types.EventsMixin {
       }
     }
 
+    const insertPayload = jobs.map(j => {
+      const { group, ...rest } = j
+      return {
+        ...rest,
+        groupId: group?.id ?? undefined,
+        groupTier: group?.tier ?? undefined
+      }
+    })
+
     const db = this.assertDb(options)
 
     const spy = this.config.__test__enableSpies ? this.#spies.get(name) : undefined
 
-    // Return IDs if spy is active for this queue (needed for job tracking)
     const returnId = !!spy || !!options.returnId
 
     const sql = plans.insertJobs(this.config.schema, { table, name, returnId })
 
-    const { rows } = await db.executeSql(sql, [JSON.stringify(jobs)])
+    const { rows } = await db.executeSql(sql, [JSON.stringify(insertPayload)])
 
     if (rows.length) {
       if (spy) {
@@ -672,6 +686,91 @@ class Manager extends EventEmitter implements types.EventsMixin {
     }
 
     return null
+  }
+
+  async createFlow (jobs: types.FlowJob[], options: types.ConnectionOptions = {}): Promise<Record<string, string>> {
+    Attorney.validateFlowJobs(jobs)
+
+    const refToId: Record<string, string> = {}
+    for (const job of jobs) {
+      refToId[job.ref] = job.options?.id ?? randomUUID()
+    }
+
+    const execute = async (db: types.IDatabase): Promise<Record<string, string>> => {
+      const byQueue = new Map<string, types.FlowJob[]>()
+      for (const job of jobs) {
+        const group = byQueue.get(job.name) || []
+        group.push(job)
+        byQueue.set(job.name, group)
+      }
+
+      for (const [queueName, queueJobs] of byQueue) {
+        const { table } = await this.getQueueCache(queueName)
+
+        const insertPayload = queueJobs.map(j => {
+          const hasDeps = j.dependsOn && j.dependsOn.length > 0
+          return {
+            id: refToId[j.ref],
+            name: queueName,
+            data: j.data ?? null,
+            priority: j.options?.priority,
+            startAfter: j.options?.startAfter,
+            singletonKey: j.options?.singletonKey ?? undefined,
+            singletonSeconds: j.options?.singletonSeconds,
+            groupId: j.options?.group?.id ?? undefined,
+            groupTier: j.options?.group?.tier ?? undefined,
+            expireInSeconds: j.options?.expireInSeconds,
+            deleteAfterSeconds: j.options?.deleteAfterSeconds,
+            retentionSeconds: j.options?.retentionSeconds,
+            retryLimit: j.options?.retryLimit,
+            retryDelay: j.options?.retryDelay,
+            retryBackoff: j.options?.retryBackoff,
+            retryDelayMax: j.options?.retryDelayMax,
+            heartbeatSeconds: j.options?.heartbeatSeconds,
+            deadLetter: j.options?.deadLetter ?? undefined,
+            blocked: hasDeps || undefined
+          }
+        })
+
+        const sql = plans.insertJobs(this.config.schema, { table, name: queueName, returnId: false })
+        await db.executeSql(sql, [JSON.stringify(insertPayload)])
+      }
+
+      const depRows: { child_name: string, child_id: string, parent_name: string, parent_id: string }[] = []
+      const parentRefs: types.DependencyRef[] = []
+
+      for (const job of jobs) {
+        if (!job.dependsOn || job.dependsOn.length === 0) continue
+        for (const depRef of job.dependsOn) {
+          const parentJob = jobs.find(j => j.ref === depRef)!
+          depRows.push({
+            child_name: job.name,
+            child_id: refToId[job.ref],
+            parent_name: parentJob.name,
+            parent_id: refToId[depRef]
+          })
+          parentRefs.push({ name: parentJob.name, id: refToId[depRef] })
+        }
+      }
+
+      if (depRows.length > 0) {
+        const depSql = plans.insertDependencies(this.config.schema)
+        await db.executeSql(depSql, [JSON.stringify(depRows)])
+        await this.#markParentsBlocking(db, parentRefs)
+      }
+
+      return refToId
+    }
+
+    if (options.db) {
+      return execute(options.db)
+    }
+
+    if (this.db._pgbdb) {
+      return (this.db as any).withTransaction(execute)
+    }
+
+    return execute(this.db)
   }
 
   getDebounceStartAfter (singletonSeconds: number, clockOffset: number) {
@@ -970,16 +1069,16 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const { rows } = await this.db.executeSql(query.text, query.values)
 
     return Object.assign(queue, rows.at(0) ||
-            {
-              deferredCount: 0,
-              queuedCount: 0,
-              activeCount: 0,
-              totalCount: 0
-            }
+      {
+        deferredCount: 0,
+        queuedCount: 0,
+        activeCount: 0,
+        totalCount: 0
+      }
     )
   }
 
-  async getJobById<T>(name: string, id: string, options: types.ConnectionOptions = {}): Promise<types.JobWithMetadata<T> | null> {
+  async getJobById<T> (name: string, id: string, options: types.ConnectionOptions = {}): Promise<types.JobWithMetadata<T> | null> {
     Attorney.assertQueueName(name)
 
     const db = this.assertDb(options)
@@ -997,7 +1096,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     }
   }
 
-  async findJobs<T>(name: string, options: types.FindJobsOptions = {}): Promise<types.JobWithMetadata<T>[]> {
+  async findJobs<T> (name: string, options: types.FindJobsOptions = {}): Promise<types.JobWithMetadata<T>[]> {
     Attorney.assertQueueName(name)
 
     const db = this.assertDb(options)
@@ -1021,6 +1120,22 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const result = await db.executeSql(sql, values)
 
     return result?.rows || []
+  }
+
+  async getDependencies (name: string, id: string, options: types.ConnectionOptions = {}): Promise<types.DependencyRef[]> {
+    Attorney.assertQueueName(name)
+    const db = this.assertDb(options)
+    const sql = plans.getDependencies(this.config.schema)
+    const { rows } = await db.executeSql(sql, [name, id])
+    return rows.map((r: any) => ({ name: r.parentName, id: r.parentId }))
+  }
+
+  async getDependents (name: string, id: string, options: types.ConnectionOptions = {}): Promise<types.DependencyRef[]> {
+    Attorney.assertQueueName(name)
+    const db = this.assertDb(options)
+    const sql = plans.getDependents(this.config.schema)
+    const { rows } = await db.executeSql(sql, [name, id])
+    return rows.map((r: any) => ({ name: r.childName, id: r.childId }))
   }
 
   private assertDb (options: types.ConnectionOptions) {

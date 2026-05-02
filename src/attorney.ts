@@ -85,6 +85,104 @@ function validateGroupConfig (config: any) {
   assert(!('tier' in config.group) || (typeof config.group.tier === 'string' && config.group.tier.length > 0), 'group.tier must be a non-empty string if provided')
 }
 
+function validateFlowJobs (jobs: types.FlowJob[]) {
+  assert(Array.isArray(jobs), 'createFlow requires an array of jobs')
+  assert(jobs.length >= 2, 'createFlow requires at least 2 jobs')
+
+  const refs = new Set<string>()
+  for (const job of jobs) {
+    assert(typeof job.ref === 'string' && job.ref.length > 0, 'each flow job must have a non-empty ref')
+    assert(!refs.has(job.ref), `duplicate ref: "${job.ref}"`)
+    refs.add(job.ref)
+
+    assert(typeof job.name === 'string' && job.name.length > 0, 'each flow job must have a non-empty name')
+    assertObjectName(job.name)
+  }
+
+  const hasDeps = jobs.some(j => j.dependsOn && j.dependsOn.length > 0)
+  assert(hasDeps, 'createFlow requires at least one job with dependsOn')
+
+  for (const job of jobs) {
+    if (!job.dependsOn) continue
+    assert(Array.isArray(job.dependsOn), `dependsOn for ref "${job.ref}" must be an array`)
+    for (const dep of job.dependsOn) {
+      assert(typeof dep === 'string' && dep.length > 0, `dependsOn entries must be non-empty strings`)
+      assert(dep !== job.ref, `job "${job.ref}" cannot depend on itself`)
+      assert(refs.has(dep), `dependsOn ref "${dep}" not found in flow`)
+    }
+  }
+
+  // Cycle detection via topological sort
+  const inDegree = new Map<string, number>()
+  const edges = new Map<string, string[]>()
+  for (const job of jobs) {
+    inDegree.set(job.ref, 0)
+    edges.set(job.ref, [])
+  }
+  for (const job of jobs) {
+    if (!job.dependsOn) continue
+    for (const dep of job.dependsOn) {
+      edges.get(dep)!.push(job.ref)
+      inDegree.set(job.ref, inDegree.get(job.ref)! + 1)
+    }
+  }
+  const queue: string[] = []
+  for (const [ref, deg] of inDegree) {
+    if (deg === 0) queue.push(ref)
+  }
+  let visited = 0
+  while (queue.length > 0) {
+    const current = queue.shift()!
+    visited++
+    for (const child of edges.get(current)!) {
+      const newDeg = inDegree.get(child)! - 1
+      inDegree.set(child, newDeg)
+      if (newDeg === 0) queue.push(child)
+    }
+  }
+  if (visited !== jobs.length) {
+    const cycle = findDependencyCycle(edges)
+    assert(false, `createFlow contains a dependency cycle: ${cycle.join(' -> ')}`)
+  }
+}
+
+function findDependencyCycle (edges: Map<string, string[]>): string[] {
+  const visiting = new Set<string>()
+  const visited = new Set<string>()
+  const path: string[] = []
+
+  function visit (ref: string): string[] | null {
+    if (visiting.has(ref)) {
+      const start = path.indexOf(ref)
+      return [...path.slice(start), ref]
+    }
+
+    if (visited.has(ref)) return null
+
+    visiting.add(ref)
+    path.push(ref)
+
+    for (const child of edges.get(ref) || []) {
+      const cycle = visit(child)
+      if (cycle) return cycle
+    }
+
+    path.pop()
+    visiting.delete(ref)
+    visited.add(ref)
+
+    return null
+  }
+
+  let cycle: string[] | null = null
+  for (const ref of edges.keys()) {
+    cycle = visit(ref)
+    if (cycle) break
+  }
+
+  return cycle!
+}
+
 function validateGroupConcurrencyValue (value: any, optionName: string) {
   if (typeof value === 'number') {
     assert(Number.isInteger(value) && value >= 1, `${optionName} must be an integer >= 1`)
@@ -374,5 +472,6 @@ export {
   checkWorkArgs,
   getConfig,
   POLICY,
+  validateFlowJobs,
   validateQueueArgs
 }
