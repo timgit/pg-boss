@@ -923,15 +923,23 @@ function archive (schema, completedInterval, failedInterval = completedInterval)
   return `
     WITH archived_rows AS (
       DELETE FROM ${schema}.job
-      WHERE (state <> '${JOB_STATES.failed}' AND completed_on < (now() - interval '${completedInterval}'))
-        OR (state = '${JOB_STATES.failed}' AND completed_on < (now() - interval '${failedInterval}'))
-        OR (state < '${JOB_STATES.active}' AND keep_until < now())
+      WHERE id IN (
+        SELECT id FROM ${schema}.job
+        WHERE (state <> '${JOB_STATES.failed}' AND completed_on < (now() - interval '${completedInterval}'))
+          OR (state = '${JOB_STATES.failed}' AND completed_on < (now() - interval '${failedInterval}'))
+          OR (state < '${JOB_STATES.active}' AND keep_until < now())
+        LIMIT 10000
+      )
       RETURNING *
+    ),
+    inserted AS (
+      INSERT INTO ${schema}.archive (${columns})
+      SELECT ${columns}
+      FROM archived_rows
+      ON CONFLICT DO NOTHING
+      RETURNING 1
     )
-    INSERT INTO ${schema}.archive (${columns})
-    SELECT ${columns}
-    FROM archived_rows
-    ON CONFLICT DO NOTHING
+    SELECT COUNT(*) as count FROM inserted
   `
 }
 

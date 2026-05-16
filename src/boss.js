@@ -165,7 +165,16 @@ class Boss extends EventEmitter {
   }
 
   async archive () {
-    await this.db.executeSql(this.archiveCommand)
+    let totalArchived = 0
+    let archived
+    
+    do {
+      const { rows } = await this.db.executeSql(this.archiveCommand)
+      archived = parseInt(rows[0].count)
+      totalArchived += archived
+    } while (archived > 0 && !this.stopped)
+    
+    return { archived: totalArchived }
   }
 
   async drop () {
