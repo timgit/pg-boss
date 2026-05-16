@@ -679,25 +679,35 @@ function insertJobs (schema) {
 
 function purge (schema, interval) {
   return `
-    DELETE FROM ${schema}.archive
-    WHERE archivedOn < (now() - interval '${interval}')
+    DELETE FROM ${schema}.archive a
+    USING (
+      SELECT id FROM ${schema}.archive
+      WHERE archivedOn < (now() - interval '${interval}')
+      LIMIT 20000
+    ) candidates
+    WHERE a.id = candidates.id
   `
 }
 
 function archive (schema, completedInterval, failedInterval = completedInterval) {
   return `
     WITH archived_rows AS (
-      DELETE FROM ${schema}.job
-      WHERE (
-          state <> '${states.failed}' AND completedOn < (now() - interval '${completedInterval}')
-        )
-        OR (
-          state = '${states.failed}' AND completedOn < (now() - interval '${failedInterval}')
-        )
-        OR (
-          state < '${states.active}' AND keepUntil < now()
-        )
-      RETURNING *
+      DELETE FROM ${schema}.job j
+      USING (
+        SELECT id FROM ${schema}.job
+        WHERE (
+            state <> '${states.failed}' AND completedOn < (now() - interval '${completedInterval}')
+          )
+          OR (
+            state = '${states.failed}' AND completedOn < (now() - interval '${failedInterval}')
+          )
+          OR (
+            state < '${states.active}' AND keepUntil < now()
+          )
+        LIMIT 10000
+      ) candidates
+      WHERE j.id = candidates.id
+      RETURNING j.*
     )
     INSERT INTO ${schema}.archive (
       id, name, priority, data, state, retryLimit, retryCount, retryDelay, retryBackoff, startAfter, startedOn, singletonKey, singletonOn, expireIn, createdOn, completedOn, keepUntil, on_complete, output
