@@ -677,6 +677,9 @@ function insertJobs (schema) {
   `
 }
 
+// USING with LIMIT: batches deletes to stay within the 30s statement_timeout set by locked().
+// WHERE id IN (subquery) was avoided as it can cause a double scan on large tables;
+// USING lets the planner execute a single Hash/Nested Loop join against the candidate rows.
 function purge (schema, interval) {
   return `
     DELETE FROM ${schema}.archive a
@@ -689,6 +692,9 @@ function purge (schema, interval) {
   `
 }
 
+// USING with LIMIT: batches deletes to stay within the 30s statement_timeout set by locked().
+// WHERE id IN (subquery) was avoided as it can cause a double scan on large tables;
+// USING lets the planner execute a single Hash/Nested Loop join against the candidate rows.
 function archive (schema, completedInterval, failedInterval = completedInterval) {
   return `
     WITH archived_rows AS (
