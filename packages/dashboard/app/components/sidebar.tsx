@@ -1,4 +1,4 @@
-import { NavLink, useRouteLoaderData, useSearchParams, useNavigate } from 'react-router'
+import { NavLink, useRouteLoaderData, useSearchParams, useNavigate, useLocation } from 'react-router'
 import { useState } from 'react'
 import { ThemeToggle } from '~/components/ui/theme-toggle'
 import { ColorThemePicker } from '~/components/ui/color-theme-picker'
@@ -169,6 +169,7 @@ export function AppSidebar () {
   const rootData = useRouteLoaderData('root') as RootLoaderData | undefined
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
+  const location = useLocation()
   const { setOpenMobile } = useSidebar()
 
   const databases = rootData?.databases || []
@@ -184,7 +185,7 @@ export function AppSidebar () {
     }
     const newSearch = params.toString()
     navigate({
-      pathname: window.location.pathname,
+      pathname: location.pathname,
       search: newSearch ? `?${newSearch}` : '',
     })
   }
