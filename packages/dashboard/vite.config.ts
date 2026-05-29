@@ -13,6 +13,14 @@ export default defineConfig(({ command }) => ({
   // Router dev server requires `basename` to start with `base`, and the dev
   // server serves assets from the root regardless of the app's basename.
   base: command === 'build' ? viteBase : '/',
+  // The base path is a build-time concept (it is baked into asset URLs above), so
+  // inline it into the bundled server too. This lets `app/server.ts` resolve the
+  // basename without depending on the env var being present at runtime.
+  define: {
+    'process.env.PGBOSS_DASHBOARD_BASE_PATH': JSON.stringify(
+      process.env.PGBOSS_DASHBOARD_BASE_PATH ?? '',
+    ),
+  },
   plugins: [
     tailwindcss(),
     reactRouterHonoServer({ runtime: 'node' }),
