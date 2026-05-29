@@ -22,6 +22,7 @@ export default defineConfig({
         'app/**/*.d.ts',
         'app/lib/types.ts',        // Type definitions only
         'app/lib/config.server.ts', // Config parsing, tested via integration
+        'app/lib/base-path.ts',    // Build-time config helper, unit-tested under tests/frontend
       ],
       thresholds: {
         lines: 90,
