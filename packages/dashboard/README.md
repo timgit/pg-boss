@@ -47,6 +47,7 @@ The dashboard is configured via environment variables:
 | `PORT` | Server port | `3000` |
 | `PGBOSS_DASHBOARD_AUTH_USERNAME` | Basic auth username (optional) | - |
 | `PGBOSS_DASHBOARD_AUTH_PASSWORD` | Basic auth password (optional) | - |
+| `PGBOSS_DASHBOARD_BASE_PATH` | Sub-path to serve the dashboard under, e.g. `/pgboss` (build-time only, see [Serving under a sub-path](#serving-under-a-sub-path)) | `/` |
 
 ### Basic Authentication
 
@@ -152,6 +153,32 @@ server {
     }
 }
 ```
+
+### Serving under a sub-path
+
+By default the dashboard is served from the root path (`/`). To serve it under a sub-path (for example behind a reverse proxy at `https://example.com/pgboss/`), set `PGBOSS_DASHBOARD_BASE_PATH` **at build time**:
+
+```bash
+PGBOSS_DASHBOARD_BASE_PATH=/pgboss npm run build
+PGBOSS_DASHBOARD_BASE_PATH=/pgboss npm start
+```
+
+This sets both the Vite asset `base` and the React Router `basename`, so assets, in-app navigation, and action redirects all stay under the prefix. The reverse proxy should forward the prefix unchanged (do not strip it):
+
+```nginx
+location /pgboss/ {
+    proxy_pass http://127.0.0.1:3000;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+> The asset base is baked in at build time, so the published npm package (which ships a prebuilt `build/`) always uses `/`. To serve under a sub-path, build from source with `PGBOSS_DASHBOARD_BASE_PATH` set.
+
+> The dev server (`npm run dev`) always serves from the root path; `PGBOSS_DASHBOARD_BASE_PATH` only affects production builds.
 
 ## Enabling Warning Persistence
 
