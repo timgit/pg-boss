@@ -1,4 +1,5 @@
 import pg from 'pg'
+import { getConnectionConfig } from './config.server'
 
 const { Pool } = pg
 
@@ -15,8 +16,8 @@ export function getPool (connectionString: string): pg.Pool {
   let pool = pools.get(connectionString)
   if (!pool) {
     pool = new Pool({
-      connectionString,
       max: 10,
+      ...getConnectionConfig(connectionString),
     })
 
     // Handle pool errors to prevent unhandled rejections

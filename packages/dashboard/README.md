@@ -44,6 +44,7 @@ The dashboard is configured via environment variables:
 |----------|-------------|---------|
 | `DATABASE_URL` | PostgreSQL connection string(s) | `postgres://localhost/pgboss` |
 | `PGBOSS_SCHEMA` | pg-boss schema name(s) | `pgboss` |
+| `PGBOSS_DASHBOARD_CONFIG` | Path to a JS config module (optional, overrides `DATABASE_URL`/`PGBOSS_SCHEMA`) | - |
 | `PORT` | Server port | `3000` |
 | `PGBOSS_DASHBOARD_AUTH_USERNAME` | Basic auth username (optional) | - |
 | `PGBOSS_DASHBOARD_AUTH_PASSWORD` | Basic auth password (optional) | - |
@@ -84,6 +85,42 @@ npx pg-boss-dashboard
 ```
 
 When multiple databases are configured, a database selector appears in the sidebar. The selected database is persisted in the URL via the `db` query parameter, making it easy to share links to specific database views.
+
+### Config File (Dynamic Credentials)
+
+Connection strings can't express everything — most notably credentials that have to be generated at connection time, such as AWS RDS IAM auth tokens (which expire after 15 minutes). For these cases, point `PGBOSS_DASHBOARD_CONFIG` at a JS module that default-exports an array of database entries:
+
+```bash
+PGBOSS_DASHBOARD_CONFIG=./dashboard-config.mjs npx pg-boss-dashboard
+```
+
+```js
+// dashboard-config.mjs
+import { Signer } from '@aws-sdk/rds-signer'
+
+const signer = new Signer({
+  hostname: 'mydb.abc123.us-east-1.rds.amazonaws.com',
+  port: 5432,
+  username: 'dashboard',
+  region: 'us-east-1',
+})
+
+export default [
+  {
+    name: 'Production',
+    url: 'postgres://dashboard@mydb.abc123.us-east-1.rds.amazonaws.com:5432/mydb',
+    schema: 'pgboss',
+    options: {
+      // password may be a function (sync or async) — node-postgres calls it
+      // for every new connection, so short-lived tokens always stay fresh
+      password: () => signer.getAuthToken(),
+      ssl: { rejectUnauthorized: false },
+    },
+  },
+]
+```
+
+Each entry takes `name`, `url`, `schema`, and `options`. Anything in `options` is merged into the `pg.Pool` and pg-boss constructor config for that database, taking precedence over values parsed from `url`. When `PGBOSS_DASHBOARD_CONFIG` is set, `DATABASE_URL` and `PGBOSS_SCHEMA` are ignored.
 
 ## Production Deployment
 

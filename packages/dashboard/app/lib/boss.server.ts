@@ -1,4 +1,5 @@
 import { PgBoss } from 'pg-boss'
+import { getConnectionConfig } from './config.server'
 import type { SendOptions, ScheduleOptions, JobWithMetadata } from './types'
 
 // Cache pg-boss instances by connection string + schema
@@ -24,13 +25,13 @@ async function getInstance (dbUrl: string, schema: string): Promise<PgBoss> {
   }
 
   const boss = new PgBoss({
-    connectionString: dbUrl,
+    ...getConnectionConfig(dbUrl),
     schema,
     schedule: false,
     supervise: false,
     migrate: false,
     createSchema: false,
-  })
+  } as ConstructorParameters<typeof PgBoss>[0])
 
   const startPromise = boss.start().then(() => {
     instances.set(key, boss)
