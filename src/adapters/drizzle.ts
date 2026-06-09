@@ -1,8 +1,9 @@
 import type { IDatabase } from '../types.ts'
 import { parsePlaceholders } from './placeholders.ts'
+import { unwrapSQLResult } from '../tools.js'
 
 export interface DrizzleTransactionLike {
-  execute(query: unknown): Promise<{ rows: any[] }>
+  execute(query: unknown): Promise<{ rows: any[] } | { rows: any[] }[]>
 }
 
 export interface DrizzleSqlTagLike {
@@ -31,7 +32,7 @@ export function fromDrizzle (tx: DrizzleTransactionLike, sql: DrizzleSqlTagLike)
     async executeSql (text: string, values?: unknown[]) {
       const { parts, reordered } = parsePlaceholders(text, values)
       const strings = Object.assign([...parts], { raw: [...parts] }) as TemplateStringsArray
-      return tx.execute(sql(strings, ...reordered))
+      return unwrapSQLResult(await tx.execute(sql(strings, ...reordered)))
     }
   }
 }
