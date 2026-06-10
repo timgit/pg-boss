@@ -5,6 +5,7 @@ export default defineConfig({
   title: 'pg-boss',
   description: 'Queueing jobs in Postgres from Node.js like a boss',
   base: '/pg-boss/',
+  cleanUrls: true,
   lastUpdated: true,
   head: [
     ['script', {}, `(function(){
