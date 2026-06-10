@@ -369,6 +369,36 @@ describe('work', function () {
     expect(wip[0].state).toBe('active')
   })
 
+  it('should emit wip heartbeat while workers are busy with long-running jobs', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    await ctx.boss.send(ctx.schema)
+
+    let jobStartedResolve!: () => void
+    const jobStarted = new Promise<void>(resolve => { jobStartedResolve = resolve })
+
+    await ctx.boss.work(ctx.schema, { pollingIntervalSeconds: 1 }, async ([job]) => {
+      jobStartedResolve()
+      const ac = new AbortController()
+      job.signal.addEventListener('abort', () => ac.abort(), { once: true })
+      try {
+        await delay(10000, undefined, ac)
+      } catch {
+        // aborted during boss.stop() teardown — expected
+      }
+    })
+
+    await jobStarted
+
+    let wipCount = 0
+    const listener = () => { wipCount++ }
+    ctx.boss.on('wip', listener)
+    await delay(6000)
+    ctx.boss.off('wip', listener)
+
+    expect(wipCount).toBeGreaterThanOrEqual(2)
+  }, 20000)
+
   it('should reject work() after stopping', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 

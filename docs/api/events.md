@@ -57,7 +57,7 @@ const boss = new PgBoss({
 
 ## `wip`
 
-Emitted at most once every 2 seconds when workers are receiving jobs. The payload is an array that represents each worker in this instance of pg-boss.
+Emitted at most once every 2 seconds whenever at least one worker has an active job. The payload is an array that represents each worker in this instance of pg-boss.
 
 ```js
 [
