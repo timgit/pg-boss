@@ -11,10 +11,10 @@ export default defineConfig({
     ['script', {}, `(function(){
       var hash = window.location.hash;
       if(window.location.pathname === '/pg-boss/' && hash.startsWith('#/')){
-        var path = hash.slice(2);
+        var path = hash.slice(2).split('?')[0];
         if(!path) return;
         if(path === 'sql') path = 'sql/job-table';
-        window.location.replace('/pg-boss/' + path.split('?')[0]);
+        window.location.replace('/pg-boss/' + path);
       }
     })()`]
   ],
