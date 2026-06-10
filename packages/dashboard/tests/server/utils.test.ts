@@ -9,6 +9,9 @@ import {
   isValidWarningType,
   JOB_STATES,
   WARNING_TYPES,
+  parseJsonFilterPairs,
+  jsonFilterPairsToObject,
+  MAX_JSON_FILTER_PAIRS,
 } from '~/lib/utils'
 
 describe('utils', () => {
@@ -202,6 +205,73 @@ describe('utils', () => {
     it('returns JSON for unknown object structure', () => {
       const data = { unknownField: 'value' }
       expect(formatWarningData(data)).toBe('{"unknownField":"value"}')
+    })
+  })
+
+  describe('parseJsonFilterPairs', () => {
+    it('returns an empty list when no matching params exist', () => {
+      const params = new URLSearchParams('foo=bar&state=active')
+      expect(parseJsonFilterPairs(params, 'data')).toEqual([])
+    })
+
+    it('extracts pairs for the requested prefix only', () => {
+      const params = new URLSearchParams('data.sessionId=abc&data.tier=hi&output.status=ok')
+      expect(parseJsonFilterPairs(params, 'data')).toEqual([
+        { key: 'sessionId', value: 'abc' },
+        { key: 'tier', value: 'hi' },
+      ])
+      expect(parseJsonFilterPairs(params, 'output')).toEqual([
+        { key: 'status', value: 'ok' },
+      ])
+    })
+
+    it('skips entries whose key is empty after the prefix', () => {
+      const params = new URLSearchParams('data.=lonely')
+      expect(parseJsonFilterPairs(params, 'data')).toEqual([])
+    })
+
+    it(`caps the result at MAX_JSON_FILTER_PAIRS (${MAX_JSON_FILTER_PAIRS})`, () => {
+      const parts: string[] = []
+      for (let i = 0; i < MAX_JSON_FILTER_PAIRS + 5; i++) {
+        parts.push(`data.k${i}=${i}`)
+      }
+      const params = new URLSearchParams(parts.join('&'))
+      expect(parseJsonFilterPairs(params, 'data')).toHaveLength(MAX_JSON_FILTER_PAIRS)
+    })
+  })
+
+  describe('jsonFilterPairsToObject', () => {
+    it('returns an empty object for no pairs', () => {
+      expect(jsonFilterPairsToObject([])).toEqual({})
+    })
+
+    it('coerces numeric strings to numbers', () => {
+      expect(jsonFilterPairsToObject([{ key: 'value', value: '1234' }]))
+        .toEqual({ value: 1234 })
+      expect(jsonFilterPairsToObject([{ key: 'temp', value: '-3.5' }]))
+        .toEqual({ temp: -3.5 })
+    })
+
+    it('coerces boolean strings to booleans', () => {
+      expect(jsonFilterPairsToObject([{ key: 'enabled', value: 'true' }]))
+        .toEqual({ enabled: true })
+      expect(jsonFilterPairsToObject([{ key: 'enabled', value: 'false' }]))
+        .toEqual({ enabled: false })
+    })
+
+    it('keeps non-numeric strings as strings', () => {
+      expect(jsonFilterPairsToObject([
+        { key: 'sessionId', value: '6dff4e1b-9c74-4d53-9969-1991d887e7ca' },
+      ])).toEqual({
+        sessionId: '6dff4e1b-9c74-4d53-9969-1991d887e7ca',
+      })
+    })
+
+    it('skips pairs with empty keys', () => {
+      expect(jsonFilterPairsToObject([
+        { key: '', value: 'x' },
+        { key: 'k', value: 'y' },
+      ])).toEqual({ k: 'y' })
     })
   })
 })

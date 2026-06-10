@@ -1,4 +1,5 @@
 import { query, queryOne } from './db.server'
+import type { JobStateFilter } from './utils'
 import type {
   QueueResult,
   JobResult,
@@ -217,52 +218,136 @@ export async function getQueue (
   return queryOne<QueueResult>(dbUrl, sql, [name])
 }
 
+// UUID v1-v8 / nil — used to short-circuit the id filter on garbage input rather
+// than letting Postgres throw 22P02. Mirrors the strictness of the existing
+// validateIdentifier helper above.
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+export interface RecentJobsFilterOptions {
+  state?: JobStateFilter | null;
+  id?: string | null;
+  queues?: string[] | null;
+  minRetries?: number | null;
+  data?: Record<string, unknown> | null;
+  output?: Record<string, unknown> | null;
+}
+
+// Build the shared WHERE fragment used by getRecentJobs and getRecentJobsCount.
+// Returns the assembled clause (with leading WHERE if any conditions exist) plus
+// the bound params. The caller appends its own LIMIT/OFFSET params after these.
+function buildRecentJobsWhere (
+  schema: string,
+  options: RecentJobsFilterOptions
+): { clause: string; params: unknown[]; impossible: boolean } {
+  const conditions: string[] = []
+  const params: unknown[] = []
+  let paramIndex = 1
+
+  const { state = null, id = null, queues = null, minRetries = null, data = null, output = null } = options
+
+  if (state === 'pending') {
+    conditions.push("state < 'completed'")
+  } else if (state && state !== 'all') {
+    conditions.push(`state = $${paramIndex}::${schema}.job_state`)
+    params.push(state)
+    paramIndex++
+  }
+
+  if (id != null && id !== '') {
+    if (!UUID_REGEX.test(id)) {
+      // No row will ever match a malformed UUID — short-circuit so callers can
+      // skip the query entirely.
+      return { clause: '', params: [], impossible: true }
+    }
+    conditions.push(`id = $${paramIndex}::uuid`)
+    params.push(id)
+    paramIndex++
+  }
+
+  if (queues && queues.length > 0) {
+    conditions.push(`name = ANY($${paramIndex}::text[])`)
+    params.push(queues)
+    paramIndex++
+  }
+
+  if (minRetries != null && minRetries > 0) {
+    conditions.push(`retry_count >= $${paramIndex}::int`)
+    params.push(minRetries)
+    paramIndex++
+  }
+
+  if (data && Object.keys(data).length > 0) {
+    conditions.push(`data @> $${paramIndex}::jsonb`)
+    params.push(JSON.stringify(data))
+    paramIndex++
+  }
+
+  if (output && Object.keys(output).length > 0) {
+    conditions.push(`output @> $${paramIndex}::jsonb`)
+    params.push(JSON.stringify(output))
+    paramIndex++
+  }
+
+  const clause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
+  return { clause, params, impossible: false }
+}
+
 // Get recent jobs across all queues with pagination
 // Uses lightweight columns and includes queue name
 export async function getRecentJobs (
   dbUrl: string,
   schema: string,
-  options: {
-    state?: string | null;
+  options: RecentJobsFilterOptions & {
     limit?: number;
     offset?: number;
   } = {}
 ): Promise<JobResult[]> {
   const s = validateIdentifier(schema)
-  const { state = null, limit = 20, offset = 0 } = options
+  const { limit = 20, offset = 0, ...filters } = options
 
-  // Handle 'pending' filter for non-final states
-  if (state === 'pending') {
-    const sql = `
-      SELECT ${JOB_LIST_COLUMNS}
-      FROM ${s}.job
-      WHERE state < 'completed'
-      ORDER BY created_on DESC
-      LIMIT $1 OFFSET $2
-    `
-    return query<JobResult>(dbUrl, sql, [limit, offset])
-  }
+  const { clause, params, impossible } = buildRecentJobsWhere(s, filters)
+  if (impossible) return []
 
-  // Handle 'all' filter or null - no state filtering
-  if (state === 'all' || state === null) {
-    const sql = `
-      SELECT ${JOB_LIST_COLUMNS}
-      FROM ${s}.job
-      ORDER BY created_on DESC
-      LIMIT $1 OFFSET $2
-    `
-    return query<JobResult>(dbUrl, sql, [limit, offset])
-  }
+  const limitPlaceholder = `$${params.length + 1}`
+  const offsetPlaceholder = `$${params.length + 2}`
 
-  // Filter by specific state
   const sql = `
     SELECT ${JOB_LIST_COLUMNS}
     FROM ${s}.job
-    WHERE state = $1::${s}.job_state
+    ${clause}
     ORDER BY created_on DESC
-    LIMIT $2 OFFSET $3
+    LIMIT ${limitPlaceholder} OFFSET ${offsetPlaceholder}
   `
-  return query<JobResult>(dbUrl, sql, [state, limit, offset])
+  return query<JobResult>(dbUrl, sql, [...params, limit, offset])
+}
+
+// Count of jobs matching the same filters as getRecentJobs. Intentionally
+// separate so the loader can skip it when no filter is active (an unfiltered
+// COUNT(*) on the job table is expensive on large deployments).
+export async function getRecentJobsCount (
+  dbUrl: string,
+  schema: string,
+  options: RecentJobsFilterOptions = {}
+): Promise<number> {
+  const s = validateIdentifier(schema)
+  const { clause, params, impossible } = buildRecentJobsWhere(s, options)
+  if (impossible) return 0
+
+  const sql = `SELECT COUNT(*)::int as count FROM ${s}.job ${clause}`
+  const result = await queryOne<{ count: number }>(dbUrl, sql, params)
+  return result?.count ?? 0
+}
+
+// Lightweight name-only listing of queues for filter dropdowns. Kept separate
+// from getQueues so the multi-select doesn't pull stat columns it never uses.
+export async function getQueueNames (
+  dbUrl: string,
+  schema: string
+): Promise<string[]> {
+  const s = validateIdentifier(schema)
+  const sql = `SELECT name FROM ${s}.queue ORDER BY name`
+  const rows = await query<{ name: string }>(dbUrl, sql)
+  return rows.map(r => r.name)
 }
 
 // Get jobs for a queue with pagination and filtering

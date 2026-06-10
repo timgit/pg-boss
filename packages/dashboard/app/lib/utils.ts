@@ -107,6 +107,59 @@ export const JOB_STATE_OPTIONS: { value: JobStateFilter; label: string }[] = [
   })),
 ]
 
+// Maximum number of key=value rows accepted per JSON filter (data / output).
+// Bounded to keep the resulting JSONB payload and URL length reasonable.
+export const MAX_JSON_FILTER_PAIRS = 10
+
+export interface JsonFilterPair {
+  key: string;
+  value: string;
+}
+
+/**
+ * Parse JSONB filter rows from URL search params for a given prefix
+ * (e.g. 'data' → reads every `data.<key>` param). Order is stable based on
+ * URLSearchParams insertion order so the UI can re-render the same pair list.
+ */
+export function parseJsonFilterPairs (
+  searchParams: URLSearchParams,
+  prefix: 'data' | 'output'
+): JsonFilterPair[] {
+  const pairs: JsonFilterPair[] = []
+  const dotPrefix = `${prefix}.`
+  for (const [paramKey, paramValue] of searchParams.entries()) {
+    if (!paramKey.startsWith(dotPrefix)) continue
+    const key = paramKey.slice(dotPrefix.length)
+    if (!key) continue
+    pairs.push({ key, value: paramValue })
+    if (pairs.length >= MAX_JSON_FILTER_PAIRS) break
+  }
+  return pairs
+}
+
+/**
+ * Convert key=value rows to the object passed to the server's @> filter.
+ * Numeric and boolean strings are coerced so `value=1234` matches the wrapped
+ * `{"value": 1234}` payload pg-boss stores for primitive job data.
+ */
+export function jsonFilterPairsToObject (pairs: JsonFilterPair[]): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const { key, value } of pairs) {
+    if (!key) continue
+    out[key] = coerceJsonScalar(value)
+  }
+  return out
+}
+
+function coerceJsonScalar (value: string): string | number | boolean {
+  if (value === 'true') return true
+  if (value === 'false') return false
+  if (value !== '' && !isNaN(Number(value)) && /^-?\d+(\.\d+)?$/.test(value)) {
+    return Number(value)
+  }
+  return value
+}
+
 // Valid warning types
 export const WARNING_TYPES = [
   'slow_query',
