@@ -6,6 +6,17 @@ export default defineConfig({
   description: 'Queueing jobs in Postgres from Node.js like a boss',
   base: '/pg-boss/',
   lastUpdated: true,
+  head: [
+    ['script', {}, `(function(){
+      var hash = window.location.hash;
+      if(hash.startsWith('#/')){
+        var path = hash.slice(2);
+        if(!path) return;
+        if(path === 'sql') path = 'sql/job-table';
+        window.location.replace('/pg-boss/' + path);
+      }
+    })()`]
+  ],
   themeConfig: {
     search: {
       provider: 'local'
