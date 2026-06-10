@@ -47,7 +47,7 @@ Creates a new job and returns the job id.
 
 * **heartbeatSeconds**, int
 
-  Default: none (disabled). Expected heartbeat interval in seconds. Overrides the queue-level `heartbeatSeconds` for this specific job. When set, workers using `work()` will automatically send periodic heartbeats. If no heartbeat is received within this interval, the monitor will fail/retry the job. Must be >= 10. See [Heartbeat vs expiration](queues?id=heartbeat-vs-expiration) for guidance on when to use this and recommended values.
+  Default: none (disabled). Expected heartbeat interval in seconds. Overrides the queue-level `heartbeatSeconds` for this specific job. When set, workers using `work()` will automatically send periodic heartbeats. If no heartbeat is received within this interval, the monitor will fail/retry the job. Must be >= 10. See [Heartbeat vs expiration](queues#heartbeat-vs-expiration) for guidance on when to use this and recommended values.
 
 **Expiration options**
 
@@ -80,7 +80,7 @@ All retry, expiration, and retention options can also be set on the queue and wi
   }
     ```
 
-  pg-boss ships with built-in adapters for popular ORMs. See [ORM Transaction Adapters](./api/adapters.md) for details.
+  pg-boss ships with built-in adapters for popular ORMs. See [ORM Transaction Adapters](./adapters) for details.
 
 **Deferred jobs**
 

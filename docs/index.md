@@ -1,8 +1,18 @@
-Queueing jobs in Postgres from Node.js like a boss.
+---
+layout: home
 
-[![NPM](https://nodei.co/npm/pg-boss.svg?style=shields&color=blue)](https://nodei.co/npm/pg-boss/)
-[![Build](https://github.com/timgit/pg-boss/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/timgit/pg-boss/actions/workflows/ci.yml)
-[![Coverage Status](https://coveralls.io/repos/github/timgit/pg-boss/badge.svg?branch=master)](https://coveralls.io/github/timgit/pg-boss?branch=master)
+hero:
+  name: pg-boss
+  tagline: Queueing jobs in Postgres from Node.js like a boss
+  actions:
+    - theme: brand
+      text: Get Started
+      link: /introduction
+    - theme: alt
+      text: API Reference
+      link: /api/constructor
+
+---
 
 ```js
 async function readme() {
@@ -40,7 +50,7 @@ pg-boss relies on Postgres's SKIP LOCKED, a feature built specifically for messa
 This will likely cater the most to teams already familiar with the simplicity of relational database semantics and operations (SQL, querying, and backups). It will be especially useful to those already relying on PostgreSQL that want to limit how many systems are required to monitor and support in their architecture.
 
 
-## Summary <!-- {docsify-ignore-all} -->
+## Summary
 * Exactly-once job delivery
 * Create jobs within your existing database transaction
 * Backpressure-compatible polling workers
