@@ -1,5 +1,6 @@
-import { NavLink, useRouteLoaderData, useSearchParams, useNavigate } from 'react-router'
-import { useState } from 'react'
+import { NavLink, useRouteLoaderData, useSearchParams, useNavigate, useLocation } from 'react-router'
+import { useState, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { ThemeToggle } from '~/components/ui/theme-toggle'
 import { ColorThemePicker } from '~/components/ui/color-theme-picker'
 import { cn } from '~/lib/utils'
@@ -102,16 +103,27 @@ function DatabaseSelector ({
   onSelect: (db: DatabaseConfig) => void
 }) {
   const [isOpen, setIsOpen] = useState(false)
+  const buttonRef = useRef<HTMLButtonElement>(null)
+  const [menuPosition, setMenuPosition] = useState<{ top: number, left: number, width: number } | null>(null)
 
   if (databases.length <= 1) {
     return null
   }
 
+  const openMenu = () => {
+    const rect = buttonRef.current?.getBoundingClientRect()
+    if (rect) {
+      setMenuPosition({ top: rect.bottom + 4, left: rect.left, width: Math.max(rect.width, 256) })
+    }
+    setIsOpen(true)
+  }
+
   return (
     <div className="relative">
       <button
+        ref={buttonRef}
         type="button"
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={() => (isOpen ? setIsOpen(false) : openMenu())}
         className={cn(
           'w-full flex items-center justify-between px-3 py-2 text-sm rounded-lg transition-colors cursor-pointer',
           'hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
@@ -124,18 +136,21 @@ function DatabaseSelector ({
         <ChevronIcon className={cn('w-4 h-4 flex-shrink-0 transition-transform', isOpen && 'rotate-180')} />
       </button>
 
-      {isOpen && (
+      {isOpen && menuPosition && typeof document !== 'undefined' && createPortal(
         <>
           {/* Backdrop */}
           <div
-            className="fixed inset-0 z-10"
+            className="fixed inset-0 z-40"
             onClick={() => setIsOpen(false)}
           />
-          {/* Dropdown */}
-          <div className={cn(
-            'absolute left-0 right-0 mt-1 rounded-lg shadow-lg z-20 py-1',
-            'bg-sidebar-accent border border-sidebar-border'
-          )}>
+          {/* Dropdown rendered in a portal so it is not clipped by the sidebar's overflow */}
+          <div
+            className={cn(
+              'fixed rounded-lg shadow-lg z-50 py-1',
+              'bg-sidebar border border-sidebar-border'
+            )}
+            style={{ top: menuPosition.top, left: menuPosition.left, width: menuPosition.width }}
+          >
             {databases.map((db) => (
               <button
                 key={db.id}
@@ -145,7 +160,7 @@ function DatabaseSelector ({
                   setIsOpen(false)
                 }}
                 className={cn(
-                  'w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors cursor-pointer',
+                  'w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors cursor-pointer text-sidebar-foreground',
                   db.id === currentDb.id
                     ? 'bg-sidebar-accent text-sidebar-accent-foreground font-medium'
                     : 'hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
@@ -159,7 +174,8 @@ function DatabaseSelector ({
               </button>
             ))}
           </div>
-        </>
+        </>,
+        document.body
       )}
     </div>
   )
@@ -169,6 +185,7 @@ export function AppSidebar () {
   const rootData = useRouteLoaderData('root') as RootLoaderData | undefined
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
+  const location = useLocation()
   const { setOpenMobile } = useSidebar()
 
   const databases = rootData?.databases || []
@@ -184,7 +201,7 @@ export function AppSidebar () {
     }
     const newSearch = params.toString()
     navigate({
-      pathname: window.location.pathname,
+      pathname: location.pathname,
       search: newSearch ? `?${newSearch}` : '',
     })
   }
