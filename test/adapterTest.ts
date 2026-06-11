@@ -98,6 +98,22 @@ describe('knex adapter', () => {
     expect(result.rows[0]?.b).toBe(10)
     expect(result.rows[0]?.c).toBe(20)
   })
+
+  it('should handle results as an array instead of object', async () => {
+    ctx.boss = await helper.start(ctx.bossConfig)
+    if (!db) db = knex({ client: 'pg', connection: connString })
+
+    const result = await db.transaction(async (trx) => {
+      const adapter = fromKnex(trx)
+      return adapter.executeSql('BEGIN; SELECT 1 as select1; SELECT 2 as select2; COMMIT;')
+    })
+
+    expect(result).toHaveProperty('rows')
+    expect(result.rows).toStrictEqual([
+      { select1: 1 },
+      { select2: 2 },
+    ])
+  })
 })
 
 describe('kysely adapter', () => {
@@ -287,6 +303,23 @@ describe('drizzle adapter', () => {
     expect(result.rows[0]?.a).toBe(20)
     expect(result.rows[0]?.b).toBe(10)
     expect(result.rows[0]?.c).toBe(20)
+  })
+
+  it('should handle results as an array instead of object', async () => {
+    ctx.boss = await helper.start(ctx.bossConfig)
+    if (!pool) pool = new pg.Pool({ connectionString: connString })
+    const db = drizzle({ client: pool })
+
+    const result = await db.transaction(async (tx) => {
+      const adapter = fromDrizzle(tx, drizzleSql)
+      return adapter.executeSql('BEGIN;\nSELECT 1 as select1;\nSELECT 2 as select2;\nCOMMIT;')
+    })
+
+    expect(result).toHaveProperty('rows')
+    expect(result.rows).toStrictEqual([
+      { select1: 1 },
+      { select2: 2 },
+    ])
   })
 })
 

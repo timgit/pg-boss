@@ -1,10 +1,14 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { ctx } from './helpers'
 
 describe('db.server', () => {
   // Reset module state between tests since it uses module-level variables
   beforeEach(() => {
     vi.resetModules()
+  })
+
+  afterEach(() => {
+    vi.unstubAllEnvs()
   })
 
   describe('getPool', () => {
@@ -119,6 +123,48 @@ describe('db.server', () => {
       // Pools should be ended (queries will fail)
       await expect(pool1.query('SELECT 1')).rejects.toThrow()
       await expect(pool2.query('SELECT 1')).rejects.toThrow()
+    })
+  })
+
+  describe('query timeouts', () => {
+    it('getQueryTimeoutMs defaults to 60000 and rejects garbage values', async () => {
+      const { getQueryTimeoutMs } = await import('~/lib/db.server')
+
+      expect(getQueryTimeoutMs()).toBe(60000)
+
+      vi.stubEnv('PGBOSS_DASHBOARD_QUERY_TIMEOUT', 'abc')
+      expect(getQueryTimeoutMs()).toBe(60000)
+
+      vi.stubEnv('PGBOSS_DASHBOARD_QUERY_TIMEOUT', '-5')
+      expect(getQueryTimeoutMs()).toBe(60000)
+
+      vi.stubEnv('PGBOSS_DASHBOARD_QUERY_TIMEOUT', '30000')
+      expect(getQueryTimeoutMs()).toBe(30000)
+    })
+
+    it('isQueryTimeoutError matches statement_timeout and client read timeout errors', async () => {
+      const { isQueryTimeoutError } = await import('~/lib/db.server')
+
+      expect(isQueryTimeoutError({ code: '57014' })).toBe(true)
+      expect(isQueryTimeoutError(new Error('Query read timeout'))).toBe(true)
+      expect(isQueryTimeoutError({ code: '42P01' })).toBe(false)
+      expect(isQueryTimeoutError(new Error('boom'))).toBe(false)
+      expect(isQueryTimeoutError(null)).toBe(false)
+      expect(isQueryTimeoutError('57014')).toBe(false)
+    })
+
+    it('cancels queries server-side after PGBOSS_DASHBOARD_QUERY_TIMEOUT', async () => {
+      vi.stubEnv('PGBOSS_DASHBOARD_QUERY_TIMEOUT', '100')
+      const { query, getPool, isQueryTimeoutError } = await import('~/lib/db.server')
+      // Distinct connection string so a pool cached by another test can't be reused
+      const cs = ctx.connectionString + '?application_name=timeout_test'
+
+      const err = await query(cs, 'SELECT pg_sleep(1)').catch((e: unknown) => e)
+
+      expect(err).toMatchObject({ code: '57014' })
+      expect(isQueryTimeoutError(err)).toBe(true)
+
+      await getPool(cs).end()
     })
   })
 

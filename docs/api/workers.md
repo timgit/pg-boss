@@ -13,33 +13,33 @@ The default options for `work()` is 1 job every 2 seconds.
 **Arguments**
 - `name`: string, *required*
 - `options`: object
-- `handler`: function(jobs): Promise<any>, *required*
+- `handler`: function(jobs): `Promise<any>`, *required*
 
 **Options**
 
 * **batchSize**, int, *(default=1)*
 
-  Same as in [`fetch()`](#fetch)
+  Same as in [`fetch()`](./jobs#fetchname-options)
 
 * **includeMetadata**, bool, *(default=false)*
 
-  Same as in [`fetch()`](#fetch)
+  Same as in [`fetch()`](./jobs#fetchname-options)
 
 * **priority**, bool, *(default=true)*
 
-  Same as in [`fetch()`](#fetch)
+  Same as in [`fetch()`](./jobs#fetchname-options)
 
 * **orderByCreatedOn**, bool, *(default=true)*
 
-  Same as in [`fetch()`](#fetch)
+  Same as in [`fetch()`](./jobs#fetchname-options)
 
 * **minPriority**, int
 
-  Same as in [`fetch()`](#fetch)
+  Same as in [`fetch()`](./jobs#fetchname-options)
 
 * **maxPriority**, int
 
-  Same as in [`fetch()`](#fetch)
+  Same as in [`fetch()`](./jobs#fetchname-options)
 
 * **pollingIntervalSeconds**, int, *(default=2)*
 

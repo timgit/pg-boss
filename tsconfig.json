@@ -11,7 +11,7 @@
     "stripInternal": true,
     "resolveJsonModule": true,
     "noEmit": true,
-    "rootDir": "./src",
+    "rootDir": "./",
   },
   "include": ["src", "test"]
 }

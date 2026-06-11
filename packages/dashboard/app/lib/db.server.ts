@@ -8,15 +8,39 @@ const pools = new Map<string, pg.Pool>()
 // Track if shutdown is in progress to prevent new queries
 let isShuttingDown = false
 
+const DEFAULT_QUERY_TIMEOUT_MS = 60_000
+// Client-side backstop fires only if the server-side kill never arrives
+// (e.g. network partition), so it sits above statement_timeout.
+const CLIENT_TIMEOUT_HEADROOM_MS = 5_000
+
+export function getQueryTimeoutMs (): number {
+  const raw = Number.parseInt(process.env.PGBOSS_DASHBOARD_QUERY_TIMEOUT ?? '', 10)
+  return Number.isInteger(raw) && raw > 0 ? raw : DEFAULT_QUERY_TIMEOUT_MS
+}
+
+// Matches both the server-side cancellation (Postgres 57014 query_canceled,
+// raised by statement_timeout) and pg's client-side query_timeout, which
+// rejects with a plain Error carrying no code.
+export function isQueryTimeoutError (err: unknown): boolean {
+  if (err == null || typeof err !== 'object') return false
+  if ('code' in err && (err as { code?: unknown }).code === '57014') return true
+  return err instanceof Error && err.message === 'Query read timeout'
+}
+
 export function getPool (connectionString: string): pg.Pool {
   if (isShuttingDown) {
     throw new Error('Database pool is shutting down')
   }
   let pool = pools.get(connectionString)
   if (!pool) {
+    // Read the timeout at pool-creation time (not module level) so tests can
+    // stub the env var and pick it up with a fresh pool.
+    const timeoutMs = getQueryTimeoutMs()
     pool = new Pool({
       connectionString,
       max: 10,
+      statement_timeout: timeoutMs,
+      query_timeout: timeoutMs + CLIENT_TIMEOUT_HEADROOM_MS,
     })
 
     // Handle pool errors to prevent unhandled rejections

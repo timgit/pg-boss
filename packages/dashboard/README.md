@@ -48,6 +48,7 @@ The dashboard is configured via environment variables:
 | `PGBOSS_DASHBOARD_AUTH_USERNAME` | Basic auth username (optional) | - |
 | `PGBOSS_DASHBOARD_AUTH_PASSWORD` | Basic auth password (optional) | - |
 | `PGBOSS_DASHBOARD_BASE_PATH` | Sub-path to serve the dashboard under, e.g. `/pgboss` (build-time only, see [Serving under a sub-path](#serving-under-a-sub-path)) | `/` |
+| `PGBOSS_DASHBOARD_QUERY_TIMEOUT` | Max milliseconds per dashboard query before server-side cancellation (`statement_timeout`). Requires a restart to change. | `60000` |
 
 ### Basic Authentication
 

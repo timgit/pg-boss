@@ -40,7 +40,7 @@ pg-boss relies on Postgres's SKIP LOCKED, a feature built specifically for messa
 This will likely cater the most to teams already familiar with the simplicity of relational database semantics and operations (SQL, querying, and backups). It will be especially useful to those already relying on PostgreSQL that want to limit how many systems are required to monitor and support in their architecture.
 
 
-## Summary <!-- {docsify-ignore-all} -->
+## Summary
 * Exactly-once job delivery
 * Create jobs within your existing database transaction
 * Backpressure-compatible polling workers
@@ -56,7 +56,7 @@ This will likely cater the most to teams already familiar with the simplicity of
 
 pg-boss includes a command-line interface if needed for managing database migrations without writing code. This is useful for CI/CD pipelines, database setup scripts, or manual schema management.
 
-See the [CLI documentation](https://timgit.github.io/pg-boss/#/cli) for details.
+See the [CLI documentation](https://timgit.github.io/pg-boss/cli) for details.
 
 ## Dashboard
 
