@@ -72,7 +72,9 @@ export function JobsFilterBar ({ filters, queueOptions, onChange }: JobsFilterBa
   const commitMinRetries = () => {
     if (minRetriesInput === filters.minRetries) return
     const trimmed = minRetriesInput.trim()
-    const valid = trimmed === '' || (/^\d+$/.test(trimmed) && Number(trimmed) >= 0)
+    // retry_count >= 0 matches every job, so 0 means "no filter" — normalize it
+    // to empty rather than committing a chip that narrows nothing.
+    const valid = /^\d+$/.test(trimmed) && Number(trimmed) > 0
     onChange({ ...filters, minRetries: valid ? trimmed : '' })
     if (!valid) setMinRetriesInput('')
   }
@@ -150,7 +152,7 @@ export function JobsFilterBar ({ filters, queueOptions, onChange }: JobsFilterBa
         />
         <input
           type="number"
-          min={0}
+          min={1}
           inputMode="numeric"
           placeholder="Min retries"
           aria-label="Minimum retries"
@@ -187,13 +189,13 @@ export function JobsFilterBar ({ filters, queueOptions, onChange }: JobsFilterBa
           <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-4">
             <PairFilterGroup
               title="Data"
-              hint="key=value pairs match against the job's data column (jsonb @>)."
+              hint="Matches top-level keys in the data column (jsonb @>). Numbers and true/false match JSON types, not strings."
               pairs={dataPairs}
               onChange={handleDataChange}
             />
             <PairFilterGroup
               title="Output"
-              hint="key=value pairs match against the job's output column."
+              hint="Matches top-level keys in the output column the same way."
               pairs={outputPairs}
               onChange={handleOutputChange}
             />

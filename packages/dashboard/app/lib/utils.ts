@@ -120,21 +120,23 @@ export interface JsonFilterPair {
  * Parse JSONB filter rows from URL search params for a given prefix
  * (e.g. 'data' → reads every `data.<key>` param). Order is stable based on
  * URLSearchParams insertion order so the UI can re-render the same pair list.
+ * Duplicate keys collapse to the last value — jsonFilterPairsToObject is
+ * last-wins, so anything else would render rows/chips the @> query ignores.
  */
 export function parseJsonFilterPairs (
   searchParams: URLSearchParams,
   prefix: 'data' | 'output'
 ): JsonFilterPair[] {
-  const pairs: JsonFilterPair[] = []
+  const byKey = new Map<string, string>()
   const dotPrefix = `${prefix}.`
   for (const [paramKey, paramValue] of searchParams.entries()) {
     if (!paramKey.startsWith(dotPrefix)) continue
     const key = paramKey.slice(dotPrefix.length)
     if (!key) continue
-    pairs.push({ key, value: paramValue })
-    if (pairs.length >= MAX_JSON_FILTER_PAIRS) break
+    if (!byKey.has(key) && byKey.size >= MAX_JSON_FILTER_PAIRS) continue
+    byKey.set(key, paramValue)
   }
-  return pairs
+  return [...byKey.entries()].map(([key, value]) => ({ key, value }))
 }
 
 /**

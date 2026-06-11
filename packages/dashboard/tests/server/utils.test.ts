@@ -230,6 +230,16 @@ describe('utils', () => {
       expect(parseJsonFilterPairs(params, 'data')).toEqual([])
     })
 
+    it('collapses duplicate keys to the last value, keeping first position', () => {
+      // Must agree with jsonFilterPairsToObject (last-wins) so the UI never
+      // shows a row or chip for a value the @> query ignores.
+      const params = new URLSearchParams('data.k=1&data.other=x&data.k=2')
+      expect(parseJsonFilterPairs(params, 'data')).toEqual([
+        { key: 'k', value: '2' },
+        { key: 'other', value: 'x' },
+      ])
+    })
+
     it(`caps the result at MAX_JSON_FILTER_PAIRS (${MAX_JSON_FILTER_PAIRS})`, () => {
       const parts: string[] = []
       for (let i = 0; i < MAX_JSON_FILTER_PAIRS + 5; i++) {

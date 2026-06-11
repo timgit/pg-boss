@@ -20,7 +20,9 @@ import {
 } from '~/components/ui/table'
 import { Pagination } from '~/components/ui/pagination'
 import { ErrorCard } from '~/components/error-card'
+import { QueryTimeoutBanner } from '~/components/query-timeout-banner'
 import { JobsFilterBar, type JobsFilters } from '~/components/jobs-filter-bar'
+import { isQueryTimeoutError, getQueryTimeoutMs } from '~/lib/db.server'
 import type { JobResult } from '~/lib/types'
 import {
   parsePageNumber,
@@ -40,7 +42,8 @@ interface ParsedFilters extends JobsFilters {
   shouldRunCount: boolean
 }
 
-function parseFiltersFromUrl (searchParams: URLSearchParams): ParsedFilters {
+// Exported for tests: buildSearchParams must round-trip through this parser.
+export function parseFiltersFromUrl (searchParams: URLSearchParams): ParsedFilters {
   const stateParam = searchParams.get('state')
   const state: JobStateFilter = stateParam !== null && isValidJobState(stateParam)
     ? (stateParam as JobStateFilter)
@@ -50,7 +53,10 @@ function parseFiltersFromUrl (searchParams: URLSearchParams): ParsedFilters {
   const queuesRaw = (searchParams.get('queues') || '').trim()
   const queues = queuesRaw ? queuesRaw.split(',').filter(Boolean) : []
   const minRetriesRaw = (searchParams.get('minRetries') || '').trim()
-  const minRetries = /^\d+$/.test(minRetriesRaw) ? minRetriesRaw : ''
+  // 0 is normalized away: retry_count >= 0 matches every job, but a non-empty
+  // value here would still flip hasNarrowingFilters and trigger an unbounded
+  // COUNT(*) even though buildRecentJobsWhere adds no condition for it.
+  const minRetries = /^\d+$/.test(minRetriesRaw) && Number(minRetriesRaw) > 0 ? minRetriesRaw : ''
 
   const dataPairs = parseJsonFilterPairs(searchParams, 'data')
   const outputPairs = parseJsonFilterPairs(searchParams, 'output')
@@ -103,12 +109,21 @@ export async function loader ({ request, context }: Route.LoaderArgs) {
   const limit = 20
   const offset = (page - 1) * limit
 
-  const [recentJobs, queueNames, totalCount] = await Promise.all([
+  const [recentJobsResult, queueNames, totalCount] = await Promise.all([
     getRecentJobs(context.DB_URL, context.SCHEMA, {
       ...parsed.serverFilters,
       limit,
       offset,
-    }),
+    }).then(
+      (rows) => ({ rows, timedOut: false }),
+      (err) => {
+        // A cancelled list query (statement_timeout) is an expected outcome on
+        // large tables with broad filters — render an inline banner instead of
+        // the ErrorBoundary so the user can remove the expensive filter.
+        if (isQueryTimeoutError(err)) return { rows: [] as JobResult[], timedOut: true }
+        throw err
+      }
+    ),
     getQueueNames(context.DB_URL, context.SCHEMA),
     // Count is best-effort: a failure here would block the entire page even
     // though the result list already loaded. Degrade to a null count so the
@@ -119,9 +134,10 @@ export async function loader ({ request, context }: Route.LoaderArgs) {
       : Promise.resolve<number | null>(null),
   ])
 
-  const hasNextPage = totalCount != null
+  const recentJobs = recentJobsResult.rows
+  const hasNextPage = !recentJobsResult.timedOut && (totalCount != null
     ? page * limit < totalCount
-    : recentJobs.length === limit
+    : recentJobs.length === limit)
   const hasPrevPage = page > 1
 
   return {
@@ -129,6 +145,8 @@ export async function loader ({ request, context }: Route.LoaderArgs) {
     queueNames,
     totalCount,
     page,
+    timedOut: recentJobsResult.timedOut,
+    queryTimeoutMs: getQueryTimeoutMs(),
     filters: {
       state: parsed.state,
       id: parsed.id,
@@ -147,7 +165,8 @@ export function ErrorBoundary () {
   return <ErrorCard title="Failed to load jobs" />
 }
 
-function buildSearchParams (filters: JobsFilters): URLSearchParams {
+// Exported for tests: must round-trip through parseFiltersFromUrl.
+export function buildSearchParams (filters: JobsFilters): URLSearchParams {
   const params = new URLSearchParams()
 
   if (filters.state !== DEFAULT_STATE_FILTER) {
@@ -176,6 +195,8 @@ export default function Jobs ({ loaderData }: Route.ComponentProps) {
     hasActiveFilters,
     hasNextPage,
     hasPrevPage,
+    timedOut,
+    queryTimeoutMs,
   } = loaderData
   const [, setSearchParams] = useSearchParams()
 
@@ -224,6 +245,8 @@ export default function Jobs ({ loaderData }: Route.ComponentProps) {
           onClearAll={clearAll}
         />
       )}
+
+      {timedOut && <QueryTimeoutBanner timeoutMs={queryTimeoutMs} />}
 
       <Card>
         <CardContent className="p-0">

@@ -78,6 +78,23 @@ describe('JobsFilterBar', () => {
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ minRetries: '3' }))
   })
 
+  it('normalizes a min retries of 0 to no filter', async () => {
+    const user = userEvent.setup()
+    const onChange = vi.fn()
+    render(
+      <JobsFilterBar filters={baseFilters} queueOptions={[]} onChange={onChange} />
+    )
+
+    // retry_count >= 0 matches every job, so 0 must commit as '' (no filter)
+    // rather than producing a chip and a COUNT(*) that narrow nothing.
+    const minRetries = screen.getByLabelText(/Minimum retries/i)
+    await user.type(minRetries, '0')
+    await user.keyboard('{Enter}')
+
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ minRetries: '' }))
+    expect(minRetries).toHaveValue(null)
+  })
+
   it('shows advanced filters when toggled', async () => {
     const user = userEvent.setup()
     render(
