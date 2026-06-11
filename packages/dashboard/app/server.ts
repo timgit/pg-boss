@@ -26,6 +26,11 @@ const { routerBasename } = resolveBasePath(process.env.PGBOSS_DASHBOARD_BASE_PAT
 
 export default createHonoServer({
   beforeAll (app) {
+    // Configure auth first so basic auth runs before the static asset handler
+    // below. serveStatic responds without calling next(), so mounting it ahead
+    // of configureAuth would leave prefixed assets publicly accessible while the
+    // library's root /assets/* stays auth-gated — keep the two consistent.
+    configureAuth(app)
     if (isProduction && routerBasename !== '/') {
       app.use(
         `${routerBasename}/assets/*`,
@@ -35,7 +40,6 @@ export default createHonoServer({
         })
       )
     }
-    configureAuth(app)
   },
   getLoadContext (c) {
     const databases = getDatabaseConfigs()
