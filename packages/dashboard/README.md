@@ -47,6 +47,7 @@ The dashboard is configured via environment variables:
 | `PORT` | Server port | `3000` |
 | `PGBOSS_DASHBOARD_AUTH_USERNAME` | Basic auth username (optional) | - |
 | `PGBOSS_DASHBOARD_AUTH_PASSWORD` | Basic auth password (optional) | - |
+| `PGBOSS_DASHBOARD_QUERY_TIMEOUT` | Max milliseconds per dashboard query before server-side cancellation (`statement_timeout`). Requires a restart to change. | `60000` |
 
 ### Basic Authentication
 
