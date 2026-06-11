@@ -48,11 +48,15 @@ function MainContent ({ children }: { children: React.ReactNode }) {
 const themeScript = `
   (function() {
     const stored = localStorage.getItem('pg-boss-theme');
-    let theme = stored || 'system';
+    const mode = stored || 'system';
+    let theme = mode;
     if (theme === 'system') {
       theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
     }
     document.documentElement.classList.add(theme);
+    // Expose the selected mode (light/dark/system) so the sidebar theme label
+    // can render from CSS on the first paint instead of client-only React state.
+    document.documentElement.dataset.themeMode = mode;
 
     const colorHex = {
       emerald: '#059669',

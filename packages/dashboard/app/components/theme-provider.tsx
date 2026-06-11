@@ -75,6 +75,9 @@ export function ThemeProvider ({ children }: { children: React.ReactNode }) {
     const root = document.documentElement
     root.classList.remove('light', 'dark')
     root.classList.add(resolved)
+    // Keep the selected mode in sync so the CSS-driven sidebar label updates
+    // when the theme changes without a reload.
+    root.dataset.themeMode = theme
   }, [theme])
 
   // Listen for system theme changes

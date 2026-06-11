@@ -1,5 +1,5 @@
 import { NavLink, useRouteLoaderData, useSearchParams, useNavigate, useLocation } from 'react-router'
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { ThemeToggle } from '~/components/ui/theme-toggle'
 import { ColorThemePicker } from '~/components/ui/color-theme-picker'
@@ -106,15 +106,32 @@ function DatabaseSelector ({
   const buttonRef = useRef<HTMLButtonElement>(null)
   const [menuPosition, setMenuPosition] = useState<{ top: number, left: number, width: number } | null>(null)
 
+  const updateMenuPosition = useCallback(() => {
+    const rect = buttonRef.current?.getBoundingClientRect()
+    if (rect) {
+      setMenuPosition({ top: rect.bottom + 4, left: rect.left, width: Math.max(rect.width, 256) })
+    }
+  }, [])
+
+  // While open, the menu is `fixed` relative to the viewport, so keep it pinned
+  // to the button as the page scrolls or the window resizes. Capture-phase scroll
+  // catches scrolling in any ancestor, not just the window.
+  useEffect(() => {
+    if (!isOpen) return
+    window.addEventListener('scroll', updateMenuPosition, true)
+    window.addEventListener('resize', updateMenuPosition)
+    return () => {
+      window.removeEventListener('scroll', updateMenuPosition, true)
+      window.removeEventListener('resize', updateMenuPosition)
+    }
+  }, [isOpen, updateMenuPosition])
+
   if (databases.length <= 1) {
     return null
   }
 
   const openMenu = () => {
-    const rect = buttonRef.current?.getBoundingClientRect()
-    if (rect) {
-      setMenuPosition({ top: rect.bottom + 4, left: rect.left, width: Math.max(rect.width, 256) })
-    }
+    updateMenuPosition()
     setIsOpen(true)
   }
 

@@ -12,94 +12,39 @@ describe("ThemeToggle", () => {
 
   beforeEach(() => {
     mockSetTheme.mockClear();
-  });
-
-  it("renders with light theme", () => {
     vi.mocked(useTheme).mockReturnValue({
-      theme: "light",
+      theme: "system",
       setTheme: mockSetTheme,
       resolvedTheme: "light",
     });
+  });
 
+  it("renders the toggle trigger", () => {
     render(<ThemeToggle />);
 
-    expect(screen.getByText("Light")).toBeInTheDocument();
     expect(screen.getByLabelText("Toggle theme")).toBeInTheDocument();
   });
 
-  it("renders with dark theme", () => {
-    vi.mocked(useTheme).mockReturnValue({
-      theme: "dark",
-      setTheme: mockSetTheme,
-      resolvedTheme: "dark",
-    });
-
-    render(<ThemeToggle />);
-
-    expect(screen.getByText("Dark")).toBeInTheDocument();
-  });
-
-  it("renders with system theme", () => {
-    vi.mocked(useTheme).mockReturnValue({
-      theme: "system",
-      setTheme: mockSetTheme,
-      resolvedTheme: "light",
-    });
-
-    render(<ThemeToggle />);
-
-    expect(screen.getByText("System")).toBeInTheDocument();
-  });
-
-  it("renders icon for light resolved theme", () => {
-    vi.mocked(useTheme).mockReturnValue({
-      theme: "light",
-      setTheme: mockSetTheme,
-      resolvedTheme: "light",
-    });
-
+  // The trigger icon and label are driven by CSS from the html element's
+  // class / data-theme-mode attribute (set by the inline theme script before
+  // first paint), not by React state. This avoids a flash of the wrong icon on
+  // load. So we assert the structural contract that makes that work rather than
+  // a specific rendered string.
+  it("renders both light and dark icons so CSS can pick without a flash", () => {
     const { container } = render(<ThemeToggle />);
 
-    const svg = container.querySelector('svg');
-    expect(svg).toBeInTheDocument();
+    // Sun (light) and Moon (dark) are both present; CSS toggles visibility.
+    expect(container.querySelectorAll("svg")).toHaveLength(2);
+    expect(container.querySelector(".dark\\:hidden")).toBeInTheDocument();
+    expect(container.querySelector(".dark\\:block")).toBeInTheDocument();
   });
 
-  it("renders icon for dark resolved theme", () => {
-    vi.mocked(useTheme).mockReturnValue({
-      theme: "dark",
-      setTheme: mockSetTheme,
-      resolvedTheme: "dark",
-    });
-
+  it("renders the CSS-driven theme label placeholder", () => {
     const { container } = render(<ThemeToggle />);
 
-    const svg = container.querySelector('svg');
-    expect(svg).toBeInTheDocument();
-  });
-
-  it("renders with system theme but light resolved", () => {
-    vi.mocked(useTheme).mockReturnValue({
-      theme: "system",
-      setTheme: mockSetTheme,
-      resolvedTheme: "light",
-    });
-
-    const { container } = render(<ThemeToggle />);
-
-    expect(screen.getByText("System")).toBeInTheDocument();
-    expect(container.querySelector('svg')).toBeInTheDocument();
-  });
-
-  it("renders with system theme but dark resolved", () => {
-    vi.mocked(useTheme).mockReturnValue({
-      theme: "system",
-      setTheme: mockSetTheme,
-      resolvedTheme: "dark",
-    });
-
-    const { container } = render(<ThemeToggle />);
-
-    expect(screen.getByText("System")).toBeInTheDocument();
-    expect(container.querySelector('svg')).toBeInTheDocument();
+    const label = container.querySelector(".theme-mode-label");
+    expect(label).toBeInTheDocument();
+    // Text is supplied by CSS ::after content, so the element itself is empty.
+    expect(label?.textContent).toBe("");
   });
 });

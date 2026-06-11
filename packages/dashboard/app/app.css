@@ -144,6 +144,22 @@
   --primary-950: var(--color-purple-950);
 }
 
+/* Sidebar theme-control labels are rendered from these attributes (set by the
+   inline theme script before first paint) so they match on the server and the
+   client and never flash the wrong value on load. */
+[data-theme-mode="light"] .theme-mode-label::after { content: "Light"; }
+[data-theme-mode="dark"] .theme-mode-label::after { content: "Dark"; }
+[data-theme-mode="system"] .theme-mode-label::after { content: "System"; }
+
+[data-color-theme="emerald"] .color-theme-label::after { content: "Emerald"; }
+[data-color-theme="teal"] .color-theme-label::after { content: "Teal"; }
+[data-color-theme="cyan"] .color-theme-label::after { content: "Cyan"; }
+[data-color-theme="sky"] .color-theme-label::after { content: "Sky"; }
+[data-color-theme="blue"] .color-theme-label::after { content: "Blue"; }
+[data-color-theme="indigo"] .color-theme-label::after { content: "Indigo"; }
+[data-color-theme="violet"] .color-theme-label::after { content: "Violet"; }
+[data-color-theme="purple"] .color-theme-label::after { content: "Purple"; }
+
 @theme {
   --color-sidebar: white;
   --color-sidebar-foreground: var(--color-gray-900);

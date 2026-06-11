@@ -39,8 +39,11 @@ export function ColorThemePicker () {
         )}
         aria-label="Change color theme"
       >
-        <span className={cn('h-5 w-5 rounded-full shrink-0', colorSwatchStyles[colorTheme])} />
-        <span className="text-sm group-data-[state=collapsed]:hidden">{colorLabels[colorTheme]}</span>
+        {/* Swatch uses the primary color, which is driven by html[data-color-theme]
+            in CSS (set before first paint) — so it shows the right color on load
+            with no hydration flash. The label text is likewise supplied by CSS. */}
+        <span className="h-5 w-5 rounded-full shrink-0 bg-primary-500" />
+        <span className="color-theme-label text-sm group-data-[state=collapsed]:hidden" />
       </Menu.Trigger>
 
       <Menu.Portal container={typeof document !== 'undefined' ? document.body : undefined}>

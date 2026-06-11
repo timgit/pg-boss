@@ -3,14 +3,8 @@ import { Menu } from '@base-ui/react/menu'
 import { useTheme } from '~/components/theme-provider'
 import { cn } from '~/lib/utils'
 
-const themeLabels = {
-  light: 'Light',
-  dark: 'Dark',
-  system: 'System',
-}
-
 export function ThemeToggle () {
-  const { theme, setTheme, resolvedTheme } = useTheme()
+  const { theme, setTheme } = useTheme()
 
   return (
     <Menu.Root>
@@ -23,12 +17,14 @@ export function ThemeToggle () {
         )}
         aria-label="Toggle theme"
       >
-        {resolvedTheme === 'dark' ? (
-          <Moon className="h-5 w-5 shrink-0" />
-        ) : (
-          <Sun className="h-5 w-5 shrink-0" />
-        )}
-        <span className="text-sm group-data-[state=collapsed]:hidden">{themeLabels[theme]}</span>
+        {/* Both icons render; CSS shows the right one based on the `.dark` class,
+            which the inline theme script sets before first paint — so there is no
+            flash of the wrong icon on load. */}
+        <Sun className="h-5 w-5 shrink-0 dark:hidden" />
+        <Moon className="hidden h-5 w-5 shrink-0 dark:block" />
+        {/* Label text is supplied by CSS from the html[data-theme-mode] attribute
+            (also set before paint) to avoid a server/client hydration mismatch. */}
+        <span className="theme-mode-label text-sm group-data-[state=collapsed]:hidden" />
       </Menu.Trigger>
 
       <Menu.Portal container={typeof document !== 'undefined' ? document.body : undefined}>
