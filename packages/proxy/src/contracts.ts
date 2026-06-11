@@ -150,6 +150,7 @@ export const jobWithMetadataSchema = jobSchemaBase.extend({
   keepUntil: z.iso.datetime().transform((val) => new Date(val)),
   blocked: z.boolean(),
   blocking: z.boolean(),
+  pendingDependencies: z.number(),
   policy: z.string(),
   deadLetter: z.string(),
   output: jsonRecordSchema,

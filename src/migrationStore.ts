@@ -828,6 +828,7 @@ function getAll (schema: string): types.Migration[] {
       install: [
         `ALTER TABLE ${schema}.job ADD COLUMN blocked boolean NOT NULL DEFAULT false`,
         `ALTER TABLE ${schema}.job ADD COLUMN blocking boolean NOT NULL DEFAULT false`,
+        `ALTER TABLE ${schema}.job ADD COLUMN pending_dependencies int NOT NULL DEFAULT 0`,
         `
         CREATE TABLE IF NOT EXISTS ${schema}.job_dependency (
           child_name text NOT NULL,
@@ -922,85 +923,9 @@ function getAll (schema: string): types.Migration[] {
         END;
         $$
         LANGUAGE plpgsql;
-        `,
-        `
-        CREATE OR REPLACE FUNCTION ${schema}.complete_jobs(
-          queue_name text,
-          job_table text,
-          job_ids uuid[],
-          job_output jsonb,
-          include_queued boolean DEFAULT false
-        )
-        RETURNS bigint AS
-        $$
-        DECLARE
-          completed_count bigint;
-          has_blocking boolean;
-        BEGIN
-          EXECUTE format(
-            'CREATE TEMP TABLE _completed ON COMMIT DROP AS
-             WITH results AS (
-               UPDATE %I.%I
-               SET completed_on = now(),
-                   state = ''completed'',
-                   output = $1
-               WHERE name = $2
-                 AND id IN (SELECT UNNEST($3))
-                 AND %s
-               RETURNING *
-             )
-             SELECT * FROM results',
-            '${schema}', job_table,
-            CASE WHEN include_queued
-              THEN 'state < ''completed'''
-              ELSE 'state = ''active'''
-            END
-          ) USING job_output, queue_name, job_ids;
-
-          SELECT COUNT(*) INTO completed_count FROM _completed;
-
-          IF completed_count = 0 THEN
-            RETURN 0;
-          END IF;
-
-          SELECT EXISTS(SELECT 1 FROM _completed WHERE blocking = true)
-            INTO has_blocking;
-
-          IF has_blocking THEN
-            EXECUTE format(
-              'UPDATE %I.job j
-               SET blocked = false
-               FROM (
-                 SELECT DISTINCT d.child_name, d.child_id
-                 FROM %I.job_dependency d
-                 JOIN _completed c ON c.name = d.parent_name AND c.id = d.parent_id
-                 WHERE c.blocking = true
-               ) ct
-               WHERE j.name = ct.child_name
-                 AND j.id = ct.child_id
-                 AND j.blocked = true
-                 AND NOT EXISTS (
-                   SELECT 1
-                   FROM %I.job_dependency d2
-                   JOIN %I.job p ON p.name = d2.parent_name AND p.id = d2.parent_id
-                   LEFT JOIN _completed r ON r.name = p.name AND r.id = p.id
-                   WHERE d2.child_name = ct.child_name
-                     AND d2.child_id = ct.child_id
-                     AND p.state <> ''completed''
-                     AND r.id IS NULL
-                 )',
-              '${schema}', '${schema}', '${schema}', '${schema}'
-            );
-          END IF;
-
-          RETURN completed_count;
-        END;
-        $$
-        LANGUAGE plpgsql;
         `
       ],
       uninstall: [
-        `DROP FUNCTION IF EXISTS ${schema}.complete_jobs`,
         `DROP INDEX IF EXISTS ${schema}.job_dep_parent_idx`,
         `DROP TABLE IF EXISTS ${schema}.job_dependency`,
         `
@@ -1088,6 +1013,7 @@ function getAll (schema: string): types.Migration[] {
         `,
         `SELECT ${schema}.job_table_run($cmd$DROP INDEX IF EXISTS ${schema}.job_i5$cmd$)`,
         `SELECT ${schema}.job_table_run($cmd$CREATE INDEX job_i5 ON ${schema}.job (name, start_after) INCLUDE (priority, created_on, id) WHERE state < 'active'$cmd$)`,
+        `ALTER TABLE ${schema}.job DROP COLUMN pending_dependencies`,
         `ALTER TABLE ${schema}.job DROP COLUMN blocking`,
         `ALTER TABLE ${schema}.job DROP COLUMN blocked`
       ]

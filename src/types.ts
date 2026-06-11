@@ -436,6 +436,7 @@ export interface JobWithMetadata<T = object> extends Job<T> {
   heartbeatSeconds: number | null;
   blocked: boolean;
   blocking: boolean;
+  pendingDependencies: number;
   deadLetter: string;
   output: object;
 }

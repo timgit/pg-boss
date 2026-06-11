@@ -1,8 +1,9 @@
+import { randomUUID } from 'node:crypto'
 import { expect } from 'vitest'
 import * as helper from './testHelper.ts'
 import { assertTruthy } from './testHelper.ts'
 import { ctx } from './hooks.ts'
-import { PgBoss } from '../src/index.ts'
+import { PgBoss, states } from '../src/index.ts'
 
 describe('dependencies', function () {
   it('should block a job until its parent completes', async function () {
@@ -293,7 +294,6 @@ describe('dependencies', function () {
       { ref: 'child', name: ctx.schema, options: { startAfter: 3600 }, dependsOn: ['parent'] }
     ])
 
-    const parentId = flow.parent
     const childId = flow.child
 
     const [job] = await ctx.boss.fetch(ctx.schema)
@@ -326,5 +326,108 @@ describe('dependencies', function () {
     expect(children.length).toBe(2)
     const childIds = children.map(j => j.id).sort()
     expect(childIds).toEqual([flow.c1, flow.c2].sort())
+  })
+
+  it('should unblock fan-in child when sibling parents complete concurrently', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+    const db1 = await helper.getDb()
+    const db2 = await helper.getDb()
+
+    try {
+      const flow = await ctx.boss.createFlow([
+        { ref: 'p1', name: ctx.schema },
+        { ref: 'p2', name: ctx.schema },
+        { ref: 'child', name: ctx.schema, dependsOn: ['p1', 'p2'] }
+      ])
+
+      const parents = await ctx.boss.fetch(ctx.schema, { batchSize: 2 })
+      expect(parents.length).toBe(2)
+
+      await Promise.all([
+        ctx.boss.complete(ctx.schema, flow.p1, null, { db: db1 }),
+        ctx.boss.complete(ctx.schema, flow.p2, null, { db: db2 })
+      ])
+
+      const childJob = await ctx.boss.getJobById(ctx.schema, flow.child)
+      assertTruthy(childJob)
+      expect(childJob.blocked).toBe(false)
+      expect(childJob.pendingDependencies).toBe(0)
+
+      const fetched = await ctx.boss.fetch(ctx.schema)
+      expect(fetched.length).toBe(1)
+      expect(fetched[0].id).toBe(flow.child)
+    } finally {
+      await db1.close()
+      await db2.close()
+    }
+  })
+
+  it('should roll back createFlow when an insert conflict skips a job', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+    const id = randomUUID()
+
+    await expect(async () => {
+      await ctx.boss!.createFlow([
+        { ref: 'parent', name: ctx.schema, options: { id } },
+        { ref: 'child', name: ctx.schema, options: { id }, dependsOn: ['parent'] }
+      ])
+    }).rejects.toThrow('createFlow failed to insert all jobs')
+
+    const jobCount = await helper.countJobs(ctx.schema, 'job', 'name = $1', [ctx.schema])
+    const dependencyCount = await helper.countJobs(ctx.schema, 'job_dependency', 'true')
+    expect(jobCount).toBe(0)
+    expect(dependencyCount).toBe(0)
+  })
+
+  it('should support two complete calls in one transaction', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+    const db = await helper.getDb()
+
+    try {
+      const flow = await ctx.boss.createFlow([
+        { ref: 'parent', name: ctx.schema },
+        { ref: 'child', name: ctx.schema, dependsOn: ['parent'] }
+      ])
+
+      const [parent] = await ctx.boss.fetch(ctx.schema)
+      expect(parent.id).toBe(flow.parent)
+
+      await db.withTransaction(async txDb => {
+        const parentResult = await ctx.boss!.complete(ctx.schema, flow.parent, null, { db: txDb })
+        expect(parentResult.affected).toBe(1)
+
+        const childResult = await ctx.boss!.complete(ctx.schema, flow.child, null, { db: txDb, includeQueued: true })
+        expect(childResult.affected).toBe(1)
+      })
+
+      const childJob = await ctx.boss.getJobById(ctx.schema, flow.child)
+      assertTruthy(childJob)
+      expect(childJob.blocked).toBe(false)
+      expect(childJob.pendingDependencies).toBe(0)
+      expect(childJob.state).toBe(states.completed)
+    } finally {
+      await db.close()
+    }
+  })
+
+  it('should complete a blocked child with its parent when includeQueued is true', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    const flow = await ctx.boss.createFlow([
+      { ref: 'parent', name: ctx.schema },
+      { ref: 'child', name: ctx.schema, dependsOn: ['parent'] }
+    ])
+
+    const result = await ctx.boss.complete(ctx.schema, [flow.parent, flow.child], null, { includeQueued: true })
+    expect(result.affected).toBe(2)
+
+    const parentJob = await ctx.boss.getJobById(ctx.schema, flow.parent)
+    const childJob = await ctx.boss.getJobById(ctx.schema, flow.child)
+    assertTruthy(parentJob)
+    assertTruthy(childJob)
+    expect(parentJob.state).toBe(states.completed)
+    expect(childJob.state).toBe(states.completed)
+    expect(childJob.blocked).toBe(false)
+    expect(childJob.pendingDependencies).toBe(0)
   })
 })

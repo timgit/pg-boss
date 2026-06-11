@@ -214,6 +214,8 @@ Create a set of jobs and their dependencies atomically in one transaction.
 
 Use `createFlow()` when jobs depend on other jobs. Dependencies are not configured on `send()` or `insert()` because creating jobs and dependencies in separate calls can race with job completion.
 
+Atomicity is handled by pg-boss when it owns the database connection. If you pass a custom `db` in `options`, wrap the call in your own transaction if you need the job and dependency inserts to commit or roll back together.
+
 The method accepts a flat array of jobs in any order. Each job has a local `ref`, and dependent jobs reference parent refs with `dependsOn`.
 
 ```ts

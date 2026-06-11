@@ -106,7 +106,7 @@ function validateFlowJobs (jobs: types.FlowJob[]) {
     if (!job.dependsOn) continue
     assert(Array.isArray(job.dependsOn), `dependsOn for ref "${job.ref}" must be an array`)
     for (const dep of job.dependsOn) {
-      assert(typeof dep === 'string' && dep.length > 0, `dependsOn entries must be non-empty strings`)
+      assert(typeof dep === 'string' && dep.length > 0, 'dependsOn entries must be non-empty strings')
       assert(dep !== job.ref, `job "${job.ref}" cannot depend on itself`)
       assert(refs.has(dep), `dependsOn ref "${dep}" not found in flow`)
     }
