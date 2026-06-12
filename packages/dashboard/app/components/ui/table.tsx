@@ -36,7 +36,7 @@ interface TableCellProps {
 export function Table ({ children, className }: TableProps) {
   return (
     <div className={cn('overflow-x-auto', className)}>
-      <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-800">
+      <table className="min-w-full border-collapse">
         {children}
       </table>
     </div>
@@ -45,7 +45,7 @@ export function Table ({ children, className }: TableProps) {
 
 export function TableHeader ({ children, className }: TableHeaderProps) {
   return (
-    <thead className={cn('bg-gray-50 dark:bg-gray-900', className)}>
+    <thead className={cn('bg-[var(--surface-sunken)]', className)}>
       {children}
     </thead>
   )
@@ -53,13 +53,7 @@ export function TableHeader ({ children, className }: TableHeaderProps) {
 
 export function TableBody ({ children, className }: TableBodyProps) {
   return (
-    <tbody
-      className={cn(
-        'divide-y divide-gray-200 bg-white',
-        'dark:divide-gray-800 dark:bg-gray-950',
-        className
-      )}
-    >
+    <tbody className={className}>
       {children}
     </tbody>
   )
@@ -69,7 +63,8 @@ export function TableRow ({ children, className, onClick }: TableRowProps) {
   return (
     <tr
       className={cn(
-        onClick && 'cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors',
+        'border-b border-[var(--border-subtle)]',
+        onClick && 'cursor-pointer hover:bg-[var(--surface-hover)] transition-colors',
         className
       )}
       onClick={onClick}
@@ -84,8 +79,7 @@ export function TableHead ({ children, className }: TableHeadProps) {
     <th
       scope="col"
       className={cn(
-        'px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider',
-        'dark:text-gray-400',
+        'px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--text-tertiary)] whitespace-nowrap',
         className
       )}
     >
@@ -97,7 +91,7 @@ export function TableHead ({ children, className }: TableHeadProps) {
 export function TableCell ({ children, className, colSpan }: TableCellProps) {
   return (
     <td
-      className={cn('px-6 py-4 whitespace-nowrap text-sm', className)}
+      className={cn('px-4 py-2.5 whitespace-nowrap text-sm text-[var(--text-secondary)]', className)}
       colSpan={colSpan}
     >
       {children}

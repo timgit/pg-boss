@@ -8,8 +8,8 @@ import {
   getProblemQueuesCount,
 } from '~/lib/queries.server'
 import { StatsCards } from '~/components/stats-cards'
-import { QueueStatsCards } from '~/components/queue-stats-cards'
 import { Card, CardHeader, CardTitle, CardContent } from '~/components/ui/card'
+import { PageHeader } from '~/components/ui/page-header'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import {
@@ -25,17 +25,18 @@ import {
   formatTimeAgo,
   WARNING_TYPE_VARIANTS,
   WARNING_TYPE_LABELS,
-  cn,
 } from '~/lib/utils'
 import type { WarningType, QueueResult, WarningResult } from '~/lib/types'
+import { dbContext } from '~/lib/db-context'
 
 export async function loader ({ context }: Route.LoaderArgs) {
+  const { DB_URL, SCHEMA } = context.get(dbContext)
   const [warnings, stats, topQueues, totalQueues, problemQueuesCount] = await Promise.all([
-    getWarnings(context.DB_URL, context.SCHEMA, { limit: 5 }),
-    getQueueStats(context.DB_URL, context.SCHEMA),
-    getTopQueues(context.DB_URL, context.SCHEMA, 5),
-    getQueueCount(context.DB_URL, context.SCHEMA),
-    getProblemQueuesCount(context.DB_URL, context.SCHEMA),
+    getWarnings(DB_URL, SCHEMA, { limit: 5 }),
+    getQueueStats(DB_URL, SCHEMA),
+    getTopQueues(DB_URL, SCHEMA, 5),
+    getQueueCount(DB_URL, SCHEMA),
+    getProblemQueuesCount(DB_URL, SCHEMA),
   ])
 
   return {
@@ -54,91 +55,79 @@ export function ErrorBoundary () {
 }
 
 export default function Overview ({ loaderData }: Route.ComponentProps) {
-  const { stats, warnings, topQueues, queueStats } = loaderData
+  const { stats, warnings, topQueues } = loaderData
 
   return (
-    <div className="space-y-8">
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Dashboard</h1>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-            Monitor your pg-boss job queues
-          </p>
-        </div>
-        <DbLink to="/send">
-          <Button variant="primary" size="md">Send Job</Button>
-        </DbLink>
+    <div>
+      <PageHeader
+        title="Overview"
+        subtitle="Monitor your pg-boss job queues"
+        action={
+          <DbLink to="/send">
+            <Button variant="primary" size="md">Send Job</Button>
+          </DbLink>
+        }
+      />
+
+      {/* Stat row */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-4">
+        <StatsCards stats={stats} />
       </div>
 
-      <section>
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
-          Overview
-        </h2>
-        <div className="space-y-5">
-          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-            <QueueStatsCards
-              totalQueues={queueStats.totalQueues}
-              problemQueues={queueStats.problemQueues}
-            />
-          </div>
-          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
-            <StatsCards stats={stats} />
-          </div>
-        </div>
-      </section>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Top Queues */}
+      {/* Two column: top queues + recent warnings */}
+      <div className="grid grid-cols-1 lg:grid-cols-[1.5fr_1fr] gap-4">
         <Card>
           <CardHeader>
             <CardTitle>Top Queues</CardTitle>
+            <DbLink
+              to="/queues"
+              className="text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
+            >
+              View all
+            </DbLink>
           </CardHeader>
-          <CardContent className="p-0">
-            {topQueues.length === 0 ? (
-              <p className="text-sm text-gray-500 dark:text-gray-400 p-6">
-                No queues found
-              </p>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead className="text-right hidden md:table-cell">Queued</TableHead>
-                    <TableHead className="text-right hidden md:table-cell">Active</TableHead>
-                    <TableHead className="text-right">Total</TableHead>
+          {topQueues.length === 0 ? (
+            <p className="text-sm text-[var(--text-tertiary)] p-5">No queues found</p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead className="text-right">Queued</TableHead>
+                  <TableHead className="text-right">Active</TableHead>
+                  <TableHead>Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {topQueues.map((queue: QueueResult) => (
+                  <TableRow key={queue.name}>
+                    <TableCell>
+                      <DbLink
+                        to={`/queues/${encodeURIComponent(queue.name)}`}
+                        className="font-medium text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
+                      >
+                        {queue.name}
+                      </DbLink>
+                    </TableCell>
+                    <TableCell className="text-right pgb-num text-[var(--text-primary)]">
+                      {queue.queuedCount.toLocaleString()}
+                    </TableCell>
+                    <TableCell className="text-right pgb-num text-[var(--text-primary)]">
+                      {queue.activeCount.toLocaleString()}
+                    </TableCell>
+                    <TableCell>
+                      <QueueStatusBadge queue={queue} />
+                    </TableCell>
                   </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {topQueues.map((queue: QueueResult) => (
-                    <TableRow key={queue.name}>
-                      <TableCell>
-                        <DbLink
-                          to={`/queues/${encodeURIComponent(queue.name)}`}
-                          className="font-medium text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
-                        >
-                          {queue.name}
-                        </DbLink>
-                      </TableCell>
-                      <TableCell className="text-right text-gray-700 dark:text-gray-300 hidden md:table-cell">
-                        {queue.queuedCount.toLocaleString()}
-                      </TableCell>
-                      <TableCell className="text-right text-gray-700 dark:text-gray-300 hidden md:table-cell">
-                        {queue.activeCount.toLocaleString()}
-                      </TableCell>
-                      <TableCell className="text-right text-gray-700 dark:text-gray-300">
-                        {queue.totalCount.toLocaleString()}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
+                ))}
+              </TableBody>
+            </Table>
+          )}
         </Card>
 
         {/* Recent Warnings */}
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
+          <CardHeader>
             <CardTitle>Recent Warnings</CardTitle>
             <DbLink
               to="/warnings"
@@ -147,47 +136,48 @@ export default function Overview ({ loaderData }: Route.ComponentProps) {
               View all
             </DbLink>
           </CardHeader>
-          <CardContent>
+          <div className="flex flex-col gap-2 p-3">
             {warnings.length === 0 ? (
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                No warnings recorded
-              </p>
+              <p className="text-sm text-[var(--text-tertiary)] p-2">No warnings recorded</p>
             ) : (
-              <ul className="space-y-3">
-                {warnings.map((warning: WarningResult) => (
-                  <li
-                    key={warning.id}
-                    className={cn(
-                      'flex items-start gap-3 p-3 rounded-lg',
-                      'bg-gray-50 dark:bg-gray-800'
-                    )}
-                  >
-                    <WarningIcon className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <Badge
-                          variant={WARNING_TYPE_VARIANTS[warning.type as WarningType]}
-                          size="sm"
-                        >
-                          {WARNING_TYPE_LABELS[warning.type as WarningType]}
-                        </Badge>
-                        <span className="text-xs text-gray-400">
-                          {formatTimeAgo(new Date(warning.createdOn))}
-                        </span>
-                      </div>
-                      <p className="text-sm text-gray-700 dark:text-gray-300 truncate">
-                        {warning.message}
-                      </p>
+              warnings.map((warning: WarningResult) => (
+                <div
+                  key={warning.id}
+                  className="flex items-start gap-3 px-3 py-2.5 rounded-lg bg-[var(--surface-sunken)]"
+                >
+                  <WarningIcon className="w-[18px] h-[18px] text-[var(--warning-500)] flex-shrink-0 mt-0.5" />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Badge
+                        variant={WARNING_TYPE_VARIANTS[warning.type as WarningType]}
+                        size="sm"
+                      >
+                        {WARNING_TYPE_LABELS[warning.type as WarningType]}
+                      </Badge>
+                      <span className="text-[11px] text-[var(--text-tertiary)] pgb-num">
+                        {formatTimeAgo(new Date(warning.createdOn))}
+                      </span>
                     </div>
-                  </li>
-                ))}
-              </ul>
+                    <p className="text-sm text-[var(--text-secondary)] truncate">
+                      {warning.message}
+                    </p>
+                  </div>
+                </div>
+              ))
             )}
-          </CardContent>
+          </div>
         </Card>
       </div>
     </div>
   )
+}
+
+function QueueStatusBadge ({ queue }: { queue: QueueResult }) {
+  const hasBacklog =
+    (queue.warningQueueSize ?? 0) > 0 && queue.queuedCount > (queue.warningQueueSize ?? 0)
+  if (hasBacklog) return <Badge variant="error" size="sm" dot>Backlogged</Badge>
+  if (queue.activeCount > 0) return <Badge variant="success" size="sm" dot>Processing</Badge>
+  return <Badge variant="gray" size="sm" dot>Idle</Badge>
 }
 
 function WarningIcon ({ className }: { className?: string }) {

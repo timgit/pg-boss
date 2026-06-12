@@ -1,5 +1,4 @@
 import { reactRouter } from '@react-router/dev/vite'
-import { reactRouterHonoServer } from 'react-router-hono-server/dev'
 import { defineConfig } from 'vite'
 import tailwindcss from '@tailwindcss/vite'
 import { resolve } from 'path'
@@ -23,7 +22,6 @@ export default defineConfig(({ command }) => ({
   },
   plugins: [
     tailwindcss(),
-    reactRouterHonoServer({ runtime: 'node' }),
     reactRouter(),
   ],
   resolve: {
@@ -31,5 +29,12 @@ export default defineConfig(({ command }) => ({
       '~': '/app',
       'pg-boss': resolve(__dirname, '../../src'),
     },
+    // Force a single copy of React in the dev module graph. Without this, Vite's
+    // dependency optimizer can pre-bundle a second React instance for a dep that
+    // imports it (react-router, @base-ui/react, lucide-react, …), and the two
+    // instances surface at runtime as `Cannot read properties of null (reading
+    // 'useContext')` — React's dispatcher is null because hooks run against a
+    // different React than the one doing the render.
+    dedupe: ['react', 'react-dom'],
   },
 }))

@@ -7,7 +7,9 @@ import {
   getQueueNames,
   type RecentJobsFilterOptions,
 } from '~/lib/queries.server'
+import { dbContext } from '~/lib/db-context'
 import { Card, CardContent } from '~/components/ui/card'
+import { PageHeader } from '~/components/ui/page-header'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import {
@@ -102,6 +104,7 @@ export function parseFiltersFromUrl (searchParams: URLSearchParams): ParsedFilte
 }
 
 export async function loader ({ request, context }: Route.LoaderArgs) {
+  const { DB_URL, SCHEMA } = context.get(dbContext)
   const url = new URL(request.url)
   const parsed = parseFiltersFromUrl(url.searchParams)
 
@@ -110,7 +113,7 @@ export async function loader ({ request, context }: Route.LoaderArgs) {
   const offset = (page - 1) * limit
 
   const [recentJobsResult, queueNames, totalCount] = await Promise.all([
-    getRecentJobs(context.DB_URL, context.SCHEMA, {
+    getRecentJobs(DB_URL, SCHEMA, {
       ...parsed.serverFilters,
       limit,
       offset,
@@ -124,12 +127,12 @@ export async function loader ({ request, context }: Route.LoaderArgs) {
         throw err
       }
     ),
-    getQueueNames(context.DB_URL, context.SCHEMA),
+    getQueueNames(DB_URL, SCHEMA),
     // Count is best-effort: a failure here would block the entire page even
     // though the result list already loaded. Degrade to a null count so the
     // subtitle silently falls back to the next-page heuristic.
     parsed.shouldRunCount
-      ? getRecentJobsCount(context.DB_URL, context.SCHEMA, parsed.serverFilters)
+      ? getRecentJobsCount(DB_URL, SCHEMA, parsed.serverFilters)
         .catch(() => null)
       : Promise.resolve<number | null>(null),
   ])
@@ -219,18 +222,16 @@ export default function Jobs ({ loaderData }: Route.ComponentProps) {
     : 'Recently created jobs across all queues'
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Jobs</h1>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-            {subtitle}
-          </p>
-        </div>
-        <DbLink to="/send">
-          <Button variant="primary" size="md">Send Job</Button>
-        </DbLink>
-      </div>
+    <div className="space-y-4">
+      <PageHeader
+        title="Jobs"
+        subtitle={subtitle}
+        action={
+          <DbLink to="/send">
+            <Button variant="primary" size="md">Send Job</Button>
+          </DbLink>
+        }
+      />
 
       <JobsFilterBar
         filters={filters}
@@ -263,7 +264,7 @@ export default function Jobs ({ loaderData }: Route.ComponentProps) {
             <TableBody>
               {recentJobs.length === 0 ? (
                 <TableRow>
-                  <TableCell className="text-center text-gray-500 dark:text-gray-400 py-8" colSpan={5}>
+                  <TableCell className="text-center text-[var(--text-tertiary)] py-8" colSpan={5}>
                     No jobs found
                   </TableCell>
                 </TableRow>
@@ -278,18 +279,18 @@ export default function Jobs ({ loaderData }: Route.ComponentProps) {
                         {job.id.slice(0, 8)}...
                       </DbLink>
                     </TableCell>
-                    <TableCell className="text-gray-700 dark:text-gray-300">
+                    <TableCell className="font-medium text-[var(--text-secondary)]">
                       {job.name}
                     </TableCell>
                     <TableCell>
-                      <Badge variant={JOB_STATE_VARIANTS[job.state]} size="sm">
+                      <Badge variant={JOB_STATE_VARIANTS[job.state]} size="sm" dot>
                         {job.state}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-gray-700 dark:text-gray-300">
+                    <TableCell className="pgb-num text-[var(--text-primary)]">
                       {job.retryCount} / {job.retryLimit}
                     </TableCell>
-                    <TableCell className="text-gray-500 dark:text-gray-400">
+                    <TableCell className="pgb-num text-[var(--text-tertiary)]">
                       {formatDate(new Date(job.createdOn))}
                     </TableCell>
                   </TableRow>

@@ -14,16 +14,24 @@ import { ThemeProvider } from "~/components/theme-provider";
 import { Breadcrumbs } from "~/components/breadcrumbs";
 import { SidebarProvider, SidebarTrigger, useSidebar } from "~/components/ui/sidebar";
 import { cn } from "~/lib/utils";
+import { dbContext } from "~/lib/db-context";
 
 function MainContent ({ children }: { children: React.ReactNode }) {
   const { open, isMobile, state } = useSidebar()
 
   return (
-    <main className={cn(
-      "flex-1 min-w-0 overflow-x-hidden bg-gray-50 dark:bg-black transition-[padding] duration-200 ease-linear",
-      !isMobile && (state === 'expanded' ? 'md:pl-32' : 'md:pl-12')
-    )}>
-      <div className="flex items-center justify-between px-6 py-2">
+    <main
+      className={cn(
+        "flex-1 min-w-0 overflow-x-hidden transition-[padding] duration-150 ease-linear",
+        !isMobile && (state === 'expanded' ? 'md:pl-[var(--sidebar-width)]' : 'md:pl-[var(--sidebar-width-icon)]')
+      )}
+      style={{ background: 'var(--gradient-app)' }}
+    >
+      {/* Frosted console topbar: breadcrumbs + global chrome */}
+      <div
+        className="sticky top-0 z-20 flex h-14 items-center justify-between gap-3 px-6 border-b border-[var(--border-subtle)] backdrop-blur-md backdrop-saturate-150"
+        style={{ background: 'var(--surface-topbar)', boxShadow: 'var(--topbar-shadow)' }}
+      >
         <div className="flex items-center gap-4">
           <SidebarTrigger />
           <Breadcrumbs />
@@ -37,7 +45,7 @@ function MainContent ({ children }: { children: React.ReactNode }) {
           </div>
         )}
       </div>
-      <div className="px-6 pb-6 lg:px-8 lg:pb-8">
+      <div className="px-6 py-6 lg:px-8 lg:py-8">
         {children}
       </div>
     </main>
@@ -59,6 +67,7 @@ const themeScript = `
     document.documentElement.dataset.themeMode = mode;
 
     const colorHex = {
+      cobalt: '#284fe0',
       emerald: '#059669',
       teal: '#0d9488',
       cyan: '#0891b2',
@@ -68,11 +77,11 @@ const themeScript = `
       violet: '#7c3aed',
       purple: '#9333ea',
     };
-    const colorTheme = localStorage.getItem('pg-boss-color-theme') || 'violet';
+    const colorTheme = localStorage.getItem('pg-boss-color-theme') || 'cobalt';
     document.documentElement.dataset.colorTheme = colorTheme;
 
     // Create favicon with color theme
-    const hex = colorHex[colorTheme] || colorHex.violet;
+    const hex = colorHex[colorTheme] || colorHex.cobalt;
     const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="6" fill="' + hex + '"/><text x="16" y="22" text-anchor="middle" font-family="system-ui,sans-serif" font-size="14" font-weight="bold" fill="white">PG</text></svg>';
     var link = document.querySelector('link[rel="icon"]');
     if (!link) {
@@ -86,9 +95,10 @@ const themeScript = `
 `;
 
 export async function loader({ context }: Route.LoaderArgs) {
+  const { databases, currentDb } = context.get(dbContext);
   return {
-    databases: context.databases,
-    currentDb: context.currentDb,
+    databases,
+    currentDb,
   };
 }
 
@@ -102,7 +112,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <Links />
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
-      <body className="bg-gray-50 dark:bg-black">
+      <body className="bg-[var(--surface-app)]">
         <ThemeProvider>
           <LoadingBar />
           <SidebarProvider>
@@ -158,5 +168,12 @@ export function meta() {
 }
 
 export function links() {
-  return [];
+  return [
+    { rel: "preconnect", href: "https://fonts.googleapis.com" },
+    { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
+    {
+      rel: "stylesheet",
+      href: "https://fonts.googleapis.com/css2?family=Geist:wght@300..700&family=Geist+Mono:wght@400..600&display=swap",
+    },
+  ];
 }

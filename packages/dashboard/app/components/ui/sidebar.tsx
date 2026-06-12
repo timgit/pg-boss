@@ -7,9 +7,9 @@ import { Tooltip } from '~/components/ui/tooltip'
 
 const SIDEBAR_COOKIE_NAME = 'sidebar:state'
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7 // 7 days
-const SIDEBAR_WIDTH = '16rem'
+const SIDEBAR_WIDTH = '11rem'
 const SIDEBAR_WIDTH_MOBILE = '18rem'
-const SIDEBAR_WIDTH_ICON = '3rem'
+const SIDEBAR_WIDTH_ICON = '3.75rem'
 const SIDEBAR_KEYBOARD_SHORTCUT = 'b'
 
 type SidebarContext = {
@@ -149,8 +149,9 @@ const Sidebar = React.forwardRef<HTMLDivElement, React.ComponentProps<'div'> & {
           )}
           <div
             ref={ref}
+            style={{ background: 'var(--sidebar-bg)' }}
             className={cn(
-              'fixed inset-y-0 z-50 flex h-full w-[--sidebar-width-mobile] flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-transform duration-200 ease-in-out',
+              'fixed inset-y-0 z-50 flex h-full w-[--sidebar-width-mobile] flex-col border-r border-sidebar-border text-sidebar-foreground transition-transform duration-200 ease-in-out',
               side === 'left' ? 'left-0' : 'right-0',
               openMobile ? 'translate-x-0' : side === 'left' ? '-translate-x-full' : 'translate-x-full',
               className
@@ -167,10 +168,11 @@ const Sidebar = React.forwardRef<HTMLDivElement, React.ComponentProps<'div'> & {
       <div
         ref={ref}
         data-state={state}
+        style={{ background: 'var(--sidebar-bg)' }}
         className={cn(
-          'group peer hidden md:flex fixed inset-y-0 left-0 z-30 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground overflow-y-auto overflow-x-hidden',
-          'transition-[width] duration-200 ease-linear',
-          state === 'expanded' ? 'w-[--sidebar-width]' : 'w-[--sidebar-width-icon]',
+          'group peer hidden md:flex fixed inset-y-0 left-0 z-30 flex-col border-r border-sidebar-border text-sidebar-foreground overflow-y-auto overflow-x-hidden',
+          'transition-[width] duration-150 ease-linear',
+          state === 'expanded' ? 'w-[var(--sidebar-width)]' : 'w-[var(--sidebar-width-icon)]',
           className
         )}
         {...props}
@@ -282,7 +284,7 @@ const SidebarMenuItem = React.forwardRef<HTMLLIElement, React.ComponentProps<'li
 SidebarMenuItem.displayName = 'SidebarMenuItem'
 
 const sidebarMenuButtonVariants = cva(
-  'peer/menu-button flex w-full items-center gap-2 overflow-hidden rounded-md p-2 text-left text-sm outline-none ring-sidebar-ring transition-[width,height,padding] hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 cursor-pointer group-has-[[data-sidebar=menu-action]]/menu-item:pr-8 group-data-[state=collapsed]:justify-center',
+  'peer/menu-button flex w-full items-center gap-2.5 overflow-hidden rounded-md px-3 py-2 text-left text-sm outline-none ring-sidebar-ring transition-[width,height,padding] hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 cursor-pointer group-has-[[data-sidebar=menu-action]]/menu-item:pr-8',
   {
     variants: {
       variant: {
@@ -319,9 +321,16 @@ const SidebarMenuButton = React.forwardRef<
       {
         'data-sidebar': 'menu-button',
         'data-active': isActive,
+        // Active item is a raised pill (gradient bg + soft shadow) with a cobalt
+        // accent rail — the design's signature selected state. The bg is a
+        // gradient, so it must be applied as a background-image via inline style.
+        style: isActive
+          ? { background: 'var(--sidebar-active-bg)', boxShadow: 'var(--sidebar-active-shadow)' }
+          : undefined,
         className: cn(
           sidebarMenuButtonVariants({ variant, size }),
-          isActive && 'bg-sidebar-accent font-medium text-sidebar-accent-foreground',
+          isActive &&
+            "relative font-medium text-[var(--sidebar-active-text)] before:absolute before:left-0 before:top-2 before:bottom-2 before:w-[3px] before:rounded-full before:bg-primary-500 before:content-[''] group-data-[state=collapsed]:before:hidden",
           className
         ),
       },

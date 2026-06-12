@@ -3,6 +3,7 @@ import { DbLink } from '~/components/db-link'
 import type { Route } from './+types/schedules.$name.$key'
 import { getSchedule } from '~/lib/queries.server'
 import { unschedule } from '~/lib/boss.server'
+import { dbContext } from '~/lib/db-context'
 import { Card, CardHeader, CardTitle, CardContent } from '~/components/ui/card'
 import { Button } from '~/components/ui/button'
 import {
@@ -18,9 +19,10 @@ import { formatDate } from '~/lib/utils'
 import { redirect } from 'react-router'
 
 export async function loader ({ params, context }: Route.LoaderArgs) {
+  const { DB_URL, SCHEMA } = context.get(dbContext)
   // Decode __default__ placeholder back to empty string
   const key = params.key === '__default__' ? '' : params.key
-  const schedule = await getSchedule(context.DB_URL, context.SCHEMA, params.name, key)
+  const schedule = await getSchedule(DB_URL, SCHEMA, params.name, key)
 
   if (!schedule) {
     throw new Response('Schedule not found', { status: 404 })
@@ -30,6 +32,7 @@ export async function loader ({ params, context }: Route.LoaderArgs) {
 }
 
 export async function action ({ params, request, context }: Route.ActionArgs) {
+  const { DB_URL, SCHEMA } = context.get(dbContext)
   const formData = await request.formData()
   const intent = formData.get('intent')
 
@@ -37,7 +40,7 @@ export async function action ({ params, request, context }: Route.ActionArgs) {
     try {
       // Decode __default__ placeholder back to empty string
       const key = params.key === '__default__' ? undefined : params.key
-      await unschedule(context.DB_URL, context.SCHEMA, params.name, key)
+      await unschedule(DB_URL, SCHEMA, params.name, key)
       return redirect('/schedules')
     } catch (err) {
       return { error: `Failed to unschedule: ${err}` }

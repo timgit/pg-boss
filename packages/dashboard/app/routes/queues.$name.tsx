@@ -15,6 +15,8 @@ import {
   isValidIntent,
 } from '~/lib/queries.server'
 import { Card, CardHeader, CardTitle, CardContent } from '~/components/ui/card'
+import { PageHeader } from '~/components/ui/page-header'
+import { StatCard } from '~/components/ui/stat-card'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import {
@@ -46,8 +48,10 @@ import {
   DEFAULT_STATE_FILTER,
   cn,
 } from '~/lib/utils'
+import { dbContext } from '~/lib/db-context'
 
 export async function loader ({ params, request, context }: Route.LoaderArgs) {
+  const { DB_URL, SCHEMA } = context.get(dbContext)
   const url = new URL(request.url)
   const stateParam = url.searchParams.get('state')
 
@@ -61,13 +65,13 @@ export async function loader ({ params, request, context }: Route.LoaderArgs) {
   const limit = 50
   const offset = (page - 1) * limit
 
-  const queue = await getQueue(context.DB_URL, context.SCHEMA, params.name)
+  const queue = await getQueue(DB_URL, SCHEMA, params.name)
 
   if (!queue) {
     throw new Response('Queue not found', { status: 404 })
   }
 
-  const jobs = await getJobs(context.DB_URL, context.SCHEMA, params.name, {
+  const jobs = await getJobs(DB_URL, SCHEMA, params.name, {
     state: stateFilter,
     limit,
     offset,
@@ -95,6 +99,7 @@ export async function loader ({ params, request, context }: Route.LoaderArgs) {
 }
 
 export async function action ({ params, request, context }: Route.ActionArgs) {
+  const { DB_URL, SCHEMA } = context.get(dbContext)
   const formData = await request.formData()
   const intent = formData.get('intent')
   const jobId = formData.get('jobId') as string
@@ -113,25 +118,25 @@ export async function action ({ params, request, context }: Route.ActionArgs) {
   try {
     switch (intent) {
       case 'cancel':
-        affected = await cancelJob(context.DB_URL, context.SCHEMA, params.name, jobId)
+        affected = await cancelJob(DB_URL, SCHEMA, params.name, jobId)
         message = affected > 0
           ? 'Job cancelled'
           : 'Job could not be cancelled (may already be completed or cancelled)'
         break
       case 'retry':
-        affected = await retryJob(context.DB_URL, context.SCHEMA, params.name, jobId)
+        affected = await retryJob(DB_URL, SCHEMA, params.name, jobId)
         message = affected > 0
           ? 'Job queued for retry'
           : 'Job could not be retried (only failed jobs can be retried)'
         break
       case 'resume':
-        affected = await resumeJob(context.DB_URL, context.SCHEMA, params.name, jobId)
+        affected = await resumeJob(DB_URL, SCHEMA, params.name, jobId)
         message = affected > 0
           ? 'Job resumed'
           : 'Job could not be resumed (only cancelled jobs can be resumed)'
         break
       case 'delete':
-        affected = await deleteJob(context.DB_URL, context.SCHEMA, params.name, jobId)
+        affected = await deleteJob(DB_URL, SCHEMA, params.name, jobId)
         message = affected > 0
           ? 'Job deleted'
           : 'Job could not be deleted (may be active or already deleted)'
@@ -184,27 +189,38 @@ export default function QueueDetail ({ loaderData }: Route.ComponentProps) {
     setSearchParams(params)
   }
 
+  const overThreshold =
+    (queue.warningQueueSize ?? 0) > 0 && queue.queuedCount > (queue.warningQueueSize ?? 0)
+
   return (
-    <div className="space-y-6">
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{queue.name}</h1>
-          <div className="mt-2 flex items-center gap-3">
-            <Badge variant="gray">{queue.policy}</Badge>
-            {queue.partition && <Badge variant="primary">Partitioned</Badge>}
-          </div>
-        </div>
-        <DbLink to={`/send?queue=${encodeURIComponent(queue.name)}`}>
-          <Button variant="primary" size="md">Send Job</Button>
-        </DbLink>
+    <div className="space-y-4">
+      <PageHeader
+        title={queue.name}
+        subtitle={`${queue.partition ? 'Partitioned' : 'Shared'} storage`}
+        action={
+          <DbLink to={`/send?queue=${encodeURIComponent(queue.name)}`}>
+            <Button variant="primary" size="md">Send Job</Button>
+          </DbLink>
+        }
+      />
+
+      <div className="flex flex-wrap items-center gap-2 -mt-2">
+        <Badge variant="primary">{queue.policy} policy</Badge>
+        {queue.deadLetter && <Badge variant="gray">dead letter → {queue.deadLetter}</Badge>}
+        {(queue.retryLimit ?? 0) > 0 && <Badge variant="gray">retry limit {queue.retryLimit}</Badge>}
       </div>
 
       {/* Queue Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <StatCard label="Queued" value={queue.queuedCount} variant="gray" />
-        <StatCard label="Active" value={queue.activeCount} variant="gray" />
-        <StatCard label="Deferred" value={queue.deferredCount} variant="gray" />
-        <StatCard label="Total" value={queue.totalCount} variant="gray" />
+        <StatCard
+          label="Queued"
+          value={queue.queuedCount.toLocaleString()}
+          accent={overThreshold ? 'error' : 'neutral'}
+          hint={overThreshold ? 'over threshold' : 'within threshold'}
+        />
+        <StatCard label="Active" value={queue.activeCount.toLocaleString()} accent="primary" />
+        <StatCard label="Deferred" value={queue.deferredCount.toLocaleString()} />
+        <StatCard label="Total" value={queue.totalCount.toLocaleString()} />
       </div>
 
       {/* Configuration Panel */}
@@ -212,34 +228,34 @@ export default function QueueDetail ({ loaderData }: Route.ComponentProps) {
         <button
           onClick={() => setConfigExpanded(!configExpanded)}
           className={cn(
-            'w-full flex items-center justify-between px-6 py-4',
-            'text-left hover:bg-gray-50 dark:hover:bg-gray-800/50',
+            'w-full flex items-center justify-between px-5 py-4',
+            'text-left hover:bg-[var(--surface-hover)]',
             'transition-colors cursor-pointer'
           )}
         >
-          <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100">
+          <h3 className="text-base font-semibold tracking-[-0.01em] text-[var(--text-primary)]">
             Configuration
           </h3>
           {configExpanded ? (
-            <ChevronDown className="h-5 w-5 text-gray-500 dark:text-gray-400" />
+            <ChevronDown className="h-5 w-5 text-[var(--text-tertiary)]" />
           ) : (
-            <ChevronRight className="h-5 w-5 text-gray-500 dark:text-gray-400" />
+            <ChevronRight className="h-5 w-5 text-[var(--text-tertiary)]" />
           )}
         </button>
 
         {configExpanded && (
-          <CardContent className="border-t border-gray-200 dark:border-gray-800">
+          <CardContent className="border-t border-[var(--border-subtle)]">
             <div className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-4">
                 <ConfigItem label="Policy" value={queue.policy || '—'} />
                 <ConfigItem label="Storage" value={queue.partition ? 'Partitioned' : 'Shared'} />
                 <div>
-                  <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Dead Letter</dt>
-                  <dd className="mt-1 text-sm text-gray-900 dark:text-gray-100">
+                  <dt className="pgb-eyebrow">Dead Letter</dt>
+                  <dd className="mt-1 text-sm text-[var(--text-primary)]">
                     {queue.deadLetter ? (
                       <DbLink
                         to={`/queues/${queue.deadLetter}`}
-                        className="text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
+                        className="font-mono text-xs text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
                       >
                         {queue.deadLetter}
                       </DbLink>
@@ -311,7 +327,7 @@ export default function QueueDetail ({ loaderData }: Route.ComponentProps) {
             <TableBody>
               {jobs.length === 0 ? (
                 <TableRow>
-                  <TableCell className="text-center text-gray-500 dark:text-gray-400 py-8" colSpan={6}>
+                  <TableCell className="text-center text-[var(--text-tertiary)] py-8" colSpan={6}>
                     No jobs found
                   </TableCell>
                 </TableRow>
@@ -406,11 +422,11 @@ function JobRow ({
         <TableCell>
           <JobStateBadge state={job.state} />
         </TableCell>
-        <TableCell className="text-gray-700 dark:text-gray-300">{job.priority}</TableCell>
-        <TableCell className="text-gray-700 dark:text-gray-300">
+        <TableCell className="pgb-num text-[var(--text-primary)]">{job.priority}</TableCell>
+        <TableCell className="pgb-num text-[var(--text-primary)]">
           {job.retryCount} / {job.retryLimit}
         </TableCell>
-        <TableCell className="text-gray-500 dark:text-gray-400">
+        <TableCell className="pgb-num text-[var(--text-tertiary)]">
           {formatDate(new Date(job.createdOn))}
         </TableCell>
         <TableCell>
@@ -522,39 +538,9 @@ function JobRow ({
 
 function JobStateBadge ({ state }: { state: JobState }) {
   return (
-    <Badge variant={JOB_STATE_VARIANTS[state]} size="sm">
+    <Badge variant={JOB_STATE_VARIANTS[state]} size="sm" dot>
       {state}
     </Badge>
-  )
-}
-
-function StatCard ({
-  label,
-  value,
-  variant,
-}: {
-  label: string
-  value: number
-  variant: 'primary' | 'success' | 'warning' | 'gray'
-}) {
-  const colors = {
-    primary: 'text-primary-600 dark:text-primary-400',
-    success: 'text-green-600 dark:text-green-400',
-    warning: 'text-amber-600 dark:text-amber-400',
-    gray: 'text-gray-600 dark:text-gray-400',
-  }
-
-  return (
-    <div className={cn(
-      'rounded-lg border p-4',
-      'bg-white border-gray-200',
-      'dark:bg-gray-900 dark:border-gray-800'
-    )}>
-      <p className="text-sm font-medium text-gray-500 dark:text-gray-400">{label}</p>
-      <p className={cn('text-2xl font-semibold', colors[variant])}>
-        {value.toLocaleString()}
-      </p>
-    </div>
   )
 }
 
@@ -567,8 +553,8 @@ function ConfigItem ({
 }) {
   return (
     <div>
-      <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">{label}</dt>
-      <dd className="mt-1 text-sm text-gray-900 dark:text-gray-100">
+      <dt className="pgb-eyebrow">{label}</dt>
+      <dd className="mt-1 text-sm text-[var(--text-primary)]">
         {value?.toString() || '—'}
       </dd>
     </div>

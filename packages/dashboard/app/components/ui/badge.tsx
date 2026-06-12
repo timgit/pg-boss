@@ -2,19 +2,22 @@ import { cva, type VariantProps } from 'class-variance-authority'
 import { type ReactNode } from 'react'
 import { cn } from '~/lib/utils'
 
+// Variants map onto the pg-boss job-lifecycle palette (--state-*), which is
+// theme-aware (solid tints in light, translucent on dark), so the same five
+// variants render correctly in both modes without per-mode classes.
 const badgeVariants = cva(
-  'inline-flex items-center gap-1.5 rounded-full font-medium ring-1 ring-inset',
+  'inline-flex items-center gap-1.5 rounded-full font-medium',
   {
     variants: {
       variant: {
-        gray: 'bg-gray-100 text-gray-700 ring-gray-500/10 dark:bg-gray-800 dark:text-gray-300 dark:ring-gray-500/20',
-        primary: 'bg-primary-50 text-primary-700 ring-primary-600/10 dark:bg-primary-950 dark:text-primary-300 dark:ring-primary-400/20',
-        success: 'bg-green-50 text-green-700 ring-green-600/10 dark:bg-green-950 dark:text-green-300 dark:ring-green-400/20',
-        warning: 'bg-warning-50 text-amber-700 ring-warning-600/10 dark:bg-warning-950 dark:text-amber-300 dark:ring-warning-400/20',
-        error: 'bg-red-50 text-red-700 ring-red-600/10 dark:bg-red-950 dark:text-red-300 dark:ring-red-400/20',
+        gray: 'bg-[var(--state-created-bg)] text-[var(--state-created-fg)]',
+        primary: 'bg-[var(--state-active-bg)] text-[var(--state-active-fg)]',
+        success: 'bg-[var(--state-completed-bg)] text-[var(--state-completed-fg)]',
+        warning: 'bg-[var(--state-retry-bg)] text-[var(--state-retry-fg)]',
+        error: 'bg-[var(--state-failed-bg)] text-[var(--state-failed-fg)]',
       },
       size: {
-        sm: 'px-2 py-0.5 text-xs',
+        sm: 'px-2 py-0.5 text-[11px]',
         md: 'px-2.5 py-1 text-xs',
         lg: 'px-3 py-1 text-sm',
       },
@@ -27,11 +30,11 @@ const badgeVariants = cva(
 )
 
 const dotVariants: Record<NonNullable<VariantProps<typeof badgeVariants>['variant']>, string> = {
-  gray: 'bg-gray-500',
-  primary: 'bg-primary-500 dark:bg-primary-400',
-  success: 'bg-green-500',
-  warning: 'bg-warning-500',
-  error: 'bg-red-500',
+  gray: 'bg-[var(--state-created-dot)]',
+  primary: 'bg-[var(--state-active-dot)]',
+  success: 'bg-[var(--state-completed-dot)]',
+  warning: 'bg-[var(--state-retry-dot)]',
+  error: 'bg-[var(--state-failed-dot)]',
 }
 
 interface BadgeProps extends VariantProps<typeof badgeVariants> {

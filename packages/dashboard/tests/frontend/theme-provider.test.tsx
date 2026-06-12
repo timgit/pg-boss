@@ -46,7 +46,7 @@ describe("ThemeProvider", () => {
     expect(theme.textContent).toBe("system");
   });
 
-  it("defaults to violet color theme", () => {
+  it("defaults to cobalt color theme", () => {
     render(
       <ThemeProvider>
         <ThemeConsumer />
@@ -54,7 +54,7 @@ describe("ThemeProvider", () => {
     );
 
     const colorTheme = screen.getByTestId("color-theme");
-    expect(colorTheme.textContent).toBe("violet");
+    expect(colorTheme.textContent).toBe("cobalt");
   });
 
   it("allows changing theme to dark", async () => {

@@ -2,6 +2,8 @@ import { beforeAll, beforeEach, afterEach, afterAll } from 'vitest'
 import pg from 'pg'
 import crypto from 'node:crypto'
 import { PgBoss } from 'pg-boss'
+import { RouterContextProvider } from 'react-router'
+import { dbContext } from '~/lib/db-context'
 
 const { Pool } = pg
 
@@ -116,6 +118,20 @@ export interface TestContext {
 export const ctx: TestContext = {
   schema: '',
   connectionString: '',
+}
+
+// Seed a RouterContextProvider for invoking loaders/actions directly (v8_middleware
+// passes `context` as a provider, read via context.get(dbContext)). Loaders only read
+// DB_URL/SCHEMA, so databases/currentDb are stubbed.
+export function makeContext (testCtx: TestContext): RouterContextProvider {
+  const provider = new RouterContextProvider()
+  provider.set(dbContext, {
+    databases: [],
+    currentDb: undefined as any,
+    DB_URL: testCtx.connectionString,
+    SCHEMA: testCtx.schema,
+  })
+  return provider
 }
 
 beforeAll(async () => {
