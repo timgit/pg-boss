@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { ctx, createTestQueue, getBoss } from './helpers'
+import { ctx, createTestQueue, getBoss, makeContext } from './helpers'
 import { action as sendJobAction } from '~/routes/send'
 import { action as createQueueAction } from '~/routes/queues.create'
 import { getQueue } from '~/lib/queries.server'
@@ -20,7 +20,7 @@ describe('Send Job Action', () => {
 
     const result = await sendJobAction({
       request,
-      context: { DB_URL: ctx.connectionString, SCHEMA: ctx.schema },
+      context: makeContext(ctx),
       params: {},
     })
 
@@ -50,7 +50,7 @@ describe('Send Job Action', () => {
 
     await sendJobAction({
       request,
-      context: { DB_URL: ctx.connectionString, SCHEMA: ctx.schema },
+      context: makeContext(ctx),
       params: {},
     })
 
@@ -74,7 +74,7 @@ describe('Send Job Action', () => {
 
     await sendJobAction({
       request,
-      context: { DB_URL: ctx.connectionString, SCHEMA: ctx.schema },
+      context: makeContext(ctx),
       params: {},
     })
 
@@ -99,7 +99,7 @@ describe('Send Job Action', () => {
 
     await sendJobAction({
       request,
-      context: { DB_URL: ctx.connectionString, SCHEMA: ctx.schema },
+      context: makeContext(ctx),
       params: {},
     })
 
@@ -123,7 +123,7 @@ describe('Send Job Action', () => {
 
     await sendJobAction({
       request,
-      context: { DB_URL: ctx.connectionString, SCHEMA: ctx.schema },
+      context: makeContext(ctx),
       params: {},
     })
 
@@ -147,7 +147,7 @@ describe('Send Job Action', () => {
 
     await sendJobAction({
       request,
-      context: { DB_URL: ctx.connectionString, SCHEMA: ctx.schema },
+      context: makeContext(ctx),
       params: {},
     })
 
@@ -167,7 +167,7 @@ describe('Send Job Action', () => {
 
     const result = await sendJobAction({
       request,
-      context: { DB_URL: ctx.connectionString, SCHEMA: ctx.schema },
+      context: makeContext(ctx),
       params: {},
     })
 
@@ -186,7 +186,7 @@ describe('Send Job Action', () => {
 
     const result = await sendJobAction({
       request,
-      context: { DB_URL: ctx.connectionString, SCHEMA: ctx.schema },
+      context: makeContext(ctx),
       params: {},
     })
 
@@ -205,7 +205,7 @@ describe('Send Job Action', () => {
 
     const result = await sendJobAction({
       request,
-      context: { DB_URL: ctx.connectionString, SCHEMA: ctx.schema },
+      context: makeContext(ctx),
       params: {},
     })
 
@@ -224,7 +224,7 @@ describe('Send Job Action', () => {
 
     const result = await sendJobAction({
       request,
-      context: { DB_URL: ctx.connectionString, SCHEMA: ctx.schema },
+      context: makeContext(ctx),
       params: {},
     })
 
@@ -244,7 +244,7 @@ describe('Create Queue Action', () => {
 
     const result = await createQueueAction({
       request,
-      context: { DB_URL: ctx.connectionString, SCHEMA: ctx.schema },
+      context: makeContext(ctx),
       params: {},
     })
 
@@ -272,7 +272,7 @@ describe('Create Queue Action', () => {
 
     await createQueueAction({
       request,
-      context: { DB_URL: ctx.connectionString, SCHEMA: ctx.schema },
+      context: makeContext(ctx),
       params: {},
     })
 
@@ -292,7 +292,7 @@ describe('Create Queue Action', () => {
 
     await createQueueAction({
       request,
-      context: { DB_URL: ctx.connectionString, SCHEMA: ctx.schema },
+      context: makeContext(ctx),
       params: {},
     })
 
@@ -312,7 +312,7 @@ describe('Create Queue Action', () => {
 
     await createQueueAction({
       request,
-      context: { DB_URL: ctx.connectionString, SCHEMA: ctx.schema },
+      context: makeContext(ctx),
       params: {},
     })
 
@@ -335,7 +335,7 @@ describe('Create Queue Action', () => {
 
     await createQueueAction({
       request,
-      context: { DB_URL: ctx.connectionString, SCHEMA: ctx.schema },
+      context: makeContext(ctx),
       params: {},
     })
 
@@ -355,7 +355,7 @@ describe('Create Queue Action', () => {
 
     await createQueueAction({
       request,
-      context: { DB_URL: ctx.connectionString, SCHEMA: ctx.schema },
+      context: makeContext(ctx),
       params: {},
     })
 
@@ -378,7 +378,7 @@ describe('Create Queue Action', () => {
 
     await createQueueAction({
       request,
-      context: { DB_URL: ctx.connectionString, SCHEMA: ctx.schema },
+      context: makeContext(ctx),
       params: {},
     })
 
@@ -403,7 +403,7 @@ describe('Create Queue Action', () => {
 
     await createQueueAction({
       request,
-      context: { DB_URL: ctx.connectionString, SCHEMA: ctx.schema },
+      context: makeContext(ctx),
       params: {},
     })
 
@@ -437,7 +437,7 @@ describe('Create Queue Action', () => {
 
     await createQueueAction({
       request,
-      context: { DB_URL: ctx.connectionString, SCHEMA: ctx.schema },
+      context: makeContext(ctx),
       params: {},
     })
 
@@ -466,7 +466,7 @@ describe('Create Queue Action', () => {
 
     const result = await createQueueAction({
       request,
-      context: { DB_URL: ctx.connectionString, SCHEMA: ctx.schema },
+      context: makeContext(ctx),
       params: {},
     })
 
@@ -485,7 +485,7 @@ describe('Create Queue Action', () => {
 
     const result = await createQueueAction({
       request,
-      context: { DB_URL: ctx.connectionString, SCHEMA: ctx.schema },
+      context: makeContext(ctx),
       params: {},
     })
 
@@ -504,7 +504,7 @@ describe('Create Queue Action', () => {
 
     const result = await createQueueAction({
       request,
-      context: { DB_URL: ctx.connectionString, SCHEMA: ctx.schema },
+      context: makeContext(ctx),
       params: {},
     })
 
@@ -523,7 +523,7 @@ describe('Create Queue Action', () => {
 
     const result = await createQueueAction({
       request,
-      context: { DB_URL: ctx.connectionString, SCHEMA: ctx.schema },
+      context: makeContext(ctx),
       params: {},
     })
 
@@ -542,7 +542,7 @@ describe('Create Queue Action', () => {
 
     const result = await createQueueAction({
       request,
-      context: { DB_URL: ctx.connectionString, SCHEMA: ctx.schema },
+      context: makeContext(ctx),
       params: {},
     })
 

@@ -2,6 +2,7 @@ import { useSearchParams } from 'react-router'
 import type { Route } from './+types/warnings'
 import { getWarnings, getWarningCount } from '~/lib/queries.server'
 import { Card, CardHeader, CardTitle, CardContent } from '~/components/ui/card'
+import { PageHeader } from '~/components/ui/page-header'
 import { Badge } from '~/components/ui/badge'
 import {
   Table,
@@ -24,8 +25,10 @@ import {
   WARNING_TYPE_VARIANTS,
   WARNING_TYPE_LABELS,
 } from '~/lib/utils'
+import { dbContext } from '~/lib/db-context'
 
 export async function loader ({ request, context }: Route.LoaderArgs) {
+  const { DB_URL, SCHEMA } = context.get(dbContext)
   const url = new URL(request.url)
   const typeParam = url.searchParams.get('type')
 
@@ -37,12 +40,12 @@ export async function loader ({ request, context }: Route.LoaderArgs) {
   const offset = (page - 1) * limit
 
   const [warnings, totalCount] = await Promise.all([
-    getWarnings(context.DB_URL, context.SCHEMA, {
+    getWarnings(DB_URL, SCHEMA, {
       type: typeFilter,
       limit,
       offset,
     }),
-    getWarningCount(context.DB_URL, context.SCHEMA, typeFilter),
+    getWarningCount(DB_URL, SCHEMA, typeFilter),
   ])
 
   const totalPages = Math.ceil(totalCount / limit)
@@ -81,17 +84,15 @@ export default function Warnings ({ loaderData }: Route.ComponentProps) {
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Warnings</h1>
-        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-          {totalCount.toLocaleString()} warning{totalCount !== 1 ? 's' : ''} recorded
-        </p>
-      </div>
+    <div className="space-y-4">
+      <PageHeader
+        title="Warnings"
+        subtitle={`${totalCount.toLocaleString()} warning${totalCount !== 1 ? 's' : ''} recorded · events emitted while persistWarnings is enabled`}
+      />
 
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>Warning History</CardTitle>
+        <CardHeader>
+          <CardTitle>Event log</CardTitle>
           <FilterSelect
             value={typeFilter}
             options={WARNING_TYPE_OPTIONS}
@@ -111,7 +112,7 @@ export default function Warnings ({ loaderData }: Route.ComponentProps) {
             <TableBody>
               {warnings.length === 0 ? (
                 <TableRow>
-                  <TableCell className="text-center text-gray-500 dark:text-gray-400 py-8" colSpan={4}>
+                  <TableCell className="text-center text-[var(--text-tertiary)] py-8" colSpan={4}>
                     {typeFilter
                       ? `No ${typeFilter.replace('_', ' ')} warnings found`
                       : 'No warnings recorded. Enable persistWarnings in pg-boss config to capture warnings.'}
@@ -123,13 +124,13 @@ export default function Warnings ({ loaderData }: Route.ComponentProps) {
                     <TableCell>
                       <WarningTypeBadge type={warning.type} />
                     </TableCell>
-                    <TableCell className="text-gray-900 dark:text-gray-100 max-w-md truncate">
+                    <TableCell className="text-[var(--text-primary)] max-w-md truncate">
                       {warning.message}
                     </TableCell>
-                    <TableCell className="font-mono text-xs text-gray-500 dark:text-gray-400 max-w-xs truncate">
+                    <TableCell className="font-mono text-xs text-[var(--text-tertiary)] max-w-xs truncate">
                       {formatWarningData(warning.data)}
                     </TableCell>
-                    <TableCell className="text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                    <TableCell className="pgb-num text-[var(--text-tertiary)] whitespace-nowrap">
                       {formatDateWithSeconds(new Date(warning.createdOn))}
                     </TableCell>
                   </TableRow>
@@ -153,7 +154,7 @@ export default function Warnings ({ loaderData }: Route.ComponentProps) {
 
 function WarningTypeBadge ({ type }: { type: WarningType }) {
   return (
-    <Badge variant={WARNING_TYPE_VARIANTS[type]} size="sm">
+    <Badge variant={WARNING_TYPE_VARIANTS[type]} size="sm" dot>
       {WARNING_TYPE_LABELS[type]}
     </Badge>
   )

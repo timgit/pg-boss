@@ -231,11 +231,14 @@ export function AppSidebar () {
   return (
     <Sidebar>
       <SidebarHeader>
-        <div className="flex items-center gap-2 px-2 py-2">
-          <div className="w-8 h-8 rounded-lg bg-primary-600 flex items-center justify-center shrink-0">
-            <span className="text-white font-bold text-sm">PG</span>
+        <div className="flex items-center gap-2.5 pl-1.5 pr-3 py-2">
+          <div className="w-8 h-8 rounded-[9px] bg-primary-600 flex items-center justify-center shrink-0">
+            <span className="text-white font-bold text-sm tracking-tight">PG</span>
           </div>
-          <span className="font-semibold text-sidebar-foreground group-data-[state=collapsed]:hidden">pg-boss</span>
+          <div className="leading-tight whitespace-nowrap group-data-[state=collapsed]:hidden">
+            <div className="font-semibold text-sm text-sidebar-accent-foreground">pg-boss</div>
+            <div className="font-mono text-[9px] tracking-[0.15em] text-sidebar-foreground/60">CONSOLE</div>
+          </div>
         </div>
         {databases && currentDb && databases.length > 1 && (
           <div className="group-data-[state=collapsed]:hidden">
@@ -262,7 +265,7 @@ export function AppSidebar () {
                     {({ isActive }: { isActive: boolean }) => (
                       <SidebarMenuButton isActive={isActive} tooltip={item.name}>
                         <item.icon className="h-5 w-5 flex-shrink-0" />
-                        <span className="group-data-[state=collapsed]:hidden">{item.name}</span>
+                        <span className="whitespace-nowrap group-data-[state=collapsed]:hidden">{item.name}</span>
                       </SidebarMenuButton>
                     )}
                   </NavLink>

@@ -1,60 +1,77 @@
-import { createHonoServer } from 'react-router-hono-server/node'
+import { Hono } from 'hono'
 import { serveStatic } from '@hono/node-server/serve-static'
+import { createRequestHandler, RouterContextProvider, type ServerBuild } from 'react-router'
+import type { Context } from 'hono'
 import { configureAuth } from './lib/auth.server'
-import { getDatabaseConfigs, findDatabaseById, type DatabaseConfig } from './lib/config.server'
-import { resolveBasePath } from './lib/base-path'
+import { getDatabaseConfigs, findDatabaseById } from './lib/config.server'
+import { dbContext } from './lib/db-context'
 
-declare module 'react-router' {
-  interface AppLoadContext {
-    readonly databases: DatabaseConfig[];
-    readonly currentDb: DatabaseConfig;
-    // Convenience accessors for current database
-    readonly DB_URL: string;
-    readonly SCHEMA: string;
-  }
+// Resolve the per-request load context the loaders/actions rely on. The selected
+// database comes from the `?db=` query param or the `pgboss_db` cookie, falling back
+// to the first configured database. With `v8_middleware` on, loaders read these
+// values via `context.get(dbContext)`.
+function getLoadContext (c: Context): RouterContextProvider {
+  const databases = getDatabaseConfigs()
+
+  const url = new URL(c.req.url)
+  const dbId = url.searchParams.get('db') || c.req.header('cookie')?.match(/pgboss_db=([^;]+)/)?.[1] || null
+  const currentDb = findDatabaseById(databases, dbId) || databases[0]
+
+  const context = new RouterContextProvider()
+  context.set(dbContext, {
+    databases,
+    currentDb,
+    // Backwards-compatible accessors
+    DB_URL: currentDb?.url || 'postgres://localhost/pgboss',
+    SCHEMA: currentDb?.schema || 'pgboss',
+  })
+  return context
 }
 
-// react-router-hono-server serves built client assets from `/assets/*` at the root,
-// ignoring the React Router basename. When a basename is set the HTML references
-// `${basename}/assets/*` (Vite base), so we mount a matching static handler here.
-// beforeAll runs before the library's own static middleware, so this wins.
-//
-// PGBOSS_DASHBOARD_BASE_PATH is inlined at build time by Vite `define`, so the
-// basename is baked into the bundle and does not need to be set at runtime.
-const isProduction = process.env.NODE_ENV !== 'development'
-const { routerBasename } = resolveBasePath(process.env.PGBOSS_DASHBOARD_BASE_PATH)
+export interface CreateHonoAppOptions {
+  /**
+   * The React Router server build, or a function returning it. In production the
+   * concrete build is passed; in development a function is passed so the build can be
+   * re-fetched per request (picking up HMR updates).
+   */
+  build: ServerBuild | (() => ServerBuild | Promise<ServerBuild>);
+  mode: 'development' | 'production';
+  /**
+   * Serve built client assets from `build/client`. Enabled in production; in development
+   * the Vite dev server middleware serves assets instead.
+   */
+  serveStaticAssets?: boolean;
+}
 
-export default createHonoServer({
-  beforeAll (app) {
-    // Configure auth first so basic auth runs before the static asset handler
-    // below. serveStatic responds without calling next(), so mounting it ahead
-    // of configureAuth would leave prefixed assets publicly accessible while the
-    // library's root /assets/* stays auth-gated — keep the two consistent.
-    configureAuth(app)
-    if (isProduction && routerBasename !== '/') {
-      app.use(
-        `${routerBasename}/assets/*`,
-        serveStatic({
-          root: 'build/client',
-          rewriteRequestPath: (path) => path.slice(routerBasename.length),
-        })
-      )
-    }
-  },
-  getLoadContext (c) {
-    const databases = getDatabaseConfigs()
+export function createHonoApp ({ build, mode, serveStaticAssets = false }: CreateHonoAppOptions): Hono {
+  const app = new Hono()
 
-    // Get selected database from query param or cookie
-    const url = new URL(c.req.url)
-    const dbId = url.searchParams.get('db') || c.req.header('cookie')?.match(/pgboss_db=([^;]+)/)?.[1] || null
-    const currentDb = findDatabaseById(databases, dbId) || databases[0]
+  // Basic auth (no-op unless PGBOSS_DASHBOARD_AUTH_* are set). Runs first so static
+  // assets and SSR responses are both gated.
+  configureAuth(app)
 
-    return {
-      databases,
-      currentDb,
-      // Backwards-compatible accessors
-      DB_URL: currentDb?.url || 'postgres://localhost/pgboss',
-      SCHEMA: currentDb?.schema || 'pgboss',
-    }
-  },
-})
+  if (serveStaticAssets) {
+    // The build's own basename is the single source of truth (baked by
+    // react-router.config.ts at build time). When set, the browser requests assets at
+    // `${basename}/assets/*` while the files live at `build/client/assets/*`, so strip
+    // the prefix before the filesystem lookup.
+    const basename = typeof build !== 'function' && build.basename && build.basename !== '/'
+      ? build.basename
+      : ''
+    const rewriteRequestPath = basename
+      ? (path: string) => path.slice(basename.length)
+      : undefined
+
+    app.use(`${basename}/assets/*`, serveStatic({ root: './build/client', rewriteRequestPath }))
+    // Remaining public files (favicon, etc.); misses fall through to the SSR handler.
+    app.use('*', serveStatic({ root: './build/client', rewriteRequestPath }))
+  }
+
+  app.all('*', async (c) => {
+    const resolvedBuild = typeof build === 'function' ? await build() : build
+    const handler = createRequestHandler(resolvedBuild, mode)
+    return handler(c.req.raw, getLoadContext(c))
+  })
+
+  return app
+}

@@ -4,6 +4,7 @@ import { DbLink } from '~/components/db-link'
 import type { Route } from './+types/queues.create'
 import { getQueues } from '~/lib/queries.server'
 import { createQueue } from '~/lib/boss.server'
+import { dbContext } from '~/lib/db-context'
 import { Card, CardHeader, CardTitle, CardContent } from '~/components/ui/card'
 import { Button } from '~/components/ui/button'
 import { Checkbox } from '~/components/ui/checkbox'
@@ -12,11 +13,13 @@ import { ErrorCard } from '~/components/error-card'
 import { cn } from '~/lib/utils'
 
 export async function loader ({ context }: Route.LoaderArgs) {
-  const queues = await getQueues(context.DB_URL, context.SCHEMA)
+  const { DB_URL, SCHEMA } = context.get(dbContext)
+  const queues = await getQueues(DB_URL, SCHEMA)
   return { queues }
 }
 
 export async function action ({ request, context }: Route.ActionArgs) {
+  const { DB_URL, SCHEMA } = context.get(dbContext)
   const formData = await request.formData()
 
   const queueName = formData.get('queueName') as string | null
@@ -114,8 +117,8 @@ export async function action ({ request, context }: Route.ActionArgs) {
 
   try {
     await createQueue(
-      context.DB_URL,
-      context.SCHEMA,
+      DB_URL,
+      SCHEMA,
       queueName.trim(),
       Object.keys(options).length > 0 ? options : undefined
     )

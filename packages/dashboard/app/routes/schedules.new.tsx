@@ -1,19 +1,23 @@
 import { useState, useEffect } from 'react'
 import { redirect, useActionData, useNavigation, useBlocker } from 'react-router'
 import { DbLink } from '~/components/db-link'
+import type { Route } from './+types/schedules.new'
 import { schedule } from '~/lib/boss.server'
 import { getQueues } from '~/lib/queries.server'
+import { dbContext } from '~/lib/db-context'
 import { Card, CardHeader, CardTitle, CardContent } from '~/components/ui/card'
 import { Button } from '~/components/ui/button'
 import { ErrorCard } from '~/components/error-card'
 import { cn } from '~/lib/utils'
 
-export async function loader ({ context }: any) {
-  const queues = await getQueues(context.DB_URL, context.SCHEMA)
+export async function loader ({ context }: Route.LoaderArgs) {
+  const { DB_URL, SCHEMA } = context.get(dbContext)
+  const queues = await getQueues(DB_URL, SCHEMA)
   return { queues }
 }
 
-export async function action ({ request, context }: any) {
+export async function action ({ request, context }: Route.ActionArgs) {
+  const { DB_URL, SCHEMA } = context.get(dbContext)
   const formData = await request.formData()
 
   const name = formData.get('name') as string | null
@@ -91,8 +95,8 @@ export async function action ({ request, context }: any) {
 
   try {
     await schedule(
-      context.DB_URL,
-      context.SCHEMA,
+      DB_URL,
+      SCHEMA,
       name.trim(),
       cron.trim(),
       parsedData,

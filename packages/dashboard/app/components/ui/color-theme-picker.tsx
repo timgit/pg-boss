@@ -4,6 +4,7 @@ import { cn } from '~/lib/utils'
 
 // Map color names to their Tailwind CSS variable for the 500 shade
 const colorSwatchStyles: Record<ColorTheme, string> = {
+  cobalt: 'bg-[#3b66f5]',
   emerald: 'bg-emerald-500',
   teal: 'bg-teal-500',
   cyan: 'bg-cyan-500',
@@ -15,6 +16,7 @@ const colorSwatchStyles: Record<ColorTheme, string> = {
 }
 
 const colorLabels: Record<ColorTheme, string> = {
+  cobalt: 'Cobalt',
   emerald: 'Emerald',
   teal: 'Teal',
   cyan: 'Cyan',

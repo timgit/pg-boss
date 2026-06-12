@@ -4,6 +4,7 @@ import { DbLink } from '~/components/db-link'
 import type { Route } from './+types/queues._index'
 import { getQueues, getQueueCount } from '~/lib/queries.server'
 import { Card, CardContent } from '~/components/ui/card'
+import { PageHeader } from '~/components/ui/page-header'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { FilterSelect } from '~/components/ui/filter-select'
@@ -17,8 +18,10 @@ import {
 } from '~/components/ui/table'
 import { formatTimeAgo, parsePageNumber, cn } from '~/lib/utils'
 import type { QueueResult } from '~/lib/types'
+import { dbContext } from '~/lib/db-context'
 
 export async function loader ({ request, context }: Route.LoaderArgs) {
+  const { DB_URL, SCHEMA } = context.get(dbContext)
   const url = new URL(request.url)
   const page = parsePageNumber(url.searchParams.get('page'))
   const filter = url.searchParams.get('filter') || 'all'
@@ -32,13 +35,13 @@ export async function loader ({ request, context }: Route.LoaderArgs) {
     : 'all'
 
   const [queues, totalCount] = await Promise.all([
-    getQueues(context.DB_URL, context.SCHEMA, {
+    getQueues(DB_URL, SCHEMA, {
       limit,
       offset,
       filter: validFilter,
       search,
     }),
-    getQueueCount(context.DB_URL, context.SCHEMA, {
+    getQueueCount(DB_URL, SCHEMA, {
       filter: validFilter,
       search,
     }),
@@ -133,21 +136,19 @@ export default function QueuesIndex ({ loaderData }: Route.ComponentProps) {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Queues</h1>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-            {totalCount.toLocaleString()} queue{totalCount !== 1 ? 's' : ''} {hasActiveFilters ? 'found' : 'configured'}
-          </p>
-        </div>
-        <DbLink to="/queues/create">
-          <Button variant="primary" size="md">Create Queue</Button>
-        </DbLink>
-      </div>
+    <div className="space-y-4">
+      <PageHeader
+        title="Queues"
+        subtitle={`${totalCount.toLocaleString()} queue${totalCount !== 1 ? 's' : ''} ${hasActiveFilters ? 'found' : 'configured'}`}
+        action={
+          <DbLink to="/queues/create">
+            <Button variant="primary" size="md">Create Queue</Button>
+          </DbLink>
+        }
+      />
 
       {/* Search and Filters */}
-      <div className="flex flex-col sm:flex-row gap-4">
+      <div className="flex flex-col sm:flex-row gap-3">
         <div className="flex-1">
           <div className="relative">
             <input
@@ -161,23 +162,21 @@ export default function QueuesIndex ({ loaderData }: Route.ComponentProps) {
                 }
               }}
               className={cn(
-                'w-full px-4 py-2 pl-10 rounded-lg border shadow-sm',
-                'bg-white border-gray-300 text-gray-900 placeholder-gray-500',
-                'dark:bg-gray-900 dark:border-gray-700 dark:text-gray-100 dark:placeholder-gray-400',
-                'focus:outline-none focus:ring-2 focus:ring-primary-600 focus:border-primary-600',
-                'dark:focus:ring-primary-500 dark:focus:border-primary-500'
+                'w-full h-[38px] px-3 py-2 pl-10 rounded-lg border shadow-sm text-sm',
+                'bg-[var(--surface-card)] border-[var(--border-strong)] text-[var(--text-primary)] placeholder-[var(--text-tertiary)]',
+                'focus:outline-none focus:border-[var(--border-focus)] focus:shadow-[var(--shadow-focus)]'
               )}
             />
-            <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+            <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-[18px] w-[18px] text-[var(--text-tertiary)]" />
             {searchInput && (
               <button
                 onClick={() => {
                   setSearchInput('')
                   handleSearch('')
                 }}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 cursor-pointer"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] cursor-pointer"
               >
-                <XIcon className="h-5 w-5" />
+                <XIcon className="h-[18px] w-[18px]" />
               </button>
             )}
           </div>
@@ -247,7 +246,7 @@ export default function QueuesIndex ({ loaderData }: Route.ComponentProps) {
             <TableBody>
               {queues.length === 0 ? (
                 <TableRow>
-                  <TableCell className="text-center text-gray-500 dark:text-gray-400 py-8" colSpan={9}>
+                  <TableCell className="text-center text-[var(--text-tertiary)] py-8" colSpan={9}>
                     No queues found
                   </TableCell>
                 </TableRow>
@@ -272,31 +271,31 @@ export default function QueuesIndex ({ loaderData }: Route.ComponentProps) {
                           {queue.policy}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-gray-700 dark:text-gray-300">
+                      <TableCell className="text-[var(--text-secondary)]">
                         {queue.partition ? 'Partitioned' : 'Shared'}
                       </TableCell>
-                      <TableCell className="text-right text-gray-700 dark:text-gray-300">
+                      <TableCell className="text-right pgb-num text-[var(--text-primary)]">
                         {queue.queuedCount.toLocaleString()}
                       </TableCell>
-                      <TableCell className="text-right text-gray-700 dark:text-gray-300">
+                      <TableCell className="text-right pgb-num text-[var(--text-primary)]">
                         {queue.activeCount.toLocaleString()}
                       </TableCell>
-                      <TableCell className="text-right text-gray-700 dark:text-gray-300">
+                      <TableCell className="text-right pgb-num text-[var(--text-primary)]">
                         {queue.deferredCount.toLocaleString()}
                       </TableCell>
-                      <TableCell className="text-right text-gray-700 dark:text-gray-300">
+                      <TableCell className="text-right pgb-num text-[var(--text-primary)]">
                         {queue.totalCount.toLocaleString()}
                       </TableCell>
                       <TableCell>
                         {queue.deadLetter ? (
                           <DbLink
                             to={`/queues/${encodeURIComponent(queue.deadLetter)}`}
-                            className="text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
+                            className="font-mono text-xs text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
                           >
                             {queue.deadLetter}
                           </DbLink>
                         ) : (
-                          <span className="text-gray-400 dark:text-gray-500">—</span>
+                          <span className="text-[var(--border-strong)]">—</span>
                         )}
                       </TableCell>
                       <TableCell>
@@ -324,12 +323,9 @@ export default function QueuesIndex ({ loaderData }: Route.ComponentProps) {
 
         {/* Pagination */}
         {totalPages > 1 && (
-          <div className={cn(
-            'flex items-center justify-between px-6 py-4 border-t',
-            'border-gray-200 dark:border-gray-800'
-          )}>
-            <div className="text-sm text-gray-500 dark:text-gray-400">
-              Page {page} of {totalPages}
+          <div className="flex items-center justify-between px-5 py-3 border-t border-[var(--border-subtle)]">
+            <div className="text-sm text-[var(--text-tertiary)]">
+              Page <b className="pgb-num text-[var(--text-secondary)] font-medium">{page}</b> of <b className="pgb-num text-[var(--text-secondary)] font-medium">{totalPages}</b>
             </div>
             <div className="flex gap-2">
               <Button

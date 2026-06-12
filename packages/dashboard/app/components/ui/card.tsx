@@ -26,14 +26,14 @@ interface CardContentProps extends HTMLAttributes<HTMLDivElement> {
   className?: string
 }
 
-export function Card ({ children, className, ...props }: CardProps) {
+export function Card ({ children, className, style, ...props }: CardProps) {
   return (
     <div
       className={cn(
-        'bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden',
-        'dark:bg-gray-900 dark:border-gray-800',
+        'rounded-[10px] border border-[var(--border-default)] shadow-sm overflow-hidden',
         className
       )}
+      style={{ background: 'var(--surface-card-grad)', ...style }}
       {...props}
     >
       {children}
@@ -45,7 +45,7 @@ export function CardHeader ({ children, className, ...props }: CardHeaderProps) 
   return (
     <div
       className={cn(
-        'px-6 py-5 border-b border-gray-200 dark:border-gray-800',
+        'flex items-center justify-between gap-3 px-5 py-4 border-b border-[var(--border-subtle)]',
         className
       )}
       {...props}
@@ -59,7 +59,7 @@ export function CardTitle ({ children, className, ...props }: CardTitleProps) {
   return (
     <h3
       className={cn(
-        'text-lg font-semibold text-gray-900 dark:text-gray-100',
+        'text-base font-semibold tracking-[-0.01em] text-[var(--text-primary)]',
         className
       )}
       {...props}
@@ -76,7 +76,7 @@ export function CardDescription ({
 }: CardDescriptionProps) {
   return (
     <p
-      className={cn('mt-1 text-sm text-gray-500 dark:text-gray-400', className)}
+      className={cn('mt-1 text-sm text-[var(--text-tertiary)]', className)}
       {...props}
     >
       {children}
@@ -86,7 +86,7 @@ export function CardDescription ({
 
 export function CardContent ({ children, className, ...props }: CardContentProps) {
   return (
-    <div className={cn('px-6 py-5', className)} {...props}>
+    <div className={cn('px-5 py-5', className)} {...props}>
       {children}
     </div>
   )

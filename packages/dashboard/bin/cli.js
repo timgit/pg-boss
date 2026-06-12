@@ -11,5 +11,5 @@ if (!process.env.HOST) process.env.HOST = '0.0.0.0'
 const packageRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
 process.chdir(packageRoot)
 
-// Import the built server - it will auto-start in production mode
-await import('../build/server/index.js')
+// Import the built HTTP server - it starts listening on import
+await import('../build/server.js')

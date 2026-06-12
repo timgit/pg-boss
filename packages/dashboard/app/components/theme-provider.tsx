@@ -2,15 +2,16 @@ import { createContext, useContext, useEffect, useState } from 'react'
 
 type Theme = 'light' | 'dark' | 'system'
 
-export type ColorTheme = 'emerald' | 'teal' | 'cyan' | 'sky' | 'blue' | 'indigo' | 'violet' | 'purple'
+export type ColorTheme = 'cobalt' | 'emerald' | 'teal' | 'cyan' | 'sky' | 'blue' | 'indigo' | 'violet' | 'purple'
 
-// Ordered by hue (warm to cool to warm)
+// Cobalt is the console's signature primary; the rest follow by hue.
 export const COLOR_THEMES: ColorTheme[] = [
-  'emerald', 'teal', 'cyan', 'sky', 'blue', 'indigo', 'violet', 'purple'
+  'cobalt', 'emerald', 'teal', 'cyan', 'sky', 'blue', 'indigo', 'violet', 'purple'
 ]
 
-// Tailwind color-600 hex values for favicon
+// Color-600 hex values for favicon
 const COLOR_HEX: Record<ColorTheme, string> = {
+  cobalt: '#284fe0',
   emerald: '#059669',
   teal: '#0d9488',
   cyan: '#0891b2',
@@ -54,7 +55,7 @@ function getStoredColorTheme (): ColorTheme {
   if (stored && COLOR_THEMES.includes(stored as ColorTheme)) {
     return stored as ColorTheme
   }
-  return 'violet'
+  return 'cobalt'
 }
 
 export function ThemeProvider ({ children }: { children: React.ReactNode }) {
