@@ -5,6 +5,10 @@ export interface SqlQuery {
   values: unknown[]
 }
 
+export const PG_ERROR = {
+  divisionByZero: '22012'
+}
+
 const DEFAULT_SCHEMA = 'pgboss'
 const MIGRATE_RACE_MESSAGE = 'division by zero'
 const CREATE_RACE_MESSAGE = 'already exists'
@@ -1501,17 +1505,25 @@ function serializeArrayParam (values: string[]): string {
   return `ARRAY[${escaped.join(',')}]::text[]`
 }
 
-function locked (schema: string, query: string | string[], key?: string): string {
+// Serialize a JSON-serializable value for embedding directly in SQL as a quoted literal
+function serializeJsonParam (value: unknown): string {
+  return `'${JSON.stringify(value).replace(SINGLE_QUOTE_REGEX, "''")}'`
+}
+
+function transaction (query: string | string[]): string {
   const sql = Array.isArray(query) ? query.join(';\n') : query
 
   return `
     BEGIN;
     SET LOCAL lock_timeout = 30000;
     SET LOCAL idle_in_transaction_session_timeout = 30000;
-    ${advisoryLock(schema, key)};
     ${sql};
     COMMIT;
   `
+}
+
+function locked (schema: string, query: string | string[], key?: string): string {
+  return transaction([advisoryLock(schema, key), ...(Array.isArray(query) ? query : [query])])
 }
 
 function advisoryLock (schema: string, key?: string) {
@@ -1739,6 +1751,8 @@ export {
   getBamStatus,
   getBamEntries,
   serializeArrayParam,
+  serializeJsonParam,
+  transaction,
   QUEUE_POLICIES,
   JOB_STATES,
   MIGRATE_RACE_MESSAGE,

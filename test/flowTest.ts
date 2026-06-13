@@ -211,6 +211,28 @@ describe('flows', function () {
     }).rejects.toThrow('flow contains a dependency cycle: a -> b -> a')
   })
 
+  it('should validate flow job options like send()', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    await expect(async () => {
+      await ctx.boss!.flow([
+        { ref: 'parent', name: ctx.schema },
+        { ref: 'child', name: ctx.schema, options: { priority: 1.5 }, dependsOn: ['parent'] }
+      ])
+    }).rejects.toThrow('priority must be an integer')
+
+    await expect(async () => {
+      await ctx.boss!.flow([
+        { ref: 'parent', name: ctx.schema, options: { retryLimit: -1 } },
+        { ref: 'child', name: ctx.schema, dependsOn: ['parent'] }
+      ])
+    }).rejects.toThrow('retryLimit must be an integer >= 0')
+
+    // nothing should have been inserted when validation fails
+    const fetched = await ctx.boss.fetch(ctx.schema, { batchSize: 10 })
+    expect(fetched.length).toBe(0)
+  })
+
   it('should support flow with a provided db', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 
@@ -371,12 +393,28 @@ describe('flows', function () {
         { ref: 'parent', name: ctx.schema, options: { id } },
         { ref: 'child', name: ctx.schema, options: { id }, dependsOn: ['parent'] }
       ])
-    }).rejects.toThrow('flow failed to insert all jobs')
+    }).rejects.toThrow('one or more jobs could not be created')
 
     const jobCount = await helper.countJobs(ctx.schema, 'job', 'name = $1', [ctx.schema])
     const dependencyCount = await helper.countJobs(ctx.schema, 'job_dependency', 'true')
     expect(jobCount).toBe(0)
     expect(dependencyCount).toBe(0)
+  })
+
+  it('should raise a helpful error when a queue policy dedupes flow jobs', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+
+    await ctx.boss.createQueue(ctx.schema, { policy: 'short' })
+
+    await expect(async () => {
+      await ctx.boss!.flow([
+        { ref: 'parent', name: ctx.schema },
+        { ref: 'child', name: ctx.schema, dependsOn: ['parent'] }
+      ])
+    }).rejects.toThrow('one or more jobs could not be created')
+
+    const jobCount = await helper.countJobs(ctx.schema, 'job', 'name = $1', [ctx.schema])
+    expect(jobCount).toBe(0)
   })
 
   it('should support two complete calls in one transaction', async function () {

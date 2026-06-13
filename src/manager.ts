@@ -19,6 +19,18 @@ const events = {
   wip: 'wip'
 }
 
+// Standard translation of low-level Postgres errors raised by job-creation SQL
+// into actionable pg-boss errors. Centralized so any write path can reuse it.
+// Always throws; rethrows untranslated errors unchanged.
+function rethrowWriteError (err: any): never {
+  // the in-SQL insert guard raises division_by_zero when ON CONFLICT skipped a job
+  if (err?.code === plans.PG_ERROR.divisionByZero) {
+    throw new Error('one or more jobs could not be created. This usually means a job id was duplicated, collided with an existing job, or was rejected by a queue policy (short, singleton, stately, or exclusive).', { cause: err })
+  }
+
+  throw err
+}
+
 class Manager extends EventEmitter implements types.EventsMixin {
   events = events
   db: (types.IDatabase & { _pgbdb?: false }) | Db
@@ -702,97 +714,112 @@ class Manager extends EventEmitter implements types.EventsMixin {
   async flow (jobs: types.FlowJob[], options: types.ConnectionOptions = {}): Promise<Record<string, string>> {
     Attorney.validateFlowJobs(jobs)
 
+    // validate and normalize each job's options the same way send()/insert() do
+    const flowJobs = jobs.map(job => ({
+      ...job,
+      options: Attorney.checkSendArgs([{ name: job.name, data: job.data, options: job.options }]).options
+    }))
+
     const refToId: Record<string, string> = {}
-    for (const job of jobs) {
+    for (const job of flowJobs) {
       refToId[job.ref] = job.options?.id ?? randomUUID()
     }
 
-    const execute = async (db: types.IDatabase): Promise<Record<string, string>> => {
-      const refToJob = new Map(jobs.map(job => [job.ref, job]))
-      const dependencyCountByRef = new Map<string, number>()
-      const parentRefs = new Set<string>()
-      const depRows: { child_name: string, child_id: string, parent_name: string, parent_id: string }[] = []
+    const refToJob = new Map(flowJobs.map(job => [job.ref, job]))
+    const dependencyCountByRef = new Map<string, number>()
+    const parentRefs = new Set<string>()
+    const depRows: { child_name: string, child_id: string, parent_name: string, parent_id: string }[] = []
 
-      for (const job of jobs) {
-        const dependsOn = [...new Set(job.dependsOn ?? [])]
-        dependencyCountByRef.set(job.ref, dependsOn.length)
+    for (const job of flowJobs) {
+      const dependsOn = [...new Set(job.dependsOn ?? [])]
+      dependencyCountByRef.set(job.ref, dependsOn.length)
 
-        for (const depRef of dependsOn) {
-          const parentJob = refToJob.get(depRef)!
-          parentRefs.add(depRef)
-          depRows.push({
-            child_name: job.name,
-            child_id: refToId[job.ref],
-            parent_name: parentJob.name,
-            parent_id: refToId[depRef]
-          })
-        }
-      }
-
-      const byQueue = new Map<string, types.FlowJob[]>()
-      for (const job of jobs) {
-        const group = byQueue.get(job.name) || []
-        group.push(job)
-        byQueue.set(job.name, group)
-      }
-
-      for (const [queueName, queueJobs] of byQueue) {
-        const { table } = await this.getQueueCache(queueName)
-
-        const insertPayload = queueJobs.map(j => {
-          const dependencyCount = dependencyCountByRef.get(j.ref) ?? 0
-          return {
-            id: refToId[j.ref],
-            name: queueName,
-            data: j.data ?? null,
-            priority: j.options?.priority,
-            startAfter: j.options?.startAfter,
-            singletonKey: j.options?.singletonKey ?? undefined,
-            singletonSeconds: j.options?.singletonSeconds,
-            groupId: j.options?.group?.id ?? undefined,
-            groupTier: j.options?.group?.tier ?? undefined,
-            expireInSeconds: j.options?.expireInSeconds,
-            deleteAfterSeconds: j.options?.deleteAfterSeconds,
-            retentionSeconds: j.options?.retentionSeconds,
-            retryLimit: j.options?.retryLimit,
-            retryDelay: j.options?.retryDelay,
-            retryBackoff: j.options?.retryBackoff,
-            retryDelayMax: j.options?.retryDelayMax,
-            heartbeatSeconds: j.options?.heartbeatSeconds,
-            deadLetter: j.options?.deadLetter ?? undefined,
-            blocked: dependencyCount > 0 || undefined,
-            blocking: parentRefs.has(j.ref) || undefined,
-            pendingDependencies: dependencyCount || undefined
-          }
+      for (const depRef of dependsOn) {
+        const parentJob = refToJob.get(depRef)!
+        parentRefs.add(depRef)
+        depRows.push({
+          child_name: job.name,
+          child_id: refToId[job.ref],
+          parent_name: parentJob.name,
+          parent_id: refToId[depRef]
         })
+      }
+    }
 
-        const sql = plans.insertJobs(this.config.schema, { table, name: queueName, returnId: true })
-        const { rows } = await db.executeSql(sql, [JSON.stringify(insertPayload)])
-        const insertedIds = new Set(rows.map(row => row.id))
-        const expectedIds = queueJobs.map(job => refToId[job.ref])
+    const byQueue = new Map<string, typeof flowJobs>()
+    for (const job of flowJobs) {
+      const group = byQueue.get(job.name) || []
+      group.push(job)
+      byQueue.set(job.name, group)
+    }
 
-        if (rows.length !== insertPayload.length || expectedIds.some(id => !insertedIds.has(id))) {
-          throw new Error(`flow failed to insert all jobs for queue ${queueName}`)
+    // Build one self-contained, parameter-less statement list so the whole flow
+    // commits atomically in a single executeSql call, regardless of db adapter.
+    // Each insert is guarded so a skipped row (ON CONFLICT) aborts the transaction.
+    const statements: string[] = []
+
+    for (const [queueName, queueJobs] of byQueue) {
+      const { table } = await this.getQueueCache(queueName)
+
+      const insertPayload = queueJobs.map(j => {
+        const dependencyCount = dependencyCountByRef.get(j.ref) ?? 0
+        return {
+          id: refToId[j.ref],
+          name: queueName,
+          data: j.data ?? null,
+          priority: j.options?.priority,
+          startAfter: j.options?.startAfter,
+          singletonKey: j.options?.singletonKey ?? undefined,
+          singletonSeconds: j.options?.singletonSeconds,
+          groupId: j.options?.group?.id ?? undefined,
+          groupTier: j.options?.group?.tier ?? undefined,
+          expireInSeconds: j.options?.expireInSeconds,
+          deleteAfterSeconds: j.options?.deleteAfterSeconds,
+          retentionSeconds: j.options?.retentionSeconds,
+          retryLimit: j.options?.retryLimit,
+          retryDelay: j.options?.retryDelay,
+          retryBackoff: j.options?.retryBackoff,
+          retryDelayMax: j.options?.retryDelayMax,
+          heartbeatSeconds: j.options?.heartbeatSeconds,
+          deadLetter: j.options?.deadLetter ?? undefined,
+          blocked: dependencyCount > 0 || undefined,
+          blocking: parentRefs.has(j.ref) || undefined,
+          pendingDependencies: dependencyCount || undefined
         }
-      }
+      })
 
-      if (depRows.length > 0) {
-        const depSql = plans.insertDependencies(this.config.schema)
-        await db.executeSql(depSql, [JSON.stringify(depRows)])
-      }
+      const insertSql = plans.insertJobs(this.config.schema, { table, name: queueName, returnId: true })
+        .replace('$1', () => plans.serializeJsonParam(insertPayload))
 
-      return refToId
+      // raises 'division by zero' (aborting the transaction) if any job was skipped.
+      // The divisor references the row count so it isn't constant-folded at plan time.
+      statements.push(`
+        WITH ins AS (
+          ${insertSql}
+        )
+        SELECT 1 / (CASE WHEN (SELECT count(*) FROM ins) = ${insertPayload.length} THEN 1 ELSE 0 END)
+      `)
     }
 
-    if (options.db) {
-      return execute(options.db)
+    if (depRows.length > 0) {
+      statements.push(
+        plans.insertDependencies(this.config.schema)
+          .replace('$1', () => plans.serializeJsonParam(depRows))
+      )
     }
 
-    if (this.db._pgbdb) {
-      return (this.db as any).withTransaction(execute)
+    // When the caller provides a db they own the transaction; otherwise wrap the
+    // statements so they run atomically as a single round-trip on any adapter.
+    const db = options.db ?? this.db
+    const sql = options.db ? statements.join(';\n') : plans.transaction(statements)
+
+    try {
+      await db.executeSql(sql)
+    } catch (err) {
+      rethrowWriteError(err)
     }
 
-    return execute(this.db)
+    return refToId
   }
 
   getDebounceStartAfter (singletonSeconds: number, clockOffset: number) {
