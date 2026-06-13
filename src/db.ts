@@ -54,6 +54,26 @@ class Db extends EventEmitter implements types.IDatabase, types.EventsMixin {
 
     return await this.pool.query(text, values)
   }
+
+  async withTransaction<T> (fn: (db: types.IDatabase) => Promise<T>): Promise<T> {
+    assert(this.opened, 'Database not opened. Call open() before executing SQL.')
+
+    const client = await this.pool.connect()
+    try {
+      await client.query('BEGIN')
+      const txDb: types.IDatabase = {
+        executeSql: (text: string, values?: unknown[]) => client.query(text, values)
+      }
+      const result = await fn(txDb)
+      await client.query('COMMIT')
+      return result
+    } catch (err) {
+      await client.query('ROLLBACK')
+      throw err
+    } finally {
+      client.release()
+    }
+  }
 }
 
 export default Db

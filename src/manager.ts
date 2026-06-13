@@ -665,6 +665,17 @@ class Manager extends EventEmitter implements types.EventsMixin {
       }
     }
 
+    const insertPayload = jobs.map(j => {
+      const {
+        blocked,
+        blocking,
+        pendingDependencies,
+        ...rest
+      } = j as types.JobInsert & { blocked?: unknown, blocking?: unknown, pendingDependencies?: unknown }
+
+      return rest
+    })
+
     const db = this.assertDb(options)
 
     const spy = this.config.__test__enableSpies ? this.#spies.get(name) : undefined
@@ -674,7 +685,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     const sql = plans.insertJobs(this.config.schema, { table, name, returnId })
 
-    const { rows } = await db.executeSql(sql, [JSON.stringify(jobs)])
+    const { rows } = await db.executeSql(sql, [JSON.stringify(insertPayload)])
 
     if (rows.length) {
       if (spy) {
@@ -686,6 +697,102 @@ class Manager extends EventEmitter implements types.EventsMixin {
     }
 
     return null
+  }
+
+  async createFlow (jobs: types.FlowJob[], options: types.ConnectionOptions = {}): Promise<Record<string, string>> {
+    Attorney.validateFlowJobs(jobs)
+
+    const refToId: Record<string, string> = {}
+    for (const job of jobs) {
+      refToId[job.ref] = job.options?.id ?? randomUUID()
+    }
+
+    const execute = async (db: types.IDatabase): Promise<Record<string, string>> => {
+      const refToJob = new Map(jobs.map(job => [job.ref, job]))
+      const dependencyCountByRef = new Map<string, number>()
+      const parentRefs = new Set<string>()
+      const depRows: { child_name: string, child_id: string, parent_name: string, parent_id: string }[] = []
+
+      for (const job of jobs) {
+        const dependsOn = [...new Set(job.dependsOn ?? [])]
+        dependencyCountByRef.set(job.ref, dependsOn.length)
+
+        for (const depRef of dependsOn) {
+          const parentJob = refToJob.get(depRef)!
+          parentRefs.add(depRef)
+          depRows.push({
+            child_name: job.name,
+            child_id: refToId[job.ref],
+            parent_name: parentJob.name,
+            parent_id: refToId[depRef]
+          })
+        }
+      }
+
+      const byQueue = new Map<string, types.FlowJob[]>()
+      for (const job of jobs) {
+        const group = byQueue.get(job.name) || []
+        group.push(job)
+        byQueue.set(job.name, group)
+      }
+
+      for (const [queueName, queueJobs] of byQueue) {
+        const { table } = await this.getQueueCache(queueName)
+
+        const insertPayload = queueJobs.map(j => {
+          const dependencyCount = dependencyCountByRef.get(j.ref) ?? 0
+          return {
+            id: refToId[j.ref],
+            name: queueName,
+            data: j.data ?? null,
+            priority: j.options?.priority,
+            startAfter: j.options?.startAfter,
+            singletonKey: j.options?.singletonKey ?? undefined,
+            singletonSeconds: j.options?.singletonSeconds,
+            groupId: j.options?.group?.id ?? undefined,
+            groupTier: j.options?.group?.tier ?? undefined,
+            expireInSeconds: j.options?.expireInSeconds,
+            deleteAfterSeconds: j.options?.deleteAfterSeconds,
+            retentionSeconds: j.options?.retentionSeconds,
+            retryLimit: j.options?.retryLimit,
+            retryDelay: j.options?.retryDelay,
+            retryBackoff: j.options?.retryBackoff,
+            retryDelayMax: j.options?.retryDelayMax,
+            heartbeatSeconds: j.options?.heartbeatSeconds,
+            deadLetter: j.options?.deadLetter ?? undefined,
+            blocked: dependencyCount > 0 || undefined,
+            blocking: parentRefs.has(j.ref) || undefined,
+            pendingDependencies: dependencyCount || undefined
+          }
+        })
+
+        const sql = plans.insertJobs(this.config.schema, { table, name: queueName, returnId: true })
+        const { rows } = await db.executeSql(sql, [JSON.stringify(insertPayload)])
+        const insertedIds = new Set(rows.map(row => row.id))
+        const expectedIds = queueJobs.map(job => refToId[job.ref])
+
+        if (rows.length !== insertPayload.length || expectedIds.some(id => !insertedIds.has(id))) {
+          throw new Error(`createFlow failed to insert all jobs for queue ${queueName}`)
+        }
+      }
+
+      if (depRows.length > 0) {
+        const depSql = plans.insertDependencies(this.config.schema)
+        await db.executeSql(depSql, [JSON.stringify(depRows)])
+      }
+
+      return refToId
+    }
+
+    if (options.db) {
+      return execute(options.db)
+    }
+
+    if (this.db._pgbdb) {
+      return (this.db as any).withTransaction(execute)
+    }
+
+    return execute(this.db)
   }
 
   getDebounceStartAfter (singletonSeconds: number, clockOffset: number) {
@@ -1035,6 +1142,22 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const result = await db.executeSql(sql, values)
 
     return result?.rows || []
+  }
+
+  async getDependencies (name: string, id: string, options: types.ConnectionOptions = {}): Promise<types.DependencyRef[]> {
+    Attorney.assertQueueName(name)
+    const db = this.assertDb(options)
+    const sql = plans.getDependencies(this.config.schema)
+    const { rows } = await db.executeSql(sql, [name, id])
+    return rows.map((r: any) => ({ name: r.parentName, id: r.parentId }))
+  }
+
+  async getDependents (name: string, id: string, options: types.ConnectionOptions = {}): Promise<types.DependencyRef[]> {
+    Attorney.assertQueueName(name)
+    const db = this.assertDb(options)
+    const sql = plans.getDependents(this.config.schema)
+    const { rows } = await db.executeSql(sql, [name, id])
+    return rows.map((r: any) => ({ name: r.childName, id: r.childId }))
   }
 
   private assertDb (options: types.ConnectionOptions) {
