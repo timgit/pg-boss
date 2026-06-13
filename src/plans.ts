@@ -214,7 +214,7 @@ function createTableJobDependency (schema: string) {
 }
 
 function createIndexJobDependencyParent (schema: string) {
-  return `CREATE INDEX job_dep_parent_idx ON ${schema}.job_dependency (parent_name, parent_id)`
+  return `CREATE INDEX IF NOT EXISTS job_dep_parent_idx ON ${schema}.job_dependency (parent_name, parent_id)`
 }
 
 function jobTableFormatFunction (schema: string) {
@@ -1049,6 +1049,7 @@ function completeJobs (schema: string, table: string, includeQueued?: boolean) {
       JOIN decremented d ON d.child_name = j.name
         AND d.child_id = j.id
       WHERE j.blocked
+      ORDER BY j.name, j.id
       FOR UPDATE OF j
     ),
     unblocked AS (

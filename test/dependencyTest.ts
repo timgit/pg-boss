@@ -9,7 +9,7 @@ describe('dependencies', function () {
   it('should block a job until its parent completes', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 
-    const flow = await ctx.boss.createFlow([
+    const flow = await ctx.boss.flow([
       { ref: 'parent', name: ctx.schema },
       { ref: 'child', name: ctx.schema, data: { child: true }, dependsOn: ['parent'] }
     ])
@@ -39,7 +39,7 @@ describe('dependencies', function () {
   it('should support fan-in: child waits for multiple parents', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 
-    const flow = await ctx.boss.createFlow([
+    const flow = await ctx.boss.flow([
       { ref: 'p1', name: ctx.schema, data: { step: 1 } },
       { ref: 'p2', name: ctx.schema, data: { step: 2 } },
       { ref: 'child', name: ctx.schema, data: { step: 'aggregate' }, dependsOn: ['p1', 'p2'] }
@@ -78,7 +78,7 @@ describe('dependencies', function () {
   it('should allow getDependencies and getDependents', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 
-    const flow = await ctx.boss.createFlow([
+    const flow = await ctx.boss.flow([
       { ref: 'parent', name: ctx.schema, data: { role: 'parent' } },
       { ref: 'child', name: ctx.schema, data: { role: 'child' }, dependsOn: ['parent'] }
     ])
@@ -100,7 +100,7 @@ describe('dependencies', function () {
   it('should keep child blocked when parent fails permanently', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 
-    const flow = await ctx.boss.createFlow([
+    const flow = await ctx.boss.flow([
       { ref: 'parent', name: ctx.schema, options: { retryLimit: 0 } },
       { ref: 'child', name: ctx.schema, dependsOn: ['parent'] }
     ])
@@ -123,7 +123,7 @@ describe('dependencies', function () {
   it('should keep child blocked when parent is cancelled', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 
-    const flow = await ctx.boss.createFlow([
+    const flow = await ctx.boss.flow([
       { ref: 'parent', name: ctx.schema },
       { ref: 'child', name: ctx.schema, dependsOn: ['parent'] }
     ])
@@ -150,7 +150,7 @@ describe('dependencies', function () {
     await ctx.boss.createQueue(queue1)
     await ctx.boss.createQueue(queue2)
 
-    const flow = await ctx.boss.createFlow([
+    const flow = await ctx.boss.flow([
       { ref: 'parent', name: queue1, data: { role: 'parent' } },
       { ref: 'child', name: queue2, data: { role: 'child' }, dependsOn: ['parent'] }
     ])
@@ -170,55 +170,55 @@ describe('dependencies', function () {
     expect(fetched2[0].id).toBe(childId)
   })
 
-  it('should reject invalid createFlow input', async function () {
+  it('should reject invalid flow input', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 
     await expect(async () => {
-      await ctx.boss!.createFlow([
+      await ctx.boss!.flow([
         { ref: 'a', name: ctx.schema }
       ])
-    }).rejects.toThrow('createFlow requires at least 2 jobs')
+    }).rejects.toThrow('flow requires at least 2 jobs')
 
     await expect(async () => {
-      await ctx.boss!.createFlow([
+      await ctx.boss!.flow([
         { ref: 'a', name: ctx.schema },
         { ref: 'a', name: ctx.schema }
       ])
     }).rejects.toThrow('duplicate ref')
 
     await expect(async () => {
-      await ctx.boss!.createFlow([
+      await ctx.boss!.flow([
         { ref: 'a', name: ctx.schema },
         { ref: 'b', name: ctx.schema, dependsOn: ['missing'] }
       ])
     }).rejects.toThrow('not found in flow')
 
     await expect(async () => {
-      await ctx.boss!.createFlow([
+      await ctx.boss!.flow([
         { ref: 'a', name: ctx.schema },
         { ref: 'b', name: ctx.schema }
       ])
-    }).rejects.toThrow('createFlow requires at least one job with dependsOn')
+    }).rejects.toThrow('flow requires at least one job with dependsOn')
 
     await expect(async () => {
-      await ctx.boss!.createFlow([
+      await ctx.boss!.flow([
         { ref: 'x', name: ctx.schema },
         { ref: 'z', name: ctx.schema },
         { ref: 'y', name: ctx.schema, dependsOn: ['x', 'z'] },
         { ref: 'a', name: ctx.schema, dependsOn: ['b'] },
         { ref: 'b', name: ctx.schema, dependsOn: ['a'] }
       ])
-    }).rejects.toThrow('createFlow contains a dependency cycle: a -> b -> a')
+    }).rejects.toThrow('flow contains a dependency cycle: a -> b -> a')
   })
 
-  it('should support createFlow with a provided db', async function () {
+  it('should support flow with a provided db', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 
     const db = await helper.getDb()
     const calls: string[] = []
 
     try {
-      const flow = await ctx.boss.createFlow([
+      const flow = await ctx.boss.flow([
         { ref: 'parent', name: ctx.schema },
         { ref: 'child', name: ctx.schema, dependsOn: ['parent'] }
       ], {
@@ -239,7 +239,7 @@ describe('dependencies', function () {
     }
   })
 
-  it('should support createFlow with a constructor-provided db', async function () {
+  it('should support flow with a constructor-provided db', async function () {
     const db = await helper.getDb()
     const calls: string[] = []
 
@@ -257,7 +257,7 @@ describe('dependencies', function () {
       await ctx.boss.start()
       await ctx.boss.createQueue(ctx.schema)
 
-      const flow = await ctx.boss.createFlow([
+      const flow = await ctx.boss.flow([
         { ref: 'parent', name: ctx.schema },
         { ref: 'child', name: ctx.schema, dependsOn: ['parent'] }
       ])
@@ -272,11 +272,11 @@ describe('dependencies', function () {
     }
   })
 
-  it('should roll back createFlow when job creation fails', async function () {
+  it('should roll back flow when job creation fails', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 
     await expect(async () => {
-      await ctx.boss!.createFlow([
+      await ctx.boss!.flow([
         { ref: 'parent', name: ctx.schema, options: { id: 'not-a-uuid' } },
         { ref: 'child', name: ctx.schema, dependsOn: ['parent'] }
       ])
@@ -289,7 +289,7 @@ describe('dependencies', function () {
   it('should honor startAfter on a dependent job', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 
-    const flow = await ctx.boss.createFlow([
+    const flow = await ctx.boss.flow([
       { ref: 'parent', name: ctx.schema },
       { ref: 'child', name: ctx.schema, options: { startAfter: 3600 }, dependsOn: ['parent'] }
     ])
@@ -310,7 +310,7 @@ describe('dependencies', function () {
   it('should complete batch including dependency unblock', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 
-    const flow = await ctx.boss.createFlow([
+    const flow = await ctx.boss.flow([
       { ref: 'p1', name: ctx.schema, data: { p: 1 } },
       { ref: 'p2', name: ctx.schema, data: { p: 2 } },
       { ref: 'c1', name: ctx.schema, data: { c: 1 }, dependsOn: ['p1'] },
@@ -334,7 +334,7 @@ describe('dependencies', function () {
     const db2 = await helper.getDb()
 
     try {
-      const flow = await ctx.boss.createFlow([
+      const flow = await ctx.boss.flow([
         { ref: 'p1', name: ctx.schema },
         { ref: 'p2', name: ctx.schema },
         { ref: 'child', name: ctx.schema, dependsOn: ['p1', 'p2'] }
@@ -362,16 +362,16 @@ describe('dependencies', function () {
     }
   })
 
-  it('should roll back createFlow when an insert conflict skips a job', async function () {
+  it('should roll back flow when an insert conflict skips a job', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
     const id = randomUUID()
 
     await expect(async () => {
-      await ctx.boss!.createFlow([
+      await ctx.boss!.flow([
         { ref: 'parent', name: ctx.schema, options: { id } },
         { ref: 'child', name: ctx.schema, options: { id }, dependsOn: ['parent'] }
       ])
-    }).rejects.toThrow('createFlow failed to insert all jobs')
+    }).rejects.toThrow('flow failed to insert all jobs')
 
     const jobCount = await helper.countJobs(ctx.schema, 'job', 'name = $1', [ctx.schema])
     const dependencyCount = await helper.countJobs(ctx.schema, 'job_dependency', 'true')
@@ -384,7 +384,7 @@ describe('dependencies', function () {
     const db = await helper.getDb()
 
     try {
-      const flow = await ctx.boss.createFlow([
+      const flow = await ctx.boss.flow([
         { ref: 'parent', name: ctx.schema },
         { ref: 'child', name: ctx.schema, dependsOn: ['parent'] }
       ])
@@ -413,7 +413,7 @@ describe('dependencies', function () {
   it('should complete a blocked child with its parent when includeQueued is true', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 
-    const flow = await ctx.boss.createFlow([
+    const flow = await ctx.boss.flow([
       { ref: 'parent', name: ctx.schema },
       { ref: 'child', name: ctx.schema, dependsOn: ['parent'] }
     ])
@@ -429,5 +429,42 @@ describe('dependencies', function () {
     expect(childJob.state).toBe(states.completed)
     expect(childJob.blocked).toBe(false)
     expect(childJob.pendingDependencies).toBe(0)
+  })
+
+  it('should block and unblock a job on a partitioned queue', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+
+    await ctx.boss.createQueue(ctx.schema, { partition: true })
+
+    const flow = await ctx.boss.flow([
+      { ref: 'parent', name: ctx.schema },
+      { ref: 'child', name: ctx.schema, data: { child: true }, dependsOn: ['parent'] }
+    ])
+
+    const parentId = flow.parent
+    const childId = flow.child
+
+    const childJob = await ctx.boss.getJobById(ctx.schema, childId)
+    assertTruthy(childJob)
+    expect(childJob.blocked).toBe(true)
+
+    const parentJob = await ctx.boss.getJobById(ctx.schema, parentId)
+    assertTruthy(parentJob)
+    expect(parentJob.blocking).toBe(true)
+
+    const fetched1 = await ctx.boss.fetch(ctx.schema)
+    expect(fetched1.length).toBe(1)
+    expect(fetched1[0].id).toBe(parentId)
+
+    await ctx.boss.complete(ctx.schema, parentId)
+
+    const childAfter = await ctx.boss.getJobById(ctx.schema, childId)
+    assertTruthy(childAfter)
+    expect(childAfter.blocked).toBe(false)
+    expect(childAfter.pendingDependencies).toBe(0)
+
+    const fetched2 = await ctx.boss.fetch(ctx.schema)
+    expect(fetched2.length).toBe(1)
+    expect(fetched2[0].id).toBe(childId)
   })
 })

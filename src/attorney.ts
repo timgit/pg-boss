@@ -86,8 +86,8 @@ function validateGroupConfig (config: any) {
 }
 
 function validateFlowJobs (jobs: types.FlowJob[]) {
-  assert(Array.isArray(jobs), 'createFlow requires an array of jobs')
-  assert(jobs.length >= 2, 'createFlow requires at least 2 jobs')
+  assert(Array.isArray(jobs), 'flow requires an array of jobs')
+  assert(jobs.length >= 2, 'flow requires at least 2 jobs')
 
   const refs = new Set<string>()
   for (const job of jobs) {
@@ -100,7 +100,7 @@ function validateFlowJobs (jobs: types.FlowJob[]) {
   }
 
   const hasDeps = jobs.some(j => j.dependsOn && j.dependsOn.length > 0)
-  assert(hasDeps, 'createFlow requires at least one job with dependsOn')
+  assert(hasDeps, 'flow requires at least one job with dependsOn')
 
   for (const job of jobs) {
     if (!job.dependsOn) continue
@@ -142,7 +142,7 @@ function validateFlowJobs (jobs: types.FlowJob[]) {
   }
   if (visited !== jobs.length) {
     const cycle = findDependencyCycle(edges)
-    assert(false, `createFlow contains a dependency cycle: ${cycle.join(' -> ')}`)
+    assert(false, `flow contains a dependency cycle: ${cycle.join(' -> ')}`)
   }
 }
 

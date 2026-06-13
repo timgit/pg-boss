@@ -199,8 +199,8 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#manager.insert(name, jobs, options)
   }
 
-  createFlow (jobs: types.FlowJob[], options?: types.ConnectionOptions): Promise<Record<string, string>> {
-    return this.#manager.createFlow(jobs, options)
+  flow (jobs: types.FlowJob[], options?: types.ConnectionOptions): Promise<Record<string, string>> {
+    return this.#manager.flow(jobs, options)
   }
 
   fetch<T>(name: string, options: types.FetchOptions & { includeMetadata: true }): Promise<types.JobWithMetadata<T>[]>

@@ -822,7 +822,7 @@ function getAll (schema: string): types.Migration[] {
       ]
     },
     {
-      release: '12.15.0',
+      release: '12.19.0',
       version: 31,
       previous: 30,
       install: [
@@ -838,7 +838,7 @@ function getAll (schema: string): types.Migration[] {
           PRIMARY KEY (child_name, child_id, parent_name, parent_id)
         )
         `,
-        `CREATE INDEX job_dep_parent_idx ON ${schema}.job_dependency (parent_name, parent_id)`,
+        `CREATE INDEX IF NOT EXISTS job_dep_parent_idx ON ${schema}.job_dependency (parent_name, parent_id)`,
         `SELECT ${schema}.job_table_run($cmd$DROP INDEX IF EXISTS ${schema}.job_i5$cmd$)`,
         `SELECT ${schema}.job_table_run($cmd$CREATE INDEX job_i5 ON ${schema}.job (name, start_after) INCLUDE (priority, created_on, id) WHERE state < 'active' AND NOT blocked$cmd$)`,
         `

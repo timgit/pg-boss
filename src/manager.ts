@@ -699,7 +699,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     return null
   }
 
-  async createFlow (jobs: types.FlowJob[], options: types.ConnectionOptions = {}): Promise<Record<string, string>> {
+  async flow (jobs: types.FlowJob[], options: types.ConnectionOptions = {}): Promise<Record<string, string>> {
     Attorney.validateFlowJobs(jobs)
 
     const refToId: Record<string, string> = {}
@@ -772,7 +772,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
         const expectedIds = queueJobs.map(job => refToId[job.ref])
 
         if (rows.length !== insertPayload.length || expectedIds.some(id => !insertedIds.has(id))) {
-          throw new Error(`createFlow failed to insert all jobs for queue ${queueName}`)
+          throw new Error(`flow failed to insert all jobs for queue ${queueName}`)
         }
       }
 
