@@ -202,7 +202,7 @@ Warnings correlate to `warning` events already emitted by pg-boss:
 ## Tech Stack
 
 - **Framework**: [React Router 7](https://reactrouter.com/) (framework mode)
-- **Server**: [Hono](https://hono.dev/) via [react-router-hono-server](https://github.com/rphlmr/react-router-hono-server)
+- **Server**: [Hono](https://hono.dev/)
 - **Styling**: [Tailwind CSS v4](https://tailwindcss.com/)
 - **Components**: [Base UI](https://base-ui.com/)
 - **Database**: [pg](https://node-postgres.com/) (PostgreSQL client)
