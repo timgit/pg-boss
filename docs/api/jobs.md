@@ -208,11 +208,11 @@ const [idA, idB] = await boss.insert('etl', [
 ], { returnId: true })
 ```
 
-### `createFlow(jobs, options)`
+### `flow(jobs, options)`
 
 Create a set of jobs and their dependencies atomically in one transaction.
 
-Use `createFlow()` when jobs depend on other jobs. Dependencies are not configured on `send()` or `insert()` because creating jobs and dependencies in separate calls can race with job completion.
+Use `flow()` when jobs depend on other jobs. Dependencies are not configured on `send()` or `insert()` because creating jobs and dependencies in separate calls can race with job completion.
 
 Atomicity is handled by pg-boss when it owns the database connection. If you pass a custom `db` in `options`, wrap the call in your own transaction if you need the job and dependency inserts to commit or roll back together.
 
@@ -231,7 +231,7 @@ interface FlowJob {
 Returns a map of `ref` to created job id.
 
 ```js
-const flow = await boss.createFlow([
+const flow = await boss.flow([
   { ref: 'extract-a', name: 'extract', data: { file: '1.csv' } },
   { ref: 'extract-b', name: 'extract', data: { file: '2.csv' } },
   {
