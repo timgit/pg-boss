@@ -5,7 +5,7 @@ import { assertTruthy } from './testHelper.ts'
 import { ctx } from './hooks.ts'
 import { PgBoss, states } from '../src/index.ts'
 
-describe('dependencies', function () {
+describe('flows', function () {
   it('should block a job until its parent completes', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 
