@@ -99,28 +99,33 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
 
     this.#starting = true
 
-    if (this.#db._pgbdb && !this.#db.opened) {
-      await this.#db.open()
-    }
+    try {
+      if (this.#db._pgbdb && !this.#db.opened) {
+        await this.#db.open()
+      }
 
-    if (this.#config.migrate) {
-      await this.#contractor.start()
-    } else {
-      await this.#contractor.check()
-    }
+      if (this.#config.migrate) {
+        await this.#contractor.start()
+      } else {
+        await this.#contractor.check()
+      }
 
-    await this.#manager.start()
+      await this.#manager.start()
 
-    if (this.#config.supervise) {
-      await this.#boss.start()
-    }
+      if (this.#config.supervise) {
+        await this.#boss.start()
+      }
 
-    if (this.#config.schedule) {
-      await this.#timekeeper.start()
-    }
+      if (this.#config.schedule) {
+        await this.#timekeeper.start()
+      }
 
-    if (this.#config.migrate) {
-      await this.#bam.start()
+      if (this.#config.migrate) {
+        await this.#bam.start()
+      }
+    } catch (err) {
+      this.#starting = false
+      throw err
     }
 
     this.#starting = false

@@ -55,6 +55,22 @@ describe('config', function () {
     expect(result2).toBeTruthy()
   })
 
+  it('should allow start() retry after a startup error', async function () {
+    let calls = 0
+    const db = {
+      async executeSql () {
+        calls += 1
+        throw new Error('startup failed')
+      }
+    }
+    const boss = new PgBoss({ db, migrate: false, supervise: false, schedule: false })
+
+    await expect(boss.start()).rejects.toThrow('startup failed')
+    await expect(boss.start()).rejects.toThrow('startup failed')
+
+    expect(calls).toBe(2)
+  })
+
   it('isInstalled() should indicate whether db schema is installed', async function () {
     const db = new Db(ctx.bossConfig)
     await db.open()
