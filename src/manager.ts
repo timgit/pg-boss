@@ -19,6 +19,18 @@ const events = {
   wip: 'wip'
 }
 
+// Standard translation of low-level Postgres errors raised by job-creation SQL
+// into actionable pg-boss errors. Centralized so any write path can reuse it.
+// Always throws; rethrows untranslated errors unchanged.
+function rethrowWriteError (err: any): never {
+  // the in-SQL insert guard raises division_by_zero when ON CONFLICT skipped a job
+  if (err?.code === plans.PG_ERROR.divisionByZero) {
+    throw new Error('one or more jobs could not be created. This usually means a job id was duplicated, collided with an existing job, or was rejected by a queue policy (short, singleton, stately, or exclusive).', { cause: err })
+  }
+
+  throw err
+}
+
 class Manager extends EventEmitter implements types.EventsMixin {
   events = events
   db: (types.IDatabase & { _pgbdb?: false }) | Db
@@ -665,6 +677,17 @@ class Manager extends EventEmitter implements types.EventsMixin {
       }
     }
 
+    const insertPayload = jobs.map(j => {
+      const {
+        blocked,
+        blocking,
+        pendingDependencies,
+        ...rest
+      } = j as types.JobInsert & { blocked?: unknown, blocking?: unknown, pendingDependencies?: unknown }
+
+      return rest
+    })
+
     const db = this.assertDb(options)
 
     const spy = this.config.__test__enableSpies ? this.#spies.get(name) : undefined
@@ -674,7 +697,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     const sql = plans.insertJobs(this.config.schema, { table, name, returnId })
 
-    const { rows } = await db.executeSql(sql, [JSON.stringify(jobs)])
+    const { rows } = await db.executeSql(sql, [JSON.stringify(insertPayload)])
 
     if (rows.length) {
       if (spy) {
@@ -686,6 +709,117 @@ class Manager extends EventEmitter implements types.EventsMixin {
     }
 
     return null
+  }
+
+  async flow (jobs: types.FlowJob[], options: types.ConnectionOptions = {}): Promise<Record<string, string>> {
+    Attorney.validateFlowJobs(jobs)
+
+    // validate and normalize each job's options the same way send()/insert() do
+    const flowJobs = jobs.map(job => ({
+      ...job,
+      options: Attorney.checkSendArgs([{ name: job.name, data: job.data, options: job.options }]).options
+    }))
+
+    const refToId: Record<string, string> = {}
+    for (const job of flowJobs) {
+      refToId[job.ref] = job.options?.id ?? randomUUID()
+    }
+
+    const refToJob = new Map(flowJobs.map(job => [job.ref, job]))
+    const dependencyCountByRef = new Map<string, number>()
+    const parentRefs = new Set<string>()
+    const depRows: { child_name: string, child_id: string, parent_name: string, parent_id: string }[] = []
+
+    for (const job of flowJobs) {
+      const dependsOn = [...new Set(job.dependsOn ?? [])]
+      dependencyCountByRef.set(job.ref, dependsOn.length)
+
+      for (const depRef of dependsOn) {
+        const parentJob = refToJob.get(depRef)!
+        parentRefs.add(depRef)
+        depRows.push({
+          child_name: job.name,
+          child_id: refToId[job.ref],
+          parent_name: parentJob.name,
+          parent_id: refToId[depRef]
+        })
+      }
+    }
+
+    const byQueue = new Map<string, typeof flowJobs>()
+    for (const job of flowJobs) {
+      const group = byQueue.get(job.name) || []
+      group.push(job)
+      byQueue.set(job.name, group)
+    }
+
+    // Build one self-contained, parameter-less statement list so the whole flow
+    // commits atomically in a single executeSql call, regardless of db adapter.
+    // Each insert is guarded so a skipped row (ON CONFLICT) aborts the transaction.
+    const statements: string[] = []
+
+    for (const [queueName, queueJobs] of byQueue) {
+      const { table } = await this.getQueueCache(queueName)
+
+      const insertPayload = queueJobs.map(j => {
+        const dependencyCount = dependencyCountByRef.get(j.ref) ?? 0
+        return {
+          id: refToId[j.ref],
+          name: queueName,
+          data: j.data ?? null,
+          priority: j.options?.priority,
+          startAfter: j.options?.startAfter,
+          singletonKey: j.options?.singletonKey ?? undefined,
+          singletonSeconds: j.options?.singletonSeconds,
+          groupId: j.options?.group?.id ?? undefined,
+          groupTier: j.options?.group?.tier ?? undefined,
+          expireInSeconds: j.options?.expireInSeconds,
+          deleteAfterSeconds: j.options?.deleteAfterSeconds,
+          retentionSeconds: j.options?.retentionSeconds,
+          retryLimit: j.options?.retryLimit,
+          retryDelay: j.options?.retryDelay,
+          retryBackoff: j.options?.retryBackoff,
+          retryDelayMax: j.options?.retryDelayMax,
+          heartbeatSeconds: j.options?.heartbeatSeconds,
+          deadLetter: j.options?.deadLetter ?? undefined,
+          blocked: dependencyCount > 0 || undefined,
+          blocking: parentRefs.has(j.ref) || undefined,
+          pendingDependencies: dependencyCount || undefined
+        }
+      })
+
+      const insertSql = plans.insertJobs(this.config.schema, { table, name: queueName, returnId: true })
+        .replace('$1', () => plans.serializeJsonParam(insertPayload))
+
+      // raises 'division by zero' (aborting the transaction) if any job was skipped.
+      // The divisor references the row count so it isn't constant-folded at plan time.
+      statements.push(`
+        WITH ins AS (
+          ${insertSql}
+        )
+        SELECT 1 / (CASE WHEN (SELECT count(*) FROM ins) = ${insertPayload.length} THEN 1 ELSE 0 END)
+      `)
+    }
+
+    if (depRows.length > 0) {
+      statements.push(
+        plans.insertDependencies(this.config.schema)
+          .replace('$1', () => plans.serializeJsonParam(depRows))
+      )
+    }
+
+    // When the caller provides a db they own the transaction; otherwise wrap the
+    // statements so they run atomically as a single round-trip on any adapter.
+    const db = options.db ?? this.db
+    const sql = options.db ? statements.join(';\n') : plans.transaction(statements)
+
+    try {
+      await db.executeSql(sql)
+    } catch (err) {
+      rethrowWriteError(err)
+    }
+
+    return refToId
   }
 
   getDebounceStartAfter (singletonSeconds: number, clockOffset: number) {
@@ -1035,6 +1169,22 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const result = await db.executeSql(sql, values)
 
     return result?.rows || []
+  }
+
+  async getDependencies (name: string, id: string, options: types.ConnectionOptions = {}): Promise<types.DependencyRef[]> {
+    Attorney.assertQueueName(name)
+    const db = this.assertDb(options)
+    const sql = plans.getDependencies(this.config.schema)
+    const { rows } = await db.executeSql(sql, [name, id])
+    return rows.map((r: any) => ({ name: r.parentName, id: r.parentId }))
+  }
+
+  async getDependents (name: string, id: string, options: types.ConnectionOptions = {}): Promise<types.DependencyRef[]> {
+    Attorney.assertQueueName(name)
+    const db = this.assertDb(options)
+    const sql = plans.getDependents(this.config.schema)
+    const { rows } = await db.executeSql(sql, [name, id])
+    return rows.map((r: any) => ({ name: r.childName, id: r.childId }))
   }
 
   private assertDb (options: types.ConnectionOptions) {
