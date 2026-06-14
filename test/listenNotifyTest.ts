@@ -155,6 +155,55 @@ describe('listen/notify', function () {
     expect(processed).toBe(false)
   })
 
+  it('wakes notify-enabled workers and recovers after the listener reconnects', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, useListenNotify: true, noDefault: true })
+    const boss = ctx.boss
+    // Terminating the listen backend surfaces as an 'error' on the promoted db events.
+    boss.on('error', () => {})
+    const notifyQueue = `${ctx.schema}_notify`
+    const plainQueue = `${ctx.schema}_plain`
+
+    await boss.createQueue(notifyQueue, { notify: true })
+    await boss.createQueue(plainQueue, { notify: false })
+
+    let notifyProcessed = 0
+    // A long poll proves wake-ups come from NOTIFY / gap-recovery, not polling.
+    await boss.work(notifyQueue, { pollingIntervalSeconds: 30 }, async () => { notifyProcessed++ })
+    // A second worker on a non-notify queue exercises the name/notify mismatch
+    // branches in notifyQueue() and forceFetchLnWorkers().
+    await boss.work(plainQueue, { pollingIntervalSeconds: 30 }, async () => {})
+
+    await delay(300)
+
+    // A notify-gated send wakes only the matching worker (notifyQueue iterates all
+    // workers, skipping the plain-queue one).
+    await boss.send(notifyQueue)
+    for (let i = 0; i < 30; i++) {
+      if (notifyProcessed >= 1) break
+      await delay(100)
+    }
+    expect(notifyProcessed).toBe(1)
+
+    // Drop the dedicated listen backend. On reconnect, forceFetchLnWorkers() forces
+    // a fetch for notify-enabled workers (and skips the plain one) to recover any
+    // notifications missed during the outage.
+    const killer = await helper.getDb()
+    try {
+      await killer.executeSql("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE query LIKE 'LISTEN %'")
+    } finally {
+      await killer.close()
+    }
+
+    // After recovery a fresh notify-gated send is delivered again.
+    await delay(1500)
+    await boss.send(notifyQueue)
+    for (let i = 0; i < 40; i++) {
+      if (notifyProcessed >= 2) break
+      await delay(100)
+    }
+    expect(notifyProcessed).toBe(2)
+  })
+
   it('warns and continues polling when the database connection cannot LISTEN', async function () {
     const config = helper.getConfig({ schema: ctx.schema })
 

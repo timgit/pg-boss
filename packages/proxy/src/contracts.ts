@@ -176,6 +176,7 @@ export const queueResultSchema = z.object({
   deadLetter: z.string().optional(),
   warningQueueSize: z.number().optional(),
   heartbeatSeconds: z.number().optional(),
+  notify: z.boolean().optional(),
   deferredCount: z.number(),
   queuedCount: z.number(),
   activeCount: z.number(),
