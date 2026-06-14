@@ -72,9 +72,13 @@ export function create (schema: string, version: number, options?: CreateOptions
     createTableSubscription(schema),
     createTableBam(schema),
 
-    jobTableFormatFunction(schema),
-    jobTableRunFunction(schema),
-    jobTableRunAsyncFunction(schema),
+    // Partition-helper functions are only used by the partitioned architecture.
+    // They are unused when partitioning is disabled, and job_table_format's
+    // IMMUTABLE + format() body is rejected at create time by databases like
+    // CockroachDB, so skip them entirely in noTablePartitioning mode.
+    noPartitioning ? '' : jobTableFormatFunction(schema),
+    noPartitioning ? '' : jobTableRunFunction(schema),
+    noPartitioning ? '' : jobTableRunAsyncFunction(schema),
 
     createTableJob(schema, noPartitioning),
     createPrimaryKeyJob(schema),
