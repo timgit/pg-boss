@@ -11,6 +11,7 @@ Creates a queue.
     partition?: boolean;
     deadLetter?: string;
     warningQueueSize?: number;
+    notify?: boolean;
   } & QueueOptions
 ```
 
@@ -45,6 +46,10 @@ Allowed policy values:
 * **warningQueueSize**, int
 
   How many items can exist in the created or retry state before emitting a warning event.
+
+* **notify**, boolean, default false
+
+  When enabled, creating an immediately-available job on this queue emits a Postgres `NOTIFY` so workers wake right away instead of waiting for their next poll. This only has an effect when the instance is started with the [`useListenNotify`](./constructor.md#newoptions) option, which runs the listener. Jobs scheduled for the future (for example via `startAfter`, `sendAfter`, or throttling/debouncing) do not emit a notification — they are picked up by polling when they mature. See [Workers › Low-latency dispatch with LISTEN/NOTIFY](./workers.md#low-latency-dispatch-with-listennotify).
 
 **Retry options**
 

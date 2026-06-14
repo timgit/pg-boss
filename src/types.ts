@@ -17,6 +17,18 @@ export type Events = {
 
 export interface IDatabase {
   executeSql(text: string, values?: unknown[]): Promise<{ rows: any[] }>;
+  /**
+   * Optional capability for LISTEN/NOTIFY support. When present, pg-boss can hold a
+   * dedicated session-pinned connection to receive notifications. The built-in pool-based
+   * Db implements this; custom adapters may implement it to enable `useListenNotify`.
+   * Must invoke `onReconnect` after each successful (re)subscribe so missed notifications
+   * can be recovered. Returns a handle whose `close()` tears down the listener.
+   */
+  listen?(channel: string, onNotification: (payload: string) => void, onReconnect: () => void): Promise<ListenHandle>;
+}
+
+export interface ListenHandle {
+  close(): Promise<void>;
 }
 
 export interface DatabaseOptions {
@@ -68,6 +80,17 @@ export interface Migration {
 }
 
 export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, MaintenanceOptions {
+  /**
+   * Enables the LISTEN/NOTIFY listener so workers on notify-enabled queues are woken
+   * the moment a job is created, instead of waiting out their polling interval. This
+   * holds one dedicated database connection for listening. Polling always remains active
+   * as a correctness floor. Requires a pg-boss-owned pool (or an adapter that supports
+   * `listen`) and a session-pinned connection — it will not work through PgBouncer in
+   * transaction pooling mode. When it can't be established, pg-boss emits a `warning` and
+   * continues polling only. Opt in per queue via the queue's `notify` option.
+   * @default false
+   */
+  useListenNotify?: boolean;
   /** @internal */
   __test__warn_slow_query?: boolean;
   /** @internal */
@@ -277,6 +300,14 @@ export interface Queue extends QueueOptions {
    * When set, workers must send periodic heartbeats. NULL = heartbeat disabled (default).
    */
   heartbeatSeconds?: number;
+  /**
+   * When `true`, creating a job on this queue emits a Postgres NOTIFY so workers wake
+   * immediately rather than waiting for their next poll. Requires the instance-level
+   * `useListenNotify` option to be enabled for the listener to act on it. Polling still
+   * runs as a fallback.
+   * @default false
+   */
+  notify?: boolean;
 }
 
 export interface QueueResult extends Queue {

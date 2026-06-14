@@ -55,6 +55,77 @@ class Db extends EventEmitter implements types.IDatabase, types.EventsMixin {
     return await this.pool.query(text, values)
   }
 
+  // Opens a dedicated, session-pinned connection for LISTEN/NOTIFY. A separate pg.Client
+  // (not a pooled connection) is used so the listener never depletes the query pool and so
+  // reconnection is self-contained. On any drop the client reconnects with capped backoff
+  // and re-runs LISTEN, then calls onReconnect so the caller can recover missed messages.
+  async listen (
+    channel: string,
+    onNotification: (payload: string) => void,
+    onReconnect: () => void
+  ): Promise<types.ListenHandle> {
+    assert(this.opened, 'Database not opened. Call open() before listening.')
+
+    let closed = false
+    let client: pg.Client | null = null
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+    let attempt = 0
+
+    const scheduleReconnect = () => {
+      if (closed || reconnectTimer) return
+      const backoff = Math.min(30000, 1000 * 2 ** Math.min(attempt, 5))
+      attempt++
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null
+        connect().catch(() => scheduleReconnect())
+      }, backoff)
+    }
+
+    const connect = async () => {
+      if (closed) return
+
+      const next = new pg.Client(this.config)
+
+      next.on('error', error => {
+        this.emit('error', error)
+        if (!closed) {
+          next.removeAllListeners()
+          next.end().catch(() => {})
+          if (client === next) client = null
+          scheduleReconnect()
+        }
+      })
+
+      next.on('notification', msg => {
+        if (msg.payload !== undefined) onNotification(msg.payload)
+      })
+
+      await next.connect()
+      await next.query(`LISTEN "${channel}"`)
+
+      client = next
+      attempt = 0
+      onReconnect()
+    }
+
+    await connect()
+
+    return {
+      close: async () => {
+        closed = true
+        if (reconnectTimer) {
+          clearTimeout(reconnectTimer)
+          reconnectTimer = null
+        }
+        if (client) {
+          client.removeAllListeners()
+          await client.end().catch(() => {})
+          client = null
+        }
+      }
+    }
+  }
+
   async withTransaction<T> (fn: (db: types.IDatabase) => Promise<T>): Promise<T> {
     assert(this.opened, 'Database not opened. Call open() before executing SQL.')
 

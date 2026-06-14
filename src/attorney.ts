@@ -15,6 +15,8 @@ function assertObjectName (value: string, name: string = 'Name') {
 function validateQueueArgs (config: any = {}) {
   assert(!('deadLetter' in config) || config.deadLetter === null || (typeof config.deadLetter === 'string'), 'deadLetter must be a string')
 
+  assert(!('notify' in config) || typeof config.notify === 'boolean', 'notify must be a boolean')
+
   if (config.deadLetter) {
     assertObjectName(config.deadLetter, 'deadLetter')
   }
@@ -307,6 +309,7 @@ function getConfig (value: string | types.ConstructorOptions): types.ResolvedCon
   config.supervise = ('supervise' in config) ? config.supervise : true
   config.migrate = ('migrate' in config) ? config.migrate : true
   config.createSchema = ('createSchema' in config) ? config.createSchema : true
+  config.useListenNotify = ('useListenNotify' in config) ? config.useListenNotify : false
 
   applySchemaConfig(config)
   applyOpsConfig(config)

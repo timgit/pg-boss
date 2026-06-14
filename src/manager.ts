@@ -507,6 +507,26 @@ class Manager extends EventEmitter implements types.EventsMixin {
     this.workers.get(workerId)?.notify()
   }
 
+  // Wake every worker on a queue so it fetches now instead of waiting out its poll delay.
+  // Called by the LISTEN/NOTIFY listener when a job lands on a notify-enabled queue.
+  notifyQueue (name: string): void {
+    for (const worker of this.workers.values()) {
+      if (worker.name === name) {
+        worker.notify()
+      }
+    }
+  }
+
+  // Gap recovery: after the listener (re)connects, notifications emitted during the
+  // outage were missed, so force every worker on a notify-enabled queue to fetch once.
+  forceFetchLnWorkers (): void {
+    for (const worker of this.workers.values()) {
+      if (this.queues?.[worker.name]?.notify) {
+        worker.notify()
+      }
+    }
+  }
+
   async subscribe (event: string, name: string): Promise<void> {
     assert(event, 'Missing required argument')
     assert(name, 'Missing required argument')
@@ -617,13 +637,13 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     const db = wrapper || this.db
 
-    const { table, policy } = await this.getQueueCache(name)
+    const { table, policy, notify } = await this.getQueueCache(name)
 
     if (policy === plans.QUEUE_POLICIES.key_strict_fifo && !singletonKey) {
       throw new Error(`${plans.QUEUE_POLICIES.key_strict_fifo} queues require a singletonKey`)
     }
 
-    const sql = plans.insertJobs(this.config.schema, { table, name, returnId: true })
+    const sql = plans.insertJobs(this.config.schema, { table, name, returnId: true, notify })
 
     const { rows: try1 } = await db.executeSql(sql, [JSON.stringify([job])])
 
@@ -667,7 +687,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
   ) {
     assert(Array.isArray(jobs), 'jobs argument should be an array')
 
-    const { table, policy } = await this.getQueueCache(name)
+    const { table, policy, notify } = await this.getQueueCache(name)
 
     if (policy === plans.QUEUE_POLICIES.key_strict_fifo) {
       for (const job of jobs) {
@@ -695,7 +715,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     // Return IDs if spy is active for this queue (needed for job tracking)
     const returnId = !!spy || !!options.returnId
 
-    const sql = plans.insertJobs(this.config.schema, { table, name, returnId })
+    const sql = plans.insertJobs(this.config.schema, { table, name, returnId, notify })
 
     const { rows } = await db.executeSql(sql, [JSON.stringify(insertPayload)])
 
@@ -759,7 +779,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const statements: string[] = []
 
     for (const [queueName, queueJobs] of byQueue) {
-      const { table } = await this.getQueueCache(queueName)
+      const { table, notify } = await this.getQueueCache(queueName)
 
       const insertPayload = queueJobs.map(j => {
         const dependencyCount = dependencyCountByRef.get(j.ref) ?? 0
@@ -799,6 +819,14 @@ class Manager extends EventEmitter implements types.EventsMixin {
         )
         SELECT 1 / (CASE WHEN (SELECT count(*) FROM ins) = ${insertPayload.length} THEN 1 ELSE 0 END)
       `)
+
+      // Wake workers for notify-enabled queues. Runs in the same transaction as the
+      // inserts above, so it commits atomically. Blocked children and future-dated roots
+      // are harmless: the fetch query filters them out, so a wake just triggers one fetch
+      // that picks up whatever roots are immediately runnable.
+      if (notify) {
+        statements.push(`SELECT pg_notify(${plans.notifyChannelSql(this.config.schema)}, '${queueName}')`)
+      }
     }
 
     if (depRows.length > 0) {
