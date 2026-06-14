@@ -248,6 +248,53 @@ describe('groupConcurrency', function () {
     }).rejects.toThrow('group.tier must be a non-empty string if provided')
   })
 
+  it('should process available group jobs when saturated group dominates the front of the queue', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
+    const spy = ctx.boss.getSpy(ctx.schema)
+
+    const groupA = 'group-saturated'
+    const groupB = 'group-available'
+    const groupConcurrency = 1
+
+    // Step 1: Send one group A job and fetch it directly to make it "active",
+    // holding group A at its concurrency limit for the entire duration of the test.
+    // This simulates a long-running job consuming the one allowed slot.
+    await ctx.boss.send(ctx.schema, {}, { group: { id: groupA } })
+    const [activeJob] = await ctx.boss.fetch(ctx.schema)
+    assertTruthy(activeJob)
+    // activeJob is now in "active" state and will never be completed during this
+    // test, keeping group A permanently saturated (active_cnt = 1 = groupConcurrency).
+
+    // Step 2: Flood the front of the queue with group A jobs.
+    // All jobs in this test use the same default priority, so after the
+    // priority desc sort key, created_on and id determine queue position.
+    // Sent after the active job, these group A jobs occupy positions 1-5
+    // ahead of group B.
+    for (let i = 0; i < 5; i++) {
+      await ctx.boss.send(ctx.schema, { index: i }, { group: { id: groupA } })
+    }
+
+    // Step 3: Enqueue one group B job. It is fully eligible (0 active, under its
+    // concurrency limit), but with the same default priority and a later
+    // created_on/id it sits at position 6 behind all of the group A queued jobs.
+    const groupBJobId = await ctx.boss.send(ctx.schema, {}, { group: { id: groupB } })
+    assertTruthy(groupBJobId)
+
+    // Step 4: Start a single worker with groupConcurrency: 1.
+    // Regression: previously the next CTE applied LIMIT 1 before the group
+    // concurrency check, so a saturated group at the front of the queue would
+    // starve all other groups. The group B job should be reached on the first
+    // poll now that saturated groups are pre-filtered in the WHERE clause.
+    await ctx.boss.work(ctx.schema, {
+      groupConcurrency,
+      localConcurrency: 1,
+      pollingIntervalSeconds: 0.5
+    }, async () => {})
+
+    const completedJob = await spy.waitForJobWithId(groupBJobId, 'completed')
+    expect(completedJob.state).toBe('completed')
+  })
+
   it('should validate groupConcurrency option in work', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 

@@ -4,7 +4,7 @@
 
 Adds a new polling worker for a queue and executes the provided callback function when jobs are found. Each call to work() will add a new worker and resolve a unqiue worker id.
 
-Workers can be stopped via `offWork()` all at once by queue name or individually by using the worker id. Worker activity may be monitored by listening to the `wip` event.
+Workers can be stopped via `offWork()` all at once by queue name or individually by using the worker id. Worker activity may be monitored by listening to the `wip` event or by polling [`getWipData()`](#getwipdataoptions).
 
 The default options for `work()` is 1 job every 2 seconds.
 
@@ -13,21 +13,33 @@ The default options for `work()` is 1 job every 2 seconds.
 **Arguments**
 - `name`: string, *required*
 - `options`: object
-- `handler`: function(jobs), *required*
+- `handler`: function(jobs): `Promise<any>`, *required*
 
 **Options**
 
 * **batchSize**, int, *(default=1)*
 
-  Same as in [`fetch()`](#fetch)
+  Same as in [`fetch()`](./jobs#fetchname-options)
 
 * **includeMetadata**, bool, *(default=false)*
 
-  Same as in [`fetch()`](#fetch)
+  Same as in [`fetch()`](./jobs#fetchname-options)
 
 * **priority**, bool, *(default=true)*
 
-  Same as in [`fetch()`](#fetch)
+  Same as in [`fetch()`](./jobs#fetchname-options)
+
+* **orderByCreatedOn**, bool, *(default=true)*
+
+  Same as in [`fetch()`](./jobs#fetchname-options)
+
+* **minPriority**, int
+
+  Same as in [`fetch()`](./jobs#fetchname-options)
+
+* **maxPriority**, int
+
+  Same as in [`fetch()`](./jobs#fetchname-options)
 
 * **pollingIntervalSeconds**, int, *(default=2)*
 
@@ -63,6 +75,23 @@ The default options for `work()` is 1 job every 2 seconds.
     localGroupConcurrency: 2
   }, async ([job]) => {
     await processData(job.data)
+  })
+  ```
+
+* **heartbeatRefreshSeconds**, number
+
+  Custom interval in seconds at which the worker sends heartbeats for active jobs. Defaults to `heartbeatSeconds / 2` (derived from the job's heartbeat configuration). Must be strictly less than `heartbeatSeconds`. This is a worker-level setting only — it is not available on queue or job configuration.
+
+  The distinction between `heartbeatSeconds` and `heartbeatRefreshSeconds`:
+  - `heartbeatSeconds` (queue/job level) defines the **contract**: how long before a missing heartbeat is considered a failure
+  - `heartbeatRefreshSeconds` (worker level) controls the **implementation**: how often the worker sends heartbeats to fulfill that contract
+
+  This option only applies when jobs have `heartbeatSeconds` configured (either on the queue or per-job). Heartbeats are sent automatically by `work()` — no user action is needed unless a custom refresh interval is desired. When using `fetch()` for manual processing, call `touch()` directly instead.
+
+  ```js
+  // Queue configured with 60s heartbeat, worker sends heartbeats every 10s
+  await boss.work('video-processing', { heartbeatRefreshSeconds: 10 }, async ([job]) => {
+    await processVideo(job.data)
   })
   ```
 
@@ -136,7 +165,7 @@ In this setup:
 
 **Handler function**
 
-`handler` should return a promise (Usually this is an `async` function). If an unhandled error occurs in a handler, `fail()` will automatically be called for the jobs, storing the error in the `output` property, making the job or jobs available for retry.
+`handler` should return a promise (Usually this is an `async` function). If the `handler` returns a value or an object, it will be stored in the `output` property. If an unhandled error occurs in a handler, `fail()` will automatically be called for the jobs, storing the error in the `output` property, making the job or jobs available for retry.
 
 The jobs argument is an array of jobs with the following properties.
 
@@ -145,6 +174,7 @@ The jobs argument is an array of jobs with the following properties.
 |`id`| string, uuid |
 |`name`| string |
 |`data`| object |
+|`heartbeatSeconds`| number \| null | Heartbeat interval configured for this job, or null if not configured |
 |`signal`| AbortSignal |
 
 
@@ -185,6 +215,33 @@ work() with abort signal
 await boss.work('process-video', async ([ job ]) => {
   const result = await fetch('https://api.example.com/process', { signal: job.signal })
 })
+```
+
+### `getWipData(options)`
+
+Returns a snapshot of all workers in this instance of pg-boss with state `created`, `active`, or `stopping`. This is the same data payload emitted by the `wip` event, but available on-demand without waiting for a job transition.
+
+Use this for continuous monitoring of worker utilization — for example, driving metrics or autoscaling signals when jobs are long-running and the `wip` event may not fire frequently enough.
+
+**Arguments**
+- `options`: object *(optional)*
+
+**Options**
+
+* **includeInternal**, bool, *(default=false)*
+
+  If true, includes workers for pg-boss internal queues (e.g., scheduling).
+
+**Returns**: `WipData[]`
+
+```js
+// Poll worker utilization every 2 seconds for metrics
+setInterval(() => {
+  const workers = boss.getWipData()
+  const working = workers.filter(w => w.state === 'active' && w.count > 0).length
+  const idle = workers.filter(w => w.state === 'active' && w.count === 0).length
+  console.log(`working: ${working}, idle: ${idle}`)
+}, 2000)
 ```
 
 ### `notifyWorker(id)`

@@ -168,4 +168,37 @@ describe('send', function () {
     expect(job.singletonKey).toBe(options.singletonKey)
     expect(new Date(job.keepUntil).toISOString()).toBe(keepUntil)
   })
+
+  it('should save as deadLetter the queue name of the one passed as option in the send method and not the one retrieved from the queue', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    const deadLetter = `${ctx.schema}_dlq`
+    const deadLetter2 = `${ctx.schema}_dlq_2`
+    await ctx.boss.createQueue(deadLetter)
+    await ctx.boss.createQueue(deadLetter2)
+    await ctx.boss.updateQueue(ctx.schema, { deadLetter })
+
+    const id = await ctx.boss.send(ctx.schema, {}, { deadLetter: deadLetter2 })
+
+    assertTruthy(id)
+    const job = await ctx.boss.getJobById(ctx.schema, id)
+    assertTruthy(job)
+
+    expect(job.deadLetter).toBe(deadLetter2)
+  })
+
+  it('should save as deadletter the queue name of the one passed as option if the deadLetter property in the queue is null', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    const deadLetter = `${ctx.schema}_dlq`
+    await ctx.boss.createQueue(deadLetter)
+
+    const id = await ctx.boss.send(ctx.schema, {}, { deadLetter })
+
+    assertTruthy(id)
+    const job = await ctx.boss.getJobById(ctx.schema, id)
+    assertTruthy(job)
+
+    expect(job.deadLetter).toBe(deadLetter)
+  })
 })

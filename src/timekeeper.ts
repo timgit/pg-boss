@@ -4,7 +4,9 @@ import EventEmitter from 'node:events'
 import * as Attorney from './attorney.ts'
 import type Manager from './manager.ts'
 import * as plans from './plans.ts'
+import { delay } from './tools.ts'
 import * as types from './types.ts'
+import { emitAndPersistWarning, type WarningContext } from './warning.ts'
 
 export const QUEUES = {
   SEND_IT: '__pgboss__send-it'
@@ -22,6 +24,10 @@ const WARNINGS = {
   }
 }
 
+const WARNING_TYPES = {
+  CLOCK_SKEW: 'clock_skew'
+} as const
+
 class Timekeeper extends EventEmitter implements types.EventsMixin {
   db: types.IDatabase
   config: types.ResolvedConstructorOptions
@@ -31,6 +37,7 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
   private cronMonitorInterval: NodeJS.Timeout | null | undefined
   private skewMonitorInterval: NodeJS.Timeout | null | undefined
   private timekeeping: boolean | undefined
+  private _checkingSkew = false
 
   clockSkew = 0
   events = EVENTS
@@ -41,6 +48,21 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
     this.db = db
     this.config = config
     this.manager = manager
+  }
+
+  get checkingSkew (): boolean {
+    return this._checkingSkew
+  }
+
+  private get warningContext (): WarningContext {
+    return {
+      emitter: this,
+      db: this.db,
+      schema: this.config.schema,
+      persistWarnings: this.config.persistWarnings,
+      warningEvent: this.events.warning,
+      errorEvent: this.events.error
+    }
   }
 
   async start () {
@@ -80,14 +102,24 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
       clearInterval(this.cronMonitorInterval)
       this.cronMonitorInterval = null
     }
+
+    while (this.timekeeping || this._checkingSkew) {
+      await delay(10)
+    }
   }
 
   async cacheClockSkew () {
     let skew = 0
 
+    this._checkingSkew = true
+
     try {
       if (this.config.__test__force_clock_monitoring_error) {
         throw new Error(this.config.__test__force_clock_monitoring_error)
+      }
+
+      if (this.config.__test__delay_clock_skew_ms) {
+        await delay(this.config.__test__delay_clock_skew_ms)
       }
 
       const { rows } = await this.db.executeSql(plans.getTime())
@@ -101,12 +133,18 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
       const skewSeconds = Math.abs(skew) / 1000
 
       if (skewSeconds >= 60 || this.config.__test__force_clock_skew_warning) {
-        this.emit(this.events.warning, { message: WARNINGS.CLOCK_SKEW.message, data: { seconds: skewSeconds, direction: skew > 0 ? 'slower' : 'faster' } })
+        await emitAndPersistWarning(
+          this.warningContext,
+          WARNING_TYPES.CLOCK_SKEW,
+          WARNINGS.CLOCK_SKEW.message,
+          { seconds: skewSeconds, direction: skew > 0 ? 'slower' : 'faster' }
+        )
       }
     } catch (err) {
       this.emit(this.events.error, err)
     } finally {
       this.clockSkew = skew
+      this._checkingSkew = false
     }
   }
 

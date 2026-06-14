@@ -1,0 +1,49 @@
+name: Publish Proxy Package
+
+on:
+  push:
+    tags:
+      - 'proxy-*'  # Triggers on tags like proxy-1.0.0, proxy-1.0.1, etc.
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    container: node:24
+    permissions:
+      id-token: write  # Required for OIDC trusted publishing
+      contents: read
+
+    services:
+      postgres:
+        image: postgres:14
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: pgboss
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Install root dependencies
+        run: npm install
+
+      - name: Install proxy dependencies
+        working-directory: packages/proxy
+        run: npm install
+
+      - name: Publish to npm
+        working-directory: packages/proxy
+        run: npm publish --provenance --access public
+        env:
+          DATABASE_URL: postgres://postgres:postgres@postgres:5432/pgboss

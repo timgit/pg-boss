@@ -1,0 +1,55 @@
+on:
+  push:
+    branches: [master]
+    tags-ignore: ['**']
+    paths:
+      - 'packages/proxy/**'
+      - 'src/**'
+      - '.github/workflows/proxy.yml'
+  pull_request:
+    branches: [master]
+    paths:
+      - 'packages/proxy/**'
+      - 'src/**'
+      - '.github/workflows/proxy.yml'
+
+name: Proxy CI
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    container: node:24
+    services:
+      postgres:
+        image: postgres
+        env:
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 24
+
+    - name: Install root dependencies
+      run: npm install
+
+    - name: Install proxy dependencies
+      run: npm install
+      working-directory: packages/proxy
+
+    - name: Typecheck
+      run: npm run typecheck
+      working-directory: packages/proxy
+
+    - name: Run tests
+      run: npm test
+      working-directory: packages/proxy

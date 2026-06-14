@@ -73,4 +73,57 @@ describe('delete', function () {
 
     expect(job).toBeFalsy()
   })
+
+  it('should never delete a completed job when deleteAfterSeconds is 0', async function () {
+    const config = {
+      ...ctx.bossConfig,
+      maintenanceIntervalSeconds: 1
+    }
+
+    ctx.boss = await helper.start(config)
+
+    const jobId = await ctx.boss.send(ctx.schema, null, { deleteAfterSeconds: 0 })
+
+    expect(jobId).toBeTruthy()
+
+    await ctx.boss.fetch(ctx.schema)
+    assertTruthy(jobId)
+    await ctx.boss.complete(ctx.schema, jobId)
+
+    await delay(2000)
+
+    await ctx.boss.supervise(ctx.schema)
+
+    const job = await ctx.boss.getJobById(ctx.schema, jobId)
+
+    expect(job).toBeTruthy()
+    expect(job?.state).toBe('completed')
+  })
+
+  it('should never delete a completed job when deleteAfterSeconds is 0 - cascade config from queue', async function () {
+    const config = {
+      ...ctx.bossConfig,
+      maintenanceIntervalSeconds: 1,
+      noDefault: true
+    }
+
+    ctx.boss = await helper.start(config)
+
+    await ctx.boss.createQueue(ctx.schema, { deleteAfterSeconds: 0 })
+
+    const jobId = await ctx.boss.send(ctx.schema)
+    expect(jobId).toBeTruthy()
+    await ctx.boss.fetch(ctx.schema)
+    assertTruthy(jobId)
+    await ctx.boss.complete(ctx.schema, jobId)
+
+    await delay(2000)
+
+    await ctx.boss.supervise(ctx.schema)
+
+    const job = await ctx.boss.getJobById(ctx.schema, jobId)
+
+    expect(job).toBeTruthy()
+    expect(job?.state).toBe('completed')
+  })
 })

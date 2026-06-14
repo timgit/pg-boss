@@ -2,6 +2,7 @@ import { expect } from 'vitest'
 import * as helper from './testHelper.ts'
 import { randomUUID } from 'node:crypto'
 import { PgBoss } from '../src/index.ts'
+import { delay } from '../src/tools.ts'
 import { ctx } from './hooks.ts'
 
 describe('ops', function () {
@@ -63,6 +64,64 @@ describe('ops', function () {
     const boss = new PgBoss(ctx.bossConfig)
     await boss.start()
     await boss.stop()
+  })
+
+  it('should stop maintaining before stop resolves', async function () {
+    ctx.boss = await helper.start({
+      ...ctx.bossConfig,
+      supervise: true,
+      superviseIntervalSeconds: 1,
+      __test__delay_maint_ms: 2000
+    })
+
+    // Wait for maintenance to start
+    while (!ctx.boss.isMaintaining()) {
+      await delay(100)
+    }
+
+    // Stop while maintenance is in progress
+    await ctx.boss.stop()
+
+    expect(ctx.boss.isMaintaining()).toBe(false)
+  })
+
+  it('should stop bam work before stop resolves', async function () {
+    ctx.boss = await helper.start({
+      ...ctx.bossConfig,
+      noDefault: true,
+      bamIntervalSeconds: 1,
+      __test__bypass_bam_interval_check: true,
+      __test__delay_bam_ms: 2000
+    })
+
+    // Wait for bam to start working
+    while (!ctx.boss.isBamWorking()) {
+      await delay(100)
+    }
+
+    // Stop while bam is in progress
+    await ctx.boss.stop()
+
+    expect(ctx.boss.isBamWorking()).toBe(false)
+  })
+
+  it('should stop clock skew check before stop resolves', async function () {
+    ctx.boss = await helper.start({
+      ...ctx.bossConfig,
+      schedule: true,
+      clockMonitorIntervalSeconds: 1,
+      __test__delay_clock_skew_ms: 2000
+    })
+
+    // Wait for clock skew check to start
+    while (!ctx.boss.isCheckingSkew()) {
+      await delay(100)
+    }
+
+    // Stop while clock skew check is in progress
+    await ctx.boss.stop()
+
+    expect(ctx.boss.isCheckingSkew()).toBe(false)
   })
 
   it('should not leave open handles after starting and stopping', async function () {

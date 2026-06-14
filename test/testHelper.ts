@@ -4,6 +4,7 @@ import crypto from 'node:crypto'
 import configJson from './config.json' with { type: 'json' }
 import cockroachConfigJson from './config.cockroachdb.json' with { type: 'json' }
 import type { ConstructorOptions } from '../src/types.ts'
+import { getColumns, getConstraints, getIndexes, getFunctions } from './pgSchemaHelper.ts'
 
 const sha1 = (value: string): string => crypto.createHash('sha1').update(value).digest('hex')
 
@@ -123,6 +124,26 @@ async function start (options?: Partial<ConstructorOptions> & { testKey?: string
   }
 }
 
+async function getSchemaDefs (schemas: string[]) {
+  const columnsSql = getColumns(schemas)
+  const indexeSql = getIndexes(schemas)
+  const constraintsSql = getConstraints(schemas)
+  const functionsSql = getFunctions(schemas)
+
+  const db = await getDb()
+
+  const [columns, indexes, constraints, functions] = await Promise.all([
+    db.executeSql(columnsSql),
+    db.executeSql(indexeSql),
+    db.executeSql(constraintsSql),
+    db.executeSql(functionsSql)
+  ])
+
+  await db.close()
+
+  return { columns, indexes, constraints, functions }
+}
+
 export {
   assertTruthy,
   dropSchema,
@@ -134,5 +155,6 @@ export {
   getConnectionString,
   tryCreateDb,
   init,
-  isCockroachDb
+  isCockroachDb,
+  getSchemaDefs
 }

@@ -4,8 +4,10 @@ import Contractor from './contractor.ts'
 import Manager from './manager.ts'
 import Timekeeper from './timekeeper.ts'
 import Boss from './boss.ts'
+import Bam from './bam.ts'
 import { delay } from './tools.ts'
 import type * as types from './types.ts'
+import * as plans from './plans.ts'
 import DbDefault from './db.ts'
 import type { JobSpyInterface } from './spy.ts'
 
@@ -15,7 +17,8 @@ export const events: types.Events = Object.freeze({
   error: 'error',
   warning: 'warning',
   wip: 'wip',
-  stopped: 'stopped'
+  stopped: 'stopped',
+  bam: 'bam'
 })
 
 export function getConstructionPlans (schema?: string) {
@@ -41,6 +44,7 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
   #contractor: Contractor
   #manager: Manager
   #timekeeper: Timekeeper
+  #bam: Bam
 
   constructor (connectionString: string)
   constructor (options: types.ConstructorOptions)
@@ -68,14 +72,18 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     const timekeeper = new Timekeeper(db, manager, config)
     manager.timekeeper = timekeeper
 
+    const bam = new Bam(db, config)
+
     this.#promoteEvents(manager)
     this.#promoteEvents(boss)
     this.#promoteEvents(timekeeper)
+    this.#promoteEvents(bam)
 
     this.#boss = boss
     this.#contractor = contractor
     this.#manager = manager
     this.#timekeeper = timekeeper
+    this.#bam = bam
   }
 
   #promoteEvents (emitter: types.EventsMixin) {
@@ -91,24 +99,33 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
 
     this.#starting = true
 
-    if (this.#db._pgbdb && !this.#db.opened) {
-      await this.#db.open()
-    }
+    try {
+      if (this.#db._pgbdb && !this.#db.opened) {
+        await this.#db.open()
+      }
 
-    if (this.#config.migrate) {
-      await this.#contractor.start()
-    } else {
-      await this.#contractor.check()
-    }
+      if (this.#config.migrate) {
+        await this.#contractor.start()
+      } else {
+        await this.#contractor.check()
+      }
 
-    await this.#manager.start()
+      await this.#manager.start()
 
-    if (this.#config.supervise) {
-      await this.#boss.start()
-    }
+      if (this.#config.supervise) {
+        await this.#boss.start()
+      }
 
-    if (this.#config.schedule) {
-      await this.#timekeeper.start()
+      if (this.#config.schedule) {
+        await this.#timekeeper.start()
+      }
+
+      if (this.#config.migrate) {
+        await this.#bam.start()
+      }
+    } catch (err) {
+      this.#starting = false
+      throw err
     }
 
     this.#starting = false
@@ -132,6 +149,7 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     await this.#manager.stop()
     await this.#timekeeper.stop()
     await this.#boss.stop()
+    await this.#bam.stop()
 
     const shutdown = async () => {
       await this.#manager.failWip()
@@ -184,6 +202,10 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
 
   insert (name: string, jobs: types.JobInsert[], options?: types.InsertOptions): Promise<string[] | null> {
     return this.#manager.insert(name, jobs, options)
+  }
+
+  flow (jobs: types.FlowJob[], options?: types.ConnectionOptions): Promise<Record<string, string>> {
+    return this.#manager.flow(jobs, options)
   }
 
   fetch<T>(name: string, options: types.FetchOptions & { includeMetadata: true }): Promise<types.JobWithMetadata<T>[]>
@@ -247,7 +269,7 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#manager.deleteAllJobs(name)
   }
 
-  complete (name: string, id: string | string[], data?: object | null, options?: types.ConnectionOptions): Promise<types.CommandResponse> {
+  complete (name: string, id: string | string[], data?: object | null, options?: types.CompleteOptions): Promise<types.CommandResponse> {
     return this.#manager.complete(name, id, data, options)
   }
 
@@ -255,12 +277,35 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#manager.fail(name, id, data, options)
   }
 
+  touch (name: string, id: string | string[], options?: types.ConnectionOptions): Promise<types.CommandResponse> {
+    return this.#manager.touch(name, id, options)
+  }
+
+  /**
+   * @deprecated Use findJobs() instead
+   */
   getJobById<T>(name: string, id: string, options?: types.ConnectionOptions): Promise<types.JobWithMetadata<T> | null> {
     return this.#manager.getJobById<T>(name, id, options)
   }
 
+  findJobs<T>(name: string, options?: types.FindJobsOptions): Promise<types.JobWithMetadata<T>[]> {
+    return this.#manager.findJobs<T>(name, options)
+  }
+
   createQueue (name: string, options?: Omit<types.Queue, 'name'>): Promise<void> {
     return this.#manager.createQueue(name, options)
+  }
+
+  getBlockedKeys (name: string): Promise<string[]> {
+    return this.#manager.getBlockedKeys(name)
+  }
+
+  getDependencies (name: string, id: string, options?: types.ConnectionOptions): Promise<types.DependencyRef[]> {
+    return this.#manager.getDependencies(name, id, options)
+  }
+
+  getDependents (name: string, id: string, options?: types.ConnectionOptions): Promise<types.DependencyRef[]> {
+    return this.#manager.getDependents(name, id, options)
   }
 
   updateQueue (name: string, options?: types.UpdateQueueOptions): Promise<void> {
@@ -283,8 +328,24 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#manager.getQueueStats(name)
   }
 
+  isMaintaining (): boolean {
+    return this.#boss.maintaining
+  }
+
+  isBamWorking (): boolean {
+    return this.#bam.working
+  }
+
+  isCheckingSkew (): boolean {
+    return this.#timekeeper.checkingSkew
+  }
+
   supervise (name?: string): Promise<void> {
     return this.#boss.supervise(name)
+  }
+
+  getWipData (options?: { includeInternal?: boolean }): types.WipData[] {
+    return this.#manager.getWipData(options)
   }
 
   getSpy<T = object> (name: string): JobSpyInterface<T> {
@@ -315,6 +376,18 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#timekeeper.getSchedules(name, key)
   }
 
+  async getBamStatus (): Promise<types.BamStatusSummary[]> {
+    const sql = plans.getBamStatus(this.#config.schema)
+    const { rows } = await this.#db.executeSql(sql)
+    return rows
+  }
+
+  async getBamEntries (): Promise<types.BamEntry[]> {
+    const sql = plans.getBamEntries(this.#config.schema)
+    const { rows } = await this.#db.executeSql(sql)
+    return rows
+  }
+
   getDb (): types.IDatabase {
     if (this.#db) {
       return this.#db
@@ -329,20 +402,34 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
 }
 
 export type {
+  BamEntry,
+  BamEvent,
+  BamStatusSummary,
+  CommandResponse,
+  CompleteOptions,
   ConnectionOptions,
   ConstructorOptions,
+  DatabaseOptions,
+  FetchGroupConcurrencyOptions,
+  DependencyRef,
   FetchOptions,
+  FindJobsOptions,
+  FlowJob,
+  GroupConcurrencyConfig,
+  GroupOptions,
   IDatabase as Db,
   InsertOptions,
   Job,
   JobFetchOptions,
   JobInsert,
+  JobOptions,
   JobPollingOptions,
   JobStates,
   Events,
   JobWithMetadata,
   MaintenanceOptions,
   OffWorkOptions,
+  PgBossEventMap,
   Queue,
   QueueOptions,
   QueuePolicy,
@@ -353,7 +440,11 @@ export type {
   SchedulingOptions,
   SendOptions,
   StopOptions,
+  UpdateQueueOptions,
+  Warning,
   WipData,
+  WorkConcurrencyOptions,
+  WorkerState,
   WorkHandler,
   WorkOptions,
   WorkWithMetadataHandler,
@@ -366,3 +457,18 @@ export type {
   JobSelector,
   SpyJob,
 } from './spy.ts'
+
+export {
+  fromKnex,
+  fromKysely,
+  fromDrizzle,
+  fromPrisma,
+} from './adapters/index.ts'
+
+export type {
+  KnexTransactionLike,
+  KyselyTransactionLike,
+  DrizzleTransactionLike,
+  DrizzleSqlTagLike,
+  PrismaTransactionLike,
+} from './adapters/index.ts'

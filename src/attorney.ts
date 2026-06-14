@@ -9,7 +9,7 @@ const POLICY = {
 }
 
 function assertObjectName (value: string, name: string = 'Name') {
-  assert(/^[\w.-]+$/.test(value), `${name} can only contain alphanumeric characters, underscores, hyphens, or periods`)
+  assert(/^[\w.\-/]+$/.test(value), `${name} can only contain alphanumeric characters, underscores, hyphens, periods, or forward slashes`)
 }
 
 function validateQueueArgs (config: any = {}) {
@@ -23,6 +23,7 @@ function validateQueueArgs (config: any = {}) {
   validateExpirationConfig(config)
   validateRetentionConfig(config)
   validateDeletionConfig(config)
+  validateHeartbeatConfig(config)
 }
 
 function checkSendArgs (args: any): types.Request {
@@ -70,6 +71,7 @@ function checkSendArgs (args: any): types.Request {
   validateRetentionConfig(options)
   validateDeletionConfig(options)
   validateGroupConfig(options)
+  validateHeartbeatConfig(options)
 
   return { name, data, options }
 }
@@ -81,6 +83,104 @@ function validateGroupConfig (config: any) {
   assert(typeof config.group === 'object', 'group must be an object')
   assert(typeof config.group.id === 'string' && config.group.id.length > 0, 'group.id must be a non-empty string')
   assert(!('tier' in config.group) || (typeof config.group.tier === 'string' && config.group.tier.length > 0), 'group.tier must be a non-empty string if provided')
+}
+
+function validateFlowJobs (jobs: types.FlowJob[]) {
+  assert(Array.isArray(jobs), 'flow requires an array of jobs')
+  assert(jobs.length >= 2, 'flow requires at least 2 jobs')
+
+  const refs = new Set<string>()
+  for (const job of jobs) {
+    assert(typeof job.ref === 'string' && job.ref.length > 0, 'each flow job must have a non-empty ref')
+    assert(!refs.has(job.ref), `duplicate ref: "${job.ref}"`)
+    refs.add(job.ref)
+
+    assert(typeof job.name === 'string' && job.name.length > 0, 'each flow job must have a non-empty name')
+    assertObjectName(job.name)
+  }
+
+  const hasDeps = jobs.some(j => j.dependsOn && j.dependsOn.length > 0)
+  assert(hasDeps, 'flow requires at least one job with dependsOn')
+
+  for (const job of jobs) {
+    if (!job.dependsOn) continue
+    assert(Array.isArray(job.dependsOn), `dependsOn for ref "${job.ref}" must be an array`)
+    for (const dep of job.dependsOn) {
+      assert(typeof dep === 'string' && dep.length > 0, 'dependsOn entries must be non-empty strings')
+      assert(dep !== job.ref, `job "${job.ref}" cannot depend on itself`)
+      assert(refs.has(dep), `dependsOn ref "${dep}" not found in flow`)
+    }
+  }
+
+  // Cycle detection via topological sort
+  const inDegree = new Map<string, number>()
+  const edges = new Map<string, string[]>()
+  for (const job of jobs) {
+    inDegree.set(job.ref, 0)
+    edges.set(job.ref, [])
+  }
+  for (const job of jobs) {
+    if (!job.dependsOn) continue
+    for (const dep of job.dependsOn) {
+      edges.get(dep)!.push(job.ref)
+      inDegree.set(job.ref, inDegree.get(job.ref)! + 1)
+    }
+  }
+  const queue: string[] = []
+  for (const [ref, deg] of inDegree) {
+    if (deg === 0) queue.push(ref)
+  }
+  let visited = 0
+  while (queue.length > 0) {
+    const current = queue.shift()!
+    visited++
+    for (const child of edges.get(current)!) {
+      const newDeg = inDegree.get(child)! - 1
+      inDegree.set(child, newDeg)
+      if (newDeg === 0) queue.push(child)
+    }
+  }
+  if (visited !== jobs.length) {
+    const cycle = findDependencyCycle(edges)
+    assert(false, `flow contains a dependency cycle: ${cycle.join(' -> ')}`)
+  }
+}
+
+function findDependencyCycle (edges: Map<string, string[]>): string[] {
+  const visiting = new Set<string>()
+  const visited = new Set<string>()
+  const path: string[] = []
+
+  function visit (ref: string): string[] | null {
+    if (visiting.has(ref)) {
+      const start = path.indexOf(ref)
+      return [...path.slice(start), ref]
+    }
+
+    if (visited.has(ref)) return null
+
+    visiting.add(ref)
+    path.push(ref)
+
+    for (const child of edges.get(ref) || []) {
+      const cycle = visit(child)
+      if (cycle) return cycle
+    }
+
+    path.pop()
+    visiting.delete(ref)
+    visited.add(ref)
+
+    return null
+  }
+
+  let cycle: string[] | null = null
+  for (const ref of edges.keys()) {
+    cycle = visit(ref)
+    if (cycle) break
+  }
+
+  return cycle!
 }
 
 function validateGroupConcurrencyValue (value: any, optionName: string) {
@@ -96,6 +196,18 @@ function validateGroupConcurrencyValue (value: any, optionName: string) {
       assert(typeof tier === 'string' && tier.length > 0, `${optionName} tier keys must be non-empty strings`)
       assert(Number.isInteger(limit) && (limit as number) >= 1, `${optionName}.tiers["${tier}"] must be an integer >= 1`)
     }
+  }
+}
+
+function validatePriorityRangeConfig (config: any) {
+  if (config.minPriority !== undefined) {
+    assert(Number.isInteger(config.minPriority), 'minPriority must be an integer')
+  }
+  if (config.maxPriority !== undefined) {
+    assert(Number.isInteger(config.maxPriority), 'maxPriority must be an integer')
+  }
+  if (config.minPriority !== undefined && config.maxPriority !== undefined) {
+    assert(config.minPriority <= config.maxPriority, 'minPriority must be <= maxPriority')
   }
 }
 
@@ -166,7 +278,9 @@ function checkWorkArgs (name: string, args: any[]): {
   assert(!('includeMetadata' in options) || typeof options.includeMetadata === 'boolean', 'includeMetadata must be a boolean')
   assert(!('priority' in options) || typeof options.priority === 'boolean', 'priority must be a boolean')
   assert(!('localConcurrency' in options) || (Number.isInteger(options.localConcurrency) && options.localConcurrency >= 1), 'localConcurrency must be an integer >= 1')
+  validatePriorityRangeConfig(options)
   validateGroupConcurrencyConfig(options)
+  validateHeartbeatRefreshConfig(options)
 
   return { options, callback }
 }
@@ -178,6 +292,7 @@ function checkFetchArgs (name: string, options: any) {
   assert(!('includeMetadata' in options) || typeof options.includeMetadata === 'boolean', 'includeMetadata must be a boolean')
   assert(!('priority' in options) || typeof options.priority === 'boolean', 'priority must be a boolean')
   assert(!('ignoreStartAfter' in options) || typeof options.ignoreStartAfter === 'boolean', 'ignoreStartAfter must be a boolean')
+  validatePriorityRangeConfig(options)
 }
 
 function getConfig (value: string | types.ConstructorOptions): types.ResolvedConstructorOptions {
@@ -197,6 +312,7 @@ function getConfig (value: string | types.ConstructorOptions): types.ResolvedCon
   applySchemaConfig(config)
   applyOpsConfig(config)
   applyScheduleConfig(config)
+  applyBamConfig(config)
   validateWarningConfig(config)
   validateDistributedDatabaseMode(config)
 
@@ -217,6 +333,12 @@ function validateWarningConfig (config: any) {
 
   assert(!('warningSlowQuerySeconds' in config) || config.warningSlowQuerySeconds >= 1,
     'configuration assert: warningSlowQuerySeconds must be at least 1')
+
+  assert(!('warningRetentionDays' in config) || (Number.isInteger(config.warningRetentionDays) && config.warningRetentionDays >= 1),
+    'configuration assert: warningRetentionDays must be an integer >= 1')
+
+  assert(!('warningRetentionDays' in config) || config.warningRetentionDays <= POLICY.MAX_RETENTION_DAYS,
+    `configuration assert: warningRetentionDays cannot exceed ${POLICY.MAX_RETENTION_DAYS} days`)
 }
 
 function validateDistributedDatabaseMode (config: any) {
@@ -263,6 +385,18 @@ function validateRetryConfig (config: any) {
   assert(!('retryDelayMax' in config) || config.retryDelayMax === null || (Number.isInteger(config.retryDelayMax) && config.retryDelayMax >= 0), 'retryDelayMax must be an integer >= 0')
 }
 
+function validateHeartbeatConfig (config: any) {
+  assert(!('heartbeatSeconds' in config) || config.heartbeatSeconds === null || (Number.isInteger(config.heartbeatSeconds) && config.heartbeatSeconds >= 10),
+    'heartbeatSeconds must be an integer >= 10')
+}
+
+function validateHeartbeatRefreshConfig (config: any) {
+  if (!('heartbeatRefreshSeconds' in config) || config.heartbeatRefreshSeconds == null) return
+
+  assert(typeof config.heartbeatRefreshSeconds === 'number' && config.heartbeatRefreshSeconds > 0,
+    'heartbeatRefreshSeconds must be a number > 0')
+}
+
 function applyPollingInterval (config: any) {
   assert(!('pollingIntervalSeconds' in config) || config.pollingIntervalSeconds >= POLICY.MIN_POLLING_INTERVAL_MS / 1000,
     `configuration assert: pollingIntervalSeconds must be at least every ${POLICY.MIN_POLLING_INTERVAL_MS}ms`)
@@ -307,8 +441,8 @@ function applyOpsConfig (config: any) {
 }
 
 function validateDeletionConfig (config: any) {
-  assert(!('deleteAfterSeconds' in config) || config.deleteAfterSeconds >= 1,
-    'configuration assert: deleteAfterSeconds must be at least every second')
+  assert(!('deleteAfterSeconds' in config) || config.deleteAfterSeconds >= 0,
+    'configuration assert: deleteAfterSeconds must be at least 0 (0 disables deletion)')
 }
 
 function applyScheduleConfig (config: any) {
@@ -328,6 +462,14 @@ function applyScheduleConfig (config: any) {
   config.cronWorkerIntervalSeconds = config.cronWorkerIntervalSeconds || 5
 }
 
+function applyBamConfig (config: any) {
+  const minInterval = config.__test__bypass_bam_interval_check ? 1 : 10
+  assert(!('bamIntervalSeconds' in config) || config.bamIntervalSeconds >= minInterval,
+    `configuration assert: bamIntervalSeconds must be at least ${minInterval} seconds`)
+
+  config.bamIntervalSeconds = config.bamIntervalSeconds || 60
+}
+
 export {
   assertKey,
   assertPostgresObjectName,
@@ -337,5 +479,6 @@ export {
   checkWorkArgs,
   getConfig,
   POLICY,
+  validateFlowJobs,
   validateQueueArgs
 }

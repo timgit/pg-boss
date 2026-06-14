@@ -1,6 +1,7 @@
 import { expect } from 'vitest'
 import * as helper from './testHelper.ts'
 import { ctx } from './hooks.ts'
+import { assertTruthy } from './testHelper.ts'
 
 describe('priority', function () {
   it('higher priority job', async function () {
@@ -45,5 +46,105 @@ describe('priority', function () {
     expect(job1.id).toBe(low)
     expect(job2.id).toBe(medium)
     expect(job3.id).toBe(high)
+  })
+
+  it('minPriority skips jobs below threshold', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    await ctx.boss.send(ctx.schema, null, { priority: -10 })
+    const normal = await ctx.boss.send(ctx.schema, null, { priority: 0 })
+
+    const [job] = await ctx.boss.fetch(ctx.schema, { minPriority: 0 })
+
+    expect(job.id).toBe(normal)
+  })
+
+  it('minPriority returns nothing when all jobs are below threshold', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    await ctx.boss.send(ctx.schema, null, { priority: -10 })
+    await ctx.boss.send(ctx.schema, null, { priority: -5 })
+
+    const jobs = await ctx.boss.fetch(ctx.schema, { minPriority: 0 })
+
+    expect(jobs.length).toBe(0)
+  })
+
+  it('maxPriority skips jobs above threshold', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    const low = await ctx.boss.send(ctx.schema, null, { priority: -10 })
+    await ctx.boss.send(ctx.schema, null, { priority: 5 })
+
+    const [job] = await ctx.boss.fetch(ctx.schema, { maxPriority: 0 })
+
+    expect(job.id).toBe(low)
+  })
+
+  it('maxPriority returns nothing when all jobs are above threshold', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    await ctx.boss.send(ctx.schema, null, { priority: 5 })
+    await ctx.boss.send(ctx.schema, null, { priority: 10 })
+
+    const jobs = await ctx.boss.fetch(ctx.schema, { maxPriority: 0 })
+
+    expect(jobs.length).toBe(0)
+  })
+
+  it('minPriority and maxPriority together fetch only jobs in range', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    await ctx.boss.send(ctx.schema, null, { priority: -10 })
+    const inRange = await ctx.boss.send(ctx.schema, null, { priority: 5 })
+    await ctx.boss.send(ctx.schema, null, { priority: 20 })
+
+    const [job] = await ctx.boss.fetch(ctx.schema, { minPriority: 1, maxPriority: 10 })
+
+    expect(job.id).toBe(inRange)
+  })
+
+  it('worker with minPriority skips jobs below threshold', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
+
+    const spy = ctx.boss.getSpy(ctx.schema)
+
+    const skipped = await ctx.boss.send(ctx.schema, null, { priority: -10 })
+    const normal = await ctx.boss.send(ctx.schema, null, { priority: 0 })
+
+    assertTruthy(skipped)
+    assertTruthy(normal)
+
+    await ctx.boss.work(ctx.schema, { minPriority: 0 }, async () => {})
+
+    await spy.waitForJobWithId(normal, 'completed')
+    await ctx.boss.offWork(ctx.schema)
+
+    const [remainingJob] = await ctx.boss.findJobs(ctx.schema, { id: skipped })
+
+    assertTruthy(remainingJob)
+    expect(remainingJob.state).toBe('created')
+  })
+
+  it('worker with maxPriority skips jobs above threshold', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
+
+    const spy = ctx.boss.getSpy(ctx.schema)
+
+    const low = await ctx.boss.send(ctx.schema, null, { priority: -10 })
+    const skipped = await ctx.boss.send(ctx.schema, null, { priority: 5 })
+
+    assertTruthy(low)
+    assertTruthy(skipped)
+
+    await ctx.boss.work(ctx.schema, { maxPriority: 0 }, async () => {})
+
+    await spy.waitForJobWithId(low, 'completed')
+    await ctx.boss.offWork(ctx.schema)
+
+    const [remainingJob] = await ctx.boss.findJobs(ctx.schema, { id: skipped })
+
+    assertTruthy(remainingJob)
+    expect(remainingJob.state).toBe('created')
   })
 })

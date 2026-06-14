@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "declaration": true,
+    "declarationMap": true,
+    "stripInternal": true,
+    "noEmit": false,
+    "allowImportingTsExtensions": false,
+    "paths": {}
+  },
+  "include": ["src"],
+  "exclude": ["src/server.ts"]
+}

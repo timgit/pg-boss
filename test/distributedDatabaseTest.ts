@@ -415,7 +415,7 @@ describe('distributed database mode', function () {
     await ctx.boss.fail(ctx.schema, jobId)
 
     // Job should be in retry state with backoff delay applied
-    const jobData = await ctx.boss.getJobById(ctx.schema, jobId, { includeArchive: true })
+    const jobData = await ctx.boss.getJobById(ctx.schema, jobId)
     helper.assertTruthy(jobData)
     expect(jobData.state).toBe('retry')
 

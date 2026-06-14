@@ -43,6 +43,12 @@ Creates a new job and returns the job id.
 
   Default: no limit. Maximum delay between retries of failed jobs, in seconds. Only used when retryBackoff is true.
 
+**Heartbeat options**
+
+* **heartbeatSeconds**, int
+
+  Default: none (disabled). Expected heartbeat interval in seconds. Overrides the queue-level `heartbeatSeconds` for this specific job. When set, workers using `work()` will automatically send periodic heartbeats. If no heartbeat is received within this interval, the monitor will fail/retry the job. Must be >= 10. See [Heartbeat vs expiration](queues#heartbeat-vs-expiration) for guidance on when to use this and recommended values.
+
 **Expiration options**
 
 * **expireInSeconds**, number
@@ -57,7 +63,7 @@ Creates a new job and returns the job id.
 
 * **deleteAfterSeconds**, int
 
-  Default: 7 days. How long a job should be retained in the database after it's completed.
+  Default: 7 days. How long a job should be retained in the database after it's completed. Set to 0 to never delete completed jobs.
 
 
 All retry, expiration, and retention options can also be set on the queue and will be inheritied for each job, unless they are overridden.
@@ -73,6 +79,8 @@ All retry, expiration, and retention options can also be set on the queue and wi
       executeSql(text: string, values: any[]): Promise<{ rows: any[] }>;
   }
     ```
+
+  pg-boss ships with built-in adapters for popular ORMs. See [ORM Transaction Adapters](./adapters) for details.
 
 **Deferred jobs**
 
@@ -167,18 +175,17 @@ Like, `sendThrottled()`, but instead of rejecting if a job is already sent in th
 
 This is a convenience version of `send()` with the `singletonSeconds`, `singletonKey` and `singletonNextSlot` option assigned. The `key` argument is optional.
 
-### `insert(name, Job[])`
+### `insert(name, Job[], options)`
 
 Create multiple jobs in one request with an array of objects.
 
-The contract and supported features are slightly different than `send()`, which is why this function is named independently.  For example, debouncing is not supported.
+The contract and supported features are slightly different than `send()`, which is why this function is named independently. For example, debouncing is not supported, and it doesn't return job IDs unless spies are enabled or `options.returnId` is set to `true`.
 
-The following contract is a typescript defintion of the expected object. Only `name` is required, but most other properties can be set. This will likely be enhanced later with more support for deferral and retention by an offset. For now, calculate any desired timestamps for these features before insertion.
+The following contract is a typescript defintion of the expected object. This will likely be enhanced later with more support for deferral and retention by an offset. For now, calculate any desired timestamps for these features before insertion.
 
 ```ts
 interface JobInsert<T = object> {
   id?: string,
-  name: string;
   data?: T;
   priority?: number;
   retryLimit?: number;
@@ -187,11 +194,60 @@ interface JobInsert<T = object> {
   startAfter?: Date | string;
   singletonKey?: string;
   expireInSeconds?: number;
+  heartbeatSeconds?: number;
   deleteAfterSeconds?: number;
   keepUntil?: Date | string;
   group?: { id: string; tier?: string };
 }
 ```
+
+```js
+const [idA, idB] = await boss.insert('etl', [
+  { data: { step: 'extract' } },
+  { data: { step: 'transform' } }
+], { returnId: true })
+```
+
+### `flow(jobs, options)`
+
+Create a set of jobs and their dependencies atomically in one transaction.
+
+Use `flow()` when jobs depend on other jobs. Dependencies are not configured on `send()` or `insert()` because creating jobs and dependencies in separate calls can race with job completion.
+
+Atomicity is handled by pg-boss when it owns the database connection. If you pass a custom `db` in `options`, wrap the call in your own transaction if you need the job and dependency inserts to commit or roll back together.
+
+The method accepts a flat array of jobs in any order. Each job has a local `ref`, and dependent jobs reference parent refs with `dependsOn`.
+
+```ts
+interface FlowJob {
+  ref: string;
+  name: string;
+  data?: object;
+  options?: Omit<JobInsert, 'data'>;
+  dependsOn?: string[];
+}
+```
+
+Returns a map of `ref` to created job id.
+
+```js
+const flow = await boss.flow([
+  { ref: 'extract-a', name: 'extract', data: { file: '1.csv' } },
+  { ref: 'extract-b', name: 'extract', data: { file: '2.csv' } },
+  {
+    ref: 'load',
+    name: 'load',
+    data: { output: 'report.csv' },
+    dependsOn: ['extract-a', 'extract-b']
+  }
+])
+
+const loadJobId = flow.load
+```
+
+Dependent jobs are created in a `blocked` state and won't be eligible for fetching until all parent jobs have completed. If a parent job fails or is cancelled, the child remains blocked. You can explicitly `cancel` or `fail` the blocked child if needed.
+
+When a dependent job uses `startAfter`, both conditions must be met: all dependencies completed and `startAfter` has passed.
 
 ### `fetch(name, options)`
 
@@ -209,6 +265,10 @@ Returns an array of jobs from a queue
 
     If true, allow jobs with a higher priority to be fetched before jobs with lower or no priority
 
+  * `orderByCreatedOn`, bool, *default: true*
+
+    If true, jobs are fetched in the order they were created. Set to false to disable this sorting for improved performance when order doesn't matter.
+
   * `includeMetadata`, bool, *default: false*
 
     If `true`, all job metadata will be returned on the job object.
@@ -216,6 +276,14 @@ Returns an array of jobs from a queue
   * `ignoreStartAfter`, bool, *default: false*
 
     If `true`, jobs with a `startAfter` timestamp in the future will be fetched. Useful for fetching jobs immediately without waiting for a retry delay.
+
+  * `minPriority`, int
+
+    If set, only fetch jobs with a priority greater than or equal to this value. If used together with `maxPriority`, `minPriority` must be less than or equal to `maxPriority`.
+
+  * `maxPriority`, int
+
+    If set, only fetch jobs with a priority less than or equal to this value. If used together with `minPriority`, `minPriority` must be less than or equal to `maxPriority`.
 
     ```js
     interface JobWithMetadata<T = object> {
@@ -235,10 +303,14 @@ Returns an array of jobs from a queue
       groupId: string | null;
       groupTier: string | null;
       expireInSeconds: number;
+      heartbeatSeconds: number | null;
+      heartbeatOn: Date | null;
       deleteAfterSeconds: number;
       createdOn: Date;
       completedOn: Date | null;
       keepUntil: Date;
+      blocked: boolean,
+      blocking: boolean,
       deadLetter: string,
       policy: string,
       output: object
@@ -319,13 +391,26 @@ Retries a set of failed jobs.
 
 ### `complete(name, id, data, options)`
 
-Completes an active job. This would likely only be used with `fetch()`. Accepts an optional `data` argument.
+Completes an active job. This would likely only be used with `fetch()`. Accepts an optional `data` argument for job output and an optional `options` object.
+
+**options**
+
+* **includeQueued**, bool
+
+  Default: false. When false (default), only jobs in `active` state can be completed. When true, jobs in `created`, `retry`, or `active` states can be completed. This is useful for completing jobs that haven't been fetched yet, or for marking failed jobs as complete without retrying them.
+
+  ```js
+  // Complete a job without fetching it first
+  await boss.complete('my-queue', jobId, { result: 'done' }, { includeQueued: true })
+  ```
+
+* **db**, object, see notes in `send()`
 
 The promise will resolve on a successful completion, or reject if the job could not be completed.
 
 ### `complete(name, [ids], options)`
 
-Completes a set of active jobs.
+Completes a set of active jobs (or queued jobs when `includeQueued: true` is specified).
 
 The promise will resolve on a successful completion, or reject if not all of the requested jobs could not be marked as completed.
 
@@ -346,10 +431,113 @@ The promise will resolve on a successful failure state assignment, or reject if 
 > See comments above on `cancel([ids])` regarding when the promise will resolve or reject because of a batch operation.
 
 
+### `touch(name, id, options)`
+
+Updates the heartbeat timestamp for an active job, signaling that the worker is still alive.
+
+This is useful when using `fetch()` for manual job processing. Workers using `work()` send heartbeats automatically when `heartbeatSeconds` is configured.
+
+```js
+const [job] = await boss.fetch('long-running-queue')
+
+const interval = setInterval(async () => {
+  await boss.touch('long-running-queue', job.id)
+}, 5000)
+
+try {
+  await processJob(job)
+  await boss.complete('long-running-queue', job.id)
+} finally {
+  clearInterval(interval)
+}
+```
+
+### `touch(name, [ids], options)`
+
+Updates the heartbeat timestamp for a set of active jobs.
+
+```js
+const jobs = await boss.fetch('long-running-queue', { batchSize: 10 })
+const ids = jobs.map(j => j.id)
+
+const result = await boss.touch('long-running-queue', ids)
+```
+
 ### `getJobById(name, id, options)`
+
+> **Deprecated:** Use `findJobs()` instead.
 
 Retrieves a job with all metadata by name and id
 
 **options**
 
 * **db**, object, see notes in `send()`
+
+### `findJobs(name, options)`
+
+Finds jobs in a queue by id, singleton key, and/or data. Returns an array of jobs with all metadata.
+
+**Arguments**
+- `name`: string, *required*
+- `options`: object
+
+**options**
+
+* **id**, string
+
+  Find a job by its id
+
+* **key**, string
+
+  Find jobs by their singletonKey
+
+* **data**, object
+
+  Find jobs where the job data contains the specified key-value pairs (top-level matching only)
+
+* **queued**, bool, *default: false*
+
+  If `true`, only return jobs in queued state (created or retry). If `false`, return jobs in any state.
+
+* **db**, object, see notes in `send()`
+
+**Examples**
+
+```js
+// Find by id
+const jobs = await boss.findJobs('my-queue', { id: 'abc-123' })
+
+// Find by singletonKey
+const jobs = await boss.findJobs('my-queue', { key: 'user-123' })
+
+// Find by data
+const jobs = await boss.findJobs('my-queue', { data: { type: 'email' } })
+
+// Find queued jobs only
+const jobs = await boss.findJobs('my-queue', { key: 'user-123', queued: true })
+
+// Combine filters
+const jobs = await boss.findJobs('my-queue', {
+  key: 'user-123',
+  data: { type: 'email' },
+  queued: true
+})
+```
+
+### `getDependencies(name, id, options)`
+
+Returns an array of parent job references that the specified job depends on.
+
+```js
+const parents = await boss.getDependencies('aggregate-results', jobId)
+// [{ name: 'process-data', id: '...' }, { name: 'process-data', id: '...' }]
+```
+
+### `getDependents(name, id, options)`
+
+Returns an array of child job references that depend on the specified job.
+
+```js
+const children = await boss.getDependents('process-data', parentJobId)
+// [{ name: 'aggregate-results', id: '...' }]
+```

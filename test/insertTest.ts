@@ -117,4 +117,37 @@ describe('insert', function () {
     expect(new Date(job!.keepUntil).toISOString()).toBe(keepUntil)
     expect(called).toBe(true)
   })
+
+  it('should create jobs with deadLetter the queue name of the ones passed as option in the send method if the queue deadLetter property is empty', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    const deadLetter = `${ctx.schema}_dlq`
+    await ctx.boss.createQueue(deadLetter)
+
+    const input = {
+      id: randomUUID(),
+      deadLetter
+    }
+
+    let called = false
+    const db = await helper.getDb()
+    const options = {
+      db: {
+        // @ts-ignore
+        async executeSql (sql, values) {
+          called = true
+          // @ts-ignore
+          return db.pool.query(sql, values)
+        }
+      }
+    }
+
+    await ctx.boss.insert(ctx.schema, [input], options)
+
+    const job = await ctx.boss.getJobById(ctx.schema, input.id)
+    expect(job).toBeTruthy()
+
+    expect(called).toBe(true)
+    expect(job!.deadLetter).toBe(input.deadLetter)
+  })
 })

@@ -1,5 +1,5 @@
-import { PgBoss } from '../dist/index.js'
-import * as helper from '../test/testHelper.js'
+import { PgBoss } from '../src/index.ts'
+import * as helper from '../test/testHelper.ts'
 
 async function schedule () {
   const boss = new PgBoss(helper.getConnectionString())

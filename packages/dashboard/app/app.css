@@ -1,0 +1,500 @@
+@import "tailwindcss";
+
+@variant dark (&:where(.dark, .dark *));
+
+/* ============================================================
+   pg-boss Console — design tokens
+   Ported from the "pg-boss Console" redesign: cobalt primary
+   (a nod to Postgres blue), cool-slate neutrals, Geist + Geist
+   Mono, and a job-lifecycle palette. The dark "ink" console
+   chrome frames bright, dense data.
+   ============================================================ */
+
+@theme inline {
+  --color-primary-50: var(--primary-50);
+  --color-primary-100: var(--primary-100);
+  --color-primary-200: var(--primary-200);
+  --color-primary-300: var(--primary-300);
+  --color-primary-400: var(--primary-400);
+  --color-primary-500: var(--primary-500);
+  --color-primary-600: var(--primary-600);
+  --color-primary-700: var(--primary-700);
+  --color-primary-800: var(--primary-800);
+  --color-primary-900: var(--primary-900);
+  --color-primary-950: var(--primary-950);
+
+  /* Semantic surface / text / border aliases so components can use
+     `bg-card`, `text-fg-muted`, `border-subtle`, etc. and adapt to the
+     active theme automatically. */
+  --color-app: var(--surface-app);
+  --color-card: var(--surface-card);
+  --color-sunken: var(--surface-sunken);
+  --color-hover: var(--surface-hover);
+  --color-fg: var(--text-primary);
+  --color-fg-muted: var(--text-secondary);
+  --color-fg-subtle: var(--text-tertiary);
+  --color-border-default: var(--border-default);
+  --color-border-subtle: var(--border-subtle);
+  --color-border-strong: var(--border-strong);
+}
+
+/* Cool-slate neutral scale — remaps Tailwind's grays so the whole app
+   inherits the console's cool neutrals without touching every class. */
+@theme {
+  --color-gray-50: #f7f8fa;
+  --color-gray-100: #eef0f4;
+  --color-gray-200: #e3e6ec;
+  --color-gray-300: #cbd1db;
+  --color-gray-400: #9aa3b2;
+  --color-gray-500: #6b7585;
+  --color-gray-600: #4d5663;
+  --color-gray-700: #3a414c;
+  --color-gray-800: #262b33;
+  --color-gray-900: #181b21;
+  --color-gray-950: #0e1014;
+
+  --font-sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+}
+
+:root {
+  /* ---- Primary — cobalt / azure (default action) ---- */
+  --primary-50: #eef3ff;
+  --primary-100: #dde7ff;
+  --primary-200: #c2d2ff;
+  --primary-300: #98b3ff;
+  --primary-400: #6589fb;
+  --primary-500: #3b66f5;
+  --primary-600: #284fe0;
+  --primary-700: #213fc4;
+  --primary-800: #21389e;
+  --primary-900: #21347d;
+  --primary-950: #161f4d;
+
+  /* ---- Neutral — cool slate ---- */
+  --neutral-0: #ffffff;
+  --neutral-50: #f7f8fa;
+  --neutral-100: #eef0f4;
+  --neutral-200: #e3e6ec;
+  --neutral-300: #cbd1db;
+  --neutral-400: #9aa3b2;
+  --neutral-500: #6b7585;
+  --neutral-600: #4d5663;
+  --neutral-700: #3a414c;
+  --neutral-800: #262b33;
+  --neutral-900: #181b21;
+  --neutral-950: #0e1014;
+
+  /* ---- Ink — sidebar / console chrome ---- */
+  --ink-900: #0f1116;
+  --ink-800: #14161d;
+  --ink-700: #1b1e26;
+  --ink-600: #232732;
+  --ink-border: #262b36;
+
+  /* ---- Semantic ---- */
+  --success-50: #e9f7ee;
+  --success-100: #cdecd9;
+  --success-500: #1f9d57;
+  --success-600: #178048;
+  --success-700: #11653a;
+
+  --warning-50: #fdf3e4;
+  --warning-100: #f9e3bf;
+  --warning-500: #df8a05;
+  --warning-600: #b86d00;
+  --warning-700: #8f5402;
+
+  --error-50: #fdecec;
+  --error-100: #f8d4d2;
+  --error-500: #e0413c;
+  --error-600: #c5302b;
+  --error-700: #9d2723;
+
+  --info-50: #e6f6f6;
+  --info-100: #c4e9e9;
+  --info-500: #0f9a9a;
+  --info-600: #0b7d7d;
+  --info-700: #0a6363;
+
+  /* ---- Surfaces ---- */
+  --surface-app: var(--neutral-50);
+  --surface-card: var(--neutral-0);
+  --surface-card-grad: var(--neutral-0);
+  --surface-sunken: var(--neutral-100);
+  --surface-hover: var(--neutral-50);
+
+  /* ---- Borders ---- */
+  --border-subtle: var(--neutral-100);
+  --border-default: var(--neutral-200);
+  --border-strong: var(--neutral-300);
+  --border-focus: var(--primary-500);
+
+  /* ---- Text ---- */
+  --text-primary: var(--neutral-900);
+  --text-secondary: var(--neutral-600);
+  --text-tertiary: var(--neutral-500);
+  --text-link: var(--primary-600);
+  --text-link-hover: var(--primary-700);
+
+  /* ---- Chart / track ---- */
+  --chart-track: var(--neutral-100);
+  --chart-muted: var(--neutral-200);
+
+  /* ---- Job lifecycle (the core product motif) ---- */
+  --state-created-fg: var(--neutral-600);
+  --state-created-bg: var(--neutral-100);
+  --state-created-dot: var(--neutral-400);
+  --state-active-fg: var(--primary-700);
+  --state-active-bg: var(--primary-50);
+  --state-active-dot: var(--primary-500);
+  --state-completed-fg: var(--success-700);
+  --state-completed-bg: var(--success-50);
+  --state-completed-dot: var(--success-500);
+  --state-retry-fg: var(--warning-700);
+  --state-retry-bg: var(--warning-50);
+  --state-retry-dot: var(--warning-500);
+  --state-failed-fg: var(--error-700);
+  --state-failed-bg: var(--error-50);
+  --state-failed-dot: var(--error-500);
+  --state-cancelled-fg: var(--neutral-500);
+  --state-cancelled-bg: var(--neutral-100);
+  --state-cancelled-dot: var(--neutral-300);
+
+  /* ---- Action ---- */
+  --action-primary: var(--primary-600);
+  --action-primary-hover: var(--primary-700);
+
+  /* ---- Ambient gradients (large surfaces only, never cards) ---- */
+  --app-glow: rgba(59, 102, 245, 0.11);
+  --app-glow-2: rgba(15, 154, 154, 0.08);
+  --gradient-app:
+    radial-gradient(1100px 480px at 16% -10%, var(--app-glow), transparent 60%),
+    radial-gradient(940px 540px at 102% -4%, var(--app-glow-2), transparent 58%),
+    linear-gradient(180deg, var(--neutral-50) 0%, var(--neutral-100) 55%, #e7eaf1 100%);
+  --gradient-console:
+    linear-gradient(176deg, #181c27 0%, var(--ink-800) 34%, var(--ink-900) 100%);
+
+  /* ---- Sidebar chrome — theme-aware (tinted cobalt-slate in light,
+     dark "ink console" under .dark) ---- */
+  --sidebar-bg:
+    radial-gradient(480px 230px at 24% -16%, var(--app-glow), transparent 72%),
+    radial-gradient(360px 300px at 96% 116%, rgba(15, 154, 154, 0.1), transparent 70%),
+    linear-gradient(168deg, #eef2fb 0%, #e4eaf5 46%, #dbe2f0 100%);
+  --sidebar-solid: #e7ecf6; /* solid fallback for bg-sidebar (popovers, mobile) */
+  --sidebar-border-color: #d4dbea;
+  --sidebar-elevated: rgba(255, 255, 255, 0.6);
+  --sidebar-text-color: var(--neutral-600);
+  --sidebar-text-strong: var(--neutral-900);
+  --sidebar-text-muted: var(--neutral-500);
+  --sidebar-active-bg: linear-gradient(180deg, #ffffff 0%, #f6f8fd 100%);
+  --sidebar-active-text: var(--primary-700);
+  --sidebar-active-shadow: 0 1px 2px rgba(20, 28, 46, 0.07), 0 3px 8px -2px rgba(20, 28, 46, 0.1);
+  --sidebar-icon: var(--neutral-500);
+  --sidebar-icon-active: var(--primary-600);
+
+  /* ---- Top bar — tinted frosted gradient + accent glow + soft shadow ---- */
+  --surface-topbar:
+    radial-gradient(620px 140px at 82% -50%, var(--app-glow), transparent 72%),
+    linear-gradient(180deg, rgba(236, 240, 249, 0.9) 0%, rgba(225, 231, 244, 0.78) 100%);
+  --topbar-shadow: 0 1px 0 rgba(20, 28, 46, 0.05), 0 12px 26px -18px rgba(20, 28, 46, 0.34);
+
+  /* ---- Elevation / shadow ---- */
+  --shadow-focus: 0 0 0 3px rgba(59, 102, 245, 0.28);
+
+  /* Default primary scale (cobalt). The color-theme picker overrides these. */
+  --primary-50: #eef3ff;
+  --primary-100: #dde7ff;
+  --primary-200: #c2d2ff;
+  --primary-300: #98b3ff;
+  --primary-400: #6589fb;
+  --primary-500: #3b66f5;
+  --primary-600: #284fe0;
+  --primary-700: #213fc4;
+  --primary-800: #21389e;
+  --primary-900: #21347d;
+  --primary-950: #161f4d;
+}
+
+/* ============================================================
+   Dark theme — applied via .dark on <html>. Overrides semantic
+   aliases only; base scales stay intact so anything referencing
+   --surface-*, --text-*, --border-*, --state-* adapts.
+   ============================================================ */
+.dark {
+  --surface-app: #0c0e13;
+  --surface-card: #15181f;
+  --surface-card-grad: linear-gradient(180deg, #1a1e27 0%, #14171e 100%);
+  --surface-sunken: #1c2029;
+  --surface-hover: #1f2430;
+
+  --ink-900: #0a0c10;
+  --ink-800: #0e1015;
+  --ink-700: #181c25;
+  --ink-600: #20242f;
+  --ink-border: #20242f;
+
+  --border-subtle: #1c2029;
+  --border-default: #272c37;
+  --border-strong: #353c49;
+
+  --text-primary: #eef1f6;
+  --text-secondary: #aeb7c6;
+  --text-tertiary: #828b9c;
+  --text-link: var(--primary-300);
+  --text-link-hover: var(--primary-200);
+
+  --chart-track: rgba(255, 255, 255, 0.07);
+  --chart-muted: #2c3340;
+
+  --state-created-fg: #c2c9d4;  --state-created-bg: rgba(154, 163, 178, 0.14);  --state-created-dot: var(--neutral-400);
+  --state-active-fg: #9fb6ff;   --state-active-bg: rgba(59, 102, 245, 0.18);    --state-active-dot: var(--primary-400);
+  --state-completed-fg: #6fd39b;--state-completed-bg: rgba(31, 157, 87, 0.18);  --state-completed-dot: var(--success-500);
+  --state-retry-fg: #f0b357;    --state-retry-bg: rgba(223, 138, 5, 0.18);      --state-retry-dot: var(--warning-500);
+  --state-failed-fg: #f2918d;   --state-failed-bg: rgba(224, 65, 60, 0.18);     --state-failed-dot: var(--error-500);
+  --state-cancelled-fg: #99a2b2;--state-cancelled-bg: rgba(154, 163, 178, 0.1); --state-cancelled-dot: var(--neutral-500);
+
+  --action-primary: var(--primary-500);
+  --action-primary-hover: var(--primary-400);
+
+  --app-glow: rgba(59, 102, 245, 0.16);
+  --app-glow-2: rgba(15, 154, 154, 0.1);
+  --gradient-app:
+    radial-gradient(1100px 480px at 16% -12%, var(--app-glow), transparent 60%),
+    radial-gradient(960px 540px at 104% -6%, var(--app-glow-2), transparent 58%),
+    radial-gradient(820px 600px at 56% 122%, rgba(59, 102, 245, 0.07), transparent 62%),
+    linear-gradient(180deg, #0e1118 0%, #0b0d12 52%, #08090d 100%);
+  --gradient-console:
+    linear-gradient(176deg, #121620 0%, #0c0e13 36%, #08090d 100%);
+
+  --sidebar-bg:
+    radial-gradient(440px 210px at 28% -12%, var(--app-glow), transparent 72%),
+    var(--gradient-console);
+  --sidebar-solid: var(--ink-800);
+  --sidebar-border-color: var(--ink-border);
+  --sidebar-elevated: var(--ink-700);
+  --sidebar-text-color: #c6ccd8;
+  --sidebar-text-strong: #f2f4f8;
+  --sidebar-text-muted: #7c8597;
+  --sidebar-active-bg: linear-gradient(180deg, #20242f 0%, #181c25 100%);
+  --sidebar-active-text: #f2f4f8;
+  --sidebar-active-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+  --sidebar-icon: #7c8597;
+  --sidebar-icon-active: var(--primary-400);
+
+  --surface-topbar:
+    radial-gradient(620px 140px at 82% -50%, var(--app-glow), transparent 72%),
+    linear-gradient(180deg, rgba(23, 27, 36, 0.86) 0%, rgba(13, 15, 20, 0.66) 100%);
+  --topbar-shadow: 0 1px 0 rgba(0, 0, 0, 0.34), 0 12px 26px -20px rgba(0, 0, 0, 0.6);
+}
+
+/* ============================================================
+   Color-theme overrides (the in-app primary picker). Cobalt is
+   the default; the rest map onto Tailwind's built-in palettes.
+   ============================================================ */
+[data-color-theme="cobalt"] {
+  --primary-50: #eef3ff;
+  --primary-100: #dde7ff;
+  --primary-200: #c2d2ff;
+  --primary-300: #98b3ff;
+  --primary-400: #6589fb;
+  --primary-500: #3b66f5;
+  --primary-600: #284fe0;
+  --primary-700: #213fc4;
+  --primary-800: #21389e;
+  --primary-900: #21347d;
+  --primary-950: #161f4d;
+}
+
+[data-color-theme="emerald"] {
+  --primary-50: var(--color-emerald-50);
+  --primary-100: var(--color-emerald-100);
+  --primary-200: var(--color-emerald-200);
+  --primary-300: var(--color-emerald-300);
+  --primary-400: var(--color-emerald-400);
+  --primary-500: var(--color-emerald-500);
+  --primary-600: var(--color-emerald-600);
+  --primary-700: var(--color-emerald-700);
+  --primary-800: var(--color-emerald-800);
+  --primary-900: var(--color-emerald-900);
+  --primary-950: var(--color-emerald-950);
+}
+
+[data-color-theme="teal"] {
+  --primary-50: var(--color-teal-50);
+  --primary-100: var(--color-teal-100);
+  --primary-200: var(--color-teal-200);
+  --primary-300: var(--color-teal-300);
+  --primary-400: var(--color-teal-400);
+  --primary-500: var(--color-teal-500);
+  --primary-600: var(--color-teal-600);
+  --primary-700: var(--color-teal-700);
+  --primary-800: var(--color-teal-800);
+  --primary-900: var(--color-teal-900);
+  --primary-950: var(--color-teal-950);
+}
+
+[data-color-theme="cyan"] {
+  --primary-50: var(--color-cyan-50);
+  --primary-100: var(--color-cyan-100);
+  --primary-200: var(--color-cyan-200);
+  --primary-300: var(--color-cyan-300);
+  --primary-400: var(--color-cyan-400);
+  --primary-500: var(--color-cyan-500);
+  --primary-600: var(--color-cyan-600);
+  --primary-700: var(--color-cyan-700);
+  --primary-800: var(--color-cyan-800);
+  --primary-900: var(--color-cyan-900);
+  --primary-950: var(--color-cyan-950);
+}
+
+[data-color-theme="sky"] {
+  --primary-50: var(--color-sky-50);
+  --primary-100: var(--color-sky-100);
+  --primary-200: var(--color-sky-200);
+  --primary-300: var(--color-sky-300);
+  --primary-400: var(--color-sky-400);
+  --primary-500: var(--color-sky-500);
+  --primary-600: var(--color-sky-600);
+  --primary-700: var(--color-sky-700);
+  --primary-800: var(--color-sky-800);
+  --primary-900: var(--color-sky-900);
+  --primary-950: var(--color-sky-950);
+}
+
+[data-color-theme="blue"] {
+  --primary-50: var(--color-blue-50);
+  --primary-100: var(--color-blue-100);
+  --primary-200: var(--color-blue-200);
+  --primary-300: var(--color-blue-300);
+  --primary-400: var(--color-blue-400);
+  --primary-500: var(--color-blue-500);
+  --primary-600: var(--color-blue-600);
+  --primary-700: var(--color-blue-700);
+  --primary-800: var(--color-blue-800);
+  --primary-900: var(--color-blue-900);
+  --primary-950: var(--color-blue-950);
+}
+
+[data-color-theme="indigo"] {
+  --primary-50: var(--color-indigo-50);
+  --primary-100: var(--color-indigo-100);
+  --primary-200: var(--color-indigo-200);
+  --primary-300: var(--color-indigo-300);
+  --primary-400: var(--color-indigo-400);
+  --primary-500: var(--color-indigo-500);
+  --primary-600: var(--color-indigo-600);
+  --primary-700: var(--color-indigo-700);
+  --primary-800: var(--color-indigo-800);
+  --primary-900: var(--color-indigo-900);
+  --primary-950: var(--color-indigo-950);
+}
+
+[data-color-theme="violet"] {
+  --primary-50: var(--color-violet-50);
+  --primary-100: var(--color-violet-100);
+  --primary-200: var(--color-violet-200);
+  --primary-300: var(--color-violet-300);
+  --primary-400: var(--color-violet-400);
+  --primary-500: var(--color-violet-500);
+  --primary-600: var(--color-violet-600);
+  --primary-700: var(--color-violet-700);
+  --primary-800: var(--color-violet-800);
+  --primary-900: var(--color-violet-900);
+  --primary-950: var(--color-violet-950);
+}
+
+[data-color-theme="purple"] {
+  --primary-50: var(--color-purple-50);
+  --primary-100: var(--color-purple-100);
+  --primary-200: var(--color-purple-200);
+  --primary-300: var(--color-purple-300);
+  --primary-400: var(--color-purple-400);
+  --primary-500: var(--color-purple-500);
+  --primary-600: var(--color-purple-600);
+  --primary-700: var(--color-purple-700);
+  --primary-800: var(--color-purple-800);
+  --primary-900: var(--color-purple-900);
+  --primary-950: var(--color-purple-950);
+}
+
+/* Sidebar theme-control labels (rendered from attributes set by the inline
+   theme script before first paint, so they never flash the wrong value). */
+[data-theme-mode="light"] .theme-mode-label::after { content: "Light"; }
+[data-theme-mode="dark"] .theme-mode-label::after { content: "Dark"; }
+[data-theme-mode="system"] .theme-mode-label::after { content: "System"; }
+
+[data-color-theme="cobalt"] .color-theme-label::after { content: "Cobalt"; }
+[data-color-theme="emerald"] .color-theme-label::after { content: "Emerald"; }
+[data-color-theme="teal"] .color-theme-label::after { content: "Teal"; }
+[data-color-theme="cyan"] .color-theme-label::after { content: "Cyan"; }
+[data-color-theme="sky"] .color-theme-label::after { content: "Sky"; }
+[data-color-theme="blue"] .color-theme-label::after { content: "Blue"; }
+[data-color-theme="indigo"] .color-theme-label::after { content: "Indigo"; }
+[data-color-theme="violet"] .color-theme-label::after { content: "Violet"; }
+[data-color-theme="purple"] .color-theme-label::after { content: "Purple"; }
+
+/* ============================================================
+   Console sidebar tokens consumed by the Base UI sidebar (which
+   reads --color-sidebar*). Wired to the theme-aware tokens above.
+   ============================================================ */
+@theme inline {
+  --color-sidebar: var(--sidebar-solid);
+  --color-sidebar-foreground: var(--sidebar-text-color);
+  --color-sidebar-accent: var(--sidebar-elevated);
+  --color-sidebar-accent-foreground: var(--sidebar-text-strong);
+  --color-sidebar-border: var(--sidebar-border-color);
+  --color-sidebar-ring: var(--primary-500);
+}
+
+/* ============================================================
+   Base styles
+   ============================================================ */
+body {
+  font-family: var(--font-sans);
+  background-color: var(--surface-app);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Tabular mono helper — counts, IDs, durations. */
+.pgb-num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1, "zero" 1, "ss01" 1;
+}
+
+/* Uppercase eyebrow micro-label. */
+.pgb-eyebrow {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+::selection {
+  background: var(--primary-200);
+  color: var(--primary-900);
+}
+
+/* Loading bar animation */
+@keyframes loading-bar {
+  0% {
+    width: 0%;
+    margin-left: 0%;
+  }
+  50% {
+    width: 30%;
+    margin-left: 40%;
+  }
+  100% {
+    width: 0%;
+    margin-left: 100%;
+  }
+}
+
+.animate-loading-bar {
+  animation: loading-bar 1s ease-in-out infinite;
+}

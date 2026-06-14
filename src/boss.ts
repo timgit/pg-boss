@@ -1,8 +1,9 @@
 import EventEmitter from 'node:events'
-import type Manager from './manager.js'
-import * as plans from './plans.js'
-import { unwrapSQLResult } from './tools.js'
-import * as types from './types.js'
+import type Manager from './manager.ts'
+import * as plans from './plans.ts'
+import { delay, unwrapSQLResult } from './tools.ts'
+import * as types from './types.ts'
+import { emitAndPersistWarning, type WarningContext } from './warning.ts'
 
 const events = {
   error: 'error',
@@ -14,8 +15,14 @@ const WARNINGS = {
   LARGE_QUEUE: { size: 10_000, message: 'Warning: large queue backlog. Your queue should be reviewed' }
 }
 
+const WARNING_TYPES = {
+  SLOW_QUERY: 'slow_query',
+  QUEUE_BACKLOG: 'queue_backlog'
+} as const
+
 class Boss extends EventEmitter implements types.EventsMixin {
   #stopped: boolean
+  #stopping: boolean
   #maintaining: boolean | undefined
   #superviseInterval: NodeJS.Timeout | undefined
   #db: types.IDatabase
@@ -35,6 +42,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
     this.#config = config
     this.#manager = manager
     this.#stopped = true
+    this.#stopping = false
 
     if (config.warningSlowQuerySeconds) {
       WARNINGS.SLOW_QUERY.seconds = config.warningSlowQuerySeconds
@@ -45,8 +53,13 @@ class Boss extends EventEmitter implements types.EventsMixin {
     }
   }
 
+  get maintaining (): boolean {
+    return !!this.#maintaining
+  }
+
   async start () {
     if (this.#stopped) {
+      this.#stopping = false
       this.#superviseInterval = setInterval(
         () => this.#onSupervise(),
         this.#config.superviseIntervalSeconds! * 1000
@@ -57,32 +70,31 @@ class Boss extends EventEmitter implements types.EventsMixin {
 
   async stop () {
     if (!this.#stopped) {
+      this.#stopping = true
       if (this.#superviseInterval) clearInterval(this.#superviseInterval)
       this.#stopped = true
+      while (this.#maintaining) {
+        await delay(10)
+      }
     }
   }
 
-  async #executeSql (sql: string) {
-    const started = Date.now()
-
-    const result = unwrapSQLResult(await this.#db.executeSql(sql))
-
-    const elapsed = (Date.now() - started) / 1000
-
-    if (
-      elapsed > WARNINGS.SLOW_QUERY.seconds ||
-      this.#config.__test__warn_slow_query
-    ) {
-      this.emit(events.warning, {
-        message: WARNINGS.SLOW_QUERY.message,
-        data: { elapsed, sql },
-      })
+  get #warningContext (): WarningContext {
+    return {
+      emitter: this,
+      db: this.#db,
+      schema: this.#config.schema,
+      persistWarnings: this.#config.persistWarnings,
+      warningEvent: events.warning,
+      errorEvent: events.error
     }
-
-    return result
   }
 
-  async #executeQuery (query: plans.SqlQuery) {
+  async #executeQuery (query: plans.SqlQuery | string) {
+    if (typeof (query) === 'string') {
+      query = { text: query, values: [] }
+    }
+
     const started = Date.now()
 
     const result = unwrapSQLResult(await this.#db.executeSql(query.text, query.values))
@@ -93,10 +105,11 @@ class Boss extends EventEmitter implements types.EventsMixin {
       elapsed > WARNINGS.SLOW_QUERY.seconds ||
       this.#config.__test__warn_slow_query
     ) {
-      this.emit(events.warning, {
-        message: WARNINGS.SLOW_QUERY.message,
-        data: { elapsed, sql: query.text, values: query.values },
-      })
+      await emitAndPersistWarning(this.#warningContext,
+        WARNING_TYPES.SLOW_QUERY,
+        WARNINGS.SLOW_QUERY.message,
+        { elapsed, sql: query.text, values: query.values }
+      )
     }
 
     return result
@@ -110,14 +123,28 @@ class Boss extends EventEmitter implements types.EventsMixin {
 
       this.#maintaining = true
 
+      if (this.#config.__test__delay_maint_ms) {
+        await delay(this.#config.__test__delay_maint_ms)
+      }
+
       const queues = await this.#manager.getQueues()
 
       !this.#stopped && (await this.supervise(queues))
+      !this.#stopped && (await this.#maintainWarnings())
     } catch (err) {
       this.emit(events.error, err)
     } finally {
       this.#maintaining = false
     }
+  }
+
+  async #maintainWarnings () {
+    if (!this.#config.persistWarnings || !this.#config.warningRetentionDays) {
+      return
+    }
+
+    const sql = plans.deleteOldWarnings(this.#config.schema, this.#config.warningRetentionDays)
+    await this.#executeQuery(sql)
   }
 
   async supervise (value?: string | types.QueueResult[]) {
@@ -138,20 +165,30 @@ class Boss extends EventEmitter implements types.EventsMixin {
       return acc
     }, {})
 
+    const heartbeatQueueNames = new Set(
+      queues.filter(q => q.heartbeatSeconds != null).map(q => q.name)
+    )
+
     for (const queueGroup of Object.values(queueGroups)) {
+      if (this.#stopping) return
+
       const { table, queues } = queueGroup
       const names = queues.map((i) => i.name)
 
       while (names.length) {
+        if (this.#stopping) return
+
         const chunk = names.splice(0, 100)
 
-        await this.#monitor(table, chunk)
+        await this.#monitor(table, chunk, heartbeatQueueNames)
         await this.#maintain(table, chunk)
       }
     }
   }
 
-  async #monitor (table: string, names: string[]) {
+  async #monitor (table: string, names: string[], heartbeatQueueNames: Set<string>) {
+    if (this.#stopping) return
+
     const command = plans.trySetQueueMonitorTime(
       this.#config.schema,
       names,
@@ -159,26 +196,43 @@ class Boss extends EventEmitter implements types.EventsMixin {
     )
     const { rows } = await this.#executeQuery(command)
 
+    if (this.#stopping) return
+
     if (rows.length) {
       const queues = rows.map((q) => q.name)
 
       const cacheStatsSql = plans.cacheQueueStats(this.#config.schema, table, queues, this.#config.noAdvisoryLocks)
-      const { rows: rowsCacheStats } = await this.#executeSql(cacheStatsSql)
+      const { rows: rowsCacheStats } = await this.#executeQuery(cacheStatsSql)
+
+      if (this.#stopping) return
+
       const warnings = rowsCacheStats.filter(i => i.queuedCount > (i.warningQueueSize || WARNINGS.LARGE_QUEUE.size))
 
       for (const warning of warnings) {
-        this.emit(events.warning, {
-          message: WARNINGS.LARGE_QUEUE.message,
-          data: warning,
-        })
+        await emitAndPersistWarning(this.#warningContext,
+          WARNING_TYPES.QUEUE_BACKLOG,
+          WARNINGS.LARGE_QUEUE.message,
+          warning
+        )
       }
 
       const sql = plans.failJobsByTimeout(this.#config.schema, table, queues, this.#config.noAdvisoryLocks)
-      await this.#executeSql(sql)
+      await this.#executeQuery(sql)
+
+      if (this.#stopping) return
+
+      const heartbeatQueues = queues.filter(q => heartbeatQueueNames.has(q))
+
+      if (heartbeatQueues.length) {
+        const heartbeatSql = plans.failJobsByHeartbeat(this.#config.schema, table, heartbeatQueues, this.#config.noAdvisoryLocks)
+        await this.#executeQuery(heartbeatSql)
+      }
     }
   }
 
   async #maintain (table: string, names: string[]) {
+    if (this.#stopping) return
+
     const command = plans.trySetQueueDeletionTime(
       this.#config.schema,
       names,
@@ -186,10 +240,15 @@ class Boss extends EventEmitter implements types.EventsMixin {
     )
     const { rows } = await this.#executeQuery(command)
 
+    if (this.#stopping) return
+
     if (rows.length) {
       const queues = rows.map((q) => q.name)
       const sql = plans.deletion(this.#config.schema, table, queues, this.#config.noAdvisoryLocks)
-      await this.#executeSql(sql)
+      await this.#executeQuery(sql)
+
+      const depSql = plans.cleanupDependencies(this.#config.schema, table, queues, this.#config.noAdvisoryLocks)
+      await this.#executeQuery(depSql)
     }
   }
 }
