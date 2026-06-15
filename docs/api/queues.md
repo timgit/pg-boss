@@ -49,7 +49,7 @@ Allowed policy values:
 
 * **notify**, boolean, default false
 
-  When enabled, creating an immediately-available job on this queue emits a Postgres `NOTIFY` so workers wake right away instead of waiting for their next poll. This only has an effect when the instance is started with the [`useListenNotify`](./constructor.md#newoptions) option, which runs the listener. Jobs scheduled for the future (for example via `startAfter`, `sendAfter`, or throttling/debouncing) do not emit a notification — they are picked up by polling when they mature. See [Workers › Low-latency dispatch with LISTEN/NOTIFY](./workers.md#low-latency-dispatch-with-listennotify).
+  When enabled, creating an immediately-available job on this queue emits a Postgres `NOTIFY` so workers wake right away instead of waiting for their next poll. This only has an effect when the instance is started with the [`useListenNotify`](./constructor.md#newoptions) option, which runs the listener. Jobs scheduled for the future (for example via `sendAfter()` or throttling/debouncing) do **not** emit a notification — they are picked up by polling when they mature. See [Workers › Low-latency dispatch with LISTEN/NOTIFY](./workers.md#low-latency-dispatch-with-listennotify).
 
 **Retry options**
 

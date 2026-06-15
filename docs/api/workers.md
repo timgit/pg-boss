@@ -45,7 +45,7 @@ The default options for `work()` is 1 job every 2 seconds.
 
   Interval to check for new jobs in seconds, must be >=0.5 (500ms)
 
-  > **Tip**: If you enable [LISTEN/NOTIFY](#low-latency-dispatch-with-listennotify), workers are woken as soon as a job is created and do not have to wait out this interval. In that setup you can safely raise `pollingIntervalSeconds` to reduce idle database queries while still getting low-latency dispatch.
+  > **Note**: If you enable [LISTEN/NOTIFY](#low-latency-dispatch-with-listennotify), workers will attempt to fetch once a job is created and do not have to wait out this interval. You can then safely raise `pollingIntervalSeconds` to reduce database queries while still getting low-latency dispatch.
 
 * **localConcurrency**, int, *(default=1)*
 
@@ -194,7 +194,7 @@ await boss.work('email-welcome', { batchSize: 5 }, (jobs) => myEmailService.send
 
 ### Low-latency dispatch with LISTEN/NOTIFY
 
-By default, workers discover new jobs by polling on their `pollingIntervalSeconds`, so a freshly created job waits up to one interval before it is picked up. pg-boss can optionally use Postgres [`LISTEN/NOTIFY`](https://www.postgresql.org/docs/current/sql-notify.html) to wake workers the instant a job is created, cutting dispatch latency to milliseconds.
+By default, workers fetch new jobs by polling on their `pollingIntervalSeconds`, so a freshly created job waits up to one interval before it is picked up. pg-boss can optionally use Postgres [`LISTEN/NOTIFY`](https://www.postgresql.org/docs/current/sql-notify.html) to wake workers the instant a job is created, cutting dispatch latency to milliseconds.
 
 This is an **opt-in optimization on top of polling, not a replacement for it.** Polling always keeps running as a safety net, so jobs are never lost if a notification is missed (for example during a brief connection drop). A notification is only ever a hint that tells a worker to fetch now instead of waiting — the normal locking fetch, queue policies, and concurrency limits are unchanged.
 
@@ -220,7 +220,7 @@ await boss.send('email-welcome', { to: 'new@user.com' })
 
 **Notes and limitations:**
 
-- Only **immediately-available** jobs emit a notification. Future-dated jobs (`startAfter`, `sendAfter`, throttling/debouncing) and jobs blocked by [flow](./jobs.md) dependencies are picked up by polling once they become eligible.
+- Only **immediately-available** jobs emit a notification. Future-dated jobs (`startAfter`, `sendAfter()`, throttling/debouncing) and jobs blocked by [flow](./jobs.md) dependencies are picked up by polling once they become eligible.
 - A NOTIFY is emitted transactionally with the insert, so it fires on commit. When you create jobs inside your own transaction via the `db` option, the notification commits atomically with your transaction.
 - The listener needs a **session-pinned** connection. It works with the built-in pool and with a `db` adapter that implements `listen`, but **not** through PgBouncer in transaction or statement pooling mode, which disables `LISTEN/NOTIFY`. When a listener cannot be established, pg-boss emits a [`warning`](./events.md#warning) of type `listen_notify_unavailable` and continues polling only.
 - The notification channel is namespaced per `schema`, so multiple pg-boss instances (and other services) on the same database do not collide.

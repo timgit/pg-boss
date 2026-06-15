@@ -12,9 +12,8 @@ const WARNING_TYPE = 'listen_notify_unavailable'
 
 // Owns the LISTEN/NOTIFY listener lifecycle. A NOTIFY is only ever a latency hint: it
 // wakes workers so they run their normal locking fetch sooner than the polling interval
-// would allow. Polling always remains active as the correctness floor, so if the listener
-// can't be established (custom adapter, PgBouncer transaction pooling, dropped connection),
-// pg-boss degrades to polling-only after emitting a warning.
+// If the listener can't be established (custom adapter, PgBouncer transaction pooling,
+// dropped connection), fall back to polling after emitting a warning.
 class Notifier extends EventEmitter implements types.EventsMixin {
   events = events
   #db: types.IDatabase
