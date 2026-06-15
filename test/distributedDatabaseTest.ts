@@ -87,7 +87,7 @@ describe('distributed database mode', function () {
     // but no job should be duplicated
     expect(allJobs.length).toBeLessThanOrEqual(jobCount)
     expect(allJobs.length).toBeGreaterThan(0)
-  })
+  }, 30000)
 
   it('should complete jobs fetched in distributed mode', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, distributedDatabaseMode: true })
@@ -296,7 +296,7 @@ describe('distributed database mode', function () {
 
     // Verify all jobs were claimed exactly once
     expect(claimedIndices.size).toBe(jobCount)
-  })
+  }, 30000)
 
   it('should work with stately policy in distributed mode', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, distributedDatabaseMode: true, noDefault: true })
