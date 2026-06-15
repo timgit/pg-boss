@@ -871,14 +871,15 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     const rows = result?.rows || []
 
-    // CockroachDB returns numeric fields as strings; normalize them
+    // CockroachDB returns numeric fields as strings; normalize them. The metadata
+    // columns are aliased to camelCase by JOB_COLUMNS_ALL, so normalize those keys.
     if (this.config.distributedDatabaseMode && options.includeMetadata) {
       for (const row of rows) {
         if (row.priority !== undefined) row.priority = Number(row.priority)
-        if (row.retry_limit !== undefined) row.retryLimit = Number(row.retry_limit)
-        if (row.retry_count !== undefined) row.retryCount = Number(row.retry_count)
-        if (row.retry_delay !== undefined) row.retryDelay = Number(row.retry_delay)
-        if (row.expire_seconds !== undefined) row.expireSeconds = Number(row.expire_seconds)
+        if (row.retryLimit !== undefined) row.retryLimit = Number(row.retryLimit)
+        if (row.retryCount !== undefined) row.retryCount = Number(row.retryCount)
+        if (row.retryDelay !== undefined) row.retryDelay = Number(row.retryDelay)
+        if (row.expireInSeconds !== undefined) row.expireInSeconds = Number(row.expireInSeconds)
       }
     }
 

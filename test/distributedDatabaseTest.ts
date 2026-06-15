@@ -486,6 +486,125 @@ describe('distributed database mode', function () {
     await _db.close()
   })
 
+  it('should unblock dependent jobs when completing a parent in distributed mode', async function () {
+    // Exercises completeDistributed()'s separate dependency-unblock statement
+    // (plans.completeJobsDistributed + plans.decrementDependents)
+    ctx.boss = await helper.start({ ...ctx.bossConfig, distributedDatabaseMode: true })
+
+    const flow = await ctx.boss.flow([
+      { ref: 'parent', name: ctx.schema },
+      { ref: 'child', name: ctx.schema, data: { child: true }, dependsOn: ['parent'] }
+    ])
+
+    // Child starts blocked, only the parent is fetchable
+    const childBefore = await ctx.boss.getJobById(ctx.schema, flow.child)
+    helper.assertTruthy(childBefore)
+    expect(childBefore.blocked).toBe(true)
+
+    const [parent] = await ctx.boss.fetch(ctx.schema)
+    expect(parent.id).toBe(flow.parent)
+
+    await ctx.boss.complete(ctx.schema, parent.id)
+
+    // Completing the blocking parent must decrement the child's pending_dependencies
+    const childAfter = await ctx.boss.getJobById(ctx.schema, flow.child)
+    helper.assertTruthy(childAfter)
+    expect(childAfter.blocked).toBe(false)
+    expect(childAfter.pendingDependencies).toBe(0)
+
+    const [unblocked] = await ctx.boss.fetch(ctx.schema)
+    expect(unblocked).toBeTruthy()
+    expect(unblocked.id).toBe(flow.child)
+  })
+
+  it('should rollback transaction on error in distributed mode complete', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, distributedDatabaseMode: true })
+
+    const jobId = await ctx.boss.send(ctx.schema, { test: 'rollback' })
+    helper.assertTruthy(jobId)
+
+    const [job] = await ctx.boss.fetch(ctx.schema)
+    expect(job).toBeTruthy()
+
+    const _db = await helper.getDb()
+    let callCount = 0
+    const db = {
+      // @ts-ignore
+      async executeSql (sql: string, values: any[]) {
+        callCount++
+        // First call is BEGIN; throw on the completion statement that follows
+        if (callCount === 2) {
+          throw new Error('Simulated database error')
+        }
+        // @ts-ignore
+        return _db.pool.query(sql, values)
+      }
+    }
+
+    await expect(async () => {
+      // @ts-ignore
+      await ctx.boss.complete(ctx.schema, jobId, null, { db })
+    }).rejects.toThrow('Simulated database error')
+
+    // The transaction was rolled back, so the job is still active
+    const jobData = await ctx.boss.getJobById(ctx.schema, jobId)
+    helper.assertTruthy(jobData)
+    expect(jobData.state).toBe('active')
+
+    await _db.close()
+  })
+
+  it('should normalize numeric metadata fields in distributed mode', async function () {
+    // Exercises the numeric-field normalization for includeMetadata fetches
+    ctx.boss = await helper.start({ ...ctx.bossConfig, distributedDatabaseMode: true })
+
+    await ctx.boss.send(ctx.schema, { value: 'meta' }, {
+      retryLimit: 5,
+      retryDelay: 7,
+      expireInSeconds: 120
+    })
+
+    const [job] = await ctx.boss.fetch(ctx.schema, { includeMetadata: true })
+    helper.assertTruthy(job)
+
+    expect(typeof job.priority).toBe('number')
+    expect(typeof job.retryLimit).toBe('number')
+    expect(typeof job.retryCount).toBe('number')
+    expect(typeof job.retryDelay).toBe('number')
+    expect(typeof job.expireInSeconds).toBe('number')
+
+    expect(job.retryLimit).toBe(5)
+    expect(job.retryDelay).toBe(7)
+    expect(job.expireInSeconds).toBe(120)
+    expect(job.retryCount).toBe(0)
+  })
+
+  it('should construct schema with all distributed compatibility flags', async function () {
+    // Exercises the CockroachDB-oriented construction branches (no partitioning,
+    // non-deferrable constraints, non-covering indexes, no advisory locks)
+    ctx.boss = await helper.start({
+      ...ctx.bossConfig,
+      distributedDatabaseMode: true,
+      noTablePartitioning: true,
+      noDeferrableConstraints: true,
+      noCoveringIndexes: true,
+      noAdvisoryLocks: true
+    })
+
+    const jobId = await ctx.boss.send(ctx.schema, { test: 'flags' })
+    helper.assertTruthy(jobId)
+
+    const [job] = await ctx.boss.fetch(ctx.schema)
+    expect(job).toBeTruthy()
+    expect(job.id).toBe(jobId)
+
+    await ctx.boss.complete(ctx.schema, jobId)
+
+    const completed = await ctx.boss.getJobById(ctx.schema, jobId)
+    helper.assertTruthy(completed)
+    expect(completed.state).toBe('completed')
+  })
+
   it('should work with noTablePartitioning mode', async function () {
     // This test covers the noPartitioning path in plans.ts (lines 244, 260)
     ctx.boss = await helper.start({
