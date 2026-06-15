@@ -14,6 +14,19 @@ import { JobSpy, type JobSpyInterface } from './spy.ts'
 
 const INTERNAL_QUEUES = Object.values(timekeeper.QUEUES).reduce<Record<string, string | undefined>>((acc, i) => ({ ...acc, [i]: i }), {})
 
+// CockroachDB returns integer columns (INT8) as strings; these aliased metadata
+// fields must be coerced back to numbers when running in distributed mode.
+const NUMERIC_METADATA_FIELDS = [
+  'priority',
+  'retryLimit',
+  'retryCount',
+  'retryDelay',
+  'retryDelayMax',
+  'expireInSeconds',
+  'deleteAfterSeconds',
+  'pendingDependencies'
+] as const
+
 const events = {
   error: 'error',
   wip: 'wip'
@@ -875,11 +888,9 @@ class Manager extends EventEmitter implements types.EventsMixin {
     // columns are aliased to camelCase by JOB_COLUMNS_ALL, so normalize those keys.
     if (this.config.distributedDatabaseMode && options.includeMetadata) {
       for (const row of rows) {
-        if (row.priority !== undefined) row.priority = Number(row.priority)
-        if (row.retryLimit !== undefined) row.retryLimit = Number(row.retryLimit)
-        if (row.retryCount !== undefined) row.retryCount = Number(row.retryCount)
-        if (row.retryDelay !== undefined) row.retryDelay = Number(row.retryDelay)
-        if (row.expireInSeconds !== undefined) row.expireInSeconds = Number(row.expireInSeconds)
+        for (const field of NUMERIC_METADATA_FIELDS) {
+          if (row[field] !== undefined && row[field] !== null) row[field] = Number(row[field])
+        }
       }
     }
 
@@ -1259,7 +1270,17 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const result1 = await db.executeSql(sql, [name, id])
 
     if (result1?.rows?.length === 1) {
-      return result1.rows[0]
+      const row = result1.rows[0]
+
+      // CockroachDB returns integer columns as strings; normalize the numeric
+      // metadata fields so callers get numbers regardless of the backend.
+      if (this.config.distributedDatabaseMode) {
+        for (const field of NUMERIC_METADATA_FIELDS) {
+          if (row[field] !== undefined && row[field] !== null) row[field] = Number(row[field])
+        }
+      }
+
+      return row
     } else {
       return null
     }
