@@ -920,9 +920,40 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const db = this.assertDb(options)
     const ids = this.mapCompletionIdArg(id, 'complete')
     const { table } = await this.getQueueCache(name)
+    const outputData = this.mapCompletionDataArg(data)
+
+    // Distributed mode: split the dependency-unblocking into a separate statement to
+    // avoid CockroachDB's multi-mutation CTE limitation (completeJobs updates two tables).
+    if (this.config.distributedDatabaseMode) {
+      return this.completeDistributed(name, ids, outputData, table, db, options.includeQueued)
+    }
+
     const sql = plans.completeJobs(this.config.schema, table, options.includeQueued)
-    const result = await db.executeSql(sql, [name, ids, this.mapCompletionDataArg(data)])
+    const result = await db.executeSql(sql, [name, ids, outputData])
     return this.mapCommandResponse(ids, result)
+  }
+
+  private async completeDistributed (name: string, ids: string[], outputData: any, table: string, db: types.IDatabase, includeQueued?: boolean): Promise<types.CommandResponse> {
+    await db.executeSql('BEGIN')
+
+    try {
+      // Step 1: Mark jobs completed and learn which ones were blocking dependents
+      const completeSql = plans.completeJobsDistributed(this.config.schema, table, includeQueued)
+      const { rows } = await db.executeSql(completeSql, [name, ids, outputData])
+
+      // Step 2: Decrement pending_dependencies for children of completed blocking parents
+      const blockingIds = rows.filter(row => row.blocking).map(row => row.id)
+      if (blockingIds.length > 0) {
+        const decrementSql = plans.decrementDependents(this.config.schema)
+        await db.executeSql(decrementSql, [name, blockingIds])
+      }
+
+      await db.executeSql('COMMIT')
+      return { jobs: ids, requested: ids.length, affected: rows.length }
+    } catch (err) {
+      await db.executeSql('ROLLBACK')
+      throw err
+    }
   }
 
   async fail (name: string, id: string | string[], data?: any, options: types.ConnectionOptions = {}) {

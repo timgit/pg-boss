@@ -392,7 +392,7 @@ describe('distributed database mode', function () {
 
     // Try to fail a job that doesn't exist (using a valid UUID format)
     const result = await ctx.boss.fail(ctx.schema, '00000000-0000-0000-0000-000000000000')
-    expect(result).toBe(0)
+    expect(result.affected).toBe(0)
   })
 
   it('should use retry backoff when failing jobs in distributed mode', async function () {

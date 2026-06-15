@@ -1140,10 +1140,10 @@ export function fetchNextJob (options: FetchJobOptions, distributed = false): Sq
   }
 }
 
-export function completeJobs (schema: string, table: string, includeQueued?: boolean) {
-  return `
-    WITH completed AS (
-      UPDATE ${schema}.${table}
+// Shared SET/WHERE body for marking jobs completed (no RETURNING). Used by the
+// single-statement completeJobs() and the distributed completeJobsDistributed().
+function completeJobsUpdate (schema: string, table: string, includeQueued?: boolean): string {
+  return `UPDATE ${schema}.${table}
       SET completed_on = now(),
         state = '${JOB_STATES.completed}',
         output = $3::jsonb,
@@ -1154,7 +1154,37 @@ export function completeJobs (schema: string, table: string, includeQueued?: boo
         AND ${includeQueued
           ? `state < '${JOB_STATES.completed}'`
           : `state = '${JOB_STATES.active}'`
-        }
+        }`
+}
+
+// Shared dependency-unblocking fragments. Both consume a `decremented` CTE
+// (child_name, child_id, n) that the caller defines, and are reused by the standard
+// completeJobs() and the distributed decrementDependents().
+function lockedChildrenCte (schema: string): string {
+  return `locked_children AS (
+      SELECT j.name, j.id, d.n
+      FROM ${schema}.job j
+      JOIN decremented d ON d.child_name = j.name
+        AND d.child_id = j.id
+      WHERE j.blocked
+      ORDER BY j.name, j.id
+      FOR UPDATE OF j
+    )`
+}
+
+function unblockChildrenUpdate (schema: string): string {
+  return `UPDATE ${schema}.job j
+      SET pending_dependencies = GREATEST(j.pending_dependencies - lc.n, 0),
+          blocked = GREATEST(j.pending_dependencies - lc.n, 0) > 0
+      FROM locked_children lc
+      WHERE j.name = lc.name
+        AND j.id = lc.id`
+}
+
+export function completeJobs (schema: string, table: string, includeQueued?: boolean) {
+  return `
+    WITH completed AS (
+      ${completeJobsUpdate(schema, table, includeQueued)}
       RETURNING name, id, blocking
     ),
     decremented AS (
@@ -1165,22 +1195,9 @@ export function completeJobs (schema: string, table: string, includeQueued?: boo
         AND d.parent_id = c.id
       GROUP BY d.child_name, d.child_id
     ),
-    locked_children AS (
-      SELECT j.name, j.id, d.n
-      FROM ${schema}.job j
-      JOIN decremented d ON d.child_name = j.name
-        AND d.child_id = j.id
-      WHERE j.blocked
-      ORDER BY j.name, j.id
-      FOR UPDATE OF j
-    ),
+    ${lockedChildrenCte(schema)},
     unblocked AS (
-      UPDATE ${schema}.job j
-      SET pending_dependencies = GREATEST(j.pending_dependencies - lc.n, 0),
-          blocked = GREATEST(j.pending_dependencies - lc.n, 0) > 0
-      FROM locked_children lc
-      WHERE j.name = lc.name
-        AND j.id = lc.id
+      ${unblockChildrenUpdate(schema)}
       RETURNING 1
     )
     SELECT COUNT(*) FROM completed
@@ -1554,6 +1571,35 @@ export function deleteJobsToFail (schema: string, table: string): SqlQuery {
     text: `DELETE FROM ${schema}.${table} WHERE name = $1 AND id IN (SELECT UNNEST($2::uuid[]))`,
     values: []
   }
+}
+
+// Distributed mode: complete jobs without the dependency-unblocking CTE so the
+// statement only mutates a single table once. CockroachDB rejects the standard
+// completeJobs() because it updates both the job table and job (for unblocking)
+// within one statement. The unblocking is handled separately by decrementDependents().
+export function completeJobsDistributed (schema: string, table: string, includeQueued?: boolean): string {
+  return `
+    ${completeJobsUpdate(schema, table, includeQueued)}
+    RETURNING id, blocking
+  `
+}
+
+// Distributed mode: decrement pending_dependencies for children of the given
+// completed parent jobs. Only the final UPDATE mutates job, so this is a single
+// mutation acceptable to CockroachDB. $2 is the list of completed parent ids that
+// were marked blocking.
+export function decrementDependents (schema: string): string {
+  return `
+    WITH decremented AS (
+      SELECT d.child_name, d.child_id, COUNT(*)::int AS n
+      FROM ${schema}.job_dependency d
+      WHERE d.parent_name = $1
+        AND d.parent_id IN (SELECT UNNEST($2::uuid[]))
+      GROUP BY d.child_name, d.child_id
+    ),
+    ${lockedChildrenCte(schema)}
+    ${unblockChildrenUpdate(schema)}
+  `
 }
 
 export function insertRetryJob (schema: string, table: string): string {
