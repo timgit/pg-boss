@@ -133,6 +133,33 @@ describe('monitoring', function () {
     expect(eventCount > 0).toBeTruthy()
   })
 
+  it('deferred jobs over threshold should emit backlog warning', async function () {
+    const config = {
+      ...ctx.bossConfig,
+      monitorIntervalSeconds: 1,
+      warningQueueSize: 1
+    }
+
+    ctx.boss = await helper.start(config)
+
+    // Both jobs are deferred (future-dated). The warning is based on queuedCount (which
+    // includes deferred jobs), so dumping a lot of deferred work still trips the warning.
+    await ctx.boss.send(ctx.schema, {}, { startAfter: 100 })
+    await ctx.boss.send(ctx.schema, {}, { startAfter: 100 })
+
+    let backlogWarnings = 0
+
+    ctx.boss.on('warning', (event) => {
+      if (event.message.includes('backlog')) backlogWarnings++
+    })
+
+    await ctx.boss.supervise(ctx.schema)
+
+    await delay(1000)
+
+    expect(backlogWarnings > 0).toBeTruthy()
+  })
+
   it('should reset cached counts to zero when all jobs are deleted for given queue', async function () {
     const config = {
       ...ctx.bossConfig,

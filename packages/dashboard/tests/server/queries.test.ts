@@ -344,19 +344,27 @@ describe('Queue Queries', () => {
 
       await updateQueueStats(ctx.schema, 'queue-1', {
         queuedCount: 10,
+        deferredCount: 4,
         activeCount: 5,
+        failedCount: 2,
         totalCount: 50,
       })
       await updateQueueStats(ctx.schema, 'queue-2', {
         queuedCount: 20,
+        deferredCount: 5,
         activeCount: 10,
+        failedCount: 3,
         totalCount: 100,
       })
 
       const stats = await getQueueStats(ctx.connectionString, ctx.schema)
 
       expect(stats.totalQueued).toBe(30)
+      expect(stats.totalDeferred).toBe(9)
+      // totalReady excludes deferred jobs: (10-4) + (20-5) = 21
+      expect(stats.totalReady).toBe(21)
       expect(stats.totalActive).toBe(15)
+      expect(stats.totalFailed).toBe(5)
       expect(stats.totalJobs).toBe(150)
       expect(stats.queueCount).toBe(2)
     })

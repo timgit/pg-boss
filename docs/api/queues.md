@@ -148,6 +148,15 @@ Returns a queue by name
 
 Returns the number of jobs in various states in a queue.  The result matches the results from getQueue(), but ignores the cached data and forces the stats to be retrieved immediately.
 
+The counts include:
+
+* `queuedCount` — jobs waiting to run, **including** deferred (future-dated) jobs; this drives the queue backlog warning, so dumping a lot of deferred work still trips it
+* `deferredCount` — jobs scheduled to start in the future (`startAfter` not yet reached)
+* `readyCount` — jobs ready to be processed now (`queuedCount - deferredCount`); the true runnable backlog
+* `activeCount` — jobs currently being processed
+* `failedCount` — failed jobs still retained in the table (bounded by the queue's retention policy, so this is a rolling count of recent failures rather than an all-time total)
+* `totalCount` — all jobs currently stored for the queue
+
 ### `getBlockedKeys(name)`
 
 Returns an array of `singletonKey` values that are currently blocked due to failed jobs. This is only available for queues with the `key_strict_fifo` policy.

@@ -386,11 +386,11 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const isNotifyActive = () => !!(this.notifier?.available && this.queues?.[name]?.notify)
 
     // Runnable backlog from the cached queue stats: created + retry jobs that are ready now
-    // (queuedCount counts state < active, which includes deferred future-dated jobs, so
-    // subtract deferredCount). Refreshed every queueCacheIntervalSeconds.
+    // (readyCount = queuedCount - deferredCount, since queuedCount counts state < active and
+    // includes deferred future-dated jobs). Refreshed every queueCacheIntervalSeconds.
     const getReadyBacklog = () => {
       const q = this.queues?.[name]
-      return q ? Math.max(0, q.queuedCount - q.deferredCount) : 0
+      return q ? Math.max(0, q.readyCount) : 0
     }
 
     // Resolve the delay before each fetch. Precedence: burst (fetch continuously) > NOTIFY
@@ -1186,7 +1186,9 @@ class Manager extends EventEmitter implements types.EventsMixin {
             {
               deferredCount: 0,
               queuedCount: 0,
+              readyCount: 0,
               activeCount: 0,
+              failedCount: 0,
               totalCount: 0
             }
     )

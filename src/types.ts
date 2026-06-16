@@ -313,7 +313,17 @@ export interface Queue extends QueueOptions {
 export interface QueueResult extends Queue {
   deferredCount: number;
   queuedCount: number;
+  /**
+   * Jobs ready to be processed now: `queuedCount - deferredCount` (clamped at 0). This is the
+   * true backlog — `queuedCount` includes deferred (future-dated) jobs that are not yet runnable.
+   */
+  readyCount: number;
   activeCount: number;
+  /**
+   * Failed jobs still retained in the table. Bounded by the queue's retention/deletion policy,
+   * so this is a rolling count of recent failures, not an all-time total.
+   */
+  failedCount: number;
   totalCount: number
   table: string;
   createdOn: Date;

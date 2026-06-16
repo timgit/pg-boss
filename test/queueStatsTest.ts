@@ -31,15 +31,53 @@ describe('queueStats', function () {
       name,
       deferredCount,
       queuedCount,
+      readyCount,
       activeCount,
+      failedCount,
       totalCount
     } = queueData!
 
     expect(name).toBe(queue1)
     expect(deferredCount).toBe(0)
     expect(queuedCount).toBe(2)
+    expect(readyCount).toBe(2)
     expect(activeCount).toBe(0)
+    expect(failedCount).toBe(0)
     expect(totalCount).toBe(2)
+  })
+
+  it('should exclude deferred jobs from readyCount', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+    const queue = randomUUID()
+    await ctx.boss.createQueue(queue)
+
+    await ctx.boss.send(queue)
+    await ctx.boss.send(queue, {}, { startAfter: 100 })
+
+    const queueData = await ctx.boss.getQueueStats(queue)
+
+    expect(queueData.queuedCount).toBe(2)
+    expect(queueData.deferredCount).toBe(1)
+    // readyCount is the true backlog: queued minus the deferred (future-dated) job
+    expect(queueData.readyCount).toBe(1)
+  })
+
+  it('should count failed jobs in failedCount', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+    const queue = randomUUID()
+    // retryLimit 0 so a single fail moves the job straight to the failed state
+    await ctx.boss.createQueue(queue, { retryLimit: 0 })
+
+    await ctx.boss.send(queue)
+    const [job] = await ctx.boss.fetch(queue)
+    await ctx.boss.fail(queue, job.id)
+
+    const queueData = await ctx.boss.getQueueStats(queue)
+
+    expect(queueData.failedCount).toBe(1)
+    expect(queueData.queuedCount).toBe(0)
+    expect(queueData.readyCount).toBe(0)
+    expect(queueData.totalCount).toBe(1)
   })
 
   it('should get accurate stats on an empty queue', async function () {

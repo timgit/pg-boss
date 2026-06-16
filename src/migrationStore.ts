@@ -1119,6 +1119,17 @@ function getAll (schema: string): types.Migration[] {
         createQueueFnV32(schema, { notify: false }),
         `ALTER TABLE ${schema}.queue DROP COLUMN notify`
       ]
+    },
+    {
+      release: '12.21.0',
+      version: 33,
+      previous: 32,
+      install: [
+        `ALTER TABLE ${schema}.queue ADD COLUMN failed_count int NOT NULL DEFAULT 0`
+      ],
+      uninstall: [
+        `ALTER TABLE ${schema}.queue DROP COLUMN failed_count`
+      ]
     }
   ]
 }

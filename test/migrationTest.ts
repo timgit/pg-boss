@@ -125,6 +125,30 @@ describe('migration', function () {
     expect(version).toBe(currentSchemaVersion)
   })
 
+  it('should add and drop the failed_count column across the v33 migration', async function () {
+    const db = await getDb({ debug: false })
+    const schema = ctx.bossConfig.schema
+
+    const columnExists = async () => {
+      const { rows } = await db.executeSql(`
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = '${schema}' AND table_name = 'queue' AND column_name = 'failed_count'
+      `)
+      return rows.length > 0
+    }
+
+    await contractor.create()
+    expect(await columnExists()).toBe(true)
+
+    await contractor.rollback(currentSchemaVersion)
+    expect(await columnExists()).toBe(false)
+
+    const oneVersionAgo = await contractor.schemaVersion()
+    assertTruthy(oneVersionAgo)
+    await contractor.next(oneVersionAgo)
+    expect(await columnExists()).toBe(true)
+  })
+
   it('should migrate to latest during start if on previous schema version', async function () {
     await contractor.create()
 

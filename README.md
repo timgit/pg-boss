@@ -43,10 +43,11 @@ This will likely cater the most to teams already familiar with the simplicity of
 ## Summary
 * Exactly-once job delivery
 * Create jobs within your existing database transaction
-* Backpressure-compatible polling workers
-* Cron scheduling
+* Backpressure-compatible polling workers, including support for LISTEN/NOTIFY low latency delivery
+* Job dependency workflow orchestration
+* Cron scheduling, job deferral
 * Queue storage policies to support a variety of rate limiting, debouncing, and concurrency use cases
-* Priority queues, dead letter queues, job deferral, automatic retries with exponential backoff
+* Priority queues, dead letter queues, automatic retries with exponential backoff
 * Pub/sub API for fan-out queue relationships
 * SQL support for non-Node.js runtimes for most operations
 * Serverless function compatible
