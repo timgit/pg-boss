@@ -19,8 +19,13 @@ export default defineConfig({
     })()`]
   ],
   themeConfig: {
+    outline: [2, 3],
+    externalLinkIcon: true,
     search: {
-      provider: 'local'
+      provider: 'local',
+      options: {
+        detailedView: true
+      }
     },
     nav: [
       { text: 'Get Started', link: '/introduction' },
@@ -41,6 +46,7 @@ export default defineConfig({
       { text: 'Proxy', link: '/proxy' },
       {
         text: 'API',
+        collapsed: false,
         items: [
           { text: 'Constructor', link: '/api/constructor' },
           { text: 'Events', link: '/api/events' },
@@ -57,6 +63,7 @@ export default defineConfig({
       },
       {
         text: 'SQL',
+        collapsed: true,
         items: [
           { text: 'Job Table', link: '/sql/job-table' },
           { text: 'Queue Functions', link: '/sql/queue-functions' },
@@ -66,13 +73,14 @@ export default defineConfig({
     ],
     editLink: {
       pattern: 'https://github.com/timgit/pg-boss/edit/master/docs/:path',
-      text: 'Edit this page on GitHub'
+      text: 'Suggest changes to this page'
     },
     lastUpdated: {
       text: 'Last updated'
     },
     socialLinks: [
-      { icon: 'github', link: 'https://github.com/timgit/pg-boss' }
+      { icon: 'github', link: 'https://github.com/timgit/pg-boss' },
+      { icon: 'npm', link: 'https://www.npmjs.com/package/pg-boss' }
     ]
   }
 })
