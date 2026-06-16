@@ -58,7 +58,9 @@ describe('throttle', function () {
   it('should debounce via sendDebounced()', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 
-    const seconds = 60
+    // Wide enough bucket that wall-clock jitter between sequential sends can't cross a
+    // singleton_on time-slot boundary under heavy parallel-suite load (avoids flakiness).
+    const seconds = 300
 
     const jobId = await ctx.boss.sendDebounced(ctx.schema, null, null, seconds)
 
@@ -88,7 +90,9 @@ describe('throttle', function () {
   it('should throttle via sendThrottled()', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 
-    const seconds = 60
+    // Wide enough bucket that wall-clock jitter between the two sequential sends can't cross a
+    // singleton_on time-slot boundary under heavy parallel-suite load (avoids flakiness).
+    const seconds = 300
 
     const jobId1 = await ctx.boss.sendThrottled(ctx.schema, null, null, seconds)
 
@@ -103,7 +107,8 @@ describe('throttle', function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 
     const singletonKey = 'a'
-    const singletonSeconds = 60
+    // Wide bucket avoids a time-slot boundary crossing between the two sends under load.
+    const singletonSeconds = 300
 
     await ctx.boss.send(ctx.schema, null, { singletonKey, singletonSeconds })
     const [job] = await ctx.boss.fetch(ctx.schema)

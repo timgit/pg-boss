@@ -45,11 +45,11 @@ jobs:
       run: npm run cover
       env:
         POSTGRES_HOST: postgres
-      
+
     - name: Coveralls
       uses: coverallsapp/github-action@v2
       with:
-        flag-name: run-${{ join(matrix.*, '-') }}
+        flag-name: standard
         parallel: true
 
   # Runs the full suite in distributed database mode on Postgres. distributedDatabaseMode is a pure
@@ -81,13 +81,24 @@ jobs:
     - name: Install
       run: npm install
 
+    # Collect coverage here too: the distributed fetch strategy exercises code paths
+    # (completeDistributed/failDistributed, distributed branches in plans.ts) that the
+    # standard `test` job never hits. Uploading as a second parallel flag makes Coveralls
+    # report the union, so those paths are measured instead of showing as uncovered.
     - name: Test (distributed mode)
-      run: npm run test:distributed
+      run: npm run cover
       env:
         POSTGRES_HOST: postgres
+        DISTRIBUTED: 'true'
+
+    - name: Coveralls
+      uses: coverallsapp/github-action@v2
+      with:
+        flag-name: distributed
+        parallel: true
 
   coverage:
-    needs: test
+    needs: [test, test-distributed]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
@@ -95,4 +106,4 @@ jobs:
       uses: coverallsapp/github-action@v2
       with:
         parallel-finished: true
-        carryforward: "run-1,run-2"
+        carryforward: "standard,distributed"
