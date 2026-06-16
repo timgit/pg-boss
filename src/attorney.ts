@@ -419,8 +419,8 @@ function applyPollingInterval (config: any) {
 
   // Burst triggers: no transform, just validation. Both put the worker into continuous-fetch
   // (no delay) mode; see JobPollingOptions for precedence.
-  assert(!('burstWhenBacklogExceeds' in config) || (Number.isInteger(config.burstWhenBacklogExceeds) && config.burstWhenBacklogExceeds >= 1),
-    'configuration assert: burstWhenBacklogExceeds must be an integer >= 1')
+  assert(!('burstWhenReadyExceeds' in config) || (Number.isInteger(config.burstWhenReadyExceeds) && config.burstWhenReadyExceeds >= 1),
+    'configuration assert: burstWhenReadyExceeds must be an integer >= 1')
 
   assert(!('burstWhenBatchFull' in config) || typeof config.burstWhenBatchFull === 'boolean',
     'configuration assert: burstWhenBatchFull must be a boolean')

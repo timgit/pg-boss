@@ -63,11 +63,11 @@ describe('work', function () {
     expect(options.notifyPollingInterval).toBe(30000)
   })
 
-  it('should fail if burstWhenBacklogExceeds is not a positive integer', async function () {
+  it('should fail if burstWhenReadyExceeds is not a positive integer', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
     await expect(async () => {
-      await ctx.boss!.work(ctx.schema, { burstWhenBacklogExceeds: 0 }, async () => {})
-    }).rejects.toThrow(/burstWhenBacklogExceeds/)
+      await ctx.boss!.work(ctx.schema, { burstWhenReadyExceeds: 0 }, async () => {})
+    }).rejects.toThrow(/burstWhenReadyExceeds/)
   })
 
   it('should fail if burstWhenBatchFull is not a boolean', async function () {
@@ -78,10 +78,10 @@ describe('work', function () {
     }).rejects.toThrow(/burstWhenBatchFull/)
   })
 
-  it('fetches continuously when the ready backlog exceeds burstWhenBacklogExceeds', async function () {
-    // Backlog is read from the cached queue stats, which are refreshed by the monitor
+  it('fetches continuously when the ready count exceeds burstWhenReadyExceeds', async function () {
+    // The ready count is read from the cached queue stats, which are refreshed by the monitor
     // (supervise/monitor intervals) and then copied into memory (queue cache interval).
-    // Turn all three down so the worker sees the backlog quickly in this test.
+    // Turn all three down so the worker sees the ready count quickly in this test.
     ctx.boss = await helper.start({
       ...ctx.bossConfig,
       supervise: true,
@@ -96,13 +96,13 @@ describe('work', function () {
     }
 
     // Let the monitor compute the stats and the queue cache pick them up before the worker
-    // starts, so its first resolveInterval() already sees a ready backlog over the threshold.
+    // starts, so its first resolveInterval() already sees a ready count over the threshold.
     await delay(3000)
 
     let processed = 0
     // A 30s base poll means that without the burst bypass at most ~1 job would be processed in
-    // the window below. A ready backlog of 10 > 5 should fetch all 10 continuously instead.
-    await ctx.boss.work(ctx.schema, { pollingIntervalSeconds: 30, burstWhenBacklogExceeds: 5 }, async () => { processed++ })
+    // the window below. A ready count of 10 > 5 should fetch all 10 continuously instead.
+    await ctx.boss.work(ctx.schema, { pollingIntervalSeconds: 30, burstWhenReadyExceeds: 5 }, async () => { processed++ })
 
     for (let i = 0; i < 30; i++) {
       if (processed >= jobCount) break
@@ -162,18 +162,18 @@ describe('work', function () {
       queueCacheIntervalSeconds: 1
     })
 
-    // Seed a backlog so the cached ready count is over the threshold.
+    // Seed jobs so the cached ready count is over the threshold.
     const seeded = 5
     for (let i = 0; i < seeded; i++) {
       await ctx.boss.send(ctx.schema)
     }
-    await delay(3000) // let the monitor + queue cache reflect the backlog
+    await delay(3000) // let the monitor + queue cache reflect the ready count
 
     let processed = 0
     // batchSize 10 > the 5 seeded jobs, so the first fetch comes back short (5 < 10). Even
-    // though the cached backlog (5) exceeds burstWhenBacklogExceeds (1), a short fetch must NOT
+    // though the cached ready count (5) exceeds burstWhenReadyExceeds (1), a short fetch must NOT
     // keep the worker in burst mode — it should fall back to the 3s poll.
-    await ctx.boss.work(ctx.schema, { batchSize: 10, pollingIntervalSeconds: 3, burstWhenBacklogExceeds: 1 }, async (jobs) => { processed += jobs.length })
+    await ctx.boss.work(ctx.schema, { batchSize: 10, pollingIntervalSeconds: 3, burstWhenReadyExceeds: 1 }, async (jobs) => { processed += jobs.length })
 
     // The first fetch grabs all seeded jobs in one batch.
     await delay(500)

@@ -51,15 +51,15 @@ The default options for `work()` is 1 job every 2 seconds.
 
   Polling interval used only while [LISTEN/NOTIFY](#low-latency-dispatch-with-listennotify) is active for the queue (the queue has `notify: true` and the instance listener is established). Since NOTIFY wakes workers immediately, polling only needs to run as a slow safety net, so this can be much larger than `pollingIntervalSeconds`. When notify is off or unavailable, `pollingIntervalSeconds` is used instead. Must be >=0.5 (500ms).
 
-* **burstWhenBacklogExceeds**, int
+* **burstWhenReadyExceeds**, int
 
-  When the queue's ready backlog — created + retry jobs runnable now, i.e. `queuedCount - deferredCount` from the cached queue stats — exceeds this value, the worker fetches continuously with no delay until it catches up; the first fetch that comes back short ends burst mode. Takes precedence over `notifyPollingIntervalSeconds` and `pollingIntervalSeconds`. Must be an integer >=1.
+  When the queue's ready count — created + retry jobs runnable now, i.e. `queuedCount - deferredCount` from the cached queue stats — exceeds this value, the worker fetches continuously with no delay until it catches up; the first fetch that comes back short ends burst mode. Takes precedence over `notifyPollingIntervalSeconds` and `pollingIntervalSeconds`. Must be an integer >=1.
 
-  > **Note**: The backlog is read from the stats cache, so reaction latency is bounded by the instance-level stats pipeline (`monitorIntervalSeconds` / `superviseIntervalSeconds` / `queueCacheIntervalSeconds`).
+  > **Note**: The ready count is read from the stats cache, so reaction latency is bounded by the instance-level stats pipeline (`monitorIntervalSeconds` / `superviseIntervalSeconds` / `queueCacheIntervalSeconds`).
 
 * **burstWhenBatchFull**, bool, *(default=false)*
 
-  While each fetch returns a full `batchSize` batch there is clearly more work, so the worker keeps fetching continuously with no delay; the first short fetch ends burst mode. Unlike `burstWhenBacklogExceeds` this reacts instantly and needs no cached stats. Ignored when `batchSize` is 1 (every successful fetch would otherwise be "full").
+  While each fetch returns a full `batchSize` batch there is clearly more work, so the worker keeps fetching continuously with no delay; the first short fetch ends burst mode. Unlike `burstWhenReadyExceeds` this reacts instantly and needs no cached stats. Ignored when `batchSize` is 1 (every successful fetch would otherwise be "full").
 
 * **localConcurrency**, int, *(default=1)*
 

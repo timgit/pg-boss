@@ -361,7 +361,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const {
       pollingInterval: interval,
       notifyPollingInterval: notifyInterval,
-      burstWhenBacklogExceeds,
+      burstWhenReadyExceeds,
       burstWhenBatchFull = false,
       batchSize = 1,
       includeMetadata = false,
@@ -385,10 +385,10 @@ class Manager extends EventEmitter implements types.EventsMixin {
     // instance listener is established.
     const isNotifyActive = () => !!(this.notifier?.available && this.queues?.[name]?.notify)
 
-    // Runnable backlog from the cached queue stats: created + retry jobs that are ready now
+    // Runnable count from the cached queue stats: created + retry jobs that are ready now
     // (readyCount = queuedCount - deferredCount, since queuedCount counts state < active and
     // includes deferred future-dated jobs). Refreshed every queueCacheIntervalSeconds.
-    const getReadyBacklog = () => {
+    const getReadyCount = () => {
       const q = this.queues?.[name]
       return q ? Math.max(0, q.readyCount) : 0
     }
@@ -398,14 +398,14 @@ class Manager extends EventEmitter implements types.EventsMixin {
     // any updateQueue notify toggles.
     //
     // A burst trigger only engages while the last fetch came back full (>= batchSize). That is
-    // both the meaning of burstWhenBatchFull and the anti-hot-loop guard for burstWhenBacklogExceeds:
-    // the cached backlog lags reality, so a short fetch (including 0 < 1 at the default batchSize)
+    // both the meaning of burstWhenBatchFull and the anti-hot-loop guard for burstWhenReadyExceeds:
+    // the cached ready count lags reality, so a short fetch (including 0 < 1 at the default batchSize)
     // means the queue has likely caught up — fall back to normal polling instead of spinning on
     // empty fetches. burstWhenBatchFull is ignored at batchSize 1 (every fetch would be "full").
     const resolveInterval = (lastFetchCount: number) => {
       const fullBatch = lastFetchCount >= batchSize
       const burst = fullBatch && (
-        (burstWhenBacklogExceeds !== undefined && getReadyBacklog() > burstWhenBacklogExceeds) ||
+        (burstWhenReadyExceeds !== undefined && getReadyCount() > burstWhenReadyExceeds) ||
         (burstWhenBatchFull && batchSize > 1)
       )
 

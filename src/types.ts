@@ -363,21 +363,21 @@ export interface JobPollingOptions {
    */
   notifyPollingIntervalSeconds?: number;
   /**
-   * Burst trigger. When the queue's ready backlog — created + retry jobs runnable now,
+   * Burst trigger. When the queue's ready count — created + retry jobs runnable now,
    * i.e. `queuedCount - deferredCount` from the cached queue stats — exceeds this value, the
    * worker fetches continuously with no delay until it catches up (a fetch that comes back
    * short ends burst mode). Takes precedence over `notifyPollingIntervalSeconds` and
    * `pollingIntervalSeconds`. Must be an integer >= 1.
    *
-   * The backlog is read from the stats cache, so reaction latency is bounded by the
+   * The ready count is read from the stats cache, so reaction latency is bounded by the
    * instance-level stats pipeline (`monitorIntervalSeconds` / `superviseIntervalSeconds` /
    * `queueCacheIntervalSeconds`, all default 60s).
    */
-  burstWhenBacklogExceeds?: number;
+  burstWhenReadyExceeds?: number;
   /**
    * Burst trigger. While each fetch returns a full `batchSize` batch there is clearly more
    * work, so the worker keeps fetching continuously with no delay; the first short fetch ends
-   * burst mode. Unlike `burstWhenBacklogExceeds` this is instant and needs no cached
+   * burst mode. Unlike `burstWhenReadyExceeds` this is instant and needs no cached
    * stats. Ignored when `batchSize` is 1 (every successful fetch would otherwise be "full").
    * @default false
    */
