@@ -11,7 +11,11 @@ import { ctx } from './hooks.ts'
 // compatibility construction branches) or rely on internals (db injection) that don't fit a
 // generic test. They explicitly opt into distributedDatabaseMode, so they also provide
 // distributed-on-Postgres coverage during the normal `npm test` run.
-describe('distributed database mode', function () {
+// Every test here calls helper.start(), which on CockroachDB pays slow per-test DDL (~8-9s
+// observed in CI), leaving little headroom under the 10s global timeout. Raise the default for
+// the whole block so startup jitter can't push a test over the edge (the concurrency tests below
+// keep their explicit per-test overrides).
+describe('distributed database mode', { timeout: 20000 }, function () {
   it('should not duplicate jobs when fetching concurrently in distributed mode', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, distributedDatabaseMode: true })
     const jobCount = 10
