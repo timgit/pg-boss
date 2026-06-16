@@ -52,6 +52,40 @@ jobs:
         flag-name: run-${{ join(matrix.*, '-') }}
         parallel: true
 
+  # Runs the full suite in distributed database mode on Postgres. distributedDatabaseMode is a pure
+  # runtime fetch-strategy toggle, so every test (existing and new) is automatically exercised
+  # against the distributed code paths here - fast and reliable, without CockroachDB's slow DDL.
+  test-distributed:
+    runs-on: ubuntu-latest
+    container: node:24
+    services:
+      postgres:
+        image: postgres
+        env:
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 24
+
+    - name: Install
+      run: npm install
+
+    - name: Test (distributed mode)
+      run: npm run test:distributed
+      env:
+        POSTGRES_HOST: postgres
+
   coverage:
     needs: test
     if: ${{ always() }}

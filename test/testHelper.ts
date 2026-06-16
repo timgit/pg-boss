@@ -11,6 +11,12 @@ const sha1 = (value: string): string => crypto.createHash('sha1').update(value).
 
 const isCockroachDb = process.env.DB_TYPE === 'cockroachdb'
 
+// Distributed database mode is the atomic-UPDATE fetch strategy used by CockroachDB et al. It is a
+// pure runtime toggle (no schema impact) and works fine on plain PostgreSQL, so we exercise the
+// whole suite under it on Postgres via DISTRIBUTED=true — fast, reliable coverage of the distributed
+// code paths without paying CockroachDB's slow per-test DDL. CockroachDB always implies it.
+const isDistributed = isCockroachDb || process.env.DISTRIBUTED === 'true'
+
 // The full suite runs against CockroachDB via `npm run test:cockroachdb`, where getConfig()
 // auto-enables distributedDatabaseMode + the compatibility flags. Wrap tests that depend on
 // Postgres-only features (table partitioning, covering indexes, exact PG schema shape) with these
@@ -48,9 +54,13 @@ function getConfig (options: Partial<ConstructorOptions> & { testKey?: string } 
   config.schedule = false
   config.createSchema = true
 
-  // Enable distributed database mode and disable partitioning for CockroachDB
-  if (isCockroachDb) {
+  // Distributed fetch strategy: enabled on CockroachDB and on Postgres via DISTRIBUTED=true
+  if (isDistributed) {
     config.distributedDatabaseMode = true
+  }
+
+  // CockroachDB additionally needs the compatibility flags (no partitioning/advisory locks/etc.)
+  if (isCockroachDb) {
     config.noTablePartitioning = true
     config.noDeferrableConstraints = true
     config.noAdvisoryLocks = true
@@ -164,6 +174,7 @@ export {
   tryCreateDb,
   init,
   isCockroachDb,
+  isDistributed,
   itPostgresOnly,
   describePostgresOnly,
   getSchemaDefs

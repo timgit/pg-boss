@@ -122,23 +122,31 @@ const boss = new PgBoss({
 
 CockroachDB uses a [different partitioning model](https://www.cockroachlabs.com/docs/stable/partitioning) that requires partition columns in the PRIMARY KEY and partitions defined inline at table creation.
 
-#### Testing against CockroachDB
+#### Testing distributed mode
 
-`npm run test:cockroachdb` runs the **entire** test suite against CockroachDB (it sets
-`DB_TYPE=cockroachdb`, and `test/testHelper.ts`'s `getConfig()` then enables
-`distributedDatabaseMode` plus the compatibility flags above for every test). This means any new
-test added to the suite is automatically exercised in distributed mode — no extra wiring needed.
+`distributedDatabaseMode` is a pure runtime fetch-strategy toggle (no schema impact) that works on
+plain PostgreSQL, so the project exercises it two ways:
 
-If a test depends on PostgreSQL-only features (table partitioning, covering indexes, or an exact
-PostgreSQL schema/migration shape), wrap it with the `itPostgresOnly` / `describePostgresOnly`
-helpers exported from `test/testHelper.ts` so it is skipped under CockroachDB. For data-driven
-tests that loop over `partition: true`/`false`, narrow the cases with `helper.isCockroachDb`.
+- **`npm run test:distributed`** — runs the **entire** test suite on Postgres with
+  `DISTRIBUTED=true`, which makes `test/testHelper.ts`'s `getConfig()` enable
+  `distributedDatabaseMode` for every test. This is the primary distributed-mode safety net: any new
+  test added to the suite is automatically exercised against the distributed code paths, fast and
+  reliably, without paying CockroachDB's slow per-test DDL. It runs as its own CI job.
+- **`npm run test:cockroachdb`** — runs `test/distributedDatabaseTest.ts` against a real CockroachDB
+  cluster (`DB_TYPE=cockroachdb`, which also enables the compatibility flags above). This is a
+  focused smoke test confirming actual CockroachDB compatibility. Running the *whole* suite against
+  CockroachDB is impractical: each test rebuilds the schema, and CockroachDB's online schema changes
+  make that ~8s per test.
 
-`test/distributedDatabaseTest.ts` holds only the distributed-mode-specific invariants that the
-general suite cannot express (concurrent-fetch deduplication, `failDistributed`/`completeDistributed`
-rollback behavior, and the compatibility-flag construction paths). Those cases opt into
-`distributedDatabaseMode` explicitly, so they also run during the normal `npm test` against
-PostgreSQL.
+For tests that depend on PostgreSQL-only features (table partitioning, covering indexes, or an exact
+PostgreSQL schema/migration shape), `test/testHelper.ts` exports `itPostgresOnly` /
+`describePostgresOnly`, which skip under CockroachDB. For data-driven tests that loop over
+`partition: true`/`false`, narrow the cases with `helper.isCockroachDb`.
+
+`test/distributedDatabaseTest.ts` holds the distributed-mode-specific invariants the general suite
+cannot express (concurrent-fetch deduplication, `failDistributed`/`completeDistributed` rollback
+behavior, and the compatibility-flag construction paths). Those cases opt into
+`distributedDatabaseMode` explicitly, so they run in every mode.
 
 ### Untested: YugabyteDB (likely compatible)
 

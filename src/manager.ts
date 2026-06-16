@@ -1012,12 +1012,11 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
       for (const job of jobs) {
         const canRetry = job.retry_count < job.retry_limit
-        const state = canRetry ? 'retry' : 'failed'
-        const completedOn = canRetry ? null : new Date()
+        let retried = false
 
-        // Calculate start_after for retry
-        let startAfter = job.start_after
         if (canRetry) {
+          // Calculate start_after for retry
+          let startAfter = job.start_after
           if (!job.retry_backoff) {
             startAfter = new Date(Date.now() + job.retry_delay * 1000)
           } else {
@@ -1027,19 +1026,34 @@ class Manager extends EventEmitter implements types.EventsMixin {
             const cappedDelay = job.retry_delay_max ? Math.min(job.retry_delay_max, delay) : delay
             startAfter = new Date(Date.now() + cappedDelay * 1000)
           }
+
+          const { rows } = await db.executeSql(insertSql, [
+            job.id, job.name, job.priority, job.data, 'retry', job.retry_limit, job.retry_count,
+            job.retry_delay, job.retry_backoff, job.retry_delay_max, startAfter, job.started_on,
+            job.singleton_key, job.singleton_on, job.group_id, job.group_tier, job.expire_seconds,
+            job.deletion_seconds, job.created_on, null, job.keep_until, job.policy,
+            outputData, job.dead_letter
+          ])
+
+          // The retry insert can be dropped by ON CONFLICT when the queue policy (e.g. stately,
+          // singleton, key_strict_fifo) already has a non-terminal job. Mirror the failed_jobs
+          // fallback of the non-distributed failJobs() CTE in that case.
+          retried = rows.length > 0
         }
 
-        await db.executeSql(insertSql, [
-          job.id, job.name, job.priority, job.data, state, job.retry_limit, job.retry_count,
-          job.retry_delay, job.retry_backoff, job.retry_delay_max, startAfter, job.started_on,
-          job.singleton_key, job.singleton_on, job.group_id, job.group_tier, job.expire_seconds,
-          job.deletion_seconds, job.created_on, completedOn, job.keep_until, job.policy,
-          outputData, job.dead_letter
-        ])
+        if (!retried) {
+          await db.executeSql(insertSql, [
+            job.id, job.name, job.priority, job.data, 'failed', job.retry_limit, job.retry_count,
+            job.retry_delay, job.retry_backoff, job.retry_delay_max, job.start_after, job.started_on,
+            job.singleton_key, job.singleton_on, job.group_id, job.group_tier, job.expire_seconds,
+            job.deletion_seconds, job.created_on, new Date(), job.keep_until, job.policy,
+            outputData, job.dead_letter
+          ])
 
-        // Insert to dead letter queue if failed and has dead_letter configured
-        if (!canRetry && job.dead_letter) {
-          await db.executeSql(dlqSql, [job.dead_letter, job.data, outputData])
+          // Insert to dead letter queue if failed and has dead_letter configured
+          if (job.dead_letter) {
+            await db.executeSql(dlqSql, [job.dead_letter, job.data, outputData])
+          }
         }
 
         count++
