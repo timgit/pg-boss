@@ -535,6 +535,12 @@ export function notifyChannelSql (schema: string): string {
   return `('pgboss_' || left(encode(sha224('${schema}'::bytea), 'hex'), 24))`
 }
 
+// Parameter-less statement that wakes workers on a notify-enabled queue. Embedded into
+// flow batches so it commits in the same transaction as the inserts.
+export function notifyQueue (schema: string, name: string): string {
+  return `SELECT pg_notify(${notifyChannelSql(schema)}, '${name}')`
+}
+
 export function deleteQueue (schema: string, name: string) {
   const sql = `SELECT ${schema}.delete_queue('${name}')`
   return locked(schema, sql, 'delete-queue')
@@ -1256,6 +1262,23 @@ export function insertJobs (schema: string, { table, name, returnId = true, noti
   `
 }
 
+// Self-contained (parameter-less) insert for one queue's slice of a flow batch. The JSON
+// payload is embedded directly so the whole flow can be sent as a single multi-statement
+// round-trip regardless of db adapter. Guarded so a skipped row (ON CONFLICT) raises
+// 'division by zero', aborting the surrounding transaction. The divisor references the
+// row count so it isn't constant-folded at plan time.
+export function insertFlowJobs (schema: string, { table, name }: { table: string, name: string }, jobs: unknown[]): string {
+  const insert = insertJobs(schema, { table, name, returnId: true })
+    .replace('$1', () => serializeJsonParam(jobs))
+
+  return `
+    WITH ins AS (
+      ${insert}
+    )
+    SELECT 1 / (CASE WHEN (SELECT count(*) FROM ins) = ${jobs.length} THEN 1 ELSE 0 END)
+  `
+}
+
 export function failJobsById (schema: string, table: string) {
   const where = `name = $1 AND id IN (SELECT UNNEST($2::uuid[])) AND state < '${JOB_STATES.completed}'`
   const output = '$3::jsonb'
@@ -1632,8 +1655,10 @@ export function getJobById (schema: string, table: string) {
     `
 }
 
-export function insertDependencies (schema: string) {
-  return `
+// Pass `deps` to embed the payload as a literal (parameter-less) so the statement can be
+// concatenated into a flow batch; omit it to get the parameterized ($1) form.
+export function insertDependencies (schema: string, deps?: unknown[]) {
+  const sql = `
     INSERT INTO ${schema}.job_dependency (child_name, child_id, parent_name, parent_id)
     SELECT child_name, child_id, parent_name, parent_id
     FROM json_to_recordset($1::json) AS x (
@@ -1644,6 +1669,8 @@ export function insertDependencies (schema: string) {
     )
     ON CONFLICT DO NOTHING
   `
+
+  return deps ? sql.replace('$1', () => serializeJsonParam(deps)) : sql
 }
 
 export function getDependencies (schema: string) {

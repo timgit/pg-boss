@@ -845,32 +845,19 @@ class Manager extends EventEmitter implements types.EventsMixin {
         }
       })
 
-      const insertSql = plans.insertJobs(this.config.schema, { table, name: queueName, returnId: true })
-        .replace('$1', () => plans.serializeJsonParam(insertPayload))
-
-      // raises 'division by zero' (aborting the transaction) if any job was skipped.
-      // The divisor references the row count so it isn't constant-folded at plan time.
-      statements.push(`
-        WITH ins AS (
-          ${insertSql}
-        )
-        SELECT 1 / (CASE WHEN (SELECT count(*) FROM ins) = ${insertPayload.length} THEN 1 ELSE 0 END)
-      `)
+      statements.push(plans.insertFlowJobs(this.config.schema, { table, name: queueName }, insertPayload))
 
       // Wake workers for notify-enabled queues. Runs in the same transaction as the
       // inserts above, so it commits atomically. Blocked children and future-dated roots
       // are harmless: the fetch query filters them out, so a wake just triggers one fetch
       // that picks up whatever roots are immediately runnable.
       if (notify) {
-        statements.push(`SELECT pg_notify(${plans.notifyChannelSql(this.config.schema)}, '${queueName}')`)
+        statements.push(plans.notifyQueue(this.config.schema, queueName))
       }
     }
 
     if (depRows.length > 0) {
-      statements.push(
-        plans.insertDependencies(this.config.schema)
-          .replace('$1', () => plans.serializeJsonParam(depRows))
-      )
+      statements.push(plans.insertDependencies(this.config.schema, depRows))
     }
 
     // When the caller provides a db they own the transaction; otherwise wrap the
