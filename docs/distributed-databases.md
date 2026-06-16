@@ -122,6 +122,24 @@ const boss = new PgBoss({
 
 CockroachDB uses a [different partitioning model](https://www.cockroachlabs.com/docs/stable/partitioning) that requires partition columns in the PRIMARY KEY and partitions defined inline at table creation.
 
+#### Testing against CockroachDB
+
+`npm run test:cockroachdb` runs the **entire** test suite against CockroachDB (it sets
+`DB_TYPE=cockroachdb`, and `test/testHelper.ts`'s `getConfig()` then enables
+`distributedDatabaseMode` plus the compatibility flags above for every test). This means any new
+test added to the suite is automatically exercised in distributed mode — no extra wiring needed.
+
+If a test depends on PostgreSQL-only features (table partitioning, covering indexes, or an exact
+PostgreSQL schema/migration shape), wrap it with the `itPostgresOnly` / `describePostgresOnly`
+helpers exported from `test/testHelper.ts` so it is skipped under CockroachDB. For data-driven
+tests that loop over `partition: true`/`false`, narrow the cases with `helper.isCockroachDb`.
+
+`test/distributedDatabaseTest.ts` holds only the distributed-mode-specific invariants that the
+general suite cannot express (concurrent-fetch deduplication, `failDistributed`/`completeDistributed`
+rollback behavior, and the compatibility-flag construction paths). Those cases opt into
+`distributedDatabaseMode` explicitly, so they also run during the normal `npm test` against
+PostgreSQL.
+
 ### Untested: YugabyteDB (likely compatible)
 
 YugabyteDB is a PostgreSQL-compatible distributed database with [native job queue support](https://docs.yugabyte.com/stable/develop/data-modeling/common-patterns/jobqueue/). YugabyteDB [recommends](https://www.yugabyte.com/blog/distributed-fifo-job-queue/) using `SELECT FOR UPDATE SKIP LOCKED` for job queues, and has optimizations for single-row transactions that make this pattern efficient.

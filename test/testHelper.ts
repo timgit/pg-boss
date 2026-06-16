@@ -1,5 +1,6 @@
 import Db from '../src/db.ts'
 import { PgBoss } from '../src/index.ts'
+import { describe, it } from 'vitest'
 import crypto from 'node:crypto'
 import configJson from './config.json' with { type: 'json' }
 import cockroachConfigJson from './config.cockroachdb.json' with { type: 'json' }
@@ -9,6 +10,13 @@ import { getColumns, getConstraints, getIndexes, getFunctions } from './pgSchema
 const sha1 = (value: string): string => crypto.createHash('sha1').update(value).digest('hex')
 
 const isCockroachDb = process.env.DB_TYPE === 'cockroachdb'
+
+// The full suite runs against CockroachDB via `npm run test:cockroachdb`, where getConfig()
+// auto-enables distributedDatabaseMode + the compatibility flags. Wrap tests that depend on
+// Postgres-only features (table partitioning, covering indexes, exact PG schema shape) with these
+// so they are skipped automatically under CockroachDB.
+const itPostgresOnly = it.skipIf(isCockroachDb)
+const describePostgresOnly = describe.skipIf(isCockroachDb)
 
 function assertTruthy<T> (value: T, message?: string): asserts value is NonNullable<T> {
   if (value == null) {
@@ -156,5 +164,7 @@ export {
   tryCreateDb,
   init,
   isCockroachDb,
+  itPostgresOnly,
+  describePostgresOnly,
   getSchemaDefs
 }

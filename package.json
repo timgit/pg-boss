@@ -44,7 +44,7 @@
     "prepublishOnly": "npm install && npm test && npm run build",
     "pretest": "prisma generate --schema=test/prisma/schema.prisma",
     "test": "eslint . && vitest run",
-    "test:cockroachdb": "cross-env DB_TYPE=cockroachdb COCKROACH_HOST=localhost npm test -- test/distributedDatabaseTest.ts",
+    "test:cockroachdb": "cross-env DB_TYPE=cockroachdb COCKROACH_HOST=localhost npm test",
     "lint:fix": "eslint . --fix",
     "precover": "prisma generate --schema=test/prisma/schema.prisma",
     "cover": "vitest run --coverage",

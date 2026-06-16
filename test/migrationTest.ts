@@ -1,6 +1,6 @@
 import { expect, beforeEach } from 'vitest'
 import { PgBoss, getConstructionPlans, getMigrationPlans, getRollbackPlans } from '../src/index.ts'
-import { getDb, assertTruthy, getSchemaDefs } from './testHelper.ts'
+import { getDb, assertTruthy, getSchemaDefs, itPostgresOnly } from './testHelper.ts'
 import Contractor from '../src/contractor.ts'
 import { getAll, migrate } from '../src/migrationStore.ts'
 import packageJson from '../package.json' with { type: 'json' }
@@ -315,7 +315,7 @@ describe('migration', function () {
     expect(result.indexOf('sql_v12')).toBeLessThan(result.indexOf('sql_v13'))
   })
 
-  it('should add migrations for partitioned tables', async function () {
+  itPostgresOnly('should add migrations for partitioned tables', async function () {
     const boss = ctx.boss = new PgBoss(ctx.bossConfig)
     await boss.start()
     await boss.createQueue(ctx.schema, { partition: true })
@@ -337,7 +337,7 @@ describe('migration', function () {
     expect(Array.isArray(bamEntries)).toBe(true)
   })
 
-  it('should return bam status grouped by status', async function () {
+  itPostgresOnly('should return bam status grouped by status', async function () {
     const boss = ctx.boss = new PgBoss(ctx.bossConfig)
     await boss.start()
     await boss.createQueue(ctx.schema, { partition: true })
@@ -356,7 +356,7 @@ describe('migration', function () {
     expect(Array.isArray(bamStatus)).toBe(true)
   })
 
-  it('should have identical schema after rollback and forward migration', async function () {
+  itPostgresOnly('should have identical schema after rollback and forward migration', async function () {
     const config = { ...ctx.bossConfig }
 
     // Create initial schema
@@ -393,7 +393,7 @@ describe('migration', function () {
     expect(finalSchema.functions.rows).toEqual(initialSchema.functions.rows)
   })
 
-  it('should detect function modification when migration has incomplete uninstall', async function () {
+  itPostgresOnly('should detect function modification when migration has incomplete uninstall', async function () {
     const config = { ...ctx.bossConfig }
 
     // Get all real migrations
@@ -450,7 +450,7 @@ describe('migration', function () {
     expect(rolledBackSchema.functions.rows).not.toEqual(originalSchema.functions.rows)
   })
 
-  it('should reject index creation that is not completely removed', async function () {
+  itPostgresOnly('should reject index creation that is not completely removed', async function () {
     const config = { ...ctx.bossConfig }
     const schema = config.schema
 
@@ -502,7 +502,7 @@ describe('migration', function () {
     expect(rolledBackSchema.indexes.rows).not.toEqual(originalSchema.indexes.rows)
   })
 
-  it('should remove indexes created on the job table that follow the standard naming convention', async function () {
+  itPostgresOnly('should remove indexes created on the job table that follow the standard naming convention', async function () {
     const config = { ...ctx.bossConfig }
     const schema = config.schema
 
@@ -554,7 +554,7 @@ describe('migration', function () {
     expect(rolledBackSchema.indexes.rows).toEqual(originalSchema.indexes.rows)
   })
 
-  it('should have identical schema after rolling back all migrations and replaying them', async function () {
+  itPostgresOnly('should have identical schema after rolling back all migrations and replaying them', async function () {
     const config = { ...ctx.bossConfig }
     const schema = config.schema
 

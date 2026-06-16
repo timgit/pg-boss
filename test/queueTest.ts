@@ -75,7 +75,7 @@ describe('queues', function () {
     await ctx.boss.deleteQueue(ctx.schema)
   })
 
-  it('should truncate a partitioned queue and leave other queues alone', async function () {
+  helper.itPostgresOnly('should truncate a partitioned queue and leave other queues alone', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
     const queue2 = `${ctx.schema}2`
@@ -92,7 +92,7 @@ describe('queues', function () {
     expect(queuedCount).toBeTruthy()
   })
 
-  it('should truncate a partitioned queue', async function () {
+  helper.itPostgresOnly('should truncate a partitioned queue', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
     await ctx.boss.createQueue(ctx.schema, { partition: true })
@@ -101,7 +101,7 @@ describe('queues', function () {
     await ctx.boss.deleteQueue(ctx.schema)
   })
 
-  it('should delete all jobs from all queues, included partitioned', async function () {
+  helper.itPostgresOnly('should delete all jobs from all queues, included partitioned', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
     await ctx.boss.createQueue(ctx.schema, { partition: true })
@@ -257,7 +257,7 @@ describe('queues', function () {
     }).rejects.toThrow()
   })
 
-  it('should fail to change queue partitioning', async function () {
+  helper.itPostgresOnly('should fail to change queue partitioning', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
     await ctx.boss.createQueue(ctx.schema, { partition: true })
 
