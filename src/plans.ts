@@ -129,6 +129,7 @@ function createTableQueue (schema: string) {
       table_name text NOT NULL,
       deferred_count int NOT NULL default 0,
       queued_count int NOT NULL default 0,
+      ready_count int NOT NULL default 0,
       warning_queued int NOT NULL default 0,
       active_count int NOT NULL default 0,
       failed_count int NOT NULL default 0,
@@ -682,7 +683,7 @@ export function getQueues (schema: string, names?: string[]): SqlQuery {
       q.deferred_count as "deferredCount",
       q.warning_queued as "warningQueueSize",
       q.queued_count as "queuedCount",
-      GREATEST(q.queued_count - q.deferred_count, 0) as "readyCount",
+      q.ready_count as "readyCount",
       q.active_count as "activeCount",
       q.failed_count as "failedCount",
       q.total_count as "totalCount",
@@ -1531,16 +1532,26 @@ export function getQueueStats (schema: string, table: string, queues: string[]):
     text: `
     SELECT
         name,
-        (count(*) FILTER (WHERE start_after > now()))::int as "deferredCount",
-        (count(*) FILTER (WHERE state < '${JOB_STATES.active}'))::int as "queuedCount",
-        GREATEST((count(*) FILTER (WHERE state < '${JOB_STATES.active}')) - (count(*) FILTER (WHERE start_after > now())), 0)::int as "readyCount",
-        (count(*) FILTER (WHERE state = '${JOB_STATES.active}'))::int as "activeCount",
-        (count(*) FILTER (WHERE state = '${JOB_STATES.failed}'))::int as "failedCount",
-        count(*)::int as "totalCount",
-        array_agg(singleton_key) FILTER (WHERE policy IN ('${QUEUE_POLICIES.singleton}','${QUEUE_POLICIES.stately}') AND state = '${JOB_STATES.active}') as "singletonsActive"
-      FROM ${schema}.${table}
-      WHERE name = ANY($1::text[])
-      GROUP BY 1
+        "deferredCount",
+        "queuedCount",
+        GREATEST("queuedCount" - "deferredCount", 0) as "readyCount",
+        "activeCount",
+        "failedCount",
+        "totalCount",
+        "singletonsActive"
+      FROM (
+        SELECT
+            name,
+            (count(*) FILTER (WHERE start_after > now()))::int as "deferredCount",
+            (count(*) FILTER (WHERE state < '${JOB_STATES.active}'))::int as "queuedCount",
+            (count(*) FILTER (WHERE state = '${JOB_STATES.active}'))::int as "activeCount",
+            (count(*) FILTER (WHERE state = '${JOB_STATES.failed}'))::int as "failedCount",
+            count(*)::int as "totalCount",
+            array_agg(singleton_key) FILTER (WHERE policy IN ('${QUEUE_POLICIES.singleton}','${QUEUE_POLICIES.stately}') AND state = '${JOB_STATES.active}') as "singletonsActive"
+          FROM ${schema}.${table}
+          WHERE name = ANY($1::text[])
+          GROUP BY 1
+      ) stats
   `,
     values: [queues]
   }
@@ -1556,6 +1567,7 @@ export function cacheQueueStats (schema: string, table: string, queues: string[]
     UPDATE ${schema}.queue SET
       deferred_count = COALESCE(stats."deferredCount", 0),
       queued_count = COALESCE(stats."queuedCount", 0),
+      ready_count = COALESCE(stats."readyCount", 0),
       active_count = COALESCE(stats."activeCount", 0),
       failed_count = COALESCE(stats."failedCount", 0),
       total_count = COALESCE(stats."totalCount", 0),

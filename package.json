@@ -52,7 +52,7 @@
     "db:construct": "node --import=tsx -e 'console.log(require(\"./src\").getConstructionPlans())'"
   },
   "pgboss": {
-    "schema": 33
+    "schema": 32
   },
   "repository": {
     "type": "git",
