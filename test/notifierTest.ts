@@ -47,6 +47,42 @@ describe('notifier', function () {
     await notifier.stop()
   })
 
+  it('available reflects the listener handle lifecycle', async function () {
+    const db = fakeDb({ listen: async () => ({ close: async () => {} }) })
+    const notifier = new Notifier(db, fakeManager, config)
+
+    expect(notifier.available).toBe(false) // before start
+
+    await notifier.start()
+    expect(notifier.available).toBe(true) // handle established
+
+    await notifier.stop()
+    expect(notifier.available).toBe(false) // after stop
+  })
+
+  it('available stays false when the database does not support listen', async function () {
+    const db = fakeDb({}) // no listen function
+    const notifier = new Notifier(db, fakeManager, config)
+
+    const warnings: any[] = []
+    notifier.on('warning', w => warnings.push(w))
+
+    await notifier.start()
+
+    expect(notifier.available).toBe(false)
+    expect(warnings[0].data.type).toBe('listen_notify_unavailable')
+  })
+
+  it('available stays false when establishing the listener throws', async function () {
+    const db = fakeDb({ listen: async () => { throw new Error('listen failed') } })
+    const notifier = new Notifier(db, fakeManager, config)
+    notifier.on('warning', () => {})
+
+    await notifier.start()
+
+    expect(notifier.available).toBe(false)
+  })
+
   it('emits an error when closing the listen handle fails', async function () {
     const db = fakeDb({ listen: async () => ({ close: async () => { throw new Error('close failed') } }) })
     const notifier = new Notifier(db, fakeManager, config)

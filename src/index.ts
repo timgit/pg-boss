@@ -77,6 +77,7 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     const bam = new Bam(db, config)
 
     const notifier = new Notifier(db, manager, config)
+    manager.notifier = notifier
 
     this.#promoteEvents(manager)
     this.#promoteEvents(boss)

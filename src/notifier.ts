@@ -29,6 +29,13 @@ class Notifier extends EventEmitter implements types.EventsMixin {
     this.#config = config
   }
 
+  // True only once the listener handle is established. False before start(), when the
+  // database doesn't support LISTEN or it fails (warning path), and after stop(). Workers
+  // read this to decide between the relaxed notify polling interval and the fallback.
+  get available (): boolean {
+    return this.#handle !== null
+  }
+
   async start () {
     if (!this.#stopped) return
     this.#stopped = false

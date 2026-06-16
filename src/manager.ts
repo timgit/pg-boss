@@ -4,6 +4,7 @@ import EventEmitter from 'node:events'
 import { serializeError as stringify } from 'serialize-error'
 import * as Attorney from './attorney.ts'
 import type Db from './db.ts'
+import type Notifier from './notifier.ts'
 import * as plans from './plans.ts'
 import type Timekeeper from './timekeeper.ts'
 import * as timekeeper from './timekeeper.ts'
@@ -41,6 +42,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
   queueCacheInterval: NodeJS.Timeout | undefined
   wipInterval: NodeJS.Timeout | undefined
   timekeeper: Timekeeper | undefined
+  notifier: Notifier | undefined
   queues: Record<string, types.QueueResult> | null
   pendingOffWorkCleanups: Set<Promise<any>>
   #spies: Map<string, JobSpy>
@@ -358,6 +360,9 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     const {
       pollingInterval: interval,
+      notifyPollingInterval: notifyInterval,
+      burstWhenBacklogExceeds,
+      burstWhenBatchFull = false,
       batchSize = 1,
       includeMetadata = false,
       priority = true,
@@ -375,6 +380,38 @@ class Manager extends EventEmitter implements types.EventsMixin {
     }
 
     const firstWorkerId = randomUUID({ disableEntropyCache: true })
+
+    // NOTIFY is only doing the fast-path wakeups when the queue opted in (notify) AND the
+    // instance listener is established.
+    const isNotifyActive = () => !!(this.notifier?.available && this.queues?.[name]?.notify)
+
+    // Runnable backlog from the cached queue stats: created + retry jobs that are ready now
+    // (queuedCount counts state < active, which includes deferred future-dated jobs, so
+    // subtract deferredCount). Refreshed every queueCacheIntervalSeconds.
+    const getReadyBacklog = () => {
+      const q = this.queues?.[name]
+      return q ? Math.max(0, q.queuedCount - q.deferredCount) : 0
+    }
+
+    // Resolve the delay before each fetch. Precedence: burst (fetch continuously) > NOTIFY
+    // backstop > base poll. Evaluated per-iteration so it tracks live cache/notify state and
+    // any updateQueue notify toggles.
+    //
+    // A burst trigger only engages while the last fetch came back full (>= batchSize). That is
+    // both the meaning of burstWhenBatchFull and the anti-hot-loop guard for burstWhenBacklogExceeds:
+    // the cached backlog lags reality, so a short fetch (including 0 < 1 at the default batchSize)
+    // means the queue has likely caught up — fall back to normal polling instead of spinning on
+    // empty fetches. burstWhenBatchFull is ignored at batchSize 1 (every fetch would be "full").
+    const resolveInterval = (lastFetchCount: number) => {
+      const fullBatch = lastFetchCount >= batchSize
+      const burst = fullBatch && (
+        (burstWhenBacklogExceeds !== undefined && getReadyBacklog() > burstWhenBacklogExceeds) ||
+        (burstWhenBatchFull && batchSize > 1)
+      )
+
+      if (burst) return 0
+      return isNotifyActive() ? notifyInterval : interval
+    }
 
     const createWorker = (workerId: string, workId: string) => {
       const fetch = () => {
@@ -421,7 +458,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
         this.emit(events.error, { ...error, message: error.message, stack: error.stack, queue: name, worker: workerId })
       }
 
-      return new Worker<ReqData>({ id: workerId, workId, name, options, interval, fetch, onFetch, onError })
+      return new Worker<ReqData>({ id: workerId, workId, name, options, resolveInterval, fetch, onFetch, onError })
     }
 
     // Spawn workers based on localConcurrency setting

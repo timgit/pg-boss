@@ -323,12 +323,55 @@ export interface QueueResult extends Queue {
 
 export type ScheduleOptions = SendOptions & { tz?: string, key?: string }
 
+/**
+ * How long a worker waits between fetches. The delay before each fetch is chosen by
+ * precedence — **burst → notify → base**:
+ *
+ * 1. **burst** (fetch continuously): a `burstWhen*` trigger is active and the last fetch
+ *    came back full, so there is clearly more work to pull.
+ * 2. **notify** (`notifyPollingIntervalSeconds`): NOTIFY is active for the queue, so polling
+ *    is just a relaxed backstop.
+ * 3. **base** (`pollingIntervalSeconds`): the normal idle poll.
+ */
 export interface JobPollingOptions {
   /**
-   * Interval to check for new jobs, in seconds. Must be >= `0.5` (500 ms).
+   * Base interval to check for new jobs, in seconds. Must be >= `0.5` (500 ms).
+   *
+   * Used when no faster/slower mode applies: queues without `notify`, or notify-enabled
+   * queues when the LISTEN/NOTIFY listener is unavailable (e.g. the adapter doesn't support
+   * it or the connection dropped).
    * @default 2
    */
   pollingIntervalSeconds?: number;
+  /**
+   * Interval to check for new jobs, in seconds, used only while NOTIFY is active for the
+   * queue — i.e. the queue has `notify: true` and the instance-level LISTEN/NOTIFY
+   * listener is established. Since NOTIFY wakes workers immediately, polling only needs to
+   * run as a slow backstop, so this can be much larger than `pollingIntervalSeconds`. When
+   * notify is off or unavailable, `pollingIntervalSeconds` is used instead. Must be >= `0.5`.
+   * @default 30
+   */
+  notifyPollingIntervalSeconds?: number;
+  /**
+   * Burst trigger. When the queue's ready backlog — created + retry jobs runnable now,
+   * i.e. `queuedCount - deferredCount` from the cached queue stats — exceeds this value, the
+   * worker fetches continuously with no delay until it catches up (a fetch that comes back
+   * short ends burst mode). Takes precedence over `notifyPollingIntervalSeconds` and
+   * `pollingIntervalSeconds`. Must be an integer >= 1.
+   *
+   * The backlog is read from the stats cache, so reaction latency is bounded by the
+   * instance-level stats pipeline (`monitorIntervalSeconds` / `superviseIntervalSeconds` /
+   * `queueCacheIntervalSeconds`, all default 60s).
+   */
+  burstWhenBacklogExceeds?: number;
+  /**
+   * Burst trigger. While each fetch returns a full `batchSize` batch there is clearly more
+   * work, so the worker keeps fetching continuously with no delay; the first short fetch ends
+   * burst mode. Unlike `burstWhenBacklogExceeds` this is instant and needs no cached
+   * stats. Ignored when `batchSize` is 1 (every successful fetch would otherwise be "full").
+   * @default false
+   */
+  burstWhenBatchFull?: boolean;
 }
 
 export interface JobFetchOptions {
@@ -409,6 +452,7 @@ export type FetchOptions = JobFetchOptions & ConnectionOptions & FetchGroupConcu
 
 export interface ResolvedWorkOptions extends WorkOptions {
   pollingInterval: number;
+  notifyPollingInterval: number;
 }
 
 export interface WorkHandler<ReqData, ResData = any> {

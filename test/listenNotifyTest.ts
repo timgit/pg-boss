@@ -139,6 +139,73 @@ describe('listen/notify', function () {
     expect(processedAt - sentAt).toBeLessThan(3000)
   })
 
+  it('uses the relaxed notify polling interval (not the fallback) while notify is active', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, useListenNotify: true, noDefault: true })
+    const queue = ctx.schema
+    await ctx.boss.createQueue(queue, { notify: true })
+
+    let processed = false
+    // Short fallback, long notify backstop. While notify is active the worker must poll on the
+    // long backstop, so a poll-only job (no NOTIFY) must NOT be picked up by the short fallback.
+    await ctx.boss.work(queue, { pollingIntervalSeconds: 0.5, notifyPollingIntervalSeconds: 30 }, async () => { processed = true })
+
+    await delay(250)
+
+    // A future-dated job does not fire NOTIFY (gated on start_after <= now()), so it can only be
+    // found by polling. On the 0.5s fallback it would be picked up fast; on the 30s notify
+    // backstop it stays waiting.
+    await ctx.boss.send(queue, {}, { startAfter: 1 })
+
+    await delay(2000)
+    expect(processed).toBe(false)
+  })
+
+  it('uses the fallback poll interval when notify is desired but the listener is unavailable', async function () {
+    const config = helper.getConfig({ schema: ctx.schema })
+
+    // Bare adapter: no `listen` capability, so the listener can't be established and notify is
+    // unavailable even though the queue opts in. The worker must use the fast fallback, not the
+    // long notify backstop.
+    const pool = new pg.Pool({
+      host: config.host,
+      port: config.port,
+      database: config.database,
+      user: config.user,
+      password: config.password
+    })
+    const adapter = { executeSql: (text: string, values?: unknown[]) => pool.query(text, values) }
+
+    const boss = new PgBoss({ ...config, db: adapter, useListenNotify: true })
+    boss.on('warning', () => {})
+    boss.on('error', () => {})
+
+    await boss.start()
+
+    try {
+      const queue = ctx.schema
+      await boss.createQueue(queue, { notify: true })
+
+      let processedAt = 0
+      await boss.work(queue, { pollingIntervalSeconds: 0.5, notifyPollingIntervalSeconds: 30 }, async () => { processedAt = Date.now() })
+
+      await delay(250)
+      const sentAt = Date.now()
+      await boss.send(queue)
+
+      for (let i = 0; i < 30; i++) {
+        if (processedAt) break
+        await delay(100)
+      }
+
+      expect(processedAt).toBeGreaterThan(0)
+      // Picked up on the 0.5s fallback, well before the 30s notify backstop would fire.
+      expect(processedAt - sentAt).toBeLessThan(3000)
+    } finally {
+      await boss.stop({ timeout: 2000 })
+      await pool.end()
+    }
+  })
+
   it('falls back to the poll interval when a queue is not notify-enabled', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, useListenNotify: true, noDefault: true })
     const queue = ctx.schema
