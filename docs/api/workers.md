@@ -43,9 +43,23 @@ The default options for `work()` is 1 job every 2 seconds.
 
 * **pollingIntervalSeconds**, int, *(default=2)*
 
-  Interval to check for new jobs in seconds, must be >=0.5 (500ms)
+  Base interval to check for new jobs, in seconds. Must be >=0.5 (500ms). Used when no faster or slower mode applies: queues without `notify`, or notify-enabled queues when the LISTEN/NOTIFY listener is unavailable.
 
-  > **Note**: If you enable [LISTEN/NOTIFY](#low-latency-dispatch-with-listennotify), workers will attempt to fetch once a job is created and do not have to wait out this interval. You can then safely raise `pollingIntervalSeconds` to reduce database queries while still getting low-latency dispatch.
+  > **Note**: When [LISTEN/NOTIFY](#low-latency-dispatch-with-listennotify) is active for a queue, workers are woken the instant a job is created and polling automatically falls back to the slower `notifyPollingIntervalSeconds` backstop — you don't need to raise `pollingIntervalSeconds` yourself.
+
+* **notifyPollingIntervalSeconds**, int, *(default=30)*
+
+  Polling interval used only while [LISTEN/NOTIFY](#low-latency-dispatch-with-listennotify) is active for the queue (the queue has `notify: true` and the instance listener is established). Since NOTIFY wakes workers immediately, polling only needs to run as a slow safety net, so this can be much larger than `pollingIntervalSeconds`. When notify is off or unavailable, `pollingIntervalSeconds` is used instead. Must be >=0.5 (500ms).
+
+* **burstWhenBacklogExceeds**, int
+
+  When the queue's ready backlog — created + retry jobs runnable now, i.e. `queuedCount - deferredCount` from the cached queue stats — exceeds this value, the worker fetches continuously with no delay until it catches up; the first fetch that comes back short ends burst mode. Takes precedence over `notifyPollingIntervalSeconds` and `pollingIntervalSeconds`. Must be an integer >=1.
+
+  > **Note**: The backlog is read from the stats cache, so reaction latency is bounded by the instance-level stats pipeline (`monitorIntervalSeconds` / `superviseIntervalSeconds` / `queueCacheIntervalSeconds`).
+
+* **burstWhenBatchFull**, bool, *(default=false)*
+
+  While each fetch returns a full `batchSize` batch there is clearly more work, so the worker keeps fetching continuously with no delay; the first short fetch ends burst mode. Unlike `burstWhenBacklogExceeds` this reacts instantly and needs no cached stats. Ignored when `batchSize` is 1 (every successful fetch would otherwise be "full").
 
 * **localConcurrency**, int, *(default=1)*
 
@@ -209,12 +223,13 @@ await boss.start()
 
 await boss.createQueue('email-welcome', { notify: true })
 
-// A long poll interval is fine — NOTIFY handles the wake-up, polling is just the fallback.
-await boss.work('email-welcome', { pollingIntervalSeconds: 30 }, ([ job ]) =>
+// No polling tuning needed — while NOTIFY is active the worker is woken the instant a
+// job is created and polls only as a slow backstop (notifyPollingIntervalSeconds, default 30s).
+await boss.work('email-welcome', ([ job ]) =>
   myEmailService.sendWelcomeEmail(job.data)
 )
 
-// This job is processed almost immediately rather than waiting up to 30s.
+// This job is processed almost immediately rather than waiting for the next poll.
 await boss.send('email-welcome', { to: 'new@user.com' })
 ```
 
