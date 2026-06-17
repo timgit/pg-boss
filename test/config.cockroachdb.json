@@ -1,0 +1,9 @@
+{
+  "host": "127.0.0.1",
+  "port": 26257,
+  "database": "pgboss",
+  "user": "root",
+  "password": "",
+  "max": 3,
+  "debug": true
+}

@@ -1,0 +1,35 @@
+on:
+  push:
+    branches: [master]
+    tags-ignore: ['**']
+  pull_request:
+    branches: [master]
+
+name: CI (CockroachDB)
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 22
+
+    - name: Start CockroachDB cluster
+      run: |
+        docker compose --profile cluster up -d
+        # Wait for setup container to complete (it creates the database)
+        docker wait pg-boss-cockroachdb-setup-1 || true
+        # Verify database was created
+        docker compose --profile cluster exec -T cockroachdb-1 cockroach sql --insecure -e "SHOW DATABASES" | grep -q pgboss
+
+    - name: Install
+      run: npm install
+
+    - name: Test distributed database mode
+      run: npm run test:cockroachdb

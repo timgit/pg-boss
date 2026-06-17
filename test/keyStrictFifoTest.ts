@@ -5,7 +5,9 @@ import { delay } from '../src/tools.ts'
 import { ctx } from './hooks.ts'
 
 describe('key_strict_fifo', function () {
-  [{ partition: false }, { partition: true }].forEach(({ partition }) => {
+  // CockroachDB disables partitioning (noTablePartitioning), so only run the non-partitioned variant there
+  const partitionCases = helper.isCockroachDb ? [{ partition: false }] : [{ partition: false }, { partition: true }]
+  partitionCases.forEach(({ partition }) => {
     it(`key_strict_fifo policy requires singletonKey using partition=${partition}`, async function () {
       ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 

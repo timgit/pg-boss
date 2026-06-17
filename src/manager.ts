@@ -14,6 +14,19 @@ import { JobSpy, type JobSpyInterface } from './spy.ts'
 
 const INTERNAL_QUEUES = Object.values(timekeeper.QUEUES).reduce<Record<string, string | undefined>>((acc, i) => ({ ...acc, [i]: i }), {})
 
+// CockroachDB returns integer columns (INT8) as strings; these aliased metadata
+// fields must be coerced back to numbers when running in distributed mode.
+const NUMERIC_METADATA_FIELDS = [
+  'priority',
+  'retryLimit',
+  'retryCount',
+  'retryDelay',
+  'retryDelayMax',
+  'expireInSeconds',
+  'deleteAfterSeconds',
+  'pendingDependencies'
+] as const
+
 const events = {
   error: 'error',
   wip: 'wip'
@@ -859,7 +872,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       ignoreSingletons: singletonsActive
     }
 
-    const query = plans.fetchNextJob(fetchOptions)
+    const query = plans.fetchNextJob(fetchOptions, this.config.distributedDatabaseMode)
 
     let result
 
@@ -869,7 +882,19 @@ class Manager extends EventEmitter implements types.EventsMixin {
       // errors from fetchquery should only be unique constraint violations
     }
 
-    return result?.rows || []
+    const rows = result?.rows || []
+
+    // CockroachDB returns numeric fields as strings; normalize them. The metadata
+    // columns are aliased to camelCase by JOB_COLUMNS_ALL, so normalize those keys.
+    if (this.config.distributedDatabaseMode && options.includeMetadata) {
+      for (const row of rows) {
+        for (const field of NUMERIC_METADATA_FIELDS) {
+          if (row[field] !== undefined && row[field] !== null) row[field] = Number(row[field])
+        }
+      }
+    }
+
+    return rows
   }
 
   private mapCompletionIdArg (id: string | string[], funcName: string) {
@@ -907,9 +932,40 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const db = this.assertDb(options)
     const ids = this.mapCompletionIdArg(id, 'complete')
     const { table } = await this.getQueueCache(name)
+    const outputData = this.mapCompletionDataArg(data)
+
+    // Distributed mode: split the dependency-unblocking into a separate statement to
+    // avoid CockroachDB's multi-mutation CTE limitation (completeJobs updates two tables).
+    if (this.config.distributedDatabaseMode) {
+      return this.completeDistributed(name, ids, outputData, table, db, options.includeQueued)
+    }
+
     const sql = plans.completeJobs(this.config.schema, table, options.includeQueued)
-    const result = await db.executeSql(sql, [name, ids, this.mapCompletionDataArg(data)])
+    const result = await db.executeSql(sql, [name, ids, outputData])
     return this.mapCommandResponse(ids, result)
+  }
+
+  private async completeDistributed (name: string, ids: string[], outputData: any, table: string, db: types.IDatabase, includeQueued?: boolean): Promise<types.CommandResponse> {
+    await db.executeSql('BEGIN')
+
+    try {
+      // Step 1: Mark jobs completed and learn which ones were blocking dependents
+      const completeSql = plans.completeJobsDistributed(this.config.schema, table, includeQueued)
+      const { rows } = await db.executeSql(completeSql, [name, ids, outputData])
+
+      // Step 2: Decrement pending_dependencies for children of completed blocking parents
+      const blockingIds = rows.filter(row => row.blocking).map(row => row.id)
+      if (blockingIds.length > 0) {
+        const decrementSql = plans.decrementDependents(this.config.schema)
+        await db.executeSql(decrementSql, [name, blockingIds])
+      }
+
+      await db.executeSql('COMMIT')
+      return { jobs: ids, requested: ids.length, affected: rows.length }
+    } catch (err) {
+      await db.executeSql('ROLLBACK')
+      throw err
+    }
   }
 
   async fail (name: string, id: string | string[], data?: any, options: types.ConnectionOptions = {}) {
@@ -917,9 +973,98 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const db = this.assertDb(options)
     const ids = this.mapCompletionIdArg(id, 'fail')
     const { table } = await this.getQueueCache(name)
+    const outputData = this.mapCompletionDataArg(data)
+
+    // Distributed mode: use separate queries to avoid CockroachDB's multi-mutation CTE limitation
+    // Note: This is not atomic - jobs could be lost if the process crashes between delete and re-insert
+    if (this.config.distributedDatabaseMode) {
+      return this.failDistributed(name, ids, outputData, table, db)
+    }
+
     const sql = plans.failJobsById(this.config.schema, table)
-    const result = await db.executeSql(sql, [name, ids, this.mapCompletionDataArg(data)])
+    const result = await db.executeSql(sql, [name, ids, outputData])
     return this.mapCommandResponse(ids, result)
+  }
+
+  private async failDistributed (name: string, ids: string[], outputData: any, table: string, db: types.IDatabase): Promise<types.CommandResponse> {
+    // Use a transaction to ensure atomicity
+    // CockroachDB doesn't support multi-mutation CTEs, but does support transactions
+    await db.executeSql('BEGIN')
+
+    try {
+      // Step 1: Select jobs to fail
+      const selectQuery = plans.selectJobsToFailById(this.config.schema, table)
+      const { rows: jobs } = await db.executeSql(selectQuery.text, [name, ids])
+
+      if (jobs.length === 0) {
+        await db.executeSql('COMMIT')
+        return { jobs: ids, requested: ids.length, affected: 0 }
+      }
+
+      // Step 2: Delete the jobs
+      const deleteQuery = plans.deleteJobsToFail(this.config.schema, table)
+      await db.executeSql(deleteQuery.text, [name, ids])
+
+      // Step 3: Re-insert jobs with updated state
+      const insertSql = plans.insertRetryJob(this.config.schema, table)
+      const dlqSql = plans.insertDeadLetterJob(this.config.schema)
+      let count = 0
+
+      for (const job of jobs) {
+        const canRetry = job.retry_count < job.retry_limit
+        let retried = false
+
+        if (canRetry) {
+          // Calculate start_after for retry
+          let startAfter = job.start_after
+          if (!job.retry_backoff) {
+            startAfter = new Date(Date.now() + job.retry_delay * 1000)
+          } else {
+            const retryCount = job.retry_count + 1
+            const exp = Math.min(16, retryCount)
+            const delay = job.retry_delay * (Math.pow(2, exp) / 2 + Math.pow(2, exp) / 2 * Math.random())
+            const cappedDelay = job.retry_delay_max ? Math.min(job.retry_delay_max, delay) : delay
+            startAfter = new Date(Date.now() + cappedDelay * 1000)
+          }
+
+          const { rows } = await db.executeSql(insertSql, [
+            job.id, job.name, job.priority, job.data, 'retry', job.retry_limit, job.retry_count,
+            job.retry_delay, job.retry_backoff, job.retry_delay_max, startAfter, job.started_on,
+            job.singleton_key, job.singleton_on, job.group_id, job.group_tier, job.expire_seconds,
+            job.deletion_seconds, job.created_on, null, job.keep_until, job.policy,
+            outputData, job.dead_letter
+          ])
+
+          // The retry insert can be dropped by ON CONFLICT when the queue policy (e.g. stately,
+          // singleton, key_strict_fifo) already has a non-terminal job. Mirror the failed_jobs
+          // fallback of the non-distributed failJobs() CTE in that case.
+          retried = rows.length > 0
+        }
+
+        if (!retried) {
+          await db.executeSql(insertSql, [
+            job.id, job.name, job.priority, job.data, 'failed', job.retry_limit, job.retry_count,
+            job.retry_delay, job.retry_backoff, job.retry_delay_max, job.start_after, job.started_on,
+            job.singleton_key, job.singleton_on, job.group_id, job.group_tier, job.expire_seconds,
+            job.deletion_seconds, job.created_on, new Date(), job.keep_until, job.policy,
+            outputData, job.dead_letter
+          ])
+
+          // Insert to dead letter queue if failed and has dead_letter configured
+          if (job.dead_letter) {
+            await db.executeSql(dlqSql, [job.dead_letter, job.data, outputData])
+          }
+        }
+
+        count++
+      }
+
+      await db.executeSql('COMMIT')
+      return { jobs: ids, requested: ids.length, affected: count }
+    } catch (err) {
+      await db.executeSql('ROLLBACK')
+      throw err
+    }
   }
 
   async deleteJob (name: string, id: string | string[], options: types.ConnectionOptions = {}) {
@@ -998,7 +1143,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       await this.getQueueCache(options.deadLetter)
     }
 
-    const sql = plans.createQueue(this.config.schema, name, { ...options, policy })
+    const sql = plans.createQueue(this.config.schema, name, { ...options, policy }, this.config.noAdvisoryLocks)
     await this.db.executeSql(sql)
   }
 
@@ -1070,7 +1215,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     try {
       await this.getQueueCache(name)
-      const sql = plans.deleteQueue(this.config.schema, name)
+      const sql = plans.deleteQueue(this.config.schema, name, this.config.noAdvisoryLocks)
       await this.db.executeSql(sql)
     } catch { }
   }
@@ -1139,7 +1284,17 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const result1 = await db.executeSql(sql, [name, id])
 
     if (result1?.rows?.length === 1) {
-      return result1.rows[0]
+      const row = result1.rows[0]
+
+      // CockroachDB returns integer columns as strings; normalize the numeric
+      // metadata fields so callers get numbers regardless of the backend.
+      if (this.config.distributedDatabaseMode) {
+        for (const field of NUMERIC_METADATA_FIELDS) {
+          if (row[field] !== undefined && row[field] !== null) row[field] = Number(row[field])
+        }
+      }
+
+      return row
     } else {
       return null
     }

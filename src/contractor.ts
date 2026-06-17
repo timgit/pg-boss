@@ -78,7 +78,7 @@ class Contractor {
 
   async migrate (version: number) {
     try {
-      const commands = migrationStore.migrate(this.config.schema, version, this.migrations)
+      const commands = migrationStore.migrate(this.config.schema, version, this.migrations, this.config.noAdvisoryLocks)
       await this.db.executeSql(commands)
     } catch (err: any) {
       assert(err.message.includes(plans.MIGRATE_RACE_MESSAGE), err)
@@ -86,12 +86,12 @@ class Contractor {
   }
 
   async next (version: number) {
-    const commands = migrationStore.next(this.config.schema, version, this.migrations)
+    const commands = migrationStore.next(this.config.schema, version, this.migrations, this.config.noAdvisoryLocks)
     await this.db.executeSql(commands)
   }
 
   async rollback (version: number) {
-    const commands = migrationStore.rollback(this.config.schema, version, this.migrations)
+    const commands = migrationStore.rollback(this.config.schema, version, this.migrations, this.config.noAdvisoryLocks)
     await this.db.executeSql(commands)
   }
 }

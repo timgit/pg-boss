@@ -45,15 +45,60 @@ jobs:
       run: npm run cover
       env:
         POSTGRES_HOST: postgres
-      
+
     - name: Coveralls
       uses: coverallsapp/github-action@v2
       with:
-        flag-name: run-${{ join(matrix.*, '-') }}
+        flag-name: standard
+        parallel: true
+
+  # Runs the full suite in distributed database mode on Postgres. distributedDatabaseMode is a pure
+  # runtime fetch-strategy toggle, so every test (existing and new) is automatically exercised
+  # against the distributed code paths here - fast and reliable, without CockroachDB's slow DDL.
+  test-distributed:
+    runs-on: ubuntu-latest
+    container: node:24
+    services:
+      postgres:
+        image: postgres
+        env:
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 24
+
+    - name: Install
+      run: npm install
+
+    # Collect coverage here too: the distributed fetch strategy exercises code paths
+    # (completeDistributed/failDistributed, distributed branches in plans.ts) that the
+    # standard `test` job never hits. Uploading as a second parallel flag makes Coveralls
+    # report the union, so those paths are measured instead of showing as uncovered.
+    - name: Test (distributed mode)
+      run: npm run cover
+      env:
+        POSTGRES_HOST: postgres
+        DISTRIBUTED: 'true'
+
+    - name: Coveralls
+      uses: coverallsapp/github-action@v2
+      with:
+        flag-name: distributed
         parallel: true
 
   coverage:
-    needs: test
+    needs: [test, test-distributed]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
@@ -61,4 +106,4 @@ jobs:
       uses: coverallsapp/github-action@v2
       with:
         parallel-finished: true
-        carryforward: "run-1,run-2"
+        carryforward: "standard,distributed"

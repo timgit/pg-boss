@@ -307,12 +307,14 @@ function getConfig (value: string | types.ConstructorOptions): types.ResolvedCon
   config.supervise = ('supervise' in config) ? config.supervise : true
   config.migrate = ('migrate' in config) ? config.migrate : true
   config.createSchema = ('createSchema' in config) ? config.createSchema : true
+  config.distributedDatabaseMode = ('distributedDatabaseMode' in config) ? config.distributedDatabaseMode : false
 
   applySchemaConfig(config)
   applyOpsConfig(config)
   applyScheduleConfig(config)
   applyBamConfig(config)
   validateWarningConfig(config)
+  validateDistributedDatabaseMode(config)
 
   return config as types.ResolvedConstructorOptions
 }
@@ -337,6 +339,11 @@ function validateWarningConfig (config: any) {
 
   assert(!('warningRetentionDays' in config) || config.warningRetentionDays <= POLICY.MAX_RETENTION_DAYS,
     `configuration assert: warningRetentionDays cannot exceed ${POLICY.MAX_RETENTION_DAYS} days`)
+}
+
+function validateDistributedDatabaseMode (config: any) {
+  assert(!('distributedDatabaseMode' in config) || typeof config.distributedDatabaseMode === 'boolean',
+    'configuration assert: distributedDatabaseMode must be a boolean')
 }
 
 function assertPostgresObjectName (name: string) {

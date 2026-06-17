@@ -1,11 +1,28 @@
 import Db from '../src/db.ts'
 import { PgBoss } from '../src/index.ts'
+import { describe, it } from 'vitest'
 import crypto from 'node:crypto'
 import configJson from './config.json' with { type: 'json' }
+import cockroachConfigJson from './config.cockroachdb.json' with { type: 'json' }
 import type { ConstructorOptions } from '../src/types.ts'
 import { getColumns, getConstraints, getIndexes, getFunctions } from './pgSchemaHelper.ts'
 
 const sha1 = (value: string): string => crypto.createHash('sha1').update(value).digest('hex')
+
+const isCockroachDb = process.env.DB_TYPE === 'cockroachdb'
+
+// Distributed database mode is the atomic-UPDATE fetch strategy used by CockroachDB et al. It is a
+// pure runtime toggle (no schema impact) and works fine on plain PostgreSQL, so we exercise the
+// whole suite under it on Postgres via DISTRIBUTED=true — fast, reliable coverage of the distributed
+// code paths without paying CockroachDB's slow per-test DDL. CockroachDB always implies it.
+const isDistributed = isCockroachDb || process.env.DISTRIBUTED === 'true'
+
+// The full suite runs against CockroachDB via `npm run test:cockroachdb`, where getConfig()
+// auto-enables distributedDatabaseMode + the compatibility flags. Wrap tests that depend on
+// Postgres-only features (table partitioning, covering indexes, exact PG schema shape) with these
+// so they are skipped automatically under CockroachDB.
+const itPostgresOnly = it.skipIf(isCockroachDb)
+const describePostgresOnly = describe.skipIf(isCockroachDb)
 
 function assertTruthy<T> (value: T, message?: string): asserts value is NonNullable<T> {
   if (value == null) {
@@ -20,10 +37,11 @@ function getConnectionString (): string {
 }
 
 function getConfig (options: Partial<ConstructorOptions> & { testKey?: string } = {}): ConstructorOptions {
-  const config: any = { ...configJson }
+  const baseConfig = isCockroachDb ? cockroachConfigJson : configJson
+  const config: any = { ...baseConfig }
 
-  config.host = process.env.POSTGRES_HOST || config.host
-  config.port = process.env.POSTGRES_PORT || config.port
+  config.host = (isCockroachDb ? process.env.COCKROACH_HOST : process.env.POSTGRES_HOST) || config.host
+  config.port = (isCockroachDb ? process.env.COCKROACH_PORT : process.env.POSTGRES_PORT) || config.port
   config.password = process.env.POSTGRES_PASSWORD || config.password
 
   if (options.testKey) {
@@ -35,6 +53,19 @@ function getConfig (options: Partial<ConstructorOptions> & { testKey?: string } 
   config.supervise = false
   config.schedule = false
   config.createSchema = true
+
+  // Distributed fetch strategy: enabled on CockroachDB and on Postgres via DISTRIBUTED=true
+  if (isDistributed) {
+    config.distributedDatabaseMode = true
+  }
+
+  // CockroachDB additionally needs the compatibility flags (no partitioning/advisory locks/etc.)
+  if (isCockroachDb) {
+    config.noTablePartitioning = true
+    config.noDeferrableConstraints = true
+    config.noAdvisoryLocks = true
+    config.noCoveringIndexes = true
+  }
 
   return Object.assign(config, options)
 }
@@ -142,5 +173,9 @@ export {
   getConnectionString,
   tryCreateDb,
   init,
+  isCockroachDb,
+  isDistributed,
+  itPostgresOnly,
+  describePostgresOnly,
   getSchemaDefs
 }

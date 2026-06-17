@@ -469,7 +469,7 @@ describe('flows', function () {
     expect(childJob.pendingDependencies).toBe(0)
   })
 
-  it('should block and unblock a job on a partitioned queue', async function () {
+  helper.itPostgresOnly('should block and unblock a job on a partitioned queue', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
     await ctx.boss.createQueue(ctx.schema, { partition: true })

@@ -540,8 +540,10 @@ describe('work', function () {
       }
     })
 
-    // Wait for all workers to start
-    await delay(500)
+    // Wait for all workers to start. The standard path claims all 3 jobs in the first poll, but
+    // distributed mode's fetch can return empty under contention, so allow several 500ms poll
+    // cycles for it to claim all 3.
+    await delay(helper.isDistributed ? 2500 : 500)
 
     // Stop with short timeout - jobs take 10s, so timeout will expire
     await ctx.boss.stop({ timeout: 1000 })
