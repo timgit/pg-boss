@@ -72,6 +72,20 @@ describe('db listen/notify', function () {
     await db.close()
   })
 
+  it('tears down the connection and rejects when the LISTEN fails after connecting', async function () {
+    const db = await helper.getDb()
+    db.on('error', () => {})
+
+    // A channel name with an embedded double quote leaves connect() to succeed but breaks the
+    // quoted identifier, so the LISTEN query rejects. The listener must end the half-open
+    // client (no leaked connection) and propagate the error rather than resolve a handle.
+    await expect(
+      db.listen('bad"channel', () => {}, () => {})
+    ).rejects.toThrow()
+
+    await db.close()
+  })
+
   it('rolls back the transaction when the callback throws and commits otherwise', async function () {
     const db = await helper.getDb()
 

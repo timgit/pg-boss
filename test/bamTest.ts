@@ -95,7 +95,7 @@ describe('bam', function () {
       const bamStatus = await boss.getBamEntries()
       const failedEntry = bamStatus.find((e: any) => e.name === 'test_error_1')
 
-      expect(failedEntry).toBeDefined()
+      helper.assertTruthy(failedEntry)
       expect(failedEntry.status).toBe('failed')
       expect(failedEntry.error).toContain(errorMessage)
     }, 10000)
@@ -177,10 +177,10 @@ describe('bam', function () {
       const failedEntry = bamStatus.find((e: any) => e.name === 'test_fail')
       const successEntry = bamStatus.find((e: any) => e.name === 'test_success')
 
-      expect(failedEntry).toBeDefined()
+      helper.assertTruthy(failedEntry)
       expect(failedEntry.status).toBe('failed')
 
-      expect(successEntry).toBeDefined()
+      helper.assertTruthy(successEntry)
       expect(successEntry.status).toBe('completed')
     }, 15000)
 
@@ -197,9 +197,9 @@ describe('bam', function () {
       const bamStatus = await boss.getBamEntries()
       const entry = bamStatus.find((e: any) => e.name === 'test_cast_error')
 
-      expect(entry).toBeDefined()
+      helper.assertTruthy(entry)
       expect(entry.status).toBe('failed')
-      expect(entry.error).toBeDefined()
+      helper.assertTruthy(entry.error)
       expect(entry.error.length).toBeGreaterThan(0)
     }, 10000)
   })
@@ -218,7 +218,7 @@ describe('bam', function () {
       const bamStatus = await boss.getBamEntries()
       const entry = bamStatus.find((e: any) => e.name === 'test_success_1')
 
-      expect(entry).toBeDefined()
+      helper.assertTruthy(entry)
       expect(entry.status).toBe('completed')
       expect(entry.completedOn).toBeDefined()
     }, 10000)

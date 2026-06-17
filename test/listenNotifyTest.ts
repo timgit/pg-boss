@@ -102,7 +102,9 @@ describe('listen/notify', function () {
 
     try {
       // Two immediate jobs + one future job: exactly one NOTIFY should fire (single-fire),
-      // and the future job must not contribute an extra notification.
+      // and the future job must not contribute an extra notification. insert() also defaults
+      // returnId to false, so this exercises the wrapper's `< 0` branch where the outer SELECT
+      // returns no rows — proving pg_notify still fires independent of the returned row set.
       await ctx.boss.insert(queue, [
         { data: { n: 1 } },
         { data: { n: 2 } },

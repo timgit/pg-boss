@@ -285,7 +285,7 @@ describe('heartbeat', function () {
       { data: { index: 2 }, heartbeatSeconds: 30 }
     ])
 
-    const jobs = await ctx.boss.fetch(ctx.schema, { batchSize: 2 })
+    const jobs = await ctx.boss.fetch<{ index: number }>(ctx.schema, { batchSize: 2 })
     expect(jobs.length).toBe(2)
 
     const sorted = jobs.sort((a, b) => a.data.index - b.data.index)

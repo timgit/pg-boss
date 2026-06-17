@@ -100,10 +100,23 @@ class Db extends EventEmitter implements types.IDatabase, types.EventsMixin {
         if (msg.payload !== undefined) onNotification(msg.payload)
       })
 
-      await next.connect()
-      await next.query(`LISTEN "${channel}"`)
-
+      // Track the client before connecting so close() can tear down a connect still in flight
+      // (e.g. shutdown during a reconnect). If connect or LISTEN then rejects, the catch ends
+      // it and rethrows — without that, a LISTEN that fails after connect() succeeded would
+      // leak an open connection. The reconnect .catch below reschedules on failure; an initial
+      // failure propagates to the caller.
       client = next
+
+      try {
+        await next.connect()
+        await next.query(`LISTEN "${channel}"`)
+      } catch (err) {
+        next.removeAllListeners()
+        await next.end().catch(() => {})
+        if (client === next) client = null
+        throw err
+      }
+
       attempt = 0
       onReconnect()
     }

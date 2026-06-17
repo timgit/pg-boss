@@ -19,7 +19,7 @@ function rollback (schema: string, version: number, migrations?: types.Migration
   return flatten(schema, result.uninstall || [], result.previous)
 }
 
-function next (schema: string, version: number, migrations: types.Migration[] | undefined) {
+function next (schema: string, version: number, migrations?: types.Migration[]) {
   migrations = migrations || getAll(schema)
 
   const result = migrations.find(i => i.previous === version)
