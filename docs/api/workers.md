@@ -53,9 +53,9 @@ The default options for `work()` is 1 job every 2 seconds.
 
 * **burstWhenReadyExceeds**, int
 
-  When the queue's ready count — created + retry jobs runnable now, i.e. `queuedCount - deferredCount` from the cached queue stats — exceeds this value, the worker fetches continuously with no delay until it catches up; the first fetch that comes back short ends burst mode. Takes precedence over `notifyPollingIntervalSeconds` and `pollingIntervalSeconds`. Must be an integer >=1.
+  When the queue's cached `readyCount` (the runnable backlog) exceeds this value, the worker fetches continuously with no delay until it catches up; the first fetch that comes back short ends burst mode. Takes precedence over `notifyPollingIntervalSeconds` and `pollingIntervalSeconds`. Must be an integer >=1.
 
-  > **Note**: The ready count is read from the stats cache, so reaction latency is bounded by the instance-level stats pipeline (`monitorIntervalSeconds` / `superviseIntervalSeconds` / `queueCacheIntervalSeconds`).
+  > **Note**: `readyCount` is read from the stats cache, so reaction latency is bounded by the instance-level stats pipeline (`monitorIntervalSeconds` / `superviseIntervalSeconds` / `queueCacheIntervalSeconds`).
 
 * **burstWhenBatchFull**, bool, *(default=false)*
 

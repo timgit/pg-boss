@@ -385,13 +385,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
     // instance listener is established.
     const isNotifyActive = () => !!(this.notifier?.available && this.queues?.[name]?.notify)
 
-    // Runnable count from the cached queue stats: created + retry jobs that are ready now
-    // (readyCount = queuedCount - deferredCount, since queuedCount counts state < active and
-    // includes deferred future-dated jobs). Refreshed every queueCacheIntervalSeconds.
-    const getReadyCount = () => {
-      const q = this.queues?.[name]
-      return q ? Math.max(0, q.readyCount) : 0
-    }
+    // Runnable backlog from the cached queue stats, refreshed every queueCacheIntervalSeconds.
+    const getReadyCount = () => this.queues?.[name]?.readyCount ?? 0
 
     // Resolve the delay before each fetch. Precedence: burst (fetch continuously) > NOTIFY
     // backstop > base poll. Evaluated per-iteration so it tracks live cache/notify state and
