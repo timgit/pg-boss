@@ -452,7 +452,8 @@ function createQueueFunction (schema: string, noPartitioning = false) {
           warning_queued,
           dead_letter,
           partition,
-          table_name
+          table_name,
+          heartbeat_seconds
         )
         VALUES (
           queue_name,
@@ -467,7 +468,8 @@ function createQueueFunction (schema: string, noPartitioning = false) {
           COALESCE((options->>'warningQueueSize')::int, ${QUEUE_DEFAULTS.warning_queued}),
           options->>'deadLetter',
           false,
-          'job'
+          'job',
+          (options->>'heartbeatSeconds')::int
         )
         ON CONFLICT DO NOTHING;
       END;
@@ -1573,6 +1575,38 @@ export function deleteJobsToFail (schema: string, table: string): SqlQuery {
   }
 }
 
+// Distributed mode: the predicate-based maintenance expiry equivalents of selectJobsToFailById.
+// The supervisor's failJobsByTimeout/failJobsByHeartbeat use the multi-mutation failJobs() CTE,
+// which CockroachDB rejects, so in distributed mode we select the timed-out jobs here and re-insert
+// them separately (delete via deleteJobsByIds, re-insert via insertRetryJob), all in one transaction.
+export function selectJobsToFailByTimeout (schema: string, table: string, queues: string[]): SqlQuery {
+  return {
+    text: `SELECT * FROM ${schema}.${table}
+      WHERE state = '${JOB_STATES.active}'
+        AND (started_on + expire_seconds * interval '1s') < now()
+        AND name = ANY(${serializeArrayParam(queues)})`,
+    values: []
+  }
+}
+
+export function selectJobsToFailByHeartbeat (schema: string, table: string, queues: string[]): SqlQuery {
+  return {
+    text: `SELECT * FROM ${schema}.${table}
+      WHERE state = '${JOB_STATES.active}'
+        AND heartbeat_seconds IS NOT NULL
+        AND (heartbeat_on + heartbeat_seconds * interval '1s') < now()
+        AND name = ANY(${serializeArrayParam(queues)})`,
+    values: []
+  }
+}
+
+export function deleteJobsByIds (schema: string, table: string): SqlQuery {
+  return {
+    text: `DELETE FROM ${schema}.${table} WHERE id IN (SELECT UNNEST($1::uuid[]))`,
+    values: []
+  }
+}
+
 // Distributed mode: complete jobs without the dependency-unblocking CTE so the
 // statement only mutates a single table once. CockroachDB rejects the standard
 // completeJobs() because it updates both the job table and job (for unblocking)
@@ -1608,9 +1642,11 @@ export function insertRetryJob (schema: string, table: string): string {
       id, name, priority, data, state, retry_limit, retry_count, retry_delay,
       retry_backoff, retry_delay_max, start_after, started_on, singleton_key, singleton_on,
       group_id, group_tier, expire_seconds, deletion_seconds, created_on, completed_on,
-      keep_until, policy, output, dead_letter
+      keep_until, policy, output, dead_letter,
+      heartbeat_on, heartbeat_seconds, blocked, blocking, pending_dependencies
     ) VALUES (
-      $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24
+      $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24,
+      $25, $26, $27, $28, $29
     ) ON CONFLICT DO NOTHING
     RETURNING id
   `

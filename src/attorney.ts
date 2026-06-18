@@ -308,6 +308,10 @@ function getConfig (value: string | types.ConstructorOptions): types.ResolvedCon
   config.migrate = ('migrate' in config) ? config.migrate : true
   config.createSchema = ('createSchema' in config) ? config.createSchema : true
   config.distributedDatabaseMode = ('distributedDatabaseMode' in config) ? config.distributedDatabaseMode : false
+  config.noTablePartitioning = ('noTablePartitioning' in config) ? config.noTablePartitioning : false
+  config.noDeferrableConstraints = ('noDeferrableConstraints' in config) ? config.noDeferrableConstraints : false
+  config.noAdvisoryLocks = ('noAdvisoryLocks' in config) ? config.noAdvisoryLocks : false
+  config.noCoveringIndexes = ('noCoveringIndexes' in config) ? config.noCoveringIndexes : false
 
   applySchemaConfig(config)
   applyOpsConfig(config)
@@ -342,8 +346,18 @@ function validateWarningConfig (config: any) {
 }
 
 function validateDistributedDatabaseMode (config: any) {
-  assert(!('distributedDatabaseMode' in config) || typeof config.distributedDatabaseMode === 'boolean',
-    'configuration assert: distributedDatabaseMode must be a boolean')
+  const booleanFlags = [
+    'distributedDatabaseMode',
+    'noTablePartitioning',
+    'noDeferrableConstraints',
+    'noAdvisoryLocks',
+    'noCoveringIndexes'
+  ]
+
+  for (const flag of booleanFlags) {
+    assert(!(flag in config) || typeof config[flag] === 'boolean',
+      `configuration assert: ${flag} must be a boolean`)
+  }
 }
 
 function assertPostgresObjectName (name: string) {

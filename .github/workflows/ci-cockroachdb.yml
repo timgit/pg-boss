@@ -4,10 +4,18 @@ on:
     tags-ignore: ['**']
   pull_request:
     branches: [master]
+  # Allow the full-suite compatibility run to be triggered by hand...
+  workflow_dispatch:
+  # ...and on a nightly schedule, so regressions in CockroachDB support surface
+  # without waiting for someone to run it manually.
+  schedule:
+    - cron: '0 6 * * *'
 
 name: CI (CockroachDB)
 
 jobs:
+  # Fast feedback on every push/PR: the distributed-mode invariants that the rest of the
+  # suite can't express, run against a real CockroachDB cluster.
   test:
     runs-on: ubuntu-latest
 
@@ -22,14 +30,41 @@ jobs:
 
     - name: Start CockroachDB cluster
       run: |
-        docker compose --profile cluster up -d
-        # Wait for setup container to complete (it creates the database)
-        docker wait pg-boss-cockroachdb-setup-1 || true
-        # Verify database was created
+        docker compose --profile cluster up -d --wait
+        # The setup container creates the database; confirm it exists before continuing.
         docker compose --profile cluster exec -T cockroachdb-1 cockroach sql --insecure -e "SHOW DATABASES" | grep -q pgboss
 
     - name: Install
-      run: npm install
+      run: npm ci
 
     - name: Test distributed database mode
       run: npm run test:cockroachdb
+
+  # Full suite against CockroachDB. This is the compatibility matrix / regression signal: it is
+  # slow (CockroachDB pays ~8s of online-DDL per test, and the suite rebuilds the schema per test),
+  # so it does not gate pushes/PRs. It runs nightly and on demand. PostgreSQL-only tests skip
+  # automatically via testHelper's itPostgresOnly/describePostgresOnly.
+  test-full-suite:
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 22
+
+    - name: Start CockroachDB cluster
+      run: |
+        docker compose --profile cluster up -d --wait
+        docker compose --profile cluster exec -T cockroachdb-1 cockroach sql --insecure -e "SHOW DATABASES" | grep -q pgboss
+
+    - name: Install
+      run: npm ci
+
+    - name: Test full suite (CockroachDB)
+      run: npm run test:cockroachdb:full

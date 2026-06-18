@@ -34,6 +34,33 @@ describe('config', function () {
     expect(() => new PgBoss(config)).toThrow()
   })
 
+  it('should reject non-boolean distributed database flags', function () {
+    const flags = [
+      'distributedDatabaseMode',
+      'noTablePartitioning',
+      'noDeferrableConstraints',
+      'noAdvisoryLocks',
+      'noCoveringIndexes'
+    ]
+
+    for (const flag of flags) {
+      expect(() => new PgBoss({ ...ctx.bossConfig, [flag]: 'yes' } as any)).toThrow(`${flag} must be a boolean`)
+    }
+  })
+
+  it('should accept boolean distributed database flags', function () {
+    const boss = new PgBoss({
+      ...ctx.bossConfig,
+      distributedDatabaseMode: true,
+      noTablePartitioning: true,
+      noDeferrableConstraints: true,
+      noAdvisoryLocks: true,
+      noCoveringIndexes: true
+    })
+
+    expect(boss).toBeTruthy()
+  })
+
   it('should accept a connectionString property', async function () {
     const connectionString = helper.getConnectionString()
     ctx.boss = new PgBoss({ connectionString, schema: ctx.bossConfig.schema })

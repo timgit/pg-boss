@@ -46,6 +46,7 @@
     "test": "eslint . && vitest run",
     "test:distributed": "cross-env DISTRIBUTED=true npm test",
     "test:cockroachdb": "cross-env DB_TYPE=cockroachdb COCKROACH_HOST=localhost npm test -- test/distributedDatabaseTest.ts",
+    "test:cockroachdb:full": "cross-env DB_TYPE=cockroachdb COCKROACH_HOST=localhost npm test -- --no-file-parallelism",
     "lint:fix": "eslint . --fix",
     "precover": "prisma generate --schema=test/prisma/schema.prisma",
     "cover": "vitest run --coverage",

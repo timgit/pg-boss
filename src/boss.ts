@@ -216,16 +216,26 @@ class Boss extends EventEmitter implements types.EventsMixin {
         )
       }
 
-      const sql = plans.failJobsByTimeout(this.#config.schema, table, queues, this.#config.noAdvisoryLocks)
-      await this.#executeQuery(sql)
+      // CockroachDB rejects the multi-mutation failJobs() CTE these use, so in distributed mode
+      // route expiry through the manager's split select/delete/re-insert variants instead.
+      if (this.#config.distributedDatabaseMode) {
+        await this.#manager.failJobsByTimeoutDistributed(table, queues)
+      } else {
+        const sql = plans.failJobsByTimeout(this.#config.schema, table, queues, this.#config.noAdvisoryLocks)
+        await this.#executeQuery(sql)
+      }
 
       if (this.#stopping) return
 
       const heartbeatQueues = queues.filter(q => heartbeatQueueNames.has(q))
 
       if (heartbeatQueues.length) {
-        const heartbeatSql = plans.failJobsByHeartbeat(this.#config.schema, table, heartbeatQueues, this.#config.noAdvisoryLocks)
-        await this.#executeQuery(heartbeatSql)
+        if (this.#config.distributedDatabaseMode) {
+          await this.#manager.failJobsByHeartbeatDistributed(table, heartbeatQueues)
+        } else {
+          const heartbeatSql = plans.failJobsByHeartbeat(this.#config.schema, table, heartbeatQueues, this.#config.noAdvisoryLocks)
+          await this.#executeQuery(heartbeatSql)
+        }
       }
     }
   }

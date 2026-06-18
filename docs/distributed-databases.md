@@ -70,12 +70,17 @@ await boss.start()
 - Only for distributed databases where `SKIP LOCKED` has performance or correctness issues
 - Trade-off of empty results is acceptable when processing time >> fetch time (typical for job queues)
 
+> **Note:** distributed mode only replaces `SKIP LOCKED` in the *fetch* path. Other operations
+> (e.g. unblocking flow dependents) still use `SELECT ... FOR UPDATE` without `SKIP LOCKED`, which
+> distributed engines like CockroachDB support fine — it is specifically `SKIP LOCKED` that is
+> avoided, not all row locking.
+
 ## Recommendations
 
 - **CockroachDB**: Use `distributedDatabaseMode` + `noTablePartitioning` + `noDeferrableConstraints` + `noAdvisoryLocks` + `noCoveringIndexes`
 - **YugabyteDB**: Use `noAdvisoryLocks` (unless preview feature enabled). Standard fetch mode works well.
 - **Citus**: Use `distributedDatabaseMode` if job table is distributed; standard mode if using reference tables
-- **Aurora DSQL**: Use `distributedDatabaseMode` + `noTablePartitioning` + `noDeferrableConstraints` + `noAdvisoryLocks`. Compatibility uncertain due to OCC and async-only indexes.
+- **Aurora DSQL**: currently **not supported**. pg-boss provisions its schema with synchronous `CREATE INDEX`, which Aurora DSQL does not offer (indexes are created asynchronously), so migrations cannot complete. The flag combination would be `distributedDatabaseMode` + `noTablePartitioning` + `noDeferrableConstraints` + `noAdvisoryLocks`, but this is untested and blocked on the indexing limitation.
 - **PostgreSQL**: Use standard mode (no special options needed)
 
 ## Transaction Isolation
@@ -134,9 +139,14 @@ plain PostgreSQL, so the project exercises it two ways:
   reliably, without paying CockroachDB's slow per-test DDL. It runs as its own CI job.
 - **`npm run test:cockroachdb`** — runs `test/distributedDatabaseTest.ts` against a real CockroachDB
   cluster (`DB_TYPE=cockroachdb`, which also enables the compatibility flags above). This is a
-  focused smoke test confirming actual CockroachDB compatibility. Running the *whole* suite against
-  CockroachDB is impractical: each test rebuilds the schema, and CockroachDB's online schema changes
-  make that ~8s per test.
+  focused smoke test confirming actual CockroachDB compatibility, and runs on every push/PR.
+- **`npm run test:cockroachdb:full`** — runs the **entire** suite against a real CockroachDB cluster
+  (`--no-file-parallelism`, so the slow per-test DDL doesn't overwhelm the cluster). This is the
+  compatibility matrix / regression signal. It's slow — CockroachDB rebuilds the schema per test and
+  pays ~8-19s of online schema changes each, so the suite takes the better part of an hour — and
+  therefore runs **nightly and on demand** (`workflow_dispatch`) rather than gating PRs. When running
+  against CockroachDB the per-test timeout is raised automatically (see `vitest.config.ts`) so slow
+  DDL reports as a real result rather than a spurious timeout.
 
 For tests that depend on PostgreSQL-only features (table partitioning, covering indexes, or an exact
 PostgreSQL schema/migration shape), `test/testHelper.ts` exports `itPostgresOnly` /
@@ -144,9 +154,23 @@ PostgreSQL schema/migration shape), `test/testHelper.ts` exports `itPostgresOnly
 `partition: true`/`false`, narrow the cases with `helper.isCockroachDb`.
 
 `test/distributedDatabaseTest.ts` holds the distributed-mode-specific invariants the general suite
-cannot express (concurrent-fetch deduplication, `failDistributed`/`completeDistributed` rollback
-behavior, and the compatibility-flag construction paths). Those cases opt into
+cannot express (concurrent-fetch deduplication, `failDistributed`/`completeDistributed` composition
+inside a caller transaction, and the compatibility-flag construction paths). Those cases opt into
 `distributedDatabaseMode` explicitly, so they run in every mode.
+
+**Verified on CockroachDB** (full-suite run, PostgreSQL-only tests skipped): job send/fetch,
+complete, fail (by id), retry of an explicitly failed job (including exponential backoff and
+`retryDelayMax`), **maintenance expiration of timed-out jobs** (`expireInSeconds`), **heartbeat
+config + heartbeat-timeout** (`heartbeatSeconds`), queue policies (`short`/`singleton`/`stately`
+with `partition: false`), throttle/debounce, deferral, cancellation, and flow dependency
+blocking/unblocking — including a blocking parent that fails and retries.
+
+In `distributedDatabaseMode` the supervisor's expiry (`failJobsByTimeout` / `failJobsByHeartbeat`)
+uses CockroachDB-safe split statements instead of the multi-mutation `failJobs()` CTE (which
+CockroachDB rejects with `multiple mutations of the same table "job" are not supported`), so
+timed-out and heartbeat-timed-out jobs are correctly moved to `retry`/`failed` rather than stranded
+in `active`. CockroachDB returns integer columns as text, so numeric job and queue fields (including
+`heartbeatSeconds`) are coerced back to numbers on read in distributed mode.
 
 ### Untested: YugabyteDB (likely compatible)
 
