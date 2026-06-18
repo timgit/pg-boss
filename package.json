@@ -47,6 +47,8 @@
     "test:distributed": "cross-env DISTRIBUTED=true npm test",
     "test:cockroachdb": "cross-env DB_TYPE=cockroachdb COCKROACH_HOST=localhost npm test -- test/distributedDatabaseTest.ts",
     "test:cockroachdb:full": "cross-env DB_TYPE=cockroachdb COCKROACH_HOST=localhost npm test -- --no-file-parallelism",
+    "test:yugabytedb:full": "cross-env DB_TYPE=yugabytedb YUGABYTE_HOST=localhost npm test -- --no-file-parallelism",
+    "test:citus:full": "cross-env DB_TYPE=citus CITUS_HOST=localhost npm test",
     "lint:fix": "eslint . --fix",
     "precover": "prisma generate --schema=test/prisma/schema.prisma",
     "cover": "vitest run --coverage",

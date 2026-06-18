@@ -78,8 +78,8 @@ await boss.start()
 ## Recommendations
 
 - **CockroachDB**: Use `distributedDatabaseMode` + `noTablePartitioning` + `noDeferrableConstraints` + `noAdvisoryLocks` + `noCoveringIndexes`
-- **YugabyteDB**: Use `noAdvisoryLocks` (unless preview feature enabled). Standard fetch mode works well.
-- **Citus**: Use `distributedDatabaseMode` if job table is distributed; standard mode if using reference tables
+- **YugabyteDB**: Partially compatible - `noAdvisoryLocks` + `noTablePartitioning` + standard fetch mode. Non-partitioned queueing works (incl. queue policies); partitioned queues, multi-master startup, and live migrations hit a YugabyteDB transaction/DDL limitation ([#21833](https://github.com/yugabyte/yugabyte-db/issues/21833)). See below.
+- **Citus**: Standard mode, no flags (the full suite passes against a single-node coordinator). Only use `distributedDatabaseMode` if you explicitly shard the job table with `create_distributed_table()`.
 - **Aurora DSQL**: currently **not supported**. pg-boss provisions its schema with synchronous `CREATE INDEX`, which Aurora DSQL does not offer (indexes are created asynchronously), so migrations cannot complete. The flag combination would be `distributedDatabaseMode` + `noTablePartitioning` + `noDeferrableConstraints` + `noAdvisoryLocks`, but this is untested and blocked on the indexing limitation.
 - **PostgreSQL**: Use standard mode (no special options needed)
 
@@ -97,8 +97,8 @@ pg-boss uses PostgreSQL's declarative table partitioning (`PARTITION BY LIST`) f
 |----------|--------|------------------|
 | PostgreSQL | Tested | None |
 | CockroachDB | Tested | `distributedDatabaseMode` + `noTablePartitioning` + `noDeferrableConstraints` + `noAdvisoryLocks` + `noCoveringIndexes` |
-| YugabyteDB | Untested (likely compatible) | `noAdvisoryLocks` (unless preview feature enabled) |
-| Citus | Untested (likely compatible) | `distributedDatabaseMode` if job table is distributed across shards |
+| YugabyteDB | Partially compatible (tested) | `noAdvisoryLocks` + `noTablePartitioning` + standard fetch; partitioned queues / multi-master / live migrations fail ([#21833](https://github.com/yugabyte/yugabyte-db/issues/21833)) |
+| Citus | Compatible (tested, full suite) | Standard mode, no flags (coordinator-local tables); `distributedDatabaseMode` only if you shard the job table |
 | Aurora DSQL | Untested (uncertain) | Likely `distributedDatabaseMode` + `noTablePartitioning` + `noDeferrableConstraints` + `noAdvisoryLocks` (see notes) |
 | Spanner | Untested (uncertain) | Likely `distributedDatabaseMode` + `noTablePartitioning` + `noDeferrableConstraints` + `noAdvisoryLocks` + `noCoveringIndexes` |
 
@@ -172,36 +172,72 @@ timed-out and heartbeat-timed-out jobs are correctly moved to `retry`/`failed` r
 in `active`. CockroachDB returns integer columns as text, so numeric job and queue fields (including
 `heartbeatSeconds`) are coerced back to numbers on read in distributed mode.
 
-### Untested: YugabyteDB (likely compatible)
+### Partially compatible: YugabyteDB
 
-YugabyteDB is a PostgreSQL-compatible distributed database with [native job queue support](https://docs.yugabyte.com/stable/develop/data-modeling/common-patterns/jobqueue/). YugabyteDB [recommends](https://www.yugabyte.com/blog/distributed-fifo-job-queue/) using `SELECT FOR UPDATE SKIP LOCKED` for job queues, and has optimizations for single-row transactions that make this pattern efficient.
+YugabyteDB is a PostgreSQL-compatible distributed database (reports as PostgreSQL 15). pg-boss has
+been tested against a single-node YugabyteDB (`docker compose --profile yugabyte up -d`,
+`npm run test:yugabytedb:full`). Basic queueing works, but there is a significant caveat.
 
-**Feature support:**
-- Table partitioning: ✅ Fully supported
-- Deferrable constraints: ✅ Supported for foreign keys
-- Covering indexes (INCLUDE): ✅ Fully supported
-- Advisory locks: ⚠️ [Tech Preview](https://github.com/yugabyte/yugabyte-db/issues/3642) - requires enabling GFlags
-
-**Recommendation:** Use `noAdvisoryLocks: true` unless you have enabled the advisory locks preview feature (requires setting `ysql_yb_enable_advisory_locks=true`). Standard fetch mode works well - YugabyteDB does not have the `SKIP LOCKED` issues that CockroachDB has.
+**Use `noAdvisoryLocks: true` + `noTablePartitioning: true`, standard fetch mode** (not
+`distributedDatabaseMode` — YugabyteDB does not have the `SKIP LOCKED` issues CockroachDB has). With
+those flags, standard (non-partitioned) queueing works: send / fetch / complete, retries, job
+expiration, flows, and queue policies (`short` / `singleton` / `stately`).
 
 ```typescript
 const boss = new PgBoss({
   connectionString: 'postgresql://localhost:5433/pgboss',
-  noAdvisoryLocks: true  // Required unless preview feature enabled
+  noAdvisoryLocks: true,
+  noTablePartitioning: true
 })
 ```
 
-If you use pg-boss with YugabyteDB, please report your findings.
+**Why `noTablePartitioning` is required.** pg-boss creates a per-queue partition with DDL (`CREATE
+TABLE … PARTITION OF …`) inside the same transaction that inserts the queue row. Two YugabyteDB
+behaviors make this fail:
 
-### Untested: Citus (likely compatible)
+1. It cannot transparently retry a multi-statement transaction sent over the *simple* query
+   protocol on a conflict ([yugabyte-db#21833](https://github.com/yugabyte/yugabyte-db/issues/21833))
+   — and pg-boss wraps these operations in a `BEGIN; … ; COMMIT;` text block, so the conflict surfaces
+   as `current transaction is expired or aborted`.
+2. DDL is **not rolled back transactionally**, so the partition table survives the aborted
+   transaction — a retry then fails with `relation "…" already exists`.
 
-Citus is a distributed PostgreSQL extension that shards tables across multiple nodes. However, `SELECT FOR UPDATE` [only works for single-shard queries](https://docs.citusdata.com/en/stable/develop/reference_workarounds.html) in Citus - cross-shard locking is not supported.
+`noTablePartitioning` keeps all jobs in one table and skips the per-queue DDL, sidestepping both.
+Advisory locks are a [Tech Preview](https://github.com/yugabyte/yugabyte-db/issues/3642) on
+YugabyteDB, hence `noAdvisoryLocks`.
 
-**Recommendation:**
-- If the pg-boss job table is a **reference table** (replicated to all nodes): Standard mode works fine.
-- If the pg-boss job table is **distributed across shards**: `distributedDatabaseMode: true` is required since `SELECT FOR UPDATE SKIP LOCKED` will error on cross-shard queries.
+**Still not reliable on YugabyteDB:** partitioned queues (`partition: true`), multi-master
+concurrent startup, and live schema migrations between pg-boss versions — all involve DDL under
+contention. A fresh install (`createSchema`) is fine; upgrading an existing deployment is not.
 
-If you use pg-boss with Citus, please report your findings.
+For the partitioned-queue case specifically, this is **not** just a query-protocol problem and
+cannot be fixed by parameterizing the call. Running `create_queue` as a real client-side transaction,
+or as a single parameterized autocommit statement, was tested and still fails: once the partition
+DDL hits a conflict YugabyteDB reports `query layer retry isn't possible … some data was already
+sent to the user` and aborts, because it cannot transparently retry a transaction that performs DDL.
+Avoiding the partition DDL (`noTablePartitioning`) is the only thing that works.
+
+### Tested: Citus (compatible in standard mode)
+
+Citus is a PostgreSQL extension that can shard tables across nodes. pg-boss never calls
+`create_distributed_table()`, so its tables stay **local to the coordinator** and behave like plain
+PostgreSQL. The **full pg-boss test suite passes** against a single-node Citus coordinator
+(`citusdata/citus`, PostgreSQL 18 + Citus 14) with the `citus` extension loaded and **no special
+flags** — partitioning, queue policies, flows, heartbeat, multi-master, and migrations all work.
+
+```typescript
+const boss = new PgBoss({
+  connectionString: 'postgresql://localhost:5434/pgboss' // standard mode, no flags
+})
+```
+
+Run it yourself: `docker compose --profile citus up -d` then `npm run test:citus:full`.
+
+**The one caveat is opt-in.** If you deliberately shard the pg-boss job table with
+`create_distributed_table()`, `SELECT FOR UPDATE SKIP LOCKED`
+[only works for single-shard queries](https://docs.citusdata.com/en/stable/develop/reference_workarounds.html)
+— so a *distributed* job table would need `distributedDatabaseMode: true`. A **reference table**
+(replicated to all nodes) or the default coordinator-local table both work in standard mode.
 
 ### Untested: Aurora DSQL (uncertain)
 

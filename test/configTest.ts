@@ -61,6 +61,67 @@ describe('config', function () {
     expect(boss).toBeTruthy()
   })
 
+  it('should warn when YugabyteDB is detected without compatibility flags', async function () {
+    const realDb = await helper.getDb()
+    const warnings: any[] = []
+
+    try {
+      const boss = new PgBoss({
+        ...ctx.bossConfig,
+        db: {
+          async executeSql (sql: string, values: any[]) {
+            if (/^\s*SELECT version\(\)/i.test(sql)) {
+              return { rows: [{ version: 'PostgreSQL 15.12-YB-2025.2.3.2-b0 on x86_64-pc-linux-gnu' }] }
+            }
+            return realDb.executeSql(sql, values)
+          }
+        }
+      })
+
+      boss.on('warning', (w: any) => warnings.push(w))
+
+      await boss.start()
+      await boss.stop({ close: false, graceful: false })
+
+      const ybWarning = warnings.find(w => w.data?.backend === 'yugabytedb')
+      expect(ybWarning).toBeTruthy()
+      expect(ybWarning.message).toContain('noTablePartitioning')
+      expect(ybWarning.message).toContain('noAdvisoryLocks')
+    } finally {
+      await realDb.close()
+    }
+  })
+
+  it('should not warn about YugabyteDB when compatibility flags are set', async function () {
+    const realDb = await helper.getDb()
+    const warnings: any[] = []
+
+    try {
+      const boss = new PgBoss({
+        ...ctx.bossConfig,
+        noTablePartitioning: true,
+        noAdvisoryLocks: true,
+        db: {
+          async executeSql (sql: string, values: any[]) {
+            if (/^\s*SELECT version\(\)/i.test(sql)) {
+              return { rows: [{ version: 'PostgreSQL 15.12-YB-2025.2.3.2-b0 on x86_64-pc-linux-gnu' }] }
+            }
+            return realDb.executeSql(sql, values)
+          }
+        }
+      })
+
+      boss.on('warning', (w: any) => warnings.push(w))
+
+      await boss.start()
+      await boss.stop({ close: false, graceful: false })
+
+      expect(warnings.find(w => w.data?.backend === 'yugabytedb')).toBeUndefined()
+    } finally {
+      await realDb.close()
+    }
+  })
+
   it('should accept a connectionString property', async function () {
     const connectionString = helper.getConnectionString()
     ctx.boss = new PgBoss({ connectionString, schema: ctx.bossConfig.schema })
@@ -93,9 +154,12 @@ describe('config', function () {
     const boss = new PgBoss({ db, migrate: false, supervise: false, schedule: false })
 
     await expect(boss.start()).rejects.toThrow('startup failed')
+    const callsAfterFirst = calls
+
     await expect(boss.start()).rejects.toThrow('startup failed')
 
-    expect(calls).toBe(2)
+    // start() must re-attempt on retry (not get stuck), so the db is touched again
+    expect(calls).toBeGreaterThan(callsAfterFirst)
   })
 
   it('isInstalled() should indicate whether db schema is installed', async function () {

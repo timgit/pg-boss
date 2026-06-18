@@ -4,12 +4,24 @@ import { describe, it } from 'vitest'
 import crypto from 'node:crypto'
 import configJson from './config.json' with { type: 'json' }
 import cockroachConfigJson from './config.cockroachdb.json' with { type: 'json' }
+import yugabyteConfigJson from './config.yugabytedb.json' with { type: 'json' }
+import citusConfigJson from './config.citus.json' with { type: 'json' }
 import type { ConstructorOptions } from '../src/types.ts'
 import { getColumns, getConstraints, getIndexes, getFunctions } from './pgSchemaHelper.ts'
 
 const sha1 = (value: string): string => crypto.createHash('sha1').update(value).digest('hex')
 
 const isCockroachDb = process.env.DB_TYPE === 'cockroachdb'
+
+// YugabyteDB is PostgreSQL-compatible and supports partitioning, deferrable constraints, and
+// covering indexes, so it runs the standard fetch path. It only needs noAdvisoryLocks, which makes
+// it a good independent check that the advisory-lock-free path works on its own.
+const isYugabyteDb = process.env.DB_TYPE === 'yugabytedb'
+
+// Citus is the Citus extension on a single-node coordinator. pg-boss does not call
+// create_distributed_table(), so its tables stay local to the coordinator and behave like plain
+// PostgreSQL - no special flags needed. This checks the schema/queries work with Citus loaded.
+const isCitus = process.env.DB_TYPE === 'citus'
 
 // Distributed database mode is the atomic-UPDATE fetch strategy used by CockroachDB et al. It is a
 // pure runtime toggle (no schema impact) and works fine on plain PostgreSQL, so we exercise the
@@ -37,12 +49,20 @@ function getConnectionString (): string {
 }
 
 function getConfig (options: Partial<ConstructorOptions> & { testKey?: string } = {}): ConstructorOptions {
-  const baseConfig = isCockroachDb ? cockroachConfigJson : configJson
+  const baseConfig = isCockroachDb ? cockroachConfigJson : isYugabyteDb ? yugabyteConfigJson : isCitus ? citusConfigJson : configJson
   const config: any = { ...baseConfig }
 
-  config.host = (isCockroachDb ? process.env.COCKROACH_HOST : process.env.POSTGRES_HOST) || config.host
-  config.port = (isCockroachDb ? process.env.COCKROACH_PORT : process.env.POSTGRES_PORT) || config.port
-  config.password = process.env.POSTGRES_PASSWORD || config.password
+  if (isYugabyteDb) {
+    config.host = process.env.YUGABYTE_HOST || config.host
+    config.port = process.env.YUGABYTE_PORT || config.port
+  } else if (isCitus) {
+    config.host = process.env.CITUS_HOST || config.host
+    config.port = process.env.CITUS_PORT || config.port
+  } else {
+    config.host = (isCockroachDb ? process.env.COCKROACH_HOST : process.env.POSTGRES_HOST) || config.host
+    config.port = (isCockroachDb ? process.env.COCKROACH_PORT : process.env.POSTGRES_PORT) || config.port
+    config.password = process.env.POSTGRES_PASSWORD || config.password
+  }
 
   if (options.testKey) {
     config.schema = `pgboss${sha1(options.testKey)}`
@@ -65,6 +85,15 @@ function getConfig (options: Partial<ConstructorOptions> & { testKey?: string } 
     config.noDeferrableConstraints = true
     config.noAdvisoryLocks = true
     config.noCoveringIndexes = true
+  }
+
+  // YugabyteDB: disable advisory locks, and disable table partitioning. pg-boss creates partitions
+  // with DDL inside a transaction, and YugabyteDB neither rolls DDL back transactionally nor can
+  // retry the multi-statement transaction on a conflict (yugabyte-db#21833), so partitioned queue
+  // creation fails there. Standard (non-partitioned) queueing works.
+  if (isYugabyteDb) {
+    config.noAdvisoryLocks = true
+    config.noTablePartitioning = true
   }
 
   return Object.assign(config, options)
@@ -174,6 +203,8 @@ export {
   tryCreateDb,
   init,
   isCockroachDb,
+  isYugabyteDb,
+  isCitus,
   isDistributed,
   itPostgresOnly,
   describePostgresOnly,

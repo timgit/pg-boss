@@ -79,8 +79,70 @@ services:
     command: sql --insecure --host=cockroachdb-1 -e "CREATE DATABASE IF NOT EXISTS pgboss"
     restart: "no"
 
+  # Single-node YugabyteDB (PostgreSQL-compatible). YSQL listens on 5433.
+  # Usage: docker compose --profile yugabyte up -d
+  yugabytedb:
+    profiles: ["yugabyte"]
+    image: yugabytedb/yugabyte:latest
+    ports:
+      - 5433:5433
+      - 15433:15433
+    volumes:
+      - yugabyte_volume:/home/yugabyte/var
+    command: bin/yugabyted start --background=false
+    healthcheck:
+      # YSQL binds to the container's advertised address, so connect via the container hostname.
+      test: ["CMD-SHELL", "bin/ysqlsh -h $$(hostname) -U yugabyte -d yugabyte -c 'select 1' || exit 1"]
+      interval: 5s
+      timeout: 10s
+      retries: 40
+      start_period: 30s
+
+  yugabytedb-setup:
+    profiles: ["yugabyte"]
+    image: yugabytedb/yugabyte:latest
+    depends_on:
+      yugabytedb:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    # YugabyteDB (PostgreSQL 15) has no CREATE DATABASE IF NOT EXISTS, so ignore the "already exists" error.
+    command: ["bin/ysqlsh -h yugabytedb -U yugabyte -d yugabyte -c 'CREATE DATABASE pgboss' || true"]
+    restart: "no"
+
+  # Single-node Citus coordinator (the Citus extension on PostgreSQL). Listens on 5432, mapped to
+  # 5434 to avoid clashing with the plain `db` service. pg-boss's tables stay local to the
+  # coordinator (it never calls create_distributed_table), so this exercises the standard path with
+  # Citus loaded. Usage: docker compose --profile citus up -d
+  citus:
+    profiles: ["citus"]
+    image: citusdata/citus:latest
+    ports:
+      - 5434:5432
+    environment:
+      - POSTGRES_PASSWORD=postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  citus-setup:
+    profiles: ["citus"]
+    image: citusdata/citus:latest
+    depends_on:
+      citus:
+        condition: service_healthy
+    environment:
+      - PGPASSWORD=postgres
+    entrypoint: ["/bin/sh", "-c"]
+    # PostgreSQL has no CREATE DATABASE IF NOT EXISTS, so ignore the "already exists" error, then
+    # ensure the citus extension is present in the pgboss database.
+    command: ["psql -h citus -U postgres -c 'CREATE DATABASE pgboss' || true; psql -h citus -U postgres -d pgboss -c 'CREATE EXTENSION IF NOT EXISTS citus'"]
+    restart: "no"
+
 volumes:
   db_volume:
   cockroach_volume_1:
   cockroach_volume_2:
   cockroach_volume_3:
+  yugabyte_volume:
