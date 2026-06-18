@@ -30,8 +30,11 @@ jobs:
 
     - name: Start CockroachDB cluster
       run: |
-        docker compose --profile cluster up -d --wait
-        # The setup container creates the database; confirm it exists before continuing.
+        docker compose --profile cluster up -d
+        # `up --wait` can't be used here: the one-shot init/setup containers exit by design, which
+        # newer compose reports as a failed service. Block on the setup container instead - it
+        # creates the pgboss database once the cluster is initialized.
+        docker wait pg-boss-cockroachdb-setup-1 || true
         docker compose --profile cluster exec -T cockroachdb-1 cockroach sql --insecure -e "SHOW DATABASES" | grep -q pgboss
 
     - name: Install
@@ -60,7 +63,10 @@ jobs:
 
     - name: Start CockroachDB cluster
       run: |
-        docker compose --profile cluster up -d --wait
+        docker compose --profile cluster up -d
+        # See the `test` job: block on the setup container (which creates the pgboss database)
+        # rather than `up --wait`, which mishandles the one-shot init/setup containers.
+        docker wait pg-boss-cockroachdb-setup-1 || true
         docker compose --profile cluster exec -T cockroachdb-1 cockroach sql --insecure -e "SHOW DATABASES" | grep -q pgboss
 
     - name: Install
