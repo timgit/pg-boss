@@ -70,7 +70,10 @@ function assertTruthy<T> (value: T, message?: string): asserts value is NonNulla
 }
 
 function getConnectionString (): string {
-  if (isPglite) throw new Error('getConnectionString is not supported under PGlite (no server); skip the test with itPglite/describePglite')
+  // PGlite has no server/connection string. Return an unusable placeholder rather than throwing so
+  // that test files referencing it during collection still load; the tests themselves are skipped
+  // under PGlite via itPglite/describePglite.
+  if (isPglite) return 'pglite://unsupported'
 
   const config = getConfig()
 

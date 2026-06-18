@@ -130,16 +130,25 @@ With standard PostgreSQL or YugabyteDB's default READ COMMITTED isolation level,
 
 ## Database Compatibility
 
-pg-boss uses PostgreSQL's declarative table partitioning (`PARTITION BY LIST`) for queue management. This requires full PostgreSQL syntax compatibility:
+Set the `backend` profile and pg-boss applies the ✅ flags below for you — this matrix is for
+reference, for overriding a profile, or for targeting a database that doesn't have a profile yet.
+(PGlite is full PostgreSQL and needs none of these flags; it is covered on the [PGlite](pglite.md)
+page, not here.)
 
-| Database | Status | `backend` profile | Expands to / required options |
-|----------|--------|-------------------|-------------------------------|
-| PostgreSQL | Tested | `postgres` | None |
-| CockroachDB | Tested | `cockroachdb` | `distributedDatabaseMode` + `noTablePartitioning` + `noDeferrableConstraints` + `noAdvisoryLocks` + `noCoveringIndexes` |
-| YugabyteDB | Partially compatible (tested) | `yugabytedb` | `noAdvisoryLocks` + `noTablePartitioning` + standard fetch; partitioned queues / multi-master / live migrations fail ([#21833](https://github.com/yugabyte/yugabyte-db/issues/21833)) |
-| Citus | Compatible (tested, full suite) | `citus` | Standard mode, no flags (coordinator-local tables); `distributedDatabaseMode` only if you shard the job table |
-| Aurora DSQL | Untested (uncertain) | *(none — set flags)* | Likely `distributedDatabaseMode` + `noTablePartitioning` + `noDeferrableConstraints` + `noAdvisoryLocks` (see notes) |
-| Spanner | Untested (uncertain) | *(none — set flags)* | Likely `distributedDatabaseMode` + `noTablePartitioning` + `noDeferrableConstraints` + `noAdvisoryLocks` + `noCoveringIndexes` |
+| Database | Status | `backend` | distributed&shy;DatabaseMode | noTable&shy;Partitioning | noDeferrable&shy;Constraints | noAdvisory&shy;Locks | noCovering&shy;Indexes |
+|----------|--------|-----------|:---:|:---:|:---:|:---:|:---:|
+| PostgreSQL | Tested | `postgres` | | | | | |
+| CockroachDB | Tested | `cockroachdb` | ✅ | ✅ | ✅ | ✅ | ✅ |
+| YugabyteDB | Partial¹ (tested) | `yugabytedb` | | ✅ | | ✅ | |
+| Citus | Tested (full suite) | `citus` | ²  | | | | |
+| Aurora DSQL | Untested | *(set flags)* | ✅ | ✅ | ✅ | ✅ | |
+| Spanner | Untested | *(set flags)* | ✅ | ✅ | ✅ | ✅ | ✅ |
+
+¹ YugabyteDB runs the standard fetch path; non-partitioned queueing works, but partitioned queues,
+multi-master startup, and live migrations fail ([#21833](https://github.com/yugabyte/yugabyte-db/issues/21833)). See below.
+
+² Citus needs no flags with the default coordinator-local table; only set `distributedDatabaseMode`
+if you deliberately shard the job table with `create_distributed_table()`.
 
 ### Tested: PostgreSQL
 
@@ -401,88 +410,14 @@ This is the documented trade-off. For job queues where processing time >> fetch 
 
 ## Compatibility Options Reference
 
-pg-boss provides several options to work with databases that don't support all PostgreSQL features:
+Setting [`backend`](#backend-profiles) applies the correct flags for you — set these by hand only to
+fine-tune or to target a database without a profile. Which database needs which flag is in the
+[compatibility matrix](#database-compatibility); each flag itself does the following:
 
-### `backend`
-
-**Default:** `'postgres'`
-
-A named database backend (`'postgres'`, `'cockroachdb'`, `'yugabytedb'`, `'citus'`, `'pglite'`) that
-expands to the right preset of the flags below. See [Backend profiles](#backend-profiles). Any flag
-set explicitly takes precedence over the profile.
-
-### `distributedDatabaseMode`
-
-**Default:** `false`
-
-Enables an alternative job fetching pattern optimized for distributed databases.
-
-- **Standard mode:** Uses `SELECT FOR UPDATE SKIP LOCKED` for efficient concurrent job fetching
-- **Distributed mode:** Uses atomic `UPDATE...RETURNING` with a JOIN, adding an extra `state < 'active'` check
-
-**When to use:**
-- CockroachDB: Required (SKIP LOCKED has performance/correctness issues)
-- YugabyteDB: Not recommended (supports SKIP LOCKED well)
-- Citus: Required if job table is distributed across shards (SKIP LOCKED only works for single-shard queries)
-- Aurora DSQL: Required (uses OCC, SKIP LOCKED semantics don't apply)
-- PostgreSQL: Not recommended (standard mode is more efficient)
-
-**Trade-off:** Under high contention, some workers may receive empty results instead of efficiently claiming different jobs.
-
-### `noTablePartitioning`
-
-**Default:** `false`
-
-Disables PostgreSQL-style declarative table partitioning (`PARTITION BY LIST`).
-
-**When to use:**
-- CockroachDB: Required (uses a different partitioning model)
-- Aurora DSQL: Required (auto-manages distribution)
-- Spanner: Likely required
-
-**Trade-off:** Queue-level partitioning (`partition: true` on `createQueue`) is not available. All jobs are stored in a single table.
-
-### `noDeferrableConstraints`
-
-**Default:** `false`
-
-Disables `DEFERRABLE INITIALLY DEFERRED` on foreign key constraints.
-
-PostgreSQL's deferrable constraints allow constraint checks to be postponed until transaction commit, which is useful for certain operations. Some distributed databases don't support this syntax.
-
-**When to use:**
-- CockroachDB: Required (syntax not supported)
-- Aurora DSQL: Required (FK constraints not supported)
-- Spanner: Likely required
-
-**Trade-off:** Foreign key constraints are checked immediately rather than at transaction commit. This shouldn't affect normal pg-boss operations.
-
-### `noAdvisoryLocks`
-
-**Default:** `false`
-
-Disables PostgreSQL advisory locks (`pg_advisory_xact_lock`).
-
-pg-boss uses advisory locks for leader election and coordination in maintenance operations. Some distributed databases don't support advisory locks.
-
-**When to use:**
-- CockroachDB: Required (`pg_advisory_xact_lock` not available)
-- YugabyteDB: Required unless advisory locks preview feature is enabled (requires GFlags)
-- Aurora DSQL: Required (not supported with OCC model)
-- Spanner: Likely required
-
-**Trade-off:** Multiple pg-boss instances may occasionally perform redundant maintenance operations. This is a performance consideration, not a correctness issue.
-
-### `noCoveringIndexes`
-
-**Default:** `false`
-
-Disables the `INCLUDE` clause in covering indexes.
-
-PostgreSQL 11+ supports covering indexes that include additional columns for index-only scans. CockroachDB supports `INCLUDE` but automatically includes primary key columns, causing errors when those columns are explicitly specified.
-
-**When to use:**
-- CockroachDB: Required (implicitly includes PK columns, causing "already contains column" errors)
-- Spanner: Likely required
-
-**Trade-off:** Slightly less efficient index-only scans for job fetching. The performance impact is minimal for most workloads.
+| Flag (default `false`) | Effect | Trade-off when enabled |
+|------------------------|--------|------------------------|
+| `distributedDatabaseMode` | Fetch with atomic `UPDATE ... RETURNING` instead of `SELECT FOR UPDATE SKIP LOCKED`, adding a `state < 'active'` recheck. | Under high contention some workers get empty results instead of skipping to unlocked rows. |
+| `noTablePartitioning` | Create the job table without `PARTITION BY LIST`. | Per-queue partitioning (`partition: true`) is unavailable; all jobs share one table. |
+| `noDeferrableConstraints` | Omit `DEFERRABLE INITIALLY DEFERRED` on foreign keys. | Constraints check immediately rather than at commit (no effect on normal operation). |
+| `noAdvisoryLocks` | Disable `pg_advisory_xact_lock` (used to coordinate schema creation/migration). | Concurrent instances may occasionally do redundant maintenance — a performance, not correctness, concern. |
+| `noCoveringIndexes` | Omit the `INCLUDE` clause on covering indexes. | Slightly less efficient index-only scans during fetch; minimal for most workloads. |

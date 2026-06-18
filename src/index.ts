@@ -431,6 +431,7 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
 
 export type {
   BackendProfile,
+  BackendOptions,
   BamEntry,
   BamEvent,
   BamStatusSummary,

@@ -48,4 +48,23 @@ describe('pglite adapter', () => {
 
     expect(pglite.calls[0].method).toBe('exec')
   })
+
+  it('rolls back an aborted transaction on error before rethrowing', async () => {
+    // Single-connection self-heal: a failed statement must not leave the connection in an aborted
+    // transaction that poisons the next query (a pool would just hand out a fresh connection).
+    const calls: string[] = []
+    const boom = new Error('boom')
+    const pglite = {
+      async query (text: string) {
+        calls.push(text)
+        if (text === 'ROLLBACK') return { rows: [] }
+        throw boom
+      },
+      async exec () { return [{ rows: [] }] }
+    }
+    const db = fromPglite(pglite as any)
+
+    await expect(db.executeSql('SELECT 1', ['x'])).rejects.toBe(boom)
+    expect(calls).toEqual(['SELECT 1', 'ROLLBACK'])
+  })
 })

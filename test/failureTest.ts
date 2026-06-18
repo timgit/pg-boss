@@ -145,7 +145,7 @@ describe('failure', function () {
     expect((job.output as { message: string }).message.includes(message)).toBeTruthy()
   })
 
-  it('should fail a job with custom connection', async function () {
+  helper.itPglite('should fail a job with custom connection', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 
     await ctx.boss.send(ctx.schema)

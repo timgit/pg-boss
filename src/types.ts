@@ -71,109 +71,61 @@ export interface MaintenanceOptions {
   maintenanceIntervalSeconds?: number;
   queueCacheIntervalSeconds?: number;
   monitorIntervalSeconds?: number;
+  persistWarnings?: boolean;
+  warningRetentionDays?: number;
+  bamIntervalSeconds?: number;
+}
+
+/**
+ * Options for running pg-boss against a specific database backend.
+ *
+ * In almost all cases you only need to set `backend` — it expands to the correct
+ * compatibility flags for that database. The individual flags below are low-level
+ * overrides for fine-tuning or for targeting a database that does not have a
+ * profile yet (e.g. Aurora DSQL, Spanner). A flag you set explicitly always wins.
+ *
+ * @see https://timgit.github.io/pg-boss/docs/distributed-databases#backend-profiles
+ */
+export interface BackendOptions {
   /**
-   * Selects a named database backend, which expands to a preset of the
-   * compatibility flags below. Explicitly-set flags always take precedence
-   * over the backend's preset.
-   *
+   * Selects the database backend, expanding to the right preset of the compatibility
+   * flags below. Recommended over setting those flags by hand.
    * @see BackendProfile
-   * @see https://timgit.github.io/pg-boss/docs/distributed-databases
    * @default 'postgres'
    */
   backend?: BackendProfile;
   /**
-   * Enable distributed database mode for use with distributed SQL databases
-   * like CockroachDB, YugabyteDB, and Citus.
-   *
-   * When enabled:
-   * - Uses atomic UPDATE instead of SELECT FOR UPDATE SKIP LOCKED for job fetching
-   *
-   * When to use:
-   * - CockroachDB: Required along with noTablePartitioning, noDeferrableConstraints,
-   *   noAdvisoryLocks, and noCoveringIndexes
-   * - YugabyteDB/Citus: Optional (test both modes for your workload)
-   * - PostgreSQL: Not recommended (standard mode is more efficient)
-   *
-   * Trade-off: Under high contention, some workers may receive empty results
-   * as concurrent updates to the same rows will fail the state check.
-   *
-   * @see https://timgit.github.io/pg-boss/docs/distributed-databases
+   * Fetch jobs with an atomic `UPDATE ... RETURNING` instead of `SELECT FOR UPDATE
+   * SKIP LOCKED`. Enabled automatically by distributed backends; prefer `backend`.
    * @default false
    */
   distributedDatabaseMode?: boolean;
   /**
-   * Disable PostgreSQL-style table partitioning for databases that don't support it.
-   *
-   * When enabled:
-   * - Creates job table without PARTITION BY LIST
-   * - All jobs stored in single table instead of partitions
-   * - Queue-level partitioning (partition: true) is not supported
-   *
-   * Required for:
-   * - CockroachDB (different partitioning model)
-   * - Spanner via PGAdapter (no declarative partitioning support)
-   * - YugabyteDB (creates partitions via DDL inside a transaction, which
-   *   Yugabyte cannot transactionally roll back or retry on conflict, so
-   *   partitioned queue creation fails there; yugabyte-db#21833)
-   *
-   * Not needed for:
-   * - PostgreSQL, Citus (full partitioning support)
-   *
-   * @see https://timgit.github.io/pg-boss/docs/distributed-databases
+   * Create the job table without `PARTITION BY LIST`, which also disables per-queue
+   * `partition: true`. Set automatically by backends without declarative
+   * partitioning; prefer `backend`.
    * @default false
    */
   noTablePartitioning?: boolean;
   /**
-   * Disable DEFERRABLE INITIALLY DEFERRED on foreign key constraints.
-   *
-   * Required for:
-   * - CockroachDB (does not support deferrable constraints)
-   * - Spanner via PGAdapter (does not support deferrable constraints)
-   *
-   * Not needed for:
-   * - PostgreSQL, YugabyteDB, Citus (full constraint support)
-   *
-   * @see https://timgit.github.io/pg-boss/docs/distributed-databases
+   * Omit `DEFERRABLE INITIALLY DEFERRED` on foreign keys. Set automatically by
+   * backends without deferrable constraints; prefer `backend`.
    * @default false
    */
   noDeferrableConstraints?: boolean;
   /**
-   * Disable PostgreSQL advisory locks (pg_advisory_xact_lock).
-   *
-   * Required for:
-   * - CockroachDB (does not support advisory locks)
-   * - Spanner via PGAdapter (does not support advisory locks)
-   * - YugabyteDB (advisory locks are not supported)
-   *
-   * Not needed for:
-   * - PostgreSQL, Citus (full advisory lock support)
-   *
-   * Note: Advisory locks are used to prevent race conditions during schema
-   * creation and migrations. Without them, CockroachDB relies on SERIALIZABLE
-   * isolation for coordination.
-   *
-   * @see https://timgit.github.io/pg-boss/docs/distributed-databases
+   * Disable advisory locks (`pg_advisory_xact_lock`) used to coordinate schema
+   * creation and migrations. Set automatically by backends without advisory locks;
+   * prefer `backend`.
    * @default false
    */
   noAdvisoryLocks?: boolean;
   /**
-   * Disable covering indexes (INCLUDE clause).
-   *
-   * Required for:
-   * - CockroachDB (implicitly includes PK columns in all indexes, causing
-   *   "already contains column" error when explicitly including them)
-   * - Spanner via PGAdapter (likely required)
-   *
-   * Not needed for:
-   * - PostgreSQL, YugabyteDB, Citus (full covering index support)
-   *
-   * @see https://timgit.github.io/pg-boss/docs/distributed-databases
+   * Omit the `INCLUDE` clause on covering indexes. Set automatically by backends
+   * that reject explicit `INCLUDE` of primary key columns; prefer `backend`.
    * @default false
    */
   noCoveringIndexes?: boolean;
-  persistWarnings?: boolean;
-  warningRetentionDays?: number;
-  bamIntervalSeconds?: number;
 }
 
 export interface Migration {
@@ -185,7 +137,7 @@ export interface Migration {
   uninstall?: string[]
 }
 
-export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, MaintenanceOptions {
+export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, MaintenanceOptions, BackendOptions {
   /** @internal */
   __test__warn_slow_query?: boolean;
   /** @internal */

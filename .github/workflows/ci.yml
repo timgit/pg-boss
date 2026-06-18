@@ -97,6 +97,28 @@ jobs:
         flag-name: distributed
         parallel: true
 
+  # Runs the full suite against embedded PGlite (in-process WASM PostgreSQL). No service container is
+  # needed — the database runs inside the test process. Connection-model-specific tests (custom pg
+  # connections, pool internals, multi-master, distributed mode) are skipped via itPglite/describePglite.
+  test-pglite:
+    runs-on: ubuntu-latest
+    container: node:24
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 24
+
+    - name: Install
+      run: npm install
+
+    - name: Test (pglite)
+      run: npm run test:pglite
+
   coverage:
     needs: [test, test-distributed]
     if: ${{ always() }}

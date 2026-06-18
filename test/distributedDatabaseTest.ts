@@ -1,4 +1,4 @@
-import { expect, describe, it } from 'vitest'
+import { expect, it } from 'vitest'
 import * as helper from './testHelper.ts'
 import { ctx } from './hooks.ts'
 
@@ -21,7 +21,7 @@ import { ctx } from './hooks.ts'
 // in CI), leaving little headroom under the 10s global timeout. Raise the default for the whole
 // block so startup jitter can't push a test over the edge (the concurrency tests keep their explicit
 // per-test overrides).
-describe('distributed database mode', { timeout: 20000 }, function () {
+helper.describePglite('distributed database mode', { timeout: 20000 }, function () {
   it('should not duplicate jobs when fetching concurrently in distributed mode', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, distributedDatabaseMode: true })
     const jobCount = 10

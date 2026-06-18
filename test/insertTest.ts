@@ -60,7 +60,7 @@ describe('insert', function () {
     expect(new Date(job!.keepUntil).toISOString()).toBe(keepUntil)
   })
 
-  it('should create jobs from an array with all properties and custom connection', async function () {
+  helper.itPglite('should create jobs from an array with all properties and custom connection', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 
     const deadLetter = `${ctx.schema}_dlq`
@@ -118,7 +118,7 @@ describe('insert', function () {
     expect(called).toBe(true)
   })
 
-  it('should create jobs with deadLetter the queue name of the ones passed as option in the send method if the queue deadLetter property is empty', async function () {
+  helper.itPglite('should create jobs with deadLetter the queue name of the ones passed as option in the send method if the queue deadLetter property is empty', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 
     const deadLetter = `${ctx.schema}_dlq`

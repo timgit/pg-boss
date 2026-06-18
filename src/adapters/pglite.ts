@@ -16,17 +16,32 @@ export interface PGliteLike {
 // (migrations/schema creation) with no parameters — those must go through `exec()`, which mirrors the
 // simple-vs-extended protocol split that the default `pg.Pool`-backed driver relies on.
 export function fromPglite (pglite: PGliteLike): IDatabase {
+  // pg-boss issues each statement expecting connection-pool semantics: an error on one statement
+  // must not affect the next. PGlite has a single connection, so a failed statement inside a
+  // BEGIN...COMMIT block (e.g. a migration that rolls back) leaves the connection in an aborted
+  // transaction that poisons every later query. A pooled driver sidesteps this by handing out a
+  // fresh connection; we emulate it by rolling back any aborted transaction before rethrowing.
+  const run = async (text: string, values?: unknown[]) => {
+    if (values?.length) {
+      return await pglite.query(text, values)
+    }
+
+    // No parameters: may be a multi-statement block (e.g. a `locked()` BEGIN ... RETURNING ...
+    // COMMIT). exec() returns one result per statement; flatten their rows so a RETURNING in the
+    // middle isn't lost behind a trailing COMMIT. This mirrors how pg-boss unwraps the array that
+    // node-postgres returns for multi-statement queries (see unwrapSQLResult).
+    const results = await pglite.exec(text)
+    return { rows: results.flatMap(r => r.rows ?? []) }
+  }
+
   return {
     async executeSql (text: string, values?: unknown[]) {
-      if (values?.length) {
-        return await pglite.query(text, values)
+      try {
+        return await run(text, values)
+      } catch (err) {
+        await pglite.query('ROLLBACK').catch(() => {})
+        throw err
       }
-
-      // No parameters: may be a multi-statement DDL block. exec() returns one result per statement;
-      // pg-boss only reads rows from single-statement parameterized queries, so returning the last
-      // statement's rows (or an empty set) is sufficient.
-      const results = await pglite.exec(text)
-      return { rows: results.at(-1)?.rows ?? [] }
     }
   }
 }

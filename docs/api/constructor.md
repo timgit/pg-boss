@@ -93,77 +93,31 @@ The following configuration options should not normally need to be changed, but 
 
   How often queue metadata is refreshed in memory.
 
+### Backend
+
 * **backend**, string, default `'postgres'`
 
-  A named database backend that expands to a preset of the compatibility flags below. One of `'postgres'`, `'cockroachdb'`, `'yugabytedb'`, `'citus'`, or `'pglite'`. Any flag set explicitly overrides the value implied by the backend.
+  Selects the database pg-boss is running against and applies the right compatibility settings for it. **This is the only backend option most users need** — it expands to the individual flags below so you don't have to. One of `'postgres'`, `'cockroachdb'`, `'yugabytedb'`, `'citus'`, or `'pglite'`.
 
-  - `cockroachdb` → `distributedDatabaseMode` + `noTablePartitioning` + `noDeferrableConstraints` + `noAdvisoryLocks` + `noCoveringIndexes`
-  - `yugabytedb` → `noAdvisoryLocks` + `noTablePartitioning`
-  - `citus` / `pglite` / `postgres` → no flags
+  ```js
+  const boss = new PgBoss({ connectionString, backend: 'cockroachdb' })
+  ```
 
-  See [Distributed Databases](../distributed-databases.md#backend-profiles) for details.
+  See [Distributed Databases](../distributed-databases.md#backend-profiles) and [PGlite](../pglite.md).
 
-* **distributedDatabaseMode**, bool, default false
+#### Compatibility flags (advanced)
 
-  Enable distributed database mode for use with distributed SQL databases. Uses atomic `UPDATE...RETURNING` instead of `SELECT FOR UPDATE SKIP LOCKED` for job fetching.
+You normally do **not** set these directly — `backend` does it for you. Set them by hand only to fine-tune, or to target a database that doesn't have a profile yet (e.g. Aurora DSQL, Spanner). An explicitly-set flag always overrides the value implied by `backend`.
 
-  - **CockroachDB**: Required (also requires `noTablePartitioning`, `noDeferrableConstraints`, `noAdvisoryLocks`, `noCoveringIndexes`)
-  - **YugabyteDB**: Not recommended. YugabyteDB supports `SKIP LOCKED` well for job queues.
-  - **Citus**: Required if job table is distributed across shards (`SELECT FOR UPDATE` only works for single-shard queries). Not needed if using a reference table.
-  - **Aurora DSQL**: Required. Uses OCC instead of pessimistic locking, so `SKIP LOCKED` semantics don't apply.
-  - **PostgreSQL**: Not recommended. Standard mode with `SKIP LOCKED` is more efficient.
+| Flag (default `false`) | What it does |
+|------------------------|--------------|
+| **distributedDatabaseMode** | Fetch jobs with atomic `UPDATE ... RETURNING` instead of `SELECT FOR UPDATE SKIP LOCKED`. |
+| **noTablePartitioning** | Create the job table without `PARTITION BY LIST` (disables per-queue `partition: true`). |
+| **noDeferrableConstraints** | Omit `DEFERRABLE INITIALLY DEFERRED` on foreign keys. |
+| **noAdvisoryLocks** | Disable `pg_advisory_xact_lock` (used to coordinate schema creation and migrations). |
+| **noCoveringIndexes** | Omit the `INCLUDE` clause on covering indexes. |
 
-  See [Distributed Databases](../distributed-databases.md) for details.
-
-* **noTablePartitioning**, bool, default false
-
-  Disable PostgreSQL-style table partitioning for databases that don't support it.
-
-  - **CockroachDB**: Required (different partitioning model)
-  - **YugabyteDB**: Required (partition DDL inside a transaction cannot be rolled back or retried; [yugabyte-db#21833](https://github.com/yugabyte/yugabyte-db/issues/21833))
-  - **Aurora DSQL**: Required (auto-manages distribution)
-  - **Spanner via PGAdapter**: Untested, likely required
-  - **PostgreSQL/Citus**: Not needed (full partitioning support)
-
-  When enabled:
-  - Creates job table without `PARTITION BY LIST`
-  - All jobs stored in single table instead of partitions
-  - Queue-level partitioning (`partition: true`) is not supported
-
-  See [Distributed Databases](../distributed-databases.md) for details.
-
-* **noDeferrableConstraints**, bool, default false
-
-  Disable `DEFERRABLE INITIALLY DEFERRED` on foreign key constraints.
-
-  - **CockroachDB**: Required (syntax not supported)
-  - **Aurora DSQL**: Required (FK constraints not supported)
-  - **Spanner via PGAdapter**: Untested, likely required
-  - **PostgreSQL/YugabyteDB/Citus**: Not needed
-
-  See [Distributed Databases](../distributed-databases.md) for details.
-
-* **noAdvisoryLocks**, bool, default false
-
-  Disable PostgreSQL advisory locks (`pg_advisory_xact_lock`) used for leader election and coordination.
-
-  - **CockroachDB**: Required (`pg_advisory_xact_lock` not available)
-  - **YugabyteDB**: Required unless advisory locks preview feature is enabled (requires GFlags `ysql_yb_enable_advisory_locks=true`)
-  - **Aurora DSQL**: Required (not supported with OCC model)
-  - **Spanner via PGAdapter**: Untested, likely required
-  - **PostgreSQL/Citus**: Not needed
-
-  See [Distributed Databases](../distributed-databases.md) for details.
-
-* **noCoveringIndexes**, bool, default false
-
-  Disable the `INCLUDE` clause in covering indexes.
-
-  - **CockroachDB**: Required (implicitly includes PK columns, causing errors)
-  - **Spanner via PGAdapter**: Untested, likely required
-  - **PostgreSQL/YugabyteDB/Citus**: Not needed
-
-  See [Distributed Databases](../distributed-databases.md) for details.
+Which flags each database needs is summarized in the [compatibility matrix](../distributed-databases.md#database-compatibility).
 
 * **persistWarnings**, bool, default false
 

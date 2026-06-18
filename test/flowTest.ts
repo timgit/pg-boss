@@ -461,7 +461,7 @@ describe('flows', function () {
     expect(jobCount).toBe(0)
   })
 
-  it('should support two complete calls in one transaction', async function () {
+  helper.itPglite('should support two complete calls in one transaction', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
     const db = await helper.getDb()
 
