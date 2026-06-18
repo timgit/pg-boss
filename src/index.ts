@@ -153,7 +153,7 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
 
         if (missing.length) {
           this.emit(events.warning, {
-            message: `YugabyteDB detected: set ${missing.join(' and ')} for compatibility. Partitioned queues (partition: true) are not supported on YugabyteDB.`,
+            message: `YugabyteDB detected: set ${missing.join(' and ')} (or backend: 'yugabytedb') for compatibility. Partitioned queues (partition: true) are not supported on YugabyteDB.`,
             data: { backend: 'yugabytedb', missingOptions: missing }
           })
         }
@@ -430,6 +430,7 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
 }
 
 export type {
+  BackendProfile,
   BamEntry,
   BamEvent,
   BamStatusSummary,
@@ -491,6 +492,7 @@ export {
   fromKysely,
   fromDrizzle,
   fromPrisma,
+  fromPglite,
 } from './adapters/index.ts'
 
 export type {
@@ -499,4 +501,5 @@ export type {
   DrizzleTransactionLike,
   DrizzleSqlTagLike,
   PrismaTransactionLike,
+  PGliteLike,
 } from './adapters/index.ts'

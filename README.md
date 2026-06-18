@@ -51,7 +51,8 @@ This will likely cater the most to teams already familiar with the simplicity of
 * SQL support for non-Node.js runtimes for most operations
 * Serverless function compatible
 * Multi-master compatible (for example, in a Kubernetes ReplicaSet)
-* [Distributed database support](https://timgit.github.io/pg-boss/docs/distributed-databases) for CockroachDB and other distributed SQL databases
+* [Distributed database support](https://timgit.github.io/pg-boss/docs/distributed-databases) for CockroachDB, YugabyteDB, Citus, and other distributed SQL databases via named `backend` profiles
+* [Embedded PGlite support](https://timgit.github.io/pg-boss/docs/pglite) for running entirely in-process (local-first, testing, serverless)
 
 ## CLI
 

@@ -1,11 +1,51 @@
 import { expect } from 'vitest'
 import Db from '../src/db.ts'
 import { PgBoss } from '../src/index.ts'
+import * as Attorney from '../src/attorney.ts'
 import * as helper from './testHelper.ts'
 import packageJson from '../package.json' with { type: 'json' }
 import { ctx } from './hooks.ts'
 
 describe('config', function () {
+  describe('backend profiles', function () {
+    const flags = ['distributedDatabaseMode', 'noTablePartitioning', 'noDeferrableConstraints', 'noAdvisoryLocks', 'noCoveringIndexes'] as const
+
+    const trueFlags = (config: any) => flags.filter(f => config[f] === true)
+
+    it('postgres (default) leaves all flags off', function () {
+      const resolved = Attorney.getConfig({ connectionString: 'postgres://localhost/db' })
+      expect(resolved.backend).toBe('postgres')
+      expect(trueFlags(resolved)).toEqual([])
+    })
+
+    it('cockroachdb enables distributed mode and all four no* gates', function () {
+      const resolved = Attorney.getConfig({ connectionString: 'postgres://localhost/db', backend: 'cockroachdb' })
+      expect(trueFlags(resolved).sort()).toEqual([...flags].sort())
+    })
+
+    it('yugabytedb enables only noAdvisoryLocks + noTablePartitioning', function () {
+      const resolved = Attorney.getConfig({ connectionString: 'postgres://localhost/db', backend: 'yugabytedb' })
+      expect(trueFlags(resolved).sort()).toEqual(['noAdvisoryLocks', 'noTablePartitioning'].sort())
+    })
+
+    it('citus and pglite leave all flags off', function () {
+      for (const backend of ['citus', 'pglite'] as const) {
+        const resolved = Attorney.getConfig({ connectionString: 'postgres://localhost/db', backend })
+        expect(trueFlags(resolved)).toEqual([])
+      }
+    })
+
+    it('an explicit flag overrides the profile', function () {
+      const resolved = Attorney.getConfig({ connectionString: 'postgres://localhost/db', backend: 'cockroachdb', noCoveringIndexes: false })
+      expect(resolved.noCoveringIndexes).toBe(false)
+      expect(resolved.distributedDatabaseMode).toBe(true)
+    })
+
+    it('rejects an unknown backend', function () {
+      expect(() => Attorney.getConfig({ connectionString: 'postgres://localhost/db', backend: 'nope' as any })).toThrow('backend must be one of')
+    })
+  })
+
   it('should allow a 50 character custom schema name', async function () {
     const config = ctx.bossConfig
 
@@ -122,7 +162,7 @@ describe('config', function () {
     }
   })
 
-  it('should accept a connectionString property', async function () {
+  helper.itPglite('should accept a connectionString property', async function () {
     const connectionString = helper.getConnectionString()
     ctx.boss = new PgBoss({ connectionString, schema: ctx.bossConfig.schema })
 
@@ -162,7 +202,7 @@ describe('config', function () {
     expect(calls).toBeGreaterThan(callsAfterFirst)
   })
 
-  it('isInstalled() should indicate whether db schema is installed', async function () {
+  helper.itPglite('isInstalled() should indicate whether db schema is installed', async function () {
     const db = new Db(ctx.bossConfig)
     await db.open()
 

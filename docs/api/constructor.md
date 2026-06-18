@@ -93,6 +93,16 @@ The following configuration options should not normally need to be changed, but 
 
   How often queue metadata is refreshed in memory.
 
+* **backend**, string, default `'postgres'`
+
+  A named database backend that expands to a preset of the compatibility flags below. One of `'postgres'`, `'cockroachdb'`, `'yugabytedb'`, `'citus'`, or `'pglite'`. Any flag set explicitly overrides the value implied by the backend.
+
+  - `cockroachdb` → `distributedDatabaseMode` + `noTablePartitioning` + `noDeferrableConstraints` + `noAdvisoryLocks` + `noCoveringIndexes`
+  - `yugabytedb` → `noAdvisoryLocks` + `noTablePartitioning`
+  - `citus` / `pglite` / `postgres` → no flags
+
+  See [Distributed Databases](../distributed-databases.md#backend-profiles) for details.
+
 * **distributedDatabaseMode**, bool, default false
 
   Enable distributed database mode for use with distributed SQL databases. Uses atomic `UPDATE...RETURNING` instead of `SELECT FOR UPDATE SKIP LOCKED` for job fetching.
@@ -110,9 +120,10 @@ The following configuration options should not normally need to be changed, but 
   Disable PostgreSQL-style table partitioning for databases that don't support it.
 
   - **CockroachDB**: Required (different partitioning model)
+  - **YugabyteDB**: Required (partition DDL inside a transaction cannot be rolled back or retried; [yugabyte-db#21833](https://github.com/yugabyte/yugabyte-db/issues/21833))
   - **Aurora DSQL**: Required (auto-manages distribution)
   - **Spanner via PGAdapter**: Untested, likely required
-  - **PostgreSQL/YugabyteDB/Citus**: Not needed (full partitioning support)
+  - **PostgreSQL/Citus**: Not needed (full partitioning support)
 
   When enabled:
   - Creates job table without `PARTITION BY LIST`

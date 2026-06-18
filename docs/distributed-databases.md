@@ -2,6 +2,41 @@
 
 pg-boss includes a `distributedDatabaseMode` option for use with PostgreSQL-compatible distributed SQL databases like YugabyteDB and Citus.
 
+## Backend profiles
+
+The `backend` option selects the database pg-boss is running against. It is a general mechanism —
+not specific to distributed databases — that expands to the right combination of compatibility flags
+so you don't have to wire them up by hand:
+
+```typescript
+import PgBoss from 'pg-boss'
+
+// Equivalent to setting distributedDatabaseMode + all four no* flags manually:
+const boss = new PgBoss({
+  connectionString: 'postgresql://root@localhost:26257/pgboss',
+  backend: 'cockroachdb'
+})
+```
+
+Each backend has a *kind* — `standard` (stock PostgreSQL), `distributed` (clustered
+Postgres-compatible engines), or `embedded` (in-process PostgreSQL). The flags follow from the kind:
+
+| `backend` | Kind | Expands to |
+|-----------|------|------------|
+| `postgres` *(default)* | standard | *(no flags)* |
+| `cockroachdb` | distributed | `distributedDatabaseMode` + `noTablePartitioning` + `noDeferrableConstraints` + `noAdvisoryLocks` + `noCoveringIndexes` |
+| `yugabytedb` | distributed | `noAdvisoryLocks` + `noTablePartitioning` |
+| `citus` | distributed | *(no flags — coordinator-local tables behave like plain PostgreSQL)* |
+| `pglite` | embedded | *(no flags — full PostgreSQL; see [PGlite](pglite.md))* |
+
+Note that `pglite` is **not** a distributed backend — it is embedded single-connection PostgreSQL
+and is documented on its own [PGlite](pglite.md) page. It appears here only because it shares the
+same `backend` selection mechanism.
+
+Any individual flag you set explicitly always **overrides** the profile, so you can start from a
+profile and fine-tune. Databases without a profile yet (Aurora DSQL, Spanner) are configured by
+setting the individual flags directly — see the [compatibility table](#database-compatibility).
+
 ## Background
 
 By default, pg-boss uses `SELECT FOR UPDATE SKIP LOCKED` for job fetching. This approach works well with PostgreSQL but may have issues in distributed databases:
@@ -44,12 +79,16 @@ This pattern is recommended for distributed work queues. See [Andrew Werner's ar
 
 ## Usage
 
+The simplest way to enable distributed mode is via a [backend profile](#backend-profiles). To opt in
+directly on a database without a profile, set `distributedDatabaseMode` (and any other required
+flags) yourself:
+
 ```typescript
 import PgBoss from 'pg-boss'
 
 const boss = new PgBoss({
-  connectionString: 'postgresql://localhost:5433/pgboss', // YugabyteDB
-  distributedDatabaseMode: true
+  connectionString: 'postgresql://root@localhost:26257/pgboss',
+  backend: 'cockroachdb' // or set distributedDatabaseMode + flags manually
 })
 
 await boss.start()
@@ -77,9 +116,9 @@ await boss.start()
 
 ## Recommendations
 
-- **CockroachDB**: Use `distributedDatabaseMode` + `noTablePartitioning` + `noDeferrableConstraints` + `noAdvisoryLocks` + `noCoveringIndexes`
-- **YugabyteDB**: Partially compatible - `noAdvisoryLocks` + `noTablePartitioning` + standard fetch mode. Non-partitioned queueing works (incl. queue policies); partitioned queues, multi-master startup, and live migrations hit a YugabyteDB transaction/DDL limitation ([#21833](https://github.com/yugabyte/yugabyte-db/issues/21833)). See below.
-- **Citus**: Standard mode, no flags (the full suite passes against a single-node coordinator). Only use `distributedDatabaseMode` if you explicitly shard the job table with `create_distributed_table()`.
+- **CockroachDB**: `backend: 'cockroachdb'` (= `distributedDatabaseMode` + `noTablePartitioning` + `noDeferrableConstraints` + `noAdvisoryLocks` + `noCoveringIndexes`)
+- **YugabyteDB**: `backend: 'yugabytedb'` (= `noAdvisoryLocks` + `noTablePartitioning`, standard fetch mode). Partially compatible — non-partitioned queueing works (incl. queue policies); partitioned queues, multi-master startup, and live migrations hit a YugabyteDB transaction/DDL limitation ([#21833](https://github.com/yugabyte/yugabyte-db/issues/21833)). See below.
+- **Citus**: `backend: 'citus'` (standard mode, no flags — the full suite passes against a single-node coordinator). Only use `distributedDatabaseMode` if you explicitly shard the job table with `create_distributed_table()`.
 - **Aurora DSQL**: currently **not supported**. pg-boss provisions its schema with synchronous `CREATE INDEX`, which Aurora DSQL does not offer (indexes are created asynchronously), so migrations cannot complete. The flag combination would be `distributedDatabaseMode` + `noTablePartitioning` + `noDeferrableConstraints` + `noAdvisoryLocks`, but this is untested and blocked on the indexing limitation.
 - **PostgreSQL**: Use standard mode (no special options needed)
 
@@ -93,14 +132,14 @@ With standard PostgreSQL or YugabyteDB's default READ COMMITTED isolation level,
 
 pg-boss uses PostgreSQL's declarative table partitioning (`PARTITION BY LIST`) for queue management. This requires full PostgreSQL syntax compatibility:
 
-| Database | Status | Required Options |
-|----------|--------|------------------|
-| PostgreSQL | Tested | None |
-| CockroachDB | Tested | `distributedDatabaseMode` + `noTablePartitioning` + `noDeferrableConstraints` + `noAdvisoryLocks` + `noCoveringIndexes` |
-| YugabyteDB | Partially compatible (tested) | `noAdvisoryLocks` + `noTablePartitioning` + standard fetch; partitioned queues / multi-master / live migrations fail ([#21833](https://github.com/yugabyte/yugabyte-db/issues/21833)) |
-| Citus | Compatible (tested, full suite) | Standard mode, no flags (coordinator-local tables); `distributedDatabaseMode` only if you shard the job table |
-| Aurora DSQL | Untested (uncertain) | Likely `distributedDatabaseMode` + `noTablePartitioning` + `noDeferrableConstraints` + `noAdvisoryLocks` (see notes) |
-| Spanner | Untested (uncertain) | Likely `distributedDatabaseMode` + `noTablePartitioning` + `noDeferrableConstraints` + `noAdvisoryLocks` + `noCoveringIndexes` |
+| Database | Status | `backend` profile | Expands to / required options |
+|----------|--------|-------------------|-------------------------------|
+| PostgreSQL | Tested | `postgres` | None |
+| CockroachDB | Tested | `cockroachdb` | `distributedDatabaseMode` + `noTablePartitioning` + `noDeferrableConstraints` + `noAdvisoryLocks` + `noCoveringIndexes` |
+| YugabyteDB | Partially compatible (tested) | `yugabytedb` | `noAdvisoryLocks` + `noTablePartitioning` + standard fetch; partitioned queues / multi-master / live migrations fail ([#21833](https://github.com/yugabyte/yugabyte-db/issues/21833)) |
+| Citus | Compatible (tested, full suite) | `citus` | Standard mode, no flags (coordinator-local tables); `distributedDatabaseMode` only if you shard the job table |
+| Aurora DSQL | Untested (uncertain) | *(none — set flags)* | Likely `distributedDatabaseMode` + `noTablePartitioning` + `noDeferrableConstraints` + `noAdvisoryLocks` (see notes) |
+| Spanner | Untested (uncertain) | *(none — set flags)* | Likely `distributedDatabaseMode` + `noTablePartitioning` + `noDeferrableConstraints` + `noAdvisoryLocks` + `noCoveringIndexes` |
 
 ### Tested: PostgreSQL
 
@@ -108,7 +147,16 @@ PostgreSQL is the primary supported database with full feature support.
 
 ### Tested: CockroachDB
 
-CockroachDB requires several compatibility options:
+CockroachDB requires several compatibility options. Use the `cockroachdb` profile:
+
+```typescript
+const boss = new PgBoss({
+  connectionString: 'postgresql://root@localhost:26257/pgboss',
+  backend: 'cockroachdb'
+})
+```
+
+…which is exactly equivalent to setting each flag by hand:
 
 ```typescript
 const boss = new PgBoss({
@@ -186,8 +234,7 @@ expiration, flows, and queue policies (`short` / `singleton` / `stately`).
 ```typescript
 const boss = new PgBoss({
   connectionString: 'postgresql://localhost:5433/pgboss',
-  noAdvisoryLocks: true,
-  noTablePartitioning: true
+  backend: 'yugabytedb' // = noAdvisoryLocks + noTablePartitioning
 })
 ```
 
@@ -227,7 +274,8 @@ flags** — partitioning, queue policies, flows, heartbeat, multi-master, and mi
 
 ```typescript
 const boss = new PgBoss({
-  connectionString: 'postgresql://localhost:5434/pgboss' // standard mode, no flags
+  connectionString: 'postgresql://localhost:5434/pgboss',
+  backend: 'citus' // standard mode, no flags
 })
 ```
 
@@ -354,6 +402,14 @@ This is the documented trade-off. For job queues where processing time >> fetch 
 ## Compatibility Options Reference
 
 pg-boss provides several options to work with databases that don't support all PostgreSQL features:
+
+### `backend`
+
+**Default:** `'postgres'`
+
+A named database backend (`'postgres'`, `'cockroachdb'`, `'yugabytedb'`, `'citus'`, `'pglite'`) that
+expands to the right preset of the flags below. See [Backend profiles](#backend-profiles). Any flag
+set explicitly takes precedence over the profile.
 
 ### `distributedDatabaseMode`
 

@@ -43,6 +43,24 @@ export interface SchedulingOptions {
   cronMonitorIntervalSeconds?: number;
 }
 
+/**
+ * A named database backend. Selecting a backend expands to a preset of the
+ * individual compatibility flags below (`distributedDatabaseMode`,
+ * `noTablePartitioning`, etc.) so you don't have to wire them up by hand.
+ * Any flag set explicitly always overrides the value implied by the backend.
+ *
+ * Backends fall into three kinds — standard, distributed, and embedded:
+ * - `postgres` (default): standard PostgreSQL, all flags off.
+ * - `cockroachdb`: distributed; enables `distributedDatabaseMode` and all four `no*` gates.
+ * - `yugabytedb`: distributed; enables `noAdvisoryLocks` and `noTablePartitioning`.
+ * - `citus`: distributed; plain PostgreSQL behavior (Citus tables stay coordinator-local).
+ * - `pglite`: embedded (NOT distributed) single-connection WASM PostgreSQL, all gates off.
+ *
+ * Spanner and other targets are not yet presets; set the individual flags
+ * directly. @see https://timgit.github.io/pg-boss/docs/distributed-databases
+ */
+export type BackendProfile = 'postgres' | 'cockroachdb' | 'yugabytedb' | 'citus' | 'pglite'
+
 export interface MaintenanceOptions {
   supervise?: boolean;
   migrate?: boolean;
@@ -53,6 +71,16 @@ export interface MaintenanceOptions {
   maintenanceIntervalSeconds?: number;
   queueCacheIntervalSeconds?: number;
   monitorIntervalSeconds?: number;
+  /**
+   * Selects a named database backend, which expands to a preset of the
+   * compatibility flags below. Explicitly-set flags always take precedence
+   * over the backend's preset.
+   *
+   * @see BackendProfile
+   * @see https://timgit.github.io/pg-boss/docs/distributed-databases
+   * @default 'postgres'
+   */
+  backend?: BackendProfile;
   /**
    * Enable distributed database mode for use with distributed SQL databases
    * like CockroachDB, YugabyteDB, and Citus.
@@ -84,9 +112,12 @@ export interface MaintenanceOptions {
    * Required for:
    * - CockroachDB (different partitioning model)
    * - Spanner via PGAdapter (no declarative partitioning support)
+   * - YugabyteDB (creates partitions via DDL inside a transaction, which
+   *   Yugabyte cannot transactionally roll back or retry on conflict, so
+   *   partitioned queue creation fails there; yugabyte-db#21833)
    *
    * Not needed for:
-   * - PostgreSQL, YugabyteDB, Citus (full partitioning support)
+   * - PostgreSQL, Citus (full partitioning support)
    *
    * @see https://timgit.github.io/pg-boss/docs/distributed-databases
    * @default false
@@ -112,9 +143,10 @@ export interface MaintenanceOptions {
    * Required for:
    * - CockroachDB (does not support advisory locks)
    * - Spanner via PGAdapter (does not support advisory locks)
+   * - YugabyteDB (advisory locks are not supported)
    *
    * Not needed for:
-   * - PostgreSQL, YugabyteDB, Citus (full advisory lock support)
+   * - PostgreSQL, Citus (full advisory lock support)
    *
    * Note: Advisory locks are used to prevent race conditions during schema
    * creation and migrations. Without them, CockroachDB relies on SERIALIZABLE

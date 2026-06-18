@@ -1,12 +1,13 @@
 import Db from '../src/db.ts'
-import { PgBoss } from '../src/index.ts'
+import { PgBoss, fromPglite } from '../src/index.ts'
+import { PGlite } from '@electric-sql/pglite'
 import { describe, it } from 'vitest'
 import crypto from 'node:crypto'
 import configJson from './config.json' with { type: 'json' }
 import cockroachConfigJson from './config.cockroachdb.json' with { type: 'json' }
 import yugabyteConfigJson from './config.yugabytedb.json' with { type: 'json' }
 import citusConfigJson from './config.citus.json' with { type: 'json' }
-import type { ConstructorOptions } from '../src/types.ts'
+import type { ConstructorOptions, IDatabase } from '../src/types.ts'
 import { getColumns, getConstraints, getIndexes, getFunctions } from './pgSchemaHelper.ts'
 
 const sha1 = (value: string): string => crypto.createHash('sha1').update(value).digest('hex')
@@ -23,6 +24,27 @@ const isYugabyteDb = process.env.DB_TYPE === 'yugabytedb'
 // PostgreSQL - no special flags needed. This checks the schema/queries work with Citus loaded.
 const isCitus = process.env.DB_TYPE === 'citus'
 
+// PGlite is embedded single-connection WASM PostgreSQL. The whole suite runs against it in-process
+// via DB_TYPE=pglite: each test-file worker shares one in-memory instance, and every testHelper db
+// operation (getDb, dropSchema, schema introspection) routes through it. There is no server, so
+// connection-string / subprocess / multi-connection tests are skipped (see itPglite/describePglite).
+const isPglite = process.env.DB_TYPE === 'pglite'
+
+// One shared in-memory PGlite instance per worker (vitest runs each test file in its own fork, so
+// this is created once per file). Construction is synchronous; readiness is awaited on first query.
+let pgliteInstance: PGlite | undefined
+function getPgliteInstance (): PGlite {
+  pgliteInstance ??= new PGlite()
+  return pgliteInstance
+}
+
+// A getDb()-compatible wrapper over the shared PGlite instance. close() is a no-op so callers that
+// open/close per operation don't tear down the instance shared by the rest of the file.
+function getPgliteDb (): IDatabase & { close: () => Promise<void> } {
+  const db = fromPglite(getPgliteInstance())
+  return { executeSql: db.executeSql, close: async () => {} }
+}
+
 // Distributed database mode is the atomic-UPDATE fetch strategy used by CockroachDB et al. It is a
 // pure runtime toggle (no schema impact) and works fine on plain PostgreSQL, so we exercise the
 // whole suite under it on Postgres via DISTRIBUTED=true — fast, reliable coverage of the distributed
@@ -36,6 +58,11 @@ const isDistributed = isCockroachDb || process.env.DISTRIBUTED === 'true'
 const itPostgresOnly = it.skipIf(isCockroachDb)
 const describePostgresOnly = describe.skipIf(isCockroachDb)
 
+// PGlite has no server, so tests that connect by connection string (CLI subprocess, ORM adapters)
+// or that require multiple independent connections cannot run against it. Wrap them with these.
+const itPglite = it.skipIf(isPglite)
+const describePglite = describe.skipIf(isPglite)
+
 function assertTruthy<T> (value: T, message?: string): asserts value is NonNullable<T> {
   if (value == null) {
     throw new Error(message ?? 'Expected value to be defined')
@@ -43,6 +70,8 @@ function assertTruthy<T> (value: T, message?: string): asserts value is NonNulla
 }
 
 function getConnectionString (): string {
+  if (isPglite) throw new Error('getConnectionString is not supported under PGlite (no server); skip the test with itPglite/describePglite')
+
   const config = getConfig()
 
   return `postgres://${config.user}:${config.password}@${config.host}:${config.port}/${config.database}`
@@ -52,7 +81,10 @@ function getConfig (options: Partial<ConstructorOptions> & { testKey?: string } 
   const baseConfig = isCockroachDb ? cockroachConfigJson : isYugabyteDb ? yugabyteConfigJson : isCitus ? citusConfigJson : configJson
   const config: any = { ...baseConfig }
 
-  if (isYugabyteDb) {
+  if (isPglite) {
+    config.host = undefined
+    config.port = undefined
+  } else if (isYugabyteDb) {
     config.host = process.env.YUGABYTE_HOST || config.host
     config.port = process.env.YUGABYTE_PORT || config.port
   } else if (isCitus) {
@@ -74,32 +106,30 @@ function getConfig (options: Partial<ConstructorOptions> & { testKey?: string } 
   config.schedule = false
   config.createSchema = true
 
-  // Distributed fetch strategy: enabled on CockroachDB and on Postgres via DISTRIBUTED=true
+  // Select the backend profile, which attorney expands into the right compatibility flags
+  // (CockroachDB: distributed + all no* gates; YugabyteDB: noAdvisoryLocks + noTablePartitioning
+  // per yugabyte-db#21833; Citus: plain Postgres). This keeps the flag matrix in one place.
+  config.backend = isPglite ? 'pglite' : isCockroachDb ? 'cockroachdb' : isYugabyteDb ? 'yugabytedb' : isCitus ? 'citus' : 'postgres'
+
+  // Distributed fetch strategy is an orthogonal runtime toggle: CockroachDB's profile already
+  // enables it; on plain Postgres we exercise the same code paths via DISTRIBUTED=true.
   if (isDistributed) {
     config.distributedDatabaseMode = true
   }
 
-  // CockroachDB additionally needs the compatibility flags (no partitioning/advisory locks/etc.)
-  if (isCockroachDb) {
-    config.noTablePartitioning = true
-    config.noDeferrableConstraints = true
-    config.noAdvisoryLocks = true
-    config.noCoveringIndexes = true
-  }
-
-  // YugabyteDB: disable advisory locks, and disable table partitioning. pg-boss creates partitions
-  // with DDL inside a transaction, and YugabyteDB neither rolls DDL back transactionally nor can
-  // retry the multi-statement transaction on a conflict (yugabyte-db#21833), so partitioned queue
-  // creation fails there. Standard (non-partitioned) queueing works.
-  if (isYugabyteDb) {
-    config.noAdvisoryLocks = true
-    config.noTablePartitioning = true
+  // Route every boss built from this config at the shared in-process PGlite instance. A fresh
+  // fromPglite wrapper per call is fine — it is a stateless adapter over the one instance.
+  if (isPglite && !('db' in options)) {
+    config.db = fromPglite(getPgliteInstance())
   }
 
   return Object.assign(config, options)
 }
 
 async function init (): Promise<void> {
+  // PGlite is in-memory and has no concept of CREATE DATABASE; nothing to provision.
+  if (isPglite) return
+
   const { database } = getConfig()
 
   assertTruthy(database)
@@ -107,6 +137,8 @@ async function init (): Promise<void> {
 }
 
 async function getDb ({ database, debug }: { database?: string; debug?: boolean } = {}): Promise<Db> {
+  if (isPglite) return getPgliteDb() as unknown as Db
+
   const config = getConfig()
 
   config.database = database || config.database
@@ -205,8 +237,11 @@ export {
   isCockroachDb,
   isYugabyteDb,
   isCitus,
+  isPglite,
   isDistributed,
   itPostgresOnly,
   describePostgresOnly,
+  itPglite,
+  describePglite,
   getSchemaDefs
 }

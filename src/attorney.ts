@@ -8,6 +8,53 @@ const POLICY = {
   MAX_RETENTION_DAYS: 365
 }
 
+// The compatibility flags a backend can toggle. A backend sets only the flags that differ from
+// stock PostgreSQL; everything else defaults to false. A flag the user sets explicitly always
+// overrides the backend preset (see resolveBackend).
+const COMPATIBILITY_FLAGS = [
+  'distributedDatabaseMode',
+  'noTablePartitioning',
+  'noDeferrableConstraints',
+  'noAdvisoryLocks',
+  'noCoveringIndexes'
+] as const
+
+type CompatibilityFlag = typeof COMPATIBILITY_FLAGS[number]
+
+// A backend's kind describes how it runs, independent of its compatibility flags:
+//  - 'standard'    stock single-node PostgreSQL
+//  - 'distributed' clustered Postgres-compatible engines (CockroachDB, YugabyteDB, Citus)
+//  - 'embedded'    in-process single-connection PostgreSQL (PGlite)
+// PGlite is deliberately 'embedded', NOT 'distributed' — it is full PostgreSQL and sets no flags.
+interface BackendDefinition {
+  kind: 'standard' | 'distributed' | 'embedded'
+  flags: Partial<Record<CompatibilityFlag, boolean>>
+}
+
+// The single source of truth for backend presets, mirrored by test/testHelper.ts.
+const BACKEND_PROFILES: Record<types.BackendProfile, BackendDefinition> = {
+  postgres: { kind: 'standard', flags: {} },
+  cockroachdb: {
+    kind: 'distributed',
+    flags: {
+      distributedDatabaseMode: true,
+      noTablePartitioning: true,
+      noDeferrableConstraints: true,
+      noAdvisoryLocks: true,
+      noCoveringIndexes: true
+    }
+  },
+  yugabytedb: {
+    kind: 'distributed',
+    flags: {
+      noAdvisoryLocks: true,
+      noTablePartitioning: true
+    }
+  },
+  citus: { kind: 'distributed', flags: {} },
+  pglite: { kind: 'embedded', flags: {} }
+}
+
 function assertObjectName (value: string, name: string = 'Name') {
   assert(/^[\w.\-/]+$/.test(value), `${name} can only contain alphanumeric characters, underscores, hyphens, periods, or forward slashes`)
 }
@@ -307,18 +354,14 @@ function getConfig (value: string | types.ConstructorOptions): types.ResolvedCon
   config.supervise = ('supervise' in config) ? config.supervise : true
   config.migrate = ('migrate' in config) ? config.migrate : true
   config.createSchema = ('createSchema' in config) ? config.createSchema : true
-  config.distributedDatabaseMode = ('distributedDatabaseMode' in config) ? config.distributedDatabaseMode : false
-  config.noTablePartitioning = ('noTablePartitioning' in config) ? config.noTablePartitioning : false
-  config.noDeferrableConstraints = ('noDeferrableConstraints' in config) ? config.noDeferrableConstraints : false
-  config.noAdvisoryLocks = ('noAdvisoryLocks' in config) ? config.noAdvisoryLocks : false
-  config.noCoveringIndexes = ('noCoveringIndexes' in config) ? config.noCoveringIndexes : false
+  resolveBackend(config)
 
   applySchemaConfig(config)
   applyOpsConfig(config)
   applyScheduleConfig(config)
   applyBamConfig(config)
   validateWarningConfig(config)
-  validateDistributedDatabaseMode(config)
+  validateBackend(config)
 
   return config as types.ResolvedConstructorOptions
 }
@@ -345,16 +388,25 @@ function validateWarningConfig (config: any) {
     `configuration assert: warningRetentionDays cannot exceed ${POLICY.MAX_RETENTION_DAYS} days`)
 }
 
-function validateDistributedDatabaseMode (config: any) {
-  const booleanFlags = [
-    'distributedDatabaseMode',
-    'noTablePartitioning',
-    'noDeferrableConstraints',
-    'noAdvisoryLocks',
-    'noCoveringIndexes'
-  ]
+// Expands config.backend into the individual compatibility flags, then defaults any
+// flag the backend did not set to false. A flag the user supplied explicitly always
+// wins over the backend preset.
+function resolveBackend (config: any) {
+  const backend = ('backend' in config) ? config.backend : 'postgres'
 
-  for (const flag of booleanFlags) {
+  assert(backend in BACKEND_PROFILES,
+    `configuration assert: backend must be one of ${Object.keys(BACKEND_PROFILES).join(', ')}`)
+
+  config.backend = backend
+  const { flags } = BACKEND_PROFILES[backend as types.BackendProfile]
+
+  for (const flag of COMPATIBILITY_FLAGS) {
+    config[flag] = (flag in config) ? config[flag] : (flags[flag] ?? false)
+  }
+}
+
+function validateBackend (config: any) {
+  for (const flag of COMPATIBILITY_FLAGS) {
     assert(!(flag in config) || typeof config[flag] === 'boolean',
       `configuration assert: ${flag} must be a boolean`)
   }

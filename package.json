@@ -17,6 +17,7 @@
     "serialize-error": "^13.0.1"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.4.1",
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
     "@tsconfig/node-ts": "^23.6.4",
@@ -49,6 +50,7 @@
     "test:cockroachdb:full": "cross-env DB_TYPE=cockroachdb COCKROACH_HOST=localhost npm test -- --no-file-parallelism",
     "test:yugabytedb:full": "cross-env DB_TYPE=yugabytedb YUGABYTE_HOST=localhost npm test -- --no-file-parallelism",
     "test:citus:full": "cross-env DB_TYPE=citus CITUS_HOST=localhost npm test",
+    "test:pglite": "cross-env DB_TYPE=pglite npm test -- --no-file-parallelism",
     "lint:fix": "eslint . --fix",
     "precover": "prisma generate --schema=test/prisma/schema.prisma",
     "cover": "vitest run --coverage",

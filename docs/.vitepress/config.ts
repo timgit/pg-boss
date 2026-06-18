@@ -40,6 +40,7 @@ export default defineConfig({
       { text: 'Dashboard', link: '/dashboard' },
       { text: 'Proxy', link: '/proxy' },
       { text: 'Distributed Databases', link: '/distributed-databases' },
+      { text: 'PGlite', link: '/pglite' },
       {
         text: 'API',
         items: [

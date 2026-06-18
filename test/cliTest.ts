@@ -3,7 +3,7 @@ import { execCommand } from 'cli-testlab'
 import { resolve } from 'node:path'
 import { writeFileSync, unlinkSync, existsSync } from 'node:fs'
 import crypto from 'node:crypto'
-import { getConnectionString, dropSchema, getDb, itPostgresOnly } from './testHelper.ts'
+import { getConnectionString, dropSchema, getDb, itPostgresOnly, describePglite } from './testHelper.ts'
 import packageJson from '../package.json' with { type: 'json' }
 
 const cliOptions = '--import=tsx '
@@ -15,7 +15,8 @@ function getTestSchema (testName: string): string {
   return `pgboss${sha1('cliTest' + testName)}`
 }
 
-describe('cli', function () {
+// The CLI runs in a subprocess that connects by connection string; PGlite is in-process only.
+describePglite('cli', function () {
   describe('help', function () {
     it('should show help with --help flag', async function () {
       await execCommand(`node ${cliPath} --help`, {
