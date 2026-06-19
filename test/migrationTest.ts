@@ -4,7 +4,7 @@ import { getDb, assertTruthy, getSchemaDefs, itPostgresOnly } from './testHelper
 import Contractor from '../src/contractor.ts'
 import { getAll, migrate, migrateCommands } from '../src/migrationStore.ts'
 import packageJson from '../package.json' with { type: 'json' }
-import { setVersion } from '../src/plans.ts'
+import { setVersion, getPartitionedQueueTables } from '../src/plans.ts'
 import { ctx } from './hooks.ts'
 
 const currentSchemaVersion = packageJson.pgboss.schema
@@ -708,6 +708,52 @@ describe('migration', function () {
       expect(await indexNames()).toEqual(['job_common_i7', 'job_common_i8'])
 
       await db.close()
+    })
+
+    it('should forward partitionTables from getMigrationPlans through to the inlined builds', function () {
+      const sql = getMigrationPlans(schema, 0, { partitionTables: ['jXYZ'] })
+
+      expect(sql).toContain(`CREATE INDEX CONCURRENTLY IF NOT EXISTS job_common_i7 ON ${schema}.job_common`)
+      expect(sql).toContain(`CREATE INDEX CONCURRENTLY IF NOT EXISTS jXYZ_i7 ON ${schema}.jXYZ`)
+      // i8 is pinned to job_common, so partitions are never targeted
+      expect(sql).not.toContain('jXYZ_i8')
+    })
+
+    it('should throw when an async migration command cannot be inlined', function () {
+      // an async command that is not a job_table_run_async($$...$$) enqueue cannot be
+      // rewritten into direct DDL, so inlining must fail loudly rather than emit garbage
+      const malformed = [
+        { release: '1.0.0', version: 1, previous: 0, install: ['CREATE TABLE x ()'], uninstall: [], async: ['SELECT 1'] }
+      ]
+
+      expect(() => migrate(schema, 0, malformed, undefined, { inlineAsync: true }))
+        .toThrow(/Unable to inline async migration command/)
+    })
+
+    itPostgresOnly('should enumerate partitioned queue tables for per-partition inlined builds', async function () {
+      const boss = ctx.boss = new PgBoss(ctx.bossConfig)
+      const dbSchema = ctx.bossConfig.schema
+
+      await boss.start()
+      await boss.createQueue('partition-queue', { partition: true })
+      await boss.stop()
+
+      // the query the CLI runs (with a live connection) to fan inlined builds across partitions
+      const db = await getDb()
+      const result = await db.executeSql(getPartitionedQueueTables(dbSchema))
+      const partitionTables = result.rows.map((row: { table_name: string }) => row.table_name)
+      await db.close()
+
+      // the partitioned queue gets its own table; the shared job_common is not partition = true
+      expect(partitionTables.length).toBeGreaterThan(0)
+      expect(partitionTables).not.toContain('job_common')
+
+      // feeding those tables in fans i7 out across each partition, exactly as `pg-boss migrate` does
+      const sql = migrate(dbSchema, 0, undefined, undefined, { inlineAsync: true, partitionTables })
+
+      for (const table of partitionTables) {
+        expect(sql).toContain(`CREATE INDEX CONCURRENTLY IF NOT EXISTS ${table}_i7 ON ${dbSchema}.${table}`)
+      }
     })
   })
 })
