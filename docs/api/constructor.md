@@ -93,7 +93,13 @@ The following configuration options should not normally need to be changed, but 
 
   How often queue metadata is refreshed in memory.
 
-### Backend
+* **persistWarnings**, bool, default false
+
+  If set to true, warnings emitted during monitoring and maintenance (slow queries, queue backlogs, clock skew) will be persisted to the `warning` table in addition to being emitted as events. This enables historical tracking of warnings for debugging and monitoring purposes. See [Events](./events.md#warning) for more details on warning types.
+
+* **warningRetentionDays**, int
+
+  When `persistWarnings` is enabled, this option controls automatic cleanup of old warnings. Warnings older than the specified number of days will be deleted during maintenance. If not set, warnings are retained indefinitely. Maximum: 365 days.
 
 * **backend**, string, default `'postgres'`
 
@@ -103,13 +109,5 @@ The following configuration options should not normally need to be changed, but 
   const boss = new PgBoss({ connectionString, backend: 'cockroachdb' })
   ```
 
-  Based on this setting, the fetch strategy, mutation strategy, schema shape, and numeric coercion may bec changed. See [Database Backends](../database-backends.md#backend-profiles)
+  Based on this setting, the fetch strategy, mutation strategy, schema shape, and numeric coercion may be changed. See [Database Backends](../database-backends.md#backend-profiles)
   for what each backend enables and the [compatibility matrix](../database-backends.md#database-compatibility).
-
-* **persistWarnings**, bool, default false
-
-  If set to true, warnings emitted during monitoring and maintenance (slow queries, queue backlogs, clock skew) will be persisted to the `warning` table in addition to being emitted as events. This enables historical tracking of warnings for debugging and monitoring purposes. See [Events](./events.md#warning) for more details on warning types.
-
-* **warningRetentionDays**, int
-
-  When `persistWarnings` is enabled, this option controls automatic cleanup of old warnings. Warnings older than the specified number of days will be deleted during maintenance. If not set, warnings are retained indefinitely. Maximum: 365 days.
