@@ -43,7 +43,7 @@
     "build": "npm run clean && tsc --project tsconfig.build.json",
     "clean": "node -e \"fs.rmSync('dist',{recursive:true,force:true})\"",
     "prepublishOnly": "npm install && npm test && npm run build",
-    "pretest": "npm run tsc && prisma generate --schema=test/prisma/schema.prisma",
+    "pretest": "prisma generate --schema=test/prisma/schema.prisma && npm run tsc",
     "test": "eslint . && vitest run",
     "test:distributed": "cross-env DISTRIBUTED=true npm test",
     "test:ci": "npm run cover && cross-env DISTRIBUTED=true npm run cover && npm run test:pglite",
