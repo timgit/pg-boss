@@ -15,7 +15,7 @@ import { JobSpy, type JobSpyInterface } from './spy.ts'
 const INTERNAL_QUEUES = Object.values(timekeeper.QUEUES).reduce<Record<string, string | undefined>>((acc, i) => ({ ...acc, [i]: i }), {})
 
 // CockroachDB returns integer columns (INT8) as strings; these aliased metadata
-// fields must be coerced back to numbers when running in distributed mode.
+// fields must be coerced back to numbers when backend === 'cockroachdb'.
 const NUMERIC_METADATA_FIELDS = [
   'priority',
   'retryLimit',
@@ -889,7 +889,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       ignoreSingletons: singletonsActive
     }
 
-    const query = plans.fetchNextJob(fetchOptions, this.config.distributedDatabaseMode)
+    const query = plans.fetchNextJob(fetchOptions, this.config.noSkipLocked)
 
     let result
 
@@ -904,7 +904,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     // CockroachDB returns integer columns as strings; normalize them. Even a minimal fetch
     // (JOB_COLUMNS_MIN) returns numeric fields like expireInSeconds/heartbeatSeconds, so normalize
     // regardless of includeMetadata. The columns are aliased to camelCase, so use those keys.
-    if (this.config.distributedDatabaseMode) {
+    if (this.config.backend === 'cockroachdb') {
       for (const row of rows) {
         for (const field of NUMERIC_METADATA_FIELDS) {
           if (row[field] !== undefined && row[field] !== null) row[field] = Number(row[field])
@@ -952,9 +952,9 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const { table } = await this.getQueueCache(name)
     const outputData = this.mapCompletionDataArg(data)
 
-    // Distributed mode: split the dependency-unblocking into a separate statement to
+    // noMultiMutationCte: split the dependency-unblocking into a separate statement to
     // avoid CockroachDB's multi-mutation CTE limitation (completeJobs updates two tables).
-    if (this.config.distributedDatabaseMode) {
+    if (this.config.noMultiMutationCte) {
       return this.completeDistributed(name, ids, outputData, table, db, options.includeQueued)
     }
 
@@ -999,10 +999,10 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const { table } = await this.getQueueCache(name)
     const outputData = this.mapCompletionDataArg(data)
 
-    // Distributed mode: use separate queries to avoid CockroachDB's multi-mutation CTE limitation.
+    // noMultiMutationCte: use separate queries to avoid CockroachDB's multi-mutation CTE limitation.
     // The delete and re-insert run in a single transaction (see withDistributedTransaction) so the
     // job cannot be lost between the two statements.
-    if (this.config.distributedDatabaseMode) {
+    if (this.config.noMultiMutationCte) {
       return this.failDistributed(name, ids, outputData, table, db)
     }
 
@@ -1238,7 +1238,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const { rows } = await this.db.executeSql(query.text, query.values)
 
     // CockroachDB returns integer columns as strings; normalize the numeric queue fields.
-    if (this.config.distributedDatabaseMode) {
+    if (this.config.backend === 'cockroachdb') {
       for (const row of rows) {
         for (const field of NUMERIC_QUEUE_FIELDS) {
           if (row[field] !== undefined && row[field] !== null) row[field] = Number(row[field])
@@ -1359,7 +1359,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
       // CockroachDB returns integer columns as strings; normalize the numeric
       // metadata fields so callers get numbers regardless of the backend.
-      if (this.config.distributedDatabaseMode) {
+      if (this.config.backend === 'cockroachdb') {
         for (const field of NUMERIC_METADATA_FIELDS) {
           if (row[field] !== undefined && row[field] !== null) row[field] = Number(row[field])
         }

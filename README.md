@@ -42,7 +42,7 @@ This will likely cater the most to teams already familiar with the simplicity of
 
 ## Summary
 * Exactly-once job delivery
-* Create jobs within your existing database transaction
+* Create jobs in an existing db transaction, including adapters for popular ORMs such as Drizzle, Knex, Kysely, Prisma
 * Backpressure-compatible polling workers
 * Cron scheduling
 * Queue storage policies to support a variety of rate limiting, debouncing, and concurrency use cases
@@ -51,8 +51,7 @@ This will likely cater the most to teams already familiar with the simplicity of
 * SQL support for non-Node.js runtimes for most operations
 * Serverless function compatible
 * Multi-master compatible (for example, in a Kubernetes ReplicaSet)
-* [Distributed database support](https://timgit.github.io/pg-boss/docs/distributed-databases) for CockroachDB, YugabyteDB, Citus, and other distributed SQL databases via named `backend` profiles
-* [Embedded PGlite support](https://timgit.github.io/pg-boss/docs/pglite) for running entirely in-process (local-first, testing, serverless)
+* [Additional database backends](https://timgit.github.io/pg-boss/docs/database-backends) for Postgres-based databases such as CockroachDB, YugabyteDB and Citus. Or, use embedded PGlite for running entirely in-process.
 
 ## CLI
 
@@ -71,48 +70,6 @@ See the [dashboard documentation](https://github.com/timgit/pg-boss/blob/master/
 A HTTP proxy is available in the [`@pg-boss/proxy`](https://www.npmjs.com/package/@pg-boss/proxy) package if needed to support use cases such as platform compatibility and connection pooling or scalability.
 
 See the [proxy documentation](https://github.com/timgit/pg-boss/blob/master/packages/proxy/README.md) for full configuration and deployment options.
-
-## ORM Transaction Adapters
-
-pg-boss ships adapters for running operations inside ORM-managed transactions.  Each adapter wraps the ORM's transaction object as an `IDatabase` you can pass via the `db` option on `send()`, `insert()`, `fetch()`, `complete()`, and other methods.
-
-### Knex / Kysely / Prisma
-
-```ts
-import { fromKnex, fromKysely, fromPrisma } from 'pg-boss'
-```
-
-```ts
-// Knex
-await knex.transaction(async (trx) => {
-  await boss.send('my-queue', data, { db: fromKnex(trx) })
-})
-
-// Kysely
-await db.transaction().execute(async (trx) => {
-  await boss.send('my-queue', data, { db: fromKysely(trx) })
-})
-
-// Prisma (v7+ with @prisma/adapter-pg)
-await prisma.$transaction(async (tx) => {
-  await boss.send('my-queue', data, { db: fromPrisma(tx) })
-})
-```
-
-### Drizzle
-
-The Drizzle adapter accepts the `sql` tagged-template function from `drizzle-orm` as a second argument so it can construct parameterised queries without a runtime dependency on `drizzle-orm`.
-
-```ts
-import { fromDrizzle } from 'pg-boss'
-import { sql } from 'drizzle-orm'
-```
-
-```ts
-await db.transaction(async (tx) => {
-  await boss.send('my-queue', data, { db: fromDrizzle(tx, sql) })
-})
-```
 
 ## Requirements
 * Node 22.12 or higher for CommonJS's require(esm)

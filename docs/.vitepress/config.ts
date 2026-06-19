@@ -39,8 +39,7 @@ export default defineConfig({
       { text: 'CLI', link: '/cli' },
       { text: 'Dashboard', link: '/dashboard' },
       { text: 'Proxy', link: '/proxy' },
-      { text: 'Distributed Databases', link: '/distributed-databases' },
-      { text: 'PGlite', link: '/pglite' },
+      { text: 'Database Backends', link: '/database-backends' },
       {
         text: 'API',
         items: [

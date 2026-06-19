@@ -6,8 +6,8 @@ import { ctx } from './hooks.ts'
 // behavioral coverage (fetch/complete/fail/retry/policies/flows/dead-letter/...) already runs in
 // distributed mode two ways: the whole suite under `DISTRIBUTED=true` on Postgres (fast, every push)
 // and under `DB_TYPE=cockroachdb` against a real cluster (`npm run test:cockroachdb:full`), where
-// testHelper.getConfig() turns on distributedDatabaseMode for every test. Don't re-test generic
-// behavior here — add it to the relevant suite instead. What stays here:
+// testHelper.getConfig() turns on noSkipLocked + noMultiMutationCte for every test. Don't re-test
+// generic behavior here — add it to the relevant suite instead. What stays here:
 //
 //   1. Concurrent-fetch deduplication — the core guarantee of the atomic UPDATE...RETURNING fetch
 //      that replaces SKIP LOCKED; no generic test asserts "N concurrent workers, zero duplicates".
@@ -15,7 +15,7 @@ import { ctx } from './hooks.ts'
 //      withDistributedTransaction contract (compose inline, roll back with the caller's tx).
 //   3. Flag-gated schema construction (noTablePartitioning / noDeferrableConstraints /
 //      noCoveringIndexes / noAdvisoryLocks) — the ONLY Postgres-side coverage of that DDL, since the
-//      `DISTRIBUTED=true` job sets distributedDatabaseMode but NOT the no* flags.
+//      `DISTRIBUTED=true` job sets noSkipLocked + noMultiMutationCte but NOT the schema no* flags.
 //
 // Every test here calls helper.start(), which on CockroachDB pays slow per-test DDL (~8-9s observed
 // in CI), leaving little headroom under the 10s global timeout. Raise the default for the whole
@@ -23,7 +23,7 @@ import { ctx } from './hooks.ts'
 // per-test overrides).
 helper.describePglite('distributed database mode', { timeout: 20000 }, function () {
   it('should not duplicate jobs when fetching concurrently in distributed mode', async function () {
-    ctx.boss = await helper.start({ ...ctx.bossConfig, distributedDatabaseMode: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: true })
     const jobCount = 10
 
     await Promise.all(
@@ -52,7 +52,7 @@ helper.describePglite('distributed database mode', { timeout: 20000 }, function 
   }, 30000)
 
   it('should handle high concurrency without duplicates in distributed mode', async function () {
-    ctx.boss = await helper.start({ ...ctx.bossConfig, distributedDatabaseMode: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: true })
     const jobCount = 50
     const workerCount = 10
 
@@ -101,7 +101,7 @@ helper.describePglite('distributed database mode', { timeout: 20000 }, function 
   }, 30000)
 
   it('should compose failDistributed inside a caller transaction and roll back with it', async function () {
-    ctx.boss = await helper.start({ ...ctx.bossConfig, distributedDatabaseMode: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: true })
 
     // Send and fetch a job
     const jobId = await ctx.boss.send(ctx.schema, { test: 'rollback' }, { retryLimit: 1 })
@@ -134,7 +134,7 @@ helper.describePglite('distributed database mode', { timeout: 20000 }, function 
   it('should return 0 affected when failing a non-existent job in distributed mode', async function () {
     // Covers failDistributed's empty-select short-circuit, which the generic suite never hits in
     // distributed mode during the standard (non-distributed) coverage run.
-    ctx.boss = await helper.start({ ...ctx.bossConfig, distributedDatabaseMode: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: true })
 
     const result = await ctx.boss.fail(ctx.schema, '00000000-0000-0000-0000-000000000000')
     expect(result.affected).toBe(0)
@@ -144,7 +144,7 @@ helper.describePglite('distributed database mode', { timeout: 20000 }, function 
     // Exercises the distributed maintenance-expiry path: boss.#monitor ->
     // manager.failJobsByTimeoutDistributed -> expireJobsDistributed -> reinsertFailedJobs (failed +
     // dead-letter branch). retryLimit 0 forces the terminal "failed" re-insert rather than a retry.
-    ctx.boss = await helper.start({ ...ctx.bossConfig, distributedDatabaseMode: true, monitorIntervalSeconds: 1, noDefault: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: true, monitorIntervalSeconds: 1, noDefault: true })
 
     const deadLetter = `${ctx.schema}_dlq`
     await ctx.boss.createQueue(deadLetter)
@@ -176,7 +176,7 @@ helper.describePglite('distributed database mode', { timeout: 20000 }, function 
     // Exercises boss.#monitor -> manager.failJobsByHeartbeatDistributed and the retry-with-backoff
     // branch of reinsertFailedJobs (retryBackoff: true), which the failDistributed rollback test
     // above does not reach (it uses the non-backoff retry path).
-    ctx.boss = await helper.start({ ...ctx.bossConfig, distributedDatabaseMode: true, monitorIntervalSeconds: 1, noDefault: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: true, monitorIntervalSeconds: 1, noDefault: true })
 
     await ctx.boss.createQueue(ctx.schema, { heartbeatSeconds: 10, retryLimit: 1, retryBackoff: true })
 
@@ -199,7 +199,7 @@ helper.describePglite('distributed database mode', { timeout: 20000 }, function 
   })
 
   it('should compose completeDistributed inside a caller transaction and roll back with it', async function () {
-    ctx.boss = await helper.start({ ...ctx.bossConfig, distributedDatabaseMode: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: true })
 
     const jobId = await ctx.boss.send(ctx.schema, { test: 'rollback' })
     helper.assertTruthy(jobId)
@@ -231,7 +231,7 @@ helper.describePglite('distributed database mode', { timeout: 20000 }, function 
     // (plans.completeJobsDistributed + plans.decrementDependents) to avoid CockroachDB's
     // multi-mutation CTE limit. Completing a blocking parent is the only thing that runs the
     // decrementDependents branch.
-    ctx.boss = await helper.start({ ...ctx.bossConfig, distributedDatabaseMode: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: true })
 
     const flow = await ctx.boss.flow([
       { ref: 'parent', name: ctx.schema },
@@ -251,14 +251,12 @@ helper.describePglite('distributed database mode', { timeout: 20000 }, function 
 
   it('should construct schema with all distributed compatibility flags', async function () {
     // Exercises the CockroachDB-oriented construction branches (no partitioning,
-    // non-deferrable constraints, non-covering indexes, no advisory locks)
+    // non-deferrable constraints, non-covering indexes, no advisory locks) by selecting
+    // the cockroachdb backend — all of whose flags are PostgreSQL-compatible (they only
+    // remove features), so the full profile constructs and runs on a plain Postgres instance.
     ctx.boss = await helper.start({
       ...ctx.bossConfig,
-      distributedDatabaseMode: true,
-      noTablePartitioning: true,
-      noDeferrableConstraints: true,
-      noCoveringIndexes: true,
-      noAdvisoryLocks: true
+      backend: 'cockroachdb'
     })
 
     const jobId = await ctx.boss.send(ctx.schema, { test: 'flags' })

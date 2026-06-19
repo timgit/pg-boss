@@ -52,7 +52,7 @@ function getPgliteDb (): IDatabase & { close: () => Promise<void> } {
 const isDistributed = isCockroachDb || process.env.DISTRIBUTED === 'true'
 
 // The full suite runs against CockroachDB via `npm run test:cockroachdb`, where getConfig()
-// auto-enables distributedDatabaseMode + the compatibility flags. Wrap tests that depend on
+// auto-enables noSkipLocked + noMultiMutationCte + the compatibility flags. Wrap tests that depend on
 // Postgres-only features (table partitioning, covering indexes, exact PG schema shape) with these
 // so they are skipped automatically under CockroachDB.
 const itPostgresOnly = it.skipIf(isCockroachDb)
@@ -114,10 +114,11 @@ function getConfig (options: Partial<ConstructorOptions> & { testKey?: string } 
   // per yugabyte-db#21833; Citus: plain Postgres). This keeps the flag matrix in one place.
   config.backend = isPglite ? 'pglite' : isCockroachDb ? 'cockroachdb' : isYugabyteDb ? 'yugabytedb' : isCitus ? 'citus' : 'postgres'
 
-  // Distributed fetch strategy is an orthogonal runtime toggle: CockroachDB's profile already
-  // enables it; on plain Postgres we exercise the same code paths via DISTRIBUTED=true.
+  // The distributed runtime toggles are orthogonal to schema flags: CockroachDB's profile already
+  // enables them; on plain Postgres we exercise the same code paths via DISTRIBUTED=true, which
+  // forces them through the internal __test__distributed hook (they are not publicly configurable).
   if (isDistributed) {
-    config.distributedDatabaseMode = true
+    config.__test__distributed = true
   }
 
   // Route every boss built from this config at the shared in-process PGlite instance. A fresh
@@ -129,6 +130,37 @@ function getConfig (options: Partial<ConstructorOptions> & { testKey?: string } 
   return Object.assign(config, options)
 }
 
+// Maps the active DB_TYPE to the docker compose command that starts its container(s). The default
+// Postgres lives in docker-compose.yaml; each alternative backend has its own compose file/project
+// so it never starts alongside the default. CockroachDB is a three-node cluster (plus init/setup
+// jobs that create the database) — starting a single node leaves it uninitialized — so it uses `--wait`.
+function dockerStartHint (): string {
+  if (isCockroachDb) return 'docker compose -f docker-compose.cockroach.yaml up -d --wait'
+  if (isYugabyteDb) return 'docker compose -f docker-compose.yugabyte.yaml up -d'
+  if (isCitus) return 'docker compose -f docker-compose.citus.yaml up -d'
+  return 'docker compose up -d db'
+}
+
+// Preflight the database connection so a missing/unstarted container fails with an actionable hint
+// (which docker compose command to run) instead of a bare ECONNREFUSED buried in every test. The
+// pg pool is lazy, so we issue a real query to force the connection. Connect to the always-present
+// `postgres` admin database since the pgboss database may not exist yet.
+async function assertDbReachable (): Promise<void> {
+  let db: Db | undefined
+  try {
+    db = await getDb({ database: 'postgres' })
+    await db.executeSql('SELECT 1')
+  } catch (err: any) {
+    const target = `${process.env.DB_TYPE || 'postgres'} test database`
+    throw new Error(
+      `\nCannot reach the ${target} (${err?.message || err}).\n` +
+      `Start its container with:\n\n    ${dockerStartHint()}\n`
+    )
+  } finally {
+    await db?.close()
+  }
+}
+
 async function init (): Promise<void> {
   // PGlite is in-memory and has no concept of CREATE DATABASE; nothing to provision.
   if (isPglite) return
@@ -136,6 +168,7 @@ async function init (): Promise<void> {
   const { database } = getConfig()
 
   assertTruthy(database)
+  await assertDbReachable()
   await tryCreateDb(database)
 }
 

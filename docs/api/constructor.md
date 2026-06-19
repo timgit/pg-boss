@@ -97,27 +97,17 @@ The following configuration options should not normally need to be changed, but 
 
 * **backend**, string, default `'postgres'`
 
-  Selects the database pg-boss is running against and applies the right compatibility settings for it. **This is the only backend option most users need** — it expands to the individual flags below so you don't have to. One of `'postgres'`, `'cockroachdb'`, `'yugabytedb'`, `'citus'`, or `'pglite'`.
+  Selects the database pg-boss is running against and applies the compatibility flags (shown below). One of `'postgres'`, `'cockroachdb'`, `'yugabytedb'`, `'citus'`, or `'pglite'`.
 
   ```js
   const boss = new PgBoss({ connectionString, backend: 'cockroachdb' })
   ```
 
-  See [Distributed Databases](../distributed-databases.md#backend-profiles) and [PGlite](../pglite.md).
-
-#### Compatibility flags (advanced)
-
-You normally do **not** set these directly — `backend` does it for you. Set them by hand only to fine-tune, or to target a database that doesn't have a profile yet (e.g. Aurora DSQL, Spanner). An explicitly-set flag always overrides the value implied by `backend`.
-
-| Flag (default `false`) | What it does |
-|------------------------|--------------|
-| **distributedDatabaseMode** | Fetch jobs with atomic `UPDATE ... RETURNING` instead of `SELECT FOR UPDATE SKIP LOCKED`. |
-| **noTablePartitioning** | Create the job table without `PARTITION BY LIST` (disables per-queue `partition: true`). |
-| **noDeferrableConstraints** | Omit `DEFERRABLE INITIALLY DEFERRED` on foreign keys. |
-| **noAdvisoryLocks** | Disable `pg_advisory_xact_lock` (used to coordinate schema creation and migrations). |
-| **noCoveringIndexes** | Omit the `INCLUDE` clause on covering indexes. |
-
-Which flags each database needs is summarized in the [compatibility matrix](../distributed-databases.md#database-compatibility).
+  `backend` is the only database-compatibility option — it turns on the internal behavior that
+  backend needs (fetch strategy, mutation strategy, schema shape, numeric coercion). Those internal
+  flags are derived from `backend` and are **not** individually configurable, so a deployment can't
+  end up with an inconsistent combination. See [Database Backends](../database-backends.md#backend-profiles)
+  for what each backend enables and the [compatibility matrix](../database-backends.md#database-compatibility).
 
 * **persistWarnings**, bool, default false
 

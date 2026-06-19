@@ -8,11 +8,12 @@ const POLICY = {
   MAX_RETENTION_DAYS: 365
 }
 
-// The compatibility flags a backend can toggle. A backend sets only the flags that differ from
-// stock PostgreSQL; everything else defaults to false. A flag the user sets explicitly always
-// overrides the backend preset (see resolveBackend).
+// The internal compatibility flags a backend can toggle. A backend sets only the flags that differ
+// from stock PostgreSQL; everything else defaults to false. These are derived from the backend
+// profile and are not user-configurable (see resolveBackend).
 const COMPATIBILITY_FLAGS = [
-  'distributedDatabaseMode',
+  'noSkipLocked',
+  'noMultiMutationCte',
   'noTablePartitioning',
   'noDeferrableConstraints',
   'noAdvisoryLocks',
@@ -37,7 +38,8 @@ const BACKEND_PROFILES: Record<types.BackendProfile, BackendDefinition> = {
   cockroachdb: {
     kind: 'distributed',
     flags: {
-      distributedDatabaseMode: true,
+      noSkipLocked: true,
+      noMultiMutationCte: true,
       noTablePartitioning: true,
       noDeferrableConstraints: true,
       noAdvisoryLocks: true,
@@ -361,7 +363,6 @@ function getConfig (value: string | types.ConstructorOptions): types.ResolvedCon
   applyScheduleConfig(config)
   applyBamConfig(config)
   validateWarningConfig(config)
-  validateBackend(config)
 
   return config as types.ResolvedConstructorOptions
 }
@@ -388,9 +389,9 @@ function validateWarningConfig (config: any) {
     `configuration assert: warningRetentionDays cannot exceed ${POLICY.MAX_RETENTION_DAYS} days`)
 }
 
-// Expands config.backend into the individual compatibility flags, then defaults any
-// flag the backend did not set to false. A flag the user supplied explicitly always
-// wins over the backend preset.
+// Expands config.backend into the internal compatibility flags. The flags are derived
+// solely from the backend profile — they are not part of the public input, so a
+// deployment can't end up with an inconsistent combination.
 function resolveBackend (config: any) {
   const backend = ('backend' in config) ? config.backend : 'postgres'
 
@@ -401,14 +402,14 @@ function resolveBackend (config: any) {
   const { flags } = BACKEND_PROFILES[backend as types.BackendProfile]
 
   for (const flag of COMPATIBILITY_FLAGS) {
-    config[flag] = (flag in config) ? config[flag] : (flags[flag] ?? false)
+    config[flag] = flags[flag] ?? false
   }
-}
 
-function validateBackend (config: any) {
-  for (const flag of COMPATIBILITY_FLAGS) {
-    assert(!(flag in config) || typeof config[flag] === 'boolean',
-      `configuration assert: ${flag} must be a boolean`)
+  // Test hook: exercise the distributed runtime paths (atomic fetch + split mutations)
+  // on top of the current backend's schema, without standing up a distributed database.
+  if (config.__test__distributed) {
+    config.noSkipLocked = true
+    config.noMultiMutationCte = true
   }
 }
 

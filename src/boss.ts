@@ -216,9 +216,9 @@ class Boss extends EventEmitter implements types.EventsMixin {
         )
       }
 
-      // CockroachDB rejects the multi-mutation failJobs() CTE these use, so in distributed mode
+      // CockroachDB rejects the multi-mutation failJobs() CTE these use, so under noMultiMutationCte
       // route expiry through the manager's split select/delete/re-insert variants instead.
-      if (this.#config.distributedDatabaseMode) {
+      if (this.#config.noMultiMutationCte) {
         await this.#manager.failJobsByTimeoutDistributed(table, queues)
       } else {
         const sql = plans.failJobsByTimeout(this.#config.schema, table, queues, this.#config.noAdvisoryLocks)
@@ -230,7 +230,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
       const heartbeatQueues = queues.filter(q => heartbeatQueueNames.has(q))
 
       if (heartbeatQueues.length) {
-        if (this.#config.distributedDatabaseMode) {
+        if (this.#config.noMultiMutationCte) {
           await this.#manager.failJobsByHeartbeatDistributed(table, heartbeatQueues)
         } else {
           const heartbeatSql = plans.failJobsByHeartbeat(this.#config.schema, table, heartbeatQueues, this.#config.noAdvisoryLocks)

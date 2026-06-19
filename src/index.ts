@@ -137,24 +137,20 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this
   }
 
-  // YugabyteDB needs noTablePartitioning + noAdvisoryLocks (partitioned queues are not supported
-  // there). pg-boss can't know the backend at construction time, so detect it from the server
-  // version at startup and emit a warning when the recommended flags aren't set. Best-effort:
-  // never block startup on this check.
+  // YugabyteDB needs the yugabytedb backend profile (no table partitioning + no advisory locks;
+  // partitioned queues are not supported there). pg-boss can't know the backend at construction
+  // time, so detect it from the server version at startup and warn when the profile isn't selected.
+  // Best-effort: never block startup on this check.
   async #warnIfDistributedMisconfigured (): Promise<void> {
     try {
       const { rows } = await this.#db.executeSql('SELECT version()')
       const version: string = rows?.[0]?.version || ''
 
       if (/yugabyte|-yb-/i.test(version)) {
-        const missing = []
-        if (!this.#config.noTablePartitioning) missing.push('noTablePartitioning')
-        if (!this.#config.noAdvisoryLocks) missing.push('noAdvisoryLocks')
-
-        if (missing.length) {
+        if (!this.#config.noTablePartitioning || !this.#config.noAdvisoryLocks) {
           this.emit(events.warning, {
-            message: `YugabyteDB detected: set ${missing.join(' and ')} (or backend: 'yugabytedb') for compatibility. Partitioned queues (partition: true) are not supported on YugabyteDB.`,
-            data: { backend: 'yugabytedb', missingOptions: missing }
+            message: "YugabyteDB detected: set backend: 'yugabytedb' for compatibility. Partitioned queues (partition: true) are not supported on YugabyteDB.",
+            data: { backend: 'yugabytedb' }
           })
         }
       }

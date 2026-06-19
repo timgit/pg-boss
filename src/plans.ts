@@ -995,20 +995,20 @@ function buildFetchParams (options: FetchJobOptions): FetchQueryParams {
 /**
  * Builds the fetch query for claiming jobs from the queue.
  *
- * In standard mode (distributed=false), uses SELECT FOR UPDATE SKIP LOCKED
- * which allows multiple workers to efficiently fetch different jobs simultaneously.
+ * With SKIP LOCKED (noSkipLocked=false, the default), uses SELECT FOR UPDATE SKIP
+ * LOCKED, which lets multiple workers efficiently fetch different jobs simultaneously.
  *
- * In distributed mode (distributed=true), omits FOR UPDATE SKIP LOCKED and adds
- * an additional state check in the WHERE clause. This pattern works better with
- * distributed databases like CockroachDB where SKIP LOCKED has performance issues
- * and can unexpectedly skip unlocked rows.
+ * With noSkipLocked=true, omits FOR UPDATE SKIP LOCKED and adds an additional state
+ * check in the WHERE clause. This pattern works better with distributed databases like
+ * CockroachDB where SKIP LOCKED has performance issues and can unexpectedly skip
+ * unlocked rows.
  *
- * Trade-off in distributed mode: Under high contention, workers may receive fewer
+ * Trade-off when noSkipLocked is set: under high contention, workers may receive fewer
  * jobs per fetch as concurrent updates to the same rows will result in some workers
  * getting empty results. This is acceptable for job queues where processing time
  * exceeds fetch time.
  */
-export function fetchNextJob (options: FetchJobOptions, distributed = false): SqlQuery {
+export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): SqlQuery {
   const { schema, table, name, policy, limit, includeMetadata, priority = true, orderByCreatedOn = true, ignoreStartAfter = false, groupConcurrency, minPriority, maxPriority } = options
 
   const singletonFetch = limit > 1 && (policy === QUEUE_POLICIES.singleton || policy === QUEUE_POLICIES.stately)
@@ -1044,9 +1044,9 @@ export function fetchNextJob (options: FetchJobOptions, distributed = false): Sq
       ), `
     : ''
 
-  // In distributed mode, omit FOR UPDATE SKIP LOCKED as it performs poorly
+  // With noSkipLocked, omit FOR UPDATE SKIP LOCKED as it performs poorly
   // in distributed databases like CockroachDB
-  const lockClause = distributed ? '' : 'FOR UPDATE OF j SKIP LOCKED'
+  const lockClause = noSkipLocked ? '' : 'FOR UPDATE OF j SKIP LOCKED'
 
   // Column references are qualified with j. throughout so both the base case and
   // the groupConcurrency branch (which joins active_group_counts) share one set of
@@ -1116,9 +1116,9 @@ export function fetchNextJob (options: FetchJobOptions, distributed = false): Sq
         ? 'singleton_ranking'
         : 'next'
 
-  // In distributed mode, add state check to prevent duplicate processing
+  // Without SKIP LOCKED, add a state check to prevent duplicate processing
   // when multiple workers try to claim the same jobs concurrently
-  const distributedStateCheck = distributed ? `AND j.state < '${JOB_STATES.active}'` : ''
+  const distributedStateCheck = noSkipLocked ? `AND j.state < '${JOB_STATES.active}'` : ''
 
   return {
     text: `

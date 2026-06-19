@@ -8,7 +8,7 @@ import { ctx } from './hooks.ts'
 
 describe('config', function () {
   describe('backend profiles', function () {
-    const flags = ['distributedDatabaseMode', 'noTablePartitioning', 'noDeferrableConstraints', 'noAdvisoryLocks', 'noCoveringIndexes'] as const
+    const flags = ['noSkipLocked', 'noMultiMutationCte', 'noTablePartitioning', 'noDeferrableConstraints', 'noAdvisoryLocks', 'noCoveringIndexes'] as const
 
     const trueFlags = (config: any) => flags.filter(f => config[f] === true)
 
@@ -18,7 +18,7 @@ describe('config', function () {
       expect(trueFlags(resolved)).toEqual([])
     })
 
-    it('cockroachdb enables distributed mode and all four no* gates', function () {
+    it('cockroachdb enables both runtime toggles and all four no* schema gates', function () {
       const resolved = Attorney.getConfig({ connectionString: 'postgres://localhost/db', backend: 'cockroachdb' })
       expect(trueFlags(resolved).sort()).toEqual([...flags].sort())
     })
@@ -33,12 +33,6 @@ describe('config', function () {
         const resolved = Attorney.getConfig({ connectionString: 'postgres://localhost/db', backend })
         expect(trueFlags(resolved)).toEqual([])
       }
-    })
-
-    it('an explicit flag overrides the profile', function () {
-      const resolved = Attorney.getConfig({ connectionString: 'postgres://localhost/db', backend: 'cockroachdb', noCoveringIndexes: false })
-      expect(resolved.noCoveringIndexes).toBe(false)
-      expect(resolved.distributedDatabaseMode).toBe(true)
     })
 
     it('rejects an unknown backend', function () {
@@ -74,34 +68,16 @@ describe('config', function () {
     expect(() => new PgBoss(config)).toThrow()
   })
 
-  it('should reject non-boolean distributed database flags', function () {
-    const flags = [
-      'distributedDatabaseMode',
-      'noTablePartitioning',
-      'noDeferrableConstraints',
-      'noAdvisoryLocks',
-      'noCoveringIndexes'
-    ]
-
-    for (const flag of flags) {
-      expect(() => new PgBoss({ ...ctx.bossConfig, [flag]: 'yes' } as any)).toThrow(`${flag} must be a boolean`)
-    }
+  it('compatibility flags are derived from the backend, not user-settable', function () {
+    // The individual flags are internal; supplying them directly has no effect — only
+    // `backend` determines them. (Passed through `as any` since they are not public options.)
+    const resolved = Attorney.getConfig({ connectionString: 'postgres://localhost/db', noSkipLocked: true, noTablePartitioning: true } as any)
+    expect(resolved.backend).toBe('postgres')
+    expect((resolved as any).noSkipLocked).toBe(false)
+    expect((resolved as any).noTablePartitioning).toBe(false)
   })
 
-  it('should accept boolean distributed database flags', function () {
-    const boss = new PgBoss({
-      ...ctx.bossConfig,
-      distributedDatabaseMode: true,
-      noTablePartitioning: true,
-      noDeferrableConstraints: true,
-      noAdvisoryLocks: true,
-      noCoveringIndexes: true
-    })
-
-    expect(boss).toBeTruthy()
-  })
-
-  it('should warn when YugabyteDB is detected without compatibility flags', async function () {
+  it('should warn when YugabyteDB is detected without the yugabytedb backend', async function () {
     const realDb = await helper.getDb()
     const warnings: any[] = []
 
@@ -125,22 +101,20 @@ describe('config', function () {
 
       const ybWarning = warnings.find(w => w.data?.backend === 'yugabytedb')
       expect(ybWarning).toBeTruthy()
-      expect(ybWarning.message).toContain('noTablePartitioning')
-      expect(ybWarning.message).toContain('noAdvisoryLocks')
+      expect(ybWarning.message).toContain("backend: 'yugabytedb'")
     } finally {
       await realDb.close()
     }
   })
 
-  it('should not warn about YugabyteDB when compatibility flags are set', async function () {
+  it('should not warn about YugabyteDB when the yugabytedb backend is selected', async function () {
     const realDb = await helper.getDb()
     const warnings: any[] = []
 
     try {
       const boss = new PgBoss({
         ...ctx.bossConfig,
-        noTablePartitioning: true,
-        noAdvisoryLocks: true,
+        backend: 'yugabytedb',
         db: {
           async executeSql (sql: string, values: any[]) {
             if (/^\s*SELECT version\(\)/i.test(sql)) {
