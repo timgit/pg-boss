@@ -35,7 +35,28 @@ can't end up with an inconsistent combination. The rest of this page explains ea
 names the internal flag it maps to, for anyone reading the source). Databases without a profile
 (Aurora DSQL, Spanner) are **not yet supported**.
 
-## What each backend changes internally
+## Database compatibility
+
+The matrix shows which PostgreSQL features each backend supports (✅). Where a feature isn't
+available (❌), pg-boss automatically switches to the compatible alternative — see the
+[compatibility flags](#compatibility-flags) below.
+
+| Database | Status | `backend` | SKIP LOCKED | Multi-mutation CTEs | Table partitioning | Deferrable constraints | Advisory locks | Covering indexes |
+|----------|--------|-----------|:---:|:---:|:---:|:---:|:---:|:---:|
+| PostgreSQL | Tested | `postgres` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| CockroachDB | Tested | `cockroachdb` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| YugabyteDB | Partial¹ | `yugabytedb` | ✅ | ✅ | ❌ | ✅ | ❌ | ✅ |
+| Citus | Tested² | `citus` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| PGlite | Tested | `pglite` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+
+¹ YugabyteDB runs the standard fetch path; non-partitioned queueing works, but partitioned queues,
+multi-master startup, and live migrations fail ([#21833](https://github.com/yugabyte/yugabyte-db/issues/21833)). See below.
+
+² In standard mode (coordinator-local table) Citus supports these like plain PostgreSQL. A
+deliberately sharded job table would lose `SKIP LOCKED` compatibility and need the atomic-`UPDATE`
+fetch instead — see [Citus](#tested-citus-compatible-in-standard-mode).
+
+## Compatibility flags
 
 Here's what each behavior does differently from stock PostgreSQL, and the internal flag it maps to
 in the source.
@@ -114,30 +135,9 @@ For optimal correctness with `noSkipLocked`, SERIALIZABLE isolation ensures exac
 processing — the recommended level for distributed work queues. With READ COMMITTED (PostgreSQL or
 YugabyteDB defaults), the `state < 'active'` recheck in the `UPDATE` still prevents duplicate claims.
 
-## Database compatibility
+## Per-database notes
 
-The flag columns below show what each backend does differently from stock PostgreSQL (see the
-[capability mapping](#what-each-backend-changes-internally) for what each flag means).
-
-| Database | Status | `backend` | no&shy;SkipLocked | noMulti&shy;MutationCte | noTable&shy;Partitioning | noDeferrable&shy;Constraints | noAdvisory&shy;Locks | noCovering&shy;Indexes |
-|----------|--------|-----------|:---:|:---:|:---:|:---:|:---:|:---:|
-| PostgreSQL | Tested | `postgres` | | | | | | |
-| CockroachDB | Tested | `cockroachdb` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| YugabyteDB | Partial¹ (tested) | `yugabytedb` | | | ✅ | | ✅ | |
-| Citus | Tested (full suite) | `citus` | ² | ² | | | | |
-| PGlite | Tested | `pglite` | | | | | | |
-| Aurora DSQL | Not supported³ | *(none)* | | | | | | |
-| Spanner | Not supported³ | *(none)* | | | | | | |
-
-¹ YugabyteDB runs the standard fetch path; non-partitioned queueing works, but partitioned queues,
-multi-master startup, and live migrations fail ([#21833](https://github.com/yugabyte/yugabyte-db/issues/21833)). See below.
-
-² With the default coordinator-local table Citus behaves like plain PostgreSQL and needs nothing.
-Only a deliberately sharded job table would need the CockroachDB-style fetch/mutation behavior — see
-[Citus](#tested-citus-compatible-in-standard-mode).
-
-³ No `backend` profile yet, so they can't be configured — see [Aurora DSQL](#not-supported-aurora-dsql)
-and [Spanner](#not-supported-spanner).
+Testing status, setup, and caveats for each supported backend.
 
 ### Tested: PostgreSQL
 
@@ -159,7 +159,7 @@ Internally that enables atomic-`UPDATE` fetch (`noSkipLocked`), split-statement 
 (`noMultiMutationCte`), a non-partitioned table (`noTablePartitioning`), non-deferrable constraints
 (`noDeferrableConstraints`), no advisory locks (`noAdvisoryLocks`), no covering-index `INCLUDE`
 (`noCoveringIndexes`), and numeric coercion on read — see
-[what each backend changes internally](#what-each-backend-changes-internally).
+[compatibility flags](#compatibility-flags).
 
 **Because `cockroachdb` disables table partitioning:**
 - Queue-level partitioning (`partition: true` on `createQueue`) is not supported
@@ -179,8 +179,9 @@ numbers on read, because CockroachDB returns integers as text.
 complete, fail (by id), retry of an explicitly failed job (including exponential backoff and
 `retryDelayMax`), maintenance expiration of timed-out jobs (`expireInSeconds`), heartbeat config +
 heartbeat-timeout (`heartbeatSeconds`), queue policies (`short`/`singleton`/`stately` with
-`partition: false`), throttle/debounce, deferral, cancellation, and flow dependency
-blocking/unblocking — including a blocking parent that fails and retries.
+`partition: false`), throttle/debounce, deferral, cancellation, flow dependency
+blocking/unblocking — including a blocking parent that fails and retries — and schema migration to
+latest (with rollback on error).
 
 #### Testing the runtime toggles
 
