@@ -1073,21 +1073,29 @@ class Manager extends EventEmitter implements types.EventsMixin {
     let count = 0
 
     for (const job of jobs) {
-      const canRetry = job.retry_count < job.retry_limit
+      // CockroachDB returns INT8 columns as strings. These rows come straight from a SELECT *, so
+      // unlike fetch/getJobById they are never normalized. Coerce the fields used in arithmetic and
+      // comparison below — otherwise `retry_count < retry_limit` is a lexicographic string compare
+      // ("9" < "10" === false, wrongly failing a retriable job) and `retry_count + 1` concatenates.
+      const retryCount = Number(job.retry_count)
+      const retryLimit = Number(job.retry_limit)
+      const retryDelay = Number(job.retry_delay)
+      const retryDelayMax = job.retry_delay_max != null ? Number(job.retry_delay_max) : null
+
+      const canRetry = retryCount < retryLimit
       let retried = false
 
       if (canRetry) {
         // Calculate start_after for retry
         let startAfter = job.start_after
         if (!job.retry_backoff) {
-          startAfter = new Date(Date.now() + job.retry_delay * 1000)
+          startAfter = new Date(Date.now() + retryDelay * 1000)
         } else {
-          const retryCount = job.retry_count + 1
-          const exp = Math.min(16, retryCount)
-          const delay = job.retry_delay * (Math.pow(2, exp) / 2 + Math.pow(2, exp) / 2 * Math.random())
+          const exp = Math.min(16, retryCount + 1)
+          const delay = retryDelay * (Math.pow(2, exp) / 2 + Math.pow(2, exp) / 2 * Math.random())
           // Match the canonical failJobs() SQL: LEAST(retry_delay_max, delay) caps the backoff,
           // treating NULL as "no cap" and 0 as a real cap. (`?:` would wrongly treat 0 as no cap.)
-          const cappedDelay = job.retry_delay_max != null ? Math.min(job.retry_delay_max, delay) : delay
+          const cappedDelay = retryDelayMax != null ? Math.min(retryDelayMax, delay) : delay
           startAfter = new Date(Date.now() + cappedDelay * 1000)
         }
 
@@ -1333,7 +1341,17 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     const { rows } = await this.db.executeSql(query.text, query.values)
 
-    return Object.assign(queue, rows.at(0) ||
+    const stats = rows.at(0)
+
+    // CockroachDB returns integer columns as strings; normalize the stats counts. (The queue fields
+    // merged in below come from getQueueCache -> getQueues, which already normalizes them.)
+    if (stats && this.config.backend === 'cockroachdb') {
+      for (const field of NUMERIC_QUEUE_FIELDS) {
+        if (stats[field] !== undefined && stats[field] !== null) stats[field] = Number(stats[field])
+      }
+    }
+
+    return Object.assign(queue, stats ||
             {
               deferredCount: 0,
               queuedCount: 0,

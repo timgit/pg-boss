@@ -198,6 +198,53 @@ helper.describePglite('distributed database mode', { timeout: 20000 }, function 
     expect(retried.state).toBe('retry')
   })
 
+  it('should retry, not fail, when the backend returns integer columns as strings', async function () {
+    // Regression: reinsertFailedJobs read the raw SELECT * rows from the distributed fail path. On
+    // CockroachDB, INT8 columns come back as strings, so `retry_count < retry_limit` was a
+    // lexicographic compare — "9" < "10" is false — which permanently failed a job that still had
+    // retries left. The DISTRIBUTED=true Postgres run can't catch this (node-pg returns numbers
+    // there), so we simulate CockroachDB's string typing with a wrapper over a real connection.
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: true })
+
+    const jobId = await ctx.boss.send(ctx.schema, { test: 'stringints' }, { retryLimit: 10 })
+    helper.assertTruthy(jobId)
+
+    const [job] = await ctx.boss.fetch(ctx.schema)
+    expect(job.id).toBe(jobId)
+
+    const _db = await helper.getDb()
+    try {
+      // Put the job one retry short of its limit. Numerically 9 < 10, so it must still retry; only a
+      // string comparison ("9" < "10" === false) would wrongly fail it.
+      await _db.executeSql(`UPDATE ${ctx.schema}.job SET retry_count = 9 WHERE id = $1`, [jobId])
+
+      // Wrap the connection so SELECT * rows return integer columns as strings, exactly as
+      // CockroachDB's driver returns INT8. The fail path's select is the only SELECT * it issues.
+      const integerColumns = ['priority', 'retry_limit', 'retry_count', 'retry_delay', 'retry_delay_max', 'group_tier', 'expire_seconds', 'deletion_seconds', 'pending_dependencies']
+      const cockroachLike = {
+        executeSql: async (text: string, values?: unknown[]) => {
+          const result = await _db.executeSql(text, values)
+          if (/^\s*SELECT \* FROM/i.test(text)) {
+            for (const row of result.rows) {
+              for (const col of integerColumns) {
+                if (row[col] !== null && row[col] !== undefined) row[col] = String(row[col])
+              }
+            }
+          }
+          return result
+        }
+      }
+
+      await ctx.boss.fail(ctx.schema, jobId, null, { db: cockroachLike })
+
+      const retried = await ctx.boss.getJobById(ctx.schema, jobId)
+      helper.assertTruthy(retried)
+      expect(retried.state).toBe('retry')
+    } finally {
+      await _db.close()
+    }
+  })
+
   it('should compose completeDistributed inside a caller transaction and roll back with it', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: true })
 
@@ -273,11 +320,29 @@ helper.describePglite('distributed database mode', { timeout: 20000 }, function 
     expect(completed.state).toBe('completed')
   })
 
-  it('should work with noTablePartitioning mode', async function () {
-    // This test covers the noPartitioning path in plans.ts (lines 244, 260)
+  it('should return numeric stats counts under the cockroachdb backend', async function () {
+    // getQueueStats has its own backend === 'cockroachdb' coercion: the stats counts come from a raw
+    // stats query, not the normalized getQueues path, so they would otherwise be returned as strings
+    // on CockroachDB. Selecting the cockroachdb backend on Postgres runs that coercion loop and lets
+    // us assert the public counts come back as numbers.
+    ctx.boss = await helper.start({ ...ctx.bossConfig, backend: 'cockroachdb' })
+
+    const jobId = await ctx.boss.send(ctx.schema, { test: 'stats' })
+    helper.assertTruthy(jobId)
+
+    const stats = await ctx.boss.getQueueStats(ctx.schema)
+    expect(typeof stats.queuedCount).toBe('number')
+    expect(stats.totalCount).toBe(1)
+  })
+
+  it('should construct schema with the yugabytedb backend (no partitioning, no advisory locks)', async function () {
+    // Exercises the noTablePartitioning + noAdvisoryLocks construction path on plain Postgres by
+    // selecting the yugabytedb backend, whose only flags are those two (both PostgreSQL-compatible,
+    // they just remove features). The compatibility flags are derived from `backend` and are not
+    // settable directly — resolveBackend() overwrites them — so the backend is the only way in.
     ctx.boss = await helper.start({
       ...ctx.bossConfig,
-      noTablePartitioning: true
+      backend: 'yugabytedb'
     })
 
     // Basic send/fetch to verify everything works

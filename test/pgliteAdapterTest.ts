@@ -6,7 +6,7 @@ function createFakePglite (): PGliteLike & { calls: Array<{ method: 'query' | 'e
   const calls: Array<{ method: 'query' | 'exec', text: string, params?: unknown[] }> = []
   return {
     calls,
-    async query (text: string, params?: unknown[]) {
+    async query (text: string, params?: unknown[]): Promise<{ rows: any[] }> {
       calls.push({ method: 'query', text, params })
       return { rows: [{ id: '1' }] }
     },

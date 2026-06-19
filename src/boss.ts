@@ -206,7 +206,10 @@ class Boss extends EventEmitter implements types.EventsMixin {
 
       if (this.#stopping) return
 
-      const warnings = rowsCacheStats.filter(i => i.queuedCount > (i.warningQueueSize || WARNINGS.LARGE_QUEUE.size))
+      // Coerce with Number(): CockroachDB returns these integer columns as strings, so a bare `>`
+      // would compare lexicographically ("100" > "9" === false) and silently miss the backlog. On
+      // standard Postgres these are already numbers, so Number() is a no-op.
+      const warnings = rowsCacheStats.filter(i => Number(i.queuedCount) > (Number(i.warningQueueSize) || WARNINGS.LARGE_QUEUE.size))
 
       for (const warning of warnings) {
         await emitAndPersistWarning(this.#warningContext,
