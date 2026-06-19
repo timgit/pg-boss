@@ -64,6 +64,10 @@ describe('Zod schema / HTTP type key drift', () => {
     expect(assertKeysMatch<AssertKeysMatch<SchemaOutput<typeof contracts.jobInsertSchema>, httpTypes.HttpJobInsert>>()).toBe(true)
   })
 
+  it('flowJobSchema matches HttpFlowJob', () => {
+    expect(assertKeysMatch<AssertKeysMatch<SchemaOutput<typeof contracts.flowJobSchema>, httpTypes.HttpFlowJob>>()).toBe(true)
+  })
+
   it('jobSchema matches HttpJob', () => {
     expect(assertKeysMatch<AssertKeysMatch<SchemaOutput<typeof contracts.jobSchema>, httpTypes.HttpJob>>()).toBe(true)
   })
@@ -74,6 +78,10 @@ describe('Zod schema / HTTP type key drift', () => {
 
   it('commandResponseSchema matches HttpCommandResponse', () => {
     expect(assertKeysMatch<AssertKeysMatch<SchemaOutput<typeof contracts.commandResponseSchema>, httpTypes.HttpCommandResponse>>()).toBe(true)
+  })
+
+  it('dependencyRefSchema matches HttpDependencyRef', () => {
+    expect(assertKeysMatch<AssertKeysMatch<SchemaOutput<typeof contracts.dependencyRefSchema>, httpTypes.HttpDependencyRef>>()).toBe(true)
   })
 
   it('queueResultSchema matches HttpQueueResult', () => {
