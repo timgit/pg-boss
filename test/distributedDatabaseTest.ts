@@ -335,7 +335,11 @@ helper.describePglite('distributed database mode', { timeout: 20000 }, function 
     expect(stats.totalCount).toBe(1)
   })
 
-  it('should construct schema with the yugabytedb backend (no partitioning, no advisory locks)', async function () {
+  // Postgres-only: the yugabytedb profile keeps DEFERRABLE foreign keys (Yugabyte supports them),
+  // which a real CockroachDB cluster rejects, so forcing this profile only makes sense on Postgres,
+  // where every profile's DDL is valid. (The cockroachdb profile above is safe everywhere because it
+  // only removes features.)
+  helper.itPostgresOnly('should construct schema with the yugabytedb backend (no partitioning, no advisory locks)', async function () {
     // Exercises the noTablePartitioning + noAdvisoryLocks construction path on plain Postgres by
     // selecting the yugabytedb backend, whose only flags are those two (both PostgreSQL-compatible,
     // they just remove features). The compatibility flags are derived from `backend` and are not
