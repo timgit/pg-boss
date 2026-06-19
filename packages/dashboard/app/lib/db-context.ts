@@ -1,10 +1,6 @@
 import { createContext, type RouterContext } from 'react-router'
 import type { DatabaseConfig } from './config.server'
 
-// The per-request load context the loaders/actions rely on. With the
-// `v8_middleware` future flag on, React Router exposes `context` as a
-// RouterContextProvider, read via `context.get(dbContext)` instead of plain
-// property access. Seeded by `getLoadContext` in `app/server.ts`.
 export interface DbContext {
   readonly databases: DatabaseConfig[]
   readonly currentDb: DatabaseConfig
