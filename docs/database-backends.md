@@ -22,34 +22,34 @@ const boss = new PgBoss({
 Each backend has a *kind* — `standard` (stock PostgreSQL), `distributed` (clustered
 Postgres-compatible engines), or `embedded` (in-process PostgreSQL):
 
-| `backend` | Kind | Compatibility behavior it enables |
-|-----------|------|-----------------------------------|
+| `backend` | Kind | What it enables |
+|-----------|------|-----------------|
 | `postgres` *(default)* | standard | *(none — full PostgreSQL)* |
-| `cockroachdb` | distributed | `noSkipLocked` + `noMultiMutationCte` + `noTablePartitioning` + `noDeferrableConstraints` + `noAdvisoryLocks` + `noCoveringIndexes` (+ numeric coercion) |
-| `yugabytedb` | distributed | `noAdvisoryLocks` + `noTablePartitioning` |
+| `cockroachdb` | distributed | Lock-free fetch, split-statement writes, single shared table, immediate constraints, lock-free schema setup, plain indexes (+ numeric coercion) |
+| `yugabytedb` | distributed | Lock-free schema setup + single shared table |
 | `citus` | distributed | *(none — coordinator-local tables behave like plain PostgreSQL)* |
 | `pglite` | embedded | *(none — full PostgreSQL; see [PGlite](#pglite-embedded))* |
 
-The individual flags named in that table are **internal** — they are derived from `backend` and
-are not separately configurable, so a deployment can't end up with an inconsistent combination.
-The rest of this page explains what each one does. Databases without a profile (Aurora DSQL,
-Spanner) are **not yet supported**.
+`backend` is the only option you set — pg-boss derives everything above from it, so a deployment
+can't end up with an inconsistent combination. The rest of this page explains each behavior (and
+names the internal flag it maps to, for anyone reading the source). Databases without a profile
+(Aurora DSQL, Spanner) are **not yet supported**.
 
 ## What each backend changes internally
 
-The named compatibility flags below are set for you by `backend`; you never set them directly. They
-are documented here so you understand what a given backend does differently from stock PostgreSQL.
+Here's what each behavior does differently from stock PostgreSQL, and the internal flag it maps to
+in the source.
 
-| Internal flag | Effect | Trade-off |
-|---------------|--------|-----------|
-| `noSkipLocked` | Fetch jobs with an atomic `UPDATE ... RETURNING` (plus a `state < 'active'` recheck) instead of `SELECT FOR UPDATE SKIP LOCKED`. | Under high contention some workers get empty results instead of skipping to unlocked rows. |
-| `noMultiMutationCte` | Run `complete`, `fail`, and supervisor expiry as split statements inside a transaction rather than a single multi-mutation CTE. | A few extra round-trips per command; negligible for normal workloads. |
-| `noTablePartitioning` | Create the job table without `PARTITION BY LIST`. | Per-queue partitioning (`partition: true`) is unavailable; all jobs share one table. |
-| `noDeferrableConstraints` | Omit `DEFERRABLE INITIALLY DEFERRED` on foreign keys. | Constraints check immediately rather than at commit (no effect on normal operation). |
-| `noAdvisoryLocks` | Disable `pg_advisory_xact_lock` (used to coordinate schema creation/migration). | Concurrent instances may occasionally do redundant maintenance — a performance, not correctness, concern. |
-| `noCoveringIndexes` | Omit the `INCLUDE` clause on covering indexes. | Slightly less efficient index-only scans during fetch; minimal for most workloads. |
+| Capability | Effect | Trade-off | Flag |
+|------------|--------|-----------|------|
+| Lock-free fetch | Fetch jobs with an atomic `UPDATE ... RETURNING` (plus a `state < 'active'` recheck) instead of `SELECT FOR UPDATE SKIP LOCKED`. | Under high contention some workers get empty results instead of skipping to unlocked rows. | `noSkipLocked` |
+| Split-statement writes | Run `complete`, `fail`, and supervisor expiry as split statements inside a transaction rather than a single multi-mutation CTE. | A few extra round-trips per command; negligible for normal workloads. | `noMultiMutationCte` |
+| Single shared table | Create the job table without `PARTITION BY LIST`. | Per-queue partitioning (`partition: true`) is unavailable; all jobs share one table. | `noTablePartitioning` |
+| Immediate constraints | Omit `DEFERRABLE INITIALLY DEFERRED` on foreign keys. | Constraints check immediately rather than at commit (no effect on normal operation). | `noDeferrableConstraints` |
+| Lock-free schema setup | Disable `pg_advisory_xact_lock` (used to coordinate schema creation/migration). | Concurrent instances may occasionally do redundant maintenance — a performance, not correctness, concern. | `noAdvisoryLocks` |
+| Plain indexes | Omit the `INCLUDE` clause on covering indexes. | Slightly less efficient index-only scans during fetch; minimal for most workloads. | `noCoveringIndexes` |
 
-`noSkipLocked` and `noMultiMutationCte` are **runtime** behaviors; the four `no*` gates are **schema**
+Lock-free fetch and split-statement writes are **runtime** behaviors; the other four are **schema**
 choices applied at install/migration time. CockroachDB needs all six; other distributed engines need
 only a subset (see below). One further CockroachDB adjustment — coercing text-encoded integers back
 to numbers — is keyed on `backend === 'cockroachdb'` directly (see below).
@@ -116,8 +116,8 @@ YugabyteDB defaults), the `state < 'active'` recheck in the `UPDATE` still preve
 
 ## Database compatibility
 
-Selecting `backend` applies the ✅ behavior below for you — the flag columns are internal and shown
-only so you can see what each backend does differently from stock PostgreSQL.
+The flag columns below show what each backend does differently from stock PostgreSQL (see the
+[capability mapping](#what-each-backend-changes-internally) for what each flag means).
 
 | Database | Status | `backend` | no&shy;SkipLocked | noMulti&shy;MutationCte | noTable&shy;Partitioning | noDeferrable&shy;Constraints | noAdvisory&shy;Locks | noCovering&shy;Indexes |
 |----------|--------|-----------|:---:|:---:|:---:|:---:|:---:|:---:|

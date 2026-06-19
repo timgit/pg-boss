@@ -154,6 +154,7 @@ export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, 
   __test__force_clock_skew_warning?: string;
   /** @internal */
   __test__force_clock_monitoring_error?: string;
+  /** @internal */
   __test__enableSpies?: boolean;
   /** @internal */
   __test__delay_maint_ms?: number;
@@ -172,6 +173,7 @@ export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, 
   migrations?: Migration[];
 }
 
+/** @internal */
 export interface ResolvedConstructorOptions extends ConstructorOptions, CompatibilityFlags {
   schema: string;
   monitorIntervalSeconds: number;

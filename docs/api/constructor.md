@@ -97,16 +97,14 @@ The following configuration options should not normally need to be changed, but 
 
 * **backend**, string, default `'postgres'`
 
-  Selects the database pg-boss is running against and applies the compatibility flags (shown below). One of `'postgres'`, `'cockroachdb'`, `'yugabytedb'`, `'citus'`, or `'pglite'`.
+  Selects the database pg-boss is running against and applies the compatibility behavior it needs. One of `'postgres'`, `'cockroachdb'`, `'yugabytedb'`, `'citus'`, or `'pglite'`.
 
   ```js
   const boss = new PgBoss({ connectionString, backend: 'cockroachdb' })
   ```
 
-  `backend` is the only database-compatibility option — it turns on the internal behavior that
-  backend needs (fetch strategy, mutation strategy, schema shape, numeric coercion). Those internal
-  flags are derived from `backend` and are **not** individually configurable, so a deployment can't
-  end up with an inconsistent combination. See [Database Backends](../database-backends.md#backend-profiles)
+  `backend` is the only database-compatibility option — pg-boss derives the fetch strategy, mutation
+  strategy, schema shape, and numeric coercion from it. See [Database Backends](../database-backends.md#backend-profiles)
   for what each backend enables and the [compatibility matrix](../database-backends.md#database-compatibility).
 
 * **persistWarnings**, bool, default false
