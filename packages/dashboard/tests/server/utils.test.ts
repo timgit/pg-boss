@@ -7,8 +7,12 @@ import {
   formatWarningData,
   isValidJobState,
   isValidWarningType,
+  isValidBamStatus,
   JOB_STATES,
   WARNING_TYPES,
+  BAM_STATUSES,
+  BAM_STATUS_VARIANTS,
+  BAM_STATUS_OPTIONS,
   parseJsonFilterPairs,
   jsonFilterPairsToObject,
   MAX_JSON_FILTER_PAIRS,
@@ -168,6 +172,46 @@ describe('utils', () => {
       expect(WARNING_TYPES).toContain('queue_backlog')
       expect(WARNING_TYPES).toContain('clock_skew')
       expect(WARNING_TYPES).toHaveLength(3)
+    })
+  })
+
+  describe('isValidBamStatus', () => {
+    it('returns true for null (no filter)', () => {
+      expect(isValidBamStatus(null)).toBe(true)
+    })
+
+    it('returns true for all valid statuses', () => {
+      for (const status of BAM_STATUSES) {
+        expect(isValidBamStatus(status)).toBe(true)
+      }
+    })
+
+    it('returns false for invalid statuses', () => {
+      expect(isValidBamStatus('invalid')).toBe(false)
+      expect(isValidBamStatus('PENDING')).toBe(false)
+      expect(isValidBamStatus('done')).toBe(false)
+      expect(isValidBamStatus('')).toBe(false)
+    })
+  })
+
+  describe('BAM_STATUSES constant', () => {
+    it('contains all expected statuses', () => {
+      expect(BAM_STATUSES).toContain('pending')
+      expect(BAM_STATUSES).toContain('in_progress')
+      expect(BAM_STATUSES).toContain('completed')
+      expect(BAM_STATUSES).toContain('failed')
+      expect(BAM_STATUSES).toHaveLength(4)
+    })
+
+    it('has a badge variant for every status', () => {
+      for (const status of BAM_STATUSES) {
+        expect(BAM_STATUS_VARIANTS[status]).toBeDefined()
+      }
+    })
+
+    it('exposes a null "all" option plus one option per status', () => {
+      expect(BAM_STATUS_OPTIONS[0].value).toBeNull()
+      expect(BAM_STATUS_OPTIONS).toHaveLength(BAM_STATUSES.length + 1)
     })
   })
 

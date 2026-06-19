@@ -202,6 +202,50 @@ export const WARNING_TYPE_OPTIONS: { value: WarningTypeValue | null; label: stri
   })),
 ]
 
+// Valid background async migration (BAM) statuses. Mirrors the status values
+// the pg-boss core writes to the bam table.
+export const BAM_STATUSES = [
+  'pending',
+  'in_progress',
+  'completed',
+  'failed',
+] as const
+
+export type BamStatusValue = (typeof BAM_STATUSES)[number]
+
+/**
+ * Validate a BAM status filter value
+ */
+export function isValidBamStatus (value: string | null): value is BamStatusValue | null {
+  if (value === null) return true
+  return BAM_STATUSES.includes(value as BamStatusValue)
+}
+
+// Badge variant mappings for BAM statuses
+export const BAM_STATUS_VARIANTS: Record<BamStatusValue, BadgeVariant> = {
+  pending: 'gray',
+  in_progress: 'primary',
+  completed: 'success',
+  failed: 'error',
+}
+
+// Human-readable labels for BAM statuses
+export const BAM_STATUS_LABELS: Record<BamStatusValue, string> = {
+  pending: 'Pending',
+  in_progress: 'In Progress',
+  completed: 'Completed',
+  failed: 'Failed',
+}
+
+// Filter options for BAM statuses (for dropdowns)
+export const BAM_STATUS_OPTIONS: { value: BamStatusValue | null; label: string }[] = [
+  { value: null, label: 'All Statuses' },
+  ...BAM_STATUSES.map((status) => ({
+    value: status,
+    label: BAM_STATUS_LABELS[status],
+  })),
+]
+
 /**
  * Format warning data for display
  */

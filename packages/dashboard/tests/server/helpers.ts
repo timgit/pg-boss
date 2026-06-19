@@ -228,6 +228,41 @@ export async function insertTestWarning (
   return result.rows[0].id
 }
 
+// Helper to insert a background async migration (BAM) row directly, mirroring
+// what pg-boss's job_table_run_async enqueues during migrations.
+export async function insertTestBam (
+  schema: string,
+  options: {
+    name: string;
+    version: number;
+    status?: string;
+    queue?: string | null;
+    table?: string;
+    command?: string;
+    error?: string | null;
+  }
+): Promise<string> {
+  const p = getPool()
+  const {
+    name,
+    version,
+    status = 'pending',
+    queue = null,
+    table = 'job_common',
+    command = `CREATE INDEX CONCURRENTLY ${name} ON ${schema}.${table} (name)`,
+    error = null,
+  } = options
+  const result = await p.query(
+    `
+    INSERT INTO ${schema}.bam (name, version, status, queue, table_name, command, error)
+    VALUES ($1, $2, $3, $4, $5, $6, $7)
+    RETURNING id
+  `,
+    [name, version, status, queue, table, command, error]
+  )
+  return result.rows[0].id
+}
+
 // Helper to update queue stats
 // Note: Queue stats are normally updated by pg-boss's monitor process
 // We update them manually for deterministic testing without waiting for monitor cycles

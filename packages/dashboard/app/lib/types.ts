@@ -62,6 +62,29 @@ export interface QueueStats {
   queueCount: number;
 }
 
+// Background async migration (BAM) status. Mirrors src/types.ts in the pg-boss core.
+export type BamStatus = 'pending' | 'in_progress' | 'completed' | 'failed'
+
+export interface BamEntryResult {
+  id: string;
+  name: string;
+  version: number;
+  status: BamStatus;
+  queue: string | null;
+  table: string;
+  command: string;
+  error: string | null;
+  createdOn: Date;
+  startedOn: Date | null;
+  completedOn: Date | null;
+}
+
+export interface BamStatusSummary {
+  status: BamStatus;
+  count: number;
+  lastCreatedOn: Date;
+}
+
 // ScheduleResult extends Schedule from pg-boss with additional fields
 export interface ScheduleResult extends Schedule {
   createdOn: Date;

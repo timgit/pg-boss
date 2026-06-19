@@ -26,6 +26,7 @@ describe('Sidebar', () => {
       expect(screen.getByText('Jobs')).toBeInTheDocument()
       expect(screen.getByText('Queues')).toBeInTheDocument()
       expect(screen.getByText('Schedules')).toBeInTheDocument()
+      expect(screen.getByText('Migrations')).toBeInTheDocument()
       expect(screen.getByText('Warnings')).toBeInTheDocument()
     })
 
@@ -39,6 +40,7 @@ describe('Sidebar', () => {
       expect(hrefs).toContain('/jobs')
       expect(hrefs).toContain('/queues')
       expect(hrefs).toContain('/schedules')
+      expect(hrefs).toContain('/migrations')
       expect(hrefs).toContain('/warnings')
     })
 
