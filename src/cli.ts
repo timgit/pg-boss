@@ -172,6 +172,31 @@ async function createDb (config: types.DatabaseOptions): Promise<Db> {
   return db
 }
 
+// Like getConnectionConfig, but returns null instead of exiting when no connection is
+// configured — used by commands (e.g. `plans`) where a connection is optional.
+function tryGetConnectionConfig (args: ReturnType<typeof parseCliArgs>): types.DatabaseOptions | null {
+  const fileConfig = loadConfigFile(args.config)
+
+  const hasConnection =
+    args.connectionString || process.env.PGBOSS_DATABASE_URL || fileConfig.connectionString ||
+    args.host || process.env.PGBOSS_HOST || fileConfig.host ||
+    args.database || process.env.PGBOSS_DATABASE || fileConfig.database
+
+  return hasConnection ? getConnectionConfig(args) : null
+}
+
+// Enumerates partitioned queue table names so inlined index builds can fan out across
+// them. Returns [] on any failure (e.g. unreachable DB or pre-partition schema), leaving
+// the export to target job_common only.
+async function getPartitionTables (db: types.IDatabase, schema: string): Promise<string[]> {
+  try {
+    const result = await db.executeSql(plans.getPartitionedQueueTables(schema))
+    return result.rows.map((row: { table_name: string }) => row.table_name)
+  } catch {
+    return []
+  }
+}
+
 async function getSchemaVersion (db: types.IDatabase, schema: string): Promise<number | null> {
   try {
     const result = await db.executeSql(plans.versionTableExists(schema))
@@ -242,7 +267,20 @@ async function cmdMigrate (args: ReturnType<typeof parseCliArgs>): Promise<void>
   const schema = config.schema || plans.DEFAULT_SCHEMA
 
   if (args.dryRun) {
-    const sql = migrationStore.migrate(schema, 0)
+    // The CLI has no BAM worker, so inline the async index builds as direct DDL. Connect
+    // (best effort) to enumerate partitioned tables; fall back to job_common only offline.
+    let partitionTables: string[] = []
+    try {
+      const db = await createDb(config)
+      try {
+        partitionTables = await getPartitionTables(db, schema)
+      } finally {
+        await db.close()
+      }
+    } catch {
+      // no reachable database: emit a job_common-only static script
+    }
+    const sql = migrationStore.migrate(schema, 0, undefined, undefined, { inlineAsync: true, partitionTables })
     console.log('-- SQL to migrate pg-boss from version 0 to latest:')
     console.log(sql)
     return
@@ -267,8 +305,15 @@ async function cmdMigrate (args: ReturnType<typeof parseCliArgs>): Promise<void>
     }
 
     console.log(`Migrating pg-boss schema "${schema}" from version ${version} to ${schemaVersion}...`)
-    const sql = migrationStore.migrate(schema, version)
+    // Inline the async index builds rather than enqueuing BAM rows that nothing will run
+    // (the CLI exits without a worker); enumerate partitions so they are covered too.
+    const partitionTables = await getPartitionTables(db, schema)
+    const { sql, concurrent } = migrationStore.migrateCommands(schema, version, undefined, undefined, { inlineAsync: true, partitionTables })
     await db.executeSql(sql)
+    // CONCURRENTLY index builds must run outside the migration transaction, one at a time.
+    for (const statement of concurrent) {
+      await db.executeSql(statement)
+    }
     console.log(`Successfully migrated pg-boss schema "${schema}" to version ${schemaVersion}`)
   } finally {
     await db.close()
@@ -322,10 +367,34 @@ async function cmdPlans (args: ReturnType<typeof parseCliArgs>): Promise<void> {
       console.log(plans.create(schema, schemaVersion, { createSchema: true }))
       break
 
-    case 'migrate':
+    case 'migrate': {
+      // Inline the async index builds (no BAM worker runs an exported script). A connection
+      // is optional: with one, fan the builds out across partitioned tables; without one,
+      // emit a job_common-only script and note the limitation.
+      const connectionConfig = tryGetConnectionConfig(args)
+      let partitionTables: string[] = []
+
+      if (connectionConfig) {
+        try {
+          const db = await createDb(connectionConfig)
+          try {
+            partitionTables = await getPartitionTables(db, schema)
+          } finally {
+            await db.close()
+          }
+        } catch {
+          // unreachable database: fall back to a job_common-only script
+        }
+      }
+
       console.log('-- SQL to migrate pg-boss (from version 0 to latest):')
-      console.log(migrationStore.migrate(schema, 0))
+      if (!connectionConfig) {
+        console.log('-- note: no database connection provided; partitioned queue tables were not enumerated.')
+        console.log('-- Run with a connection (e.g. --connection-string) to include per-partition index builds.')
+      }
+      console.log(migrationStore.migrate(schema, 0, undefined, undefined, { inlineAsync: true, partitionTables }))
       break
+    }
 
     case 'rollback':
       console.log(`-- SQL to rollback pg-boss from version ${schemaVersion} to ${schemaVersion - 1}:`)
