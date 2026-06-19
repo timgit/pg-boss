@@ -3,7 +3,7 @@ name: Deploy docs
 on:
   push:
     branches: [master]
-    paths: ['docs/**', '.github/workflows/docs.yml']
+    paths: ['docs/**', '.github/workflows/docs.yml', 'package.json']
   workflow_dispatch:
 
 permissions:
@@ -17,6 +17,7 @@ concurrency:
 
 jobs:
   build:
+    if: github.repository == 'timgit/pg-boss'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
