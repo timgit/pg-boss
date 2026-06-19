@@ -52,7 +52,7 @@ This will likely cater the most to teams already familiar with the simplicity of
 * SQL support for non-Node.js runtimes for most operations
 * Serverless function compatible
 * Multi-master compatible (for example, in a Kubernetes ReplicaSet)
-* [Additional database backends](https://timgit.github.io/pg-boss/docs/database-backends) for Postgres-based databases such as CockroachDB, YugabyteDB and Citus. Or, use embedded PGlite for running entirely in-process.
+* [Additional database backends](https://timgit.github.io/pg-boss/database-backends) for Postgres-based databases such as CockroachDB, YugabyteDB and Citus. Or, use embedded PGlite for running entirely in-process.
 
 ## CLI
 
@@ -64,13 +64,13 @@ See the [CLI documentation](https://timgit.github.io/pg-boss/cli) for details.
 
 A web-based dashboard is available in the [`@pg-boss/dashboard`](https://www.npmjs.com/package/@pg-boss/dashboard) package for monitoring and managing jobs, queues and schedules.
 
-See the [dashboard documentation](https://github.com/timgit/pg-boss/blob/master/packages/dashboard/README.md) for full configuration and deployment options.
+See the [dashboard documentation](https://timgit.github.io/pg-boss/dashboard) for details.
 
 ## Proxy
 
 A HTTP proxy is available in the [`@pg-boss/proxy`](https://www.npmjs.com/package/@pg-boss/proxy) package if needed to support use cases such as platform compatibility and connection pooling or scalability.
 
-See the [proxy documentation](https://github.com/timgit/pg-boss/blob/master/packages/proxy/README.md) for full configuration and deployment options.
+See the [proxy documentation](https://timgit.github.io/pg-boss/proxy) for details.
 
 ## Requirements
 * Node 22.12 or higher for CommonJS's require(esm)

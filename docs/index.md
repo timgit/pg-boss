@@ -14,6 +14,8 @@ hero:
 
 ---
 
+<!-- The content below is generated from README.md by scripts/sync-readme.js. Do not edit it directly. -->
+
 ```js
 async function readme() {
   const { PgBoss } = require('pg-boss');
@@ -52,7 +54,7 @@ This will likely cater the most to teams already familiar with the simplicity of
 
 ## Summary
 * Exactly-once job delivery
-* Create jobs within your existing database transaction
+* Create jobs in an existing db transaction, including adapters for popular ORMs such as Drizzle, Knex, Kysely, Prisma
 * Backpressure-compatible polling workers, including support for LISTEN/NOTIFY low latency delivery
 * Job dependency workflow orchestration
 * Cron scheduling, job deferral
@@ -62,23 +64,29 @@ This will likely cater the most to teams already familiar with the simplicity of
 * SQL support for non-Node.js runtimes for most operations
 * Serverless function compatible
 * Multi-master compatible (for example, in a Kubernetes ReplicaSet)
+* [Additional database backends](/database-backends) for Postgres-based databases such as CockroachDB, YugabyteDB and Citus. Or, use embedded PGlite for running entirely in-process.
+
+## CLI
+
+pg-boss includes a command-line interface if needed for managing database migrations without writing code. This is useful for CI/CD pipelines, database setup scripts, or manual schema management.
+
+See the [CLI documentation](/cli) for details.
 
 ## Dashboard
 
-A web-based dashboard is available for monitoring and managing pg-boss job queues. It provides an overview of queue statistics, job browsing and filtering, job actions (create, cancel, retry, resume, delete), warning history, and multi-database support.
+A web-based dashboard is available in the [`@pg-boss/dashboard`](https://www.npmjs.com/package/@pg-boss/dashboard) package for monitoring and managing jobs, queues and schedules.
 
-```bash
-DATABASE_URL="postgres://user:password@localhost:5432/mydb" npx pg-boss-dashboard
-```
+See the [dashboard documentation](/dashboard) for details.
 
-See the [Dashboard](dashboard.md) page for more details.
+## Proxy
+
+A HTTP proxy is available in the [`@pg-boss/proxy`](https://www.npmjs.com/package/@pg-boss/proxy) package if needed to support use cases such as platform compatibility and connection pooling or scalability.
+
+See the [proxy documentation](/proxy) for details.
 
 ## Requirements
 * Node 22.12 or higher for CommonJS's require(esm)
 * PostgreSQL 13 or higher
-
-## Documentation
-* [Docs](https://timgit.github.io/pg-boss/)
 
 ## Contributing
 To setup a development environment for this library:

@@ -46,6 +46,7 @@
     "pretest": "npm run tsc && prisma generate --schema=test/prisma/schema.prisma",
     "test": "eslint . && vitest run",
     "test:distributed": "cross-env DISTRIBUTED=true npm test",
+    "test:ci": "npm run cover && cross-env DISTRIBUTED=true npm run cover && npm run test:pglite",
     "test:cockroachdb": "cross-env DB_TYPE=cockroachdb COCKROACH_HOST=localhost npm test -- test/distributedDatabaseTest.ts",
     "test:cockroachdb:full": "cross-env DB_TYPE=cockroachdb COCKROACH_HOST=localhost npm test -- --no-file-parallelism",
     "test:yugabytedb:full": "cross-env DB_TYPE=yugabytedb YUGABYTE_HOST=localhost npm test -- --no-file-parallelism",
@@ -56,6 +57,8 @@
     "cover": "vitest run --coverage",
     "tsc": "tsc --noEmit",
     "readme": "node ./examples/readme.js",
+    "docs": "npm run docs:dev --prefix docs",
+    "docs:readme": "node ./scripts/sync-readme.js",
     "db:migrate": "node --import=tsx -e 'console.log(require(\"./src\").getMigrationPlans())'",
     "db:construct": "node --import=tsx -e 'console.log(require(\"./src\").getConstructionPlans())'"
   },
