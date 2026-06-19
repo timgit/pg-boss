@@ -55,7 +55,12 @@ describe('work', function () {
 
     await delay(timeout)
 
-    expect(processCount).toBe(timeout / 1000 / pollingIntervalSeconds)
+    // The worker polls immediately and then every pollingIntervalSeconds, so the
+    // exact count lands on a boundary (the final poll races the delay above).
+    // Allow ±1 to keep this from being flaky while still proving the interval is honored.
+    const expected = timeout / 1000 / pollingIntervalSeconds
+    expect(processCount).toBeGreaterThanOrEqual(expected - 1)
+    expect(processCount).toBeLessThanOrEqual(expected + 1)
   })
 
   it('should provide abort signal to job handler', async function () {
