@@ -1,0 +1,33 @@
+# Single-node Citus coordinator (the Citus extension on PostgreSQL). Listens on 5432 in-container,
+# mapped to 5434 to avoid clashing with the default `db`. pg-boss never calls
+# create_distributed_table(), so its tables stay local to the coordinator and behave like plain
+# PostgreSQL — this exercises the standard path with Citus loaded. Its own compose project so it
+# never starts alongside the default Postgres (docker-compose.yaml).
+# Usage: docker compose -f docker-compose.citus.yaml up -d
+name: pgboss-citus
+
+services:
+  citus:
+    image: citusdata/citus:latest
+    ports:
+      - 5434:5432
+    environment:
+      - POSTGRES_PASSWORD=postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  citus-setup:
+    image: citusdata/citus:latest
+    depends_on:
+      citus:
+        condition: service_healthy
+    environment:
+      - PGPASSWORD=postgres
+    entrypoint: ["/bin/sh", "-c"]
+    # PostgreSQL has no CREATE DATABASE IF NOT EXISTS, so ignore the "already exists" error, then
+    # ensure the citus extension is present in the pgboss database.
+    command: ["psql -h citus -U postgres -c 'CREATE DATABASE pgboss' || true; psql -h citus -U postgres -d pgboss -c 'CREATE EXTENSION IF NOT EXISTS citus'"]
+    restart: "no"

@@ -1,0 +1,62 @@
+# Three-node CockroachDB cluster for the compatibility suite. Its own compose project so it never
+# starts alongside the default Postgres (docker-compose.yaml).
+# Usage: docker compose -f docker-compose.cockroach.yaml up -d --wait
+name: pgboss-cockroach
+
+# The three nodes are identical except for their advertise address, ports, and data volume.
+x-cockroach-node: &cockroach-node
+  image: cockroachdb/cockroach:latest
+  healthcheck:
+    test: ["CMD", "curl", "-sf", "http://localhost:8080/health"]
+    interval: 2s
+    timeout: 5s
+    retries: 30
+    start_period: 10s
+
+services:
+  cockroachdb-1:
+    <<: *cockroach-node
+    ports:
+      - 26257:26257
+      - 8080:8080
+    volumes:
+      - cockroach_volume_1:/cockroach/cockroach-data
+    command: start --insecure --advertise-addr=cockroachdb-1 --join=cockroachdb-1,cockroachdb-2,cockroachdb-3
+
+  cockroachdb-2:
+    <<: *cockroach-node
+    volumes:
+      - cockroach_volume_2:/cockroach/cockroach-data
+    command: start --insecure --advertise-addr=cockroachdb-2 --join=cockroachdb-1,cockroachdb-2,cockroachdb-3
+
+  cockroachdb-3:
+    <<: *cockroach-node
+    volumes:
+      - cockroach_volume_3:/cockroach/cockroach-data
+    command: start --insecure --advertise-addr=cockroachdb-3 --join=cockroachdb-1,cockroachdb-2,cockroachdb-3
+
+  cockroachdb-init:
+    image: cockroachdb/cockroach:latest
+    depends_on:
+      cockroachdb-1:
+        condition: service_healthy
+      cockroachdb-2:
+        condition: service_healthy
+      cockroachdb-3:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["cockroach init --insecure --host=cockroachdb-1 || true"]
+    restart: "no"
+
+  cockroachdb-setup:
+    image: cockroachdb/cockroach:latest
+    depends_on:
+      cockroachdb-init:
+        condition: service_completed_successfully
+    command: sql --insecure --host=cockroachdb-1 -e "CREATE DATABASE IF NOT EXISTS pgboss"
+    restart: "no"
+
+volumes:
+  cockroach_volume_1:
+  cockroach_volume_2:
+  cockroach_volume_3:

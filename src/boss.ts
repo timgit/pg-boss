@@ -201,12 +201,15 @@ class Boss extends EventEmitter implements types.EventsMixin {
     if (rows.length) {
       const queues = rows.map((q) => q.name)
 
-      const cacheStatsSql = plans.cacheQueueStats(this.#config.schema, table, queues)
+      const cacheStatsSql = plans.cacheQueueStats(this.#config.schema, table, queues, this.#config.noAdvisoryLocks)
       const { rows: rowsCacheStats } = await this.#executeQuery(cacheStatsSql)
 
       if (this.#stopping) return
 
-      const warnings = rowsCacheStats.filter(i => i.queuedCount > (i.warningQueueSize || WARNINGS.LARGE_QUEUE.size))
+      // Coerce with Number(): CockroachDB returns these integer columns as strings, so a bare `>`
+      // would compare lexicographically ("100" > "9" === false) and silently miss the backlog. On
+      // standard Postgres these are already numbers, so Number() is a no-op.
+      const warnings = rowsCacheStats.filter(i => Number(i.queuedCount) > (Number(i.warningQueueSize) || WARNINGS.LARGE_QUEUE.size))
 
       for (const warning of warnings) {
         await emitAndPersistWarning(this.#warningContext,
@@ -216,16 +219,26 @@ class Boss extends EventEmitter implements types.EventsMixin {
         )
       }
 
-      const sql = plans.failJobsByTimeout(this.#config.schema, table, queues)
-      await this.#executeQuery(sql)
+      // CockroachDB rejects the multi-mutation failJobs() CTE these use, so under noMultiMutationCte
+      // route expiry through the manager's split select/delete/re-insert variants instead.
+      if (this.#config.noMultiMutationCte) {
+        await this.#manager.failJobsByTimeoutDistributed(table, queues)
+      } else {
+        const sql = plans.failJobsByTimeout(this.#config.schema, table, queues, this.#config.noAdvisoryLocks)
+        await this.#executeQuery(sql)
+      }
 
       if (this.#stopping) return
 
       const heartbeatQueues = queues.filter(q => heartbeatQueueNames.has(q))
 
       if (heartbeatQueues.length) {
-        const heartbeatSql = plans.failJobsByHeartbeat(this.#config.schema, table, heartbeatQueues)
-        await this.#executeQuery(heartbeatSql)
+        if (this.#config.noMultiMutationCte) {
+          await this.#manager.failJobsByHeartbeatDistributed(table, heartbeatQueues)
+        } else {
+          const heartbeatSql = plans.failJobsByHeartbeat(this.#config.schema, table, heartbeatQueues, this.#config.noAdvisoryLocks)
+          await this.#executeQuery(heartbeatSql)
+        }
       }
     }
   }
@@ -244,10 +257,10 @@ class Boss extends EventEmitter implements types.EventsMixin {
 
     if (rows.length) {
       const queues = rows.map((q) => q.name)
-      const sql = plans.deletion(this.#config.schema, table, queues)
+      const sql = plans.deletion(this.#config.schema, table, queues, this.#config.noAdvisoryLocks)
       await this.#executeQuery(sql)
 
-      const depSql = plans.cleanupDependencies(this.#config.schema, table, queues)
+      const depSql = plans.cleanupDependencies(this.#config.schema, table, queues, this.#config.noAdvisoryLocks)
       await this.#executeQuery(depSql)
     }
   }

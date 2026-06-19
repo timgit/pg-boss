@@ -104,6 +104,8 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
         await this.#db.open()
       }
 
+      await this.#warnIfDistributedMisconfigured()
+
       if (this.#config.migrate) {
         await this.#contractor.start()
       } else {
@@ -133,6 +135,28 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     this.#stopped = false
 
     return this
+  }
+
+  // YugabyteDB needs the yugabytedb backend profile (no table partitioning + no advisory locks;
+  // partitioned queues are not supported there). pg-boss can't know the backend at construction
+  // time, so detect it from the server version at startup and warn when the profile isn't selected.
+  // Best-effort: never block startup on this check.
+  async #warnIfDistributedMisconfigured (): Promise<void> {
+    try {
+      const { rows } = await this.#db.executeSql('SELECT version()')
+      const version: string = rows?.[0]?.version || ''
+
+      if (/yugabyte|-yb-/i.test(version)) {
+        if (!this.#config.noTablePartitioning || !this.#config.noAdvisoryLocks) {
+          this.emit(events.warning, {
+            message: "YugabyteDB detected: set backend: 'yugabytedb' for compatibility. Partitioned queues (partition: true) are not supported on YugabyteDB.",
+            data: { backend: 'yugabytedb' }
+          })
+        }
+      }
+    } catch {
+      // version detection is best-effort and must never prevent startup
+    }
   }
 
   async stop (options: types.StopOptions = {}): Promise<void> {
@@ -402,6 +426,8 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
 }
 
 export type {
+  BackendProfile,
+  BackendOptions,
   BamEntry,
   BamEvent,
   BamStatusSummary,
@@ -463,6 +489,7 @@ export {
   fromKysely,
   fromDrizzle,
   fromPrisma,
+  fromPglite,
 } from './adapters/index.ts'
 
 export type {
@@ -471,4 +498,5 @@ export type {
   DrizzleTransactionLike,
   DrizzleSqlTagLike,
   PrismaTransactionLike,
+  PGliteLike,
 } from './adapters/index.ts'

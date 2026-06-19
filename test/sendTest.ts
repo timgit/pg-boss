@@ -67,7 +67,7 @@ describe('send', function () {
     expect(job.data).toBe(null)
   })
 
-  it('should accept job object with name and custom connection', async function () {
+  helper.itPglite('should accept job object with name and custom connection', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 
     let called = false
@@ -93,7 +93,7 @@ describe('send', function () {
     expect(called).toBe(true)
   })
 
-  it('should not create job if transaction fails', async function () {
+  helper.itPglite('should not create job if transaction fails', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
     const { schema } = ctx.bossConfig
 

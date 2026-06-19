@@ -43,6 +43,23 @@ export interface SchedulingOptions {
   cronMonitorIntervalSeconds?: number;
 }
 
+/**
+ * A named database backend. Selecting a backend turns on the internal compatibility
+ * behavior it needs (`noSkipLocked`, `noMultiMutationCte`, `noTablePartitioning`, etc.).
+ * Those flags are derived from the backend and are not individually configurable.
+ *
+ * Backends fall into three kinds — standard, distributed, and embedded:
+ * - `postgres` (default): standard PostgreSQL, all flags off.
+ * - `cockroachdb`: distributed; enables `noSkipLocked`, `noMultiMutationCte`, and all four `no*` schema gates.
+ * - `yugabytedb`: distributed; enables `noAdvisoryLocks` and `noTablePartitioning`.
+ * - `citus`: distributed; plain PostgreSQL behavior (Citus tables stay coordinator-local).
+ * - `pglite`: embedded (NOT distributed) single-connection WASM PostgreSQL, all gates off.
+ *
+ * Spanner, Aurora DSQL, and other targets do not have a profile yet and are not
+ * supported. @see https://timgit.github.io/pg-boss/docs/database-backends
+ */
+export type BackendProfile = 'postgres' | 'cockroachdb' | 'yugabytedb' | 'citus' | 'pglite'
+
 export interface MaintenanceOptions {
   supervise?: boolean;
   migrate?: boolean;
@@ -58,6 +75,57 @@ export interface MaintenanceOptions {
   bamIntervalSeconds?: number;
 }
 
+/**
+ * Options for running pg-boss against a specific database backend.
+ *
+ * `backend` is the only knob — it expands to the correct internal compatibility flags
+ * for that database (fetch strategy, mutation strategy, schema shape). Those flags are
+ * derived from the backend and are not individually configurable, so a deployment can't
+ * end up with an inconsistent combination.
+ *
+ * @see https://timgit.github.io/pg-boss/docs/database-backends#backend-profiles
+ */
+export interface BackendOptions {
+  /**
+   * Selects the database backend pg-boss is running against, expanding to the right
+   * preset of internal compatibility flags. Databases without a profile (e.g. Aurora
+   * DSQL, Spanner) are not yet supported.
+   * @see BackendProfile
+   * @default 'postgres'
+   */
+  backend?: BackendProfile;
+}
+
+/**
+ * Internal compatibility flags derived from {@link BackendOptions.backend}. These are
+ * resolved from the backend profile and are not part of the public constructor input —
+ * read them off the resolved config, never set them directly.
+ * @internal
+ */
+export interface CompatibilityFlags {
+  /**
+   * Fetch jobs with an atomic `UPDATE ... RETURNING` (plus a `state < 'active'` recheck)
+   * instead of `SELECT FOR UPDATE SKIP LOCKED`, for engines where SKIP LOCKED performs
+   * poorly or skips rows (e.g. CockroachDB).
+   */
+  noSkipLocked?: boolean;
+  /**
+   * Run `complete`, `fail`, and supervisor expiry as split statements inside a
+   * transaction instead of one multi-mutation CTE, for engines that reject "multiple
+   * mutations of the same table" in one statement (e.g. CockroachDB). (Coercing
+   * text-encoded integers back to numbers is keyed on `backend === 'cockroachdb'`.)
+   */
+  noMultiMutationCte?: boolean;
+  /** Create the job table without `PARTITION BY LIST` (also disables per-queue `partition: true`). */
+  noTablePartitioning?: boolean;
+  /** Omit `DEFERRABLE INITIALLY DEFERRED` on foreign keys. */
+  noDeferrableConstraints?: boolean;
+  /** Disable advisory locks (`pg_advisory_xact_lock`) used to coordinate schema creation and migrations. */
+  noAdvisoryLocks?: boolean;
+  /** Omit the `INCLUDE` clause on covering indexes. */
+  noCoveringIndexes?: boolean;
+}
+
 export interface Migration {
   release: string
   version: number
@@ -67,7 +135,7 @@ export interface Migration {
   uninstall?: string[]
 }
 
-export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, MaintenanceOptions {
+export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, MaintenanceOptions, BackendOptions {
   /** @internal */
   __test__warn_slow_query?: boolean;
   /** @internal */
@@ -86,6 +154,7 @@ export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, 
   __test__force_clock_skew_warning?: string;
   /** @internal */
   __test__force_clock_monitoring_error?: string;
+  /** @internal */
   __test__enableSpies?: boolean;
   /** @internal */
   __test__delay_maint_ms?: number;
@@ -93,11 +162,19 @@ export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, 
   __test__delay_bam_ms?: number;
   /** @internal */
   __test__delay_clock_skew_ms?: number;
+  /**
+   * Force the distributed runtime toggles (`noSkipLocked` + `noMultiMutationCte`) on top
+   * of the current backend's schema, so the distributed code paths can be exercised on a
+   * plain Postgres instance (see `npm run test:distributed`) without a distributed DB.
+   * @internal
+   */
+  __test__distributed?: boolean;
   /** @internal */
   migrations?: Migration[];
 }
 
-export interface ResolvedConstructorOptions extends ConstructorOptions {
+/** @internal */
+export interface ResolvedConstructorOptions extends ConstructorOptions, CompatibilityFlags {
   schema: string;
   monitorIntervalSeconds: number;
   cronMonitorIntervalSeconds: number;

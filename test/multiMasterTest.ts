@@ -1,5 +1,5 @@
 import { expect } from 'vitest'
-import { getDb } from './testHelper.ts'
+import { getDb, itPglite } from './testHelper.ts'
 import { PgBoss } from '../src/index.ts'
 import Contractor from '../src/contractor.ts'
 import { getAll } from '../src/migrationStore.ts'
@@ -9,7 +9,7 @@ import { ctx } from './hooks.ts'
 const currentSchemaVersion = packageJson.pgboss.schema
 
 describe('multi-master', function () {
-  it('should only allow 1 master to start at a time', async function () {
+  itPglite('should only allow 1 master to start at a time', async function () {
     const replicaCount = 20
     const config = { ...ctx.bossConfig, supervise: true, max: 2 }
     const instances = []
