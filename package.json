@@ -1,6 +1,6 @@
 {
   "name": "pg-boss",
-  "version": "12.20.0",
+  "version": "12.21.0",
   "description": "Queueing jobs in Postgres from Node.js like a boss",
   "type": "module",
   "main": "./dist/index.js",
@@ -13,11 +13,11 @@
   },
   "dependencies": {
     "cron-parser": "^5.5.0",
-    "pg": "^8.21.0",
+    "pg": "^8.22.0",
     "serialize-error": "^13.0.1"
   },
   "devDependencies": {
-    "@electric-sql/pglite": "^0.4.1",
+    "@electric-sql/pglite": "^0.5.3",
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
     "@tsconfig/node-ts": "^23.6.4",
