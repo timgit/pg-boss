@@ -79,7 +79,7 @@ describe('complete', function () {
     expect((jobWithMetadata as any).output.message).toBe(completionError.message)
   })
 
-  it('should complete a batch of jobs with custom connection', async function () {
+  helper.itPglite('should complete a batch of jobs with custom connection', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 
     const batchSize = 3

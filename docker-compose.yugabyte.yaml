@@ -1,0 +1,34 @@
+# Single-node YugabyteDB (PostgreSQL-compatible) for the compatibility suite. YSQL listens on 5433.
+# Its own compose project so it never starts alongside the default Postgres (docker-compose.yaml).
+# Usage: docker compose -f docker-compose.yugabyte.yaml up -d
+name: pgboss-yugabyte
+
+services:
+  yugabytedb:
+    image: yugabytedb/yugabyte:latest
+    ports:
+      - 5433:5433
+      - 15433:15433
+    volumes:
+      - yugabyte_volume:/home/yugabyte/var
+    command: bin/yugabyted start --background=false
+    healthcheck:
+      # YSQL binds to the container's advertised address, so connect via the container hostname.
+      test: ["CMD-SHELL", "bin/ysqlsh -h $$(hostname) -U yugabyte -d yugabyte -c 'select 1' || exit 1"]
+      interval: 5s
+      timeout: 10s
+      retries: 40
+      start_period: 30s
+
+  yugabytedb-setup:
+    image: yugabytedb/yugabyte:latest
+    depends_on:
+      yugabytedb:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    # YugabyteDB (PostgreSQL 15) has no CREATE DATABASE IF NOT EXISTS, so ignore the "already exists" error.
+    command: ["bin/ysqlsh -h yugabytedb -U yugabyte -d yugabyte -c 'CREATE DATABASE pgboss' || true"]
+    restart: "no"
+
+volumes:
+  yugabyte_volume:

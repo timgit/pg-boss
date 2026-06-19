@@ -120,6 +120,50 @@ describe('flows', function () {
     expect(fetched.length).toBe(0)
   })
 
+  it('should unblock child after a blocking parent fails and is retried', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    const flow = await ctx.boss.flow([
+      { ref: 'parent', name: ctx.schema, options: { retryLimit: 1 } },
+      { ref: 'child', name: ctx.schema, data: { child: true }, dependsOn: ['parent'] }
+    ])
+
+    const parentId = flow.parent
+    const childId = flow.child
+
+    // Fail the parent while it still has a retry available
+    const [job1] = await ctx.boss.fetch(ctx.schema)
+    expect(job1.id).toBe(parentId)
+    await ctx.boss.fail(ctx.schema, parentId, new Error('transient failure'))
+
+    // The retried parent must still be flagged as blocking, otherwise completing it later
+    // would never unblock its dependents (regression guard for distributed fail+retry).
+    const retriedParent = await ctx.boss.getJobById(ctx.schema, parentId)
+    assertTruthy(retriedParent)
+    expect(retriedParent.state).toBe(states.retry)
+    expect(retriedParent.blocking).toBe(true)
+
+    // Child stays blocked while the parent is pending its retry
+    const blockedChild = await ctx.boss.getJobById(ctx.schema, childId)
+    assertTruthy(blockedChild)
+    expect(blockedChild.blocked).toBe(true)
+
+    // Retry and complete the parent
+    const [job2] = await ctx.boss.fetch(ctx.schema)
+    expect(job2.id).toBe(parentId)
+    await ctx.boss.complete(ctx.schema, parentId)
+
+    // Child should now be unblocked and fetchable
+    const unblockedChild = await ctx.boss.getJobById(ctx.schema, childId)
+    assertTruthy(unblockedChild)
+    expect(unblockedChild.blocked).toBe(false)
+    expect(unblockedChild.pendingDependencies).toBe(0)
+
+    const fetched = await ctx.boss.fetch(ctx.schema)
+    expect(fetched.length).toBe(1)
+    expect(fetched[0].id).toBe(childId)
+  })
+
   it('should keep child blocked when parent is cancelled', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 
@@ -417,7 +461,7 @@ describe('flows', function () {
     expect(jobCount).toBe(0)
   })
 
-  it('should support two complete calls in one transaction', async function () {
+  helper.itPglite('should support two complete calls in one transaction', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
     const db = await helper.getDb()
 
@@ -469,7 +513,7 @@ describe('flows', function () {
     expect(childJob.pendingDependencies).toBe(0)
   })
 
-  it('should block and unblock a job on a partitioned queue', async function () {
+  helper.itPostgresOnly('should block and unblock a job on a partitioned queue', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
     await ctx.boss.createQueue(ctx.schema, { partition: true })

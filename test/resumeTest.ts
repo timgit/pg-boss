@@ -34,7 +34,7 @@ describe('cancel', function () {
     expect(job2 && job2.state === 'created').toBeTruthy()
   })
 
-  it('should cancel and resume a pending job with custom connection', async function () {
+  helper.itPglite('should cancel and resume a pending job with custom connection', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 
     const jobId = await ctx.boss.send(ctx.schema, null, { startAfter: 1 })

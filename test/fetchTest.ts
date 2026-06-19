@@ -161,7 +161,7 @@ describe('fetch', function () {
     }
   })
 
-  it('should fetch a job with custom connection', async function () {
+  helper.itPglite('should fetch a job with custom connection', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 
     let calledCounter = 0
@@ -183,7 +183,7 @@ describe('fetch', function () {
     expect(calledCounter).toBe(2)
   })
 
-  it('should allow fetching jobs that have a start_after in the future', async function () {
+  helper.itPglite('should allow fetching jobs that have a start_after in the future', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 
     await ctx.boss.send(ctx.schema, { startAfter: new Date(Date.now() + 1000) })

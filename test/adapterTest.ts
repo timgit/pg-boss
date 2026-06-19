@@ -1,9 +1,13 @@
-import { describe, it, afterAll } from 'vitest'
+import { it, afterAll } from 'vitest'
 import { ctx, expect } from './hooks.ts'
 import * as helper from './testHelper.ts'
 import pg from 'pg'
 
 import { fromKnex, fromKysely, fromDrizzle, fromPrisma } from '../src/adapters/index.ts'
+
+// These adapters wrap real ORM connections that reach Postgres over a connection string; PGlite is
+// in-process only, so the whole file is skipped under PGlite (fromPglite is covered separately).
+const describe = helper.describePglite
 
 import knex, { type Knex } from 'knex'
 import { Kysely, PostgresDialect } from 'kysely'

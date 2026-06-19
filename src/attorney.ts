@@ -8,6 +8,55 @@ const POLICY = {
   MAX_RETENTION_DAYS: 365
 }
 
+// The internal compatibility flags a backend can toggle. A backend sets only the flags that differ
+// from stock PostgreSQL; everything else defaults to false. These are derived from the backend
+// profile and are not user-configurable (see resolveBackend).
+const COMPATIBILITY_FLAGS = [
+  'noSkipLocked',
+  'noMultiMutationCte',
+  'noTablePartitioning',
+  'noDeferrableConstraints',
+  'noAdvisoryLocks',
+  'noCoveringIndexes'
+] as const
+
+type CompatibilityFlag = typeof COMPATIBILITY_FLAGS[number]
+
+// A backend's kind describes how it runs, independent of its compatibility flags:
+//  - 'standard'    stock single-node PostgreSQL
+//  - 'distributed' clustered Postgres-compatible engines (CockroachDB, YugabyteDB, Citus)
+//  - 'embedded'    in-process single-connection PostgreSQL (PGlite)
+// PGlite is deliberately 'embedded', NOT 'distributed' — it is full PostgreSQL and sets no flags.
+interface BackendDefinition {
+  kind: 'standard' | 'distributed' | 'embedded'
+  flags: Partial<Record<CompatibilityFlag, boolean>>
+}
+
+// The single source of truth for backend presets, mirrored by test/testHelper.ts.
+const BACKEND_PROFILES: Record<types.BackendProfile, BackendDefinition> = {
+  postgres: { kind: 'standard', flags: {} },
+  cockroachdb: {
+    kind: 'distributed',
+    flags: {
+      noSkipLocked: true,
+      noMultiMutationCte: true,
+      noTablePartitioning: true,
+      noDeferrableConstraints: true,
+      noAdvisoryLocks: true,
+      noCoveringIndexes: true
+    }
+  },
+  yugabytedb: {
+    kind: 'distributed',
+    flags: {
+      noAdvisoryLocks: true,
+      noTablePartitioning: true
+    }
+  },
+  citus: { kind: 'distributed', flags: {} },
+  pglite: { kind: 'embedded', flags: {} }
+}
+
 function assertObjectName (value: string, name: string = 'Name') {
   assert(/^[\w.\-/]+$/.test(value), `${name} can only contain alphanumeric characters, underscores, hyphens, periods, or forward slashes`)
 }
@@ -311,6 +360,8 @@ function getConfig (value: string | types.ConstructorOptions): types.ResolvedCon
   config.createSchema = ('createSchema' in config) ? config.createSchema : true
   config.useListenNotify = ('useListenNotify' in config) ? config.useListenNotify : false
 
+  resolveBackend(config)
+
   applySchemaConfig(config)
   applyOpsConfig(config)
   applyScheduleConfig(config)
@@ -340,6 +391,30 @@ function validateWarningConfig (config: any) {
 
   assert(!('warningRetentionDays' in config) || config.warningRetentionDays <= POLICY.MAX_RETENTION_DAYS,
     `configuration assert: warningRetentionDays cannot exceed ${POLICY.MAX_RETENTION_DAYS} days`)
+}
+
+// Expands config.backend into the internal compatibility flags. The flags are derived
+// solely from the backend profile — they are not part of the public input, so a
+// deployment can't end up with an inconsistent combination.
+function resolveBackend (config: any) {
+  const backend = ('backend' in config) ? config.backend : 'postgres'
+
+  assert(backend in BACKEND_PROFILES,
+    `configuration assert: backend must be one of ${Object.keys(BACKEND_PROFILES).join(', ')}`)
+
+  config.backend = backend
+  const { flags } = BACKEND_PROFILES[backend as types.BackendProfile]
+
+  for (const flag of COMPATIBILITY_FLAGS) {
+    config[flag] = flags[flag] ?? false
+  }
+
+  // Test hook: exercise the distributed runtime paths (atomic fetch + split mutations)
+  // on top of the current backend's schema, without standing up a distributed database.
+  if (config.__test__distributed) {
+    config.noSkipLocked = true
+    config.noMultiMutationCte = true
+  }
 }
 
 function assertPostgresObjectName (name: string) {

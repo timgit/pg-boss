@@ -53,7 +53,7 @@ describe('cancel', function () {
     await ctx.boss.cancel(ctx.schema, jobs as string[])
   })
 
-  it('should cancel a pending job with custom connection', async function () {
+  helper.itPglite('should cancel a pending job with custom connection', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 
     let called = false

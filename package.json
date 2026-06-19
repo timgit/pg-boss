@@ -17,6 +17,7 @@
     "serialize-error": "^13.0.1"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.4.1",
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
     "@tsconfig/node-ts": "^23.6.4",
@@ -26,6 +27,7 @@
     "@types/pg": "^8.20.0",
     "@vitest/coverage-v8": "^4.1.2",
     "cli-testlab": "^6.0.1",
+    "cross-env": "^10.1.0",
     "drizzle-orm": "^1.0.0-beta.22",
     "eslint": "^9.39.4",
     "knex": "^3.2.10",
@@ -43,6 +45,12 @@
     "prepublishOnly": "npm install && npm test && npm run build",
     "pretest": "npm run tsc && prisma generate --schema=test/prisma/schema.prisma",
     "test": "eslint . && vitest run",
+    "test:distributed": "cross-env DISTRIBUTED=true npm test",
+    "test:cockroachdb": "cross-env DB_TYPE=cockroachdb COCKROACH_HOST=localhost npm test -- test/distributedDatabaseTest.ts",
+    "test:cockroachdb:full": "cross-env DB_TYPE=cockroachdb COCKROACH_HOST=localhost npm test -- --no-file-parallelism",
+    "test:yugabytedb:full": "cross-env DB_TYPE=yugabytedb YUGABYTE_HOST=localhost npm test -- --no-file-parallelism",
+    "test:citus:full": "cross-env DB_TYPE=citus CITUS_HOST=localhost npm test",
+    "test:pglite": "cross-env DB_TYPE=pglite npm test -- --no-file-parallelism",
     "lint:fix": "eslint . --fix",
     "precover": "prisma generate --schema=test/prisma/schema.prisma",
     "cover": "vitest run --coverage",

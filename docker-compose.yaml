@@ -1,3 +1,7 @@
+# Default single-node Postgres for the standard test suite.
+# Usage: docker compose up -d
+# The alternative backends each have their own file (docker-compose.cockroach.yaml,
+# docker-compose.yugabyte.yaml, docker-compose.citus.yaml) so they never start alongside this default.
 services:
   db:
     image: postgres:18

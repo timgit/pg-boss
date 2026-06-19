@@ -1,0 +1,9 @@
+{
+  "host": "127.0.0.1",
+  "port": 5433,
+  "database": "pgboss",
+  "user": "yugabyte",
+  "password": "yugabyte",
+  "max": 3,
+  "debug": false
+}
