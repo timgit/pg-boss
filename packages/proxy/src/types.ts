@@ -45,6 +45,11 @@ export type HttpCompleteOptions = Omit<types.CompleteOptions, 'db'>
 
 export type HttpJobInsert = types.JobInsert<HttpJsonRecord>
 
+export type HttpFlowJob = Omit<types.FlowJob, 'data' | 'options'> & {
+  data?: HttpJsonRecord
+  options?: Omit<HttpJobInsert, 'data'>
+}
+
 export type HttpJob = Omit<types.Job<HttpJsonRecord>, 'signal'>
 
 export type HttpJobWithMetadata = Omit<
@@ -56,6 +61,8 @@ export type HttpJobWithMetadata = Omit<
 }
 
 export type HttpCommandResponse = types.CommandResponse
+
+export type HttpDependencyRef = types.DependencyRef
 
 export type HttpQueueResult = types.QueueResult
 
@@ -126,6 +133,15 @@ export type HttpInsertRequest = {
 export type HttpInsertResponse = {
   ok: true
   result: string[] | null
+}
+
+export type HttpFlowRequest = {
+  jobs: HttpFlowJob[]
+}
+
+export type HttpFlowResponse = {
+  ok: true
+  result: Record<string, string>
 }
 
 export type HttpFetchRequest = {
@@ -220,6 +236,16 @@ export type HttpFailResponse = HttpCancelResponse
 export type HttpFindJobsResponse = {
   ok: true
   result: HttpJobWithMetadata[]
+}
+
+export type HttpGetDependenciesResponse = {
+  ok: true
+  result: HttpDependencyRef[]
+}
+
+export type HttpGetDependentsResponse = {
+  ok: true
+  result: HttpDependencyRef[]
 }
 
 export type HttpCreateQueueOptions = HttpQueueOptions & {

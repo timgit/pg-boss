@@ -120,6 +120,14 @@ export const jobInsertSchema = z.object({
   deadLetter: z.string().optional(),
 }) satisfies z.ZodType<types.HttpJobInsert>
 
+export const flowJobSchema = z.object({
+  ref: z.string(),
+  name: queueNameSchema,
+  data: jsonRecordSchema.optional(),
+  options: jobInsertSchema.omit({ data: true }).optional(),
+  dependsOn: z.array(z.string()).optional(),
+}) satisfies z.ZodType<types.HttpFlowJob>
+
 const jobSchemaBase = z.object({
   id: z.string(),
   name: z.string(),
@@ -161,6 +169,11 @@ export const commandResponseSchema = z.object({
   requested: z.number(),
   affected: z.number(),
 }) satisfies z.ZodType<types.HttpCommandResponse>
+
+export const dependencyRefSchema = z.object({
+  name: z.string(),
+  id: z.string(),
+}) satisfies z.ZodType<types.HttpDependencyRef>
 
 export const queueResultSchema = z.object({
   name: z.string(),
@@ -272,6 +285,15 @@ export const insertRequestSchema: z.ZodType<types.HttpInsertRequest> = z.object(
 export const insertResponseSchema: z.ZodType<types.HttpInsertResponse> = z.object({
   ok: z.literal(true),
   result: z.array(z.string()).nullable()
+})
+
+export const flowRequestSchema: z.ZodType<types.HttpFlowRequest> = z.object({
+  jobs: z.array(flowJobSchema)
+})
+
+export const flowResponseSchema: z.ZodType<types.HttpFlowResponse> = z.object({
+  ok: z.literal(true),
+  result: z.record(z.string(), z.string())
 })
 
 export const fetchRequestSchema: z.ZodType<types.HttpFetchRequest> = z.object({
@@ -408,6 +430,16 @@ export const failResponseSchema: z.ZodType<types.HttpFailResponse> = z.object({
 export const findJobsResponseSchema: z.ZodType<types.HttpFindJobsResponse> = z.object({
   ok: z.literal(true),
   result: z.array(jobWithMetadataSchema)
+})
+
+export const getDependenciesResponseSchema: z.ZodType<types.HttpGetDependenciesResponse> = z.object({
+  ok: z.literal(true),
+  result: z.array(dependencyRefSchema)
+})
+
+export const getDependentsResponseSchema: z.ZodType<types.HttpGetDependentsResponse> = z.object({
+  ok: z.literal(true),
+  result: z.array(dependencyRefSchema)
 })
 
 export const createQueueRequestSchema: z.ZodType<types.HttpCreateQueueRequest> = z.object({

@@ -20,9 +20,13 @@ import {
   failResponseSchema,
   fetchRequestSchema,
   fetchResponseSchema,
+  flowRequestSchema,
+  flowResponseSchema,
   findJobsResponseSchema,
   getBamStatusResponseSchema,
   getBlockedKeysResponseSchema,
+  getDependenciesResponseSchema,
+  getDependentsResponseSchema,
   getQueueResponseSchema,
   getQueuesResponseSchema,
   getSchedulesResponseSchema,
@@ -154,12 +158,18 @@ const blockedKeysQuerySchema = z.object({
   name: z.string().min(1)
 })
 
+const dependencyQuerySchema = z.object({
+  name: z.string().min(1),
+  id: z.string().min(1)
+})
+
 export const postMethods: RouteEntry[] = [
   post('jobs', 'send', sendRequestSchema, sendResponseSchema, (body) => withOptionalDataOptions([body.name], body.data, body.options)),
   post('jobs', 'sendAfter', sendAfterRequestSchema, sendAfterResponseSchema, (body) => withFixedDataOptions([body.name], body.data, body.options, [body.after])),
   post('jobs', 'sendThrottled', sendThrottledRequestSchema, sendThrottledResponseSchema, (body) => withFixedDataOptions([body.name], body.data, body.options, [body.seconds, body.key])),
   post('jobs', 'sendDebounced', sendDebouncedRequestSchema, sendDebouncedResponseSchema, (body) => withFixedDataOptions([body.name], body.data, body.options, [body.seconds, body.key])),
   post('jobs', 'insert', insertRequestSchema, insertResponseSchema, (body) => withOptionalOptions([body.name, body.jobs], body.options)),
+  post('jobs', 'flow', flowRequestSchema, flowResponseSchema, (body) => [body.jobs]),
   post('jobs', 'fetch', fetchRequestSchema, fetchResponseSchema, (body) => withOptionalOptions([body.name], body.options)),
   post('jobs', 'complete', completeRequestSchema, completeResponseSchema, (body) => withOptionalDataOptions([body.name, body.id], body.data, body.options)),
   post('jobs', 'fail', failRequestSchema, failResponseSchema, (body) => withOptionalDataOptions([body.name, body.id], body.data)),
@@ -193,6 +203,8 @@ export const getMethods: RouteEntry[] = [
     if (q.name) return [q.name]
     return []
   }),
+  get('jobs', 'getDependencies', getDependenciesResponseSchema, dependencyQuerySchema, (q) => [q.name, q.id]),
+  get('jobs', 'getDependents', getDependentsResponseSchema, dependencyQuerySchema, (q) => [q.name, q.id]),
   get('jobs', 'findJobs', findJobsResponseSchema, findJobsQuerySchema, (q) => {
     const args: unknown[] = [q.name]
     const options: Record<string, unknown> = {}

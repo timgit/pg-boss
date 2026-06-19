@@ -396,6 +396,11 @@ describe('proxy api routes', () => {
         expected: ['queue', [{ id: '1', data: {} }], { returnId: true }]
       },
       {
+        method: 'flow',
+        body: { jobs: [{ ref: 'a', name: 'queue' }, { ref: 'b', name: 'queue', dependsOn: ['a'] }] },
+        expected: [[{ ref: 'a', name: 'queue' }, { ref: 'b', name: 'queue', dependsOn: ['a'] }]]
+      },
+      {
         method: 'fetch',
         body: { name: 'queue', options: { includeMetadata: true } },
         expected: ['queue', { includeMetadata: true }]
@@ -517,6 +522,8 @@ describe('proxy api routes', () => {
       { method: 'getBamStatus', expected: [] },
       { method: 'getQueue', query: 'name=queue', expected: ['queue'] },
       { method: 'getBlockedKeys', query: 'name=queue', expected: ['queue'] },
+      { method: 'getDependencies', query: 'name=queue&id=1', expected: ['queue', '1'] },
+      { method: 'getDependents', query: 'name=queue&id=1', expected: ['queue', '1'] },
       { method: 'getQueues', query: 'names=a&names=b', expected: [['a', 'b']] },
       { method: 'getQueues', expected: [] },
       { method: 'getSchedules', query: 'name=queue&key=k', expected: ['queue', 'k'] },
