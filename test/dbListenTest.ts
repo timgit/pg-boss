@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { it, expect } from 'vitest'
 import * as helper from './testHelper.ts'
 import { delay } from '../src/tools.ts'
 
@@ -14,7 +14,10 @@ async function terminateListener (db: any, channel: string): Promise<void> {
   )
 }
 
-describe('db listen/notify', function () {
+// The built-in Db.listen path is the pg.Pool/pg.Client driver: a dedicated session-pinned client,
+// pg_terminate_backend, and capped-backoff reconnection. None of that exists for embedded
+// single-connection PGlite, so skip the whole file there (PGlite's listen is covered via fromPglite).
+helper.describePglite('db listen/notify', function () {
   it('reconnects after the listen connection drops and delivers later notifications', async function () {
     const db = await helper.getDb()
     const channel = 'pgboss_db_reconnect_test'

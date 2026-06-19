@@ -17,7 +17,8 @@ const COMPATIBILITY_FLAGS = [
   'noTablePartitioning',
   'noDeferrableConstraints',
   'noAdvisoryLocks',
-  'noCoveringIndexes'
+  'noCoveringIndexes',
+  'noListenNotify'
 ] as const
 
 type CompatibilityFlag = typeof COMPATIBILITY_FLAGS[number]
@@ -43,7 +44,8 @@ const BACKEND_PROFILES: Record<types.BackendProfile, BackendDefinition> = {
       noTablePartitioning: true,
       noDeferrableConstraints: true,
       noAdvisoryLocks: true,
-      noCoveringIndexes: true
+      noCoveringIndexes: true,
+      noListenNotify: true
     }
   },
   yugabytedb: {

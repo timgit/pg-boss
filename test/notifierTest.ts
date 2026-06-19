@@ -60,6 +60,25 @@ describe('notifier', function () {
     expect(notifier.available).toBe(false) // after stop
   })
 
+  it('skips the listener and warns on a backend without LISTEN/NOTIFY', async function () {
+    let listened = false
+    const db = fakeDb({ listen: async () => { listened = true; return { close: async () => {} } } })
+    const notifier = new Notifier(db, fakeManager, { schema: 'pgboss', backend: 'cockroachdb', noListenNotify: true } as any)
+
+    const warnings: any[] = []
+    notifier.on('warning', w => warnings.push(w))
+
+    await notifier.start()
+
+    expect(listened).toBe(false) // never attempts to listen
+    expect(notifier.available).toBe(false)
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0].data.type).toBe('listen_notify_unavailable')
+    expect(warnings[0].data.backend).toBe('cockroachdb')
+
+    await notifier.stop()
+  })
+
   it('available stays false when the database does not support listen', async function () {
     const db = fakeDb({}) // no listen function
     const notifier = new Notifier(db, fakeManager, config)

@@ -1,10 +1,13 @@
 import type { IDatabase } from '../types.ts'
 
 // Minimal structural type for an `@electric-sql/pglite` instance, so pg-boss does not take a
-// hard dependency on the package. Both methods return an object with a `rows` array.
+// hard dependency on the package. The query/exec methods return an object with a `rows` array;
+// `listen` (optional, present on real PGlite) registers a LISTEN handler and resolves to an
+// unsubscribe function.
 export interface PGliteLike {
   query<T = any>(query: string, params?: unknown[]): Promise<{ rows: T[] }>
   exec(query: string): Promise<Array<{ rows: any[] }>>
+  listen?(channel: string, callback: (payload: string) => void): Promise<() => Promise<void>>
 }
 
 // Adapts a PGlite instance (embedded single-connection WASM PostgreSQL) to pg-boss's IDatabase.
@@ -34,7 +37,7 @@ export function fromPglite (pglite: PGliteLike): IDatabase {
     return { rows: results.flatMap(r => r.rows ?? []) }
   }
 
-  return {
+  const db: IDatabase = {
     async executeSql (text: string, values?: unknown[]) {
       try {
         return await run(text, values)
@@ -44,4 +47,20 @@ export function fromPglite (pglite: PGliteLike): IDatabase {
       }
     }
   }
+
+  // PGlite is embedded single-connection PostgreSQL, so LISTEN/NOTIFY works entirely in-process:
+  // the same instance both NOTIFYs (via pg-boss's inlined pg_notify) and delivers to listeners.
+  // Only expose `listen` when the instance actually supports it (older builds/mocks may not), so
+  // the notifier cleanly falls back to polling otherwise. There is no network connection to drop,
+  // hence no reconnect loop — onReconnect is invoked once after the initial subscribe to mirror
+  // the pooled driver and force a gap-recovery fetch.
+  if (typeof pglite.listen === 'function') {
+    db.listen = async (channel, onNotification, onReconnect) => {
+      const unsubscribe = await pglite.listen!(channel, onNotification)
+      onReconnect()
+      return { close: async () => { await unsubscribe() } }
+    }
+  }
+
+  return db
 }

@@ -27,8 +27,8 @@ async function rawListener (schema: string) {
   return { received, close: () => client.end() }
 }
 
-describe('listen/notify', function () {
-  it('emits a NOTIFY carrying the queue name for an immediate job on a notify-enabled queue', async function () {
+helper.describeListenNotify('listen/notify', function () {
+  helper.itPglite('emits a NOTIFY carrying the queue name for an immediate job on a notify-enabled queue', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
     const queue = ctx.schema
     await ctx.boss.createQueue(queue, { notify: true })
@@ -44,7 +44,7 @@ describe('listen/notify', function () {
     }
   })
 
-  it('does not emit a NOTIFY for a future-dated job (gated on start_after <= now)', async function () {
+  helper.itPglite('does not emit a NOTIFY for a future-dated job (gated on start_after <= now)', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
     const queue = ctx.schema
     await ctx.boss.createQueue(queue, { notify: true })
@@ -60,7 +60,7 @@ describe('listen/notify', function () {
     }
   })
 
-  it('does not emit a NOTIFY when the queue is not notify-enabled', async function () {
+  helper.itPglite('does not emit a NOTIFY when the queue is not notify-enabled', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
     const queue = ctx.schema
     await ctx.boss.createQueue(queue, { notify: false })
@@ -76,7 +76,7 @@ describe('listen/notify', function () {
     }
   })
 
-  it('updateQueue can toggle notify on', async function () {
+  helper.itPglite('updateQueue can toggle notify on', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
     const queue = ctx.schema
     await ctx.boss.createQueue(queue, { notify: false })
@@ -93,7 +93,7 @@ describe('listen/notify', function () {
     }
   })
 
-  it('fires a single NOTIFY for an insert() batch, gated on immediate availability', async function () {
+  helper.itPglite('fires a single NOTIFY for an insert() batch, gated on immediate availability', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
     const queue = ctx.schema
     await ctx.boss.createQueue(queue, { notify: true })
@@ -162,7 +162,7 @@ describe('listen/notify', function () {
     expect(processed).toBe(false)
   })
 
-  it('uses the fallback poll interval when notify is desired but the listener is unavailable', async function () {
+  helper.itPglite('uses the fallback poll interval when notify is desired but the listener is unavailable', async function () {
     const config = helper.getConfig({ schema: ctx.schema })
 
     // Bare adapter: no `listen` capability, so the listener can't be established and notify is
@@ -224,7 +224,7 @@ describe('listen/notify', function () {
     expect(processed).toBe(false)
   })
 
-  it('wakes notify-enabled workers and recovers after the listener reconnects', async function () {
+  helper.itPglite('wakes notify-enabled workers and recovers after the listener reconnects', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, useListenNotify: true, noDefault: true })
     const boss = ctx.boss
     // Terminating the listen backend surfaces as an 'error' on the promoted db events.
@@ -273,7 +273,7 @@ describe('listen/notify', function () {
     expect(notifyProcessed).toBe(2)
   })
 
-  it('warns and continues polling when the database connection cannot LISTEN', async function () {
+  helper.itPglite('warns and continues polling when the database connection cannot LISTEN', async function () {
     const config = helper.getConfig({ schema: ctx.schema })
 
     // A bare adapter exposes only executeSql (no `listen` capability), like a user-supplied
@@ -310,5 +310,41 @@ describe('listen/notify', function () {
       await boss.stop({ timeout: 2000 })
       await pool.end()
     }
+  })
+})
+
+// Runs on every backend, including those that don't implement LISTEN/NOTIFY (CockroachDB) or have
+// it disabled (YugabyteDB). The producer inlines pg_notify into the insert when a queue opts into
+// notify; on a noListenNotify backend that would error, so the producer must suppress it. These
+// tests prove the suppression: producing to a notify-enabled queue must never throw and jobs must
+// still be delivered by polling.
+describe('notify producer bypass (all backends)', function () {
+  it('send/insert/flow to a notify-enabled queue succeed and deliver via polling', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+    const boss = ctx.boss
+    const queue = ctx.schema
+    await boss.createQueue(queue, { notify: true })
+
+    const sendId = await boss.send(queue)
+    expect(sendId).toBeTruthy()
+
+    const insertIds = await boss.insert(queue, [{ data: { n: 1 } }], { returnId: true })
+    expect(insertIds).toHaveLength(1)
+
+    // A parent + dependent child on the notify-enabled queue exercises flow's notifyQueue path.
+    await boss.flow([
+      { ref: 'parent', name: queue, data: { n: 2 } },
+      { ref: 'child', name: queue, data: { n: 3 }, dependsOn: ['parent'] }
+    ])
+
+    let processed = 0
+    await boss.work(queue, { pollingIntervalSeconds: 0.5 }, async () => { processed++ })
+
+    // send + insert + flow(parent, child) = 4 jobs; the child unblocks once the parent completes.
+    for (let i = 0; i < 60; i++) {
+      if (processed >= 4) break
+      await delay(100)
+    }
+    expect(processed).toBe(4)
   })
 })

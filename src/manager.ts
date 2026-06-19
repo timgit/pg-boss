@@ -569,6 +569,13 @@ class Manager extends EventEmitter implements types.EventsMixin {
     this.workers.get(workerId)?.notify()
   }
 
+  // Whether a queue's `notify` opt-in actually emits a transactional pg_notify. Backends that
+  // don't implement LISTEN/NOTIFY (noListenNotify, e.g. CockroachDB) would error on the inlined
+  // pg_notify, so the producer falls back to polling-only delivery on those.
+  #notifyEnabled (queueNotify: boolean | undefined): boolean {
+    return !!queueNotify && !this.config.noListenNotify
+  }
+
   // Wake every worker on a queue so it fetches now instead of waiting out its poll delay.
   // Called by the LISTEN/NOTIFY listener when a job lands on a notify-enabled queue.
   notifyQueue (name: string): void {
@@ -705,7 +712,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       throw new Error(`${plans.QUEUE_POLICIES.key_strict_fifo} queues require a singletonKey`)
     }
 
-    const sql = plans.insertJobs(this.config.schema, { table, name, returnId: true, notify })
+    const sql = plans.insertJobs(this.config.schema, { table, name, returnId: true, notify: this.#notifyEnabled(notify) })
 
     const { rows: try1 } = await db.executeSql(sql, [JSON.stringify([job])])
 
@@ -777,7 +784,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     // Return IDs if spy is active for this queue (needed for job tracking)
     const returnId = !!spy || !!options.returnId
 
-    const sql = plans.insertJobs(this.config.schema, { table, name, returnId, notify })
+    const sql = plans.insertJobs(this.config.schema, { table, name, returnId, notify: this.#notifyEnabled(notify) })
 
     const { rows } = await db.executeSql(sql, [JSON.stringify(insertPayload)])
 
@@ -876,7 +883,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       // inserts above, so it commits atomically. Blocked children and future-dated roots
       // are harmless: the fetch query filters them out, so a wake just triggers one fetch
       // that picks up whatever roots are immediately runnable.
-      if (notify) {
+      if (this.#notifyEnabled(notify)) {
         statements.push(plans.notifyQueue(this.config.schema, queueName))
       }
     }

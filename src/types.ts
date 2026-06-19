@@ -62,10 +62,11 @@ export interface SchedulingOptions {
  *
  * Backends fall into three kinds — standard, distributed, and embedded:
  * - `postgres` (default): standard PostgreSQL, all flags off.
- * - `cockroachdb`: distributed; enables `noSkipLocked`, `noMultiMutationCte`, and all four `no*` schema gates.
- * - `yugabytedb`: distributed; enables `noAdvisoryLocks` and `noTablePartitioning`.
- * - `citus`: distributed; plain PostgreSQL behavior (Citus tables stay coordinator-local).
- * - `pglite`: embedded (NOT distributed) single-connection WASM PostgreSQL, all gates off.
+ * - `cockroachdb`: distributed; enables `noSkipLocked`, `noMultiMutationCte`, `noListenNotify`, and all four `no*` schema gates.
+ * - `yugabytedb`: distributed; enables `noAdvisoryLocks` and `noTablePartitioning`. Supports cluster-wide
+ *   LISTEN/NOTIFY (early access, off by default — enable the `ysql_yb_enable_listen_notify` flag).
+ * - `citus`: distributed; plain PostgreSQL behavior (Citus tables stay coordinator-local); LISTEN/NOTIFY works on the coordinator.
+ * - `pglite`: embedded (NOT distributed) single-connection WASM PostgreSQL, all gates off; supports in-process LISTEN/NOTIFY.
  *
  * Spanner, Aurora DSQL, and other targets do not have a profile yet and are not
  * supported. @see https://timgit.github.io/pg-boss/docs/database-backends
@@ -136,6 +137,13 @@ export interface CompatibilityFlags {
   noAdvisoryLocks?: boolean;
   /** Omit the `INCLUDE` clause on covering indexes. */
   noCoveringIndexes?: boolean;
+  /**
+   * Skip LISTEN/NOTIFY entirely, for engines that don't implement it (e.g. CockroachDB).
+   * Suppresses both the producer-side transactional `pg_notify` (which would otherwise error
+   * on insert) and the `useListenNotify` listener. Polling delivers jobs. (YugabyteDB does
+   * support cluster-wide LISTEN/NOTIFY, so it does NOT set this flag.)
+   */
+  noListenNotify?: boolean;
 }
 
 export interface Migration {

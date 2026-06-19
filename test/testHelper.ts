@@ -66,6 +66,13 @@ const describePostgresOnly = describe.skipIf(isCockroachDb) as SuiteAPI
 const itPglite = it.skipIf(isPglite) as TestAPI
 const describePglite = describe.skipIf(isPglite) as SuiteAPI
 
+// LISTEN/NOTIFY is unavailable in these backends' test environments: CockroachDB never implements
+// it (noListenNotify), and the YugabyteDB test container doesn't enable the early-access
+// `ysql_yb_enable_listen_notify` flag. Wrap notify-behavior tests with these so the compatibility
+// matrix skips them; the producer bypass is still covered separately on every backend.
+const itListenNotify = it.skipIf(isCockroachDb || isYugabyteDb) as TestAPI
+const describeListenNotify = describe.skipIf(isCockroachDb || isYugabyteDb) as SuiteAPI
+
 function assertTruthy<T> (value: T, message?: string): asserts value is NonNullable<T> {
   if (value == null) {
     throw new Error(message ?? 'Expected value to be defined')
@@ -282,5 +289,7 @@ export {
   describePostgresOnly,
   itPglite,
   describePglite,
+  itListenNotify,
+  describeListenNotify,
   getSchemaDefs
 }
