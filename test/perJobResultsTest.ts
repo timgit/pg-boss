@@ -446,4 +446,72 @@ describe('perJobResults', function () {
       expect(job.state).toBe('completed')
     })
   })
+
+  // Mirror of the distributed block above. The standard (multi-mutation CTE) per-job settlement paths
+  // - completeJobsWithOutputs / failJobsByIdWithOutputs / deadLetterJobsByIdWithOutputs - only run when
+  // noMultiMutationCte is off. The DISTRIBUTED=true coverage suite forces it on globally, so without
+  // pinning it off here those CTE plans show as uncovered in that run. Force the standard path with
+  // __test__distributed: false so it is exercised in both the standard and distributed coverage suites.
+  describe('standard backend path (multiMutationCte)', function () {
+    it('settles a mixed batch of completions and failures with their own outputs', async function () {
+      ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: false, __test__enableSpies: true })
+      const spy = ctx.boss.getSpy(ctx.schema)
+
+      const completeId = await ctx.boss.send(ctx.schema, { outcome: 'complete' }, { retryLimit: 0 })
+      const failId = await ctx.boss.send(ctx.schema, { outcome: 'fail' }, { retryLimit: 0 })
+      assertTruthy(completeId)
+      assertTruthy(failId)
+
+      await ctx.boss.work(ctx.schema, { batchSize: 10, perJobResults: true, pollingIntervalSeconds: 0.5 }, async jobs =>
+        jobs.map(job => (job.data as { outcome: string }).outcome === 'complete'
+          ? { id: job.id, status: 'completed' as const, output: { ok: true } }
+          : { id: job.id, status: 'failed' as const, output: new Error('handler said fail') }))
+
+      await spy.waitForJobWithId(completeId, 'completed')
+      await spy.waitForJobWithId(failId, 'failed')
+
+      const completed = await ctx.boss.getJobById(ctx.schema, completeId)
+      const failed = await ctx.boss.getJobById(ctx.schema, failId)
+
+      assertTruthy(completed)
+      expect(completed.state).toBe('completed')
+      expect((completed.output as { ok: boolean }).ok).toBe(true)
+
+      assertTruthy(failed)
+      expect(failed.state).toBe('failed')
+      expect((failed.output as { message: string }).message).toBe('handler said fail')
+    })
+
+    it('routes a deadletter result straight to the DLQ, bypassing remaining retries', async function () {
+      ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: false, noDefault: true, __test__enableSpies: true })
+      const spy = ctx.boss.getSpy(ctx.schema)
+
+      const deadLetter = `${ctx.schema}_dlq`
+      await ctx.boss.createQueue(deadLetter)
+      await ctx.boss.createQueue(ctx.schema, { deadLetter })
+
+      const jobId = await ctx.boss.send(ctx.schema, { key: 'payload' }, { retryLimit: 2 })
+      assertTruthy(jobId)
+
+      // deadLetterJobsByIdWithOutputs must force the terminal failure so the job dead-letters on its
+      // first attempt rather than re-inserting as a retry, carrying its own per-job output.
+      await ctx.boss.work(ctx.schema, { batchSize: 10, perJobResults: true, pollingIntervalSeconds: 0.5 }, async jobs =>
+        jobs.map(job => ({ id: job.id, status: 'deadletter' as const, output: new Error('fatal, do not retry') })))
+
+      await spy.waitForJobWithId(jobId, 'failed')
+
+      const source = await ctx.boss.getJobById(ctx.schema, jobId)
+      assertTruthy(source)
+      expect(source.state).toBe('failed')
+      expect(source.retryCount).toBe(0)
+
+      const [dlqJob] = await ctx.boss.fetch<{ key: string }>(deadLetter)
+      assertTruthy(dlqJob)
+      expect(dlqJob.data.key).toBe('payload')
+
+      const dlqWithMeta = await ctx.boss.getJobById(deadLetter, dlqJob.id)
+      assertTruthy(dlqWithMeta)
+      expect((dlqWithMeta.output as { message: string }).message).toBe('fatal, do not retry')
+    })
+  })
 })
