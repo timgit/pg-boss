@@ -324,11 +324,16 @@ class Manager extends EventEmitter implements types.EventsMixin {
     }
 
     // Spy tracking runs after the completion/failure logic so a spy lookup error can never
-    // be mistaken for a handler failure and re-route the job through fail().
-    if (didFail) {
-      this.#trackJobsFailed(name, jobs, failedError)
-    } else {
-      await this.#trackJobsCompleted(name, jobs, completedResult, completedAffected)
+    // be mistaken for a handler failure and re-route the job through fail(). The flag is
+    // gated here, not just inside the trackers, so the production hot path (spies off) never
+    // even calls the async tracker — no promise allocated, no microtask tick. The checks
+    // inside the trackers stay as a safety net.
+    if (this.config.__test__enableSpies && this.#spies.has(name)) {
+      if (didFail) {
+        this.#trackJobsFailed(name, jobs, failedError)
+      } else {
+        await this.#trackJobsCompleted(name, jobs, completedResult, completedAffected)
+      }
     }
   }
 
