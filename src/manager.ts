@@ -230,20 +230,24 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const batch = new Map(jobs.map(job => [job.id, job]))
     const disposition = new Map<string, types.JobResult>()
     for (const item of result as types.JobResult[]) {
-      if (item && batch.has(item.id) && (item.status === 'completed' || item.status === 'failed')) {
+      if (item && batch.has(item.id) && (item.status === 'completed' || item.status === 'failed' || item.status === 'deadletter')) {
         disposition.set(item.id, item)
       }
     }
 
-    // Partition the batch (the authoritative set of jobs) by disposition.
+    // Partition the batch (the authoritative set of jobs) by disposition. `deadletter` jobs fail
+    // terminally and route straight to the dead letter queue, bypassing remaining retries.
     const completed: { job: types.Job<T>, output: unknown }[] = []
     const failed: { job: types.Job<T>, output: unknown }[] = []
+    const deadLettered: { job: types.Job<T>, output: unknown }[] = []
     for (const job of jobs) {
       const item = disposition.get(job.id)
       if (item?.status === 'completed') {
         completed.push({ job, output: item.output })
       } else if (item?.status === 'failed') {
         failed.push({ job, output: item.output })
+      } else if (item?.status === 'deadletter') {
+        deadLettered.push({ job, output: item.output })
       } else {
         failed.push({ job, output: new Error('no disposition returned by handler') })
       }
@@ -255,8 +259,12 @@ class Manager extends EventEmitter implements types.EventsMixin {
     if (failed.length > 0) {
       await this.#failWithOutputs(name, failed.map(f => ({ id: f.job.id, output: f.output })))
     }
+    if (deadLettered.length > 0) {
+      await this.#failWithOutputs(name, deadLettered.map(d => ({ id: d.job.id, output: d.output })), true)
+    }
 
-    this.#trackJobsSettled(name, completed, failed)
+    // Dead lettered jobs end in the same terminal `failed` state as failed jobs on the source queue.
+    this.#trackJobsSettled(name, completed, [...failed, ...deadLettered])
   }
 
   // Complete a set of active jobs, each with its own output, in a constant number of statements
@@ -286,8 +294,9 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
   // Fail a set of active jobs, each with its own output, in a constant number of statements. On a
   // distributed backend this reuses the select -> delete -> reinsert split, passing per-id outputs
-  // to reinsertFailedJobs so each job keeps its own failure detail.
-  async #failWithOutputs (name: string, items: { id: string, output: unknown }[]): Promise<types.CommandResponse> {
+  // to reinsertFailedJobs so each job keeps its own failure detail. When `forceTerminal` is set the
+  // jobs fail terminally and route straight to the dead letter queue, bypassing remaining retries.
+  async #failWithOutputs (name: string, items: { id: string, output: unknown }[], forceTerminal = false): Promise<types.CommandResponse> {
     const { table } = await this.getQueueCache(name)
     const ids = items.map(item => item.id)
 
@@ -304,13 +313,15 @@ class Manager extends EventEmitter implements types.EventsMixin {
         const deleteQuery = plans.deleteJobsToFail(this.config.schema, table)
         await tx.executeSql(deleteQuery.text, [name, ids])
 
-        const count = await this.reinsertFailedJobs(tx, table, jobs, null, outputById)
+        const count = await this.reinsertFailedJobs(tx, table, jobs, null, outputById, forceTerminal)
         return { jobs: ids, requested: ids.length, affected: count }
       })
     }
 
     const payload = items.map(item => ({ id: item.id, output: this.mapCompletionDataArg(item.output) }))
-    const sql = plans.failJobsByIdWithOutputs(this.config.schema, table)
+    const sql = forceTerminal
+      ? plans.deadLetterJobsByIdWithOutputs(this.config.schema, table)
+      : plans.failJobsByIdWithOutputs(this.config.schema, table)
     const result = await this.db.executeSql(sql, [name, JSON.stringify(payload)])
     return this.mapCommandResponse(ids, result)
   }
@@ -1196,7 +1207,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
   // Re-insert a set of just-deleted jobs as retry (when retries remain) or failed (+ dead letter),
   // preserving the flow/heartbeat columns. Shared by failDistributed and the distributed
   // maintenance expiry above. Returns the number of jobs processed.
-  private async reinsertFailedJobs (tx: types.IDatabase, table: string, jobs: any[], outputData: any, outputById?: Map<string, any>): Promise<number> {
+  private async reinsertFailedJobs (tx: types.IDatabase, table: string, jobs: any[], outputData: any, outputById?: Map<string, any>, forceTerminal = false): Promise<number> {
     const insertSql = plans.insertRetryJob(this.config.schema, table)
     const dlqSql = plans.insertDeadLetterJob(this.config.schema)
     let count = 0
@@ -1214,7 +1225,9 @@ class Manager extends EventEmitter implements types.EventsMixin {
       const retryDelay = Number(job.retry_delay)
       const retryDelayMax = job.retry_delay_max != null ? Number(job.retry_delay_max) : null
 
-      const canRetry = retryCount < retryLimit
+      // forceTerminal (perJobResults `deadletter`) skips retries so the job fails terminally and
+      // routes straight to the dead letter queue below.
+      const canRetry = !forceTerminal && retryCount < retryLimit
       let retried = false
 
       if (canRetry) {

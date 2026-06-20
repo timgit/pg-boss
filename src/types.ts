@@ -447,10 +447,10 @@ export type WorkOptions = JobFetchOptions & JobPollingOptions & WorkConcurrencyO
   heartbeatRefreshSeconds?: number;
   /**
    * Opt in to per-job settlement for batch handlers. When true, the handler must resolve with a
-   * `JobResult[]` describing the outcome (`completed` or `failed`, with optional per-job `output`)
-   * of each job in the batch. pg-boss settles each job individually, preserving its own output.
-   * Any job omitted from the result is failed (and retried) with a descriptive error. Throwing
-   * from the handler still fails the whole batch. Defaults to false.
+   * `JobResult[]` describing the outcome (`completed`, `failed`, or `deadletter`, with optional
+   * per-job `output`) of each job in the batch. pg-boss settles each job individually, preserving
+   * its own output. Any job omitted from the result is failed (and retried) with a descriptive
+   * error. Throwing from the handler still fails the whole batch. Defaults to false.
    */
   perJobResults?: boolean;
 }
@@ -473,11 +473,15 @@ export interface WorkWithMetadataHandler<ReqData, ResData = any> {
   (job: JobWithMetadata<ReqData>[]): Promise<ResData>;
 }
 
-export type JobResultStatus = 'completed' | 'failed'
+export type JobResultStatus = 'completed' | 'failed' | 'deadletter'
 
 /**
  * Per-job outcome returned by a `perJobResults` batch handler. `id` must match a job from the
  * batch; `output` is stored on that job (the completion result, or the failure detail).
+ *
+ * `deadletter` fails the job terminally and routes it straight to the queue's configured dead
+ * letter queue, bypassing any remaining retries. If the queue has no dead letter queue, it simply
+ * fails terminally (same as a `failed` job whose retries are exhausted).
  */
 export interface JobResult<ResData = any> {
   id: string;

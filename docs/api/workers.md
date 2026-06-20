@@ -36,14 +36,17 @@ The default options for `work()` is 1 job every 2 seconds.
         const output = resize(job.data)
         return { id: job.id, status: 'completed', output }
       } catch (err) {
-        return { id: job.id, status: 'failed', output: err }
+        return err.fatal
+          ? { id: job.id, status: 'deadletter', output: err }
+          : { id: job.id, status: 'failed', output: err }
       }
     })
   })
   ```
 
-  Each `JobResult` is `{ id, status, output? }` where `id` matches a job from the batch, `status` is `'completed'` or `'failed'`, and `output` is stored on that job (the completion result, or the failure detail). Notes:
+  Each `JobResult` is `{ id, status, output? }` where `id` matches a job from the batch, `status` is `'completed'`, `'failed'`, or `'deadletter'`, and `output` is stored on that job (the completion result, or the failure detail). Notes:
 
+  - **`deadletter`** fails the job terminally and routes it straight to the queue's configured dead letter queue, bypassing any remaining retries (the `output` travels to the dead letter job). If the queue has no dead letter queue configured, the job simply fails terminally — equivalent to a `failed` job that has exhausted its retries.
   - Any job in the batch the handler omits from the array is **failed** with a descriptive error so it retries (or dead-letters) per the queue config — a returned result is never assumed.
   - **Throwing** from the handler still fails the entire batch, exactly as without `perJobResults`. Use the returned array to express per-job failures; reserve throwing for batch-wide errors.
   - Resolving with anything other than an array is treated as a contract violation and fails the whole batch.

@@ -1452,7 +1452,20 @@ function failJobs (schema: string, table: string, where: string, output: string)
 // re-insert them as retry (when retries remain) or failed (+ dead letter). `where` selects the rows
 // to fail and `output` is the SQL expression stored on each re-inserted job. Returned without the
 // leading `WITH` or trailing `SELECT` so callers can prepend extra CTEs (e.g. an output map).
-function failJobsBody (schema: string, table: string, where: string, output: string) {
+// When `forceTerminal` is set, every re-inserted job goes straight to the terminal `failed` state
+// regardless of remaining retries, so the dlq_jobs CTE routes it to the dead letter queue (if any)
+// immediately. This backs the perJobResults `deadletter` disposition.
+function failJobsBody (schema: string, table: string, where: string, output: string, forceTerminal = false) {
+  const state = forceTerminal
+    ? `'${JOB_STATES.failed}'::${schema}.job_state`
+    : `CASE
+          WHEN retry_count < retry_limit THEN '${JOB_STATES.retry}'::${schema}.job_state
+          ELSE '${JOB_STATES.failed}'::${schema}.job_state
+          END`
+  const completedOn = forceTerminal
+    ? 'now()'
+    : 'CASE WHEN retry_count < retry_limit THEN NULL ELSE now() END'
+
   return `deleted_jobs AS (
       DELETE FROM ${schema}.${table}
       WHERE ${where}
@@ -1495,10 +1508,7 @@ function failJobsBody (schema: string, table: string, where: string, output: str
         name,
         priority,
         data,
-        CASE
-          WHEN retry_count < retry_limit THEN '${JOB_STATES.retry}'::${schema}.job_state
-          ELSE '${JOB_STATES.failed}'::${schema}.job_state
-          END as state,
+        ${state} as state,
         retry_limit,
         retry_count,
         retry_delay,
@@ -1522,7 +1532,7 @@ function failJobsBody (schema: string, table: string, where: string, output: str
         expire_seconds,
         deletion_seconds,
         created_on,
-        CASE WHEN retry_count < retry_limit THEN NULL ELSE now() END as completed_on,
+        ${completedOn} as completed_on,
         keep_until,
         policy,
         ${output},
@@ -1636,6 +1646,21 @@ export function failJobsByIdWithOutputs (schema: string, table: string) {
       SELECT * FROM json_to_recordset($2::json) AS x (id uuid, output jsonb)
     ),
     ${failJobsBody(schema, table, where, output)}
+    SELECT COUNT(*) FROM results
+  `
+}
+
+// Like failJobsByIdWithOutputs, but fails every job terminally (forceTerminal) so it routes straight
+// to the dead letter queue, bypassing remaining retries. Backs the perJobResults `deadletter` status.
+export function deadLetterJobsByIdWithOutputs (schema: string, table: string) {
+  const where = `name = $1 AND id IN (SELECT id FROM output_map) AND state < '${JOB_STATES.completed}'`
+  const output = '(SELECT om.output FROM output_map om WHERE om.id = deleted_jobs.id)'
+
+  return `
+    WITH output_map AS (
+      SELECT * FROM json_to_recordset($2::json) AS x (id uuid, output jsonb)
+    ),
+    ${failJobsBody(schema, table, where, output, true)}
     SELECT COUNT(*) FROM results
   `
 }
