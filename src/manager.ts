@@ -208,12 +208,24 @@ class Manager extends EventEmitter implements types.EventsMixin {
     }
   }
 
-  #trackJobsFailed<T> (name: string, jobs: types.Job<T>[], err: Error): void {
+  async #trackJobsFailed<T> (name: string, jobs: types.Job<T>[], err: Error): Promise<void> {
     const spy = this.config.__test__enableSpies ? this.#spies.get(name) : undefined
-    if (spy) {
-      for (const job of jobs) {
-        spy.addJob(job.id, name, job.data as object, 'failed', { message: err?.message, stack: err?.stack })
+    if (!spy) return
+
+    // A handler throw routes through fail(), but fail() only lands the job in the terminal
+    // 'failed' state once its retries are exhausted (retry_count >= retry_limit). While retries
+    // remain the job goes back to 'retry' and will run again, so recording 'failed' here would be
+    // wrong — the spy would report a permanent failure for a job that may yet succeed on retry,
+    // and (if the retry does succeed) it would hold contradictory 'failed' + 'completed' entries.
+    // Read the real persisted state and only record 'failed' when the job actually failed for good.
+    // The eventual outcome of a retried job — success, or terminal failure when retries run out —
+    // is recorded by whichever attempt produces it. Mirrors the slow path in #trackJobsCompleted.
+    for (const job of jobs) {
+      const persisted = await this.getJobById<object>(name, job.id)
+      if (persisted?.state === 'failed') {
+        spy.addJob(job.id, name, job.data as object, 'failed', persisted.output ?? { message: err?.message, stack: err?.stack })
       }
+      // 'retry' / 'created' (retries remaining) have no terminal spy state, so they are skipped.
     }
   }
 
@@ -336,7 +348,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     // inside the trackers stay as a safety net.
     if (this.config.__test__enableSpies && this.#spies.has(name)) {
       if (didFail) {
-        this.#trackJobsFailed(name, jobs, failedError)
+        await this.#trackJobsFailed(name, jobs, failedError)
       } else {
         await this.#trackJobsCompleted(name, jobs, completedResult, completedAffected)
       }

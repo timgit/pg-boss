@@ -90,6 +90,62 @@ describe('spy', function () {
     expect((persisted as any).state).toBe('failed')
   })
 
+  it('should not record a transient failure as failed when the job later succeeds on retry', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
+
+    const spy = ctx.boss.getSpy(ctx.schema)
+
+    // retryLimit 1 + no delay: first attempt throws (job → retry), second attempt succeeds.
+    const jobId = await ctx.boss.send(ctx.schema, { value: 'test' }, { retryLimit: 1, retryDelay: 0 })
+    assertTruthy(jobId)
+
+    let attempts = 0
+    await ctx.boss.work(ctx.schema, async () => {
+      attempts++
+      if (attempts === 1) {
+        throw new Error('transient error')
+      }
+      return { result: 'success' }
+    })
+
+    // The job ultimately succeeds, so the spy must report it as completed...
+    const job = await spy.waitForJobWithId(jobId, 'completed')
+    expect(job.id).toBe(jobId)
+    expect(job.state).toBe('completed')
+    expect(job.output).toEqual({ result: 'success' })
+
+    // ...and must never have recorded the transient first-attempt failure as a terminal failure.
+    const failedResult = await Promise.race([
+      spy.waitForJobWithId(jobId, 'failed'),
+      delay(500).then(() => 'timeout')
+    ])
+    expect(failedResult).toBe('timeout')
+  })
+
+  it('should record a failure as failed only once retries are exhausted', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
+
+    const spy = ctx.boss.getSpy(ctx.schema)
+
+    // retryLimit 1 + no delay: both the initial attempt and its single retry throw.
+    const jobId = await ctx.boss.send(ctx.schema, { value: 'test' }, { retryLimit: 1, retryDelay: 0 })
+    assertTruthy(jobId)
+
+    await ctx.boss.work(ctx.schema, async () => {
+      throw new Error('always fails')
+    })
+
+    const job = await spy.waitForJobWithId(jobId, 'failed')
+    expect(job.id).toBe(jobId)
+    expect(job.state).toBe('failed')
+    expect((job.output as any).message).toBe('always fails')
+
+    // The database agrees the job is terminally failed (retries exhausted).
+    const persisted = await ctx.boss.getJobById(ctx.schema, jobId)
+    expect((persisted as any).state).toBe('failed')
+    expect((persisted as any).retryCount).toBe(1)
+  })
+
   it('should track job as active', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
 
