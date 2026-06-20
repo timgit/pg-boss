@@ -76,7 +76,7 @@ describe('perJobResults', function () {
     }
   })
 
-  it('fails (and retries) jobs the handler omits from its results', async function () {
+  it('fails jobs the handler omits from its results', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
     const spy = ctx.boss.getSpy(ctx.schema)
 
@@ -141,5 +141,108 @@ describe('perJobResults', function () {
     assertTruthy(job)
     expect(job.state).toBe('failed')
     expect((job.output as { message: string }).message).toBe('boom')
+  })
+
+  it('retries a per-job failure and can settle it on a later attempt', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
+    const spy = ctx.boss.getSpy(ctx.schema)
+
+    const jobId = await ctx.boss.send(ctx.schema, { outcome: 'flaky' }, { retryLimit: 1, retryDelay: 0 })
+    assertTruthy(jobId)
+
+    // Fail the job on its first processing, complete it on the retry. This exercises the
+    // fail -> reinsert-as-retry -> re-fetch -> settle path that retryLimit: 0 tests never reach.
+    let attempts = 0
+    await ctx.boss.work(ctx.schema, { batchSize: 10, perJobResults: true, pollingIntervalSeconds: 0.5 }, async jobs =>
+      jobs.map(job => {
+        attempts++
+        return attempts === 1
+          ? { id: job.id, status: 'failed' as const, output: new Error('transient') }
+          : { id: job.id, status: 'completed' as const, output: { ok: true } }
+      }))
+
+    await spy.waitForJobWithId(jobId, 'failed')
+    await spy.waitForJobWithId(jobId, 'completed')
+
+    const job = await ctx.boss.getJobById(ctx.schema, jobId)
+    assertTruthy(job)
+    expect(job.state).toBe('completed')
+    expect(job.retryCount).toBe(1)
+    expect((job.output as { ok: boolean }).ok).toBe(true)
+  })
+
+  it('routes a per-job failure to the dead letter queue with its own output', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true, __test__enableSpies: true })
+    const spy = ctx.boss.getSpy(ctx.schema)
+
+    const deadLetter = `${ctx.schema}_dlq`
+    await ctx.boss.createQueue(deadLetter)
+    await ctx.boss.createQueue(ctx.schema, { deadLetter })
+
+    const jobId = await ctx.boss.send(ctx.schema, { key: 'payload' }, { retryLimit: 0 })
+    assertTruthy(jobId)
+
+    await ctx.boss.work(ctx.schema, { batchSize: 10, perJobResults: true, pollingIntervalSeconds: 0.5 }, async jobs =>
+      jobs.map(job => ({ id: job.id, status: 'failed' as const, output: new Error('dlq please') })))
+
+    await spy.waitForJobWithId(jobId, 'failed')
+
+    // The dead letter job carries the original data and the per-job failure output.
+    const [dlqJob] = await ctx.boss.fetch<{ key: string }>(deadLetter)
+    assertTruthy(dlqJob)
+    expect(dlqJob.data.key).toBe('payload')
+
+    const dlqWithMeta = await ctx.boss.getJobById(deadLetter, dlqJob.id)
+    assertTruthy(dlqWithMeta)
+    expect((dlqWithMeta.output as { message: string }).message).toBe('dlq please')
+  })
+
+  it('unblocks a dependent child when the blocking parent is completed via perJobResults', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
+    const spy = ctx.boss.getSpy(ctx.schema)
+
+    const flow = await ctx.boss.flow([
+      { ref: 'parent', name: ctx.schema, data: { role: 'parent' } },
+      { ref: 'child', name: ctx.schema, data: { role: 'child' }, dependsOn: ['parent'] }
+    ])
+    const parentId = flow.parent
+    const childId = flow.child
+
+    const parentBefore = await ctx.boss.getJobById(ctx.schema, parentId)
+    assertTruthy(parentBefore)
+    expect(parentBefore.blocking).toBe(true)
+
+    // The worker only ever fetches the parent until it completes; completing it through the
+    // perJobResults path must run the dependency-unblock CTE so the child becomes fetchable.
+    await ctx.boss.work(ctx.schema, { batchSize: 10, perJobResults: true, pollingIntervalSeconds: 0.5 }, async jobs =>
+      jobs.map(job => ({ id: job.id, status: 'completed' as const, output: { role: (job.data as { role: string }).role } })))
+
+    await spy.waitForJobWithId(parentId, 'completed')
+    await spy.waitForJobWithId(childId, 'completed')
+
+    const child = await ctx.boss.getJobById(ctx.schema, childId)
+    assertTruthy(child)
+    expect(child.blocked).toBe(false)
+    expect(child.pendingDependencies).toBe(0)
+    expect(child.state).toBe('completed')
+  })
+
+  it('fails a job whose result carries an unrecognized status', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
+    const spy = ctx.boss.getSpy(ctx.schema)
+
+    const jobId = await ctx.boss.send(ctx.schema, { outcome: 'complete' }, { retryLimit: 0 })
+    assertTruthy(jobId)
+
+    await ctx.boss.work(ctx.schema, { batchSize: 10, perJobResults: true, pollingIntervalSeconds: 0.5 }, async jobs =>
+      // @ts-expect-error 'skipped' is not a valid JobResultStatus
+      jobs.map(job => ({ id: job.id, status: 'skipped', output: { ignored: true } })))
+
+    await spy.waitForJobWithId(jobId, 'failed')
+
+    const job = await ctx.boss.getJobById(ctx.schema, jobId)
+    assertTruthy(job)
+    expect(job.state).toBe('failed')
+    expect((job.output as { message: string }).message).toBe('no disposition returned by handler')
   })
 })

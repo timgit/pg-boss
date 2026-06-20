@@ -211,8 +211,9 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
   // Per-job settlement for `perJobResults` batch handlers. The handler resolves with a JobResult[]
   // describing each job's outcome; we settle completed and failed jobs individually, each with its
-  // own output. Jobs that share an identical output are collapsed into a single complete()/fail()
-  // call. Any batch job the handler omits (or returns with an invalid shape) is failed with a
+  // own output. All completed jobs are settled in a single statement and all failed jobs in another
+  // (each output carried per-id via a JSON recordset), so batch size never drives the statement
+  // count. Any batch job the handler omits (or returns with an invalid shape) is failed with a
   // descriptive error so it retries / dead-letters per queue config.
   async #settlePerJob<T> (name: string, jobs: types.Job<T>[], result: unknown): Promise<void> {
     if (!Array.isArray(result)) {
