@@ -41,6 +41,41 @@ describe('perJobResults', function () {
     expect((failed.output as { message: string }).message).toBe('handler said fail')
   })
 
+  it('settles a large batch of distinct per-job outputs', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
+    const spy = ctx.boss.getSpy(ctx.schema)
+
+    const size = 25
+    const ids: string[] = []
+    for (let i = 0; i < size; i++) {
+      const id = await ctx.boss.send(ctx.schema, { n: i }, { retryLimit: 0 })
+      assertTruthy(id)
+      ids.push(id)
+    }
+
+    // Even indices complete with a distinct output, odd indices fail with a distinct output.
+    await ctx.boss.work(ctx.schema, { batchSize: size, perJobResults: true, pollingIntervalSeconds: 0.5 }, async jobs =>
+      jobs.map(job => {
+        const n = (job.data as { n: number }).n
+        return n % 2 === 0
+          ? { id: job.id, status: 'completed' as const, output: { n } }
+          : { id: job.id, status: 'failed' as const, output: new Error(`failed ${n}`) }
+      }))
+
+    for (let i = 0; i < size; i++) {
+      await spy.waitForJobWithId(ids[i]!, i % 2 === 0 ? 'completed' : 'failed')
+      const job = await ctx.boss.getJobById(ctx.schema, ids[i]!)
+      assertTruthy(job)
+      if (i % 2 === 0) {
+        expect(job.state).toBe('completed')
+        expect((job.output as { n: number }).n).toBe(i)
+      } else {
+        expect(job.state).toBe('failed')
+        expect((job.output as { message: string }).message).toBe(`failed ${i}`)
+      }
+    }
+  })
+
   it('fails (and retries) jobs the handler omits from its results', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
     const spy = ctx.boss.getSpy(ctx.schema)

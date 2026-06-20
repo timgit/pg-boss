@@ -263,7 +263,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
   // and passed as a JSON recordset so the batch size doesn't drive the statement count.
   async #completeWithOutputs (name: string, items: { id: string, output: unknown }[]): Promise<types.CommandResponse> {
     const { table } = await this.getQueueCache(name)
-    const payload = items.map(item => ({ id: item.id, output: this.mapCompletionDataArg(item.output as object) }))
+    const payload = items.map(item => ({ id: item.id, output: this.mapCompletionDataArg(item.output) }))
     const ids = items.map(item => item.id)
 
     if (this.config.noMultiMutationCte) {
@@ -1055,7 +1055,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     return ids
   }
 
-  private mapCompletionDataArg (data?: object | null) {
+  private mapCompletionDataArg (data?: unknown) {
     if (data === null || typeof data === 'undefined' || typeof data === 'function') { return null }
 
     const result = (typeof data === 'object' && !Array.isArray(data))
