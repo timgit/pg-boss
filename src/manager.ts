@@ -194,6 +194,91 @@ class Manager extends EventEmitter implements types.EventsMixin {
     }
   }
 
+  #trackJobsSettled<T> (
+    name: string,
+    completed: { job: types.Job<T>, output: unknown }[],
+    failed: { job: types.Job<T>, output: unknown }[]
+  ): void {
+    const spy = this.config.__test__enableSpies ? this.#spies.get(name) : undefined
+    if (!spy) return
+    for (const { job, output } of completed) {
+      spy.addJob(job.id, name, job.data as object, 'completed', output as object)
+    }
+    for (const { job, output } of failed) {
+      spy.addJob(job.id, name, job.data as object, 'failed', stringify(output) as object)
+    }
+  }
+
+  // Per-job settlement for `perJobResults` batch handlers. The handler resolves with a JobResult[]
+  // describing each job's outcome; we settle completed and failed jobs individually, each with its
+  // own output. Jobs that share an identical output are collapsed into a single complete()/fail()
+  // call. Any batch job the handler omits (or returns with an invalid shape) is failed with a
+  // descriptive error so it retries / dead-letters per queue config.
+  async #settlePerJob<T> (name: string, jobs: types.Job<T>[], result: unknown): Promise<void> {
+    if (!Array.isArray(result)) {
+      // The handler opted into perJobResults but did not return an array: a contract violation.
+      // Fail the whole batch so the mistake surfaces and the jobs are retried.
+      const err = new Error('perJobResults handler must resolve with an array of job results')
+      await this.fail(name, jobs.map(job => job.id), err)
+      this.#trackJobsFailed(name, jobs, err)
+      return
+    }
+
+    // Index the handler's dispositions by job id, keeping only valid entries that reference a job
+    // from this batch. Last write wins on duplicate ids.
+    const batch = new Map(jobs.map(job => [job.id, job]))
+    const disposition = new Map<string, types.JobResult>()
+    for (const item of result as types.JobResult[]) {
+      if (item && batch.has(item.id) && (item.status === 'completed' || item.status === 'failed')) {
+        disposition.set(item.id, item)
+      }
+    }
+
+    // Partition the batch (the authoritative set of jobs) by disposition.
+    const completed: { job: types.Job<T>, output: unknown }[] = []
+    const failed: { job: types.Job<T>, output: unknown }[] = []
+    for (const job of jobs) {
+      const item = disposition.get(job.id)
+      if (item?.status === 'completed') {
+        completed.push({ job, output: item.output })
+      } else if (item?.status === 'failed') {
+        failed.push({ job, output: item.output })
+      } else {
+        failed.push({ job, output: new Error('no disposition returned by handler') })
+      }
+    }
+
+    await this.#settleGrouped(name, completed, (ids, output) => this.complete(name, ids, output as object))
+    await this.#settleGrouped(name, failed, (ids, output) => this.fail(name, ids, output))
+
+    this.#trackJobsSettled(name, completed, failed)
+  }
+
+  // Group jobs that share an identical (serialized) output into a single settle() call, so common
+  // cases — no output, or a shared error — collapse to one statement instead of one per job.
+  async #settleGrouped<T> (
+    name: string,
+    items: { job: types.Job<T>, output: unknown }[],
+    settle: (ids: string[], output: unknown) => Promise<unknown>
+  ): Promise<void> {
+    if (items.length === 0) return
+
+    const groups = new Map<string, { output: unknown, ids: string[] }>()
+    for (const { job, output } of items) {
+      const key = JSON.stringify(stringify(output ?? null)) ?? 'null'
+      const group = groups.get(key)
+      if (group) {
+        group.ids.push(job.id)
+      } else {
+        groups.set(key, { output, ids: [job.id] })
+      }
+    }
+
+    for (const { output, ids } of groups.values()) {
+      await settle(ids, output)
+    }
+  }
+
   #storeLocalGroupConfig (name: string, localGroupConcurrency: number | types.GroupConcurrencyConfig): void {
     const config: types.GroupConcurrencyConfig = typeof localGroupConcurrency === 'number'
       ? { default: localGroupConcurrency }
@@ -257,7 +342,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
     jobs: types.Job<T>[],
     callback: types.WorkHandler<T>,
     worker?: Worker<T>,
-    heartbeatRefreshSeconds?: number
+    heartbeatRefreshSeconds?: number,
+    perJobResults = false
   ): Promise<void> {
     const jobIds = jobs.map(job => job.id)
     const maxExpiration = jobs.reduce((acc, i) => Math.max(acc, i.expireInSeconds), 0)
@@ -286,8 +372,12 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     try {
       const result = await resolveWithinSeconds(callback(jobs), maxExpiration, `handler execution exceeded ${maxExpiration}s`, ac)
-      await this.complete(name, jobIds, jobIds.length === 1 ? result : undefined)
-      this.#trackJobsCompleted(name, jobs, result)
+      if (perJobResults) {
+        await this.#settlePerJob(name, jobs, result)
+      } else {
+        await this.complete(name, jobIds, jobIds.length === 1 ? result : undefined)
+        this.#trackJobsCompleted(name, jobs, result)
+      }
     } catch (err: any) {
       await this.fail(name, jobIds, err)
       this.#trackJobsFailed(name, jobs, err)
@@ -377,6 +467,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
   }
 
   work<ReqData>(name: string, handler: types.WorkHandler<ReqData>): Promise<string>
+  work<ReqData>(name: string, options: types.WorkOptions & { perJobResults: true; includeMetadata: true }, handler: types.PerJobWorkWithMetadataHandler<ReqData>): Promise<string>
+  work<ReqData>(name: string, options: types.WorkOptions & { perJobResults: true }, handler: types.PerJobWorkHandler<ReqData>): Promise<string>
   work<ReqData>(name: string, options: types.WorkOptions & { includeMetadata: true }, handler: types.WorkWithMetadataHandler<ReqData>): Promise<string>
   work<ReqData>(name: string, options: types.WorkOptions, handler: types.WorkHandler<ReqData>): Promise<string>
   async work<ReqData> (name: string, ...args: unknown[]): Promise<string> {
@@ -398,6 +490,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       heartbeatRefreshSeconds,
       minPriority,
       maxPriority,
+      perJobResults = false,
     } = options
 
     if (localGroupConcurrency != null) {
@@ -426,7 +519,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
         // Skip all in-memory group tracking when localGroupConcurrency is not enabled
         if (localGroupConcurrency == null) {
-          await this.#processJobs(name, jobs, callback, worker, heartbeatRefreshSeconds)
+          await this.#processJobs(name, jobs, callback, worker, heartbeatRefreshSeconds, perJobResults)
         } else {
           const { allowed, excess, groupedJobs } = this.#trackLocalGroupStart(name, jobs)
 
@@ -437,7 +530,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
           if (allowed.length > 0) {
             try {
-              await this.#processJobs(name, allowed, callback, worker, heartbeatRefreshSeconds)
+              await this.#processJobs(name, allowed, callback, worker, heartbeatRefreshSeconds, perJobResults)
             } finally {
               this.#trackLocalGroupEnd(name, groupedJobs)
             }
