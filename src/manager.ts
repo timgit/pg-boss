@@ -197,6 +197,12 @@ class Manager extends EventEmitter implements types.EventsMixin {
       const state = persisted?.state
       if (state === 'completed' || state === 'failed' || state === 'active' || state === 'created') {
         spy.addJob(job.id, name, job.data as object, state, persisted?.output)
+      } else if (!persisted) {
+        // The handler deleted the job itself (e.g. boss.deleteJob in the handler), so there is
+        // no persisted row to inspect. The handler still returned normally, so from the spy's
+        // perspective the work succeeded — record 'completed', matching the behavior before
+        // manual-failure tracking was added.
+        spy.addJob(job.id, name, job.data as object, 'completed', undefined)
       }
       // 'retry' / 'cancelled' have no spy-state equivalent, so they are intentionally skipped
     }
