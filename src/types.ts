@@ -473,7 +473,7 @@ export interface WorkWithMetadataHandler<ReqData, ResData = any> {
   (job: JobWithMetadata<ReqData>[]): Promise<ResData>;
 }
 
-export type JobResultStatus = 'completed' | 'failed';
+export type JobResultStatus = 'completed' | 'failed'
 
 /**
  * Per-job outcome returned by a `perJobResults` batch handler. `id` must match a job from the

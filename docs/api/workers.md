@@ -25,6 +25,29 @@ The default options for `work()` is 1 job every 2 seconds.
 
   Same as in [`fetch()`](./jobs#fetchname-options)
 
+* **perJobResults**, bool, *(default=false)*
+
+  Opt in to per-job settlement for batch handlers. By default a batch handler is all-or-nothing: returning completes every job in the batch (and the return value is only stored as `output` when `batchSize` is 1), while throwing fails every job. When `perJobResults` is true, the handler must instead resolve with an array of `JobResult` objects — one per job it processed — and pg-boss settles each job individually, preserving its own output:
+
+  ```js
+  await boss.work('resize-image', { batchSize: 10, perJobResults: true }, async (jobs) => {
+    return jobs.map(job => {
+      try {
+        const output = resize(job.data)
+        return { id: job.id, status: 'completed', output }
+      } catch (err) {
+        return { id: job.id, status: 'failed', output: err }
+      }
+    })
+  })
+  ```
+
+  Each `JobResult` is `{ id, status, output? }` where `id` matches a job from the batch, `status` is `'completed'` or `'failed'`, and `output` is stored on that job (the completion result, or the failure detail). Notes:
+
+  - Any job in the batch the handler omits from the array is **failed** with a descriptive error so it retries (or dead-letters) per the queue config — a returned result is never assumed.
+  - **Throwing** from the handler still fails the entire batch, exactly as without `perJobResults`. Use the returned array to express per-job failures; reserve throwing for batch-wide errors.
+  - Resolving with anything other than an array is treated as a contract violation and fails the whole batch.
+
 * **priority**, bool, *(default=true)*
 
   Same as in [`fetch()`](./jobs#fetchname-options)
@@ -166,6 +189,8 @@ In this setup:
 **Handler function**
 
 `handler` should return a promise (Usually this is an `async` function). If the `handler` returns a value or an object, it will be stored in the `output` property. If an unhandled error occurs in a handler, `fail()` will automatically be called for the jobs, storing the error in the `output` property, making the job or jobs available for retry.
+
+> By default this is all-or-nothing across the batch. To complete and fail individual jobs within a batch — each with its own `output` — enable the **perJobResults** option above.
 
 The jobs argument is an array of jobs with the following properties.
 
