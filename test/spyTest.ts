@@ -57,6 +57,39 @@ describe('spy', function () {
     expect((job.output as any).message).toBe('test error')
   })
 
+  it('should track a manual failure inside the handler as failed, not completed', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
+
+    const spy = ctx.boss.getSpy(ctx.schema)
+
+    // retryLimit 0 so the manual fail lands in the terminal failed state (not retry)
+    const jobId = await ctx.boss.send(ctx.schema, { value: 'test' }, { retryLimit: 0 })
+    assertTruthy(jobId)
+
+    // Handler manually fails the job (e.g. a validation error) but returns normally
+    await ctx.boss.work(ctx.schema, async ([job]) => {
+      await ctx.boss!.fail(ctx.schema, job.id, new Error('validation failed'))
+    })
+
+    // Spy must reflect the real persisted state, not infer completion from the
+    // handler returning without throwing
+    const job = await spy.waitForJobWithId(jobId, 'failed')
+    expect(job.id).toBe(jobId)
+    expect(job.state).toBe('failed')
+    expect((job.output as any).message).toBe('validation failed')
+
+    // It must never have been recorded as completed
+    const completedResult = await Promise.race([
+      spy.waitForJobWithId(jobId, 'completed'),
+      delay(500).then(() => 'timeout')
+    ])
+    expect(completedResult).toBe('timeout')
+
+    // And the database agrees
+    const persisted = await ctx.boss.getJobById(ctx.schema, jobId)
+    expect((persisted as any).state).toBe('failed')
+  })
+
   it('should track job as active', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
 

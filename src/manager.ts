@@ -175,13 +175,30 @@ class Manager extends EventEmitter implements types.EventsMixin {
     }
   }
 
-  #trackJobsCompleted<T> (name: string, jobs: types.Job<T>[], result: unknown): void {
+  async #trackJobsCompleted<T> (name: string, jobs: types.Job<T>[], result: unknown, affected: number): Promise<void> {
     const spy = this.config.__test__enableSpies ? this.#spies.get(name) : undefined
-    if (spy) {
+    if (!spy) return
+
+    // Fast path: complete() transitioned every job (it only touches jobs still in the
+    // active state), so the handler's return value is the output for each one.
+    if (affected === jobs.length) {
       const output = jobs.length === 1 ? result as object : undefined
       for (const job of jobs) {
         spy.addJob(job.id, name, job.data as object, 'completed', output)
       }
+      return
+    }
+
+    // Otherwise the handler transitioned one or more jobs itself before returning (e.g. a
+    // validation failure routed through boss.fail()), making complete() a no-op for those.
+    // Reflect each job's real persisted state rather than assuming completion.
+    for (const job of jobs) {
+      const persisted = await this.getJobById<object>(name, job.id)
+      const state = persisted?.state
+      if (state === 'completed' || state === 'failed' || state === 'active' || state === 'created') {
+        spy.addJob(job.id, name, job.data as object, state, persisted?.output)
+      }
+      // 'retry' / 'cancelled' have no spy-state equivalent, so they are intentionally skipped
     }
   }
 
@@ -284,19 +301,34 @@ class Manager extends EventEmitter implements types.EventsMixin {
       }, intervalMs)
     }
 
+    let completedResult: unknown
+    let completedAffected = 0
+    let failedError: any
+    let didFail = false
+
     try {
       const result = await resolveWithinSeconds(callback(jobs), maxExpiration, `handler execution exceeded ${maxExpiration}s`, ac)
-      await this.complete(name, jobIds, jobIds.length === 1 ? result : undefined)
-      this.#trackJobsCompleted(name, jobs, result)
+      const completion = await this.complete(name, jobIds, jobIds.length === 1 ? result : undefined)
+      completedResult = result
+      completedAffected = completion.affected
     } catch (err: any) {
       await this.fail(name, jobIds, err)
-      this.#trackJobsFailed(name, jobs, err)
+      failedError = err
+      didFail = true
     } finally {
       if (heartbeatTimer) clearInterval(heartbeatTimer)
       if (worker) {
         // Clear between jobs
         worker.abortController = null
       }
+    }
+
+    // Spy tracking runs after the completion/failure logic so a spy lookup error can never
+    // be mistaken for a handler failure and re-route the job through fail().
+    if (didFail) {
+      this.#trackJobsFailed(name, jobs, failedError)
+    } else {
+      await this.#trackJobsCompleted(name, jobs, completedResult, completedAffected)
     }
   }
 
