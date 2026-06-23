@@ -12,6 +12,7 @@ export default defineConfig({
     testTimeout,
     hookTimeout,
     include: ['test/**/*Test.ts'],
+    globalSetup: ['./test/checkDuplicateTestNames.ts'],
     setupFiles: ['./test/hooks.ts'],
     globals: true,
     typecheck: {

@@ -304,7 +304,7 @@ describe('perJobResults', function () {
   // friends reject the CTE. The standard coverage run is plain Postgres, so force that variant here
   // with __test__distributed (the same toggle the DISTRIBUTED=true suite uses) to exercise it.
   describe('distributed backend path (noMultiMutationCte)', function () {
-    it('settles a mixed batch of completions and failures with their own outputs', async function () {
+    it('settles a mixed batch of completions and failures with their own outputs (distributed path)', async function () {
       ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: true, __test__enableSpies: true })
       const spy = ctx.boss.getSpy(ctx.schema)
 
@@ -363,7 +363,7 @@ describe('perJobResults', function () {
       expect(child.state).toBe('completed')
     })
 
-    it('routes a per-job failure to the dead letter queue with its own output', async function () {
+    it('routes a per-job failure to the dead letter queue with its own output (distributed path)', async function () {
       ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: true, noDefault: true, __test__enableSpies: true })
       const spy = ctx.boss.getSpy(ctx.schema)
 
@@ -389,7 +389,7 @@ describe('perJobResults', function () {
       expect((dlqWithMeta.output as { message: string }).message).toBe('dlq please')
     })
 
-    it('routes a deadletter result straight to the DLQ, bypassing remaining retries', async function () {
+    it('routes a deadletter result straight to the DLQ, bypassing remaining retries (distributed path)', async function () {
       ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: true, noDefault: true, __test__enableSpies: true })
       const spy = ctx.boss.getSpy(ctx.schema)
 
@@ -453,7 +453,7 @@ describe('perJobResults', function () {
   // pinning it off here those CTE plans show as uncovered in that run. Force the standard path with
   // __test__distributed: false so it is exercised in both the standard and distributed coverage suites.
   describe('standard backend path (multiMutationCte)', function () {
-    it('settles a mixed batch of completions and failures with their own outputs', async function () {
+    it('settles a mixed batch of completions and failures with their own outputs (standard path)', async function () {
       ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: false, __test__enableSpies: true })
       const spy = ctx.boss.getSpy(ctx.schema)
 
@@ -482,7 +482,7 @@ describe('perJobResults', function () {
       expect((failed.output as { message: string }).message).toBe('handler said fail')
     })
 
-    it('routes a deadletter result straight to the DLQ, bypassing remaining retries', async function () {
+    it('routes a deadletter result straight to the DLQ, bypassing remaining retries (standard path)', async function () {
       ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: false, noDefault: true, __test__enableSpies: true })
       const spy = ctx.boss.getSpy(ctx.schema)
 
