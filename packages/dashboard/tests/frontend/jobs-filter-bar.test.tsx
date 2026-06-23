@@ -134,7 +134,7 @@ describe('JobsFilterBar', () => {
 
     await user.click(screen.getByText(/Add data filter/i))
     // Empty rows are local UI state — they don't push to the URL until
-    // both the key and value are filled in.
+    // both key and value are filled in.
     expect(onChange).not.toHaveBeenCalled()
     expect(screen.getByLabelText(/Data filter key 2/i)).toBeInTheDocument()
     expect(screen.getByLabelText(/Data filter value 2/i)).toBeInTheDocument()
@@ -157,9 +157,8 @@ describe('JobsFilterBar', () => {
 
   it('keeps a half-edited row visible after the user clears its value (regression: prop sync should not wipe local state)', async () => {
     // Simulates the real route: parent owns filters, JobsFilterBar drives them
-    // via onChange. When the user clears the value, the committed pairs go
-    // from [{sessionId:abc}] to [], the parent re-renders with data=[], and
-    // the row should NOT vanish — the user is still typing.
+    // via onChange. When the user clears the value, the committed URL filter
+    // becomes empty but the local row should not vanish — the user is still typing.
     function Host () {
       const [filters, setFilters] = useState<JobsFilters>({
         ...baseFilters,
@@ -185,7 +184,7 @@ describe('JobsFilterBar', () => {
     expect(screen.getByLabelText(/Data filter value 1/i)).toHaveValue('xyz')
   })
 
-  it('commits a data row only after both key and value are filled in', async () => {
+  it('keeps a new data row local until both key and value are set', async () => {
     const user = userEvent.setup()
     const onChange = vi.fn()
     render(
@@ -199,7 +198,8 @@ describe('JobsFilterBar', () => {
     const valueInput = screen.getByLabelText(/Data filter value 1/i)
 
     await user.type(keyInput, 'sessionId')
-    expect(onChange).not.toHaveBeenCalled() // value still empty
+    expect(onChange).not.toHaveBeenCalled()
+    expect(keyInput).toHaveValue('sessionId')
 
     await user.type(valueInput, 'abc')
     expect(onChange).toHaveBeenLastCalledWith(

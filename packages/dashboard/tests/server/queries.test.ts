@@ -637,6 +637,21 @@ describe('Job Queries', () => {
       expect(jobs).toHaveLength(2)
     })
 
+    it('includes custom job column projections', async () => {
+      await createTestQueue('test-queue')
+      await sendTestJob('test-queue', { tenantId: 'acme' })
+
+      const jobs = await getJobs(ctx.connectionString, ctx.schema, 'test-queue', {
+        jobColumns: [
+          { path: 'id', name: 'ID' },
+          { path: 'data.tenantId', name: 'Tenant' },
+        ],
+      })
+
+      expect(jobs).toHaveLength(1)
+      expect((jobs[0] as Record<string, unknown>).dataTenantId).toBe('acme')
+    })
+
     it('filters jobs by state', async () => {
       await createTestQueue('test-queue')
       await sendTestJob('test-queue', { task: 'created' })
