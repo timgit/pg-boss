@@ -253,6 +253,7 @@ export type HttpCreateQueueOptions = HttpQueueOptions & {
   partition?: boolean
   deadLetter?: string
   warningQueueSize?: number
+  notify?: boolean
 }
 
 export type HttpCreateQueueRequest = {
@@ -270,6 +271,7 @@ export type HttpGetBlockedKeysResponse = {
 export type HttpUpdateQueueOptions = HttpQueueOptions & {
   deadLetter?: string
   warningQueueSize?: number
+  notify?: boolean
 }
 
 export type HttpUpdateQueueRequest = {

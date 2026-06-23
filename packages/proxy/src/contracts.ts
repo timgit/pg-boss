@@ -451,7 +451,8 @@ export const createQueueRequestSchema: z.ZodType<types.HttpCreateQueueRequest> =
     policy: z.string().optional(),
     partition: z.boolean().optional(),
     deadLetter: z.string().optional(),
-    warningQueueSize: z.number().optional()
+    warningQueueSize: z.number().optional(),
+    notify: z.boolean().optional()
   })).optional()
 })
 
@@ -469,7 +470,8 @@ export const updateQueueRequestSchema: z.ZodType<types.HttpUpdateQueueRequest> =
   name: queueNameSchema,
   options: queueOptionsSchema.and(z.object({
     deadLetter: z.string().optional(),
-    warningQueueSize: z.number().optional()
+    warningQueueSize: z.number().optional(),
+    notify: z.boolean().optional()
   })).optional()
 })
 
