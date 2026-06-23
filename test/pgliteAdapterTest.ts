@@ -49,6 +49,38 @@ describe('pglite adapter', () => {
     expect(pglite.calls[0].method).toBe('exec')
   })
 
+  it('does not expose listen when the instance lacks it', () => {
+    const db = fromPglite(createFakePglite())
+    expect(db.listen).toBeUndefined()
+  })
+
+  it('wires LISTEN/NOTIFY through to the PGlite instance when supported', async () => {
+    let registered: { channel: string, callback: (p: string) => void } | undefined
+    let unsubscribed = false
+    const pglite = {
+      ...createFakePglite(),
+      async listen (channel: string, callback: (p: string) => void) {
+        registered = { channel, callback }
+        return async () => { unsubscribed = true }
+      }
+    }
+    const db = fromPglite(pglite)
+    expect(typeof db.listen).toBe('function')
+
+    const payloads: string[] = []
+    let reconnects = 0
+    const handle = await db.listen!('pgboss_chan', p => payloads.push(p), () => { reconnects++ })
+
+    expect(registered?.channel).toBe('pgboss_chan')
+    expect(reconnects).toBe(1) // onReconnect fires once after the initial subscribe
+
+    registered!.callback('q1')
+    expect(payloads).toEqual(['q1'])
+
+    await handle.close()
+    expect(unsubscribed).toBe(true)
+  })
+
   it('rolls back an aborted transaction on error before rethrowing', async () => {
     // Single-connection self-heal: a failed statement must not leave the connection in an aborted
     // transaction that poisons the next query (a pool would just hand out a fresh connection).

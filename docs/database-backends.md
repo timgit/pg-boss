@@ -25,7 +25,7 @@ Postgres-compatible engines), or `embedded` (in-process PostgreSQL):
 | `backend` | Kind | What it enables |
 |-----------|------|-----------------|
 | `postgres` *(default)* | standard | *(none — full PostgreSQL)* |
-| `cockroachdb` | distributed | Lock-free fetch, split-statement writes, single shared table, immediate constraints, lock-free schema setup, plain indexes (+ numeric coercion) |
+| `cockroachdb` | distributed | Lock-free fetch, split-statement writes, single shared table, immediate constraints, lock-free schema setup, plain indexes (+ numeric coercion), no LISTEN/NOTIFY |
 | `yugabytedb` | distributed | Lock-free schema setup + single shared table |
 | `citus` | distributed | *(none — coordinator-local tables behave like plain PostgreSQL)* |
 | `pglite` | embedded | *(none — full PostgreSQL; see [PGlite](#pglite-embedded))* |
@@ -41,13 +41,13 @@ The matrix shows which PostgreSQL features each backend supports (✅). Where a 
 available (❌), pg-boss automatically switches to the compatible alternative — see the
 [compatibility flags](#compatibility-flags) below.
 
-| Database | Status | `backend` | SKIP LOCKED | Multi-mutation CTEs | Table partitioning | Deferrable constraints | Advisory locks | Covering indexes |
-|----------|--------|-----------|:---:|:---:|:---:|:---:|:---:|:---:|
-| PostgreSQL | Tested | `postgres` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| CockroachDB | Tested | `cockroachdb` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| YugabyteDB | Partial¹ | `yugabytedb` | ✅ | ✅ | ❌ | ✅ | ❌ | ✅ |
-| Citus | Tested² | `citus` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| PGlite | Tested | `pglite` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Database | Status | `backend` | SKIP LOCKED | Multi-mutation CTEs | Table partitioning | Deferrable constraints | Advisory locks | Covering indexes | LISTEN/NOTIFY |
+|----------|--------|-----------|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| PostgreSQL | Tested | `postgres` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| CockroachDB | Tested | `cockroachdb` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| YugabyteDB | Partial¹ | `yugabytedb` | ✅ | ✅ | ❌ | ✅ | ❌ | ✅ | ✅³ |
+| Citus | Tested² | `citus` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| PGlite | Tested | `pglite` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅⁴ |
 
 ¹ YugabyteDB runs the standard fetch path; non-partitioned queueing works, but partitioned queues,
 multi-master startup, and live migrations fail ([#21833](https://github.com/yugabyte/yugabyte-db/issues/21833)). See below.
@@ -55,6 +55,13 @@ multi-master startup, and live migrations fail ([#21833](https://github.com/yuga
 ² In standard mode (coordinator-local table) Citus supports these like plain PostgreSQL. A
 deliberately sharded job table would lose `SKIP LOCKED` compatibility and need the atomic-`UPDATE`
 fetch instead — see [Citus](#tested-citus-compatible-in-standard-mode).
+
+³ YugabyteDB supports cluster-wide LISTEN/NOTIFY as an early-access feature that is **off by
+default** — enable the `ysql_yb_enable_listen_notify` flag on TServers and Masters. When it's off,
+leave `useListenNotify` disabled and avoid the queue `notify` option; pg-boss delivers via polling.
+
+⁴ PGlite is embedded single-connection PostgreSQL, so LISTEN/NOTIFY works entirely in-process. The
+`fromPglite` adapter wires it up automatically, so `useListenNotify` works with no extra setup.
 
 ## Compatibility flags
 

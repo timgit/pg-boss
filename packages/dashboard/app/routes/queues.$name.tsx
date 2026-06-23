@@ -211,15 +211,17 @@ export default function QueueDetail ({ loaderData }: Route.ComponentProps) {
       </div>
 
       {/* Queue Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
         <StatCard
           label="Queued"
           value={queue.queuedCount.toLocaleString()}
           accent={overThreshold ? 'error' : 'neutral'}
-          hint={overThreshold ? 'over threshold' : 'within threshold'}
+          hint={overThreshold ? 'over threshold' : 'incl. deferred'}
         />
-        <StatCard label="Active" value={queue.activeCount.toLocaleString()} accent="primary" />
         <StatCard label="Deferred" value={queue.deferredCount.toLocaleString()} />
+        <StatCard label="Ready" value={queue.readyCount.toLocaleString()} accent="primary" hint="ready to process" />
+        <StatCard label="Active" value={queue.activeCount.toLocaleString()} accent="primary" />
+        <StatCard label="Failed" value={queue.failedCount.toLocaleString()} hint="recent failures" />
         <StatCard label="Total" value={queue.totalCount.toLocaleString()} />
       </div>
 

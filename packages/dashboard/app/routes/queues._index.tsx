@@ -236,8 +236,10 @@ export default function QueuesIndex ({ loaderData }: Route.ComponentProps) {
                 <TableHead>Policy</TableHead>
                 <TableHead>Storage</TableHead>
                 <TableHead className="text-right">Queued</TableHead>
-                <TableHead className="text-right">Active</TableHead>
                 <TableHead className="text-right">Deferred</TableHead>
+                <TableHead className="text-right">Ready</TableHead>
+                <TableHead className="text-right">Active</TableHead>
+                <TableHead className="text-right">Failed</TableHead>
                 <TableHead className="text-right">Total</TableHead>
                 <TableHead>Dead Letter</TableHead>
                 <TableHead>Status</TableHead>
@@ -246,7 +248,7 @@ export default function QueuesIndex ({ loaderData }: Route.ComponentProps) {
             <TableBody>
               {queues.length === 0 ? (
                 <TableRow>
-                  <TableCell className="text-center text-[var(--text-tertiary)] py-8" colSpan={9}>
+                  <TableCell className="text-center text-[var(--text-tertiary)] py-8" colSpan={11}>
                     No queues found
                   </TableCell>
                 </TableRow>
@@ -278,10 +280,16 @@ export default function QueuesIndex ({ loaderData }: Route.ComponentProps) {
                         {queue.queuedCount.toLocaleString()}
                       </TableCell>
                       <TableCell className="text-right pgb-num text-[var(--text-primary)]">
+                        {queue.deferredCount.toLocaleString()}
+                      </TableCell>
+                      <TableCell className="text-right pgb-num text-[var(--text-primary)]">
+                        {queue.readyCount.toLocaleString()}
+                      </TableCell>
+                      <TableCell className="text-right pgb-num text-[var(--text-primary)]">
                         {queue.activeCount.toLocaleString()}
                       </TableCell>
                       <TableCell className="text-right pgb-num text-[var(--text-primary)]">
-                        {queue.deferredCount.toLocaleString()}
+                        {queue.failedCount.toLocaleString()}
                       </TableCell>
                       <TableCell className="text-right pgb-num text-[var(--text-primary)]">
                         {queue.totalCount.toLocaleString()}

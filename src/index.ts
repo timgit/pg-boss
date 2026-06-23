@@ -5,6 +5,7 @@ import Manager from './manager.ts'
 import Timekeeper from './timekeeper.ts'
 import Boss from './boss.ts'
 import Bam from './bam.ts'
+import Notifier from './notifier.ts'
 import { delay } from './tools.ts'
 import type * as types from './types.ts'
 import * as plans from './plans.ts'
@@ -45,6 +46,7 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
   #manager: Manager
   #timekeeper: Timekeeper
   #bam: Bam
+  #notifier: Notifier
 
   constructor (connectionString: string)
   constructor (options: types.ConstructorOptions)
@@ -74,16 +76,21 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
 
     const bam = new Bam(db, config)
 
+    const notifier = new Notifier(db, manager, config)
+    manager.notifier = notifier
+
     this.#promoteEvents(manager)
     this.#promoteEvents(boss)
     this.#promoteEvents(timekeeper)
     this.#promoteEvents(bam)
+    this.#promoteEvents(notifier)
 
     this.#boss = boss
     this.#contractor = contractor
     this.#manager = manager
     this.#timekeeper = timekeeper
     this.#bam = bam
+    this.#notifier = notifier
   }
 
   #promoteEvents (emitter: types.EventsMixin) {
@@ -113,6 +120,10 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
       }
 
       await this.#manager.start()
+
+      if (this.#config.useListenNotify) {
+        await this.#notifier.start()
+      }
 
       if (this.#config.supervise) {
         await this.#boss.start()
@@ -170,6 +181,7 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
 
     this.#stoppingOn = Date.now()
 
+    await this.#notifier.stop()
     await this.#manager.stop()
     await this.#timekeeper.stop()
     await this.#boss.stop()
@@ -239,10 +251,7 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
   }
 
   work<ReqData, ResData = any>(name: string, handler: types.WorkHandler<ReqData, ResData>): Promise<string>
-  work<ReqData, ResData = any>(name: string, options: types.WorkOptions & { perJobResults: true; includeMetadata: true }, handler: types.PerJobWorkWithMetadataHandler<ReqData, ResData>): Promise<string>
-  work<ReqData, ResData = any>(name: string, options: types.WorkOptions & { perJobResults: true }, handler: types.PerJobWorkHandler<ReqData, ResData>): Promise<string>
-  work<ReqData, ResData = any>(name: string, options: types.WorkOptions & { includeMetadata: true }, handler: types.WorkWithMetadataHandler<ReqData, ResData>): Promise<string>
-  work<ReqData, ResData = any>(name: string, options: types.WorkOptions, handler: types.WorkHandler<ReqData, ResData>): Promise<string>
+  work<ReqData, ResData = any, const O extends types.WorkOptions = types.WorkOptions>(name: string, options: O, handler: types.WorkHandlerFor<O, ReqData, ResData>): Promise<string>
   work (...args: any[]): Promise<string> {
     return this.#manager.work(...args as Parameters<Manager['work']>)
   }
@@ -478,6 +487,7 @@ export type {
   WorkHandler,
   WorkOptions,
   WorkWithMetadataHandler,
+  WorkHandlerFor,
   PerJobWorkHandler,
   PerJobWorkWithMetadataHandler,
 } from './types.ts'

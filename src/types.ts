@@ -17,6 +17,18 @@ export type Events = {
 
 export interface IDatabase {
   executeSql(text: string, values?: unknown[]): Promise<{ rows: any[] }>;
+  /**
+   * Optional capability for LISTEN/NOTIFY support. When present, pg-boss can hold a
+   * dedicated session-pinned connection to receive notifications. The built-in pool-based
+   * Db implements this; custom adapters may implement it to enable `useListenNotify`.
+   * Must invoke `onReconnect` after each successful (re)subscribe so missed notifications
+   * can be recovered. Returns a handle whose `close()` tears down the listener.
+   */
+  listen?(channel: string, onNotification: (payload: string) => void, onReconnect: () => void): Promise<ListenHandle>;
+}
+
+export interface ListenHandle {
+  close(): Promise<void>;
 }
 
 export interface DatabaseOptions {
@@ -50,10 +62,11 @@ export interface SchedulingOptions {
  *
  * Backends fall into three kinds — standard, distributed, and embedded:
  * - `postgres` (default): standard PostgreSQL, all flags off.
- * - `cockroachdb`: distributed; enables `noSkipLocked`, `noMultiMutationCte`, and all four `no*` schema gates.
- * - `yugabytedb`: distributed; enables `noAdvisoryLocks` and `noTablePartitioning`.
- * - `citus`: distributed; plain PostgreSQL behavior (Citus tables stay coordinator-local).
- * - `pglite`: embedded (NOT distributed) single-connection WASM PostgreSQL, all gates off.
+ * - `cockroachdb`: distributed; enables `noSkipLocked`, `noMultiMutationCte`, `noListenNotify`, and all four `no*` schema gates.
+ * - `yugabytedb`: distributed; enables `noAdvisoryLocks` and `noTablePartitioning`. Supports cluster-wide
+ *   LISTEN/NOTIFY (early access, off by default — enable the `ysql_yb_enable_listen_notify` flag).
+ * - `citus`: distributed; plain PostgreSQL behavior (Citus tables stay coordinator-local); LISTEN/NOTIFY works on the coordinator.
+ * - `pglite`: embedded (NOT distributed) single-connection WASM PostgreSQL, all gates off; supports in-process LISTEN/NOTIFY.
  *
  * Spanner, Aurora DSQL, and other targets do not have a profile yet and are not
  * supported. @see https://timgit.github.io/pg-boss/docs/database-backends
@@ -124,6 +137,13 @@ export interface CompatibilityFlags {
   noAdvisoryLocks?: boolean;
   /** Omit the `INCLUDE` clause on covering indexes. */
   noCoveringIndexes?: boolean;
+  /**
+   * Skip LISTEN/NOTIFY entirely, for engines that don't implement it (e.g. CockroachDB).
+   * Suppresses both the producer-side transactional `pg_notify` (which would otherwise error
+   * on insert) and the `useListenNotify` listener. Polling delivers jobs. (YugabyteDB does
+   * support cluster-wide LISTEN/NOTIFY, so it does NOT set this flag.)
+   */
+  noListenNotify?: boolean;
 }
 
 export interface Migration {
@@ -136,6 +156,17 @@ export interface Migration {
 }
 
 export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, MaintenanceOptions, BackendOptions {
+  /**
+   * Enables the LISTEN/NOTIFY listener so workers on notify-enabled queues are woken
+   * the moment a job is created, instead of waiting out their polling interval. This
+   * holds one dedicated database connection for listening. Polling always remains active
+   * as a correctness floor. Requires a pg-boss-owned pool (or an adapter that supports
+   * `listen`) and a session-pinned connection — it will not work through PgBouncer in
+   * transaction pooling mode. When it can't be established, pg-boss emits a `warning` and
+   * continues polling only. Opt in per queue via the queue's `notify` option.
+   * @default false
+   */
+  useListenNotify?: boolean;
   /** @internal */
   __test__warn_slow_query?: boolean;
   /** @internal */
@@ -354,12 +385,30 @@ export interface Queue extends QueueOptions {
    * When set, workers must send periodic heartbeats. NULL = heartbeat disabled (default).
    */
   heartbeatSeconds?: number;
+  /**
+   * When `true`, creating a job on this queue emits a Postgres NOTIFY so workers wake
+   * immediately rather than waiting for their next poll. Requires the instance-level
+   * `useListenNotify` option to be enabled for the listener to act on it. Polling still
+   * runs as a fallback.
+   * @default false
+   */
+  notify?: boolean;
 }
 
 export interface QueueResult extends Queue {
   deferredCount: number;
   queuedCount: number;
+  /**
+   * Jobs ready to be processed now: `queuedCount - deferredCount` (clamped at 0). This is the
+   * true backlog — `queuedCount` includes deferred (future-dated) jobs that are not yet runnable.
+   */
+  readyCount: number;
   activeCount: number;
+  /**
+   * Failed jobs still retained in the table. Bounded by the queue's retention/deletion policy,
+   * so this is a rolling count of recent failures, not an all-time total.
+   */
+  failedCount: number;
   totalCount: number
   table: string;
   createdOn: Date;
@@ -369,12 +418,54 @@ export interface QueueResult extends Queue {
 
 export type ScheduleOptions = SendOptions & { tz?: string, key?: string }
 
+/**
+ * How long a worker waits between fetches. The delay before each fetch is chosen by
+ * precedence — **burst → notify → base**:
+ *
+ * 1. **burst** (fetch continuously): a `burstWhen*` trigger is active and the last fetch
+ *    came back full, so there is clearly more work to pull.
+ * 2. **notify** (`notifyPollingIntervalSeconds`): NOTIFY is active for the queue, so polling
+ *    is just a relaxed backstop.
+ * 3. **base** (`pollingIntervalSeconds`): the normal idle poll.
+ */
 export interface JobPollingOptions {
   /**
-   * Interval to check for new jobs, in seconds. Must be >= `0.5` (500 ms).
+   * Base interval to check for new jobs, in seconds. Must be >= `0.5` (500 ms).
+   *
+   * Used when no faster/slower mode applies: queues without `notify`, or notify-enabled
+   * queues when the LISTEN/NOTIFY listener is unavailable (e.g. the adapter doesn't support
+   * it or the connection dropped).
    * @default 2
    */
   pollingIntervalSeconds?: number;
+  /**
+   * Interval to check for new jobs, in seconds, used only while NOTIFY is active for the
+   * queue — i.e. the queue has `notify: true` and the instance-level LISTEN/NOTIFY
+   * listener is established. Since NOTIFY wakes workers immediately, polling only needs to
+   * run as a slow backstop, so this can be much larger than `pollingIntervalSeconds`. When
+   * notify is off or unavailable, `pollingIntervalSeconds` is used instead. Must be >= `0.5`.
+   * @default 30
+   */
+  notifyPollingIntervalSeconds?: number;
+  /**
+   * Burst trigger. When the queue's cached `readyCount` (the runnable backlog) exceeds this
+   * value, the worker fetches continuously with no delay until it catches up (a fetch that
+   * comes back short ends burst mode). Takes precedence over `notifyPollingIntervalSeconds` and
+   * `pollingIntervalSeconds`. Must be an integer >= 1.
+   *
+   * The ready count is read from the stats cache, so reaction latency is bounded by the
+   * instance-level stats pipeline (`monitorIntervalSeconds` / `superviseIntervalSeconds` /
+   * `queueCacheIntervalSeconds`, all default 60s).
+   */
+  burstWhenReadyExceeds?: number;
+  /**
+   * Burst trigger. While each fetch returns a full `batchSize` batch there is clearly more
+   * work, so the worker keeps fetching continuously with no delay; the first short fetch ends
+   * burst mode. Unlike `burstWhenReadyExceeds` this is instant and needs no cached
+   * stats. Ignored when `batchSize` is 1 (every successful fetch would otherwise be "full").
+   * @default false
+   */
+  burstWhenBatchFull?: boolean;
 }
 
 export interface JobFetchOptions {
@@ -463,6 +554,7 @@ export type FetchOptions = JobFetchOptions & ConnectionOptions & FetchGroupConcu
 
 export interface ResolvedWorkOptions extends WorkOptions {
   pollingInterval: number;
+  notifyPollingInterval: number;
 }
 
 export interface WorkHandler<ReqData, ResData = any> {
@@ -489,13 +581,28 @@ export interface JobResult<ResData = any> {
   output?: ResData;
 }
 
-export interface PerJobWorkHandler<ReqData, ResData = any> {
-  (job: Job<ReqData>[]): Promise<JobResult<ResData>[]>;
+export interface PerJobWorkHandler<ReqData> {
+  (job: Job<ReqData>[]): Promise<JobResult[]>;
 }
 
-export interface PerJobWorkWithMetadataHandler<ReqData, ResData = any> {
-  (job: JobWithMetadata<ReqData>[]): Promise<JobResult<ResData>[]>;
+export interface PerJobWorkWithMetadataHandler<ReqData> {
+  (job: JobWithMetadata<ReqData>[]): Promise<JobResult[]>;
 }
+
+/**
+ * Resolves the handler signature a `work` call must satisfy from the *inferred* options type `O`.
+ * A literal `perJobResults: true` (optionally with `includeMetadata: true`) demands a per-job handler
+ * that resolves with a `JobResult[]`; anything else keeps the permissive single-output handler.
+ *
+ * Because the branch is driven by `O extends { perJobResults: true }`, only a statically-known `true`
+ * selects the strict handler. Options whose `perJobResults` is a plain `boolean` (e.g. a value typed
+ * as `WorkOptions`, or `{ perJobResults: someFlag }`) do not match the literal and fall through to the
+ * permissive handler, so dynamically-built options keep compiling exactly as before.
+ */
+export type WorkHandlerFor<O extends WorkOptions, ReqData, ResData = any> =
+  O extends { perJobResults: true }
+    ? (O extends { includeMetadata: true } ? PerJobWorkWithMetadataHandler<ReqData> : PerJobWorkHandler<ReqData>)
+    : (O extends { includeMetadata: true } ? WorkWithMetadataHandler<ReqData, ResData> : WorkHandler<ReqData, ResData>)
 
 export interface Request {
   name: string;

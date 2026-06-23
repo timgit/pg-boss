@@ -69,7 +69,23 @@ The default options for `work()` is 1 job every 2 seconds.
 
 * **pollingIntervalSeconds**, int, *(default=2)*
 
-  Interval to check for new jobs in seconds, must be >=0.5 (500ms)
+  Base interval to check for new jobs, in seconds. Must be >=0.5 (500ms). Used when no faster or slower mode applies: queues without `notify`, or notify-enabled queues when the LISTEN/NOTIFY listener is unavailable.
+
+  > **Note**: When [LISTEN/NOTIFY](#low-latency-dispatch-with-listennotify) is active for a queue, workers are woken the instant a job is created and polling automatically falls back to the slower `notifyPollingIntervalSeconds` backstop — you don't need to raise `pollingIntervalSeconds` yourself.
+
+* **notifyPollingIntervalSeconds**, int, *(default=30)*
+
+  Polling interval used only while [LISTEN/NOTIFY](#low-latency-dispatch-with-listennotify) is active for the queue (the queue has `notify: true` and the instance listener is established). Since NOTIFY wakes workers immediately, polling only needs to run as a slow safety net, so this can be much larger than `pollingIntervalSeconds`. When notify is off or unavailable, `pollingIntervalSeconds` is used instead. Must be >=0.5 (500ms).
+
+* **burstWhenReadyExceeds**, int
+
+  When the queue's cached `readyCount` (the runnable backlog) exceeds this value, the worker fetches continuously with no delay until it catches up; the first fetch that comes back short ends burst mode. Takes precedence over `notifyPollingIntervalSeconds` and `pollingIntervalSeconds`. Must be an integer >=1.
+
+  > **Note**: `readyCount` is read from the stats cache, so reaction latency is bounded by the instance-level stats pipeline (`monitorIntervalSeconds` / `superviseIntervalSeconds` / `queueCacheIntervalSeconds`).
+
+* **burstWhenBatchFull**, bool, *(default=false)*
+
+  While each fetch returns a full `batchSize` batch there is clearly more work, so the worker keeps fetching continuously with no delay; the first short fetch ends burst mode. Unlike `burstWhenReadyExceeds` this reacts instantly and needs no cached stats. Ignored when `batchSize` is 1 (every successful fetch would otherwise be "full").
 
 * **localConcurrency**, int, *(default=1)*
 
@@ -217,6 +233,40 @@ An example of a worker that returns a maximum of 5 jobs in a batch.
 ```js
 await boss.work('email-welcome', { batchSize: 5 }, (jobs) => myEmailService.sendWelcomeEmails(jobs.map(job => job.data)))
 ```
+
+### Low-latency dispatch with LISTEN/NOTIFY
+
+By default, workers fetch new jobs by polling on their `pollingIntervalSeconds`, so a freshly created job waits up to one interval before it is picked up. pg-boss can optionally use Postgres [`LISTEN/NOTIFY`](https://www.postgresql.org/docs/current/sql-notify.html) to wake workers the instant a job is created, cutting dispatch latency to milliseconds.
+
+This is an **opt-in optimization on top of polling, not a replacement for it.** Polling always keeps running as a safety net, so jobs are never lost if a notification is missed (for example during a brief connection drop). A notification is only ever a hint that tells a worker to fetch now instead of waiting — the normal locking fetch, queue policies, and concurrency limits are unchanged.
+
+**Enabling it requires two opt-ins:**
+
+1. Start the instance with [`useListenNotify: true`](./constructor.md#newoptions). This runs a listener on one dedicated database connection.
+2. Mark each queue that should emit notifications with the [`notify: true`](./queues.md#createqueuename-queue) option on `createQueue()` (or `updateQueue()`).
+
+```js
+const boss = new PgBoss({ connectionString, useListenNotify: true })
+await boss.start()
+
+await boss.createQueue('email-welcome', { notify: true })
+
+// No polling tuning needed — while NOTIFY is active the worker is woken the instant a
+// job is created and polls only as a slow backstop (notifyPollingIntervalSeconds, default 30s).
+await boss.work('email-welcome', ([ job ]) =>
+  myEmailService.sendWelcomeEmail(job.data)
+)
+
+// This job is processed almost immediately rather than waiting for the next poll.
+await boss.send('email-welcome', { to: 'new@user.com' })
+```
+
+**Notes and limitations:**
+
+- Only **immediately-available** jobs emit a notification. Future-dated jobs (`startAfter`, `sendAfter()`, throttling/debouncing) and jobs blocked by [flow](./jobs.md) dependencies are picked up by polling once they become eligible.
+- A NOTIFY is emitted transactionally with the insert, so it fires on commit. When you create jobs inside your own transaction via the `db` option, the notification commits atomically with your transaction.
+- The listener needs a **session-pinned** connection. It works with the built-in pool and with a `db` adapter that implements `listen`, but **not** through PgBouncer in transaction or statement pooling mode, which disables `LISTEN/NOTIFY`. When a listener cannot be established, pg-boss emits a [`warning`](./events.md#warning) of type `listen_notify_unavailable` and continues polling only.
+- The notification channel is namespaced per `schema`, so multiple pg-boss instances (and other services) on the same database do not collide.
 
 ### `work(name, handler)`
 

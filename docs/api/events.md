@@ -31,6 +31,7 @@ boss.on('warning', ({ message, data }) => {
 | `slow_query` | A maintenance query exceeded the slow query threshold | `elapsed` (seconds) |
 | `queue_backlog` | A queue has exceeded its warning threshold | `name`, `queuedCount`, `warningQueued` |
 | `clock_skew` | Database clock is out of sync with application server | `seconds`, `direction` |
+| `listen_notify_unavailable` | `useListenNotify` is enabled but a `LISTEN/NOTIFY` listener could not be established (for example a `db` adapter without `listen`, or PgBouncer transaction pooling); pg-boss continues with polling only | `type`, `error` |
 
 ### Warning Persistence
 

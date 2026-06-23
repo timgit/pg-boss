@@ -17,7 +17,7 @@ export default defineConfig(({ command }) => ({
   // basename without depending on the env var being present at runtime.
   define: {
     'process.env.PGBOSS_DASHBOARD_BASE_PATH': JSON.stringify(
-      process.env.PGBOSS_DASHBOARD_BASE_PATH ?? '',
+      process.env.PGBOSS_DASHBOARD_BASE_PATH ?? ''
     ),
   },
   plugins: [

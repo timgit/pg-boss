@@ -4,6 +4,7 @@ import EventEmitter from 'node:events'
 import { serializeError as stringify } from 'serialize-error'
 import * as Attorney from './attorney.ts'
 import type Db from './db.ts'
+import type Notifier from './notifier.ts'
 import * as plans from './plans.ts'
 import type Timekeeper from './timekeeper.ts'
 import * as timekeeper from './timekeeper.ts'
@@ -71,6 +72,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
   queueCacheInterval: NodeJS.Timeout | undefined
   wipInterval: NodeJS.Timeout | undefined
   timekeeper: Timekeeper | undefined
+  notifier: Notifier | undefined
   queues: Record<string, types.QueueResult> | null
   pendingOffWorkCleanups: Set<Promise<any>>
   #spies: Map<string, JobSpy>
@@ -574,10 +576,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
   }
 
   work<ReqData>(name: string, handler: types.WorkHandler<ReqData>): Promise<string>
-  work<ReqData>(name: string, options: types.WorkOptions & { perJobResults: true; includeMetadata: true }, handler: types.PerJobWorkWithMetadataHandler<ReqData>): Promise<string>
-  work<ReqData>(name: string, options: types.WorkOptions & { perJobResults: true }, handler: types.PerJobWorkHandler<ReqData>): Promise<string>
-  work<ReqData>(name: string, options: types.WorkOptions & { includeMetadata: true }, handler: types.WorkWithMetadataHandler<ReqData>): Promise<string>
-  work<ReqData>(name: string, options: types.WorkOptions, handler: types.WorkHandler<ReqData>): Promise<string>
+  work<ReqData, const O extends types.WorkOptions = types.WorkOptions>(name: string, options: O, handler: types.WorkHandlerFor<O, ReqData>): Promise<string>
   async work<ReqData> (name: string, ...args: unknown[]): Promise<string> {
     const { options, callback } = Attorney.checkWorkArgs(name, args)
 
@@ -587,6 +586,9 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     const {
       pollingInterval: interval,
+      notifyPollingInterval: notifyInterval,
+      burstWhenReadyExceeds,
+      burstWhenBatchFull = false,
       batchSize = 1,
       includeMetadata = false,
       priority = true,
@@ -605,6 +607,33 @@ class Manager extends EventEmitter implements types.EventsMixin {
     }
 
     const firstWorkerId = randomUUID({ disableEntropyCache: true })
+
+    // NOTIFY is only doing the fast-path wakeups when the queue opted in (notify) AND the
+    // instance listener is established.
+    const isNotifyActive = () => !!(this.notifier?.available && this.queues?.[name]?.notify)
+
+    // Runnable backlog from the cached queue stats, refreshed every queueCacheIntervalSeconds.
+    const getReadyCount = () => this.queues?.[name]?.readyCount ?? 0
+
+    // Resolve the delay before each fetch. Precedence: burst (fetch continuously) > NOTIFY
+    // backstop > base poll. Evaluated per-iteration so it tracks live cache/notify state and
+    // any updateQueue notify toggles.
+    //
+    // A burst trigger only engages while the last fetch came back full (>= batchSize). That is
+    // both the meaning of burstWhenBatchFull and the anti-hot-loop guard for burstWhenReadyExceeds:
+    // the cached ready count lags reality, so a short fetch (including 0 < 1 at the default batchSize)
+    // means the queue has likely caught up — fall back to normal polling instead of spinning on
+    // empty fetches. burstWhenBatchFull is ignored at batchSize 1 (every fetch would be "full").
+    const resolveInterval = (lastFetchCount: number) => {
+      const fullBatch = lastFetchCount >= batchSize
+      const burst = fullBatch && (
+        (burstWhenReadyExceeds !== undefined && getReadyCount() > burstWhenReadyExceeds) ||
+        (burstWhenBatchFull && batchSize > 1)
+      )
+
+      if (burst) return 0
+      return isNotifyActive() ? notifyInterval : interval
+    }
 
     const createWorker = (workerId: string, workId: string) => {
       const fetch = () => {
@@ -651,7 +680,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
         this.emit(events.error, { ...error, message: error.message, stack: error.stack, queue: name, worker: workerId })
       }
 
-      return new Worker<ReqData>({ id: workerId, workId, name, options, interval, fetch, onFetch, onError })
+      return new Worker<ReqData>({ id: workerId, workId, name, options, resolveInterval, fetch, onFetch, onError })
     }
 
     // Spawn workers based on localConcurrency setting
@@ -735,6 +764,33 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
   notifyWorker (workerId: string): void {
     this.workers.get(workerId)?.notify()
+  }
+
+  // Whether a queue's `notify` opt-in actually emits a transactional pg_notify. Backends that
+  // don't implement LISTEN/NOTIFY (noListenNotify, e.g. CockroachDB) would error on the inlined
+  // pg_notify, so the producer falls back to polling-only delivery on those.
+  #notifyEnabled (queueNotify: boolean | undefined): boolean {
+    return !!queueNotify && !this.config.noListenNotify
+  }
+
+  // Wake every worker on a queue so it fetches now instead of waiting out its poll delay.
+  // Called by the LISTEN/NOTIFY listener when a job lands on a notify-enabled queue.
+  notifyQueue (name: string): void {
+    for (const worker of this.workers.values()) {
+      if (worker.name === name) {
+        worker.notify()
+      }
+    }
+  }
+
+  // Gap recovery: after the listener (re)connects, notifications emitted during the
+  // outage were missed, so force every worker on a notify-enabled queue to fetch once.
+  forceFetchLnWorkers (): void {
+    for (const worker of this.workers.values()) {
+      if (this.queues?.[worker.name]?.notify) {
+        worker.notify()
+      }
+    }
   }
 
   async subscribe (event: string, name: string): Promise<void> {
@@ -847,13 +903,13 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     const db = wrapper || this.db
 
-    const { table, policy } = await this.getQueueCache(name)
+    const { table, policy, notify } = await this.getQueueCache(name)
 
     if (policy === plans.QUEUE_POLICIES.key_strict_fifo && !singletonKey) {
       throw new Error(`${plans.QUEUE_POLICIES.key_strict_fifo} queues require a singletonKey`)
     }
 
-    const sql = plans.insertJobs(this.config.schema, { table, name, returnId: true })
+    const sql = plans.insertJobs(this.config.schema, { table, name, returnId: true, notify: this.#notifyEnabled(notify) })
 
     const { rows: try1 } = await db.executeSql(sql, [JSON.stringify([job])])
 
@@ -897,7 +953,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
   ) {
     assert(Array.isArray(jobs), 'jobs argument should be an array')
 
-    const { table, policy } = await this.getQueueCache(name)
+    const { table, policy, notify } = await this.getQueueCache(name)
 
     if (policy === plans.QUEUE_POLICIES.key_strict_fifo) {
       for (const job of jobs) {
@@ -925,7 +981,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     // Return IDs if spy is active for this queue (needed for job tracking)
     const returnId = !!spy || !!options.returnId
 
-    const sql = plans.insertJobs(this.config.schema, { table, name, returnId })
+    const sql = plans.insertJobs(this.config.schema, { table, name, returnId, notify: this.#notifyEnabled(notify) })
 
     const { rows } = await db.executeSql(sql, [JSON.stringify(insertPayload)])
 
@@ -989,7 +1045,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const statements: string[] = []
 
     for (const [queueName, queueJobs] of byQueue) {
-      const { table } = await this.getQueueCache(queueName)
+      const { table, notify } = await this.getQueueCache(queueName)
 
       const insertPayload = queueJobs.map(j => {
         const dependencyCount = dependencyCountByRef.get(j.ref) ?? 0
@@ -1018,24 +1074,19 @@ class Manager extends EventEmitter implements types.EventsMixin {
         }
       })
 
-      const insertSql = plans.insertJobs(this.config.schema, { table, name: queueName, returnId: true })
-        .replace('$1', () => plans.serializeJsonParam(insertPayload))
+      statements.push(plans.insertFlowJobs(this.config.schema, { table, name: queueName }, insertPayload))
 
-      // raises 'division by zero' (aborting the transaction) if any job was skipped.
-      // The divisor references the row count so it isn't constant-folded at plan time.
-      statements.push(`
-        WITH ins AS (
-          ${insertSql}
-        )
-        SELECT 1 / (CASE WHEN (SELECT count(*) FROM ins) = ${insertPayload.length} THEN 1 ELSE 0 END)
-      `)
+      // Wake workers for notify-enabled queues. Runs in the same transaction as the
+      // inserts above, so it commits atomically. Blocked children and future-dated roots
+      // are harmless: the fetch query filters them out, so a wake just triggers one fetch
+      // that picks up whatever roots are immediately runnable.
+      if (this.#notifyEnabled(notify)) {
+        statements.push(plans.notifyQueue(this.config.schema, queueName))
+      }
     }
 
     if (depRows.length > 0) {
-      statements.push(
-        plans.insertDependencies(this.config.schema)
-          .replace('$1', () => plans.serializeJsonParam(depRows))
-      )
+      statements.push(plans.insertDependencies(this.config.schema, depRows))
     }
 
     // When the caller provides a db they own the transaction; otherwise wrap the
@@ -1560,7 +1611,9 @@ class Manager extends EventEmitter implements types.EventsMixin {
             {
               deferredCount: 0,
               queuedCount: 0,
+              readyCount: 0,
               activeCount: 0,
+              failedCount: 0,
               totalCount: 0
             }
     )

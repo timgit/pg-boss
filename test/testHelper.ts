@@ -1,7 +1,7 @@
 import Db from '../src/db.ts'
 import { PgBoss, fromPglite } from '../src/index.ts'
 import { PGlite } from '@electric-sql/pglite'
-import { describe, it } from 'vitest'
+import { describe, it, type SuiteAPI, type TestAPI } from 'vitest'
 import crypto from 'node:crypto'
 import configJson from './config.json' with { type: 'json' }
 import cockroachConfigJson from './config.cockroachdb.json' with { type: 'json' }
@@ -55,13 +55,23 @@ const isDistributed = isCockroachDb || process.env.DISTRIBUTED === 'true'
 // auto-enables noSkipLocked + noMultiMutationCte + the compatibility flags. Wrap tests that depend on
 // Postgres-only features (table partitioning, covering indexes, exact PG schema shape) with these
 // so they are skipped automatically under CockroachDB.
-const itPostgresOnly = it.skipIf(isCockroachDb)
-const describePostgresOnly = describe.skipIf(isCockroachDb)
+// Annotated with the exported TestAPI/SuiteAPI types: skipIf() returns vitest's internal
+// ChainableTestAPI/ChainableSuiteAPI, which can't be named in this module's emitted
+// declarations (TS4023). The exported aliases are nameable and callable the same way.
+const itPostgresOnly = it.skipIf(isCockroachDb) as TestAPI
+const describePostgresOnly = describe.skipIf(isCockroachDb) as SuiteAPI
 
 // PGlite has no server, so tests that connect by connection string (CLI subprocess, ORM adapters)
 // or that require multiple independent connections cannot run against it. Wrap them with these.
-const itPglite = it.skipIf(isPglite)
-const describePglite = describe.skipIf(isPglite)
+const itPglite = it.skipIf(isPglite) as TestAPI
+const describePglite = describe.skipIf(isPglite) as SuiteAPI
+
+// LISTEN/NOTIFY is unavailable in these backends' test environments: CockroachDB never implements
+// it (noListenNotify), and the YugabyteDB test container doesn't enable the early-access
+// `ysql_yb_enable_listen_notify` flag. Wrap notify-behavior tests with these so the compatibility
+// matrix skips them; the producer bypass is still covered separately on every backend.
+const itListenNotify = it.skipIf(isCockroachDb || isYugabyteDb) as TestAPI
+const describeListenNotify = describe.skipIf(isCockroachDb || isYugabyteDb) as SuiteAPI
 
 function assertTruthy<T> (value: T, message?: string): asserts value is NonNullable<T> {
   if (value == null) {
@@ -279,5 +289,7 @@ export {
   describePostgresOnly,
   itPglite,
   describePglite,
+  itListenNotify,
+  describeListenNotify,
   getSchemaDefs
 }

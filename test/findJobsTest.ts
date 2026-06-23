@@ -47,7 +47,7 @@ describe('findJobs', function () {
     await ctx.boss.send(ctx.schema, { type: 'email', to: 'user2@test.com' })
     await ctx.boss.send(ctx.schema, { type: 'sms', to: '555-1234' })
 
-    const emailJobs = await ctx.boss.findJobs(ctx.schema, { data: { type: 'email' } })
+    const emailJobs = await ctx.boss.findJobs<{ type: string }>(ctx.schema, { data: { type: 'email' } })
 
     expect(emailJobs.length).toBe(2)
     expect(emailJobs.every(j => j.data?.type === 'email')).toBe(true)
@@ -128,7 +128,7 @@ describe('findJobs', function () {
     await ctx.boss.send(ctx.schema, { category: 'B', value: 2 }, { singletonKey: 'key-1' })
     await ctx.boss.send(ctx.schema, { category: 'A', value: 3 }, { singletonKey: 'key-2' })
 
-    const jobs = await ctx.boss.findJobs(ctx.schema, {
+    const jobs = await ctx.boss.findJobs<{ category: string }>(ctx.schema, {
       key: 'key-1',
       data: { category: 'A' }
     })

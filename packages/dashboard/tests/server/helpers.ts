@@ -269,7 +269,7 @@ export async function insertTestBam (
 export async function updateQueueStats (
   schema: string,
   queueName: string,
-  stats: { queuedCount?: number; activeCount?: number; totalCount?: number; deferredCount?: number }
+  stats: { queuedCount?: number; activeCount?: number; totalCount?: number; deferredCount?: number; failedCount?: number }
 ): Promise<void> {
   const p = getPool()
   const sets: string[] = []
@@ -291,6 +291,10 @@ export async function updateQueueStats (
   if (stats.deferredCount !== undefined) {
     sets.push(`deferred_count = $${paramIndex++}`)
     values.push(stats.deferredCount)
+  }
+  if (stats.failedCount !== undefined) {
+    sets.push(`failed_count = $${paramIndex++}`)
+    values.push(stats.failedCount)
   }
 
   if (sets.length > 0) {

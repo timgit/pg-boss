@@ -24,6 +24,12 @@ export interface QueueResult extends PgBossQueueResult {
   // Dashboard-specific fields for monitoring and maintenance tracking
   monitorOn: Date | null;
   maintainOn: Date | null;
+  // Stats fields (declared locally so the dashboard typechecks against older
+  // installed pg-boss versions whose published types predate these columns).
+  // readyCount = queuedCount - deferredCount (jobs runnable now); failedCount =
+  // failed jobs still retained in the table.
+  readyCount: number;
+  failedCount: number;
 }
 
 // JobState is a union type extracted from JobWithMetadata
@@ -57,7 +63,9 @@ export interface WarningResult {
 export interface QueueStats {
   totalDeferred: number;
   totalQueued: number;
+  totalReady: number;
   totalActive: number;
+  totalFailed: number;
   totalJobs: number;
   queueCount: number;
 }

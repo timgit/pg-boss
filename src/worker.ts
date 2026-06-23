@@ -13,7 +13,7 @@ interface WorkerOptions<T> {
   workId: string
   name: string
   options: types.WorkOptions
-  interval: number
+  resolveInterval: (lastFetchCount: number) => number
   fetch: () => Promise<types.Job<T>[]>
   onFetch: (jobs: types.Job<T>[]) => Promise<void>
   onError: (err: any) => void
@@ -27,7 +27,7 @@ class Worker<T = unknown> {
   readonly fetch: () => Promise<types.Job<T>[]>
   readonly onFetch: (jobs: types.Job<T>[]) => Promise<void>
   readonly onError: (err: any) => void
-  readonly interval: number
+  readonly resolveInterval: (lastFetchCount: number) => number
 
   jobs: types.Job<T>[] = []
   createdOn = Date.now()
@@ -45,7 +45,7 @@ class Worker<T = unknown> {
   private beenNotified = false
   private runPromise: Promise<void> | null = null
 
-  constructor ({ id, workId, name, options, interval, fetch, onFetch, onError }: WorkerOptions<T>) {
+  constructor ({ id, workId, name, options, resolveInterval, fetch, onFetch, onError }: WorkerOptions<T>) {
     this.id = id
     this.workId = workId
     this.name = name
@@ -53,7 +53,7 @@ class Worker<T = unknown> {
     this.fetch = fetch
     this.onFetch = onFetch
     this.onError = onError
-    this.interval = interval
+    this.resolveInterval = resolveInterval
   }
 
   start () {
@@ -66,6 +66,10 @@ class Worker<T = unknown> {
     while (!this.stopping) {
       const started = Date.now()
 
+      // Number of jobs the last fetch returned; stays 0 on error so a failed fetch backs
+      // off to normal polling instead of hot-looping in burst mode.
+      let fetchedCount = 0
+
       try {
         this.beenNotified = false
         const jobs = await this.fetch()
@@ -73,6 +77,7 @@ class Worker<T = unknown> {
         this.lastFetchedOn = Date.now()
 
         if (jobs) {
+          fetchedCount = jobs.length
           this.jobs = jobs
 
           this.lastJobStartedOn = this.lastFetchedOn
@@ -96,8 +101,14 @@ class Worker<T = unknown> {
 
       this.lastJobDuration = duration
 
-      if (!this.stopping && !this.beenNotified && (this.interval - duration) > 100) {
-        this.loopDelayPromise = delay(this.interval - duration)
+      // Resolve the effective delay each iteration: burst (continuous), NOTIFY backstop, or
+      // the base poll (see Manager.work). fetchedCount lets the resolver keep going only while
+      // fetches come back full — a short fetch resumes normal polling. A returned interval
+      // <= duration + 100 (0 in burst mode) skips the delay and re-fetches immediately.
+      const interval = this.resolveInterval(fetchedCount)
+
+      if (!this.stopping && !this.beenNotified && (interval - duration) > 100) {
+        this.loopDelayPromise = delay(interval - duration)
         await this.loopDelayPromise
         this.loopDelayPromise = null
       }

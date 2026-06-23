@@ -17,7 +17,8 @@ const COMPATIBILITY_FLAGS = [
   'noTablePartitioning',
   'noDeferrableConstraints',
   'noAdvisoryLocks',
-  'noCoveringIndexes'
+  'noCoveringIndexes',
+  'noListenNotify'
 ] as const
 
 type CompatibilityFlag = typeof COMPATIBILITY_FLAGS[number]
@@ -43,7 +44,8 @@ const BACKEND_PROFILES: Record<types.BackendProfile, BackendDefinition> = {
       noTablePartitioning: true,
       noDeferrableConstraints: true,
       noAdvisoryLocks: true,
-      noCoveringIndexes: true
+      noCoveringIndexes: true,
+      noListenNotify: true
     }
   },
   yugabytedb: {
@@ -63,6 +65,8 @@ function assertObjectName (value: string, name: string = 'Name') {
 
 function validateQueueArgs (config: any = {}) {
   assert(!('deadLetter' in config) || config.deadLetter === null || (typeof config.deadLetter === 'string'), 'deadLetter must be a string')
+
+  assert(!('notify' in config) || typeof config.notify === 'boolean', 'notify must be a boolean')
 
   if (config.deadLetter) {
     assertObjectName(config.deadLetter, 'deadLetter')
@@ -357,6 +361,8 @@ function getConfig (value: string | types.ConstructorOptions): types.ResolvedCon
   config.supervise = ('supervise' in config) ? config.supervise : true
   config.migrate = ('migrate' in config) ? config.migrate : true
   config.createSchema = ('createSchema' in config) ? config.createSchema : true
+  config.useListenNotify = ('useListenNotify' in config) ? config.useListenNotify : false
+
   resolveBackend(config)
 
   applySchemaConfig(config)
@@ -472,6 +478,30 @@ function applyPollingInterval (config: any) {
   config.pollingInterval = ('pollingIntervalSeconds' in config)
     ? config.pollingIntervalSeconds * 1000
     : 2000
+
+  assert(!('notifyPollingIntervalSeconds' in config) || config.notifyPollingIntervalSeconds >= POLICY.MIN_POLLING_INTERVAL_MS / 1000,
+    `configuration assert: notifyPollingIntervalSeconds must be at least every ${POLICY.MIN_POLLING_INTERVAL_MS}ms`)
+
+  // Relaxed backstop poll used only while NOTIFY is active for the queue; falls back to
+  // pollingInterval when notify is unavailable. It must never be smaller than the base poll —
+  // that would make a notify-active queue poll more aggressively than an idle one, the opposite
+  // of the intent. When explicit, reject a value below the base; when defaulted, floor it at the
+  // base so bumping pollingIntervalSeconds past 30s can't silently leave notify smaller.
+  if ('notifyPollingIntervalSeconds' in config) {
+    config.notifyPollingInterval = config.notifyPollingIntervalSeconds * 1000
+    assert(config.notifyPollingInterval >= config.pollingInterval,
+      'configuration assert: notifyPollingIntervalSeconds must be at least pollingIntervalSeconds')
+  } else {
+    config.notifyPollingInterval = Math.max(30000, config.pollingInterval)
+  }
+
+  // Burst triggers: no transform, just validation. Both put the worker into continuous-fetch
+  // (no delay) mode; see JobPollingOptions for precedence.
+  assert(!('burstWhenReadyExceeds' in config) || (Number.isInteger(config.burstWhenReadyExceeds) && config.burstWhenReadyExceeds >= 1),
+    'configuration assert: burstWhenReadyExceeds must be an integer >= 1')
+
+  assert(!('burstWhenBatchFull' in config) || typeof config.burstWhenBatchFull === 'boolean',
+    'configuration assert: burstWhenBatchFull must be a boolean')
 }
 
 function applyOpsConfig (config: any) {

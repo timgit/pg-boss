@@ -34,7 +34,9 @@ const QUEUE_COLUMNS = `
   deletion_seconds as "deleteAfterSeconds",
   deferred_count as "deferredCount",
   queued_count as "queuedCount",
+  GREATEST(queued_count - deferred_count, 0) as "readyCount",
   active_count as "activeCount",
+  failed_count as "failedCount",
   total_count as "totalCount",
   warning_queued as "warningQueueSize",
   singletons_active as "singletonsActive",
@@ -629,7 +631,9 @@ export async function getQueueStats (
     SELECT
       COALESCE(SUM(deferred_count), 0)::int as "totalDeferred",
       COALESCE(SUM(queued_count), 0)::int as "totalQueued",
+      COALESCE(SUM(GREATEST(queued_count - deferred_count, 0)), 0)::int as "totalReady",
       COALESCE(SUM(active_count), 0)::int as "totalActive",
+      COALESCE(SUM(failed_count), 0)::int as "totalFailed",
       COALESCE(SUM(total_count), 0)::int as "totalJobs",
       COUNT(*)::int as "queueCount"
     FROM ${s}.queue
@@ -639,7 +643,9 @@ export async function getQueueStats (
     result ?? {
       totalDeferred: 0,
       totalQueued: 0,
+      totalReady: 0,
       totalActive: 0,
+      totalFailed: 0,
       totalJobs: 0,
       queueCount: 0,
     }

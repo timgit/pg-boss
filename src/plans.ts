@@ -145,10 +145,13 @@ function createTableQueue (schema: string) {
       table_name text NOT NULL,
       deferred_count int NOT NULL default 0,
       queued_count int NOT NULL default 0,
+      ready_count int NOT NULL default 0,
       warning_queued int NOT NULL default 0,
       active_count int NOT NULL default 0,
+      failed_count int NOT NULL default 0,
       total_count int NOT NULL default 0,
       heartbeat_seconds int,
+      notify bool NOT NULL DEFAULT false,
       singletons_active text[],
       monitor_on timestamp with time zone,
       maintain_on timestamp with time zone,
@@ -505,7 +508,8 @@ function createQueueFunction (schema: string, noPartitioning = false) {
           dead_letter,
           partition,
           table_name,
-          heartbeat_seconds
+          heartbeat_seconds,
+          notify
         )
         VALUES (
           queue_name,
@@ -521,7 +525,8 @@ function createQueueFunction (schema: string, noPartitioning = false) {
           options->>'deadLetter',
           COALESCE((options->>'partition')::bool, ${QUEUE_DEFAULTS.partition}),
           tablename,
-          (options->>'heartbeatSeconds')::int
+          (options->>'heartbeatSeconds')::int,
+          COALESCE((options->>'notify')::bool, false)
         )
         ON CONFLICT DO NOTHING
         RETURNING created_on
@@ -602,6 +607,28 @@ function deleteQueueFunction (schema: string, noPartitioning = false) {
 export function createQueue (schema: string, name: string, options: unknown, noAdvisoryLocks?: boolean) {
   const sql = `SELECT ${schema}.create_queue('${name}', '${JSON.stringify(options)}'::jsonb)`
   return locked(schema, sql, 'create-queue', noAdvisoryLocks)
+}
+
+// LISTEN/NOTIFY channels share a single database-global namespace and are limited to
+// NAMEDATALEN (63 bytes), unlike the rest of pg-boss which is schema-bound. Derive a
+// stable, collision-resistant channel from the schema so separate pg-boss instances
+// (and other services) on the same database never clash. Payload carries the queue name.
+//
+// Returns a SQL scalar expression (not a value) hashed in-database with sha224, matching
+// the convention used by advisoryLock() and partition table naming. Both the producer
+// (inlined into the insert) and the listener (resolved once at startup) derive the channel
+// from this single expression, so they always agree. The 'pgboss_' prefix keeps the
+// channel human-recognizable in pg_stat_activity; 24 hex chars leaves ample headroom under
+// the 63-byte identifier limit. Channels are already scoped to a single database, so unlike
+// advisoryLock there is no need to mix in current_database().
+export function notifyChannelSql (schema: string): string {
+  return `('pgboss_' || left(encode(sha224('${schema}'::bytea), 'hex'), 24))`
+}
+
+// Parameter-less statement that wakes workers on a notify-enabled queue. Embedded into
+// flow batches so it commits in the same transaction as the inserts.
+export function notifyQueue (schema: string, name: string): string {
+  return `SELECT pg_notify(${notifyChannelSql(schema)}, '${name}')`
 }
 
 export function deleteQueue (schema: string, name: string, noAdvisoryLocks?: boolean) {
@@ -717,6 +744,7 @@ export function updateQueue (schema: string, { deadLetter }: UpdateQueueOptions 
       heartbeat_seconds = CASE WHEN o.data ? 'heartbeatSeconds'
         THEN (o.data->>'heartbeatSeconds')::int
         ELSE heartbeat_seconds END,
+      notify = COALESCE((o.data->>'notify')::bool, notify),
       ${
         deadLetter === undefined
           ? ''
@@ -744,11 +772,14 @@ export function getQueues (schema: string, names?: string[]): SqlQuery {
       q.deletion_seconds as "deleteAfterSeconds",
       q.partition,
       q.heartbeat_seconds as "heartbeatSeconds",
+      q.notify,
       q.dead_letter as "deadLetter",
       q.deferred_count as "deferredCount",
       q.warning_queued as "warningQueueSize",
       q.queued_count as "queuedCount",
+      q.ready_count as "readyCount",
       q.active_count as "activeCount",
+      q.failed_count as "failedCount",
       q.total_count as "totalCount",
       q.singletons_active as "singletonsActive",
       q.table_name as "table",
@@ -1311,10 +1342,15 @@ interface InsertJobsOptions {
   table: string
   name: string
   returnId?: boolean
+  notify?: boolean
 }
 
-export function insertJobs (schema: string, { table, name, returnId = true }: InsertJobsOptions) {
-  const sql = `
+export function insertJobs (schema: string, { table, name, returnId = true, notify = false }: InsertJobsOptions) {
+  // When notify is enabled we always RETURN start_after so the wrapper below can gate
+  // the NOTIFY on immediate availability, regardless of whether the caller wants ids.
+  const returning = notify ? 'RETURNING id, start_after' : returnId ? 'RETURNING id' : ''
+
+  const insert = `
     INSERT INTO ${schema}.${table} (
       id,
       name,
@@ -1397,10 +1433,47 @@ export function insertJobs (schema: string, { table, name, returnId = true }: In
     ) j
     JOIN ${schema}.queue q ON q.name = '${name}'
     ON CONFLICT DO NOTHING
-    ${returnId ? 'RETURNING id' : ''}
+    ${returning}
   `
 
-  return sql
+  if (!notify) {
+    return insert
+  }
+
+  // Fire a single transactional NOTIFY (committed atomically with the insert) only when
+  // at least one inserted row is immediately runnable. Future-dated/throttled jobs are
+  // left to the polling floor. The `notified` CTE is referenced from the final WHERE so
+  // Postgres actually evaluates it; pg_notify runs at most once thanks to LIMIT 1. The
+  // comparator shapes the output rows to honor returnId without changing notify behavior.
+  const comparator = returnId ? '>= 0' : '< 0'
+
+  return `
+    WITH ins AS (
+      ${insert}
+    ),
+    notified AS (
+      SELECT pg_notify(${notifyChannelSql(schema)}, '${name}')
+      FROM ins WHERE start_after <= now() LIMIT 1
+    )
+    SELECT id FROM ins WHERE (SELECT count(*) FROM notified) ${comparator}
+  `
+}
+
+// Self-contained (parameter-less) insert for one queue's slice of a flow batch. The JSON
+// payload is embedded directly so the whole flow can be sent as a single multi-statement
+// round-trip regardless of db adapter. Guarded so a skipped row (ON CONFLICT) raises
+// 'division by zero', aborting the surrounding transaction. The divisor references the
+// row count so it isn't constant-folded at plan time.
+export function insertFlowJobs (schema: string, { table, name }: { table: string, name: string }, jobs: unknown[]): string {
+  const insert = insertJobs(schema, { table, name, returnId: true })
+    .replace('$1', () => serializeJsonParam(jobs))
+
+  return `
+    WITH ins AS (
+      ${insert}
+    )
+    SELECT 1 / (CASE WHEN (SELECT count(*) FROM ins) = ${jobs.length} THEN 1 ELSE 0 END)
+  `
 }
 
 export function failJobsById (schema: string, table: string) {
@@ -1804,14 +1877,26 @@ export function getQueueStats (schema: string, table: string, queues: string[]):
     text: `
     SELECT
         name,
-        (count(*) FILTER (WHERE start_after > now()))::int as "deferredCount",
-        (count(*) FILTER (WHERE state < '${JOB_STATES.active}'))::int as "queuedCount",
-        (count(*) FILTER (WHERE state = '${JOB_STATES.active}'))::int as "activeCount",
-        count(*)::int as "totalCount",
-        array_agg(singleton_key) FILTER (WHERE policy IN ('${QUEUE_POLICIES.singleton}','${QUEUE_POLICIES.stately}') AND state = '${JOB_STATES.active}') as "singletonsActive"
-      FROM ${schema}.${table}
-      WHERE name = ANY($1::text[])
-      GROUP BY 1
+        "deferredCount",
+        "queuedCount",
+        GREATEST("queuedCount" - "deferredCount", 0) as "readyCount",
+        "activeCount",
+        "failedCount",
+        "totalCount",
+        "singletonsActive"
+      FROM (
+        SELECT
+            name,
+            (count(*) FILTER (WHERE start_after > now()))::int as "deferredCount",
+            (count(*) FILTER (WHERE state < '${JOB_STATES.active}'))::int as "queuedCount",
+            (count(*) FILTER (WHERE state = '${JOB_STATES.active}'))::int as "activeCount",
+            (count(*) FILTER (WHERE state = '${JOB_STATES.failed}'))::int as "failedCount",
+            count(*)::int as "totalCount",
+            array_agg(singleton_key) FILTER (WHERE policy IN ('${QUEUE_POLICIES.singleton}','${QUEUE_POLICIES.stately}') AND state = '${JOB_STATES.active}') as "singletonsActive"
+          FROM ${schema}.${table}
+          WHERE name = ANY($1::text[])
+          GROUP BY 1
+      ) stats
   `,
     values: [queues]
   }
@@ -1827,7 +1912,9 @@ export function cacheQueueStats (schema: string, table: string, queues: string[]
     UPDATE ${schema}.queue SET
       deferred_count = COALESCE(stats."deferredCount", 0),
       queued_count = COALESCE(stats."queuedCount", 0),
+      ready_count = COALESCE(stats."readyCount", 0),
       active_count = COALESCE(stats."activeCount", 0),
+      failed_count = COALESCE(stats."failedCount", 0),
       total_count = COALESCE(stats."totalCount", 0),
       singletons_active = stats."singletonsActive"
     FROM (
@@ -1926,8 +2013,10 @@ export function getJobById (schema: string, table: string) {
     `
 }
 
-export function insertDependencies (schema: string) {
-  return `
+// Pass `deps` to embed the payload as a literal (parameter-less) so the statement can be
+// concatenated into a flow batch; omit it to get the parameterized ($1) form.
+export function insertDependencies (schema: string, deps?: unknown[]) {
+  const sql = `
     INSERT INTO ${schema}.job_dependency (child_name, child_id, parent_name, parent_id)
     SELECT child_name, child_id, parent_name, parent_id
     FROM json_to_recordset($1::json) AS x (
@@ -1938,6 +2027,8 @@ export function insertDependencies (schema: string) {
     )
     ON CONFLICT DO NOTHING
   `
+
+  return deps ? sql.replace('$1', () => serializeJsonParam(deps)) : sql
 }
 
 export function getDependencies (schema: string) {

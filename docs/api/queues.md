@@ -11,6 +11,7 @@ Creates a queue.
     partition?: boolean;
     deadLetter?: string;
     warningQueueSize?: number;
+    notify?: boolean;
   } & QueueOptions
 ```
 
@@ -45,6 +46,10 @@ Allowed policy values:
 * **warningQueueSize**, int
 
   How many items can exist in the created or retry state before emitting a warning event.
+
+* **notify**, boolean, default false
+
+  When enabled, creating an immediately-available job on this queue emits a Postgres `NOTIFY` so workers wake right away instead of waiting for their next poll. This only has an effect when the instance is started with the [`useListenNotify`](./constructor.md#newoptions) option, which runs the listener. Jobs scheduled for the future (for example via `sendAfter()` or throttling/debouncing) do **not** emit a notification — they are picked up by polling when they mature. See [Workers › Low-latency dispatch with LISTEN/NOTIFY](./workers.md#low-latency-dispatch-with-listennotify).
 
 **Retry options**
 
@@ -142,6 +147,15 @@ Returns a queue by name
 ### `getQueueStats(name)`
 
 Returns the number of jobs in various states in a queue.  The result matches the results from getQueue(), but ignores the cached data and forces the stats to be retrieved immediately.
+
+The counts include:
+
+* `queuedCount` — jobs waiting to run, **including** deferred (future-dated) jobs; this drives the queue backlog warning, so dumping a lot of deferred work still trips it
+* `deferredCount` — jobs scheduled to start in the future (`startAfter` not yet reached)
+* `readyCount` — jobs ready to be processed now (`queuedCount - deferredCount`); the true runnable backlog
+* `activeCount` — jobs currently being processed
+* `failedCount` — failed jobs still retained in the table (bounded by the queue's retention policy, so this is a rolling count of recent failures rather than an all-time total)
+* `totalCount` — all jobs currently stored for the queue
 
 ### `getBlockedKeys(name)`
 

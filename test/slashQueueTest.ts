@@ -10,7 +10,7 @@ describe('queue names with slashes', function () {
     await ctx.boss.createQueue(queueName)
 
     const queue = await ctx.boss.getQueue(queueName)
-    expect(queue).toBeTruthy()
+    helper.assertTruthy(queue)
     expect(queue.name).toBe(queueName)
   })
 

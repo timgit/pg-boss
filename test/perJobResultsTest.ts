@@ -2,6 +2,7 @@ import { expect } from 'vitest'
 import * as helper from './testHelper.ts'
 import { assertTruthy } from './testHelper.ts'
 import { ctx } from './hooks.ts'
+import type { JobWithMetadata } from '../src/index.ts'
 
 describe('perJobResults', function () {
   it('validates perJobResults must be a boolean', async function () {
@@ -48,7 +49,7 @@ describe('perJobResults', function () {
     const size = 25
     const ids: string[] = []
     for (let i = 0; i < size; i++) {
-      const id = await ctx.boss.send(ctx.schema, { n: i }, { retryLimit: 0 })
+      const id: string | null = await ctx.boss.send(ctx.schema, { n: i }, { retryLimit: 0 })
       assertTruthy(id)
       ids.push(id)
     }
@@ -64,7 +65,7 @@ describe('perJobResults', function () {
 
     for (let i = 0; i < size; i++) {
       await spy.waitForJobWithId(ids[i]!, i % 2 === 0 ? 'completed' : 'failed')
-      const job = await ctx.boss.getJobById(ctx.schema, ids[i]!)
+      const job: JobWithMetadata | null = await ctx.boss.getJobById(ctx.schema, ids[i]!)
       assertTruthy(job)
       if (i % 2 === 0) {
         expect(job.state).toBe('completed')
@@ -113,7 +114,7 @@ describe('perJobResults', function () {
     assertTruthy(jobId)
 
     await ctx.boss.work(ctx.schema, { batchSize: 10, perJobResults: true, pollingIntervalSeconds: 0.5 },
-      // @ts-expect-error deliberately violating the contract
+      // @ts-expect-error a perJobResults handler must resolve with a JobResult[], not a bare object
       async () => ({ not: 'an array' }))
 
     await spy.waitForJobWithId(jobId, 'failed')
@@ -431,8 +432,9 @@ describe('perJobResults', function () {
       // Settle the job out of band before returning a failed disposition for it. By the time the
       // distributed per-job fail runs, selectJobsToFailById finds no active row, so it short-circuits
       // (jobs.length === 0) instead of re-inserting - modelling a job that vanished mid-batch.
-      await ctx.boss.work(ctx.schema, { batchSize: 10, perJobResults: true, pollingIntervalSeconds: 0.5 }, async jobs => {
-        await ctx.boss.complete(ctx.schema, jobs[0]!.id)
+      const boss = ctx.boss
+      await boss.work(ctx.schema, { batchSize: 10, perJobResults: true, pollingIntervalSeconds: 0.5 }, async jobs => {
+        await boss.complete(ctx.schema, jobs[0]!.id)
         return jobs.map(job => ({ id: job.id, status: 'failed' as const, output: new Error('too late') }))
       })
 
