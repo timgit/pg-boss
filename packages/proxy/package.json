@@ -18,6 +18,9 @@
   "files": [
     "dist"
   ],
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "scripts": {
     "dev": "cross-env DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/pgboss tsx src/server.ts",
     "gen:version": "tsx scripts/gen-version.ts",
