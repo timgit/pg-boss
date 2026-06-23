@@ -576,10 +576,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
   }
 
   work<ReqData>(name: string, handler: types.WorkHandler<ReqData>): Promise<string>
-  work<ReqData>(name: string, options: types.WorkOptions & { perJobResults: true; includeMetadata: true }, handler: types.PerJobWorkWithMetadataHandler<ReqData>): Promise<string>
-  work<ReqData>(name: string, options: types.WorkOptions & { perJobResults: true }, handler: types.PerJobWorkHandler<ReqData>): Promise<string>
-  work<ReqData>(name: string, options: types.WorkOptions & { includeMetadata: true }, handler: types.WorkWithMetadataHandler<ReqData>): Promise<string>
-  work<ReqData>(name: string, options: types.WorkOptions, handler: types.WorkHandler<ReqData>): Promise<string>
+  work<ReqData, const O extends types.WorkOptions = types.WorkOptions>(name: string, options: O, handler: types.WorkHandlerFor<O, ReqData>): Promise<string>
   async work<ReqData> (name: string, ...args: unknown[]): Promise<string> {
     const { options, callback } = Attorney.checkWorkArgs(name, args)
 

@@ -581,13 +581,28 @@ export interface JobResult<ResData = any> {
   output?: ResData;
 }
 
-export interface PerJobWorkHandler<ReqData, ResData = any> {
-  (job: Job<ReqData>[]): Promise<JobResult<ResData>[]>;
+export interface PerJobWorkHandler<ReqData> {
+  (job: Job<ReqData>[]): Promise<JobResult[]>;
 }
 
-export interface PerJobWorkWithMetadataHandler<ReqData, ResData = any> {
-  (job: JobWithMetadata<ReqData>[]): Promise<JobResult<ResData>[]>;
+export interface PerJobWorkWithMetadataHandler<ReqData> {
+  (job: JobWithMetadata<ReqData>[]): Promise<JobResult[]>;
 }
+
+/**
+ * Resolves the handler signature a `work` call must satisfy from the *inferred* options type `O`.
+ * A literal `perJobResults: true` (optionally with `includeMetadata: true`) demands a per-job handler
+ * that resolves with a `JobResult[]`; anything else keeps the permissive single-output handler.
+ *
+ * Because the branch is driven by `O extends { perJobResults: true }`, only a statically-known `true`
+ * selects the strict handler. Options whose `perJobResults` is a plain `boolean` (e.g. a value typed
+ * as `WorkOptions`, or `{ perJobResults: someFlag }`) do not match the literal and fall through to the
+ * permissive handler, so dynamically-built options keep compiling exactly as before.
+ */
+export type WorkHandlerFor<O extends WorkOptions, ReqData, ResData = any> =
+  O extends { perJobResults: true }
+    ? (O extends { includeMetadata: true } ? PerJobWorkWithMetadataHandler<ReqData> : PerJobWorkHandler<ReqData>)
+    : (O extends { includeMetadata: true } ? WorkWithMetadataHandler<ReqData, ResData> : WorkHandler<ReqData, ResData>)
 
 export interface Request {
   name: string;
