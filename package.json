@@ -55,6 +55,7 @@
     "lint:fix": "eslint . --fix",
     "cover": "npm test -- --coverage",
     "tsc": "tsc --noEmit",
+    "cli": "node ./dist/cli.js",
     "readme": "node ./examples/readme.js",
     "docs": "npm run docs:dev --prefix docs",
     "docs:readme": "node ./scripts/sync-readme.js",

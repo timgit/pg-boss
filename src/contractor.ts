@@ -11,8 +11,11 @@ class Contractor {
     return plans.create(schema, schemaVersion, options)
   }
 
-  static migrationPlans (schema = plans.DEFAULT_SCHEMA, version = schemaVersion - 1) {
-    return migrationStore.migrate(schema, version)
+  static migrationPlans (schema = plans.DEFAULT_SCHEMA, version = schemaVersion - 1, options: { partitionTables?: string[] } = {}) {
+    // Exported plans run without a BAM worker, so inline the async index builds as direct
+    // DDL rather than job_table_run_async() enqueues (see issue #766). Callers that hold a
+    // live connection can pass partitionTables to fan the builds out across partitions.
+    return migrationStore.migrate(schema, version, undefined, undefined, { inlineAsync: true, partitionTables: options.partitionTables })
   }
 
   static rollbackPlans (schema = plans.DEFAULT_SCHEMA, version = schemaVersion) {

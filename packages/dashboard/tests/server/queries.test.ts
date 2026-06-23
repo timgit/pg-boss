@@ -2,9 +2,11 @@ import { describe, it, expect } from 'vitest'
 import pg from 'pg'
 import {
   ctx,
+  getBoss,
   createTestQueue,
   sendTestJob,
   insertTestWarning,
+  insertTestBam,
   updateQueueStats,
   fetchTestJob,
   completeTestJob,
@@ -26,6 +28,9 @@ import {
   getWarnings,
   getWarningCount,
   deleteOldWarnings,
+  getBamEntries,
+  getBamCount,
+  getBamStatusSummary,
   getQueueStats,
   getSchedules,
   getScheduleCount,
@@ -1031,6 +1036,138 @@ describe('Warning Queries', () => {
 
       const count = await getWarningCount(ctx.connectionString, ctx.schema, 'slow_query')
       expect(count).toBe(2)
+    })
+  })
+
+  describe('getBamEntries', () => {
+    // The live test boss runs a BAM worker that claims pending/failed rows on
+    // start. Stop it first so the bam table stays exactly as the test seeds it.
+    // queries.server uses its own pool, so reads still work after the boss closes.
+    async function stopBamWorker () {
+      await getBoss().stop({ close: true })
+    }
+
+    it('returns empty array when bam table does not exist', async () => {
+      const testSchema = 'pgboss_no_bam_table'
+      const pool = new Pool({ connectionString: ctx.connectionString })
+      await pool.query(`DROP SCHEMA IF EXISTS ${testSchema} CASCADE`)
+      await pool.query(`CREATE SCHEMA ${testSchema}`)
+      await pool.end()
+
+      const entries = await getBamEntries(ctx.connectionString, testSchema)
+      expect(entries).toEqual([])
+    })
+
+    it('returns empty array when no entries exist', async () => {
+      await stopBamWorker()
+      const entries = await getBamEntries(ctx.connectionString, ctx.schema)
+      expect(entries).toEqual([])
+    })
+
+    it('returns entries ordered by version desc', async () => {
+      await stopBamWorker()
+      await insertTestBam(ctx.schema, { name: 'idx_a', version: 26 })
+      await insertTestBam(ctx.schema, { name: 'idx_b', version: 27 })
+
+      const entries = await getBamEntries(ctx.connectionString, ctx.schema)
+
+      expect(entries).toHaveLength(2)
+      expect(entries[0].name).toBe('idx_b')
+      expect(entries[0].version).toBe(27)
+      expect(entries[1].name).toBe('idx_a')
+    })
+
+    it('maps table_name and timestamps to camelCase fields', async () => {
+      await stopBamWorker()
+      await insertTestBam(ctx.schema, {
+        name: 'idx_c',
+        version: 27,
+        status: 'failed',
+        queue: 'my-queue',
+        table: 'job_common',
+        error: 'boom',
+      })
+
+      const [entry] = await getBamEntries(ctx.connectionString, ctx.schema)
+
+      expect(entry.table).toBe('job_common')
+      expect(entry.queue).toBe('my-queue')
+      expect(entry.status).toBe('failed')
+      expect(entry.error).toBe('boom')
+      expect(entry).toHaveProperty('createdOn')
+    })
+
+    it('filters entries by status', async () => {
+      await stopBamWorker()
+      await insertTestBam(ctx.schema, { name: 'idx_d', version: 27, status: 'completed' })
+      await insertTestBam(ctx.schema, { name: 'idx_e', version: 27, status: 'failed' })
+      await insertTestBam(ctx.schema, { name: 'idx_f', version: 27, status: 'completed' })
+
+      const entries = await getBamEntries(ctx.connectionString, ctx.schema, {
+        status: 'completed',
+      })
+
+      expect(entries).toHaveLength(2)
+      expect(entries.every((e) => e.status === 'completed')).toBe(true)
+    })
+  })
+
+  describe('getBamCount', () => {
+    it('returns 0 when bam table does not exist', async () => {
+      const testSchema = 'pgboss_no_bam_count'
+      const pool = new Pool({ connectionString: ctx.connectionString })
+      await pool.query(`DROP SCHEMA IF EXISTS ${testSchema} CASCADE`)
+      await pool.query(`CREATE SCHEMA ${testSchema}`)
+      await pool.end()
+
+      const count = await getBamCount(ctx.connectionString, testSchema)
+      expect(count).toBe(0)
+    })
+
+    it('returns total count', async () => {
+      await getBoss().stop({ close: true })
+      await insertTestBam(ctx.schema, { name: 'idx_j', version: 27, status: 'completed' })
+      await insertTestBam(ctx.schema, { name: 'idx_k', version: 27, status: 'completed' })
+      await insertTestBam(ctx.schema, { name: 'idx_l', version: 27, status: 'in_progress' })
+
+      const count = await getBamCount(ctx.connectionString, ctx.schema)
+      expect(count).toBe(3)
+    })
+
+    it('returns filtered count', async () => {
+      await getBoss().stop({ close: true })
+      await insertTestBam(ctx.schema, { name: 'idx_m', version: 27, status: 'completed' })
+      await insertTestBam(ctx.schema, { name: 'idx_n', version: 27, status: 'completed' })
+      await insertTestBam(ctx.schema, { name: 'idx_o', version: 27, status: 'in_progress' })
+
+      const count = await getBamCount(ctx.connectionString, ctx.schema, 'completed')
+      expect(count).toBe(2)
+    })
+  })
+
+  describe('getBamStatusSummary', () => {
+    it('returns empty array when bam table does not exist', async () => {
+      const testSchema = 'pgboss_no_bam_summary'
+      const pool = new Pool({ connectionString: ctx.connectionString })
+      await pool.query(`DROP SCHEMA IF EXISTS ${testSchema} CASCADE`)
+      await pool.query(`CREATE SCHEMA ${testSchema}`)
+      await pool.end()
+
+      const summary = await getBamStatusSummary(ctx.connectionString, testSchema)
+      expect(summary).toEqual([])
+    })
+
+    it('returns counts grouped by status', async () => {
+      await getBoss().stop({ close: true })
+      await insertTestBam(ctx.schema, { name: 'idx_g', version: 27, status: 'pending' })
+      await insertTestBam(ctx.schema, { name: 'idx_h', version: 27, status: 'pending' })
+      await insertTestBam(ctx.schema, { name: 'idx_i', version: 27, status: 'failed' })
+
+      const summary = await getBamStatusSummary(ctx.connectionString, ctx.schema)
+      const byStatus = Object.fromEntries(summary.map((s) => [s.status, s.count]))
+
+      expect(byStatus.pending).toBe(2)
+      expect(byStatus.failed).toBe(1)
     })
   })
 

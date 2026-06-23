@@ -331,6 +331,7 @@ function checkWorkArgs (name: string, args: any[]): {
   assert(!('includeMetadata' in options) || typeof options.includeMetadata === 'boolean', 'includeMetadata must be a boolean')
   assert(!('priority' in options) || typeof options.priority === 'boolean', 'priority must be a boolean')
   assert(!('localConcurrency' in options) || (Number.isInteger(options.localConcurrency) && options.localConcurrency >= 1), 'localConcurrency must be an integer >= 1')
+  assert(!('perJobResults' in options) || typeof options.perJobResults === 'boolean', 'perJobResults must be a boolean')
   validatePriorityRangeConfig(options)
   validateGroupConcurrencyConfig(options)
   validateHeartbeatRefreshConfig(options)

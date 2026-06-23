@@ -2,9 +2,9 @@ import { expect, beforeEach } from 'vitest'
 import { PgBoss, getConstructionPlans, getMigrationPlans, getRollbackPlans } from '../src/index.ts'
 import { getDb, assertTruthy, getSchemaDefs, itPostgresOnly } from './testHelper.ts'
 import Contractor from '../src/contractor.ts'
-import { getAll, migrate } from '../src/migrationStore.ts'
+import { getAll, migrate, migrateCommands } from '../src/migrationStore.ts'
 import packageJson from '../package.json' with { type: 'json' }
-import { setVersion } from '../src/plans.ts'
+import { setVersion, getPartitionedQueueTables } from '../src/plans.ts'
 import { ctx } from './hooks.ts'
 
 const currentSchemaVersion = packageJson.pgboss.schema
@@ -630,5 +630,130 @@ describe('migration', function () {
     expect(finalSchema.indexes.rows).toEqual(baselineSchema.indexes.rows)
     expect(finalSchema.constraints.rows).toEqual(baselineSchema.constraints.rows)
     expect(finalSchema.functions.rows).toEqual(baselineSchema.functions.rows)
+  })
+
+  describe('inline async migration (CLI / exported plans)', function () {
+    const schema = 'custom'
+    const enqueueCall = /SELECT\s+\S*job_table_run_async\(/
+
+    it('should inline async index builds as direct DDL in exported migration plans', function () {
+      const sql = getMigrationPlans(schema, 0)
+
+      expect(sql).toContain('CREATE INDEX CONCURRENTLY IF NOT EXISTS job_common_i7')
+      expect(sql).toContain('CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS job_common_i8')
+      // provenance comment naming the source pg function
+      expect(sql).toContain(`-- inlined from ${schema}.job_table_run_async`)
+      // the inert BAM enqueue call is gone (only the comment mentions the function)
+      expect(sql).not.toMatch(enqueueCall)
+    })
+
+    it('should place inlined CONCURRENTLY builds after COMMIT', function () {
+      const sql = getMigrationPlans(schema, 0)
+
+      const commitIndex = sql.lastIndexOf('COMMIT;')
+      const i7Index = sql.indexOf('CREATE INDEX CONCURRENTLY IF NOT EXISTS job_common_i7')
+
+      expect(commitIndex).toBeGreaterThan(-1)
+      expect(i7Index).toBeGreaterThan(commitIndex)
+    })
+
+    it('should fan inlined i7 across partition tables and keep i8 on job_common only', function () {
+      const sql = migrate(schema, 0, undefined, undefined, { inlineAsync: true, partitionTables: ['jABC'] })
+
+      expect(sql).toContain(`CREATE INDEX CONCURRENTLY IF NOT EXISTS job_common_i7 ON ${schema}.job_common`)
+      expect(sql).toContain(`CREATE INDEX CONCURRENTLY IF NOT EXISTS jABC_i7 ON ${schema}.jABC`)
+      expect(sql).toContain(`CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS job_common_i8 ON ${schema}.job_common`)
+      // i8 is not fanned out across partitions
+      expect(sql).not.toContain('jABC_i8')
+    })
+
+    it('should keep using job_table_run_async (BAM) for the live migration path', function () {
+      const sql = migrate(schema, 0)
+
+      expect(sql).toMatch(enqueueCall)
+      expect(sql).not.toContain('CONCURRENTLY IF NOT EXISTS')
+    })
+
+    itPostgresOnly('should create job_common i7/i8 via the inlined path without a BAM worker', async function () {
+      const config = { ...ctx.bossConfig }
+      const dbSchema = config.schema
+      config.migrations = getAll(dbSchema)
+
+      const db = await getDb()
+      // @ts-ignore
+      const contractor = new Contractor(db, config)
+
+      await contractor.create()
+
+      // roll back through the migrations that add i7 (v27) and i8 (v28) so both indexes
+      // are dropped, simulating a database where the async/BAM builds never ran (#766)
+      for (let v = currentSchemaVersion; v >= versionWithAsyncMigrations; v--) {
+        await contractor.rollback(v)
+      }
+
+      const indexNames = async () => (await db.executeSql(
+        `SELECT indexname FROM pg_indexes WHERE schemaname = '${dbSchema}' AND indexname IN ('job_common_i7', 'job_common_i8')`
+      )).rows.map((row: { indexname: string }) => row.indexname).sort()
+
+      expect(await indexNames()).toHaveLength(0)
+
+      // apply the inlined migration exactly as `pg-boss migrate` does — the transactional
+      // block, then each CONCURRENTLY build separately — with no BAM worker running anywhere
+      const { sql, concurrent } = migrateCommands(dbSchema, versionWithAsyncMigrations - 1, getAll(dbSchema), false, { inlineAsync: true, partitionTables: [] })
+      await db.executeSql(sql)
+      for (const statement of concurrent) {
+        await db.executeSql(statement)
+      }
+
+      expect(await indexNames()).toEqual(['job_common_i7', 'job_common_i8'])
+
+      await db.close()
+    })
+
+    it('should forward partitionTables from getMigrationPlans through to the inlined builds', function () {
+      const sql = getMigrationPlans(schema, 0, { partitionTables: ['jXYZ'] })
+
+      expect(sql).toContain(`CREATE INDEX CONCURRENTLY IF NOT EXISTS job_common_i7 ON ${schema}.job_common`)
+      expect(sql).toContain(`CREATE INDEX CONCURRENTLY IF NOT EXISTS jXYZ_i7 ON ${schema}.jXYZ`)
+      // i8 is pinned to job_common, so partitions are never targeted
+      expect(sql).not.toContain('jXYZ_i8')
+    })
+
+    it('should throw when an async migration command cannot be inlined', function () {
+      // an async command that is not a job_table_run_async($$...$$) enqueue cannot be
+      // rewritten into direct DDL, so inlining must fail loudly rather than emit garbage
+      const malformed = [
+        { release: '1.0.0', version: 1, previous: 0, install: ['CREATE TABLE x ()'], uninstall: [], async: ['SELECT 1'] }
+      ]
+
+      expect(() => migrate(schema, 0, malformed, undefined, { inlineAsync: true }))
+        .toThrow(/Unable to inline async migration command/)
+    })
+
+    itPostgresOnly('should enumerate partitioned queue tables for per-partition inlined builds', async function () {
+      const boss = ctx.boss = new PgBoss(ctx.bossConfig)
+      const dbSchema = ctx.bossConfig.schema
+
+      await boss.start()
+      await boss.createQueue('partition-queue', { partition: true })
+      await boss.stop()
+
+      // the query the CLI runs (with a live connection) to fan inlined builds across partitions
+      const db = await getDb()
+      const result = await db.executeSql(getPartitionedQueueTables(dbSchema))
+      const partitionTables = result.rows.map((row: { table_name: string }) => row.table_name)
+      await db.close()
+
+      // the partitioned queue gets its own table; the shared job_common is not partition = true
+      expect(partitionTables.length).toBeGreaterThan(0)
+      expect(partitionTables).not.toContain('job_common')
+
+      // feeding those tables in fans i7 out across each partition, exactly as `pg-boss migrate` does
+      const sql = migrate(dbSchema, 0, undefined, undefined, { inlineAsync: true, partitionTables })
+
+      for (const table of partitionTables) {
+        expect(sql).toContain(`CREATE INDEX CONCURRENTLY IF NOT EXISTS ${table}_i7 ON ${dbSchema}.${table}`)
+      }
+    })
   })
 })

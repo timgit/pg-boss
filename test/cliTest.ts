@@ -77,6 +77,18 @@ describePglite('cli', function () {
       })
     })
 
+    it('should inline async index builds in migrate plans (no BAM worker runs an exported script)', async function () {
+      const result = await execCommand(`node ${cliPath} plans migrate`)
+      expect(result.stdout).toContain('CONCURRENTLY IF NOT EXISTS')
+      // the inert BAM enqueue must not appear in an exported script
+      expect(result.stdout).not.toMatch(/SELECT\s+\S*job_table_run_async\(/)
+    })
+
+    it('should note the missing connection in migrate plans when none is provided', async function () {
+      const result = await execCommand(`node ${cliPath} plans migrate`)
+      expect(result.stdout).toContain('no database connection provided')
+    })
+
     it('should output rollback SQL plans', async function () {
       await execCommand(`node ${cliPath} plans rollback`, {
         expectedOutput: 'SQL to rollback'
@@ -163,7 +175,7 @@ describePglite('cli', function () {
         await dropSchema(schema)
       })
 
-      it('should report when pg-boss is not installed', async function () {
+      it('should report when pg-boss is not installed (version)', async function () {
         await execCommand(
           `node ${cliPath} version --connection-string ${connectionString} --schema ${schema}`,
           { expectedOutput: 'not installed' }
@@ -217,7 +229,7 @@ describePglite('cli', function () {
         )
       })
 
-      it('should support dry-run mode', async function () {
+      it('should support dry-run mode (create)', async function () {
         const result = await execCommand(
           `node ${cliPath} create --connection-string ${connectionString} --schema ${schema} --dry-run`
         )
@@ -263,11 +275,75 @@ describePglite('cli', function () {
         )
       })
 
-      it('should support dry-run mode', async function () {
+      it('should support dry-run mode (migrate)', async function () {
         const result = await execCommand(
           `node ${cliPath} migrate --connection-string ${connectionString} --schema ${schema} --dry-run`
         )
         expect(result.stdout).toContain('SQL to migrate')
+      })
+
+      it('should inline async index builds in migrate dry-run output', async function () {
+        const result = await execCommand(
+          `node ${cliPath} migrate --connection-string ${connectionString} --schema ${schema} --dry-run`
+        )
+        expect(result.stdout).toContain('CONCURRENTLY IF NOT EXISTS')
+      })
+    })
+
+    describe('inline async migration', function () {
+      const schema = getTestSchema('inline-async')
+
+      beforeEach(async function () {
+        await dropSchema(schema)
+      })
+
+      afterEach(async function () {
+        await dropSchema(schema)
+      })
+
+      it('should omit the missing-connection note in migrate plans when a connection is provided', async function () {
+        const result = await execCommand(
+          `node ${cliPath} plans migrate --connection-string ${connectionString} --schema ${schema}`
+        )
+        expect(result.stdout).toContain('CONCURRENTLY IF NOT EXISTS')
+        expect(result.stdout).not.toContain('no database connection provided')
+      })
+
+      itPostgresOnly('should build i7/i8 indexes via the CLI apply path with no BAM worker', async function () {
+        // install the latest schema, then roll back below the versions that add i7 (v27)
+        // and i8 (v28) so both async indexes are dropped, simulating a database where the
+        // BAM builds never ran (#766)
+        await execCommand(
+          `node ${cliPath} create --connection-string ${connectionString} --schema ${schema}`,
+          { expectedOutput: 'Successfully created' }
+        )
+
+        for (let v = currentSchemaVersion; v > 26; v--) {
+          await execCommand(
+            `node ${cliPath} rollback --connection-string ${connectionString} --schema ${schema}`,
+            { expectedOutput: 'Successfully rolled back' }
+          )
+        }
+
+        const indexNames = async () => {
+          const db = await getDb()
+          const result = await db.executeSql(
+            `SELECT indexname FROM pg_indexes WHERE schemaname = '${schema}' AND indexname IN ('job_common_i7', 'job_common_i8')`
+          )
+          await db.close()
+          return result.rows.map((row: { indexname: string }) => row.indexname).sort()
+        }
+
+        expect(await indexNames()).toHaveLength(0)
+
+        // `pg-boss migrate` re-applies v27..latest, running the inlined CONCURRENTLY builds
+        // one at a time after the migration transaction — no BAM worker involved
+        await execCommand(
+          `node ${cliPath} migrate --connection-string ${connectionString} --schema ${schema}`,
+          { expectedOutput: 'Successfully migrated' }
+        )
+
+        expect(await indexNames()).toEqual(['job_common_i7', 'job_common_i8'])
       })
     })
 
@@ -282,7 +358,7 @@ describePglite('cli', function () {
         await dropSchema(schema)
       })
 
-      it('should report when pg-boss is not installed', async function () {
+      it('should report when pg-boss is not installed (rollback)', async function () {
         await execCommand(
           `node ${cliPath} rollback --connection-string ${connectionString} --schema ${schema}`,
           { expectedOutput: 'not installed' }

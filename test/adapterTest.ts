@@ -69,7 +69,7 @@ describe('knex adapter', () => {
     expect(check.rows.length).toBe(0)
   })
 
-  it('should handle repeated parameter placeholders', async () => {
+  it('should handle repeated parameter placeholders (knex)', async () => {
     ctx.boss = await helper.start(ctx.bossConfig)
     if (!db) db = knex({ client: 'pg', connection: connString })
 
@@ -86,7 +86,7 @@ describe('knex adapter', () => {
     expect(result.rows[0]?.c).toBe(7)
   })
 
-  it('should handle out-of-order repeated placeholders', async () => {
+  it('should handle out-of-order repeated placeholders (knex)', async () => {
     ctx.boss = await helper.start(ctx.bossConfig)
     if (!db) db = knex({ client: 'pg', connection: connString })
 
@@ -103,7 +103,7 @@ describe('knex adapter', () => {
     expect(result.rows[0]?.c).toBe(20)
   })
 
-  it('should handle results as an array instead of object', async () => {
+  it('should handle results as an array instead of object (knex)', async () => {
     ctx.boss = await helper.start(ctx.bossConfig)
     if (!db) db = knex({ client: 'pg', connection: connString })
 
@@ -188,7 +188,7 @@ describe('kysely adapter', () => {
     expect(check.rows.length).toBe(0)
   })
 
-  it('should handle repeated parameter placeholders', async () => {
+  it('should handle repeated parameter placeholders (kysely)', async () => {
     ctx.boss = await helper.start(ctx.bossConfig)
     if (!db) {
       const pool = new pg.Pool({ connectionString: connString })
@@ -273,7 +273,7 @@ describe('drizzle adapter', () => {
     expect(check.rows.length).toBe(0)
   })
 
-  it('should handle repeated parameter placeholders', async () => {
+  it('should handle repeated parameter placeholders (drizzle)', async () => {
     ctx.boss = await helper.start(ctx.bossConfig)
     if (!pool) pool = new pg.Pool({ connectionString: connString })
     const db = drizzle({ client: pool })
@@ -291,7 +291,7 @@ describe('drizzle adapter', () => {
     expect(result.rows[0]?.c).toBe(7)
   })
 
-  it('should handle out-of-order repeated placeholders', async () => {
+  it('should handle out-of-order repeated placeholders (drizzle)', async () => {
     ctx.boss = await helper.start(ctx.bossConfig)
     if (!pool) pool = new pg.Pool({ connectionString: connString })
     const db = drizzle({ client: pool })
@@ -309,7 +309,7 @@ describe('drizzle adapter', () => {
     expect(result.rows[0]?.c).toBe(20)
   })
 
-  it('should handle results as an array instead of object', async () => {
+  it('should handle results as an array instead of object (drizzle)', async () => {
     ctx.boss = await helper.start(ctx.bossConfig)
     if (!pool) pool = new pg.Pool({ connectionString: connString })
     const db = drizzle({ client: pool })
@@ -400,7 +400,7 @@ describe('prisma adapter', () => {
     expect(check.rows.length).toBe(0)
   })
 
-  it('should handle repeated parameter placeholders', async () => {
+  it('should handle repeated parameter placeholders (prisma)', async () => {
     ctx.boss = await helper.start(ctx.bossConfig)
     if (!pool) pool = new pg.Pool({ connectionString: connString })
     if (!prisma) {
