@@ -12,7 +12,7 @@
     "node": ">=22.12.0"
   },
   "dependencies": {
-    "cron-parser": "^5.5.0",
+    "cron-parser": "^5.6.0",
     "pg": "^8.22.0",
     "serialize-error": "^13.0.1"
   },
@@ -22,8 +22,8 @@
     "@prisma/client": "^7.8.0",
     "@tsconfig/node-ts": "^23.6.4",
     "@tsconfig/node22": "^22.0.5",
-    "@types/luxon": "^3.7.1",
-    "@types/node": "^22.19.21",
+    "@types/luxon": "^3.7.2",
+    "@types/node": "^22.20.0",
     "@types/pg": "^8.20.0",
     "@vitest/coverage-v8": "^4.1.2",
     "cli-testlab": "^6.0.1",
@@ -58,9 +58,7 @@
     "cli": "node ./dist/cli.js",
     "readme": "node ./examples/readme.js",
     "docs": "npm run docs:dev --prefix docs",
-    "docs:readme": "node ./scripts/sync-readme.js",
-    "db:migrate": "node --import=tsx -e 'console.log(require(\"./src\").getMigrationPlans())'",
-    "db:construct": "node --import=tsx -e 'console.log(require(\"./src\").getConstructionPlans())'"
+    "docs:readme": "node ./scripts/sync-readme.js"
   },
   "pgboss": {
     "schema": 32
