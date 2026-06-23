@@ -239,6 +239,8 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
   }
 
   work<ReqData, ResData = any>(name: string, handler: types.WorkHandler<ReqData, ResData>): Promise<string>
+  work<ReqData, ResData = any>(name: string, options: types.WorkOptions & { perJobResults: true; includeMetadata: true }, handler: types.PerJobWorkWithMetadataHandler<ReqData, ResData>): Promise<string>
+  work<ReqData, ResData = any>(name: string, options: types.WorkOptions & { perJobResults: true }, handler: types.PerJobWorkHandler<ReqData, ResData>): Promise<string>
   work<ReqData, ResData = any>(name: string, options: types.WorkOptions & { includeMetadata: true }, handler: types.WorkWithMetadataHandler<ReqData, ResData>): Promise<string>
   work<ReqData, ResData = any>(name: string, options: types.WorkOptions, handler: types.WorkHandler<ReqData, ResData>): Promise<string>
   work (...args: any[]): Promise<string> {
@@ -450,6 +452,8 @@ export type {
   JobInsert,
   JobOptions,
   JobPollingOptions,
+  JobResult,
+  JobResultStatus,
   JobStates,
   Events,
   JobWithMetadata,
@@ -474,6 +478,8 @@ export type {
   WorkHandler,
   WorkOptions,
   WorkWithMetadataHandler,
+  PerJobWorkHandler,
+  PerJobWorkWithMetadataHandler,
 } from './types.ts'
 
 export type {

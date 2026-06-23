@@ -175,7 +175,7 @@ describePglite('cli', function () {
         await dropSchema(schema)
       })
 
-      it('should report when pg-boss is not installed', async function () {
+      it('should report when pg-boss is not installed (version)', async function () {
         await execCommand(
           `node ${cliPath} version --connection-string ${connectionString} --schema ${schema}`,
           { expectedOutput: 'not installed' }
@@ -229,7 +229,7 @@ describePglite('cli', function () {
         )
       })
 
-      it('should support dry-run mode', async function () {
+      it('should support dry-run mode (create)', async function () {
         const result = await execCommand(
           `node ${cliPath} create --connection-string ${connectionString} --schema ${schema} --dry-run`
         )
@@ -275,7 +275,7 @@ describePglite('cli', function () {
         )
       })
 
-      it('should support dry-run mode', async function () {
+      it('should support dry-run mode (migrate)', async function () {
         const result = await execCommand(
           `node ${cliPath} migrate --connection-string ${connectionString} --schema ${schema} --dry-run`
         )
@@ -358,7 +358,7 @@ describePglite('cli', function () {
         await dropSchema(schema)
       })
 
-      it('should report when pg-boss is not installed', async function () {
+      it('should report when pg-boss is not installed (rollback)', async function () {
         await execCommand(
           `node ${cliPath} rollback --connection-string ${connectionString} --schema ${schema}`,
           { expectedOutput: 'not installed' }
