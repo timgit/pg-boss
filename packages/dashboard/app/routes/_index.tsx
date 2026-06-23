@@ -6,6 +6,7 @@ import {
   getTopQueues,
   getQueueCount,
   getProblemQueuesCount,
+  getBamStatusSummary,
 } from '~/lib/queries.server'
 import { StatsCards } from '~/components/stats-cards'
 import { Card, CardHeader, CardTitle, CardContent } from '~/components/ui/card'
@@ -31,18 +32,31 @@ import { dbContext } from '~/lib/db-context'
 
 export async function loader ({ context }: Route.LoaderArgs) {
   const { DB_URL, SCHEMA } = context.get(dbContext)
-  const [warnings, stats, topQueues, totalQueues, problemQueuesCount] = await Promise.all([
+  const [warnings, stats, topQueues, totalQueues, problemQueuesCount, bamSummary] = await Promise.all([
     getWarnings(DB_URL, SCHEMA, { limit: 5 }),
     getQueueStats(DB_URL, SCHEMA),
     getTopQueues(DB_URL, SCHEMA, 5),
     getQueueCount(DB_URL, SCHEMA),
     getProblemQueuesCount(DB_URL, SCHEMA),
+    getBamStatusSummary(DB_URL, SCHEMA),
   ])
+
+  // Reduce the BAM summary to the counts the overview card needs.
+  const migrations = bamSummary.reduce(
+    (acc, row) => {
+      if (row.status === 'pending') acc.pending += row.count
+      else if (row.status === 'in_progress') acc.inProgress += row.count
+      else if (row.status === 'failed') acc.failed += row.count
+      return acc
+    },
+    { pending: 0, inProgress: 0, failed: 0 }
+  )
 
   return {
     stats,
     warnings,
     topQueues,
+    migrations,
     queueStats: {
       totalQueues,
       problemQueues: problemQueuesCount,
@@ -55,7 +69,7 @@ export function ErrorBoundary () {
 }
 
 export default function Overview ({ loaderData }: Route.ComponentProps) {
-  const { stats, warnings, topQueues } = loaderData
+  const { stats, warnings, topQueues, migrations } = loaderData
 
   return (
     <div>
@@ -73,6 +87,8 @@ export default function Overview ({ loaderData }: Route.ComponentProps) {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-4">
         <StatsCards stats={stats} />
       </div>
+
+      <MigrationsBanner migrations={migrations} />
 
       {/* Two column: top queues + recent warnings */}
       <div className="grid grid-cols-1 lg:grid-cols-[1.5fr_1fr] gap-4">
@@ -169,6 +185,36 @@ export default function Overview ({ loaderData }: Route.ComponentProps) {
         </Card>
       </div>
     </div>
+  )
+}
+
+function MigrationsBanner ({
+  migrations,
+}: {
+  migrations: { pending: number; inProgress: number; failed: number }
+}) {
+  const { pending, inProgress, failed } = migrations
+  // Nothing in flight or failed — keep the overview uncluttered. The dedicated
+  // Migrations page is always reachable from the sidebar.
+  if (pending === 0 && inProgress === 0 && failed === 0) return null
+
+  const parts: string[] = []
+  if (pending > 0) parts.push(`${pending.toLocaleString()} pending`)
+  if (inProgress > 0) parts.push(`${inProgress.toLocaleString()} in progress`)
+  if (failed > 0) parts.push(`${failed.toLocaleString()} failed`)
+
+  return (
+    <DbLink to="/migrations" className="block mb-4">
+      <Card className="flex items-center gap-3 px-4 py-3 hover:bg-[var(--surface-hover)]">
+        <Badge variant={failed > 0 ? 'error' : 'warning'} size="sm" dot>
+          Async migrations
+        </Badge>
+        <span className="text-sm text-[var(--text-secondary)]">{parts.join(' · ')}</span>
+        <span className="ml-auto text-sm font-medium text-primary-600 dark:text-primary-400">
+          View
+        </span>
+      </Card>
+    </DbLink>
   )
 }
 

@@ -11,5 +11,6 @@ export default [
   route('schedules/:name/:key', 'routes/schedules.$name.$key.tsx'),
   route('schedules/new', 'routes/schedules.new.tsx'),
   route('send', 'routes/send.tsx'),
+  route('migrations', 'routes/migrations.tsx'),
   route('warnings', 'routes/warnings.tsx'),
 ] satisfies RouteConfig

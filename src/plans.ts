@@ -896,6 +896,10 @@ export function versionTableExists (schema: string) {
   return `SELECT to_regclass('${schema}.version') as name`
 }
 
+export function getPartitionedQueueTables (schema: string) {
+  return `SELECT table_name FROM ${schema}.queue WHERE partition = true`
+}
+
 export function insertVersion (schema: string, version: number) {
   return `INSERT INTO ${schema}.version(version) VALUES ('${version}')`
 }

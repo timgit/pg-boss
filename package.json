@@ -55,6 +55,7 @@
     "precover": "prisma generate --schema=test/prisma/schema.prisma",
     "cover": "vitest run --coverage",
     "tsc": "tsc --noEmit",
+    "cli": "node ./dist/cli.js",
     "readme": "node ./examples/readme.js",
     "db:migrate": "node --import=tsx -e 'console.log(require(\"./src\").getMigrationPlans())'",
     "db:construct": "node --import=tsx -e 'console.log(require(\"./src\").getConstructionPlans())'"

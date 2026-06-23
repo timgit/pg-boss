@@ -6,6 +6,8 @@ import type {
   WarningResult,
   QueueStats,
   ScheduleResult,
+  BamEntryResult,
+  BamStatusSummary,
 } from './types'
 
 // Validate schema name to prevent SQL injection
@@ -520,6 +522,99 @@ export async function getWarningCount (
     // Table doesn't exist - persistWarnings not enabled
     if (err && typeof err === 'object' && 'code' in err && err.code === '42P01') {
       return 0
+    }
+    throw err
+  }
+}
+
+// Get background async migration (BAM) entries, newest schema version first.
+// Mirrors plans.getBamEntries in the pg-boss core (same column aliases).
+// Returns [] if the bam table doesn't exist (schema predates async migrations).
+export async function getBamEntries (
+  dbUrl: string,
+  schema: string,
+  options: {
+    status?: string | null;
+    limit?: number;
+    offset?: number;
+  } = {}
+): Promise<BamEntryResult[]> {
+  const s = validateIdentifier(schema)
+  const { status = null, limit = 200, offset = 0 } = options
+
+  const sql = `
+    SELECT
+      id,
+      name,
+      version,
+      status,
+      queue,
+      table_name as "table",
+      command,
+      error,
+      created_on as "createdOn",
+      started_on as "startedOn",
+      completed_on as "completedOn"
+    FROM ${s}.bam
+    WHERE ($1::text IS NULL OR status = $1)
+    ORDER BY version DESC, created_on DESC
+    LIMIT $2 OFFSET $3
+  `
+  try {
+    return await query<BamEntryResult>(dbUrl, sql, [status, limit, offset])
+  } catch (err: unknown) {
+    // Table doesn't exist - schema predates background async migrations
+    if (err && typeof err === 'object' && 'code' in err && err.code === '42P01') {
+      return []
+    }
+    throw err
+  }
+}
+
+// Get BAM entry count (for pagination), optionally filtered by status.
+// Returns 0 if the bam table doesn't exist.
+export async function getBamCount (
+  dbUrl: string,
+  schema: string,
+  status?: string | null
+): Promise<number> {
+  const s = validateIdentifier(schema)
+  const sql = `
+    SELECT COUNT(*)::int as count
+    FROM ${s}.bam
+    WHERE ($1::text IS NULL OR status = $1)
+  `
+  try {
+    const result = await queryOne<{ count: number }>(dbUrl, sql, [status ?? null])
+    return result?.count ?? 0
+  } catch (err: unknown) {
+    // Table doesn't exist - schema predates background async migrations
+    if (err && typeof err === 'object' && 'code' in err && err.code === '42P01') {
+      return 0
+    }
+    throw err
+  }
+}
+
+// Get aggregated BAM counts grouped by status, for the summary cards and the
+// Overview widget. Mirrors plans.getBamStatus in the pg-boss core.
+// Returns [] if the bam table doesn't exist.
+export async function getBamStatusSummary (
+  dbUrl: string,
+  schema: string
+): Promise<BamStatusSummary[]> {
+  const s = validateIdentifier(schema)
+  const sql = `
+    SELECT status, count(*)::int as count, max(created_on) as "lastCreatedOn"
+    FROM ${s}.bam
+    GROUP BY status
+  `
+  try {
+    return await query<BamStatusSummary>(dbUrl, sql)
+  } catch (err: unknown) {
+    // Table doesn't exist - schema predates background async migrations
+    if (err && typeof err === 'object' && 'code' in err && err.code === '42P01') {
+      return []
     }
     throw err
   }

@@ -2,6 +2,61 @@ import assert from 'node:assert'
 import * as plans from './plans.ts'
 import * as types from './types.ts'
 
+// Options for rendering an async (BAM) migration as inline, self-contained DDL instead
+// of a job_table_run_async() enqueue call. Used by CLI / exported migrations, which run
+// in a context with no BAM worker to process the queued commands. See issue #766.
+interface MigrateOptions {
+  inlineAsync?: boolean
+  // Partitioned queue table names to expand the inlined index builds across, in addition
+  // to job_common. Supplied by callers that hold a live connection (the CLI); empty for a
+  // purely static export, which can only target job_common.
+  partitionTables?: string[]
+}
+
+// Mirrors the SQL job_table_format() function (src/plans.ts): rewrites a command targeting
+// the base `job` table to target a specific partition table.
+function formatJobTable (command: string, table: string) {
+  return command
+    .replaceAll('.job', `.${table}`)
+    .replaceAll('job_i', `${table}_i`)
+}
+
+// Derives the direct index DDL that a job_table_run_async() command would eventually run
+// via BAM, one statement per target table, each prefixed with a provenance comment. The
+// CONCURRENTLY keyword is preserved (these are emitted after COMMIT), and IF NOT EXISTS is
+// added so the script is safe to re-run.
+function inlineAsyncCommand (schema: string, asyncCommand: string, version: number, partitionTables: string[]) {
+  const nameMatch = asyncCommand.match(/job_table_run_async\(\s*'([^']+)'/)
+  const bodyMatch = asyncCommand.match(/\$\$([\s\S]*?)\$\$/)
+  // An explicit table arg after the $$ body pins the command to a single table (e.g. i8 →
+  // job_common); without it the command fans out across job_common + every partition.
+  const tableMatch = asyncCommand.match(/\$\$\s*,\s*'([^']+)'/)
+
+  assert(nameMatch && bodyMatch, `Unable to inline async migration command: ${asyncCommand}`)
+
+  const commandName = nameMatch[1]
+  const body = bodyMatch[1].trim()
+  const targetTables = tableMatch ? [tableMatch[1]] : ['job_common', ...partitionTables]
+
+  return targetTables.map(table => {
+    const ddl = formatJobTable(body, table).replace(
+      /(CREATE (?:UNIQUE )?INDEX CONCURRENTLY) /,
+      '$1 IF NOT EXISTS '
+    )
+    const comment = `-- inlined from ${schema}.job_table_run_async (migration v${version}, command: ${commandName})`
+    return `${comment}\n${ddl}`
+  })
+}
+
+// A migration split into its transactional block and the post-COMMIT CONCURRENTLY index
+// builds. The concurrent statements cannot run inside a transaction, so a programmatic
+// caller (the CLI apply path) must execute each one on its own; a printed script can simply
+// concatenate them (psql runs top-level statements individually). See migrate().
+interface MigrationCommands {
+  sql: string
+  concurrent: string[]
+}
+
 function flatten (schema: string, commands: string[], version: number, noAdvisoryLocks?: boolean) {
   commands.unshift(plans.assertMigration(schema, version))
   commands.push(plans.setVersion(schema, version))
@@ -29,8 +84,13 @@ function next (schema: string, version: number, migrations: types.Migration[] | 
   return flatten(schema, result.install, result.version, noAdvisoryLocks)
 }
 
-function migrate (schema: string, version: number, migrations?: types.Migration[], noAdvisoryLocks?: boolean) {
+// Builds the migration as separate pieces: the transactional block plus any inlined
+// CONCURRENTLY index builds (when options.inlineAsync). Callers that execute SQL
+// programmatically must run `concurrent` statements individually, outside a transaction.
+function migrateCommands (schema: string, version: number, migrations?: types.Migration[], noAdvisoryLocks?: boolean, options: MigrateOptions = {}): MigrationCommands {
   migrations = migrations || getAll(schema)
+
+  const concurrent: string[] = []
 
   const result = migrations
     .filter(i => i.previous >= version!)
@@ -39,10 +99,17 @@ function migrate (schema: string, version: number, migrations?: types.Migration[
       acc.install = acc.install.concat(migration.install)
 
       if (migration.async) {
-        const bamCommands = migration.async.map(cmd =>
-          cmd.replace(/\$VERSION\$/g, String(migration.version))
-        )
-        acc.install = acc.install.concat(bamCommands)
+        if (options.inlineAsync) {
+          // Bypass BAM: emit the real index DDL (run after COMMIT) instead of enqueuing it.
+          for (const cmd of migration.async) {
+            concurrent.push(...inlineAsyncCommand(schema, cmd, migration.version, options.partitionTables || []))
+          }
+        } else {
+          const bamCommands = migration.async.map(cmd =>
+            cmd.replace(/\$VERSION\$/g, String(migration.version))
+          )
+          acc.install = acc.install.concat(bamCommands)
+        }
       }
 
       acc.version = migration.version
@@ -51,7 +118,16 @@ function migrate (schema: string, version: number, migrations?: types.Migration[
 
   assert(result.install.length > 0, `Version ${version} not found.`)
 
-  return flatten(schema, result.install, result.version!, noAdvisoryLocks)
+  return { sql: flatten(schema, result.install, result.version!, noAdvisoryLocks), concurrent }
+}
+
+// Renders a migration as a single SQL script. The inlined CONCURRENTLY builds are appended
+// after COMMIT; this form is meant for printing/export (psql runs them individually). To
+// apply programmatically, use migrateCommands() and execute `concurrent` separately.
+function migrate (schema: string, version: number, migrations?: types.Migration[], noAdvisoryLocks?: boolean, options: MigrateOptions = {}) {
+  const { sql, concurrent } = migrateCommands(schema, version, migrations, noAdvisoryLocks, options)
+
+  return concurrent.length ? `${sql}\n${concurrent.join(';\n')};` : sql
 }
 
 function getAll (schema: string): types.Migration[] {
@@ -1025,5 +1101,6 @@ export {
   rollback,
   next,
   migrate,
+  migrateCommands,
   getAll,
 }

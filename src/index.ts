@@ -25,8 +25,8 @@ export function getConstructionPlans (schema?: string) {
   return Contractor.constructionPlans(schema)
 }
 
-export function getMigrationPlans (schema?: string, version?: number) {
-  return Contractor.migrationPlans(schema, version)
+export function getMigrationPlans (schema?: string, version?: number, options?: { partitionTables?: string[] }) {
+  return Contractor.migrationPlans(schema, version, options)
 }
 
 export function getRollbackPlans (schema?: string, version?: number) {
