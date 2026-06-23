@@ -175,22 +175,57 @@ class Manager extends EventEmitter implements types.EventsMixin {
     }
   }
 
-  #trackJobsCompleted<T> (name: string, jobs: types.Job<T>[], result: unknown): void {
+  async #trackJobsCompleted<T> (name: string, jobs: types.Job<T>[], result: unknown, affected: number): Promise<void> {
     const spy = this.config.__test__enableSpies ? this.#spies.get(name) : undefined
-    if (spy) {
+    if (!spy) return
+
+    // Fast path: complete() transitioned every job (it only touches jobs still in the
+    // active state), so the handler's return value is the output for each one.
+    if (affected === jobs.length) {
       const output = jobs.length === 1 ? result as object : undefined
       for (const job of jobs) {
         spy.addJob(job.id, name, job.data as object, 'completed', output)
       }
+      return
+    }
+
+    // Otherwise the handler transitioned one or more jobs itself before returning (e.g. a
+    // validation failure routed through boss.fail()), making complete() a no-op for those.
+    // Reflect each job's real persisted state rather than assuming completion.
+    for (const job of jobs) {
+      const persisted = await this.getJobById<object>(name, job.id)
+      const state = persisted?.state
+      if (state === 'completed' || state === 'failed' || state === 'active' || state === 'created') {
+        spy.addJob(job.id, name, job.data as object, state, persisted?.output)
+      } else if (!persisted) {
+        // The handler deleted the job itself (e.g. boss.deleteJob in the handler), so there is
+        // no persisted row to inspect. The handler still returned normally, so from the spy's
+        // perspective the work succeeded — record 'completed', matching the behavior before
+        // manual-failure tracking was added.
+        spy.addJob(job.id, name, job.data as object, 'completed', undefined)
+      }
+      // 'retry' / 'cancelled' have no spy-state equivalent, so they are intentionally skipped
     }
   }
 
-  #trackJobsFailed<T> (name: string, jobs: types.Job<T>[], err: Error): void {
+  async #trackJobsFailed<T> (name: string, jobs: types.Job<T>[], err: Error): Promise<void> {
     const spy = this.config.__test__enableSpies ? this.#spies.get(name) : undefined
-    if (spy) {
-      for (const job of jobs) {
-        spy.addJob(job.id, name, job.data as object, 'failed', { message: err?.message, stack: err?.stack })
+    if (!spy) return
+
+    // A handler throw routes through fail(), but fail() only lands the job in the terminal
+    // 'failed' state once its retries are exhausted (retry_count >= retry_limit). While retries
+    // remain the job goes back to 'retry' and will run again, so recording 'failed' here would be
+    // wrong — the spy would report a permanent failure for a job that may yet succeed on retry,
+    // and (if the retry does succeed) it would hold contradictory 'failed' + 'completed' entries.
+    // Read the real persisted state and only record 'failed' when the job actually failed for good.
+    // The eventual outcome of a retried job — success, or terminal failure when retries run out —
+    // is recorded by whichever attempt produces it. Mirrors the slow path in #trackJobsCompleted.
+    for (const job of jobs) {
+      const persisted = await this.getJobById<object>(name, job.id)
+      if (persisted?.state === 'failed') {
+        spy.addJob(job.id, name, job.data as object, 'failed', persisted.output ?? { message: err?.message, stack: err?.stack })
       }
+      // 'retry' / 'created' (retries remaining) have no terminal spy state, so they are skipped.
     }
   }
 
@@ -417,22 +452,47 @@ class Manager extends EventEmitter implements types.EventsMixin {
       }, intervalMs)
     }
 
+    let completedResult: unknown
+    let completedAffected = 0
+    let failedError: any
+    let didFail = false
+
     try {
       const result = await resolveWithinSeconds(callback(jobs), maxExpiration, `handler execution exceeded ${maxExpiration}s`, ac)
       if (perJobResults) {
+        // #settlePerJob settles each job individually and does its own (synchronous,
+        // lookup-free) spy tracking via #trackJobsSettled, so the deferred tracker below
+        // is skipped for this path.
         await this.#settlePerJob(name, jobs, result)
       } else {
-        await this.complete(name, jobIds, jobIds.length === 1 ? result : undefined)
-        this.#trackJobsCompleted(name, jobs, result)
+        const completion = await this.complete(name, jobIds, jobIds.length === 1 ? result : undefined)
+        completedResult = result
+        completedAffected = completion.affected
       }
     } catch (err: any) {
       await this.fail(name, jobIds, err)
-      this.#trackJobsFailed(name, jobs, err)
+      failedError = err
+      didFail = true
     } finally {
       if (heartbeatTimer) clearInterval(heartbeatTimer)
       if (worker) {
         // Clear between jobs
         worker.abortController = null
+      }
+    }
+
+    // Spy tracking runs after the completion/failure logic so a spy lookup error can never
+    // be mistaken for a handler failure and re-route the job through fail(). The flag is
+    // gated here, not just inside the trackers, so the production hot path (spies off) never
+    // even calls the async tracker — no promise allocated, no microtask tick. The checks
+    // inside the trackers stay as a safety net.
+    if (this.config.__test__enableSpies && this.#spies.has(name)) {
+      if (didFail) {
+        await this.#trackJobsFailed(name, jobs, failedError)
+      } else if (!perJobResults) {
+        // perJobResults already tracked inside #settlePerJob; tracking again here would
+        // double-record (and overwrite per-job outputs with the batch's slow-path lookup).
+        await this.#trackJobsCompleted(name, jobs, completedResult, completedAffected)
       }
     }
   }
