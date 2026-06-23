@@ -167,7 +167,7 @@ helper.describePglite('distributed database mode', { timeout: 20000 }, function 
     helper.assertTruthy(failed)
     expect(failed.state).toBe('failed')
 
-    const [dlqJob] = await ctx.boss.fetch<{ key: string }>(deadLetter)
+    const [dlqJob] = await helper.fetchWithRetry<{ key: string }>(ctx.boss, deadLetter)
     expect(dlqJob).toBeTruthy()
     expect(dlqJob.data.key).toBe(ctx.schema)
   })

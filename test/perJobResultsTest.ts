@@ -189,7 +189,7 @@ describe('perJobResults', function () {
     await spy.waitForJobWithId(jobId, 'failed')
 
     // The dead letter job carries the original data and the per-job failure output.
-    const [dlqJob] = await ctx.boss.fetch<{ key: string }>(deadLetter)
+    const [dlqJob] = await helper.fetchWithRetry<{ key: string }>(ctx.boss, deadLetter)
     assertTruthy(dlqJob)
     expect(dlqJob.data.key).toBe('payload')
 
@@ -271,7 +271,7 @@ describe('perJobResults', function () {
     expect(source.retryCount).toBe(0)
 
     // The dead letter job carries the original data and the per-job output.
-    const [dlqJob] = await ctx.boss.fetch<{ key: string }>(deadLetter)
+    const [dlqJob] = await helper.fetchWithRetry<{ key: string }>(ctx.boss, deadLetter)
     assertTruthy(dlqJob)
     expect(dlqJob.data.key).toBe('payload')
 
@@ -381,7 +381,7 @@ describe('perJobResults', function () {
       await spy.waitForJobWithId(jobId, 'failed')
 
       // reinsertFailedJobs runs through the distributed split here, carrying the per-id output.
-      const [dlqJob] = await ctx.boss.fetch<{ key: string }>(deadLetter)
+      const [dlqJob] = await helper.fetchWithRetry<{ key: string }>(ctx.boss, deadLetter)
       assertTruthy(dlqJob)
       expect(dlqJob.data.key).toBe('payload')
 
@@ -413,7 +413,7 @@ describe('perJobResults', function () {
       expect(source.state).toBe('failed')
       expect(source.retryCount).toBe(0)
 
-      const [dlqJob] = await ctx.boss.fetch<{ key: string }>(deadLetter)
+      const [dlqJob] = await helper.fetchWithRetry<{ key: string }>(ctx.boss, deadLetter)
       assertTruthy(dlqJob)
       expect(dlqJob.data.key).toBe('payload')
 
@@ -507,7 +507,7 @@ describe('perJobResults', function () {
       expect(source.state).toBe('failed')
       expect(source.retryCount).toBe(0)
 
-      const [dlqJob] = await ctx.boss.fetch<{ key: string }>(deadLetter)
+      const [dlqJob] = await helper.fetchWithRetry<{ key: string }>(ctx.boss, deadLetter)
       assertTruthy(dlqJob)
       expect(dlqJob.data.key).toBe('payload')
 

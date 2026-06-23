@@ -7,7 +7,8 @@ import configJson from './config.json' with { type: 'json' }
 import cockroachConfigJson from './config.cockroachdb.json' with { type: 'json' }
 import yugabyteConfigJson from './config.yugabytedb.json' with { type: 'json' }
 import citusConfigJson from './config.citus.json' with { type: 'json' }
-import type { ConstructorOptions, IDatabase } from '../src/types.ts'
+import type { ConstructorOptions, IDatabase, FetchOptions, Job } from '../src/types.ts'
+import { delay } from '../src/tools.ts'
 import { getColumns, getConstraints, getIndexes, getFunctions } from './pgSchemaHelper.ts'
 
 const sha1 = (value: string): string => crypto.createHash('sha1').update(value).digest('hex')
@@ -249,6 +250,22 @@ async function start (options?: Partial<ConstructorOptions> & { testKey?: string
   }
 }
 
+// PGlite's now() has coarse, sub-statement resolution, so a row inserted with the default
+// start_after = now() can tie with an immediately following fetch's `start_after < now()` filter and
+// briefly read as not-yet-due. Real Postgres advances now() between statements, so the first attempt
+// always wins there. Retry the fetch a few times so assertions on freshly-inserted jobs (e.g. a job
+// just routed to a dead letter queue) aren't flaky under PGlite.
+async function fetchWithRetry<T = object> (boss: PgBoss, name: string, options?: FetchOptions, attempts = 20): Promise<Job<T>[]> {
+  for (let i = 0; i < attempts; i++) {
+    const jobs = await boss.fetch<T>(name, options)
+    if (jobs.length > 0) {
+      return jobs
+    }
+    await delay(2)
+  }
+  return []
+}
+
 async function getSchemaDefs (schemas: string[]) {
   const columnsSql = getColumns(schemas)
   const indexeSql = getIndexes(schemas)
@@ -273,6 +290,7 @@ export {
   assertTruthy,
   dropSchema,
   start,
+  fetchWithRetry,
   getDb,
   countJobs,
   findJobs,

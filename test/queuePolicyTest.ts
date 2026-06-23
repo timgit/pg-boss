@@ -179,7 +179,7 @@ describe('queuePolicy', function () {
       assertTruthy(job2Data)
       expect(job2Data.state).toBe('failed')
 
-      const [job2Dlq] = await ctx.boss.fetch(deadLetter)
+      const [job2Dlq] = await helper.fetchWithRetry(ctx.boss, deadLetter)
 
       expect(job2Dlq).toBeTruthy()
     })
