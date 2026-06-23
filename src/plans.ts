@@ -1206,6 +1206,62 @@ export function completeJobs (schema: string, table: string, includeQueued?: boo
   `
 }
 
+// Per-job-output completion: each job's output is supplied via a JSON recordset ($2) and applied by
+// id, so a batch can be completed with distinct outputs in a single statement. Mirrors completeJobs
+// (only active jobs; same dependency-unblocking), but sources output from the input join.
+export function completeJobsWithOutputs (schema: string, table: string) {
+  return `
+    WITH input AS (
+      SELECT * FROM json_to_recordset($2::json) AS x (id uuid, output jsonb)
+    ),
+    completed AS (
+      UPDATE ${schema}.${table} j
+      SET completed_on = now(),
+        state = '${JOB_STATES.completed}',
+        output = i.output
+      FROM input i
+      WHERE j.name = $1
+        AND j.id = i.id
+        AND j.state = '${JOB_STATES.active}'
+      RETURNING j.name, j.id, j.blocking
+    ),
+    decremented AS (
+      SELECT d.child_name, d.child_id, COUNT(*)::int AS n
+      FROM ${schema}.job_dependency d
+      JOIN completed c ON c.blocking
+        AND d.parent_name = c.name
+        AND d.parent_id = c.id
+      GROUP BY d.child_name, d.child_id
+    ),
+    ${lockedChildrenCte(schema)},
+    unblocked AS (
+      ${unblockChildrenUpdate(schema)}
+      RETURNING 1
+    )
+    SELECT COUNT(*) FROM completed
+  `
+}
+
+// Distributed equivalent of completeJobsWithOutputs: a single mutation that returns the completed
+// ids and whether each was blocking, so the caller can decrement dependents in a separate statement
+// (CockroachDB rejects multi-mutation CTEs). Pairs with decrementDependents().
+export function completeJobsWithOutputsDistributed (schema: string, table: string) {
+  return `
+    WITH input AS (
+      SELECT * FROM json_to_recordset($2::json) AS x (id uuid, output jsonb)
+    )
+    UPDATE ${schema}.${table} j
+    SET completed_on = now(),
+      state = '${JOB_STATES.completed}',
+      output = i.output
+    FROM input i
+    WHERE j.name = $1
+      AND j.id = i.id
+      AND j.state = '${JOB_STATES.active}'
+    RETURNING j.id, j.blocking
+  `
+}
+
 export function cancelJobs (schema: string, table: string) {
   return `
     WITH results as (
@@ -1387,7 +1443,30 @@ export function touchJobs (schema: string, table: string) {
 
 function failJobs (schema: string, table: string, where: string, output: string) {
   return `
-    WITH deleted_jobs AS (
+    WITH ${failJobsBody(schema, table, where, output)}
+    SELECT COUNT(*) FROM results
+  `
+}
+
+// The CTE chain shared by failJobs() and failJobsByIdWithOutputs(): delete the matched jobs and
+// re-insert them as retry (when retries remain) or failed (+ dead letter). `where` selects the rows
+// to fail and `output` is the SQL expression stored on each re-inserted job. Returned without the
+// leading `WITH` or trailing `SELECT` so callers can prepend extra CTEs (e.g. an output map).
+// When `forceTerminal` is set, every re-inserted job goes straight to the terminal `failed` state
+// regardless of remaining retries, so the dlq_jobs CTE routes it to the dead letter queue (if any)
+// immediately. This backs the perJobResults `deadletter` disposition.
+function failJobsBody (schema: string, table: string, where: string, output: string, forceTerminal = false) {
+  const state = forceTerminal
+    ? `'${JOB_STATES.failed}'::${schema}.job_state`
+    : `CASE
+          WHEN retry_count < retry_limit THEN '${JOB_STATES.retry}'::${schema}.job_state
+          ELSE '${JOB_STATES.failed}'::${schema}.job_state
+          END`
+  const completedOn = forceTerminal
+    ? 'now()'
+    : 'CASE WHEN retry_count < retry_limit THEN NULL ELSE now() END'
+
+  return `deleted_jobs AS (
       DELETE FROM ${schema}.${table}
       WHERE ${where}
       RETURNING *
@@ -1429,10 +1508,7 @@ function failJobs (schema: string, table: string, where: string, output: string)
         name,
         priority,
         data,
-        CASE
-          WHEN retry_count < retry_limit THEN '${JOB_STATES.retry}'::${schema}.job_state
-          ELSE '${JOB_STATES.failed}'::${schema}.job_state
-          END as state,
+        ${state} as state,
         retry_limit,
         retry_count,
         retry_delay,
@@ -1456,7 +1532,7 @@ function failJobs (schema: string, table: string, where: string, output: string)
         expire_seconds,
         deletion_seconds,
         created_on,
-        CASE WHEN retry_count < retry_limit THEN NULL ELSE now() END as completed_on,
+        ${completedOn} as completed_on,
         keep_until,
         policy,
         ${output},
@@ -1555,7 +1631,36 @@ function failJobs (schema: string, table: string, where: string, output: string)
       FROM results r
         JOIN ${schema}.queue q ON q.name = r.dead_letter
       WHERE state = '${JOB_STATES.failed}'
-    )
+    )`
+}
+
+export function failJobsByIdWithOutputs (schema: string, table: string) {
+  // Output is supplied per job via a JSON recordset ($2). `where` and the output expression both
+  // reference the output_map CTE so each re-inserted job keeps its own output. Constant number of
+  // statements regardless of batch size.
+  const where = `name = $1 AND id IN (SELECT id FROM output_map) AND state < '${JOB_STATES.completed}'`
+  const output = '(SELECT om.output FROM output_map om WHERE om.id = deleted_jobs.id)'
+
+  return `
+    WITH output_map AS (
+      SELECT * FROM json_to_recordset($2::json) AS x (id uuid, output jsonb)
+    ),
+    ${failJobsBody(schema, table, where, output)}
+    SELECT COUNT(*) FROM results
+  `
+}
+
+// Like failJobsByIdWithOutputs, but fails every job terminally (forceTerminal) so it routes straight
+// to the dead letter queue, bypassing remaining retries. Backs the perJobResults `deadletter` status.
+export function deadLetterJobsByIdWithOutputs (schema: string, table: string) {
+  const where = `name = $1 AND id IN (SELECT id FROM output_map) AND state < '${JOB_STATES.completed}'`
+  const output = '(SELECT om.output FROM output_map om WHERE om.id = deleted_jobs.id)'
+
+  return `
+    WITH output_map AS (
+      SELECT * FROM json_to_recordset($2::json) AS x (id uuid, output jsonb)
+    ),
+    ${failJobsBody(schema, table, where, output, true)}
     SELECT COUNT(*) FROM results
   `
 }
