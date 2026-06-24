@@ -65,7 +65,7 @@ The following options can be set as properties in an object for additional confi
 
 * **supervise**, bool, default true
 
-  If this is set to false, maintenance and monitoring operations will be disabled on this instance. This is an advanced use case, as bypassing maintenance operations is not something you would want to do under normal circumstances.
+  If this is set to false, flows, maintenance, and monitoring operations will be skipped on this instance. This is an advanced use case, and not something you would want to do under normal circumstances.
 
 * **schedule**, bool, default true
 
