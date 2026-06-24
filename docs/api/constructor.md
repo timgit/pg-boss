@@ -65,7 +65,7 @@ The following options can be set as properties in an object for additional confi
 
 * **supervise**, bool, default true
 
-  If this is set to false, maintenance and monitoring operations will be disabled on this instance. This is an advanced use case, as bypassing maintenance operations is not something you would want to do under normal circumstances.
+  If this is set to false, flows, maintenance, and monitoring operations will be skipped on this instance. This is an advanced use case, and not something you would want to do under normal circumstances.
 
 * **schedule**, bool, default true
 
@@ -102,6 +102,10 @@ The following configuration options should not normally need to be changed, but 
 * **queueCacheIntervalSeconds**, int, default 60 seconds
 
   How often queue metadata is refreshed in memory.
+
+* **flowIntervalSeconds**, int, default 5 seconds
+
+  How often the background flow resolver runs to unblock dependent jobs (created via [`flow()`](./jobs.md#flowjobs-options)) whose parents have completed. Completing a job no longer unblocks its dependents inline; this resolver handles it shortly after, off the completion hot path. Only runs when `supervise` is enabled.
 
 * **persistWarnings**, bool, default false
 

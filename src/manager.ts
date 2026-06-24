@@ -313,15 +313,11 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const ids = items.map(item => item.id)
 
     if (this.config.noMultiMutationCte) {
-      return this.withDistributedTransaction(this.db, async (tx) => {
-        const sql = plans.completeJobsWithOutputsDistributed(this.config.schema, table)
-        const { rows } = await tx.executeSql(sql, [name, JSON.stringify(payload)])
-        const blockingIds = rows.filter(row => row.blocking).map(row => row.id)
-        if (blockingIds.length > 0) {
-          await tx.executeSql(plans.decrementDependents(this.config.schema), [name, blockingIds])
-        }
-        return { jobs: ids, requested: ids.length, affected: rows.length }
-      })
+      // Dependency unblocking is handled out of band by the background resolver (Navigator), so
+      // completion is a single statement here too.
+      const sql = plans.completeJobsWithOutputsDistributed(this.config.schema, table)
+      const { rows } = await this.db.executeSql(sql, [name, JSON.stringify(payload)])
+      return { jobs: ids, requested: ids.length, affected: rows.length }
     }
 
     const sql = plans.completeJobsWithOutputs(this.config.schema, table)
@@ -1227,20 +1223,11 @@ class Manager extends EventEmitter implements types.EventsMixin {
   }
 
   private async completeDistributed (name: string, ids: string[], outputData: any, table: string, db: types.IDatabase, includeQueued?: boolean): Promise<types.CommandResponse> {
-    return this.withDistributedTransaction(db, async (tx) => {
-      // Step 1: Mark jobs completed and learn which ones were blocking dependents
-      const completeSql = plans.completeJobsDistributed(this.config.schema, table, includeQueued)
-      const { rows } = await tx.executeSql(completeSql, [name, ids, outputData])
-
-      // Step 2: Decrement pending_dependencies for children of completed blocking parents
-      const blockingIds = rows.filter(row => row.blocking).map(row => row.id)
-      if (blockingIds.length > 0) {
-        const decrementSql = plans.decrementDependents(this.config.schema)
-        await tx.executeSql(decrementSql, [name, blockingIds])
-      }
-
-      return { jobs: ids, requested: ids.length, affected: rows.length }
-    })
+    // Dependency unblocking is handled out of band by the background resolver (Navigator), so
+    // completion is a single statement on every backend.
+    const sql = plans.completeJobsDistributed(this.config.schema, table, includeQueued)
+    const { rows } = await db.executeSql(sql, [name, ids, outputData])
+    return { jobs: ids, requested: ids.length, affected: rows.length }
   }
 
   async fail (name: string, id: string | string[], data?: any, options: types.ConnectionOptions = {}) {
@@ -1297,6 +1284,39 @@ class Manager extends EventEmitter implements types.EventsMixin {
   async failJobsByHeartbeatDistributed (table: string, queues: string[]): Promise<number> {
     const select = plans.selectJobsToFailByHeartbeat(this.config.schema, table, queues)
     return this.expireJobsDistributed(table, select, { value: { message: 'job heartbeat timeout' } })
+  }
+
+  // Distributed flow audit for one partition table (CockroachDB / noMultiMutationCte): lock a
+  // batch of completed blocking parents, then decrement their children and clear blocking per
+  // parent queue (decrementDependents and clearBlocking are each keyed by a single name). Returns
+  // the number of parents resolved so the resolver can loop until a batch drains.
+  async resolveFlowJobsDistributed (table: string, names: string[]): Promise<number> {
+    const select = plans.selectBlockingParents(this.config.schema, table, names, this.config.noSkipLocked)
+
+    return this.withDistributedTransaction(this.db, async (tx) => {
+      const { rows } = await tx.executeSql(select.text, select.values)
+
+      if (rows.length === 0) {
+        return 0
+      }
+
+      const idsByName = new Map<string, string[]>()
+      for (const row of rows) {
+        const list = idsByName.get(row.name) || []
+        list.push(row.id)
+        idsByName.set(row.name, list)
+      }
+
+      const decrementSql = plans.decrementDependents(this.config.schema)
+      const clearSql = plans.clearBlocking(this.config.schema)
+
+      for (const [name, ids] of idsByName) {
+        await tx.executeSql(decrementSql, [name, ids])
+        await tx.executeSql(clearSql, [name, ids])
+      }
+
+      return rows.length
+    })
   }
 
   private async expireJobsDistributed (table: string, select: plans.SqlQuery, outputData: any): Promise<number> {

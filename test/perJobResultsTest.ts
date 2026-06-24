@@ -199,7 +199,7 @@ describe('perJobResults', function () {
   })
 
   it('unblocks a dependent child when the blocking parent is completed via perJobResults', async function () {
-    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true, supervise: true, flowIntervalSeconds: 1, __test__bypass_flow_interval_check: true })
     const spy = ctx.boss.getSpy(ctx.schema)
 
     const flow = await ctx.boss.flow([
@@ -213,8 +213,8 @@ describe('perJobResults', function () {
     assertTruthy(parentBefore)
     expect(parentBefore.blocking).toBe(true)
 
-    // The worker only ever fetches the parent until it completes; completing it through the
-    // perJobResults path must run the dependency-unblock CTE so the child becomes fetchable.
+    // The worker only ever fetches the parent until it completes; unblocking the child is done off
+    // the hot path by the background resolver (issue #824), which supervise:true enables here.
     await ctx.boss.work(ctx.schema, { batchSize: 10, perJobResults: true, pollingIntervalSeconds: 0.5 }, async jobs =>
       jobs.map(job => ({ id: job.id, status: 'completed' as const, output: { role: (job.data as { role: string }).role } })))
 
@@ -335,7 +335,7 @@ describe('perJobResults', function () {
     })
 
     it('unblocks a dependent child when the blocking parent is completed', async function () {
-      ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: true, __test__enableSpies: true })
+      ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: true, __test__enableSpies: true, supervise: true, flowIntervalSeconds: 1, __test__bypass_flow_interval_check: true })
       const spy = ctx.boss.getSpy(ctx.schema)
 
       const flow = await ctx.boss.flow([
@@ -349,8 +349,8 @@ describe('perJobResults', function () {
       assertTruthy(parentBefore)
       expect(parentBefore.blocking).toBe(true)
 
-      // Completing the parent through the distributed path must run the separate decrementDependents
-      // statement so the child becomes fetchable.
+      // Unblocking the child is done off the hot path by the background resolver (issue #824),
+      // which on a distributed backend runs the split decrementDependents + clearBlocking statements.
       await ctx.boss.work(ctx.schema, { batchSize: 10, perJobResults: true, pollingIntervalSeconds: 0.5 }, async jobs =>
         jobs.map(job => ({ id: job.id, status: 'completed' as const, output: { role: (job.data as { role: string }).role } })))
 

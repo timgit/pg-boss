@@ -30,6 +30,7 @@ describe('flows', function () {
     expect(fetched1[0].id).toBe(parentId)
 
     await ctx.boss.complete(ctx.schema, parentId)
+    await ctx.boss.resolveFlow()
 
     const fetched2 = await ctx.boss.fetch(ctx.schema)
     expect(fetched2.length).toBe(1)
@@ -58,6 +59,7 @@ describe('flows', function () {
 
     const [job1] = await ctx.boss.fetch(ctx.schema)
     await ctx.boss.complete(ctx.schema, job1.id)
+    await ctx.boss.resolveFlow()
 
     const childAfterOne = await ctx.boss.getJobById(ctx.schema, childId)
     assertTruthy(childAfterOne)
@@ -65,6 +67,7 @@ describe('flows', function () {
 
     const [job2] = await ctx.boss.fetch(ctx.schema)
     await ctx.boss.complete(ctx.schema, job2.id)
+    await ctx.boss.resolveFlow()
 
     const childAfterAll = await ctx.boss.getJobById(ctx.schema, childId)
     assertTruthy(childAfterAll)
@@ -152,6 +155,7 @@ describe('flows', function () {
     const [job2] = await ctx.boss.fetch(ctx.schema)
     expect(job2.id).toBe(parentId)
     await ctx.boss.complete(ctx.schema, parentId)
+    await ctx.boss.resolveFlow()
 
     // Child should now be unblocked and fetchable
     const unblockedChild = await ctx.boss.getJobById(ctx.schema, childId)
@@ -208,6 +212,7 @@ describe('flows', function () {
     const [job] = await ctx.boss.fetch(queue1)
     expect(job.id).toBe(parentId)
     await ctx.boss.complete(queue1, parentId)
+    await ctx.boss.resolveFlow()
 
     const fetched2 = await ctx.boss.fetch(queue2)
     expect(fetched2.length).toBe(1)
@@ -364,6 +369,7 @@ describe('flows', function () {
 
     const [job] = await ctx.boss.fetch(ctx.schema)
     await ctx.boss.complete(ctx.schema, job.id)
+    await ctx.boss.resolveFlow()
 
     const childJob = await ctx.boss.getJobById(ctx.schema, childId)
     assertTruthy(childJob)
@@ -387,6 +393,7 @@ describe('flows', function () {
     expect(parents.length).toBe(2)
 
     await ctx.boss.complete(ctx.schema, parents.map(j => j.id))
+    await ctx.boss.resolveFlow()
 
     const children = await ctx.boss.fetch(ctx.schema, { batchSize: 10 })
     expect(children.length).toBe(2)
@@ -413,6 +420,7 @@ describe('flows', function () {
         ctx.boss.complete(ctx.schema, flow.p1, null, { db: db1 }),
         ctx.boss.complete(ctx.schema, flow.p2, null, { db: db2 })
       ])
+      await ctx.boss.resolveFlow()
 
       const childJob = await ctx.boss.getJobById(ctx.schema, flow.child)
       assertTruthy(childJob)
@@ -539,6 +547,7 @@ describe('flows', function () {
     expect(fetched1[0].id).toBe(parentId)
 
     await ctx.boss.complete(ctx.schema, parentId)
+    await ctx.boss.resolveFlow()
 
     const childAfter = await ctx.boss.getJobById(ctx.schema, childId)
     assertTruthy(childAfter)

@@ -502,6 +502,64 @@ describe('migration', function () {
     expect(rolledBackSchema.indexes.rows).not.toEqual(originalSchema.indexes.rows)
   })
 
+  itPostgresOnly('drops the covering INCLUDE from the job_i5 fetch index at v33, across partitions and reversibly', async function () {
+    const config = { ...ctx.bossConfig }
+    const schema = config.schema
+
+    const db = await getDb()
+    // @ts-ignore
+    const contractor = new Contractor(db, config)
+
+    // Read job_i5's definition on job_common + every partition by targeting each index relation by
+    // name (pg_get_indexdef on its regclass), rather than scanning the catalog-wide pg_indexes view —
+    // that view can transiently race concurrent DDL from parallel test workers ("could not open
+    // relation with OID"). Touching only this schema's own relations keeps the read deterministic.
+    const fetchIndexDefs = async (): Promise<string[]> => {
+      const parts = await db.executeSql(`SELECT table_name FROM ${schema}.queue WHERE partition = true ORDER BY table_name`)
+      const tables = ['job_common', ...parts.rows.map((r: { table_name: string }) => r.table_name)]
+      const defs: string[] = []
+      for (const t of tables) {
+        const res = await db.executeSql('SELECT pg_get_indexdef($1::regclass) AS indexdef', [`${schema}.${t}_i5`])
+        defs.push(res.rows[0].indexdef)
+      }
+      return defs
+    }
+
+    await contractor.create()
+    // A partitioned queue gives job_i5 a second home, exercising the per-partition fan-out of the
+    // rebuild (job_table_run across job_common + every partition).
+    await db.executeSql(`SELECT ${schema}.create_queue('part_q', '{"partition":true,"policy":"standard"}'::jsonb)`)
+
+    // Fresh install (current version): both job_common and the partition build job_i5 with no
+    // covering payload — FOR UPDATE ... SKIP LOCKED in the fetch precludes an index-only scan, so
+    // the INCLUDE was dead weight on the hot insert path.
+    let defs = await fetchIndexDefs()
+    expect(defs).toHaveLength(2)
+    for (const def of defs) expect(def).not.toContain('INCLUDE')
+
+    // Roll back to v32: the historical covering form is restored on every table.
+    let version = await contractor.schemaVersion()
+    assertTruthy(version)
+    while (version > 32) {
+      await contractor.rollback(version)
+      version = await contractor.schemaVersion()
+      assertTruthy(version)
+    }
+    expect(version).toBe(32)
+    defs = await fetchIndexDefs()
+    expect(defs).toHaveLength(2)
+    for (const def of defs) expect(def).toContain('INCLUDE (priority, created_on, id)')
+
+    // Migrate forward across v33: the INCLUDE is dropped again on every table.
+    await contractor.next(32)
+    expect(await contractor.schemaVersion()).toBe(33)
+    defs = await fetchIndexDefs()
+    expect(defs).toHaveLength(2)
+    for (const def of defs) expect(def).not.toContain('INCLUDE')
+
+    await db.close()
+  })
+
   itPostgresOnly('should remove indexes created on the job table that follow the standard naming convention', async function () {
     const config = { ...ctx.bossConfig }
     const schema = config.schema

@@ -21,7 +21,15 @@ import { ctx } from './hooks.ts'
 // in CI), leaving little headroom under the 10s global timeout. Raise the default for the whole
 // block so startup jitter can't push a test over the edge (the concurrency tests keep their explicit
 // per-test overrides).
-helper.describePglite('distributed database mode', { timeout: 20000 }, function () {
+//
+// The override must only LIFT the Postgres budget — never cap a distributed backend. vitest.config.ts
+// already gives cockroachdb/yugabytedb a 60s global; a flat 20s here would lower it for exactly the
+// heaviest tests (the withTransaction composition tests do slow DDL + an extra connection), which is
+// how they timed out at 20s on the CockroachDB run. So match that 60s on distributed backends.
+const isDistributedBackend = process.env.DB_TYPE === 'cockroachdb' || process.env.DB_TYPE === 'yugabytedb'
+const blockTimeout = isDistributedBackend ? 60000 : 20000
+
+helper.describePglite('distributed database mode', { timeout: blockTimeout }, function () {
   it('should not duplicate jobs when fetching concurrently in distributed mode', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: true })
     const jobCount = 10
@@ -274,10 +282,9 @@ helper.describePglite('distributed database mode', { timeout: 20000 }, function 
   })
 
   it('should unblock dependents when completing a blocking parent in distributed mode', async function () {
-    // completeDistributed splits the dependency-unblock into a second statement
-    // (plans.completeJobsDistributed + plans.decrementDependents) to avoid CockroachDB's
-    // multi-mutation CTE limit. Completing a blocking parent is the only thing that runs the
-    // decrementDependents branch.
+    // Completion no longer unblocks dependents inline (that work moved off the hot path to the
+    // background resolver — see issue #824). resolveFlow() forces a resolution pass, which on a
+    // distributed backend runs the split selectBlockingParents + decrementDependents + clearBlocking.
     ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: true })
 
     const flow = await ctx.boss.flow([
@@ -289,11 +296,30 @@ helper.describePglite('distributed database mode', { timeout: 20000 }, function 
     expect(parent.id).toBe(flow.parent)
 
     await ctx.boss.complete(ctx.schema, parent.id)
+    await ctx.boss.resolveFlow()
 
     const child = await ctx.boss.getJobById(ctx.schema, flow.child)
     helper.assertTruthy(child)
     expect(child.blocked).toBe(false)
     expect(child.pendingDependencies).toBe(0)
+  })
+
+  it('distributed flow resolver is a no-op when there are no blocking parents', async function () {
+    // A completed but non-blocking job has no dependents, so the distributed resolver's batch query
+    // (selectBlockingParents) returns nothing and resolveFlowJobsDistributed short-circuits to 0.
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: true })
+
+    const id = await ctx.boss.send(ctx.schema)
+    helper.assertTruthy(id)
+    const [job] = await ctx.boss.fetch(ctx.schema)
+    await ctx.boss.complete(ctx.schema, job.id)
+
+    // Resolves across the existing queue, finds no completed blocking parents, and does nothing.
+    await ctx.boss.resolveFlow()
+
+    const completed = await ctx.boss.getJobById(ctx.schema, id)
+    helper.assertTruthy(completed)
+    expect(completed.state).toBe('completed')
   })
 
   it('should construct schema with all distributed compatibility flags', async function () {

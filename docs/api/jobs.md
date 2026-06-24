@@ -249,6 +249,12 @@ Dependent jobs are created in a `blocked` state and won't be eligible for fetchi
 
 When a dependent job uses `startAfter`, both conditions must be met: all dependencies completed and `startAfter` has passed.
 
+Unblocking happens off the completion hot path: a background resolver wakes shortly after a parent completes (see `flowIntervalSeconds` in the [constructor options](./constructor.md)) and unblocks any dependents that are now ready. This keeps completing jobs fast regardless of how many flows exist. The resolver runs when `supervise` is enabled; call [`resolveFlow()`](#resolveflow) to force a pass immediately (e.g. in tests).
+
+### `resolveFlow()`
+
+Forces an immediate flow-resolution pass instead of waiting for the next background cycle, unblocking dependents of any parents that have completed. Returns a promise that resolves when the pass finishes. Useful for deterministic tests, or when you have disabled `supervise` and drive maintenance yourself.
+
 ### `fetch(name, options)`
 
 Returns an array of jobs from a queue

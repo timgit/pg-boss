@@ -27,6 +27,31 @@ describe('expire', function () {
     expect(job.state).toBe('failed')
   })
 
+  it('should expire a job through the standard (non-distributed) path', async function () {
+    // Pin the standard maintenance path even under DISTRIBUTED=true. getConfig() force-enables
+    // __test__distributed for the distributed CI run, which routes expiry through
+    // failJobsByTimeoutDistributed; overriding it back to false exercises boss.ts's standard
+    // failJobsByTimeout branch + plans.failJobsByTimeout here, so neither CI flag leaves the
+    // other branch uncovered (mirror of distributedDatabaseTest pinning __test__distributed:true).
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: false })
+
+    const jobId = await ctx.boss.send(ctx.schema, null, { retryLimit: 0 })
+    assertTruthy(jobId)
+
+    await ctx.boss.fetch(ctx.schema)
+
+    // Backdate started_on past the expiration window instead of sleeping — deterministic and fast.
+    const db = await helper.getDb()
+    await db.executeSql(`UPDATE ${ctx.schema}.job SET started_on = now() - interval '1 hour' WHERE id = $1`, [jobId])
+    await db.close()
+
+    await ctx.boss.supervise(ctx.schema)
+
+    const job = await ctx.boss.getJobById(ctx.schema, jobId)
+    assertTruthy(job)
+    expect(job.state).toBe('failed')
+  })
+
   it('should expire a job - cascaded config', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
