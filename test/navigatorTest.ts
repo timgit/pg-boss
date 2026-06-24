@@ -84,6 +84,32 @@ describe('navigator (flow resolver)', function () {
     expect(unblocked.pendingDependencies).toBe(0)
   })
 
+  it('resolves a flow through the standard (non-distributed) path', async function () {
+    // Pin the standard resolver even under DISTRIBUTED=true. getConfig() force-enables
+    // __test__distributed for the distributed CI run, which routes every flow pass through
+    // resolveFlowJobsDistributed; overriding it back to false exercises navigator.#resolveStandard
+    // + plans.resolveFlowJobs here. This is the mirror of distributedDatabaseTest pinning
+    // __test__distributed:true to cover the distributed path under the standard run, so neither
+    // CI flag leaves the other branch uncovered.
+    ctx.boss = await helper.start({ ...ctx.bossConfig, supervise: false, __test__distributed: false })
+
+    const flow = await ctx.boss.flow([
+      { ref: 'parent', name: ctx.schema },
+      { ref: 'child', name: ctx.schema, dependsOn: ['parent'] }
+    ])
+
+    const [parent] = await ctx.boss.fetch(ctx.schema)
+    expect(parent.id).toBe(flow.parent)
+    await ctx.boss.complete(ctx.schema, flow.parent)
+
+    await ctx.boss.resolveFlow()
+
+    const child = await ctx.boss.getJobById(ctx.schema, flow.child)
+    helper.assertTruthy(child)
+    expect(child.blocked).toBe(false)
+    expect(child.pendingDependencies).toBe(0)
+  })
+
   it('is idempotent across repeated resolveFlow() passes', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, supervise: false })
 

@@ -121,3 +121,22 @@ The event payload contains:
 ```
 
 This event is useful for monitoring migration progress in production environments or for logging purposes.
+
+## `flow`
+
+Emitted by the background flow resolver each time it unblocks one or more dependent jobs (created via [`flow()`](./jobs.md#flowjobs-options)) whose parents have completed. See `flowIntervalSeconds` in the [constructor options](./constructor.md) for how often the resolver runs.
+
+```js
+boss.on('flow', event => {
+  console.log(`Resolved ${event.resolved} flow job(s) in ${event.table}`)
+})
+```
+
+The event payload contains:
+
+```js
+{
+  table: 'job_common',  // partition table the dependents were unblocked in
+  resolved: 3           // number of dependent jobs unblocked in this batch
+}
+```

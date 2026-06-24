@@ -77,6 +77,36 @@ describe('heartbeat', function () {
     expect(failedJob.output).toEqual({ value: { message: 'job heartbeat timeout' } })
   })
 
+  it('should fail job by heartbeat timeout through the standard (non-distributed) path', async function () {
+    // Pin the standard maintenance path even under DISTRIBUTED=true (mirror of distributedDatabaseTest
+    // pinning __test__distributed:true). The distributed CI run otherwise routes this through
+    // failJobsByHeartbeatDistributed, leaving boss.ts's standard failJobsByHeartbeat branch +
+    // plans.failJobsByHeartbeat uncovered on that flag.
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: false, monitorIntervalSeconds: 1, noDefault: true })
+
+    await ctx.boss.createQueue(ctx.schema, { heartbeatSeconds: 10, retryLimit: 0 })
+
+    const jobId = await ctx.boss.send(ctx.schema)
+    assertTruthy(jobId)
+
+    const [job] = await ctx.boss.fetch(ctx.schema)
+    assertTruthy(job)
+
+    const db = await helper.getDb()
+    await db.executeSql(
+      `UPDATE ${ctx.schema}.job SET heartbeat_on = now() - interval '20 seconds' WHERE id = $1`,
+      [jobId]
+    )
+    await db.close()
+
+    await ctx.boss.supervise(ctx.schema)
+
+    const failedJob = await ctx.boss.getJobById(ctx.schema, jobId)
+    assertTruthy(failedJob)
+    expect(failedJob.state).toBe('failed')
+    expect(failedJob.output).toEqual({ value: { message: 'job heartbeat timeout' } })
+  })
+
   it('should extend heartbeat via manual touch', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
