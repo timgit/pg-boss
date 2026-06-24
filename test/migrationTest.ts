@@ -510,16 +510,19 @@ describe('migration', function () {
     // @ts-ignore
     const contractor = new Contractor(db, config)
 
-    // Only the fetch index job_i5 carries start_after, so this returns it for job_common and every
-    // partition table — one row per table.
-    const fetchIndexes = async (): Promise<Array<{ tablename: string, indexdef: string }>> => {
-      const res = await db.executeSql(
-        `SELECT tablename, indexdef FROM pg_indexes
-         WHERE schemaname = $1 AND indexdef LIKE '%start_after%'
-         ORDER BY tablename`,
-        [schema]
-      )
-      return res.rows
+    // Read job_i5's definition on job_common + every partition by targeting each index relation by
+    // name (pg_get_indexdef on its regclass), rather than scanning the catalog-wide pg_indexes view —
+    // that view can transiently race concurrent DDL from parallel test workers ("could not open
+    // relation with OID"). Touching only this schema's own relations keeps the read deterministic.
+    const fetchIndexDefs = async (): Promise<string[]> => {
+      const parts = await db.executeSql(`SELECT table_name FROM ${schema}.queue WHERE partition = true ORDER BY table_name`)
+      const tables = ['job_common', ...parts.rows.map((r: { table_name: string }) => r.table_name)]
+      const defs: string[] = []
+      for (const t of tables) {
+        const res = await db.executeSql('SELECT pg_get_indexdef($1::regclass) AS indexdef', [`${schema}.${t}_i5`])
+        defs.push(res.rows[0].indexdef)
+      }
+      return defs
     }
 
     await contractor.create()
@@ -530,9 +533,9 @@ describe('migration', function () {
     // Fresh install (current version): both job_common and the partition build job_i5 with no
     // covering payload — FOR UPDATE ... SKIP LOCKED in the fetch precludes an index-only scan, so
     // the INCLUDE was dead weight on the hot insert path.
-    let defs = await fetchIndexes()
+    let defs = await fetchIndexDefs()
     expect(defs).toHaveLength(2)
-    for (const d of defs) expect(d.indexdef).not.toContain('INCLUDE')
+    for (const def of defs) expect(def).not.toContain('INCLUDE')
 
     // Roll back to v32: the historical covering form is restored on every table.
     let version = await contractor.schemaVersion()
@@ -543,16 +546,16 @@ describe('migration', function () {
       assertTruthy(version)
     }
     expect(version).toBe(32)
-    defs = await fetchIndexes()
+    defs = await fetchIndexDefs()
     expect(defs).toHaveLength(2)
-    for (const d of defs) expect(d.indexdef).toContain('INCLUDE (priority, created_on, id)')
+    for (const def of defs) expect(def).toContain('INCLUDE (priority, created_on, id)')
 
     // Migrate forward across v33: the INCLUDE is dropped again on every table.
     await contractor.next(32)
     expect(await contractor.schemaVersion()).toBe(33)
-    defs = await fetchIndexes()
+    defs = await fetchIndexDefs()
     expect(defs).toHaveLength(2)
-    for (const d of defs) expect(d.indexdef).not.toContain('INCLUDE')
+    for (const def of defs) expect(def).not.toContain('INCLUDE')
 
     await db.close()
   })

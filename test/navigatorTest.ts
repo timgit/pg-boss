@@ -146,4 +146,32 @@ describe('navigator (flow resolver)', function () {
 
     expect(errors.some(e => e.message === errorMessage)).toBe(true)
   })
+
+  it('exposes isResolvingFlow() and serializes resolveFlow() behind an in-flight poll', async function () {
+    // __test__delay_flow_ms holds each background poll's #working flag open long enough to observe.
+    ctx.boss = new PgBoss({
+      ...ctx.bossConfig,
+      ...flowConfig,
+      __test__delay_flow_ms: 300
+    })
+
+    await ctx.boss.start()
+
+    // Catch a background poll mid-flight: exercises the #working getter, isResolvingFlow(), and the
+    // __test__delay_flow_ms branch of #onPoll. Poll up to ~2s (interval is 1s) to avoid flakiness.
+    let observedInFlight = false
+    for (let i = 0; i < 400; i++) {
+      if (ctx.boss.isResolvingFlow()) {
+        observedInFlight = true
+        break
+      }
+      await delay(5)
+    }
+
+    expect(observedInFlight).toBe(true)
+
+    // Invoked while a poll is in flight, resolveFlow() must wait its turn (exercises resolveNow's
+    // `while (#working)` guard) and then complete without hanging.
+    await ctx.boss.resolveFlow()
+  })
 })
