@@ -352,7 +352,7 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
   }
 
   getQueues (names?: string[]): Promise<types.QueueResult[]> {
-    return this.#manager.getQueues()
+    return this.#manager.getQueues(names)
   }
 
   getQueue (name: string): Promise<types.QueueResult | null> {
