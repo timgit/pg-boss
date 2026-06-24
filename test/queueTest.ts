@@ -189,6 +189,24 @@ describe('queues', function () {
     expect(queues.some(q => q.name === queue2)).toBeTruthy()
   })
 
+  it('getQueues(names) filters to the requested queues', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+    const queue1 = `${ctx.bossConfig.schema}_1`
+    const queue2 = `${ctx.bossConfig.schema}_2`
+    const queue3 = `${ctx.bossConfig.schema}_3`
+
+    await ctx.boss.createQueue(queue1)
+    await ctx.boss.createQueue(queue2)
+    await ctx.boss.createQueue(queue3)
+
+    const queues = await ctx.boss.getQueues([queue1, queue2])
+
+    expect(queues.length).toBe(2)
+    expect(queues.some(q => q.name === queue1)).toBeTruthy()
+    expect(queues.some(q => q.name === queue2)).toBeTruthy()
+    expect(queues.some(q => q.name === queue3)).toBeFalsy()
+  })
+
   it('should update queue properties', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 

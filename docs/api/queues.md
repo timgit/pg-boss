@@ -136,9 +136,9 @@ Updates options on an existing queue, with the exception of the `policy` and `pa
 
 Deletes a queue and all jobs.
 
-### `getQueues()`
+### `getQueues(names?)`
 
-Returns all queues
+Returns all queues, or only the named queues when an array of names is provided.
 
 ### `getQueue(name)`
 
