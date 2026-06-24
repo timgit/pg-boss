@@ -673,8 +673,8 @@ function createIndexJobThrottle (schema: string) {
 function createIndexJobFetch (schema: string, noCoveringIndex = false) {
   // No covering INCLUDE: the fetch locks candidate rows with FOR UPDATE ... SKIP LOCKED, which
   // forces heap access, so an index-only scan is impossible and a covering payload would never be
-  // read from the index. Confirmed dead weight via EXPLAIN ANALYZE (see index-review.md /
-  // examples/index-perf); dropping it shrinks job_i5 on the hot insert path at no read-side cost.
+  // read from the index. Confirmed dead weight via EXPLAIN ANALYZE (see examples/index-perf);
+  // dropping it shrinks job_i5 on the hot insert path at no read-side cost.
   // noCoveringIndex (the CockroachDB profile flag that stripped the old INCLUDE) is now moot here.
   return `CREATE INDEX job_i5 ON ${schema}.job (name, start_after) WHERE state < '${JOB_STATES.active}' AND NOT blocked`
 }
@@ -815,7 +815,7 @@ export function deleteJobsById (schema: string, table: string) {
     WITH results as (
       DELETE FROM ${schema}.${table}
       WHERE name = $1
-        AND id IN (SELECT UNNEST($2::uuid[]))
+        AND id = ANY($2::uuid[])
       RETURNING 1
     )
     SELECT COUNT(*) from results
@@ -1205,7 +1205,7 @@ function completeJobsUpdate (schema: string, table: string, includeQueued?: bool
         blocked = ${includeQueued ? 'false' : 'blocked'},
         pending_dependencies = ${includeQueued ? '0' : 'pending_dependencies'}
       WHERE name = $1
-        AND id IN (SELECT UNNEST($2::uuid[]))
+        AND id = ANY($2::uuid[])
         AND ${includeQueued
           ? `state < '${JOB_STATES.completed}'`
           : `state = '${JOB_STATES.active}'`
@@ -1300,7 +1300,7 @@ export function cancelJobs (schema: string, table: string) {
       SET completed_on = now(),
         state = '${JOB_STATES.cancelled}'
       WHERE name = $1
-        AND id IN (SELECT UNNEST($2::uuid[]))
+        AND id = ANY($2::uuid[])
         AND state < '${JOB_STATES.completed}'
       RETURNING 1
     )
@@ -1315,7 +1315,7 @@ export function resumeJobs (schema: string, table: string) {
       SET completed_on = NULL,
         state = '${JOB_STATES.created}'
       WHERE name = $1
-        AND id IN (SELECT UNNEST($2::uuid[]))
+        AND id = ANY($2::uuid[])
         AND state = '${JOB_STATES.cancelled}'
       RETURNING 1
     )
@@ -1330,7 +1330,7 @@ export function restoreJobs (schema: string, table: string) {
         started_on = NULL,
         heartbeat_on = NULL
     WHERE name = $1
-      AND id IN (SELECT UNNEST($2::uuid[]))
+      AND id = ANY($2::uuid[])
   `
 }
 
@@ -1473,7 +1473,7 @@ export function insertFlowJobs (schema: string, { table, name }: { table: string
 }
 
 export function failJobsById (schema: string, table: string) {
-  const where = `name = $1 AND id IN (SELECT UNNEST($2::uuid[])) AND state < '${JOB_STATES.completed}'`
+  const where = `name = $1 AND id = ANY($2::uuid[]) AND state < '${JOB_STATES.completed}'`
   const output = '$3::jsonb'
 
   return failJobs(schema, table, where, output)
@@ -1506,7 +1506,7 @@ export function touchJobs (schema: string, table: string) {
       UPDATE ${schema}.${table}
       SET heartbeat_on = now()
       WHERE name = $1
-        AND id IN (SELECT UNNEST($2::uuid[]))
+        AND id = ANY($2::uuid[])
         AND state = '${JOB_STATES.active}'
       RETURNING 1
     )
@@ -1741,14 +1741,14 @@ export function deadLetterJobsByIdWithOutputs (schema: string, table: string) {
 // Distributed mode: separate queries to avoid CockroachDB's multi-mutation CTE limitation
 export function selectJobsToFailById (schema: string, table: string): SqlQuery {
   return {
-    text: `SELECT * FROM ${schema}.${table} WHERE name = $1 AND id IN (SELECT UNNEST($2::uuid[])) AND state < '${JOB_STATES.completed}'`,
+    text: `SELECT * FROM ${schema}.${table} WHERE name = $1 AND id = ANY($2::uuid[]) AND state < '${JOB_STATES.completed}'`,
     values: []
   }
 }
 
 export function deleteJobsToFail (schema: string, table: string): SqlQuery {
   return {
-    text: `DELETE FROM ${schema}.${table} WHERE name = $1 AND id IN (SELECT UNNEST($2::uuid[]))`,
+    text: `DELETE FROM ${schema}.${table} WHERE name = $1 AND id = ANY($2::uuid[])`,
     values: []
   }
 }
@@ -1780,7 +1780,7 @@ export function selectJobsToFailByHeartbeat (schema: string, table: string, queu
 
 export function deleteJobsByIds (schema: string, table: string): SqlQuery {
   return {
-    text: `DELETE FROM ${schema}.${table} WHERE id IN (SELECT UNNEST($1::uuid[]))`,
+    text: `DELETE FROM ${schema}.${table} WHERE id = ANY($1::uuid[])`,
     values: []
   }
 }
@@ -1804,7 +1804,7 @@ export function decrementDependents (schema: string): string {
       SELECT d.child_name, d.child_id, COUNT(*)::int AS n
       FROM ${schema}.job_dependency d
       WHERE d.parent_name = $1
-        AND d.parent_id IN (SELECT UNNEST($2::uuid[]))
+        AND d.parent_id = ANY($2::uuid[])
       GROUP BY d.child_name, d.child_id
     ),
     ${lockedChildrenCte(schema)}
@@ -1889,7 +1889,7 @@ export function clearBlocking (schema: string): string {
     UPDATE ${schema}.job
     SET blocking = false
     WHERE name = $1
-      AND id IN (SELECT UNNEST($2::uuid[]))
+      AND id = ANY($2::uuid[])
   `
 }
 
@@ -1939,7 +1939,7 @@ export function retryJobs (schema: string, table: string) {
       SET state = '${JOB_STATES.retry}',
         retry_limit = retry_limit + 1
       WHERE name = $1
-        AND id IN (SELECT UNNEST($2::uuid[]))
+        AND id = ANY($2::uuid[])
         AND state = '${JOB_STATES.failed}'
       RETURNING 1
     )

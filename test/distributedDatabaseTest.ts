@@ -296,6 +296,24 @@ helper.describePglite('distributed database mode', { timeout: 20000 }, function 
     expect(child.pendingDependencies).toBe(0)
   })
 
+  it('distributed flow resolver is a no-op when there are no blocking parents', async function () {
+    // A completed but non-blocking job has no dependents, so the distributed resolver's batch query
+    // (selectBlockingParents) returns nothing and resolveFlowJobsDistributed short-circuits to 0.
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: true })
+
+    const id = await ctx.boss.send(ctx.schema)
+    helper.assertTruthy(id)
+    const [job] = await ctx.boss.fetch(ctx.schema)
+    await ctx.boss.complete(ctx.schema, job.id)
+
+    // Resolves across the existing queue, finds no completed blocking parents, and does nothing.
+    await ctx.boss.resolveFlow()
+
+    const completed = await ctx.boss.getJobById(ctx.schema, id)
+    helper.assertTruthy(completed)
+    expect(completed.state).toBe('completed')
+  })
+
   it('should construct schema with all distributed compatibility flags', async function () {
     // Exercises the CockroachDB-oriented construction branches (no partitioning,
     // non-deferrable constraints, non-covering indexes, no advisory locks) by selecting
