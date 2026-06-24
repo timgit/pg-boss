@@ -103,7 +103,7 @@ The following configuration options should not normally need to be changed, but 
 
   How often queue metadata is refreshed in memory.
 
-* **flowIntervalSeconds**, int, default 2 seconds
+* **flowIntervalSeconds**, int, default 5 seconds
 
   How often the background flow resolver runs to unblock dependent jobs (created via [`flow()`](./jobs.md#flowjobs-options)) whose parents have completed. Completing a job no longer unblocks its dependents inline; this resolver handles it shortly after, off the completion hot path. Only runs when `supervise` is enabled.
 

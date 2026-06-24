@@ -574,7 +574,7 @@ function applyFlowConfig (config: any) {
   assert(!('flowIntervalSeconds' in config) || config.flowIntervalSeconds >= minInterval,
     `configuration assert: flowIntervalSeconds must be at least ${minInterval} seconds`)
 
-  config.flowIntervalSeconds = config.flowIntervalSeconds || 2
+  config.flowIntervalSeconds = config.flowIntervalSeconds || 5
 }
 
 export {
