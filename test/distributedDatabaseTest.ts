@@ -21,7 +21,15 @@ import { ctx } from './hooks.ts'
 // in CI), leaving little headroom under the 10s global timeout. Raise the default for the whole
 // block so startup jitter can't push a test over the edge (the concurrency tests keep their explicit
 // per-test overrides).
-helper.describePglite('distributed database mode', { timeout: 20000 }, function () {
+//
+// The override must only LIFT the Postgres budget — never cap a distributed backend. vitest.config.ts
+// already gives cockroachdb/yugabytedb a 60s global; a flat 20s here would lower it for exactly the
+// heaviest tests (the withTransaction composition tests do slow DDL + an extra connection), which is
+// how they timed out at 20s on the CockroachDB run. So match that 60s on distributed backends.
+const isDistributedBackend = process.env.DB_TYPE === 'cockroachdb' || process.env.DB_TYPE === 'yugabytedb'
+const blockTimeout = isDistributedBackend ? 60000 : 20000
+
+helper.describePglite('distributed database mode', { timeout: blockTimeout }, function () {
   it('should not duplicate jobs when fetching concurrently in distributed mode', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: true })
     const jobCount = 10
