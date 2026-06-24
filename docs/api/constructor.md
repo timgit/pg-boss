@@ -36,6 +36,10 @@ The following options can be set as properties in an object for additional confi
 
 * **application_name** - string, defaults to "pgboss"
 
+* **connectionTimeoutMillis** - int, defaults to 10000
+
+  Number of milliseconds to wait before timing out when acquiring a new client from the pool. Set to `0` to disable the timeout and wait indefinitely.
+
 * **db** - object
 
     Passing an object named db allows you "bring your own database connection". This option may be beneficial if you'd like to use an existing database service with its own connection pool. Setting this option will bypass the above configuration.
