@@ -12,7 +12,8 @@ export type Events = {
   warning: 'warning',
   wip: 'wip',
   stopped: 'stopped',
-  bam: 'bam'
+  bam: 'bam',
+  flow: 'flow'
 }
 
 export interface IDatabase {
@@ -86,6 +87,7 @@ export interface MaintenanceOptions {
   persistWarnings?: boolean;
   warningRetentionDays?: number;
   bamIntervalSeconds?: number;
+  flowIntervalSeconds?: number;
 }
 
 /**
@@ -180,6 +182,10 @@ export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, 
   /** @internal */
   __test__bypass_bam_interval_check?: boolean;
   /** @internal */
+  __test__throw_flow?: string;
+  /** @internal */
+  __test__bypass_flow_interval_check?: boolean;
+  /** @internal */
   __test__force_cron_monitoring_error?: string;
   /** @internal */
   __test__force_clock_skew_warning?: string;
@@ -191,6 +197,8 @@ export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, 
   __test__delay_maint_ms?: number;
   /** @internal */
   __test__delay_bam_ms?: number;
+  /** @internal */
+  __test__delay_flow_ms?: number;
   /** @internal */
   __test__delay_clock_skew_ms?: number;
   /**
@@ -211,6 +219,7 @@ export interface ResolvedConstructorOptions extends ConstructorOptions, Compatib
   cronMonitorIntervalSeconds: number;
   maintenanceIntervalSeconds: number;
   bamIntervalSeconds: number;
+  flowIntervalSeconds: number;
 }
 
 /**
@@ -756,6 +765,11 @@ export interface BamStatusSummary {
   lastCreatedOn: Date
 }
 
+export interface FlowEvent {
+  table: string
+  resolved: number
+}
+
 export interface BamEvent {
   id: string
   name: string
@@ -771,4 +785,5 @@ export type PgBossEventMap = {
   wip: [data: WipData[]]
   stopped: []
   bam: [data: BamEvent]
+  flow: [data: FlowEvent]
 }

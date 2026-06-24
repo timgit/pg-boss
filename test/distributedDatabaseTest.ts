@@ -274,10 +274,9 @@ helper.describePglite('distributed database mode', { timeout: 20000 }, function 
   })
 
   it('should unblock dependents when completing a blocking parent in distributed mode', async function () {
-    // completeDistributed splits the dependency-unblock into a second statement
-    // (plans.completeJobsDistributed + plans.decrementDependents) to avoid CockroachDB's
-    // multi-mutation CTE limit. Completing a blocking parent is the only thing that runs the
-    // decrementDependents branch.
+    // Completion no longer unblocks dependents inline (that work moved off the hot path to the
+    // background resolver — see issue #824). resolveFlow() forces a resolution pass, which on a
+    // distributed backend runs the split selectBlockingParents + decrementDependents + clearBlocking.
     ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: true })
 
     const flow = await ctx.boss.flow([
@@ -289,6 +288,7 @@ helper.describePglite('distributed database mode', { timeout: 20000 }, function 
     expect(parent.id).toBe(flow.parent)
 
     await ctx.boss.complete(ctx.schema, parent.id)
+    await ctx.boss.resolveFlow()
 
     const child = await ctx.boss.getJobById(ctx.schema, flow.child)
     helper.assertTruthy(child)

@@ -369,6 +369,7 @@ function getConfig (value: string | types.ConstructorOptions): types.ResolvedCon
   applyOpsConfig(config)
   applyScheduleConfig(config)
   applyBamConfig(config)
+  applyFlowConfig(config)
   validateWarningConfig(config)
 
   return config as types.ResolvedConstructorOptions
@@ -566,6 +567,14 @@ function applyBamConfig (config: any) {
     `configuration assert: bamIntervalSeconds must be at least ${minInterval} seconds`)
 
   config.bamIntervalSeconds = config.bamIntervalSeconds || 60
+}
+
+function applyFlowConfig (config: any) {
+  const minInterval = config.__test__bypass_flow_interval_check ? 0.5 : 1
+  assert(!('flowIntervalSeconds' in config) || config.flowIntervalSeconds >= minInterval,
+    `configuration assert: flowIntervalSeconds must be at least ${minInterval} seconds`)
+
+  config.flowIntervalSeconds = config.flowIntervalSeconds || 2
 }
 
 export {

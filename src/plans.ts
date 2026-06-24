@@ -123,7 +123,8 @@ function createTableVersion (schema: string) {
     CREATE TABLE ${schema}.version (
       version int primary key,
       cron_on timestamp with time zone,
-      bam_on timestamp with time zone
+      bam_on timestamp with time zone,
+      flow_on timestamp with time zone
     )
   `
 }
@@ -412,6 +413,7 @@ function createTableJobCommon (schema: string) {
     SELECT ${schema}.job_table_run($cmd$${createIndexJobThrottle(schema)}$cmd$, '${COMMON_JOB_TABLE}');
     SELECT ${schema}.job_table_run($cmd$${createIndexJobFetch(schema)}$cmd$, '${COMMON_JOB_TABLE}');
     SELECT ${schema}.job_table_run($cmd$${createIndexJobGroupConcurrency(schema)}$cmd$, '${COMMON_JOB_TABLE}');
+    SELECT ${schema}.job_table_run($cmd$${createIndexJobBlocking(schema)}$cmd$, '${COMMON_JOB_TABLE}');
 
     ALTER TABLE ${schema}.job ATTACH PARTITION ${schema}.${COMMON_JOB_TABLE} DEFAULT;
   `
@@ -431,6 +433,7 @@ function createTableJobIndexes (schema: string, noDeferrableConstraints = false,
     ${createIndexJobThrottle(schema)};
     ${createIndexJobFetch(schema, noCoveringIndex)};
     ${createIndexJobGroupConcurrency(schema)};
+    ${createIndexJobBlocking(schema)};
   `
 }
 
@@ -546,6 +549,7 @@ function createQueueFunction (schema: string, noPartitioning = false) {
       EXECUTE ${schema}.job_table_format($cmd$${createIndexJobFetch(schema)}$cmd$, tablename);
       EXECUTE ${schema}.job_table_format($cmd$${createIndexJobThrottle(schema)}$cmd$, tablename);
       EXECUTE ${schema}.job_table_format($cmd$${createIndexJobGroupConcurrency(schema)}$cmd$, tablename);
+      EXECUTE ${schema}.job_table_format($cmd$${createIndexJobBlocking(schema)}$cmd$, tablename);
 
       IF options->>'policy' = 'short' THEN
         EXECUTE ${schema}.job_table_format($cmd$${createIndexJobPolicyShort(schema)}$cmd$, tablename);
@@ -667,10 +671,12 @@ function createIndexJobThrottle (schema: string) {
 }
 
 function createIndexJobFetch (schema: string, noCoveringIndex = false) {
-  // CockroachDB implicitly includes primary key columns (id) in all indexes,
-  // so we can't explicitly INCLUDE them - it causes "already contains column" error
-  const includeClause = noCoveringIndex ? '' : 'INCLUDE (priority, created_on, id) '
-  return `CREATE INDEX job_i5 ON ${schema}.job (name, start_after) ${includeClause}WHERE state < '${JOB_STATES.active}' AND NOT blocked`
+  // No covering INCLUDE: the fetch locks candidate rows with FOR UPDATE ... SKIP LOCKED, which
+  // forces heap access, so an index-only scan is impossible and a covering payload would never be
+  // read from the index. Confirmed dead weight via EXPLAIN ANALYZE (see index-review.md /
+  // examples/index-perf); dropping it shrinks job_i5 on the hot insert path at no read-side cost.
+  // noCoveringIndex (the CockroachDB profile flag that stripped the old INCLUDE) is now moot here.
+  return `CREATE INDEX job_i5 ON ${schema}.job (name, start_after) WHERE state < '${JOB_STATES.active}' AND NOT blocked`
 }
 
 function createIndexJobPolicyExclusive (schema: string) {
@@ -689,6 +695,14 @@ function createIndexJobGroupConcurrency (schema: string) {
   return `CREATE INDEX job_i7 ON ${schema}.job (name, group_id) WHERE state = '${JOB_STATES.active}' AND group_id IS NOT NULL`
 }
 
+// Partial index supporting the background flow resolver (Navigator): lets it find completed
+// blocking parents with an index scan instead of a partition-wide scan. The `state = completed`
+// predicate keeps still-running and permanently-failed blocking parents out of the index, so
+// non-flow queues (and high-partition-count deployments) carry an empty index that costs nothing.
+function createIndexJobBlocking (schema: string) {
+  return `CREATE INDEX job_i9 ON ${schema}.job (name, id) WHERE blocking AND state = '${JOB_STATES.completed}'`
+}
+
 export function trySetQueueMonitorTime (schema: string, queues: string[], seconds: number): SqlQuery {
   return trySetQueueTimestamp(schema, queues, 'monitor_on', seconds)
 }
@@ -703,6 +717,10 @@ export function trySetCronTime (schema: string, seconds: number) {
 
 export function trySetBamTime (schema: string, seconds: number) {
   return trySetTimestamp(schema, 'bam_on', seconds)
+}
+
+export function trySetFlowTime (schema: string, seconds: number) {
+  return trySetTimestamp(schema, 'flow_on', seconds)
 }
 
 function trySetTimestamp (schema: string, column: string, seconds: number) {
@@ -1218,26 +1236,17 @@ function unblockChildrenUpdate (schema: string): string {
         AND j.id = lc.id`
 }
 
+// Dependency unblocking is intentionally NOT done here. Completion is the hot path; chasing
+// dependents inline (joining job_dependency and the partitioned job table) made completion
+// scale with partition count (see issue #824). The background resolver (Navigator) handles
+// unblocking out of band, driven by the job_i9 partial index.
 export function completeJobs (schema: string, table: string, includeQueued?: boolean) {
   return `
-    WITH completed AS (
+    WITH results AS (
       ${completeJobsUpdate(schema, table, includeQueued)}
-      RETURNING name, id, blocking
-    ),
-    decremented AS (
-      SELECT d.child_name, d.child_id, COUNT(*)::int AS n
-      FROM ${schema}.job_dependency d
-      JOIN completed c ON c.blocking
-        AND d.parent_name = c.name
-        AND d.parent_id = c.id
-      GROUP BY d.child_name, d.child_id
-    ),
-    ${lockedChildrenCte(schema)},
-    unblocked AS (
-      ${unblockChildrenUpdate(schema)}
       RETURNING 1
     )
-    SELECT COUNT(*) FROM completed
+    SELECT COUNT(*) FROM results
   `
 }
 
@@ -1249,7 +1258,7 @@ export function completeJobsWithOutputs (schema: string, table: string) {
     WITH input AS (
       SELECT * FROM json_to_recordset($2::json) AS x (id uuid, output jsonb)
     ),
-    completed AS (
+    results AS (
       UPDATE ${schema}.${table} j
       SET completed_on = now(),
         state = '${JOB_STATES.completed}',
@@ -1258,28 +1267,15 @@ export function completeJobsWithOutputs (schema: string, table: string) {
       WHERE j.name = $1
         AND j.id = i.id
         AND j.state = '${JOB_STATES.active}'
-      RETURNING j.name, j.id, j.blocking
-    ),
-    decremented AS (
-      SELECT d.child_name, d.child_id, COUNT(*)::int AS n
-      FROM ${schema}.job_dependency d
-      JOIN completed c ON c.blocking
-        AND d.parent_name = c.name
-        AND d.parent_id = c.id
-      GROUP BY d.child_name, d.child_id
-    ),
-    ${lockedChildrenCte(schema)},
-    unblocked AS (
-      ${unblockChildrenUpdate(schema)}
       RETURNING 1
     )
-    SELECT COUNT(*) FROM completed
+    SELECT COUNT(*) FROM results
   `
 }
 
 // Distributed equivalent of completeJobsWithOutputs: a single mutation that returns the completed
-// ids and whether each was blocking, so the caller can decrement dependents in a separate statement
-// (CockroachDB rejects multi-mutation CTEs). Pairs with decrementDependents().
+// ids. Dependency unblocking is handled out of band by the background resolver (Navigator), so
+// completion does no dependency work on any backend.
 export function completeJobsWithOutputsDistributed (schema: string, table: string) {
   return `
     WITH input AS (
@@ -1293,7 +1289,7 @@ export function completeJobsWithOutputsDistributed (schema: string, table: strin
     WHERE j.name = $1
       AND j.id = i.id
       AND j.state = '${JOB_STATES.active}'
-    RETURNING j.id, j.blocking
+    RETURNING j.id
   `
 }
 
@@ -1789,21 +1785,19 @@ export function deleteJobsByIds (schema: string, table: string): SqlQuery {
   }
 }
 
-// Distributed mode: complete jobs without the dependency-unblocking CTE so the
-// statement only mutates a single table once. CockroachDB rejects the standard
-// completeJobs() because it updates both the job table and job (for unblocking)
-// within one statement. The unblocking is handled separately by decrementDependents().
+// Distributed mode: complete jobs as a single-table mutation. Dependency unblocking is handled
+// out of band by the background resolver (Navigator), so completion does no dependency work.
 export function completeJobsDistributed (schema: string, table: string, includeQueued?: boolean): string {
   return `
     ${completeJobsUpdate(schema, table, includeQueued)}
-    RETURNING id, blocking
+    RETURNING id
   `
 }
 
-// Distributed mode: decrement pending_dependencies for children of the given
-// completed parent jobs. Only the final UPDATE mutates job, so this is a single
-// mutation acceptable to CockroachDB. $2 is the list of completed parent ids that
-// were marked blocking.
+// Decrement pending_dependencies for children of the given completed parent jobs, unblocking
+// any that reach zero. Only the final UPDATE mutates job, so this is a single mutation acceptable
+// to CockroachDB. Used by the distributed flow resolver path. $1 is the parent queue name, $2 the
+// list of resolved parent ids for that queue.
 export function decrementDependents (schema: string): string {
   return `
     WITH decremented AS (
@@ -1815,6 +1809,87 @@ export function decrementDependents (schema: string): string {
     ),
     ${lockedChildrenCte(schema)}
     ${unblockChildrenUpdate(schema)}
+  `
+}
+
+// Background flow resolver (Navigator) batch size: the max number of completed blocking parents
+// locked per audit statement. The resolver loops until a batch drains, so this only bounds the
+// lock footprint and per-statement cost.
+export const FLOW_BATCH_SIZE = 1000
+
+// Standard (multi-mutation CTE) flow audit. Locks a batch of completed blocking parents in the
+// given partition table, decrements their children's pending_dependencies (reusing the shared
+// unblock fragments, which reach across partitions via the parent job table), unblocks children
+// that reach zero, and clears `blocking` on the resolved parents so they leave the job_i9 index
+// and are never reprocessed. $1 is the chunk of queue names (for partition pruning). Returns the
+// number of parents resolved so the caller can loop until a batch drains.
+export function resolveFlowJobs (schema: string, table: string, names: string[]): SqlQuery {
+  return {
+    text: `
+    WITH locked_parents AS (
+      SELECT j.name, j.id
+      FROM ${schema}.${table} j
+      WHERE j.blocking
+        AND j.state = '${JOB_STATES.completed}'
+        AND j.name = ANY($1::text[])
+      ORDER BY j.name, j.id
+      FOR UPDATE OF j SKIP LOCKED
+      LIMIT ${FLOW_BATCH_SIZE}
+    ),
+    decremented AS (
+      SELECT d.child_name, d.child_id, COUNT(*)::int AS n
+      FROM ${schema}.job_dependency d
+      JOIN locked_parents p ON d.parent_name = p.name
+        AND d.parent_id = p.id
+      GROUP BY d.child_name, d.child_id
+    ),
+    ${lockedChildrenCte(schema)},
+    unblocked AS (
+      ${unblockChildrenUpdate(schema)}
+      RETURNING 1
+    ),
+    cleared AS (
+      UPDATE ${schema}.${table} j
+      SET blocking = false
+      FROM locked_parents p
+      WHERE j.name = p.name
+        AND j.id = p.id
+      RETURNING 1
+    )
+    SELECT COUNT(*)::int AS resolved FROM cleared
+  `,
+    values: [names]
+  }
+}
+
+// Distributed flow audit (CockroachDB / noMultiMutationCte). Locks a batch of completed blocking
+// parents without mutating, so the caller can run the single-mutation decrementDependents() and
+// clearBlocking() separately within one transaction. $1 is the chunk of queue names; SKIP LOCKED
+// is omitted under noSkipLocked.
+export function selectBlockingParents (schema: string, table: string, names: string[], noSkipLocked?: boolean): SqlQuery {
+  return {
+    text: `
+      SELECT name, id
+      FROM ${schema}.${table}
+      WHERE blocking
+        AND state = '${JOB_STATES.completed}'
+        AND name = ANY($1::text[])
+      ORDER BY name, id
+      FOR UPDATE${noSkipLocked ? '' : ' SKIP LOCKED'}
+      LIMIT ${FLOW_BATCH_SIZE}
+    `,
+    values: [names]
+  }
+}
+
+// Distributed flow audit: clear `blocking` on resolved parents (single mutation). $1 is the parent
+// queue name, $2 the list of resolved parent ids for that queue.
+export function clearBlocking (schema: string): string {
+  return `
+    UPDATE ${schema}.job
+    SET blocking = false
+    WHERE name = $1
+      AND id IN (SELECT UNNEST($2::uuid[]))
   `
 }
 

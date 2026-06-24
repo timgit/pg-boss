@@ -502,6 +502,61 @@ describe('migration', function () {
     expect(rolledBackSchema.indexes.rows).not.toEqual(originalSchema.indexes.rows)
   })
 
+  itPostgresOnly('drops the covering INCLUDE from the job_i5 fetch index at v33, across partitions and reversibly', async function () {
+    const config = { ...ctx.bossConfig }
+    const schema = config.schema
+
+    const db = await getDb()
+    // @ts-ignore
+    const contractor = new Contractor(db, config)
+
+    // Only the fetch index job_i5 carries start_after, so this returns it for job_common and every
+    // partition table — one row per table.
+    const fetchIndexes = async (): Promise<Array<{ tablename: string, indexdef: string }>> => {
+      const res = await db.executeSql(
+        `SELECT tablename, indexdef FROM pg_indexes
+         WHERE schemaname = $1 AND indexdef LIKE '%start_after%'
+         ORDER BY tablename`,
+        [schema]
+      )
+      return res.rows
+    }
+
+    await contractor.create()
+    // A partitioned queue gives job_i5 a second home, exercising the per-partition fan-out of the
+    // rebuild (job_table_run across job_common + every partition).
+    await db.executeSql(`SELECT ${schema}.create_queue('part_q', '{"partition":true,"policy":"standard"}'::jsonb)`)
+
+    // Fresh install (current version): both job_common and the partition build job_i5 with no
+    // covering payload — FOR UPDATE ... SKIP LOCKED in the fetch precludes an index-only scan, so
+    // the INCLUDE was dead weight on the hot insert path.
+    let defs = await fetchIndexes()
+    expect(defs).toHaveLength(2)
+    for (const d of defs) expect(d.indexdef).not.toContain('INCLUDE')
+
+    // Roll back to v32: the historical covering form is restored on every table.
+    let version = await contractor.schemaVersion()
+    assertTruthy(version)
+    while (version > 32) {
+      await contractor.rollback(version)
+      version = await contractor.schemaVersion()
+      assertTruthy(version)
+    }
+    expect(version).toBe(32)
+    defs = await fetchIndexes()
+    expect(defs).toHaveLength(2)
+    for (const d of defs) expect(d.indexdef).toContain('INCLUDE (priority, created_on, id)')
+
+    // Migrate forward across v33: the INCLUDE is dropped again on every table.
+    await contractor.next(32)
+    expect(await contractor.schemaVersion()).toBe(33)
+    defs = await fetchIndexes()
+    expect(defs).toHaveLength(2)
+    for (const d of defs) expect(d.indexdef).not.toContain('INCLUDE')
+
+    await db.close()
+  })
+
   itPostgresOnly('should remove indexes created on the job table that follow the standard naming convention', async function () {
     const config = { ...ctx.bossConfig }
     const schema = config.schema

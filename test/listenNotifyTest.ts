@@ -320,7 +320,9 @@ helper.describeListenNotify('listen/notify', function () {
 // still be delivered by polling.
 describe('notify producer bypass (all backends)', function () {
   it('send/insert/flow to a notify-enabled queue succeed and deliver via polling', async function () {
-    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+    // supervise:true runs the background resolver so the flow child unblocks once its parent
+    // completes (unblocking moved off the completion hot path — issue #824).
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true, supervise: true, flowIntervalSeconds: 1, __test__bypass_flow_interval_check: true })
     const boss = ctx.boss
     const queue = ctx.schema
     await boss.createQueue(queue, { notify: true })
@@ -340,7 +342,8 @@ describe('notify producer bypass (all backends)', function () {
     let processed = 0
     await boss.work(queue, { pollingIntervalSeconds: 0.5 }, async () => { processed++ })
 
-    // send + insert + flow(parent, child) = 4 jobs; the child unblocks once the parent completes.
+    // send + insert + flow(parent, child) = 4 jobs; the child unblocks once the parent completes
+    // and the background resolver runs.
     for (let i = 0; i < 60; i++) {
       if (processed >= 4) break
       await delay(100)

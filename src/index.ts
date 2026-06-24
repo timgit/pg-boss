@@ -5,6 +5,7 @@ import Manager from './manager.ts'
 import Timekeeper from './timekeeper.ts'
 import Boss from './boss.ts'
 import Bam from './bam.ts'
+import Navigator from './navigator.ts'
 import Notifier from './notifier.ts'
 import { delay } from './tools.ts'
 import type * as types from './types.ts'
@@ -19,7 +20,8 @@ export const events: types.Events = Object.freeze({
   warning: 'warning',
   wip: 'wip',
   stopped: 'stopped',
-  bam: 'bam'
+  bam: 'bam',
+  flow: 'flow'
 })
 
 export function getConstructionPlans (schema?: string) {
@@ -46,6 +48,7 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
   #manager: Manager
   #timekeeper: Timekeeper
   #bam: Bam
+  #navigator: Navigator
   #notifier: Notifier
 
   constructor (connectionString: string)
@@ -76,6 +79,8 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
 
     const bam = new Bam(db, config)
 
+    const navigator = new Navigator(db, manager, config)
+
     const notifier = new Notifier(db, manager, config)
     manager.notifier = notifier
 
@@ -83,6 +88,7 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     this.#promoteEvents(boss)
     this.#promoteEvents(timekeeper)
     this.#promoteEvents(bam)
+    this.#promoteEvents(navigator)
     this.#promoteEvents(notifier)
 
     this.#boss = boss
@@ -90,6 +96,7 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     this.#manager = manager
     this.#timekeeper = timekeeper
     this.#bam = bam
+    this.#navigator = navigator
     this.#notifier = notifier
   }
 
@@ -127,6 +134,7 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
 
       if (this.#config.supervise) {
         await this.#boss.start()
+        await this.#navigator.start()
       }
 
       if (this.#config.schedule) {
@@ -185,6 +193,7 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     await this.#manager.stop()
     await this.#timekeeper.stop()
     await this.#boss.stop()
+    await this.#navigator.stop()
     await this.#bam.stop()
 
     const shutdown = async () => {
@@ -371,12 +380,22 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#bam.working
   }
 
+  isResolvingFlow (): boolean {
+    return this.#navigator.working
+  }
+
   isCheckingSkew (): boolean {
     return this.#timekeeper.checkingSkew
   }
 
   supervise (name?: string): Promise<void> {
     return this.#boss.supervise(name)
+  }
+
+  // Force an immediate flow-resolution pass (unblock dependents of completed jobs) instead of
+  // waiting for the next background poll. Mirrors supervise() for on-demand maintenance.
+  resolveFlow (): Promise<void> {
+    return this.#navigator.resolveNow()
   }
 
   getWipData (options?: { includeInternal?: boolean }): types.WipData[] {
