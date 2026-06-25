@@ -496,6 +496,7 @@ export type {
   QueueOptions,
   QueuePolicy,
   QueueResult,
+  RedriveOptions,
   Request,
   Schedule,
   ScheduleOptions,

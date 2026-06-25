@@ -441,6 +441,11 @@ describe('proxy api routes', () => {
         expected: ['queue', '1']
       },
       {
+        method: 'redrive',
+        body: { name: 'dlq', options: { destination: 'dest', sourceName: 'src', limit: 50 } },
+        expected: ['dlq', { destination: 'dest', sourceName: 'src', limit: 50 }]
+      },
+      {
         method: 'deleteQueuedJobs',
         body: { name: 'queue' },
         expected: ['queue']

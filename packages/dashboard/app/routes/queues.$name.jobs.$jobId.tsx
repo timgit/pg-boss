@@ -273,6 +273,33 @@ export default function JobDetail ({ loaderData }: Route.ComponentProps) {
                 </div>
               )}
 
+              {(job.sourceName || job.sourceId) && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-4">
+                  {job.sourceName && (
+                    <div>
+                      <dt className="pgb-eyebrow">Source Queue</dt>
+                      <dd className="mt-1 text-sm text-[var(--text-primary)]">
+                        <DbLink
+                          to={`/queues/${job.sourceName}`}
+                          className="font-mono text-xs text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
+                        >
+                          {job.sourceName}
+                        </DbLink>
+                      </dd>
+                    </div>
+                  )}
+                  {job.sourceId && (
+                    <ConfigItem label="Source Job ID" value={job.sourceId} mono />
+                  )}
+                  {job.sourceRetryCount !== null && job.sourceRetryCount !== undefined && (
+                    <ConfigItem label="Source Retry Count" value={job.sourceRetryCount} mono />
+                  )}
+                  {job.sourceCreatedOn && (
+                    <ConfigItem label="Source Created" value={formatDate(new Date(job.sourceCreatedOn))} mono />
+                  )}
+                </div>
+              )}
+
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-x-6 gap-y-4">
                 <ConfigItem
                   label="Created"
