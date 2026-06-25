@@ -366,7 +366,11 @@ function createTableJob (schema: string, noPartitioning = false) {
       heartbeat_seconds int,
       blocked boolean not null default false,
       blocking boolean not null default false,
-      pending_dependencies int not null default 0
+      pending_dependencies int not null default 0,
+      source_name text,
+      source_id uuid,
+      source_created_on timestamp with time zone,
+      source_retry_count int
     ) ${partitionClause}
   `
 }
@@ -394,7 +398,11 @@ const JOB_COLUMNS_ALL = `${JOB_COLUMNS_MIN},
   blocked,
   blocking,
   pending_dependencies as "pendingDependencies",
-  output
+  output,
+  source_name as "sourceName",
+  source_id as "sourceId",
+  source_created_on as "sourceCreatedOn",
+  source_retry_count as "sourceRetryCount"
 `
 
 function createTableJobCommon (schema: string) {
@@ -1691,16 +1699,21 @@ function failJobsBody (schema: string, table: string, where: string, output: str
       SELECT * FROM failed_jobs
     ),
     dlq_jobs as (
-      INSERT INTO ${schema}.job (name, data, output, retry_limit, retry_backoff, retry_delay, keep_until, deletion_seconds)
+      INSERT INTO ${schema}.job (name, data, output, retry_limit, retry_backoff, retry_delay, keep_until, deletion_seconds,
+        source_name, source_id, source_created_on, source_retry_count)
       SELECT
         r.dead_letter,
-        data,
-        output,
+        r.data,
+        r.output,
         q.retry_limit,
         q.retry_backoff,
         q.retry_delay,
         now() + q.retention_seconds * interval '1s',
-        q.deletion_seconds
+        q.deletion_seconds,
+        r.name,
+        r.id,
+        r.created_on,
+        r.retry_count
       FROM results r
         JOIN ${schema}.queue q ON q.name = r.dead_letter
       WHERE state = '${JOB_STATES.failed}'
@@ -1911,9 +1924,49 @@ export function insertRetryJob (schema: string, table: string): string {
 
 export function insertDeadLetterJob (schema: string): string {
   return `
-    INSERT INTO ${schema}.job (name, data, output, retry_limit, retry_backoff, retry_delay, keep_until, deletion_seconds)
-    SELECT $1, $2, $3, q.retry_limit, q.retry_backoff, q.retry_delay, now() + q.retention_seconds * interval '1s', q.deletion_seconds
+    INSERT INTO ${schema}.job (name, data, output, retry_limit, retry_backoff, retry_delay, keep_until, deletion_seconds,
+      source_name, source_id, source_created_on, source_retry_count)
+    SELECT $1, $2, $3, q.retry_limit, q.retry_backoff, q.retry_delay, now() + q.retention_seconds * interval '1s', q.deletion_seconds,
+      $4, $5, $6, $7
     FROM ${schema}.queue q WHERE q.name = $1
+  `
+}
+
+// Dead-letter redrive. Moves un-started jobs out of a dead-letter queue and
+// re-creates them as fresh jobs on their original source queue (or $2 destination override),
+// oldest-first, capped at $4. The JOIN in `candidates` only matches jobs whose destination queue
+// exists, so legacy/orphaned jobs (NULL source_name, no override) are never deleted — they stay
+// in the DLQ rather than being lost. Re-created jobs get a new id, `created` state, retry_count 0,
+// cleared output, NULL source_*, and the destination queue's current retry/retention/policy config.
+export function redriveJobs (schema: string, table: string): string {
+  return `
+    WITH candidates AS (
+      SELECT j.id
+      FROM ${schema}.${table} j
+      JOIN ${schema}.queue q ON q.name = COALESCE($2, j.source_name)
+      WHERE j.name = $1
+        AND j.state < '${JOB_STATES.active}'
+        AND ($3::text IS NULL OR j.source_name = $3)
+      ORDER BY j.created_on
+      LIMIT $4
+      FOR UPDATE OF j SKIP LOCKED
+    ),
+    moved AS (
+      DELETE FROM ${schema}.${table}
+      WHERE id IN (SELECT id FROM candidates)
+      RETURNING *
+    ),
+    ins AS (
+      INSERT INTO ${schema}.job
+        (name, data, priority, retry_limit, retry_backoff, retry_delay, retry_delay_max,
+         expire_seconds, keep_until, deletion_seconds, policy)
+      SELECT COALESCE($2, m.source_name), m.data, m.priority, q.retry_limit, q.retry_backoff,
+        q.retry_delay, q.retry_delay_max, q.expire_seconds,
+        now() + q.retention_seconds * interval '1s', q.deletion_seconds, q.policy
+      FROM moved m JOIN ${schema}.queue q ON q.name = COALESCE($2, m.source_name)
+      RETURNING 1
+    )
+    SELECT count(*)::int AS moved FROM ins
   `
 }
 

@@ -757,6 +757,39 @@ describe('Job Queries', () => {
       expect(job!.priority).toBe(5)
       expect(job!.data).toEqual({ foo: 'bar' })
     })
+
+    it('returns null source-tracking fields for a job that was not dead-lettered', async () => {
+      await createTestQueue('test-queue')
+      const jobId = await sendTestJob('test-queue', { foo: 'bar' })
+
+      const job = await getJobById(ctx.connectionString, ctx.schema, 'test-queue', jobId!)
+
+      expect(job!.sourceName).toBeNull()
+      expect(job!.sourceId).toBeNull()
+      expect(job!.sourceCreatedOn).toBeNull()
+      expect(job!.sourceRetryCount).toBeNull()
+    })
+
+    it('exposes source-tracking fields for a dead-lettered job', async () => {
+      await createTestQueue('test-dlq')
+      await createTestQueue('test-queue', { deadLetter: 'test-dlq', retryLimit: 0 })
+
+      const jobId = await sendTestJob('test-queue', { foo: 'bar' })
+
+      // fail() routes the job to the dead letter queue synchronously
+      await fetchTestJob('test-queue')
+      await failTestJob('test-queue', jobId!)
+
+      // The dead-lettered copy is a new job in the DLQ with its own id
+      const moved = await fetchTestJob('test-dlq')
+      const dlqJob = await getJobById(ctx.connectionString, ctx.schema, 'test-dlq', moved!.id)
+
+      expect(dlqJob).not.toBeNull()
+      expect(dlqJob!.sourceName).toBe('test-queue')
+      expect(dlqJob!.sourceId).toBe(jobId)
+      expect(dlqJob!.sourceCreatedOn).toBeTruthy()
+      expect(dlqJob!.sourceRetryCount).toBe(0)
+    })
   })
 })
 

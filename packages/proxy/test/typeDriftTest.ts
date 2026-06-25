@@ -52,6 +52,10 @@ describe('Zod schema / HTTP type key drift', () => {
     expect(assertKeysMatch<AssertKeysMatch<SchemaOutput<typeof contracts.findJobsOptionsSchema>, httpTypes.HttpFindJobsOptions>>()).toBe(true)
   })
 
+  it('redriveOptionsSchema matches HttpRedriveOptions', () => {
+    expect(assertKeysMatch<AssertKeysMatch<SchemaOutput<typeof contracts.redriveOptionsSchema>, httpTypes.HttpRedriveOptions>>()).toBe(true)
+  })
+
   it('insertOptionsSchema matches HttpInsertOptions', () => {
     expect(assertKeysMatch<AssertKeysMatch<SchemaOutput<typeof contracts.insertOptionsSchema>, httpTypes.HttpInsertOptions>>()).toBe(true)
   })

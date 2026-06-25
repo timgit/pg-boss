@@ -213,6 +213,134 @@ describe('failure', function () {
     const [job] = await helper.fetchWithRetry<{ key: string }>(ctx.boss, deadLetter)
 
     expect(job.data.key).toBe(ctx.schema)
+
+    const dlqJob = await ctx.boss.getJobById(deadLetter, job.id)
+    assertTruthy(dlqJob)
+    expect(dlqJob.sourceName).toBe(ctx.schema)
+    expect(dlqJob.sourceId).toBe(jobId)
+    expect(dlqJob.sourceCreatedOn).toBeTruthy()
+    expect(dlqJob.sourceRetryCount).toBe(0)
+  })
+
+  it('redrive moves a dead-lettered job back to its source queue', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+
+    const deadLetter = `${ctx.schema}_dlq`
+
+    await ctx.boss.createQueue(deadLetter)
+    await ctx.boss.createQueue(ctx.schema, { deadLetter })
+
+    const jobId = await ctx.boss.send(ctx.schema, { key: ctx.schema }, { retryLimit: 0 })
+    assertTruthy(jobId)
+
+    await ctx.boss.fetch(ctx.schema)
+    // fail() routes the job to the dead letter queue synchronously, leaving it in the created
+    // state. Don't fetch from the DLQ here — that would activate it and make it ineligible.
+    await ctx.boss.fail(ctx.schema, jobId)
+
+    const moved = await ctx.boss.redrive(deadLetter)
+    expect(moved).toBe(1)
+
+    // dead letter queue is now drained
+    const movedAgain = await ctx.boss.redrive(deadLetter)
+    expect(movedAgain).toBe(0)
+
+    // reappears on the source queue as a fresh job
+    const [redriven] = await helper.fetchWithRetry<{ key: string }>(ctx.boss, ctx.schema)
+    expect(redriven.data.key).toBe(ctx.schema)
+    expect(redriven.id).not.toBe(jobId)
+
+    const redrivenMeta = await ctx.boss.getJobById(ctx.schema, redriven.id)
+    assertTruthy(redrivenMeta)
+    expect(redrivenMeta.retryCount).toBe(0)
+    expect(redrivenMeta.sourceName).toBeNull()
+  })
+
+  it('redrive routes each job back to its own source queue', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+
+    const deadLetter = `${ctx.schema}_dlq`
+    const queueA = `${ctx.schema}_a`
+    const queueB = `${ctx.schema}_b`
+
+    await ctx.boss.createQueue(deadLetter)
+    await ctx.boss.createQueue(queueA, { deadLetter })
+    await ctx.boss.createQueue(queueB, { deadLetter })
+
+    const idA = await ctx.boss.send(queueA, { from: 'a' }, { retryLimit: 0 })
+    const idB = await ctx.boss.send(queueB, { from: 'b' }, { retryLimit: 0 })
+    assertTruthy(idA)
+    assertTruthy(idB)
+
+    await ctx.boss.fetch(queueA)
+    await ctx.boss.fetch(queueB)
+    await ctx.boss.fail(queueA, idA)
+    await ctx.boss.fail(queueB, idB)
+
+    const moved = await ctx.boss.redrive(deadLetter)
+    expect(moved).toBe(2)
+
+    const [jobA] = await helper.fetchWithRetry<{ from: string }>(ctx.boss, queueA)
+    const [jobB] = await helper.fetchWithRetry<{ from: string }>(ctx.boss, queueB)
+    expect(jobA.data.from).toBe('a')
+    expect(jobB.data.from).toBe('b')
+  })
+
+  it('redrive honors destination override and sourceName filter', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+
+    const deadLetter = `${ctx.schema}_dlq`
+    const queueA = `${ctx.schema}_a`
+    const queueB = `${ctx.schema}_b`
+    const destination = `${ctx.schema}_dest`
+
+    await ctx.boss.createQueue(deadLetter)
+    await ctx.boss.createQueue(destination)
+    await ctx.boss.createQueue(queueA, { deadLetter })
+    await ctx.boss.createQueue(queueB, { deadLetter })
+
+    const idA = await ctx.boss.send(queueA, { from: 'a' }, { retryLimit: 0 })
+    const idB = await ctx.boss.send(queueB, { from: 'b' }, { retryLimit: 0 })
+    assertTruthy(idA)
+    assertTruthy(idB)
+
+    await ctx.boss.fetch(queueA)
+    await ctx.boss.fetch(queueB)
+    await ctx.boss.fail(queueA, idA)
+    await ctx.boss.fail(queueB, idB)
+
+    // only redrive queueA's jobs, into the override destination
+    const moved = await ctx.boss.redrive(deadLetter, { destination, sourceName: queueA })
+    expect(moved).toBe(1)
+
+    const [destJob] = await helper.fetchWithRetry<{ from: string }>(ctx.boss, destination)
+    expect(destJob.data.from).toBe('a')
+
+    // queueB's job is untouched, still in the dead letter queue
+    const [remaining] = await helper.fetchWithRetry<{ from: string }>(ctx.boss, deadLetter)
+    expect(remaining.data.from).toBe('b')
+  })
+
+  it('redrive limit caps the number of jobs moved', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+
+    const deadLetter = `${ctx.schema}_dlq`
+
+    await ctx.boss.createQueue(deadLetter)
+    await ctx.boss.createQueue(ctx.schema, { deadLetter })
+
+    for (let i = 0; i < 3; i++) {
+      const id: string | null = await ctx.boss.send(ctx.schema, { i }, { retryLimit: 0 })
+      assertTruthy(id)
+      await ctx.boss.fetch(ctx.schema)
+      await ctx.boss.fail(ctx.schema, id)
+    }
+
+    const movedFirst = await ctx.boss.redrive(deadLetter, { limit: 2 })
+    expect(movedFirst).toBe(2)
+
+    const movedRest = await ctx.boss.redrive(deadLetter)
+    expect(movedRest).toBe(1)
   })
 
   it('should fail active jobs in a worker during shutdown', async function () {

@@ -93,6 +93,12 @@ export const findJobsOptionsSchema = z.object({
   queued: z.boolean().optional(),
 }) satisfies z.ZodType<types.HttpFindJobsOptions>
 
+export const redriveOptionsSchema = z.object({
+  destination: queueNameSchema.optional(),
+  sourceName: queueNameSchema.optional(),
+  limit: z.number().optional(),
+}) satisfies z.ZodType<types.HttpRedriveOptions>
+
 export const insertOptionsSchema = z.object({
   returnId: z.boolean().optional(),
 }) satisfies z.ZodType<types.HttpInsertOptions>
@@ -162,6 +168,10 @@ export const jobWithMetadataSchema = jobSchemaBase.extend({
   policy: z.string(),
   deadLetter: z.string(),
   output: jsonRecordSchema,
+  sourceName: z.string().nullable(),
+  sourceId: z.string().nullable(),
+  sourceCreatedOn: z.iso.datetime().nullable().transform((val) => val ? new Date(val) : null),
+  sourceRetryCount: z.number().nullable(),
 }) satisfies z.ZodType<types.HttpJobWithMetadata>
 
 export const commandResponseSchema = z.object({
@@ -378,6 +388,16 @@ export const deleteJobRequestSchema: z.ZodType<types.HttpDeleteJobRequest> = z.o
 export const deleteJobResponseSchema: z.ZodType<types.HttpDeleteJobResponse> = z.object({
   ok: z.literal(true),
   result: commandResponseSchema
+})
+
+export const redriveRequestSchema: z.ZodType<types.HttpRedriveRequest> = z.object({
+  name: queueNameSchema,
+  options: redriveOptionsSchema.optional()
+})
+
+export const redriveResponseSchema: z.ZodType<types.HttpRedriveResponse> = z.object({
+  ok: z.literal(true),
+  result: z.number()
 })
 
 export const deleteQueuedJobsRequestSchema: z.ZodType<types.HttpDeleteQueuedJobsRequest> = z.object({
