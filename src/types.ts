@@ -333,6 +333,26 @@ export interface FindJobsOptions extends ConnectionOptions {
   queued?: boolean;
 }
 
+export interface RedriveOptions extends ConnectionOptions {
+  /**
+   * Override queue to move jobs into. Defaults to each job's original source
+   * queue (`sourceName`). Jobs with no recorded source queue are only
+   * moved when this is supplied.
+   */
+  destination?: string;
+  /**
+   * Only redrive jobs that originated from this source queue. Useful when a
+   * single dead letter queue collects from multiple sources.
+   */
+  sourceName?: string;
+  /**
+   * Maximum number of jobs to move in this call, oldest first. Loop or schedule
+   * repeated calls to drain at a controlled rate.
+   * @default 1000
+   */
+  limit?: number;
+}
+
 export type InsertOptions = ConnectionOptions & { returnId?: boolean }
 
 export type SendOptions = JobOptions & QueueOptions & ConnectionOptions
@@ -664,6 +684,26 @@ export interface JobWithMetadata<T = object> extends Job<T> {
   pendingDependencies: number;
   deadLetter: string;
   output: object;
+  /**
+   * For a job that was moved into a dead letter queue, the name of the queue it
+   * originally failed on. `null` for jobs that were not dead-lettered.
+   */
+  sourceName: string | null;
+  /**
+   * For a dead-lettered job, the id of the original job that failed. `null`
+   * otherwise.
+   */
+  sourceId: string | null;
+  /**
+   * For a dead-lettered job, the `createdOn` of the original job, preserving its
+   * true age in the system across the move. `null` otherwise.
+   */
+  sourceCreatedOn: Date | null;
+  /**
+   * For a dead-lettered job, the number of retries the original job consumed
+   * before it was dead-lettered. `null` otherwise.
+   */
+  sourceRetryCount: number | null;
 }
 
 export interface JobInsert<T = object> {

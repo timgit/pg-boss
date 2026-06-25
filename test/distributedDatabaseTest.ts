@@ -178,6 +178,13 @@ helper.describePglite('distributed database mode', { timeout: blockTimeout }, fu
     const [dlqJob] = await helper.fetchWithRetry<{ key: string }>(ctx.boss, deadLetter)
     expect(dlqJob).toBeTruthy()
     expect(dlqJob.data.key).toBe(ctx.schema)
+
+    // distributed insertDeadLetterJob carries source provenance
+    const dlqMeta = await ctx.boss.getJobById(deadLetter, dlqJob.id)
+    helper.assertTruthy(dlqMeta)
+    expect(dlqMeta.sourceName).toBe(ctx.schema)
+    expect(dlqMeta.sourceId).toBe(jobId)
+    expect(dlqMeta.sourceCreatedOn).toBeTruthy()
   })
 
   it('should retry heartbeat-timed-out jobs with backoff via distributed supervise', async function () {

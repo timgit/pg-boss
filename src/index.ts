@@ -301,6 +301,10 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#manager.deleteJob(name, id, options)
   }
 
+  redrive (name: string, options?: types.RedriveOptions): Promise<number> {
+    return this.#manager.redrive(name, options)
+  }
+
   deleteQueuedJobs (name: string): Promise<void> {
     return this.#manager.deleteQueuedJobs(name)
   }

@@ -1405,7 +1405,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
         // Insert to dead letter queue if failed and has dead_letter configured
         if (job.dead_letter) {
-          await tx.executeSql(dlqSql, [job.dead_letter, job.data, jobOutput])
+          await tx.executeSql(dlqSql, [job.dead_letter, job.data, jobOutput, job.name, job.id, job.created_on, job.retry_count])
         }
       }
 
@@ -1423,6 +1423,28 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const sql = plans.deleteJobsById(this.config.schema, table)
     const result = await db.executeSql(sql, [name, ids])
     return this.mapCommandResponse(ids, result)
+  }
+
+  async redrive (name: string, options: types.RedriveOptions = {}): Promise<number> {
+    Attorney.assertQueueName(name)
+
+    const { destination, sourceName, limit = 1000 } = options
+
+    if (destination !== undefined) {
+      Attorney.assertQueueName(destination)
+    }
+
+    if (sourceName !== undefined) {
+      Attorney.assertQueueName(sourceName)
+    }
+
+    assert(Number.isInteger(limit) && limit >= 1, 'limit must be an integer >= 1')
+
+    const db = this.assertDb(options)
+    const { table } = await this.getQueueCache(name)
+    const sql = plans.redriveJobs(this.config.schema, table)
+    const result = await db.executeSql(sql, [name, destination ?? null, sourceName ?? null, limit])
+    return result.rows[0].moved as number
   }
 
   async cancel (name: string, id: string | string[], options: types.ConnectionOptions = {}) {

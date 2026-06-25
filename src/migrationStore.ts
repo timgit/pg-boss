@@ -1005,6 +1005,26 @@ function getAll (schema: string): types.Migration[] {
         `SELECT ${schema}.job_table_run($cmd$DROP INDEX IF EXISTS ${schema}.job_i9$cmd$)`,
         `ALTER TABLE ${schema}.version DROP COLUMN flow_on`
       ]
+    },
+    {
+      release: '12.23.0',
+      version: 34,
+      previous: 33,
+      // Dead-letter source provenance. Plain columns on the partitioned parent cascade to
+      // job_common (DEFAULT partition) and every existing/future partition, so no job_table_run
+      // fan-out or createQueueFn bump is needed (queue-creation/index logic is unchanged).
+      install: [
+        `ALTER TABLE ${schema}.job ADD COLUMN IF NOT EXISTS source_name text`,
+        `ALTER TABLE ${schema}.job ADD COLUMN IF NOT EXISTS source_id uuid`,
+        `ALTER TABLE ${schema}.job ADD COLUMN IF NOT EXISTS source_created_on timestamp with time zone`,
+        `ALTER TABLE ${schema}.job ADD COLUMN IF NOT EXISTS source_retry_count int`
+      ],
+      uninstall: [
+        `ALTER TABLE ${schema}.job DROP COLUMN source_name`,
+        `ALTER TABLE ${schema}.job DROP COLUMN source_id`,
+        `ALTER TABLE ${schema}.job DROP COLUMN source_created_on`,
+        `ALTER TABLE ${schema}.job DROP COLUMN source_retry_count`
+      ]
     }
   ]
 }

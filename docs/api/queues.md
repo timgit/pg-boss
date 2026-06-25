@@ -41,7 +41,7 @@ Allowed policy values:
 
 * **deadLetter**, string
 
-  When a job fails after all retries, if the queue has a `deadLetter` property, the job's payload will be copied into that queue, copying the same retention and retry configuration as the original job.
+  When a job fails after all retries, if the queue has a `deadLetter` property, the job's payload will be copied into that queue, copying the same retention and retry configuration as the original job. The dead-lettered job also records where it came from via the `sourceName`, `sourceId`, `sourceCreatedOn`, and `sourceRetryCount` fields, which power [`redrive()`](jobs#redrivename-options) for moving jobs back to their source queue.
 
 * **warningQueueSize**, int
 

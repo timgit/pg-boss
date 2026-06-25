@@ -319,9 +319,19 @@ Returns an array of jobs from a queue
       blocking: boolean,
       deadLetter: string,
       policy: string,
-      output: object
+      output: object,
+      sourceName: string | null,
+      sourceId: string | null,
+      sourceCreatedOn: Date | null,
+      sourceRetryCount: number | null
     }
     ```
+
+When a job is moved into a dead letter queue, the `source*` fields record where it
+came from: `sourceName` is the queue it originally failed on, `sourceId` is the id
+of the original job, `sourceCreatedOn` is the original job's creation time (so its
+true age survives the move), and `sourceRetryCount` is how many retries it consumed
+before being dead-lettered. These are `null` for jobs that were not dead-lettered.
 
 
 **Notes**
@@ -353,6 +363,37 @@ Deletes a job by id.
 ### `deleteJob(name, [ids], options)`
 
 Deletes a set of jobs by id.
+
+### `redrive(name, options)`
+
+Moves jobs out of a dead letter queue and re-creates them as fresh jobs on their original source queue. `name` is the
+dead letter queue to drain. Returns the number of jobs moved.
+
+Each job is routed back to the queue it originally failed on (its `sourceName`),
+so a single dead letter queue that collects from many source queues fans back out
+correctly. Re-created jobs get a new id, a reset retry count, cleared output, and
+the destination queue's current retry, retention, and policy configuration. Only
+jobs that are not currently being processed (still in the `created`/`retry` state)
+are moved.
+
+`options`:
+
+- `destination` — override queue to move all matched jobs into, instead of each
+  job's original source queue. Required to redrive jobs that have no recorded
+  source queue (e.g. jobs dead-lettered before this feature existed); such jobs are
+  left in place otherwise.
+- `sourceName` — only redrive jobs that originated from this source queue.
+- `limit` — maximum number of jobs to move in this call, oldest first (default
+  `1000`). Loop or schedule repeated calls to drain large dead letter queues at a
+  controlled rate.
+
+```js
+// drain a dead letter queue back to its source queues, 500 at a time
+let moved
+do {
+  moved = await boss.redrive('email-dlq', { limit: 500 })
+} while (moved > 0)
+```
 
 ### `deleteQueuedJobs(name)`
 
