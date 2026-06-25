@@ -8,7 +8,7 @@ GRANT CREATE ON DATABASE db1 TO leastprivuser;
 
 If the CREATE privilege is not available or desired, you have two options:
 
-1. **CLI (recommended)** - Use the pg-boss CLI to manage schema creation and migrations. The CLI can output SQL without executing it (`--dry-run` or `plans` command), allowing DBAs to review and run the commands manually. See the [CLI documentation](https://github.com/timgit/pg-boss#cli) for details.
+1. **CLI (recommended)** - Use the pg-boss CLI to manage schema creation and migrations. The CLI can output SQL without executing it (`--dry-run` or `plans` command), allowing DBAs to review and run the commands manually. See the [CLI documentation](./cli) for details.
 
 2. **Static functions** - Use the included [utility functions](./api/utils) to export the SQL commands programmatically.
 
