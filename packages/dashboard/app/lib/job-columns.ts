@@ -118,10 +118,6 @@ export function getRowCellValue (row: object, prop: string): string | null {
   return String(value)
 }
 
-export function jobColumnProp (path: string): string {
-  return propFromPath(path)
-}
-
 export function defaultJobColumnName (path: string): string {
   return JOB_COLUMN_DEFAULT_NAMES.get(path) ?? path
 }
@@ -145,15 +141,3 @@ function jobColumnsEqual (a: JobColumn[], b: JobColumn[]): boolean {
   })
 }
 
-function propFromPath (path: string): string {
-  if (BUILTIN_COLUMN_PATHS.has(path) || EXTRA_DB_COLUMN_PATHS.has(path)) return path
-
-  const [first = '', ...rest] = path.split('.').filter(Boolean)
-  const prop = [
-    first,
-    ...rest.map(part => part.charAt(0).toUpperCase() + part.slice(1)),
-  ]
-    .join('')
-
-  return prop || 'columnValue'
-}

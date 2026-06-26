@@ -4,7 +4,6 @@ import {
   DEFAULT_QUEUE_JOB_COLUMNS,
   createJobColumn,
   getRowCellValue,
-  jobColumnProp,
   parseJobColumns,
   appendJobColumns,
   type JobColumn,
@@ -83,11 +82,7 @@ describe('job columns', () => {
     ])
   })
 
-  it('derives row property names from paths', () => {
-    expect(jobColumnProp('id')).toBe('id')
-    expect(jobColumnProp('data.tenant.id')).toBe('dataTenantId')
-    expect(jobColumnProp('output.status')).toBe('outputStatus')
-
+  it('keeps falsy row values visible', () => {
     const row = {
       priority: 0,
       retryCount: 0,
@@ -96,11 +91,11 @@ describe('job columns', () => {
       singletonKey: null,
     }
 
-    expect(getRowCellValue(row, jobColumnProp('priority'))).toBe('0')
-    expect(getRowCellValue(row, jobColumnProp('retryCount'))).toBe('0')
-    expect(getRowCellValue(row, jobColumnProp('retryLimit'))).toBe('0')
-    expect(getRowCellValue(row, jobColumnProp('deadLetter'))).toBe('false')
-    expect(getRowCellValue(row, jobColumnProp('singletonKey'))).toBeNull()
+    expect(getRowCellValue(row, 'priority')).toBe('0')
+    expect(getRowCellValue(row, 'retryCount')).toBe('0')
+    expect(getRowCellValue(row, 'retryLimit')).toBe('0')
+    expect(getRowCellValue(row, 'deadLetter')).toBe('false')
+    expect(getRowCellValue(row, 'singletonKey')).toBeNull()
   })
 
   it('ignores invalid column paths and falls back to defaults if none survive', () => {

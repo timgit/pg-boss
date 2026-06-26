@@ -8,7 +8,6 @@ import {
 } from '~/lib/utils'
 import {
   getRowCellValue,
-  jobColumnProp,
   type JobColumn,
 } from '~/lib/job-columns'
 
@@ -73,7 +72,7 @@ export function JobColumnCell ({
       )
     }
     default: {
-      const value = getRowCellValue(row, jobColumnProp(column.path))
+      const value = getRowCellValue(row, column.path)
       return (
         <TableCell className="font-mono text-xs text-[var(--text-secondary)] max-w-[12rem] truncate">
           <span title={value ?? undefined}>{value ?? '—'}</span>

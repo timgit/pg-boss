@@ -3,7 +3,6 @@ import type { JobStateFilter } from './utils'
 import {
   isBuiltinJobColumnPath,
   jobColumnDbColumn,
-  jobColumnProp,
   type JobColumn,
 } from './job-columns'
 import type {
@@ -87,7 +86,7 @@ export function buildJobColumnProjections (columns: JobColumn[]): string[] {
 
   for (const col of columns) {
     if (isBuiltinJobColumnPath(col.path)) continue
-    const prop = jobColumnProp(col.path)
+    const prop = col.path
     if (seen.has(prop)) continue
     seen.add(prop)
 

@@ -17,13 +17,15 @@ describe('job column SQL projections', () => {
     expect(buildJobColumnProjections([
       { path: 'id', name: 'ID' },
       { path: 'data.name', name: 'Job name' },
+      { path: 'data.tenant.id', name: 'Nested tenant' },
       { path: 'data.tenantId', name: 'Tenant' },
       { path: 'data.bad-key', name: 'Quoted' },
       { path: 'groupId', name: 'Group' },
     ])).toEqual([
-      'data #>> ARRAY[\'name\'] as "dataName"',
-      'data #>> ARRAY[\'tenantId\'] as "dataTenantId"',
-      'data #>> ARRAY[\'bad-key\'] as "dataBad-key"',
+      'data #>> ARRAY[\'name\'] as "data.name"',
+      'data #>> ARRAY[\'tenant\',\'id\'] as "data.tenant.id"',
+      'data #>> ARRAY[\'tenantId\'] as "data.tenantId"',
+      'data #>> ARRAY[\'bad-key\'] as "data.bad-key"',
       'group_id as "groupId"',
     ])
   })
