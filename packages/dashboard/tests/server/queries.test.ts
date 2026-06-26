@@ -649,7 +649,7 @@ describe('Job Queries', () => {
       })
 
       expect(jobs).toHaveLength(1)
-      expect((jobs[0] as Record<string, unknown>).dataTenantId).toBe('acme')
+      expect((jobs[0] as Record<string, unknown>)['data.tenantId']).toBe('acme')
     })
 
     it('filters jobs by state', async () => {

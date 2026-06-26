@@ -140,4 +140,3 @@ function jobColumnsEqual (a: JobColumn[], b: JobColumn[]): boolean {
     return column.path === other.path && column.name === other.name
   })
 }
-
