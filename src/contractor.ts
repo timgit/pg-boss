@@ -29,7 +29,7 @@ class Contractor {
   constructor (db: types.IDatabase, config: types.ResolvedConstructorOptions) {
     this.config = config
     this.db = db
-    this.migrations = this.config.migrations || migrationStore.getAll(this.config.schema)
+    this.migrations = this.config.migrations || migrationStore.getAll(this.config.schema, this.config.noTablePartitioning)
   }
 
   async schemaVersion () {

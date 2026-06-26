@@ -45,6 +45,27 @@ const NUMERIC_QUEUE_FIELDS = [
   'totalCount'
 ] as const
 
+// The count columns shared by live stats and recorded snapshots (the QueueStats shape).
+const STATS_COUNT_FIELDS = [
+  'deferredCount',
+  'queuedCount',
+  'readyCount',
+  'activeCount',
+  'failedCount',
+  'totalCount'
+] as const
+
+// Stale-cache budget for getQueueStats when persistQueueStats is off. A queue-table cache older than
+// this means monitoring isn't keeping it current (e.g. supervise was enabled once but isn't now), so
+// the counts are recomputed and re-cached instead of returned. Defaults to one hour, raised to the
+// configured monitor/supervise interval when that's larger (both capped at MAX_EXPIRATION_HOURS).
+const QUEUE_STATS_CACHE_TTL_SECONDS = 60 * 60
+
+// Tighter budget applied when getQueueStats is called with { force: true }: recompute for a fresh
+// reading, but still reuse anything computed within the last minute so back-to-back forced calls
+// don't each re-run the job-table aggregate.
+const QUEUE_STATS_FORCE_TTL_SECONDS = 60
+
 const events = {
   error: 'error',
   wip: 'wip'
@@ -1630,35 +1651,91 @@ class Manager extends EventEmitter implements types.EventsMixin {
     }
   }
 
-  async getQueueStats (name: string) {
+  // Queue stats are a time series, always returned as an array (newest first).
+  //
+  // With persistQueueStats enabled this returns the recorded history, optionally bounded by
+  // from/to/limit. With it disabled there's no series, so it returns a single datapoint built from
+  // the cached counts the monitor maintains on the queue table — cheap, and avoids re-running the
+  // job-table aggregate on every call. The aggregate runs only when { force: true } is passed or the
+  // cache is missing/stale; either way the fresh counts are written back to the cache so later reads
+  // stay cheap. Throws if the queue doesn't exist. For the cached counts as a single value, use
+  // getQueue(name).
+  async getQueueStats (name: string, options: types.QueueStatsOptions = {}): Promise<types.QueueStats[]> {
     Attorney.assertQueueName(name)
 
-    const queue = await this.getQueueCache(name)
+    const isCockroach = this.config.backend === 'cockroachdb'
 
-    const query = plans.getQueueStats(this.config.schema, queue.table, [name])
-
-    const { rows } = await this.db.executeSql(query.text, query.values)
-
-    const stats = rows.at(0)
-
-    // CockroachDB returns integer columns as strings; normalize the stats counts. (The queue fields
-    // merged in below come from getQueueCache -> getQueues, which already normalizes them.)
-    if (stats && this.config.backend === 'cockroachdb') {
-      for (const field of NUMERIC_QUEUE_FIELDS) {
-        if (stats[field] !== undefined && stats[field] !== null) stats[field] = Number(stats[field])
+    const toSnapshot = (row: any): types.QueueStats => {
+      const snapshot: types.QueueStats = {
+        name,
+        deferredCount: 0,
+        queuedCount: 0,
+        readyCount: 0,
+        activeCount: 0,
+        failedCount: 0,
+        totalCount: 0,
+        capturedOn: row?.capturedOn ?? new Date()
       }
+
+      for (const field of STATS_COUNT_FIELDS) {
+        const value = row?.[field]
+        // CockroachDB returns integer columns as strings; normalize the counts.
+        if (value !== undefined && value !== null) snapshot[field] = isCockroach ? Number(value) : value
+      }
+
+      return snapshot
     }
 
-    return Object.assign(queue, stats ||
-            {
-              deferredCount: 0,
-              queuedCount: 0,
-              readyCount: 0,
-              activeCount: 0,
-              failedCount: 0,
-              totalCount: 0
-            }
-    )
+    if (this.config.persistQueueStats) {
+      // Validate the queue exists (consistent with the persistence-off path below); the history
+      // query itself would just return an empty series for an unknown name.
+      await this.getQueueCache(name)
+
+      const { from = null, to = null, limit = 1000 } = options
+
+      assert(Number.isInteger(limit) && limit >= 1 && limit <= 100_000,
+        'getQueueStats: limit must be an integer between 1 and 100000')
+
+      const sql = plans.getQueueStatsHistory(this.config.schema)
+      const { rows } = await this.db.executeSql(sql, [name, from, to, limit])
+
+      return rows.map(toSnapshot)
+    }
+
+    // persistQueueStats disabled: serve the cached counts the monitor keeps on the queue table.
+    // capturedOn is monitor_on — NULL if never monitored, or old if monitoring has since been turned
+    // off. Serve the cache while it's within budget; otherwise recompute and re-cache. { force: true }
+    // applies a much tighter budget (a fresh reading), but still reuses a value computed in the last
+    // minute so repeated forced calls don't each re-run the aggregate.
+    const cacheSql = plans.getQueueStatsCache(this.config.schema)
+    const { rows: cacheRows } = await this.db.executeSql(cacheSql, [name])
+    const cached = cacheRows.at(0)
+
+    if (!cached) {
+      throw new Error(`Queue ${name} does not exist`)
+    }
+
+    const maxCacheAgeMs = (options.force
+      ? QUEUE_STATS_FORCE_TTL_SECONDS
+      : Math.max(
+        QUEUE_STATS_CACHE_TTL_SECONDS,
+        this.config.monitorIntervalSeconds ?? 0,
+        this.config.superviseIntervalSeconds ?? 0
+      )
+    ) * 1000
+
+    const cacheAgeMs = cached.capturedOn == null
+      ? Infinity
+      : Date.now() - new Date(cached.capturedOn).getTime()
+
+    if (cacheAgeMs <= maxCacheAgeMs) {
+      return [toSnapshot(cached)]
+    }
+
+    const refreshSql = plans.refreshQueueStats(this.config.schema, cached.table, name)
+    const { rows: refreshed } = await this.db.executeSql(refreshSql)
+
+    return [toSnapshot(refreshed.at(0) ?? cached)]
   }
 
   async getJobById<T>(name: string, id: string, options: types.ConnectionOptions = {}): Promise<types.JobWithMetadata<T> | null> {

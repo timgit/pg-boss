@@ -24,7 +24,7 @@ describe('queueStats', function () {
 
   it('should get accurate stats', async function () {
     ctx.boss = await init(ctx.bossConfig)
-    const queueData = await ctx.boss.getQueueStats(queue1)
+    const [queueData] = await ctx.boss.getQueueStats(queue1)
     expect(queueData).not.toBe(undefined)
 
     const {
@@ -35,7 +35,7 @@ describe('queueStats', function () {
       activeCount,
       failedCount,
       totalCount
-    } = queueData!
+    } = queueData
 
     expect(name).toBe(queue1)
     expect(deferredCount).toBe(0)
@@ -54,7 +54,7 @@ describe('queueStats', function () {
     await ctx.boss.send(queue)
     await ctx.boss.send(queue, {}, { startAfter: 100 })
 
-    const queueData = await ctx.boss.getQueueStats(queue)
+    const [queueData] = await ctx.boss.getQueueStats(queue)
 
     expect(queueData.queuedCount).toBe(2)
     expect(queueData.deferredCount).toBe(1)
@@ -72,7 +72,7 @@ describe('queueStats', function () {
     const [job] = await ctx.boss.fetch(queue)
     await ctx.boss.fail(queue, job.id)
 
-    const queueData = await ctx.boss.getQueueStats(queue)
+    const [queueData] = await ctx.boss.getQueueStats(queue)
 
     expect(queueData.failedCount).toBe(1)
     expect(queueData.queuedCount).toBe(0)
@@ -85,7 +85,7 @@ describe('queueStats', function () {
     const queue3 = randomUUID()
     await ctx.boss.createQueue(queue3)
 
-    const queueData = await ctx.boss.getQueueStats(queue3)
+    const [queueData] = await ctx.boss.getQueueStats(queue3)
     expect(queueData).not.toBe(undefined)
 
     const {
@@ -104,7 +104,7 @@ describe('queueStats', function () {
   })
 
   it('should properly get queue stats when all jobs are deleted', async function () {
-    ctx.boss = await helper.start({ ...ctx.bossConfig, monitorIntervalSeconds: 1, queueCacheIntervalSeconds: 1 })
+    ctx.boss = await helper.start(ctx.bossConfig)
 
     const queue4 = randomUUID()
     await ctx.boss.createQueue(queue4)
@@ -113,16 +113,10 @@ describe('queueStats', function () {
     await ctx.boss.send(queue4)
     await ctx.boss.send(queue4)
 
-    await ctx.boss.supervise(queue4)
-
     await ctx.boss.deleteAllJobs(queue4)
 
-    await ctx.boss.supervise(queue4)
-
-    // wait for a second for queueCache to update
-    await new Promise(resolve => setTimeout(resolve, 1000))
-
-    const queueData = await ctx.boss.getQueueStats(queue4)
+    // never monitored, so getQueueStats recomputes from the job table and reflects the deletion
+    const [queueData] = await ctx.boss.getQueueStats(queue4)
     expect(queueData).toBeTruthy()
 
     expect(queueData.deferredCount).toBe(0)

@@ -1,6 +1,6 @@
 {
   "name": "pg-boss",
-  "version": "12.23.0",
+  "version": "12.24.0",
   "description": "Queueing jobs in Postgres from Node.js like a boss",
   "type": "module",
   "main": "./dist/index.js",
@@ -61,7 +61,7 @@
     "docs:readme": "node ./scripts/sync-readme.js"
   },
   "pgboss": {
-    "schema": 34
+    "schema": 35
   },
   "repository": {
     "type": "git",

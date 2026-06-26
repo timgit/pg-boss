@@ -86,8 +86,36 @@ export interface MaintenanceOptions {
   monitorIntervalSeconds?: number;
   persistWarnings?: boolean;
   warningRetentionDays?: number;
+  persistQueueStats?: boolean;
+  queueStatsRetentionDays?: number;
   bamIntervalSeconds?: number;
   flowIntervalSeconds?: number;
+}
+
+export interface QueueStats {
+  name: string;
+  deferredCount: number;
+  queuedCount: number;
+  readyCount: number;
+  activeCount: number;
+  failedCount: number;
+  totalCount: number;
+  capturedOn: Date;
+}
+
+export interface QueueStatsOptions {
+  /** persistQueueStats on: only return snapshots captured at or after this time. */
+  from?: Date;
+  /** persistQueueStats on: only return snapshots captured at or before this time. */
+  to?: Date;
+  /** persistQueueStats on: maximum number of snapshots to return (1–100000, default 1000). */
+  limit?: number;
+  /**
+   * persistQueueStats off: return a fresh reading. Recomputes the counts from the job table and
+   * refreshes the queue-table cache rather than serving the regular (up to ~1h) cache, but still
+   * reuses anything computed in the last minute so repeated forced calls don't each re-aggregate.
+   */
+  force?: boolean;
 }
 
 /**

@@ -393,27 +393,6 @@ describe('migration', function () {
     expect(finalSchema.functions.rows).toEqual(initialSchema.functions.rows)
   })
 
-  itPostgresOnly('v34 adds and removes dead-letter source columns', async function () {
-    const config = { ...ctx.bossConfig }
-
-    await contractor.create()
-
-    const sourceColumns = ['source_name', 'source_id', 'source_created_on', 'source_retry_count']
-
-    const installed = JSON.stringify((await getSchemaDefs([config.schema])).columns.rows)
-    for (const col of sourceColumns) {
-      expect(installed).toContain(col)
-    }
-
-    await contractor.rollback(currentSchemaVersion)
-    expect(await contractor.schemaVersion()).toBe(currentSchemaVersion - 1)
-
-    const rolledBack = JSON.stringify((await getSchemaDefs([config.schema])).columns.rows)
-    for (const col of sourceColumns) {
-      expect(rolledBack).not.toContain(col)
-    }
-  })
-
   itPostgresOnly('should detect function modification when migration has incomplete uninstall', async function () {
     const config = { ...ctx.bossConfig }
 

@@ -87,6 +87,10 @@ export function create (schema: string, version: number, options?: CreateOptions
     createTableWarning(schema),
     createIndexWarning(schema),
 
+    createTableQueueStats(schema, noPartitioning),
+    createIndexQueueStats(schema),
+    noPartitioning ? '' : ensureQueueStatsPartitions(schema),
+
     createTableJobDependency(schema),
     createIndexJobDependencyParent(schema),
 
@@ -938,6 +942,167 @@ export function deleteOldWarnings (schema: string, days: number): string {
   return `
     DELETE FROM ${schema}.warning
     WHERE created_on < now() - interval '${days} days'
+  `
+}
+
+export function createTableQueueStats (schema: string, noPartitioning = false): string {
+  if (noPartitioning) {
+    return `
+      CREATE TABLE ${schema}.queue_stats (
+        id uuid NOT NULL DEFAULT gen_random_uuid(),
+        name text NOT NULL,
+        deferred_count int NOT NULL DEFAULT 0,
+        queued_count   int NOT NULL DEFAULT 0,
+        ready_count    int NOT NULL DEFAULT 0,
+        active_count   int NOT NULL DEFAULT 0,
+        failed_count   int NOT NULL DEFAULT 0,
+        total_count    int NOT NULL DEFAULT 0,
+        captured_on timestamptz NOT NULL DEFAULT now(),
+        PRIMARY KEY (id)
+      )
+    `
+  }
+  return `
+    CREATE TABLE ${schema}.queue_stats (
+      id uuid NOT NULL DEFAULT gen_random_uuid(),
+      name text NOT NULL,
+      deferred_count int NOT NULL DEFAULT 0,
+      queued_count   int NOT NULL DEFAULT 0,
+      ready_count    int NOT NULL DEFAULT 0,
+      active_count   int NOT NULL DEFAULT 0,
+      failed_count   int NOT NULL DEFAULT 0,
+      total_count    int NOT NULL DEFAULT 0,
+      captured_on timestamptz NOT NULL DEFAULT now(),
+      PRIMARY KEY (id, captured_on)
+    ) PARTITION BY RANGE (captured_on)
+  `
+}
+
+export function createIndexQueueStats (schema: string): string {
+  return `CREATE INDEX queue_stats_i1 ON ${schema}.queue_stats (name, captured_on DESC)`
+}
+
+// Idempotently create the daily partitions for today and tomorrow (UTC). Both the day suffix and
+// the range bounds are derived in SQL from the UTC calendar date, and the bounds are emitted as
+// explicit `+00` timestamptz literals. This keeps partitioning correct regardless of the database
+// session TimeZone (a bare date literal like '2026-06-25' would otherwise be cast to timestamptz in
+// the session TZ, so rows written near UTC midnight could fall outside every existing partition).
+// Computing the date in SQL (rather than interpolating new Date()) also keeps emitted DDL — including
+// the v35 migration and exported create plans — deterministic and apply-time accurate.
+export function ensureQueueStatsPartitions (schema: string): string {
+  return `
+    DO $$
+    DECLARE
+      d date;
+      i int;
+      part_name text;
+    BEGIN
+      FOR i IN 0..1 LOOP
+        d := (now() AT TIME ZONE 'UTC')::date + i;
+        part_name := 'queue_stats_' || to_char(d, 'YYYYMMDD');
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_class c
+          JOIN pg_namespace n ON n.oid = c.relnamespace
+          WHERE n.nspname = '${schema}' AND c.relname = part_name
+        ) THEN
+          EXECUTE format(
+            'CREATE TABLE ${schema}.%I PARTITION OF ${schema}.queue_stats FOR VALUES FROM (%L) TO (%L)',
+            part_name,
+            to_char(d, 'YYYY-MM-DD') || ' 00:00:00+00',
+            to_char(d + 1, 'YYYY-MM-DD') || ' 00:00:00+00'
+          );
+        END IF;
+      END LOOP;
+    END;
+    $$
+  `
+}
+
+export function dropOldQueueStatsPartitions (schema: string, days: number): string {
+  return `
+    DO $$
+    DECLARE
+      r record;
+      cutoff date := (now() AT TIME ZONE 'UTC')::date - ${days};
+      suffix text;
+      part_date date;
+    BEGIN
+      FOR r IN
+        SELECT c.relname
+        FROM pg_inherits i
+        JOIN pg_class p ON p.oid = i.inhparent
+        JOIN pg_class c ON c.oid = i.inhrelid
+        JOIN pg_namespace n ON n.oid = p.relnamespace
+        WHERE n.nspname = '${schema}' AND p.relname = 'queue_stats'
+      LOOP
+        suffix := substring(r.relname FROM 'queue_stats_(.*)$');
+        IF suffix ~ '^[0-9]{8}$' THEN
+          part_date := to_date(suffix, 'YYYYMMDD');
+          IF part_date < cutoff THEN
+            EXECUTE 'DROP TABLE IF EXISTS ${schema}.' || quote_ident(r.relname);
+          END IF;
+        END IF;
+      END LOOP;
+    END;
+    $$
+  `
+}
+
+export function deleteOldQueueStats (schema: string, days: number): string {
+  return `
+    DELETE FROM ${schema}.queue_stats
+    WHERE captured_on < now() - interval '${days} days'
+  `
+}
+
+export function insertQueueStats (schema: string, queues: string[], noAdvisoryLocks?: boolean): string {
+  const sql = `
+    INSERT INTO ${schema}.queue_stats
+      (name, deferred_count, queued_count, ready_count, active_count, failed_count, total_count)
+    SELECT name, deferred_count, queued_count, ready_count, active_count, failed_count, total_count
+    FROM ${schema}.queue
+    WHERE name = ANY(${serializeArrayParam(queues)})
+  `
+  return locked(schema, sql, 'queue-stats-insert', noAdvisoryLocks)
+}
+
+// Cheap single-row read of the cached counts the monitor maintains on the queue table. capturedOn
+// is monitor_on — the moment those counts were last refreshed, or NULL if the queue has never been
+// monitored (so the caller knows to recompute rather than trust default-zero counts).
+export function getQueueStatsCache (schema: string): string {
+  return `
+    SELECT
+      name,
+      deferred_count as "deferredCount",
+      queued_count   as "queuedCount",
+      ready_count    as "readyCount",
+      active_count   as "activeCount",
+      failed_count   as "failedCount",
+      total_count    as "totalCount",
+      table_name     as "table",
+      monitor_on     as "capturedOn"
+    FROM ${schema}.queue
+    WHERE name = $1
+  `
+}
+
+export function getQueueStatsHistory (schema: string): string {
+  return `
+    SELECT
+      name,
+      deferred_count as "deferredCount",
+      queued_count   as "queuedCount",
+      ready_count    as "readyCount",
+      active_count   as "activeCount",
+      failed_count   as "failedCount",
+      total_count    as "totalCount",
+      captured_on    as "capturedOn"
+    FROM ${schema}.queue_stats
+    WHERE name = $1
+      AND ($2::timestamptz IS NULL OR captured_on >= $2)
+      AND ($3::timestamptz IS NULL OR captured_on <= $3)
+    ORDER BY captured_on DESC
+    LIMIT $4
   `
 }
 
@@ -2058,6 +2223,44 @@ export function cacheQueueStats (schema: string, table: string, queues: string[]
   `
 
   return locked(schema, sql, 'queue-stats', noAdvisoryLocks)
+}
+
+// Recompute one queue's counts from the job table and write them back to the queue-table cache
+// (including monitor_on, so subsequent reads are served from cache), returning the fresh counts.
+// Backs getQueueStats(name, { force: true }) and the first read of a never-monitored queue. A single
+// atomic UPDATE ... RETURNING — no advisory lock needed since concurrent forced refreshes are
+// idempotent (each is a valid point-in-time snapshot; last write wins).
+export function refreshQueueStats (schema: string, table: string, name: string): string {
+  const statsQuery = getQueueStats(schema, table, [name])
+  const statsText = statsQuery.text.replace('$1::text[]', serializeArrayParam([name]))
+
+  return `
+    WITH stats AS (${statsText})
+    UPDATE ${schema}.queue SET
+      deferred_count = COALESCE(stats."deferredCount", 0),
+      queued_count = COALESCE(stats."queuedCount", 0),
+      ready_count = COALESCE(stats."readyCount", 0),
+      active_count = COALESCE(stats."activeCount", 0),
+      failed_count = COALESCE(stats."failedCount", 0),
+      total_count = COALESCE(stats."totalCount", 0),
+      singletons_active = stats."singletonsActive",
+      monitor_on = now()
+    FROM (
+      SELECT q.name
+      FROM unnest(${serializeArrayParam([name])}) AS q(name)
+    ) q
+    LEFT JOIN stats ON stats.name = q.name
+    WHERE queue.name = q.name
+    RETURNING
+      queue.name,
+      queue.deferred_count as "deferredCount",
+      queue.queued_count as "queuedCount",
+      queue.ready_count as "readyCount",
+      queue.active_count as "activeCount",
+      queue.failed_count as "failedCount",
+      queue.total_count as "totalCount",
+      queue.monitor_on as "capturedOn"
+  `
 }
 
 // Serialize a string array for embedding directly in SQL as PostgreSQL array literal

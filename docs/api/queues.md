@@ -144,11 +144,9 @@ Returns all queues, or only the named queues when an array of names is provided.
 
 Returns a queue by name
 
-### `getQueueStats(name)`
+### `getQueueStats(name, options)`
 
-Returns the number of jobs in various states in a queue.  The result matches the results from getQueue(), but ignores the cached data and forces the stats to be retrieved immediately.
-
-The counts include:
+Returns an array of queue-depth snapshots, most recent first. Each snapshot has the queue `name`, a `capturedOn` timestamp, and these counts:
 
 * `queuedCount` — jobs waiting to run, **including** deferred (future-dated) jobs; this drives the queue backlog warning, so dumping a lot of deferred work still trips it
 * `deferredCount` — jobs scheduled to start in the future (`startAfter` not yet reached)
@@ -156,6 +154,13 @@ The counts include:
 * `activeCount` — jobs currently being processed
 * `failedCount` — failed jobs still retained in the table (bounded by the queue's retention policy, so this is a rolling count of recent failures rather than an all-time total)
 * `totalCount` — all jobs currently stored for the queue
+
+Behavior depends on whether stats are being persisted:
+
+* When [`persistQueueStats`](./constructor.md) is enabled, this returns the recorded time series. `options` filters it: `from` (Date, snapshots at or after), `to` (Date, snapshots at or before), and `limit` (int, default 1000, range 1–100000).
+* When `persistQueueStats` is disabled it returns a single datapoint as a one-element array. By default this is served from the cached counts the monitor maintains on the queue table (cheap, refreshed every `monitorIntervalSeconds`), so the value can be up to one monitor interval stale. Pass `{ force: true }` for a fresh reading: it recomputes the counts directly from the job table and writes them back to the cache, but still reuses anything computed in the last 60 seconds, so repeated forced calls don't each re-aggregate. The aggregate is also run (and the cache refreshed) automatically when the cache can't be trusted: when the queue has never been monitored, or when the cache is stale — older than one hour, or older than the configured `monitorIntervalSeconds`/`superviseIntervalSeconds` when that is larger (e.g. monitoring was enabled once but isn't anymore).
+
+For the cached counts as a single value with the full queue config, use [`getQueue(name)`](#getqueuename).
 
 ### `getBlockedKeys(name)`
 

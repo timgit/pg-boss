@@ -712,7 +712,7 @@ const createQueueFn: Record<number, (schema: string) => string> = {
   `
 }
 
-function getAll (schema: string): types.Migration[] {
+function getAll (schema: string, noPartitioning = false): types.Migration[] {
   return [
     {
       release: '11.1.0',
@@ -1024,6 +1024,27 @@ function getAll (schema: string): types.Migration[] {
         `ALTER TABLE ${schema}.job DROP COLUMN source_id`,
         `ALTER TABLE ${schema}.job DROP COLUMN source_created_on`,
         `ALTER TABLE ${schema}.job DROP COLUMN source_retry_count`
+      ]
+    },
+    {
+      release: '12.24.0',
+      version: 35,
+      previous: 34,
+      // Mirror plans.create(): honor noTablePartitioning so upgrades on non-partitioning
+      // deployments (e.g. CockroachDB, which rejects declarative RANGE partitioning) get a plain
+      // queue_stats table instead of a partitioned one they could never maintain.
+      install: noPartitioning
+        ? [
+            plans.createTableQueueStats(schema, true),
+            plans.createIndexQueueStats(schema)
+          ]
+        : [
+            plans.createTableQueueStats(schema, false),
+            plans.createIndexQueueStats(schema),
+            plans.ensureQueueStatsPartitions(schema)
+          ],
+      uninstall: [
+        `DROP TABLE IF EXISTS ${schema}.queue_stats`
       ]
     }
   ]

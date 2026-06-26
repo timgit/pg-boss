@@ -115,6 +115,14 @@ The following configuration options should not normally need to be changed, but 
 
   When `persistWarnings` is enabled, this option controls automatic cleanup of old warnings. Warnings older than the specified number of days will be deleted during maintenance. If not set, warnings are retained indefinitely. Maximum: 365 days.
 
+* **persistQueueStats**, bool, default false
+
+  If set to true, the per-queue counts captured during monitoring (deferred, queued, ready, active, failed, and total) are written to the `queue_stats` table on every monitor cycle, in addition to updating the live counts on the `queue` table. This builds a time series of queue depth that you can query with [`getQueueStats()`](./queues.md#getqueuestatsname-options). On partitioning backends the table is partitioned by day, and daily partitions are provisioned and pruned automatically during maintenance.
+
+* **queueStatsRetentionDays**, int, default 7
+
+  When `persistQueueStats` is enabled, this controls automatic cleanup of old snapshots. Stats older than the specified number of days are removed during maintenance (by dropping expired daily partitions, or by deleting old rows on non-partitioning backends). Maximum: 365 days.
+
 * **backend**, string, default `'postgres'`
 
   Selects the database pg-boss is running against and applies the compatibility behavior it needs. One of `'postgres'`, `'cockroachdb'`, `'yugabytedb'`, `'citus'`, or `'pglite'`.

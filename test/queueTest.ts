@@ -88,7 +88,7 @@ describe('queues', function () {
     await ctx.boss.deleteAllJobs(ctx.schema)
     await ctx.boss.deleteQueue(ctx.schema)
 
-    const { queuedCount } = await ctx.boss.getQueueStats(queue2)
+    const [{ queuedCount }] = await ctx.boss.getQueueStats(queue2)
     expect(queuedCount).toBeTruthy()
   })
 
@@ -113,8 +113,8 @@ describe('queues', function () {
 
     await ctx.boss.deleteAllJobs()
 
-    const { queuedCount: count1 } = await ctx.boss.getQueueStats(ctx.schema)
-    const { queuedCount: count2 } = await ctx.boss.getQueueStats(queue2)
+    const [{ queuedCount: count1 }] = await ctx.boss.getQueueStats(ctx.schema)
+    const [{ queuedCount: count2 }] = await ctx.boss.getQueueStats(queue2)
 
     expect(count1 + count2).toBe(0)
   })

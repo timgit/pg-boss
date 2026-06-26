@@ -11,7 +11,7 @@ describe('insert', function () {
 
     await ctx.boss.insert(ctx.schema, input)
 
-    const { queuedCount } = await ctx.boss.getQueueStats(ctx.schema)
+    const [{ queuedCount }] = await ctx.boss.getQueueStats(ctx.schema)
 
     expect(queuedCount).toBe(3)
   })
