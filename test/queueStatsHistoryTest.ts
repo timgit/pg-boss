@@ -168,12 +168,148 @@ describe('queueStatsHistory', function () {
     expect(limited.length).toBeLessThanOrEqual(2)
   })
 
-  it('should validate queueStatsRetentionDays < 1', async function () {
-    await expect(helper.start({ ...ctx.bossConfig, persistQueueStats: true, queueStatsRetentionDays: 0 })).rejects.toThrow('queueStatsRetentionDays')
+  // Seed queue_stats rows directly with controlled captured_on/counts so bucketing is deterministic.
+  // All timestamps are `agoSeconds` before now (kept within today's UTC partition), and the partition
+  // is ensured first so partitioned Postgres accepts the inserts.
+  async function seedStats (q: string, rows: Array<{ ago: number, queued?: number, total?: number }>) {
+    const db = await helper.getDb()
+    await db.executeSql(plans.ensureQueueStatsPartitions(ctx.schema))
+    for (const r of rows) {
+      await db.executeSql(
+        `INSERT INTO ${ctx.schema}.queue_stats
+           (name, deferred_count, queued_count, ready_count, active_count, failed_count, total_count, captured_on)
+         VALUES ($1, 0, $2, 0, 0, 0, $3, now() - ($4 || ' seconds')::interval)`,
+        [q, r.queued ?? 0, r.total ?? 0, String(r.ago)])
+    }
+    await db.close()
+  }
+
+  helper.itPostgresOnly('downsamples a large series with bucketSeconds', async function () {
+    const q = `q${randomUUID().replaceAll('-', '')}`
+    ctx.boss = await helper.start({ ...ctx.bossConfig, persistQueueStats: true })
+    await ctx.boss.createQueue(q)
+
+    // 60 snapshots one second apart; 10-second buckets collapse them to ~6-7 rows
+    await seedStats(q, Array.from({ length: 60 }, (_, i) => ({ ago: i, queued: i })))
+
+    const buckets = await ctx.boss.getQueueStats(q, { bucketSeconds: 10 })
+    expect(buckets.length).toBeLessThan(60)
+    expect(buckets.length).toBeLessThanOrEqual(8)
+    expect(buckets[0].capturedOn).toBeInstanceOf(Date)
+    // newest bucket first
+    expect(buckets[0].capturedOn.getTime()).toBeGreaterThan(buckets.at(-1)!.capturedOn.getTime())
   })
 
-  it('should validate queueStatsRetentionDays > 365', async function () {
-    await expect(helper.start({ ...ctx.bossConfig, persistQueueStats: true, queueStatsRetentionDays: 366 })).rejects.toThrow('queueStatsRetentionDays')
+  helper.itPostgresOnly('applies max/min/avg within a bucket', async function () {
+    const q = `q${randomUUID().replaceAll('-', '')}`
+    ctx.boss = await helper.start({ ...ctx.bossConfig, persistQueueStats: true })
+    await ctx.boss.createQueue(q)
+
+    // two rows a couple seconds apart; a wide bucket collapses both into one
+    await seedStats(q, [{ ago: 1, queued: 10 }, { ago: 2, queued: 21 }])
+
+    const [mx] = await ctx.boss.getQueueStats(q, { bucketSeconds: 3600, aggregate: 'max' })
+    const [mn] = await ctx.boss.getQueueStats(q, { bucketSeconds: 3600, aggregate: 'min' })
+    const [av] = await ctx.boss.getQueueStats(q, { bucketSeconds: 3600, aggregate: 'avg' })
+
+    expect(mx.queuedCount).toBe(21)
+    expect(mn.queuedCount).toBe(10)
+    expect(av.queuedCount).toBe(16) // round(avg(10,21)) = round(15.5) = 16
+    expect(Number.isInteger(av.queuedCount)).toBe(true)
+  })
+
+  helper.itPostgresOnly('defaults to max when aggregate is omitted', async function () {
+    const q = `q${randomUUID().replaceAll('-', '')}`
+    ctx.boss = await helper.start({ ...ctx.bossConfig, persistQueueStats: true })
+    await ctx.boss.createQueue(q)
+    await seedStats(q, [{ ago: 1, queued: 10 }, { ago: 2, queued: 21 }])
+
+    const [bucket] = await ctx.boss.getQueueStats(q, { bucketSeconds: 3600 })
+    expect(bucket.queuedCount).toBe(21)
+  })
+
+  helper.itPostgresOnly('maxDataPoints fits the series into ~N points', async function () {
+    const q = `q${randomUUID().replaceAll('-', '')}`
+    ctx.boss = await helper.start({ ...ctx.bossConfig, persistQueueStats: true })
+    await ctx.boss.createQueue(q)
+
+    // 120 snapshots over two minutes; target 10 points
+    await seedStats(q, Array.from({ length: 120 }, (_, i) => ({ ago: i, queued: i })))
+
+    const points = await ctx.boss.getQueueStats(q, { maxDataPoints: 10 })
+    expect(points.length).toBeGreaterThan(1)
+    expect(points.length).toBeLessThanOrEqual(11) // ~N, allow a boundary-straddling extra bucket
+  })
+
+  helper.itPostgresOnly('maxDataPoints derives the bucket width from an explicit from/to window', async function () {
+    const q = `q${randomUUID().replaceAll('-', '')}`
+    ctx.boss = await helper.start({ ...ctx.bossConfig, persistQueueStats: true })
+    await ctx.boss.createQueue(q)
+    await seedStats(q, Array.from({ length: 20 }, (_, i) => ({ ago: i, queued: i })))
+
+    // whole-second bounds so the derived width is an exact integer and buckets align cleanly
+    const to = new Date(Math.floor(Date.now() / 1000) * 1000 + 1000)
+    const from = new Date(to.getTime() - 100_000) // 100s window
+    const maxDataPoints = 10
+    const expectedWidth = Math.max(1, Math.ceil(((to.getTime() - from.getTime()) / 1000) / maxDataPoints))
+
+    const points = await ctx.boss.getQueueStats(q, { from, to, maxDataPoints })
+    expect(points.length).toBeGreaterThan(0)
+    expect(points.length).toBeLessThanOrEqual(maxDataPoints + 1)
+    // every bucket boundary aligns to the width derived from (to-from)/maxDataPoints, not the data span
+    for (const p of points) {
+      expect(Math.round(p.capturedOn.getTime() / 1000) % expectedWidth).toBe(0)
+    }
+  })
+
+  it('bucketSeconds wins when both bucketSeconds and maxDataPoints are passed', async function () {
+    const q = `q${randomUUID().replaceAll('-', '')}`
+    ctx.boss = await helper.start({ ...ctx.bossConfig, persistQueueStats: true })
+    await ctx.boss.createQueue(q)
+    // both supplied; an invalid maxDataPoints must be ignored because bucketSeconds takes precedence
+    await expect(ctx.boss.getQueueStats(q, { bucketSeconds: 60, maxDataPoints: 0 })).resolves.toBeInstanceOf(Array)
+  })
+
+  it('rejects a non-integer or non-positive bucketSeconds / maxDataPoints', async function () {
+    const q = `q${randomUUID().replaceAll('-', '')}`
+    ctx.boss = await helper.start({ ...ctx.bossConfig, persistQueueStats: true })
+    await ctx.boss.createQueue(q)
+
+    await expect(ctx.boss.getQueueStats(q, { bucketSeconds: 0 })).rejects.toThrow('bucketSeconds')
+    await expect(ctx.boss.getQueueStats(q, { bucketSeconds: 1.5 })).rejects.toThrow('bucketSeconds')
+    await expect(ctx.boss.getQueueStats(q, { maxDataPoints: -10 })).rejects.toThrow('maxDataPoints')
+    await expect(ctx.boss.getQueueStats(q, { maxDataPoints: 2.5 })).rejects.toThrow('maxDataPoints')
+  })
+
+  it('rejects an invalid aggregate', async function () {
+    const q = `q${randomUUID().replaceAll('-', '')}`
+    ctx.boss = await helper.start({ ...ctx.bossConfig, persistQueueStats: true })
+    await ctx.boss.createQueue(q)
+    // @ts-expect-error invalid aggregate
+    await expect(ctx.boss.getQueueStats(q, { bucketSeconds: 60, aggregate: 'sum' })).rejects.toThrow('aggregate')
+  })
+
+  // The bucket expression must stay portable: no date_bin() (PG14+, unsupported on CockroachDB),
+  // built from to_timestamp/extract(epoch)/floor which exist on PG13+ and the distributed backends.
+  it('builds a portable bucket expression (no date_bin)', function () {
+    const sql = plans.getQueueStatsHistoryBucketed('pgboss', 'max', 'bucket')
+    expect(sql).not.toContain('date_bin')
+    expect(sql).toContain('to_timestamp')
+  })
+
+  // The covering INCLUDE is gated on noCoveringIndexes: present by default (Postgres/Yugabyte),
+  // stripped for CockroachDB which uses STORING instead of INCLUDE.
+  it('emits a covering queue_stats index unless noCoveringIndexes is set', function () {
+    expect(plans.createIndexQueueStats('pgboss')).toContain('INCLUDE')
+    expect(plans.createIndexQueueStats('pgboss', true)).not.toContain('INCLUDE')
+  })
+
+  it('should validate queueStatRetentionDays < 1', async function () {
+    await expect(helper.start({ ...ctx.bossConfig, persistQueueStats: true, queueStatRetentionDays: 0 })).rejects.toThrow('queueStatRetentionDays')
+  })
+
+  it('should validate queueStatRetentionDays > 365', async function () {
+    await expect(helper.start({ ...ctx.bossConfig, persistQueueStats: true, queueStatRetentionDays: 366 })).rejects.toThrow('queueStatRetentionDays')
   })
 
   helper.itPostgresOnly('should create a daily partition for today', async function () {
@@ -201,7 +337,7 @@ describe('queueStatsHistory', function () {
     ctx.boss = await helper.start({
       ...ctx.bossConfig,
       persistQueueStats: true,
-      queueStatsRetentionDays: 7,
+      queueStatRetentionDays: 7,
       supervise: true,
       superviseIntervalSeconds: 1
     })
@@ -255,7 +391,7 @@ describe('queueStatsHistory', function () {
     ctx.boss = await helper.start({
       ...ctx.bossConfig,
       persistQueueStats: true,
-      queueStatsRetentionDays: 7,
+      queueStatRetentionDays: 7,
       supervise: false
     })
     await ctx.boss.createQueue(q)
@@ -308,7 +444,7 @@ describe('queueStatsHistory', function () {
       ...ctx.bossConfig,
       backend: 'cockroachdb',
       persistQueueStats: true,
-      queueStatsRetentionDays: 7,
+      queueStatRetentionDays: 7,
       noDefault: true
     })
 

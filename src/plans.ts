@@ -88,7 +88,7 @@ export function create (schema: string, version: number, options?: CreateOptions
     createIndexWarning(schema),
 
     createTableQueueStats(schema, noPartitioning),
-    createIndexQueueStats(schema),
+    createIndexQueueStats(schema, noCovering),
     noPartitioning ? '' : ensureQueueStatsPartitions(schema),
 
     createTableJobDependency(schema),
@@ -978,8 +978,18 @@ export function createTableQueueStats (schema: string, noPartitioning = false): 
   `
 }
 
-export function createIndexQueueStats (schema: string): string {
-  return `CREATE INDEX queue_stats_i1 ON ${schema}.queue_stats (name, captured_on DESC)`
+// queue_stats_i1 serves both the raw history query and the bucketed aggregates: the filter
+// (name = ?, captured_on range) rides the composite key, and the six count columns are carried as
+// covering payload so those reads run index-only (no per-row heap fetch — the dominant cost when an
+// aggregate scans many rows). INCLUDE is gated on the noCoveringIndexes profile flag, which
+// CockroachDB sets (it uses STORING, not INCLUDE) but YugabyteDB does not (it supports INCLUDE):
+// the gated backends keep the plain composite index — correct, just not covering.
+export function createIndexQueueStats (schema: string, noCoveringIndex = false): string {
+  const cols = '(name, captured_on DESC)'
+  const include = 'INCLUDE (deferred_count, queued_count, ready_count, active_count, failed_count, total_count)'
+  return noCoveringIndex
+    ? `CREATE INDEX queue_stats_i1 ON ${schema}.queue_stats ${cols}`
+    : `CREATE INDEX queue_stats_i1 ON ${schema}.queue_stats ${cols} ${include}`
 }
 
 // Idempotently create the daily partitions for today and tomorrow (UTC). Both the day suffix and
@@ -1102,6 +1112,67 @@ export function getQueueStatsHistory (schema: string): string {
       AND ($2::timestamptz IS NULL OR captured_on >= $2)
       AND ($3::timestamptz IS NULL OR captured_on <= $3)
     ORDER BY captured_on DESC
+    LIMIT $4
+  `
+}
+
+// Per-bucket aggregate over a count column. The function name can't be a bind parameter, so it's
+// interpolated — safe because the manager validates `aggregate` against this whitelist first. Every
+// result is cast back to int: it honors the int count contract (avg rounds) and keeps Postgres
+// returning the value as a JS number rather than a numeric string.
+const STATS_AGG = {
+  max: (c: string) => `max(${c})::int`,
+  min: (c: string) => `min(${c})::int`,
+  avg: (c: string) => `round(avg(${c}))::int`
+} as const
+
+// Downsampled history: group the recorded series into fixed-width time buckets and collapse each
+// bucket's counts with `aggregate`, so a wide window returns a manageable, representative sample
+// instead of just the newest `limit` raw rows.
+//
+//   mode 'bucket' — $5 is the bucket width in seconds (explicit resolution).
+//   mode 'auto'   — $5 is maxDataPoints; the width is derived in-SQL so the series fits in ~$5
+//                   points. The spanned window is from/to when supplied, else the data's own
+//                   min/max captured_on for whichever side is open.
+//
+// The bucket key avoids date_bin() (PG14+): pg-boss supports PostgreSQL 13+ and CockroachDB/
+// YugabyteDB, none of which can rely on it. to_timestamp / extract(epoch) / floor exist on all of
+// them (extract returns double on PG13, numeric on PG14+; floor/division handle both identically),
+// and buckets align to the Unix epoch so their boundaries are stable across calls.
+export function getQueueStatsHistoryBucketed (schema: string, aggregate: 'max' | 'min' | 'avg', mode: 'bucket' | 'auto'): string {
+  const agg = STATS_AGG[aggregate]
+  const widthCte = mode === 'auto'
+    ? `WITH bounds AS (
+         SELECT
+           coalesce($2::timestamptz, min(captured_on)) AS lo,
+           coalesce($3::timestamptz, max(captured_on)) AS hi
+         FROM ${schema}.queue_stats
+         WHERE name = $1
+           AND ($2::timestamptz IS NULL OR captured_on >= $2)
+           AND ($3::timestamptz IS NULL OR captured_on <= $3)
+       ),
+       w AS (
+         SELECT greatest(1, ceil(extract(epoch from (hi - lo)) / greatest($5, 1))::bigint)::bigint AS secs
+         FROM bounds
+       )`
+    : 'WITH w AS (SELECT greatest($5, 1)::bigint AS secs)'
+  const bucket = 'to_timestamp(floor(extract(epoch from captured_on) / w.secs) * w.secs)'
+  return `
+    ${widthCte}
+    SELECT
+      ${agg('deferred_count')} as "deferredCount",
+      ${agg('queued_count')}   as "queuedCount",
+      ${agg('ready_count')}    as "readyCount",
+      ${agg('active_count')}   as "activeCount",
+      ${agg('failed_count')}   as "failedCount",
+      ${agg('total_count')}    as "totalCount",
+      ${bucket}                as "capturedOn"
+    FROM ${schema}.queue_stats, w
+    WHERE name = $1
+      AND ($2::timestamptz IS NULL OR captured_on >= $2)
+      AND ($3::timestamptz IS NULL OR captured_on <= $3)
+    GROUP BY ${bucket}
+    ORDER BY ${bucket} DESC
     LIMIT $4
   `
 }

@@ -1691,10 +1691,28 @@ class Manager extends EventEmitter implements types.EventsMixin {
       // query itself would just return an empty series for an unknown name.
       await this.getQueueCache(name)
 
-      const { from = null, to = null, limit = 1000 } = options
+      const { from = null, to = null, limit = 1000, bucketSeconds, maxDataPoints, aggregate = 'max' } = options
 
       assert(Number.isInteger(limit) && limit >= 1 && limit <= 100_000,
         'getQueueStats: limit must be an integer between 1 and 100000')
+
+      // Downsample into time buckets when requested. bucketSeconds sets an explicit resolution;
+      // maxDataPoints derives the width in-SQL so the series fits in ~N points. Explicit wins.
+      if (bucketSeconds !== undefined || maxDataPoints !== undefined) {
+        assert(aggregate === 'max' || aggregate === 'min' || aggregate === 'avg',
+          "getQueueStats: aggregate must be 'max', 'min', or 'avg'")
+
+        const mode = bucketSeconds !== undefined ? 'bucket' : 'auto'
+        const width = bucketSeconds ?? maxDataPoints
+
+        assert(Number.isInteger(width) && width! >= 1,
+          `getQueueStats: ${mode === 'bucket' ? 'bucketSeconds' : 'maxDataPoints'} must be a positive integer`)
+
+        const sql = plans.getQueueStatsHistoryBucketed(this.config.schema, aggregate, mode)
+        const { rows } = await this.db.executeSql(sql, [name, from, to, limit, width])
+
+        return rows.map(toSnapshot)
+      }
 
       const sql = plans.getQueueStatsHistory(this.config.schema)
       const { rows } = await this.db.executeSql(sql, [name, from, to, limit])

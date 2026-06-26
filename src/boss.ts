@@ -152,13 +152,13 @@ class Boss extends EventEmitter implements types.EventsMixin {
   }
 
   async #maintainQueueStats () {
-    if (!this.#config.persistQueueStats || !this.#config.queueStatsRetentionDays) {
+    if (!this.#config.persistQueueStats || !this.#config.queueStatRetentionDays) {
       return
     }
 
     const sql = this.#config.noTablePartitioning
-      ? plans.deleteOldQueueStats(this.#config.schema, this.#config.queueStatsRetentionDays)
-      : plans.dropOldQueueStatsPartitions(this.#config.schema, this.#config.queueStatsRetentionDays)
+      ? plans.deleteOldQueueStats(this.#config.schema, this.#config.queueStatRetentionDays)
+      : plans.dropOldQueueStatsPartitions(this.#config.schema, this.#config.queueStatRetentionDays)
     await this.#executeQuery(sql)
   }
 

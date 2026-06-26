@@ -87,7 +87,7 @@ export interface MaintenanceOptions {
   persistWarnings?: boolean;
   warningRetentionDays?: number;
   persistQueueStats?: boolean;
-  queueStatsRetentionDays?: number;
+  queueStatRetentionDays?: number;
   bamIntervalSeconds?: number;
   flowIntervalSeconds?: number;
 }
@@ -110,6 +110,30 @@ export interface QueueStatsOptions {
   to?: Date;
   /** persistQueueStats on: maximum number of snapshots to return (1–100000, default 1000). */
   limit?: number;
+  /**
+   * persistQueueStats on: downsample the recorded series into fixed-width time buckets this many
+   * seconds wide, returning one aggregated snapshot per bucket instead of raw rows. Each bucket
+   * collapses its count columns via {@link aggregate}. Buckets align to the Unix epoch, so their
+   * boundaries are deterministic and stable across calls. Must be a positive integer. Omitted →
+   * raw snapshots (current behavior). Size it so the bucket count stays within `limit`, otherwise
+   * only the newest `limit` buckets are returned and the oldest part of the window is dropped.
+   */
+  bucketSeconds?: number;
+  /**
+   * persistQueueStats on: auto-downsample. Derive {@link bucketSeconds} so the series fits in
+   * roughly this many points — e.g. a chart's pixel width. Must be a positive integer. The window
+   * spanned is `from`/`to` when supplied (so an explicit x-axis range yields stable buckets even
+   * with sparse data), falling back to the data's own `min`/`max` captured timestamps for any
+   * open side. Ignored when `bucketSeconds` is set (explicit resolution wins).
+   */
+  maxDataPoints?: number;
+  /**
+   * persistQueueStats on: how each count column is collapsed within a bucket when `bucketSeconds`
+   * or `maxDataPoints` is set. `'max'` surfaces peak depth (best for backlog alerting), `'min'`
+   * the trough, `'avg'` the rounded mean. Ignored when neither bucket option is set.
+   * @default 'max'
+   */
+  aggregate?: 'max' | 'min' | 'avg';
   /**
    * persistQueueStats off: return a fresh reading. Recomputes the counts from the job table and
    * refreshes the queue-table cache rather than serving the regular (up to ~1h) cache, but still

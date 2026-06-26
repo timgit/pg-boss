@@ -94,7 +94,7 @@ describe('migration', function () {
     }).rejects.toThrow()
   })
 
-  it.skip('should migrate to previous version and back again', async function () {
+  it('should migrate to previous version and back again', async function () {
     await contractor.create()
 
     await contractor.rollback(currentSchemaVersion)
@@ -141,7 +141,7 @@ describe('migration', function () {
     expect(version).toBe(currentSchemaVersion)
   })
 
-  it.skip('should migrate through 2 versions back and forth', async function () {
+  it('should migrate through 2 versions back and forth', async function () {
     const queue = 'migrate-back-2-and-forward'
 
     const config = { ...ctx.bossConfig }
@@ -188,7 +188,7 @@ describe('migration', function () {
     await ctx.boss.complete(queue, job2.id)
   })
 
-  it.skip('should migrate to latest during start if on previous 2 schema versions', async function () {
+  it('should migrate to latest during start if on previous 2 schema versions', async function () {
     await contractor.create()
 
     await contractor.rollback(currentSchemaVersion)

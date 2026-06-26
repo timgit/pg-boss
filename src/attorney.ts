@@ -538,14 +538,14 @@ function applyOpsConfig (config: any) {
   assert(config.queueCacheIntervalSeconds / 60 / 60 <= POLICY.MAX_EXPIRATION_HOURS,
     `configuration assert: queueCacheIntervalSeconds cannot exceed ${POLICY.MAX_EXPIRATION_HOURS} hours`)
 
-  if ('queueStatsRetentionDays' in config) {
-    assert(Number.isInteger(config.queueStatsRetentionDays) && config.queueStatsRetentionDays >= 1,
-      'configuration assert: queueStatsRetentionDays must be an integer >= 1')
-    assert(config.queueStatsRetentionDays <= POLICY.MAX_RETENTION_DAYS,
-      `configuration assert: queueStatsRetentionDays cannot exceed ${POLICY.MAX_RETENTION_DAYS} days`)
+  if ('queueStatRetentionDays' in config) {
+    assert(Number.isInteger(config.queueStatRetentionDays) && config.queueStatRetentionDays >= 1,
+      'configuration assert: queueStatRetentionDays must be an integer >= 1')
+    assert(config.queueStatRetentionDays <= POLICY.MAX_RETENTION_DAYS,
+      `configuration assert: queueStatRetentionDays cannot exceed ${POLICY.MAX_RETENTION_DAYS} days`)
   }
 
-  config.queueStatsRetentionDays = config.queueStatsRetentionDays || 7
+  config.queueStatRetentionDays = config.queueStatRetentionDays || 7
 }
 
 function validateDeletionConfig (config: any) {
