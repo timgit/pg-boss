@@ -851,6 +851,10 @@ export function getSchedules (schema: string) {
 }
 
 export function getSchedulesByQueue (schema: string) {
+  return `SELECT * FROM ${schema}.schedule WHERE name = $1 ORDER BY key`
+}
+
+export function getSchedulesByQueueAndKey (schema: string) {
   return `SELECT * FROM ${schema}.schedule WHERE name = $1 AND COALESCE(key, '') = $2`
 }
 

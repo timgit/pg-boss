@@ -202,13 +202,16 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
     await Promise.allSettled(jobs.map(({ data }) => this.manager.send(data)))
   }
 
-  async getSchedules (name?: string, key = '') : Promise<types.Schedule[]> {
+  async getSchedules (name?: string, key?: string): Promise<types.Schedule[]> {
     let sql = plans.getSchedules(this.config.schema)
     let params: unknown[] = []
 
-    if (name) {
-      sql = plans.getSchedulesByQueue(this.config.schema)
+    if (name && key !== undefined) {
+      sql = plans.getSchedulesByQueueAndKey(this.config.schema)
       params = [name, key]
+    } else if (name) {
+      sql = plans.getSchedulesByQueue(this.config.schema)
+      params = [name]
     }
 
     const { rows } = await this.db.executeSql(sql, params)
