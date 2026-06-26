@@ -113,7 +113,7 @@ function isSupportedJobColumnPath (path: string): boolean {
 
 export function getRowCellValue (row: object, prop: string): string | null {
   const value = (row as Record<string, unknown>)[prop]
-  if (!value) return null
+  if (value == null) return null
   if (typeof value === 'object') return JSON.stringify(value)
   return String(value)
 }

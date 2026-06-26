@@ -3,6 +3,7 @@ import {
   DEFAULT_JOB_COLUMNS,
   DEFAULT_QUEUE_JOB_COLUMNS,
   createJobColumn,
+  getRowCellValue,
   jobColumnProp,
   parseJobColumns,
   appendJobColumns,
@@ -86,6 +87,20 @@ describe('job columns', () => {
     expect(jobColumnProp('id')).toBe('id')
     expect(jobColumnProp('data.tenant.id')).toBe('dataTenantId')
     expect(jobColumnProp('output.status')).toBe('outputStatus')
+
+    const row = {
+      priority: 0,
+      retryCount: 0,
+      retryLimit: 0,
+      deadLetter: false,
+      singletonKey: null,
+    }
+
+    expect(getRowCellValue(row, jobColumnProp('priority'))).toBe('0')
+    expect(getRowCellValue(row, jobColumnProp('retryCount'))).toBe('0')
+    expect(getRowCellValue(row, jobColumnProp('retryLimit'))).toBe('0')
+    expect(getRowCellValue(row, jobColumnProp('deadLetter'))).toBe('false')
+    expect(getRowCellValue(row, jobColumnProp('singletonKey'))).toBeNull()
   })
 
   it('ignores invalid column paths and falls back to defaults if none survive', () => {

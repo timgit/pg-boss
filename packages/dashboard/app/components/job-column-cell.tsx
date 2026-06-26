@@ -53,30 +53,25 @@ export function JobColumnCell ({
           {row.retryCount} / {row.retryLimit}
         </TableCell>
       )
+    case 'priority':
+    case 'retryCount':
+    case 'retryLimit':
+      return (
+        <TableCell className="pgb-num text-[var(--text-primary)]">
+          {row[column.path]}
+        </TableCell>
+      )
     case 'createdOn':
-      return (
-        <TableCell className="pgb-num text-[var(--text-tertiary)]">
-          {formatDate(new Date(row.createdOn))}
-        </TableCell>
-      )
     case 'startedOn':
-      return (
-        <TableCell className="pgb-num text-[var(--text-tertiary)]">
-          {row.startedOn ? formatDate(new Date(row.startedOn)) : '—'}
-        </TableCell>
-      )
     case 'completedOn':
+    case 'startAfter': {
+      const value = row[column.path]
       return (
         <TableCell className="pgb-num text-[var(--text-tertiary)]">
-          {row.completedOn ? formatDate(new Date(row.completedOn)) : '—'}
+          {value ? formatDate(new Date(value)) : '—'}
         </TableCell>
       )
-    case 'startAfter':
-      return (
-        <TableCell className="pgb-num text-[var(--text-tertiary)]">
-          {formatDate(new Date(row.startAfter))}
-        </TableCell>
-      )
+    }
     default: {
       const value = getRowCellValue(row, jobColumnProp(column.path))
       return (
