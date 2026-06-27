@@ -238,25 +238,102 @@ describe('queueStatsHistory', function () {
 
     const points = await ctx.boss.getQueueStats(q, { maxDataPoints: 10 })
     expect(points.length).toBeGreaterThan(1)
-    expect(points.length).toBeLessThanOrEqual(11) // ~N, allow a boundary-straddling extra bucket
+    expect(points.length).toBeLessThanOrEqual(10) // hard-capped at maxDataPoints (no straddle overshoot)
   })
 
-  helper.itPostgresOnly('maxDataPoints derives the bucket width from an explicit from/to window', async function () {
+  helper.itPostgresOnly('auto-mode hard-caps at maxDataPoints even when epoch buckets straddle a boundary', async function () {
     const q = `q${randomUUID().replaceAll('-', '')}`
     ctx.boss = await helper.start({ ...ctx.bossConfig, persistQueueStats: true })
     await ctx.boss.createQueue(q)
+
+    // Deterministically force the straddle: 9 snapshots exactly 10s apart, oldest aligned to a 10s
+    // epoch boundary. With maxDataPoints=8 the derived width is ceil(80/8)=10s, and because the span
+    // starts on a boundary and is exactly 8*10s wide, the epoch-aligned buckets number 9 (N+1).
+    const db = await helper.getDb()
+    await db.executeSql(plans.ensureQueueStatsPartitions(ctx.schema))
+    const base = Math.floor((Math.floor(Date.now() / 1000) - 200) / 10) * 10 // 10s-aligned, ~200s ago
+    for (let i = 0; i < 9; i++) {
+      await db.executeSql(
+        `INSERT INTO ${ctx.schema}.queue_stats (name, queued_count, captured_on)
+         VALUES ($1, $2, to_timestamp($3))`,
+        [q, i, base + i * 10])
+    }
+    await db.close()
+
+    const points = await ctx.boss.getQueueStats(q, { maxDataPoints: 8 })
+    // 9 distinct buckets exist, but the LIMIT keeps only the newest 8
+    expect(points.length).toBe(8)
+  })
+
+  helper.itPostgresOnly('maxDataPoints binds the bucket width to the stored data, not a wider from/to window', async function () {
+    const q = `q${randomUUID().replaceAll('-', '')}`
+    ctx.boss = await helper.start({ ...ctx.bossConfig, persistQueueStats: true })
+    await ctx.boss.createQueue(q)
+    // ~20s of data, one snapshot per second
     await seedStats(q, Array.from({ length: 20 }, (_, i) => ({ ago: i, queued: i })))
 
-    // whole-second bounds so the derived width is an exact integer and buckets align cleanly
+    // a from/to window ~5x wider than the seeded data. The old behavior sized the width to this
+    // 100s window (ceil(100/10)=10s), collapsing the 20s of data into ~2 buckets — the undershoot.
     const to = new Date(Math.floor(Date.now() / 1000) * 1000 + 1000)
     const from = new Date(to.getTime() - 100_000) // 100s window
     const maxDataPoints = 10
-    const expectedWidth = Math.max(1, Math.ceil(((to.getTime() - from.getTime()) / 1000) / maxDataPoints))
+
+    // The width derives from from/to clamped into the data's own min/max (greatest/least), so a
+    // window wider than the data collapses to the data span. Compute the same expression the
+    // bucketed query uses so the alignment check below matches exactly (sub-ms safe).
+    const db = await helper.getDb()
+    const { rows: [w] } = await db.executeSql(
+      `SELECT greatest(1, ceil(extract(epoch from (
+         least(coalesce($3::timestamptz, max(captured_on)), max(captured_on))
+         - greatest(coalesce($2::timestamptz, min(captured_on)), min(captured_on))
+       )) / $4)::bigint)::bigint AS secs
+       FROM ${ctx.schema}.queue_stats
+       WHERE name = $1`,
+      [q, from, to, maxDataPoints])
+    await db.close()
+    const expectedWidth = Number(w.secs)
 
     const points = await ctx.boss.getQueueStats(q, { from, to, maxDataPoints })
-    expect(points.length).toBeGreaterThan(0)
-    expect(points.length).toBeLessThanOrEqual(maxDataPoints + 1)
-    // every bucket boundary aligns to the width derived from (to-from)/maxDataPoints, not the data span
+    // the wide window no longer wastes buckets on empty time: the series fills ~N points
+    expect(points.length).toBeGreaterThan(maxDataPoints / 2)
+    expect(points.length).toBeLessThanOrEqual(maxDataPoints)
+    // every bucket boundary aligns to the data-derived width (~2s), not the window-derived width (10s)
+    for (const p of points) {
+      expect(Math.round(p.capturedOn.getTime() / 1000) % expectedWidth).toBe(0)
+    }
+  })
+
+  helper.itPostgresOnly('maxDataPoints lets a from/to window narrower than the data drive a finer width', async function () {
+    const q = `q${randomUUID().replaceAll('-', '')}`
+    ctx.boss = await helper.start({ ...ctx.bossConfig, persistQueueStats: true })
+    await ctx.boss.createQueue(q)
+    // 120s of data, one snapshot per second
+    await seedStats(q, Array.from({ length: 120 }, (_, i) => ({ ago: i, queued: i })))
+
+    // a 20s window strictly inside the 120s of data: from/to stay within the data, so they (not the
+    // full 120s extent) drive the width — the clamp's zoom-in half.
+    const to = new Date(Math.floor((Date.now() - 40_000) / 1000) * 1000)
+    const from = new Date(to.getTime() - 20_000)
+    const maxDataPoints = 10
+
+    const db = await helper.getDb()
+    const { rows: [w] } = await db.executeSql(
+      `SELECT greatest(1, ceil(extract(epoch from (
+         least(coalesce($3::timestamptz, max(captured_on)), max(captured_on))
+         - greatest(coalesce($2::timestamptz, min(captured_on)), min(captured_on))
+       )) / $4)::bigint)::bigint AS secs
+       FROM ${ctx.schema}.queue_stats
+       WHERE name = $1`,
+      [q, from, to, maxDataPoints])
+    await db.close()
+    const expectedWidth = Number(w.secs)
+
+    // window-derived width (~2s over the 20s window), not the ~12s the full 120s data span would give
+    expect(expectedWidth).toBeLessThanOrEqual(3)
+
+    const points = await ctx.boss.getQueueStats(q, { from, to, maxDataPoints })
+    expect(points.length).toBeGreaterThan(maxDataPoints / 2)
+    expect(points.length).toBeLessThanOrEqual(maxDataPoints)
     for (const p of points) {
       expect(Math.round(p.capturedOn.getTime() / 1000) % expectedWidth).toBe(0)
     }

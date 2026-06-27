@@ -1,6 +1,6 @@
 import type { IDatabase } from '../types.ts'
 import { parsePlaceholders } from './placeholders.ts'
-import { unwrapSQLResult } from '../tools.js'
+import { unwrapSQLResult } from '../tools.ts'
 
 export interface DrizzleTransactionLike {
   execute(query: unknown): Promise<{ rows: any[] } | { rows: any[] }[]>

@@ -1131,9 +1131,8 @@ const STATS_AGG = {
 // instead of just the newest `limit` raw rows.
 //
 //   mode 'bucket' — $5 is the bucket width in seconds (explicit resolution).
-//   mode 'auto'   — $5 is maxDataPoints; the width is derived in-SQL so the series fits in ~$5
-//                   points. The spanned window is from/to when supplied, else the data's own
-//                   min/max captured_on for whichever side is open.
+//   mode 'auto'   — $5 is maxDataPoints; the width is derived so the series fits in $5 points.
+//                   from/to sets the range, but they cannot exceed the data's own min/max values.
 //
 // The bucket key avoids date_bin() (PG14+): pg-boss supports PostgreSQL 13+ and CockroachDB/
 // YugabyteDB, none of which can rely on it. to_timestamp / extract(epoch) / floor exist on all of
@@ -1141,39 +1140,48 @@ const STATS_AGG = {
 // and buckets align to the Unix epoch so their boundaries are stable across calls.
 export function getQueueStatsHistoryBucketed (schema: string, aggregate: 'max' | 'min' | 'avg', mode: 'bucket' | 'auto'): string {
   const agg = STATS_AGG[aggregate]
+
   const widthCte = mode === 'auto'
-    ? `WITH bounds AS (
-         SELECT
-           coalesce($2::timestamptz, min(captured_on)) AS lo,
-           coalesce($3::timestamptz, max(captured_on)) AS hi
+    ? `WITH extent AS (
+         SELECT min(captured_on) AS lo, max(captured_on) AS hi
          FROM ${schema}.queue_stats
          WHERE name = $1
-           AND ($2::timestamptz IS NULL OR captured_on >= $2)
-           AND ($3::timestamptz IS NULL OR captured_on <= $3)
+       ),
+       bounds AS (
+         SELECT
+           greatest(coalesce($2::timestamptz, lo), lo) AS lo,
+           least(coalesce($3::timestamptz, hi), hi)    AS hi
+         FROM extent
        ),
        w AS (
          SELECT greatest(1, ceil(extract(epoch from (hi - lo)) / greatest($5, 1))::bigint)::bigint AS secs
          FROM bounds
        )`
     : 'WITH w AS (SELECT greatest($5, 1)::bigint AS secs)'
-  const bucket = 'to_timestamp(floor(extract(epoch from captured_on) / w.secs) * w.secs)'
+
+  // Hard-cap auto-mode at maxDataPoints. Epoch-aligned bucketing can straddle a boundary and emit
+  // one bucket more than the target, so cap the row count at the smaller of the user's limit and
+  // maxDataPoints. ORDER BY DESC means the cap drops the oldest (straddle) bucket and keeps the
+  // newest N. Explicit bucketSeconds has no target to overshoot, so it keeps the raw limit.
+  const limit = mode === 'auto' ? 'least($4, $5)' : '$4'
+
   return `
     ${widthCte}
     SELECT
+      to_timestamp(floor(extract(epoch from captured_on) / w.secs) * w.secs) as "capturedOn",
       ${agg('deferred_count')} as "deferredCount",
       ${agg('queued_count')}   as "queuedCount",
       ${agg('ready_count')}    as "readyCount",
       ${agg('active_count')}   as "activeCount",
       ${agg('failed_count')}   as "failedCount",
-      ${agg('total_count')}    as "totalCount",
-      ${bucket}                as "capturedOn"
+      ${agg('total_count')}    as "totalCount"
     FROM ${schema}.queue_stats, w
     WHERE name = $1
       AND ($2::timestamptz IS NULL OR captured_on >= $2)
       AND ($3::timestamptz IS NULL OR captured_on <= $3)
-    GROUP BY ${bucket}
-    ORDER BY ${bucket} DESC
-    LIMIT $4
+    GROUP BY 1
+    ORDER BY 1 DESC
+    LIMIT ${limit}
   `
 }
 
