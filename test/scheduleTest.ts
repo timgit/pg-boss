@@ -389,4 +389,43 @@ describe('schedule', function () {
     expect(schedules.length).toBe(1)
     expect(schedules[0].cron).toBe('0 1 * * *')
   })
+
+  it('should get all schedules for a queue regardless of key when no key is given', async function () {
+    const config = {
+      ...ctx.bossConfig
+    }
+
+    ctx.boss = await helper.start(config)
+
+    const queue2 = ctx.bossConfig.schema + '2'
+
+    await ctx.boss.createQueue(queue2)
+
+    await ctx.boss.schedule(ctx.schema, '* * * * *', null, { key: 'a' })
+    await ctx.boss.schedule(ctx.schema, '0 1 * * *', null, { key: 'b' })
+    await ctx.boss.schedule(queue2, '0 2 * * *')
+
+    const schedules = await ctx.boss.getSchedules(ctx.schema)
+
+    expect(schedules.length).toBe(2)
+    expect(schedules.every(s => s.name === ctx.schema)).toBeTruthy()
+    expect(schedules.some(s => s.key === 'a')).toBeTruthy()
+    expect(schedules.some(s => s.key === 'b')).toBeTruthy()
+  })
+
+  it('should get only the default-key schedule when key is explicitly empty', async function () {
+    const config = {
+      ...ctx.bossConfig
+    }
+
+    ctx.boss = await helper.start(config)
+
+    await ctx.boss.schedule(ctx.schema, '* * * * *')
+    await ctx.boss.schedule(ctx.schema, '0 1 * * *', null, { key: 'a' })
+
+    const schedules = await ctx.boss.getSchedules(ctx.schema, '')
+
+    expect(schedules.length).toBe(1)
+    expect(schedules[0].cron).toBe('* * * * *')
+  })
 })

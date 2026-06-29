@@ -309,6 +309,28 @@ describe('drizzle adapter', () => {
     expect(result.rows[0]?.c).toBe(20)
   })
 
+  it('should handle array parameters bound to ANY($N::uuid[]) (drizzle)', async () => {
+    ctx.boss = await helper.start(ctx.bossConfig)
+    if (!pool) pool = new pg.Pool({ connectionString: connString })
+    const db = drizzle({ client: pool })
+
+    const id = 'd1e48017-d11b-4434-a745-90ee6453caef'
+
+    // single-element and multi-element arrays must each bind as one array-typed
+    // parameter, not be expanded into a list of scalar placeholders
+    const result = await db.transaction(async (tx) => {
+      const adapter = fromDrizzle(tx, drizzleSql)
+      return adapter.executeSql(
+        `SELECT $1::uuid = ANY($2::uuid[]) as single,
+                ($1::uuid = ANY($3::uuid[])) as multi`,
+        [id, [id], [id, 'a745d11b-d11b-4434-a745-90ee6453caef']]
+      )
+    })
+
+    expect(result.rows[0]?.single).toBe(true)
+    expect(result.rows[0]?.multi).toBe(true)
+  })
+
   it('should handle results as an array instead of object (drizzle)', async () => {
     ctx.boss = await helper.start(ctx.bossConfig)
     if (!pool) pool = new pg.Pool({ connectionString: connString })

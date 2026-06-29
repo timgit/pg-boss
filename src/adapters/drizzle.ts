@@ -8,6 +8,7 @@ export interface DrizzleTransactionLike {
 
 export interface DrizzleSqlTagLike {
   (strings: TemplateStringsArray, ...values: unknown[]): unknown
+  param(value: unknown): unknown
 }
 
 /**
@@ -32,7 +33,12 @@ export function fromDrizzle (tx: DrizzleTransactionLike, sql: DrizzleSqlTagLike)
     async executeSql (text: string, values?: unknown[]) {
       const { parts, reordered } = parsePlaceholders(text, values)
       const strings = Object.assign([...parts], { raw: [...parts] }) as TemplateStringsArray
-      return unwrapSQLResult(await tx.execute(sql(strings, ...reordered)))
+      // Bind each value through sql.param so drizzle emits exactly one placeholder
+      // per value. A bare array would otherwise be expanded into a parameter list
+      // ($2, $3, ...) instead of a single array-typed parameter, breaking any query
+      // with `= ANY($N::uuid[])` (deleteJob/complete/fail/cancel/resume/retry).
+      const params = reordered.map(value => sql.param(value))
+      return unwrapSQLResult(await tx.execute(sql(strings, ...params)))
     }
   }
 }
