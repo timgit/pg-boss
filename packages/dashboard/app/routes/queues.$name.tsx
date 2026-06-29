@@ -41,22 +41,30 @@ import {
   DialogTitle,
 } from '~/components/ui/dialog'
 import { ErrorCard } from '~/components/error-card'
-import type { JobState, JobResult } from '~/lib/types'
+import { JobColumnsEditor } from '~/components/job-columns-editor'
+import { JobColumnCell } from '~/components/job-column-cell'
+import type { JobResult } from '~/lib/types'
 import {
   parsePageNumber,
   isValidJobState,
   formatDate,
   JOB_STATE_OPTIONS,
-  JOB_STATE_VARIANTS,
   DEFAULT_STATE_FILTER,
   cn,
 } from '~/lib/utils'
 import { dbContext } from '~/lib/db-context'
+import {
+  DEFAULT_QUEUE_JOB_COLUMNS,
+  parseJobColumns,
+  appendJobColumns,
+  type JobColumn,
+} from '~/lib/job-columns'
 
 export async function loader ({ params, request, context }: Route.LoaderArgs) {
   const { DB_URL, SCHEMA } = context.get(dbContext)
   const url = new URL(request.url)
   const stateParam = url.searchParams.get('state')
+  const jobColumns = parseJobColumns(url.searchParams, DEFAULT_QUEUE_JOB_COLUMNS)
 
   // Default to 'pending' filter to avoid showing completed/failed jobs in large queues
   // Users can explicitly select 'all' to see all jobs
@@ -77,7 +85,7 @@ export async function loader ({ params, request, context }: Route.LoaderArgs) {
   // The Ready sparkline comes from the always-on queue.ready_history column (loaded with `queue`).
   // collection drives the banner that points at the interactive metrics chart (needs persistQueueStats).
   const [jobs, collection] = await Promise.all([
-    getJobs(DB_URL, SCHEMA, params.name, { state: stateFilter, limit, offset }),
+    getJobs(DB_URL, SCHEMA, params.name, { state: stateFilter, limit, offset, jobColumns }),
     getQueueStatsCollectionStatus(DB_URL, SCHEMA),
   ])
 
@@ -97,6 +105,7 @@ export async function loader ({ params, request, context }: Route.LoaderArgs) {
     page,
     totalPages,
     stateFilter,
+    jobColumns,
     hasNextPage,
     hasPrevPage,
     statsAvailable: collection.available,
@@ -171,6 +180,7 @@ export default function QueueDetail ({ loaderData }: Route.ComponentProps) {
     page,
     totalPages,
     stateFilter,
+    jobColumns,
     hasNextPage,
     hasPrevPage,
     statsAvailable,
@@ -200,6 +210,19 @@ export default function QueueDetail ({ loaderData }: Route.ComponentProps) {
     const params = new URLSearchParams(searchParams)
     params.set('page', newPage.toString())
     setSearchParams(params)
+  }
+
+  const handleColumnsChange = (columns: JobColumn[]) => {
+    const params = new URLSearchParams(searchParams)
+    appendJobColumns(params, columns, DEFAULT_QUEUE_JOB_COLUMNS)
+    params.delete('page')
+    setSearchParams(params)
+  }
+
+  const getShareUrl = (columns: JobColumn[]) => {
+    const params = new URLSearchParams(searchParams)
+    appendJobColumns(params, columns, DEFAULT_QUEUE_JOB_COLUMNS)
+    return `${window.location.origin}${window.location.pathname}?${params.toString()}`
   }
 
   const overThreshold =
@@ -340,39 +363,45 @@ export default function QueueDetail ({ loaderData }: Route.ComponentProps) {
 
       {/* Jobs Table */}
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>
-            Jobs
-            {totalCount !== null && ` (${totalCount.toLocaleString()})`}
-          </CardTitle>
-          <FilterSelect
-            value={stateFilter}
-            options={JOB_STATE_OPTIONS}
-            onChange={(value) => handleFilterChange('state', value)}
+        <CardHeader className="flex-col items-stretch sm:flex-row sm:items-center">
+          <div className="flex items-center justify-between gap-3">
+            <CardTitle>
+              Jobs
+              {totalCount !== null && ` (${totalCount.toLocaleString()})`}
+            </CardTitle>
+            <FilterSelect
+              value={stateFilter}
+              options={JOB_STATE_OPTIONS}
+              onChange={(value) => handleFilterChange('state', value)}
+            />
+          </div>
+          <JobColumnsEditor
+            columns={jobColumns}
+            defaultColumns={DEFAULT_QUEUE_JOB_COLUMNS}
+            getShareUrl={getShareUrl}
+            onColumnsChange={handleColumnsChange}
           />
         </CardHeader>
         <CardContent className="p-0">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>ID</TableHead>
-                <TableHead>State</TableHead>
-                <TableHead>Priority</TableHead>
-                <TableHead>Retries</TableHead>
-                <TableHead>Created</TableHead>
+                {jobColumns.map((col, index) => (
+                  <TableHead key={`${col.path}-${index}`}>{col.name}</TableHead>
+                ))}
                 <TableHead>Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {jobs.length === 0 ? (
                 <TableRow>
-                  <TableCell className="text-center text-[var(--text-tertiary)] py-8" colSpan={6}>
+                  <TableCell className="text-center text-[var(--text-tertiary)] py-8" colSpan={jobColumns.length + 1}>
                     No jobs found
                   </TableCell>
                 </TableRow>
               ) : (
                 jobs.map((job: JobResult) => (
-                  <JobRow key={job.id} job={job} queueName={queue.name} />
+                  <JobRow key={job.id} job={job} queueName={queue.name} jobColumns={jobColumns} />
                 ))
               )}
             </TableBody>
@@ -394,9 +423,11 @@ export default function QueueDetail ({ loaderData }: Route.ComponentProps) {
 function JobRow ({
   job,
   queueName,
+  jobColumns,
 }: {
   job: JobResult
   queueName: string
+  jobColumns: JobColumn[]
 }) {
   const fetcher = useFetcher<{ success?: boolean; affected?: number; message?: string; error?: string }>()
   const isLoading = fetcher.state !== 'idle'
@@ -450,24 +481,14 @@ function JobRow ({
   return (
     <>
       <TableRow to={`/queues/${encodeURIComponent(queueName)}/jobs/${job.id}`}>
-        <TableCell>
-          <DbLink
-            to={`/queues/${queueName}/jobs/${job.id}`}
-            className="font-mono text-xs text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
-          >
-            {job.id}
-          </DbLink>
-        </TableCell>
-        <TableCell>
-          <JobStateBadge state={job.state} />
-        </TableCell>
-        <TableCell className="pgb-num text-[var(--text-primary)]">{job.priority}</TableCell>
-        <TableCell className="pgb-num text-[var(--text-primary)]">
-          {job.retryCount} / {job.retryLimit}
-        </TableCell>
-        <TableCell className="pgb-num text-[var(--text-tertiary)]">
-          {formatDate(new Date(job.createdOn))}
-        </TableCell>
+        {jobColumns.map((column, index) => (
+          <JobColumnCell
+            key={`${column.path}-${index}`}
+            row={job}
+            column={column}
+            queueName={queueName}
+          />
+        ))}
         <TableCell>
           <div className="flex items-center gap-2">
             {showError && (
@@ -572,14 +593,6 @@ function JobRow ({
         </DialogContent>
       </Dialog>
     </>
-  )
-}
-
-function JobStateBadge ({ state }: { state: JobState }) {
-  return (
-    <Badge variant={JOB_STATE_VARIANTS[state]} size="sm" dot>
-      {state}
-    </Badge>
   )
 }
 

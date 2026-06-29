@@ -24,12 +24,18 @@ import { Pagination } from '~/components/ui/pagination'
 import { ErrorCard } from '~/components/error-card'
 import { QueryTimeoutBanner } from '~/components/query-timeout-banner'
 import { JobsFilterBar, type JobsFilters } from '~/components/jobs-filter-bar'
+import { JobColumnsEditor } from '~/components/job-columns-editor'
+import { JobColumnCell } from '~/components/job-column-cell'
 import { isQueryTimeoutError, getQueryTimeoutMs } from '~/lib/db.server'
 import type { JobResult } from '~/lib/types'
 import {
+  DEFAULT_JOB_COLUMNS,
+  parseJobColumns,
+  appendJobColumns,
+  type JobColumn,
+} from '~/lib/job-columns'
+import {
   parsePageNumber,
-  formatDate,
-  JOB_STATE_VARIANTS,
   isValidJobState,
   DEFAULT_STATE_FILTER,
   ALL_STATES_FILTER,
@@ -62,8 +68,8 @@ export function parseFiltersFromUrl (searchParams: URLSearchParams): ParsedFilte
 
   const dataPairs = parseJsonFilterPairs(searchParams, 'data')
   const outputPairs = parseJsonFilterPairs(searchParams, 'output')
-  const dataObject = jsonFilterPairsToObject(dataPairs.filter(p => p.key && p.value !== ''))
-  const outputObject = jsonFilterPairsToObject(outputPairs.filter(p => p.key && p.value !== ''))
+  const dataObject = jsonFilterPairsToObject(dataPairs.filter(p => p.key.trim() && p.value !== ''))
+  const outputObject = jsonFilterPairsToObject(outputPairs.filter(p => p.key.trim() && p.value !== ''))
 
   // Cosmetic vs cost-bearing distinction:
   //   hasActiveFilters drives the "X jobs found" subtitle and the chip strip.
@@ -107,6 +113,7 @@ export async function loader ({ request, context }: Route.LoaderArgs) {
   const { DB_URL, SCHEMA } = context.get(dbContext)
   const url = new URL(request.url)
   const parsed = parseFiltersFromUrl(url.searchParams)
+  const jobColumns = parseJobColumns(url.searchParams)
 
   const page = parsePageNumber(url.searchParams.get('page'))
   const limit = 20
@@ -117,6 +124,7 @@ export async function loader ({ request, context }: Route.LoaderArgs) {
       ...parsed.serverFilters,
       limit,
       offset,
+      jobColumns,
     }).then(
       (rows) => ({ rows, timedOut: false }),
       (err) => {
@@ -161,6 +169,7 @@ export async function loader ({ request, context }: Route.LoaderArgs) {
     hasActiveFilters: parsed.hasActiveFilters,
     hasNextPage,
     hasPrevPage,
+    jobColumns,
   }
 }
 
@@ -169,7 +178,9 @@ export function ErrorBoundary () {
 }
 
 // Exported for tests: must round-trip through parseFiltersFromUrl.
-export function buildSearchParams (filters: JobsFilters): URLSearchParams {
+export function buildSearchParams (
+  filters: JobsFilters
+): URLSearchParams {
   const params = new URLSearchParams()
 
   if (filters.state !== DEFAULT_STATE_FILTER) {
@@ -188,6 +199,28 @@ export function buildSearchParams (filters: JobsFilters): URLSearchParams {
   return params
 }
 
+export function buildViewParams (
+  jobColumns: JobColumn[] = DEFAULT_JOB_COLUMNS
+): URLSearchParams {
+  const params = new URLSearchParams()
+  appendJobColumns(params, jobColumns)
+  return params
+}
+
+export function buildParams (
+  filters: JobsFilters,
+  jobColumns: JobColumn[] = DEFAULT_JOB_COLUMNS
+): URLSearchParams {
+  const params = buildSearchParams(filters)
+  const viewParams = buildViewParams(jobColumns)
+
+  for (const [key, value] of viewParams) {
+    params.append(key, value)
+  }
+
+  return params
+}
+
 export default function Jobs ({ loaderData }: Route.ComponentProps) {
   const {
     recentJobs,
@@ -200,21 +233,46 @@ export default function Jobs ({ loaderData }: Route.ComponentProps) {
     hasPrevPage,
     timedOut,
     queryTimeoutMs,
+    jobColumns,
   } = loaderData
   const [, setSearchParams] = useSearchParams()
 
-  const handleFiltersChange = (next: JobsFilters) => {
-    setSearchParams(buildSearchParams(next))
-  }
-
-  const handlePageChange = (newPage: number) => {
-    const params = buildSearchParams(filters)
-    if (newPage > 1) params.set('page', newPage.toString())
+  const setQueryParams = (params: URLSearchParams) => {
+    const current = new URLSearchParams(window.location.search)
+    if (current.has('db')) params.set('db', current.get('db')!)
     setSearchParams(params)
   }
 
+  const getShareUrl = (columns: JobColumn[]) => {
+    const params = buildParams(filters, columns)
+    const current = new URLSearchParams(window.location.search)
+    if (current.has('db')) params.set('db', current.get('db')!)
+    return `${window.location.origin}${window.location.pathname}?${params.toString()}`
+  }
+
+  const handleFiltersChange = (next: JobsFilters) => {
+    setQueryParams(buildParams(next, jobColumns))
+  }
+
+  const handleColumnsChange = (columns: JobColumn[]) => {
+    setQueryParams(buildParams(filters, columns))
+  }
+
+  const handlePageChange = (newPage: number) => {
+    const params = buildParams(filters, jobColumns)
+    if (newPage > 1) params.set('page', newPage.toString())
+    setQueryParams(params)
+  }
+
   const clearAll = () => {
-    setSearchParams(new URLSearchParams())
+    setQueryParams(buildParams({
+      state: DEFAULT_STATE_FILTER,
+      id: '',
+      queues: [],
+      minRetries: '',
+      data: [],
+      output: [],
+    }, jobColumns))
   }
 
   const subtitle = hasActiveFilters && totalCount != null
@@ -239,6 +297,12 @@ export default function Jobs ({ loaderData }: Route.ComponentProps) {
         onChange={handleFiltersChange}
       />
 
+      <JobColumnsEditor
+        columns={jobColumns}
+        getShareUrl={getShareUrl}
+        onColumnsChange={handleColumnsChange}
+      />
+
       {hasActiveFilters && (
         <ActiveFilterChips
           filters={filters}
@@ -254,45 +318,27 @@ export default function Jobs ({ loaderData }: Route.ComponentProps) {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>ID</TableHead>
-                <TableHead>Queue</TableHead>
-                <TableHead>State</TableHead>
-                <TableHead>Retries</TableHead>
-                <TableHead>Created</TableHead>
+                {jobColumns.map((col, index) => (
+                  <TableHead key={`${col.path}-${index}`}>{col.name}</TableHead>
+                ))}
               </TableRow>
             </TableHeader>
             <TableBody>
               {recentJobs.length === 0 ? (
                 <TableRow>
-                  <TableCell className="text-center text-[var(--text-tertiary)] py-8" colSpan={5}>
+                  <TableCell
+                    className="text-center text-[var(--text-tertiary)] py-8"
+                    colSpan={jobColumns.length}
+                  >
                     No jobs found
                   </TableCell>
                 </TableRow>
               ) : (
                 recentJobs.map((job: JobResult) => (
                   <TableRow key={job.id} to={`/queues/${encodeURIComponent(job.name)}/jobs/${job.id}`}>
-                    <TableCell>
-                      <DbLink
-                        to={`/queues/${encodeURIComponent(job.name)}/jobs/${job.id}`}
-                        className="font-mono text-xs text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
-                      >
-                        {job.id}
-                      </DbLink>
-                    </TableCell>
-                    <TableCell className="font-medium text-[var(--text-secondary)]">
-                      {job.name}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={JOB_STATE_VARIANTS[job.state]} size="sm" dot>
-                        {job.state}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="pgb-num text-[var(--text-primary)]">
-                      {job.retryCount} / {job.retryLimit}
-                    </TableCell>
-                    <TableCell className="pgb-num text-[var(--text-tertiary)]">
-                      {formatDate(new Date(job.createdOn))}
-                    </TableCell>
+                    {jobColumns.map((col, index) => (
+                      <JobColumnCell key={`${col.path}-${index}`} row={job} column={col} />
+                    ))}
                   </TableRow>
                 ))
               )}

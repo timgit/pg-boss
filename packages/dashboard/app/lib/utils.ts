@@ -129,6 +129,36 @@ export interface JsonFilterPair {
   value: string;
 }
 
+export interface SearchParamPair {
+  key: string;
+  value: string;
+}
+
+export function parseSearchParamPairs (
+  searchParams: URLSearchParams,
+  paramName: string,
+  separator = '|'
+): SearchParamPair[] {
+  return searchParams.getAll(paramName).map(rawValue => {
+    const separatorIndex = rawValue.indexOf(separator)
+    return {
+      key: (separatorIndex >= 0 ? rawValue.slice(0, separatorIndex) : rawValue).trim(),
+      value: separatorIndex >= 0 ? rawValue.slice(separatorIndex + separator.length).trim() : '',
+    }
+  })
+}
+
+export function appendSearchParamPairs (
+  searchParams: URLSearchParams,
+  paramName: string,
+  pairs: SearchParamPair[],
+  separator = '|'
+): void {
+  for (const pair of pairs) {
+    searchParams.append(paramName, `${pair.key}${separator}${pair.value}`)
+  }
+}
+
 /**
  * Parse JSONB filter rows from URL search params for a given prefix
  * (e.g. 'data' → reads every `data.<key>` param). Order is stable based on

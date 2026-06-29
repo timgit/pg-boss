@@ -14,7 +14,9 @@ import {
   BAM_STATUSES,
   BAM_STATUS_VARIANTS,
   BAM_STATUS_OPTIONS,
+  appendSearchParamPairs,
   parseJsonFilterPairs,
+  parseSearchParamPairs,
   jsonFilterPairsToObject,
   MAX_JSON_FILTER_PAIRS,
 } from '~/lib/utils'
@@ -323,6 +325,38 @@ describe('utils', () => {
       }
       const params = new URLSearchParams(parts.join('&'))
       expect(parseJsonFilterPairs(params, 'data')).toHaveLength(MAX_JSON_FILTER_PAIRS)
+    })
+  })
+
+  describe('search param pairs', () => {
+    it('parses repeated delimited params', () => {
+      const params = new URLSearchParams('col=id%7CID&col=data.tenantId%7CTenant&state=failed')
+
+      expect(parseSearchParamPairs(params, 'col')).toEqual([
+        { key: 'id', value: 'ID' },
+        { key: 'data.tenantId', value: 'Tenant' },
+      ])
+    })
+
+    it('supports missing values and custom separators', () => {
+      const params = new URLSearchParams('item=name:item-name&item=state')
+
+      expect(parseSearchParamPairs(params, 'item', ':')).toEqual([
+        { key: 'name', value: 'item-name' },
+        { key: 'state', value: '' },
+      ])
+    })
+
+    it('appends repeated delimited params', () => {
+      const params = new URLSearchParams('state=failed')
+
+      appendSearchParamPairs(params, 'col', [
+        { key: 'id', value: 'ID' },
+        { key: 'data.tenantId', value: 'Tenant' },
+      ])
+
+      expect(params.get('state')).toBe('failed')
+      expect(params.getAll('col')).toEqual(['id|ID', 'data.tenantId|Tenant'])
     })
   })
 
