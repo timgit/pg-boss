@@ -260,6 +260,13 @@ export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, 
    * @internal
    */
   __test__distributed?: boolean;
+  /**
+   * Force `noAdvisoryLocks` on top of the current backend's schema, so the advisory-lock-free
+   * SQL path (the same one YugabyteDB and CockroachDB take) can be exercised on a plain Postgres
+   * instance without standing up one of those databases.
+   * @internal
+   */
+  __test__noAdvisoryLocks?: boolean;
   /** @internal */
   migrations?: Migration[];
 }

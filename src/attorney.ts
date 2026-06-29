@@ -419,6 +419,12 @@ function resolveBackend (config: any) {
     config.noSkipLocked = true
     config.noMultiMutationCte = true
   }
+
+  // Test hook: exercise the advisory-lock-free SQL path (used by YugabyteDB/CockroachDB) on a
+  // plain Postgres instance, without standing up a backend whose profile sets the flag.
+  if (config.__test__noAdvisoryLocks) {
+    config.noAdvisoryLocks = true
+  }
 }
 
 function assertPostgresObjectName (name: string) {
