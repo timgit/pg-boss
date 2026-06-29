@@ -12,52 +12,27 @@ on:
 name: CI
 
 jobs:
+  # Runs the full suite against Postgres in two modes via one matrix:
+  #   - standard:    npm run cover (with coverage, uploaded to Coveralls as the only flag)
+  #   - distributed: npm run test:distributed (DISTRIBUTED=true)
+  # distributedDatabaseMode is a pure runtime fetch-strategy toggle, so every test (existing and new)
+  # is automatically exercised against the distributed code paths in the distributed leg - fast and
+  # reliable, without CockroachDB's slow DDL. The distributed leg is behavioral only: its line
+  # coverage is already produced by the standard leg, where distributedDatabaseTest/perJobResultsTest
+  # pin __test__distributed per-instance. Its value is catching features that regress under the
+  # distributed fetch path (retry/policies/flows/dead-letter/...), which coverage % can't see.
+  # fail-fast is off so one mode's failure doesn't mask the other's result.
   test:
     runs-on: ubuntu-latest
     container: node:24
     strategy:
+      fail-fast: false
       matrix:
-        node: [ 24 ]
-    services:      
-      postgres:
-        image: postgres
-        env:
-          POSTGRES_PASSWORD: postgres
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-          
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v5
-    
-    - name: Set up Node.js
-      uses: actions/setup-node@v5
-      with:
-        node-version: ${{ matrix.node }}
-
-    - name: Install
-      run: npm install
-      
-    - name: Test
-      run: npm run cover
-      env:
-        POSTGRES_HOST: postgres
-
-    - name: Coveralls
-      uses: coverallsapp/github-action@v2
-      with:
-        flag-name: standard
-        parallel: true
-
-  # Runs the full suite in distributed database mode on Postgres. distributedDatabaseMode is a pure
-  # runtime fetch-strategy toggle, so every test (existing and new) is automatically exercised
-  # against the distributed code paths here - fast and reliable, without CockroachDB's slow DDL.
-  test-distributed:
-    runs-on: ubuntu-latest
-    container: node:24
+        include:
+          - mode: standard
+            command: npm run cover
+          - mode: distributed
+            command: npm run test:distributed
     services:
       postgres:
         image: postgres
@@ -81,20 +56,17 @@ jobs:
     - name: Install
       run: npm install
 
-    # Collect coverage here too: the distributed fetch strategy exercises code paths
-    # (completeDistributed/failDistributed, distributed branches in plans.ts) that the
-    # standard `test` job never hits. Uploading as a second parallel flag makes Coveralls
-    # report the union, so those paths are measured instead of showing as uncovered.
-    - name: Test (distributed mode)
-      run: npm run cover
+    - name: Test (${{ matrix.mode }})
+      run: ${{ matrix.command }}
       env:
         POSTGRES_HOST: postgres
-        DISTRIBUTED: 'true'
 
+    # Only the standard leg produces coverage; the distributed leg uploads nothing.
     - name: Coveralls
+      if: ${{ matrix.mode == 'standard' }}
       uses: coverallsapp/github-action@v2
       with:
-        flag-name: distributed
+        flag-name: standard
         parallel: true
 
   # Runs the full suite against embedded PGlite (in-process WASM PostgreSQL). No service container is
@@ -131,7 +103,7 @@ jobs:
     - name: Set up Node.js
       uses: actions/setup-node@v5
       with:
-        node-version: 22
+        node-version: 24
 
     - name: Start CockroachDB cluster
       run: |
@@ -149,7 +121,7 @@ jobs:
       run: npm run test:cockroachdb
 
   coverage:
-    needs: [test, test-distributed]
+    needs: [test]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
@@ -157,4 +129,4 @@ jobs:
       uses: coverallsapp/github-action@v2
       with:
         parallel-finished: true
-        carryforward: "standard,distributed"
+        carryforward: "standard"
