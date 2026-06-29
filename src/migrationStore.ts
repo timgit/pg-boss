@@ -1110,17 +1110,25 @@ function getAll (schema: string, noPartitioning = false, noCovering = false): ty
       // deployments (e.g. CockroachDB, which rejects declarative RANGE partitioning) get a plain
       // queue_stats table instead of a partitioned one they could never maintain. noCovering is a
       // separate axis (CockroachDB sets it, YugabyteDB doesn't) gating the index's covering INCLUDE.
-      install: noPartitioning
-        ? [
-            createTableQueueStatsFn[35](schema, true),
-            createIndexQueueStatsFn[35](schema, noCovering)
-          ]
-        : [
-            createTableQueueStatsFn[35](schema, false),
-            createIndexQueueStatsFn[35](schema, noCovering),
-            ensureQueueStatsPartitionsFn[35](schema)
-          ],
+      // Also adds queue.ready_history: an always-on sliding window of recent ready counts on the
+      // queue row for the dashboard sparkline (maintained by cacheQueueStats every monitor cycle,
+      // independent of persistQueueStats). NOT NULL DEFAULT '{}' backfills existing rows with an
+      // empty window that fills in over the next monitor cycles.
+      install: [
+        ...(noPartitioning
+          ? [
+              createTableQueueStatsFn[35](schema, true),
+              createIndexQueueStatsFn[35](schema, noCovering)
+            ]
+          : [
+              createTableQueueStatsFn[35](schema, false),
+              createIndexQueueStatsFn[35](schema, noCovering),
+              ensureQueueStatsPartitionsFn[35](schema)
+            ]),
+        `ALTER TABLE ${schema}.queue ADD COLUMN ready_history int[] NOT NULL DEFAULT '{}'`
+      ],
       uninstall: [
+        `ALTER TABLE ${schema}.queue DROP COLUMN ready_history`,
         `DROP TABLE IF EXISTS ${schema}.queue_stats`
       ]
     }

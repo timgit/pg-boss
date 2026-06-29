@@ -155,6 +155,7 @@ function createTableQueue (schema: string) {
       active_count int NOT NULL default 0,
       failed_count int NOT NULL default 0,
       total_count int NOT NULL default 0,
+      ready_history int[] NOT NULL default '{}',
       heartbeat_seconds int,
       notify bool NOT NULL DEFAULT false,
       singletons_active text[],
@@ -2274,6 +2275,12 @@ export function getQueueStats (schema: string, table: string, queues: string[]):
   }
 }
 
+// Length of the recent-ready-count sliding window kept on queue.ready_history for the dashboard
+// sparkline. One sample is appended per monitor cycle (default 60s), so this is roughly the last
+// READY_HISTORY_SIZE minutes of trend. Sized to comfortably render the sparkline (the widest is the
+// ~160px detail card) without over-collecting — more points than pixels add nothing visible.
+export const READY_HISTORY_SIZE = 60
+
 export function cacheQueueStats (schema: string, table: string, queues: string[], noAdvisoryLocks?: boolean): string {
   const statsQuery = getQueueStats(schema, table, queues)
   // Serialize the $1 parameter for use in locked() multi-statement query
@@ -2288,7 +2295,24 @@ export function cacheQueueStats (schema: string, table: string, queues: string[]
       active_count = COALESCE(stats."activeCount", 0),
       failed_count = COALESCE(stats."failedCount", 0),
       total_count = COALESCE(stats."totalCount", 0),
-      singletons_active = stats."singletonsActive"
+      singletons_active = stats."singletonsActive",
+      -- Always-on sliding window of recent ready counts for the dashboard sparkline (independent of
+      -- persistQueueStats). Prepend the newest sample and keep the newest READY_HISTORY_SIZE, stored
+      -- newest-first. Built with unnest + array_agg (not array slicing, which CockroachDB lacks).
+      ready_history = (
+        SELECT COALESCE(array_agg(v ORDER BY ord), '{}'::int[])
+        FROM (
+          SELECT v, ord
+          FROM (
+            SELECT COALESCE(stats."readyCount", 0)::int AS v, 0::bigint AS ord
+            UNION ALL
+            SELECT h.v, h.ord
+            FROM unnest(COALESCE(queue.ready_history, '{}'::int[])) WITH ORDINALITY AS h(v, ord)
+          ) merged
+          ORDER BY ord
+          LIMIT ${READY_HISTORY_SIZE}
+        ) capped
+      )
     FROM (
       SELECT q.name
       FROM unnest(${serializeArrayParam(queues)}) AS q(name)

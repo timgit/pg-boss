@@ -12,7 +12,10 @@ export function Breadcrumbs() {
     return null
   }
 
-  const breadcrumbs: Array<{ label: string; href?: string }> = []
+  // Every trail starts with a link back to the Home (overview) page.
+  const breadcrumbs: Array<{ label: string; href?: string }> = [
+    { label: 'Home', href: '/' },
+  ]
 
   // Handle different route patterns
   if (pathSegments[0] === 'queues') {
@@ -24,7 +27,7 @@ export function Breadcrumbs() {
 
       if (pathSegments.length > 2 && pathSegments[2] === 'jobs' && pathSegments[3]) {
         const jobId = pathSegments[3]
-        breadcrumbs.push({ label: `${jobId.slice(0, 8)}...` })
+        breadcrumbs.push({ label: jobId })
       }
     }
   } else if (pathSegments[0] === 'schedules') {
@@ -45,7 +48,8 @@ export function Breadcrumbs() {
     breadcrumbs.push({ label: 'Send Job' })
   }
 
-  if (breadcrumbs.length === 0) {
+  // Only the Home root and no page-specific crumb (unmatched route) — show nothing.
+  if (breadcrumbs.length <= 1) {
     return null
   }
 

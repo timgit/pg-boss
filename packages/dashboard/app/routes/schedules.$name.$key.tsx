@@ -2,9 +2,11 @@ import { useState } from 'react'
 import { DbLink } from '~/components/db-link'
 import type { Route } from './+types/schedules.$name.$key'
 import { getSchedule } from '~/lib/queries.server'
+import { nextCronOccurrence } from '~/lib/cron.server'
 import { unschedule } from '~/lib/boss.server'
 import { dbContext } from '~/lib/db-context'
 import { Card, CardHeader, CardTitle, CardContent } from '~/components/ui/card'
+import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import {
   Dialog,
@@ -15,7 +17,7 @@ import {
   DialogTitle,
 } from '~/components/ui/dialog'
 import { ErrorCard } from '~/components/error-card'
-import { formatDate } from '~/lib/utils'
+import { formatDate, formatTimeUntil } from '~/lib/utils'
 import { redirect } from 'react-router'
 
 export async function loader ({ params, context }: Route.LoaderArgs) {
@@ -28,7 +30,8 @@ export async function loader ({ params, context }: Route.LoaderArgs) {
     throw new Response('Schedule not found', { status: 404 })
   }
 
-  return { schedule }
+  const next = nextCronOccurrence(schedule.cron, schedule.timezone)
+  return { schedule, nextOccurrence: next ? next.toISOString() : null }
 }
 
 export async function action ({ params, request, context }: Route.ActionArgs) {
@@ -60,12 +63,12 @@ export function ErrorBoundary () {
 }
 
 export default function ScheduleDetail ({ loaderData, actionData }: Route.ComponentProps) {
-  const { schedule } = loaderData
+  const { schedule, nextOccurrence } = loaderData
   const [confirmDialog, setConfirmDialog] = useState(false)
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between">
+      <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
             {schedule.name}
@@ -74,14 +77,22 @@ export default function ScheduleDetail ({ loaderData, actionData }: Route.Compon
             )}
           </h1>
         </div>
-        <Button
-          variant="danger"
-          size="md"
-          className="cursor-pointer"
-          onClick={() => setConfirmDialog(true)}
-        >
-          Unschedule
-        </Button>
+        <div className="flex flex-col items-end gap-3">
+          <Button
+            variant="danger"
+            size="md"
+            className="cursor-pointer"
+            onClick={() => setConfirmDialog(true)}
+          >
+            Unschedule
+          </Button>
+          <div className="flex gap-6 text-sm text-[var(--text-tertiary)]">
+            <span>Created {formatDate(new Date(schedule.createdOn))}</span>
+            {new Date(schedule.updatedOn).getTime() !== new Date(schedule.createdOn).getTime() && (
+              <span>Updated {formatDate(new Date(schedule.updatedOn))}</span>
+            )}
+          </div>
+        </div>
       </div>
 
       {actionData?.error && (
@@ -93,57 +104,53 @@ export default function ScheduleDetail ({ loaderData, actionData }: Route.Compon
       <div className="grid gap-6">
         <Card>
           <CardHeader>
-            <CardTitle>Schedule Configuration</CardTitle>
+            <CardTitle>Scheduled Job</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div>
-              <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Queue</dt>
-              <dd className="mt-1">
-                <DbLink
-                  to={`/queues/${encodeURIComponent(schedule.name)}`}
-                  className="text-sm text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
-                >
-                  {schedule.name}
-                </DbLink>
-              </dd>
+            <div className="flex items-start gap-12">
+              <div>
+                <dt className="pgb-eyebrow">Queue</dt>
+                <dd className="mt-1 text-sm">
+                  <DbLink
+                    to={`/queues/${encodeURIComponent(schedule.name)}`}
+                    className="text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
+                  >
+                    {schedule.name}
+                  </DbLink>
+                </dd>
+              </div>
+              <div>
+                <dt className="pgb-eyebrow">Key</dt>
+                <dd className="mt-1 text-sm text-gray-900 dark:text-gray-100">
+                  {schedule.key || <span className="text-gray-400 dark:text-gray-500">—</span>}
+                </dd>
+              </div>
             </div>
 
             <div>
-              <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Key</dt>
-              <dd className="mt-1 text-sm text-gray-900 dark:text-gray-100">
-                {schedule.key || <span className="text-gray-400 dark:text-gray-500">—</span>}
-              </dd>
-            </div>
-
-            <div>
-              <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Cron Expression</dt>
-              <dd className="mt-1">
+              <dt className="pgb-eyebrow">Cron Expression</dt>
+              <dd className="mt-1 flex items-center gap-2">
                 <code className="text-sm bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded text-gray-700 dark:text-gray-300">
                   {schedule.cron}
                 </code>
+                <Badge variant="gray" size="sm">{schedule.timezone || 'UTC'}</Badge>
               </dd>
             </div>
 
             <div>
-              <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Timezone</dt>
+              <dt className="pgb-eyebrow">Next occurrence</dt>
               <dd className="mt-1 text-sm text-gray-900 dark:text-gray-100">
-                {schedule.timezone || <span className="text-gray-400 dark:text-gray-500">Default</span>}
+                {nextOccurrence ? (
+                  <>
+                    {formatDate(new Date(nextOccurrence))}
+                    <span className="text-gray-500 dark:text-gray-400"> ({formatTimeUntil(new Date(nextOccurrence))})</span>
+                  </>
+                ) : (
+                  <span className="text-gray-400 dark:text-gray-500">—</span>
+                )}
               </dd>
             </div>
 
-            <div>
-              <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Created</dt>
-              <dd className="mt-1 text-sm text-gray-900 dark:text-gray-100">
-                {formatDate(new Date(schedule.createdOn))}
-              </dd>
-            </div>
-
-            <div>
-              <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Updated</dt>
-              <dd className="mt-1 text-sm text-gray-900 dark:text-gray-100">
-                {formatDate(new Date(schedule.updatedOn))}
-              </dd>
-            </div>
           </CardContent>
         </Card>
 

@@ -270,13 +270,13 @@ export default function Jobs ({ loaderData }: Route.ComponentProps) {
                 </TableRow>
               ) : (
                 recentJobs.map((job: JobResult) => (
-                  <TableRow key={job.id}>
+                  <TableRow key={job.id} to={`/queues/${encodeURIComponent(job.name)}/jobs/${job.id}`}>
                     <TableCell>
                       <DbLink
                         to={`/queues/${encodeURIComponent(job.name)}/jobs/${job.id}`}
                         className="font-mono text-xs text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
                       >
-                        {job.id.slice(0, 8)}...
+                        {job.id}
                       </DbLink>
                     </TableCell>
                     <TableCell className="font-medium text-[var(--text-secondary)]">
@@ -336,7 +336,7 @@ function ActiveFilterChips ({ filters, onChange, onClearAll }: ActiveFilterChips
 
       {filters.id && (
         <Chip
-          label={`ID: ${filters.id.slice(0, 8)}...`}
+          label={`ID: ${filters.id}`}
           onRemove={() => onChange({ ...filters, id: '' })}
         />
       )}

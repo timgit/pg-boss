@@ -3,23 +3,17 @@ import type { ComponentProps } from "react";
 import { cn } from "~/lib/utils";
 
 type LinkProps = ComponentProps<typeof Link>;
+type To = LinkProps["to"];
 
-/**
- * A Link component that preserves the current database selection (db query param)
- * when navigating to other pages in the dashboard.
- */
-export function DbLink({ to, children, className, ...props }: LinkProps) {
-  const [searchParams] = useSearchParams();
-  const dbParam = searchParams.get("db");
-
-  // Build the target URL preserving the db param
-  let href: string;
+// Resolve a router `to` into an href string that preserves the active database selection (the `db`
+// query param). Pure so it can be reused by both DbLink and row-level navigation.
+export function resolveDbHref(to: To, dbParam: string | null): string {
   if (typeof to === "string") {
     const url = new URL(to, "http://localhost");
     if (dbParam && !url.searchParams.has("db")) {
       url.searchParams.set("db", dbParam);
     }
-    href = url.pathname + url.search;
+    return url.pathname + url.search;
   } else if (typeof to === "object" && to !== null) {
     // Handle object form: { pathname, search, hash }
     const pathname = to.pathname || "";
@@ -31,10 +25,23 @@ export function DbLink({ to, children, className, ...props }: LinkProps) {
       params.set("db", dbParam);
     }
     const search = params.toString();
-    href = pathname + (search ? `?${search}` : "") + hash;
-  } else {
-    href = String(to);
+    return pathname + (search ? `?${search}` : "") + hash;
   }
+  return String(to);
+}
+
+// Hook form of resolveDbHref, reading the current db param from the URL.
+export function useDbHref(to: To): string {
+  const [searchParams] = useSearchParams();
+  return resolveDbHref(to, searchParams.get("db"));
+}
+
+/**
+ * A Link component that preserves the current database selection (db query param)
+ * when navigating to other pages in the dashboard.
+ */
+export function DbLink({ to, children, className, ...props }: LinkProps) {
+  const href = useDbHref(to);
 
   return (
     <Link to={href} className={cn("cursor-pointer", className)} {...props}>

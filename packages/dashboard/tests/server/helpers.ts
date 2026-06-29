@@ -305,6 +305,53 @@ export async function updateQueueStats (
   }
 }
 
+// Seed historical rows into the partitioned queue_stats table. supervise is disabled in tests, so
+// the daily range partitions aren't auto-created — make one per distinct UTC day before inserting.
+export async function insertQueueStatsHistory (
+  schema: string,
+  queueName: string,
+  rows: Array<{
+    capturedOn: Date;
+    deferredCount?: number;
+    queuedCount?: number;
+    readyCount?: number;
+    activeCount?: number;
+    failedCount?: number;
+    totalCount?: number;
+  }>
+): Promise<void> {
+  const p = getPool()
+
+  const days = new Set(rows.map((r) => r.capturedOn.toISOString().slice(0, 10)))
+  for (const day of days) {
+    const next = new Date(new Date(`${day}T00:00:00Z`).getTime() + 86400000).toISOString().slice(0, 10)
+    const part = `queue_stats_${day.replace(/-/g, '')}`
+    await p.query(
+      `CREATE TABLE IF NOT EXISTS ${schema}.${part}
+         PARTITION OF ${schema}.queue_stats
+         FOR VALUES FROM ('${day} 00:00:00+00') TO ('${next} 00:00:00+00')`
+    )
+  }
+
+  for (const r of rows) {
+    await p.query(
+      `INSERT INTO ${schema}.queue_stats
+         (name, deferred_count, queued_count, ready_count, active_count, failed_count, total_count, captured_on)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [
+        queueName,
+        r.deferredCount ?? 0,
+        r.queuedCount ?? 0,
+        r.readyCount ?? 0,
+        r.activeCount ?? 0,
+        r.failedCount ?? 0,
+        r.totalCount ?? 0,
+        r.capturedOn,
+      ]
+    )
+  }
+}
+
 // Helpers to change job state using pg-boss APIs
 export async function fetchTestJob (queueName: string): Promise<{ id: string; data: unknown } | null> {
   const boss = getBoss()

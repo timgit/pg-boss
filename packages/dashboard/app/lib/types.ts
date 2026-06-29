@@ -30,6 +30,9 @@ export interface QueueResult extends PgBossQueueResult {
   // failed jobs still retained in the table.
   readyCount: number;
   failedCount: number;
+  // Sliding window of recent ready counts (newest first) maintained by pg-boss on every monitor
+  // cycle for the dashboard sparkline. Present only on schema v35+; undefined on older databases.
+  readyHistory?: number[] | null;
 }
 
 // JobState is a union type extracted from JobWithMetadata
@@ -69,6 +72,21 @@ export interface QueueStats {
   totalJobs: number;
   queueCount: number;
 }
+
+// One downsampled queue_stats bucket. capturedOn is the bucket's epoch seconds (a number, so it
+// plots directly on a uPlot time axis and serializes cleanly through loaders); the six counts are
+// the bucket aggregate (max/min/avg) of the recorded snapshots.
+export interface QueueStatsPoint {
+  capturedOn: number;
+  deferredCount: number;
+  queuedCount: number;
+  readyCount: number;
+  activeCount: number;
+  failedCount: number;
+  totalCount: number;
+}
+
+export type QueueStatsAggregate = 'max' | 'min' | 'avg'
 
 // Background async migration (BAM) status. Mirrors src/types.ts in the pg-boss core.
 export type BamStatus = 'pending' | 'in_progress' | 'completed' | 'failed'

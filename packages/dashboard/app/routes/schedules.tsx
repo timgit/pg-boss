@@ -5,6 +5,7 @@ import {
   getSchedules,
   getScheduleCount,
 } from '~/lib/queries.server'
+import { nextCronOccurrence } from '~/lib/cron.server'
 import { Card, CardHeader, CardTitle, CardContent } from '~/components/ui/card'
 import { PageHeader } from '~/components/ui/page-header'
 import { Badge } from '~/components/ui/badge'
@@ -16,14 +17,15 @@ import {
   TableRow,
   TableHead,
   TableCell,
+  SortableHeader,
 } from '~/components/ui/table'
 import { Pagination } from '~/components/ui/pagination'
 import { ErrorCard } from '~/components/error-card'
-import type { ScheduleResult } from '~/lib/types'
 import { dbContext } from '~/lib/db-context'
 import {
   parsePageNumber,
   formatDate,
+  formatTimeUntil,
 } from '~/lib/utils'
 
 export async function loader ({ request, context }: Route.LoaderArgs) {
@@ -32,18 +34,26 @@ export async function loader ({ request, context }: Route.LoaderArgs) {
   const page = parsePageNumber(url.searchParams.get('page'))
   const limit = 20
   const offset = (page - 1) * limit
+  const sort = url.searchParams.get('sort')
+  const dir = url.searchParams.get('dir')
 
   const [schedules, totalCount] = await Promise.all([
-    getSchedules(DB_URL, SCHEMA, { limit, offset }),
+    getSchedules(DB_URL, SCHEMA, { limit, offset, sort, dir }),
     getScheduleCount(DB_URL, SCHEMA),
   ])
+
+  // Derive each schedule's next fire time from its cron + timezone (null if the cron is unparseable).
+  const schedulesWithNext = schedules.map((schedule) => {
+    const next = nextCronOccurrence(schedule.cron, schedule.timezone)
+    return { ...schedule, nextOccurrence: next ? next.toISOString() : null }
+  })
 
   const totalPages = Math.ceil(totalCount / limit)
   const hasNextPage = schedules.length === limit
   const hasPrevPage = page > 1
 
   return {
-    schedules,
+    schedules: schedulesWithNext,
     totalCount,
     page,
     totalPages,
@@ -108,30 +118,30 @@ export default function Schedules ({ loaderData }: Route.ComponentProps) {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Queue</TableHead>
-                <TableHead>Key</TableHead>
-                <TableHead>Cron</TableHead>
+                <SortableHeader column="name">Queue</SortableHeader>
+                <SortableHeader column="key">Key</SortableHeader>
+                <SortableHeader column="cron">Cron</SortableHeader>
                 <TableHead>Frequency</TableHead>
-                <TableHead>Timezone</TableHead>
-                <TableHead>Created</TableHead>
-                <TableHead>Updated</TableHead>
+                <TableHead>Next occurrence</TableHead>
+                <SortableHeader column="timezone">Timezone</SortableHeader>
               </TableRow>
             </TableHeader>
             <TableBody>
               {schedules.length === 0 ? (
                 <TableRow>
-                  <TableCell className="text-center text-[var(--text-tertiary)] py-8" colSpan={7}>
+                  <TableCell className="text-center text-[var(--text-tertiary)] py-8" colSpan={6}>
                     No schedules found
                   </TableCell>
                 </TableRow>
               ) : (
-                schedules.map((schedule: ScheduleResult) => {
+                schedules.map((schedule) => {
                   const scheduleKey = schedule.key || '__default__'
                   const schedulePath = `/schedules/${encodeURIComponent(schedule.name)}/${encodeURIComponent(scheduleKey)}`
 
                   return (
                     <TableRow
                       key={`${schedule.name}:${schedule.key}`}
+                      to={schedulePath}
                     >
                       <TableCell>
                         <DbLink
@@ -150,16 +160,19 @@ export default function Schedules ({ loaderData }: Route.ComponentProps) {
                       <TableCell className="text-[var(--text-secondary)]">
                         {cronHuman(schedule.cron)}
                       </TableCell>
+                      <TableCell className="text-[var(--text-secondary)]">
+                        {schedule.nextOccurrence ? (
+                          <span title={formatDate(new Date(schedule.nextOccurrence))}>
+                            {formatTimeUntil(new Date(schedule.nextOccurrence))}
+                          </span>
+                        ) : (
+                          <span className="text-[var(--border-strong)]">—</span>
+                        )}
+                      </TableCell>
                       <TableCell>
                         {schedule.timezone
                           ? <Badge variant="gray" size="sm">{schedule.timezone}</Badge>
                           : <span className="text-[var(--border-strong)]">—</span>}
-                      </TableCell>
-                      <TableCell className="pgb-num text-[var(--text-tertiary)]">
-                        {formatDate(new Date(schedule.createdOn))}
-                      </TableCell>
-                      <TableCell className="pgb-num text-[var(--text-tertiary)]">
-                        {formatDate(new Date(schedule.updatedOn))}
                       </TableCell>
                     </TableRow>
                   )

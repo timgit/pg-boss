@@ -1,5 +1,6 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
+import { useNavigate } from "react-router";
 import {
   Table,
   TableHeader,
@@ -61,6 +62,52 @@ describe("TableRow", () => {
 
     fireEvent.click(screen.getByRole("row"));
     expect(handleClick).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("TableRow navigation (`to`)", () => {
+  let navigate: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    navigate = vi.fn();
+    vi.mocked(useNavigate).mockReturnValue(navigate);
+  });
+
+  const renderRow = (children: React.ReactNode) =>
+    render(
+      <table>
+        <tbody>
+          <TableRow to="/queues/abc">{children}</TableRow>
+        </tbody>
+      </table>
+    );
+
+  it("marks the row clickable and navigates on a plain-cell click", () => {
+    renderRow(<td>plain cell</td>);
+    expect(screen.getByRole("row")).toHaveClass("cursor-pointer");
+
+    fireEvent.click(screen.getByText("plain cell"));
+    expect(navigate).toHaveBeenCalledWith("/queues/abc");
+  });
+
+  it("defers to nested interactive elements instead of navigating", () => {
+    renderRow(
+      <td>
+        <a href="/other">inner link</a>
+        <button>inner button</button>
+      </td>
+    );
+
+    fireEvent.click(screen.getByText("inner link"));
+    fireEvent.click(screen.getByText("inner button"));
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it("ignores modifier-clicks so the primary link can open in a new tab", () => {
+    renderRow(<td>plain cell</td>);
+    fireEvent.click(screen.getByText("plain cell"), { metaKey: true });
+    fireEvent.click(screen.getByText("plain cell"), { ctrlKey: true });
+    expect(navigate).not.toHaveBeenCalled();
   });
 });
 

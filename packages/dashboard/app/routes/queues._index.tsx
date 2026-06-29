@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 import { DbLink } from '~/components/db-link'
 import type { Route } from './+types/queues._index'
 import { getQueues, getQueueCount } from '~/lib/queries.server'
+import { Sparkline } from '~/components/ui/sparkline'
 import { Card, CardContent } from '~/components/ui/card'
 import { PageHeader } from '~/components/ui/page-header'
 import { Badge } from '~/components/ui/badge'
@@ -15,6 +16,7 @@ import {
   TableRow,
   TableHead,
   TableCell,
+  SortableHeader,
 } from '~/components/ui/table'
 import { formatTimeAgo, parsePageNumber, cn } from '~/lib/utils'
 import type { QueueResult } from '~/lib/types'
@@ -34,12 +36,17 @@ export async function loader ({ request, context }: Route.LoaderArgs) {
     ? (filter as 'all' | 'attention' | 'partitioned')
     : 'all'
 
+  const sort = url.searchParams.get('sort')
+  const dir = url.searchParams.get('dir')
+
   const [queues, totalCount] = await Promise.all([
     getQueues(DB_URL, SCHEMA, {
       limit,
       offset,
       filter: validFilter,
       search,
+      sort,
+      dir,
     }),
     getQueueCount(DB_URL, SCHEMA, {
       filter: validFilter,
@@ -232,17 +239,17 @@ export default function QueuesIndex ({ loaderData }: Route.ComponentProps) {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Policy</TableHead>
-                <TableHead>Storage</TableHead>
-                <TableHead className="text-right">Queued</TableHead>
-                <TableHead className="text-right">Deferred</TableHead>
-                <TableHead className="text-right">Ready</TableHead>
-                <TableHead className="text-right">Active</TableHead>
-                <TableHead className="text-right">Failed</TableHead>
-                <TableHead className="text-right">Total</TableHead>
-                <TableHead>Dead Letter</TableHead>
-                <TableHead>Status</TableHead>
+                <SortableHeader column="name">Name</SortableHeader>
+                <SortableHeader column="policy" className="w-28">Policy</SortableHeader>
+                <SortableHeader column="queued" align="right" title="Queued">QU</SortableHeader>
+                <SortableHeader column="deferred" align="right" title="Deferred">DF</SortableHeader>
+                <SortableHeader column="ready" align="right" title="Ready">RE</SortableHeader>
+                <TableHead className="w-32">Trend</TableHead>
+                <SortableHeader column="active" align="right" title="Active">AC</SortableHeader>
+                <SortableHeader column="failed" align="right" title="Failed">FA</SortableHeader>
+                <SortableHeader column="total" align="right" title="Total">TO</SortableHeader>
+                <SortableHeader column="storage" className="w-28">Storage</SortableHeader>
+                <TableHead className="w-32">Status</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -259,7 +266,7 @@ export default function QueuesIndex ({ loaderData }: Route.ComponentProps) {
                     queue.queuedCount > (queue.warningQueueSize ?? 0)
 
                   return (
-                    <TableRow key={queue.name}>
+                    <TableRow key={queue.name} to={`/queues/${encodeURIComponent(queue.name)}`}>
                       <TableCell>
                         <DbLink
                           to={`/queues/${encodeURIComponent(queue.name)}`}
@@ -273,9 +280,6 @@ export default function QueuesIndex ({ loaderData }: Route.ComponentProps) {
                           {queue.policy}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-[var(--text-secondary)]">
-                        {queue.partition ? 'Partitioned' : 'Shared'}
-                      </TableCell>
                       <TableCell className="text-right pgb-num text-[var(--text-primary)]">
                         {queue.queuedCount.toLocaleString()}
                       </TableCell>
@@ -284,6 +288,21 @@ export default function QueuesIndex ({ loaderData }: Route.ComponentProps) {
                       </TableCell>
                       <TableCell className="text-right pgb-num text-[var(--text-primary)]">
                         {queue.readyCount.toLocaleString()}
+                      </TableCell>
+                      <TableCell>
+                        {queue.readyHistory && queue.readyHistory.length > 0 ? (
+                          <Sparkline
+                            // Stored newest-first; reverse to chronological (oldest → newest).
+                            data={[...queue.readyHistory].reverse()}
+                            width={96}
+                            height={20}
+                            color="var(--primary-600)"
+                            showDot={false}
+                            aria-label={`Ready count trend for ${queue.name}`}
+                          />
+                        ) : (
+                          <span className="text-[var(--border-strong)]">—</span>
+                        )}
                       </TableCell>
                       <TableCell className="text-right pgb-num text-[var(--text-primary)]">
                         {queue.activeCount.toLocaleString()}
@@ -294,17 +313,8 @@ export default function QueuesIndex ({ loaderData }: Route.ComponentProps) {
                       <TableCell className="text-right pgb-num text-[var(--text-primary)]">
                         {queue.totalCount.toLocaleString()}
                       </TableCell>
-                      <TableCell>
-                        {queue.deadLetter ? (
-                          <DbLink
-                            to={`/queues/${encodeURIComponent(queue.deadLetter)}`}
-                            className="font-mono text-xs text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
-                          >
-                            {queue.deadLetter}
-                          </DbLink>
-                        ) : (
-                          <span className="text-[var(--border-strong)]">—</span>
-                        )}
+                      <TableCell className="text-[var(--text-secondary)]">
+                        {queue.partition ? 'Partitioned' : 'Shared'}
                       </TableCell>
                       <TableCell>
                         {hasBacklog ? (

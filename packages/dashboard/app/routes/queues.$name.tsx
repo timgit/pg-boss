@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useFetcher, useSearchParams } from 'react-router'
-import { MoreHorizontal, ChevronDown, ChevronRight } from 'lucide-react'
+import { MoreHorizontal, ChevronDown, ChevronRight, LineChart } from 'lucide-react'
 import { Menu } from '@base-ui/react/menu'
 import { DbLink } from '~/components/db-link'
 import type { Route } from './+types/queues.$name'
@@ -8,12 +8,15 @@ import {
   getQueue,
   getJobs,
   getJobCountFromQueue,
+  getQueueStatsCollectionStatus,
   cancelJob,
   retryJob,
   resumeJob,
   deleteJob,
   isValidIntent,
 } from '~/lib/queries.server'
+import { Sparkline } from '~/components/ui/sparkline'
+import { StatsDisabledBanner } from '~/components/stats-disabled-banner'
 import { Card, CardHeader, CardTitle, CardContent } from '~/components/ui/card'
 import { PageHeader } from '~/components/ui/page-header'
 import { StatCard } from '~/components/ui/stat-card'
@@ -71,11 +74,12 @@ export async function loader ({ params, request, context }: Route.LoaderArgs) {
     throw new Response('Queue not found', { status: 404 })
   }
 
-  const jobs = await getJobs(DB_URL, SCHEMA, params.name, {
-    state: stateFilter,
-    limit,
-    offset,
-  })
+  // The Ready sparkline comes from the always-on queue.ready_history column (loaded with `queue`).
+  // collection drives the banner that points at the interactive metrics chart (needs persistQueueStats).
+  const [jobs, collection] = await Promise.all([
+    getJobs(DB_URL, SCHEMA, params.name, { state: stateFilter, limit, offset }),
+    getQueueStatsCollectionStatus(DB_URL, SCHEMA),
+  ])
 
   // Use cached count from queue table instead of COUNT(*) query
   // Returns null if count not available for this filter
@@ -95,6 +99,7 @@ export async function loader ({ params, request, context }: Route.LoaderArgs) {
     stateFilter,
     hasNextPage,
     hasPrevPage,
+    statsAvailable: collection.available,
   }
 }
 
@@ -168,7 +173,15 @@ export default function QueueDetail ({ loaderData }: Route.ComponentProps) {
     stateFilter,
     hasNextPage,
     hasPrevPage,
+    statsAvailable,
   } = loaderData
+
+  // ready_history is stored newest-first; reverse to chronological (oldest → newest) for the chart.
+  const readyTrend = queue.readyHistory ? [...queue.readyHistory].reverse() : []
+
+  // Link a StatCard to the metrics page pre-filtered to that single series.
+  const metricsHref = (series: string) =>
+    `/queues/${encodeURIComponent(queue.name)}/metrics?series=${series}`
   const [searchParams, setSearchParams] = useSearchParams()
   const [configExpanded, setConfigExpanded] = useState(false)
 
@@ -196,33 +209,57 @@ export default function QueueDetail ({ loaderData }: Route.ComponentProps) {
     <div className="space-y-4">
       <PageHeader
         title={queue.name}
-        subtitle={`${queue.partition ? 'Partitioned' : 'Shared'} storage`}
         action={
-          <DbLink to={`/send?queue=${encodeURIComponent(queue.name)}`}>
-            <Button variant="primary" size="md">Send Job</Button>
-          </DbLink>
+          <div className="flex items-center gap-2">
+            <DbLink to={`/queues/${encodeURIComponent(queue.name)}/metrics`}>
+              <Button variant="outline" size="md">
+                <LineChart className="h-4 w-4 mr-1.5" aria-hidden="true" />
+                View metrics
+              </Button>
+            </DbLink>
+            <DbLink to={`/send?queue=${encodeURIComponent(queue.name)}`}>
+              <Button variant="primary" size="md">Send Job</Button>
+            </DbLink>
+          </div>
         }
       />
 
       <div className="flex flex-wrap items-center gap-2 -mt-2">
         <Badge variant="primary">{queue.policy} policy</Badge>
+        <Badge variant="gray">{queue.partition ? 'Partitioned' : 'Shared'} storage</Badge>
         {queue.deadLetter && <Badge variant="gray">dead letter → {queue.deadLetter}</Badge>}
-        {(queue.retryLimit ?? 0) > 0 && <Badge variant="gray">retry limit {queue.retryLimit}</Badge>}
       </div>
 
-      {/* Queue Stats */}
+      {!statsAvailable && <StatsDisabledBanner />}
+
+      {/* Queue Stats — each card opens the metrics page filtered to that series. */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
         <StatCard
           label="Queued"
           value={queue.queuedCount.toLocaleString()}
           accent={overThreshold ? 'error' : 'neutral'}
-          hint={overThreshold ? 'over threshold' : 'incl. deferred'}
+          hint={overThreshold ? 'over threshold' : undefined}
+          to={metricsHref('queued')}
         />
-        <StatCard label="Deferred" value={queue.deferredCount.toLocaleString()} />
-        <StatCard label="Ready" value={queue.readyCount.toLocaleString()} accent="primary" hint="ready to process" />
-        <StatCard label="Active" value={queue.activeCount.toLocaleString()} accent="primary" />
-        <StatCard label="Failed" value={queue.failedCount.toLocaleString()} hint="recent failures" />
-        <StatCard label="Total" value={queue.totalCount.toLocaleString()} />
+        <StatCard label="Deferred" value={queue.deferredCount.toLocaleString()} to={metricsHref('deferred')} />
+        <StatCard
+          label="Ready"
+          value={queue.readyCount.toLocaleString()}
+          accent="primary"
+          to={metricsHref('ready')}
+          sparkline={readyTrend.length > 0 && (
+            <Sparkline
+              data={readyTrend}
+              width={160}
+              height={24}
+              color="var(--primary-600)"
+              aria-label="Ready count over the last 24 hours"
+            />
+          )}
+        />
+        <StatCard label="Active" value={queue.activeCount.toLocaleString()} accent="primary" to={metricsHref('active')} />
+        <StatCard label="Failed" value={queue.failedCount.toLocaleString()} to={metricsHref('failed')} />
+        <StatCard label="Total" value={queue.totalCount.toLocaleString()} to={metricsHref('total')} />
       </div>
 
       {/* Configuration Panel */}
@@ -412,13 +449,13 @@ function JobRow ({
 
   return (
     <>
-      <TableRow>
+      <TableRow to={`/queues/${encodeURIComponent(queueName)}/jobs/${job.id}`}>
         <TableCell>
           <DbLink
             to={`/queues/${queueName}/jobs/${job.id}`}
             className="font-mono text-xs text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
           >
-            {job.id.slice(0, 8)}...
+            {job.id}
           </DbLink>
         </TableCell>
         <TableCell>
@@ -484,7 +521,7 @@ function JobRow ({
                         onClick={() => openConfirmDialog(
                           'cancel',
                           'Cancel Job',
-                          `Are you sure you want to cancel job ${job.id.slice(0, 8)}...? This will stop the job from being processed.`,
+                          `Are you sure you want to cancel job ${job.id}? This will stop the job from being processed.`,
                           'Cancel Job'
                         )}
                       >
@@ -497,7 +534,7 @@ function JobRow ({
                         onClick={() => openConfirmDialog(
                           'delete',
                           'Delete Job',
-                          `Are you sure you want to delete job ${job.id.slice(0, 8)}...? This action cannot be undone.`,
+                          `Are you sure you want to delete job ${job.id}? This action cannot be undone.`,
                           'Delete'
                         )}
                       >
