@@ -1,5 +1,10 @@
 import { query, queryOne } from './db.server'
 import type { JobStateFilter } from './utils'
+import {
+  isBuiltinJobColumnPath,
+  jobColumnDbColumn,
+  type JobColumn,
+} from './job-columns'
 import type {
   QueueResult,
   JobResult,
@@ -61,6 +66,50 @@ const JOB_LIST_COLUMNS = `
   created_on as "createdOn",
   singleton_key as "singletonKey"
 `
+
+export function jobColumnPathToSql (path: string): string {
+  if (path === 'data' || path === 'output') return path
+
+  if (path.startsWith('data.') || path.startsWith('output.')) {
+    const [column, ...segments] = path.split('.')
+    return `${column} #>> ARRAY[${segments.map(quoteSqlString).join(',')}]`
+  }
+
+  const sql = jobColumnDbColumn(path)
+  if (!sql) throw new Error(`Invalid column path: ${path}`)
+  return sql
+}
+
+export function buildJobColumnProjections (columns: JobColumn[]): string[] {
+  const seen = new Set<string>()
+  const projections: string[] = []
+
+  for (const col of columns) {
+    if (isBuiltinJobColumnPath(col.path)) continue
+    const prop = col.path
+    if (seen.has(prop)) continue
+    seen.add(prop)
+
+    const expr = jobColumnPathToSql(col.path)
+    projections.push(`${expr} as ${quoteSqlIdentifier(prop)}`)
+  }
+
+  return projections
+}
+
+function buildJobListSelect (jobColumns: JobColumn[] = []): string {
+  const extra = buildJobColumnProjections(jobColumns)
+  if (extra.length === 0) return JOB_LIST_COLUMNS
+  return `${JOB_LIST_COLUMNS},\n  ${extra.join(',\n  ')}`
+}
+
+function quoteSqlIdentifier (identifier: string): string {
+  return `"${identifier.replace(/"/g, '""')}"`
+}
+
+function quoteSqlString (value: string): string {
+  return `'${value.replace(/'/g, "''")}'`
+}
 
 // Get queues with cached stats, with optional pagination, filtering, and search
 export async function getQueues (
@@ -304,19 +353,21 @@ export async function getRecentJobs (
   options: RecentJobsFilterOptions & {
     limit?: number;
     offset?: number;
+    jobColumns?: JobColumn[];
   } = {}
 ): Promise<JobResult[]> {
   const s = validateIdentifier(schema)
-  const { limit = 20, offset = 0, ...filters } = options
+  const { limit = 20, offset = 0, jobColumns = [], ...filters } = options
 
   const { clause, params, impossible } = buildRecentJobsWhere(s, filters)
   if (impossible) return []
 
   const limitPlaceholder = `$${params.length + 1}`
   const offsetPlaceholder = `$${params.length + 2}`
+  const selectColumns = buildJobListSelect(jobColumns)
 
   const sql = `
-    SELECT ${JOB_LIST_COLUMNS}
+    SELECT ${selectColumns}
     FROM ${s}.job
     ${clause}
     ORDER BY created_on DESC
@@ -367,15 +418,17 @@ export async function getJobs (
     state?: string | null;
     limit?: number;
     offset?: number;
+    jobColumns?: JobColumn[];
   } = {}
 ): Promise<JobResult[]> {
   const s = validateIdentifier(schema)
-  const { state = null, limit = 50, offset = 0 } = options
+  const { state = null, limit = 50, offset = 0, jobColumns = [] } = options
+  const selectColumns = buildJobListSelect(jobColumns)
 
   // Handle 'pending' filter for non-final states
   if (state === 'pending') {
     const sql = `
-      SELECT ${JOB_LIST_COLUMNS}
+      SELECT ${selectColumns}
       FROM ${s}.job
       WHERE name = $1
       AND state < 'completed'
@@ -388,7 +441,7 @@ export async function getJobs (
   // Handle 'all' filter or null - no state filtering
   if (state === 'all' || state === null) {
     const sql = `
-      SELECT ${JOB_LIST_COLUMNS}
+      SELECT ${selectColumns}
       FROM ${s}.job
       WHERE name = $1
       ORDER BY created_on DESC
@@ -399,7 +452,7 @@ export async function getJobs (
 
   // Filter by specific state
   const sql = `
-    SELECT ${JOB_LIST_COLUMNS}
+    SELECT ${selectColumns}
     FROM ${s}.job
     WHERE name = $1
     AND state = $2::${s}.job_state

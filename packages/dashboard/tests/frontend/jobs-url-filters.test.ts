@@ -53,7 +53,7 @@ describe('jobs URL filter round-trip', () => {
       id: '',
       queues: [],
       minRetries: '',
-      data: [{ key: 'sessionId', value: '' }, { key: '', value: 'orphan' }],
+      data: [{ key: 'tenantId', value: '' }, { key: '', value: 'orphan' }],
       output: [],
     }
     expect(buildSearchParams(filters).toString()).toBe('')
@@ -67,8 +67,7 @@ describe('jobs URL filter round-trip', () => {
   })
 
   it('does not run the count for state=all even with minRetries=0 present', () => {
-    const parsed = parseFiltersFromUrl(new URLSearchParams('state=all&minRetries=0'))
-    expect(parsed.shouldRunCount).toBe(false)
+    expect(parseFiltersFromUrl(new URLSearchParams('state=all&minRetries=0')).shouldRunCount).toBe(false)
   })
 
   it('collapses duplicate data keys to the value the query uses', () => {
