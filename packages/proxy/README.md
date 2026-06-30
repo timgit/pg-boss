@@ -432,7 +432,7 @@ services:
   proxy:
     image: node:24
     working_dir: /app
-    command: sh -c "npm install -g @pg-boss/proxy && pgboss-proxy"
+    command: sh -c "npm install -g @pg-boss/proxy && pg-boss-proxy"
     environment:
       DATABASE_URL: postgres://user:pass@db:5432/mydb
       PGBOSS_SCHEMA: pgboss

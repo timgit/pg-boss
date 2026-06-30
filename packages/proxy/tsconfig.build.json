@@ -10,6 +10,5 @@
     "allowImportingTsExtensions": false,
     "paths": {}
   },
-  "include": ["src"],
-  "exclude": ["src/server.ts"]
+  "include": ["src"]
 }
