@@ -80,7 +80,7 @@ describe("Breadcrumbs", () => {
 
     expect(screen.getByText("Queues")).toBeInTheDocument();
     expect(screen.getByText("my-queue")).toBeInTheDocument();
-    expect(screen.getByText("12345678...")).toBeInTheDocument();
+    expect(screen.getByText("12345678-abcd")).toBeInTheDocument();
   });
 
   it("renders breadcrumbs for schedules path", () => {
@@ -177,6 +177,21 @@ describe("Breadcrumbs", () => {
     expect(container.firstChild).toBeNull();
   });
 
+  it("includes a Home root link to the overview page", () => {
+    vi.mocked(useLocation).mockReturnValue({ pathname: "/queues" } as any);
+    vi.mocked(useMatches).mockReturnValue([]);
+
+    render(
+      <MemoryRouter>
+        <Breadcrumbs />
+      </MemoryRouter>
+    );
+
+    const homeLink = screen.getByText("Home").closest("a");
+    expect(homeLink).toBeInTheDocument();
+    expect(homeLink).toHaveAttribute("href", "/");
+  });
+
   it("renders separator between breadcrumbs", () => {
     vi.mocked(useLocation).mockReturnValue({ pathname: "/queues/my-queue" } as any);
     vi.mocked(useMatches).mockReturnValue([]);
@@ -187,8 +202,9 @@ describe("Breadcrumbs", () => {
       </MemoryRouter>
     );
 
+    // Home / Queues / my-queue → two separators
     const separators = screen.getAllByText("/");
-    expect(separators).toHaveLength(1);
+    expect(separators).toHaveLength(2);
   });
 
   it("renders last breadcrumb without link", () => {

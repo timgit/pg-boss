@@ -372,8 +372,8 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#manager.getQueue(name)
   }
 
-  getQueueStats (name: string): Promise<types.QueueResult> {
-    return this.#manager.getQueueStats(name)
+  getQueueStats (name: string, options?: types.QueueStatsOptions): Promise<types.QueueStats[]> {
+    return this.#manager.getQueueStats(name, options)
   }
 
   isMaintaining (): boolean {
@@ -496,6 +496,8 @@ export type {
   QueueOptions,
   QueuePolicy,
   QueueResult,
+  QueueStats,
+  QueueStatsOptions,
   RedriveOptions,
   Request,
   Schedule,

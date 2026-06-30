@@ -140,7 +140,7 @@ export default function JobDetail ({ loaderData }: Route.ComponentProps) {
             {(job.state === 'created' || job.state === 'retry' || job.state === 'active') && (
               <ConfirmDialog
                 title="Cancel Job"
-                description={`Are you sure you want to cancel job ${job.id.slice(0, 8)}...? This will prevent the job from being processed.`}
+                description={`Are you sure you want to cancel job ${job.id}? This will prevent the job from being processed.`}
                 confirmLabel="Cancel Job"
                 confirmVariant="danger"
                 triggerVariant="outline"
@@ -152,7 +152,7 @@ export default function JobDetail ({ loaderData }: Route.ComponentProps) {
             {job.state !== 'active' && (
               <ConfirmDialog
                 title="Delete Job"
-                description={`Are you sure you want to delete job ${job.id.slice(0, 8)}...? This action cannot be undone.`}
+                description={`Are you sure you want to delete job ${job.id}? This action cannot be undone.`}
                 confirmLabel="Delete"
                 confirmVariant="danger"
                 triggerVariant="danger"

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import {
   parsePageNumber,
   formatTimeAgo,
+  formatTimeUntil,
   formatDate,
   formatDateWithSeconds,
   formatWarningData,
@@ -89,6 +90,37 @@ describe('utils', () => {
     it('returns days ago for dates more than 1 day ago', () => {
       const date = new Date('2024-01-12T12:00:00Z') // 3 days ago
       expect(formatTimeAgo(date)).toBe('3d ago')
+    })
+  })
+
+  describe('formatTimeUntil', () => {
+    beforeEach(() => {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2024-01-15T12:00:00Z'))
+    })
+
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    it("returns 'now' for past or current dates", () => {
+      expect(formatTimeUntil(new Date('2024-01-15T11:59:30Z'))).toBe('now')
+    })
+
+    it("returns 'in <1m' for dates less than 60 seconds away", () => {
+      expect(formatTimeUntil(new Date('2024-01-15T12:00:30Z'))).toBe('in <1m')
+    })
+
+    it('returns minutes for dates less than 1 hour away', () => {
+      expect(formatTimeUntil(new Date('2024-01-15T12:30:00Z'))).toBe('in 30m')
+    })
+
+    it('returns hours for dates less than 1 day away', () => {
+      expect(formatTimeUntil(new Date('2024-01-15T18:00:00Z'))).toBe('in 6h')
+    })
+
+    it('returns days for dates more than 1 day away', () => {
+      expect(formatTimeUntil(new Date('2024-01-18T12:00:00Z'))).toBe('in 3d')
     })
   })
 

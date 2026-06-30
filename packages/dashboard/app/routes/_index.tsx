@@ -21,6 +21,7 @@ import {
   TableHead,
   TableCell,
 } from '~/components/ui/table'
+import { Sparkline } from '~/components/ui/sparkline'
 import { ErrorCard } from '~/components/error-card'
 import {
   formatTimeAgo,
@@ -111,12 +112,13 @@ export default function Overview ({ loaderData }: Route.ComponentProps) {
                   <TableHead>Name</TableHead>
                   <TableHead className="text-right">Queued</TableHead>
                   <TableHead className="text-right">Active</TableHead>
+                  <TableHead>Trend</TableHead>
                   <TableHead>Status</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {topQueues.map((queue: QueueResult) => (
-                  <TableRow key={queue.name}>
+                  <TableRow key={queue.name} to={`/queues/${encodeURIComponent(queue.name)}`}>
                     <TableCell>
                       <DbLink
                         to={`/queues/${encodeURIComponent(queue.name)}`}
@@ -130,6 +132,21 @@ export default function Overview ({ loaderData }: Route.ComponentProps) {
                     </TableCell>
                     <TableCell className="text-right pgb-num text-[var(--text-primary)]">
                       {queue.activeCount.toLocaleString()}
+                    </TableCell>
+                    <TableCell>
+                      {queue.readyHistory && queue.readyHistory.length > 0 ? (
+                        <Sparkline
+                          // Stored newest-first; reverse to chronological (oldest → newest).
+                          data={[...queue.readyHistory].reverse()}
+                          width={96}
+                          height={20}
+                          color="var(--primary-600)"
+                          showDot={false}
+                          aria-label={`Ready count trend for ${queue.name}`}
+                        />
+                      ) : (
+                        <span className="text-[var(--border-strong)]">—</span>
+                      )}
                     </TableCell>
                     <TableCell>
                       <QueueStatusBadge queue={queue} />

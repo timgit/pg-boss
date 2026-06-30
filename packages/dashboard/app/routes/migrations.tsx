@@ -12,6 +12,7 @@ import {
   TableRow,
   TableHead,
   TableCell,
+  SortableHeader,
 } from '~/components/ui/table'
 import { FilterSelect } from '~/components/ui/filter-select'
 import { Pagination } from '~/components/ui/pagination'
@@ -49,9 +50,11 @@ export async function loader ({ request, context }: Route.LoaderArgs) {
 
   const page = parsePageNumber(url.searchParams.get('page'))
   const offset = (page - 1) * PAGE_SIZE
+  const sort = url.searchParams.get('sort')
+  const dir = url.searchParams.get('dir')
 
   const [entries, totalCount, summary] = await Promise.all([
-    getBamEntries(DB_URL, SCHEMA, { status: statusFilter, limit: PAGE_SIZE, offset }),
+    getBamEntries(DB_URL, SCHEMA, { status: statusFilter, limit: PAGE_SIZE, offset, sort, dir }),
     getBamCount(DB_URL, SCHEMA, statusFilter),
     getBamStatusSummary(DB_URL, SCHEMA),
   ])
@@ -124,13 +127,13 @@ export default function Migrations ({ loaderData }: Route.ComponentProps) {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead className="text-right">Ver</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Table</TableHead>
-                <TableHead>Created</TableHead>
-                <TableHead>Started</TableHead>
-                <TableHead>Completed</TableHead>
+                <SortableHeader column="name">Name</SortableHeader>
+                <SortableHeader column="version" align="right">Ver</SortableHeader>
+                <SortableHeader column="status">Status</SortableHeader>
+                <SortableHeader column="table">Table</SortableHeader>
+                <SortableHeader column="created">Created</SortableHeader>
+                <SortableHeader column="started">Started</SortableHeader>
+                <SortableHeader column="completed">Completed</SortableHeader>
                 <TableHead>Command / Error</TableHead>
               </TableRow>
             </TableHeader>

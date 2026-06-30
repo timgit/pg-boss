@@ -363,7 +363,7 @@ helper.describePglite('distributed database mode', { timeout: blockTimeout }, fu
     const jobId = await ctx.boss.send(ctx.schema, { test: 'stats' })
     helper.assertTruthy(jobId)
 
-    const stats = await ctx.boss.getQueueStats(ctx.schema)
+    const [stats] = await ctx.boss.getQueueStats(ctx.schema)
     expect(typeof stats.queuedCount).toBe('number')
     expect(stats.totalCount).toBe(1)
   })

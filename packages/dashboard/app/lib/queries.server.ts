@@ -10,10 +10,68 @@ import type {
   JobResult,
   WarningResult,
   QueueStats,
+  QueueStatsPoint,
+  QueueStatsAggregate,
   ScheduleResult,
   BamEntryResult,
   BamStatusSummary,
 } from './types'
+
+export interface SortOptions {
+  sort?: string | null;
+  dir?: string | null;
+}
+
+// Map a UI sort key + direction into a safe ORDER BY clause. The key is resolved to a real column
+// through an allowlist (so it can never inject), the direction is constrained to ASC/DESC, and a
+// stable tiebreaker keeps pagination deterministic across ties. Unknown keys fall back to the list's
+// default ordering.
+function buildOrderBy (
+  { sort, dir }: SortOptions,
+  columns: Record<string, string>,
+  defaultOrderBy: string,
+  tiebreak?: string
+): string {
+  const column = sort ? columns[sort] : undefined
+  if (!column) return `ORDER BY ${defaultOrderBy}`
+  const direction = dir === 'desc' ? 'DESC' : 'ASC'
+  return `ORDER BY ${column} ${direction}${tiebreak ? `, ${tiebreak}` : ''}`
+}
+
+// Per-list allowlists mapping sort keys (used in the URL + column headers) to real columns.
+const QUEUE_SORT_COLUMNS: Record<string, string> = {
+  name: 'name',
+  policy: 'policy',
+  storage: 'partition',
+  queued: 'queued_count',
+  deferred: 'deferred_count',
+  ready: 'GREATEST(queued_count - deferred_count, 0)',
+  active: 'active_count',
+  failed: 'failed_count',
+  total: 'total_count',
+}
+
+const SCHEDULE_SORT_COLUMNS: Record<string, string> = {
+  name: 'name',
+  key: 'key',
+  cron: 'cron',
+  timezone: 'timezone',
+}
+
+const WARNING_SORT_COLUMNS: Record<string, string> = {
+  type: 'type',
+  created: 'created_on',
+}
+
+const BAM_SORT_COLUMNS: Record<string, string> = {
+  name: 'name',
+  version: 'version',
+  status: 'status',
+  table: 'table_name',
+  created: 'created_on',
+  started: 'started_on',
+  completed: 'completed_on',
+}
 
 // Validate schema name to prevent SQL injection
 // Schema names must be valid PostgreSQL identifiers
@@ -112,6 +170,39 @@ function quoteSqlString (value: string): string {
 }
 
 // Get queues with cached stats, with optional pagination, filtering, and search
+// Whether queue.ready_history (schema v35+) exists, cached per (db, schema) for the process lifetime.
+// Lets the queues list/detail read the always-on sparkline column when present and degrade silently
+// on older databases — without a per-row or per-load schema probe.
+const readyHistoryColumnCache = new Map<string, boolean>()
+
+// Reset the ready_history capability cache (used by tests).
+export function clearReadyHistoryColumnCache (): void {
+  readyHistoryColumnCache.clear()
+}
+
+async function hasReadyHistoryColumn (dbUrl: string, schema: string): Promise<boolean> {
+  const key = `${dbUrl}::${schema}`
+  const cached = readyHistoryColumnCache.get(key)
+  if (cached !== undefined) return cached
+
+  validateIdentifier(schema)
+  const sql = `
+    SELECT EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_schema = $1 AND table_name = 'queue' AND column_name = 'ready_history'
+    ) as "exists"
+  `
+  const row = await queryOne<{ exists: boolean }>(dbUrl, sql, [schema])
+  const exists = row?.exists ?? false
+  readyHistoryColumnCache.set(key, exists)
+  return exists
+}
+
+// Build the `, ready_history as "readyHistory"` SELECT fragment when the column exists, else ''.
+async function readyHistoryColumn (dbUrl: string, schema: string): Promise<string> {
+  return (await hasReadyHistoryColumn(dbUrl, schema)) ? ', ready_history as "readyHistory"' : ''
+}
+
 export async function getQueues (
   dbUrl: string,
   schema: string,
@@ -120,10 +211,12 @@ export async function getQueues (
     offset?: number;
     filter?: 'all' | 'attention' | 'partitioned';
     search?: string;
-  } = {}
+  } & SortOptions = {}
 ): Promise<QueueResult[]> {
   const s = validateIdentifier(schema)
-  const { limit, offset, filter = 'all', search } = options
+  const readyHistoryCol = await readyHistoryColumn(dbUrl, schema)
+  const { limit, offset, filter = 'all', search, sort, dir } = options
+  const orderBy = buildOrderBy({ sort, dir }, QUEUE_SORT_COLUMNS, 'name', 'name')
 
   // Build WHERE conditions
   const conditions: string[] = []
@@ -149,10 +242,10 @@ export async function getQueues (
   // If no pagination, return all queues
   if (limit === undefined) {
     const sql = `
-      SELECT ${QUEUE_COLUMNS}
+      SELECT ${QUEUE_COLUMNS}${readyHistoryCol}
       FROM ${s}.queue
       ${whereClause}
-      ORDER BY name
+      ${orderBy}
     `
     return query<QueueResult>(dbUrl, sql, params)
   }
@@ -160,10 +253,10 @@ export async function getQueues (
   // With pagination
   params.push(limit, offset ?? 0)
   const sql = `
-    SELECT ${QUEUE_COLUMNS}
+    SELECT ${QUEUE_COLUMNS}${readyHistoryCol}
     FROM ${s}.queue
     ${whereClause}
-    ORDER BY name
+    ${orderBy}
     LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
   `
   return query<QueueResult>(dbUrl, sql, params)
@@ -247,8 +340,9 @@ export async function getTopQueues (
   limit: number = 5
 ): Promise<QueueResult[]> {
   const s = validateIdentifier(schema)
+  const readyHistoryCol = await readyHistoryColumn(dbUrl, schema)
   const sql = `
-    SELECT ${QUEUE_COLUMNS}
+    SELECT ${QUEUE_COLUMNS}${readyHistoryCol}
     FROM ${s}.queue
     ORDER BY total_count DESC
     LIMIT $1
@@ -263,8 +357,9 @@ export async function getQueue (
   name: string
 ): Promise<QueueResult | null> {
   const s = validateIdentifier(schema)
+  const readyHistoryCol = await readyHistoryColumn(dbUrl, schema)
   const sql = `
-    SELECT ${QUEUE_COLUMNS}
+    SELECT ${QUEUE_COLUMNS}${readyHistoryCol}
     FROM ${s}.queue
     WHERE name = $1
   `
@@ -501,10 +596,11 @@ export async function getWarnings (
     type?: string | null;
     limit?: number;
     offset?: number;
-  } = {}
+  } & SortOptions = {}
 ): Promise<WarningResult[]> {
   const s = validateIdentifier(schema)
-  const { type = null, limit = 50, offset = 0 } = options
+  const { type = null, limit = 50, offset = 0, sort, dir } = options
+  const orderBy = buildOrderBy({ sort, dir }, WARNING_SORT_COLUMNS, 'created_on DESC', 'id DESC')
 
   const sql = `
     SELECT
@@ -515,7 +611,7 @@ export async function getWarnings (
       created_on as "createdOn"
     FROM ${s}.warning
     WHERE ($1::text IS NULL OR type = $1)
-    ORDER BY created_on DESC
+    ${orderBy}
     LIMIT $2 OFFSET $3
   `
   try {
@@ -592,10 +688,11 @@ export async function getBamEntries (
     status?: string | null;
     limit?: number;
     offset?: number;
-  } = {}
+  } & SortOptions = {}
 ): Promise<BamEntryResult[]> {
   const s = validateIdentifier(schema)
-  const { status = null, limit = 200, offset = 0 } = options
+  const { status = null, limit = 200, offset = 0, sort, dir } = options
+  const orderBy = buildOrderBy({ sort, dir }, BAM_SORT_COLUMNS, 'version DESC, created_on DESC', 'created_on DESC')
 
   const sql = `
     SELECT
@@ -612,7 +709,7 @@ export async function getBamEntries (
       completed_on as "completedOn"
     FROM ${s}.bam
     WHERE ($1::text IS NULL OR status = $1)
-    ORDER BY version DESC, created_on DESC
+    ${orderBy}
     LIMIT $2 OFFSET $3
   `
   try {
@@ -705,6 +802,114 @@ export async function getQueueStats (
   )
 }
 
+// Per-bucket aggregate over a count column. Mirrors STATS_AGG in src/plans.ts. The function name
+// can't be a bind parameter so it's interpolated — safe because callers run `aggregate` through
+// resolveAggregate first. Cast back to int so node-postgres returns JS numbers, not numeric strings.
+const STATS_AGG = {
+  max: (c: string) => `max(${c})::int`,
+  min: (c: string) => `min(${c})::int`,
+  avg: (c: string) => `round(avg(${c}))::int`,
+} as const
+
+export function resolveAggregate (aggregate?: string | null): QueueStatsAggregate {
+  return aggregate === 'min' || aggregate === 'avg' ? aggregate : 'max'
+}
+
+export interface QueueStatsHistoryOptions {
+  from?: Date | null;
+  to?: Date | null;
+  aggregate?: QueueStatsAggregate | string | null;
+  maxDataPoints?: number;
+}
+
+// Downsampled history for one queue: group the recorded series into ~maxDataPoints fixed-width
+// time buckets and collapse each with `aggregate`. Mirrors plans.getQueueStatsHistoryBucketed
+// (auto mode) in the pg-boss core — the epoch-floor bucket key avoids date_bin() (PG14+) so it runs
+// on PostgreSQL 13+/CockroachDB/Yugabyte, and buckets align to the Unix epoch so boundaries are
+// stable across calls. capturedOn is returned as epoch seconds (float8 → JS number) for charting.
+// Returns points ascending by time. [] when queue_stats is absent (schema predates v35).
+export async function getQueueStatsHistory (
+  dbUrl: string,
+  schema: string,
+  name: string,
+  options: QueueStatsHistoryOptions = {}
+): Promise<QueueStatsPoint[]> {
+  const s = validateIdentifier(schema)
+  const { from = null, to = null } = options
+  const agg = STATS_AGG[resolveAggregate(options.aggregate)]
+  const maxDataPoints = Number.isInteger(options.maxDataPoints) && (options.maxDataPoints as number) > 0
+    ? (options.maxDataPoints as number)
+    : 100
+
+  // Inner query keeps the newest maxDataPoints buckets (epoch-aligned bucketing can straddle a
+  // boundary and emit one extra), then the outer flips to ascending order for plotting.
+  const sql = `
+    WITH extent AS (
+      SELECT min(captured_on) AS lo, max(captured_on) AS hi
+      FROM ${s}.queue_stats
+      WHERE name = $1
+    ),
+    bounds AS (
+      SELECT
+        greatest(coalesce($2::timestamptz, lo), lo) AS lo,
+        least(coalesce($3::timestamptz, hi), hi)    AS hi
+      FROM extent
+    ),
+    w AS (
+      SELECT greatest(1, ceil(extract(epoch from (hi - lo)) / greatest($4, 1))::bigint)::bigint AS secs
+      FROM bounds
+    )
+    SELECT * FROM (
+      SELECT
+        (floor(extract(epoch from captured_on) / w.secs) * w.secs)::float8 as "capturedOn",
+        ${agg('deferred_count')} as "deferredCount",
+        ${agg('queued_count')}   as "queuedCount",
+        ${agg('ready_count')}    as "readyCount",
+        ${agg('active_count')}   as "activeCount",
+        ${agg('failed_count')}   as "failedCount",
+        ${agg('total_count')}    as "totalCount"
+      FROM ${s}.queue_stats, w
+      WHERE name = $1
+        AND ($2::timestamptz IS NULL OR captured_on >= $2)
+        AND ($3::timestamptz IS NULL OR captured_on <= $3)
+      GROUP BY 1
+      ORDER BY 1 DESC
+      LIMIT $4
+    ) t
+    ORDER BY t."capturedOn" ASC
+  `
+  try {
+    return await query<QueueStatsPoint>(dbUrl, sql, [name, from, to, maxDataPoints])
+  } catch (err: unknown) {
+    // Table doesn't exist - schema predates queue stats (v35)
+    if (err && typeof err === 'object' && 'code' in err && err.code === '42P01') {
+      return []
+    }
+    throw err
+  }
+}
+
+// Whether queue stats are being collected. The queue_stats table is always created at schema v35;
+// only the inserts are gated by persistQueueStats. So "collecting" means the table exists AND holds
+// at least one row — which also reads a just-enabled-but-no-snapshot-yet instance as not-yet-active.
+// 42P01 → schema predates v35 → unavailable. Drives the StatsDisabledBanner.
+export async function getQueueStatsCollectionStatus (
+  dbUrl: string,
+  schema: string
+): Promise<{ available: boolean }> {
+  const s = validateIdentifier(schema)
+  const sql = `SELECT EXISTS (SELECT 1 FROM ${s}.queue_stats LIMIT 1) as available`
+  try {
+    const row = await queryOne<{ available: boolean }>(dbUrl, sql)
+    return { available: row?.available ?? false }
+  } catch (err: unknown) {
+    if (err && typeof err === 'object' && 'code' in err && err.code === '42P01') {
+      return { available: false }
+    }
+    throw err
+  }
+}
+
 const JOB_INTENTS = ['cancel', 'retry', 'resume', 'delete'] as const
 type JobActionIntent = (typeof JOB_INTENTS)[number]
 
@@ -747,10 +952,11 @@ export async function getSchedules (
   options: {
     limit?: number;
     offset?: number;
-  } = {}
+  } & SortOptions = {}
 ): Promise<ScheduleResult[]> {
   const s = validateIdentifier(schema)
-  const { limit, offset } = options
+  const { limit, offset, sort, dir } = options
+  const orderBy = buildOrderBy({ sort, dir }, SCHEDULE_SORT_COLUMNS, 'name, key', 'name, key')
 
   const sql = `
     SELECT
@@ -763,7 +969,7 @@ export async function getSchedules (
       created_on as "createdOn",
       updated_on as "updatedOn"
     FROM ${s}.schedule
-    ORDER BY name, key
+    ${orderBy}
     ${limit !== undefined ? 'LIMIT $1 OFFSET $2' : ''}
   `
 

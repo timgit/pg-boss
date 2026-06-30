@@ -130,7 +130,6 @@ class Boss extends EventEmitter implements types.EventsMixin {
       const queues = await this.#manager.getQueues()
 
       !this.#stopped && (await this.supervise(queues))
-      !this.#stopped && (await this.#maintainWarnings())
     } catch (err) {
       this.emit(events.error, err)
     } finally {
@@ -147,6 +146,22 @@ class Boss extends EventEmitter implements types.EventsMixin {
     await this.#executeQuery(sql)
   }
 
+  async #ensureQueueStatsPartitions () {
+    const sql = plans.ensureQueueStatsPartitions(this.#config.schema)
+    await this.#executeQuery(sql)
+  }
+
+  async #maintainQueueStats () {
+    if (!this.#config.persistQueueStats || !this.#config.queueStatRetentionDays) {
+      return
+    }
+
+    const sql = this.#config.noTablePartitioning
+      ? plans.deleteOldQueueStats(this.#config.schema, this.#config.queueStatRetentionDays)
+      : plans.dropOldQueueStatsPartitions(this.#config.schema, this.#config.queueStatRetentionDays)
+    await this.#executeQuery(sql)
+  }
+
   async supervise (value?: string | types.QueueResult[]) {
     let queues: types.QueueResult[]
 
@@ -154,6 +169,15 @@ class Boss extends EventEmitter implements types.EventsMixin {
       queues = value
     } else {
       queues = await this.#manager.getQueues(value)
+    }
+
+    // Ensure today's/tomorrow's partitions exist before any insertQueueStats below. Retention
+    // (#maintainWarnings/#maintainQueueStats) runs at the tail. Both live here, in the public
+    // supervise() path that also performs the writes, rather than in the timer-only #onSupervise
+    // wrapper — so manual supervise() callers (instances run with the built-in supervisor disabled)
+    // get partitions provisioned and old data pruned, not just job retention.
+    if (this.#config.persistQueueStats && !this.#config.noTablePartitioning && !this.#stopping) {
+      await this.#ensureQueueStatsPartitions()
     }
 
     const queueGroups = queues.reduce<
@@ -184,6 +208,11 @@ class Boss extends EventEmitter implements types.EventsMixin {
         await this.#maintain(table, chunk)
       }
     }
+
+    if (this.#stopping) return
+
+    await this.#maintainWarnings()
+    await this.#maintainQueueStats()
   }
 
   async #monitor (table: string, names: string[], heartbeatQueueNames: Set<string>) {
@@ -203,6 +232,11 @@ class Boss extends EventEmitter implements types.EventsMixin {
 
       const cacheStatsSql = plans.cacheQueueStats(this.#config.schema, table, queues, this.#config.noAdvisoryLocks)
       const { rows: rowsCacheStats } = await this.#executeQuery(cacheStatsSql)
+
+      if (this.#config.persistQueueStats) {
+        const insertSql = plans.insertQueueStats(this.#config.schema, queues, this.#config.noAdvisoryLocks)
+        await this.#executeQuery(insertSql)
+      }
 
       if (this.#stopping) return
 

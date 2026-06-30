@@ -28,7 +28,7 @@ export function JobColumnCell ({
             to={`/queues/${encodeURIComponent(queueName)}/jobs/${row.id}`}
             className="font-mono text-xs text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
           >
-            {row.id.slice(0, 8)}...
+            {row.id}
           </DbLink>
         </TableCell>
       )

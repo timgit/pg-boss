@@ -94,7 +94,7 @@ describe('migration', function () {
     }).rejects.toThrow()
   })
 
-  it.skip('should migrate to previous version and back again', async function () {
+  it('should migrate to previous version and back again', async function () {
     await contractor.create()
 
     await contractor.rollback(currentSchemaVersion)
@@ -141,7 +141,7 @@ describe('migration', function () {
     expect(version).toBe(currentSchemaVersion)
   })
 
-  it.skip('should migrate through 2 versions back and forth', async function () {
+  it('should migrate through 2 versions back and forth', async function () {
     const queue = 'migrate-back-2-and-forward'
 
     const config = { ...ctx.bossConfig }
@@ -188,7 +188,7 @@ describe('migration', function () {
     await ctx.boss.complete(queue, job2.id)
   })
 
-  it.skip('should migrate to latest during start if on previous 2 schema versions', async function () {
+  it('should migrate to latest during start if on previous 2 schema versions', async function () {
     await contractor.create()
 
     await contractor.rollback(currentSchemaVersion)
@@ -391,27 +391,6 @@ describe('migration', function () {
     expect(finalSchema.indexes.rows).toEqual(initialSchema.indexes.rows)
     expect(finalSchema.constraints.rows).toEqual(initialSchema.constraints.rows)
     expect(finalSchema.functions.rows).toEqual(initialSchema.functions.rows)
-  })
-
-  itPostgresOnly('v34 adds and removes dead-letter source columns', async function () {
-    const config = { ...ctx.bossConfig }
-
-    await contractor.create()
-
-    const sourceColumns = ['source_name', 'source_id', 'source_created_on', 'source_retry_count']
-
-    const installed = JSON.stringify((await getSchemaDefs([config.schema])).columns.rows)
-    for (const col of sourceColumns) {
-      expect(installed).toContain(col)
-    }
-
-    await contractor.rollback(currentSchemaVersion)
-    expect(await contractor.schemaVersion()).toBe(currentSchemaVersion - 1)
-
-    const rolledBack = JSON.stringify((await getSchemaDefs([config.schema])).columns.rows)
-    for (const col of sourceColumns) {
-      expect(rolledBack).not.toContain(col)
-    }
   })
 
   itPostgresOnly('should detect function modification when migration has incomplete uninstall', async function () {

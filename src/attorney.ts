@@ -419,6 +419,12 @@ function resolveBackend (config: any) {
     config.noSkipLocked = true
     config.noMultiMutationCte = true
   }
+
+  // Test hook: exercise the advisory-lock-free SQL path (used by YugabyteDB/CockroachDB) on a
+  // plain Postgres instance, without standing up a backend whose profile sets the flag.
+  if (config.__test__noAdvisoryLocks) {
+    config.noAdvisoryLocks = true
+  }
 }
 
 function assertPostgresObjectName (name: string) {
@@ -537,6 +543,15 @@ function applyOpsConfig (config: any) {
 
   assert(config.queueCacheIntervalSeconds / 60 / 60 <= POLICY.MAX_EXPIRATION_HOURS,
     `configuration assert: queueCacheIntervalSeconds cannot exceed ${POLICY.MAX_EXPIRATION_HOURS} hours`)
+
+  if ('queueStatRetentionDays' in config) {
+    assert(Number.isInteger(config.queueStatRetentionDays) && config.queueStatRetentionDays >= 1,
+      'configuration assert: queueStatRetentionDays must be an integer >= 1')
+    assert(config.queueStatRetentionDays <= POLICY.MAX_RETENTION_DAYS,
+      `configuration assert: queueStatRetentionDays cannot exceed ${POLICY.MAX_RETENTION_DAYS} days`)
+  }
+
+  config.queueStatRetentionDays = config.queueStatRetentionDays || 7
 }
 
 function validateDeletionConfig (config: any) {

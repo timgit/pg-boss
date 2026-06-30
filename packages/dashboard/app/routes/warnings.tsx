@@ -11,6 +11,7 @@ import {
   TableRow,
   TableHead,
   TableCell,
+  SortableHeader,
 } from '~/components/ui/table'
 import { Pagination } from '~/components/ui/pagination'
 import { FilterSelect } from '~/components/ui/filter-select'
@@ -38,12 +39,16 @@ export async function loader ({ request, context }: Route.LoaderArgs) {
   const page = parsePageNumber(url.searchParams.get('page'))
   const limit = 50
   const offset = (page - 1) * limit
+  const sort = url.searchParams.get('sort')
+  const dir = url.searchParams.get('dir')
 
   const [warnings, totalCount] = await Promise.all([
     getWarnings(DB_URL, SCHEMA, {
       type: typeFilter,
       limit,
       offset,
+      sort,
+      dir,
     }),
     getWarningCount(DB_URL, SCHEMA, typeFilter),
   ])
@@ -103,10 +108,10 @@ export default function Warnings ({ loaderData }: Route.ComponentProps) {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Type</TableHead>
+                <SortableHeader column="type">Type</SortableHeader>
                 <TableHead>Message</TableHead>
                 <TableHead>Details</TableHead>
-                <TableHead>Time</TableHead>
+                <SortableHeader column="created">Time</SortableHeader>
               </TableRow>
             </TableHeader>
             <TableBody>

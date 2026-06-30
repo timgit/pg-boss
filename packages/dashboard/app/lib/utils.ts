@@ -31,6 +31,19 @@ export function formatTimeAgo (date: Date): string {
 }
 
 /**
+ * Format a future date as a relative time string (e.g., "in 5m", "in 2h", "in 3d").
+ */
+export function formatTimeUntil (date: Date): string {
+  const seconds = Math.floor((date.getTime() - Date.now()) / 1000)
+
+  if (seconds <= 0) return 'now'
+  if (seconds < 60) return 'in <1m'
+  if (seconds < 3600) return `in ${Math.floor(seconds / 60)}m`
+  if (seconds < 86400) return `in ${Math.floor(seconds / 3600)}h`
+  return `in ${Math.floor(seconds / 86400)}d`
+}
+
+/**
  * Format a date for display in tables/lists
  */
 export function formatDate (date: Date): string {

@@ -1,6 +1,6 @@
 {
   "name": "pg-boss",
-  "version": "12.23.1",
+  "version": "12.24.0",
   "description": "Queueing jobs in Postgres from Node.js like a boss",
   "type": "module",
   "main": "./dist/index.js",
@@ -51,17 +51,19 @@
     "test:cockroachdb:full": "cross-env DB_TYPE=cockroachdb COCKROACH_HOST=localhost npm test -- --no-file-parallelism",
     "test:yugabytedb:full": "cross-env DB_TYPE=yugabytedb YUGABYTE_HOST=localhost npm test -- --no-file-parallelism",
     "test:citus:full": "cross-env DB_TYPE=citus CITUS_HOST=localhost npm test",
-    "test:pglite": "cross-env DB_TYPE=pglite npm test -- --no-file-parallelism",
+    "test:pglite": "cross-env DB_TYPE=pglite npm test",
     "lint:fix": "eslint . --fix",
     "cover": "npm test -- --coverage",
     "tsc": "tsc --noEmit",
     "cli": "node ./dist/cli.js",
+    "console": "tsx scripts/console.js",
+    "seed": "tsx scripts/seed-queue-stats.js",
     "readme": "node ./examples/readme.js",
     "docs": "npm run docs:dev --prefix docs",
     "docs:readme": "node ./scripts/sync-readme.js"
   },
   "pgboss": {
-    "schema": 34
+    "schema": 35
   },
   "repository": {
     "type": "git",

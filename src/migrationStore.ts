@@ -712,7 +712,83 @@ const createQueueFn: Record<number, (schema: string) => string> = {
   `
 }
 
-function getAll (schema: string): types.Migration[] {
+// Frozen per-version snapshots of the queue_stats DDL, version-keyed like createQueueFn above. A
+// migration must always emit the DDL as it was authored for that schema version; the plans.* builders
+// track the *current* schema and will drift as it evolves, so the migration copies the DDL here
+// rather than importing it. When a later version changes queue_stats, add a new keyed entry and leave
+// the older ones untouched.
+const createTableQueueStatsFn: Record<number, (schema: string, noPartitioning: boolean) => string> = {
+  35: (schema, noPartitioning) => noPartitioning
+    ? `
+      CREATE TABLE ${schema}.queue_stats (
+        id uuid NOT NULL DEFAULT gen_random_uuid(),
+        name text NOT NULL,
+        deferred_count int NOT NULL DEFAULT 0,
+        queued_count   int NOT NULL DEFAULT 0,
+        ready_count    int NOT NULL DEFAULT 0,
+        active_count   int NOT NULL DEFAULT 0,
+        failed_count   int NOT NULL DEFAULT 0,
+        total_count    int NOT NULL DEFAULT 0,
+        captured_on timestamptz NOT NULL DEFAULT now(),
+        PRIMARY KEY (id)
+      )
+    `
+    : `
+    CREATE TABLE ${schema}.queue_stats (
+      id uuid NOT NULL DEFAULT gen_random_uuid(),
+      name text NOT NULL,
+      deferred_count int NOT NULL DEFAULT 0,
+      queued_count   int NOT NULL DEFAULT 0,
+      ready_count    int NOT NULL DEFAULT 0,
+      active_count   int NOT NULL DEFAULT 0,
+      failed_count   int NOT NULL DEFAULT 0,
+      total_count    int NOT NULL DEFAULT 0,
+      captured_on timestamptz NOT NULL DEFAULT now(),
+      PRIMARY KEY (id, captured_on)
+    ) PARTITION BY RANGE (captured_on)
+  `
+}
+
+const createIndexQueueStatsFn: Record<number, (schema: string, noCovering: boolean) => string> = {
+  35: (schema, noCovering) => {
+    const cols = '(name, captured_on DESC)'
+    const include = 'INCLUDE (deferred_count, queued_count, ready_count, active_count, failed_count, total_count)'
+    return noCovering
+      ? `CREATE INDEX queue_stats_i1 ON ${schema}.queue_stats ${cols}`
+      : `CREATE INDEX queue_stats_i1 ON ${schema}.queue_stats ${cols} ${include}`
+  }
+}
+
+const ensureQueueStatsPartitionsFn: Record<number, (schema: string) => string> = {
+  35: (schema) => `
+    DO $$
+    DECLARE
+      d date;
+      i int;
+      part_name text;
+    BEGIN
+      FOR i IN 0..1 LOOP
+        d := (now() AT TIME ZONE 'UTC')::date + i;
+        part_name := 'queue_stats_' || to_char(d, 'YYYYMMDD');
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_class c
+          JOIN pg_namespace n ON n.oid = c.relnamespace
+          WHERE n.nspname = '${schema}' AND c.relname = part_name
+        ) THEN
+          EXECUTE format(
+            'CREATE TABLE ${schema}.%I PARTITION OF ${schema}.queue_stats FOR VALUES FROM (%L) TO (%L)',
+            part_name,
+            to_char(d, 'YYYY-MM-DD') || ' 00:00:00+00',
+            to_char(d + 1, 'YYYY-MM-DD') || ' 00:00:00+00'
+          );
+        END IF;
+      END LOOP;
+    END;
+    $$
+  `
+}
+
+function getAll (schema: string, noPartitioning = false, noCovering = false): types.Migration[] {
   return [
     {
       release: '11.1.0',
@@ -1024,6 +1100,36 @@ function getAll (schema: string): types.Migration[] {
         `ALTER TABLE ${schema}.job DROP COLUMN source_id`,
         `ALTER TABLE ${schema}.job DROP COLUMN source_created_on`,
         `ALTER TABLE ${schema}.job DROP COLUMN source_retry_count`
+      ]
+    },
+    {
+      release: '12.24.0',
+      version: 35,
+      previous: 34,
+      // Mirror plans.create(): honor noTablePartitioning so upgrades on non-partitioning
+      // deployments (e.g. CockroachDB, which rejects declarative RANGE partitioning) get a plain
+      // queue_stats table instead of a partitioned one they could never maintain. noCovering is a
+      // separate axis (CockroachDB sets it, YugabyteDB doesn't) gating the index's covering INCLUDE.
+      // Also adds queue.ready_history: an always-on sliding window of recent ready counts on the
+      // queue row for the dashboard sparkline (maintained by cacheQueueStats every monitor cycle,
+      // independent of persistQueueStats). NOT NULL DEFAULT '{}' backfills existing rows with an
+      // empty window that fills in over the next monitor cycles.
+      install: [
+        ...(noPartitioning
+          ? [
+              createTableQueueStatsFn[35](schema, true),
+              createIndexQueueStatsFn[35](schema, noCovering)
+            ]
+          : [
+              createTableQueueStatsFn[35](schema, false),
+              createIndexQueueStatsFn[35](schema, noCovering),
+              ensureQueueStatsPartitionsFn[35](schema)
+            ]),
+        `ALTER TABLE ${schema}.queue ADD COLUMN ready_history int[] NOT NULL DEFAULT '{}'`
+      ],
+      uninstall: [
+        `ALTER TABLE ${schema}.queue DROP COLUMN ready_history`,
+        `DROP TABLE IF EXISTS ${schema}.queue_stats`
       ]
     }
   ]

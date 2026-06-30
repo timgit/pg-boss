@@ -335,7 +335,7 @@ export default function Jobs ({ loaderData }: Route.ComponentProps) {
                 </TableRow>
               ) : (
                 recentJobs.map((job: JobResult) => (
-                  <TableRow key={job.id}>
+                  <TableRow key={job.id} to={`/queues/${encodeURIComponent(job.name)}/jobs/${job.id}`}>
                     {jobColumns.map((col, index) => (
                       <JobColumnCell key={`${col.path}-${index}`} row={job} column={col} />
                     ))}
@@ -382,7 +382,7 @@ function ActiveFilterChips ({ filters, onChange, onClearAll }: ActiveFilterChips
 
       {filters.id && (
         <Chip
-          label={`ID: ${filters.id.slice(0, 8)}...`}
+          label={`ID: ${filters.id}`}
           onRemove={() => onChange({ ...filters, id: '' })}
         />
       )}

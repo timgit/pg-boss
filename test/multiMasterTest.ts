@@ -22,7 +22,7 @@ describe('multi-master', function () {
     await Promise.all(instances.map(i => i.stop({ graceful: false })))
   })
 
-  it.skip('should only allow 1 master to migrate to latest at a time', async function () {
+  itPglite('should only allow 1 master to migrate to latest at a time', async function () {
     const config = {
       ...ctx.bossConfig,
       supervise: true,
