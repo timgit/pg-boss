@@ -502,7 +502,7 @@ describe('migration', function () {
     expect(rolledBackSchema.indexes.rows).not.toEqual(originalSchema.indexes.rows)
   })
 
-  itPostgresOnly('drops the covering INCLUDE from the job_i5 fetch index at v33, across partitions and reversibly', async function () {
+  itPostgresOnly('reshapes job_i5 and builds job_i9 off-transaction via BAM on upgrade across partitions (issue #832)', async function () {
     const config = { ...ctx.bossConfig }
     const schema = config.schema
 
@@ -510,34 +510,49 @@ describe('migration', function () {
     // @ts-ignore
     const contractor = new Contractor(db, config)
 
-    // Read job_i5's definition on job_common + every partition by targeting each index relation by
+    // Read an index's definition on job_common + every partition by targeting each index relation by
     // name (pg_get_indexdef on its regclass), rather than scanning the catalog-wide pg_indexes view —
     // that view can transiently race concurrent DDL from parallel test workers ("could not open
     // relation with OID"). Touching only this schema's own relations keeps the read deterministic.
-    const fetchIndexDefs = async (): Promise<string[]> => {
+    const fetchIndexDefs = async (suffix: string): Promise<(string | null)[]> => {
       const parts = await db.executeSql(`SELECT table_name FROM ${schema}.queue WHERE partition = true ORDER BY table_name`)
       const tables = ['job_common', ...parts.rows.map((r: { table_name: string }) => r.table_name)]
-      const defs: string[] = []
+      const defs: (string | null)[] = []
       for (const t of tables) {
-        const res = await db.executeSql('SELECT pg_get_indexdef($1::regclass) AS indexdef', [`${schema}.${t}_i5`])
-        defs.push(res.rows[0].indexdef)
+        const res = await db.executeSql(
+          'SELECT pg_get_indexdef(c.oid) AS indexdef FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = $1 AND c.relname = $2',
+          [schema, `${t}${suffix}`]
+        )
+        defs.push(res.rows[0]?.indexdef ?? null)
       }
       return defs
     }
 
+    // The BAM background worker drains its queue one command at a time in created_on order. CONCURRENTLY
+    // runs outside a transaction (pool.query autocommits), so we can apply each command directly.
+    const drainBam = async () => {
+      let next
+      while ((next = (await db.executeSql(
+        `SELECT id, command FROM ${schema}.bam WHERE status IN ('pending', 'failed') ORDER BY created_on LIMIT 1`
+      )).rows[0])) {
+        await db.executeSql(next.command)
+        await db.executeSql(`UPDATE ${schema}.bam SET status = 'completed' WHERE id = $1`, [next.id])
+      }
+    }
+
     await contractor.create()
-    // A partitioned queue gives job_i5 a second home, exercising the per-partition fan-out of the
-    // rebuild (job_table_run across job_common + every partition).
+    // A partitioned queue gives the indexes a second home, exercising the per-partition fan-out.
     await db.executeSql(`SELECT ${schema}.create_queue('part_q', '{"partition":true,"policy":"standard"}'::jsonb)`)
 
-    // Fresh install (current version): both job_common and the partition build job_i5 with no
-    // covering payload — FOR UPDATE ... SKIP LOCKED in the fetch precludes an index-only scan, so
-    // the INCLUDE was dead weight on the hot insert path.
-    let defs = await fetchIndexDefs()
-    expect(defs).toHaveLength(2)
-    for (const def of defs) expect(def).not.toContain('INCLUDE')
+    // Fresh install (current version): job_i5 is slim (no covering payload — FOR UPDATE ... SKIP
+    // LOCKED precludes an index-only scan) and job_i9 exists on every table.
+    let i5 = await fetchIndexDefs('_i5')
+    expect(i5).toHaveLength(2)
+    for (const def of i5) expect(def).not.toContain('INCLUDE')
+    let i9 = await fetchIndexDefs('_i9')
+    for (const def of i9) expect(def).not.toBeNull()
 
-    // Roll back to v32: the historical covering form is restored on every table.
+    // Roll back to v32: the historical covering job_i5 is restored and job_i9 is dropped everywhere.
     let version = await contractor.schemaVersion()
     assertTruthy(version)
     while (version > 32) {
@@ -546,18 +561,53 @@ describe('migration', function () {
       assertTruthy(version)
     }
     expect(version).toBe(32)
-    defs = await fetchIndexDefs()
-    expect(defs).toHaveLength(2)
-    for (const def of defs) expect(def).toContain('INCLUDE (priority, created_on, id)')
+    i5 = await fetchIndexDefs('_i5')
+    for (const def of i5) expect(def).toContain('INCLUDE (priority, created_on, id)')
+    i9 = await fetchIndexDefs('_i9')
+    for (const def of i9) expect(def).toBeNull()
 
-    // Migrate forward across v33: the INCLUDE is dropped again on every table.
-    await contractor.next(32)
-    expect(await contractor.schemaVersion()).toBe(33)
-    defs = await fetchIndexDefs()
-    expect(defs).toHaveLength(2)
-    for (const def of defs) expect(def).not.toContain('INCLUDE')
+    // Migrate forward. Per issue #832, v33 no longer changes indexes synchronously inside the
+    // migration transaction; it enqueues the work on BAM as CONCURRENTLY DDL instead, so the
+    // transaction takes no locks on job_common. The build is deferred until BAM drains.
+    await contractor.migrate(32)
+    expect(await contractor.schemaVersion()).toBe(currentSchemaVersion)
+    i9 = await fetchIndexDefs('_i9')
+    for (const def of i9) expect(def).toBeNull() // not built yet — deferred to BAM
+    i5 = await fetchIndexDefs('_i5')
+    for (const def of i5) expect(def).toContain('INCLUDE (priority, created_on, id)') // not reshaped yet
+
+    await drainBam()
+
+    // After draining, job_i9 exists on every table and job_i5 has been slimmed (drop ran before
+    // rebuild, so the rebuild's name didn't collide) — converging on the fresh-install schema.
+    i9 = await fetchIndexDefs('_i9')
+    for (const def of i9) expect(def).not.toBeNull()
+    i5 = await fetchIndexDefs('_i5')
+    expect(i5).toHaveLength(2)
+    for (const def of i5) expect(def).not.toContain('INCLUDE')
+
+    // Idempotency: re-running the enqueued commands converges to the same state (job_i9 build is
+    // IF NOT EXISTS; job_i5 is a drop-then-rebuild that lands slim again).
+    await db.executeSql(`UPDATE ${schema}.bam SET status = 'pending'`)
+    await drainBam()
+    i9 = await fetchIndexDefs('_i9')
+    for (const def of i9) expect(def).not.toBeNull()
+    i5 = await fetchIndexDefs('_i5')
+    for (const def of i5) expect(def).not.toContain('INCLUDE')
 
     await db.close()
+  })
+
+  it('patch upgrade from schema 35 carries only the bam default — no job-index churn (issue #832)', function () {
+    // A database already past v33 (schema 35) upgrading to 36 runs only v36, which carries the
+    // bam.created_on default change and NO index work. So it never re-drops/rebuilds its existing
+    // job_i5/job_i9 — the slim job_i5 it already has stays put. The index fix lives in v33, which only
+    // pre-v33 (deadlock-affected) databases run.
+    const sql = migrate('custom', 35)
+    expect(sql).toContain('ALTER TABLE custom.bam ALTER COLUMN created_on SET DEFAULT clock_timestamp()')
+    expect(sql).not.toContain('job_i9')
+    expect(sql).not.toContain('job_i5')
+    expect(sql).not.toMatch(/job_table_run_async\(/)
   })
 
   itPostgresOnly('should remove indexes created on the job table that follow the standard naming convention', async function () {
@@ -729,7 +779,10 @@ describe('migration', function () {
       const sql = migrate(schema, 0)
 
       expect(sql).toMatch(enqueueCall)
-      expect(sql).not.toContain('CONCURRENTLY IF NOT EXISTS')
+      // The live path enqueues to BAM; it never renders the inlined direct DDL (whose provenance
+      // comment is the unambiguous marker). The CONCURRENTLY text itself now appears inside the
+      // enqueued job_table_run_async() command bodies, so it can't distinguish the paths.
+      expect(sql).not.toContain('-- inlined from')
     })
 
     itPostgresOnly('should create job_common i7/i8 via the inlined path without a BAM worker', async function () {

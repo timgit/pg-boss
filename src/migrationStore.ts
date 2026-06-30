@@ -39,8 +39,11 @@ function inlineAsyncCommand (schema: string, asyncCommand: string, version: numb
   const targetTables = tableMatch ? [tableMatch[1]] : ['job_common', ...partitionTables]
 
   return targetTables.map(table => {
+    // Add IF NOT EXISTS so the exported script is re-runnable. The negative lookahead keeps it
+    // idempotent when the async command already spells out IF NOT EXISTS (the live BAM path needs it
+    // there for its own idempotency — e.g. migration v36's job_i9 build), avoiding a double insert.
     const ddl = formatJobTable(body, table).replace(
-      /(CREATE (?:UNIQUE )?INDEX CONCURRENTLY) /,
+      /(CREATE (?:UNIQUE )?INDEX CONCURRENTLY)(?! IF NOT EXISTS) /,
       '$1 IF NOT EXISTS '
     )
     const comment = `-- inlined from ${schema}.job_table_run_async (migration v${version}, command: ${commandName})`
@@ -1022,8 +1025,16 @@ function getAll (schema: string, noPartitioning = false, noCovering = false): ty
         )
         `,
         `CREATE INDEX IF NOT EXISTS job_dep_parent_idx ON ${schema}.job_dependency (parent_name, parent_id)`,
-        `SELECT ${schema}.job_table_run($cmd$DROP INDEX IF EXISTS ${schema}.job_i5$cmd$)`,
-        `SELECT ${schema}.job_table_run($cmd$CREATE INDEX job_i5 ON ${schema}.job (name, start_after) INCLUDE (priority, created_on, id) WHERE state < 'active' AND NOT blocked$cmd$)`,
+        // NOTE: the v31 job_i5 rebuild (adding `AND NOT blocked`) is intentionally omitted — v33
+        // drops and rebuilds job_i5 again (slimming off the covering INCLUDE), so on a multi-version
+        // upgrade (<= v31 -> >= v33, applied as one migration transaction) this only built a covering
+        // index that v33 immediately throws away. The whole migration runs in a single transaction,
+        // so no worker observes the pre-v33 shape; the old job_i5 simply persists untouched until v33
+        // replaces it. Anyone who already migrated to exactly v31/v32 keeps the index they built then,
+        // so removing the build here does not affect them. New partitions created while on v31 still
+        // get the correct shape from createQueueFn[31] below.
+        // `SELECT ${schema}.job_table_run($cmd$DROP INDEX IF EXISTS ${schema}.job_i5$cmd$)`,
+        // `SELECT ${schema}.job_table_run($cmd$CREATE INDEX job_i5 ON ${schema}.job (name, start_after) INCLUDE (priority, created_on, id) WHERE state < 'active' AND NOT blocked$cmd$)`,
         createQueueFn[31](schema)
       ],
       uninstall: [
@@ -1060,18 +1071,51 @@ function getAll (schema: string, noPartitioning = false, noCovering = false): ty
       previous: 32,
       install: [
         `ALTER TABLE ${schema}.version ADD COLUMN IF NOT EXISTS flow_on timestamp with time zone`,
-        // The partial job_i9 index backs the background flow resolver. Built synchronously across
-        // job_common + every existing partition (no table arg fans out), mirroring v31's job_i5
-        // rebuild; it is a tiny partial index, so the build is cheap. New partitions get it from
-        // createQueueFn[33] below.
-        `SELECT ${schema}.job_table_run($cmd$CREATE INDEX job_i9 ON ${schema}.job (name, id) WHERE blocking AND state = 'completed'$cmd$)`,
-        // Drop the covering INCLUDE from the fetch index job_i5: FOR UPDATE ... SKIP LOCKED in the
-        // fetch forces heap access, so the payload was never read from the index
-        // Rebuilt across job_common + every existing partition, same as v31's job_i5 rebuild.
-        // New partitions get the slim form from createQueueFn[33] above.
-        `SELECT ${schema}.job_table_run($cmd$DROP INDEX IF EXISTS ${schema}.job_i5$cmd$)`,
-        `SELECT ${schema}.job_table_run($cmd$CREATE INDEX job_i5 ON ${schema}.job (name, start_after) WHERE state < 'active' AND NOT blocked$cmd$)`,
+        // The job_i9 build and job_i5 reshape are run OFF the migration transaction, via BAM as
+        // CONCURRENTLY DDL — see the `async` block below. The original v33 ran them synchronously here
+        // via job_table_run(), taking SHARE/ACCESS EXCLUSIVE locks on job_common + every partition
+        // inside the migration transaction, which deadlocked live workers polling job_common during a
+        // rolling deploy (issue #832).
+        //
+        // Only databases that have NOT yet passed v33 execute this install, and they always have the
+        // covering job_i5 (the slim form is introduced here) — so the reshape never needlessly
+        // rebuilds an already-slim index. Databases already past v33 keep what they built then; they
+        // pick up only the bam default change, carried separately by migration v36.
+        //
+        // Set the bam queue's created_on default to clock_timestamp() BEFORE the enqueues below. BAM
+        // applies queued commands in created_on order, and the job_i5 reshape is an ordered
+        // drop-then-rebuild; now() is constant within this migration transaction and would tie them.
+        // (Migrations run in version order, so this must be in v33 — v36 runs after these enqueues.)
+        `ALTER TABLE ${schema}.bam ALTER COLUMN created_on SET DEFAULT clock_timestamp()`,
         createQueueFn[33](schema)
+      ],
+      async: [
+        // Partial index backing the background flow resolver.
+        `SELECT ${schema}.job_table_run_async(
+          'flow_resolver_index',
+          $VERSION$,
+          $$
+          CREATE INDEX CONCURRENTLY IF NOT EXISTS job_i9 ON ${schema}.job (name, id) WHERE blocking AND state = 'completed'
+          $$
+        )`,
+        // Slim the fetch index job_i5: drop the covering INCLUDE (priority, created_on, id) — the
+        // fetch's FOR UPDATE ... SKIP LOCKED forces heap access, so the payload was never read from
+        // the index. Drop-then-rebuild (CONCURRENTLY can't reshape in place); BAM runs them in
+        // created_on order, drop before rebuild (see the clock_timestamp() default set above).
+        `SELECT ${schema}.job_table_run_async(
+          'fetch_index_drop',
+          $VERSION$,
+          $$
+          DROP INDEX CONCURRENTLY IF EXISTS ${schema}.job_i5
+          $$
+        )`,
+        `SELECT ${schema}.job_table_run_async(
+          'fetch_index',
+          $VERSION$,
+          $$
+          CREATE INDEX CONCURRENTLY IF NOT EXISTS job_i5 ON ${schema}.job (name, start_after) WHERE state < 'active' AND NOT blocked
+          $$
+        )`
       ],
       uninstall: [
         createQueueFn[32](schema),
@@ -1131,6 +1175,23 @@ function getAll (schema: string, noPartitioning = false, noCovering = false): ty
         `ALTER TABLE ${schema}.queue DROP COLUMN ready_history`,
         `DROP TABLE IF EXISTS ${schema}.queue_stats`
       ]
+    },
+    {
+      release: '12.24.1',
+      version: 36,
+      previous: 35,
+      // Carry only the bam.created_on default change (now() -> clock_timestamp()) to databases that
+      // already ran v33 and so won't re-run its install. This keeps a fully-migrated database's schema
+      // identical to a fresh install (plans.create builds the bam table with this default), and lets a
+      // future async migration enqueue an ordered drop-then-rebuild without the now() tie. The ALTER
+      // is idempotent, so databases that just ran v33's copy of it (a multi-version upgrade) are
+      // unaffected. No index work here — that lives in v33, which the deadlock-affected (pre-v33)
+      // databases run; databases already past v33 keep the indexes they built and skip the churn.
+      install: [
+        `ALTER TABLE ${schema}.bam ALTER COLUMN created_on SET DEFAULT clock_timestamp()`
+      ],
+      // The default change is forward-compatible and harmless to keep, so rollback leaves it in place.
+      uninstall: []
     }
   ]
 }

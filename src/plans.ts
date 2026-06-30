@@ -207,7 +207,10 @@ function createTableBam (schema: string) {
       table_name text NOT NULL,
       command text NOT NULL,
       error text,
-      created_on timestamp with time zone NOT NULL DEFAULT now(),
+      -- clock_timestamp() (not now()) so multiple job_table_run_async() enqueues within a single
+      -- migration transaction keep their insertion order — BAM applies queued commands in created_on
+      -- order, and some migrations enqueue an ordered drop-then-rebuild pair (see migration v33).
+      created_on timestamp with time zone NOT NULL DEFAULT clock_timestamp(),
       started_on timestamp with time zone,
       completed_on timestamp with time zone
     )
@@ -2521,7 +2524,10 @@ export function getNextBamCommand (schema: string) {
       SELECT id FROM ${schema}.bam
       WHERE status IN ('pending', 'failed')
         AND NOT EXISTS (SELECT 1 FROM ${schema}.bam WHERE status = 'in_progress')
-      ORDER BY created_on
+      -- Process all 'pending' commands (oldest first) before retrying any 'failed' one, so a
+      -- permanently-failing command can't sit at the head of the queue and starve everything behind
+      -- it (head-of-line blocking). Within a status, created_on preserves enqueue order.
+      ORDER BY (status = 'failed'), created_on
       LIMIT 1
     )
     RETURNING id, name, version, status, queue, table_name as "table", command, error,
