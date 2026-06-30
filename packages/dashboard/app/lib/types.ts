@@ -26,8 +26,9 @@ export interface QueueResult extends PgBossQueueResult {
   maintainOn: Date | null;
   // Stats fields (declared locally so the dashboard typechecks against older
   // installed pg-boss versions whose published types predate these columns).
-  // readyCount = queuedCount - deferredCount (jobs runnable now); failedCount =
-  // failed jobs still retained in the table.
+  // readyCount = queue.ready_count, the count of jobs runnable now (start_after <= now),
+  // persisted by pg-boss as GREATEST(queued - deferred, 0) since schema v32 (alongside
+  // failed_count); failedCount = failed jobs still retained in the table.
   readyCount: number;
   failedCount: number;
   // Sliding window of recent ready counts (newest first) maintained by pg-boss on every monitor

@@ -269,7 +269,7 @@ export async function insertTestBam (
 export async function updateQueueStats (
   schema: string,
   queueName: string,
-  stats: { queuedCount?: number; activeCount?: number; totalCount?: number; deferredCount?: number; failedCount?: number }
+  stats: { queuedCount?: number; readyCount?: number; activeCount?: number; totalCount?: number; deferredCount?: number; failedCount?: number }
 ): Promise<void> {
   const p = getPool()
   const sets: string[] = []
@@ -279,6 +279,16 @@ export async function updateQueueStats (
   if (stats.queuedCount !== undefined) {
     sets.push(`queued_count = $${paramIndex++}`)
     values.push(stats.queuedCount)
+  }
+  // Mirror pg-boss's cacheQueueStats: ready_count is the persisted GREATEST(queued - deferred, 0).
+  // Default it from the provided counts so fixtures reflect what the core would actually write.
+  const readyCount = stats.readyCount ??
+    (stats.queuedCount !== undefined || stats.deferredCount !== undefined
+      ? Math.max((stats.queuedCount ?? 0) - (stats.deferredCount ?? 0), 0)
+      : undefined)
+  if (readyCount !== undefined) {
+    sets.push(`ready_count = $${paramIndex++}`)
+    values.push(readyCount)
   }
   if (stats.activeCount !== undefined) {
     sets.push(`active_count = $${paramIndex++}`)

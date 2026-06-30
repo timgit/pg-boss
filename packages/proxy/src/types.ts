@@ -309,9 +309,11 @@ export type HttpGetQueueResponse = {
   result: HttpQueueResult | null
 }
 
+export type HttpQueueStats = types.QueueStats
+
 export type HttpGetQueueStatsResponse = {
   ok: true
-  result: HttpQueueResult
+  result: HttpQueueStats[]
 }
 
 export type HttpSuperviseRequest = {

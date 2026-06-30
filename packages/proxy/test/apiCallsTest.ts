@@ -531,6 +531,7 @@ describe('proxy api routes', () => {
       { method: 'getDependents', query: 'name=queue&id=1', expected: ['queue', '1'] },
       { method: 'getQueues', query: 'names=a&names=b', expected: [['a', 'b']] },
       { method: 'getQueues', expected: [] },
+      { method: 'getQueueStats', query: 'name=queue', expected: ['queue'] },
       { method: 'getSchedules', query: 'name=queue&key=k', expected: ['queue', 'k'] },
       { method: 'getSchedules', query: 'name=queue', expected: ['queue'] },
       { method: 'getSchedules', expected: [] },
@@ -589,6 +590,40 @@ describe('proxy api routes', () => {
     const findRes = await app.fetch(findReq)
     expect(findRes.status).toBe(200)
     expect(calls.get('findJobs')?.[0]).toEqual(['queue'])
+  })
+
+  it('GET getQueueStats builds options from query params', async () => {
+    const { boss, calls } = createBossMock()
+    const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any })
+
+    const req = new Request('http://local/api/getQueueStats?name=queue&limit=50&aggregate=avg&force=true', { method: 'GET' })
+    const res = await app.fetch(req)
+    expect(res.status).toBe(200)
+    expect(calls.get('getQueueStats')?.[0]).toEqual(['queue', { limit: 50, aggregate: 'avg', force: true }])
+  })
+
+  it('GET getQueueStats coerces from/to to Date and numerics to numbers', async () => {
+    const { boss, calls } = createBossMock()
+    const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any })
+
+    const req = new Request('http://local/api/getQueueStats?name=queue&from=2026-06-01T00:00:00.000Z&bucketSeconds=3600&maxDataPoints=100', { method: 'GET' })
+    const res = await app.fetch(req)
+    expect(res.status).toBe(200)
+    const call = calls.get('getQueueStats')?.[0] as [string, Record<string, unknown>]
+    expect(call[0]).toBe('queue')
+    expect(call[1].from).toBeInstanceOf(Date)
+    expect((call[1].from as Date).toISOString()).toBe('2026-06-01T00:00:00.000Z')
+    expect(call[1].bucketSeconds).toBe(3600)
+    expect(call[1].maxDataPoints).toBe(100)
+  })
+
+  it('GET getQueueStats rejects invalid numeric params', async () => {
+    const { boss } = createBossMock()
+    const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any })
+
+    const req = new Request('http://local/api/getQueueStats?name=queue&limit=-5', { method: 'GET' })
+    const res = await app.fetch(req)
+    expect(res.status).toBe(400)
   })
 
   it('rejects oversized request bodies', async () => {

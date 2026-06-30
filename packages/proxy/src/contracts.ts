@@ -519,9 +519,20 @@ export const getQueueResponseSchema: z.ZodType<types.HttpGetQueueResponse> = z.o
   result: queueResultSchema.nullable()
 })
 
+export const queueStatsSchema = z.object({
+  name: z.string(),
+  deferredCount: z.number(),
+  queuedCount: z.number(),
+  readyCount: z.number(),
+  activeCount: z.number(),
+  failedCount: z.number(),
+  totalCount: z.number(),
+  capturedOn: z.iso.datetime().transform((val) => new Date(val)),
+}) satisfies z.ZodType<types.HttpQueueStats>
+
 export const getQueueStatsResponseSchema: z.ZodType<types.HttpGetQueueStatsResponse> = z.object({
   ok: z.literal(true),
-  result: queueResultSchema
+  result: z.array(queueStatsSchema)
 })
 
 export const superviseRequestSchema: z.ZodType<types.HttpSuperviseRequest> = z.object({

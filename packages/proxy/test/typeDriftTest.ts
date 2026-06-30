@@ -92,6 +92,10 @@ describe('Zod schema / HTTP type key drift', () => {
     expect(assertKeysMatch<AssertKeysMatch<SchemaOutput<typeof contracts.queueResultSchema>, httpTypes.HttpQueueResult>>()).toBe(true)
   })
 
+  it('queueStatsSchema matches HttpQueueStats', () => {
+    expect(assertKeysMatch<AssertKeysMatch<SchemaOutput<typeof contracts.queueStatsSchema>, httpTypes.HttpQueueStats>>()).toBe(true)
+  })
+
   it('scheduleSchema matches HttpSchedule', () => {
     expect(assertKeysMatch<AssertKeysMatch<SchemaOutput<typeof contracts.scheduleSchema>, httpTypes.HttpSchedule>>()).toBe(true)
   })

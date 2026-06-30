@@ -28,6 +28,7 @@ import {
   getDependenciesResponseSchema,
   getDependentsResponseSchema,
   getQueueResponseSchema,
+  getQueueStatsResponseSchema,
   getQueuesResponseSchema,
   getSchedulesResponseSchema,
   insertRequestSchema,
@@ -160,6 +161,19 @@ const blockedKeysQuerySchema = z.object({
   name: z.string().min(1)
 })
 
+// getQueueStats query params map onto pg-boss QueueStatsOptions. GET params arrive as strings, so
+// dates transform to Date (the option type) and numerics/booleans coerce; all are optional.
+const queueStatsQuerySchema = z.object({
+  name: z.string().min(1),
+  from: z.iso.datetime().transform((v) => new Date(v)).optional(),
+  to: z.iso.datetime().transform((v) => new Date(v)).optional(),
+  limit: z.coerce.number().int().positive().optional(),
+  bucketSeconds: z.coerce.number().int().positive().optional(),
+  maxDataPoints: z.coerce.number().int().positive().optional(),
+  aggregate: z.enum(['max', 'min', 'avg']).optional(),
+  force: z.enum(['true', 'false']).transform((v) => v === 'true').optional()
+})
+
 const dependencyQuerySchema = z.object({
   name: z.string().min(1),
   id: z.string().min(1)
@@ -201,6 +215,17 @@ export const getMethods: RouteEntry[] = [
   get('queues', 'getQueue', getQueueResponseSchema, nameQuerySchema, (q) => [q.name]),
   get('queues', 'getBlockedKeys', getBlockedKeysResponseSchema, blockedKeysQuerySchema, (q) => [q.name]),
   get('queues', 'getQueues', getQueuesResponseSchema, namesQuerySchema, (q) => (q.names ? [q.names] : [])),
+  get('queues', 'getQueueStats', getQueueStatsResponseSchema, queueStatsQuerySchema, (q) => {
+    const options: Record<string, unknown> = {}
+    if (q.from !== undefined) options.from = q.from
+    if (q.to !== undefined) options.to = q.to
+    if (q.limit !== undefined) options.limit = q.limit
+    if (q.bucketSeconds !== undefined) options.bucketSeconds = q.bucketSeconds
+    if (q.maxDataPoints !== undefined) options.maxDataPoints = q.maxDataPoints
+    if (q.aggregate !== undefined) options.aggregate = q.aggregate
+    if (q.force !== undefined) options.force = q.force
+    return Object.keys(options).length > 0 ? [q.name, options] : [q.name]
+  }),
   get('schedules', 'getSchedules', getSchedulesResponseSchema, schedulesQuerySchema, (q) => {
     if (q.name && q.key) return [q.name, q.key]
     if (q.name) return [q.name]

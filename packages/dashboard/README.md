@@ -18,7 +18,7 @@ A web-based dashboard for monitoring and managing [pg-boss](https://github.com/t
 
 - Node.js 22.12+
 - PostgreSQL database with pg-boss schema
-- pg-boss 12.11+
+- pg-boss 12.24+ recommended (12.21 minimum; queue metrics history and ready-count sparklines require 12.24)
 
 ## Installation
 
