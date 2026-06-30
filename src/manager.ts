@@ -543,6 +543,10 @@ class Manager extends EventEmitter implements types.EventsMixin {
     return queue
   }
 
+  #evictQueueCache (name: string) {
+    if (this.queues) delete this.queues[name]
+  }
+
   async stop () {
     this.stopped = true
 
@@ -1515,6 +1519,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     const sql = plans.createQueue(this.config.schema, name, { ...options, policy }, this.config.noAdvisoryLocks)
     await this.db.executeSql(sql)
+    this.#evictQueueCache(name)
   }
 
   async getBlockedKeys (name: string): Promise<string[]> {
@@ -1579,6 +1584,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     const sql = plans.updateQueue(this.config.schema, { deadLetter })
     await this.db.executeSql(sql, [name, options])
+    this.#evictQueueCache(name)
   }
 
   async getQueue (name: string) {
@@ -1594,6 +1600,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       await this.getQueueCache(name)
       const sql = plans.deleteQueue(this.config.schema, name, this.config.noAdvisoryLocks)
       await this.db.executeSql(sql)
+      this.#evictQueueCache(name)
     } catch { }
   }
 

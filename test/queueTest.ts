@@ -66,6 +66,26 @@ describe('queues', function () {
     await ctx.boss.createQueue(ctx.schema)
   })
 
+  helper.itPostgresOnly('should not use a stale cached table after delete and recreate with a different partition setting', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+
+    const queue = ctx.schema
+
+    await ctx.boss.createQueue(queue, { partition: true })
+    await ctx.boss.send(queue)
+
+    await ctx.boss.deleteQueue(queue)
+    await ctx.boss.createQueue(queue, { partition: false })
+
+    const jobId = await ctx.boss.send(queue)
+
+    assertTruthy(jobId)
+    const jobs = await ctx.boss.findJobs(queue, { id: jobId })
+    const job = jobs[0]
+    expect(job).toBeTruthy()
+    expect(job!.id).toBe(jobId)
+  })
+
   it('should delete an empty queue', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
