@@ -38,12 +38,16 @@ jobs:
       uses: actions/setup-node@v5
       with:
         node-version: 24
+        cache: npm
+        cache-dependency-path: |
+          package-lock.json
+          packages/dashboard/package-lock.json
 
     - name: Install root dependencies
-      run: npm install
+      run: npm ci
 
     - name: Install dashboard dependencies
-      run: npm install
+      run: npm ci
       working-directory: packages/dashboard
 
     - name: Typecheck
