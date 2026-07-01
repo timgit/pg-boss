@@ -184,7 +184,9 @@ Target the job with **exactly one** of:
 - `options.id` — a single job by id.
 - `options.singletonKey` — jobs sharing that key.
 
-Any other options (`data`, `priority`, `startAfter`, `retryLimit`, `keepUntil`, etc.) replace the job's current values exactly as they would for a fresh `send()`; **unspecified options revert to the queue defaults**, so pass the full set you want the job to end up with.
+This is a **partial edit**: only the fields you supply are changed, and any option you omit is left at the job's current value. Passing just a new `data` payload with a target replaces the payload without disturbing the job's existing `startAfter`, `priority`, retry settings, etc. Supported fields are `data`, `priority`, `startAfter`, `retryLimit`, `retryDelay`, `retryBackoff`, `retryDelayMax`, `expireInSeconds`, `retentionSeconds`, `deleteAfterSeconds`, `deadLetter`, `heartbeatSeconds`, and `group`. The job's `singletonKey` and `singletonOn` (throttle slot) are always preserved. To leave the payload unchanged while editing only options, pass `undefined` for `data`; passing `null` clears it.
+
+If a touched job ends up runnable (its `startAfter` is now in the past) on a queue with `LISTEN`/`NOTIFY` enabled, a wake-up notification is emitted so idle workers fetch it promptly.
 
 Returns a `Promise<string[]>` of the ids that were updated.
 
@@ -238,7 +240,6 @@ interface JobInsert<T = object> {
   expireInSeconds?: number;
   heartbeatSeconds?: number;
   deleteAfterSeconds?: number;
-  keepUntil?: Date | string;
   group?: { id: string; tier?: string };
 }
 ```

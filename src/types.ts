@@ -364,7 +364,6 @@ export interface JobOptions {
   singletonKey?: string;
   singletonSeconds?: number;
   singletonNextSlot?: boolean;
-  keepUntil?: number | string | Date;
   group?: GroupOptions;
   deadLetter?: string;
 }
@@ -429,11 +428,20 @@ export type JobMatchStrategy = 'newest' | 'oldest' | 'all'
 
 /**
  * Options for `update()` and `upsert()`. Target a job with exactly one of `id`
- * or `singletonKey` (`upsert()` requires `singletonKey`). Unspecified fields are
- * reset to the queue defaults, exactly like a fresh `send()`. `match` is only
- * valid when targeting by `singletonKey`.
+ * or `singletonKey` (`upsert()` requires `singletonKey`). Only the fields you
+ * supply are changed; any option you omit is left at the job's current value
+ * (this is a partial edit, not a re-`send()`). `match` is only valid when
+ * targeting by `singletonKey`.
+ *
+ * This is a curated subset of `SendOptions`: the throttle/debounce options
+ * (`singletonSeconds`, `singletonNextSlot`) are intentionally excluded because
+ * `update`/`upsert` do not act on them (a job's throttle slot is preserved).
  */
-export type UpdateOptions = SendOptions & { match?: JobMatchStrategy }
+export type UpdateOptions =
+  Pick<JobOptions, 'id' | 'priority' | 'startAfter' | 'singletonKey' | 'group' | 'deadLetter'>
+  & QueueOptions
+  & ConnectionOptions
+  & { match?: JobMatchStrategy }
 
 /**
  * The queue policy dictates how jobs are allowed to be queued and processed.

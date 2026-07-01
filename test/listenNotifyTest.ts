@@ -351,3 +351,61 @@ describe('notify producer bypass (all backends)', function () {
     expect(processed).toBe(4)
   })
 })
+
+helper.describeListenNotify('listen/notify update', function () {
+  helper.itPglite('update that pulls a future-dated job forward emits a NOTIFY', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+    const queue = ctx.schema
+    await ctx.boss.createQueue(queue, { notify: true })
+
+    // future-dated => no NOTIFY at send time
+    const id = await ctx.boss.send(queue, {}, { startAfter: 60 })
+
+    const listener = await rawListener(ctx.schema)
+
+    try {
+      await ctx.boss.update(queue, { v: 2 }, { id: id!, startAfter: new Date(Date.now() - 1000).toISOString() })
+      await delay(500)
+      expect(listener.received).toContain(queue)
+    } finally {
+      await listener.close()
+    }
+  })
+
+  helper.itPglite('partial update that keeps the job future-dated emits no NOTIFY', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+    const queue = ctx.schema
+    await ctx.boss.createQueue(queue, { notify: true })
+
+    const id = await ctx.boss.send(queue, {}, { startAfter: 60 })
+
+    const listener = await rawListener(ctx.schema)
+
+    try {
+      // edits only the payload; start_after stays in the future
+      await ctx.boss.update(queue, { v: 2 }, { id: id! })
+      await delay(500)
+      expect(listener.received).toHaveLength(0)
+    } finally {
+      await listener.close()
+    }
+  })
+
+  helper.itPglite('update on a non-notify queue emits no NOTIFY', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+    const queue = ctx.schema
+    await ctx.boss.createQueue(queue, { notify: false })
+
+    const id = await ctx.boss.send(queue, {}, { startAfter: 60 })
+
+    const listener = await rawListener(ctx.schema)
+
+    try {
+      await ctx.boss.update(queue, { v: 2 }, { id: id!, startAfter: new Date(Date.now() - 1000).toISOString() })
+      await delay(500)
+      expect(listener.received).toHaveLength(0)
+    } finally {
+      await listener.close()
+    }
+  })
+})

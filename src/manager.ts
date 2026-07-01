@@ -889,7 +889,6 @@ class Manager extends EventEmitter implements types.EventsMixin {
       expireInSeconds,
       deleteAfterSeconds,
       retentionSeconds,
-      keepUntil,
       retryLimit,
       retryDelay,
       retryBackoff,
@@ -913,7 +912,6 @@ class Manager extends EventEmitter implements types.EventsMixin {
       expireInSeconds,
       deleteAfterSeconds,
       retentionSeconds,
-      keepUntil,
       retryLimit,
       retryDelay,
       retryBackoff,
@@ -974,27 +972,53 @@ class Manager extends EventEmitter implements types.EventsMixin {
     return null
   }
 
-  // Overwrites the mutable fields of not-yet-active (created/retry) jobs in place, preserving
-  // their id and state. Targets by id or singletonKey; never inserts. Returns the ids that were
-  // updated ([] when nothing matched — the job is missing or already active).
-  async update (name: string, data: object | null, options: types.UpdateOptions = {}): Promise<string[]> {
+  // Builds the partial-edit payload for update()/upsert(): ONLY the fields the caller actually
+  // supplied end up as keys (undefined is dropped by JSON.stringify), so plans.updateJob leaves
+  // every other column untouched. Compatible with both plans.updateJob ($1 = this object) and
+  // plans.insertJobs ($1 = [this object]), whose json_to_recordset treats absent keys as null.
+  #toUpdatePayload (data: object | null | undefined, options: types.UpdateOptions) {
+    return {
+      data,
+      priority: options.priority,
+      startAfter: options.startAfter,
+      retentionSeconds: options.retentionSeconds,
+      expireInSeconds: options.expireInSeconds,
+      deleteAfterSeconds: options.deleteAfterSeconds,
+      retryLimit: options.retryLimit,
+      retryDelay: options.retryDelay,
+      retryBackoff: options.retryBackoff,
+      retryDelayMax: options.retryDelayMax,
+      deadLetter: options.deadLetter,
+      heartbeatSeconds: options.heartbeatSeconds,
+      groupId: options.group?.id,
+      groupTier: options.group?.tier,
+      id: options.id,
+      singletonKey: options.singletonKey
+    }
+  }
+
+  // Edits the mutable fields of not-yet-active (created/retry) jobs in place, preserving their
+  // id/state/singleton identity. Only the fields present in `options` (plus `data` when supplied)
+  // are changed; everything else is left as-is. Targets by id or singletonKey; never inserts.
+  // Returns the ids that were updated ([] when nothing matched — missing or already active).
+  async update (name: string, data: object | null | undefined, options: types.UpdateOptions = {}): Promise<string[]> {
     Attorney.assertQueueName(name)
     const request = Attorney.checkUpdateArgs([name, data, options])
     const db = this.assertDb(options)
-    const { table } = await this.getQueueCache(name)
+    const { table, notify } = await this.getQueueCache(name)
 
     const opts = (request.options ?? {}) as types.UpdateOptions
     const by = opts.id ? 'id' : 'singletonKey'
     const match = opts.match ?? 'newest'
-    const job = this.#toJobPayload(name, request.data ?? null, opts)
+    const payload = JSON.stringify(this.#toUpdatePayload(request.data, opts))
 
-    const sql = plans.updateJob(this.config.schema, table, name, by, match)
-    const { rows } = await db.executeSql(sql, [JSON.stringify([job])])
+    const sql = plans.updateJob(this.config.schema, table, name, by, match, this.#notifyEnabled(notify))
+    const { rows } = await db.executeSql(sql, [payload])
 
     return rows.map(row => row.id)
   }
 
-  // update-or-insert keyed by singletonKey: overwrite the matching pre-active job(s) in place,
+  // update-or-insert keyed by singletonKey: edit the matching pre-active job(s) in place,
   // otherwise insert a fresh job. Runs update-first (policy-independent match), inserting only
   // when nothing matched; a deduped insert (lost the race to a concurrent writer) falls back to
   // one more update so the winning row is returned. See docs for the ordering rationale.
@@ -1006,26 +1030,29 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     const opts = (request.options ?? {}) as types.UpdateOptions
     const match = opts.match ?? 'newest'
-    const job = this.#toJobPayload(name, request.data ?? null, opts)
 
-    if (policy === plans.QUEUE_POLICIES.key_strict_fifo && !job.singletonKey) {
+    if (policy === plans.QUEUE_POLICIES.key_strict_fifo && !opts.singletonKey) {
       throw new Error(`${plans.QUEUE_POLICIES.key_strict_fifo} queues require a singletonKey`)
     }
 
-    const updateSql = plans.updateJob(this.config.schema, table, name, 'singletonKey', match)
-    const insertSql = plans.insertJobs(this.config.schema, { table, name, returnId: true, notify: this.#notifyEnabled(notify) })
-    const payload = JSON.stringify([job])
+    const notifyEnabled = this.#notifyEnabled(notify)
+    const updateSql = plans.updateJob(this.config.schema, table, name, 'singletonKey', match, notifyEnabled)
+    const insertSql = plans.insertJobs(this.config.schema, { table, name, returnId: true, notify: notifyEnabled })
+
+    const job = this.#toUpdatePayload(request.data, opts)
+    const updatePayload = JSON.stringify(job)
+    const insertPayload = JSON.stringify([job])
 
     return this.withDistributedTransaction(db, async (tx) => {
-      const { rows: updated } = await tx.executeSql(updateSql, [payload])
+      const { rows: updated } = await tx.executeSql(updateSql, [updatePayload])
       if (updated.length) return updated.map(row => row.id)
 
-      const { rows: inserted } = await tx.executeSql(insertSql, [payload])
+      const { rows: inserted } = await tx.executeSql(insertSql, [insertPayload])
       if (inserted.length) return inserted.map(row => row.id)
 
       // The insert was skipped by ON CONFLICT (a concurrent send/upsert won the race); the
-      // conflicting row is now visible, so overwrite it.
-      const { rows: retry } = await tx.executeSql(updateSql, [payload])
+      // conflicting row is now visible, so edit it.
+      const { rows: retry } = await tx.executeSql(updateSql, [updatePayload])
       return retry.map(row => row.id)
     })
   }

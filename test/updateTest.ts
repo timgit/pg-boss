@@ -169,6 +169,58 @@ describe('update', function () {
     })
   })
 
+  describe('partial edit', function () {
+    it('editing data by id leaves other options untouched', async function () {
+      ctx.boss = await helper.start(ctx.bossConfig)
+
+      const startAfter = new Date(Date.now() + 60_000).toISOString()
+      const id = await ctx.boss.send(ctx.schema, { v: 1 }, { priority: 5, startAfter })
+      assertTruthy(id)
+
+      const result = await ctx.boss.update(ctx.schema, { v: 2 }, { id })
+      expect(result).toEqual([id])
+
+      const job = await ctx.boss.getJobById(ctx.schema, id)
+      assertTruthy(job)
+      expect(job.data).toEqual({ v: 2 })
+      expect(job.priority).toBe(5)
+      expect(new Date(job.startAfter).toISOString()).toBe(startAfter)
+    })
+
+    it('editing one option leaves data and the rest untouched', async function () {
+      ctx.boss = await helper.start(ctx.bossConfig)
+
+      const startAfter = new Date(Date.now() + 60_000).toISOString()
+      const id = await ctx.boss.send(ctx.schema, { keep: 'me' }, { priority: 5, startAfter })
+      assertTruthy(id)
+
+      // pass undefined data => payload untouched, only priority changes
+      await ctx.boss.update(ctx.schema, undefined, { id, priority: 9 })
+
+      const job = await ctx.boss.getJobById(ctx.schema, id)
+      assertTruthy(job)
+      expect(job.priority).toBe(9)
+      expect(job.data).toEqual({ keep: 'me' })
+      expect(new Date(job.startAfter).toISOString()).toBe(startAfter)
+    })
+
+    it('editing by singletonKey leaves other options untouched', async function () {
+      ctx.boss = await helper.start(ctx.bossConfig)
+
+      const startAfter = new Date(Date.now() + 60_000).toISOString()
+      const id = await ctx.boss.send(ctx.schema, { v: 1 }, { singletonKey: 'k', priority: 3, startAfter })
+      assertTruthy(id)
+
+      await ctx.boss.update(ctx.schema, { v: 2 }, { singletonKey: 'k' })
+
+      const job = await ctx.boss.getJobById(ctx.schema, id)
+      assertTruthy(job)
+      expect(job.data).toEqual({ v: 2 })
+      expect(job.priority).toBe(3)
+      expect(new Date(job.startAfter).toISOString()).toBe(startAfter)
+    })
+  })
+
   it('should work on a partitioned queue', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
     await ctx.boss.createQueue(ctx.schema, { partition: true })

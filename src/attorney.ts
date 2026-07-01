@@ -131,10 +131,21 @@ function checkSendArgs (args: any): types.Request {
 
 const JOB_MATCH_STRATEGIES = ['newest', 'oldest', 'all']
 
+// Unlike checkSendArgs, this does NOT inject send-style defaults (e.g. priority = 0): update()
+// is a partial edit, so only the option keys the caller actually supplied may survive into the
+// payload. Normalization is limited to type coercion (startAfter) and validation.
 function checkUpdateArgs (args: any, { upsert = false } = {}): types.Request {
   const verb = upsert ? 'upsert()' : 'update()'
-  const result = checkSendArgs(args)
-  const { id, singletonKey, match } = (result.options ?? {}) as types.UpdateOptions
+  const name = args[0]
+  const data = args[1]
+
+  assert(name, 'boss requires all jobs to have a queue name')
+  assert(typeof data !== 'function', `${verb} cannot accept a function as the payload.  Did you intend to use work()?`)
+
+  const options = { ...(args[2] || {}) }
+  assert(typeof options === 'object', 'options should be an object')
+
+  const { id, singletonKey, match } = options as types.UpdateOptions
 
   if (upsert) {
     assert(singletonKey, `${verb} requires a singletonKey`)
@@ -146,7 +157,25 @@ function checkUpdateArgs (args: any, { upsert = false } = {}): types.Request {
 
   assert(match === undefined || JOB_MATCH_STRATEGIES.includes(match), `match must be one of: ${JOB_MATCH_STRATEGIES.join(', ')}`)
 
-  return result
+  assert(!('priority' in options) || (Number.isInteger(options.priority)), 'priority must be an integer')
+
+  if ('startAfter' in options) {
+    options.startAfter = (options.startAfter instanceof Date && typeof options.startAfter.toISOString === 'function')
+      ? options.startAfter.toISOString()
+      : (+options.startAfter > 0)
+          ? '' + options.startAfter
+          : (typeof options.startAfter === 'string')
+              ? options.startAfter
+              : undefined
+  }
+
+  validateRetryConfig(options)
+  validateExpirationConfig(options)
+  validateRetentionConfig(options)
+  validateGroupConfig(options)
+  validateHeartbeatConfig(options)
+
+  return { name, data, options }
 }
 
 function validateGroupConfig (config: any) {
