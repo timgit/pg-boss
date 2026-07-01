@@ -188,7 +188,7 @@ This is a **partial edit**: only the fields you supply are changed, and any opti
 
 If a touched job ends up runnable (its `startAfter` is now in the past) on a queue with `LISTEN`/`NOTIFY` enabled, a wake-up notification is emitted so idle workers fetch it promptly.
 
-Returns a `Promise<string[]>` of the ids that were updated.
+Returns a `Promise<UpdateResponse>`: `{ jobs, updated, inserted }`, where `jobs` are the affected ids, `updated` is the number of jobs overwritten, and `inserted` is always `0` for `update()`.
 
 ```js
 // by id
@@ -210,7 +210,7 @@ Because a `singletonKey` is only guaranteed unique per state under the `short` a
 
 Update-or-insert keyed by `singletonKey`: if a not-yet-active job with the key exists it is overwritten in place (preserving its `id`), otherwise a new job is inserted. `upsert()` **requires** a `singletonKey` and cannot target by `id`. It supports the same `match` option as `update()` (default `newest`).
 
-Returns a `Promise<string[]>` of the affected ids (the updated ids, or the id of the newly inserted job).
+Returns a `Promise<UpdateResponse>`: `{ jobs, updated, inserted }`. On a hit, `updated` reflects the overwritten job(s) and `inserted` is `0`; on a miss, `inserted` is `1` and `jobs` holds the new id.
 
 ```js
 // ensure exactly one queued "process this article" job carries the latest body

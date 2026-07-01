@@ -35,7 +35,7 @@ describe('update', function () {
     assertTruthy(id)
 
     const result = await ctx.boss.update(ctx.schema, { v: 2 }, { id })
-    expect(result).toEqual([id])
+    expect(result).toEqual({ jobs: [id], updated: 1, inserted: 0 })
 
     const job = await ctx.boss.getJobById(ctx.schema, id)
     assertTruthy(job)
@@ -65,7 +65,7 @@ describe('update', function () {
     assertTruthy(fetched)
 
     const result = await ctx.boss.update(ctx.schema, { v: 2 }, { id })
-    expect(result).toEqual([])
+    expect(result).toEqual({ jobs: [], updated: 0, inserted: 0 })
 
     const job = await ctx.boss.getJobById(ctx.schema, id)
     assertTruthy(job)
@@ -75,7 +75,7 @@ describe('update', function () {
   it('should return an empty array when the job id does not exist', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
     const result = await ctx.boss.update(ctx.schema, { v: 2 }, { id: MISSING_UUID })
-    expect(result).toEqual([])
+    expect(result).toEqual({ jobs: [], updated: 0, inserted: 0 })
   })
 
   it('should update a created job by singletonKey', async function () {
@@ -85,7 +85,7 @@ describe('update', function () {
     assertTruthy(id)
 
     const result = await ctx.boss.update(ctx.schema, { v: 2 }, { singletonKey: 'k' })
-    expect(result).toEqual([id])
+    expect(result).toEqual({ jobs: [id], updated: 1, inserted: 0 })
 
     const job = await ctx.boss.getJobById(ctx.schema, id)
     assertTruthy(job)
@@ -95,7 +95,7 @@ describe('update', function () {
   it('should return an empty array when no job matches the singletonKey', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
     const result = await ctx.boss.update(ctx.schema, { v: 2 }, { singletonKey: 'nope' })
-    expect(result).toEqual([])
+    expect(result).toEqual({ jobs: [], updated: 0, inserted: 0 })
   })
 
   describe('multiple matches', function () {
@@ -120,7 +120,7 @@ describe('update', function () {
       const { boss, id1, id2, id3 } = await seedThree()
 
       const result = await boss.update(ctx.schema, { updated: true }, { singletonKey: 'k', match: 'newest' })
-      expect(result).toEqual([id3])
+      expect(result).toEqual({ jobs: [id3], updated: 1, inserted: 0 })
 
       const [j1, j2, j3] = await Promise.all([
         boss.getJobById(ctx.schema, id1),
@@ -137,7 +137,7 @@ describe('update', function () {
       const { boss, id1, id3 } = await seedThree()
 
       const result = await boss.update(ctx.schema, { updated: true }, { singletonKey: 'k', match: 'oldest' })
-      expect(result).toEqual([id1])
+      expect(result).toEqual({ jobs: [id1], updated: 1, inserted: 0 })
 
       const j1 = await boss.getJobById(ctx.schema, id1)
       const j3 = await boss.getJobById(ctx.schema, id3)
@@ -149,7 +149,9 @@ describe('update', function () {
       const { boss, id1, id2, id3 } = await seedThree()
 
       const result = await boss.update(ctx.schema, { updated: true }, { singletonKey: 'k', match: 'all' })
-      expect([...result].sort()).toEqual([id1, id2, id3].sort())
+      expect([...result.jobs].sort()).toEqual([id1, id2, id3].sort())
+      expect(result.updated).toBe(3)
+      expect(result.inserted).toBe(0)
 
       const jobs = await Promise.all([
         boss.getJobById(ctx.schema, id1),
@@ -165,7 +167,7 @@ describe('update', function () {
     it('defaults to newest when match is omitted', async function () {
       const { boss, id3 } = await seedThree()
       const result = await boss.update(ctx.schema, { updated: true }, { singletonKey: 'k' })
-      expect(result).toEqual([id3])
+      expect(result).toEqual({ jobs: [id3], updated: 1, inserted: 0 })
     })
   })
 
@@ -178,7 +180,7 @@ describe('update', function () {
       assertTruthy(id)
 
       const result = await ctx.boss.update(ctx.schema, { v: 2 }, { id })
-      expect(result).toEqual([id])
+      expect(result).toEqual({ jobs: [id], updated: 1, inserted: 0 })
 
       const job = await ctx.boss.getJobById(ctx.schema, id)
       assertTruthy(job)
@@ -229,7 +231,7 @@ describe('update', function () {
     assertTruthy(id)
 
     const result = await ctx.boss.update(ctx.schema, { v: 2 }, { singletonKey: 'k' })
-    expect(result).toEqual([id])
+    expect(result).toEqual({ jobs: [id], updated: 1, inserted: 0 })
 
     const job = await ctx.boss.getJobById(ctx.schema, id)
     expect(job!.data).toEqual({ v: 2 })

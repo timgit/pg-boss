@@ -20,9 +20,11 @@ describe('upsert', function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 
     const result = await ctx.boss.upsert(ctx.schema, { v: 1 }, { singletonKey: 'k' })
-    expect(result.length).toBe(1)
+    expect(result.inserted).toBe(1)
+    expect(result.updated).toBe(0)
+    expect(result.jobs).toHaveLength(1)
 
-    const job = await ctx.boss.getJobById(ctx.schema, result[0])
+    const job = await ctx.boss.getJobById(ctx.schema, result.jobs[0])
     assertTruthy(job)
     expect(job.data).toEqual({ v: 1 })
     expect(job.singletonKey).toBe('k')
@@ -35,7 +37,7 @@ describe('upsert', function () {
     assertTruthy(id)
 
     const result = await ctx.boss.upsert(ctx.schema, { v: 2 }, { singletonKey: 'k' })
-    expect(result).toEqual([id])
+    expect(result).toEqual({ jobs: [id], updated: 1, inserted: 0 })
 
     const job = await ctx.boss.getJobById(ctx.schema, id)
     assertTruthy(job)
@@ -52,10 +54,12 @@ describe('upsert', function () {
     assertTruthy(fetched)
 
     const result = await ctx.boss.upsert(ctx.schema, { v: 2 }, { singletonKey: 'k' })
-    expect(result.length).toBe(1)
-    expect(result[0]).not.toBe(id)
+    expect(result.inserted).toBe(1)
+    expect(result.updated).toBe(0)
+    expect(result.jobs).toHaveLength(1)
+    expect(result.jobs[0]).not.toBe(id)
 
-    const job = await ctx.boss.getJobById(ctx.schema, result[0])
+    const job = await ctx.boss.getJobById(ctx.schema, result.jobs[0])
     assertTruthy(job)
     expect(job.data).toEqual({ v: 2 })
 

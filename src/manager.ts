@@ -1001,7 +1001,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
   // id/state/singleton identity. Only the fields present in `options` (plus `data` when supplied)
   // are changed; everything else is left as-is. Targets by id or singletonKey; never inserts.
   // Returns the ids that were updated ([] when nothing matched — missing or already active).
-  async update (name: string, data: object | null | undefined, options: types.UpdateOptions = {}): Promise<string[]> {
+  async update (name: string, data: object | null | undefined, options: types.UpdateOptions = {}): Promise<types.UpdateResponse> {
     Attorney.assertQueueName(name)
     const request = Attorney.checkUpdateArgs([name, data, options])
     const db = this.assertDb(options)
@@ -1015,14 +1015,15 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const sql = plans.updateJob(this.config.schema, table, name, by, match, this.#notifyEnabled(notify))
     const { rows } = await db.executeSql(sql, [payload])
 
-    return rows.map(row => row.id)
+    const jobs = rows.map(row => row.id)
+    return { jobs, updated: jobs.length, inserted: 0 }
   }
 
   // update-or-insert keyed by singletonKey: edit the matching pre-active job(s) in place,
   // otherwise insert a fresh job. Runs update-first (policy-independent match), inserting only
   // when nothing matched; a deduped insert (lost the race to a concurrent writer) falls back to
   // one more update so the winning row is returned. See docs for the ordering rationale.
-  async upsert (name: string, data: object | null, options: types.UpdateOptions = {}): Promise<string[]> {
+  async upsert (name: string, data: object | null, options: types.UpdateOptions = {}): Promise<types.UpdateResponse> {
     Attorney.assertQueueName(name)
     const request = Attorney.checkUpdateArgs([name, data, options], { upsert: true })
     const db = this.assertDb(options)
@@ -1045,15 +1046,22 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     return this.withDistributedTransaction(db, async (tx) => {
       const { rows: updated } = await tx.executeSql(updateSql, [updatePayload])
-      if (updated.length) return updated.map(row => row.id)
+      if (updated.length) {
+        const jobs = updated.map(row => row.id)
+        return { jobs, updated: jobs.length, inserted: 0 }
+      }
 
       const { rows: inserted } = await tx.executeSql(insertSql, [insertPayload])
-      if (inserted.length) return inserted.map(row => row.id)
+      if (inserted.length) {
+        const jobs = inserted.map(row => row.id)
+        return { jobs, updated: 0, inserted: jobs.length }
+      }
 
       // The insert was skipped by ON CONFLICT (a concurrent send/upsert won the race); the
       // conflicting row is now visible, so edit it.
       const { rows: retry } = await tx.executeSql(updateSql, [updatePayload])
-      return retry.map(row => row.id)
+      const jobs = retry.map(row => row.id)
+      return { jobs, updated: jobs.length, inserted: 0 }
     })
   }
 

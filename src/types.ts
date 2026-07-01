@@ -871,6 +871,20 @@ export interface CommandResponse {
   affected: number;
 }
 
+/**
+ * The result of `update()` and `upsert()`. Unlike the target-a-list mutators
+ * (`cancel`/`resume`/etc.), these discover how many jobs a target resolves to
+ * and, for `upsert()`, whether a row was overwritten or newly created.
+ */
+export interface UpdateResponse {
+  /** Ids of the jobs affected — overwritten in place, or newly inserted (`upsert` only). */
+  jobs: string[];
+  /** Number of existing jobs overwritten in place. */
+  updated: number;
+  /** Number of jobs newly inserted. Always `0` for `update()`. */
+  inserted: number;
+}
+
 export interface BamEntry {
   id: string
   name: string
