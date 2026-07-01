@@ -40,7 +40,6 @@ const sendOptionsSchemaBase = z.object({
   singletonKey: z.string().optional(),
   singletonSeconds: z.number().optional(),
   singletonNextSlot: z.boolean().optional(),
-  keepUntil: dateInputSchema.optional(),
   group: groupOptionsSchema.optional(),
   deadLetter: z.string().optional(),
   expireInSeconds: z.number().optional(),
