@@ -45,6 +45,10 @@ export type HttpInsertOptions = Omit<types.InsertOptions, 'db'>
 
 export type HttpCompleteOptions = Omit<types.CompleteOptions, 'db'>
 
+export type HttpUpdateOptions = Omit<types.UpdateOptions, 'db'>
+
+export type HttpUpdateResult = types.UpdateResponse
+
 export type HttpJobInsert = types.JobInsert<HttpJsonRecord>
 
 export type HttpFlowJob = Omit<types.FlowJob, 'data' | 'options'> & {
@@ -136,6 +140,21 @@ export type HttpInsertResponse = {
   ok: true
   result: string[] | null
 }
+
+export type HttpUpdateRequest = {
+  name: HttpQueueName
+  data?: HttpNullableJsonRecord
+  options: HttpUpdateOptions
+}
+
+export type HttpUpdateResponse = {
+  ok: true
+  result: HttpUpdateResult
+}
+
+export type HttpUpsertRequest = HttpUpdateRequest
+
+export type HttpUpsertResponse = HttpUpdateResponse
 
 export type HttpFlowRequest = {
   jobs: HttpFlowJob[]

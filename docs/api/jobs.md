@@ -177,7 +177,7 @@ This is a convenience version of `send()` with the `singletonSeconds`, `singleto
 
 ### `update(name, data, options)`
 
-Overwrites the payload and options of one or more **not-yet-active** jobs (state `created` or `retry`), in place. The job keeps its `id` and `state`; a job that is already `active`, `completed`, or otherwise terminal is never modified. `update()` never inserts — if nothing matches, it resolves to an empty array.
+Overwrites the payload and options of one or more **not-yet-active** jobs (state `created` or `retry`), in place. The job keeps its `id` and `state`; a job that is already `active`, `completed`, or otherwise terminal is never modified. `update()` never inserts — if nothing matches, it resolves with an empty `jobs` array and `updated: 0`.
 
 Target the job with **exactly one** of:
 

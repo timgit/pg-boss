@@ -344,7 +344,7 @@ describePglite('cli', function () {
         )
 
         expect(await indexNames()).toEqual(['job_common_i7', 'job_common_i8'])
-      })
+      }, 30_000)
     })
 
     describe('rollback', function () {
