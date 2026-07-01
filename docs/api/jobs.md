@@ -208,7 +208,7 @@ Because a `singletonKey` is only guaranteed unique per state under the `short` a
 
 ### `upsert(name, data, options)`
 
-Update-or-insert keyed by `singletonKey`: if a not-yet-active job with the key exists it is overwritten in place (preserving its `id`), otherwise a new job is inserted. `upsert()` **requires** a `singletonKey` and cannot target by `id`. It supports the same `match` option as `update()` (default `newest`).
+Update-or-insert by `id` or `singletonKey` (exactly one, same as `update()`): if a matching not-yet-active job exists it is overwritten in place (preserving its `id`), otherwise a new job is inserted. When targeting by `id`, the new job is created with that id. It supports the same `match` option as `update()` (default `newest`, `singletonKey` targeting only). On a `key_strict_fifo` queue a `singletonKey` is required (the insert-on-miss path can't create a keyless job).
 
 Returns a `Promise<UpdateResponse>`: `{ jobs, updated, inserted }`. On a hit, `updated` reflects the overwritten job(s) and `inserted` is `0`; on a miss, `inserted` is `1` and `jobs` holds the new id.
 

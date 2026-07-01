@@ -1019,25 +1019,29 @@ class Manager extends EventEmitter implements types.EventsMixin {
     return { jobs, updated: jobs.length, inserted: 0 }
   }
 
-  // update-or-insert keyed by singletonKey: edit the matching pre-active job(s) in place,
+  // update-or-insert by id or singletonKey: edit the matching pre-active job(s) in place,
   // otherwise insert a fresh job. Runs update-first (policy-independent match), inserting only
-  // when nothing matched; a deduped insert (lost the race to a concurrent writer) falls back to
-  // one more update so the winning row is returned. See docs for the ordering rationale.
-  async upsert (name: string, data: object | null, options: types.UpdateOptions = {}): Promise<types.UpdateResponse> {
+  // when nothing matched; a deduped insert (lost the race to a concurrent writer, or an id that
+  // collides with an existing non-pre-active job) falls back to one more update. See docs for
+  // the ordering rationale.
+  async upsert (name: string, data: object | null | undefined, options: types.UpdateOptions = {}): Promise<types.UpdateResponse> {
     Attorney.assertQueueName(name)
     const request = Attorney.checkUpdateArgs([name, data, options], { upsert: true })
     const db = this.assertDb(options)
     const { table, policy, notify } = await this.getQueueCache(name)
 
     const opts = (request.options ?? {}) as types.UpdateOptions
+    const by = opts.id ? 'id' : 'singletonKey'
     const match = opts.match ?? 'newest'
 
+    // The insert-on-miss path needs a singletonKey on key_strict_fifo queues (a keyless job would
+    // violate the queue's check constraint), so reject upfront — including the id-target case.
     if (policy === plans.QUEUE_POLICIES.key_strict_fifo && !opts.singletonKey) {
       throw new Error(`${plans.QUEUE_POLICIES.key_strict_fifo} queues require a singletonKey`)
     }
 
     const notifyEnabled = this.#notifyEnabled(notify)
-    const updateSql = plans.updateJob(this.config.schema, table, name, 'singletonKey', match, notifyEnabled)
+    const updateSql = plans.updateJob(this.config.schema, table, name, by, match, notifyEnabled)
     const insertSql = plans.insertJobs(this.config.schema, { table, name, returnId: true, notify: notifyEnabled })
 
     const job = this.#toUpdatePayload(request.data, opts)

@@ -245,7 +245,7 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#manager.update(name, data, options)
   }
 
-  upsert (name: string, data: object | null, options?: types.UpdateOptions): Promise<types.UpdateResponse> {
+  upsert (name: string, data: object | null | undefined, options?: types.UpdateOptions): Promise<types.UpdateResponse> {
     return this.#manager.upsert(name, data, options)
   }
 

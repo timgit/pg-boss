@@ -147,13 +147,11 @@ function checkUpdateArgs (args: any, { upsert = false } = {}): types.Request {
 
   const { id, singletonKey, match } = options as types.UpdateOptions
 
-  if (upsert) {
-    assert(singletonKey, `${verb} requires a singletonKey`)
-    assert(!id, `${verb} targets jobs by singletonKey and cannot accept an id`)
-  } else {
-    assert((!!id) !== (!!singletonKey), `${verb} requires exactly one of id or singletonKey`)
-    assert(!(id && match !== undefined), 'match is only valid when targeting jobs by singletonKey')
-  }
+  // Both update() and upsert() target by exactly one of id or singletonKey. (upsert() may also
+  // require a singletonKey at runtime on key_strict_fifo queues — enforced in the manager, which
+  // knows the policy — because an insert-on-miss there needs a key.)
+  assert((!!id) !== (!!singletonKey), `${verb} requires exactly one of id or singletonKey`)
+  assert(!(id && match !== undefined), 'match is only valid when targeting jobs by singletonKey')
 
   assert(match === undefined || JOB_MATCH_STRATEGIES.includes(match), `match must be one of: ${JOB_MATCH_STRATEGIES.join(', ')}`)
 
