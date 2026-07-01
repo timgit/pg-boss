@@ -175,6 +175,48 @@ Like, `sendThrottled()`, but instead of rejecting if a job is already sent in th
 
 This is a convenience version of `send()` with the `singletonSeconds`, `singletonKey` and `singletonNextSlot` option assigned. The `key` argument is optional.
 
+### `update(name, data, options)`
+
+Overwrites the payload and options of one or more **not-yet-active** jobs (state `created` or `retry`), in place. The job keeps its `id` and `state`; a job that is already `active`, `completed`, or otherwise terminal is never modified. `update()` never inserts — if nothing matches, it resolves to an empty array.
+
+Target the job with **exactly one** of:
+
+- `options.id` — a single job by id.
+- `options.singletonKey` — jobs sharing that key.
+
+Any other options (`data`, `priority`, `startAfter`, `retryLimit`, `keepUntil`, etc.) replace the job's current values exactly as they would for a fresh `send()`; **unspecified options revert to the queue defaults**, so pass the full set you want the job to end up with.
+
+Returns a `Promise<string[]>` of the ids that were updated.
+
+```js
+// by id
+await boss.update('email', { to: 'a@b.co', retries: 0 }, { id: jobId })
+
+// by singletonKey
+await boss.update('article', { articleId: 42, body: '…latest…' }, { singletonKey: 'article-42' })
+```
+
+Because a `singletonKey` is only guaranteed unique per state under the `short` and `stately` policies, several pre-active jobs can share a key (for example under throttling/debouncing, or with a manually-assigned key on a `standard` queue). Use `options.match` to choose which are overwritten, ordered by `createdOn`:
+
+- `newest` (default) — overwrite the most recently created match.
+- `oldest` — overwrite the earliest created match.
+- `all` — overwrite every match.
+
+`match` is only valid when targeting by `singletonKey`.
+
+### `upsert(name, data, options)`
+
+Update-or-insert keyed by `singletonKey`: if a not-yet-active job with the key exists it is overwritten in place (preserving its `id`), otherwise a new job is inserted. `upsert()` **requires** a `singletonKey` and cannot target by `id`. It supports the same `match` option as `update()` (default `newest`).
+
+Returns a `Promise<string[]>` of the affected ids (the updated ids, or the id of the newly inserted job).
+
+```js
+// ensure exactly one queued "process this article" job carries the latest body
+await boss.upsert('article', { articleId: 42, body: '…latest…' }, { singletonKey: 'article-42' })
+```
+
+Internally `upsert()` runs the update first (a policy-independent match), inserting only when nothing matched, so it behaves consistently across every queue policy.
+
 ### `insert(name, Job[], options)`
 
 Create multiple jobs in one request with an array of objects.

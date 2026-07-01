@@ -241,6 +241,14 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#manager.sendThrottled(name, data, options, seconds, key)
   }
 
+  update (name: string, data: object | null, options?: types.UpdateOptions): Promise<string[]> {
+    return this.#manager.update(name, data, options)
+  }
+
+  upsert (name: string, data: object | null, options?: types.UpdateOptions): Promise<string[]> {
+    return this.#manager.upsert(name, data, options)
+  }
+
   sendDebounced (name: string, data: object | null, options: types.SendOptions | null, seconds: number, key?: string): Promise<string | null> {
     return this.#manager.sendDebounced(name, data, options, seconds, key)
   }

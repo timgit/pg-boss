@@ -417,6 +417,25 @@ export type InsertOptions = ConnectionOptions & { returnId?: boolean }
 export type SendOptions = JobOptions & QueueOptions & ConnectionOptions
 
 /**
+ * When `update()`/`upsert()` targets jobs by `singletonKey` and more than one
+ * pre-active (created or retry) job shares that key (possible under
+ * throttle/debounce or a manually-set key on a `standard` queue), this selects
+ * which match(es) to overwrite, ordered by `createdOn`:
+ * - `newest` (default) overwrites the most recently enqueued match
+ * - `oldest` overwrites the earliest enqueued match
+ * - `all` overwrites every match
+ */
+export type JobMatchStrategy = 'newest' | 'oldest' | 'all'
+
+/**
+ * Options for `update()` and `upsert()`. Target a job with exactly one of `id`
+ * or `singletonKey` (`upsert()` requires `singletonKey`). Unspecified fields are
+ * reset to the queue defaults, exactly like a fresh `send()`. `match` is only
+ * valid when targeting by `singletonKey`.
+ */
+export type UpdateOptions = SendOptions & { match?: JobMatchStrategy }
+
+/**
  * The queue policy dictates how jobs are allowed to be queued and processed.
  *
  * - `standard` supports all standard features such as deferral, priority, and

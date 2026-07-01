@@ -876,16 +876,16 @@ class Manager extends EventEmitter implements types.EventsMixin {
     return await this.createJob(result)
   }
 
-  async createJob (request: types.Request): Promise<string | null> {
-    const { name, data = null, options = {} } = request
+  // Shapes a validated request into the JSON job payload consumed by plans.insertJobs and
+  // plans.updateJob. Shared by createJob (send) and update/upsert so all three derive
+  // start_after/keep_until/singleton the same way.
+  #toJobPayload (name: string, data: object | null, options: types.SendOptions) {
     const {
       id = null,
-      db: wrapper,
       priority,
       startAfter,
       singletonKey = null,
       singletonSeconds,
-      singletonNextSlot,
       expireInSeconds,
       deleteAfterSeconds,
       retentionSeconds,
@@ -899,7 +899,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       deadLetter = null
     } = options
 
-    const job = {
+    return {
       id,
       name,
       data,
@@ -921,12 +921,19 @@ class Manager extends EventEmitter implements types.EventsMixin {
       heartbeatSeconds,
       deadLetter
     }
+  }
+
+  async createJob (request: types.Request): Promise<string | null> {
+    const { name, data = null, options = {} } = request
+    const { db: wrapper, singletonSeconds, singletonNextSlot } = options
+
+    const job = this.#toJobPayload(name, data, options)
 
     const db = wrapper || this.db
 
     const { table, policy, notify } = await this.getQueueCache(name)
 
-    if (policy === plans.QUEUE_POLICIES.key_strict_fifo && !singletonKey) {
+    if (policy === plans.QUEUE_POLICIES.key_strict_fifo && !job.singletonKey) {
       throw new Error(`${plans.QUEUE_POLICIES.key_strict_fifo} queues require a singletonKey`)
     }
 
@@ -965,6 +972,62 @@ class Manager extends EventEmitter implements types.EventsMixin {
     }
 
     return null
+  }
+
+  // Overwrites the mutable fields of not-yet-active (created/retry) jobs in place, preserving
+  // their id and state. Targets by id or singletonKey; never inserts. Returns the ids that were
+  // updated ([] when nothing matched — the job is missing or already active).
+  async update (name: string, data: object | null, options: types.UpdateOptions = {}): Promise<string[]> {
+    Attorney.assertQueueName(name)
+    const request = Attorney.checkUpdateArgs([name, data, options])
+    const db = this.assertDb(options)
+    const { table } = await this.getQueueCache(name)
+
+    const opts = (request.options ?? {}) as types.UpdateOptions
+    const by = opts.id ? 'id' : 'singletonKey'
+    const match = opts.match ?? 'newest'
+    const job = this.#toJobPayload(name, request.data ?? null, opts)
+
+    const sql = plans.updateJob(this.config.schema, table, name, by, match)
+    const { rows } = await db.executeSql(sql, [JSON.stringify([job])])
+
+    return rows.map(row => row.id)
+  }
+
+  // update-or-insert keyed by singletonKey: overwrite the matching pre-active job(s) in place,
+  // otherwise insert a fresh job. Runs update-first (policy-independent match), inserting only
+  // when nothing matched; a deduped insert (lost the race to a concurrent writer) falls back to
+  // one more update so the winning row is returned. See docs for the ordering rationale.
+  async upsert (name: string, data: object | null, options: types.UpdateOptions = {}): Promise<string[]> {
+    Attorney.assertQueueName(name)
+    const request = Attorney.checkUpdateArgs([name, data, options], { upsert: true })
+    const db = this.assertDb(options)
+    const { table, policy, notify } = await this.getQueueCache(name)
+
+    const opts = (request.options ?? {}) as types.UpdateOptions
+    const match = opts.match ?? 'newest'
+    const job = this.#toJobPayload(name, request.data ?? null, opts)
+
+    if (policy === plans.QUEUE_POLICIES.key_strict_fifo && !job.singletonKey) {
+      throw new Error(`${plans.QUEUE_POLICIES.key_strict_fifo} queues require a singletonKey`)
+    }
+
+    const updateSql = plans.updateJob(this.config.schema, table, name, 'singletonKey', match)
+    const insertSql = plans.insertJobs(this.config.schema, { table, name, returnId: true, notify: this.#notifyEnabled(notify) })
+    const payload = JSON.stringify([job])
+
+    return this.withDistributedTransaction(db, async (tx) => {
+      const { rows: updated } = await tx.executeSql(updateSql, [payload])
+      if (updated.length) return updated.map(row => row.id)
+
+      const { rows: inserted } = await tx.executeSql(insertSql, [payload])
+      if (inserted.length) return inserted.map(row => row.id)
+
+      // The insert was skipped by ON CONFLICT (a concurrent send/upsert won the race); the
+      // conflicting row is now visible, so overwrite it.
+      const { rows: retry } = await tx.executeSql(updateSql, [payload])
+      return retry.map(row => row.id)
+    })
   }
 
   async insert (

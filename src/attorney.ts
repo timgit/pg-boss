@@ -129,6 +129,26 @@ function checkSendArgs (args: any): types.Request {
   return { name, data, options }
 }
 
+const JOB_MATCH_STRATEGIES = ['newest', 'oldest', 'all']
+
+function checkUpdateArgs (args: any, { upsert = false } = {}): types.Request {
+  const verb = upsert ? 'upsert()' : 'update()'
+  const result = checkSendArgs(args)
+  const { id, singletonKey, match } = (result.options ?? {}) as types.UpdateOptions
+
+  if (upsert) {
+    assert(singletonKey, `${verb} requires a singletonKey`)
+    assert(!id, `${verb} targets jobs by singletonKey and cannot accept an id`)
+  } else {
+    assert((!!id) !== (!!singletonKey), `${verb} requires exactly one of id or singletonKey`)
+    assert(!(id && match !== undefined), 'match is only valid when targeting jobs by singletonKey')
+  }
+
+  assert(match === undefined || JOB_MATCH_STRATEGIES.includes(match), `match must be one of: ${JOB_MATCH_STRATEGIES.join(', ')}`)
+
+  return result
+}
+
 function validateGroupConfig (config: any) {
   if (!('group' in config) || config.group === undefined || config.group === null) {
     return
@@ -598,6 +618,7 @@ export {
   assertQueueName,
   checkFetchArgs,
   checkSendArgs,
+  checkUpdateArgs,
   checkWorkArgs,
   getConfig,
   POLICY,

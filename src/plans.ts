@@ -1,4 +1,4 @@
-import type { UpdateQueueOptions } from './types.ts'
+import type { JobMatchStrategy, UpdateQueueOptions } from './types.ts'
 
 export interface SqlQuery {
   text: string
@@ -2249,6 +2249,74 @@ export function retryJobs (schema: string, table: string) {
       RETURNING 1
     )
     SELECT COUNT(*) from results
+  `
+}
+
+// Overwrites the mutable fields of not-yet-active jobs in place, preserving id/state.
+// The single job payload arrives as $1 (a one-element JSON array, same shape as insertJobs)
+// so start_after/keep_until/singleton derivations match a fresh send exactly. Targeting is
+// by id or singleton_key; when by key, `match` picks which of several pre-active matches to
+// overwrite (newest/oldest = one row via ORDER BY + LIMIT; all = every match). Callers that
+// need insert-on-miss compose this with insertJobs (see Manager.upsert).
+export function updateJob (schema: string, table: string, name: string, by: 'id' | 'singletonKey', match: JobMatchStrategy) {
+  const targetPredicate = by === 'id' ? 'job.id = src.id' : 'job.singleton_key = src."singletonKey"'
+  const ordering = (by === 'singletonKey' && match !== 'all')
+    ? `ORDER BY job.created_on ${match === 'oldest' ? 'ASC' : 'DESC'} LIMIT 1`
+    : ''
+
+  return `
+    WITH src AS (
+      SELECT *,
+        CASE
+          WHEN right("startAfter", 1) = 'Z' THEN CAST("startAfter" as timestamp with time zone)
+          ELSE now() + CAST(COALESCE("startAfter",'0') as interval)
+          END as start_after
+      FROM json_to_recordset($1::json) as x (
+        id uuid,
+        priority integer,
+        data jsonb,
+        "startAfter" text,
+        "retryLimit" integer,
+        "retryDelay" integer,
+        "retryDelayMax" integer,
+        "retryBackoff" boolean,
+        "singletonKey" text,
+        "expireInSeconds" integer,
+        "deleteAfterSeconds" integer,
+        "retentionSeconds" integer,
+        "groupId" text,
+        "groupTier" text,
+        "deadLetter" text,
+        "heartbeatSeconds" integer
+      )
+    ),
+    target AS (
+      SELECT job.id
+      FROM ${schema}.${table} job, src
+      WHERE job.name = '${name}'
+        AND job.state < '${JOB_STATES.active}'
+        AND ${targetPredicate}
+      ${ordering}
+    )
+    UPDATE ${schema}.${table} job
+    SET data = src.data,
+        priority = COALESCE(src.priority, 0),
+        start_after = src.start_after,
+        keep_until = src.start_after + (COALESCE(src."retentionSeconds", q.retention_seconds) * interval '1s'),
+        expire_seconds = COALESCE(src."expireInSeconds", q.expire_seconds),
+        deletion_seconds = COALESCE(src."deleteAfterSeconds", q.deletion_seconds),
+        retry_limit = COALESCE(src."retryLimit", q.retry_limit),
+        retry_delay = COALESCE(src."retryDelay", q.retry_delay),
+        retry_backoff = COALESCE(src."retryBackoff", q.retry_backoff, false),
+        retry_delay_max = COALESCE(src."retryDelayMax", q.retry_delay_max),
+        dead_letter = COALESCE(src."deadLetter", q.dead_letter),
+        heartbeat_seconds = COALESCE(src."heartbeatSeconds", q.heartbeat_seconds),
+        group_id = src."groupId",
+        group_tier = src."groupTier"
+    FROM src, ${schema}.queue q
+    WHERE job.id IN (SELECT id FROM target)
+      AND q.name = '${name}'
+    RETURNING job.id
   `
 }
 
