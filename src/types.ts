@@ -444,6 +444,18 @@ export type UpdateOptions =
   & { match?: JobMatchStrategy }
 
 /**
+ * The object form accepted by the single-argument overload of `update()` and
+ * `upsert()`, mirroring {@link Request} for `send()`. `data` is optional
+ * (omit or pass `undefined` to edit only options; pass `null` to clear the
+ * payload) and `options` carries the target (`id` or `singletonKey`).
+ */
+export interface UpdateRequest {
+  name: string;
+  data?: object | null;
+  options?: UpdateOptions;
+}
+
+/**
  * The queue policy dictates how jobs are allowed to be queued and processed.
  *
  * - `standard` supports all standard features such as deferral, priority, and

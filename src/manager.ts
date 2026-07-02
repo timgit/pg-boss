@@ -1001,16 +1001,20 @@ class Manager extends EventEmitter implements types.EventsMixin {
   // id/state/singleton identity. Only the fields present in `options` (plus `data` when supplied)
   // are changed; everything else is left as-is. Targets by id or singletonKey; never inserts.
   // Returns the ids that were updated ([] when nothing matched — missing or already active).
-  async update (name: string, data: object | null | undefined, options: types.UpdateOptions = {}): Promise<types.UpdateResponse> {
+  update (request: types.UpdateRequest): Promise<types.UpdateResponse>
+  update (name: string, data: object | null | undefined, options?: types.UpdateOptions): Promise<types.UpdateResponse>
+  async update (...args: any[]): Promise<types.UpdateResponse> {
+    const request = Attorney.checkUpdateArgs(args)
+    const { name, data } = request
+    const opts = (request.options ?? {}) as types.UpdateOptions
+
     Attorney.assertQueueName(name)
-    const request = Attorney.checkUpdateArgs([name, data, options])
-    const db = this.assertDb(options)
+    const db = this.assertDb(opts)
     const { table, notify } = await this.getQueueCache(name)
 
-    const opts = (request.options ?? {}) as types.UpdateOptions
     const by = opts.id ? 'id' : 'singletonKey'
     const match = opts.match ?? 'newest'
-    const payload = JSON.stringify(this.#toUpdatePayload(request.data, opts))
+    const payload = JSON.stringify(this.#toUpdatePayload(data, opts))
 
     const sql = plans.updateJob(this.config.schema, table, name, by, match, this.#notifyEnabled(notify))
     const { rows } = await db.executeSql(sql, [payload])
@@ -1024,13 +1028,17 @@ class Manager extends EventEmitter implements types.EventsMixin {
   // when nothing matched; a deduped insert (lost the race to a concurrent writer, or an id that
   // collides with an existing non-pre-active job) falls back to one more update. See docs for
   // the ordering rationale.
-  async upsert (name: string, data: object | null | undefined, options: types.UpdateOptions = {}): Promise<types.UpdateResponse> {
+  upsert (request: types.UpdateRequest): Promise<types.UpdateResponse>
+  upsert (name: string, data: object | null | undefined, options?: types.UpdateOptions): Promise<types.UpdateResponse>
+  async upsert (...args: any[]): Promise<types.UpdateResponse> {
+    const request = Attorney.checkUpdateArgs(args, { upsert: true })
+    const { name, data } = request
+    const opts = (request.options ?? {}) as types.UpdateOptions
+
     Attorney.assertQueueName(name)
-    const request = Attorney.checkUpdateArgs([name, data, options], { upsert: true })
-    const db = this.assertDb(options)
+    const db = this.assertDb(opts)
     const { table, policy, notify } = await this.getQueueCache(name)
 
-    const opts = (request.options ?? {}) as types.UpdateOptions
     const by = opts.id ? 'id' : 'singletonKey'
     const match = opts.match ?? 'newest'
 
@@ -1044,7 +1052,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const updateSql = plans.updateJob(this.config.schema, table, name, by, match, notifyEnabled)
     const insertSql = plans.insertJobs(this.config.schema, { table, name, returnId: true, notify: notifyEnabled })
 
-    const job = this.#toUpdatePayload(request.data, opts)
+    const job = this.#toUpdatePayload(data, opts)
     const updatePayload = JSON.stringify(job)
     const insertPayload = JSON.stringify([job])
 

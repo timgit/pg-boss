@@ -42,14 +42,34 @@ By default, calling `stop()` without any arguments will gracefully wait for all 
 
     Note: This option is ignored when `graceful` is set to `false`.
 
+```js
+// graceful shutdown: wait for active jobs to finish (up to the timeout)
+await boss.stop()
+
+// stop workers but keep the connection pool open for send() and fetch()
+await boss.stop({ close: false })
+
+// shut down immediately without waiting for active jobs
+await boss.stop({ graceful: false })
+```
 
 ### `isInstalled()`
 
 Utility function to see if pg-boss is installed in the configured database.
 
+```js
+const installed = await boss.isInstalled()
+// true
+```
+
 ### `schemaVersion()`
 
 Utility function to get the database schema version.
+
+```js
+const version = await boss.schemaVersion()
+// 36
+```
 
 ### `getBamStatus()`
 

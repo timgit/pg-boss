@@ -223,6 +223,47 @@ describe('update', function () {
     })
   })
 
+  describe('object API', function () {
+    it('should update a job passed as a single object argument', async function () {
+      ctx.boss = await helper.start(ctx.bossConfig)
+
+      const id = await ctx.boss.send(ctx.schema, { v: 1 })
+      assertTruthy(id)
+
+      const result = await ctx.boss.update({ name: ctx.schema, data: { v: 2 }, options: { id } })
+      expect(result).toEqual({ jobs: [id], updated: 1, inserted: 0 })
+
+      const job = await ctx.boss.getJobById(ctx.schema, id)
+      assertTruthy(job)
+      expect(job.data).toEqual({ v: 2 })
+    })
+
+    it('should edit only options when data is omitted', async function () {
+      ctx.boss = await helper.start(ctx.bossConfig)
+
+      const id = await ctx.boss.send(ctx.schema, { keep: 'me' }, { priority: 1 })
+      assertTruthy(id)
+
+      await ctx.boss.update({ name: ctx.schema, options: { id, priority: 9 } })
+
+      const job = await ctx.boss.getJobById(ctx.schema, id)
+      assertTruthy(job)
+      expect(job.priority).toBe(9)
+      expect(job.data).toEqual({ keep: 'me' })
+    })
+
+    it('should reject the object form when neither id nor singletonKey is provided', async function () {
+      ctx.boss = await helper.start(ctx.bossConfig)
+      await expect(ctx.boss.update({ name: ctx.schema, data: { v: 1 } })).rejects.toThrow(/exactly one of id or singletonKey/)
+    })
+
+    it('should reject the object form with more than one argument', async function () {
+      ctx.boss = await helper.start(ctx.bossConfig)
+      // @ts-ignore - deliberately misusing the object overload
+      await expect(ctx.boss.update({ name: ctx.schema, options: { id: MISSING_UUID } }, { v: 1 })).rejects.toThrow(/object API only accepts 1 argument/)
+    })
+  })
+
   it('should work on a partitioned queue', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
     await ctx.boss.createQueue(ctx.schema, { partition: true })

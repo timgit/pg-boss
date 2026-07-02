@@ -136,13 +136,28 @@ const JOB_MATCH_STRATEGIES = ['newest', 'oldest', 'all']
 // payload. Normalization is limited to type coercion (startAfter) and validation.
 function checkUpdateArgs (args: any, { upsert = false } = {}): types.Request {
   const verb = upsert ? 'upsert()' : 'update()'
-  const name = args[0]
-  const data = args[1]
+  let name, data, rawOptions
+
+  if (typeof args[0] === 'string') {
+    name = args[0]
+    data = args[1]
+    rawOptions = args[2]
+  } else if (typeof args[0] === 'object') {
+    assert(args.length === 1, `${verb} object API only accepts 1 argument`)
+
+    const job = args[0]
+
+    assert(job, 'boss requires all jobs to have a name')
+
+    name = job.name
+    data = job.data
+    rawOptions = job.options
+  }
 
   assert(name, 'boss requires all jobs to have a queue name')
   assert(typeof data !== 'function', `${verb} cannot accept a function as the payload.  Did you intend to use work()?`)
 
-  const options = { ...(args[2] || {}) }
+  const options = { ...(rawOptions || {}) }
   assert(typeof options === 'object', 'options should be an object')
 
   const { id, singletonKey, match } = options as types.UpdateOptions

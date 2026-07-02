@@ -241,12 +241,16 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#manager.sendThrottled(name, data, options, seconds, key)
   }
 
-  update (name: string, data: object | null | undefined, options?: types.UpdateOptions): Promise<types.UpdateResponse> {
-    return this.#manager.update(name, data, options)
+  update (request: types.UpdateRequest): Promise<types.UpdateResponse>
+  update (name: string, data: object | null | undefined, options?: types.UpdateOptions): Promise<types.UpdateResponse>
+  update (...args: any[]): Promise<types.UpdateResponse> {
+    return this.#manager.update(...args as Parameters<Manager['update']>)
   }
 
-  upsert (name: string, data: object | null | undefined, options?: types.UpdateOptions): Promise<types.UpdateResponse> {
-    return this.#manager.upsert(name, data, options)
+  upsert (request: types.UpdateRequest): Promise<types.UpdateResponse>
+  upsert (name: string, data: object | null | undefined, options?: types.UpdateOptions): Promise<types.UpdateResponse>
+  upsert (...args: any[]): Promise<types.UpdateResponse> {
+    return this.#manager.upsert(...args as Parameters<Manager['upsert']>)
   }
 
   sendDebounced (name: string, data: object | null, options: types.SendOptions | null, seconds: number, key?: string): Promise<string | null> {
@@ -516,6 +520,7 @@ export type {
   StopOptions,
   UpdateOptions,
   UpdateQueueOptions,
+  UpdateRequest,
   UpdateResponse,
   Warning,
   WipData,

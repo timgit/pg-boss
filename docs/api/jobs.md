@@ -162,6 +162,13 @@ This is a convenience version of `send()` with the `startAfter` option assigned.
 
 `value`: int: seconds | string: ISO date string | Date
 
+```js
+// start in 5 minutes
+await boss.sendAfter('email-reminder', { userId: 123 }, null, 300)
+
+// start at a specific date and time
+await boss.sendAfter('email-reminder', { userId: 123 }, null, new Date('2027-01-01T08:00:00Z'))
+```
 
 ### `sendThrottled(name, data, options, seconds, key)`
 
@@ -169,15 +176,30 @@ Only allows one job to be sent to the same queue within a number of seconds.  In
 
 This is a convenience version of `send()` with the `singletonSeconds` and `singletonKey` option assigned. The `key` argument is optional.
 
+```js
+// accept at most 1 job per user per minute; extra sends resolve null
+const jobId = await boss.sendThrottled('sync-profile', { userId: 123 }, null, 60, `user-${123}`)
+
+if (!jobId) {
+  console.log('job was throttled')
+}
+```
+
 ### `sendDebounced(name, data, options, seconds, key)`
 
 Like, `sendThrottled()`, but instead of rejecting if a job is already sent in the current interval, it will try to add the job to the next interval if one hasn't already been sent.
 
 This is a convenience version of `send()` with the `singletonSeconds`, `singletonKey` and `singletonNextSlot` option assigned. The `key` argument is optional.
 
+```js
+// coalesce bursts of edits: at most 1 job per document per 30 seconds,
+// and if the slot is taken, schedule one for the next slot
+await boss.sendDebounced('reindex-document', { docId: 'doc-1' }, null, 30, 'doc-1')
+```
+
 ### `update(name, data, options)`
 
-Overwrites the payload and options of one or more **not-yet-active** jobs (state `created` or `retry`), in place. The job keeps its `id` and `state`; a job that is already `active`, `completed`, or otherwise terminal is never modified. `update()` never inserts — if nothing matches, it resolves with an empty `jobs` array and `updated: 0`.
+Overwrites the payload and options of one or more **not-yet-active** jobs (state `created` or `retry`). A job that is already `active`, `completed`, or otherwise terminal is never modified. `update()` never inserts — if nothing matches, it resolves with an empty `jobs` array and `updated: 0`.
 
 Target the job with **exactly one** of:
 
@@ -206,9 +228,21 @@ Because a `singletonKey` is only guaranteed unique per state under the `short` a
 
 `match` is only valid when targeting by `singletonKey`.
 
+### `update({ name, data, options })`
+
+This overload supports updating a job with a single object with name, data, and options properties. `data` is optional — omit it to edit only options.
+
+```js
+await boss.update({
+  name: 'article',
+  data: { articleId: 42, body: '…latest…' },
+  options: { singletonKey: 'article-42' }
+})
+```
+
 ### `upsert(name, data, options)`
 
-Update-or-insert by `id` or `singletonKey` (exactly one, same as `update()`): if a matching not-yet-active job exists it is overwritten in place (preserving its `id`), otherwise a new job is inserted. When targeting by `id`, the new job is created with that id. It supports the same `match` option as `update()` (default `newest`, `singletonKey` targeting only). On a `key_strict_fifo` queue a `singletonKey` is required (the insert-on-miss path can't create a keyless job).
+Update-or-insert one or more **not-yet-active** jobs (state `created` or `retry`).  `upsert()` attempts to update an existing job, but if a match is not found, a new job is inserted. When targeting by `id`, the new job is created with that id. It supports the same `match` option as `update()` (default `newest`, `singletonKey` targeting only). On a `key_strict_fifo` queue a `singletonKey` is required.
 
 Returns a `Promise<UpdateResponse>`: `{ jobs, updated, inserted }`. On a hit, `updated` reflects the overwritten job(s) and `inserted` is `0`; on a miss, `inserted` is `1` and `jobs` holds the new id.
 
@@ -218,6 +252,18 @@ await boss.upsert('article', { articleId: 42, body: '…latest…' }, { singleto
 ```
 
 Internally `upsert()` runs the update first (a policy-independent match), inserting only when nothing matched, so it behaves consistently across every queue policy.
+
+### `upsert({ name, data, options })`
+
+This overload supports upserting a job with a single object with name, data, and options properties, mirroring `update({ name, data, options })`.
+
+```js
+await boss.upsert({
+  name: 'article',
+  data: { articleId: 42, body: '…latest…' },
+  options: { singletonKey: 'article-42' }
+})
+```
 
 ### `insert(name, Job[], options)`
 
@@ -297,6 +343,13 @@ Unblocking happens off the completion hot path: a background resolver wakes shor
 ### `resolveFlow()`
 
 Forces an immediate flow-resolution pass instead of waiting for the next background cycle, unblocking dependents of any parents that have completed. Returns a promise that resolves when the pass finishes. Useful for deterministic tests, or when you have disabled `supervise` and drive maintenance yourself.
+
+```js
+await boss.complete('extract', parentJobId)
+
+// unblock any ready dependents now instead of waiting for the next cycle
+await boss.resolveFlow()
+```
 
 ### `fetch(name, options)`
 
@@ -403,9 +456,20 @@ Deletes a job by id.
 
 > Job deletion is offered if desired for a "fetch then delete" workflow similar to SQS. This is not the default behavior for workers so "everything just works" by default, including job throttling and debouncing, which requires jobs to exist to enforce a unique constraint. For example, if you are debouncing a queue to "only allow 1 job per hour", deleting jobs after processing would re-open that time slot, breaking your throttling policy.
 
+```js
+const [job] = await boss.fetch('email-send')
+await emailer.send(job.data)
+await boss.deleteJob('email-send', job.id)
+```
+
 ### `deleteJob(name, [ids], options)`
 
 Deletes a set of jobs by id.
+
+```js
+const jobs = await boss.fetch('email-send', { batchSize: 20 })
+await boss.deleteJob('email-send', jobs.map(job => job.id))
+```
 
 ### `redrive(name, options)`
 
@@ -442,9 +506,17 @@ do {
 
 Deletes all queued jobs in a queue.
 
+```js
+await boss.deleteQueuedJobs('email-send')
+```
+
 ### `deleteStoredJobs(name)`
 
 Deletes all jobs in completed, failed, and cancelled state in a queue.
+
+```js
+await boss.deleteStoredJobs('email-send')
+```
 
 ### `deleteAllJobs(name?)`
 
@@ -452,10 +524,21 @@ Deletes all jobs in a queue, including active jobs.
 
 If no queue name is given, jobs are deleted from all queues.
 
+```js
+// delete everything in one queue
+await boss.deleteAllJobs('email-send')
+
+// delete everything in all queues
+await boss.deleteAllJobs()
+```
 
 ### `cancel(name, id, options)`
 
 Cancels a pending or active job.
+
+```js
+await boss.cancel('email-send', jobId)
+```
 
 ### `cancel(name, [ids], options)`
 
@@ -463,25 +546,57 @@ Cancels a set of pending or active jobs.
 
 When passing an array of ids, it's possible that the operation may partially succeed based on the state of individual jobs requested. Consider this a best-effort attempt.
 
+```js
+await boss.cancel('email-send', [jobId1, jobId2])
+```
+
 ### `resume(name, id, options)`
 
 Resumes a cancelled job.
+
+```js
+await boss.resume('email-send', jobId)
+```
 
 ### `resume(name, [ids], options)`
 
 Resumes a set of cancelled jobs.
 
+```js
+await boss.resume('email-send', [jobId1, jobId2])
+```
+
 ### `retry(name, id, options)`
 
 Retries a failed job.
+
+```js
+await boss.retry('email-send', jobId)
+```
 
 ### `retry(name, [ids], options)`
 
 Retries a set of failed jobs.
 
+```js
+// requeue all failed jobs for another attempt
+const failed = await boss.findJobs('email-send')
+const ids = failed.filter(job => job.state === 'failed').map(job => job.id)
+
+await boss.retry('email-send', ids)
+```
+
 ### `complete(name, id, data, options)`
 
 Completes an active job. This would likely only be used with `fetch()`. Accepts an optional `data` argument for job output and an optional `options` object.
+
+```js
+const [job] = await boss.fetch('report-generation')
+
+const report = await generateReport(job.data)
+
+await boss.complete('report-generation', job.id, { reportUrl: report.url })
+```
 
 **options**
 
@@ -512,9 +627,27 @@ Marks an active job as failed.
 
 The promise will resolve on a successful assignment of failure, or reject if the job could not be marked as failed.
 
+```js
+const [job] = await boss.fetch('email-send')
+
+try {
+  await emailer.send(job.data)
+  await boss.complete('email-send', job.id)
+} catch (err) {
+  // stored in the job's output and eligible for retry per the queue config
+  await boss.fail('email-send', job.id, err)
+}
+```
+
 ### `fail(name, [ids], options)`
 
 Fails a set of active jobs.
+
+```js
+const jobs = await boss.fetch('email-send', { batchSize: 10 })
+
+await boss.fail('email-send', jobs.map(job => job.id), { message: 'smtp outage' })
+```
 
 The promise will resolve on a successful failure state assignment, or reject if not all of the requested jobs could not be marked as failed.
 

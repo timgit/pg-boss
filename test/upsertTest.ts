@@ -139,4 +139,25 @@ describe('upsert', function () {
     expect(jobs[0].id).toBe(id)
     expect(jobs[0].data).toEqual({ body: 'v2' })
   })
+
+  describe('object API', function () {
+    it('should insert then update a job passed as a single object argument', async function () {
+      ctx.boss = await helper.start(ctx.bossConfig)
+
+      const inserted = await ctx.boss.upsert({ name: ctx.schema, data: { v: 1 }, options: { id: SOME_UUID } })
+      expect(inserted).toEqual({ jobs: [SOME_UUID], updated: 0, inserted: 1 })
+
+      const updated = await ctx.boss.upsert({ name: ctx.schema, data: { v: 2 }, options: { id: SOME_UUID } })
+      expect(updated).toEqual({ jobs: [SOME_UUID], updated: 1, inserted: 0 })
+
+      const job = await ctx.boss.getJobById(ctx.schema, SOME_UUID)
+      assertTruthy(job)
+      expect(job.data).toEqual({ v: 2 })
+    })
+
+    it('should reject the object form when neither id nor singletonKey is provided', async function () {
+      ctx.boss = await helper.start(ctx.bossConfig)
+      await expect(ctx.boss.upsert({ name: ctx.schema, data: { v: 1 } })).rejects.toThrow(/exactly one of id or singletonKey/)
+    })
+  })
 })
