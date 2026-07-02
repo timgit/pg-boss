@@ -356,7 +356,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     if (this.config.noMultiMutationCte) {
       const outputById = new Map(items.map(item => [item.id, this.mapCompletionDataArg(item.output)]))
-      return this.withDistributedTransaction(this.db, async (tx) => {
+      return this.ensureTransaction(this.db, async (tx) => {
         const selectQuery = plans.selectJobsToFailById(this.config.schema, table)
         const { rows: jobs } = await tx.executeSql(selectQuery.text, [name, ids])
 
@@ -1056,7 +1056,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const updatePayload = JSON.stringify(job)
     const insertPayload = JSON.stringify([job])
 
-    return this.withDistributedTransaction(db, async (tx) => {
+    const result = await this.ensureTransaction(db, async (tx) => {
       const { rows: updated } = await tx.executeSql(updateSql, [updatePayload])
       if (updated.length) {
         const jobs = updated.map(row => row.id)
@@ -1075,6 +1075,19 @@ class Manager extends EventEmitter implements types.EventsMixin {
       const jobs = retry.map(row => row.id)
       return { jobs, updated: jobs.length, inserted: 0 }
     })
+
+    // Track inserted (newly created) jobs for spies, matching createJob/insert. Runs after the
+    // transaction commits so a rolled-back insert never leaves a phantom spy entry.
+    if (result.inserted && this.config.__test__enableSpies) {
+      const spy = this.#spies.get(name)
+      if (spy) {
+        for (const id of result.jobs) {
+          spy.addJob(id, name, data || {}, 'created')
+        }
+      }
+    }
+
+    return result
   }
 
   async insert (
@@ -1349,7 +1362,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
   // connection we pin a single client via withTransaction(); when the caller supplied their own
   // db (options.db) we run the statements inline so they compose inside the caller's transaction
   // rather than issuing a BEGIN/COMMIT that would commit or roll back their outer work.
-  private async withDistributedTransaction<T> (db: types.IDatabase, fn: (tx: types.IDatabase) => Promise<T>): Promise<T> {
+  private async ensureTransaction<T> (db: types.IDatabase, fn: (tx: types.IDatabase) => Promise<T>): Promise<T> {
     if (db === this.db && this.db._pgbdb) {
       return this.db.withTransaction(fn)
     }
@@ -1373,7 +1386,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const outputData = this.mapCompletionDataArg(data)
 
     // noMultiMutationCte: use separate queries to avoid CockroachDB's multi-mutation CTE limitation.
-    // The delete and re-insert run in a single transaction (see withDistributedTransaction) so the
+    // The delete and re-insert run in a single transaction (see ensureTransaction) so the
     // job cannot be lost between the two statements.
     if (this.config.noMultiMutationCte) {
       return this.failDistributed(name, ids, outputData, table, db)
@@ -1387,7 +1400,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
   private async failDistributed (name: string, ids: string[], outputData: any, table: string, db: types.IDatabase): Promise<types.CommandResponse> {
     // CockroachDB doesn't support multi-mutation CTEs, but does support transactions, so the
     // delete + re-insert is split into separate statements run atomically.
-    return this.withDistributedTransaction(db, async (tx) => {
+    return this.ensureTransaction(db, async (tx) => {
       // Step 1: Select jobs to fail
       const selectQuery = plans.selectJobsToFailById(this.config.schema, table)
       const { rows: jobs } = await tx.executeSql(selectQuery.text, [name, ids])
@@ -1428,7 +1441,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
   async resolveFlowJobsDistributed (table: string, names: string[]): Promise<number> {
     const select = plans.selectBlockingParents(this.config.schema, table, names, this.config.noSkipLocked)
 
-    return this.withDistributedTransaction(this.db, async (tx) => {
+    return this.ensureTransaction(this.db, async (tx) => {
       const { rows } = await tx.executeSql(select.text, select.values)
 
       if (rows.length === 0) {
@@ -1455,7 +1468,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
   }
 
   private async expireJobsDistributed (table: string, select: plans.SqlQuery, outputData: any): Promise<number> {
-    return this.withDistributedTransaction(this.db, async (tx) => {
+    return this.ensureTransaction(this.db, async (tx) => {
       const { rows: jobs } = await tx.executeSql(select.text, [])
 
       if (jobs.length === 0) {

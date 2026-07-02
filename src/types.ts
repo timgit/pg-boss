@@ -243,7 +243,11 @@ export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, 
   __test__force_clock_skew_warning?: string;
   /** @internal */
   __test__force_clock_monitoring_error?: string;
-  /** @internal */
+  /**
+   * Enables job spies for deterministic testing (see `getSpy`). Adds per-transition
+   * tracking overhead — **NOT for production.**
+   * @default false
+   */
   __test__enableSpies?: boolean;
   /** @internal */
   __test__delay_maint_ms?: number;

@@ -199,16 +199,34 @@ await boss.sendDebounced('reindex-document', { docId: 'doc-1' }, null, 30, 'doc-
 
 ### `update(name, data, options)`
 
-Overwrites the payload and options of one or more **not-yet-active** jobs (state `created` or `retry`). A job that is already `active`, `completed`, or otherwise terminal is never modified. `update()` never inserts — if nothing matches, it resolves with an empty `jobs` array and `updated: 0`.
+Updates the payload and options of one or more **not-yet-active** jobs (state `created` or `retry`). Jobs that are already `active`, `completed`, or otherwise terminal cannot be updated. If nothing matches, it resolves with an empty `jobs` array and `updated: 0`.
 
 Target the job with **exactly one** of:
 
 - `options.id` — a single job by id.
 - `options.singletonKey` — jobs sharing that key.
 
-This is a **partial edit**: only the fields you supply are changed, and any option you omit is left at the job's current value. Passing just a new `data` payload with a target replaces the payload without disturbing the job's existing `startAfter`, `priority`, retry settings, etc. Supported fields are `data`, `priority`, `startAfter`, `retryLimit`, `retryDelay`, `retryBackoff`, `retryDelayMax`, `expireInSeconds`, `retentionSeconds`, `deleteAfterSeconds`, `deadLetter`, `heartbeatSeconds`, and `group`. The job's `singletonKey` and `singletonOn` (throttle slot) are always preserved. To leave the payload unchanged while editing only options, pass `undefined` for `data`; passing `null` clears it.
+Only the fields you supply are changed, and any option you omit is left at the job's current value. Passing just a new `data` payload with a target replaces the payload without disturbing the job's existing `startAfter`, `priority`, retry settings, etc. 
 
-If a touched job ends up runnable (its `startAfter` is now in the past) on a queue with `LISTEN`/`NOTIFY` enabled, a wake-up notification is emitted so idle workers fetch it promptly.
+Updatable fields are:
+
+* `data`
+* `priority`
+* `startAfter`
+* `retryLimit`
+* `retryDelay`
+* `retryBackoff`
+* `retryDelayMax`
+* `expireInSeconds`
+* `retentionSeconds`
+* `deleteAfterSeconds`
+* `deadLetter`
+* `heartbeatSeconds`
+* `group`
+
+The job's `singletonKey` and `singletonOn` (throttle slot) are always preserved. To leave the payload unchanged while editing only options, pass `undefined` for `data`; passing `null` clears it.
+
+If the updated job ends up runnable (its `startAfter` is now in the past) on a queue with `LISTEN`/`NOTIFY` enabled, a wake-up notification is emitted so idle workers fetch it promptly.
 
 Returns a `Promise<UpdateResponse>`: `{ jobs, updated, inserted }`, where `jobs` are the affected ids, `updated` is the number of jobs overwritten, and `inserted` is always `0` for `update()`.
 
@@ -220,7 +238,7 @@ await boss.update('email', { to: 'a@b.co', retries: 0 }, { id: jobId })
 await boss.update('article', { articleId: 42, body: '…latest…' }, { singletonKey: 'article-42' })
 ```
 
-Because a `singletonKey` is only guaranteed unique per state under the `short` and `stately` policies, several pre-active jobs can share a key (for example under throttling/debouncing, or with a manually-assigned key on a `standard` queue). Use `options.match` to choose which are overwritten, ordered by `createdOn`:
+Because a `singletonKey` is only guaranteed unique per state under the `short` and `stately` policies, several pre-active jobs can share a key (for example under throttling/debouncing, or with a manually-assigned key on a `standard` queue). Use `options.match` to choose which are updated, ordered by `createdOn`:
 
 - `newest` (default) — overwrite the most recently created match.
 - `oldest` — overwrite the earliest created match.
@@ -242,7 +260,7 @@ await boss.update({
 
 ### `upsert(name, data, options)`
 
-Update-or-insert one or more **not-yet-active** jobs (state `created` or `retry`).  `upsert()` attempts to update an existing job, but if a match is not found, a new job is inserted. When targeting by `id`, the new job is created with that id. It supports the same `match` option as `update()` (default `newest`, `singletonKey` targeting only). On a `key_strict_fifo` queue a `singletonKey` is required.
+Update-or-insert one or more **not-yet-active** jobs (state `created` or `retry`). Confused yet?  This is more of a special use case and probably shouldn't replace the normal usage of `send()`. Think of `upsert()` as a convenience abstraction over 2 steps: `update()` first, but if no matches were found, then `insert()`. The same options are used here as in `update()`.  When matching by `id`, the new job is created with that id. It supports the same `match` option as `update()` when using `singletonKey`. However, remember that on a `key_strict_fifo` queue, `singletonKey` is required to insert.
 
 Returns a `Promise<UpdateResponse>`: `{ jobs, updated, inserted }`. On a hit, `updated` reflects the overwritten job(s) and `inserted` is `0`; on a miss, `inserted` is `1` and `jobs` holds the new id.
 
@@ -251,7 +269,6 @@ Returns a `Promise<UpdateResponse>`: `{ jobs, updated, inserted }`. On a hit, `u
 await boss.upsert('article', { articleId: 42, body: '…latest…' }, { singletonKey: 'article-42' })
 ```
 
-Internally `upsert()` runs the update first (a policy-independent match), inserting only when nothing matched, so it behaves consistently across every queue policy.
 
 ### `upsert({ name, data, options })`
 
