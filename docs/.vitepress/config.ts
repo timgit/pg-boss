@@ -64,7 +64,7 @@ export default defineConfig({
       },
       {
         text: 'SQL',
-        collapsed: true,
+        collapsed: false,
         items: [
           { text: 'Job Table', link: '/sql/job-table' },
           { text: 'Queue Functions', link: '/sql/queue-functions' },
