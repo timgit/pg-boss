@@ -12,7 +12,7 @@ import { ctx } from './hooks.ts'
 //   1. Concurrent-fetch deduplication — the core guarantee of the atomic UPDATE...RETURNING fetch
 //      that replaces SKIP LOCKED; no generic test asserts "N concurrent workers, zero duplicates".
 //   2. Caller-supplied-transaction composition for completeDistributed/failDistributed — the
-//      withDistributedTransaction contract (compose inline, roll back with the caller's tx).
+//      ensureTransaction contract (compose inline, roll back with the caller's tx).
 //   3. Flag-gated schema construction (noTablePartitioning / noDeferrableConstraints /
 //      noCoveringIndexes / noAdvisoryLocks) — the ONLY Postgres-side coverage of that DDL, since the
 //      `DISTRIBUTED=true` job sets noSkipLocked + noMultiMutationCte but NOT the schema no* flags.

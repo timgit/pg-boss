@@ -73,7 +73,7 @@ Emitted at most once every 2 seconds whenever at least one worker has an active 
     lastFetchedOn: 1620149137015,
     lastJobStartedOn: 1620149137015,
     lastJobEndedOn: null,
-    lastJobDuration: 343
+    lastJobDuration: 343,
     lastError: null,
     lastErrorOn: null
   }

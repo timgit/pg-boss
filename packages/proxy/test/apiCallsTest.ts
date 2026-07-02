@@ -396,6 +396,16 @@ describe('proxy api routes', () => {
         expected: ['queue', [{ id: '1', data: {} }], { returnId: true }]
       },
       {
+        method: 'update',
+        body: { name: 'queue', data: { foo: 'bar' }, options: { id: '1' } },
+        expected: ['queue', { foo: 'bar' }, { id: '1' }]
+      },
+      {
+        method: 'upsert',
+        body: { name: 'queue', data: { foo: 'bar' }, options: { singletonKey: 'k', match: 'all' } },
+        expected: ['queue', { foo: 'bar' }, { singletonKey: 'k', match: 'all' }]
+      },
+      {
         method: 'flow',
         body: { jobs: [{ ref: 'a', name: 'queue' }, { ref: 'b', name: 'queue', dependsOn: ['a'] }] },
         expected: [[{ ref: 'a', name: 'queue' }, { ref: 'b', name: 'queue', dependsOn: ['a'] }]]
@@ -724,6 +734,38 @@ describe('proxy api routes', () => {
     const response = await app.fetch(request)
     expect(response.status).toBe(200)
     expect(calls.get('send')?.[0]).toEqual(['queue'])
+  })
+
+  it('edge case: update without data passes undefined (leave payload unchanged), not null', async () => {
+    const { boss, calls } = createBossMock()
+    const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any })
+
+    const request = await postJson('http://local/api/update', { name: 'queue', options: { id: '1' } })
+    const response = await app.fetch(request)
+    expect(response.status).toBe(200)
+    const args = calls.get('update')?.[0]
+    expect(args).toEqual(['queue', undefined, { id: '1' }])
+    expect(args?.[1]).toBeUndefined()
+  })
+
+  it('edge case: update with null data passes null (clear payload)', async () => {
+    const { boss, calls } = createBossMock()
+    const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any })
+
+    const request = await postJson('http://local/api/update', { name: 'queue', data: null, options: { singletonKey: 'k' } })
+    const response = await app.fetch(request)
+    expect(response.status).toBe(200)
+    expect(calls.get('update')?.[0]).toEqual(['queue', null, { singletonKey: 'k' }])
+  })
+
+  it('edge case: update without options is rejected', async () => {
+    const { boss, calls } = createBossMock()
+    const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any })
+
+    const request = await postJson('http://local/api/update', { name: 'queue', data: { foo: 'bar' } })
+    const response = await app.fetch(request)
+    expect(response.status).toBe(400)
+    expect(calls.get('update')?.length).toBe(0)
   })
 
   it('edge case: deleteAllJobs with no name', async () => {

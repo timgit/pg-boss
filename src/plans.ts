@@ -1,4 +1,4 @@
-import type { UpdateQueueOptions } from './types.ts'
+import type { JobMatchStrategy, UpdateQueueOptions } from './types.ts'
 
 export interface SqlQuery {
   text: string
@@ -2249,6 +2249,76 @@ export function retryJobs (schema: string, table: string) {
       RETURNING 1
     )
     SELECT COUNT(*) from results
+  `
+}
+
+// Partial in-place edit of not-yet-active jobs, preserving id/state/singleton identity.
+// The payload ($1) is a jsonb object of ONLY the fields the caller supplied; each column is
+// left untouched unless its key is present (`o.data ? 'key'`), so an update that carries just
+// `data` never clobbers an existing start_after/priority/etc. Targeting is by id or
+// singleton_key; when by key, `match` picks which of several pre-active matches to edit
+// (newest/oldest = one row via ORDER BY + LIMIT; all = every match). When `notify` is set the
+// edit emits a single pg_notify iff a touched row ends up runnable (start_after <= now()),
+// closing the wake-up gap for jobs pulled forward. Callers needing insert-on-miss compose this
+// with insertJobs (see Manager.upsert).
+export function updateJob (schema: string, table: string, name: string, by: 'id' | 'singletonKey', match: JobMatchStrategy, notify = false) {
+  const targetPredicate = by === 'id'
+    ? "job.id = (o.data->>'id')::uuid"
+    : "job.singleton_key = o.data->>'singletonKey'"
+  const ordering = (by === 'singletonKey' && match !== 'all')
+    ? `ORDER BY job.created_on ${match === 'oldest' ? 'ASC' : 'DESC'} LIMIT 1`
+    : ''
+
+  // Resolve the incoming startAfter the same way insertJobs does (absolute 'Z' timestamp vs.
+  // relative interval), falling back to the row's current start_after when not supplied.
+  const resolvedStartAfter = `
+        CASE WHEN o.data ? 'startAfter'
+          THEN CASE WHEN right(o.data->>'startAfter', 1) = 'Z'
+                 THEN (o.data->>'startAfter')::timestamptz
+                 ELSE now() + CAST(o.data->>'startAfter' AS interval) END
+          ELSE job.start_after END`
+
+  const tail = notify
+    ? `, notified AS (
+      SELECT pg_notify(${notifyChannelSql(schema)}, '${name}')
+      FROM upd WHERE start_after <= now() LIMIT 1
+    )
+    SELECT id FROM upd WHERE (SELECT count(*) FROM notified) >= 0`
+    : `
+    SELECT id FROM upd`
+
+  return `
+    WITH o AS (SELECT $1::jsonb AS data),
+    target AS (
+      SELECT job.id
+      FROM ${schema}.${table} job, o
+      WHERE job.name = '${name}'
+        AND job.state < '${JOB_STATES.active}'
+        AND ${targetPredicate}
+      ${ordering}
+    ),
+    upd AS (
+      UPDATE ${schema}.${table} job
+      SET data = CASE WHEN o.data ? 'data' THEN o.data->'data' ELSE job.data END,
+          priority = COALESCE((o.data->>'priority')::int, job.priority),
+          start_after = ${resolvedStartAfter},
+          keep_until = CASE WHEN o.data ? 'retentionSeconds'
+            THEN (${resolvedStartAfter}) + ((o.data->>'retentionSeconds')::int * interval '1s')
+            ELSE job.keep_until END,
+          expire_seconds = COALESCE((o.data->>'expireInSeconds')::int, job.expire_seconds),
+          deletion_seconds = COALESCE((o.data->>'deleteAfterSeconds')::int, job.deletion_seconds),
+          retry_limit = COALESCE((o.data->>'retryLimit')::int, job.retry_limit),
+          retry_delay = COALESCE((o.data->>'retryDelay')::int, job.retry_delay),
+          retry_backoff = COALESCE((o.data->>'retryBackoff')::bool, job.retry_backoff),
+          retry_delay_max = CASE WHEN o.data ? 'retryDelayMax' THEN (o.data->>'retryDelayMax')::int ELSE job.retry_delay_max END,
+          dead_letter = CASE WHEN o.data ? 'deadLetter' THEN o.data->>'deadLetter' ELSE job.dead_letter END,
+          heartbeat_seconds = CASE WHEN o.data ? 'heartbeatSeconds' THEN (o.data->>'heartbeatSeconds')::int ELSE job.heartbeat_seconds END,
+          group_id = CASE WHEN o.data ? 'groupId' THEN o.data->>'groupId' ELSE job.group_id END,
+          group_tier = CASE WHEN o.data ? 'groupTier' THEN o.data->>'groupTier' ELSE job.group_tier END
+      FROM o
+      WHERE job.id IN (SELECT id FROM target)
+      RETURNING job.id, job.start_after
+    )${tail}
   `
 }
 

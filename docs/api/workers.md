@@ -326,6 +326,14 @@ setInterval(() => {
 
 Notifies a worker by id to bypass the job polling interval (see `pollingIntervalSeconds`) for this iteration in the loop.
 
+```js
+const workerId = await boss.work('email-welcome', { pollingIntervalSeconds: 60 }, handler)
+
+// a job was just created — tell the worker to fetch now instead of
+// waiting out the remainder of its polling interval
+await boss.send('email-welcome', { to: 'new@user.com' })
+boss.notifyWorker(workerId)
+```
 
 ### `offWork(name, options)`
 
@@ -344,3 +352,13 @@ Removes a worker by name or id and stops polling.
 * **id**, string
 
   Only stop polling by worker id
+
+```js
+const workerId = await boss.work('email-welcome', handler)
+
+// stop all workers for a queue, waiting for active jobs to finish
+await boss.offWork('email-welcome')
+
+// stop a single worker by id without waiting
+await boss.offWork('email-welcome', { id: workerId, wait: false })
+```

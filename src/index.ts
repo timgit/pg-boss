@@ -241,6 +241,18 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#manager.sendThrottled(name, data, options, seconds, key)
   }
 
+  update (request: types.UpdateRequest): Promise<types.UpdateResponse>
+  update (name: string, data: object | null | undefined, options?: types.UpdateOptions): Promise<types.UpdateResponse>
+  update (...args: any[]): Promise<types.UpdateResponse> {
+    return this.#manager.update(...args as Parameters<Manager['update']>)
+  }
+
+  upsert (request: types.UpdateRequest): Promise<types.UpsertResponse>
+  upsert (name: string, data: object | null | undefined, options?: types.UpdateOptions): Promise<types.UpsertResponse>
+  upsert (...args: any[]): Promise<types.UpsertResponse> {
+    return this.#manager.upsert(...args as Parameters<Manager['upsert']>)
+  }
+
   sendDebounced (name: string, data: object | null, options: types.SendOptions | null, seconds: number, key?: string): Promise<string | null> {
     return this.#manager.sendDebounced(name, data, options, seconds, key)
   }
@@ -482,6 +494,7 @@ export type {
   Job,
   JobFetchOptions,
   JobInsert,
+  JobMatchStrategy,
   JobOptions,
   JobPollingOptions,
   JobResult,
@@ -505,7 +518,11 @@ export type {
   SchedulingOptions,
   SendOptions,
   StopOptions,
+  UpdateOptions,
   UpdateQueueOptions,
+  UpdateRequest,
+  UpdateResponse,
+  UpsertResponse,
   Warning,
   WipData,
   WorkConcurrencyOptions,

@@ -40,7 +40,6 @@ const sendOptionsSchemaBase = z.object({
   singletonKey: z.string().optional(),
   singletonSeconds: z.number().optional(),
   singletonNextSlot: z.boolean().optional(),
-  keepUntil: dateInputSchema.optional(),
   group: groupOptionsSchema.optional(),
   deadLetter: z.string().optional(),
   expireInSeconds: z.number().optional(),
@@ -65,6 +64,26 @@ export const queueOptionsSchema = z.object({
   retryDelayMax: z.number().optional(),
   heartbeatSeconds: z.number().optional(),
 }) satisfies z.ZodType<types.HttpQueueOptions>
+
+// Curated subset of send options accepted by update()/upsert(): partial edits exclude the
+// throttle/debounce options (singletonSeconds, singletonNextSlot) and add match.
+export const updateOptionsSchema = z.object({
+  id: z.string().optional(),
+  priority: z.number().optional(),
+  startAfter: dateInputSchema.optional(),
+  singletonKey: z.string().optional(),
+  group: groupOptionsSchema.optional(),
+  deadLetter: z.string().optional(),
+  expireInSeconds: z.number().optional(),
+  retentionSeconds: z.number().optional(),
+  deleteAfterSeconds: z.number().optional(),
+  retryLimit: z.number().optional(),
+  retryDelay: z.number().optional(),
+  retryBackoff: z.boolean().optional(),
+  retryDelayMax: z.number().optional(),
+  heartbeatSeconds: z.number().optional(),
+  match: z.enum(['newest', 'oldest', 'all']).optional(),
+}) satisfies z.ZodType<types.HttpUpdateOptions>
 
 export const scheduleOptionsSchema = sendOptionsSchemaBase.extend({
   tz: z.string().optional(),
@@ -179,6 +198,17 @@ export const commandResponseSchema = z.object({
   requested: z.number(),
   affected: z.number(),
 }) satisfies z.ZodType<types.HttpCommandResponse>
+
+export const updateResultSchema = z.object({
+  jobs: z.array(z.string()),
+  updated: z.number(),
+}) satisfies z.ZodType<types.HttpUpdateResult>
+
+export const upsertResultSchema = z.object({
+  jobs: z.array(z.string()),
+  updated: z.number(),
+  inserted: z.number(),
+}) satisfies z.ZodType<types.HttpUpsertResult>
 
 export const dependencyRefSchema = z.object({
   name: z.string(),
@@ -298,6 +328,30 @@ export const insertRequestSchema: z.ZodType<types.HttpInsertRequest> = z.object(
 export const insertResponseSchema: z.ZodType<types.HttpInsertResponse> = z.object({
   ok: z.literal(true),
   result: z.array(z.string()).nullable()
+})
+
+// options is required: update()/upsert() must target by id or singletonKey. `data` stays
+// optional-and-nullable — an absent key leaves the payload unchanged, null clears it.
+export const updateRequestSchema: z.ZodType<types.HttpUpdateRequest> = z.object({
+  name: queueNameSchema,
+  data: nullableJsonRecordSchema.optional(),
+  options: updateOptionsSchema
+})
+
+export const updateResponseSchema: z.ZodType<types.HttpUpdateResponse> = z.object({
+  ok: z.literal(true),
+  result: updateResultSchema
+})
+
+export const upsertRequestSchema: z.ZodType<types.HttpUpsertRequest> = z.object({
+  name: queueNameSchema,
+  data: nullableJsonRecordSchema.optional(),
+  options: updateOptionsSchema
+})
+
+export const upsertResponseSchema: z.ZodType<types.HttpUpsertResponse> = z.object({
+  ok: z.literal(true),
+  result: upsertResultSchema
 })
 
 export const flowRequestSchema: z.ZodType<types.HttpFlowRequest> = z.object({

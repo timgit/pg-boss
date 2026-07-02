@@ -447,4 +447,53 @@ describe('spy', function () {
     expect(job2.id).toBe(jobId2)
     expect(job2.data).toEqual({ value: 'second' })
   })
+
+  it('should track job creation via upsert insert-on-miss', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
+
+    const spy = ctx.boss.getSpy<{ value: string }>(ctx.schema)
+
+    const { randomUUID } = await import('node:crypto')
+    const id = randomUUID()
+
+    // Nothing matches this id yet, so upsert falls through to the insert branch.
+    const result = await ctx.boss.upsert(ctx.schema, { value: 'upserted' }, { id })
+    expect(result.inserted).toBe(1)
+    expect(result.jobs).toEqual([id])
+
+    const job = await spy.waitForJobWithId(id, 'created')
+    expect(job.id).toBe(id)
+    expect(job.name).toBe(ctx.schema)
+    expect(job.data).toEqual({ value: 'upserted' })
+    expect(job.state).toBe('created')
+  })
+
+  it('should not record a new creation when upsert updates an existing job in place', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
+
+    const spy = ctx.boss.getSpy<{ value: string }>(ctx.schema)
+
+    const { randomUUID } = await import('node:crypto')
+    const id = randomUUID()
+
+    // First upsert inserts and is tracked as created.
+    const first = await ctx.boss.upsert(ctx.schema, { value: 'original' }, { id })
+    expect(first.inserted).toBe(1)
+    await spy.waitForJobWithId(id, 'created')
+
+    // Clear so any spurious 'created' from the update branch would be observable.
+    spy.clear()
+
+    // Second upsert matches the pre-active job and edits it in place (no insert).
+    const second = await ctx.boss.upsert(ctx.schema, { value: 'edited' }, { id })
+    expect(second.updated).toBe(1)
+    expect(second.inserted).toBe(0)
+
+    // The update branch must not emit a 'created' spy entry.
+    const result = await Promise.race([
+      spy.waitForJobWithId(id, 'created'),
+      delay(500).then(() => 'timeout')
+    ])
+    expect(result).toBe('timeout')
+  })
 })

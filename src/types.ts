@@ -243,7 +243,11 @@ export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, 
   __test__force_clock_skew_warning?: string;
   /** @internal */
   __test__force_clock_monitoring_error?: string;
-  /** @internal */
+  /**
+   * Enables job spies for deterministic testing (see `getSpy`). Adds per-transition
+   * tracking overhead — **NOT for production.**
+   * @default false
+   */
   __test__enableSpies?: boolean;
   /** @internal */
   __test__delay_maint_ms?: number;
@@ -364,7 +368,6 @@ export interface JobOptions {
   singletonKey?: string;
   singletonSeconds?: number;
   singletonNextSlot?: boolean;
-  keepUntil?: number | string | Date;
   group?: GroupOptions;
   deadLetter?: string;
 }
@@ -415,6 +418,46 @@ export interface RedriveOptions extends ConnectionOptions {
 export type InsertOptions = ConnectionOptions & { returnId?: boolean }
 
 export type SendOptions = JobOptions & QueueOptions & ConnectionOptions
+
+/**
+ * When `update()`/`upsert()` targets jobs by `singletonKey` and more than one
+ * pre-active (created or retry) job shares that key (possible under
+ * throttle/debounce or a manually-set key on a `standard` queue), this selects
+ * which match(es) to overwrite, ordered by `createdOn`:
+ * - `newest` (default) overwrites the most recently enqueued match
+ * - `oldest` overwrites the earliest enqueued match
+ * - `all` overwrites every match
+ */
+export type JobMatchStrategy = 'newest' | 'oldest' | 'all'
+
+/**
+ * Options for `update()` and `upsert()`. Target a job with exactly one of `id`
+ * or `singletonKey` (`upsert()` requires `singletonKey`). Only the fields you
+ * supply are changed; any option you omit is left at the job's current value
+ * (this is a partial edit, not a re-`send()`). `match` is only valid when
+ * targeting by `singletonKey`.
+ *
+ * This is a curated subset of `SendOptions`: the throttle/debounce options
+ * (`singletonSeconds`, `singletonNextSlot`) are intentionally excluded because
+ * `update`/`upsert` do not act on them (a job's throttle slot is preserved).
+ */
+export type UpdateOptions =
+  Pick<JobOptions, 'id' | 'priority' | 'startAfter' | 'singletonKey' | 'group' | 'deadLetter'>
+  & QueueOptions
+  & ConnectionOptions
+  & { match?: JobMatchStrategy }
+
+/**
+ * The object form accepted by the single-argument overload of `update()` and
+ * `upsert()`, mirroring {@link Request} for `send()`. `data` is optional
+ * (omit or pass `undefined` to edit only options; pass `null` to clear the
+ * payload) and `options` carries the target (`id` or `singletonKey`).
+ */
+export interface UpdateRequest {
+  name: string;
+  data?: object | null;
+  options?: UpdateOptions;
+}
 
 /**
  * The queue policy dictates how jobs are allowed to be queued and processed.
@@ -842,6 +885,30 @@ export interface CommandResponse {
   requested: number;
   /** @internal */
   affected: number;
+}
+
+/**
+ * The result of `update()`. Unlike the target-a-list mutators
+ * (`cancel`/`resume`/etc.), `update()` discovers how many jobs a target
+ * resolves to. `update()` never inserts, so there is no `inserted` count —
+ * see {@link UpsertResponse} for `upsert()`.
+ */
+export interface UpdateResponse {
+  /** Ids of the jobs updated in place. */
+  jobs: string[];
+  /** Number of existing jobs updated in place (equals `jobs.length`). */
+  updated: number;
+}
+
+/**
+ * The result of `upsert()`. Extends {@link UpdateResponse} with the
+ * update-vs-insert discriminator: a single `upsert()` either edits the
+ * matching job(s) in place (`updated`) or inserts one new job (`inserted`),
+ * so exactly one of the two counts is non-zero.
+ */
+export interface UpsertResponse extends UpdateResponse {
+  /** Number of jobs newly inserted (mutually exclusive with `updated`). */
+  inserted: number;
 }
 
 export interface BamEntry {

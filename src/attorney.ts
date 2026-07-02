@@ -129,6 +129,68 @@ function checkSendArgs (args: any): types.Request {
   return { name, data, options }
 }
 
+const JOB_MATCH_STRATEGIES = ['newest', 'oldest', 'all']
+
+// Unlike checkSendArgs, this does NOT inject send-style defaults (e.g. priority = 0): update()
+// is a partial edit, so only the option keys the caller actually supplied may survive into the
+// payload. Normalization is limited to type coercion (startAfter) and validation.
+function checkUpdateArgs (args: any, { upsert = false } = {}): types.Request {
+  const verb = upsert ? 'upsert()' : 'update()'
+  let name, data, rawOptions
+
+  if (typeof args[0] === 'string') {
+    name = args[0]
+    data = args[1]
+    rawOptions = args[2]
+  } else if (typeof args[0] === 'object') {
+    assert(args.length === 1, `${verb} object API only accepts 1 argument`)
+
+    const job = args[0]
+
+    assert(job, 'boss requires all jobs to have a name')
+
+    name = job.name
+    data = job.data
+    rawOptions = job.options
+  }
+
+  assert(name, 'boss requires all jobs to have a queue name')
+  assert(typeof data !== 'function', `${verb} cannot accept a function as the payload.  Did you intend to use work()?`)
+
+  const options = { ...(rawOptions || {}) }
+  assert(typeof options === 'object', 'options should be an object')
+
+  const { id, singletonKey, match } = options as types.UpdateOptions
+
+  // Both update() and upsert() target by exactly one of id or singletonKey. (upsert() may also
+  // require a singletonKey at runtime on key_strict_fifo queues — enforced in the manager, which
+  // knows the policy — because an insert-on-miss there needs a key.)
+  assert((!!id) !== (!!singletonKey), `${verb} requires exactly one of id or singletonKey`)
+  assert(!(id && match !== undefined), 'match is only valid when targeting jobs by singletonKey')
+
+  assert(match === undefined || JOB_MATCH_STRATEGIES.includes(match), `match must be one of: ${JOB_MATCH_STRATEGIES.join(', ')}`)
+
+  assert(!('priority' in options) || (Number.isInteger(options.priority)), 'priority must be an integer')
+
+  if ('startAfter' in options) {
+    options.startAfter = (options.startAfter instanceof Date && typeof options.startAfter.toISOString === 'function')
+      ? options.startAfter.toISOString()
+      : (+options.startAfter > 0)
+          ? '' + options.startAfter
+          : (typeof options.startAfter === 'string')
+              ? options.startAfter
+              : undefined
+  }
+
+  validateRetryConfig(options)
+  validateExpirationConfig(options)
+  validateRetentionConfig(options)
+  validateGroupConfig(options)
+  validateHeartbeatConfig(options)
+
+  return { name, data, options }
+}
+
 function validateGroupConfig (config: any) {
   if (!('group' in config) || config.group === undefined || config.group === null) {
     return
@@ -598,6 +660,7 @@ export {
   assertQueueName,
   checkFetchArgs,
   checkSendArgs,
+  checkUpdateArgs,
   checkWorkArgs,
   getConfig,
   POLICY,

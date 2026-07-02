@@ -4,6 +4,22 @@
 
 Creates a queue.
 
+```js
+// a basic queue with the default (standard) policy
+await boss.createQueue('email-send')
+
+// a queue with retry and dead letter configuration
+// (the dead letter queue must exist before it can be referenced)
+await boss.createQueue('order-processing-dlq')
+await boss.createQueue('order-processing', {
+  policy: 'singleton',
+  retryLimit: 5,
+  retryDelay: 60,
+  retryBackoff: true,
+  deadLetter: 'order-processing-dlq'
+})
+```
+
 ```ts
   type Queue = {
     name: string;
@@ -132,17 +148,41 @@ Actual detection time is `heartbeatSeconds` + up to `monitorIntervalSeconds` (de
 
 Updates options on an existing queue, with the exception of the `policy` and `partition` settings, which cannot be changed.
 
+```js
+await boss.updateQueue('email-send', { retryLimit: 5, retryDelay: 120 })
+```
+
 ### `deleteQueue(name)`
 
 Deletes a queue and all jobs.
+
+```js
+await boss.deleteQueue('email-send')
+```
 
 ### `getQueues(names?)`
 
 Returns all queues, or only the named queues when an array of names is provided.
 
+```js
+const queues = await boss.getQueues()
+
+for (const queue of queues) {
+  console.log(`${queue.name}: ${queue.queuedCount} queued, ${queue.activeCount} active`)
+}
+```
+
 ### `getQueue(name)`
 
-Returns a queue by name
+Returns a queue by name, or `null` if it doesn't exist.
+
+```js
+const queue = await boss.getQueue('email-send')
+
+if (!queue) {
+  await boss.createQueue('email-send')
+}
+```
 
 ### `getQueueStats(name, options)`
 
@@ -167,6 +207,20 @@ Behavior depends on whether stats are being persisted:
 
   `limit` still caps the number of buckets returned, so size the bucket so the bucket count stays within it. The covering index on `queue_stats` plus daily partition pruning keeps these aggregates fast with no extra setup; for sustained high-frequency monitoring over long retention you can layer pre-aggregated rollup tables or point `queue_stats` at a TimescaleDB hypertable with a continuous aggregate.
 * When `persistQueueStats` is disabled it returns a single datapoint as a one-element array. By default this is served from the cached counts in the queue table (refreshed every `monitorIntervalSeconds`), so the value can be up to one monitor interval stale. Pass `{ force: true }` to re-count directly from the job table and update the values in the queue table, but even this option is rate-limited to once a minute, so repeated calls using `force` don't always re-aggregate.
+
+```js
+// current queue depth (single snapshot when persistQueueStats is disabled)
+const [stats] = await boss.getQueueStats('email-send')
+console.log(`${stats.readyCount} jobs ready, ${stats.activeCount} active`)
+
+// with persistQueueStats enabled: last 24 hours, downsampled for a 300px-wide chart
+const series = await boss.getQueueStats('email-send', {
+  from: new Date(Date.now() - 24 * 60 * 60 * 1000),
+  to: new Date(),
+  maxDataPoints: 300,
+  aggregate: 'max'
+})
+```
 
 ### `getBlockedKeys(name)`
 
