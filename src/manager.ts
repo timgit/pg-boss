@@ -1020,7 +1020,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const { rows } = await db.executeSql(sql, [payload])
 
     const jobs = rows.map(row => row.id)
-    return { jobs, updated: jobs.length, inserted: 0 }
+    return { jobs, updated: jobs.length }
   }
 
   // update-or-insert by id or singletonKey: edit the matching pre-active job(s) in place,
@@ -1028,9 +1028,9 @@ class Manager extends EventEmitter implements types.EventsMixin {
   // when nothing matched; a deduped insert (lost the race to a concurrent writer, or an id that
   // collides with an existing non-pre-active job) falls back to one more update. See docs for
   // the ordering rationale.
-  upsert (request: types.UpdateRequest): Promise<types.UpdateResponse>
-  upsert (name: string, data: object | null | undefined, options?: types.UpdateOptions): Promise<types.UpdateResponse>
-  async upsert (...args: any[]): Promise<types.UpdateResponse> {
+  upsert (request: types.UpdateRequest): Promise<types.UpsertResponse>
+  upsert (name: string, data: object | null | undefined, options?: types.UpdateOptions): Promise<types.UpsertResponse>
+  async upsert (...args: any[]): Promise<types.UpsertResponse> {
     const request = Attorney.checkUpdateArgs(args, { upsert: true })
     const { name, data } = request
     const opts = (request.options ?? {}) as types.UpdateOptions

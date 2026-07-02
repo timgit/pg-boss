@@ -888,16 +888,26 @@ export interface CommandResponse {
 }
 
 /**
- * The result of `update()` and `upsert()`. Unlike the target-a-list mutators
- * (`cancel`/`resume`/etc.), these discover how many jobs a target resolves to
- * and, for `upsert()`, whether a row was overwritten or newly created.
+ * The result of `update()`. Unlike the target-a-list mutators
+ * (`cancel`/`resume`/etc.), `update()` discovers how many jobs a target
+ * resolves to. `update()` never inserts, so there is no `inserted` count —
+ * see {@link UpsertResponse} for `upsert()`.
  */
 export interface UpdateResponse {
-  /** Ids of the jobs affected — overwritten in place, or newly inserted (`upsert` only). */
+  /** Ids of the jobs updated in place. */
   jobs: string[];
-  /** Number of existing jobs overwritten in place. */
+  /** Number of existing jobs updated in place (equals `jobs.length`). */
   updated: number;
-  /** Number of jobs newly inserted. Always `0` for `update()`. */
+}
+
+/**
+ * The result of `upsert()`. Extends {@link UpdateResponse} with the
+ * update-vs-insert discriminator: a single `upsert()` either edits the
+ * matching job(s) in place (`updated`) or inserts one new job (`inserted`),
+ * so exactly one of the two counts is non-zero.
+ */
+export interface UpsertResponse extends UpdateResponse {
+  /** Number of jobs newly inserted (mutually exclusive with `updated`). */
   inserted: number;
 }
 

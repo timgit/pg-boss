@@ -247,9 +247,9 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#manager.update(...args as Parameters<Manager['update']>)
   }
 
-  upsert (request: types.UpdateRequest): Promise<types.UpdateResponse>
-  upsert (name: string, data: object | null | undefined, options?: types.UpdateOptions): Promise<types.UpdateResponse>
-  upsert (...args: any[]): Promise<types.UpdateResponse> {
+  upsert (request: types.UpdateRequest): Promise<types.UpsertResponse>
+  upsert (name: string, data: object | null | undefined, options?: types.UpdateOptions): Promise<types.UpsertResponse>
+  upsert (...args: any[]): Promise<types.UpsertResponse> {
     return this.#manager.upsert(...args as Parameters<Manager['upsert']>)
   }
 
@@ -522,6 +522,7 @@ export type {
   UpdateQueueOptions,
   UpdateRequest,
   UpdateResponse,
+  UpsertResponse,
   Warning,
   WipData,
   WorkConcurrencyOptions,

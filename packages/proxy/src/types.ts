@@ -49,6 +49,8 @@ export type HttpUpdateOptions = Omit<types.UpdateOptions, 'db'>
 
 export type HttpUpdateResult = types.UpdateResponse
 
+export type HttpUpsertResult = types.UpsertResponse
+
 export type HttpJobInsert = types.JobInsert<HttpJsonRecord>
 
 export type HttpFlowJob = Omit<types.FlowJob, 'data' | 'options'> & {
@@ -154,7 +156,10 @@ export type HttpUpdateResponse = {
 
 export type HttpUpsertRequest = HttpUpdateRequest
 
-export type HttpUpsertResponse = HttpUpdateResponse
+export type HttpUpsertResponse = {
+  ok: true
+  result: HttpUpsertResult
+}
 
 export type HttpFlowRequest = {
   jobs: HttpFlowJob[]

@@ -202,8 +202,13 @@ export const commandResponseSchema = z.object({
 export const updateResultSchema = z.object({
   jobs: z.array(z.string()),
   updated: z.number(),
-  inserted: z.number(),
 }) satisfies z.ZodType<types.HttpUpdateResult>
+
+export const upsertResultSchema = z.object({
+  jobs: z.array(z.string()),
+  updated: z.number(),
+  inserted: z.number(),
+}) satisfies z.ZodType<types.HttpUpsertResult>
 
 export const dependencyRefSchema = z.object({
   name: z.string(),
@@ -346,7 +351,7 @@ export const upsertRequestSchema: z.ZodType<types.HttpUpsertRequest> = z.object(
 
 export const upsertResponseSchema: z.ZodType<types.HttpUpsertResponse> = z.object({
   ok: z.literal(true),
-  result: updateResultSchema
+  result: upsertResultSchema
 })
 
 export const flowRequestSchema: z.ZodType<types.HttpFlowRequest> = z.object({

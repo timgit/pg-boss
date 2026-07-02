@@ -228,7 +228,7 @@ The job's `singletonKey` and `singletonOn` (throttle slot) are always preserved.
 
 If the updated job ends up runnable (its `startAfter` is now in the past) on a queue with `LISTEN`/`NOTIFY` enabled, a wake-up notification is emitted so idle workers fetch it promptly.
 
-Returns a `Promise<UpdateResponse>`: `{ jobs, updated, inserted }`, where `jobs` are the affected ids, `updated` is the number of jobs overwritten, and `inserted` is always `0` for `update()`.
+Returns a `Promise<UpdateResponse>`: `{ jobs, updated }`, where `jobs` are the affected ids and `updated` is the number of jobs updated (equal to `jobs.length`).
 
 ```js
 // by id
@@ -262,7 +262,7 @@ await boss.update({
 
 Update-or-insert one or more **not-yet-active** jobs (state `created` or `retry`). Confused yet?  This is more of a special use case and probably shouldn't replace the normal usage of `send()`. Think of `upsert()` as a convenience abstraction over 2 steps: `update()` first, but if no matches were found, then `insert()`. The same options are used here as in `update()`.  When matching by `id`, the new job is created with that id. It supports the same `match` option as `update()` when using `singletonKey`. However, remember that on a `key_strict_fifo` queue, `singletonKey` is required to insert.
 
-Returns a `Promise<UpdateResponse>`: `{ jobs, updated, inserted }`. On a hit, `updated` reflects the overwritten job(s) and `inserted` is `0`; on a miss, `inserted` is `1` and `jobs` holds the new id.
+Returns a `Promise<UpsertResponse>`: `{ jobs, updated, inserted }`. On a hit, `updated` reflects the updated job(s) and `inserted` is `0`; on a miss, `inserted` is `1` and `jobs` holds the new id.
 
 ```js
 // ensure exactly one queued "process this article" job carries the latest body
