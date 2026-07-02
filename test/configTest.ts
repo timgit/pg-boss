@@ -53,6 +53,8 @@ describe('config', function () {
 
     await ctx.boss.start()
 
+    await ctx.boss.stop()
+
     await helper.dropSchema(config.schema)
   })
 
