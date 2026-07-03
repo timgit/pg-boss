@@ -686,7 +686,7 @@ function purge (schema, interval) {
     USING (
       SELECT id FROM ${schema}.archive
       WHERE archivedOn < (now() - interval '${interval}')
-      LIMIT 20000
+      LIMIT 100000
     ) candidates
     WHERE a.id = candidates.id
   `
@@ -710,7 +710,7 @@ function archive (schema, completedInterval, failedInterval = completedInterval)
           OR (
             state < '${states.active}' AND keepUntil < now()
           )
-        LIMIT 25000
+        LIMIT 100000
       ) candidates
       WHERE j.id = candidates.id
       RETURNING j.*
