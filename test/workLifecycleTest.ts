@@ -171,7 +171,7 @@ describe('work lifecycle', function () {
     await ctx.boss.start()
 
     assertTruthy(jobId)
-    const job = await ctx.boss.getJobById(ctx.schema, jobId)
+    const [job] = await ctx.boss.findJobs(ctx.schema, { id: jobId })
 
     assertTruthy(job)
     expect(signalAborted).toBe(false)
@@ -205,7 +205,7 @@ describe('work lifecycle', function () {
     await ctx.boss.start()
 
     assertTruthy(jobId)
-    const job = await ctx.boss.getJobById<{}>(ctx.schema, jobId)
+    const [job] = await ctx.boss.findJobs<{}>(ctx.schema, { id: jobId })
 
     assertTruthy(job)
     expect(job.state).toBe('failed')
@@ -259,7 +259,7 @@ describe('work lifecycle', function () {
       const jobId = jobIds[i]
       assertTruthy(jobId)
       // @ts-ignore
-      const job = await ctx.boss.getJobById(ctx.schema, jobId)
+      const [job] = await ctx.boss.findJobs(ctx.schema, { id: jobId })
       assertTruthy(job)
       expect(job.state).toBe('failed')
       expect(job.output).toBeTruthy()

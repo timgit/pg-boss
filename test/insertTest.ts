@@ -42,7 +42,7 @@ describe('insert', function () {
 
     await ctx.boss.insert(ctx.schema, [input])
 
-    const job = await ctx.boss.getJobById(ctx.schema, input.id)
+    const [job] = await ctx.boss.findJobs(ctx.schema, { id: input.id })
 
     expect(job).toBeTruthy()
 
@@ -99,7 +99,7 @@ describe('insert', function () {
 
     await ctx.boss.insert(ctx.schema, [input], options)
 
-    const job = await ctx.boss.getJobById(ctx.schema, input.id)
+    const [job] = await ctx.boss.findJobs(ctx.schema, { id: input.id })
 
     expect(job).toBeTruthy()
 
@@ -144,7 +144,7 @@ describe('insert', function () {
 
     await ctx.boss.insert(ctx.schema, [input], options)
 
-    const job = await ctx.boss.getJobById(ctx.schema, input.id)
+    const [job] = await ctx.boss.findJobs(ctx.schema, { id: input.id })
     expect(job).toBeTruthy()
 
     expect(called).toBe(true)

@@ -126,7 +126,7 @@ describe('queuePolicy', function () {
       await ctx.boss.fail(ctx.schema, job1.id)
 
       assertTruthy(jobId1)
-      const job1WithData = await ctx.boss.getJobById(ctx.schema, jobId1)
+      const [job1WithData] = await ctx.boss.findJobs(ctx.schema, { id: jobId1 })
 
       assertTruthy(job1WithData)
       expect(job1WithData.state).toBe('retry')
@@ -137,7 +137,7 @@ describe('queuePolicy', function () {
 
       await ctx.boss.fetch(ctx.schema)
 
-      const job1a = await ctx.boss.getJobById(ctx.schema, jobId1)
+      const [job1a] = await ctx.boss.findJobs(ctx.schema, { id: jobId1 })
 
       assertTruthy(job1a)
       expect(job1a.state).toBe('active')
@@ -159,7 +159,7 @@ describe('queuePolicy', function () {
       await ctx.boss.fetch(ctx.schema)
       assertTruthy(jobId1)
       await ctx.boss.fail(ctx.schema, jobId1)
-      const job1Data = await ctx.boss.getJobById(ctx.schema, jobId1)
+      const [job1Data] = await ctx.boss.findJobs(ctx.schema, { id: jobId1 })
       assertTruthy(job1Data)
       expect(job1Data.state).toBe('retry')
 
@@ -174,7 +174,7 @@ describe('queuePolicy', function () {
       assertTruthy(jobId2)
       await ctx.boss.fail(ctx.schema, jobId2)
 
-      const job2Data = await ctx.boss.getJobById(ctx.schema, jobId2)
+      const [job2Data] = await ctx.boss.findJobs(ctx.schema, { id: jobId2 })
 
       assertTruthy(job2Data)
       expect(job2Data.state).toBe('failed')
@@ -206,14 +206,14 @@ describe('queuePolicy', function () {
       await ctx.boss.fail(ctx.schema, jobA.id)
 
       assertTruthy(jobAId)
-      let jobAWithData = await ctx.boss.getJobById(ctx.schema, jobAId)
+      let [jobAWithData] = await ctx.boss.findJobs(ctx.schema, { id: jobAId })
 
       assertTruthy(jobAWithData)
       expect(jobAWithData.state).toBe('retry')
 
       await ctx.boss.fetch(ctx.schema)
 
-      jobAWithData = await ctx.boss.getJobById(ctx.schema, jobAId)
+      jobAWithData = (await ctx.boss.findJobs(ctx.schema, { id: jobAId }))[0]
 
       assertTruthy(jobAWithData)
       expect(jobAWithData.state).toBe('active')
@@ -223,7 +223,7 @@ describe('queuePolicy', function () {
       expect(jobB).toBeTruthy()
 
       assertTruthy(jobBId)
-      const jobBWithData = await ctx.boss.getJobById(ctx.schema, jobBId)
+      const [jobBWithData] = await ctx.boss.findJobs(ctx.schema, { id: jobBId })
 
       assertTruthy(jobBWithData)
       expect(jobBWithData.state).toBe('active')
@@ -351,7 +351,7 @@ describe('queuePolicy', function () {
       await ctx.boss.fail(ctx.schema, job1.id)
 
       assertTruthy(jobId1)
-      const job1WithData = await ctx.boss.getJobById(ctx.schema, jobId1)
+      const [job1WithData] = await ctx.boss.findJobs(ctx.schema, { id: jobId1 })
 
       assertTruthy(job1WithData)
       expect(job1WithData.state).toBe('retry')
@@ -363,7 +363,7 @@ describe('queuePolicy', function () {
 
       await ctx.boss.fetch(ctx.schema)
 
-      const job1a = await ctx.boss.getJobById(ctx.schema, jobId1)
+      const [job1a] = await ctx.boss.findJobs(ctx.schema, { id: jobId1 })
 
       assertTruthy(job1a)
       expect(job1a.state).toBe('active')
@@ -402,14 +402,14 @@ describe('queuePolicy', function () {
       await ctx.boss.fail(ctx.schema, jobA.id)
 
       assertTruthy(jobAId)
-      let jobAWithData = await ctx.boss.getJobById(ctx.schema, jobAId)
+      let [jobAWithData] = await ctx.boss.findJobs(ctx.schema, { id: jobAId })
 
       assertTruthy(jobAWithData)
       expect(jobAWithData.state).toBe('retry')
 
       await ctx.boss.fetch(ctx.schema)
 
-      jobAWithData = await ctx.boss.getJobById(ctx.schema, jobAId)
+      jobAWithData = (await ctx.boss.findJobs(ctx.schema, { id: jobAId }))[0]
 
       assertTruthy(jobAWithData)
       expect(jobAWithData.state).toBe('active')
@@ -419,7 +419,7 @@ describe('queuePolicy', function () {
       expect(jobB).toBeTruthy()
 
       assertTruthy(jobBId)
-      const jobBWithData = await ctx.boss.getJobById(ctx.schema, jobBId)
+      const [jobBWithData] = await ctx.boss.findJobs(ctx.schema, { id: jobBId })
 
       assertTruthy(jobBWithData)
       expect(jobBWithData.state).toBe('active')

@@ -71,14 +71,14 @@ describe('navigator (flow resolver)', function () {
     await ctx.boss.complete(ctx.schema, flow.parent)
 
     // Completion alone must not unblock the child — that inline work was the #824 regression.
-    const stillBlocked = await ctx.boss.getJobById(ctx.schema, flow.child)
+    const [stillBlocked] = await ctx.boss.findJobs(ctx.schema, { id: flow.child })
     helper.assertTruthy(stillBlocked)
     expect(stillBlocked.blocked).toBe(true)
     expect(stillBlocked.pendingDependencies).toBe(1)
 
     await ctx.boss.resolveFlow()
 
-    const unblocked = await ctx.boss.getJobById(ctx.schema, flow.child)
+    const [unblocked] = await ctx.boss.findJobs(ctx.schema, { id: flow.child })
     helper.assertTruthy(unblocked)
     expect(unblocked.blocked).toBe(false)
     expect(unblocked.pendingDependencies).toBe(0)
@@ -104,7 +104,7 @@ describe('navigator (flow resolver)', function () {
 
     await ctx.boss.resolveFlow()
 
-    const child = await ctx.boss.getJobById(ctx.schema, flow.child)
+    const [child] = await ctx.boss.findJobs(ctx.schema, { id: flow.child })
     helper.assertTruthy(child)
     expect(child.blocked).toBe(false)
     expect(child.pendingDependencies).toBe(0)
@@ -127,7 +127,7 @@ describe('navigator (flow resolver)', function () {
     await ctx.boss.resolveFlow()
     await ctx.boss.resolveFlow()
 
-    const child = await ctx.boss.getJobById(ctx.schema, flow.child)
+    const [child] = await ctx.boss.findJobs(ctx.schema, { id: flow.child })
     helper.assertTruthy(child)
     expect(child.blocked).toBe(false)
     // pending_dependencies clamps at 0 — no parent is ever decremented twice.
@@ -150,7 +150,7 @@ describe('navigator (flow resolver)', function () {
     await triggerFlowPoll(ctx.schema)
     await flowEvent
 
-    const child = await ctx.boss.getJobById(ctx.schema, flow.child)
+    const [child] = await ctx.boss.findJobs(ctx.schema, { id: flow.child })
     helper.assertTruthy(child)
     expect(child.blocked).toBe(false)
     expect(child.pendingDependencies).toBe(0)

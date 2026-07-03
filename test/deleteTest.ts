@@ -25,7 +25,7 @@ describe('delete', function () {
 
     await ctx.boss.supervise(ctx.schema)
 
-    const job = await ctx.boss.getJobById(ctx.schema, jobId)
+    const [job] = await ctx.boss.findJobs(ctx.schema, { id: jobId })
 
     expect(job).toBeFalsy()
   })
@@ -51,7 +51,7 @@ describe('delete', function () {
 
     await ctx.boss.supervise(ctx.schema)
 
-    const job = await ctx.boss.getJobById(ctx.schema, jobId)
+    const [job] = await ctx.boss.findJobs(ctx.schema, { id: jobId })
 
     expect(job).toBeFalsy()
   })
@@ -69,7 +69,7 @@ describe('delete', function () {
     assertTruthy(jobId)
     await ctx.boss.deleteJob(ctx.schema, jobId)
 
-    const job = await ctx.boss.getJobById(ctx.schema, jobId)
+    const [job] = await ctx.boss.findJobs(ctx.schema, { id: jobId })
 
     expect(job).toBeFalsy()
   })
@@ -94,7 +94,7 @@ describe('delete', function () {
 
     await ctx.boss.supervise(ctx.schema)
 
-    const job = await ctx.boss.getJobById(ctx.schema, jobId)
+    const [job] = await ctx.boss.findJobs(ctx.schema, { id: jobId })
 
     expect(job).toBeTruthy()
     expect(job?.state).toBe('completed')
@@ -121,7 +121,7 @@ describe('delete', function () {
 
     await ctx.boss.supervise(ctx.schema)
 
-    const job = await ctx.boss.getJobById(ctx.schema, jobId)
+    const [job] = await ctx.boss.findJobs(ctx.schema, { id: jobId })
 
     expect(job).toBeTruthy()
     expect(job?.state).toBe('completed')

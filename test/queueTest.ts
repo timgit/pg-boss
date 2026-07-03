@@ -326,7 +326,7 @@ describe('queues', function () {
     const jobId = await ctx.boss.send(ctx.schema)
 
     assertTruthy(jobId)
-    const job = await ctx.boss.getJobById(ctx.schema, jobId)
+    const [job] = await ctx.boss.findJobs(ctx.schema, { id: jobId })
 
     assertTruthy(job)
 

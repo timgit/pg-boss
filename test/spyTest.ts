@@ -86,7 +86,7 @@ describe('spy', function () {
     expect(completedResult).toBe('timeout')
 
     // And the database agrees
-    const persisted = await ctx.boss.getJobById(ctx.schema, jobId)
+    const [persisted] = await ctx.boss.findJobs(ctx.schema, { id: jobId })
     expect((persisted as any).state).toBe('failed')
   })
 
@@ -141,7 +141,7 @@ describe('spy', function () {
     expect((job.output as any).message).toBe('always fails')
 
     // The database agrees the job is terminally failed (retries exhausted).
-    const persisted = await ctx.boss.getJobById(ctx.schema, jobId)
+    const [persisted] = await ctx.boss.findJobs(ctx.schema, { id: jobId })
     expect((persisted as any).state).toBe('failed')
     expect((persisted as any).retryCount).toBe(1)
   })

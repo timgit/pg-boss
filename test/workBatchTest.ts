@@ -72,7 +72,7 @@ describe('work batch & completion', function () {
     assertTruthy(jobId)
     await spy.waitForJobWithId(jobId, 'completed')
 
-    const job = await ctx.boss.getJobById(ctx.schema, jobId)
+    const [job] = await ctx.boss.findJobs(ctx.schema, { id: jobId })
 
     assertTruthy(job)
     expect(job.state).toBe('completed')
@@ -108,7 +108,7 @@ describe('work batch & completion', function () {
     assertTruthy(jobId)
     await spy.waitForJobWithId(jobId, 'completed')
 
-    const job = await ctx.boss.getJobById(ctx.schema, jobId)
+    const [job] = await ctx.boss.findJobs(ctx.schema, { id: jobId })
 
     expect(job).toBeFalsy()
   })
@@ -143,7 +143,7 @@ describe('work batch & completion', function () {
     await delay(2000)
 
     assertTruthy(jobId)
-    const job = await ctx.boss.getJobById(ctx.schema, jobId)
+    const [job] = await ctx.boss.findJobs(ctx.schema, { id: jobId })
 
     assertTruthy(job)
     expect(job.state).toBe('failed')
@@ -162,8 +162,8 @@ describe('work batch & completion', function () {
 
     assertTruthy(jobId1)
     assertTruthy(jobId2)
-    const job1 = await ctx.boss.getJobById(ctx.schema, jobId1)
-    const job2 = await ctx.boss.getJobById(ctx.schema, jobId2)
+    const [job1] = await ctx.boss.findJobs(ctx.schema, { id: jobId1 })
+    const [job2] = await ctx.boss.findJobs(ctx.schema, { id: jobId2 })
 
     assertTruthy(job1)
     expect(job1.state).toBe('failed')
