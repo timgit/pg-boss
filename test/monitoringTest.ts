@@ -108,7 +108,8 @@ describe('monitoring', function () {
   })
 
   it('should not leak warningQueueSize to other instances', async function () {
-   new PgBoss({ ...ctx.bossConfig, warningQueueSize: 1 })
+    // eslint-disable-next-line no-new
+    new PgBoss({ ...ctx.bossConfig, warningQueueSize: 1 })
 
     const boss = ctx.boss = await helper.start(ctx.bossConfig)
     await boss.send(ctx.schema)
