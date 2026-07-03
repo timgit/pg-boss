@@ -107,6 +107,14 @@ The following configuration options should not normally need to be changed, but 
 
   How often the background flow resolver runs to unblock dependent jobs (created via [`flow()`](./jobs.md#flowjobs-options)) whose parents have completed. Completing a job no longer unblocks its dependents inline; this resolver handles it shortly after, off the completion hot path. Only runs when `supervise` is enabled.
 
+* **warningSlowQuerySeconds**, int, default 30
+
+  The threshold, in seconds, above which a monitoring or maintenance query emits a `slow_query` [`warning`](./events.md#warning) event. Applies per instance and must be at least 1.
+
+* **warningQueueSize**, int, default 10000
+
+  The default number of jobs in the created or retry state a queue may hold before emitting a `queue_backlog` [`warning`](./events.md#warning) event. Applies per instance and must be at least 1. Individual queues can override this with their own [`warningQueueSize`](./queues.md#createqueue-name-queue) on `createQueue`.
+
 * **persistWarnings**, bool, default false
 
   If set to true, warnings emitted during monitoring and maintenance (slow queries, queue backlogs, clock skew) will be persisted to the `warning` table in addition to being emitted as events. This enables historical tracking of warnings for debugging and monitoring purposes. See [Events](./events.md#warning) for more details on warning types.
