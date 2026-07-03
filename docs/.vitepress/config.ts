@@ -8,6 +8,7 @@ export default defineConfig({
   cleanUrls: true,
   lastUpdated: true,
   head: [
+    ['meta', { name: 'theme-color', content: '#2f7cf6' }],
     ['script', {}, `(function(){
       var hash = window.location.hash;
       if(window.location.pathname === '/pg-boss/' && hash.startsWith('#/')){
