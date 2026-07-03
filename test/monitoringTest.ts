@@ -108,8 +108,7 @@ describe('monitoring', function () {
   })
 
   it('should not leak warningQueueSize to other instances', async function () {
-    const other = new PgBoss({ ...ctx.bossConfig, warningQueueSize: 1 })
-    expect(other).toBeTruthy()
+   new PgBoss({ ...ctx.bossConfig, warningQueueSize: 1 })
 
     const boss = ctx.boss = await helper.start(ctx.bossConfig)
     await boss.send(ctx.schema)

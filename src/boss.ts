@@ -29,8 +29,8 @@ class Boss extends EventEmitter implements types.EventsMixin {
   #db: types.IDatabase
   #config: types.ResolvedConstructorOptions
   #manager: Manager
-  #slowQuerySeconds: number
-  #largeQueueSize: number
+  readonly #slowQuerySeconds: number
+  readonly #largeQueueSize: number
 
   events = events
 
