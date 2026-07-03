@@ -13,6 +13,7 @@ await boss.send('hey-there', { msg:'this came for you' })
 
 If the required database objects do not exist in the specified database, **`start()` will automatically create them**. The same process is true for updates as well. If a new schema version is required, pg-boss will automatically migrate the internal storage to the latest installed version.
 
+> [!WARNING]
 > While this is most likely a welcome feature, be aware of this during upgrades since this could delay the promise resolution by however long the migration script takes to run against your data.  For example, if you happened to have millions of jobs in the job table just hanging around for archiving and the next version of the schema had a couple of new indexes, it may take a few seconds before `start()` resolves. Most migrations are very quick, however, and are designed with performance in mind.
 
 Additionally, all schema operations, both first-time provisioning and migrations, are nested within advisory locks to prevent race conditions during `start()`. Internally, these locks are created using `pg_advisory_xact_lock()` which auto-unlock at the end of the transaction and don't require a persistent session or the need to issue an unlock. For databases that don't support advisory locks (like CockroachDB), select the matching backend (e.g. `backend: 'cockroachdb'`) and pg-boss adjusts accordingly.
@@ -40,7 +41,8 @@ By default, calling `stop()` without any arguments will gracefully wait for all 
 
     Default: 30000. Maximum time (in milliseconds) to wait for workers to finish job processing before shutting down the PgBoss instance.
 
-    Note: This option is ignored when `graceful` is set to `false`.
+    > [!WARNING]
+    > This option is ignored when `graceful` is set to `false`.
 
 ```js
 // graceful shutdown: wait for active jobs to finish (up to the timeout)

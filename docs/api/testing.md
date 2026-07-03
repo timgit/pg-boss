@@ -12,8 +12,8 @@ const boss = new PgBoss({
   __test__enableSpies: true
 })
 ```
-
-> **Note:** Calling `getSpy()` without enabling spies will throw an error.
+> [!WARNING]
+> Calling `getSpy()` without enabling spies will throw an error.
 
 ## `getSpy(name)`
 

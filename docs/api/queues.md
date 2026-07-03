@@ -21,14 +21,14 @@ await boss.createQueue('order-processing', {
 ```
 
 ```ts
-  type Queue = {
-    name: string;
-    policy?: QueuePolicy;
-    partition?: boolean;
-    deadLetter?: string;
-    warningQueueSize?: number;
-    notify?: boolean;
-  } & QueueOptions
+type Queue = {
+  name: string;
+  policy?: QueuePolicy;
+  partition?: boolean;
+  deadLetter?: string;
+  warningQueueSize?: number;
+  notify?: boolean;
+} & QueueOptions
 ```
 
 Allowed policy values:
@@ -42,8 +42,10 @@ Allowed policy values:
 | `exclusive` | Only allows 1 job to be queued or active. Can be extended with `singletonKey` |
 | `key_strict_fifo` | Strict FIFO ordering per `singletonKey`. Requires `singletonKey` on every job. Blocks processing of jobs with the same key while any job with that key is active, in retry, or failed. |
 
+> [!WARNING]
 > `stately` queues are special in how retries are handled. By definition, stately queues will not allow multiple jobs to occupy `retry` state. Once a job exists in `retry`, failing another `active` job will bypass the retry mechanism and force the job to `failed`. If this job requires retries, consider a custom retry implementation using a dead letter queue.
 
+> [!NOTE]
 > `key_strict_fifo` queues enforce strict FIFO (First-In-First-Out) ordering per `singletonKey`. This is useful when you need to ensure jobs for the same entity (e.g., the same order, customer, or resource) are processed sequentially in the order they were created. The queue will block processing of subsequent jobs with the same `singletonKey` while any job with that key is:
 > - **active**: currently being processed
 > - **retry**: waiting to be retried after a failure

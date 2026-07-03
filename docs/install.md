@@ -12,9 +12,11 @@ If the CREATE privilege is not available or desired, you have two options:
 
 2. **Static functions** - Use the included [utility functions](./api/utils) to export the SQL commands programmatically.
 
-**Note:** When managing schema manually, you will need to monitor future releases for schema changes.
+> [!NOTE]
+> When managing schema manually, you will need to monitor future releases for schema changes.
 
-NOTE: Using an existing schema is supported for advanced use cases **but discouraged**, as this opens up the possibility that creation will fail on an object name collision, and it will add more steps to the uninstallation process.
+> [!WARNING]
+> Using an existing schema is supported for advanced use cases **but discouraged**, as this opens up the possibility that creation will fail on an object name collision, and it will add more steps to the uninstallation process.
 
 # Database uninstall
 
