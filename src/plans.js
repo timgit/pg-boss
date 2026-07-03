@@ -710,7 +710,7 @@ function archive (schema, completedInterval, failedInterval = completedInterval)
           OR (
             state < '${states.active}' AND keepUntil < now()
           )
-        LIMIT 10000
+        LIMIT 25000
       ) candidates
       WHERE j.id = candidates.id
       RETURNING j.*
