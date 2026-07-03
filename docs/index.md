@@ -11,6 +11,32 @@ hero:
     - theme: alt
       text: API Reference
       link: /api/constructor
+  
+features:
+  - title: Exactly-once delivery
+    details: Built on Postgres SKIP LOCKED for atomic, exactly-once job processing with no extra infrastructure.
+    link: /introduction
+    linkText: How it works
+  - title: Transactional & ORM-ready
+    details: Enqueue jobs inside your existing transaction, with adapters for Drizzle, Knex, Kysely and Prisma.
+    link: /api/adapters
+    linkText: Adapters
+  - title: Low-latency workers
+    details: Backpressure-aware polling workers with optional LISTEN/NOTIFY for rapid delivery.
+    link: /api/workers
+    linkText: Workers
+  - title: Workflows & scheduling
+    details: Job dependency orchestration, cron scheduling and job deferral for multi-step pipelines.
+    link: /api/jobs
+    linkText: Jobs & flows
+  - title: Production-grade policies
+    details: Rate limiting, debouncing, concurrency, priorities, dead-letter queues and retries with exponential backoff.
+    link: /api/queues
+    linkText: Queue policies
+  - title: Runs anywhere Postgres does
+    details: Serverless and multi-master friendly, with CockroachDB, YugabyteDB, Citus and embedded PGlite support.
+    link: /database-backends
+    linkText: Database backends
 
 ---
 
