@@ -1,9 +1,12 @@
 # Jobs
 
+## Creating jobs
+
 ### `send()`
 
 Creates a new job and returns the job id.
 
+> [!NOTE]
 > `send()` will resolve a `null` for job id under some use cases when using unique jobs or throttling (see below).  These options are always opt-in on the send side and therefore don't result in a promise rejection.
 
 ### `send(name, data, options)`
@@ -314,6 +317,8 @@ const [idA, idB] = await boss.insert('etl', [
 ], { returnId: true })
 ```
 
+## Flows
+
 ### `flow(jobs, options)`
 
 Create a set of jobs and their dependencies atomically in one transaction.
@@ -367,6 +372,8 @@ await boss.complete('extract', parentJobId)
 // unblock any ready dependents now instead of waiting for the next cycle
 await boss.resolveFlow()
 ```
+
+## Fetching jobs
 
 ### `fetch(name, options)`
 
@@ -467,10 +474,13 @@ await Promise.allSettled(jobs.map(async job => {
 }))
 ```
 
+## Deleting and redriving jobs
+
 ### `deleteJob(name, id, options)`
 
 Deletes a job by id.
 
+> [!NOTE]
 > Job deletion is offered if desired for a "fetch then delete" workflow similar to SQS. This is not the default behavior for workers so "everything just works" by default, including job throttling and debouncing, which requires jobs to exist to enforce a unique constraint. For example, if you are debouncing a queue to "only allow 1 job per hour", deleting jobs after processing would re-open that time slot, breaking your throttling policy.
 
 ```js
@@ -549,6 +559,8 @@ await boss.deleteAllJobs('email-send')
 await boss.deleteAllJobs()
 ```
 
+## Cancelling, resuming, and retrying jobs
+
 ### `cancel(name, id, options)`
 
 Cancels a pending or active job.
@@ -603,6 +615,8 @@ const ids = failed.filter(job => job.state === 'failed').map(job => job.id)
 await boss.retry('email-send', ids)
 ```
 
+## Completing and failing jobs
+
 ### `complete(name, id, data, options)`
 
 Completes an active job. This would likely only be used with `fetch()`. Accepts an optional `data` argument for job output and an optional `options` object.
@@ -636,6 +650,7 @@ Completes a set of active jobs (or queued jobs when `includeQueued: true` is spe
 
 The promise will resolve on a successful completion, or reject if not all of the requested jobs could not be marked as completed.
 
+> [!NOTE]
 > See comments above on `cancel([ids])` regarding when the promise will resolve or reject because of a batch operation.
 
 ### `fail(name, id, data, options)`
@@ -668,6 +683,7 @@ await boss.fail('email-send', jobs.map(job => job.id), { message: 'smtp outage' 
 
 The promise will resolve on a successful failure state assignment, or reject if not all of the requested jobs could not be marked as failed.
 
+> [!NOTE]
 > See comments above on `cancel([ids])` regarding when the promise will resolve or reject because of a batch operation.
 
 
@@ -703,8 +719,11 @@ const ids = jobs.map(j => j.id)
 const result = await boss.touch('long-running-queue', ids)
 ```
 
+## Finding jobs
+
 ### `getJobById(name, id, options)`
 
+> [!WARNING]
 > **Deprecated:** Use `findJobs()` instead.
 
 Retrieves a job with all metadata by name and id
@@ -763,6 +782,8 @@ const jobs = await boss.findJobs('my-queue', {
   queued: true
 })
 ```
+
+## Inspecting dependencies
 
 ### `getDependencies(name, id, options)`
 
