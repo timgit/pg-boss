@@ -2222,13 +2222,14 @@ export function redriveJobs (schema: string, table: string): string {
   `
 }
 
-export function deletion (schema: string, table: string, queues: string[], noAdvisoryLocks?: boolean): string {
+export function deletion (schema: string, table: string, queues: string[], noAdvisoryLocks?: boolean, deleteFailedJobs: boolean = true): string {
+  const failedFilter = deleteFailedJobs ? '' : ` AND state < '${JOB_STATES.failed}'`
   const sql = `
     DELETE FROM ${schema}.${table}
     WHERE name = ANY(${serializeArrayParam(queues)})
       AND
       (
-        (deletion_seconds > 0 AND completed_on + deletion_seconds * interval '1s' < now())
+        (deletion_seconds > 0 AND completed_on + deletion_seconds * interval '1s' < now()${failedFilter})
         OR
         (state < '${JOB_STATES.active}' AND keep_until < now())
       )

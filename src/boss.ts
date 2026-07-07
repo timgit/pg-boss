@@ -288,7 +288,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
 
     if (rows.length) {
       const queues = rows.map((q) => q.name)
-      const sql = plans.deletion(this.#config.schema, table, queues, this.#config.noAdvisoryLocks)
+      const sql = plans.deletion(this.#config.schema, table, queues, this.#config.noAdvisoryLocks, this.#config.deleteFailedJobs)
       await this.#executeQuery(sql)
 
       const depSql = plans.cleanupDependencies(this.#config.schema, table, queues, this.#config.noAdvisoryLocks)

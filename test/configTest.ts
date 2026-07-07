@@ -40,6 +40,10 @@ describe('config', function () {
     })
   })
 
+  it('rejects a non-boolean deleteFailedJobs', function () {
+    expect(() => Attorney.getConfig({ connectionString: 'postgres://localhost/db', deleteFailedJobs: 'nope' as any })).toThrow('deleteFailedJobs must be a boolean')
+  })
+
   it('should allow a 50 character custom schema name', async function () {
     const config = ctx.bossConfig
 

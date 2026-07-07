@@ -100,6 +100,84 @@ describe('delete', function () {
     expect(job?.state).toBe('completed')
   })
 
+  it('should delete a failed job via maintenance by default', async function () {
+    const config = {
+      ...ctx.bossConfig,
+      maintenanceIntervalSeconds: 1
+    }
+
+    ctx.boss = await helper.start(config)
+
+    const jobId = await ctx.boss.send(ctx.schema, null, { deleteAfterSeconds: 1, retryLimit: 0 })
+
+    expect(jobId).toBeTruthy()
+
+    await ctx.boss.fetch(ctx.schema)
+    assertTruthy(jobId)
+    await ctx.boss.fail(ctx.schema, jobId)
+
+    await delay(1000)
+
+    await ctx.boss.supervise(ctx.schema)
+
+    const job = await ctx.boss.getJobById(ctx.schema, jobId)
+
+    expect(job).toBeFalsy()
+  })
+
+  it('should not delete a failed job via maintenance when deleteFailedJobs is false', async function () {
+    const config = {
+      ...ctx.bossConfig,
+      maintenanceIntervalSeconds: 1,
+      deleteFailedJobs: false
+    }
+
+    ctx.boss = await helper.start(config)
+
+    const jobId = await ctx.boss.send(ctx.schema, null, { deleteAfterSeconds: 1, retryLimit: 0 })
+
+    expect(jobId).toBeTruthy()
+
+    await ctx.boss.fetch(ctx.schema)
+    assertTruthy(jobId)
+    await ctx.boss.fail(ctx.schema, jobId)
+
+    await delay(2000)
+
+    await ctx.boss.supervise(ctx.schema)
+
+    const job = await ctx.boss.getJobById(ctx.schema, jobId)
+
+    expect(job).toBeTruthy()
+    expect(job?.state).toBe('failed')
+  })
+
+  it('should still delete a completed job via maintenance when deleteFailedJobs is false', async function () {
+    const config = {
+      ...ctx.bossConfig,
+      maintenanceIntervalSeconds: 1,
+      deleteFailedJobs: false
+    }
+
+    ctx.boss = await helper.start(config)
+
+    const jobId = await ctx.boss.send(ctx.schema, null, { deleteAfterSeconds: 1 })
+
+    expect(jobId).toBeTruthy()
+
+    await ctx.boss.fetch(ctx.schema)
+    assertTruthy(jobId)
+    await ctx.boss.complete(ctx.schema, jobId)
+
+    await delay(1000)
+
+    await ctx.boss.supervise(ctx.schema)
+
+    const job = await ctx.boss.getJobById(ctx.schema, jobId)
+
+    expect(job).toBeFalsy()
+  })
+
   it('should never delete a completed job when deleteAfterSeconds is 0 - cascade config from queue', async function () {
     const config = {
       ...ctx.bossConfig,

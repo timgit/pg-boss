@@ -82,6 +82,7 @@ export interface MaintenanceOptions {
   warningQueueSize?: number;
   superviseIntervalSeconds?: number;
   maintenanceIntervalSeconds?: number;
+  deleteFailedJobs?: boolean;
   queueCacheIntervalSeconds?: number;
   monitorIntervalSeconds?: number;
   persistWarnings?: boolean;
