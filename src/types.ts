@@ -315,20 +315,24 @@ export interface QueueOptions {
    */
   retryLimit?: number;
   /**
-   * Delay between retries of failed jobs, in seconds.
+   * Delay between retries of failed jobs, in seconds. When `retryBackoff` is
+   * enabled, this is the base delay that the exponential backoff multiplies, so
+   * it must be non-zero for backoff to have any effect.
    * @default 0
    */
   retryDelay?: number;
   /**
    * Enables exponential backoff retries based on `retryDelay` instead of a
-   * fixed delay. Sets initial `retryDelay` to 1 if not set.
+   * fixed delay. The backoff delay is a multiple of `retryDelay`, so `retryDelay`
+   * must be set to a non-zero value for backoff to take effect. With the default
+   * `retryDelay` of 0 the computed delay is always 0 and retries fire immediately.
    *
    * A simplified function to get the delay between runs is: `retryDelay * 2 ^ retryCount`
    * with some jitter.
    *
    * The function used to determine the backoff delay is:
    * ```js
-   * Math.min(retryDelayMax, retryDelay * (2 ** Math.Min(16, retryCount) / 2 + 2 Math.Min(16, retryCount) / 2 * Math.random()))
+   * Math.min(retryDelayMax, retryDelay * (2 ** Math.min(16, retryCount + 1) / 2 + 2 ** Math.min(16, retryCount + 1) / 2 * Math.random()))
    * ```
    * @default false
    */
