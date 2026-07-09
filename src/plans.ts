@@ -1343,30 +1343,42 @@ export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): S
   const hasGroupConcurrency = groupConcurrency != null
   const hasMinPriority = minPriority != null
   const hasMaxPriority = maxPriority != null
+  const groupConcurrencyConfig = hasGroupConcurrency
+    ? (typeof groupConcurrency === 'number' ? { default: groupConcurrency } : groupConcurrency)
+    : null
   const hasTiers = hasGroupConcurrency &&
-    typeof groupConcurrency === 'object' &&
-    groupConcurrency.tiers &&
-    Object.keys(groupConcurrency.tiers).length > 0
+    groupConcurrencyConfig?.tiers &&
+    Object.keys(groupConcurrencyConfig.tiers).length > 0
+  const hasSingleGroupConcurrency = hasGroupConcurrency && !hasTiers && groupConcurrencyConfig?.default === 1
+  const hasActiveGroupCounts = hasGroupConcurrency && !hasSingleGroupConcurrency
 
   const params = buildFetchParams(options)
+  const groupLimit = hasTiers
+    ? `COALESCE((${params.tiersParam} ->> group_tier)::int, ${params.defaultGroupLimitParam})`
+    : params.defaultGroupLimitParam
+  const activeGroupCountExpression = hasActiveGroupCounts
+    ? 'COALESCE(((SELECT counts FROM active_group_count_map) ->> j.group_id)::int, 0)'
+    : ''
 
   const selectCols = [
     'j.id',
     singletonFetch ? 'j.singleton_key' : '',
-    hasGroupConcurrency ? 'j.group_id, j.group_tier' : ''
+    hasGroupConcurrency ? 'j.group_id, j.group_tier' : '',
+    hasActiveGroupCounts ? `${activeGroupCountExpression} as active_cnt` : ''
   ].filter(Boolean).join(', ')
 
-  // MATERIALIZED forces Postgres to compute this aggregation once and cache the
-  // result. Without it, Postgres 12+ may inline the CTE and re-evaluate the
-  // COUNT query at each reference site. active_group_counts is referenced twice:
-  // once in the next CTE join (to pre-filter saturated groups before LIMIT) and
-  // once in group_ranking (to enforce the per-batch concurrency limit).
-  const activeGroupCountsCte = hasGroupConcurrency
-    ? `active_group_counts AS MATERIALIZED (
-        SELECT group_id, COUNT(*)::int as active_cnt
-        FROM ${schema}.${table}
-        WHERE name = '${name}' AND state = '${JOB_STATES.active}' AND group_id IS NOT NULL
-        GROUP BY group_id
+  // For limits above 1, aggregate active counts into a single JSONB value. Each
+  // candidate uses a keyed lookup through an uncorrelated InitPlan, so the planner
+  // cannot turn stale active-group estimates into a per-candidate relation scan.
+  const activeGroupCountMapCte = hasActiveGroupCounts
+    ? `active_group_count_map AS MATERIALIZED (
+        SELECT COALESCE(jsonb_object_agg(group_id, active_cnt), '{}'::jsonb) as counts
+        FROM (
+          SELECT group_id, COUNT(*)::int as active_cnt
+          FROM ${schema}.${table}
+          WHERE name = '${name}' AND state = '${JOB_STATES.active}' AND group_id IS NOT NULL
+          GROUP BY group_id
+        ) active_groups
       ), `
     : ''
 
@@ -1375,8 +1387,22 @@ export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): S
   const lockClause = noSkipLocked ? '' : 'FOR UPDATE OF j SKIP LOCKED'
 
   // Column references are qualified with j. throughout so both the base case and
-  // the groupConcurrency branch (which joins active_group_counts) share one set of
-  // expressions. The join introduces agc.group_id which would otherwise be ambiguous.
+  // the groupConcurrency branches share one set of expressions.
+  const groupConcurrencyFilter = hasGroupConcurrency
+    ? hasSingleGroupConcurrency
+      ? `(j.group_id IS NULL
+            OR NOT EXISTS (
+              SELECT 1
+              FROM ${schema}.${table} active_group_probe
+              WHERE active_group_probe.name = '${name}'
+                AND active_group_probe.state = '${JOB_STATES.active}'
+                AND active_group_probe.group_id IS NOT NULL
+                AND active_group_probe.group_id = j.group_id
+            ))`
+      : `(j.group_id IS NULL
+            OR ${activeGroupCountExpression} < ${groupLimit})`
+    : ''
+
   const whereConditions = [
     `j.name = '${name}'`,
     `j.state < '${JOB_STATES.active}'`,
@@ -1391,20 +1417,13 @@ export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): S
     hasIgnoreGroups ? `(j.group_id IS NULL OR j.group_id <> ALL(${params.ignoreGroupsParam}))` : '',
     hasMinPriority ? `j.priority >= ${params.minPriorityParam}` : '',
     hasMaxPriority ? `j.priority <= ${params.maxPriorityParam}` : '',
-    hasGroupConcurrency
-      ? `(j.group_id IS NULL
-            OR agc.active_cnt IS NULL
-            OR agc.active_cnt < ${hasTiers
-              ? `COALESCE((${params.tiersParam} ->> j.group_tier)::int, ${params.defaultGroupLimitParam})`
-              : params.defaultGroupLimitParam})`
-      : ''
+    groupConcurrencyFilter
   ].filter(Boolean).join('\n          AND ')
 
   const nextCte = `
       next AS (
         SELECT ${selectCols}
         FROM ${schema}.${table} j
-        ${hasGroupConcurrency ? 'LEFT JOIN active_group_counts agc ON j.group_id = agc.group_id' : ''}
         WHERE ${whereConditions}
         ORDER BY ${priority ? 'j.priority desc, ' : ''}${orderByCreatedOn ? 'j.created_on, ' : ''}j.id
         LIMIT ${limit}
@@ -1413,7 +1432,7 @@ export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): S
 
   const singletonCte = singletonFetch
     ? `, singleton_ranking AS (
-        SELECT id, ${hasGroupConcurrency ? 'group_id, group_tier, ' : ''}
+        SELECT id, ${hasGroupConcurrency ? 'group_id, group_tier, ' : ''}${hasActiveGroupCounts ? 'active_cnt, ' : ''}
           row_number() OVER (PARTITION BY singleton_key) as singleton_rn
         FROM next
       )`
@@ -1427,25 +1446,30 @@ export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): S
           , t.group_tier
           ${singletonFetch ? ', singleton_rn' : ''}
           , ROW_NUMBER() OVER (PARTITION BY t.group_id ORDER BY t.id) as group_rn
-          , COALESCE(agc.active_cnt, 0) as active_cnt
+          , ${hasActiveGroupCounts ? 't.active_cnt' : '0'} as active_cnt
         FROM ${singletonFetch ? 'singleton_ranking' : 'next'} t
-        LEFT JOIN active_group_counts agc ON t.group_id = agc.group_id
         ${singletonFetch ? 'WHERE singleton_rn = 1' : ''}
       ),
       group_filtered AS (
         SELECT id FROM group_ranking
         WHERE group_id IS NULL
-          OR (active_cnt + group_rn) <= ${hasTiers
-          ? `COALESCE((${params.tiersParam} ->> group_tier)::int, ${params.defaultGroupLimitParam})`
-          : params.defaultGroupLimitParam}
+          OR (active_cnt + group_rn) <= ${groupLimit}
       )`
     : ''
 
-  const finalCte = (hasGroupConcurrency)
+  const finalCte = hasGroupConcurrency
     ? 'group_filtered'
     : (singletonFetch)
         ? 'singleton_ranking'
         : 'next'
+
+  // An uncorrelated array InitPlan makes the selected ids a one-time input to the
+  // UPDATE. Without it, stale estimates can make Postgres put the inlined ranking
+  // query on the inner side of a nested loop and execute it once per job table row.
+  const updateSource = hasGroupConcurrency ? '' : `FROM ${finalCte}`
+  const updateMatch = hasGroupConcurrency
+    ? `j.id = ANY (ARRAY(SELECT id FROM ${finalCte}))`
+    : `j.id = ${finalCte}.id`
 
   // Without SKIP LOCKED, add a state check to prevent duplicate processing
   // when multiple workers try to claim the same jobs concurrently
@@ -1454,7 +1478,7 @@ export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): S
   return {
     text: `
       WITH
-      ${activeGroupCountsCte}
+      ${activeGroupCountMapCte}
       ${nextCte}
       ${singletonCte}
       ${groupConcurrencyCtes}
@@ -1463,8 +1487,8 @@ export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): S
         started_on = now(),
         heartbeat_on = now(),
         retry_count = CASE WHEN started_on IS NOT NULL THEN retry_count + 1 ELSE retry_count END
-      FROM ${finalCte}
-      WHERE name = '${name}' AND j.id = ${finalCte}.id
+      ${updateSource}
+      WHERE name = '${name}' AND ${updateMatch}
       ${singletonFetch && !hasGroupConcurrency ? 'AND singleton_rn = 1' : ''}
       ${distributedStateCheck}
       RETURNING j.${includeMetadata ? JOB_COLUMNS_ALL : JOB_COLUMNS_MIN}
