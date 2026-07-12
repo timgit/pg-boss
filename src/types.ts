@@ -375,6 +375,49 @@ export interface GroupConcurrencyConfig {
   tiers?: Record<string, number>;
 }
 
+/**
+ * A grouped job candidate that passed pg-boss's ordinary fetch filters and
+ * database-backed group concurrency check.
+ */
+export interface GroupAvailabilityCandidate {
+  groupId: string;
+  groupTier: string | null;
+  /** Number of matching jobs observed during candidate discovery. */
+  requested: number;
+}
+
+/**
+ * The number of additional jobs from a group that may be claimed by the
+ * current fetch. A capacity of 0 keeps that group's jobs queued.
+ */
+export interface GroupAvailabilityDecision {
+  groupId: string;
+  groupTier: string | null;
+  capacity: number;
+}
+
+export interface GroupAvailabilityContext {
+  name: string;
+  candidates: readonly GroupAvailabilityCandidate[];
+}
+
+export interface GroupAvailabilityHook {
+  (context: GroupAvailabilityContext): Promise<readonly GroupAvailabilityDecision[]>;
+}
+
+export interface QueueAvailabilityContext {
+  name: string;
+  requested: number;
+}
+
+/**
+ * Returns the maximum number of jobs that may be claimed by the current fetch.
+ * A capacity of 0 keeps all jobs queued.
+ */
+export interface QueueAvailabilityHook {
+  (context: QueueAvailabilityContext): Promise<number>;
+}
+
 export interface JobOptions {
   id?: string;
   priority?: number;
@@ -673,6 +716,17 @@ export interface WorkConcurrencyOptions {
    * Coordinates across distributed deployments via database queries.
    */
   groupConcurrency?: number | GroupConcurrencyConfig;
+  /**
+   * Asynchronously reduce the fetch capacity of otherwise eligible groups.
+   * The hook runs before jobs are claimed, so jobs from groups with no
+   * returned capacity remain queued. Requires `groupConcurrency`.
+   */
+  groupAvailability?: GroupAvailabilityHook;
+  /**
+   * Asynchronously reduce total queue capacity before jobs are claimed. Works
+   * for grouped and ungrouped jobs and does not require `groupConcurrency`.
+   */
+  queueAvailability?: QueueAvailabilityHook;
 }
 
 export type WorkOptions = JobFetchOptions & JobPollingOptions & WorkConcurrencyOptions & {
@@ -692,6 +746,8 @@ export type WorkOptions = JobFetchOptions & JobPollingOptions & WorkConcurrencyO
 }
 export interface FetchGroupConcurrencyOptions {
   groupConcurrency?: number | GroupConcurrencyConfig;
+  groupAvailability?: GroupAvailabilityHook;
+  queueAvailability?: QueueAvailabilityHook;
   ignoreGroups?: string[] | null;
 }
 

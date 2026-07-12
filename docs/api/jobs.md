@@ -411,6 +411,25 @@ Returns an array of jobs from a queue
 
     If set, only fetch jobs with a priority less than or equal to this value. If used together with `minPriority`, `minPriority` must be less than or equal to `maxPriority`.
 
+  * `groupConcurrency`, int | object
+
+    Applies the same global per-group active-job limit supported by `work()`. Jobs without a group
+    bypass the limit.
+
+  * `groupAvailability`, async function
+
+    Runs a custom availability check before grouped jobs are claimed. Requires `groupConcurrency`.
+    The hook receives `{ name, candidates }` and returns `{ groupId, groupTier, capacity }`
+    decisions. A capacity of `0`, or an omitted candidate, leaves matching jobs queued. See the
+    [`work()` group availability documentation](./workers#workname-options-handler) for the full
+    contract and coordinator example.
+
+  * `queueAvailability`, async function
+
+    Runs a whole-queue capacity check before any jobs are claimed. The hook receives
+    `{ name, requested }` and returns a non-negative integer capacity. It works without
+    `groupConcurrency`; returning `0` leaves grouped and ungrouped jobs queued.
+
     ```js
     interface JobWithMetadata<T = object> {
       id: string;

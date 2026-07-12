@@ -346,6 +346,8 @@ function validatePriorityRangeConfig (config: any) {
 function validateGroupConcurrencyConfig (config: any) {
   const hasGlobal = config.groupConcurrency != null
   const hasLocal = config.localGroupConcurrency != null
+  const hasAvailability = config.groupAvailability != null
+  const hasQueueAvailability = config.queueAvailability != null
 
   assert(
     !(hasGlobal && hasLocal),
@@ -353,6 +355,13 @@ function validateGroupConcurrencyConfig (config: any) {
   )
 
   if (hasGlobal) validateGroupConcurrencyValue(config.groupConcurrency, 'groupConcurrency')
+  if (hasAvailability) {
+    assert(typeof config.groupAvailability === 'function', 'groupAvailability must be a function')
+    assert(hasGlobal, 'groupAvailability requires groupConcurrency')
+  }
+  if (hasQueueAvailability) {
+    assert(typeof config.queueAvailability === 'function', 'queueAvailability must be a function')
+  }
   if (hasLocal) {
     validateGroupConcurrencyValue(config.localGroupConcurrency, 'localGroupConcurrency')
     validateLocalGroupConcurrencyLimit(config.localGroupConcurrency, config.localConcurrency)
@@ -426,6 +435,7 @@ function checkFetchArgs (name: string, options: any) {
   assert(!('priority' in options) || typeof options.priority === 'boolean', 'priority must be a boolean')
   assert(!('ignoreStartAfter' in options) || typeof options.ignoreStartAfter === 'boolean', 'ignoreStartAfter must be a boolean')
   validatePriorityRangeConfig(options)
+  validateGroupConcurrencyConfig(options)
 }
 
 function getConfig (value: string | types.ConstructorOptions): types.ResolvedConstructorOptions {

@@ -621,6 +621,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
       localConcurrency = 1,
       localGroupConcurrency,
       groupConcurrency,
+      groupAvailability,
+      queueAvailability,
       orderByCreatedOn = true,
       heartbeatRefreshSeconds,
       minPriority,
@@ -666,7 +668,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
         const ignoreGroups = localGroupConcurrency != null
           ? this.#getGroupsAtLocalCapacity(name)
           : undefined
-        return this.fetch<ReqData>(name, { batchSize, includeMetadata, priority, orderByCreatedOn, groupConcurrency, ignoreGroups, minPriority, maxPriority })
+        return this.fetch<ReqData>(name, { batchSize, includeMetadata, priority, orderByCreatedOn, groupConcurrency, groupAvailability, queueAvailability, ignoreGroups, minPriority, maxPriority })
       }
 
       const onFetch = async (jobs: types.Job<ReqData>[]) => {
@@ -1312,14 +1314,33 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     const { table, policy, singletonsActive } = await this.getQueueCache(name)
 
-    const fetchOptions = {
-      ...options,
+    const { groupAvailability, queueAvailability, ...sqlOptions } = options
+    const fetchOptions: plans.FetchJobOptions = {
+      ...sqlOptions,
       schema: this.config.schema,
       table,
       name,
       policy,
       limit: options.batchSize || 1,
       ignoreSingletons: singletonsActive
+    }
+
+    if (queueAvailability) {
+      const queueCapacity = await queueAvailability({ name, requested: fetchOptions.limit })
+      if (!Number.isInteger(queueCapacity) || queueCapacity < 0) {
+        throw new Error('queueAvailability must resolve with an integer >= 0')
+      }
+      if (queueCapacity === 0) return []
+      fetchOptions.limit = Math.min(fetchOptions.limit, queueCapacity)
+    }
+
+    if (groupAvailability) {
+      fetchOptions.groupAvailabilityLimits = await this.resolveGroupAvailability(
+        name,
+        groupAvailability,
+        fetchOptions,
+        db
+      )
     }
 
     const query = plans.fetchNextJob(fetchOptions, this.config.noSkipLocked)
@@ -1351,6 +1372,103 @@ class Manager extends EventEmitter implements types.EventsMixin {
     }
 
     return rows
+  }
+
+  private async resolveGroupAvailability (
+    name: string,
+    hook: types.GroupAvailabilityHook,
+    fetchOptions: plans.FetchJobOptions,
+    db: types.IDatabase | Db
+  ): Promise<Record<string, Record<string, number>>> {
+    const capacities = new Map<string, Map<string, number>>()
+    const ignoredGroupTiers = new Map<string, Set<string>>()
+    const scanLimit = Math.max(fetchOptions.limit * 8, 64)
+    let approvedCapacity = 0
+    const candidateOptions = { ...fetchOptions }
+    delete candidateOptions.groupAvailabilityLimits
+    delete candidateOptions.ignoreGroupTiers
+
+    while (approvedCapacity < fetchOptions.limit) {
+      const ignored = Object.fromEntries(Array.from(ignoredGroupTiers, ([groupId, tiers]) => [
+        groupId,
+        Object.fromEntries(Array.from(tiers, tier => [tier, true]))
+      ]))
+      const candidateQuery = plans.fetchGroupCandidates({
+        ...candidateOptions,
+        ignoreGroupTiers: ignored
+      }, scanLimit)
+      const { rows } = await db.executeSql(candidateQuery.text, candidateQuery.values)
+
+      if (rows.length === 0) break
+
+      const grouped = new Map<string, types.GroupAvailabilityCandidate>()
+      for (const row of rows) {
+        const groupId = row.groupId as string | null
+        const groupTier = (row.groupTier as string | null) ?? null
+        if (!groupId) continue
+
+        const key = JSON.stringify([groupId, groupTier])
+        let candidate = grouped.get(key)
+        if (!candidate) {
+          candidate = { groupId, groupTier, requested: 0 }
+          grouped.set(key, candidate)
+        }
+        candidate.requested = Math.min(candidate.requested + 1, fetchOptions.limit)
+      }
+
+      if (grouped.size === 0) break
+
+      const candidates = Array.from(grouped.values())
+      const result = await hook({ name, candidates })
+
+      if (!Array.isArray(result)) {
+        throw new Error('groupAvailability must resolve with an array of decisions')
+      }
+
+      const candidateKeys = new Set(grouped.keys())
+      const decisions = new Map<string, number>()
+      for (const decision of result) {
+        const validTier = decision?.groupTier === null || typeof decision?.groupTier === 'string'
+        const key = decision ? JSON.stringify([decision.groupId, decision.groupTier]) : ''
+        if (!decision || typeof decision.groupId !== 'string' || !validTier || !candidateKeys.has(key)) {
+          throw new Error('groupAvailability decisions must reference a candidate groupId and groupTier')
+        }
+        if (!Number.isInteger(decision.capacity) || decision.capacity < 0) {
+          throw new Error(`groupAvailability capacity for "${decision.groupId}" must be an integer >= 0`)
+        }
+        decisions.set(key, decision.capacity)
+      }
+
+      for (const candidate of candidates) {
+        const key = JSON.stringify([candidate.groupId, candidate.groupTier])
+        const tierKey = candidate.groupTier ?? ''
+        const capacity = decisions.get(key) ?? 0
+
+        let groupCapacities = capacities.get(candidate.groupId)
+        if (!groupCapacities) {
+          groupCapacities = new Map()
+          capacities.set(candidate.groupId, groupCapacities)
+        }
+        groupCapacities.set(tierKey, capacity)
+
+        let ignoredTiers = ignoredGroupTiers.get(candidate.groupId)
+        if (!ignoredTiers) {
+          ignoredTiers = new Set()
+          ignoredGroupTiers.set(candidate.groupId, ignoredTiers)
+        }
+        ignoredTiers.add(tierKey)
+        approvedCapacity += Math.min(capacity, fetchOptions.limit)
+      }
+
+      // A short page means candidate discovery reached the end of the currently
+      // eligible grouped jobs. The final fetch may still claim ungrouped jobs.
+      if (rows.length < scanLimit) break
+    }
+
+    return Object.fromEntries(Array.from(capacities, ([groupId, tiers]) => [
+      groupId,
+      Object.fromEntries(tiers)
+    ]))
   }
 
   private mapCompletionIdArg (id: string | string[], funcName: string) {

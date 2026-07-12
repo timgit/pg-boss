@@ -172,21 +172,79 @@ The default options for `work()` is 1 job every 2 seconds.
   })
   ```
 
+* **queueAvailability**, async function
+
+  Adds a caller-defined capacity check for the whole queue. It works for grouped and ungrouped
+  jobs and does not require `groupConcurrency`. The hook receives the queue name and requested
+  batch size, then returns the maximum number of jobs that may be claimed by that fetch. Returning
+  `0` leaves every job queued and skips group candidate discovery.
+
+  ```js
+  await boss.work('process-data', {
+    localConcurrency: 10,
+    queueAvailability: async ({ name, requested }) => {
+      return resourceCoordinator.getQueueCapacity({ name, requested })
+    }
+  }, handler)
+  ```
+
+* **groupAvailability**, async function
+
+  Adds a caller-defined availability check on top of `groupConcurrency`. pg-boss first discovers
+  grouped jobs that have database concurrency capacity, then calls the hook before claiming them.
+  Return a capacity for each group-and-tier pair that may be dequeued. A capacity of `0` (or
+  omitting a candidate from the result) leaves matching jobs queued. Jobs without a group bypass
+  this hook and can be controlled with `queueAvailability`.
+
+  `groupAvailability` requires `groupConcurrency` and is called with batches of candidates:
+
+  ```js
+  await boss.work('process-data', {
+    localConcurrency: 10,
+    groupConcurrency: 5,
+    groupAvailability: async ({ name, candidates }) => {
+      const capacities = await resourceCoordinator.getCapacity(
+        candidates.map(({ groupId, groupTier, requested }) => ({ groupId, groupTier, requested }))
+      )
+
+      return candidates.map(({ groupId, groupTier }) => ({
+        groupId,
+        groupTier,
+        capacity: capacities[groupId]?.[groupTier ?? 'default'] ?? 0
+      }))
+    }
+  }, async ([job]) => {
+    await processData(job.data)
+  })
+  ```
+
+  The hook runs before the atomic database claim, without holding a database transaction open
+  during the external call. pg-boss rechecks `groupConcurrency` when claiming. The external
+  capacity is an admission decision for that fetch, not an atomic reservation protocol across
+  nodes; coordinators that require strict token accounting should reserve capacity atomically.
+
+  If the hook throws or returns an invalid decision, the fetch fails without claiming jobs and
+  the worker emits its normal error event. Hook results are not cached by pg-boss.
+
 #### Understanding concurrency options
 
-The three concurrency options work together to control job processing at different levels:
+The concurrency and availability options work together to control job processing at different levels:
 
 | Option | Scope | Tracking | Use case |
 | - | - | - | - |
 | `localConcurrency` | Per-node | N/A (worker count) | Control total parallel processing capacity per node |
 | `localGroupConcurrency` | Per-node, per-group | In-memory | Limit group concurrency without DB overhead |
 | `groupConcurrency` | Global, per-group | Database | Coordinate group limits across distributed nodes |
+| `queueAvailability` | Per fetch, per queue | Caller-defined hook | Gate total capacity for grouped or ungrouped jobs |
+| `groupAvailability` | Per fetch, per group and tier | Caller-defined hook | Gate group capacity on external resources |
 
 **Key relationships:**
 
 - `localConcurrency` sets the maximum number of jobs a single node can process simultaneously (limited by worker count)
 - `localGroupConcurrency` must be ≤ `localConcurrency` (you can't process more jobs from a group than you have workers)
 - `groupConcurrency` can exceed `localConcurrency` because it's a global limit across all nodes
+- `queueAvailability` can reduce the total batch size and runs before group candidate discovery
+- `groupAvailability` can only reduce the capacity allowed by `groupConcurrency`
 
 **Example: Multi-node deployment**
 

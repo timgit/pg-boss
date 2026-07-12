@@ -1226,7 +1226,10 @@ interface GroupConcurrencyConfig {
   tiers?: Record<string, number>
 }
 
-interface FetchJobOptions {
+type GroupTierCapacities = Record<string, Record<string, number>>
+type IgnoredGroupTiers = Record<string, Record<string, boolean>>
+
+export interface FetchJobOptions {
   schema: string
   table: string
   name: string
@@ -1238,7 +1241,9 @@ interface FetchJobOptions {
   ignoreStartAfter?: boolean
   ignoreSingletons: string[] | null
   ignoreGroups?: string[] | null
+  ignoreGroupTiers?: IgnoredGroupTiers
   groupConcurrency?: number | GroupConcurrencyConfig
+  groupAvailabilityLimits?: GroupTierCapacities
   minPriority?: number
   maxPriority?: number
 }
@@ -1247,17 +1252,21 @@ interface FetchQueryParams {
   values: unknown[]
   ignoreSingletonsParam: string
   ignoreGroupsParam: string
+  ignoreGroupTiersParam: string
   defaultGroupLimitParam: string
   tiersParam: string
+  groupAvailabilityParam: string
   minPriorityParam: string
   maxPriorityParam: string
 }
 
 function buildFetchParams (options: FetchJobOptions): FetchQueryParams {
-  const { ignoreSingletons, ignoreGroups, groupConcurrency, minPriority, maxPriority } = options
+  const { ignoreSingletons, ignoreGroups, ignoreGroupTiers, groupConcurrency, groupAvailabilityLimits, minPriority, maxPriority } = options
   const hasIgnoreSingletons = ignoreSingletons != null && ignoreSingletons.length > 0
   const hasIgnoreGroups = ignoreGroups != null && ignoreGroups.length > 0
+  const hasIgnoreGroupTiers = ignoreGroupTiers != null && Object.keys(ignoreGroupTiers).length > 0
   const hasGroupConcurrency = groupConcurrency != null
+  const hasGroupAvailability = groupAvailabilityLimits != null
   const hasMinPriority = minPriority != null
   const hasMaxPriority = maxPriority != null
   const groupConcurrencyConfig = hasGroupConcurrency
@@ -1269,8 +1278,10 @@ function buildFetchParams (options: FetchJobOptions): FetchQueryParams {
   let paramIndex = 0
   let ignoreSingletonsParam = ''
   let ignoreGroupsParam = ''
+  let ignoreGroupTiersParam = ''
   let defaultGroupLimitParam = ''
   let tiersParam = ''
+  let groupAvailabilityParam = ''
   let minPriorityParam = ''
   let maxPriorityParam = ''
 
@@ -1291,6 +1302,12 @@ function buildFetchParams (options: FetchJobOptions): FetchQueryParams {
     values.push(ignoreGroups)
   }
 
+  if (hasIgnoreGroupTiers) {
+    paramIndex++
+    ignoreGroupTiersParam = `$${paramIndex}::jsonb`
+    values.push(JSON.stringify(ignoreGroupTiers))
+  }
+
   if (hasGroupConcurrency && groupConcurrencyConfig) {
     paramIndex++
     defaultGroupLimitParam = `$${paramIndex}::int`
@@ -1301,6 +1318,12 @@ function buildFetchParams (options: FetchJobOptions): FetchQueryParams {
       tiersParam = `$${paramIndex}::jsonb`
       values.push(JSON.stringify(groupConcurrencyConfig.tiers))
     }
+  }
+
+  if (hasGroupAvailability) {
+    paramIndex++
+    groupAvailabilityParam = `$${paramIndex}::jsonb`
+    values.push(JSON.stringify(groupAvailabilityLimits))
   }
 
   if (hasMinPriority) {
@@ -1315,7 +1338,119 @@ function buildFetchParams (options: FetchJobOptions): FetchQueryParams {
     values.push(maxPriority)
   }
 
-  return { values, ignoreSingletonsParam, ignoreGroupsParam, defaultGroupLimitParam, tiersParam, minPriorityParam, maxPriorityParam }
+  return { values, ignoreSingletonsParam, ignoreGroupsParam, ignoreGroupTiersParam, defaultGroupLimitParam, tiersParam, groupAvailabilityParam, minPriorityParam, maxPriorityParam }
+}
+
+interface GroupConcurrencySql {
+  hasGroupConcurrency: boolean
+  hasTiers: boolean
+  hasSingleGroupConcurrency: boolean
+  activeGroupLimit: string
+  activeGroupCountsJoin: string
+  groupConcurrencyFilter: string
+}
+
+function buildGroupConcurrencySql (options: FetchJobOptions, params: FetchQueryParams): GroupConcurrencySql {
+  const { schema, table, name, groupConcurrency } = options
+  const hasGroupConcurrency = groupConcurrency != null
+  const groupConcurrencyConfig = hasGroupConcurrency
+    ? (typeof groupConcurrency === 'number' ? { default: groupConcurrency } : groupConcurrency)
+    : null
+  const hasTiers = !!(hasGroupConcurrency &&
+    groupConcurrencyConfig?.tiers &&
+    Object.keys(groupConcurrencyConfig.tiers).length > 0)
+  const hasSingleGroupConcurrency = hasGroupConcurrency && !hasTiers && groupConcurrencyConfig?.default === 1
+  const hasActiveGroupCounts = hasGroupConcurrency && !hasSingleGroupConcurrency
+  const activeGroupLimit = hasGroupConcurrency
+    ? hasTiers
+      ? `COALESCE((${params.tiersParam} ->> j.group_tier)::int, ${params.defaultGroupLimitParam})`
+      : params.defaultGroupLimitParam
+    : ''
+
+  const activeGroupCountsJoin = hasActiveGroupCounts
+    ? `LEFT JOIN LATERAL (
+          SELECT COUNT(*)::int as active_cnt
+          FROM (
+            SELECT 1
+            FROM ${schema}.${table} active_group_probe
+            WHERE active_group_probe.name = '${name}'
+              AND active_group_probe.state = '${JOB_STATES.active}'
+              AND active_group_probe.group_id IS NOT NULL
+              AND active_group_probe.group_id = j.group_id
+            LIMIT ${activeGroupLimit}
+          ) active_group_limited
+        ) agc ON j.group_id IS NOT NULL`
+    : ''
+
+  const groupConcurrencyFilter = hasGroupConcurrency
+    ? hasSingleGroupConcurrency
+      ? `(j.group_id IS NULL
+            OR NOT EXISTS (
+              SELECT 1
+              FROM ${schema}.${table} active_group_probe
+              WHERE active_group_probe.name = '${name}'
+                AND active_group_probe.state = '${JOB_STATES.active}'
+                AND active_group_probe.group_id IS NOT NULL
+                AND active_group_probe.group_id = j.group_id
+            ))`
+      : `(j.group_id IS NULL
+            OR agc.active_cnt IS NULL
+            OR agc.active_cnt < ${activeGroupLimit})`
+    : ''
+
+  return {
+    hasGroupConcurrency,
+    hasTiers,
+    hasSingleGroupConcurrency,
+    activeGroupLimit,
+    activeGroupCountsJoin,
+    groupConcurrencyFilter
+  }
+}
+
+/**
+ * Returns a bounded sample of grouped jobs that pass the same static and
+ * database-backed group-concurrency filters as fetchNextJob(). This query is
+ * read-only: callers can consult an external coordinator before claiming work.
+ */
+export function fetchGroupCandidates (options: FetchJobOptions, scanLimit: number): SqlQuery {
+  const { schema, table, name, priority = true, orderByCreatedOn = true, ignoreStartAfter = false, minPriority, maxPriority } = options
+  const hasIgnoreSingletons = options.ignoreSingletons != null && options.ignoreSingletons.length > 0
+  const hasIgnoreGroups = options.ignoreGroups != null && options.ignoreGroups.length > 0
+  const hasIgnoreGroupTiers = options.ignoreGroupTiers != null && Object.keys(options.ignoreGroupTiers).length > 0
+  const hasMinPriority = minPriority != null
+  const hasMaxPriority = maxPriority != null
+  const params = buildFetchParams(options)
+  const { hasGroupConcurrency, activeGroupCountsJoin, groupConcurrencyFilter } = buildGroupConcurrencySql(options, params)
+
+  const whereConditions = [
+    `j.name = '${name}'`,
+    `j.state < '${JOB_STATES.active}'`,
+    'NOT j.blocked',
+    'j.group_id IS NOT NULL',
+    hasGroupConcurrency ? `${params.defaultGroupLimitParam} >= 1` : '',
+    !ignoreStartAfter ? 'j.start_after < now()' : '',
+    hasIgnoreSingletons ? `j.singleton_key <> ALL(${params.ignoreSingletonsParam})` : '',
+    hasIgnoreGroups ? `j.group_id <> ALL(${params.ignoreGroupsParam})` : '',
+    hasIgnoreGroupTiers
+      ? `NOT COALESCE(((${params.ignoreGroupTiersParam} -> j.group_id) ? COALESCE(j.group_tier, '')), false)`
+      : '',
+    hasMinPriority ? `j.priority >= ${params.minPriorityParam}` : '',
+    hasMaxPriority ? `j.priority <= ${params.maxPriorityParam}` : '',
+    groupConcurrencyFilter
+  ].filter(Boolean).join('\n        AND ')
+
+  return {
+    text: `
+      SELECT j.group_id as "groupId", j.group_tier as "groupTier"
+      FROM ${schema}.${table} j
+      ${activeGroupCountsJoin}
+      WHERE ${whereConditions}
+      ORDER BY ${priority ? 'j.priority desc, ' : ''}${orderByCreatedOn ? 'j.created_on, ' : ''}j.id
+      LIMIT ${scanLimit}
+    `,
+    values: params.values
+  }
 }
 
 /**
@@ -1335,29 +1470,24 @@ function buildFetchParams (options: FetchJobOptions): FetchQueryParams {
  * exceeds fetch time.
  */
 export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): SqlQuery {
-  const { schema, table, name, policy, limit, includeMetadata, priority = true, orderByCreatedOn = true, ignoreStartAfter = false, groupConcurrency, minPriority, maxPriority } = options
+  const { schema, table, name, policy, limit, includeMetadata, priority = true, orderByCreatedOn = true, ignoreStartAfter = false, minPriority, maxPriority } = options
 
   const singletonFetch = limit > 1 && (policy === QUEUE_POLICIES.singleton || policy === QUEUE_POLICIES.stately)
   const hasIgnoreSingletons = options.ignoreSingletons != null && options.ignoreSingletons.length > 0
   const hasIgnoreGroups = options.ignoreGroups != null && options.ignoreGroups.length > 0
-  const hasGroupConcurrency = groupConcurrency != null
+  const hasGroupAvailability = options.groupAvailabilityLimits != null
   const hasMinPriority = minPriority != null
   const hasMaxPriority = maxPriority != null
-  const groupConcurrencyConfig = hasGroupConcurrency
-    ? (typeof groupConcurrency === 'number' ? { default: groupConcurrency } : groupConcurrency)
-    : null
-  const hasTiers = hasGroupConcurrency &&
-    groupConcurrencyConfig?.tiers &&
-    Object.keys(groupConcurrencyConfig.tiers).length > 0
-  const hasSingleGroupConcurrency = hasGroupConcurrency && !hasTiers && groupConcurrencyConfig?.default === 1
-  const hasActiveGroupCounts = hasGroupConcurrency && !hasSingleGroupConcurrency
 
   const params = buildFetchParams(options)
-  const activeGroupLimit = hasGroupConcurrency
-    ? hasTiers
-      ? `COALESCE((${params.tiersParam} ->> j.group_tier)::int, ${params.defaultGroupLimitParam})`
-      : params.defaultGroupLimitParam
-    : ''
+  const {
+    hasGroupConcurrency,
+    hasTiers,
+    hasSingleGroupConcurrency,
+    activeGroupCountsJoin,
+    groupConcurrencyFilter
+  } = buildGroupConcurrencySql(options, params)
+  const hasActiveGroupCounts = hasGroupConcurrency && !hasSingleGroupConcurrency
 
   const selectCols = [
     'j.id',
@@ -1367,27 +1497,11 @@ export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): S
       ? hasActiveGroupCounts
         ? 'COALESCE(agc.active_cnt, 0) as active_cnt'
         : '0 as active_cnt'
+      : '',
+    hasGroupAvailability
+      ? `COALESCE(((${params.groupAvailabilityParam} -> j.group_id) ->> COALESCE(j.group_tier, ''))::int, 0) as availability_capacity`
       : ''
   ].filter(Boolean).join(', ')
-
-  // For limits above 1, count only the candidate's active group, bounded by that
-  // group's configured limit, via the existing (name, group_id) active-job index.
-  // This avoids materializing all active groups and then rescanning that CTE once
-  // per saturated pending row when stats are stale.
-  const activeGroupCountsJoin = hasActiveGroupCounts
-    ? `LEFT JOIN LATERAL (
-          SELECT COUNT(*)::int as active_cnt
-          FROM (
-            SELECT 1
-            FROM ${schema}.${table} active_group_probe
-            WHERE active_group_probe.name = '${name}'
-              AND active_group_probe.state = '${JOB_STATES.active}'
-              AND active_group_probe.group_id IS NOT NULL
-              AND active_group_probe.group_id = j.group_id
-            LIMIT ${activeGroupLimit}
-          ) active_group_limited
-        ) agc ON j.group_id IS NOT NULL`
-    : ''
 
   // With noSkipLocked, omit FOR UPDATE SKIP LOCKED as it performs poorly
   // in distributed databases like CockroachDB
@@ -1396,22 +1510,6 @@ export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): S
   // Column references are qualified with j. throughout so both the base case and
   // the groupConcurrency branches share one set of expressions. The count-based
   // branch introduces agc.active_cnt from the lateral count probe.
-  const groupConcurrencyFilter = hasGroupConcurrency
-    ? hasSingleGroupConcurrency
-      ? `(j.group_id IS NULL
-            OR NOT EXISTS (
-              SELECT 1
-              FROM ${schema}.${table} active_group_probe
-              WHERE active_group_probe.name = '${name}'
-                AND active_group_probe.state = '${JOB_STATES.active}'
-                AND active_group_probe.group_id IS NOT NULL
-                AND active_group_probe.group_id = j.group_id
-            ))`
-      : `(j.group_id IS NULL
-            OR agc.active_cnt IS NULL
-            OR agc.active_cnt < ${activeGroupLimit})`
-    : ''
-
   const whereConditions = [
     `j.name = '${name}'`,
     `j.state < '${JOB_STATES.active}'`,
@@ -1421,6 +1519,9 @@ export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): S
     hasIgnoreGroups ? `(j.group_id IS NULL OR j.group_id <> ALL(${params.ignoreGroupsParam}))` : '',
     hasMinPriority ? `j.priority >= ${params.minPriorityParam}` : '',
     hasMaxPriority ? `j.priority <= ${params.maxPriorityParam}` : '',
+    hasGroupAvailability
+      ? `(j.group_id IS NULL OR COALESCE(((${params.groupAvailabilityParam} -> j.group_id) ->> COALESCE(j.group_tier, ''))::int, 0) > 0)`
+      : '',
     groupConcurrencyFilter
   ].filter(Boolean).join('\n          AND ')
 
@@ -1437,7 +1538,7 @@ export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): S
 
   const singletonCte = singletonFetch
     ? `, singleton_ranking AS (
-        SELECT id, ${hasGroupConcurrency ? 'group_id, group_tier, active_cnt, ' : ''}
+        SELECT id, ${hasGroupConcurrency ? 'group_id, group_tier, active_cnt, ' : ''}${hasGroupAvailability ? 'availability_capacity, ' : ''}
           row_number() OVER (PARTITION BY singleton_key) as singleton_rn
         FROM next
       )`
@@ -1451,16 +1552,19 @@ export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): S
           , t.group_tier
           ${singletonFetch ? ', singleton_rn' : ''}
           , ROW_NUMBER() OVER (PARTITION BY t.group_id ORDER BY t.id) as group_rn
+          ${hasGroupAvailability ? ', ROW_NUMBER() OVER (PARTITION BY t.group_id, t.group_tier ORDER BY t.id) as availability_rn' : ''}
           , t.active_cnt
+          ${hasGroupAvailability ? ', t.availability_capacity' : ''}
         FROM ${singletonFetch ? 'singleton_ranking' : 'next'} t
         ${singletonFetch ? 'WHERE singleton_rn = 1' : ''}
       ),
       group_filtered AS (
         SELECT id FROM group_ranking
         WHERE group_id IS NULL
-          OR (active_cnt + group_rn) <= ${hasTiers
-          ? `COALESCE((${params.tiersParam} ->> group_tier)::int, ${params.defaultGroupLimitParam})`
-          : params.defaultGroupLimitParam}
+          OR ((active_cnt + group_rn) <= ${hasTiers
+            ? `COALESCE((${params.tiersParam} ->> group_tier)::int, ${params.defaultGroupLimitParam})`
+            : params.defaultGroupLimitParam}
+            ${hasGroupAvailability ? 'AND availability_rn <= availability_capacity' : ''})
       )`
     : ''
 
