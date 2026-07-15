@@ -218,6 +218,173 @@ describe('key_strict_fifo', function () {
       expect(job2.id).toBe(jobId2)
     })
 
+    // The four tests below cover key_strict_fifo blocking - the rule "is another job of this key
+    // already in flight or stuck?" (a sibling in active/retry/failed). key_strict_fifo used to rely
+    // only on the job_i8 unique index: fetch tried to activate a blocked key's job, hit a unique
+    // violation (23505), and manager.fetch() swallowed it as an empty result - so on a batch fetch
+    // one stuck/failed key starved every other key. The fix skips blocked keys in fetchNextJob, so
+    // a blocked key only holds back its own successors while every other key keeps flowing.
+    it(`key_strict_fifo failed key does not block other keys using partition=${partition}`, async function () {
+      ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+
+      await ctx.boss.createQueue(ctx.schema, { policy: 'key_strict_fifo', partition })
+
+      // A1, A2 share a key (A2 is the head of A's queue after A1 fails); B1 is a different key
+      const jobIdA1 = await ctx.boss.send(ctx.schema, { key: 'A', order: 1 }, { singletonKey: 'A', retryLimit: 0 })
+      const jobIdA2 = await ctx.boss.send(ctx.schema, { key: 'A', order: 2 }, { singletonKey: 'A' })
+      const jobIdB1 = await ctx.boss.send(ctx.schema, { key: 'B', order: 1 }, { singletonKey: 'B' })
+
+      expect(jobIdA1).toBeTruthy()
+      expect(jobIdA2).toBeTruthy()
+      expect(jobIdB1).toBeTruthy()
+
+      // Fetch and permanently fail A1
+      const [jobA1] = await ctx.boss.fetch(ctx.schema)
+      expect(jobA1.id).toBe(jobIdA1)
+      await ctx.boss.fail(ctx.schema, jobA1.id)
+
+      assertTruthy(jobIdA1)
+      const failedA1 = await ctx.boss.getJobById(ctx.schema, jobIdA1)
+      assertTruthy(failedA1)
+      expect(failedA1.state).toBe('failed')
+
+      // B1 must still be fetchable even though A is blocked at the head of the queue
+      const [jobB1] = await ctx.boss.fetch(ctx.schema)
+      expect(jobB1).toBeTruthy()
+      expect(jobB1.id).toBe(jobIdB1)
+
+      // A2 must NOT be fetchable while A1 is failed
+      const [blocked] = await ctx.boss.fetch(ctx.schema)
+      expect(blocked).toBeFalsy()
+    })
+
+    it(`key_strict_fifo recovers successors in order after retry using partition=${partition}`, async function () {
+      ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+
+      await ctx.boss.createQueue(ctx.schema, { policy: 'key_strict_fifo', partition })
+
+      const jobIdA1 = await ctx.boss.send(ctx.schema, { order: 1 }, { singletonKey: 'A', retryLimit: 0 })
+      const jobIdA2 = await ctx.boss.send(ctx.schema, { order: 2 }, { singletonKey: 'A' })
+
+      // Fetch and fail A1
+      const [jobA1] = await ctx.boss.fetch(ctx.schema)
+      await ctx.boss.fail(ctx.schema, jobA1.id)
+
+      // Queue for key A is blocked
+      const [blocked] = await ctx.boss.fetch(ctx.schema)
+      expect(blocked).toBeFalsy()
+
+      // Retry the failed job - A1 becomes fetchable again (retry state), A2 stays queued
+      assertTruthy(jobIdA1)
+      await ctx.boss.retry(ctx.schema, jobIdA1)
+
+      const [retriedA1] = await ctx.boss.fetch(ctx.schema)
+      expect(retriedA1).toBeTruthy()
+      expect(retriedA1.id).toBe(jobIdA1)
+
+      // A2 still not fetchable while A1 is active
+      const [stillBlocked] = await ctx.boss.fetch(ctx.schema)
+      expect(stillBlocked).toBeFalsy()
+
+      // Once A1 completes, A2 becomes fetchable
+      await ctx.boss.complete(ctx.schema, retriedA1.id)
+
+      const [jobA2] = await ctx.boss.fetch(ctx.schema)
+      expect(jobA2).toBeTruthy()
+      expect(jobA2.id).toBe(jobIdA2)
+    })
+
+    it(`key_strict_fifo active key does not block other keys using partition=${partition}`, async function () {
+      ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+
+      await ctx.boss.createQueue(ctx.schema, { policy: 'key_strict_fifo', partition })
+
+      // A1 older than A2; B1 is a different key
+      const jobIdA1 = await ctx.boss.send(ctx.schema, { order: 1 }, { singletonKey: 'A' })
+      const jobIdA2 = await ctx.boss.send(ctx.schema, { order: 2 }, { singletonKey: 'A' })
+      const jobIdB1 = await ctx.boss.send(ctx.schema, { order: 1 }, { singletonKey: 'B' })
+
+      expect(jobIdA1).toBeTruthy()
+      expect(jobIdA2).toBeTruthy()
+      expect(jobIdB1).toBeTruthy()
+
+      // Fetch A1, leave it active (do not complete)
+      const [jobA1] = await ctx.boss.fetch(ctx.schema)
+      expect(jobA1.id).toBe(jobIdA1)
+
+      // A2 is older than B1 so it sorts first, but it is blocked while A1 is active. A default
+      // (single-row) fetch must skip A2 before applying LIMIT and return B1 rather than nothing.
+      const [jobB1] = await ctx.boss.fetch(ctx.schema)
+      expect(jobB1).toBeTruthy()
+      expect(jobB1.id).toBe(jobIdB1)
+    })
+
+    it(`key_strict_fifo batch fetch dedups same key using partition=${partition}`, async function () {
+      ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+
+      await ctx.boss.createQueue(ctx.schema, { policy: 'key_strict_fifo', partition })
+
+      const jobIdA1 = await ctx.boss.send(ctx.schema, { order: 1 }, { singletonKey: 'A' })
+      const jobIdA2 = await ctx.boss.send(ctx.schema, { order: 2 }, { singletonKey: 'A' })
+      const jobIdB1 = await ctx.boss.send(ctx.schema, { order: 1 }, { singletonKey: 'B' })
+
+      expect(jobIdA1).toBeTruthy()
+      expect(jobIdA2).toBeTruthy()
+      expect(jobIdB1).toBeTruthy()
+
+      // A single batch fetch must return one job per key (the oldest) and must not try to
+      // activate two same-key jobs in one statement, which would violate job_i8 and abort the
+      // whole fetch. Before the fix this returned an empty/partial batch instead of [A1, B1].
+      const jobs = await ctx.boss.fetch(ctx.schema, { batchSize: 3 })
+      const fetchedIds = jobs.map(job => job.id).sort()
+      expect(fetchedIds).toEqual([jobIdA1, jobIdB1].sort())
+    })
+
+    // The two tests below cover key_strict_fifo ordering - the rule "among this key's waiting jobs,
+    // is this the oldest?". Priority may order across keys, but never within a key. Before the fix
+    // the per-key dedup ran after the priority/LIMIT ordering, so a newer higher-priority job could
+    // jump ahead of an older one with the same key.
+    it(`key_strict_fifo priority does not reorder within a key using partition=${partition}`, async function () {
+      ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+
+      await ctx.boss.createQueue(ctx.schema, { policy: 'key_strict_fifo', partition })
+
+      // Same key: older job at priority 0, newer job at priority 10. The older one must come back
+      // first - within a key the oldest always wins, regardless of priority.
+      const older = await ctx.boss.send(ctx.schema, { order: 1 }, { singletonKey: 'A', priority: 0 })
+      const newer = await ctx.boss.send(ctx.schema, { order: 2 }, { singletonKey: 'A', priority: 10 })
+
+      const [first] = await ctx.boss.fetch(ctx.schema)
+      expect(first.id).toBe(older)
+
+      await ctx.boss.complete(ctx.schema, first.id)
+
+      const [second] = await ctx.boss.fetch(ctx.schema)
+      expect(second.id).toBe(newer)
+    })
+
+    it(`key_strict_fifo batch does not surface a newer high-priority same-key job using partition=${partition}`, async function () {
+      ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+
+      await ctx.boss.createQueue(ctx.schema, { policy: 'key_strict_fifo', partition })
+
+      // A's older job is low priority, its newer job is high priority, with other keys in between.
+      // A's oldest queued job is its only eligible candidate, so a batch fetch must never return A's
+      // newer job while the older one is still queued - whatever the priorities or batch size.
+      const olderA = await ctx.boss.send(ctx.schema, { order: 1 }, { singletonKey: 'A', priority: 0 })
+      const newerA = await ctx.boss.send(ctx.schema, { order: 2 }, { singletonKey: 'A', priority: 10 })
+      await ctx.boss.send(ctx.schema, { order: 1 }, { singletonKey: 'B', priority: 5 })
+      await ctx.boss.send(ctx.schema, { order: 1 }, { singletonKey: 'C', priority: 5 })
+
+      assertTruthy(olderA)
+      assertTruthy(newerA)
+
+      const jobs = await ctx.boss.fetch(ctx.schema, { batchSize: 2 })
+      const fetchedIds = jobs.map(job => job.id)
+
+      expect(fetchedIds).not.toContain(newerA)
+    })
+
     it(`getBlockedKeys returns blocked singletonKeys using partition=${partition}`, async function () {
       ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
