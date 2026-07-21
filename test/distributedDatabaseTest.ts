@@ -19,8 +19,10 @@ import { ctx } from './hooks.ts'
 //
 // Every test here calls helper.start(), which on CockroachDB pays slow per-test DDL (~8-9s observed
 // in CI), leaving little headroom under the 10s global timeout. Raise the default for the whole
-// block so startup jitter can't push a test over the edge (the concurrency tests keep their explicit
-// per-test overrides).
+// block so startup jitter can't push a test over the edge. Per-test overrides pass blockTimeout
+// (never a bare literal) so they lift the Postgres budget without capping a distributed backend
+// below it — a flat 30000 here previously timed the two concurrency tests out on a slow
+// CockroachDB run while the rest of the block, allowed 60s, passed at up to 47s.
 //
 // The override must only LIFT the Postgres budget — never cap a distributed backend. vitest.config.ts
 // already gives cockroachdb/yugabytedb a 60s global; a flat 20s here would lower it for exactly the
@@ -57,7 +59,7 @@ helper.describePglite('distributed database mode', { timeout: blockTimeout }, fu
     // but no job should be duplicated
     expect(allJobs.length).toBeLessThanOrEqual(jobCount)
     expect(allJobs.length).toBeGreaterThan(0)
-  }, 30000)
+  }, blockTimeout)
 
   it('should handle high concurrency without duplicates in distributed mode', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: true })
@@ -106,7 +108,7 @@ helper.describePglite('distributed database mode', { timeout: blockTimeout }, fu
 
     // Verify all jobs were claimed exactly once
     expect(claimedIndices.size).toBe(jobCount)
-  }, 30000)
+  }, blockTimeout)
 
   it('should compose failDistributed inside a caller transaction and roll back with it', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: true })
