@@ -1337,7 +1337,8 @@ function buildFetchParams (options: FetchJobOptions): FetchQueryParams {
 export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): SqlQuery {
   const { schema, table, name, policy, limit, includeMetadata, priority = true, orderByCreatedOn = true, ignoreStartAfter = false, groupConcurrency, minPriority, maxPriority } = options
 
-  const singletonFetch = limit > 1 && (policy === QUEUE_POLICIES.singleton || policy === QUEUE_POLICIES.stately)
+  const keyStrictFifo = policy === QUEUE_POLICIES.key_strict_fifo
+  const singletonFetch = limit > 1 && (policy === QUEUE_POLICIES.singleton || policy === QUEUE_POLICIES.stately || keyStrictFifo)
   const hasIgnoreSingletons = options.ignoreSingletons != null && options.ignoreSingletons.length > 0
   const hasIgnoreGroups = options.ignoreGroups != null && options.ignoreGroups.length > 0
   const hasGroupConcurrency = groupConcurrency != null
@@ -1353,6 +1354,9 @@ export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): S
   const selectCols = [
     'j.id',
     singletonFetch ? 'j.singleton_key' : '',
+    // created_on is carried through so the per-key dedup ranking below can order
+    // by (created_on, id) and keep the oldest job per key (strict FIFO).
+    singletonFetch && keyStrictFifo ? 'j.created_on' : '',
     hasGroupConcurrency ? 'j.group_id, j.group_tier' : ''
   ].filter(Boolean).join(', ')
 
@@ -1388,6 +1392,46 @@ export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): S
     // NOTIFY gating already uses `start_after <= now()` for the same reason.
     !ignoreStartAfter ? 'j.start_after <= now()' : '',
     hasIgnoreSingletons ? `COALESCE(j.singleton_key, '') <> ALL(${params.ignoreSingletonsParam})` : '',
+    // key_strict_fifo blocking check: "is another job of this key already in flight or stuck?"
+    // Exclude j if a sibling is active/retry/failed, so a key holds back its own successors while
+    // one of its jobs is occupied - without starving other keys, which keep flowing.
+    // `b.id <> j.id` is essential so a job already in retry stays fetchable for its own re-fetch
+    // (retry -> active does not violate job_i8, the unique index that guarantees at most one job
+    // per key sits in those states).
+    // The `b.policy` predicate is what lets this NOT EXISTS use the partial job_i8 index: its
+    // WHERE clause includes `policy = key_strict_fifo`, so without it the planner falls back to a
+    // seq scan for the per-key lookup. Every row sharing b.name shares this policy, so the
+    // predicate is a no-op on results but turns the anti-join into an index probe.
+    keyStrictFifo
+      ? `NOT EXISTS (
+            SELECT 1 FROM ${schema}.${table} b
+            WHERE b.name = j.name
+              AND b.singleton_key = j.singleton_key
+              AND b.state IN ('${JOB_STATES.active}', '${JOB_STATES.retry}', '${JOB_STATES.failed}')
+              AND b.policy = '${QUEUE_POLICIES.key_strict_fifo}'
+              AND b.id <> j.id
+          )`
+      : '',
+    // key_strict_fifo FIFO-head check: "among this key's waiting jobs, is this the oldest?"
+    // Exclude j if an older eligible sibling is still waiting (state < active), so only each key's
+    // head is a candidate before the priority/created_on ordering and LIMIT run. Without this,
+    // `priority desc` (or a small batch window) can surface a newer same-key job ahead of an older
+    // one, breaking the "processed in the order they were created" contract. Since only the head is
+    // eligible, cross-key priority ordering below still applies, but within a key the oldest always
+    // wins. "Older" is compared by (created_on, id), matching the fetch tiebreak, and the head is
+    // scoped to currently-eligible rows (same state/blocked/start_after filters as j) so a delayed
+    // older sibling doesn't stall a ready one beyond existing behavior.
+    keyStrictFifo
+      ? `NOT EXISTS (
+            SELECT 1 FROM ${schema}.${table} h
+            WHERE h.name = j.name
+              AND h.singleton_key = j.singleton_key
+              AND h.policy = '${QUEUE_POLICIES.key_strict_fifo}'
+              AND h.state < '${JOB_STATES.active}'
+              AND NOT h.blocked${!ignoreStartAfter ? '\n              AND h.start_after < now()' : ''}
+              AND (h.created_on, h.id) < (j.created_on, j.id)
+          )`
+      : '',
     hasIgnoreGroups ? `(j.group_id IS NULL OR j.group_id <> ALL(${params.ignoreGroupsParam}))` : '',
     hasMinPriority ? `j.priority >= ${params.minPriorityParam}` : '',
     hasMaxPriority ? `j.priority <= ${params.maxPriorityParam}` : '',
@@ -1414,7 +1458,7 @@ export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): S
   const singletonCte = singletonFetch
     ? `, singleton_ranking AS (
         SELECT id, ${hasGroupConcurrency ? 'group_id, group_tier, ' : ''}
-          row_number() OVER (PARTITION BY singleton_key) as singleton_rn
+          row_number() OVER (PARTITION BY singleton_key ORDER BY ${keyStrictFifo ? 'created_on, ' : ''}id) as singleton_rn
         FROM next
       )`
     : ''

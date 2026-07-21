@@ -496,8 +496,12 @@ export interface UpdateRequest {
  *   singletonKey`.
  *
  * - `key_strict_fifo` ensures strict FIFO ordering per `singletonKey`. Requires
- *   `singletonKey` on every job. Blocks processing of jobs with the same key
- *   while any job with that key is active, in retry, or failed.
+ *   `singletonKey` on every job. While a job with a given key is active, in retry,
+ *   or failed, the next job for that same key is held back. Blocking is scoped to
+ *   the individual key: a stuck (e.g. failed) key never stalls other keys, whose
+ *   jobs keep flowing normally. Once the blocking job leaves that state (via
+ *   `retry()`, `deleteJob()`, or maintenance), the key's successors become
+ *   fetchable again, still in FIFO order.
  */
 export type QueuePolicy = 'standard' | 'short' | 'singleton' | 'stately' | 'exclusive' | 'key_strict_fifo' | (string & {})
 

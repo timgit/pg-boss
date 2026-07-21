@@ -40,18 +40,20 @@ Allowed policy values:
 | `singleton` | Only allows 1 job to be active, unlimited queued. Can be extended with `singletonKey` |
 | `stately` | Combination of short and singleton: Only allows 1 job per state, queued and/or active. Can be extended with `singletonKey` |
 | `exclusive` | Only allows 1 job to be queued or active. Can be extended with `singletonKey` |
-| `key_strict_fifo` | Strict FIFO ordering per `singletonKey`. Requires `singletonKey` on every job. Blocks processing of jobs with the same key while any job with that key is active, in retry, or failed. |
+| `key_strict_fifo` | Strict FIFO ordering per `singletonKey`. Requires `singletonKey` on every job. Holds back the next job for a key while a job with that same key is active, in retry, or failed. Blocking is scoped per key, so a stuck key never stalls other keys. |
 
 > [!WARNING]
 > `stately` queues are special in how retries are handled. By definition, stately queues will not allow multiple jobs to occupy `retry` state. Once a job exists in `retry`, failing another `active` job will bypass the retry mechanism and force the job to `failed`. If this job requires retries, consider a custom retry implementation using a dead letter queue.
 
 > [!NOTE]
-> `key_strict_fifo` queues enforce strict FIFO (First-In-First-Out) ordering per `singletonKey`. This is useful when you need to ensure jobs for the same entity (e.g., the same order, customer, or resource) are processed sequentially in the order they were created. The queue will block processing of subsequent jobs with the same `singletonKey` while any job with that key is:
+> `key_strict_fifo` queues enforce strict FIFO (First-In-First-Out) ordering per `singletonKey`. This is useful when you need to ensure jobs for the same entity (e.g., the same order, customer, or resource) are processed sequentially in the order they were created. The queue will hold back subsequent jobs with the same `singletonKey` while any job with that key is:
 > - **active**: currently being processed
 > - **retry**: waiting to be retried after a failure
 > - **failed**: permanently failed (exhausted all retries)
 >
-> To unblock a key after a permanent failure, you can either delete the failed job using `deleteJob()` or retry it using `retry()`. Use `getBlockedKeys()` to discover which keys are currently blocked due to failed jobs.
+> Blocking is scoped to the individual key. A key that is stuck (for example on a permanently failed job) only holds back its own successors; jobs for every other `singletonKey` continue to be fetched normally, so a single failure never stalls the whole queue.
+>
+> To unblock a key after a permanent failure, you can either delete the failed job using `deleteJob()` or retry it using `retry()`. Once the blocking job leaves the active/retry/failed state, that key's queued successors become fetchable again, still in FIFO order. Use `getBlockedKeys()` to discover which keys are currently blocked due to failed jobs.
 
 * **partition**, boolean, default false
 
