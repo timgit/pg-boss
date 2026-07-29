@@ -22,6 +22,21 @@ describe('Sparkline', () => {
     expect(container.querySelector('circle')).not.toBeNull()
   })
 
+  it('centers a flat series instead of pinning it to the baseline', () => {
+    const { container } = render(<Sparkline data={[1, 1, 1]} height={24} showDot={false} />)
+    const ys = container.querySelector('polyline')!
+      .getAttribute('points')!
+      .trim()
+      .split(/\s+/)
+      .map((point) => Number(point.split(',')[1]))
+    expect(new Set(ys)).toEqual(new Set([12]))
+  })
+
+  it('stays within a container narrower than its nominal width', () => {
+    const { container } = render(<Sparkline data={[1, 2, 3]} width={160} />)
+    expect(container.querySelector('svg')!.getAttribute('class')).toContain('max-w-full')
+  })
+
   it('applies the provided color and aria-label', () => {
     const { container } = render(
       <Sparkline data={[1, 2, 3]} color="var(--error-600)" aria-label="trend" />
