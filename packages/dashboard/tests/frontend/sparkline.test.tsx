@@ -33,6 +33,7 @@ describe('Sparkline', () => {
   })
 
   it('stays within a container narrower than its nominal width', () => {
+    // jsdom has no layout engine, so the class assertion stands in for measuring the rendered box.
     const { container } = render(<Sparkline data={[1, 2, 3]} width={160} />)
     expect(container.querySelector('svg')!.getAttribute('class')).toContain('max-w-full')
   })

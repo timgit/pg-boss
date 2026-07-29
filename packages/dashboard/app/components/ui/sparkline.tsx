@@ -35,7 +35,7 @@ export function Sparkline ({
 
   const min = Math.min(...data)
   const max = Math.max(...data)
-  const span = max - min || 1
+  const span = max - min
   const n = data.length
 
   const x = (i: number) => (n === 1 ? width / 2 : pad + (i / (n - 1)) * innerW)
@@ -44,13 +44,12 @@ export function Sparkline ({
 
   const points = data.map((v, i) => `${x(i).toFixed(2)},${y(v).toFixed(2)}`).join(' ')
 
-  // max-w-full keeps the fixed-width SVG from spilling out of a narrower container (e.g. a stat card).
-
   return (
     <svg
       width={width}
       height={height}
       viewBox={`0 0 ${width} ${height}`}
+      // max-w-full keeps the fixed-width SVG from spilling out of a narrower container (e.g. a stat card).
       className={cn('max-w-full overflow-visible', className)}
       role="img"
       aria-label={ariaLabel}
