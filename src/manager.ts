@@ -1638,6 +1638,16 @@ class Manager extends EventEmitter implements types.EventsMixin {
     return result.rows[0].moved as number
   }
 
+  async redriveJob (name: string, id: string, options: types.RedriveJobOptions = {}): Promise<string | null> {
+    Attorney.assertQueueName(name)
+
+    const db = this.assertDb(options)
+    const { table } = await this.getQueueCache(name)
+    const sql = plans.redriveJob(this.config.schema, table)
+    const result = await db.executeSql(sql, [name, id])
+    return (result.rows[0]?.id as string | undefined) ?? null
+  }
+
   async cancel (name: string, id: string | string[], options: types.ConnectionOptions = {}) {
     Attorney.assertQueueName(name)
     const db = this.assertDb(options)

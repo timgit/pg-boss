@@ -328,6 +328,42 @@ describe('failure', function () {
     expect(redrivenMeta.sourceName).toBeNull()
   })
 
+  it('redriveJob moves only the selected dead-lettered job and returns its replacement id', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+
+    const deadLetter = `${ctx.schema}_dlq`
+
+    await ctx.boss.createQueue(deadLetter)
+    await ctx.boss.createQueue(ctx.schema, { deadLetter })
+
+    const firstSourceId = await ctx.boss.send(ctx.schema, { selected: false }, { retryLimit: 0 })
+    const secondSourceId = await ctx.boss.send(ctx.schema, { selected: true }, { retryLimit: 0 })
+    assertTruthy(firstSourceId)
+    assertTruthy(secondSourceId)
+
+    await ctx.boss.fetch(ctx.schema)
+    await ctx.boss.fetch(ctx.schema)
+    await ctx.boss.fail(ctx.schema, firstSourceId)
+    await ctx.boss.fail(ctx.schema, secondSourceId)
+
+    const deadLetterJobs = await ctx.boss.findJobs<{ selected: boolean }>(deadLetter)
+    const selectedDeadLetter = deadLetterJobs.find(job => job.sourceId === secondSourceId)
+    const unselected = deadLetterJobs.find(job => job.sourceId === firstSourceId)
+    assertTruthy(selectedDeadLetter)
+    assertTruthy(unselected)
+
+    const replacementId = await ctx.boss.redriveJob(deadLetter, selectedDeadLetter.id)
+
+    assertTruthy(replacementId)
+    expect(replacementId).not.toBe(selectedDeadLetter.id)
+    await expect(ctx.boss.findJobs(deadLetter, { id: selectedDeadLetter.id })).resolves.toEqual([])
+    await expect(ctx.boss.findJobs(deadLetter, { id: unselected.id })).resolves.toHaveLength(1)
+    await expect(ctx.boss.findJobs(ctx.schema, { id: replacementId })).resolves.toMatchObject([
+      { id: replacementId, data: { selected: true }, retryCount: 0, sourceName: null }
+    ])
+    await expect(ctx.boss.redriveJob(deadLetter, selectedDeadLetter.id)).resolves.toBeNull()
+  })
+
   it('redrive routes each job back to its own source queue', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 

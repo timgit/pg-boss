@@ -2273,6 +2273,53 @@ export function redriveJobs (schema: string, table: string): string {
   `
 }
 
+// Exact dead-letter redrive. The source row is deleted only when its replacement insert succeeds,
+// so a destination policy collision leaves the selected job available for a later decision.
+export function redriveJob (schema: string, table: string): string {
+  return `
+    WITH candidate AS (
+      SELECT j.*, gen_random_uuid() AS replacement_id,
+        q.retry_limit AS destination_retry_limit,
+        q.retry_backoff AS destination_retry_backoff,
+        q.retry_delay AS destination_retry_delay,
+        q.retry_delay_max AS destination_retry_delay_max,
+        q.expire_seconds AS destination_expire_seconds,
+        q.retention_seconds AS destination_retention_seconds,
+        q.deletion_seconds AS destination_deletion_seconds,
+        q.policy AS destination_policy
+      FROM ${schema}.${table} j
+      JOIN ${schema}.queue q ON q.name = j.source_name
+      WHERE j.name = $1
+        AND j.id = $2
+        AND j.state < '${JOB_STATES.active}'
+      FOR UPDATE OF j SKIP LOCKED
+    ),
+    ins AS (
+      INSERT INTO ${schema}.job
+        (id, name, data, priority, retry_limit, retry_backoff, retry_delay, retry_delay_max,
+         expire_seconds, keep_until, deletion_seconds, policy, singleton_key, heartbeat_seconds)
+      SELECT c.replacement_id, c.source_name, c.data, c.priority,
+        c.destination_retry_limit, c.destination_retry_backoff, c.destination_retry_delay,
+        c.destination_retry_delay_max, c.destination_expire_seconds,
+        now() + c.destination_retention_seconds * interval '1s',
+        c.destination_deletion_seconds, c.destination_policy, c.singleton_key, c.heartbeat_seconds
+      FROM candidate c
+      ON CONFLICT DO NOTHING
+      RETURNING id
+    ),
+    deleted AS (
+      DELETE FROM ${schema}.${table} j
+      USING candidate c, ins i
+      WHERE j.id = c.id
+        AND i.id = c.replacement_id
+      RETURNING j.id
+    )
+    SELECT i.id
+    FROM ins i
+    WHERE EXISTS (SELECT 1 FROM deleted)
+  `
+}
+
 export function deletion (schema: string, table: string, queues: string[], noAdvisoryLocks?: boolean): string {
   const sql = `
     DELETE FROM ${schema}.${table}

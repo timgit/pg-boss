@@ -446,6 +446,8 @@ export interface RedriveOptions extends ConnectionOptions {
   limit?: number;
 }
 
+export type RedriveJobOptions = ConnectionOptions
+
 export type InsertOptions = ConnectionOptions & { returnId?: boolean }
 
 export type SendOptions = JobOptions & QueueOptions & ConnectionOptions

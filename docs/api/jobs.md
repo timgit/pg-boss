@@ -529,6 +529,25 @@ do {
 } while (moved > 0)
 ```
 
+### `redriveJob(name, id, options)`
+
+Moves one exact, un-started job out of a dead letter queue and re-creates it as a
+fresh job on its original source queue. Returns the replacement job id, or `null`
+when the selected dead-letter job is absent, currently being processed, has no
+recorded source queue, or cannot be inserted under that queue's current policy.
+
+The source job is deleted only after its replacement is inserted. Pass a custom
+`db` in `options` to compose the redrive with application audit or state changes
+inside a caller-owned transaction.
+
+`id` is the selected job's id in the dead letter queue, not its earlier
+`sourceId`. Pass `db` in `options` to execute through a custom database adapter,
+including an existing transaction.
+
+```js
+const replacementId = await boss.redriveJob('email-dlq', deadLetterJobId)
+```
+
 ### `deleteQueuedJobs(name)`
 
 Deletes all queued jobs in a queue.

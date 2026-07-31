@@ -140,6 +140,35 @@ describe('knex adapter', () => {
     helper.assertTruthy(job)
     expect(job.data).toEqual({ v: 2 })
   })
+
+  it('should roll back an exact redrive through a knex transaction', async () => {
+    const boss = ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+    if (!db) db = knex({ client: 'pg', connection: connString })
+
+    const deadLetter = `${ctx.schema}_dlq`
+    await boss.createQueue(deadLetter)
+    await boss.createQueue(ctx.schema, { deadLetter })
+
+    const sourceId = await boss.send(ctx.schema, { selected: true }, { retryLimit: 0 })
+    helper.assertTruthy(sourceId)
+    await boss.fetch(ctx.schema)
+    await boss.fail(ctx.schema, sourceId)
+
+    const [source] = await boss.findJobs(deadLetter)
+    helper.assertTruthy(source)
+
+    let replacementId: string | null = null
+    try {
+      await db.transaction(async (trx) => {
+        replacementId = await boss.redriveJob(deadLetter, source.id, { db: fromKnex(trx) })
+        throw new Error('force rollback')
+      })
+    } catch {}
+
+    helper.assertTruthy(replacementId)
+    await expect(boss.findJobs(deadLetter, { id: source.id })).resolves.toHaveLength(1)
+    await expect(boss.findJobs(ctx.schema, { id: replacementId })).resolves.toEqual([])
+  })
 })
 
 describe('kysely adapter', () => {
