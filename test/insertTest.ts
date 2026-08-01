@@ -151,6 +151,22 @@ describe('insert', function () {
     expect(job!.deadLetter).toBe(input.deadLetter)
   })
 
+  it('should persist group id and tier', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    const input = {
+      id: randomUUID(),
+      group: { id: 'group1', tier: 'tier1' }
+    }
+
+    await ctx.boss.insert(ctx.schema, [input])
+
+    const job = await ctx.boss.getJobById(ctx.schema, input.id)
+
+    expect(job!.groupId).toBe(input.group.id)
+    expect(job!.groupTier).toBe(input.group.tier)
+  })
+
   it('should attribute insert spy data to the right id when ON CONFLICT skips a job', async function () {
     // insertJobs ends in ON CONFLICT DO NOTHING; on a short-policy queue a duplicate singletonKey is
     // skipped, so the returned rows no longer align positionally with the input jobs. The spy must

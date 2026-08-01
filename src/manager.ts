@@ -1142,8 +1142,11 @@ class Manager extends EventEmitter implements types.EventsMixin {
         blocked,
         blocking,
         pendingDependencies,
-        ...rest
+        group,
+        ...jobFields
       } = j as types.JobInsert & { blocked?: unknown, blocking?: unknown, pendingDependencies?: unknown }
+
+      const rest = { ...jobFields, groupId: group?.id, groupTier: group?.tier }
 
       if (dataById) {
         // Best-effort spy bookkeeping, only reached when __test__enableSpies is set (a test-intended
