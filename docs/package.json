@@ -1,7 +1,8 @@
 {
   "name": "pg-boss-docs",
+  "type": "module",
   "devDependencies": {
-    "vitepress": "^2.0.0-alpha.17"
+    "vitepress": "^2.0.0-alpha.18"
   },
   "scripts": {
     "docs:dev": "vitepress dev",
