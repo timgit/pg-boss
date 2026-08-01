@@ -27,7 +27,7 @@ if (!siteBase) {
 }
 
 // Rewrite markdown links that point back into the docs site into root-relative
-// links (e.g. https://pgboss.dev/cli -> /cli, and the bare base
+// links (e.g. https://pgboss.io/cli -> /cli, and the bare base
 // -> /). External links (GitHub, npm, badges) are left untouched.
 function relativizeLinks (text) {
   const escaped = siteBase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')

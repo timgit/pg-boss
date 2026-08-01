@@ -87,7 +87,7 @@ export interface SchedulingOptions {
  * - `pglite`: embedded (NOT distributed) single-connection WASM PostgreSQL, all gates off; supports in-process LISTEN/NOTIFY.
  *
  * Spanner, Aurora DSQL, and other targets do not have a profile yet and are not
- * supported. @see https://pgboss.dev/database-backends
+ * supported. @see https://pgboss.io/database-backends
  */
 export type BackendProfile = 'postgres' | 'cockroachdb' | 'yugabytedb' | 'citus' | 'pglite'
 
@@ -167,7 +167,7 @@ export interface QueueStatsOptions {
  * derived from the backend and are not individually configurable, so a deployment can't
  * end up with an inconsistent combination.
  *
- * @see https://pgboss.dev/database-backends#backend-profiles
+ * @see https://pgboss.io/database-backends#backend-profiles
  */
 export interface BackendOptions {
   /**

@@ -53,32 +53,32 @@ This will likely cater the most to teams already familiar with the simplicity of
 * SQL support for non-Node.js runtimes for most operations
 * Serverless function compatible
 * Multi-master compatible (for example, in a Kubernetes ReplicaSet)
-* [Additional database backends](https://pgboss.dev/database-backends) for Postgres-based databases such as CockroachDB, YugabyteDB and Citus. Or, use embedded PGlite for running entirely in-process.
+* [Additional database backends](https://pgboss.io/database-backends) for Postgres-based databases such as CockroachDB, YugabyteDB and Citus. Or, use embedded PGlite for running entirely in-process.
 
 ## CLI
 
 pg-boss includes a command-line interface if needed for managing database migrations without writing code. This is useful for CI/CD pipelines, database setup scripts, or manual schema management.
 
-See the [CLI documentation](https://pgboss.dev/cli) for details.
+See the [CLI documentation](https://pgboss.io/cli) for details.
 
 ## Dashboard
 
 A web-based dashboard is available in the [`@pg-boss/dashboard`](https://www.npmjs.com/package/@pg-boss/dashboard) package for monitoring and managing jobs, queues and schedules.
 
-See the [dashboard documentation](https://pgboss.dev/dashboard) for details.
+See the [dashboard documentation](https://pgboss.io/dashboard) for details.
 
 ## Proxy
 
 A HTTP proxy is available in the [`@pg-boss/proxy`](https://www.npmjs.com/package/@pg-boss/proxy) package if needed to support use cases such as platform compatibility and connection pooling or scalability.
 
-See the [proxy documentation](https://pgboss.dev/proxy) for details.
+See the [proxy documentation](https://pgboss.io/proxy) for details.
 
 ## Requirements
 * Node 22.12 or higher for CommonJS's require(esm)
 * PostgreSQL 13 or higher
 
 ## Documentation
-* [Docs](https://pgboss.dev/)
+* [Docs](https://pgboss.io/)
 
 ## Contributing
 To setup a development environment for this library:

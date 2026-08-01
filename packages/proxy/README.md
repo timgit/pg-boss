@@ -4,7 +4,7 @@ An HTTP proxy for [pg-boss](https://github.com/timgit/pg-boss) methods, exposing
 
 All background processing (supervision, scheduling, migrations) is disabled by default, so the proxy runs statelessly: it only opens a database connection and serves requests.
 
-📖 **[Read the full documentation →](https://pgboss.dev/proxy)**
+📖 **[Read the full documentation →](https://pgboss.io/proxy)**
 
 ## Quick Start
 
@@ -28,7 +28,7 @@ await proxy.start()
 // Reads DATABASE_URL from process.env, listens on PORT (default 3000)
 ```
 
-For the HTTP API, runtime-neutral entry points, shutdown wiring (Node/Deno/Bun), full configuration (code options and environment variables), route filtering, custom middleware, and deployment, see the [documentation](https://pgboss.dev/proxy).
+For the HTTP API, runtime-neutral entry points, shutdown wiring (Node/Deno/Bun), full configuration (code options and environment variables), route filtering, custom middleware, and deployment, see the [documentation](https://pgboss.io/proxy).
 
 ## Running from Source
 
