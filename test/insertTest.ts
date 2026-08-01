@@ -2,6 +2,7 @@ import { expect } from 'vitest'
 import { randomUUID } from 'node:crypto'
 import * as helper from './testHelper.ts'
 import { ctx } from './hooks.ts'
+import type { JobInsert } from '../src/types.ts'
 
 describe('insert', function () {
   it('should create jobs from an array', async function () {
@@ -165,6 +166,73 @@ describe('insert', function () {
 
     expect(job!.groupId).toBe(input.group.id)
     expect(job!.groupTier).toBe(input.group.tier)
+  })
+
+  it('should persist group id when tier is omitted', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    const input = {
+      id: randomUUID(),
+      group: { id: 'group1' }
+    }
+
+    await ctx.boss.insert(ctx.schema, [input])
+
+    const job = await ctx.boss.getJobById(ctx.schema, input.id)
+
+    expect(job!.groupId).toBe(input.group.id)
+    expect(job!.groupTier).toBe(null)
+  })
+
+  it('should not clobber raw groupId/groupTier fields', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    // insertJobs' json_to_recordset declares groupId/groupTier columns directly, so passing those
+    // raw names through insert() has always worked — it was the natural workaround while insert()
+    // was dropping `group`. Not a documented contract, but flattening `group` must not overwrite
+    // them with undefined, or that workaround breaks in exactly the way it was compensating for.
+    const input = { id: randomUUID(), groupId: 'group1', groupTier: 'tier1' }
+
+    await ctx.boss.insert(ctx.schema, [input as JobInsert])
+
+    const job = await ctx.boss.getJobById(ctx.schema, input.id)
+
+    expect(job!.groupId).toBe(input.groupId)
+    expect(job!.groupTier).toBe(input.groupTier)
+  })
+
+  it('should reject an invalid group', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    // insert() skips Attorney otherwise, but an empty group.id would silently become a real
+    // concurrency group named '' once persisted, so it is validated the same way send() does.
+    await expect(ctx.boss.insert(ctx.schema, [{ group: { id: '' } }]))
+      .rejects.toThrow('group.id must be a non-empty string')
+
+    await expect(ctx.boss.insert(ctx.schema, [{ group: { id: 'group1', tier: '' } }]))
+      .rejects.toThrow('group.tier must be a non-empty string if provided')
+
+    const [{ queuedCount }] = await ctx.boss.getQueueStats(ctx.schema)
+    expect(queuedCount).toBe(0)
+  })
+
+  it('should honor groupConcurrency for jobs created by insert', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    // The group columns are only useful if the fetch plan sees them, so prove the round trip
+    // rather than just the persisted row: 4 jobs in one group, groupConcurrency of 2.
+    const groupId = 'tenant-1'
+    await ctx.boss.insert(ctx.schema, [
+      { group: { id: groupId } },
+      { group: { id: groupId } },
+      { group: { id: groupId } },
+      { group: { id: groupId } }
+    ])
+
+    const jobs = await ctx.boss.fetch(ctx.schema, { batchSize: 4, groupConcurrency: 2 })
+
+    expect(jobs.length).toBe(2)
+    expect(jobs.every(job => job.groupId === groupId)).toBe(true)
   })
 
   it('should attribute insert spy data to the right id when ON CONFLICT skips a job', async function () {

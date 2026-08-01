@@ -1116,6 +1116,11 @@ class Manager extends EventEmitter implements types.EventsMixin {
         }
         seenIds.add(job.id)
       }
+
+      // insert() otherwise skips Attorney on purpose (it is the raw, high-volume path), but an
+      // invalid group is worth rejecting here: send() already throws on it, and an empty-string
+      // group.id would silently become a real concurrency group named '' once persisted.
+      Attorney.validateGroupConfig(job)
     }
 
     const { table, policy, notify } = await this.getQueueCache(name)
@@ -1143,10 +1148,17 @@ class Manager extends EventEmitter implements types.EventsMixin {
         blocking,
         pendingDependencies,
         group,
-        ...jobFields
+        ...rest
       } = j as types.JobInsert & { blocked?: unknown, blocking?: unknown, pendingDependencies?: unknown }
 
-      const rest = { ...jobFields, groupId: group?.id, groupTier: group?.tier }
+      // Flatten group to the column names insertJobs' json_to_recordset declares, matching
+      // send()/upsert()/flow(). Assigned only when a group is present: those same raw column
+      // names are accepted by the recordset directly, and unconditional keys would overwrite
+      // them with undefined — silently breaking anyone who passed groupId/groupTier as a
+      // workaround while insert() was dropping `group` entirely.
+      if (group) {
+        Object.assign(rest, { groupId: group.id, groupTier: group.tier })
+      }
 
       if (dataById) {
         // Best-effort spy bookkeeping, only reached when __test__enableSpies is set (a test-intended

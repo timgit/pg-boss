@@ -688,5 +688,6 @@ export {
   getConfig,
   POLICY,
   validateFlowJobs,
+  validateGroupConfig,
   validateQueueArgs
 }
