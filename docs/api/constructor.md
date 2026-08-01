@@ -72,6 +72,14 @@ The following options can be set as properties in an object for additional confi
 
     Database schema that contains all required storage objects. Only alphanumeric and underscore allowed, length: <= 50 characters
 
+    To use a name that isn't a legal bare identifier — one containing dashes, or a reserved word — quote it yourself:
+
+    ```js
+    new PgBoss({ schema: '"My-Schema"' })
+    ```
+
+    The value is used verbatim as an identifier, so the quotes are preserved as written. Note that `MySchema` and `"MySchema"` are different schemas: PostgreSQL folds the unquoted form to `myschema`. Double quotes, single quotes, periods, dollar signs, backslashes and control characters are rejected inside a quoted name.
+
 
 **Operations options**
 

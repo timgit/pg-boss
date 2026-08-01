@@ -514,9 +514,37 @@ function resolveBackend (config: any) {
 
 function assertPostgresObjectName (name: string) {
   assert(typeof name === 'string', 'Name must be a string')
-  assert(name.length <= 50, 'Name cannot exceed 50 characters')
-  assert(!/\W/.test(name), 'Name can only contain alphanumeric characters or underscores')
-  assert(!/^\d/.test(name), 'Name cannot start with a number')
+
+  const quoted = name.startsWith('"') && name.endsWith('"') && name.length > 1
+  const resolved = quoted ? name.slice(1, -1) : name
+
+  assert(resolved.length > 0, 'Name cannot be empty')
+  // the limit applies to the resolved name, since that is what postgres stores and what the
+  // derived object names are built from.
+  assert(resolved.length <= 50, 'Name cannot exceed 50 characters')
+
+  if (quoted) {
+    // the value is interpolated into identifier positions verbatim, so a double quote inside the
+    // outer pair would close the identifier early and allow arbitrary SQL to follow.
+    assert(!resolved.includes('"'), 'Quoted name cannot contain double quotes')
+  } else {
+    assert(!/\W/.test(name), 'Name can only contain alphanumeric characters or underscores')
+    assert(!/^\d/.test(name), 'Name cannot start with a number')
+    return
+  }
+
+  // a single quote would terminate the literal in the string-comparison positions, and would also
+  // break the `EXECUTE format('… ')` bodies the schema is interpolated into.
+  assert(!resolved.includes("'"), 'Quoted name cannot contain single quotes')
+  // $ can collide with the dollar-quoted function bodies the schema appears inside.
+  assert(!resolved.includes('$'), 'Quoted name cannot contain dollar signs')
+  // partition and table naming splits on '.', so a dot would be misread as a schema separator.
+  assert(!resolved.includes('.'), 'Quoted name cannot contain periods')
+  // backslash is not valid in the bytea inputs the name is hashed through, and control
+  // characters can break out of the provenance comments in exported migration SQL.
+  assert(!resolved.includes('\\'), 'Quoted name cannot contain backslashes')
+  // eslint-disable-next-line no-control-regex
+  assert(!/[\x00-\x1f\x7f]/.test(resolved), 'Quoted name cannot contain control characters')
 }
 
 function assertQueueName (name: string) {
