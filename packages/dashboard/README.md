@@ -2,7 +2,7 @@
 
 A web-based dashboard for monitoring and managing [pg-boss](https://github.com/timgit/pg-boss) job queues — browse queues, inspect and act on jobs, and review warning history from a single UI.
 
-📖 **[Read the full documentation →](https://timgit.github.io/pg-boss/dashboard)**
+📖 **[Read the full documentation →](https://pgboss.dev/dashboard)**
 
 ## Quick Start
 
@@ -13,7 +13,7 @@ DATABASE_URL="postgres://user:password@localhost:5432/mydb" npx pg-boss-dashboar
 
 Open http://localhost:3000 in your browser.
 
-Requires Node.js 22.12+ and a PostgreSQL database with a pg-boss schema (pg-boss 12.24+ recommended). For configuration, multi-database setup, production deployment, warning persistence, and troubleshooting, see the [documentation](https://timgit.github.io/pg-boss/dashboard).
+Requires Node.js 22.12+ and a PostgreSQL database with a pg-boss schema (pg-boss 12.24+ recommended). For configuration, multi-database setup, production deployment, warning persistence, and troubleshooting, see the [documentation](https://pgboss.dev/dashboard).
 
 ## Development
 
