@@ -520,22 +520,28 @@ function assertPostgresObjectName (name: string) {
 
   assert(resolved.length > 0, 'Name cannot be empty')
   // the limit applies to the resolved name, since that is what postgres stores and what the
-  // derived object names are built from.
-  assert(resolved.length <= 50, 'Name cannot exceed 50 characters')
+  // derived object names are built from. it is measured in bytes rather than characters because
+  // postgres truncates identifiers at NAMEDATALEN-1 (63) bytes *silently* - a name over the limit
+  // would install fine but leave the configured name and the catalog name permanently out of sync,
+  // so every nspname comparison would miss. bare names are ascii, so this only binds on quoted ones.
+  assert(Buffer.byteLength(resolved, 'utf8') <= 50, 'Name cannot exceed 50 bytes')
 
-  if (quoted) {
-    // the value is interpolated into identifier positions verbatim, so a double quote inside the
-    // outer pair would close the identifier early and allow arbitrary SQL to follow.
-    assert(!resolved.includes('"'), 'Quoted name cannot contain double quotes')
-  } else {
+  if (!quoted) {
     assert(!/\W/.test(name), 'Name can only contain alphanumeric characters or underscores')
     assert(!/^\d/.test(name), 'Name cannot start with a number')
     return
   }
 
+  // the value is interpolated into identifier positions verbatim, so a double quote inside the
+  // outer pair would close the identifier early and allow arbitrary SQL to follow.
+  assert(!resolved.includes('"'), 'Quoted name cannot contain double quotes')
   // a single quote would terminate the literal in the string-comparison positions, and would also
   // break the `EXECUTE format('… ')` bodies the schema is interpolated into.
   assert(!resolved.includes("'"), 'Quoted name cannot contain single quotes')
+  // % is a format() specifier, and the schema is interpolated into EXECUTE format('… ${schema}.%I …')
+  // templates. an unknown specifier aborts the statement; a valid one (e.g. "a%Ib") is worse, since
+  // it silently consumes an argument and shifts every later specifier by one.
+  assert(!resolved.includes('%'), 'Quoted name cannot contain percent signs')
   // $ can collide with the dollar-quoted function bodies the schema appears inside.
   assert(!resolved.includes('$'), 'Quoted name cannot contain dollar signs')
   // partition and table naming splits on '.', so a dot would be misread as a schema separator.

@@ -1,5 +1,6 @@
 import assert from 'node:assert'
 import * as plans from './plans.ts'
+import { resolveSchemaName } from './tools.ts'
 import * as types from './types.ts'
 
 // Options for rendering an async (BAM) migration as inline, self-contained DDL instead
@@ -781,6 +782,10 @@ const createIndexQueueStatsFn: Record<number, (schema: string, noCovering: boole
   }
 }
 
+// The nspname comparison needs the resolved catalog name, same as plans.ensureQueueStatsPartitions.
+// This does change the SQL a frozen migration emits, but only for names the check could never have
+// matched anyway (quoted, or bare mixed-case), and only from "silently creates a partition it
+// already believes is missing" to "checks correctly".
 const ensureQueueStatsPartitionsFn: Record<number, (schema: string) => string> = {
   35: (schema) => `
     DO $$
@@ -795,7 +800,7 @@ const ensureQueueStatsPartitionsFn: Record<number, (schema: string) => string> =
         IF NOT EXISTS (
           SELECT 1 FROM pg_class c
           JOIN pg_namespace n ON n.oid = c.relnamespace
-          WHERE n.nspname = '${schema}' AND c.relname = part_name
+          WHERE n.nspname = '${resolveSchemaName(schema)}' AND c.relname = part_name
         ) THEN
           EXECUTE format(
             'CREATE TABLE ${schema}.%I PARTITION OF ${schema}.queue_stats FOR VALUES FROM (%L) TO (%L)',

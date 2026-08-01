@@ -8,7 +8,7 @@ import {
 } from './drifter.ts'
 import type { ExpectedColumns, ExpectedConstraints } from './drifter.ts'
 import schemaManifest from './schema.json' with { type: 'json' }
-import { resolveSchemaName } from './tools.ts'
+import { normalizeSchemaName, resolveSchemaName } from './tools.ts'
 
 export interface SqlQuery {
   text: string
@@ -672,8 +672,11 @@ export function createQueue (schema: string, name: string, options: unknown, noA
 // channel human-recognizable in pg_stat_activity; 24 hex chars leaves ample headroom under
 // the 63-byte identifier limit. Channels are already scoped to a single database, so unlike
 // advisoryLock there is no need to mix in current_database().
+//
+// normalizeSchemaName, not resolveSchemaName: the channel is never matched against the catalog, so
+// it only has to agree across instances on the same schema. See the note on the helper.
 export function notifyChannelSql (schema: string): string {
-  return `('pgboss_' || left(encode(sha224('${resolveSchemaName(schema)}'::bytea), 'hex'), 24))`
+  return `('pgboss_' || left(encode(sha224('${normalizeSchemaName(schema)}'::bytea), 'hex'), 24))`
 }
 
 // Parameter-less statement that wakes workers on a notify-enabled queue. Embedded into
@@ -2535,9 +2538,12 @@ export function locked (schema: string, query: string | string[], key?: string, 
   return transaction(noAdvisoryLocks ? statements : [advisoryLock(schema, key), ...statements])
 }
 
+// normalizeSchemaName, not resolveSchemaName: the key is opaque to postgres and never compared
+// against the catalog, so it only has to agree across instances on the same schema. See the note
+// on the helper.
 function advisoryLock (schema: string, key?: string) {
   return `SELECT pg_advisory_xact_lock(
-      ('x' || encode(sha224((current_database() || '.pgboss.${resolveSchemaName(schema)}${key || ''}')::bytea), 'hex'))::bit(64)::bigint
+      ('x' || encode(sha224((current_database() || '.pgboss.${normalizeSchemaName(schema)}${key || ''}')::bytea), 'hex'))::bit(64)::bigint
   )`
 }
 

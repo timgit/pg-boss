@@ -70,7 +70,7 @@ The following options can be set as properties in an object for additional confi
 
 * **schema** - string, defaults to "pgboss"
 
-    Database schema that contains all required storage objects. Only alphanumeric and underscore allowed, length: <= 50 characters
+    Database schema that contains all required storage objects. Only alphanumeric and underscore allowed, length: <= 50 bytes
 
     To use a name that isn't a legal bare identifier — one containing dashes, or a reserved word — quote it yourself:
 
@@ -78,7 +78,9 @@ The following options can be set as properties in an object for additional confi
     new PgBoss({ schema: '"My-Schema"' })
     ```
 
-    The value is used verbatim as an identifier, so the quotes are preserved as written. Note that `MySchema` and `"MySchema"` are different schemas: PostgreSQL folds the unquoted form to `myschema`. Double quotes, single quotes, periods, dollar signs, backslashes and control characters are rejected inside a quoted name.
+    The value is used verbatim as an identifier, so the quotes are preserved as written. Note that `MySchema` and `"MySchema"` are different schemas: PostgreSQL folds the unquoted form to `myschema`. Double quotes, single quotes, percent signs, periods, dollar signs, backslashes and control characters are rejected inside a quoted name.
+
+    The length limit is measured in bytes, since it's possible to use multi-byte characters inside a quoted name. PostgreSQL truncates identifiers past 63 bytes without complaint, which would leave the configured name and the stored name permanently out of sync.
 
 
 **Operations options**

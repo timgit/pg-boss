@@ -1,7 +1,7 @@
 import { expect } from 'vitest'
 import * as Attorney from '../src/attorney.ts'
 import * as plans from '../src/plans.ts'
-import { resolveSchemaName } from '../src/tools.ts'
+import { normalizeSchemaName, resolveSchemaName } from '../src/tools.ts'
 import { PgBoss } from '../src/index.ts'
 import * as helper from './testHelper.ts'
 
@@ -44,9 +44,23 @@ describe('quoted schema names', function () {
       expect(() => getSchema('"a\nb"')).toThrow('control characters')
     })
 
+    it('rejects percent signs, which are format() specifiers', function () {
+      // An unknown specifier aborts the statement outright...
+      expect(() => getSchema('"pct%Schema"')).toThrow('percent signs')
+      // ...and a valid one is worse: it shifts every later format() argument by one.
+      expect(() => getSchema('"a%Ib"')).toThrow('percent signs')
+    })
+
     it('applies the length limit to the resolved name', function () {
       expect(() => getSchema(`"${'a'.repeat(50)}"`)).not.toThrow()
       expect(() => getSchema(`"${'a'.repeat(51)}"`)).toThrow('cannot exceed 50')
+    })
+
+    it('measures the length limit in bytes, as postgres does', function () {
+      // Postgres truncates identifiers past 63 bytes silently, which would desync the configured
+      // name from the stored one and make every nspname comparison miss. 30 of these are 90 bytes.
+      expect(() => getSchema(`"${'数'.repeat(30)}"`)).toThrow('cannot exceed 50 bytes')
+      expect(() => getSchema(`"${'数'.repeat(16)}"`)).not.toThrow()
     })
 
     it('rejects an empty quoted name', function () {
@@ -76,6 +90,35 @@ describe('quoted schema names', function () {
     })
   })
 
+  describe('normalizeSchemaName', function () {
+    it('strips quoting that carries no meaning', function () {
+      expect(normalizeSchemaName('"pgboss"')).toBe('pgboss')
+      expect(normalizeSchemaName('"pgboss_v2"')).toBe('pgboss_v2')
+    })
+
+    it('strips quoting from a reserved word', function () {
+      // The quotes are load-bearing in identifier positions, but not here: a schema named `user`
+      // resolves the same either way, so both spellings must land on one channel and one lock.
+      expect(normalizeSchemaName('"user"')).toBe('user')
+    })
+
+    it('leaves bare names exactly as configured', function () {
+      // Not folded to lower case: these values feed hashes, so folding would change the notify
+      // channel and advisory lock key of a name that has always been legal, and split a rolling
+      // upgrade across two channels.
+      expect(normalizeSchemaName('pgboss')).toBe('pgboss')
+      expect(normalizeSchemaName('MySchema')).toBe('MySchema')
+    })
+
+    it('leaves quoting in place when it changes which schema is meant', function () {
+      // "MySchema" is a different schema from MySchema, which postgres stores as myschema, so the
+      // two must not collapse onto the same channel and lock.
+      expect(normalizeSchemaName('"MySchema"')).toBe('"MySchema"')
+      expect(normalizeSchemaName('"My-Schema"')).toBe('"My-Schema"')
+      expect(normalizeSchemaName('"a b"')).toBe('"a b"')
+    })
+  })
+
   describe('generated sql', function () {
     it('is unchanged for a name needing no quotes', function () {
       expect(plans.create('pgboss', 37, { createSchema: true })).not.toContain('"pgboss"')
@@ -94,6 +137,16 @@ describe('quoted schema names', function () {
 
     it('derives a different advisory lock for load-bearing quoted names', function () {
       expect(plans.locked('"MySchema"', 'SELECT 1')).not.toEqual(plans.locked('MySchema', 'SELECT 1'))
+    })
+
+    it('derives the channel and lock from the name exactly as configured', function () {
+      // These are hashes, never matched against the catalog, so they only have to agree between
+      // instances. Folding a bare name into them would change the channel and lock key of an
+      // install that has always been legal, and a rolling upgrade would stop coordinating.
+      for (const schema of ['pgboss', 'MySchema']) {
+        expect(plans.notifyChannelSql(schema)).toContain(`sha224('${schema}'::bytea)`)
+        expect(plans.locked(schema, 'SELECT 1')).toContain(`.pgboss.${schema}`)
+      }
     })
   })
 
