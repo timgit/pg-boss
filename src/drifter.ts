@@ -1,3 +1,4 @@
+import { resolveSchemaName } from './tools.ts'
 import type { ManagedIndex, InvalidIndex, MismatchedIndex, ManagedFunction, MismatchedFunction, TableColumnDrift, EnumDrift, ConstraintDrift, SchemaDriftReport } from './types.ts'
 
 const SINGLE_QUOTE_REGEX = /'/g
@@ -166,7 +167,7 @@ export function getSchemaIndexes (schema: string) {
     JOIN pg_class c ON c.oid = i.indexrelid
     JOIN pg_class t ON t.oid = i.indrelid
     JOIN pg_namespace n ON n.oid = c.relnamespace
-    WHERE n.nspname = '${schema.replace(SINGLE_QUOTE_REGEX, "''")}'
+    WHERE n.nspname = '${resolveSchemaName(schema).replace(SINGLE_QUOTE_REGEX, "''")}'
   `
 }
 
@@ -179,7 +180,7 @@ export function getSchemaFunctions (schema: string) {
     SELECT p.proname AS name, pg_get_functiondef(p.oid) AS def
     FROM pg_proc p
     JOIN pg_namespace n ON n.oid = p.pronamespace
-    WHERE n.nspname = '${schema.replace(SINGLE_QUOTE_REGEX, "''")}'
+    WHERE n.nspname = '${resolveSchemaName(schema).replace(SINGLE_QUOTE_REGEX, "''")}'
   `
 }
 
@@ -192,7 +193,7 @@ export function getEnumDefinition (schema: string, typeName = 'job_state') {
     FROM pg_enum e
     JOIN pg_type t ON t.oid = e.enumtypid
     JOIN pg_namespace n ON n.oid = t.typnamespace
-    WHERE n.nspname = '${schema.replace(SINGLE_QUOTE_REGEX, "''")}' AND t.typname = '${typeName}'
+    WHERE n.nspname = '${resolveSchemaName(schema).replace(SINGLE_QUOTE_REGEX, "''")}' AND t.typname = '${typeName}'
     ORDER BY e.enumsortorder
   `
 }
@@ -212,7 +213,7 @@ export function getSchemaColumns (schema: string) {
     JOIN pg_class c ON c.oid = a.attrelid
     JOIN pg_namespace n ON n.oid = c.relnamespace
     LEFT JOIN pg_attrdef ad ON ad.adrelid = a.attrelid AND ad.adnum = a.attnum
-    WHERE n.nspname = '${schema.replace(SINGLE_QUOTE_REGEX, "''")}'
+    WHERE n.nspname = '${resolveSchemaName(schema).replace(SINGLE_QUOTE_REGEX, "''")}'
       AND a.attnum > 0 AND NOT a.attisdropped AND c.relkind IN ('r', 'p')
   `
 }
@@ -228,7 +229,7 @@ export function getSchemaTables (schema: string) {
     SELECT c.relname AS "table"
     FROM pg_class c
     JOIN pg_namespace n ON n.oid = c.relnamespace
-    WHERE n.nspname = '${schema.replace(SINGLE_QUOTE_REGEX, "''")}'
+    WHERE n.nspname = '${resolveSchemaName(schema).replace(SINGLE_QUOTE_REGEX, "''")}'
       AND c.relkind IN ('r', 'p')
   `
 }
@@ -243,7 +244,7 @@ export function getSchemaConstraints (schema: string) {
     FROM pg_constraint con
     JOIN pg_class rel ON rel.oid = con.conrelid
     JOIN pg_namespace n ON n.oid = rel.relnamespace
-    WHERE n.nspname = '${schema.replace(SINGLE_QUOTE_REGEX, "''")}' AND con.contype <> 'n'
+    WHERE n.nspname = '${resolveSchemaName(schema).replace(SINGLE_QUOTE_REGEX, "''")}' AND con.contype <> 'n'
   `
 }
 

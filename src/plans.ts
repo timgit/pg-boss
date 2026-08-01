@@ -8,6 +8,7 @@ import {
 } from './drifter.ts'
 import type { ExpectedColumns, ExpectedConstraints } from './drifter.ts'
 import schemaManifest from './schema.json' with { type: 'json' }
+import { resolveSchemaName } from './tools.ts'
 
 export interface SqlQuery {
   text: string
@@ -672,7 +673,7 @@ export function createQueue (schema: string, name: string, options: unknown, noA
 // the 63-byte identifier limit. Channels are already scoped to a single database, so unlike
 // advisoryLock there is no need to mix in current_database().
 export function notifyChannelSql (schema: string): string {
-  return `('pgboss_' || left(encode(sha224('${schema}'::bytea), 'hex'), 24))`
+  return `('pgboss_' || left(encode(sha224('${resolveSchemaName(schema)}'::bytea), 'hex'), 24))`
 }
 
 // Parameter-less statement that wakes workers on a notify-enabled queue. Embedded into
@@ -1029,7 +1030,7 @@ export function ensureQueueStatsPartitions (schema: string): string {
         IF NOT EXISTS (
           SELECT 1 FROM pg_class c
           JOIN pg_namespace n ON n.oid = c.relnamespace
-          WHERE n.nspname = '${schema}' AND c.relname = part_name
+          WHERE n.nspname = '${resolveSchemaName(schema)}' AND c.relname = part_name
         ) THEN
           EXECUTE format(
             'CREATE TABLE ${schema}.%I PARTITION OF ${schema}.queue_stats FOR VALUES FROM (%L) TO (%L)',
@@ -1059,7 +1060,7 @@ export function dropOldQueueStatsPartitions (schema: string, days: number): stri
         JOIN pg_class p ON p.oid = i.inhparent
         JOIN pg_class c ON c.oid = i.inhrelid
         JOIN pg_namespace n ON n.oid = p.relnamespace
-        WHERE n.nspname = '${schema}' AND p.relname = 'queue_stats'
+        WHERE n.nspname = '${resolveSchemaName(schema)}' AND p.relname = 'queue_stats'
       LOOP
         suffix := substring(r.relname FROM 'queue_stats_(.*)$');
         IF suffix ~ '^[0-9]{8}$' THEN
@@ -2536,7 +2537,7 @@ export function locked (schema: string, query: string | string[], key?: string, 
 
 function advisoryLock (schema: string, key?: string) {
   return `SELECT pg_advisory_xact_lock(
-      ('x' || encode(sha224((current_database() || '.pgboss.${schema}${key || ''}')::bytea), 'hex'))::bit(64)::bigint
+      ('x' || encode(sha224((current_database() || '.pgboss.${resolveSchemaName(schema)}${key || ''}')::bytea), 'hex'))::bit(64)::bigint
   )`
 }
 
@@ -2711,7 +2712,7 @@ export function getNextBamCommand (schema: string, { useLiveness = false }: { us
       AND l.granted
       AND l.mode = 'ShareUpdateExclusiveLock'
       AND l.database = (SELECT oid FROM pg_database WHERE datname = current_database())
-      AND l.relation = to_regclass(quote_ident('${schema}') || '.' || quote_ident(${tableCol}))
+      AND l.relation = to_regclass(quote_ident('${resolveSchemaName(schema)}') || '.' || quote_ident(${tableCol}))
   )`
   const stale = (startedCol: string, tableCol: string) => `(
     ${startedCol} < now() - interval '${BAM_LIVENESS_GRACE_SECONDS} seconds'
@@ -2785,7 +2786,7 @@ export function bamHealProbe (schema: string, command: string): string | null {
     FROM pg_class c
     JOIN pg_index i ON i.indexrelid = c.oid
     JOIN pg_namespace n ON n.oid = c.relnamespace
-    WHERE n.nspname = '${schema.replace(SINGLE_QUOTE_REGEX, "''")}' AND c.relname = '${match[1].replace(SINGLE_QUOTE_REGEX, "''")}'
+    WHERE n.nspname = '${resolveSchemaName(schema).replace(SINGLE_QUOTE_REGEX, "''")}' AND c.relname = '${match[1].replace(SINGLE_QUOTE_REGEX, "''")}'
   `
 }
 

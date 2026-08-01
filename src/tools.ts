@@ -61,8 +61,27 @@ async function resolveWithinSeconds<T> (promise: Promise<T>, seconds: number, me
   return result
 }
 
+/**
+ * Resolves a configured schema string to the name postgres actually stores in the catalog.
+ *
+ * the `schema` option is interpolated verbatim into identifier positions, so a caller may quote it
+ * to reach names that are not legal bare `'"My-Schema"'`. The catalog holds the *resolved* name,
+ * so comparisons against `pg_namespace.nspname`, and the hashes deriving the notify channel and
+ * advisory lock, need this rather than the raw config value.
+ *
+ * A quoted name resolves to its contents verbatim; a bare one is folded to lower case, as postgres
+ * does on the way in. That makes `"pgboss"` and `pgboss` the same schema, sharing a channel and a
+ * lock, while `"MySchema"` and `MySchema` stay distinct. The latter is stored as `myschema`.
+ */
+function resolveSchemaName (schema: string): string {
+  return schema.startsWith('"') && schema.endsWith('"') && schema.length > 1
+    ? schema.slice(1, -1).replaceAll('""', '"')
+    : schema.toLowerCase()
+}
+
 export {
   delay,
+  resolveSchemaName,
   resolveWithinSeconds,
   unwrapSQLResult
 }
