@@ -574,7 +574,10 @@ function validateExpirationConfig (config: any) {
   assert(!('expireInSeconds' in config) || config.expireInSeconds >= 1,
     'configuration assert: expireInSeconds must be at least every second')
 
-  assert(!config.expireInSeconds || config.expireInSeconds / 60 / 60 < POLICY.MAX_EXPIRATION_HOURS, `configuration assert: expiration cannot exceed ${POLICY.MAX_EXPIRATION_HOURS} hours`)
+  // inclusive, like every other option bounded by MAX_EXPIRATION_HOURS: an expiration of exactly
+  // the maximum does not "exceed" it. this is also the value the docs recommend for the longest
+  // jobs, and the value the maintenance interval defaults to.
+  assert(!config.expireInSeconds || config.expireInSeconds / 60 / 60 <= POLICY.MAX_EXPIRATION_HOURS, `configuration assert: expiration cannot exceed ${POLICY.MAX_EXPIRATION_HOURS} hours`)
 }
 
 function validateRetryConfig (config: any) {

@@ -100,6 +100,27 @@ describe('expire', function () {
     expect(job.state).toBe('failed')
   })
 
+  it('should persist an expiration of exactly 24 hours', async function () {
+    const expireInSeconds = 24 * 60 * 60
+
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+
+    await ctx.boss.createQueue(ctx.schema, { expireInSeconds })
+
+    const queue = await ctx.boss.getQueue(ctx.schema)
+
+    assertTruthy(queue)
+    expect(queue.expireInSeconds).toBe(expireInSeconds)
+
+    const jobId = await ctx.boss.send(ctx.schema, null, { expireInSeconds })
+
+    assertTruthy(jobId)
+    const job = await ctx.boss.getJobById(ctx.schema, jobId)
+
+    assertTruthy(job)
+    expect(job.expireInSeconds).toBe(expireInSeconds)
+  })
+
   it('should abort signal when job handler times out', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, monitorIntervalSeconds: 1 })
 

@@ -132,7 +132,7 @@ Actual detection time is `heartbeatSeconds` + up to `monitorIntervalSeconds` (de
 
 * **expireInSeconds**, number
 
-  Default: 15 minutes.  How many seconds a job may be in active state before being retried or failed. Must be >=1
+  Default: 15 minutes.  How many seconds a job may be in active state before being retried or failed. Must be >=1 and <= 86400 (24 hours)
 
 **Retention options**
 
