@@ -260,6 +260,77 @@ describe('quoted schema names', function () {
       }
     })
 
+    it('recommends the bare spelling when the variant needs no quotes', async function () {
+      // The mirror of the case above: here the existing schema is a legal lower-case identifier, so
+      // the config that reaches it is bare. Quoting it would work too, but bare is what they wrote.
+      const bare = 'caseplainschema'
+      const quoted = '"CasePlainSchema"'
+
+      await helper.dropSchema(bare)
+      await helper.dropSchema(quoted)
+
+      const installed = new PgBoss(helper.getConfig({ schema: bare }))
+
+      try {
+        await installed.start()
+        await installed.stop({ graceful: false })
+
+        const conflicting = new PgBoss(helper.getConfig({ schema: quoted }))
+
+        try {
+          await expect(conflicting.start()).rejects.toThrow('To use the existing installation, set schema: \'caseplainschema\'')
+        } finally {
+          await conflicting.stop({ graceful: false })
+        }
+      } finally {
+        await helper.dropSchema(bare)
+        await helper.dropSchema(quoted)
+      }
+    })
+
+    it('installs anyway when the case variant probe cannot run', async function () {
+      // Catalog access varies across backends and permission setups. A probe that throws is not
+      // evidence of a conflict, so it must never block an install that would otherwise succeed -
+      // even when a real variant exists and the probe would have found it.
+      const quoted = '"CaseProbeSchema"'
+      const bare = 'CaseProbeSchema'
+
+      await helper.dropSchema(quoted)
+      await helper.dropSchema(bare)
+
+      const installed = new PgBoss(helper.getConfig({ schema: quoted }))
+      const db = await helper.getDb()
+
+      let probed = false
+
+      const failingProbeDb = {
+        async executeSql (sql: string, values?: any[]) {
+          if (sql.includes('lower(n.nspname)')) {
+            probed = true
+            throw new Error('permission denied for table pg_namespace')
+          }
+          return db.executeSql(sql, values)
+        }
+      }
+
+      const boss = new PgBoss(helper.getConfig({ schema: bare, db: failingProbeDb }))
+
+      try {
+        await installed.start()
+        await installed.stop({ graceful: false })
+
+        await boss.start()
+        await boss.createQueue('probe-failure-queue')
+
+        expect(probed).toBe(true)
+      } finally {
+        await boss.stop({ graceful: false })
+        await db.close()
+        await helper.dropSchema(quoted)
+        await helper.dropSchema(bare)
+      }
+    })
+
     it('does not block an install when an unrelated schema shares the folded name', async function () {
       // Only a schema holding a pg-boss installation counts. A bare namespace that happens to
       // collide must never stop a legitimate install.
