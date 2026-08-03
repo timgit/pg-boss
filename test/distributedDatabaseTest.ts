@@ -29,6 +29,12 @@ import { ctx } from './hooks.ts'
 const isDistributedBackend = process.env.DB_TYPE === 'cockroachdb' || process.env.DB_TYPE === 'yugabytedb'
 const blockTimeout = isDistributedBackend ? 60000 : 20000
 
+// The concurrency tests need more than the block default on Postgres, so they carry their own
+// override - which has to follow the same rule, since a per-test value replaces the block value in
+// both directions. A flat 30s here would have capped exactly the two most contention-heavy tests in
+// the file at half the budget their neighbours get on CockroachDB.
+const concurrencyTimeout = isDistributedBackend ? blockTimeout : 30000
+
 helper.describePglite('distributed database mode', { timeout: blockTimeout }, function () {
   it('should not duplicate jobs when fetching concurrently in distributed mode', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: true })
@@ -57,7 +63,7 @@ helper.describePglite('distributed database mode', { timeout: blockTimeout }, fu
     // but no job should be duplicated
     expect(allJobs.length).toBeLessThanOrEqual(jobCount)
     expect(allJobs.length).toBeGreaterThan(0)
-  }, 30000)
+  }, concurrencyTimeout)
 
   it('should handle high concurrency without duplicates in distributed mode', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: true })
@@ -106,7 +112,7 @@ helper.describePglite('distributed database mode', { timeout: blockTimeout }, fu
 
     // Verify all jobs were claimed exactly once
     expect(claimedIndices.size).toBe(jobCount)
-  }, 30000)
+  }, concurrencyTimeout)
 
   it('should compose failDistributed inside a caller transaction and roll back with it', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: true })
