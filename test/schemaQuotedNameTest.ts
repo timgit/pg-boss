@@ -21,6 +21,27 @@ describe('quoted schema names', function () {
       expect(() => getSchema('my-schema')).toThrow('alphanumeric')
       expect(() => getSchema('1schema')).toThrow('cannot start with a number')
     })
+
+    it('names the rejected value and hands back the config that works', function () {
+      // The quoted form is the whole point of the feature, so the error teaches it rather than
+      // leaving the caller to find the docs.
+      expect(() => getSchema('my-schema')).toThrow('Pass it quoted to use it verbatim: schema:')
+      expect(() => getSchema('my-schema')).toThrow('"my-schema" can only contain')
+      expect(() => getSchema('1schema')).toThrow('"1schema" cannot start with a number')
+    })
+
+    it('scopes the bare rules to unquoted names', function () {
+      // The restriction is not universal any more, so stating it flatly would be wrong.
+      expect(() => getSchema('my-schema')).toThrow('underscores when unquoted')
+      expect(() => getSchema('1schema')).toThrow('start with a number when unquoted')
+    })
+
+    it('says why quoting will not help a name the quoted rules also reject', function () {
+      // Suggesting schema: '"a$b"' would just move the throw one line down.
+      expect(() => getSchema('a$b')).toThrow('alphanumeric')
+      expect(() => getSchema('a$b')).not.toThrow('Pass it quoted')
+      expect(() => getSchema('a$b')).toThrow('Quoting will not help: a quoted name cannot contain dollar signs.')
+    })
   })
 
   describe('validation of quoted names', function () {
@@ -139,6 +160,14 @@ describe('quoted schema names', function () {
       expect(plans.locked('"MySchema"', 'SELECT 1')).not.toEqual(plans.locked('MySchema', 'SELECT 1'))
     })
 
+    it('probes for case variants using the resolved name', function () {
+      // The catalog holds the folded name, so the comparison has to be against that, not the
+      // configured spelling - and the configured spelling itself must be excluded from the match.
+      expect(plans.getSchemaCaseVariants('MySchema')).toContain("lower(n.nspname) = lower('myschema')")
+      expect(plans.getSchemaCaseVariants('MySchema')).toContain("n.nspname <> 'myschema'")
+      expect(plans.getSchemaCaseVariants('"MySchema"')).toContain("n.nspname <> 'MySchema'")
+    })
+
     it('derives the channel and lock from the name exactly as configured', function () {
       // These are hashes, never matched against the catalog, so they only have to agree between
       // instances. Folding a bare name into them would change the channel and lock key of an
@@ -174,6 +203,89 @@ describe('quoted schema names', function () {
       } finally {
         await boss.stop({ graceful: false })
         await helper.dropSchema(schema)
+      }
+    })
+
+    it('refuses to install beside an installation differing only in case', async function () {
+      // The dangerous direction: the data lives in the quoted schema, and the bare config resolves
+      // to a different, empty one. Without the guard this installs and every job appears to vanish.
+      const quoted = '"CaseGuardSchema"'
+      const bare = 'CaseGuardSchema'
+
+      await helper.dropSchema(quoted)
+      await helper.dropSchema(bare)
+
+      const installed = new PgBoss(helper.getConfig({ schema: quoted }))
+
+      try {
+        await installed.start()
+        await installed.stop({ graceful: false })
+
+        const conflicting = new PgBoss(helper.getConfig({ schema: bare }))
+
+        try {
+          await expect(conflicting.start()).rejects.toThrow('differs only in case')
+          // The message has to hand over the spelling that reaches the existing data.
+          await expect(conflicting.start()).rejects.toThrow('To use the existing installation, set schema:')
+          await expect(conflicting.start()).rejects.toThrow('"CaseGuardSchema"')
+        } finally {
+          await conflicting.stop({ graceful: false })
+        }
+      } finally {
+        await helper.dropSchema(quoted)
+        await helper.dropSchema(bare)
+      }
+    })
+
+    it('installs beside a case variant when explicitly allowed', async function () {
+      const quoted = '"CaseAllowSchema"'
+      const bare = 'CaseAllowSchema'
+
+      await helper.dropSchema(quoted)
+      await helper.dropSchema(bare)
+
+      const installed = new PgBoss(helper.getConfig({ schema: quoted }))
+      const second = new PgBoss(helper.getConfig({ schema: bare, allowSchemaCaseVariant: true }))
+
+      try {
+        await installed.start()
+        await installed.stop({ graceful: false })
+
+        await second.start()
+        await second.createQueue('case-variant-queue')
+      } finally {
+        await second.stop({ graceful: false })
+        await helper.dropSchema(quoted)
+        await helper.dropSchema(bare)
+      }
+    })
+
+    it('does not block an install when an unrelated schema shares the folded name', async function () {
+      // Only a schema holding a pg-boss installation counts. A bare namespace that happens to
+      // collide must never stop a legitimate install.
+      const quoted = '"CaseUnrelatedSchema"'
+      const bare = 'CaseUnrelatedSchema'
+
+      await helper.dropSchema(quoted)
+      await helper.dropSchema(bare)
+
+      const db = await helper.getDb()
+
+      try {
+        await db.executeSql(`CREATE SCHEMA ${quoted}`)
+      } finally {
+        await db.close()
+      }
+
+      const boss = new PgBoss(helper.getConfig({ schema: bare }))
+
+      try {
+        await boss.start()
+        await boss.createQueue('unrelated-schema-queue')
+      } finally {
+        await boss.stop({ graceful: false })
+        await helper.dropSchema(quoted)
+        await helper.dropSchema(bare)
       }
     })
 

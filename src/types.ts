@@ -95,6 +95,17 @@ export interface MaintenanceOptions {
   supervise?: boolean;
   migrate?: boolean;
   createSchema?: boolean;
+  /**
+   * Skips the startup check that refuses to install into `schema` when another schema differing
+   * from it only by case already holds a pg-boss installation.
+   *
+   * That check exists because `schema: 'MySchema'` and `schema: '"MySchema"'` name two different
+   * schemas — PostgreSQL folds the unquoted form to `myschema` and stores the quoted one verbatim —
+   * so mis-spelling the quoting installs an empty second schema and every existing job appears to
+   * vanish. Set this only if you genuinely intend two installations whose names differ by case.
+   * @default false
+   */
+  allowSchemaCaseVariant?: boolean;
   warningSlowQuerySeconds?: number;
   warningQueueSize?: number;
   superviseIntervalSeconds?: number;

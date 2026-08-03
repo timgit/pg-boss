@@ -512,6 +512,32 @@ function resolveBackend (config: any) {
   }
 }
 
+// The character rules for the contents of a quoted name, as a predicate clause returned rather than
+// thrown, so the bare-name path can ask whether quoting would actually fix a name before
+// recommending it - and explain why not when it wouldn't.
+function quotedNameProblem (resolved: string): string | null {
+  // the value is interpolated into identifier positions verbatim, so a double quote inside the
+  // outer pair would close the identifier early and allow arbitrary SQL to follow.
+  if (resolved.includes('"')) return 'cannot contain double quotes'
+  // a single quote would terminate the literal in the string-comparison positions, and would also
+  // break the `EXECUTE format('… ')` bodies the schema is interpolated into.
+  if (resolved.includes("'")) return 'cannot contain single quotes'
+  // % is a format() specifier, and the schema is interpolated into EXECUTE format('… ${schema}.%I …')
+  // templates. an unknown specifier aborts the statement; a valid one (e.g. "a%Ib") is worse, since
+  // it silently consumes an argument and shifts every later specifier by one.
+  if (resolved.includes('%')) return 'cannot contain percent signs'
+  // $ can collide with the dollar-quoted function bodies the schema appears inside.
+  if (resolved.includes('$')) return 'cannot contain dollar signs'
+  // partition and table naming splits on '.', so a dot would be misread as a schema separator.
+  if (resolved.includes('.')) return 'cannot contain periods'
+  // backslash is not valid in the bytea inputs the name is hashed through, and control
+  // characters can break out of the provenance comments in exported migration SQL.
+  if (resolved.includes('\\')) return 'cannot contain backslashes'
+  // eslint-disable-next-line no-control-regex
+  if (/[\x00-\x1f\x7f]/.test(resolved)) return 'cannot contain control characters'
+  return null
+}
+
 function assertPostgresObjectName (name: string) {
   assert(typeof name === 'string', 'Name must be a string')
 
@@ -526,31 +552,25 @@ function assertPostgresObjectName (name: string) {
   // so every nspname comparison would miss. bare names are ascii, so this only binds on quoted ones.
   assert(Buffer.byteLength(resolved, 'utf8') <= 50, 'Name cannot exceed 50 bytes')
 
-  if (!quoted) {
-    assert(!/\W/.test(name), 'Name can only contain alphanumeric characters or underscores')
-    assert(!/^\d/.test(name), 'Name cannot start with a number')
+  if (quoted) {
+    const problem = quotedNameProblem(resolved)
+    assert(problem === null, `Quoted name ${problem}`)
     return
   }
 
-  // the value is interpolated into identifier positions verbatim, so a double quote inside the
-  // outer pair would close the identifier early and allow arbitrary SQL to follow.
-  assert(!resolved.includes('"'), 'Quoted name cannot contain double quotes')
-  // a single quote would terminate the literal in the string-comparison positions, and would also
-  // break the `EXECUTE format('… ')` bodies the schema is interpolated into.
-  assert(!resolved.includes("'"), 'Quoted name cannot contain single quotes')
-  // % is a format() specifier, and the schema is interpolated into EXECUTE format('… ${schema}.%I …')
-  // templates. an unknown specifier aborts the statement; a valid one (e.g. "a%Ib") is worse, since
-  // it silently consumes an argument and shifts every later specifier by one.
-  assert(!resolved.includes('%'), 'Quoted name cannot contain percent signs')
-  // $ can collide with the dollar-quoted function bodies the schema appears inside.
-  assert(!resolved.includes('$'), 'Quoted name cannot contain dollar signs')
-  // partition and table naming splits on '.', so a dot would be misread as a schema separator.
-  assert(!resolved.includes('.'), 'Quoted name cannot contain periods')
-  // backslash is not valid in the bytea inputs the name is hashed through, and control
-  // characters can break out of the provenance comments in exported migration SQL.
-  assert(!resolved.includes('\\'), 'Quoted name cannot contain backslashes')
-  // eslint-disable-next-line no-control-regex
-  assert(!/[\x00-\x1f\x7f]/.test(resolved), 'Quoted name cannot contain control characters')
+  // A name that is not a legal bare identifier is usable verbatim if it is quoted, so hand the
+  // caller the config value that works instead of only the rule they broke - otherwise the feature
+  // is only discoverable by finding the docs. When quoting would not help either, say which rule
+  // stops it, rather than recommending a value that also throws or leaving the caller to guess.
+  const problem = quotedNameProblem(name)
+  const remedy = problem === null
+    ? ` Pass it quoted to use it verbatim: schema: '"${name}"'`
+    : ` Quoting will not help: a quoted name ${problem}.`
+
+  // Both rules are scoped to unquoted names - the message has to say so, since the quoted form
+  // accepts far more than this.
+  assert(!/\W/.test(name), `Schema name ${JSON.stringify(name)} can only contain alphanumeric characters or underscores when unquoted.${remedy}`)
+  assert(!/^\d/.test(name), `Schema name ${JSON.stringify(name)} cannot start with a number when unquoted.${remedy}`)
 }
 
 function assertQueueName (name: string) {

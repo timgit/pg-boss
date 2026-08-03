@@ -70,7 +70,7 @@ The following options can be set as properties in an object for additional confi
 
 * **schema** - string, defaults to "pgboss"
 
-    Database schema that contains all required storage objects. Only alphanumeric and underscore allowed, length: <= 50 bytes
+    Database schema that contains all required storage objects. Unquoted, only alphanumeric and underscore are allowed, and the name may not start with a number. Quoted (see below), any character is allowed except double quotes, single quotes, percent signs, periods, dollar signs, backslashes and control characters. Either way the limit is <= 50 bytes.
 
     To use a name that isn't a legal bare identifier — one containing dashes, or a reserved word — quote it yourself:
 
@@ -81,6 +81,8 @@ The following options can be set as properties in an object for additional confi
     The value is used verbatim as an identifier, so the quotes are preserved as written. Note that `MySchema` and `"MySchema"` are different schemas: PostgreSQL folds the unquoted form to `myschema`. Double quotes, single quotes, percent signs, periods, dollar signs, backslashes and control characters are rejected inside a quoted name.
 
     The length limit is measured in bytes, since it's possible to use multi-byte characters inside a quoted name. PostgreSQL truncates identifiers past 63 bytes without complaint, which would leave the configured name and the stored name permanently out of sync.
+
+    Because the two spellings look nearly identical but name different schemas, `start()` refuses to install into a schema when another one differing from it only by case already holds a pg-boss installation, and names the spelling that reaches the existing data. Override with [`allowSchemaCaseVariant`](#allowschemacasevariant) if two such installations are genuinely intended.
 
 
 **Operations options**
@@ -108,6 +110,12 @@ The following configuration options should not normally need to be changed, but 
 * **createSchema**, bool, default true
   
   If set to false, the `CREATE SCHEMA` statement will not be issued during installation. This may be useful if this privilege is not granted to the role.
+
+* **allowSchemaCaseVariant**, bool, default false
+
+  If set to true, `start()` will install into `schema` even when another schema differing from it only by case already holds a pg-boss installation.
+
+  The check this disables exists because `schema: 'MySchema'` and `schema: '"MySchema"'` name two different schemas — PostgreSQL folds the unquoted form to `myschema` and stores the quoted one verbatim. Mis-spelling the quoting is not an error on its own: pg-boss simply finds no installation, creates an empty second schema, and every existing job appears to have vanished. Only set this if two installations whose names differ by case are intended.
 
 * **superviseIntervalSeconds**, int, default 60 seconds
 

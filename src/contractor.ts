@@ -7,6 +7,9 @@ import type * as types from './types.ts'
 
 const schemaVersion = packageJson.pgboss.schema as number
 
+// A name postgres would store unchanged if written without quotes.
+const BARE_LOWER_IDENTIFIER_REGEX = /^[a-z_][a-z0-9_]*$/
+
 class Contractor {
   static constructionPlans (schema = plans.DEFAULT_SCHEMA, options = { createSchema: true }) {
     return plans.create(schema, schemaVersion, options)
@@ -53,8 +56,47 @@ class Contractor {
         await this.migrate(version)
       }
     } else {
+      await this.assertNoSchemaCaseVariant()
       await this.create()
     }
+  }
+
+  // `schema: 'MySchema'` and `schema: '"MySchema"'` are two different schemas - postgres folds the
+  // bare form to `myschema` and stores the quoted one verbatim - but the two configs differ by two
+  // characters and are indistinguishable in logs. Getting it wrong is not an error on its own: the
+  // version table simply isn't there, so pg-boss installs a second, empty schema alongside the
+  // populated one and every existing job silently disappears. Fires only on the install path, and
+  // only when the variant actually holds a pg-boss install, so an unrelated schema that happens to
+  // share a folded name never blocks a legitimate install.
+  private async assertNoSchemaCaseVariant () {
+    if (this.config.allowSchemaCaseVariant) {
+      return
+    }
+
+    const schema = this.config.schema
+    let variants: string[]
+
+    try {
+      const result = await this.db.executeSql(plans.getSchemaCaseVariants(schema))
+      variants = result.rows.map((r: { name: string }) => r.name)
+    } catch {
+      // Catalog access varies across backends and permission setups. A probe that cannot run is
+      // not evidence of a problem, so it must never block an install that would otherwise succeed.
+      return
+    }
+
+    if (variants.length === 0) {
+      return
+    }
+
+    // A variant that is already a legal lower-case bare identifier is reached by writing it bare;
+    // anything else (mixed case, or a name needing quotes) has to be configured quoted.
+    const spellings = variants.map(name => BARE_LOWER_IDENTIFIER_REGEX.test(name) ? `'${name}'` : `'"${name}"'`)
+
+    throw new Error(`pg-boss is not installed in schema ${schema}, but is installed in ${variants.map(n => `"${n}"`).join(', ')}, which differs only in case. ` +
+      'PostgreSQL folds unquoted names to lower case and stores quoted names verbatim, so these are different schemas. ' +
+      `To use the existing installation, set schema: ${spellings.join(' or ')}. ` +
+      'To install a new schema beside it anyway, set allowSchemaCaseVariant: true.')
   }
 
   // Presence-level schema drift scan: compares the managed indexes the code expects against the live

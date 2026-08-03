@@ -1217,6 +1217,22 @@ export function versionTableExists (schema: string) {
   return `SELECT to_regclass('${schema}.version') as name`
 }
 
+// Installed pg-boss schemas whose name differs from the configured one by case alone. Postgres
+// folds a bare name and stores a quoted one verbatim, so `MySchema` and `"MySchema"` are two
+// schemas that look nearly identical in config. Used on the install path to tell a caller who
+// mis-spelled the quoting that their data is next door, rather than silently installing a second,
+// empty schema beside the populated one.
+export function getSchemaCaseVariants (schema: string): string {
+  const resolved = resolveSchemaName(schema).replace(SINGLE_QUOTE_REGEX, "''")
+  return `
+    SELECT n.nspname as name
+    FROM pg_namespace n
+    JOIN pg_class c ON c.relnamespace = n.oid AND c.relname = 'version' AND c.relkind IN ('r', 'p')
+    WHERE lower(n.nspname) = lower('${resolved}') AND n.nspname <> '${resolved}'
+    ORDER BY n.nspname
+  `
+}
+
 export function getPartitionedQueueTables (schema: string) {
   return `SELECT table_name FROM ${schema}.queue WHERE partition = true`
 }
