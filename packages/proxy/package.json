@@ -1,6 +1,6 @@
 {
   "name": "@pg-boss/proxy",
-  "version": "1.5.2",
+  "version": "1.5.3",
   "description": "HTTP proxy for pg-boss",
   "type": "module",
   "main": "./dist/index.js",
@@ -41,14 +41,14 @@
     "@hono/zod-openapi": "^1.5.1",
     "@logtape/hono": "^2.3.0",
     "@logtape/logtape": "^2.3.0",
-    "hono": "^4.12.33",
-    "pg-boss": "^12.26.4",
+    "hono": "^4.12.34",
+    "pg-boss": "^12.27.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/node": "^22.20.1",
     "cross-env": "^10.1.0",
-    "tsx": "^4.23.1",
+    "tsx": "^4.23.5",
     "typescript": "^6.0.3",
     "vitest": "^4.1.10"
   },
