@@ -429,6 +429,40 @@ describe('schedule', function () {
     expect(schedules.length).toBe(1)
     expect(schedules[0].cron).toBe('* * * * *')
   })
+
+  it('a stored schedule with an unusable time zone does not stop other schedules from firing', async function () {
+    const config = {
+      ...ctx.bossConfig,
+      cronMonitorIntervalSeconds: 1,
+      cronWorkerIntervalSeconds: 1,
+      schedule: true
+    }
+
+    ctx.boss = await helper.start(config)
+
+    await ctx.boss.schedule(ctx.schema, '* * * * *')
+
+    // A row as an earlier release would have left it: schedule() accepted the zone because
+    // cron-parser only rejects it once a date is computed. Written directly, since schedule()
+    // now refuses it.
+    const broken = `${ctx.schema}_broken`
+    await ctx.boss.createQueue(broken)
+
+    const db = await helper.getDb()
+    await db.executeSql(
+      `INSERT INTO ${ctx.schema}.schedule (name, key, cron, timezone, data, options)
+       VALUES ($1, '', '* * * * *', 'Mars/Phobos', null, '{}'::jsonb)`,
+      [broken]
+    )
+
+    await delay(4000)
+
+    // the healthy schedule must still fire — it did not before, because evaluating the broken row
+    // threw straight out of the cron pass
+    const [job] = await ctx.boss.fetch(ctx.schema)
+
+    expect(job).toBeTruthy()
+  })
 })
 
 // Pure unit tests for the clock-domain logic — no database or running instance needed.
@@ -488,5 +522,54 @@ describe('timekeeper clock domain', function () {
     await (tk as any).onSendIt([{ data: { name: 'q', data: null, options: {} } }])
 
     expect(errors.some(e => e.message === 'forward failed')).toBe(true)
+  })
+
+  it('schedule() rejects a time zone postgres-style cron parsing does not validate', async function () {
+    const tk = makeTk(0)
+
+    // cron-parser accepts any string as `tz` at parse time and only fails later, when a date is
+    // actually computed. A typo therefore used to be stored happily and detonate on the cron pass.
+    await expect(tk.schedule('q', '* * * * *', null, { tz: 'America/New_Yrok' })).rejects.toThrow(/time zone/i)
+  })
+
+  it('schedule() still accepts the time zone spellings that already worked', async function () {
+    const tk = makeTk(0)
+
+    for (const tz of ['UTC', 'utc', 'America/New_York', 'EST5EDT', '+05:30', 'Etc/GMT+3']) {
+      await expect(tk.schedule('q', '* * * * *', null, { tz })).resolves.toBeUndefined()
+    }
+
+    // omitting tz entirely keeps defaulting to UTC
+    await expect(tk.schedule('q', '* * * * *')).resolves.toBeUndefined()
+  })
+
+  it('one unusable schedule row does not stop every other schedule from firing', async function () {
+    const tk = makeTk(0)
+    ;(tk as any).stopped = false
+
+    const inserted: any[] = []
+    ;(tk as any).manager = { insert: async (_q: string, jobs: any[]) => { inserted.push(...jobs) } }
+
+    // A row that predates validation (or was written straight to the table) carries a time zone
+    // that throws once prev() computes a date. It must be skipped, not allowed to abort the pass:
+    // cron() filtered every schedule through one shouldSendIt() call, so this single row silently
+    // stopped scheduling for every queue in the whole deployment, on every pass, forever.
+    ;(tk as any).getSchedules = async () => ([
+      { name: 'broken', key: '', data: null, options: {}, cron: '* * * * *', timezone: 'Mars/Phobos' },
+      { name: 'healthy', key: '', data: null, options: {}, cron: '* * * * *', timezone: 'UTC' }
+    ])
+
+    const warnings: any[] = []
+    tk.on('warning', (w: any) => warnings.push(w))
+    tk.on('error', () => {}) // must not be needed, but don't crash the run if it is
+
+    await tk.cron()
+
+    expect(inserted.length).toBe(1)
+    expect(inserted[0].singletonKey).toBe('healthy__')
+
+    // and the operator has to be told which schedule is broken, or it stays invisible
+    expect(warnings.length).toBe(1)
+    expect(warnings[0].message).toMatch(/broken/)
   })
 })
