@@ -25,8 +25,29 @@ const WARNINGS = {
 }
 
 const WARNING_TYPES = {
-  CLOCK_SKEW: 'clock_skew'
+  CLOCK_SKEW: 'clock_skew',
+  INVALID_SCHEDULE: 'invalid_schedule'
 } as const
+
+/**
+ * Asserts that `tz` is a time zone cron evaluation can actually use.
+ *
+ * cron-parser validates `tz` lazily: parsing without a reference date never constructs a CronDate,
+ * so every string is accepted and a bad zone only surfaces later, when a date is computed, as an
+ * opaque "CronDate: unhandled timestamp". Passing a reference date here forces that construction so
+ * a typo like 'America/New_Yrok' is rejected by schedule() rather than persisted to the schedule
+ * table. Deliberately reuses cron-parser rather than an independent Intl check, so what schedule()
+ * accepts is exactly what the cron pass can evaluate.
+ *
+ * The caller validates the cron expression first, so a failure here is attributable to the zone.
+ */
+function assertTimezone (tz: string): void {
+  try {
+    CronExpressionParser.parse('* * * * *', { tz, strict: false, currentDate: new Date() })
+  } catch {
+    throw new Error(`Unknown or unsupported time zone: ${tz}`)
+  }
+}
 
 class Timekeeper extends EventEmitter implements types.EventsMixin {
   db: types.IDatabase
@@ -178,9 +199,34 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
   async cron () {
     const schedules = await this.getSchedules()
 
-    const scheduled = schedules
-      .filter(i => this.shouldSendIt(i.cron, i.timezone))
-      .map(({ name, key, data, options }): types.JobInsert => ({ data: { name, data, options }, singletonKey: `${name}__${key}`, singletonSeconds: 60 }))
+    const scheduled: types.JobInsert[] = []
+
+    for (const { name, key, data, options, cron, timezone } of schedules) {
+      let due: boolean
+
+      try {
+        due = this.shouldSendIt(cron, timezone)
+      } catch (err) {
+        // Evaluating one row must not decide the fate of the others. schedule() now rejects an
+        // unusable time zone, but a row written by an earlier release — or straight into the table —
+        // still throws here. This was a single filter() over every schedule, so one such row
+        // propagated out of cron() and silently stopped scheduling for every queue in the
+        // deployment, on every pass, until someone found the row. Skip it and warn instead, naming
+        // the schedule so it is actually fixable.
+        await emitAndPersistWarning(
+          this.warningContext,
+          WARNING_TYPES.INVALID_SCHEDULE,
+          `Warning: schedule for queue "${name}" (key "${key}") could not be evaluated and was skipped: ${(err as Error).message}`,
+          { queue: name, key, cron, timezone }
+        )
+
+        continue
+      }
+
+      if (due) {
+        scheduled.push({ data: { name, data, options }, singletonKey: `${name}__${key}`, singletonSeconds: 60 })
+      }
+    }
 
     if (scheduled.length > 0 && !this.stopped) {
       await this.manager.insert(QUEUES.SEND_IT, scheduled)
@@ -230,7 +276,9 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
   async schedule (name: string, cron: string, data?: unknown, options: types.ScheduleOptions = {}): Promise<void> {
     const { tz = 'UTC', key = '', ...rest } = options
 
+    // cron expression first, so a bad expression reports as one rather than as a time zone problem
     CronExpressionParser.parse(cron, { tz, strict: false })
+    assertTimezone(tz)
 
     Attorney.checkSendArgs([name, data, { ...rest }])
     Attorney.assertKey(key)
