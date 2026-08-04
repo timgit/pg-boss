@@ -46,7 +46,7 @@ This will likely cater the most to teams already familiar with the simplicity of
 
 ## Summary
 * Exactly-once job delivery
-* Create jobs in an existing db transaction, including adapters for popular ORMs such as Drizzle, Knex, Kysely, Prisma, and Bun's built-in SQL client
+* Create jobs in an existing db transaction, including adapters for Bun's built-in SQL client and embedded PGlite
 * Backpressure-compatible polling workers, including support for LISTEN/NOTIFY low latency delivery
 * Job dependency workflow orchestration
 * Cron scheduling, job deferral

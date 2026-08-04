@@ -2,7 +2,7 @@
  * Interactive console against the seeded demo database.
  *
  *   npm run console                    # connects to a pgboss database on localhost
- *   npx tsx scripts/console.js         # same, direct invocation
+ *   bun scripts/console.js             # same, direct invocation
  *
  * In the REPL you get:
  *   boss            a started PgBoss instance (await boss.getQueueStats('queue-25'))

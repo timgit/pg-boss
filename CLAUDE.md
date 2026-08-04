@@ -8,7 +8,7 @@ pg-boss is a job queue for Node.js built on PostgreSQL. It relies on `SKIP LOCKE
 
 Requirements: **Bun** (verified against Bun 1.4). The whole test suite and every `package.json` script run under Bun — `test/testHelper.ts` imports Bun's `SQL` at module load, so the suite cannot run under Node — and each script shells out to `bun`/`bunx`. The published library still targets **Node ≥ 22.12** (for `require(esm)`) and **PostgreSQL ≥ 13**. Tests need a running Postgres — `docker compose up -d db` starts one matching `test/config.json` (db `pgboss`, user/pass `postgres`).
 
-- `bun run test` — the full check: `eslint . && bun --bun vitest run`. The `pretest` hook runs `bunx prisma generate`, `bun run tsc` (`tsc --noEmit`), and `gen:manifest:check` first, so a failing type-check or a stale `schema.json` fails the test command before any test runs.
+- `bun run test` — the full check: `eslint . && bun --bun vitest run`. The `pretest` hook runs `bun run tsc` (`tsc --noEmit`) and `gen:manifest:check` first, so a failing type-check or a stale `schema.json` fails the test command before any test runs.
 - `bun run test -- test/sendTest.ts` — run a single test file.
 - `bun run test -- -t "substring of test name"` — run tests matching a name.
 - `bun run cover` — tests with V8 coverage.
@@ -68,7 +68,7 @@ Distributed backends return integer columns as **strings**; `manager.ts` and `bo
 
 ### Bring-your-own database & ORM adapters
 
-Anything implementing `IDatabase` (`executeSql`, optionally `withTransaction`/`listen`) can back pg-boss instead of the built-in pool — this is how jobs are created inside an existing app transaction. `src/adapters/` wraps popular ORM transaction objects (`fromDrizzle`, `fromKnex`, `fromKysely`, `fromPrisma`, `fromPglite`, `fromBunSql`); `placeholders.ts` handles the `$1` vs `?` parameter-style differences between them.
+Anything implementing `IDatabase` (`executeSql`, optionally `withTransaction`/`listen`) can back pg-boss instead of the built-in pool — this is how jobs are created inside an existing app transaction. `src/adapters/` wraps a driver's connection or transaction object (`fromPglite`, `fromBunSql`); both use native `$N` placeholders.
 
 `fromBunSql` is the one adapter that also replaces the pool outright, and it carries workarounds for four Bun behaviors that differ from node-postgres: the SQLSTATE arrives on `err.errno` rather than `err.code` (which `manager.ts` keys real behavior on), JSON parameters are re-encoded from pg-boss's already-serialized payloads, JS arrays are not bound as postgres arrays, and `BEGIN … COMMIT` blocks are refused on a pooled connection. `DB_TYPE=bun` (`bun run test:bun`) runs the whole suite through it.
 

@@ -603,20 +603,11 @@ export type {
 } from './spy.ts'
 
 export {
-  fromKnex,
-  fromKysely,
-  fromDrizzle,
-  fromPrisma,
   fromPglite,
   fromBunSql,
 } from './adapters/index.ts'
 
 export type {
-  KnexTransactionLike,
-  KyselyTransactionLike,
-  DrizzleTransactionLike,
-  DrizzleSqlTagLike,
-  PrismaTransactionLike,
   PGliteLike,
   BunSqlLike,
   BunReservedLike,
