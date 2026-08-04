@@ -141,16 +141,21 @@ describe('queueStatsHistory', function () {
     await ctx.boss.supervise(q)
     const after = new Date()
 
+    // captured_on is stamped by Postgres now(), while before/after come from the test's new Date(). The
+    // two clocks can drift by tens of ms (much more under Docker/colima), so pad the window generously in
+    // both directions — the skew is always far smaller than this margin — instead of asserting an exact fit.
+    const skewMs = 60_000
+
     const rowsAll = await ctx.boss.getQueueStats(q)
     expect(rowsAll.length).toBeGreaterThan(0)
 
-    const rowsFrom = await ctx.boss.getQueueStats(q, { from: before })
+    const rowsFrom = await ctx.boss.getQueueStats(q, { from: new Date(before.getTime() - skewMs) })
     expect(rowsFrom.length).toBeGreaterThan(0)
 
-    const rowsTo = await ctx.boss.getQueueStats(q, { to: after })
+    const rowsTo = await ctx.boss.getQueueStats(q, { to: new Date(after.getTime() + skewMs) })
     expect(rowsTo.length).toBeGreaterThan(0)
 
-    const rowsNone = await ctx.boss.getQueueStats(q, { from: new Date(after.getTime() + 60_000) })
+    const rowsNone = await ctx.boss.getQueueStats(q, { from: new Date(after.getTime() + skewMs) })
     expect(rowsNone).toHaveLength(0)
   })
 
