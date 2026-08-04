@@ -7,4 +7,3 @@ coverage
 dist
 .react-router
 build
-/docs/.vitepress/cache

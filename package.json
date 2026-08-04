@@ -59,9 +59,7 @@
     "cli": "node ./dist/cli.js",
     "gen:manifest": "tsx scripts/gen-manifest.ts",
     "gen:manifest:check": "tsx scripts/gen-manifest.ts --check",
-    "console": "tsx scripts/console.js",
-    "docs": "npm run docs:dev --prefix docs",
-    "docs:readme": "node ./scripts/sync-readme.js"
+    "console": "tsx scripts/console.js"
   },
   "pgboss": {
     "schema": 37
