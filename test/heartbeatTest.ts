@@ -193,7 +193,7 @@ describe('heartbeat', function () {
 
     await ctx.boss.supervise(ctx.schema)
 
-    const failedJob = await ctx.boss.getJobById(ctx.schema, jobId)
+    const [failedJob] = await ctx.boss.findJobs(ctx.schema, { id: jobId })
     assertTruthy(failedJob)
     expect(failedJob.state).toBe('failed')
     expect(failedJob.output).toEqual({ value: { message: 'job heartbeat timeout' } })

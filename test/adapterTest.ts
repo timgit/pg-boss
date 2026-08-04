@@ -136,7 +136,7 @@ describe('knex adapter', () => {
 
     expect(result).toEqual({ jobs: [id], updated: 1 })
 
-    const job = await boss.getJobById(ctx.schema, id)
+    const [job] = await boss.findJobs(ctx.schema, { id })
     helper.assertTruthy(job)
     expect(job.data).toEqual({ v: 2 })
   })
@@ -415,7 +415,7 @@ describe('drizzle adapter (postgres-js)', () => {
 
     expect(jobId).toBeDefined()
 
-    const job = await ctx.boss.getJobById(queue, jobId!)
+    const [job] = await ctx.boss.findJobs(queue, { id: jobId! })
     expect(job?.data).toStrictEqual({ hello: 'world' })
   })
 
@@ -436,8 +436,8 @@ describe('drizzle adapter (postgres-js)', () => {
 
     expect(jobId).toBeDefined()
 
-    const job = await ctx.boss.getJobById(queue, jobId!)
-    expect(job).toBeNull()
+    const [job] = await ctx.boss.findJobs(queue, { id: jobId! })
+    expect(job).toBeUndefined()
   })
 
   it('should handle empty result sets (postgres-js)', async () => {
