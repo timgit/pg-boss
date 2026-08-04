@@ -60,18 +60,46 @@ await boss.schedule('notification-abc', `0 3 * * *`, null, { tz: 'America/Chicag
 
 Removes all scheduled jobs for the specified queue name.
 
+```js
+await boss.unschedule('notification-abc')
+```
+
 ### `unschedule(name, key)`
 
 Removes a schedule by queue name and unique key.
+
+```js
+// create two schedules on the same queue, then remove just one
+await boss.schedule('report', '0 6 * * *', { region: 'us' }, { key: 'us' })
+await boss.schedule('report', '0 18 * * *', { region: 'eu' }, { key: 'eu' })
+
+await boss.unschedule('report', 'eu')
+```
 
 ### `getSchedules()`
 
 Returns all scheduled jobs.
 
+```js
+const schedules = await boss.getSchedules()
+
+for (const schedule of schedules) {
+  console.log(`${schedule.name} (${schedule.key}): ${schedule.cron} ${schedule.timezone}`)
+}
+```
+
 ### `getSchedules(name)`
 
 Returns all scheduled jobs by queue name.
 
+```js
+const schedules = await boss.getSchedules('report')
+```
+
 ### `getSchedules(name, key)`
 
 Returns all scheduled jobs by queue name and unique key.
+
+```js
+const [schedule] = await boss.getSchedules('report', 'eu')
+```

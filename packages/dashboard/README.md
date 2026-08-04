@@ -1,214 +1,21 @@
 # pg-boss Dashboard
 
-A web-based dashboard for monitoring and managing [pg-boss](https://github.com/timgit/pg-boss) job queues.
+A web-based dashboard for monitoring and managing [pg-boss](https://github.com/timgit/pg-boss) job queues — browse queues, inspect and act on jobs, and review warning history from a single UI.
 
-## Features
-
-- **Overview**: Aggregate statistics, problem queues, and recent warnings at a glance
-- **Queue Management**: View all queues with cached statistics and create new queues
-- **Job List**: View jobs with state and queue filtering
-- **Job Details**: View full job payloads, output data, and metadata
-- **Job Actions**: Create, cancel, retry, resume, or delete jobs directly from the UI
-- **Warning History**: When `persistWarnings` is enabled, browse through previously emitted warning events. 
-- **Multi-Schema Support**: Monitor multiple pg-boss instances from a single dashboard
-- **Mobile Responsive**: Full functionality on mobile devices with collapsible sidebar
-- **Shareable URLs**: Database selection and filters are preserved in URLs for easy sharing
-
-## Requirements
-
-- Node.js 22.12+
-- PostgreSQL database with pg-boss schema
-- pg-boss 12.24+ recommended (12.21 minimum; queue metrics history and ready-count sparklines require 12.24)
-
-## Installation
-
-```bash
-npm install @pg-boss/dashboard
-```
+📖 **[Read the full documentation →](https://pgboss.io/dashboard)**
 
 ## Quick Start
 
-For a quick local test:
-
 ```bash
+npm install @pg-boss/dashboard
 DATABASE_URL="postgres://user:password@localhost:5432/mydb" npx pg-boss-dashboard
 ```
 
 Open http://localhost:3000 in your browser.
 
-## Configuration
+Requires Node.js 22.12+ and a PostgreSQL database with a pg-boss schema (pg-boss 12.24+ recommended). For configuration, multi-database setup, production deployment, warning persistence, and troubleshooting, see the [documentation](https://pgboss.io/dashboard).
 
-The dashboard is configured via environment variables:
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `DATABASE_URL` | PostgreSQL connection string(s) | `postgres://localhost/pgboss` |
-| `PGBOSS_SCHEMA` | pg-boss schema name(s) | `pgboss` |
-| `PORT` | Server port | `3000` |
-| `PGBOSS_DASHBOARD_AUTH_USERNAME` | Basic auth username (optional) | - |
-| `PGBOSS_DASHBOARD_AUTH_PASSWORD` | Basic auth password (optional) | - |
-| `PGBOSS_DASHBOARD_BASE_PATH` | Sub-path to serve the dashboard under, e.g. `/pgboss` (build-time only, see [Serving under a sub-path](#serving-under-a-sub-path)) | `/` |
-| `PGBOSS_DASHBOARD_QUERY_TIMEOUT` | Max milliseconds per dashboard query before server-side cancellation (`statement_timeout`). Requires a restart to change. | `60000` |
-
-### Basic Authentication
-
-To protect the dashboard with basic authentication, set `PGBOSS_DASHBOARD_AUTH_USERNAME` and `PGBOSS_DASHBOARD_AUTH_PASSWORD`:
-
-```bash
-PGBOSS_DASHBOARD_AUTH_USERNAME=admin \
-PGBOSS_DASHBOARD_AUTH_PASSWORD=secret \
-DATABASE_URL="postgres://localhost/mydb" \
-npx pg-boss-dashboard
-```
-
-Both variables must be provided together. If only one is set, the dashboard will throw an error on startup.
-
-### Multi-Database Configuration
-
-To monitor multiple pg-boss instances, separate connection strings with a pipe (`|`):
-
-```bash
-DATABASE_URL="postgres://host1/db1|postgres://host2/db2" npx pg-boss-dashboard
-```
-
-You can optionally name each database for better identification in the UI:
-
-```bash
-DATABASE_URL="Production=postgres://prod/db|Staging=postgres://stage/db" npx pg-boss-dashboard
-```
-
-If your databases use different schemas, specify them with matching pipe separation:
-
-```bash
-DATABASE_URL="postgres://host1/db1|postgres://host2/db2" \
-PGBOSS_SCHEMA="pgboss|jobs" \
-npx pg-boss-dashboard
-```
-
-When multiple databases are configured, a database selector appears in the sidebar. The selected database is persisted in the URL via the `db` query parameter, making it easy to share links to specific database views.
-
-## Production Deployment
-
-### Option 1: Direct Node.js
-
-```bash
-npm install @pg-boss/dashboard
-
-DATABASE_URL="postgres://user:pass@localhost:5432/db" \
-  node node_modules/@pg-boss/dashboard/build/server/index.js
-```
-
-### Option 2: Docker
-
-```dockerfile
-FROM node:24
-WORKDIR /app
-RUN npm install -g @pg-boss/dashboard
-ENV PORT=3000
-EXPOSE 3000
-CMD ["pg-boss-dashboard"]
-```
-
-```bash
-docker build -t pgboss-dashboard .
-docker run -d \
-  -e DATABASE_URL="postgres://user:pass@host:5432/db" \
-  -p 3000:3000 \
-  pgboss-dashboard
-```
-
-### Option 3: Docker Compose
-
-```yaml
-services:
-  dashboard:
-    image: node:24
-    working_dir: /app
-    command: sh -c "npm install -g @pg-boss/dashboard && pg-boss-dashboard"
-    environment:
-      DATABASE_URL: postgres://user:pass@db:5432/mydb
-      PGBOSS_SCHEMA: pgboss
-      PORT: 3000
-    ports:
-      - "3000:3000"
-    depends_on:
-      - db
-```
-
-### Reverse Proxy
-
-For production, place a reverse proxy in front of any of the above options. Example Nginx configuration:
-
-```nginx
-server {
-    listen 80;
-    server_name pgboss.example.com;
-
-    location / {
-        proxy_pass http://127.0.0.1:3000;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
-```
-
-### Serving under a sub-path
-
-By default the dashboard is served from the root path (`/`). To serve it under a sub-path (for example behind a reverse proxy at `https://example.com/pgboss/`), set `PGBOSS_DASHBOARD_BASE_PATH` **at build time**:
-
-```bash
-PGBOSS_DASHBOARD_BASE_PATH=/pgboss npm run build
-PGBOSS_DASHBOARD_BASE_PATH=/pgboss npm start
-```
-
-This sets both the Vite asset `base` and the React Router `basename`, so assets, in-app navigation, and action redirects all stay under the prefix. The reverse proxy should forward the prefix unchanged (do not strip it):
-
-```nginx
-location /pgboss/ {
-    proxy_pass http://127.0.0.1:3000;
-    proxy_http_version 1.1;
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
-}
-```
-
-> The asset base is baked in at build time, so the published npm package (which ships a prebuilt `build/`) always uses `/`. To serve under a sub-path, build from source with `PGBOSS_DASHBOARD_BASE_PATH` set.
-
-> The dev server (`npm run dev`) always serves from the root path; `PGBOSS_DASHBOARD_BASE_PATH` only affects production builds.
-
-## Enabling Warning Persistence
-
-To capture warnings in the dashboard, enable warning persistence in your pg-boss configuration:
-
-```javascript
-const PgBoss = require('pg-boss');
-
-const boss = new PgBoss({
-  connectionString: 'postgres://localhost/mydb',
-  persistWarnings: true  // Enable warning persistence
-});
-```
-
-Warnings correlate to `warning` events already emitted by pg-boss:
-- `slow_query`: Queries taking longer than expected
-- `queue_backlog`: Queues exceeding their warning threshold
-- `clock_skew`: Database clock drift detection
-
-## Tech Stack
-
-- **Framework**: [React Router 7](https://reactrouter.com/) (framework mode)
-- **Server**: [Hono](https://hono.dev/)
-- **Styling**: [Tailwind CSS v4](https://tailwindcss.com/)
-- **Components**: [Base UI](https://base-ui.com/)
-- **Database**: [pg](https://node-postgres.com/) (PostgreSQL client)
-- **Testing**: [Vitest](https://vitest.dev/) + [Testing Library](https://testing-library.com/)
-
-## Development (Contributing)
+## Development
 
 To work on the dashboard from source:
 
@@ -250,23 +57,6 @@ npm test
 # Full CI test (used by GitHub Actions)
 npm run ci
 ```
-
-## Troubleshooting
-
-### "Failed to load dashboard"
-
-- Verify `DATABASE_URL` is correct and the database is accessible
-- Ensure the pg-boss schema exists (run pg-boss at least once to create it)
-- Check PostgreSQL logs for connection errors
-
-### No warnings showing
-
-- Ensure `persistWarnings: true` is set in your pg-boss configuration
-- Warnings are only recorded after enabling this option
-
-### Queue stats seem stale
-
-Queue statistics are cached in the `queue` table by pg-boss's monitoring system. They update based on your `monitorStateIntervalSeconds` configuration (default: 30 seconds).
 
 ## License
 

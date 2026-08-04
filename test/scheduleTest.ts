@@ -3,6 +3,7 @@ import { expect } from 'vitest'
 import { DateTime } from 'luxon'
 import * as helper from './testHelper.ts'
 import { PgBoss } from '../src/index.ts'
+import Timekeeper from '../src/timekeeper.ts'
 import { ctx } from './hooks.ts'
 
 describe('schedule', function () {
@@ -427,5 +428,65 @@ describe('schedule', function () {
 
     expect(schedules.length).toBe(1)
     expect(schedules[0].cron).toBe('* * * * *')
+  })
+})
+
+// Pure unit tests for the clock-domain logic — no database or running instance needed.
+describe('timekeeper clock domain', function () {
+  function makeTk (dbTimeOffsetMs: number, config: object = {}) {
+    const db = {
+      executeSql: async () => ({ rows: [{ time: String(Date.now() + dbTimeOffsetMs) }] })
+    }
+    // manager is unused by the methods under test
+    return new Timekeeper(db as any, {} as any, { schema: 'test', ...config } as any)
+  }
+
+  it('cacheClockSkew keeps the last-known-good skew when the time query fails', async function () {
+    const tk = makeTk(30_000) // db ~30s ahead (below the 60s warning threshold)
+    await tk.cacheClockSkew()
+    expect(tk.clockSkew).toBeGreaterThan(20_000)
+
+    const good = tk.clockSkew
+
+    tk.on('error', () => {}) // swallow the emitted error so it doesn't crash the process
+    ;(tk.config as any).__test__force_clock_monitoring_error = 'boom'
+
+    await tk.cacheClockSkew()
+
+    // must NOT be clobbered back to 0
+    expect(tk.clockSkew).toBe(good)
+  })
+
+  it('shouldSendIt fires within the window even when the database clock is far ahead', function () {
+    const tk = makeTk(0)
+    tk.clockSkew = 120_000 // db 2 minutes ahead of local
+
+    // an every-minute cron: the previous boundary is always < 60s before database time regardless
+    // of skew. Computing prev() from the local clock (the old bug) would push prevDiff past 60 and
+    // silently kill scheduling.
+    expect(tk.shouldSendIt('* * * * *', 'UTC')).toBe(true)
+  })
+
+  it('shouldSendIt does not fire when the previous occurrence is well outside the window', function () {
+    const tk = makeTk(0)
+    tk.clockSkew = 120_000
+
+    // a yearly cron: the previous Jan-1 midnight is (except in the 60s after New Year UTC) far more
+    // than 60s ago, so it must not fire — proving the window check isn't simply always-true.
+    expect(tk.shouldSendIt('0 0 1 1 *', 'UTC')).toBe(false)
+  })
+
+  it('onSendIt emits an error when a forwarded cron send fails', async function () {
+    const tk = makeTk(0)
+    // a manager whose send always rejects
+    ;(tk as any).manager = { send: async () => { throw new Error('forward failed') } }
+
+    const errors: any[] = []
+    tk.on('error', (e: any) => errors.push(e))
+
+    // discarding allSettled results would drop this occurrence silently; it must emit instead
+    await (tk as any).onSendIt([{ data: { name: 'q', data: null, options: {} } }])
+
+    expect(errors.some(e => e.message === 'forward failed')).toBe(true)
   })
 })

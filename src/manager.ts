@@ -279,7 +279,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       // Fail the whole batch so the mistake surfaces and the jobs are retried.
       const err = new Error('perJobResults handler must resolve with an array of job results')
       await this.fail(name, jobs.map(job => job.id), err)
-      this.#trackJobsFailed(name, jobs, err)
+      await this.#trackJobsFailed(name, jobs, err)
       return
     }
 
@@ -356,7 +356,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     if (this.config.noMultiMutationCte) {
       const outputById = new Map(items.map(item => [item.id, this.mapCompletionDataArg(item.output)]))
-      return this.withDistributedTransaction(this.db, async (tx) => {
+      return this.ensureTransaction(this.db, async (tx) => {
         const selectQuery = plans.selectJobsToFailById(this.config.schema, table)
         const { rows: jobs } = await tx.executeSql(selectQuery.text, [name, ids])
 
@@ -448,7 +448,12 @@ class Manager extends EventEmitter implements types.EventsMixin {
   ): Promise<void> {
     const jobIds = jobs.map(job => job.id)
     const maxExpiration = jobs.reduce((acc, i) => Math.max(acc, i.expireInSeconds), 0)
-    const heartbeatSeconds = jobs.reduce((acc, j) => Math.max(acc, j.heartbeatSeconds || 0), 0)
+    // Minimum, not maximum: heartbeatSeconds is per-job, and failJobsByHeartbeat fails a job once
+    // its OWN heartbeat_on is stale by ITS OWN heartbeat_seconds. A refresh cadence derived from
+    // the batch max would let a small-heartbeat job in a mixed batch go stale and get failed out
+    // from under a still-running handler before the shared timer ever touches it.
+    const heartbeatCandidates = jobs.map(j => j.heartbeatSeconds || 0).filter(s => s > 0)
+    const heartbeatSeconds = heartbeatCandidates.length ? Math.min(...heartbeatCandidates) : 0
     const ac = new AbortController()
     jobs.forEach(job => { job.signal = ac.signal })
 
@@ -680,17 +685,17 @@ class Manager extends EventEmitter implements types.EventsMixin {
         } else {
           const { allowed, excess, groupedJobs } = this.#trackLocalGroupStart(name, jobs)
 
-          if (excess.length > 0) {
-            const excessIds = excess.map(job => job.id)
-            await this.restore(name, excessIds)
-          }
-
-          if (allowed.length > 0) {
-            try {
-              await this.#processJobs(name, allowed, callback, worker, heartbeatRefreshSeconds, perJobResults)
-            } finally {
-              this.#trackLocalGroupEnd(name, groupedJobs)
+          try {
+            if (excess.length > 0) {
+              const excessIds = excess.map(job => job.id)
+              await this.restore(name, excessIds)
             }
+
+            if (allowed.length > 0) {
+              await this.#processJobs(name, allowed, callback, worker, heartbeatRefreshSeconds, perJobResults)
+            }
+          } finally {
+            this.#trackLocalGroupEnd(name, groupedJobs)
           }
         }
 
@@ -757,7 +762,13 @@ class Manager extends EventEmitter implements types.EventsMixin {
     assert(name, 'queue name is required')
     assert(typeof name === 'string', 'queue name must be a string')
 
-    const query = (i: Worker<any>) => options?.id ? i.id === options.id : i.name === name
+    // work() returns only the first spawned worker's id (shared as `workId` across every worker
+    // it spawned under localConcurrency), so { id } must match on workId too — otherwise only
+    // worker 0 of a localConcurrency > 1 call ever stops, and the rest poll forever with no other
+    // way to reach them. i.id is still checked so a specific worker id from getWipData() still
+    // targets just that one worker. name is always required so a stray/mismatched id can't stop
+    // a worker on a different queue.
+    const query = (i: Worker<any>) => i.name === name && (options?.id ? (i.id === options.id || i.workId === options.id) : true)
 
     const workers = this.getWorkers().filter(i => query(i) && !i.stopping && !i.stopped)
 
@@ -876,20 +887,19 @@ class Manager extends EventEmitter implements types.EventsMixin {
     return await this.createJob(result)
   }
 
-  async createJob (request: types.Request): Promise<string | null> {
-    const { name, data = null, options = {} } = request
+  // Shapes a validated request into the JSON job payload consumed by plans.insertJobs and
+  // plans.updateJob. Shared by createJob (send) and update/upsert so all three derive
+  // start_after/keep_until/singleton the same way.
+  #toJobPayload (name: string, data: object | null, options: types.SendOptions) {
     const {
       id = null,
-      db: wrapper,
       priority,
       startAfter,
       singletonKey = null,
       singletonSeconds,
-      singletonNextSlot,
       expireInSeconds,
       deleteAfterSeconds,
       retentionSeconds,
-      keepUntil,
       retryLimit,
       retryDelay,
       retryBackoff,
@@ -899,7 +909,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       deadLetter = null
     } = options
 
-    const job = {
+    return {
       id,
       name,
       data,
@@ -913,7 +923,6 @@ class Manager extends EventEmitter implements types.EventsMixin {
       expireInSeconds,
       deleteAfterSeconds,
       retentionSeconds,
-      keepUntil,
       retryLimit,
       retryDelay,
       retryBackoff,
@@ -921,12 +930,19 @@ class Manager extends EventEmitter implements types.EventsMixin {
       heartbeatSeconds,
       deadLetter
     }
+  }
+
+  async createJob (request: types.Request): Promise<string | null> {
+    const { name, data = null, options = {} } = request
+    const { db: wrapper, singletonSeconds, singletonNextSlot } = options
+
+    const job = this.#toJobPayload(name, data, options)
 
     const db = wrapper || this.db
 
     const { table, policy, notify } = await this.getQueueCache(name)
 
-    if (policy === plans.QUEUE_POLICIES.key_strict_fifo && !singletonKey) {
+    if (policy === plans.QUEUE_POLICIES.key_strict_fifo && !job.singletonKey) {
       throw new Error(`${plans.QUEUE_POLICIES.key_strict_fifo} queues require a singletonKey`)
     }
 
@@ -967,12 +983,145 @@ class Manager extends EventEmitter implements types.EventsMixin {
     return null
   }
 
+  // Builds the partial-edit payload for update()/upsert(): ONLY the fields the caller actually
+  // supplied end up as keys (undefined is dropped by JSON.stringify), so plans.updateJob leaves
+  // every other column untouched. Compatible with both plans.updateJob ($1 = this object) and
+  // plans.insertJobs ($1 = [this object]), whose json_to_recordset treats absent keys as null.
+  #toUpdatePayload (data: object | null | undefined, options: types.UpdateOptions) {
+    return {
+      data,
+      priority: options.priority,
+      startAfter: options.startAfter,
+      retentionSeconds: options.retentionSeconds,
+      expireInSeconds: options.expireInSeconds,
+      deleteAfterSeconds: options.deleteAfterSeconds,
+      retryLimit: options.retryLimit,
+      retryDelay: options.retryDelay,
+      retryBackoff: options.retryBackoff,
+      retryDelayMax: options.retryDelayMax,
+      deadLetter: options.deadLetter,
+      heartbeatSeconds: options.heartbeatSeconds,
+      groupId: options.group?.id,
+      groupTier: options.group?.tier,
+      id: options.id,
+      singletonKey: options.singletonKey
+    }
+  }
+
+  // Edits the mutable fields of not-yet-active (created/retry) jobs in place, preserving their
+  // id/state/singleton identity. Only the fields present in `options` (plus `data` when supplied)
+  // are changed; everything else is left as-is. Targets by id or singletonKey; never inserts.
+  // Returns the ids that were updated ([] when nothing matched — missing or already active).
+  update (request: types.UpdateRequest): Promise<types.UpdateResponse>
+  update (name: string, data: object | null | undefined, options?: types.UpdateOptions): Promise<types.UpdateResponse>
+  async update (...args: any[]): Promise<types.UpdateResponse> {
+    const request = Attorney.checkUpdateArgs(args)
+    const { name, data } = request
+    const opts = (request.options ?? {}) as types.UpdateOptions
+
+    Attorney.assertQueueName(name)
+    const db = this.assertDb(opts)
+    const { table, notify } = await this.getQueueCache(name)
+
+    const by = opts.id ? 'id' : 'singletonKey'
+    const match = opts.match ?? 'newest'
+    const payload = JSON.stringify(this.#toUpdatePayload(data, opts))
+
+    const sql = plans.updateJob(this.config.schema, table, name, by, match, this.#notifyEnabled(notify))
+    const { rows } = await db.executeSql(sql, [payload])
+
+    const jobs = rows.map(row => row.id)
+    return { jobs, updated: jobs.length }
+  }
+
+  // update-or-insert by id or singletonKey: edit the matching pre-active job(s) in place,
+  // otherwise insert a fresh job. Runs update-first (policy-independent match), inserting only
+  // when nothing matched; a deduped insert (lost the race to a concurrent writer, or an id that
+  // collides with an existing non-pre-active job) falls back to one more update. See docs for
+  // the ordering rationale.
+  upsert (request: types.UpdateRequest): Promise<types.UpsertResponse>
+  upsert (name: string, data: object | null | undefined, options?: types.UpdateOptions): Promise<types.UpsertResponse>
+  async upsert (...args: any[]): Promise<types.UpsertResponse> {
+    const request = Attorney.checkUpdateArgs(args, { upsert: true })
+    const { name, data } = request
+    const opts = (request.options ?? {}) as types.UpdateOptions
+
+    Attorney.assertQueueName(name)
+    const db = this.assertDb(opts)
+    const { table, policy, notify } = await this.getQueueCache(name)
+
+    const by = opts.id ? 'id' : 'singletonKey'
+    const match = opts.match ?? 'newest'
+
+    // The insert-on-miss path needs a singletonKey on key_strict_fifo queues (a keyless job would
+    // violate the queue's check constraint), so reject upfront — including the id-target case.
+    if (policy === plans.QUEUE_POLICIES.key_strict_fifo && !opts.singletonKey) {
+      throw new Error(`${plans.QUEUE_POLICIES.key_strict_fifo} queues require a singletonKey`)
+    }
+
+    const notifyEnabled = this.#notifyEnabled(notify)
+    const updateSql = plans.updateJob(this.config.schema, table, name, by, match, notifyEnabled)
+    const insertSql = plans.insertJobs(this.config.schema, { table, name, returnId: true, notify: notifyEnabled })
+
+    const job = this.#toUpdatePayload(data, opts)
+    const updatePayload = JSON.stringify(job)
+    const insertPayload = JSON.stringify([job])
+
+    const result = await this.ensureTransaction(db, async (tx) => {
+      const { rows: updated } = await tx.executeSql(updateSql, [updatePayload])
+      if (updated.length) {
+        const jobs = updated.map(row => row.id)
+        return { jobs, updated: jobs.length, inserted: 0 }
+      }
+
+      const { rows: inserted } = await tx.executeSql(insertSql, [insertPayload])
+      if (inserted.length) {
+        const jobs = inserted.map(row => row.id)
+        return { jobs, updated: 0, inserted: jobs.length }
+      }
+
+      // The insert was skipped by ON CONFLICT (a concurrent send/upsert won the race); the
+      // conflicting row is now visible, so edit it.
+      const { rows: retry } = await tx.executeSql(updateSql, [updatePayload])
+      const jobs = retry.map(row => row.id)
+      return { jobs, updated: jobs.length, inserted: 0 }
+    })
+
+    // Track inserted (newly created) jobs for spies, matching createJob/insert. Runs after the
+    // transaction commits so a rolled-back insert never leaves a phantom spy entry.
+    if (result.inserted && this.config.__test__enableSpies) {
+      const spy = this.#spies.get(name)
+      if (spy) {
+        for (const id of result.jobs) {
+          spy.addJob(id, name, data || {}, 'created')
+        }
+      }
+    }
+
+    return result
+  }
+
   async insert (
     name: string,
     jobs: types.JobInsert[],
     options: types.InsertOptions = {}
   ) {
     assert(Array.isArray(jobs), 'jobs argument should be an array')
+
+    const seenIds = new Set<string>()
+    for (const job of jobs) {
+      if (job.id != null) {
+        if (seenIds.has(job.id)) {
+          throw new Error(`duplicate job id in insert batch: ${job.id}`)
+        }
+        seenIds.add(job.id)
+      }
+
+      // insert() otherwise skips Attorney on purpose (it is the raw, high-volume path), but an
+      // invalid group is worth rejecting here: send() already throws on it, and an empty-string
+      // group.id would silently become a real concurrency group named '' once persisted.
+      Attorney.validateGroupConfig(job)
+    }
 
     const { table, policy, notify } = await this.getQueueCache(name)
 
@@ -984,20 +1133,46 @@ class Manager extends EventEmitter implements types.EventsMixin {
       }
     }
 
+    const spy = this.config.__test__enableSpies ? this.#spies.get(name) : undefined
+
+    // insertJobs ends in ON CONFLICT DO NOTHING, so skipped rows shift the returned rows out of
+    // alignment with the input jobs — a positional rows[i] <-> jobs[i] pairing attributes the wrong
+    // data to the wrong id. When a spy is watching, assign every job an explicit id up front (the
+    // insert COALESCEs id, so this is equivalent to letting the DB generate one) and index data by
+    // id, so returned rows can be matched back to their job regardless of any conflicts.
+    const dataById = spy ? new Map<string, unknown>() : undefined
+
     const insertPayload = jobs.map(j => {
       const {
         blocked,
         blocking,
         pendingDependencies,
+        group,
         ...rest
       } = j as types.JobInsert & { blocked?: unknown, blocking?: unknown, pendingDependencies?: unknown }
+
+      // Flatten group to the column names insertJobs' json_to_recordset declares, matching
+      // send()/upsert()/flow(). Assigned only when a group is present: those same raw column
+      // names are accepted by the recordset directly, and unconditional keys would overwrite
+      // them with undefined — silently breaking anyone who passed groupId/groupTier as a
+      // workaround while insert() was dropping `group` entirely.
+      if (group) {
+        Object.assign(rest, { groupId: group.id, groupTier: group.tier })
+      }
+
+      if (dataById) {
+        // Best-effort spy bookkeeping, only reached when __test__enableSpies is set (a test-intended
+        // opt-in, off by default). The id we assign here is exactly what the DB would otherwise
+        // COALESCE in, so generating it client-side is harmless — and if randomUUID ever fell short,
+        // only spy attribution would degrade, never the insert itself.
+        rest.id ??= randomUUID()
+        dataById.set(rest.id, j.data ?? {})
+      }
 
       return rest
     })
 
     const db = this.assertDb(options)
-
-    const spy = this.config.__test__enableSpies ? this.#spies.get(name) : undefined
 
     // Return IDs if spy is active for this queue (needed for job tracking)
     const returnId = !!spy || !!options.returnId
@@ -1008,8 +1183,9 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     if (rows.length) {
       if (spy) {
-        for (let i = 0; i < rows.length; i++) {
-          spy.addJob(rows[i].id, name, jobs[i].data || {}, 'created')
+        // dataById is populated for every job when a spy is active
+        for (const row of rows) {
+          spy.addJob(row.id, name, dataById!.get(row.id) as object, 'created')
         }
       }
       return rows.map((i): string => i.id)
@@ -1167,8 +1343,13 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     try {
       result = await db.executeSql(query.text, query.values)
-    } catch (err) {
-      // errors from fetchquery should only be unique constraint violations
+    } catch (err: any) {
+      // The only fetch error we tolerate is a unique-constraint violation (SQLSTATE 23505) from a
+      // policy/singleton index when a concurrent fetch won the same slot — treat that as an empty
+      // fetch. Anything else (a DB outage, a malformed query) must surface: swallowing it turned
+      // every failed fetch into a silent [] with no error event, indistinguishable from an empty
+      // queue. Rethrowing routes it to the worker's onError (emits `error`) or to a direct caller.
+      if (err?.code !== '23505') throw err
     }
 
     const rows = result?.rows || []
@@ -1239,7 +1420,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
   // connection we pin a single client via withTransaction(); when the caller supplied their own
   // db (options.db) we run the statements inline so they compose inside the caller's transaction
   // rather than issuing a BEGIN/COMMIT that would commit or roll back their outer work.
-  private async withDistributedTransaction<T> (db: types.IDatabase, fn: (tx: types.IDatabase) => Promise<T>): Promise<T> {
+  private async ensureTransaction<T> (db: types.IDatabase, fn: (tx: types.IDatabase) => Promise<T>): Promise<T> {
     if (db === this.db && this.db._pgbdb) {
       return this.db.withTransaction(fn)
     }
@@ -1263,7 +1444,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const outputData = this.mapCompletionDataArg(data)
 
     // noMultiMutationCte: use separate queries to avoid CockroachDB's multi-mutation CTE limitation.
-    // The delete and re-insert run in a single transaction (see withDistributedTransaction) so the
+    // The delete and re-insert run in a single transaction (see ensureTransaction) so the
     // job cannot be lost between the two statements.
     if (this.config.noMultiMutationCte) {
       return this.failDistributed(name, ids, outputData, table, db)
@@ -1277,7 +1458,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
   private async failDistributed (name: string, ids: string[], outputData: any, table: string, db: types.IDatabase): Promise<types.CommandResponse> {
     // CockroachDB doesn't support multi-mutation CTEs, but does support transactions, so the
     // delete + re-insert is split into separate statements run atomically.
-    return this.withDistributedTransaction(db, async (tx) => {
+    return this.ensureTransaction(db, async (tx) => {
       // Step 1: Select jobs to fail
       const selectQuery = plans.selectJobsToFailById(this.config.schema, table)
       const { rows: jobs } = await tx.executeSql(selectQuery.text, [name, ids])
@@ -1318,7 +1499,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
   async resolveFlowJobsDistributed (table: string, names: string[]): Promise<number> {
     const select = plans.selectBlockingParents(this.config.schema, table, names, this.config.noSkipLocked)
 
-    return this.withDistributedTransaction(this.db, async (tx) => {
+    return this.ensureTransaction(this.db, async (tx) => {
       const { rows } = await tx.executeSql(select.text, select.values)
 
       if (rows.length === 0) {
@@ -1345,7 +1526,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
   }
 
   private async expireJobsDistributed (table: string, select: plans.SqlQuery, outputData: any): Promise<number> {
-    return this.withDistributedTransaction(this.db, async (tx) => {
+    return this.ensureTransaction(this.db, async (tx) => {
       const { rows: jobs } = await tx.executeSql(select.text, [])
 
       if (jobs.length === 0) {
@@ -1393,7 +1574,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
           startAfter = new Date(Date.now() + retryDelay * 1000)
         } else {
           const exp = Math.min(16, retryCount + 1)
-          const delay = retryDelay * (Math.pow(2, exp) / 2 + Math.pow(2, exp) / 2 * Math.random())
+          const delay = Math.max(retryDelay, 1) * (Math.pow(2, exp) / 2 + Math.pow(2, exp) / 2 * Math.random())
           // Match the canonical failJobs() SQL: LEAST(retry_delay_max, delay) caps the backoff,
           // treating NULL as "no cap" and 0 as a real cap. (`?:` would wrongly treat 0 as no cap.)
           const cappedDelay = retryDelayMax != null ? Math.min(retryDelayMax, delay) : delay
@@ -1430,7 +1611,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
         // Insert to dead letter queue if failed and has dead_letter configured
         if (job.dead_letter) {
-          await tx.executeSql(dlqSql, [job.dead_letter, job.data, jobOutput, job.name, job.id, job.created_on, job.retry_count])
+          await tx.executeSql(dlqSql, [job.dead_letter, job.data, jobOutput, job.name, job.id, job.created_on, job.retry_count, job.singleton_key, job.heartbeat_seconds])
         }
       }
 
@@ -1617,12 +1798,18 @@ class Manager extends EventEmitter implements types.EventsMixin {
   async deleteQueue (name: string) {
     Attorney.assertQueueName(name)
 
+    // Scope the catch to the cache lookup only: a queue that doesn't exist is a no-op. The DELETE
+    // and cache eviction must NOT be swallowed — a transient connection error there previously
+    // resolved as success while the queue (and its stale cache entry) survived.
     try {
       await this.getQueueCache(name)
-      const sql = plans.deleteQueue(this.config.schema, name, this.config.noAdvisoryLocks)
-      await this.db.executeSql(sql)
-      this.#evictQueueCache(name)
-    } catch { }
+    } catch {
+      return
+    }
+
+    const sql = plans.deleteQueue(this.config.schema, name, this.config.noAdvisoryLocks)
+    await this.db.executeSql(sql)
+    this.#evictQueueCache(name)
   }
 
   async deleteQueuedJobs (name: string) {

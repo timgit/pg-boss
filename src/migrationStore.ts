@@ -1,5 +1,6 @@
 import assert from 'node:assert'
 import * as plans from './plans.ts'
+import { resolveSchemaName } from './tools.ts'
 import * as types from './types.ts'
 
 // Options for rendering an async (BAM) migration as inline, self-contained DDL instead
@@ -16,9 +17,13 @@ interface MigrateOptions {
 // Mirrors the SQL job_table_format() function (src/plans.ts): rewrites a command targeting
 // the base `job` table to target a specific partition table.
 function formatJobTable (command: string, table: string) {
+  // Anchor both rewrites so a schema name that itself contains these substrings (e.g. `job_intake`)
+  // isn't mangled: `.job\b` only matches the base table reference (`schema.job`, not `schema.job_i5`
+  // whose `job` is followed by `_`), and `job_iN` only matches the bare index-name tokens (job_i1..9),
+  // never the `job_i` inside an arbitrary schema name.
   return command
-    .replaceAll('.job', `.${table}`)
-    .replaceAll('job_i', `${table}_i`)
+    .replace(/\.job\b/g, `.${table}`)
+    .replace(/\bjob_i(\d+)/g, `${table}_i$1`)
 }
 
 // Derives the direct index DDL that a job_table_run_async() command would eventually run
@@ -92,6 +97,21 @@ function next (schema: string, version: number, migrations?: types.Migration[], 
 // programmatically must run `concurrent` statements individually, outside a transaction.
 function migrateCommands (schema: string, version: number, migrations?: types.Migration[], noAdvisoryLocks?: boolean, options: MigrateOptions = {}): MigrationCommands {
   migrations = migrations || getAll(schema)
+
+  // Refuse to migrate from a real DB version older than the oldest migration can start from.
+  // Without this floor, `filter(i => i.previous >= version)` happily selects the whole chain for any
+  // version below the minimum `previous`, applying migrations over missing intermediate steps — a
+  // cryptic mid-transaction failure, or worse a "success" that stamps the latest version onto an
+  // incomplete schema. Version 0 is the sentinel for a full "from scratch" export (getMigrationPlans)
+  // and is intentionally exempt.
+  // Only floor a valid numeric version; a non-numeric/garbage version falls through to the
+  // "Version X not found" assert below. Version 0 is the full-export sentinel and is exempt.
+  if (Number.isInteger(version) && version !== 0) {
+    const minPrevious = Math.min(...migrations.map(i => i.previous))
+    assert(version >= minPrevious,
+      `Cannot migrate pg-boss schema from version ${version}: the oldest supported starting version is ${minPrevious}. ` +
+      'Upgrade to a schema at or above that version using an older pg-boss release first.')
+  }
 
   const concurrent: string[] = []
 
@@ -762,6 +782,10 @@ const createIndexQueueStatsFn: Record<number, (schema: string, noCovering: boole
   }
 }
 
+// The nspname comparison needs the resolved catalog name, same as plans.ensureQueueStatsPartitions.
+// This does change the SQL a frozen migration emits, but only for names the check could never have
+// matched anyway (quoted, or bare mixed-case), and only from "silently creates a partition it
+// already believes is missing" to "checks correctly".
 const ensureQueueStatsPartitionsFn: Record<number, (schema: string) => string> = {
   35: (schema) => `
     DO $$
@@ -776,7 +800,7 @@ const ensureQueueStatsPartitionsFn: Record<number, (schema: string) => string> =
         IF NOT EXISTS (
           SELECT 1 FROM pg_class c
           JOIN pg_namespace n ON n.oid = c.relnamespace
-          WHERE n.nspname = '${schema}' AND c.relname = part_name
+          WHERE n.nspname = '${resolveSchemaName(schema)}' AND c.relname = part_name
         ) THEN
           EXECUTE format(
             'CREATE TABLE ${schema}.%I PARTITION OF ${schema}.queue_stats FOR VALUES FROM (%L) TO (%L)',
@@ -789,6 +813,47 @@ const ensureQueueStatsPartitionsFn: Record<number, (schema: string) => string> =
     END;
     $$
   `
+}
+
+// Frozen job_table_format() bodies, one per schema version, so the v37 migration is an immutable
+// snapshot even if plans.jobTableFormatFunction drifts later. 37 is the anchored regexp_replace
+// fix (matches only the base table reference and bare job_iN tokens); 36 is the prior naive
+// replace(), kept solely so v37's rollback restores the exact previous definition.
+const jobTableFormatFn: Record<number, (schema: string) => string> = {
+  36: (schema) => `
+    CREATE OR REPLACE FUNCTION ${schema}.job_table_format(command text, table_name text)
+    RETURNS text AS
+    $$
+      SELECT format(
+        replace(
+          replace(command, '.job', '.%1$I'),
+          'job_i', '%1$s_i'
+        ),
+        table_name
+      );
+    $$
+    LANGUAGE sql IMMUTABLE;
+  `,
+  37: (schema) => `
+    CREATE OR REPLACE FUNCTION ${schema}.job_table_format(command text, table_name text)
+    RETURNS text AS
+    $$
+      SELECT format(
+        regexp_replace(
+          regexp_replace(command, '\\.job\\y', '.%1$I', 'g'),
+          '\\yjob_i(\\d+)', '%1$s_i\\1', 'g'
+        ),
+        table_name
+      );
+    $$
+    LANGUAGE sql IMMUTABLE;
+  `
+}
+
+// Lowest schema version a migration can start from (the smallest `previous` in the set). Below
+// this there is no chain to apply; callers use it as an honest floor / offline fallback.
+function getMinVersion (schema: string): number {
+  return Math.min(...getAll(schema).map(i => i.previous))
 }
 
 function getAll (schema: string, noPartitioning = false, noCovering = false): types.Migration[] {
@@ -936,7 +1001,7 @@ function getAll (schema: string, noPartitioning = false, noCovering = false): ty
         `ALTER INDEX ${schema}.job_common_i3 RENAME TO job_i3`,
         `ALTER INDEX ${schema}.job_common_i2 RENAME TO job_i2`,
         `ALTER INDEX ${schema}.job_common_i1 RENAME TO job_i1`,
-        `SELECT ${schema}.job_table_run('DROP INDEX ${schema}.job_i7')`,
+        `SELECT ${schema}.job_table_run('DROP INDEX IF EXISTS ${schema}.job_i7')`,
         createQueueFn[26](schema),
         `DROP FUNCTION ${schema}.job_table_run(text, text, text)`,
         `DROP FUNCTION ${schema}.job_table_run_async(text, int, text, text, text)`,
@@ -1192,6 +1257,23 @@ function getAll (schema: string, noPartitioning = false, noCovering = false): ty
       ],
       // The default change is forward-compatible and harmless to keep, so rollback leaves it in place.
       uninstall: []
+    },
+    {
+      release: '12.26.0',
+      version: 37,
+      previous: 36,
+      // Fix job_table_format(): the naive replace() mangled schema names containing `.job` or
+      // `job_i` (e.g. `job_intake`), rewriting index builds to a nonexistent schema. The anchored
+      // regexp_replace version matches only the base table reference and bare job_iN index tokens.
+      // Only installed where partitioning is enabled — the function is created by plans.create()
+      // solely in that case (plans.ts), so a noPartitioning database has none to replace.
+      install: noPartitioning
+        ? []
+        : [jobTableFormatFn[37](schema)],
+      // Restore the prior (naive) definition on rollback so the schema matches v36 exactly.
+      uninstall: noPartitioning
+        ? []
+        : [jobTableFormatFn[36](schema)]
     }
   ]
 }
@@ -1202,4 +1284,5 @@ export {
   migrate,
   migrateCommands,
   getAll,
+  getMinVersion,
 }

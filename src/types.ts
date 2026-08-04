@@ -45,6 +45,23 @@ export interface DatabaseOptions {
   max?: number;
   db?: IDatabase;
   connectionTimeoutMillis?: number;
+  /**
+   * Interval in milliseconds between LISTEN/NOTIFY heartbeat checks on the dedicated
+   * listener connection. Lower values detect silent connection drops faster at the cost
+   * of more heartbeat queries. Defaults to 10000.
+   */
+  notifyHeartbeatIntervalMs?: number;
+  /**
+   * Timeout in milliseconds for each LISTEN/NOTIFY heartbeat query. If a heartbeat does
+   * not complete within this window the listener is torn down and reconnected. Raise this
+   * on a loaded database where the default is too aggressive. Defaults to 5000.
+   */
+  notifyHeartbeatTimeoutMs?: number;
+  /**
+   * TCP keepalive initial delay in milliseconds for the dedicated LISTEN/NOTIFY connection.
+   * Defaults to 10000.
+   */
+  notifyKeepAliveInitialDelayMs?: number;
   /** @internal */
   debug?: boolean;
 }
@@ -70,7 +87,7 @@ export interface SchedulingOptions {
  * - `pglite`: embedded (NOT distributed) single-connection WASM PostgreSQL, all gates off; supports in-process LISTEN/NOTIFY.
  *
  * Spanner, Aurora DSQL, and other targets do not have a profile yet and are not
- * supported. @see https://timgit.github.io/pg-boss/docs/database-backends
+ * supported. @see https://pgboss.io/database-backends
  */
 export type BackendProfile = 'postgres' | 'cockroachdb' | 'yugabytedb' | 'citus' | 'pglite'
 
@@ -78,6 +95,17 @@ export interface MaintenanceOptions {
   supervise?: boolean;
   migrate?: boolean;
   createSchema?: boolean;
+  /**
+   * Skips the startup check that refuses to install into `schema` when another schema differing
+   * from it only by case already holds a pg-boss installation.
+   *
+   * That check exists because `schema: 'MySchema'` and `schema: '"MySchema"'` name two different
+   * schemas — PostgreSQL folds the unquoted form to `myschema` and stores the quoted one verbatim —
+   * so mis-spelling the quoting installs an empty second schema and every existing job appears to
+   * vanish. Set this only if you genuinely intend two installations whose names differ by case.
+   * @default false
+   */
+  allowSchemaCaseVariant?: boolean;
   warningSlowQuerySeconds?: number;
   warningQueueSize?: number;
   superviseIntervalSeconds?: number;
@@ -150,7 +178,7 @@ export interface QueueStatsOptions {
  * derived from the backend and are not individually configurable, so a deployment can't
  * end up with an inconsistent combination.
  *
- * @see https://timgit.github.io/pg-boss/docs/database-backends#backend-profiles
+ * @see https://pgboss.io/database-backends#backend-profiles
  */
 export interface BackendOptions {
   /**
@@ -198,6 +226,13 @@ export interface CompatibilityFlags {
    * support cluster-wide LISTEN/NOTIFY, so it does NOT set this flag.)
    */
   noListenNotify?: boolean;
+  /**
+   * The engine lacks (or doesn't populate) `pg_stat_progress_create_index`, so BAM can't tell
+   * whether a stuck `in_progress` index build is still running. Set for CockroachDB/YugabyteDB,
+   * whose online-DDL job model isn't the PG `CONCURRENTLY` path. When set, BAM reclaims stale
+   * commands on the timeout alone and skips drop-then-rebuild healing.
+   */
+  noIndexProgressView?: boolean;
 }
 
 export interface Migration {
@@ -243,7 +278,11 @@ export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, 
   __test__force_clock_skew_warning?: string;
   /** @internal */
   __test__force_clock_monitoring_error?: string;
-  /** @internal */
+  /**
+   * Enables job spies for deterministic testing (see `getSpy`). Adds per-transition
+   * tracking overhead — **NOT for production.**
+   * @default false
+   */
   __test__enableSpies?: boolean;
   /** @internal */
   __test__delay_maint_ms?: number;
@@ -267,6 +306,13 @@ export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, 
    * @internal
    */
   __test__noAdvisoryLocks?: boolean;
+  /**
+   * Force `noIndexProgressView` on top of the current backend, so the timeout-only BAM reclaim path
+   * (no liveness, no CONCURRENTLY healing — the one CockroachDB/YugabyteDB take) can be exercised on
+   * a plain Postgres instance.
+   * @internal
+   */
+  __test__noIndexProgressView?: boolean;
   /** @internal */
   migrations?: Migration[];
 }
@@ -364,7 +410,6 @@ export interface JobOptions {
   singletonKey?: string;
   singletonSeconds?: number;
   singletonNextSlot?: boolean;
-  keepUntil?: number | string | Date;
   group?: GroupOptions;
   deadLetter?: string;
 }
@@ -415,6 +460,46 @@ export interface RedriveOptions extends ConnectionOptions {
 export type InsertOptions = ConnectionOptions & { returnId?: boolean }
 
 export type SendOptions = JobOptions & QueueOptions & ConnectionOptions
+
+/**
+ * When `update()`/`upsert()` targets jobs by `singletonKey` and more than one
+ * pre-active (created or retry) job shares that key (possible under
+ * throttle/debounce or a manually-set key on a `standard` queue), this selects
+ * which match(es) to overwrite, ordered by `createdOn`:
+ * - `newest` (default) overwrites the most recently enqueued match
+ * - `oldest` overwrites the earliest enqueued match
+ * - `all` overwrites every match
+ */
+export type JobMatchStrategy = 'newest' | 'oldest' | 'all'
+
+/**
+ * Options for `update()` and `upsert()`. Target a job with exactly one of `id`
+ * or `singletonKey` (`upsert()` requires `singletonKey`). Only the fields you
+ * supply are changed; any option you omit is left at the job's current value
+ * (this is a partial edit, not a re-`send()`). `match` is only valid when
+ * targeting by `singletonKey`.
+ *
+ * This is a curated subset of `SendOptions`: the throttle/debounce options
+ * (`singletonSeconds`, `singletonNextSlot`) are intentionally excluded because
+ * `update`/`upsert` do not act on them (a job's throttle slot is preserved).
+ */
+export type UpdateOptions =
+  Pick<JobOptions, 'id' | 'priority' | 'startAfter' | 'singletonKey' | 'group' | 'deadLetter'>
+  & QueueOptions
+  & ConnectionOptions
+  & { match?: JobMatchStrategy }
+
+/**
+ * The object form accepted by the single-argument overload of `update()` and
+ * `upsert()`, mirroring {@link Request} for `send()`. `data` is optional
+ * (omit or pass `undefined` to edit only options; pass `null` to clear the
+ * payload) and `options` carries the target (`id` or `singletonKey`).
+ */
+export interface UpdateRequest {
+  name: string;
+  data?: object | null;
+  options?: UpdateOptions;
+}
 
 /**
  * The queue policy dictates how jobs are allowed to be queued and processed.
@@ -844,6 +929,30 @@ export interface CommandResponse {
   affected: number;
 }
 
+/**
+ * The result of `update()`. Unlike the target-a-list mutators
+ * (`cancel`/`resume`/etc.), `update()` discovers how many jobs a target
+ * resolves to. `update()` never inserts, so there is no `inserted` count —
+ * see {@link UpsertResponse} for `upsert()`.
+ */
+export interface UpdateResponse {
+  /** Ids of the jobs updated in place. */
+  jobs: string[];
+  /** Number of existing jobs updated in place (equals `jobs.length`). */
+  updated: number;
+}
+
+/**
+ * The result of `upsert()`. Extends {@link UpdateResponse} with the
+ * update-vs-insert discriminator: a single `upsert()` either edits the
+ * matching job(s) in place (`updated`) or inserts one new job (`inserted`),
+ * so exactly one of the two counts is non-zero.
+ */
+export interface UpsertResponse extends UpdateResponse {
+  /** Number of jobs newly inserted (mutually exclusive with `updated`). */
+  inserted: number;
+}
+
 export interface BamEntry {
   id: string
   name: string
@@ -856,12 +965,148 @@ export interface BamEntry {
   createdOn: Date
   startedOn?: Date
   completedOn?: Date
+  // True when getNextBamCommand re-picked a command that was already attempted — a stale in_progress
+  // row (prior claimer died mid-run) or a prior 'failed' row (including ones left by older releases) —
+  // signalling that healing (drop-then-rebuild) may be needed. Only set on the liveness path.
+  reattempt?: boolean
 }
 
 export interface BamStatusSummary {
   status: 'pending' | 'in_progress' | 'completed' | 'failed'
   count: number
   lastCreatedOn: Date
+}
+
+/** One managed index pg-boss expects to exist, and the table it belongs to. */
+export interface ManagedIndex {
+  name: string
+  table: string
+  /** Readable expected key-column list (ordered), for definition-diff. Absent if not derivable. */
+  keys?: string
+  /** Readable expected partial-index predicate (the WHERE clause), '' for a non-partial index. */
+  predicate?: string
+  /** The full expected `CREATE INDEX` statement (schema-qualified), ready to run to recreate it. */
+  definition?: string
+}
+
+/**
+ * A managed index that is present in the catalog but marked INVALID. Its definition is correct (an
+ * interrupted build, not a wrong shape), so only the expected `definition` is carried — there is no
+ * meaningful actual-vs-expected diff to show.
+ */
+export interface InvalidIndex extends ManagedIndex {
+  /** True when a pending/in_progress/failed BAM row is (re)building it, so it may heal itself. */
+  building: boolean
+}
+
+/** A present index whose key columns/order or predicate differ from what the code expects. */
+export interface MismatchedIndex extends ManagedIndex {
+  /** Readable key-column list the code expects. */
+  expectedKeys: string
+  /** Readable key-column list actually in the catalog (from pg_get_indexdef). */
+  actualKeys: string
+  /** Readable predicate the code expects ('' for a non-partial index). */
+  expectedPredicate: string
+  /** Readable predicate actually in the catalog, from pg_get_indexdef ('' for a non-partial index). */
+  actualPredicate: string
+  /** The index's current definition from pg_get_indexdef, for side-by-side comparison with `definition`. */
+  actualDefinition: string
+  /** Which parts differ — 'keys', 'predicate', or both. */
+  differs: Array<'keys' | 'predicate'>
+}
+
+/** One managed plpgsql/sql function pg-boss expects to exist, with its normalised body for diffing. */
+export interface ManagedFunction {
+  name: string
+  /** Whitespace-normalised expected function body (the text between the outer `$$` dollar quotes). */
+  expectedBody: string
+  /** The full expected `CREATE FUNCTION` statement (schema-qualified), ready to run to recreate it. */
+  definition: string
+}
+
+/** A present managed function whose body differs from what the code expects. */
+export interface MismatchedFunction extends ManagedFunction {
+  /** Whitespace-normalised body actually stored in the catalog (from pg_get_functiondef). */
+  actualBody: string
+  /** The function's current definition from pg_get_functiondef, for side-by-side comparison. */
+  actualDefinition: string
+}
+
+/** Column drift for a managed table: columns the code expects that are absent, columns present in the
+ *  catalog that the code does not expect, and (fixed tables only) columns whose default, data type, or
+ *  nullability differs from the code's DDL. */
+export interface TableColumnDrift {
+  /** The (unqualified) table name. */
+  table: string
+  /** Expected columns with no matching catalog column. */
+  missingColumns: string[]
+  /** Catalog columns the expected set does not account for. */
+  unexpectedColumns: string[]
+  /** Columns whose live default expression differs from the code's expected default (fixed tables only). */
+  defaultMismatches: Array<{ column: string, expected: string, actual: string }>
+  /** Columns whose live data type differs from the code's expected type (fixed tables only). */
+  typeMismatches: Array<{ column: string, expected: string, actual: string }>
+  /** Columns whose live NOT NULL flag differs from the code's expectation (fixed tables only). */
+  nullabilityMismatches: Array<{ column: string, expected: boolean, actual: boolean }>
+}
+
+/** Constraint-set drift for a managed table: expected constraints absent from the catalog, and catalog
+ *  constraints the code does not expect. Compared on normalised pg_get_constraintdef strings. */
+export interface ConstraintDrift {
+  /** The (unqualified) table name. */
+  table: string
+  /** Expected constraints with no matching catalog constraint. */
+  missingConstraints: string[]
+  /** Catalog constraint definitions the expected set does not account for. */
+  unexpectedConstraints: string[]
+}
+
+/** Drift in an enum type's value set or ordering (pg-boss's `job_state`). */
+export interface EnumDrift {
+  /** The enum type's name (e.g. `job_state`). */
+  name: string
+  /** Ordered enum labels the code expects. */
+  expectedValues: string[]
+  /** Ordered enum labels actually in the catalog. */
+  actualValues: string[]
+}
+
+/**
+ * Result of a schema drift scan: managed indexes, functions, and enums that should exist per the
+ * code's expected shape vs. what the live catalog actually holds. Covers presence (missing / invalid
+ * / unexpected) and definition-level drift (a present index, function body, or enum whose shape
+ * differs from what the code emits).
+ */
+export interface SchemaDriftReport {
+  /** True when nothing is missing, invalid, mismatched, or drifted (tables, columns, defaults, types,
+   *  constraints, enum). `extraIndexes` is informational and does NOT affect this. */
+  ok: boolean
+  /** Expected managed tables with no matching catalog table. */
+  missingTables: string[]
+  /** Expected indexes with no matching catalog entry (excludes ones a BAM row is still building). */
+  missing: ManagedIndex[]
+  /** Expected indexes still being built by a pending/in_progress/failed BAM row — not yet drift. */
+  building: ManagedIndex[]
+  /** Present indexes marked INVALID (interrupted CREATE INDEX CONCURRENTLY). */
+  invalid: InvalidIndex[]
+  /**
+   * Standalone (non-constraint-backing) indexes present on a managed table that the expected set does
+   * not account for — a stale pg-boss index or one a user added. Informational only: an extra index is
+   * harmless, so this is surfaced as a warning and does not make the schema "not ok".
+   */
+  extraIndexes: Array<{ name: string, table: string }>
+  /** Present indexes whose key columns/order differ from the expected definition. */
+  mismatched: MismatchedIndex[]
+  /** Expected functions with no matching catalog entry. */
+  missingFunctions: ManagedFunction[]
+  /** Present functions whose body differs from the code's expected definition. */
+  mismatchedFunctions: MismatchedFunction[]
+  /** Managed tables with missing/unexpected columns or column-default drift (only differing tables). */
+  columnDrift: TableColumnDrift[]
+  /** Managed tables with missing or unexpected constraints (only tables that differ are listed). */
+  constraintDrift: ConstraintDrift[]
+  /** Enum drift when the live `job_state` value set/order differs from the code; null when it matches. */
+  enumDrift: EnumDrift | null
 }
 
 export interface FlowEvent {

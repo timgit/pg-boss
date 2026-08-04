@@ -1,6 +1,6 @@
 {
   "name": "pg-boss",
-  "version": "12.24.1",
+  "version": "12.27.0",
   "description": "Queueing jobs in Postgres from Node.js like a boss",
   "type": "module",
   "main": "./dist/index.js",
@@ -12,30 +12,31 @@
     "node": ">=22.12.0"
   },
   "dependencies": {
-    "cron-parser": "^5.6.1",
+    "cron-parser": "^5.7.0",
     "pg": "^8.22.0",
     "serialize-error": "^13.0.1"
   },
   "devDependencies": {
-    "@electric-sql/pglite": "^0.5.3",
-    "@prisma/adapter-pg": "^7.8.0",
-    "@prisma/client": "^7.8.0",
+    "@electric-sql/pglite": "^0.5.4",
+    "@prisma/adapter-pg": "^7.9.1",
+    "@prisma/client": "^7.9.1",
     "@tsconfig/node-ts": "^23.6.4",
     "@tsconfig/node22": "^22.0.5",
-    "@types/luxon": "^3.7.2",
-    "@types/node": "^22.20.0",
-    "@types/pg": "^8.20.0",
+    "@types/luxon": "^3.7.3",
+    "@types/node": "^22.20.1",
+    "@types/pg": "^8.20.3",
     "@vitest/coverage-v8": "^4.1.2",
     "cli-testlab": "^6.0.1",
     "cross-env": "^10.1.0",
     "drizzle-orm": "^1.0.0-rc.4",
-    "eslint": "^9.39.4",
+    "eslint": "^9.39.5",
     "knex": "^3.3.0",
-    "kysely": "^0.29.2",
+    "kysely": "^0.29.4",
     "luxon": "^3.7.2",
     "neostandard": "^0.13.0",
-    "prisma": "^7.8.0",
-    "tsx": "^4.22.4",
+    "postgres": "^3.4.9",
+    "prisma": "^7.9.1",
+    "tsx": "^4.23.1",
     "typescript": "^6.0.3",
     "vitest": "^4.0.18"
   },
@@ -43,7 +44,7 @@
     "build": "npm run clean && tsc --project tsconfig.build.json",
     "clean": "node -e \"fs.rmSync('dist',{recursive:true,force:true})\"",
     "prepublishOnly": "npm install && npm test && npm run build",
-    "pretest": "prisma generate --schema=test/prisma/schema.prisma && npm run tsc",
+    "pretest": "prisma generate --schema=test/prisma/schema.prisma && npm run tsc && npm run gen:manifest:check",
     "test": "eslint . && vitest run",
     "test:distributed": "cross-env DISTRIBUTED=true npm test",
     "test:ci": "npm run cover && cross-env DISTRIBUTED=true npm run cover && npm run test:pglite",
@@ -56,6 +57,8 @@
     "cover": "npm test -- --coverage",
     "tsc": "tsc --noEmit",
     "cli": "node ./dist/cli.js",
+    "gen:manifest": "tsx scripts/gen-manifest.ts",
+    "gen:manifest:check": "tsx scripts/gen-manifest.ts --check",
     "console": "tsx scripts/console.js",
     "seed": "tsx scripts/seed-queue-stats.js",
     "readme": "node ./examples/readme.js",
@@ -63,7 +66,7 @@
     "docs:readme": "node ./scripts/sync-readme.js"
   },
   "pgboss": {
-    "schema": 36
+    "schema": 37
   },
   "repository": {
     "type": "git",
@@ -74,7 +77,7 @@
   "bugs": {
     "url": "https://github.com/timgit/pg-boss/issues"
   },
-  "homepage": "https://timgit.github.io/pg-boss",
+  "homepage": "https://pgboss.io",
   "keywords": [
     "postgresql",
     "postgres",

@@ -2,9 +2,9 @@ import { expect, beforeEach } from 'vitest'
 import { PgBoss, getConstructionPlans, getMigrationPlans, getRollbackPlans } from '../src/index.ts'
 import { getDb, assertTruthy, getSchemaDefs, itPostgresOnly } from './testHelper.ts'
 import Contractor from '../src/contractor.ts'
-import { getAll, migrate, migrateCommands } from '../src/migrationStore.ts'
+import { getAll, migrate, migrateCommands, getMinVersion } from '../src/migrationStore.ts'
 import packageJson from '../package.json' with { type: 'json' }
-import { setVersion, getPartitionedQueueTables } from '../src/plans.ts'
+import { setVersion, getPartitionedQueueTables, jobTableFormatFunction } from '../src/plans.ts'
 import { ctx } from './hooks.ts'
 
 const currentSchemaVersion = packageJson.pgboss.schema
@@ -54,6 +54,58 @@ describe('migration', function () {
     expect(() => {
       getMigrationPlans(schema, currentSchemaVersion)
     }).toThrow()
+  })
+
+  it('should refuse to migrate from a version below the oldest supported floor', function () {
+    // The oldest migration starts from version 25. Migrating from anything lower would apply the
+    // whole chain over missing intermediate steps, so it must fail loudly with a clear message.
+    expect(() => migrate('custom', 10)).toThrow(/oldest supported starting version/)
+
+    // the floor itself is fine
+    expect(() => migrate('custom', 25)).not.toThrow()
+  })
+
+  it('should guard the v27 async index drop with IF EXISTS on rollback', function () {
+    // job_i7 is built asynchronously via BAM, so a rollback before that build ran would abort the
+    // whole transaction on "index does not exist" without IF EXISTS.
+    const sql = getRollbackPlans('custom', 27)
+    expect(sql).toContain('DROP INDEX IF EXISTS custom.job_i7')
+  })
+
+  it('should not corrupt a schema name that contains the job_i token when inlining', function () {
+    // formatJobTable used naive substring replacement; a schema like `job_intake` (contains job_i)
+    // got rewritten to `job_common_intake`. The inlined async DDL must reference the real schema.
+    const sql = migrate('job_intake', 26, undefined, undefined, { inlineAsync: true })
+    expect(sql).toContain('job_intake.job_common')
+    expect(sql).not.toContain('job_common_intake')
+  })
+
+  itPostgresOnly('job_table_format() (plpgsql) handles a schema name containing the job_i token (v37)', async function () {
+    // The installed SQL function used the same naive replace() as formatJobTable did. A schema like
+    // `job_intake` (contains `job_i`) got rewritten to `job_common_intake` — an index build against a
+    // nonexistent schema. The v37 anchored regexp_replace version rewrites only the base table
+    // reference and bare job_iN tokens.
+    const db = await getDb()
+    const schema = 'job_intake'
+
+    await db.executeSql(`DROP SCHEMA IF EXISTS ${schema} CASCADE`)
+    await db.executeSql(`CREATE SCHEMA ${schema}`)
+    try {
+      await db.executeSql(jobTableFormatFunction(schema))
+
+      const command = `CREATE INDEX job_i5 ON ${schema}.job (name)`
+      const { rows } = await db.executeSql(`SELECT ${schema}.job_table_format($1, 'job_common') as out`, [command])
+
+      expect(rows[0].out).toBe(`CREATE INDEX job_common_i5 ON ${schema}.job_common (name)`)
+      expect(rows[0].out).not.toContain('job_common_intake')
+    } finally {
+      await db.executeSql(`DROP SCHEMA IF EXISTS ${schema} CASCADE`)
+    }
+  })
+
+  it('getMinVersion returns the lowest previous version in the migration set', function () {
+    // The oldest migration is v26 (previous: 25), so no chain exists below 25.
+    expect(getMinVersion('custom')).toBe(25)
   })
 
   it('should export commands to migrate', function () {

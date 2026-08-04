@@ -42,7 +42,7 @@ available (❌), pg-boss automatically switches to the compatible alternative �
 [compatibility flags](#compatibility-flags) below.
 
 | Database | Status | `backend` | SKIP LOCKED | Multi-mutation CTEs | Table partitioning | Deferrable constraints | Advisory locks | Covering indexes | LISTEN/NOTIFY |
-|----------|--------|-----------|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+|----------|--------|-----------|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
 | PostgreSQL | Tested | `postgres` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | CockroachDB | Tested | `cockroachdb` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | YugabyteDB | Partial¹ | `yugabytedb` | ✅ | ✅ | ❌ | ✅ | ❌ | ✅ | ✅³ |
@@ -102,7 +102,7 @@ CockroachDB but are independent in principle:
     SELECT id FROM jobs
     WHERE name = $name
       AND state < 'active'
-      AND start_after < now()
+      AND start_after <= now()
     ORDER BY priority DESC, created_on, id
     LIMIT $batchSize
   )

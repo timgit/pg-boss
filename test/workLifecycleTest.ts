@@ -221,6 +221,7 @@ describe('work lifecycle', function () {
     const localConcurrency = 3
     const abortedJobs: string[] = []
     const jobIds: (string | null)[] = []
+    let started = 0
 
     // Send 3 jobs
     for (let i = 0; i < 3; i++) {
@@ -229,6 +230,7 @@ describe('work lifecycle', function () {
     }
 
     await ctx.boss.work(ctx.schema, { localConcurrency, pollingIntervalSeconds: 0.5 }, async ([job]) => {
+      started++
       // All jobs check for abort signal
       for (let i = 0; i < 100; i++) {
         if (job.signal.aborted) {
@@ -239,8 +241,15 @@ describe('work lifecycle', function () {
       }
     })
 
-    // Wait for all workers to start
-    await delay(500)
+    // Wait until all 3 workers have actually picked up a job before stopping. A fixed
+    // delay races the last fetch under load: a worker that hasn't fetched when stop()
+    // halts fetching never runs its handler, so its signal is never checked (abortedJobs
+    // ends at 2 instead of 3). Gate on the real in-flight count instead.
+    for (let i = 0; i < 50; i++) {
+      if (started >= localConcurrency) break
+      await delay(100)
+    }
+    expect(started).toBe(localConcurrency)
 
     // Stop with short timeout - jobs take 10s, so timeout will expire
     await ctx.boss.stop({ timeout: 1000 })

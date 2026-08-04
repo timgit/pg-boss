@@ -3,6 +3,13 @@ import pg from 'pg'
 import assert from 'node:assert'
 import type * as types from './types.ts'
 
+// Keep silent network failures below the default 30-second notify polling backstop: in the
+// worst case a failure happens immediately after a successful check, then takes one interval,
+// one query timeout, and the existing first reconnect backoff (1s) to restore LISTEN.
+const DEFAULT_LISTEN_HEARTBEAT_INTERVAL_MS = 10000
+const DEFAULT_LISTEN_HEARTBEAT_TIMEOUT_MS = 5000
+const DEFAULT_LISTEN_KEEP_ALIVE_INITIAL_DELAY_MS = 10000
+
 class Db extends EventEmitter implements types.IDatabase, types.EventsMixin {
   private pool!: pg.Pool
   private config: types.DatabaseOptions
@@ -57,8 +64,9 @@ class Db extends EventEmitter implements types.IDatabase, types.EventsMixin {
 
   // Opens a dedicated, session-pinned connection for LISTEN/NOTIFY. A separate pg.Client
   // (not a pooled connection) is used so the listener never depletes the query pool and so
-  // reconnection is self-contained. On any drop the client reconnects with capped backoff
-  // and re-runs LISTEN, then calls onReconnect so the caller can recover missed messages.
+  // reconnection is self-contained. TCP keepalive plus a same-session heartbeat detect silent
+  // drops and lost subscriptions. The client reconnects with capped backoff, re-runs LISTEN,
+  // then calls onReconnect so the caller can recover missed messages.
   async listen (
     channel: string,
     onNotification: (payload: string) => void,
@@ -69,7 +77,23 @@ class Db extends EventEmitter implements types.IDatabase, types.EventsMixin {
     let closed = false
     let client: pg.Client | null = null
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+    let heartbeatTimer: ReturnType<typeof setTimeout> | null = null
     let attempt = 0
+    const heartbeatInterval = this.config.notifyHeartbeatIntervalMs ?? DEFAULT_LISTEN_HEARTBEAT_INTERVAL_MS
+    const heartbeatTimeout = this.config.notifyHeartbeatTimeoutMs ?? DEFAULT_LISTEN_HEARTBEAT_TIMEOUT_MS
+    const keepAliveInitialDelay = this.config.notifyKeepAliveInitialDelayMs ?? DEFAULT_LISTEN_KEEP_ALIVE_INITIAL_DELAY_MS
+    // Only self-heal once the listener has been established at least once. If the INITIAL connect
+    // fails, the rejection propagates to the caller (Notifier.start), which falls back to
+    // polling-only and discards this subscription's close handle — so a reconnect scheduled from
+    // the client 'error' handler would be an untracked connection nothing can close, keeping the
+    // event loop alive and delivering notifications into a stopped manager.
+    let established = false
+
+    const clearHeartbeat = () => {
+      if (!heartbeatTimer) return
+      clearTimeout(heartbeatTimer)
+      heartbeatTimer = null
+    }
 
     const scheduleReconnect = () => {
       if (closed || reconnectTimer) return
@@ -81,20 +105,71 @@ class Db extends EventEmitter implements types.IDatabase, types.EventsMixin {
       }, backoff)
     }
 
+    const disconnect = (target: pg.Client, error: Error) => {
+      if (closed || client !== target) return
+
+      clearHeartbeat()
+      client = null
+      target.removeAllListeners()
+      target.end().catch(() => {})
+      this.emit('error', error)
+      if (established) scheduleReconnect()
+    }
+
+    const scheduleHeartbeat = (target: pg.Client) => {
+      if (closed || client !== target) return
+      heartbeatTimer = setTimeout(() => {
+        heartbeatTimer = null
+        heartbeat(target).catch(error => disconnect(target, error))
+      }, heartbeatInterval)
+    }
+
+    const heartbeat = async (target: pg.Client) => {
+      if (closed || client !== target) return
+
+      let timeout: ReturnType<typeof setTimeout> | null = null
+      const query = target.query(
+        `SELECT EXISTS (
+           SELECT 1
+             FROM pg_listening_channels() AS active(channel)
+            WHERE channel = $1
+         ) AS listening`,
+        [channel]
+      )
+      query.catch(() => {})
+
+      try {
+        const result = await Promise.race([
+          query,
+          new Promise<never>((resolve, reject) => {
+            timeout = setTimeout(() => reject(new Error('LISTEN/NOTIFY heartbeat timed out')), heartbeatTimeout)
+          })
+        ])
+
+        if (!result.rows[0]?.listening) {
+          throw new Error('LISTEN/NOTIFY channel registration was lost')
+        }
+      } finally {
+        if (timeout) clearTimeout(timeout)
+      }
+
+      scheduleHeartbeat(target)
+    }
+
     const connect = async () => {
       if (closed) return
 
-      const next = new pg.Client(this.config)
+      const next = new pg.Client({
+        ...this.config,
+        keepAlive: true,
+        keepAliveInitialDelayMillis: keepAliveInitialDelay
+      })
 
       next.on('error', error => {
-        this.emit('error', error)
-        if (!closed) {
-          next.removeAllListeners()
-          next.end().catch(() => {})
-          if (client === next) client = null
-          scheduleReconnect()
-        }
+        disconnect(next, error)
       })
+
+      next.on('end', () => disconnect(next, new Error('LISTEN/NOTIFY connection ended')))
 
       next.on('notification', msg => {
         if (msg.payload !== undefined) onNotification(msg.payload)
@@ -118,6 +193,8 @@ class Db extends EventEmitter implements types.IDatabase, types.EventsMixin {
       }
 
       attempt = 0
+      established = true
+      scheduleHeartbeat(next)
       onReconnect()
     }
 
@@ -130,6 +207,7 @@ class Db extends EventEmitter implements types.IDatabase, types.EventsMixin {
           clearTimeout(reconnectTimer)
           reconnectTimer = null
         }
+        clearHeartbeat()
         if (client) {
           client.removeAllListeners()
           await client.end().catch(() => {})

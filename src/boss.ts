@@ -10,6 +10,7 @@ const events = {
   warning: 'warning'
 }
 
+// Default thresholds and warning messages
 const WARNINGS = {
   SLOW_QUERY: { seconds: 30, message: 'Warning: slow query. Your queues and/or database server should be reviewed' },
   LARGE_QUEUE: { size: 10_000, message: 'Warning: large queue backlog. Your queue should be reviewed' }
@@ -28,6 +29,8 @@ class Boss extends EventEmitter implements types.EventsMixin {
   #db: types.IDatabase
   #config: types.ResolvedConstructorOptions
   #manager: Manager
+  readonly #slowQuerySeconds: number
+  readonly #largeQueueSize: number
 
   events = events
 
@@ -43,14 +46,8 @@ class Boss extends EventEmitter implements types.EventsMixin {
     this.#manager = manager
     this.#stopped = true
     this.#stopping = false
-
-    if (config.warningSlowQuerySeconds) {
-      WARNINGS.SLOW_QUERY.seconds = config.warningSlowQuerySeconds
-    }
-
-    if (config.warningQueueSize) {
-      WARNINGS.LARGE_QUEUE.size = config.warningQueueSize
-    }
+    this.#slowQuerySeconds = config.warningSlowQuerySeconds || WARNINGS.SLOW_QUERY.seconds
+    this.#largeQueueSize = config.warningQueueSize || WARNINGS.LARGE_QUEUE.size
   }
 
   get maintaining (): boolean {
@@ -102,7 +99,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
     const elapsed = (Date.now() - started) / 1000
 
     if (
-      elapsed > WARNINGS.SLOW_QUERY.seconds ||
+      elapsed > this.#slowQuerySeconds ||
       this.#config.__test__warn_slow_query
     ) {
       await emitAndPersistWarning(this.#warningContext,
@@ -189,10 +186,6 @@ class Boss extends EventEmitter implements types.EventsMixin {
       return acc
     }, {})
 
-    const heartbeatQueueNames = new Set(
-      queues.filter(q => q.heartbeatSeconds != null).map(q => q.name)
-    )
-
     for (const queueGroup of Object.values(queueGroups)) {
       if (this.#stopping) return
 
@@ -204,7 +197,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
 
         const chunk = names.splice(0, 100)
 
-        await this.#monitor(table, chunk, heartbeatQueueNames)
+        await this.#monitor(table, chunk)
         await this.#maintain(table, chunk)
       }
     }
@@ -215,7 +208,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
     await this.#maintainQueueStats()
   }
 
-  async #monitor (table: string, names: string[], heartbeatQueueNames: Set<string>) {
+  async #monitor (table: string, names: string[]) {
     if (this.#stopping) return
 
     const command = plans.trySetQueueMonitorTime(
@@ -243,7 +236,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
       // Coerce with Number(): CockroachDB returns these integer columns as strings, so a bare `>`
       // would compare lexicographically ("100" > "9" === false) and silently miss the backlog. On
       // standard Postgres these are already numbers, so Number() is a no-op.
-      const warnings = rowsCacheStats.filter(i => Number(i.queuedCount) > (Number(i.warningQueueSize) || WARNINGS.LARGE_QUEUE.size))
+      const warnings = rowsCacheStats.filter(i => Number(i.queuedCount) > (Number(i.warningQueueSize) || this.#largeQueueSize))
 
       for (const warning of warnings) {
         await emitAndPersistWarning(this.#warningContext,
@@ -264,15 +257,11 @@ class Boss extends EventEmitter implements types.EventsMixin {
 
       if (this.#stopping) return
 
-      const heartbeatQueues = queues.filter(q => heartbeatQueueNames.has(q))
-
-      if (heartbeatQueues.length) {
-        if (this.#config.noMultiMutationCte) {
-          await this.#manager.failJobsByHeartbeatDistributed(table, heartbeatQueues)
-        } else {
-          const heartbeatSql = plans.failJobsByHeartbeat(this.#config.schema, table, heartbeatQueues, this.#config.noAdvisoryLocks)
-          await this.#executeQuery(heartbeatSql)
-        }
+      if (this.#config.noMultiMutationCte) {
+        await this.#manager.failJobsByHeartbeatDistributed(table, queues)
+      } else {
+        const heartbeatSql = plans.failJobsByHeartbeat(this.#config.schema, table, queues, this.#config.noAdvisoryLocks)
+        await this.#executeQuery(heartbeatSql)
       }
     }
   }

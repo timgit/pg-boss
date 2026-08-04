@@ -1,4 +1,14 @@
-import type { UpdateQueueOptions } from './types.ts'
+import type { JobMatchStrategy, UpdateQueueOptions, ManagedIndex, ManagedFunction } from './types.ts'
+import {
+  indexKeysRaw,
+  indexPredicateRaw,
+  displayIndexDefinition,
+  extractFunctionBody,
+  normalizeFunctionBody
+} from './drifter.ts'
+import type { ExpectedColumns, ExpectedConstraints } from './drifter.ts'
+import schemaManifest from './schema.json' with { type: 'json' }
+import { normalizeSchemaName, resolveSchemaName } from './tools.ts'
 
 export interface SqlQuery {
   text: string
@@ -12,10 +22,26 @@ export const PG_ERROR = {
 export const DEFAULT_SCHEMA = 'pgboss'
 export const MIGRATE_RACE_MESSAGE = 'division by zero'
 export const CREATE_RACE_MESSAGE = 'already exists'
-const SINGLE_QUOTE_REGEX = /'/g
+export const SINGLE_QUOTE_REGEX = /'/g
 const FIFTEEN_MINUTES = 60 * 15
 const FORTEEN_DAYS = 60 * 60 * 24 * 14
 const SEVEN_DAYS = 60 * 60 * 24 * 7
+// A bam row stuck at 'in_progress' past this means the process that claimed it died or was
+// stopped mid-command (bam.ts #processCommands returns without marking the row on #stopped or a
+// crash), and getNextBamCommand needs to reclaim it or every future async migration wedges forever.
+// This is the *fallback* backstop only — deliberately long (24h) because false-reclaim is the worse
+// failure: reclaiming a still-running CREATE INDEX CONCURRENTLY runs two builds on the same index at
+// once, and an interrupted CONCURRENTLY leaves an INVALID index needing manual cleanup. The intended
+// *primary* trigger is a liveness check against pg_stat_progress_create_index (reclaim as soon as no
+// backend is actually building), which recovers in minutes instead of a day; the 24h timeout only
+// covers cases liveness can't classify (non-index commands, or a build that never registered).
+const BAM_STALE_SECONDS = 60 * 60 * 24
+// Liveness grace window: on the native-Postgres path we don't trust a "no build running" reading
+// until a claimed command has had time to actually start and register in pg_stat_progress_create_index
+// (pool latency between claiming the row and issuing the build). Below this age, an in_progress row is
+// only reclaimed via the 24h fallback, never via liveness — so a genuinely-running build is never
+// yanked out from under itself.
+const BAM_LIVENESS_GRACE_SECONDS = 60 * 5
 
 export const JOB_STATES = Object.freeze({
   created: 'created',
@@ -46,7 +72,7 @@ const QUEUE_DEFAULTS = {
   partition: false
 }
 
-const COMMON_JOB_TABLE = 'job_common'
+export const COMMON_JOB_TABLE = 'job_common'
 
 interface CreateOptions {
   createSchema?: boolean
@@ -249,15 +275,20 @@ export function createIndexJobDependencyParent (schema: string) {
   return `CREATE INDEX IF NOT EXISTS job_dep_parent_idx ON ${schema}.job_dependency (parent_name, parent_id)`
 }
 
-function jobTableFormatFunction (schema: string) {
+// Anchored so a schema name that itself contains these substrings (e.g. `job_intake`) isn't
+// mangled: `\.job\y` matches only the base table reference (`schema.job`, not `schema.job_i5` whose
+// `job` is followed by `_`, nor `.job_dependency`), and `\yjob_i(\d+)` matches only the bare
+// index-name tokens (job_i1..9), never the `job_i` inside a schema name. Mirrors formatJobTable()
+// in migrationStore.ts; the migration that fixed this (v37) carries its own frozen copy.
+export function jobTableFormatFunction (schema: string) {
   return `
     CREATE FUNCTION ${schema}.job_table_format(command text, table_name text)
     RETURNS text AS
     $$
       SELECT format(
-        replace(
-          replace(command, '.job', '.%1$I'),
-          'job_i', '%1$s_i'
+        regexp_replace(
+          regexp_replace(command, '\\.job\\y', '.%1$I', 'g'),
+          '\\yjob_i(\\d+)', '%1$s_i\\1', 'g'
         ),
         table_name
       );
@@ -641,8 +672,11 @@ export function createQueue (schema: string, name: string, options: unknown, noA
 // channel human-recognizable in pg_stat_activity; 24 hex chars leaves ample headroom under
 // the 63-byte identifier limit. Channels are already scoped to a single database, so unlike
 // advisoryLock there is no need to mix in current_database().
+//
+// normalizeSchemaName, not resolveSchemaName: the channel is never matched against the catalog, so
+// it only has to agree across instances on the same schema. See the note on the helper.
 export function notifyChannelSql (schema: string): string {
-  return `('pgboss_' || left(encode(sha224('${schema}'::bytea), 'hex'), 24))`
+  return `('pgboss_' || left(encode(sha224('${normalizeSchemaName(schema)}'::bytea), 'hex'), 24))`
 }
 
 // Parameter-less statement that wakes workers on a notify-enabled queue. Embedded into
@@ -768,14 +802,14 @@ export function updateQueue (schema: string, { deadLetter }: UpdateQueueOptions 
       retry_limit = COALESCE((o.data->>'retryLimit')::int, retry_limit),
       retry_delay = COALESCE((o.data->>'retryDelay')::int, retry_delay),
       retry_backoff = COALESCE((o.data->>'retryBackoff')::bool, retry_backoff),
-      retry_delay_max = CASE WHEN o.data ? 'retryDelayMax'
+      retry_delay_max = CASE WHEN jsonb_exists(o.data, 'retryDelayMax')
         THEN (o.data->>'retryDelayMax')::int
         ELSE retry_delay_max END,
       expire_seconds = COALESCE((o.data->>'expireInSeconds')::int, expire_seconds),
       retention_seconds = COALESCE((o.data->>'retentionSeconds')::int, retention_seconds),
       deletion_seconds = COALESCE((o.data->>'deleteAfterSeconds')::int, deletion_seconds),
       warning_queued = COALESCE((o.data->>'warningQueueSize')::int, warning_queued),
-      heartbeat_seconds = CASE WHEN o.data ? 'heartbeatSeconds'
+      heartbeat_seconds = CASE WHEN jsonb_exists(o.data, 'heartbeatSeconds')
         THEN (o.data->>'heartbeatSeconds')::int
         ELSE heartbeat_seconds END,
       notify = COALESCE((o.data->>'notify')::bool, notify),
@@ -954,22 +988,6 @@ export function deleteOldWarnings (schema: string, days: number): string {
 }
 
 export function createTableQueueStats (schema: string, noPartitioning = false): string {
-  if (noPartitioning) {
-    return `
-      CREATE TABLE ${schema}.queue_stats (
-        id uuid NOT NULL DEFAULT gen_random_uuid(),
-        name text NOT NULL,
-        deferred_count int NOT NULL DEFAULT 0,
-        queued_count   int NOT NULL DEFAULT 0,
-        ready_count    int NOT NULL DEFAULT 0,
-        active_count   int NOT NULL DEFAULT 0,
-        failed_count   int NOT NULL DEFAULT 0,
-        total_count    int NOT NULL DEFAULT 0,
-        captured_on timestamptz NOT NULL DEFAULT now(),
-        PRIMARY KEY (id)
-      )
-    `
-  }
   return `
     CREATE TABLE ${schema}.queue_stats (
       id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -981,23 +999,17 @@ export function createTableQueueStats (schema: string, noPartitioning = false): 
       failed_count   int NOT NULL DEFAULT 0,
       total_count    int NOT NULL DEFAULT 0,
       captured_on timestamptz NOT NULL DEFAULT now(),
-      PRIMARY KEY (id, captured_on)
-    ) PARTITION BY RANGE (captured_on)
+      ${noPartitioning ? 'PRIMARY KEY (id)' : 'PRIMARY KEY (id, captured_on)'}
+    ) ${noPartitioning ? '' : 'PARTITION BY RANGE (captured_on)'}
   `
 }
 
-// queue_stats_i1 serves both the raw history query and the bucketed aggregates: the filter
-// (name = ?, captured_on range) rides the composite key, and the six count columns are carried as
-// covering payload so those reads run index-only (no per-row heap fetch — the dominant cost when an
-// aggregate scans many rows). INCLUDE is gated on the noCoveringIndexes profile flag, which
-// CockroachDB sets (it uses STORING, not INCLUDE) but YugabyteDB does not (it supports INCLUDE):
-// the gated backends keep the plain composite index — correct, just not covering.
 export function createIndexQueueStats (schema: string, noCoveringIndex = false): string {
-  const cols = '(name, captured_on DESC)'
-  const include = 'INCLUDE (deferred_count, queued_count, ready_count, active_count, failed_count, total_count)'
-  return noCoveringIndex
-    ? `CREATE INDEX queue_stats_i1 ON ${schema}.queue_stats ${cols}`
-    : `CREATE INDEX queue_stats_i1 ON ${schema}.queue_stats ${cols} ${include}`
+  const include = noCoveringIndex
+    ? ''
+    : 'INCLUDE (deferred_count, queued_count, ready_count, active_count, failed_count, total_count)'
+
+  return `CREATE INDEX queue_stats_i1 ON ${schema}.queue_stats (name, captured_on DESC) ${include}`
 }
 
 // Idempotently create the daily partitions for today and tomorrow (UTC). Both the day suffix and
@@ -1021,7 +1033,7 @@ export function ensureQueueStatsPartitions (schema: string): string {
         IF NOT EXISTS (
           SELECT 1 FROM pg_class c
           JOIN pg_namespace n ON n.oid = c.relnamespace
-          WHERE n.nspname = '${schema}' AND c.relname = part_name
+          WHERE n.nspname = '${resolveSchemaName(schema)}' AND c.relname = part_name
         ) THEN
           EXECUTE format(
             'CREATE TABLE ${schema}.%I PARTITION OF ${schema}.queue_stats FOR VALUES FROM (%L) TO (%L)',
@@ -1051,7 +1063,7 @@ export function dropOldQueueStatsPartitions (schema: string, days: number): stri
         JOIN pg_class p ON p.oid = i.inhparent
         JOIN pg_class c ON c.oid = i.inhrelid
         JOIN pg_namespace n ON n.oid = p.relnamespace
-        WHERE n.nspname = '${schema}' AND p.relname = 'queue_stats'
+        WHERE n.nspname = '${resolveSchemaName(schema)}' AND p.relname = 'queue_stats'
       LOOP
         suffix := substring(r.relname FROM 'queue_stats_(.*)$');
         IF suffix ~ '^[0-9]{8}$' THEN
@@ -1205,6 +1217,22 @@ export function versionTableExists (schema: string) {
   return `SELECT to_regclass('${schema}.version') as name`
 }
 
+// Installed pg-boss schemas whose name differs from the configured one by case alone. Postgres
+// folds a bare name and stores a quoted one verbatim, so `MySchema` and `"MySchema"` are two
+// schemas that look nearly identical in config. Used on the install path to tell a caller who
+// mis-spelled the quoting that their data is next door, rather than silently installing a second,
+// empty schema beside the populated one.
+export function getSchemaCaseVariants (schema: string): string {
+  const resolved = resolveSchemaName(schema).replace(SINGLE_QUOTE_REGEX, "''")
+  return `
+    SELECT n.nspname as name
+    FROM pg_namespace n
+    JOIN pg_class c ON c.relnamespace = n.oid AND c.relname = 'version' AND c.relkind IN ('r', 'p')
+    WHERE lower(n.nspname) = lower('${resolved}') AND n.nspname <> '${resolved}'
+    ORDER BY n.nspname
+  `
+}
+
 export function getPartitionedQueueTables (schema: string) {
   return `SELECT table_name FROM ${schema}.queue WHERE partition = true`
 }
@@ -1269,7 +1297,12 @@ function buildFetchParams (options: FetchJobOptions): FetchQueryParams {
   if (hasIgnoreSingletons) {
     paramIndex++
     ignoreSingletonsParam = `$${paramIndex}::text[]`
-    values.push(ignoreSingletons)
+    // job_i2/job_i3 key singleton/stately jobs on the empty key (COALESCE(singleton_key, ''))
+    // as one slot, so a keyless active job must block keyless pending jobs the same way a keyed
+    // one blocks its key. Map null -> '' here so the WHERE clause's COALESCE comparison (below)
+    // never has to compare against a literal NULL array element, which would make `<> ALL(...)`
+    // evaluate to NULL (excluding every row) instead of the intended per-key filter.
+    values.push(ignoreSingletons.map(key => key ?? ''))
   }
 
   if (hasIgnoreGroups) {
@@ -1330,30 +1363,42 @@ export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): S
   const hasGroupConcurrency = groupConcurrency != null
   const hasMinPriority = minPriority != null
   const hasMaxPriority = maxPriority != null
+  const groupConcurrencyConfig = hasGroupConcurrency
+    ? (typeof groupConcurrency === 'number' ? { default: groupConcurrency } : groupConcurrency)
+    : null
   const hasTiers = hasGroupConcurrency &&
-    typeof groupConcurrency === 'object' &&
-    groupConcurrency.tiers &&
-    Object.keys(groupConcurrency.tiers).length > 0
+    groupConcurrencyConfig?.tiers &&
+    Object.keys(groupConcurrencyConfig.tiers).length > 0
+  const hasSingleGroupConcurrency = hasGroupConcurrency && !hasTiers && groupConcurrencyConfig?.default === 1
+  const hasActiveGroupCounts = hasGroupConcurrency && !hasSingleGroupConcurrency
 
   const params = buildFetchParams(options)
+  const groupLimit = hasTiers
+    ? `COALESCE((${params.tiersParam} ->> group_tier)::int, ${params.defaultGroupLimitParam})`
+    : params.defaultGroupLimitParam
+  const activeGroupCountExpression = hasActiveGroupCounts
+    ? 'COALESCE(((SELECT counts FROM active_group_count_map) ->> j.group_id)::int, 0)'
+    : ''
 
   const selectCols = [
     'j.id',
     singletonFetch ? 'j.singleton_key' : '',
-    hasGroupConcurrency ? 'j.group_id, j.group_tier' : ''
+    hasGroupConcurrency ? 'j.group_id, j.group_tier' : '',
+    hasActiveGroupCounts ? `${activeGroupCountExpression} as active_cnt` : ''
   ].filter(Boolean).join(', ')
 
-  // MATERIALIZED forces Postgres to compute this aggregation once and cache the
-  // result. Without it, Postgres 12+ may inline the CTE and re-evaluate the
-  // COUNT query at each reference site. active_group_counts is referenced twice:
-  // once in the next CTE join (to pre-filter saturated groups before LIMIT) and
-  // once in group_ranking (to enforce the per-batch concurrency limit).
-  const activeGroupCountsCte = hasGroupConcurrency
-    ? `active_group_counts AS MATERIALIZED (
-        SELECT group_id, COUNT(*)::int as active_cnt
-        FROM ${schema}.${table}
-        WHERE name = '${name}' AND state = '${JOB_STATES.active}' AND group_id IS NOT NULL
-        GROUP BY group_id
+  // For limits above 1, aggregate active counts into a single JSONB value. Each
+  // candidate uses a keyed lookup through an uncorrelated InitPlan, so the planner
+  // cannot turn stale active-group estimates into a per-candidate relation scan.
+  const activeGroupCountMapCte = hasActiveGroupCounts
+    ? `active_group_count_map AS MATERIALIZED (
+        SELECT COALESCE(jsonb_object_agg(group_id, active_cnt), '{}'::jsonb) as counts
+        FROM (
+          SELECT group_id, COUNT(*)::int as active_cnt
+          FROM ${schema}.${table}
+          WHERE name = '${name}' AND state = '${JOB_STATES.active}' AND group_id IS NOT NULL
+          GROUP BY group_id
+        ) active_groups
       ), `
     : ''
 
@@ -1362,31 +1407,43 @@ export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): S
   const lockClause = noSkipLocked ? '' : 'FOR UPDATE OF j SKIP LOCKED'
 
   // Column references are qualified with j. throughout so both the base case and
-  // the groupConcurrency branch (which joins active_group_counts) share one set of
-  // expressions. The join introduces agc.group_id which would otherwise be ambiguous.
+  // the groupConcurrency branches share one set of expressions.
+  const groupConcurrencyFilter = hasGroupConcurrency
+    ? hasSingleGroupConcurrency
+      ? `(j.group_id IS NULL
+            OR NOT EXISTS (
+              SELECT 1
+              FROM ${schema}.${table} active_group_probe
+              WHERE active_group_probe.name = '${name}'
+                AND active_group_probe.state = '${JOB_STATES.active}'
+                AND active_group_probe.group_id IS NOT NULL
+                AND active_group_probe.group_id = j.group_id
+            ))`
+      : `(j.group_id IS NULL
+            OR ${activeGroupCountExpression} < ${groupLimit})`
+    : ''
+
   const whereConditions = [
     `j.name = '${name}'`,
     `j.state < '${JOB_STATES.active}'`,
     'NOT j.blocked',
-    !ignoreStartAfter ? 'j.start_after < now()' : '',
-    hasIgnoreSingletons ? `j.singleton_key <> ALL(${params.ignoreSingletonsParam})` : '',
+    // `<=` (not `<`) so a job inserted with the default start_after = now() is immediately
+    // fetchable in the next statement. `now()` is transaction-scoped; on backends with coarse
+    // clock resolution (notably PGlite) consecutive autocommit statements often share the same
+    // timestamp, so `<` would leave freshly-inserted jobs invisible until the clock ticks.
+    // NOTIFY gating already uses `start_after <= now()` for the same reason.
+    !ignoreStartAfter ? 'j.start_after <= now()' : '',
+    hasIgnoreSingletons ? `COALESCE(j.singleton_key, '') <> ALL(${params.ignoreSingletonsParam})` : '',
     hasIgnoreGroups ? `(j.group_id IS NULL OR j.group_id <> ALL(${params.ignoreGroupsParam}))` : '',
     hasMinPriority ? `j.priority >= ${params.minPriorityParam}` : '',
     hasMaxPriority ? `j.priority <= ${params.maxPriorityParam}` : '',
-    hasGroupConcurrency
-      ? `(j.group_id IS NULL
-            OR agc.active_cnt IS NULL
-            OR agc.active_cnt < ${hasTiers
-              ? `COALESCE((${params.tiersParam} ->> j.group_tier)::int, ${params.defaultGroupLimitParam})`
-              : params.defaultGroupLimitParam})`
-      : ''
+    groupConcurrencyFilter
   ].filter(Boolean).join('\n          AND ')
 
   const nextCte = `
       next AS (
         SELECT ${selectCols}
         FROM ${schema}.${table} j
-        ${hasGroupConcurrency ? 'LEFT JOIN active_group_counts agc ON j.group_id = agc.group_id' : ''}
         WHERE ${whereConditions}
         ORDER BY ${priority ? 'j.priority desc, ' : ''}${orderByCreatedOn ? 'j.created_on, ' : ''}j.id
         LIMIT ${limit}
@@ -1395,7 +1452,7 @@ export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): S
 
   const singletonCte = singletonFetch
     ? `, singleton_ranking AS (
-        SELECT id, ${hasGroupConcurrency ? 'group_id, group_tier, ' : ''}
+        SELECT id, ${hasGroupConcurrency ? 'group_id, group_tier, ' : ''}${hasActiveGroupCounts ? 'active_cnt, ' : ''}
           row_number() OVER (PARTITION BY singleton_key) as singleton_rn
         FROM next
       )`
@@ -1409,25 +1466,30 @@ export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): S
           , t.group_tier
           ${singletonFetch ? ', singleton_rn' : ''}
           , ROW_NUMBER() OVER (PARTITION BY t.group_id ORDER BY t.id) as group_rn
-          , COALESCE(agc.active_cnt, 0) as active_cnt
+          , ${hasActiveGroupCounts ? 't.active_cnt' : '0'} as active_cnt
         FROM ${singletonFetch ? 'singleton_ranking' : 'next'} t
-        LEFT JOIN active_group_counts agc ON t.group_id = agc.group_id
         ${singletonFetch ? 'WHERE singleton_rn = 1' : ''}
       ),
       group_filtered AS (
         SELECT id FROM group_ranking
         WHERE group_id IS NULL
-          OR (active_cnt + group_rn) <= ${hasTiers
-          ? `COALESCE((${params.tiersParam} ->> group_tier)::int, ${params.defaultGroupLimitParam})`
-          : params.defaultGroupLimitParam}
+          OR (active_cnt + group_rn) <= ${groupLimit}
       )`
     : ''
 
-  const finalCte = (hasGroupConcurrency)
+  const finalCte = hasGroupConcurrency
     ? 'group_filtered'
     : (singletonFetch)
         ? 'singleton_ranking'
         : 'next'
+
+  // An uncorrelated array InitPlan makes the selected ids a one-time input to the
+  // UPDATE. Without it, stale estimates can make Postgres put the inlined ranking
+  // query on the inner side of a nested loop and execute it once per job table row.
+  const updateSource = hasGroupConcurrency ? '' : `FROM ${finalCte}`
+  const updateMatch = hasGroupConcurrency
+    ? `j.id = ANY (ARRAY(SELECT id FROM ${finalCte}))`
+    : `j.id = ${finalCte}.id`
 
   // Without SKIP LOCKED, add a state check to prevent duplicate processing
   // when multiple workers try to claim the same jobs concurrently
@@ -1436,7 +1498,7 @@ export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): S
   return {
     text: `
       WITH
-      ${activeGroupCountsCte}
+      ${activeGroupCountMapCte}
       ${nextCte}
       ${singletonCte}
       ${groupConcurrencyCtes}
@@ -1445,8 +1507,8 @@ export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): S
         started_on = now(),
         heartbeat_on = now(),
         retry_count = CASE WHEN started_on IS NOT NULL THEN retry_count + 1 ELSE retry_count END
-      FROM ${finalCte}
-      WHERE name = '${name}' AND j.id = ${finalCte}.id
+      ${updateSource}
+      WHERE name = '${name}' AND ${updateMatch}
       ${singletonFetch && !hasGroupConcurrency ? 'AND singleton_rn = 1' : ''}
       ${distributedStateCheck}
       RETURNING j.${includeMetadata ? JOB_COLUMNS_ALL : JOB_COLUMNS_MIN}
@@ -1851,7 +1913,7 @@ function failJobsBody (schema: string, table: string, where: string, output: str
              WHEN NOT retry_backoff THEN now() + retry_delay * interval '1'
              ELSE now() + LEAST(
                retry_delay_max,
-               retry_delay * (
+               GREATEST(retry_delay, 1) * (
                 2 ^ LEAST(16, retry_count + 1) / 2 +
                 2 ^ LEAST(16, retry_count + 1) / 2 * random()
                )
@@ -1952,7 +2014,7 @@ function failJobsBody (schema: string, table: string, where: string, output: str
     ),
     dlq_jobs as (
       INSERT INTO ${schema}.job (name, data, output, retry_limit, retry_backoff, retry_delay, keep_until, deletion_seconds,
-        source_name, source_id, source_created_on, source_retry_count)
+        expire_seconds, source_name, source_id, source_created_on, source_retry_count, singleton_key, heartbeat_seconds)
       SELECT
         r.dead_letter,
         r.data,
@@ -1962,10 +2024,13 @@ function failJobsBody (schema: string, table: string, where: string, output: str
         q.retry_delay,
         now() + q.retention_seconds * interval '1s',
         q.deletion_seconds,
+        q.expire_seconds,
         r.name,
         r.id,
         r.created_on,
-        r.retry_count
+        r.retry_count,
+        r.singleton_key,
+        r.heartbeat_seconds
       FROM results r
         JOIN ${schema}.queue q ON q.name = r.dead_letter
       WHERE state = '${JOB_STATES.failed}'
@@ -2177,9 +2242,9 @@ export function insertRetryJob (schema: string, table: string): string {
 export function insertDeadLetterJob (schema: string): string {
   return `
     INSERT INTO ${schema}.job (name, data, output, retry_limit, retry_backoff, retry_delay, keep_until, deletion_seconds,
-      source_name, source_id, source_created_on, source_retry_count)
+      expire_seconds, source_name, source_id, source_created_on, source_retry_count, singleton_key, heartbeat_seconds)
     SELECT $1, $2, $3, q.retry_limit, q.retry_backoff, q.retry_delay, now() + q.retention_seconds * interval '1s', q.deletion_seconds,
-      $4, $5, $6, $7
+      q.expire_seconds, $4, $5, $6, $7, $8, $9
     FROM ${schema}.queue q WHERE q.name = $1
   `
 }
@@ -2211,11 +2276,17 @@ export function redriveJobs (schema: string, table: string): string {
     ins AS (
       INSERT INTO ${schema}.job
         (name, data, priority, retry_limit, retry_backoff, retry_delay, retry_delay_max,
-         expire_seconds, keep_until, deletion_seconds, policy)
+         expire_seconds, keep_until, deletion_seconds, policy, singleton_key, heartbeat_seconds)
       SELECT COALESCE($2, m.source_name), m.data, m.priority, q.retry_limit, q.retry_backoff,
         q.retry_delay, q.retry_delay_max, q.expire_seconds,
-        now() + q.retention_seconds * interval '1s', q.deletion_seconds, q.policy
+        now() + q.retention_seconds * interval '1s', q.deletion_seconds, q.policy,
+        m.singleton_key, m.heartbeat_seconds
       FROM moved m JOIN ${schema}.queue q ON q.name = COALESCE($2, m.source_name)
+      -- A destination queue's short/stately policy can still collide on (name, singleton_key)
+      -- if two redriven jobs share a key (job_i1/job_i3); dropping just that row here, matching
+      -- retried_jobs' ON CONFLICT DO NOTHING elsewhere, is preferable to aborting the whole batch.
+      -- The dropped job has already been deleted from the DLQ by the moved CTE and is not restored.
+      ON CONFLICT DO NOTHING
       RETURNING 1
     )
     SELECT count(*)::int AS moved FROM ins
@@ -2242,13 +2313,95 @@ export function retryJobs (schema: string, table: string) {
     WITH results as (
       UPDATE ${schema}.job
       SET state = '${JOB_STATES.retry}',
-        retry_limit = retry_limit + 1
+        retry_limit = retry_limit + 1,
+        completed_on = NULL
       WHERE name = $1
         AND id = ANY($2::uuid[])
         AND state = '${JOB_STATES.failed}'
       RETURNING 1
     )
     SELECT COUNT(*) from results
+  `
+}
+
+// Partial in-place edit of not-yet-active jobs, preserving id/state/singleton identity.
+// The payload ($1) is a jsonb object of ONLY the fields the caller supplied; each column is
+// left untouched unless its key is present (`jsonb_exists(o.data, 'key')`), so an update that carries just
+// `data` never clobbers an existing start_after/priority/etc. Targeting is by id or
+// singleton_key; when by key, `match` picks which of several pre-active matches to edit
+// (newest/oldest = one row via ORDER BY + LIMIT; all = every match). When `notify` is set the
+// edit emits a single pg_notify iff a touched row ends up runnable (start_after <= now()),
+// closing the wake-up gap for jobs pulled forward. Callers needing insert-on-miss compose this
+// with insertJobs (see Manager.upsert).
+export function updateJob (schema: string, table: string, name: string, by: 'id' | 'singletonKey', match: JobMatchStrategy, notify = false) {
+  const targetPredicate = by === 'id'
+    ? "job.id = (o.data->>'id')::uuid"
+    : "job.singleton_key = o.data->>'singletonKey'"
+  const ordering = (by === 'singletonKey' && match !== 'all')
+    ? `ORDER BY job.created_on ${match === 'oldest' ? 'ASC' : 'DESC'} LIMIT 1`
+    : ''
+
+  // Resolve the incoming startAfter the same way insertJobs does (absolute 'Z' timestamp vs.
+  // relative interval), falling back to the row's current start_after when not supplied.
+  const resolvedStartAfter = `
+        CASE WHEN jsonb_exists(o.data, 'startAfter')
+          THEN CASE WHEN right(o.data->>'startAfter', 1) = 'Z'
+                 THEN (o.data->>'startAfter')::timestamptz
+                 ELSE now() + CAST(o.data->>'startAfter' AS interval) END
+          ELSE job.start_after END`
+
+  const tail = notify
+    ? `, notified AS (
+      SELECT pg_notify(${notifyChannelSql(schema)}, '${name}')
+      FROM upd WHERE start_after <= now() LIMIT 1
+    )
+    SELECT id FROM upd WHERE (SELECT count(*) FROM notified) >= 0`
+    : `
+    SELECT id FROM upd`
+
+  return `
+    WITH o AS (SELECT $1::jsonb AS data),
+    target AS (
+      SELECT job.id
+      FROM ${schema}.${table} job, o
+      WHERE job.name = '${name}'
+        AND job.state < '${JOB_STATES.active}'
+        AND ${targetPredicate}
+      ${ordering}
+    ),
+    upd AS (
+      UPDATE ${schema}.${table} job
+      SET data = CASE WHEN jsonb_exists(o.data, 'data') THEN o.data->'data' ELSE job.data END,
+          priority = COALESCE((o.data->>'priority')::int, job.priority),
+          start_after = ${resolvedStartAfter},
+          keep_until = CASE
+            WHEN jsonb_exists(o.data, 'retentionSeconds')
+              THEN (${resolvedStartAfter}) + ((o.data->>'retentionSeconds')::int * interval '1s')
+            -- When only start_after moves, slide keep_until by the same original retention window
+            -- (keep_until - start_after) so pulling a job forward/back never leaves keep_until in
+            -- the past, which the deletion sweep would treat as expired and remove the pending job.
+            WHEN jsonb_exists(o.data, 'startAfter')
+              THEN (${resolvedStartAfter}) + (job.keep_until - job.start_after)
+            ELSE job.keep_until END,
+          expire_seconds = COALESCE((o.data->>'expireInSeconds')::int, job.expire_seconds),
+          deletion_seconds = COALESCE((o.data->>'deleteAfterSeconds')::int, job.deletion_seconds),
+          retry_limit = COALESCE((o.data->>'retryLimit')::int, job.retry_limit),
+          retry_delay = COALESCE((o.data->>'retryDelay')::int, job.retry_delay),
+          retry_backoff = COALESCE((o.data->>'retryBackoff')::bool, job.retry_backoff),
+          retry_delay_max = CASE WHEN jsonb_exists(o.data, 'retryDelayMax') THEN (o.data->>'retryDelayMax')::int ELSE job.retry_delay_max END,
+          dead_letter = CASE WHEN jsonb_exists(o.data, 'deadLetter') THEN o.data->>'deadLetter' ELSE job.dead_letter END,
+          heartbeat_seconds = CASE WHEN jsonb_exists(o.data, 'heartbeatSeconds') THEN (o.data->>'heartbeatSeconds')::int ELSE job.heartbeat_seconds END,
+          group_id = CASE WHEN jsonb_exists(o.data, 'groupId') THEN o.data->>'groupId' ELSE job.group_id END,
+          group_tier = CASE WHEN jsonb_exists(o.data, 'groupTier') THEN o.data->>'groupTier' ELSE job.group_tier END
+      FROM o
+      -- Re-check state < active on the locked row, not just in the unlocked target CTE. Under
+      -- READ COMMITTED a concurrent fetchNextJob can activate a candidate between target selection
+      -- and this UPDATE; EvalPlanQual re-evaluates this predicate on the freshly-locked row, so the
+      -- guard here prevents mutating a job a worker has already started running.
+      WHERE job.id IN (SELECT id FROM target)
+        AND job.state < '${JOB_STATES.active}'
+      RETURNING job.id, job.start_after
+    )${tail}
   `
 }
 
@@ -2267,7 +2420,7 @@ export function getQueueStats (schema: string, table: string, queues: string[]):
       FROM (
         SELECT
             name,
-            (count(*) FILTER (WHERE start_after > now()))::int as "deferredCount",
+            (count(*) FILTER (WHERE start_after > now() AND state < '${JOB_STATES.active}'))::int as "deferredCount",
             (count(*) FILTER (WHERE state < '${JOB_STATES.active}'))::int as "queuedCount",
             (count(*) FILTER (WHERE state = '${JOB_STATES.active}'))::int as "activeCount",
             (count(*) FILTER (WHERE state = '${JOB_STATES.failed}'))::int as "failedCount",
@@ -2401,9 +2554,12 @@ export function locked (schema: string, query: string | string[], key?: string, 
   return transaction(noAdvisoryLocks ? statements : [advisoryLock(schema, key), ...statements])
 }
 
+// normalizeSchemaName, not resolveSchemaName: the key is opaque to postgres and never compared
+// against the catalog, so it only has to agree across instances on the same schema. See the note
+// on the helper.
 function advisoryLock (schema: string, key?: string) {
   return `SELECT pg_advisory_xact_lock(
-      ('x' || encode(sha224((current_database() || '.pgboss.${schema}${key || ''}')::bytea), 'hex'))::bit(64)::bigint
+      ('x' || encode(sha224((current_database() || '.pgboss.${normalizeSchemaName(schema)}${key || ''}')::bytea), 'hex'))::bit(64)::bigint
   )`
 }
 
@@ -2516,22 +2672,143 @@ export function getBlockedKeys (schema: string, table: string) {
     `
 }
 
-export function getNextBamCommand (schema: string) {
+export function getNextBamCommand (schema: string, { useLiveness = false }: { useLiveness?: boolean } = {}) {
+  // Head-of-line note (shared by both variants): process all 'pending' commands (oldest first)
+  // before retrying any 'failed' or stale 'in_progress' one, so a permanently-failing (or
+  // crashed-mid-flight) command can't sit at the head of the queue and starve everything behind it.
+  // Within a status, created_on preserves enqueue order.
+  if (!useLiveness) {
+    // Timeout-only path for engines without pg_stat_progress_create_index (CockroachDB/YugabyteDB):
+    // a stuck in_progress row is reclaimed purely on the 24h fallback. No CONCURRENTLY healing, so no
+    // reclaimed flag is emitted (bam.ts skips healing when noIndexProgressView is set anyway).
+    return `
+      UPDATE ${schema}.bam
+      SET status = 'in_progress', started_on = now()
+      WHERE id = (
+        SELECT id FROM ${schema}.bam
+        WHERE (
+          status IN ('pending', 'failed')
+          OR (status = 'in_progress' AND started_on < now() - interval '${BAM_STALE_SECONDS} seconds')
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM ${schema}.bam
+          WHERE status = 'in_progress' AND started_on >= now() - interval '${BAM_STALE_SECONDS} seconds'
+        )
+        ORDER BY (status != 'pending'), created_on
+        LIMIT 1
+      )
+      RETURNING id, name, version, status, queue, table_name as "table", command, error,
+                created_on as "createdOn", started_on as "startedOn", completed_on as "completedOn"
+    `
+  }
+
+  // Native-Postgres liveness path. An in_progress row counts as "stale" (reclaimable) when it is past
+  // the grace window AND no backend is actually building its index right now. The same predicate,
+  // negated, defines a genuinely-live command that must still block the queue — so a running build is
+  // NEVER reclaimed (no matter how long it runs), and a dead one recovers within the grace window.
+  // There is deliberately no 24h absolute cap here: liveBuild=true always means a build is in flight, so
+  // capping on elapsed time would reclaim a genuinely-running build and start a second
+  // CREATE INDEX CONCURRENTLY on the same index — the exact double-build this path exists to prevent.
+  // (The timeout-only path's BAM_STALE_SECONDS fallback covers engines with no way to detect liveness.)
+  //
+  // liveBuild(tableCol): is a CREATE INDEX CONCURRENTLY actively building this table's index right now?
+  // Detected via pg_locks, NOT pg_stat_progress_create_index — and that choice is load-bearing for
+  // multi-instance safety. pg_stat_progress_* is filtered to the querying role's OWN backends (only a
+  // superuser or a member of pg_read_all_stats sees another role's builds), so a progress-view check
+  // silently reads a peer's live build as "dead" whenever pg-boss instances connect under different DB
+  // roles — and the heal step (bamHealProbe/bamHealDrop in bam.ts) would then DROP INDEX CONCURRENTLY a
+  // live index mid-build, racing the builder into a double CREATE. pg_locks, by contrast, is cluster-wide
+  // and visible to every role (verified empirically). CREATE INDEX CONCURRENTLY holds a
+  // ShareUpdateExclusiveLock on the target table for the ENTIRE build and releases it the instant the
+  // statement finishes or the backend dies, so a granted SUExclusive lock on the row's table is a
+  // crash-safe, role-agnostic "build in flight" signal — instances may run under different roles with no
+  // loss of safety. Ordinary queue DML never takes SUExclusive (it uses AccessShare/RowShare/
+  // RowExclusive), so it can't false-trigger; a concurrent autovacuum/ANALYZE on the same table DOES take
+  // SUExclusive and reads as "live", but that false positive is in the SAFE direction — it only briefly
+  // DEFERS a reclaim, never drops a live index. Scoped to the current database (l.database) because
+  // pg_locks is cluster-wide while relation OIDs are only unique per database. Correlating on the table
+  // is enough because the queue runs only one in_progress command at a time.
+  const liveBuild = (tableCol: string) => `EXISTS (
+    SELECT 1 FROM pg_locks l
+    WHERE l.locktype = 'relation'
+      AND l.granted
+      AND l.mode = 'ShareUpdateExclusiveLock'
+      AND l.database = (SELECT oid FROM pg_database WHERE datname = current_database())
+      AND l.relation = to_regclass(quote_ident('${resolveSchemaName(schema)}') || '.' || quote_ident(${tableCol}))
+  )`
+  const stale = (startedCol: string, tableCol: string) => `(
+    ${startedCol} < now() - interval '${BAM_LIVENESS_GRACE_SECONDS} seconds'
+    AND NOT ${liveBuild(tableCol)}
+  )`
+
   return `
-    UPDATE ${schema}.bam
-    SET status = 'in_progress', started_on = now()
-    WHERE id = (
-      SELECT id FROM ${schema}.bam
-      WHERE status IN ('pending', 'failed')
-        AND NOT EXISTS (SELECT 1 FROM ${schema}.bam WHERE status = 'in_progress')
-      -- Process all 'pending' commands (oldest first) before retrying any 'failed' one, so a
-      -- permanently-failing command can't sit at the head of the queue and starve everything behind
-      -- it (head-of-line blocking). Within a status, created_on preserves enqueue order.
-      ORDER BY (status = 'failed'), created_on
+    WITH candidate AS (
+      SELECT c.id, c.status AS prior_status
+      FROM ${schema}.bam c
+      WHERE (
+        c.status IN ('pending', 'failed')
+        OR (c.status = 'in_progress' AND ${stale('c.started_on', 'c.table_name')})
+      )
+      AND NOT EXISTS (
+        SELECT 1 FROM ${schema}.bam g
+        WHERE g.status = 'in_progress' AND NOT ${stale('g.started_on', 'g.table_name')}
+      )
+      ORDER BY (c.status != 'pending'), c.created_on
       LIMIT 1
+      -- Defense-in-depth against a double-claim. The upstream trySetBamTime throttle serializes healers
+      -- to one per interval, but a build running longer than bamIntervalSeconds lets a second instance
+      -- pass the throttle while the first is still working. FOR UPDATE SKIP LOCKED makes the claim itself
+      -- mutually exclusive: whichever instance locks the head row wins; the other skips it (and, with
+      -- LIMIT 1, claims nothing) rather than re-running the same UPDATE and re-driving the command with a
+      -- stale prior_status. OF c scopes the lock to the candidate row only, so the NOT EXISTS probe over
+      -- bam g is never itself locked. Postgres-only path — SKIP LOCKED is deliberately absent from the
+      -- timeout-only variant, which also serves CockroachDB/YugabyteDB where it performs poorly and can
+      -- skip unexpectedly.
+      FOR UPDATE OF c SKIP LOCKED
     )
-    RETURNING id, name, version, status, queue, table_name as "table", command, error,
-              created_on as "createdOn", started_on as "startedOn", completed_on as "completedOn"
+    UPDATE ${schema}.bam b
+    SET status = 'in_progress', started_on = now()
+    FROM candidate
+    WHERE b.id = candidate.id
+    RETURNING b.id, b.name, b.version, b.status, b.queue, b.table_name as "table", b.command, b.error,
+              b.created_on as "createdOn", b.started_on as "startedOn", b.completed_on as "completedOn",
+              -- reattempt: was this command already tried once (stale-reclaimed in_progress OR a prior
+              -- 'failed')? Either way an interrupted/failed CREATE INDEX CONCURRENTLY may have left an
+              -- INVALID index, so the runner heals (drop-then-rebuild) before re-running. Fresh
+              -- 'pending' rows have nothing to heal.
+              (candidate.prior_status <> 'pending') as reattempt
+  `
+}
+
+// Derives the drop-then-rebuild heal step for a re-attempted BAM index build: an interrupted
+// CREATE INDEX CONCURRENTLY leaves an INVALID index in the catalog, and the command's own
+// IF NOT EXISTS would then skip forever (marking the row done while the index stays invalid).
+// Dropping it first lets the re-run rebuild cleanly. Returns null for non-index commands (which
+// have nothing to heal) so the caller just re-runs them. DROP ... CONCURRENTLY runs outside a
+// transaction, matching the CREATE, and IF EXISTS makes it a no-op when there's nothing to drop.
+export function bamHealDrop (schema: string, command: string): string | null {
+  const match = command.match(/CREATE\s+(?:UNIQUE\s+)?INDEX\s+CONCURRENTLY\s+(?:IF\s+NOT\s+EXISTS\s+)?("?[\w$]+"?)/i)
+  if (!match) return null
+  return `DROP INDEX CONCURRENTLY IF EXISTS ${schema}.${match[1]}`
+}
+
+// Probe run before bamHealDrop: returns `invalid = true` only when the index the re-attempted command
+// would build already exists AND is INVALID (an interrupted CREATE INDEX CONCURRENTLY left a stub).
+// A build that actually finished but whose BAM row was never marked completed — e.g. a graceful stop
+// landed between the CREATE succeeding and markCompleted — leaves a VALID index; dropping that would
+// tear down a live production index for the whole rebuild window, so the caller must NOT heal it (the
+// re-run's own IF NOT EXISTS then no-ops and just marks the row done). Returns null for non-index
+// commands and for an absent index (no row), where there is nothing to drop. Mirrors bamHealDrop's
+// CONCURRENTLY-only recognition so it is non-null exactly when bamHealDrop is.
+export function bamHealProbe (schema: string, command: string): string | null {
+  const match = command.match(/CREATE\s+(?:UNIQUE\s+)?INDEX\s+CONCURRENTLY\s+(?:IF\s+NOT\s+EXISTS\s+)?"?([\w$]+)"?/i)
+  if (!match) return null
+  return `
+    SELECT NOT i.indisvalid AS invalid
+    FROM pg_class c
+    JOIN pg_index i ON i.indexrelid = c.oid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = '${resolveSchemaName(schema).replace(SINGLE_QUOTE_REGEX, "''")}' AND c.relname = '${match[1].replace(SINGLE_QUOTE_REGEX, "''")}'
   `
 }
 
@@ -2567,4 +2844,186 @@ export function getBamEntries (schema: string) {
     FROM ${schema}.bam
     ORDER BY version, created_on
   `
+}
+
+// --- drift detection: live-catalog probes ---
+//
+// pg-boss-specific probes that read the live database for drift detection: partitioning topology and
+// in-flight BAM builds. Their results feed the generic engine in drifter.ts, which knows nothing about
+// pg-boss.
+
+// Probe for the default partition; its presence means the partitioned architecture is in use, so
+// drift detection reads it from the live database rather than trusting a boss config flag.
+export function jobCommonExists (schema: string) {
+  return `SELECT to_regclass('${schema}.${COMMON_JOB_TABLE}') as name`
+}
+
+// Per-queue partition tables and their policy, so the expected index set can be computed per table.
+export function getManagedQueuePartitions (schema: string) {
+  return `SELECT table_name as "table", policy FROM ${schema}.queue WHERE partition = true`
+}
+
+// The CREATE INDEX command text of every BAM row not yet completed — used to tell a genuinely-missing
+// index apart from one an async build is still working on (or retrying after a failure).
+export function getIncompleteBamCommands (schema: string) {
+  return `SELECT command FROM ${schema}.bam WHERE status <> 'completed'`
+}
+
+// Extracts the index name a BAM command builds, so an incomplete build can be matched to a missing
+// index. Mirrors the CREATE INDEX shapes bamHealDrop recognises.
+export function bamCommandIndexName (command: string): string | null {
+  const match = command.match(/CREATE\s+(?:UNIQUE\s+)?INDEX\s+(?:CONCURRENTLY\s+)?(?:IF\s+NOT\s+EXISTS\s+)?"?([\w$]+)"?/i)
+  return match ? match[1] : null
+}
+
+// --- expected schema shape (all derived from the generated manifest) ---
+//
+// The expected tables/columns/constraints/functions/indexes/enum pg-boss compares the live catalog
+// against. Every one is read from schema.json (regenerate with `npm run gen:manifest` after a
+// DDL change) with the placeholder schema substituted back — so nothing here duplicates the DDL as
+// hand-written literals. The only hand-maintained pg-boss knowledge is the per-queue partition index
+// distribution rule just below. These produce the `expected` inputs to drifter.ts's generic diff.
+
+interface QueuePartition {
+  table: string
+  policy?: string | null
+}
+
+// job_iN partial indexes that gate on a queue policy: a per-queue partition table (partition:true)
+// only receives the index for its own policy (see create_queue, createQueueFunction). The shared
+// job_common table and a non-partitioned job table carry all of them at once. Keep in sync with the
+// createIndexJobPolicy* builders and the ELSIF ladder in createQueueFunction.
+const POLICY_JOB_INDEXES: Record<number, string> = {
+  1: QUEUE_POLICIES.short,
+  2: QUEUE_POLICIES.singleton,
+  3: QUEUE_POLICIES.stately,
+  6: QUEUE_POLICIES.exclusive,
+  8: QUEUE_POLICIES.key_strict_fifo
+}
+// job_iN indexes with no policy gate — created on every job table regardless of policy
+// (throttle i4, fetch i5, group-concurrency i7, blocking i9).
+const BASE_JOB_INDEXES = [4, 5, 7, 9]
+
+// The fixed (non-job) managed tables; job/job_common/partitions are handled separately.
+const FIXED_MANAGED_TABLES = ['version', 'queue', 'schedule', 'subscription', 'bam', 'warning', 'queue_stats', 'job_dependency']
+
+// Selects the manifest section for the live architecture, and substitutes the real schema name back in
+// for the placeholder the manifest stores.
+function manifestSection (partitioned: boolean) {
+  return partitioned ? schemaManifest.partitioned : schemaManifest.nonPartitioned
+}
+
+function applyManifestSchema (text: string, schema: string): string {
+  return text.split(schemaManifest.schemaToken).join(schema)
+}
+
+// The job_state enum values in declaration order, from the manifest (both sections carry the same enum).
+// Order is significant — the numeric base type makes created < retry < … < failed load-bearing.
+export const EXPECTED_JOB_STATES: readonly string[] = schemaManifest.partitioned.enum
+
+// The tables pg-boss expects to exist. The manifest lists the fixed tables plus job (and job_common in
+// partitioned mode); per-queue partition tables are dynamic, so they are appended from the live set.
+export function expectedManagedTables (schema: string, partitioned: boolean, partitions: QueuePartition[] = []): string[] {
+  const tables = [...manifestSection(partitioned).tables]
+  if (partitioned) for (const p of partitions) tables.push(p.table)
+  return tables
+}
+
+// The columns pg-boss expects on each managed table, taken from the manifest (introspected column type,
+// nullability, and default). Fixed tables carry the full defaults + types maps so column defaults, data
+// types, and nullability are diffed; the job table (shared by job_common and every per-queue partition
+// in partitioned mode) is name-only — its FKs are profile-dependent and keep_until's interval default is
+// not worth pinning per-partition. A table with no live columns is skipped by the diff, so listing one
+// that does not exist yet is harmless.
+export function expectedManagedColumns (schema: string, partitioned: boolean, partitions: QueuePartition[] = []): ExpectedColumns[] {
+  const fixed = new Set(FIXED_MANAGED_TABLES)
+  const byTable = new Map<string, ExpectedColumns>()
+  const jobColumns: string[] = []
+
+  for (const c of manifestSection(partitioned).columns) {
+    if (c.table === 'job') { jobColumns.push(c.column); continue }
+    if (!fixed.has(c.table)) continue // job_common / anything else derives from the job template below
+    let entry = byTable.get(c.table)
+    if (!entry) byTable.set(c.table, entry = { table: c.table, columns: [], defaults: {}, types: {} })
+    entry.columns.push(c.column)
+    entry.types![c.column] = { type: applyManifestSchema(c.type, schema), notNull: c.notNull }
+    if (c.default != null) entry.defaults![c.column] = applyManifestSchema(c.default, schema)
+  }
+
+  const out = [...byTable.values()]
+  out.push({ table: 'job', columns: jobColumns })
+  if (partitioned) {
+    out.push({ table: COMMON_JOB_TABLE, columns: jobColumns })
+    for (const p of partitions) out.push({ table: p.table, columns: jobColumns })
+  }
+
+  return out
+}
+
+// The constraints pg-boss expects on each FIXED managed table, taken verbatim from the manifest's
+// pg_get_constraintdef capture (job/job_common/partitions are excluded: their FKs are profile-dependent
+// DEFERRABLE). Compared as a normalized set, so order is irrelevant. The fresh-install integration test
+// verifies the manifest matches live.
+export function expectedManagedConstraints (schema: string, partitioned: boolean): ExpectedConstraints[] {
+  const fixed = new Set(FIXED_MANAGED_TABLES)
+  const byTable = new Map<string, string[]>()
+  for (const { table, def } of manifestSection(partitioned).constraints) {
+    if (!fixed.has(table)) continue
+    const list = byTable.get(table) ?? byTable.set(table, []).get(table)!
+    list.push(applyManifestSchema(def, schema))
+  }
+  return [...byTable].map(([table, constraints]) => ({ table, constraints }))
+}
+
+// The functions pg-boss expects to exist in `schema`, from the manifest's pg_get_functiondef capture
+// (the partitioned architecture has the three job_table_* helpers plus partition-aware create_queue/
+// delete_queue; non-partitioned mode has neither the helpers nor the partition branches). Each entry
+// carries the whitespace-normalised body used for the diff and the full statement for remediation.
+// Postgres stores a function body verbatim, so the manifest body compares equal to the live one.
+export function expectedManagedFunctions (schema: string, partitioned: boolean): ManagedFunction[] {
+  return manifestSection(partitioned).functions.map(fn => {
+    const def = applyManifestSchema(fn.def, schema)
+    return {
+      name: fn.name,
+      expectedBody: normalizeFunctionBody(extractFunctionBody(def)),
+      definition: def.replace(/\s+/g, ' ').trim()
+    }
+  })
+}
+
+// Computes the set of indexes pg-boss expects to exist in `schema`, sourced from the manifest.
+// `partitioned` reflects the live database (job_common present ⇒ partitioned architecture), so this
+// needs no boss config. The manifest holds every fixed index (the static ones plus the job_iN set on
+// job/job_common); each per-queue partition is dynamic, so its indexes are templated here from the
+// job_common set — the base indexes always, plus the one for the queue's policy. keys/predicate/
+// definition are derived from the catalog-canonical pg_get_indexdef the manifest stores.
+export function expectedManagedIndexes (schema: string, partitioned: boolean, partitions: QueuePartition[] = []): ManagedIndex[] {
+  const managed = (name: string, table: string, indexdef: string): ManagedIndex => {
+    const def = applyManifestSchema(indexdef, schema)
+    return { name, table, keys: indexKeysRaw(def), predicate: indexPredicateRaw(def), definition: displayIndexDefinition(def) }
+  }
+
+  const jobTable = partitioned ? COMMON_JOB_TABLE : 'job'
+  const out: ManagedIndex[] = []
+  const jobIndexes: Array<{ n: number, def: string }> = []
+
+  // The manifest holds only the managed indexes (constraint-backing *_pkey indexes are excluded at
+  // generation), so every row is an expectation.
+  for (const idx of manifestSection(partitioned).indexes) {
+    out.push(managed(idx.name, idx.table, idx.def))
+    const n = idx.table === jobTable ? idx.name.match(/_i(\d+)$/) : null
+    if (n) jobIndexes.push({ n: Number(n[1]), def: idx.def })
+  }
+
+  // Per-queue partition tables are dynamic, so template each applicable job_common index onto them.
+  if (partitioned) {
+    for (const p of partitions) {
+      for (const { n, def } of jobIndexes) {
+        if (!BASE_JOB_INDEXES.includes(n) && POLICY_JOB_INDEXES[n] !== p.policy) continue
+        out.push(managed(`${p.table}_i${n}`, p.table, def.split(COMMON_JOB_TABLE).join(p.table)))
+      }
+    }
+  }
+
+  return out
 }

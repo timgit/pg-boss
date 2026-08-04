@@ -15,6 +15,7 @@ import type { JobSpyInterface } from './spy.ts'
 
 export { JOB_STATES as states } from './plans.ts'
 export { QUEUE_POLICIES as policies } from './plans.ts'
+
 export const events: types.Events = Object.freeze({
   error: 'error',
   warning: 'warning',
@@ -39,8 +40,9 @@ export function getRollbackPlans (schema?: string, version?: number) {
 export class PgBoss extends EventEmitter<types.PgBossEventMap> {
   #stoppingOn: number | null
   #stopped: boolean
-  #starting: boolean | undefined
   #started: boolean | undefined
+  #startingPromise: Promise<this> | null = null
+  #stoppingPromise: Promise<void> | null = null
   #config: types.ResolvedConstructorOptions
   #db: (types.IDatabase & { _pgbdb?: false }) | DbDefault
   #boss: Boss
@@ -107,51 +109,70 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
   }
 
   async start (): Promise<this> {
-    if (this.#starting || this.#started) {
+    // A stop() already in flight must finish (clearing any resources it's tearing down) before a
+    // fresh start() begins, otherwise the two race over the same intervals/pool.
+    if (this.#stoppingPromise) {
+      await this.#stoppingPromise.catch(() => {})
+    }
+
+    // Return the SAME in-flight promise to a concurrent caller instead of a fresh `this` — a
+    // second caller must observe the actual outcome (including a rejection), not silently no-op
+    // while the first call is still mid-flight.
+    if (this.#startingPromise) {
+      return this.#startingPromise
+    }
+
+    if (this.#started) {
       return this
     }
 
-    this.#starting = true
+    // Cleared to false before any subsystem is started (not just on success): if #doStart throws
+    // partway through, subsystems already started (e.g. manager's queueCacheInterval/wipInterval)
+    // must still be reachable by stop() for cleanup, and stop() no-ops whenever #stopped is true.
+    this.#stopped = false
+
+    this.#startingPromise = this.#doStart()
 
     try {
-      if (this.#db._pgbdb && !this.#db.opened) {
-        await this.#db.open()
-      }
+      return await this.#startingPromise
+    } finally {
+      this.#startingPromise = null
+    }
+  }
 
-      await this.#warnIfDistributedMisconfigured()
-
-      if (this.#config.migrate) {
-        await this.#contractor.start()
-      } else {
-        await this.#contractor.check()
-      }
-
-      await this.#manager.start()
-
-      if (this.#config.useListenNotify) {
-        await this.#notifier.start()
-      }
-
-      if (this.#config.supervise) {
-        await this.#boss.start()
-        await this.#navigator.start()
-      }
-
-      if (this.#config.schedule) {
-        await this.#timekeeper.start()
-      }
-
-      if (this.#config.migrate) {
-        await this.#bam.start()
-      }
-    } catch (err) {
-      this.#starting = false
-      throw err
+  async #doStart (): Promise<this> {
+    if (this.#db._pgbdb && !this.#db.opened) {
+      await this.#db.open()
     }
 
-    this.#starting = false
+    await this.#warnIfDistributedMisconfigured()
+
+    if (this.#config.migrate) {
+      await this.#contractor.start()
+    } else {
+      await this.#contractor.check()
+    }
+
+    await this.#manager.start()
+
+    if (this.#config.useListenNotify) {
+      await this.#notifier.start()
+    }
+
+    if (this.#config.supervise) {
+      await this.#boss.start()
+      await this.#navigator.start()
+    }
+
+    if (this.#config.schedule) {
+      await this.#timekeeper.start()
+    }
+
+    if (this.#config.migrate) {
+      await this.#bam.start()
+    }
+
     this.#started = true
-    this.#stopped = false
 
     return this
   }
@@ -179,7 +200,17 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
   }
 
   async stop (options: types.StopOptions = {}): Promise<void> {
-    if (this.#stoppingOn || this.#stopped) {
+    // A start() already in flight must finish (or fail) before stop() evaluates state, otherwise
+    // stop() reads #stopped mid-start and silently no-ops while start() keeps running.
+    if (this.#startingPromise) {
+      await this.#startingPromise.catch(() => {})
+    }
+
+    if (this.#stoppingPromise) {
+      return this.#stoppingPromise
+    }
+
+    if (this.#stopped) {
       return
     }
 
@@ -188,40 +219,55 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     timeout = Math.max(timeout, 1000)
 
     this.#stoppingOn = Date.now()
+    this.#stoppingPromise = this.#doStop(close, graceful, timeout)
 
-    await this.#notifier.stop()
-    await this.#manager.stop()
-    await this.#timekeeper.stop()
-    await this.#boss.stop()
-    await this.#navigator.stop()
-    await this.#bam.stop()
+    try {
+      return await this.#stoppingPromise
+    } finally {
+      this.#stoppingPromise = null
+    }
+  }
 
-    const shutdown = async () => {
-      await this.#manager.failWip()
+  async #doStop (close: boolean, graceful: boolean, timeout: number): Promise<void> {
+    try {
+      await this.#notifier.stop()
+      await this.#manager.stop()
+      await this.#timekeeper.stop()
+      await this.#boss.stop()
+      await this.#navigator.stop()
+      await this.#bam.stop()
 
-      if (this.#db._pgbdb && this.#db.opened && close) {
-        await this.#db.close()
+      const shutdown = async () => {
+        await this.#manager.failWip()
 
-        // Give event loop time to process socket closes
-        await delay(10)
+        if (this.#db._pgbdb && this.#db.opened && close) {
+          await this.#db.close()
+
+          // Give event loop time to process socket closes
+          await delay(10)
+        }
+
+        this.#stopped = true
+        this.#started = false
+
+        this.emit(events.stopped)
       }
 
-      this.#stopped = true
+      if (!graceful) {
+        await shutdown()
+        return
+      }
+
+      while ((Date.now() - this.#stoppingOn!) < timeout && this.#manager.hasPendingCleanups()) {
+        await delay(500)
+      }
+
+      await shutdown()
+    } finally {
+      // Reset unconditionally (success or throw) so a stop() that fails partway can be retried
+      // instead of every future stop()/start() call silently no-op-ing forever on the stale marker.
       this.#stoppingOn = null
-      this.#started = false
-
-      this.emit(events.stopped)
     }
-
-    if (!graceful) {
-      return await shutdown()
-    }
-
-    while ((Date.now() - this.#stoppingOn!) < timeout && this.#manager.hasPendingCleanups()) {
-      await delay(500)
-    }
-
-    await shutdown()
   }
 
   send (request: types.Request): Promise<string | null>
@@ -239,6 +285,18 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
 
   sendThrottled (name: string, data: object | null, options: types.SendOptions | null, seconds: number, key?: string): Promise<string | null> {
     return this.#manager.sendThrottled(name, data, options, seconds, key)
+  }
+
+  update (request: types.UpdateRequest): Promise<types.UpdateResponse>
+  update (name: string, data: object | null | undefined, options?: types.UpdateOptions): Promise<types.UpdateResponse>
+  update (...args: any[]): Promise<types.UpdateResponse> {
+    return this.#manager.update(...args as Parameters<Manager['update']>)
+  }
+
+  upsert (request: types.UpdateRequest): Promise<types.UpsertResponse>
+  upsert (name: string, data: object | null | undefined, options?: types.UpdateOptions): Promise<types.UpsertResponse>
+  upsert (...args: any[]): Promise<types.UpsertResponse> {
+    return this.#manager.upsert(...args as Parameters<Manager['upsert']>)
   }
 
   sendDebounced (name: string, data: object | null, options: types.SendOptions | null, seconds: number, key?: string): Promise<string | null> {
@@ -422,6 +480,10 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#contractor.schemaVersion()
   }
 
+  detectSchemaDrift (): Promise<types.SchemaDriftReport> {
+    return this.#contractor.detectDrift()
+  }
+
   schedule (name: string, cron: string, data?: object | null, options?: types.ScheduleOptions): Promise<void> {
     return this.#timekeeper.schedule(name, cron, data, options)
   }
@@ -479,9 +541,11 @@ export type {
   GroupOptions,
   IDatabase as Db,
   InsertOptions,
+  InvalidIndex,
   Job,
   JobFetchOptions,
   JobInsert,
+  JobMatchStrategy,
   JobOptions,
   JobPollingOptions,
   JobResult,
@@ -490,6 +554,13 @@ export type {
   Events,
   JobWithMetadata,
   MaintenanceOptions,
+  ManagedIndex,
+  MismatchedIndex,
+  ManagedFunction,
+  MismatchedFunction,
+  TableColumnDrift,
+  ConstraintDrift,
+  EnumDrift,
   OffWorkOptions,
   PgBossEventMap,
   Queue,
@@ -503,9 +574,14 @@ export type {
   Schedule,
   ScheduleOptions,
   SchedulingOptions,
+  SchemaDriftReport,
   SendOptions,
   StopOptions,
+  UpdateOptions,
   UpdateQueueOptions,
+  UpdateRequest,
+  UpdateResponse,
+  UpsertResponse,
   Warning,
   WipData,
   WorkConcurrencyOptions,

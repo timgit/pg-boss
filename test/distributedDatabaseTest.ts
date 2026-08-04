@@ -12,7 +12,7 @@ import { ctx } from './hooks.ts'
 //   1. Concurrent-fetch deduplication — the core guarantee of the atomic UPDATE...RETURNING fetch
 //      that replaces SKIP LOCKED; no generic test asserts "N concurrent workers, zero duplicates".
 //   2. Caller-supplied-transaction composition for completeDistributed/failDistributed — the
-//      withDistributedTransaction contract (compose inline, roll back with the caller's tx).
+//      ensureTransaction contract (compose inline, roll back with the caller's tx).
 //   3. Flag-gated schema construction (noTablePartitioning / noDeferrableConstraints /
 //      noCoveringIndexes / noAdvisoryLocks) — the ONLY Postgres-side coverage of that DDL, since the
 //      `DISTRIBUTED=true` job sets noSkipLocked + noMultiMutationCte but NOT the schema no* flags.
@@ -28,6 +28,12 @@ import { ctx } from './hooks.ts'
 // how they timed out at 20s on the CockroachDB run. So match that 60s on distributed backends.
 const isDistributedBackend = process.env.DB_TYPE === 'cockroachdb' || process.env.DB_TYPE === 'yugabytedb'
 const blockTimeout = isDistributedBackend ? 60000 : 20000
+
+// The concurrency tests need more than the block default on Postgres, so they carry their own
+// override - which has to follow the same rule, since a per-test value replaces the block value in
+// both directions. A flat 30s here would have capped exactly the two most contention-heavy tests in
+// the file at half the budget their neighbours get on CockroachDB.
+const concurrencyTimeout = isDistributedBackend ? blockTimeout : 30000
 
 helper.describePglite('distributed database mode', { timeout: blockTimeout }, function () {
   it('should not duplicate jobs when fetching concurrently in distributed mode', async function () {
@@ -57,7 +63,7 @@ helper.describePglite('distributed database mode', { timeout: blockTimeout }, fu
     // but no job should be duplicated
     expect(allJobs.length).toBeLessThanOrEqual(jobCount)
     expect(allJobs.length).toBeGreaterThan(0)
-  }, 30000)
+  }, concurrencyTimeout)
 
   it('should handle high concurrency without duplicates in distributed mode', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: true })
@@ -106,7 +112,7 @@ helper.describePglite('distributed database mode', { timeout: blockTimeout }, fu
 
     // Verify all jobs were claimed exactly once
     expect(claimedIndices.size).toBe(jobCount)
-  }, 30000)
+  }, concurrencyTimeout)
 
   it('should compose failDistributed inside a caller transaction and roll back with it', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: true })

@@ -5,6 +5,7 @@ import { readFileSync, existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import Db from './db.ts'
 import * as plans from './plans.ts'
+import Contractor from './contractor.ts'
 import * as migrationStore from './migrationStore.ts'
 import packageJson from '../package.json' with { type: 'json' }
 import type * as types from './types.ts'
@@ -32,6 +33,7 @@ Commands:
   migrate     Run pending migrations (creates schema if not exists)
   create      Create the pg-boss schema (initial installation)
   version     Show current schema version
+  doctor      Check for schema/index drift against the expected shape
   plans       Output SQL plans without executing
   rollback    Rollback the last migration
 
@@ -268,20 +270,33 @@ async function cmdMigrate (args: ReturnType<typeof parseCliArgs>): Promise<void>
 
   if (args.dryRun) {
     // The CLI has no BAM worker, so inline the async index builds as direct DDL. Connect
-    // (best effort) to enumerate partitioned tables; fall back to job_common only offline.
+    // (best effort) to read the DB's actual version and enumerate partitioned tables; fall back to
+    // job_common only offline.
     let partitionTables: string[] = []
+    let version: number | null = null
     try {
       const db = await createDb(config)
       try {
         partitionTables = await getPartitionTables(db, schema)
+        version = await getSchemaVersion(db, schema)
       } finally {
         await db.close()
       }
     } catch {
       // no reachable database: emit a job_common-only static script
     }
-    const sql = migrationStore.migrate(schema, 0, undefined, undefined, { inlineAsync: true, partitionTables })
-    console.log('-- SQL to migrate pg-boss from version 0 to latest:')
+
+    if (version !== null && version >= schemaVersion) {
+      console.log(`-- pg-boss schema "${schema}" is already at version ${version} (latest: ${schemaVersion}); nothing to migrate.`)
+      return
+    }
+
+    // Render from the DB's actual version so the printed SQL is exactly what `migrate` would run.
+    // Offline (or not yet installed) we can't know it, so fall back to the oldest supported starting
+    // version — the full chain — instead of a bogus "from 0" that fails on non-idempotent steps.
+    const fromVersion = version ?? migrationStore.getMinVersion(schema)
+    const sql = migrationStore.migrate(schema, fromVersion, undefined, undefined, { inlineAsync: true, partitionTables })
+    console.log(`-- SQL to migrate pg-boss from version ${fromVersion} to ${schemaVersion}:`)
     console.log(sql)
     return
   }
@@ -355,6 +370,135 @@ async function cmdRollback (args: ReturnType<typeof parseCliArgs>): Promise<void
   }
 }
 
+async function cmdDoctor (args: ReturnType<typeof parseCliArgs>): Promise<void> {
+  const config = getConnectionConfig(args)
+  const schema = config.schema || plans.DEFAULT_SCHEMA
+  const db = await createDb(config)
+
+  try {
+    const version = await getSchemaVersion(db, schema)
+    if (version === null) {
+      console.log(`pg-boss is not installed in schema "${schema}"`)
+      process.exitCode = 1
+      return
+    }
+
+    console.log(`Schema "${schema}" version ${version} (latest: ${schemaVersion})`)
+    if (version < schemaVersion) {
+      console.log(`⚠ Migrations pending: ${schemaVersion - version} — run "pg-boss migrate" before trusting drift results`)
+    }
+
+    // Reuse the same drift scan the boss.detectSchemaDrift() API runs, rather than duplicating the
+    // catalog queries + computeSchemaDrift wiring here (the two copies had already drifted apart and
+    // carried divergent best-effort/backend-gating bugs). Contractor.detectDrift handles the
+    // partitioned probe, best-effort catalog fallbacks, and backend-specific gating in one place.
+    const contractor = new Contractor(db, { ...config, schema } as unknown as types.ResolvedConstructorOptions)
+    const report = await contractor.detectDrift()
+
+    if (report.building.length) {
+      console.log(`\nBuilding (async index build in progress — not yet drift) (${report.building.length}):`)
+      for (const i of report.building) console.log(`  ${i.table}.${i.name}`)
+    }
+
+    // Extra indexes are informational (a stale pg-boss index or a user-added one) — a warning, not
+    // drift. Printed regardless of overall status; it never changes the exit code.
+    if (report.extraIndexes.length) {
+      console.log(`\n⚠ EXTRA INDEXES (present on a managed table but not expected — harmless) (${report.extraIndexes.length}):`)
+      for (const i of report.extraIndexes) console.log(`  ${i.table}.${i.name}`)
+    }
+
+    if (report.ok) {
+      console.log('\n✓ No drift detected')
+      return
+    }
+
+    if (report.missingTables.length) {
+      console.log(`\nMISSING TABLES (expected but absent) (${report.missingTables.length}):`)
+      for (const t of report.missingTables) console.log(`  ${t}`)
+    }
+
+    // Each drifted index is printed with the expected (correct) definition and, where one exists, the
+    // actual definition beneath it, for a direct side-by-side comparison and copy-paste remediation.
+    if (report.missing.length) {
+      console.log(`\nMISSING (expected but absent) (${report.missing.length}):`)
+      for (const i of report.missing) {
+        console.log(`  ${i.table}.${i.name}`)
+        if (i.definition) console.log(`    expected: ${i.definition}`)
+      }
+    }
+
+    if (report.invalid.length) {
+      // The definition is correct — the index is just invalid (interrupted build) — so show the DDL to
+      // drop and rebuild it, not an expected-vs-actual comparison (they would be identical).
+      console.log(`\nINVALID (present but marked invalid — drop and rebuild) (${report.invalid.length}):`)
+      for (const i of report.invalid) {
+        console.log(`  ${i.table}.${i.name}`)
+        if (i.definition) console.log(`    rebuild: ${i.definition}`)
+      }
+    }
+
+    if (report.mismatched.length) {
+      console.log(`\nMISMATCHED (definition differs) (${report.mismatched.length}):`)
+      for (const m of report.mismatched) {
+        console.log(`  ${m.table}.${m.name} [${m.differs.join(', ')}]`)
+        if (m.definition) console.log(`    expected: ${m.definition}`)
+        console.log(`    actual:   ${m.actualDefinition}`)
+      }
+    }
+
+    if (report.missingFunctions.length) {
+      console.log(`\nMISSING FUNCTIONS (expected but absent) (${report.missingFunctions.length}):`)
+      for (const f of report.missingFunctions) {
+        console.log(`  ${f.name}`)
+        console.log(`    expected: ${f.definition}`)
+      }
+    }
+
+    if (report.mismatchedFunctions.length) {
+      console.log(`\nMISMATCHED FUNCTIONS (body differs) (${report.mismatchedFunctions.length}):`)
+      for (const f of report.mismatchedFunctions) {
+        console.log(`  ${f.name}`)
+        console.log(`    expected: ${f.definition}`)
+        console.log(`    actual:   ${f.actualDefinition}`)
+      }
+    }
+
+    if (report.columnDrift.length) {
+      console.log(`\nCOLUMN DRIFT (missing/unexpected columns, or default/type/nullability drift) (${report.columnDrift.length}):`)
+      for (const c of report.columnDrift) {
+        console.log(`  ${c.table}`)
+        if (c.missingColumns.length) console.log(`    missing:    ${c.missingColumns.join(', ')}`)
+        if (c.unexpectedColumns.length) console.log(`    unexpected: ${c.unexpectedColumns.join(', ')}`)
+        for (const d of c.defaultMismatches) console.log(`    default ${d.column}: expected ${d.expected}, actual ${d.actual}`)
+        for (const d of c.typeMismatches) console.log(`    type ${d.column}: expected ${d.expected}, actual ${d.actual}`)
+        for (const d of c.nullabilityMismatches) console.log(`    nullability ${d.column}: expected ${d.expected ? 'NOT NULL' : 'nullable'}, actual ${d.actual ? 'NOT NULL' : 'nullable'}`)
+      }
+    }
+
+    if (report.constraintDrift.length) {
+      console.log(`\nCONSTRAINT DRIFT (missing or unexpected constraints) (${report.constraintDrift.length}):`)
+      for (const c of report.constraintDrift) {
+        console.log(`  ${c.table}`)
+        if (c.missingConstraints.length) for (const d of c.missingConstraints) console.log(`    missing:    ${d}`)
+        if (c.unexpectedConstraints.length) for (const d of c.unexpectedConstraints) console.log(`    unexpected: ${d}`)
+      }
+    }
+
+    if (report.enumDrift) {
+      const e = report.enumDrift
+      console.log('\nENUM DRIFT (value set/order differs):')
+      console.log(`  ${e.name}`)
+      console.log(`    expected: ${e.expectedValues.join(', ')}`)
+      console.log(`    actual:   ${e.actualValues.join(', ')}`)
+    }
+
+    console.log('\n✗ Schema drift detected')
+    process.exitCode = 1
+  } finally {
+    await db.close()
+  }
+}
+
 async function cmdPlans (args: ReturnType<typeof parseCliArgs>): Promise<void> {
   const fileConfig = loadConfigFile(args.config)
   const schema = args.schema || process.env.PGBOSS_SCHEMA || fileConfig.schema || plans.DEFAULT_SCHEMA
@@ -420,6 +564,10 @@ async function main (): Promise<void> {
     switch (args.command) {
       case 'version':
         await cmdVersion(args)
+        break
+
+      case 'doctor':
+        await cmdDoctor(args)
         break
 
       case 'create':

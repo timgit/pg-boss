@@ -298,4 +298,20 @@ describe('work', function () {
 
     expect(receivedCount).toBe(1)
   })
+
+  it('offWork by returned id stops every worker spawned under localConcurrency', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    // work() returns only the first worker's id (shared as workId across the others). offWork({ id })
+    // must match on workId too, otherwise only worker 0 stops and the rest keep polling with no
+    // API to reach them.
+    const id = await ctx.boss.work(ctx.schema, { localConcurrency: 3, pollingIntervalSeconds: 0.5 }, async () => {})
+
+    const active = () => ctx.boss!.getWipData().filter(w => w.name === ctx.schema).length
+    expect(active()).toBe(3)
+
+    await ctx.boss.offWork(ctx.schema, { id, wait: true })
+
+    expect(active()).toBe(0)
+  })
 })

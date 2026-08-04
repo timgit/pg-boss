@@ -3,7 +3,9 @@ import { parsePlaceholders } from './placeholders.ts'
 import { unwrapSQLResult } from '../tools.ts'
 
 export interface DrizzleTransactionLike {
-  execute(query: unknown): Promise<{ rows: any[] } | { rows: any[] }[]>
+  // node-postgres returns { rows }, or an array of them for multi-statement queries;
+  // postgres-js returns the rows themselves as a flat array (see unwrapSQLResult).
+  execute(query: unknown): Promise<{ rows: any[] } | { rows: any[] }[] | any[]>
 }
 
 export interface DrizzleSqlTagLike {

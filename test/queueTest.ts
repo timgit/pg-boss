@@ -1,10 +1,31 @@
-import { expect } from 'vitest'
+import { expect, vi } from 'vitest'
 import * as helper from './testHelper.ts'
 import { assertTruthy } from './testHelper.ts'
 import { states } from '../src/index.ts'
 import { ctx } from './hooks.ts'
 
 describe('queues', function () {
+  it('deleteQueue on a missing queue is a no-op', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+
+    // getQueueCache throws for a non-existent queue; that lookup failure is the only thing swallowed
+    await expect(ctx.boss.deleteQueue(`${ctx.schema}_missing`)).resolves.toBeUndefined()
+  })
+
+  it('deleteQueue surfaces a DELETE failure instead of resolving as success', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+
+    await ctx.boss.createQueue(ctx.schema)
+    // warm the manager's queue cache so the mocked failure lands on the DELETE, not the cache lookup
+    await ctx.boss.fetch(ctx.schema)
+
+    const db = ctx.boss.getDb()
+    const spy = vi.spyOn(db, 'executeSql').mockRejectedValueOnce(new Error('delete boom'))
+
+    await expect(ctx.boss.deleteQueue(ctx.schema)).rejects.toThrow('delete boom')
+
+    spy.mockRestore()
+  })
   it('should create a queue', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 

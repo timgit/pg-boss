@@ -2,6 +2,7 @@ import { expect } from 'vitest'
 import * as helper from './testHelper.ts'
 import { delay } from '../src/tools.ts'
 import { ctx } from './hooks.ts'
+import { PgBoss } from '../src/index.ts'
 import * as plans from '../src/plans.ts'
 
 describe('monitoring', function () {
@@ -104,6 +105,22 @@ describe('monitoring', function () {
     await delay(1000)
 
     expect(eventCount > 0).toBeTruthy()
+  })
+
+  it('should not leak warningQueueSize to other instances', async function () {
+    // eslint-disable-next-line no-new
+    new PgBoss({ ...ctx.bossConfig, warningQueueSize: 1 })
+
+    const boss = ctx.boss = await helper.start(ctx.bossConfig)
+    await boss.send(ctx.schema)
+    await boss.send(ctx.schema)
+
+    let leaked = false
+    boss.on('warning', (event) => { if (event.message.includes('queue')) leaked = true })
+
+    await boss.supervise(ctx.schema)
+
+    expect(leaked).toBe(false)
   })
 
   it('large queue should emit warning via queue config', async function () {

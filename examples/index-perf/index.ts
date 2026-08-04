@@ -111,7 +111,7 @@ function candidateSql (limit: number): string {
     WHERE j.name = '${QUEUE}'
       AND j.state < 'active'
       AND NOT j.blocked
-      AND j.start_after < now()
+      AND j.start_after <= now()
     ORDER BY j.priority desc, j.created_on, j.id
     LIMIT ${limit}
     FOR UPDATE OF j SKIP LOCKED`
@@ -132,7 +132,7 @@ async function seed (db: Db) {
       now() - ((g % 3600) || ' seconds')::interval,
       now() - ((g % 3600) || ' seconds')::interval
     FROM generate_series(1, ${ELIGIBLE}) g`)
-  // Future-scheduled created jobs — in the index, filtered out by start_after < now().
+  // Future-scheduled created jobs — in the index, filtered out by start_after <= now().
   // FUTURE_HI gives them a high priority to model the priority index's worst case: many
   // not-yet-due jobs ranked ahead of the due ones, which a priority-keyed walk must filter past.
   const futurePriority = process.env.FUTURE_HI ? 9 : 0

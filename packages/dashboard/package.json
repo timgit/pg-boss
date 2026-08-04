@@ -1,6 +1,6 @@
 {
   "name": "@pg-boss/dashboard",
-  "version": "1.6.1",
+  "version": "1.6.5",
   "description": "Web dashboard for monitoring and managing pg-boss job queues",
   "keywords": [
     "pg-boss",
@@ -45,42 +45,42 @@
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",
-    "@hono/node-server": "^2.0.6",
+    "@hono/node-server": "^2.0.12",
     "@react-router/node": "^8.0.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "cron-parser": "^5.6.1",
-    "hono": "^4.12.27",
-    "isbot": "^5.1.44",
-    "lucide-react": "^1.22.0",
+    "cron-parser": "^5.7.0",
+    "hono": "^4.12.34",
+    "isbot": "^5.2.1",
+    "lucide-react": "^1.28.0",
     "pg": "^8.22.0",
-    "pg-boss": "^12.24.1",
-    "react": "^19.2.7",
-    "react-dom": "^19.2.7",
+    "pg-boss": "^12.27.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
     "react-router": "^8.0.1",
     "tailwind-merge": "^3.6.0",
     "uplot": "^1.6.32"
   },
   "devDependencies": {
-    "@react-router/dev": "^8.1.0",
-    "@tailwindcss/vite": "^4.3.2",
+    "@react-router/dev": "^8.3.0",
+    "@tailwindcss/vite": "^4.3.3",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
-    "@types/node": "^22.20.0",
-    "@types/pg": "^8.20.0",
-    "@types/react": "^19.2.17",
-    "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^6.0.3",
+    "@types/node": "^22.20.1",
+    "@types/pg": "^8.20.3",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@vitejs/plugin-react": "^6.0.5",
     "@vitest/coverage-v8": "^4.1.2",
     "cross-env": "^10.1.0",
     "esbuild": "^0.28.1",
     "jsdom": "^29.1.1",
     "tailwindcss": "^4.1.18",
-    "tsx": "^4.22.4",
+    "tsx": "^4.23.5",
     "typescript": "^6.0.3",
-    "vite": "^8.1.1",
+    "vite": "^8.2.0",
     "vitest": "^4.1.2"
   },
   "repository": {
@@ -92,5 +92,5 @@
   "bugs": {
     "url": "https://github.com/timgit/pg-boss/issues"
   },
-  "homepage": "https://timgit.github.io/pg-boss"
+  "homepage": "https://pgboss.io"
 }

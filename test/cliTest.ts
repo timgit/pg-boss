@@ -1,5 +1,6 @@
 import { describe, it, beforeEach, afterEach, expect } from 'vitest'
 import { execCommand } from 'cli-testlab'
+import { spawnSync } from 'node:child_process'
 import { resolve } from 'node:path'
 import { writeFileSync, unlinkSync, existsSync } from 'node:fs'
 import crypto from 'node:crypto'
@@ -7,7 +8,16 @@ import { getConnectionString, dropSchema, getDb, itPostgresOnly, describePglite 
 import packageJson from '../package.json' with { type: 'json' }
 
 const cliOptions = '--import=tsx '
-const cliPath = cliOptions + resolve(import.meta.dirname, '../src/cli.ts')
+const cliFile = resolve(import.meta.dirname, '../src/cli.ts')
+const cliPath = cliOptions + cliFile
+
+// cli-testlab's execCommand rejects on any non-zero exit unless expectedErrorMessage (stderr) is set,
+// but `doctor` prints its report to stdout and exits 1 when drift is found. Run it directly so both
+// the stdout report and the exit code can be asserted.
+function runCli (args: string[]): { stdout: string, stderr: string, code: number | null } {
+  const result = spawnSync('node', ['--import=tsx', cliFile, ...args], { encoding: 'utf-8' })
+  return { stdout: result.stdout || '', stderr: result.stderr || '', code: result.status }
+}
 const sha1 = (value: string): string => crypto.createHash('sha1').update(value).digest('hex')
 const currentSchemaVersion = packageJson.pgboss.schema
 
@@ -51,6 +61,9 @@ describePglite('cli', function () {
       })
       await execCommand(`node ${cliPath} --help`, {
         expectedOutput: 'rollback'
+      })
+      await execCommand(`node ${cliPath} --help`, {
+        expectedOutput: 'doctor'
       })
     })
 
@@ -288,6 +301,22 @@ describePglite('cli', function () {
         )
         expect(result.stdout).toContain('CONCURRENTLY IF NOT EXISTS')
       })
+
+      it('dry-run reads the actual installed version instead of always assuming 0', async function () {
+        // install the latest schema first
+        await execCommand(
+          `node ${cliPath} create --connection-string ${connectionString} --schema ${schema}`,
+          { expectedOutput: 'Successfully created' }
+        )
+
+        // a dry-run must now detect the DB is already current rather than printing a bogus
+        // "from version 0 to latest" script
+        const result = await execCommand(
+          `node ${cliPath} migrate --connection-string ${connectionString} --schema ${schema} --dry-run`
+        )
+        expect(result.stdout).toContain('already at version')
+        expect(result.stdout).not.toContain('from version 0')
+      })
     })
 
     describe('inline async migration', function () {
@@ -344,7 +373,7 @@ describePglite('cli', function () {
         )
 
         expect(await indexNames()).toEqual(['job_common_i7', 'job_common_i8'])
-      })
+      }, 30_000)
     })
 
     describe('rollback', function () {
@@ -403,6 +432,64 @@ describePglite('cli', function () {
         await db.close()
 
         expect(versionBefore).toBe(versionAfter)
+      })
+    })
+
+    describe('doctor', function () {
+      const schema = getTestSchema('doctor')
+
+      beforeEach(async function () {
+        await dropSchema(schema)
+      })
+
+      afterEach(async function () {
+        await dropSchema(schema)
+      })
+
+      const createSchema = () => execCommand(
+        `node ${cliPath} create --connection-string ${connectionString} --schema ${schema}`,
+        { expectedOutput: 'Successfully created' }
+      )
+
+      it('should report when pg-boss is not installed (doctor)', function () {
+        const { stdout, code } = runCli(['doctor', '--connection-string', connectionString, '--schema', schema])
+        expect(stdout).toContain('not installed')
+        expect(code).toBe(1)
+      })
+
+      it('should report no drift for a freshly created schema', async function () {
+        await createSchema()
+
+        const { stdout, code } = runCli(['doctor', '--connection-string', connectionString, '--schema', schema])
+        expect(stdout).toContain('No drift detected')
+        expect(code).toBe(0)
+      })
+
+      itPostgresOnly('should report a dropped index as missing', async function () {
+        await createSchema()
+
+        const db = await getDb()
+        await db.executeSql(`DROP INDEX ${schema}.job_common_i5`)
+        await db.close()
+
+        const { stdout, code } = runCli(['doctor', '--connection-string', connectionString, '--schema', schema])
+        expect(stdout).toContain('MISSING')
+        expect(stdout).toContain('job_common_i5')
+        expect(code).toBe(1)
+      })
+
+      itPostgresOnly('should report an index with a changed predicate as mismatched', async function () {
+        await createSchema()
+
+        const db = await getDb()
+        await db.executeSql(`DROP INDEX ${schema}.job_common_i9`)
+        await db.executeSql(`CREATE INDEX job_common_i9 ON ${schema}.job_common (name, id) WHERE blocking AND state = 'active'`)
+        await db.close()
+
+        const { stdout, code } = runCli(['doctor', '--connection-string', connectionString, '--schema', schema])
+        expect(stdout).toContain('MISMATCHED')
+        expect(stdout).toContain('[predicate]')
+        expect(code).toBe(1)
       })
     })
 

@@ -13,7 +13,12 @@ export function fromKnex (trx: KnexTransactionLike): IDatabase {
       // so each textual occurrence (including reuse of the same $N) must be
       // mapped to its own ? with the value duplicated in textual order.
       const { parts, reordered } = parsePlaceholders(text, values)
-      const knexSql = parts.join('?')
+      // Several pg-boss queries (e.g. updateJob) also contain literal jsonb `?` key-exists
+      // operators. knex.raw() scans the whole string for `?` to fill bindings, so those
+      // literal occurrences must be escaped as `\?` (knex's own literal-? syntax) before
+      // joining in the real placeholders — otherwise knex miscounts bindings and throws
+      // "Undefined binding(s) detected" on any query that mixes both.
+      const knexSql = parts.map(part => part.replace(/\?/g, '\\?')).join('?')
       return unwrapSQLResult(await trx.raw(knexSql, reordered))
     }
   }

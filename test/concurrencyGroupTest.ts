@@ -190,6 +190,71 @@ describe('groupConcurrency', function () {
     expect(maxByGroup[freeGroup]).toBeGreaterThanOrEqual(1)
   })
 
+  it('should preserve tiered batch capacity when groups are already active', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    const schema = ctx.schema
+    const queueName = ctx.schema
+    const db = await helper.getDb()
+
+    try {
+      // vip-full is already at its tier limit, so its pending jobs must be skipped.
+      await db.executeSql(`
+        INSERT INTO ${schema}.job_common (name, data, state, group_id, group_tier, start_after, created_on, started_on)
+        SELECT $1, jsonb_build_object('group', 'vip-full'), 'active'::${schema}.job_state, 'vip-full', 'vip', now() - interval '5 minutes', now() - interval '5 minutes', now() - interval '5 minutes'
+        FROM generate_series(1, 3)
+      `, [queueName])
+
+      // vip has one active job and a tier limit of three, leaving two slots in this fetch batch.
+      await db.executeSql(`
+        INSERT INTO ${schema}.job_common (name, data, state, group_id, group_tier, start_after, created_on, started_on)
+        VALUES ($1, jsonb_build_object('group', 'vip'), 'active'::${schema}.job_state, 'vip', 'vip', now() - interval '5 minutes', now() - interval '5 minutes', now() - interval '5 minutes')
+      `, [queueName])
+
+      await db.executeSql(`
+        INSERT INTO ${schema}.job_common (name, data, state, group_id, group_tier, start_after, created_on)
+        SELECT $1, jsonb_build_object('group', 'vip-full'), 'created'::${schema}.job_state, 'vip-full', 'vip', now() - interval '5 minutes', now() - interval '4 minutes' + (g * interval '1 millisecond')
+        FROM generate_series(1, 3) g
+      `, [queueName])
+
+      await db.executeSql(`
+        INSERT INTO ${schema}.job_common (name, data, state, group_id, group_tier, start_after, created_on)
+        SELECT $1, jsonb_build_object('group', 'vip'), 'created'::${schema}.job_state, 'vip', 'vip', now() - interval '5 minutes', now() - interval '3 minutes' + (g * interval '1 millisecond')
+        FROM generate_series(1, 3) g
+      `, [queueName])
+
+      await db.executeSql(`
+        INSERT INTO ${schema}.job_common (name, data, state, group_id, start_after, created_on)
+        SELECT $1, jsonb_build_object('group', 'default'), 'created'::${schema}.job_state, 'default', now() - interval '5 minutes', now() - interval '2 minutes' + (g * interval '1 millisecond')
+        FROM generate_series(1, 2) g
+      `, [queueName])
+
+      const jobs = await ctx.boss.fetch(queueName, {
+        batchSize: 10,
+        includeMetadata: true,
+        priority: false,
+        orderByCreatedOn: true,
+        groupConcurrency: {
+          default: 1,
+          tiers: { vip: 3 }
+        }
+      })
+
+      const groupCounts = jobs.reduce<Record<string, number>>((counts, job) => {
+        const group = (job.data as { group: string }).group
+        counts[group] = (counts[group] ?? 0) + 1
+        return counts
+      }, {})
+
+      expect(jobs).toHaveLength(3)
+      expect(groupCounts['vip-full'] ?? 0).toBe(0)
+      expect(groupCounts.vip).toBe(2)
+      expect(groupCounts.default).toBe(1)
+    } finally {
+      await db.close()
+    }
+  })
+
   it('should allow jobs without group to bypass group concurrency limits', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
 

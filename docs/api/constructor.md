@@ -40,6 +40,18 @@ The following options can be set as properties in an object for additional confi
 
   Number of milliseconds to wait before timing out when acquiring a new client from the pool. Set to `0` to disable the timeout and wait indefinitely.
 
+* **notifyHeartbeatIntervalMs** - int, defaults to 10000
+
+  Interval between heartbeat checks on the dedicated LISTEN/NOTIFY connection. Lower values detect silent connection drops faster at the cost of more heartbeat queries.
+
+* **notifyHeartbeatTimeoutMs** - int, defaults to 5000
+
+  Timeout for each LISTEN/NOTIFY heartbeat query. If a heartbeat does not complete within this window the listener is torn down and reconnected. Raise this on a loaded database where the default is too aggressive.
+
+* **notifyKeepAliveInitialDelayMs** - int, defaults to 10000
+
+  TCP keepalive initial delay for the dedicated LISTEN/NOTIFY connection.
+
 * **db** - object
 
     Passing an object named db allows you "bring your own database connection". This option may be beneficial if you'd like to use an existing database service with its own connection pool. Setting this option will bypass the above configuration.
@@ -58,7 +70,19 @@ The following options can be set as properties in an object for additional confi
 
 * **schema** - string, defaults to "pgboss"
 
-    Database schema that contains all required storage objects. Only alphanumeric and underscore allowed, length: <= 50 characters
+    Database schema that contains all required storage objects. Unquoted, only alphanumeric and underscore are allowed, and the name may not start with a number. Quoted (see below), any character is allowed except double quotes, single quotes, percent signs, periods, dollar signs, backslashes and control characters. Either way the limit is <= 50 bytes.
+
+    To use a name that isn't a legal bare identifier — one containing dashes, or a reserved word — quote it yourself:
+
+    ```js
+    new PgBoss({ schema: '"My-Schema"' })
+    ```
+
+    The value is used verbatim as an identifier, so the quotes are preserved as written. Note that `MySchema` and `"MySchema"` are different schemas: PostgreSQL folds the unquoted form to `myschema`. Double quotes, single quotes, percent signs, periods, dollar signs, backslashes and control characters are rejected inside a quoted name.
+
+    The length limit is measured in bytes, since it's possible to use multi-byte characters inside a quoted name. PostgreSQL truncates identifiers past 63 bytes without complaint, which would leave the configured name and the stored name permanently out of sync.
+
+    Because the two spellings look nearly identical but name different schemas, `start()` refuses to install into a schema when another one differing from it only by case already holds a pg-boss installation, and names the spelling that reaches the existing data. Override with [`allowSchemaCaseVariant`](#allowschemacasevariant) if two such installations are genuinely intended.
 
 
 **Operations options**
@@ -77,7 +101,7 @@ The following options can be set as properties in an object for additional confi
 
 * **useListenNotify**, bool, default false
 
-  Enables a `LISTEN/NOTIFY` listener so that workers on notify-enabled queues are woken the moment a job is created, instead of waiting out their `pollingIntervalSeconds`. This is a latency optimization layered on top of polling — polling always remains active as a fallback, so jobs are never lost if a notification is missed. See [Workers › Low-latency dispatch with LISTEN/NOTIFY](./workers.md#low-latency-dispatch-with-listennotify) for the full picture and the per-queue `notify` option that controls which queues emit notifications.
+  Enables a `LISTEN/NOTIFY` listener so that workers on notify-enabled queues are woken the moment a job is created, instead of waiting out their `pollingIntervalSeconds`. This is a latency optimization layered on top of polling — polling always remains active as a fallback, so jobs are never lost if a notification is missed. See [Low-latency dispatch with LISTEN/NOTIFY](./workers.md#low-latency-dispatch-with-listen-notify) for the full picture and the per-queue `notify` option that controls which queues emit notifications.
 
   This option holds one dedicated database connection open for listening. It requires a session-pinned connection: it works with the built-in connection pool and with a `db` adapter that implements `listen`, but **not** through PgBouncer in transaction or statement pooling mode, which disables `LISTEN/NOTIFY`. When a listener cannot be established, pg-boss emits a [`warning`](./events.md#warning) event of type `listen_notify_unavailable` and continues with polling only.
 
@@ -86,6 +110,12 @@ The following configuration options should not normally need to be changed, but 
 * **createSchema**, bool, default true
   
   If set to false, the `CREATE SCHEMA` statement will not be issued during installation. This may be useful if this privilege is not granted to the role.
+
+* **allowSchemaCaseVariant**, bool, default false
+
+  If set to true, `start()` will install into `schema` even when another schema differing from it only by case already holds a pg-boss installation.
+
+  The check this disables exists because `schema: 'MySchema'` and `schema: '"MySchema"'` name two different schemas — PostgreSQL folds the unquoted form to `myschema` and stores the quoted one verbatim. Mis-spelling the quoting is not an error on its own: pg-boss simply finds no installation, creates an empty second schema, and every existing job appears to have vanished. Only set this if two installations whose names differ by case are intended.
 
 * **superviseIntervalSeconds**, int, default 60 seconds
 
@@ -106,6 +136,14 @@ The following configuration options should not normally need to be changed, but 
 * **flowIntervalSeconds**, int, default 5 seconds
 
   How often the background flow resolver runs to unblock dependent jobs (created via [`flow()`](./jobs.md#flowjobs-options)) whose parents have completed. Completing a job no longer unblocks its dependents inline; this resolver handles it shortly after, off the completion hot path. Only runs when `supervise` is enabled.
+
+* **warningSlowQuerySeconds**, int, default 30
+
+  The threshold, in seconds, above which a monitoring or maintenance query emits a `slow_query` [`warning`](./events.md#warning) event. Applies per instance and must be at least 1.
+
+* **warningQueueSize**, int, default 10000
+
+  The default number of jobs in the created or retry state a queue may hold before emitting a `queue_backlog` [`warning`](./events.md#warning) event. Applies per instance and must be at least 1. Individual queues can override this with their own [`warningQueueSize`](./queues.md#createqueue-name-queue) on `createQueue`.
 
 * **persistWarnings**, bool, default false
 

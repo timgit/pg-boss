@@ -35,11 +35,12 @@ export function Sparkline ({
 
   const min = Math.min(...data)
   const max = Math.max(...data)
-  const span = max - min || 1
+  const span = max - min
   const n = data.length
 
   const x = (i: number) => (n === 1 ? width / 2 : pad + (i / (n - 1)) * innerW)
-  const y = (v: number) => pad + (1 - (v - min) / span) * innerH
+  // Flat series has no span to normalize against — center it instead of pinning it to the baseline.
+  const y = (v: number) => (max === min ? height / 2 : pad + (1 - (v - min) / span) * innerH)
 
   const points = data.map((v, i) => `${x(i).toFixed(2)},${y(v).toFixed(2)}`).join(' ')
 
@@ -48,7 +49,8 @@ export function Sparkline ({
       width={width}
       height={height}
       viewBox={`0 0 ${width} ${height}`}
-      className={cn('overflow-visible', className)}
+      // max-w-full keeps the fixed-width SVG from spilling out of a narrower container (e.g. a stat card).
+      className={cn('max-w-full overflow-visible', className)}
       role="img"
       aria-label={ariaLabel}
     >

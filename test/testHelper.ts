@@ -67,6 +67,10 @@ const describePostgresOnly = describe.skipIf(isCockroachDb) as SuiteAPI
 const itPglite = it.skipIf(isPglite) as TestAPI
 const describePglite = describe.skipIf(isPglite) as SuiteAPI
 
+// Tests that need multiple independent role connections (e.g. one session holds a lock while
+// another polls) can't run on PGlite (single in-process instance, no network) or CockroachDB.
+const describeMultiConnectionOnly = describe.skipIf(isPglite || isCockroachDb) as SuiteAPI
+
 // LISTEN/NOTIFY is unavailable in these backends' test environments: CockroachDB never implements
 // it (noListenNotify), and the YugabyteDB test container doesn't enable the early-access
 // `ysql_yb_enable_listen_notify` flag. Wrap notify-behavior tests with these so the compatibility
@@ -227,6 +231,18 @@ async function tryCreateDb (database: string): Promise<void> {
   }
 }
 
+// PGlite often assigns the same created_on to back-to-back inserts. Tests that assert FIFO /
+// insertion order (ORDER BY created_on, id) need distinct timestamps; without them UUID id order
+// can win and look like a policy bug. No-op on real Postgres, where statement boundaries already
+// advance now(). start() wires this into every job-creating method below, so suites rarely need to
+// call it directly - reach for it only when writing jobs through the db handle instead of boss.
+async function separateTimestamps (): Promise<void> {
+  if (isPglite) await delay(2)
+}
+
+// Job-creating methods wrapped by start() under PGlite so each write lands on its own created_on.
+const JOB_WRITE_METHODS = ['send', 'sendAfter', 'sendThrottled', 'sendDebounced', 'insert'] as const
+
 async function start (options?: Partial<ConstructorOptions> & { testKey?: string; noDefault?: boolean }): Promise<PgBoss> {
   try {
     const config = getConfig(options)
@@ -240,6 +256,21 @@ async function start (options?: Partial<ConstructorOptions> & { testKey?: string
       assertTruthy(config.schema)
       await boss.createQueue(config.schema)
     }
+
+    // Advance the clock after each write so insertion ordering matches real Postgres without
+    // sprinkling delays through every suite. See separateTimestamps.
+    if (isPglite) {
+      for (const method of JOB_WRITE_METHODS) {
+        const original = boss[method].bind(boss) as (...args: unknown[]) => Promise<unknown>
+        // @ts-ignore - one wrapper shape for a set of overloaded signatures
+        boss[method] = async (...args: unknown[]) => {
+          const result = await original(...args)
+          await separateTimestamps()
+          return result
+        }
+      }
+    }
+
     return boss
   } catch (err) {
     // this is nice for occaisional debugging, Mr. Linter
@@ -250,11 +281,11 @@ async function start (options?: Partial<ConstructorOptions> & { testKey?: string
   }
 }
 
-// PGlite's now() has coarse, sub-statement resolution, so a row inserted with the default
-// start_after = now() can tie with an immediately following fetch's `start_after < now()` filter and
-// briefly read as not-yet-due. Real Postgres advances now() between statements, so the first attempt
-// always wins there. Retry the fetch a few times so assertions on freshly-inserted jobs (e.g. a job
-// just routed to a dead letter queue) aren't flaky under PGlite.
+// PGlite's now() has coarse, sub-statement resolution, so consecutive statements often share a
+// timestamp. Fetch uses `start_after <= now()` so a row inserted with the default start_after =
+// now() is immediately claimable; prefer that over relying on the clock to tick between send and
+// fetch. fetchWithRetry remains useful for cases where work appears asynchronously (e.g. a job
+// just routed to a dead letter queue) and may not be visible on the first attempt.
 async function fetchWithRetry<T = object> (boss: PgBoss, name: string, options?: FetchOptions, attempts = 20): Promise<Job<T>[]> {
   for (let i = 0; i < attempts; i++) {
     const jobs = await boss.fetch<T>(name, options)
@@ -291,6 +322,7 @@ export {
   dropSchema,
   start,
   fetchWithRetry,
+  separateTimestamps,
   getDb,
   countJobs,
   findJobs,
@@ -307,6 +339,7 @@ export {
   describePostgresOnly,
   itPglite,
   describePglite,
+  describeMultiConnectionOnly,
   itListenNotify,
   describeListenNotify,
   getSchemaDefs

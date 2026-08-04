@@ -1,20 +1,23 @@
 import { defineConfig } from 'vitepress'
-import pkg from '../../package.json'
+import pkg from '../../package.json' with { type: 'json' }
 
 export default defineConfig({
   title: 'pg-boss',
   description: 'Queueing jobs in Postgres from Node.js like a boss',
-  base: '/pg-boss/',
+  base: '/',
   cleanUrls: true,
   lastUpdated: true,
   head: [
+    ['meta', { name: 'theme-color', content: '#2f7cf6' }],
     ['script', {}, `(function(){
       var hash = window.location.hash;
-      if(window.location.pathname === '/pg-boss/' && hash.startsWith('#/')){
+      var pathname = window.location.pathname;
+      // Legacy hash routes were served from both the github.io subpath and the root
+      if((pathname === '/' || pathname === '/pg-boss/') && hash.startsWith('#/')){
         var path = hash.slice(2).split('?')[0];
         if(!path) return;
         if(path === 'sql') path = 'sql/job-table';
-        window.location.replace('/pg-boss/' + path);
+        window.location.replace('/' + path);
       }
     })()`]
   ],
@@ -29,7 +32,7 @@ export default defineConfig({
     },
     nav: [
       { text: 'Get Started', link: '/introduction' },
-      { text: 'API', link: '/api/constructor' },
+      { text: 'API', link: '/api/constructor', activeMatch: '/api/' },
       {
         text: pkg.version,
         items: [
@@ -64,7 +67,7 @@ export default defineConfig({
       },
       {
         text: 'SQL',
-        collapsed: true,
+        collapsed: false,
         items: [
           { text: 'Job Table', link: '/sql/job-table' },
           { text: 'Queue Functions', link: '/sql/queue-functions' },

@@ -62,7 +62,11 @@ import {
   unscheduleRequestSchema,
   unscheduleResponseSchema,
   updateQueueRequestSchema,
-  updateQueueResponseSchema
+  updateQueueResponseSchema,
+  updateRequestSchema,
+  updateResponseSchema,
+  upsertRequestSchema,
+  upsertResponseSchema
 } from './contracts.js'
 
 export function withOptionalDataOptions (args: unknown[], data?: unknown, options?: unknown) {
@@ -185,6 +189,10 @@ export const postMethods: RouteEntry[] = [
   post('jobs', 'sendThrottled', sendThrottledRequestSchema, sendThrottledResponseSchema, (body) => withFixedDataOptions([body.name], body.data, body.options, [body.seconds, body.key])),
   post('jobs', 'sendDebounced', sendDebouncedRequestSchema, sendDebouncedResponseSchema, (body) => withFixedDataOptions([body.name], body.data, body.options, [body.seconds, body.key])),
   post('jobs', 'insert', insertRequestSchema, insertResponseSchema, (body) => withOptionalOptions([body.name, body.jobs], body.options)),
+  // data passes through verbatim (not withOptionalDataOptions): update/upsert distinguish
+  // absent data (leave payload unchanged) from null (clear it)
+  post('jobs', 'update', updateRequestSchema, updateResponseSchema, (body) => [body.name, body.data, body.options]),
+  post('jobs', 'upsert', upsertRequestSchema, upsertResponseSchema, (body) => [body.name, body.data, body.options]),
   post('jobs', 'flow', flowRequestSchema, flowResponseSchema, (body) => [body.jobs]),
   post('jobs', 'fetch', fetchRequestSchema, fetchResponseSchema, (body) => withOptionalOptions([body.name], body.options)),
   post('jobs', 'complete', completeRequestSchema, completeResponseSchema, (body) => withOptionalDataOptions([body.name, body.id], body.data, body.options)),

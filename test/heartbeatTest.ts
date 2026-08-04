@@ -168,6 +168,37 @@ describe('heartbeat', function () {
     expect(activeJob.state).toBe('active')
   })
 
+  it('should fail by heartbeat for a per-job heartbeat on a queue without queue-level heartbeat', async function () {
+    // Per-job heartbeatSeconds must be enforced even when the queue itself has no heartbeat config.
+    // Supervision previously only monitored queues whose queue row set heartbeatSeconds, so a job
+    // that opted in via send() was never heartbeat-failed on a plain queue.
+    ctx.boss = await helper.start({ ...ctx.bossConfig, monitorIntervalSeconds: 1, noDefault: true })
+
+    await ctx.boss.createQueue(ctx.schema, { retryLimit: 0 })
+
+    const jobId = await ctx.boss.send(ctx.schema, null, { heartbeatSeconds: 10 })
+    assertTruthy(jobId)
+
+    const [job] = await ctx.boss.fetch(ctx.schema)
+    assertTruthy(job)
+    expect(job.heartbeatSeconds).toBe(10)
+
+    // backdate heartbeat_on past the per-job window
+    const db = await helper.getDb()
+    await db.executeSql(
+      `UPDATE ${ctx.schema}.job SET heartbeat_on = now() - interval '20 seconds' WHERE id = $1`,
+      [jobId]
+    )
+    await db.close()
+
+    await ctx.boss.supervise(ctx.schema)
+
+    const failedJob = await ctx.boss.getJobById(ctx.schema, jobId)
+    assertTruthy(failedJob)
+    expect(failedJob.state).toBe('failed')
+    expect(failedJob.output).toEqual({ value: { message: 'job heartbeat timeout' } })
+  })
+
   it('should allow per-job heartbeat override', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 

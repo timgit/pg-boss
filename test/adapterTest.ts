@@ -12,7 +12,9 @@ const describe = helper.describePglite
 import knex, { type Knex } from 'knex'
 import { Kysely, PostgresDialect } from 'kysely'
 import { drizzle } from 'drizzle-orm/node-postgres'
+import { drizzle as drizzlePostgresJs } from 'drizzle-orm/postgres-js'
 import { sql as drizzleSql } from 'drizzle-orm'
+import postgres from 'postgres'
 import { PrismaClient } from '@prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
 
@@ -117,6 +119,26 @@ describe('knex adapter', () => {
       { select1: 1 },
       { select2: 2 },
     ])
+  })
+
+  it('should update a job through a knex transaction (updateJob mixes literal jsonb ? with $N)', async () => {
+    // updateJob's SQL carries ~11 literal jsonb `?` key-exists operators alongside its $N
+    // placeholders. knex.raw() scans the whole string for `?` to fill bindings, so those literal
+    // occurrences must be escaped; otherwise knex miscounts and throws "Undefined binding(s) detected".
+    const boss = ctx.boss = await helper.start(ctx.bossConfig)
+    if (!db) db = knex({ client: 'pg', connection: connString })
+
+    const id = await boss.send(ctx.schema, { v: 1 })
+    helper.assertTruthy(id)
+
+    const result = await db.transaction(async (trx) =>
+      boss.update(ctx.schema, { v: 2 }, { id, db: fromKnex(trx) }))
+
+    expect(result).toEqual({ jobs: [id], updated: 1 })
+
+    const job = await boss.getJobById(ctx.schema, id)
+    helper.assertTruthy(job)
+    expect(job.data).toEqual({ v: 2 })
   })
 })
 
@@ -346,6 +368,107 @@ describe('drizzle adapter', () => {
       { select1: 1 },
       { select2: 2 },
     ])
+  })
+})
+
+// postgres.js returns rows as a flat array instead of node-postgres's { rows } object, so the
+// adapter has to recognize that shape rather than flat-mapping a missing `rows` property (#852).
+describe('drizzle adapter (postgres-js)', () => {
+  let client: ReturnType<typeof postgres>
+
+  afterAll(async () => {
+    if (client) await client.end()
+  })
+
+  const getDb = () => {
+    if (!client) client = postgres(connString)
+    return drizzlePostgresJs({ client })
+  }
+
+  it('should execute sql through a postgres-js drizzle transaction', async () => {
+    ctx.boss = await helper.start(ctx.bossConfig)
+    const db = getDb()
+
+    const jobId = await db.transaction(async (tx) => {
+      const adapter = fromDrizzle(tx, drizzleSql)
+      const result = await adapter.executeSql(
+        `INSERT INTO ${ctx.schema}.job (name, data, state)
+         VALUES ($1, $2, 'created')
+         RETURNING id`,
+        [ctx.schema, '{}']
+      )
+      return result.rows[0]?.id
+    })
+
+    expect(jobId).toBeDefined()
+  })
+
+  it('should send a job through a postgres-js drizzle transaction', async () => {
+    ctx.boss = await helper.start(ctx.bossConfig)
+    const db = getDb()
+    const queue = ctx.bossConfig.schema
+    await ctx.boss.createQueue(queue)
+
+    const jobId = await db.transaction(async (tx) => {
+      return ctx.boss!.send(queue, { hello: 'world' }, { db: fromDrizzle(tx, drizzleSql) })
+    })
+
+    expect(jobId).toBeDefined()
+
+    const job = await ctx.boss.getJobById(queue, jobId!)
+    expect(job?.data).toStrictEqual({ hello: 'world' })
+  })
+
+  it('should rollback a job sent in a failed postgres-js drizzle transaction', async () => {
+    ctx.boss = await helper.start(ctx.bossConfig)
+    const db = getDb()
+    const queue = ctx.bossConfig.schema
+    await ctx.boss.createQueue(queue)
+
+    let jobId: string | null = null
+
+    try {
+      await db.transaction(async (tx) => {
+        jobId = await ctx.boss!.send(queue, { hello: 'world' }, { db: fromDrizzle(tx, drizzleSql) })
+        throw new Error('rollback')
+      })
+    } catch {}
+
+    expect(jobId).toBeDefined()
+
+    const job = await ctx.boss.getJobById(queue, jobId!)
+    expect(job).toBeNull()
+  })
+
+  it('should handle empty result sets (postgres-js)', async () => {
+    ctx.boss = await helper.start(ctx.bossConfig)
+    const db = getDb()
+
+    const result = await db.transaction(async (tx) => {
+      const adapter = fromDrizzle(tx, drizzleSql)
+      return adapter.executeSql('SELECT 1 as val WHERE false')
+    })
+
+    expect(result.rows).toStrictEqual([])
+  })
+
+  it('should handle array parameters bound to ANY($N::uuid[]) (postgres-js)', async () => {
+    ctx.boss = await helper.start(ctx.bossConfig)
+    const db = getDb()
+
+    const id = 'd1e48017-d11b-4434-a745-90ee6453caef'
+
+    const result = await db.transaction(async (tx) => {
+      const adapter = fromDrizzle(tx, drizzleSql)
+      return adapter.executeSql(
+        `SELECT $1::uuid = ANY($2::uuid[]) as single,
+                ($1::uuid = ANY($3::uuid[])) as multi`,
+        [id, [id], [id, 'a745d11b-d11b-4434-a745-90ee6453caef']]
+      )
+    })
+
+    expect(result.rows[0]?.single).toBe(true)
+    expect(result.rows[0]?.multi).toBe(true)
   })
 })
 

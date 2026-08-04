@@ -222,6 +222,78 @@ describe('failure', function () {
     expect(dlqJob.sourceRetryCount).toBe(0)
   })
 
+  it('dead letter preserves singleton_key and heartbeat_seconds from the source job', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+
+    const deadLetter = `${ctx.schema}_dlq`
+
+    await ctx.boss.createQueue(deadLetter)
+    await ctx.boss.createQueue(ctx.schema, { deadLetter, heartbeatSeconds: 30 })
+
+    const jobId = await ctx.boss.send(ctx.schema, { key: ctx.schema }, { retryLimit: 0, singletonKey: 'sk', heartbeatSeconds: 40 })
+    assertTruthy(jobId)
+
+    await ctx.boss.fetch(ctx.schema)
+    await ctx.boss.fail(ctx.schema, jobId)
+
+    // read the DLQ job's raw columns without fetching (which would activate it)
+    const dlq = await helper.findJobs(ctx.schema, 'name = $1 and source_id = $2', [deadLetter, jobId])
+    expect(dlq.rows.length).toBe(1)
+    expect(dlq.rows[0].singleton_key).toBe('sk')
+    expect(dlq.rows[0].heartbeat_seconds).toBe(40)
+  })
+
+  it('dead letter inherits the DLQ queue expire_seconds instead of the column default', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+
+    const deadLetter = `${ctx.schema}_dlq`
+
+    // DLQ configured with a long expiration; a dead-lettered job must get THIS, not the 900s default.
+    await ctx.boss.createQueue(deadLetter, { expireInSeconds: 3600 })
+    await ctx.boss.createQueue(ctx.schema, { deadLetter })
+
+    const jobId = await ctx.boss.send(ctx.schema, { key: ctx.schema }, { retryLimit: 0 })
+    assertTruthy(jobId)
+
+    await ctx.boss.fetch(ctx.schema)
+    await ctx.boss.fail(ctx.schema, jobId)
+
+    const dlq = await helper.findJobs(ctx.schema, 'name = $1 and source_id = $2', [deadLetter, jobId])
+    expect(dlq.rows.length).toBe(1)
+    expect(dlq.rows[0].expire_seconds).toBe(3600)
+  })
+
+  it('redrive tolerates destination policy collisions instead of aborting the batch', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+
+    const deadLetter = `${ctx.schema}_dlq`
+
+    await ctx.boss.createQueue(deadLetter)
+    // short policy: at most one job in the created state per queue (job_i1). Two dead-lettered jobs
+    // redriving back here both insert as created and collide; without ON CONFLICT DO NOTHING the
+    // whole redrive statement aborts and the jobs are stranded in the DLQ forever.
+    await ctx.boss.createQueue(ctx.schema, { deadLetter, policy: 'short', retryLimit: 0 })
+
+    const id1 = await ctx.boss.send(ctx.schema, { n: 1 })
+    assertTruthy(id1)
+    await ctx.boss.fetch(ctx.schema) // id1 -> active, frees the created slot
+
+    const id2 = await ctx.boss.send(ctx.schema, { n: 2 })
+    assertTruthy(id2)
+    await ctx.boss.fetch(ctx.schema) // id2 -> active
+
+    await ctx.boss.fail(ctx.schema, id1)
+    await ctx.boss.fail(ctx.schema, id2)
+
+    // both jobs now sit in the DLQ; redrive routes both back to the short source queue
+    const moved = await ctx.boss.redrive(deadLetter)
+    expect(moved).toBe(1)
+
+    // the DLQ is drained either way (the colliding row is dropped, not restored)
+    const movedAgain = await ctx.boss.redrive(deadLetter)
+    expect(movedAgain).toBe(0)
+  })
+
   it('redrive moves a dead-lettered job back to its source queue', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 

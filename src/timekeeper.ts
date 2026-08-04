@@ -140,10 +140,11 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
           { seconds: skewSeconds, direction: skew > 0 ? 'slower' : 'faster' }
         )
       }
+
+      this.clockSkew = skew
     } catch (err) {
       this.emit(this.events.error, err)
     } finally {
-      this.clockSkew = skew
       this._checkingSkew = false
     }
   }
@@ -187,11 +188,11 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
   }
 
   shouldSendIt (cron: string, tz: string) {
-    const interval = CronExpressionParser.parse(cron, { tz, strict: false })
+    const databaseTime = Date.now() + this.clockSkew
+
+    const interval = CronExpressionParser.parse(cron, { tz, strict: false, currentDate: new Date(databaseTime) })
 
     const prevTime = interval.prev()
-
-    const databaseTime = Date.now() + this.clockSkew
 
     const prevDiff = (databaseTime - prevTime.getTime()) / 1000
 
@@ -199,7 +200,14 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
   }
 
   private async onSendIt (jobs: types.Job<types.Request>[]): Promise<void> {
-    await Promise.allSettled(jobs.map(({ data }) => this.manager.send(data)))
+    const results = await Promise.allSettled(jobs.map(({ data }) => this.manager.send(data)))
+
+    // Surface any failed forward so a lost cron tick isn't silent
+    for (const result of results) {
+      if (result.status === 'rejected') {
+        this.emit(this.events.error, result.reason)
+      }
+    }
   }
 
   async getSchedules (name?: string, key?: string): Promise<types.Schedule[]> {

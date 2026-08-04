@@ -18,7 +18,8 @@ const COMPATIBILITY_FLAGS = [
   'noDeferrableConstraints',
   'noAdvisoryLocks',
   'noCoveringIndexes',
-  'noListenNotify'
+  'noListenNotify',
+  'noIndexProgressView'
 ] as const
 
 type CompatibilityFlag = typeof COMPATIBILITY_FLAGS[number]
@@ -45,16 +46,27 @@ const BACKEND_PROFILES: Record<types.BackendProfile, BackendDefinition> = {
       noDeferrableConstraints: true,
       noAdvisoryLocks: true,
       noCoveringIndexes: true,
-      noListenNotify: true
+      noListenNotify: true,
+      // Online DDL runs as a schema-change job, not the PG CONCURRENTLY path, and
+      // pg_stat_progress_create_index isn't available — so BAM can't use liveness-based reclaim.
+      noIndexProgressView: true
     }
   },
   yugabytedb: {
     kind: 'distributed',
     flags: {
       noAdvisoryLocks: true,
-      noTablePartitioning: true
+      noTablePartitioning: true,
+      // Index builds are a distributed backfill that pg_stat_progress_create_index doesn't reflect,
+      // so liveness would misread an in-flight build as dead. BAM falls back to the timeout instead.
+      noIndexProgressView: true
     }
   },
+  // No noIndexProgressView: pg-boss keeps its tables coordinator-local (it never calls
+  // create_distributed_table), so CREATE INDEX CONCURRENTLY runs against ordinary local Postgres tables
+  // on the coordinator, where pg_stat_progress_create_index is accurate and liveness-based reclaim is
+  // valid. This holds ONLY while the tables stay coordinator-local — if they are ever distributed, the
+  // coordinator's progress view would misread in-flight worker builds as dead and BAM could double-build.
   citus: { kind: 'distributed', flags: {} },
   pglite: { kind: 'embedded', flags: {} }
 }
@@ -123,6 +135,73 @@ function checkSendArgs (args: any): types.Request {
   validateExpirationConfig(options)
   validateRetentionConfig(options)
   validateDeletionConfig(options)
+  validateGroupConfig(options)
+  validateHeartbeatConfig(options)
+
+  return { name, data, options }
+}
+
+const JOB_MATCH_STRATEGIES = ['newest', 'oldest', 'all']
+
+// Unlike checkSendArgs, this does NOT inject send-style defaults (e.g. priority = 0): update()
+// is a partial edit, so only the option keys the caller actually supplied may survive into the
+// payload. Normalization is limited to type coercion (startAfter) and validation.
+function checkUpdateArgs (args: any, { upsert = false } = {}): types.Request {
+  const verb = upsert ? 'upsert()' : 'update()'
+  let name, data, rawOptions
+
+  if (typeof args[0] === 'string') {
+    name = args[0]
+    data = args[1]
+    rawOptions = args[2]
+  } else if (typeof args[0] === 'object') {
+    assert(args.length === 1, `${verb} object API only accepts 1 argument`)
+
+    const job = args[0]
+
+    assert(job, 'boss requires all jobs to have a name')
+
+    name = job.name
+    data = job.data
+    rawOptions = job.options
+  }
+
+  assert(name, 'boss requires all jobs to have a queue name')
+  assert(typeof data !== 'function', `${verb} cannot accept a function as the payload.  Did you intend to use work()?`)
+
+  const options = { ...(rawOptions || {}) }
+  assert(typeof options === 'object', 'options should be an object')
+
+  const { id, singletonKey, match } = options as types.UpdateOptions
+
+  // Both update() and upsert() target by exactly one of id or singletonKey. (upsert() may also
+  // require a singletonKey at runtime on key_strict_fifo queues — enforced in the manager, which
+  // knows the policy — because an insert-on-miss there needs a key.)
+  assert((!!id) !== (!!singletonKey), `${verb} requires exactly one of id or singletonKey`)
+  assert(!(id && match !== undefined), 'match is only valid when targeting jobs by singletonKey')
+
+  assert(match === undefined || JOB_MATCH_STRATEGIES.includes(match), `match must be one of: ${JOB_MATCH_STRATEGIES.join(', ')}`)
+
+  assert(!('priority' in options) || (Number.isInteger(options.priority)), 'priority must be an integer')
+
+  if ('startAfter' in options) {
+    // Unlike send(), update() must honor a numeric startAfter of 0 (or negative) — the caller is
+    // explicitly pulling a deferred job forward to now. The send-style `+startAfter > 0` guard
+    // coerced 0 to undefined, which JSON.stringify then dropped, silently making the edit a no-op.
+    // Any finite number is passed through as a seconds interval ('0' -> now()); a string is kept.
+    const startAfter = options.startAfter
+    options.startAfter = (startAfter instanceof Date && typeof startAfter.toISOString === 'function')
+      ? startAfter.toISOString()
+      : (typeof startAfter === 'number' && Number.isFinite(startAfter))
+          ? '' + startAfter
+          : (typeof startAfter === 'string')
+              ? startAfter
+              : undefined
+  }
+
+  validateRetryConfig(options)
+  validateExpirationConfig(options)
+  validateRetentionConfig(options)
   validateGroupConfig(options)
   validateHeartbeatConfig(options)
 
@@ -425,13 +504,73 @@ function resolveBackend (config: any) {
   if (config.__test__noAdvisoryLocks) {
     config.noAdvisoryLocks = true
   }
+
+  // Test hook: exercise the no-liveness BAM reclaim path (timeout-only, no CONCURRENTLY healing)
+  // used by CockroachDB/YugabyteDB, on a plain Postgres instance.
+  if (config.__test__noIndexProgressView) {
+    config.noIndexProgressView = true
+  }
+}
+
+// The character rules for the contents of a quoted name, as a predicate clause returned rather than
+// thrown, so the bare-name path can ask whether quoting would actually fix a name before
+// recommending it - and explain why not when it wouldn't.
+function quotedNameProblem (resolved: string): string | null {
+  // the value is interpolated into identifier positions verbatim, so a double quote inside the
+  // outer pair would close the identifier early and allow arbitrary SQL to follow.
+  if (resolved.includes('"')) return 'cannot contain double quotes'
+  // a single quote would terminate the literal in the string-comparison positions, and would also
+  // break the `EXECUTE format('… ')` bodies the schema is interpolated into.
+  if (resolved.includes("'")) return 'cannot contain single quotes'
+  // % is a format() specifier, and the schema is interpolated into EXECUTE format('… ${schema}.%I …')
+  // templates. an unknown specifier aborts the statement; a valid one (e.g. "a%Ib") is worse, since
+  // it silently consumes an argument and shifts every later specifier by one.
+  if (resolved.includes('%')) return 'cannot contain percent signs'
+  // $ can collide with the dollar-quoted function bodies the schema appears inside.
+  if (resolved.includes('$')) return 'cannot contain dollar signs'
+  // partition and table naming splits on '.', so a dot would be misread as a schema separator.
+  if (resolved.includes('.')) return 'cannot contain periods'
+  // backslash is not valid in the bytea inputs the name is hashed through, and control
+  // characters can break out of the provenance comments in exported migration SQL.
+  if (resolved.includes('\\')) return 'cannot contain backslashes'
+  // eslint-disable-next-line no-control-regex
+  if (/[\x00-\x1f\x7f]/.test(resolved)) return 'cannot contain control characters'
+  return null
 }
 
 function assertPostgresObjectName (name: string) {
   assert(typeof name === 'string', 'Name must be a string')
-  assert(name.length <= 50, 'Name cannot exceed 50 characters')
-  assert(!/\W/.test(name), 'Name can only contain alphanumeric characters or underscores')
-  assert(!/^\d/.test(name), 'Name cannot start with a number')
+
+  const quoted = name.startsWith('"') && name.endsWith('"') && name.length > 1
+  const resolved = quoted ? name.slice(1, -1) : name
+
+  assert(resolved.length > 0, 'Name cannot be empty')
+  // the limit applies to the resolved name, since that is what postgres stores and what the
+  // derived object names are built from. it is measured in bytes rather than characters because
+  // postgres truncates identifiers at NAMEDATALEN-1 (63) bytes *silently* - a name over the limit
+  // would install fine but leave the configured name and the catalog name permanently out of sync,
+  // so every nspname comparison would miss. bare names are ascii, so this only binds on quoted ones.
+  assert(Buffer.byteLength(resolved, 'utf8') <= 50, 'Name cannot exceed 50 bytes')
+
+  if (quoted) {
+    const problem = quotedNameProblem(resolved)
+    assert(problem === null, `Quoted name ${problem}`)
+    return
+  }
+
+  // A name that is not a legal bare identifier is usable verbatim if it is quoted, so hand the
+  // caller the config value that works instead of only the rule they broke - otherwise the feature
+  // is only discoverable by finding the docs. When quoting would not help either, say which rule
+  // stops it, rather than recommending a value that also throws or leaving the caller to guess.
+  const problem = quotedNameProblem(name)
+  const remedy = problem === null
+    ? ` Pass it quoted to use it verbatim: schema: '"${name}"'`
+    : ` Quoting will not help: a quoted name ${problem}.`
+
+  // Both rules are scoped to unquoted names - the message has to say so, since the quoted form
+  // accepts far more than this.
+  assert(!/\W/.test(name), `Schema name ${JSON.stringify(name)} can only contain alphanumeric characters or underscores when unquoted.${remedy}`)
+  assert(!/^\d/.test(name), `Schema name ${JSON.stringify(name)} cannot start with a number when unquoted.${remedy}`)
 }
 
 function assertQueueName (name: string) {
@@ -598,9 +737,11 @@ export {
   assertQueueName,
   checkFetchArgs,
   checkSendArgs,
+  checkUpdateArgs,
   checkWorkArgs,
   getConfig,
   POLICY,
   validateFlowJobs,
+  validateGroupConfig,
   validateQueueArgs
 }

@@ -62,6 +62,27 @@ describe('queueStats', function () {
     expect(queueData.readyCount).toBe(1)
   })
 
+  it('should not let a cancelled deferred job deflate readyCount', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+    const queue = randomUUID()
+    await ctx.boss.createQueue(queue)
+
+    // two ready jobs plus one deferred job that we then cancel
+    await ctx.boss.send(queue)
+    await ctx.boss.send(queue)
+    const deferredId = await ctx.boss.send(queue, {}, { startAfter: 3600 })
+    helper.assertTruthy(deferredId)
+    await ctx.boss.cancel(queue, deferredId)
+
+    const [queueData] = await ctx.boss.getQueueStats(queue)
+
+    // deferredCount must be scoped to queued state; the cancelled deferred job (still future-dated)
+    // must not be counted, or readyCount (queued - deferred) under-reports the true backlog.
+    expect(queueData.queuedCount).toBe(2)
+    expect(queueData.deferredCount).toBe(0)
+    expect(queueData.readyCount).toBe(2)
+  })
+
   it('should count failed jobs in failedCount', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
     const queue = randomUUID()
