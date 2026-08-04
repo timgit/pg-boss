@@ -98,18 +98,6 @@ pg-boss includes a command-line interface if needed for managing database migrat
 
 See the [CLI documentation](/cli) for details.
 
-## Dashboard
-
-A web-based dashboard is available in the [`@pg-boss/dashboard`](https://www.npmjs.com/package/@pg-boss/dashboard) package for monitoring and managing jobs, queues and schedules.
-
-See the [dashboard documentation](/dashboard) for details.
-
-## Proxy
-
-A HTTP proxy is available in the [`@pg-boss/proxy`](https://www.npmjs.com/package/@pg-boss/proxy) package if needed to support use cases such as platform compatibility and connection pooling or scalability.
-
-See the [proxy documentation](/proxy) for details.
-
 ## Requirements
 * Node 22.12 or higher for CommonJS's require(esm)
 * PostgreSQL 13 or higher

@@ -45,8 +45,6 @@ export default defineConfig({
       { text: 'Introduction', link: '/introduction' },
       { text: 'Install', link: '/install' },
       { text: 'CLI', link: '/cli' },
-      { text: 'Dashboard', link: '/dashboard' },
-      { text: 'Proxy', link: '/proxy' },
       { text: 'Database Backends', link: '/database-backends' },
       {
         text: 'API',

@@ -723,7 +723,7 @@ function createIndexJobThrottle (schema: string) {
 function createIndexJobFetch (schema: string, noCoveringIndex = false) {
   // No covering INCLUDE: the fetch locks candidate rows with FOR UPDATE ... SKIP LOCKED, which
   // forces heap access, so an index-only scan is impossible and a covering payload would never be
-  // read from the index. Confirmed dead weight via EXPLAIN ANALYZE (see examples/index-perf);
+  // read from the index. Confirmed dead weight via EXPLAIN ANALYZE;
   // dropping it shrinks job_i5 on the hot insert path at no read-side cost.
   // noCoveringIndex (the CockroachDB profile flag that stripped the old INCLUDE) is now moot here.
   return `CREATE INDEX job_i5 ON ${schema}.job (name, start_after) WHERE state < '${JOB_STATES.active}' AND NOT blocked`
