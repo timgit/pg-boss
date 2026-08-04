@@ -3,7 +3,7 @@ import { ctx, expect } from './hooks.ts'
 import * as helper from './testHelper.ts'
 import pg from 'pg'
 
-import { fromKnex, fromKysely, fromDrizzle, fromPrisma } from '../src/adapters/index.ts'
+import { fromKnex, fromKysely, fromDrizzle, fromPrisma, fromBunSql } from '../src/adapters/index.ts'
 
 // These adapters wrap real ORM connections that reach Postgres over a connection string; PGlite is
 // in-process only, so the whole file is skipped under PGlite (fromPglite is covered separately).
@@ -17,6 +17,7 @@ import { sql as drizzleSql } from 'drizzle-orm'
 import postgres from 'postgres'
 import { PrismaClient } from '@prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
+import { SQL } from 'bun'
 
 const config = helper.getConfig()
 const connString = `postgres://${config.user}:${config.password}@${config.host}:${config.port}/${config.database}`
@@ -564,5 +565,159 @@ describe('prisma adapter', () => {
     expect(result.rows[0]?.a).toBe(7)
     expect(result.rows[0]?.b).toBe(9)
     expect(result.rows[0]?.c).toBe(7)
+  })
+})
+
+// Bun's SQL client is a driver rather than an ORM, so it is exercised both ways: inside a
+// sql.begin() transaction like the adapters above, and directly on the pooled client, which is how
+// a pg-boss instance configured with `db: fromBunSql(sql)` uses it.
+describe('bun adapter', () => {
+  let sql: SQL
+
+  afterAll(async () => {
+    if (sql) await sql.close()
+  })
+
+  const getSql = () => {
+    sql ??= new SQL(connString, { max: 5 })
+    return sql
+  }
+
+  it('should execute sql through a bun transaction', async () => {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    const jobId = await getSql().begin(async (tx: any) => {
+      const adapter = fromBunSql(tx)
+      const result = await adapter.executeSql(
+        `INSERT INTO ${ctx.schema}.job (name, data, state)
+         VALUES ($1, $2, 'created')
+         RETURNING id`,
+        [ctx.schema, '{}']
+      )
+      return result.rows[0]?.id
+    })
+
+    expect(jobId).toBeDefined()
+  })
+
+  it('should execute parameterless sql through a bun transaction', async () => {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    const result = await getSql().begin(async (tx: any) =>
+      fromBunSql(tx).executeSql('SELECT 1 as val'))
+
+    expect(result.rows[0]?.val).toBe(1)
+  })
+
+  it('should rollback on bun transaction failure', async () => {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    let jobId: string | undefined
+    try {
+      await getSql().begin(async (tx: any) => {
+        const adapter = fromBunSql(tx)
+        const result = await adapter.executeSql(
+          `INSERT INTO ${ctx.schema}.job (name, data, state)
+           VALUES ($1, $2, 'created')
+           RETURNING id`,
+          [ctx.schema, '{}']
+        )
+        jobId = result.rows[0]?.id
+        throw new Error('force rollback')
+      })
+    } catch {}
+
+    expect(jobId).toBeDefined()
+    const check = await helper.findJobs(ctx.schema, 'id = $1', [jobId])
+    expect(check.rows.length).toBe(0)
+  })
+
+  it('should handle repeated parameter placeholders (bun)', async () => {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    const result = await fromBunSql(getSql()).executeSql(
+      'SELECT $1::int as a, $2::int as b, $1::int as c',
+      [7, 9]
+    )
+
+    expect(result.rows[0]?.a).toBe(7)
+    expect(result.rows[0]?.b).toBe(9)
+    expect(result.rows[0]?.c).toBe(7)
+  })
+
+  it('should handle out-of-order repeated placeholders (bun)', async () => {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    const result = await fromBunSql(getSql()).executeSql(
+      'SELECT $2::int as a, $1::int as b, $2::int as c',
+      [10, 20]
+    )
+
+    expect(result.rows[0]?.a).toBe(20)
+    expect(result.rows[0]?.b).toBe(10)
+    expect(result.rows[0]?.c).toBe(20)
+  })
+
+  it('should handle array parameters bound to ANY($N::uuid[]) (bun)', async () => {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    const id = 'd1e48017-d11b-4434-a745-90ee6453caef'
+
+    // bun joins a JS array parameter with commas and no braces, which postgres rejects as a
+    // malformed array literal, so the adapter has to build the array literal itself
+    const result = await fromBunSql(getSql()).executeSql(
+      `SELECT $1::uuid = ANY($2::uuid[]) as single,
+              ($1::uuid = ANY($3::uuid[])) as multi`,
+      [id, [id], [id, 'a745d11b-d11b-4434-a745-90ee6453caef']]
+    )
+
+    expect(result.rows[0]?.single).toBe(true)
+    expect(result.rows[0]?.multi).toBe(true)
+  })
+
+  it('should bind an encoded json argument without re-encoding it (bun)', async () => {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    // bun infers the parameter type from the ::json cast and encodes the value, which would
+    // double-encode the payload pg-boss has already stringified
+    const result = await fromBunSql(getSql()).executeSql(
+      'SELECT * FROM json_to_recordset($1::json) AS x (id int, name text)',
+      [JSON.stringify([{ id: 1, name: 'first' }, { id: 2, name: 'second' }])]
+    )
+
+    expect(result.rows).toStrictEqual([
+      { id: 1, name: 'first' },
+      { id: 2, name: 'second' },
+    ])
+  })
+
+  it('should handle results as an array instead of object (bun)', async () => {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    // bun refuses transaction control on a pooled connection, so the adapter replays the block on
+    // a reserved one; the per-statement row arrays are then flattened into a single row set
+    const result = await fromBunSql(getSql()).executeSql('BEGIN;\nSELECT 1 as select1;\nSELECT 2 as select2;\nCOMMIT;')
+
+    expect(result).toHaveProperty('rows')
+    expect(result.rows).toStrictEqual([
+      { select1: 1 },
+      { select2: 2 },
+    ])
+  })
+
+  it('should update a job through a bun transaction (bun)', async () => {
+    const boss = ctx.boss = await helper.start(ctx.bossConfig)
+
+    const id = await boss.send(ctx.schema, { v: 1 })
+    helper.assertTruthy(id)
+
+    const result = await getSql().begin(async (tx: any) =>
+      boss.update(ctx.schema, { v: 2 }, { id, db: fromBunSql(tx) }))
+
+    expect(result).toEqual({ jobs: [id], updated: 1 })
+
+    const job = await boss.getJobById(ctx.schema, id)
+    helper.assertTruthy(job)
+    expect(job.data).toEqual({ v: 2 })
   })
 })

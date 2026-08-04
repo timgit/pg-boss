@@ -4,7 +4,7 @@
     "@tsconfig/node-ts/tsconfig.json"
   ],
   "compilerOptions": {
-    "types": ["node", "vitest/globals"],
+    "types": ["node", "bun", "vitest/globals"],
     "outDir": "dist",
     "declaration": true,
     "declarationMap": true,

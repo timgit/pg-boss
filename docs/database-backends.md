@@ -361,6 +361,72 @@ PGlite supports in-memory, IndexedDB (browser), and filesystem persistence — s
 [PGlite docs](https://pglite.dev/docs/filesystems). pg-boss treats all of them identically; the job
 schema and data persist wherever the PGlite instance stores its data directory.
 
+### Bun.SQL
+
+[Bun's built-in SQL client](https://bun.com/docs/api/sql) is a *driver*, not a backend: it connects
+to the same stock PostgreSQL the default `pg` pool does, so `backend` stays at its default
+`postgres` and no compatibility flags apply. Reach it with the `fromBunSql` adapter, and a Bun
+application can drop the `pg` dependency entirely.
+
+#### Usage
+
+Bun's SQL client is built in — nothing to install.
+
+```ts
+import { SQL } from 'bun'
+import PgBoss, { fromBunSql } from 'pg-boss'
+
+const sql = new SQL('postgres://user:pass@localhost:5432/mydb')
+
+const boss = new PgBoss({ db: fromBunSql(sql) })
+
+await boss.start()
+
+await boss.createQueue('email')
+await boss.send('email', { to: 'user@example.com' })
+```
+
+The same adapter also scopes a single operation to a `sql.begin()` transaction — see
+[Database Adapters](api/adapters.md#bun).
+
+#### Lifecycle is yours to manage
+
+pg-boss does **not** open or close the `SQL` client — you own it. Construct it before
+`boss.start()` and close it after `boss.stop()`:
+
+```ts
+await boss.stop()
+await sql.close()
+```
+
+#### No LISTEN/NOTIFY
+
+Bun's SQL client
+[does not implement LISTEN or NOTIFY](https://bun.com/docs/api/sql#postgresql-specific-features).
+The adapter therefore exposes no listener, and `useListenNotify: true` emits a
+`listen_notify_unavailable` warning and continues with polling. Nothing is lost but wake-up latency —
+a NOTIFY is only ever a hint that makes workers poll sooner, never a correctness requirement.
+
+The producer side is unaffected: the `pg_notify` pg-boss inlines into inserts is evaluated by
+PostgreSQL itself, so a queue can stay opted into `notify` and a separate `pg`-backed instance can
+still listen for it.
+
+#### Keep Bun's default `prepare: true`
+
+Bun derives each parameter's wire encoding from the type PostgreSQL reports for that placeholder,
+which only happens when statements are prepared. Under `prepare: false`, dates and objects are sent
+in forms PostgreSQL rejects, so that option is not supported.
+
+Bun caches prepared statements per connection, keyed by query text. pg-boss generates its SQL per
+queue table, so that cache grows with the number of partitioned queues — worth watching in
+`pg_prepared_statements` on deployments with very many of them.
+
+#### Multi-statement blocks
+
+Schema installs, migrations and maintenance run as a single `BEGIN … COMMIT` block, which Bun
+refuses on a pooled connection. The adapter replays those on a reserved connection automatically —
+you do not need `max: 1`.
+
 ### Not supported: Aurora DSQL
 
 There is no `backend` profile for Aurora DSQL, so pg-boss cannot currently be configured to run

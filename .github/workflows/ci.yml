@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+    tags-ignore: ['**']
+  pull_request:
+    branches: [master]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    container: oven/bun:1
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - mode: standard
+            command: bun run test
+          - mode: distributed
+            command: bun run test:distributed
+          - mode: bun-driver
+            command: bun run test:bun
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v5
+
+    - name: Install
+      run: bun install
+
+    - name: Test (${{ matrix.mode }})
+      run: ${{ matrix.command }}
+      env:
+        POSTGRES_HOST: postgres
+
+  test-pglite:
+    runs-on: ubuntu-latest
+    container: oven/bun:1
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v5
+
+    - name: Install
+      run: bun install
+
+    - name: Test (pglite)
+      run: bun run test:pglite

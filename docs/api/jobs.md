@@ -83,7 +83,7 @@ All retry, expiration, and retention options can also be set on the queue and wi
   }
     ```
 
-  pg-boss ships with built-in adapters for popular ORMs. See [ORM Transaction Adapters](./adapters) for details.
+  pg-boss ships with built-in adapters for popular ORMs and for Bun's SQL client. See [Database Adapters](./adapters) for details.
 
 **Deferred jobs**
 
