@@ -199,7 +199,7 @@ describe('quoted schema names', function () {
         expect(job.data).toEqual({ hello: 'world' })
 
         await boss.complete(queue, job.id)
-        expect((await boss.getJobById(queue, job.id))?.state).toBe('completed')
+        expect((await boss.findJobs(queue, { id: job.id }))[0]?.state).toBe('completed')
       } finally {
         await boss.stop({ graceful: false })
         await helper.dropSchema(schema)

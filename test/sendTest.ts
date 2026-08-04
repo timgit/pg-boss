@@ -154,7 +154,7 @@ describe('send', function () {
     const id = await ctx.boss.send(ctx.schema, {}, options)
 
     assertTruthy(id)
-    const job = await ctx.boss.getJobById(ctx.schema, id)
+    const [job] = await ctx.boss.findJobs(ctx.schema, { id })
     assertTruthy(job)
 
     expect(job.priority).toBe(options.priority)
@@ -181,7 +181,7 @@ describe('send', function () {
     const id = await ctx.boss.send(ctx.schema, {}, { deadLetter: deadLetter2 })
 
     assertTruthy(id)
-    const job = await ctx.boss.getJobById(ctx.schema, id)
+    const [job] = await ctx.boss.findJobs(ctx.schema, { id })
     assertTruthy(job)
 
     expect(job.deadLetter).toBe(deadLetter2)
@@ -196,7 +196,7 @@ describe('send', function () {
     const id = await ctx.boss.send(ctx.schema, {}, { deadLetter })
 
     assertTruthy(id)
-    const job = await ctx.boss.getJobById(ctx.schema, id)
+    const [job] = await ctx.boss.findJobs(ctx.schema, { id })
     assertTruthy(job)
 
     expect(job.deadLetter).toBe(deadLetter)

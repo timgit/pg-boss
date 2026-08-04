@@ -137,7 +137,7 @@ helper.describePglite('distributed database mode', { timeout: blockTimeout }, fu
         })
       ).rejects.toThrow('Simulated caller abort')
 
-      const jobData = await ctx.boss.getJobById(ctx.schema, jobId)
+      const [jobData] = await ctx.boss.findJobs(ctx.schema, { id: jobId })
       helper.assertTruthy(jobData)
       expect(jobData.state).toBe('active')
     } finally {
@@ -177,7 +177,7 @@ helper.describePglite('distributed database mode', { timeout: blockTimeout }, fu
 
     await ctx.boss.supervise(ctx.schema)
 
-    const failed = await ctx.boss.getJobById(ctx.schema, jobId)
+    const [failed] = await ctx.boss.findJobs(ctx.schema, { id: jobId })
     helper.assertTruthy(failed)
     expect(failed.state).toBe('failed')
 
@@ -186,7 +186,7 @@ helper.describePglite('distributed database mode', { timeout: blockTimeout }, fu
     expect(dlqJob.data.key).toBe(ctx.schema)
 
     // distributed insertDeadLetterJob carries source provenance
-    const dlqMeta = await ctx.boss.getJobById(deadLetter, dlqJob.id)
+    const [dlqMeta] = await ctx.boss.findJobs(deadLetter, { id: dlqJob.id })
     helper.assertTruthy(dlqMeta)
     expect(dlqMeta.sourceName).toBe(ctx.schema)
     expect(dlqMeta.sourceId).toBe(jobId)
@@ -214,7 +214,7 @@ helper.describePglite('distributed database mode', { timeout: blockTimeout }, fu
 
     await ctx.boss.supervise(ctx.schema)
 
-    const retried = await ctx.boss.getJobById(ctx.schema, jobId)
+    const [retried] = await ctx.boss.findJobs(ctx.schema, { id: jobId })
     helper.assertTruthy(retried)
     expect(retried.state).toBe('retry')
   })
@@ -258,7 +258,7 @@ helper.describePglite('distributed database mode', { timeout: blockTimeout }, fu
 
       await ctx.boss.fail(ctx.schema, jobId, null, { db: cockroachLike })
 
-      const retried = await ctx.boss.getJobById(ctx.schema, jobId)
+      const [retried] = await ctx.boss.findJobs(ctx.schema, { id: jobId })
       helper.assertTruthy(retried)
       expect(retried.state).toBe('retry')
     } finally {
@@ -286,7 +286,7 @@ helper.describePglite('distributed database mode', { timeout: blockTimeout }, fu
         })
       ).rejects.toThrow('Simulated caller abort')
 
-      const jobData = await ctx.boss.getJobById(ctx.schema, jobId)
+      const [jobData] = await ctx.boss.findJobs(ctx.schema, { id: jobId })
       helper.assertTruthy(jobData)
       expect(jobData.state).toBe('active')
     } finally {
@@ -311,7 +311,7 @@ helper.describePglite('distributed database mode', { timeout: blockTimeout }, fu
     await ctx.boss.complete(ctx.schema, parent.id)
     await ctx.boss.resolveFlow()
 
-    const child = await ctx.boss.getJobById(ctx.schema, flow.child)
+    const [child] = await ctx.boss.findJobs(ctx.schema, { id: flow.child })
     helper.assertTruthy(child)
     expect(child.blocked).toBe(false)
     expect(child.pendingDependencies).toBe(0)
@@ -330,7 +330,7 @@ helper.describePglite('distributed database mode', { timeout: blockTimeout }, fu
     // Resolves across the existing queue, finds no completed blocking parents, and does nothing.
     await ctx.boss.resolveFlow()
 
-    const completed = await ctx.boss.getJobById(ctx.schema, id)
+    const [completed] = await ctx.boss.findJobs(ctx.schema, { id })
     helper.assertTruthy(completed)
     expect(completed.state).toBe('completed')
   })
@@ -354,7 +354,7 @@ helper.describePglite('distributed database mode', { timeout: blockTimeout }, fu
 
     await ctx.boss.complete(ctx.schema, jobId)
 
-    const completed = await ctx.boss.getJobById(ctx.schema, jobId)
+    const [completed] = await ctx.boss.findJobs(ctx.schema, { id: jobId })
     helper.assertTruthy(completed)
     expect(completed.state).toBe('completed')
   })
@@ -399,7 +399,7 @@ helper.describePglite('distributed database mode', { timeout: blockTimeout }, fu
     await ctx.boss.complete(ctx.schema, jobId)
 
     // Verify job is completed
-    const completedJob = await ctx.boss.getJobById(ctx.schema, jobId)
+    const [completedJob] = await ctx.boss.findJobs(ctx.schema, { id: jobId })
     helper.assertTruthy(completedJob)
     expect(completedJob.state).toBe('completed')
   })

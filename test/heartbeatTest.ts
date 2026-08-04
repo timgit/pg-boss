@@ -44,7 +44,7 @@ describe('heartbeat', function () {
     await delay(2000)
 
     expect(processedId).toBe(jobId)
-    const job = await ctx.boss.getJobById(ctx.schema, jobId)
+    const [job] = await ctx.boss.findJobs(ctx.schema, { id: jobId })
     assertTruthy(job)
     expect(job.state).toBe('completed')
   })
@@ -71,7 +71,7 @@ describe('heartbeat', function () {
 
     await ctx.boss.supervise(ctx.schema)
 
-    const failedJob = await ctx.boss.getJobById(ctx.schema, jobId)
+    const [failedJob] = await ctx.boss.findJobs(ctx.schema, { id: jobId })
     assertTruthy(failedJob)
     expect(failedJob.state).toBe('failed')
     expect(failedJob.output).toEqual({ value: { message: 'job heartbeat timeout' } })
@@ -101,7 +101,7 @@ describe('heartbeat', function () {
 
     await ctx.boss.supervise(ctx.schema)
 
-    const failedJob = await ctx.boss.getJobById(ctx.schema, jobId)
+    const [failedJob] = await ctx.boss.findJobs(ctx.schema, { id: jobId })
     assertTruthy(failedJob)
     expect(failedJob.state).toBe('failed')
     expect(failedJob.output).toEqual({ value: { message: 'job heartbeat timeout' } })
@@ -163,7 +163,7 @@ describe('heartbeat', function () {
     // Supervise should not fail it via heartbeat
     await ctx.boss.supervise(ctx.schema)
 
-    const activeJob = await ctx.boss.getJobById(ctx.schema, jobId)
+    const [activeJob] = await ctx.boss.findJobs(ctx.schema, { id: jobId })
     assertTruthy(activeJob)
     expect(activeJob.state).toBe('active')
   })
@@ -193,7 +193,7 @@ describe('heartbeat', function () {
 
     await ctx.boss.supervise(ctx.schema)
 
-    const failedJob = await ctx.boss.getJobById(ctx.schema, jobId)
+    const [failedJob] = await ctx.boss.findJobs(ctx.schema, { id: jobId })
     assertTruthy(failedJob)
     expect(failedJob.state).toBe('failed')
     expect(failedJob.output).toEqual({ value: { message: 'job heartbeat timeout' } })
@@ -263,7 +263,7 @@ describe('heartbeat', function () {
 
     await ctx.boss.supervise(ctx.schema)
 
-    const retriedJob = await ctx.boss.getJobById(ctx.schema, jobId)
+    const [retriedJob] = await ctx.boss.findJobs(ctx.schema, { id: jobId })
     assertTruthy(retriedJob)
     expect(retriedJob.state).toBe('retry')
 

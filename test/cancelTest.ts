@@ -20,7 +20,7 @@ describe('cancel', function () {
     assertTruthy(jobId)
     await ctx.boss.cancel(ctx.schema, jobId)
 
-    const job = await ctx.boss.getJobById(ctx.schema, jobId)
+    const [job] = await ctx.boss.findJobs(ctx.schema, { id: jobId })
 
     expect(job && job.state === 'cancelled').toBeTruthy()
   })
@@ -70,7 +70,7 @@ describe('cancel', function () {
     assertTruthy(jobId)
     await ctx.boss.cancel(ctx.schema, jobId, { db })
 
-    const job = await ctx.boss.getJobById(ctx.schema, jobId)
+    const [job] = await ctx.boss.findJobs(ctx.schema, { id: jobId })
 
     expect(job && job.state === 'cancelled').toBeTruthy()
     expect(called).toBe(true)
