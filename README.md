@@ -1,4 +1,7 @@
-Queueing jobs in Postgres from Node.js like a boss.
+> [!WARNING]
+> **Work in progress.** This is an experimental fork of pg-boss that runs on Bun and adds SQLite and in-memory backends. It's under active development and not yet production-ready — expect breaking changes.
+
+Queueing jobs in Postgres, SQLite, and memory from Bun like a boss.
 
 [![Build](https://github.com/timgit/pg-boss/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/timgit/pg-boss/actions/workflows/ci.yml)
 [![Coverage](https://img.shields.io/coverallsCoverage/github/timgit/pg-boss)](https://coveralls.io/github/timgit/pg-boss?branch=master)

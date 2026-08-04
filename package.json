@@ -1,7 +1,7 @@
 {
   "name": "pg-boss",
   "version": "12.27.0",
-  "description": "Queueing jobs in Postgres from Node.js like a boss",
+  "description": "Queueing jobs in Postgres, SQLite, and memory from Bun like a boss",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
