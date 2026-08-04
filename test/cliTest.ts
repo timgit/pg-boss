@@ -7,7 +7,7 @@ import crypto from 'node:crypto'
 import { getConnectionString, dropSchema, getDb, itPostgresOnly, describePglite } from './testHelper.ts'
 import packageJson from '../package.json' with { type: 'json' }
 
-const cliOptions = '--import=tsx '
+const cliOptions = ''
 const cliFile = resolve(import.meta.dirname, '../src/cli.ts')
 const cliPath = cliOptions + cliFile
 
@@ -15,7 +15,7 @@ const cliPath = cliOptions + cliFile
 // but `doctor` prints its report to stdout and exits 1 when drift is found. Run it directly so both
 // the stdout report and the exit code can be asserted.
 function runCli (args: string[]): { stdout: string, stderr: string, code: number | null } {
-  const result = spawnSync('node', ['--import=tsx', cliFile, ...args], { encoding: 'utf-8' })
+  const result = spawnSync('bun', [cliFile, ...args], { encoding: 'utf-8' })
   return { stdout: result.stdout || '', stderr: result.stderr || '', code: result.status }
 }
 const sha1 = (value: string): string => crypto.createHash('sha1').update(value).digest('hex')
@@ -29,49 +29,49 @@ function getTestSchema (testName: string): string {
 describePglite('cli', function () {
   describe('help', function () {
     it('should show help with --help flag', async function () {
-      await execCommand(`node ${cliPath} --help`, {
+      await execCommand(`bun ${cliPath} --help`, {
         expectedOutput: 'pg-boss CLI'
       })
     })
 
     it('should show help with -h flag', async function () {
-      await execCommand(`node ${cliPath} -h`, {
+      await execCommand(`bun ${cliPath} -h`, {
         expectedOutput: 'Usage: pg-boss <command>'
       })
     })
 
     it('should show help when no command provided', async function () {
-      await execCommand(`node ${cliPath}`, {
+      await execCommand(`bun ${cliPath}`, {
         expectedOutput: 'Commands:'
       })
     })
 
     it('should list all available commands in help', async function () {
-      await execCommand(`node ${cliPath} --help`, {
+      await execCommand(`bun ${cliPath} --help`, {
         expectedOutput: 'migrate'
       })
-      await execCommand(`node ${cliPath} --help`, {
+      await execCommand(`bun ${cliPath} --help`, {
         expectedOutput: 'create'
       })
-      await execCommand(`node ${cliPath} --help`, {
+      await execCommand(`bun ${cliPath} --help`, {
         expectedOutput: 'version'
       })
-      await execCommand(`node ${cliPath} --help`, {
+      await execCommand(`bun ${cliPath} --help`, {
         expectedOutput: 'plans'
       })
-      await execCommand(`node ${cliPath} --help`, {
+      await execCommand(`bun ${cliPath} --help`, {
         expectedOutput: 'rollback'
       })
-      await execCommand(`node ${cliPath} --help`, {
+      await execCommand(`bun ${cliPath} --help`, {
         expectedOutput: 'doctor'
       })
     })
 
     it('should show environment variables documentation', async function () {
-      await execCommand(`node ${cliPath} --help`, {
+      await execCommand(`bun ${cliPath} --help`, {
         expectedOutput: 'PGBOSS_DATABASE_URL'
       })
-      await execCommand(`node ${cliPath} --help`, {
+      await execCommand(`bun ${cliPath} --help`, {
         expectedOutput: 'PGBOSS_HOST'
       })
     })
@@ -79,43 +79,43 @@ describePglite('cli', function () {
 
   describe('plans', function () {
     it('should output create SQL plans', async function () {
-      await execCommand(`node ${cliPath} plans create`, {
+      await execCommand(`bun ${cliPath} plans create`, {
         expectedOutput: 'CREATE SCHEMA'
       })
     })
 
     it('should output migrate SQL plans', async function () {
-      await execCommand(`node ${cliPath} plans migrate`, {
+      await execCommand(`bun ${cliPath} plans migrate`, {
         expectedOutput: 'SQL to migrate'
       })
     })
 
     it('should inline async index builds in migrate plans (no BAM worker runs an exported script)', async function () {
-      const result = await execCommand(`node ${cliPath} plans migrate`)
+      const result = await execCommand(`bun ${cliPath} plans migrate`)
       expect(result.stdout).toContain('CONCURRENTLY IF NOT EXISTS')
       // the inert BAM enqueue must not appear in an exported script
       expect(result.stdout).not.toMatch(/SELECT\s+\S*job_table_run_async\(/)
     })
 
     it('should note the missing connection in migrate plans when none is provided', async function () {
-      const result = await execCommand(`node ${cliPath} plans migrate`)
+      const result = await execCommand(`bun ${cliPath} plans migrate`)
       expect(result.stdout).toContain('no database connection provided')
     })
 
     it('should output rollback SQL plans', async function () {
-      await execCommand(`node ${cliPath} plans rollback`, {
+      await execCommand(`bun ${cliPath} plans rollback`, {
         expectedOutput: 'SQL to rollback'
       })
     })
 
     it('should use custom schema in plans', async function () {
-      await execCommand(`node ${cliPath} plans create --schema custom_schema`, {
+      await execCommand(`bun ${cliPath} plans create --schema custom_schema`, {
         expectedOutput: 'custom_schema'
       })
     })
 
     it('should error on unknown plans subcommand', async function () {
-      await execCommand(`node ${cliPath} plans unknown`, {
+      await execCommand(`bun ${cliPath} plans unknown`, {
         expectedErrorMessage: 'Unknown plans subcommand'
       })
     })
@@ -123,14 +123,14 @@ describePglite('cli', function () {
 
   describe('error handling', function () {
     it('should error when no database connection configured', async function () {
-      await execCommand(`node ${cliPath} migrate`, {
+      await execCommand(`bun ${cliPath} migrate`, {
         expectedErrorMessage: 'No database connection configured'
       })
     })
 
     it('should error on unknown command', async function () {
       // Use plans command context since unknown command check happens before connection
-      await execCommand(`node ${cliPath} unknowncommand`, {
+      await execCommand(`bun ${cliPath} unknowncommand`, {
         expectedErrorMessage: 'Unknown command'
       })
     })
@@ -156,7 +156,7 @@ describePglite('cli', function () {
       }
       writeFileSync(configPath, JSON.stringify(config))
 
-      await execCommand(`node ${cliPath} plans create --config ${configPath}`, {
+      await execCommand(`bun ${cliPath} plans create --config ${configPath}`, {
         expectedOutput: 'test_config_schema'
       })
     })
@@ -168,7 +168,7 @@ describePglite('cli', function () {
       }
       writeFileSync(configPath, JSON.stringify(config))
 
-      await execCommand(`node ${cliPath} plans create --config ${configPath}`, {
+      await execCommand(`bun ${cliPath} plans create --config ${configPath}`, {
         expectedOutput: 'Loaded config from'
       })
     })
@@ -190,7 +190,7 @@ describePglite('cli', function () {
 
       it('should report when pg-boss is not installed (version)', async function () {
         await execCommand(
-          `node ${cliPath} version --connection-string ${connectionString} --schema ${schema}`,
+          `bun ${cliPath} version --connection-string ${connectionString} --schema ${schema}`,
           { expectedOutput: 'not installed' }
         )
       })
@@ -198,13 +198,13 @@ describePglite('cli', function () {
       it('should report current version after installation', async function () {
         // First create the schema
         await execCommand(
-          `node ${cliPath} create --connection-string ${connectionString} --schema ${schema}`,
+          `bun ${cliPath} create --connection-string ${connectionString} --schema ${schema}`,
           { expectedOutput: 'Successfully created' }
         )
 
         // Then check version
         await execCommand(
-          `node ${cliPath} version --connection-string ${connectionString} --schema ${schema}`,
+          `bun ${cliPath} version --connection-string ${connectionString} --schema ${schema}`,
           { expectedOutput: 'Current schema version' }
         )
       })
@@ -223,7 +223,7 @@ describePglite('cli', function () {
 
       it('should create pg-boss schema', async function () {
         await execCommand(
-          `node ${cliPath} create --connection-string ${connectionString} --schema ${schema}`,
+          `bun ${cliPath} create --connection-string ${connectionString} --schema ${schema}`,
           { expectedOutput: 'Successfully created' }
         )
       })
@@ -231,26 +231,26 @@ describePglite('cli', function () {
       it('should report if schema already exists', async function () {
         // Create first time
         await execCommand(
-          `node ${cliPath} create --connection-string ${connectionString} --schema ${schema}`,
+          `bun ${cliPath} create --connection-string ${connectionString} --schema ${schema}`,
           { expectedOutput: 'Successfully created' }
         )
 
         // Try to create again
         await execCommand(
-          `node ${cliPath} create --connection-string ${connectionString} --schema ${schema}`,
+          `bun ${cliPath} create --connection-string ${connectionString} --schema ${schema}`,
           { expectedOutput: 'already installed' }
         )
       })
 
       it('should support dry-run mode (create)', async function () {
         const result = await execCommand(
-          `node ${cliPath} create --connection-string ${connectionString} --schema ${schema} --dry-run`
+          `bun ${cliPath} create --connection-string ${connectionString} --schema ${schema} --dry-run`
         )
         expect(result.stdout).toContain('SQL to create')
 
         // Verify schema was not actually created
         await execCommand(
-          `node ${cliPath} version --connection-string ${connectionString} --schema ${schema}`,
+          `bun ${cliPath} version --connection-string ${connectionString} --schema ${schema}`,
           { expectedOutput: 'not installed' }
         )
       })
@@ -269,7 +269,7 @@ describePglite('cli', function () {
 
       it('should create schema if not exists during migrate', async function () {
         await execCommand(
-          `node ${cliPath} migrate --connection-string ${connectionString} --schema ${schema}`,
+          `bun ${cliPath} migrate --connection-string ${connectionString} --schema ${schema}`,
           { expectedOutput: 'Successfully created' }
         )
       })
@@ -277,27 +277,27 @@ describePglite('cli', function () {
       it('should report when already at latest version', async function () {
         // First create the schema
         await execCommand(
-          `node ${cliPath} create --connection-string ${connectionString} --schema ${schema}`,
+          `bun ${cliPath} create --connection-string ${connectionString} --schema ${schema}`,
           { expectedOutput: 'Successfully created' }
         )
 
         // Then try to migrate
         await execCommand(
-          `node ${cliPath} migrate --connection-string ${connectionString} --schema ${schema}`,
+          `bun ${cliPath} migrate --connection-string ${connectionString} --schema ${schema}`,
           { expectedOutput: 'already at version' }
         )
       })
 
       it('should support dry-run mode (migrate)', async function () {
         const result = await execCommand(
-          `node ${cliPath} migrate --connection-string ${connectionString} --schema ${schema} --dry-run`
+          `bun ${cliPath} migrate --connection-string ${connectionString} --schema ${schema} --dry-run`
         )
         expect(result.stdout).toContain('SQL to migrate')
       })
 
       it('should inline async index builds in migrate dry-run output', async function () {
         const result = await execCommand(
-          `node ${cliPath} migrate --connection-string ${connectionString} --schema ${schema} --dry-run`
+          `bun ${cliPath} migrate --connection-string ${connectionString} --schema ${schema} --dry-run`
         )
         expect(result.stdout).toContain('CONCURRENTLY IF NOT EXISTS')
       })
@@ -305,14 +305,14 @@ describePglite('cli', function () {
       it('dry-run reads the actual installed version instead of always assuming 0', async function () {
         // install the latest schema first
         await execCommand(
-          `node ${cliPath} create --connection-string ${connectionString} --schema ${schema}`,
+          `bun ${cliPath} create --connection-string ${connectionString} --schema ${schema}`,
           { expectedOutput: 'Successfully created' }
         )
 
         // a dry-run must now detect the DB is already current rather than printing a bogus
         // "from version 0 to latest" script
         const result = await execCommand(
-          `node ${cliPath} migrate --connection-string ${connectionString} --schema ${schema} --dry-run`
+          `bun ${cliPath} migrate --connection-string ${connectionString} --schema ${schema} --dry-run`
         )
         expect(result.stdout).toContain('already at version')
         expect(result.stdout).not.toContain('from version 0')
@@ -332,7 +332,7 @@ describePglite('cli', function () {
 
       it('should omit the missing-connection note in migrate plans when a connection is provided', async function () {
         const result = await execCommand(
-          `node ${cliPath} plans migrate --connection-string ${connectionString} --schema ${schema}`
+          `bun ${cliPath} plans migrate --connection-string ${connectionString} --schema ${schema}`
         )
         expect(result.stdout).toContain('CONCURRENTLY IF NOT EXISTS')
         expect(result.stdout).not.toContain('no database connection provided')
@@ -343,13 +343,13 @@ describePglite('cli', function () {
         // and i8 (v28) so both async indexes are dropped, simulating a database where the
         // BAM builds never ran (#766)
         await execCommand(
-          `node ${cliPath} create --connection-string ${connectionString} --schema ${schema}`,
+          `bun ${cliPath} create --connection-string ${connectionString} --schema ${schema}`,
           { expectedOutput: 'Successfully created' }
         )
 
         for (let v = currentSchemaVersion; v > 26; v--) {
           await execCommand(
-            `node ${cliPath} rollback --connection-string ${connectionString} --schema ${schema}`,
+            `bun ${cliPath} rollback --connection-string ${connectionString} --schema ${schema}`,
             { expectedOutput: 'Successfully rolled back' }
           )
         }
@@ -368,7 +368,7 @@ describePglite('cli', function () {
         // `pg-boss migrate` re-applies v27..latest, running the inlined CONCURRENTLY builds
         // one at a time after the migration transaction — no BAM worker involved
         await execCommand(
-          `node ${cliPath} migrate --connection-string ${connectionString} --schema ${schema}`,
+          `bun ${cliPath} migrate --connection-string ${connectionString} --schema ${schema}`,
           { expectedOutput: 'Successfully migrated' }
         )
 
@@ -389,7 +389,7 @@ describePglite('cli', function () {
 
       it('should report when pg-boss is not installed (rollback)', async function () {
         await execCommand(
-          `node ${cliPath} rollback --connection-string ${connectionString} --schema ${schema}`,
+          `bun ${cliPath} rollback --connection-string ${connectionString} --schema ${schema}`,
           { expectedOutput: 'not installed' }
         )
       })
@@ -397,13 +397,13 @@ describePglite('cli', function () {
       it('should rollback last migration', async function () {
         // First create the schema
         await execCommand(
-          `node ${cliPath} create --connection-string ${connectionString} --schema ${schema}`,
+          `bun ${cliPath} create --connection-string ${connectionString} --schema ${schema}`,
           { expectedOutput: 'Successfully created' }
         )
 
         // Then rollback
         await execCommand(
-          `node ${cliPath} rollback --connection-string ${connectionString} --schema ${schema}`,
+          `bun ${cliPath} rollback --connection-string ${connectionString} --schema ${schema}`,
           { expectedOutput: 'Successfully rolled back' }
         )
       })
@@ -411,7 +411,7 @@ describePglite('cli', function () {
       it('should support dry-run mode for rollback', async function () {
         // First create the schema
         await execCommand(
-          `node ${cliPath} create --connection-string ${connectionString} --schema ${schema}`,
+          `bun ${cliPath} create --connection-string ${connectionString} --schema ${schema}`,
           { expectedOutput: 'Successfully created' }
         )
 
@@ -422,7 +422,7 @@ describePglite('cli', function () {
 
         // Dry run rollback
         const result = await execCommand(
-          `node ${cliPath} rollback --connection-string ${connectionString} --schema ${schema} --dry-run`
+          `bun ${cliPath} rollback --connection-string ${connectionString} --schema ${schema} --dry-run`
         )
         expect(result.stdout).toContain('SQL to rollback')
 
@@ -447,7 +447,7 @@ describePglite('cli', function () {
       })
 
       const createSchema = () => execCommand(
-        `node ${cliPath} create --connection-string ${connectionString} --schema ${schema}`,
+        `bun ${cliPath} create --connection-string ${connectionString} --schema ${schema}`,
         { expectedOutput: 'Successfully created' }
       )
 
@@ -505,14 +505,14 @@ describePglite('cli', function () {
       })
 
       it('should read connection from PGBOSS_DATABASE_URL env var', async function () {
-        await execCommand(`node ${cliPath} version`, {
+        await execCommand(`bun ${cliPath} version`, {
           env: { PGBOSS_DATABASE_URL: connectionString, PGBOSS_SCHEMA: schema },
           expectedOutput: 'not installed'
         })
       })
 
       it('should read schema from PGBOSS_SCHEMA env var', async function () {
-        await execCommand(`node ${cliPath} plans create`, {
+        await execCommand(`bun ${cliPath} plans create`, {
           env: { PGBOSS_DATABASE_URL: connectionString, PGBOSS_SCHEMA: 'env_test_schema' },
           expectedOutput: 'env_test_schema'
         })
@@ -532,14 +532,14 @@ describePglite('cli', function () {
 
       it('should connect using individual connection parameters', async function () {
         await execCommand(
-          `node ${cliPath} version --host 127.0.0.1 --port 5432 --database pgboss --user postgres --password postgres --schema ${schema}`,
+          `bun ${cliPath} version --host 127.0.0.1 --port 5432 --database pgboss --user postgres --password postgres --schema ${schema}`,
           { expectedOutput: 'not installed' }
         )
       })
 
       it('should connect using short options', async function () {
         await execCommand(
-          `node ${cliPath} version --host 127.0.0.1 -d pgboss -u postgres -p postgres -s ${schema}`,
+          `bun ${cliPath} version --host 127.0.0.1 -d pgboss -u postgres -p postgres -s ${schema}`,
           { expectedOutput: 'not installed' }
         )
       })
@@ -558,7 +558,7 @@ describePglite('cli', function () {
 
       it('should create all required tables and types', async function () {
         await execCommand(
-          `node ${cliPath} create --connection-string ${connectionString} --schema ${schema}`,
+          `bun ${cliPath} create --connection-string ${connectionString} --schema ${schema}`,
           { expectedOutput: 'Successfully created' }
         )
 
@@ -603,7 +603,7 @@ describePglite('cli', function () {
 
       it('should set correct schema version', async function () {
         await execCommand(
-          `node ${cliPath} create --connection-string ${connectionString} --schema ${schema}`,
+          `bun ${cliPath} create --connection-string ${connectionString} --schema ${schema}`,
           { expectedOutput: 'Successfully created' }
         )
 
@@ -616,7 +616,7 @@ describePglite('cli', function () {
 
       it('should decrement schema version after rollback', async function () {
         await execCommand(
-          `node ${cliPath} create --connection-string ${connectionString} --schema ${schema}`,
+          `bun ${cliPath} create --connection-string ${connectionString} --schema ${schema}`,
           { expectedOutput: 'Successfully created' }
         )
 
@@ -625,7 +625,7 @@ describePglite('cli', function () {
         const versionBefore = beforeResult.rows[0].version
 
         await execCommand(
-          `node ${cliPath} rollback --connection-string ${connectionString} --schema ${schema}`,
+          `bun ${cliPath} rollback --connection-string ${connectionString} --schema ${schema}`,
           { expectedOutput: 'Successfully rolled back' }
         )
 
@@ -638,7 +638,7 @@ describePglite('cli', function () {
 
       itPostgresOnly('should create job table as partitioned with job_common as default partition', async function () {
         await execCommand(
-          `node ${cliPath} create --connection-string ${connectionString} --schema ${schema}`,
+          `bun ${cliPath} create --connection-string ${connectionString} --schema ${schema}`,
           { expectedOutput: 'Successfully created' }
         )
 
