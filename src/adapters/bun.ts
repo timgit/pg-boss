@@ -47,6 +47,13 @@ const TRANSACTION_REGEX = /\bBEGIN\b|\bSTART\s+TRANSACTION\b/i
 // SQLSTATE is promoted onto `code` and bun's class kept on `bunCode`.
 const SERVER_ERROR = 'ERR_POSTGRES_SERVER_ERROR'
 
+// Bun 1.3.x hands a pooled connection to a waiting query in the window between a transaction block
+// failing and the ROLLBACK that clears its aborted state, so an unrelated query fails with 25P02.
+// Reserving does not help — the leak is inside the pool the reserved connection came from. Rather
+// than prevent it, treat the aborted transaction as transient and clear it on the way through.
+const ABORTED_TRANSACTION = '25P02'
+const ABORTED_RETRY_LIMIT = 3
+
 function promoteSqlState (err: any): any {
   if (err?.code === SERVER_ERROR && typeof err.errno === 'string') {
     err.bunCode = err.code
@@ -203,36 +210,60 @@ async function executeReserved (sql: BunSqlLike, text: string): Promise<any> {
  * ```
  */
 export function fromBunSql (sql: BunSqlLike): IDatabase {
+  async function run (query: string, values?: unknown[], jsonParams?: Set<number>) {
+    // Only the simple protocol accepts the multi-statement blocks below, and pg-boss only ever
+    // sends those without parameters — the same split fromPglite makes between query and exec.
+    if (values?.length) {
+      return normalizeResult(await sql.unsafe(query, toBunParams(values, jsonParams!)))
+    }
+
+    if (!isPooled(sql)) {
+      return normalizeResult(await sql.unsafe(query))
+    }
+
+    if (!TRANSACTION_REGEX.test(query)) {
+      try {
+        return normalizeResult(await sql.unsafe(query))
+      } catch (err: any) {
+        // Backstop for anything bun rejects that the check above did not anticipate. Bun rejects
+        // before running any of the statement, so replaying it on a pinned connection is safe.
+        if (err?.code !== UNSAFE_TRANSACTION) {
+          throw err
+        }
+      }
+    }
+
+    return normalizeResult(await executeReserved(sql, query))
+  }
+
   return {
     async executeSql (text: string, values?: unknown[]) {
       const { query, jsonParams } = rewriteJsonCasts(text)
 
-      try {
-        // Only the simple protocol accepts the multi-statement blocks below, and pg-boss only ever
-        // sends those without parameters — the same split fromPglite makes between query and exec.
-        if (values?.length) {
-          return normalizeResult(await sql.unsafe(query, toBunParams(values, jsonParams)))
-        }
+      for (let attempt = 0; ; attempt++) {
+        try {
+          // A retry of a parameterless statement carries its own cure. Sending `ROLLBACK; <stmt>`
+          // as one simple query is atomic with respect to which connection serves it: on the
+          // poisoned one the ROLLBACK clears the aborted transaction and the statement then runs,
+          // and on a healthy one the ROLLBACK is a no-op warning. A parameterized statement cannot
+          // carry a second command, so those get a standalone ROLLBACK below and a plain retry.
+          const healing = attempt > 0 && !values?.length
 
-        if (!isPooled(sql)) {
-          return normalizeResult(await sql.unsafe(query))
-        }
+          return await run(healing ? `ROLLBACK; ${query}` : query, values, jsonParams)
+        } catch (err: any) {
+          promoteSqlState(err)
 
-        if (!TRANSACTION_REGEX.test(query)) {
-          try {
-            return normalizeResult(await sql.unsafe(query))
-          } catch (err: any) {
-            // Backstop for anything bun rejects that the check above did not anticipate. Bun rejects
-            // before running any of the statement, so replaying it on a pinned connection is safe.
-            if (err?.code !== UNSAFE_TRANSACTION) {
-              throw err
-            }
+          // 25P02 reaching this adapter is always spurious: every transaction block it issues ends
+          // in COMMIT or is rolled back before the connection goes back to the pool, so an aborted
+          // transaction on a connection handed to us is bun 1.3.x leaking one (see ISSUES.txt #3).
+          if (err?.code !== ABORTED_TRANSACTION || attempt >= ABORTED_RETRY_LIMIT || !isPooled(sql)) {
+            throw err
+          }
+
+          if (values?.length) {
+            await sql.unsafe('ROLLBACK').catch(() => {})
           }
         }
-
-        return normalizeResult(await executeReserved(sql, query))
-      } catch (err) {
-        throw promoteSqlState(err)
       }
     }
   }
