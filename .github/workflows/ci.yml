@@ -1,3 +1,6 @@
+# Actions are pinned to full commit SHAs; the trailing version comment lets
+# Dependabot keep them current. A mutable tag can be repointed at new code,
+# which matters most for the publish workflows that hold id-token: write.
 on:
   push:
     branches: [master]
@@ -46,10 +49,10 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v5
+      uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
     - name: Set up Node.js
-      uses: actions/setup-node@v5
+      uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
       with:
         node-version: 24
 
@@ -64,7 +67,7 @@ jobs:
     # Only the standard leg produces coverage; the distributed leg uploads nothing.
     - name: Coveralls
       if: ${{ matrix.mode == 'standard' }}
-      uses: coverallsapp/github-action@v2
+      uses: coverallsapp/github-action@8d6379e14d29928660c4ba802d8e85393440b329 # v2
       with:
         flag-name: standard
         parallel: true
@@ -78,10 +81,10 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v5
+      uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
     - name: Set up Node.js
-      uses: actions/setup-node@v5
+      uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
       with:
         node-version: 24
 
@@ -98,10 +101,10 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v5
+      uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
     - name: Set up Node.js
-      uses: actions/setup-node@v5
+      uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
       with:
         node-version: 24
 
@@ -126,7 +129,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Coveralls Finished
-      uses: coverallsapp/github-action@v2
+      uses: coverallsapp/github-action@8d6379e14d29928660c4ba802d8e85393440b329 # v2
       with:
         parallel-finished: true
         carryforward: "standard"
