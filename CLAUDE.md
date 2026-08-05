@@ -98,6 +98,18 @@ Anything implementing `IDatabase` (`executeSql`, optionally `withTransaction`/`l
 
 Code comments should be rare. Only when it's important to explain WHY an implementation looks the way it does, never WHAT the code does (that can be easily deduced from the code itself!). A comment should be ONE single sentence. Only in extremely rare occurences where it's important to expand on the WHY rationale, may you add a SECOND sentence.
 
+## Commit messages
+
+Titles follow the Conventional Commits format release-please parses: `type(optional-scope): description`. Types are `feat`, `fix`, `perf`, `refactor`, `test`, `docs`, `ci`, `chore` — only `feat` and `fix` produce a release entry. Mark a breaking change with `!` before the colon (`feat(api)!: …`) or a `BREAKING CHANGE:` footer.
+
+Keep the description SHORT and concise: one imperative line, lowercase, no trailing period, under ~72 characters. Add a body only when the *why* is not obvious from the diff, and keep it to a couple of lines.
+
+```
+fix(adapters): reserve a connection for transaction blocks
+feat: add detectSchemaDrift
+chore: drop cross-env dependency
+```
+
 ## PR reviews
 
 When reviewing a PR, use the https://github.com/khromov/bun-boss repo to check issue numbers.
