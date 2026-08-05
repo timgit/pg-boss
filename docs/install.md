@@ -6,11 +6,16 @@ pg-boss will automatically create a dedicated schema (`pgboss` is the default na
 GRANT CREATE ON DATABASE db1 TO leastprivuser;
 ```
 
-If the CREATE privilege is not available or desired, you have two options:
+If the CREATE privilege is not available or desired, export the schema DDL programmatically with the included [`getConstructionPlans()`](./api/utils) utility. It returns the SQL for the current schema version without executing it, so a DBA can review and run the commands manually:
 
-1. **CLI (recommended)** - Use the pg-boss CLI to manage schema creation and migrations. The CLI can output SQL without executing it (`--dry-run` or `plans` command), allowing DBAs to review and run the commands manually. See the [CLI documentation](./cli) for details.
+```js
+import { getConstructionPlans } from 'pg-boss'
+import fs from 'node:fs'
 
-2. **Static functions** - Use the included [utility functions](./api/utils) to export the SQL commands programmatically.
+fs.writeFileSync('create-pgboss.sql', getConstructionPlans('pgboss'))
+```
+
+Once the schema exists, construct the instance with `migrate: false` so `start()` verifies the schema instead of trying to create it.
 
 > [!NOTE]
 > When managing schema manually, you will need to monitor future releases for schema changes.

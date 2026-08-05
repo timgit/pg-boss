@@ -11,7 +11,9 @@ const POLICY = {
 
 // The internal compatibility flags a backend can toggle. A backend sets only the flags that differ
 // from stock PostgreSQL; everything else defaults to false. These are derived from the backend
-// profile and are not user-configurable (see resolveBackend).
+// profile and are not user-configurable (see resolveBackend). The seam is preserved for the SQLite
+// dialect (and future backends); the distributed-Postgres profiles that once produced these flags
+// on Postgres-rendered SQL are gone, so the four Postgres-only branches are held under __test__ hooks.
 const COMPATIBILITY_FLAGS = [
   'noSkipLocked',
   'noMultiMutationCte',
@@ -19,64 +21,26 @@ const COMPATIBILITY_FLAGS = [
   'noDeferrableConstraints',
   'noAdvisoryLocks',
   'noCoveringIndexes',
-  'noListenNotify',
-  'noIndexProgressView'
+  'noListenNotify'
 ] as const
 
 type CompatibilityFlag = typeof COMPATIBILITY_FLAGS[number]
 
-// A backend's kind describes how it runs, independent of its compatibility flags:
-//  - 'standard'    stock single-node PostgreSQL
-//  - 'distributed' clustered Postgres-compatible engines (CockroachDB, YugabyteDB, Citus)
-//  - 'embedded'    in-process single-connection PostgreSQL (PGlite)
-// PGlite is deliberately 'embedded', NOT 'distributed' — it is full PostgreSQL and sets no flags.
 interface BackendDefinition {
-  kind: 'standard' | 'distributed' | 'embedded'
-  // The SQL dialect plans.ts renders for this backend; every Postgres-compatible engine omits it.
+  // The SQL dialect plans.ts renders for this backend; Postgres-compatible engines omit it.
   dialect?: DialectName
   flags: Partial<Record<CompatibilityFlag, boolean>>
 }
 
 // The single source of truth for backend presets, mirrored by test/testHelper.ts.
 const BACKEND_PROFILES: Record<types.BackendProfile, BackendDefinition> = {
-  postgres: { kind: 'standard', flags: {} },
-  cockroachdb: {
-    kind: 'distributed',
-    flags: {
-      noSkipLocked: true,
-      noMultiMutationCte: true,
-      noTablePartitioning: true,
-      noDeferrableConstraints: true,
-      noAdvisoryLocks: true,
-      noCoveringIndexes: true,
-      noListenNotify: true,
-      // Online DDL runs as a schema-change job, not the PG CONCURRENTLY path, and
-      // pg_stat_progress_create_index isn't available — so BAM can't use liveness-based reclaim.
-      noIndexProgressView: true
-    }
-  },
-  yugabytedb: {
-    kind: 'distributed',
-    flags: {
-      noAdvisoryLocks: true,
-      noTablePartitioning: true,
-      // Index builds are a distributed backfill that pg_stat_progress_create_index doesn't reflect,
-      // so liveness would misread an in-flight build as dead. BAM falls back to the timeout instead.
-      noIndexProgressView: true
-    }
-  },
-  // No noIndexProgressView: pg-boss keeps its tables coordinator-local (it never calls
-  // create_distributed_table), so CREATE INDEX CONCURRENTLY runs against ordinary local Postgres tables
-  // on the coordinator, where pg_stat_progress_create_index is accurate and liveness-based reclaim is
-  // valid. This holds ONLY while the tables stay coordinator-local — if they are ever distributed, the
-  // coordinator's progress view would misread in-flight worker builds as dead and BAM could double-build.
-  citus: { kind: 'distributed', flags: {} },
-  pglite: { kind: 'embedded', flags: {} },
+  postgres: { flags: {} },
+  // PGlite is embedded single-connection full PostgreSQL and sets no compatibility flags.
+  pglite: { flags: {} },
   // SQLite is a different SQL dialect, not a Postgres-compatible engine: plans.ts renders
   // alternate SQL for it, and every compatibility flag applies (single-writer, no row locks,
   // no partitioning, no advisory locks, no LISTEN/NOTIFY, no CONCURRENTLY/progress view).
   sqlite: {
-    kind: 'embedded',
     dialect: 'sqlite',
     flags: {
       noSkipLocked: true,
@@ -85,8 +49,7 @@ const BACKEND_PROFILES: Record<types.BackendProfile, BackendDefinition> = {
       noDeferrableConstraints: true,
       noAdvisoryLocks: true,
       noCoveringIndexes: true,
-      noListenNotify: true,
-      noIndexProgressView: true
+      noListenNotify: true
     }
   }
 }
@@ -467,7 +430,6 @@ function getConfig (value: string | types.ConstructorOptions): types.ResolvedCon
   applySchemaConfig(config)
   applyOpsConfig(config)
   applyScheduleConfig(config)
-  applyBamConfig(config)
   applyFlowConfig(config)
   validateWarningConfig(config)
 
@@ -488,12 +450,6 @@ function validateWarningConfig (config: any) {
 
   assert(!('warningSlowQuerySeconds' in config) || config.warningSlowQuerySeconds >= 1,
     'configuration assert: warningSlowQuerySeconds must be at least 1')
-
-  assert(!('warningRetentionDays' in config) || (Number.isInteger(config.warningRetentionDays) && config.warningRetentionDays >= 1),
-    'configuration assert: warningRetentionDays must be an integer >= 1')
-
-  assert(!('warningRetentionDays' in config) || config.warningRetentionDays <= POLICY.MAX_RETENTION_DAYS,
-    `configuration assert: warningRetentionDays cannot exceed ${POLICY.MAX_RETENTION_DAYS} days`)
 }
 
 // Expands config.backend into the internal compatibility flags. The flags are derived
@@ -521,23 +477,34 @@ function resolveBackend (config: any) {
     assert(!('connectionString' in config), "configuration assert: connectionString does not apply to backend 'sqlite' — the db adapter carries the database")
   }
 
-  // Test hook: exercise the distributed runtime paths (atomic fetch + split mutations)
-  // on top of the current backend's schema, without standing up a distributed database.
+  // Test hooks: force a single compatibility flag on top of the current backend so the Postgres-
+  // rendered branch it selects can be exercised on a plain Postgres instance. The SQLite profile is
+  // the only real producer of most of these now, but SQLite renders a different dialect — these keep
+  // the Postgres branches covered so the seam stays trustworthy.
   if (config.__test__distributed) {
+    // The distributed runtime paths: atomic fetch + split mutations.
     config.noSkipLocked = true
     config.noMultiMutationCte = true
   }
 
-  // Test hook: exercise the advisory-lock-free SQL path (used by YugabyteDB/CockroachDB) on a
-  // plain Postgres instance, without standing up a backend whose profile sets the flag.
   if (config.__test__noAdvisoryLocks) {
     config.noAdvisoryLocks = true
   }
 
-  // Test hook: exercise the no-liveness BAM reclaim path (timeout-only, no CONCURRENTLY healing)
-  // used by CockroachDB/YugabyteDB, on a plain Postgres instance.
-  if (config.__test__noIndexProgressView) {
-    config.noIndexProgressView = true
+  if (config.__test__noTablePartitioning) {
+    config.noTablePartitioning = true
+  }
+
+  if (config.__test__noDeferrableConstraints) {
+    config.noDeferrableConstraints = true
+  }
+
+  if (config.__test__noCoveringIndexes) {
+    config.noCoveringIndexes = true
+  }
+
+  if (config.__test__noListenNotify) {
+    config.noListenNotify = true
   }
 }
 
@@ -711,15 +678,6 @@ function applyOpsConfig (config: any) {
 
   assert(config.queueCacheIntervalSeconds / 60 / 60 <= POLICY.MAX_EXPIRATION_HOURS,
     `configuration assert: queueCacheIntervalSeconds cannot exceed ${POLICY.MAX_EXPIRATION_HOURS} hours`)
-
-  if ('queueStatRetentionDays' in config) {
-    assert(Number.isInteger(config.queueStatRetentionDays) && config.queueStatRetentionDays >= 1,
-      'configuration assert: queueStatRetentionDays must be an integer >= 1')
-    assert(config.queueStatRetentionDays <= POLICY.MAX_RETENTION_DAYS,
-      `configuration assert: queueStatRetentionDays cannot exceed ${POLICY.MAX_RETENTION_DAYS} days`)
-  }
-
-  config.queueStatRetentionDays = config.queueStatRetentionDays || 7
 }
 
 function validateDeletionConfig (config: any) {
@@ -742,14 +700,6 @@ function applyScheduleConfig (config: any) {
     'configuration assert: cronWorkerIntervalSeconds must be between 1 and 45 seconds')
 
   config.cronWorkerIntervalSeconds = config.cronWorkerIntervalSeconds || 5
-}
-
-function applyBamConfig (config: any) {
-  const minInterval = config.__test__bypass_bam_interval_check ? 1 : 10
-  assert(!('bamIntervalSeconds' in config) || config.bamIntervalSeconds >= minInterval,
-    `configuration assert: bamIntervalSeconds must be at least ${minInterval} seconds`)
-
-  config.bamIntervalSeconds = config.bamIntervalSeconds || 60
 }
 
 function applyFlowConfig (config: any) {

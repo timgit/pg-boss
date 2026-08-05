@@ -4,8 +4,7 @@ import { ctx } from './hooks.ts'
 
 // This file holds ONLY the invariants the general suite structurally cannot express. General
 // behavioral coverage (fetch/complete/fail/retry/policies/flows/dead-letter/...) already runs in
-// distributed mode two ways: the whole suite under `DISTRIBUTED=true` on Postgres (fast, every push)
-// and under `DB_TYPE=cockroachdb` against a real cluster (`npm run test:cockroachdb:full`), where
+// distributed mode via the whole suite under `DISTRIBUTED=true` on Postgres, where
 // testHelper.getConfig() turns on noSkipLocked + noMultiMutationCte for every test. Don't re-test
 // generic behavior here — add it to the relevant suite instead. What stays here:
 //
@@ -16,24 +15,14 @@ import { ctx } from './hooks.ts'
 //   3. Flag-gated schema construction (noTablePartitioning / noDeferrableConstraints /
 //      noCoveringIndexes / noAdvisoryLocks) — the ONLY Postgres-side coverage of that DDL, since the
 //      `DISTRIBUTED=true` job sets noSkipLocked + noMultiMutationCte but NOT the schema no* flags.
+//      These now select the flags through the __test__ hooks (the distributed profiles are gone).
 //
-// Every test here calls helper.start(), which on CockroachDB pays slow per-test DDL (~8-9s observed
-// in CI), leaving little headroom under the 10s global timeout. Raise the default for the whole
-// block so startup jitter can't push a test over the edge (the concurrency tests keep their explicit
-// per-test overrides).
-//
-// The override must only LIFT the Postgres budget — never cap a distributed backend. vitest.config.ts
-// already gives cockroachdb/yugabytedb a 60s global; a flat 20s here would lower it for exactly the
-// heaviest tests (the withTransaction composition tests do slow DDL + an extra connection), which is
-// how they timed out at 20s on the CockroachDB run. So match that 60s on distributed backends.
-const isDistributedBackend = process.env.DB_TYPE === 'cockroachdb' || process.env.DB_TYPE === 'yugabytedb'
-const blockTimeout = isDistributedBackend ? 60000 : 20000
+// Raise the default for the whole block so startup jitter can't push a test over the edge (the
+// concurrency tests keep their explicit per-test overrides).
+const blockTimeout = 20000
 
-// The concurrency tests need more than the block default on Postgres, so they carry their own
-// override - which has to follow the same rule, since a per-test value replaces the block value in
-// both directions. A flat 30s here would have capped exactly the two most contention-heavy tests in
-// the file at half the budget their neighbours get on CockroachDB.
-const concurrencyTimeout = isDistributedBackend ? blockTimeout : 30000
+// The concurrency tests need more than the block default on Postgres, so they carry their own override.
+const concurrencyTimeout = 30000
 
 helper.describePglite('distributed database mode', { timeout: blockTimeout }, function () {
   it('should not duplicate jobs when fetching concurrently in distributed mode', async function () {
@@ -335,14 +324,20 @@ helper.describePglite('distributed database mode', { timeout: blockTimeout }, fu
     expect(completed.state).toBe('completed')
   })
 
-  it('should construct schema with all distributed compatibility flags', async function () {
-    // Exercises the CockroachDB-oriented construction branches (no partitioning,
-    // non-deferrable constraints, non-covering indexes, no advisory locks) by selecting
-    // the cockroachdb backend — all of whose flags are PostgreSQL-compatible (they only
-    // remove features), so the full profile constructs and runs on a plain Postgres instance.
+  helper.itPostgresOnly('should construct schema with all compatibility flags forced on', async function () {
+    // Exercises every no*-flag construction branch (no partitioning, non-deferrable constraints,
+    // non-covering indexes, no advisory locks, no LISTEN/NOTIFY) plus the distributed runtime path,
+    // all forced through the __test__ hooks so the full flag combination constructs and runs on a
+    // plain Postgres instance. The flags are not settable directly — resolveBackend() derives them —
+    // so the hooks are the only way in.
     ctx.boss = await helper.start({
       ...ctx.bossConfig,
-      backend: 'cockroachdb'
+      __test__distributed: true,
+      __test__noAdvisoryLocks: true,
+      __test__noTablePartitioning: true,
+      __test__noDeferrableConstraints: true,
+      __test__noCoveringIndexes: true,
+      __test__noListenNotify: true
     })
 
     const jobId = await ctx.boss.send(ctx.schema, { test: 'flags' })
@@ -359,12 +354,10 @@ helper.describePglite('distributed database mode', { timeout: blockTimeout }, fu
     expect(completed.state).toBe('completed')
   })
 
-  it('should return numeric stats counts under the cockroachdb backend', async function () {
-    // getQueueStats has its own backend === 'cockroachdb' coercion: the stats counts come from a raw
-    // stats query, not the normalized getQueues path, so they would otherwise be returned as strings
-    // on CockroachDB. Selecting the cockroachdb backend on Postgres runs that coercion loop and lets
-    // us assert the public counts come back as numbers.
-    ctx.boss = await helper.start({ ...ctx.bossConfig, backend: 'cockroachdb' })
+  it('should return numeric stats counts in distributed mode', async function () {
+    // getQueueStats serves counts from a raw stats query rather than the normalized getQueues path;
+    // assert the public counts come back as numbers under the distributed runtime path.
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: true })
 
     const jobId = await ctx.boss.send(ctx.schema, { test: 'stats' })
     helper.assertTruthy(jobId)
@@ -374,21 +367,14 @@ helper.describePglite('distributed database mode', { timeout: blockTimeout }, fu
     expect(stats.totalCount).toBe(1)
   })
 
-  // Postgres-only: the yugabytedb profile keeps DEFERRABLE foreign keys (Yugabyte supports them),
-  // which a real CockroachDB cluster rejects, so forcing this profile only makes sense on Postgres,
-  // where every profile's DDL is valid. (The cockroachdb profile above is safe everywhere because it
-  // only removes features.)
-  helper.itPostgresOnly('should construct schema with the yugabytedb backend (no partitioning, no advisory locks)', async function () {
-    // Exercises the noTablePartitioning + noAdvisoryLocks construction path on plain Postgres by
-    // selecting the yugabytedb backend, whose only flags are those two (both PostgreSQL-compatible,
-    // they just remove features). The compatibility flags are derived from `backend` and are not
-    // settable directly — resolveBackend() overwrites them — so the backend is the only way in.
+  helper.itPostgresOnly('should construct schema with no partitioning and no advisory locks', async function () {
+    // Exercises the noTablePartitioning + noAdvisoryLocks construction path on plain Postgres.
     ctx.boss = await helper.start({
       ...ctx.bossConfig,
-      backend: 'yugabytedb'
+      __test__noTablePartitioning: true,
+      __test__noAdvisoryLocks: true
     })
 
-    // Basic send/fetch to verify everything works
     const jobId = await ctx.boss.send(ctx.schema, { test: 'noPartitioning' })
     helper.assertTruthy(jobId)
 
@@ -398,7 +384,6 @@ helper.describePglite('distributed database mode', { timeout: blockTimeout }, fu
 
     await ctx.boss.complete(ctx.schema, jobId)
 
-    // Verify job is completed
     const completedJob = await ctx.boss.getJobById(ctx.schema, jobId)
     helper.assertTruthy(completedJob)
     expect(completedJob.state).toBe('completed')

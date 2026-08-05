@@ -3,7 +3,6 @@ import { ctx } from './hooks.ts'
 import * as helper from './testHelper.ts'
 import { PgBoss } from '../src/index.ts'
 import * as plans from '../src/plans.ts'
-import { next, rollback, getAll } from '../src/migrationStore.ts'
 
 // Targeted coverage for argument-shape and option branches that the feature suites
 // don't otherwise reach. Each case maps to a specific reachable branch.
@@ -117,18 +116,5 @@ describe('plan-builder coverage', function () {
     const sql = plans.transaction('pgboss', 'SELECT 1')
     expect(sql).toContain('BEGIN')
     expect(sql).toContain('SELECT 1')
-  })
-
-  it('next() resolves migrations from the store when none are supplied', function () {
-    const all = getAll('pgboss')
-    const sql = next('pgboss', all[0].previous)
-    expect(typeof sql).toBe('string')
-  })
-
-  it('rollback() tolerates a migration without an uninstall block', function () {
-    const sql = rollback('pgboss', 5, [
-      { version: 5, previous: 4, release: 'test', install: [], uninstall: undefined } as any
-    ])
-    expect(typeof sql).toBe('string')
   })
 })

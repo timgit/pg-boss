@@ -1,7 +1,7 @@
 // The SQL dialect seam. plans.ts builders accept a Ctx (a bare schema string, or a PlanContext
 // carrying a Dialect) and render names/expressions through these primitives, so one builder can
 // serve both dialects. A bare string resolves to POSTGRES, which keeps every static caller
-// (CLI, migrationStore, construction plans) and every existing test byte-identical — the
+// (construction plans) and every existing test byte-identical — the
 // postgres primitives must always return exactly the text plans.ts interpolated before the seam
 // existed (guarded by test/plansSnapshotTest.ts).
 

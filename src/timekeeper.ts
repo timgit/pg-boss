@@ -6,7 +6,7 @@ import type Manager from './manager.ts'
 import * as plans from './plans.ts'
 import { delay } from './tools.ts'
 import * as types from './types.ts'
-import { emitAndPersistWarning, type WarningContext } from './warning.ts'
+import { emitWarning, type WarningContext } from './warning.ts'
 
 export const QUEUES = {
   SEND_IT: '__pgboss__send-it'
@@ -23,10 +23,6 @@ const WARNINGS = {
     message: 'Warning: Clock skew between this instance and the database server. This will not break scheduling, but is emitted any time the skew exceeds 60 seconds.'
   }
 }
-
-const WARNING_TYPES = {
-  CLOCK_SKEW: 'clock_skew'
-} as const
 
 class Timekeeper extends EventEmitter implements types.EventsMixin {
   db: types.IDatabase
@@ -57,11 +53,7 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
   private get warningContext (): WarningContext {
     return {
       emitter: this,
-      db: this.db,
-      schema: this.config,
-      persistWarnings: this.config.persistWarnings,
-      warningEvent: this.events.warning,
-      errorEvent: this.events.error
+      warningEvent: this.events.warning
     }
   }
 
@@ -133,9 +125,8 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
       const skewSeconds = Math.abs(skew) / 1000
 
       if (skewSeconds >= 60 || this.config.__test__force_clock_skew_warning) {
-        await emitAndPersistWarning(
+        emitWarning(
           this.warningContext,
-          WARNING_TYPES.CLOCK_SKEW,
           WARNINGS.CLOCK_SKEW.message,
           { seconds: skewSeconds, direction: skew > 0 ? 'slower' : 'faster' }
         )

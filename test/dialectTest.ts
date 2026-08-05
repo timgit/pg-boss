@@ -12,9 +12,8 @@ const QUEUES = ['q1', 'q2']
 
 describe('dialect', function () {
   describe('job state order', function () {
-    it('matches plans.JOB_STATES declaration order and the manifest enum', function () {
+    it('matches plans.JOB_STATES declaration order', function () {
       expect([...JOB_STATE_ORDER]).toEqual(Object.keys(plans.JOB_STATES))
-      expect([...JOB_STATE_ORDER]).toEqual([...plans.EXPECTED_JOB_STATES])
     })
 
     it('sqlite IN-lists partition states exactly like postgres ordinal comparisons', function () {
@@ -71,12 +70,8 @@ describe('dialect', function () {
       getQueues: () => plans.getQueues(sqliteCtx, QUEUES),
       getQueueStats: () => plans.getQueueStats(sqliteCtx, T, QUEUES),
       getQueueStatsCache: () => plans.getQueueStatsCache(sqliteCtx),
-      getQueueStatsHistory: () => plans.getQueueStatsHistory(sqliteCtx),
-      getQueueStatsHistoryBucketedAuto: () => plans.getQueueStatsHistoryBucketed(sqliteCtx, 'avg', 'auto'),
-      getQueueStatsHistoryBucketedFixed: () => plans.getQueueStatsHistoryBucketed(sqliteCtx, 'max', 'bucket'),
       cacheQueueStats: () => plans.cacheQueueStats(sqliteCtx, T, QUEUES, true),
       refreshQueueStats: () => plans.refreshQueueStats(sqliteCtx, T, 'q1'),
-      insertQueueStats: () => plans.insertQueueStats(sqliteCtx, QUEUES, true),
       insertJobs: () => plans.insertJobs(sqliteCtx, { table: T, name: 'q1' }),
       fetchNextJob: () => plans.fetchNextJob({ schema: S, dialect: SQLITE, table: T, name: 'q1', policy: 'standard', limit: 2, includeMetadata: true, ignoreSingletons: ['a'], ignoreGroups: ['g'], groupConcurrency: { default: 2, tiers: { gold: 5 } }, minPriority: 1, maxPriority: 9 }).text,
       completeJobs: () => plans.completeJobsDistributed(sqliteCtx, T, true),
@@ -118,11 +113,6 @@ describe('dialect', function () {
       subscribe: () => plans.subscribe(sqliteCtx),
       unsubscribe: () => plans.unsubscribe(sqliteCtx),
       getQueuesForEvent: () => plans.getQueuesForEvent(sqliteCtx),
-      insertWarning: () => plans.insertWarning(sqliteCtx),
-      getWarnings: () => plans.getWarnings(sqliteCtx),
-      getWarningsCount: () => plans.getWarningsCount(sqliteCtx),
-      deleteOldWarnings: () => plans.deleteOldWarnings(sqliteCtx, 30),
-      deleteOldQueueStats: () => plans.deleteOldQueueStats(sqliteCtx, 30),
       updateJobById: () => plans.updateJob(sqliteCtx, T, 'q1', 'id', 'newest'),
       updateJobByKey: () => plans.updateJob(sqliteCtx, T, 'q1', 'singletonKey', 'oldest'),
       findJobs: () => plans.findJobs(sqliteCtx, T, { queued: true, byKey: true, byData: true, byId: true }),
@@ -133,9 +123,7 @@ describe('dialect', function () {
       decrementDependents: () => plans.decrementDependents(sqliteCtx),
       selectBlockingParents: () => plans.selectBlockingParents(sqliteCtx, T, QUEUES, true).text,
       clearBlocking: () => plans.clearBlocking(sqliteCtx),
-      getBlockedKeys: () => plans.getBlockedKeys(sqliteCtx, T),
-      getBamStatus: () => plans.getBamStatus(sqliteCtx),
-      getBamEntries: () => plans.getBamEntries(sqliteCtx)
+      getBlockedKeys: () => plans.getBlockedKeys(sqliteCtx, T)
     }
 
     // Postgres-only constructs that must never appear in sqlite-rendered SQL. Word-boundary

@@ -87,27 +87,6 @@ describe('ops', function () {
     expect(ctx.boss.isMaintaining()).toBe(false)
   })
 
-  // BAM never starts on sqlite (no CREATE INDEX CONCURRENTLY).
-  helper.itSqlite('should stop bam work before stop resolves', async function () {
-    ctx.boss = await helper.start({
-      ...ctx.bossConfig,
-      noDefault: true,
-      bamIntervalSeconds: 1,
-      __test__bypass_bam_interval_check: true,
-      __test__delay_bam_ms: 2000
-    })
-
-    // Wait for bam to start working
-    while (!ctx.boss.isBamWorking()) {
-      await delay(100)
-    }
-
-    // Stop while bam is in progress
-    await ctx.boss.stop()
-
-    expect(ctx.boss.isBamWorking()).toBe(false)
-  })
-
   it('should stop clock skew check before stop resolves', async function () {
     ctx.boss = await helper.start({
       ...ctx.bossConfig,

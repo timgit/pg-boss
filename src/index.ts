@@ -4,12 +4,10 @@ import Contractor from './contractor.ts'
 import Manager from './manager.ts'
 import Timekeeper from './timekeeper.ts'
 import Boss from './boss.ts'
-import Bam from './bam.ts'
 import Navigator from './navigator.ts'
 import Notifier from './notifier.ts'
 import { delay } from './tools.ts'
 import type * as types from './types.ts'
-import * as plans from './plans.ts'
 import DbDefault from './db.ts'
 import type { JobSpyInterface } from './spy.ts'
 
@@ -21,20 +19,11 @@ export const events: types.Events = Object.freeze({
   warning: 'warning',
   wip: 'wip',
   stopped: 'stopped',
-  bam: 'bam',
   flow: 'flow'
 })
 
 export function getConstructionPlans (schema?: string) {
   return Contractor.constructionPlans(schema)
-}
-
-export function getMigrationPlans (schema?: string, version?: number, options?: { partitionTables?: string[] }) {
-  return Contractor.migrationPlans(schema, version, options)
-}
-
-export function getRollbackPlans (schema?: string, version?: number) {
-  return Contractor.rollbackPlans(schema, version)
 }
 
 export class PgBoss extends EventEmitter<types.PgBossEventMap> {
@@ -49,7 +38,6 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
   #contractor: Contractor
   #manager: Manager
   #timekeeper: Timekeeper
-  #bam: Bam
   #navigator: Navigator
   #notifier: Notifier
 
@@ -79,8 +67,6 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     const timekeeper = new Timekeeper(db, manager, config)
     manager.timekeeper = timekeeper
 
-    const bam = new Bam(db, config)
-
     const navigator = new Navigator(db, manager, config)
 
     const notifier = new Notifier(db, manager, config)
@@ -89,7 +75,6 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     this.#promoteEvents(manager)
     this.#promoteEvents(boss)
     this.#promoteEvents(timekeeper)
-    this.#promoteEvents(bam)
     this.#promoteEvents(navigator)
     this.#promoteEvents(notifier)
 
@@ -97,7 +82,6 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     this.#contractor = contractor
     this.#manager = manager
     this.#timekeeper = timekeeper
-    this.#bam = bam
     this.#navigator = navigator
     this.#notifier = notifier
   }
@@ -145,8 +129,6 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
       await this.#db.open()
     }
 
-    await this.#warnIfDistributedMisconfigured()
-
     if (this.#config.migrate) {
       await this.#contractor.start()
     } else {
@@ -168,41 +150,9 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
       await this.#timekeeper.start()
     }
 
-    // BAM applies CREATE INDEX CONCURRENTLY commands, which don't exist in SQLite —
-    // sqlite installs carry no async migrations, so the worker never needs to run.
-    if (this.#config.migrate && this.#config.dialect?.name !== 'sqlite') {
-      await this.#bam.start()
-    }
-
     this.#started = true
 
     return this
-  }
-
-  // YugabyteDB needs the yugabytedb backend profile (no table partitioning + no advisory locks;
-  // partitioned queues are not supported there). pg-boss can't know the backend at construction
-  // time, so detect it from the server version at startup and warn when the profile isn't selected.
-  // Best-effort: never block startup on this check.
-  async #warnIfDistributedMisconfigured (): Promise<void> {
-    if (this.#config.dialect?.name === 'sqlite') {
-      return
-    }
-
-    try {
-      const { rows } = await this.#db.executeSql('SELECT version()')
-      const version: string = rows?.[0]?.version || ''
-
-      if (/yugabyte|-yb-/i.test(version)) {
-        if (!this.#config.noTablePartitioning || !this.#config.noAdvisoryLocks) {
-          this.emit(events.warning, {
-            message: "YugabyteDB detected: set backend: 'yugabytedb' for compatibility. Partitioned queues (partition: true) are not supported on YugabyteDB.",
-            data: { backend: 'yugabytedb' }
-          })
-        }
-      }
-    } catch {
-      // version detection is best-effort and must never prevent startup
-    }
   }
 
   async stop (options: types.StopOptions = {}): Promise<void> {
@@ -241,7 +191,6 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
       await this.#timekeeper.stop()
       await this.#boss.stop()
       await this.#navigator.stop()
-      await this.#bam.stop()
 
       const shutdown = async () => {
         await this.#manager.failWip()
@@ -444,10 +393,6 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#boss.maintaining
   }
 
-  isBamWorking (): boolean {
-    return this.#bam.working
-  }
-
   isResolvingFlow (): boolean {
     return this.#navigator.working
   }
@@ -486,10 +431,6 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#contractor.schemaVersion()
   }
 
-  detectSchemaDrift (): Promise<types.SchemaDriftReport> {
-    return this.#contractor.detectDrift()
-  }
-
   schedule (name: string, cron: string, data?: object | null, options?: types.ScheduleOptions): Promise<void> {
     return this.#timekeeper.schedule(name, cron, data, options)
   }
@@ -500,18 +441,6 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
 
   getSchedules (name?: string, key?: string): Promise<types.Schedule[]> {
     return this.#timekeeper.getSchedules(name, key)
-  }
-
-  async getBamStatus (): Promise<types.BamStatusSummary[]> {
-    const sql = plans.getBamStatus(this.#config)
-    const { rows } = await this.#db.executeSql(sql)
-    return rows
-  }
-
-  async getBamEntries (): Promise<types.BamEntry[]> {
-    const sql = plans.getBamEntries(this.#config)
-    const { rows } = await this.#db.executeSql(sql)
-    return rows
   }
 
   getDb (): types.IDatabase {
@@ -530,9 +459,6 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
 export type {
   BackendProfile,
   BackendOptions,
-  BamEntry,
-  BamEvent,
-  BamStatusSummary,
   CommandResponse,
   CompleteOptions,
   ConnectionOptions,
@@ -547,7 +473,6 @@ export type {
   GroupOptions,
   IDatabase as Db,
   InsertOptions,
-  InvalidIndex,
   Job,
   JobFetchOptions,
   JobInsert,
@@ -560,13 +485,6 @@ export type {
   Events,
   JobWithMetadata,
   MaintenanceOptions,
-  ManagedIndex,
-  MismatchedIndex,
-  ManagedFunction,
-  MismatchedFunction,
-  TableColumnDrift,
-  ConstraintDrift,
-  EnumDrift,
   OffWorkOptions,
   PgBossEventMap,
   Queue,
@@ -580,7 +498,6 @@ export type {
   Schedule,
   ScheduleOptions,
   SchedulingOptions,
-  SchemaDriftReport,
   SendOptions,
   StopOptions,
   UpdateOptions,

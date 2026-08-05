@@ -4,9 +4,6 @@ import { ctx } from './hooks.ts'
 import * as plans from '../src/plans.ts'
 
 const describeRepro = describe.skipIf(
-  helper.isCockroachDb ||
-  helper.isYugabyteDb ||
-  helper.isCitus ||
   helper.isPglite ||
   helper.isSqlite ||
   helper.isDistributed

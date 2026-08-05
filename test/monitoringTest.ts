@@ -3,7 +3,6 @@ import * as helper from './testHelper.ts'
 import { delay } from '../src/tools.ts'
 import { ctx } from './hooks.ts'
 import { PgBoss } from '../src/index.ts'
-import * as plans from '../src/plans.ts'
 
 describe('monitoring', function () {
   it('should cache job counts into queue', async function () {
@@ -204,12 +203,11 @@ describe('monitoring', function () {
     expect(result!.totalCount).toBe(0)
   })
 
-  it('slow maintenance should persist warning when persistWarnings is enabled', async function () {
+  it('slow maintenance should emit a warning event', async function () {
     const config = {
       ...ctx.bossConfig,
       __test__warn_slow_query: true,
-      warningSlowQuerySeconds: 1,
-      persistWarnings: true
+      warningSlowQuerySeconds: 1
     }
 
     ctx.boss = await helper.start(config)
@@ -223,80 +221,5 @@ describe('monitoring', function () {
     await ctx.boss.supervise(ctx.schema)
 
     expect(eventCount > 0).toBeTruthy()
-
-    // Verify warning was persisted to database
-    const db = await helper.getDb()
-    const sql = plans.getWarnings(helper.planCtx(ctx.schema))
-    const result = await db.executeSql(sql, [null, 10, 0])
-    await db.close()
-
-    expect(result.rows.length).toBeGreaterThan(0)
-    expect(result.rows[0].type).toBe('slow_query')
-  })
-
-  it('should maintain warnings by deleting old ones', async function () {
-    const config = {
-      ...ctx.bossConfig,
-      persistWarnings: true,
-      warningRetentionDays: 1, // set to 1 day retention
-      supervise: true, // enable supervise so the maintenance interval runs
-      superviseIntervalSeconds: 1 // run every second
-    }
-
-    ctx.boss = await helper.start(config)
-
-    // Insert an old warning manually (older than 1 day)
-    const db = await helper.getDb()
-    await db.executeSql(`
-      INSERT INTO ${helper.qualify(ctx.schema, 'warning')} (type, message, data, created_on)
-      VALUES ('test_old', 'old warning', '{}', $1)
-    `, [new Date(Date.now() - 2 * 86_400_000)])
-
-    // Verify old warning exists using the getWarningsCount plan
-    const countSql = plans.getWarningsCount(helper.planCtx(ctx.schema))
-    const beforeResult = await db.executeSql(countSql, ['test_old'])
-    expect(beforeResult.rows[0].count).toBe(1)
-
-    // Wait for the supervise interval to run maintainWarnings
-    await delay(2000)
-
-    // Verify old warning was deleted
-    const afterResult = await db.executeSql(countSql, ['test_old'])
-
-    // The old warning (2 days old) should be deleted since retention is 1 day
-    expect(afterResult.rows[0].count).toBe(0)
-
-    // Stop the boss before closing the database to avoid errors from the supervisor
-    await ctx.boss.stop()
-    await db.close()
-  })
-
-  it('should emit error when warning persistence fails', async function () {
-    const config = {
-      ...ctx.bossConfig,
-      __test__warn_slow_query: true,
-      warningSlowQuerySeconds: 1,
-      persistWarnings: true
-    }
-
-    ctx.boss = await helper.start(config)
-
-    // Drop the warning table to cause persistence to fail
-    const db = await helper.getDb()
-    await db.executeSql(`DROP TABLE IF EXISTS ${helper.qualify(ctx.schema, 'warning')}${helper.isSqlite ? '' : ' CASCADE'}`)
-    await db.close()
-
-    let errorCount = 0
-    let warningCount = 0
-
-    ctx.boss.on('error', () => errorCount++)
-    ctx.boss.on('warning', () => warningCount++)
-
-    await ctx.boss.supervise(ctx.schema)
-
-    // Warning event should still be emitted
-    expect(warningCount > 0).toBeTruthy()
-    // Error should be emitted when persistence fails
-    expect(errorCount > 0).toBeTruthy()
   })
 })

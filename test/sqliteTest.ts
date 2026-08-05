@@ -47,7 +47,7 @@ describe('sqlite', () => {
 
     const second = new PgBoss({ backend: 'sqlite', db: fromBunSqlite(sql), supervise: false, schedule: false })
     second.on('error', () => {})
-    await expect(second.start()).rejects.toThrow(/cannot be migrated/)
+    await expect(second.start()).rejects.toThrow(/cannot be upgraded/)
   })
 
   it('rejects a config without a db adapter', () => {
@@ -122,13 +122,6 @@ describe('sqlite', () => {
     const queue = await boss.getQueue('dupes')
     expect(queue!.retryLimit).toBe(3)
 
-    await boss.stop({ graceful: false })
-  })
-
-  it('reports a clean schema drift scan', async () => {
-    const boss = await startBoss()
-    const report = await boss.detectSchemaDrift()
-    expect(report.ok).toBe(true)
     await boss.stop({ graceful: false })
   })
 
