@@ -137,6 +137,21 @@ the block failing and the ROLLBACK landing, and fails with
 The victim is an unrelated query — in practice `getQueues`, or BAM/navigator's
 `UPDATE ... version SET bam_on = now()`.
 
+A SILENT VARIANT (wrong-empty results)
+
+The same 1.3.x pool defect has a form that raises no error at all: under mixed
+concurrent load, a parameterized SELECT can succeed with an EMPTY result set for
+a row that is committed and visible. Instrumented runs showed `getQueues`
+returning zero rows for an existing queue during the 50-send burst in
+distributedDatabaseTest "high concurrency" (the intermittent bun-driver / '1'
+failure), which surfaced as `Queue <name> does not exist`. Because nothing
+throws, neither the 25P02-handling above nor a retry-on-error can catch it.
+pg-boss now bounds the blast radius client-side (src/manager.ts): createQueue/
+updateQueue write through to the queue cache, a negative per-name lookup is
+corroborated by a second read before it throws, and an empty full refresh only
+replaces a non-empty cache when two consecutive refreshes agree. Also fixed
+upstream in Bun 1.4.
+
 MINIMAL REPRODUCTION (no pg-boss involved)
 
     import { SQL } from 'bun'
