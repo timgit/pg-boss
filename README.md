@@ -1,11 +1,9 @@
 > [!WARNING]
-> **Work in progress.** This is an experimental fork of pg-boss that runs on Bun and adds SQLite and in-memory backends. It's under active development and not yet production-ready — expect breaking changes.
+> **Work in progress.** bun-boss is an experimental fork of [pg-boss](https://github.com/timgit/pg-boss) that runs on Bun and adds SQLite and in-memory backends. It's under active development and not yet production-ready — expect breaking changes. The SQLite and in-memory backends are not implemented yet; Postgres (including embedded PGlite) is what works today.
 
 Queueing jobs in Postgres, SQLite, and memory from Bun like a boss.
 
-[![Build](https://github.com/timgit/pg-boss/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/timgit/pg-boss/actions/workflows/ci.yml)
-[![Coverage](https://img.shields.io/coverallsCoverage/github/timgit/pg-boss)](https://coveralls.io/github/timgit/pg-boss?branch=master)
-[![NPM](https://img.shields.io/npm/v/pg-boss)](https://www.npmjs.com/package/pg-boss)
+[![Build](https://github.com/khromov/bun-boss/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/khromov/bun-boss/actions/workflows/ci.yml)
 
 
 ```js
@@ -37,9 +35,9 @@ readme()
   })
 ```
 
-pg-boss is a job queue built in Node.js on top of PostgreSQL in order to provide background processing and reliable asynchronous execution to Node.js applications.
+bun-boss is a job queue built on top of PostgreSQL in order to provide background processing and reliable asynchronous execution to Bun and Node.js applications. The package is still named `pg-boss` and still exports the `PgBoss` class — only the project has been renamed so far.
 
-pg-boss relies on Postgres's SKIP LOCKED, a feature built specifically for message queues to resolve record locking challenges inherent with relational databases. This provides exactly-once delivery and the safety of guaranteed atomic commits to asynchronous job processing.
+It relies on Postgres's SKIP LOCKED, a feature built specifically for message queues to resolve record locking challenges inherent with relational databases. This provides exactly-once delivery and the safety of guaranteed atomic commits to asynchronous job processing.
 
 This will likely cater the most to teams already familiar with the simplicity of relational database semantics and operations (SQL, querying, and backups). It will be especially useful to those already relying on PostgreSQL that want to limit how many systems are required to monitor and support in their architecture.
 
@@ -56,38 +54,42 @@ This will likely cater the most to teams already familiar with the simplicity of
 * SQL support for non-Node.js runtimes for most operations
 * Serverless function compatible
 * Multi-master compatible (for example, in a Kubernetes ReplicaSet)
-* [Additional database backends](https://pgboss.io/database-backends) for Postgres-based databases such as CockroachDB, YugabyteDB and Citus. Or, use embedded PGlite for running entirely in-process.
+* [Additional database backends](docs/database-backends.md) for Postgres-based databases such as CockroachDB, YugabyteDB and Citus. Or, use embedded PGlite for running entirely in-process.
 
 ## CLI
 
-pg-boss includes a command-line interface if needed for managing database migrations without writing code. This is useful for CI/CD pipelines, database setup scripts, or manual schema management.
+A command-line interface is included if needed for managing database migrations without writing code. This is useful for CI/CD pipelines, database setup scripts, or manual schema management.
 
-See the [CLI documentation](https://pgboss.io/cli) for details.
+See the [CLI documentation](docs/cli.md) for details.
 
 ## Requirements
-* Node 22.12 or higher for CommonJS's require(esm)
 * PostgreSQL 13 or higher
+* Node 22.12 or higher for CommonJS's require(esm)
+* Bun 1.4 or higher when using Bun's built-in SQL client as the driver (see [database backends](docs/database-backends.md)), and for working on this repo
 
 ## Documentation
-* [Docs](https://pgboss.io/)
+* [Docs](docs/introduction.md) in this repo
+* [Upstream docs](https://pgboss.io/) for everything the fork has not changed
 
 ## Contributing
 To setup a development environment for this library:
 
 ```bash
-git clone https://github.com/timgit/pg-boss.git
-npm install
+git clone https://github.com/khromov/bun-boss.git
+bun install
 ```
+
+The test suite, linter and every package script run under Bun.
 
 To run the test suite, linter and code coverage:
 ```bash
-npm run cover
+bun run cover
 ```
 
-The test suite will try and create a new database named pgboss. The [config.json](https://github.com/timgit/pg-boss/blob/master/test/config.json) file has the default credentials to connect to postgres.
+The test suite will try and create a new database named pgboss. The [config.json](test/config.json) file has the default credentials to connect to postgres.
 
-The [Docker Compose](https://github.com/timgit/pg-boss/blob/master/docker-compose.yaml) file can be used to start a local postgres instance for testing:
+The [Docker Compose](docker-compose.yaml) file can be used to start a local postgres instance for testing:
 
 ```bash
-docker compose up
+docker compose up -d db
 ```
