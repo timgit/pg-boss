@@ -77,12 +77,12 @@ describe('heartbeat', function () {
     expect(failedJob.output).toEqual({ value: { message: 'job heartbeat timeout' } })
   })
 
-  it('should fail job by heartbeat timeout through the standard (non-distributed) path', async function () {
-    // Pin the standard maintenance path even under DISTRIBUTED=true (mirror of distributedDatabaseTest
-    // pinning __test__distributed:true). The distributed CI run otherwise routes this through
-    // failJobsByHeartbeatDistributed, leaving boss.ts's standard failJobsByHeartbeat branch +
+  it('should fail job by heartbeat timeout through the standard (single-statement) path', async function () {
+    // Pin the standard maintenance path even under NO_SKIP_LOCKED_NO_CTE=true (mirror of noSkipLockedNoCteTest
+    // pinning __test__noSkipLockedNoCte:true). The distributed CI run otherwise routes this through
+    // failJobsByHeartbeatNoCte, leaving boss.ts's standard failJobsByHeartbeat branch +
     // plans.failJobsByHeartbeat uncovered on that flag.
-    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: false, monitorIntervalSeconds: 1, noDefault: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__noSkipLockedNoCte: false, monitorIntervalSeconds: 1, noDefault: true })
 
     await ctx.boss.createQueue(ctx.schema, { heartbeatSeconds: 10, retryLimit: 0 })
 

@@ -4,18 +4,18 @@ import { ctx } from './hooks.ts'
 
 // This file holds ONLY the invariants the general suite structurally cannot express. General
 // behavioral coverage (fetch/complete/fail/retry/policies/flows/dead-letter/...) already runs in
-// distributed mode via the whole suite under `DISTRIBUTED=true` on Postgres, where
+// the no-SKIP-LOCKED path via the whole suite under `NO_SKIP_LOCKED_NO_CTE=true` on Postgres, where
 // testHelper.getConfig() turns on noSkipLocked + noMultiMutationCte for every test. Don't re-test
 // generic behavior here — add it to the relevant suite instead. What stays here:
 //
 //   1. Concurrent-fetch deduplication — the core guarantee of the atomic UPDATE...RETURNING fetch
 //      that replaces SKIP LOCKED; no generic test asserts "N concurrent workers, zero duplicates".
-//   2. Caller-supplied-transaction composition for completeDistributed/failDistributed — the
+//   2. Caller-supplied-transaction composition for completeNoCte/failNoCte — the
 //      ensureTransaction contract (compose inline, roll back with the caller's tx).
 //   3. Flag-gated schema construction (noTablePartitioning / noDeferrableConstraints /
 //      noCoveringIndexes / noAdvisoryLocks) — the ONLY Postgres-side coverage of that DDL, since the
-//      `DISTRIBUTED=true` job sets noSkipLocked + noMultiMutationCte but NOT the schema no* flags.
-//      These now select the flags through the __test__ hooks (the distributed profiles are gone).
+//      `NO_SKIP_LOCKED_NO_CTE=true` job sets noSkipLocked + noMultiMutationCte but NOT the schema no* flags.
+//      These now select the flags through the __test__ hooks (the backend profiles are gone).
 //
 // Raise the default for the whole block so startup jitter can't push a test over the edge (the
 // concurrency tests keep their explicit per-test overrides).
@@ -24,9 +24,9 @@ const blockTimeout = 20000
 // The concurrency tests need more than the block default on Postgres, so they carry their own override.
 const concurrencyTimeout = 30000
 
-helper.describePglite('distributed database mode', { timeout: blockTimeout }, function () {
-  it('should not duplicate jobs when fetching concurrently in distributed mode', async function () {
-    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: true })
+helper.describePglite('no-SKIP-LOCKED / no-CTE mode', { timeout: blockTimeout }, function () {
+  it('should not duplicate jobs when fetching concurrently with SKIP LOCKED disabled', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__noSkipLockedNoCte: true })
     const jobCount = 10
 
     await Promise.all(
@@ -43,7 +43,7 @@ helper.describePglite('distributed database mode', { timeout: blockTimeout }, fu
     const allJobs = results.flat()
 
     // Each job should only be fetched once (no duplicates)
-    // This is the key guarantee of the distributed mode
+    // This is the key guarantee of the the no-SKIP-LOCKED path
     const jobIds = allJobs.map(j => j.id)
     const uniqueJobIds = new Set(jobIds)
     expect(uniqueJobIds.size).toBe(jobIds.length)
@@ -54,8 +54,8 @@ helper.describePglite('distributed database mode', { timeout: blockTimeout }, fu
     expect(allJobs.length).toBeGreaterThan(0)
   }, concurrencyTimeout)
 
-  it('should handle high concurrency without duplicates in distributed mode', async function () {
-    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: true })
+  it('should handle high concurrency without duplicates with SKIP LOCKED disabled', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__noSkipLockedNoCte: true })
     const jobCount = 50
     const workerCount = 10
 
@@ -103,8 +103,8 @@ helper.describePglite('distributed database mode', { timeout: blockTimeout }, fu
     expect(claimedIndices.size).toBe(jobCount)
   }, concurrencyTimeout)
 
-  it('should compose failDistributed inside a caller transaction and roll back with it', async function () {
-    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: true })
+  it('should compose failNoCte inside a caller transaction and roll back with it', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__noSkipLockedNoCte: true })
 
     // Send and fetch a job
     const jobId = await ctx.boss.send(ctx.schema, { test: 'rollback' }, { retryLimit: 1 })
@@ -134,20 +134,20 @@ helper.describePglite('distributed database mode', { timeout: blockTimeout }, fu
     }
   })
 
-  it('should return 0 affected when failing a non-existent job in distributed mode', async function () {
-    // Covers failDistributed's empty-select short-circuit, which the generic suite never hits in
-    // distributed mode during the standard (non-distributed) coverage run.
-    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: true })
+  it('should return 0 affected when failing a non-existent job with SKIP LOCKED disabled', async function () {
+    // Covers failNoCte's empty-select short-circuit, which the generic suite never hits in
+    // the no-SKIP-LOCKED path during the standard (single-statement) coverage run.
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__noSkipLockedNoCte: true })
 
     const result = await ctx.boss.fail(ctx.schema, '00000000-0000-0000-0000-000000000000')
     expect(result.affected).toBe(0)
   })
 
-  it('should fail timed-out jobs to the dead letter queue via distributed supervise', async function () {
-    // Exercises the distributed maintenance-expiry path: boss.#monitor ->
-    // manager.failJobsByTimeoutDistributed -> expireJobsDistributed -> reinsertFailedJobs (failed +
+  it('should fail timed-out jobs to the dead letter queue via the split supervise path', async function () {
+    // Exercises the noMultiMutationCte maintenance-expiry path: boss.#monitor ->
+    // manager.failJobsByTimeoutNoCte -> expireJobsNoCte -> reinsertFailedJobs (failed +
     // dead-letter branch). retryLimit 0 forces the terminal "failed" re-insert rather than a retry.
-    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: true, monitorIntervalSeconds: 1, noDefault: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__noSkipLockedNoCte: true, monitorIntervalSeconds: 1, noDefault: true })
 
     const deadLetter = `${ctx.schema}_dlq`
     await ctx.boss.createQueue(deadLetter)
@@ -174,7 +174,7 @@ helper.describePglite('distributed database mode', { timeout: blockTimeout }, fu
     expect(dlqJob).toBeTruthy()
     expect(dlqJob.data.key).toBe(ctx.schema)
 
-    // distributed insertDeadLetterJob carries source provenance
+    // the split insertDeadLetterJob carries source provenance
     const dlqMeta = await ctx.boss.getJobById(deadLetter, dlqJob.id)
     helper.assertTruthy(dlqMeta)
     expect(dlqMeta.sourceName).toBe(ctx.schema)
@@ -182,11 +182,11 @@ helper.describePglite('distributed database mode', { timeout: blockTimeout }, fu
     expect(dlqMeta.sourceCreatedOn).toBeTruthy()
   })
 
-  it('should retry heartbeat-timed-out jobs with backoff via distributed supervise', async function () {
-    // Exercises boss.#monitor -> manager.failJobsByHeartbeatDistributed and the retry-with-backoff
-    // branch of reinsertFailedJobs (retryBackoff: true), which the failDistributed rollback test
+  it('should retry heartbeat-timed-out jobs with backoff via the split supervise path', async function () {
+    // Exercises boss.#monitor -> manager.failJobsByHeartbeatNoCte and the retry-with-backoff
+    // branch of reinsertFailedJobs (retryBackoff: true), which the failNoCte rollback test
     // above does not reach (it uses the non-backoff retry path).
-    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: true, monitorIntervalSeconds: 1, noDefault: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__noSkipLockedNoCte: true, monitorIntervalSeconds: 1, noDefault: true })
 
     await ctx.boss.createQueue(ctx.schema, { heartbeatSeconds: 10, retryLimit: 1, retryBackoff: true })
 
@@ -209,12 +209,12 @@ helper.describePglite('distributed database mode', { timeout: blockTimeout }, fu
   })
 
   it('should retry, not fail, when the backend returns integer columns as strings', async function () {
-    // Regression: reinsertFailedJobs read the raw SELECT * rows from the distributed fail path. On
-    // CockroachDB, INT8 columns come back as strings, so `retry_count < retry_limit` was a
+    // Regression: reinsertFailedJobs read the raw SELECT * rows from the split fail path. With a
+    // driver that returns integer columns as strings, `retry_count < retry_limit` was a
     // lexicographic compare — "9" < "10" is false — which permanently failed a job that still had
-    // retries left. The DISTRIBUTED=true Postgres run can't catch this (node-pg returns numbers
-    // there), so we simulate CockroachDB's string typing with a wrapper over a real connection.
-    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: true })
+    // retries left. The NO_SKIP_LOCKED_NO_CTE=true Postgres run can't catch this (node-pg returns numbers
+    // there), so we simulate a string-typed driver with a wrapper over a real connection.
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__noSkipLockedNoCte: true })
 
     const jobId = await ctx.boss.send(ctx.schema, { test: 'stringints' }, { retryLimit: 10 })
     helper.assertTruthy(jobId)
@@ -228,10 +228,10 @@ helper.describePglite('distributed database mode', { timeout: blockTimeout }, fu
       // string comparison ("9" < "10" === false) would wrongly fail it.
       await _db.executeSql(`UPDATE ${ctx.schema}.job SET retry_count = 9 WHERE id = $1`, [jobId])
 
-      // Wrap the connection so SELECT * rows return integer columns as strings, exactly as
-      // CockroachDB's driver returns INT8. The fail path's select is the only SELECT * it issues.
+      // Wrap the connection so SELECT * rows return integer columns as strings, as some drivers
+      // do. The fail path's select is the only SELECT * it issues.
       const integerColumns = ['priority', 'retry_limit', 'retry_count', 'retry_delay', 'retry_delay_max', 'group_tier', 'expire_seconds', 'deletion_seconds', 'pending_dependencies']
-      const cockroachLike = {
+      const stringIntegerDriver = {
         executeSql: async (text: string, values?: unknown[]) => {
           const result = await _db.executeSql(text, values)
           if (/^\s*SELECT \* FROM/i.test(text)) {
@@ -245,7 +245,7 @@ helper.describePglite('distributed database mode', { timeout: blockTimeout }, fu
         }
       }
 
-      await ctx.boss.fail(ctx.schema, jobId, null, { db: cockroachLike })
+      await ctx.boss.fail(ctx.schema, jobId, null, { db: stringIntegerDriver })
 
       const retried = await ctx.boss.getJobById(ctx.schema, jobId)
       helper.assertTruthy(retried)
@@ -255,8 +255,8 @@ helper.describePglite('distributed database mode', { timeout: blockTimeout }, fu
     }
   })
 
-  it('should compose completeDistributed inside a caller transaction and roll back with it', async function () {
-    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: true })
+  it('should compose completeNoCte inside a caller transaction and roll back with it', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__noSkipLockedNoCte: true })
 
     const jobId = await ctx.boss.send(ctx.schema, { test: 'rollback' })
     helper.assertTruthy(jobId)
@@ -283,11 +283,11 @@ helper.describePglite('distributed database mode', { timeout: blockTimeout }, fu
     }
   })
 
-  it('should unblock dependents when completing a blocking parent in distributed mode', async function () {
+  it('should unblock dependents when completing a blocking parent with SKIP LOCKED disabled', async function () {
     // Completion no longer unblocks dependents inline (that work moved off the hot path to the
     // background resolver — see issue #824). resolveFlow() forces a resolution pass, which on a
-    // distributed backend runs the split selectBlockingParents + decrementDependents + clearBlocking.
-    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: true })
+    // noMultiMutationCte backend runs the split selectBlockingParents + decrementDependents + clearBlocking.
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__noSkipLockedNoCte: true })
 
     const flow = await ctx.boss.flow([
       { ref: 'parent', name: ctx.schema },
@@ -306,10 +306,10 @@ helper.describePglite('distributed database mode', { timeout: blockTimeout }, fu
     expect(child.pendingDependencies).toBe(0)
   })
 
-  it('distributed flow resolver is a no-op when there are no blocking parents', async function () {
-    // A completed but non-blocking job has no dependents, so the distributed resolver's batch query
-    // (selectBlockingParents) returns nothing and resolveFlowJobsDistributed short-circuits to 0.
-    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: true })
+  it('split flow resolver is a no-op when there are no blocking parents', async function () {
+    // A completed but non-blocking job has no dependents, so the split flow resolver's batch query
+    // (selectBlockingParents) returns nothing and resolveFlowJobsNoCte short-circuits to 0.
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__noSkipLockedNoCte: true })
 
     const id = await ctx.boss.send(ctx.schema)
     helper.assertTruthy(id)
@@ -326,13 +326,13 @@ helper.describePglite('distributed database mode', { timeout: blockTimeout }, fu
 
   helper.itPostgresOnly('should construct schema with all compatibility flags forced on', async function () {
     // Exercises every no*-flag construction branch (no partitioning, non-deferrable constraints,
-    // non-covering indexes, no advisory locks, no LISTEN/NOTIFY) plus the distributed runtime path,
+    // non-covering indexes, no advisory locks, no LISTEN/NOTIFY) plus the no-SKIP-LOCKED + no-CTE runtime path,
     // all forced through the __test__ hooks so the full flag combination constructs and runs on a
     // plain Postgres instance. The flags are not settable directly — resolveBackend() derives them —
     // so the hooks are the only way in.
     ctx.boss = await helper.start({
       ...ctx.bossConfig,
-      __test__distributed: true,
+      __test__noSkipLockedNoCte: true,
       __test__noAdvisoryLocks: true,
       __test__noTablePartitioning: true,
       __test__noDeferrableConstraints: true,
@@ -354,10 +354,10 @@ helper.describePglite('distributed database mode', { timeout: blockTimeout }, fu
     expect(completed.state).toBe('completed')
   })
 
-  it('should return numeric stats counts in distributed mode', async function () {
+  it('should return numeric stats counts with SKIP LOCKED disabled', async function () {
     // getQueueStats serves counts from a raw stats query rather than the normalized getQueues path;
-    // assert the public counts come back as numbers under the distributed runtime path.
-    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: true })
+    // assert the public counts come back as numbers under the no-SKIP-LOCKED + no-CTE runtime path.
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__noSkipLockedNoCte: true })
 
     const jobId = await ctx.boss.send(ctx.schema, { test: 'stats' })
     helper.assertTruthy(jobId)

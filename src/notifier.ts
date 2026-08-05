@@ -40,7 +40,7 @@ class Notifier extends EventEmitter implements types.EventsMixin {
     if (!this.#stopped) return
     this.#stopped = false
 
-    // Some backends (e.g. CockroachDB) don't implement LISTEN/NOTIFY at all. Skip the
+    // Some backends (e.g. SQLite) don't implement LISTEN/NOTIFY at all. Skip the
     // listener there even when useListenNotify was requested; polling still runs.
     if (this.#config.noListenNotify) {
       this.emit(events.warning, {

@@ -6,7 +6,7 @@ import * as plans from '../src/plans.ts'
 const describeRepro = describe.skipIf(
   helper.isPglite ||
   helper.isSqlite ||
-  helper.isDistributed
+  helper.isNoSkipLockedNoCte
 )
 
 interface PlanNode {

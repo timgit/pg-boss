@@ -94,10 +94,8 @@ export function create (c: Ctx, version: number, options?: CreateOptions) {
     createTableQueue(c),
     createTableSchedule(c),
 
-    // Partition-helper functions are only used by the partitioned architecture.
-    // They are unused when partitioning is disabled, and job_table_format's
-    // IMMUTABLE + format() body is rejected at create time by databases like
-    // CockroachDB, so skip them entirely in noTablePartitioning mode.
+    // Partition-helper functions are only used by the partitioned architecture, so they are
+    // skipped entirely in noTablePartitioning mode.
     noPartitioning ? '' : jobTableFormatFunction(c),
     noPartitioning ? '' : jobTableRunFunction(c),
 
@@ -799,7 +797,7 @@ function createIndexJobFetch (c: Ctx, noCoveringIndex = false) {
   // forces heap access, so an index-only scan is impossible and a covering payload would never be
   // read from the index. Confirmed dead weight via EXPLAIN ANALYZE;
   // dropping it shrinks job_i5 on the hot insert path at no read-side cost.
-  // noCoveringIndex (the CockroachDB profile flag that stripped the old INCLUDE) is now moot here.
+  // The noCoveringIndexes flag (which stripped the old INCLUDE) is moot here.
   return `CREATE INDEX ${qi(c, 'job_i5')} ON ${qn(c, 'job')} (name, start_after) WHERE ${dial(c).stateLt('state', JOB_STATES.active)} AND NOT blocked`
 }
 
@@ -1162,9 +1160,9 @@ function buildFetchParams (options: FetchJobOptions): FetchQueryParams {
  * LOCKED, which lets multiple workers efficiently fetch different jobs simultaneously.
  *
  * With noSkipLocked=true, omits FOR UPDATE SKIP LOCKED and adds an additional state
- * check in the WHERE clause. This pattern works better with distributed databases like
- * CockroachDB where SKIP LOCKED has performance issues and can unexpectedly skip
- * unlocked rows.
+ * check in the WHERE clause. This is the path for backends without (or with unreliable)
+ * SKIP LOCKED — the SQLite backend, and any where SKIP LOCKED has performance issues or
+ * can unexpectedly skip unlocked rows.
  *
  * Trade-off when noSkipLocked is set: under high contention, workers may receive fewer
  * jobs per fetch as concurrent updates to the same rows will result in some workers
@@ -1225,8 +1223,7 @@ export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): S
       ), `
     : ''
 
-  // With noSkipLocked, omit FOR UPDATE SKIP LOCKED as it performs poorly
-  // in distributed databases like CockroachDB
+  // With noSkipLocked, omit FOR UPDATE SKIP LOCKED (unavailable or poorly performing on such backends).
   const lockClause = noSkipLocked ? '' : 'FOR UPDATE OF j SKIP LOCKED'
 
   // Column references are qualified with j. throughout so both the base case and
@@ -1316,7 +1313,7 @@ export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): S
 
   // Without SKIP LOCKED, add a state check to prevent duplicate processing
   // when multiple workers try to claim the same jobs concurrently
-  const distributedStateCheck = noSkipLocked ? `AND ${d.stateLt('j.state', JOB_STATES.active)}` : ''
+  const noSkipLockedStateCheck = noSkipLocked ? `AND ${d.stateLt('j.state', JOB_STATES.active)}` : ''
 
   return {
     text: `
@@ -1333,7 +1330,7 @@ export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): S
       ${updateSource}
       WHERE name = '${name}' AND ${updateMatch}
       ${singletonFetch && !hasGroupConcurrency ? 'AND singleton_rn = 1' : ''}
-      ${distributedStateCheck}
+      ${noSkipLockedStateCheck}
       RETURNING ${d.returningAlias('j')}${includeMetadata ? JOB_COLUMNS_ALL : JOB_COLUMNS_MIN}${
         // SQLite's RETURNING row order is unspecified, so emit the claim-ordering keys for the
         // manager to re-sort by (metadata fetches already carry priority/createdOn).
@@ -1345,7 +1342,7 @@ export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): S
 }
 
 // Shared SET/WHERE body for marking jobs completed (no RETURNING). Used by the
-// single-statement completeJobs() and the distributed completeJobsDistributed().
+// single-statement completeJobs() and the split completeJobsNoCte().
 function completeJobsUpdate (c: Ctx, table: string, includeQueued?: boolean): string {
   const d = dial(c)
   return `UPDATE ${qn(c, table)}
@@ -1364,7 +1361,7 @@ function completeJobsUpdate (c: Ctx, table: string, includeQueued?: boolean): st
 
 // Shared dependency-unblocking fragments. Both consume a `decremented` CTE
 // (child_name, child_id, n) that the caller defines, and are reused by the standard
-// completeJobs() and the distributed decrementDependents().
+// completeJobs() and the split decrementDependents().
 function lockedChildrenCte (c: Ctx): string {
   return `locked_children AS (
       SELECT j.name, j.id, d.n
@@ -1424,10 +1421,10 @@ export function completeJobsWithOutputs (c: Ctx, table: string) {
   `
 }
 
-// Distributed equivalent of completeJobsWithOutputs: a single mutation that returns the completed
-// ids. Dependency unblocking is handled out of band by the background resolver (Navigator), so
-// completion does no dependency work on any backend.
-export function completeJobsWithOutputsDistributed (c: Ctx, table: string) {
+// noMultiMutationCte equivalent of completeJobsWithOutputs: a single mutation that returns the
+// completed ids. Dependency unblocking is handled out of band by the background resolver (Navigator),
+// so completion does no dependency work on any backend.
+export function completeJobsWithOutputsNoCte (c: Ctx, table: string) {
   const d = dial(c)
 
   // Output values arrive pre-serialized (mapCompletionDataArg), so the sqlite branch extracts
@@ -1991,7 +1988,7 @@ export function deadLetterJobsByIdWithOutputs (c: Ctx, table: string) {
   `
 }
 
-// Distributed mode: separate queries to avoid CockroachDB's multi-mutation CTE limitation
+// noMultiMutationCte path: separate queries instead of one multi-mutation CTE
 export function selectJobsToFailById (c: Ctx, table: string): SqlQuery {
   const d = dial(c)
   return {
@@ -2007,10 +2004,10 @@ export function deleteJobsToFail (c: Ctx, table: string): SqlQuery {
   }
 }
 
-// Distributed mode: the predicate-based maintenance expiry equivalents of selectJobsToFailById.
-// The supervisor's failJobsByTimeout/failJobsByHeartbeat use the multi-mutation failJobs() CTE,
-// which CockroachDB rejects, so in distributed mode we select the timed-out jobs here and re-insert
-// them separately (delete via deleteJobsByIds, re-insert via insertRetryJob), all in one transaction.
+// noMultiMutationCte path: the predicate-based maintenance expiry equivalents of selectJobsToFailById.
+// The supervisor's failJobsByTimeout/failJobsByHeartbeat use the multi-mutation failJobs() CTE, so
+// under noMultiMutationCte we select the timed-out jobs here and re-insert them separately (delete
+// via deleteJobsByIds, re-insert via insertRetryJob), all in one transaction.
 export function selectJobsToFailByTimeout (c: Ctx, table: string, queues: string[]): SqlQuery {
   return {
     text: `SELECT * FROM ${qn(c, table)}
@@ -2039,9 +2036,9 @@ export function deleteJobsByIds (c: Ctx, table: string): SqlQuery {
   }
 }
 
-// Distributed mode: complete jobs as a single-table mutation. Dependency unblocking is handled
+// noMultiMutationCte path: complete jobs as a single-table mutation. Dependency unblocking is handled
 // out of band by the background resolver (Navigator), so completion does no dependency work.
-export function completeJobsDistributed (c: Ctx, table: string, includeQueued?: boolean): string {
+export function completeJobsNoCte (c: Ctx, table: string, includeQueued?: boolean): string {
   return `
     ${completeJobsUpdate(c, table, includeQueued)}
     RETURNING id
@@ -2050,7 +2047,7 @@ export function completeJobsDistributed (c: Ctx, table: string, includeQueued?: 
 
 // Decrement pending_dependencies for children of the given completed parent jobs, unblocking
 // any that reach zero. Only the final UPDATE mutates job, so this is a single mutation acceptable
-// to CockroachDB. Used by the distributed flow resolver path. $1 is the parent queue name, $2 the
+// under noMultiMutationCte. Used by the split flow resolver path. $1 is the parent queue name, $2 the
 // list of resolved parent ids for that queue.
 export function decrementDependents (c: Ctx): string {
   return `
@@ -2116,10 +2113,9 @@ export function resolveFlowJobs (c: Ctx, table: string, names: string[]): SqlQue
   }
 }
 
-// Distributed flow audit (CockroachDB / noMultiMutationCte). Locks a batch of completed blocking
-// parents without mutating, so the caller can run the single-mutation decrementDependents() and
-// clearBlocking() separately within one transaction. $1 is the chunk of queue names; SKIP LOCKED
-// is omitted under noSkipLocked.
+// noMultiMutationCte flow audit. Locks a batch of completed blocking parents without mutating, so
+// the caller can run the single-mutation decrementDependents() and clearBlocking() separately within
+// one transaction. $1 is the chunk of queue names; SKIP LOCKED is omitted under noSkipLocked.
 export function selectBlockingParents (c: Ctx, table: string, names: string[], noSkipLocked?: boolean): SqlQuery {
   return {
     text: `
@@ -2136,8 +2132,8 @@ export function selectBlockingParents (c: Ctx, table: string, names: string[], n
   }
 }
 
-// Distributed flow audit: clear `blocking` on resolved parents (single mutation). $1 is the parent
-// queue name, $2 the list of resolved parent ids for that queue.
+// noMultiMutationCte flow audit: clear `blocking` on resolved parents (single mutation). $1 is the
+// parent queue name, $2 the list of resolved parent ids for that queue.
 export function clearBlocking (c: Ctx): string {
   return `
     UPDATE ${qn(c, 'job')}
@@ -2503,7 +2499,7 @@ export function cacheQueueStats (c: Ctx, table: string, queues: string[], noAdvi
       singletons_active = stats."singletonsActive",
       -- Always-on sliding window of recent ready counts for the dashboard sparkline. Prepend the
       -- newest sample and keep the newest READY_HISTORY_SIZE, stored newest-first. Built with
-      -- unnest + array_agg (not array slicing, which some distributed engines lack).
+      -- unnest + array_agg (not array slicing, which some engines lack).
       ready_history = (
         SELECT COALESCE(array_agg(v ORDER BY ord), '{}'::int[])
         FROM (

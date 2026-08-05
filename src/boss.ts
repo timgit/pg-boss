@@ -179,9 +179,9 @@ class Boss extends EventEmitter implements types.EventsMixin {
 
       if (this.#stopping) return
 
-      // Coerce with Number(): distributed backends return these integer columns as strings, so a bare
+      // Coerce with Number(): some drivers return these integer columns as strings, so a bare
       // `>` would compare lexicographically ("100" > "9" === false) and silently miss the backlog. On
-      // standard Postgres these are already numbers, so Number() is a no-op.
+      // the pg driver these are already numbers, so Number() is a no-op.
       const warnings = rowsCacheStats.filter(i => Number(i.queuedCount) > (Number(i.warningQueueSize) || this.#largeQueueSize))
 
       for (const warning of warnings) {
@@ -191,7 +191,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
       // The multi-mutation failJobs() CTE is rejected under noMultiMutationCte, so route expiry
       // through the manager's split select/delete/re-insert variants instead.
       if (this.#config.noMultiMutationCte) {
-        await this.#manager.failJobsByTimeoutDistributed(table, queues)
+        await this.#manager.failJobsByTimeoutNoCte(table, queues)
       } else {
         const sql = plans.failJobsByTimeout(this.#config, table, queues, this.#config.noAdvisoryLocks)
         await this.#executeQuery(sql)
@@ -200,7 +200,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
       if (this.#stopping) return
 
       if (this.#config.noMultiMutationCte) {
-        await this.#manager.failJobsByHeartbeatDistributed(table, queues)
+        await this.#manager.failJobsByHeartbeatNoCte(table, queues)
       } else {
         const heartbeatSql = plans.failJobsByHeartbeat(this.#config, table, queues, this.#config.noAdvisoryLocks)
         await this.#executeQuery(heartbeatSql)

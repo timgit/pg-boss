@@ -313,8 +313,8 @@ helper.describeListenNotify('listen/notify', function () {
   })
 })
 
-// Runs on every backend, including those that don't implement LISTEN/NOTIFY (CockroachDB) or have
-// it disabled (YugabyteDB). The producer inlines pg_notify into the insert when a queue opts into
+// Runs on every backend, including those that don't implement LISTEN/NOTIFY (SQLite sets
+// noListenNotify). The producer inlines pg_notify into the insert when a queue opts into
 // notify; on a noListenNotify backend that would error, so the producer must suppress it. These
 // tests prove the suppression: producing to a notify-enabled queue must never throw and jobs must
 // still be delivered by polling.

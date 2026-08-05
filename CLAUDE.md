@@ -29,13 +29,13 @@ Requirements: **Bun 1.4 or newer** — on 1.3.x, Bun can hand a pooled connectio
 
 ### CI
 
-`.github/workflows/ci.yml` runs on every push to `master` and every PR, entirely under Bun (`container: oven/bun:<version>` — no Node toolchain; the toolchain is selected by image because `bun upgrade` needs `unzip`, which these images lack). The matrix is `standard` / `distributed` against a Postgres service container, plus `bun-driver` twice — on `1` and on `canary`, because `fromBunSql` is the one part of the suite whose behavior depends on Bun itself. Separate PGlite and SQLite jobs need no database (the SQLite job also runs on both toolchains and re-verifies the Bun sqlite driver behaviors with `scripts/spike-bun-sqlite.ts` first).
+`.github/workflows/ci.yml` runs on every push to `master` and every PR, entirely under Bun (`container: oven/bun:<version>` — no Node toolchain; the toolchain is selected by image because `bun upgrade` needs `unzip`, which these images lack). The matrix is `standard` / `no-skip-locked-no-cte` against a Postgres service container, plus `bun-driver` twice — on `1` and on `canary`, because `fromBunSql` is the one part of the suite whose behavior depends on Bun itself. Separate PGlite and SQLite jobs need no database (the SQLite job also runs on both toolchains and re-verifies the Bun sqlite driver behaviors with `scripts/spike-bun-sqlite.ts` first).
 
 ### Running against other backends
 
-The suite is parameterized by `DB_TYPE` / `DISTRIBUTED` env vars (resolved in `test/testHelper.ts`):
+The suite is parameterized by `DB_TYPE` / `NO_SKIP_LOCKED_NO_CTE` env vars (resolved in `test/testHelper.ts`):
 
-- `bun run test:distributed` — `DISTRIBUTED=true`, exercises the atomic-UPDATE fetch path on plain Postgres (fast, no separate DB).
+- `bun run test:no-skip-locked-no-cte` — `NO_SKIP_LOCKED_NO_CTE=true`, exercises the atomic-UPDATE fetch + split-statement write paths on plain Postgres (fast, no separate DB).
 - `bun run test:bun` — `DB_TYPE=bun`, routes the whole suite through the `fromBunSql` adapter (Bun's built-in `SQL` client) against the same Postgres server, so the adapter's parameter-binding workarounds are exercised by every query rather than only the dedicated adapter tests.
 - `bun run test:pglite` — `DB_TYPE=pglite`, in-process WASM Postgres, no server. Connection-string / subprocess / multi-connection tests auto-skip.
 - `bun run test:sqlite` — `DB_TYPE=sqlite`, in-process SQLite through Bun's `SQL` client (`fromBunSqlite`), no server. This is the one backend that is a *different SQL dialect*, not Postgres-compatible: `src/dialect.ts` supplies rendering primitives to `plans.ts` (a bare-string schema arg means postgres; a `PlanContext` carries the dialect), and `test/plansSnapshotTest.ts` pins the postgres output byte-for-byte. Skips everything pglite skips plus the pg-catalog-shaped tests.
@@ -63,7 +63,7 @@ Every SQL string and all DDL lives in **`src/plans.ts`**. Components never inlin
 
 The library targets stock Postgres, embedded PGlite, and embedded SQLite. `attorney.ts` (`resolveBackend`) maps a `backend` profile to a set of internal `noXxx` compatibility flags — e.g. `noSkipLocked`, `noMultiMutationCte`, `noTablePartitioning`, `noAdvisoryLocks`, `noListenNotify`, `noCoveringIndexes`. These flags are **not user-configurable**; they are derived from the profile and thread through `plans.ts`, `manager.ts`, and `boss.ts` to select alternate query strategies (e.g. the split select/delete/re-insert path when `noMultiMutationCte`, atomic-UPDATE fetch when `noSkipLocked`). When touching a query, check whether it has a no-flag variant.
 
-`sqlite` is the profile that turns every flag on (plus its own dialect rendering), so it exercises the flagged branches end-to-end. The postgres-dialect branches of these flags are covered on plain Postgres by the `__test__distributed` hook (`DISTRIBUTED=true` / `bun run test:distributed`, forcing `noSkipLocked` + `noMultiMutationCte`) and the other `__test__` construction hooks, since the flags are not publicly configurable.
+`sqlite` is the profile that turns every flag on (plus its own dialect rendering), so it exercises the flagged branches end-to-end. The postgres-dialect branches of these flags are covered on plain Postgres by the `__test__noSkipLockedNoCte` hook (`NO_SKIP_LOCKED_NO_CTE=true` / `bun run test:no-skip-locked-no-cte`, forcing `noSkipLocked` + `noMultiMutationCte`) and the other `__test__` construction hooks, since the flags are not publicly configurable.
 
 ### Config resolution
 

@@ -268,7 +268,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
   }
 
   // Complete a set of active jobs, each with its own output, in a constant number of statements
-  // (one on Postgres, two on a distributed backend). Outputs are serialized like complete()/fail()
+  // (one normally, two under noMultiMutationCte). Outputs are serialized like complete()/fail()
   // and passed as a JSON recordset so the batch size doesn't drive the statement count.
   async #completeWithOutputs (name: string, items: { id: string, output: unknown }[]): Promise<types.CommandResponse> {
     const { table } = await this.getQueueCache(name)
@@ -278,7 +278,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     if (this.config.noMultiMutationCte) {
       // Dependency unblocking is handled out of band by the background resolver (Navigator), so
       // completion is a single statement here too.
-      const sql = plans.completeJobsWithOutputsDistributed(this.config, table)
+      const sql = plans.completeJobsWithOutputsNoCte(this.config, table)
       const { rows } = await this.db.executeSql(sql, [name, JSON.stringify(payload)])
       return { jobs: ids, requested: ids.length, affected: rows.length }
     }
@@ -288,8 +288,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
     return this.mapCommandResponse(ids, result)
   }
 
-  // Fail a set of active jobs, each with its own output, in a constant number of statements. On a
-  // distributed backend this reuses the select -> delete -> reinsert split, passing per-id outputs
+  // Fail a set of active jobs, each with its own output, in a constant number of statements. Under
+  // noMultiMutationCte this reuses the select -> delete -> reinsert split, passing per-id outputs
   // to reinsertFailedJobs so each job keeps its own failure detail. When `forceTerminal` is set the
   // jobs fail terminally and route straight to the dead letter queue, bypassing remaining retries.
   async #failWithOutputs (name: string, items: { id: string, output: unknown }[], forceTerminal = false): Promise<types.CommandResponse> {
@@ -679,7 +679,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
   }
 
   // Whether a queue's `notify` opt-in actually emits a transactional pg_notify. Backends that
-  // don't implement LISTEN/NOTIFY (noListenNotify, e.g. CockroachDB) would error on the inlined
+  // don't implement LISTEN/NOTIFY (noListenNotify, e.g. SQLite) would error on the inlined
   // pg_notify, so the producer falls back to polling-only delivery on those.
   #notifyEnabled (queueNotify: boolean | undefined): boolean {
     return !!queueNotify && !this.config.noListenNotify
@@ -1321,10 +1321,10 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const { table } = await this.getQueueCache(name)
     const outputData = this.mapCompletionDataArg(data)
 
-    // noMultiMutationCte: split the dependency-unblocking into a separate statement to
-    // avoid CockroachDB's multi-mutation CTE limitation (completeJobs updates two tables).
+    // noMultiMutationCte: split the dependency-unblocking into a separate statement, since
+    // completeJobs updates two tables in one CTE (rejected under this flag).
     if (this.config.noMultiMutationCte) {
-      return this.completeDistributed(name, ids, outputData, table, db, options.includeQueued)
+      return this.completeNoCte(name, ids, outputData, table, db, options.includeQueued)
     }
 
     const sql = plans.completeJobs(this.config, table, options.includeQueued)
@@ -1332,7 +1332,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     return this.mapCommandResponse(ids, result)
   }
 
-  // Distributed complete/fail need several statements run atomically. When we own the database
+  // The split complete/fail need several statements run atomically. When we own the database
   // and it can open transactions we pin one via withTransaction(); when the caller supplied their
   // own db (options.db) we run the statements inline so they compose inside the caller's
   // transaction rather than issuing a BEGIN/COMMIT that would commit or roll back their outer work.
@@ -1344,10 +1344,10 @@ class Manager extends EventEmitter implements types.EventsMixin {
     return fn(db)
   }
 
-  private async completeDistributed (name: string, ids: string[], outputData: any, table: string, db: types.IDatabase, includeQueued?: boolean): Promise<types.CommandResponse> {
+  private async completeNoCte (name: string, ids: string[], outputData: any, table: string, db: types.IDatabase, includeQueued?: boolean): Promise<types.CommandResponse> {
     // Dependency unblocking is handled out of band by the background resolver (Navigator), so
     // completion is a single statement on every backend.
-    const sql = plans.completeJobsDistributed(this.config, table, includeQueued)
+    const sql = plans.completeJobsNoCte(this.config, table, includeQueued)
     const { rows } = await db.executeSql(sql, [name, ids, outputData])
     return { jobs: ids, requested: ids.length, affected: rows.length }
   }
@@ -1359,11 +1359,11 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const { table } = await this.getQueueCache(name)
     const outputData = this.mapCompletionDataArg(data)
 
-    // noMultiMutationCte: use separate queries to avoid CockroachDB's multi-mutation CTE limitation.
-    // The delete and re-insert run in a single transaction (see ensureTransaction) so the
-    // job cannot be lost between the two statements.
+    // noMultiMutationCte: use separate queries instead of one multi-mutation CTE. The delete and
+    // re-insert run in a single transaction (see ensureTransaction) so the job cannot be lost
+    // between the two statements.
     if (this.config.noMultiMutationCte) {
-      return this.failDistributed(name, ids, outputData, table, db)
+      return this.failNoCte(name, ids, outputData, table, db)
     }
 
     const sql = plans.failJobsById(this.config, table)
@@ -1371,8 +1371,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
     return this.mapCommandResponse(ids, result)
   }
 
-  private async failDistributed (name: string, ids: string[], outputData: any, table: string, db: types.IDatabase): Promise<types.CommandResponse> {
-    // CockroachDB doesn't support multi-mutation CTEs, but does support transactions, so the
+  private async failNoCte (name: string, ids: string[], outputData: any, table: string, db: types.IDatabase): Promise<types.CommandResponse> {
+    // Under noMultiMutationCte the multi-mutation CTE isn't available, but transactions are, so the
     // delete + re-insert is split into separate statements run atomically.
     return this.ensureTransaction(db, async (tx) => {
       // Step 1: Select jobs to fail
@@ -1394,25 +1394,25 @@ class Manager extends EventEmitter implements types.EventsMixin {
     })
   }
 
-  // Distributed equivalents of the supervisor's failJobsByTimeout/failJobsByHeartbeat maintenance.
-  // Those use the multi-mutation failJobs() CTE, which CockroachDB rejects, so on a distributed
-  // database we select the expired/timed-out jobs, delete them, and re-insert as retry/failed in a
-  // single transaction (the same split as failDistributed). Always run on the pooled connection.
-  async failJobsByTimeoutDistributed (table: string, queues: string[]): Promise<number> {
+  // noMultiMutationCte equivalents of the supervisor's failJobsByTimeout/failJobsByHeartbeat
+  // maintenance. Those use the multi-mutation failJobs() CTE, so under this flag we select the
+  // expired/timed-out jobs, delete them, and re-insert as retry/failed in a single transaction
+  // (the same split as failNoCte). Always run on the pooled connection.
+  async failJobsByTimeoutNoCte (table: string, queues: string[]): Promise<number> {
     const select = plans.selectJobsToFailByTimeout(this.config, table, queues)
-    return this.expireJobsDistributed(table, select, { value: { message: 'job timed out' } })
+    return this.expireJobsNoCte(table, select, { value: { message: 'job timed out' } })
   }
 
-  async failJobsByHeartbeatDistributed (table: string, queues: string[]): Promise<number> {
+  async failJobsByHeartbeatNoCte (table: string, queues: string[]): Promise<number> {
     const select = plans.selectJobsToFailByHeartbeat(this.config, table, queues)
-    return this.expireJobsDistributed(table, select, { value: { message: 'job heartbeat timeout' } })
+    return this.expireJobsNoCte(table, select, { value: { message: 'job heartbeat timeout' } })
   }
 
-  // Distributed flow audit for one partition table (CockroachDB / noMultiMutationCte): lock a
-  // batch of completed blocking parents, then decrement their children and clear blocking per
-  // parent queue (decrementDependents and clearBlocking are each keyed by a single name). Returns
-  // the number of parents resolved so the resolver can loop until a batch drains.
-  async resolveFlowJobsDistributed (table: string, names: string[]): Promise<number> {
+  // noMultiMutationCte flow audit for one partition table: lock a batch of completed blocking
+  // parents, then decrement their children and clear blocking per parent queue (decrementDependents
+  // and clearBlocking are each keyed by a single name). Returns the number of parents resolved so
+  // the resolver can loop until a batch drains.
+  async resolveFlowJobsNoCte (table: string, names: string[]): Promise<number> {
     const select = plans.selectBlockingParents(this.config, table, names, this.config.noSkipLocked)
 
     return this.ensureTransaction(this.db, async (tx) => {
@@ -1441,7 +1441,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     })
   }
 
-  private async expireJobsDistributed (table: string, select: plans.SqlQuery, outputData: any): Promise<number> {
+  private async expireJobsNoCte (table: string, select: plans.SqlQuery, outputData: any): Promise<number> {
     return this.ensureTransaction(this.db, async (tx) => {
       const { rows: jobs } = await tx.executeSql(select.text, [])
 
@@ -1458,7 +1458,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
   }
 
   // Re-insert a set of just-deleted jobs as retry (when retries remain) or failed (+ dead letter),
-  // preserving the flow/heartbeat columns. Shared by failDistributed and the distributed
+  // preserving the flow/heartbeat columns. Shared by failNoCte and the noMultiMutationCte
   // maintenance expiry above. Returns the number of jobs processed.
   private async reinsertFailedJobs (tx: types.IDatabase, table: string, jobs: any[], outputData: any, outputById?: Map<string, any>, forceTerminal = false): Promise<number> {
     const insertSql = plans.insertRetryJob(this.config, table)
@@ -1469,7 +1469,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       // Per-job output when supplied (perJobResults), otherwise the single shared output.
       const jobOutput = outputById ? (outputById.get(job.id) ?? null) : outputData
 
-      // CockroachDB returns INT8 columns as strings. These rows come straight from a SELECT *, so
+      // Some drivers return integer columns as strings. These rows come straight from a SELECT *, so
       // unlike fetch/getJobById they are never normalized. Coerce the fields used in arithmetic and
       // comparison below — otherwise `retry_count < retry_limit` is a lexicographic string compare
       // ("9" < "10" === false, wrongly failing a retriable job) and `retry_count + 1` concatenates.
@@ -1499,7 +1499,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
         // heartbeat_on resets to NULL on re-insert; heartbeat_seconds/blocked/blocking/
         // pending_dependencies are preserved so flows and heartbeat detection survive a retry
-        // (matches the non-distributed failJobs() CTE).
+        // (matches the single-statement failJobs() CTE).
         const { rows } = await tx.executeSql(insertSql, [
           job.id, job.name, job.priority, job.data, 'retry', job.retry_limit, job.retry_count,
           job.retry_delay, job.retry_backoff, job.retry_delay_max, startAfter, job.started_on,
@@ -1511,7 +1511,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
         // The retry insert can be dropped by ON CONFLICT when the queue policy (e.g. stately,
         // singleton) already has a non-terminal job. Mirror the failed_jobs
-        // fallback of the non-distributed failJobs() CTE in that case.
+        // fallback of the single-statement failJobs() CTE in that case.
         retried = rows.length > 0
       }
 
@@ -1566,7 +1566,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const { table } = await this.getQueueCache(name)
 
     // SQLite can't run redriveJobs' DML-in-CTE pipeline; split it into select/delete/re-insert
-    // inside a transaction (same shape as failDistributed).
+    // inside a transaction (same shape as failNoCte).
     if (this.config.dialect?.name === 'sqlite') {
       return this.ensureTransaction(db, async (tx) => {
         const selectSql = plans.selectJobsToRedrive(this.config, table)

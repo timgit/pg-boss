@@ -5,9 +5,9 @@ import * as plans from '../src/plans.ts'
 
 // The advisory-lock-free SQL path - plans.locked() omitting pg_advisory_xact_lock - is taken by any
 // backend that sets noAdvisoryLocks (the SQLite dialect does). The general Postgres suite never runs
-// it: standard/distributed Postgres and PGlite all keep advisory locks on. This file pins the
+// it: plain Postgres and PGlite all keep advisory locks on. This file pins the
 // lock-free variant directly, exercised on plain Postgres via the __test__noAdvisoryLocks hook (the
-// same cheap-toggle trick __test__distributed uses for the distributed path).
+// same cheap-toggle trick __test__noSkipLockedNoCte uses for the no-SKIP-LOCKED / no-CTE path).
 
 describe('advisory-lock-free SQL generation', function () {
   it('omits pg_advisory_xact_lock when noAdvisoryLocks is set, includes it by default', function () {

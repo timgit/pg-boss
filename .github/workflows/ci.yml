@@ -23,9 +23,9 @@ jobs:
           - mode: standard
             bun: '1'
             command: bun run test
-          - mode: distributed
+          - mode: no-skip-locked-no-cte
             bun: '1'
-            command: bun run test:distributed
+            command: bun run test:no-skip-locked-no-cte
           - mode: bun-driver
             bun: canary
             command: bun run test:bun

@@ -3,8 +3,8 @@ import { PGlite } from '@electric-sql/pglite'
 import { PgBoss, fromPglite } from '../src/index.ts'
 
 // End-to-end coverage against a real (in-memory) PGlite instance. PGlite is full PostgreSQL, so it
-// runs with the `pglite` backend profile (no compatibility flags) and supports features the
-// distributed backends cannot — including declarative table partitioning. Each test owns its own
+// runs with the `pglite` backend profile (no compatibility flags) and supports features the SQLite
+// backend cannot — including declarative table partitioning. Each test owns its own
 // instance, so these are independent of the shared pg-backed test harness.
 describe('pglite', () => {
   let instances: PGlite[] = []
