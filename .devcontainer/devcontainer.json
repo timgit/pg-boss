@@ -1,0 +1,25 @@
+{
+	"name": "bun-boss",
+	"build": {
+		"dockerfile": "Dockerfile"
+	},
+	"features": {
+		"ghcr.io/shyim/devcontainers-features/bun:0": {},
+		"ghcr.io/devcontainers/features/github-cli:1": {},
+		"ghcr.io/anthropics/devcontainer-features/claude-code:1.0": {}
+	},
+	"forwardPorts": [5432],
+	"portsAttributes": {
+		"5432": {
+			"label": "postgres",
+			"onAutoForward": "silent"
+		}
+	},
+	"postCreateCommand": "bun install",
+	"postStartCommand": "bash .devcontainer/setup-postgres.sh",
+	"customizations": {
+		"vscode": {
+			"extensions": ["dbaeumer.vscode-eslint", "oven.bun-vscode"]
+		}
+	}
+}
