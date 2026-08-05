@@ -3,7 +3,8 @@
   "bootstrap-sha": "6def16e56ffb60b7cc9d6f3ce991b022855dbc7d",
   "packages": {
     ".": {
-      "release-type": "node"
+      "release-type": "node",
+      "bump-minor-pre-major": true
     }
   }
 }
