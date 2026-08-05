@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import { PGlite } from '@electric-sql/pglite'
-import { PgBoss, fromPglite } from '../src/index.ts'
+import { BunBoss, fromPglite } from '../src/index.ts'
 
 // End-to-end coverage against a real (in-memory) PGlite instance. PGlite is full PostgreSQL, so it
 // runs with the `pglite` backend profile (no compatibility flags) and supports features the
@@ -17,7 +17,7 @@ describe('pglite', () => {
   async function startBoss (extra: Record<string, any> = {}) {
     const pglite = new PGlite()
     instances.push(pglite)
-    const boss = new PgBoss({ backend: 'pglite', db: fromPglite(pglite), supervise: false, schedule: false, ...extra })
+    const boss = new BunBoss({ backend: 'pglite', db: fromPglite(pglite), supervise: false, schedule: false, ...extra })
     boss.on('error', () => {})
     await boss.start()
     return boss

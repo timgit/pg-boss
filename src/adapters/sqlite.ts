@@ -9,7 +9,7 @@ export interface BunSqliteLike {
   unsafe(query: string, values?: unknown[]): Promise<any>
 }
 
-// SQLite extended result codes mapped to the SQLSTATE codes pg-boss keys behavior on
+// SQLite extended result codes mapped to the SQLSTATE codes bun-boss keys behavior on
 // (unique-violation tolerance on fetch, FK translation on schedule). The original code is
 // preserved on `sqliteCode`, mirroring how fromBunSql keeps Bun's class on `bunCode`.
 const SQLSTATE_BY_SQLITE_CODE: Record<string, string> = {
@@ -32,7 +32,7 @@ function mapSqliteError (err: any): any {
 
 // Bun's sqlite binding silently binds Date objects as NULL and mis-binds plain objects, so
 // convert here: Dates become the canonical dialect timestamp text (comparable against
-// SQL-generated strftime output), objects and arrays become JSON text (pg-boss's bind-as-text
+// SQL-generated strftime output), objects and arrays become JSON text (bun-boss's bind-as-text
 // convention; arrays are queried with json_each).
 function toSqliteParams (values: unknown[]): unknown[] {
   return values.map((value) => {
@@ -162,18 +162,18 @@ function serialize<T> (sql: BunSqliteLike, fn: () => Promise<T>): Promise<T> {
 
 const initialized = new WeakSet<BunSqliteLike>()
 
-// Adapts a Bun `SQL` instance opened on a sqlite:// URL to pg-boss's IDatabase — pair it with
+// Adapts a Bun `SQL` instance opened on a sqlite:// URL to bun-boss's IDatabase — pair it with
 // `backend: 'sqlite'`. The user owns the instance lifecycle (construction and close()). The
 // return type marks withTransaction non-optional so the documented atomic-enqueue pattern
 // type-checks without a non-null assertion.
 export function fromBunSqlite (sql: BunSqliteLike): IDatabase & Required<Pick<IDatabase, 'withTransaction'>> {
-  // foreign_keys defaults OFF in SQLite and pg-boss depends on FK errors firing (queue
+  // foreign_keys defaults OFF in SQLite and bun-boss depends on FK errors firing (queue
   // existence on schedule/send); busy_timeout makes concurrent writers on a shared file wait
   // instead of failing with SQLITE_BUSY.
   const init = async () => {
     if (initialized.has(sql)) return
     // Latch only after both pragmas land — a failed foreign_keys pragma latched early would
-    // silently disable the FK errors pg-boss keys behavior on. Serialization makes this race-free.
+    // silently disable the FK errors bun-boss keys behavior on. Serialization makes this race-free.
     await sql.unsafe('PRAGMA foreign_keys = ON')
     await sql.unsafe('PRAGMA busy_timeout = 5000')
     initialized.add(sql)

@@ -2,7 +2,7 @@ import { expect } from 'vitest'
 import * as helper from './testHelper.ts'
 import { delay } from '../src/tools.ts'
 import { ctx } from './hooks.ts'
-import { PgBoss } from '../src/index.ts'
+import { BunBoss } from '../src/index.ts'
 
 describe('monitoring', function () {
   it('should cache job counts into queue', async function () {
@@ -108,7 +108,7 @@ describe('monitoring', function () {
 
   it('should not leak warningQueueSize to other instances', async function () {
     // eslint-disable-next-line no-new
-    new PgBoss({ ...ctx.bossConfig, warningQueueSize: 1 })
+    new BunBoss({ ...ctx.bossConfig, warningQueueSize: 1 })
 
     const boss = ctx.boss = await helper.start(ctx.bossConfig)
     await boss.send(ctx.schema)

@@ -75,7 +75,7 @@ All retry, expiration, and retention options can also be set on the queue and wi
 
 * **db**, object
 
-  Instead of using pg-boss's default adapter, you can use your own, as long as it implements the following interface (the same as the pg module).
+  Instead of using bun-boss's default adapter, you can use your own, as long as it implements the following interface (the same as the pg module).
 
     ```ts
     interface Db {
@@ -83,7 +83,7 @@ All retry, expiration, and retention options can also be set on the queue and wi
   }
     ```
 
-  pg-boss ships with built-in adapters for Bun's SQL client and embedded PGlite. See [Database Adapters](./adapters) for details.
+  bun-boss ships with built-in adapters for Bun's SQL client and embedded PGlite. See [Database Adapters](./adapters) for details.
 
 **Deferred jobs**
 
@@ -325,7 +325,7 @@ Create a set of jobs and their dependencies atomically in one transaction.
 
 Use `flow()` when jobs depend on other jobs. Dependencies are not configured on `send()` or `insert()` because creating jobs and dependencies in separate calls can race with job completion.
 
-Atomicity is handled by pg-boss when it owns the database connection. If you pass a custom `db` in `options`, wrap the call in your own transaction if you need the job and dependency inserts to commit or roll back together.
+Atomicity is handled by bun-boss when it owns the database connection. If you pass a custom `db` in `options`, wrap the call in your own transaction if you need the job and dependency inserts to commit or roll back together.
 
 The method accepts a flat array of jobs in any order. Each job has a local `ref`, and dependent jobs reference parent refs with `dependsOn`.
 

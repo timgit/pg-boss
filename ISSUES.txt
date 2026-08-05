@@ -60,13 +60,13 @@ under DISTRIBUTED=true — that is the path that binds the live objects.
 2. The json classifier infers parameter types from SQL text
 -------------------------------------------------------------------------------
 
-Status:   correct for every query pg-boss generates today
+Status:   correct for every query bun-boss generates today
 Severity: medium — the failure mode is silent and the guard is indirect
 Files:    src/adapters/bun.ts (JSON_CAST_REGEX, JSON_OPERATOR_REGEX, rewriteJsonCasts)
 
 WHAT IT DOES
 
-Because Bun double-encodes a json parameter that pg-boss has already serialized,
+Because Bun double-encodes a json parameter that bun-boss has already serialized,
 the adapter finds json placeholders in the SQL text, casts them through `text`,
 and encodes the matching value to suit. It recognises two shapes:
 
@@ -146,13 +146,13 @@ returning zero rows for an existing queue during the 50-send burst in
 distributedDatabaseTest "high concurrency" (the intermittent bun-driver / '1'
 failure), which surfaced as `Queue <name> does not exist`. Because nothing
 throws, neither the 25P02-handling above nor a retry-on-error can catch it.
-pg-boss now bounds the blast radius client-side (src/manager.ts): createQueue/
+bun-boss now bounds the blast radius client-side (src/manager.ts): createQueue/
 updateQueue write through to the queue cache, a negative per-name lookup is
 corroborated by a second read before it throws, and an empty full refresh only
 replaces a non-empty cache when two consecutive refreshes agree. Also fixed
 upstream in Bun 1.4.
 
-MINIMAL REPRODUCTION (no pg-boss involved)
+MINIMAL REPRODUCTION (no bun-boss involved)
 
     import { SQL } from 'bun'
     const sql = new SQL(url, { max: 10 })
@@ -185,7 +185,7 @@ RULED OUT
   - `reserve()` failing to pin: it pins correctly on both versions, including
     after a failed query on the reserved connection, and including under a
     saturated pool.
-  - a pg-boss query opening a transaction on the pool: every transaction block is
+  - a bun-boss query opening a transaction on the pool: every transaction block is
     routed through executeReserved; no pooled statement opens one.
 
 WHAT WE DID

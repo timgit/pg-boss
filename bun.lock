@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "pg-boss",
+      "name": "bun-boss",
       "dependencies": {
         "cron-parser": "^5.7.0",
         "pg": "^8.22.0",

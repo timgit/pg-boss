@@ -1,6 +1,6 @@
 import { expect } from 'vitest'
 import Db from '../src/db.ts'
-import { PgBoss } from '../src/index.ts'
+import { BunBoss } from '../src/index.ts'
 import * as Attorney from '../src/attorney.ts'
 import * as helper from './testHelper.ts'
 import packageJson from '../package.json' with { type: 'json' }
@@ -60,7 +60,7 @@ describe('config', function () {
 
     expect(config.schema.length).toBe(50)
 
-    ctx.boss = new PgBoss(config)
+    ctx.boss = new BunBoss(config)
 
     await ctx.boss.start()
 
@@ -78,7 +78,7 @@ describe('config', function () {
 
     expect(config.schema.length > 50).toBeTruthy()
 
-    expect(() => new PgBoss(config)).toThrow()
+    expect(() => new BunBoss(config)).toThrow()
   })
 
   it('compatibility flags are derived from the backend, not user-settable', function () {
@@ -92,13 +92,13 @@ describe('config', function () {
 
   helper.itPglite('should accept a connectionString property', async function () {
     const connectionString = helper.getConnectionString()
-    ctx.boss = new PgBoss({ connectionString, schema: ctx.bossConfig.schema })
+    ctx.boss = new BunBoss({ connectionString, schema: ctx.bossConfig.schema })
 
     await ctx.boss.start()
   })
 
   it('should not allow calling job instance functions if not started', async function () {
-    const boss = new PgBoss(ctx.bossConfig)
+    const boss = new BunBoss(ctx.bossConfig)
 
     await expect(async () => {
       await boss.send('queue1')
@@ -119,7 +119,7 @@ describe('config', function () {
         throw new Error('startup failed')
       }
     }
-    const boss = new PgBoss({ db, migrate: false, supervise: false, schedule: false })
+    const boss = new BunBoss({ db, migrate: false, supervise: false, schedule: false })
 
     await expect(boss.start()).rejects.toThrow('startup failed')
     const callsAfterFirst = calls
@@ -134,7 +134,7 @@ describe('config', function () {
     const db = new Db(ctx.bossConfig)
     await db.open()
 
-    ctx.boss = new PgBoss({ ...ctx.bossConfig, db })
+    ctx.boss = new BunBoss({ ...ctx.bossConfig, db })
     expect(await ctx.boss.isInstalled()).toBe(false)
     await ctx.boss.start()
     expect(await ctx.boss.isInstalled()).toBe(true)
@@ -143,6 +143,6 @@ describe('config', function () {
   it('schemaVersion() should return current version', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
     const version = await ctx.boss.schemaVersion()
-    expect(version).toBe(packageJson.pgboss.schema)
+    expect(version).toBe(packageJson.bunboss.schema)
   })
 })

@@ -1,5 +1,5 @@
 import { expect } from 'vitest'
-import { PgBoss } from '../src/index.ts'
+import { BunBoss } from '../src/index.ts'
 import { delay } from '../src/tools.ts'
 import { ctx } from './hooks.ts'
 
@@ -12,7 +12,7 @@ describe('background processing error handling', function () {
     }
 
     const config = { ...ctx.bossConfig, ...defaults }
-    ctx.boss = new PgBoss(config)
+    ctx.boss = new BunBoss(config)
 
     let errorCount = 0
 

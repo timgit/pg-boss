@@ -183,7 +183,7 @@ async function explainGroupConcurrencyFetchPlan ({
       await db.executeSql(`ANALYZE ${schema}.job_common`)
     }
 
-    // Use pg-boss's actual groupConcurrency fetch query. Current pg-boss fails the stale-stats
+    // Use bun-boss's actual groupConcurrency fetch query. Current bun-boss fails the stale-stats
     // check because Postgres can choose a CTE-rescan plan; the fix should make both cases pass.
     const query = plans.fetchNextJob({
       schema,

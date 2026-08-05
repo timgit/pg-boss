@@ -1,6 +1,6 @@
 # Database install
 
-pg-boss will automatically create a dedicated schema (`pgboss` is the default name) in the target database. This will require the user in database connection to have the [CREATE](http://www.postgresql.org/docs/current/static/sql-grant.html) privilege.
+bun-boss will automatically create a dedicated schema (`pgboss` is the default name) in the target database. This will require the user in database connection to have the [CREATE](http://www.postgresql.org/docs/current/static/sql-grant.html) privilege.
 
 ```sql
 GRANT CREATE ON DATABASE db1 TO leastprivuser;
@@ -9,10 +9,10 @@ GRANT CREATE ON DATABASE db1 TO leastprivuser;
 If the CREATE privilege is not available or desired, export the schema DDL programmatically with the included [`getConstructionPlans()`](./api/utils) utility. It returns the SQL for the current schema version without executing it, so a DBA can review and run the commands manually:
 
 ```js
-import { getConstructionPlans } from 'pg-boss'
+import { getConstructionPlans } from 'bun-boss'
 import fs from 'node:fs'
 
-fs.writeFileSync('create-pgboss.sql', getConstructionPlans('pgboss'))
+fs.writeFileSync('create-bunboss.sql', getConstructionPlans('pgboss'))
 ```
 
 Once the schema exists, construct the instance with `migrate: false` so `start()` verifies the schema instead of trying to create it.
@@ -25,7 +25,7 @@ Once the schema exists, construct the instance with `migrate: false` so `start()
 
 # Database uninstall
 
-If you need to uninstall pg-boss from a database, just run the following command.
+If you need to uninstall bun-boss from a database, just run the following command.
 
 ```sql
 DROP SCHEMA $1 CASCADE

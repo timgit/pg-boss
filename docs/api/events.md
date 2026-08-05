@@ -1,6 +1,6 @@
 # Events
 
-Each pg-boss instance is an EventEmitter, and contains the following events.
+Each bun-boss instance is an EventEmitter, and contains the following events.
 
 ## `error`
 The `error` event could be raised during internal processing, such as scheduling and maintenance. Adding a listener to the error event is strongly encouraged because of the default behavior of Node.
@@ -16,11 +16,11 @@ boss.on('error', error => logger.error(error));
 ```
 ## `warning`
 
-During monitoring and maintenance, pg-boss may raise warning events. The payload contains `message` and `data` properties with details about the warning.
+During monitoring and maintenance, bun-boss may raise warning events. The payload contains `message` and `data` properties with details about the warning.
 
 ```js
 boss.on('warning', ({ message, data }) => {
-  console.log('pg-boss warning:', message, data);
+  console.log('bun-boss warning:', message, data);
 });
 ```
 
@@ -31,11 +31,11 @@ boss.on('warning', ({ message, data }) => {
 | `slow_query` | A maintenance query exceeded the slow query threshold | `elapsed` (seconds) |
 | `queue_backlog` | A queue has exceeded its warning threshold | `name`, `queuedCount`, `warningQueued` |
 | `clock_skew` | Database clock is out of sync with application server | `seconds`, `direction` |
-| `listen_notify_unavailable` | `useListenNotify` is enabled but a `LISTEN/NOTIFY` listener could not be established (for example a `db` adapter without `listen`, or PgBouncer transaction pooling); pg-boss continues with polling only | `type`, `error` |
+| `listen_notify_unavailable` | `useListenNotify` is enabled but a `LISTEN/NOTIFY` listener could not be established (for example a `db` adapter without `listen`, or PgBouncer transaction pooling); bun-boss continues with polling only | `type`, `error` |
 
 ## `wip`
 
-Emitted at most once every 2 seconds whenever at least one worker has an active job. The payload is an array that represents each worker in this instance of pg-boss.
+Emitted at most once every 2 seconds whenever at least one worker has an active job. The payload is an array that represents each worker in this instance of bun-boss.
 
 ```js
 [

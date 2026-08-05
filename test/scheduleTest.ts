@@ -2,7 +2,7 @@ import { delay } from '../src/tools.ts'
 import { expect } from 'vitest'
 import { DateTime } from 'luxon'
 import * as helper from './testHelper.ts'
-import { PgBoss } from '../src/index.ts'
+import { BunBoss } from '../src/index.ts'
 import Timekeeper from '../src/timekeeper.ts'
 import { ctx } from './hooks.ts'
 
@@ -168,7 +168,7 @@ describe('schedule', function () {
     }
 
     // @ts-ignore
-    ctx.boss = new PgBoss(config)
+    ctx.boss = new BunBoss(config)
 
     let warningCount = 0
 
@@ -187,12 +187,12 @@ describe('schedule', function () {
       ...ctx.bossConfig,
       clockMonitorIntervalSeconds: 1,
       schedule: true,
-      __test__force_clock_monitoring_error: 'pg-boss mock error: clock skew monitoring'
+      __test__force_clock_monitoring_error: 'bun-boss mock error: clock skew monitoring'
     }
 
     let errorCount = 0
 
-    ctx.boss = new PgBoss(config)
+    ctx.boss = new BunBoss(config)
 
     ctx.boss.on('error', error => {
       expect(error.message).toBe(config.__test__force_clock_monitoring_error)
@@ -211,12 +211,12 @@ describe('schedule', function () {
       ...ctx.bossConfig,
       cronMonitorIntervalSeconds: 1,
       schedule: true,
-      __test__force_cron_monitoring_error: 'pg-boss mock error: cron monitoring'
+      __test__force_cron_monitoring_error: 'bun-boss mock error: cron monitoring'
     }
 
     let errorCount = 0
 
-    ctx.boss = new PgBoss(config)
+    ctx.boss = new BunBoss(config)
 
     ctx.boss.on('error', error => {
       expect(error.message).toBe(config.__test__force_cron_monitoring_error)
@@ -235,12 +235,12 @@ describe('schedule', function () {
       ...ctx.bossConfig,
       schedule: true,
       clockMonitorIntervalSeconds: 1,
-      __test__force_clock_monitoring_error: 'pg-boss mock error: clock monitoring'
+      __test__force_clock_monitoring_error: 'bun-boss mock error: clock monitoring'
     }
 
     let errorCount = 0
 
-    ctx.boss = new PgBoss(config)
+    ctx.boss = new BunBoss(config)
 
     ctx.boss.on('error', (error) => {
       expect(error.message).toBe(config.__test__force_clock_monitoring_error)

@@ -5,18 +5,18 @@
  *   bun scripts/console.js             # same, direct invocation
  *
  * In the REPL you get:
- *   boss            a started PgBoss instance (await boss.getQueueStats('queue-25'))
+ *   boss            a started BunBoss instance (await boss.getQueueStats('queue-25'))
  *   sql`...`        tagged-template raw query, returns rows (await sql`select now()`)
  *   sql(text, vals) same, with $1.. params       (await sql('select $1::int', [7]))
  *   pool            the underlying pg Pool
- *   schema          the pg-boss schema name ('pgboss')
+ *   schema          the bun-boss schema name ('pgboss')
  *
  * Top-level await works. Ctrl-D (or .exit) shuts everything down cleanly.
  */
 
 import repl from 'node:repl'
 import pg from 'pg'
-import { PgBoss } from '../src/index.ts'
+import { BunBoss } from '../src/index.ts'
 
 const base = {
   host: process.env.PGHOST || '127.0.0.1',
@@ -28,7 +28,7 @@ const base = {
 const schema = 'pgboss'
 
 const pool = new pg.Pool({ ...base, max: 4 })
-const boss = new PgBoss({ ...base, schema, persistQueueStats: true })
+const boss = new BunBoss({ ...base, schema, persistQueueStats: true })
 
 // sql`select $1` interpolations → $1..$n params  OR  sql('select $1', [val]) → rows
 function sql (strings, ...values) {

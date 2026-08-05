@@ -1,9 +1,9 @@
 import { expect } from 'vitest'
-import { PgBoss } from '../src/index.ts'
+import { BunBoss } from '../src/index.ts'
 
 describe('database', function () {
   it('should fail on invalid database host', async function () {
-    const boss = new PgBoss({
+    const boss = new BunBoss({
       connectionString: 'postgres://bobby:tables@wat:12345/northwind',
       connectionTimeoutMillis: 3000
     })
@@ -23,7 +23,7 @@ describe('database', function () {
       }
     }
 
-    const boss = new PgBoss({ db: mydb })
+    const boss = new BunBoss({ db: mydb })
     const response = await boss.getDb().executeSql(query)
 
     // @ts-ignore

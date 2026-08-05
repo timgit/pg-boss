@@ -1,7 +1,7 @@
 import { expect, vi } from 'vitest'
 import * as helper from './testHelper.ts'
 import { randomUUID } from 'node:crypto'
-import { PgBoss } from '../src/index.ts'
+import { BunBoss } from '../src/index.ts'
 import Manager from '../src/manager.ts'
 import Timekeeper from '../src/timekeeper.ts'
 import { delay } from '../src/tools.ts'
@@ -63,7 +63,7 @@ describe('ops', function () {
   })
 
   it('should start and stop immediately', async function () {
-    const boss = new PgBoss(ctx.bossConfig)
+    const boss = new BunBoss(ctx.bossConfig)
     await boss.start()
     await boss.stop()
   })
@@ -125,7 +125,7 @@ describe('ops', function () {
   it('should tear down subsystems and stay restartable after a start() failure', async function () {
     const resourcesBefore = process.getActiveResourcesInfo()
 
-    ctx.boss = new PgBoss({ ...ctx.bossConfig, schedule: true })
+    ctx.boss = new BunBoss({ ...ctx.bossConfig, schedule: true })
 
     // #stopped is cleared at the very top of start() (before any subsystem starts), so a mid-start
     // throw still leaves the subsystems that DID start (manager's queueCacheInterval/wipInterval)
@@ -151,7 +151,7 @@ describe('ops', function () {
   })
 
   it('should dedupe concurrent start() calls to one in-flight promise', async function () {
-    ctx.boss = new PgBoss(ctx.bossConfig)
+    ctx.boss = new BunBoss(ctx.bossConfig)
 
     // The second start() sees #startingPromise already set and returns it, rather than kicking off
     // a second #doStart — both callers resolve to the same instance.
@@ -166,7 +166,7 @@ describe('ops', function () {
   })
 
   it('should wait for an in-flight start() before stopping', async function () {
-    ctx.boss = new PgBoss(ctx.bossConfig)
+    ctx.boss = new BunBoss(ctx.bossConfig)
 
     // stop() called mid-start must await the start (so it evaluates real, settled state) instead of
     // reading #stopped mid-flight and silently no-oping while start() keeps running.
@@ -182,7 +182,7 @@ describe('ops', function () {
   })
 
   it('should wait for an in-flight stop() before starting again', async function () {
-    ctx.boss = new PgBoss(ctx.bossConfig)
+    ctx.boss = new BunBoss(ctx.bossConfig)
     await ctx.boss.start()
 
     // start() called mid-stop must let the teardown finish before bringing subsystems back up,
@@ -203,7 +203,7 @@ describe('ops', function () {
   it('should not leave open handles after starting and stopping', async function () {
     const resourcesBefore = process.getActiveResourcesInfo()
 
-    const boss = new PgBoss({ ...ctx.bossConfig, supervise: true, schedule: true })
+    const boss = new BunBoss({ ...ctx.bossConfig, supervise: true, schedule: true })
     await boss.start()
     await boss.createQueue(ctx.schema)
     await boss.work(ctx.schema, async () => {})

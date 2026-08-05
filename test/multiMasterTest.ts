@@ -1,5 +1,5 @@
 import { itPglite } from './testHelper.ts'
-import { PgBoss } from '../src/index.ts'
+import { BunBoss } from '../src/index.ts'
 import { ctx } from './hooks.ts'
 
 describe('multi-master', function () {
@@ -9,7 +9,7 @@ describe('multi-master', function () {
     const instances = []
 
     for (let i = 0; i < replicaCount; i++) {
-      instances.push(new PgBoss(config))
+      instances.push(new BunBoss(config))
     }
 
     await Promise.all(instances.map(i => i.start()))

@@ -8,8 +8,8 @@ Queueing jobs in Postgres, SQLite, and memory from Bun like a boss.
 
 ```js
 async function readme() {
-  const { PgBoss } = require('pg-boss');
-  const boss = new PgBoss('postgres://user:pass@host/database');
+  const { BunBoss } = require('bun-boss');
+  const boss = new BunBoss('postgres://user:pass@host/database');
 
   boss.on('error', console.error)
 
@@ -35,7 +35,7 @@ readme()
   })
 ```
 
-bun-boss is a job queue built on top of PostgreSQL in order to provide background processing and reliable asynchronous execution to Bun and Node.js applications. The package is still named `pg-boss` and still exports the `PgBoss` class — only the project has been renamed so far.
+bun-boss is a job queue built on top of PostgreSQL in order to provide background processing and reliable asynchronous execution to Bun and Node.js applications.
 
 It relies on Postgres's SKIP LOCKED, a feature built specifically for message queues to resolve record locking challenges inherent with relational databases. This provides exactly-once delivery and the safety of guaranteed atomic commits to asynchronous job processing.
 

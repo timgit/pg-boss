@@ -1,13 +1,13 @@
 # Testing
 
-pg-boss includes built-in spy support to help write fast, deterministic tests without polling or arbitrary delays.
+bun-boss includes built-in spy support to help write fast, deterministic tests without polling or arbitrary delays.
 
 ## Enabling Spies
 
 Spies must be explicitly enabled via the `__test__enableSpies` constructor option. This ensures zero overhead in production.
 
 ```js
-const boss = new PgBoss({
+const boss = new BunBoss({
   connectionString: 'postgres://...',
   __test__enableSpies: true
 })
@@ -53,7 +53,7 @@ Waits for a job matching the selector function to reach the specified state. If 
 - `state`: string, one of 'created', 'active', 'completed', 'failed'
 
 ```js
-const boss = new PgBoss({ ..., __test__enableSpies: true })
+const boss = new BunBoss({ ..., __test__enableSpies: true })
 await boss.start()
 
 const spy = boss.getSpy('my-queue')
@@ -107,14 +107,14 @@ afterEach(() => {
 ## Example Test
 
 ```js
-const PgBoss = require('pg-boss')
+const { BunBoss } = require('bun-boss')
 const assert = require('assert')
 
 describe('email notifications', () => {
   let boss
 
   before(async () => {
-    boss = new PgBoss({
+    boss = new BunBoss({
       connectionString: process.env.DATABASE_URL,
       __test__enableSpies: true
     })
