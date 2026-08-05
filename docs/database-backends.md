@@ -470,8 +470,9 @@ await boss.send('email', { to: 'user@example.com' })
 ```
 
 Because pg-boss's tables live in the **same database file** as your application's (namespaced by a
-quoted `"schema.table"` prefix), enqueueing jobs inside your own transactions is fully atomic with
-your application writes.
+quoted `"schema.table"` prefix), a job enqueued inside a transaction opened through the adapter's
+`withTransaction` (passed as the operation's `db`) commits atomically with your application
+writes — see [Database Adapters](api/adapters.md#sqlite-bun) for the pattern.
 
 #### Single-process, single logical connection
 
@@ -496,6 +497,11 @@ within one process instead.
 - Relative `startAfter` strings (`'5 minutes'`) are parsed by pg-boss rather than the database;
   the supported grammar is `N unit` sequences (`seconds/minutes/hours/days/weeks`) and
   `HH:MM[:SS]`.
+- **Flows** verify all-or-nothing creation in code inside a real transaction rather than via
+  Postgres's statement-level error signal. A bring-your-own `IDatabase` that omits
+  `withTransaction` therefore loses flow atomicity, and when a flow fails inside a caller-owned
+  transaction (`{ db }`), the transaction itself stays usable — roll it back rather than
+  committing after a caught flow error.
 
 ### Not supported: Aurora DSQL
 

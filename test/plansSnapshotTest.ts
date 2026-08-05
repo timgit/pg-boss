@@ -131,6 +131,8 @@ const cases: Record<string, () => unknown> = {
   insertRetryJob: () => plans.insertRetryJob(S, T),
   insertDeadLetterJob: () => plans.insertDeadLetterJob(S),
   redriveJobs: () => plans.redriveJobs(S, T),
+  selectJobsToRedrive: () => plans.selectJobsToRedrive(S, T),
+  insertRedriveJob: () => plans.insertRedriveJob(S),
   deletion: () => plans.deletion(S, T, QUEUES),
   'deletion noAdvisoryLocks': () => plans.deletion(S, T, QUEUES, true),
   retryJobs: () => plans.retryJobs(S, T),
@@ -215,5 +217,17 @@ describe('plans postgres byte-identity', function () {
       .join('\n')
 
     await expect(document).toMatchFileSnapshot('./plansSnapshot.sql')
+  })
+
+  // The cases record is hand-maintained, so without this a new plans builder would ship with
+  // unpinned postgres output (it happened: the redrive split originally landed unsnapshotted).
+  it('should include every plans function export in the cases', function () {
+    const covered = new Set(Object.keys(cases).map(key => key.split(' ')[0]))
+    const missing = Object.entries(plans)
+      .filter(([, value]) => typeof value === 'function')
+      .map(([name]) => name)
+      .filter(name => !covered.has(name))
+
+    expect(missing).toEqual([])
   })
 })

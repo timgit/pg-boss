@@ -67,10 +67,25 @@ export function rewritePlaceholders (text: string, values: unknown[]): { query: 
       }
       query += text.slice(i, j + 1)
       i = j + 1
+    } else if (ch === '-' && text[i + 1] === '-') {
+      const end = text.indexOf('\n', i)
+      const j = end === -1 ? text.length : end
+      query += text.slice(i, j)
+      i = j
+    } else if (ch === '/' && text[i + 1] === '*') {
+      const end = text.indexOf('*/', i + 2)
+      const j = end === -1 ? text.length : end + 2
+      query += text.slice(i, j)
+      i = j
     } else if (ch === '$' && /[1-9]/.test(text[i + 1])) {
       let j = i + 1
       while (j < text.length && /[0-9]/.test(text[j])) j++
       const index = parseInt(text.slice(i + 1, j), 10)
+      // node-postgres raises on a missing bind value; silently binding NULL here would turn a
+      // plans.ts arity bug into silently-NULL data.
+      if (index > values.length) {
+        throw new Error(`SQL references $${index} but only ${values.length} parameter value(s) were provided`)
+      }
       query += '?'
       params.push(values[index - 1])
       i = j
@@ -148,16 +163,20 @@ function serialize<T> (sql: BunSqliteLike, fn: () => Promise<T>): Promise<T> {
 const initialized = new WeakSet<BunSqliteLike>()
 
 // Adapts a Bun `SQL` instance opened on a sqlite:// URL to pg-boss's IDatabase — pair it with
-// `backend: 'sqlite'`. The user owns the instance lifecycle (construction and close()).
-export function fromBunSqlite (sql: BunSqliteLike): IDatabase {
+// `backend: 'sqlite'`. The user owns the instance lifecycle (construction and close()). The
+// return type marks withTransaction non-optional so the documented atomic-enqueue pattern
+// type-checks without a non-null assertion.
+export function fromBunSqlite (sql: BunSqliteLike): IDatabase & Required<Pick<IDatabase, 'withTransaction'>> {
   // foreign_keys defaults OFF in SQLite and pg-boss depends on FK errors firing (queue
   // existence on schedule/send); busy_timeout makes concurrent writers on a shared file wait
   // instead of failing with SQLITE_BUSY.
   const init = async () => {
     if (initialized.has(sql)) return
-    initialized.add(sql)
+    // Latch only after both pragmas land — a failed foreign_keys pragma latched early would
+    // silently disable the FK errors pg-boss keys behavior on. Serialization makes this race-free.
     await sql.unsafe('PRAGMA foreign_keys = ON')
     await sql.unsafe('PRAGMA busy_timeout = 5000')
+    initialized.add(sql)
   }
 
   const normalize = (result: any): { rows: any[] } => {
@@ -174,6 +193,12 @@ export function fromBunSqlite (sql: BunSqliteLike): IDatabase {
 
     try {
       if (values?.length) {
+        // Only the no-params branch splits scripts, so a parameterized multi-statement text would
+        // silently drop statements inside a single unsafe() call — refuse it loudly instead.
+        if (splitStatements(text).length > 1) {
+          throw new Error('parameterized multi-statement SQL is not supported by fromBunSqlite')
+        }
+
         const { query, params } = rewritePlaceholders(text, values)
         return normalize(await sql.unsafe(query, toSqliteParams(params)))
       }

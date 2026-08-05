@@ -41,6 +41,15 @@ describe('dialect', function () {
     })
   })
 
+  describe('schema qualification', function () {
+    it('resolves quoted and bare schema names like postgres before quoting', function () {
+      expect(SQLITE.qualify('"MySchema"', 'job')).toBe('"MySchema.job"')
+      expect(SQLITE.qualify('MySchema', 'job')).toBe('"myschema.job"')
+      expect(SQLITE.qualify('pgboss', 'job')).toBe('"pgboss.job"')
+      expect(SQLITE.qualifyIndex('"MySchema"', 'job_i1')).toBe('"MySchema.job_i1"')
+    })
+  })
+
   describe('timestamp format', function () {
     it('binds Dates in the exact shape strftime %fZ produces', function () {
       const rendered = toSqliteTimestamp(new Date('2026-01-02T03:04:05.678Z'))
@@ -71,6 +80,7 @@ describe('dialect', function () {
       insertJobs: () => plans.insertJobs(sqliteCtx, { table: T, name: 'q1' }),
       fetchNextJob: () => plans.fetchNextJob({ schema: S, dialect: SQLITE, table: T, name: 'q1', policy: 'standard', limit: 2, includeMetadata: true, ignoreSingletons: ['a'], ignoreGroups: ['g'], groupConcurrency: { default: 2, tiers: { gold: 5 } }, minPriority: 1, maxPriority: 9 }).text,
       completeJobs: () => plans.completeJobsDistributed(sqliteCtx, T, true),
+      completeJobsWithOutputs: () => plans.completeJobsWithOutputsDistributed(sqliteCtx, T),
       cancelJobs: () => plans.cancelJobs(sqliteCtx, T),
       resumeJobs: () => plans.resumeJobs(sqliteCtx, T),
       retryJobs: () => plans.retryJobs(sqliteCtx, T),
@@ -103,6 +113,8 @@ describe('dialect', function () {
       schedule: () => plans.schedule(sqliteCtx),
       unschedule: () => plans.unschedule(sqliteCtx),
       getSchedules: () => plans.getSchedules(sqliteCtx),
+      getSchedulesByQueue: () => plans.getSchedulesByQueue(sqliteCtx),
+      getSchedulesByQueueAndKey: () => plans.getSchedulesByQueueAndKey(sqliteCtx),
       subscribe: () => plans.subscribe(sqliteCtx),
       unsubscribe: () => plans.unsubscribe(sqliteCtx),
       getQueuesForEvent: () => plans.getQueuesForEvent(sqliteCtx),
@@ -143,12 +155,19 @@ describe('dialect', function () {
       ['pg_catalog object', /\bpg_\w+\b/],
       ['dollar quoting', /\$\$|\$cmd\$/],
       ['SET LOCAL', /\bSET\s+LOCAL\b/i],
+      ['TRUNCATE', /\bTRUNCATE\b/i],
+      ['interval cast', /\bAS\s+interval\b/i],
+      ['GREATEST/LEAST', /\b(?:GREATEST|LEAST)\s*\(/i],
+      ['EXTRACT', /\bEXTRACT\s*\(/i],
       ['unquoted schema qualification', new RegExp(`(?<!["'])\\b${S}\\.`)]
     ]
 
     for (const [name, render] of Object.entries(cases)) {
       it(`renders ${name} without postgres-only constructs`, function () {
-        const sql = String(render())
+        // Unwrap SqlQuery objects so a builder whose return type changes can't silently become
+        // "[object Object]" and exempt itself from the lint.
+        const rendered = render() as any
+        const sql = typeof rendered === 'object' && rendered !== null && 'text' in rendered ? rendered.text : String(rendered)
 
         for (const [label, pattern] of forbidden) {
           expect(sql, `${name} rendered a ${label}: ${sql.match(pattern)?.[0]}`).not.toMatch(pattern)

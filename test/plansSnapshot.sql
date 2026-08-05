@@ -4386,6 +4386,32 @@ DELETE FROM pgboss.job WHERE id = ANY($1::uuid[])
     SELECT count(*)::int AS moved FROM ins
   
 
+=== selectJobsToRedrive ===
+
+      SELECT j.id, j.data, j.priority, j.singleton_key as "singletonKey",
+        j.heartbeat_seconds as "heartbeatSeconds", j.source_name as "sourceName"
+      FROM pgboss.job j
+      JOIN pgboss.queue q ON q.name = COALESCE($2, j.source_name)
+      WHERE j.name = $1
+        AND j.state < 'active'
+        AND ($3::text IS NULL OR j.source_name = $3)
+      ORDER BY j.created_on
+      LIMIT $4
+    
+-- values: []
+
+=== insertRedriveJob ===
+
+    INSERT INTO pgboss.job
+      (name, data, priority, retry_limit, retry_backoff, retry_delay, retry_delay_max,
+       expire_seconds, keep_until, deletion_seconds, policy, singleton_key, heartbeat_seconds)
+    SELECT q.name, $2, $3, q.retry_limit, q.retry_backoff, q.retry_delay, q.retry_delay_max,
+      q.expire_seconds, now() + q.retention_seconds * interval '1s', q.deletion_seconds, q.policy, $4, $5
+    FROM pgboss.queue q WHERE q.name = $1
+    ON CONFLICT DO NOTHING
+    RETURNING id
+  
+
 === deletion ===
 
     BEGIN;

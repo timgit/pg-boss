@@ -1140,6 +1140,11 @@ export function deleteStoredJobs (c: Ctx, table: string) {
 }
 
 export function truncateTable (c: Ctx, table: string) {
+  // SQLite has no TRUNCATE statement; an unqualified DELETE takes its internal truncate optimization instead.
+  if (dial(c).name === 'sqlite') {
+    return `DELETE FROM ${qn(c, table)}`
+  }
+
   return `TRUNCATE ${qn(c, table)}`
 }
 
@@ -1533,7 +1538,7 @@ export function versionTableExists (c: Ctx) {
   // Both branches return exactly one row with a null name when not installed — isInstalled
   // reads rows[0].name unconditionally.
   if (dial(c).name === 'sqlite') {
-    return `SELECT (SELECT name FROM sqlite_schema WHERE type = 'table' AND name = '${sch(c)}.version') as name`
+    return `SELECT (SELECT name FROM sqlite_schema WHERE type = 'table' AND name = '${resolveSchemaName(sch(c))}.version') as name`
   }
 
   return `SELECT to_regclass('${qn(c, 'version')}') as name`
@@ -2955,9 +2960,14 @@ export function getQueueStats (c: Ctx, table: string, queues: string[], embedQue
   const d = dial(c)
   const nameFilter = embedQueues
     ? d.name === 'sqlite'
-      ? `name IN (${queues.map(q => `'${q}'`).join(',')})`
+      ? `name IN (${queues.map(q => sqliteLiteral(q)).join(',')})`
       : `name = ANY(${serializeArrayParam(queues)})`
     : d.inArrayParam('name', '$1', 'text[]')
+
+  // json_group_array yields '[]' over zero matching rows where array_agg yields NULL — nullif
+  // keeps the singletonsActive shape (string[] | null) identical across backends.
+  const singletonsAgg = `${d.arrayAgg('singleton_key')} FILTER (WHERE policy IN ('${QUEUE_POLICIES.singleton}','${QUEUE_POLICIES.stately}') AND state = '${JOB_STATES.active}')`
+  const singletonsActive = d.name === 'sqlite' ? `nullif(${singletonsAgg}, '[]')` : singletonsAgg
 
   return {
     text: `
@@ -2978,7 +2988,7 @@ export function getQueueStats (c: Ctx, table: string, queues: string[], embedQue
             ${d.castInt(`(count(*) FILTER (WHERE state = '${JOB_STATES.active}'))`)} as "activeCount",
             ${d.castInt(`(count(*) FILTER (WHERE state = '${JOB_STATES.failed}'))`)} as "failedCount",
             ${d.castInt('count(*)')} as "totalCount",
-            ${d.arrayAgg('singleton_key')} FILTER (WHERE policy IN ('${QUEUE_POLICIES.singleton}','${QUEUE_POLICIES.stately}') AND state = '${JOB_STATES.active}') as "singletonsActive"
+            ${singletonsActive} as "singletonsActive"
           FROM ${qn(c, table)}
           WHERE ${nameFilter}
           GROUP BY 1
@@ -3051,7 +3061,7 @@ export function cacheQueueStats (c: Ctx, table: string, queues: string[], noAdvi
 // so it can ride in the locked() maintenance script.
 function cacheQueueStatsSqlite (c: Ctx, table: string, queues: string[], noAdvisoryLocks?: boolean): string {
   const statsText = getQueueStats(c, table, queues, true).text
-  const namesTable = queues.map(q => `SELECT '${q}' as name`).join(' UNION ALL ')
+  const namesTable = queues.map(q => `SELECT ${sqliteLiteral(q)} as name`).join(' UNION ALL ')
 
   const sql = `
     WITH stats AS (${statsText})
@@ -3104,7 +3114,7 @@ export function refreshQueueStats (c: Ctx, table: string, name: string): string 
   // target needs an explicit alias for the qualified references, and RETURNING rejects
   // alias-qualified columns.
   const namesTable = d.name === 'sqlite'
-    ? `SELECT '${name}' as name`
+    ? `SELECT ${sqliteLiteral(name)} as name`
     : `SELECT q.name
       FROM unnest(${serializeArrayParam([name])}) AS q(name)`
   const target = d.name === 'sqlite' ? `${qn(c, 'queue')} AS queue` : qn(c, 'queue')

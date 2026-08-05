@@ -75,6 +75,10 @@ jobs:
   test-sqlite:
     runs-on: ubuntu-latest
     container: oven/bun:${{ matrix.bun }}
+    # Job-level, not step-level: a step-level continue-on-error reports the whole job green on
+    # failure, hiding canary breakage entirely; job-level keeps the job visibly red while letting
+    # the workflow pass.
+    continue-on-error: ${{ matrix.optional == true }}
     strategy:
       fail-fast: false
       matrix:
@@ -97,8 +101,6 @@ jobs:
 
     - name: Verify Bun sqlite driver behaviors
       run: bun scripts/spike-bun-sqlite.ts
-      continue-on-error: ${{ matrix.optional == true }}
 
     - name: Test (sqlite, bun ${{ matrix.bun }})
       run: bun run test:sqlite
-      continue-on-error: ${{ matrix.optional == true }}

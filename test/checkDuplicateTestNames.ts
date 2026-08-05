@@ -16,8 +16,9 @@ import { fileURLToPath } from 'node:url'
 // titles; dynamically constructed names (template interpolation, .each) are out of scope.
 const TEST_DIR = path.dirname(fileURLToPath(import.meta.url))
 
-// Matches it / test (and modifiers like it.only / it.skip) whose first argument is a quoted string.
-const TEST_NAME = /\b(?:it|test)(?:\.\w+)?\s*\(\s*(["'`])((?:\\.|(?!\1).)*)\1/g
+// Matches it / test, modifiers like it.only / it.skip, and the camel-cased skip helpers from
+// testHelper (itSqlite, itPostgresOnly, ...) whose first argument is a quoted string.
+const TEST_NAME = /\b(?:it|test)(?:[A-Z]\w*)?(?:\.\w+)?\s*\(\s*(["'`])((?:\\.|(?!\1).)*)\1/g
 
 export default function checkDuplicateTestNames (): void {
   const files = fs.readdirSync(TEST_DIR).filter(f => f.endsWith('Test.ts'))

@@ -142,6 +142,24 @@ describe('queues', function () {
     await ctx.boss.deleteQueue(ctx.schema)
   })
 
+  it('should delete all jobs from all queues', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+
+    await ctx.boss.createQueue(ctx.schema)
+    await ctx.boss.send(ctx.schema)
+
+    const queue2 = `${ctx.schema}2`
+    await ctx.boss.createQueue(queue2)
+    await ctx.boss.send(queue2)
+
+    await ctx.boss.deleteAllJobs()
+
+    const [{ queuedCount: count1 }] = await ctx.boss.getQueueStats(ctx.schema)
+    const [{ queuedCount: count2 }] = await ctx.boss.getQueueStats(queue2)
+
+    expect(count1 + count2).toBe(0)
+  })
+
   helper.itPostgresOnly('should delete all jobs from all queues, included partitioned', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 

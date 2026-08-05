@@ -5,6 +5,8 @@
 // postgres primitives must always return exactly the text plans.ts interpolated before the seam
 // existed (guarded by test/plansSnapshotTest.ts).
 
+import { resolveSchemaName } from './tools.ts'
+
 export type DialectName = 'postgres' | 'sqlite'
 
 // Job states in enum declaration order. Must match plans.JOB_STATES and the manifest enum —
@@ -182,8 +184,11 @@ export const POSTGRES: Dialect = {
 
 export const SQLITE: Dialect = {
   name: 'sqlite',
-  qualify: (schema, object) => `"${schema}.${object}"`,
-  qualifyIndex: (schema, index) => `"${schema}.${index}"`,
+  // The configured schema resolves like postgres would store it (quoted form verbatim, bare form
+  // folded) before landing inside the quoted name — raw interpolation of a quoted config would
+  // render the malformed ""MySchema".job".
+  qualify: (schema, object) => `"${resolveSchemaName(schema)}.${object}"`,
+  qualifyIndex: (schema, index) => `"${resolveSchemaName(schema)}.${index}"`,
   now: () => SQLITE_NOW,
   nowPlusSeconds: (secondsExpr) => `strftime('%Y-%m-%dT%H:%M:%fZ', unixepoch('subsec') + ${secondsExpr}, 'unixepoch')`,
   tsPlusSeconds: (tsExpr, secondsExpr) => `strftime('%Y-%m-%dT%H:%M:%fZ', unixepoch(${tsExpr}, 'subsec') + ${secondsExpr}, 'unixepoch')`,

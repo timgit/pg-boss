@@ -43,14 +43,71 @@ const checks: Check[] = [
     }
   },
   {
-    name: 'constraint errors carry SQLITE_CONSTRAINT_* on err.code',
+    name: 'constraint errors carry the exact SQLITE_CONSTRAINT_* extended codes on err.code',
     kind: 'required',
     run: async (sql) => {
-      await sql.unsafe('CREATE TABLE u1 (k TEXT PRIMARY KEY)')
-      await sql.unsafe('INSERT INTO u1 VALUES ($1)', ['x'])
-      const err: any = await sql.unsafe('INSERT INTO u1 VALUES ($1)', ['x']).then(() => null, e => e)
-      const pass = typeof err?.code === 'string' && err.code.startsWith('SQLITE_CONSTRAINT')
-      return { pass, detail: JSON.stringify({ code: err?.code, errno: err?.errno, message: err?.message }) }
+      // Exact extended codes, not the bare SQLITE_CONSTRAINT class: the adapter's SQLSTATE map
+      // keys on them, so a toolchain emitting the bare class would miss every entry.
+      await sql.unsafe('CREATE TABLE u1 (k TEXT PRIMARY KEY, v TEXT)')
+      await sql.unsafe('CREATE UNIQUE INDEX u1_v ON u1 (v)')
+      await sql.unsafe('INSERT INTO u1 VALUES ($1, $2)', ['x', 'v1'])
+      const pk: any = await sql.unsafe('INSERT INTO u1 VALUES ($1, $2)', ['x', 'v2']).then(() => null, e => e)
+      const uq: any = await sql.unsafe('INSERT INTO u1 VALUES ($1, $2)', ['y', 'v1']).then(() => null, e => e)
+      const pass = pk?.code === 'SQLITE_CONSTRAINT_PRIMARYKEY' && uq?.code === 'SQLITE_CONSTRAINT_UNIQUE'
+      return { pass, detail: JSON.stringify({ pk: pk?.code, unique: uq?.code }) }
+    }
+  },
+  {
+    name: 'FK violations carry SQLITE_CONSTRAINT_FOREIGNKEY and a "foreign key" message with foreign_keys ON',
+    kind: 'required',
+    run: async (sql) => {
+      // Both the exact code (mapped to 23503) and the message shape (timekeeper's case-insensitive
+      // fallback) are load-bearing for schedule-to-missing-queue translation.
+      await sql.unsafe('PRAGMA foreign_keys = ON')
+      await sql.unsafe('CREATE TABLE fkp (id TEXT PRIMARY KEY)')
+      await sql.unsafe('CREATE TABLE fkc (p TEXT REFERENCES fkp (id))')
+      const err: any = await sql.unsafe('INSERT INTO fkc VALUES ($1)', ['missing']).then(() => null, e => e)
+      const pass = err?.code === 'SQLITE_CONSTRAINT_FOREIGNKEY' && /foreign key/i.test(err?.message ?? '')
+      return { pass, detail: JSON.stringify({ code: err?.code, message: err?.message }) }
+    }
+  },
+  {
+    name: 'anonymous ? placeholders bind strictly positionally',
+    kind: 'required',
+    run: async (sql) => {
+      // The only placeholder form the adapter emits after rewriting $N — if this breaks while $N
+      // still works, the $N checks alone would green-light a broken toolchain.
+      const rows = await sql.unsafe('SELECT ? as a, ? as b, ? as c', [7, 'x', 9])
+      const pass = rows?.[0]?.a === 7 && rows?.[0]?.b === 'x' && rows?.[0]?.c === 9
+      return { pass, detail: JSON.stringify(rows) }
+    }
+  },
+  {
+    name: 'statements share one logical connection: BEGIN via unsafe() governs later unsafe() calls',
+    kind: 'required',
+    run: async (sql) => {
+      // withTransaction issues BEGIN/statements/COMMIT as separate unsafe() calls and the
+      // serialization mutex assumes every statement lands inside the open transaction.
+      await sql.unsafe('CREATE TABLE tx1 (id INTEGER)')
+      await sql.unsafe('BEGIN IMMEDIATE')
+      await sql.unsafe('INSERT INTO tx1 VALUES (1)')
+      const inside = await sql.unsafe('SELECT count(*) as n FROM tx1')
+      await sql.unsafe('ROLLBACK')
+      const after = await sql.unsafe('SELECT count(*) as n FROM tx1')
+      const pass = inside?.[0]?.n === 1 && after?.[0]?.n === 0
+      return { pass, detail: JSON.stringify({ inside: inside?.[0]?.n, after: after?.[0]?.n }) }
+    }
+  },
+  {
+    name: 'math functions and aggregate ORDER BY: ceil(), json_group_array(v ORDER BY ord)',
+    kind: 'required',
+    run: async (sql) => {
+      // ceil() needs the math-functions compile flag; aggregate ORDER BY needs SQLite >= 3.44 —
+      // both are used by the queue-stats builders.
+      const a = await sql.unsafe('SELECT ceil(1.2) as c')
+      const b = await sql.unsafe('WITH t(v, ord) AS (VALUES (10, 2), (20, 1)) SELECT json_group_array(v ORDER BY ord) as arr FROM t')
+      const pass = a?.[0]?.c === 2 && b?.[0]?.arr === '[20,10]'
+      return { pass, detail: JSON.stringify({ a, b }) }
     }
   },
   {

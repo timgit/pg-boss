@@ -65,6 +65,20 @@ describe('sqlite adapter', () => {
       expect(query).toBe('SELECT \'$1\' as lit, "col$2" as ident, ? as real')
       expect(params).toEqual(['A'])
     })
+
+    it('ignores $N and quotes inside line and block comments', () => {
+      const { query, params } = rewritePlaceholders("SELECT $1 -- don't touch $2 here\n, $2 as b", ['A', 'B'])
+      expect(query).toBe("SELECT ? -- don't touch $2 here\n, ? as b")
+      expect(params).toEqual(['A', 'B'])
+
+      const block = rewritePlaceholders("SELECT /* can't touch $9 */ $1", ['A'])
+      expect(block.query).toBe("SELECT /* can't touch $9 */ ?")
+      expect(block.params).toEqual(['A'])
+    })
+
+    it('throws on a placeholder beyond the provided values', () => {
+      expect(() => rewritePlaceholders('SELECT $1, $2', ['only'])).toThrow(/\$2/)
+    })
   })
 
   describe('splitStatements', () => {
@@ -115,6 +129,36 @@ describe('sqlite adapter', () => {
 
     expect(afterInit(calls).map(c => c.text)).toEqual(['INSERT INTO t VALUES (1)', 'SELECT 2', 'SELECT 3'])
     expect(result.rows).toEqual([{ n: 1 }, { n: 1 }, { n: 1 }])
+  })
+
+  it('refuses parameterized multi-statement SQL', async () => {
+    const { sql, calls } = createFakeSqlite()
+    const db = fromBunSqlite(sql)
+
+    const err: any = await db.executeSql('SELECT $1; SELECT $1', ['x']).then(() => null, e => e)
+    expect(err?.message).toMatch(/multi-statement/)
+    // Nothing from the statement itself ran — only the connection-poisoning rollback guard.
+    expect(afterInit(calls).map(c => c.text)).toEqual(['ROLLBACK'])
+  })
+
+  it('retries the pragmas when the first init attempt fails', async () => {
+    let failFirst = true
+    const { sql, calls } = createFakeSqlite({
+      errorOn: (text) => {
+        if (failFirst && text.startsWith('PRAGMA foreign_keys')) {
+          failFirst = false
+          return new Error('locked')
+        }
+        return undefined
+      }
+    })
+    const db = fromBunSqlite(sql)
+
+    await expect(db.executeSql('SELECT 1')).rejects.toThrow(/locked/)
+    await db.executeSql('SELECT 2')
+
+    const pragmas = calls.filter(c => c.text.startsWith('PRAGMA foreign_keys'))
+    expect(pragmas.length).toBe(2)
   })
 
   it('copies result rows into a plain array', async () => {

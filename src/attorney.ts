@@ -514,6 +514,13 @@ function resolveBackend (config: any) {
     config[flag] = flags[flag] ?? false
   }
 
+  // Without a db adapter the config falls through to the default pg.Pool, and sqlite-rendered SQL
+  // reaches a postgres connection — reject the combination here instead of failing bafflingly at start().
+  if (dialect === 'sqlite') {
+    assert(config.db, "configuration assert: backend 'sqlite' requires a db adapter (see fromBunSqlite)")
+    assert(!('connectionString' in config), "configuration assert: connectionString does not apply to backend 'sqlite' — the db adapter carries the database")
+  }
+
   // Test hook: exercise the distributed runtime paths (atomic fetch + split mutations)
   // on top of the current backend's schema, without standing up a distributed database.
   if (config.__test__distributed) {

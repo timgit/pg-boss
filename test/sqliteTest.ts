@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest'
 import { SQL } from 'bun'
 import { PgBoss, fromBunSqlite } from '../src/index.ts'
 import { delay } from '../src/tools.ts'
+import packageJson from '../package.json' with { type: 'json' }
 
 // End-to-end coverage against a real in-memory SQLite database through Bun's SQL client. SQLite is
 // a different SQL dialect (not a Postgres-compatible engine), so the `sqlite` backend profile sets
@@ -31,7 +32,44 @@ describe('sqlite', () => {
   it('installs the schema on start', async () => {
     const boss = await startBoss()
     expect(await boss.isInstalled()).toBe(true)
-    expect(await boss.schemaVersion()).toBeGreaterThan(0)
+    expect(await boss.schemaVersion()).toBe(packageJson.pgboss.schema)
+    await boss.stop({ graceful: false })
+  })
+
+  it('refuses to start against an older installed schema version', async () => {
+    const sql = newInstance()
+    const first = new PgBoss({ backend: 'sqlite', db: fromBunSqlite(sql), supervise: false, schedule: false })
+    first.on('error', () => {})
+    await first.start()
+    await first.stop({ graceful: false })
+
+    await sql.unsafe('UPDATE "pgboss.version" SET version = 1')
+
+    const second = new PgBoss({ backend: 'sqlite', db: fromBunSqlite(sql), supervise: false, schedule: false })
+    second.on('error', () => {})
+    await expect(second.start()).rejects.toThrow(/cannot be migrated/)
+  })
+
+  it('rejects a config without a db adapter', () => {
+    expect(() => new PgBoss({ backend: 'sqlite' } as any)).toThrow(/requires a db adapter/)
+  })
+
+  it('rejects a config with a connection string', () => {
+    expect(() => new PgBoss({ backend: 'sqlite', db: fromBunSqlite(newInstance()), connectionString: 'postgres://localhost/x' } as any)).toThrow(/connectionString/)
+  })
+
+  it('installs with a quoted schema name', async () => {
+    const boss = new PgBoss({ backend: 'sqlite', db: fromBunSqlite(newInstance()), schema: '"MyBoss"', supervise: false, schedule: false })
+    boss.on('error', () => {})
+    await boss.start()
+
+    expect(await boss.isInstalled()).toBe(true)
+
+    await boss.createQueue('quoted')
+    const id = await boss.send('quoted', { n: 1 })
+    const [job] = await boss.fetch('quoted')
+    expect(job.id).toBe(id)
+
     await boss.stop({ graceful: false })
   })
 
