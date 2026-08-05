@@ -32,12 +32,6 @@ describe('upsert', function () {
     await expect(ctx.boss.upsert(ctx.schema, { v: 1 }, { id: SOME_UUID, singletonKey: 'k' })).rejects.toThrow(/exactly one/)
   })
 
-  it('should reject upsert by id on a key_strict_fifo queue', async function () {
-    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
-    await ctx.boss.createQueue(ctx.schema, { policy: 'key_strict_fifo' })
-    await expect(ctx.boss.upsert(ctx.schema, { v: 1 }, { id: SOME_UUID })).rejects.toThrow(/key_strict_fifo/)
-  })
-
   it('should insert a new job with the given id when none exists (by id)', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 

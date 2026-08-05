@@ -479,12 +479,8 @@ export interface UpdateRequest {
  *
  * - `exclusive` only allows 1 job to be queued or active. Can be extended with
  *   singletonKey`.
- *
- * - `key_strict_fifo` ensures strict FIFO ordering per `singletonKey`. Requires
- *   `singletonKey` on every job. Blocks processing of jobs with the same key
- *   while any job with that key is active, in retry, or failed.
  */
-export type QueuePolicy = 'standard' | 'short' | 'singleton' | 'stately' | 'exclusive' | 'key_strict_fifo' | (string & {})
+export type QueuePolicy = 'standard' | 'short' | 'singleton' | 'stately' | 'exclusive' | (string & {})
 
 export interface Queue extends QueueOptions {
   /**
@@ -652,11 +648,6 @@ export interface WorkConcurrencyOptions {
    * Each worker polls and processes jobs independently.
    */
   localConcurrency?: number;
-  /**
-   * Limit concurrent jobs per group within this node (in-memory tracking).
-   * No database overhead. Does not coordinate across nodes.
-   */
-  localGroupConcurrency?: number | GroupConcurrencyConfig;
   /**
    * Limit concurrent jobs per group globally across all nodes (database tracking).
    * Coordinates across distributed deployments via database queries.

@@ -52,8 +52,7 @@ export const QUEUE_POLICIES = Object.freeze({
   short: 'short',
   singleton: 'singleton',
   stately: 'stately',
-  exclusive: 'exclusive',
-  key_strict_fifo: 'key_strict_fifo'
+  exclusive: 'exclusive'
 })
 
 const QUEUE_DEFAULTS = {
@@ -94,7 +93,6 @@ export function create (c: Ctx, version: number, options?: CreateOptions) {
     createTableVersion(c),
     createTableQueue(c),
     createTableSchedule(c),
-    createTableSubscription(c),
 
     // Partition-helper functions are only used by the partitioned architecture.
     // They are unused when partitioning is disabled, and job_table_format's
@@ -193,13 +191,6 @@ function createSqlite (c: Ctx, version: number): string {
       updated_on text not null default (${SQLITE_NOW_DEFAULT}),
       PRIMARY KEY (name, key)
     )`,
-    `CREATE TABLE ${qn(c, 'subscription')} (
-      event text not null,
-      name text not null REFERENCES ${qn(c, 'queue')} ON DELETE CASCADE,
-      created_on text not null default (${SQLITE_NOW_DEFAULT}),
-      updated_on text not null default (${SQLITE_NOW_DEFAULT}),
-      PRIMARY KEY (event, name)
-    )`,
     `CREATE TABLE ${qn(c, 'job')} (
       id text not null default (${SQLITE_UUID_DEFAULT}),
       name text not null,
@@ -236,7 +227,6 @@ function createSqlite (c: Ctx, version: number): string {
       source_created_on text,
       source_retry_count integer,
       PRIMARY KEY (name, id),
-      CONSTRAINT job_key_strict_fifo_singleton_key_check CHECK (NOT (policy = '${QUEUE_POLICIES.key_strict_fifo}' AND singleton_key IS NULL)),
       FOREIGN KEY (name) REFERENCES ${qn(c, 'queue')} (name) ON DELETE RESTRICT,
       FOREIGN KEY (dead_letter) REFERENCES ${qn(c, 'queue')} (name) ON DELETE RESTRICT
     )`,
@@ -247,7 +237,6 @@ function createSqlite (c: Ctx, version: number): string {
     createIndexJobFetch(c),
     createIndexJobPolicyExclusive(c),
     createIndexJobGroupConcurrency(c),
-    createIndexJobPolicyKeyStrictFifo(c),
     createIndexJobBlocking(c),
     `CREATE TABLE ${qn(c, 'job_dependency')} (
       child_name text NOT NULL,
@@ -339,18 +328,6 @@ function createTableSchedule (c: Ctx) {
       created_on timestamp with time zone not null default now(),
       updated_on timestamp with time zone not null default now(),
       PRIMARY KEY (name, key)
-    )
-  `
-}
-
-function createTableSubscription (c: Ctx) {
-  return `
-    CREATE TABLE ${qn(c, 'subscription')} (
-      event text not null,
-      name text not null REFERENCES ${qn(c, 'queue')} ON DELETE CASCADE,
-      created_on timestamp with time zone not null default now(),
-      updated_on timestamp with time zone not null default now(),
-      PRIMARY KEY(event, name)
     )
   `
 }
@@ -503,8 +480,6 @@ function createTableJobCommon (c: Ctx) {
     SELECT ${qn(c, 'job_table_run')}($cmd$${createIndexJobPolicySingleton(c)}$cmd$, '${COMMON_JOB_TABLE}');
     SELECT ${qn(c, 'job_table_run')}($cmd$${createIndexJobPolicyStately(c)}$cmd$, '${COMMON_JOB_TABLE}');
     SELECT ${qn(c, 'job_table_run')}($cmd$${createIndexJobPolicyExclusive(c)}$cmd$, '${COMMON_JOB_TABLE}');
-    SELECT ${qn(c, 'job_table_run')}($cmd$${createIndexJobPolicyKeyStrictFifo(c)}$cmd$, '${COMMON_JOB_TABLE}');
-    SELECT ${qn(c, 'job_table_run')}($cmd$${createCheckConstraintKeyStrictFifo(c)}$cmd$, '${COMMON_JOB_TABLE}');
     SELECT ${qn(c, 'job_table_run')}($cmd$${createIndexJobThrottle(c)}$cmd$, '${COMMON_JOB_TABLE}');
     SELECT ${qn(c, 'job_table_run')}($cmd$${createIndexJobFetch(c)}$cmd$, '${COMMON_JOB_TABLE}');
     SELECT ${qn(c, 'job_table_run')}($cmd$${createIndexJobGroupConcurrency(c)}$cmd$, '${COMMON_JOB_TABLE}');
@@ -523,8 +498,6 @@ function createTableJobIndexes (c: Ctx, noDeferrableConstraints = false, noCover
     ${createIndexJobPolicySingleton(c)};
     ${createIndexJobPolicyStately(c)};
     ${createIndexJobPolicyExclusive(c)};
-    ${createIndexJobPolicyKeyStrictFifo(c)};
-    ${createCheckConstraintKeyStrictFifo(c)};
     ${createIndexJobThrottle(c)};
     ${createIndexJobFetch(c, noCoveringIndex)};
     ${createIndexJobGroupConcurrency(c)};
@@ -654,9 +627,6 @@ function createQueueFunction (c: Ctx, noPartitioning = false) {
         EXECUTE ${qn(c, 'job_table_format')}($cmd$${createIndexJobPolicyStately(c)}$cmd$, tablename);
       ELSIF options->>'policy' = 'exclusive' THEN
         EXECUTE ${qn(c, 'job_table_format')}($cmd$${createIndexJobPolicyExclusive(c)}$cmd$, tablename);
-      ELSIF options->>'policy' = '${QUEUE_POLICIES.key_strict_fifo}' THEN
-        EXECUTE ${qn(c, 'job_table_format')}($cmd$${createIndexJobPolicyKeyStrictFifo(c)}$cmd$, tablename);
-        EXECUTE ${qn(c, 'job_table_format')}($cmd$${createCheckConstraintKeyStrictFifo(c)}$cmd$, tablename);
       END IF;
 
       EXECUTE format('ALTER TABLE ${sch(c)}.%I ADD CONSTRAINT cjc CHECK (name=%L)', tablename, queue_name);
@@ -837,14 +807,6 @@ function createIndexJobPolicyExclusive (c: Ctx) {
   return `CREATE UNIQUE INDEX ${qi(c, 'job_i6')} ON ${qn(c, 'job')} (name, COALESCE(singleton_key, '')) WHERE ${dial(c).stateLte('state', JOB_STATES.active)} AND policy = '${QUEUE_POLICIES.exclusive}'`
 }
 
-function createIndexJobPolicyKeyStrictFifo (c: Ctx) {
-  return `CREATE UNIQUE INDEX ${qi(c, 'job_i8')} ON ${qn(c, 'job')} (name, singleton_key) WHERE state IN ('${JOB_STATES.active}', '${JOB_STATES.retry}', '${JOB_STATES.failed}') AND policy = '${QUEUE_POLICIES.key_strict_fifo}'`
-}
-
-function createCheckConstraintKeyStrictFifo (c: Ctx) {
-  return `ALTER TABLE ${qn(c, 'job')} ADD CONSTRAINT job_key_strict_fifo_singleton_key_check CHECK (NOT (policy = '${QUEUE_POLICIES.key_strict_fifo}' AND singleton_key IS NULL))`
-}
-
 function createIndexJobGroupConcurrency (c: Ctx) {
   return `CREATE INDEX ${qi(c, 'job_i7')} ON ${qn(c, 'job')} (name, group_id) WHERE state = '${JOB_STATES.active}' AND group_id IS NOT NULL`
 }
@@ -1022,31 +984,6 @@ export function unschedule (c: Ctx) {
     DELETE FROM ${qn(c, 'schedule')}
     WHERE name = $1
       AND COALESCE(key, '') = $2
-  `
-}
-
-export function subscribe (c: Ctx) {
-  return `
-    INSERT INTO ${qn(c, 'subscription')} (event, name)
-    VALUES ($1, $2)
-    ON CONFLICT (event, name) DO UPDATE SET
-      event = EXCLUDED.event,
-      name = EXCLUDED.name,
-      updated_on = ${dial(c).now()}
-  `
-}
-
-export function unsubscribe (c: Ctx) {
-  return `
-    DELETE FROM ${qn(c, 'subscription')}
-    WHERE event = $1 and name = $2
-  `
-}
-
-export function getQueuesForEvent (c: Ctx) {
-  return `
-    SELECT name FROM ${qn(c, 'subscription')}
-    WHERE event = $1
   `
 }
 
@@ -1539,17 +1476,6 @@ export function resumeJobs (c: Ctx, table: string) {
       RETURNING 1`
 
   return countMutation(c, mutation)
-}
-
-export function restoreJobs (c: Ctx, table: string) {
-  return `
-    UPDATE ${qn(c, table)}
-    SET state = '${JOB_STATES.created}',
-        started_on = NULL,
-        heartbeat_on = NULL
-    WHERE name = $1
-      AND ${dial(c).inArrayParam('id', '$2', 'uuid[]')}
-  `
 }
 
 interface InsertJobsOptions {
@@ -2838,14 +2764,4 @@ export function cleanupDependencies (c: Ctx, table: string, queues: string[], no
   `
 
   return locked(c, sql, table + 'cleanupDependencies', noAdvisoryLocks)
-}
-
-export function getBlockedKeys (c: Ctx, table: string) {
-  return `
-    SELECT DISTINCT singleton_key as "singletonKey"
-    FROM ${qn(c, table)}
-    WHERE name = $1
-      AND state = '${JOB_STATES.failed}'
-      AND policy = '${QUEUE_POLICIES.key_strict_fifo}'
-    `
 }

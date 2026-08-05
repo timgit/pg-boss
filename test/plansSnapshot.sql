@@ -70,15 +70,6 @@
     )
   ;
 
-    CREATE TABLE pgboss.subscription (
-      event text not null,
-      name text not null REFERENCES pgboss.queue ON DELETE CASCADE,
-      created_on timestamp with time zone not null default now(),
-      updated_on timestamp with time zone not null default now(),
-      PRIMARY KEY(event, name)
-    )
-  ;
-
     CREATE FUNCTION pgboss.job_table_format(command text, table_name text)
     RETURNS text AS
     $$
@@ -166,8 +157,6 @@ ALTER TABLE pgboss.job ADD PRIMARY KEY (name, id);
     SELECT pgboss.job_table_run($cmd$CREATE UNIQUE INDEX job_i2 ON pgboss.job (name, COALESCE(singleton_key, '')) WHERE state = 'active' AND policy = 'singleton'$cmd$, 'job_common');
     SELECT pgboss.job_table_run($cmd$CREATE UNIQUE INDEX job_i3 ON pgboss.job (name, state, COALESCE(singleton_key, '')) WHERE state <= 'active' AND policy = 'stately'$cmd$, 'job_common');
     SELECT pgboss.job_table_run($cmd$CREATE UNIQUE INDEX job_i6 ON pgboss.job (name, COALESCE(singleton_key, '')) WHERE state <= 'active' AND policy = 'exclusive'$cmd$, 'job_common');
-    SELECT pgboss.job_table_run($cmd$CREATE UNIQUE INDEX job_i8 ON pgboss.job (name, singleton_key) WHERE state IN ('active', 'retry', 'failed') AND policy = 'key_strict_fifo'$cmd$, 'job_common');
-    SELECT pgboss.job_table_run($cmd$ALTER TABLE pgboss.job ADD CONSTRAINT job_key_strict_fifo_singleton_key_check CHECK (NOT (policy = 'key_strict_fifo' AND singleton_key IS NULL))$cmd$, 'job_common');
     SELECT pgboss.job_table_run($cmd$CREATE UNIQUE INDEX job_i4 ON pgboss.job (name, singleton_on, COALESCE(singleton_key, '')) WHERE state <> 'cancelled' AND singleton_on IS NOT NULL$cmd$, 'job_common');
     SELECT pgboss.job_table_run($cmd$CREATE INDEX job_i5 ON pgboss.job (name, start_after) WHERE state < 'active' AND NOT blocked$cmd$, 'job_common');
     SELECT pgboss.job_table_run($cmd$CREATE INDEX job_i7 ON pgboss.job (name, group_id) WHERE state = 'active' AND group_id IS NOT NULL$cmd$, 'job_common');
@@ -260,9 +249,6 @@ CREATE INDEX IF NOT EXISTS job_dep_parent_idx ON pgboss.job_dependency (parent_n
         EXECUTE pgboss.job_table_format($cmd$CREATE UNIQUE INDEX job_i3 ON pgboss.job (name, state, COALESCE(singleton_key, '')) WHERE state <= 'active' AND policy = 'stately'$cmd$, tablename);
       ELSIF options->>'policy' = 'exclusive' THEN
         EXECUTE pgboss.job_table_format($cmd$CREATE UNIQUE INDEX job_i6 ON pgboss.job (name, COALESCE(singleton_key, '')) WHERE state <= 'active' AND policy = 'exclusive'$cmd$, tablename);
-      ELSIF options->>'policy' = 'key_strict_fifo' THEN
-        EXECUTE pgboss.job_table_format($cmd$CREATE UNIQUE INDEX job_i8 ON pgboss.job (name, singleton_key) WHERE state IN ('active', 'retry', 'failed') AND policy = 'key_strict_fifo'$cmd$, tablename);
-        EXECUTE pgboss.job_table_format($cmd$ALTER TABLE pgboss.job ADD CONSTRAINT job_key_strict_fifo_singleton_key_check CHECK (NOT (policy = 'key_strict_fifo' AND singleton_key IS NULL))$cmd$, tablename);
       END IF;
 
       EXECUTE format('ALTER TABLE pgboss.%I ADD CONSTRAINT cjc CHECK (name=%L)', tablename, queue_name);
@@ -296,7 +282,7 @@ CREATE INDEX IF NOT EXISTS job_dep_parent_idx ON pgboss.job_dependency (parent_n
     $$
     LANGUAGE plpgsql;
   ;
-INSERT INTO pgboss.version(version) VALUES ('37');
+INSERT INTO pgboss.version(version) VALUES ('1');
     COMMIT;
   
 
@@ -372,15 +358,6 @@ CREATE SCHEMA IF NOT EXISTS pgboss;
     )
   ;
 
-    CREATE TABLE pgboss.subscription (
-      event text not null,
-      name text not null REFERENCES pgboss.queue ON DELETE CASCADE,
-      created_on timestamp with time zone not null default now(),
-      updated_on timestamp with time zone not null default now(),
-      PRIMARY KEY(event, name)
-    )
-  ;
-
     CREATE FUNCTION pgboss.job_table_format(command text, table_name text)
     RETURNS text AS
     $$
@@ -468,8 +445,6 @@ ALTER TABLE pgboss.job ADD PRIMARY KEY (name, id);
     SELECT pgboss.job_table_run($cmd$CREATE UNIQUE INDEX job_i2 ON pgboss.job (name, COALESCE(singleton_key, '')) WHERE state = 'active' AND policy = 'singleton'$cmd$, 'job_common');
     SELECT pgboss.job_table_run($cmd$CREATE UNIQUE INDEX job_i3 ON pgboss.job (name, state, COALESCE(singleton_key, '')) WHERE state <= 'active' AND policy = 'stately'$cmd$, 'job_common');
     SELECT pgboss.job_table_run($cmd$CREATE UNIQUE INDEX job_i6 ON pgboss.job (name, COALESCE(singleton_key, '')) WHERE state <= 'active' AND policy = 'exclusive'$cmd$, 'job_common');
-    SELECT pgboss.job_table_run($cmd$CREATE UNIQUE INDEX job_i8 ON pgboss.job (name, singleton_key) WHERE state IN ('active', 'retry', 'failed') AND policy = 'key_strict_fifo'$cmd$, 'job_common');
-    SELECT pgboss.job_table_run($cmd$ALTER TABLE pgboss.job ADD CONSTRAINT job_key_strict_fifo_singleton_key_check CHECK (NOT (policy = 'key_strict_fifo' AND singleton_key IS NULL))$cmd$, 'job_common');
     SELECT pgboss.job_table_run($cmd$CREATE UNIQUE INDEX job_i4 ON pgboss.job (name, singleton_on, COALESCE(singleton_key, '')) WHERE state <> 'cancelled' AND singleton_on IS NOT NULL$cmd$, 'job_common');
     SELECT pgboss.job_table_run($cmd$CREATE INDEX job_i5 ON pgboss.job (name, start_after) WHERE state < 'active' AND NOT blocked$cmd$, 'job_common');
     SELECT pgboss.job_table_run($cmd$CREATE INDEX job_i7 ON pgboss.job (name, group_id) WHERE state = 'active' AND group_id IS NOT NULL$cmd$, 'job_common');
@@ -562,9 +537,6 @@ CREATE INDEX IF NOT EXISTS job_dep_parent_idx ON pgboss.job_dependency (parent_n
         EXECUTE pgboss.job_table_format($cmd$CREATE UNIQUE INDEX job_i3 ON pgboss.job (name, state, COALESCE(singleton_key, '')) WHERE state <= 'active' AND policy = 'stately'$cmd$, tablename);
       ELSIF options->>'policy' = 'exclusive' THEN
         EXECUTE pgboss.job_table_format($cmd$CREATE UNIQUE INDEX job_i6 ON pgboss.job (name, COALESCE(singleton_key, '')) WHERE state <= 'active' AND policy = 'exclusive'$cmd$, tablename);
-      ELSIF options->>'policy' = 'key_strict_fifo' THEN
-        EXECUTE pgboss.job_table_format($cmd$CREATE UNIQUE INDEX job_i8 ON pgboss.job (name, singleton_key) WHERE state IN ('active', 'retry', 'failed') AND policy = 'key_strict_fifo'$cmd$, tablename);
-        EXECUTE pgboss.job_table_format($cmd$ALTER TABLE pgboss.job ADD CONSTRAINT job_key_strict_fifo_singleton_key_check CHECK (NOT (policy = 'key_strict_fifo' AND singleton_key IS NULL))$cmd$, tablename);
       END IF;
 
       EXECUTE format('ALTER TABLE pgboss.%I ADD CONSTRAINT cjc CHECK (name=%L)', tablename, queue_name);
@@ -598,7 +570,7 @@ CREATE INDEX IF NOT EXISTS job_dep_parent_idx ON pgboss.job_dependency (parent_n
     $$
     LANGUAGE plpgsql;
   ;
-INSERT INTO pgboss.version(version) VALUES ('37');
+INSERT INTO pgboss.version(version) VALUES ('1');
     COMMIT;
   
 
@@ -670,15 +642,6 @@ INSERT INTO pgboss.version(version) VALUES ('37');
       PRIMARY KEY (name, key)
     )
   ;
-
-    CREATE TABLE pgboss.subscription (
-      event text not null,
-      name text not null REFERENCES pgboss.queue ON DELETE CASCADE,
-      created_on timestamp with time zone not null default now(),
-      updated_on timestamp with time zone not null default now(),
-      PRIMARY KEY(event, name)
-    )
-  ;
 ;
 ;
 
@@ -726,8 +689,6 @@ ALTER TABLE pgboss.job ADD PRIMARY KEY (name, id);
     CREATE UNIQUE INDEX job_i2 ON pgboss.job (name, COALESCE(singleton_key, '')) WHERE state = 'active' AND policy = 'singleton';
     CREATE UNIQUE INDEX job_i3 ON pgboss.job (name, state, COALESCE(singleton_key, '')) WHERE state <= 'active' AND policy = 'stately';
     CREATE UNIQUE INDEX job_i6 ON pgboss.job (name, COALESCE(singleton_key, '')) WHERE state <= 'active' AND policy = 'exclusive';
-    CREATE UNIQUE INDEX job_i8 ON pgboss.job (name, singleton_key) WHERE state IN ('active', 'retry', 'failed') AND policy = 'key_strict_fifo';
-    ALTER TABLE pgboss.job ADD CONSTRAINT job_key_strict_fifo_singleton_key_check CHECK (NOT (policy = 'key_strict_fifo' AND singleton_key IS NULL));
     CREATE UNIQUE INDEX job_i4 ON pgboss.job (name, singleton_on, COALESCE(singleton_key, '')) WHERE state <> 'cancelled' AND singleton_on IS NOT NULL;
     CREATE INDEX job_i5 ON pgboss.job (name, start_after) WHERE state < 'active' AND NOT blocked;
     CREATE INDEX job_i7 ON pgboss.job (name, group_id) WHERE state = 'active' AND group_id IS NOT NULL;
@@ -796,7 +757,7 @@ CREATE INDEX IF NOT EXISTS job_dep_parent_idx ON pgboss.job_dependency (parent_n
     $$
     LANGUAGE plpgsql;
   ;
-INSERT INTO pgboss.version(version) VALUES ('37');
+INSERT INTO pgboss.version(version) VALUES ('1');
     COMMIT;
   
 
@@ -1077,28 +1038,6 @@ SELECT * FROM pgboss.schedule WHERE name = $1 AND COALESCE(key, '') = $2
       AND COALESCE(key, '') = $2
   
 
-=== subscribe ===
-
-    INSERT INTO pgboss.subscription (event, name)
-    VALUES ($1, $2)
-    ON CONFLICT (event, name) DO UPDATE SET
-      event = EXCLUDED.event,
-      name = EXCLUDED.name,
-      updated_on = now()
-  
-
-=== unsubscribe ===
-
-    DELETE FROM pgboss.subscription
-    WHERE event = $1 and name = $2
-  
-
-=== getQueuesForEvent ===
-
-    SELECT name FROM pgboss.subscription
-    WHERE event = $1
-  
-
 === getTime ===
 SELECT round(date_part('epoch', now()) * 1000) as time
 
@@ -1122,7 +1061,7 @@ SELECT round(date_part('epoch', now()) * 1000) as time
 SELECT version from pgboss.version
 
 === setVersion ===
-UPDATE pgboss.version SET version = '37'
+UPDATE pgboss.version SET version = '1'
 
 === versionTableExists ===
 SELECT to_regclass('pgboss.version') as name
@@ -1140,7 +1079,7 @@ SELECT to_regclass('pgboss.version') as name
 SELECT table_name FROM pgboss.queue WHERE partition = true
 
 === insertVersion ===
-INSERT INTO pgboss.version(version) VALUES ('37')
+INSERT INTO pgboss.version(version) VALUES ('1')
 
 === fetchNextJob base ===
 
@@ -1333,37 +1272,6 @@ INSERT INTO pgboss.version(version) VALUES ('37')
 -- values: []
 
 === fetchNextJob exclusive ===
-
-      WITH
-      
-      
-      next AS (
-        SELECT j.id
-        FROM pgboss.job j
-        WHERE j.name = 'q1'
-          AND j.state < 'active'
-          AND NOT j.blocked
-          AND j.start_after <= now()
-        ORDER BY j.priority desc, j.created_on, j.id
-        LIMIT 1
-        FOR UPDATE OF j SKIP LOCKED
-      )
-      
-      
-      UPDATE pgboss.job j SET
-        state = 'active',
-        started_on = now(),
-        heartbeat_on = now(),
-        retry_count = CASE WHEN started_on IS NOT NULL THEN retry_count + 1 ELSE retry_count END
-      FROM next
-      WHERE name = 'q1' AND j.id = next.id
-      
-      
-      RETURNING j.id, name, data, expire_seconds as "expireInSeconds", heartbeat_seconds as "heartbeatSeconds", group_id as "groupId", group_tier as "groupTier"
-    
--- values: []
-
-=== fetchNextJob key_strict_fifo ===
 
       WITH
       
@@ -1929,16 +1837,6 @@ INSERT INTO pgboss.version(version) VALUES ('37')
       RETURNING 1
     )
     SELECT COUNT(*) from results
-  
-
-=== restoreJobs ===
-
-    UPDATE pgboss.job
-    SET state = 'created',
-        started_on = NULL,
-        heartbeat_on = NULL
-    WHERE name = $1
-      AND id = ANY($2::uuid[])
   
 
 === insertJobs ===
@@ -4833,12 +4731,3 @@ SELECT 2;
   ;
     COMMIT;
   
-
-=== getBlockedKeys ===
-
-    SELECT DISTINCT singleton_key as "singletonKey"
-    FROM pgboss.job
-    WHERE name = $1
-      AND state = 'failed'
-      AND policy = 'key_strict_fifo'
-    

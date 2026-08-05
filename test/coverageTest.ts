@@ -23,14 +23,11 @@ describe('argument-shape coverage', function () {
     await ctx.boss.work(queue, { priority: true } as any, async () => {})
   })
 
-  it('work() honors orderByCreatedOn:false and localGroupConcurrency without localConcurrency', async function () {
+  it('work() honors orderByCreatedOn:false', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
     const queue = ctx.schema
 
     await ctx.boss.work(queue, { orderByCreatedOn: false } as any, async () => {})
-    await ctx.boss.offWork(queue)
-
-    await ctx.boss.work(queue, { localGroupConcurrency: 1 } as any, async () => {})
   })
 
   it('send variants accept null options, including a 1-second debounce', async function () {

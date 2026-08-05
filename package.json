@@ -44,7 +44,7 @@
     "console": "bun scripts/console.js"
   },
   "pgboss": {
-    "schema": 37
+    "schema": 1
   },
   "repository": {
     "type": "git",

@@ -286,18 +286,6 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#manager.notifyWorker(workerId)
   }
 
-  subscribe (event: string, name: string): Promise<void> {
-    return this.#manager.subscribe(event, name)
-  }
-
-  unsubscribe (event: string, name: string): Promise<void> {
-    return this.#manager.unsubscribe(event, name)
-  }
-
-  publish (event: string, data?: object, options?: types.SendOptions): Promise<void> {
-    return this.#manager.publish(event, data, options)
-  }
-
   cancel (name: string, id: string | string[], options?: types.ConnectionOptions): Promise<types.CommandResponse> {
     return this.#manager.cancel(name, id, options)
   }
@@ -355,10 +343,6 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
 
   createQueue (name: string, options?: Omit<types.Queue, 'name'>): Promise<void> {
     return this.#manager.createQueue(name, options)
-  }
-
-  getBlockedKeys (name: string): Promise<string[]> {
-    return this.#manager.getBlockedKeys(name)
   }
 
   getDependencies (name: string, id: string, options?: types.ConnectionOptions): Promise<types.DependencyRef[]> {

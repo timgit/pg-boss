@@ -20,9 +20,9 @@ const fetchBase = {
 }
 
 const cases: Record<string, () => unknown> = {
-  'create default': () => plans.create(S, 37),
-  'create with schema': () => plans.create(S, 37, { createSchema: true }),
-  'create all flags': () => plans.create(S, 37, { createSchema: true, noTablePartitioning: true, noDeferrableConstraints: true, noAdvisoryLocks: true, noCoveringIndexes: true }),
+  'create default': () => plans.create(S, 1),
+  'create with schema': () => plans.create(S, 1, { createSchema: true }),
+  'create all flags': () => plans.create(S, 1, { createSchema: true, noTablePartitioning: true, noDeferrableConstraints: true, noAdvisoryLocks: true, noCoveringIndexes: true }),
   createTableJobDependency: () => plans.createTableJobDependency(S),
   createIndexJobDependencyParent: () => plans.createIndexJobDependencyParent(S),
   jobTableFormatFunction: () => plans.jobTableFormatFunction(S),
@@ -50,24 +50,20 @@ const cases: Record<string, () => unknown> = {
   getSchedulesByQueueAndKey: () => plans.getSchedulesByQueueAndKey(S),
   schedule: () => plans.schedule(S),
   unschedule: () => plans.unschedule(S),
-  subscribe: () => plans.subscribe(S),
-  unsubscribe: () => plans.unsubscribe(S),
-  getQueuesForEvent: () => plans.getQueuesForEvent(S),
   getTime: () => plans.getTime(S),
   getQueueStatsCache: () => plans.getQueueStatsCache(S),
   getVersion: () => plans.getVersion(S),
-  setVersion: () => plans.setVersion(S, 37),
+  setVersion: () => plans.setVersion(S, 1),
   versionTableExists: () => plans.versionTableExists(S),
   getSchemaCaseVariants: () => plans.getSchemaCaseVariants(S),
   getPartitionedQueueTables: () => plans.getPartitionedQueueTables(S),
-  insertVersion: () => plans.insertVersion(S, 37),
+  insertVersion: () => plans.insertVersion(S, 1),
   'fetchNextJob base': () => plans.fetchNextJob({ ...fetchBase }),
   'fetchNextJob noSkipLocked': () => plans.fetchNextJob({ ...fetchBase }, true),
   'fetchNextJob metadata': () => plans.fetchNextJob({ ...fetchBase, includeMetadata: true }),
   'fetchNextJob singleton batch': () => plans.fetchNextJob({ ...fetchBase, policy: 'singleton', limit: 5 }),
   'fetchNextJob stately batch': () => plans.fetchNextJob({ ...fetchBase, policy: 'stately', limit: 5 }),
   'fetchNextJob exclusive': () => plans.fetchNextJob({ ...fetchBase, policy: 'exclusive' }),
-  'fetchNextJob key_strict_fifo': () => plans.fetchNextJob({ ...fetchBase, policy: 'key_strict_fifo' }),
   'fetchNextJob no priority no order ignoreStartAfter': () => plans.fetchNextJob({ ...fetchBase, priority: false, orderByCreatedOn: false, ignoreStartAfter: true }),
   'fetchNextJob ignoreSingletons': () => plans.fetchNextJob({ ...fetchBase, ignoreSingletons: ['a', 'b'] }),
   'fetchNextJob ignoreGroups': () => plans.fetchNextJob({ ...fetchBase, ignoreGroups: ['g1'] }),
@@ -84,7 +80,6 @@ const cases: Record<string, () => unknown> = {
   'completeJobsDistributed includeQueued': () => plans.completeJobsDistributed(S, T, true),
   cancelJobs: () => plans.cancelJobs(S, T),
   resumeJobs: () => plans.resumeJobs(S, T),
-  restoreJobs: () => plans.restoreJobs(S, T),
   insertJobs: () => plans.insertJobs(S, { table: T, name: 'q1' }),
   'insertJobs no returnId': () => plans.insertJobs(S, { table: T, name: 'q1', returnId: false }),
   'insertJobs notify': () => plans.insertJobs(S, { table: T, name: 'q1', notify: true }),
@@ -143,8 +138,7 @@ const cases: Record<string, () => unknown> = {
   getDependencies: () => plans.getDependencies(S),
   getDependents: () => plans.getDependents(S),
   cleanupDependencies: () => plans.cleanupDependencies(S, T, QUEUES),
-  'cleanupDependencies noAdvisoryLocks': () => plans.cleanupDependencies(S, T, QUEUES, true),
-  getBlockedKeys: () => plans.getBlockedKeys(S, T)
+  'cleanupDependencies noAdvisoryLocks': () => plans.cleanupDependencies(S, T, QUEUES, true)
 }
 
 function render (value: unknown): string {
