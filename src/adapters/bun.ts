@@ -56,25 +56,22 @@ function promoteSqlState (err: any): any {
   return err
 }
 
-// Bun infers each parameter's type from the query and encodes the JS value accordingly. For a
-// json/jsonb parameter that means JSON.stringify — but pg-boss binds most of those already encoded
-// as JSON text, so they arrive double-encoded: `json_to_recordset($1::json)` fails with "cannot
-// call json_to_recordset on a scalar" and every send/insert breaks. Casting through text first
-// makes postgres infer the parameter as text, so bun passes the value through and postgres does
-// the parsing, exactly as node-postgres does today. `$1::text::json` is semantically identical for
-// postgres, so this stays correct if bun changes. Verified against bun 1.4.0.
+// Bun JSON.stringifys a json/jsonb parameter, but pg-boss binds most of those already encoded, so
+// they arrive double-encoded and `json_to_recordset($1::json)` fails on the scalar. Casting through
+// text (`$1::text::json`, semantically identical for postgres) makes bun pass the value through and
+// postgres do the parsing, exactly as node-postgres does today. Verified against bun 1.4.0.
 //
-// The rewrite also decides how the matching value is encoded, so both conventions pg-boss uses for
-// json arguments work: pre-encoded text passes through, while a live object (complete/fail route
-// their output through serialize-error, which returns an object) is encoded here rather than being
-// stringified into "[object Object]" by the text binding.
+// The rewrite also decides how the matching value is encoded, covering both conventions pg-boss
+// uses: pre-encoded text passes through, while a live object (complete/fail bind serialize-error's
+// output) is encoded here rather than stringified into "[object Object]" by the text binding.
 const JSON_CAST_REGEX = /\$(\d+)\s*::\s*(jsonb?)\b/gi
 
 // A placeholder can also be typed as json by the operator it sits under rather than by a cast:
 // findJobs filters with `data @> $n`, where postgres infers jsonb from the column. Give those the
-// same explicit cast so the rule stays "a json argument is bound as text". The lookahead skips a
-// placeholder that already carries its own cast, which the pass above handles.
-const JSON_OPERATOR_REGEX = /(@>|<@)(\s*)\$(\d+)(?!\s*::)/g
+// same explicit cast so the rule stays "a json argument is bound as text". A placeholder that
+// already carries its own cast is left for the pass above — the word boundary stops `\d+` from
+// backtracking into a partial index (`$1` out of `$12::jsonb`) just to satisfy the lookahead.
+const JSON_OPERATOR_REGEX = /(@>|<@)(\s*)\$(\d+)\b(?!\s*::)/g
 
 function rewriteJsonCasts (text: string): { query: string, jsonParams: Set<number> } {
   const jsonParams = new Set<number>()
@@ -134,7 +131,13 @@ function toBunParams (values: readonly unknown[], jsonParams: Set<number>): unkn
       return toJsonParam(value)
     }
 
-    return Array.isArray(value) ? toArrayLiteral(value) : value
+    if (Array.isArray(value)) {
+      return toArrayLiteral(value)
+    }
+
+    // ISO text parses to the identical timestamptz, and unlike bun's native Date encoding it also
+    // survives `prepare: false`, where bun falls back to String(value) — a form postgres rejects.
+    return value instanceof Date ? value.toISOString() : value
   })
 }
 

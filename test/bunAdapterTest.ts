@@ -142,13 +142,22 @@ describe('bun adapter', () => {
       expect(await capture([[['a'], ['b']]])).toEqual(['{{"a"},{"b"}}'])
     })
 
-    it('leaves non-array values alone', async () => {
+    it('encodes a bare date parameter as iso text', async () => {
+      // Postgres parses ISO text into the identical timestamptz, and the encoding survives
+      // `prepare: false`, where bun's own Date binding falls back to an unparseable String(value).
       const { sql, calls } = createFakeBunSql()
-      const now = new Date()
 
-      await fromBunSql(sql).executeSql('SELECT $1, $2, $3, $4', ['q1', 7, now, null])
+      await fromBunSql(sql).executeSql('SELECT $1::timestamptz', [new Date(0)])
 
-      expect(calls[0].values).toEqual(['q1', 7, now, null])
+      expect(calls[0].values).toEqual(['1970-01-01T00:00:00.000Z'])
+    })
+
+    it('leaves other non-array values alone', async () => {
+      const { sql, calls } = createFakeBunSql()
+
+      await fromBunSql(sql).executeSql('SELECT $1, $2, $3', ['q1', 7, null])
+
+      expect(calls[0].values).toEqual(['q1', 7, null])
     })
   })
 
@@ -205,6 +214,24 @@ describe('bun adapter', () => {
     it('does not double-cast a containment placeholder that already has one', async () => {
       const call = await capture('SELECT * FROM job WHERE data @> $1::jsonb', ['{}'])
       expect(call.text).toBe('SELECT * FROM job WHERE data @> $1::text::jsonb')
+    })
+
+    it('casts a two-digit containment placeholder without splitting its index', async () => {
+      const values = [...Array(10).fill('x'), { keep: true }, { type: 'email' }]
+
+      const call = await capture('SELECT * FROM job WHERE a = $11 AND data @> $12', values)
+
+      expect(call.text).toBe('SELECT * FROM job WHERE a = $11 AND data @> $12::text::jsonb')
+      expect(call.values![10]).toEqual({ keep: true })
+      expect(call.values![11]).toBe('{"type":"email"}')
+    })
+
+    it('does not backtrack into a two-digit placeholder that already carries a cast', async () => {
+      // Without the word boundary, `\d+` gives back a digit to satisfy the lookahead and `$12::jsonb`
+      // is mangled into `$1::text::jsonb2::jsonb`.
+      const call = await capture('SELECT * FROM job WHERE data @> $12::jsonb', ['{}'])
+
+      expect(call.text).toBe('SELECT * FROM job WHERE data @> $12::text::jsonb')
     })
 
     it('only json-encodes the arguments that carry a json cast', async () => {

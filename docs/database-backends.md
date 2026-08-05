@@ -425,8 +425,8 @@ still listen for it.
 #### Keep Bun's default `prepare: true`
 
 Bun derives each parameter's wire encoding from the type PostgreSQL reports for that placeholder,
-which only happens when statements are prepared. Under `prepare: false`, dates and objects are sent
-in forms PostgreSQL rejects, so that option is not supported.
+which only happens when statements are prepared. Under `prepare: false`, an object bound to an
+uncast jsonb placeholder is sent in a form PostgreSQL rejects, so that option is not supported.
 
 Bun caches prepared statements per connection, keyed by query text. pg-boss generates its SQL per
 queue table, so that cache grows with the number of partitioned queues — worth watching in

@@ -39,7 +39,6 @@
     "pretest": "bun run tsc && bun run gen:manifest:check",
     "test": "eslint . && bun --bun vitest run",
     "test:distributed": "DISTRIBUTED=true bun run test",
-    "test:ci": "bun run cover && DISTRIBUTED=true bun run cover && bun run test:pglite && bun run test:bun",
     "test:cockroachdb": "DB_TYPE=cockroachdb COCKROACH_HOST=localhost bun run test -- test/distributedDatabaseTest.ts",
     "test:cockroachdb:full": "DB_TYPE=cockroachdb COCKROACH_HOST=localhost bun run test -- --no-file-parallelism",
     "test:yugabytedb:full": "DB_TYPE=yugabytedb YUGABYTE_HOST=localhost bun run test -- --no-file-parallelism",

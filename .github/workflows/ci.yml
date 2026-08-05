@@ -36,7 +36,7 @@ jobs:
             # ROLLBACK that clears its aborted transaction has landed, so an unrelated query fails
             # with 25P02 whenever a transaction block fails under concurrency. That is upstream, not
             # ours — the adapter rolls back before releasing — and it is fixed in 1.4. Kept visible
-            # so we notice when stable catches up; see ISSUE.txt.
+            # so we notice when stable catches up; see ISSUES.txt.
             optional: true
     services:
       postgres:
