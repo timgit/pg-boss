@@ -190,7 +190,8 @@ describe('groupConcurrency', function () {
     expect(maxByGroup[freeGroup]).toBeGreaterThanOrEqual(1)
   })
 
-  it('should preserve tiered batch capacity when groups are already active', async function () {
+  // Seeds active/backdated jobs with generate_series + jsonb_build_object + enum casts — irreducibly postgres.
+  helper.itSqlite('should preserve tiered batch capacity when groups are already active', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 
     const schema = ctx.schema

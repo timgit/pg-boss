@@ -42,7 +42,7 @@ describe('expire', function () {
 
     // Backdate started_on past the expiration window instead of sleeping — deterministic and fast.
     const db = await helper.getDb()
-    await db.executeSql(`UPDATE ${ctx.schema}.job SET started_on = now() - interval '1 hour' WHERE id = $1`, [jobId])
+    await db.executeSql(`UPDATE ${helper.qualify(ctx.schema, 'job')} SET started_on = $2 WHERE id = $1`, [jobId, new Date(Date.now() - 3_600_000)])
     await db.close()
 
     await ctx.boss.supervise(ctx.schema)

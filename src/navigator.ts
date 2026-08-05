@@ -90,7 +90,7 @@ class Navigator extends EventEmitter implements types.EventsMixin {
         await delay(this.#config.__test__delay_flow_ms)
       }
 
-      const gate = plans.trySetFlowTime(this.#config.schema, this.#config.flowIntervalSeconds)
+      const gate = plans.trySetFlowTime(this.#config, this.#config.flowIntervalSeconds)
       const { rows } = await this.#db.executeSql(gate)
 
       if (rows.length === 1) {
@@ -163,7 +163,7 @@ class Navigator extends EventEmitter implements types.EventsMixin {
   }
 
   async #resolveStandard (table: string, names: string[]): Promise<number> {
-    const query = plans.resolveFlowJobs(this.#config.schema, table, names)
+    const query = plans.resolveFlowJobs(this.#config, table, names)
     const { rows } = await this.#db.executeSql(query.text, query.values)
     // CockroachDB returns integer columns as strings; coerce so the drain-loop comparison is numeric.
     return Number(rows[0]?.resolved ?? 0)

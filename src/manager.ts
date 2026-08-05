@@ -45,6 +45,37 @@ const NUMERIC_QUEUE_FIELDS = [
   'totalCount'
 ] as const
 
+// The sqlite dialect stores timestamps as ISO text, booleans as 0/1, and json/arrays as TEXT;
+// re-hydrate the JS types the pg driver returns natively so row shapes match across backends.
+const QUEUE_BOOL_FIELDS = ['retryBackoff', 'partition', 'notify'] as const
+const QUEUE_DATE_FIELDS = ['createdOn', 'updatedOn'] as const
+
+const JOB_DATE_FIELDS = ['startAfter', 'startedOn', 'singletonOn', 'heartbeatOn', 'createdOn', 'completedOn', 'keepUntil', 'sourceCreatedOn'] as const
+const JOB_BOOL_FIELDS = ['retryBackoff', 'blocked', 'blocking'] as const
+
+function coerceSqliteJobRow (row: any): any {
+  if (typeof row.data === 'string') row.data = JSON.parse(row.data)
+  if (typeof row.output === 'string') row.output = JSON.parse(row.output)
+  for (const field of JOB_BOOL_FIELDS) {
+    if (row[field] !== undefined && row[field] !== null) row[field] = !!row[field]
+  }
+  for (const field of JOB_DATE_FIELDS) {
+    if (typeof row[field] === 'string') row[field] = new Date(row[field])
+  }
+  return row
+}
+
+function coerceSqliteQueueRow (row: any): any {
+  for (const field of QUEUE_BOOL_FIELDS) {
+    if (row[field] !== undefined && row[field] !== null) row[field] = !!row[field]
+  }
+  for (const field of QUEUE_DATE_FIELDS) {
+    if (typeof row[field] === 'string') row[field] = new Date(row[field])
+  }
+  if (typeof row.singletonsActive === 'string') row.singletonsActive = JSON.parse(row.singletonsActive)
+  return row
+}
+
 // The count columns shared by live stats and recorded snapshots (the QueueStats shape).
 const STATS_COUNT_FIELDS = [
   'deferredCount',
@@ -336,12 +367,12 @@ class Manager extends EventEmitter implements types.EventsMixin {
     if (this.config.noMultiMutationCte) {
       // Dependency unblocking is handled out of band by the background resolver (Navigator), so
       // completion is a single statement here too.
-      const sql = plans.completeJobsWithOutputsDistributed(this.config.schema, table)
+      const sql = plans.completeJobsWithOutputsDistributed(this.config, table)
       const { rows } = await this.db.executeSql(sql, [name, JSON.stringify(payload)])
       return { jobs: ids, requested: ids.length, affected: rows.length }
     }
 
-    const sql = plans.completeJobsWithOutputs(this.config.schema, table)
+    const sql = plans.completeJobsWithOutputs(this.config, table)
     const result = await this.db.executeSql(sql, [name, JSON.stringify(payload)])
     return this.mapCommandResponse(ids, result)
   }
@@ -357,14 +388,14 @@ class Manager extends EventEmitter implements types.EventsMixin {
     if (this.config.noMultiMutationCte) {
       const outputById = new Map(items.map(item => [item.id, this.mapCompletionDataArg(item.output)]))
       return this.ensureTransaction(this.db, async (tx) => {
-        const selectQuery = plans.selectJobsToFailById(this.config.schema, table)
+        const selectQuery = plans.selectJobsToFailById(this.config, table)
         const { rows: jobs } = await tx.executeSql(selectQuery.text, [name, ids])
 
         if (jobs.length === 0) {
           return { jobs: ids, requested: ids.length, affected: 0 }
         }
 
-        const deleteQuery = plans.deleteJobsToFail(this.config.schema, table)
+        const deleteQuery = plans.deleteJobsToFail(this.config, table)
         await tx.executeSql(deleteQuery.text, [name, ids])
 
         const count = await this.reinsertFailedJobs(tx, table, jobs, null, outputById, forceTerminal)
@@ -374,8 +405,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     const payload = items.map(item => ({ id: item.id, output: this.mapCompletionDataArg(item.output) }))
     const sql = forceTerminal
-      ? plans.deadLetterJobsByIdWithOutputs(this.config.schema, table)
-      : plans.failJobsByIdWithOutputs(this.config.schema, table)
+      ? plans.deadLetterJobsByIdWithOutputs(this.config, table)
+      : plans.failJobsByIdWithOutputs(this.config, table)
     const result = await this.db.executeSql(sql, [name, JSON.stringify(payload)])
     return this.mapCommandResponse(ids, result)
   }
@@ -828,21 +859,21 @@ class Manager extends EventEmitter implements types.EventsMixin {
   async subscribe (event: string, name: string): Promise<void> {
     assert(event, 'Missing required argument')
     assert(name, 'Missing required argument')
-    const sql = plans.subscribe(this.config.schema)
+    const sql = plans.subscribe(this.config)
     await this.db.executeSql(sql, [event, name])
   }
 
   async unsubscribe (event: string, name: string): Promise<void> {
     assert(event, 'Missing required argument')
     assert(name, 'Missing required argument')
-    const sql = plans.unsubscribe(this.config.schema)
+    const sql = plans.unsubscribe(this.config)
     await this.db.executeSql(sql, [event, name])
   }
 
   publish (event: string, data?: object, options?: types.SendOptions): Promise<void>
   async publish (event: string, data?: object, options?: types.SendOptions): Promise<void> {
     assert(event, 'Missing required argument')
-    const sql = plans.getQueuesForEvent(this.config.schema)
+    const sql = plans.getQueuesForEvent(this.config)
     const { rows } = await this.db.executeSql(sql, [event])
 
     await Promise.allSettled(rows.map(({ name }) => this.send(name, data, options)))
@@ -887,6 +918,20 @@ class Manager extends EventEmitter implements types.EventsMixin {
     return await this.createJob(result)
   }
 
+  // The sqlite dialect has no interval type, so relative startAfter strings that Postgres
+  // resolves via CAST(text AS interval) are converted to numeric seconds here. Absolute
+  // ISO ('Z'-suffixed) and numeric values pass through to SQL untouched.
+  #normalizeStartAfter<T extends { startAfter?: unknown }> (payload: T): T {
+    const value = payload.startAfter
+
+    if (this.config.dialect?.name === 'sqlite' &&
+      typeof value === 'string' && !value.endsWith('Z') && !/^-?\d+(\.\d+)?$/.test(value)) {
+      payload.startAfter = String(Attorney.parseIntervalSeconds(value)) as T['startAfter']
+    }
+
+    return payload
+  }
+
   // Shapes a validated request into the JSON job payload consumed by plans.insertJobs and
   // plans.updateJob. Shared by createJob (send) and update/upsert so all three derive
   // start_after/keep_until/singleton the same way.
@@ -909,7 +954,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       deadLetter = null
     } = options
 
-    return {
+    return this.#normalizeStartAfter({
       id,
       name,
       data,
@@ -929,7 +974,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       retryDelayMax,
       heartbeatSeconds,
       deadLetter
-    }
+    })
   }
 
   async createJob (request: types.Request): Promise<string | null> {
@@ -946,7 +991,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       throw new Error(`${plans.QUEUE_POLICIES.key_strict_fifo} queues require a singletonKey`)
     }
 
-    const sql = plans.insertJobs(this.config.schema, { table, name, returnId: true, notify: this.#notifyEnabled(notify) })
+    const sql = plans.insertJobs(this.config, { table, name, returnId: true, notify: this.#notifyEnabled(notify) })
 
     const { rows: try1 } = await db.executeSql(sql, [JSON.stringify([job])])
 
@@ -988,7 +1033,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
   // every other column untouched. Compatible with both plans.updateJob ($1 = this object) and
   // plans.insertJobs ($1 = [this object]), whose json_to_recordset treats absent keys as null.
   #toUpdatePayload (data: object | null | undefined, options: types.UpdateOptions) {
-    return {
+    return this.#normalizeStartAfter({
       data,
       priority: options.priority,
       startAfter: options.startAfter,
@@ -1005,7 +1050,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       groupTier: options.group?.tier,
       id: options.id,
       singletonKey: options.singletonKey
-    }
+    })
   }
 
   // Edits the mutable fields of not-yet-active (created/retry) jobs in place, preserving their
@@ -1027,7 +1072,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const match = opts.match ?? 'newest'
     const payload = JSON.stringify(this.#toUpdatePayload(data, opts))
 
-    const sql = plans.updateJob(this.config.schema, table, name, by, match, this.#notifyEnabled(notify))
+    const sql = plans.updateJob(this.config, table, name, by, match, this.#notifyEnabled(notify))
     const { rows } = await db.executeSql(sql, [payload])
 
     const jobs = rows.map(row => row.id)
@@ -1060,8 +1105,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
     }
 
     const notifyEnabled = this.#notifyEnabled(notify)
-    const updateSql = plans.updateJob(this.config.schema, table, name, by, match, notifyEnabled)
-    const insertSql = plans.insertJobs(this.config.schema, { table, name, returnId: true, notify: notifyEnabled })
+    const updateSql = plans.updateJob(this.config, table, name, by, match, notifyEnabled)
+    const insertSql = plans.insertJobs(this.config, { table, name, returnId: true, notify: notifyEnabled })
 
     const job = this.#toUpdatePayload(data, opts)
     const updatePayload = JSON.stringify(job)
@@ -1160,6 +1205,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
         Object.assign(rest, { groupId: group.id, groupTier: group.tier })
       }
 
+      this.#normalizeStartAfter(rest as { startAfter?: unknown })
+
       if (dataById) {
         // Best-effort spy bookkeeping, only reached when __test__enableSpies is set (a test-intended
         // opt-in, off by default). The id we assign here is exactly what the DB would otherwise
@@ -1177,7 +1224,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     // Return IDs if spy is active for this queue (needed for job tracking)
     const returnId = !!spy || !!options.returnId
 
-    const sql = plans.insertJobs(this.config.schema, { table, name, returnId, notify: this.#notifyEnabled(notify) })
+    const sql = plans.insertJobs(this.config, { table, name, returnId, notify: this.#notifyEnabled(notify) })
 
     const { rows } = await db.executeSql(sql, [JSON.stringify(insertPayload)])
 
@@ -1241,12 +1288,17 @@ class Manager extends EventEmitter implements types.EventsMixin {
     // Each insert is guarded so a skipped row (ON CONFLICT) aborts the transaction.
     const statements: string[] = []
 
+    // sqlite path: parameterized per-queue inserts collected for a JS-verified transaction
+    // below (embedded JSON literals and the division-by-zero guard don't exist there).
+    const sqliteInserts: Array<{ queueName: string, table: string, payload: unknown[] }> = []
+    const isSqliteDialect = this.config.dialect?.name === 'sqlite'
+
     for (const [queueName, queueJobs] of byQueue) {
       const { table, notify } = await this.getQueueCache(queueName)
 
       const insertPayload = queueJobs.map(j => {
         const dependencyCount = dependencyCountByRef.get(j.ref) ?? 0
-        return {
+        return this.#normalizeStartAfter({
           id: refToId[j.ref],
           name: queueName,
           data: j.data ?? null,
@@ -1268,28 +1320,68 @@ class Manager extends EventEmitter implements types.EventsMixin {
           blocked: dependencyCount > 0 || undefined,
           blocking: parentRefs.has(j.ref) || undefined,
           pendingDependencies: dependencyCount || undefined
-        }
+        })
       })
 
-      statements.push(plans.insertFlowJobs(this.config.schema, { table, name: queueName }, insertPayload))
+      if (isSqliteDialect) {
+        sqliteInserts.push({ queueName, table, payload: insertPayload })
+        continue
+      }
+
+      statements.push(plans.insertFlowJobs(this.config, { table, name: queueName }, insertPayload))
 
       // Wake workers for notify-enabled queues. Runs in the same transaction as the
       // inserts above, so it commits atomically. Blocked children and future-dated roots
       // are harmless: the fetch query filters them out, so a wake just triggers one fetch
       // that picks up whatever roots are immediately runnable.
       if (this.#notifyEnabled(notify)) {
-        statements.push(plans.notifyQueue(this.config.schema, queueName))
+        statements.push(plans.notifyQueue(this.config, queueName))
       }
     }
 
+    // sqlite: bound-parameter inserts inside a real transaction, with the all-or-nothing
+    // guard enforced in JS — SQLite returns NULL for the division-by-zero trick, so a
+    // partial flow must be detected by comparing inserted row counts instead.
+    if (isSqliteDialect) {
+      const runFlow = async (tx: types.IDatabase) => {
+        for (const { queueName, table, payload } of sqliteInserts) {
+          const sql = plans.insertJobs(this.config, { table, name: queueName, returnId: true })
+          const { rows } = await tx.executeSql(sql, [JSON.stringify(payload)])
+
+          if (rows.length !== payload.length) {
+            // The same signal the postgres guard raises, so rethrowWriteError translates it
+            // into the identical user-facing error (and the transaction rolls back).
+            throw Object.assign(new Error('flow insert skipped by a queue policy conflict'), { code: plans.PG_ERROR.divisionByZero })
+          }
+        }
+
+        if (depRows.length > 0) {
+          await tx.executeSql(plans.insertDependencies(this.config), [JSON.stringify(depRows)])
+        }
+      }
+
+      try {
+        // A caller-supplied db owns its transaction; statements compose inline there.
+        if (options.db) {
+          await runFlow(options.db)
+        } else {
+          await this.ensureTransaction(this.db, runFlow)
+        }
+      } catch (err) {
+        rethrowWriteError(err)
+      }
+
+      return refToId
+    }
+
     if (depRows.length > 0) {
-      statements.push(plans.insertDependencies(this.config.schema, depRows))
+      statements.push(plans.insertDependencies(this.config, depRows))
     }
 
     // When the caller provides a db they own the transaction; otherwise wrap the
     // statements so they run atomically as a single round-trip on any adapter.
     const db = options.db ?? this.db
-    const sql = options.db ? statements.join(';\n') : plans.transaction(statements)
+    const sql = options.db ? statements.join(';\n') : plans.transaction(this.config, statements)
 
     try {
       await db.executeSql(sql)
@@ -1330,6 +1422,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const fetchOptions = {
       ...options,
       schema: this.config.schema,
+      dialect: this.config.dialect,
       table,
       name,
       policy,
@@ -1365,6 +1458,28 @@ class Manager extends EventEmitter implements types.EventsMixin {
       }
     }
 
+    if (this.config.dialect?.name === 'sqlite') {
+      for (const row of rows) coerceSqliteJobRow(row)
+
+      // SQLite's RETURNING order is unspecified; restore the claim ordering the fetch query
+      // selected by (ISO text sorts chronologically). The hidden keys exist only when the fetch
+      // was minimal — metadata fetches sort by their own priority/createdOn columns.
+      const { priority = true, orderByCreatedOn = true } = options
+      const sortPriority = (row: any) => row.__priority ?? row.priority ?? 0
+      const sortCreatedOn = (row: any) => String(row.__createdOn ?? (row.createdOn instanceof Date ? row.createdOn.toISOString() : row.createdOn) ?? '')
+
+      rows.sort((a: any, b: any) =>
+        (priority ? sortPriority(b) - sortPriority(a) : 0) ||
+        (orderByCreatedOn ? sortCreatedOn(a).localeCompare(sortCreatedOn(b)) : 0) ||
+        String(a.id).localeCompare(String(b.id))
+      )
+
+      for (const row of rows) {
+        delete row.__priority
+        delete row.__createdOn
+      }
+    }
+
     return rows
   }
 
@@ -1390,11 +1505,15 @@ class Manager extends EventEmitter implements types.EventsMixin {
     return stringify(result)
   }
 
+  // Postgres command plans report a single { count } row; dialect variants that end in
+  // RETURNING id report one row per affected job, so fall back to the row count.
   private mapCommandResponse (ids: string[], result: { rows: any[] } | null): types.CommandResponse {
+    const rows = result?.rows
+
     return {
       jobs: ids,
       requested: ids.length,
-      affected: result && result.rows ? parseInt(result.rows[0].count) : 0
+      affected: !rows ? 0 : rows[0]?.count !== undefined ? parseInt(rows[0].count) : rows.length
     }
   }
 
@@ -1411,18 +1530,18 @@ class Manager extends EventEmitter implements types.EventsMixin {
       return this.completeDistributed(name, ids, outputData, table, db, options.includeQueued)
     }
 
-    const sql = plans.completeJobs(this.config.schema, table, options.includeQueued)
+    const sql = plans.completeJobs(this.config, table, options.includeQueued)
     const result = await db.executeSql(sql, [name, ids, outputData])
     return this.mapCommandResponse(ids, result)
   }
 
-  // Distributed complete/fail need several statements run atomically. When we own the pooled
-  // connection we pin a single client via withTransaction(); when the caller supplied their own
-  // db (options.db) we run the statements inline so they compose inside the caller's transaction
-  // rather than issuing a BEGIN/COMMIT that would commit or roll back their outer work.
+  // Distributed complete/fail need several statements run atomically. When we own the database
+  // and it can open transactions we pin one via withTransaction(); when the caller supplied their
+  // own db (options.db) we run the statements inline so they compose inside the caller's
+  // transaction rather than issuing a BEGIN/COMMIT that would commit or roll back their outer work.
   private async ensureTransaction<T> (db: types.IDatabase, fn: (tx: types.IDatabase) => Promise<T>): Promise<T> {
-    if (db === this.db && this.db._pgbdb) {
-      return this.db.withTransaction(fn)
+    if (db === this.db && typeof db.withTransaction === 'function') {
+      return db.withTransaction(fn)
     }
 
     return fn(db)
@@ -1431,7 +1550,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
   private async completeDistributed (name: string, ids: string[], outputData: any, table: string, db: types.IDatabase, includeQueued?: boolean): Promise<types.CommandResponse> {
     // Dependency unblocking is handled out of band by the background resolver (Navigator), so
     // completion is a single statement on every backend.
-    const sql = plans.completeJobsDistributed(this.config.schema, table, includeQueued)
+    const sql = plans.completeJobsDistributed(this.config, table, includeQueued)
     const { rows } = await db.executeSql(sql, [name, ids, outputData])
     return { jobs: ids, requested: ids.length, affected: rows.length }
   }
@@ -1450,7 +1569,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       return this.failDistributed(name, ids, outputData, table, db)
     }
 
-    const sql = plans.failJobsById(this.config.schema, table)
+    const sql = plans.failJobsById(this.config, table)
     const result = await db.executeSql(sql, [name, ids, outputData])
     return this.mapCommandResponse(ids, result)
   }
@@ -1460,7 +1579,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     // delete + re-insert is split into separate statements run atomically.
     return this.ensureTransaction(db, async (tx) => {
       // Step 1: Select jobs to fail
-      const selectQuery = plans.selectJobsToFailById(this.config.schema, table)
+      const selectQuery = plans.selectJobsToFailById(this.config, table)
       const { rows: jobs } = await tx.executeSql(selectQuery.text, [name, ids])
 
       if (jobs.length === 0) {
@@ -1468,7 +1587,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       }
 
       // Step 2: Delete the jobs
-      const deleteQuery = plans.deleteJobsToFail(this.config.schema, table)
+      const deleteQuery = plans.deleteJobsToFail(this.config, table)
       await tx.executeSql(deleteQuery.text, [name, ids])
 
       // Step 3: Re-insert jobs with updated state
@@ -1483,12 +1602,12 @@ class Manager extends EventEmitter implements types.EventsMixin {
   // database we select the expired/timed-out jobs, delete them, and re-insert as retry/failed in a
   // single transaction (the same split as failDistributed). Always run on the pooled connection.
   async failJobsByTimeoutDistributed (table: string, queues: string[]): Promise<number> {
-    const select = plans.selectJobsToFailByTimeout(this.config.schema, table, queues)
+    const select = plans.selectJobsToFailByTimeout(this.config, table, queues)
     return this.expireJobsDistributed(table, select, { value: { message: 'job timed out' } })
   }
 
   async failJobsByHeartbeatDistributed (table: string, queues: string[]): Promise<number> {
-    const select = plans.selectJobsToFailByHeartbeat(this.config.schema, table, queues)
+    const select = plans.selectJobsToFailByHeartbeat(this.config, table, queues)
     return this.expireJobsDistributed(table, select, { value: { message: 'job heartbeat timeout' } })
   }
 
@@ -1497,7 +1616,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
   // parent queue (decrementDependents and clearBlocking are each keyed by a single name). Returns
   // the number of parents resolved so the resolver can loop until a batch drains.
   async resolveFlowJobsDistributed (table: string, names: string[]): Promise<number> {
-    const select = plans.selectBlockingParents(this.config.schema, table, names, this.config.noSkipLocked)
+    const select = plans.selectBlockingParents(this.config, table, names, this.config.noSkipLocked)
 
     return this.ensureTransaction(this.db, async (tx) => {
       const { rows } = await tx.executeSql(select.text, select.values)
@@ -1513,8 +1632,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
         idsByName.set(row.name, list)
       }
 
-      const decrementSql = plans.decrementDependents(this.config.schema)
-      const clearSql = plans.clearBlocking(this.config.schema)
+      const decrementSql = plans.decrementDependents(this.config)
+      const clearSql = plans.clearBlocking(this.config)
 
       for (const [name, ids] of idsByName) {
         await tx.executeSql(decrementSql, [name, ids])
@@ -1534,7 +1653,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       }
 
       const ids = jobs.map(job => job.id)
-      const deleteSql = plans.deleteJobsByIds(this.config.schema, table)
+      const deleteSql = plans.deleteJobsByIds(this.config, table)
       await tx.executeSql(deleteSql.text, [ids])
 
       return this.reinsertFailedJobs(tx, table, jobs, outputData)
@@ -1545,8 +1664,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
   // preserving the flow/heartbeat columns. Shared by failDistributed and the distributed
   // maintenance expiry above. Returns the number of jobs processed.
   private async reinsertFailedJobs (tx: types.IDatabase, table: string, jobs: any[], outputData: any, outputById?: Map<string, any>, forceTerminal = false): Promise<number> {
-    const insertSql = plans.insertRetryJob(this.config.schema, table)
-    const dlqSql = plans.insertDeadLetterJob(this.config.schema)
+    const insertSql = plans.insertRetryJob(this.config, table)
+    const dlqSql = plans.insertDeadLetterJob(this.config)
     let count = 0
 
     for (const job of jobs) {
@@ -1626,7 +1745,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const db = this.assertDb(options)
     const ids = this.mapCompletionIdArg(id, 'deleteJob')
     const { table } = await this.getQueueCache(name)
-    const sql = plans.deleteJobsById(this.config.schema, table)
+    const sql = plans.deleteJobsById(this.config, table)
     const result = await db.executeSql(sql, [name, ids])
     return this.mapCommandResponse(ids, result)
   }
@@ -1648,7 +1767,36 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     const db = this.assertDb(options)
     const { table } = await this.getQueueCache(name)
-    const sql = plans.redriveJobs(this.config.schema, table)
+
+    // SQLite can't run redriveJobs' DML-in-CTE pipeline; split it into select/delete/re-insert
+    // inside a transaction (same shape as failDistributed).
+    if (this.config.dialect?.name === 'sqlite') {
+      return this.ensureTransaction(db, async (tx) => {
+        const selectSql = plans.selectJobsToRedrive(this.config, table)
+        const { rows: candidates } = await tx.executeSql(selectSql.text, [name, destination ?? null, sourceName ?? null, limit])
+
+        if (!candidates.length) {
+          return 0
+        }
+
+        const deleteSql = plans.deleteJobsByIds(this.config, table)
+        await tx.executeSql(deleteSql.text, [candidates.map((j: any) => j.id)])
+
+        const insertSql = plans.insertRedriveJob(this.config)
+        let moved = 0
+
+        for (const job of candidates) {
+          const { rows } = await tx.executeSql(insertSql, [
+            destination ?? job.sourceName, job.data, job.priority, job.singletonKey, job.heartbeatSeconds
+          ])
+          moved += rows.length
+        }
+
+        return moved
+      })
+    }
+
+    const sql = plans.redriveJobs(this.config, table)
     const result = await db.executeSql(sql, [name, destination ?? null, sourceName ?? null, limit])
     return result.rows[0].moved as number
   }
@@ -1658,7 +1806,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const db = this.assertDb(options)
     const ids = this.mapCompletionIdArg(id, 'cancel')
     const { table } = await this.getQueueCache(name)
-    const sql = plans.cancelJobs(this.config.schema, table)
+    const sql = plans.cancelJobs(this.config, table)
     const result = await db.executeSql(sql, [name, ids])
     return this.mapCommandResponse(ids, result)
   }
@@ -1668,7 +1816,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const db = this.assertDb(options)
     const ids = this.mapCompletionIdArg(id, 'resume')
     const { table } = await this.getQueueCache(name)
-    const sql = plans.resumeJobs(this.config.schema, table)
+    const sql = plans.resumeJobs(this.config, table)
     const result = await db.executeSql(sql, [name, ids])
     return this.mapCommandResponse(ids, result)
   }
@@ -1678,7 +1826,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const db = this.assertDb(options)
     const ids = this.mapCompletionIdArg(id, 'restore')
     const { table } = await this.getQueueCache(name)
-    const sql = plans.restoreJobs(this.config.schema, table)
+    const sql = plans.restoreJobs(this.config, table)
     await db.executeSql(sql, [name, ids])
   }
 
@@ -1687,7 +1835,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const db = options.db || this.db
     const ids = this.mapCompletionIdArg(id, 'retry')
     const { table } = await this.getQueueCache(name)
-    const sql = plans.retryJobs(this.config.schema, table)
+    const sql = plans.retryJobs(this.config, table)
     const result = await db.executeSql(sql, [name, ids])
     return this.mapCommandResponse(ids, result)
   }
@@ -1697,7 +1845,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const db = this.assertDb(options)
     const ids = this.mapCompletionIdArg(id, 'touch')
     const { table } = await this.getQueueCache(name)
-    const sql = plans.touchJobs(this.config.schema, table)
+    const sql = plans.touchJobs(this.config, table)
     const result = await db.executeSql(sql, [name, ids])
     return this.mapCommandResponse(ids, result)
   }
@@ -1719,7 +1867,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       await this.getQueueCache(options.deadLetter)
     }
 
-    const sql = plans.createQueue(this.config.schema, name, { ...options, policy }, this.config.noAdvisoryLocks)
+    const sql = plans.createQueue(this.config, name, { ...options, policy }, this.config.noAdvisoryLocks)
     await this.db.executeSql(sql)
     this.#evictQueueCache(name)
   }
@@ -1733,7 +1881,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       throw new Error(`getBlockedKeys is only available for ${plans.QUEUE_POLICIES.key_strict_fifo} queues`)
     }
 
-    const sql = plans.getBlockedKeys(this.config.schema, table)
+    const sql = plans.getBlockedKeys(this.config, table)
     const { rows } = await this.db.executeSql(sql, [name])
 
     return rows.map(row => row.singletonKey)
@@ -1747,7 +1895,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       }
     }
 
-    const query = plans.getQueues(this.config.schema, names)
+    const query = plans.getQueues(this.config, names)
     const { rows } = await this.db.executeSql(query.text, query.values)
 
     // CockroachDB returns integer columns as strings; normalize the numeric queue fields.
@@ -1757,6 +1905,10 @@ class Manager extends EventEmitter implements types.EventsMixin {
           if (row[field] !== undefined && row[field] !== null) row[field] = Number(row[field])
         }
       }
+    }
+
+    if (this.config.dialect?.name === 'sqlite') {
+      for (const row of rows) coerceSqliteQueueRow(row)
     }
 
     return rows
@@ -1784,7 +1936,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       notStrictEqual(name, deadLetter, 'deadLetter cannot be itself')
     }
 
-    const sql = plans.updateQueue(this.config.schema, { deadLetter })
+    const sql = plans.updateQueue(this.config, { deadLetter })
     await this.db.executeSql(sql, [name, options])
     this.#evictQueueCache(name)
   }
@@ -1807,7 +1959,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       return
     }
 
-    const sql = plans.deleteQueue(this.config.schema, name, this.config.noAdvisoryLocks)
+    const sql = plans.deleteQueue(this.config, name, this.config.noAdvisoryLocks)
     await this.db.executeSql(sql)
     this.#evictQueueCache(name)
   }
@@ -1815,20 +1967,20 @@ class Manager extends EventEmitter implements types.EventsMixin {
   async deleteQueuedJobs (name: string) {
     Attorney.assertQueueName(name)
     const { table } = await this.getQueueCache(name)
-    const sql = plans.deleteQueuedJobs(this.config.schema, table)
+    const sql = plans.deleteQueuedJobs(this.config, table)
     await this.db.executeSql(sql, [name])
   }
 
   async deleteStoredJobs (name: string) {
     Attorney.assertQueueName(name)
     const { table } = await this.getQueueCache(name)
-    const sql = plans.deleteStoredJobs(this.config.schema, table)
+    const sql = plans.deleteStoredJobs(this.config, table)
     await this.db.executeSql(sql, [name])
   }
 
   async deleteAllJobs (name?: string) {
     if (!name) {
-      const sql = plans.truncateTable(this.config.schema, 'job')
+      const sql = plans.truncateTable(this.config, 'job')
       await this.db.executeSql(sql)
       return
     }
@@ -1837,10 +1989,10 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const { table, partition } = await this.getQueueCache(name)
 
     if (partition) {
-      const sql = plans.truncateTable(this.config.schema, table)
+      const sql = plans.truncateTable(this.config, table)
       await this.db.executeSql(sql)
     } else {
-      const sql = plans.deleteAllJobs(this.config.schema, table)
+      const sql = plans.deleteAllJobs(this.config, table)
       await this.db.executeSql(sql, [name])
     }
   }
@@ -1868,7 +2020,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
         activeCount: 0,
         failedCount: 0,
         totalCount: 0,
-        capturedOn: row?.capturedOn ?? new Date()
+        // sqlite returns timestamps as ISO text; the pg driver returns Date.
+        capturedOn: typeof row?.capturedOn === 'string' ? new Date(row.capturedOn) : (row?.capturedOn ?? new Date())
       }
 
       for (const field of STATS_COUNT_FIELDS) {
@@ -1902,13 +2055,13 @@ class Manager extends EventEmitter implements types.EventsMixin {
         assert(Number.isInteger(width) && width! >= 1,
           `getQueueStats: ${mode === 'bucket' ? 'bucketSeconds' : 'maxDataPoints'} must be a positive integer`)
 
-        const sql = plans.getQueueStatsHistoryBucketed(this.config.schema, aggregate, mode)
+        const sql = plans.getQueueStatsHistoryBucketed(this.config, aggregate, mode)
         const { rows } = await this.db.executeSql(sql, [name, from, to, limit, width])
 
         return rows.map(toSnapshot)
       }
 
-      const sql = plans.getQueueStatsHistory(this.config.schema)
+      const sql = plans.getQueueStatsHistory(this.config)
       const { rows } = await this.db.executeSql(sql, [name, from, to, limit])
 
       return rows.map(toSnapshot)
@@ -1919,7 +2072,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     // off. Serve the cache while it's within budget; otherwise recompute and re-cache. { force: true }
     // applies a much tighter budget (a fresh reading), but still reuses a value computed in the last
     // minute so repeated forced calls don't each re-run the aggregate.
-    const cacheSql = plans.getQueueStatsCache(this.config.schema)
+    const cacheSql = plans.getQueueStatsCache(this.config)
     const { rows: cacheRows } = await this.db.executeSql(cacheSql, [name])
     const cached = cacheRows.at(0)
 
@@ -1944,7 +2097,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       return [toSnapshot(cached)]
     }
 
-    const refreshSql = plans.refreshQueueStats(this.config.schema, cached.table, name)
+    const refreshSql = plans.refreshQueueStats(this.config, cached.table, name)
     const { rows: refreshed } = await this.db.executeSql(refreshSql)
 
     return [toSnapshot(refreshed.at(0) ?? cached)]
@@ -1957,7 +2110,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     const { table } = await this.getQueueCache(name)
 
-    const sql = plans.getJobById(this.config.schema, table)
+    const sql = plans.getJobById(this.config, table)
 
     const result1 = await db.executeSql(sql, [name, id])
 
@@ -1970,6 +2123,10 @@ class Manager extends EventEmitter implements types.EventsMixin {
         for (const field of NUMERIC_METADATA_FIELDS) {
           if (row[field] !== undefined && row[field] !== null) row[field] = Number(row[field])
         }
+      }
+
+      if (this.config.dialect?.name === 'sqlite') {
+        coerceSqliteJobRow(row)
       }
 
       return row
@@ -1987,7 +2144,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     const { id, key, data, queued = false } = options
 
-    const sql = plans.findJobs(this.config.schema, table, {
+    const sql = plans.findJobs(this.config, table, {
       byId: id !== undefined,
       byKey: key !== undefined,
       byData: data !== undefined,
@@ -2001,13 +2158,19 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     const result = await db.executeSql(sql, values)
 
-    return result?.rows || []
+    const rows = result?.rows || []
+
+    if (this.config.dialect?.name === 'sqlite') {
+      for (const row of rows) coerceSqliteJobRow(row)
+    }
+
+    return rows
   }
 
   async getDependencies (name: string, id: string, options: types.ConnectionOptions = {}): Promise<types.DependencyRef[]> {
     Attorney.assertQueueName(name)
     const db = this.assertDb(options)
-    const sql = plans.getDependencies(this.config.schema)
+    const sql = plans.getDependencies(this.config)
     const { rows } = await db.executeSql(sql, [name, id])
     return rows.map((r: any) => ({ name: r.parentName, id: r.parentId }))
   }
@@ -2015,7 +2178,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
   async getDependents (name: string, id: string, options: types.ConnectionOptions = {}): Promise<types.DependencyRef[]> {
     Attorney.assertQueueName(name)
     const db = this.assertDb(options)
-    const sql = plans.getDependents(this.config.schema)
+    const sql = plans.getDependents(this.config)
     const { rows } = await db.executeSql(sql, [name, id])
     return rows.map((r: any) => ({ name: r.childName, id: r.childId }))
   }

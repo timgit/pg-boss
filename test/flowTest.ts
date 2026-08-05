@@ -343,7 +343,8 @@ describe('flows', function () {
     }
   })
 
-  it('should roll back flow when job creation fails', async function () {
+  // sqlite has no uuid type — the invalid-id rejection this asserts is postgres validation.
+  helper.itSqlite('should roll back flow when job creation fails', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 
     await expect(async () => {

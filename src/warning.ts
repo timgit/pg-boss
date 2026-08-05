@@ -1,11 +1,12 @@
 import type EventEmitter from 'node:events'
 import * as plans from './plans.ts'
 import type * as types from './types.ts'
+import type { Ctx } from './dialect.ts'
 
 export interface WarningContext {
   emitter: EventEmitter
   db: types.IDatabase
-  schema: string
+  schema: Ctx
   persistWarnings?: boolean
   warningEvent: string
   errorEvent: string

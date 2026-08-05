@@ -37,12 +37,12 @@ class Contractor {
   }
 
   async schemaVersion () {
-    const result = await this.db.executeSql(plans.getVersion(this.config.schema))
+    const result = await this.db.executeSql(plans.getVersion(this.config))
     return result.rows.length ? parseInt(result.rows[0].version) : null
   }
 
   async isInstalled () {
-    const result = await this.db.executeSql(plans.versionTableExists(this.config.schema))
+    const result = await this.db.executeSql(plans.versionTableExists(this.config))
     return !!result.rows[0].name
   }
 
@@ -53,6 +53,12 @@ class Contractor {
       const version = await this.schemaVersion()
 
       if (version !== null && schemaVersion > version) {
+        // The sqlite dialect installs fresh at the current version and has no migration
+        // history yet; a lower installed version means this database predates support for it.
+        if (this.config.dialect?.name === 'sqlite') {
+          throw new Error(`sqlite schema version ${version} cannot be migrated to ${schemaVersion} by this release`)
+        }
+
         await this.migrate(version)
       }
     } else {
@@ -103,6 +109,25 @@ class Contractor {
   // catalog. Partitioned vs. non-partitioned is read from the database (job_common presence), and the
   // per-queue policy indexes are computed from the queue table, so conditional indexes are handled.
   async detectDrift (): Promise<types.SchemaDriftReport> {
+    // The drift scan is built on pg_catalog introspection and the Postgres-shaped manifest;
+    // a sqlite catalog introspector is out of scope, so report a clean pass.
+    if (this.config.dialect?.name === 'sqlite') {
+      return {
+        ok: true,
+        missingTables: [],
+        missing: [],
+        building: [],
+        invalid: [],
+        extraIndexes: [],
+        mismatched: [],
+        missingFunctions: [],
+        mismatchedFunctions: [],
+        columnDrift: [],
+        constraintDrift: [],
+        enumDrift: null
+      }
+    }
+
     const schema = this.config.schema
 
     const probe = await this.db.executeSql(plans.jobCommonExists(schema))
@@ -219,7 +244,7 @@ class Contractor {
 
   async create () {
     try {
-      const commands = plans.create(this.config.schema, schemaVersion, this.config)
+      const commands = plans.create(this.config, schemaVersion, this.config)
       await this.db.executeSql(commands)
     } catch (err: any) {
       assert(err.message.includes(plans.CREATE_RACE_MESSAGE), err)

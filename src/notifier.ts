@@ -62,7 +62,7 @@ class Notifier extends EventEmitter implements types.EventsMixin {
       // Resolve the channel literal once from the shared SQL expression. LISTEN cannot take
       // an expression, so the listener needs the concrete name; the producer inlines the
       // same expression, so both sides always agree.
-      const { rows } = await this.#db.executeSql(`SELECT ${plans.notifyChannelSql(this.#config.schema)} AS channel`)
+      const { rows } = await this.#db.executeSql(`SELECT ${plans.notifyChannelSql(this.#config)} AS channel`)
       const channel = rows[0].channel
 
       this.#handle = await this.#db.listen(

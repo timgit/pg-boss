@@ -8,6 +8,7 @@ const describeRepro = describe.skipIf(
   helper.isYugabyteDb ||
   helper.isCitus ||
   helper.isPglite ||
+  helper.isSqlite ||
   helper.isDistributed
 )
 

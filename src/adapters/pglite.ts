@@ -10,6 +10,18 @@ export interface PGliteLike {
   listen?(channel: string, callback: (payload: string) => void): Promise<() => Promise<void>>
 }
 
+// One serialization chain per PGlite instance, shared across every adapter wrapping it, so a
+// withTransaction block is never interleaved with statements from another wrapper — on a single
+// connection an interloping statement would join (and be rolled back with) the open transaction.
+const locks = new WeakMap<PGliteLike, Promise<unknown>>()
+
+function serialize<T> (pglite: PGliteLike, fn: () => Promise<T>): Promise<T> {
+  const prev = locks.get(pglite) ?? Promise.resolve()
+  const next = prev.then(fn, fn)
+  locks.set(pglite, next.then(() => undefined, () => undefined))
+  return next
+}
+
 // Adapts a PGlite instance (embedded single-connection WASM PostgreSQL) to pg-boss's IDatabase.
 // PGlite is full PostgreSQL, so it needs none of the distributed compatibility flags — pair it
 // with `backend: 'pglite'`. The user owns the PGlite instance lifecycle (construction and close).
@@ -37,14 +49,34 @@ export function fromPglite (pglite: PGliteLike): IDatabase {
     return { rows: results.flatMap(r => r.rows ?? []) }
   }
 
+  const execute = async (text: string, values?: unknown[]) => {
+    try {
+      return await run(text, values)
+    } catch (err) {
+      await pglite.query('ROLLBACK').catch(() => {})
+      throw err
+    }
+  }
+
   const db: IDatabase = {
     async executeSql (text: string, values?: unknown[]) {
-      try {
-        return await run(text, values)
-      } catch (err) {
-        await pglite.query('ROLLBACK').catch(() => {})
-        throw err
-      }
+      return serialize(pglite, () => execute(text, values))
+    },
+
+    // The tx database runs statements directly — the serialization lock is already held for the
+    // whole block, and re-acquiring it from inside would deadlock.
+    async withTransaction (fn) {
+      return serialize(pglite, async () => {
+        await pglite.query('BEGIN')
+        try {
+          const result = await fn({ executeSql: (text, values) => run(text, values) })
+          await pglite.query('COMMIT')
+          return result
+        } catch (err) {
+          await pglite.query('ROLLBACK').catch(() => {})
+          throw err
+        }
+      })
     }
   }
 

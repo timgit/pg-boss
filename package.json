@@ -44,6 +44,7 @@
     "test:yugabytedb:full": "DB_TYPE=yugabytedb YUGABYTE_HOST=localhost bun run test -- --no-file-parallelism",
     "test:citus:full": "DB_TYPE=citus CITUS_HOST=localhost bun run test",
     "test:pglite": "DB_TYPE=pglite bun run test",
+    "test:sqlite": "DB_TYPE=sqlite bun run test",
     "test:bun": "DB_TYPE=bun bun run test",
     "lint:fix": "eslint . --fix",
     "cover": "bun run test -- --coverage",

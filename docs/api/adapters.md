@@ -10,7 +10,7 @@ interface Db {
 }
 ```
 
-pg-boss ships with `fromBunSql` for Bun's built-in `SQL` client and `fromPglite` for embedded PGlite (see [Database Backends](../database-backends.md#pglite-embedded)).
+pg-boss ships with `fromBunSql` for Bun's built-in `SQL` client against PostgreSQL, `fromPglite` for embedded PGlite, and `fromBunSqlite` for embedded SQLite through Bun's `SQL` client (see [Database Backends](../database-backends.md#pglite-embedded)).
 
 ## Bun
 
@@ -37,6 +37,27 @@ await sql.begin(async (tx) => {
 Bun talks to real PostgreSQL, so leave `backend` at its default `postgres` — no compatibility flags apply. As with every adapter, the `SQL` client's lifecycle is yours: pg-boss never opens or closes it.
 
 See [Bun.SQL](../database-backends.md#bunsql) for the driver-level details — LISTEN/NOTIFY, prepared statements, and multi-statement blocks.
+
+## SQLite (Bun)
+
+`fromBunSqlite` adapts Bun's `SQL` client opened on a `sqlite://` URL. It always backs a whole
+pg-boss instance (pair it with `backend: 'sqlite'`), and because pg-boss's tables live in the same
+database file as your application's, a job created through the instance's own `send()` already
+commits atomically with writes you make on the same `SQL` instance — the adapter serializes all
+statements on the single logical connection.
+
+```ts
+import { SQL } from 'bun'
+import PgBoss, { fromBunSqlite } from 'pg-boss'
+
+const sql = new SQL('sqlite://app.db')
+
+const boss = new PgBoss({ backend: 'sqlite', db: fromBunSqlite(sql) })
+await boss.start()
+```
+
+See [SQLite](../database-backends.md#sqlite-embedded-via-bunsql) for the dialect-level details and
+limitations.
 
 ## Rollback behaviour
 

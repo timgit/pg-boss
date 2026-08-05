@@ -15,7 +15,7 @@ const flowConfig = {
 // Reset the cluster cadence gate so the next background poll resolves immediately.
 async function triggerFlowPoll (schema: string) {
   const db = await helper.getDb()
-  await db.executeSql(`UPDATE ${schema}.version SET flow_on = NULL`)
+  await db.executeSql(`UPDATE ${helper.qualify(schema, 'version')} SET flow_on = NULL`)
   await db.close()
 }
 

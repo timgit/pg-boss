@@ -29,6 +29,7 @@ Postgres-compatible engines), or `embedded` (in-process PostgreSQL):
 | `yugabytedb` | distributed | Lock-free schema setup + single shared table |
 | `citus` | distributed | *(none — coordinator-local tables behave like plain PostgreSQL)* |
 | `pglite` | embedded | *(none — full PostgreSQL; see [PGlite](#pglite-embedded))* |
+| `sqlite` | embedded | A different SQL dialect entirely: every compatibility flag plus sqlite-rendered SQL (see [SQLite](#sqlite-embedded-via-bunsql)) |
 
 `backend` is the only option you set — pg-boss derives everything above from it, so a deployment
 can't end up with an inconsistent combination. The rest of this page explains each behavior (and
@@ -48,6 +49,7 @@ available (❌), pg-boss automatically switches to the compatible alternative �
 | YugabyteDB | Partial¹ | `yugabytedb` | ✅ | ✅ | ❌ | ✅ | ❌ | ✅ | ✅³ |
 | Citus | Tested² | `citus` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | PGlite | Tested | `pglite` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅⁴ |
+| SQLite | Tested | `sqlite` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 
 ¹ YugabyteDB runs the standard fetch path; non-partitioned queueing works, but partitioned queues,
 multi-master startup, and live migrations fail ([#21833](https://github.com/yugabyte/yugabyte-db/issues/21833)). See below.
@@ -437,6 +439,63 @@ queue table, so that cache grows with the number of partitioned queues — worth
 Schema installs, migrations and maintenance run as a single `BEGIN … COMMIT` block, which Bun
 refuses on a pooled connection. The adapter replays those on a reserved connection automatically —
 you do not need `max: 1`.
+
+### SQLite (embedded, via Bun.SQL)
+
+SQLite is the one supported backend that is **not** a Postgres-compatible engine — it is a
+different SQL dialect. The `sqlite` profile enables every compatibility flag, and pg-boss renders
+alternate SQL for it throughout: TEXT ISO-8601 timestamps, TEXT uuids and JSON, a
+CHECK-constrained state column, `json_each` in place of arrays, and the atomic-`UPDATE` claim in
+place of row locking. The only supported driver is
+[Bun's built-in SQL client](https://bun.com/docs/api/sql) opened on a `sqlite://` URL, reached
+through the `fromBunSqlite` adapter. Requires Bun 1.2.21+ (Bun's sqlite support in `SQL`).
+
+#### Usage
+
+```ts
+import { SQL } from 'bun'
+import PgBoss, { fromBunSqlite } from 'pg-boss'
+
+const sql = new SQL('sqlite://app.db')      // or 'sqlite://:memory:'
+
+const boss = new PgBoss({
+  backend: 'sqlite',
+  db: fromBunSqlite(sql)
+})
+
+await boss.start()
+
+await boss.createQueue('email')
+await boss.send('email', { to: 'user@example.com' })
+```
+
+Because pg-boss's tables live in the **same database file** as your application's (namespaced by a
+quoted `"schema.table"` prefix), enqueueing jobs inside your own transactions is fully atomic with
+your application writes.
+
+#### Single-process, single logical connection
+
+SQLite is a single-writer embedded database. The adapter serializes every statement and every
+transaction block internally, and it enables `PRAGMA foreign_keys = ON` and a
+`PRAGMA busy_timeout` on first use. Like PGlite, you own the instance lifecycle — construct the
+`SQL` instance before `boss.start()` and `sql.close()` it after `boss.stop()`. Running multiple
+pg-boss **processes** against the same database file is not supported; use worker concurrency
+within one process instead.
+
+#### What is different from the Postgres backends
+
+- **Fresh installs only**: the sqlite schema installs at the current version; there is no
+  migration history. Upgrading pg-boss against an older sqlite install fails with an explicit
+  error until sqlite migrations ship.
+- **No LISTEN/NOTIFY**: workers rely on polling (the correctness floor on every backend).
+- **`detectSchemaDrift()`** reports a clean pass — the drift scan is built on `pg_catalog`
+  introspection.
+- **`findJobs({ data })`** matches shallowly: every top-level key/value in the filter must match;
+  nested objects compare as JSON text rather than by deep containment.
+- **BAM** (the async-migration worker) never runs — SQLite has no `CREATE INDEX CONCURRENTLY`.
+- Relative `startAfter` strings (`'5 minutes'`) are parsed by pg-boss rather than the database;
+  the supported grammar is `N unit` sequences (`seconds/minutes/hours/days/weeks`) and
+  `HH:MM[:SS]`.
 
 ### Not supported: Aurora DSQL
 

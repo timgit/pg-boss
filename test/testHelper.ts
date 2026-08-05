@@ -1,5 +1,5 @@
 import Db from '../src/db.ts'
-import { PgBoss, fromPglite, fromBunSql } from '../src/index.ts'
+import { PgBoss, fromPglite, fromBunSql, fromBunSqlite } from '../src/index.ts'
 import { PGlite } from '@electric-sql/pglite'
 import { SQL } from 'bun'
 import { describe, it, type SuiteAPI, type TestAPI } from 'vitest'
@@ -11,6 +11,7 @@ import citusConfigJson from './config.citus.json' with { type: 'json' }
 import type { ConstructorOptions, IDatabase, FetchOptions, Job } from '../src/types.ts'
 import { delay } from '../src/tools.ts'
 import { getColumns, getConstraints, getIndexes, getFunctions } from './pgSchemaHelper.ts'
+import { SQLITE as SQLITE_DIALECT } from '../src/dialect.ts'
 
 const sha1 = (value: string): string => crypto.createHash('sha1').update(value).digest('hex')
 
@@ -47,6 +48,27 @@ function getPgliteDb (): IDatabase & { close: () => Promise<void> } {
   return { executeSql: db.executeSql, close: async () => {} }
 }
 
+// SQLite runs in-process through Bun's built-in SQL client (sqlite://:memory:) with the `sqlite`
+// backend profile — a different SQL dialect, not a Postgres-compatible engine. Each test-file
+// worker shares one in-memory database; per-test isolation comes from the quoted-name prefix
+// ("<schema>.job"), so dropSchema drops the prefixed tables. No server, so connection-string /
+// subprocess / multi-connection tests are skipped like PGlite's.
+const isSqlite = process.env.DB_TYPE === 'sqlite'
+
+// One shared in-memory SQLite database per worker, mirroring the PGlite instance below.
+let sqliteInstance: SQL | undefined
+function getSqliteInstance (): SQL {
+  sqliteInstance ??= new SQL('sqlite://:memory:')
+  return sqliteInstance
+}
+
+// A getDb()-compatible wrapper over the shared SQLite database; close() is a no-op for the same
+// reason as getPgliteDb().
+function getSqliteDb (): IDatabase & { close: () => Promise<void> } {
+  const db = fromBunSqlite(getSqliteInstance())
+  return { executeSql: db.executeSql, close: async () => {} }
+}
+
 // Bun's built-in SQL client talks to the same PostgreSQL server as the default run, reached through
 // the fromBunSql adapter instead of the pg pool. DB_TYPE=bun runs the whole suite that way, so the
 // adapter's workarounds for bun's parameter binding are exercised by every query pg-boss issues
@@ -76,29 +98,36 @@ const isDistributed = isCockroachDb || process.env.DISTRIBUTED === 'true'
 // Annotated with the exported TestAPI/SuiteAPI types: skipIf() returns vitest's internal
 // ChainableTestAPI/ChainableSuiteAPI, which can't be named in this module's emitted
 // declarations (TS4023). The exported aliases are nameable and callable the same way.
-const itPostgresOnly = it.skipIf(isCockroachDb) as TestAPI
-const describePostgresOnly = describe.skipIf(isCockroachDb) as SuiteAPI
+const itPostgresOnly = it.skipIf(isCockroachDb || isSqlite) as TestAPI
+const describePostgresOnly = describe.skipIf(isCockroachDb || isSqlite) as SuiteAPI
 
 // PGlite has no server, so tests that connect by connection string (CLI subprocess, ORM adapters)
 // or that require multiple independent connections cannot run against it. Wrap them with these.
-const itPglite = it.skipIf(isPglite) as TestAPI
-const describePglite = describe.skipIf(isPglite) as SuiteAPI
+// SQLite shares every one of those limitations, so it rides the same gates.
+const itPglite = it.skipIf(isPglite || isSqlite) as TestAPI
+const describePglite = describe.skipIf(isPglite || isSqlite) as SuiteAPI
+
+// Tests whose assertion SQL or behavior is irreducibly Postgres (raw pg constructs the qualify()
+// helper can't bridge, deep jsonb containment, pg_catalog probes). Wrap them with these.
+const itSqlite = it.skipIf(isSqlite) as TestAPI
+const describeSqlite = describe.skipIf(isSqlite) as SuiteAPI
 
 // Tests that need multiple independent role connections (e.g. one session holds a lock while
 // another polls) can't run on PGlite (single in-process instance, no network) or CockroachDB.
-const describeMultiConnectionOnly = describe.skipIf(isPglite || isCockroachDb) as SuiteAPI
+const describeMultiConnectionOnly = describe.skipIf(isPglite || isSqlite || isCockroachDb) as SuiteAPI
 
 // Tests that reach into the built-in pg pool (its size, its events) rather than going through
 // IDatabase. Every mode that supplies its own `db` bypasses that pool entirely, so skip them there.
-const itDefaultDriver = it.skipIf(isPglite || isBun) as TestAPI
+const itDefaultDriver = it.skipIf(isPglite || isSqlite || isBun) as TestAPI
 
 // LISTEN/NOTIFY is unavailable in these backends' test environments: CockroachDB never implements
 // it (noListenNotify), the YugabyteDB test container doesn't enable the early-access
 // `ysql_yb_enable_listen_notify` flag, and bun implements neither LISTEN nor NOTIFY so its adapter
-// exposes no listener. Wrap notify-behavior tests with these so the compatibility matrix skips
-// them; the producer bypass is still covered separately on every backend.
-const itListenNotify = it.skipIf(isCockroachDb || isYugabyteDb || isBun) as TestAPI
-const describeListenNotify = describe.skipIf(isCockroachDb || isYugabyteDb || isBun) as SuiteAPI
+// exposes no listener. SQLite has no LISTEN/NOTIFY at all. Wrap notify-behavior tests with these
+// so the compatibility matrix skips them; the producer bypass is still covered separately on every
+// backend.
+const itListenNotify = it.skipIf(isCockroachDb || isYugabyteDb || isBun || isSqlite) as TestAPI
+const describeListenNotify = describe.skipIf(isCockroachDb || isYugabyteDb || isBun || isSqlite) as SuiteAPI
 
 function assertTruthy<T> (value: T, message?: string): asserts value is NonNullable<T> {
   if (value == null) {
@@ -113,7 +142,7 @@ function getConnectionConfig (): any {
   const baseConfig = isCockroachDb ? cockroachConfigJson : isYugabyteDb ? yugabyteConfigJson : isCitus ? citusConfigJson : configJson
   const config: any = { ...baseConfig }
 
-  if (isPglite) {
+  if (isPglite || isSqlite) {
     config.host = undefined
     config.port = undefined
   } else if (isYugabyteDb) {
@@ -137,6 +166,10 @@ function getConnectionString (): string {
   // under PGlite via itPglite/describePglite.
   if (isPglite) return 'pglite://unsupported'
 
+  // Deliberately NOT a bun-autodetectable sqlite:// URL, so an accidentally-unskipped test can't
+  // create a stray database file.
+  if (isSqlite) return 'sqlite-unsupported://unsupported'
+
   const config = getConnectionConfig()
 
   return `postgres://${config.user}:${config.password}@${config.host}:${config.port}/${config.database}`
@@ -158,7 +191,7 @@ function getConfig (options: Partial<ConstructorOptions> & { testKey?: string } 
   // Select the backend profile, which attorney expands into the right compatibility flags
   // (CockroachDB: distributed + all no* gates; YugabyteDB: noAdvisoryLocks + noTablePartitioning
   // per yugabyte-db#21833; Citus: plain Postgres). This keeps the flag matrix in one place.
-  config.backend = isPglite ? 'pglite' : isCockroachDb ? 'cockroachdb' : isYugabyteDb ? 'yugabytedb' : isCitus ? 'citus' : 'postgres'
+  config.backend = isPglite ? 'pglite' : isSqlite ? 'sqlite' : isCockroachDb ? 'cockroachdb' : isYugabyteDb ? 'yugabytedb' : isCitus ? 'citus' : 'postgres'
 
   // The distributed runtime toggles are orthogonal to schema flags: CockroachDB's profile already
   // enables them; on plain Postgres we exercise the same code paths via DISTRIBUTED=true, which
@@ -176,6 +209,12 @@ function getConfig (options: Partial<ConstructorOptions> & { testKey?: string } 
   // Same idea for bun: a stateless adapter over the one shared SQL client.
   if (isBun && !('db' in options)) {
     config.db = fromBunSql(getBunSql())
+  }
+
+  // And for sqlite: a stateless adapter over the shared in-memory database (the adapter's
+  // serialization lock is keyed on the SQL instance, so fresh wrappers per call are safe).
+  if (isSqlite && !('db' in options)) {
+    config.db = fromBunSqlite(getSqliteInstance())
   }
 
   return Object.assign(config, options)
@@ -213,8 +252,8 @@ async function assertDbReachable (): Promise<void> {
 }
 
 async function init (): Promise<void> {
-  // PGlite is in-memory and has no concept of CREATE DATABASE; nothing to provision.
-  if (isPglite) return
+  // PGlite and SQLite are in-memory and have no concept of CREATE DATABASE; nothing to provision.
+  if (isPglite || isSqlite) return
 
   const { database } = getConfig()
 
@@ -225,6 +264,7 @@ async function init (): Promise<void> {
 
 async function getDb ({ database, debug }: { database?: string; debug?: boolean } = {}): Promise<Db> {
   if (isPglite) return getPgliteDb() as unknown as Db
+  if (isSqlite) return getSqliteDb() as unknown as Db
 
   const config = getConfig()
 
@@ -237,22 +277,47 @@ async function getDb ({ database, debug }: { database?: string; debug?: boolean 
   return db
 }
 
+// Renders a schema-qualified table reference for raw test SQL: real schema qualification on
+// Postgres-likes, the sqlite dialect's quoted-name prefix ("schema.table") on SQLite.
+function qualify (schema: string, table: string): string {
+  return isSqlite ? `"${schema}.${table}"` : `${schema}.${table}`
+}
+
+// A PlanContext for tests calling plans.* builders directly, so the rendered SQL matches the
+// active backend's dialect.
+function planCtx (schema: string): { schema: string, dialect?: typeof SQLITE_DIALECT } {
+  return { schema, dialect: isSqlite ? SQLITE_DIALECT : undefined }
+}
+
 async function dropSchema (schema: string): Promise<void> {
   const db = await getDb()
-  await db.executeSql(`DROP SCHEMA IF EXISTS ${schema} CASCADE`)
+
+  if (isSqlite) {
+    // No schemas in SQLite: the namespace is the quoted-name prefix, so drop every prefixed table
+    // (indexes go with them). FK enforcement is suspended for the drops — job/schedule reference
+    // queue, and there is no CASCADE ordering. LIKE has no wildcard risk — schema names are hex.
+    const { rows } = await db.executeSql(`SELECT name FROM sqlite_schema WHERE type = 'table' AND name LIKE '${schema}.%'`)
+    if (rows.length) {
+      const drops = rows.map((row: any) => `DROP TABLE IF EXISTS "${row.name}"`).join(';\n')
+      await db.executeSql(`PRAGMA foreign_keys = OFF;\n${drops};\nPRAGMA foreign_keys = ON`)
+    }
+  } else {
+    await db.executeSql(`DROP SCHEMA IF EXISTS ${schema} CASCADE`)
+  }
+
   await db.close()
 }
 
 async function findJobs (schema: string, where: string, values?: any[]): Promise<any> {
   const db = await getDb()
-  const jobs = await db.executeSql(`select * from ${schema}.job where ${where}`, values)
+  const jobs = await db.executeSql(`select * from ${qualify(schema, 'job')} where ${where}`, values)
   await db.close()
   return jobs
 }
 
 async function countJobs (schema: string, table: string, where: string, values?: any[]): Promise<number> {
   const db = await getDb()
-  const result = await db.executeSql(`select count(*) as count from ${schema}.${table} where ${where}`, values)
+  const result = await db.executeSql(`select count(*) as count from ${qualify(schema, table)} where ${where}`, values)
   await db.close()
   return parseFloat(result.rows[0].count)
 }
@@ -273,7 +338,9 @@ async function tryCreateDb (database: string): Promise<void> {
 // advance now(). start() wires this into every job-creating method below, so suites rarely need to
 // call it directly - reach for it only when writing jobs through the db handle instead of boss.
 async function separateTimestamps (): Promise<void> {
-  if (isPglite) await delay(2)
+  // SQLite shares the failure mode: millisecond resolution means back-to-back writes can land on
+  // the same created_on, letting random UUID order win FIFO assertions.
+  if (isPglite || isSqlite) await delay(2)
 }
 
 // Job-creating methods wrapped by start() under PGlite so each write lands on its own created_on.
@@ -295,7 +362,7 @@ async function start (options?: Partial<ConstructorOptions> & { testKey?: string
 
     // Advance the clock after each write so insertion ordering matches real Postgres without
     // sprinkling delays through every suite. See separateTimestamps.
-    if (isPglite) {
+    if (isPglite || isSqlite) {
       for (const method of JOB_WRITE_METHODS) {
         const original = boss[method].bind(boss) as (...args: unknown[]) => Promise<unknown>
         // @ts-ignore - one wrapper shape for a set of overloaded signatures
@@ -371,14 +438,19 @@ export {
   isCitus,
   isPglite,
   isBun,
+  isSqlite,
   isDistributed,
   itPostgresOnly,
   describePostgresOnly,
   itPglite,
   describePglite,
+  itSqlite,
+  describeSqlite,
   itDefaultDriver,
   describeMultiConnectionOnly,
   itListenNotify,
   describeListenNotify,
-  getSchemaDefs
+  getSchemaDefs,
+  qualify,
+  planCtx
 }

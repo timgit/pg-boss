@@ -79,7 +79,8 @@ describe('config', function () {
     expect((resolved as any).noTablePartitioning).toBe(false)
   })
 
-  it('should warn when YugabyteDB is detected without the yugabytedb backend', async function () {
+  // The version() warmup probe is skipped entirely on sqlite.
+  helper.itSqlite('should warn when YugabyteDB is detected without the yugabytedb backend', async function () {
     const realDb = await helper.getDb()
     const warnings: any[] = []
 
@@ -109,7 +110,7 @@ describe('config', function () {
     }
   })
 
-  it('should not warn about YugabyteDB when the yugabytedb backend is selected', async function () {
+  helper.itSqlite('should not warn about YugabyteDB when the yugabytedb backend is selected', async function () {
     const realDb = await helper.getDb()
     const warnings: any[] = []
 

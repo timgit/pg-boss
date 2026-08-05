@@ -87,7 +87,8 @@ describe('ops', function () {
     expect(ctx.boss.isMaintaining()).toBe(false)
   })
 
-  it('should stop bam work before stop resolves', async function () {
+  // BAM never starts on sqlite (no CREATE INDEX CONCURRENTLY).
+  helper.itSqlite('should stop bam work before stop resolves', async function () {
     ctx.boss = await helper.start({
       ...ctx.bossConfig,
       noDefault: true,

@@ -1,3 +1,5 @@
+import type { Dialect } from './dialect.ts'
+
 export type JobStates = {
   created: 'created',
   retry: 'retry',
@@ -18,6 +20,14 @@ export type Events = {
 
 export interface IDatabase {
   executeSql(text: string, values?: unknown[]): Promise<{ rows: any[] }>;
+  /**
+   * Optional transaction capability. When present, pg-boss runs its multi-statement
+   * operations (upsert, distributed complete/fail/expire, flow resolution) inside a real
+   * transaction via this method; otherwise those statements run sequentially without
+   * atomicity. The callback receives a database bound to the transaction — all statements
+   * must go through it.
+   */
+  withTransaction?<T>(fn: (tx: IDatabase) => Promise<T>): Promise<T>;
   /**
    * Optional capability for LISTEN/NOTIFY support. When present, pg-boss can hold a
    * dedicated session-pinned connection to receive notifications. The built-in pool-based
@@ -89,7 +99,7 @@ export interface SchedulingOptions {
  * Spanner, Aurora DSQL, and other targets do not have a profile yet and are not
  * supported. @see https://pgboss.io/database-backends
  */
-export type BackendProfile = 'postgres' | 'cockroachdb' | 'yugabytedb' | 'citus' | 'pglite'
+export type BackendProfile = 'postgres' | 'cockroachdb' | 'yugabytedb' | 'citus' | 'pglite' | 'sqlite'
 
 export interface MaintenanceOptions {
   supervise?: boolean;
@@ -320,6 +330,7 @@ export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, 
 /** @internal */
 export interface ResolvedConstructorOptions extends ConstructorOptions, CompatibilityFlags {
   schema: string;
+  dialect: Dialect;
   monitorIntervalSeconds: number;
   cronMonitorIntervalSeconds: number;
   maintenanceIntervalSeconds: number;

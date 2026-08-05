@@ -65,7 +65,8 @@ function waitForBamEvent (boss: any, name: string, status: string, timeoutMs = 5
   })
 }
 
-describe('bam', function () {
+// BAM never runs on sqlite (no CREATE INDEX CONCURRENTLY; the worker is gated off at start()).
+helper.describeSqlite('bam', function () {
   describe('poll error handling', function () {
     it('should emit error when poll throws', async function () {
       const errorMessage = 'test bam poll error'

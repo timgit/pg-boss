@@ -58,7 +58,7 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
     return {
       emitter: this,
       db: this.db,
-      schema: this.config.schema,
+      schema: this.config,
       persistWarnings: this.config.persistWarnings,
       warningEvent: this.events.warning,
       errorEvent: this.events.error
@@ -122,7 +122,7 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
         await delay(this.config.__test__delay_clock_skew_ms)
       }
 
-      const { rows } = await this.db.executeSql(plans.getTime())
+      const { rows } = await this.db.executeSql(plans.getTime(this.config))
 
       const local = Date.now()
 
@@ -159,7 +159,7 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
 
       this.timekeeping = true
 
-      const sql = plans.trySetCronTime(this.config.schema, this.config.cronMonitorIntervalSeconds)
+      const sql = plans.trySetCronTime(this.config, this.config.cronMonitorIntervalSeconds)
 
       if (!this.stopped) {
         const { rows } = await this.db.executeSql(sql)
@@ -211,18 +211,28 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
   }
 
   async getSchedules (name?: string, key?: string): Promise<types.Schedule[]> {
-    let sql = plans.getSchedules(this.config.schema)
+    let sql = plans.getSchedules(this.config)
     let params: unknown[] = []
 
     if (name && key !== undefined) {
-      sql = plans.getSchedulesByQueueAndKey(this.config.schema)
+      sql = plans.getSchedulesByQueueAndKey(this.config)
       params = [name, key]
     } else if (name) {
-      sql = plans.getSchedulesByQueue(this.config.schema)
+      sql = plans.getSchedulesByQueue(this.config)
       params = [name]
     }
 
     const { rows } = await this.db.executeSql(sql, params)
+
+    // sqlite returns jsonb/timestamptz columns as TEXT; re-hydrate the driver types.
+    if (this.config.dialect?.name === 'sqlite') {
+      for (const row of rows) {
+        if (typeof row.data === 'string') row.data = JSON.parse(row.data)
+        if (typeof row.options === 'string') row.options = JSON.parse(row.options)
+        if (typeof row.created_on === 'string') row.created_on = new Date(row.created_on)
+        if (typeof row.updated_on === 'string') row.updated_on = new Date(row.updated_on)
+      }
+    }
 
     return rows
   }
@@ -236,10 +246,12 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
     Attorney.assertKey(key)
 
     try {
-      const sql = plans.schedule(this.config.schema)
+      const sql = plans.schedule(this.config)
       await this.db.executeSql(sql, [name, key, cron, tz, data, options])
     } catch (err: any) {
-      if (err.message.includes('foreign key')) {
+      // Code-first so drivers that don't emit Postgres message text still match; the message
+      // fallback is case-insensitive because SQLite reports 'FOREIGN KEY constraint failed'.
+      if (err.code === '23503' || /foreign key/i.test(err.message)) {
         err.message = `Queue ${name} not found`
       }
 
@@ -248,7 +260,7 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
   }
 
   async unschedule (name: string, key = ''): Promise<void> {
-    const sql = plans.unschedule(this.config.schema)
+    const sql = plans.unschedule(this.config)
     await this.db.executeSql(sql, [name, key])
   }
 }

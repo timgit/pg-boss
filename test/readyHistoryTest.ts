@@ -14,13 +14,13 @@ describe('readyHistory', function () {
     const db = await helper.getDb()
     const readHistory = async (): Promise<number[]> => {
       const { rows } = await db.executeSql(
-        `SELECT ready_history FROM ${ctx.schema}.queue WHERE name = $1`, [queue])
-      return rows[0].ready_history
+        `SELECT ready_history FROM ${helper.qualify(ctx.schema, 'queue')} WHERE name = $1`, [queue])
+      return typeof rows[0].ready_history === 'string' ? JSON.parse(rows[0].ready_history) : rows[0].ready_history
     }
     // The monitor only runs for queues whose monitor_on is older than monitorIntervalSeconds; age it
     // so each manual supervise() actually performs a cycle.
     const makeDue = () => db.executeSql(
-      `UPDATE ${ctx.schema}.queue SET monitor_on = now() - interval '1 day' WHERE name = $1`, [queue])
+      `UPDATE ${helper.qualify(ctx.schema, 'queue')} SET monitor_on = $2 WHERE name = $1`, [queue, new Date(Date.now() - 86_400_000)])
 
     // Empty queue: the first monitor cycle records a single 0.
     await ctx.boss.supervise(queue)
@@ -36,11 +36,12 @@ describe('readyHistory', function () {
     // Capping: pre-seed an over-full window (size + 10), run one more cycle, and confirm it caps at
     // READY_HISTORY_SIZE with the newest sample prepended and the oldest dropped.
     const hi = 1000 + READY_HISTORY_SIZE + 9
+    const seeded = Array.from({ length: hi - 1000 + 1 }, (_, i) => 1000 + i)
     await db.executeSql(
-      `UPDATE ${ctx.schema}.queue
-         SET ready_history = (SELECT array_agg(g ORDER BY g) FROM generate_series(1000, ${hi}) AS g),
-             monitor_on = now() - interval '1 day'
-       WHERE name = $1`, [queue])
+      `UPDATE ${helper.qualify(ctx.schema, 'queue')}
+         SET ready_history = $2,
+             monitor_on = $3
+       WHERE name = $1`, [queue, seeded, new Date(Date.now() - 86_400_000)])
     await ctx.boss.supervise(queue)
 
     const capped = await readHistory()
