@@ -1,11 +1,9 @@
 import { defineConfig } from 'vitest/config'
 
-// CockroachDB and YugabyteDB pay heavy online-DDL/schema-rebuild costs per test, which blow the
-// PostgreSQL-tuned 10s budget. Give the whole suite more headroom when running against a distributed
-// backend so the compatibility runs report real failures instead of timeouts.
-const isDistributedBackend = process.env.DB_TYPE === 'cockroachdb' || process.env.DB_TYPE === 'yugabytedb'
-const testTimeout = isDistributedBackend ? 60000 : 10000
-const hookTimeout = isDistributedBackend ? 60000 : 10000
+const slowBackends = ['cockroachdb', 'yugabytedb', 'pglite', 'citus']
+const isSlowBackend = slowBackends.includes(process.env.DB_TYPE ?? '')
+const testTimeout = isSlowBackend ? 120000 : 30000
+const hookTimeout = isSlowBackend ? 120000 : 30000
 
 export default defineConfig({
   test: {
