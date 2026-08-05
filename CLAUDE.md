@@ -19,24 +19,24 @@ The rename has happened, but only down to the database boundary. The npm package
 - SQLite's derived `"pgboss.job"` / `"pgboss.version"` quoted identifiers, which follow from `DEFAULT_SCHEMA`.
 - The test/dev database named `pgboss` (`docker-compose.yaml` ↔ `test/config.json` ↔ `.devcontainer/setup-postgres.sh` ↔ `scripts/console.js`) and the `pgboss<sha1>` per-test schemas.
 
-`test/plansSnapshot.sql` pins the generated Postgres SQL byte-for-byte, so it is the tripwire: **if a change makes that snapshot diff, a must-not-change identifier was renamed** — fix the cause rather than regenerating with `-u`.
+`test/plansSnapshot.sql` pins the generated Postgres SQL byte-for-byte, so it is the tripwire: **if a change makes that snapshot diff, a must-not-change identifier was renamed** — fix the cause rather than regenerating with `UPDATE_SNAPSHOTS=true`.
 
 Use "bun-boss"/`BunBoss` for the project, package, and class; "pg-boss" only when naming upstream (`timgit/pg-boss`), and `pgboss` only for the schema and the identifiers above.
 
 ## Direction
 
 - **Bun-first.** Runtime, test suite, CI, and every `package.json` script are Bun. There is no compile step: the package publishes raw `src/*.ts` (`main`/`types` both point at `src/index.ts`, `files` ships `src`), so consumers are Bun too — Node refuses type stripping inside `node_modules`, and would need a bundler. TypeScript stays for type-checking only (`tsc --noEmit`).
-- **SQLite is a supported backend** (`backend: 'sqlite'` + `fromBunSqlite` over Bun's `SQL` on a `sqlite://` URL). It is a second SQL *dialect*, not another Postgres-compatible profile: `src/dialect.ts` holds the rendering primitives (`qualify`, state IN-lists, epoch time math, json_each arrays), `plans.ts` builders take a `Ctx` (bare string ⇒ postgres, so static callers are untouched), and the truly divergent shapes (install DDL, insertJobs, updateJob, cacheQueueStats) are explicit sqlite forks beside their postgres twins. `test/plansSnapshotTest.ts` pins postgres output byte-for-byte; `test/dialectTest.ts` guards the silent-correctness traps (enum ordering, timestamp shape, pg-only construct leaks). SQLite installs fresh at the current schema version (v1) — there is no migration history and no in-place upgrade. `scripts/spike-bun-sqlite.ts` documents the Bun sqlite driver behaviors the adapter depends on (run it when moving toolchains).
+- **SQLite is a supported backend** (`backend: 'sqlite'` + `fromBunSqlite` over Bun's `SQL` on a `sqlite://` URL). It is a second SQL *dialect*, not another Postgres-compatible profile: `src/dialect.ts` holds the rendering primitives (`qualify`, state IN-lists, epoch time math, json_each arrays), `plans.ts` builders take a `Ctx` (bare string ⇒ postgres, so static callers are untouched), and the truly divergent shapes (install DDL, insertJobs, updateJob, cacheQueueStats) are explicit sqlite forks beside their postgres twins. `test/plansSnapshot.test.ts` pins postgres output byte-for-byte; `test/dialect.test.ts` guards the silent-correctness traps (enum ordering, timestamp shape, pg-only construct leaks). SQLite installs fresh at the current schema version (v1) — there is no migration history and no in-place upgrade. `scripts/spike-bun-sqlite.ts` documents the Bun sqlite driver behaviors the adapter depends on (run it when moving toolchains).
 - **`ISSUES.txt` is the running log of Bun-adapter traps** (parameter-encoding fragility, the Bun 1.3.x pooled-connection leak). Read it before changing `src/adapters/bun.ts`, and keep it current when one is fixed.
 
 ## Commands
 
 Requirements: **Bun 1.4 or newer** — on 1.3.x, Bun can hand a pooled connection to a waiting query before the ROLLBACK of a failed transaction block lands, surfacing as a spurious `25P02` (see `ISSUES.txt` #3). The whole test suite and every `package.json` script run under Bun — `test/testHelper.ts` imports Bun's `SQL` at module load, so the suite cannot run under Node — and each script shells out to `bun`/`bunx`. The published library ships uncompiled TypeScript, so consuming it needs **Bun 1.3.14+** (the 1.4 floor above applies to the `fromBunSql` driver path and to working on this repo, not to consumers) and **PostgreSQL ≥ 13**. Tests need a running Postgres, supplied **either** by Docker **or** by a local install — try both. `docker compose up -d db` starts a container matching `test/config.json` (db `pgboss`, user/pass `postgres`); where Docker is unavailable, a local Postgres on `127.0.0.1:5432` with the same db/user/pass works identically (check with `pg_isready` / `PGPASSWORD=postgres psql -h localhost -U postgres -d pgboss -c 'select 1'`).
 
-- `bun run test` — the full check: `eslint . && bun --bun vitest run`. The `pretest` hook runs `bun run tsc` (`tsc --noEmit`) first, so a failing type-check fails the test command before any test runs.
-- `bun run test -- test/sendTest.ts` — run a single test file.
+- `bun run test` — the full check: `eslint . && bun test --timeout 120000`. The `pretest` hook runs `bun run tsc` (`tsc --noEmit`) first, so a failing type-check fails the test command before any test runs. Test-runner behavior (preloads for `test/hooks.ts` and the duplicate-name guard) lives in `bunfig.toml`.
+- `bun run test -- ./test/send.test.ts` — run a single test file (or directly: `bun test --timeout 120000 ./test/send.test.ts`).
 - `bun run test -- -t "substring of test name"` — run tests matching a name.
-- `bun run cover` — tests with V8 coverage.
+- `bun run cover` — tests with coverage (text + lcov).
 - `bun run tsc` — type-check only (`tsc --noEmit`). `bun run lint:fix` — autofix lint.
 
 ### CI
@@ -50,7 +50,7 @@ The suite is parameterized by `DB_TYPE` / `NO_SKIP_LOCKED_NO_CTE` env vars (reso
 - `bun run test:no-skip-locked-no-cte` — `NO_SKIP_LOCKED_NO_CTE=true`, exercises the atomic-UPDATE fetch + split-statement write paths on plain Postgres (fast, no separate DB).
 - `bun run test:bun` — `DB_TYPE=bun`, routes the whole suite through the `fromBunSql` adapter (Bun's built-in `SQL` client) against the same Postgres server, so the adapter's parameter-binding workarounds are exercised by every query rather than only the dedicated adapter tests.
 - `bun run test:pglite` — `DB_TYPE=pglite`, in-process WASM Postgres, no server. Connection-string / subprocess / multi-connection tests auto-skip.
-- `bun run test:sqlite` — `DB_TYPE=sqlite`, in-process SQLite through Bun's `SQL` client (`fromBunSqlite`), no server. This is the one backend that is a *different SQL dialect*, not Postgres-compatible: `src/dialect.ts` supplies rendering primitives to `plans.ts` (a bare-string schema arg means postgres; a `PlanContext` carries the dialect), and `test/plansSnapshotTest.ts` pins the postgres output byte-for-byte. Skips everything pglite skips plus the pg-catalog-shaped tests.
+- `bun run test:sqlite` — `DB_TYPE=sqlite`, in-process SQLite through Bun's `SQL` client (`fromBunSqlite`), no server. This is the one backend that is a *different SQL dialect*, not Postgres-compatible: `src/dialect.ts` supplies rendering primitives to `plans.ts` (a bare-string schema arg means postgres; a `PlanContext` carries the dialect), and `test/plansSnapshot.test.ts` pins the postgres output byte-for-byte. Skips everything pglite skips plus the pg-catalog-shaped tests.
 
 ## Architecture
 
@@ -89,8 +89,9 @@ Anything implementing `IDatabase` (`executeSql`, optionally `withTransaction`/`l
 
 ## Testing conventions
 
-- Test files are `test/**/*Test.ts`; compile-only type tests are `test/**/*TypeTest.ts` (run by vitest's `typecheck`).
-- **Each test derives its own Postgres schema from `sha1(testFile + testName)`** (see `test/hooks.ts`), and that schema doubles as the queue namespace. So **leaf test names must be unique within a file** — a `globalSetup` (`checkDuplicateTestNames.ts`) statically rejects duplicates, because a collision manifests as flaky cross-test interference (especially under the single shared PGlite instance), not a clean failure.
+- Test files are `test/**/*.test.ts`, run by `bun test`; compile-only type tests are `test/**/*TypeTest.ts` — deliberately outside the runner's discovery patterns, enforced solely by `tsc --noEmit` (the `pretest` hook).
+- **Every test must import `it`/`describe`/`expect` from `test/harness.ts`, never use the runner's injected globals** (an eslint `no-restricted-globals` rule enforces this). The harness `it` wraps the test body with per-test schema setup because bun's hooks receive no test context; a raw `it` would silently run against the previous test's schema.
+- **Each test derives its own Postgres schema from `sha1(testFile + testName)`** (see `test/hooks.ts`), and that schema doubles as the queue namespace. So **leaf test names must be unique within a file** — a preload (`checkDuplicateTestNames.ts`, wired in `bunfig.toml`) statically rejects duplicates, because a collision manifests as flaky cross-test interference (especially under the single shared PGlite instance), not a clean failure. A failed test's schema is kept for debugging; it is dropped on the next run of that test.
 - Use the skip helpers from `testHelper.ts` rather than raw `it` when a test depends on backend specifics: `itPostgresOnly`/`describePostgresOnly` (partitioning, covering indexes, exact PG schema shape), `itPglite`/`describePglite` (needs a real server or multiple connections).
 
 ## Docs

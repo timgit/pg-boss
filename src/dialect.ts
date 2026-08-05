@@ -3,7 +3,7 @@
 // serve both dialects. A bare string resolves to POSTGRES, which keeps every static caller
 // (construction plans) and every existing test byte-identical — the
 // postgres primitives must always return exactly the text plans.ts interpolated before the seam
-// existed (guarded by test/plansSnapshotTest.ts).
+// existed (guarded by test/plansSnapshot.test.ts).
 
 import { resolveSchemaName } from './tools.ts'
 

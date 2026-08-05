@@ -52,7 +52,7 @@ keep the docs as-is.
 
 TEST
 
-Add a `prepare: false` client to test/bunSqlTest.ts and run a fail/retry cycle
+Add a `prepare: false` client to test/bunSql.test.ts and run a fail/retry cycle
 under NO_SKIP_LOCKED_NO_CTE=true — that is the path that binds the live objects.
 
 

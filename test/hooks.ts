@@ -1,6 +1,7 @@
-import { beforeAll, beforeEach, afterEach, expect } from 'vitest'
+import { beforeAll, afterEach, expect } from 'bun:test'
 import * as helper from './testHelper.ts'
 import { assertTruthy } from './testHelper.ts'
+import { registerPerTestSetup, testState } from './harness.ts'
 import type { ConstructorOptions } from '../src/types.ts'
 import type { BunBoss } from '../src/index.ts'
 import crypto from 'node:crypto'
@@ -11,24 +12,12 @@ export interface TestContext {
   schema: string
 }
 
-// Shared test context - each test file gets its own module scope in vitest
+// Shared test context. Under bun's default single-process run every file shares this module, but
+// tests execute sequentially and the harness reassigns it per test, so there is no cross-talk.
 export const ctx: TestContext = {
   boss: undefined,
   bossConfig: {} as ConstructorOptions & { schema: string },
   schema: ''
-}
-
-// Track current test info for schema generation
-let currentTestFile: string = ''
-let currentTestName: string = ''
-
-export function setCurrentTest (file: string, name: string): void {
-  currentTestFile = file
-  currentTestName = name
-}
-
-function getTestKey (): string {
-  return currentTestFile + currentTestName
 }
 
 const sha1 = (value: string): string => crypto.createHash('sha1').update(value).digest('hex')
@@ -37,15 +26,10 @@ beforeAll(async () => {
   await helper.init()
 })
 
-beforeEach(async (context) => {
-  // Use vitest's task info for unique schema generation
-  const testFile = context.task.file?.name || 'unknown'
-  const testName = context.task.name || 'unknown'
-  currentTestFile = testFile
-  currentTestName = testName
-
-  const testKey = getTestKey()
-  const schema = `pgboss${sha1(testKey)}`
+// Runs at the start of every wrapped test body (see harness.ts) — bun's beforeEach receives no
+// test context, so the file/name pair needed for the unique schema has to come from the wrapper.
+registerPerTestSetup(async (testFile, testName) => {
+  const schema = `pgboss${sha1(testFile + testName)}`
 
   const config = helper.getConfig({ schema })
   assertTruthy(config.schema)
@@ -57,7 +41,7 @@ beforeEach(async (context) => {
   ctx.boss = undefined
 })
 
-afterEach(async (context) => {
+afterEach(async () => {
   const { boss } = ctx
 
   if (boss) {
@@ -65,8 +49,7 @@ afterEach(async (context) => {
   }
 
   // Only drop schema if test passed
-  const state = context.task.result?.state
-  if (state === 'pass') {
+  if (testState.passed) {
     await helper.dropSchema(ctx.schema)
   }
 })
