@@ -33,6 +33,7 @@ export function registerPerTestSetup (fn: PerTestSetup): void {
 }
 
 // Read by hooks.ts's afterEach to keep the schema of a failed (or timed-out) test for debugging.
+// Module-level state is safe only under bun's sequential default — make it per-test before --parallel.
 export const testState = { passed: false }
 
 function callerFile (): string {
@@ -43,7 +44,9 @@ function callerFile (): string {
       return path.relative(process.cwd(), match[1])
     }
   }
-  return 'unknown'
+  // A fallback file key would let same-named tests in different files collide on one schema, so an
+  // unrecognized stack format (a path with spaces, a bun format change) must fail at registration.
+  throw new Error(`harness could not resolve the calling test file from the stack:\n${lines.join('\n')}`)
 }
 
 function normalizeArgs (a: TestBody | TestOptions, b?: TestBody | number | TestOptions): { fn: TestBody, opts?: number | TestOptions } {
@@ -67,14 +70,14 @@ function makeIt (skipped: boolean, base: typeof bunIt | typeof bunIt.only = bunI
       testState.passed = true
     }
     if (skipped) {
-      bunIt.skip(name, body)
+      bunIt.skip(name, body, opts as never)
     } else {
       base(name, body, opts as never)
     }
   }) as TestAPI
 
   wrapped.skipIf = (condition: unknown) => makeIt(skipped || Boolean(condition), base)
-  wrapped.skip = (name, fn) => bunIt.skip(name, fn)
+  wrapped.skip = (name, fn, opts?) => bunIt.skip(name, fn, opts as never)
   wrapped.only = (name, a, b?) => makeIt(skipped, bunIt.only)(name, a as TestBody, b)
   return wrapped
 }
