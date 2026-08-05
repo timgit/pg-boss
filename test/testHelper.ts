@@ -70,11 +70,11 @@ function getBunSql (): SQL {
   return bunSqlInstance
 }
 
-// Distributed database mode is the atomic-UPDATE fetch strategy (noSkipLocked + noMultiMutationCte).
-// It is a pure runtime toggle (no schema impact) and works fine on plain PostgreSQL, so we exercise
-// the whole suite under it on Postgres via DISTRIBUTED=true — fast, reliable coverage of the
-// distributed code paths without a distributed database.
-const isDistributed = process.env.DISTRIBUTED === 'true'
+// The no-SKIP-LOCKED / no-multi-mutation-CTE runtime path (the atomic-UPDATE fetch + split-statement
+// writes the SQLite backend uses). It is a pure runtime toggle (no schema impact) and works fine on
+// plain PostgreSQL, so we exercise the whole suite under it on Postgres via NO_SKIP_LOCKED_NO_CTE=true
+// — fast, reliable coverage of those branches without SQLite's dialect.
+const isNoSkipLockedNoCte = process.env.NO_SKIP_LOCKED_NO_CTE === 'true'
 
 // Wrap tests that depend on Postgres-only features (table partitioning, covering indexes, exact PG
 // schema shape) with these so they are skipped automatically under SQLite.
@@ -165,10 +165,10 @@ function getConfig (options: Partial<ConstructorOptions> & { testKey?: string } 
   // Select the backend profile, which attorney expands into the right compatibility flags.
   config.backend = isPglite ? 'pglite' : isSqlite ? 'sqlite' : 'postgres'
 
-  // On plain Postgres we exercise the distributed code paths via DISTRIBUTED=true, which forces
-  // them through the internal __test__distributed hook (they are not publicly configurable).
-  if (isDistributed) {
-    config.__test__distributed = true
+  // On plain Postgres we exercise the no-SKIP-LOCKED / no-CTE code paths via NO_SKIP_LOCKED_NO_CTE=true,
+  // which forces them through the internal __test__noSkipLockedNoCte hook (not publicly configurable).
+  if (isNoSkipLockedNoCte) {
+    config.__test__noSkipLockedNoCte = true
   }
 
   // Route every boss built from this config at the shared in-process PGlite instance. A fresh
@@ -401,7 +401,7 @@ export {
   isPglite,
   isBun,
   isSqlite,
-  isDistributed,
+  isNoSkipLockedNoCte,
   itPostgresOnly,
   describePostgresOnly,
   itPglite,

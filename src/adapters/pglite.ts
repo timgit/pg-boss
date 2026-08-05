@@ -23,7 +23,7 @@ function serialize<T> (pglite: PGliteLike, fn: () => Promise<T>): Promise<T> {
 }
 
 // Adapts a PGlite instance (embedded single-connection WASM PostgreSQL) to bun-boss's IDatabase.
-// PGlite is full PostgreSQL, so it needs none of the distributed compatibility flags — pair it
+// PGlite is full PostgreSQL, so it needs none of the compatibility flags — pair it
 // with `backend: 'pglite'`. The user owns the PGlite instance lifecycle (construction and close).
 //
 // PGlite uses native `$1` placeholders, so no placeholder translation is needed. The one wrinkle is

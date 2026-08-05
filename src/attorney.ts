@@ -11,9 +11,9 @@ const POLICY = {
 
 // The internal compatibility flags a backend can toggle. A backend sets only the flags that differ
 // from stock PostgreSQL; everything else defaults to false. These are derived from the backend
-// profile and are not user-configurable (see resolveBackend). The seam is preserved for the SQLite
-// dialect (and future backends); the distributed-Postgres profiles that once produced these flags
-// on Postgres-rendered SQL are gone, so the four Postgres-only branches are held under __test__ hooks.
+// profile and are not user-configurable (see resolveBackend). The SQLite dialect (and future
+// backends) is the only profile that sets them; the Postgres-rendered form of each branch is kept
+// under test on a plain Postgres instance via the __test__ hooks below.
 const COMPATIBILITY_FLAGS = [
   'noSkipLocked',
   'noMultiMutationCte',
@@ -444,8 +444,8 @@ function resolveBackend (config: any) {
   // rendered branch it selects can be exercised on a plain Postgres instance. The SQLite profile is
   // the only real producer of most of these now, but SQLite renders a different dialect — these keep
   // the Postgres branches covered so the seam stays trustworthy.
-  if (config.__test__distributed) {
-    // The distributed runtime paths: atomic fetch + split mutations.
+  if (config.__test__noSkipLockedNoCte) {
+    // The two runtime paths: atomic fetch (no SKIP LOCKED) + split-statement writes (no multi-mutation CTE).
     config.noSkipLocked = true
     config.noMultiMutationCte = true
   }

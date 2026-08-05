@@ -32,11 +32,11 @@ describe('config', function () {
       expect(() => Attorney.getConfig({ connectionString: 'postgres://localhost/db', backend: 'nope' as any })).toThrow('backend must be one of')
     })
 
-    // The distributed-Postgres profiles were dropped; the seam that once produced these flags on
+    // The backend profiles were dropped; the seam that once produced these flags on
     // Postgres-rendered SQL is preserved through __test__ hooks so the branches stay testable.
     it('the __test__ hooks each force their flag on top of postgres', function () {
       const cases = {
-        __test__distributed: ['noSkipLocked', 'noMultiMutationCte'],
+        __test__noSkipLockedNoCte: ['noSkipLocked', 'noMultiMutationCte'],
         __test__noAdvisoryLocks: ['noAdvisoryLocks'],
         __test__noTablePartitioning: ['noTablePartitioning'],
         __test__noDeferrableConstraints: ['noDeferrableConstraints'],

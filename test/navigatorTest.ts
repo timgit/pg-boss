@@ -51,9 +51,9 @@ describe('navigator (flow resolver)', function () {
       expect(sql).not.toMatch(/FOR UPDATE/i)
     })
 
-    it('distributed completion does not chase dependents', function () {
-      expect(plans.completeJobsDistributed('pgboss', 'job')).not.toContain('blocking')
-      expect(plans.completeJobsWithOutputsDistributed('pgboss', 'job')).not.toContain('blocking')
+    it('split completion does not chase dependents', function () {
+      expect(plans.completeJobsNoCte('pgboss', 'job')).not.toContain('blocking')
+      expect(plans.completeJobsWithOutputsNoCte('pgboss', 'job')).not.toContain('blocking')
     })
   })
 
@@ -84,14 +84,14 @@ describe('navigator (flow resolver)', function () {
     expect(unblocked.pendingDependencies).toBe(0)
   })
 
-  it('resolves a flow through the standard (non-distributed) path', async function () {
-    // Pin the standard resolver even under DISTRIBUTED=true. getConfig() force-enables
-    // __test__distributed for the distributed CI run, which routes every flow pass through
-    // resolveFlowJobsDistributed; overriding it back to false exercises navigator.#resolveStandard
-    // + plans.resolveFlowJobs here. This is the mirror of distributedDatabaseTest pinning
-    // __test__distributed:true to cover the distributed path under the standard run, so neither
+  it('resolves a flow through the standard (single-statement) path', async function () {
+    // Pin the standard resolver even under NO_SKIP_LOCKED_NO_CTE=true. getConfig() force-enables
+    // __test__noSkipLockedNoCte for that CI run, which routes every flow pass through
+    // resolveFlowJobsNoCte; overriding it back to false exercises navigator.#resolveStandard
+    // + plans.resolveFlowJobs here. This is the mirror of noSkipLockedNoCteTest pinning
+    // __test__noSkipLockedNoCte:true to cover the split path under the standard run, so neither
     // CI flag leaves the other branch uncovered.
-    ctx.boss = await helper.start({ ...ctx.bossConfig, supervise: false, __test__distributed: false })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, supervise: false, __test__noSkipLockedNoCte: false })
 
     const flow = await ctx.boss.flow([
       { ref: 'parent', name: ctx.schema },

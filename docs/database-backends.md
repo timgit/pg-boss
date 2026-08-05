@@ -110,17 +110,17 @@ Only `SKIP LOCKED` is replaced in the fetch path — other operations still use 
 `noSkipLocked` and `noMultiMutationCte` are pure runtime behaviors (no schema impact) that work on
 plain PostgreSQL, so the project exercises them independently of any embedded backend:
 
-- **`bun run test:distributed`** — runs the **entire** test suite on Postgres with
-  `DISTRIBUTED=true`, which makes `test/testHelper.ts`'s `getConfig()` set the internal
-  `__test__distributed` hook for every test (forcing `noSkipLocked` + `noMultiMutationCte` on top of
-  the plain-Postgres schema, since the flags are not publicly configurable). Any new test is
+- **`bun run test:no-skip-locked-no-cte`** — runs the **entire** test suite on Postgres with
+  `NO_SKIP_LOCKED_NO_CTE=true`, which makes `test/testHelper.ts`'s `getConfig()` set the internal
+  `__test__noSkipLockedNoCte` hook for every test (forcing `noSkipLocked` + `noMultiMutationCte` on top
+  of the plain-Postgres schema, since the flags are not publicly configurable). Any new test is
   automatically exercised against the atomic-`UPDATE` fetch and split-statement write paths, fast
   and reliably. It runs as its own CI job.
 
-`test/distributedDatabaseTest.ts` holds the invariants the general suite cannot express
-(concurrent-fetch deduplication, `failDistributed`/`completeDistributed` composition inside a caller
+`test/noSkipLockedNoCteTest.ts` holds the invariants the general suite cannot express
+(concurrent-fetch deduplication, `failNoCte`/`completeNoCte` composition inside a caller
 transaction, and the compatibility-flag construction paths). Those cases force the runtime behavior
-via `__test__distributed`, so they run in every mode.
+via `__test__noSkipLockedNoCte`, so they run in every mode.
 
 ### Transaction isolation
 

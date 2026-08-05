@@ -36,9 +36,9 @@ WHERE IT BITES
 
 `reinsertFailedJobs` (src/manager.ts) binds `job.data` and `jobOutput` — decoded
 jsonb values, i.e. live objects — to *uncast* placeholders whose type comes from
-the column. It is on the `noMultiMutationCte` path (failDistributed and the
-distributed maintenance expiry), so it is reached under `DB_TYPE=bun
-DISTRIBUTED=true` and on CockroachDB / YugabyteDB, not on stock Postgres. Bun
+the column. It is on the `noMultiMutationCte` path (failNoCte and the split
+maintenance expiry), so through this adapter it is only reached under `DB_TYPE=bun
+NO_SKIP_LOCKED_NO_CTE=true`, not on stock Postgres. Bun
 encodes those correctly on its own — but only when prepared — and the adapter
 must keep its hands off them (see issue 2), so a blanket "stringify every object"
 would break the case that currently works.
@@ -53,7 +53,7 @@ keep the docs as-is.
 TEST
 
 Add a `prepare: false` client to test/bunSqlTest.ts and run a fail/retry cycle
-under DISTRIBUTED=true — that is the path that binds the live objects.
+under NO_SKIP_LOCKED_NO_CTE=true — that is the path that binds the live objects.
 
 
 -------------------------------------------------------------------------------
@@ -143,7 +143,7 @@ The same 1.3.x pool defect has a form that raises no error at all: under mixed
 concurrent load, a parameterized SELECT can succeed with an EMPTY result set for
 a row that is committed and visible. Instrumented runs showed `getQueues`
 returning zero rows for an existing queue during the 50-send burst in
-distributedDatabaseTest "high concurrency" (the intermittent bun-driver / '1'
+noSkipLockedNoCteTest "high concurrency" (the intermittent bun-driver / '1'
 failure), which surfaced as `Queue <name> does not exist`. Because nothing
 throws, neither the 25P02-handling above nor a retry-on-error can catch it.
 bun-boss now bounds the blast radius client-side (src/manager.ts): createQueue/

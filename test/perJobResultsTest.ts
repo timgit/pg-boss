@@ -300,13 +300,13 @@ describe('perJobResults', function () {
     expect((job.output as { message: string }).message).toBe('terminal')
   })
 
-  // The per-job complete/fail paths have a distributed variant (noMultiMutationCte) that splits the
-  // single multi-mutation CTE into a transaction of separate statements, because CockroachDB and
-  // friends reject the CTE. The standard coverage run is plain Postgres, so force that variant here
-  // with __test__distributed (the same toggle the DISTRIBUTED=true suite uses) to exercise it.
-  describe('distributed backend path (noMultiMutationCte)', function () {
-    it('settles a mixed batch of completions and failures with their own outputs (distributed path)', async function () {
-      ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: true, __test__enableSpies: true })
+  // The per-job complete/fail paths have a split variant (noMultiMutationCte) that breaks the
+  // single multi-mutation CTE into a transaction of separate statements, for backends that reject
+  // the CTE (SQLite). The standard coverage run is plain Postgres, so force that variant here
+  // with __test__noSkipLockedNoCte (the same toggle the NO_SKIP_LOCKED_NO_CTE=true suite uses) to exercise it.
+  describe('split backend path (noMultiMutationCte)', function () {
+    it('settles a mixed batch of completions and failures with their own outputs (split path)', async function () {
+      ctx.boss = await helper.start({ ...ctx.bossConfig, __test__noSkipLockedNoCte: true, __test__enableSpies: true })
       const spy = ctx.boss.getSpy(ctx.schema)
 
       const completeId = await ctx.boss.send(ctx.schema, { outcome: 'complete' }, { retryLimit: 0 })
@@ -335,7 +335,7 @@ describe('perJobResults', function () {
     })
 
     it('unblocks a dependent child when the blocking parent is completed', async function () {
-      ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: true, __test__enableSpies: true, supervise: true, flowIntervalSeconds: 1, __test__bypass_flow_interval_check: true })
+      ctx.boss = await helper.start({ ...ctx.bossConfig, __test__noSkipLockedNoCte: true, __test__enableSpies: true, supervise: true, flowIntervalSeconds: 1, __test__bypass_flow_interval_check: true })
       const spy = ctx.boss.getSpy(ctx.schema)
 
       const flow = await ctx.boss.flow([
@@ -350,7 +350,7 @@ describe('perJobResults', function () {
       expect(parentBefore.blocking).toBe(true)
 
       // Unblocking the child is done off the hot path by the background resolver (issue #824),
-      // which on a distributed backend runs the split decrementDependents + clearBlocking statements.
+      // which on a noMultiMutationCte backend runs the split decrementDependents + clearBlocking statements.
       await ctx.boss.work(ctx.schema, { batchSize: 10, perJobResults: true, pollingIntervalSeconds: 0.5 }, async jobs =>
         jobs.map(job => ({ id: job.id, status: 'completed' as const, output: { role: (job.data as { role: string }).role } })))
 
@@ -364,8 +364,8 @@ describe('perJobResults', function () {
       expect(child.state).toBe('completed')
     })
 
-    it('routes a per-job failure to the dead letter queue with its own output (distributed path)', async function () {
-      ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: true, noDefault: true, __test__enableSpies: true })
+    it('routes a per-job failure to the dead letter queue with its own output (split path)', async function () {
+      ctx.boss = await helper.start({ ...ctx.bossConfig, __test__noSkipLockedNoCte: true, noDefault: true, __test__enableSpies: true })
       const spy = ctx.boss.getSpy(ctx.schema)
 
       const deadLetter = `${ctx.schema}_dlq`
@@ -380,7 +380,7 @@ describe('perJobResults', function () {
 
       await spy.waitForJobWithId(jobId, 'failed')
 
-      // reinsertFailedJobs runs through the distributed split here, carrying the per-id output.
+      // reinsertFailedJobs runs through the split here, carrying the per-id output.
       const [dlqJob] = await helper.fetchWithRetry<{ key: string }>(ctx.boss, deadLetter)
       assertTruthy(dlqJob)
       expect(dlqJob.data.key).toBe('payload')
@@ -390,8 +390,8 @@ describe('perJobResults', function () {
       expect((dlqWithMeta.output as { message: string }).message).toBe('dlq please')
     })
 
-    it('routes a deadletter result straight to the DLQ, bypassing remaining retries (distributed path)', async function () {
-      ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: true, noDefault: true, __test__enableSpies: true })
+    it('routes a deadletter result straight to the DLQ, bypassing remaining retries (split path)', async function () {
+      ctx.boss = await helper.start({ ...ctx.bossConfig, __test__noSkipLockedNoCte: true, noDefault: true, __test__enableSpies: true })
       const spy = ctx.boss.getSpy(ctx.schema)
 
       const deadLetter = `${ctx.schema}_dlq`
@@ -423,14 +423,14 @@ describe('perJobResults', function () {
     })
 
     it('no-ops the per-job fail when the job already left the active state', async function () {
-      ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: true, __test__enableSpies: true })
+      ctx.boss = await helper.start({ ...ctx.bossConfig, __test__noSkipLockedNoCte: true, __test__enableSpies: true })
       const spy = ctx.boss.getSpy(ctx.schema)
 
       const jobId = await ctx.boss.send(ctx.schema, { key: 'payload' }, { retryLimit: 0 })
       assertTruthy(jobId)
 
       // Settle the job out of band before returning a failed disposition for it. By the time the
-      // distributed per-job fail runs, selectJobsToFailById finds no active row, so it short-circuits
+      // split per-job fail runs, selectJobsToFailById finds no active row, so it short-circuits
       // (jobs.length === 0) instead of re-inserting - modelling a job that vanished mid-batch.
       const boss = ctx.boss
       await boss.work(ctx.schema, { batchSize: 10, perJobResults: true, pollingIntervalSeconds: 0.5 }, async jobs => {
@@ -449,14 +449,14 @@ describe('perJobResults', function () {
     })
   })
 
-  // Mirror of the distributed block above. The standard (multi-mutation CTE) per-job settlement paths
+  // Mirror of the split block above. The standard (multi-mutation CTE) per-job settlement paths
   // - completeJobsWithOutputs / failJobsByIdWithOutputs / deadLetterJobsByIdWithOutputs - only run when
-  // noMultiMutationCte is off. The DISTRIBUTED=true coverage suite forces it on globally, so without
+  // noMultiMutationCte is off. The NO_SKIP_LOCKED_NO_CTE=true coverage suite forces it on globally, so without
   // pinning it off here those CTE plans show as uncovered in that run. Force the standard path with
-  // __test__distributed: false so it is exercised in both the standard and distributed coverage suites.
+  // __test__noSkipLockedNoCte: false so it is exercised in both the standard and NO_SKIP_LOCKED_NO_CTE coverage runs.
   describe('standard backend path (multiMutationCte)', function () {
     it('settles a mixed batch of completions and failures with their own outputs (standard path)', async function () {
-      ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: false, __test__enableSpies: true })
+      ctx.boss = await helper.start({ ...ctx.bossConfig, __test__noSkipLockedNoCte: false, __test__enableSpies: true })
       const spy = ctx.boss.getSpy(ctx.schema)
 
       const completeId = await ctx.boss.send(ctx.schema, { outcome: 'complete' }, { retryLimit: 0 })
@@ -485,7 +485,7 @@ describe('perJobResults', function () {
     })
 
     it('routes a deadletter result straight to the DLQ, bypassing remaining retries (standard path)', async function () {
-      ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: false, noDefault: true, __test__enableSpies: true })
+      ctx.boss = await helper.start({ ...ctx.bossConfig, __test__noSkipLockedNoCte: false, noDefault: true, __test__enableSpies: true })
       const spy = ctx.boss.getSpy(ctx.schema)
 
       const deadLetter = `${ctx.schema}_dlq`

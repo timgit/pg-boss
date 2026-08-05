@@ -27,13 +27,13 @@ describe('expire', function () {
     expect(job.state).toBe('failed')
   })
 
-  it('should expire a job through the standard (non-distributed) path', async function () {
-    // Pin the standard maintenance path even under DISTRIBUTED=true. getConfig() force-enables
-    // __test__distributed for the distributed CI run, which routes expiry through
-    // failJobsByTimeoutDistributed; overriding it back to false exercises boss.ts's standard
+  it('should expire a job through the standard (single-statement) path', async function () {
+    // Pin the standard maintenance path even under NO_SKIP_LOCKED_NO_CTE=true. getConfig() force-enables
+    // __test__noSkipLockedNoCte for that CI run, which routes expiry through
+    // failJobsByTimeoutNoCte; overriding it back to false exercises boss.ts's standard
     // failJobsByTimeout branch + plans.failJobsByTimeout here, so neither CI flag leaves the
-    // other branch uncovered (mirror of distributedDatabaseTest pinning __test__distributed:true).
-    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: false })
+    // other branch uncovered (mirror of noSkipLockedNoCteTest pinning __test__noSkipLockedNoCte:true).
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__noSkipLockedNoCte: false })
 
     const jobId = await ctx.boss.send(ctx.schema, null, { retryLimit: 0 })
     assertTruthy(jobId)

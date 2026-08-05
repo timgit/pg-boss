@@ -28,7 +28,7 @@
     "prepublishOnly": "bun install && bun run test",
     "pretest": "bun run tsc",
     "test": "eslint . && bun --bun vitest run",
-    "test:distributed": "DISTRIBUTED=true bun run test",
+    "test:no-skip-locked-no-cte": "NO_SKIP_LOCKED_NO_CTE=true bun run test",
     "test:pglite": "DB_TYPE=pglite bun run test",
     "test:sqlite": "DB_TYPE=sqlite bun run test",
     "test:bun": "DB_TYPE=bun bun run test",

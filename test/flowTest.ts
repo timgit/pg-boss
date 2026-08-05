@@ -140,7 +140,7 @@ describe('flows', function () {
     await ctx.boss.fail(ctx.schema, parentId, new Error('transient failure'))
 
     // The retried parent must still be flagged as blocking, otherwise completing it later
-    // would never unblock its dependents (regression guard for distributed fail+retry).
+    // would never unblock its dependents (regression guard for split fail+retry).
     const retriedParent = await ctx.boss.getJobById(ctx.schema, parentId)
     assertTruthy(retriedParent)
     expect(retriedParent.state).toBe(states.retry)

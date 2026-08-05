@@ -21,7 +21,7 @@ export interface IDatabase {
   executeSql(text: string, values?: unknown[]): Promise<{ rows: any[] }>;
   /**
    * Optional transaction capability. When present, bun-boss runs its multi-statement
-   * operations (upsert, distributed complete/fail/expire, flow resolution) inside a real
+   * operations (upsert, the split complete/fail/expire, flow resolution) inside a real
    * transaction via this method; otherwise those statements run sequentially without
    * atomicity. The callback receives a database bound to the transaction — all statements
    * must go through it.
@@ -170,8 +170,8 @@ export interface BackendOptions {
 export interface CompatibilityFlags {
   /**
    * Fetch jobs with an atomic `UPDATE ... RETURNING` (plus a `state < 'active'` recheck)
-   * instead of `SELECT FOR UPDATE SKIP LOCKED`, for engines where SKIP LOCKED performs
-   * poorly or skips rows (e.g. CockroachDB).
+   * instead of `SELECT FOR UPDATE SKIP LOCKED`, for backends without (or with unreliable)
+   * `SKIP LOCKED`. Set by the SQLite backend.
    */
   noSkipLocked?: boolean;
   /**
@@ -184,15 +184,14 @@ export interface CompatibilityFlags {
   noTablePartitioning?: boolean;
   /** Omit `DEFERRABLE INITIALLY DEFERRED` on foreign keys. */
   noDeferrableConstraints?: boolean;
-  /** Disable advisory locks (`pg_advisory_xact_lock`) used to coordinate schema creation and migrations. */
+  /** Disable advisory locks (`pg_advisory_xact_lock`) used to coordinate schema creation. */
   noAdvisoryLocks?: boolean;
   /** Omit the `INCLUDE` clause on covering indexes. */
   noCoveringIndexes?: boolean;
   /**
-   * Skip LISTEN/NOTIFY entirely, for engines that don't implement it (e.g. CockroachDB).
+   * Skip LISTEN/NOTIFY entirely, for backends that don't implement it (the SQLite backend sets this).
    * Suppresses both the producer-side transactional `pg_notify` (which would otherwise error
-   * on insert) and the `useListenNotify` listener. Polling delivers jobs. (YugabyteDB does
-   * support cluster-wide LISTEN/NOTIFY, so it does NOT set this flag.)
+   * on insert) and the `useListenNotify` listener. Polling delivers jobs.
    */
   noListenNotify?: boolean;
 }
@@ -240,12 +239,12 @@ export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, 
   /** @internal */
   __test__delay_clock_skew_ms?: number;
   /**
-   * Force the distributed runtime toggles (`noSkipLocked` + `noMultiMutationCte`) on top
-   * of the current backend's schema, so the distributed code paths can be exercised on a
-   * plain Postgres instance (see `npm run test:distributed`) without a distributed DB.
+   * Force the two runtime flags (`noSkipLocked` + `noMultiMutationCte`) on top of the current
+   * backend's schema, so the atomic-fetch + split-mutation code paths (the ones the SQLite backend
+   * takes) can be exercised on a plain Postgres instance (see `bun run test:no-skip-locked-no-cte`).
    * @internal
    */
-  __test__distributed?: boolean;
+  __test__noSkipLockedNoCte?: boolean;
   /**
    * Force `noAdvisoryLocks` on top of the current backend's schema, so the advisory-lock-free
    * SQL path can be exercised on a plain Postgres instance.

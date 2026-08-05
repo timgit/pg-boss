@@ -1767,7 +1767,7 @@ INSERT INTO pgboss.version(version) VALUES ('1')
     SELECT COUNT(*) FROM results
   
 
-=== completeJobsWithOutputsDistributed ===
+=== completeJobsWithOutputsNoCte ===
 
     WITH input AS (
       SELECT * FROM json_to_recordset($2::json) AS x (id uuid, output jsonb)
@@ -1783,7 +1783,7 @@ INSERT INTO pgboss.version(version) VALUES ('1')
     RETURNING j.id
   
 
-=== completeJobsDistributed ===
+=== completeJobsNoCte ===
 
     UPDATE pgboss.job
       SET completed_on = now(),
@@ -1797,7 +1797,7 @@ INSERT INTO pgboss.version(version) VALUES ('1')
     RETURNING id
   
 
-=== completeJobsDistributed includeQueued ===
+=== completeJobsNoCte includeQueued ===
 
     UPDATE pgboss.job
       SET completed_on = now(),
@@ -4191,7 +4191,7 @@ DELETE FROM pgboss.job WHERE id = ANY($1::uuid[])
       singletons_active = stats."singletonsActive",
       -- Always-on sliding window of recent ready counts for the dashboard sparkline. Prepend the
       -- newest sample and keep the newest READY_HISTORY_SIZE, stored newest-first. Built with
-      -- unnest + array_agg (not array slicing, which some distributed engines lack).
+      -- unnest + array_agg (not array slicing, which some engines lack).
       ready_history = (
         SELECT COALESCE(array_agg(v ORDER BY ord), '{}'::int[])
         FROM (
@@ -4260,7 +4260,7 @@ DELETE FROM pgboss.job WHERE id = ANY($1::uuid[])
       singletons_active = stats."singletonsActive",
       -- Always-on sliding window of recent ready counts for the dashboard sparkline. Prepend the
       -- newest sample and keep the newest READY_HISTORY_SIZE, stored newest-first. Built with
-      -- unnest + array_agg (not array slicing, which some distributed engines lack).
+      -- unnest + array_agg (not array slicing, which some engines lack).
       ready_history = (
         SELECT COALESCE(array_agg(v ORDER BY ord), '{}'::int[])
         FROM (
