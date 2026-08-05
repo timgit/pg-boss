@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pg-boss — a guided tour of the codebase</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="topbar">
+  <button id="btn-index" class="icon-btn" title="Slide index (g)" aria-label="Open slide index">
+    <span class="hamburger"></span>
+  </button>
+  <div class="crumbs">
+    <span id="crumb-chapter" class="crumb-chapter"></span>
+    <span id="crumb-title" class="crumb-title"></span>
+  </div>
+  <div class="topbar-right">
+    <span id="counter" class="counter"></span>
+    <button id="btn-help" class="icon-btn" title="Keyboard help (?)" aria-label="Keyboard help">?</button>
+  </div>
+  <div class="progress"><div id="progress-fill" class="progress-fill"></div></div>
+</header>
+
+<main id="split" class="split">
+  <section id="pane-prose" class="pane pane-prose">
+    <article id="prose" class="prose"></article>
+    <div id="quiz-slot"></div>
+  </section>
+
+  <div id="gutter" class="gutter" role="separator" aria-orientation="vertical" tabindex="-1"></div>
+
+  <section id="pane-code" class="pane pane-code">
+    <div id="panels"></div>
+  </section>
+</main>
+
+<footer class="navbar">
+  <button id="btn-prev" class="nav-btn">&larr; Prev</button>
+  <div id="dots" class="dots"></div>
+  <button id="btn-next" class="nav-btn nav-btn-primary">Next &rarr;</button>
+</footer>
+
+<div id="drawer" class="drawer" hidden>
+  <div class="drawer-panel" role="dialog" aria-label="Slide index">
+    <div class="drawer-head">
+      <h2>Contents</h2>
+      <button id="drawer-close" class="icon-btn" aria-label="Close">&times;</button>
+    </div>
+    <nav id="toc" class="toc"></nav>
+  </div>
+  <div class="drawer-scrim" data-close></div>
+</div>
+
+<div id="help" class="modal" hidden>
+  <div class="modal-panel" role="dialog" aria-label="Keyboard shortcuts">
+    <h2>Keyboard</h2>
+    <dl class="keys">
+      <dt><kbd>&rarr;</kbd> <kbd>l</kbd> <kbd>space</kbd></dt><dd>Next slide</dd>
+      <dt><kbd>&larr;</kbd> <kbd>h</kbd></dt><dd>Previous slide</dd>
+      <dt><kbd>j</kbd> / <kbd>k</kbd></dt><dd>Next / previous slide</dd>
+      <dt><kbd>g</kbd></dt><dd>Open the slide index</dd>
+      <dt><kbd>?</kbd></dt><dd>This help</dd>
+      <dt><kbd>Esc</kbd></dt><dd>Close overlays</dd>
+    </dl>
+    <p class="muted">Progress, visited slides and quiz answers are stored in this browser only.</p>
+    <button id="help-close" class="nav-btn">Close</button>
+  </div>
+  <div class="modal-scrim" data-close></div>
+</div>
+
+<script src="highlight.js"></script>
+<script src="diagrams.js"></script>
+<script src="slides.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
