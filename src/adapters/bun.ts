@@ -69,8 +69,9 @@ function promoteSqlState (err: any): any {
 // postgres do the parsing, exactly as node-postgres does today. Verified against bun 1.4.0.
 //
 // The rewrite also decides how the matching value is encoded, covering both conventions pg-boss
-// uses: pre-encoded text passes through, while a live object (complete/fail bind serialize-error's
-// output) is encoded here rather than stringified into "[object Object]" by the text binding.
+// uses: pre-encoded text passes through, while a live object (complete/fail bind the serialized-error
+// output from src/serialize-error.ts) is encoded here rather than stringified into "[object Object]"
+// by the text binding.
 const JSON_CAST_REGEX = /\$(\d+)\s*::\s*(jsonb?)\b/gi
 
 // A placeholder can also be typed as json by the operator it sits under rather than by a cast:

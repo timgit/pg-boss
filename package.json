@@ -10,8 +10,7 @@
   },
   "dependencies": {
     "cron-parser": "^5.7.0",
-    "pg": "^8.22.0",
-    "serialize-error": "^13.0.1"
+    "pg": "^8.22.0"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.4",
