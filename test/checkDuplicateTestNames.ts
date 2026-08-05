@@ -21,7 +21,8 @@ const TEST_DIR = path.dirname(fileURLToPath(import.meta.url))
 const TEST_NAME = /\b(?:it|test)(?:[A-Z]\w*)?(?:\.\w+)?\s*\(\s*(["'`])((?:\\.|(?!\1).)*)\1/g
 
 function checkDuplicateTestNames (): void {
-  const files = fs.readdirSync(TEST_DIR).filter(f => f.endsWith('.test.ts') || f.endsWith('TypeTest.ts'))
+  // Only *.test.ts — TypeTest files are compile-only and never execute, so they never make schemas.
+  const files = fs.readdirSync(TEST_DIR).filter(f => f.endsWith('.test.ts'))
   const offenders: string[] = []
 
   for (const file of files) {

@@ -14,12 +14,15 @@ interface TestOptions {
   repeats?: number
 }
 
-export interface TestAPI {
+interface TestFn {
   (name: string, fn: TestBody, opts?: number | TestOptions): void
   (name: string, opts: TestOptions, fn: TestBody): void
+}
+
+export interface TestAPI extends TestFn {
   skipIf: (condition: unknown) => TestAPI
-  skip: (name: string, fn: TestBody, opts?: number | TestOptions) => void
-  only: (name: string, fn: TestBody, opts?: number | TestOptions) => void
+  skip: TestFn
+  only: TestFn
 }
 
 export type SuiteAPI = typeof describe
@@ -33,14 +36,20 @@ export function registerPerTestSetup (fn: PerTestSetup): void {
 }
 
 // Read by hooks.ts's afterEach to keep the schema of a failed (or timed-out) test for debugging.
+// `seq` fences the flag: a timed-out body keeps running after bun abandons it, and without the
+// fence its late resolution would mark a *later* test passed and drop a schema meant to be kept.
 // Module-level state is safe only under bun's sequential default — make it per-test before --parallel.
-export const testState = { passed: false }
+export const testState = { seq: 0, passed: false }
 
 function callerFile (): string {
   const lines = (new Error().stack ?? '').split('\n')
   for (const line of lines) {
-    const match = line.match(/\(?([^\s()]+\.ts)[:)]/)
-    if (match && !match[1].endsWith('harness.ts') && !match[1].endsWith('testHelper.ts')) {
+    // Only *.test.ts frames qualify, so a helper module that wraps `it` (testHelper's skip
+    // variants, or a future one) can never become the file key for the tests it registers.
+    const match = line.match(/\(?([^\s()]+\.test\.ts)[:)]/)
+    if (match) {
+      // Relative to cwd: running from another directory changes the schema hashes, so a failed
+      // schema kept by a repo-root run is only dropped by a rerun from the same place.
       return path.relative(process.cwd(), match[1])
     }
   }
@@ -64,10 +73,13 @@ function makeIt (skipped: boolean, base: typeof bunIt | typeof bunIt.only = bunI
       if (!perTestSetup) {
         throw new Error('per-test setup not registered — is test/hooks.ts preloaded via bunfig.toml?')
       }
+      const seq = ++testState.seq
       testState.passed = false
       await perTestSetup(testFile, name)
       await fn()
-      testState.passed = true
+      if (testState.seq === seq) {
+        testState.passed = true
+      }
     }
     if (skipped) {
       bunIt.skip(name, body, opts as never)
@@ -77,8 +89,12 @@ function makeIt (skipped: boolean, base: typeof bunIt | typeof bunIt.only = bunI
   }) as TestAPI
 
   wrapped.skipIf = (condition: unknown) => makeIt(skipped || Boolean(condition), base)
-  wrapped.skip = (name, fn, opts?) => bunIt.skip(name, fn, opts as never)
-  wrapped.only = (name, a, b?) => makeIt(skipped, bunIt.only)(name, a as TestBody, b)
+  wrapped.skip = (name: string, a: TestBody | TestOptions, b?: TestBody | number | TestOptions) => {
+    const { fn, opts } = normalizeArgs(a, b)
+    bunIt.skip(name, fn, opts as never)
+  }
+  wrapped.only = (name: string, a: TestBody | TestOptions, b?: TestBody | number | TestOptions) =>
+    makeIt(skipped, bunIt.only)(name, a as TestBody, b as never)
   return wrapped
 }
 
