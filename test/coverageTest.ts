@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { ctx } from './hooks.ts'
 import * as helper from './testHelper.ts'
-import { PgBoss } from '../src/index.ts'
+import { BunBoss } from '../src/index.ts'
 import * as plans from '../src/plans.ts'
 
 // Targeted coverage for argument-shape and option branches that the feature suites
@@ -9,8 +9,8 @@ import * as plans from '../src/plans.ts'
 
 describe('argument-shape coverage', function () {
   it('constructs from a connection string', function () {
-    const boss = new PgBoss(helper.getConnectionString())
-    expect(boss).toBeInstanceOf(PgBoss)
+    const boss = new BunBoss(helper.getConnectionString())
+    expect(boss).toBeInstanceOf(BunBoss)
   })
 
   it('work() accepts null options and a boolean priority option', async function () {

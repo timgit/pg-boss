@@ -2,13 +2,13 @@ import { it, afterEach } from 'vitest'
 import { SQL } from 'bun'
 import { ctx, expect } from './hooks.ts'
 import * as helper from './testHelper.ts'
-import { PgBoss, fromBunSql } from '../src/index.ts'
+import { BunBoss, fromBunSql } from '../src/index.ts'
 
 // Bun's SQL client speaks the wire protocol, so it needs a real server — skipped under PGlite.
 const describe = helper.describePglite
 
 // End-to-end coverage of fromBunSql against a real PostgreSQL server, in both of its shapes: as the
-// connection for a whole pg-boss instance (replacing the default pg pool) and as a per-operation
+// connection for a whole bun-boss instance (replacing the default pg pool) and as a per-operation
 // handle inside a sql.begin() transaction. This is where the workarounds the adapter carries for
 // bun's parameter binding are actually proven — the unit tests in bunAdapterTest.ts only assert the
 // shape of what gets sent.
@@ -26,8 +26,8 @@ describe('bun sql', () => {
     return client
   }
 
-  async function startBoss (sql: SQL): Promise<PgBoss> {
-    const boss = new PgBoss({ ...ctx.bossConfig, db: fromBunSql(sql) })
+  async function startBoss (sql: SQL): Promise<BunBoss> {
+    const boss = new BunBoss({ ...ctx.bossConfig, db: fromBunSql(sql) })
     boss.on('error', () => {})
     await boss.start()
     ctx.boss = boss
@@ -170,10 +170,10 @@ describe('bun sql', () => {
 
   it('falls back to polling when useListenNotify is enabled', async () => {
     // Bun implements neither LISTEN nor NOTIFY, so the notifier must warn and keep polling rather
-    // than fail start(). The pg_notify pg-boss inlines into inserts is evaluated by postgres and
+    // than fail start(). The pg_notify bun-boss inlines into inserts is evaluated by postgres and
     // still fires, so a queue can stay opted in.
     const warnings: any[] = []
-    const boss = new PgBoss({ ...ctx.bossConfig, db: fromBunSql(getSql()), useListenNotify: true })
+    const boss = new BunBoss({ ...ctx.bossConfig, db: fromBunSql(getSql()), useListenNotify: true })
     boss.on('error', () => {})
     boss.on('warning', warning => warnings.push(warning))
 

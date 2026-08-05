@@ -1,19 +1,19 @@
 # Database Backends
 
-pg-boss runs on stock single-node PostgreSQL by default. It also supports the embedded WASM build
+bun-boss runs on stock single-node PostgreSQL by default. It also supports the embedded WASM build
 [PGlite](https://pglite.dev) and an embedded [SQLite](#sqlite-embedded-via-bunsql) backend. You
 select one with the `backend` option, which applies all the compatibility behavior that backend
 needs.
 
 ## Backend profiles
 
-`backend` is the **only** option you set — it selects the database pg-boss is running against and
+`backend` is the **only** option you set — it selects the database bun-boss is running against and
 turns on the right combination of internal compatibility behavior for it:
 
 ```typescript
-import PgBoss from 'pg-boss'
+import { BunBoss } from 'bun-boss'
 
-const boss = new PgBoss({
+const boss = new BunBoss({
   connectionString: 'postgresql://localhost:5432/pgboss',
   backend: 'postgres'
 })
@@ -27,14 +27,14 @@ Each backend has a *kind* — `standard` (stock PostgreSQL) or `embedded` (in-pr
 | `pglite` | embedded | *(none — full PostgreSQL; see [PGlite](#pglite-embedded))* |
 | `sqlite` | embedded | A different SQL dialect entirely: every compatibility flag plus sqlite-rendered SQL (see [SQLite](#sqlite-embedded-via-bunsql)) |
 
-`backend` is the only option you set — pg-boss derives everything above from it, so a deployment
+`backend` is the only option you set — bun-boss derives everything above from it, so a deployment
 can't end up with an inconsistent combination. The rest of this page explains each behavior (and
 names the internal flag it maps to, for anyone reading the source).
 
 ## Database compatibility
 
 The matrix shows which PostgreSQL features each backend supports (✅). Where a feature isn't
-available (❌), pg-boss automatically switches to the compatible alternative — see the
+available (❌), bun-boss automatically switches to the compatible alternative — see the
 [compatibility flags](#compatibility-flags) below.
 
 | Database | Status | `backend` | SKIP LOCKED | Multi-mutation CTEs | Table partitioning | Deferrable constraints | Advisory locks | Covering indexes | LISTEN/NOTIFY |
@@ -69,8 +69,8 @@ choices applied at install time.
 
 `noSkipLocked` and `noMultiMutationCte` address two unrelated limitations:
 
-- **`noSkipLocked`** is about the *fetch* path. By default pg-boss claims jobs with `SELECT FOR
-  UPDATE SKIP LOCKED`. Where a backend can't rely on `SKIP LOCKED`, pg-boss instead claims jobs with
+- **`noSkipLocked`** is about the *fetch* path. By default bun-boss claims jobs with `SELECT FOR
+  UPDATE SKIP LOCKED`. Where a backend can't rely on `SKIP LOCKED`, bun-boss instead claims jobs with
   an atomic `UPDATE ... RETURNING` and a `state < 'active'` recheck:
 
   ```sql
@@ -97,7 +97,7 @@ choices applied at install time.
   candidate rows, all attempt the `UPDATE`, one wins, and the rest receive empty results and poll
   again. That is acceptable when processing time >> fetch time (typical for job queues).
 
-- **`noMultiMutationCte`** is about the *write* path. pg-boss's `complete`, `fail`, and supervisor
+- **`noMultiMutationCte`** is about the *write* path. bun-boss's `complete`, `fail`, and supervisor
   expiry normally run as a single CTE that mutates more than one table at once (e.g. completing a
   job and unblocking its flow dependents). Where that isn't available, those operations run as
   separate statements inside one transaction instead, so a job can't be lost between them.
@@ -140,7 +140,7 @@ special options needed.
 ### PGlite (embedded)
 
 [PGlite](https://pglite.dev) is a complete PostgreSQL build packaged as a WASM library that runs
-embedded in your process — no separate database server. Because PGlite is real PostgreSQL, pg-boss
+embedded in your process — no separate database server. Because PGlite is real PostgreSQL, bun-boss
 runs against it with **no compatibility flags**: declarative partitioning, deferrable constraints,
 advisory locks, covering indexes, and `SELECT FOR UPDATE SKIP LOCKED` all work. It is embedded
 single-connection PostgreSQL, reached through the `@electric-sql/pglite` client rather than the `pg`
@@ -148,7 +148,7 @@ connection pool, via the `fromPglite` adapter.
 
 #### Usage
 
-Install PGlite alongside pg-boss:
+Install PGlite alongside bun-boss:
 
 ```bash
 npm install @electric-sql/pglite
@@ -158,11 +158,11 @@ Construct a PGlite instance, wrap it with `fromPglite`, and select the `pglite` 
 
 ```ts
 import { PGlite } from '@electric-sql/pglite'
-import PgBoss, { fromPglite } from 'pg-boss'
+import { BunBoss, fromPglite } from 'bun-boss'
 
 const pglite = new PGlite('idb://my-app')   // or new PGlite() for in-memory
 
-const boss = new PgBoss({
+const boss = new BunBoss({
   backend: 'pglite',
   db: fromPglite(pglite)
 })
@@ -179,7 +179,7 @@ await boss.complete('email', job.id)
 
 #### Lifecycle is yours to manage
 
-Unlike the default `pg`-pool connection, pg-boss does **not** open or close the PGlite instance —
+Unlike the default `pg`-pool connection, bun-boss does **not** open or close the PGlite instance —
 you own it. Construct it before `boss.start()` and close it after `boss.stop()`:
 
 ```ts
@@ -187,12 +187,12 @@ await boss.stop()
 await pglite.close()
 ```
 
-This mirrors the [ORM transaction adapters](api/adapters.md): pg-boss only calls `executeSql` on the
+This mirrors the [ORM transaction adapters](api/adapters.md): bun-boss only calls `executeSql` on the
 object you provide.
 
 #### Single-connection considerations
 
-PGlite serializes everything through one connection. pg-boss's background loops (maintenance,
+PGlite serializes everything through one connection. bun-boss's background loops (maintenance,
 scheduling, monitoring) and your workers all share that single connection, so queries are processed
 one at a time. This is fine functionally — PGlite queues requests internally — but you should keep
 concurrency modest:
@@ -204,7 +204,7 @@ concurrency modest:
 #### Persistence
 
 PGlite supports in-memory, IndexedDB (browser), and filesystem persistence — see the
-[PGlite docs](https://pglite.dev/docs/filesystems). pg-boss treats all of them identically; the job
+[PGlite docs](https://pglite.dev/docs/filesystems). bun-boss treats all of them identically; the job
 schema and data persist wherever the PGlite instance stores its data directory.
 
 ### Bun.SQL
@@ -231,11 +231,11 @@ Bun's SQL client is built in — nothing to install.
 
 ```ts
 import { SQL } from 'bun'
-import PgBoss, { fromBunSql } from 'pg-boss'
+import { BunBoss, fromBunSql } from 'bun-boss'
 
 const sql = new SQL('postgres://user:pass@localhost:5432/mydb')
 
-const boss = new PgBoss({ db: fromBunSql(sql) })
+const boss = new BunBoss({ db: fromBunSql(sql) })
 
 await boss.start()
 
@@ -248,7 +248,7 @@ The same adapter also scopes a single operation to a `sql.begin()` transaction �
 
 #### Lifecycle is yours to manage
 
-pg-boss does **not** open or close the `SQL` client — you own it. Construct it before
+bun-boss does **not** open or close the `SQL` client — you own it. Construct it before
 `boss.start()` and close it after `boss.stop()`:
 
 ```ts
@@ -264,7 +264,7 @@ The adapter therefore exposes no listener, and `useListenNotify: true` emits a
 `listen_notify_unavailable` warning and continues with polling. Nothing is lost but wake-up latency —
 a NOTIFY is only ever a hint that makes workers poll sooner, never a correctness requirement.
 
-The producer side is unaffected: the `pg_notify` pg-boss inlines into inserts is evaluated by
+The producer side is unaffected: the `pg_notify` bun-boss inlines into inserts is evaluated by
 PostgreSQL itself, so a queue can stay opted into `notify` and a separate `pg`-backed instance can
 still listen for it.
 
@@ -274,7 +274,7 @@ Bun derives each parameter's wire encoding from the type PostgreSQL reports for 
 which only happens when statements are prepared. Under `prepare: false`, an object bound to an
 uncast jsonb placeholder is sent in a form PostgreSQL rejects, so that option is not supported.
 
-Bun caches prepared statements per connection, keyed by query text. pg-boss generates its SQL per
+Bun caches prepared statements per connection, keyed by query text. bun-boss generates its SQL per
 queue table, so that cache grows with the number of partitioned queues — worth watching in
 `pg_prepared_statements` on deployments with very many of them.
 
@@ -287,7 +287,7 @@ need `max: 1`.
 ### SQLite (embedded, via Bun.SQL)
 
 SQLite is the one supported backend that is **not** a Postgres-compatible engine — it is a
-different SQL dialect. The `sqlite` profile enables every compatibility flag, and pg-boss renders
+different SQL dialect. The `sqlite` profile enables every compatibility flag, and bun-boss renders
 alternate SQL for it throughout: TEXT ISO-8601 timestamps, TEXT uuids and JSON, a
 CHECK-constrained state column, `json_each` in place of arrays, and the atomic-`UPDATE` claim in
 place of row locking. The only supported driver is
@@ -298,11 +298,11 @@ through the `fromBunSqlite` adapter. Requires Bun 1.2.21+ (Bun's sqlite support 
 
 ```ts
 import { SQL } from 'bun'
-import PgBoss, { fromBunSqlite } from 'pg-boss'
+import { BunBoss, fromBunSqlite } from 'bun-boss'
 
 const sql = new SQL('sqlite://app.db')      // or 'sqlite://:memory:'
 
-const boss = new PgBoss({
+const boss = new BunBoss({
   backend: 'sqlite',
   db: fromBunSqlite(sql)
 })
@@ -313,7 +313,7 @@ await boss.createQueue('email')
 await boss.send('email', { to: 'user@example.com' })
 ```
 
-Because pg-boss's tables live in the **same database file** as your application's (namespaced by a
+Because bun-boss's tables live in the **same database file** as your application's (namespaced by a
 quoted `"schema.table"` prefix), a job enqueued inside a transaction opened through the adapter's
 `withTransaction` (passed as the operation's `db`) commits atomically with your application
 writes — see [Database Adapters](api/adapters.md#sqlite-bun) for the pattern.
@@ -324,18 +324,18 @@ SQLite is a single-writer embedded database. The adapter serializes every statem
 transaction block internally, and it enables `PRAGMA foreign_keys = ON` and a
 `PRAGMA busy_timeout` on first use. Like PGlite, you own the instance lifecycle — construct the
 `SQL` instance before `boss.start()` and `sql.close()` it after `boss.stop()`. Running multiple
-pg-boss **processes** against the same database file is not supported; use worker concurrency
+bun-boss **processes** against the same database file is not supported; use worker concurrency
 within one process instead.
 
 #### What is different from the Postgres backends
 
 - **Fresh installs only**: the sqlite schema installs at the current version; there is no
-  migration history. Upgrading pg-boss against an older sqlite install fails with an explicit
+  migration history. Upgrading bun-boss against an older sqlite install fails with an explicit
   error until sqlite migrations ship.
 - **No LISTEN/NOTIFY**: workers rely on polling (the correctness floor on every backend).
 - **`findJobs({ data })`** matches shallowly: every top-level key/value in the filter must match;
   nested objects compare as JSON text rather than by deep containment.
-- Relative `startAfter` strings (`'5 minutes'`) are parsed by pg-boss rather than the database;
+- Relative `startAfter` strings (`'5 minutes'`) are parsed by bun-boss rather than the database;
   the supported grammar is `N unit` sequences (`seconds/minutes/hours/days/weeks`) and
   `HH:MM[:SS]`.
 - **Flows** verify all-or-nothing creation in code inside a real transaction rather than via
@@ -372,7 +372,7 @@ await boss.work('my-queue', {
 
 ### When to use alternative systems
 
-**Use pg-boss** (database-backed queue) when:
+**Use bun-boss** (database-backed queue) when:
 - Throughput is under ~10,000 jobs/second (PostgreSQL handles this comfortably)
 - Processing time >> fetch time (typical for background jobs)
 - Transactional consistency with your data is required
@@ -394,7 +394,7 @@ These apply when running with `noSkipLocked` (the atomic-UPDATE fetch path).
 
 ### Cache staleness
 
-pg-boss caches queue metadata (including active singleton keys) with a configurable refresh interval
+bun-boss caches queue metadata (including active singleton keys) with a configurable refresh interval
 (`queueCacheIntervalSeconds`, default 60s). Under high concurrency:
 
 - Two workers may both see stale cache showing no active singletons
@@ -417,7 +417,7 @@ acceptable — workers simply poll again.
 
 ### Compatibility notes
 
-- All pg-boss features (priorities, groups, singletons, retries, etc.) work on every backend.
+- All bun-boss features (priorities, groups, singletons, retries, etc.) work on every backend.
 - The atomic-`UPDATE` fetch (`noSkipLocked`) offers no benefit on stock PostgreSQL — under contention
   workers receive empty results instead of efficiently skipping to unlocked rows — which is why it is
   only enabled for backends that need it, never on `backend: 'postgres'`.

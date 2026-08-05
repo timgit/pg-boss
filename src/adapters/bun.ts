@@ -1,6 +1,6 @@
 import type { IDatabase } from '../types.ts'
 
-// Minimal structural types for Bun's built-in SQL client (`import { SQL } from 'bun'`), so pg-boss
+// Minimal structural types for Bun's built-in SQL client (`import { SQL } from 'bun'`), so bun-boss
 // takes no dependency on bun types and still type-checks under node. A pooled `SQL` client and the
 // transaction object handed to `sql.begin()` are interchangeable here — both expose `unsafe()` —
 // which is what lets one factory serve the driver-level and per-transaction use cases.
@@ -21,13 +21,13 @@ export interface BunReservedLike {
 }
 
 // Bun refuses to run explicit transaction control on a pooled connection, since the next statement
-// could land on a different connection. pg-boss issues such blocks from plans.transaction()/locked()
+// could land on a different connection. bun-boss issues such blocks from plans.transaction()/locked()
 // for schema install, migrations and maintenance, so those get retried on a reserved connection.
 const UNSAFE_TRANSACTION = 'ERR_POSTGRES_UNSAFE_TRANSACTION'
 
 // Only a pooled handle may be pinned with reserve(). A reserved connection and a transaction scope
 // are already pinned, and reserving from inside a transaction would quietly run the block on a
-// different connection — committing it independently of the caller's work. pg-boss never sends a
+// different connection — committing it independently of the caller's work. bun-boss never sends a
 // transaction block through a caller-supplied handle, so that shape fails loudly instead.
 function isPooled (sql: BunSqlLike): boolean {
   return typeof sql.reserve === 'function' && sql.release === undefined && sql.savepoint === undefined
@@ -41,7 +41,7 @@ function isPooled (sql: BunSqlLike): boolean {
 const TRANSACTION_REGEX = /\bBEGIN\b|\bSTART\s+TRANSACTION\b/i
 
 // Bun puts its own error class on `code` and the postgres SQLSTATE on `errno`, where every other
-// driver pg-boss supports puts the SQLSTATE on `code`. pg-boss keys real behavior on it — a fetch
+// driver bun-boss supports puts the SQLSTATE on `code`. bun-boss keys real behavior on it — a fetch
 // tolerates 23505 from a queue policy's unique index rather than failing (manager.ts), and a job
 // insert translates the 22012 its ON CONFLICT guard raises into an actionable message — so the
 // SQLSTATE is promoted onto `code` and bun's class kept on `bunCode`.
@@ -63,14 +63,15 @@ function promoteSqlState (err: any): any {
   return err
 }
 
-// Bun JSON.stringifys a json/jsonb parameter, but pg-boss binds most of those already encoded, so
+// Bun JSON.stringifys a json/jsonb parameter, but bun-boss binds most of those already encoded, so
 // they arrive double-encoded and `json_to_recordset($1::json)` fails on the scalar. Casting through
 // text (`$1::text::json`, semantically identical for postgres) makes bun pass the value through and
 // postgres do the parsing, exactly as node-postgres does today. Verified against bun 1.4.0.
 //
-// The rewrite also decides how the matching value is encoded, covering both conventions pg-boss
-// uses: pre-encoded text passes through, while a live object (complete/fail bind serialize-error's
-// output) is encoded here rather than stringified into "[object Object]" by the text binding.
+// The rewrite also decides how the matching value is encoded, covering both conventions bun-boss
+// uses: pre-encoded text passes through, while a live object (complete/fail bind the serialized-error
+// output from src/serialize-error.ts) is encoded here rather than stringified into "[object Object]"
+// by the text binding.
 const JSON_CAST_REGEX = /\$(\d+)\s*::\s*(jsonb?)\b/gi
 
 // A placeholder can also be typed as json by the operator it sits under rather than by a cast:
@@ -106,8 +107,8 @@ function toJsonParam (value: unknown): unknown {
 
 // Bun serializes an array parameter by joining its elements with commas and no braces, which
 // postgres rejects as a malformed array literal — so every `= ANY($n::uuid[])` and `$n::text[]`
-// query pg-boss emits fails. Encode the array literal ourselves, the way node-postgres does; bun
-// passes a string through untouched and the explicit ::type[] cast pg-boss always writes gives
+// query bun-boss emits fails. Encode the array literal ourselves, the way node-postgres does; bun
+// passes a string through untouched and the explicit ::type[] cast bun-boss always writes gives
 // postgres the element type. A literal string keeps working if bun later binds arrays natively.
 // Verified against bun 1.4.0.
 function toArrayLiteral (values: readonly unknown[]): string {
@@ -185,23 +186,23 @@ async function executeReserved (sql: BunSqlLike, text: string): Promise<any> {
 }
 
 /**
- * Adapts Bun's built-in SQL client to pg-boss's {@link IDatabase}.
+ * Adapts Bun's built-in SQL client to bun-boss's {@link IDatabase}.
  *
- * Works both as the connection for an entire pg-boss instance, replacing the default `pg` pool,
+ * Works both as the connection for an entire bun-boss instance, replacing the default `pg` pool,
  * and as a per-operation handle that composes job writes into an existing `sql.begin()`
- * transaction. The caller owns the client's lifecycle — pg-boss never closes it.
+ * transaction. The caller owns the client's lifecycle — bun-boss never closes it.
  *
  * Bun implements neither LISTEN nor NOTIFY, so no `listen` is exposed and `useListenNotify` falls
- * back to polling with a warning (see notifier.ts). The `pg_notify` pg-boss inlines into inserts is
+ * back to polling with a warning (see notifier.ts). The `pg_notify` bun-boss inlines into inserts is
  * evaluated by postgres and still fires for any listener on another driver.
  *
  * @example
  * ```ts
  * import { SQL } from 'bun'
- * import PgBoss, { fromBunSql } from 'pg-boss'
+ * import { BunBoss, fromBunSql } from 'bun-boss'
  *
  * const sql = new SQL('postgres://localhost/mydb')
- * const boss = new PgBoss({ db: fromBunSql(sql) })
+ * const boss = new BunBoss({ db: fromBunSql(sql) })
  *
  * await sql.begin(async (tx) => {
  *   await tx`INSERT INTO orders (item) VALUES (${'widget'})`
@@ -211,7 +212,7 @@ async function executeReserved (sql: BunSqlLike, text: string): Promise<any> {
  */
 export function fromBunSql (sql: BunSqlLike): IDatabase {
   async function run (query: string, values?: unknown[], jsonParams?: Set<number>) {
-    // Only the simple protocol accepts the multi-statement blocks below, and pg-boss only ever
+    // Only the simple protocol accepts the multi-statement blocks below, and bun-boss only ever
     // sends those without parameters — the same split fromPglite makes between query and exec.
     if (values?.length) {
       return normalizeResult(await sql.unsafe(query, toBunParams(values, jsonParams!)))

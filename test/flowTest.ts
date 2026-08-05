@@ -3,7 +3,7 @@ import { expect } from 'vitest'
 import * as helper from './testHelper.ts'
 import { assertTruthy } from './testHelper.ts'
 import { ctx } from './hooks.ts'
-import { PgBoss, states } from '../src/index.ts'
+import { BunBoss, states } from '../src/index.ts'
 
 describe('flows', function () {
   it('should block a job until its parent completes', async function () {
@@ -315,7 +315,7 @@ describe('flows', function () {
     const calls: string[] = []
 
     try {
-      ctx.boss = new PgBoss({
+      ctx.boss = new BunBoss({
         ...ctx.bossConfig,
         db: {
           async executeSql (sql, values) {

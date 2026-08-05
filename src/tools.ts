@@ -86,7 +86,7 @@ function resolveSchemaName (schema: string): string {
 }
 
 /**
- * Canonicalizes a configured schema string for the values pg-boss *derives* from it rather than
+ * Canonicalizes a configured schema string for the values bun-boss *derives* from it rather than
  * looks up: the notify channel name and the advisory lock key.
  *
  * Those are hashes of a string, never compared against the catalog - the channel literal is

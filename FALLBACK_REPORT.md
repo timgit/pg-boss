@@ -1,7 +1,7 @@
 # Fallback Report
 
 When a backend can't do something stock Postgres does, `attorney.ts` sets a `noXxx`
-flag and pg-boss selects an alternate query strategy. Each keeps **correctness**; the
+flag and bun-boss selects an alternate query strategy. Each keeps **correctness**; the
 cost is throughput, latency, or scalability. Summary of every fallback:
 
 | Flag | PG feature dropped | Workaround | What it costs |

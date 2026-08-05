@@ -1,6 +1,6 @@
 # Job table
 
-If you need to interact with pg-boss outside of Node.js, such as other clients or even using triggers within PostgreSQL itself, most functionality is supported when working directly against the internal tables. For example, if you wanted to bulk load jobs and skip calling `send()` or `insert()`, you could use SQL `INSERT` or `COPY` commands.
+If you need to interact with bun-boss outside of Node.js, such as other clients or even using triggers within PostgreSQL itself, most functionality is supported when working directly against the internal tables. For example, if you wanted to bulk load jobs and skip calling `send()` or `insert()`, you could use SQL `INSERT` or `COPY` commands.
 
 The following is the definition of the primary job table. For manual job creation, the only required column is `name`. All other columns are nullable or have defaults.
 

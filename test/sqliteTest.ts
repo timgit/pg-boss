@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import { SQL } from 'bun'
-import { PgBoss, fromBunSqlite } from '../src/index.ts'
+import { BunBoss, fromBunSqlite } from '../src/index.ts'
 import { delay } from '../src/tools.ts'
 import packageJson from '../package.json' with { type: 'json' }
 
@@ -23,7 +23,7 @@ describe('sqlite', () => {
   }
 
   async function startBoss (extra: Record<string, any> = {}) {
-    const boss = new PgBoss({ backend: 'sqlite', db: fromBunSqlite(newInstance()), supervise: false, schedule: false, ...extra })
+    const boss = new BunBoss({ backend: 'sqlite', db: fromBunSqlite(newInstance()), supervise: false, schedule: false, ...extra })
     boss.on('error', () => {})
     await boss.start()
     return boss
@@ -32,34 +32,34 @@ describe('sqlite', () => {
   it('installs the schema on start', async () => {
     const boss = await startBoss()
     expect(await boss.isInstalled()).toBe(true)
-    expect(await boss.schemaVersion()).toBe(packageJson.pgboss.schema)
+    expect(await boss.schemaVersion()).toBe(packageJson.bunboss.schema)
     await boss.stop({ graceful: false })
   })
 
   it('refuses to start against an older installed schema version', async () => {
     const sql = newInstance()
-    const first = new PgBoss({ backend: 'sqlite', db: fromBunSqlite(sql), supervise: false, schedule: false })
+    const first = new BunBoss({ backend: 'sqlite', db: fromBunSqlite(sql), supervise: false, schedule: false })
     first.on('error', () => {})
     await first.start()
     await first.stop({ graceful: false })
 
-    await sql.unsafe(`UPDATE "pgboss.version" SET version = ${packageJson.pgboss.schema - 1}`)
+    await sql.unsafe(`UPDATE "pgboss.version" SET version = ${packageJson.bunboss.schema - 1}`)
 
-    const second = new PgBoss({ backend: 'sqlite', db: fromBunSqlite(sql), supervise: false, schedule: false })
+    const second = new BunBoss({ backend: 'sqlite', db: fromBunSqlite(sql), supervise: false, schedule: false })
     second.on('error', () => {})
     await expect(second.start()).rejects.toThrow(/cannot be upgraded/)
   })
 
   it('rejects a config without a db adapter', () => {
-    expect(() => new PgBoss({ backend: 'sqlite' } as any)).toThrow(/requires a db adapter/)
+    expect(() => new BunBoss({ backend: 'sqlite' } as any)).toThrow(/requires a db adapter/)
   })
 
   it('rejects a config with a connection string', () => {
-    expect(() => new PgBoss({ backend: 'sqlite', db: fromBunSqlite(newInstance()), connectionString: 'postgres://localhost/x' } as any)).toThrow(/connectionString/)
+    expect(() => new BunBoss({ backend: 'sqlite', db: fromBunSqlite(newInstance()), connectionString: 'postgres://localhost/x' } as any)).toThrow(/connectionString/)
   })
 
   it('installs with a quoted schema name', async () => {
-    const boss = new PgBoss({ backend: 'sqlite', db: fromBunSqlite(newInstance()), schema: '"MyBoss"', supervise: false, schedule: false })
+    const boss = new BunBoss({ backend: 'sqlite', db: fromBunSqlite(newInstance()), schema: '"MyBoss"', supervise: false, schedule: false })
     boss.on('error', () => {})
     await boss.start()
 
@@ -75,12 +75,12 @@ describe('sqlite', () => {
 
   it('restarting against an installed database is a no-op', async () => {
     const sql = newInstance()
-    const first = new PgBoss({ backend: 'sqlite', db: fromBunSqlite(sql), supervise: false, schedule: false })
+    const first = new BunBoss({ backend: 'sqlite', db: fromBunSqlite(sql), supervise: false, schedule: false })
     first.on('error', () => {})
     await first.start()
     await first.stop({ graceful: false })
 
-    const second = new PgBoss({ backend: 'sqlite', db: fromBunSqlite(sql), supervise: false, schedule: false })
+    const second = new BunBoss({ backend: 'sqlite', db: fromBunSqlite(sql), supervise: false, schedule: false })
     second.on('error', () => {})
     await second.start()
     expect(await second.isInstalled()).toBe(true)

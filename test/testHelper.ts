@@ -1,5 +1,5 @@
 import Db from '../src/db.ts'
-import { PgBoss, fromPglite, fromBunSql, fromBunSqlite } from '../src/index.ts'
+import { BunBoss, fromPglite, fromBunSql, fromBunSqlite } from '../src/index.ts'
 import { PGlite } from '@electric-sql/pglite'
 import { SQL } from 'bun'
 import { describe, it, type SuiteAPI, type TestAPI } from 'vitest'
@@ -56,7 +56,7 @@ function getSqliteDb (): IDatabase & { close: () => Promise<void> } {
 
 // Bun's built-in SQL client talks to the same PostgreSQL server as the default run, reached through
 // the fromBunSql adapter instead of the pg pool. DB_TYPE=bun runs the whole suite that way, so the
-// adapter's workarounds for bun's parameter binding are exercised by every query pg-boss issues
+// adapter's workarounds for bun's parameter binding are exercised by every query bun-boss issues
 // rather than only by the dedicated files. The backend profile stays `postgres` — this swaps the
 // driver, not the database.
 const isBun = process.env.DB_TYPE === 'bun'
@@ -116,7 +116,7 @@ function assertTruthy<T> (value: T, message?: string): asserts value is NonNulla
   }
 }
 
-// The connection settings for the active DB_TYPE, before any pg-boss options are layered on.
+// The connection settings for the active DB_TYPE, before any bun-boss options are layered on.
 // Separate from getConfig() because getConfig() attaches an adapter under DB_TYPE=bun, and that
 // adapter is itself built from a connection string — going through getConfig() would recurse.
 function getConnectionConfig (): any {
@@ -311,11 +311,11 @@ async function separateTimestamps (): Promise<void> {
 // Job-creating methods wrapped by start() under PGlite so each write lands on its own created_on.
 const JOB_WRITE_METHODS = ['send', 'sendAfter', 'sendThrottled', 'sendDebounced', 'insert'] as const
 
-async function start (options?: Partial<ConstructorOptions> & { testKey?: string; noDefault?: boolean }): Promise<PgBoss> {
+async function start (options?: Partial<ConstructorOptions> & { testKey?: string; noDefault?: boolean }): Promise<BunBoss> {
   try {
     const config = getConfig(options)
 
-    const boss = new PgBoss(config)
+    const boss = new BunBoss(config)
     // boss.on('error', err => console.log({ schema: config.schema, message: err.message }))
 
     await boss.start()
@@ -354,7 +354,7 @@ async function start (options?: Partial<ConstructorOptions> & { testKey?: string
 // now() is immediately claimable; prefer that over relying on the clock to tick between send and
 // fetch. fetchWithRetry remains useful for cases where work appears asynchronously (e.g. a job
 // just routed to a dead letter queue) and may not be visible on the first attempt.
-async function fetchWithRetry<T = object> (boss: PgBoss, name: string, options?: FetchOptions, attempts = 20): Promise<Job<T>[]> {
+async function fetchWithRetry<T = object> (boss: BunBoss, name: string, options?: FetchOptions, attempts = 20): Promise<Job<T>[]> {
   for (let i = 0; i < attempts; i++) {
     const jobs = await boss.fetch<T>(name, options)
     if (jobs.length > 0) {

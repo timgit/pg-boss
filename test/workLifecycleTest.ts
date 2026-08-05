@@ -210,7 +210,7 @@ describe('work lifecycle', function () {
     assertTruthy(job)
     expect(job.state).toBe('failed')
     // @ts-expect-error untyped object
-    expect((job.output)?.value).toBe('pg-boss shut down while active')
+    expect((job.output)?.value).toBe('bun-boss shut down while active')
     // Signal should be aborted immediately in non-graceful shutdown
     expect(signalAborted).toBe(true)
   })

@@ -26,7 +26,7 @@ export function getConstructionPlans (schema?: string) {
   return Contractor.constructionPlans(schema)
 }
 
-export class PgBoss extends EventEmitter<types.PgBossEventMap> {
+export class BunBoss extends EventEmitter<types.BunBossEventMap> {
   #stoppingOn: number | null
   #stopped: boolean
   #started: boolean | undefined
@@ -87,7 +87,7 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
   }
 
   #promoteEvents (emitter: types.EventsMixin) {
-    for (const event of Object.values(emitter?.events) as (keyof types.PgBossEventMap)[]) {
+    for (const event of Object.values(emitter?.events) as (keyof types.BunBossEventMap)[]) {
       emitter.on(event, arg => this.emit(event, arg))
     }
   }
@@ -470,7 +470,7 @@ export type {
   JobWithMetadata,
   MaintenanceOptions,
   OffWorkOptions,
-  PgBossEventMap,
+  BunBossEventMap,
   Queue,
   QueueOptions,
   QueuePolicy,

@@ -724,8 +724,8 @@ function createQueueSqlite (c: Ctx, name: string, options: unknown): string {
 }
 
 // LISTEN/NOTIFY channels share a single database-global namespace and are limited to
-// NAMEDATALEN (63 bytes), unlike the rest of pg-boss which is schema-bound. Derive a
-// stable, collision-resistant channel from the schema so separate pg-boss instances
+// NAMEDATALEN (63 bytes), unlike the rest of bun-boss which is schema-bound. Derive a
+// stable, collision-resistant channel from the schema so separate bun-boss instances
 // (and other services) on the same database never clash. Payload carries the queue name.
 //
 // Returns a SQL scalar expression (not a value) hashed in-database with sha224, matching
@@ -1031,7 +1031,7 @@ export function versionTableExists (c: Ctx) {
   return `SELECT to_regclass('${qn(c, 'version')}') as name`
 }
 
-// Installed pg-boss schemas whose name differs from the configured one by case alone. Postgres
+// Installed bun-boss schemas whose name differs from the configured one by case alone. Postgres
 // folds a bare name and stores a quoted one verbatim, so `MySchema` and `"MySchema"` are two
 // schemas that look nearly identical in config. Used on the install path to tell a caller who
 // mis-spelled the quoting that their data is next door, rather than silently installing a second,

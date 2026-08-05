@@ -4,9 +4,9 @@ import * as helper from './testHelper.ts'
 import { ctx } from './hooks.ts'
 import * as plans from '../src/plans.ts'
 import { delay } from '../src/tools.ts'
-import { PgBoss } from '../src/index.ts'
+import { BunBoss } from '../src/index.ts'
 
-// Opens a raw pg connection LISTENing on this schema's pg-boss channel and collects
+// Opens a raw pg connection LISTENing on this schema's bun-boss channel and collects
 // payloads. Returns the collected array plus a close function. Used to assert the
 // producer's NOTIFY emission directly, without timing-dependent worker assertions.
 async function rawListener (schema: string) {
@@ -177,7 +177,7 @@ helper.describeListenNotify('listen/notify', function () {
     })
     const adapter = { executeSql: (text: string, values?: unknown[]) => pool.query(text, values) }
 
-    const boss = new PgBoss({ ...config, db: adapter, useListenNotify: true })
+    const boss = new BunBoss({ ...config, db: adapter, useListenNotify: true })
     boss.on('warning', () => {})
     boss.on('error', () => {})
 
@@ -287,7 +287,7 @@ helper.describeListenNotify('listen/notify', function () {
     })
     const adapter = { executeSql: (text: string, values?: unknown[]) => pool.query(text, values) }
 
-    const boss = new PgBoss({ ...config, db: adapter, useListenNotify: true })
+    const boss = new BunBoss({ ...config, db: adapter, useListenNotify: true })
     const warnings: any[] = []
     boss.on('warning', w => warnings.push(w))
     boss.on('error', () => {})

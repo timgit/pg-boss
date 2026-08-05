@@ -35,12 +35,12 @@ export interface Dialect {
 
   // Renders a schema-qualified object name. Postgres has real schemas; SQLite has none, so the
   // qualified name becomes a single quoted identifier ("pgboss.job") in the main database —
-  // keeping pg-boss objects co-located (and transactional) with the application's own tables.
+  // keeping bun-boss objects co-located (and transactional) with the application's own tables.
   qualify(schema: string, object: string): string
 
   // Renders the index name for CREATE INDEX. Postgres creates the index in the table's schema
   // from a bare name; SQLite's index namespace is flat per database, so the name carries the
-  // same quoted schema prefix as tables to stay unique across pg-boss instances.
+  // same quoted schema prefix as tables to stay unique across bun-boss instances.
   qualifyIndex(schema: string, index: string): string
 
   // Current timestamp expression. SQLite stores ISO-8601 UTC text with milliseconds — fixed

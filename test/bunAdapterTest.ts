@@ -355,7 +355,7 @@ describe('bun adapter', () => {
     })
 
     it('promotes the sqlstate from errno onto code', async () => {
-      // pg-boss tolerates 23505 on fetch and translates 22012 on insert, both keyed on err.code.
+      // bun-boss tolerates 23505 on fetch and translates 22012 on insert, both keyed on err.code.
       const { sql } = createFakeBunSql({ poolError: () => serverError('23505') })
 
       await expect(fromBunSql(sql).executeSql('SELECT 1', ['x'])).rejects.toMatchObject({
