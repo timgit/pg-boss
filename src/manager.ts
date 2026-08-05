@@ -15,36 +15,6 @@ import { JobSpy, type JobSpyInterface } from './spy.ts'
 
 const INTERNAL_QUEUES = Object.values(timekeeper.QUEUES).reduce<Record<string, string | undefined>>((acc, i) => ({ ...acc, [i]: i }), {})
 
-// CockroachDB returns integer columns (INT8) as strings; these aliased metadata
-// fields must be coerced back to numbers when backend === 'cockroachdb'.
-const NUMERIC_METADATA_FIELDS = [
-  'priority',
-  'retryLimit',
-  'retryCount',
-  'retryDelay',
-  'retryDelayMax',
-  'expireInSeconds',
-  'heartbeatSeconds',
-  'deleteAfterSeconds',
-  'pendingDependencies'
-] as const
-
-// Queue rows (plans.getQueues) return these integer columns as strings on CockroachDB too.
-const NUMERIC_QUEUE_FIELDS = [
-  'retryLimit',
-  'retryDelay',
-  'retryDelayMax',
-  'expireInSeconds',
-  'retentionSeconds',
-  'deleteAfterSeconds',
-  'heartbeatSeconds',
-  'deferredCount',
-  'warningQueueSize',
-  'queuedCount',
-  'activeCount',
-  'totalCount'
-] as const
-
 // The sqlite dialect stores timestamps as ISO text, booleans as 0/1, and json/arrays as TEXT;
 // re-hydrate the JS types the pg driver returns natively so row shapes match across backends.
 const QUEUE_BOOL_FIELDS = ['retryBackoff', 'partition', 'notify'] as const
@@ -86,7 +56,7 @@ const STATS_COUNT_FIELDS = [
   'totalCount'
 ] as const
 
-// Stale-cache budget for getQueueStats when persistQueueStats is off. A queue-table cache older than
+// Stale-cache budget for getQueueStats. A queue-table cache older than
 // this means monitoring isn't keeping it current (e.g. supervise was enabled once but isn't now), so
 // the counts are recomputed and re-cached instead of returned. Defaults to one hour, raised to the
 // configured monitor/supervise interval when that's larger (both capped at MAX_EXPIRATION_HOURS).
@@ -1447,17 +1417,6 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     const rows = result?.rows || []
 
-    // CockroachDB returns integer columns as strings; normalize them. Even a minimal fetch
-    // (JOB_COLUMNS_MIN) returns numeric fields like expireInSeconds/heartbeatSeconds, so normalize
-    // regardless of includeMetadata. The columns are aliased to camelCase, so use those keys.
-    if (this.config.backend === 'cockroachdb') {
-      for (const row of rows) {
-        for (const field of NUMERIC_METADATA_FIELDS) {
-          if (row[field] !== undefined && row[field] !== null) row[field] = Number(row[field])
-        }
-      }
-    }
-
     if (this.config.dialect?.name === 'sqlite') {
       for (const row of rows) coerceSqliteJobRow(row)
 
@@ -1898,15 +1857,6 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const query = plans.getQueues(this.config, names)
     const { rows } = await this.db.executeSql(query.text, query.values)
 
-    // CockroachDB returns integer columns as strings; normalize the numeric queue fields.
-    if (this.config.backend === 'cockroachdb') {
-      for (const row of rows) {
-        for (const field of NUMERIC_QUEUE_FIELDS) {
-          if (row[field] !== undefined && row[field] !== null) row[field] = Number(row[field])
-        }
-      }
-    }
-
     if (this.config.dialect?.name === 'sqlite') {
       for (const row of rows) coerceSqliteQueueRow(row)
     }
@@ -1997,19 +1947,13 @@ class Manager extends EventEmitter implements types.EventsMixin {
     }
   }
 
-  // Queue stats are a time series, always returned as an array (newest first).
-  //
-  // With persistQueueStats enabled this returns the recorded history, optionally bounded by
-  // from/to/limit. With it disabled there's no series, so it returns a single datapoint built from
-  // the cached counts the monitor maintains on the queue table — cheap, and avoids re-running the
-  // job-table aggregate on every call. The aggregate runs only when { force: true } is passed or the
-  // cache is missing/stale; either way the fresh counts are written back to the cache so later reads
-  // stay cheap. Throws if the queue doesn't exist. For the cached counts as a single value, use
-  // getQueue(name).
+  // Returns a single datapoint (as a one-element array, newest first) built from the cached counts
+  // the monitor maintains on the queue table — cheap, and avoids re-running the job-table aggregate
+  // on every call. The aggregate runs only when { force: true } is passed or the cache is missing/
+  // stale; either way the fresh counts are written back to the cache so later reads stay cheap.
+  // Throws if the queue doesn't exist. For the cached counts as a single value, use getQueue(name).
   async getQueueStats (name: string, options: types.QueueStatsOptions = {}): Promise<types.QueueStats[]> {
     Attorney.assertQueueName(name)
-
-    const isCockroach = this.config.backend === 'cockroachdb'
 
     const toSnapshot = (row: any): types.QueueStats => {
       const snapshot: types.QueueStats = {
@@ -2026,52 +1970,17 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
       for (const field of STATS_COUNT_FIELDS) {
         const value = row?.[field]
-        // CockroachDB returns integer columns as strings; normalize the counts.
-        if (value !== undefined && value !== null) snapshot[field] = isCockroach ? Number(value) : value
+        if (value !== undefined && value !== null) snapshot[field] = value
       }
 
       return snapshot
     }
 
-    if (this.config.persistQueueStats) {
-      // Validate the queue exists (consistent with the persistence-off path below); the history
-      // query itself would just return an empty series for an unknown name.
-      await this.getQueueCache(name)
-
-      const { from = null, to = null, limit = 1000, bucketSeconds, maxDataPoints, aggregate = 'max' } = options
-
-      assert(Number.isInteger(limit) && limit >= 1 && limit <= 100_000,
-        'getQueueStats: limit must be an integer between 1 and 100000')
-
-      // Downsample into time buckets when requested. bucketSeconds sets an explicit resolution;
-      // maxDataPoints derives the width in-SQL so the series fits in ~N points. Explicit wins.
-      if (bucketSeconds !== undefined || maxDataPoints !== undefined) {
-        assert(aggregate === 'max' || aggregate === 'min' || aggregate === 'avg',
-          "getQueueStats: aggregate must be 'max', 'min', or 'avg'")
-
-        const mode = bucketSeconds !== undefined ? 'bucket' : 'auto'
-        const width = bucketSeconds ?? maxDataPoints
-
-        assert(Number.isInteger(width) && width! >= 1,
-          `getQueueStats: ${mode === 'bucket' ? 'bucketSeconds' : 'maxDataPoints'} must be a positive integer`)
-
-        const sql = plans.getQueueStatsHistoryBucketed(this.config, aggregate, mode)
-        const { rows } = await this.db.executeSql(sql, [name, from, to, limit, width])
-
-        return rows.map(toSnapshot)
-      }
-
-      const sql = plans.getQueueStatsHistory(this.config)
-      const { rows } = await this.db.executeSql(sql, [name, from, to, limit])
-
-      return rows.map(toSnapshot)
-    }
-
-    // persistQueueStats disabled: serve the cached counts the monitor keeps on the queue table.
-    // capturedOn is monitor_on — NULL if never monitored, or old if monitoring has since been turned
-    // off. Serve the cache while it's within budget; otherwise recompute and re-cache. { force: true }
-    // applies a much tighter budget (a fresh reading), but still reuses a value computed in the last
-    // minute so repeated forced calls don't each re-run the aggregate.
+    // Serve the cached counts the monitor keeps on the queue table. capturedOn is monitor_on — NULL
+    // if never monitored, or old if monitoring has since been turned off. Serve the cache while it's
+    // within budget; otherwise recompute and re-cache. { force: true } applies a much tighter budget
+    // (a fresh reading), but still reuses a value computed in the last minute so repeated forced
+    // calls don't each re-run the aggregate.
     const cacheSql = plans.getQueueStatsCache(this.config)
     const { rows: cacheRows } = await this.db.executeSql(cacheSql, [name])
     const cached = cacheRows.at(0)
@@ -2116,14 +2025,6 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     if (result1?.rows?.length === 1) {
       const row = result1.rows[0]
-
-      // CockroachDB returns integer columns as strings; normalize the numeric
-      // metadata fields so callers get numbers regardless of the backend.
-      if (this.config.backend === 'cockroachdb') {
-        for (const field of NUMERIC_METADATA_FIELDS) {
-          if (row[field] !== undefined && row[field] !== null) row[field] = Number(row[field])
-        }
-      }
 
       if (this.config.dialect?.name === 'sqlite') {
         coerceSqliteJobRow(row)

@@ -8,25 +8,24 @@ The library itself is a job queue built on PostgreSQL: it relies on `SKIP LOCKED
 
 ## Naming: the rename has not happened
 
-Only the repo, the devcontainer, and the docs framing say "bun-boss". The npm package name is still `pg-boss`, the exported class is still `PgBoss`, the CLI bin is still `pg-boss`, the schema/queue namespace is still `pgboss`, and internal SQL identifiers are unchanged. **Do not rename any of these opportunistically** — the schema name in particular is on-disk state for every existing install. Use "bun-boss" for the project/repo, "pg-boss" when naming the package, class, or schema.
+Only the repo, the devcontainer, and the docs framing say "bun-boss". The npm package name is still `pg-boss`, the exported class is still `PgBoss`, the schema/queue namespace is still `pgboss`, and internal SQL identifiers are unchanged. **Do not rename any of these opportunistically** — the schema name in particular is on-disk state for every existing install. Use "bun-boss" for the project/repo, "pg-boss" when naming the package, class, or schema.
 
 ## Direction
 
 - **Bun-first.** Runtime, test suite, CI, and every `package.json` script are Bun. Node is only a compatibility target for consumers of the published library.
-- **SQLite is a supported backend** (`backend: 'sqlite'` + `fromBunSqlite` over Bun's `SQL` on a `sqlite://` URL). It is a second SQL *dialect*, not another Postgres-compatible profile: `src/dialect.ts` holds the rendering primitives (`qualify`, state IN-lists, epoch time math, json_each arrays), `plans.ts` builders take a `Ctx` (bare string ⇒ postgres, so static callers are untouched), and the truly divergent shapes (install DDL, insertJobs, updateJob, cacheQueueStats) are explicit sqlite forks beside their postgres twins. `test/plansSnapshotTest.ts` pins postgres output byte-for-byte; `test/dialectTest.ts` guards the silent-correctness traps (enum ordering, timestamp shape, pg-only construct leaks). SQLite installs fresh at the current schema version — no migration history, no drift scan, no BAM. `scripts/spike-bun-sqlite.ts` documents the Bun sqlite driver behaviors the adapter depends on (run it when moving toolchains).
+- **SQLite is a supported backend** (`backend: 'sqlite'` + `fromBunSqlite` over Bun's `SQL` on a `sqlite://` URL). It is a second SQL *dialect*, not another Postgres-compatible profile: `src/dialect.ts` holds the rendering primitives (`qualify`, state IN-lists, epoch time math, json_each arrays), `plans.ts` builders take a `Ctx` (bare string ⇒ postgres, so static callers are untouched), and the truly divergent shapes (install DDL, insertJobs, updateJob, cacheQueueStats) are explicit sqlite forks beside their postgres twins. `test/plansSnapshotTest.ts` pins postgres output byte-for-byte; `test/dialectTest.ts` guards the silent-correctness traps (enum ordering, timestamp shape, pg-only construct leaks). SQLite installs fresh at the current schema version (v37) — there is no migration history and no in-place upgrade. `scripts/spike-bun-sqlite.ts` documents the Bun sqlite driver behaviors the adapter depends on (run it when moving toolchains).
 - **`ISSUES.txt` is the running log of Bun-adapter traps** (parameter-encoding fragility, the Bun 1.3.x pooled-connection leak). Read it before changing `src/adapters/bun.ts`, and keep it current when one is fixed.
 
 ## Commands
 
 Requirements: **Bun 1.4 or newer** — on 1.3.x, Bun can hand a pooled connection to a waiting query before the ROLLBACK of a failed transaction block lands, surfacing as a spurious `25P02` (see `ISSUES.txt` #3). The whole test suite and every `package.json` script run under Bun — `test/testHelper.ts` imports Bun's `SQL` at module load, so the suite cannot run under Node — and each script shells out to `bun`/`bunx`. The published library still targets **Node ≥ 22.12** (for `require(esm)`) and **PostgreSQL ≥ 13**. Tests need a running Postgres — `docker compose up -d db` starts one matching `test/config.json` (db `pgboss`, user/pass `postgres`).
 
-- `bun run test` — the full check: `eslint . && bun --bun vitest run`. The `pretest` hook runs `bun run tsc` (`tsc --noEmit`) and `gen:manifest:check` first, so a failing type-check or a stale `schema.json` fails the test command before any test runs.
+- `bun run test` — the full check: `eslint . && bun --bun vitest run`. The `pretest` hook runs `bun run tsc` (`tsc --noEmit`) first, so a failing type-check fails the test command before any test runs.
 - `bun run test -- test/sendTest.ts` — run a single test file.
 - `bun run test -- -t "substring of test name"` — run tests matching a name.
 - `bun run cover` — tests with V8 coverage.
 - `bun run tsc` — type-check only (`tsc --noEmit`). `bun run lint:fix` — autofix lint.
 - `bun run build` — clean `dist/` and compile via `tsconfig.build.json`.
-- `bun run gen:manifest` — regenerate `src/schema.json` (see Schema manifest below). `gen:manifest:check` verifies it is current.
 
 ### CI
 
@@ -39,41 +38,32 @@ The suite is parameterized by `DB_TYPE` / `DISTRIBUTED` env vars (resolved in `t
 - `bun run test:distributed` — `DISTRIBUTED=true`, exercises the atomic-UPDATE fetch path on plain Postgres (fast, no separate DB).
 - `bun run test:bun` — `DB_TYPE=bun`, routes the whole suite through the `fromBunSql` adapter (Bun's built-in `SQL` client) against the same Postgres server, so the adapter's parameter-binding workarounds are exercised by every query rather than only the dedicated adapter tests.
 - `bun run test:pglite` — `DB_TYPE=pglite`, in-process WASM Postgres, no server. Connection-string / subprocess / multi-connection tests auto-skip.
-- `bun run test:sqlite` — `DB_TYPE=sqlite`, in-process SQLite through Bun's `SQL` client (`fromBunSqlite`), no server. This is the one backend that is a *different SQL dialect*, not Postgres-compatible: `src/dialect.ts` supplies rendering primitives to `plans.ts` (a bare-string schema arg means postgres; a `PlanContext` carries the dialect), and `test/plansSnapshotTest.ts` pins the postgres output byte-for-byte. Skips everything pglite skips plus migrations, drift, BAM, and pg-catalog-shaped tests.
-- `bun run test:cockroachdb` / `test:yugabytedb:full` / `test:citus:full` — real distributed engines; matching `docker-compose.*.yaml` files start them. These runs auto-enable the backend's compatibility flags.
-
-`vitest.config.ts` raises the per-test timeout to 60s for cockroach/yugabyte (their online-DDL cost blows the 10s Postgres budget).
+- `bun run test:sqlite` — `DB_TYPE=sqlite`, in-process SQLite through Bun's `SQL` client (`fromBunSqlite`), no server. This is the one backend that is a *different SQL dialect*, not Postgres-compatible: `src/dialect.ts` supplies rendering primitives to `plans.ts` (a bare-string schema arg means postgres; a `PlanContext` carries the dialect), and `test/plansSnapshotTest.ts` pins the postgres output byte-for-byte. Skips everything pglite skips plus the pg-catalog-shaped tests.
 
 ## Architecture
 
 ### Component composition
 
-`src/index.ts` defines the public `PgBoss` class (an `EventEmitter`). It does almost no work itself — the constructor builds a set of collaborator objects, all sharing one `IDatabase` and one resolved config, and public methods delegate (mostly to `Manager`). Each collaborator is itself an `EventEmitter`; `#promoteEvents` re-emits their events on the `PgBoss` instance, which is how `error`/`warning`/`wip`/`flow`/`bam` surface to the user.
+`src/index.ts` defines the public `PgBoss` class (an `EventEmitter`). It does almost no work itself — the constructor builds a set of collaborator objects, all sharing one `IDatabase` and one resolved config, and public methods delegate (mostly to `Manager`). Each collaborator is itself an `EventEmitter`; `#promoteEvents` re-emits their events on the `PgBoss` instance, which is how `error`/`warning`/`wip`/`flow` surface to the user.
 
 - **`manager.ts`** — the core (largest file). All job operations: `send`/`insert`/`fetch`/`work`/`complete`/`fail`/`cancel`/`retry`, queue CRUD, pub/sub, stats. Owns the `Worker` instances created by `work()`.
-- **`boss.ts`** — the background **supervisor**. A timer (`superviseIntervalSeconds`) drives `supervise()`, which per queue-table monitors backlog, fails timed-out/heartbeat-stale jobs, maintains partitions, and prunes archived jobs / old stats / warnings.
-- **`contractor.ts`** — schema **install and migration** on `start()`. Reads the target version from `package.json` → `pgboss.schema`, compares against the installed version, and migrates. Also exposes the static `getConstructionPlans`/`getMigrationPlans`/`getRollbackPlans` used by the CLI and `index.ts`.
+- **`boss.ts`** — the background **supervisor**. A timer (`superviseIntervalSeconds`) drives `supervise()`, which per queue-table monitors backlog, fails timed-out/heartbeat-stale jobs, maintains partitions, and prunes archived jobs.
+- **`contractor.ts`** — schema **install and verify** on `start()`. Reads the target version from `package.json` → `pgboss.schema` and installs it fresh at that version; an older installed schema throws rather than migrating in place (with `migrate: false` it verifies instead of installing). Also exposes the static `getConstructionPlans` used by `index.ts`.
 - **`timekeeper.ts`** — **cron scheduling** (via `cron-parser`); enqueues due scheduled jobs and watches for clock skew.
 - **`navigator.ts`** — background **flow / job-dependency resolver**. Off-hot-path: audits completed "blocking" parents and unblocks children (job completion itself stays join-free for speed).
-- **`bam.ts`** — background **async-migration worker** ("build a migration"). Processes queued long-running DDL (e.g. `CREATE INDEX CONCURRENTLY`) so schema upgrades don't block `start()`.
 - **`notifier.ts`** — **LISTEN/NOTIFY** listener lifecycle. A NOTIFY is only ever a _latency hint_ that wakes workers to poll sooner; if the listener can't be established, it warns and falls back to polling. Never required for correctness.
 - **`worker.ts`** — the per-`work()` polling loop. Resolves its next delay each iteration (burst / notify-backstop / base poll) and can be woken early by `notify()`.
 - **`db.ts`** — the default `IDatabase` backed by a `pg.Pool`. Implements `executeSql`, `withTransaction`, and a self-healing session-pinned `listen()` (dedicated `pg.Client`, TCP keepalive + same-session heartbeat, capped-backoff reconnect).
 
 ### plans.ts is the single source of truth for SQL
 
-Every SQL string and all DDL lives in **`src/plans.ts`** (plus migration deltas in `migrationStore.ts`). Components never inline SQL — they call a `plans.*` builder and pass the result to `db.executeSql`. When changing behavior that touches the database, change it in `plans.ts`.
-
-`src/schema.json` is a **generated** catalog snapshot of a freshly-created schema (both partitioned and non-partitioned shapes). `scripts/gen-manifest.ts` builds it by creating the schema on an in-memory PGlite and introspecting it with the same queries `drifter.ts` uses at runtime. Consequences:
-
-- After **any** DDL change in `plans.ts`, run `bun run gen:manifest` — CI (`gen:manifest:check`) fails the build otherwise. Never hand-edit `schema.json`.
-- `drifter.ts` powers `boss.detectSchemaDrift()` by diffing a live database against this manifest.
+Every SQL string and all DDL lives in **`src/plans.ts`**. Components never inline SQL — they call a `plans.*` builder and pass the result to `db.executeSql`. When changing behavior that touches the database, change it in `plans.ts`.
 
 ### Backend compatibility flags
 
-The library targets stock Postgres plus Postgres-compatible engines (CockroachDB, YugabyteDB, Citus) and embedded PGlite. `attorney.ts` (`resolveBackend`) maps a `backend` profile to a set of internal `noXxx` compatibility flags — e.g. `noSkipLocked`, `noMultiMutationCte`, `noTablePartitioning`, `noAdvisoryLocks`, `noListenNotify`, `noCoveringIndexes`, `noIndexProgressView`. These flags are **not user-configurable**; they are derived from the profile and thread through `plans.ts`, `manager.ts`, and `boss.ts` to select alternate query strategies (e.g. the split select/delete/re-insert path when `noMultiMutationCte`, atomic-UPDATE fetch when `noSkipLocked`). When touching a query, check whether it has a distributed/no-flag variant.
+The library targets stock Postgres, embedded PGlite, and embedded SQLite. `attorney.ts` (`resolveBackend`) maps a `backend` profile to a set of internal `noXxx` compatibility flags — e.g. `noSkipLocked`, `noMultiMutationCte`, `noTablePartitioning`, `noAdvisoryLocks`, `noListenNotify`, `noCoveringIndexes`. These flags are **not user-configurable**; they are derived from the profile and thread through `plans.ts`, `manager.ts`, and `boss.ts` to select alternate query strategies (e.g. the split select/delete/re-insert path when `noMultiMutationCte`, atomic-UPDATE fetch when `noSkipLocked`). When touching a query, check whether it has a no-flag variant.
 
-Distributed backends return integer columns as **strings**; `manager.ts` and `boss.ts` coerce known numeric fields with `Number()`. Watch for this when adding numeric metadata columns — a bare `>` compares lexicographically otherwise.
+`sqlite` is the profile that turns every flag on (plus its own dialect rendering), so it exercises the flagged branches end-to-end. The postgres-dialect branches of these flags are covered on plain Postgres by the `__test__distributed` hook (`DISTRIBUTED=true` / `bun run test:distributed`, forcing `noSkipLocked` + `noMultiMutationCte`) and the other `__test__` construction hooks, since the flags are not publicly configurable.
 
 ### Config resolution
 
@@ -107,7 +97,7 @@ Keep the description SHORT and concise: one imperative line, lowercase, no trail
 
 ```
 fix(adapters): reserve a connection for transaction blocks
-feat: add detectSchemaDrift
+feat(sqlite): add fromBunSqlite backend
 chore: drop cross-env dependency
 ```
 

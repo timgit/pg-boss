@@ -33,29 +33,6 @@ boss.on('warning', ({ message, data }) => {
 | `clock_skew` | Database clock is out of sync with application server | `seconds`, `direction` |
 | `listen_notify_unavailable` | `useListenNotify` is enabled but a `LISTEN/NOTIFY` listener could not be established (for example a `db` adapter without `listen`, or PgBouncer transaction pooling); pg-boss continues with polling only | `type`, `error` |
 
-### Warning Persistence
-
-Warnings are emitted as events by default. To also persist warnings to the database for historical tracking, enable the `persistWarnings` option:
-
-```js
-const boss = new PgBoss({
-  connectionString: 'postgres://...',
-  persistWarnings: true
-});
-```
-
-When enabled, warnings are stored in the `warning` table and can be queried directly. See [SQL](/sql/warning-table) for the table schema.
-
-To automatically prune old warnings, set the `warningRetentionDays` option:
-
-```js
-const boss = new PgBoss({
-  connectionString: 'postgres://...',
-  persistWarnings: true,
-  warningRetentionDays: 30  // Auto-delete warnings older than 30 days
-});
-```
-
 ## `wip`
 
 Emitted at most once every 2 seconds whenever at least one worker has an active job. The payload is an array that represents each worker in this instance of pg-boss.
@@ -96,31 +73,6 @@ boss.on('wip', workers => {
 ## `stopped`
 
 Emitted after `stop()` once all workers have completed their work and maintenance has been shut down.
-
-## `bam`
-
-Emitted when a boss async migration (BAM) command changes status. BAM commands are database operations that run asynchronously after schema migrations, such as creating indexes on partitioned tables.
-
-```js
-boss.on('bam', event => {
-  console.log(`BAM ${event.name}: ${event.status}`)
-})
-```
-
-The event payload contains:
-
-```js
-{
-  id: '550e8400-e29b-41d4-a716-446655440000',
-  name: 'create-index',
-  status: 'completed',  // 'in_progress', 'completed', or 'failed'
-  queue: 'my-queue',    // queue name if applicable
-  table: 'j1a2b3c4...', // target table name
-  error: undefined      // error message if status is 'failed'
-}
-```
-
-This event is useful for monitoring migration progress in production environments or for logging purposes.
 
 ## `flow`
 

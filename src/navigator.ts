@@ -14,8 +14,8 @@ const events = {
 const MAX_BATCHES_PER_PASS = 100
 
 // Background flow resolver. Completion is kept on a join-free hot path (see issue #824); the
-// dependency bookkeeping that used to run inline now happens here, out of band. Modeled on the
-// Bam poller: on each tick it claims the cluster-wide cadence gate (version.flow_on) and, if it
+// dependency bookkeeping that used to run inline now happens here, out of band. On each tick it
+// claims the cluster-wide cadence gate (version.flow_on) and, if it
 // wins, audits for completed "blocking" parents via the job_i9 partial index, decrements their
 // children, unblocks those reaching zero, and clears the parents' blocking flag so they are not
 // reprocessed. The Guild Navigator that keeps the spice flowing.

@@ -54,13 +54,7 @@ This will likely cater the most to teams already familiar with the simplicity of
 * SQL support for non-Node.js runtimes for most operations
 * Serverless function compatible
 * Multi-master compatible (for example, in a Kubernetes ReplicaSet)
-* [Additional database backends](docs/database-backends.md) for Postgres-based databases such as CockroachDB, YugabyteDB and Citus. Or, use embedded PGlite for running entirely in-process.
-
-## CLI
-
-A command-line interface is included if needed for managing database migrations without writing code. This is useful for CI/CD pipelines, database setup scripts, or manual schema management.
-
-See the [CLI documentation](docs/cli.md) for details.
+* [Additional database backends](docs/database-backends.md): embedded PGlite (in-process WASM Postgres) and embedded SQLite via Bun's built-in `SQL` client.
 
 ## Requirements
 * PostgreSQL 13 or higher

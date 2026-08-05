@@ -14,7 +14,6 @@ export type Events = {
   warning: 'warning',
   wip: 'wip',
   stopped: 'stopped',
-  bam: 'bam',
   flow: 'flow'
 }
 
@@ -88,18 +87,14 @@ export interface SchedulingOptions {
  * behavior it needs (`noSkipLocked`, `noMultiMutationCte`, `noTablePartitioning`, etc.).
  * Those flags are derived from the backend and are not individually configurable.
  *
- * Backends fall into three kinds — standard, distributed, and embedded:
  * - `postgres` (default): standard PostgreSQL, all flags off.
- * - `cockroachdb`: distributed; enables `noSkipLocked`, `noMultiMutationCte`, `noListenNotify`, and all four `no*` schema gates.
- * - `yugabytedb`: distributed; enables `noAdvisoryLocks` and `noTablePartitioning`. Supports cluster-wide
- *   LISTEN/NOTIFY (early access, off by default — enable the `ysql_yb_enable_listen_notify` flag).
- * - `citus`: distributed; plain PostgreSQL behavior (Citus tables stay coordinator-local); LISTEN/NOTIFY works on the coordinator.
- * - `pglite`: embedded (NOT distributed) single-connection WASM PostgreSQL, all gates off; supports in-process LISTEN/NOTIFY.
+ * - `pglite`: embedded single-connection WASM PostgreSQL, all flags off; supports in-process LISTEN/NOTIFY.
+ * - `sqlite`: embedded SQLite through Bun's `SQL` client — a different SQL dialect, with every
+ *   compatibility flag on. Requires a db adapter (see `fromBunSqlite`).
  *
- * Spanner, Aurora DSQL, and other targets do not have a profile yet and are not
- * supported. @see https://pgboss.io/database-backends
+ * @see https://pgboss.io/database-backends
  */
-export type BackendProfile = 'postgres' | 'cockroachdb' | 'yugabytedb' | 'citus' | 'pglite' | 'sqlite'
+export type BackendProfile = 'postgres' | 'pglite' | 'sqlite'
 
 export interface MaintenanceOptions {
   supervise?: boolean;
@@ -122,11 +117,6 @@ export interface MaintenanceOptions {
   maintenanceIntervalSeconds?: number;
   queueCacheIntervalSeconds?: number;
   monitorIntervalSeconds?: number;
-  persistWarnings?: boolean;
-  warningRetentionDays?: number;
-  persistQueueStats?: boolean;
-  queueStatRetentionDays?: number;
-  bamIntervalSeconds?: number;
   flowIntervalSeconds?: number;
 }
 
@@ -142,40 +132,10 @@ export interface QueueStats {
 }
 
 export interface QueueStatsOptions {
-  /** persistQueueStats on: only return snapshots captured at or after this time. */
-  from?: Date;
-  /** persistQueueStats on: only return snapshots captured at or before this time. */
-  to?: Date;
-  /** persistQueueStats on: maximum number of snapshots to return (1–100000, default 1000). */
-  limit?: number;
   /**
-   * persistQueueStats on: downsample the recorded series into fixed-width time buckets this many
-   * seconds wide, returning one aggregated snapshot per bucket instead of raw rows. Each bucket
-   * collapses its count columns via {@link aggregate}. Buckets align to the Unix epoch, so their
-   * boundaries are deterministic and stable across calls. Must be a positive integer. Omitted →
-   * raw snapshots (current behavior). Size it so the bucket count stays within `limit`, otherwise
-   * only the newest `limit` buckets are returned and the oldest part of the window is dropped.
-   */
-  bucketSeconds?: number;
-  /**
-   * persistQueueStats on: auto-downsample. Derive {@link bucketSeconds} so the series fits in
-   * roughly this many points — e.g. a chart's pixel width. Must be a positive integer. The window
-   * spanned is `from`/`to` when supplied (so an explicit x-axis range yields stable buckets even
-   * with sparse data), falling back to the data's own `min`/`max` captured timestamps for any
-   * open side. Ignored when `bucketSeconds` is set (explicit resolution wins).
-   */
-  maxDataPoints?: number;
-  /**
-   * persistQueueStats on: how each count column is collapsed within a bucket when `bucketSeconds`
-   * or `maxDataPoints` is set. `'max'` surfaces peak depth (best for backlog alerting), `'min'`
-   * the trough, `'avg'` the rounded mean. Ignored when neither bucket option is set.
-   * @default 'max'
-   */
-  aggregate?: 'max' | 'min' | 'avg';
-  /**
-   * persistQueueStats off: return a fresh reading. Recomputes the counts from the job table and
-   * refreshes the queue-table cache rather than serving the regular (up to ~1h) cache, but still
-   * reuses anything computed in the last minute so repeated forced calls don't each re-aggregate.
+   * Return a fresh reading. Recomputes the counts from the job table and refreshes the queue-table
+   * cache rather than serving the regular (up to ~1h) cache, but still reuses anything computed in
+   * the last minute so repeated forced calls don't each re-aggregate.
    */
   force?: boolean;
 }
@@ -217,8 +177,7 @@ export interface CompatibilityFlags {
   /**
    * Run `complete`, `fail`, and supervisor expiry as split statements inside a
    * transaction instead of one multi-mutation CTE, for engines that reject "multiple
-   * mutations of the same table" in one statement (e.g. CockroachDB). (Coercing
-   * text-encoded integers back to numbers is keyed on `backend === 'cockroachdb'`.)
+   * mutations of the same table" in one statement.
    */
   noMultiMutationCte?: boolean;
   /** Create the job table without `PARTITION BY LIST` (also disables per-queue `partition: true`). */
@@ -236,22 +195,6 @@ export interface CompatibilityFlags {
    * support cluster-wide LISTEN/NOTIFY, so it does NOT set this flag.)
    */
   noListenNotify?: boolean;
-  /**
-   * The engine lacks (or doesn't populate) `pg_stat_progress_create_index`, so BAM can't tell
-   * whether a stuck `in_progress` index build is still running. Set for CockroachDB/YugabyteDB,
-   * whose online-DDL job model isn't the PG `CONCURRENTLY` path. When set, BAM reclaims stale
-   * commands on the timeout alone and skips drop-then-rebuild healing.
-   */
-  noIndexProgressView?: boolean;
-}
-
-export interface Migration {
-  release: string
-  version: number
-  previous: number
-  install: string[]
-  async?: string[]
-  uninstall?: string[]
 }
 
 export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, MaintenanceOptions, BackendOptions {
@@ -275,10 +218,6 @@ export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, 
   /** @internal */
   __test__throw_worker?: boolean;
   /** @internal */
-  __test__throw_bam?: string;
-  /** @internal */
-  __test__bypass_bam_interval_check?: boolean;
-  /** @internal */
   __test__throw_flow?: string;
   /** @internal */
   __test__bypass_flow_interval_check?: boolean;
@@ -297,8 +236,6 @@ export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, 
   /** @internal */
   __test__delay_maint_ms?: number;
   /** @internal */
-  __test__delay_bam_ms?: number;
-  /** @internal */
   __test__delay_flow_ms?: number;
   /** @internal */
   __test__delay_clock_skew_ms?: number;
@@ -311,20 +248,34 @@ export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, 
   __test__distributed?: boolean;
   /**
    * Force `noAdvisoryLocks` on top of the current backend's schema, so the advisory-lock-free
-   * SQL path (the same one YugabyteDB and CockroachDB take) can be exercised on a plain Postgres
-   * instance without standing up one of those databases.
+   * SQL path can be exercised on a plain Postgres instance.
    * @internal
    */
   __test__noAdvisoryLocks?: boolean;
   /**
-   * Force `noIndexProgressView` on top of the current backend, so the timeout-only BAM reclaim path
-   * (no liveness, no CONCURRENTLY healing — the one CockroachDB/YugabyteDB take) can be exercised on
-   * a plain Postgres instance.
+   * Force `noTablePartitioning` on top of the current backend, so the non-partitioned Postgres
+   * schema/query path can be exercised on a plain Postgres instance.
    * @internal
    */
-  __test__noIndexProgressView?: boolean;
-  /** @internal */
-  migrations?: Migration[];
+  __test__noTablePartitioning?: boolean;
+  /**
+   * Force `noDeferrableConstraints` on top of the current backend, so the non-deferrable-constraint
+   * Postgres DDL path can be exercised on a plain Postgres instance.
+   * @internal
+   */
+  __test__noDeferrableConstraints?: boolean;
+  /**
+   * Force `noCoveringIndexes` on top of the current backend, so the covering-index-free Postgres
+   * DDL path can be exercised on a plain Postgres instance.
+   * @internal
+   */
+  __test__noCoveringIndexes?: boolean;
+  /**
+   * Force `noListenNotify` on top of the current backend, so the LISTEN/NOTIFY-free path can be
+   * exercised on a plain Postgres instance.
+   * @internal
+   */
+  __test__noListenNotify?: boolean;
 }
 
 /** @internal */
@@ -334,7 +285,6 @@ export interface ResolvedConstructorOptions extends ConstructorOptions, Compatib
   monitorIntervalSeconds: number;
   cronMonitorIntervalSeconds: number;
   maintenanceIntervalSeconds: number;
-  bamIntervalSeconds: number;
   flowIntervalSeconds: number;
 }
 
@@ -964,174 +914,9 @@ export interface UpsertResponse extends UpdateResponse {
   inserted: number;
 }
 
-export interface BamEntry {
-  id: string
-  name: string
-  version: number
-  status: 'pending' | 'in_progress' | 'completed' | 'failed'
-  queue?: string
-  table: string
-  command: string
-  error?: string
-  createdOn: Date
-  startedOn?: Date
-  completedOn?: Date
-  // True when getNextBamCommand re-picked a command that was already attempted — a stale in_progress
-  // row (prior claimer died mid-run) or a prior 'failed' row (including ones left by older releases) —
-  // signalling that healing (drop-then-rebuild) may be needed. Only set on the liveness path.
-  reattempt?: boolean
-}
-
-export interface BamStatusSummary {
-  status: 'pending' | 'in_progress' | 'completed' | 'failed'
-  count: number
-  lastCreatedOn: Date
-}
-
-/** One managed index pg-boss expects to exist, and the table it belongs to. */
-export interface ManagedIndex {
-  name: string
-  table: string
-  /** Readable expected key-column list (ordered), for definition-diff. Absent if not derivable. */
-  keys?: string
-  /** Readable expected partial-index predicate (the WHERE clause), '' for a non-partial index. */
-  predicate?: string
-  /** The full expected `CREATE INDEX` statement (schema-qualified), ready to run to recreate it. */
-  definition?: string
-}
-
-/**
- * A managed index that is present in the catalog but marked INVALID. Its definition is correct (an
- * interrupted build, not a wrong shape), so only the expected `definition` is carried — there is no
- * meaningful actual-vs-expected diff to show.
- */
-export interface InvalidIndex extends ManagedIndex {
-  /** True when a pending/in_progress/failed BAM row is (re)building it, so it may heal itself. */
-  building: boolean
-}
-
-/** A present index whose key columns/order or predicate differ from what the code expects. */
-export interface MismatchedIndex extends ManagedIndex {
-  /** Readable key-column list the code expects. */
-  expectedKeys: string
-  /** Readable key-column list actually in the catalog (from pg_get_indexdef). */
-  actualKeys: string
-  /** Readable predicate the code expects ('' for a non-partial index). */
-  expectedPredicate: string
-  /** Readable predicate actually in the catalog, from pg_get_indexdef ('' for a non-partial index). */
-  actualPredicate: string
-  /** The index's current definition from pg_get_indexdef, for side-by-side comparison with `definition`. */
-  actualDefinition: string
-  /** Which parts differ — 'keys', 'predicate', or both. */
-  differs: Array<'keys' | 'predicate'>
-}
-
-/** One managed plpgsql/sql function pg-boss expects to exist, with its normalised body for diffing. */
-export interface ManagedFunction {
-  name: string
-  /** Whitespace-normalised expected function body (the text between the outer `$$` dollar quotes). */
-  expectedBody: string
-  /** The full expected `CREATE FUNCTION` statement (schema-qualified), ready to run to recreate it. */
-  definition: string
-}
-
-/** A present managed function whose body differs from what the code expects. */
-export interface MismatchedFunction extends ManagedFunction {
-  /** Whitespace-normalised body actually stored in the catalog (from pg_get_functiondef). */
-  actualBody: string
-  /** The function's current definition from pg_get_functiondef, for side-by-side comparison. */
-  actualDefinition: string
-}
-
-/** Column drift for a managed table: columns the code expects that are absent, columns present in the
- *  catalog that the code does not expect, and (fixed tables only) columns whose default, data type, or
- *  nullability differs from the code's DDL. */
-export interface TableColumnDrift {
-  /** The (unqualified) table name. */
-  table: string
-  /** Expected columns with no matching catalog column. */
-  missingColumns: string[]
-  /** Catalog columns the expected set does not account for. */
-  unexpectedColumns: string[]
-  /** Columns whose live default expression differs from the code's expected default (fixed tables only). */
-  defaultMismatches: Array<{ column: string, expected: string, actual: string }>
-  /** Columns whose live data type differs from the code's expected type (fixed tables only). */
-  typeMismatches: Array<{ column: string, expected: string, actual: string }>
-  /** Columns whose live NOT NULL flag differs from the code's expectation (fixed tables only). */
-  nullabilityMismatches: Array<{ column: string, expected: boolean, actual: boolean }>
-}
-
-/** Constraint-set drift for a managed table: expected constraints absent from the catalog, and catalog
- *  constraints the code does not expect. Compared on normalised pg_get_constraintdef strings. */
-export interface ConstraintDrift {
-  /** The (unqualified) table name. */
-  table: string
-  /** Expected constraints with no matching catalog constraint. */
-  missingConstraints: string[]
-  /** Catalog constraint definitions the expected set does not account for. */
-  unexpectedConstraints: string[]
-}
-
-/** Drift in an enum type's value set or ordering (pg-boss's `job_state`). */
-export interface EnumDrift {
-  /** The enum type's name (e.g. `job_state`). */
-  name: string
-  /** Ordered enum labels the code expects. */
-  expectedValues: string[]
-  /** Ordered enum labels actually in the catalog. */
-  actualValues: string[]
-}
-
-/**
- * Result of a schema drift scan: managed indexes, functions, and enums that should exist per the
- * code's expected shape vs. what the live catalog actually holds. Covers presence (missing / invalid
- * / unexpected) and definition-level drift (a present index, function body, or enum whose shape
- * differs from what the code emits).
- */
-export interface SchemaDriftReport {
-  /** True when nothing is missing, invalid, mismatched, or drifted (tables, columns, defaults, types,
-   *  constraints, enum). `extraIndexes` is informational and does NOT affect this. */
-  ok: boolean
-  /** Expected managed tables with no matching catalog table. */
-  missingTables: string[]
-  /** Expected indexes with no matching catalog entry (excludes ones a BAM row is still building). */
-  missing: ManagedIndex[]
-  /** Expected indexes still being built by a pending/in_progress/failed BAM row — not yet drift. */
-  building: ManagedIndex[]
-  /** Present indexes marked INVALID (interrupted CREATE INDEX CONCURRENTLY). */
-  invalid: InvalidIndex[]
-  /**
-   * Standalone (non-constraint-backing) indexes present on a managed table that the expected set does
-   * not account for — a stale pg-boss index or one a user added. Informational only: an extra index is
-   * harmless, so this is surfaced as a warning and does not make the schema "not ok".
-   */
-  extraIndexes: Array<{ name: string, table: string }>
-  /** Present indexes whose key columns/order differ from the expected definition. */
-  mismatched: MismatchedIndex[]
-  /** Expected functions with no matching catalog entry. */
-  missingFunctions: ManagedFunction[]
-  /** Present functions whose body differs from the code's expected definition. */
-  mismatchedFunctions: MismatchedFunction[]
-  /** Managed tables with missing/unexpected columns or column-default drift (only differing tables). */
-  columnDrift: TableColumnDrift[]
-  /** Managed tables with missing or unexpected constraints (only tables that differ are listed). */
-  constraintDrift: ConstraintDrift[]
-  /** Enum drift when the live `job_state` value set/order differs from the code; null when it matches. */
-  enumDrift: EnumDrift | null
-}
-
 export interface FlowEvent {
   table: string
   resolved: number
-}
-
-export interface BamEvent {
-  id: string
-  name: string
-  status: string
-  queue?: string
-  table: string
-  error?: string
 }
 
 export type PgBossEventMap = {
@@ -1139,6 +924,5 @@ export type PgBossEventMap = {
   warning: [warning: Warning]
   wip: [data: WipData[]]
   stopped: []
-  bam: [data: BamEvent]
   flow: [data: FlowEvent]
 }

@@ -5,27 +5,12 @@ import { SQL } from 'bun'
 import { describe, it, type SuiteAPI, type TestAPI } from 'vitest'
 import crypto from 'node:crypto'
 import configJson from './config.json' with { type: 'json' }
-import cockroachConfigJson from './config.cockroachdb.json' with { type: 'json' }
-import yugabyteConfigJson from './config.yugabytedb.json' with { type: 'json' }
-import citusConfigJson from './config.citus.json' with { type: 'json' }
 import type { ConstructorOptions, IDatabase, FetchOptions, Job } from '../src/types.ts'
 import { delay } from '../src/tools.ts'
 import { getColumns, getConstraints, getIndexes, getFunctions } from './pgSchemaHelper.ts'
 import { SQLITE as SQLITE_DIALECT } from '../src/dialect.ts'
 
 const sha1 = (value: string): string => crypto.createHash('sha1').update(value).digest('hex')
-
-const isCockroachDb = process.env.DB_TYPE === 'cockroachdb'
-
-// YugabyteDB is PostgreSQL-compatible and supports partitioning, deferrable constraints, and
-// covering indexes, so it runs the standard fetch path. It only needs noAdvisoryLocks, which makes
-// it a good independent check that the advisory-lock-free path works on its own.
-const isYugabyteDb = process.env.DB_TYPE === 'yugabytedb'
-
-// Citus is the Citus extension on a single-node coordinator. pg-boss does not call
-// create_distributed_table(), so its tables stay local to the coordinator and behave like plain
-// PostgreSQL - no special flags needed. This checks the schema/queries work with Citus loaded.
-const isCitus = process.env.DB_TYPE === 'citus'
 
 // PGlite is embedded single-connection WASM PostgreSQL. The whole suite runs against it in-process
 // via DB_TYPE=pglite: each test-file worker shares one in-memory instance, and every testHelper db
@@ -85,23 +70,21 @@ function getBunSql (): SQL {
   return bunSqlInstance
 }
 
-// Distributed database mode is the atomic-UPDATE fetch strategy used by CockroachDB et al. It is a
-// pure runtime toggle (no schema impact) and works fine on plain PostgreSQL, so we exercise the
-// whole suite under it on Postgres via DISTRIBUTED=true — fast, reliable coverage of the distributed
-// code paths without paying CockroachDB's slow per-test DDL. CockroachDB always implies it.
-const isDistributed = isCockroachDb || process.env.DISTRIBUTED === 'true'
+// Distributed database mode is the atomic-UPDATE fetch strategy (noSkipLocked + noMultiMutationCte).
+// It is a pure runtime toggle (no schema impact) and works fine on plain PostgreSQL, so we exercise
+// the whole suite under it on Postgres via DISTRIBUTED=true — fast, reliable coverage of the
+// distributed code paths without a distributed database.
+const isDistributed = process.env.DISTRIBUTED === 'true'
 
-// The full suite runs against CockroachDB via `npm run test:cockroachdb`, where getConfig()
-// auto-enables noSkipLocked + noMultiMutationCte + the compatibility flags. Wrap tests that depend on
-// Postgres-only features (table partitioning, covering indexes, exact PG schema shape) with these
-// so they are skipped automatically under CockroachDB.
+// Wrap tests that depend on Postgres-only features (table partitioning, covering indexes, exact PG
+// schema shape) with these so they are skipped automatically under SQLite.
 // Annotated with the exported TestAPI/SuiteAPI types: skipIf() returns vitest's internal
 // ChainableTestAPI/ChainableSuiteAPI, which can't be named in this module's emitted
 // declarations (TS4023). The exported aliases are nameable and callable the same way.
-const itPostgresOnly = it.skipIf(isCockroachDb || isSqlite) as TestAPI
-const describePostgresOnly = describe.skipIf(isCockroachDb || isSqlite) as SuiteAPI
+const itPostgresOnly = it.skipIf(isSqlite) as TestAPI
+const describePostgresOnly = describe.skipIf(isSqlite) as SuiteAPI
 
-// PGlite has no server, so tests that connect by connection string (CLI subprocess, ORM adapters)
+// PGlite has no server, so tests that connect by connection string (subprocess, ORM adapters)
 // or that require multiple independent connections cannot run against it. Wrap them with these.
 // SQLite shares every one of those limitations, so it rides the same gates.
 const itPglite = it.skipIf(isPglite || isSqlite) as TestAPI
@@ -113,21 +96,19 @@ const itSqlite = it.skipIf(isSqlite) as TestAPI
 const describeSqlite = describe.skipIf(isSqlite) as SuiteAPI
 
 // Tests that need multiple independent role connections (e.g. one session holds a lock while
-// another polls) can't run on PGlite (single in-process instance, no network) or CockroachDB.
-const describeMultiConnectionOnly = describe.skipIf(isPglite || isSqlite || isCockroachDb) as SuiteAPI
+// another polls) can't run on PGlite (single in-process instance, no network).
+const describeMultiConnectionOnly = describe.skipIf(isPglite || isSqlite) as SuiteAPI
 
 // Tests that reach into the built-in pg pool (its size, its events) rather than going through
 // IDatabase. Every mode that supplies its own `db` bypasses that pool entirely, so skip them there.
 const itDefaultDriver = it.skipIf(isPglite || isSqlite || isBun) as TestAPI
 
-// LISTEN/NOTIFY is unavailable in these backends' test environments: CockroachDB never implements
-// it (noListenNotify), the YugabyteDB test container doesn't enable the early-access
-// `ysql_yb_enable_listen_notify` flag, and bun implements neither LISTEN nor NOTIFY so its adapter
-// exposes no listener. SQLite has no LISTEN/NOTIFY at all. Wrap notify-behavior tests with these
-// so the compatibility matrix skips them; the producer bypass is still covered separately on every
-// backend.
-const itListenNotify = it.skipIf(isCockroachDb || isYugabyteDb || isBun || isSqlite) as TestAPI
-const describeListenNotify = describe.skipIf(isCockroachDb || isYugabyteDb || isBun || isSqlite) as SuiteAPI
+// LISTEN/NOTIFY is unavailable in these backends' test environments: bun implements neither LISTEN
+// nor NOTIFY so its adapter exposes no listener, and SQLite has no LISTEN/NOTIFY at all. Wrap
+// notify-behavior tests with these so the compatibility matrix skips them; the producer bypass is
+// still covered separately on every backend.
+const itListenNotify = it.skipIf(isBun || isSqlite) as TestAPI
+const describeListenNotify = describe.skipIf(isBun || isSqlite) as SuiteAPI
 
 function assertTruthy<T> (value: T, message?: string): asserts value is NonNullable<T> {
   if (value == null) {
@@ -139,21 +120,14 @@ function assertTruthy<T> (value: T, message?: string): asserts value is NonNulla
 // Separate from getConfig() because getConfig() attaches an adapter under DB_TYPE=bun, and that
 // adapter is itself built from a connection string — going through getConfig() would recurse.
 function getConnectionConfig (): any {
-  const baseConfig = isCockroachDb ? cockroachConfigJson : isYugabyteDb ? yugabyteConfigJson : isCitus ? citusConfigJson : configJson
-  const config: any = { ...baseConfig }
+  const config: any = { ...configJson }
 
   if (isPglite || isSqlite) {
     config.host = undefined
     config.port = undefined
-  } else if (isYugabyteDb) {
-    config.host = process.env.YUGABYTE_HOST || config.host
-    config.port = process.env.YUGABYTE_PORT || config.port
-  } else if (isCitus) {
-    config.host = process.env.CITUS_HOST || config.host
-    config.port = process.env.CITUS_PORT || config.port
   } else {
-    config.host = (isCockroachDb ? process.env.COCKROACH_HOST : process.env.POSTGRES_HOST) || config.host
-    config.port = (isCockroachDb ? process.env.COCKROACH_PORT : process.env.POSTGRES_PORT) || config.port
+    config.host = process.env.POSTGRES_HOST || config.host
+    config.port = process.env.POSTGRES_PORT || config.port
     config.password = process.env.POSTGRES_PASSWORD || config.password
   }
 
@@ -188,14 +162,11 @@ function getConfig (options: Partial<ConstructorOptions> & { testKey?: string } 
   config.schedule = false
   config.createSchema = true
 
-  // Select the backend profile, which attorney expands into the right compatibility flags
-  // (CockroachDB: distributed + all no* gates; YugabyteDB: noAdvisoryLocks + noTablePartitioning
-  // per yugabyte-db#21833; Citus: plain Postgres). This keeps the flag matrix in one place.
-  config.backend = isPglite ? 'pglite' : isSqlite ? 'sqlite' : isCockroachDb ? 'cockroachdb' : isYugabyteDb ? 'yugabytedb' : isCitus ? 'citus' : 'postgres'
+  // Select the backend profile, which attorney expands into the right compatibility flags.
+  config.backend = isPglite ? 'pglite' : isSqlite ? 'sqlite' : 'postgres'
 
-  // The distributed runtime toggles are orthogonal to schema flags: CockroachDB's profile already
-  // enables them; on plain Postgres we exercise the same code paths via DISTRIBUTED=true, which
-  // forces them through the internal __test__distributed hook (they are not publicly configurable).
+  // On plain Postgres we exercise the distributed code paths via DISTRIBUTED=true, which forces
+  // them through the internal __test__distributed hook (they are not publicly configurable).
   if (isDistributed) {
     config.__test__distributed = true
   }
@@ -220,14 +191,8 @@ function getConfig (options: Partial<ConstructorOptions> & { testKey?: string } 
   return Object.assign(config, options)
 }
 
-// Maps the active DB_TYPE to the docker compose command that starts its container(s). The default
-// Postgres lives in docker-compose.yaml; each alternative backend has its own compose file/project
-// so it never starts alongside the default. CockroachDB is a three-node cluster (plus init/setup
-// jobs that create the database) — starting a single node leaves it uninitialized — so it uses `--wait`.
+// The docker compose command that starts the Postgres test database.
 function dockerStartHint (): string {
-  if (isCockroachDb) return 'docker compose -f docker-compose.cockroach.yaml up -d --wait'
-  if (isYugabyteDb) return 'docker compose -f docker-compose.yugabyte.yaml up -d'
-  if (isCitus) return 'docker compose -f docker-compose.citus.yaml up -d'
   return 'docker compose up -d db'
 }
 
@@ -433,9 +398,6 @@ export {
   getConnectionString,
   tryCreateDb,
   init,
-  isCockroachDb,
-  isYugabyteDb,
-  isCitus,
   isPglite,
   isBun,
   isSqlite,

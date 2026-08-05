@@ -146,13 +146,6 @@ helper.describeSqlite('quoted schema names', function () {
       expect(plans.create('pgboss', 37, { createSchema: true })).not.toContain('"pgboss"')
     })
 
-    it('compares against the resolved name in catalog lookups', function () {
-      const sql = plans.create('"My-Schema"', 37, { createSchema: true })
-
-      expect(sql).toContain("nspname = 'My-Schema'")
-      expect(sql).not.toContain('nspname = \'"My-Schema"\'')
-    })
-
     it('derives the same advisory lock for redundantly quoted names', function () {
       expect(plans.locked('"pgboss"', 'SELECT 1')).toEqual(plans.locked('pgboss', 'SELECT 1'))
     })

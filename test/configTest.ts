@@ -8,7 +8,7 @@ import { ctx } from './hooks.ts'
 
 describe('config', function () {
   describe('backend profiles', function () {
-    const flags = ['noSkipLocked', 'noMultiMutationCte', 'noTablePartitioning', 'noDeferrableConstraints', 'noAdvisoryLocks', 'noCoveringIndexes'] as const
+    const flags = ['noSkipLocked', 'noMultiMutationCte', 'noTablePartitioning', 'noDeferrableConstraints', 'noAdvisoryLocks', 'noCoveringIndexes', 'noListenNotify'] as const
 
     const trueFlags = (config: any) => flags.filter(f => config[f] === true)
 
@@ -18,25 +18,36 @@ describe('config', function () {
       expect(trueFlags(resolved)).toEqual([])
     })
 
-    it('cockroachdb enables both runtime toggles and all four no* schema gates', function () {
-      const resolved = Attorney.getConfig({ connectionString: 'postgres://localhost/db', backend: 'cockroachdb' })
+    it('pglite leaves all flags off', function () {
+      const resolved = Attorney.getConfig({ connectionString: 'postgres://localhost/db', backend: 'pglite' })
+      expect(trueFlags(resolved)).toEqual([])
+    })
+
+    it('sqlite enables every compatibility flag', function () {
+      const resolved = Attorney.getConfig({ backend: 'sqlite', db: { executeSql: async () => ({ rows: [] }) } as any })
       expect(trueFlags(resolved).sort()).toEqual([...flags].sort())
-    })
-
-    it('yugabytedb enables only noAdvisoryLocks + noTablePartitioning', function () {
-      const resolved = Attorney.getConfig({ connectionString: 'postgres://localhost/db', backend: 'yugabytedb' })
-      expect(trueFlags(resolved).sort()).toEqual(['noAdvisoryLocks', 'noTablePartitioning'].sort())
-    })
-
-    it('citus and pglite leave all flags off', function () {
-      for (const backend of ['citus', 'pglite'] as const) {
-        const resolved = Attorney.getConfig({ connectionString: 'postgres://localhost/db', backend })
-        expect(trueFlags(resolved)).toEqual([])
-      }
     })
 
     it('rejects an unknown backend', function () {
       expect(() => Attorney.getConfig({ connectionString: 'postgres://localhost/db', backend: 'nope' as any })).toThrow('backend must be one of')
+    })
+
+    // The distributed-Postgres profiles were dropped; the seam that once produced these flags on
+    // Postgres-rendered SQL is preserved through __test__ hooks so the branches stay testable.
+    it('the __test__ hooks each force their flag on top of postgres', function () {
+      const cases = {
+        __test__distributed: ['noSkipLocked', 'noMultiMutationCte'],
+        __test__noAdvisoryLocks: ['noAdvisoryLocks'],
+        __test__noTablePartitioning: ['noTablePartitioning'],
+        __test__noDeferrableConstraints: ['noDeferrableConstraints'],
+        __test__noCoveringIndexes: ['noCoveringIndexes'],
+        __test__noListenNotify: ['noListenNotify']
+      } as const
+
+      for (const [hook, expected] of Object.entries(cases)) {
+        const resolved = Attorney.getConfig({ connectionString: 'postgres://localhost/db', [hook]: true } as any)
+        expect(trueFlags(resolved).sort()).toEqual([...expected].sort())
+      }
     })
   })
 
@@ -77,66 +88,6 @@ describe('config', function () {
     expect(resolved.backend).toBe('postgres')
     expect((resolved as any).noSkipLocked).toBe(false)
     expect((resolved as any).noTablePartitioning).toBe(false)
-  })
-
-  // The version() warmup probe is skipped entirely on sqlite.
-  helper.itSqlite('should warn when YugabyteDB is detected without the yugabytedb backend', async function () {
-    const realDb = await helper.getDb()
-    const warnings: any[] = []
-
-    try {
-      const boss = new PgBoss({
-        ...ctx.bossConfig,
-        db: {
-          async executeSql (sql: string, values: any[]) {
-            if (/^\s*SELECT version\(\)/i.test(sql)) {
-              return { rows: [{ version: 'PostgreSQL 15.12-YB-2025.2.3.2-b0 on x86_64-pc-linux-gnu' }] }
-            }
-            return realDb.executeSql(sql, values)
-          }
-        }
-      })
-
-      boss.on('warning', (w: any) => warnings.push(w))
-
-      await boss.start()
-      await boss.stop({ close: false, graceful: false })
-
-      const ybWarning = warnings.find(w => w.data?.backend === 'yugabytedb')
-      expect(ybWarning).toBeTruthy()
-      expect(ybWarning.message).toContain("backend: 'yugabytedb'")
-    } finally {
-      await realDb.close()
-    }
-  })
-
-  helper.itSqlite('should not warn about YugabyteDB when the yugabytedb backend is selected', async function () {
-    const realDb = await helper.getDb()
-    const warnings: any[] = []
-
-    try {
-      const boss = new PgBoss({
-        ...ctx.bossConfig,
-        backend: 'yugabytedb',
-        db: {
-          async executeSql (sql: string, values: any[]) {
-            if (/^\s*SELECT version\(\)/i.test(sql)) {
-              return { rows: [{ version: 'PostgreSQL 15.12-YB-2025.2.3.2-b0 on x86_64-pc-linux-gnu' }] }
-            }
-            return realDb.executeSql(sql, values)
-          }
-        }
-      })
-
-      boss.on('warning', (w: any) => warnings.push(w))
-
-      await boss.start()
-      await boss.stop({ close: false, graceful: false })
-
-      expect(warnings.find(w => w.data?.backend === 'yugabytedb')).toBeUndefined()
-    } finally {
-      await realDb.close()
-    }
   })
 
   helper.itPglite('should accept a connectionString property', async function () {

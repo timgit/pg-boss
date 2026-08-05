@@ -5,8 +5,8 @@ import { delay } from '../src/tools.ts'
 import { ctx } from './hooks.ts'
 
 describe('queuePolicy', function () {
-  // CockroachDB disables partitioning (noTablePartitioning), so only run the non-partitioned variant there
-  const partitionCases = helper.isCockroachDb ? [{ partition: false }] : [{ partition: false }, { partition: true }]
+  // SQLite disables partitioning (noTablePartitioning), so only run the non-partitioned variant there
+  const partitionCases = helper.isSqlite ? [{ partition: false }] : [{ partition: false }, { partition: true }]
   partitionCases.forEach(({ partition }) => {
     it(`short policy only allows 1 job in ctx.schema using partition=${partition}`, async function () {
       ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })

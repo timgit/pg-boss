@@ -97,7 +97,7 @@ The following options can be set as properties in an object for additional confi
 
 * **migrate**, bool, default true
 
-  If this is set to false, this instance will skip attempts to run schema migrations during `start()`. If schema migrations exist, `start()` will throw and error and block usage. This is an advanced use case when the configured user account does not have schema mutation privileges.
+  If this is set to false, this instance will verify the schema during `start()` instead of installing it, skipping any schema mutation. If the schema is missing, `start()` will throw an error and block usage. This is an advanced use case when the configured user account does not have schema mutation privileges.
 
 * **useListenNotify**, bool, default false
 
@@ -145,29 +145,13 @@ The following configuration options should not normally need to be changed, but 
 
   The default number of jobs in the created or retry state a queue may hold before emitting a `queue_backlog` [`warning`](./events.md#warning) event. Applies per instance and must be at least 1. Individual queues can override this with their own [`warningQueueSize`](./queues.md#createqueue-name-queue) on `createQueue`.
 
-* **persistWarnings**, bool, default false
-
-  If set to true, warnings emitted during monitoring and maintenance (slow queries, queue backlogs, clock skew) will be persisted to the `warning` table in addition to being emitted as events. This enables historical tracking of warnings for debugging and monitoring purposes. See [Events](./events.md#warning) for more details on warning types.
-
-* **warningRetentionDays**, int
-
-  When `persistWarnings` is enabled, this option controls automatic cleanup of old warnings. Warnings older than the specified number of days will be deleted during maintenance. If not set, warnings are retained indefinitely. Maximum: 365 days.
-
-* **persistQueueStats**, bool, default false
-
-  If set to true, the per-queue counts captured during monitoring (deferred, queued, ready, active, failed, and total) are written to the `queue_stats` table on every monitor cycle, in addition to updating the live counts on the `queue` table. This builds a time series of queue depth that you can query with [`getQueueStats()`](./queues.md#getqueuestatsname-options), which can downsample the series into time buckets (`bucketSeconds` / `maxDataPoints`) for graphing. Data is partitioned by day, pruned automatically during maintenance.
-
-* **queueStatRetentionDays**, int, default 7
-
-  When `persistQueueStats` is enabled, this controls automatic cleanup of old snapshots. Stats older than the specified number of days are removed during maintenance. Maximum: 365 days.
-
 * **backend**, string, default `'postgres'`
 
-  Selects the database pg-boss is running against and applies the compatibility behavior it needs. One of `'postgres'`, `'cockroachdb'`, `'yugabytedb'`, `'citus'`, or `'pglite'`.
+  Selects the database pg-boss is running against and applies the compatibility behavior it needs. One of `'postgres'`, `'pglite'`, or `'sqlite'`.
 
   ```js
-  const boss = new PgBoss({ connectionString, backend: 'cockroachdb' })
+  const boss = new PgBoss({ connectionString, backend: 'sqlite' })
   ```
 
-  Based on this setting, the fetch strategy, mutation strategy, schema shape, and numeric coercion may be changed. See [Database Backends](../database-backends.md#backend-profiles)
+  Based on this setting, the fetch strategy, mutation strategy, and schema shape may be changed. See [Database Backends](../database-backends.md#backend-profiles)
   for what each backend enables and the [compatibility matrix](../database-backends.md#database-compatibility).

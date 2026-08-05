@@ -3,14 +3,11 @@ import * as helper from './testHelper.ts'
 import { ctx } from './hooks.ts'
 import * as plans from '../src/plans.ts'
 
-// The advisory-lock-free SQL path - plans.locked() omitting pg_advisory_xact_lock - is taken by
-// every backend whose profile sets noAdvisoryLocks (YugabyteDB and CockroachDB). The general suite
-// never runs it: standard/distributed Postgres and PGlite all keep advisory locks on, and the real
-// CockroachDB CI job bundles noAdvisoryLocks with the distributed fetch path and only runs the
-// narrow distributedDatabaseTest. This file pins the lock-free variant directly, exercised on plain
-// Postgres via the __test__noAdvisoryLocks hook (the same cheap-toggle trick __test__distributed
-// uses for the distributed path) - no Yugabyte/Cockroach container needed. The real-cluster check
-// stays manual (npm run test:yugabytedb:full).
+// The advisory-lock-free SQL path - plans.locked() omitting pg_advisory_xact_lock - is taken by any
+// backend that sets noAdvisoryLocks (the SQLite dialect does). The general Postgres suite never runs
+// it: standard/distributed Postgres and PGlite all keep advisory locks on. This file pins the
+// lock-free variant directly, exercised on plain Postgres via the __test__noAdvisoryLocks hook (the
+// same cheap-toggle trick __test__distributed uses for the distributed path).
 
 describe('advisory-lock-free SQL generation', function () {
   it('omits pg_advisory_xact_lock when noAdvisoryLocks is set, includes it by default', function () {
@@ -35,7 +32,6 @@ helper.describePglite('advisory-lock-free runtime path', function () {
     ctx.boss = await helper.start({
       ...ctx.bossConfig,
       __test__noAdvisoryLocks: true,
-      persistQueueStats: true,
       noDefault: true
     })
 
@@ -49,7 +45,7 @@ helper.describePglite('advisory-lock-free runtime path', function () {
     expect(job.id).toBe(jobId)
     await ctx.boss.complete(queue, jobId)
 
-    // Drives #monitor (cacheQueueStats + insertQueueStats + failJobsByTimeout) and #maintain
+    // Drives #monitor (cacheQueueStats + failJobsByTimeout) and #maintain
     // (deletion + cleanupDependencies) - the maintenance locked() call sites - lock-free.
     await ctx.boss.supervise(queue)
 

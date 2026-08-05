@@ -5,9 +5,6 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "bin": {
-    "pg-boss": "./dist/cli.js"
-  },
   "engines": {
     "node": ">=22.12.0"
   },
@@ -25,7 +22,6 @@
     "@types/node": "^22.20.1",
     "@types/pg": "^8.20.3",
     "@vitest/coverage-v8": "^4.1.2",
-    "cli-testlab": "^6.0.1",
     "eslint": "^9.39.5",
     "luxon": "^3.7.2",
     "neostandard": "^0.13.0",
@@ -36,22 +32,15 @@
     "build": "bun run clean && tsc --project tsconfig.build.json",
     "clean": "bun -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "prepublishOnly": "bun install && bun run test && bun run build",
-    "pretest": "bun run tsc && bun run gen:manifest:check",
+    "pretest": "bun run tsc",
     "test": "eslint . && bun --bun vitest run",
     "test:distributed": "DISTRIBUTED=true bun run test",
-    "test:cockroachdb": "DB_TYPE=cockroachdb COCKROACH_HOST=localhost bun run test -- test/distributedDatabaseTest.ts",
-    "test:cockroachdb:full": "DB_TYPE=cockroachdb COCKROACH_HOST=localhost bun run test -- --no-file-parallelism",
-    "test:yugabytedb:full": "DB_TYPE=yugabytedb YUGABYTE_HOST=localhost bun run test -- --no-file-parallelism",
-    "test:citus:full": "DB_TYPE=citus CITUS_HOST=localhost bun run test",
     "test:pglite": "DB_TYPE=pglite bun run test",
     "test:sqlite": "DB_TYPE=sqlite bun run test",
     "test:bun": "DB_TYPE=bun bun run test",
     "lint:fix": "eslint . --fix",
     "cover": "bun run test -- --coverage",
     "tsc": "tsc --noEmit",
-    "cli": "bun ./dist/cli.js",
-    "gen:manifest": "bun scripts/gen-manifest.ts",
-    "gen:manifest:check": "bun scripts/gen-manifest.ts --check",
     "console": "bun scripts/console.js"
   },
   "pgboss": {

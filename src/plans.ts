@@ -1,13 +1,4 @@
-import type { JobMatchStrategy, UpdateQueueOptions, ManagedIndex, ManagedFunction } from './types.ts'
-import {
-  indexKeysRaw,
-  indexPredicateRaw,
-  displayIndexDefinition,
-  extractFunctionBody,
-  normalizeFunctionBody
-} from './drifter.ts'
-import type { ExpectedColumns, ExpectedConstraints } from './drifter.ts'
-import schemaManifest from './schema.json' with { type: 'json' }
+import type { JobMatchStrategy, UpdateQueueOptions } from './types.ts'
 import { normalizeSchemaName, resolveSchemaName } from './tools.ts'
 import { type Ctx, type Dialect, qn, sch, dial } from './dialect.ts'
 
@@ -41,28 +32,11 @@ export const PG_ERROR = {
 }
 
 export const DEFAULT_SCHEMA = 'pgboss'
-export const MIGRATE_RACE_MESSAGE = 'division by zero'
 export const CREATE_RACE_MESSAGE = 'already exists'
 export const SINGLE_QUOTE_REGEX = /'/g
 const FIFTEEN_MINUTES = 60 * 15
 const FORTEEN_DAYS = 60 * 60 * 24 * 14
 const SEVEN_DAYS = 60 * 60 * 24 * 7
-// A bam row stuck at 'in_progress' past this means the process that claimed it died or was
-// stopped mid-command (bam.ts #processCommands returns without marking the row on #stopped or a
-// crash), and getNextBamCommand needs to reclaim it or every future async migration wedges forever.
-// This is the *fallback* backstop only — deliberately long (24h) because false-reclaim is the worse
-// failure: reclaiming a still-running CREATE INDEX CONCURRENTLY runs two builds on the same index at
-// once, and an interrupted CONCURRENTLY leaves an INVALID index needing manual cleanup. The intended
-// *primary* trigger is a liveness check against pg_stat_progress_create_index (reclaim as soon as no
-// backend is actually building), which recovers in minutes instead of a day; the 24h timeout only
-// covers cases liveness can't classify (non-index commands, or a build that never registered).
-const BAM_STALE_SECONDS = 60 * 60 * 24
-// Liveness grace window: on the native-Postgres path we don't trust a "no build running" reading
-// until a claimed command has had time to actually start and register in pg_stat_progress_create_index
-// (pool latency between claiming the row and issuing the build). Below this age, an in_progress row is
-// only reclaimed via the 24h fallback, never via liveness — so a genuinely-running build is never
-// yanked out from under itself.
-const BAM_LIVENESS_GRACE_SECONDS = 60 * 5
 
 export const JOB_STATES = Object.freeze({
   created: 'created',
@@ -121,7 +95,6 @@ export function create (c: Ctx, version: number, options?: CreateOptions) {
     createTableQueue(c),
     createTableSchedule(c),
     createTableSubscription(c),
-    createTableBam(c),
 
     // Partition-helper functions are only used by the partitioned architecture.
     // They are unused when partitioning is disabled, and job_table_format's
@@ -129,18 +102,10 @@ export function create (c: Ctx, version: number, options?: CreateOptions) {
     // CockroachDB, so skip them entirely in noTablePartitioning mode.
     noPartitioning ? '' : jobTableFormatFunction(c),
     noPartitioning ? '' : jobTableRunFunction(c),
-    noPartitioning ? '' : jobTableRunAsyncFunction(c),
 
     createTableJob(c, noPartitioning),
     createPrimaryKeyJob(c),
     noPartitioning ? createTableJobIndexes(c, noDeferrable, noCovering) : createTableJobCommon(c),
-
-    createTableWarning(c),
-    createIndexWarning(c),
-
-    createTableQueueStats(c, noPartitioning),
-    createIndexQueueStats(c, noCovering),
-    noPartitioning ? '' : ensureQueueStatsPartitions(c),
 
     createTableJobDependency(c),
     createIndexJobDependencyParent(c),
@@ -185,7 +150,6 @@ function createSqlite (c: Ctx, version: number): string {
     `CREATE TABLE ${qn(c, 'version')} (
       version integer primary key,
       cron_on text,
-      bam_on text,
       flow_on text
     )`,
     `CREATE TABLE ${qn(c, 'queue')} (
@@ -236,19 +200,6 @@ function createSqlite (c: Ctx, version: number): string {
       updated_on text not null default (${SQLITE_NOW_DEFAULT}),
       PRIMARY KEY (event, name)
     )`,
-    `CREATE TABLE ${qn(c, 'bam')} (
-      id text PRIMARY KEY default (${SQLITE_UUID_DEFAULT}),
-      name text NOT NULL,
-      version integer NOT NULL,
-      status text NOT NULL DEFAULT 'pending',
-      queue text,
-      table_name text NOT NULL,
-      command text NOT NULL,
-      error text,
-      created_on text NOT NULL DEFAULT (${SQLITE_NOW_DEFAULT}),
-      started_on text,
-      completed_on text
-    )`,
     `CREATE TABLE ${qn(c, 'job')} (
       id text not null default (${SQLITE_UUID_DEFAULT}),
       name text not null,
@@ -298,27 +249,6 @@ function createSqlite (c: Ctx, version: number): string {
     createIndexJobGroupConcurrency(c),
     createIndexJobPolicyKeyStrictFifo(c),
     createIndexJobBlocking(c),
-    `CREATE TABLE ${qn(c, 'warning')} (
-      id text PRIMARY KEY default (${SQLITE_UUID_DEFAULT}),
-      type text NOT NULL,
-      message text NOT NULL,
-      data text,
-      created_on text NOT NULL DEFAULT (${SQLITE_NOW_DEFAULT})
-    )`,
-    createIndexWarning(c),
-    `CREATE TABLE ${qn(c, 'queue_stats')} (
-      id text NOT NULL DEFAULT (${SQLITE_UUID_DEFAULT}),
-      name text NOT NULL,
-      deferred_count integer NOT NULL DEFAULT 0,
-      queued_count   integer NOT NULL DEFAULT 0,
-      ready_count    integer NOT NULL DEFAULT 0,
-      active_count   integer NOT NULL DEFAULT 0,
-      failed_count   integer NOT NULL DEFAULT 0,
-      total_count    integer NOT NULL DEFAULT 0,
-      captured_on text NOT NULL DEFAULT (${SQLITE_NOW_DEFAULT}),
-      PRIMARY KEY (id)
-    )`,
-    createIndexQueueStats(c, true),
     `CREATE TABLE ${qn(c, 'job_dependency')} (
       child_name text NOT NULL,
       child_id text NOT NULL,
@@ -357,7 +287,6 @@ function createTableVersion (c: Ctx) {
     CREATE TABLE ${qn(c, 'version')} (
       version int primary key,
       cron_on timestamp with time zone,
-      bam_on timestamp with time zone,
       flow_on timestamp with time zone
     )
   `
@@ -426,43 +355,6 @@ function createTableSubscription (c: Ctx) {
   `
 }
 
-function createTableBam (c: Ctx) {
-  return `
-    CREATE TABLE ${qn(c, 'bam')} (
-      id uuid PRIMARY KEY default gen_random_uuid(),
-      name text NOT NULL,
-      version int NOT NULL,
-      status text NOT NULL DEFAULT 'pending',
-      queue text,
-      table_name text NOT NULL,
-      command text NOT NULL,
-      error text,
-      -- clock_timestamp() (not now()) so multiple job_table_run_async() enqueues within a single
-      -- migration transaction keep their insertion order — BAM applies queued commands in created_on
-      -- order, and some migrations enqueue an ordered drop-then-rebuild pair (see migration v33).
-      created_on timestamp with time zone NOT NULL DEFAULT clock_timestamp(),
-      started_on timestamp with time zone,
-      completed_on timestamp with time zone
-    )
-  `
-}
-
-export function createTableWarning (c: Ctx) {
-  return `
-    CREATE TABLE ${qn(c, 'warning')} (
-      id uuid PRIMARY KEY default gen_random_uuid(),
-      type text NOT NULL,
-      message text NOT NULL,
-      data jsonb,
-      created_on timestamp with time zone NOT NULL DEFAULT now()
-    )
-  `
-}
-
-export function createIndexWarning (c: Ctx) {
-  return `CREATE INDEX ${qi(c, 'warning_i1')} ON ${qn(c, 'warning')} (created_on DESC)`
-}
-
 export function createTableJobDependency (c: Ctx) {
   return `
     CREATE TABLE ${qn(c, 'job_dependency')} (
@@ -482,8 +374,7 @@ export function createIndexJobDependencyParent (c: Ctx) {
 // Anchored so a schema name that itself contains these substrings (e.g. `job_intake`) isn't
 // mangled: `\.job\y` matches only the base table reference (`schema.job`, not `schema.job_i5` whose
 // `job` is followed by `_`, nor `.job_dependency`), and `\yjob_i(\d+)` matches only the bare
-// index-name tokens (job_i1..9), never the `job_i` inside a schema name. Mirrors formatJobTable()
-// in migrationStore.ts; the migration that fixed this (v37) carries its own frozen copy.
+// index-name tokens (job_i1..9), never the `job_i` inside a schema name.
 export function jobTableFormatFunction (c: Ctx) {
   return `
     CREATE FUNCTION ${qn(c, 'job_table_format')}(command text, table_name text)
@@ -524,53 +415,6 @@ function jobTableRunFunction (c: Ctx) {
       LOOP
         EXECUTE ${qn(c, 'job_table_format')}(command, tbl.table_name);
       END LOOP;
-    END;
-    $$
-    LANGUAGE plpgsql;
-  `
-}
-
-function jobTableRunAsyncFunction (c: Ctx) {
-  return `
-    CREATE FUNCTION ${qn(c, 'job_table_run_async')}(command_name text, version int, command text, tbl_name text DEFAULT NULL, queue_name text DEFAULT NULL)
-    RETURNS VOID AS
-    $$
-    BEGIN
-      IF queue_name IS NOT NULL THEN
-        SELECT table_name INTO tbl_name FROM ${qn(c, 'queue')} WHERE name = queue_name;
-      END IF;
-
-      IF tbl_name IS NOT NULL THEN
-        INSERT INTO ${qn(c, 'bam')} (name, version, status, queue, table_name, command)
-        VALUES (
-          command_name,
-          version,
-          'pending',
-          queue_name,
-          tbl_name,
-          ${qn(c, 'job_table_format')}(command, tbl_name)
-        );
-        RETURN;
-      END IF;
-
-      INSERT INTO ${qn(c, 'bam')} (name, version, status, queue, table_name, command)
-      SELECT
-        command_name,
-        version,
-        'pending',
-        NULL,
-        '${COMMON_JOB_TABLE}',
-        ${qn(c, 'job_table_format')}(command, '${COMMON_JOB_TABLE}')
-      UNION ALL
-      SELECT
-        command_name,
-        version,
-        'pending',
-        queue.name,
-        queue.table_name,
-        ${qn(c, 'job_table_format')}(command, queue.table_name)
-      FROM ${qn(c, 'queue')}
-      WHERE partition = true;
     END;
     $$
     LANGUAGE plpgsql;
@@ -1025,10 +869,6 @@ export function trySetCronTime (c: Ctx, seconds: number) {
   return trySetTimestamp(c, 'cron_on', seconds)
 }
 
-export function trySetBamTime (c: Ctx, seconds: number) {
-  return trySetTimestamp(c, 'bam_on', seconds)
-}
-
 export function trySetFlowTime (c: Ctx, seconds: number) {
   return trySetTimestamp(c, 'flow_on', seconds)
 }
@@ -1218,152 +1058,6 @@ export function getTime (c: Ctx) {
   return "SELECT round(date_part('epoch', now()) * 1000) as time"
 }
 
-export function insertWarning (c: Ctx) {
-  return `
-    INSERT INTO ${qn(c, 'warning')} (type, message, data)
-    VALUES ($1, $2, $3)
-  `
-}
-
-export function getWarnings (c: Ctx): string {
-  return `
-    SELECT
-      id,
-      type,
-      message,
-      data,
-      created_on as "createdOn"
-    FROM ${qn(c, 'warning')}
-    WHERE (${dial(c).textParamIsNull('$1')} OR type = $1)
-    ORDER BY created_on DESC
-    LIMIT $2 OFFSET $3
-  `
-}
-
-export function getWarningsCount (c: Ctx): string {
-  return `
-    SELECT ${dial(c).castInt('COUNT(*)')} as count
-    FROM ${qn(c, 'warning')}
-    WHERE (${dial(c).textParamIsNull('$1')} OR type = $1)
-  `
-}
-
-export function deleteOldWarnings (c: Ctx, days: number): string {
-  return `
-    DELETE FROM ${qn(c, 'warning')}
-    WHERE created_on < ${dial(c).nowMinusInterval(days, 'days')}
-  `
-}
-
-export function createTableQueueStats (c: Ctx, noPartitioning = false): string {
-  return `
-    CREATE TABLE ${qn(c, 'queue_stats')} (
-      id uuid NOT NULL DEFAULT gen_random_uuid(),
-      name text NOT NULL,
-      deferred_count int NOT NULL DEFAULT 0,
-      queued_count   int NOT NULL DEFAULT 0,
-      ready_count    int NOT NULL DEFAULT 0,
-      active_count   int NOT NULL DEFAULT 0,
-      failed_count   int NOT NULL DEFAULT 0,
-      total_count    int NOT NULL DEFAULT 0,
-      captured_on timestamptz NOT NULL DEFAULT now(),
-      ${noPartitioning ? 'PRIMARY KEY (id)' : 'PRIMARY KEY (id, captured_on)'}
-    ) ${noPartitioning ? '' : 'PARTITION BY RANGE (captured_on)'}
-  `
-}
-
-export function createIndexQueueStats (c: Ctx, noCoveringIndex = false): string {
-  const include = noCoveringIndex
-    ? ''
-    : 'INCLUDE (deferred_count, queued_count, ready_count, active_count, failed_count, total_count)'
-
-  return `CREATE INDEX ${qi(c, 'queue_stats_i1')} ON ${qn(c, 'queue_stats')} (name, captured_on DESC) ${include}`
-}
-
-// Idempotently create the daily partitions for today and tomorrow (UTC). Both the day suffix and
-// the range bounds are derived in SQL from the UTC calendar date, and the bounds are emitted as
-// explicit `+00` timestamptz literals. This keeps partitioning correct regardless of the database
-// session TimeZone (a bare date literal like '2026-06-25' would otherwise be cast to timestamptz in
-// the session TZ, so rows written near UTC midnight could fall outside every existing partition).
-// Computing the date in SQL (rather than interpolating new Date()) also keeps emitted DDL — including
-// the v35 migration and exported create plans — deterministic and apply-time accurate.
-export function ensureQueueStatsPartitions (c: Ctx): string {
-  return `
-    DO $$
-    DECLARE
-      d date;
-      i int;
-      part_name text;
-    BEGIN
-      FOR i IN 0..1 LOOP
-        d := (now() AT TIME ZONE 'UTC')::date + i;
-        part_name := 'queue_stats_' || to_char(d, 'YYYYMMDD');
-        IF NOT EXISTS (
-          SELECT 1 FROM pg_class c
-          JOIN pg_namespace n ON n.oid = c.relnamespace
-          WHERE n.nspname = '${resolveSchemaName(sch(c))}' AND c.relname = part_name
-        ) THEN
-          EXECUTE format(
-            'CREATE TABLE ${sch(c)}.%I PARTITION OF ${qn(c, 'queue_stats')} FOR VALUES FROM (%L) TO (%L)',
-            part_name,
-            to_char(d, 'YYYY-MM-DD') || ' 00:00:00+00',
-            to_char(d + 1, 'YYYY-MM-DD') || ' 00:00:00+00'
-          );
-        END IF;
-      END LOOP;
-    END;
-    $$
-  `
-}
-
-export function dropOldQueueStatsPartitions (c: Ctx, days: number): string {
-  return `
-    DO $$
-    DECLARE
-      r record;
-      cutoff date := (now() AT TIME ZONE 'UTC')::date - ${days};
-      suffix text;
-      part_date date;
-    BEGIN
-      FOR r IN
-        SELECT c.relname
-        FROM pg_inherits i
-        JOIN pg_class p ON p.oid = i.inhparent
-        JOIN pg_class c ON c.oid = i.inhrelid
-        JOIN pg_namespace n ON n.oid = p.relnamespace
-        WHERE n.nspname = '${resolveSchemaName(sch(c))}' AND p.relname = 'queue_stats'
-      LOOP
-        suffix := substring(r.relname FROM 'queue_stats_(.*)$');
-        IF suffix ~ '^[0-9]{8}$' THEN
-          part_date := to_date(suffix, 'YYYYMMDD');
-          IF part_date < cutoff THEN
-            EXECUTE 'DROP TABLE IF EXISTS ${sch(c)}.' || quote_ident(r.relname);
-          END IF;
-        END IF;
-      END LOOP;
-    END;
-    $$
-  `
-}
-
-export function deleteOldQueueStats (c: Ctx, days: number): string {
-  return `
-    DELETE FROM ${qn(c, 'queue_stats')}
-    WHERE captured_on < ${dial(c).nowMinusInterval(days, 'days')}
-  `
-}
-
-export function insertQueueStats (c: Ctx, queues: string[], noAdvisoryLocks?: boolean): string {
-  const sql = `
-    INSERT INTO ${qn(c, 'queue_stats')}
-      (name, deferred_count, queued_count, ready_count, active_count, failed_count, total_count)
-    SELECT name, deferred_count, queued_count, ready_count, active_count, failed_count, total_count
-    FROM ${qn(c, 'queue')}
-    WHERE ${dial(c).inArrayLiteral('name', queues)}
-  `
-  return locked(c, sql, 'queue-stats-insert', noAdvisoryLocks)
-}
-
 // Cheap single-row read of the cached counts the monitor maintains on the queue table. capturedOn
 // is monitor_on — the moment those counts were last refreshed, or NULL if the queue has never been
 // monitored (so the caller knows to recompute rather than trust default-zero counts).
@@ -1381,148 +1075,6 @@ export function getQueueStatsCache (c: Ctx): string {
       monitor_on     as "capturedOn"
     FROM ${qn(c, 'queue')}
     WHERE name = $1
-  `
-}
-
-export function getQueueStatsHistory (c: Ctx): string {
-  return `
-    SELECT
-      name,
-      deferred_count as "deferredCount",
-      queued_count   as "queuedCount",
-      ready_count    as "readyCount",
-      active_count   as "activeCount",
-      failed_count   as "failedCount",
-      total_count    as "totalCount",
-      captured_on    as "capturedOn"
-    FROM ${qn(c, 'queue_stats')}
-    WHERE name = $1
-      AND (${dial(c).tsParamIsNull('$2')} OR captured_on >= $2)
-      AND (${dial(c).tsParamIsNull('$3')} OR captured_on <= $3)
-    ORDER BY captured_on DESC
-    LIMIT $4
-  `
-}
-
-// Per-bucket aggregate over a count column. The function name can't be a bind parameter, so it's
-// interpolated — safe because the manager validates `aggregate` against this whitelist first. Every
-// result is cast back to int: it honors the int count contract (avg rounds) and keeps Postgres
-// returning the value as a JS number rather than a numeric string.
-const STATS_AGG = {
-  max: (c: string) => `max(${c})::int`,
-  min: (c: string) => `min(${c})::int`,
-  avg: (c: string) => `round(avg(${c}))::int`
-} as const
-
-// Downsampled history: group the recorded series into fixed-width time buckets and collapse each
-// bucket's counts with `aggregate`, so a wide window returns a manageable, representative sample
-// instead of just the newest `limit` raw rows.
-//
-//   mode 'bucket' — $5 is the bucket width in seconds (explicit resolution).
-//   mode 'auto'   — $5 is maxDataPoints; the width is derived so the series fits in $5 points.
-//                   from/to sets the range, but they cannot exceed the data's own min/max values.
-//
-// The bucket key avoids date_bin() (PG14+): pg-boss supports PostgreSQL 13+ and CockroachDB/
-// YugabyteDB, none of which can rely on it. to_timestamp / extract(epoch) / floor exist on all of
-// them (extract returns double on PG13, numeric on PG14+; floor/division handle both identically),
-// and buckets align to the Unix epoch so their boundaries are stable across calls.
-export function getQueueStatsHistoryBucketed (c: Ctx, aggregate: 'max' | 'min' | 'avg', mode: 'bucket' | 'auto'): string {
-  if (dial(c).name === 'sqlite') {
-    return getQueueStatsHistoryBucketedSqlite(c, aggregate, mode)
-  }
-
-  const agg = STATS_AGG[aggregate]
-
-  const widthCte = mode === 'auto'
-    ? `WITH extent AS (
-         SELECT min(captured_on) AS lo, max(captured_on) AS hi
-         FROM ${qn(c, 'queue_stats')}
-         WHERE name = $1
-       ),
-       bounds AS (
-         SELECT
-           greatest(coalesce($2::timestamptz, lo), lo) AS lo,
-           least(coalesce($3::timestamptz, hi), hi)    AS hi
-         FROM extent
-       ),
-       w AS (
-         SELECT greatest(1, ceil(extract(epoch from (hi - lo)) / greatest($5, 1))::bigint)::bigint AS secs
-         FROM bounds
-       )`
-    : 'WITH w AS (SELECT greatest($5, 1)::bigint AS secs)'
-
-  // Hard-cap auto-mode at maxDataPoints. Epoch-aligned bucketing can straddle a boundary and emit
-  // one bucket more than the target, so cap the row count at the smaller of the user's limit and
-  // maxDataPoints. ORDER BY DESC means the cap drops the oldest (straddle) bucket and keeps the
-  // newest N. Explicit bucketSeconds has no target to overshoot, so it keeps the raw limit.
-  const limit = mode === 'auto' ? 'least($4, $5)' : '$4'
-
-  return `
-    ${widthCte}
-    SELECT
-      to_timestamp(floor(extract(epoch from captured_on) / w.secs) * w.secs) as "capturedOn",
-      ${agg('deferred_count')} as "deferredCount",
-      ${agg('queued_count')}   as "queuedCount",
-      ${agg('ready_count')}    as "readyCount",
-      ${agg('active_count')}   as "activeCount",
-      ${agg('failed_count')}   as "failedCount",
-      ${agg('total_count')}    as "totalCount"
-    FROM ${qn(c, 'queue_stats')}, w
-    WHERE name = $1
-      AND ($2::timestamptz IS NULL OR captured_on >= $2)
-      AND ($3::timestamptz IS NULL OR captured_on <= $3)
-    GROUP BY 1
-    ORDER BY 1 DESC
-    LIMIT ${limit}
-  `
-}
-
-// The sqlite rendering of the bucketed history: epoch math via unixepoch, bucket keys re-rendered
-// as the dialect's ISO text, scalar max/min in place of GREATEST/LEAST.
-function getQueueStatsHistoryBucketedSqlite (c: Ctx, aggregate: 'max' | 'min' | 'avg', mode: 'bucket' | 'auto'): string {
-  const agg = {
-    max: (col: string) => `max(${col})`,
-    min: (col: string) => `min(${col})`,
-    avg: (col: string) => `CAST(round(avg(${col})) AS INTEGER)`
-  }[aggregate]
-
-  const widthCte = mode === 'auto'
-    ? `WITH extent AS (
-         SELECT min(captured_on) AS lo, max(captured_on) AS hi
-         FROM ${qn(c, 'queue_stats')}
-         WHERE name = $1
-       ),
-       bounds AS (
-         SELECT
-           max(COALESCE($2, lo), lo) AS lo,
-           min(COALESCE($3, hi), hi) AS hi
-         FROM extent
-       ),
-       w AS (
-         SELECT max(1, CAST(ceil((unixepoch(hi, 'subsec') - unixepoch(lo, 'subsec')) / max($5, 1)) AS INTEGER)) AS secs
-         FROM bounds
-       )`
-    : 'WITH w AS (SELECT max($5, 1) AS secs)'
-
-  const limit = mode === 'auto' ? 'min($4, $5)' : '$4'
-
-  return `
-    ${widthCte}
-    SELECT
-      strftime('%Y-%m-%dT%H:%M:%fZ', CAST(unixepoch(captured_on, 'subsec') / w.secs AS INTEGER) * w.secs, 'unixepoch') as "capturedOn",
-      ${agg('deferred_count')} as "deferredCount",
-      ${agg('queued_count')}   as "queuedCount",
-      ${agg('ready_count')}    as "readyCount",
-      ${agg('active_count')}   as "activeCount",
-      ${agg('failed_count')}   as "failedCount",
-      ${agg('total_count')}    as "totalCount"
-    FROM ${qn(c, 'queue_stats')}, w
-    WHERE name = $1
-      AND ($2 IS NULL OR captured_on >= $2)
-      AND ($3 IS NULL OR captured_on <= $3)
-    GROUP BY 1
-    ORDER BY 1 DESC
-    LIMIT ${limit}
   `
 }
 
@@ -3023,9 +2575,9 @@ export function cacheQueueStats (c: Ctx, table: string, queues: string[], noAdvi
       failed_count = COALESCE(stats."failedCount", 0),
       total_count = COALESCE(stats."totalCount", 0),
       singletons_active = stats."singletonsActive",
-      -- Always-on sliding window of recent ready counts for the dashboard sparkline (independent of
-      -- persistQueueStats). Prepend the newest sample and keep the newest READY_HISTORY_SIZE, stored
-      -- newest-first. Built with unnest + array_agg (not array slicing, which CockroachDB lacks).
+      -- Always-on sliding window of recent ready counts for the dashboard sparkline. Prepend the
+      -- newest sample and keep the newest READY_HISTORY_SIZE, stored newest-first. Built with
+      -- unnest + array_agg (not array slicing, which some distributed engines lack).
       ready_history = (
         SELECT COALESCE(array_agg(v ORDER BY ord), '{}'::int[])
         FROM (
@@ -3179,11 +2731,6 @@ function advisoryLock (c: Ctx, key?: string) {
   )`
 }
 
-export function assertMigration (c: Ctx, version: number) {
-  // raises 'division by zero' if already on desired schema version
-  return `SELECT version::int/(version::int-${version}) from ${qn(c, 'version')}`
-}
-
 export function findJobs (c: Ctx, table: string, options: { queued: boolean, byKey: boolean, byData: boolean, byId: boolean }) {
   const { queued, byKey, byData, byId } = options
 
@@ -3301,360 +2848,4 @@ export function getBlockedKeys (c: Ctx, table: string) {
       AND state = '${JOB_STATES.failed}'
       AND policy = '${QUEUE_POLICIES.key_strict_fifo}'
     `
-}
-
-export function getNextBamCommand (c: Ctx, { useLiveness = false }: { useLiveness?: boolean } = {}) {
-  // Head-of-line note (shared by both variants): process all 'pending' commands (oldest first)
-  // before retrying any 'failed' or stale 'in_progress' one, so a permanently-failing (or
-  // crashed-mid-flight) command can't sit at the head of the queue and starve everything behind it.
-  // Within a status, created_on preserves enqueue order.
-  if (!useLiveness) {
-    // Timeout-only path for engines without pg_stat_progress_create_index (CockroachDB/YugabyteDB):
-    // a stuck in_progress row is reclaimed purely on the 24h fallback. No CONCURRENTLY healing, so no
-    // reclaimed flag is emitted (bam.ts skips healing when noIndexProgressView is set anyway).
-    return `
-      UPDATE ${qn(c, 'bam')}
-      SET status = 'in_progress', started_on = now()
-      WHERE id = (
-        SELECT id FROM ${qn(c, 'bam')}
-        WHERE (
-          status IN ('pending', 'failed')
-          OR (status = 'in_progress' AND started_on < now() - interval '${BAM_STALE_SECONDS} seconds')
-        )
-        AND NOT EXISTS (
-          SELECT 1 FROM ${qn(c, 'bam')}
-          WHERE status = 'in_progress' AND started_on >= now() - interval '${BAM_STALE_SECONDS} seconds'
-        )
-        ORDER BY (status != 'pending'), created_on
-        LIMIT 1
-      )
-      RETURNING id, name, version, status, queue, table_name as "table", command, error,
-                created_on as "createdOn", started_on as "startedOn", completed_on as "completedOn"
-    `
-  }
-
-  // Native-Postgres liveness path. An in_progress row counts as "stale" (reclaimable) when it is past
-  // the grace window AND no backend is actually building its index right now. The same predicate,
-  // negated, defines a genuinely-live command that must still block the queue — so a running build is
-  // NEVER reclaimed (no matter how long it runs), and a dead one recovers within the grace window.
-  // There is deliberately no 24h absolute cap here: liveBuild=true always means a build is in flight, so
-  // capping on elapsed time would reclaim a genuinely-running build and start a second
-  // CREATE INDEX CONCURRENTLY on the same index — the exact double-build this path exists to prevent.
-  // (The timeout-only path's BAM_STALE_SECONDS fallback covers engines with no way to detect liveness.)
-  //
-  // liveBuild(tableCol): is a CREATE INDEX CONCURRENTLY actively building this table's index right now?
-  // Detected via pg_locks, NOT pg_stat_progress_create_index — and that choice is load-bearing for
-  // multi-instance safety. pg_stat_progress_* is filtered to the querying role's OWN backends (only a
-  // superuser or a member of pg_read_all_stats sees another role's builds), so a progress-view check
-  // silently reads a peer's live build as "dead" whenever pg-boss instances connect under different DB
-  // roles — and the heal step (bamHealProbe/bamHealDrop in bam.ts) would then DROP INDEX CONCURRENTLY a
-  // live index mid-build, racing the builder into a double CREATE. pg_locks, by contrast, is cluster-wide
-  // and visible to every role (verified empirically). CREATE INDEX CONCURRENTLY holds a
-  // ShareUpdateExclusiveLock on the target table for the ENTIRE build and releases it the instant the
-  // statement finishes or the backend dies, so a granted SUExclusive lock on the row's table is a
-  // crash-safe, role-agnostic "build in flight" signal — instances may run under different roles with no
-  // loss of safety. Ordinary queue DML never takes SUExclusive (it uses AccessShare/RowShare/
-  // RowExclusive), so it can't false-trigger; a concurrent autovacuum/ANALYZE on the same table DOES take
-  // SUExclusive and reads as "live", but that false positive is in the SAFE direction — it only briefly
-  // DEFERS a reclaim, never drops a live index. Scoped to the current database (l.database) because
-  // pg_locks is cluster-wide while relation OIDs are only unique per database. Correlating on the table
-  // is enough because the queue runs only one in_progress command at a time.
-  const liveBuild = (tableCol: string) => `EXISTS (
-    SELECT 1 FROM pg_locks l
-    WHERE l.locktype = 'relation'
-      AND l.granted
-      AND l.mode = 'ShareUpdateExclusiveLock'
-      AND l.database = (SELECT oid FROM pg_database WHERE datname = current_database())
-      AND l.relation = to_regclass(quote_ident('${resolveSchemaName(sch(c))}') || '.' || quote_ident(${tableCol}))
-  )`
-  const stale = (startedCol: string, tableCol: string) => `(
-    ${startedCol} < now() - interval '${BAM_LIVENESS_GRACE_SECONDS} seconds'
-    AND NOT ${liveBuild(tableCol)}
-  )`
-
-  return `
-    WITH candidate AS (
-      SELECT c.id, c.status AS prior_status
-      FROM ${qn(c, 'bam')} c
-      WHERE (
-        c.status IN ('pending', 'failed')
-        OR (c.status = 'in_progress' AND ${stale('c.started_on', 'c.table_name')})
-      )
-      AND NOT EXISTS (
-        SELECT 1 FROM ${qn(c, 'bam')} g
-        WHERE g.status = 'in_progress' AND NOT ${stale('g.started_on', 'g.table_name')}
-      )
-      ORDER BY (c.status != 'pending'), c.created_on
-      LIMIT 1
-      -- Defense-in-depth against a double-claim. The upstream trySetBamTime throttle serializes healers
-      -- to one per interval, but a build running longer than bamIntervalSeconds lets a second instance
-      -- pass the throttle while the first is still working. FOR UPDATE SKIP LOCKED makes the claim itself
-      -- mutually exclusive: whichever instance locks the head row wins; the other skips it (and, with
-      -- LIMIT 1, claims nothing) rather than re-running the same UPDATE and re-driving the command with a
-      -- stale prior_status. OF c scopes the lock to the candidate row only, so the NOT EXISTS probe over
-      -- bam g is never itself locked. Postgres-only path — SKIP LOCKED is deliberately absent from the
-      -- timeout-only variant, which also serves CockroachDB/YugabyteDB where it performs poorly and can
-      -- skip unexpectedly.
-      FOR UPDATE OF c SKIP LOCKED
-    )
-    UPDATE ${qn(c, 'bam')} b
-    SET status = 'in_progress', started_on = now()
-    FROM candidate
-    WHERE b.id = candidate.id
-    RETURNING b.id, b.name, b.version, b.status, b.queue, b.table_name as "table", b.command, b.error,
-              b.created_on as "createdOn", b.started_on as "startedOn", b.completed_on as "completedOn",
-              -- reattempt: was this command already tried once (stale-reclaimed in_progress OR a prior
-              -- 'failed')? Either way an interrupted/failed CREATE INDEX CONCURRENTLY may have left an
-              -- INVALID index, so the runner heals (drop-then-rebuild) before re-running. Fresh
-              -- 'pending' rows have nothing to heal.
-              (candidate.prior_status <> 'pending') as reattempt
-  `
-}
-
-// Derives the drop-then-rebuild heal step for a re-attempted BAM index build: an interrupted
-// CREATE INDEX CONCURRENTLY leaves an INVALID index in the catalog, and the command's own
-// IF NOT EXISTS would then skip forever (marking the row done while the index stays invalid).
-// Dropping it first lets the re-run rebuild cleanly. Returns null for non-index commands (which
-// have nothing to heal) so the caller just re-runs them. DROP ... CONCURRENTLY runs outside a
-// transaction, matching the CREATE, and IF EXISTS makes it a no-op when there's nothing to drop.
-export function bamHealDrop (c: Ctx, command: string): string | null {
-  const match = command.match(/CREATE\s+(?:UNIQUE\s+)?INDEX\s+CONCURRENTLY\s+(?:IF\s+NOT\s+EXISTS\s+)?("?[\w$]+"?)/i)
-  if (!match) return null
-  return `DROP INDEX CONCURRENTLY IF EXISTS ${sch(c)}.${match[1]}`
-}
-
-// Probe run before bamHealDrop: returns `invalid = true` only when the index the re-attempted command
-// would build already exists AND is INVALID (an interrupted CREATE INDEX CONCURRENTLY left a stub).
-// A build that actually finished but whose BAM row was never marked completed — e.g. a graceful stop
-// landed between the CREATE succeeding and markCompleted — leaves a VALID index; dropping that would
-// tear down a live production index for the whole rebuild window, so the caller must NOT heal it (the
-// re-run's own IF NOT EXISTS then no-ops and just marks the row done). Returns null for non-index
-// commands and for an absent index (no row), where there is nothing to drop. Mirrors bamHealDrop's
-// CONCURRENTLY-only recognition so it is non-null exactly when bamHealDrop is.
-export function bamHealProbe (c: Ctx, command: string): string | null {
-  const match = command.match(/CREATE\s+(?:UNIQUE\s+)?INDEX\s+CONCURRENTLY\s+(?:IF\s+NOT\s+EXISTS\s+)?"?([\w$]+)"?/i)
-  if (!match) return null
-  return `
-    SELECT NOT i.indisvalid AS invalid
-    FROM pg_class c
-    JOIN pg_index i ON i.indexrelid = c.oid
-    JOIN pg_namespace n ON n.oid = c.relnamespace
-    WHERE n.nspname = '${resolveSchemaName(sch(c)).replace(SINGLE_QUOTE_REGEX, "''")}' AND c.relname = '${match[1].replace(SINGLE_QUOTE_REGEX, "''")}'
-  `
-}
-
-export function setBamCompleted (c: Ctx, id: string) {
-  return `
-    UPDATE ${qn(c, 'bam')}
-    SET status = 'completed', completed_on = now()
-    WHERE id = '${id}'
-  `
-}
-
-export function setBamFailed (c: Ctx, id: string, error: string) {
-  const escapedError = error.replace(/'/g, "''")
-  return `
-    UPDATE ${qn(c, 'bam')}
-    SET status = 'failed', error = '${escapedError}', completed_on = now()
-    WHERE id = '${id}'
-  `
-}
-
-export function getBamStatus (c: Ctx) {
-  return `
-    SELECT status, ${dial(c).castInt('count(*)')} as count, max(created_on) as "lastCreatedOn"
-    FROM ${qn(c, 'bam')}
-    GROUP BY status
-  `
-}
-
-export function getBamEntries (c: Ctx) {
-  return `
-    SELECT id, name, version, status, queue, table_name as "table", command, error,
-           created_on as "createdOn", started_on as "startedOn", completed_on as "completedOn"
-    FROM ${qn(c, 'bam')}
-    ORDER BY version, created_on
-  `
-}
-
-// --- drift detection: live-catalog probes ---
-//
-// pg-boss-specific probes that read the live database for drift detection: partitioning topology and
-// in-flight BAM builds. Their results feed the generic engine in drifter.ts, which knows nothing about
-// pg-boss.
-
-// Probe for the default partition; its presence means the partitioned architecture is in use, so
-// drift detection reads it from the live database rather than trusting a boss config flag.
-export function jobCommonExists (c: Ctx) {
-  return `SELECT to_regclass('${qn(c, COMMON_JOB_TABLE)}') as name`
-}
-
-// Per-queue partition tables and their policy, so the expected index set can be computed per table.
-export function getManagedQueuePartitions (c: Ctx) {
-  return `SELECT table_name as "table", policy FROM ${qn(c, 'queue')} WHERE partition = true`
-}
-
-// The CREATE INDEX command text of every BAM row not yet completed — used to tell a genuinely-missing
-// index apart from one an async build is still working on (or retrying after a failure).
-export function getIncompleteBamCommands (c: Ctx) {
-  return `SELECT command FROM ${qn(c, 'bam')} WHERE status <> 'completed'`
-}
-
-// Extracts the index name a BAM command builds, so an incomplete build can be matched to a missing
-// index. Mirrors the CREATE INDEX shapes bamHealDrop recognises.
-export function bamCommandIndexName (command: string): string | null {
-  const match = command.match(/CREATE\s+(?:UNIQUE\s+)?INDEX\s+(?:CONCURRENTLY\s+)?(?:IF\s+NOT\s+EXISTS\s+)?"?([\w$]+)"?/i)
-  return match ? match[1] : null
-}
-
-// --- expected schema shape (all derived from the generated manifest) ---
-//
-// The expected tables/columns/constraints/functions/indexes/enum pg-boss compares the live catalog
-// against. Every one is read from schema.json (regenerate with `npm run gen:manifest` after a
-// DDL change) with the placeholder schema substituted back — so nothing here duplicates the DDL as
-// hand-written literals. The only hand-maintained pg-boss knowledge is the per-queue partition index
-// distribution rule just below. These produce the `expected` inputs to drifter.ts's generic diff.
-
-interface QueuePartition {
-  table: string
-  policy?: string | null
-}
-
-// job_iN partial indexes that gate on a queue policy: a per-queue partition table (partition:true)
-// only receives the index for its own policy (see create_queue, createQueueFunction). The shared
-// job_common table and a non-partitioned job table carry all of them at once. Keep in sync with the
-// createIndexJobPolicy* builders and the ELSIF ladder in createQueueFunction.
-const POLICY_JOB_INDEXES: Record<number, string> = {
-  1: QUEUE_POLICIES.short,
-  2: QUEUE_POLICIES.singleton,
-  3: QUEUE_POLICIES.stately,
-  6: QUEUE_POLICIES.exclusive,
-  8: QUEUE_POLICIES.key_strict_fifo
-}
-// job_iN indexes with no policy gate — created on every job table regardless of policy
-// (throttle i4, fetch i5, group-concurrency i7, blocking i9).
-const BASE_JOB_INDEXES = [4, 5, 7, 9]
-
-// The fixed (non-job) managed tables; job/job_common/partitions are handled separately.
-const FIXED_MANAGED_TABLES = ['version', 'queue', 'schedule', 'subscription', 'bam', 'warning', 'queue_stats', 'job_dependency']
-
-// Selects the manifest section for the live architecture, and substitutes the real schema name back in
-// for the placeholder the manifest stores.
-function manifestSection (partitioned: boolean) {
-  return partitioned ? schemaManifest.partitioned : schemaManifest.nonPartitioned
-}
-
-function applyManifestSchema (text: string, schema: string): string {
-  return text.split(schemaManifest.schemaToken).join(schema)
-}
-
-// The job_state enum values in declaration order, from the manifest (both sections carry the same enum).
-// Order is significant — the numeric base type makes created < retry < … < failed load-bearing.
-export const EXPECTED_JOB_STATES: readonly string[] = schemaManifest.partitioned.enum
-
-// The tables pg-boss expects to exist. The manifest lists the fixed tables plus job (and job_common in
-// partitioned mode); per-queue partition tables are dynamic, so they are appended from the live set.
-export function expectedManagedTables (c: Ctx, partitioned: boolean, partitions: QueuePartition[] = []): string[] {
-  const tables = [...manifestSection(partitioned).tables]
-  if (partitioned) for (const p of partitions) tables.push(p.table)
-  return tables
-}
-
-// The columns pg-boss expects on each managed table, taken from the manifest (introspected column type,
-// nullability, and default). Fixed tables carry the full defaults + types maps so column defaults, data
-// types, and nullability are diffed; the job table (shared by job_common and every per-queue partition
-// in partitioned mode) is name-only — its FKs are profile-dependent and keep_until's interval default is
-// not worth pinning per-partition. A table with no live columns is skipped by the diff, so listing one
-// that does not exist yet is harmless.
-export function expectedManagedColumns (c: Ctx, partitioned: boolean, partitions: QueuePartition[] = []): ExpectedColumns[] {
-  const fixed = new Set(FIXED_MANAGED_TABLES)
-  const byTable = new Map<string, ExpectedColumns>()
-  const jobColumns: string[] = []
-
-  for (const col of manifestSection(partitioned).columns) {
-    if (col.table === 'job') { jobColumns.push(col.column); continue }
-    if (!fixed.has(col.table)) continue // job_common / anything else derives from the job template below
-    let entry = byTable.get(col.table)
-    if (!entry) byTable.set(col.table, entry = { table: col.table, columns: [], defaults: {}, types: {} })
-    entry.columns.push(col.column)
-    entry.types![col.column] = { type: applyManifestSchema(col.type, sch(c)), notNull: col.notNull }
-    if (col.default != null) entry.defaults![col.column] = applyManifestSchema(col.default, sch(c))
-  }
-
-  const out = [...byTable.values()]
-  out.push({ table: 'job', columns: jobColumns })
-  if (partitioned) {
-    out.push({ table: COMMON_JOB_TABLE, columns: jobColumns })
-    for (const p of partitions) out.push({ table: p.table, columns: jobColumns })
-  }
-
-  return out
-}
-
-// The constraints pg-boss expects on each FIXED managed table, taken verbatim from the manifest's
-// pg_get_constraintdef capture (job/job_common/partitions are excluded: their FKs are profile-dependent
-// DEFERRABLE). Compared as a normalized set, so order is irrelevant. The fresh-install integration test
-// verifies the manifest matches live.
-export function expectedManagedConstraints (c: Ctx, partitioned: boolean): ExpectedConstraints[] {
-  const fixed = new Set(FIXED_MANAGED_TABLES)
-  const byTable = new Map<string, string[]>()
-  for (const { table, def } of manifestSection(partitioned).constraints) {
-    if (!fixed.has(table)) continue
-    const list = byTable.get(table) ?? byTable.set(table, []).get(table)!
-    list.push(applyManifestSchema(def, sch(c)))
-  }
-  return [...byTable].map(([table, constraints]) => ({ table, constraints }))
-}
-
-// The functions pg-boss expects to exist in `schema`, from the manifest's pg_get_functiondef capture
-// (the partitioned architecture has the three job_table_* helpers plus partition-aware create_queue/
-// delete_queue; non-partitioned mode has neither the helpers nor the partition branches). Each entry
-// carries the whitespace-normalised body used for the diff and the full statement for remediation.
-// Postgres stores a function body verbatim, so the manifest body compares equal to the live one.
-export function expectedManagedFunctions (c: Ctx, partitioned: boolean): ManagedFunction[] {
-  return manifestSection(partitioned).functions.map(fn => {
-    const def = applyManifestSchema(fn.def, sch(c))
-    return {
-      name: fn.name,
-      expectedBody: normalizeFunctionBody(extractFunctionBody(def)),
-      definition: def.replace(/\s+/g, ' ').trim()
-    }
-  })
-}
-
-// Computes the set of indexes pg-boss expects to exist in `schema`, sourced from the manifest.
-// `partitioned` reflects the live database (job_common present ⇒ partitioned architecture), so this
-// needs no boss config. The manifest holds every fixed index (the static ones plus the job_iN set on
-// job/job_common); each per-queue partition is dynamic, so its indexes are templated here from the
-// job_common set — the base indexes always, plus the one for the queue's policy. keys/predicate/
-// definition are derived from the catalog-canonical pg_get_indexdef the manifest stores.
-export function expectedManagedIndexes (c: Ctx, partitioned: boolean, partitions: QueuePartition[] = []): ManagedIndex[] {
-  const managed = (name: string, table: string, indexdef: string): ManagedIndex => {
-    const def = applyManifestSchema(indexdef, sch(c))
-    return { name, table, keys: indexKeysRaw(def), predicate: indexPredicateRaw(def), definition: displayIndexDefinition(def) }
-  }
-
-  const jobTable = partitioned ? COMMON_JOB_TABLE : 'job'
-  const out: ManagedIndex[] = []
-  const jobIndexes: Array<{ n: number, def: string }> = []
-
-  // The manifest holds only the managed indexes (constraint-backing *_pkey indexes are excluded at
-  // generation), so every row is an expectation.
-  for (const idx of manifestSection(partitioned).indexes) {
-    out.push(managed(idx.name, idx.table, idx.def))
-    const n = idx.table === jobTable ? idx.name.match(/_i(\d+)$/) : null
-    if (n) jobIndexes.push({ n: Number(n[1]), def: idx.def })
-  }
-
-  // Per-queue partition tables are dynamic, so template each applicable job_common index onto them.
-  if (partitioned) {
-    for (const p of partitions) {
-      for (const { n, def } of jobIndexes) {
-        if (!BASE_JOB_INDEXES.includes(n) && POLICY_JOB_INDEXES[n] !== p.policy) continue
-        out.push(managed(`${p.table}_i${n}`, p.table, def.split(COMMON_JOB_TABLE).join(p.table)))
-      }
-    }
-  }
-
-  return out
 }

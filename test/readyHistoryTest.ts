@@ -2,7 +2,6 @@ import { expect } from 'vitest'
 import * as helper from './testHelper.ts'
 import { randomUUID } from 'node:crypto'
 import { ctx } from './hooks.ts'
-import * as migrationStore from '../src/migrationStore.ts'
 import { READY_HISTORY_SIZE } from '../src/plans.ts'
 
 describe('readyHistory', function () {
@@ -51,12 +50,5 @@ describe('readyHistory', function () {
     expect(capped[READY_HISTORY_SIZE - 1]).toBe(1000 + READY_HISTORY_SIZE - 2) // oldest kept; the rest dropped
 
     await db.close()
-  })
-
-  it('is added by the v35 migration and dropped on rollback', function () {
-    const migration = migrationStore.getAll('pgboss').find(m => m.version === 35)
-    expect(migration).toBeTruthy()
-    expect(migration!.install.join('\n')).toContain('ADD COLUMN ready_history int[]')
-    expect((migration!.uninstall ?? []).join('\n')).toContain('DROP COLUMN ready_history')
   })
 })

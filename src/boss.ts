@@ -3,7 +3,7 @@ import type Manager from './manager.ts'
 import * as plans from './plans.ts'
 import { delay, unwrapSQLResult } from './tools.ts'
 import * as types from './types.ts'
-import { emitAndPersistWarning, type WarningContext } from './warning.ts'
+import { emitWarning, type WarningContext } from './warning.ts'
 
 const events = {
   error: 'error',
@@ -15,11 +15,6 @@ const WARNINGS = {
   SLOW_QUERY: { seconds: 30, message: 'Warning: slow query. Your queues and/or database server should be reviewed' },
   LARGE_QUEUE: { size: 10_000, message: 'Warning: large queue backlog. Your queue should be reviewed' }
 }
-
-const WARNING_TYPES = {
-  SLOW_QUERY: 'slow_query',
-  QUEUE_BACKLOG: 'queue_backlog'
-} as const
 
 class Boss extends EventEmitter implements types.EventsMixin {
   #stopped: boolean
@@ -79,11 +74,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
   get #warningContext (): WarningContext {
     return {
       emitter: this,
-      db: this.#db,
-      schema: this.#config,
-      persistWarnings: this.#config.persistWarnings,
-      warningEvent: events.warning,
-      errorEvent: events.error
+      warningEvent: events.warning
     }
   }
 
@@ -102,8 +93,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
       elapsed > this.#slowQuerySeconds ||
       this.#config.__test__warn_slow_query
     ) {
-      await emitAndPersistWarning(this.#warningContext,
-        WARNING_TYPES.SLOW_QUERY,
+      emitWarning(this.#warningContext,
         WARNINGS.SLOW_QUERY.message,
         { elapsed, sql: query.text, values: query.values }
       )
@@ -134,31 +124,6 @@ class Boss extends EventEmitter implements types.EventsMixin {
     }
   }
 
-  async #maintainWarnings () {
-    if (!this.#config.persistWarnings || !this.#config.warningRetentionDays) {
-      return
-    }
-
-    const sql = plans.deleteOldWarnings(this.#config, this.#config.warningRetentionDays)
-    await this.#executeQuery(sql)
-  }
-
-  async #ensureQueueStatsPartitions () {
-    const sql = plans.ensureQueueStatsPartitions(this.#config)
-    await this.#executeQuery(sql)
-  }
-
-  async #maintainQueueStats () {
-    if (!this.#config.persistQueueStats || !this.#config.queueStatRetentionDays) {
-      return
-    }
-
-    const sql = this.#config.noTablePartitioning
-      ? plans.deleteOldQueueStats(this.#config, this.#config.queueStatRetentionDays)
-      : plans.dropOldQueueStatsPartitions(this.#config, this.#config.queueStatRetentionDays)
-    await this.#executeQuery(sql)
-  }
-
   async supervise (value?: string | types.QueueResult[]) {
     let queues: types.QueueResult[]
 
@@ -166,15 +131,6 @@ class Boss extends EventEmitter implements types.EventsMixin {
       queues = value
     } else {
       queues = await this.#manager.getQueues(value)
-    }
-
-    // Ensure today's/tomorrow's partitions exist before any insertQueueStats below. Retention
-    // (#maintainWarnings/#maintainQueueStats) runs at the tail. Both live here, in the public
-    // supervise() path that also performs the writes, rather than in the timer-only #onSupervise
-    // wrapper — so manual supervise() callers (instances run with the built-in supervisor disabled)
-    // get partitions provisioned and old data pruned, not just job retention.
-    if (this.#config.persistQueueStats && !this.#config.noTablePartitioning && !this.#stopping) {
-      await this.#ensureQueueStatsPartitions()
     }
 
     const queueGroups = queues.reduce<
@@ -201,11 +157,6 @@ class Boss extends EventEmitter implements types.EventsMixin {
         await this.#maintain(table, chunk)
       }
     }
-
-    if (this.#stopping) return
-
-    await this.#maintainWarnings()
-    await this.#maintainQueueStats()
   }
 
   async #monitor (table: string, names: string[]) {
@@ -226,28 +177,19 @@ class Boss extends EventEmitter implements types.EventsMixin {
       const cacheStatsSql = plans.cacheQueueStats(this.#config, table, queues, this.#config.noAdvisoryLocks)
       const { rows: rowsCacheStats } = await this.#executeQuery(cacheStatsSql)
 
-      if (this.#config.persistQueueStats) {
-        const insertSql = plans.insertQueueStats(this.#config, queues, this.#config.noAdvisoryLocks)
-        await this.#executeQuery(insertSql)
-      }
-
       if (this.#stopping) return
 
-      // Coerce with Number(): CockroachDB returns these integer columns as strings, so a bare `>`
-      // would compare lexicographically ("100" > "9" === false) and silently miss the backlog. On
+      // Coerce with Number(): distributed backends return these integer columns as strings, so a bare
+      // `>` would compare lexicographically ("100" > "9" === false) and silently miss the backlog. On
       // standard Postgres these are already numbers, so Number() is a no-op.
       const warnings = rowsCacheStats.filter(i => Number(i.queuedCount) > (Number(i.warningQueueSize) || this.#largeQueueSize))
 
       for (const warning of warnings) {
-        await emitAndPersistWarning(this.#warningContext,
-          WARNING_TYPES.QUEUE_BACKLOG,
-          WARNINGS.LARGE_QUEUE.message,
-          warning
-        )
+        emitWarning(this.#warningContext, WARNINGS.LARGE_QUEUE.message, warning)
       }
 
-      // CockroachDB rejects the multi-mutation failJobs() CTE these use, so under noMultiMutationCte
-      // route expiry through the manager's split select/delete/re-insert variants instead.
+      // The multi-mutation failJobs() CTE is rejected under noMultiMutationCte, so route expiry
+      // through the manager's split select/delete/re-insert variants instead.
       if (this.#config.noMultiMutationCte) {
         await this.#manager.failJobsByTimeoutDistributed(table, queues)
       } else {
