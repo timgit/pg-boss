@@ -80,7 +80,6 @@ describe('dialect', function () {
       resumeJobs: () => plans.resumeJobs(sqliteCtx, T),
       retryJobs: () => plans.retryJobs(sqliteCtx, T),
       touchJobs: () => plans.touchJobs(sqliteCtx, T),
-      restoreJobs: () => plans.restoreJobs(sqliteCtx, T),
       deleteJobsById: () => plans.deleteJobsById(sqliteCtx, T),
       deleteJobsByIds: () => plans.deleteJobsByIds(sqliteCtx, T).text,
       deleteQueuedJobs: () => plans.deleteQueuedJobs(sqliteCtx, T),
@@ -110,9 +109,6 @@ describe('dialect', function () {
       getSchedules: () => plans.getSchedules(sqliteCtx),
       getSchedulesByQueue: () => plans.getSchedulesByQueue(sqliteCtx),
       getSchedulesByQueueAndKey: () => plans.getSchedulesByQueueAndKey(sqliteCtx),
-      subscribe: () => plans.subscribe(sqliteCtx),
-      unsubscribe: () => plans.unsubscribe(sqliteCtx),
-      getQueuesForEvent: () => plans.getQueuesForEvent(sqliteCtx),
       updateJobById: () => plans.updateJob(sqliteCtx, T, 'q1', 'id', 'newest'),
       updateJobByKey: () => plans.updateJob(sqliteCtx, T, 'q1', 'singletonKey', 'oldest'),
       findJobs: () => plans.findJobs(sqliteCtx, T, { queued: true, byKey: true, byData: true, byId: true }),
@@ -122,8 +118,7 @@ describe('dialect', function () {
       getDependents: () => plans.getDependents(sqliteCtx),
       decrementDependents: () => plans.decrementDependents(sqliteCtx),
       selectBlockingParents: () => plans.selectBlockingParents(sqliteCtx, T, QUEUES, true).text,
-      clearBlocking: () => plans.clearBlocking(sqliteCtx),
-      getBlockedKeys: () => plans.getBlockedKeys(sqliteCtx, T)
+      clearBlocking: () => plans.clearBlocking(sqliteCtx)
     }
 
     // Postgres-only constructs that must never appear in sqlite-rendered SQL. Word-boundary

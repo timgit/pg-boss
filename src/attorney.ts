@@ -157,9 +157,7 @@ function checkUpdateArgs (args: any, { upsert = false } = {}): types.Request {
 
   const { id, singletonKey, match } = options as types.UpdateOptions
 
-  // Both update() and upsert() target by exactly one of id or singletonKey. (upsert() may also
-  // require a singletonKey at runtime on key_strict_fifo queues — enforced in the manager, which
-  // knows the policy — because an insert-on-miss there needs a key.)
+  // Both update() and upsert() target by exactly one of id or singletonKey.
   assert((!!id) !== (!!singletonKey), `${verb} requires exactly one of id or singletonKey`)
   assert(!(id && match !== undefined), 'match is only valid when targeting jobs by singletonKey')
 
@@ -327,43 +325,7 @@ function validatePriorityRangeConfig (config: any) {
 }
 
 function validateGroupConcurrencyConfig (config: any) {
-  const hasGlobal = config.groupConcurrency != null
-  const hasLocal = config.localGroupConcurrency != null
-
-  assert(
-    !(hasGlobal && hasLocal),
-    'cannot specify both groupConcurrency and localGroupConcurrency - choose one'
-  )
-
-  if (hasGlobal) validateGroupConcurrencyValue(config.groupConcurrency, 'groupConcurrency')
-  if (hasLocal) {
-    validateGroupConcurrencyValue(config.localGroupConcurrency, 'localGroupConcurrency')
-    validateLocalGroupConcurrencyLimit(config.localGroupConcurrency, config.localConcurrency)
-  }
-}
-
-function validateLocalGroupConcurrencyLimit (localGroupConcurrency: any, localConcurrency: number | undefined) {
-  const effectiveLocalConcurrency = localConcurrency ?? 1
-
-  if (typeof localGroupConcurrency === 'number') {
-    assert(
-      localGroupConcurrency <= effectiveLocalConcurrency,
-      `localGroupConcurrency (${localGroupConcurrency}) cannot exceed localConcurrency (${effectiveLocalConcurrency})`
-    )
-  } else if (typeof localGroupConcurrency === 'object') {
-    assert(
-      localGroupConcurrency.default <= effectiveLocalConcurrency,
-      `localGroupConcurrency.default (${localGroupConcurrency.default}) cannot exceed localConcurrency (${effectiveLocalConcurrency})`
-    )
-    if (localGroupConcurrency.tiers) {
-      for (const [tier, limit] of Object.entries(localGroupConcurrency.tiers)) {
-        assert(
-          (limit as number) <= effectiveLocalConcurrency,
-          `localGroupConcurrency.tiers["${tier}"] (${limit}) cannot exceed localConcurrency (${effectiveLocalConcurrency})`
-        )
-      }
-    }
-  }
+  if (config.groupConcurrency != null) validateGroupConcurrencyValue(config.groupConcurrency, 'groupConcurrency')
 }
 
 function checkWorkArgs (name: string, args: any[]): {
@@ -409,6 +371,7 @@ function checkFetchArgs (name: string, options: any) {
   assert(!('priority' in options) || typeof options.priority === 'boolean', 'priority must be a boolean')
   assert(!('ignoreStartAfter' in options) || typeof options.ignoreStartAfter === 'boolean', 'ignoreStartAfter must be a boolean')
   validatePriorityRangeConfig(options)
+  validateGroupConcurrencyConfig(options)
 }
 
 function getConfig (value: string | types.ConstructorOptions): types.ResolvedConstructorOptions {
