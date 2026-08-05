@@ -446,7 +446,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
   async getQueueCache (name: string): Promise<types.QueueResult> {
     assert(this.queues, 'Queue cache is not initialized')
 
-    let queue = this.queues[name]
+    let queue: types.QueueResult | null | undefined = this.queues[name]
 
     if (queue) {
       return queue
@@ -1077,9 +1077,9 @@ class Manager extends EventEmitter implements types.EventsMixin {
         parentRefs.add(depRef)
         depRows.push({
           child_name: job.name,
-          child_id: refToId[job.ref],
+          child_id: refToId[job.ref]!,
           parent_name: parentJob.name,
-          parent_id: refToId[depRef]
+          parent_id: refToId[depRef]!
         })
       }
     }

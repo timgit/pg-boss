@@ -25,20 +25,19 @@ Use "bun-boss"/`BunBoss` for the project, package, and class; "pg-boss" only whe
 
 ## Direction
 
-- **Bun-first.** Runtime, test suite, CI, and every `package.json` script are Bun. Node is only a compatibility target for consumers of the published library.
+- **Bun-first.** Runtime, test suite, CI, and every `package.json` script are Bun. There is no compile step: the package publishes raw `src/*.ts` (`main`/`types` both point at `src/index.ts`, `files` ships `src`), so consumers are Bun too — Node refuses type stripping inside `node_modules`, and would need a bundler. TypeScript stays for type-checking only (`tsc --noEmit`).
 - **SQLite is a supported backend** (`backend: 'sqlite'` + `fromBunSqlite` over Bun's `SQL` on a `sqlite://` URL). It is a second SQL *dialect*, not another Postgres-compatible profile: `src/dialect.ts` holds the rendering primitives (`qualify`, state IN-lists, epoch time math, json_each arrays), `plans.ts` builders take a `Ctx` (bare string ⇒ postgres, so static callers are untouched), and the truly divergent shapes (install DDL, insertJobs, updateJob, cacheQueueStats) are explicit sqlite forks beside their postgres twins. `test/plansSnapshotTest.ts` pins postgres output byte-for-byte; `test/dialectTest.ts` guards the silent-correctness traps (enum ordering, timestamp shape, pg-only construct leaks). SQLite installs fresh at the current schema version (v1) — there is no migration history and no in-place upgrade. `scripts/spike-bun-sqlite.ts` documents the Bun sqlite driver behaviors the adapter depends on (run it when moving toolchains).
 - **`ISSUES.txt` is the running log of Bun-adapter traps** (parameter-encoding fragility, the Bun 1.3.x pooled-connection leak). Read it before changing `src/adapters/bun.ts`, and keep it current when one is fixed.
 
 ## Commands
 
-Requirements: **Bun 1.4 or newer** — on 1.3.x, Bun can hand a pooled connection to a waiting query before the ROLLBACK of a failed transaction block lands, surfacing as a spurious `25P02` (see `ISSUES.txt` #3). The whole test suite and every `package.json` script run under Bun — `test/testHelper.ts` imports Bun's `SQL` at module load, so the suite cannot run under Node — and each script shells out to `bun`/`bunx`. The published library still targets **Node ≥ 22.12** (for `require(esm)`) and **PostgreSQL ≥ 13**. Tests need a running Postgres, supplied **either** by Docker **or** by a local install — try both. `docker compose up -d db` starts a container matching `test/config.json` (db `pgboss`, user/pass `postgres`); where Docker is unavailable, a local Postgres on `127.0.0.1:5432` with the same db/user/pass works identically (check with `pg_isready` / `PGPASSWORD=postgres psql -h localhost -U postgres -d pgboss -c 'select 1'`).
+Requirements: **Bun 1.4 or newer** — on 1.3.x, Bun can hand a pooled connection to a waiting query before the ROLLBACK of a failed transaction block lands, surfacing as a spurious `25P02` (see `ISSUES.txt` #3). The whole test suite and every `package.json` script run under Bun — `test/testHelper.ts` imports Bun's `SQL` at module load, so the suite cannot run under Node — and each script shells out to `bun`/`bunx`. The published library targets **Bun 1.4+** (it ships uncompiled TypeScript) and **PostgreSQL ≥ 13**. Tests need a running Postgres, supplied **either** by Docker **or** by a local install — try both. `docker compose up -d db` starts a container matching `test/config.json` (db `pgboss`, user/pass `postgres`); where Docker is unavailable, a local Postgres on `127.0.0.1:5432` with the same db/user/pass works identically (check with `pg_isready` / `PGPASSWORD=postgres psql -h localhost -U postgres -d pgboss -c 'select 1'`).
 
 - `bun run test` — the full check: `eslint . && bun --bun vitest run`. The `pretest` hook runs `bun run tsc` (`tsc --noEmit`) first, so a failing type-check fails the test command before any test runs.
 - `bun run test -- test/sendTest.ts` — run a single test file.
 - `bun run test -- -t "substring of test name"` — run tests matching a name.
 - `bun run cover` — tests with V8 coverage.
 - `bun run tsc` — type-check only (`tsc --noEmit`). `bun run lint:fix` — autofix lint.
-- `bun run build` — clean `dist/` and compile via `tsconfig.build.json`.
 
 ### CI
 
