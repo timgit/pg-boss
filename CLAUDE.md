@@ -81,3 +81,7 @@ Anything implementing `IDatabase` (`executeSql`, optionally `withTransaction`/`l
 ## Comments in code
 
 Code comments should be rare. Only when it's important to explain WHY an implementation looks the way it does, never WHAT the code does (that can be easily deduced from the code itself!). A comment should be ONE single sentence. Only in extremely rare occurences where it's important to expand on the WHY rationale, may you add a SECOND sentence.
+
+## PR reviews
+
+When reviewing a PR, use the https://github.com/khromov/bun-boss repo to check issue numbers.
