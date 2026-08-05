@@ -10,7 +10,7 @@ interface Db {
 }
 ```
 
-pg-boss ships with `fromBunSql` for Bun's built-in `SQL` client and `fromPglite` for embedded PGlite (see [Database Backends](../database-backends.md#pglite-embedded)).
+pg-boss ships with `fromBunSql` for Bun's built-in `SQL` client against PostgreSQL, `fromPglite` for embedded PGlite, and `fromBunSqlite` for embedded SQLite through Bun's `SQL` client (see [Database Backends](../database-backends.md#pglite-embedded)).
 
 ## Bun
 
@@ -37,6 +37,41 @@ await sql.begin(async (tx) => {
 Bun talks to real PostgreSQL, so leave `backend` at its default `postgres` — no compatibility flags apply. As with every adapter, the `SQL` client's lifecycle is yours: pg-boss never opens or closes it.
 
 See [Bun.SQL](../database-backends.md#bunsql) for the driver-level details — LISTEN/NOTIFY, prepared statements, and multi-statement blocks.
+
+## SQLite (Bun)
+
+`fromBunSqlite` adapts Bun's `SQL` client opened on a `sqlite://` URL. It always backs a whole
+pg-boss instance (pair it with `backend: 'sqlite'`), and pg-boss's tables live in the same
+database file as your application's.
+
+```ts
+import { SQL } from 'bun'
+import PgBoss, { fromBunSqlite } from 'pg-boss'
+
+const sql = new SQL('sqlite://app.db')
+const db = fromBunSqlite(sql)
+
+const boss = new PgBoss({ backend: 'sqlite', db })
+await boss.start()
+```
+
+Sharing the database file does not by itself make a job atomic with your writes — a plain `send()`
+outside a transaction commits on its own. To get atomicity, open the transaction through the
+adapter's `withTransaction` and pass its handle as the operation's `db`:
+
+```ts
+await db.withTransaction(async (tx) => {
+  await tx.executeSql('INSERT INTO orders (item, qty) VALUES ($1, $2)', ['widget', 1])
+  await boss.send('order-processing', { item: 'widget' }, { db: tx })
+})
+```
+
+Always use `withTransaction` rather than issuing `BEGIN` yourself on the shared `SQL` instance:
+the adapter serializes its own statements on the single logical connection, but it cannot see a
+transaction you open directly, and pg-boss's background writes would interleave into it.
+
+See [SQLite](../database-backends.md#sqlite-embedded-via-bunsql) for the dialect-level details and
+limitations.
 
 ## Rollback behaviour
 

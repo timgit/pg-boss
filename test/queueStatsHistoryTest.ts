@@ -27,7 +27,7 @@ describe('queueStatsHistory', function () {
     // ...and nothing is written to the queue_stats table
     const db = await helper.getDb()
     const { rows: persisted } = await db.executeSql(
-      `SELECT count(*)::int as c FROM ${ctx.schema}.queue_stats WHERE name = $1`, [queue])
+      `SELECT CAST(count(*) AS int) as c FROM ${helper.qualify(ctx.schema, 'queue_stats')} WHERE name = $1`, [queue])
     await db.close()
     expect(persisted[0].c).toBe(0)
   })
@@ -56,7 +56,7 @@ describe('queueStatsHistory', function () {
     // Age the cache past 60s but within the 1h plain budget
     const db = await helper.getDb()
     await db.executeSql(
-      `UPDATE ${ctx.schema}.queue SET monitor_on = now() - interval '90 seconds' WHERE name = $1`, [q])
+      `UPDATE ${helper.qualify(ctx.schema, 'queue')} SET monitor_on = $2 WHERE name = $1`, [q, new Date(Date.now() - 90_000)])
     await db.close()
 
     // A plain read still serves the (90s-old) cache...
@@ -82,7 +82,7 @@ describe('queueStatsHistory', function () {
     await ctx.boss.send(q)
     const db = await helper.getDb()
     await db.executeSql(
-      `UPDATE ${ctx.schema}.queue SET monitor_on = now() - interval '2 hours' WHERE name = $1`, [q])
+      `UPDATE ${helper.qualify(ctx.schema, 'queue')} SET monitor_on = $2 WHERE name = $1`, [q, new Date(Date.now() - 2 * 60 * 60 * 1000)])
     await db.close()
 
     // a plain read must treat the stale cache as untrustworthy and recompute
@@ -178,13 +178,13 @@ describe('queueStatsHistory', function () {
   // is ensured first so partitioned Postgres accepts the inserts.
   async function seedStats (q: string, rows: Array<{ ago: number, queued?: number, total?: number }>) {
     const db = await helper.getDb()
-    await db.executeSql(plans.ensureQueueStatsPartitions(ctx.schema))
+    await db.executeSql(plans.ensureQueueStatsPartitions(helper.planCtx(ctx.schema)))
     for (const r of rows) {
       await db.executeSql(
-        `INSERT INTO ${ctx.schema}.queue_stats
+        `INSERT INTO ${helper.qualify(ctx.schema, 'queue_stats')}
            (name, deferred_count, queued_count, ready_count, active_count, failed_count, total_count, captured_on)
-         VALUES ($1, 0, $2, 0, 0, 0, $3, now() - ($4 || ' seconds')::interval)`,
-        [q, r.queued ?? 0, r.total ?? 0, String(r.ago)])
+         VALUES ($1, 0, $2, 0, 0, 0, $3, $4)`,
+        [q, r.queued ?? 0, r.total ?? 0, new Date(Date.now() - r.ago * 1000)])
     }
     await db.close()
   }
@@ -255,7 +255,7 @@ describe('queueStatsHistory', function () {
     // epoch boundary. With maxDataPoints=8 the derived width is ceil(80/8)=10s, and because the span
     // starts on a boundary and is exactly 8*10s wide, the epoch-aligned buckets number 9 (N+1).
     const db = await helper.getDb()
-    await db.executeSql(plans.ensureQueueStatsPartitions(ctx.schema))
+    await db.executeSql(plans.ensureQueueStatsPartitions(helper.planCtx(ctx.schema)))
     const base = Math.floor((Math.floor(Date.now() / 1000) - 200) / 10) * 10 // 10s-aligned, ~200s ago
     for (let i = 0; i < 9; i++) {
       await db.executeSql(

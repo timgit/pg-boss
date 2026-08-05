@@ -71,7 +71,7 @@ class Bam extends EventEmitter implements types.EventsMixin {
       }
 
       const sql = plans.trySetBamTime(
-        this.#config.schema,
+        this.#config,
         this.#config.bamIntervalSeconds
       )
       const { rows } = await this.#db.executeSql(sql)
@@ -108,7 +108,7 @@ class Bam extends EventEmitter implements types.EventsMixin {
       // the liveness path — CockroachDB/YugabyteDB roll interrupted builds back, so there's nothing to
       // heal and DROP ... CONCURRENTLY isn't their model.
       if (entry.reattempt && !this.#config.noIndexProgressView) {
-        const dropSql = plans.bamHealDrop(this.#config.schema, entry.command)
+        const dropSql = plans.bamHealDrop(this.#config, entry.command)
         if (dropSql) {
           // Only heal an index the previous attempt left INVALID. A re-attempt can also fire for a
           // build that actually SUCCEEDED but whose row was never marked completed (a graceful stop
@@ -116,7 +116,7 @@ class Bam extends EventEmitter implements types.EventsMixin {
           // it would tear down a live production index for the whole rebuild window. Probe indisvalid
           // first; skip the drop for a valid (or absent) index and let the command's IF NOT EXISTS re-run
           // no-op it and mark the row done.
-          const probeSql = plans.bamHealProbe(this.#config.schema, entry.command)
+          const probeSql = plans.bamHealProbe(this.#config, entry.command)
           const { rows } = await this.#db.executeSql(probeSql!)
           if (rows[0]?.invalid) {
             await this.#db.executeSql(dropSql)
@@ -156,18 +156,18 @@ class Bam extends EventEmitter implements types.EventsMixin {
   }
 
   async #getNextCommand (): Promise<types.BamEntry | null> {
-    const sql = plans.getNextBamCommand(this.#config.schema, { useLiveness: !this.#config.noIndexProgressView })
+    const sql = plans.getNextBamCommand(this.#config, { useLiveness: !this.#config.noIndexProgressView })
     const { rows } = await this.#db.executeSql(sql)
     return rows[0] || null
   }
 
   async #markCompleted (id: string): Promise<void> {
-    const sql = plans.setBamCompleted(this.#config.schema, id)
+    const sql = plans.setBamCompleted(this.#config, id)
     await this.#db.executeSql(sql)
   }
 
   async #markFailed (id: string, error: unknown): Promise<void> {
-    const sql = plans.setBamFailed(this.#config.schema, id, String(error))
+    const sql = plans.setBamFailed(this.#config, id, String(error))
     await this.#db.executeSql(sql)
   }
 }

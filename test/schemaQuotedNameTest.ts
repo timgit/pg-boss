@@ -9,7 +9,8 @@ const connectionString = 'postgres://localhost/db'
 
 const getSchema = (schema: string) => Attorney.getConfig({ connectionString, schema }).schema
 
-describe('quoted schema names', function () {
+// Postgres identifier folding/quoting and pg_namespace case-variant probes have no sqlite analogue.
+helper.describeSqlite('quoted schema names', function () {
   describe('validation of bare names', function () {
     it('accepts the names it always accepted', function () {
       for (const schema of ['pgboss', 'pgboss_v2', 'MySchema', '_private']) {

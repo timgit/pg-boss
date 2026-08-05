@@ -13,7 +13,7 @@ Only the repo, the devcontainer, and the docs framing say "bun-boss". The npm pa
 ## Direction
 
 - **Bun-first.** Runtime, test suite, CI, and every `package.json` script are Bun. Node is only a compatibility target for consumers of the published library.
-- **SQLite and in-memory backends are advertised in the README but do not exist yet.** Before starting that work, read `REPORT.md`: it is the feasibility verdict, and its conclusion is that SQLite is a second SQL dialect port (not another `attorney.ts` backend profile), touching `plans.ts`, `migrationStore.ts`, `drifter.ts`, and the manifest. `src/adapters/` currently contains exactly two adapters, both Postgres-dialect: `fromPglite` and `fromBunSql`.
+- **SQLite is a supported backend** (`backend: 'sqlite'` + `fromBunSqlite` over Bun's `SQL` on a `sqlite://` URL). It is a second SQL *dialect*, not another Postgres-compatible profile: `src/dialect.ts` holds the rendering primitives (`qualify`, state IN-lists, epoch time math, json_each arrays), `plans.ts` builders take a `Ctx` (bare string ⇒ postgres, so static callers are untouched), and the truly divergent shapes (install DDL, insertJobs, updateJob, cacheQueueStats) are explicit sqlite forks beside their postgres twins. `test/plansSnapshotTest.ts` pins postgres output byte-for-byte; `test/dialectTest.ts` guards the silent-correctness traps (enum ordering, timestamp shape, pg-only construct leaks). SQLite installs fresh at the current schema version — no migration history, no drift scan, no BAM. `scripts/spike-bun-sqlite.ts` documents the Bun sqlite driver behaviors the adapter depends on (run it when moving toolchains).
 - **`ISSUES.txt` is the running log of Bun-adapter traps** (parameter-encoding fragility, the Bun 1.3.x pooled-connection leak). Read it before changing `src/adapters/bun.ts`, and keep it current when one is fixed.
 
 ## Commands
@@ -30,7 +30,7 @@ Requirements: **Bun 1.4 or newer** — on 1.3.x, Bun can hand a pooled connectio
 
 ### CI
 
-`.github/workflows/ci.yml` runs on every push to `master` and every PR, entirely under Bun (`container: oven/bun:<version>` — no Node toolchain; the toolchain is selected by image because `bun upgrade` needs `unzip`, which these images lack). The matrix is `standard` / `distributed` against a Postgres service container, plus `bun-driver` twice — on `1` and on `canary`, because `fromBunSql` is the one part of the suite whose behavior depends on Bun itself. A separate PGlite job needs no database.
+`.github/workflows/ci.yml` runs on every push to `master` and every PR, entirely under Bun (`container: oven/bun:<version>` — no Node toolchain; the toolchain is selected by image because `bun upgrade` needs `unzip`, which these images lack). The matrix is `standard` / `distributed` against a Postgres service container, plus `bun-driver` twice — on `1` and on `canary`, because `fromBunSql` is the one part of the suite whose behavior depends on Bun itself. Separate PGlite and SQLite jobs need no database (the SQLite job also runs on both toolchains and re-verifies the Bun sqlite driver behaviors with `scripts/spike-bun-sqlite.ts` first).
 
 ### Running against other backends
 
@@ -39,6 +39,7 @@ The suite is parameterized by `DB_TYPE` / `DISTRIBUTED` env vars (resolved in `t
 - `bun run test:distributed` — `DISTRIBUTED=true`, exercises the atomic-UPDATE fetch path on plain Postgres (fast, no separate DB).
 - `bun run test:bun` — `DB_TYPE=bun`, routes the whole suite through the `fromBunSql` adapter (Bun's built-in `SQL` client) against the same Postgres server, so the adapter's parameter-binding workarounds are exercised by every query rather than only the dedicated adapter tests.
 - `bun run test:pglite` — `DB_TYPE=pglite`, in-process WASM Postgres, no server. Connection-string / subprocess / multi-connection tests auto-skip.
+- `bun run test:sqlite` — `DB_TYPE=sqlite`, in-process SQLite through Bun's `SQL` client (`fromBunSqlite`), no server. This is the one backend that is a *different SQL dialect*, not Postgres-compatible: `src/dialect.ts` supplies rendering primitives to `plans.ts` (a bare-string schema arg means postgres; a `PlanContext` carries the dialect), and `test/plansSnapshotTest.ts` pins the postgres output byte-for-byte. Skips everything pglite skips plus migrations, drift, BAM, and pg-catalog-shaped tests.
 - `bun run test:cockroachdb` / `test:yugabytedb:full` / `test:citus:full` — real distributed engines; matching `docker-compose.*.yaml` files start them. These runs auto-enable the backend's compatibility flags.
 
 `vitest.config.ts` raises the per-test timeout to 60s for cockroach/yugabyte (their online-DDL cost blows the 10s Postgres budget).

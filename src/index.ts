@@ -168,7 +168,9 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
       await this.#timekeeper.start()
     }
 
-    if (this.#config.migrate) {
+    // BAM applies CREATE INDEX CONCURRENTLY commands, which don't exist in SQLite —
+    // sqlite installs carry no async migrations, so the worker never needs to run.
+    if (this.#config.migrate && this.#config.dialect?.name !== 'sqlite') {
       await this.#bam.start()
     }
 
@@ -182,6 +184,10 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
   // time, so detect it from the server version at startup and warn when the profile isn't selected.
   // Best-effort: never block startup on this check.
   async #warnIfDistributedMisconfigured (): Promise<void> {
+    if (this.#config.dialect?.name === 'sqlite') {
+      return
+    }
+
     try {
       const { rows } = await this.#db.executeSql('SELECT version()')
       const version: string = rows?.[0]?.version || ''
@@ -497,13 +503,13 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
   }
 
   async getBamStatus (): Promise<types.BamStatusSummary[]> {
-    const sql = plans.getBamStatus(this.#config.schema)
+    const sql = plans.getBamStatus(this.#config)
     const { rows } = await this.#db.executeSql(sql)
     return rows
   }
 
   async getBamEntries (): Promise<types.BamEntry[]> {
-    const sql = plans.getBamEntries(this.#config.schema)
+    const sql = plans.getBamEntries(this.#config)
     const { rows } = await this.#db.executeSql(sql)
     return rows
   }
@@ -605,10 +611,12 @@ export type {
 export {
   fromPglite,
   fromBunSql,
+  fromBunSqlite,
 } from './adapters/index.ts'
 
 export type {
   PGliteLike,
   BunSqlLike,
   BunReservedLike,
+  BunSqliteLike,
 } from './adapters/index.ts'

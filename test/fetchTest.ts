@@ -1,6 +1,7 @@
 import { expect, vi } from 'vitest'
 import * as helper from './testHelper.ts'
 import * as plans from '../src/plans.ts'
+import { SQLITE } from '../src/dialect.ts'
 import { ctx } from './hooks.ts'
 
 describe('fetch', function () {
@@ -47,7 +48,8 @@ describe('fetch', function () {
     // queue stalled. The null must be treated as the empty key, blocking only keyless jobs.
     const query = plans.fetchNextJob({
       schema: ctx.schema,
-      table: 'job_common',
+      dialect: helper.isSqlite ? SQLITE : undefined,
+      table: helper.isSqlite ? 'job' : 'job_common',
       name: ctx.schema,
       policy: 'singleton',
       limit: 1,

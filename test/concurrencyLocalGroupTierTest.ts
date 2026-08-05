@@ -31,7 +31,7 @@ describe('localGroupConcurrency (tier & retry)', function () {
     await spy.waitForJobWithId(jobId1, 'completed')
     await spy.waitForJobWithId(jobId2, 'completed')
 
-    const result = await helper.findJobs(ctx.schema, 'id = ANY($1::uuid[])', [[jobId1, jobId2]])
+    const result = await helper.findJobs(ctx.schema, 'id IN ($1, $2)', [jobId1, jobId2])
     expect(result.rows.length).toBe(2)
     for (const row of result.rows) {
       // Regression: the excess-restored job previously had retry_count = 1 even

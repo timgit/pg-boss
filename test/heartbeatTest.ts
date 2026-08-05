@@ -24,7 +24,7 @@ describe('heartbeat', function () {
       // Record heartbeat_on before the timer fires
       const db = await helper.getDb()
       const { rows: before } = await db.executeSql(
-        `SELECT heartbeat_on FROM ${ctx.schema}.job WHERE id = $1`,
+        `SELECT heartbeat_on FROM ${helper.qualify(ctx.schema, 'job')} WHERE id = $1`,
         [jobId]
       )
 
@@ -32,13 +32,13 @@ describe('heartbeat', function () {
       await delay(1000)
 
       const { rows: after } = await db.executeSql(
-        `SELECT heartbeat_on FROM ${ctx.schema}.job WHERE id = $1`,
+        `SELECT heartbeat_on FROM ${helper.qualify(ctx.schema, 'job')} WHERE id = $1`,
         [jobId]
       )
       await db.close()
 
       // heartbeat_on should have been updated by the timer
-      expect(after[0].heartbeat_on.getTime()).toBeGreaterThan(before[0].heartbeat_on.getTime())
+      expect(new Date(after[0].heartbeat_on).getTime()).toBeGreaterThan(new Date(before[0].heartbeat_on).getTime())
     })
 
     await delay(2000)
@@ -64,8 +64,8 @@ describe('heartbeat', function () {
     // manually backdate heartbeat_on to simulate timeout
     const db = await helper.getDb()
     await db.executeSql(
-      `UPDATE ${ctx.schema}.job SET heartbeat_on = now() - interval '20 seconds' WHERE id = $1`,
-      [jobId]
+      `UPDATE ${helper.qualify(ctx.schema, 'job')} SET heartbeat_on = $2 WHERE id = $1`,
+      [jobId, new Date(Date.now() - 20_000)]
     )
     await db.close()
 
@@ -94,8 +94,8 @@ describe('heartbeat', function () {
 
     const db = await helper.getDb()
     await db.executeSql(
-      `UPDATE ${ctx.schema}.job SET heartbeat_on = now() - interval '20 seconds' WHERE id = $1`,
-      [jobId]
+      `UPDATE ${helper.qualify(ctx.schema, 'job')} SET heartbeat_on = $2 WHERE id = $1`,
+      [jobId, new Date(Date.now() - 20_000)]
     )
     await db.close()
 
@@ -124,7 +124,7 @@ describe('heartbeat', function () {
     // Verify heartbeat_on was updated
     const db = await helper.getDb()
     const { rows } = await db.executeSql(
-      `SELECT heartbeat_on FROM ${ctx.schema}.job WHERE id = $1`,
+      `SELECT heartbeat_on FROM ${helper.qualify(ctx.schema, 'job')} WHERE id = $1`,
       [jobId]
     )
     await db.close()
@@ -186,8 +186,8 @@ describe('heartbeat', function () {
     // backdate heartbeat_on past the per-job window
     const db = await helper.getDb()
     await db.executeSql(
-      `UPDATE ${ctx.schema}.job SET heartbeat_on = now() - interval '20 seconds' WHERE id = $1`,
-      [jobId]
+      `UPDATE ${helper.qualify(ctx.schema, 'job')} SET heartbeat_on = $2 WHERE id = $1`,
+      [jobId, new Date(Date.now() - 20_000)]
     )
     await db.close()
 
@@ -256,8 +256,8 @@ describe('heartbeat', function () {
     // backdate heartbeat_on to simulate timeout
     const db = await helper.getDb()
     await db.executeSql(
-      `UPDATE ${ctx.schema}.job SET heartbeat_on = now() - interval '20 seconds' WHERE id = $1`,
-      [jobId]
+      `UPDATE ${helper.qualify(ctx.schema, 'job')} SET heartbeat_on = $2 WHERE id = $1`,
+      [jobId, new Date(Date.now() - 20_000)]
     )
     await db.close()
 

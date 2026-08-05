@@ -1,6 +1,6 @@
 import { expect, beforeEach } from 'vitest'
 import { PgBoss, getConstructionPlans, getMigrationPlans, getRollbackPlans } from '../src/index.ts'
-import { getDb, assertTruthy, getSchemaDefs, itPostgresOnly } from './testHelper.ts'
+import { getDb, assertTruthy, getSchemaDefs, itPostgresOnly, describeSqlite } from './testHelper.ts'
 import Contractor from '../src/contractor.ts'
 import { getAll, migrate, migrateCommands, getMinVersion } from '../src/migrationStore.ts'
 import packageJson from '../package.json' with { type: 'json' }
@@ -11,7 +11,8 @@ const currentSchemaVersion = packageJson.pgboss.schema
 // Version 27 has async migrations that create BAM entries for partitioned tables
 const versionWithAsyncMigrations = 27
 
-describe('migration', function () {
+// The sqlite dialect installs fresh at the current version — there is no migration history to exercise.
+describeSqlite('migration', function () {
   let contractor: Contractor
 
   beforeEach(async function () {

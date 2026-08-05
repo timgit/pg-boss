@@ -114,7 +114,7 @@ describe('argument-shape coverage', function () {
 
 describe('plan-builder coverage', function () {
   it('transaction() accepts a single string statement', function () {
-    const sql = plans.transaction('SELECT 1')
+    const sql = plans.transaction('pgboss', 'SELECT 1')
     expect(sql).toContain('BEGIN')
     expect(sql).toContain('SELECT 1')
   })

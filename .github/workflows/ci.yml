@@ -71,3 +71,36 @@ jobs:
 
     - name: Test (pglite)
       run: bun run test:pglite
+
+  test-sqlite:
+    runs-on: ubuntu-latest
+    container: oven/bun:${{ matrix.bun }}
+    # Job-level, not step-level: a step-level continue-on-error reports the whole job green on
+    # failure, hiding canary breakage entirely; job-level keeps the job visibly red while letting
+    # the workflow pass.
+    continue-on-error: ${{ matrix.optional == true }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Like bun-driver, this suite's behavior depends on Bun itself (its sqlite driver), so it
+        # runs on both toolchains. Canary is non-blocking until its sqlite driver has a track record.
+        include:
+          - bun: '1'
+          - bun: canary
+            optional: true
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v5
+
+    - name: Report bun version
+      run: bun --version
+
+    - name: Install
+      run: bun install
+
+    - name: Verify Bun sqlite driver behaviors
+      run: bun scripts/spike-bun-sqlite.ts
+
+    - name: Test (sqlite, bun ${{ matrix.bun }})
+      run: bun run test:sqlite

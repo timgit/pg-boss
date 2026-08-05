@@ -226,7 +226,7 @@ describe('monitoring', function () {
 
     // Verify warning was persisted to database
     const db = await helper.getDb()
-    const sql = plans.getWarnings(ctx.schema)
+    const sql = plans.getWarnings(helper.planCtx(ctx.schema))
     const result = await db.executeSql(sql, [null, 10, 0])
     await db.close()
 
@@ -248,12 +248,12 @@ describe('monitoring', function () {
     // Insert an old warning manually (older than 1 day)
     const db = await helper.getDb()
     await db.executeSql(`
-      INSERT INTO ${ctx.schema}.warning (type, message, data, created_on)
-      VALUES ('test_old', 'old warning', '{}', now() - interval '2 days')
-    `)
+      INSERT INTO ${helper.qualify(ctx.schema, 'warning')} (type, message, data, created_on)
+      VALUES ('test_old', 'old warning', '{}', $1)
+    `, [new Date(Date.now() - 2 * 86_400_000)])
 
     // Verify old warning exists using the getWarningsCount plan
-    const countSql = plans.getWarningsCount(ctx.schema)
+    const countSql = plans.getWarningsCount(helper.planCtx(ctx.schema))
     const beforeResult = await db.executeSql(countSql, ['test_old'])
     expect(beforeResult.rows[0].count).toBe(1)
 
@@ -283,7 +283,7 @@ describe('monitoring', function () {
 
     // Drop the warning table to cause persistence to fail
     const db = await helper.getDb()
-    await db.executeSql(`DROP TABLE IF EXISTS ${ctx.schema}.warning CASCADE`)
+    await db.executeSql(`DROP TABLE IF EXISTS ${helper.qualify(ctx.schema, 'warning')}${helper.isSqlite ? '' : ' CASCADE'}`)
     await db.close()
 
     let errorCount = 0

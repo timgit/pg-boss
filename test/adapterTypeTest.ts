@@ -1,7 +1,7 @@
 import { describe, it, expectTypeOf } from 'vitest'
 
-import { fromBunSql } from '../src/adapters/index.ts'
-import type { BunSqlLike } from '../src/adapters/index.ts'
+import { fromBunSql, fromBunSqlite } from '../src/adapters/index.ts'
+import type { BunSqlLike, BunSqliteLike } from '../src/adapters/index.ts'
 import type { IDatabase } from '../src/types.ts'
 
 import type { SQL } from 'bun'
@@ -16,5 +16,14 @@ describe('adapter type compatibility', () => {
 
   it('fromBunSql returns IDatabase', () => {
     expectTypeOf(fromBunSql).returns.toMatchTypeOf<IDatabase>()
+  })
+
+  it('bun sql client satisfies BunSqliteLike', () => {
+    expectTypeOf<SQL>().toMatchTypeOf<BunSqliteLike>()
+  })
+
+  it('fromBunSqlite returns IDatabase with withTransaction', () => {
+    expectTypeOf(fromBunSqlite).returns.toMatchTypeOf<IDatabase>()
+    expectTypeOf(fromBunSqlite).returns.toHaveProperty('withTransaction')
   })
 })

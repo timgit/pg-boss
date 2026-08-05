@@ -80,7 +80,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
     return {
       emitter: this,
       db: this.#db,
-      schema: this.#config.schema,
+      schema: this.#config,
       persistWarnings: this.#config.persistWarnings,
       warningEvent: events.warning,
       errorEvent: events.error
@@ -139,12 +139,12 @@ class Boss extends EventEmitter implements types.EventsMixin {
       return
     }
 
-    const sql = plans.deleteOldWarnings(this.#config.schema, this.#config.warningRetentionDays)
+    const sql = plans.deleteOldWarnings(this.#config, this.#config.warningRetentionDays)
     await this.#executeQuery(sql)
   }
 
   async #ensureQueueStatsPartitions () {
-    const sql = plans.ensureQueueStatsPartitions(this.#config.schema)
+    const sql = plans.ensureQueueStatsPartitions(this.#config)
     await this.#executeQuery(sql)
   }
 
@@ -154,8 +154,8 @@ class Boss extends EventEmitter implements types.EventsMixin {
     }
 
     const sql = this.#config.noTablePartitioning
-      ? plans.deleteOldQueueStats(this.#config.schema, this.#config.queueStatRetentionDays)
-      : plans.dropOldQueueStatsPartitions(this.#config.schema, this.#config.queueStatRetentionDays)
+      ? plans.deleteOldQueueStats(this.#config, this.#config.queueStatRetentionDays)
+      : plans.dropOldQueueStatsPartitions(this.#config, this.#config.queueStatRetentionDays)
     await this.#executeQuery(sql)
   }
 
@@ -212,7 +212,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
     if (this.#stopping) return
 
     const command = plans.trySetQueueMonitorTime(
-      this.#config.schema,
+      this.#config,
       names,
       this.#config.monitorIntervalSeconds
     )
@@ -223,11 +223,11 @@ class Boss extends EventEmitter implements types.EventsMixin {
     if (rows.length) {
       const queues = rows.map((q) => q.name)
 
-      const cacheStatsSql = plans.cacheQueueStats(this.#config.schema, table, queues, this.#config.noAdvisoryLocks)
+      const cacheStatsSql = plans.cacheQueueStats(this.#config, table, queues, this.#config.noAdvisoryLocks)
       const { rows: rowsCacheStats } = await this.#executeQuery(cacheStatsSql)
 
       if (this.#config.persistQueueStats) {
-        const insertSql = plans.insertQueueStats(this.#config.schema, queues, this.#config.noAdvisoryLocks)
+        const insertSql = plans.insertQueueStats(this.#config, queues, this.#config.noAdvisoryLocks)
         await this.#executeQuery(insertSql)
       }
 
@@ -251,7 +251,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
       if (this.#config.noMultiMutationCte) {
         await this.#manager.failJobsByTimeoutDistributed(table, queues)
       } else {
-        const sql = plans.failJobsByTimeout(this.#config.schema, table, queues, this.#config.noAdvisoryLocks)
+        const sql = plans.failJobsByTimeout(this.#config, table, queues, this.#config.noAdvisoryLocks)
         await this.#executeQuery(sql)
       }
 
@@ -260,7 +260,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
       if (this.#config.noMultiMutationCte) {
         await this.#manager.failJobsByHeartbeatDistributed(table, queues)
       } else {
-        const heartbeatSql = plans.failJobsByHeartbeat(this.#config.schema, table, queues, this.#config.noAdvisoryLocks)
+        const heartbeatSql = plans.failJobsByHeartbeat(this.#config, table, queues, this.#config.noAdvisoryLocks)
         await this.#executeQuery(heartbeatSql)
       }
     }
@@ -270,7 +270,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
     if (this.#stopping) return
 
     const command = plans.trySetQueueDeletionTime(
-      this.#config.schema,
+      this.#config,
       names,
       this.#config.maintenanceIntervalSeconds
     )
@@ -280,10 +280,10 @@ class Boss extends EventEmitter implements types.EventsMixin {
 
     if (rows.length) {
       const queues = rows.map((q) => q.name)
-      const sql = plans.deletion(this.#config.schema, table, queues, this.#config.noAdvisoryLocks)
+      const sql = plans.deletion(this.#config, table, queues, this.#config.noAdvisoryLocks)
       await this.#executeQuery(sql)
 
-      const depSql = plans.cleanupDependencies(this.#config.schema, table, queues, this.#config.noAdvisoryLocks)
+      const depSql = plans.cleanupDependencies(this.#config, table, queues, this.#config.noAdvisoryLocks)
       await this.#executeQuery(depSql)
     }
   }

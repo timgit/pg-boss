@@ -8,7 +8,8 @@ import packageJson from '../package.json' with { type: 'json' }
 
 const schemaVersion = packageJson.pgboss.schema as number
 
-describe('drift', function () {
+// detectSchemaDrift reports a clean pass on sqlite by design (pg_catalog introspection only).
+helper.describeSqlite('drift', function () {
   describe('expectedManagedIndexes (pure)', function () {
     it('non-partitioned puts the full job_iN set on the job table', function () {
       const expected = plans.expectedManagedIndexes('pgboss', false, [])

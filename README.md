@@ -1,5 +1,5 @@
 > [!WARNING]
-> **Work in progress.** bun-boss is an experimental fork of [pg-boss](https://github.com/timgit/pg-boss) that runs on Bun and adds SQLite and in-memory backends. It's under active development and not yet production-ready — expect breaking changes. The SQLite and in-memory backends are not implemented yet; Postgres (including embedded PGlite) is what works today.
+> **Work in progress.** bun-boss is an experimental fork of [pg-boss](https://github.com/timgit/pg-boss) that runs on Bun and adds SQLite and in-memory backends. It's under active development and not yet production-ready — expect breaking changes. Postgres (including embedded PGlite) and SQLite (`backend: 'sqlite'` through Bun's built-in `SQL` client — see [Database Backends](docs/database-backends.md#sqlite-embedded-via-bunsql)) work today; a dedicated in-memory backend is not implemented yet (SQLite on `sqlite://:memory:` covers that use in the meantime).
 
 Queueing jobs in Postgres, SQLite, and memory from Bun like a boss.
 

@@ -58,7 +58,8 @@ describe('delayed jobs', function () {
 
     expect(job).toBeFalsy()
 
-    await delay(2000)
+    // The margin over the 2s startAfter absorbs host-vs-database clock skew (common under colima).
+    await delay(2500)
 
     const [job2] = await ctx.boss.fetch(ctx.schema)
 
@@ -79,7 +80,8 @@ describe('delayed jobs', function () {
 
     expect(job).toBeFalsy()
 
-    await delay(2000)
+    // The margin over the 2s startAfter absorbs host-vs-database clock skew (common under colima).
+    await delay(2500)
 
     const [job2] = await ctx.boss.fetch(ctx.schema)
 

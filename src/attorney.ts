@@ -1,5 +1,6 @@
 import assert from 'node:assert'
 import { DEFAULT_SCHEMA } from './plans.ts'
+import { DIALECTS, type DialectName } from './dialect.ts'
 import type * as types from './types.ts'
 
 const POLICY = {
@@ -31,6 +32,8 @@ type CompatibilityFlag = typeof COMPATIBILITY_FLAGS[number]
 // PGlite is deliberately 'embedded', NOT 'distributed' — it is full PostgreSQL and sets no flags.
 interface BackendDefinition {
   kind: 'standard' | 'distributed' | 'embedded'
+  // The SQL dialect plans.ts renders for this backend; every Postgres-compatible engine omits it.
+  dialect?: DialectName
   flags: Partial<Record<CompatibilityFlag, boolean>>
 }
 
@@ -68,7 +71,24 @@ const BACKEND_PROFILES: Record<types.BackendProfile, BackendDefinition> = {
   // valid. This holds ONLY while the tables stay coordinator-local — if they are ever distributed, the
   // coordinator's progress view would misread in-flight worker builds as dead and BAM could double-build.
   citus: { kind: 'distributed', flags: {} },
-  pglite: { kind: 'embedded', flags: {} }
+  pglite: { kind: 'embedded', flags: {} },
+  // SQLite is a different SQL dialect, not a Postgres-compatible engine: plans.ts renders
+  // alternate SQL for it, and every compatibility flag applies (single-writer, no row locks,
+  // no partitioning, no advisory locks, no LISTEN/NOTIFY, no CONCURRENTLY/progress view).
+  sqlite: {
+    kind: 'embedded',
+    dialect: 'sqlite',
+    flags: {
+      noSkipLocked: true,
+      noMultiMutationCte: true,
+      noTablePartitioning: true,
+      noDeferrableConstraints: true,
+      noAdvisoryLocks: true,
+      noCoveringIndexes: true,
+      noListenNotify: true,
+      noIndexProgressView: true
+    }
+  }
 }
 
 function assertObjectName (value: string, name: string = 'Name') {
@@ -486,10 +506,19 @@ function resolveBackend (config: any) {
     `configuration assert: backend must be one of ${Object.keys(BACKEND_PROFILES).join(', ')}`)
 
   config.backend = backend
-  const { flags } = BACKEND_PROFILES[backend as types.BackendProfile]
+  const { flags, dialect } = BACKEND_PROFILES[backend as types.BackendProfile]
+
+  config.dialect = DIALECTS[dialect ?? 'postgres']
 
   for (const flag of COMPATIBILITY_FLAGS) {
     config[flag] = flags[flag] ?? false
+  }
+
+  // Without a db adapter the config falls through to the default pg.Pool, and sqlite-rendered SQL
+  // reaches a postgres connection — reject the combination here instead of failing bafflingly at start().
+  if (dialect === 'sqlite') {
+    assert(config.db, "configuration assert: backend 'sqlite' requires a db adapter (see fromBunSqlite)")
+    assert(!('connectionString' in config), "configuration assert: connectionString does not apply to backend 'sqlite' — the db adapter carries the database")
   }
 
   // Test hook: exercise the distributed runtime paths (atomic fetch + split mutations)
@@ -731,12 +760,66 @@ function applyFlowConfig (config: any) {
   config.flowIntervalSeconds = config.flowIntervalSeconds || 5
 }
 
+const INTERVAL_UNIT_SECONDS: Record<string, number> = {
+  s: 1,
+  sec: 1,
+  secs: 1,
+  second: 1,
+  seconds: 1,
+  m: 60,
+  min: 60,
+  mins: 60,
+  minute: 60,
+  minutes: 60,
+  h: 3600,
+  hr: 3600,
+  hrs: 3600,
+  hour: 3600,
+  hours: 3600,
+  d: 86400,
+  day: 86400,
+  days: 86400,
+  w: 604800,
+  week: 604800,
+  weeks: 604800
+}
+
+// Parses a relative interval string ('5 minutes', '1 hour 30 minutes', '01:30:00') into seconds.
+// The sqlite dialect has no interval type, so what Postgres resolves via CAST(text AS interval)
+// is resolved here before the payload is bound.
+function parseIntervalSeconds (text: string): number {
+  const trimmed = text.trim()
+
+  const clock = trimmed.match(/^(\d+):([0-5]?\d)(?::([0-5]?\d(?:\.\d+)?))?$/)
+  if (clock) {
+    const [, h, m, s] = clock
+    return parseInt(h, 10) * 3600 + parseInt(m, 10) * 60 + (s ? parseFloat(s) : 0)
+  }
+
+  let total = 0
+  let consumed = ''
+  const partRegex = /(\d+(?:\.\d+)?)\s*([a-z]+)\s*,?\s*/gi
+  let match: RegExpExecArray | null
+
+  while ((match = partRegex.exec(trimmed)) !== null) {
+    const seconds = INTERVAL_UNIT_SECONDS[match[2].toLowerCase()]
+    assert(seconds !== undefined, `Unrecognized interval unit '${match[2]}' in startAfter: ${text}`)
+    total += parseFloat(match[1]) * seconds
+    consumed += match[0]
+  }
+
+  assert(consumed.length === trimmed.length && consumed.length > 0, `Unrecognized startAfter interval: ${text}`)
+
+  return total
+}
+
 export {
   assertKey,
   assertPostgresObjectName,
   assertQueueName,
   checkFetchArgs,
   checkSendArgs,
+  parseIntervalSeconds,
   checkUpdateArgs,
   checkWorkArgs,
   getConfig,

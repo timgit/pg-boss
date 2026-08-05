@@ -306,9 +306,10 @@ describe('key_strict_fifo', function () {
     // Direct SQL insert with NULL singleton_key should be rejected by CHECK constraint
     const db = ctx.boss.getDb()
     const schema = ctx.bossConfig.schema || 'pgboss'
+    const table = helper.isSqlite ? 'job' : 'job_common'
 
     await expect(db.executeSql(`
-      INSERT INTO ${schema}.job_common (name, data, policy)
+      INSERT INTO ${helper.qualify(schema, table)} (name, data, policy)
       VALUES ($1, $2, 'key_strict_fifo')
     `, [ctx.schema, JSON.stringify({ test: 'data' })]))
       .rejects.toThrow(/singleton_key/)
