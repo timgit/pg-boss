@@ -14,13 +14,28 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # The bun-driver mode runs on both toolchains, because fromBunSql is the one part of the
+        # suite whose behavior depends on Bun itself. The pg-driver suites only run on stable —
+        # running them twice buys nothing but minutes.
         include:
           - mode: standard
+            bun: stable
             command: bun run test
           - mode: distributed
+            bun: stable
             command: bun run test:distributed
           - mode: bun-driver
+            bun: canary
             command: bun run test:bun
+          - mode: bun-driver
+            bun: stable
+            command: bun run test:bun
+            # Non-blocking: Bun 1.3.x returns a pooled connection to a waiting query before the
+            # ROLLBACK that clears its aborted transaction has landed, so an unrelated query fails
+            # with 25P02 whenever a transaction block fails under concurrency. That is upstream, not
+            # ours — the adapter rolls back before releasing — and it is fixed in 1.4. Kept visible
+            # so we notice when stable catches up; see ISSUE.txt.
+            optional: true
     services:
       postgres:
         image: postgres:18
@@ -36,11 +51,19 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v5
 
+    - name: Use bun canary
+      if: matrix.bun == 'canary'
+      run: bun upgrade --canary
+
+    - name: Report bun version
+      run: bun --version
+
     - name: Install
       run: bun install
 
-    - name: Test (${{ matrix.mode }})
+    - name: Test (${{ matrix.mode }}, bun ${{ matrix.bun }})
       run: ${{ matrix.command }}
+      continue-on-error: ${{ matrix.optional == true }}
       env:
         POSTGRES_HOST: postgres
 

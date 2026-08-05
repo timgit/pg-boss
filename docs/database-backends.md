@@ -368,6 +368,17 @@ to the same stock PostgreSQL the default `pg` pool does, so `backend` stays at i
 `postgres` and no compatibility flags apply. Reach it with the `fromBunSql` adapter, and a Bun
 application can drop the `pg` dependency entirely.
 
+#### Requires Bun 1.4 or newer
+
+For driver-level use, **Bun 1.4+**. On 1.3.x, a pooled connection can be handed to a waiting query
+before the `ROLLBACK` clearing its aborted transaction has landed, so an unrelated query fails with
+`25P02 current transaction is aborted` whenever a transaction block fails under concurrency —
+schema migration races and contended maintenance being the realistic triggers. The adapter already
+rolls back before releasing; the window is inside Bun's pool and is fixed in 1.4.
+
+Transaction-scoped use (`fromBunSql(tx)` inside `sql.begin()`) never reserves a connection and is
+unaffected on either version.
+
 #### Usage
 
 Bun's SQL client is built in — nothing to install.
