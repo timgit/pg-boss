@@ -4,7 +4,7 @@
     "@tsconfig/node-ts/tsconfig.json"
   ],
   "compilerOptions": {
-    "types": ["node", "bun", "vitest/globals"],
+    "types": ["node", "bun"],
     "resolveJsonModule": true,
     "noEmit": true,
     "rootDir": "./"

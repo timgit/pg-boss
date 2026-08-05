@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-// Preflight guard run once before the suite (wired as vitest `globalSetup`).
+// Preflight guard run before the suite (wired as a `bun test` preload in bunfig.toml).
 //
 // Each test derives its own Postgres schema from sha1(testFile + testName) (see hooks.ts), and the
 // schema doubles as the queue namespace. Two tests in the same file with the same name therefore
@@ -20,8 +20,8 @@ const TEST_DIR = path.dirname(fileURLToPath(import.meta.url))
 // testHelper (itSqlite, itPostgresOnly, ...) whose first argument is a quoted string.
 const TEST_NAME = /\b(?:it|test)(?:[A-Z]\w*)?(?:\.\w+)?\s*\(\s*(["'`])((?:\\.|(?!\1).)*)\1/g
 
-export default function checkDuplicateTestNames (): void {
-  const files = fs.readdirSync(TEST_DIR).filter(f => f.endsWith('Test.ts'))
+function checkDuplicateTestNames (): void {
+  const files = fs.readdirSync(TEST_DIR).filter(f => f.endsWith('.test.ts') || f.endsWith('TypeTest.ts'))
   const offenders: string[] = []
 
   for (const file of files) {
@@ -47,3 +47,5 @@ export default function checkDuplicateTestNames (): void {
     )
   }
 }
+
+checkDuplicateTestNames()

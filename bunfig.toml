@@ -1,0 +1,4 @@
+# checkDuplicateTestNames must run before hooks.ts so a name collision fails fast.
+[test]
+preload = ["./test/checkDuplicateTestNames.ts", "./test/hooks.ts"]
+coverageSkipTestFiles = true

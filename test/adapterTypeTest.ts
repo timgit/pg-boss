@@ -1,4 +1,4 @@
-import { describe, it, expectTypeOf } from 'vitest'
+import { describe, it, expectTypeOf } from 'bun:test'
 
 import { fromBunSql, fromBunSqlite } from '../src/adapters/index.ts'
 import type { BunSqlLike, BunSqliteLike } from '../src/adapters/index.ts'
@@ -6,7 +6,8 @@ import type { IDatabase } from '../src/types.ts'
 
 import type { SQL } from 'bun'
 
-// Vitest typecheck verifies these at compile time.
+// `tsc --noEmit` verifies these at compile time; the file is never executed (bun test does not
+// discover the *TypeTest.ts suffix, and expectTypeOf is a runtime no-op anyway).
 // A failure means our adapter interfaces have drifted from the real library types.
 
 describe('adapter type compatibility', () => {
