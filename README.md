@@ -58,7 +58,8 @@ This will likely cater the most to teams already familiar with the simplicity of
 
 ## Requirements
 * PostgreSQL 13 or higher
-* Bun 1.4 or higher — the package ships TypeScript sources with no compile step, so it is consumed by Bun directly. Node cannot import it from `node_modules` without a bundler or transpiler.
+* Bun 1.3.14 or higher — the package ships TypeScript sources with no compile step, so it is consumed by Bun directly. Node cannot import it from `node_modules` without a bundler or transpiler.
+* Bun 1.4 or higher when using Bun's built-in SQL client as the driver (see [database backends](docs/database-backends.md)), and for working on this repo
 
 ## Documentation
 * [Docs](docs/introduction.md) in this repo
