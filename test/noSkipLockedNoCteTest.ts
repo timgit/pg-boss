@@ -43,7 +43,7 @@ helper.describePglite('no-SKIP-LOCKED / no-CTE mode', { timeout: blockTimeout },
     const allJobs = results.flat()
 
     // Each job should only be fetched once (no duplicates)
-    // This is the key guarantee of the the no-SKIP-LOCKED path
+    // This is the key guarantee of the no-SKIP-LOCKED path
     const jobIds = allJobs.map(j => j.id)
     const uniqueJobIds = new Set(jobIds)
     expect(uniqueJobIds.size).toBe(jobIds.length)

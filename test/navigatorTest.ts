@@ -86,10 +86,10 @@ describe('navigator (flow resolver)', function () {
 
   it('resolves a flow through the standard (single-statement) path', async function () {
     // Pin the standard resolver even under NO_SKIP_LOCKED_NO_CTE=true. getConfig() force-enables
-    // __test__noSkipLockedNoCte for the distributed CI run, which routes every flow pass through
+    // __test__noSkipLockedNoCte for that CI run, which routes every flow pass through
     // resolveFlowJobsNoCte; overriding it back to false exercises navigator.#resolveStandard
     // + plans.resolveFlowJobs here. This is the mirror of noSkipLockedNoCteTest pinning
-    // __test__noSkipLockedNoCte:true to cover the distributed path under the standard run, so neither
+    // __test__noSkipLockedNoCte:true to cover the split path under the standard run, so neither
     // CI flag leaves the other branch uncovered.
     ctx.boss = await helper.start({ ...ctx.bossConfig, supervise: false, __test__noSkipLockedNoCte: false })
 

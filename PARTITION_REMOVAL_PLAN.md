@@ -2,6 +2,10 @@
 
 Plan for removing PostgreSQL table-partitioning support from bun-boss entirely.
 
+> Historical planning document: written before the fork dropped the CockroachDB/YugabyteDB/Citus
+> profiles and their migration/CLI machinery, so backend names and some file references describe
+> the codebase as it was then.
+
 ## TL;DR
 
 - **Two things are partitioned today:** the `job` table (`PARTITION BY LIST (name)` — a
@@ -132,7 +136,7 @@ Only after the migration has shipped and a deprecation window has passed. Every 
   the postgres output is pinned byte-for-byte, so these must be updated deliberately.
 - **Partition-specific tests**: prune assertions in `queueTest.ts`, `queuePolicyTest.ts`,
   `keyStrictFifoTest.ts`, `queueStatsHistoryTest.ts`, `driftTest.ts`, `configTest.ts`, `cliTest.ts`,
-  `distributedDatabaseTest.ts`.
+  `noSkipLockedNoCteTest.ts` (named `distributedDatabaseTest.ts` at the time of writing).
 - **New migration test**: seed a v37 database with a `job_common` default partition **and** at least
   one dedicated `j<hash>` partition holding rows, run v38, assert (a) no rows lost, (b)
   `queue.table_name = 'job'` / `partition = false`, (c) `detectSchemaDrift()` clean against the

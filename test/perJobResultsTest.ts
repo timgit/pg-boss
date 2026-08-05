@@ -453,7 +453,7 @@ describe('perJobResults', function () {
   // - completeJobsWithOutputs / failJobsByIdWithOutputs / deadLetterJobsByIdWithOutputs - only run when
   // noMultiMutationCte is off. The NO_SKIP_LOCKED_NO_CTE=true coverage suite forces it on globally, so without
   // pinning it off here those CTE plans show as uncovered in that run. Force the standard path with
-  // __test__noSkipLockedNoCte: false so it is exercised in both the standard and distributed coverage suites.
+  // __test__noSkipLockedNoCte: false so it is exercised in both the standard and NO_SKIP_LOCKED_NO_CTE coverage runs.
   describe('standard backend path (multiMutationCte)', function () {
     it('settles a mixed batch of completions and failures with their own outputs (standard path)', async function () {
       ctx.boss = await helper.start({ ...ctx.bossConfig, __test__noSkipLockedNoCte: false, __test__enableSpies: true })
