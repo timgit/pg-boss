@@ -2,3 +2,5 @@
 [test]
 preload = ["./test/checkDuplicateTestNames.ts", "./test/hooks.ts"]
 coverageSkipTestFiles = true
+# Coverage is a src/ metric — keep the test helpers and scripts out of the report.
+coveragePathIgnorePatterns = ["test/**", "scripts/**"]
