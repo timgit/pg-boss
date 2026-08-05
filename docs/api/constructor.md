@@ -91,6 +91,10 @@ The following options can be set as properties in an object for additional confi
 
   If this is set to false, flows, maintenance, and monitoring operations will be skipped on this instance. This is an advanced use case, and not something you would want to do under normal circumstances.
 
+* **deleteFailedJobs**, bool, default true
+
+  If this is set to false, the maintenance (retention) pass will never delete jobs in the `failed` state; they remain in the job table until removed manually via `deleteJob()`, `deleteStoredJobs()`, or `deleteAllJobs()`. Completed and cancelled jobs are still deleted per their `deleteAfterSeconds` setting.
+
 * **schedule**, bool, default true
 
   If this is set to false, this instance will not monitor or created scheduled jobs during. This is an advanced use case you may want to do for testing or if the clock of the server is skewed and you would like to disable the skew warnings.

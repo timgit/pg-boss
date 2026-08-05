@@ -438,6 +438,7 @@ function getConfig (value: string | types.ConstructorOptions): types.ResolvedCon
 
   config.schedule = ('schedule' in config) ? config.schedule : true
   config.supervise = ('supervise' in config) ? config.supervise : true
+  config.deleteFailedJobs = ('deleteFailedJobs' in config) ? config.deleteFailedJobs : true
   config.migrate = ('migrate' in config) ? config.migrate : true
   config.createSchema = ('createSchema' in config) ? config.createSchema : true
   config.useListenNotify = ('useListenNotify' in config) ? config.useListenNotify : false
@@ -651,6 +652,9 @@ function applyPollingInterval (config: any) {
 }
 
 function applyOpsConfig (config: any) {
+  assert(typeof config.deleteFailedJobs === 'boolean',
+    'configuration assert: deleteFailedJobs must be a boolean')
+
   assert(!('superviseIntervalSeconds' in config) || config.superviseIntervalSeconds >= 1,
     'configuration assert: superviseIntervalSeconds must be at least every second')
 
