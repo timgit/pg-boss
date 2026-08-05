@@ -1,7 +1,7 @@
 import assert, { notStrictEqual } from 'node:assert'
 import { randomUUID } from 'node:crypto'
 import EventEmitter from 'node:events'
-import { serializeError as stringify } from 'serialize-error'
+import { serializeError as stringify } from './serialize-error.ts'
 import * as Attorney from './attorney.ts'
 import type Db from './db.ts'
 import type Notifier from './notifier.ts'
