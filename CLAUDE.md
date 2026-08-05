@@ -110,6 +110,32 @@ feat: add detectSchemaDrift
 chore: drop cross-env dependency
 ```
 
-## PR reviews
+## GitHub
+
+**This is a fork, and `gh` will target the wrong repository by default.** `origin` is
+`khromov/bun-boss`; `upstream` is `timgit/pg-boss`, which we do not own. `gh` resolves a fork's
+default base to its *parent*, so a bare `gh pr create` opens a pull request **against
+`timgit/pg-boss`** — a public, unwanted PR on a stranger's repository.
+
+Never rely on the default. Pass `--repo khromov/bun-boss` to every `gh` command that touches a
+repository (`pr create`, `pr list`, `pr view`, `issue create`, `api`, …), and for a new PR name the
+head branch explicitly too:
+
+```
+gh pr create --repo khromov/bun-boss --base master --head khromov:<branch> [--draft]
+```
+
+Then confirm it landed where you meant, before saying it is done:
+
+```
+gh pr view <n> --repo khromov/bun-boss --json url,baseRefName,isDraft
+```
+
+A checkout should also have its default pinned once, which makes bare commands safe:
+`gh repo set-default khromov/bun-boss`. This writes to `.git/config`, so it is per-clone and is not
+inherited by a fresh clone — check it with `gh repo set-default --view` rather than assuming.
+
+If a PR does open upstream by mistake, close it immediately with a brief explanatory comment, then
+reopen it on the fork.
 
 When reviewing a PR, use the https://github.com/khromov/bun-boss repo to check issue numbers.
