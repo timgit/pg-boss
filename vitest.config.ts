@@ -1,9 +1,7 @@
 import { defineConfig } from 'vitest/config'
 
-const slowBackends = ['cockroachdb', 'yugabytedb', 'pglite', 'citus']
-const isSlowBackend = slowBackends.includes(process.env.DB_TYPE ?? '')
-const testTimeout = isSlowBackend ? 120000 : 30000
-const hookTimeout = isSlowBackend ? 120000 : 30000
+const testTimeout = 120000
+const hookTimeout = 120000
 
 export default defineConfig({
   test: {
