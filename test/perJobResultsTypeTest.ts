@@ -1,5 +1,5 @@
 import { describe, it, expectTypeOf } from 'vitest'
-import type { PgBoss } from '../src/index.ts'
+import type { BunBoss } from '../src/index.ts'
 import type {
   WorkHandlerFor,
   WorkHandler,
@@ -49,7 +49,7 @@ describe('WorkHandlerFor resolves the handler from the inferred options', () => 
 // Compile-only: never invoked at runtime. tsc/typecheck verify that real work() calls accept valid
 // handlers and reject malformed per-job handlers end to end (overload + inference + const O), not just
 // the WorkHandlerFor mapping in isolation.
-export async function workCallTypeContract (boss: PgBoss): Promise<void> {
+export async function workCallTypeContract (boss: BunBoss): Promise<void> {
   // --- accepted: ordinary handlers and dynamically-built options ---
   await boss.work('q', async () => 'done')
   await boss.work('q', { batchSize: 5 }, async jobs => jobs.length)

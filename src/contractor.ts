@@ -3,7 +3,7 @@ import * as plans from './plans.ts'
 import packageJson from '../package.json' with { type: 'json' }
 import type * as types from './types.ts'
 
-const schemaVersion = packageJson.pgboss.schema as number
+const schemaVersion = packageJson.bunboss.schema as number
 
 // A name postgres would store unchanged if written without quotes.
 const BARE_LOWER_IDENTIFIER_REGEX = /^[a-z_][a-z0-9_]*$/
@@ -51,9 +51,9 @@ class Contractor {
   // `schema: 'MySchema'` and `schema: '"MySchema"'` are two different schemas - postgres folds the
   // bare form to `myschema` and stores the quoted one verbatim - but the two configs differ by two
   // characters and are indistinguishable in logs. Getting it wrong is not an error on its own: the
-  // version table simply isn't there, so pg-boss installs a second, empty schema alongside the
+  // version table simply isn't there, so bun-boss installs a second, empty schema alongside the
   // populated one and every existing job silently disappears. Fires only on the install path, and
-  // only when the variant actually holds a pg-boss install, so an unrelated schema that happens to
+  // only when the variant actually holds a bun-boss install, so an unrelated schema that happens to
   // share a folded name never blocks a legitimate install.
   private async assertNoSchemaCaseVariant () {
     if (this.config.allowSchemaCaseVariant) {
@@ -80,7 +80,7 @@ class Contractor {
     // anything else (mixed case, or a name needing quotes) has to be configured quoted.
     const spellings = variants.map(name => BARE_LOWER_IDENTIFIER_REGEX.test(name) ? `'${name}'` : `'"${name}"'`)
 
-    throw new Error(`pg-boss is not installed in schema ${schema}, but is installed in ${variants.map(n => `"${n}"`).join(', ')}, which differs only in case. ` +
+    throw new Error(`bun-boss is not installed in schema ${schema}, but is installed in ${variants.map(n => `"${n}"`).join(', ')}, which differs only in case. ` +
       'PostgreSQL folds unquoted names to lower case and stores quoted names verbatim, so these are different schemas. ' +
       `To use the existing installation, set schema: ${spellings.join(' or ')}. ` +
       'To install a new schema beside it anyway, set allowSchemaCaseVariant: true.')
@@ -90,13 +90,13 @@ class Contractor {
     const installed = await this.isInstalled()
 
     if (!installed) {
-      throw new Error('pg-boss is not installed')
+      throw new Error('bun-boss is not installed')
     }
 
     const version = await this.schemaVersion()
 
     if (schemaVersion !== version) {
-      throw new Error(`pg-boss schema version ${version} does not match the expected version ${schemaVersion}`)
+      throw new Error(`bun-boss schema version ${version} does not match the expected version ${schemaVersion}`)
     }
   }
 

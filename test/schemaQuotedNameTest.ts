@@ -2,7 +2,7 @@ import { expect } from 'vitest'
 import * as Attorney from '../src/attorney.ts'
 import * as plans from '../src/plans.ts'
 import { normalizeSchemaName, resolveSchemaName } from '../src/tools.ts'
-import { PgBoss } from '../src/index.ts'
+import { BunBoss } from '../src/index.ts'
 import * as helper from './testHelper.ts'
 
 const connectionString = 'postgres://localhost/db'
@@ -175,12 +175,12 @@ helper.describeSqlite('quoted schema names', function () {
 
   describe('runtime behaviour', function () {
     it('runs a full job lifecycle in a quoted schema', async function () {
-      const schema = '"pg-boss Test-Schema"'
+      const schema = '"bun-boss Test-Schema"'
       const queue = 'quoted-schema-queue'
 
       await helper.dropSchema(schema)
 
-      const boss = new PgBoss(helper.getConfig({ schema }))
+      const boss = new BunBoss(helper.getConfig({ schema }))
 
       try {
         await boss.start()
@@ -209,13 +209,13 @@ helper.describeSqlite('quoted schema names', function () {
       await helper.dropSchema(quoted)
       await helper.dropSchema(bare)
 
-      const installed = new PgBoss(helper.getConfig({ schema: quoted }))
+      const installed = new BunBoss(helper.getConfig({ schema: quoted }))
 
       try {
         await installed.start()
         await installed.stop({ graceful: false })
 
-        const conflicting = new PgBoss(helper.getConfig({ schema: bare }))
+        const conflicting = new BunBoss(helper.getConfig({ schema: bare }))
 
         try {
           await expect(conflicting.start()).rejects.toThrow('differs only in case')
@@ -238,8 +238,8 @@ helper.describeSqlite('quoted schema names', function () {
       await helper.dropSchema(quoted)
       await helper.dropSchema(bare)
 
-      const installed = new PgBoss(helper.getConfig({ schema: quoted }))
-      const second = new PgBoss(helper.getConfig({ schema: bare, allowSchemaCaseVariant: true }))
+      const installed = new BunBoss(helper.getConfig({ schema: quoted }))
+      const second = new BunBoss(helper.getConfig({ schema: bare, allowSchemaCaseVariant: true }))
 
       try {
         await installed.start()
@@ -263,13 +263,13 @@ helper.describeSqlite('quoted schema names', function () {
       await helper.dropSchema(bare)
       await helper.dropSchema(quoted)
 
-      const installed = new PgBoss(helper.getConfig({ schema: bare }))
+      const installed = new BunBoss(helper.getConfig({ schema: bare }))
 
       try {
         await installed.start()
         await installed.stop({ graceful: false })
 
-        const conflicting = new PgBoss(helper.getConfig({ schema: quoted }))
+        const conflicting = new BunBoss(helper.getConfig({ schema: quoted }))
 
         try {
           await expect(conflicting.start()).rejects.toThrow('To use the existing installation, set schema: \'caseplainschema\'')
@@ -292,7 +292,7 @@ helper.describeSqlite('quoted schema names', function () {
       await helper.dropSchema(quoted)
       await helper.dropSchema(bare)
 
-      const installed = new PgBoss(helper.getConfig({ schema: quoted }))
+      const installed = new BunBoss(helper.getConfig({ schema: quoted }))
       const db = await helper.getDb()
 
       let probed = false
@@ -307,7 +307,7 @@ helper.describeSqlite('quoted schema names', function () {
         }
       }
 
-      const boss = new PgBoss(helper.getConfig({ schema: bare, db: failingProbeDb }))
+      const boss = new BunBoss(helper.getConfig({ schema: bare, db: failingProbeDb }))
 
       try {
         await installed.start()
@@ -326,7 +326,7 @@ helper.describeSqlite('quoted schema names', function () {
     })
 
     it('does not block an install when an unrelated schema shares the folded name', async function () {
-      // Only a schema holding a pg-boss installation counts. A bare namespace that happens to
+      // Only a schema holding a bun-boss installation counts. A bare namespace that happens to
       // collide must never stop a legitimate install.
       const quoted = '"CaseUnrelatedSchema"'
       const bare = 'CaseUnrelatedSchema'
@@ -342,7 +342,7 @@ helper.describeSqlite('quoted schema names', function () {
         await db.close()
       }
 
-      const boss = new PgBoss(helper.getConfig({ schema: bare }))
+      const boss = new BunBoss(helper.getConfig({ schema: bare }))
 
       try {
         await boss.start()
@@ -361,7 +361,7 @@ helper.describeSqlite('quoted schema names', function () {
 
       await helper.dropSchema(schema)
 
-      const boss = new PgBoss(helper.getConfig({ schema }))
+      const boss = new BunBoss(helper.getConfig({ schema }))
 
       try {
         await boss.start()

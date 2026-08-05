@@ -1,5 +1,5 @@
 {
-  "name": "pg-boss",
+  "name": "bun-boss",
   "version": "0.1.0",
   "description": "Queueing jobs in Postgres, SQLite, and memory from Bun like a boss",
   "type": "module",
@@ -42,22 +42,24 @@
     "tsc": "tsc --noEmit",
     "console": "bun scripts/console.js"
   },
-  "pgboss": {
+  "bunboss": {
     "schema": 1
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/timgit/pg-boss.git"
+    "url": "git+https://github.com/khromov/bun-boss.git"
   },
-  "author": "timgit",
+  "author": "Stanislav Khromov",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/timgit/pg-boss/issues"
+    "url": "https://github.com/khromov/bun-boss/issues"
   },
-  "homepage": "https://pgboss.io",
+  "homepage": "https://github.com/khromov/bun-boss",
   "keywords": [
     "postgresql",
     "postgres",
+    "sqlite",
+    "bun",
     "queue",
     "job"
   ],

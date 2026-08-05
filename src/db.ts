@@ -20,7 +20,7 @@ class Db extends EventEmitter implements types.IDatabase, types.EventsMixin {
   constructor (config: types.DatabaseOptions) {
     super()
 
-    config.application_name = config.application_name || 'pgboss'
+    config.application_name = config.application_name || 'bunboss'
     config.connectionTimeoutMillis ??= 10000
     // config.maxUses = config.maxUses || 1000
 

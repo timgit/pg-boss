@@ -73,7 +73,7 @@ const events = {
 }
 
 // Standard translation of low-level Postgres errors raised by job-creation SQL
-// into actionable pg-boss errors. Centralized so any write path can reuse it.
+// into actionable bun-boss errors. Centralized so any write path can reuse it.
 // Always throws; rethrows untranslated errors unchanged.
 function rethrowWriteError (err: any): never {
   // the in-SQL insert guard raises division_by_zero when ON CONFLICT skipped a job
@@ -503,7 +503,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     for (const worker of this.workers.values()) {
       const jobIds = worker.jobs.map(j => j.id)
       if (jobIds.length) {
-        await this.fail(worker.name, jobIds, 'pg-boss shut down while active')
+        await this.fail(worker.name, jobIds, 'bun-boss shut down while active')
       }
       worker.abort()
     }
@@ -515,7 +515,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const { options, callback } = Attorney.checkWorkArgs(name, args)
 
     if (this.stopped) {
-      throw new Error('Workers are disabled. pg-boss is stopped')
+      throw new Error('Workers are disabled. bun-boss is stopped')
     }
 
     const {

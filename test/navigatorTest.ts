@@ -1,7 +1,7 @@
 import { describe, it } from 'vitest'
 import { ctx, expect } from './hooks.ts'
 import * as helper from './testHelper.ts'
-import { PgBoss } from '../src/index.ts'
+import { BunBoss } from '../src/index.ts'
 import * as plans from '../src/plans.ts'
 import { delay } from '../src/tools.ts'
 
@@ -158,7 +158,7 @@ describe('navigator (flow resolver)', function () {
 
   it('emits error when the poll throws', async function () {
     const errorMessage = 'test flow poll error'
-    ctx.boss = new PgBoss({
+    ctx.boss = new BunBoss({
       ...ctx.bossConfig,
       ...flowConfig,
       __test__throw_flow: errorMessage
@@ -175,7 +175,7 @@ describe('navigator (flow resolver)', function () {
 
   it('exposes isResolvingFlow() and serializes resolveFlow() behind an in-flight poll', async function () {
     // __test__delay_flow_ms holds each background poll's #working flag open long enough to observe.
-    ctx.boss = new PgBoss({
+    ctx.boss = new BunBoss({
       ...ctx.bossConfig,
       ...flowConfig,
       __test__delay_flow_ms: 300

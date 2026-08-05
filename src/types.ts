@@ -20,7 +20,7 @@ export type Events = {
 export interface IDatabase {
   executeSql(text: string, values?: unknown[]): Promise<{ rows: any[] }>;
   /**
-   * Optional transaction capability. When present, pg-boss runs its multi-statement
+   * Optional transaction capability. When present, bun-boss runs its multi-statement
    * operations (upsert, distributed complete/fail/expire, flow resolution) inside a real
    * transaction via this method; otherwise those statements run sequentially without
    * atomicity. The callback receives a database bound to the transaction — all statements
@@ -28,7 +28,7 @@ export interface IDatabase {
    */
   withTransaction?<T>(fn: (tx: IDatabase) => Promise<T>): Promise<T>;
   /**
-   * Optional capability for LISTEN/NOTIFY support. When present, pg-boss can hold a
+   * Optional capability for LISTEN/NOTIFY support. When present, bun-boss can hold a
    * dedicated session-pinned connection to receive notifications. The built-in pool-based
    * Db implements this; custom adapters may implement it to enable `useListenNotify`.
    * Must invoke `onReconnect` after each successful (re)subscribe so missed notifications
@@ -92,7 +92,7 @@ export interface SchedulingOptions {
  * - `sqlite`: embedded SQLite through Bun's `SQL` client — a different SQL dialect, with every
  *   compatibility flag on. Requires a db adapter (see `fromBunSqlite`).
  *
- * @see https://pgboss.io/database-backends
+ * @see https://github.com/khromov/bun-boss/blob/master/docs/database-backends.md
  */
 export type BackendProfile = 'postgres' | 'pglite' | 'sqlite'
 
@@ -102,7 +102,7 @@ export interface MaintenanceOptions {
   createSchema?: boolean;
   /**
    * Skips the startup check that refuses to install into `schema` when another schema differing
-   * from it only by case already holds a pg-boss installation.
+   * from it only by case already holds a bun-boss installation.
    *
    * That check exists because `schema: 'MySchema'` and `schema: '"MySchema"'` name two different
    * schemas — PostgreSQL folds the unquoted form to `myschema` and stores the quoted one verbatim —
@@ -141,18 +141,18 @@ export interface QueueStatsOptions {
 }
 
 /**
- * Options for running pg-boss against a specific database backend.
+ * Options for running bun-boss against a specific database backend.
  *
  * `backend` is the only knob — it expands to the correct internal compatibility flags
  * for that database (fetch strategy, mutation strategy, schema shape). Those flags are
  * derived from the backend and are not individually configurable, so a deployment can't
  * end up with an inconsistent combination.
  *
- * @see https://pgboss.io/database-backends#backend-profiles
+ * @see https://github.com/khromov/bun-boss/blob/master/docs/database-backends.md#backend-profiles
  */
 export interface BackendOptions {
   /**
-   * Selects the database backend pg-boss is running against, expanding to the right
+   * Selects the database backend bun-boss is running against, expanding to the right
    * preset of internal compatibility flags. Databases without a profile (e.g. Aurora
    * DSQL, Spanner) are not yet supported.
    * @see BackendProfile
@@ -202,9 +202,9 @@ export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, 
    * Enables the LISTEN/NOTIFY listener so workers on notify-enabled queues are woken
    * the moment a job is created, instead of waiting out their polling interval. This
    * holds one dedicated database connection for listening. Polling always remains active
-   * as a correctness floor. Requires a pg-boss-owned pool (or an adapter that supports
+   * as a correctness floor. Requires a bun-boss-owned pool (or an adapter that supports
    * `listen`) and a session-pinned connection — it will not work through PgBouncer in
-   * transaction pooling mode. When it can't be established, pg-boss emits a `warning` and
+   * transaction pooling mode. When it can't be established, bun-boss emits a `warning` and
    * continues polling only. Opt in per queue via the queue's `notify` option.
    * @default false
    */
@@ -664,7 +664,7 @@ export type WorkOptions = JobFetchOptions & JobPollingOptions & WorkConcurrencyO
   /**
    * Opt in to per-job settlement for batch handlers. When true, the handler must resolve with a
    * `JobResult[]` describing the outcome (`completed`, `failed`, or `deadletter`, with optional
-   * per-job `output`) of each job in the batch. pg-boss settles each job individually, preserving
+   * per-job `output`) of each job in the batch. bun-boss settles each job individually, preserving
    * its own output. Any job omitted from the result is failed (and retried) with a descriptive
    * error. Throwing from the handler still fails the whole batch. Defaults to false.
    */
@@ -910,7 +910,7 @@ export interface FlowEvent {
   resolved: number
 }
 
-export type PgBossEventMap = {
+export type BunBossEventMap = {
   error: [error: Error]
   warning: [warning: Warning]
   wip: [data: WipData[]]

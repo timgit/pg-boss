@@ -6,9 +6,22 @@ This repo is **bun-boss** (`origin` = `khromov/bun-boss`), an experimental Bun-f
 
 The library itself is a job queue built on PostgreSQL: it relies on `SKIP LOCKED` for exactly-once delivery and stores all state (jobs, queues, schedules, archive) in a dedicated Postgres schema. The package in `src/` is the whole product.
 
-## Naming: the rename has not happened
+## Naming: renamed above the database line, unchanged below it
 
-Only the repo, the devcontainer, and the docs framing say "bun-boss". The npm package name is still `pg-boss`, the exported class is still `PgBoss`, the schema/queue namespace is still `pgboss`, and internal SQL identifiers are unchanged. **Do not rename any of these opportunistically** — the schema name in particular is on-disk state for every existing install. Use "bun-boss" for the project/repo, "pg-boss" when naming the package, class, or schema.
+The rename has happened, but only down to the database boundary. The npm package is `bun-boss`, the exported class is `BunBoss` (named export — there is no default export), the `package.json` schema-version key is `bunboss`, and the connection `application_name` defaults to `bunboss`.
+
+**Everything that is on-disk Postgres state or cross-instance coordination is still `pgboss` and must stay that way** — renaming any of it orphans existing installs:
+
+- `plans.ts` `DEFAULT_SCHEMA = 'pgboss'` — the schema holding every table.
+- The `pgboss_` NOTIFY channel prefix in `plans.ts` — hashed, so a change desyncs LISTEN from NOTIFY during a rolling upgrade.
+- The `.pgboss.` advisory-lock seed in `plans.ts` — hashed into the lock id, so a change makes old and new instances stop mutually excluding.
+- `timekeeper.ts` `'__pgboss__send-it'` — a persisted queue name and `job.name` value.
+- SQLite's derived `"pgboss.job"` / `"pgboss.version"` quoted identifiers, which follow from `DEFAULT_SCHEMA`.
+- The test/dev database named `pgboss` (`docker-compose.yaml` ↔ `test/config.json` ↔ `.devcontainer/setup-postgres.sh` ↔ `scripts/console.js`) and the `pgboss<sha1>` per-test schemas.
+
+`test/plansSnapshot.sql` pins the generated Postgres SQL byte-for-byte, so it is the tripwire: **if a change makes that snapshot diff, a must-not-change identifier was renamed** — fix the cause rather than regenerating with `-u`.
+
+Use "bun-boss"/`BunBoss` for the project, package, and class; "pg-boss" only when naming upstream (`timgit/pg-boss`), and `pgboss` only for the schema and the identifiers above.
 
 ## Direction
 
@@ -44,11 +57,11 @@ The suite is parameterized by `DB_TYPE` / `DISTRIBUTED` env vars (resolved in `t
 
 ### Component composition
 
-`src/index.ts` defines the public `PgBoss` class (an `EventEmitter`). It does almost no work itself — the constructor builds a set of collaborator objects, all sharing one `IDatabase` and one resolved config, and public methods delegate (mostly to `Manager`). Each collaborator is itself an `EventEmitter`; `#promoteEvents` re-emits their events on the `PgBoss` instance, which is how `error`/`warning`/`wip`/`flow` surface to the user.
+`src/index.ts` defines the public `BunBoss` class (an `EventEmitter`). It does almost no work itself — the constructor builds a set of collaborator objects, all sharing one `IDatabase` and one resolved config, and public methods delegate (mostly to `Manager`). Each collaborator is itself an `EventEmitter`; `#promoteEvents` re-emits their events on the `BunBoss` instance, which is how `error`/`warning`/`wip`/`flow` surface to the user.
 
 - **`manager.ts`** — the core (largest file). All job operations: `send`/`insert`/`fetch`/`work`/`complete`/`fail`/`cancel`/`retry`, queue CRUD, pub/sub, stats. Owns the `Worker` instances created by `work()`.
 - **`boss.ts`** — the background **supervisor**. A timer (`superviseIntervalSeconds`) drives `supervise()`, which per queue-table monitors backlog, fails timed-out/heartbeat-stale jobs, maintains partitions, and prunes archived jobs.
-- **`contractor.ts`** — schema **install and verify** on `start()`. Reads the target version from `package.json` → `pgboss.schema` and installs it fresh at that version; an older installed schema throws rather than migrating in place (with `migrate: false` it verifies instead of installing). Also exposes the static `getConstructionPlans` used by `index.ts`.
+- **`contractor.ts`** — schema **install and verify** on `start()`. Reads the target version from `package.json` → `bunboss.schema` and installs it fresh at that version; an older installed schema throws rather than migrating in place (with `migrate: false` it verifies instead of installing). Also exposes the static `getConstructionPlans` used by `index.ts`.
 - **`timekeeper.ts`** — **cron scheduling** (via `cron-parser`); enqueues due scheduled jobs and watches for clock skew.
 - **`navigator.ts`** — background **flow / job-dependency resolver**. Off-hot-path: audits completed "blocking" parents and unblocks children (job completion itself stays join-free for speed).
 - **`notifier.ts`** — **LISTEN/NOTIFY** listener lifecycle. A NOTIFY is only ever a _latency hint_ that wakes workers to poll sooner; if the listener can't be established, it warns and falls back to polling. Never required for correctness.
@@ -83,7 +96,7 @@ Anything implementing `IDatabase` (`executeSql`, optionally `withTransaction`/`l
 
 ## Docs
 
-`docs/` is plain markdown (the vitepress tooling was removed in the fork) and is still written from upstream's Node/pg-boss point of view, with links to `pgboss.io`. `docs/database-backends.md` is the one that tracks fork behavior: it documents the Bun 1.4 floor, the `prepare: true` requirement, and the LISTEN/NOTIFY gap, so update it alongside `src/adapters/bun.ts`.
+`docs/` is plain markdown (the vitepress tooling was removed in the fork). Prose and code samples name `bun-boss`/`BunBoss`; the only surviving `pgboss` mentions are schema names and DDL, and the only `pgboss.io` link is the upstream-docs pointer in `README.md`. Samples use the named import (`import { BunBoss } from 'bun-boss'`) because there is no default export. `docs/database-backends.md` is the one that tracks fork behavior: it documents the Bun 1.4 floor, the `prepare: true` requirement, and the LISTEN/NOTIFY gap, so update it alongside `src/adapters/bun.ts`.
 
 ## Comments in code
 
