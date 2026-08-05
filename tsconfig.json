@@ -5,13 +5,9 @@
   ],
   "compilerOptions": {
     "types": ["node", "bun", "vitest/globals"],
-    "outDir": "dist",
-    "declaration": true,
-    "declarationMap": true,
-    "stripInternal": true,
     "resolveJsonModule": true,
     "noEmit": true,
-    "rootDir": "./",
+    "rootDir": "./"
   },
   "include": ["src", "test"]
 }

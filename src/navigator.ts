@@ -129,7 +129,7 @@ class Navigator extends EventEmitter implements types.EventsMixin {
     // the chunk's queue names (mirrors boss.supervise()'s grouping).
     const queueGroups = queues.reduce<Record<string, { table: string, names: string[] }>>((acc, q) => {
       acc[q.table] = acc[q.table] || { table: q.table, names: [] }
-      acc[q.table].names.push(q.name)
+      acc[q.table]!.names.push(q.name)
       return acc
     }, {})
 

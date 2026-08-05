@@ -77,9 +77,9 @@ export function rewritePlaceholders (text: string, values: unknown[]): { query: 
       const j = end === -1 ? text.length : end + 2
       query += text.slice(i, j)
       i = j
-    } else if (ch === '$' && /[1-9]/.test(text[i + 1])) {
+    } else if (ch === '$' && /[1-9]/.test(text[i + 1] ?? '')) {
       let j = i + 1
-      while (j < text.length && /[0-9]/.test(text[j])) j++
+      while (j < text.length && /[0-9]/.test(text[j]!)) j++
       const index = parseInt(text.slice(i + 1, j), 10)
       // node-postgres raises on a missing bind value; silently binding NULL here would turn a
       // plans.ts arity bug into silently-NULL data.
@@ -206,7 +206,7 @@ export function fromBunSqlite (sql: BunSqliteLike): IDatabase & Required<Pick<ID
       const statements = splitStatements(text)
 
       if (statements.length === 1) {
-        return normalize(await sql.unsafe(statements[0]))
+        return normalize(await sql.unsafe(statements[0]!))
       }
 
       const rows: any[] = []

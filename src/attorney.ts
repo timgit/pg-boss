@@ -706,7 +706,7 @@ function parseIntervalSeconds (text: string): number {
   const clock = trimmed.match(/^(\d+):([0-5]?\d)(?::([0-5]?\d(?:\.\d+)?))?$/)
   if (clock) {
     const [, h, m, s] = clock
-    return parseInt(h, 10) * 3600 + parseInt(m, 10) * 60 + (s ? parseFloat(s) : 0)
+    return parseInt(h!, 10) * 3600 + parseInt(m!, 10) * 60 + (s ? parseFloat(s) : 0)
   }
 
   let total = 0
@@ -715,9 +715,9 @@ function parseIntervalSeconds (text: string): number {
   let match: RegExpExecArray | null
 
   while ((match = partRegex.exec(trimmed)) !== null) {
-    const seconds = INTERVAL_UNIT_SECONDS[match[2].toLowerCase()]
+    const seconds = INTERVAL_UNIT_SECONDS[match[2]!.toLowerCase()]
     assert(seconds !== undefined, `Unrecognized interval unit '${match[2]}' in startAfter: ${text}`)
-    total += parseFloat(match[1]) * seconds
+    total += parseFloat(match[1]!) * seconds
     consumed += match[0]
   }
 
