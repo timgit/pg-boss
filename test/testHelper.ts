@@ -1,6 +1,7 @@
 import Db from '../src/db.ts'
-import { PgBoss, fromPglite } from '../src/index.ts'
+import { PgBoss, fromPglite, fromBunSql } from '../src/index.ts'
 import { PGlite } from '@electric-sql/pglite'
+import { SQL } from 'bun'
 import { describe, it, type SuiteAPI, type TestAPI } from 'vitest'
 import crypto from 'node:crypto'
 import configJson from './config.json' with { type: 'json' }
@@ -46,6 +47,22 @@ function getPgliteDb (): IDatabase & { close: () => Promise<void> } {
   return { executeSql: db.executeSql, close: async () => {} }
 }
 
+// Bun's built-in SQL client talks to the same PostgreSQL server as the default run, reached through
+// the fromBunSql adapter instead of the pg pool. DB_TYPE=bun runs the whole suite that way, so the
+// adapter's workarounds for bun's parameter binding are exercised by every query pg-boss issues
+// rather than only by the dedicated files. The backend profile stays `postgres` — this swaps the
+// driver, not the database.
+const isBun = process.env.DB_TYPE === 'bun'
+
+// One shared client per worker (vitest forks per test file), mirroring the PGlite instance below.
+// `max` is deliberately generous: transaction blocks take a reserved connection out of the pool for
+// their duration, and several boss instances can be alive at once within a file.
+let bunSqlInstance: SQL | undefined
+function getBunSql (): SQL {
+  bunSqlInstance ??= new SQL(getConnectionString(), { max: 10 })
+  return bunSqlInstance
+}
+
 // Distributed database mode is the atomic-UPDATE fetch strategy used by CockroachDB et al. It is a
 // pure runtime toggle (no schema impact) and works fine on plain PostgreSQL, so we exercise the
 // whole suite under it on Postgres via DISTRIBUTED=true — fast, reliable coverage of the distributed
@@ -71,12 +88,17 @@ const describePglite = describe.skipIf(isPglite) as SuiteAPI
 // another polls) can't run on PGlite (single in-process instance, no network) or CockroachDB.
 const describeMultiConnectionOnly = describe.skipIf(isPglite || isCockroachDb) as SuiteAPI
 
+// Tests that reach into the built-in pg pool (its size, its events) rather than going through
+// IDatabase. Every mode that supplies its own `db` bypasses that pool entirely, so skip them there.
+const itDefaultDriver = it.skipIf(isPglite || isBun) as TestAPI
+
 // LISTEN/NOTIFY is unavailable in these backends' test environments: CockroachDB never implements
-// it (noListenNotify), and the YugabyteDB test container doesn't enable the early-access
-// `ysql_yb_enable_listen_notify` flag. Wrap notify-behavior tests with these so the compatibility
-// matrix skips them; the producer bypass is still covered separately on every backend.
-const itListenNotify = it.skipIf(isCockroachDb || isYugabyteDb) as TestAPI
-const describeListenNotify = describe.skipIf(isCockroachDb || isYugabyteDb) as SuiteAPI
+// it (noListenNotify), the YugabyteDB test container doesn't enable the early-access
+// `ysql_yb_enable_listen_notify` flag, and bun implements neither LISTEN nor NOTIFY so its adapter
+// exposes no listener. Wrap notify-behavior tests with these so the compatibility matrix skips
+// them; the producer bypass is still covered separately on every backend.
+const itListenNotify = it.skipIf(isCockroachDb || isYugabyteDb || isBun) as TestAPI
+const describeListenNotify = describe.skipIf(isCockroachDb || isYugabyteDb || isBun) as SuiteAPI
 
 function assertTruthy<T> (value: T, message?: string): asserts value is NonNullable<T> {
   if (value == null) {
@@ -84,18 +106,10 @@ function assertTruthy<T> (value: T, message?: string): asserts value is NonNulla
   }
 }
 
-function getConnectionString (): string {
-  // PGlite has no server/connection string. Return an unusable placeholder rather than throwing so
-  // that test files referencing it during collection still load; the tests themselves are skipped
-  // under PGlite via itPglite/describePglite.
-  if (isPglite) return 'pglite://unsupported'
-
-  const config = getConfig()
-
-  return `postgres://${config.user}:${config.password}@${config.host}:${config.port}/${config.database}`
-}
-
-function getConfig (options: Partial<ConstructorOptions> & { testKey?: string } = {}): ConstructorOptions {
+// The connection settings for the active DB_TYPE, before any pg-boss options are layered on.
+// Separate from getConfig() because getConfig() attaches an adapter under DB_TYPE=bun, and that
+// adapter is itself built from a connection string — going through getConfig() would recurse.
+function getConnectionConfig (): any {
   const baseConfig = isCockroachDb ? cockroachConfigJson : isYugabyteDb ? yugabyteConfigJson : isCitus ? citusConfigJson : configJson
   const config: any = { ...baseConfig }
 
@@ -113,6 +127,23 @@ function getConfig (options: Partial<ConstructorOptions> & { testKey?: string } 
     config.port = (isCockroachDb ? process.env.COCKROACH_PORT : process.env.POSTGRES_PORT) || config.port
     config.password = process.env.POSTGRES_PASSWORD || config.password
   }
+
+  return config
+}
+
+function getConnectionString (): string {
+  // PGlite has no server/connection string. Return an unusable placeholder rather than throwing so
+  // that test files referencing it during collection still load; the tests themselves are skipped
+  // under PGlite via itPglite/describePglite.
+  if (isPglite) return 'pglite://unsupported'
+
+  const config = getConnectionConfig()
+
+  return `postgres://${config.user}:${config.password}@${config.host}:${config.port}/${config.database}`
+}
+
+function getConfig (options: Partial<ConstructorOptions> & { testKey?: string } = {}): ConstructorOptions {
+  const config: any = getConnectionConfig()
 
   if (options.testKey) {
     config.schema = `pgboss${sha1(options.testKey)}`
@@ -140,6 +171,11 @@ function getConfig (options: Partial<ConstructorOptions> & { testKey?: string } 
   // fromPglite wrapper per call is fine — it is a stateless adapter over the one instance.
   if (isPglite && !('db' in options)) {
     config.db = fromPglite(getPgliteInstance())
+  }
+
+  // Same idea for bun: a stateless adapter over the one shared SQL client.
+  if (isBun && !('db' in options)) {
+    config.db = fromBunSql(getBunSql())
   }
 
   return Object.assign(config, options)
@@ -334,11 +370,13 @@ export {
   isYugabyteDb,
   isCitus,
   isPglite,
+  isBun,
   isDistributed,
   itPostgresOnly,
   describePostgresOnly,
   itPglite,
   describePglite,
+  itDefaultDriver,
   describeMultiConnectionOnly,
   itListenNotify,
   describeListenNotify,

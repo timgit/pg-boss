@@ -7,9 +7,10 @@ import * as plans from '../src/plans.ts'
 const SOME_UUID = '00000000-0000-0000-0000-000000000000'
 
 describe('upsert', function () {
-  // The JSONB key-existence operator `?` collides with knex's positional-binding parser (issue #837:
-  // "Expected 1 bindings, saw 10"). The update SQL must use the jsonb_exists() function form instead.
-  it('generates update SQL free of the ? operator (knex adapter compatibility)', function () {
+  // The JSONB key-existence operator `?` collides with any positional `?`-binding query parser
+  // (issue #837: "Expected 1 bindings, saw 10"). The update SQL must use the jsonb_exists()
+  // function form instead.
+  it('generates update SQL free of the ? operator', function () {
     const sqls = [
       plans.updateJob('pgboss', 'job', 'q', 'id', 'newest'),
       plans.updateJob('pgboss', 'job', 'q', 'singletonKey', 'all', true),

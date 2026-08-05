@@ -30,7 +30,7 @@ describe('ops', function () {
     await ctx.boss.stop({ graceful: false })
   })
 
-  helper.itPglite('should close the connection pool', async function () {
+  helper.itDefaultDriver('should close the connection pool', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
     await ctx.boss.stop({ graceful: false })
 
@@ -38,7 +38,7 @@ describe('ops', function () {
     expect(ctx.boss.getDb().pool.totalCount).toBe(0)
   })
 
-  helper.itPglite('should close the connection pool gracefully', async function () {
+  helper.itDefaultDriver('should close the connection pool gracefully', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
     await ctx.boss.stop()
 

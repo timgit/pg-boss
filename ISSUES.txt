@@ -1,0 +1,187 @@
+KNOWN ISSUES — src/adapters/bun.ts
+==================================
+
+Follow-ups from the Bun.SQL adapter work. Verified against Bun 1.3.14 / 1.4.0 and
+PostgreSQL 18 (docker compose). Issues 1 and 2 are not live bugs — they are traps a
+future change could walk into. Issue 3 is live on Bun 1.3.x and fixed upstream in 1.4.
+
+
+-------------------------------------------------------------------------------
+1. `prepare: false` silently breaks object parameters
+-------------------------------------------------------------------------------
+
+Status:   documented as unsupported, not enforced. Date parameters, which broke
+          the same way, are now ISO-encoded in toBunParams as cheap insurance.
+Severity: low today, sharp edge for users
+Files:    src/adapters/bun.ts (toBunParams)
+          docs/database-backends.md ("Keep Bun's default `prepare: true`")
+
+WHAT HAPPENS
+
+Bun derives each parameter's wire encoding from the type PostgreSQL describes for
+that placeholder, and that description is only available when the statement is
+prepared. With `prepare: false` Bun falls back to `String(value)`:
+
+    const sql = new SQL(url, { prepare: false })
+
+    await sql.unsafe('select $1::jsonb as j', [{ a: 1 }])
+    // ERROR 22P02: invalid input syntax for type json
+
+The adapter's own rewrites survive `prepare: false` — a json argument bound as
+text through `$n::text::jsonb` works, an array literal works, and a bare Date is
+ISO-encoded (postgres parses ISO 8601 into the identical timestamptz). What does
+not survive is a live object the adapter deliberately passes through untouched.
+
+WHERE IT BITES
+
+`reinsertFailedJobs` (src/manager.ts) binds `job.data` and `jobOutput` — decoded
+jsonb values, i.e. live objects — to *uncast* placeholders whose type comes from
+the column. It is on the `noMultiMutationCte` path (failDistributed and the
+distributed maintenance expiry), so it is reached under `DB_TYPE=bun
+DISTRIBUTED=true` and on CockroachDB / YugabyteDB, not on stock Postgres. Bun
+encodes those correctly on its own — but only when prepared — and the adapter
+must keep its hands off them (see issue 2), so a blanket "stringify every object"
+would break the case that currently works.
+
+PROPOSED FIX
+
+If we want `prepare: false` genuinely supported (it is the documented workaround
+for PgBouncer in transaction mode), the object case needs the classifier from
+issue 2 extended to uncast jsonb columns, which is a bigger change. Otherwise
+keep the docs as-is.
+
+TEST
+
+Add a `prepare: false` client to test/bunSqlTest.ts and run a fail/retry cycle
+under DISTRIBUTED=true — that is the path that binds the live objects.
+
+
+-------------------------------------------------------------------------------
+2. The json classifier infers parameter types from SQL text
+-------------------------------------------------------------------------------
+
+Status:   correct for every query pg-boss generates today
+Severity: medium — the failure mode is silent and the guard is indirect
+Files:    src/adapters/bun.ts (JSON_CAST_REGEX, JSON_OPERATOR_REGEX, rewriteJsonCasts)
+
+WHAT IT DOES
+
+Because Bun double-encodes a json parameter that pg-boss has already serialized,
+the adapter finds json placeholders in the SQL text, casts them through `text`,
+and encodes the matching value to suit. It recognises two shapes:
+
+  - an explicit cast:              $1::json, $2::jsonb
+  - a jsonb containment operator:  data @> $1, data <@ $1
+
+Anything else is left alone, which is correct for uncast placeholders whose type
+comes from a column (see issue 1) — Bun encodes those properly.
+
+WHY IT IS FRAGILE
+
+The classifier is a second source of truth about plans.ts, living in a different
+file, kept in sync by nothing but review. A new query that binds a json argument
+in a shape neither regex matches will double-encode it and fail — or worse,
+store a JSON string where an object was meant.
+
+This is not hypothetical. `findJobs` (src/plans.ts:2589) emits
+
+    AND data @> $N
+
+with no cast, and it was missed by the first version of the classifier. It only
+surfaced because `DB_TYPE=bun` runs the whole suite through the adapter; the
+dedicated adapter tests were all green.
+
+WHAT GUARDS IT TODAY
+
+`bun run test:bun` (the `bun-driver` CI matrix entry). It is the only thing that
+catches this class of regression, and it caught this one. Do not drop that job.
+
+OPTIONS, ROUGHLY IN ORDER OF EFFORT
+
+  a. Status quo + a comment in plans.ts warning that a json placeholder needs an
+     explicit `::json`/`::jsonb` cast. Cheapest; relies on people reading it.
+
+  b. A static test that scans plans.ts for placeholders in a json context without
+     a cast, and fails with a pointer to this file. Catches the mistake at the
+     source rather than three layers down in a queue-policy test.
+
+  c. Normalize plans.ts so every json placeholder carries an explicit cast, then
+     drop JSON_OPERATOR_REGEX and the whole "infer from operator" branch. Cast
+     `data @> $N::jsonb` in findJobs and the classifier reduces to one rule. This
+     is the real fix: it makes the invariant explicit in the file that owns the
+     SQL, and shrinks the adapter. It touches shared SQL, so it needs a pass over
+     the other backends, but `$N::jsonb` is a no-op for every driver.
+
+Recommendation: (c), with (b) as the regression guard if we want belt and braces.
+
+
+-------------------------------------------------------------------------------
+3. Bun 1.3.x leaks an aborted transaction into the connection pool
+-------------------------------------------------------------------------------
+
+Status:   live on Bun 1.3.14, fixed in Bun 1.4.0 — upstream, not ours
+Severity: high on 1.3.x driver-level use; not reproducible on 1.4
+Files:    src/adapters/bun.ts (executeReserved) — correct as written, no fix needed
+          .github/workflows/ci.yml (bun-driver / stable is non-blocking because of this)
+
+WHAT HAPPENS
+
+`executeReserved` runs a transaction block on a reserved connection and, if the
+block fails, issues ROLLBACK before `release()`. On Bun 1.3.14 that is not enough:
+a query already waiting on the pool is handed the connection in the window between
+the block failing and the ROLLBACK landing, and fails with
+
+    25P02  current transaction is aborted, commands ignored until end of
+           transaction block
+
+The victim is an unrelated query — in practice `getQueues`, or BAM/navigator's
+`UPDATE ... version SET bam_on = now()`.
+
+MINIMAL REPRODUCTION (no pg-boss involved)
+
+    import { SQL } from 'bun'
+    const sql = new SQL(url, { max: 10 })
+    let poisoned = 0
+    const worker = async () => {
+      for (let n = 0; n < 15; n++) {
+        const r = await sql.reserve()
+        try { await r.unsafe('BEGIN; select pg_advisory_xact_lock(42); select 1/0; COMMIT;') }
+        catch { await r.unsafe('ROLLBACK').catch(() => {}) }
+        finally { r.release() }
+      }
+    }
+    const hammer = async () => {
+      const until = Date.now() + 8000
+      while (Date.now() < until) {
+        await Promise.all(Array.from({ length: 6 }, () =>
+          sql.unsafe('select 1 as ok').catch(e => { if (e.errno === '25P02') poisoned++ })))
+      }
+    }
+    await Promise.all([...Array.from({ length: 5 }, worker), hammer()])
+    console.log(Bun.version, poisoned)
+
+    bun 1.3.14 -> 2 poisoned
+    bun 1.4.0  -> 0 poisoned
+
+RULED OUT
+
+  - `release()` resetting the connection: it does not, on either version. That is
+    why the adapter's ROLLBACK exists and it is load-bearing.
+  - `reserve()` failing to pin: it pins correctly on both versions, including
+    after a failed query on the reserved connection, and including under a
+    saturated pool.
+  - a pg-boss query opening a transaction on the pool: every transaction block is
+    routed through executeReserved; no pooled statement opens one.
+
+WHAT WE DID
+
+Documented Bun 1.4+ as the floor for driver-level use, and made the
+bun-driver/stable CI job non-blocking so the failure stays visible without
+blocking merges.
+
+WHEN BUN 1.4 IS STABLE
+
+Drop `optional: true` from that matrix entry in .github/workflows/ci.yml, drop the
+"Requires Bun 1.4 or newer" section from docs/database-backends.md, and delete this
+entry. Worth reporting upstream first if it has not been already — the repro above
+is self-contained.
