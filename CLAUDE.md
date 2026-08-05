@@ -29,7 +29,7 @@ Requirements: **Bun 1.4 or newer** — on 1.3.x, Bun can hand a pooled connectio
 
 ### CI
 
-`.github/workflows/ci.yml` runs on every push to `master` and every PR, entirely under Bun (`container: oven/bun:<version>` — no Node toolchain; the toolchain is selected by image because `bun upgrade` needs `unzip`, which these images lack). The matrix is `standard` / `distributed` against a Postgres service container, plus `bun-driver` twice — on `1` and on `canary`, because `fromBunSql` is the one part of the suite whose behavior depends on Bun itself. Separate PGlite and SQLite jobs need no database (the SQLite job also runs on both toolchains and re-verifies the Bun sqlite driver behaviors with `scripts/spike-bun-sqlite.ts` first).
+`.github/workflows/ci.yml` runs on every push to `main` and every PR, entirely under Bun (`container: oven/bun:<version>` — no Node toolchain; the toolchain is selected by image because `bun upgrade` needs `unzip`, which these images lack). The matrix is `standard` / `distributed` against a Postgres service container, plus `bun-driver` twice — on `1` and on `canary`, because `fromBunSql` is the one part of the suite whose behavior depends on Bun itself. Separate PGlite and SQLite jobs need no database (the SQLite job also runs on both toolchains and re-verifies the Bun sqlite driver behaviors with `scripts/spike-bun-sqlite.ts` first).
 
 ### Running against other backends
 
@@ -113,7 +113,7 @@ repository (`pr create`, `pr list`, `pr view`, `issue create`, `api`, …), and 
 head branch explicitly too:
 
 ```
-gh pr create --repo khromov/bun-boss --base master --head khromov:<branch> [--draft]
+gh pr create --repo khromov/bun-boss --base main --head khromov:<branch> [--draft]
 ```
 
 Then confirm it landed where you meant, before saying it is done:

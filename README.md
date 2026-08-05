@@ -3,7 +3,7 @@
 
 Queueing jobs in Postgres, SQLite, and memory from Bun like a boss.
 
-[![Build](https://github.com/khromov/bun-boss/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/khromov/bun-boss/actions/workflows/ci.yml)
+[![Build](https://github.com/khromov/bun-boss/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/khromov/bun-boss/actions/workflows/ci.yml)
 
 
 ```js

@@ -1,7 +1,7 @@
 name: release-please
 on:
   push:
-    branches: [master]
+    branches: [main]
 permissions:
   contents: write
   pull-requests: write
