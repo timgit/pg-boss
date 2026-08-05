@@ -131,6 +131,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
   #localGroupActive: Map<string, Map<string, number>>
   #localGroupConfig: Map<string, types.GroupConcurrencyConfig>
   #localGroupMaxLimit: Map<string, number>
+  #lastRefreshEmpty = false
 
   constructor (db: types.IDatabase, config: types.ResolvedConstructorOptions) {
     super()
@@ -574,6 +575,16 @@ class Manager extends EventEmitter implements types.EventsMixin {
     try {
       assert(!this.config.__test__throw_queueCache, 'test error')
       const queues = await this.getQueues()
+
+      // One empty snapshot against a non-empty cache is not proof the queues are gone (a driver
+      // fault can yield a wrong-empty result set): keep the cache and require the next refresh
+      // to confirm before wiping.
+      if (queues.length === 0 && !this.#lastRefreshEmpty && this.queues && Object.keys(this.queues).length) {
+        this.#lastRefreshEmpty = true
+        return
+      }
+
+      this.#lastRefreshEmpty = queues.length === 0
       this.queues = queues.reduce<Record<string, types.QueueResult>>((acc, i) => { acc[i.name] = i; return acc }, {})
     } catch (error: any) {
       emit && this.emit(events.error, { ...error, message: error.message, stack: error.stack })
@@ -589,19 +600,38 @@ class Manager extends EventEmitter implements types.EventsMixin {
       return queue
     }
 
-    queue = await this.getQueue(name)
+    // Corroborate a negative before concluding nonexistence: a transient driver fault can
+    // return a wrong-empty result set, and a single uncorroborated empty read must not become
+    // a user-visible failure. Positive results are never re-read.
+    queue = await this.getQueue(name) ?? await this.getQueue(name)
 
     if (!queue) {
       throw new Error(`Queue ${name} does not exist`)
     }
 
-    this.queues[name] = queue
+    this.#cacheQueueRow(name, queue)
 
     return queue
   }
 
   #evictQueueCache (name: string) {
     if (this.queues) delete this.queues[name]
+  }
+
+  #cacheQueueRow (name: string, queue: types.QueueResult) {
+    this.queues![name] = queue
+    // A live row is proof the queue table is non-empty: re-arm the guard that keeps a single
+    // empty refresh from wiping the cache.
+    this.#lastRefreshEmpty = false
+  }
+
+  // Read-back, not synthesis: createQueue on an existing queue is a config-preserving no-op
+  // (ON CONFLICT DO NOTHING), so the DB row is the only truth worth caching. An empty read-back
+  // (transient driver fault) degrades to the old behavior — evict and let getQueueCache refill.
+  async #refreshQueueCacheEntry (name: string) {
+    const queue = await this.getQueue(name)
+    if (queue) this.#cacheQueueRow(name, queue)
+    else this.#evictQueueCache(name)
   }
 
   async stop () {
@@ -1869,7 +1899,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     const sql = plans.createQueue(this.config, name, { ...options, policy }, this.config.noAdvisoryLocks)
     await this.db.executeSql(sql)
-    this.#evictQueueCache(name)
+    await this.#refreshQueueCacheEntry(name)
   }
 
   async getBlockedKeys (name: string): Promise<string[]> {
@@ -1938,7 +1968,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     const sql = plans.updateQueue(this.config, { deadLetter })
     await this.db.executeSql(sql, [name, options])
-    this.#evictQueueCache(name)
+    await this.#refreshQueueCacheEntry(name)
   }
 
   async getQueue (name: string) {
