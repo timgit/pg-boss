@@ -13,13 +13,13 @@ describe('config', function () {
     const trueFlags = (config: any) => flags.filter(f => config[f] === true)
 
     it('postgres (default) leaves all flags off', function () {
-      const resolved = Attorney.getConfig({ connectionString: 'postgres://localhost/db' })
+      const resolved = Attorney.getConfig({ url: 'postgres://localhost/db' })
       expect(resolved.backend).toBe('postgres')
       expect(trueFlags(resolved)).toEqual([])
     })
 
     it('pglite leaves all flags off', function () {
-      const resolved = Attorney.getConfig({ connectionString: 'postgres://localhost/db', backend: 'pglite' })
+      const resolved = Attorney.getConfig({ url: 'postgres://localhost/db', backend: 'pglite' })
       expect(trueFlags(resolved)).toEqual([])
     })
 
@@ -29,7 +29,7 @@ describe('config', function () {
     })
 
     it('rejects an unknown backend', function () {
-      expect(() => Attorney.getConfig({ connectionString: 'postgres://localhost/db', backend: 'nope' as any })).toThrow('backend must be one of')
+      expect(() => Attorney.getConfig({ url: 'postgres://localhost/db', backend: 'nope' as any })).toThrow('backend must be one of')
     })
 
     // The backend profiles were dropped; the seam that once produced these flags on
@@ -45,7 +45,7 @@ describe('config', function () {
       } as const
 
       for (const [hook, expected] of Object.entries(cases)) {
-        const resolved = Attorney.getConfig({ connectionString: 'postgres://localhost/db', [hook]: true } as any)
+        const resolved = Attorney.getConfig({ url: 'postgres://localhost/db', [hook]: true } as any)
         expect(trueFlags(resolved).sort()).toEqual([...expected].sort())
       }
     })
@@ -84,15 +84,15 @@ describe('config', function () {
   it('compatibility flags are derived from the backend, not user-settable', function () {
     // The individual flags are internal; supplying them directly has no effect — only
     // `backend` determines them. (Passed through `as any` since they are not public options.)
-    const resolved = Attorney.getConfig({ connectionString: 'postgres://localhost/db', noSkipLocked: true, noTablePartitioning: true } as any)
+    const resolved = Attorney.getConfig({ url: 'postgres://localhost/db', noSkipLocked: true, noTablePartitioning: true } as any)
     expect(resolved.backend).toBe('postgres')
     expect((resolved as any).noSkipLocked).toBe(false)
     expect((resolved as any).noTablePartitioning).toBe(false)
   })
 
-  helper.itPglite('should accept a connectionString property', async function () {
-    const connectionString = helper.getConnectionString()
-    ctx.boss = new BunBoss({ connectionString, schema: ctx.bossConfig.schema })
+  helper.itPglite('should accept a url property', async function () {
+    const url = helper.getConnectionString()
+    ctx.boss = new BunBoss({ url, schema: ctx.bossConfig.schema })
 
     await ctx.boss.start()
   })

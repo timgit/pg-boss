@@ -5,8 +5,8 @@ import * as helper from './testHelper.ts'
 describe('database', function () {
   it('should fail on invalid database host', async function () {
     const boss = new BunBoss({
-      connectionString: 'postgres://bobby:tables@wat:12345/northwind',
-      connectionTimeoutMillis: 3000
+      url: 'postgres://bobby:tables@wat:12345/northwind',
+      connectionTimeout: 3
     })
 
     await expect((async () => {

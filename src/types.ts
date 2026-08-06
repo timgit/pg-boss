@@ -42,22 +42,34 @@ export interface ListenHandle {
   close(): Promise<void>;
 }
 
+/**
+ * Connection settings for the built-in driver. These carry Bun's own `SQL` option names and
+ * are forwarded to it verbatim, so its defaults and semantics apply — see
+ * https://bun.com/docs/api/sql. `schema`, `db`, and `application_name` are bun-boss's own.
+ */
 export interface DatabaseOptions {
-  application_name?: string;
-  database?: string;
-  user?: string;
+  /** Connection URL, used instead of the individual settings below. */
+  url?: string;
+  hostname?: string;
+  port?: number | string;
+  username?: string;
   password?: string | (() => string | Promise<string>);
-  host?: string;
-  port?: number;
-  schema?: string;
-  /** Passed to Bun's SQL client as its `tls` option. */
-  ssl?: any;
-  connectionString?: string;
+  database?: string;
+  /** Bun's TLS option: a boolean, a TLS config object, or a `Bun.file()` certificate. */
+  tls?: any;
   max?: number;
+  /** Seconds to wait when establishing a connection; `0` waits indefinitely. */
+  connectionTimeout?: number;
+  /** Seconds a pooled connection may sit idle before it is closed; `0` never closes it. */
+  idleTimeout?: number;
+  /** Seconds a pooled connection may live before it is recycled; `0` never recycles it. */
+  maxLifetime?: number;
+  /** Unix domain socket path, used instead of `hostname`/`port`. */
+  path?: string;
+  /** Reported to Postgres as the session's application_name. @default 'bunboss' */
+  application_name?: string;
+  schema?: string;
   db?: IDatabase;
-  connectionTimeoutMillis?: number;
-  /** @internal */
-  debug?: boolean;
 }
 
 export interface SchedulingOptions {

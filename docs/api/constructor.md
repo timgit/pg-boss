@@ -1,11 +1,11 @@
 # Constructor
 
-### `new(connectionString)`
+### `new(url)`
 
 Passing a string argument to the constructor implies a PostgreSQL connection string, passed to [Bun's SQL client](https://bun.com/docs/api/sql) as its connection URL.
 
 ```js
-const boss = new BunBoss('postgres://user:pass@host:port/database?ssl=require');
+const boss = new BunBoss('postgres://user:pass@host:port/database?sslmode=require');
 ```
 
 ### `new(options)`
@@ -14,33 +14,47 @@ The following options can be set as properties in an object for additional confi
 
 **Connection options**
 
-* **host** - string,  defaults to "127.0.0.1"
+These carry [Bun's SQL client](https://bun.com/docs/api/sql) option names and are forwarded to it verbatim, so its defaults and semantics apply. Every timeout is in **seconds**.
 
-* **port** - int,  defaults to 5432
+* **hostname** - string, defaults to "localhost"
 
-* **ssl** - boolean or object
+* **port** - int or string, defaults to 5432
 
-  Passed to Bun's SQL client as its `tls` option.
+* **tls** - boolean, object, or `Bun.file()` certificate
 
 * **database** - string, *required*
 
-* **user** - string, *required*
+* **username** - string, *required*
 
 * **password** - string
 
-* **connectionString** - string
+* **url** - string
 
-  PostgreSQL connection string will be parsed and used instead of `host`, `port`, `ssl`, `database`, `user`, `password`.
+  PostgreSQL connection string, parsed and used instead of `hostname`, `port`, `tls`, `database`, `username`, `password`.
+
+* **path** - string
+
+  Unix domain socket path, used instead of `hostname` and `port`.
 
 * **max** - int, defaults to 10
 
   Maximum number of connections that will be shared by all operations in this instance
 
+* **connectionTimeout** - int, defaults to 30
+
+  Seconds to wait when establishing a connection. Set to `0` to wait indefinitely.
+
+* **idleTimeout** - int, defaults to 0
+
+  Seconds a pooled connection may sit idle before it is closed. `0` never closes it.
+
+* **maxLifetime** - int, defaults to 0
+
+  Seconds a pooled connection may live before it is recycled. `0` never recycles it.
+
 * **application_name** - string, defaults to "bunboss"
 
-* **connectionTimeoutMillis** - int, defaults to 10000
-
-  Number of milliseconds to wait when establishing a connection. Set to `0` to disable the timeout and wait indefinitely. Bun's SQL client takes this timeout in seconds, so the value is converted; `0` and sub-second values keep their meaning across the conversion.
+  Reported to PostgreSQL as the session's `application_name`.
 
 * **db** - object
 
@@ -140,7 +154,7 @@ The following configuration options should not normally need to be changed, but 
   Selects the database bun-boss is running against and applies the compatibility behavior it needs. One of `'postgres'`, `'pglite'`, or `'sqlite'`.
 
   ```js
-  const boss = new BunBoss({ connectionString, backend: 'sqlite' })
+  const boss = new BunBoss({ backend: 'sqlite', db: fromBunSqlite(sql) })
   ```
 
   Based on this setting, the fetch strategy, mutation strategy, and schema shape may be changed. See [Database Backends](../database-backends.md#backend-profiles)

@@ -102,10 +102,10 @@ function getConnectionConfig (): any {
   const config: any = { ...configJson }
 
   if (isPglite || isSqlite) {
-    config.host = undefined
+    config.hostname = undefined
     config.port = undefined
   } else {
-    config.host = process.env.POSTGRES_HOST || config.host
+    config.hostname = process.env.POSTGRES_HOST || config.hostname
     config.port = process.env.POSTGRES_PORT || config.port
     config.password = process.env.POSTGRES_PASSWORD || config.password
   }
@@ -125,7 +125,7 @@ function getConnectionString (): string {
 
   const config = getConnectionConfig()
 
-  return `postgres://${config.user}:${config.password}@${config.host}:${config.port}/${config.database}`
+  return `postgres://${config.username}:${config.password}@${config.hostname}:${config.port}/${config.database}`
 }
 
 function getConfig (options: Partial<ConstructorOptions> & { testKey?: string } = {}): ConstructorOptions {
@@ -201,7 +201,7 @@ async function init (): Promise<void> {
   await tryCreateDb(database)
 }
 
-async function getDb ({ database, debug }: { database?: string; debug?: boolean } = {}): Promise<Db> {
+async function getDb ({ database }: { database?: string } = {}): Promise<Db> {
   if (isPglite) return getPgliteDb() as unknown as Db
   if (isSqlite) return getSqliteDb() as unknown as Db
 
@@ -209,7 +209,7 @@ async function getDb ({ database, debug }: { database?: string; debug?: boolean 
 
   config.database = database || config.database
 
-  const db = new Db({ ...config, debug })
+  const db = new Db(config)
 
   await db.open()
 

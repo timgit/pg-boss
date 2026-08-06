@@ -14,7 +14,7 @@ turns on the right combination of internal compatibility behavior for it:
 import { BunBoss } from 'bun-boss'
 
 const boss = new BunBoss({
-  connectionString: 'postgresql://localhost:5432/pgboss',
+  url: 'postgresql://localhost:5432/pgboss',
   backend: 'postgres'
 })
 ```

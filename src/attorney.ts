@@ -379,7 +379,7 @@ function getConfig (value: string | types.ConstructorOptions): types.ResolvedCon
     'configuration assert: string or config object is required to connect to postgres')
 
   const config = (typeof value === 'string')
-    ? { connectionString: value }
+    ? { url: value }
     : { ...value }
 
   config.schedule = ('schedule' in config) ? config.schedule : true
@@ -437,7 +437,7 @@ function resolveBackend (config: any) {
   // reaches a postgres connection — reject the combination here instead of failing bafflingly at start().
   if (dialect === 'sqlite') {
     assert(config.db, "configuration assert: backend 'sqlite' requires a db adapter (see fromBunSqlite)")
-    assert(!('connectionString' in config), "configuration assert: connectionString does not apply to backend 'sqlite' — the db adapter carries the database")
+    assert(!('url' in config), "configuration assert: url does not apply to backend 'sqlite' — the db adapter carries the database")
   }
 
   // Test hooks: force a single compatibility flag on top of the current backend so the Postgres-

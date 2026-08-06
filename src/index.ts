@@ -41,7 +41,7 @@ export class BunBoss extends EventEmitter<types.BunBossEventMap> {
   #navigator: Navigator
   #notifier: Notifier
 
-  constructor (connectionString: string)
+  constructor (url: string)
   constructor (options: types.ConstructorOptions)
   constructor (value: string | types.ConstructorOptions) {
     super()

@@ -9,6 +9,14 @@ import type * as types from './types.ts'
 // driver exposes no `listen` and `useListenNotify` degrades to polling (see notifier.ts).
 // Not an EventEmitter: Bun's client has no background-error hook (unlike pg.Pool's idle-client
 // 'error'), so connection failures surface as rejections on the operation that hit them.
+// Explicit allowlist: the resolved config carries every constructor option, and only the
+// connection settings may reach Bun's SQL constructor. Deliberately excludes `prepare` and
+// `bigint` — the adapter's parameter encoding depends on both (see ISSUES.txt #1).
+const SQL_OPTION_KEYS = [
+  'url', 'hostname', 'port', 'username', 'password', 'database',
+  'tls', 'max', 'connectionTimeout', 'idleTimeout', 'maxLifetime', 'path'
+] as const satisfies readonly (keyof types.DatabaseOptions)[]
+
 class Db implements types.IDatabase {
   private sql!: SQL
   private adapter!: types.IDatabase
@@ -19,32 +27,22 @@ class Db implements types.IDatabase {
 
   constructor (config: types.DatabaseOptions) {
     config.application_name = config.application_name || 'bunboss'
-    config.connectionTimeoutMillis ??= 10000
 
     this.config = config
     this._pgbdb = true
     this.opened = false
   }
 
-  // Explicit allowlist: the resolved config carries every constructor option, and only the
-  // connection settings may reach Bun's SQL constructor.
   #sqlOptions () {
     const config = this.config
+    // application_name is the one setting Bun has no top-level option for.
     const options: Record<string, unknown> = {
-      // Bun takes seconds where pg took milliseconds; 0 disables the timeout on both sides,
-      // and fractional seconds are honored, so the division preserves pg's semantics.
-      connectionTimeout: config.connectionTimeoutMillis! / 1000,
       connection: { application_name: config.application_name }
     }
 
-    if (config.max !== undefined) options.max = config.max
-    if (config.connectionString !== undefined) options.url = config.connectionString
-    if (config.host !== undefined) options.hostname = config.host
-    if (config.port !== undefined) options.port = Number(config.port)
-    if (config.user !== undefined) options.username = config.user
-    if (config.password !== undefined) options.password = config.password
-    if (config.database !== undefined) options.database = config.database
-    if (config.ssl !== undefined) options.tls = config.ssl
+    for (const key of SQL_OPTION_KEYS) {
+      if (config[key] !== undefined) options[key] = config[key]
+    }
 
     return options
   }
