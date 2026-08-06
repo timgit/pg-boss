@@ -1,4 +1,3 @@
-import EventEmitter from 'node:events'
 import assert from 'node:assert'
 import { SQL } from 'bun'
 import { fromBunSql, type BunSqlLike } from './adapters/bun.ts'
@@ -8,7 +7,9 @@ import type * as types from './types.ts'
 // driver carries the same workarounds (SQLSTATE promotion, json cast rewriting, reserved
 // transaction blocks) as a user-supplied Bun.SQL handle. Bun implements no LISTEN, so this
 // driver exposes no `listen` and `useListenNotify` degrades to polling (see notifier.ts).
-class Db extends EventEmitter implements types.IDatabase, types.EventsMixin {
+// Not an EventEmitter: Bun's client has no background-error hook (unlike pg.Pool's idle-client
+// 'error'), so connection failures surface as rejections on the operation that hit them.
+class Db implements types.IDatabase {
   private sql!: SQL
   private adapter!: types.IDatabase
   private config: types.DatabaseOptions
@@ -17,8 +18,6 @@ class Db extends EventEmitter implements types.IDatabase, types.EventsMixin {
   opened: boolean
 
   constructor (config: types.DatabaseOptions) {
-    super()
-
     config.application_name = config.application_name || 'bunboss'
     config.connectionTimeoutMillis ??= 10000
 
@@ -27,16 +26,13 @@ class Db extends EventEmitter implements types.IDatabase, types.EventsMixin {
     this.opened = false
   }
 
-  events = {
-    error: 'error'
-  }
-
   // Explicit allowlist: the resolved config carries every constructor option, and only the
   // connection settings may reach Bun's SQL constructor.
   #sqlOptions () {
     const config = this.config
     const options: Record<string, unknown> = {
-      // Bun takes seconds where pg took milliseconds.
+      // Bun takes seconds where pg took milliseconds; 0 disables the timeout on both sides,
+      // and fractional seconds are honored, so the division preserves pg's semantics.
       connectionTimeout: config.connectionTimeoutMillis! / 1000,
       connection: { application_name: config.application_name }
     }
