@@ -7,23 +7,21 @@
   "types": "./src/index.ts",
   "dependencies": {
     "@types/bun": "^1.3.14",
-    "cron-parser": "^5.7.0"
+    "croner": "^10.0.1"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.4",
     "@tsconfig/node-ts": "^23.6.4",
     "@tsconfig/node22": "^22.0.5",
-    "@types/luxon": "^3.7.3",
     "@types/node": "^22.20.1",
     "eslint": "^9.39.5",
-    "luxon": "^3.7.2",
     "neostandard": "^0.13.0",
     "typescript": "^6.0.3"
   },
   "scripts": {
     "prepublishOnly": "bun install && bun run test",
     "pretest": "bun run tsc",
-    "test": "eslint . && bun test --timeout 120000",
+    "test": "eslint . && bun test --parallel --timeout 120000",
     "test:no-skip-locked-no-cte": "NO_SKIP_LOCKED_NO_CTE=true bun run test",
     "test:pglite": "DB_TYPE=pglite bun run test",
     "test:sqlite": "DB_TYPE=sqlite bun run test",

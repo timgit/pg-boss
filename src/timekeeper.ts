@@ -1,4 +1,4 @@
-import { CronExpressionParser } from 'cron-parser'
+import { Cron } from 'croner'
 import EventEmitter from 'node:events'
 
 import * as Attorney from './attorney.ts'
@@ -181,9 +181,10 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
   shouldSendIt (cron: string, tz: string) {
     const databaseTime = Date.now() + this.clockSkew
 
-    const interval = CronExpressionParser.parse(cron, { tz, strict: false, currentDate: new Date(databaseTime) })
+    const [prevTime] = new Cron(cron, { timezone: tz }).previousRuns(1, new Date(databaseTime))
 
-    const prevTime = interval.prev()
+    // croner returns an empty array when there is no prior occurrence; cron-parser threw instead.
+    if (!prevTime) return false
 
     const prevDiff = (databaseTime - prevTime.getTime()) / 1000
 
@@ -231,7 +232,9 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
   async schedule (name: string, cron: string, data?: unknown, options: types.ScheduleOptions = {}): Promise<void> {
     const { tz = 'UTC', key = '', ...rest } = options
 
-    CronExpressionParser.parse(cron, { tz, strict: false })
+    // Construct only to validate; croner throws on an invalid expression or timezone.
+    // eslint-disable-next-line no-new
+    new Cron(cron, { timezone: tz })
 
     Attorney.checkSendArgs([name, data, { ...rest }])
     Attorney.assertKey(key)

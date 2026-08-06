@@ -38,7 +38,9 @@ export function registerPerTestSetup (fn: PerTestSetup): void {
 // Read by hooks.ts's afterEach to keep the schema of a failed (or timed-out) test for debugging.
 // `seq` fences the flag: a timed-out body keeps running after bun abandons it, and without the
 // fence its late resolution would mark a *later* test passed and drop a schema meant to be kept.
-// Module-level state is safe only under bun's sequential default — make it per-test before --parallel.
+// Module-level state is per-file, so it survives --parallel: that flag implies --isolate, giving
+// each file its own worker process (own module scope), and tests within a file still run in order.
+// It would break under --concurrent (tests within one file overlapping) — the suite must not use it.
 export const testState = { seq: 0, passed: false }
 
 function callerFile (): string {

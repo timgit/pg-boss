@@ -1,10 +1,15 @@
 import { delay } from '../src/tools.ts'
 import { describe, it, expect } from './harness.ts'
-import { DateTime } from 'luxon'
 import * as helper from './testHelper.ts'
 import { BunBoss } from '../src/index.ts'
 import Timekeeper from '../src/timekeeper.ts'
 import { ctx } from './hooks.ts'
+
+function clockIn (date: Date, timeZone: string) {
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone, hourCycle: 'h23', hour: '2-digit', minute: '2-digit' }).formatToParts(date)
+  const part = (type: string) => Number(parts.find(p => p.type === type)?.value)
+  return { hour: part('hour'), minute: part('minute') }
+}
 
 describe('schedule', function () {
   it('should send job based on every minute expression', async function () {
@@ -55,6 +60,14 @@ describe('schedule', function () {
     })()).rejects.toThrow()
   })
 
+  it('should reject an invalid cron expression', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    await expect((async () => {
+      await ctx.boss!.schedule(ctx.schema, 'not a cron')
+    })()).rejects.toThrow()
+  })
+
   it('should send job based on every minute expression after a restart', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, schedule: false })
 
@@ -62,9 +75,9 @@ describe('schedule', function () {
 
     await ctx.boss.stop({ graceful: false })
 
-    ctx.boss = await helper.start({ ...ctx.bossConfig, cronWorkerIntervalSeconds: 1, schedule: true })
+    ctx.boss = await helper.start({ ...ctx.bossConfig, cronMonitorIntervalSeconds: 1, cronWorkerIntervalSeconds: 1, schedule: true })
 
-    await delay(4000)
+    await delay(6000)
 
     const [job] = await ctx.boss.fetch(ctx.schema)
 
@@ -98,15 +111,10 @@ describe('schedule', function () {
 
     ctx.boss = await helper.start(config)
 
-    const nowUtc = DateTime.utc()
+    const now = new Date()
 
-    const currentMinute = nowUtc.minute
-    const currentHour = nowUtc.hour
-
-    const nextUtc = nowUtc.plus({ minutes: 1 })
-
-    const nextMinute = nextUtc.minute
-    const nextHour = nextUtc.hour
+    const { hour: currentHour, minute: currentMinute } = clockIn(now, 'UTC')
+    const { hour: nextHour, minute: nextMinute } = clockIn(new Date(now.getTime() + 60000), 'UTC')
 
     // using current and next minute because the clock is ticking
     const minute = currentMinute === nextMinute ? currentMinute : `${currentMinute},${nextMinute}`
@@ -135,15 +143,10 @@ describe('schedule', function () {
 
     const tz = 'America/Los_Angeles'
 
-    const nowLocal = DateTime.fromObject({}, { zone: tz })
+    const now = new Date()
 
-    const currentMinute = nowLocal.minute
-    const currentHour = nowLocal.hour
-
-    const nextLocal = nowLocal.plus({ minutes: 1 })
-
-    const nextMinute = nextLocal.minute
-    const nextHour = nextLocal.hour
+    const { hour: currentHour, minute: currentMinute } = clockIn(now, tz)
+    const { hour: nextHour, minute: nextMinute } = clockIn(new Date(now.getTime() + 60000), tz)
 
     // using current and next minute because the clock is ticking
     const minute = currentMinute === nextMinute ? currentMinute : `${currentMinute},${nextMinute}`
