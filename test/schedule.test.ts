@@ -55,6 +55,14 @@ describe('schedule', function () {
     })()).rejects.toThrow()
   })
 
+  it('should reject an invalid cron expression', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    await expect((async () => {
+      await ctx.boss!.schedule(ctx.schema, 'not a cron')
+    })()).rejects.toThrow()
+  })
+
   it('should send job based on every minute expression after a restart', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, schedule: false })
 

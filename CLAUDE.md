@@ -61,7 +61,7 @@ The suite is parameterized by `DB_TYPE` / `NO_SKIP_LOCKED_NO_CTE` env vars (reso
 - **`manager.ts`** — the core (largest file). All job operations: `send`/`insert`/`fetch`/`work`/`complete`/`fail`/`cancel`/`retry`, queue CRUD, pub/sub, stats. Owns the `Worker` instances created by `work()`.
 - **`boss.ts`** — the background **supervisor**. A timer (`superviseIntervalSeconds`) drives `supervise()`, which per queue-table monitors backlog, fails timed-out/heartbeat-stale jobs, maintains partitions, and prunes archived jobs.
 - **`contractor.ts`** — schema **install and verify** on `start()`. Reads the target version from `package.json` → `bunboss.schema` and installs it fresh at that version; an older installed schema throws rather than migrating in place (with `migrate: false` it verifies instead of installing). Also exposes the static `getConstructionPlans` used by `index.ts`.
-- **`timekeeper.ts`** — **cron scheduling** (via `cron-parser`); enqueues due scheduled jobs and watches for clock skew.
+- **`timekeeper.ts`** — **cron scheduling** (via `croner`); enqueues due scheduled jobs and watches for clock skew.
 - **`navigator.ts`** — background **flow / job-dependency resolver**. Off-hot-path: audits completed "blocking" parents and unblocks children (job completion itself stays join-free for speed).
 - **`notifier.ts`** — **LISTEN/NOTIFY** listener lifecycle. A NOTIFY is only ever a _latency hint_ that wakes workers to poll sooner; if the listener can't be established, it warns and falls back to polling. Never required for correctness.
 - **`worker.ts`** — the per-`work()` polling loop. Resolves its next delay each iteration (burst / notify-backstop / base poll) and can be woken early by `notify()`.

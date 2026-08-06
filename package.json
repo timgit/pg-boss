@@ -7,7 +7,7 @@
   "types": "./src/index.ts",
   "dependencies": {
     "@types/pg": "^8.20.3",
-    "cron-parser": "^5.7.0",
+    "croner": "^10.0.1",
     "pg": "^8.22.0"
   },
   "devDependencies": {
