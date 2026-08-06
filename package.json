@@ -25,7 +25,7 @@
   "scripts": {
     "prepublishOnly": "bun install && bun run test",
     "pretest": "bun run tsc",
-    "test": "eslint . && bun test --timeout 120000",
+    "test": "eslint . && bun test --parallel --timeout 120000",
     "test:no-skip-locked-no-cte": "NO_SKIP_LOCKED_NO_CTE=true bun run test",
     "test:pglite": "DB_TYPE=pglite bun run test",
     "test:sqlite": "DB_TYPE=sqlite bun run test",
