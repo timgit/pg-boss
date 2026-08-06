@@ -40,7 +40,7 @@ The following options can be set as properties in an object for additional confi
 
 * **connectionTimeoutMillis** - int, defaults to 10000
 
-  Number of milliseconds to wait when establishing a connection. Bun's SQL client takes this timeout in seconds, so the value is converted (sub-second granularity is not guaranteed).
+  Number of milliseconds to wait when establishing a connection. Set to `0` to disable the timeout and wait indefinitely. Bun's SQL client takes this timeout in seconds, so the value is converted; `0` and sub-second values keep their meaning across the conversion.
 
 * **db** - object
 
