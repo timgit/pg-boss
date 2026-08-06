@@ -219,13 +219,16 @@ compatibility flags apply. Passing a connection string or connection options to 
 constructor builds an internal `SQL` client wrapped by the `fromBunSql` adapter; passing
 `db: fromBunSql(sql)` uses a client you own instead.
 
-#### Requires Bun 1.4 or newer
+#### Bun 1.3.14 minimum, 1.4 recommended
 
-**Bun 1.4+** is the floor for running bun-boss. On 1.3.x, a pooled connection can be handed to a
-waiting query before the `ROLLBACK` clearing its aborted transaction has landed, so an unrelated
-query fails with `25P02 current transaction is aborted` whenever a transaction block fails under
-concurrency — contended maintenance being the realistic trigger. The adapter already rolls back
-before releasing; the window is inside Bun's pool and is fixed in 1.4.
+The package floor is **Bun 1.3.14**; prefer **1.4+**. On 1.3.x, a pooled connection can be handed
+to a waiting query before the `ROLLBACK` clearing its aborted transaction has landed, so an
+unrelated query can fail with `25P02 current transaction is aborted` whenever a transaction block
+fails under concurrency — contended maintenance being the realistic trigger. The window is inside
+Bun's pool and is fixed in 1.4; on 1.3.x the driver detects the aborted state, clears it, and
+retries, so the failure is masked rather than eliminated. A rarer silent form of the same 1.3.x
+defect can return an empty result for a committed row under concurrent load — bun-boss corroborates
+queue lookups to bound it (see `ISSUES.txt` #3), but only 1.4 removes it.
 
 Transaction-scoped use (`fromBunSql(tx)` inside `sql.begin()`) never reserves a connection and is
 unaffected on either version.
