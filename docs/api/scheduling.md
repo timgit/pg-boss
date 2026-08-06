@@ -26,7 +26,7 @@ If needed, the default clock monitoring interval can be adjusted using `clockMon
 }
 ```
 
-For more cron documentation and examples see the docs for the [cron-parser package](https://www.npmjs.com/package/cron-parser).
+For more cron documentation and examples see the docs for the [croner package](https://www.npmjs.com/package/croner).
 
 ### `schedule(name, cron, data, options)`
 
