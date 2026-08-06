@@ -28,11 +28,12 @@ export interface IDatabase {
    */
   withTransaction?<T>(fn: (tx: IDatabase) => Promise<T>): Promise<T>;
   /**
-   * Optional capability for LISTEN/NOTIFY support. When present, bun-boss can hold a
-   * dedicated session-pinned connection to receive notifications. The built-in pool-based
-   * Db implements this; custom adapters may implement it to enable `useListenNotify`.
-   * Must invoke `onReconnect` after each successful (re)subscribe so missed notifications
-   * can be recovered. Returns a handle whose `close()` tears down the listener.
+   * Optional capability for LISTEN/NOTIFY support. When present, bun-boss can receive
+   * notifications through it. The built-in driver (Bun's SQL client) does not implement
+   * this; the `fromPglite` adapter does, and custom adapters may implement it to enable
+   * `useListenNotify`. Must invoke `onReconnect` after each successful (re)subscribe so
+   * missed notifications can be recovered. Returns a handle whose `close()` tears down
+   * the listener.
    */
   listen?(channel: string, onNotification: (payload: string) => void, onReconnect: () => void): Promise<ListenHandle>;
 }
@@ -49,28 +50,12 @@ export interface DatabaseOptions {
   host?: string;
   port?: number;
   schema?: string;
+  /** Passed to Bun's SQL client as its `tls` option. */
   ssl?: any;
   connectionString?: string;
   max?: number;
   db?: IDatabase;
   connectionTimeoutMillis?: number;
-  /**
-   * Interval in milliseconds between LISTEN/NOTIFY heartbeat checks on the dedicated
-   * listener connection. Lower values detect silent connection drops faster at the cost
-   * of more heartbeat queries. Defaults to 10000.
-   */
-  notifyHeartbeatIntervalMs?: number;
-  /**
-   * Timeout in milliseconds for each LISTEN/NOTIFY heartbeat query. If a heartbeat does
-   * not complete within this window the listener is torn down and reconnected. Raise this
-   * on a loaded database where the default is too aggressive. Defaults to 5000.
-   */
-  notifyHeartbeatTimeoutMs?: number;
-  /**
-   * TCP keepalive initial delay in milliseconds for the dedicated LISTEN/NOTIFY connection.
-   * Defaults to 10000.
-   */
-  notifyKeepAliveInitialDelayMs?: number;
   /** @internal */
   debug?: boolean;
 }
@@ -199,12 +184,11 @@ export interface CompatibilityFlags {
 export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, MaintenanceOptions, BackendOptions {
   /**
    * Enables the LISTEN/NOTIFY listener so workers on notify-enabled queues are woken
-   * the moment a job is created, instead of waiting out their polling interval. This
-   * holds one dedicated database connection for listening. Polling always remains active
-   * as a correctness floor. Requires a bun-boss-owned pool (or an adapter that supports
-   * `listen`) and a session-pinned connection — it will not work through PgBouncer in
-   * transaction pooling mode. When it can't be established, bun-boss emits a `warning` and
-   * continues polling only. Opt in per queue via the queue's `notify` option.
+   * the moment a job is created, instead of waiting out their polling interval. Polling
+   * always remains active as a correctness floor. Requires a `db` adapter that implements
+   * `listen` (e.g. `fromPglite`); the built-in driver — Bun's SQL client — implements no
+   * LISTEN, so with it bun-boss emits a `warning` and continues polling only. Opt in per
+   * queue via the queue's `notify` option.
    * @default false
    */
   useListenNotify?: boolean;

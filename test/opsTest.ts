@@ -30,20 +30,18 @@ describe('ops', function () {
     await ctx.boss.stop({ graceful: false })
   })
 
-  helper.itDefaultDriver('should close the connection pool', async function () {
+  helper.itPglite('should close the connection pool', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
     await ctx.boss.stop({ graceful: false })
 
-    // @ts-ignore
-    expect(ctx.boss.getDb().pool.totalCount).toBe(0)
+    await expect(ctx.boss.getDb().executeSql('select 1')).rejects.toThrow('Database not opened')
   })
 
-  helper.itDefaultDriver('should close the connection pool gracefully', async function () {
+  helper.itPglite('should close the connection pool gracefully', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
     await ctx.boss.stop()
 
-    // @ts-ignore
-    expect(ctx.boss.getDb().pool.totalCount).toBe(0)
+    await expect(ctx.boss.getDb().executeSql('select 1')).rejects.toThrow('Database not opened')
   })
 
   it('should not close the connection pool after stop with close option', async function () {

@@ -433,7 +433,7 @@ function resolveBackend (config: any) {
     config[flag] = flags[flag] ?? false
   }
 
-  // Without a db adapter the config falls through to the default pg.Pool, and sqlite-rendered SQL
+  // Without a db adapter the config falls through to the built-in postgres driver, and sqlite-rendered SQL
   // reaches a postgres connection — reject the combination here instead of failing bafflingly at start().
   if (dialect === 'sqlite') {
     assert(config.db, "configuration assert: backend 'sqlite' requires a db adapter (see fromBunSqlite)")

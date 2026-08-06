@@ -39,12 +39,16 @@ available (❌), bun-boss automatically switches to the compatible alternative �
 
 | Database | Status | `backend` | SKIP LOCKED | Multi-mutation CTEs | Table partitioning | Deferrable constraints | Advisory locks | Covering indexes | LISTEN/NOTIFY |
 |----------|--------|-----------|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| PostgreSQL | Tested | `postgres` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| PostgreSQL | Tested | `postgres` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅² |
 | PGlite | Tested | `pglite` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅¹ |
 | SQLite | Tested | `sqlite` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 
 ¹ PGlite is embedded single-connection PostgreSQL, so LISTEN/NOTIFY works entirely in-process. The
 `fromPglite` adapter wires it up automatically, so `useListenNotify` works with no extra setup.
+
+² Producer side only through the built-in driver: bun-boss still inlines `pg_notify` into inserts on
+notify-enabled queues, but Bun's SQL client implements no LISTEN, so the *listener* requires a `db`
+adapter that implements `listen` — see [No LISTEN/NOTIFY](#no-listennotify).
 
 ## Compatibility flags
 
@@ -135,7 +139,7 @@ Testing status, setup, and caveats for each supported backend.
 ### Tested: PostgreSQL
 
 PostgreSQL is the primary supported database with full feature support. Use standard mode — no
-special options needed.
+special options needed. The built-in driver is [Bun's SQL client](#bunsql-the-built-in-driver).
 
 ### PGlite (embedded)
 
@@ -143,8 +147,8 @@ special options needed.
 embedded in your process — no separate database server. Because PGlite is real PostgreSQL, bun-boss
 runs against it with **no compatibility flags**: declarative partitioning, deferrable constraints,
 advisory locks, covering indexes, and `SELECT FOR UPDATE SKIP LOCKED` all work. It is embedded
-single-connection PostgreSQL, reached through the `@electric-sql/pglite` client rather than the `pg`
-connection pool, via the `fromPglite` adapter.
+single-connection PostgreSQL, reached through the `@electric-sql/pglite` client rather than the
+built-in Bun-SQL driver, via the `fromPglite` adapter.
 
 #### Usage
 
@@ -179,7 +183,7 @@ await boss.complete('email', job.id)
 
 #### Lifecycle is yours to manage
 
-Unlike the default `pg`-pool connection, bun-boss does **not** open or close the PGlite instance —
+Unlike the built-in driver's connection, bun-boss does **not** open or close the PGlite instance —
 you own it. Construct it before `boss.start()` and close it after `boss.stop()`:
 
 ```ts
@@ -207,27 +211,42 @@ PGlite supports in-memory, IndexedDB (browser), and filesystem persistence — s
 [PGlite docs](https://pglite.dev/docs/filesystems). bun-boss treats all of them identically; the job
 schema and data persist wherever the PGlite instance stores its data directory.
 
-### Bun.SQL
+### Bun.SQL (the built-in driver)
 
-[Bun's built-in SQL client](https://bun.com/docs/api/sql) is a *driver*, not a backend: it connects
-to the same stock PostgreSQL the default `pg` pool does, so `backend` stays at its default
-`postgres` and no compatibility flags apply. Reach it with the `fromBunSql` adapter, and a Bun
-application can drop the `pg` dependency entirely.
+[Bun's built-in SQL client](https://bun.com/docs/api/sql) is bun-boss's driver for stock
+PostgreSQL: it is a *driver*, not a backend, so `backend` stays at its default `postgres` and no
+compatibility flags apply. Passing a connection string or connection options to the `BunBoss`
+constructor builds an internal `SQL` client wrapped by the `fromBunSql` adapter; passing
+`db: fromBunSql(sql)` uses a client you own instead.
 
 #### Requires Bun 1.4 or newer
 
-For driver-level use, **Bun 1.4+**. On 1.3.x, a pooled connection can be handed to a waiting query
-before the `ROLLBACK` clearing its aborted transaction has landed, so an unrelated query fails with
-`25P02 current transaction is aborted` whenever a transaction block fails under concurrency —
-contended maintenance being the realistic trigger. The adapter already rolls back before releasing;
-the window is inside Bun's pool and is fixed in 1.4.
+**Bun 1.4+** is the floor for running bun-boss. On 1.3.x, a pooled connection can be handed to a
+waiting query before the `ROLLBACK` clearing its aborted transaction has landed, so an unrelated
+query fails with `25P02 current transaction is aborted` whenever a transaction block fails under
+concurrency — contended maintenance being the realistic trigger. The adapter already rolls back
+before releasing; the window is inside Bun's pool and is fixed in 1.4.
 
 Transaction-scoped use (`fromBunSql(tx)` inside `sql.begin()`) never reserves a connection and is
 unaffected on either version.
 
 #### Usage
 
-Bun's SQL client is built in — nothing to install.
+Bun's SQL client is built in — nothing to install, and nothing to configure beyond the connection:
+
+```ts
+import { BunBoss } from 'bun-boss'
+
+const boss = new BunBoss('postgres://user:pass@localhost:5432/mydb')
+
+await boss.start()
+
+await boss.createQueue('email')
+await boss.send('email', { to: 'user@example.com' })
+```
+
+To share a client your application already owns (or to scope a single operation to a `sql.begin()`
+transaction — see [Database Adapters](api/adapters.md#bun)), wrap it with `fromBunSql`:
 
 ```ts
 import { SQL } from 'bun'
@@ -236,37 +255,23 @@ import { BunBoss, fromBunSql } from 'bun-boss'
 const sql = new SQL('postgres://user:pass@localhost:5432/mydb')
 
 const boss = new BunBoss({ db: fromBunSql(sql) })
-
-await boss.start()
-
-await boss.createQueue('email')
-await boss.send('email', { to: 'user@example.com' })
 ```
 
-The same adapter also scopes a single operation to a `sql.begin()` transaction — see
-[Database Adapters](api/adapters.md#bun).
-
-#### Lifecycle is yours to manage
-
-bun-boss does **not** open or close the `SQL` client — you own it. Construct it before
-`boss.start()` and close it after `boss.stop()`:
-
-```ts
-await boss.stop()
-await sql.close()
-```
+With a bring-your-own client, bun-boss does **not** open or close it — construct it before
+`boss.start()` and `sql.close()` it after `boss.stop()`. The built-in client's lifecycle is
+bun-boss's own: it opens on `start()` and closes on `stop()`.
 
 #### No LISTEN/NOTIFY
 
 Bun's SQL client
 [does not implement LISTEN or NOTIFY](https://bun.com/docs/api/sql#postgresql-specific-features).
-The adapter therefore exposes no listener, and `useListenNotify: true` emits a
+The built-in driver therefore exposes no listener, and `useListenNotify: true` emits a
 `listen_notify_unavailable` warning and continues with polling. Nothing is lost but wake-up latency —
 a NOTIFY is only ever a hint that makes workers poll sooner, never a correctness requirement.
 
 The producer side is unaffected: the `pg_notify` bun-boss inlines into inserts is evaluated by
-PostgreSQL itself, so a queue can stay opted into `notify` and a separate `pg`-backed instance can
-still listen for it.
+PostgreSQL itself, so a queue can stay opted into `notify` and any listener on another connection
+(e.g. a `fromPglite`-backed instance, or your own session holding `LISTEN`) can still act on it.
 
 #### Keep Bun's default `prepare: true`
 

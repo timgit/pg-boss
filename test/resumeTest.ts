@@ -47,8 +47,7 @@ describe('cancel', function () {
       // @ts-ignore
       async executeSql (sql, values) {
         callCount++
-        // @ts-ignore
-        return _db.pool.query(sql, values)
+        return _db.executeSql(sql, values)
       }
     }
 

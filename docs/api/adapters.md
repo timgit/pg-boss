@@ -14,7 +14,7 @@ bun-boss ships with `fromBunSql` for Bun's built-in `SQL` client against Postgre
 
 ## Bun
 
-Bun's built-in [`SQL`](https://bun.com/docs/api/sql) client is a driver rather than an ORM, so `fromBunSql` covers both uses: it can back a whole bun-boss instance in place of the `pg` pool, and it can scope a single operation to a `sql.begin()` transaction. Bun hands out the same shape for a pool and for a transaction, so one function serves both.
+Bun's built-in [`SQL`](https://bun.com/docs/api/sql) client is a driver rather than an ORM, so `fromBunSql` covers both uses: it can back a whole bun-boss instance with a client you own (the built-in driver wraps its own client with this same adapter), and it can scope a single operation to a `sql.begin()` transaction. Bun hands out the same shape for a pool and for a transaction, so one function serves both.
 
 ```ts
 import { SQL } from 'bun'
@@ -22,7 +22,7 @@ import { BunBoss, fromBunSql } from 'bun-boss'
 
 const sql = new SQL('postgres://user:pass@localhost:5432/mydb')
 
-// drive bun-boss entirely through Bun — no `pg` pool
+// back bun-boss with a client your application already owns
 const boss = new BunBoss({ db: fromBunSql(sql) })
 await boss.start()
 
@@ -36,7 +36,7 @@ await sql.begin(async (tx) => {
 
 Bun talks to real PostgreSQL, so leave `backend` at its default `postgres` — no compatibility flags apply. As with every adapter, the `SQL` client's lifecycle is yours: bun-boss never opens or closes it.
 
-See [Bun.SQL](../database-backends.md#bunsql) for the driver-level details — LISTEN/NOTIFY, prepared statements, and multi-statement blocks.
+See [Bun.SQL](../database-backends.md#bunsql-the-built-in-driver) for the driver-level details — LISTEN/NOTIFY, prepared statements, and multi-statement blocks.
 
 ## SQLite (Bun)
 

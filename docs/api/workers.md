@@ -218,11 +218,11 @@ This is an **opt-in optimization on top of polling, not a replacement for it.** 
 
 **Enabling it requires two opt-ins:**
 
-1. Start the instance with [`useListenNotify: true`](./constructor.md#newoptions). This runs a listener on one dedicated database connection.
+1. Start the instance with [`useListenNotify: true`](./constructor.md#newoptions) and a `db` adapter that implements `listen` — e.g. [`fromPglite`](../database-backends.md#pglite-embedded). The built-in driver (Bun's SQL client) implements no LISTEN, so with it the listener cannot be established and bun-boss continues with polling.
 2. Mark each queue that should emit notifications with the [`notify: true`](./queues.md#createqueuename-queue) option on `createQueue()` (or `updateQueue()`).
 
 ```js
-const boss = new BunBoss({ connectionString, useListenNotify: true })
+const boss = new BunBoss({ backend: 'pglite', db: fromPglite(pglite), useListenNotify: true })
 await boss.start()
 
 await boss.createQueue('email-welcome', { notify: true })
@@ -241,7 +241,7 @@ await boss.send('email-welcome', { to: 'new@user.com' })
 
 - Only **immediately-available** jobs emit a notification. Future-dated jobs (`startAfter`, `sendAfter()`, throttling/debouncing) and jobs blocked by [flow](./jobs.md) dependencies are picked up by polling once they become eligible.
 - A NOTIFY is emitted transactionally with the insert, so it fires on commit. When you create jobs inside your own transaction via the `db` option, the notification commits atomically with your transaction.
-- The listener needs a **session-pinned** connection. It works with the built-in pool and with a `db` adapter that implements `listen`, but **not** through PgBouncer in transaction or statement pooling mode, which disables `LISTEN/NOTIFY`. When a listener cannot be established, bun-boss emits a [`warning`](./events.md#warning) of type `listen_notify_unavailable` and continues polling only.
+- The listener requires a `db` adapter that implements `listen` (e.g. `fromPglite`, or a custom adapter holding a session-pinned connection — **not** one through PgBouncer in transaction or statement pooling mode, which disables `LISTEN/NOTIFY`). The built-in driver implements no LISTEN. When a listener cannot be established, bun-boss emits a [`warning`](./events.md#warning) of type `listen_notify_unavailable` and continues polling only. The producer side still fires either way, so external listeners on other connections can act on it.
 - The notification channel is namespaced per `schema`, so multiple bun-boss instances (and other services) on the same database do not collide.
 
 ### `work(name, handler)`

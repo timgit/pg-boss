@@ -188,9 +188,10 @@ async function executeReserved (sql: BunSqlLike, text: string): Promise<any> {
 /**
  * Adapts Bun's built-in SQL client to bun-boss's {@link IDatabase}.
  *
- * Works both as the connection for an entire bun-boss instance, replacing the default `pg` pool,
- * and as a per-operation handle that composes job writes into an existing `sql.begin()`
- * transaction. The caller owns the client's lifecycle — bun-boss never closes it.
+ * Works both as the connection for an entire bun-boss instance — the built-in driver wraps its own
+ * `SQL` client with this same adapter — and as a per-operation handle that composes job writes into
+ * an existing `sql.begin()` transaction. The caller owns the client's lifecycle — bun-boss never
+ * closes it.
  *
  * Bun implements neither LISTEN nor NOTIFY, so no `listen` is exposed and `useListenNotify` falls
  * back to polling with a warning (see notifier.ts). The `pg_notify` bun-boss inlines into inserts is

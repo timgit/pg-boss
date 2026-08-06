@@ -2,7 +2,7 @@
 
 ### `new(connectionString)`
 
-Passing a string argument to the constructor implies a PostgreSQL connection string in one of the formats specified by the [pg](https://github.com/brianc/node-postgres) package.  Some examples are currently posted in the [pg docs](https://github.com/brianc/node-postgres/wiki/pg).
+Passing a string argument to the constructor implies a PostgreSQL connection string, passed to [Bun's SQL client](https://bun.com/docs/api/sql) as its connection URL.
 
 ```js
 const boss = new BunBoss('postgres://user:pass@host:port/database?ssl=require');
@@ -19,6 +19,8 @@ The following options can be set as properties in an object for additional confi
 * **port** - int,  defaults to 5432
 
 * **ssl** - boolean or object
+
+  Passed to Bun's SQL client as its `tls` option.
 
 * **database** - string, *required*
 
@@ -38,19 +40,7 @@ The following options can be set as properties in an object for additional confi
 
 * **connectionTimeoutMillis** - int, defaults to 10000
 
-  Number of milliseconds to wait before timing out when acquiring a new client from the pool. Set to `0` to disable the timeout and wait indefinitely.
-
-* **notifyHeartbeatIntervalMs** - int, defaults to 10000
-
-  Interval between heartbeat checks on the dedicated LISTEN/NOTIFY connection. Lower values detect silent connection drops faster at the cost of more heartbeat queries.
-
-* **notifyHeartbeatTimeoutMs** - int, defaults to 5000
-
-  Timeout for each LISTEN/NOTIFY heartbeat query. If a heartbeat does not complete within this window the listener is torn down and reconnected. Raise this on a loaded database where the default is too aggressive.
-
-* **notifyKeepAliveInitialDelayMs** - int, defaults to 10000
-
-  TCP keepalive initial delay for the dedicated LISTEN/NOTIFY connection.
+  Number of milliseconds to wait when establishing a connection. Bun's SQL client takes this timeout in seconds, so the value is converted (sub-second granularity is not guaranteed).
 
 * **db** - object
 
@@ -103,7 +93,7 @@ The following options can be set as properties in an object for additional confi
 
   Enables a `LISTEN/NOTIFY` listener so that workers on notify-enabled queues are woken the moment a job is created, instead of waiting out their `pollingIntervalSeconds`. This is a latency optimization layered on top of polling — polling always remains active as a fallback, so jobs are never lost if a notification is missed. See [Low-latency dispatch with LISTEN/NOTIFY](./workers.md#low-latency-dispatch-with-listen-notify) for the full picture and the per-queue `notify` option that controls which queues emit notifications.
 
-  This option holds one dedicated database connection open for listening. It requires a session-pinned connection: it works with the built-in connection pool and with a `db` adapter that implements `listen`, but **not** through PgBouncer in transaction or statement pooling mode, which disables `LISTEN/NOTIFY`. When a listener cannot be established, bun-boss emits a [`warning`](./events.md#warning) event of type `listen_notify_unavailable` and continues with polling only.
+  This option requires a `db` adapter that implements `listen` (e.g. `fromPglite`). The built-in driver — Bun's SQL client — implements no LISTEN, so with it bun-boss emits a [`warning`](./events.md#warning) event of type `listen_notify_unavailable` and continues with polling only. The producer side (`pg_notify` inlined into inserts) still fires either way, so a listener on another connection can act on it.
 
 The following configuration options should not normally need to be changed, but are still available for special use cases.
 

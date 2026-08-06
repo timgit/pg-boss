@@ -37,8 +37,8 @@ WHERE IT BITES
 `reinsertFailedJobs` (src/manager.ts) binds `job.data` and `jobOutput` — decoded
 jsonb values, i.e. live objects — to *uncast* placeholders whose type comes from
 the column. It is on the `noMultiMutationCte` path (failNoCte and the split
-maintenance expiry), so through this adapter it is only reached under `DB_TYPE=bun
-NO_SKIP_LOCKED_NO_CTE=true`, not on stock Postgres. Bun
+maintenance expiry), so it is only reached under `NO_SKIP_LOCKED_NO_CTE=true`
+(`bun run test:no-skip-locked-no-cte`), not on stock-profile Postgres. Bun
 encodes those correctly on its own — but only when prepared — and the adapter
 must keep its hands off them (see issue 2), so a blanket "stringify every object"
 would break the case that currently works.
@@ -88,13 +88,15 @@ This is not hypothetical. `findJobs` (src/plans.ts:2589) emits
     AND data @> $N
 
 with no cast, and it was missed by the first version of the classifier. It only
-surfaced because `DB_TYPE=bun` runs the whole suite through the adapter; the
-dedicated adapter tests were all green.
+surfaced because running the whole suite through the adapter exercises every
+query; the dedicated adapter tests were all green.
 
 WHAT GUARDS IT TODAY
 
-`bun run test:bun` (the `bun-driver` CI matrix entry). It is the only thing that
-catches this class of regression, and it caught this one. Do not drop that job.
+The default test run (`bun run test`): the built-in driver wraps its own SQL
+client with fromBunSql, so every query bun-boss issues goes through the
+classifier on plain Postgres and on the no-skip-locked-no-cte variant. Do not
+reintroduce a driver split that lets the default run bypass the adapter.
 
 OPTIONS, ROUGHLY IN ORDER OF EFFORT
 
@@ -120,9 +122,9 @@ Recommendation: (c), with (b) as the regression guard if we want belt and braces
 -------------------------------------------------------------------------------
 
 Status:   live on Bun 1.3.14, fixed in Bun 1.4.0 — upstream, not ours
-Severity: high on 1.3.x driver-level use; not reproducible on 1.4
+Severity: high on 1.3.x; not reproducible on 1.4. fromBunSql is now the
+          built-in driver, so this is why Bun 1.4 is the package floor.
 Files:    src/adapters/bun.ts (executeReserved) — correct as written, no fix needed
-          .github/workflows/ci.yml (bun-driver / stable is non-blocking because of this)
 
 WHAT HAPPENS
 
@@ -190,16 +192,16 @@ RULED OUT
 
 WHAT WE DID
 
-Documented Bun 1.4+ as the floor for driver-level use, and made the
-bun-driver/stable CI job non-blocking so the failure stays visible without
-blocking merges.
+Documented Bun 1.4+ as the floor for the package (README.md,
+docs/database-backends.md). The adapter's 25P02 retry and the queue-cache
+corroboration in src/manager.ts stay as defense-in-depth on 1.3.x.
 
-WHEN BUN 1.4 IS STABLE
+WHEN BUN 1.4 IS THE OLDEST TOOLCHAIN IN USE
 
-Drop `optional: true` from that matrix entry in .github/workflows/ci.yml, drop the
-"Requires Bun 1.4 or newer" section from docs/database-backends.md, and delete this
-entry. Worth reporting upstream first if it has not been already — the repro above
-is self-contained.
+Drop the "Requires Bun 1.4 or newer" section from docs/database-backends.md and
+delete this entry (the 25P02 retry can stay — it is cheap and self-contained).
+Worth reporting upstream first if it has not been already — the repro above is
+self-contained.
 
 -------------------------------------------------------------------------------
 4. Bun sqlite driver quirks the fromBunSqlite adapter works around
