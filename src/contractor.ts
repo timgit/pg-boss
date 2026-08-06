@@ -105,7 +105,11 @@ class Contractor {
       const commands = plans.create(this.config, schemaVersion, this.config)
       await this.db.executeSql(commands)
     } catch (err: any) {
-      assert(err.message.includes(plans.CREATE_RACE_MESSAGE), err)
+      // A tight CREATE SCHEMA IF NOT EXISTS race surfaces as a duplicate pg_namespace key whose
+      // message lacks 'already exists' (only the detail carries it), so match that flavor too.
+      const benignRace = err.message.includes(plans.CREATE_RACE_MESSAGE) ||
+        (err.code === '23505' && err.constraint === 'pg_namespace_nspname_index')
+      assert(benignRace, err)
     }
   }
 }

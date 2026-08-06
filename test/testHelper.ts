@@ -2,7 +2,7 @@ import Db from '../src/db.ts'
 import { BunBoss, fromPglite, fromBunSqlite } from '../src/index.ts'
 import { PGlite } from '@electric-sql/pglite'
 import { SQL } from 'bun'
-import { describe, it, type SuiteAPI, type TestAPI } from 'vitest'
+import { describe, it, type SuiteAPI, type TestAPI } from './harness.ts'
 import crypto from 'node:crypto'
 import configJson from './config.json' with { type: 'json' }
 import type { ConstructorOptions, IDatabase, FetchOptions, Job } from '../src/types.ts'
@@ -13,13 +13,14 @@ import { SQLITE as SQLITE_DIALECT } from '../src/dialect.ts'
 const sha1 = (value: string): string => crypto.createHash('sha1').update(value).digest('hex')
 
 // PGlite is embedded single-connection WASM PostgreSQL. The whole suite runs against it in-process
-// via DB_TYPE=pglite: each test-file worker shares one in-memory instance, and every testHelper db
+// via DB_TYPE=pglite: the process shares one in-memory instance, and every testHelper db
 // operation (getDb, dropSchema, schema introspection) routes through it. There is no server, so
 // connection-string / subprocess / multi-connection tests are skipped (see itPglite/describePglite).
 const isPglite = process.env.DB_TYPE === 'pglite'
 
-// One shared in-memory PGlite instance per worker (vitest runs each test file in its own fork, so
-// this is created once per file). Construction is synchronous; readiness is awaited on first query.
+// One shared in-memory PGlite instance per process (bun test runs the whole suite in one process;
+// per-test isolation comes from the schema). Construction is synchronous; readiness is awaited on
+// first query.
 let pgliteInstance: PGlite | undefined
 function getPgliteInstance (): PGlite {
   pgliteInstance ??= new PGlite()
@@ -34,13 +35,13 @@ function getPgliteDb (): IDatabase & { close: () => Promise<void> } {
 }
 
 // SQLite runs in-process through Bun's built-in SQL client (sqlite://:memory:) with the `sqlite`
-// backend profile — a different SQL dialect, not a Postgres-compatible engine. Each test-file
-// worker shares one in-memory database; per-test isolation comes from the quoted-name prefix
+// backend profile — a different SQL dialect, not a Postgres-compatible engine. The process shares
+// one in-memory database; per-test isolation comes from the quoted-name prefix
 // ("<schema>.job"), so dropSchema drops the prefixed tables. No server, so connection-string /
 // subprocess / multi-connection tests are skipped like PGlite's.
 const isSqlite = process.env.DB_TYPE === 'sqlite'
 
-// One shared in-memory SQLite database per worker, mirroring the PGlite instance below.
+// One shared in-memory SQLite database per process, mirroring the PGlite instance below.
 let sqliteInstance: SQL | undefined
 function getSqliteInstance (): SQL {
   sqliteInstance ??= new SQL('sqlite://:memory:')
@@ -62,9 +63,8 @@ const isNoSkipLockedNoCte = process.env.NO_SKIP_LOCKED_NO_CTE === 'true'
 
 // Wrap tests that depend on Postgres-only features (table partitioning, covering indexes, exact PG
 // schema shape) with these so they are skipped automatically under SQLite.
-// Annotated with the exported TestAPI/SuiteAPI types: skipIf() returns vitest's internal
-// ChainableTestAPI/ChainableSuiteAPI, which can't be named in this module's emitted
-// declarations (TS4023). The exported aliases are nameable and callable the same way.
+// The `it` here is the harness wrapper (per-test schema setup lives in its body), so every skip
+// helper below must be built from it — bun's raw `it` would silently bypass that setup.
 const itPostgresOnly = it.skipIf(isSqlite) as TestAPI
 const describePostgresOnly = describe.skipIf(isSqlite) as SuiteAPI
 
@@ -88,8 +88,8 @@ const describeMultiConnectionOnly = describe.skipIf(isPglite || isSqlite) as Sui
 // nor NOTIFY delivery, and SQLite has no LISTEN/NOTIFY at all. Wrap notify-behavior tests with
 // these so they run only under DB_TYPE=pglite; the producer bypass is still covered separately on
 // every backend.
-const itListenNotify = it.runIf(isPglite) as TestAPI
-const describeListenNotify = describe.runIf(isPglite) as SuiteAPI
+const itListenNotify = it.skipIf(!isPglite) as TestAPI
+const describeListenNotify = describe.skipIf(!isPglite) as SuiteAPI
 
 function assertTruthy<T> (value: T, message?: string): asserts value is NonNullable<T> {
   if (value == null) {

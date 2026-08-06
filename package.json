@@ -15,22 +15,20 @@
     "@tsconfig/node22": "^22.0.5",
     "@types/luxon": "^3.7.3",
     "@types/node": "^22.20.1",
-    "@vitest/coverage-v8": "^4.1.2",
     "eslint": "^9.39.5",
     "luxon": "^3.7.2",
     "neostandard": "^0.13.0",
-    "typescript": "^6.0.3",
-    "vitest": "^4.0.18"
+    "typescript": "^6.0.3"
   },
   "scripts": {
     "prepublishOnly": "bun install && bun run test",
     "pretest": "bun run tsc",
-    "test": "eslint . && bun --bun vitest run",
+    "test": "eslint . && bun test --timeout 120000",
     "test:no-skip-locked-no-cte": "NO_SKIP_LOCKED_NO_CTE=true bun run test",
     "test:pglite": "DB_TYPE=pglite bun run test",
     "test:sqlite": "DB_TYPE=sqlite bun run test",
     "lint:fix": "eslint . --fix",
-    "cover": "bun run test -- --coverage",
+    "cover": "bun run test -- --coverage --coverage-reporter=text --coverage-reporter=lcov",
     "tsc": "tsc --noEmit",
     "console": "bun scripts/console.js"
   },

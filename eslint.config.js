@@ -3,7 +3,6 @@ import { defineConfig } from 'eslint/config'
 
 const config = neostandard({
   ts: true,
-  env: ['mocha'],
   ignores: neostandard.resolveIgnoresFromGitignore(),
   noJsx: true,
 })
@@ -11,5 +10,16 @@ const config = neostandard({
 export default defineConfig(config, {
   languageOptions: {
     ecmaVersion: 2025,
+  },
+}, {
+  // Bun injects bare test globals that bypass the harness's wrapped `it` (no per-test schema
+  // setup), so every test symbol must be imported from test/harness.ts explicitly.
+  files: ['test/**/*.ts'],
+  rules: {
+    'no-restricted-globals': [
+      'error',
+      ...['it', 'test', 'describe', 'expect', 'beforeAll', 'beforeEach', 'afterEach', 'afterAll']
+        .map(name => ({ name, message: `Import ${name} from './harness.ts' instead of using the injected global.` })),
+    ],
   },
 })

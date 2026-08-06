@@ -121,7 +121,7 @@ plain PostgreSQL, so the project exercises them independently of any embedded ba
   automatically exercised against the atomic-`UPDATE` fetch and split-statement write paths, fast
   and reliably. It runs as its own CI job.
 
-`test/noSkipLockedNoCteTest.ts` holds the invariants the general suite cannot express
+`test/noSkipLockedNoCte.test.ts` holds the invariants the general suite cannot express
 (concurrent-fetch deduplication, `failNoCte`/`completeNoCte` composition inside a caller
 transaction, and the compatibility-flag construction paths). Those cases force the runtime behavior
 via `__test__noSkipLockedNoCte`, so they run in every mode.

@@ -1,4 +1,4 @@
-import { describe, it, expectTypeOf } from 'vitest'
+import { describe, it, expectTypeOf } from 'bun:test'
 import type { BunBoss } from '../src/index.ts'
 import type {
   WorkHandlerFor,
@@ -11,7 +11,8 @@ import type {
 
 // These assertions pin the compile-time contract of `work()`'s handler selection so a future change
 // to the overloads or to WorkHandlerFor can't silently loosen per-job typing or regress the ordinary
-// (non-perJobResults) API. Verified by `npm run tsc` and by vitest's typecheck pass.
+// (non-perJobResults) API. Verified by `bun run tsc`; the file is never executed (bun test does
+// not discover the *TypeTest.ts suffix, and expectTypeOf is a runtime no-op anyway).
 
 type Req = { n: number }
 
