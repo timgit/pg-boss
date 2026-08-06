@@ -1,5 +1,5 @@
 import { delay } from '../src/tools.ts'
-import { describe, it, expect } from './harness.ts'
+import { describe, it, expect, setSystemTime } from './harness.ts'
 import * as helper from './testHelper.ts'
 import { BunBoss } from '../src/index.ts'
 import Timekeeper from '../src/timekeeper.ts'
@@ -468,6 +468,34 @@ describe('timekeeper clock domain', function () {
     // of skew. Computing prev() from the local clock (the old bug) would push prevDiff past 60 and
     // silently kill scheduling.
     expect(tk.shouldSendIt('* * * * *', 'UTC')).toBe(true)
+  })
+
+  // The wall clock decides whether this one passes, so pin it: croner's previousRuns() skips the
+  // second its reference lands in, which used to drop the boundary that had just passed and made
+  // an every-minute schedule miss for one second in every sixty.
+  it('shouldSendIt fires during the first second of a minute', function () {
+    const tk = makeTk(0)
+    tk.clockSkew = 120_000
+
+    setSystemTime(new Date(Date.UTC(2026, 7, 7, 12, 34, 0)))
+
+    try {
+      expect(tk.shouldSendIt('* * * * *', 'UTC')).toBe(true)
+    } finally {
+      setSystemTime()
+    }
+  })
+
+  it('shouldSendIt fires for an occurrence landing exactly on the current second', function () {
+    const tk = makeTk(0)
+
+    setSystemTime(new Date(Date.UTC(2027, 0, 1, 0, 0, 0)))
+
+    try {
+      expect(tk.shouldSendIt('0 0 1 1 *', 'UTC')).toBe(true)
+    } finally {
+      setSystemTime()
+    }
   })
 
   it('shouldSendIt does not fire when the previous occurrence is well outside the window', function () {

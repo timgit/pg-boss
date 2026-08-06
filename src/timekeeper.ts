@@ -181,7 +181,11 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
   shouldSendIt (cron: string, tz: string) {
     const databaseTime = Date.now() + this.clockSkew
 
-    const [prevTime] = new Cron(cron, { timezone: tz }).previousRuns(1, new Date(databaseTime))
+    // croner's previousRuns() excludes the second its reference lands in, so anchor the search at
+    // the start of the next second to keep an occurrence in the current second in scope.
+    const anchor = Math.floor(databaseTime / 1000) * 1000 + 1000
+
+    const [prevTime] = new Cron(cron, { timezone: tz }).previousRuns(1, new Date(anchor))
 
     // croner returns an empty array when there is no prior occurrence; cron-parser threw instead.
     if (!prevTime) return false
