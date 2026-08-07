@@ -17,7 +17,7 @@ const boss = new BunBoss({
 
 ## `getSpy(name)`
 
-Returns a spy instance for the specified queue. The spy tracks all job state transitions (created, active, completed, failed) for that queue.
+Returns a spy instance for the specified queue. The spy tracks all job state transitions (created, active, completed, failed) for that queue. Transitions are recorded from the moment spies are enabled, not from the first `getSpy()` call — fetching the spy after a job has already settled still resolves waits for the states it passed through.
 
 **Arguments**
 - `name`: string, queue name

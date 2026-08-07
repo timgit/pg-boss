@@ -116,12 +116,22 @@ class Manager extends EventEmitter implements types.EventsMixin {
     if (!this.config.__test__enableSpies) {
       throw new Error('Spy is not enabled. Set __test__enableSpies: true in constructor options to use spies.')
     }
+    return this.#spyFor(name)! as unknown as JobSpyInterface<T>
+  }
+
+  // Every record site goes through this lazy accessor rather than #spies.get, so transitions that
+  // happen before the first getSpy() call for a queue are still captured — the testing docs promise
+  // waitForJob resolves immediately for jobs that reached the state before the spy was fetched.
+  #spyFor (name: string): JobSpy | undefined {
+    if (!this.config.__test__enableSpies) {
+      return undefined
+    }
     let spy = this.#spies.get(name)
     if (!spy) {
       spy = new JobSpy()
       this.#spies.set(name, spy)
     }
-    return spy as unknown as JobSpyInterface<T>
+    return spy
   }
 
   clearSpies (): void {
@@ -132,7 +142,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
   }
 
   #trackJobsActive<T> (name: string, jobs: types.Job<T>[]): void {
-    const spy = this.config.__test__enableSpies ? this.#spies.get(name) : undefined
+    const spy = this.#spyFor(name)
     if (spy) {
       for (const job of jobs) {
         spy.addJob(job.id, name, job.data as object, 'active')
@@ -141,7 +151,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
   }
 
   async #trackJobsCompleted<T> (name: string, jobs: types.Job<T>[], result: unknown, affected: number): Promise<void> {
-    const spy = this.config.__test__enableSpies ? this.#spies.get(name) : undefined
+    const spy = this.#spyFor(name)
     if (!spy) return
 
     // Fast path: complete() transitioned every job (it only touches jobs still in the
@@ -174,7 +184,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
   }
 
   async #trackJobsFailed<T> (name: string, jobs: types.Job<T>[], err: Error): Promise<void> {
-    const spy = this.config.__test__enableSpies ? this.#spies.get(name) : undefined
+    const spy = this.#spyFor(name)
     if (!spy) return
 
     // A handler throw routes through fail(), but fail() only lands the job in the terminal
@@ -199,7 +209,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     completed: { job: types.Job<T>, output: unknown }[],
     failed: { job: types.Job<T>, output: unknown }[]
   ): void {
-    const spy = this.config.__test__enableSpies ? this.#spies.get(name) : undefined
+    const spy = this.#spyFor(name)
     if (!spy) return
     for (const { job, output } of completed) {
       spy.addJob(job.id, name, job.data as object, 'completed', output as object)
@@ -394,7 +404,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     // gated here, not just inside the trackers, so the production hot path (spies off) never
     // even calls the async tracker — no promise allocated, no microtask tick. The checks
     // inside the trackers stay as a safety net.
-    if (this.config.__test__enableSpies && this.#spies.has(name)) {
+    if (this.config.__test__enableSpies) {
       if (didFail) {
         await this.#trackJobsFailed(name, jobs, failedError)
       } else if (!perJobResults) {
@@ -819,12 +829,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     if (try1.length === 1) {
       const jobId = try1[0].id
-      if (this.config.__test__enableSpies) {
-        const spy = this.#spies.get(name)
-        if (spy) {
-          spy.addJob(jobId, name, data || {}, 'created')
-        }
-      }
+      this.#spyFor(name)?.addJob(jobId, name, data || {}, 'created')
       return jobId
     }
 
@@ -837,12 +842,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
       if (try2.length === 1) {
         const jobId = try2[0].id
-        if (this.config.__test__enableSpies) {
-          const spy = this.#spies.get(name)
-          if (spy) {
-            spy.addJob(jobId, name, data || {}, 'created')
-          }
-        }
+        this.#spyFor(name)?.addJob(jobId, name, data || {}, 'created')
         return jobId
       }
     }
@@ -950,8 +950,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     // Track inserted (newly created) jobs for spies, matching createJob/insert. Runs after the
     // transaction commits so a rolled-back insert never leaves a phantom spy entry.
-    if (result.inserted && this.config.__test__enableSpies) {
-      const spy = this.#spies.get(name)
+    if (result.inserted) {
+      const spy = this.#spyFor(name)
       if (spy) {
         for (const id of result.jobs) {
           spy.addJob(id, name, data || {}, 'created')
@@ -986,7 +986,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     const { table, notify } = await this.getQueueCache(name)
 
-    const spy = this.config.__test__enableSpies ? this.#spies.get(name) : undefined
+    const spy = this.#spyFor(name)
 
     // insertJobs ends in ON CONFLICT DO NOTHING, so skipped rows shift the returned rows out of
     // alignment with the input jobs — a positional rows[i] <-> jobs[i] pairing attributes the wrong
