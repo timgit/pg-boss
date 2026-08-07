@@ -1,6 +1,6 @@
 {
   "name": "bun-boss",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Queueing jobs in Postgres, SQLite, and memory from Bun like a boss",
   "type": "module",
   "main": "./src/index.ts",
