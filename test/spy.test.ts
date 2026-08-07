@@ -190,6 +190,45 @@ describe('spy', function () {
     expect(duration < 100).toBeTruthy()
   })
 
+  it('should track transitions that happened before the first getSpy() call', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
+
+    // No getSpy() yet — the send must still be recorded.
+    const jobId = await ctx.boss.send(ctx.schema, { value: 'test' })
+    assertTruthy(jobId)
+
+    const spy = ctx.boss.getSpy(ctx.schema)
+    const job = await spy.waitForJobWithId(jobId, 'created')
+
+    expect(job.id).toBe(jobId)
+    expect(job.state).toBe('created')
+  })
+
+  it('should resolve a terminal state reached before the first getSpy() call', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
+
+    const jobId = await ctx.boss.send(ctx.schema, { value: 'test' })
+    assertTruthy(jobId)
+
+    await ctx.boss.work(ctx.schema, async () => ({ result: 'success' }))
+
+    // Poll the persisted state so the spy is only fetched after the job has already completed.
+    for (let i = 0; i < 100; i++) {
+      const persisted = await ctx.boss.findJobs(ctx.schema, { id: jobId })
+      if (persisted[0]?.state === 'completed') {
+        break
+      }
+      await delay(50)
+    }
+
+    const spy = ctx.boss.getSpy(ctx.schema)
+    const job = await spy.waitForJobWithId(jobId, 'completed')
+
+    expect(job.id).toBe(jobId)
+    expect(job.state).toBe('completed')
+    expect(job.output).toEqual({ result: 'success' })
+  })
+
   it('should support waitForJob with data selector', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, __test__enableSpies: true })
 
