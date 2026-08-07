@@ -1,34 +1,26 @@
 import { describe, it, expect } from './harness.ts'
-import pg from 'pg'
+import { SQL } from 'bun'
 import * as helper from './testHelper.ts'
 import { ctx } from './hooks.ts'
 import * as plans from '../src/plans.ts'
 import { delay } from '../src/tools.ts'
-import { BunBoss } from '../src/index.ts'
+import { BunBoss, fromBunSql } from '../src/index.ts'
 
-// Opens a raw pg connection LISTENing on this schema's bun-boss channel and collects
-// payloads. Returns the collected array plus a close function. Used to assert the
-// producer's NOTIFY emission directly, without timing-dependent worker assertions.
+// Subscribes on this schema's bun-boss channel via the shared PGlite instance and collects
+// payloads. Returns the collected array plus a close function. Under DB_TYPE=pglite the boss
+// produces into the same instance, so this asserts the producer's NOTIFY emission directly,
+// without timing-dependent worker assertions.
 async function rawListener (schema: string) {
-  const config = helper.getConfig()
-  const client = new pg.Client({
-    host: config.host,
-    port: config.port,
-    database: config.database,
-    user: config.user,
-    password: config.password
-  })
-  await client.connect()
+  const pglite = helper.getPgliteInstance()
   const received: string[] = []
-  client.on('notification', msg => { if (msg.payload) received.push(msg.payload) })
   // Resolve the channel literal from the same SQL expression the producer uses.
-  const { rows } = await client.query(`SELECT ${plans.notifyChannelSql(schema)} AS channel`)
-  await client.query(`LISTEN "${rows[0].channel}"`)
-  return { received, close: () => client.end() }
+  const { rows } = await pglite.query<{ channel: string }>(`SELECT ${plans.notifyChannelSql(schema)} AS channel`)
+  const unsubscribe = await pglite.listen(rows[0].channel, payload => { if (payload) received.push(payload) })
+  return { received, close: () => unsubscribe() }
 }
 
 helper.describeListenNotify('listen/notify', function () {
-  helper.itPglite('emits a NOTIFY carrying the queue name for an immediate job on a notify-enabled queue', async function () {
+  it('emits a NOTIFY carrying the queue name for an immediate job on a notify-enabled queue', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
     const queue = ctx.schema
     await ctx.boss.createQueue(queue, { notify: true })
@@ -44,7 +36,7 @@ helper.describeListenNotify('listen/notify', function () {
     }
   })
 
-  helper.itPglite('does not emit a NOTIFY for a future-dated job (gated on start_after <= now)', async function () {
+  it('does not emit a NOTIFY for a future-dated job (gated on start_after <= now)', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
     const queue = ctx.schema
     await ctx.boss.createQueue(queue, { notify: true })
@@ -60,7 +52,7 @@ helper.describeListenNotify('listen/notify', function () {
     }
   })
 
-  helper.itPglite('does not emit a NOTIFY when the queue is not notify-enabled', async function () {
+  it('does not emit a NOTIFY when the queue is not notify-enabled', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
     const queue = ctx.schema
     await ctx.boss.createQueue(queue, { notify: false })
@@ -76,7 +68,7 @@ helper.describeListenNotify('listen/notify', function () {
     }
   })
 
-  helper.itPglite('updateQueue can toggle notify on', async function () {
+  it('updateQueue can toggle notify on', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
     const queue = ctx.schema
     await ctx.boss.createQueue(queue, { notify: false })
@@ -93,7 +85,7 @@ helper.describeListenNotify('listen/notify', function () {
     }
   })
 
-  helper.itPglite('fires a single NOTIFY for an insert() batch, gated on immediate availability', async function () {
+  it('fires a single NOTIFY for an insert() batch, gated on immediate availability', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
     const queue = ctx.schema
     await ctx.boss.createQueue(queue, { notify: true })
@@ -162,20 +154,36 @@ helper.describeListenNotify('listen/notify', function () {
     expect(processed).toBe(false)
   })
 
-  helper.itPglite('uses the fallback poll interval when notify is desired but the listener is unavailable', async function () {
+  it('falls back to the poll interval when a queue is not notify-enabled', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, useListenNotify: true, noDefault: true })
+    const queue = ctx.schema
+    await ctx.boss.createQueue(queue, { notify: false })
+
+    let processed = false
+    await ctx.boss.work(queue, { pollingIntervalSeconds: 4 }, async () => { processed = true })
+
+    await delay(250)
+    await ctx.boss.send(queue)
+
+    // Without NOTIFY the job should still be waiting on the 4s poll at this point.
+    await delay(1500)
+    expect(processed).toBe(false)
+  })
+})
+
+// The built-in driver (Bun's SQL client) implements no LISTEN, so a listener can never be
+// established on these backends: useListenNotify degrades to polling with a warning. Runs on the
+// real-server modes (default and no-skip-locked-no-cte), where the fromBunSql shape below talks to
+// the same Postgres the boss does.
+helper.describePglite('listen/notify fallback (no listener capability)', function () {
+  it('uses the fallback poll interval when notify is desired but the listener is unavailable', async function () {
     const config = helper.getConfig({ schema: ctx.schema })
 
     // Bare adapter: no `listen` capability, so the listener can't be established and notify is
     // unavailable even though the queue opts in. The worker must use the fast fallback, not the
     // long notify backstop.
-    const pool = new pg.Pool({
-      host: config.host,
-      port: config.port,
-      database: config.database,
-      user: config.user,
-      password: config.password
-    })
-    const adapter = { executeSql: (text: string, values?: unknown[]) => pool.query(text, values) }
+    const sql = new SQL(helper.getConnectionString(), { max: 5 })
+    const adapter = fromBunSql(sql)
 
     const boss = new BunBoss({ ...config, db: adapter, useListenNotify: true })
     boss.on('warning', () => {})
@@ -204,88 +212,17 @@ helper.describeListenNotify('listen/notify', function () {
       expect(processedAt - sentAt).toBeLessThan(3000)
     } finally {
       await boss.stop({ timeout: 2000 })
-      await pool.end()
+      await sql.close()
     }
   })
 
-  it('falls back to the poll interval when a queue is not notify-enabled', async function () {
-    ctx.boss = await helper.start({ ...ctx.bossConfig, useListenNotify: true, noDefault: true })
-    const queue = ctx.schema
-    await ctx.boss.createQueue(queue, { notify: false })
-
-    let processed = false
-    await ctx.boss.work(queue, { pollingIntervalSeconds: 4 }, async () => { processed = true })
-
-    await delay(250)
-    await ctx.boss.send(queue)
-
-    // Without NOTIFY the job should still be waiting on the 4s poll at this point.
-    await delay(1500)
-    expect(processed).toBe(false)
-  })
-
-  helper.itPglite('wakes notify-enabled workers and recovers after the listener reconnects', async function () {
-    ctx.boss = await helper.start({ ...ctx.bossConfig, useListenNotify: true, noDefault: true })
-    const boss = ctx.boss
-    // Terminating the listen backend surfaces as an 'error' on the promoted db events.
-    boss.on('error', () => {})
-    const notifyQueue = `${ctx.schema}_notify`
-    const plainQueue = `${ctx.schema}_plain`
-
-    await boss.createQueue(notifyQueue, { notify: true })
-    await boss.createQueue(plainQueue, { notify: false })
-
-    let notifyProcessed = 0
-    // A long poll proves wake-ups come from NOTIFY / gap-recovery, not polling.
-    await boss.work(notifyQueue, { pollingIntervalSeconds: 30 }, async () => { notifyProcessed++ })
-    // A second worker on a non-notify queue exercises the name/notify mismatch
-    // branches in notifyQueue() and forceFetchLnWorkers().
-    await boss.work(plainQueue, { pollingIntervalSeconds: 30 }, async () => {})
-
-    await delay(300)
-
-    // A notify-gated send wakes only the matching worker (notifyQueue iterates all
-    // workers, skipping the plain-queue one).
-    await boss.send(notifyQueue)
-    for (let i = 0; i < 30; i++) {
-      if (notifyProcessed >= 1) break
-      await delay(100)
-    }
-    expect(notifyProcessed).toBe(1)
-
-    // Drop the dedicated listen backend. On reconnect, forceFetchLnWorkers() forces
-    // a fetch for notify-enabled workers (and skips the plain one) to recover any
-    // notifications missed during the outage.
-    const killer = await helper.getDb()
-    try {
-      await killer.executeSql("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE query LIKE 'LISTEN %'")
-    } finally {
-      await killer.close()
-    }
-
-    // After recovery a fresh notify-gated send is delivered again.
-    await delay(1500)
-    await boss.send(notifyQueue)
-    for (let i = 0; i < 40; i++) {
-      if (notifyProcessed >= 2) break
-      await delay(100)
-    }
-    expect(notifyProcessed).toBe(2)
-  })
-
-  helper.itPglite('warns and continues polling when the database connection cannot LISTEN', async function () {
+  it('warns and continues polling when the database connection cannot LISTEN', async function () {
     const config = helper.getConfig({ schema: ctx.schema })
 
     // A bare adapter exposes only executeSql (no `listen` capability), like a user-supplied
     // transaction-pooled connection that can't hold a session for LISTEN/NOTIFY.
-    const pool = new pg.Pool({
-      host: config.host,
-      port: config.port,
-      database: config.database,
-      user: config.user,
-      password: config.password
-    })
-    const adapter = { executeSql: (text: string, values?: unknown[]) => pool.query(text, values) }
+    const sql = new SQL(helper.getConnectionString(), { max: 5 })
+    const adapter = fromBunSql(sql)
 
     const boss = new BunBoss({ ...config, db: adapter, useListenNotify: true })
     const warnings: any[] = []
@@ -308,7 +245,36 @@ helper.describeListenNotify('listen/notify', function () {
       expect(warnings.some(w => w?.data?.type === 'listen_notify_unavailable')).toBe(true)
     } finally {
       await boss.stop({ timeout: 2000 })
-      await pool.end()
+      await sql.close()
+    }
+  })
+
+  it('warns and continues polling when the built-in driver is asked for notify', async function () {
+    // No db adapter: the built-in driver (Bun's SQL client) implements no LISTEN, so opting into
+    // useListenNotify must warn and still deliver via polling.
+    const config = helper.getConfig({ schema: ctx.schema })
+
+    const boss = new BunBoss({ ...config, useListenNotify: true })
+    const warnings: any[] = []
+    boss.on('warning', w => warnings.push(w))
+    boss.on('error', () => {})
+
+    await boss.start()
+
+    try {
+      const queue = ctx.schema
+      await boss.createQueue(queue, { notify: true })
+
+      const completed = new Promise<boolean>(resolve => {
+        boss.work(queue, { pollingIntervalSeconds: 0.5 }, async () => resolve(true))
+      })
+
+      await boss.send(queue)
+
+      expect(await completed).toBe(true)
+      expect(warnings.some(w => w?.data?.type === 'listen_notify_unavailable')).toBe(true)
+    } finally {
+      await boss.stop({ timeout: 2000 })
     }
   })
 })
@@ -353,7 +319,7 @@ describe('notify producer bypass (all backends)', function () {
 })
 
 helper.describeListenNotify('listen/notify update', function () {
-  helper.itPglite('update that pulls a future-dated job forward emits a NOTIFY', async function () {
+  it('update that pulls a future-dated job forward emits a NOTIFY', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
     const queue = ctx.schema
     await ctx.boss.createQueue(queue, { notify: true })
@@ -372,7 +338,7 @@ helper.describeListenNotify('listen/notify update', function () {
     }
   })
 
-  helper.itPglite('partial update that keeps the job future-dated emits no NOTIFY', async function () {
+  it('partial update that keeps the job future-dated emits no NOTIFY', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
     const queue = ctx.schema
     await ctx.boss.createQueue(queue, { notify: true })
@@ -391,7 +357,7 @@ helper.describeListenNotify('listen/notify update', function () {
     }
   })
 
-  helper.itPglite('update on a non-notify queue emits no NOTIFY', async function () {
+  it('update on a non-notify queue emits no NOTIFY', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
     const queue = ctx.schema
     await ctx.boss.createQueue(queue, { notify: false })

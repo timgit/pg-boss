@@ -5,6 +5,8 @@ Each bun-boss instance is an EventEmitter, and contains the following events.
 ## `error`
 The `error` event could be raised during internal processing, such as scheduling and maintenance. Adding a listener to the error event is strongly encouraged because of the default behavior of Node.
 
+Database connection failures are not reported here: the built-in driver (Bun's SQL client) exposes no background-error hook, so a broken connection surfaces as a rejection on the operation that encountered it — typically re-emitted as an `error` by the background component that issued the query.
+
 > If an EventEmitter does not have at least one listener registered for the 'error' event, and an 'error' event is emitted, the error is thrown, a stack trace is printed, and the Node.js process exits.
 >
 >Source: [Node.js Events > Error Events](https://nodejs.org/api/events.html#events_error_events)

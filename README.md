@@ -35,7 +35,7 @@ readme()
   })
 ```
 
-bun-boss is a job queue built on top of PostgreSQL in order to provide background processing and reliable asynchronous execution to Bun and Node.js applications.
+bun-boss is a job queue built on top of PostgreSQL in order to provide background processing and reliable asynchronous execution to Bun applications.
 
 It relies on Postgres's SKIP LOCKED, a feature built specifically for message queues to resolve record locking challenges inherent with relational databases. This provides exactly-once delivery and the safety of guaranteed atomic commits to asynchronous job processing.
 
@@ -58,8 +58,7 @@ This will likely cater the most to teams already familiar with the simplicity of
 
 ## Requirements
 * PostgreSQL 13 or higher
-* Bun 1.3.14 or higher — the package ships TypeScript sources with no compile step, so it is consumed by Bun directly. Node cannot import it from `node_modules` without a bundler or transpiler.
-* Bun 1.4 or higher when using Bun's built-in SQL client as the driver (see [database backends](docs/database-backends.md)), and for working on this repo
+* Bun 1.3.14 or higher, 1.4+ recommended — the package ships TypeScript sources with no compile step, so it is consumed by Bun directly (Node cannot import it from `node_modules` without a bundler or transpiler), and the built-in database driver is Bun's own SQL client (see [database backends](docs/database-backends.md) for why 1.4 is preferred)
 
 ## Documentation
 * [Docs](docs/introduction.md) in this repo

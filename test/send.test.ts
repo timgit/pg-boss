@@ -77,8 +77,7 @@ describe('send', function () {
         // @ts-ignore
         async executeSql (sql, values) {
           called = true
-          // @ts-ignore
-          return db.pool.query(sql, values)
+          return db.executeSql(sql, values)
         }
       },
       someCrazyOption: 'whatever'
@@ -98,31 +97,18 @@ describe('send', function () {
     const { schema } = ctx.bossConfig
 
     const db = await helper.getDb()
-    const client = (db as any).pool
-    await client.query(`CREATE TABLE IF NOT EXISTS ${schema}.test (label VARCHAR(50))`)
+    await db.executeSql(`CREATE TABLE IF NOT EXISTS ${schema}.test (label VARCHAR(50))`)
 
-    const throwError = () => { throw new Error('Error') }
+    await expect(
+      db.withTransaction(async tx => {
+        await tx.executeSql(`INSERT INTO ${schema}.test(label) VALUES('Test')`)
+        await ctx.boss!.send({ name: ctx.schema, options: { db: tx, someCrazyOption: 'whatever' } as any })
+        throw new Error('Error')
+      })
+    ).rejects.toThrow('Error')
 
-    try {
-      await client.query('BEGIN')
-      const options = {
-        db: {
-          async executeSql (sql: string, values: any[]) {
-            return client.query(sql, values)
-          }
-        },
-        someCrazyOption: 'whatever'
-      }
-      const queryText = `INSERT INTO ${schema}.test(label) VALUES('Test')`
-      await client.query(queryText)
-
-      await ctx.boss.send({ name: ctx.schema, options })
-
-      throwError()
-      await client.query('COMMIT')
-    } catch (e) {
-      await client.query('ROLLBACK')
-    }
+    const { rows } = await db.executeSql(`SELECT count(*) as count FROM ${schema}.test`)
+    expect(parseInt(rows[0].count, 10)).toBe(0)
 
     const [job] = await ctx.boss.fetch(ctx.schema)
 

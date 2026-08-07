@@ -41,7 +41,7 @@ export class BunBoss extends EventEmitter<types.BunBossEventMap> {
   #navigator: Navigator
   #notifier: Notifier
 
-  constructor (connectionString: string)
+  constructor (url: string)
   constructor (options: types.ConstructorOptions)
   constructor (value: string | types.ConstructorOptions) {
     super()
@@ -53,10 +53,6 @@ export class BunBoss extends EventEmitter<types.BunBossEventMap> {
 
     const db: (types.IDatabase & { _pgbdb?: false }) | DbDefault = this.getDb()
     this.#db = db
-
-    if ('_pgbdb' in this.#db && this.#db._pgbdb) {
-      this.#promoteEvents(this.#db)
-    }
 
     const contractor = new Contractor(db, config)
 

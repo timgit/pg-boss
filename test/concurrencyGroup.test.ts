@@ -61,8 +61,7 @@ describe('groupConcurrency', function () {
   it('singleton limit active jobs per group and singletonKey simultaneously', async function () {
     const config = {
       ...ctx.bossConfig,
-      noDefault: true,
-      debug: true
+      noDefault: true
     }
 
     const groupId = 'tenant-123'

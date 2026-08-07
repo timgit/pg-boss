@@ -5,9 +5,9 @@ import { normalizeSchemaName, resolveSchemaName } from '../src/tools.ts'
 import { BunBoss } from '../src/index.ts'
 import * as helper from './testHelper.ts'
 
-const connectionString = 'postgres://localhost/db'
+const url = 'postgres://localhost/db'
 
-const getSchema = (schema: string) => Attorney.getConfig({ connectionString, schema }).schema
+const getSchema = (schema: string) => Attorney.getConfig({ url, schema }).schema
 
 // Postgres identifier folding/quoting and pg_namespace case-variant probes have no sqlite analogue.
 helper.describeSqlite('quoted schema names', function () {

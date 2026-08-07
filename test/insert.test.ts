@@ -92,8 +92,7 @@ describe('insert', function () {
         // @ts-ignore
         async executeSql (sql, values) {
           called = true
-          // @ts-ignore
-          return db.pool.query(sql, values)
+          return db.executeSql(sql, values)
         }
       }
     }
@@ -137,8 +136,7 @@ describe('insert', function () {
         // @ts-ignore
         async executeSql (sql, values) {
           called = true
-          // @ts-ignore
-          return db.pool.query(sql, values)
+          return db.executeSql(sql, values)
         }
       }
     }

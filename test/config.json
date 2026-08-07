@@ -1,9 +1,8 @@
 {
-  "host": "127.0.0.1",
+  "hostname": "127.0.0.1",
   "port": 5432,
 	"database": "pgboss",
-	"user": "postgres",
+	"username": "postgres",
 	"password": "postgres",
-  "max": 3,
-  "debug": false
+  "max": 3
 }

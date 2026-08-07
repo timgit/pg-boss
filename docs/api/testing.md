@@ -8,7 +8,7 @@ Spies must be explicitly enabled via the `__test__enableSpies` constructor optio
 
 ```js
 const boss = new BunBoss({
-  connectionString: 'postgres://...',
+  url: 'postgres://...',
   __test__enableSpies: true
 })
 ```
@@ -115,7 +115,7 @@ describe('email notifications', () => {
 
   before(async () => {
     boss = new BunBoss({
-      connectionString: process.env.DATABASE_URL,
+      url: process.env.DATABASE_URL,
       __test__enableSpies: true
     })
     await boss.start()

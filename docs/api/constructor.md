@@ -1,11 +1,11 @@
 # Constructor
 
-### `new(connectionString)`
+### `new(url)`
 
-Passing a string argument to the constructor implies a PostgreSQL connection string in one of the formats specified by the [pg](https://github.com/brianc/node-postgres) package.  Some examples are currently posted in the [pg docs](https://github.com/brianc/node-postgres/wiki/pg).
+Passing a string argument to the constructor implies a PostgreSQL connection string, passed to [Bun's SQL client](https://bun.com/docs/api/sql) as its connection URL.
 
 ```js
-const boss = new BunBoss('postgres://user:pass@host:port/database?ssl=require');
+const boss = new BunBoss('postgres://user:pass@host:port/database?sslmode=require');
 ```
 
 ### `new(options)`
@@ -14,43 +14,47 @@ The following options can be set as properties in an object for additional confi
 
 **Connection options**
 
-* **host** - string,  defaults to "127.0.0.1"
+These carry [Bun's SQL client](https://bun.com/docs/api/sql) option names and are forwarded to it verbatim, so its defaults and semantics apply. Every timeout is in **seconds**.
 
-* **port** - int,  defaults to 5432
+* **hostname** - string, defaults to "localhost"
 
-* **ssl** - boolean or object
+* **port** - int or string, defaults to 5432
+
+* **tls** - boolean, object, or `Bun.file()` certificate
 
 * **database** - string, *required*
 
-* **user** - string, *required*
+* **username** - string, *required*
 
 * **password** - string
 
-* **connectionString** - string
+* **url** - string
 
-  PostgreSQL connection string will be parsed and used instead of `host`, `port`, `ssl`, `database`, `user`, `password`.
+  PostgreSQL connection string, parsed and used instead of `hostname`, `port`, `tls`, `database`, `username`, `password`.
+
+* **path** - string
+
+  Unix domain socket path, used instead of `hostname` and `port`.
 
 * **max** - int, defaults to 10
 
   Maximum number of connections that will be shared by all operations in this instance
 
+* **connectionTimeout** - int, defaults to 30
+
+  Seconds to wait when establishing a connection. Set to `0` to wait indefinitely.
+
+* **idleTimeout** - int, defaults to 0
+
+  Seconds a pooled connection may sit idle before it is closed. `0` never closes it.
+
+* **maxLifetime** - int, defaults to 0
+
+  Seconds a pooled connection may live before it is recycled. `0` never recycles it.
+
 * **application_name** - string, defaults to "bunboss"
 
-* **connectionTimeoutMillis** - int, defaults to 10000
-
-  Number of milliseconds to wait before timing out when acquiring a new client from the pool. Set to `0` to disable the timeout and wait indefinitely.
-
-* **notifyHeartbeatIntervalMs** - int, defaults to 10000
-
-  Interval between heartbeat checks on the dedicated LISTEN/NOTIFY connection. Lower values detect silent connection drops faster at the cost of more heartbeat queries.
-
-* **notifyHeartbeatTimeoutMs** - int, defaults to 5000
-
-  Timeout for each LISTEN/NOTIFY heartbeat query. If a heartbeat does not complete within this window the listener is torn down and reconnected. Raise this on a loaded database where the default is too aggressive.
-
-* **notifyKeepAliveInitialDelayMs** - int, defaults to 10000
-
-  TCP keepalive initial delay for the dedicated LISTEN/NOTIFY connection.
+  Reported to PostgreSQL as the session's `application_name`.
 
 * **db** - object
 
@@ -103,7 +107,7 @@ The following options can be set as properties in an object for additional confi
 
   Enables a `LISTEN/NOTIFY` listener so that workers on notify-enabled queues are woken the moment a job is created, instead of waiting out their `pollingIntervalSeconds`. This is a latency optimization layered on top of polling — polling always remains active as a fallback, so jobs are never lost if a notification is missed. See [Low-latency dispatch with LISTEN/NOTIFY](./workers.md#low-latency-dispatch-with-listen-notify) for the full picture and the per-queue `notify` option that controls which queues emit notifications.
 
-  This option holds one dedicated database connection open for listening. It requires a session-pinned connection: it works with the built-in connection pool and with a `db` adapter that implements `listen`, but **not** through PgBouncer in transaction or statement pooling mode, which disables `LISTEN/NOTIFY`. When a listener cannot be established, bun-boss emits a [`warning`](./events.md#warning) event of type `listen_notify_unavailable` and continues with polling only.
+  This option requires a `db` adapter that implements `listen` (e.g. `fromPglite`). The built-in driver — Bun's SQL client — implements no LISTEN, so with it bun-boss emits a [`warning`](./events.md#warning) event of type `listen_notify_unavailable` and continues with polling only. The producer side (`pg_notify` inlined into inserts) still fires either way, so a listener on another connection can act on it.
 
 The following configuration options should not normally need to be changed, but are still available for special use cases.
 
@@ -150,7 +154,7 @@ The following configuration options should not normally need to be changed, but 
   Selects the database bun-boss is running against and applies the compatibility behavior it needs. One of `'postgres'`, `'pglite'`, or `'sqlite'`.
 
   ```js
-  const boss = new BunBoss({ connectionString, backend: 'sqlite' })
+  const boss = new BunBoss({ backend: 'sqlite', db: fromBunSqlite(sql) })
   ```
 
   Based on this setting, the fetch strategy, mutation strategy, and schema shape may be changed. See [Database Backends](../database-backends.md#backend-profiles)

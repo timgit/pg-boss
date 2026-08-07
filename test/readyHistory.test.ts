@@ -14,7 +14,9 @@ describe('readyHistory', function () {
     const readHistory = async (): Promise<number[]> => {
       const { rows } = await db.executeSql(
         `SELECT ready_history FROM ${helper.qualify(ctx.schema, 'queue')} WHERE name = $1`, [queue])
-      return typeof rows[0].ready_history === 'string' ? JSON.parse(rows[0].ready_history) : rows[0].ready_history
+      const raw = rows[0].ready_history
+      // sqlite stores the window as JSON text; Bun's SQL client decodes int[] as an Int32Array.
+      return typeof raw === 'string' ? JSON.parse(raw) : Array.from(raw)
     }
     // The monitor only runs for queues whose monitor_on is older than monitorIntervalSeconds; age it
     // so each manual supervise() actually performs a cycle.

@@ -228,8 +228,7 @@ describe('fetch', function () {
         // @ts-ignore
         async executeSql (sql, values) {
           calledCounter++
-          // @ts-ignore
-          return db.pool.query(sql, values)
+          return db.executeSql(sql, values)
         }
       }
     }
@@ -251,8 +250,7 @@ describe('fetch', function () {
         // @ts-ignore
         async executeSql (sql, values) {
           sqlStatements.push(sql)
-          // @ts-ignore
-          return db.pool.query(sql, values)
+          return db.executeSql(sql, values)
         }
       }
     }
@@ -274,8 +272,7 @@ describe('fetch', function () {
         // @ts-ignore
         async executeSql (sql, values) {
           sqlStatements.push(sql)
-          // @ts-ignore
-          return db.pool.query(sql, values)
+          return db.executeSql(sql, values)
         }
       }
     }

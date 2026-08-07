@@ -55,7 +55,7 @@ describe('sqlite', () => {
   })
 
   it('rejects a config with a connection string', () => {
-    expect(() => new BunBoss({ backend: 'sqlite', db: fromBunSqlite(newInstance()), connectionString: 'postgres://localhost/x' } as any)).toThrow(/connectionString/)
+    expect(() => new BunBoss({ backend: 'sqlite', db: fromBunSqlite(newInstance()), url: 'postgres://localhost/x' } as any)).toThrow(/url does not apply/)
   })
 
   it('installs with a quoted schema name', async () => {

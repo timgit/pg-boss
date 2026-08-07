@@ -29,7 +29,7 @@ function serialize<T> (pglite: PGliteLike, fn: () => Promise<T>): Promise<T> {
 // PGlite uses native `$1` placeholders, so no placeholder translation is needed. The one wrinkle is
 // that `query()` runs a single statement only, while bun-boss issues concatenated multi-statement DDL
 // (migrations/schema creation) with no parameters — those must go through `exec()`, which mirrors the
-// simple-vs-extended protocol split that the default `pg.Pool`-backed driver relies on.
+// simple-vs-extended protocol split that the built-in driver relies on.
 export function fromPglite (pglite: PGliteLike): IDatabase {
   // bun-boss issues each statement expecting connection-pool semantics: an error on one statement
   // must not affect the next. PGlite has a single connection, so a failed statement inside a

@@ -1,5 +1,5 @@
 import Db from '../src/db.ts'
-import { BunBoss, fromPglite, fromBunSql, fromBunSqlite } from '../src/index.ts'
+import { BunBoss, fromPglite, fromBunSqlite } from '../src/index.ts'
 import { PGlite } from '@electric-sql/pglite'
 import { SQL } from 'bun'
 import { describe, it, type SuiteAPI, type TestAPI } from './harness.ts'
@@ -55,22 +55,6 @@ function getSqliteDb (): IDatabase & { close: () => Promise<void> } {
   return { executeSql: db.executeSql, close: async () => {} }
 }
 
-// Bun's built-in SQL client talks to the same PostgreSQL server as the default run, reached through
-// the fromBunSql adapter instead of the pg pool. DB_TYPE=bun runs the whole suite that way, so the
-// adapter's workarounds for bun's parameter binding are exercised by every query bun-boss issues
-// rather than only by the dedicated files. The backend profile stays `postgres` — this swaps the
-// driver, not the database.
-const isBun = process.env.DB_TYPE === 'bun'
-
-// One shared client per process, mirroring the PGlite instance below. `max` is deliberately
-// generous: transaction blocks take a reserved connection out of the pool for their duration, and
-// several boss instances can be alive at once within a file.
-let bunSqlInstance: SQL | undefined
-function getBunSql (): SQL {
-  bunSqlInstance ??= new SQL(getConnectionString(), { max: 10 })
-  return bunSqlInstance
-}
-
 // The no-SKIP-LOCKED / no-multi-mutation-CTE runtime path (the atomic-UPDATE fetch + split-statement
 // writes the SQLite backend uses). It is a pure runtime toggle (no schema impact) and works fine on
 // plain PostgreSQL, so we exercise the whole suite under it on Postgres via NO_SKIP_LOCKED_NO_CTE=true
@@ -99,16 +83,13 @@ const describeSqlite = describe.skipIf(isSqlite) as SuiteAPI
 // another polls) can't run on PGlite (single in-process instance, no network).
 const describeMultiConnectionOnly = describe.skipIf(isPglite || isSqlite) as SuiteAPI
 
-// Tests that reach into the built-in pg pool (its size, its events) rather than going through
-// IDatabase. Every mode that supplies its own `db` bypasses that pool entirely, so skip them there.
-const itDefaultDriver = it.skipIf(isPglite || isSqlite || isBun) as TestAPI
-
-// LISTEN/NOTIFY is unavailable in these backends' test environments: bun implements neither LISTEN
-// nor NOTIFY so its adapter exposes no listener, and SQLite has no LISTEN/NOTIFY at all. Wrap
-// notify-behavior tests with these so the compatibility matrix skips them; the producer bypass is
-// still covered separately on every backend.
-const itListenNotify = it.skipIf(isBun || isSqlite) as TestAPI
-const describeListenNotify = describe.skipIf(isBun || isSqlite) as SuiteAPI
+// LISTEN/NOTIFY behavior tests need a db adapter that implements `listen`, and in this suite that
+// is only PGlite's in-process listener (fromPglite): Bun's SQL client implements neither LISTEN
+// nor NOTIFY delivery, and SQLite has no LISTEN/NOTIFY at all. Wrap notify-behavior tests with
+// these so they run only under DB_TYPE=pglite; the producer bypass is still covered separately on
+// every backend.
+const itListenNotify = it.skipIf(!isPglite) as TestAPI
+const describeListenNotify = describe.skipIf(!isPglite) as SuiteAPI
 
 function assertTruthy<T> (value: T, message?: string): asserts value is NonNullable<T> {
   if (value == null) {
@@ -117,16 +98,14 @@ function assertTruthy<T> (value: T, message?: string): asserts value is NonNulla
 }
 
 // The connection settings for the active DB_TYPE, before any bun-boss options are layered on.
-// Separate from getConfig() because getConfig() attaches an adapter under DB_TYPE=bun, and that
-// adapter is itself built from a connection string — going through getConfig() would recurse.
 function getConnectionConfig (): any {
   const config: any = { ...configJson }
 
   if (isPglite || isSqlite) {
-    config.host = undefined
+    config.hostname = undefined
     config.port = undefined
   } else {
-    config.host = process.env.POSTGRES_HOST || config.host
+    config.hostname = process.env.POSTGRES_HOST || config.hostname
     config.port = process.env.POSTGRES_PORT || config.port
     config.password = process.env.POSTGRES_PASSWORD || config.password
   }
@@ -146,7 +125,7 @@ function getConnectionString (): string {
 
   const config = getConnectionConfig()
 
-  return `postgres://${config.user}:${config.password}@${config.host}:${config.port}/${config.database}`
+  return `postgres://${config.username}:${config.password}@${config.hostname}:${config.port}/${config.database}`
 }
 
 function getConfig (options: Partial<ConstructorOptions> & { testKey?: string } = {}): ConstructorOptions {
@@ -177,11 +156,6 @@ function getConfig (options: Partial<ConstructorOptions> & { testKey?: string } 
     config.db = fromPglite(getPgliteInstance())
   }
 
-  // Same idea for bun: a stateless adapter over the one shared SQL client.
-  if (isBun && !('db' in options)) {
-    config.db = fromBunSql(getBunSql())
-  }
-
   // And for sqlite: a stateless adapter over the shared in-memory database (the adapter's
   // serialization lock is keyed on the SQL instance, so fresh wrappers per call are safe).
   if (isSqlite && !('db' in options)) {
@@ -198,7 +172,7 @@ function dockerStartHint (): string {
 
 // Preflight the database connection so a missing/unstarted container fails with an actionable hint
 // (which docker compose command to run) instead of a bare ECONNREFUSED buried in every test. The
-// pg pool is lazy, so we issue a real query to force the connection. Connect to the always-present
+// pool is lazy, so we issue a real query to force the connection. Connect to the always-present
 // `postgres` admin database since the pgboss database may not exist yet.
 async function assertDbReachable (): Promise<void> {
   let db: Db | undefined
@@ -227,7 +201,7 @@ async function init (): Promise<void> {
   await tryCreateDb(database)
 }
 
-async function getDb ({ database, debug }: { database?: string; debug?: boolean } = {}): Promise<Db> {
+async function getDb ({ database }: { database?: string } = {}): Promise<Db> {
   if (isPglite) return getPgliteDb() as unknown as Db
   if (isSqlite) return getSqliteDb() as unknown as Db
 
@@ -235,7 +209,7 @@ async function getDb ({ database, debug }: { database?: string; debug?: boolean 
 
   config.database = database || config.database
 
-  const db = new Db({ ...config, debug })
+  const db = new Db(config)
 
   await db.open()
 
@@ -388,6 +362,7 @@ async function getSchemaDefs (schemas: string[]) {
 export {
   assertTruthy,
   dropSchema,
+  getPgliteInstance,
   start,
   fetchWithRetry,
   separateTimestamps,
@@ -399,7 +374,6 @@ export {
   tryCreateDb,
   init,
   isPglite,
-  isBun,
   isSqlite,
   isNoSkipLockedNoCte,
   itPostgresOnly,
@@ -408,7 +382,6 @@ export {
   describePglite,
   itSqlite,
   describeSqlite,
-  itDefaultDriver,
   describeMultiConnectionOnly,
   itListenNotify,
   describeListenNotify,

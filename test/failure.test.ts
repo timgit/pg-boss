@@ -158,8 +158,7 @@ describe('failure', function () {
       // @ts-ignore
       async executeSql (sql, values) {
         called = true
-        // @ts-ignore
-        return _db.pool.query(sql, values)
+        return _db.executeSql(sql, values)
       }
     }
 

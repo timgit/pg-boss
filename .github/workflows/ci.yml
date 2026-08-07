@@ -16,22 +16,19 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # The bun-driver mode runs on both toolchains, because fromBunSql is the one part of the
-        # suite whose behavior depends on Bun itself. The pg-driver suites only run on stable —
-        # running them twice buys nothing but minutes.
+        # The built-in driver is Bun's own SQL client, so the standard suite is the one whose
+        # behavior depends on Bun itself — it runs on both toolchains. The no-skip-locked-no-cte
+        # variant only swaps query strategies, so once on stable is enough.
         include:
           - mode: standard
             bun: '1'
             command: bun run test
+          - mode: standard
+            bun: canary
+            command: bun run test
           - mode: no-skip-locked-no-cte
             bun: '1'
             command: bun run test:no-skip-locked-no-cte
-          - mode: bun-driver
-            bun: canary
-            command: bun run test:bun
-          - mode: bun-driver
-            bun: '1'
-            command: bun run test:bun
     services:
       postgres:
         image: postgres:18

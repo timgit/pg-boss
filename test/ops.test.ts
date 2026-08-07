@@ -30,20 +30,54 @@ describe('ops', function () {
     await ctx.boss.stop({ graceful: false })
   })
 
-  helper.itDefaultDriver('should close the connection pool', async function () {
-    ctx.boss = await helper.start(ctx.bossConfig)
-    await ctx.boss.stop({ graceful: false })
+  // Bun's SQL client exposes no pool counts, so the server's view is the ground truth for "pool
+  // closed": tag the instance with a unique application_name and count its backends from a
+  // separate connection. Backend teardown is asynchronous after close() resolves, hence the poll.
+  const countBackends = async (monitor: Awaited<ReturnType<typeof helper.getDb>>, name: string) => {
+    const { rows } = await monitor.executeSql('SELECT count(*) AS count FROM pg_stat_activity WHERE application_name = $1', [name])
+    return parseInt(rows[0].count, 10)
+  }
 
-    // @ts-ignore
-    expect(ctx.boss.getDb().pool.totalCount).toBe(0)
+  const waitForNoBackends = async (monitor: Awaited<ReturnType<typeof helper.getDb>>, name: string) => {
+    let count = -1
+    for (let i = 0; i < 50; i++) {
+      count = await countBackends(monitor, name)
+      if (count === 0) break
+      await delay(100)
+    }
+    return count
+  }
+
+  helper.itPglite('should close the connection pool', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, application_name: ctx.schema })
+    const monitor = await helper.getDb()
+
+    try {
+      expect(await countBackends(monitor, ctx.schema)).toBeGreaterThan(0)
+
+      await ctx.boss.stop({ graceful: false })
+
+      await expect(ctx.boss.getDb().executeSql('select 1')).rejects.toThrow('Database not opened')
+      expect(await waitForNoBackends(monitor, ctx.schema)).toBe(0)
+    } finally {
+      await monitor.close()
+    }
   })
 
-  helper.itDefaultDriver('should close the connection pool gracefully', async function () {
-    ctx.boss = await helper.start(ctx.bossConfig)
-    await ctx.boss.stop()
+  helper.itPglite('should close the connection pool gracefully', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, application_name: ctx.schema })
+    const monitor = await helper.getDb()
 
-    // @ts-ignore
-    expect(ctx.boss.getDb().pool.totalCount).toBe(0)
+    try {
+      expect(await countBackends(monitor, ctx.schema)).toBeGreaterThan(0)
+
+      await ctx.boss.stop()
+
+      await expect(ctx.boss.getDb().executeSql('select 1')).rejects.toThrow('Database not opened')
+      expect(await waitForNoBackends(monitor, ctx.schema)).toBe(0)
+    } finally {
+      await monitor.close()
+    }
   })
 
   it('should not close the connection pool after stop with close option', async function () {

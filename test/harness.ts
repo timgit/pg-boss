@@ -102,4 +102,4 @@ function makeIt (skipped: boolean, base: typeof bunIt | typeof bunIt.only = bunI
 
 export const it: TestAPI = makeIt(false)
 
-export { describe, expect, beforeAll, beforeEach, afterEach, afterAll, vi, spyOn, expectTypeOf } from 'bun:test'
+export { describe, expect, beforeAll, beforeEach, afterEach, afterAll, vi, spyOn, expectTypeOf, setSystemTime } from 'bun:test'

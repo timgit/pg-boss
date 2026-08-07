@@ -8,7 +8,7 @@ describe('speed', function () {
   const data = new Array(jobCount).fill(null).map((item, index) => ({ name: queue, data: { index } }))
 
   it(`should be able to fetch and complete ${jobCount} jobs in 9 seconds`, { timeout: 9000 }, async function () {
-    const config = { ...ctx.bossConfig, min: 10, max: 10, noDefault: true }
+    const config = { ...ctx.bossConfig, max: 10, noDefault: true }
     ctx.boss = await helper.start(config)
     await ctx.boss.createQueue(queue)
     await ctx.boss.insert(queue, data)
