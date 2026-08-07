@@ -1,0 +1,93 @@
+name: release
+
+on:
+  push:
+    branches: [main]
+  # Re-publish an existing tag (e.g. the npm publish step failed after the
+  # GitHub release was already cut).
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to re-publish (e.g. bun-boss-v0.2.0)'
+        required: true
+        type: string
+
+# Never run two releases at once, and never cancel one midway — a half-published
+# release is worse than a slow one.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write # npm provenance (OIDC)
+
+jobs:
+  release-please:
+    if: ${{ github.event_name == 'push' }}
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+    steps:
+      # Opens/updates the release PR; on merge it cuts the tag + GitHub release
+      # and sets release_created, which gates the publish job below.
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  # Publishes the tag release-please just cut, or the tag given to
+  # workflow_dispatch. Always builds from the tag, never from a moving branch.
+  publish:
+    needs: release-please
+    if: ${{ !cancelled() && (github.event_name == 'workflow_dispatch' || needs.release-please.outputs.release_created == 'true') }}
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || needs.release-please.outputs.tag_name }}
+
+      # Unlike ci.yml this job runs on the runner, not in an oven/bun container,
+      # because publishing needs node + npm alongside bun.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      # npm (not bun) does the publishing: this repo is configured as a trusted
+      # publisher on npmjs.com, so npm swaps the workflow's OIDC token (hence
+      # `id-token: write` above) for a short-lived registry credential — no
+      # NPM_TOKEN secret, and provenance is attached automatically.
+      #
+      # Trusted publishing needs npm >= 11.5.1, which is newer than what some
+      # Node 24 releases bundle, so upgrade it explicitly rather than hoping.
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          registry-url: 'https://registry.npmjs.org'
+      - run: npm install -g npm@latest
+
+      - run: bun install
+
+      # The full check (tsc, eslint, suite) against the service Postgres on
+      # localhost:5432, same as test/config.json expects.
+      - run: bun run test
+
+      # --ignore-scripts skips prepublishOnly, which would re-run the suite the
+      # previous step just ran; the hook stays to guard manual publishes.
+      - name: Publish to npm
+        run: npm publish --access public --ignore-scripts
