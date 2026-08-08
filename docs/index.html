@@ -17,6 +17,8 @@
     loadSidebar: true,
     homepage: 'introduction.md',
     relativePath: true,
+    // Load the single root _sidebar.md on every nested route (otherwise docsify looks for one per folder).
+    alias: { '/.*/_sidebar.md': '/_sidebar.md' },
     subMaxLevel: 3,
     auto2top: true,
     search: { placeholder: 'Search', noData: 'No results', depth: 3 },
