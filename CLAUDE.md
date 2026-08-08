@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This repo is **bun-boss** (`origin` = `khromov/bun-boss`), an experimental Bun-first fork of pg-boss. `upstream` is `timgit/pg-boss`, which is where the core still comes from — keep diffs against it small and mergeable unless a change is specifically part of the fork's direction.
 
-The library itself is a job queue built on PostgreSQL: it relies on `SKIP LOCKED` for exactly-once delivery and stores all state (jobs, queues, schedules, archive) in a dedicated Postgres schema. The package in `src/` is the whole product.
+The library itself is a job queue built on PostgreSQL: it relies on `SKIP LOCKED` for exactly-once delivery and stores all state (jobs, queues, schedules, job dependencies) in a dedicated Postgres schema. The package in `src/` is the whole product.
 
 ## Naming: renamed above the database line, unchanged below it
 
@@ -58,7 +58,7 @@ The suite is parameterized by `DB_TYPE` / `NO_SKIP_LOCKED_NO_CTE` env vars (reso
 `src/index.ts` defines the public `BunBoss` class (an `EventEmitter`). It does almost no work itself — the constructor builds a set of collaborator objects, all sharing one `IDatabase` and one resolved config, and public methods delegate (mostly to `Manager`). Each collaborator is itself an `EventEmitter`; `#promoteEvents` re-emits their events on the `BunBoss` instance, which is how `error`/`warning`/`wip`/`flow` surface to the user.
 
 - **`manager.ts`** — the core (largest file). All job operations: `send`/`insert`/`fetch`/`work`/`complete`/`fail`/`cancel`/`retry`, queue CRUD, pub/sub, stats. Owns the `Worker` instances created by `work()`.
-- **`boss.ts`** — the background **supervisor**. A timer (`superviseIntervalSeconds`) drives `supervise()`, which per queue-table monitors backlog, fails timed-out/heartbeat-stale jobs, maintains partitions, and prunes archived jobs.
+- **`boss.ts`** — the background **supervisor**. A timer (`superviseIntervalSeconds`) drives `supervise()`, which per queue-table monitors backlog, fails timed-out/heartbeat-stale jobs, deletes jobs past their retention window, and cleans up orphaned job dependencies.
 - **`contractor.ts`** — schema **install and verify** on `start()`. Reads the target version from `package.json` → `bunboss.schema` and installs it fresh at that version; an older installed schema throws rather than migrating in place (with `migrate: false` it verifies instead of installing). Also exposes the static `getConstructionPlans` used by `index.ts`.
 - **`timekeeper.ts`** — **cron scheduling** (via `croner`); enqueues due scheduled jobs and watches for clock skew.
 - **`navigator.ts`** — background **flow / job-dependency resolver**. Off-hot-path: audits completed "blocking" parents and unblocks children (job completion itself stays join-free for speed).

@@ -2,7 +2,7 @@
 
 ### `work()`
 
-Adds a new polling worker for a queue and executes the provided callback function when jobs are found. Each call to work() will add a new worker and resolve a unqiue worker id.
+Adds a new polling worker for a queue and executes the provided callback function when jobs are found. Each call to work() will add a new worker and resolve a unique worker id.
 
 Workers can be stopped via `offWork()` all at once by queue name or individually by using the worker id. Worker activity may be monitored by listening to the `wip` event or by polling [`getWipData()`](#getwipdataoptions).
 
@@ -59,6 +59,10 @@ The default options for `work()` is 1 job every 2 seconds.
 
   Same as in [`fetch()`](./jobs.md#fetchname-options)
 
+* **ignoreStartAfter**, bool, *(default=false)*
+
+  Same as in [`fetch()`](./jobs.md#fetchname-options)
+
 * **minPriority**, int
 
   Same as in [`fetch()`](./jobs.md#fetchname-options)
@@ -67,15 +71,15 @@ The default options for `work()` is 1 job every 2 seconds.
 
   Same as in [`fetch()`](./jobs.md#fetchname-options)
 
-* **pollingIntervalSeconds**, int, *(default=2)*
+* **pollingIntervalSeconds**, number, *(default=2)*
 
   Base interval to check for new jobs, in seconds. Must be >=0.5 (500ms). Used when no faster or slower mode applies: queues without `notify`, or notify-enabled queues when the LISTEN/NOTIFY listener is unavailable.
 
   > **Note**: When [LISTEN/NOTIFY](#low-latency-dispatch-with-listennotify) is active for a queue, workers are woken the instant a job is created and polling automatically falls back to the slower `notifyPollingIntervalSeconds` backstop — you don't need to raise `pollingIntervalSeconds` yourself.
 
-* **notifyPollingIntervalSeconds**, int, *(default=30)*
+* **notifyPollingIntervalSeconds**, number, *(default=max(30, pollingIntervalSeconds))*
 
-  Polling interval used only while [LISTEN/NOTIFY](#low-latency-dispatch-with-listennotify) is active for the queue (the queue has `notify: true` and the instance listener is established). Since NOTIFY wakes workers immediately, polling only needs to run as a slow safety net, so this can be much larger than `pollingIntervalSeconds`. When notify is off or unavailable, `pollingIntervalSeconds` is used instead. Must be >=0.5 (500ms).
+  Polling interval used only while [LISTEN/NOTIFY](#low-latency-dispatch-with-listennotify) is active for the queue (the queue has `notify: true` and the instance listener is established). Since NOTIFY wakes workers immediately, polling only needs to run as a slow safety net, so this can be much larger than `pollingIntervalSeconds`. When notify is off or unavailable, `pollingIntervalSeconds` is used instead. Must be >=0.5 (500ms) and never below `pollingIntervalSeconds` — the default is floored at `pollingIntervalSeconds` so raising that above 30 raises this too.
 
 * **burstWhenReadyExceeds**, int
 
@@ -194,8 +198,11 @@ The jobs argument is an array of jobs with the following properties.
 |`id`| string, uuid |
 |`name`| string |
 |`data`| object |
+|`expireInSeconds`| number | How many seconds the job may stay active before being retried or failed |
 |`heartbeatSeconds`| number \| null | Heartbeat interval configured for this job, or null if not configured |
 |`signal`| AbortSignal |
+|`groupId`| string \| null | Group identifier from the `group` option in `send()`, or null if the job has no group |
+|`groupTier`| string \| null | Group tier from the `group` option in `send()`, or null if no tier was set |
 
 
 An example of a worker that checks for a job every 10 seconds.
@@ -222,6 +229,10 @@ This is an **opt-in optimization on top of polling, not a replacement for it.** 
 2. Mark each queue that should emit notifications with the `notify: true` option on `createQueue()` (or `updateQueue()`).
 
 ```js
+import { PGlite } from '@electric-sql/pglite'
+import { BunBoss, fromPglite } from 'bun-boss'
+
+const pglite = new PGlite()
 const boss = new BunBoss({ backend: 'pglite', db: fromPglite(pglite), useListenNotify: true })
 await boss.start()
 
@@ -315,7 +326,7 @@ boss.notifyWorker(workerId)
 
 Removes a worker by name or id and stops polling.
 
-** Arguments **
+**Arguments**
 - name: string
 - options: object
 

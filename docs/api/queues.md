@@ -1,6 +1,6 @@
 # Queues
 
-### `createQueue(name, Queue)`
+### `createQueue(name, options?)`
 
 Creates a queue.
 
@@ -46,7 +46,7 @@ Allowed policy values:
 
 * **partition**, boolean, default false
 
-  If set to true, a dedicated table will be created in the partition scheme. This would be more useful for large queues in order to keep it from being a "noisy neighbor". 
+  If set to true, a dedicated table will be created in the partition scheme. This would be more useful for large queues in order to keep it from being a "noisy neighbor". Postgres and PGlite only — backends without table partitioning (SQLite) accept the option but store it as `false` (see [Database backends](../database-backends.md)).
 
 * **deadLetter**, string
 
@@ -54,7 +54,7 @@ Allowed policy values:
 
 * **warningQueueSize**, int
 
-  How many items can exist in the created or retry state before emitting a warning event.
+  How many items can exist in the created or retry state before emitting a warning event. When left unset it is stored as `0`, which falls back to the instance-level `warningQueueSize`, or 10,000 if that is unset as well.
 
 * **notify**, boolean, default false
 
@@ -76,7 +76,7 @@ Allowed policy values:
 
 * **retryDelayMax**, int
 
-  Default: no limit. Maximum delay between retries of failed jobs, in seconds. Only used when retryBackoff is true.
+  Default: no limit. Maximum delay between retries of failed jobs, in seconds. Can only be set when `retryBackoff` is `true` — setting it otherwise throws `retryDelayMax can only be set if retryBackoff is true`.
 
 **Heartbeat options**
 
@@ -117,13 +117,13 @@ Actual detection time is `heartbeatSeconds` + up to `monitorIntervalSeconds` (de
 | Quick tasks (email, notifications) | 900 (default) | 30-60 | ~1-2 min |
 | Medium tasks (report generation) | 900-1800 | 30-60 | ~1-2 min |
 | Long tasks (video processing, ML) | 7200 (2 hr) | 60-300 | ~2-6 min |
-| Very long tasks (data migration) | 86400 (24 hr) | 300-600 | ~6-11 min |
+| Very long tasks (data migration) | 86399 (~24 hr, the maximum) | 300-600 | ~6-11 min |
 
 **Expiration options**
 
 * **expireInSeconds**, number
 
-  Default: 15 minutes.  How many seconds a job may be in active state before being retried or failed. Must be >=1
+  Default: 15 minutes.  How many seconds a job may be in active state before being retried or failed. Must be >=1 and less than 24 hours (86400)
 
 **Retention options**
 
@@ -135,11 +135,11 @@ Actual detection time is `heartbeatSeconds` + up to `monitorIntervalSeconds` (de
 
   Default: 7 days. How long a job should be retained in the database after it's completed. Set to 0 to never delete completed jobs.
 
-* All retry, expiration, and retention options set on the queue will be inheritied for each job, unless they are overridden.
+* All retry, expiration, and retention options set on the queue will be inherited for each job, unless they are overridden.
 
 ### `updateQueue(name, options)`
 
-Updates options on an existing queue, with the exception of the `policy` and `partition` settings, which cannot be changed.
+Updates options on an existing queue, with the exception of the `policy` and `partition` settings, which cannot be changed — passing either throws `queue policy cannot be changed after creation` / `queue partitioning cannot be changed after creation`. At least one property must be supplied; an empty options object throws `no properties found to update`.
 
 ```js
 await boss.updateQueue('email-send', { retryLimit: 5, retryDelay: 120 })
@@ -156,6 +156,8 @@ await boss.deleteQueue('email-send')
 ### `getQueues(names?)`
 
 Returns all queues, or only the named queues when an array of names is provided.
+
+The count fields on the result (`queuedCount`, `readyCount`, `activeCount`, ...) are the cached values maintained by the monitor, so they can be stale — they stay at zero until the monitor first runs. Use [`getQueueStats(name, { force: true })`](#getqueuestatsname-options) for a fresh count.
 
 ```js
 const queues = await boss.getQueues()
@@ -177,7 +179,7 @@ if (!queue) {
 }
 ```
 
-### `getQueueStats(name, options)`
+### `getQueueStats(name, options?)`
 
 Returns the current queue-depth counts as a single-element array (newest first). The one snapshot has the queue `name`, a `capturedOn` timestamp, and these counts:
 
@@ -188,7 +190,7 @@ Returns the current queue-depth counts as a single-element array (newest first).
 * `failedCount` — failed jobs still retained in the table (bounded by the queue's retention policy, so this is a rolling count of recent failures rather than an all-time total)
 * `totalCount` — all jobs currently stored for the queue
 
-By default the counts are served from the cache on the queue table (refreshed every `monitorIntervalSeconds`), so the value can be up to one monitor interval stale. Pass `{ force: true }` to re-count directly from the job table and update the values on the queue table, but even this option is rate-limited to once a minute, so repeated calls using `force` don't always re-aggregate.
+By default the counts are served from the cache on the queue table (refreshed every `monitorIntervalSeconds`), so with the monitor running the value is at most one monitor interval stale. If monitoring is disabled or falling behind, the cached value is served until it is over an hour old, at which point it is recomputed. Pass `{ force: true }` to re-count directly from the job table and update the values on the queue table, but even this option is rate-limited to once a minute, so repeated calls using `force` don't always re-aggregate.
 
 ```js
 const [stats] = await boss.getQueueStats('email-send')

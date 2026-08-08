@@ -1,6 +1,6 @@
 # Database install
 
-bun-boss will automatically create a dedicated schema (`pgboss` is the default name) in the target database. This will require the user in database connection to have the [CREATE](http://www.postgresql.org/docs/current/static/sql-grant.html) privilege.
+bun-boss will automatically create a dedicated schema (`pgboss` is the default name) in the target database. This will require the user in database connection to have the [CREATE](https://www.postgresql.org/docs/current/sql-grant.html) privilege.
 
 ```sql
 GRANT CREATE ON DATABASE db1 TO leastprivuser;
@@ -17,6 +17,18 @@ fs.writeFileSync('create-bunboss.sql', getConstructionPlans('pgboss'))
 
 Once the schema exists, construct the instance with `migrate: false` so `start()` verifies the schema instead of trying to create it.
 
+The runtime user still needs access to the objects the DBA created, otherwise `start()` fails with `permission denied for schema pgboss`. Grant it usage on the schema and DML on its tables:
+
+```sql
+GRANT USAGE ON SCHEMA pgboss TO leastprivuser;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA pgboss TO leastprivuser;
+ALTER DEFAULT PRIVILEGES IN SCHEMA pgboss GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO leastprivuser;
+```
+
+`ON ALL TABLES` only covers the tables that exist when you run it, so the `ALTER DEFAULT PRIVILEGES` line is what keeps a queue created later reachable.
+
+No CREATE privilege is required at runtime with `migrate: false`, as long as queues are created by the privileged operator. Creating a queue from the application still performs DDL: `createQueue(name, { partition: true })` builds a dedicated table and fails with `permission denied for schema pgboss`, and deleting a partitioned queue requires ownership of that table.
+
 > [!NOTE]
 > When managing schema manually, you will need to monitor future releases for schema changes.
 
@@ -28,10 +40,10 @@ Once the schema exists, construct the instance with `migrate: false` so `start()
 If you need to uninstall bun-boss from a database, just run the following command.
 
 ```sql
-DROP SCHEMA $1 CASCADE
+DROP SCHEMA pgboss CASCADE
 ```
 
-Where `$1` is the name of your schema if you've customized it.  Otherwise, the default schema is `pgboss`.
+Replace `pgboss` with the name of your schema if you've customized it. The schema name cannot be supplied as a bind parameter — it must be written into the statement.
 
 NOTE: If an existing schema was used during installation, created objects will need to be removed manually using the following commands.
 

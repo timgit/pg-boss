@@ -16,6 +16,8 @@ The following options can be set as properties in an object for additional confi
 
 These carry [Bun's SQL client](https://bun.com/docs/api/sql) option names and are forwarded to it verbatim, so its defaults and semantics apply. Every timeout is in **seconds**.
 
+Only the options listed below are forwarded. Bun's aliases (`host`, `user`, `pass`, `ssl`) and `prepare`/`bigint` are not accepted and are silently ignored — `prepare` and `bigint` are excluded deliberately, because the adapter's parameter encoding depends on Bun's defaults for both. TypeScript rejects all of them at compile time; JavaScript does not. `application_name`, `schema`, and `db` are bun-boss's own options rather than Bun's, and `application_name` is reshaped into Bun's `connection` object.
+
 * **hostname** - string, defaults to "localhost"
 
 * **port** - int or string, defaults to 5432
@@ -26,11 +28,11 @@ These carry [Bun's SQL client](https://bun.com/docs/api/sql) option names and ar
 
 * **username** - string
 
-* **password** - string
+* **password** - string, or a function returning a string or `Promise<string>` (resolved per connection)
 
 * **url** - string
 
-  PostgreSQL connection string, parsed and used instead of `hostname`, `port`, `tls`, `database`, `username`, `password`.
+  PostgreSQL connection string, used as an alternative to `hostname`, `port`, `tls`, `database`, `username`, `password`. Don't combine the two: any of those options set alongside `url` overrides the corresponding part of the URL, so `{ url: 'postgres://host/mydb', database: 'other' }` silently connects to `other`.
 
 * **path** - string
 
@@ -60,7 +62,7 @@ These carry [Bun's SQL client](https://bun.com/docs/api/sql) option names and ar
 
     Passing an object named db allows you "bring your own database connection". This option may be beneficial if you'd like to use an existing database service with its own connection pool. Setting this option will bypass the above configuration.
 
-    The expected interface is a function named `executeSql` that allows the following code to run without errors.
+    The expected interface is an object with an `executeSql` method that allows the following code to run without errors.
 
 
     ```js
@@ -71,6 +73,8 @@ These carry [Bun's SQL client](https://bun.com/docs/api/sql) option names and ar
 
     assert(rows[0].input === 'arg1')
     ```
+
+    `executeSql` is the only required member. Two optional capabilities extend it: `withTransaction`, without which bun-boss's multi-statement operations (upsert, the split complete/fail/expire, flow resolution) run without a transaction, and `listen`, without which `useListenNotify` (below) degrades to polling. See [Adapters](./adapters.md) for the full interface and the adapters bun-boss ships with.
 
 * **schema** - string, defaults to "pgboss"
 
@@ -97,7 +101,7 @@ These carry [Bun's SQL client](https://bun.com/docs/api/sql) option names and ar
 
 * **schedule**, bool, default true
 
-  If this is set to false, this instance will not monitor or created scheduled jobs during. This is an advanced use case you may want to do for testing or if the clock of the server is skewed and you would like to disable the skew warnings.
+  If this is set to false, this instance will not monitor or create scheduled jobs. This is an advanced use case you may want to do for testing or if the clock of the server is skewed and you would like to disable the skew warnings.
 
 * **migrate**, bool, default true
 
@@ -141,13 +145,25 @@ The following configuration options should not normally need to be changed, but 
 
   How often the background flow resolver runs to unblock dependent jobs (created via [`flow()`](./jobs.md#flowjobs-options)) whose parents have completed. Completing a job no longer unblocks its dependents inline; this resolver handles it shortly after, off the completion hot path. Only runs when `supervise` is enabled.
 
+* **cronMonitorIntervalSeconds**, int, default 30 seconds
+
+  How often schedules are checked so that due scheduled jobs are sent. Must be between 1 and 45 seconds. Only runs when `schedule` is enabled.
+
+* **cronWorkerIntervalSeconds**, int, default 5 seconds
+
+  How often the internal worker that runs scheduled jobs polls. Must be between 1 and 45 seconds. Only runs when `schedule` is enabled.
+
+* **clockMonitorIntervalSeconds**, int, default 600 seconds
+
+  How often this instance compares its clock to the database server's clock, so that the skew can be used as an offset during cron evaluation. Must be between 1 second and 10 minutes. Only runs when `schedule` is enabled.
+
 * **warningSlowQuerySeconds**, int, default 30
 
   The threshold, in seconds, above which a monitoring or maintenance query emits a `slow_query` [`warning`](./events.md#warning) event. Applies per instance and must be at least 1.
 
 * **warningQueueSize**, int, default 10000
 
-  The default number of jobs in the created or retry state a queue may hold before emitting a `queue_backlog` [`warning`](./events.md#warning) event. Applies per instance and must be at least 1. Individual queues can override this with their own [`warningQueueSize`](./queues.md#createqueuename-queue) on `createQueue`.
+  The default number of jobs in the created or retry state a queue may hold before emitting a `queue_backlog` [`warning`](./events.md#warning) event. Applies per instance and must be at least 1. Individual queues can override this with their own [`warningQueueSize`](./queues.md#createqueuename-options) on `createQueue`.
 
 * **backend**, string, default `'postgres'`
 

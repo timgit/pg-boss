@@ -8,10 +8,11 @@ Prepares the target database and begins job monitoring.
 
 ```js
 await boss.start()
+await boss.createQueue('hey-there')
 await boss.send('hey-there', { msg:'this came for you' })
 ```
 
-If the required database objects do not exist in the specified database, **`start()` will automatically create them** at the current schema version. There is no in-place upgrade from an older installed schema version: if bun-boss finds a schema older than the version this release ships, `start()` throws rather than migrating it in place.
+If the required database objects do not exist in the specified database, **`start()` will automatically create them** at the current schema version (with `migrate: false`, `start()` verifies the existing schema instead and throws if it is missing or the wrong version). There is no in-place upgrade from an older installed schema version: if bun-boss finds a schema older than the version this release ships, `start()` throws rather than migrating it in place.
 
 On Postgres and PGlite, schema installation is nested within an advisory lock to prevent race conditions during `start()`. Internally, this lock is created using `pg_advisory_xact_lock()` which auto-unlocks at the end of the transaction and doesn't require a persistent session or the need to issue an unlock. The SQLite backend has no advisory locks (do not run multiple bun-boss processes against one database file).
 
@@ -36,7 +37,7 @@ By default, calling `stop()` without any arguments will gracefully wait for all 
 
   * `timeout`, int
 
-    Default: 30000. Maximum time (in milliseconds) to wait for workers to finish job processing before shutting down the BunBoss instance.
+    Default: 30000. Maximum time (in milliseconds) to wait for workers to finish job processing before shutting down the BunBoss instance. Values below 1000 are raised to 1000.
 
     > [!WARNING]
     > This option is ignored when `graceful` is set to `false`.
@@ -72,7 +73,7 @@ const version = await boss.schemaVersion()
 
 ### `supervise(name)`
 
-Forces an immediate maintenance pass instead of waiting for the next background cycle: it monitors backlog, fails timed-out and heartbeat-stale jobs, maintains partitions, and prunes archived jobs. Pass a queue name to supervise a single queue, or omit it for all. Useful for deterministic tests, or when you have disabled `supervise` and drive maintenance yourself.
+Forces an immediate maintenance pass instead of waiting for the next background cycle: it monitors backlog, fails timed-out and heartbeat-stale jobs, deletes jobs past their retention window, and cleans up orphaned job dependencies. Pass a queue name to supervise a single queue, or omit it for all. Useful for deterministic tests, or when you have disabled `supervise` and drive maintenance yourself.
 
 ```js
 await boss.supervise()
@@ -84,7 +85,7 @@ Forces an immediate [flow](./jobs.md#flowjobs-options)-resolution pass, unblocki
 
 ### `isMaintaining()`
 
-Returns `true` while a maintenance pass is running. Use it to avoid launching a manual `supervise()` on top of the background one, or to assert quiescence in tests.
+Returns `true` while the background maintenance pass is running. Use it to avoid launching a manual `supervise()` on top of the background one. A manual `supervise()` does not set this flag.
 
 ```js
 const busy = boss.isMaintaining()
@@ -93,7 +94,7 @@ const busy = boss.isMaintaining()
 
 ### `isResolvingFlow()`
 
-Returns `true` while a flow-resolution pass is running. Pairs with `resolveFlow()` the way `isMaintaining()` pairs with `supervise()`.
+Returns `true` while a flow-resolution pass is running — including one started by a manual `resolveFlow()`.
 
 ### `isCheckingSkew()`
 
@@ -105,7 +106,7 @@ Returns the current worker work-in-progress snapshot — the same payload carrie
 
 ### `getDb()`
 
-Returns the `IDatabase` instance bun-boss is using — the built-in Bun `SQL` driver, or the adapter you passed as the `db` option. Use it to run your own SQL over the same connection via `executeSql(text, values)` instead of opening a second pool.
+Returns the `Db` instance (the `IDatabase` interface, exported as `Db`) bun-boss is using — the built-in Bun `SQL` driver, or the adapter you passed as the `db` option. Use it to run your own SQL over the same connection via `executeSql(text, values)` instead of opening a second pool.
 
 ```js
 const db = boss.getDb()

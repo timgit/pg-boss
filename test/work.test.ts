@@ -314,4 +314,37 @@ describe('work', function () {
 
     expect(active()).toBe(0)
   })
+
+  it('forwards ignoreStartAfter to fetch so future-dated jobs are picked up', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    await ctx.boss.send(ctx.schema, null, { startAfter: new Date(Date.now() + 60000) })
+
+    let received = 0
+
+    await ctx.boss.work(ctx.schema, { ignoreStartAfter: true, pollingIntervalSeconds: 0.5 }, async () => { received++ })
+
+    await delay(2000)
+
+    expect(received).toBe(1)
+  })
+
+  it('emits a real Error instance carrying queue and worker', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__throw_worker: true })
+
+    const errors: any[] = []
+    ctx.boss.on('error', err => errors.push(err))
+
+    await ctx.boss.send(ctx.schema)
+    const id = await ctx.boss.work(ctx.schema, { pollingIntervalSeconds: 0.5 }, async () => {})
+
+    await delay(2000)
+
+    const error = errors[0]
+    assertTruthy(error)
+    expect(error instanceof Error).toBe(true)
+    expect(error.name).toBe('Error')
+    expect(error.queue).toBe(ctx.schema)
+    expect(error.worker).toBe(id)
+  })
 })

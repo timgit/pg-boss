@@ -72,6 +72,11 @@ const events = {
   wip: 'wip'
 }
 
+// The error event contract is an Error instance, so listeners can rely on instanceof and .name.
+function asError (value: any): Error {
+  return value instanceof Error ? value : Object.assign(new Error(value?.message ?? String(value)), value)
+}
+
 // Standard translation of low-level Postgres errors raised by job-creation SQL
 // into actionable bun-boss errors. Centralized so any write path can reuse it.
 // Always throws; rethrows untranslated errors unchanged.
@@ -449,7 +454,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       this.#lastRefreshEmpty = queues.length === 0
       this.queues = queues.reduce<Record<string, types.QueueResult>>((acc, i) => { acc[i.name] = i; return acc }, {})
     } catch (error: any) {
-      emit && this.emit(events.error, { ...error, message: error.message, stack: error.stack })
+      emit && this.emit(events.error, asError(error))
     }
   }
 
@@ -539,6 +544,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       localConcurrency = 1,
       groupConcurrency,
       orderByCreatedOn = true,
+      ignoreStartAfter = false,
       heartbeatRefreshSeconds,
       minPriority,
       maxPriority,
@@ -576,7 +582,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     const createWorker = (workerId: string, workId: string) => {
       const fetch = () => {
-        return this.fetch<ReqData>(name, { batchSize, includeMetadata, priority, orderByCreatedOn, groupConcurrency, minPriority, maxPriority })
+        return this.fetch<ReqData>(name, { batchSize, includeMetadata, priority, orderByCreatedOn, ignoreStartAfter, groupConcurrency, minPriority, maxPriority })
       }
 
       const onFetch = async (jobs: types.Job<ReqData>[]) => {
@@ -595,7 +601,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       }
 
       const onError = (error: any) => {
-        this.emit(events.error, { ...error, message: error.message, stack: error.stack, queue: name, worker: workerId })
+        this.emit(events.error, Object.assign(asError(error), { queue: name, worker: workerId }))
       }
 
       return new Worker<ReqData>({ id: workerId, workId, name, options, resolveInterval, fetch, onFetch, onError })

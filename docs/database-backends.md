@@ -63,11 +63,13 @@ in the source. These flags are not user-configurable — `resolveBackend` derive
 | Split-statement writes | Run `complete`, `fail`, and supervisor expiry as split statements inside a transaction rather than a single multi-mutation CTE. | A few extra round-trips per command; negligible for normal workloads. | `noMultiMutationCte` |
 | Single shared table | Create the job table without `PARTITION BY LIST`. | Per-queue partitioning (`partition: true`) is unavailable; all jobs share one table. | `noTablePartitioning` |
 | Immediate constraints | Omit `DEFERRABLE INITIALLY DEFERRED` on foreign keys. | Constraints check immediately rather than at commit (no effect on normal operation). | `noDeferrableConstraints` |
-| Lock-free schema setup | Disable `pg_advisory_xact_lock` (used to coordinate schema creation). | Concurrent instances may occasionally do redundant maintenance — a performance, not correctness, concern. | `noAdvisoryLocks` |
+| Lock-free coordination | Disable `pg_advisory_xact_lock` (used to coordinate schema creation, queue DDL, and supervisor maintenance across instances). | Concurrent instances may occasionally do redundant maintenance — a performance, not correctness, concern. | `noAdvisoryLocks` |
 | Plain indexes | Omit the `INCLUDE` clause on covering indexes. | Slightly less efficient index-only scans during fetch; minimal for most workloads. | `noCoveringIndexes` |
+| No LISTEN/NOTIFY | Skip the listener entirely; workers rely on polling. | Wake-up latency only — a NOTIFY is never a correctness requirement. | `noListenNotify` |
 
-Lock-free fetch and split-statement writes are **runtime** behaviors; the other four are **schema**
-choices applied at install time.
+Lock-free fetch, split-statement writes, lock-free coordination, and polling-only wake-ups are
+**runtime** behaviors; `noTablePartitioning`, `noDeferrableConstraints`, and `noCoveringIndexes`
+are **schema** choices applied at install time.
 
 ### Why fetch and mutation strategy are tracked separately
 
@@ -106,8 +108,9 @@ choices applied at install time.
   job and unblocking its flow dependents). Where that isn't available, those operations run as
   separate statements inside one transaction instead, so a job can't be lost between them.
 
-Only `SKIP LOCKED` is replaced in the fetch path — other operations still use ordinary
-`SELECT ... FOR UPDATE` (without `SKIP LOCKED`).
+`noSkipLocked` changes two statements: the fetch claim and the `noMultiMutationCte` flow-audit lock
+(`selectBlockingParents`). Other row locks are unaffected — the flow resolver and `redrive` keep
+`FOR UPDATE ... SKIP LOCKED`, and the dependency-unblock lock has always been a plain `FOR UPDATE`.
 
 ### Testing the runtime toggles
 
@@ -163,7 +166,7 @@ Construct a PGlite instance, wrap it with `fromPglite`, and select the `pglite` 
 import { PGlite } from '@electric-sql/pglite'
 import { BunBoss, fromPglite } from 'bun-boss'
 
-const pglite = new PGlite('idb://my-app')   // or new PGlite() for in-memory
+const pglite = new PGlite('./my-app-data')   // or new PGlite() for in-memory; 'idb://name' in the browser
 
 const boss = new BunBoss({
   backend: 'pglite',
@@ -190,8 +193,9 @@ await boss.stop()
 await pglite.close()
 ```
 
-This mirrors the [database adapters](api/adapters.md): bun-boss only calls `executeSql` on the
-object you provide.
+This mirrors the [database adapters](api/adapters.md): bun-boss only issues queries through the
+object you provide (`executeSql`, plus `withTransaction`/`listen` when it implements them); it
+never opens or closes it.
 
 #### Single-connection considerations
 
@@ -275,11 +279,15 @@ The producer side is unaffected: the `pg_notify` bun-boss inlines into inserts i
 PostgreSQL itself, so a queue can stay opted into `notify` and any listener on another connection
 (e.g. a `fromPglite`-backed instance, or your own session holding `LISTEN`) can still act on it.
 
-#### Keep Bun's default `prepare: true`
+#### Bring-your-own clients: keep Bun's default `prepare: true`
 
 Bun derives each parameter's wire encoding from the type PostgreSQL reports for that placeholder,
 which only happens when statements are prepared. Under `prepare: false`, an object bound to an
 uncast jsonb placeholder is sent in a form PostgreSQL rejects, so that option is not supported.
+
+The built-in driver forwards only connection settings to Bun's `SQL` (`src/db.ts` allowlist), so
+`prepare` passed to the `BunBoss` constructor is silently ignored and the default always applies.
+The constraint only bites a client you construct yourself and pass via `fromBunSql`.
 
 Bun caches prepared statements per connection, keyed by query text. bun-boss generates its SQL per
 queue table, so that cache grows with the number of partitioned queues — worth watching in
@@ -320,6 +328,11 @@ await boss.createQueue('email')
 await boss.send('email', { to: 'user@example.com' })
 ```
 
+`backend: 'sqlite'` **requires** a `db` adapter — there is no built-in SQLite driver — and
+**rejects** `url`: the connection lives on the `SQL` instance you hand to `fromBunSqlite`, so
+`new BunBoss({ backend: 'sqlite', db: fromBunSqlite(sql), url: 'sqlite://app.db' })` throws. The
+`db` assert fires first, so a literal that omits both is rejected for the missing adapter.
+
 Because bun-boss's tables live in the **same database file** as your application's (namespaced by a
 quoted `"schema.table"` prefix), a job enqueued inside a transaction opened through the adapter's
 `withTransaction` (passed as the operation's `db`) commits atomically with your application
@@ -336,15 +349,16 @@ within one process instead.
 
 #### What is different from the Postgres backends
 
-- **Fresh installs only**: the sqlite schema installs at the current version; there is no
-  migration history. Upgrading bun-boss against an older sqlite install fails with an explicit
-  error until sqlite migrations ship.
+One thing that is *not* different: like every backend, sqlite installs fresh at the current schema
+version, and upgrading bun-boss against an older install fails with an explicit error rather than
+migrating in place.
+
 - **No LISTEN/NOTIFY**: workers rely on polling (the correctness floor on every backend).
 - **`findJobs({ data })`** matches shallowly: every top-level key/value in the filter must match;
   nested objects compare as JSON text rather than by deep containment.
 - Relative `startAfter` strings (`'5 minutes'`) are parsed by bun-boss rather than the database;
-  the supported grammar is `N unit` sequences (`seconds/minutes/hours/days/weeks`) and
-  `HH:MM[:SS]`.
+  the supported grammar is `N unit` sequences (`seconds/minutes/hours/days/weeks`, singular and
+  abbreviated forms accepted, optionally comma-separated) and `HH:MM[:SS]`.
 - **Flows** verify all-or-nothing creation in code inside a real transaction rather than via
   Postgres's statement-level error signal. A bring-your-own `IDatabase` that omits
   `withTransaction` therefore loses flow atomicity, and when a flow fails inside a caller-owned
@@ -353,29 +367,32 @@ within one process instead.
 
 ## Scaling beyond a single table
 
-For very high-throughput workloads (thousands of jobs per second), `noSkipLocked` alone may not be
-sufficient. At scale, contention on the job table becomes a bottleneck regardless of the fetch
-strategy.
+For very high-throughput workloads (thousands of jobs per second), a single job table becomes the
+bottleneck regardless of the fetch strategy.
 
 ### Application-level sharding
 
-A more scalable approach is to shard work at the application level using `singletonKey`:
+A more scalable approach is to shard work at the application level across several queues:
 
 ```typescript
-// Each worker claims a partition (e.g., via consistent hashing or assignment)
-const workerId = process.env.WORKER_ID // 0, 1, 2, ...
-const totalWorkers = parseInt(process.env.TOTAL_WORKERS)
+// Each worker claims a shard; shards are separate queues.
+const workerId = Number(process.env.WORKER_ID ?? 0)      // 0, 1, 2, ...
+const totalWorkers = Number(process.env.TOTAL_WORKERS ?? 1)
 
-// Send jobs with partition assignment
-await boss.send('my-queue', jobData, {
-  singletonKey: `partition-${jobId % totalWorkers}`
-})
+for (let shard = 0; shard < totalWorkers; shard++) {
+  await boss.createQueue(`my-queue-${shard}`)
+}
 
-// Each worker only processes its partition
-await boss.work('my-queue', {
-  singletonKey: `partition-${workerId}`
-}, handler)
+// Producers route each job to a shard.
+await boss.send(`my-queue-${hash(jobKey) % totalWorkers}`, jobData)
+
+// Each worker only polls its own shard's queue.
+await boss.work(`my-queue-${workerId}`, handler)
 ```
+
+`work()` has no `singletonKey` option — `singletonKey` constrains enqueue-side concurrency for a
+single queue and cannot partition consumers, so passing it to `work()` is silently ignored and
+every worker drains every shard.
 
 ### When to use alternative systems
 
@@ -424,7 +441,10 @@ acceptable — workers simply poll again.
 
 ### Compatibility notes
 
-- All bun-boss features (priorities, groups, singletons, retries, etc.) work on every backend.
+- All job-level bun-boss features (priorities, groups, singletons, retries, etc.) work on every
+  backend. Two deployment-level features do not: per-queue `partition: true` requires
+  `backend: 'postgres'` or `'pglite'` (it is accepted but has no effect under `noTablePartitioning`),
+  and LISTEN/NOTIFY is unavailable on SQLite.
 - The atomic-`UPDATE` fetch (`noSkipLocked`) offers no benefit on stock PostgreSQL — under contention
   workers receive empty results instead of efficiently skipping to unlocked rows — which is why it is
   only enabled for backends that need it, never on `backend: 'postgres'`.

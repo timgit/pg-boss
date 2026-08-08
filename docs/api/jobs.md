@@ -28,6 +28,10 @@ Creates a new job and returns the job id.
 
   optional id.  If not set, a uuid will automatically created
 
+* **deadLetter**, string
+
+  optional dead letter queue for this job, overriding the queue-level `deadLetter`. See [queues](./queues.md).
+
 **Retry options**
 
 * **retryLimit**, int
@@ -69,7 +73,7 @@ Creates a new job and returns the job id.
   Default: 7 days. How long a job should be retained in the database after it's completed. Set to 0 to never delete completed jobs.
 
 
-All retry, expiration, and retention options can also be set on the queue and will be inheritied for each job, unless they are overridden.
+All retry, expiration, and retention options can also be set on the queue and will be inherited for each job, unless they are overridden.
   
 **Connection options**
 
@@ -235,7 +239,7 @@ Returns a `Promise<UpdateResponse>`: `{ jobs, updated }`, where `jobs` are the a
 
 ```js
 // by id
-await boss.update('email', { to: 'a@b.co', retries: 0 }, { id: jobId })
+await boss.update('email', { to: 'a@b.co' }, { id: jobId })
 
 // by singletonKey
 await boss.update('article', { articleId: 42, body: '…latest…' }, { singletonKey: 'article-42' })
@@ -285,13 +289,13 @@ await boss.upsert({
 })
 ```
 
-### `insert(name, Job[], options)`
+### `insert(name, JobInsert[], options)`
 
 Create multiple jobs in one request with an array of objects.
 
 The contract and supported features are slightly different than `send()`, which is why this function is named independently. For example, debouncing is not supported, and it doesn't return job IDs unless spies are enabled or `options.returnId` is set to `true`.
 
-The following contract is a typescript defintion of the expected object. This will likely be enhanced later with more support for deferral and retention by an offset. For now, calculate any desired timestamps for these features before insertion.
+The following contract is a TypeScript definition of the expected object. This will likely be enhanced later with more support for deferral and retention by an offset. For now, calculate any desired timestamps for these features before insertion.
 
 ```ts
 interface JobInsert<T = object> {
@@ -301,11 +305,15 @@ interface JobInsert<T = object> {
   retryLimit?: number;
   retryDelay?: number;
   retryBackoff?: boolean;
-  startAfter?: Date | string;
+  retryDelayMax?: number;
+  startAfter?: number | Date | string;
   singletonKey?: string;
+  singletonSeconds?: number;
   expireInSeconds?: number;
+  retentionSeconds?: number;
   heartbeatSeconds?: number;
   deleteAfterSeconds?: number;
+  deadLetter?: string;
   group?: { id: string; tier?: string };
 }
 ```
@@ -419,41 +427,49 @@ Returns an array of jobs from a queue
 
     Skip jobs whose `group.id` is in this list, so a worker can drain ungrouped or other-group work while a saturated group is handled elsewhere. Fetch-only — there is no `work()` equivalent.
 
-    ```js
-    interface JobWithMetadata<T = object> {
-      id: string;
-      name: string;
-      data: T;
-      priority: number;
-      state: 'created' | 'retry' | 'active' | 'completed' | 'cancelled' | 'failed';
-      retryLimit: number;
-      retryCount: number;
-      retryDelay: number;
-      retryBackoff: boolean;
-      startAfter: Date;
-      startedOn: Date;
-      singletonKey: string | null;
-      singletonOn: Date | null;
-      groupId: string | null;
-      groupTier: string | null;
-      expireInSeconds: number;
-      heartbeatSeconds: number | null;
-      heartbeatOn: Date | null;
-      deleteAfterSeconds: number;
-      createdOn: Date;
-      completedOn: Date | null;
-      keepUntil: Date;
-      blocked: boolean,
-      blocking: boolean,
-      deadLetter: string,
-      policy: string,
-      output: object,
-      sourceName: string | null,
-      sourceId: string | null,
-      sourceCreatedOn: Date | null,
-      sourceRetryCount: number | null
-    }
-    ```
+**Job metadata**
+
+With `includeMetadata: true`, each job is returned with all metadata:
+
+```ts
+interface JobWithMetadata<T = object> {
+  id: string;
+  name: string;
+  data: T;
+  priority: number;
+  state: 'created' | 'retry' | 'active' | 'completed' | 'cancelled' | 'failed';
+  retryLimit: number;
+  retryCount: number;
+  retryDelay: number;
+  retryBackoff: boolean;
+  retryDelayMax?: number;
+  startAfter: Date;
+  startedOn: Date;
+  singletonKey: string | null;
+  singletonOn: Date | null;
+  groupId?: string | null;
+  groupTier?: string | null;
+  expireInSeconds: number;
+  heartbeatSeconds: number | null;
+  heartbeatOn: Date | null;
+  deleteAfterSeconds: number;
+  createdOn: Date;
+  completedOn: Date | null;
+  keepUntil: Date;
+  blocked: boolean,
+  blocking: boolean,
+  pendingDependencies: number,
+  deadLetter: string,
+  policy: string,
+  output: object,
+  sourceName: string | null,
+  sourceId: string | null,
+  sourceCreatedOn: Date | null,
+  sourceRetryCount: number | null
+}
+```
+
+Although `signal` is declared on the exported `Job` type, it is not present on jobs returned by `fetch()`; it is only attached to the job passed to a `work()` handler.
 
 When a job is moved into a dead letter queue, the `source*` fields record where it
 came from: `sourceName` is the queue it originally failed on, `sourceId` is the id
@@ -652,7 +668,7 @@ await boss.complete('report-generation', job.id, { reportUrl: report.url })
 
 The promise will resolve on a successful completion, or reject if the job could not be completed.
 
-### `complete(name, [ids], options)`
+### `complete(name, [ids], data, options)`
 
 Completes a set of active jobs (or queued jobs when `includeQueued: true` is specified).
 
@@ -679,7 +695,7 @@ try {
 }
 ```
 
-### `fail(name, [ids], options)`
+### `fail(name, [ids], data, options)`
 
 Fails a set of active jobs.
 
@@ -772,19 +788,19 @@ Finds jobs in a queue by id, singleton key, and/or data. Returns an array of job
 
 ```js
 // Find by id
-const jobs = await boss.findJobs('my-queue', { id: 'abc-123' })
+const byId = await boss.findJobs('my-queue', { id: '9b45b709-910a-4a9f-b57a-9d39da3d4033' })
 
 // Find by singletonKey
-const jobs = await boss.findJobs('my-queue', { key: 'user-123' })
+const byKey = await boss.findJobs('my-queue', { key: 'user-123' })
 
 // Find by data
-const jobs = await boss.findJobs('my-queue', { data: { type: 'email' } })
+const byData = await boss.findJobs('my-queue', { data: { type: 'email' } })
 
 // Find queued jobs only
-const jobs = await boss.findJobs('my-queue', { key: 'user-123', queued: true })
+const queuedOnly = await boss.findJobs('my-queue', { key: 'user-123', queued: true })
 
 // Combine filters
-const jobs = await boss.findJobs('my-queue', {
+const combined = await boss.findJobs('my-queue', {
   key: 'user-123',
   data: { type: 'email' },
   queued: true

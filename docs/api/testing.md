@@ -12,10 +12,12 @@ const boss = new BunBoss({
   __test__enableSpies: true
 })
 ```
+As everywhere else in bun-boss, the queue must already exist — call `await boss.createQueue(name)` before sending or working, since queues are never created implicitly.
+
 > [!WARNING]
 > Calling `getSpy()` without enabling spies will throw an error.
 
-## `getSpy(name)`
+## `getSpy<T>(name)`
 
 Returns a spy instance for the specified queue. The spy tracks all job state transitions (created, active, completed, failed) for that queue. Transitions are recorded from the moment spies are enabled, not from the first `getSpy()` call — fetching the spy after a job has already settled still resolves waits for the states it passed through.
 
@@ -44,6 +46,12 @@ interface SpyJob<T = object> {
 }
 ```
 
+Supply the type argument to have `job.data` typed instead of `object`:
+
+```ts
+const spy = boss.getSpy<{ userId: string }>('my-queue')
+```
+
 ### `spy.waitForJob(selector, state)`
 
 Waits for a job matching the selector function to reach the specified state. If a job matching the selector criteria was already processed before this method was called, the promise will resolve immediately.
@@ -53,7 +61,10 @@ Waits for a job matching the selector function to reach the specified state. If 
 - `state`: string, one of 'created', 'active', 'completed', 'failed'
 
 ```js
-const boss = new BunBoss({ ..., __test__enableSpies: true })
+const boss = new BunBoss({
+  url: process.env.DATABASE_URL,
+  __test__enableSpies: true
+})
 await boss.start()
 
 const spy = boss.getSpy('my-queue')
@@ -88,7 +99,11 @@ const job = await spy.waitForJobWithId(jobId, 'completed')
 
 Clears all tracked job data from the spy. Useful for resetting state between tests.
 
+Any `waitForJob()`/`waitForJobWithId()` promise still pending when `clear()` is called is dropped and will never settle — only call it between tests, never while a wait is outstanding.
+
 ```js
+const spy = boss.getSpy('my-queue')
+
 afterEach(() => {
   spy.clear()
 })
@@ -96,7 +111,7 @@ afterEach(() => {
 
 ## `clearSpies()`
 
-Clears all spies and their tracked data across all queues.
+Clears all spies and their tracked data across all queues. It also **removes** the spy objects, so a handle obtained before the call is permanently detached and never sees another transition — call `getSpy()` again after clearing rather than reusing a handle held in `beforeAll`.
 
 ```js
 afterEach(() => {
@@ -112,6 +127,7 @@ import { BunBoss } from 'bun-boss'
 
 describe('email notifications', () => {
   let boss
+  let workerId
 
   beforeAll(async () => {
     boss = new BunBoss({
@@ -119,13 +135,17 @@ describe('email notifications', () => {
       __test__enableSpies: true
     })
     await boss.start()
+    await boss.createQueue('email-welcome')
   })
 
   afterAll(async () => {
     await boss.stop()
   })
 
-  afterEach(() => {
+  // Stop the test's worker, otherwise it keeps polling and can steal the next test's job
+  afterEach(async () => {
+    if (workerId) await boss.offWork('email-welcome', { id: workerId, wait: true })
+    workerId = undefined
     boss.clearSpies()
   })
 
@@ -133,7 +153,7 @@ describe('email notifications', () => {
     const spy = boss.getSpy('email-welcome')
 
     // Start the worker
-    await boss.work('email-welcome', async ([job]) => {
+    workerId = await boss.work('email-welcome', async ([job]) => {
       await sendEmail(job.data.email, 'Welcome!')
       return { sent: true }
     })
@@ -153,7 +173,7 @@ describe('email notifications', () => {
   test('should handle email failures', async () => {
     const spy = boss.getSpy('email-welcome')
 
-    await boss.work('email-welcome', async () => {
+    workerId = await boss.work('email-welcome', async () => {
       throw new Error('SMTP connection failed')
     })
 
@@ -188,5 +208,11 @@ const job = await waitPromise // Resolves correctly
 | - | - |
 | `created` | Job inserted via `send()` or `insert()` |
 | `active` | Job fetched by a worker and handler started |
-| `completed` | Handler finished successfully |
+| `completed` | A worker's handler returned successfully, or `complete()` was called from inside a handler |
 | `failed` | Handler threw an error and the job's retries were exhausted |
+
+A handler that calls `fail()` and then returns normally is recorded as `failed`, not `completed`.
+
+Spies observe the worker path only. A job settled outside a handler — `fetch()` followed by `complete()` — reaches `completed` in the database, but the spy never records it and a wait on that state will hang.
+
+`retry` and `cancelled` are **not** tracked. `waitForJob()` with an untracked state never resolves and never rejects — TypeScript rejects it via `JobSpyState`, but plain JS will hang.

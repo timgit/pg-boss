@@ -14,11 +14,11 @@ but **not** this format which is parsed as "only run exactly at 3:30:30 am every
 30 30 3 * * *
 ```
 
-To change how often schedules are checked, you can set `cronMonitorIntervalSeconds`. To change how often cron jobs are run, you can set `cronWorkerIntervalSeconds`.
+To change how often schedules are checked, you can set the constructor option `cronMonitorIntervalSeconds` (default `30`, range 1-45). To change how often cron jobs are run, you can set the constructor option `cronWorkerIntervalSeconds` (default `5`, range 1-45).
 
 In order mitigate clock skew and drift, every 10 minutes the clocks of each instance are compared to the database server's clock. The skew, if any, is stored and used as an offset during cron evaluation to ensure all instances are synchronized. Internally, job throttling options are then used to make sure only 1 job is sent even if multiple instances are running.
 
-If needed, the default clock monitoring interval can be adjusted using `clockMonitorIntervalSeconds`. Additionally, to disable scheduling on an instance completely, use the following in the constructor options.
+If needed, the default clock monitoring interval can be adjusted using the constructor option `clockMonitorIntervalSeconds` (default `600`, range 1-600). Additionally, to disable scheduling on an instance completely, use the following in the constructor options.
 
 ```js
 {
@@ -30,7 +30,7 @@ For more cron documentation and examples see the docs for the [croner package](h
 
 ### `schedule(name, cron, data, options)`
 
-Schedules a job to be sent to the specified queue based on a cron expression. If the schedule already exists, it's updated to the new cron expression.
+Schedules a job to be sent to the specified queue based on a cron expression. If the schedule already exists, it's updated to the new cron expression. The queue must already exist; `schedule()` throws `Queue <name> not found` otherwise.
 
 **Arguments**
 
@@ -47,7 +47,7 @@ Schedules a job to be sent to the specified queue based on a cron expression. If
 
 * **key**
   
-  An optional unique key when more than one schedule is needed for this queue.
+  An optional unique key when more than one schedule is needed for this queue. Defaults to an empty string. May only contain alphanumeric characters, underscores, hyphens, periods, or forward slashes.
 
 
 For example, the following code will send a job at 3:00am in the US central time zone into the queue `notification-abc`.
@@ -58,7 +58,7 @@ await boss.schedule('notification-abc', `0 3 * * *`, null, { tz: 'America/Chicag
 
 ### `unschedule(name)`
 
-Removes all scheduled jobs for the specified queue name.
+Removes the schedule with the default (empty) key for the specified queue name. Schedules created with a `key` are not affected — remove those with [`unschedule(name, key)`](#unschedulename-key).
 
 ```js
 await boss.unschedule('notification-abc')
@@ -98,7 +98,7 @@ const schedules = await boss.getSchedules('report')
 
 ### `getSchedules(name, key)`
 
-Returns all scheduled jobs by queue name and unique key.
+Returns the schedule for the given queue name and unique key, as a single-element array (empty if none). Since `(name, key)` is the primary key of the schedule table, at most one row is ever returned.
 
 ```js
 const [schedule] = await boss.getSchedules('report', 'eu')

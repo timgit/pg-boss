@@ -2,13 +2,31 @@
 
 bun-boss operations such as `send()`, `insert()`, `fetch()`, and `complete()` accept a `db` option that lets you run them inside an existing database transaction. This is how you ensure that job creation (or completion) is atomic with your application's own writes — if the transaction rolls back, so does the job.
 
-Each adapter wraps a driver's connection or transaction object as a bun-boss `Db` (the `executeSql` interface), so bun-boss can execute its own SQL within your transaction.
+Each adapter wraps a driver's connection, instance, or transaction object as a bun-boss `Db` (the `executeSql` interface, plus the optional `withTransaction` and `listen` capabilities), so bun-boss can execute its own SQL within your transaction.
 
 ```ts
 interface Db {
-  executeSql(text: string, values: any[]): Promise<{ rows: any[] }>;
+  executeSql(text: string, values?: unknown[]): Promise<{ rows: any[] }>;
+  // Optional. When present, bun-boss runs its multi-statement operations (upsert, the split
+  // complete/fail/expire, flow resolution) inside a real transaction; otherwise they run
+  // sequentially without atomicity.
+  withTransaction?<T>(fn: (tx: Db) => Promise<T>): Promise<T>;
+  // Optional. Enables LISTEN/NOTIFY (`useListenNotify`); only `fromPglite` implements it.
+  listen?(channel: string, onNotification: (payload: string) => void, onReconnect: () => void): Promise<ListenHandle>;
 }
 ```
+
+Only `executeSql` is required. An adapter that omits `withTransaction` still works, but bun-boss falls back to running those multi-statement operations without a transaction — and flow resolution loses atomicity, so a flow that fails part way can leave dependencies partly written (see [Database Backends](../database-backends.md#what-is-different-from-the-postgres-backends)). When a flow fails inside a caller-owned transaction (`{ db }`), the transaction itself stays usable — roll it back rather than committing after a caught flow error.
+
+What the shipped adapters implement:
+
+| adapter | `executeSql` | `withTransaction` | `listen` |
+|---|---|---|---|
+| `fromBunSql` | ✅ | ❌ | ❌ |
+| `fromBunSqlite` | ✅ | ✅ | ❌ |
+| `fromPglite` | ✅ | ✅ | ✅ |
+
+Write `$1, $2` placeholders in your own SQL on every backend; the adapter translates them to whatever the driver expects.
 
 bun-boss ships with `fromBunSql` for Bun's built-in `SQL` client against PostgreSQL, `fromPglite` for embedded PGlite, and `fromBunSqlite` for embedded SQLite through Bun's `SQL` client (see [Database Backends](../database-backends.md)).
 
@@ -36,7 +54,45 @@ await sql.begin(async (tx) => {
 
 Bun talks to real PostgreSQL, so leave `backend` at its default `postgres` — no compatibility flags apply. As with every adapter, the `SQL` client's lifecycle is yours: bun-boss never opens or closes it.
 
+`fromBunSql` implements `executeSql` only — it has no `withTransaction`. Backing a whole instance with it therefore runs bun-boss's own multi-statement operations (upsert, the split complete/fail/expire, flow resolution) without a transaction, unlike the built-in driver, which does supply `withTransaction`. Use it for the per-operation `{ db }` case, or accept that trade-off.
+
 See [Bun.SQL](../database-backends.md#bunsql-the-built-in-driver) for the driver-level details — LISTEN/NOTIFY, prepared statements, and multi-statement blocks.
+
+## PGlite
+
+`fromPglite` adapts a PGlite instance. Like SQLite it backs a whole bun-boss instance (pair it with
+`backend: 'pglite'`), and bun-boss's tables live in the same in-process database as your
+application's. It is the only shipped adapter that implements `listen`, so it is the only one that
+can serve `useListenNotify`.
+
+```ts
+import { PGlite } from '@electric-sql/pglite'
+import { BunBoss, fromPglite } from 'bun-boss'
+
+const pglite = new PGlite('./my-app-data')
+const db = fromPglite(pglite)
+
+const boss = new BunBoss({ backend: 'pglite', db })
+await boss.start()
+```
+
+Sharing the database does not by itself make a job atomic with your writes — a plain `send()`
+outside a transaction commits on its own. To get atomicity, open the transaction through the
+adapter's `withTransaction` and pass its handle as the operation's `db`:
+
+```ts
+await db.withTransaction!(async (tx) => {
+  await tx.executeSql('INSERT INTO orders (item, qty) VALUES ($1, $2)', ['widget', 1])
+  await boss.send('order-processing', { item: 'widget' }, { db: tx })
+})
+```
+
+`fromPglite` is typed as the base `Db`, on which `withTransaction` is optional, so TypeScript needs
+the assertion (or a local check) before the call; `fromBunSqlite` narrows its return type instead,
+which is why the SQLite sample below needs neither.
+
+See [PGlite](../database-backends.md#pglite-embedded) for the instance-level details and
+limitations.
 
 ## SQLite (Bun)
 

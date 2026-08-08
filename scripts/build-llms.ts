@@ -35,7 +35,8 @@ async function listMarkdown (dir: string, prefix = ''): Promise<string[]> {
   for (const entry of entries) {
     const rel = prefix ? `${prefix}/${entry.name}` : entry.name
     if (entry.isDirectory()) {
-      if (entry.name === 'images') continue
+      // vendor/ holds third-party assets, not documentation.
+      if (entry.name === 'images' || entry.name === 'vendor') continue
       files.push(...(await listMarkdown(join(dir, entry.name), rel)))
     } else if (entry.name.endsWith('.md') && entry.name !== '_sidebar.md') {
       files.push(rel)

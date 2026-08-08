@@ -453,6 +453,7 @@ export type {
   GroupOptions,
   IDatabase as Db,
   InsertOptions,
+  ListenHandle,
   Job,
   JobFetchOptions,
   JobInsert,

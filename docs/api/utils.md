@@ -14,6 +14,8 @@ import { getConstructionPlans } from 'bun-boss'
 Returns the SQL commands required for manual creation of the required schema.
 
 ```js
+import fs from 'node:fs'
+
 const sql = getConstructionPlans('pgboss')
 
 // hand the DDL to a migration tool or a privileged operator
