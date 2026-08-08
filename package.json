@@ -1,6 +1,6 @@
 {
   "name": "bun-boss",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Queueing jobs in Postgres, PGlite, and SQLite from Bun like a boss",
   "type": "module",
   "main": "./src/index.ts",

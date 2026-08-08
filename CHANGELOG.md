@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.3](https://github.com/khromov/bun-boss/compare/bun-boss-v0.2.2...bun-boss-v0.2.3) (2026-08-08)
+
+
+### Bug Fixes
+
+* emit real Error on worker/queue-cache paths and forward ignoreStartAfter in work() ([#41](https://github.com/khromov/bun-boss/issues/41)) ([6c188f2](https://github.com/khromov/bun-boss/commit/6c188f2c791f6ec6a66e146cea89ac6223b2f26d))
+
 ## [0.2.2](https://github.com/khromov/bun-boss/compare/bun-boss-v0.2.1...bun-boss-v0.2.2) (2026-08-08)
 
 
