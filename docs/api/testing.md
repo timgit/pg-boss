@@ -107,13 +107,13 @@ afterEach(() => {
 ## Example Test
 
 ```js
-const { BunBoss } = require('bun-boss')
-const assert = require('assert')
+import { describe, test, expect, beforeAll, afterAll, afterEach } from 'bun:test'
+import { BunBoss } from 'bun-boss'
 
 describe('email notifications', () => {
   let boss
 
-  before(async () => {
+  beforeAll(async () => {
     boss = new BunBoss({
       url: process.env.DATABASE_URL,
       __test__enableSpies: true
@@ -121,7 +121,7 @@ describe('email notifications', () => {
     await boss.start()
   })
 
-  after(async () => {
+  afterAll(async () => {
     await boss.stop()
   })
 
@@ -129,7 +129,7 @@ describe('email notifications', () => {
     boss.clearSpies()
   })
 
-  it('should send welcome email when user signs up', async () => {
+  test('should send welcome email when user signs up', async () => {
     const spy = boss.getSpy('email-welcome')
 
     // Start the worker
@@ -147,10 +147,10 @@ describe('email notifications', () => {
       'completed'
     )
 
-    assert.deepStrictEqual(job.output, { sent: true })
+    expect(job.output).toEqual({ sent: true })
   })
 
-  it('should handle email failures', async () => {
+  test('should handle email failures', async () => {
     const spy = boss.getSpy('email-welcome')
 
     await boss.work('email-welcome', async () => {
@@ -161,7 +161,7 @@ describe('email notifications', () => {
 
     const job = await spy.waitForJobWithId(jobId, 'failed')
 
-    assert.strictEqual(job.output.message, 'SMTP connection failed')
+    expect(job.output.message).toBe('SMTP connection failed')
   })
 })
 ```

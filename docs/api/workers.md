@@ -89,7 +89,7 @@ The default options for `work()` is 1 job every 2 seconds.
 
 * **localConcurrency**, int, *(default=1)*
 
-  Number of workers to spawn for this queue within the current Node.js process. Each worker polls and processes jobs independently, enabling parallel job processing within a single `work()` call.
+  Number of workers to spawn for this queue within the current Bun process. Each worker polls and processes jobs independently, enabling parallel job processing within a single `work()` call.
 
   > [!NOTE]
   > This is a per-node setting. In a distributed deployment with multiple nodes, each node manages its own workers independently. For example, if you have 3 nodes each calling `work()` with `localConcurrency: 5`, you'll have 15 total workers across your cluster.

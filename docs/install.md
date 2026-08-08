@@ -37,10 +37,14 @@ NOTE: If an existing schema was used during installation, created objects will n
 
 ```sql
 DROP TABLE pgboss.version;
+DROP TABLE pgboss.job_dependency;
+DROP TABLE pgboss.job_common;
 DROP TABLE pgboss.job;
 DROP TYPE pgboss.job_state;
 DROP TABLE pgboss.schedule;
 DROP FUNCTION pgboss.create_queue;
 DROP FUNCTION pgboss.delete_queue;
+DROP FUNCTION pgboss.job_table_format;
+DROP FUNCTION pgboss.job_table_run;
 DROP TABLE pgboss.queue;
 ```

@@ -75,7 +75,7 @@ All retry, expiration, and retention options can also be set on the queue and wi
 
 * **db**, object
 
-  Instead of using bun-boss's default adapter, you can use your own, as long as it implements the following interface (the same as the pg module).
+  Instead of using bun-boss's default adapter, you can use your own, as long as it implements the following `executeSql` interface (see [Database Adapters](./adapters.md)).
 
     ```ts
     interface Db {
@@ -460,7 +460,7 @@ The following example shows how to fetch and delete up to 20 jobs.
 
 ```js
 const QUEUE = 'email-daily-digest'
-const emailer = require('./emailer.js')
+import emailer from './emailer.js'
 
 const jobs = await boss.fetch(QUEUE, { batchSize: 20 })
 

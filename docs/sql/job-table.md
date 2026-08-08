@@ -1,6 +1,6 @@
 # Job table
 
-If you need to interact with bun-boss outside of Node.js, such as other clients or even using triggers within PostgreSQL itself, most functionality is supported when working directly against the internal tables. For example, if you wanted to bulk load jobs and skip calling `send()` or `insert()`, you could use SQL `INSERT` or `COPY` commands.
+If you need to interact with bun-boss outside of Bun, such as other clients or even using triggers within PostgreSQL itself, most functionality is supported when working directly against the internal tables. For example, if you wanted to bulk load jobs and skip calling `send()` or `insert()`, you could use SQL `INSERT` or `COPY` commands.
 
 The following is the definition of the primary job table. For manual job creation, the only required column is `name`. All other columns are nullable or have defaults.
 
@@ -15,11 +15,13 @@ CREATE TABLE pgboss.job (
   retry_count integer not null default(0),
   retry_delay integer not null default(0),
   retry_backoff boolean not null default false,
-  retry_delay_max integer;
+  retry_delay_max integer,
   expire_seconds integer not null default (900),
   deletion_seconds integer not null default (60 * 60 * 24 * 7),
   singleton_key text,
   singleton_on timestamp without time zone,
+  group_id text,
+  group_tier text,
   start_after timestamp with time zone not null default now(),
   created_on timestamp with time zone not null default now(),
   started_on timestamp with time zone,
@@ -30,6 +32,13 @@ CREATE TABLE pgboss.job (
   policy text,
   heartbeat_on timestamp with time zone,
   heartbeat_seconds int,
+  blocked boolean not null default false,
+  blocking boolean not null default false,
+  pending_dependencies int not null default 0,
+  source_name text,
+  source_id uuid,
+  source_created_on timestamp with time zone,
+  source_retry_count int,
   CONSTRAINT job_pkey PRIMARY KEY (name, id)
 ) PARTITION BY LIST (name)
 ```

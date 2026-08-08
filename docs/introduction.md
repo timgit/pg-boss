@@ -1,5 +1,5 @@
 # Introduction
-bun-boss is a job queue powered by Postgres, operated by 1 or more Node.js instances.
+bun-boss is a job queue powered by Postgres, operated by 1 or more Bun instances.
 
 bun-boss relies on [SKIP LOCKED](https://www.postgresql.org/docs/current/sql-select.html#SQL-FOR-UPDATE-SHARE), a feature built specifically for message queues to resolve record locking challenges inherent with relational databases. This provides exactly-once delivery and the safety of guaranteed atomic commits to asynchronous job processing.
 
@@ -9,7 +9,7 @@ Internally, bun-boss uses declarative list-based partitioning to expose a single
 
 If a queue needs to be scaled out, you can create it with a `partition` option that will create a dedicated physical table within the partitioning hierarchy. This storage strategy should offer a balance between maintenance operations and query plan optimization. According to [the docs](https://www.postgresql.org/docs/current/ddl-partitioning.html#DDL-PARTITIONING-DECLARATIVE-BEST-PRACTICES), Postgres should scale to thousands of queues in a partitioning hierarchy quite well, but the decision on how many dedicated tables to use should be based on your specific needs. If your usage somehow exceeds what Postgres partitioning is capable of (congrats!), consider provisioning queues into separate schemas in the target database.
 
-You may use as many Node.js instances as desired to connect to the same Postgres database, even running it inside serverless functions if needed. Each instance maintains a client-side connection pool or you can substitute your own database client, limited to the maximum number of connections your database server (or server-side connection pooler) can accept. If you find yourself needing even more connections, bun-boss can easily be used behind your custom web API.
+You may use as many Bun instances as desired to connect to the same Postgres database, even running it inside serverless functions if needed. Each instance maintains a client-side connection pool or you can substitute your own database client, limited to the maximum number of connections your database server (or server-side connection pooler) can accept. If you find yourself needing even more connections, bun-boss can easily be used behind your custom web API.
 
 ## Job states
 

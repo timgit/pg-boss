@@ -67,5 +67,5 @@ Utility function to get the database schema version.
 
 ```js
 const version = await boss.schemaVersion()
-// 37
+// 1
 ```

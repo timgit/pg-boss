@@ -3,7 +3,7 @@
 Each bun-boss instance is an EventEmitter, and contains the following events.
 
 ## `error`
-The `error` event could be raised during internal processing, such as scheduling and maintenance. Adding a listener to the error event is strongly encouraged because of the default behavior of Node.
+The `error` event could be raised during internal processing, such as scheduling and maintenance. Adding a listener to the error event is strongly encouraged because of the default behavior of the `EventEmitter`.
 
 Database connection failures are not reported here: the built-in driver (Bun's SQL client) exposes no background-error hook, so a broken connection surfaces as a rejection on the operation that encountered it — typically re-emitted as an `error` by the background component that issued the query.
 
@@ -31,7 +31,7 @@ boss.on('warning', ({ message, data }) => {
 | Type | Description | Data Properties |
 |------|-------------|-----------------|
 | `slow_query` | A maintenance query exceeded the slow query threshold | `elapsed` (seconds) |
-| `queue_backlog` | A queue has exceeded its warning threshold | `name`, `queuedCount`, `warningQueued` |
+| `queue_backlog` | A queue has exceeded its warning threshold | `name`, `queuedCount`, `warningQueueSize` |
 | `clock_skew` | Database clock is out of sync with application server | `seconds`, `direction` |
 | `listen_notify_unavailable` | `useListenNotify` is enabled but a `LISTEN/NOTIFY` listener could not be established (for example a `db` adapter without `listen`, or PgBouncer transaction pooling); bun-boss continues with polling only | `type`, `error` |
 

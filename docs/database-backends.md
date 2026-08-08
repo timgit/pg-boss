@@ -155,7 +155,7 @@ built-in Bun-SQL driver, via the `fromPglite` adapter.
 Install PGlite alongside bun-boss:
 
 ```bash
-npm install @electric-sql/pglite
+bun add @electric-sql/pglite
 ```
 
 Construct a PGlite instance, wrap it with `fromPglite`, and select the `pglite` backend profile:
@@ -300,7 +300,7 @@ alternate SQL for it throughout: TEXT ISO-8601 timestamps, TEXT uuids and JSON, 
 CHECK-constrained state column, `json_each` in place of arrays, and the atomic-`UPDATE` claim in
 place of row locking. The only supported driver is
 [Bun's built-in SQL client](https://bun.com/docs/api/sql) opened on a `sqlite://` URL, reached
-through the `fromBunSqlite` adapter. Requires Bun 1.2.21+ (Bun's sqlite support in `SQL`).
+through the `fromBunSqlite` adapter. Requires Bun 1.3.14+ (the package floor; Bun's sqlite support in `SQL`).
 
 #### Usage
 
