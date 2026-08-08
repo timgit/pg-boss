@@ -8,6 +8,9 @@ const config = neostandard({
 })
 
 export default defineConfig(config, {
+  // Third-party minified assets vendored verbatim; not ours to lint.
+  ignores: ['docs/vendor/**'],
+}, {
   languageOptions: {
     ecmaVersion: 2025,
   },
