@@ -1,6 +1,3 @@
-> [!WARNING]
-> **Work in progress.** bun-boss is an experimental fork of [pg-boss](https://github.com/timgit/pg-boss) that runs on Bun and adds SQLite and in-memory backends. It's under active development and not yet production-ready — expect breaking changes. Postgres (including embedded PGlite) and SQLite (`backend: 'sqlite'` through Bun's built-in `SQL` client — see [Database Backends](docs/database-backends.md#sqlite-embedded-via-bunsql)) work today; a dedicated in-memory backend is not implemented yet (SQLite on `sqlite://:memory:` covers that use in the meantime).
-
 Queueing jobs in Postgres, SQLite, and memory from Bun like a boss.
 
 [![Build](https://github.com/khromov/bun-boss/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/khromov/bun-boss/actions/workflows/ci.yml)
@@ -35,30 +32,29 @@ readme()
   })
 ```
 
-bun-boss is a job queue built on top of PostgreSQL in order to provide background processing and reliable asynchronous execution to Bun applications.
+bun-boss is a job queue for Bun applications that provides background processing and reliable asynchronous execution, backed by PostgreSQL (including embedded PGlite) or embedded SQLite.
 
-It relies on Postgres's SKIP LOCKED, a feature built specifically for message queues to resolve record locking challenges inherent with relational databases. This provides exactly-once delivery and the safety of guaranteed atomic commits to asynchronous job processing.
+On PostgreSQL it relies on SKIP LOCKED, a feature built specifically for message queues to resolve record locking challenges inherent with relational databases; on backends without it (such as SQLite) the same guarantee comes from an atomic, state-gated claim. Either way this provides exactly-once delivery and the safety of guaranteed atomic commits to asynchronous job processing.
 
-This will likely cater the most to teams already familiar with the simplicity of relational database semantics and operations (SQL, querying, and backups). It will be especially useful to those already relying on PostgreSQL that want to limit how many systems are required to monitor and support in their architecture.
+This will likely cater the most to teams already familiar with the simplicity of relational database semantics and operations (SQL, querying, and backups). It will be especially useful to those already relying on a relational database that want to limit how many systems are required to monitor and support in their architecture.
 
 
 ## Summary
 * Exactly-once job delivery
-* Create jobs in an existing db transaction, including adapters for Bun's built-in SQL client and embedded PGlite
-* Backpressure-compatible polling workers, including support for LISTEN/NOTIFY low latency delivery
+* Create jobs in an existing db transaction, including adapters for Bun's built-in SQL client, embedded PGlite, and embedded SQLite
+* Backpressure-compatible polling workers, with optional low-latency LISTEN/NOTIFY delivery on adapters that support it (PGlite) — the built-in Bun SQL driver and SQLite fall back to polling
 * Job dependency workflow orchestration
 * Cron scheduling, job deferral
 * Queue storage policies to support a variety of rate limiting, debouncing, and concurrency use cases
 * Priority queues, dead letter queues with redrive, automatic retries with exponential backoff
-* Pub/sub API for fan-out queue relationships
-* SQL support for non-Node.js runtimes for most operations
+* SQL support for interacting with Postgres directly (tables and stored functions), without the JS library
 * Serverless function compatible
-* Multi-master compatible (for example, in a Kubernetes ReplicaSet)
+* Multi-master compatible on Postgres and PGlite (for example, in a Kubernetes ReplicaSet); embedded SQLite is single-writer
 * [Additional database backends](docs/database-backends.md): embedded PGlite (in-process WASM Postgres) and embedded SQLite via Bun's built-in `SQL` client.
 
 ## Requirements
-* PostgreSQL 13 or higher
-* Bun 1.3.14 or higher, 1.4+ recommended — the package ships TypeScript sources with no compile step, so it is consumed by Bun directly (Node cannot import it from `node_modules` without a bundler or transpiler), and the built-in database driver is Bun's own SQL client (see [database backends](docs/database-backends.md) for why 1.4 is preferred)
+* PostgreSQL 13 or higher for the Postgres backend (not required when using embedded PGlite or SQLite)
+* Bun 1.3.14 or higher — bun-boss runs on both Bun 1.3 and Bun 1.4 (the Rust rewrite); 1.4+ is recommended. The package ships TypeScript sources with no compile step, so it is consumed by Bun directly (Node cannot import it from `node_modules` without a bundler or transpiler), and the built-in database driver is Bun's own SQL client (see [database backends](docs/database-backends.md) for why 1.4 is preferred)
 
 ## Documentation
 * [Docs site](https://khromov.github.io/bun-boss/) (also as plain markdown under [`docs/`](docs/introduction.md))
