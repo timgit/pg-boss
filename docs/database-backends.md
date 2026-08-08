@@ -128,9 +128,8 @@ via `__test__noSkipLockedNoCte`, so they run in every mode.
 
 ### Transaction isolation
 
-For optimal correctness with `noSkipLocked`, SERIALIZABLE isolation ensures exactly-once job
-processing. With READ COMMITTED (the PostgreSQL default), the `state < 'active'` recheck in the
-`UPDATE` still prevents duplicate claims.
+The `state < 'active'` recheck in the `UPDATE` guarantees exactly-once claims under READ COMMITTED
+(the PostgreSQL default); bun-boss does not set or require SERIALIZABLE isolation.
 
 ## Per-database notes
 
@@ -191,7 +190,7 @@ await boss.stop()
 await pglite.close()
 ```
 
-This mirrors the [ORM transaction adapters](api/adapters.md): bun-boss only calls `executeSql` on the
+This mirrors the [database adapters](api/adapters.md): bun-boss only calls `executeSql` on the
 object you provide.
 
 #### Single-connection considerations

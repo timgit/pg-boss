@@ -40,7 +40,7 @@ Creates a new job and returns the job id.
 
 * **retryBackoff**, bool
 
-  Default: false. Enables exponential backoff retries based on retryDelay instead of a fixed delay. Sets initial retryDelay to 1 if not set. A simplified function to get the delay between runs is: `retryDelay * 2 ^ retryCount` with some jitter. The full function to determine the backoff delay is `Math.min(retryDelayMax, retryDelay * (2 ** Math.Min(16, retryCount) / 2 + 2 ** Math.Min(16, retryCount) / 2 * Math.random()))`
+  Default: false. Enables exponential backoff retries based on retryDelay instead of a fixed delay. Sets initial retryDelay to 1 if not set. A simplified function to get the delay between runs is: `retryDelay * 2 ^ retryCount` with some jitter. The full function to determine the backoff delay is `Math.min(retryDelayMax, Math.max(retryDelay, 1) * (2 ** Math.min(16, retryCount + 1) / 2 + 2 ** Math.min(16, retryCount + 1) / 2 * Math.random()))`
 
 * **retryDelayMax**, int
 
@@ -50,7 +50,7 @@ Creates a new job and returns the job id.
 
 * **heartbeatSeconds**, int
 
-  Default: none (disabled). Expected heartbeat interval in seconds. Overrides the queue-level `heartbeatSeconds` for this specific job. When set, workers using `work()` will automatically send periodic heartbeats. If no heartbeat is received within this interval, the monitor will fail/retry the job. Must be >= 10. See [Heartbeat vs expiration](queues#heartbeat-vs-expiration) for guidance on when to use this and recommended values.
+  Default: none (disabled). Expected heartbeat interval in seconds. Overrides the queue-level `heartbeatSeconds` for this specific job. When set, workers using `work()` will automatically send periodic heartbeats. If no heartbeat is received within this interval, the monitor will fail/retry the job. Must be >= 10. See [Heartbeat vs expiration](./queues.md#heartbeat-vs-expiration) for guidance on when to use this and recommended values.
 
 **Expiration options**
 
@@ -83,7 +83,7 @@ All retry, expiration, and retention options can also be set on the queue and wi
   }
     ```
 
-  bun-boss ships with built-in adapters for Bun's SQL client and embedded PGlite. See [Database Adapters](./adapters.md) for details.
+  bun-boss ships with built-in adapters for Bun's SQL client, embedded PGlite, and embedded SQLite. See [Database Adapters](./adapters.md) for details.
 
 **Deferred jobs**
 
@@ -360,7 +360,7 @@ Dependent jobs are created in a `blocked` state and won't be eligible for fetchi
 
 When a dependent job uses `startAfter`, both conditions must be met: all dependencies completed and `startAfter` has passed.
 
-Unblocking happens off the completion hot path: a background resolver wakes shortly after a parent completes (see `flowIntervalSeconds` in the [constructor options]()) and unblocks any dependents that are now ready. This keeps completing jobs fast regardless of how many flows exist. The resolver runs when `supervise` is enabled; call [`resolveFlow()`](#resolveflow) to force a pass immediately (e.g. in tests).
+Unblocking happens off the completion hot path: a background resolver wakes shortly after a parent completes (see `flowIntervalSeconds` in the [constructor options](./constructor.md)) and unblocks any dependents that are now ready. This keeps completing jobs fast regardless of how many flows exist. The resolver runs when `supervise` is enabled; call [`resolveFlow()`](#resolveflow) to force a pass immediately (e.g. in tests).
 
 ### `resolveFlow()`
 
@@ -410,6 +410,14 @@ Returns an array of jobs from a queue
   * `maxPriority`, int
 
     If set, only fetch jobs with a priority less than or equal to this value. If used together with `minPriority`, `minPriority` must be less than or equal to `maxPriority`.
+
+  * `groupConcurrency`, int | object, *default: none*
+
+    Cap concurrently active jobs per group across all nodes, using the same shape as the `work()` option — a number, or `{ default, tiers }`. See [group concurrency](./workers.md).
+
+  * `ignoreGroups`, string[], *default: none*
+
+    Skip jobs whose `group.id` is in this list, so a worker can drain ungrouped or other-group work while a saturated group is handled elsewhere. Fetch-only — there is no `work()` equivalent.
 
     ```js
     interface JobWithMetadata<T = object> {

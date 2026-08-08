@@ -1,11 +1,11 @@
 # Introduction
-bun-boss is a job queue powered by Postgres, operated by 1 or more Bun instances.
+bun-boss is a job queue that runs on Postgres, PGlite, or SQLite, operated by 1 or more Bun instances.
 
-bun-boss relies on [SKIP LOCKED](https://www.postgresql.org/docs/current/sql-select.html#SQL-FOR-UPDATE-SHARE), a feature built specifically for message queues to resolve record locking challenges inherent with relational databases. This provides exactly-once delivery and the safety of guaranteed atomic commits to asynchronous job processing.
+On Postgres, bun-boss uses [SKIP LOCKED](https://www.postgresql.org/docs/current/sql-select.html#SQL-FOR-UPDATE-SHARE), a feature built specifically for message queues to resolve record locking challenges inherent with relational databases. On backends without it (SQLite), an atomic, state-gated claim provides the same guarantee. Either way this provides exactly-once delivery and the safety of guaranteed atomic commits to asynchronous job processing.
 
-This will likely cater the most to teams already familiar with the simplicity of relational database semantics and operations (SQL, querying, and backups). It will be especially useful to those already relying on PostgreSQL that want to limit how many systems are required to monitor and support in their architecture.
+This will likely cater the most to teams already familiar with the simplicity of relational database semantics and operations (SQL, querying, and backups). It will be especially useful to those already relying on a relational database that want to limit how many systems are required to monitor and support in their architecture.
 
-Internally, bun-boss uses declarative list-based partitioning to expose a single logical `job` table. By default, all queues's jobs will be stored together in a shared table, but this could affect performance if 1 or more of your queues grows significantly or experiences an unexpected backlog. 
+On Postgres, bun-boss uses declarative list-based partitioning to expose a single logical `job` table. By default, all queues's jobs will be stored together in a shared table, but this could affect performance if 1 or more of your queues grows significantly or experiences an unexpected backlog. 
 
 If a queue needs to be scaled out, you can create it with a `partition` option that will create a dedicated physical table within the partitioning hierarchy. This storage strategy should offer a balance between maintenance operations and query plan optimization. According to [the docs](https://www.postgresql.org/docs/current/ddl-partitioning.html#DDL-PARTITIONING-DECLARATIVE-BEST-PRACTICES), Postgres should scale to thousands of queues in a partitioning hierarchy quite well, but the decision on how many dedicated tables to use should be based on your specific needs. If your usage somehow exceeds what Postgres partitioning is capable of (congrats!), consider provisioning queues into separate schemas in the target database.
 

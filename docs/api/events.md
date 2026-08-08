@@ -30,10 +30,10 @@ boss.on('warning', ({ message, data }) => {
 
 | Type | Description | Data Properties |
 |------|-------------|-----------------|
-| `slow_query` | A maintenance query exceeded the slow query threshold | `elapsed` (seconds) |
+| `slow_query` | A maintenance query exceeded the slow query threshold | `elapsed` (seconds), `sql`, `values` |
 | `queue_backlog` | A queue has exceeded its warning threshold | `name`, `queuedCount`, `warningQueueSize` |
 | `clock_skew` | Database clock is out of sync with application server | `seconds`, `direction` |
-| `listen_notify_unavailable` | `useListenNotify` is enabled but a `LISTEN/NOTIFY` listener could not be established (for example a `db` adapter without `listen`, or PgBouncer transaction pooling); bun-boss continues with polling only | `type`, `error` |
+| `listen_notify_unavailable` | `useListenNotify` is enabled but a `LISTEN/NOTIFY` listener could not be established (an unsupported backend, a `db` adapter without `listen`, or a failed subscribe such as PgBouncer transaction pooling); bun-boss continues with polling only | `type`, and `backend` or `error` depending on the cause |
 
 ## `wip`
 

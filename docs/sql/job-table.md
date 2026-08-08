@@ -2,7 +2,7 @@
 
 If you need to interact with bun-boss outside of Bun, such as other clients or even using triggers within PostgreSQL itself, most functionality is supported when working directly against the internal tables. For example, if you wanted to bulk load jobs and skip calling `send()` or `insert()`, you could use SQL `INSERT` or `COPY` commands.
 
-The following is the definition of the primary job table. For manual job creation, the only required column is `name`. All other columns are nullable or have defaults.
+The following is the primary job table on the Postgres and PGlite backends. The SQLite backend installs an equivalent table in its own dialect (text timestamps, integer booleans, no partitioning). For manual job creation, the only required column is `name`. All other columns are nullable or have defaults.
 
 ```sql
 CREATE TABLE pgboss.job (

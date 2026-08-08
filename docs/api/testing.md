@@ -189,4 +189,4 @@ const job = await waitPromise // Resolves correctly
 | `created` | Job inserted via `send()` or `insert()` |
 | `active` | Job fetched by a worker and handler started |
 | `completed` | Handler finished successfully |
-| `failed` | Handler threw an error or job expired |
+| `failed` | Handler threw an error and the job's retries were exhausted |

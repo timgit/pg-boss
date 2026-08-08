@@ -47,7 +47,7 @@ Schedules a job to be sent to the specified queue based on a cron expression. If
 
 * **key**
   
-  An optional unique key if more than schedule is needed for this queue.
+  An optional unique key when more than one schedule is needed for this queue.
 
 
 For example, the following code will send a job at 3:00am in the US central time zone into the queue `notification-abc`.

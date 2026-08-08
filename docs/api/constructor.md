@@ -22,9 +22,9 @@ These carry [Bun's SQL client](https://bun.com/docs/api/sql) option names and ar
 
 * **tls** - boolean, object, or `Bun.file()` certificate
 
-* **database** - string, *required*
+* **database** - string
 
-* **username** - string, *required*
+* **username** - string
 
 * **password** - string
 
@@ -86,7 +86,7 @@ These carry [Bun's SQL client](https://bun.com/docs/api/sql) option names and ar
 
     The length limit is measured in bytes, since it's possible to use multi-byte characters inside a quoted name. PostgreSQL truncates identifiers past 63 bytes without complaint, which would leave the configured name and the stored name permanently out of sync.
 
-    Because the two spellings look nearly identical but name different schemas, `start()` refuses to install into a schema when another one differing from it only by case already holds a bun-boss installation, and names the spelling that reaches the existing data. Override with [`allowSchemaCaseVariant`](#allowschemacasevariant) if two such installations are genuinely intended.
+    Because the two spellings look nearly identical but name different schemas, `start()` refuses to install into a schema when another one differing from it only by case already holds a bun-boss installation, and names the spelling that reaches the existing data. Override with `allowSchemaCaseVariant` (below) if two such installations are genuinely intended.
 
 
 **Operations options**
@@ -105,7 +105,7 @@ These carry [Bun's SQL client](https://bun.com/docs/api/sql) option names and ar
 
 * **useListenNotify**, bool, default false
 
-  Enables a `LISTEN/NOTIFY` listener so that workers on notify-enabled queues are woken the moment a job is created, instead of waiting out their `pollingIntervalSeconds`. This is a latency optimization layered on top of polling — polling always remains active as a fallback, so jobs are never lost if a notification is missed. See [Low-latency dispatch with LISTEN/NOTIFY](./workers.md#low-latency-dispatch-with-listen-notify) for the full picture and the per-queue `notify` option that controls which queues emit notifications.
+  Enables a `LISTEN/NOTIFY` listener so that workers on notify-enabled queues are woken the moment a job is created, instead of waiting out their `pollingIntervalSeconds`. This is a latency optimization layered on top of polling — polling always remains active as a fallback, so jobs are never lost if a notification is missed. See [Low-latency dispatch with LISTEN/NOTIFY](./workers.md#low-latency-dispatch-with-listennotify) for the full picture and the per-queue `notify` option that controls which queues emit notifications.
 
   This option requires a `db` adapter that implements `listen` (e.g. `fromPglite`). The built-in driver — Bun's SQL client — implements no LISTEN, so with it bun-boss emits a [`warning`](./events.md#warning) event of type `listen_notify_unavailable` and continues with polling only. The producer side (`pg_notify` inlined into inserts) still fires either way, so a listener on another connection can act on it.
 
@@ -147,7 +147,7 @@ The following configuration options should not normally need to be changed, but 
 
 * **warningQueueSize**, int, default 10000
 
-  The default number of jobs in the created or retry state a queue may hold before emitting a `queue_backlog` [`warning`](./events.md#warning) event. Applies per instance and must be at least 1. Individual queues can override this with their own [`warningQueueSize`](./queues.md#createqueue-name-queue) on `createQueue`.
+  The default number of jobs in the created or retry state a queue may hold before emitting a `queue_backlog` [`warning`](./events.md#warning) event. Applies per instance and must be at least 1. Individual queues can override this with their own [`warningQueueSize`](./queues.md#createqueuename-queue) on `createQueue`.
 
 * **backend**, string, default `'postgres'`
 
