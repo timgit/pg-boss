@@ -19,11 +19,11 @@ The default options for `work()` is 1 job every 2 seconds.
 
 * **batchSize**, int, *(default=1)*
 
-  Same as in [`fetch()`](./jobs#fetchname-options)
+  Same as in [`fetch()`](./jobs.md#fetchname-options)
 
 * **includeMetadata**, bool, *(default=false)*
 
-  Same as in [`fetch()`](./jobs#fetchname-options)
+  Same as in [`fetch()`](./jobs.md#fetchname-options)
 
 * **perJobResults**, bool, *(default=false)*
 
@@ -53,19 +53,19 @@ The default options for `work()` is 1 job every 2 seconds.
 
 * **priority**, bool, *(default=true)*
 
-  Same as in [`fetch()`](./jobs#fetchname-options)
+  Same as in [`fetch()`](./jobs.md#fetchname-options)
 
 * **orderByCreatedOn**, bool, *(default=true)*
 
-  Same as in [`fetch()`](./jobs#fetchname-options)
+  Same as in [`fetch()`](./jobs.md#fetchname-options)
 
 * **minPriority**, int
 
-  Same as in [`fetch()`](./jobs#fetchname-options)
+  Same as in [`fetch()`](./jobs.md#fetchname-options)
 
 * **maxPriority**, int
 
-  Same as in [`fetch()`](./jobs#fetchname-options)
+  Same as in [`fetch()`](./jobs.md#fetchname-options)
 
 * **pollingIntervalSeconds**, int, *(default=2)*
 
@@ -218,8 +218,8 @@ This is an **opt-in optimization on top of polling, not a replacement for it.** 
 
 **Enabling it requires two opt-ins:**
 
-1. Start the instance with [`useListenNotify: true`](./constructor.md#newoptions) and a `db` adapter that implements `listen` — e.g. [`fromPglite`](../database-backends.md#pglite-embedded). The built-in driver (Bun's SQL client) implements no LISTEN, so with it the listener cannot be established and bun-boss continues with polling.
-2. Mark each queue that should emit notifications with the [`notify: true`](./queues.md#createqueuename-queue) option on `createQueue()` (or `updateQueue()`).
+1. Start the instance with [`useListenNotify: true`]() and a `db` adapter that implements `listen` — e.g. [`fromPglite`](). The built-in driver (Bun's SQL client) implements no LISTEN, so with it the listener cannot be established and bun-boss continues with polling.
+2. Mark each queue that should emit notifications with the [`notify: true`]() option on `createQueue()` (or `updateQueue()`).
 
 ```js
 const boss = new BunBoss({ backend: 'pglite', db: fromPglite(pglite), useListenNotify: true })
@@ -239,9 +239,9 @@ await boss.send('email-welcome', { to: 'new@user.com' })
 
 **Notes and limitations:**
 
-- Only **immediately-available** jobs emit a notification. Future-dated jobs (`startAfter`, `sendAfter()`, throttling/debouncing) and jobs blocked by [flow](./jobs.md) dependencies are picked up by polling once they become eligible.
+- Only **immediately-available** jobs emit a notification. Future-dated jobs (`startAfter`, `sendAfter()`, throttling/debouncing) and jobs blocked by [flow]() dependencies are picked up by polling once they become eligible.
 - A NOTIFY is emitted transactionally with the insert, so it fires on commit. When you create jobs inside your own transaction via the `db` option, the notification commits atomically with your transaction.
-- The listener requires a `db` adapter that implements `listen` (e.g. `fromPglite`, or a custom adapter holding a session-pinned connection — **not** one through PgBouncer in transaction or statement pooling mode, which disables `LISTEN/NOTIFY`). The built-in driver implements no LISTEN. When a listener cannot be established, bun-boss emits a [`warning`](./events.md#warning) of type `listen_notify_unavailable` and continues polling only. The producer side still fires either way, so external listeners on other connections can act on it.
+- The listener requires a `db` adapter that implements `listen` (e.g. `fromPglite`, or a custom adapter holding a session-pinned connection — **not** one through PgBouncer in transaction or statement pooling mode, which disables `LISTEN/NOTIFY`). The built-in driver implements no LISTEN. When a listener cannot be established, bun-boss emits a [`warning`]() of type `listen_notify_unavailable` and continues polling only. The producer side still fires either way, so external listeners on other connections can act on it.
 - The notification channel is namespaced per `schema`, so multiple bun-boss instances (and other services) on the same database do not collide.
 
 ### `work(name, handler)`

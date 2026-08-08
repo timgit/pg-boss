@@ -1,0 +1,45 @@
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="description" content="bun-boss documentation — a Bun-first job queue on Postgres, PGlite, and SQLite." />
+<title>bun-boss docs</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/docsify@4/lib/themes/vue.css" />
+<style>
+  .llm-links { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--border-color, #eaecef); font-size: 0.9em; }
+  .llm-links a { margin-right: 1rem; }
+</style>
+<div id="app">Loading…</div>
+<script>
+  const REPO = 'khromov/bun-boss'
+  const BRANCH = 'main'
+  window.$docsify = {
+    name: 'bun-boss',
+    repo: REPO,
+    loadSidebar: true,
+    homepage: 'introduction.md',
+    relativePath: true,
+    subMaxLevel: 3,
+    auto2top: true,
+    search: { placeholder: 'Search', noData: 'No results', depth: 3 },
+    // Append per-page raw-markdown links so each doc can be pasted straight into an LLM.
+    plugins: [
+      function (hook, vm) {
+        hook.afterEach(function (html) {
+          const file = vm.route.file
+          if (!file || !file.endsWith('.md')) return html
+          const raw = 'https://raw.githubusercontent.com/' + REPO + '/' + BRANCH + '/docs/' + file
+          const blob = 'https://github.com/' + REPO + '/blob/' + BRANCH + '/docs/' + file
+          return html +
+            '<div class="llm-links">' +
+            '<strong>For LLMs:</strong> ' +
+            '<a href="' + raw + '" target="_blank" rel="noopener">Raw markdown of this page</a>' +
+            '<a href="llms.txt" target="_blank" rel="noopener">llms.txt</a>' +
+            '<a href="llms-full.txt" target="_blank" rel="noopener">llms-full.txt</a>' +
+            '<a href="' + blob + '" target="_blank" rel="noopener">View on GitHub</a>' +
+            '</div>'
+        })
+      }
+    ]
+  }
+</script>
+<script src="https://cdn.jsdelivr.net/npm/docsify@4"></script>
+<script src="https://cdn.jsdelivr.net/npm/docsify@4/lib/plugins/search.min.js"></script>

@@ -6,7 +6,7 @@ bun-boss will automatically create a dedicated schema (`pgboss` is the default n
 GRANT CREATE ON DATABASE db1 TO leastprivuser;
 ```
 
-If the CREATE privilege is not available or desired, export the schema DDL programmatically with the included [`getConstructionPlans()`](./api/utils) utility. It returns the SQL for the current schema version without executing it, so a DBA can review and run the commands manually:
+If the CREATE privilege is not available or desired, export the schema DDL programmatically with the included [`getConstructionPlans()`](./api/utils.md) utility. It returns the SQL for the current schema version without executing it, so a DBA can review and run the commands manually:
 
 ```js
 import { getConstructionPlans } from 'bun-boss'

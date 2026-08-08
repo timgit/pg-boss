@@ -83,7 +83,7 @@ All retry, expiration, and retention options can also be set on the queue and wi
   }
     ```
 
-  bun-boss ships with built-in adapters for Bun's SQL client and embedded PGlite. See [Database Adapters](./adapters) for details.
+  bun-boss ships with built-in adapters for Bun's SQL client and embedded PGlite. See [Database Adapters](./adapters.md) for details.
 
 **Deferred jobs**
 
@@ -360,7 +360,7 @@ Dependent jobs are created in a `blocked` state and won't be eligible for fetchi
 
 When a dependent job uses `startAfter`, both conditions must be met: all dependencies completed and `startAfter` has passed.
 
-Unblocking happens off the completion hot path: a background resolver wakes shortly after a parent completes (see `flowIntervalSeconds` in the [constructor options](./constructor.md)) and unblocks any dependents that are now ready. This keeps completing jobs fast regardless of how many flows exist. The resolver runs when `supervise` is enabled; call [`resolveFlow()`](#resolveflow) to force a pass immediately (e.g. in tests).
+Unblocking happens off the completion hot path: a background resolver wakes shortly after a parent completes (see `flowIntervalSeconds` in the [constructor options]()) and unblocks any dependents that are now ready. This keeps completing jobs fast regardless of how many flows exist. The resolver runs when `supervise` is enabled; call [`resolveFlow()`](#resolveflow) to force a pass immediately (e.g. in tests).
 
 ### `resolveFlow()`
 
