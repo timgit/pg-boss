@@ -31,7 +31,8 @@
     "lint:fix": "eslint . --fix",
     "cover": "bun run test -- --coverage --coverage-reporter=text --coverage-reporter=lcov",
     "tsc": "tsc --noEmit",
-    "console": "bun scripts/console.js"
+    "console": "bun scripts/console.js",
+    "docs:llms": "bun scripts/build-llms.ts"
   },
   "bunboss": {
     "schema": 1

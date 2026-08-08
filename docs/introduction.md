@@ -13,10 +13,10 @@ You may use as many Node.js instances as desired to connect to the same Postgres
 
 ## Job states
 
-All jobs start out in the `created` state and become `active` via [`fetch(name, options)`](./api/jobs#fetchname-options) or in a polling worker via [`work()`](./api/workers#work). 
+All jobs start out in the `created` state and become `active` via [`fetch(name, options)`](./api/jobs.md#fetchname-options) or in a polling worker via [`work()`](./api/workers.md#work). 
 
-In a worker, when your handler function completes, jobs will be marked `completed` automatically unless previously deleted via [`deleteJob(name, id)`](./api/jobs#deletejobname-id-options). If an unhandled error is thrown in your handler, the job will usually enter the `retry` state, and then the `failed` state once all retries have been attempted. 
+In a worker, when your handler function completes, jobs will be marked `completed` automatically unless previously deleted via [`deleteJob(name, id)`](./api/jobs.md#deletejobname-id-options). If an unhandled error is thrown in your handler, the job will usually enter the `retry` state, and then the `failed` state once all retries have been attempted. 
 
-Uncompleted jobs may also be assigned to `cancelled` state via [`cancel(name, id)`](./api/jobs#cancelname-id-options), where they can be moved back into `created` via [`resume(name, id)`](./api/jobs#resumename-id-options). Failed jobs can be retried via [`retry(name, id)`](./api/jobs#retryname-id-options).
+Uncompleted jobs may also be assigned to `cancelled` state via [`cancel(name, id)`](./api/jobs.md#cancelname-id-options), where they can be moved back into `created` via [`resume(name, id)`](./api/jobs.md#resumename-id-options). Failed jobs can be retried via [`retry(name, id)`](./api/jobs.md#retryname-id-options).
 
 All jobs that are not actively deleted during processing will remain in `completed`, `cancelled` or `failed` state until they are automatically removed.
