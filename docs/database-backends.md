@@ -236,6 +236,14 @@ queue lookups to bound it (see `ISSUES.txt` #3), but only 1.4 removes it.
 Transaction-scoped use (`fromBunSql(tx)` inside `sql.begin()`) never reserves a connection and is
 unaffected on either version.
 
+#### `@types/bun` is an optional peer dependency
+
+bun-boss publishes uncompiled TypeScript, so a consumer running `tsc` type-checks bun-boss's own
+sources as part of its program (`skipLibCheck` does not apply — it only skips `.d.ts`). The driver
+imports `SQL` from `bun`, so that project needs `@types/bun` installed: `bun add -d @types/bun`,
+which `bun init` already does. It is declared as an *optional* peer dependency rather than a
+runtime dependency, so `bun install` never pulls a types package into a production install.
+
 #### Usage
 
 Bun's SQL client is built in — nothing to install, and nothing to configure beyond the connection:

@@ -42,7 +42,7 @@ This will likely cater the most to teams already familiar with the simplicity of
 bun add bun-boss
 ```
 
-The package ships uncompiled TypeScript, so it is consumed by Bun directly — Node needs a bundler or transpiler to import it from `node_modules`.
+The package ships uncompiled TypeScript, so it is consumed by Bun directly — Node needs a bundler or transpiler to import it from `node_modules`. Because those sources are type-checked in place rather than as pre-built `.d.ts` files, a project that runs `tsc` also needs `@types/bun` (`bun add -d @types/bun`, which `bun init` already does). It is declared as an optional peer dependency, so nothing is installed for you and a runtime-only install stays free of type packages.
 
 ## Summary
 * Exactly-once job delivery

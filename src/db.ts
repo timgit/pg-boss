@@ -1,4 +1,6 @@
 import assert from 'node:assert'
+// @ts-ignore -- @types/bun is an optional peer dependency, so 'bun' may not resolve for a
+// consumer type-checking this package's shipped source.
 import { SQL } from 'bun'
 import { fromBunSql, type BunSqlLike } from './adapters/bun.ts'
 import type * as types from './types.ts'
@@ -17,8 +19,15 @@ const SQL_OPTION_KEYS = [
   'tls', 'max', 'connectionTimeout', 'idleTimeout', 'maxLifetime', 'path'
 ] as const satisfies readonly (keyof types.DatabaseOptions)[]
 
+// Structural type for Bun's SQL client, mirroring adapters/bun.ts, so the shipped TypeScript
+// type-checks in a project that has no @types/bun installed.
+interface BunSqlClient extends BunSqlLike {
+  close(): Promise<void>
+  begin<T>(fn: (tx: BunSqlLike) => Promise<T>): Promise<T>
+}
+
 class Db implements types.IDatabase {
-  private sql!: SQL
+  private sql!: BunSqlClient
   private adapter!: types.IDatabase
   private config: types.DatabaseOptions
   /** @internal */
@@ -48,7 +57,7 @@ class Db implements types.IDatabase {
   }
 
   async open () {
-    this.sql = new SQL(this.#sqlOptions())
+    this.sql = new SQL(this.#sqlOptions()) as unknown as BunSqlClient
     this.adapter = fromBunSql(this.sql)
     this.opened = true
   }
@@ -71,7 +80,7 @@ class Db implements types.IDatabase {
 
     // The transaction handle satisfies BunSqlLike, so the adapter runs the block un-reserved on
     // the transaction's own connection; sql.begin commits on resolve and rolls back on throw.
-    return await this.sql.begin(tx => fn(fromBunSql(tx as unknown as BunSqlLike))) as T
+    return await this.sql.begin(tx => fn(fromBunSql(tx)))
   }
 }
 
