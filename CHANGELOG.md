@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.4](https://github.com/khromov/bun-boss/compare/bun-boss-v0.2.3...bun-boss-v0.2.4) (2026-08-09)
+
+
+### Bug Fixes
+
+* **deps:** move @types/bun out of production dependencies ([#43](https://github.com/khromov/bun-boss/issues/43)) ([20935ab](https://github.com/khromov/bun-boss/commit/20935abfb11e24d3e563f84dacaa84e0836fcf11))
+
 ## [0.2.3](https://github.com/khromov/bun-boss/compare/bun-boss-v0.2.2...bun-boss-v0.2.3) (2026-08-08)
 
 
