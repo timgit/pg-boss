@@ -230,14 +230,14 @@ class Manager extends EventEmitter implements types.EventsMixin {
   // (each output carried per-id via a JSON recordset), so batch size never drives the statement
   // count. Any batch job the handler omits (or returns with an invalid shape) is failed with a
   // descriptive error so it retries / dead-letters per queue config.
-  async #settlePerJob<T> (name: string, jobs: types.Job<T>[], result: unknown): Promise<void> {
+  async #settlePerJob<T> (name: string, jobs: types.Job<T>[], result: unknown): Promise<number> {
     if (!Array.isArray(result)) {
       // The handler opted into perJobResults but did not return an array: a contract violation.
       // Fail the whole batch so the mistake surfaces and the jobs are retried.
       const err = new Error('perJobResults handler must resolve with an array of job results')
       await this.fail(name, jobs.map(job => job.id), err)
       await this.#trackJobsFailed(name, jobs, err)
-      return
+      return 0
     }
 
     // Index the handler's dispositions by job id, keeping only valid entries that reference a job
@@ -280,6 +280,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     // Dead lettered jobs end in the same terminal `failed` state as failed jobs on the source queue.
     this.#trackJobsSettled(name, completed, [...failed, ...deadLettered])
+
+    return completed.length
   }
 
   // Complete a set of active jobs, each with its own output, in a constant number of statements
@@ -344,7 +346,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     worker?: Worker<T>,
     heartbeatRefreshSeconds?: number,
     perJobResults = false
-  ): Promise<void> {
+  ): Promise<number> {
     const jobIds = jobs.map(job => job.id)
     const maxExpiration = jobs.reduce((acc, i) => Math.max(acc, i.expireInSeconds), 0)
     // Minimum, not maximum: heartbeatSeconds is per-job, and failJobsByHeartbeat fails a job once
@@ -379,6 +381,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     let completedAffected = 0
     let failedError: any
     let didFail = false
+    let settledCount = 0
 
     try {
       const result = await resolveWithinSeconds(callback(jobs), maxExpiration, `handler execution exceeded ${maxExpiration}s`, ac)
@@ -386,11 +389,12 @@ class Manager extends EventEmitter implements types.EventsMixin {
         // #settlePerJob settles each job individually and does its own (synchronous,
         // lookup-free) spy tracking via #trackJobsSettled, so the deferred tracker below
         // is skipped for this path.
-        await this.#settlePerJob(name, jobs, result)
+        settledCount = await this.#settlePerJob(name, jobs, result)
       } else {
         const completion = await this.complete(name, jobIds, jobIds.length === 1 ? result : undefined)
         completedResult = result
         completedAffected = completion.affected
+        settledCount = jobs.length
       }
     } catch (err: any) {
       await this.fail(name, jobIds, err)
@@ -418,6 +422,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
         await this.#trackJobsCompleted(name, jobs, completedResult, completedAffected)
       }
     }
+
+    return settledCount
   }
 
   async start () {
@@ -551,6 +557,11 @@ class Manager extends EventEmitter implements types.EventsMixin {
       perJobResults = false,
     } = options
 
+    // On by default, but not for a caller who configured one of the fullBatch-gated triggers:
+    // those exist to hold burst mode back, and silently widening them to any non-empty fetch
+    // would change a deliberately tuned setup on upgrade.
+    const burstWhileNonEmpty = options.burstWhileNonEmpty ?? (burstWhenReadyExceeds === undefined && !burstWhenBatchFull)
+
     const firstWorkerId = randomUUID({ disableEntropyCache: true })
 
     // NOTIFY is only doing the fast-path wakeups when the queue opted in (notify) AND the
@@ -564,17 +575,21 @@ class Manager extends EventEmitter implements types.EventsMixin {
     // backstop > base poll. Evaluated per-iteration so it tracks live cache/notify state and
     // any updateQueue notify toggles.
     //
-    // A burst trigger only engages while the last fetch came back full (>= batchSize). That is
-    // both the meaning of burstWhenBatchFull and the anti-hot-loop guard for burstWhenReadyExceeds:
-    // the cached ready count lags reality, so a short fetch (including 0 < 1 at the default batchSize)
-    // means the queue has likely caught up — fall back to normal polling instead of spinning on
-    // empty fetches. burstWhenBatchFull is ignored at batchSize 1 (every fetch would be "full").
-    const resolveInterval = (lastFetchCount: number) => {
-      const fullBatch = lastFetchCount >= batchSize
-      const burst = fullBatch && (
-        (burstWhenReadyExceeds !== undefined && getReadyCount() > burstWhenReadyExceeds) ||
-        (burstWhenBatchFull && batchSize > 1)
-      )
+    // burstWhileNonEmpty (default on) bursts while jobs keep settling, so a backlog drains at the
+    // fetch rate rather than one job per poll interval even at batchSize 1. It gates on settled
+    // rather than fetched jobs because retryDelay defaults to 0: a batch whose handler threw is
+    // instantly re-fetchable, and bursting on it would burn every retryLimit attempt in
+    // milliseconds. The fullBatch-gated triggers stay for opt-out (burstWhileNonEmpty: false): a
+    // short fetch means the queue likely caught up, and burstWhenBatchFull is ignored at batchSize
+    // 1 (every fetch would be "full").
+    const resolveInterval = (fetchedCount: number, settledCount: number) => {
+      const fullBatch = fetchedCount >= batchSize
+      const burst =
+        (burstWhileNonEmpty && settledCount > 0) ||
+        (fullBatch && (
+          (burstWhenReadyExceeds !== undefined && getReadyCount() > burstWhenReadyExceeds) ||
+          (burstWhenBatchFull && batchSize > 1)
+        ))
 
       if (burst) return 0
       return isNotifyActive() ? notifyInterval : interval
@@ -586,7 +601,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       }
 
       const onFetch = async (jobs: types.Job<ReqData>[]) => {
-        if (!jobs.length) return
+        if (!jobs.length) return 0
         if (this.config.__test__throw_worker) throw new Error('__test__throw_worker')
 
         this.emitWip(name)
@@ -595,9 +610,11 @@ class Manager extends EventEmitter implements types.EventsMixin {
         // Get the worker instance for abort controller tracking
         const worker = this.workers.get(workerId)
 
-        await this.#processJobs(name, jobs, callback, worker, heartbeatRefreshSeconds, perJobResults)
+        const settledCount = await this.#processJobs(name, jobs, callback, worker, heartbeatRefreshSeconds, perJobResults)
 
         this.emitWip(name)
+
+        return settledCount
       }
 
       const onError = (error: any) => {

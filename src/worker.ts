@@ -13,9 +13,9 @@ interface WorkerOptions<T> {
   workId: string
   name: string
   options: types.WorkOptions
-  resolveInterval: (lastFetchCount: number) => number
+  resolveInterval: (fetchedCount: number, settledCount: number) => number
   fetch: () => Promise<types.Job<T>[]>
-  onFetch: (jobs: types.Job<T>[]) => Promise<void>
+  onFetch: (jobs: types.Job<T>[]) => Promise<number>
   onError: (err: any) => void
 }
 
@@ -25,9 +25,9 @@ class Worker<T = unknown> {
   readonly name: string
   readonly options: types.WorkOptions
   readonly fetch: () => Promise<types.Job<T>[]>
-  readonly onFetch: (jobs: types.Job<T>[]) => Promise<void>
+  readonly onFetch: (jobs: types.Job<T>[]) => Promise<number>
   readonly onError: (err: any) => void
-  readonly resolveInterval: (lastFetchCount: number) => number
+  readonly resolveInterval: (fetchedCount: number, settledCount: number) => number
 
   jobs: types.Job<T>[] = []
   createdOn = Date.now()
@@ -66,9 +66,10 @@ class Worker<T = unknown> {
     while (!this.stopping) {
       const started = Date.now()
 
-      // Number of jobs the last fetch returned; stays 0 on error so a failed fetch backs
-      // off to normal polling instead of hot-looping in burst mode.
+      // Jobs the last fetch returned, and of those how many settled; both stay 0 on error so a
+      // failed iteration backs off to normal polling instead of hot-looping in burst mode.
       let fetchedCount = 0
+      let settledCount = 0
 
       try {
         this.beenNotified = false
@@ -82,13 +83,17 @@ class Worker<T = unknown> {
 
           this.lastJobStartedOn = this.lastFetchedOn
 
-          await this.onFetch(jobs)
+          settledCount = await this.onFetch(jobs)
 
           this.lastJobEndedOn = Date.now()
 
           this.jobs = []
         }
       } catch (err: any) {
+        // onFetch throws with fetchedCount already assigned, so clear it here too.
+        fetchedCount = 0
+        settledCount = 0
+
         this.lastErrorOn = Date.now()
         this.lastError = err
 
@@ -102,10 +107,10 @@ class Worker<T = unknown> {
       this.lastJobDuration = duration
 
       // Resolve the effective delay each iteration: burst (continuous), NOTIFY backstop, or
-      // the base poll (see Manager.work). fetchedCount lets the resolver keep going only while
-      // fetches come back full — a short fetch resumes normal polling. A returned interval
-      // <= duration + 100 (0 in burst mode) skips the delay and re-fetches immediately.
-      const interval = this.resolveInterval(fetchedCount)
+      // the base poll (see Manager.work). The two counts are what let the resolver end burst
+      // mode on an unproductive iteration. A returned interval <= duration + 100 (0 in burst
+      // mode) skips the delay and re-fetches immediately.
+      const interval = this.resolveInterval(fetchedCount, settledCount)
 
       if (!this.stopping && !this.beenNotified && (interval - duration) > 100) {
         this.loopDelayPromise = delay(interval - duration)

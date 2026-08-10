@@ -91,6 +91,12 @@ The default options for `work()` is 1 job every 2 seconds.
 
   While each fetch returns a full `batchSize` batch there is clearly more work, so the worker keeps fetching continuously with no delay; the first short fetch ends burst mode. Unlike `burstWhenReadyExceeds` this reacts instantly and needs no cached stats. Ignored when `batchSize` is 1 (every successful fetch would otherwise be "full").
 
+* **burstWhileNonEmpty**, bool, *(default=true, unless `burstWhenReadyExceeds` or `burstWhenBatchFull` is set)*
+
+  While each fetch settles at least one job there is more work ready, so the worker keeps fetching continuously with no delay; the first fetch that settles nothing — an empty fetch, a failed fetch, or a batch whose handler threw for every job — resumes normal polling. Unlike `burstWhenBatchFull` this works at any `batchSize`, including 1 — the poll interval becomes the idle cadence, not a per-job delay while a backlog drains. Set `false` to restore the pre-0.3 behavior of one fetch per poll interval.
+
+  > **Note**: Because the other two triggers exist to hold burst mode back, setting either of them opts out of this one — otherwise this would burst on every non-empty fetch and make their thresholds moot. Passing `burstWhileNonEmpty: true` explicitly overrides that opt-out, at which point the other trigger no longer has any effect. Gating on *settled* rather than fetched jobs matters because `retryDelay` defaults to 0: a batch whose handler threw is immediately re-fetchable, and bursting on it would burn every `retryLimit` attempt in milliseconds.
+
 * **localConcurrency**, int, *(default=1)*
 
   Number of workers to spawn for this queue within the current Bun process. Each worker polls and processes jobs independently, enabling parallel job processing within a single `work()` call.

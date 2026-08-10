@@ -547,8 +547,8 @@ export type ScheduleOptions = SendOptions & { tz?: string, key?: string }
  * How long a worker waits between fetches. The delay before each fetch is chosen by
  * precedence — **burst → notify → base**:
  *
- * 1. **burst** (fetch continuously): a `burstWhen*` trigger is active and the last fetch
- *    came back full, so there is clearly more work to pull.
+ * 1. **burst** (fetch continuously): a burst trigger is active, so there is clearly more work
+ *    to pull — by default `burstWhileNonEmpty`, i.e. the last fetch settled at least one job.
  * 2. **notify** (`notifyPollingIntervalSeconds`): NOTIFY is active for the queue, so polling
  *    is just a relaxed backstop.
  * 3. **base** (`pollingIntervalSeconds`): the normal idle poll.
@@ -581,6 +581,10 @@ export interface JobPollingOptions {
    * The ready count is read from the stats cache, so reaction latency is bounded by the
    * instance-level stats pipeline (`monitorIntervalSeconds` / `superviseIntervalSeconds` /
    * `queueCacheIntervalSeconds`, all default 60s).
+   *
+   * Setting this opts out of the default `burstWhileNonEmpty`, which would otherwise burst on
+   * every non-empty fetch and make this threshold moot. Passing `burstWhileNonEmpty: true`
+   * alongside it restores that — and this threshold then has no effect.
    */
   burstWhenReadyExceeds?: number;
   /**
@@ -588,9 +592,24 @@ export interface JobPollingOptions {
    * work, so the worker keeps fetching continuously with no delay; the first short fetch ends
    * burst mode. Unlike `burstWhenReadyExceeds` this is instant and needs no cached
    * stats. Ignored when `batchSize` is 1 (every successful fetch would otherwise be "full").
+   *
+   * Setting this opts out of the default `burstWhileNonEmpty`, which would otherwise burst on
+   * every non-empty fetch and make the full-batch gate moot. Passing `burstWhileNonEmpty: true`
+   * alongside it restores that — and this gate then has no effect.
    * @default false
    */
   burstWhenBatchFull?: boolean;
+  /**
+   * Burst trigger. While each fetch settles at least one job there is more work ready, so the
+   * worker keeps fetching continuously with no delay; the first fetch that settles nothing — an
+   * empty fetch, a failed fetch, or a batch whose handler threw for every job — ends burst mode
+   * and resumes normal polling. Gating on settled rather than fetched jobs is what keeps a
+   * failing handler from burning every `retryLimit` attempt in milliseconds, since `retryDelay`
+   * defaults to 0. Unlike `burstWhenBatchFull` this works at any `batchSize`, including 1, making
+   * the poll interval the idle cadence rather than a per-job delay while a backlog drains.
+   * @default true, unless `burstWhenReadyExceeds` or `burstWhenBatchFull` is set
+   */
+  burstWhileNonEmpty?: boolean;
 }
 
 export interface JobFetchOptions {

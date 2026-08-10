@@ -102,7 +102,7 @@ describe('work', function () {
     let processed = 0
     // A 30s base poll means that without the burst bypass at most ~1 job would be processed in
     // the window below. A ready count of 10 > 5 should fetch all 10 continuously instead.
-    await ctx.boss.work(ctx.schema, { pollingIntervalSeconds: 30, burstWhenReadyExceeds: 5 }, async () => { processed++ })
+    await ctx.boss.work(ctx.schema, { pollingIntervalSeconds: 30, burstWhenReadyExceeds: 5, burstWhileNonEmpty: false }, async () => { processed++ })
 
     for (let i = 0; i < 30; i++) {
       if (processed >= jobCount) break
@@ -125,7 +125,7 @@ describe('work', function () {
     // batchSize 5 -> fetches of 5, 5, then 2 (short). The full batches keep the worker fetching
     // with no delay; the short fetch ends it. Without the bypass the 30s base poll would let at
     // most one batch through in the window below.
-    await ctx.boss.work(ctx.schema, { batchSize: 5, pollingIntervalSeconds: 30, burstWhenBatchFull: true }, async (jobs) => { processed += jobs.length })
+    await ctx.boss.work(ctx.schema, { batchSize: 5, pollingIntervalSeconds: 30, burstWhenBatchFull: true, burstWhileNonEmpty: false }, async (jobs) => { processed += jobs.length })
 
     for (let i = 0; i < 30; i++) {
       if (processed >= jobCount) break
@@ -142,7 +142,7 @@ describe('work', function () {
     // batchSize defaults to 1, so burstWhenBatchFull is a no-op: after the first job the worker
     // must wait out the 30s base poll rather than fetching continuously.
     await ctx.boss.send(ctx.schema)
-    await ctx.boss.work(ctx.schema, { pollingIntervalSeconds: 30, burstWhenBatchFull: true }, async (jobs) => { processed += jobs.length })
+    await ctx.boss.work(ctx.schema, { pollingIntervalSeconds: 30, burstWhenBatchFull: true, burstWhileNonEmpty: false }, async (jobs) => { processed += jobs.length })
 
     await delay(500)
     expect(processed).toBe(1)
@@ -173,7 +173,7 @@ describe('work', function () {
     // batchSize 10 > the 5 seeded jobs, so the first fetch comes back short (5 < 10). Even
     // though the cached ready count (5) exceeds burstWhenReadyExceeds (1), a short fetch must NOT
     // keep the worker in burst mode — it should fall back to the 3s poll.
-    await ctx.boss.work(ctx.schema, { batchSize: 10, pollingIntervalSeconds: 3, burstWhenReadyExceeds: 1 }, async (jobs) => { processed += jobs.length })
+    await ctx.boss.work(ctx.schema, { batchSize: 10, pollingIntervalSeconds: 3, burstWhenReadyExceeds: 1, burstWhileNonEmpty: false }, async (jobs) => { processed += jobs.length })
 
     // The first fetch grabs all seeded jobs in one batch.
     await delay(500)
@@ -184,6 +184,127 @@ describe('work', function () {
     await ctx.boss.send(ctx.schema)
     await delay(1200)
     expect(processed).toBe(seeded)
+  })
+
+  it('should fail if burstWhileNonEmpty is not a boolean', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+    await expect((async () => {
+      // @ts-ignore
+      await ctx.boss!.work(ctx.schema, { burstWhileNonEmpty: 'yes' }, async () => {})
+    })()).rejects.toThrow(/burstWhileNonEmpty/)
+  })
+
+  it('drains a batchSize 1 backlog continuously by default with burstWhileNonEmpty', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    const jobCount = 10
+    for (let i = 0; i < jobCount; i++) {
+      await ctx.boss.send(ctx.schema)
+    }
+
+    let processed = 0
+    // No burst option passed and batchSize defaults to 1 (where burstWhenBatchFull is a no-op): only
+    // the default-on burstWhileNonEmpty can drain this before the 30s base poll would let ~1 through.
+    await ctx.boss.work(ctx.schema, { pollingIntervalSeconds: 30 }, async () => { processed++ })
+
+    for (let i = 0; i < 30; i++) {
+      if (processed >= jobCount) break
+      await delay(100)
+    }
+
+    expect(processed).toBe(jobCount)
+  })
+
+  it('resumes normal polling after the backlog drains with burstWhileNonEmpty', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    await ctx.boss.send(ctx.schema)
+
+    let processed = 0
+    await ctx.boss.work(ctx.schema, { pollingIntervalSeconds: 30 }, async () => { processed++ })
+
+    // The one job drains at once; the following empty fetch ends the burst and drops the worker back
+    // to the 30s base poll.
+    await delay(500)
+    expect(processed).toBe(1)
+
+    // A job sent now must wait out that poll — if the empty fetch didn't end the burst the worker
+    // would be hot-looping at 0 and grab it immediately.
+    await ctx.boss.send(ctx.schema)
+    await delay(1200)
+    expect(processed).toBe(1)
+  })
+
+  it('bursts through a partial trailing fetch, not only full batches, with burstWhileNonEmpty', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    const jobCount = 8
+    for (let i = 0; i < jobCount; i++) {
+      await ctx.boss.send(ctx.schema)
+    }
+
+    let processed = 0
+    // batchSize 5 -> fetches of 5 then a partial 3. burstWhenBatchFull would stop at the short fetch;
+    // burstWhileNonEmpty keeps going while any job comes back, so all 8 drain before the 30s poll.
+    await ctx.boss.work(ctx.schema, { batchSize: 5, pollingIntervalSeconds: 30 }, async (jobs) => { processed += jobs.length })
+
+    for (let i = 0; i < 30; i++) {
+      if (processed >= jobCount) break
+      await delay(100)
+    }
+
+    expect(processed).toBe(jobCount)
+  })
+
+  it('leaves burstWhileNonEmpty off when another burst trigger is configured', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    for (let i = 0; i < 5; i++) {
+      await ctx.boss.send(ctx.schema)
+    }
+
+    let processed = 0
+    // burstWhenBatchFull is set but a no-op at batchSize 1, and configuring it opts out of the
+    // default burstWhileNonEmpty — so this backlog drains one job per 30s poll, not all at once.
+    await ctx.boss.work(ctx.schema, { pollingIntervalSeconds: 30, burstWhenBatchFull: true }, async (jobs) => { processed += jobs.length })
+
+    await delay(1500)
+    expect(processed).toBe(1)
+  })
+
+  it('does not burst on a batch whose handler failed every job', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    await ctx.boss.send(ctx.schema, {}, { retryLimit: 5 })
+
+    let attempts = 0
+    await ctx.boss.work(ctx.schema, { pollingIntervalSeconds: 30 }, async () => {
+      attempts++
+      throw new Error('handler blew up')
+    })
+
+    // retryDelay defaults to 0, so the failed job is immediately re-fetchable: only gating burst
+    // on settled jobs keeps the worker from burning all 5 retries in a hot loop.
+    await delay(1500)
+    expect(attempts).toBe(1)
+  })
+
+  it('does not burst when job processing throws after the fetch', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__throw_worker: true })
+
+    const errors: any[] = []
+    ctx.boss.on('error', err => errors.push(err))
+
+    for (let i = 0; i < 5; i++) {
+      await ctx.boss.send(ctx.schema)
+    }
+
+    await ctx.boss.work(ctx.schema, { pollingIntervalSeconds: 30 }, async () => {})
+
+    // The throw lands after the fetch count was recorded, so without clearing it the worker would
+    // burst straight through the remaining jobs instead of backing off to the 30s poll.
+    await delay(1500)
+    expect(errors.length).toBe(1)
   })
 
   it('offWork should fail without a name', async function () {
@@ -206,7 +327,9 @@ describe('work', function () {
       await ctx.boss.send(ctx.schema)
     }
 
-    await ctx.boss.work(ctx.schema, { pollingIntervalSeconds }, async () => {
+    // burstWhileNonEmpty: false opts out of the default backlog draining so this observes the base
+    // poll cadence — with the default on, all 10 would drain at once instead of one per interval.
+    await ctx.boss.work(ctx.schema, { pollingIntervalSeconds, burstWhileNonEmpty: false }, async () => {
       processCount++
     })
 
