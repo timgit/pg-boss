@@ -13,7 +13,8 @@ import type * as types from './types.ts'
 // 'error'), so connection failures surface as rejections on the operation that hit them.
 // Explicit allowlist: the resolved config carries every constructor option, and only the
 // connection settings may reach Bun's SQL constructor. Deliberately excludes `prepare` and
-// `bigint` — the adapter's parameter encoding depends on both (see ISSUES.txt #1).
+// `bigint` — the adapter's parameter encoding depends on both: with `prepare: false` bun has no
+// prepared-statement type to encode a live object bound to an uncast jsonb placeholder.
 const SQL_OPTION_KEYS = [
   'url', 'hostname', 'port', 'username', 'password', 'database',
   'tls', 'max', 'connectionTimeout', 'idleTimeout', 'maxLifetime', 'path'

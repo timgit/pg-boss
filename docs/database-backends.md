@@ -230,8 +230,9 @@ unrelated query can fail with `25P02 current transaction is aborted` whenever a 
 fails under concurrency — contended maintenance being the realistic trigger. The window is inside
 Bun's pool and is fixed in 1.4; on 1.3.x the driver detects the aborted state, clears it, and
 retries, so the failure is masked rather than eliminated. A rarer silent form of the same 1.3.x
-defect can return an empty result for a committed row under concurrent load — bun-boss corroborates
-queue lookups to bound it (see `ISSUES.txt` #3), but only 1.4 removes it.
+defect can return an empty result for a committed row under concurrent load — bun-boss bounds it by
+re-reading a queue lookup that comes back empty before treating the queue as missing, and by
+requiring two consecutive empty refreshes before it wipes the queue cache. Only 1.4 removes it.
 
 Transaction-scoped use (`fromBunSql(tx)` inside `sql.begin()`) never reserves a connection and is
 unaffected on either version.

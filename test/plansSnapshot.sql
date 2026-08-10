@@ -4537,7 +4537,7 @@ SELECT 2;
 
     FROM pgboss.job
     WHERE name = $1
-      AND data @> $2
+      AND data @> $2::jsonb
     
 
 === findJobs byId ===
@@ -4608,7 +4608,7 @@ SELECT 2;
     FROM pgboss.job
     WHERE name = $1
       AND singleton_key = $2
-      AND data @> $3
+      AND data @> $3::jsonb
       AND state < 'active'
     
 

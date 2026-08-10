@@ -81,7 +81,8 @@ export interface Dialect {
   jsonHasKey(expr: string, key: string): string
 
   // A bound parameter used as a JSON document. Postgres casts the text to jsonb; SQLite's json
-  // functions read JSON text directly.
+  // functions read JSON text directly. The postgres cast is also what marks the parameter as json
+  // for the bun adapter's classifier, so route every json placeholder through here.
   jsonParam(param: string): string
 
   // Extracts a typed scalar from a JSON expression. SQLite's ->> already returns SQL-typed

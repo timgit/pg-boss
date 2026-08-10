@@ -3,6 +3,21 @@
 // violated); KNOWN-BUG rows document upstream behavior the adapter works around, and a change
 // there means a workaround may be removable — reported, not fatal.
 //
+// What each KNOWN-BUG row below costs the adapter (src/adapters/sqlite.ts), so a row that starts
+// passing points at the code that can go:
+//
+//   array values bind by first appearance  -> every $n is rewritten to an anonymous `?` and the
+//                                             values expanded per occurrence
+//   multi-statement unsafe() loses rows    -> scripts are split and run one statement at a time
+//                                             under the serialization lock
+//   double-quote desyncs the lexer         -> JSON is never rendered as an inline literal on the
+//                                             sqlite dialect, only ever bound as a parameter
+//   Date parameter binds as NULL           -> Dates are converted to the dialect's ISO text
+//                                             (toSqliteTimestamp) before binding
+//   reserve() unsupported, begin() leaks   -> the adapter drives BEGIN IMMEDIATE/COMMIT itself
+//                                             under a mutex shared by every wrapper of one SQL
+//   alias-qualified RETURNING rejected     -> sqlite-rendered plans return unqualified columns
+//
 // Usage: bun scripts/spike-bun-sqlite.ts
 
 import { SQL } from 'bun'

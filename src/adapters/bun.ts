@@ -72,27 +72,18 @@ function promoteSqlState (err: any): any {
 // uses: pre-encoded text passes through, while a live object (complete/fail bind the serialized-error
 // output from src/serialize-error.ts) is encoded here rather than stringified into "[object Object]"
 // by the text binding.
+//
+// Only an explicit ::json/::jsonb cast marks a placeholder as json, so every json placeholder in
+// plans.ts must carry one — a bare `data @> $n` double-encodes, which a plansSnapshot guard catches.
 const JSON_CAST_REGEX = /\$(\d+)\s*::\s*(jsonb?)\b/gi
-
-// A placeholder can also be typed as json by the operator it sits under rather than by a cast:
-// findJobs filters with `data @> $n`, where postgres infers jsonb from the column. Give those the
-// same explicit cast so the rule stays "a json argument is bound as text". A placeholder that
-// already carries its own cast is left for the pass above — the word boundary stops `\d+` from
-// backtracking into a partial index (`$1` out of `$12::jsonb`) just to satisfy the lookahead.
-const JSON_OPERATOR_REGEX = /(@>|<@)(\s*)\$(\d+)\b(?!\s*::)/g
 
 function rewriteJsonCasts (text: string): { query: string, jsonParams: Set<number> } {
   const jsonParams = new Set<number>()
 
-  const query = text
-    .replace(JSON_OPERATOR_REGEX, (_match, operator: string, space: string, index: string) => {
-      jsonParams.add(Number(index))
-      return `${operator}${space}$${index}::text::jsonb`
-    })
-    .replace(JSON_CAST_REGEX, (_match, index: string, type: string) => {
-      jsonParams.add(Number(index))
-      return `$${index}::text::${type}`
-    })
+  const query = text.replace(JSON_CAST_REGEX, (_match, index: string, type: string) => {
+    jsonParams.add(Number(index))
+    return `$${index}::text::${type}`
+  })
 
   return { query, jsonParams }
 }
@@ -257,7 +248,8 @@ export function fromBunSql (sql: BunSqlLike): IDatabase {
 
           // 25P02 reaching this adapter is always spurious: every transaction block it issues ends
           // in COMMIT or is rolled back before the connection goes back to the pool, so an aborted
-          // transaction on a connection handed to us is bun 1.3.x leaking one (see ISSUES.txt #3).
+          // transaction on a connection handed to us is bun 1.3.x leaking one into the pool, which
+          // 1.4 fixes at the source.
           if (err?.code !== ABORTED_TRANSACTION || attempt >= ABORTED_RETRY_LIMIT || !isPooled(sql)) {
             throw err
           }

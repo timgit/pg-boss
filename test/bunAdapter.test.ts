@@ -204,34 +204,29 @@ describe('bun adapter', () => {
       expect(call.values).toEqual([null, undefined])
     })
 
-    it('casts a placeholder typed by a jsonb containment operator', async () => {
-      // findJobs filters with `data @> $n`, where the column supplies the type instead of a cast.
-      const call = await capture('SELECT * FROM job WHERE data @> $1', ['{"type":"email"}'])
+    it('casts a jsonb containment placeholder that carries an explicit cast', async () => {
+      // findJobs filters with `data @> $n::jsonb`; the cast is what the classifier keys on.
+      const call = await capture('SELECT * FROM job WHERE data @> $1::jsonb', ['{"type":"email"}'])
       expect(call.text).toBe('SELECT * FROM job WHERE data @> $1::text::jsonb')
       expect(call.values).toEqual(['{"type":"email"}'])
     })
 
-    it('does not double-cast a containment placeholder that already has one', async () => {
-      const call = await capture('SELECT * FROM job WHERE data @> $1::jsonb', ['{}'])
-      expect(call.text).toBe('SELECT * FROM job WHERE data @> $1::text::jsonb')
+    it('leaves a bare containment placeholder untouched', async () => {
+      // A json placeholder is recognised only by its cast, so plans.ts must write `$n::jsonb`; a
+      // bare `data @> $n` passes through and would double-encode (the plansSnapshot test guards this).
+      const call = await capture('SELECT * FROM job WHERE data @> $1', [{ type: 'email' }])
+      expect(call.text).toBe('SELECT * FROM job WHERE data @> $1')
+      expect(call.values).toEqual([{ type: 'email' }])
     })
 
-    it('casts a two-digit containment placeholder without splitting its index', async () => {
+    it('casts a two-digit placeholder without splitting its index', async () => {
       const values = [...Array(10).fill('x'), { keep: true }, { type: 'email' }]
 
-      const call = await capture('SELECT * FROM job WHERE a = $11 AND data @> $12', values)
+      const call = await capture('SELECT * FROM job WHERE a = $11 AND data @> $12::jsonb', values)
 
       expect(call.text).toBe('SELECT * FROM job WHERE a = $11 AND data @> $12::text::jsonb')
       expect(call.values![10]).toEqual({ keep: true })
       expect(call.values![11]).toBe('{"type":"email"}')
-    })
-
-    it('does not backtrack into a two-digit placeholder that already carries a cast', async () => {
-      // Without the word boundary, `\d+` gives back a digit to satisfy the lookahead and `$12::jsonb`
-      // is mangled into `$1::text::jsonb2::jsonb`.
-      const call = await capture('SELECT * FROM job WHERE data @> $12::jsonb', ['{}'])
-
-      expect(call.text).toBe('SELECT * FROM job WHERE data @> $12::text::jsonb')
     })
 
     it('only json-encodes the arguments that carry a json cast', async () => {
