@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.0](https://github.com/khromov/bun-boss/compare/bun-boss-v0.2.4...bun-boss-v0.3.0) (2026-08-10)
+
+
+### Features
+
+* **worker:** burst immediately after a non-empty fetch ([#45](https://github.com/khromov/bun-boss/issues/45)) ([3729da5](https://github.com/khromov/bun-boss/commit/3729da55a206c21a9f1fc45d74b9280ed81a4c5c))
+
+
+### Bug Fixes
+
+* **adapters:** key json classifier solely on explicit casts, retire ISSUES.txt ([#34](https://github.com/khromov/bun-boss/issues/34)) ([3dcbce1](https://github.com/khromov/bun-boss/commit/3dcbce1e7fb28ece41d8638e18ad153845ac826e))
+
 ## [0.2.4](https://github.com/khromov/bun-boss/compare/bun-boss-v0.2.3...bun-boss-v0.2.4) (2026-08-09)
 
 
