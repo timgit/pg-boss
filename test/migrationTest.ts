@@ -1,8 +1,8 @@
 import { expect, beforeEach } from 'vitest'
 import { PgBoss, getConstructionPlans, getMigrationPlans, getRollbackPlans } from '../src/index.ts'
-import { getDb, assertTruthy, getSchemaDefs, itPostgresOnly } from './testHelper.ts'
+import { getDb, assertTruthy, getSchemaDefs, itPostgresOnly, start } from './testHelper.ts'
 import Contractor from '../src/contractor.ts'
-import { getAll, migrate, migrateCommands, getMinVersion } from '../src/migrationStore.ts'
+import { getAll, migrate, migrateCommands, getMinVersion, next } from '../src/migrationStore.ts'
 import packageJson from '../package.json' with { type: 'json' }
 import { setVersion, getPartitionedQueueTables, jobTableFormatFunction } from '../src/plans.ts'
 import { ctx } from './hooks.ts'
@@ -429,6 +429,18 @@ describe('migration', function () {
 
     expect(migratedVersion).toBe(currentSchemaVersion)
 
+    const boss = ctx.boss = await start({
+      ...config,
+      noDefault: true,
+      bamIntervalSeconds: 1,
+      __test__bypass_bam_interval_check: true
+    })
+    await expect.poll(async () => {
+      const status = await boss.getBamStatus()
+      return status.filter(item => item.status !== 'completed').reduce((sum, item) => sum + item.count, 0)
+    }, { timeout: 10000 }).toBe(0)
+    await boss.stop()
+
     // Capture final schema state
     const finalSchema = await getSchemaDefs([config.schema])
 
@@ -650,12 +662,102 @@ describe('migration', function () {
     await db.close()
   })
 
+  itPostgresOnly('builds the key_strict_fifo head index for shared and strict FIFO job tables', async function () {
+    const config = { ...ctx.bossConfig }
+    const schema = config.schema
+    const db = await getDb()
+
+    await contractor.create()
+    await contractor.rollback(currentSchemaVersion)
+    await db.executeSql(`SELECT ${schema}.create_queue('strict_existing', '{"partition":true,"policy":"key_strict_fifo"}'::jsonb)`)
+    await db.executeSql(`SELECT ${schema}.create_queue('standard_existing', '{"partition":true,"policy":"standard"}'::jsonb)`)
+
+    const queues = await db.executeSql(`SELECT name, table_name FROM ${schema}.queue WHERE name IN ('strict_existing', 'standard_existing')`)
+    const strictTable = queues.rows.find(row => row.name === 'strict_existing').table_name
+    const standardTable = queues.rows.find(row => row.name === 'standard_existing').table_name
+
+    await contractor.migrate(currentSchemaVersion - 1)
+
+    const targets = await db.executeSql(`SELECT table_name FROM ${schema}.bam WHERE name = 'key_strict_fifo_head_index' ORDER BY table_name`)
+    expect(targets.rows.map(row => row.table_name)).toEqual(['job_common', strictTable].sort())
+
+    const boss = ctx.boss = await start({
+      ...config,
+      noDefault: true,
+      bamIntervalSeconds: 1,
+      __test__bypass_bam_interval_check: true
+    })
+    await expect.poll(async () => {
+      const status = await boss.getBamStatus()
+      return status.filter(item => item.status !== 'completed').reduce((sum, item) => sum + item.count, 0)
+    }, { timeout: 10000 }).toBe(0)
+
+    const existingIndexes = await db.executeSql(`
+      SELECT to_regclass('${schema}.job_common_i10') AS common,
+             to_regclass('${schema}.${strictTable}_i10') AS strict,
+             to_regclass('${schema}.${standardTable}_i10') AS standard
+    `)
+    expect(existingIndexes.rows[0].common).not.toBeNull()
+    expect(existingIndexes.rows[0].strict).not.toBeNull()
+    expect(existingIndexes.rows[0].standard).toBeNull()
+
+    await boss.createQueue('strict_future', { partition: true, policy: 'key_strict_fifo' })
+    const futureQueue = await db.executeSql(`SELECT table_name FROM ${schema}.queue WHERE name = 'strict_future'`)
+    const futureIndex = await db.executeSql(`SELECT to_regclass('${schema}.${futureQueue.rows[0].table_name}_i10') AS name`)
+    expect(futureIndex.rows[0].name).not.toBeNull()
+
+    await db.close()
+  })
+
+  itPostgresOnly('removes pending key_strict_fifo index builds before rolling back v38', async function () {
+    const schema = ctx.bossConfig.schema
+    const db = await getDb()
+
+    await contractor.create()
+    await contractor.rollback(currentSchemaVersion)
+    await db.executeSql(`SELECT ${schema}.create_queue('strict_existing', '{"partition":true,"policy":"key_strict_fifo"}'::jsonb)`)
+
+    const queue = await db.executeSql(`SELECT table_name FROM ${schema}.queue WHERE name = 'strict_existing'`)
+    const table = queue.rows[0].table_name
+
+    await contractor.migrate(currentSchemaVersion - 1)
+
+    const pendingBefore = await db.executeSql(`SELECT count(*)::int AS count FROM ${schema}.bam WHERE version = 38 AND name = 'key_strict_fifo_head_index' AND status <> 'completed'`)
+    expect(pendingBefore.rows[0].count).toBe(2)
+
+    await contractor.rollback(currentSchemaVersion)
+
+    const pendingAfter = await db.executeSql(`SELECT count(*)::int AS count FROM ${schema}.bam WHERE version = 38 AND name = 'key_strict_fifo_head_index' AND status <> 'completed'`)
+    const indexes = await db.executeSql(`SELECT to_regclass('${schema}.job_common_i10') AS common, to_regclass('${schema}.${table}_i10') AS strict`)
+    expect(pendingAfter.rows[0].count).toBe(0)
+    expect(indexes.rows[0]).toEqual({ common: null, strict: null })
+
+    await db.close()
+  })
+
+  itPostgresOnly('refuses to roll back v38 while a key_strict_fifo index build is in progress', async function () {
+    const schema = ctx.bossConfig.schema
+    const db = await getDb()
+
+    await contractor.create()
+    await contractor.rollback(currentSchemaVersion)
+    await contractor.migrate(currentSchemaVersion - 1)
+    await db.executeSql(`UPDATE ${schema}.bam SET status = 'in_progress' WHERE version = 38 AND name = 'key_strict_fifo_head_index' AND table_name = 'job_common'`)
+
+    await expect(contractor.rollback(currentSchemaVersion)).rejects.toThrow(/while key_strict_fifo_head_index is being built/)
+
+    const version = await db.executeSql(`SELECT version FROM ${schema}.version`)
+    expect(Number(version.rows[0].version)).toBe(currentSchemaVersion)
+
+    await db.close()
+  })
+
   it('patch upgrade from schema 35 carries only the bam default — no job-index churn (issue #832)', function () {
     // A database already past v33 (schema 35) upgrading to 36 runs only v36, which carries the
     // bam.created_on default change and NO index work. So it never re-drops/rebuilds its existing
     // job_i5/job_i9 — the slim job_i5 it already has stays put. The index fix lives in v33, which only
     // pre-v33 (deadlock-affected) databases run.
-    const sql = migrate('custom', 35)
+    const sql = next('custom', 35)
     expect(sql).toContain('ALTER TABLE custom.bam ALTER COLUMN created_on SET DEFAULT clock_timestamp()')
     expect(sql).not.toContain('job_i9')
     expect(sql).not.toContain('job_i5')
@@ -818,13 +920,36 @@ describe('migration', function () {
     })
 
     it('should fan inlined i7 across partition tables and keep i8 on job_common only', function () {
-      const sql = migrate(schema, 0, undefined, undefined, { inlineAsync: true, partitionTables: ['jABC'] })
+      const sql = migrate(schema, 0, undefined, undefined, {
+        inlineAsync: true,
+        partitionTables: [{ tableName: 'jABC', policy: 'standard' }]
+      })
 
       expect(sql).toContain(`CREATE INDEX CONCURRENTLY IF NOT EXISTS job_common_i7 ON ${schema}.job_common`)
       expect(sql).toContain(`CREATE INDEX CONCURRENTLY IF NOT EXISTS jABC_i7 ON ${schema}.jABC`)
       expect(sql).toContain(`CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS job_common_i8 ON ${schema}.job_common`)
       // i8 is not fanned out across partitions
       expect(sql).not.toContain('jABC_i8')
+    })
+
+    it('should build i10 only for key_strict_fifo partitions', function () {
+      const sql = migrate(schema, 37, undefined, undefined, {
+        inlineAsync: true,
+        partitionTables: [
+          { tableName: 'strict_table', policy: 'key_strict_fifo' },
+          { tableName: 'standard_table', policy: 'standard' }
+        ]
+      })
+
+      expect(sql).toContain(`CREATE INDEX CONCURRENTLY IF NOT EXISTS strict_table_i10 ON ${schema}.strict_table`)
+      expect(sql).not.toContain('standard_table_i10')
+    })
+
+    it('should reject policy-scoped migration expansion without partition policies', function () {
+      expect(() => migrate(schema, 37, undefined, undefined, {
+        inlineAsync: true,
+        partitionTables: ['strict_table']
+      })).toThrow(/requires partition policy metadata/)
     })
 
     it('should keep using job_table_run_async (BAM) for the live migration path', function () {
@@ -874,7 +999,9 @@ describe('migration', function () {
     })
 
     it('should forward partitionTables from getMigrationPlans through to the inlined builds', function () {
-      const sql = getMigrationPlans(schema, 0, { partitionTables: ['jXYZ'] })
+      const sql = getMigrationPlans(schema, 0, {
+        partitionTables: [{ tableName: 'jXYZ', policy: 'standard' }]
+      })
 
       expect(sql).toContain(`CREATE INDEX CONCURRENTLY IF NOT EXISTS job_common_i7 ON ${schema}.job_common`)
       expect(sql).toContain(`CREATE INDEX CONCURRENTLY IF NOT EXISTS jXYZ_i7 ON ${schema}.jXYZ`)
@@ -904,18 +1031,21 @@ describe('migration', function () {
       // the query the CLI runs (with a live connection) to fan inlined builds across partitions
       const db = await getDb()
       const result = await db.executeSql(getPartitionedQueueTables(dbSchema))
-      const partitionTables = result.rows.map((row: { table_name: string }) => row.table_name)
+      const partitionTables = result.rows.map((row: { table_name: string, policy: 'standard' }) => ({
+        tableName: row.table_name,
+        policy: row.policy
+      }))
       await db.close()
 
       // the partitioned queue gets its own table; the shared job_common is not partition = true
       expect(partitionTables.length).toBeGreaterThan(0)
-      expect(partitionTables).not.toContain('job_common')
+      expect(partitionTables.map(partition => partition.tableName)).not.toContain('job_common')
 
       // feeding those tables in fans i7 out across each partition, exactly as `pg-boss migrate` does
       const sql = migrate(dbSchema, 0, undefined, undefined, { inlineAsync: true, partitionTables })
 
-      for (const table of partitionTables) {
-        expect(sql).toContain(`CREATE INDEX CONCURRENTLY IF NOT EXISTS ${table}_i7 ON ${dbSchema}.${table}`)
+      for (const partition of partitionTables) {
+        expect(sql).toContain(`CREATE INDEX CONCURRENTLY IF NOT EXISTS ${partition.tableName}_i7 ON ${dbSchema}.${partition.tableName}`)
       }
     })
   })

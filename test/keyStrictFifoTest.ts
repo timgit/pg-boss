@@ -119,6 +119,116 @@ describe('key_strict_fifo', function () {
       expect(job2AfterComplete.id).toBe(jobId2)
     })
 
+    it(`key_strict_fifo retry only blocks jobs with the same key using partition=${partition}`, async function () {
+      ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+
+      await ctx.boss.createQueue(ctx.schema, { policy: 'key_strict_fifo', partition })
+
+      const firstA = await ctx.boss.send(ctx.schema, { key: 'A', order: 1 }, {
+        singletonKey: 'A',
+        retryLimit: 1,
+        retryDelay: 60
+      })
+      await ctx.boss.send(ctx.schema, { key: 'A', order: 2 }, { singletonKey: 'A' })
+      const firstB = await ctx.boss.send(ctx.schema, { key: 'B', order: 1 }, { singletonKey: 'B' })
+
+      const [jobA] = await ctx.boss.fetch(ctx.schema)
+      expect(jobA.id).toBe(firstA)
+      await ctx.boss.fail(ctx.schema, jobA.id)
+
+      const [jobB] = await ctx.boss.fetch(ctx.schema)
+      expect(jobB?.id).toBe(firstB)
+    })
+
+    it(`key_strict_fifo active job only blocks jobs with the same key using partition=${partition}`, async function () {
+      ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+
+      await ctx.boss.createQueue(ctx.schema, { policy: 'key_strict_fifo', partition })
+
+      const firstA = await ctx.boss.send(ctx.schema, { key: 'A', order: 1 }, { singletonKey: 'A' })
+      await ctx.boss.send(ctx.schema, { key: 'A', order: 2 }, { singletonKey: 'A' })
+      const firstB = await ctx.boss.send(ctx.schema, { key: 'B', order: 1 }, { singletonKey: 'B' })
+
+      const [jobA] = await ctx.boss.fetch(ctx.schema)
+      expect(jobA.id).toBe(firstA)
+
+      const [jobB] = await ctx.boss.fetch(ctx.schema)
+      expect(jobB?.id).toBe(firstB)
+    })
+
+    it(`key_strict_fifo failed job only blocks jobs with the same key using partition=${partition}`, async function () {
+      ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+
+      await ctx.boss.createQueue(ctx.schema, { policy: 'key_strict_fifo', partition })
+
+      const firstA = await ctx.boss.send(ctx.schema, { key: 'A', order: 1 }, { singletonKey: 'A', retryLimit: 0 })
+      await ctx.boss.send(ctx.schema, { key: 'A', order: 2 }, { singletonKey: 'A' })
+      const firstB = await ctx.boss.send(ctx.schema, { key: 'B', order: 1 }, { singletonKey: 'B' })
+
+      const [jobA] = await ctx.boss.fetch(ctx.schema)
+      expect(jobA.id).toBe(firstA)
+      await ctx.boss.fail(ctx.schema, jobA.id)
+
+      const [jobB] = await ctx.boss.fetch(ctx.schema)
+      expect(jobB?.id).toBe(firstB)
+    })
+
+    it(`key_strict_fifo batch fetch returns one head per key using partition=${partition}`, async function () {
+      ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+
+      await ctx.boss.createQueue(ctx.schema, { policy: 'key_strict_fifo', partition })
+
+      const firstA = await ctx.boss.send(ctx.schema, { key: 'A', order: 1 }, { singletonKey: 'A' })
+      await ctx.boss.send(ctx.schema, { key: 'A', order: 2 }, { singletonKey: 'A' })
+      const firstB = await ctx.boss.send(ctx.schema, { key: 'B', order: 1 }, { singletonKey: 'B' })
+
+      const jobs = await ctx.boss.fetch(ctx.schema, { batchSize: 3 })
+      expect(jobs.map(job => job.id).sort()).toEqual([firstA, firstB].sort())
+    })
+
+    it(`key_strict_fifo priority does not reorder jobs within a key using partition=${partition}`, async function () {
+      ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+
+      await ctx.boss.createQueue(ctx.schema, { policy: 'key_strict_fifo', partition })
+
+      const older = await ctx.boss.send(ctx.schema, { order: 1 }, { singletonKey: 'A', priority: 0 })
+      const newer = await ctx.boss.send(ctx.schema, { order: 2 }, { singletonKey: 'A', priority: 10 })
+
+      const [first] = await ctx.boss.fetch(ctx.schema)
+      expect(first.id).toBe(older)
+      await ctx.boss.complete(ctx.schema, first.id)
+
+      const [second] = await ctx.boss.fetch(ctx.schema)
+      expect(second.id).toBe(newer)
+    })
+
+    it(`key_strict_fifo allows a ready job past a deferred job using partition=${partition}`, async function () {
+      ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+
+      await ctx.boss.createQueue(ctx.schema, { policy: 'key_strict_fifo', partition })
+
+      await ctx.boss.send(ctx.schema, { order: 1 }, { singletonKey: 'A', startAfter: 60 })
+      const ready = await ctx.boss.send(ctx.schema, { order: 2 }, { singletonKey: 'A' })
+
+      const [job] = await ctx.boss.fetch(ctx.schema)
+      expect(job.id).toBe(ready)
+    })
+
+    it(`key_strict_fifo priority filters cannot skip a key head using partition=${partition}`, async function () {
+      ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+
+      await ctx.boss.createQueue(ctx.schema, { policy: 'key_strict_fifo', partition })
+
+      const head = await ctx.boss.send(ctx.schema, { order: 1 }, { singletonKey: 'A', priority: 0 })
+      await ctx.boss.send(ctx.schema, { order: 2 }, { singletonKey: 'A', priority: 10 })
+
+      const filtered = await ctx.boss.fetch(ctx.schema, { minPriority: 5 })
+      expect(filtered).toEqual([])
+
+      const [job] = await ctx.boss.fetch(ctx.schema)
+      expect(job.id).toBe(head)
+    })
+
     it(`key_strict_fifo policy blocks queue permanently on failure using partition=${partition}`, async function () {
       ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 

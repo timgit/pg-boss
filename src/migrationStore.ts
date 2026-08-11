@@ -8,10 +8,10 @@ import * as types from './types.ts'
 // in a context with no BAM worker to process the queued commands. See issue #766.
 interface MigrateOptions {
   inlineAsync?: boolean
-  // Partitioned queue table names to expand the inlined index builds across, in addition
+  // Partitioned queue metadata used to expand inlined index builds, in addition
   // to job_common. Supplied by callers that hold a live connection (the CLI); empty for a
   // purely static export, which can only target job_common.
-  partitionTables?: string[]
+  partitionTables?: Array<string | types.MigrationPartition>
 }
 
 // Mirrors the SQL job_table_format() function (src/plans.ts): rewrites a command targeting
@@ -30,18 +30,26 @@ function formatJobTable (command: string, table: string) {
 // via BAM, one statement per target table, each prefixed with a provenance comment. The
 // CONCURRENTLY keyword is preserved (these are emitted after COMMIT), and IF NOT EXISTS is
 // added so the script is safe to re-run.
-function inlineAsyncCommand (schema: string, asyncCommand: string, version: number, partitionTables: string[]) {
-  const nameMatch = asyncCommand.match(/job_table_run_async\(\s*'([^']+)'/)
-  const bodyMatch = asyncCommand.match(/\$\$([\s\S]*?)\$\$/)
+function inlineAsyncCommand (schema: string, asyncMigration: string | types.AsyncMigrationCommand, version: number, partitionTables: Array<string | types.MigrationPartition>) {
+  const asyncCommand = typeof asyncMigration === 'string' ? asyncMigration : asyncMigration.command
+  const nameMatch = typeof asyncMigration === 'string' ? asyncCommand.match(/job_table_run_async\(\s*'([^']+)'/) : null
+  const bodyMatch = typeof asyncMigration === 'string' ? asyncCommand.match(/\$\$([\s\S]*?)\$\$/) : null
   // An explicit table arg after the $$ body pins the command to a single table (e.g. i8 →
   // job_common); without it the command fans out across job_common + every partition.
-  const tableMatch = asyncCommand.match(/\$\$\s*,\s*'([^']+)'/)
+  const tableMatch = typeof asyncMigration === 'string' ? asyncCommand.match(/\$\$\s*,\s*'([^']+)'/) : null
 
-  assert(nameMatch && bodyMatch, `Unable to inline async migration command: ${asyncCommand}`)
+  assert(typeof asyncMigration !== 'string' || (nameMatch && bodyMatch), `Unable to inline async migration command: ${asyncCommand}`)
 
-  const commandName = nameMatch[1]
-  const body = bodyMatch[1].trim()
-  const targetTables = tableMatch ? [tableMatch[1]] : ['job_common', ...partitionTables]
+  const commandName = typeof asyncMigration === 'string' ? nameMatch![1] : asyncMigration.name
+  const body = typeof asyncMigration === 'string' ? bodyMatch![1].trim() : asyncMigration.command.trim()
+  if (typeof asyncMigration !== 'string' && asyncMigration.partitionPolicy) {
+    assert(partitionTables.every(partition => typeof partition !== 'string'),
+      `Policy-scoped async migration ${asyncMigration.name} requires partition policy metadata`)
+  }
+  const eligiblePartitions = partitionTables
+    .filter(partition => typeof asyncMigration === 'string' || !asyncMigration.partitionPolicy || (typeof partition !== 'string' && partition.policy === asyncMigration.partitionPolicy))
+    .map(partition => typeof partition === 'string' ? partition : partition.tableName)
+  const targetTables = tableMatch ? [tableMatch[1]] : ['job_common', ...eligiblePartitions]
 
   return targetTables.map(table => {
     // Add IF NOT EXISTS so the exported script is re-runnable. The negative lookahead keeps it
@@ -54,6 +62,30 @@ function inlineAsyncCommand (schema: string, asyncCommand: string, version: numb
     const comment = `-- inlined from ${schema}.job_table_run_async (migration v${version}, command: ${commandName})`
     return `${comment}\n${ddl}`
   })
+}
+
+function renderAsyncCommand (schema: string, asyncMigration: string | types.AsyncMigrationCommand, version: number) {
+  if (typeof asyncMigration === 'string') {
+    return asyncMigration.replace(/\$VERSION\$/g, String(version))
+  }
+
+  const name = asyncMigration.name.replaceAll("'", "''")
+  const policy = asyncMigration.partitionPolicy?.replaceAll("'", "''")
+  if (!policy) {
+    return `SELECT ${schema}.job_table_run_async('${name}', ${version}, $$${asyncMigration.command}$$)`
+  }
+
+  return `SELECT ${schema}.job_table_run_async(
+    '${name}',
+    ${version},
+    $$${asyncMigration.command}$$,
+    targets.table_name
+  )
+  FROM (
+    SELECT 'job_common'::text AS table_name
+    UNION ALL
+    SELECT table_name FROM ${schema}.queue WHERE partition = true AND policy = '${policy}'
+  ) targets`
 }
 
 // A migration split into its transactional block and the post-COMMIT CONCURRENTLY index
@@ -129,7 +161,7 @@ function migrateCommands (schema: string, version: number, migrations?: types.Mi
           }
         } else {
           const bamCommands = migration.async.map(cmd =>
-            cmd.replace(/\$VERSION\$/g, String(migration.version))
+            renderAsyncCommand(schema, cmd, migration.version)
           )
           acc.install = acc.install.concat(bamCommands)
         }
@@ -732,6 +764,93 @@ const createQueueFn: Record<number, (schema: string) => string> = {
     END;
     $$
     LANGUAGE plpgsql;
+  `,
+  38: (schema) => `
+    CREATE OR REPLACE FUNCTION ${schema}.create_queue(queue_name text, options jsonb)
+    RETURNS VOID AS
+    $$
+    DECLARE
+      tablename varchar := CASE WHEN options->>'partition' = 'true'
+                            THEN 'j' || encode(sha224(queue_name::bytea), 'hex')
+                            ELSE 'job_common'
+                            END;
+      queue_created_on timestamptz;
+    BEGIN
+
+      WITH q as (
+        INSERT INTO ${schema}.queue (
+          name,
+          policy,
+          retry_limit,
+          retry_delay,
+          retry_backoff,
+          retry_delay_max,
+          expire_seconds,
+          retention_seconds,
+          deletion_seconds,
+          warning_queued,
+          dead_letter,
+          partition,
+          table_name,
+          heartbeat_seconds,
+          notify
+        )
+        VALUES (
+          queue_name,
+          options->>'policy',
+          COALESCE((options->>'retryLimit')::int, 2),
+          COALESCE((options->>'retryDelay')::int, 0),
+          COALESCE((options->>'retryBackoff')::bool, false),
+          (options->>'retryDelayMax')::int,
+          COALESCE((options->>'expireInSeconds')::int, 900),
+          COALESCE((options->>'retentionSeconds')::int, 1209600),
+          COALESCE((options->>'deleteAfterSeconds')::int, 604800),
+          COALESCE((options->>'warningQueueSize')::int, 0),
+          options->>'deadLetter',
+          COALESCE((options->>'partition')::bool, false),
+          tablename,
+          (options->>'heartbeatSeconds')::int,
+          COALESCE((options->>'notify')::bool, false)
+        )
+        ON CONFLICT DO NOTHING
+        RETURNING created_on
+      )
+      SELECT created_on into queue_created_on from q;
+
+      IF queue_created_on IS NULL OR options->>'partition' IS DISTINCT FROM 'true' THEN
+        RETURN;
+      END IF;
+
+      EXECUTE format('CREATE TABLE ${schema}.%I (LIKE ${schema}.job INCLUDING DEFAULTS)', tablename);
+
+      EXECUTE ${schema}.job_table_format($cmd$ALTER TABLE ${schema}.job ADD PRIMARY KEY (name, id)$cmd$, tablename);
+      EXECUTE ${schema}.job_table_format($cmd$ALTER TABLE ${schema}.job ADD CONSTRAINT q_fkey FOREIGN KEY (name) REFERENCES ${schema}.queue (name) ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED$cmd$, tablename);
+      EXECUTE ${schema}.job_table_format($cmd$ALTER TABLE ${schema}.job ADD CONSTRAINT dlq_fkey FOREIGN KEY (dead_letter) REFERENCES ${schema}.queue (name) ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED$cmd$, tablename);
+
+      EXECUTE ${schema}.job_table_format($cmd$CREATE INDEX job_i5 ON ${schema}.job (name, start_after) WHERE state < 'active' AND NOT blocked$cmd$, tablename);
+      EXECUTE ${schema}.job_table_format($cmd$CREATE UNIQUE INDEX job_i4 ON ${schema}.job (name, singleton_on, COALESCE(singleton_key, '')) WHERE state <> 'cancelled' AND singleton_on IS NOT NULL$cmd$, tablename);
+      EXECUTE ${schema}.job_table_format($cmd$CREATE INDEX job_i7 ON ${schema}.job (name, group_id) WHERE state = 'active' AND group_id IS NOT NULL$cmd$, tablename);
+      EXECUTE ${schema}.job_table_format($cmd$CREATE INDEX job_i9 ON ${schema}.job (name, id) WHERE blocking AND state = 'completed'$cmd$, tablename);
+
+      IF options->>'policy' = 'short' THEN
+        EXECUTE ${schema}.job_table_format($cmd$CREATE UNIQUE INDEX job_i1 ON ${schema}.job (name, COALESCE(singleton_key, '')) WHERE state = 'created' AND policy = 'short'$cmd$, tablename);
+      ELSIF options->>'policy' = 'singleton' THEN
+        EXECUTE ${schema}.job_table_format($cmd$CREATE UNIQUE INDEX job_i2 ON ${schema}.job (name, COALESCE(singleton_key, '')) WHERE state = 'active' AND policy = 'singleton'$cmd$, tablename);
+      ELSIF options->>'policy' = 'stately' THEN
+        EXECUTE ${schema}.job_table_format($cmd$CREATE UNIQUE INDEX job_i3 ON ${schema}.job (name, state, COALESCE(singleton_key, '')) WHERE state <= 'active' AND policy = 'stately'$cmd$, tablename);
+      ELSIF options->>'policy' = 'exclusive' THEN
+        EXECUTE ${schema}.job_table_format($cmd$CREATE UNIQUE INDEX job_i6 ON ${schema}.job (name, COALESCE(singleton_key, '')) WHERE state <= 'active' AND policy = 'exclusive'$cmd$, tablename);
+      ELSIF options->>'policy' = 'key_strict_fifo' THEN
+        EXECUTE ${schema}.job_table_format($cmd$CREATE UNIQUE INDEX job_i8 ON ${schema}.job (name, singleton_key) WHERE state IN ('active', 'retry', 'failed') AND policy = 'key_strict_fifo'$cmd$, tablename);
+        EXECUTE ${schema}.job_table_format($cmd$CREATE INDEX job_i10 ON ${schema}.job (name, singleton_key, created_on, id) WHERE state < 'active' AND NOT blocked AND policy = 'key_strict_fifo'$cmd$, tablename);
+        EXECUTE ${schema}.job_table_format($cmd$ALTER TABLE ${schema}.job ADD CONSTRAINT job_key_strict_fifo_singleton_key_check CHECK (NOT (policy = 'key_strict_fifo' AND singleton_key IS NULL))$cmd$, tablename);
+      END IF;
+
+      EXECUTE format('ALTER TABLE ${schema}.%I ADD CONSTRAINT cjc CHECK (name=%L)', tablename, queue_name);
+      EXECUTE format('ALTER TABLE ${schema}.job ATTACH PARTITION ${schema}.%I FOR VALUES IN (%L)', tablename, queue_name);
+    END;
+    $$
+    LANGUAGE plpgsql;
   `
 }
 
@@ -1274,6 +1393,46 @@ function getAll (schema: string, noPartitioning = false, noCovering = false): ty
       uninstall: noPartitioning
         ? []
         : [jobTableFormatFn[36](schema)]
+    },
+    {
+      release: '12.28.0',
+      version: 38,
+      previous: 37,
+      install: noPartitioning
+        ? [`CREATE INDEX job_i10 ON ${schema}.job (name, singleton_key, created_on, id) WHERE state < 'active' AND NOT blocked AND policy = 'key_strict_fifo'`]
+        : [createQueueFn[38](schema)],
+      async: noPartitioning
+        ? []
+        : [
+            {
+              name: 'key_strict_fifo_head_index',
+              partitionPolicy: 'key_strict_fifo',
+              command: `CREATE INDEX CONCURRENTLY IF NOT EXISTS job_i10 ON ${schema}.job (name, singleton_key, created_on, id) WHERE state < 'active' AND NOT blocked AND policy = 'key_strict_fifo'`
+            }
+          ],
+      uninstall: noPartitioning
+        ? [`DROP INDEX IF EXISTS ${schema}.job_i10`]
+        : [
+            `LOCK TABLE ${schema}.bam IN SHARE ROW EXCLUSIVE MODE`,
+            `DO $$
+            BEGIN
+              IF EXISTS (
+                SELECT 1 FROM ${schema}.bam
+                WHERE version = 38
+                  AND name = 'key_strict_fifo_head_index'
+                  AND status = 'in_progress'
+              ) THEN
+                RAISE EXCEPTION 'Cannot roll back pg-boss schema v38 while key_strict_fifo_head_index is being built';
+              END IF;
+            END;
+            $$`,
+            `DELETE FROM ${schema}.bam
+             WHERE version = 38
+               AND name = 'key_strict_fifo_head_index'
+               AND status <> 'completed'`,
+            createQueueFn[33](schema),
+            `SELECT ${schema}.job_table_run($cmd$DROP INDEX IF EXISTS ${schema}.job_i10$cmd$)`
+          ]
     }
   ]
 }

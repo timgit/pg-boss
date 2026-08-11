@@ -456,6 +456,7 @@ function createTableJobCommon (schema: string) {
     SELECT ${schema}.job_table_run($cmd$${createIndexJobPolicyStately(schema)}$cmd$, '${COMMON_JOB_TABLE}');
     SELECT ${schema}.job_table_run($cmd$${createIndexJobPolicyExclusive(schema)}$cmd$, '${COMMON_JOB_TABLE}');
     SELECT ${schema}.job_table_run($cmd$${createIndexJobPolicyKeyStrictFifo(schema)}$cmd$, '${COMMON_JOB_TABLE}');
+    SELECT ${schema}.job_table_run($cmd$${createIndexJobPolicyKeyStrictFifoHeads(schema)}$cmd$, '${COMMON_JOB_TABLE}');
     SELECT ${schema}.job_table_run($cmd$${createCheckConstraintKeyStrictFifo(schema)}$cmd$, '${COMMON_JOB_TABLE}');
     SELECT ${schema}.job_table_run($cmd$${createIndexJobThrottle(schema)}$cmd$, '${COMMON_JOB_TABLE}');
     SELECT ${schema}.job_table_run($cmd$${createIndexJobFetch(schema)}$cmd$, '${COMMON_JOB_TABLE}');
@@ -476,6 +477,7 @@ function createTableJobIndexes (schema: string, noDeferrableConstraints = false,
     ${createIndexJobPolicyStately(schema)};
     ${createIndexJobPolicyExclusive(schema)};
     ${createIndexJobPolicyKeyStrictFifo(schema)};
+    ${createIndexJobPolicyKeyStrictFifoHeads(schema)};
     ${createCheckConstraintKeyStrictFifo(schema)};
     ${createIndexJobThrottle(schema)};
     ${createIndexJobFetch(schema, noCoveringIndex)};
@@ -608,6 +610,7 @@ function createQueueFunction (schema: string, noPartitioning = false) {
         EXECUTE ${schema}.job_table_format($cmd$${createIndexJobPolicyExclusive(schema)}$cmd$, tablename);
       ELSIF options->>'policy' = '${QUEUE_POLICIES.key_strict_fifo}' THEN
         EXECUTE ${schema}.job_table_format($cmd$${createIndexJobPolicyKeyStrictFifo(schema)}$cmd$, tablename);
+        EXECUTE ${schema}.job_table_format($cmd$${createIndexJobPolicyKeyStrictFifoHeads(schema)}$cmd$, tablename);
         EXECUTE ${schema}.job_table_format($cmd$${createCheckConstraintKeyStrictFifo(schema)}$cmd$, tablename);
       END IF;
 
@@ -735,6 +738,10 @@ function createIndexJobPolicyExclusive (schema: string) {
 
 function createIndexJobPolicyKeyStrictFifo (schema: string) {
   return `CREATE UNIQUE INDEX job_i8 ON ${schema}.job (name, singleton_key) WHERE state IN ('${JOB_STATES.active}', '${JOB_STATES.retry}', '${JOB_STATES.failed}') AND policy = '${QUEUE_POLICIES.key_strict_fifo}'`
+}
+
+function createIndexJobPolicyKeyStrictFifoHeads (schema: string) {
+  return `CREATE INDEX job_i10 ON ${schema}.job (name, singleton_key, created_on, id) WHERE state < '${JOB_STATES.active}' AND NOT blocked AND policy = '${QUEUE_POLICIES.key_strict_fifo}'`
 }
 
 function createCheckConstraintKeyStrictFifo (schema: string) {
@@ -1234,7 +1241,7 @@ export function getSchemaCaseVariants (schema: string): string {
 }
 
 export function getPartitionedQueueTables (schema: string) {
-  return `SELECT table_name FROM ${schema}.queue WHERE partition = true`
+  return `SELECT table_name, policy FROM ${schema}.queue WHERE partition = true`
 }
 
 export function insertVersion (schema: string, version: number) {
@@ -1357,6 +1364,7 @@ function buildFetchParams (options: FetchJobOptions): FetchQueryParams {
 export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): SqlQuery {
   const { schema, table, name, policy, limit, includeMetadata, priority = true, orderByCreatedOn = true, ignoreStartAfter = false, groupConcurrency, minPriority, maxPriority } = options
 
+  const keyStrictFifo = policy === QUEUE_POLICIES.key_strict_fifo
   const singletonFetch = limit > 1 && (policy === QUEUE_POLICIES.singleton || policy === QUEUE_POLICIES.stately)
   const hasIgnoreSingletons = options.ignoreSingletons != null && options.ignoreSingletons.length > 0
   const hasIgnoreGroups = options.ignoreGroups != null && options.ignoreGroups.length > 0
@@ -1423,6 +1431,19 @@ export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): S
             OR ${activeGroupCountExpression} < ${groupLimit})`
     : ''
 
+  const strictFifoHeadsCte = keyStrictFifo
+    ? `strict_fifo_heads AS MATERIALIZED (
+        SELECT DISTINCT ON (h.singleton_key) h.id
+        FROM ${schema}.${table} h
+        WHERE h.name = '${name}'
+          AND h.state < '${JOB_STATES.active}'
+          AND NOT h.blocked
+          AND h.policy = '${QUEUE_POLICIES.key_strict_fifo}'
+          ${!ignoreStartAfter ? 'AND h.start_after <= now()' : ''}
+        ORDER BY h.singleton_key, h.created_on, h.id
+      ), `
+    : ''
+
   const whereConditions = [
     `j.name = '${name}'`,
     `j.state < '${JOB_STATES.active}'`,
@@ -1433,6 +1454,18 @@ export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): S
     // timestamp, so `<` would leave freshly-inserted jobs invisible until the clock ticks.
     // NOTIFY gating already uses `start_after <= now()` for the same reason.
     !ignoreStartAfter ? 'j.start_after <= now()' : '',
+    keyStrictFifo ? 'j.id IN (SELECT id FROM strict_fifo_heads)' : '',
+    keyStrictFifo
+      ? `NOT EXISTS (
+            SELECT 1
+            FROM ${schema}.${table} b
+            WHERE b.name = j.name
+              AND b.singleton_key = j.singleton_key
+              AND b.state IN ('${JOB_STATES.active}', '${JOB_STATES.retry}', '${JOB_STATES.failed}')
+              AND b.policy = '${QUEUE_POLICIES.key_strict_fifo}'
+              AND b.id <> j.id
+          )`
+      : '',
     hasIgnoreSingletons ? `COALESCE(j.singleton_key, '') <> ALL(${params.ignoreSingletonsParam})` : '',
     hasIgnoreGroups ? `(j.group_id IS NULL OR j.group_id <> ALL(${params.ignoreGroupsParam}))` : '',
     hasMinPriority ? `j.priority >= ${params.minPriorityParam}` : '',
@@ -1498,6 +1531,7 @@ export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): S
   return {
     text: `
       WITH
+      ${strictFifoHeadsCte}
       ${activeGroupCountMapCte}
       ${nextCte}
       ${singletonCte}
@@ -2898,7 +2932,8 @@ const POLICY_JOB_INDEXES: Record<number, string> = {
   2: QUEUE_POLICIES.singleton,
   3: QUEUE_POLICIES.stately,
   6: QUEUE_POLICIES.exclusive,
-  8: QUEUE_POLICIES.key_strict_fifo
+  8: QUEUE_POLICIES.key_strict_fifo,
+  10: QUEUE_POLICIES.key_strict_fifo
 }
 // job_iN indexes with no policy gate — created on every job table regardless of policy
 // (throttle i4, fetch i5, group-concurrency i7, blocking i9).

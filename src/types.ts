@@ -240,8 +240,19 @@ export interface Migration {
   version: number
   previous: number
   install: string[]
-  async?: string[]
+  async?: Array<string | AsyncMigrationCommand>
   uninstall?: string[]
+}
+
+export interface AsyncMigrationCommand {
+  name: string
+  command: string
+  partitionPolicy?: QueuePolicy
+}
+
+export interface MigrationPartition {
+  tableName: string
+  policy: QueuePolicy
 }
 
 export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, MaintenanceOptions, BackendOptions {
@@ -519,9 +530,11 @@ export interface UpdateRequest {
  * - `exclusive` only allows 1 job to be queued or active. Can be extended with
  *   singletonKey`.
  *
- * - `key_strict_fifo` ensures strict FIFO ordering per `singletonKey`. Requires
- *   `singletonKey` on every job. Blocks processing of jobs with the same key
- *   while any job with that key is active, in retry, or failed.
+ * - `key_strict_fifo` ensures FIFO ordering per `singletonKey`. Requires
+ *   `singletonKey` on every job. A job that is active, in retry, or failed only
+ *   holds back successors with the same key; other keys remain fetchable.
+ *   Priority cannot reorder jobs within a key. Deferred jobs join the ordering
+ *   when their `startAfter` time is reached.
  */
 export type QueuePolicy = 'standard' | 'short' | 'singleton' | 'stately' | 'exclusive' | 'key_strict_fifo' | (string & {})
 

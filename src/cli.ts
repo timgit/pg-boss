@@ -187,13 +187,13 @@ function tryGetConnectionConfig (args: ReturnType<typeof parseCliArgs>): types.D
   return hasConnection ? getConnectionConfig(args) : null
 }
 
-// Enumerates partitioned queue table names so inlined index builds can fan out across
+// Enumerates partitioned queue metadata so inlined index builds can fan out across
 // them. Returns [] on any failure (e.g. unreachable DB or pre-partition schema), leaving
 // the export to target job_common only.
-async function getPartitionTables (db: types.IDatabase, schema: string): Promise<string[]> {
+async function getPartitionTables (db: types.IDatabase, schema: string): Promise<types.MigrationPartition[]> {
   try {
     const result = await db.executeSql(plans.getPartitionedQueueTables(schema))
-    return result.rows.map((row: { table_name: string }) => row.table_name)
+    return result.rows.map((row: { table_name: string, policy: types.QueuePolicy }) => ({ tableName: row.table_name, policy: row.policy }))
   } catch {
     return []
   }
@@ -272,7 +272,7 @@ async function cmdMigrate (args: ReturnType<typeof parseCliArgs>): Promise<void>
     // The CLI has no BAM worker, so inline the async index builds as direct DDL. Connect
     // (best effort) to read the DB's actual version and enumerate partitioned tables; fall back to
     // job_common only offline.
-    let partitionTables: string[] = []
+    let partitionTables: types.MigrationPartition[] = []
     let version: number | null = null
     try {
       const db = await createDb(config)
@@ -516,7 +516,7 @@ async function cmdPlans (args: ReturnType<typeof parseCliArgs>): Promise<void> {
       // is optional: with one, fan the builds out across partitioned tables; without one,
       // emit a job_common-only script and note the limitation.
       const connectionConfig = tryGetConnectionConfig(args)
-      let partitionTables: string[] = []
+      let partitionTables: types.MigrationPartition[] = []
 
       if (connectionConfig) {
         try {
