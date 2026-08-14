@@ -66,20 +66,42 @@ export function ErrorBoundary () {
   return <ErrorCard title="Failed to load schedules" />
 }
 
-// Readable description for the common cron patterns; falls back to the raw
-// fields for anything bespoke. Purely derived from the cron string.
-function cronHuman (cron: string): string {
-  const known: Record<string, string> = {
-    '0 2 * * *': 'Every day at 02:00',
-    '*/15 * * * *': 'Every 15 minutes',
-    '0 0 1 * *': 'Monthly on the 1st at 00:00',
-    '0 * * * *': 'Every hour on the hour',
-    '0 0 * * *': 'Every day at midnight',
+function ordinal (n: number): string {
+  const v = n % 100
+  if (v >= 11 && v <= 13) return `${n}th`
+  return `${n}${['th', 'st', 'nd', 'rd'][n % 10] ?? 'th'}`
+}
+
+const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+
+// Readable description for the common cron patterns; falls back to
+// 'Custom schedule' for anything bespoke. A pattern is only described when
+// every field it ignores is a wildcard — '0 4 * * 0' is weekly on Sunday,
+// never 'Every day at 04:00'.
+export function cronHuman (cron: string): string {
+  const fields = cron.trim().split(/\s+/)
+  if (fields.length !== 5) return 'Custom schedule'
+  const [m, h, dom, mon, dow] = fields as [string, string, string, string, string]
+  const anyDom = dom === '*'
+  const anyMon = mon === '*'
+  const anyDow = dow === '*'
+
+  if (/^\*\/\d+$/.test(m) && h === '*' && anyDom && anyMon && anyDow) {
+    return `Every ${m.slice(2)} minutes`
   }
-  if (known[cron]) return known[cron]
-  const [m, h] = cron.split(' ')
-  if (m === '0' && h && h !== '*') return `Every day at ${h.padStart(2, '0')}:00`
-  if (m?.startsWith('*/')) return `Every ${m.slice(2)} minutes`
+  if (m === '0' && h === '*' && anyDom && anyMon && anyDow) return 'Every hour on the hour'
+
+  if (!/^\d+$/.test(m) || !/^\d+$/.test(h)) return 'Custom schedule'
+  const time = `${h.padStart(2, '0')}:${m.padStart(2, '0')}`
+  if (anyDom && anyMon && anyDow) {
+    return time === '00:00' ? 'Every day at midnight' : `Every day at ${time}`
+  }
+  if (anyDom && anyMon && /^[0-7]$/.test(dow)) {
+    return `Weekly on ${WEEKDAYS[Number(dow) % 7]} at ${time}`
+  }
+  if (anyMon && anyDow && /^\d+$/.test(dom)) {
+    return `Monthly on the ${ordinal(Number(dom))} at ${time}`
+  }
   return 'Custom schedule'
 }
 
