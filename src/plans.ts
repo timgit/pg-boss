@@ -741,7 +741,9 @@ function createIndexJobPolicyKeyStrictFifo (schema: string) {
 }
 
 function createIndexJobPolicyKeyStrictFifoHeads (schema: string) {
-  return `CREATE INDEX job_i10 ON ${schema}.job (name, singleton_key, created_on, id) WHERE state < '${JOB_STATES.active}' AND NOT blocked AND policy = '${QUEUE_POLICIES.key_strict_fifo}'`
+  // Column order mirrors the strict_fifo_heads ORDER BY (state DESC puts a retry job ahead
+  // of created siblings) so the DISTINCT ON head-per-key scan stays an ordered index scan.
+  return `CREATE INDEX job_i10 ON ${schema}.job (name, singleton_key, state DESC, created_on, id) WHERE state < '${JOB_STATES.active}' AND NOT blocked AND policy = '${QUEUE_POLICIES.key_strict_fifo}'`
 }
 
 function createCheckConstraintKeyStrictFifo (schema: string) {
@@ -1431,6 +1433,11 @@ export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): S
             OR ${activeGroupCountExpression} < ${groupLimit})`
     : ''
 
+  // state DESC (retry > created in the enum) makes a retry job its key's head. job_i8
+  // guarantees at most one job per key in active/retry/failed, and the NOT EXISTS blocker
+  // below rejects every sibling of a retry job — so if created_on picked the head, an older
+  // deferred job whose start_after has since arrived would claim the head slot while being
+  // unfetchable, and the retry job (fetchable but not the head) would deadlock the key.
   const strictFifoHeadsCte = keyStrictFifo
     ? `strict_fifo_heads AS MATERIALIZED (
         SELECT DISTINCT ON (h.singleton_key) h.id
@@ -1440,7 +1447,7 @@ export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): S
           AND NOT h.blocked
           AND h.policy = '${QUEUE_POLICIES.key_strict_fifo}'
           ${!ignoreStartAfter ? 'AND h.start_after <= now()' : ''}
-        ORDER BY h.singleton_key, h.created_on, h.id
+        ORDER BY h.singleton_key, h.state DESC, h.created_on, h.id
       ), `
     : ''
 

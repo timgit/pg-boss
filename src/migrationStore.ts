@@ -842,7 +842,7 @@ const createQueueFn: Record<number, (schema: string) => string> = {
         EXECUTE ${schema}.job_table_format($cmd$CREATE UNIQUE INDEX job_i6 ON ${schema}.job (name, COALESCE(singleton_key, '')) WHERE state <= 'active' AND policy = 'exclusive'$cmd$, tablename);
       ELSIF options->>'policy' = 'key_strict_fifo' THEN
         EXECUTE ${schema}.job_table_format($cmd$CREATE UNIQUE INDEX job_i8 ON ${schema}.job (name, singleton_key) WHERE state IN ('active', 'retry', 'failed') AND policy = 'key_strict_fifo'$cmd$, tablename);
-        EXECUTE ${schema}.job_table_format($cmd$CREATE INDEX job_i10 ON ${schema}.job (name, singleton_key, created_on, id) WHERE state < 'active' AND NOT blocked AND policy = 'key_strict_fifo'$cmd$, tablename);
+        EXECUTE ${schema}.job_table_format($cmd$CREATE INDEX job_i10 ON ${schema}.job (name, singleton_key, state DESC, created_on, id) WHERE state < 'active' AND NOT blocked AND policy = 'key_strict_fifo'$cmd$, tablename);
         EXECUTE ${schema}.job_table_format($cmd$ALTER TABLE ${schema}.job ADD CONSTRAINT job_key_strict_fifo_singleton_key_check CHECK (NOT (policy = 'key_strict_fifo' AND singleton_key IS NULL))$cmd$, tablename);
       END IF;
 
@@ -1399,7 +1399,7 @@ function getAll (schema: string, noPartitioning = false, noCovering = false): ty
       version: 38,
       previous: 37,
       install: noPartitioning
-        ? [`CREATE INDEX job_i10 ON ${schema}.job (name, singleton_key, created_on, id) WHERE state < 'active' AND NOT blocked AND policy = 'key_strict_fifo'`]
+        ? [`CREATE INDEX job_i10 ON ${schema}.job (name, singleton_key, state DESC, created_on, id) WHERE state < 'active' AND NOT blocked AND policy = 'key_strict_fifo'`]
         : [createQueueFn[38](schema)],
       async: noPartitioning
         ? []
@@ -1407,7 +1407,7 @@ function getAll (schema: string, noPartitioning = false, noCovering = false): ty
             {
               name: 'key_strict_fifo_head_index',
               partitionPolicy: 'key_strict_fifo',
-              command: `CREATE INDEX CONCURRENTLY IF NOT EXISTS job_i10 ON ${schema}.job (name, singleton_key, created_on, id) WHERE state < 'active' AND NOT blocked AND policy = 'key_strict_fifo'`
+              command: `CREATE INDEX CONCURRENTLY IF NOT EXISTS job_i10 ON ${schema}.job (name, singleton_key, state DESC, created_on, id) WHERE state < 'active' AND NOT blocked AND policy = 'key_strict_fifo'`
             }
           ],
       uninstall: noPartitioning
