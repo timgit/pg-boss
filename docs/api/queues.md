@@ -51,7 +51,7 @@ Allowed policy values:
 > - **retry**: waiting to be retried after a failure
 > - **failed**: permanently failed (exhausted all retries)
 >
-> Blocking is scoped to the individual key, so jobs with other keys remain fetchable. Priority can order work across keys but cannot reorder jobs within a key. A deferred job does not become that key's FIFO head until its `startAfter` time is reached, so a later ready job can run first. Fetch filters such as `minPriority` and `maxPriority` are applied after the head is selected and cannot skip it.
+> Blocking is scoped to the individual key, so jobs with other keys remain fetchable. Priority can order work across keys but cannot reorder jobs within a key. A deferred job does not become that key's FIFO head until its `startAfter` time is reached, so a later ready job can run first. If that later job fails into `retry`, it keeps the key's head position until it completes or permanently fails — even after the deferred job's `startAfter` arrives — since a job that has started must finish before any sibling runs. Fetch filters such as `minPriority` and `maxPriority` are applied after the head is selected and cannot skip it.
 >
 > To unblock a key after a permanent failure, you can either delete the failed job using `deleteJob()` or retry it using `retry()`. Use `getBlockedKeys()` to discover which keys are currently blocked due to failed jobs.
 

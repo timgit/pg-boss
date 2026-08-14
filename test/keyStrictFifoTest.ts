@@ -214,6 +214,32 @@ describe('key_strict_fifo', function () {
       expect(job.id).toBe(ready)
     })
 
+    it(`key_strict_fifo retry job stays fetchable ahead of an older deferred job using partition=${partition}`, async function () {
+      ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+
+      await ctx.boss.createQueue(ctx.schema, { policy: 'key_strict_fifo', partition })
+
+      // The older job is deferred, so the newer ready job runs first via the deferred-job carve-out
+      const deferred = await ctx.boss.send(ctx.schema, { order: 1 }, { singletonKey: 'A', startAfter: 1 })
+      const ready = await ctx.boss.send(ctx.schema, { order: 2 }, { singletonKey: 'A', retryLimit: 1, retryDelay: 0 })
+
+      const [job] = await ctx.boss.fetch(ctx.schema)
+      expect(job.id).toBe(ready)
+      await ctx.boss.fail(ctx.schema, job.id)
+
+      // Let the deferred job's startAfter pass so it competes for the key head
+      await delay(1500)
+
+      // The retry job must remain the key's head; if the deferred job claimed it,
+      // the key would deadlock (head blocked by the retry sibling, retry not the head)
+      const [retriedJob] = await ctx.boss.fetch(ctx.schema)
+      expect(retriedJob?.id).toBe(ready)
+      await ctx.boss.complete(ctx.schema, retriedJob.id)
+
+      const [afterComplete] = await ctx.boss.fetch(ctx.schema)
+      expect(afterComplete?.id).toBe(deferred)
+    })
+
     it(`key_strict_fifo priority filters cannot skip a key head using partition=${partition}`, async function () {
       ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
