@@ -193,3 +193,20 @@ describe('findJobs', function () {
     expect(jobs[0].id).toBe(targetId)
   })
 })
+
+// Covers the legacy API
+describe('getJobById (deprecated)', function () {
+  it('should still find a job by id', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    const jobId = await ctx.boss.send(ctx.schema, { foo: 'bar' })
+    helper.assertTruthy(jobId)
+
+    // eslint-disable-next-line no-restricted-syntax
+    const job = await ctx.boss.getJobById(ctx.schema, jobId)
+
+    expect(job).toBeTruthy()
+    expect(job?.id).toBe(jobId)
+    expect(job?.data).toEqual({ foo: 'bar' })
+  })
+})

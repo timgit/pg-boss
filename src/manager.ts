@@ -2001,7 +2001,18 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     const result = await db.executeSql(sql, values)
 
-    return result?.rows || []
+    const rows = result?.rows || []
+
+    // CockroachDB returns integer columns as strings; normalize them (see fetch() above).
+    if (this.config.backend === 'cockroachdb') {
+      for (const row of rows) {
+        for (const field of NUMERIC_METADATA_FIELDS) {
+          if (row[field] !== undefined && row[field] !== null) row[field] = Number(row[field])
+        }
+      }
+    }
+
+    return rows
   }
 
   async getDependencies (name: string, id: string, options: types.ConnectionOptions = {}): Promise<types.DependencyRef[]> {
