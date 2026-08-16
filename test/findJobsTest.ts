@@ -197,16 +197,25 @@ describe('findJobs', function () {
 // Covers the legacy API
 describe('getJobById (deprecated)', function () {
   it('should still find a job by id', async function () {
-    ctx.boss = await helper.start(ctx.bossConfig)
+    // Forces the cockroachdb backend (safe on plain Postgres - see the "distributed compatibility
+    // flags" test in distributedDatabaseTest.ts) so this also exercises getJobById's own
+    // backend === 'cockroachdb' numeric-coercion branch in manager.ts, which nothing else covers
+    // now that every other call site has moved to findJobs().
+    ctx.boss = await helper.start({ ...ctx.bossConfig, backend: 'cockroachdb' })
 
     const jobId = await ctx.boss.send(ctx.schema, { foo: 'bar' })
     helper.assertTruthy(jobId)
 
-    // eslint-disable-next-line no-restricted-syntax
+    // eslint-disable-next-line no-restricted-syntax -- intentional: covers the deprecated legacy API
     const job = await ctx.boss.getJobById(ctx.schema, jobId)
 
     expect(job).toBeTruthy()
     expect(job?.id).toBe(jobId)
     expect(job?.data).toEqual({ foo: 'bar' })
+    expect(typeof job?.priority).toBe('number')
+
+    // eslint-disable-next-line no-restricted-syntax -- intentional: covers the deprecated legacy API's not-found branch
+    const missing = await ctx.boss.getJobById(ctx.schema, '00000000-0000-0000-0000-000000000000')
+    expect(missing).toBeNull()
   })
 })
