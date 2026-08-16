@@ -506,7 +506,7 @@ dead letter queue to drain. Returns the number of jobs moved.
 Each job is routed back to the queue it originally failed on (its `sourceName`),
 so a single dead letter queue that collects from many source queues fans back out
 correctly. Re-created jobs get a new id, a reset retry count, cleared output, and
-the destination queue's current retry, retention, and policy configuration. Only
+the destination queue's current retry, retention, policy, and deadLetter configuration. Only
 jobs that are not currently being processed (still in the `created`/`retry` state)
 are moved.
 
