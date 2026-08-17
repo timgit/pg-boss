@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.4.0](https://github.com/khromov/bun-boss/compare/bun-boss-v0.3.0...bun-boss-v0.4.0) (2026-08-17)
+
+
+### ⚠ BREAKING CHANGES
+
+* **config:** add tableIsolation with prefix mode ([#48](https://github.com/khromov/bun-boss/issues/48))
+
+### Features
+
+* **config:** add tableIsolation with prefix mode ([#48](https://github.com/khromov/bun-boss/issues/48)) ([230dd07](https://github.com/khromov/bun-boss/commit/230dd07c4cf77a377049f6443b2b4dfbce77ae98))
+
 ## [0.3.0](https://github.com/khromov/bun-boss/compare/bun-boss-v0.2.4...bun-boss-v0.3.0) (2026-08-10)
 
 
