@@ -43,7 +43,7 @@ describe('sqlite', () => {
     await first.start()
     await first.stop({ graceful: false })
 
-    await sql.unsafe(`UPDATE "pgboss.version" SET version = ${packageJson.bunboss.schema - 1}`)
+    await sql.unsafe(`UPDATE "bunboss.version" SET version = ${packageJson.bunboss.schema - 1}`)
 
     const second = new BunBoss({ backend: 'sqlite', db: fromBunSqlite(sql), supervise: false, schedule: false })
     second.on('error', () => {})

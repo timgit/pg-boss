@@ -1254,6 +1254,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       ...options,
       schema: this.config.schema,
       dialect: this.config.dialect,
+      tableIsolation: this.config.tableIsolation,
       table,
       name,
       policy,

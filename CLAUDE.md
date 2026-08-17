@@ -8,20 +8,23 @@ The library itself is a job queue built on PostgreSQL: it relies on `SKIP LOCKED
 
 ## Naming: renamed above the database line, unchanged below it
 
-The rename has happened, but only down to the database boundary. The npm package is `bun-boss`, the exported class is `BunBoss` (named export — there is no default export), the `package.json` schema-version key is `bunboss`, and the connection `application_name` defaults to `bunboss`.
+The rename has happened, but only down to the database boundary. The npm package is `bun-boss`, the exported class is `BunBoss` (named export — there is no default export), the `package.json` schema-version key is `bunboss`, and the connection `application_name` defaults to `bunboss`. The **prefix**-mode default namespace (`plans.ts` `DEFAULT_PREFIX = 'bunboss'`, see `tableIsolation` below) is also above the line.
 
-**Everything that is on-disk Postgres state or cross-instance coordination is still `pgboss` and must stay that way** — renaming any of it orphans existing installs:
+**The `pgboss` name still governs `tableIsolation: 'schema'` (the default mode) on-disk state and cross-instance coordination, and must stay that way** — renaming any of it orphans existing schema-mode installs:
 
-- `plans.ts` `DEFAULT_SCHEMA = 'pgboss'` — the schema holding every table.
+- `plans.ts` `DEFAULT_SCHEMA = 'pgboss'` — the default schema holding every table in schema mode. (Prefix mode's default namespace is `DEFAULT_PREFIX = 'bunboss'`, a fork-only facility with no upstream history, so it carries the fork identity instead.)
 - The `pgboss_` NOTIFY channel prefix in `plans.ts` — hashed, so a change desyncs LISTEN from NOTIFY during a rolling upgrade.
 - The `.pgboss.` advisory-lock seed in `plans.ts` — hashed into the lock id, so a change makes old and new instances stop mutually excluding.
 - `timekeeper.ts` `'__pgboss__send-it'` — a persisted queue name and `job.name` value.
-- SQLite's derived `"pgboss.job"` / `"pgboss.version"` quoted identifiers, which follow from `DEFAULT_SCHEMA`.
 - The test/dev database named `pgboss` (`docker-compose.yaml` ↔ `test/config.json` ↔ `.devcontainer/setup-postgres.sh` ↔ `scripts/console.js`) and the `pgboss<sha1>` per-test schemas.
 
-`test/plansSnapshot.sql` pins the generated Postgres SQL byte-for-byte, so it is the tripwire: **if a change makes that snapshot diff, a must-not-change identifier was renamed** — fix the cause rather than regenerating with `UPDATE_SNAPSHOTS=true`.
+**`tableIsolation` is a separate axis from the SQL dialect.** `'schema'` (default on Postgres/PGlite) puts tables in a dedicated Postgres schema (`pgboss.job`); `'prefix'` folds the schema name into a single quoted identifier in the connection's default schema (`"bunboss.job"`), co-located with the app's tables, and disables partitioning. SQLite has no schemas, so it is **always** prefix. Only object/index qualification differs between modes: `qn`/`qi` in `src/dialect.ts` branch on `tableIsolation`, sharing one `prefixQualify` renderer with the SQLite dialect. Prefix mode's schema-only steps (CREATE SCHEMA, partitioning, the `pg_namespace` case-variant probe) are skipped via `createSchema: false` + `noTablePartitioning: true` (set in `attorney.resolveTableIsolation`) and a contractor guard — no new partition SQL exists.
 
-Use "bun-boss"/`BunBoss` for the project, package, and class; "pg-boss" only when naming upstream (`timgit/pg-boss`), and `pgboss` only for the schema and the identifiers above.
+**SQLite's default namespace changed from `pgboss` to `bunboss`** as part of adding `tableIsolation` — a deliberate fork-level breaking change (SQLite is always prefix, so it now follows `DEFAULT_PREFIX`). Its derived quoted identifiers are `"bunboss.job"` / `"bunboss.version"` by default. Existing SQLite installs pin the old name with `schema: 'pgboss'`.
+
+`test/plansSnapshot.sql` pins the generated **schema-mode** Postgres SQL byte-for-byte (against an explicit `pgboss` schema), so it is the tripwire for the identifiers above: **if a change makes that snapshot diff, a must-not-change identifier was renamed** — fix the cause rather than regenerating with `UPDATE_SNAPSHOTS=true`.
+
+Use "bun-boss"/`BunBoss` for the project, package, and class; "pg-boss" only when naming upstream (`timgit/pg-boss`), and `pgboss` only for the schema-mode identifiers above.
 
 ## Direction
 

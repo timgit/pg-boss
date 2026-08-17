@@ -131,6 +131,10 @@ export interface Dialect {
 export interface PlanContext {
   schema: string
   dialect?: Dialect
+  // 'prefix' folds the schema name into a single quoted table identifier ("prefix.job") in the
+  // connection's default schema, instead of a real Postgres schema — the SQLite isolation style,
+  // opt-in on Postgres. Absent means 'schema'.
+  tableIsolation?: 'schema' | 'prefix'
 }
 
 export type Ctx = string | PlanContext
@@ -188,8 +192,8 @@ export const SQLITE: Dialect = {
   // The configured schema resolves like postgres would store it (quoted form verbatim, bare form
   // folded) before landing inside the quoted name — raw interpolation of a quoted config would
   // render the malformed ""MySchema".job".
-  qualify: (schema, object) => `"${resolveSchemaName(schema)}.${object}"`,
-  qualifyIndex: (schema, index) => `"${resolveSchemaName(schema)}.${index}"`,
+  qualify: (schema, object) => prefixQualify(schema, object),
+  qualifyIndex: (schema, index) => prefixQualify(schema, index),
   now: () => SQLITE_NOW,
   nowPlusSeconds: (secondsExpr) => `strftime('%Y-%m-%dT%H:%M:%fZ', unixepoch('subsec') + ${secondsExpr}, 'unixepoch')`,
   tsPlusSeconds: (tsExpr, secondsExpr) => `strftime('%Y-%m-%dT%H:%M:%fZ', unixepoch(${tsExpr}, 'subsec') + ${secondsExpr}, 'unixepoch')`,
@@ -236,8 +240,22 @@ export function dial (c: Ctx): Dialect {
   return typeof c === 'string' ? POSTGRES : (c.dialect ?? POSTGRES)
 }
 
+// The one rendering difference between the two isolation modes: a prefixed name is a single quoted
+// identifier carrying the schema name and a dot ("prefix.job"), living in the default schema.
+export function prefixQualify (schema: string, object: string): string {
+  return `"${resolveSchemaName(schema)}.${object}"`
+}
+
+function isPrefix (c: Ctx): boolean {
+  return typeof c !== 'string' && c.tableIsolation === 'prefix'
+}
+
 export function qn (c: Ctx, object: string): string {
-  return dial(c).qualify(sch(c), object)
+  return isPrefix(c) ? prefixQualify(sch(c), object) : dial(c).qualify(sch(c), object)
+}
+
+export function qi (c: Ctx, index: string): string {
+  return isPrefix(c) ? prefixQualify(sch(c), index) : dial(c).qualifyIndex(sch(c), index)
 }
 
 export function isSqliteDialect (c: Ctx): boolean {

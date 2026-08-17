@@ -1,5 +1,5 @@
 import assert from 'node:assert'
-import { DEFAULT_SCHEMA } from './plans.ts'
+import { DEFAULT_SCHEMA, DEFAULT_PREFIX } from './plans.ts'
 import { DIALECTS, type DialectName } from './dialect.ts'
 import type * as types from './types.ts'
 
@@ -405,7 +405,9 @@ function applySchemaConfig (config: types.ConstructorOptions) {
     assertPostgresObjectName(config.schema)
   }
 
-  config.schema = config.schema || DEFAULT_SCHEMA
+  // Prefix mode has no upstream on-disk history, so it defaults to the fork identity; schema mode
+  // keeps 'pgboss' so existing installs are untouched. Runs after resolveBackend sets tableIsolation.
+  config.schema = config.schema || (config.tableIsolation === 'prefix' ? DEFAULT_PREFIX : DEFAULT_SCHEMA)
 }
 
 function validateWarningConfig (config: any) {
@@ -441,6 +443,8 @@ function resolveBackend (config: any) {
     assert(!('url' in config), "configuration assert: url does not apply to backend 'sqlite' — the db adapter carries the database")
   }
 
+  resolveTableIsolation(config, dialect)
+
   // Test hooks: force a single compatibility flag on top of the current backend so the Postgres-
   // rendered branch it selects can be exercised on a plain Postgres instance. The SQLite profile is
   // the only real producer of most of these now, but SQLite renders a different dialect — these keep
@@ -469,6 +473,27 @@ function resolveBackend (config: any) {
 
   if (config.__test__noListenNotify) {
     config.noListenNotify = true
+  }
+}
+
+// Resolves how bun-boss isolates its tables (a schema vs. a quoted name prefix). SQLite has no
+// schemas, so it is always prefix; Postgres/PGlite default to schema and may opt into prefix.
+// Prefix mode has no dedicated schema, so there is nothing to create and no partitioning.
+function resolveTableIsolation (config: any, dialect: DialectName | undefined) {
+  if (dialect === 'sqlite') {
+    assert(!('tableIsolation' in config) || config.tableIsolation === 'prefix',
+      "configuration assert: backend 'sqlite' always uses tableIsolation 'prefix'")
+    config.tableIsolation = 'prefix'
+  } else {
+    const isolation = ('tableIsolation' in config) ? config.tableIsolation : 'schema'
+    assert(isolation === 'schema' || isolation === 'prefix',
+      'configuration assert: tableIsolation must be one of schema, prefix')
+    config.tableIsolation = isolation
+  }
+
+  if (config.tableIsolation === 'prefix') {
+    config.noTablePartitioning = true
+    config.createSchema = false
   }
 }
 

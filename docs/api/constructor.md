@@ -76,9 +76,9 @@ Only the options listed below are forwarded. Bun's aliases (`host`, `user`, `pas
 
     `executeSql` is the only required member. Two optional capabilities extend it: `withTransaction`, without which bun-boss's multi-statement operations (upsert, the split complete/fail/expire, flow resolution) run without a transaction, and `listen`, without which `useListenNotify` (below) degrades to polling. See [Adapters](./adapters.md) for the full interface and the adapters bun-boss ships with.
 
-* **schema** - string, defaults to "pgboss"
+* **schema** - string, defaults to "pgboss" (schema mode) or "bunboss" (prefix mode)
 
-    Database schema that contains all required storage objects. Unquoted, only alphanumeric and underscore are allowed, and the name may not start with a number. Quoted (see below), any character is allowed except double quotes, single quotes, percent signs, periods, dollar signs, backslashes and control characters. Either way the limit is <= 50 bytes.
+    The namespace that contains all required storage objects — a Postgres schema in schema mode, or the name folded into each table's quoted identifier in prefix mode (see `tableIsolation` below). Unquoted, only alphanumeric and underscore are allowed, and the name may not start with a number. Quoted (see below), any character is allowed except double quotes, single quotes, percent signs, periods, dollar signs, backslashes and control characters. Either way the limit is <= 50 bytes.
 
     To use a name that isn't a legal bare identifier — one containing dashes, or a reserved word — quote it yourself:
 
@@ -91,6 +91,15 @@ Only the options listed below are forwarded. Bun's aliases (`host`, `user`, `pas
     The length limit is measured in bytes, since it's possible to use multi-byte characters inside a quoted name. PostgreSQL truncates identifiers past 63 bytes without complaint, which would leave the configured name and the stored name permanently out of sync.
 
     Because the two spellings look nearly identical but name different schemas, `start()` refuses to install into a schema when another one differing from it only by case already holds a bun-boss installation, and names the spelling that reaches the existing data. Override with `allowSchemaCaseVariant` (below) if two such installations are genuinely intended.
+
+* **tableIsolation** - `'schema' | 'prefix'`, default `'schema'`
+
+    How bun-boss isolates its tables.
+
+    * `'schema'` (default on Postgres and PGlite) — a dedicated Postgres schema, so objects are `schema.job`, `schema.queue`, etc.
+    * `'prefix'` — the `schema` name is folded into a single quoted identifier per object (`"schema.job"`) that lives in the connection's default schema (e.g. `public`), alongside your application's own tables. Use this to avoid a separate schema. Prefix mode does not create a schema and **disables table partitioning** (all queues share one job table); everything else — `SKIP LOCKED`, LISTEN/NOTIFY, advisory locks — works as usual on Postgres.
+
+    The SQLite backend has no schemas, so it always uses prefix mode; setting `tableIsolation: 'schema'` there is rejected. In prefix mode the `schema` default is `"bunboss"` rather than `"pgboss"`.
 
 
 **Operations options**

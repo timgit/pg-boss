@@ -1,10 +1,6 @@
 import type { JobMatchStrategy, UpdateQueueOptions } from './types.ts'
 import { normalizeSchemaName, resolveSchemaName } from './tools.ts'
-import { type Ctx, type Dialect, qn, sch, dial } from './dialect.ts'
-
-function qi (c: Ctx, index: string): string {
-  return dial(c).qualifyIndex(sch(c), index)
-}
+import { type Ctx, type Dialect, qn, qi, sch, dial } from './dialect.ts'
 
 // Postgres counts a mutation's affected rows via a data-modifying CTE; SQLite cannot put DML in a
 // CTE, so the mutation runs top-level and the caller counts its RETURNING rows instead (see
@@ -32,6 +28,9 @@ export const PG_ERROR = {
 }
 
 export const DEFAULT_SCHEMA = 'pgboss'
+// Prefix mode is a fork-level facility with no upstream on-disk history, so its default namespace
+// carries the fork identity rather than 'pgboss' (see attorney.applySchemaConfig).
+export const DEFAULT_PREFIX = 'bunboss'
 export const CREATE_RACE_MESSAGE = 'already exists'
 export const SINGLE_QUOTE_REGEX = /'/g
 const FIFTEEN_MINUTES = 60 * 15
@@ -1063,6 +1062,7 @@ interface GroupConcurrencyConfig {
 interface FetchJobOptions {
   schema: string
   dialect?: Dialect
+  tableIsolation?: 'schema' | 'prefix'
   table: string
   name: string
   policy: string | undefined

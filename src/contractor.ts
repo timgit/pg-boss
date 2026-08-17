@@ -9,8 +9,14 @@ const schemaVersion = packageJson.bunboss.schema as number
 const BARE_LOWER_IDENTIFIER_REGEX = /^[a-z_][a-z0-9_]*$/
 
 class Contractor {
-  static constructionPlans (schema = plans.DEFAULT_SCHEMA, options = { createSchema: true }) {
-    return plans.create(schema, schemaVersion, options)
+  static constructionPlans (schema?: string, options?: { tableIsolation?: 'schema' | 'prefix' }) {
+    const prefix = options?.tableIsolation === 'prefix'
+    const name = schema ?? (prefix ? plans.DEFAULT_PREFIX : plans.DEFAULT_SCHEMA)
+    // Schema mode passes a bare string (byte-identical to the pre-isolation static caller); prefix
+    // mode carries the isolation on a context object and skips schema creation and partitioning.
+    return prefix
+      ? plans.create({ schema: name, tableIsolation: 'prefix' }, schemaVersion, { createSchema: false, noTablePartitioning: true })
+      : plans.create(name, schemaVersion, { createSchema: true })
   }
 
   private config: types.ResolvedConstructorOptions
@@ -57,6 +63,11 @@ class Contractor {
   // share a folded name never blocks a legitimate install.
   private async assertNoSchemaCaseVariant () {
     if (this.config.allowSchemaCaseVariant) {
+      return
+    }
+
+    // Prefix mode has no dedicated schema, so the pg_namespace case-variant probe does not apply.
+    if (this.config.tableIsolation === 'prefix') {
       return
     }
 

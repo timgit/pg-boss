@@ -22,8 +22,8 @@ export const events: types.Events = Object.freeze({
   flow: 'flow'
 })
 
-export function getConstructionPlans (schema?: string) {
-  return Contractor.constructionPlans(schema)
+export function getConstructionPlans (schema?: string, options?: { tableIsolation?: 'schema' | 'prefix' }) {
+  return Contractor.constructionPlans(schema, options)
 }
 
 export class BunBoss extends EventEmitter<types.BunBossEventMap> {

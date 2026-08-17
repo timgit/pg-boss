@@ -242,6 +242,26 @@ async function dropSchema (schema: string): Promise<void> {
     }
   } else {
     await db.executeSql(`DROP SCHEMA IF EXISTS ${schema} CASCADE`)
+
+    // Prefix-mode installs place quoted "<schema>.name" tables/types/functions in the default
+    // schema instead of a dedicated one, so sweep those too (a no-op for schema-mode tests, whose
+    // objects carry no dotted name in the default schema). LIKE is safe — schema names are hex.
+    const { rows } = await db.executeSql(
+      `SELECT 'DROP TABLE IF EXISTS "' || c.relname || '" CASCADE' AS stmt
+         FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+         WHERE n.nspname = current_schema() AND c.relkind IN ('r', 'p') AND c.relname LIKE '${schema}.%'
+       UNION ALL
+       SELECT 'DROP TYPE IF EXISTS "' || t.typname || '" CASCADE'
+         FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace
+         WHERE n.nspname = current_schema() AND t.typname LIKE '${schema}.%'
+       UNION ALL
+       SELECT 'DROP FUNCTION IF EXISTS ' || p.oid::regprocedure || ' CASCADE'
+         FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+         WHERE n.nspname = current_schema() AND p.proname LIKE '${schema}.%'`)
+
+    if (rows.length) {
+      await db.executeSql(rows.map((row: any) => row.stmt).join(';\n'))
+    }
   }
 
   await db.close()

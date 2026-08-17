@@ -68,7 +68,19 @@ export interface DatabaseOptions {
   path?: string;
   /** Reported to Postgres as the session's application_name. @default 'bunboss' */
   application_name?: string;
+  /**
+   * The namespace bun-boss's tables live in. @default 'pgboss' in schema mode, 'bunboss' in prefix mode
+   */
   schema?: string;
+  /**
+   * How bun-boss isolates its tables.
+   * - `schema` (default on Postgres/PGlite): a dedicated Postgres schema (`schema.job`).
+   * - `prefix`: a single quoted identifier in the connection's default schema (`"schema.job"`),
+   *   co-located with the application's own tables. Disables table partitioning. Always used by
+   *   the SQLite backend, which has no schemas.
+   * @default 'schema'
+   */
+  tableIsolation?: 'schema' | 'prefix';
   db?: IDatabase;
 }
 
@@ -276,6 +288,7 @@ export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, 
 /** @internal */
 export interface ResolvedConstructorOptions extends ConstructorOptions, CompatibilityFlags {
   schema: string;
+  tableIsolation: 'schema' | 'prefix';
   dialect: Dialect;
   monitorIntervalSeconds: number;
   cronMonitorIntervalSeconds: number;
