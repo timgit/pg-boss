@@ -38,7 +38,6 @@ const cases: Record<string, () => unknown> = {
   trySetCronTime: () => plans.trySetCronTime(S, 60),
   trySetFlowTime: () => plans.trySetFlowTime(S, 60),
   updateQueue: () => plans.updateQueue(S),
-  'updateQueue deadLetter': () => plans.updateQueue(S, { deadLetter: 'dlq' }),
   getQueues: () => plans.getQueues(S),
   'getQueues by names': () => plans.getQueues(S, QUEUES),
   deleteJobsById: () => plans.deleteJobsById(S, T),

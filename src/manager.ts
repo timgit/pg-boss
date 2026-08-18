@@ -1722,9 +1722,10 @@ class Manager extends EventEmitter implements types.EventsMixin {
     if (deadLetter) {
       Attorney.assertQueueName(deadLetter)
       notStrictEqual(name, deadLetter, 'deadLetter cannot be itself')
+      await this.getQueueCache(deadLetter)
     }
 
-    const sql = plans.updateQueue(this.config, { deadLetter })
+    const sql = plans.updateQueue(this.config)
     await this.db.executeSql(sql, [name, options])
     await this.#refreshQueueCacheEntry(name)
   }

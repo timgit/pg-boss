@@ -13,6 +13,7 @@ import type { JobSpyInterface } from './spy.ts'
 
 export { JOB_STATES as states } from './plans.ts'
 export { QUEUE_POLICIES as policies } from './plans.ts'
+export { QUEUE_OPTION_DEFAULTS as queueOptionDefaults } from './plans.ts'
 
 export const events: types.Events = Object.freeze({
   error: 'error',

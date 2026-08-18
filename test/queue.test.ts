@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from './harness.ts'
 import * as helper from './testHelper.ts'
 import { assertTruthy } from './testHelper.ts'
-import { states } from '../src/index.ts'
+import { states, queueOptionDefaults } from '../src/index.ts'
 import { ctx } from './hooks.ts'
 
 describe('queues', function () {
@@ -321,6 +321,40 @@ describe('queues', function () {
     expect(queueObj!.retryDelay).toBe(updateProps.retryDelay)
     expect(queueObj!.expireInSeconds).toBe(updateProps.expireInSeconds)
     expect(queueObj!.deadLetter).toBe(updateProps.deadLetter)
+  })
+
+  it('should clear deadLetter via updateQueue with null and keep it when the key is omitted', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+
+    const deadLetter = `${ctx.schema}_dlq`
+    await ctx.boss.createQueue(deadLetter)
+    await ctx.boss.createQueue(ctx.schema, { deadLetter })
+
+    // An update that omits the key leaves the link alone
+    await ctx.boss.updateQueue(ctx.schema, { retryLimit: 1 })
+    expect((await ctx.boss.getQueue(ctx.schema))!.deadLetter).toBe(deadLetter)
+
+    await ctx.boss.updateQueue(ctx.schema, { deadLetter: null })
+    expect((await ctx.boss.getQueue(ctx.schema))!.deadLetter).toBeNull()
+  })
+
+  it('should fail to update deadLetter to a queue that does not exist', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+
+    await ctx.boss.createQueue(ctx.schema)
+
+    await expect(ctx.boss.updateQueue(ctx.schema, { deadLetter: `${ctx.schema}_missing` })).rejects.toThrow()
+  })
+
+  it('should store exactly queueOptionDefaults for a queue created without options', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+
+    await ctx.boss.createQueue(ctx.schema)
+    const queue = (await ctx.boss.getQueue(ctx.schema))!
+
+    for (const [key, value] of Object.entries(queueOptionDefaults)) {
+      expect(queue[key as keyof typeof queueOptionDefaults]).toBe(value as never)
+    }
   })
 
   it('should fail to change queue policy', async function () {

@@ -14,7 +14,7 @@ describe('upsert', function () {
     const sqls = [
       plans.updateJob('pgboss', 'job', 'q', 'id', 'newest'),
       plans.updateJob('pgboss', 'job', 'q', 'singletonKey', 'all', true),
-      plans.updateQueue('pgboss', { deadLetter: 'dl' })
+      plans.updateQueue('pgboss')
     ]
     for (const sql of sqls) {
       expect(sql).not.toMatch(/\?/)

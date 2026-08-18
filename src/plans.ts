@@ -65,6 +65,25 @@ const QUEUE_DEFAULTS = {
   partition: false
 }
 
+/**
+ * The stored value each queue option lands on when createQueue omits it; nullable options
+ * (retryDelayMax, deadLetter, heartbeatSeconds) read back as null. Public so consumers that verify
+ * or diff stored queue configuration don't have to mirror these numbers.
+ */
+export const QUEUE_OPTION_DEFAULTS: { readonly [K in keyof UpdateQueueOptions]-?: Exclude<UpdateQueueOptions[K], undefined> | null } = Object.freeze({
+  expireInSeconds: QUEUE_DEFAULTS.expire_seconds,
+  retentionSeconds: QUEUE_DEFAULTS.retention_seconds,
+  deleteAfterSeconds: QUEUE_DEFAULTS.deletion_seconds,
+  retryLimit: QUEUE_DEFAULTS.retry_limit,
+  retryDelay: QUEUE_DEFAULTS.retry_delay,
+  retryBackoff: QUEUE_DEFAULTS.retry_backoff,
+  retryDelayMax: null,
+  warningQueueSize: QUEUE_DEFAULTS.warning_queued,
+  heartbeatSeconds: null,
+  deadLetter: null,
+  notify: false
+})
+
 export const COMMON_JOB_TABLE = 'job_common'
 
 interface CreateOptions {
@@ -854,7 +873,7 @@ function trySetQueueTimestamp (c: Ctx, queues: string[], column: string, seconds
   }
 }
 
-export function updateQueue (c: Ctx, { deadLetter }: UpdateQueueOptions = {}) {
+export function updateQueue (c: Ctx) {
   const d = dial(c)
   return `
     WITH options as (SELECT ${d.jsonParam('$2')} as data)
@@ -873,11 +892,9 @@ export function updateQueue (c: Ctx, { deadLetter }: UpdateQueueOptions = {}) {
         THEN ${d.jsonGet('o.data', 'heartbeatSeconds', 'int')}
         ELSE heartbeat_seconds END,
       notify = COALESCE(${d.jsonGet('o.data', 'notify', 'bool')}, notify),
-      ${
-        deadLetter === undefined
-          ? ''
-          : `dead_letter = CASE WHEN '${deadLetter}' IS DISTINCT FROM dead_letter THEN '${deadLetter}' ELSE dead_letter END,`
-      }
+      dead_letter = CASE WHEN ${d.jsonHasKey('o.data', 'deadLetter')}
+        THEN ${d.jsonGet('o.data', 'deadLetter', 'text')}
+        ELSE dead_letter END,
       updated_on = ${d.now()}
     FROM options o
     WHERE name = $1

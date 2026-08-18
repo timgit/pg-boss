@@ -510,9 +510,10 @@ export interface Queue extends QueueOptions {
   /**
    * The name of the queue's dead letter queue. When a job fails after all
    * retries, the job's payload will be copied into said queue, copying the same
-   * retention and retry configuration as the original job.
+   * retention and retry configuration as the original job. Pass `null` to
+   * `updateQueue` to clear the link; reads return `null` when unset.
    */
-  deadLetter?: string;
+  deadLetter?: string | null;
   /**
    * The number of jobs allowed to exist in the created or retry state before
    * emitting a warning event.

@@ -893,31 +893,9 @@ SELECT pgboss.delete_queue('q1');
         THEN (o.data->>'heartbeatSeconds')::int
         ELSE heartbeat_seconds END,
       notify = COALESCE((o.data->>'notify')::bool, notify),
-      
-      updated_on = now()
-    FROM options o
-    WHERE name = $1
-  
-
-=== updateQueue deadLetter ===
-
-    WITH options as (SELECT $2::jsonb as data)
-    UPDATE pgboss.queue SET
-      retry_limit = COALESCE((o.data->>'retryLimit')::int, retry_limit),
-      retry_delay = COALESCE((o.data->>'retryDelay')::int, retry_delay),
-      retry_backoff = COALESCE((o.data->>'retryBackoff')::bool, retry_backoff),
-      retry_delay_max = CASE WHEN jsonb_exists(o.data, 'retryDelayMax')
-        THEN (o.data->>'retryDelayMax')::int
-        ELSE retry_delay_max END,
-      expire_seconds = COALESCE((o.data->>'expireInSeconds')::int, expire_seconds),
-      retention_seconds = COALESCE((o.data->>'retentionSeconds')::int, retention_seconds),
-      deletion_seconds = COALESCE((o.data->>'deleteAfterSeconds')::int, deletion_seconds),
-      warning_queued = COALESCE((o.data->>'warningQueueSize')::int, warning_queued),
-      heartbeat_seconds = CASE WHEN jsonb_exists(o.data, 'heartbeatSeconds')
-        THEN (o.data->>'heartbeatSeconds')::int
-        ELSE heartbeat_seconds END,
-      notify = COALESCE((o.data->>'notify')::bool, notify),
-      dead_letter = CASE WHEN 'dlq' IS DISTINCT FROM dead_letter THEN 'dlq' ELSE dead_letter END,
+      dead_letter = CASE WHEN jsonb_exists(o.data, 'deadLetter')
+        THEN (o.data->>'deadLetter')::text
+        ELSE dead_letter END,
       updated_on = now()
     FROM options o
     WHERE name = $1
