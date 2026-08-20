@@ -7,6 +7,9 @@ export default defineConfig({
   base: '/',
   cleanUrls: true,
   lastUpdated: true,
+  sitemap: {
+    hostname: 'https://pgboss.io'
+  },
   head: [
     ['meta', { name: 'theme-color', content: '#2f7cf6' }],
     ['script', {}, `(function(){
