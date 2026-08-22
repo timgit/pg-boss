@@ -2,15 +2,16 @@
 // Generates the sponsor lists in docs/sponsors.md from GitHub Sponsors.
 //
 // The prose at the top of docs/sponsors.md is hand-maintained; everything
-// below the generated marker is rebuilt from the API. Sponsors are bucketed by
-// their monthly tier: $50 and above get a logo in the grid, $10 and above get
-// a name in the list.
+// below the generated marker is rebuilt from the API.
 //
 // Run `npm run docs:sponsors` to refresh. Use `--check` in CI to fail (without
 // writing) when the page has drifted from the API.
 //
-// Requires SPONSORS_TOKEN: a token for the sponsored account with permission to
-// read its sponsorships. The Actions GITHUB_TOKEN cannot read sponsorship data.
+// Requires SPONSORS_TOKEN: a classic PAT for the sponsored account with the
+// read:user and read:org scopes. read:user alone is not enough — reading the
+// `login` of an Organization sponsor requires read:org, and the API answers a
+// token without it with a scope error rather than partial data. The Actions
+// GITHUB_TOKEN cannot read sponsorship data at all.
 //
 // Only public sponsorships are listed. includePrivate is deliberately omitted —
 // a private sponsor hid the relationship on purpose, and publishing their logo
@@ -77,7 +78,7 @@ async function fetchSponsorships (token) {
     const page = body.data?.viewer?.sponsorshipsAsMaintainer
 
     if (!page) {
-      throw new Error('GitHub API returned no sponsorship data. Check that SPONSORS_TOKEN belongs to the sponsored account and carries the scope to read sponsorships.')
+      throw new Error('GitHub API returned no sponsorship data. Check that SPONSORS_TOKEN belongs to the sponsored account and carries both the read:user and read:org scopes.')
     }
 
     sponsorships.push(...page.nodes)
@@ -162,7 +163,7 @@ function render (page, sponsors) {
 const token = process.env.SPONSORS_TOKEN
 
 if (!token) {
-  console.error('SPONSORS_TOKEN is not set. It needs a token for the sponsored account; the Actions GITHUB_TOKEN cannot read sponsorship data.')
+  console.error('SPONSORS_TOKEN is not set. It needs a classic PAT for the sponsored account with the read:user and read:org scopes; the Actions GITHUB_TOKEN cannot read sponsorship data.')
   process.exit(1)
 }
 
