@@ -88,6 +88,55 @@ async function fetchSponsorships (token) {
   return sponsorships
 }
 
+// GitHub does not validate the website field on a profile, so it hands back
+// whatever the sponsor typed — including things that only resolve on their own
+// machine. Anything that isn't a public http(s) address falls back to the
+// sponsor's GitHub profile, which always works.
+function publicWebsite (websiteUrl) {
+  if (!websiteUrl) {
+    return null
+  }
+
+  let url
+
+  try {
+    // A bare "example.com" is a real answer here; a bare "localhost" is not,
+    // and gets rejected below on its own merits.
+    url = new URL(/^[a-z][a-z0-9+.-]*:/i.test(websiteUrl) ? websiteUrl : `https://${websiteUrl}`)
+  } catch {
+    return null
+  }
+
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    return null
+  }
+
+  const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, '')
+
+  // Loopback and link-local names.
+  if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local') || host.endsWith('.internal')) {
+    return null
+  }
+
+  // IPv6 loopback and unique-local.
+  if (host === '::1' || host.startsWith('fc') || host.startsWith('fd') || host.startsWith('fe80:')) {
+    return null
+  }
+
+  // IPv4 loopback, private ranges and link-local.
+  const ipv4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/)
+
+  if (ipv4) {
+    const [a, b] = ipv4.slice(1).map(Number)
+    return (a === 127 || a === 10 || a === 0 || (a === 192 && b === 168) || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31))
+      ? null
+      : url.href
+  }
+
+  // Anything left without a dot is a bare host name, not a public site.
+  return host.includes('.') ? url.href : null
+}
+
 // One-time sponsorships are excluded: placement is sold as ongoing, and a
 // one-time sponsor has nothing left to cancel.
 function toSponsors (sponsorships) {
@@ -98,8 +147,8 @@ function toSponsors (sponsorships) {
       createdAt,
       login: sponsorEntity.login,
       name: sponsorEntity.name || sponsorEntity.login,
-      // Their own site if they published one, otherwise their GitHub profile.
-      href: sponsorEntity.websiteUrl || sponsorEntity.url,
+      // Their own site if they published a usable one, otherwise their profile.
+      href: publicWebsite(sponsorEntity.websiteUrl) || sponsorEntity.url,
       avatar: sponsorEntity.avatarUrl
     }))
     // Highest tier first, then longest-standing, then alphabetical. Stable
