@@ -1,0 +1,54 @@
+name: Sync sponsors
+
+# Rebuilds the sponsor lists in docs/sponsors.md from the GitHub Sponsors API
+# and commits the result when it changed. Sponsorships start and stop without
+# any push to this repo, so the page needs a schedule rather than a trigger.
+
+on:
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write # to dispatch the docs deploy below
+
+concurrency:
+  group: sync-sponsors
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: github.repository == 'timgit/pg-boss'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      # No install step: the script uses only node built-ins.
+      - run: npm run docs:sponsors
+        env:
+          SPONSORS_TOKEN: ${{ secrets.SPONSORS_TOKEN }}
+
+      - id: commit
+        run: |
+          if git diff --quiet -- docs/sponsors.md; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No sponsor changes."
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add docs/sponsors.md
+          git commit -m 'docs: update sponsors'
+          git push
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      # A push made with GITHUB_TOKEN does not start other workflows, so the
+      # docs deploy has to be asked for explicitly.
+      - if: steps.commit.outputs.changed == 'true'
+        run: gh workflow run docs.yml --ref master
+        env:
+          GH_TOKEN: ${{ github.token }}

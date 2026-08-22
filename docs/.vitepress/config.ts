@@ -48,6 +48,7 @@ export default defineConfig({
       { text: 'Dashboard', link: '/dashboard' },
       { text: 'Proxy', link: '/proxy' },
       { text: 'Database Backends', link: '/database-backends' },
+      { text: 'Sponsors', link: '/sponsors' },
       {
         text: 'API',
         collapsed: false,

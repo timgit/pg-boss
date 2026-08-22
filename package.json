@@ -63,7 +63,8 @@
     "seed": "tsx scripts/seed-queue-stats.js",
     "readme": "node ./examples/readme.js",
     "docs": "npm run docs:dev --prefix docs",
-    "docs:readme": "node ./scripts/sync-readme.js"
+    "docs:readme": "node ./scripts/sync-readme.js",
+    "docs:sponsors": "node --env-file-if-exists=.env ./scripts/sync-sponsors.js"
   },
   "pgboss": {
     "schema": 37
