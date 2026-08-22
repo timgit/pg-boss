@@ -45,7 +45,9 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add docs/sponsors.md README.md docs/index.md
-          git commit -m 'docs: update sponsors'
+          # [skip ci] keeps a docs-only commit from firing the full test matrix.
+          # The docs deploy is dispatched explicitly below, so it is unaffected.
+          git commit -m 'docs: update sponsors [skip ci]'
           git push
           echo "changed=true" >> "$GITHUB_OUTPUT"
 
