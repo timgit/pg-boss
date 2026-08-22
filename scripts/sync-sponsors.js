@@ -1,8 +1,11 @@
 #!/usr/bin/env node
-// Generates the sponsor lists in docs/sponsors.md from GitHub Sponsors.
+// Generates the sponsor lists in docs/sponsors.md and the logo grid in
+// README.md from GitHub Sponsors.
 //
 // The prose at the top of docs/sponsors.md is hand-maintained; everything
-// below the generated marker is rebuilt from the API.
+// below the generated marker is rebuilt from the API. The readme carries the
+// same logo grid between its own pair of markers, and reaches docs/index.md
+// through `npm run docs:readme`.
 //
 // Run `npm run docs:sponsors` to refresh. Use `--check` in CI to fail (without
 // writing) when the page has drifted from the API.
@@ -23,8 +26,11 @@ import { dirname, join } from 'node:path'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const pagePath = join(root, 'docs', 'sponsors.md')
+const readmePath = join(root, 'README.md')
 
 const MARKER = '<!-- The lists below are generated from GitHub Sponsors by scripts/sync-sponsors.js. Do not edit them directly. -->'
+const README_START = '<!-- sponsors:start The logos below are generated from GitHub Sponsors by scripts/sync-sponsors.js. Do not edit them directly. -->'
+const README_END = '<!-- sponsors:end -->'
 
 // Tier thresholds, in monthly dollars. These mirror what the tier descriptions
 // promise, so changing one means changing the other.
@@ -198,6 +204,22 @@ function renderLists (sponsors) {
   return sections.join('\n\n')
 }
 
+// The readme shows only the logo grid. Backers are named on the docs page,
+// which the readme section links to.
+function renderReadme (readme, sponsors) {
+  const start = readme.indexOf(README_START)
+  const end = readme.indexOf(README_END)
+
+  if (start === -1 || end === -1 || end < start) {
+    throw new Error(`README.md: missing the generated marker pair:\n${README_START}\n${README_END}`)
+  }
+
+  const logos = sponsors.filter(s => s.dollars >= LOGO_TIER)
+  const grid = logos.length ? `\n${renderLogos(logos)}\n` : '\n'
+
+  return `${readme.slice(0, start)}${README_START}${grid}${readme.slice(end)}`
+}
+
 function render (page, sponsors) {
   const marker = page.indexOf(MARKER)
 
@@ -217,11 +239,16 @@ if (!token) {
 }
 
 const page = readFileSync(pagePath, 'utf8')
+const readme = readFileSync(readmePath, 'utf8')
 
-let next
+let outputs
 
 try {
-  next = render(page, toSponsors(await fetchSponsorships(token)))
+  const sponsors = toSponsors(await fetchSponsorships(token))
+  outputs = [
+    { label: 'docs/sponsors.md', path: pagePath, current: page, next: render(page, sponsors) },
+    { label: 'README.md', path: readmePath, current: readme, next: renderReadme(readme, sponsors) }
+  ]
 } catch (error) {
   // A stack trace here is noise: every realistic failure is a bad token, a
   // revoked scope, or GitHub being down.
@@ -229,17 +256,20 @@ try {
   process.exit(1)
 }
 
-const check = process.argv.includes('--check')
+const stale = outputs.filter(({ current, next }) => current !== next)
 
-if (check) {
-  if (page !== next) {
-    console.error('docs/sponsors.md is out of sync with GitHub Sponsors. Run `npm run docs:sponsors`.')
+if (process.argv.includes('--check')) {
+  if (stale.length) {
+    console.error(`${stale.map(o => o.label).join(' and ')} out of sync with GitHub Sponsors. Run \`npm run docs:sponsors\`.`)
     process.exit(1)
   }
-  console.log('docs/sponsors.md is in sync with GitHub Sponsors.')
-} else if (page === next) {
-  console.log('docs/sponsors.md is already up to date.')
+  console.log('Sponsor lists are in sync with GitHub Sponsors.')
+} else if (!stale.length) {
+  console.log('Sponsor lists are already up to date.')
 } else {
-  writeFileSync(pagePath, next)
-  console.log('Synced GitHub Sponsors -> docs/sponsors.md')
+  for (const { label, path, next } of stale) {
+    writeFileSync(path, next)
+    console.log(`Synced GitHub Sponsors -> ${label}`)
+  }
+  console.log('Run `npm run docs:readme` to carry the readme grid into docs/index.md.')
 }

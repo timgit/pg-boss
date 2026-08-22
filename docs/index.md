@@ -114,6 +114,15 @@ See the [proxy documentation](/proxy) for details.
 * Node 22.12 or higher for CommonJS's require(esm)
 * PostgreSQL 13 or higher
 
+## Sponsors
+
+pg-boss is MIT licensed and always will be. It is maintained by one person, and sponsorship is what pays for the maintenance, security response, and support behind it.
+
+[Become a sponsor](https://github.com/sponsors/timgit), or see everyone who already does on the [sponsors page](/sponsors).
+
+<!-- sponsors:start The logos below are generated from GitHub Sponsors by scripts/sync-sponsors.js. Do not edit them directly. -->
+<!-- sponsors:end -->
+
 ## Contributing
 To setup a development environment for this library:
 

@@ -27,21 +27,24 @@ jobs:
         with:
           node-version: 22
 
-      # No install step: the script uses only node built-ins.
+      # No install step: both scripts use only node built-ins.
       - run: npm run docs:sponsors
         env:
           SPONSORS_TOKEN: ${{ secrets.SPONSORS_TOKEN }}
 
+      # The readme grid reaches docs/index.md only through the readme sync.
+      - run: npm run docs:readme
+
       - id: commit
         run: |
-          if git diff --quiet -- docs/sponsors.md; then
+          if git diff --quiet -- docs/sponsors.md README.md docs/index.md; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
             echo "No sponsor changes."
             exit 0
           fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add docs/sponsors.md
+          git add docs/sponsors.md README.md docs/index.md
           git commit -m 'docs: update sponsors'
           git push
           echo "changed=true" >> "$GITHUB_OUTPUT"
