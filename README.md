@@ -84,6 +84,12 @@ pg-boss is MIT licensed and always will be. It is maintained by one person, and 
 [Become a sponsor](https://github.com/sponsors/timgit), or see everyone who already does on the [sponsors page](https://pgboss.io/sponsors).
 
 <!-- sponsors:start The logos below are generated from GitHub Sponsors by scripts/sync-sponsors.js. Do not edit them directly. -->
+<div style="display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; margin: 1.5rem 0;">
+  <a href="https://altruistiq.com/" target="_blank" rel="noopener"><img src="https://avatars.githubusercontent.com/u/88195975?s=200&amp;v=4" alt="Altruistiq" title="Altruistiq" width="64" height="64" style="border-radius: 8px;"></a>
+  <a href="https://wasp.sh/" target="_blank" rel="noopener"><img src="https://avatars.githubusercontent.com/u/55102317?s=200&amp;v=4" alt="wasp-lang" title="wasp-lang" width="64" height="64" style="border-radius: 8px;"></a>
+  <a href="https://github.com/Ferry-Health" target="_blank" rel="noopener"><img src="https://avatars.githubusercontent.com/u/158637456?s=200&amp;v=4" alt="Ferry Health" title="Ferry Health" width="64" height="64" style="border-radius: 8px;"></a>
+  <a href="https://superpower.com/" target="_blank" rel="noopener"><img src="https://avatars.githubusercontent.com/u/114334709?s=200&amp;v=4" alt="Superpower" title="Superpower" width="64" height="64" style="border-radius: 8px;"></a>
+</div>
 <!-- sponsors:end -->
 
 ## Documentation
