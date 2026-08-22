@@ -33,6 +33,7 @@ export default defineConfig({
     nav: [
       { text: 'Get Started', link: '/introduction' },
       { text: 'API', link: '/api/constructor', activeMatch: '/api/' },
+      { text: 'Sponsors', link: '/sponsors' },
       {
         text: pkg.version,
         items: [
