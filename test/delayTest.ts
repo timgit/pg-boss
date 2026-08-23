@@ -122,17 +122,17 @@ describe('delayed jobs', function () {
     expect(new Date(job.startAfter).toISOString()).toBe(INSTANT)
   })
 
-  // A string with no zone designator is resolved by Postgres in the database's time zone, so
-  // the exact instant depends on that setting. Asserting within a day of the nominal UTC
-  // instant keeps this independent of the server's time zone (max offset is ±14h) while still
-  // proving the string parsed as a date time rather than being rejected as an interval.
-  const ONE_DAY = 24 * 60 * 60 * 1000
-  for (const [label, startAfter, nominal] of [
-    ['a date time string with no zone', '2027-01-01T08:00:00', '2027-01-01T08:00:00Z'],
-    ['a space-separated date time string', '2027-01-01 08:00:00', '2027-01-01T08:00:00Z'],
-    ['a date-only string', '2027-01-01', '2027-01-01T00:00:00Z']
+  // A string with no zone designator would otherwise be cast to timestamptz in the database
+  // session's TimeZone, making the instant depend on server configuration. Attorney pins it to
+  // UTC first, so these resolve to the same instant on any server.
+  for (const [label, startAfter, expected] of [
+    ['a date time string with no zone', '2027-01-01T08:00:00', INSTANT],
+    ['a minute-precision date time string with no zone', '2027-01-01T08:00', INSTANT],
+    ['a space-separated date time string', '2027-01-01 08:00:00', INSTANT],
+    ['a fractional-second date time string with no zone', '2027-01-01 08:00:00.5', '2027-01-01T08:00:00.500Z'],
+    ['a date-only string', '2027-01-01', '2027-01-01T00:00:00.000Z']
   ] as const) {
-    it(`should accept ${label}`, async function () {
+    it(`should resolve ${label} as UTC`, async function () {
       ctx.boss = await helper.start(ctx.bossConfig)
 
       const id = await ctx.boss.send(ctx.schema, null, { startAfter })
@@ -140,19 +140,53 @@ describe('delayed jobs', function () {
 
       const job = await ctx.boss.getJobById(ctx.schema, id)
       assertTruthy(job)
-
-      const drift = Math.abs(new Date(job.startAfter).getTime() - new Date(nominal).getTime())
-      expect(drift).toBeLessThanOrEqual(ONE_DAY)
+      expect(new Date(job.startAfter).toISOString()).toBe(expected)
     })
   }
 
-  // Forms that reached the date time path only via the trailing 'Z' check, so they keep
-  // working: ISO 8601 basic format, and a value with leading whitespace.
-  for (const [label, startAfter] of [
-    ['in ISO 8601 basic format', '20270101T080000Z'],
-    ['with leading whitespace', '  2027-01-01T08:00:00Z']
+  it('should resolve a zone-less date time string passed to insert() as UTC', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    const [id] = await ctx.boss.insert(ctx.schema, [{ startAfter: '2027-01-01T08:00:00' }], { returnId: true }) ?? []
+    assertTruthy(id)
+
+    const job = await ctx.boss.getJobById(ctx.schema, id)
+    assertTruthy(job)
+    expect(new Date(job.startAfter).toISOString()).toBe(INSTANT)
+  })
+
+  // The UTC pin is a whitelist of the zone-less spellings, so anything carrying a zone Postgres
+  // resolves on its own is passed through untouched rather than having a 'Z' appended to it.
+  it('should leave a date time string naming a time zone to the database', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    const id = await ctx.boss.send(ctx.schema, null, { startAfter: '2027-01-01 03:00:00 America/New_York' })
+    assertTruthy(id)
+
+    const job = await ctx.boss.getJobById(ctx.schema, id)
+    assertTruthy(job)
+    expect(new Date(job.startAfter).toISOString()).toBe(INSTANT)
+  })
+
+  helper.itPostgresOnly('should leave a single-digit offset to the database', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    const id = await ctx.boss.send(ctx.schema, null, { startAfter: '2027-01-01T13:30:00+5:30' })
+    assertTruthy(id)
+
+    const job = await ctx.boss.getJobById(ctx.schema, id)
+    assertTruthy(job)
+    expect(new Date(job.startAfter).toISOString()).toBe(INSTANT)
+  })
+
+  // Forms that reached the date time path only via the trailing 'Z' check, so they keep working:
+  // ISO 8601 basic format, and a value with leading whitespace. Basic format is Postgres-only —
+  // CockroachDB's timestamp parser rejects '20270101T080000Z', on master as well as here.
+  for (const [label, startAfter, testFn] of [
+    ['in ISO 8601 basic format', '20270101T080000Z', helper.itPostgresOnly],
+    ['with leading whitespace', '  2027-01-01T08:00:00Z', it]
   ] as const) {
-    it(`should still resolve a date time string ${label}`, async function () {
+    testFn(`should still resolve a date time string ${label}`, async function () {
       ctx.boss = await helper.start(ctx.bossConfig)
 
       const id = await ctx.boss.send(ctx.schema, null, { startAfter })

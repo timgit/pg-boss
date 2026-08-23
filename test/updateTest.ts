@@ -279,6 +279,20 @@ describe('update', function () {
       expect(new Date(job.startAfter).toISOString()).toBe('2027-01-01T08:00:00.000Z')
     })
 
+    it('resolves a zone-less startAfter date time string as UTC', async function () {
+      ctx.boss = await helper.start(ctx.bossConfig)
+
+      const id = await ctx.boss.send(ctx.schema, { v: 1 })
+      assertTruthy(id)
+
+      // no zone designator: pinned to UTC rather than resolved in the database session's TimeZone
+      await ctx.boss.update(ctx.schema, undefined, { id, startAfter: '2027-01-01T08:00:00' })
+
+      const job = await ctx.boss.getJobById(ctx.schema, id)
+      assertTruthy(job)
+      expect(new Date(job.startAfter).toISOString()).toBe('2027-01-01T08:00:00.000Z')
+    })
+
     it('still accepts a relative interval string for startAfter', async function () {
       ctx.boss = await helper.start(ctx.bossConfig)
 

@@ -1717,8 +1717,14 @@ export function restoreJobs (schema: string, table: string) {
 // Recognition is only ever widened, so anything that resolves as an interval today still
 // does: bare seconds ('0', '300'), phrases ('5 minutes'), ISO 8601 durations ('PT1H') and
 // the year-month form ('2027-01', which Postgres reads as 2027 years 1 mon) carry neither
-// mark. A date time with an explicit offset resolves to that exact instant; one with no zone
-// designator is resolved by Postgres in the database's time zone.
+// mark. A date time with an explicit offset resolves to that exact instant.
+//
+// A zone-less date time would otherwise be cast in the database session's TimeZone, so the
+// public entry points pin it to UTC before it gets here (Attorney.pinZonelessDateTime). This
+// cast is still session-TZ dependent for anything that reaches it unpinned, which is why the
+// pin lives at the boundary rather than in this expression: a caller may legitimately pass a
+// form Postgres resolves itself ('2027-01-01 08:00:00 America/New_York'), and rewriting those
+// in SQL would mean re-implementing timestamp parsing in a regex.
 function isDateTimeString (expression: string) {
   return `(right(${expression}, 1) = 'Z' OR ${expression} ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}')`
 }

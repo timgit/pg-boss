@@ -96,10 +96,38 @@ All retry, expiration, and retention options can also be set on the queue and wi
 
   A string that begins with an ISO 8601 calendar date (`YYYY-MM-DD`) is read as a date time. If it
   carries an explicit zone designator (`Z` or an offset such as `+05:30`) it resolves to that exact
-  instant; without one it is resolved in the database's time zone.
+  instant. If it carries none, it is interpreted as UTC, so the instant does not depend on the
+  database's time zone.
+
+  | String | Resolves to |
+  | --- | --- |
+  | `'2027-01-01T08:00:00Z'` | 2027-01-01 08:00 UTC |
+  | `'2027-01-01T08:00:00.123Z'` | 2027-01-01 08:00:00.123 UTC |
+  | `'2027-01-01T08:00:00+00:00'` | 2027-01-01 08:00 UTC |
+  | `'2027-01-01T08:00:00+0000'` | 2027-01-01 08:00 UTC |
+  | `'2027-01-01T08:00:00+00'` | 2027-01-01 08:00 UTC |
+  | `'2027-01-01T13:30:00+05:30'` | 2027-01-01 08:00 UTC |
+  | `'2027-01-01T00:00:00-08:00'` | 2027-01-01 08:00 UTC |
+  | `'20270101T080000Z'` (basic format) | 2027-01-01 08:00 UTC |
+  | `'2027-01-01T08:00:00'` | 2027-01-01 08:00 UTC |
+  | `'2027-01-01T08:00'` | 2027-01-01 08:00 UTC |
+  | `'2027-01-01 08:00:00'` | 2027-01-01 08:00 UTC |
+  | `'2027-01-01'` | 2027-01-01 00:00 UTC |
+
+  A string naming a time zone instead of an offset (`'2027-01-01 08:00:00 America/New_York'`) is
+  left for the database to resolve, and observes that zone's rules including daylight saving.
 
   Any other string is read as a relative delay from now, using Postgres interval syntax — so
-  `'5 minutes'`, `'1 hour'`, `'PT1H'` and `'90'` (bare seconds) are all valid.
+  `'5 minutes'`, `'1 hour'`, `'PT1H'` and `'90'` (bare seconds) are all valid. A string that begins
+  with a calendar date but is not a valid date time (`'2027-13-45'`) is an error rather than a delay.
+
+  Note that the ISO 8601 year-month and ordinal date formats are *not* recognized as date times.
+  They are valid Postgres intervals, so they are read as very long delays rather than rejected:
+
+  | String | Read as |
+  | --- | --- |
+  | `'2027-01'` | a delay of 2027 years 1 month |
+  | `'2027-001'` | a delay of 2027 years 1 month |
 
   ```js
   await boss.send('email-reminder', { userId: 123 }, { startAfter: '2027-01-01T08:00:00Z' })
@@ -327,6 +355,8 @@ interface JobInsert<T = object> {
   group?: { id: string; tier?: string };
 }
 ```
+
+A `startAfter` string is interpreted exactly as it is in [`send()`](#send-name-data-options).
 
 ```js
 const [idA, idB] = await boss.insert('etl', [

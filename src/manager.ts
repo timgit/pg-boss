@@ -1160,6 +1160,13 @@ class Manager extends EventEmitter implements types.EventsMixin {
         Object.assign(rest, { groupId: group.id, groupTier: group.tier })
       }
 
+      // insert() otherwise skips Attorney, but a zone-less date time string still has to be pinned
+      // to UTC: without it the same string resolves in the database session's TimeZone here while
+      // resolving as UTC through send(), so one API would schedule a different instant than the other.
+      if (typeof rest.startAfter === 'string') {
+        rest.startAfter = Attorney.pinZonelessDateTime(rest.startAfter)
+      }
+
       if (dataById) {
         // Best-effort spy bookkeeping, only reached when __test__enableSpies is set (a test-intended
         // opt-in, off by default). The id we assign here is exactly what the DB would otherwise

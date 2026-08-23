@@ -91,6 +91,24 @@ function validateQueueArgs (config: any = {}) {
   validateHeartbeatConfig(config)
 }
 
+// A `startAfter` string that begins with an ISO 8601 calendar date is cast to timestamptz by the
+// database, so one carrying no zone designator resolves in the database session's TimeZone. Two
+// instances against the same database can then schedule the same string at different instants
+// (a 10.5 hour spread between America/New_York and Asia/Kolkata, and a date-only string can land
+// on the previous day), which is nothing the caller of send() is thinking about. The documented
+// contract is UTC and the Date path already produces UTC via toISOString(), so pin the zone here.
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}/
+
+// Matched against the remainder past YYYY-MM-DD, and deliberately a whitelist of the zone-less
+// spellings rather than a test for a missing zone: a trailing '-01' would read as an offset, and
+// forms Postgres resolves on its own — a named zone ('... UTC', '... America/New_York'), a
+// single-digit offset ('+5:30') — must be left exactly as they are rather than pinned to UTC.
+const ZONELESS_TIME = /^(?:[T ]\d{2}(?::\d{2}(?::\d{2}(?:[.,]\d+)?)?)?)?$/
+
+function pinZonelessDateTime (value: string) {
+  return ISO_DATE.test(value) && ZONELESS_TIME.test(value.slice(10)) ? value + 'Z' : value
+}
+
 function checkSendArgs (args: any): types.Request {
   let name, data, options
 
@@ -128,7 +146,7 @@ function checkSendArgs (args: any): types.Request {
     : (+options.startAfter > 0)
         ? '' + options.startAfter
         : (typeof options.startAfter === 'string')
-            ? options.startAfter
+            ? pinZonelessDateTime(options.startAfter)
             : undefined
 
   validateRetryConfig(options)
@@ -195,7 +213,7 @@ function checkUpdateArgs (args: any, { upsert = false } = {}): types.Request {
       : (typeof startAfter === 'number' && Number.isFinite(startAfter))
           ? '' + startAfter
           : (typeof startAfter === 'string')
-              ? startAfter
+              ? pinZonelessDateTime(startAfter)
               : undefined
   }
 
@@ -743,6 +761,7 @@ export {
   checkUpdateArgs,
   checkWorkArgs,
   getConfig,
+  pinZonelessDateTime,
   POLICY,
   validateFlowJobs,
   validateGroupConfig,
