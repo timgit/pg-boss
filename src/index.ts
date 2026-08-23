@@ -29,7 +29,7 @@ export function getConstructionPlans (schema?: string) {
   return Contractor.constructionPlans(schema)
 }
 
-export function getMigrationPlans (schema?: string, version?: number, options?: { partitionTables?: Array<string | types.MigrationPartition> }) {
+export function getMigrationPlans (schema?: string, version?: number, options?: { partitionTables?: types.MigrationPartition[] }) {
   return Contractor.migrationPlans(schema, version, options)
 }
 

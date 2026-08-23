@@ -233,6 +233,26 @@ describe('drift', function () {
         .toBe('CREATE INDEX warning_i1 ON pgboss.warning (created_on DESC)')
     })
 
+    it('returns the readable INCLUDE payload list, and empty when the index has none', function () {
+      expect(drifter.indexIncludeRaw("CREATE INDEX job_i10 ON s.job USING btree (name, singleton_key) INCLUDE (start_after) WHERE state < 'active'"))
+        .toBe('start_after')
+      expect(drifter.indexIncludeRaw('CREATE INDEX x ON s.t USING btree (a, b) INCLUDE (c, d)')).toBe('c, d')
+      expect(drifter.indexIncludeRaw('CREATE INDEX x ON s.t USING btree (a)')).toBe('')
+      expect(drifter.indexIncludeRaw("CREATE INDEX x ON s.t USING btree (a) WHERE label = 'INCLUDE'")).toBe('')
+    })
+
+    it('indexInclude is order-insensitive because INCLUDE columns are payload, not ordering', function () {
+      expect(drifter.indexInclude('CREATE INDEX x ON s.t (a) INCLUDE (c, d)'))
+        .toBe(drifter.indexInclude('CREATE INDEX x ON s.t (a) INCLUDE (d, c)'))
+      expect(drifter.indexInclude('CREATE INDEX x ON s.t (a) INCLUDE (c, d)'))
+        .not.toBe(drifter.indexInclude('CREATE INDEX x ON s.t (a) INCLUDE (c)'))
+    })
+
+    it('indexKeys ignores the INCLUDE payload', function () {
+      expect(drifter.indexKeys('CREATE INDEX x ON s.t USING btree (a, b) INCLUDE (c)'))
+        .toBe(drifter.indexKeys('CREATE INDEX x ON s.t USING btree (a, b)'))
+    })
+
     it('indexPredicateRaw strips the redundant outer parentheses but keeps inner grouping', function () {
       expect(drifter.indexPredicateRaw("CREATE INDEX x ON s.t (a) WHERE (blocking AND (state = 'active'::s.job_state))"))
         .toBe("blocking AND (state = 'active')")
@@ -275,6 +295,33 @@ describe('drift', function () {
       const live = [{ name: 'job_common_i9', table: 'job_common', valid: true, def: "CREATE INDEX job_common_i9 ON pgboss.job_common USING btree (id, name) WHERE (blocking AND (state = 'active'::pgboss.job_state))" }]
       const report = drifter.computeSchemaDrift({ indexes: { expected, live } })
       expect(report.mismatched[0].differs).toEqual(['keys', 'predicate'])
+    })
+
+    it('flags an index whose INCLUDE payload was dropped', function () {
+      // The exact regression that motivated comparing INCLUDE: a job_i10 rebuilt without its
+      // start_after payload still has matching keys and predicate, but silently loses the
+      // index-only scan the key_strict_fifo head selection depends on.
+      const withInclude = [{ name: 'job_common_i10', table: 'job_common', keys: 'name, singleton_key', include: 'start_after', predicate: "state < 'active'" }]
+      const live = [{ name: 'job_common_i10', table: 'job_common', valid: true, def: "CREATE INDEX job_common_i10 ON pgboss.job_common USING btree (name, singleton_key) WHERE (state < 'active'::pgboss.job_state)" }]
+      const report = drifter.computeSchemaDrift({ indexes: { expected: withInclude, live } })
+      expect(report.ok).toBe(false)
+      expect(report.mismatched[0].differs).toEqual(['include'])
+      expect(report.mismatched[0]).toMatchObject({ expectedInclude: 'start_after', actualInclude: '' })
+    })
+
+    it('flags an unexpected INCLUDE payload on a live index', function () {
+      const noInclude = [{ name: 'x_i1', table: 't', keys: 'a', predicate: '' }]
+      const live = [{ name: 'x_i1', table: 't', valid: true, def: 'CREATE INDEX x_i1 ON s.t USING btree (a) INCLUDE (b)' }]
+      const report = drifter.computeSchemaDrift({ indexes: { expected: noInclude, live } })
+      expect(report.mismatched[0].differs).toEqual(['include'])
+      expect(report.mismatched[0].actualInclude).toBe('b')
+    })
+
+    it('reports ok when the INCLUDE payload matches in a different order', function () {
+      const expectedInclude = [{ name: 'x_i1', table: 't', keys: 'a', include: 'c, b', predicate: '' }]
+      const live = [{ name: 'x_i1', table: 't', valid: true, def: 'CREATE INDEX x_i1 ON s.t USING btree (a) INCLUDE (b, c)' }]
+      const report = drifter.computeSchemaDrift({ indexes: { expected: expectedInclude, live } })
+      expect(report.ok).toBe(true)
     })
 
     it('does not flag when the live def is unparseable', function () {

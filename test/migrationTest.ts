@@ -678,8 +678,12 @@ describe('migration', function () {
 
     await contractor.migrate(currentSchemaVersion - 1)
 
-    const targets = await db.executeSql(`SELECT table_name FROM ${schema}.bam WHERE name = 'key_strict_fifo_head_index' ORDER BY table_name`)
+    const targets = await db.executeSql(`SELECT table_name, queue FROM ${schema}.bam WHERE name = 'key_strict_fifo_head_index' ORDER BY table_name`)
     expect(targets.rows.map(row => row.table_name)).toEqual(['job_common', strictTable].sort())
+    // Partition rows record which queue they belong to, matching the unscoped fan-out inside
+    // job_table_run_async(); job_common has no queue of its own, so its row stays null.
+    expect(targets.rows.find(row => row.table_name === strictTable).queue).toBe('strict_existing')
+    expect(targets.rows.find(row => row.table_name === 'job_common').queue).toBeNull()
 
     const boss = ctx.boss = await start({
       ...config,
@@ -735,19 +739,53 @@ describe('migration', function () {
     await db.close()
   })
 
-  itPostgresOnly('refuses to roll back v38 while a key_strict_fifo index build is in progress', async function () {
+  itPostgresOnly('rolls back past an unfinished key_strict_fifo build without a special guard', async function () {
+    // A row left at 'in_progress' by an instance that died mid-build must not wedge rollback: there is
+    // no status check, because a build that is genuinely running holds a ShareUpdateExclusiveLock on
+    // the table the uninstall drops the index from, so it fails the whole transaction on lock_timeout
+    // instead. See the note in migrationStore.rollback().
     const schema = ctx.bossConfig.schema
     const db = await getDb()
 
     await contractor.create()
     await contractor.rollback(currentSchemaVersion)
     await contractor.migrate(currentSchemaVersion - 1)
-    await db.executeSql(`UPDATE ${schema}.bam SET status = 'in_progress' WHERE version = 38 AND name = 'key_strict_fifo_head_index' AND table_name = 'job_common'`)
+    await db.executeSql(`UPDATE ${schema}.bam SET status = 'in_progress', started_on = now() - interval '1 hour' WHERE version = 38 AND name = 'key_strict_fifo_head_index' AND table_name = 'job_common'`)
 
-    await expect(contractor.rollback(currentSchemaVersion)).rejects.toThrow(/while key_strict_fifo_head_index is being built/)
+    await contractor.rollback(currentSchemaVersion)
 
     const version = await db.executeSql(`SELECT version FROM ${schema}.version`)
-    expect(Number(version.rows[0].version)).toBe(currentSchemaVersion)
+    expect(Number(version.rows[0].version)).toBe(currentSchemaVersion - 1)
+
+    const pending = await db.executeSql(`SELECT count(*)::int AS count FROM ${schema}.bam WHERE version = 38 AND status <> 'completed'`)
+    expect(pending.rows[0].count).toBe(0)
+
+    await db.close()
+  })
+
+  itPostgresOnly('clears unfinished bam rows for any rolled-back version, not just the newest', async function () {
+    // The cleanup lives in rollback(), not in one migration's uninstall list, because the BAM runner
+    // does not filter by schema version: any row left pending would rebuild an index the rollback had
+    // just dropped. v33 enqueues its own async builds and is rolled back here to prove that.
+    const schema = ctx.bossConfig.schema
+    const db = await getDb()
+
+    await contractor.create()
+
+    for (let v = currentSchemaVersion; v >= 33; v--) {
+      await contractor.rollback(v)
+    }
+
+    // Re-apply v33 so its async builds are enqueued for real rather than hand-inserted
+    await contractor.migrate(32)
+
+    const before = await db.executeSql(`SELECT count(*)::int AS count FROM ${schema}.bam WHERE version = 33 AND status <> 'completed'`)
+    expect(before.rows[0].count).toBeGreaterThan(0)
+
+    await contractor.rollback(33)
+
+    const after = await db.executeSql(`SELECT count(*)::int AS count FROM ${schema}.bam WHERE version = 33 AND status <> 'completed'`)
+    expect(after.rows[0].count).toBe(0)
 
     await db.close()
   })
@@ -945,11 +983,14 @@ describe('migration', function () {
       expect(sql).not.toContain('standard_table_i10')
     })
 
-    it('should reject policy-scoped migration expansion without partition policies', function () {
+    it('should reject the removed string[] partitionTables shape', function () {
+      // TypeScript callers get a compile error; this pins the runtime error a JavaScript caller
+      // still on the pre-12.28.0 shape sees, instead of a silently wrong target list.
       expect(() => migrate(schema, 37, undefined, undefined, {
         inlineAsync: true,
+        // @ts-expect-error deliberately passing the removed string[] shape
         partitionTables: ['strict_table']
-      })).toThrow(/requires partition policy metadata/)
+      })).toThrow(/must be \{ tableName, policy \} records/)
     })
 
     it('should keep using job_table_run_async (BAM) for the live migration path', function () {

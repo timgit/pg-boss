@@ -10,8 +10,23 @@ interface MigrateOptions {
   inlineAsync?: boolean
   // Partitioned queue metadata used to expand inlined index builds, in addition
   // to job_common. Supplied by callers that hold a live connection (the CLI); empty for a
-  // purely static export, which can only target job_common.
-  partitionTables?: Array<string | types.MigrationPartition>
+  // purely static export, which can only target job_common. Each entry carries the queue's
+  // policy because policy-scoped builds (v38's job_i10) must skip partitions of other policies.
+  partitionTables?: types.MigrationPartition[]
+}
+
+// 12.28.0 replaced the plain `string[]` partitionTables shape with { tableName, policy } records.
+// TypeScript callers get a compile error; this keeps JavaScript callers from silently exporting a
+// migration whose target list is wrong (a bare string has no policy, so every policy-scoped build
+// would quietly drop it).
+function assertPartitionMetadata (partitionTables: types.MigrationPartition[]) {
+  for (const partition of partitionTables) {
+    assert(
+      typeof partition === 'object' && partition !== null &&
+      typeof partition.tableName === 'string' && typeof partition.policy === 'string',
+      `partitionTables entries must be { tableName, policy } records, received: ${JSON.stringify(partition)}. The string[] form was removed in 12.28.0.`
+    )
+  }
 }
 
 // Mirrors the SQL job_table_format() function (src/plans.ts): rewrites a command targeting
@@ -30,25 +45,26 @@ function formatJobTable (command: string, table: string) {
 // via BAM, one statement per target table, each prefixed with a provenance comment. The
 // CONCURRENTLY keyword is preserved (these are emitted after COMMIT), and IF NOT EXISTS is
 // added so the script is safe to re-run.
-function inlineAsyncCommand (schema: string, asyncMigration: string | types.AsyncMigrationCommand, version: number, partitionTables: Array<string | types.MigrationPartition>) {
-  const asyncCommand = typeof asyncMigration === 'string' ? asyncMigration : asyncMigration.command
-  const nameMatch = typeof asyncMigration === 'string' ? asyncCommand.match(/job_table_run_async\(\s*'([^']+)'/) : null
-  const bodyMatch = typeof asyncMigration === 'string' ? asyncCommand.match(/\$\$([\s\S]*?)\$\$/) : null
+function inlineAsyncCommand (schema: string, asyncMigration: string | types.AsyncMigrationCommand, version: number, partitionTables: types.MigrationPartition[]) {
+  // Two spellings: the legacy string form embeds the whole job_table_run_async() call as SQL, so
+  // name/body/table-pin have to be parsed back out of it; the record form carries them as fields.
+  const isLegacy = typeof asyncMigration === 'string'
+  const asyncCommand = isLegacy ? asyncMigration : asyncMigration.command
+  const nameMatch = isLegacy ? asyncCommand.match(/job_table_run_async\(\s*'([^']+)'/) : null
+  const bodyMatch = isLegacy ? asyncCommand.match(/\$\$([\s\S]*?)\$\$/) : null
   // An explicit table arg after the $$ body pins the command to a single table (e.g. i8 →
   // job_common); without it the command fans out across job_common + every partition.
-  const tableMatch = typeof asyncMigration === 'string' ? asyncCommand.match(/\$\$\s*,\s*'([^']+)'/) : null
+  const tableMatch = isLegacy ? asyncCommand.match(/\$\$\s*,\s*'([^']+)'/) : null
 
-  assert(typeof asyncMigration !== 'string' || (nameMatch && bodyMatch), `Unable to inline async migration command: ${asyncCommand}`)
+  assert(!isLegacy || (nameMatch && bodyMatch), `Unable to inline async migration command: ${asyncCommand}`)
 
-  const commandName = typeof asyncMigration === 'string' ? nameMatch![1] : asyncMigration.name
-  const body = typeof asyncMigration === 'string' ? bodyMatch![1].trim() : asyncMigration.command.trim()
-  if (typeof asyncMigration !== 'string' && asyncMigration.partitionPolicy) {
-    assert(partitionTables.every(partition => typeof partition !== 'string'),
-      `Policy-scoped async migration ${asyncMigration.name} requires partition policy metadata`)
-  }
+  const commandName = isLegacy ? nameMatch![1] : asyncMigration.name
+  const body = (isLegacy ? bodyMatch![1] : asyncMigration.command).trim()
+  // A policy-scoped build only belongs on partitions of that policy; unscoped builds fan out to all.
+  const partitionPolicy = isLegacy ? undefined : asyncMigration.partitionPolicy
   const eligiblePartitions = partitionTables
-    .filter(partition => typeof asyncMigration === 'string' || !asyncMigration.partitionPolicy || (typeof partition !== 'string' && partition.policy === asyncMigration.partitionPolicy))
-    .map(partition => typeof partition === 'string' ? partition : partition.tableName)
+    .filter(partition => !partitionPolicy || partition.policy === partitionPolicy)
+    .map(partition => partition.tableName)
   const targetTables = tableMatch ? [tableMatch[1]] : ['job_common', ...eligiblePartitions]
 
   return targetTables.map(table => {
@@ -75,16 +91,21 @@ function renderAsyncCommand (schema: string, asyncMigration: string | types.Asyn
     return `SELECT ${schema}.job_table_run_async('${name}', ${version}, $$${asyncMigration.command}$$)`
   }
 
+  // queue_name is passed alongside table_name so the enqueued rows record which queue each build
+  // belongs to, matching what the unscoped fan-out inside job_table_run_async() writes. For a
+  // partition row the function re-derives table_name from queue_name and lands on the same value;
+  // job_common has no queue of its own, so its row keeps queue NULL like the fan-out does.
   return `SELECT ${schema}.job_table_run_async(
     '${name}',
     ${version},
     $$${asyncMigration.command}$$,
-    targets.table_name
+    targets.table_name,
+    targets.queue_name
   )
   FROM (
-    SELECT 'job_common'::text AS table_name
+    SELECT 'job_common'::text AS table_name, NULL::text AS queue_name
     UNION ALL
-    SELECT table_name FROM ${schema}.queue WHERE partition = true AND policy = '${policy}'
+    SELECT table_name, name FROM ${schema}.queue WHERE partition = true AND policy = '${policy}'
   ) targets`
 }
 
@@ -111,7 +132,21 @@ function rollback (schema: string, version: number, migrations?: types.Migration
 
   assert(result, `Version ${version} not found.`)
 
-  return flatten(schema, result.uninstall || [], result.previous, noAdvisoryLocks)
+  // Async (BAM) index builds are enqueued as bam rows, and the BAM runner does not filter by schema
+  // version — so a row left unfinished by a rollback would rebuild, one version later, the very index
+  // the rollback just dropped. Clear this version's unfinished rows as part of the same transaction.
+  // Only migrations that enqueue async commands can have any, and the migration that introduced BAM
+  // is also the first one with async commands, so bam is guaranteed to exist here; ordering the delete
+  // ahead of the migration's own steps keeps it before that migration's DROP TABLE bam.
+  //
+  // No guard against a build that is genuinely running: the uninstall steps drop the index the build
+  // holds a ShareUpdateExclusiveLock on, so a live build already makes the whole rollback fail on the
+  // transaction's lock_timeout, taking this delete with it.
+  const clearAsync = result.async?.length
+    ? [`DELETE FROM ${schema}.bam WHERE version = ${result.version} AND status <> 'completed'`]
+    : []
+
+  return flatten(schema, [...clearAsync, ...(result.uninstall || [])], result.previous, noAdvisoryLocks)
 }
 
 function next (schema: string, version: number, migrations?: types.Migration[], noAdvisoryLocks?: boolean) {
@@ -144,6 +179,8 @@ function migrateCommands (schema: string, version: number, migrations?: types.Mi
       `Cannot migrate pg-boss schema from version ${version}: the oldest supported starting version is ${minPrevious}. ` +
       'Upgrade to a schema at or above that version using an older pg-boss release first.')
   }
+
+  assertPartitionMetadata(options.partitionTables || [])
 
   const concurrent: string[] = []
 
@@ -842,7 +879,7 @@ const createQueueFn: Record<number, (schema: string) => string> = {
         EXECUTE ${schema}.job_table_format($cmd$CREATE UNIQUE INDEX job_i6 ON ${schema}.job (name, COALESCE(singleton_key, '')) WHERE state <= 'active' AND policy = 'exclusive'$cmd$, tablename);
       ELSIF options->>'policy' = 'key_strict_fifo' THEN
         EXECUTE ${schema}.job_table_format($cmd$CREATE UNIQUE INDEX job_i8 ON ${schema}.job (name, singleton_key) WHERE state IN ('active', 'retry', 'failed') AND policy = 'key_strict_fifo'$cmd$, tablename);
-        EXECUTE ${schema}.job_table_format($cmd$CREATE INDEX job_i10 ON ${schema}.job (name, singleton_key, state DESC, created_on, id) WHERE state < 'active' AND NOT blocked AND policy = 'key_strict_fifo'$cmd$, tablename);
+        EXECUTE ${schema}.job_table_format($cmd$CREATE INDEX job_i10 ON ${schema}.job (name, singleton_key, state DESC, created_on, id) INCLUDE (start_after) WHERE state < 'active' AND NOT blocked AND policy = 'key_strict_fifo'$cmd$, tablename);
         EXECUTE ${schema}.job_table_format($cmd$ALTER TABLE ${schema}.job ADD CONSTRAINT job_key_strict_fifo_singleton_key_check CHECK (NOT (policy = 'key_strict_fifo' AND singleton_key IS NULL))$cmd$, tablename);
       END IF;
 
@@ -1399,7 +1436,9 @@ function getAll (schema: string, noPartitioning = false, noCovering = false): ty
       version: 38,
       previous: 37,
       install: noPartitioning
-        ? [`CREATE INDEX job_i10 ON ${schema}.job (name, singleton_key, state DESC, created_on, id) WHERE state < 'active' AND NOT blocked AND policy = 'key_strict_fifo'`]
+        // noCovering backends (CockroachDB) have no INCLUDE, so they get the narrow index. The
+        // partitioned path is PostgreSQL-only and always covering.
+        ? [`CREATE INDEX job_i10 ON ${schema}.job (name, singleton_key, state DESC, created_on, id)${noCovering ? '' : ' INCLUDE (start_after)'} WHERE state < 'active' AND NOT blocked AND policy = 'key_strict_fifo'`]
         : [createQueueFn[38](schema)],
       async: noPartitioning
         ? []
@@ -1407,29 +1446,12 @@ function getAll (schema: string, noPartitioning = false, noCovering = false): ty
             {
               name: 'key_strict_fifo_head_index',
               partitionPolicy: 'key_strict_fifo',
-              command: `CREATE INDEX CONCURRENTLY IF NOT EXISTS job_i10 ON ${schema}.job (name, singleton_key, state DESC, created_on, id) WHERE state < 'active' AND NOT blocked AND policy = 'key_strict_fifo'`
+              command: `CREATE INDEX CONCURRENTLY IF NOT EXISTS job_i10 ON ${schema}.job (name, singleton_key, state DESC, created_on, id) INCLUDE (start_after) WHERE state < 'active' AND NOT blocked AND policy = 'key_strict_fifo'`
             }
           ],
       uninstall: noPartitioning
         ? [`DROP INDEX IF EXISTS ${schema}.job_i10`]
         : [
-            `LOCK TABLE ${schema}.bam IN SHARE ROW EXCLUSIVE MODE`,
-            `DO $$
-            BEGIN
-              IF EXISTS (
-                SELECT 1 FROM ${schema}.bam
-                WHERE version = 38
-                  AND name = 'key_strict_fifo_head_index'
-                  AND status = 'in_progress'
-              ) THEN
-                RAISE EXCEPTION 'Cannot roll back pg-boss schema v38 while key_strict_fifo_head_index is being built';
-              END IF;
-            END;
-            $$`,
-            `DELETE FROM ${schema}.bam
-             WHERE version = 38
-               AND name = 'key_strict_fifo_head_index'
-               AND status <> 'completed'`,
             createQueueFn[33](schema),
             `SELECT ${schema}.job_table_run($cmd$DROP INDEX IF EXISTS ${schema}.job_i10$cmd$)`
           ]

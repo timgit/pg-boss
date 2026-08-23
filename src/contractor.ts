@@ -15,7 +15,7 @@ class Contractor {
     return plans.create(schema, schemaVersion, options)
   }
 
-  static migrationPlans (schema = plans.DEFAULT_SCHEMA, version = schemaVersion - 1, options: { partitionTables?: Array<string | types.MigrationPartition> } = {}) {
+  static migrationPlans (schema = plans.DEFAULT_SCHEMA, version = schemaVersion - 1, options: { partitionTables?: types.MigrationPartition[] } = {}) {
     // Exported plans run without a BAM worker, so inline the async index builds as direct
     // DDL rather than job_table_run_async() enqueues (see issue #766). Callers that hold a
     // live connection can pass partition metadata to fan the builds out across partitions.
@@ -193,8 +193,15 @@ class Contractor {
     const expectedColumns = plans.expectedManagedColumns(schema, partitioned, partitions)
       .map(c => canonicalPg ? c : { table: c.table, columns: c.columns })
 
+    // The manifest is generated against standard Postgres, so every index that carries an INCLUDE
+    // payload records one. Backends without covering indexes build the narrow form of those indexes
+    // on purpose (see the noCovering branches in plans.ts / migrationStore.ts), so expect no payload
+    // there instead of reporting each one as drifted.
+    const expectedIndexes = plans.expectedManagedIndexes(schema, partitioned, partitions)
+      .map(i => this.config.noCoveringIndexes ? { ...i, include: '' } : i)
+
     return drifter.computeSchemaDrift({
-      indexes: { expected: plans.expectedManagedIndexes(schema, partitioned, partitions), live, building },
+      indexes: { expected: expectedIndexes, live, building },
       tables: { expected: plans.expectedManagedTables(schema, partitioned, partitions), live: liveTables ?? [...new Set(liveColumns.map(c => c.table))] },
       functions: functionsSupported ? { expected: plans.expectedManagedFunctions(schema, partitioned), live: liveFunctions } : undefined,
       columns: { expected: expectedColumns, live: liveColumns },

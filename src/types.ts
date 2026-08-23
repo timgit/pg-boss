@@ -533,8 +533,10 @@ export interface UpdateRequest {
  * - `key_strict_fifo` ensures FIFO ordering per `singletonKey`. Requires
  *   `singletonKey` on every job. A job that is active, in retry, or failed only
  *   holds back successors with the same key; other keys remain fetchable.
- *   Priority cannot reorder jobs within a key. Deferred jobs join the ordering
- *   when their `startAfter` time is reached.
+ *   Priority cannot reorder jobs within a key. A job that is not yet fetchable
+ *   is skipped when choosing a key's head, so deferred jobs join the ordering
+ *   when their `startAfter` is reached, and flow-blocked jobs when their
+ *   dependencies complete.
  */
 export type QueuePolicy = 'standard' | 'short' | 'singleton' | 'stately' | 'exclusive' | 'key_strict_fifo' | (string & {})
 
@@ -996,6 +998,8 @@ export interface ManagedIndex {
   table: string
   /** Readable expected key-column list (ordered), for definition-diff. Absent if not derivable. */
   keys?: string
+  /** Readable expected INCLUDE payload column list, '' for an index with no INCLUDE clause. */
+  include?: string
   /** Readable expected partial-index predicate (the WHERE clause), '' for a non-partial index. */
   predicate?: string
   /** The full expected `CREATE INDEX` statement (schema-qualified), ready to run to recreate it. */
@@ -1018,14 +1022,18 @@ export interface MismatchedIndex extends ManagedIndex {
   expectedKeys: string
   /** Readable key-column list actually in the catalog (from pg_get_indexdef). */
   actualKeys: string
+  /** Readable INCLUDE payload list the code expects ('' when it expects no INCLUDE clause). */
+  expectedInclude: string
+  /** Readable INCLUDE payload list actually in the catalog ('' when the live index has none). */
+  actualInclude: string
   /** Readable predicate the code expects ('' for a non-partial index). */
   expectedPredicate: string
   /** Readable predicate actually in the catalog, from pg_get_indexdef ('' for a non-partial index). */
   actualPredicate: string
   /** The index's current definition from pg_get_indexdef, for side-by-side comparison with `definition`. */
   actualDefinition: string
-  /** Which parts differ — 'keys', 'predicate', or both. */
-  differs: Array<'keys' | 'predicate'>
+  /** Which parts differ — any of 'keys', 'include', 'predicate'. */
+  differs: Array<'keys' | 'include' | 'predicate'>
 }
 
 /** One managed plpgsql/sql function pg-boss expects to exist, with its normalised body for diffing. */

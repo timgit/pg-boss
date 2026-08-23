@@ -6,7 +6,8 @@ const SINGLE_QUOTE_REGEX = /'/g
 // Extracts the first balanced parenthesised group from a CREATE INDEX statement — the key-column
 // list. Stops at the matching close paren, so a trailing INCLUDE(...) or WHERE(...) is excluded and
 // an inner COALESCE(...) is kept. Works on both hand-written DDL and pg_get_indexdef output (whose
-// leading `USING btree (` opens the same first group).
+// leading `USING btree (` opens the same first group). The INCLUDE payload is not ignored, just
+// compared separately — see extractIndexIncludeList.
 function extractIndexKeyList (ddl: string): string | null {
   const open = ddl.indexOf('(')
   if (open === -1) return null
@@ -38,6 +39,45 @@ function normalizeKeyList (keyList: string): string {
 export function indexKeys (ddl: string): string {
   const list = extractIndexKeyList(ddl)
   return list === null ? '' : normalizeKeyList(list)
+}
+
+// Extracts the INCLUDE(...) payload column list, or null when the index has none. Both hand-written
+// DDL and pg_get_indexdef spell it the same way, and it always sits between the key list and the
+// WHERE clause, so scanning from the end of the key list keeps an inner `INCLUDE` inside a quoted
+// column name or a predicate literal out of reach.
+function extractIndexIncludeList (ddl: string): string | null {
+  const keyList = extractIndexKeyList(ddl)
+  if (keyList === null) return null
+  const afterKeys = ddl.indexOf('(') + keyList.length + 2
+  const tail = ddl.slice(afterKeys)
+  const m = tail.match(/^\s*INCLUDE\s*\(/i)
+  if (!m) return null
+  const open = afterKeys + m[0].length - 1
+  let depth = 0
+  for (let i = open; i < ddl.length; i++) {
+    if (ddl[i] === '(') depth++
+    else if (ddl[i] === ')' && --depth === 0) return ddl.slice(open + 1, i)
+  }
+  return null
+}
+
+// Normalises an INCLUDE list. Unlike the key list this is order-INSENSITIVE, and deliberately so:
+// INCLUDE columns are payload, not part of the btree ordering, so `INCLUDE (a, b)` and
+// `INCLUDE (b, a)` are the same index. Sorting them means a rebuild that lists them differently is
+// not reported as drift, while a genuinely added or dropped payload column still is.
+function normalizeIncludeList (includeList: string): string {
+  return normalizeKeyList(includeList).split(',').filter(Boolean).sort().join(',')
+}
+
+export function indexInclude (ddl: string): string {
+  const list = extractIndexIncludeList(ddl)
+  return list === null ? '' : normalizeIncludeList(list)
+}
+
+// Readable INCLUDE column list for a drift report, '' when the index has no INCLUDE clause.
+export function indexIncludeRaw (ddl: string): string {
+  const list = extractIndexIncludeList(ddl)
+  return list === null ? '' : list.replace(CAST_REGEX, '').replace(/\s+/g, ' ').trim()
 }
 
 // Everything after the top-level WHERE — the partial-index predicate — or '' for a non-partial index.
@@ -455,11 +495,14 @@ export function computeSchemaDrift (
       if (normalizeKeyList(actualKeys)) {
         const expectedPredicate = idx.predicate ?? ''
         const actualPredicate = indexPredicateRaw(found.def)
-        const differs: Array<'keys' | 'predicate'> = []
+        const expectedInclude = idx.include ?? ''
+        const actualInclude = indexIncludeRaw(found.def)
+        const differs: Array<'keys' | 'include' | 'predicate'> = []
         if (normalizeKeyList(idx.keys) !== normalizeKeyList(actualKeys)) differs.push('keys')
+        if (normalizeIncludeList(expectedInclude) !== normalizeIncludeList(actualInclude)) differs.push('include')
         if (normalizePredicate(expectedPredicate) !== normalizePredicate(actualPredicate)) differs.push('predicate')
         if (differs.length) {
-          mismatched.push({ ...idx, expectedKeys: idx.keys, actualKeys, expectedPredicate, actualPredicate, actualDefinition: displayIndexDefinition(found.def), differs })
+          mismatched.push({ ...idx, expectedKeys: idx.keys, actualKeys, expectedInclude, actualInclude, expectedPredicate, actualPredicate, actualDefinition: displayIndexDefinition(found.def), differs })
         }
       }
     }
