@@ -45,7 +45,8 @@ function assertTimezone (tz: string): void {
   try {
     CronExpressionParser.parse('* * * * *', { tz, strict: false, currentDate: new Date() })
   } catch {
-    throw new Error(`Unknown or unsupported time zone: ${tz}`)
+    // Quoted so an empty string renders as `""` rather than a dangling colon
+    throw new Error(`Unknown or unsupported time zone: "${tz}"`)
   }
 }
 
@@ -59,6 +60,15 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
   private skewMonitorInterval: NodeJS.Timeout | null | undefined
   private timekeeping: boolean | undefined
   private _checkingSkew = false
+
+  // Rows already warned about, keyed on (name, key, cron, timezone). Unlike every other warning
+  // type, an unusable schedule never heals on its own: clock skew converges, a backlog drains, a
+  // slow query is a one-off, but a bad row sits there until a human edits it. Warning every pass
+  // would persist a row every cronMonitorIntervalSeconds forever, and warningRetentionDays has no
+  // default, so a single typo could grow the warning table without bound. Rebuilt each pass from
+  // the rows still broken, so a fixed or deleted schedule drops out and would warn again if it
+  // came back.
+  private warnedSchedules = new Set<string>()
 
   clockSkew = 0
   events = EVENTS
@@ -88,6 +98,8 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
 
   async start () {
     this.stopped = false
+    // A restart should re-surface a row nobody has fixed yet
+    this.warnedSchedules.clear()
 
     await this.cacheClockSkew()
     await this.manager.createQueue(QUEUES.SEND_IT)
@@ -200,6 +212,7 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
     const schedules = await this.getSchedules()
 
     const scheduled: types.JobInsert[] = []
+    const stillBroken = new Set<string>()
 
     for (const { name, key, data, options, cron, timezone } of schedules) {
       let due: boolean
@@ -213,12 +226,18 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
         // propagated out of cron() and silently stopped scheduling for every queue in the
         // deployment, on every pass, until someone found the row. Skip it and warn instead, naming
         // the schedule so it is actually fixable.
-        await emitAndPersistWarning(
-          this.warningContext,
-          WARNING_TYPES.INVALID_SCHEDULE,
-          `Warning: schedule for queue "${name}" (key "${key}") could not be evaluated and was skipped: ${(err as Error).message}`,
-          { queue: name, key, cron, timezone }
-        )
+        const warned = JSON.stringify([name, key, cron, timezone])
+
+        stillBroken.add(warned)
+
+        if (!this.warnedSchedules.has(warned)) {
+          await emitAndPersistWarning(
+            this.warningContext,
+            WARNING_TYPES.INVALID_SCHEDULE,
+            `Warning: schedule for queue "${name}" (key "${key}") could not be evaluated and was skipped: ${(err as Error).message}`,
+            { queue: name, key, cron, timezone }
+          )
+        }
 
         continue
       }
@@ -227,6 +246,8 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
         scheduled.push({ data: { name, data, options }, singletonKey: `${name}__${key}`, singletonSeconds: 60 })
       }
     }
+
+    this.warnedSchedules = stillBroken
 
     if (scheduled.length > 0 && !this.stopped) {
       await this.manager.insert(QUEUES.SEND_IT, scheduled)
@@ -276,8 +297,11 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
   async schedule (name: string, cron: string, data?: unknown, options: types.ScheduleOptions = {}): Promise<void> {
     const { tz = 'UTC', key = '', ...rest } = options
 
-    // cron expression first, so a bad expression reports as one rather than as a time zone problem
-    CronExpressionParser.parse(cron, { tz, strict: false })
+    // Expression first, so a bad expression reports as one rather than as a time zone problem. The
+    // check is deliberately run against UTC rather than the supplied tz: it only works today
+    // because cron-parser is lazy about an unusable zone, and if that ever changes this call would
+    // throw the opaque "CronDate: unhandled timestamp" that assertTimezone exists to replace.
+    CronExpressionParser.parse(cron, { tz: 'UTC', strict: false })
     assertTimezone(tz)
 
     Attorney.checkSendArgs([name, data, { ...rest }])

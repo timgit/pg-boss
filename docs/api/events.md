@@ -32,7 +32,7 @@ boss.on('warning', ({ message, data }) => {
 | `queue_backlog` | A queue has exceeded its warning threshold | `name`, `queuedCount`, `warningQueued` |
 | `clock_skew` | Database clock is out of sync with application server | `seconds`, `direction` |
 | `listen_notify_unavailable` | `useListenNotify` is enabled but a `LISTEN/NOTIFY` listener could not be established (for example a `db` adapter without `listen`, or PgBouncer transaction pooling); pg-boss continues with polling only | `type`, `error` |
-| `invalid_schedule` | A stored schedule could not be evaluated (for example an unusable `timezone` written by an older release) and was skipped for this cron pass; the remaining schedules are unaffected | `queue`, `key`, `cron`, `timezone` |
+| `invalid_schedule` | A stored schedule could not be evaluated (for example an unusable `timezone` written by an older release) and was skipped for this cron pass; the remaining schedules are unaffected. Emitted once per broken schedule rather than on every pass, and again if the schedule is edited or the instance restarts | `queue`, `key`, `cron`, `timezone` |
 
 ### Warning Persistence
 

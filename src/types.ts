@@ -925,7 +925,7 @@ export type UpdateQueueOptions = Omit<Queue, 'name' | 'partition' | 'policy'>
 
 export interface Warning { message: string, data: object }
 
-export type WarningType = 'slow_query' | 'queue_backlog' | 'clock_skew'
+export type WarningType = 'slow_query' | 'queue_backlog' | 'clock_skew' | 'listen_notify_unavailable' | 'invalid_schedule'
 
 export interface PersistedWarning {
   id: number;

@@ -455,12 +455,22 @@ describe('schedule', function () {
       [broken]
     )
 
-    await delay(4000)
+    // Poll rather than sleeping a fixed 4s: the chain is cron pass -> send-it insert -> send-it
+    // worker -> fetch, and a fixed sleep is both slower in the common case and short on margin
+    // when CI is loaded.
+    const deadline = Date.now() + 20_000
+    let job
+
+    while (!job && Date.now() < deadline) {
+      ;[job] = await ctx.boss.fetch(ctx.schema)
+
+      if (!job) {
+        await delay(250)
+      }
+    }
 
     // the healthy schedule must still fire — it did not before, because evaluating the broken row
     // threw straight out of the cron pass
-    const [job] = await ctx.boss.fetch(ctx.schema)
-
     expect(job).toBeTruthy()
   })
 })
@@ -532,6 +542,18 @@ describe('timekeeper clock domain', function () {
     await expect(tk.schedule('q', '* * * * *', null, { tz: 'America/New_Yrok' })).rejects.toThrow(/time zone/i)
   })
 
+  it('schedule() reports a bad cron expression as a cron error even when the time zone is also bad', async function () {
+    const tk = makeTk(0)
+
+    // The expression is validated before the zone, so the more specific error wins. This ordering
+    // is load-bearing: reversed, a typo in both would be reported only as a time zone problem and
+    // the expression would still be broken after the user fixed the zone.
+    await expect(tk.schedule('q', 'not a cron', null, { tz: 'Mars/Phobos' })).rejects.toThrow(/Invalid characters/)
+
+    // and a valid expression with a bad zone still reports the zone
+    await expect(tk.schedule('q', '* * * * *', null, { tz: 'Mars/Phobos' })).rejects.toThrow(/time zone/i)
+  })
+
   it('schedule() still accepts the time zone spellings that already worked', async function () {
     const tk = makeTk(0)
 
@@ -571,5 +593,102 @@ describe('timekeeper clock domain', function () {
     // and the operator has to be told which schedule is broken, or it stays invisible
     expect(warnings.length).toBe(1)
     expect(warnings[0].message).toMatch(/broken/)
+  })
+
+  it('an unusable schedule row warns once, not on every pass', async function () {
+    const tk = makeTk(0)
+    ;(tk as any).stopped = false
+    ;(tk as any).manager = { insert: async () => {} }
+    ;(tk as any).getSchedules = async () => ([
+      { name: 'broken', key: '', data: null, options: {}, cron: '* * * * *', timezone: 'Mars/Phobos' }
+    ])
+
+    const warnings: any[] = []
+    tk.on('warning', (w: any) => warnings.push(w))
+
+    // Every other warning type describes something that clears itself — skew converges, a backlog
+    // drains, a slow query is a one-off. A bad schedule row sits there until a human edits it, so
+    // warning per pass would persist a row every cronMonitorIntervalSeconds forever, and
+    // warningRetentionDays has no default to bound it.
+    for (let i = 0; i < 5; i++) {
+      await tk.cron()
+    }
+
+    expect(warnings.length).toBe(1)
+  })
+
+  it('a repaired schedule row warns again if it breaks a second time', async function () {
+    const tk = makeTk(0)
+    ;(tk as any).stopped = false
+    ;(tk as any).manager = { insert: async () => {} }
+
+    let timezone = 'Mars/Phobos'
+    ;(tk as any).getSchedules = async () => ([
+      { name: 'broken', key: '', data: null, options: {}, cron: '* * * * *', timezone }
+    ])
+
+    const warnings: any[] = []
+    tk.on('warning', (w: any) => warnings.push(w))
+
+    await tk.cron()
+    await tk.cron()
+    expect(warnings.length).toBe(1)
+
+    // fixed: the row drops out of the warned set, so the suppression must not outlive it
+    timezone = 'UTC'
+    await tk.cron()
+    expect(warnings.length).toBe(1)
+
+    // broken again — a fresh occurrence the operator has not seen
+    timezone = 'Mars/Phobos'
+    await tk.cron()
+    expect(warnings.length).toBe(2)
+  })
+
+  it('editing an unusable schedule row into a different unusable state warns again', async function () {
+    const tk = makeTk(0)
+    ;(tk as any).stopped = false
+    ;(tk as any).manager = { insert: async () => {} }
+
+    let timezone = 'Mars/Phobos'
+    ;(tk as any).getSchedules = async () => ([
+      { name: 'broken', key: '', data: null, options: {}, cron: '* * * * *', timezone }
+    ])
+
+    const warnings: any[] = []
+    tk.on('warning', (w: any) => warnings.push(w))
+
+    await tk.cron()
+
+    // suppression keys on the whole row, so a failed repair attempt is reported rather than
+    // swallowed as "already warned about that queue"
+    timezone = 'America/New_Yrok'
+    await tk.cron()
+
+    expect(warnings.length).toBe(2)
+    expect(warnings[1].data.timezone).toBe('America/New_Yrok')
+  })
+
+  it('start() re-surfaces a schedule row nobody has fixed', async function () {
+    const tk = makeTk(0)
+    ;(tk as any).stopped = false
+    ;(tk as any).manager = { insert: async () => {} }
+    ;(tk as any).getSchedules = async () => ([
+      { name: 'broken', key: '', data: null, options: {}, cron: '* * * * *', timezone: 'Mars/Phobos' }
+    ])
+
+    const warnings: any[] = []
+    tk.on('warning', (w: any) => warnings.push(w))
+
+    await tk.cron()
+    expect(warnings.length).toBe(1)
+
+    // The suppression is per-instance and deliberately does not survive a restart: a redeploy is
+    // exactly when an operator is looking, and an unfixed row should say so again.
+    ;(tk as any).warnedSchedules.clear()
+
+    await tk.cron()
+
+    expect(warnings.length).toBe(2)
   })
 })
