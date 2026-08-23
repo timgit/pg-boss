@@ -89,10 +89,23 @@ All retry, expiration, and retention options can also be set on the queue and wi
 
 * **startAfter** int, string, or Date
   * int: seconds to delay starting the job
-  * string: Start after a UTC Date time string in 8601 format
+  * string: Start after an ISO 8601 date time string, or after a relative interval
   * Date: Start after a Date object
 
     Default: 0
+
+  A string that begins with an ISO 8601 calendar date (`YYYY-MM-DD`) is read as a date time. If it
+  carries an explicit zone designator (`Z` or an offset such as `+05:30`) it resolves to that exact
+  instant; without one it is resolved in the database's time zone.
+
+  Any other string is read as a relative delay from now, using Postgres interval syntax — so
+  `'5 minutes'`, `'1 hour'`, `'PT1H'` and `'90'` (bare seconds) are all valid.
+
+  ```js
+  await boss.send('email-reminder', { userId: 123 }, { startAfter: '2027-01-01T08:00:00Z' })
+  await boss.send('email-reminder', { userId: 123 }, { startAfter: '2027-01-01T13:30:00+05:30' })
+  await boss.send('email-reminder', { userId: 123 }, { startAfter: '1 hour' })
+  ```
 
 **Group options**
 
@@ -163,7 +176,9 @@ Send a job that should start after a number of seconds from now, or after a spec
 
 This is a convenience version of `send()` with the `startAfter` option assigned.
 
-`value`: int: seconds | string: ISO date string | Date
+`value`: int: seconds | string: ISO 8601 date time or a relative interval | Date
+
+See [`startAfter`](#send-name-data-options) for how a string is interpreted.
 
 ```js
 // start in 5 minutes
@@ -171,6 +186,9 @@ await boss.sendAfter('email-reminder', { userId: 123 }, null, 300)
 
 // start at a specific date and time
 await boss.sendAfter('email-reminder', { userId: 123 }, null, new Date('2027-01-01T08:00:00Z'))
+
+// same instant, expressed with an offset instead of Z
+await boss.sendAfter('email-reminder', { userId: 123 }, null, '2027-01-01T13:30:00+05:30')
 ```
 
 ### `sendThrottled(name, data, options, seconds, key)`

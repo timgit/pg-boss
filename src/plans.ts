@@ -1708,6 +1708,21 @@ export function restoreJobs (schema: string, table: string) {
   `
 }
 
+// A `startAfter` string is either an absolute date time or a delay expressed as a Postgres
+// interval. A trailing 'Z' has always marked a date time; a leading ISO 8601 calendar date
+// (YYYY-MM-DD) marks one as well, which is what lets the other 8601 zone designators through
+// ('+00:00', '+05:30', '-08:00') along with zone-less and date-only strings — all of which
+// used to reach the interval cast and fail as 'invalid input syntax for type interval'.
+//
+// Recognition is only ever widened, so anything that resolves as an interval today still
+// does: bare seconds ('0', '300'), phrases ('5 minutes'), ISO 8601 durations ('PT1H') and
+// the year-month form ('2027-01', which Postgres reads as 2027 years 1 mon) carry neither
+// mark. A date time with an explicit offset resolves to that exact instant; one with no zone
+// designator is resolved by Postgres in the database's time zone.
+function isDateTimeString (expression: string) {
+  return `(right(${expression}, 1) = 'Z' OR ${expression} ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}')`
+}
+
 interface InsertJobsOptions {
   table: string
   name: string
@@ -1774,7 +1789,7 @@ export function insertJobs (schema: string, { table, name, returnId = true, noti
     FROM (
       SELECT *,
         CASE
-          WHEN right("startAfter", 1) = 'Z' THEN CAST("startAfter" as timestamp with time zone)
+          WHEN ${isDateTimeString('"startAfter"')} THEN CAST("startAfter" as timestamp with time zone)
           ELSE now() + CAST(COALESCE("startAfter",'0') as interval)
           END as start_after
       FROM json_to_recordset($1::json) as x (
@@ -2393,11 +2408,11 @@ export function updateJob (schema: string, table: string, name: string, by: 'id'
     ? `ORDER BY job.created_on ${match === 'oldest' ? 'ASC' : 'DESC'} LIMIT 1`
     : ''
 
-  // Resolve the incoming startAfter the same way insertJobs does (absolute 'Z' timestamp vs.
+  // Resolve the incoming startAfter the same way insertJobs does (absolute date time vs.
   // relative interval), falling back to the row's current start_after when not supplied.
   const resolvedStartAfter = `
         CASE WHEN jsonb_exists(o.data, 'startAfter')
-          THEN CASE WHEN right(o.data->>'startAfter', 1) = 'Z'
+          THEN CASE WHEN ${isDateTimeString("o.data->>'startAfter'")}
                  THEN (o.data->>'startAfter')::timestamptz
                  ELSE now() + CAST(o.data->>'startAfter' AS interval) END
           ELSE job.start_after END`

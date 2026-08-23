@@ -264,6 +264,37 @@ describe('update', function () {
       const [job] = await helper.fetchWithRetry(ctx.boss, ctx.schema)
       expect(job?.id).toBe(id)
     })
+
+    it('resolves a startAfter date time string with an offset to the same instant', async function () {
+      ctx.boss = await helper.start(ctx.bossConfig)
+
+      const id = await ctx.boss.send(ctx.schema, { v: 1 })
+      assertTruthy(id)
+
+      // the same instant as 2027-01-01T08:00:00Z, spelled with a +05:30 offset
+      await ctx.boss.update(ctx.schema, undefined, { id, startAfter: '2027-01-01T13:30:00+05:30' })
+
+      const job = await ctx.boss.getJobById(ctx.schema, id)
+      assertTruthy(job)
+      expect(new Date(job.startAfter).toISOString()).toBe('2027-01-01T08:00:00.000Z')
+    })
+
+    it('still accepts a relative interval string for startAfter', async function () {
+      ctx.boss = await helper.start(ctx.bossConfig)
+
+      const id = await ctx.boss.send(ctx.schema, { v: 1 })
+      assertTruthy(id)
+
+      const before = Date.now()
+      await ctx.boss.update(ctx.schema, undefined, { id, startAfter: '1 hour' })
+
+      const job = await ctx.boss.getJobById(ctx.schema, id)
+      assertTruthy(job)
+
+      const startAfterMs = new Date(job.startAfter).getTime()
+      expect(startAfterMs).toBeGreaterThan(before + 59 * 60 * 1000)
+      expect(startAfterMs).toBeLessThan(before + 61 * 60 * 1000)
+    })
   })
 
   describe('object API', function () {
