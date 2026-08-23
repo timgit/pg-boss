@@ -2327,7 +2327,8 @@ export function insertDeadLetterJob (schema: string): string {
 // oldest-first, capped at $4. The JOIN in `candidates` only matches jobs whose destination queue
 // exists, so legacy/orphaned jobs (NULL source_name, no override) are never deleted — they stay
 // in the DLQ rather than being lost. Re-created jobs get a new id, `created` state, retry_count 0,
-// cleared output, NULL source_*, and the destination queue's current retry/retention/policy config.
+// cleared output, NULL source_*, and the destination queue's current retry/retention/policy/
+// dead_letter config (matching send()'s COALESCE(job option, queue.dead_letter) stamp).
 export function redriveJobs (schema: string, table: string): string {
   return `
     WITH candidates AS (
@@ -2349,11 +2350,12 @@ export function redriveJobs (schema: string, table: string): string {
     ins AS (
       INSERT INTO ${schema}.job
         (name, data, priority, retry_limit, retry_backoff, retry_delay, retry_delay_max,
-         expire_seconds, keep_until, deletion_seconds, policy, singleton_key, heartbeat_seconds)
+         expire_seconds, keep_until, deletion_seconds, policy, singleton_key, heartbeat_seconds,
+         dead_letter)
       SELECT COALESCE($2, m.source_name), m.data, m.priority, q.retry_limit, q.retry_backoff,
         q.retry_delay, q.retry_delay_max, q.expire_seconds,
         now() + q.retention_seconds * interval '1s', q.deletion_seconds, q.policy,
-        m.singleton_key, m.heartbeat_seconds
+        m.singleton_key, m.heartbeat_seconds, q.dead_letter
       FROM moved m JOIN ${schema}.queue q ON q.name = COALESCE($2, m.source_name)
       -- A destination queue's short/stately policy can still collide on (name, singleton_key)
       -- if two redriven jobs share a key (job_i1/job_i3); dropping just that row here, matching

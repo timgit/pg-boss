@@ -326,6 +326,41 @@ describe('failure', function () {
     assertTruthy(redrivenMeta)
     expect(redrivenMeta.retryCount).toBe(0)
     expect(redrivenMeta.sourceName).toBeNull()
+    // send() stamps dead_letter from the destination queue; redrive must do the same so a
+    // subsequent terminal failure still copies into the DLQ (fail uses job.dead_letter).
+    expect(redrivenMeta.deadLetter).toBe(deadLetter)
+  })
+
+  it('redrive stamps deadLetter so a second failure returns to the DLQ', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+
+    const deadLetter = `${ctx.schema}_dlq`
+
+    await ctx.boss.createQueue(deadLetter)
+    // retryLimit on the queue (not just send) so redrive inherits a terminal-on-first-fail config
+    await ctx.boss.createQueue(ctx.schema, { deadLetter, retryLimit: 0 })
+
+    const jobId = await ctx.boss.send(ctx.schema, { key: ctx.schema })
+    assertTruthy(jobId)
+
+    await ctx.boss.fetch(ctx.schema)
+    await ctx.boss.fail(ctx.schema, jobId)
+
+    expect(await ctx.boss.redrive(deadLetter)).toBe(1)
+
+    const [redriven] = await helper.fetchWithRetry<{ key: string }>(ctx.boss, ctx.schema)
+    expect(redriven.data.key).toBe(ctx.schema)
+
+    // without dead_letter on the redriven row this stays failed on the source queue forever
+    await ctx.boss.fail(ctx.schema, redriven.id)
+
+    const [dlqJob] = await helper.fetchWithRetry<{ key: string }>(ctx.boss, deadLetter)
+    expect(dlqJob.data.key).toBe(ctx.schema)
+
+    const dlqMeta = await ctx.boss.getJobById(deadLetter, dlqJob.id)
+    assertTruthy(dlqMeta)
+    expect(dlqMeta.sourceName).toBe(ctx.schema)
+    expect(dlqMeta.sourceId).toBe(redriven.id)
   })
 
   it('redrive routes each job back to its own source queue', async function () {
