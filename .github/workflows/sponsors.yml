@@ -1,0 +1,59 @@
+name: Sync sponsors
+
+# Rebuilds the sponsor lists in docs/sponsors.md from the GitHub Sponsors API
+# and commits the result when it changed. Sponsorships start and stop without
+# any push to this repo, so the page needs a schedule rather than a trigger.
+
+on:
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write # to dispatch the docs deploy below
+
+concurrency:
+  group: sync-sponsors
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: github.repository == 'timgit/pg-boss'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      # No install step: both scripts use only node built-ins.
+      - run: npm run docs:sponsors
+        env:
+          SPONSORS_TOKEN: ${{ secrets.SPONSORS_TOKEN }}
+
+      # The readme grid reaches docs/index.md only through the readme sync.
+      - run: npm run docs:readme
+
+      - id: commit
+        run: |
+          if git diff --quiet -- docs/sponsors.md README.md docs/index.md; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No sponsor changes."
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add docs/sponsors.md README.md docs/index.md
+          # [skip ci] keeps a docs-only commit from firing the full test matrix.
+          # The docs deploy is dispatched explicitly below, so it is unaffected.
+          git commit -m 'docs: update sponsors [skip ci]'
+          git push
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      # A push made with GITHUB_TOKEN does not start other workflows, so the
+      # docs deploy has to be asked for explicitly.
+      - if: steps.commit.outputs.changed == 'true'
+        run: gh workflow run docs.yml --ref master
+        env:
+          GH_TOKEN: ${{ github.token }}
