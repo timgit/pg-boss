@@ -15,7 +15,7 @@ CREATE TABLE pgboss.warning (
 | Column | Description |
 |--------|-------------|
 | `id` | Auto-incrementing primary key |
-| `type` | Warning type: `slow_query`, `queue_backlog`, or `clock_skew` |
+| `type` | Warning type: `slow_query`, `queue_backlog`, `clock_skew`, or `invalid_schedule` |
 | `message` | Human-readable warning message |
 | `data` | JSON object with warning-specific details |
 | `created_on` | Timestamp when the warning was recorded |

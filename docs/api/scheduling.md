@@ -43,7 +43,8 @@ Schedules a job to be sent to the specified queue based on a cron expression. If
 
 * **tz**
 
-  An optional time zone name. If not specified, the default is UTC.
+  An optional time zone name. If not specified, the default is UTC. An unrecognized time zone is
+  rejected by `schedule()`, so a typo cannot be stored and then fail on the cron pass.
 
 * **key**
   
