@@ -56,7 +56,7 @@ Creates a new job and returns the job id.
 
 * **expireInSeconds**, number
 
-  Default: 15 minutes.  How many seconds a job may be in active state before being retried or failed. Must be >=1
+  Default: 15 minutes.  How many seconds a job may be in active state before being retried or failed. Must be >=1 and <= 86400 (24 hours)
 
 **Retention options**
 

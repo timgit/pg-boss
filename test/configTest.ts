@@ -40,6 +40,33 @@ describe('config', function () {
     })
   })
 
+  describe('expiration limit', function () {
+    const MAX_EXPIRE_SECONDS = Attorney.POLICY.MAX_EXPIRATION_HOURS * 60 * 60
+
+    it('should accept an expiration of exactly the maximum', function () {
+      expect(() => Attorney.checkSendArgs(['queue', null, { expireInSeconds: MAX_EXPIRE_SECONDS }])).not.toThrow()
+      expect(() => Attorney.validateQueueArgs({ expireInSeconds: MAX_EXPIRE_SECONDS })).not.toThrow()
+    })
+
+    it('should reject an expiration above the maximum', function () {
+      const overLimit = MAX_EXPIRE_SECONDS + 1
+      expect(() => Attorney.checkSendArgs(['queue', null, { expireInSeconds: overLimit }])).toThrow('cannot exceed')
+      expect(() => Attorney.validateQueueArgs({ expireInSeconds: overLimit })).toThrow('cannot exceed')
+    })
+
+    // The other options measured against MAX_EXPIRATION_HOURS all treat the limit as inclusive,
+    // and the default maintenance interval sits exactly on it. Expiration must agree.
+    it('should treat the limit the same way as the other options bounded by it', function () {
+      const config = { connectionString: 'postgres://localhost/db' }
+
+      for (const option of ['superviseIntervalSeconds', 'maintenanceIntervalSeconds', 'monitorIntervalSeconds', 'queueCacheIntervalSeconds']) {
+        expect(() => Attorney.getConfig({ ...config, [option]: MAX_EXPIRE_SECONDS })).not.toThrow()
+      }
+
+      expect(Attorney.getConfig(config).maintenanceIntervalSeconds).toBe(MAX_EXPIRE_SECONDS)
+    })
+  })
+
   it('should allow a 50 character custom schema name', async function () {
     const config = ctx.bossConfig
 
