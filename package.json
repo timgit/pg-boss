@@ -67,7 +67,7 @@
     "docs:sponsors": "node --env-file-if-exists=.env ./scripts/sync-sponsors.js"
   },
   "pgboss": {
-    "schema": 37
+    "schema": 38
   },
   "repository": {
     "type": "git",
