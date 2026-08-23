@@ -1,15 +1,35 @@
 # Keeps the SHA-pinned actions in .github/workflows current. Pinning without an
 # update path just trades a supply-chain risk for a staleness one, so the two
 # belong together.
+#
+# Why the pins exist: a tag like @v5 is mutable and can be repointed at new code
+# by whoever controls it. That matters most in publish.yml, publish-dashboard.yml,
+# publish-proxy.yml and docs.yml, which run with id-token: write - an action in
+# those jobs sits inside the npm trusted-publishing boundary, so a repointed tag
+# there reaches everyone who installs pg-boss. The trailing "# v5" comment on each
+# pin is not decoration: it is what Dependabot reads to know which version a SHA
+# corresponds to, so it has to survive any edit to those lines.
+#
+# Scope: github-actions only, on purpose. The four npm lockfiles (root, docs,
+# packages/dashboard, packages/proxy) are deliberately not covered here - add an
+# npm entry if that changes.
 version: 2
 updates:
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
+    # Minor and patch bumps batch into a single PR - routine churn, one review.
+    # Majors are deliberately outside the group so each arrives as its own PR:
+    # they can change action behavior (setup-node has moved default caching and
+    # node-version resolution across majors), and a grouped major is neither
+    # separately reviewable nor separately revertable.
     groups:
       actions:
         patterns:
           - "*"
+        update-types:
+          - "minor"
+          - "patch"
     commit-message:
       prefix: "ci"

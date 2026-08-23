@@ -1,3 +1,4 @@
+# Actions are pinned to full commit SHAs; see .github/dependabot.yml for why and how they are updated.
 name: Deploy docs
 
 on:
