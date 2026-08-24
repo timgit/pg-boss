@@ -1618,7 +1618,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
         // Insert to dead letter queue if failed and has dead_letter configured
         if (job.dead_letter) {
-          await tx.executeSql(dlqSql, [job.dead_letter, job.data, jobOutput, job.name, job.id, job.created_on, job.retry_count, job.singleton_key, job.heartbeat_seconds])
+          await tx.executeSql(dlqSql, [job.dead_letter, job.data, jobOutput, job.name, job.id, job.created_on, job.retry_count, job.singleton_key, job.priority, job.group_id, job.group_tier])
         }
       }
 

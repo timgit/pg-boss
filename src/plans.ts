@@ -2086,10 +2086,11 @@ function failJobsBody (schema: string, table: string, where: string, output: str
       SELECT * FROM failed_jobs
     ),
     dlq_jobs as (
-      INSERT INTO ${schema}.job (name, data, output, retry_limit, retry_backoff, retry_delay, keep_until, deletion_seconds,
-        expire_seconds, source_name, source_id, source_created_on, source_retry_count, singleton_key, heartbeat_seconds)
+      INSERT INTO ${schema}.job (name, priority, data, output, retry_limit, retry_backoff, retry_delay, keep_until, deletion_seconds,
+        expire_seconds, source_name, source_id, source_created_on, source_retry_count, singleton_key, group_id, group_tier, heartbeat_seconds)
       SELECT
         r.dead_letter,
+        r.priority,
         r.data,
         r.output,
         q.retry_limit,
@@ -2103,7 +2104,9 @@ function failJobsBody (schema: string, table: string, where: string, output: str
         r.created_on,
         r.retry_count,
         r.singleton_key,
-        r.heartbeat_seconds
+        r.group_id,
+        r.group_tier,
+        q.heartbeat_seconds
       FROM results r
         JOIN ${schema}.queue q ON q.name = r.dead_letter
       WHERE state = '${JOB_STATES.failed}'
@@ -2315,9 +2318,10 @@ export function insertRetryJob (schema: string, table: string): string {
 export function insertDeadLetterJob (schema: string): string {
   return `
     INSERT INTO ${schema}.job (name, data, output, retry_limit, retry_backoff, retry_delay, keep_until, deletion_seconds,
-      expire_seconds, source_name, source_id, source_created_on, source_retry_count, singleton_key, heartbeat_seconds)
+      expire_seconds, source_name, source_id, source_created_on, source_retry_count, singleton_key, heartbeat_seconds,
+      priority, group_id, group_tier)
     SELECT $1, $2, $3, q.retry_limit, q.retry_backoff, q.retry_delay, now() + q.retention_seconds * interval '1s', q.deletion_seconds,
-      q.expire_seconds, $4, $5, $6, $7, $8, $9
+      q.expire_seconds, $4, $5, $6, $7, $8, q.heartbeat_seconds, $9, $10, $11
     FROM ${schema}.queue q WHERE q.name = $1
   `
 }
@@ -2327,8 +2331,11 @@ export function insertDeadLetterJob (schema: string): string {
 // oldest-first, capped at $4. The JOIN in `candidates` only matches jobs whose destination queue
 // exists, so legacy/orphaned jobs (NULL source_name, no override) are never deleted — they stay
 // in the DLQ rather than being lost. Re-created jobs get a new id, `created` state, retry_count 0,
-// cleared output, NULL source_*, and the destination queue's current retry/retention/policy/
-// dead_letter config (matching send()'s COALESCE(job option, queue.dead_letter) stamp).
+// cleared output, NULL source_*, and every queue-config column (retry/retention/policy/expiry/
+// heartbeat/dead_letter) from the destination queue as it is configured now — per-job overrides
+// from the original send() are not preserved, since the DLQ copy never stored them. `dead_letter`
+// is the same value send() falls back to, so a second terminal failure re-enters the DLQ.
+// Job-identity columns (priority, singleton_key, group_id, group_tier) are carried over instead.
 export function redriveJobs (schema: string, table: string): string {
   return `
     WITH candidates AS (
@@ -2350,12 +2357,12 @@ export function redriveJobs (schema: string, table: string): string {
     ins AS (
       INSERT INTO ${schema}.job
         (name, data, priority, retry_limit, retry_backoff, retry_delay, retry_delay_max,
-         expire_seconds, keep_until, deletion_seconds, policy, singleton_key, heartbeat_seconds,
-         dead_letter)
+         expire_seconds, keep_until, deletion_seconds, policy, singleton_key, group_id, group_tier,
+         heartbeat_seconds, dead_letter)
       SELECT COALESCE($2, m.source_name), m.data, m.priority, q.retry_limit, q.retry_backoff,
         q.retry_delay, q.retry_delay_max, q.expire_seconds,
         now() + q.retention_seconds * interval '1s', q.deletion_seconds, q.policy,
-        m.singleton_key, m.heartbeat_seconds, q.dead_letter
+        m.singleton_key, m.group_id, m.group_tier, q.heartbeat_seconds, q.dead_letter
       FROM moved m JOIN ${schema}.queue q ON q.name = COALESCE($2, m.source_name)
       -- A destination queue's short/stately policy can still collide on (name, singleton_key)
       -- if two redriven jobs share a key (job_i1/job_i3); dropping just that row here, matching

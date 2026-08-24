@@ -554,9 +554,18 @@ dead letter queue to drain. Returns the number of jobs moved.
 Each job is routed back to the queue it originally failed on (its `sourceName`),
 so a single dead letter queue that collects from many source queues fans back out
 correctly. Re-created jobs get a new id, a reset retry count, cleared output, and
-the destination queue's current retry, retention, policy, and deadLetter configuration. Only
+the destination queue's current retry, retention, policy, expiration, heartbeat, and
+deadLetter configuration. Per-job overrides passed to the original `send()` (such as
+`expireInSeconds` or `retryLimit`) are not restored — the queue's configuration wins.
+The job's `priority`, `singletonKey`, and `group` are carried through, so a redriven
+job keeps its ordering weight and stays subject to its group concurrency limits. Only
 jobs that are not currently being processed (still in the `created`/`retry` state)
 are moved.
+
+Jobs that were part of a flow cannot be recovered with `redrive()`. A dead-lettered
+parent never reaches the `completed` state, so its dependents stay blocked, and the
+re-created job has a new id that the existing dependency rows do not point at. Redriving
+such a job runs it again standalone; the original flow does not resume.
 
 `options`:
 

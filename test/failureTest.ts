@@ -222,12 +222,12 @@ describe('failure', function () {
     expect(dlqJob.sourceRetryCount).toBe(0)
   })
 
-  it('dead letter preserves singleton_key and heartbeat_seconds from the source job', async function () {
+  it('dead letter preserves singleton_key but takes heartbeat_seconds from the DLQ queue', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
     const deadLetter = `${ctx.schema}_dlq`
 
-    await ctx.boss.createQueue(deadLetter)
+    await ctx.boss.createQueue(deadLetter, { heartbeatSeconds: 50 })
     await ctx.boss.createQueue(ctx.schema, { deadLetter, heartbeatSeconds: 30 })
 
     const jobId = await ctx.boss.send(ctx.schema, { key: ctx.schema }, { retryLimit: 0, singletonKey: 'sk', heartbeatSeconds: 40 })
@@ -240,7 +240,11 @@ describe('failure', function () {
     const dlq = await helper.findJobs(ctx.schema, 'name = $1 and source_id = $2', [deadLetter, jobId])
     expect(dlq.rows.length).toBe(1)
     expect(dlq.rows[0].singleton_key).toBe('sk')
-    expect(dlq.rows[0].heartbeat_seconds).toBe(40)
+    // job identity (singleton_key) travels; queue config does not. The copy is worked by the
+    // DLQ queue's consumers, so it runs under the DLQ queue's heartbeat, matching how
+    // expire_seconds/retry/retention are already sourced there. The source job's per-send
+    // heartbeatSeconds (40) and the source queue's (30) both lose.
+    expect(dlq.rows[0].heartbeat_seconds).toBe(50)
   })
 
   it('dead letter inherits the DLQ queue expire_seconds instead of the column default', async function () {
@@ -363,6 +367,92 @@ describe('failure', function () {
     expect(dlqMeta.sourceId).toBe(redriven.id)
   })
 
+  it('dead letter copy and redrive preserve priority and group', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+
+    const deadLetter = `${ctx.schema}_dlq`
+
+    await ctx.boss.createQueue(deadLetter)
+    await ctx.boss.createQueue(ctx.schema, { deadLetter })
+
+    const jobId = await ctx.boss.send(ctx.schema, { key: ctx.schema }, {
+      retryLimit: 0,
+      priority: 7,
+      group: { id: 'tenant-42', tier: 'gold' }
+    })
+    assertTruthy(jobId)
+
+    await ctx.boss.fetch(ctx.schema)
+    await ctx.boss.fail(ctx.schema, jobId)
+
+    // inspect the dead letter copy without fetching it — activating it would make it
+    // ineligible for the redrive below
+    const dlqRows = await helper.findJobs(ctx.schema, 'name = $1', [deadLetter])
+    expect(dlqRows.rows.length).toBe(1)
+    expect(dlqRows.rows[0].priority).toBe(7)
+    expect(dlqRows.rows[0].group_id).toBe('tenant-42')
+    expect(dlqRows.rows[0].group_tier).toBe('gold')
+
+    expect(await ctx.boss.redrive(deadLetter)).toBe(1)
+
+    const [redriven] = await helper.fetchWithRetry<{ key: string }>(ctx.boss, ctx.schema)
+    const redrivenMeta = await ctx.boss.getJobById(ctx.schema, redriven.id)
+    assertTruthy(redrivenMeta)
+    // without these the job comes back at priority 0 with no group, silently escaping
+    // its group concurrency cap and tier routing
+    expect(redrivenMeta.priority).toBe(7)
+    expect(redrivenMeta.groupId).toBe('tenant-42')
+    expect(redrivenMeta.groupTier).toBe('gold')
+  })
+
+  it('dead letter copy takes heartbeatSeconds from the dead letter queue', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+
+    const deadLetter = `${ctx.schema}_dlq`
+
+    await ctx.boss.createQueue(deadLetter, { heartbeatSeconds: 900 })
+    await ctx.boss.createQueue(ctx.schema, { deadLetter, heartbeatSeconds: 120 })
+
+    const jobId = await ctx.boss.send(ctx.schema, { key: ctx.schema }, { retryLimit: 0 })
+    assertTruthy(jobId)
+
+    await ctx.boss.fetch(ctx.schema)
+    await ctx.boss.fail(ctx.schema, jobId)
+
+    // the copy is a job on the dead letter queue, so it is worked under that queue's config —
+    // it used to inherit the source queue's heartbeat instead
+    const [dlqJob] = await helper.fetchWithRetry<{ key: string }>(ctx.boss, deadLetter)
+    const dlqMeta = await ctx.boss.getJobById(deadLetter, dlqJob.id)
+    assertTruthy(dlqMeta)
+    expect(dlqMeta.heartbeatSeconds).toBe(900)
+  })
+
+  it('redrive takes heartbeatSeconds from the destination queue', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+
+    const deadLetter = `${ctx.schema}_dlq`
+    const destination = `${ctx.schema}_dest`
+
+    await ctx.boss.createQueue(deadLetter)
+    await ctx.boss.createQueue(destination, { heartbeatSeconds: 900 })
+    await ctx.boss.createQueue(ctx.schema, { deadLetter, heartbeatSeconds: 120 })
+
+    const jobId = await ctx.boss.send(ctx.schema, { key: ctx.schema }, { retryLimit: 0 })
+    assertTruthy(jobId)
+
+    await ctx.boss.fetch(ctx.schema)
+    await ctx.boss.fail(ctx.schema, jobId)
+
+    expect(await ctx.boss.redrive(deadLetter, { destination })).toBe(1)
+
+    const [destJob] = await helper.fetchWithRetry<{ key: string }>(ctx.boss, destination)
+    const destMeta = await ctx.boss.getJobById(destination, destJob.id)
+    assertTruthy(destMeta)
+    // every queue-config column follows the destination queue, heartbeat included —
+    // it used to be copied off the dead letter row instead
+    expect(destMeta.heartbeatSeconds).toBe(900)
+  })
+
   it('redrive routes each job back to its own source queue', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
@@ -400,9 +490,11 @@ describe('failure', function () {
     const queueA = `${ctx.schema}_a`
     const queueB = `${ctx.schema}_b`
     const destination = `${ctx.schema}_dest`
+    const destDeadLetter = `${ctx.schema}_dest_dlq`
 
     await ctx.boss.createQueue(deadLetter)
-    await ctx.boss.createQueue(destination)
+    await ctx.boss.createQueue(destDeadLetter)
+    await ctx.boss.createQueue(destination, { deadLetter: destDeadLetter })
     await ctx.boss.createQueue(queueA, { deadLetter })
     await ctx.boss.createQueue(queueB, { deadLetter })
 
@@ -422,6 +514,12 @@ describe('failure', function () {
 
     const [destJob] = await helper.fetchWithRetry<{ from: string }>(ctx.boss, destination)
     expect(destJob.data.from).toBe('a')
+
+    // the override destination's config wins, not the source queue's: the redriven job is
+    // stamped with destination's deadLetter, so a second failure lands in destDeadLetter
+    const destMeta = await ctx.boss.getJobById(destination, destJob.id)
+    assertTruthy(destMeta)
+    expect(destMeta.deadLetter).toBe(destDeadLetter)
 
     // queueB's job is untouched, still in the dead letter queue
     const [remaining] = await helper.fetchWithRetry<{ from: string }>(ctx.boss, deadLetter)

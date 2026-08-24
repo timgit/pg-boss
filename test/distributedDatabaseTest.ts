@@ -161,10 +161,13 @@ helper.describePglite('distributed database mode', { timeout: blockTimeout }, fu
     ctx.boss = await helper.start({ ...ctx.bossConfig, __test__distributed: true, monitorIntervalSeconds: 1, noDefault: true })
 
     const deadLetter = `${ctx.schema}_dlq`
-    await ctx.boss.createQueue(deadLetter)
-    await ctx.boss.createQueue(ctx.schema, { deadLetter, retryLimit: 0 })
+    await ctx.boss.createQueue(deadLetter, { heartbeatSeconds: 900 })
+    await ctx.boss.createQueue(ctx.schema, { deadLetter, retryLimit: 0, heartbeatSeconds: 120 })
 
-    const jobId = await ctx.boss.send(ctx.schema, { key: ctx.schema })
+    const jobId = await ctx.boss.send(ctx.schema, { key: ctx.schema }, {
+      priority: 7,
+      group: { id: 'tenant-42', tier: 'gold' }
+    })
     helper.assertTruthy(jobId)
 
     const [job] = await ctx.boss.fetch(ctx.schema)
@@ -191,6 +194,13 @@ helper.describePglite('distributed database mode', { timeout: blockTimeout }, fu
     expect(dlqMeta.sourceName).toBe(ctx.schema)
     expect(dlqMeta.sourceId).toBe(jobId)
     expect(dlqMeta.sourceCreatedOn).toBeTruthy()
+    // ...and the ordering weight and group attribution of the failed job, matching the
+    // canonical dlq_jobs CTE
+    expect(dlqMeta.priority).toBe(7)
+    expect(dlqMeta.groupId).toBe('tenant-42')
+    expect(dlqMeta.groupTier).toBe('gold')
+    // heartbeat comes from the dead letter queue, not the source job
+    expect(dlqMeta.heartbeatSeconds).toBe(900)
   })
 
   it('should retry heartbeat-timed-out jobs with backoff via distributed supervise', async function () {
