@@ -92,6 +92,25 @@ jobs:
     - name: Test (pglite)
       run: npm run test:pglite
 
+  # docs/index.md is generated from README.md by scripts/sync-readme.js, so a README edit
+  # that skips the regenerate step silently leaves the docs home page stale. The check needs
+  # no dependencies (the script uses only node builtins) and no database, so it runs as its
+  # own job for fast, clearly-named feedback instead of riding along in a test leg.
+  docs-readme-sync:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+    - name: Set up Node.js
+      uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+      with:
+        node-version: 24
+
+    - name: Check docs/index.md is in sync with README.md
+      run: npm run docs:readme -- --check
+
   # Fast feedback on every push/PR: the distributed-mode invariants that the rest of the
   # suite can't express, run against a real CockroachDB cluster.
   test-cockroachdb:
