@@ -305,6 +305,66 @@ describe('queues', function () {
     expect(queueObj!.deadLetter).toBe(updateProps.deadLetter)
   })
 
+  it('should clear the dead letter queue with null', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+
+    const deadLetter = `${ctx.schema}_dlq`
+    await ctx.boss.createQueue(deadLetter)
+    await ctx.boss.createQueue(ctx.schema, { deadLetter })
+
+    expect((await ctx.boss.getQueue(ctx.schema))!.deadLetter).toBe(deadLetter)
+
+    await ctx.boss.updateQueue(ctx.schema, { deadLetter: null })
+
+    expect((await ctx.boss.getQueue(ctx.schema))!.deadLetter).toBeNull()
+  })
+
+  it('should not clear the dead letter queue when other properties are updated', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+
+    const deadLetter = `${ctx.schema}_dlq`
+    await ctx.boss.createQueue(deadLetter)
+    await ctx.boss.createQueue(ctx.schema, { deadLetter })
+
+    await ctx.boss.updateQueue(ctx.schema, { retryLimit: 5 })
+
+    const queueObj = await ctx.boss.getQueue(ctx.schema)
+
+    expect(queueObj!.retryLimit).toBe(5)
+    expect(queueObj!.deadLetter).toBe(deadLetter)
+  })
+
+  it('should route failed jobs to the queue itself after the dead letter queue is cleared', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+
+    const deadLetter = `${ctx.schema}_dlq`
+    await ctx.boss.createQueue(deadLetter)
+    await ctx.boss.createQueue(ctx.schema, { deadLetter, retryLimit: 0 })
+
+    await ctx.boss.updateQueue(ctx.schema, { deadLetter: null })
+
+    const jobId = await ctx.boss.send(ctx.schema)
+    assertTruthy(jobId)
+
+    const [job] = await ctx.boss.fetch(ctx.schema)
+    await ctx.boss.fail(ctx.schema, job.id)
+
+    expect((await ctx.boss.fetch(deadLetter)).length).toBe(0)
+  })
+
+  it('should clear the nullable numeric options with null', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+
+    await ctx.boss.createQueue(ctx.schema, { retryBackoff: true, retryDelayMax: 60, heartbeatSeconds: 30 })
+
+    await ctx.boss.updateQueue(ctx.schema, { retryDelayMax: null, heartbeatSeconds: null })
+
+    const queueObj = await ctx.boss.getQueue(ctx.schema)
+
+    expect(queueObj!.retryDelayMax).toBeNull()
+    expect(queueObj!.heartbeatSeconds).toBeNull()
+  })
+
   it('should fail to change queue policy', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 

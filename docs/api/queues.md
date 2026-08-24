@@ -158,6 +158,12 @@ Updates options on an existing queue, with the exception of the `policy` and `pa
 await boss.updateQueue('email-send', { retryLimit: 5, retryDelay: 120 })
 ```
 
+Only the options included in the call are changed. The nullable options—`deadLetter`, `retryDelayMax`, and `heartbeatSeconds`—are cleared by passing `null`.
+
+```js
+await boss.updateQueue('email-send', { deadLetter: null })
+```
+
 ### `deleteQueue(name)`
 
 Deletes a queue and all jobs.

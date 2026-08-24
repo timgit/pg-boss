@@ -1,4 +1,4 @@
-import type { JobMatchStrategy, UpdateQueueOptions, ManagedIndex, ManagedFunction } from './types.ts'
+import type { JobMatchStrategy, ManagedIndex, ManagedFunction } from './types.ts'
 import {
   indexKeysRaw,
   indexIncludeRaw,
@@ -815,7 +815,7 @@ function trySetQueueTimestamp (schema: string, queues: string[], column: string,
   }
 }
 
-export function updateQueue (schema: string, { deadLetter }: UpdateQueueOptions = {}) {
+export function updateQueue (schema: string) {
   return `
     WITH options as (SELECT $2::jsonb as data)
     UPDATE ${schema}.queue SET
@@ -833,11 +833,9 @@ export function updateQueue (schema: string, { deadLetter }: UpdateQueueOptions 
         THEN (o.data->>'heartbeatSeconds')::int
         ELSE heartbeat_seconds END,
       notify = COALESCE((o.data->>'notify')::bool, notify),
-      ${
-        deadLetter === undefined
-          ? ''
-          : `dead_letter = CASE WHEN '${deadLetter}' IS DISTINCT FROM dead_letter THEN '${deadLetter}' ELSE dead_letter END,`
-      }
+      dead_letter = CASE WHEN jsonb_exists(o.data, 'deadLetter')
+        THEN o.data->>'deadLetter'
+        ELSE dead_letter END,
       updated_on = now()
     FROM options o
     WHERE name = $1

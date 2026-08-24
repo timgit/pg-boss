@@ -1786,12 +1786,14 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
     const { deadLetter } = options
 
-    if (deadLetter) {
+    // null is the documented way to clear the dead letter queue, so it has to reach the update as a
+    // present-but-null key. Only a non-null value is a queue name worth validating.
+    if (deadLetter !== null && deadLetter !== undefined) {
       Attorney.assertQueueName(deadLetter)
       notStrictEqual(name, deadLetter, 'deadLetter cannot be itself')
     }
 
-    const sql = plans.updateQueue(this.config.schema, { deadLetter })
+    const sql = plans.updateQueue(this.config.schema)
     await this.db.executeSql(sql, [name, options])
     this.#evictQueueCache(name)
   }

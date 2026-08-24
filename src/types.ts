@@ -921,7 +921,20 @@ export interface FunctionsMixin {
   functions: Function[];
 }
 
-export type UpdateQueueOptions = Omit<Queue, 'name' | 'partition' | 'policy'>
+export type UpdateQueueOptions = Omit<Queue, 'name' | 'partition' | 'policy' | 'deadLetter' | 'retryDelayMax' | 'heartbeatSeconds'> & {
+  /**
+   * The name of the queue's dead letter queue, or `null` to clear it.
+   */
+  deadLetter?: string | null;
+  /**
+   * Maximum delay between retries of failed jobs, in seconds, or `null` for no limit.
+   */
+  retryDelayMax?: number | null;
+  /**
+   * Expected heartbeat interval in seconds, or `null` to disable heartbeats.
+   */
+  heartbeatSeconds?: number | null;
+}
 
 export interface Warning { message: string, data: object }
 
