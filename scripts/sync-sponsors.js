@@ -32,10 +32,21 @@ const MARKER = '<!-- The lists below are generated from GitHub Sponsors by scrip
 const README_START = '<!-- sponsors:start The logos below are generated from GitHub Sponsors by scripts/sync-sponsors.js. Do not edit them directly. -->'
 const README_END = '<!-- sponsors:end -->'
 
-// Tier thresholds, in monthly dollars. These mirror what the tier descriptions
-// promise, so changing one means changing the other.
-const LOGO_TIER = 50
-const NAME_TIER = 10
+// The ladder, highest rung first. Thresholds are monthly dollars and mirror what
+// the tier descriptions promise, so changing one means changing the other. A
+// sponsor lands in the first rung they clear, and anything under the last rung is
+// not listed at all. Adding a rung later — Partner, Advisory — is one entry here
+// and nothing else.
+const TIERS = [
+  { dollars: 250, heading: 'Production Sponsors', logoSize: 96 },
+  { dollars: 50, heading: 'Sponsors', logoSize: 64 },
+  { dollars: 10, heading: 'Backers' }
+]
+
+// Rungs with a logoSize get a grid; the rest get a bulleted list of names.
+function tierFor (dollars) {
+  return TIERS.find(tier => dollars >= tier.dollars) || null
+}
 
 const QUERY = `
   query($cursor: String) {
@@ -144,12 +155,14 @@ function publicWebsite (websiteUrl) {
 }
 
 // One-time sponsorships are excluded: placement is sold as ongoing, and a
-// one-time sponsor has nothing left to cancel.
+// one-time sponsor has nothing left to cancel. Sponsors below the lowest rung
+// are dropped too — a custom $5 amount has no section to land in.
 function toSponsors (sponsorships) {
   return sponsorships
     .filter(({ tier, sponsorEntity }) => tier && sponsorEntity && !tier.isOneTime)
     .map(({ tier, sponsorEntity, createdAt }) => ({
       dollars: tier.monthlyPriceInDollars,
+      tier: tierFor(tier.monthlyPriceInDollars),
       createdAt,
       login: sponsorEntity.login,
       name: sponsorEntity.name || sponsorEntity.login,
@@ -157,6 +170,7 @@ function toSponsors (sponsorships) {
       href: publicWebsite(sponsorEntity.websiteUrl) || sponsorEntity.url,
       avatar: sponsorEntity.avatarUrl
     }))
+    .filter(sponsor => sponsor.tier)
     // Highest tier first, then longest-standing, then alphabetical. Stable
     // ordering keeps a scheduled run from producing a diff with no news in it.
     .sort((a, b) =>
@@ -169,12 +183,15 @@ function escapeAttribute (text) {
   return text.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
-// A flex grid with inline styles, so the page needs no custom theme CSS.
+// A flex grid with inline styles, so the page needs no custom theme CSS. Each
+// logo is sized by its rung, which is what keeps a $250 sponsor from rendering
+// pixel-identical to a $50 one.
 function renderLogos (sponsors) {
-  const items = sponsors.map(({ name, href, avatar }) => {
+  const items = sponsors.map(({ name, href, avatar, tier }) => {
     const alt = escapeAttribute(name)
+    const size = tier.logoSize
     return `  <a href="${escapeAttribute(href)}" target="_blank" rel="noopener">` +
-      `<img src="${escapeAttribute(avatar)}" alt="${alt}" title="${alt}" width="64" height="64" style="border-radius: 8px;"></a>`
+      `<img src="${escapeAttribute(avatar)}" alt="${alt}" title="${alt}" width="${size}" height="${size}" style="border-radius: 8px;"></a>`
   })
 
   return `<div style="display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; margin: 1.5rem 0;">\n${items.join('\n')}\n</div>`
@@ -184,18 +201,14 @@ function renderNames (sponsors) {
   return sponsors.map(({ name, href }) => `- [${name}](${href})`).join('\n')
 }
 
+// One section per rung, highest first. A rung with no occupants prints nothing:
+// an empty heading advertises a tier nobody bought.
 function renderLists (sponsors) {
-  const logos = sponsors.filter(s => s.dollars >= LOGO_TIER)
-  const names = sponsors.filter(s => s.dollars >= NAME_TIER && s.dollars < LOGO_TIER)
-  const sections = []
-
-  if (logos.length) {
-    sections.push(`## Companies\n\n${renderLogos(logos)}`)
-  }
-
-  if (names.length) {
-    sections.push(`## Backers\n\n${renderNames(names)}`)
-  }
+  const sections = TIERS
+    .map(tier => ({ tier, members: sponsors.filter(sponsor => sponsor.tier === tier) }))
+    .filter(({ members }) => members.length)
+    .map(({ tier, members }) =>
+      `## ${tier.heading}\n\n${tier.logoSize ? renderLogos(members) : renderNames(members)}`)
 
   if (!sections.length) {
     return '_No public sponsors yet._'
@@ -204,8 +217,9 @@ function renderLists (sponsors) {
   return sections.join('\n\n')
 }
 
-// The readme shows only the logo grid. Backers are named on the docs page,
-// which the readme section links to.
+// The readme shows only the logo grid, as one grid rather than per-rung sections
+// — the rungs stay legible there through logo size alone. Backers are named on
+// the docs page, which the readme section links to.
 function renderReadme (readme, sponsors) {
   const start = readme.indexOf(README_START)
   const end = readme.indexOf(README_END)
@@ -214,7 +228,7 @@ function renderReadme (readme, sponsors) {
     throw new Error(`README.md: missing the generated marker pair:\n${README_START}\n${README_END}`)
   }
 
-  const logos = sponsors.filter(s => s.dollars >= LOGO_TIER)
+  const logos = sponsors.filter(sponsor => sponsor.tier.logoSize)
   const grid = logos.length ? `\n${renderLogos(logos)}\n` : '\n'
 
   return `${readme.slice(0, start)}${README_START}${grid}${readme.slice(end)}`
