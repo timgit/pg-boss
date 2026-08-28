@@ -1,0 +1,4 @@
+{
+  "_comment": "Manual overrides for sponsor tooling. Sponsoring orgs are expanded to their PUBLIC members automatically; anyone whose org membership is private will not match, so list them here. Keys are sponsoring org logins. Phase 4b writes per-sponsor seat mappings into this same file, so both { \"org\": [\"login\"] } and { \"org\": { \"members\": [], \"seats\": [] } } are understood.",
+  "overrides": {}
+}

@@ -64,7 +64,8 @@
     "readme": "node ./examples/readme.js",
     "docs": "npm run docs:dev --prefix docs",
     "docs:readme": "node ./scripts/sync-readme.js",
-    "docs:sponsors": "node --env-file-if-exists=.env ./scripts/sync-sponsors.js"
+    "docs:sponsors": "node --env-file-if-exists=.env ./scripts/sync-sponsors.js",
+    "sponsors:label": "node --env-file-if-exists=.env ./scripts/sponsor-label.js"
   },
   "pgboss": {
     "schema": 38

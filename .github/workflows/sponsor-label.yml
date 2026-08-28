@@ -1,0 +1,42 @@
+# Actions are pinned to full commit SHAs; see .github/dependabot.yml for why and how they are updated.
+name: Sponsor label
+
+# Applies the `sponsor` label when a sponsor at $50/mo or above opens an issue
+# or a discussion. The label is visibility, not a turnaround promise — it exists
+# so the queue can be read by who is in it.
+#
+# Labelling happens at open time, so a sponsor who upgrades from $10 to $50
+# leaves older open items unlabelled. Re-label those by hand; at these volumes
+# it is a one-minute job.
+
+on:
+  issues:
+    types: [opened]
+  discussion:
+    types: [created]
+
+# GITHUB_TOKEN cannot read sponsorship data and is not used for the mutation
+# either — SPONSORS_TOKEN does both, so no write permissions are granted here.
+permissions:
+  contents: read
+
+concurrency:
+  group: sponsor-label-${{ github.event.issue.node_id || github.event.discussion.node_id }}
+  cancel-in-progress: false
+
+jobs:
+  label:
+    if: github.repository == 'timgit/pg-boss'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 22
+
+      # No install step: the script uses only node built-ins.
+      - run: node ./scripts/sponsor-label.js
+        env:
+          SPONSORS_TOKEN: ${{ secrets.SPONSORS_TOKEN }}
+          AUTHOR_LOGIN: ${{ github.event.issue.user.login || github.event.discussion.user.login }}
+          LABELABLE_ID: ${{ github.event.issue.node_id || github.event.discussion.node_id }}
