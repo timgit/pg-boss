@@ -16,12 +16,16 @@ describe('cronHuman', () => {
 
   it('describes minute intervals only when all other fields are wildcards', () => {
     expect(cronHuman('*/15 * * * *')).toBe('Every 15 minutes')
+    expect(cronHuman('*/1 * * * *')).toBe('Every minute')
     expect(cronHuman('*/15 * * * 1')).toBe('Custom schedule')
     expect(cronHuman('*/15 2 * * *')).toBe('Custom schedule')
   })
 
   it('describes hourly and monthly patterns', () => {
     expect(cronHuman('0 * * * *')).toBe('Every hour on the hour')
+    expect(cronHuman('30 * * * *')).toBe('Every hour at :30')
+    expect(cronHuman('5 * * * *')).toBe('Every hour at :05')
+    expect(cronHuman('30 * * * 1')).toBe('Custom schedule')
     expect(cronHuman('0 0 1 * *')).toBe('Monthly on the 1st at 00:00')
     expect(cronHuman('0 12 22 * *')).toBe('Monthly on the 22nd at 12:00')
     expect(cronHuman('0 12 11 * *')).toBe('Monthly on the 11th at 12:00')

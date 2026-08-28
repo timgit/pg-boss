@@ -87,9 +87,12 @@ export function cronHuman (cron: string): string {
   const anyDow = dow === '*'
 
   if (/^\*\/\d+$/.test(m) && h === '*' && anyDom && anyMon && anyDow) {
-    return `Every ${m.slice(2)} minutes`
+    const step = Number(m.slice(2))
+    return step === 1 ? 'Every minute' : `Every ${step} minutes`
   }
-  if (m === '0' && h === '*' && anyDom && anyMon && anyDow) return 'Every hour on the hour'
+  if (h === '*' && anyDom && anyMon && anyDow && /^\d+$/.test(m)) {
+    return m === '0' ? 'Every hour on the hour' : `Every hour at :${m.padStart(2, '0')}`
+  }
 
   if (!/^\d+$/.test(m) || !/^\d+$/.test(h)) return 'Custom schedule'
   const time = `${h.padStart(2, '0')}:${m.padStart(2, '0')}`
