@@ -1,5 +1,6 @@
 import { expect } from 'vitest'
 import * as helper from './testHelper.ts'
+import { assertTruthy } from './testHelper.ts'
 import { ctx } from './hooks.ts'
 
 describe('pubsub', function () {
@@ -67,6 +68,50 @@ describe('pubsub', function () {
 
     expect(job1.data.message).toBe(message)
     expect(job2.data.message).toBe(message)
+  })
+
+  it('should reject when a subscribed queue fails, after sending to the rest', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+
+    interface Message {
+      message: string
+    }
+
+    const healthy = 'subqueue-healthy'
+    // key_strict_fifo rejects a send with no singletonKey, so publish() has one subscriber that
+    // fails and one that succeeds without needing an unhealthy connection to arrange it.
+    const failing = 'subqueue-failing'
+
+    await ctx.boss.createQueue(healthy)
+    await ctx.boss.createQueue(failing, { policy: 'key_strict_fifo' })
+
+    const event = 'event'
+    const message = 'hi'
+
+    await ctx.boss.subscribe(event, healthy)
+    await ctx.boss.subscribe(event, failing)
+
+    const error = await ctx.boss.publish(event, { message }).then(
+      () => undefined,
+      (err: unknown) => err as AggregateError
+    )
+
+    expect(error).toBeInstanceOf(AggregateError)
+    assertTruthy(error)
+
+    expect(error.message).toMatch(/failed for 1 of 2 subscribed queue\(s\)/)
+
+    // each entry names its own queue, so attribution doesn't rely on errors[] lining up with the
+    // queue order positionally
+    expect(error.errors).toHaveLength(1)
+    expect(error.errors[0]).toMatch(new RegExp(`^${failing}: .*key_strict_fifo`))
+
+    // the healthy subscriber was still sent to
+    const [job1] = await ctx.boss.fetch<Message>(healthy)
+    expect(job1.data.message).toBe(message)
+
+    const [job2] = await ctx.boss.fetch(failing)
+    expect(job2).toBeFalsy()
   })
 })
 

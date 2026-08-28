@@ -845,7 +845,20 @@ class Manager extends EventEmitter implements types.EventsMixin {
     const sql = plans.getQueuesForEvent(this.config.schema)
     const { rows } = await this.db.executeSql(sql, [event])
 
-    await Promise.allSettled(rows.map(({ name }) => this.send(name, data, options)))
+    const results = await Promise.allSettled(rows.map(({ name }) => this.send(name, data, options)))
+
+    const failures = results
+      .map((result, index) => ({ result, name: rows[index].name }))
+      .filter((entry): entry is { result: PromiseRejectedResult, name: string } => entry.result.status === 'rejected')
+
+    if (failures.length > 0) {
+      // Each entry names its own queue, so attribution doesn't depend on lining errors[] up with
+      // the queue order positionally, and survives two subscribers failing with identical text.
+      throw new AggregateError(
+        failures.map(({ name, result }) => `${name}: ${result.reason?.message ?? result.reason}`),
+        `publish('${event}') failed for ${failures.length} of ${results.length} subscribed queue(s)`
+      )
+    }
   }
 
   send (request: types.Request): Promise<string | null>
