@@ -540,10 +540,13 @@ export const getBlockedKeysResponseSchema: z.ZodType<types.HttpGetBlockedKeysRes
   result: z.array(z.string())
 })
 
+// updateQueue accepts null for the fields pg-boss allows clearing on an existing queue
 export const updateQueueRequestSchema: z.ZodType<types.HttpUpdateQueueRequest> = z.object({
   name: queueNameSchema,
-  options: queueOptionsSchema.and(z.object({
-    deadLetter: z.string().optional(),
+  options: queueOptionsSchema.omit({ retryDelayMax: true, heartbeatSeconds: true }).and(z.object({
+    deadLetter: z.string().nullable().optional(),
+    retryDelayMax: z.number().nullable().optional(),
+    heartbeatSeconds: z.number().nullable().optional(),
     warningQueueSize: z.number().optional(),
     notify: z.boolean().optional()
   })).optional()

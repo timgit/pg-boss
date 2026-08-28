@@ -304,8 +304,10 @@ export type HttpGetBlockedKeysResponse = {
   result: string[]
 }
 
-export type HttpUpdateQueueOptions = HttpQueueOptions & {
-  deadLetter?: string
+export type HttpUpdateQueueOptions = Omit<HttpQueueOptions, 'retryDelayMax' | 'heartbeatSeconds'> & {
+  deadLetter?: string | null
+  retryDelayMax?: number | null
+  heartbeatSeconds?: number | null
   warningQueueSize?: number
   notify?: boolean
 }

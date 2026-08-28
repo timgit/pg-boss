@@ -562,6 +562,16 @@ describe('proxy api routes', () => {
     }
   })
 
+  it('updateQueue passes null through for the fields pg-boss allows clearing', async () => {
+    const { boss, calls } = createBossMock()
+    const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any })
+
+    const body = { name: 'queue', options: { deadLetter: null, retryDelayMax: null, heartbeatSeconds: null } }
+    const response = await app.fetch(await postJson('http://local/api/updateQueue', body))
+    expect(response.status).toBe(200)
+    expect(calls.get('updateQueue')?.[0]).toEqual(['queue', { deadLetter: null, retryDelayMax: null, heartbeatSeconds: null }])
+  })
+
   it('GET findJobs passes flattened options as query params', async () => {
     const { boss, calls } = createBossMock()
     const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any })
