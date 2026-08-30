@@ -35,6 +35,7 @@ Commands:
   version     Show current schema version
   doctor      Check for schema/index drift against the expected shape
   plans       Output SQL plans without executing
+  reindex     Rebuild bloated job indexes (REINDEX INDEX CONCURRENTLY)
   rollback    Rollback the last migration
 
 Options:
@@ -48,7 +49,8 @@ Options:
   --password, -p <pass>   Database password
   --connection-string     Full connection string (overrides other connection options)
   --ssl                   Enable SSL connection
-  --dry-run               Output SQL without executing (for plans command)
+  --dry-run               Output SQL without executing (for plans and reindex commands)
+  --force                 Rebuild every job index, not just the bloated ones (reindex)
 
 Environment Variables:
   PGBOSS_DATABASE_URL     Full connection string
@@ -146,7 +148,8 @@ function parseCliArgs () {
       password: { type: 'string', short: 'p' },
       'connection-string': { type: 'string' },
       ssl: { type: 'boolean' },
-      'dry-run': { type: 'boolean' }
+      'dry-run': { type: 'boolean' },
+      force: { type: 'boolean' }
     },
     allowPositionals: true
   })
@@ -163,6 +166,7 @@ function parseCliArgs () {
     connectionString: values['connection-string'],
     ssl: values.ssl,
     dryRun: values['dry-run'],
+    force: values.force,
     command: positionals[0],
     subCommand: positionals[1]
   }
@@ -400,6 +404,24 @@ async function cmdDoctor (args: ReturnType<typeof parseCliArgs>): Promise<void> 
       for (const i of report.building) console.log(`  ${i.table}.${i.name}`)
     }
 
+    // Index bloat is a runtime condition, not schema drift: the index matches its expected
+    // definition, it is just carrying pages it no longer needs. Printed regardless of overall
+    // status and never changes the exit code, same as extra indexes below.
+    try {
+      const { rows: bloated } = await db.executeSql(plans.getBloatedIndexes(schema))
+
+      if (bloated.length) {
+        console.log(`\n⚠ INDEX BLOAT (rebuild with "pg-boss reindex") (${bloated.length}):`)
+        for (const i of bloated) {
+          const mb = Math.round(Number(i.bytes) / 1024 / 1024)
+          console.log(`  ${i.table}.${i.name} — ${mb} MB across ${i.pages} pages, ~${i.entries} live entries`)
+          if (!i.owned) console.log('    note: the connected role does not own this index and cannot reindex it')
+        }
+      }
+    } catch {
+      // Best effort — a role without catalog visibility should not fail the whole drift report.
+    }
+
     // Extra indexes are informational (a stale pg-boss index or a user-added one) — a warning, not
     // drift. Printed regardless of overall status; it never changes the exit code.
     if (report.extraIndexes.length) {
@@ -499,6 +521,82 @@ async function cmdDoctor (args: ReturnType<typeof parseCliArgs>): Promise<void> 
   }
 }
 
+// Bloated indexes are found and rebuilt directly here rather than through a PgBoss instance: the
+// command must work against an installation this process does not otherwise manage, and starting an
+// instance would also start workers, maintenance and migrations.
+async function cmdReindex (args: ReturnType<typeof parseCliArgs>): Promise<void> {
+  const config = getConnectionConfig(args)
+  const schema = config.schema || plans.DEFAULT_SCHEMA
+  const db = await createDb(config)
+
+  try {
+    const version = await getSchemaVersion(db, schema)
+    if (version === null) {
+      console.log(`pg-boss is not installed in schema "${schema}"`)
+      process.exitCode = 1
+      return
+    }
+
+    const sql = args.force ? plans.getJobIndexes(schema) : plans.getBloatedIndexes(schema)
+    const { rows } = await db.executeSql(sql)
+
+    if (!rows.length) {
+      console.log(args.force
+        ? `No job indexes found in schema "${schema}"`
+        : `No bloated indexes found in schema "${schema}"`)
+      return
+    }
+
+    const { rows: leftovers } = await db.executeSql(plans.getReindexLeftovers(schema))
+
+    const commands: string[] = []
+
+    for (const index of rows) {
+      for (const leftover of leftovers) {
+        // Postgres names the transient index `<index>_ccnew`, then `_ccnew1`, `_ccnew2` on collision.
+        if (leftover.name.startsWith(`${index.name}_ccnew`)) {
+          commands.push(plans.dropIndexConcurrently(schema, leftover.name))
+        }
+      }
+
+      commands.push(plans.reindexIndex(schema, index.name))
+    }
+
+    if (args.dryRun) {
+      console.log(`-- SQL to rebuild ${rows.length} index(es) in schema "${schema}":`)
+      for (const command of commands) console.log(`${command};`)
+      return
+    }
+
+    for (const index of rows) {
+      const mb = Math.round(Number(index.bytes) / 1024 / 1024)
+      console.log(`  ${index.table}.${index.name} — ${mb} MB across ${index.pages} pages, ~${index.entries} live entries`)
+    }
+
+    console.log(`\nRebuilding ${rows.length} index(es)...`)
+
+    let failures = 0
+
+    for (const command of commands) {
+      try {
+        await db.executeSql(command)
+        console.log(`  ✓ ${command}`)
+      } catch (err: any) {
+        failures++
+        console.error(`  ✗ ${command}\n    ${err.message}`)
+      }
+    }
+
+    if (failures) {
+      process.exitCode = 1
+    } else {
+      console.log('\n✓ Done')
+    }
+  } finally {
+    await db.close()
+  }
+}
+
 async function cmdPlans (args: ReturnType<typeof parseCliArgs>): Promise<void> {
   const fileConfig = loadConfigFile(args.config)
   const schema = args.schema || process.env.PGBOSS_SCHEMA || fileConfig.schema || plans.DEFAULT_SCHEMA
@@ -584,6 +682,10 @@ async function main (): Promise<void> {
 
       case 'plans':
         await cmdPlans(args)
+        break
+
+      case 'reindex':
+        await cmdReindex(args)
         break
 
       default:

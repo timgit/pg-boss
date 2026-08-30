@@ -3,7 +3,7 @@
 The following functions are exported from the package and are not required during normal operations, but are intended to assist in schema creation or migration if run-time privileges do not allow schema changes.
 
 ```js
-import { getConstructionPlans, getMigrationPlans, getRollbackPlans } from 'pg-boss'
+import { getConstructionPlans, getMigrationPlans, getRollbackPlans, getIndexBloatPlans } from 'pg-boss'
 ```
 
 ### `getConstructionPlans(schema)`
@@ -45,3 +45,28 @@ Returns the SQL commands required to manually roll back the specified version to
 ```js
 const sql = getRollbackPlans('pgboss', 36)
 ```
+
+### `getIndexBloatPlans(schema, options)`
+
+**Arguments**
+- `schema`: string, database schema name
+- `options`: object, optional. Accepts `minPages` (default 128) and `maxEntriesPerPage` (default 5).
+
+Returns the catalog query pg-boss uses to find bloated job indexes, as SQL text. Unlike [`getReindexCommands()`](./ops.md#getreindexcommandsoptions) this needs no instance and no connection from this process — it is meant to be pasted into psql or handed to a monitoring tool.
+
+```js
+const sql = getIndexBloatPlans('pgboss')
+```
+
+Each row describes one index that is holding far more pages than its live entries need:
+
+| Column | Description |
+| --- | --- |
+| `name` | Index name |
+| `table` | The job table it belongs to |
+| `pages` | Size in 8 kB pages |
+| `entries` | Live entries, as of the last `VACUUM` / `ANALYZE` |
+| `bytes` | Size on disk |
+| `owned` | Whether the connected role can `REINDEX` it |
+
+`pages` and `entries` come from `pg_class`, which only `VACUUM` and `ANALYZE` refresh, so the results go stale on a table with autovacuum disabled.

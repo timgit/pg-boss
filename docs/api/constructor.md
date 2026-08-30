@@ -133,6 +133,37 @@ The following configuration options should not normally need to be changed, but 
 
   How often queue metadata is refreshed in memory.
 
+* **reindex**, bool | object, default true
+
+  Rebuilds bloated job indexes with `REINDEX INDEX CONCURRENTLY` during maintenance.
+
+  Autovacuum reclaims heap space but never shrinks a btree, so a job index stays at the size of the largest backlog its queue has ever held. Every later vacuum then walks all of those pages, which becomes the dominant cost on a queue that has drained. Rebuilds are gated on an index density check, so a healthy installation never runs one.
+
+  Set to `false` to disable rebuilds. Detection is unaffected: bloat still raises an `index_bloat` [`warning`](./events.md#warning), and [`getReindexCommands()`](./ops.md#getreindexcommandsoptions) still returns the statements to run by hand. The same applies to indexes the connected role does not own, and to `db` adapters that wrap queries in a transaction — `REINDEX CONCURRENTLY` cannot run inside one.
+
+  CockroachDB and YugabyteDB skip this entirely, detection included. They store data outside PostgreSQL's heap, so there is no btree page bloat to reclaim, they reject `REINDEX`, and neither reports the page counts the check reads.
+
+  Pass an object to change the thresholds:
+
+  | Property | Type | Default | Description |
+  | --- | --- | --- | --- |
+  | `minPages` | int | 128 | Ignore indexes smaller than this many 8 kB pages |
+  | `maxEntriesPerPage` | number | 5 | Live entries per page below which an index counts as bloated. A freshly built job index holds 140-170 |
+  | `maxIndexBytes` | int | 2147483648 | Never rebuild an index larger than this |
+
+  ```js
+  const boss = new PgBoss({
+    connectionString,
+    reindex: { maxIndexBytes: 512 * 1024 * 1024 }
+  })
+  ```
+
+  `force` is only accepted by [`supervise()`](./ops.md#supervisename-options), not here — a timer that rebuilt every job index on every interval is never what you want.
+
+* **reindexIntervalSeconds**, int, default 1 day
+
+  How often the index bloat check runs. One instance per interval performs it, coordinated through the database, so adding instances does not multiply the work. Cannot exceed 24 hours.
+
 * **flowIntervalSeconds**, int, default 5 seconds
 
   How often the background flow resolver runs to unblock dependent jobs (created via [`flow()`](./jobs.md#flowjobs-options)) whose parents have completed. Completing a job no longer unblocks its dependents inline; this resolver handles it shortly after, off the completion hot path. Only runs when `supervise` is enabled.

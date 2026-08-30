@@ -18,8 +18,15 @@ const WARNINGS = {
 
 const WARNING_TYPES = {
   SLOW_QUERY: 'slow_query',
-  QUEUE_BACKLOG: 'queue_backlog'
+  QUEUE_BACKLOG: 'queue_backlog',
+  INDEX_BLOAT: 'index_bloat'
 } as const
+
+// SQLSTATE 25001 (active_sql_transaction): "REINDEX CONCURRENTLY cannot run inside a transaction
+// block". Raised when a user-supplied adapter wraps executeSql in a transaction — a property of the
+// adapter, not of this pass, so it disables rebuilds for the life of the instance rather than
+// retrying every interval.
+const IN_TRANSACTION_ERROR = '25001'
 
 class Boss extends EventEmitter implements types.EventsMixin {
   #stopped: boolean
@@ -31,6 +38,12 @@ class Boss extends EventEmitter implements types.EventsMixin {
   #manager: Manager
   readonly #slowQuerySeconds: number
   readonly #largeQueueSize: number
+  // Set once a rebuild proves impossible on this connection (see IN_TRANSACTION_ERROR). Detection
+  // keeps running; only the DDL is abandoned.
+  #reindexUnavailable: string | null = null
+  // Warn once per bloated index rather than on every pass. An index leaves the set as soon as it
+  // stops qualifying — rebuilt, dropped, or refilled — so a later episode warns again.
+  #warnedBloat = new Set<string>()
 
   events = events
 
@@ -159,7 +172,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
     await this.#executeQuery(sql)
   }
 
-  async supervise (value?: string | types.QueueResult[]) {
+  async supervise (value?: string | types.QueueResult[], options?: types.SuperviseOptions) {
     let queues: types.QueueResult[]
 
     if (Array.isArray(value)) {
@@ -206,6 +219,10 @@ class Boss extends EventEmitter implements types.EventsMixin {
 
     await this.#maintainWarnings()
     await this.#maintainQueueStats()
+
+    // Last in the pass: a rebuild is DDL that can run for seconds, so nothing time-sensitive
+    // (expiry, deletion, stats) should ever queue behind it.
+    await this.#reindex(Object.keys(queueGroups), options)
   }
 
   async #monitor (table: string, names: string[]) {
@@ -286,6 +303,190 @@ class Boss extends EventEmitter implements types.EventsMixin {
       const depSql = plans.cleanupDependencies(this.#config.schema, table, queues, this.#config.noAdvisoryLocks)
       await this.#executeQuery(depSql)
     }
+  }
+
+  // DDL runs outside the slow-query timer. A REINDEX is expected to take seconds — routing it
+  // through #executeQuery would emit a bogus slow_query warning on every rebuild.
+  async #executeDdl (sql: string) {
+    return unwrapSQLResult(await this.#db.executeSql(sql))
+  }
+
+  #resolveReindexOptions (options?: types.SuperviseOptions): types.ReindexOptions | null {
+    const setting = options && 'reindex' in options ? options.reindex : this.#config.reindex
+
+    if (setting === false) return null
+    if (setting === true || setting === undefined) return {}
+
+    return setting
+  }
+
+  /**
+   * Reports bloated job indexes and, unless disabled, rebuilds them with REINDEX INDEX
+   * CONCURRENTLY. See the notes in plans.ts for why the trigger is index density rather than
+   * elapsed time.
+   *
+   * Detection still runs where the rebuild cannot: a role that does not own the indexes, an adapter
+   * that wraps queries in a transaction, and `reindex: false` all still produce the `index_bloat`
+   * warning and can act on getReindexCommands(). The one exception is a backend that stores data
+   * outside PostgreSQL's heap — see the noConcurrentReindex gate below.
+   */
+  async #reindex (tables: string[], options?: types.SuperviseOptions) {
+    if (this.#stopping) return
+
+    // Skipped whole, detection included, on engines with no btree page bloat to find. Verified on
+    // CockroachDB v26.2 and YugabyteDB 2025.2: CockroachDB has no pg_relation_size() at all and
+    // rejects `reltuples / relpages` outright ("unsupported binary operator: <float4> / <int4>"),
+    // so running the check would throw once per interval; YugabyteDB answers but reports relpages
+    // and pg_relation_size as 0 for every relation, so nothing could ever match. Both store data in
+    // an LSM that compacts on its own, and both reject REINDEX — CockroachDB with the hint
+    // "CockroachDB does not require reindexing."
+    if (this.#config.noConcurrentReindex) return
+
+    const resolved = this.#resolveReindexOptions(options)
+    const force = !!resolved?.force
+
+    // An explicit force is a request to run now; everything else waits for the shared interval so
+    // exactly one instance in the cluster does the work.
+    if (!force) {
+      const claim = plans.trySetReindexTime(this.#config.schema, this.#config.reindexIntervalSeconds)
+      const { rows } = await this.#executeQuery(claim)
+      if (!rows.length) return
+    }
+
+    if (this.#stopping) return
+
+    const scope = tables.length ? tables : undefined
+    const detectSql = plans.getBloatedIndexes(this.#config.schema, scope, resolved ?? undefined)
+    const { rows: bloated } = await this.#executeQuery(detectSql)
+
+    const rebuilding = resolved !== null && !this.#config.noConcurrentReindex && !this.#reindexUnavailable
+
+    let targets: types.IndexBloat[] = []
+
+    if (rebuilding) {
+      const maxIndexBytes = resolved.maxIndexBytes ?? plans.REINDEX_DEFAULTS.maxIndexBytes
+      const candidates = force
+        ? (await this.#executeQuery(plans.getJobIndexes(this.#config.schema, scope))).rows
+        : bloated
+
+      targets = candidates.filter((i: types.IndexBloat) => i.owned && Number(i.bytes) <= maxIndexBytes)
+
+      if (targets.length) {
+        await this.#dropReindexLeftovers(scope)
+      }
+    }
+
+    const rebuilt = new Set<string>()
+    const failed = new Map<string, string>()
+
+    for (const target of targets) {
+      if (this.#stopping) return
+
+      try {
+        await this.#executeDdl(plans.reindexIndex(this.#config.schema, target.name))
+        rebuilt.add(target.name)
+      } catch (err) {
+        const code = (err as { code?: string })?.code
+
+        if (code === IN_TRANSACTION_ERROR) {
+          this.#reindexUnavailable = (err as Error).message
+          failed.set(target.name, this.#reindexUnavailable)
+          // Every remaining index would fail identically — the transaction wrapper is a property of
+          // the adapter, not of this index.
+          break
+        }
+
+        failed.set(target.name, (err as Error).message)
+      }
+    }
+
+    await this.#warnIndexBloat(bloated, rebuilt, failed, rebuilding)
+  }
+
+  // Invalid `*_ccnew` stubs from an interrupted REINDEX CONCURRENTLY. Best effort: a failure here
+  // must not stop the rebuilds, since the retry's own IF EXISTS handles the common case anyway.
+  async #dropReindexLeftovers (tables?: string[]) {
+    try {
+      const { rows } = await this.#executeQuery(plans.getReindexLeftovers(this.#config.schema, tables))
+
+      for (const leftover of rows) {
+        if (this.#stopping) return
+        await this.#executeDdl(plans.dropIndexConcurrently(this.#config.schema, leftover.name))
+      }
+    } catch (err) {
+      this.emit(events.error, err)
+    }
+  }
+
+  async #warnIndexBloat (
+    bloated: types.IndexBloat[],
+    rebuilt: Set<string>,
+    failed: Map<string, string>,
+    rebuilding: boolean
+  ) {
+    const stillBloated = new Set<string>()
+
+    for (const index of bloated) {
+      // A rebuilt index is no longer a standing condition, and re-warning about it next episode is
+      // correct, so it never enters the warned set.
+      if (rebuilt.has(index.name)) continue
+
+      stillBloated.add(index.name)
+
+      if (this.#warnedBloat.has(index.name)) continue
+
+      const reason = failed.get(index.name) ??
+        (!rebuilding
+          ? (this.#reindexUnavailable ?? 'automatic reindexing is disabled')
+          : !index.owned
+              ? 'the connected role does not own the index'
+              : 'the index is larger than maxIndexBytes')
+
+      await emitAndPersistWarning(this.#warningContext,
+        WARNING_TYPES.INDEX_BLOAT,
+        `Warning: index "${index.name}" is bloated (${Math.round(Number(index.bytes) / 1024 / 1024)} MB across ${index.pages} pages for ~${index.entries} live entries) and was not rebuilt: ${reason}. See getReindexCommands()`,
+        index
+      )
+    }
+
+    this.#warnedBloat = stillBloated
+  }
+
+  /**
+   * The REINDEX statements this instance would run, for installations where it cannot run them
+   * itself. Unlike the background pass this applies no ownership filter and no size cap unless one
+   * is passed — the commands are for an operator, who may run them as a different role.
+   */
+  async getReindexCommands (options?: types.ReindexOptions): Promise<string[]> {
+    const schema = this.#config.schema
+
+    const sql = options?.force
+      ? plans.getJobIndexes(schema)
+      : plans.getBloatedIndexes(schema, undefined, options)
+
+    const { rows } = await this.#executeQuery(sql)
+
+    const targets = options?.maxIndexBytes === undefined
+      ? rows
+      : rows.filter((i: types.IndexBloat) => Number(i.bytes) <= options.maxIndexBytes!)
+
+    if (!targets.length) return []
+
+    const { rows: leftovers } = await this.#executeQuery(plans.getReindexLeftovers(schema))
+    const commands: string[] = []
+
+    for (const target of targets) {
+      // Postgres names the transient index `<index>_ccnew`, then `_ccnew1`, `_ccnew2` on collision.
+      for (const leftover of leftovers) {
+        if (leftover.name.startsWith(`${target.name}_ccnew`)) {
+          commands.push(plans.dropIndexConcurrently(schema, leftover.name))
+        }
+      }
+
+      commands.push(plans.reindexIndex(schema, target.name))
+    }
+
+    return commands
   }
 }
 

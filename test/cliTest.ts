@@ -435,6 +435,89 @@ describePglite('cli', function () {
       })
     })
 
+    describe('reindex', function () {
+      const schema = getTestSchema('reindex')
+
+      beforeEach(async function () {
+        await dropSchema(schema)
+      })
+
+      afterEach(async function () {
+        await dropSchema(schema)
+      })
+
+      const createSchema = () => execCommand(
+        `node ${cliPath} create --connection-string ${connectionString} --schema ${schema}`,
+        { expectedOutput: 'Successfully created' }
+      )
+
+      // Drains a 60k-job backlog so job_common_i5 and job_common_pkey keep the pages they grew.
+      async function bloatIndexes () {
+        const db = await getDb()
+        await db.executeSql(`SELECT ${schema}.create_queue('churn', '{"policy":"standard"}'::jsonb)`)
+        await db.executeSql(`
+          INSERT INTO ${schema}.job (id, name, data, start_after, keep_until, policy)
+          SELECT gen_random_uuid(), 'churn', '{}'::jsonb, now() + (random() * interval '1 day'), now() + interval '14 days', 'standard'
+          FROM generate_series(1, 60000)
+        `)
+        await db.executeSql(`DELETE FROM ${schema}.job WHERE name = 'churn'`)
+        await db.executeSql(`VACUUM (ANALYZE) ${schema}.job_common`)
+        await db.close()
+      }
+
+      it('should report when pg-boss is not installed (reindex)', function () {
+        const { stdout, code } = runCli(['reindex', '--connection-string', connectionString, '--schema', schema])
+        expect(stdout).toContain('not installed')
+        expect(code).toBe(1)
+      })
+
+      it('should report nothing to do on a fresh schema', async function () {
+        await createSchema()
+
+        const { stdout, code } = runCli(['reindex', '--connection-string', connectionString, '--schema', schema])
+        expect(stdout).toContain('No bloated indexes found')
+        expect(code).toBe(0)
+      })
+
+      itPostgresOnly('should print the statements with --dry-run without running them', async function () {
+        await createSchema()
+        await bloatIndexes()
+
+        const { stdout, code } = runCli(['reindex', '--connection-string', connectionString, '--schema', schema, '--dry-run'])
+        expect(stdout).toContain('REINDEX INDEX CONCURRENTLY')
+        expect(stdout).toContain('job_common_i5')
+        expect(code).toBe(0)
+
+        const db = await getDb()
+        const { rows } = await db.executeSql(`SELECT pg_relation_size('${schema}.job_common_i5')::bigint as bytes`)
+        await db.close()
+        expect(Number(rows[0].bytes)).toBeGreaterThan(1024 * 1024)
+      })
+
+      itPostgresOnly('should rebuild the bloated indexes', async function () {
+        await createSchema()
+        await bloatIndexes()
+
+        const { stdout, code } = runCli(['reindex', '--connection-string', connectionString, '--schema', schema])
+        expect(stdout).toContain('Done')
+        expect(code).toBe(0)
+
+        const db = await getDb()
+        const { rows } = await db.executeSql(`SELECT pg_relation_size('${schema}.job_common_i5')::bigint as bytes`)
+        await db.close()
+        expect(Number(rows[0].bytes)).toBeLessThan(64 * 1024)
+      })
+
+      itPostgresOnly('should report bloat in the doctor output', async function () {
+        await createSchema()
+        await bloatIndexes()
+
+        const { stdout } = runCli(['doctor', '--connection-string', connectionString, '--schema', schema])
+        expect(stdout).toContain('INDEX BLOAT')
+        expect(stdout).toContain('job_common_i5')
+      })
+    })
+
     describe('doctor', function () {
       const schema = getTestSchema('doctor')
 

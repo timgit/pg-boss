@@ -1,4 +1,5 @@
-import type { JobMatchStrategy, ManagedIndex, ManagedFunction } from './types.ts'
+import assert from 'node:assert'
+import type { IndexBloatOptions, JobMatchStrategy, ManagedIndex, ManagedFunction } from './types.ts'
 import {
   indexKeysRaw,
   indexIncludeRaw,
@@ -155,7 +156,8 @@ function createTableVersion (schema: string) {
       version int primary key,
       cron_on timestamp with time zone,
       bam_on timestamp with time zone,
-      flow_on timestamp with time zone
+      flow_on timestamp with time zone,
+      reindex_on timestamp with time zone
     )
   `
 }
@@ -791,6 +793,10 @@ export function trySetBamTime (schema: string, seconds: number) {
 
 export function trySetFlowTime (schema: string, seconds: number) {
   return trySetTimestamp(schema, 'flow_on', seconds)
+}
+
+export function trySetReindexTime (schema: string, seconds: number) {
+  return trySetTimestamp(schema, 'reindex_on', seconds)
 }
 
 function trySetTimestamp (schema: string, column: string, seconds: number) {
@@ -3107,4 +3113,152 @@ export function expectedManagedIndexes (schema: string, partitioned: boolean, pa
   }
 
   return out
+}
+
+// --- Index bloat detection and reindexing (issue #876) ---------------------------------------
+//
+// Autovacuum reclaims heap space but never returns btree pages to the OS, so a job index sizes
+// itself to the largest backlog its queue has ever held and stays there. A drained 1M-job peak
+// leaves job_common_i5 at 38 MB and job_common_pkey at 51 MB holding 1k live rows — and every
+// subsequent vacuum with dead tuples to clean does a full physical scan of every one of those
+// pages (measured: 17,969 buffer hits + 3,892 reads vs 750 hits / 0 reads after a rebuild), which
+// is what drains IO burst credits on managed Postgres.
+//
+// The bloat is a high-water mark rather than an unbounded leak — empty pages ARE recycled by later
+// inserts — so the trigger is density, not elapsed time.
+
+export const REINDEX_DEFAULTS = {
+  // 1 MB. Below this the absolute waste is irrelevant and reltuples/relpages is noisy.
+  minPages: 128,
+  // A freshly rebuilt job index packs 140-170 entries per page; a bloated one holds ~0.2. Five is
+  // three orders of magnitude clear of healthy and cannot false-positive.
+  maxEntriesPerPage: 5,
+  // 2 GB. A large index that still passes the density gate would carry a genuinely expensive
+  // rebuild, so leave it to an operator who has chosen the moment.
+  maxIndexBytes: 2 * 1024 * 1024 * 1024
+}
+
+function numericThreshold (value: unknown, fallback: number, name: string): number {
+  if (value === undefined || value === null) return fallback
+
+  assert(typeof value === 'number' && Number.isFinite(value) && value >= 0,
+    `configuration assert: reindex.${name} must be a finite number >= 0`)
+
+  return value
+}
+
+// The job tables in scope: every partition registered in the queue table, plus the base names for
+// installations that predate a queue row or run with noTablePartitioning (where `job` is a plain
+// table and carries the indexes itself).
+function jobTableScope (schema: string, tables?: string[]) {
+  return tables?.length
+    ? `t.relname = ANY(${serializeArrayParam(tables)})`
+    : `t.relname IN (SELECT table_name FROM ${schema}.queue UNION SELECT 'job' UNION SELECT '${COMMON_JOB_TABLE}')`
+}
+
+/**
+ * Bloated job indexes, by the pg_class density heuristic. Deliberately avoids pgstattuple: it is an
+ * extension that may not be installed, and relpages/reltuples separates a bloated index from a
+ * healthy one by three orders of magnitude on their own.
+ *
+ * PostgreSQL-only (including PGlite, where both the bloat and REINDEX CONCURRENTLY behave normally).
+ * Callers must gate on noConcurrentReindex — see the note in boss.ts #reindex.
+ *
+ * `owned` is returned rather than filtered on, so an installation whose role cannot reindex still
+ * gets told what is bloated. Only leaf indexes (relkind 'i') are candidates — pg-boss creates
+ * i1..i10 directly on each partition, and a partitioned index (relkind 'I') cannot be reindexed
+ * except through its leaves anyway.
+ *
+ * Caveat: relpages/reltuples are refreshed by VACUUM/ANALYZE, so they go stale where autovacuum is
+ * disabled for the table. That is acceptable — the entire failure mode assumes autovacuum runs.
+ */
+export function getBloatedIndexes (schema: string, tables?: string[], options?: IndexBloatOptions): string {
+  // These are interpolated into the statement, and supervise()/getReindexCommands() accept them
+  // per call, where the constructor's validation never runs. Reject anything that isn't a finite
+  // number here rather than trusting the caller.
+  const minPages = numericThreshold(options?.minPages, REINDEX_DEFAULTS.minPages, 'minPages')
+  const maxEntriesPerPage = numericThreshold(options?.maxEntriesPerPage, REINDEX_DEFAULTS.maxEntriesPerPage, 'maxEntriesPerPage')
+
+  return `
+    SELECT
+      i.relname as name,
+      t.relname as table,
+      i.relpages as pages,
+      i.reltuples::bigint as entries,
+      pg_relation_size(i.oid) as bytes,
+      pg_has_role(current_user, i.relowner, 'USAGE') as owned
+    FROM pg_class i
+    JOIN pg_index x ON x.indexrelid = i.oid
+    JOIN pg_class t ON t.oid = x.indrelid
+    JOIN pg_namespace n ON n.oid = i.relnamespace
+    WHERE n.nspname = '${resolveSchemaName(schema).replace(SINGLE_QUOTE_REGEX, "''")}'
+      AND i.relkind = 'i'
+      AND x.indisvalid
+      AND ${jobTableScope(schema, tables)}
+      AND i.relpages > ${minPages}
+      AND i.reltuples / GREATEST(i.relpages, 1) < ${maxEntriesPerPage}
+    ORDER BY pg_relation_size(i.oid) DESC
+  `
+}
+
+/**
+ * Every owned leaf index on the job tables, ignoring the density gate — the target list for
+ * `{ force: true }`.
+ */
+export function getJobIndexes (schema: string, tables?: string[]): string {
+  return `
+    SELECT
+      i.relname as name,
+      t.relname as table,
+      i.relpages as pages,
+      i.reltuples::bigint as entries,
+      pg_relation_size(i.oid) as bytes,
+      pg_has_role(current_user, i.relowner, 'USAGE') as owned
+    FROM pg_class i
+    JOIN pg_index x ON x.indexrelid = i.oid
+    JOIN pg_class t ON t.oid = x.indrelid
+    JOIN pg_namespace n ON n.oid = i.relnamespace
+    WHERE n.nspname = '${resolveSchemaName(schema).replace(SINGLE_QUOTE_REGEX, "''")}'
+      AND i.relkind = 'i'
+      AND x.indisvalid
+      AND ${jobTableScope(schema, tables)}
+    ORDER BY pg_relation_size(i.oid) DESC
+  `
+}
+
+/**
+ * Invalid `*_ccnew` stubs left behind by an interrupted REINDEX CONCURRENTLY. Postgres appends
+ * `_ccnew`, then `_ccnew1`, `_ccnew2`, ... on collision. These must be dropped before a retry or
+ * they accumulate, and they are dead weight that vacuum still walks. Mirrors bamHealDrop's role for
+ * interrupted CREATE INDEX CONCURRENTLY.
+ */
+export function getReindexLeftovers (schema: string, tables?: string[]): string {
+  return `
+    SELECT i.relname as name
+    FROM pg_class i
+    JOIN pg_index x ON x.indexrelid = i.oid
+    JOIN pg_class t ON t.oid = x.indrelid
+    JOIN pg_namespace n ON n.oid = i.relnamespace
+    WHERE n.nspname = '${resolveSchemaName(schema).replace(SINGLE_QUOTE_REGEX, "''")}'
+      AND i.relkind = 'i'
+      AND NOT x.indisvalid
+      AND i.relname ~ '_ccnew[0-9]*$'
+      AND pg_has_role(current_user, i.relowner, 'USAGE')
+      AND ${jobTableScope(schema, tables)}
+  `
+}
+
+// Index names come from the catalog, so they are raw identifiers that may need quoting (a queue
+// name can contain anything, and the derived partition/index names inherit it). The schema is
+// already validated and carries its own quoting - see assertPostgresObjectName.
+function quoteIdentifier (name: string) {
+  return `"${name.replace(/"/g, '""')}"`
+}
+
+export function reindexIndex (schema: string, name: string): string {
+  return `REINDEX INDEX CONCURRENTLY ${schema}.${quoteIdentifier(name)}`
+}
+
+export function dropIndexConcurrently (schema: string, name: string): string {
+  return `DROP INDEX CONCURRENTLY IF EXISTS ${schema}.${quoteIdentifier(name)}`
 }

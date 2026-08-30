@@ -1455,6 +1455,19 @@ function getAll (schema: string, noPartitioning = false, noCovering = false): ty
             createQueueFn[33](schema),
             `SELECT ${schema}.job_table_run($cmd$DROP INDEX IF EXISTS ${schema}.job_i10$cmd$)`
           ]
+    },
+    {
+      release: '12.29.0',
+      version: 39,
+      previous: 38,
+      // Interval claim for the index-bloat maintenance pass, so one instance per interval runs it
+      // rather than every instance racing on the same REINDEX. Same shape as bam_on / flow_on.
+      install: [
+        `ALTER TABLE ${schema}.version ADD COLUMN IF NOT EXISTS reindex_on timestamp with time zone`
+      ],
+      uninstall: [
+        `ALTER TABLE ${schema}.version DROP COLUMN reindex_on`
+      ]
     }
   ]
 }

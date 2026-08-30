@@ -413,4 +413,25 @@ helper.describePglite('distributed database mode', { timeout: blockTimeout }, fu
     helper.assertTruthy(completedJob)
     expect(completedJob.state).toBe('completed')
   })
+
+  it('should run maintenance without attempting the index bloat check', async function () {
+    // The bloat check reads pg_class.relpages and pg_relation_size(), neither of which a
+    // heap-less engine answers usefully — CockroachDB has no pg_relation_size() at all and rejects
+    // `reltuples / relpages` with "unsupported binary operator: <float4> / <int4>", so a supervise
+    // pass that ran the check would throw once per reindex interval. Distributed backends must skip
+    // it outright. Runs on Postgres too, via the backend profile, so the gate can't quietly rot.
+    const errors: Error[] = []
+    ctx.boss = await helper.start({ ...ctx.bossConfig, backend: 'cockroachdb', supervise: false })
+    ctx.boss.on('error', err => errors.push(err))
+
+    await expect(ctx.boss.supervise()).resolves.toBeUndefined()
+    expect(errors).toEqual([])
+
+    // The interval claim is never taken either, so nothing schedules work that can't run.
+    const db = await helper.getDb()
+    const { rows } = await db.executeSql(`SELECT reindex_on FROM ${ctx.schema}.version`)
+    await db.close()
+
+    expect(rows[0].reindex_on).toBeNull()
+  })
 })

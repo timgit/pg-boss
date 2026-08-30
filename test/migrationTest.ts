@@ -10,9 +10,20 @@ import { ctx } from './hooks.ts'
 const currentSchemaVersion = packageJson.pgboss.schema
 // Version 27 has async migrations that create BAM entries for partitioned tables
 const versionWithAsyncMigrations = 27
+// The migration that enqueues the key_strict_fifo head index (job_i10). Pinned by number rather
+// than derived from currentSchemaVersion so a later schema bump can't silently retarget the tests
+// that exercise it at an unrelated migration.
+const keyStrictFifoVersion = 38
 
 describe('migration', function () {
   let contractor: Contractor
+
+  // rollback(v) uninstalls v, leaving v-1, so reaching an older version means walking down.
+  async function rollbackTo (target: number) {
+    for (let v = currentSchemaVersion; v > target; v--) {
+      await contractor.rollback(v)
+    }
+  }
 
   beforeEach(async function () {
     const db = await getDb({ debug: false })
@@ -668,7 +679,7 @@ describe('migration', function () {
     const db = await getDb()
 
     await contractor.create()
-    await contractor.rollback(currentSchemaVersion)
+    await rollbackTo(keyStrictFifoVersion - 1)
     await db.executeSql(`SELECT ${schema}.create_queue('strict_existing', '{"partition":true,"policy":"key_strict_fifo"}'::jsonb)`)
     await db.executeSql(`SELECT ${schema}.create_queue('standard_existing', '{"partition":true,"policy":"standard"}'::jsonb)`)
 
@@ -676,7 +687,7 @@ describe('migration', function () {
     const strictTable = queues.rows.find(row => row.name === 'strict_existing').table_name
     const standardTable = queues.rows.find(row => row.name === 'standard_existing').table_name
 
-    await contractor.migrate(currentSchemaVersion - 1)
+    await contractor.migrate(keyStrictFifoVersion - 1)
 
     const targets = await db.executeSql(`SELECT table_name, queue FROM ${schema}.bam WHERE name = 'key_strict_fifo_head_index' ORDER BY table_name`)
     expect(targets.rows.map(row => row.table_name)).toEqual(['job_common', strictTable].sort())
@@ -718,20 +729,20 @@ describe('migration', function () {
     const db = await getDb()
 
     await contractor.create()
-    await contractor.rollback(currentSchemaVersion)
+    await rollbackTo(keyStrictFifoVersion - 1)
     await db.executeSql(`SELECT ${schema}.create_queue('strict_existing', '{"partition":true,"policy":"key_strict_fifo"}'::jsonb)`)
 
     const queue = await db.executeSql(`SELECT table_name FROM ${schema}.queue WHERE name = 'strict_existing'`)
     const table = queue.rows[0].table_name
 
-    await contractor.migrate(currentSchemaVersion - 1)
+    await contractor.migrate(keyStrictFifoVersion - 1)
 
-    const pendingBefore = await db.executeSql(`SELECT count(*)::int AS count FROM ${schema}.bam WHERE version = 38 AND name = 'key_strict_fifo_head_index' AND status <> 'completed'`)
+    const pendingBefore = await db.executeSql(`SELECT count(*)::int AS count FROM ${schema}.bam WHERE version = ${keyStrictFifoVersion} AND name = 'key_strict_fifo_head_index' AND status <> 'completed'`)
     expect(pendingBefore.rows[0].count).toBe(2)
 
-    await contractor.rollback(currentSchemaVersion)
+    await rollbackTo(keyStrictFifoVersion - 1)
 
-    const pendingAfter = await db.executeSql(`SELECT count(*)::int AS count FROM ${schema}.bam WHERE version = 38 AND name = 'key_strict_fifo_head_index' AND status <> 'completed'`)
+    const pendingAfter = await db.executeSql(`SELECT count(*)::int AS count FROM ${schema}.bam WHERE version = ${keyStrictFifoVersion} AND name = 'key_strict_fifo_head_index' AND status <> 'completed'`)
     const indexes = await db.executeSql(`SELECT to_regclass('${schema}.job_common_i10') AS common, to_regclass('${schema}.${table}_i10') AS strict`)
     expect(pendingAfter.rows[0].count).toBe(0)
     expect(indexes.rows[0]).toEqual({ common: null, strict: null })
@@ -748,16 +759,16 @@ describe('migration', function () {
     const db = await getDb()
 
     await contractor.create()
-    await contractor.rollback(currentSchemaVersion)
-    await contractor.migrate(currentSchemaVersion - 1)
-    await db.executeSql(`UPDATE ${schema}.bam SET status = 'in_progress', started_on = now() - interval '1 hour' WHERE version = 38 AND name = 'key_strict_fifo_head_index' AND table_name = 'job_common'`)
+    await rollbackTo(keyStrictFifoVersion - 1)
+    await contractor.migrate(keyStrictFifoVersion - 1)
+    await db.executeSql(`UPDATE ${schema}.bam SET status = 'in_progress', started_on = now() - interval '1 hour' WHERE version = ${keyStrictFifoVersion} AND name = 'key_strict_fifo_head_index' AND table_name = 'job_common'`)
 
-    await contractor.rollback(currentSchemaVersion)
+    await rollbackTo(keyStrictFifoVersion - 1)
 
     const version = await db.executeSql(`SELECT version FROM ${schema}.version`)
-    expect(Number(version.rows[0].version)).toBe(currentSchemaVersion - 1)
+    expect(Number(version.rows[0].version)).toBe(keyStrictFifoVersion - 1)
 
-    const pending = await db.executeSql(`SELECT count(*)::int AS count FROM ${schema}.bam WHERE version = 38 AND status <> 'completed'`)
+    const pending = await db.executeSql(`SELECT count(*)::int AS count FROM ${schema}.bam WHERE version = ${keyStrictFifoVersion} AND status <> 'completed'`)
     expect(pending.rows[0].count).toBe(0)
 
     await db.close()

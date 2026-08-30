@@ -33,6 +33,14 @@ export function getMigrationPlans (schema?: string, version?: number, options?: 
   return Contractor.migrationPlans(schema, version, options)
 }
 
+/**
+ * The catalog query pg-boss uses to find bloated job indexes, as SQL text. Runnable in psql with no
+ * pg-boss instance and no connection from this process.
+ */
+export function getIndexBloatPlans (schema?: string, options?: types.IndexBloatOptions) {
+  return plans.getBloatedIndexes(schema || plans.DEFAULT_SCHEMA, undefined, options)
+}
+
 export function getRollbackPlans (schema?: string, version?: number) {
   return Contractor.rollbackPlans(schema, version)
 }
@@ -450,8 +458,21 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#timekeeper.checkingSkew
   }
 
-  supervise (name?: string): Promise<void> {
-    return this.#boss.supervise(name)
+  supervise (name?: string, options?: types.SuperviseOptions): Promise<void> {
+    return this.#boss.supervise(name, options)
+  }
+
+  /**
+   * The `REINDEX INDEX CONCURRENTLY` statements needed to rebuild the currently bloated job
+   * indexes, in the order they should be run, including any `DROP INDEX CONCURRENTLY` for stubs
+   * left by an interrupted rebuild.
+   *
+   * For installations where pg-boss cannot run them itself — a role that doesn't own the indexes,
+   * an adapter that wraps queries in a transaction, or a distributed backend. Pass
+   * `{ force: true }` for every job index rather than only the bloated ones.
+   */
+  getReindexCommands (options?: types.ReindexOptions): Promise<string[]> {
+    return this.#boss.getReindexCommands(options)
   }
 
   // Force an immediate flow-resolution pass (unblock dependents of completed jobs) instead of
@@ -541,6 +562,8 @@ export type {
   GroupOptions,
   IDatabase as Db,
   InsertOptions,
+  IndexBloat,
+  IndexBloatOptions,
   InvalidIndex,
   Job,
   JobFetchOptions,
@@ -572,6 +595,7 @@ export type {
   QueueStats,
   QueueStatsOptions,
   RedriveOptions,
+  ReindexOptions,
   Request,
   Schedule,
   ScheduleOptions,
@@ -579,6 +603,7 @@ export type {
   SchemaDriftReport,
   SendOptions,
   StopOptions,
+  SuperviseOptions,
   UpdateOptions,
   UpdateQueueOptions,
   UpdateRequest,
