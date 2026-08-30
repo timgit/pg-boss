@@ -195,7 +195,7 @@ helper.describePostgresOnly('reindex', function () {
       ...ctx.bossConfig,
       noDefault: true,
       supervise: false,
-      __test__noConcurrentReindex: true
+      __test__noReindex: true
     })
     boss.on('warning', w => events.push((w as Warning).message))
     boss.on('error', (err: Error) => events.push(err.message))

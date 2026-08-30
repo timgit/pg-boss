@@ -306,12 +306,13 @@ export interface CompatibilityFlags {
   noIndexProgressView?: boolean;
   /**
    * The engine stores data outside PostgreSQL's heap, so there is no btree page bloat to reclaim
-   * and no usable `REINDEX`. Skips the index-bloat maintenance pass entirely, detection included.
+   * and no `REINDEX` in any form — the `CONCURRENTLY` modifier is irrelevant, both engines reject
+   * the plain statement too. Skips the index-bloat maintenance pass entirely, detection included.
    * Set for CockroachDB/YugabyteDB, where the check is not merely useless but unusable: CockroachDB
    * has no `pg_relation_size()` and rejects `reltuples / relpages`, while YugabyteDB reports both
    * `relpages` and `pg_relation_size()` as 0 for every relation.
    */
-  noConcurrentReindex?: boolean;
+  noReindex?: boolean;
 }
 
 export interface Migration {
@@ -404,11 +405,11 @@ export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, 
    */
   __test__noIndexProgressView?: boolean;
   /**
-   * Force `noConcurrentReindex` on top of the current backend, so the skipped index-bloat pass
+   * Force `noReindex` on top of the current backend, so the skipped index-bloat pass
    * (used by CockroachDB/YugabyteDB) can be exercised on plain Postgres.
    * @internal
    */
-  __test__noConcurrentReindex?: boolean;
+  __test__noReindex?: boolean;
   /** @internal */
   migrations?: Migration[];
 }

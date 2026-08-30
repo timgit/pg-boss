@@ -328,7 +328,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
    * Detection still runs where the rebuild cannot: a role that does not own the indexes, an adapter
    * that wraps queries in a transaction, and `reindex: false` all still produce the `index_bloat`
    * warning and can act on getReindexCommands(). The one exception is a backend that stores data
-   * outside PostgreSQL's heap — see the noConcurrentReindex gate below.
+   * outside PostgreSQL's heap — see the noReindex gate below.
    */
   async #reindex (tables: string[], options?: types.SuperviseOptions) {
     if (this.#stopping) return
@@ -338,9 +338,9 @@ class Boss extends EventEmitter implements types.EventsMixin {
     // rejects `reltuples / relpages` outright ("unsupported binary operator: <float4> / <int4>"),
     // so running the check would throw once per interval; YugabyteDB answers but reports relpages
     // and pg_relation_size as 0 for every relation, so nothing could ever match. Both store data in
-    // an LSM that compacts on its own, and both reject REINDEX — CockroachDB with the hint
-    // "CockroachDB does not require reindexing."
-    if (this.#config.noConcurrentReindex) return
+    // an LSM that compacts on its own, and both reject REINDEX in either form — CockroachDB with
+    // the hint "CockroachDB does not require reindexing."
+    if (this.#config.noReindex) return
 
     const resolved = this.#resolveReindexOptions(options)
     const force = !!resolved?.force
@@ -359,7 +359,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
     const detectSql = plans.getBloatedIndexes(this.#config.schema, scope, resolved ?? undefined)
     const { rows: bloated } = await this.#executeQuery(detectSql)
 
-    const rebuilding = resolved !== null && !this.#config.noConcurrentReindex && !this.#reindexUnavailable
+    const rebuilding = resolved !== null && !this.#reindexUnavailable
 
     let targets: types.IndexBloat[] = []
 

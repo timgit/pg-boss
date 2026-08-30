@@ -20,7 +20,7 @@ const COMPATIBILITY_FLAGS = [
   'noCoveringIndexes',
   'noListenNotify',
   'noIndexProgressView',
-  'noConcurrentReindex'
+  'noReindex'
 ] as const
 
 type CompatibilityFlag = typeof COMPATIBILITY_FLAGS[number]
@@ -51,10 +51,11 @@ const BACKEND_PROFILES: Record<types.BackendProfile, BackendDefinition> = {
       // Online DDL runs as a schema-change job, not the PG CONCURRENTLY path, and
       // pg_stat_progress_create_index isn't available — so BAM can't use liveness-based reclaim.
       noIndexProgressView: true,
-      // REINDEX is rejected outright ("CockroachDB does not require reindexing"), and the bloat
-      // check itself cannot run: there is no pg_relation_size(), and reltuples / relpages is an
-      // "unsupported binary operator: <float4> / <int4>".
-      noConcurrentReindex: true
+      // REINDEX is rejected in either form — "CockroachDB does not require reindexing" with
+      // CONCURRENTLY, "unimplemented: this syntax" without — and the bloat check itself cannot run:
+      // there is no pg_relation_size(), and reltuples / relpages is an "unsupported binary
+      // operator: <float4> / <int4>".
+      noReindex: true
     }
   },
   yugabytedb: {
@@ -65,9 +66,10 @@ const BACKEND_PROFILES: Record<types.BackendProfile, BackendDefinition> = {
       // Index builds are a distributed backfill that pg_stat_progress_create_index doesn't reflect,
       // so liveness would misread an in-flight build as dead. BAM falls back to the timeout instead.
       noIndexProgressView: true,
-      // "REINDEX not supported yet", and DocDB compaction owns reclamation. The bloat check runs
-      // but can never match: relpages and pg_relation_size() are 0 for every relation.
-      noConcurrentReindex: true
+      // "REINDEX not supported yet" with or without CONCURRENTLY, and DocDB compaction owns
+      // reclamation. The bloat check runs but can never match: relpages and pg_relation_size() are
+      // 0 for every relation.
+      noReindex: true
     }
   },
   // No noIndexProgressView: pg-boss keeps its tables coordinator-local (it never calls
@@ -540,8 +542,8 @@ function resolveBackend (config: any) {
 
   // Test hook: exercise the detection-only reindex path (bloat is reported, never rebuilt) used by
   // CockroachDB/YugabyteDB, on a plain Postgres instance.
-  if (config.__test__noConcurrentReindex) {
-    config.noConcurrentReindex = true
+  if (config.__test__noReindex) {
+    config.noReindex = true
   }
 }
 

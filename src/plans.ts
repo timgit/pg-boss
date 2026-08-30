@@ -3162,7 +3162,7 @@ function jobTableScope (schema: string, tables?: string[]) {
  * healthy one by three orders of magnitude on their own.
  *
  * PostgreSQL-only (including PGlite, where both the bloat and REINDEX CONCURRENTLY behave normally).
- * Callers must gate on noConcurrentReindex — see the note in boss.ts #reindex.
+ * Callers must gate on noReindex — see the note in boss.ts #reindex.
  *
  * `owned` is returned rather than filtered on, so an installation whose role cannot reindex still
  * gets told what is bloated. Only leaf indexes (relkind 'i') are candidates — pg-boss creates
