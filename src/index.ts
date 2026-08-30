@@ -35,7 +35,8 @@ export function getMigrationPlans (schema?: string, version?: number, options?: 
 
 /**
  * The catalog query pg-boss uses to find bloated job indexes, as SQL text. Runnable in psql with no
- * pg-boss instance and no connection from this process.
+ * pg-boss instance and no connection from this process. PostgreSQL only — the heap-less engines
+ * (CockroachDB, YugabyteDB) do not answer it.
  */
 export function getIndexBloatPlans (schema?: string, options?: types.IndexBloatOptions) {
   return plans.getBloatedIndexes(schema || plans.DEFAULT_SCHEMA, undefined, options)
@@ -468,8 +469,9 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
    * left by an interrupted rebuild.
    *
    * For installations where pg-boss cannot run them itself — a role that doesn't own the indexes,
-   * an adapter that wraps queries in a transaction, or a distributed backend. Pass
-   * `{ force: true }` for every job index rather than only the bloated ones.
+   * or an adapter that wraps queries in a transaction. Pass `{ force: true }` for every job index
+   * rather than only the bloated ones. Empty on CockroachDB and YugabyteDB, which have no btree
+   * bloat to reclaim and reject `REINDEX` in any form.
    */
   getReindexCommands (options?: types.ReindexOptions): Promise<string[]> {
     return this.#boss.getReindexCommands(options)

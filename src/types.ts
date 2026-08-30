@@ -151,6 +151,14 @@ export interface IndexBloatOptions {
    * @default 5
    */
   maxEntriesPerPage?: number;
+  /**
+   * How many times larger than its live entries need an index must be before it counts as bloated.
+   * The size those entries need is estimated from `pg_stats`, so a legitimately sparse index — a
+   * long `singletonKey` packs fewer than five entries per page while perfectly packed — is not
+   * mistaken for a bloated one.
+   * @default 4
+   */
+  minSizeRatio?: number;
 }
 
 export interface ReindexOptions extends IndexBloatOptions {

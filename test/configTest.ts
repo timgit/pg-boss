@@ -82,7 +82,7 @@ describe('config', function () {
       expect(() => Attorney.getConfig({ ...config, reindex: {} })).not.toThrow()
       expect(() => Attorney.getConfig({
         ...config,
-        reindex: { minPages: 0, maxEntriesPerPage: 0.5, maxIndexBytes: 1, force: false }
+        reindex: { minPages: 0, maxEntriesPerPage: 0.5, minSizeRatio: 0, maxIndexBytes: 1, force: false }
       })).not.toThrow()
       expect(() => Attorney.getConfig({ ...config, reindex: 'yes' as never }))
         .toThrow('reindex must be a boolean or an options object')
@@ -97,6 +97,8 @@ describe('config', function () {
         .toThrow('reindex.minPages must be an integer >= 0')
       expect(() => Attorney.getConfig({ ...config, reindex: { maxEntriesPerPage: 0 } }))
         .toThrow('reindex.maxEntriesPerPage must be a number > 0')
+      expect(() => Attorney.getConfig({ ...config, reindex: { minSizeRatio: -1 } }))
+        .toThrow('reindex.minSizeRatio must be a number >= 0')
       expect(() => Attorney.getConfig({ ...config, reindex: { maxIndexBytes: 0 } }))
         .toThrow('reindex.maxIndexBytes must be an integer > 0')
     })

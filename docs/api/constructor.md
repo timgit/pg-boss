@@ -149,6 +149,7 @@ The following configuration options should not normally need to be changed, but 
   | --- | --- | --- | --- |
   | `minPages` | int | 128 | Ignore indexes smaller than this many 8 kB pages |
   | `maxEntriesPerPage` | number | 5 | Live entries per page below which an index counts as bloated. A freshly built job index holds 140-170 |
+  | `minSizeRatio` | number | 4 | How many times larger than its live entries need an index must be. The needed size is estimated from `pg_stats`, so a wide `singletonKey` — which legitimately packs fewer than five entries per page — is not mistaken for bloat |
   | `maxIndexBytes` | int | 2147483648 | Never rebuild an index larger than this |
 
   ```js

@@ -44,6 +44,9 @@ class Boss extends EventEmitter implements types.EventsMixin {
   // Warn once per bloated index rather than on every pass. An index leaves the set as soon as it
   // stops qualifying — rebuilt, dropped, or refilled — so a later episode warns again.
   #warnedBloat = new Set<string>()
+  // Local rate limit for passes that only report bloat, which deliberately leave the shared interval
+  // claim to whichever instance can act on it.
+  #detectOnly = 0
 
   events = events
 
@@ -344,13 +347,24 @@ class Boss extends EventEmitter implements types.EventsMixin {
 
     const resolved = this.#resolveReindexOptions(options)
     const force = !!resolved?.force
+    const rebuilding = resolved !== null && !this.#reindexUnavailable
 
-    // An explicit force is a request to run now; everything else waits for the shared interval so
-    // exactly one instance in the cluster does the work.
+    // An explicit force is a request to run now; everything else waits for an interval.
+    //
+    // Which interval depends on whether this instance can do the work. The shared claim exists so
+    // exactly one instance in the cluster rebuilds per window — an instance that is only ever going
+    // to report bloat has no business taking it, or a peer configured to rebuild would find the
+    // window gone and skip the rebuild for a whole day. Detection-only passes throttle themselves
+    // locally instead, on the same interval.
     if (!force) {
-      const claim = plans.trySetReindexTime(this.#config.schema, this.#config.reindexIntervalSeconds)
-      const { rows } = await this.#executeQuery(claim)
-      if (!rows.length) return
+      if (rebuilding) {
+        const claim = plans.trySetReindexTime(this.#config.schema, this.#config.reindexIntervalSeconds)
+        const { rows } = await this.#executeQuery(claim)
+        if (!rows.length) return
+      } else {
+        if (Date.now() < this.#detectOnly) return
+        this.#detectOnly = Date.now() + this.#config.reindexIntervalSeconds * 1000
+      }
     }
 
     if (this.#stopping) return
@@ -358,8 +372,6 @@ class Boss extends EventEmitter implements types.EventsMixin {
     const scope = tables.length ? tables : undefined
     const detectSql = plans.getBloatedIndexes(this.#config.schema, scope, resolved ?? undefined)
     const { rows: bloated } = await this.#executeQuery(detectSql)
-
-    const rebuilding = resolved !== null && !this.#reindexUnavailable
 
     let targets: types.IndexBloat[] = []
 
@@ -407,7 +419,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
   // must not stop the rebuilds, since the retry's own IF EXISTS handles the common case anyway.
   async #dropReindexLeftovers (tables?: string[]) {
     try {
-      const { rows } = await this.#executeQuery(plans.getReindexLeftovers(this.#config.schema, tables))
+      const { rows } = await this.#executeQuery(plans.getReindexLeftovers(this.#config.schema, tables, this.#config.noIndexProgressView))
 
       for (const leftover of rows) {
         if (this.#stopping) return
@@ -435,12 +447,17 @@ class Boss extends EventEmitter implements types.EventsMixin {
 
       if (this.#warnedBloat.has(index.name)) continue
 
+      // Ownership first: an index the role cannot touch was never a candidate, so it has no entry in
+      // `failed` no matter why the pass stopped. #reindexUnavailable comes next and covers the
+      // indexes the 25001 giveup skipped without attempting — they are neither failed nor rebuilt,
+      // and reporting a size cap they are nowhere near would point at the wrong knob.
       const reason = failed.get(index.name) ??
-        (!rebuilding
-          ? (this.#reindexUnavailable ?? 'automatic reindexing is disabled')
-          : !index.owned
-              ? 'the connected role does not own the index'
-              : 'the index is larger than maxIndexBytes')
+        (!index.owned
+          ? 'the connected role does not own the index'
+          : this.#reindexUnavailable ??
+            (!rebuilding
+              ? 'automatic reindexing is disabled'
+              : 'the index is larger than maxIndexBytes'))
 
       await emitAndPersistWarning(this.#warningContext,
         WARNING_TYPES.INDEX_BLOAT,
@@ -458,6 +475,11 @@ class Boss extends EventEmitter implements types.EventsMixin {
    * is passed — the commands are for an operator, who may run them as a different role.
    */
   async getReindexCommands (options?: types.ReindexOptions): Promise<string[]> {
+    // The catalog query reads pg_class.relpages and pg_relation_size(), which the heap-less engines
+    // either reject outright or answer with zeroes — same gate as #reindex, and there is nothing to
+    // rebuild on them anyway.
+    if (this.#config.noReindex) return []
+
     const schema = this.#config.schema
 
     const sql = options?.force
@@ -472,21 +494,9 @@ class Boss extends EventEmitter implements types.EventsMixin {
 
     if (!targets.length) return []
 
-    const { rows: leftovers } = await this.#executeQuery(plans.getReindexLeftovers(schema))
-    const commands: string[] = []
+    const { rows: leftovers } = await this.#executeQuery(plans.getReindexLeftovers(schema, undefined, this.#config.noIndexProgressView, true))
 
-    for (const target of targets) {
-      // Postgres names the transient index `<index>_ccnew`, then `_ccnew1`, `_ccnew2` on collision.
-      for (const leftover of leftovers) {
-        if (leftover.name.startsWith(`${target.name}_ccnew`)) {
-          commands.push(plans.dropIndexConcurrently(schema, leftover.name))
-        }
-      }
-
-      commands.push(plans.reindexIndex(schema, target.name))
-    }
-
-    return commands
+    return plans.buildReindexCommands(schema, targets, leftovers)
   }
 }
 

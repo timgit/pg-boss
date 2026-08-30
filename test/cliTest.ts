@@ -508,6 +508,43 @@ describePglite('cli', function () {
         expect(Number(rows[0].bytes)).toBeLessThan(64 * 1024)
       })
 
+      itPostgresOnly('should skip an index the connected role does not own', async function () {
+        await createSchema()
+        await bloatIndexes()
+
+        const role = `pgboss_cli_nonowner_${process.pid}`
+        const db = await getDb()
+
+        try {
+          await db.executeSql(`DROP ROLE IF EXISTS ${role}`)
+          await db.executeSql(`CREATE ROLE ${role} LOGIN PASSWORD 'nonowner'`)
+          await db.executeSql(`GRANT USAGE ON SCHEMA ${schema} TO ${role}`)
+          await db.executeSql(`GRANT SELECT ON ALL TABLES IN SCHEMA ${schema} TO ${role}`)
+
+          const guestString = connectionString.replace(/\/\/[^@]+@/, `//${role}:nonowner@`)
+
+          // REINDEX needs ownership, so the command says so up front instead of letting each
+          // statement come back refused, and exits non-zero because nothing was rebuilt.
+          const { stdout, stderr, code } = runCli(['reindex', '--connection-string', guestString, '--schema', schema])
+          expect(stderr).toContain('does not own this index')
+          expect(stderr).not.toContain('Could not read index statistics')
+          expect(stdout).not.toContain('Rebuilding')
+          expect(code).toBe(1)
+
+          // Printing is not executing: --dry-run still lists every statement, for an operator who
+          // may run them as the owner.
+          const dry = runCli(['reindex', '--connection-string', guestString, '--schema', schema, '--dry-run'])
+          expect(dry.stdout).toContain('REINDEX INDEX CONCURRENTLY')
+          expect(dry.stdout).toContain('needs a role that can REINDEX it')
+          expect(dry.code).toBe(0)
+        } finally {
+          await db.executeSql(`REVOKE ALL ON ALL TABLES IN SCHEMA ${schema} FROM ${role}`).catch(() => {})
+          await db.executeSql(`REVOKE USAGE ON SCHEMA ${schema} FROM ${role}`).catch(() => {})
+          await db.executeSql(`DROP ROLE IF EXISTS ${role}`).catch(() => {})
+          await db.close()
+        }
+      })
+
       itPostgresOnly('should report bloat in the doctor output', async function () {
         await createSchema()
         await bloatIndexes()

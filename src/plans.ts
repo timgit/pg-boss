@@ -3131,12 +3131,49 @@ export const REINDEX_DEFAULTS = {
   // 1 MB. Below this the absolute waste is irrelevant and reltuples/relpages is noisy.
   minPages: 128,
   // A freshly rebuilt job index packs 140-170 entries per page; a bloated one holds ~0.2. Five is
-  // three orders of magnitude clear of healthy and cannot false-positive.
+  // three orders of magnitude clear of healthy on the indexes that carry fixed-width keys.
   maxEntriesPerPage: 5,
+  // Density alone is not enough: singleton_key is unbounded text and is indexed by i1-i4, i6, i8 and
+  // i10, so a healthy index over ~1.3 kB keys legitimately holds fewer than five entries per page
+  // (measured: 150k distinct 1,286-byte keys, freshly built, 4.0 entries/page) and would be rebuilt
+  // every interval forever. What separates that from bloat is the index's size against the size its
+  // own live entries need, which pg_stats gives for free (measured on the two fixtures):
+  //
+  //   reported bloat (drained 1M peak)   0 live entries, 4,861 pages         4861x
+  //   healthy wide-key index             150k x 1,291 bytes, 37,502 pages     1.6x
+  //
+  // Four keeps a wide margin on both sides, and unlike a comparison against the heap it does not
+  // quietly stop working when the heap itself is bloated or cannot be truncated.
+  minSizeRatio: 4,
   // 2 GB. A large index that still passes the density gate would carry a genuinely expensive
   // rebuild, so leave it to an operator who has chosen the moment.
   maxIndexBytes: 2 * 1024 * 1024 * 1024
 }
+
+// float8, not bigint: pg_relation_size() and reltuples::bigint are int8, which node-postgres hands
+// back as a *string* (it registers no int8 parser), so the exported IndexBloat type would be lying
+// about `bytes` and `entries` and a consumer comparing them numerically would be comparing text.
+// int4 is not an option - the index that exceeds maxIndexBytes is exactly the one that overflows it.
+// float8 is exact to 2^53 bytes, and reltuples is a float4 estimate to begin with.
+// The pages the index's *live* entries actually need, from the average width of what it indexes.
+// pg_stats carries that per column, and — the part that matters here, since i1-i4 and i6 key on
+// `COALESCE(singleton_key, '')` — ANALYZE also collects it for an index's expression columns, keyed
+// by the index relation. Plain attnums read the table's stats, attnum 0 (an expression) falls back
+// to the index's own. 20 bytes covers the btree tuple header and line pointer.
+const INDEX_WIDTH_JOIN = `LEFT JOIN LATERAL (
+      SELECT COALESCE(sum(COALESCE(ts.avg_width, xs.avg_width, 0)), 0) AS key_width
+      FROM unnest(x.indkey::int2[]) WITH ORDINALITY AS k(attnum, pos)
+      LEFT JOIN pg_attribute a ON a.attrelid = x.indrelid AND a.attnum = k.attnum
+      LEFT JOIN pg_stats ts ON ts.schemaname = n.nspname AND ts.tablename = t.relname AND ts.attname = a.attname
+      LEFT JOIN pg_attribute ia ON ia.attrelid = i.oid AND ia.attnum = k.pos::int2
+      LEFT JOIN pg_stats xs ON xs.schemaname = n.nspname AND xs.tablename = i.relname AND xs.attname = ia.attname
+    ) w ON true`
+
+const EXPECTED_PAGES = 'GREATEST(ceil((i.reltuples * (w.key_width + 20)) / 8192.0), 1)'
+
+const INDEX_STAT_COLUMNS = `
+      floor(i.reltuples)::float8 as entries,
+      pg_relation_size(i.oid)::float8 as bytes,`
 
 function numericThreshold (value: unknown, fallback: number, name: string): number {
   if (value === undefined || value === null) return fallback
@@ -3178,25 +3215,32 @@ export function getBloatedIndexes (schema: string, tables?: string[], options?: 
   // number here rather than trusting the caller.
   const minPages = numericThreshold(options?.minPages, REINDEX_DEFAULTS.minPages, 'minPages')
   const maxEntriesPerPage = numericThreshold(options?.maxEntriesPerPage, REINDEX_DEFAULTS.maxEntriesPerPage, 'maxEntriesPerPage')
+  const minSizeRatio = numericThreshold(options?.minSizeRatio, REINDEX_DEFAULTS.minSizeRatio, 'minSizeRatio')
 
   return `
     SELECT
       i.relname as name,
       t.relname as table,
       i.relpages as pages,
-      i.reltuples::bigint as entries,
-      pg_relation_size(i.oid) as bytes,
+      ${INDEX_STAT_COLUMNS}
       pg_has_role(current_user, i.relowner, 'USAGE') as owned
     FROM pg_class i
     JOIN pg_index x ON x.indexrelid = i.oid
     JOIN pg_class t ON t.oid = x.indrelid
     JOIN pg_namespace n ON n.oid = i.relnamespace
+    ${INDEX_WIDTH_JOIN}
     WHERE n.nspname = '${resolveSchemaName(schema).replace(SINGLE_QUOTE_REGEX, "''")}'
       AND i.relkind = 'i'
       AND x.indisvalid
       AND ${jobTableScope(schema, tables)}
       AND i.relpages > ${minPages}
+      -- PG 14+ writes -1 rather than 0 for a relation that has never been vacuumed or analyzed
+      -- (commit 3d351d916b2). It would pass both gates below - a negative count is under any
+      -- density, and a negative expected size is under any page count - on stats that mean
+      -- "unknown" rather than "empty".
+      AND i.reltuples >= 0
       AND i.reltuples / GREATEST(i.relpages, 1) < ${maxEntriesPerPage}
+      AND i.relpages > ${minSizeRatio} * ${EXPECTED_PAGES}
     ORDER BY pg_relation_size(i.oid) DESC
   `
 }
@@ -3211,8 +3255,7 @@ export function getJobIndexes (schema: string, tables?: string[]): string {
       i.relname as name,
       t.relname as table,
       i.relpages as pages,
-      i.reltuples::bigint as entries,
-      pg_relation_size(i.oid) as bytes,
+      ${INDEX_STAT_COLUMNS}
       pg_has_role(current_user, i.relowner, 'USAGE') as owned
     FROM pg_class i
     JOIN pg_index x ON x.indexrelid = i.oid
@@ -3232,7 +3275,26 @@ export function getJobIndexes (schema: string, tables?: string[]): string {
  * they accumulate, and they are dead weight that vacuum still walks. Mirrors bamHealDrop's role for
  * interrupted CREATE INDEX CONCURRENTLY.
  */
-export function getReindexLeftovers (schema: string, tables?: string[]): string {
+export function getReindexLeftovers (schema: string, tables?: string[], noIndexProgressView = false, anyOwner = false): string {
+  // A rebuild that is still running looks exactly like a leftover from one that died: its transient
+  // index is invalid until the swap. Nothing in the catalog distinguishes them, so ask whether a
+  // build is actually in flight on that table - the same liveness source bam.ts uses to decide a
+  // claimed CREATE INDEX CONCURRENTLY is dead, and pg_stat_progress_create_index covers REINDEX
+  // CONCURRENTLY too. Without it, a forced pass (which skips the interval claim) could drop the
+  // stub another instance is in the middle of building.
+  //
+  // Best effort by nature: an unprivileged role sees only its own backends in the progress view, and
+  // a backend that skips the view has no liveness to read at all.
+  const liveBuild = noIndexProgressView
+    ? ''
+    : 'AND NOT EXISTS (SELECT 1 FROM pg_stat_progress_create_index p WHERE p.relid = x.indrelid)'
+
+  // The background pass can only drop what it owns, so filtering there saves an error. The command
+  // list is the opposite case - it is handed to an operator who may run it as the owning role, and
+  // it already emits REINDEX for indexes this connection does not own, so withholding the DROP that
+  // has to precede one would hand over a list that fails on the first statement.
+  const owner = anyOwner ? '' : "AND pg_has_role(current_user, i.relowner, 'USAGE')"
+
   return `
     SELECT i.relname as name
     FROM pg_class i
@@ -3243,8 +3305,9 @@ export function getReindexLeftovers (schema: string, tables?: string[]): string 
       AND i.relkind = 'i'
       AND NOT x.indisvalid
       AND i.relname ~ '_ccnew[0-9]*$'
-      AND pg_has_role(current_user, i.relowner, 'USAGE')
       AND ${jobTableScope(schema, tables)}
+      ${owner}
+      ${liveBuild}
   `
 }
 
@@ -3261,4 +3324,23 @@ export function reindexIndex (schema: string, name: string): string {
 
 export function dropIndexConcurrently (schema: string, name: string): string {
   return `DROP INDEX CONCURRENTLY IF EXISTS ${schema}.${quoteIdentifier(name)}`
+}
+
+/**
+ * The statement list an operator runs by hand: every stale stub dropped first, then the rebuilds.
+ *
+ * Stubs are emitted whole rather than paired to the index they came from. Postgres does not append
+ * `_ccnew` — it truncates the *base* so the result fits in 63 bytes, so `j<sha224>_i5` (60 chars)
+ * leaves behind `j<sha224>__ccnew` with the `i5` gone, and a prefix match never fires on a
+ * partitioned queue (every partition table name is `'j' || sha224(queue_name)`, 57 chars). Dropping
+ * them unconditionally is also what the background pass does: an invalid stub is dead weight that
+ * vacuum still walks, whichever index it came from.
+ */
+export function buildReindexCommands (schema: string, targets: { name: string }[], leftovers: { name: string }[]): string[] {
+  if (!targets.length) return []
+
+  return [
+    ...leftovers.map(({ name }) => dropIndexConcurrently(schema, name)),
+    ...targets.map(({ name }) => reindexIndex(schema, name))
+  ]
 }

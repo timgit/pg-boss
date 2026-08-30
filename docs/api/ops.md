@@ -81,6 +81,8 @@ const version = await boss.schemaVersion()
 
 Runs one maintenance pass immediately instead of waiting for the next background cycle: monitoring (backlog warnings, expired and heartbeat-abandoned jobs, cached stats), deletion of jobs past their retention, warning and queue-stat pruning, and the index bloat check.
 
+Passing `name` restricts the pass to that queue's own rows, but the index bloat check works on tables: for a queue with `partition: false` (the default) the indexes it would rebuild belong to the shared `job_common` table, which every other unpartitioned queue also uses.
+
 This is the same pass the background supervisor runs on `superviseIntervalSeconds`. Call it directly when you have set `supervise: false` and drive maintenance yourself, or in tests where waiting for a timer is not an option.
 
 ```js
@@ -109,11 +111,11 @@ Steps within a pass are individually rate-limited by their own intervals (`maint
 ### `getReindexCommands(options)`
 
 **Arguments**
-- `options`: object, optional. Accepts `force`, `minPages`, `maxEntriesPerPage`, and `maxIndexBytes`.
+- `options`: object, optional. Accepts `force`, `minPages`, `maxEntriesPerPage`, `minSizeRatio`, and `maxIndexBytes`.
 
 Returns the SQL statements that would rebuild the currently bloated job indexes, in the order they should be run, including a `DROP INDEX CONCURRENTLY` for any invalid stub left behind by an interrupted rebuild.
 
-Use this where pg-boss cannot run the rebuild itself — the connected role does not own the indexes, or the `db` adapter wraps queries in a transaction (`REINDEX CONCURRENTLY` cannot run inside one). Unlike the background pass, no ownership filter and no size cap are applied unless `maxIndexBytes` is passed, since the commands are intended for an operator who may run them as a different role.
+Use this where pg-boss cannot run the rebuild itself — the connected role does not own the indexes, or the `db` adapter wraps queries in a transaction (`REINDEX CONCURRENTLY` cannot run inside one). Returns an empty array on CockroachDB and YugabyteDB, which have no btree bloat to reclaim and reject `REINDEX` in any form. Unlike the background pass, no ownership filter and no size cap are applied unless `maxIndexBytes` is passed, since the commands are intended for an operator who may run them as a different role.
 
 ```js
 const commands = await boss.getReindexCommands()

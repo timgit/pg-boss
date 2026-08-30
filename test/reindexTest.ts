@@ -156,6 +156,120 @@ helper.describePostgresOnly('reindex', function () {
     expect(persisted.length).toBe(bloatWarnings.length)
   })
 
+  it('leaves the shared interval claim alone when it can only report', async function () {
+    // A peer that would have rebuilt has to still find the window open: the claim is what makes one
+    // instance per interval do the work, and an instance that never rebuilds taking it would cost
+    // the cluster a whole window. The detection-only pass rate-limits itself in memory instead.
+    const reporter = ctx.boss = await helper.start({
+      ...ctx.bossConfig,
+      noDefault: true,
+      supervise: false,
+      reindex: false
+    })
+
+    await reporter.createQueue('churn')
+    await fillAndDrain(ctx.schema, 'churn')
+    await reporter.supervise()
+
+    const db = await helper.getDb()
+
+    try {
+      const { rows } = await db.executeSql(`SELECT reindex_on FROM ${ctx.schema}.version`)
+      expect(rows[0].reindex_on).toBeNull()
+    } finally {
+      await db.close()
+    }
+
+    // Same instance, rebuilds enabled for this pass only: the claim is there to be taken.
+    const before = await indexSizes(ctx.schema)
+    expect(before.job_common_i5).toBeGreaterThan(1024 * 1024)
+
+    await reporter.supervise(undefined, { reindex: true })
+
+    expect((await indexSizes(ctx.schema)).job_common_i5).toBeLessThan(64 * 1024)
+  })
+
+  it('checks each job table once per pass, not once per queue', async function () {
+    // Queues are iterated in groups during a pass, but reindexing is table-wide and job_common is
+    // shared by every unpartitioned queue, so the check belongs to the pass rather than the loop.
+    let claims = 0
+    let detections = 0
+    const db = await helper.getDb()
+
+    try {
+      const boss = ctx.boss = await helper.start({
+        ...ctx.bossConfig,
+        noDefault: true,
+        supervise: false,
+        reindexIntervalSeconds: 60,
+        db: interceptingDb(db, text => {
+          if (text.includes('reindex_on')) claims++
+          // reltuples is unique to the two detection queries; the leftover sweep shares pg_has_role.
+          if (text.includes('reltuples')) detections++
+          return null
+        })
+      })
+
+      for (let i = 0; i < 6; i++) {
+        await boss.createQueue(`shared${i}`)
+      }
+
+      await boss.createQueue('own', { partition: true })
+      await fillAndDrain(ctx.schema, 'shared0')
+
+      // Counted from here: startup migrations touch the same version row.
+      claims = 0
+      detections = 0
+
+      await boss.supervise()
+
+      // Eight queues across two tables: one claim, one catalog read.
+      expect({ claims, detections }).toEqual({ claims: 1, detections: 1 })
+
+      // Inside the window the claim returns no row and the catalog is never read.
+      await boss.supervise()
+      expect(claims).toBe(2)
+      expect(detections).toBe(1)
+    } finally {
+      await db.close()
+    }
+  })
+
+  it('rate-limits a detection-only pass without the shared claim', async function () {
+    let detections = 0
+    const db = await helper.getDb()
+
+    try {
+      const boss = ctx.boss = await helper.start({
+        ...ctx.bossConfig,
+        noDefault: true,
+        supervise: false,
+        reindex: false,
+        reindexIntervalSeconds: 1,
+        db: interceptingDb(db, text => {
+          if (text.includes('reltuples')) detections++
+          return null
+        })
+      })
+
+      await boss.createQueue('churn')
+      await fillAndDrain(ctx.schema, 'churn')
+
+      await boss.supervise()
+      expect(detections).toBe(1)
+
+      // Inside the local window the pass returns before it touches the catalog.
+      await boss.supervise()
+      expect(detections).toBe(1)
+
+      await delay(1100)
+      await boss.supervise()
+      expect(detections).toBe(2)
+    } finally {
+      await db.close()
+    }
+  })
+
   it('warns only once per bloated index', async function () {
     const warnings: string[] = []
     const boss = ctx.boss = await helper.start({
@@ -215,6 +329,10 @@ helper.describePostgresOnly('reindex', function () {
     await db.close()
 
     expect(rows[0].reindex_on).toBeNull()
+
+    // Same gate on the operator-facing list: the query it runs is the one these engines reject.
+    expect(await boss.getReindexCommands()).toEqual([])
+    expect(await boss.getReindexCommands({ force: true })).toEqual([])
   })
 
   it('skips an index larger than maxIndexBytes', async function () {
@@ -291,6 +409,51 @@ helper.describePostgresOnly('reindex', function () {
     expect(rows[0].name).toBeNull()
   })
 
+  it('drops a stub whose name postgres truncated to fit 63 bytes', async function () {
+    const boss = ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true, supervise: false })
+    await boss.createQueue('churn', { partition: true })
+
+    const db = await helper.getDb()
+
+    try {
+      const { rows: [queue] } = await db.executeSql(`SELECT table_name FROM ${ctx.schema}.queue WHERE name = 'churn'`)
+      const table = queue.table_name
+
+      await db.executeSql(`
+        INSERT INTO ${ctx.schema}.job (id, name, data, start_after, keep_until, policy)
+        SELECT gen_random_uuid(), 'churn', '{}'::jsonb, now() + (random() * interval '1 day'), now() + interval '14 days', 'standard'
+        FROM generate_series(1, ${BLOAT_ROWS})
+      `)
+      await db.executeSql(`DELETE FROM ${ctx.schema}.job WHERE name = 'churn'`)
+      await db.executeSql(`VACUUM (ANALYZE) ${ctx.schema}.${table}`)
+
+      // Postgres does not append `_ccnew` — it truncates the base so the whole name fits in 63
+      // bytes. A partition table is `'j' || sha224(queue_name)` (57 chars), so its `_i5` index is
+      // 60 and the stub loses the `i5` entirely. Pairing a stub to its index by name prefix would
+      // therefore miss every partitioned queue.
+      const stub = `${table}_ccnew`
+
+      expect(stub.length).toBe(63)
+      expect(stub.startsWith(`${table}_i5_ccnew`)).toBe(false)
+
+      await db.executeSql(`CREATE INDEX ${stub} ON ${ctx.schema}.${table} (name, start_after)`)
+      await db.executeSql(`UPDATE pg_index SET indisvalid = false WHERE indexrelid = '${ctx.schema}.${stub}'::regclass`)
+
+      const commands = await boss.getReindexCommands()
+      const drop = `DROP INDEX CONCURRENTLY IF EXISTS ${ctx.schema}."${stub}"`
+
+      expect(commands).toContain(drop)
+      expect(commands.indexOf(drop)).toBeLessThan(commands.findIndex(c => c.startsWith('REINDEX')))
+
+      await boss.supervise()
+
+      const { rows } = await db.executeSql(`SELECT to_regclass('${ctx.schema}.${stub}') as name`)
+      expect(rows[0].name).toBeNull()
+    } finally {
+      await db.close()
+    }
+  })
+
   // Skipped on PGlite: this needs a second connection authenticated as a different role, and PGlite
   // is a single in-process instance with no server to connect to (getConfig() leaves host/port
   // undefined there, so a second pool would fall back to 127.0.0.1:5432 and be refused).
@@ -334,6 +497,22 @@ helper.describePostgresOnly('reindex', function () {
       expect(after.job_common_i5).toBe(before.job_common_i5)
       expect(after.job_common_pkey).toBe(before.job_common_pkey)
       expect(warnings.some(m => m.includes('does not own the index'))).toBe(true)
+
+      // The command list is for an operator who may run it as the owner, so it withholds nothing —
+      // including the DROP for a stub owned by someone else, which has to precede its REINDEX.
+      const db2 = await helper.getDb()
+
+      try {
+        await db2.executeSql(`CREATE INDEX job_common_i5_ccnew ON ${ctx.schema}.job_common (name, start_after)`)
+        await db2.executeSql(`UPDATE pg_index SET indisvalid = false WHERE indexrelid = '${ctx.schema}.job_common_i5_ccnew'::regclass`)
+
+        const commands = await guest.getReindexCommands()
+        expect(commands).toContain(`DROP INDEX CONCURRENTLY IF EXISTS ${ctx.schema}."job_common_i5_ccnew"`)
+        expect(commands).toContain(`REINDEX INDEX CONCURRENTLY ${ctx.schema}."job_common_i5"`)
+      } finally {
+        await db2.executeSql(`DROP INDEX IF EXISTS ${ctx.schema}.job_common_i5_ccnew`).catch(() => {})
+        await db2.close()
+      }
     } finally {
       await guest.stop({ graceful: false }).catch(() => {})
       await db.executeSql(`REVOKE ALL ON ALL TABLES IN SCHEMA ${ctx.schema} FROM ${role}`)
@@ -455,7 +634,10 @@ helper.describePostgresOnly('reindex', function () {
       await guest.supervise()
 
       expect((await indexSizes(ctx.schema)).job_common_i5).toBe(before.job_common_i5)
-      expect(warnings.some(m => m.includes('cannot run inside a transaction block'))).toBe(true)
+      // Both indexes report the wrapper, not just the one that was attempted: the others were
+      // skipped by the giveup, so a size-cap message would name a limit they are nowhere near.
+      expect(warnings.filter(m => m.includes('cannot run inside a transaction block')).length).toBe(2)
+      expect(warnings.some(m => m.includes('larger than maxIndexBytes'))).toBe(false)
 
       // Both bloated indexes are candidates, but the wrapper is a property of the adapter rather
       // than of one index, so the pass stops after the first and never retries on a later one.
@@ -470,13 +652,144 @@ helper.describePostgresOnly('reindex', function () {
     }
   })
 
+  it('ignores an index whose stats have never been collected', async function () {
+    // PG 14+ writes reltuples = -1 for a relation that has never been vacuumed or analyzed (PG 13
+    // wrote 0). A negative count is under any density and produces a negative expected size, so
+    // without the guard it would pass every gate on stats that mean "unknown", not "empty".
+    const boss = ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true, supervise: false })
+    await boss.createQueue('churn')
+    await fillAndDrain(ctx.schema, 'churn')
+
+    expect((await boss.getReindexCommands()).length).toBeGreaterThan(0)
+
+    const db = await helper.getDb()
+
+    try {
+      await db.executeSql(`UPDATE pg_class SET reltuples = -1 WHERE oid = '${ctx.schema}.job_common_i5'::regclass`)
+
+      const commands = await boss.getReindexCommands()
+      expect(commands).not.toContain(`REINDEX INDEX CONCURRENTLY ${ctx.schema}."job_common_i5"`)
+      expect(commands).toContain(`REINDEX INDEX CONCURRENTLY ${ctx.schema}."job_common_pkey"`)
+    } finally {
+      await db.close()
+    }
+  })
+
+  // Needs two extra connections — one to hold a snapshot open, one to sit in the blocked rebuild —
+  // which PGlite (single in-process instance) cannot provide.
+  helper.itPglite('leaves a stub alone while a rebuild is actually running', async function () {
+    // An in-flight REINDEX CONCURRENTLY's transient index is invalid too, and nothing in the catalog
+    // separates it from the wreckage of one that died. force skips the interval claim, so two passes
+    // can overlap — without the liveness check one would drop the index the other is building.
+    const boss = ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true, supervise: false })
+    await boss.createQueue('churn')
+    await fillAndDrain(ctx.schema, 'churn')
+
+    const db = await helper.getDb()
+    const config = helper.getConfig({ schema: ctx.schema }) as Record<string, any>
+    const connection = () => new pg.Client({
+      host: config.host, port: config.port, database: config.database, user: config.user, password: config.password
+    })
+
+    const holder = connection()
+    const builder = connection()
+
+    try {
+      await db.executeSql(`CREATE INDEX job_common_i5_ccnew ON ${ctx.schema}.job_common (name, start_after)`)
+      await db.executeSql(`UPDATE pg_index SET indisvalid = false WHERE indexrelid = '${ctx.schema}.job_common_i5_ccnew'::regclass`)
+
+      const drop = `DROP INDEX CONCURRENTLY IF EXISTS ${ctx.schema}."job_common_i5_ccnew"`
+      expect(await boss.getReindexCommands()).toContain(drop)
+
+      // A real build, held in its wait phase rather than raced: REINDEX CONCURRENTLY waits out every
+      // transaction older than itself, so an open snapshot on another connection keeps it running —
+      // and registered in pg_stat_progress_create_index — for as long as the test needs.
+      await holder.connect()
+      await holder.query('BEGIN')
+      await holder.query(`SELECT 1 FROM ${ctx.schema}.job_common LIMIT 1`)
+
+      await builder.connect()
+      const building = builder.query(`REINDEX INDEX CONCURRENTLY ${ctx.schema}.job_common_pkey`)
+
+      let live = 0
+
+      while (!live) {
+        const { rows } = await db.executeSql(
+          `SELECT count(*)::int as count FROM pg_stat_progress_create_index WHERE relid = '${ctx.schema}.job_common'::regclass`)
+        live = rows[0].count
+      }
+
+      expect(await boss.getReindexCommands()).not.toContain(drop)
+
+      await holder.query('COMMIT')
+      await building
+
+      // Once nothing is building, the same stub is a leftover again.
+      expect(await boss.getReindexCommands()).toContain(drop)
+    } finally {
+      await holder.query('COMMIT').catch(() => {})
+      await holder.end().catch(() => {})
+      await builder.end().catch(() => {})
+      await db.close()
+    }
+  })
+
   it('exports the detection query without a connection', function () {
     const sql = getIndexBloatPlans('pgboss')
 
     expect(sql).toContain('pg_has_role')
     expect(sql).toContain("n.nspname = 'pgboss'")
     expect(sql).toContain('i.relpages > 128')
+    expect(sql).toContain('i.relpages > 4 * GREATEST(ceil((i.reltuples * (w.key_width + 20)) / 8192.0), 1)')
     expect(getIndexBloatPlans('pgboss', { minPages: 4, maxEntriesPerPage: 2 })).toContain('i.relpages > 4')
+    expect(getIndexBloatPlans('pgboss', { minSizeRatio: 9 })).toContain('i.relpages > 9 * GREATEST(ceil')
+  })
+
+  it('leaves a sparse index alone when it is no larger than its entries need', async function () {
+    // Density alone cannot tell bloat from a legitimately wide key: singleton_key is unbounded text,
+    // and an index over ~1.3 kB keys holds fewer than five entries per page while perfectly packed
+    // (measured: 150k distinct 1,286-byte keys, freshly built, 4.0 entries/page, expected-size ratio
+    // 1.6). The pg_stats size ratio is what separates the two. Asserted through the option rather
+    // than a 300 MB fixture: with the ratio raised past anything reachable, indexes that ARE bloated
+    // stop qualifying.
+    const boss = ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true, supervise: false })
+    await boss.createQueue('churn')
+    await fillAndDrain(ctx.schema, 'churn')
+
+    expect((await boss.getReindexCommands()).length).toBeGreaterThan(0)
+    expect(await boss.getReindexCommands({ minSizeRatio: 1_000_000 })).toEqual([])
+
+    const before = await indexSizes(ctx.schema)
+    await boss.supervise(undefined, { reindex: { minSizeRatio: 1_000_000 } })
+    const after = await indexSizes(ctx.schema)
+
+    expect(after.job_common_i5).toBe(before.job_common_i5)
+    expect(after.job_common_pkey).toBe(before.job_common_pkey)
+  })
+
+  it('reports index size and entry count as numbers', async function () {
+    // pg_relation_size() and reltuples::bigint are int8, which node-postgres returns as a string
+    // unless the query casts. IndexBloat declares them as numbers and the warning carries them to
+    // user code, so the cast has to hold.
+    const warnings: Warning[] = []
+    const boss = ctx.boss = await helper.start({
+      ...ctx.bossConfig,
+      noDefault: true,
+      supervise: false,
+      reindex: false
+    })
+    boss.on('warning', w => warnings.push(w as Warning))
+
+    await boss.createQueue('churn')
+    await fillAndDrain(ctx.schema, 'churn')
+    await boss.supervise()
+
+    const data = warnings.find(w => w.message.includes('is bloated'))?.data as { bytes: number, entries: number, pages: number }
+
+    expect(typeof data.bytes).toBe('number')
+    expect(typeof data.entries).toBe('number')
+    expect(typeof data.pages).toBe('number')
+    expect(data.bytes).toBeGreaterThan(1024 * 1024)
   })
 
   it('rejects a non-numeric threshold passed per call', async function () {

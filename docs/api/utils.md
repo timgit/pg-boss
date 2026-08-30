@@ -50,9 +50,9 @@ const sql = getRollbackPlans('pgboss', 36)
 
 **Arguments**
 - `schema`: string, database schema name
-- `options`: object, optional. Accepts `minPages` (default 128) and `maxEntriesPerPage` (default 5).
+- `options`: object, optional. Accepts `minPages` (default 128), `maxEntriesPerPage` (default 5) and `minSizeRatio` (default 4).
 
-Returns the catalog query pg-boss uses to find bloated job indexes, as SQL text. Unlike [`getReindexCommands()`](./ops.md#getreindexcommandsoptions) this needs no instance and no connection from this process — it is meant to be pasted into psql or handed to a monitoring tool.
+Returns the catalog query pg-boss uses to find bloated job indexes, as SQL text. PostgreSQL only — CockroachDB and YugabyteDB do not answer it. Unlike [`getReindexCommands()`](./ops.md#getreindexcommandsoptions) this needs no instance and no connection from this process — it is meant to be pasted into psql or handed to a monitoring tool.
 
 ```js
 const sql = getIndexBloatPlans('pgboss')

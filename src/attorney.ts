@@ -738,12 +738,14 @@ function validateReindexConfig (config: any) {
     'configuration assert: reindex must be a boolean or an options object')
 
   if (typeof config.reindex === 'object' && config.reindex !== null) {
-    const { minPages, maxEntriesPerPage, maxIndexBytes, force } = config.reindex
+    const { minPages, maxEntriesPerPage, minSizeRatio, maxIndexBytes, force } = config.reindex
 
     assert(minPages === undefined || (Number.isInteger(minPages) && minPages >= 0),
       'configuration assert: reindex.minPages must be an integer >= 0')
     assert(maxEntriesPerPage === undefined || (typeof maxEntriesPerPage === 'number' && maxEntriesPerPage > 0),
       'configuration assert: reindex.maxEntriesPerPage must be a number > 0')
+    assert(minSizeRatio === undefined || (typeof minSizeRatio === 'number' && minSizeRatio >= 0),
+      'configuration assert: reindex.minSizeRatio must be a number >= 0')
     assert(maxIndexBytes === undefined || (Number.isInteger(maxIndexBytes) && maxIndexBytes > 0),
       'configuration assert: reindex.maxIndexBytes must be an integer > 0')
     // force belongs to an explicit supervise() call, not to a background timer that would then

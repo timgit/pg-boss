@@ -538,7 +538,22 @@ async function cmdReindex (args: ReturnType<typeof parseCliArgs>): Promise<void>
     }
 
     const sql = args.force ? plans.getJobIndexes(schema) : plans.getBloatedIndexes(schema)
-    const { rows } = await db.executeSql(sql)
+
+    let rows: any[]
+
+    try {
+      ({ rows } = await db.executeSql(sql))
+    } catch (err: any) {
+      // The check reads pg_class.relpages and pg_relation_size(). CockroachDB has neither (it
+      // rejects `reltuples / relpages` as an unsupported binary operator) and YugabyteDB reports
+      // zeroes for every relation. The CLI takes a connection string, not a backend profile, so
+      // there is nothing to gate on ahead of time — say what happened instead of surfacing a raw
+      // catalog error.
+      console.error(`Could not read index statistics from schema "${schema}": ${err.message}`)
+      console.error('The bloat check reads pg_class.relpages and pg_relation_size(), which CockroachDB and YugabyteDB do not provide.')
+      process.exitCode = 1
+      return
+    }
 
     if (!rows.length) {
       console.log(args.force
@@ -547,24 +562,22 @@ async function cmdReindex (args: ReturnType<typeof parseCliArgs>): Promise<void>
       return
     }
 
-    const { rows: leftovers } = await db.executeSql(plans.getReindexLeftovers(schema))
-
-    const commands: string[] = []
-
-    for (const index of rows) {
-      for (const leftover of leftovers) {
-        // Postgres names the transient index `<index>_ccnew`, then `_ccnew1`, `_ccnew2` on collision.
-        if (leftover.name.startsWith(`${index.name}_ccnew`)) {
-          commands.push(plans.dropIndexConcurrently(schema, leftover.name))
-        }
-      }
-
-      commands.push(plans.reindexIndex(schema, index.name))
-    }
+    // anyOwner for the printed list, which may be run as a different role; the execution path below
+    // filters ownership itself.
+    const { rows: leftovers } = await db.executeSql(plans.getReindexLeftovers(schema, undefined, false, args.dryRun))
 
     if (args.dryRun) {
+      // Every index, ownership included: the printed SQL is for an operator, who may well run it as
+      // the role that does own them.
+      const commands = plans.buildReindexCommands(schema, rows, leftovers)
+
       console.log(`-- SQL to rebuild ${rows.length} index(es) in schema "${schema}":`)
       for (const command of commands) console.log(`${command};`)
+
+      for (const index of rows.filter(i => !i.owned)) {
+        console.log(`-- note: "${index.name}" is not owned by ${config.user || 'the connected role'} and needs a role that can REINDEX it`)
+      }
+
       return
     }
 
@@ -573,9 +586,25 @@ async function cmdReindex (args: ReturnType<typeof parseCliArgs>): Promise<void>
       console.log(`  ${index.table}.${index.name} — ${mb} MB across ${index.pages} pages, ~${index.entries} live entries`)
     }
 
-    console.log(`\nRebuilding ${rows.length} index(es)...`)
+    // Executing is different from printing: REINDEX needs ownership, so an index this role cannot
+    // touch is reported up front rather than attempted for the sake of the server's error message.
+    const skipped = rows.filter(index => !index.owned)
+    const targets = rows.filter(index => index.owned)
 
-    let failures = 0
+    for (const index of skipped) {
+      console.error(`  ✗ ${index.name}\n    the connected role does not own this index and cannot reindex it`)
+    }
+
+    if (!targets.length) {
+      process.exitCode = 1
+      return
+    }
+
+    const commands = plans.buildReindexCommands(schema, targets, leftovers)
+
+    console.log(`\nRebuilding ${targets.length} index(es)...`)
+
+    let failures = skipped.length
 
     for (const command of commands) {
       try {
