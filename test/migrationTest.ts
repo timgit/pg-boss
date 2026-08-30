@@ -1054,6 +1054,28 @@ describe('migration', function () {
       await db.close()
     })
 
+    it('should enqueue an unscoped async command when it names no partition policy', function () {
+      // An AsyncMigrationCommand without partitionPolicy fans out to every job table rather than to
+      // the partitions of one policy, so it enqueues the two-argument form and lets
+      // job_table_run_async() do the fan-out itself. Every command in the store happens to name a
+      // policy today, so this shape is only reachable through a supplied migration.
+      const migrations = [{
+        release: '99.0.0',
+        version: 99,
+        previous: 98,
+        install: ['SELECT 1'],
+        async: [{ name: 'unscoped_build', command: 'CREATE INDEX CONCURRENTLY job_i99 ON job (id)' }],
+        uninstall: ['SELECT 1']
+      }]
+
+      const { sql, concurrent } = migrateCommands(schema, 98, migrations, false)
+
+      expect(sql).toContain(`SELECT ${schema}.job_table_run_async('unscoped_build', 99, $$CREATE INDEX CONCURRENTLY job_i99 ON job (id)$$)`)
+      // No queue_name/table_name arguments: those belong to the policy-scoped form.
+      expect(sql).not.toContain('queue_name')
+      expect(concurrent).toEqual([])
+    })
+
     it('should forward partitionTables from getMigrationPlans through to the inlined builds', function () {
       const sql = getMigrationPlans(schema, 0, {
         partitionTables: [{ tableName: 'jXYZ', policy: 'standard' }]
