@@ -1,4 +1,5 @@
-import type { JobMatchStrategy, ManagedIndex, ManagedFunction } from './types.ts'
+import assert from 'node:assert'
+import type { IndexBloatOptions, JobMatchStrategy, ManagedIndex, ManagedFunction } from './types.ts'
 import {
   indexKeysRaw,
   indexIncludeRaw,
@@ -73,6 +74,11 @@ const QUEUE_DEFAULTS = {
   partition: false
 }
 
+// The root of the job table hierarchy, under both install shapes: the partitioned parent that
+// COMMON_JOB_TABLE and every per-queue partition attach to, and the plain physical table that
+// carries the rows and indexes itself where noTablePartitioning is set. Also the template every
+// partition is cloned from (CREATE TABLE ... LIKE).
+export const BASE_JOB_TABLE = 'job'
 export const COMMON_JOB_TABLE = 'job_common'
 
 interface CreateOptions {
@@ -155,7 +161,8 @@ function createTableVersion (schema: string) {
       version int primary key,
       cron_on timestamp with time zone,
       bam_on timestamp with time zone,
-      flow_on timestamp with time zone
+      flow_on timestamp with time zone,
+      reindex_on timestamp with time zone
     )
   `
 }
@@ -524,7 +531,7 @@ function createQueueFunction (schema: string, noPartitioning = false) {
           COALESCE((options->>'warningQueueSize')::int, ${QUEUE_DEFAULTS.warning_queued}),
           options->>'deadLetter',
           false,
-          'job',
+          '${BASE_JOB_TABLE}',
           (options->>'heartbeatSeconds')::int
         )
         ON CONFLICT DO NOTHING;
@@ -791,6 +798,10 @@ export function trySetBamTime (schema: string, seconds: number) {
 
 export function trySetFlowTime (schema: string, seconds: number) {
   return trySetTimestamp(schema, 'flow_on', seconds)
+}
+
+export function trySetReindexTime (schema: string, seconds: number) {
+  return trySetTimestamp(schema, 'reindex_on', seconds)
 }
 
 function trySetTimestamp (schema: string, column: string, seconds: number) {
@@ -3022,7 +3033,7 @@ export function expectedManagedColumns (schema: string, partitioned: boolean, pa
   const jobColumns: string[] = []
 
   for (const c of manifestSection(partitioned).columns) {
-    if (c.table === 'job') { jobColumns.push(c.column); continue }
+    if (c.table === BASE_JOB_TABLE) { jobColumns.push(c.column); continue }
     if (!fixed.has(c.table)) continue // job_common / anything else derives from the job template below
     let entry = byTable.get(c.table)
     if (!entry) byTable.set(c.table, entry = { table: c.table, columns: [], defaults: {}, types: {} })
@@ -3032,7 +3043,7 @@ export function expectedManagedColumns (schema: string, partitioned: boolean, pa
   }
 
   const out = [...byTable.values()]
-  out.push({ table: 'job', columns: jobColumns })
+  out.push({ table: BASE_JOB_TABLE, columns: jobColumns })
   if (partitioned) {
     out.push({ table: COMMON_JOB_TABLE, columns: jobColumns })
     for (const p of partitions) out.push({ table: p.table, columns: jobColumns })
@@ -3084,7 +3095,7 @@ export function expectedManagedIndexes (schema: string, partitioned: boolean, pa
     return { name, table, keys: indexKeysRaw(def), include: indexIncludeRaw(def), predicate: indexPredicateRaw(def), definition: displayIndexDefinition(def) }
   }
 
-  const jobTable = partitioned ? COMMON_JOB_TABLE : 'job'
+  const jobTable = partitioned ? COMMON_JOB_TABLE : BASE_JOB_TABLE
   const out: ManagedIndex[] = []
   const jobIndexes: Array<{ n: number, def: string }> = []
 
@@ -3107,4 +3118,242 @@ export function expectedManagedIndexes (schema: string, partitioned: boolean, pa
   }
 
   return out
+}
+
+// --- Index bloat detection and reindexing (issue #876) ---------------------------------------
+//
+// Autovacuum reclaims heap space but never returns btree pages to the OS, so a job index sizes
+// itself to the largest backlog its queue has ever held and stays there. A drained 1M-job peak
+// leaves job_common_i5 at 38 MB and job_common_pkey at 51 MB holding 1k live rows — and every
+// subsequent vacuum with dead tuples to clean does a full physical scan of every one of those
+// pages (measured: 17,969 buffer hits + 3,892 reads vs 750 hits / 0 reads after a rebuild), which
+// is what drains IO burst credits on managed Postgres.
+//
+// The bloat is a high-water mark rather than an unbounded leak — empty pages ARE recycled by later
+// inserts — so the trigger is density, not elapsed time.
+
+export const REINDEX_DEFAULTS = {
+  // 1 MB. Below this the absolute waste is irrelevant and reltuples/relpages is noisy.
+  minPages: 128,
+  // A freshly rebuilt job index packs 140-170 entries per page; a bloated one holds ~0.2. Five is
+  // three orders of magnitude clear of healthy on the indexes that carry fixed-width keys.
+  maxEntriesPerPage: 5,
+  // Density alone is not enough: singleton_key is unbounded text and is indexed by i1-i4, i6, i8 and
+  // i10, so a healthy index over ~1.3 kB keys legitimately holds fewer than five entries per page
+  // (measured: 150k distinct 1,286-byte keys, freshly built, 4.0 entries/page) and would be rebuilt
+  // every interval forever. What separates that from bloat is the index's size against the size its
+  // own live entries need, which pg_stats gives for free (measured on the two fixtures):
+  //
+  //   reported bloat (drained 1M peak)   0 live entries, 4,861 pages         4861x
+  //   healthy wide-key index             150k x 1,291 bytes, 37,502 pages     1.6x
+  //
+  // Four keeps a wide margin on both sides, and unlike a comparison against the heap it does not
+  // quietly stop working when the heap itself is bloated or cannot be truncated.
+  minSizeRatio: 4,
+  // 2 GB. A large index that still passes the density gate would carry a genuinely expensive
+  // rebuild, so leave it to an operator who has chosen the moment.
+  maxIndexBytes: 2 * 1024 * 1024 * 1024
+}
+
+// float8, not bigint: pg_relation_size() and reltuples::bigint are int8, which node-postgres hands
+// back as a *string* (it registers no int8 parser), so the exported IndexBloat type would be lying
+// about `bytes` and `entries` and a consumer comparing them numerically would be comparing text.
+// int4 is not an option - the index that exceeds maxIndexBytes is exactly the one that overflows it.
+// float8 is exact to 2^53 bytes, and reltuples is a float4 estimate to begin with.
+// The pages the index's *live* entries actually need, from the average width of what it indexes.
+// pg_stats carries that per column, and — the part that matters here, since i1-i4 and i6 key on
+// `COALESCE(singleton_key, '')` — ANALYZE also collects it for an index's expression columns, keyed
+// by the index relation. Plain attnums read the table's stats, attnum 0 (an expression) falls back
+// to the index's own. 20 bytes covers the btree tuple header and line pointer.
+const INDEX_WIDTH_JOIN = `LEFT JOIN LATERAL (
+      SELECT COALESCE(sum(COALESCE(ts.avg_width, xs.avg_width, 0)), 0) AS key_width
+      FROM unnest(x.indkey::int2[]) WITH ORDINALITY AS k(attnum, pos)
+      LEFT JOIN pg_attribute a ON a.attrelid = x.indrelid AND a.attnum = k.attnum
+      LEFT JOIN pg_stats ts ON ts.schemaname = n.nspname AND ts.tablename = t.relname AND ts.attname = a.attname
+      LEFT JOIN pg_attribute ia ON ia.attrelid = i.oid AND ia.attnum = k.pos::int2
+      LEFT JOIN pg_stats xs ON xs.schemaname = n.nspname AND xs.tablename = i.relname AND xs.attname = ia.attname
+    ) w ON true`
+
+const EXPECTED_PAGES = 'GREATEST(ceil((i.reltuples * (w.key_width + 20)) / 8192.0), 1)'
+
+const INDEX_STAT_COLUMNS = `
+      floor(i.reltuples)::float8 as entries,
+      pg_relation_size(i.oid)::float8 as bytes,`
+
+function numericThreshold (value: unknown, fallback: number, name: string): number {
+  if (value === undefined || value === null) return fallback
+
+  assert(typeof value === 'number' && Number.isFinite(value) && value >= 0,
+    `configuration assert: reindex.${name} must be a finite number >= 0`)
+
+  return value
+}
+
+// The job tables in scope. Every queue row names the physical table its jobs live on, so the
+// subquery covers the whole installation on its own: `job_common` for an unpartitioned queue,
+// `j<sha224(name)>` for a partitioned one, and `job` itself where noTablePartitioning makes `job` a
+// plain table rather than a partitioned parent.
+//
+// The two literals cover the one thing it cannot. The shared table is created by the install with
+// all of its indexes and outlives every queue row, so it has to stay in scope before the first queue
+// exists and after the last one is dropped - which is precisely when a drained backlog has left
+// bloat behind and nothing points at the table any more. Whichever of the two names the install
+// shape doesn't use simply matches nothing, and on a partitioned install `job` is the parent, whose
+// indexes are partitioned (relkind 'I') and already excluded by the relkind = 'i' filter.
+function jobTableScope (schema: string, tables?: string[]) {
+  return tables?.length
+    ? `t.relname = ANY(${serializeArrayParam(tables)})`
+    : `t.relname IN (SELECT table_name FROM ${schema}.queue UNION SELECT '${BASE_JOB_TABLE}' UNION SELECT '${COMMON_JOB_TABLE}')`
+}
+
+/**
+ * Bloated job indexes, by the pg_class density heuristic. Deliberately avoids pgstattuple: it is an
+ * extension that may not be installed, and relpages/reltuples separates a bloated index from a
+ * healthy one by three orders of magnitude on their own.
+ *
+ * PostgreSQL-only (including PGlite, where both the bloat and REINDEX CONCURRENTLY behave normally).
+ * Callers must gate on noReindex — see the note in boss.ts #reindex.
+ *
+ * `owned` is returned rather than filtered on, so an installation whose role cannot reindex still
+ * gets told what is bloated. Only leaf indexes (relkind 'i') are candidates — pg-boss creates
+ * i1..i10 directly on each partition, and a partitioned index (relkind 'I') cannot be reindexed
+ * except through its leaves anyway.
+ *
+ * Caveat: relpages/reltuples are refreshed by VACUUM/ANALYZE, so they go stale where autovacuum is
+ * disabled for the table. That is acceptable — the entire failure mode assumes autovacuum runs.
+ */
+export function getBloatedIndexes (schema: string, tables?: string[], options?: IndexBloatOptions): string {
+  // These are interpolated into the statement, and supervise()/getReindexCommands() accept them
+  // per call, where the constructor's validation never runs. Reject anything that isn't a finite
+  // number here rather than trusting the caller.
+  const minPages = numericThreshold(options?.minPages, REINDEX_DEFAULTS.minPages, 'minPages')
+  const maxEntriesPerPage = numericThreshold(options?.maxEntriesPerPage, REINDEX_DEFAULTS.maxEntriesPerPage, 'maxEntriesPerPage')
+  const minSizeRatio = numericThreshold(options?.minSizeRatio, REINDEX_DEFAULTS.minSizeRatio, 'minSizeRatio')
+
+  return `
+    SELECT
+      i.relname as name,
+      t.relname as table,
+      i.relpages as pages,
+      ${INDEX_STAT_COLUMNS}
+      pg_has_role(current_user, i.relowner, 'USAGE') as owned
+    FROM pg_class i
+    JOIN pg_index x ON x.indexrelid = i.oid
+    JOIN pg_class t ON t.oid = x.indrelid
+    JOIN pg_namespace n ON n.oid = i.relnamespace
+    ${INDEX_WIDTH_JOIN}
+    WHERE n.nspname = '${resolveSchemaName(schema).replace(SINGLE_QUOTE_REGEX, "''")}'
+      AND i.relkind = 'i'
+      AND x.indisvalid
+      AND ${jobTableScope(schema, tables)}
+      AND i.relpages > ${minPages}
+      -- PG 14+ writes -1 rather than 0 for a relation that has never been vacuumed or analyzed
+      -- (commit 3d351d916b2). It would pass both gates below - a negative count is under any
+      -- density, and a negative expected size is under any page count - on stats that mean
+      -- "unknown" rather than "empty".
+      AND i.reltuples >= 0
+      AND i.reltuples / GREATEST(i.relpages, 1) < ${maxEntriesPerPage}
+      AND i.relpages > ${minSizeRatio} * ${EXPECTED_PAGES}
+    ORDER BY pg_relation_size(i.oid) DESC
+  `
+}
+
+/**
+ * Every owned leaf index on the job tables, ignoring the density gate — the target list for
+ * `{ force: true }`.
+ */
+export function getJobIndexes (schema: string, tables?: string[]): string {
+  return `
+    SELECT
+      i.relname as name,
+      t.relname as table,
+      i.relpages as pages,
+      ${INDEX_STAT_COLUMNS}
+      pg_has_role(current_user, i.relowner, 'USAGE') as owned
+    FROM pg_class i
+    JOIN pg_index x ON x.indexrelid = i.oid
+    JOIN pg_class t ON t.oid = x.indrelid
+    JOIN pg_namespace n ON n.oid = i.relnamespace
+    WHERE n.nspname = '${resolveSchemaName(schema).replace(SINGLE_QUOTE_REGEX, "''")}'
+      AND i.relkind = 'i'
+      AND x.indisvalid
+      AND ${jobTableScope(schema, tables)}
+    ORDER BY pg_relation_size(i.oid) DESC
+  `
+}
+
+/**
+ * Invalid `*_ccnew` stubs left behind by an interrupted REINDEX CONCURRENTLY. Postgres appends
+ * `_ccnew`, then `_ccnew1`, `_ccnew2`, ... on collision. These must be dropped before a retry or
+ * they accumulate, and they are dead weight that vacuum still walks. Mirrors bamHealDrop's role for
+ * interrupted CREATE INDEX CONCURRENTLY.
+ */
+export function getReindexLeftovers (schema: string, tables?: string[], noIndexProgressView = false, anyOwner = false): string {
+  // A rebuild that is still running looks exactly like a leftover from one that died: its transient
+  // index is invalid until the swap. Nothing in the catalog distinguishes them, so ask whether a
+  // build is actually in flight on that table - the same liveness source bam.ts uses to decide a
+  // claimed CREATE INDEX CONCURRENTLY is dead, and pg_stat_progress_create_index covers REINDEX
+  // CONCURRENTLY too. Without it, a forced pass (which skips the interval claim) could drop the
+  // stub another instance is in the middle of building.
+  //
+  // Best effort by nature: an unprivileged role sees only its own backends in the progress view, and
+  // a backend that skips the view has no liveness to read at all.
+  const liveBuild = noIndexProgressView
+    ? ''
+    : 'AND NOT EXISTS (SELECT 1 FROM pg_stat_progress_create_index p WHERE p.relid = x.indrelid)'
+
+  // The background pass can only drop what it owns, so filtering there saves an error. The command
+  // list is the opposite case - it is handed to an operator who may run it as the owning role, and
+  // it already emits REINDEX for indexes this connection does not own, so withholding the DROP that
+  // has to precede one would hand over a list that fails on the first statement.
+  const owner = anyOwner ? '' : "AND pg_has_role(current_user, i.relowner, 'USAGE')"
+
+  return `
+    SELECT i.relname as name
+    FROM pg_class i
+    JOIN pg_index x ON x.indexrelid = i.oid
+    JOIN pg_class t ON t.oid = x.indrelid
+    JOIN pg_namespace n ON n.oid = i.relnamespace
+    WHERE n.nspname = '${resolveSchemaName(schema).replace(SINGLE_QUOTE_REGEX, "''")}'
+      AND i.relkind = 'i'
+      AND NOT x.indisvalid
+      AND i.relname ~ '_ccnew[0-9]*$'
+      AND ${jobTableScope(schema, tables)}
+      ${owner}
+      ${liveBuild}
+  `
+}
+
+// Index names come from the catalog, so they are raw identifiers that may need quoting (a queue
+// name can contain anything, and the derived partition/index names inherit it). The schema is
+// already validated and carries its own quoting - see assertPostgresObjectName.
+function quoteIdentifier (name: string) {
+  return `"${name.replace(/"/g, '""')}"`
+}
+
+export function reindexIndex (schema: string, name: string): string {
+  return `REINDEX INDEX CONCURRENTLY ${schema}.${quoteIdentifier(name)}`
+}
+
+export function dropIndexConcurrently (schema: string, name: string): string {
+  return `DROP INDEX CONCURRENTLY IF EXISTS ${schema}.${quoteIdentifier(name)}`
+}
+
+/**
+ * The statement list an operator runs by hand: every stale stub dropped first, then the rebuilds.
+ *
+ * Stubs are emitted whole rather than paired to the index they came from. Postgres does not append
+ * `_ccnew` — it truncates the *base* so the result fits in 63 bytes, so `j<sha224>_i5` (60 chars)
+ * leaves behind `j<sha224>__ccnew` with the `i5` gone, and a prefix match never fires on a
+ * partitioned queue (every partition table name is `'j' || sha224(queue_name)`, 57 chars). Dropping
+ * them unconditionally is also what the background pass does: an invalid stub is dead weight that
+ * vacuum still walks, whichever index it came from.
+ */
+export function buildReindexCommands (schema: string, targets: { name: string }[], leftovers: { name: string }[]): string[] {
+  if (!targets.length) return []
+
+  return [
+    ...leftovers.map(({ name }) => dropIndexConcurrently(schema, name)),
+    ...targets.map(({ name }) => reindexIndex(schema, name))
+  ]
 }

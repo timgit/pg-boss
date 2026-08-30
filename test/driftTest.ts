@@ -248,6 +248,14 @@ describe('drift', function () {
         .not.toBe(drifter.indexInclude('CREATE INDEX x ON s.t (a) INCLUDE (c)'))
     })
 
+    it('returns empty when the INCLUDE list opens but never closes', function () {
+      // Unbalanced parens in the payload list, the mirror of the same case for the key list. Neither
+      // pg_get_indexdef nor the manifest can produce it, so this is the guard against a truncated or
+      // hand-edited definition being read as a payload column named after the rest of the string.
+      expect(drifter.indexInclude('CREATE INDEX x ON s.t (a) INCLUDE (c, d')).toBe('')
+      expect(drifter.indexIncludeRaw('CREATE INDEX x ON s.t USING btree (a, b) INCLUDE (c')).toBe('')
+    })
+
     it('indexKeys ignores the INCLUDE payload', function () {
       expect(drifter.indexKeys('CREATE INDEX x ON s.t USING btree (a, b) INCLUDE (c)'))
         .toBe(drifter.indexKeys('CREATE INDEX x ON s.t USING btree (a, b)'))

@@ -435,6 +435,126 @@ describePglite('cli', function () {
       })
     })
 
+    describe('reindex', function () {
+      const schema = getTestSchema('reindex')
+
+      beforeEach(async function () {
+        await dropSchema(schema)
+      })
+
+      afterEach(async function () {
+        await dropSchema(schema)
+      })
+
+      const createSchema = () => execCommand(
+        `node ${cliPath} create --connection-string ${connectionString} --schema ${schema}`,
+        { expectedOutput: 'Successfully created' }
+      )
+
+      // Drains a 60k-job backlog so job_common_i5 and job_common_pkey keep the pages they grew.
+      async function bloatIndexes () {
+        const db = await getDb()
+        await db.executeSql(`SELECT ${schema}.create_queue('churn', '{"policy":"standard"}'::jsonb)`)
+        await db.executeSql(`
+          INSERT INTO ${schema}.job (id, name, data, start_after, keep_until, policy)
+          SELECT gen_random_uuid(), 'churn', '{}'::jsonb, now() + (random() * interval '1 day'), now() + interval '14 days', 'standard'
+          FROM generate_series(1, 60000)
+        `)
+        await db.executeSql(`DELETE FROM ${schema}.job WHERE name = 'churn'`)
+        await db.executeSql(`VACUUM (ANALYZE) ${schema}.job_common`)
+        await db.close()
+      }
+
+      it('should report when pg-boss is not installed (reindex)', function () {
+        const { stdout, code } = runCli(['reindex', '--connection-string', connectionString, '--schema', schema])
+        expect(stdout).toContain('not installed')
+        expect(code).toBe(1)
+      })
+
+      it('should report nothing to do on a fresh schema', async function () {
+        await createSchema()
+
+        const { stdout, code } = runCli(['reindex', '--connection-string', connectionString, '--schema', schema])
+        expect(stdout).toContain('No bloated indexes found')
+        expect(code).toBe(0)
+      })
+
+      itPostgresOnly('should print the statements with --dry-run without running them', async function () {
+        await createSchema()
+        await bloatIndexes()
+
+        const { stdout, code } = runCli(['reindex', '--connection-string', connectionString, '--schema', schema, '--dry-run'])
+        expect(stdout).toContain('REINDEX INDEX CONCURRENTLY')
+        expect(stdout).toContain('job_common_i5')
+        expect(code).toBe(0)
+
+        const db = await getDb()
+        const { rows } = await db.executeSql(`SELECT pg_relation_size('${schema}.job_common_i5')::bigint as bytes`)
+        await db.close()
+        expect(Number(rows[0].bytes)).toBeGreaterThan(1024 * 1024)
+      })
+
+      itPostgresOnly('should rebuild the bloated indexes', async function () {
+        await createSchema()
+        await bloatIndexes()
+
+        const { stdout, code } = runCli(['reindex', '--connection-string', connectionString, '--schema', schema])
+        expect(stdout).toContain('Done')
+        expect(code).toBe(0)
+
+        const db = await getDb()
+        const { rows } = await db.executeSql(`SELECT pg_relation_size('${schema}.job_common_i5')::bigint as bytes`)
+        await db.close()
+        expect(Number(rows[0].bytes)).toBeLessThan(64 * 1024)
+      })
+
+      itPostgresOnly('should skip an index the connected role does not own', async function () {
+        await createSchema()
+        await bloatIndexes()
+
+        const role = `pgboss_cli_nonowner_${process.pid}`
+        const db = await getDb()
+
+        try {
+          await db.executeSql(`DROP ROLE IF EXISTS ${role}`)
+          await db.executeSql(`CREATE ROLE ${role} LOGIN PASSWORD 'nonowner'`)
+          await db.executeSql(`GRANT USAGE ON SCHEMA ${schema} TO ${role}`)
+          await db.executeSql(`GRANT SELECT ON ALL TABLES IN SCHEMA ${schema} TO ${role}`)
+
+          const guestString = connectionString.replace(/\/\/[^@]+@/, `//${role}:nonowner@`)
+
+          // REINDEX needs ownership, so the command says so up front instead of letting each
+          // statement come back refused, and exits non-zero because nothing was rebuilt.
+          const { stdout, stderr, code } = runCli(['reindex', '--connection-string', guestString, '--schema', schema])
+          expect(stderr).toContain('does not own this index')
+          expect(stderr).not.toContain('Could not read index statistics')
+          expect(stdout).not.toContain('Rebuilding')
+          expect(code).toBe(1)
+
+          // Printing is not executing: --dry-run still lists every statement, for an operator who
+          // may run them as the owner.
+          const dry = runCli(['reindex', '--connection-string', guestString, '--schema', schema, '--dry-run'])
+          expect(dry.stdout).toContain('REINDEX INDEX CONCURRENTLY')
+          expect(dry.stdout).toContain('needs a role that can REINDEX it')
+          expect(dry.code).toBe(0)
+        } finally {
+          await db.executeSql(`REVOKE ALL ON ALL TABLES IN SCHEMA ${schema} FROM ${role}`).catch(() => {})
+          await db.executeSql(`REVOKE USAGE ON SCHEMA ${schema} FROM ${role}`).catch(() => {})
+          await db.executeSql(`DROP ROLE IF EXISTS ${role}`).catch(() => {})
+          await db.close()
+        }
+      })
+
+      itPostgresOnly('should report bloat in the doctor output', async function () {
+        await createSchema()
+        await bloatIndexes()
+
+        const { stdout } = runCli(['doctor', '--connection-string', connectionString, '--schema', schema])
+        expect(stdout).toContain('INDEX BLOAT')
+        expect(stdout).toContain('job_common_i5')
+      })
+    })
+
     describe('doctor', function () {
       const schema = getTestSchema('doctor')
 

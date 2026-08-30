@@ -1,6 +1,6 @@
 {
   "name": "pg-boss",
-  "version": "12.28.1",
+  "version": "12.29.0",
   "description": "Queueing jobs in Postgres from Node.js like a boss",
   "type": "module",
   "main": "./dist/index.js",
@@ -68,7 +68,7 @@
     "sponsors:label": "node --env-file-if-exists=.env ./scripts/sponsor-label.js"
   },
   "pgboss": {
-    "schema": 38
+    "schema": 39
   },
   "repository": {
     "type": "git",

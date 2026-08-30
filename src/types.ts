@@ -118,6 +118,85 @@ export interface MaintenanceOptions {
   queueStatRetentionDays?: number;
   bamIntervalSeconds?: number;
   flowIntervalSeconds?: number;
+  /**
+   * Rebuild bloated job indexes with `REINDEX INDEX CONCURRENTLY` during maintenance.
+   *
+   * Autovacuum reclaims heap space but never shrinks a btree, so a job index stays at the size of
+   * the largest backlog its queue has ever held. Every later vacuum then walks all of those pages,
+   * which is the dominant cost on a drained queue. Rebuilds are gated on a density check, so a
+   * healthy installation never runs one.
+   *
+   * Set `false` to disable rebuilds entirely. Bloat detection and the `index_bloat` warning are
+   * unaffected — use `getReindexCommands()` to run the statements yourself.
+   * @default true
+   */
+  reindex?: boolean | ReindexOptions;
+  /**
+   * How often the bloat check runs. One instance per interval performs it, coordinated through
+   * `version.reindex_on`. Must be >=1 second and cannot exceed 24 hours.
+   * @default 86400
+   */
+  reindexIntervalSeconds?: number;
+}
+
+/** Thresholds for the index-bloat density check. */
+export interface IndexBloatOptions {
+  /**
+   * Ignore indexes smaller than this many 8 kB pages.
+   * @default 128
+   */
+  minPages?: number;
+  /**
+   * Live index entries per 8 kB page below which an index is considered bloated.
+   * @default 5
+   */
+  maxEntriesPerPage?: number;
+  /**
+   * How many times larger than its live entries need an index must be before it counts as bloated.
+   * The size those entries need is estimated from `pg_stats`, so a legitimately sparse index — a
+   * long `singletonKey` packs fewer than five entries per page while perfectly packed — is not
+   * mistaken for a bloated one.
+   * @default 4
+   */
+  minSizeRatio?: number;
+}
+
+export interface ReindexOptions extends IndexBloatOptions {
+  /**
+   * Rebuild every job index in scope instead of only the bloated ones, and ignore the interval
+   * claim so the pass runs immediately.
+   * @default false
+   */
+  force?: boolean;
+  /**
+   * Never rebuild an index larger than this many bytes. A large index that still passes the density
+   * gate carries a genuinely expensive rebuild, so it is left to an operator.
+   * @default 2147483648
+   */
+  maxIndexBytes?: number;
+}
+
+export interface SuperviseOptions {
+  /**
+   * Overrides the constructor's `reindex` setting for this pass only.
+   */
+  reindex?: boolean | ReindexOptions;
+}
+
+/** A bloated index found by the maintenance density check. */
+export interface IndexBloat {
+  /** Index name, unqualified. */
+  name: string;
+  /** The job table the index belongs to. */
+  table: string;
+  /** Index size in 8 kB pages. */
+  pages: number;
+  /** Live index entries, as of the last VACUUM/ANALYZE. */
+  entries: number;
+  /** Index size on disk. */
+  bytes: number;
+  /** Whether the connected role can `REINDEX` it. */
+  owned: boolean;
 }
 
 export interface QueueStats {
@@ -233,6 +312,15 @@ export interface CompatibilityFlags {
    * commands on the timeout alone and skips drop-then-rebuild healing.
    */
   noIndexProgressView?: boolean;
+  /**
+   * The engine stores data outside PostgreSQL's heap, so there is no btree page bloat to reclaim
+   * and no `REINDEX` in any form — the `CONCURRENTLY` modifier is irrelevant, both engines reject
+   * the plain statement too. Skips the index-bloat maintenance pass entirely, detection included.
+   * Set for CockroachDB/YugabyteDB, where the check is not merely useless but unusable: CockroachDB
+   * has no `pg_relation_size()` and rejects `reltuples / relpages`, while YugabyteDB reports both
+   * `relpages` and `pg_relation_size()` as 0 for every relation.
+   */
+  noReindex?: boolean;
 }
 
 export interface Migration {
@@ -324,6 +412,12 @@ export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, 
    * @internal
    */
   __test__noIndexProgressView?: boolean;
+  /**
+   * Force `noReindex` on top of the current backend, so the skipped index-bloat pass
+   * (used by CockroachDB/YugabyteDB) can be exercised on plain Postgres.
+   * @internal
+   */
+  __test__noReindex?: boolean;
   /** @internal */
   migrations?: Migration[];
 }
@@ -336,6 +430,7 @@ export interface ResolvedConstructorOptions extends ConstructorOptions, Compatib
   maintenanceIntervalSeconds: number;
   bamIntervalSeconds: number;
   flowIntervalSeconds: number;
+  reindexIntervalSeconds: number;
 }
 
 /**
@@ -938,7 +1033,7 @@ export type UpdateQueueOptions = Omit<Queue, 'name' | 'partition' | 'policy' | '
 
 export interface Warning { message: string, data: object }
 
-export type WarningType = 'slow_query' | 'queue_backlog' | 'clock_skew' | 'listen_notify_unavailable' | 'invalid_schedule'
+export type WarningType = 'slow_query' | 'queue_backlog' | 'clock_skew' | 'listen_notify_unavailable' | 'invalid_schedule' | 'index_bloat'
 
 export interface PersistedWarning {
   id: number;

@@ -67,6 +67,58 @@ describe('config', function () {
     })
   })
 
+  describe('reindex', function () {
+    const config = { connectionString: 'postgres://localhost/db' }
+    const MAX_EXPIRE_SECONDS = Attorney.POLICY.MAX_EXPIRATION_HOURS * 60 * 60
+
+    it('should default to enabled on a daily interval', function () {
+      const resolved = Attorney.getConfig(config)
+      expect(resolved.reindex).toBe(true)
+      expect(resolved.reindexIntervalSeconds).toBe(MAX_EXPIRE_SECONDS)
+    })
+
+    it('should accept a boolean or a thresholds object', function () {
+      expect(Attorney.getConfig({ ...config, reindex: false }).reindex).toBe(false)
+      expect(() => Attorney.getConfig({ ...config, reindex: {} })).not.toThrow()
+      expect(() => Attorney.getConfig({
+        ...config,
+        reindex: { minPages: 0, maxEntriesPerPage: 0.5, minSizeRatio: 0, maxIndexBytes: 1, force: false }
+      })).not.toThrow()
+      expect(() => Attorney.getConfig({ ...config, reindex: 'yes' as never }))
+        .toThrow('reindex must be a boolean or an options object')
+      expect(() => Attorney.getConfig({ ...config, reindex: null as never }))
+        .toThrow('reindex must be a boolean or an options object')
+    })
+
+    it('should reject thresholds that are not positive numbers', function () {
+      expect(() => Attorney.getConfig({ ...config, reindex: { minPages: -1 } }))
+        .toThrow('reindex.minPages must be an integer >= 0')
+      expect(() => Attorney.getConfig({ ...config, reindex: { minPages: 1.5 } }))
+        .toThrow('reindex.minPages must be an integer >= 0')
+      expect(() => Attorney.getConfig({ ...config, reindex: { maxEntriesPerPage: 0 } }))
+        .toThrow('reindex.maxEntriesPerPage must be a number > 0')
+      expect(() => Attorney.getConfig({ ...config, reindex: { minSizeRatio: -1 } }))
+        .toThrow('reindex.minSizeRatio must be a number >= 0')
+      expect(() => Attorney.getConfig({ ...config, reindex: { maxIndexBytes: 0 } }))
+        .toThrow('reindex.maxIndexBytes must be an integer > 0')
+    })
+
+    // force means "run now, rebuild everything"; on the background timer that would rebuild every
+    // job index on every interval, which is never the intent.
+    it('should reject force in constructor options', function () {
+      expect(() => Attorney.getConfig({ ...config, reindex: { force: true } }))
+        .toThrow('reindex.force cannot be set in constructor options')
+    })
+
+    it('should bound the interval like the other maintenance intervals', function () {
+      expect(() => Attorney.getConfig({ ...config, reindexIntervalSeconds: 0 }))
+        .toThrow('reindexIntervalSeconds must be at least every second')
+      expect(() => Attorney.getConfig({ ...config, reindexIntervalSeconds: MAX_EXPIRE_SECONDS + 1 }))
+        .toThrow('reindexIntervalSeconds cannot exceed')
+      expect(() => Attorney.getConfig({ ...config, reindexIntervalSeconds: MAX_EXPIRE_SECONDS })).not.toThrow()
+    })
+  })
+
   it('should allow a 50 character custom schema name', async function () {
     const config = ctx.bossConfig
 

@@ -73,6 +73,94 @@ const version = await boss.schemaVersion()
 // 36
 ```
 
+### `supervise(name, options)`
+
+**Arguments**
+- `name`: string, optional. Restrict the pass to a single queue. Omit for every queue.
+- `options`: object, optional
+
+Runs one maintenance pass immediately instead of waiting for the next background cycle: monitoring (backlog warnings, expired and heartbeat-abandoned jobs, cached stats), deletion of jobs past their retention, warning and queue-stat pruning, and the index bloat check.
+
+Passing `name` restricts the pass to that queue's own rows, but the index bloat check works on tables: for a queue with `partition: false` (the default) the indexes it would rebuild belong to the shared `job_common` table, which every other unpartitioned queue also uses.
+
+This is the same pass the background supervisor runs on `superviseIntervalSeconds`. Call it directly when you have set `supervise: false` and drive maintenance yourself, or in tests where waiting for a timer is not an option.
+
+```js
+await boss.supervise()
+await boss.supervise('email-queue')
+```
+
+**Options**
+
+| Property | Type | Default | Description |
+| --- | --- | --- | --- |
+| `reindex` | bool \| object | the instance's [`reindex`](./constructor.md) setting | Overrides index rebuilding for this pass only |
+
+The `reindex` object accepts the same `minPages`, `maxEntriesPerPage` and `maxIndexBytes` thresholds as the constructor option, plus `force`:
+
+```js
+// skip the bloat check and the shared interval, and rebuild every job index now
+await boss.supervise(undefined, { reindex: { force: true } })
+
+// run maintenance without touching indexes
+await boss.supervise(undefined, { reindex: false })
+```
+
+Steps within a pass are individually rate-limited by their own intervals (`maintenanceIntervalSeconds`, `monitorIntervalSeconds`, `reindexIntervalSeconds`), and those limits are shared across instances, so calling `supervise()` in a loop does not run everything on every call. `reindex: { force: true }` is the one exception: it bypasses the interval as well as the bloat check.
+
+### `getReindexCommands(options)`
+
+**Arguments**
+- `options`: object, optional. Accepts `force`, `minPages`, `maxEntriesPerPage`, `minSizeRatio`, and `maxIndexBytes`.
+
+Returns the SQL statements that would rebuild the currently bloated job indexes, in the order they should be run, including a `DROP INDEX CONCURRENTLY` for any invalid stub left behind by an interrupted rebuild.
+
+Use this where pg-boss cannot run the rebuild itself — the connected role does not own the indexes, or the `db` adapter wraps queries in a transaction (`REINDEX CONCURRENTLY` cannot run inside one). Returns an empty array on CockroachDB and YugabyteDB, which have no btree bloat to reclaim and reject `REINDEX` in any form. Unlike the background pass, no ownership filter and no size cap are applied unless `maxIndexBytes` is passed, since the commands are intended for an operator who may run them as a different role.
+
+```js
+const commands = await boss.getReindexCommands()
+// [
+//   'REINDEX INDEX CONCURRENTLY pgboss."job_common_i5"',
+//   'REINDEX INDEX CONCURRENTLY pgboss."job_common_pkey"'
+// ]
+```
+
+An empty array means nothing is bloated. Pass `{ force: true }` for every job index instead of only the bloated ones.
+
+> Each statement must be run outside a transaction block.
+
+### `isMaintaining()`
+
+Returns `true` while a maintenance pass is in flight, whether started by the background supervisor or by `supervise()`.
+
+```js
+const busy = boss.isMaintaining()
+// false
+```
+
+### `isBamWorking()`
+
+Returns `true` while a boss async migration (BAM) command is being processed. See [`getBamStatus()`](#getbamstatus).
+
+### `isResolvingFlow()`
+
+Returns `true` while the background flow resolver is unblocking dependents of completed parent jobs. See [`resolveFlow()`](./jobs.md#resolveflow).
+
+### `isCheckingSkew()`
+
+Returns `true` while the clock skew check is running. Only relevant when `schedule` is enabled.
+
+### `getDb()`
+
+Returns the database interface this instance is using: the `db` adapter passed in the constructor, or the connection pool pg-boss created for itself.
+
+```js
+const db = boss.getDb()
+const { rows } = await db.executeSql('SELECT now()')
+```
+
+> Reaching past the API and mutating pg-boss tables directly is not supported. This exists so an application can reuse the same pool for its own queries rather than opening a second one.
+
 ### `getBamStatus()`
 
 Returns a summary of boss async migration (BAM) commands grouped by status.

@@ -19,7 +19,8 @@ const COMPATIBILITY_FLAGS = [
   'noAdvisoryLocks',
   'noCoveringIndexes',
   'noListenNotify',
-  'noIndexProgressView'
+  'noIndexProgressView',
+  'noReindex'
 ] as const
 
 type CompatibilityFlag = typeof COMPATIBILITY_FLAGS[number]
@@ -49,7 +50,12 @@ const BACKEND_PROFILES: Record<types.BackendProfile, BackendDefinition> = {
       noListenNotify: true,
       // Online DDL runs as a schema-change job, not the PG CONCURRENTLY path, and
       // pg_stat_progress_create_index isn't available — so BAM can't use liveness-based reclaim.
-      noIndexProgressView: true
+      noIndexProgressView: true,
+      // REINDEX is rejected in either form — "CockroachDB does not require reindexing" with
+      // CONCURRENTLY, "unimplemented: this syntax" without — and the bloat check itself cannot run:
+      // there is no pg_relation_size(), and reltuples / relpages is an "unsupported binary
+      // operator: <float4> / <int4>".
+      noReindex: true
     }
   },
   yugabytedb: {
@@ -59,7 +65,11 @@ const BACKEND_PROFILES: Record<types.BackendProfile, BackendDefinition> = {
       noTablePartitioning: true,
       // Index builds are a distributed backfill that pg_stat_progress_create_index doesn't reflect,
       // so liveness would misread an in-flight build as dead. BAM falls back to the timeout instead.
-      noIndexProgressView: true
+      noIndexProgressView: true,
+      // "REINDEX not supported yet" with or without CONCURRENTLY, and DocDB compaction owns
+      // reclamation. The bloat check runs but can never match: relpages and pg_relation_size() are
+      // 0 for every relation.
+      noReindex: true
     }
   },
   // No noIndexProgressView: pg-boss keeps its tables coordinator-local (it never calls
@@ -459,6 +469,7 @@ function getConfig (value: string | types.ConstructorOptions): types.ResolvedCon
   config.migrate = ('migrate' in config) ? config.migrate : true
   config.createSchema = ('createSchema' in config) ? config.createSchema : true
   config.useListenNotify = ('useListenNotify' in config) ? config.useListenNotify : false
+  config.reindex = ('reindex' in config) ? config.reindex : true
 
   resolveBackend(config)
 
@@ -527,6 +538,12 @@ function resolveBackend (config: any) {
   // used by CockroachDB/YugabyteDB, on a plain Postgres instance.
   if (config.__test__noIndexProgressView) {
     config.noIndexProgressView = true
+  }
+
+  // Test hook: exercise the detection-only reindex path (bloat is reported, never rebuilt) used by
+  // CockroachDB/YugabyteDB, on a plain Postgres instance.
+  if (config.__test__noReindex) {
+    config.noReindex = true
   }
 }
 
@@ -712,6 +729,38 @@ function applyOpsConfig (config: any) {
   }
 
   config.queueStatRetentionDays = config.queueStatRetentionDays || 7
+
+  validateReindexConfig(config)
+}
+
+function validateReindexConfig (config: any) {
+  assert(!('reindex' in config) || typeof config.reindex === 'boolean' || (typeof config.reindex === 'object' && config.reindex !== null),
+    'configuration assert: reindex must be a boolean or an options object')
+
+  if (typeof config.reindex === 'object' && config.reindex !== null) {
+    const { minPages, maxEntriesPerPage, minSizeRatio, maxIndexBytes, force } = config.reindex
+
+    assert(minPages === undefined || (Number.isInteger(minPages) && minPages >= 0),
+      'configuration assert: reindex.minPages must be an integer >= 0')
+    assert(maxEntriesPerPage === undefined || (typeof maxEntriesPerPage === 'number' && maxEntriesPerPage > 0),
+      'configuration assert: reindex.maxEntriesPerPage must be a number > 0')
+    assert(minSizeRatio === undefined || (typeof minSizeRatio === 'number' && minSizeRatio >= 0),
+      'configuration assert: reindex.minSizeRatio must be a number >= 0')
+    assert(maxIndexBytes === undefined || (Number.isInteger(maxIndexBytes) && maxIndexBytes > 0),
+      'configuration assert: reindex.maxIndexBytes must be an integer > 0')
+    // force belongs to an explicit supervise() call, not to a background timer that would then
+    // rebuild every job index on every interval.
+    assert(force === undefined || force === false,
+      'configuration assert: reindex.force cannot be set in constructor options — pass it to supervise()')
+  }
+
+  assert(!('reindexIntervalSeconds' in config) || config.reindexIntervalSeconds >= 1,
+    'configuration assert: reindexIntervalSeconds must be at least every second')
+
+  config.reindexIntervalSeconds = config.reindexIntervalSeconds || POLICY.MAX_EXPIRATION_HOURS * 60 * 60
+
+  assert(config.reindexIntervalSeconds / 60 / 60 <= POLICY.MAX_EXPIRATION_HOURS,
+    `configuration assert: reindexIntervalSeconds cannot exceed ${POLICY.MAX_EXPIRATION_HOURS} hours`)
 }
 
 function validateDeletionConfig (config: any) {
