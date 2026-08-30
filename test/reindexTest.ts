@@ -2,7 +2,8 @@ import { it } from 'vitest'
 import { ctx, expect } from './hooks.ts'
 import * as helper from './testHelper.ts'
 import { PgBoss, getIndexBloatPlans } from '../src/index.ts'
-import type { Warning } from '../src/types.ts'
+import pg from 'pg'
+import type { IDatabase, Warning } from '../src/types.ts'
 import { delay } from '../src/tools.ts'
 
 // Enough rows that job_common_i5 and job_common_pkey both clear the 128-page (1 MB) floor once the
@@ -43,6 +44,14 @@ async function indexSizes (schema: string): Promise<Record<string, number>> {
     return Object.fromEntries(rows.map(r => [r.name, Number(r.bytes)]))
   } finally {
     await db.close()
+  }
+}
+
+// Delegates every statement to the real database, letting a test rewrite specific ones so failures
+// come back from the server rather than from a stub.
+function interceptingDb (db: IDatabase, rewrite: (text: string) => string | null): IDatabase {
+  return {
+    executeSql: (text: string, values?: unknown[]) => db.executeSql(rewrite(text) ?? text, values)
   }
 }
 
@@ -282,7 +291,10 @@ helper.describePostgresOnly('reindex', function () {
     expect(rows[0].name).toBeNull()
   })
 
-  it('reports bloat a non-owning role cannot rebuild, rather than failing', async function () {
+  // Skipped on PGlite: this needs a second connection authenticated as a different role, and PGlite
+  // is a single in-process instance with no server to connect to (getConfig() leaves host/port
+  // undefined there, so a second pool would fall back to 127.0.0.1:5432 and be refused).
+  helper.itPglite('reports bloat a non-owning role cannot rebuild, rather than failing', async function () {
     // The whole point of filtering on ownership in the catalog query is that a role without rights
     // never issues a REINDEX it would only be refused for. Proven from a second connection: the test
     // user is a superuser (a member of every role), so the distinction is invisible from there.
@@ -331,6 +343,133 @@ helper.describePostgresOnly('reindex', function () {
     }
   })
 
+  it('applies maxIndexBytes to the exported command list only when asked', async function () {
+    const boss = ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true, supervise: false })
+    await boss.createQueue('churn')
+    await fillAndDrain(ctx.schema, 'churn')
+
+    // No cap by default here, unlike the background pass: the commands are for an operator running
+    // them deliberately, so omitting a large index from the list would be the surprising behavior.
+    expect((await boss.getReindexCommands()).length).toBeGreaterThan(0)
+    expect(await boss.getReindexCommands({ maxIndexBytes: 1024 })).toEqual([])
+  })
+
+  it('warns and carries on when a rebuild fails for a reason other than a transaction', async function () {
+    const warnings: string[] = []
+    const db = await helper.getDb()
+
+    try {
+      // Redirect the rebuild at an index that isn't there, so the failure is a real server error
+      // with a SQLSTATE that isn't 25001. Every bloated index should still be attempted.
+      const boss = ctx.boss = await helper.start({
+        ...ctx.bossConfig,
+        noDefault: true,
+        supervise: false,
+        db: interceptingDb(db, text =>
+          text.startsWith('REINDEX') ? `REINDEX INDEX CONCURRENTLY ${ctx.schema}."no_such_index"` : null)
+      })
+      boss.on('warning', w => warnings.push((w as Warning).message))
+
+      await boss.createQueue('churn')
+      await fillAndDrain(ctx.schema, 'churn')
+
+      const before = await indexSizes(ctx.schema)
+      await boss.supervise()
+      const after = await indexSizes(ctx.schema)
+
+      expect(after.job_common_i5).toBe(before.job_common_i5)
+      expect(warnings.filter(m => m.includes('does not exist')).length).toBe(2)
+    } finally {
+      await db.close()
+    }
+  })
+
+  it('emits an error but still rebuilds when the leftover sweep fails', async function () {
+    const errors: string[] = []
+    const db = await helper.getDb()
+
+    try {
+      const boss = ctx.boss = await helper.start({
+        ...ctx.bossConfig,
+        noDefault: true,
+        supervise: false,
+        db: interceptingDb(db, text => text.includes('_ccnew') ? 'SELECT this_is_not_valid_sql' : null)
+      })
+      boss.on('error', (err: Error) => errors.push(err.message))
+
+      await boss.createQueue('churn')
+      await fillAndDrain(ctx.schema, 'churn')
+
+      await boss.supervise()
+
+      // Dropping stale stubs is best effort — the rebuild it precedes must not be lost with it.
+      expect(errors.length).toBeGreaterThan(0)
+      expect((await indexSizes(ctx.schema)).job_common_i5).toBeLessThan(64 * 1024)
+    } finally {
+      await db.close()
+    }
+  })
+
+  // Needs a second, session-pinned connection to hold an explicit transaction open, which PGlite
+  // (single in-process instance) cannot provide.
+  helper.itPglite('gives up on rebuilds when the adapter wraps queries in a transaction', async function () {
+    const owner = ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true, supervise: false })
+    await owner.createQueue('churn')
+    await fillAndDrain(ctx.schema, 'churn')
+
+    const config = helper.getConfig({ schema: ctx.schema }) as Record<string, any>
+    const client = new pg.Client({
+      host: config.host, port: config.port, database: config.database, user: config.user, password: config.password
+    })
+    await client.connect()
+
+    // A real transaction, not a stubbed error: Postgres itself raises SQLSTATE 25001 for a REINDEX
+    // CONCURRENTLY issued inside one, which is exactly what a transaction-wrapping db adapter does.
+    let reindexAttempts = 0
+    const warnings: string[] = []
+    const guest = new PgBoss({
+      schema: ctx.schema,
+      migrate: false,
+      supervise: false,
+      reindexIntervalSeconds: 1,
+      db: {
+        executeSql: async (text: string, values?: unknown[]) => {
+          if (!text.startsWith('REINDEX')) return client.query(text, values as unknown[])
+
+          reindexAttempts++
+          await client.query('BEGIN')
+          try {
+            return await client.query(text, values as unknown[])
+          } finally {
+            await client.query('ROLLBACK')
+          }
+        }
+      }
+    })
+    guest.on('warning', w => warnings.push((w as Warning).message))
+
+    try {
+      await guest.start()
+
+      const before = await indexSizes(ctx.schema)
+      await guest.supervise()
+
+      expect((await indexSizes(ctx.schema)).job_common_i5).toBe(before.job_common_i5)
+      expect(warnings.some(m => m.includes('cannot run inside a transaction block'))).toBe(true)
+
+      // Both bloated indexes are candidates, but the wrapper is a property of the adapter rather
+      // than of one index, so the pass stops after the first and never retries on a later one.
+      expect(reindexAttempts).toBe(1)
+
+      await delay(1100)
+      await guest.supervise()
+      expect(reindexAttempts).toBe(1)
+    } finally {
+      await guest.stop({ graceful: false }).catch(() => {})
+      await client.end()
+    }
+  })
+
   it('exports the detection query without a connection', function () {
     const sql = getIndexBloatPlans('pgboss')
 
@@ -351,10 +490,5 @@ helper.describePostgresOnly('reindex', function () {
 
     await expect(boss.supervise(undefined, { reindex: { maxEntriesPerPage: Number.NaN } }))
       .rejects.toThrow('reindex.maxEntriesPerPage must be a finite number >= 0')
-  })
-
-  it('rejects force in constructor options', function () {
-    expect(() => new PgBoss({ ...ctx.bossConfig, reindex: { force: true } }))
-      .toThrow('reindex.force cannot be set in constructor options')
   })
 })

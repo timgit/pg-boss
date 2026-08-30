@@ -865,7 +865,11 @@ describe('migration', function () {
     expect(rolledBackSchema.indexes.rows).toEqual(originalSchema.indexes.rows)
   })
 
-  itPostgresOnly('should have identical schema after rolling back all migrations and replaying them', async function () {
+  // Walks every migration down and back up, waiting on BAM index builds at each end, so its cost
+  // grows with the migration list — it was already landing at 8-10s against the 10s default before
+  // schema v39, and tipped over under the contention of a full parallel run. Budgeted explicitly
+  // rather than left to tip again on the next schema bump.
+  itPostgresOnly('should have identical schema after rolling back all migrations and replaying them', { timeout: 60000 }, async function () {
     const config = { ...ctx.bossConfig }
     const schema = config.schema
 
