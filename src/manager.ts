@@ -1850,7 +1850,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
   async deleteAllJobs (name?: string) {
     if (!name) {
-      const sql = plans.truncateTable(this.config.schema, 'job')
+      const sql = plans.truncateTable(this.config.schema, plans.BASE_JOB_TABLE)
       await this.db.executeSql(sql)
       return
     }

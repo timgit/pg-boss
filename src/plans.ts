@@ -74,6 +74,11 @@ const QUEUE_DEFAULTS = {
   partition: false
 }
 
+// The root of the job table hierarchy, under both install shapes: the partitioned parent that
+// COMMON_JOB_TABLE and every per-queue partition attach to, and the plain physical table that
+// carries the rows and indexes itself where noTablePartitioning is set. Also the template every
+// partition is cloned from (CREATE TABLE ... LIKE).
+export const BASE_JOB_TABLE = 'job'
 export const COMMON_JOB_TABLE = 'job_common'
 
 interface CreateOptions {
@@ -526,7 +531,7 @@ function createQueueFunction (schema: string, noPartitioning = false) {
           COALESCE((options->>'warningQueueSize')::int, ${QUEUE_DEFAULTS.warning_queued}),
           options->>'deadLetter',
           false,
-          'job',
+          '${BASE_JOB_TABLE}',
           (options->>'heartbeatSeconds')::int
         )
         ON CONFLICT DO NOTHING;
@@ -3028,7 +3033,7 @@ export function expectedManagedColumns (schema: string, partitioned: boolean, pa
   const jobColumns: string[] = []
 
   for (const c of manifestSection(partitioned).columns) {
-    if (c.table === 'job') { jobColumns.push(c.column); continue }
+    if (c.table === BASE_JOB_TABLE) { jobColumns.push(c.column); continue }
     if (!fixed.has(c.table)) continue // job_common / anything else derives from the job template below
     let entry = byTable.get(c.table)
     if (!entry) byTable.set(c.table, entry = { table: c.table, columns: [], defaults: {}, types: {} })
@@ -3038,7 +3043,7 @@ export function expectedManagedColumns (schema: string, partitioned: boolean, pa
   }
 
   const out = [...byTable.values()]
-  out.push({ table: 'job', columns: jobColumns })
+  out.push({ table: BASE_JOB_TABLE, columns: jobColumns })
   if (partitioned) {
     out.push({ table: COMMON_JOB_TABLE, columns: jobColumns })
     for (const p of partitions) out.push({ table: p.table, columns: jobColumns })
@@ -3090,7 +3095,7 @@ export function expectedManagedIndexes (schema: string, partitioned: boolean, pa
     return { name, table, keys: indexKeysRaw(def), include: indexIncludeRaw(def), predicate: indexPredicateRaw(def), definition: displayIndexDefinition(def) }
   }
 
-  const jobTable = partitioned ? COMMON_JOB_TABLE : 'job'
+  const jobTable = partitioned ? COMMON_JOB_TABLE : BASE_JOB_TABLE
   const out: ManagedIndex[] = []
   const jobIndexes: Array<{ n: number, def: string }> = []
 
@@ -3184,13 +3189,21 @@ function numericThreshold (value: unknown, fallback: number, name: string): numb
   return value
 }
 
-// The job tables in scope: every partition registered in the queue table, plus the base names for
-// installations that predate a queue row or run with noTablePartitioning (where `job` is a plain
-// table and carries the indexes itself).
+// The job tables in scope. Every queue row names the physical table its jobs live on, so the
+// subquery covers the whole installation on its own: `job_common` for an unpartitioned queue,
+// `j<sha224(name)>` for a partitioned one, and `job` itself where noTablePartitioning makes `job` a
+// plain table rather than a partitioned parent.
+//
+// The two literals cover the one thing it cannot. The shared table is created by the install with
+// all of its indexes and outlives every queue row, so it has to stay in scope before the first queue
+// exists and after the last one is dropped - which is precisely when a drained backlog has left
+// bloat behind and nothing points at the table any more. Whichever of the two names the install
+// shape doesn't use simply matches nothing, and on a partitioned install `job` is the parent, whose
+// indexes are partitioned (relkind 'I') and already excluded by the relkind = 'i' filter.
 function jobTableScope (schema: string, tables?: string[]) {
   return tables?.length
     ? `t.relname = ANY(${serializeArrayParam(tables)})`
-    : `t.relname IN (SELECT table_name FROM ${schema}.queue UNION SELECT 'job' UNION SELECT '${COMMON_JOB_TABLE}')`
+    : `t.relname IN (SELECT table_name FROM ${schema}.queue UNION SELECT '${BASE_JOB_TABLE}' UNION SELECT '${COMMON_JOB_TABLE}')`
 }
 
 /**
