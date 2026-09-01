@@ -43,7 +43,7 @@ describe('upsert', function () {
     const result = await ctx.boss.upsert(ctx.schema, { v: 1 }, { id: SOME_UUID })
     expect(result).toEqual({ jobs: [SOME_UUID], updated: 0, inserted: 1 })
 
-    const job = await ctx.boss.getJobById(ctx.schema, SOME_UUID)
+    const [job] = await ctx.boss.findJobs(ctx.schema, { id: SOME_UUID })
     assertTruthy(job)
     expect(job.data).toEqual({ v: 1 })
   })
@@ -57,7 +57,7 @@ describe('upsert', function () {
     const result = await ctx.boss.upsert(ctx.schema, { v: 2 }, { id })
     expect(result).toEqual({ jobs: [id], updated: 1, inserted: 0 })
 
-    const job = await ctx.boss.getJobById(ctx.schema, id)
+    const [job] = await ctx.boss.findJobs(ctx.schema, { id })
     assertTruthy(job)
     expect(job.data).toEqual({ v: 2 })
   })
@@ -70,7 +70,7 @@ describe('upsert', function () {
     expect(result.updated).toBe(0)
     expect(result.jobs).toHaveLength(1)
 
-    const job = await ctx.boss.getJobById(ctx.schema, result.jobs[0])
+    const [job] = await ctx.boss.findJobs(ctx.schema, { id: result.jobs[0] })
     assertTruthy(job)
     expect(job.data).toEqual({ v: 1 })
     expect(job.singletonKey).toBe('k')
@@ -85,7 +85,7 @@ describe('upsert', function () {
     const result = await ctx.boss.upsert(ctx.schema, { v: 2 }, { singletonKey: 'k' })
     expect(result).toEqual({ jobs: [id], updated: 1, inserted: 0 })
 
-    const job = await ctx.boss.getJobById(ctx.schema, id)
+    const [job] = await ctx.boss.findJobs(ctx.schema, { id })
     assertTruthy(job)
     expect(job.data).toEqual({ v: 2 })
   })
@@ -105,12 +105,12 @@ describe('upsert', function () {
     expect(result.jobs).toHaveLength(1)
     expect(result.jobs[0]).not.toBe(id)
 
-    const job = await ctx.boss.getJobById(ctx.schema, result.jobs[0])
+    const [job] = await ctx.boss.findJobs(ctx.schema, { id: result.jobs[0] })
     assertTruthy(job)
     expect(job.data).toEqual({ v: 2 })
 
     // the originally active job is untouched
-    const original = await ctx.boss.getJobById(ctx.schema, id)
+    const [original] = await ctx.boss.findJobs(ctx.schema, { id })
     expect(original!.state).toBe('active')
     expect(original!.data).toEqual({ v: 1 })
   })
@@ -130,7 +130,7 @@ describe('upsert', function () {
     const result = await ctx.boss.upsert(ctx.schema, { v: 2 }, { singletonKey: 'k' })
     expect(result).toEqual({ jobs: [], updated: 0, inserted: 0 })
 
-    const original = await ctx.boss.getJobById(ctx.schema, id)
+    const [original] = await ctx.boss.findJobs(ctx.schema, { id })
     expect(original!.state).toBe('active')
     expect(original!.data).toEqual({ v: 1 })
   })
@@ -165,7 +165,7 @@ describe('upsert', function () {
       const updated = await ctx.boss.upsert({ name: ctx.schema, data: { v: 2 }, options: { id: SOME_UUID } })
       expect(updated).toEqual({ jobs: [SOME_UUID], updated: 1, inserted: 0 })
 
-      const job = await ctx.boss.getJobById(ctx.schema, SOME_UUID)
+      const [job] = await ctx.boss.findJobs(ctx.schema, { id: SOME_UUID })
       assertTruthy(job)
       expect(job.data).toEqual({ v: 2 })
     })

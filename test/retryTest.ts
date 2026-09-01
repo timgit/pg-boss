@@ -86,7 +86,7 @@ describe('retries', function () {
     const t0 = Date.now()
     await ctx.boss.fail(ctx.schema, jobId)
 
-    const job = await ctx.boss.getJobById(ctx.schema, jobId)
+    const [job] = await ctx.boss.findJobs(ctx.schema, { id: jobId })
     assertTruthy(job)
     assertTruthy(job.startAfter)
 
@@ -134,7 +134,7 @@ describe('retries', function () {
     assertTruthy(jobId)
     await ctx.boss.fail(ctx.schema, jobId)
     await ctx.boss.retry(ctx.schema, jobId)
-    const job = await ctx.boss.getJobById(ctx.schema, jobId)
+    const [job] = await ctx.boss.findJobs(ctx.schema, { id: jobId })
     assertTruthy(job)
     const { state, retryLimit } = job
     expect(state === 'retry').toBeTruthy()

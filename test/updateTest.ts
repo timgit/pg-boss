@@ -37,7 +37,7 @@ describe('update', function () {
     const result = await ctx.boss.update(ctx.schema, { v: 2 }, { id })
     expect(result).toEqual({ jobs: [id], updated: 1 })
 
-    const job = await ctx.boss.getJobById(ctx.schema, id)
+    const [job] = await ctx.boss.findJobs(ctx.schema, { id })
     assertTruthy(job)
     expect(job.data).toEqual({ v: 2 })
   })
@@ -50,7 +50,7 @@ describe('update', function () {
 
     await ctx.boss.update(ctx.schema, { v: 2 }, { id, priority: 5 })
 
-    const job = await ctx.boss.getJobById(ctx.schema, id)
+    const [job] = await ctx.boss.findJobs(ctx.schema, { id })
     assertTruthy(job)
     expect(job.priority).toBe(5)
   })
@@ -67,7 +67,7 @@ describe('update', function () {
     const result = await ctx.boss.update(ctx.schema, { v: 2 }, { id })
     expect(result).toEqual({ jobs: [], updated: 0 })
 
-    const job = await ctx.boss.getJobById(ctx.schema, id)
+    const [job] = await ctx.boss.findJobs(ctx.schema, { id })
     assertTruthy(job)
     expect(job.data).toEqual({ v: 1 })
   })
@@ -87,7 +87,7 @@ describe('update', function () {
     const result = await ctx.boss.update(ctx.schema, { v: 2 }, { singletonKey: 'k' })
     expect(result).toEqual({ jobs: [id], updated: 1 })
 
-    const job = await ctx.boss.getJobById(ctx.schema, id)
+    const [job] = await ctx.boss.findJobs(ctx.schema, { id })
     assertTruthy(job)
     expect(job.data).toEqual({ v: 2 })
   })
@@ -123,9 +123,9 @@ describe('update', function () {
       expect(result).toEqual({ jobs: [id3], updated: 1 })
 
       const [j1, j2, j3] = await Promise.all([
-        boss.getJobById(ctx.schema, id1),
-        boss.getJobById(ctx.schema, id2),
-        boss.getJobById(ctx.schema, id3)
+        boss.findJobs(ctx.schema, { id: id1 }).then(r => r[0]),
+        boss.findJobs(ctx.schema, { id: id2 }).then(r => r[0]),
+        boss.findJobs(ctx.schema, { id: id3 }).then(r => r[0])
       ])
 
       expect(j1!.data).toEqual({ n: 1 })
@@ -139,8 +139,8 @@ describe('update', function () {
       const result = await boss.update(ctx.schema, { updated: true }, { singletonKey: 'k', match: 'oldest' })
       expect(result).toEqual({ jobs: [id1], updated: 1 })
 
-      const j1 = await boss.getJobById(ctx.schema, id1)
-      const j3 = await boss.getJobById(ctx.schema, id3)
+      const [j1] = await boss.findJobs(ctx.schema, { id: id1 })
+      const [j3] = await boss.findJobs(ctx.schema, { id: id3 })
       expect(j1!.data).toEqual({ updated: true })
       expect(j3!.data).toEqual({ n: 3 })
     })
@@ -153,9 +153,9 @@ describe('update', function () {
       expect(result.updated).toBe(3)
 
       const jobs = await Promise.all([
-        boss.getJobById(ctx.schema, id1),
-        boss.getJobById(ctx.schema, id2),
-        boss.getJobById(ctx.schema, id3)
+        boss.findJobs(ctx.schema, { id: id1 }).then(r => r[0]),
+        boss.findJobs(ctx.schema, { id: id2 }).then(r => r[0]),
+        boss.findJobs(ctx.schema, { id: id3 }).then(r => r[0])
       ])
 
       for (const job of jobs) {
@@ -181,7 +181,7 @@ describe('update', function () {
       const result = await ctx.boss.update(ctx.schema, { v: 2 }, { id })
       expect(result).toEqual({ jobs: [id], updated: 1 })
 
-      const job = await ctx.boss.getJobById(ctx.schema, id)
+      const [job] = await ctx.boss.findJobs(ctx.schema, { id })
       assertTruthy(job)
       expect(job.data).toEqual({ v: 2 })
       expect(job.priority).toBe(5)
@@ -198,7 +198,7 @@ describe('update', function () {
       // pass undefined data => payload untouched, only priority changes
       await ctx.boss.update(ctx.schema, undefined, { id, priority: 9 })
 
-      const job = await ctx.boss.getJobById(ctx.schema, id)
+      const [job] = await ctx.boss.findJobs(ctx.schema, { id })
       assertTruthy(job)
       expect(job.priority).toBe(9)
       expect(job.data).toEqual({ keep: 'me' })
@@ -214,7 +214,7 @@ describe('update', function () {
 
       await ctx.boss.update(ctx.schema, { v: 2 }, { singletonKey: 'k' })
 
-      const job = await ctx.boss.getJobById(ctx.schema, id)
+      const [job] = await ctx.boss.findJobs(ctx.schema, { id })
       assertTruthy(job)
       expect(job.data).toEqual({ v: 2 })
       expect(job.priority).toBe(3)
@@ -321,7 +321,7 @@ describe('update', function () {
       const result = await ctx.boss.update({ name: ctx.schema, data: { v: 2 }, options: { id } })
       expect(result).toEqual({ jobs: [id], updated: 1 })
 
-      const job = await ctx.boss.getJobById(ctx.schema, id)
+      const [job] = await ctx.boss.findJobs(ctx.schema, { id })
       assertTruthy(job)
       expect(job.data).toEqual({ v: 2 })
     })
@@ -334,7 +334,7 @@ describe('update', function () {
 
       await ctx.boss.update({ name: ctx.schema, options: { id, priority: 9 } })
 
-      const job = await ctx.boss.getJobById(ctx.schema, id)
+      const [job] = await ctx.boss.findJobs(ctx.schema, { id })
       assertTruthy(job)
       expect(job.priority).toBe(9)
       expect(job.data).toEqual({ keep: 'me' })
@@ -362,7 +362,7 @@ describe('update', function () {
     const result = await ctx.boss.update(ctx.schema, { v: 2 }, { singletonKey: 'k' })
     expect(result).toEqual({ jobs: [id], updated: 1 })
 
-    const job = await ctx.boss.getJobById(ctx.schema, id)
+    const [job] = await ctx.boss.findJobs(ctx.schema, { id })
     expect(job!.data).toEqual({ v: 2 })
   })
 })

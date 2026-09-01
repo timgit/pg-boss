@@ -53,7 +53,7 @@ describe('failure', function () {
 
     await ctx.boss.fail(ctx.schema, jobs.map(job => job.id), new Error(message))
 
-    const results = await Promise.all(jobs.map(job => ctx.boss!.getJobById(ctx.schema, job.id)))
+    const results = await Promise.all(jobs.map(job => ctx.boss!.findJobs(ctx.schema, { id: job.id }).then(r => r[0])))
 
     // @ts-ignore
     expect(results.every(i => i!.output.message === message)).toBeTruthy()
@@ -73,7 +73,7 @@ describe('failure', function () {
     assertTruthy(jobId)
     await ctx.boss.fail(ctx.schema, jobId, failPayload)
 
-    const job = await ctx.boss.getJobById(ctx.schema, jobId)
+    const [job] = await ctx.boss.findJobs(ctx.schema, { id: jobId })
 
     expect(job?.output).toBeTruthy()
 
@@ -95,7 +95,7 @@ describe('failure', function () {
     assertTruthy(jobId)
     await spy.waitForJobWithId(jobId, 'failed')
 
-    const job = await ctx.boss.getJobById(ctx.schema, jobId)
+    const [job] = await ctx.boss.findJobs(ctx.schema, { id: jobId })
 
     assertTruthy(job)
     expect((job.output as { value: string }).value).toBe(failPayload)
@@ -119,7 +119,7 @@ describe('failure', function () {
     assertTruthy(jobId)
     await spy.waitForJobWithId(jobId, 'failed')
 
-    const job = await ctx.boss.getJobById(ctx.schema, jobId)
+    const [job] = await ctx.boss.findJobs(ctx.schema, { id: jobId })
 
     assertTruthy(job)
     expect((job.output as { something: string }).something).toBe(something)
@@ -139,7 +139,7 @@ describe('failure', function () {
     assertTruthy(jobId)
     await spy.waitForJobWithId(jobId, 'failed')
 
-    const job = await ctx.boss.getJobById(ctx.schema, jobId)
+    const [job] = await ctx.boss.findJobs(ctx.schema, { id: jobId })
 
     assertTruthy(job)
     expect((job.output as { message: string }).message.includes(message)).toBeTruthy()
@@ -188,7 +188,7 @@ describe('failure', function () {
     assertTruthy(jobId)
     await spy.waitForJobWithId(jobId, 'failed')
 
-    const job = await ctx.boss.getJobById(ctx.schema, jobId)
+    const [job] = await ctx.boss.findJobs(ctx.schema, { id: jobId })
 
     assertTruthy(job)
     expect((job.output as { message: string }).message).toBe(message)
@@ -214,7 +214,7 @@ describe('failure', function () {
 
     expect(job.data.key).toBe(ctx.schema)
 
-    const dlqJob = await ctx.boss.getJobById(deadLetter, job.id)
+    const [dlqJob] = await ctx.boss.findJobs(deadLetter, { id: job.id })
     assertTruthy(dlqJob)
     expect(dlqJob.sourceName).toBe(ctx.schema)
     expect(dlqJob.sourceId).toBe(jobId)
@@ -326,7 +326,7 @@ describe('failure', function () {
     expect(redriven.data.key).toBe(ctx.schema)
     expect(redriven.id).not.toBe(jobId)
 
-    const redrivenMeta = await ctx.boss.getJobById(ctx.schema, redriven.id)
+    const [redrivenMeta] = await ctx.boss.findJobs(ctx.schema, { id: redriven.id })
     assertTruthy(redrivenMeta)
     expect(redrivenMeta.retryCount).toBe(0)
     expect(redrivenMeta.sourceName).toBeNull()
