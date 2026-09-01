@@ -3331,6 +3331,106 @@ function quoteIdentifier (name: string) {
   return `"${name.replace(/"/g, '""')}"`
 }
 
+/**
+ * The sources that can hold the MVCC horizon back, and the catalog each is read from. Split out so
+ * an installation whose role cannot read one of them still gets an answer from the rest, and so the
+ * warning can name which sources it could not check rather than implying a clean bill of health.
+ *
+ * `pg_stat_activity.backend_xmin` is readable by an unprivileged role (it is not one of the columns
+ * restricted to the owning user), as are the other three views, so the degraded path is defensive
+ * rather than expected — a managed provider may still revoke them.
+ */
+export const XMIN_HORIZON_SOURCES = {
+  // Restricted to backends whose transaction was already open when the failed vacuum ran ($1).
+  // Every backend executing a query advertises a backend_xmin, including the one asking this
+  // question, so presence alone is not evidence — the ordering against a vacuum that reclaimed
+  // nothing is. Compared as timestamps inside one statement rather than as two ages read from two
+  // queries a moment apart, which would let a connection that started after the vacuum qualify.
+  backends: 'SELECT max(age(backend_xmin)) FROM pg_catalog.pg_stat_activity WHERE backend_xmin IS NOT NULL AND xact_start < $1',
+  slots: 'SELECT max(age(xmin)) FROM pg_catalog.pg_replication_slots WHERE xmin IS NOT NULL',
+  slotsCatalog: 'SELECT max(age(catalog_xmin)) FROM pg_catalog.pg_replication_slots WHERE catalog_xmin IS NOT NULL',
+  standbys: 'SELECT max(age(backend_xmin)) FROM pg_catalog.pg_stat_replication WHERE backend_xmin IS NOT NULL',
+  prepared: 'SELECT max(age(transaction)) FROM pg_catalog.pg_prepared_xacts'
+} as const
+
+export type XminHorizonSource = keyof typeof XMIN_HORIZON_SOURCES
+
+export const XMIN_HORIZON_QUERY_SOURCES = Object.keys(XMIN_HORIZON_SOURCES) as readonly XminHorizonSource[]
+
+/**
+ * How far behind the MVCC horizon is, per holder class, in **transactions**.
+ *
+ * `age()` measures transactions elapsed since the pinned xid, not wall time, which is the metric
+ * that matters: dead tuples accumulate per transaction, so a horizon pinned across an idle night
+ * costs nothing while the same age on a busy queue is a backlog of rows autovacuum cannot reclaim.
+ * Measured directly — a REPEATABLE READ holder open on an idle database reports 0, and 2,000 after
+ * 2,000 transactions with the same holder still open.
+ *
+ * Also returns the oldest in-transaction backend's wall-clock age, purely so the warning can say
+ * how long as well as how far; nothing keys off it.
+ */
+export function getXminHorizon (lastVacuum: Date, sources: readonly XminHorizonSource[] = XMIN_HORIZON_QUERY_SOURCES): SqlQuery {
+  const columns = sources.map(name => `(${XMIN_HORIZON_SOURCES[name]}) as "${name}"`)
+
+  const text = `
+    SELECT
+      ${columns.join(',\n      ')},
+      (SELECT max(extract(epoch from (now() - xact_start)))::int
+         FROM pg_catalog.pg_stat_activity
+        WHERE backend_xmin IS NOT NULL AND xact_start IS NOT NULL) as "oldestTransactionSeconds"
+  `
+
+  // Only backends carries the placeholder, so the value goes along only when it is actually
+  // referenced - binding one to a statement that has none is an error, not a no-op.
+  return { text, values: sources.includes('backends') ? [lastVacuum] : [] }
+}
+
+/**
+ * Dead-tuple accounting for pg-boss's own job tables, plus the autovacuum settings each table is
+ * actually measured against.
+ *
+ * This is the direct measurement the `xmin_horizon` check is built on. `age(backend_xmin)` is only
+ * a proxy for it, and a poor one: it counts cluster transactions, so a producer batching 500 jobs
+ * per `insert()` moves it ~9x slower than one calling `send()` per job for identical garbage, and
+ * any unrelated application sharing the database moves it for reasons that have nothing to do with
+ * pg-boss at all. `n_dead_tup` is the harm itself.
+ *
+ * The budget comes from Postgres rather than from a pg-boss constant:
+ * `autovacuum_vacuum_threshold + autovacuum_vacuum_scale_factor * n_live_tup` is the point the
+ * server itself decides a table needs vacuuming. Per-table reloptions win over the cluster
+ * settings, so an operator who has tuned a queue's table is measured against their own numbers.
+ *
+ * `lastVacuum` is the later of the autovacuum and manual timestamps: what matters is that a vacuum
+ * ran, not who asked for it. GREATEST ignores NULLs, so it is NULL only when neither has ever run.
+ * Its age is computed server-side rather than against the client clock, so the check does not
+ * inherit the skew that `clock_skew` exists to report.
+ *
+ * PostgreSQL-only. Callers must gate on noMonitorVacuum - see the note in boss.ts #checkXminHorizon.
+ */
+export function getJobTableGarbage (schema: string, tables?: string[]): string {
+  return `
+    SELECT t.relname as name,
+      s.n_live_tup as "liveTuples",
+      s.n_dead_tup as "deadTuples",
+      GREATEST(s.last_autovacuum, s.last_vacuum) as "lastVacuum",
+      extract(epoch from (now() - GREATEST(s.last_autovacuum, s.last_vacuum)))::int as "vacuumAgeSeconds",
+      coalesce((SELECT option_value::int FROM pg_options_to_table(t.reloptions)
+                 WHERE option_name = 'autovacuum_vacuum_threshold'),
+               current_setting('autovacuum_vacuum_threshold')::int) as "threshold",
+      coalesce((SELECT option_value::float8 FROM pg_options_to_table(t.reloptions)
+                 WHERE option_name = 'autovacuum_vacuum_scale_factor'),
+               current_setting('autovacuum_vacuum_scale_factor')::float8) as "scaleFactor",
+      coalesce((SELECT option_value::boolean FROM pg_options_to_table(t.reloptions)
+                 WHERE option_name = 'autovacuum_enabled'), true) as "autovacuumEnabled"
+    FROM pg_catalog.pg_class t
+    JOIN pg_catalog.pg_namespace n ON n.oid = t.relnamespace
+    JOIN pg_catalog.pg_stat_user_tables s ON s.relid = t.oid
+    WHERE n.nspname = '${resolveSchemaName(schema).replace(SINGLE_QUOTE_REGEX, "''")}'
+      AND t.relkind = 'r'
+      AND ${jobTableScope(schema, tables)}
+  `
+}
+
 export function reindexIndex (schema: string, name: string): string {
   return `REINDEX INDEX CONCURRENTLY ${schema}.${quoteIdentifier(name)}`
 }

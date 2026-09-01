@@ -165,6 +165,46 @@ The following configuration options should not normally need to be changed, but 
 
   How often the index bloat check runs. One instance per interval performs it, coordinated through the database, so adding instances does not multiply the work. Cannot exceed 24 hours.
 
+* **monitorVacuum**, bool, default true
+
+  Whether to check that vacuum is keeping up with the queues. Set `false` to disable.
+
+  One measurement, two [`warning`](./events.md#warning) types, because the fixes are opposite:
+
+  | warning | what it means | the fix |
+  | --- | --- | --- |
+  | `xmin_horizon` | vacuum runs and reclaims nothing | find and release whatever is pinning the horizon |
+  | `autovacuum_disabled` | nothing is vacuuming the table at all | turn autovacuum back on, or vacuum on a schedule that keeps up |
+
+  While something holds the horizon back — a backend sitting in an open transaction, a lagging replication slot, a standby with `hot_standby_feedback` enabled, or a prepared transaction — autovacuum cannot reclaim anything your queues delete. Dead tuples accumulate, indexes bloat, and every later vacuum pass gets more expensive. This is the precondition behind most reports of a Postgres queue degrading over time, and it is invisible from the queue's own counters: a backlog caused by too few workers and a backlog caused by a pinned horizon look identical and have opposite fixes.
+
+  There is no threshold to tune, because the check measures the damage rather than guessing at it. It reads `pg_stat_user_tables` for pg-boss's own job tables. Both warnings share a first condition:
+
+  1. a job table is past the point Postgres itself would vacuum it — `autovacuum_vacuum_threshold + autovacuum_vacuum_scale_factor × n_live_tup`, honouring per-table storage parameters over the cluster settings.
+
+  Two consecutive passes then decide which diagnosis applies. For `xmin_horizon`:
+
+  2. a vacuum has since run on that table and the dead-tuple count did not fall, so vacuum tried and reclaimed nothing — this is what separates a pinned horizon from ordinary churn, where a vacuum drops the count sharply;
+  3. a horizon holder exists that is old enough to explain it — for a backend, one whose transaction was already open when that vacuum ran; for a replication slot, standby or prepared transaction, any at all, since those advertise an xmin only while something is genuinely stuck.
+
+  For `autovacuum_disabled`, instead:
+
+  2. the table has `autovacuum_enabled = false`, no vacuum ran between the two passes, and the dead-tuple count grew.
+
+  Turning autovacuum off on a queue table and vacuuming on your own schedule is a legitimate setup, and it stays quiet: a manual vacuum both moves the timestamp and drops the count, so neither branch matches. The warning is for the case where nothing is running at all.
+
+  Sensitivity is therefore tuned with Postgres's own autovacuum settings, per table if you want a particular queue watched more or less closely:
+
+  ```sql
+  ALTER TABLE pgboss.job_common SET (autovacuum_vacuum_scale_factor = 0.05);
+  ```
+
+  Because the second condition compares two observations, the first supervise pass after a horizon is pinned never warns; the warning arrives on a later pass, once a vacuum has actually failed.
+
+  The `xmin_horizon` warning names which holder is responsible so it can be tracked down — start with `pg_stat_activity` for idle-in-transaction backends and `pg_replication_slots` for unread slots. If the connected role cannot read one of those catalogs, the warning's `unreadableSources` lists what could not be checked, so a partial answer is never reported as a clean one.
+
+  Not available on CockroachDB or YugabyteDB, which reclaim on their own schedule rather than from the oldest live snapshot.
+
 * **flowIntervalSeconds**, int, default 5 seconds
 
   How often the background flow resolver runs to unblock dependent jobs (created via [`flow()`](./jobs.md#flowjobs-options)) whose parents have completed. Completing a job no longer unblocks its dependents inline; this resolver handles it shortly after, off the completion hot path. Only runs when `supervise` is enabled.

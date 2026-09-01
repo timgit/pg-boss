@@ -13,14 +13,39 @@ const events = {
 // Default thresholds and warning messages
 const WARNINGS = {
   SLOW_QUERY: { seconds: 30, message: 'Warning: slow query. Your queues and/or database server should be reviewed' },
-  LARGE_QUEUE: { size: 10_000, message: 'Warning: large queue backlog. Your queue should be reviewed' }
+  LARGE_QUEUE: { size: 10_000, message: 'Warning: large queue backlog. Your queue should be reviewed' },
+  // No threshold constant: the trigger is measured, not configured. See #checkVacuum.
+  XMIN_HORIZON: { message: 'Warning: the database transaction horizon is pinned, so completed jobs cannot be cleaned up' },
+  AUTOVACUUM_DISABLED: { message: 'Warning: autovacuum is disabled, so nothing is reclaiming completed jobs' }
 }
 
 const WARNING_TYPES = {
   SLOW_QUERY: 'slow_query',
   QUEUE_BACKLOG: 'queue_backlog',
-  INDEX_BLOAT: 'index_bloat'
+  INDEX_BLOAT: 'index_bloat',
+  XMIN_HORIZON: 'xmin_horizon',
+  AUTOVACUUM_DISABLED: 'autovacuum_disabled'
 } as const
+
+// Which holder class each source in the horizon query represents, phrased so the warning names
+// something an operator can go and look at.
+const XMIN_HOLDERS: Record<plans.XminHorizonSource, string> = {
+  backends: 'a backend holding an open transaction',
+  slots: 'a replication slot',
+  slotsCatalog: 'a replication slot (catalog xmin)',
+  standbys: 'a standby with hot_standby_feedback enabled',
+  prepared: 'a prepared transaction'
+}
+
+// One job table's garbage, as two consecutive supervise passes saw it.
+interface TableGarbage {
+  name: string
+  liveTuples: number
+  deadTuples: number
+  budget: number
+  vacuumAgeSeconds: number | null
+  lastVacuum: number
+}
 
 // SQLSTATE 25001 (active_sql_transaction): "REINDEX CONCURRENTLY cannot run inside a transaction
 // block". Raised when a user-supplied adapter wraps executeSql in a transaction — a property of the
@@ -47,6 +72,18 @@ class Boss extends EventEmitter implements types.EventsMixin {
   // Local rate limit for passes that only report bloat, which deliberately leave the shared interval
   // claim to whichever instance can act on it.
   #detectOnly = 0
+  // Latched while a job table is over its autovacuum budget, so a sustained pin warns once rather
+  // than every pass. Cleared when every table is back under budget, so a later episode warns again.
+  #warnedXminHorizon = false
+  // Same latching for the sibling diagnosis: garbage growing on a table nothing vacuums at all.
+  #warnedAutovacuumDisabled = false
+  // Per job table: the dead-tuple count and vacuum timestamp last seen while the table was over its
+  // autovacuum budget. Two observations are what turn "there is garbage" into "a vacuum ran and
+  // reclaimed none of it" - see #checkXminHorizon.
+  #garbageEvidence = new Map<string, { deadTuples: number, lastVacuum: number }>()
+  // Sources the connected role could not read. Narrowed once on first failure rather than retried
+  // every pass; an empty-but-unreadable source must never be reported as healthy.
+  #xminHorizonSources: plans.XminHorizonSource[] | null = null
 
   events = events
 
@@ -220,6 +257,8 @@ class Boss extends EventEmitter implements types.EventsMixin {
 
     if (this.#stopping) return
 
+    await this.#checkVacuum()
+
     await this.#maintainWarnings()
     await this.#maintainQueueStats()
 
@@ -306,6 +345,271 @@ class Boss extends EventEmitter implements types.EventsMixin {
       const depSql = plans.cleanupDependencies(this.#config.schema, table, queues, this.#config.noAdvisoryLocks)
       await this.#executeQuery(depSql)
     }
+  }
+
+  /**
+   * Warn when the queues are producing garbage that nothing is reclaiming. Every documented
+   * Postgres-queue collapse has this as its precondition, and until now pg-boss reported only the
+   * symptom (`queue_backlog`) and never the cause: a backlog caused by too few workers and one
+   * caused by unreclaimed garbage look identical from the queue's own counters, and have opposite
+   * fixes.
+   *
+   * One measurement, two diagnoses, because the fixes are completely different:
+   *
+   *   `xmin_horizon`        vacuum runs and reclaims nothing - something is pinning the MVCC
+   *                         horizon, and the fix is to find and release the holder.
+   *   `autovacuum_disabled` nothing runs at all - autovacuum is turned off on the table, and the
+   *                         fix is to turn it back on or vacuum on a schedule that keeps up.
+   *
+   * The trigger is the harm itself, read from `pg_stat_user_tables`, not a transaction-count proxy.
+   * A measured comparison of the two (scripts/xmin-horizon-experiment.js) is what settled this: the
+   * transaction count that corresponds to a given amount of unreclaimable garbage moves by ~9x with
+   * producer batching alone, and without bound with unrelated traffic on the same cluster, because
+   * `age()` is cluster-global. No constant survives that. Dead tuples do not move: the same 40,000
+   * jobs left the same 120,000 unreclaimable rows across both producer shapes.
+   *
+   * Both diagnoses share the first condition - a job table past the point Postgres itself would
+   * vacuum it (`autovacuum_vacuum_threshold + scale_factor * live`, per-table storage parameters
+   * honoured) - and then split on what two consecutive observations show:
+   *
+   *   a vacuum ran and the dead-tuple count did not fall  -> the horizon is pinned
+   *   no vacuum ran and the dead-tuple count grew         -> nothing is vacuuming this table
+   *
+   * Either way it takes two passes to establish, so the first pass after a problem starts never
+   * warns. That is the intended cost of not guessing: one supervise interval of delay buys a signal
+   * that means what it says. It is also what keeps an operator who has turned autovacuum off
+   * deliberately and vacuums on their own schedule quiet - their manual vacuum both moves the
+   * timestamp and drops the count, so neither branch matches.
+   *
+   * PostgreSQL-only: CockroachDB and YugabyteDB reclaim on their engine's own schedule rather than
+   * from the oldest live snapshot, and their profiles set noMonitorVacuum.
+   */
+  async #checkVacuum () {
+    if (this.#stopping) return
+
+    if (this.#config.monitorVacuum === false || this.#config.noMonitorVacuum) return
+
+    const { rows } = await this.#executeQuery(plans.getJobTableGarbage(this.#config.schema))
+
+    if (this.#stopping) return
+
+    // Vacuum ran and reclaimed nothing, versus nothing ran at all.
+    const stuck: TableGarbage[] = []
+    const unvacuumed: TableGarbage[] = []
+    // Tracked separately so one table sitting permanently over budget with autovacuum off cannot
+    // pin the other diagnosis's latch and suppress a later, unrelated episode.
+    let vacuumedOverBudget = false
+    let disabledOverBudget = false
+
+    // Partitioned queues come and go, so drop evidence for tables the query no longer returns
+    // rather than holding a row per table this instance has ever seen.
+    const present = new Set(rows.map(row => row.name as string))
+
+    for (const name of this.#garbageEvidence.keys()) {
+      if (!present.has(name)) this.#garbageEvidence.delete(name)
+    }
+
+    for (const row of rows) {
+      const name = row.name as string
+      const liveTuples = Number(row.liveTuples)
+      const deadTuples = Number(row.deadTuples)
+      const budget = Number(row.threshold) + Number(row.scaleFactor) * liveTuples
+      const disabled = row.autovacuumEnabled === false
+      // Compared only against the previous observation of the same table, so any monotonic clock
+      // works; a table never vacuumed reads as 0 and stays there, which is exactly the state the
+      // autovacuum_disabled branch is looking for.
+      const lastVacuum = row.lastVacuum ? new Date(row.lastVacuum).getTime() : 0
+
+      if (deadTuples <= budget) {
+        this.#garbageEvidence.delete(name)
+        continue
+      }
+
+      if (disabled) {
+        disabledOverBudget = true
+      } else {
+        vacuumedOverBudget = true
+      }
+
+      const previous = this.#garbageEvidence.get(name)
+      this.#garbageEvidence.set(name, { deadTuples, lastVacuum })
+
+      if (!previous) continue
+
+      const garbage = {
+        name,
+        liveTuples,
+        deadTuples,
+        budget,
+        // Null rather than 0 when the table has never been vacuumed at all - "never" and "just now"
+        // are opposite readings and must not share a value.
+        vacuumAgeSeconds: row.vacuumAgeSeconds === null ? null : Number(row.vacuumAgeSeconds),
+        lastVacuum
+      }
+
+      if (disabled) {
+        // Nothing ran between the two observations and the pile grew.
+        if (lastVacuum === previous.lastVacuum && deadTuples > previous.deadTuples) {
+          unvacuumed.push(garbage)
+        }
+      } else if (lastVacuum > previous.lastVacuum && deadTuples >= previous.deadTuples) {
+        // A vacuum ran between the two observations and left at least as much garbage as it found.
+        stuck.push(garbage)
+      }
+    }
+
+    if (!vacuumedOverBudget) this.#warnedXminHorizon = false
+    if (!disabledOverBudget) this.#warnedAutovacuumDisabled = false
+
+    await this.#warnAutovacuumDisabled(unvacuumed)
+    await this.#warnXminHorizon(stuck)
+  }
+
+  /**
+   * Garbage piling up on a table nothing vacuums. No horizon lookup: there is no vacuum here that
+   * could have failed, so there is no holder to blame, and naming one would send the operator after
+   * the wrong thing entirely. The fix is autovacuum, not a stuck transaction.
+   */
+  async #warnAutovacuumDisabled (unvacuumed: TableGarbage[]) {
+    if (!unvacuumed.length || this.#warnedAutovacuumDisabled || this.#stopping) return
+
+    this.#warnedAutovacuumDisabled = true
+
+    const worst = unvacuumed.reduce((a, b) => (b.deadTuples > a.deadTuples ? b : a))
+    const since = worst.vacuumAgeSeconds === null
+      ? 'has never been vacuumed'
+      : `was last vacuumed ${worst.vacuumAgeSeconds}s ago`
+
+    await emitAndPersistWarning(this.#warningContext,
+      WARNING_TYPES.AUTOVACUUM_DISABLED,
+      `${WARNINGS.AUTOVACUUM_DISABLED.message}: ${worst.name} has autovacuum_enabled = false, holds ` +
+      `${worst.deadTuples} dead rows and is still growing, and ${since} ` +
+      `(Postgres would vacuum this table at ${Math.round(worst.budget)})`,
+      {
+        table: worst.name,
+        tables: unvacuumed.map(t => t.name),
+        liveTuples: worst.liveTuples,
+        deadTuples: worst.deadTuples,
+        budget: Math.round(worst.budget),
+        vacuumAgeSeconds: worst.vacuumAgeSeconds
+      }
+    )
+  }
+
+  /** Garbage that survived a vacuum, attributed to whatever is holding the horizon back. */
+  async #warnXminHorizon (stuck: TableGarbage[]) {
+    if (!stuck.length || this.#warnedXminHorizon || this.#stopping) return
+
+    // The vacuum a holder has to predate is the most recent one that failed, so the newest wins.
+    const lastVacuum = new Date(Math.max(...stuck.map(t => t.lastVacuum)))
+    const horizon = await this.#readXminHorizon(lastVacuum)
+
+    if (!horizon || this.#stopping) return
+
+    const holder = this.#attributeXminHorizon(horizon.row)
+
+    // Garbage that survived a vacuum with no holder old enough to explain it is a real problem, but
+    // not this one - staying quiet is what keeps the warning worth acting on.
+    if (!holder) return
+
+    this.#warnedXminHorizon = true
+
+    const worst = stuck.reduce((a, b) => (b.deadTuples > a.deadTuples ? b : a))
+    const seconds = Number(horizon.row.oldestTransactionSeconds)
+
+    await emitAndPersistWarning(this.#warningContext,
+      WARNING_TYPES.XMIN_HORIZON,
+      `${WARNINGS.XMIN_HORIZON.message}: ${XMIN_HOLDERS[holder.source]} is holding it ${holder.age} transactions back. ` +
+      `${worst.name} has ${worst.deadTuples} dead rows that a vacuum ${worst.vacuumAgeSeconds}s ago could not reclaim ` +
+      `(Postgres vacuums this table at ${Math.round(worst.budget)})`,
+      {
+        source: holder.source,
+        holder: XMIN_HOLDERS[holder.source],
+        transactions: holder.age,
+        table: worst.name,
+        liveTuples: worst.liveTuples,
+        deadTuples: worst.deadTuples,
+        budget: Math.round(worst.budget),
+        vacuumAgeSeconds: worst.vacuumAgeSeconds,
+        tables: stuck.map(t => t.name),
+        oldestTransactionSeconds: Number.isFinite(seconds) ? seconds : null,
+        // Named so a partial answer is never mistaken for a clean one.
+        unreadableSources: horizon.unreadable
+      }
+    )
+  }
+
+  /**
+   * The widest holder in the row. Every source the query returns has already been qualified — the
+   * backends column is filtered server-side to transactions that predate the failed vacuum, and a
+   * slot, standby or prepared transaction advertises an xmin only while something is genuinely
+   * stuck — so this is a straight maximum. The horizon is pinned to the oldest of them, which makes
+   * the widest the one worth naming.
+   */
+  #attributeXminHorizon (row: Record<string, number | null>) {
+    let worst: { source: plans.XminHorizonSource, age: number } | null = null
+
+    // Iterates the known holder classes, not the row's columns: the row also carries
+    // oldestTransactionSeconds, which is informational and would otherwise read as a holder named
+    // after a column with an age of 0.
+    for (const source of Object.keys(XMIN_HOLDERS) as plans.XminHorizonSource[]) {
+      const age = row[source] === undefined || row[source] === null ? NaN : Number(row[source])
+
+      if (Number.isFinite(age) && (!worst || age > worst.age)) {
+        worst = { source, age }
+      }
+    }
+
+    return worst
+  }
+
+  /**
+   * Read the horizon, narrowing to the sources this role can actually read. Called only when a
+   * table already shows unreclaimable garbage, so an installation with a healthy horizon never
+   * pays for it.
+   */
+  async #readXminHorizon (lastVacuum: Date) {
+    const attempted = this.#xminHorizonSources ?? plans.XMIN_HORIZON_QUERY_SOURCES
+
+    try {
+      const { rows } = await this.#executeQuery(plans.getXminHorizon(lastVacuum, attempted))
+      const unreadable = plans.XMIN_HORIZON_QUERY_SOURCES.filter(name => !attempted.includes(name))
+
+      return { row: (rows[0] ?? {}) as Record<string, number | null>, unreadable }
+    } catch (err) {
+      // A role that cannot read one of the catalogs fails the whole statement. Narrow to the
+      // sources that do work rather than losing the check entirely - but remember what was dropped,
+      // because "no rows" from an unreadable view must not read as "horizon is healthy".
+      const readable = await this.#narrowXminHorizonSources(attempted, lastVacuum)
+
+      this.#xminHorizonSources = readable
+
+      if (!readable.length) {
+        this.emit(events.warning, {
+          message: 'Unable to read the transaction horizon; the xmin_horizon check is disabled for this instance.',
+          data: { type: WARNING_TYPES.XMIN_HORIZON, error: (err as Error)?.message }
+        })
+      }
+
+      return null
+    }
+  }
+
+  // Probe each source alone to find which ones this role can actually read. Runs only after the
+  // combined query has already failed, so the cost is paid once per instance, not per pass.
+  async #narrowXminHorizonSources (attempted: readonly plans.XminHorizonSource[], lastVacuum: Date) {
+    const readable: plans.XminHorizonSource[] = []
+
+    for (const source of attempted) {
+      try {
+        await this.#executeQuery(plans.getXminHorizon(lastVacuum, [source]))
+        readable.push(source)
+      } catch {
+        // Unreadable for this role; reported alongside the warning as unreadableSources.
+      }
+    }
+
+    return readable
   }
 
   // DDL runs outside the slow-query timer. A REINDEX is expected to take seconds — routing it

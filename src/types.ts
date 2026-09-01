@@ -137,6 +137,21 @@ export interface MaintenanceOptions {
    * @default 86400
    */
   reindexIntervalSeconds?: number;
+  /**
+   * Whether to check that vacuum is keeping up with the queues. Covers two warnings, because the
+   * fixes are opposite: `xmin_horizon` when vacuum runs and reclaims nothing (something is pinning
+   * the MVCC horizon — an idle-in-transaction backend, a lagging replication slot, a standby with
+   * `hot_standby_feedback`, a prepared transaction), and `autovacuum_disabled` when nothing is
+   * vacuuming the table at all. Either way dead tuples and index bloat accumulate without bound,
+   * which is the precondition for every documented Postgres-queue collapse.
+   *
+   * There is no threshold to set. Both fire on measured evidence: a job table past the point
+   * Postgres itself would vacuum it, plus what two consecutive passes show about whether a vacuum
+   * ran and whether it reclaimed anything. Sensitivity is tuned with Postgres's own
+   * `autovacuum_vacuum_threshold` / `autovacuum_vacuum_scale_factor`, per table if wanted.
+   * @default true
+   */
+  monitorVacuum?: boolean;
 }
 
 /** Thresholds for the index-bloat density check. */
@@ -321,6 +336,14 @@ export interface CompatibilityFlags {
    * `relpages` and `pg_relation_size()` as 0 for every relation.
    */
   noReindex?: boolean;
+  /**
+   * The engine has no PostgreSQL-style vacuum to monitor: reclamation is governed by the engine's
+   * own GC (CockroachDB's MVCC GC TTL, YugabyteDB's DocDB compaction) rather than by the oldest
+   * live snapshot, there is no autovacuum to be disabled, and `pg_stat_activity.backend_xmin` /
+   * `pg_replication_slots` do not carry the same meaning. Skips both the `xmin_horizon` and
+   * `autovacuum_disabled` checks entirely.
+   */
+  noMonitorVacuum?: boolean;
 }
 
 export interface Migration {
@@ -1033,7 +1056,7 @@ export type UpdateQueueOptions = Omit<Queue, 'name' | 'partition' | 'policy' | '
 
 export interface Warning { message: string, data: object }
 
-export type WarningType = 'slow_query' | 'queue_backlog' | 'clock_skew' | 'listen_notify_unavailable' | 'invalid_schedule' | 'index_bloat'
+export type WarningType = 'slow_query' | 'queue_backlog' | 'clock_skew' | 'listen_notify_unavailable' | 'invalid_schedule' | 'index_bloat' | 'xmin_horizon' | 'autovacuum_disabled'
 
 export interface PersistedWarning {
   id: number;
