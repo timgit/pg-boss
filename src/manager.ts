@@ -72,7 +72,7 @@ const events = {
   wip: 'wip'
 }
 
-// The fetch options that were performance escapes from the fetch's sort. job_i5 is now ordered to
+// The fetch options that were performance escapes from the fetch's sort. The index is now ordered to
 // match the fetch, so they escape nothing — `priority: false` is the only remaining shape that
 // still full-sorts, making it slower than the default it was meant to beat. Accepted and ignored
 // for now; removed in the next major.
