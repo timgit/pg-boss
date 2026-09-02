@@ -4,6 +4,8 @@ Jobs may be created automatically on a recurring expression. As with other cron-
 
 Each schedule stores the moment its next occurrence is due. Every 30 seconds, one instance claims the occurrences that have come due and sends their jobs. Claiming the row is what keeps a multi-instance deployment from sending the same occurrence twice, so no throttling is involved and a recurrence kind with finer resolution than a minute is sent as often as its expression says.
 
+Each forwarded job carries an id derived from the schedule and the occurrence, so a forward that has to be retried collapses instead of becoming a second job. A cron occurrence on a minute boundary additionally carries the one-per-minute slot used by releases before schema 40, which is what keeps a rolling upgrade from double-sending: an instance still running the older code evaluates the same expression itself and lands in the same slot. There is exactly one such occurrence per minute, so that slot can never collapse two occurrences of the same schedule.
+
 To change how often occurrences are claimed, set `cronMonitorIntervalSeconds`. To change how often the claimed jobs are forwarded to their queues, set `cronWorkerIntervalSeconds`.
 
 To mitigate clock skew and drift, every 10 minutes the clock of each instance is compared to the database server's clock. The skew, if any, is stored and used as an offset when occurrences are computed, so all instances agree on when a schedule is due. The default clock monitoring interval can be adjusted with `clockMonitorIntervalSeconds`.
@@ -44,6 +46,8 @@ await boss.schedule('run-workflow',
 
 Parsers are pure functions that pg-boss calls; they are never stored or serialized. Only the kind and the expression reach the database, so an instance that has no parser for a stored kind leaves those schedules alone and emits a [`warning`](./events.md#warning) of type `unsupported_recurrence`, exactly as a queue with no `work()` handler is simply never fetched. Register the parser on at least one running instance and the schedule resumes.
 
+Only one instance runs a scheduling pass per `cronMonitorIntervalSeconds`, so an instance without the parser would otherwise spend the pass on a row it cannot evaluate and leave the occurrence to age out of the grace window. When a pass finds a due schedule of a kind it cannot evaluate, it releases the pass so the next instance to tick can try, and an instance that does have the parser gets there while the occurrence is still on time.
+
 The expression is stored in the `cron` column whatever the kind, and `getSchedules()` reports it as both `cron` and `expression`.
 
 ## Cron expressions
@@ -66,11 +70,13 @@ For more cron documentation and examples see the docs for the [cron-parser packa
 
 ## Missed occurrences
 
-If no instance is running when an occurrence comes due, the occurrence is missed. Because each schedule stores the occurrence it is waiting on, pg-boss knows exactly which ones were skipped, and the `missed` option decides what to do about them.
+An occurrence claimed within `missedGraceSeconds` of coming due was not missed, and is sent whatever the policy below says. That window defaults to 60 seconds, or twice `cronMonitorIntervalSeconds` when that is longer, and it is what lets a pass send every occurrence it arrived in time for rather than one per pass: a kind with second-level resolution gets all of them.
+
+Anything older came due while no instance was claiming, which is what the `missed` option decides the fate of. Because each schedule stores the occurrence it is waiting on, pg-boss knows exactly which ones those were.
 
 * **skip** (default)
 
-  Send nothing for them and resume at the next occurrence. This is how scheduling has always behaved.
+  Send nothing for them and resume at the next occurrence. A [`warning`](./events.md#warning) of type `missed_occurrences_skipped` names the schedule and the occurrence, so a drop is not silent.
 
 * **once**
 
@@ -78,11 +84,10 @@ If no instance is running when an occurrence comes due, the occurrence is missed
 
 * **all**
 
-  Send one job per missed occurrence, oldest first. Capped at 1000 per schedule, after which the remainder is dropped and a [`warning`](./events.md#warning) of type `missed_occurrences_capped` is emitted.
+  Send one job per missed occurrence, oldest first. Capped by `maxCatchupOccurrences` (1000 by default), after which the remainder is dropped and a [`warning`](./events.md#warning) of type `missed_occurrences_capped` is emitted. The cap applies to the pass as a whole as well as to each schedule, so a long catch-up cannot turn one pass into an unbounded insert; every schedule due in that pass still gets the occurrence it is actually due.
 
-An occurrence claimed within 60 seconds of coming due (or twice `cronMonitorIntervalSeconds`, whichever is longer) counts as on time and is sent whatever the policy. A schedule's first occurrence is also always sent, since `schedule()` applies the same window when it anchors the row.
+A schedule's first occurrence is treated exactly like any later one. `schedule()` anchors it one grace window back, so `0 3 * * *` created at 03:00:30 still sends immediately, but a schedule created while nothing was claiming gets whatever its policy says rather than an exemption.
 
-### `schedule(name, cron, data, options)`
 ### `schedule(name, recurrence, data, options)`
 
 Schedules a job to be sent to the specified queue on a recurring expression. If the schedule already exists, it's updated to the new expression.
@@ -90,7 +95,7 @@ Schedules a job to be sent to the specified queue on a recurring expression. If 
 **Arguments**
 
 - `name`: string, *required*
-- `cron`: string, *required*. A cron expression, or `{ kind, expression }` for a registered recurrence kind
+- `recurrence`: string or object, *required*. A cron expression, or `{ kind, expression }` for a registered recurrence kind
 - `data`: object
 - `options`: object
 

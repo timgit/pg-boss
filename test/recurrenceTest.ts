@@ -51,15 +51,36 @@ async function collectJobs (expected: number, timeoutMs = 20_000) {
   return collected
 }
 
-// Parks a schedule on an occurrence that came due while nothing was running. Aligned to a minute
-// boundary so the number of occurrences a minutely expression missed is exact.
-async function backdateSchedule (minutesAgo: number) {
+/**
+ * An hourly cron expression whose boundary sits half an hour away from now, in both directions.
+ *
+ * A minutely expression would make every catch-up assertion a race against the wall clock: the next
+ * real occurrence is at most a minute out, so a test that collects jobs and then checks that no
+ * more arrive fails whenever it happens to run across a minute boundary. Half an hour of margin on
+ * either side makes the occurrence count exact and the "and no more" assertions deterministic.
+ */
+function hourlySchedule () {
+  const minute = (new Date().getUTCMinutes() + 30) % 60
+
+  // The most recent occurrence, which is always about thirty minutes back.
+  const previous = new Date()
+  previous.setUTCSeconds(0, 0)
+  previous.setUTCMinutes(minute)
+
+  if (previous.getTime() > Date.now()) {
+    previous.setUTCHours(previous.getUTCHours() - 1)
+  }
+
+  return { expression: `${minute} * * * *`, previous }
+}
+
+// Parks a schedule on an occurrence that came due while nothing was claiming.
+async function backdateSchedule (previous: Date, hoursAgo: number) {
+  const nextRunAt = new Date(previous.getTime() - hoursAgo * 3600_000)
+
   await execute(
-    `UPDATE ${ctx.schema}.schedule
-     SET next_run_at = date_trunc('minute', now()) - ($1 || ' minutes')::interval,
-         last_run_at = date_trunc('minute', now()) - ($2 || ' minutes')::interval
-     WHERE name = $3`,
-    [minutesAgo, minutesAgo + 1, ctx.schema]
+    `UPDATE ${ctx.schema}.schedule SET next_run_at = $1, last_run_at = $2 WHERE name = $3`,
+    [nextRunAt, new Date(nextRunAt.getTime() - 3600_000), ctx.schema]
   )
 }
 
@@ -149,6 +170,30 @@ describe('recurrence kinds', function () {
     const jobs = await ctx.boss.fetch(ctx.schema, { batchSize: 10 })
 
     expect(jobs.length).toBe(0)
+  })
+
+  it('reports an expression with no reachable occurrence as an expression problem', async function () {
+    const config = {
+      ...ctx.bossConfig,
+      recurrences: {
+        // validate() is optional and only judges shape, so an expression that parses and then has
+        // no occurrence at all gets this far. On its own that surfaces as a raw parser message
+        // thrown from a code path with nothing to say the caller's expression was the problem.
+        finite: {
+          next: () => { throw new Error('Out of the timespan range') },
+          validate: () => {}
+        }
+      }
+    }
+
+    ctx.boss = await helper.start(config)
+
+    await expect(ctx.boss.schedule(ctx.schema, { kind: 'finite', expression: 'never' }))
+      .rejects.toThrow(/Recurrence expression "never" has no usable first occurrence: Out of the timespan range/)
+
+    const schedules = await ctx.boss.getSchedules()
+
+    expect(schedules.length).toBe(0)
   })
 
   it('rejects a kind with no registered parser at schedule() time', async function () {
@@ -246,14 +291,16 @@ describe('recurrence kinds', function () {
 })
 
 describe('missed occurrences', function () {
-  // Creates a minutely schedule without a running timekeeper, backdates it, then starts an instance
+  // Creates an hourly schedule without a running timekeeper, backdates it, then starts an instance
   // that will find the occurrences waiting.
-  async function startWithMissedOccurrences (missed?: 'skip' | 'once' | 'all', minutesAgo = 3) {
+  async function startWithMissedOccurrences (missed?: 'skip' | 'once' | 'all', hoursAgo = 3, config: object = {}) {
+    const { expression, previous } = hourlySchedule()
+
     ctx.boss = await helper.start({ ...ctx.bossConfig, schedule: false })
 
-    await ctx.boss.schedule(ctx.schema, '* * * * *', null, missed ? { missed } : {})
+    await ctx.boss.schedule(ctx.schema, expression, null, missed ? { missed } : {})
 
-    await backdateSchedule(minutesAgo)
+    await backdateSchedule(previous, hoursAgo)
 
     await ctx.boss.stop({ graceful: false })
 
@@ -261,14 +308,17 @@ describe('missed occurrences', function () {
       ...ctx.bossConfig,
       cronMonitorIntervalSeconds: 1,
       cronWorkerIntervalSeconds: 1,
-      schedule: true
+      schedule: true,
+      ...config
     })
+
+    return previous
   }
 
   it('skips them by default and resumes at the next occurrence', async function () {
     await startWithMissedOccurrences()
 
-    // Long enough for several passes; the next real occurrence is up to a minute out, so nothing
+    // Long enough for several passes; the next real occurrence is half an hour out, so nothing
     // should arrive in that time.
     await delay(6000)
 
@@ -279,6 +329,31 @@ describe('missed occurrences', function () {
     const schedule = await readSchedule()
 
     expect(new Date(schedule.nextRunAt).getTime()).toBeGreaterThan(Date.now())
+  })
+
+  it('says which schedule lost which occurrence when the default skips it', async function () {
+    // Read back from the warning table rather than the event: the drop happens on the very first
+    // pass, which a listener attached after start() would have already missed, and warnOnce never
+    // repeats it.
+    const previous = await startWithMissedOccurrences(undefined, 3, { persistWarnings: true })
+
+    const deadline = Date.now() + 20_000
+    let rows: any[] = []
+
+    while (rows.length === 0 && Date.now() < deadline) {
+      await delay(250)
+      const result = await execute(
+        `SELECT type, message, data FROM ${ctx.schema}.warning WHERE type = 'missed_occurrences_skipped'`
+      )
+      rows = result.rows
+    }
+
+    // skip is the default, so silence here is how a deployment writes off occurrence after
+    // occurrence with nothing at all to show for it.
+    expect(rows.length).toBe(1)
+    expect(rows[0].message).toMatch(/was skipped/)
+    expect(rows[0].data.queue).toBe(ctx.schema)
+    expect(new Date(rows[0].data.dueAt).getTime()).toBe(previous.getTime() - 3 * 3600_000)
   })
 
   it('sends a single job for the whole outage with missed: once', async function () {
@@ -299,11 +374,17 @@ describe('missed occurrences', function () {
   it('sends one job per occurrence with missed: all', async function () {
     await startWithMissedOccurrences('all')
 
-    // the claimed occurrence three minutes back, plus the two after it and the one at the current
-    // minute boundary
+    // the claimed occurrence three hours back, plus the two after it and the most recent one
     const jobs = await collectJobs(4)
 
     expect(jobs.length).toBe(4)
+
+    // and no fifth: the next occurrence is half an hour out
+    await delay(3000)
+
+    const more = await ctx.boss!.fetch(ctx.schema, { batchSize: 10 })
+
+    expect(more.length).toBe(0)
   })
 
   it('rejects an unknown missed policy', async function () {

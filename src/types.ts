@@ -90,6 +90,31 @@ export interface SchedulingOptions {
    * })
    */
   recurrences?: RecurrenceParsers;
+  /**
+   * How long after coming due an occurrence still counts as on time, in seconds. Anything older
+   * came due while no instance was claiming, and the schedule's `missed` policy decides its fate.
+   *
+   * Defaults to 60 seconds, or twice `cronMonitorIntervalSeconds` when that is longer. Raise it in
+   * a deployment whose passes routinely run late (a large schedule table, a contended pass slot,
+   * or a recurrence kind only some instances have a parser for), so healthy occurrences are not
+   * written off as missed.
+   * @default 60
+   */
+  missedGraceSeconds?: number;
+  /**
+   * The most occurrences one scheduling pass will send, per schedule and in total. `missed: 'all'`
+   * is unbounded by construction, so the remainder is dropped and reported as a
+   * `missed_occurrences_capped` warning.
+   * @default 1000
+   */
+  maxCatchupOccurrences?: number;
+  /**
+   * How long a schedule may sit with no pending occurrence before a pass re-anchors it, in seconds.
+   * Covers rows carried over from a schema that stored no occurrence, and rows whose claiming
+   * process died before it could write the following occurrence back.
+   * @default 300
+   */
+  scheduleRepairSeconds?: number;
 }
 
 /**
@@ -121,10 +146,12 @@ export interface Recurrence {
 }
 
 /**
- * What to do with occurrences that came due while no instance was running to send them.
+ * What to do with occurrences that came due while no instance was claiming them.
  *
- * - `skip`: send nothing for them, resume at the next future occurrence. The default, and how
- *   scheduling behaved before missed occurrences were tracked.
+ * An occurrence claimed within `missedGraceSeconds` of coming due was not missed, and is sent
+ * whatever the policy.
+ *
+ * - `skip`: send nothing for them, resume at the next future occurrence. The default.
  * - `once`: send a single job, no matter how many occurrences were missed.
  * - `all`: send one job per missed occurrence, oldest first.
  */
@@ -488,6 +515,9 @@ export interface ResolvedConstructorOptions extends ConstructorOptions, Compatib
   bamIntervalSeconds: number;
   flowIntervalSeconds: number;
   reindexIntervalSeconds: number;
+  missedGraceSeconds: number;
+  maxCatchupOccurrences: number;
+  scheduleRepairSeconds: number;
 }
 
 /**
@@ -1104,7 +1134,7 @@ export type UpdateQueueOptions = Omit<Queue, 'name' | 'partition' | 'policy' | '
 
 export interface Warning { message: string, data: object }
 
-export type WarningType = 'slow_query' | 'queue_backlog' | 'clock_skew' | 'listen_notify_unavailable' | 'invalid_schedule' | 'index_bloat' | 'unsupported_recurrence' | 'missed_occurrences_capped'
+export type WarningType = 'slow_query' | 'queue_backlog' | 'clock_skew' | 'listen_notify_unavailable' | 'invalid_schedule' | 'index_bloat' | 'unsupported_recurrence' | 'missed_occurrences_capped' | 'missed_occurrences_skipped'
 
 export interface PersistedWarning {
   id: number;

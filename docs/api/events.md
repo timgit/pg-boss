@@ -35,7 +35,8 @@ boss.on('warning', ({ message, data }) => {
 | `index_bloat` | A job index is holding far more pages than its live entries need and was not rebuilt — because rebuilds are disabled, the connected role does not own the index, the index exceeds `maxIndexBytes`, or `REINDEX CONCURRENTLY` failed. The message names the reason. Emitted once per index rather than on every pass, and again if the condition returns after being cleared | `name`, `table`, `pages`, `entries`, `bytes`, `owned` |
 | `invalid_schedule` | A stored schedule could not be evaluated (for example an unusable `timezone` written by an older release, or a recurrence parser that answered with something other than a date) and was skipped for this scheduling pass; the remaining schedules are unaffected. Emitted once per broken schedule rather than on every pass, and again if the schedule is edited or the instance restarts | `queue`, `key`, `kind`, `expression`, `timezone` |
 | `unsupported_recurrence` | A schedule came due whose recurrence `kind` this instance has no parser for. The row is left untouched for an instance that has one. Emitted once per schedule rather than on every pass | `queue`, `key`, `kind`, `expression` |
-| `missed_occurrences_capped` | A `missed: 'all'` schedule was owed more than 1000 occurrences; the remainder were dropped | `queue`, `key`, `kind`, `expression`, `timezone`, `cap` |
+| `missed_occurrences_capped` | A schedule was owed more occurrences than one pass may send (`maxCatchupOccurrences`, 1000 by default); the remainder were dropped | `queue`, `key`, `kind`, `expression`, `timezone`, `cap` |
+| `missed_occurrences_skipped` | An occurrence came due more than `missedGraceSeconds` before any instance claimed it and the schedule's default `missed: 'skip'` policy sent nothing for it. Emitted once per schedule rather than on every pass | `queue`, `key`, `kind`, `expression`, `timezone`, `dueAt`, `graceSeconds` |
 
 ### Warning Persistence
 

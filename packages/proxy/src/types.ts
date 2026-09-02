@@ -76,7 +76,7 @@ export type HttpQueueResult = types.QueueResult
 
 export type HttpSchedule = Omit<types.Schedule, 'data' | 'options'> & {
   data?: HttpJsonRecord
-  options?: HttpSendOptions
+  options?: HttpScheduleOptions
 }
 
 export type HttpBamStatusSummary = types.BamStatusSummary
@@ -358,9 +358,11 @@ export type HttpSchemaVersionResponse = {
   result: number | null
 }
 
+export type HttpRecurrence = types.Recurrence
+
 export type HttpScheduleRequest = {
   name: HttpQueueName
-  cron: string
+  cron: string | HttpRecurrence
   data?: HttpNullableJsonRecord
   options?: HttpScheduleOptions
 }

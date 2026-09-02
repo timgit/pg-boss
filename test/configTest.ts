@@ -67,6 +67,38 @@ describe('config', function () {
     })
   })
 
+  describe('scheduling policies', function () {
+    const config = { connectionString: 'postgres://localhost/db' }
+
+    it('should default the grace window to a minute, or two monitor intervals when that is longer', function () {
+      expect(Attorney.getConfig(config).missedGraceSeconds).toBe(60)
+
+      // A pass that cannot run more often than the monitor interval cannot be expected to claim
+      // inside a window narrower than two of them.
+      expect(Attorney.getConfig({ ...config, cronMonitorIntervalSeconds: 45 }).missedGraceSeconds).toBe(90)
+    })
+
+    it('should accept an explicit grace window, which is what a deployment with late passes needs', function () {
+      expect(Attorney.getConfig({ ...config, missedGraceSeconds: 300 }).missedGraceSeconds).toBe(300)
+      expect(() => Attorney.getConfig({ ...config, missedGraceSeconds: 0 }))
+        .toThrow('missedGraceSeconds must be at least 1 second')
+    })
+
+    it('should default and validate the per-pass occurrence cap', function () {
+      expect(Attorney.getConfig(config).maxCatchupOccurrences).toBe(1000)
+      expect(Attorney.getConfig({ ...config, maxCatchupOccurrences: 50 }).maxCatchupOccurrences).toBe(50)
+      expect(() => Attorney.getConfig({ ...config, maxCatchupOccurrences: 0 }))
+        .toThrow('maxCatchupOccurrences must be at least 1')
+    })
+
+    it('should default and validate the schedule repair window', function () {
+      expect(Attorney.getConfig(config).scheduleRepairSeconds).toBe(300)
+      expect(Attorney.getConfig({ ...config, scheduleRepairSeconds: 30 }).scheduleRepairSeconds).toBe(30)
+      expect(() => Attorney.getConfig({ ...config, scheduleRepairSeconds: 0 }))
+        .toThrow('scheduleRepairSeconds must be at least 1 second')
+    })
+  })
+
   describe('reindex', function () {
     const config = { connectionString: 'postgres://localhost/db' }
     const MAX_EXPIRE_SECONDS = Attorney.POLICY.MAX_EXPIRATION_HOURS * 60 * 60

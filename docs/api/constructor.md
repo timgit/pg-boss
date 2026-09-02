@@ -111,6 +111,18 @@ The following options can be set as properties in an object for additional confi
   })
   ```
 
+* **missedGraceSeconds**, int, default 60
+
+  How long after coming due an occurrence still counts as on time, in seconds. Anything older came due while no instance was claiming, and the schedule's `missed` policy decides its fate. Defaults to 60 seconds, or twice `cronMonitorIntervalSeconds` when that is longer. Raise it in a deployment whose passes routinely run late, so healthy occurrences are not written off as missed. See [Missed occurrences](./scheduling.md#missed-occurrences).
+
+* **maxCatchupOccurrences**, int, default 1000
+
+  The most occurrences one scheduling pass will send, per schedule and in total. `missed: 'all'` is unbounded by construction, so the remainder is dropped and reported as a `missed_occurrences_capped` warning.
+
+* **scheduleRepairSeconds**, int, default 300
+
+  How long a schedule may sit with no pending occurrence before a pass re-anchors it, in seconds. Covers rows carried over from a schema that stored no occurrence, and rows whose claiming process died before it could write the following occurrence back.
+
 * **migrate**, bool, default true
 
   If this is set to false, this instance will skip attempts to run schema migrations during `start()`. If schema migrations exist, `start()` will throw and error and block usage. This is an advanced use case when the configured user account does not have schema mutation privileges.

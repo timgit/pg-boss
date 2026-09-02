@@ -484,6 +484,7 @@ describe('timekeeper occurrences', function () {
     claim?: any[]
     unsupported?: any[]
     writes?: { name: string, key: string, nextRunAt: Date | null }[]
+    released?: number
   }
 
   function makeDb (dbTimeOffsetMs: number, state: FakeState) {
@@ -499,9 +500,16 @@ describe('timekeeper occurrences', function () {
           return { rows: state.claim || [] }
         }
 
+        // one statement for the whole pass, so the rows arrive as a JSON payload
         if (sql.includes('SET next_run_at')) {
-          const [name, key, nextRunAt] = params as [string, string, Date | null]
-          state.writes!.push({ name, key, nextRunAt })
+          for (const { name, key, nextRunAt } of JSON.parse(params[0] as string)) {
+            state.writes!.push({ name, key, nextRunAt: new Date(nextRunAt) })
+          }
+          return { rows: [] }
+        }
+
+        if (sql.includes('SET cron_on = null')) {
+          state.released = (state.released || 0) + 1
           return { rows: [] }
         }
 
@@ -526,8 +534,20 @@ describe('timekeeper occurrences', function () {
     return tk
   }
 
-  // A claim row as the database hands it back: `dueAt` is the occurrence taken, `priorRunAt` the
-  // one before it (null the first time a schedule fires).
+  // An occurrence that has only just passed, pinned half a second off the boundary: only a cron
+  // occurrence exactly on the minute goes in the rolling-upgrade slot (see throttleSlot), and most
+  // of these tests are not about that.
+  function justPassed () {
+    const now = Date.now()
+    return new Date(now - (now % 1000) - 500)
+  }
+
+  /** The most recent minute boundary, which is what a 5-field cron expression always lands on. */
+  function onTheMinute () {
+    return new Date(Math.floor(Date.now() / 60_000) * 60_000)
+  }
+
+  // A claim row as the database hands it back, where `dueAt` is the occurrence taken.
   function claimRow (overrides: object = {}) {
     return {
       name: 'q',
@@ -537,8 +557,20 @@ describe('timekeeper occurrences', function () {
       timezone: 'UTC',
       data: null,
       options: {},
-      dueAt: new Date(),
-      priorRunAt: new Date(Date.now() - 60_000),
+      dueAt: justPassed(),
+      databaseTime: new Date(),
+      ...overrides
+    }
+  }
+
+  // A repair row as the database hands it back.
+  function repairRow (overrides: object = {}) {
+    return {
+      name: 'q',
+      key: '',
+      kind: 'cron',
+      expression: '* * * * *',
+      timezone: 'UTC',
       databaseTime: new Date(),
       ...overrides
     }
@@ -640,16 +672,43 @@ describe('timekeeper occurrences', function () {
 
     expect(inserted.length).toBe(1)
     expect(inserted[0].singletonKey).toBe('q__')
-    // dedup is the row claim now, so the minute-granularity throttle is gone
-    expect(inserted[0].singletonSeconds).toBeUndefined()
 
     expect(state.writes!.length).toBe(1)
     expect(state.writes![0].nextRunAt!.getTime()).toBeGreaterThan(Date.now())
   })
 
-  it('skips a missed occurrence by default, and still advances the schedule', async function () {
-    const dueAt = new Date(Date.now() - 10 * 60 * 1000)
-    const state: FakeState = { claim: [claimRow({ dueAt, priorRunAt: new Date(dueAt.getTime() - 60_000) })] }
+  it('gives an occurrence the same job id every time it is forwarded', async function () {
+    const dueAt = justPassed()
+
+    // The job the claimed occurrence turns into, on a pass of its own each time.
+    async function forward (occurrence: Date) {
+      const state: FakeState = { claim: [claimRow({ dueAt: occurrence })] }
+      const tk = makeTk(0, {}, state)
+      const inserted: any[] = []
+      ;(tk as any).manager = { insert: async (_q: string, jobs: any[]) => { inserted.push(...jobs) } }
+      await tk.cron()
+      return inserted[0]
+    }
+
+    const first = await forward(dueAt)
+    const second = await forward(dueAt)
+
+    // Forwarding is not atomic with the claim, so an insert that commits and loses its
+    // acknowledgement is handed back and re-forwarded by a later pass. The id is what makes the
+    // repeat collapse on ON CONFLICT DO NOTHING instead of becoming a second job.
+    expect(first.id).toBe(second.id)
+    expect(first.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
+
+    // and a different occurrence of the same schedule is a different job
+    const other = await forward(new Date(dueAt.getTime() - 30_000))
+
+    expect(other.id).not.toBe(first.id)
+  })
+
+  it('files a cron occurrence on the minute in the slot a release before schema 40 would use', async function () {
+    const dueAt = onTheMinute()
+    const databaseTime = new Date()
+    const state: FakeState = { claim: [claimRow({ dueAt, databaseTime })] }
     const tk = makeTk(0, {}, state)
 
     const inserted: any[] = []
@@ -657,8 +716,95 @@ describe('timekeeper occurrences', function () {
 
     await tk.cron()
 
-    // ten minutes of occurrences came due with nobody running; the default reproduces what
-    // scheduling did before they were tracked, which is to resume at the next one
+    // An instance on pre-40 code keeps running against a 40 schema and forwards with
+    // singletonSeconds: 60, so during a rolling upgrade both it and this pass can forward the same
+    // occurrence. Reusing its minute slot is what collapses the pair.
+    expect(inserted[0].singletonSeconds).toBe(60)
+
+    // and the slot is pinned to the occurrence rather than to insert time, so a pass that straddles
+    // a minute boundary does not file the occurrence under the following minute
+    const slot = databaseTime.getTime() + inserted[0].singletonOffset * 1000
+    expect(Math.floor(slot / 60_000)).toBe(dueAt.getTime() / 60_000)
+  })
+
+  it('leaves an occurrence off the minute out of that slot, which is what would throttle it', async function () {
+    const state: FakeState = {
+      claim: [claimRow({ kind: 'ticks', expression: '2', dueAt: justPassed() })]
+    }
+    const tk = makeTk(0, {
+      recurrences: { ticks: { next: (e: string, after: Date) => new Date(after.getTime() + Number(e) * 1000) } }
+    }, state)
+
+    const inserted: any[] = []
+    ;(tk as any).manager = { insert: async (_q: string, jobs: any[]) => { inserted.push(...jobs) } }
+
+    await tk.cron()
+
+    // A minute slot is exactly what capped a schedule at one job a minute, which is what the row
+    // claim replaced it for.
+    expect(inserted.length).toBeGreaterThanOrEqual(1)
+    expect(inserted[0].singletonSeconds).toBeUndefined()
+    expect(inserted[0].singletonOffset).toBeUndefined()
+  })
+
+  it('sends every occurrence a late pass arrived in time for, not just the one it claimed', async function () {
+    // A kind finer than the grace window: three occurrences came due between the one claimed and
+    // now, and all four were claimed inside the window, so none of them was missed.
+    const dueAt = new Date(Date.now() - 8_000)
+    const state: FakeState = { claim: [claimRow({ kind: 'ticks', expression: '2', dueAt })] }
+    const tk = makeTk(0, {
+      recurrences: { ticks: { next: (e: string, after: Date) => new Date(after.getTime() + Number(e) * 1000) } }
+    }, state)
+
+    const inserted: any[] = []
+    ;(tk as any).manager = { insert: async (_q: string, jobs: any[]) => { inserted.push(...jobs) } }
+
+    await tk.cron()
+
+    // One job per pass would throttle a two-second kind to the monitor interval, which is the
+    // throttle the row claim replaced.
+    expect(inserted.length).toBeGreaterThanOrEqual(4)
+    expect(state.writes![0].nextRunAt!.getTime()).toBeGreaterThan(Date.now())
+  })
+
+  it('skips a missed occurrence by default, says so, and still advances the schedule', async function () {
+    const dueAt = new Date(Date.now() - 10 * 60 * 1000)
+    const state: FakeState = { claim: [claimRow({ dueAt })] }
+    const tk = makeTk(0, {}, state)
+
+    const inserted: any[] = []
+    ;(tk as any).manager = { insert: async (_q: string, jobs: any[]) => { inserted.push(...jobs) } }
+
+    const warnings: any[] = []
+    tk.on('warning', (w: any) => warnings.push(w))
+
+    await tk.cron()
+
+    // ten minutes of occurrences came due with nobody claiming; the default resumes at the next one
+    expect(inserted.length).toBe(0)
+    expect(state.writes![0].nextRunAt!.getTime()).toBeGreaterThan(Date.now())
+
+    // and says which schedule lost which occurrence: skip is the default, so silence here is how a
+    // deployment writes off occurrence after occurrence with nothing to show for it
+    expect(warnings.length).toBe(1)
+    expect(warnings[0].message).toMatch(/was skipped/)
+    expect(warnings[0].data.dueAt).toBe(dueAt.toISOString())
+  })
+
+  it('skips a first occurrence nobody claimed in time, the same as any later one', async function () {
+    // A schedule created while nothing was running, or created seconds before an outage. The row
+    // has never fired, but that is not a reason to send a month-old occurrence under a policy
+    // documented as sending nothing for the ones that were missed.
+    const dueAt = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+    const state: FakeState = { claim: [claimRow({ dueAt, expression: '0 3 * * *' })] }
+    const tk = makeTk(0, {}, state)
+
+    const inserted: any[] = []
+    ;(tk as any).manager = { insert: async (_q: string, jobs: any[]) => { inserted.push(...jobs) } }
+    tk.on('warning', () => {})
+
+    await tk.cron()
+
     expect(inserted.length).toBe(0)
     expect(state.writes![0].nextRunAt!.getTime()).toBeGreaterThan(Date.now())
   })
@@ -666,7 +812,7 @@ describe('timekeeper occurrences', function () {
   it('missed: once collapses a whole outage into a single job', async function () {
     const dueAt = new Date(Date.now() - 10 * 60 * 1000)
     const state: FakeState = {
-      claim: [claimRow({ dueAt, priorRunAt: new Date(dueAt.getTime() - 60_000), options: { missed: 'once' } })]
+      claim: [claimRow({ dueAt, options: { missed: 'once' } })]
     }
     const tk = makeTk(0, {}, state)
 
@@ -676,15 +822,15 @@ describe('timekeeper occurrences', function () {
     await tk.cron()
 
     expect(inserted.length).toBe(1)
+    expect(state.writes![0].nextRunAt!.getTime()).toBeGreaterThan(Date.now())
   })
 
   it('missed: all sends one job per occurrence that came due', async function () {
     // aligned to a minute boundary so the count is exact rather than off by a partial minute
-    const boundary = new Date(Math.floor(Date.now() / 60_000) * 60_000)
-    const dueAt = new Date(boundary.getTime() - 4 * 60_000)
+    const dueAt = new Date(onTheMinute().getTime() - 4 * 60_000)
 
     const state: FakeState = {
-      claim: [claimRow({ dueAt, priorRunAt: new Date(dueAt.getTime() - 60_000), options: { missed: 'all' } })]
+      claim: [claimRow({ dueAt, options: { missed: 'all' } })]
     }
     const tk = makeTk(0, {}, state)
 
@@ -695,14 +841,15 @@ describe('timekeeper occurrences', function () {
 
     // the claimed occurrence plus the four that passed while it waited
     expect(inserted.length).toBe(5)
+    // every one of them minute-aligned, so the rolling-upgrade slot cannot collapse two of them
+    expect(new Set(inserted.map(j => j.singletonOffset)).size).toBe(5)
   })
 
   it('missed: all stops at the cap and says so', async function () {
-    const boundary = new Date(Math.floor(Date.now() / 60_000) * 60_000)
-    const dueAt = new Date(boundary.getTime() - 5000 * 60_000)
+    const dueAt = new Date(onTheMinute().getTime() - 5000 * 60_000)
 
     const state: FakeState = {
-      claim: [claimRow({ dueAt, priorRunAt: new Date(dueAt.getTime() - 60_000), options: { missed: 'all' } })]
+      claim: [claimRow({ dueAt, options: { missed: 'all' } })]
     }
     const tk = makeTk(0, {}, state)
 
@@ -717,16 +864,70 @@ describe('timekeeper occurrences', function () {
     // a minutely schedule left alone for days is otherwise an unbounded insert
     expect(inserted.length).toBe(1000)
     expect(warnings.length).toBe(1)
-    expect(warnings[0].message).toMatch(/missed more than 1000/)
+    expect(warnings[0].message).toMatch(/more occurrences than one pass may send \(1000\)/)
     expect(state.writes![0].nextRunAt!.getTime()).toBeGreaterThan(Date.now())
   })
 
-  it('a schedule fires the first time even when the pass is late to its first occurrence', async function () {
-    // priorRunAt null: schedule() already decided this occurrence was recent enough to keep when it
-    // anchored the row, and the seconds it took a pass to get here must not overturn that
-    const dueAt = new Date(Date.now() - 90_000)
-    const state: FakeState = { claim: [claimRow({ dueAt, priorRunAt: null })] }
-    const tk = makeTk(0, {}, state)
+  it('caps a pass across schedules, not only within one', async function () {
+    const dueAt = new Date(onTheMinute().getTime() - 5000 * 60_000)
+
+    const state: FakeState = {
+      claim: [
+        claimRow({ name: 'first', dueAt, options: { missed: 'all' } }),
+        claimRow({ name: 'second', dueAt, options: { missed: 'all' } }),
+        claimRow({ name: 'third', dueAt, options: { missed: 'all' } })
+      ]
+    }
+    const tk = makeTk(0, { maxCatchupOccurrences: 10 }, state)
+
+    const inserted: any[] = []
+    ;(tk as any).manager = { insert: async (_q: string, jobs: any[]) => { inserted.push(...jobs) } }
+    tk.on('warning', () => {})
+
+    await tk.cron()
+
+    // A per-schedule cap alone is one insert statement and one synchronous parser loop that both
+    // scale with the number of schedules owed a catch-up: without a pass budget these three would
+    // be thirty occurrences, and three hundred schedules three thousand.
+    expect(inserted.filter(j => j.data.name === 'first').length).toBe(10)
+
+    // The two behind it still get the occurrence they are actually due, so a long catch-up in front
+    // of a schedule can never starve it. That is what bounds a pass at the cap or one per due
+    // schedule, whichever is larger.
+    expect(inserted.filter(j => j.data.name === 'second').length).toBe(1)
+    expect(inserted.filter(j => j.data.name === 'third').length).toBe(1)
+    expect(state.writes!.length).toBe(3)
+  })
+
+  it('stops a finite recurrence at its last occurrence instead of writing another one back', async function () {
+    const state: FakeState = { claim: [claimRow({ kind: 'finite', expression: 'last' })] }
+    const tk = makeTk(0, {
+      // a recurrence with nothing after the occurrence just claimed
+      recurrences: { finite: { next: () => null } }
+    }, state)
+
+    const inserted: any[] = []
+    ;(tk as any).manager = { insert: async (_q: string, jobs: any[]) => { inserted.push(...jobs) } }
+
+    await tk.cron()
+
+    // the occurrence still fires; the row simply keeps the null the claim left behind, which is
+    // what getSchedules() reports as a finished schedule
+    expect(inserted.length).toBe(1)
+    expect(state.writes!.length).toBe(0)
+  })
+
+  it('anchors past an occurrence claimed a moment before the clock says it is due', async function () {
+    // The pass measures against an estimate of the database clock, so a claim can land fractionally
+    // before the occurrence it just took. Anchoring on `now` alone would re-derive that same
+    // occurrence and fire it a second time.
+    const dueAt = new Date(Date.now() + 2000)
+    const state: FakeState = {
+      claim: [claimRow({ kind: 'ticks', expression: '2', dueAt, options: { missed: 'once' } })]
+    }
+    const tk = makeTk(0, {
+      recurrences: { ticks: { next: (e: string, after: Date) => new Date(after.getTime() + Number(e) * 1000) } }
+    }, state)
 
     const inserted: any[] = []
     ;(tk as any).manager = { insert: async (_q: string, jobs: any[]) => { inserted.push(...jobs) } }
@@ -734,10 +935,11 @@ describe('timekeeper occurrences', function () {
     await tk.cron()
 
     expect(inserted.length).toBe(1)
+    expect(state.writes![0].nextRunAt!.getTime()).toBe(dueAt.getTime() + 2000)
   })
 
   it('hands an occurrence back when the forward fails, rather than dropping it', async function () {
-    const dueAt = new Date()
+    const dueAt = justPassed()
     const state: FakeState = { claim: [claimRow({ dueAt })] }
     const tk = makeTk(0, {}, state)
 
@@ -749,6 +951,69 @@ describe('timekeeper occurrences', function () {
     // good. It goes back exactly where it was for a later pass to re-claim.
     expect(state.writes!.length).toBe(1)
     expect(state.writes![0].nextRunAt!.getTime()).toBe(dueAt.getTime())
+  })
+
+  it('emits when the write that advances a schedule fails, rather than losing it silently', async function () {
+    const state: FakeState = { claim: [claimRow()] }
+    const tk = makeTk(0, {}, state)
+    const inner = (tk as any).db
+
+    ;(tk as any).db = {
+      executeSql: async (sql: string, params: unknown[] = []) => {
+        if (sql.includes('SET next_run_at')) {
+          throw new Error('write failed')
+        }
+        return inner.executeSql(sql, params)
+      }
+    }
+    ;(tk as any).manager = { insert: async () => {} }
+
+    const errors: any[] = []
+    tk.on('error', (e: any) => errors.push(e))
+
+    await tk.cron()
+
+    // The jobs are already durable, so the pass has nothing to undo and must not abort. The row
+    // stays claimed for repair to re-anchor, but the failure still has to reach the error event.
+    expect(errors.some(e => e.message === 'write failed')).toBe(true)
+  })
+
+  it('leaves a claimed occurrence for a later pass when the instance stops mid-pass', async function () {
+    const dueAt = justPassed()
+    const state: FakeState = { claim: [claimRow({ dueAt })] }
+    const tk = makeTk(0, {}, state)
+
+    // stop() landing between the claim and the forward: the jobs must not be queued once the
+    // worker that would run them is gone, and the occurrence must go back rather than be written
+    // off, since the claim has already cleared next_run_at.
+    ;(tk as any).manager = { insert: async () => { throw new Error('must not forward after stop') } }
+    ;(tk as any).stopped = true
+
+    await tk.cron()
+
+    expect(state.writes!.length).toBe(1)
+    expect(state.writes![0].nextRunAt!.getTime()).toBe(dueAt.getTime())
+  })
+
+  it('keeps the warnings a failed pass already emitted from being emitted again on the next one', async function () {
+    const state: FakeState = {
+      repair: [repairRow({ name: 'broken', timezone: 'Mars/Phobos' })],
+      claim: [claimRow()]
+    }
+    const tk = makeTk(0, {}, state)
+
+    ;(tk as any).manager = { insert: async () => { throw new Error('insert failed') } }
+
+    const warnings: any[] = []
+    tk.on('warning', (w: any) => warnings.push(w))
+
+    // Throwing straight out of the pass would discard the suppression set, so the broken row would
+    // warn (and persist a warning row) on every pass for as long as the insert kept failing, and
+    // warningRetentionDays has no default to bound that.
+    await expect(tk.cron()).rejects.toThrow('insert failed')
+    await expect(tk.cron()).rejects.toThrow('insert failed')
+
+    expect(warnings.length).toBe(1)
   })
 
   it('onSendIt emits an error when a forwarded cron send fails', async function () {
@@ -829,11 +1094,18 @@ describe('timekeeper occurrences', function () {
 
   it('a parser that answers with something other than a date is treated as a broken schedule', async function () {
     const state: FakeState = {
-      claim: [claimRow({ kind: 'bad', expression: 'x' })]
+      claim: [
+        claimRow({ name: 'backwards', kind: 'backwards', expression: 'x' }),
+        claimRow({ name: 'notadate', kind: 'notadate', expression: 'x' })
+      ]
     }
     const tk = makeTk(0, {
-      // a parser going backwards would spin the catch-up loop forever
-      recurrences: { bad: { next: (_e: string, after: Date) => new Date(after.getTime() - 1000) } }
+      recurrences: {
+        // a parser going backwards would spin the catch-up loop forever
+        backwards: { next: (_e: string, after: Date) => new Date(after.getTime() - 1000) },
+        // and one answering with a string would reach the schedule table as `Invalid Date`
+        notadate: { next: () => 'next tuesday' }
+      }
     }, state)
 
     const warnings: any[] = []
@@ -841,8 +1113,10 @@ describe('timekeeper occurrences', function () {
 
     await tk.cron()
 
-    expect(warnings.length).toBe(1)
-    expect(warnings[0].message).toMatch(/could not be evaluated/)
+    expect(warnings.length).toBe(2)
+    expect(warnings.every(w => /could not be evaluated/.test(w.message))).toBe(true)
+    expect(warnings.some(w => /is not after/.test(w.message))).toBe(true)
+    expect(warnings.some(w => /instead of a Date or null/.test(w.message))).toBe(true)
   })
 
   it('one unusable schedule row does not stop every other schedule from firing', async function () {
@@ -876,7 +1150,7 @@ describe('timekeeper occurrences', function () {
   })
 
   it('an unusable schedule row warns once, not on every pass', async function () {
-    const state: FakeState = { repair: [{ name: 'broken', key: '', kind: 'cron', expression: '* * * * *', timezone: 'Mars/Phobos', lastRunAt: null }] }
+    const state: FakeState = { repair: [repairRow({ name: 'broken', timezone: 'Mars/Phobos' })] }
     const tk = makeTk(0, {}, state)
 
     const warnings: any[] = []
@@ -894,7 +1168,7 @@ describe('timekeeper occurrences', function () {
   })
 
   it('a repaired schedule row warns again if it breaks a second time', async function () {
-    const row = { name: 'broken', key: '', kind: 'cron', expression: '* * * * *', timezone: 'Mars/Phobos', lastRunAt: null }
+    const row = repairRow({ name: 'broken', timezone: 'Mars/Phobos' })
     const state: FakeState = { repair: [row] }
     const tk = makeTk(0, {}, state)
 
@@ -917,7 +1191,7 @@ describe('timekeeper occurrences', function () {
   })
 
   it('editing an unusable schedule row into a different unusable state warns again', async function () {
-    const row = { name: 'broken', key: '', kind: 'cron', expression: '* * * * *', timezone: 'Mars/Phobos', lastRunAt: null }
+    const row = repairRow({ name: 'broken', timezone: 'Mars/Phobos' })
     const state: FakeState = { repair: [row] }
     const tk = makeTk(0, {}, state)
 
@@ -936,7 +1210,7 @@ describe('timekeeper occurrences', function () {
   })
 
   it('start() re-surfaces a schedule row nobody has fixed', async function () {
-    const state: FakeState = { repair: [{ name: 'broken', key: '', kind: 'cron', expression: '* * * * *', timezone: 'Mars/Phobos', lastRunAt: null }] }
+    const state: FakeState = { repair: [repairRow({ name: 'broken', timezone: 'Mars/Phobos' })] }
     const tk = makeTk(0, {}, state)
 
     const warnings: any[] = []
@@ -956,7 +1230,7 @@ describe('timekeeper occurrences', function () {
 
   it('repair anchors a schedule that has no pending occurrence, without sending one', async function () {
     const state: FakeState = {
-      repair: [{ name: 'q', key: '', kind: 'cron', expression: '* * * * *', timezone: 'UTC', lastRunAt: null, databaseTime: new Date() }]
+      repair: [repairRow()]
     }
     const tk = makeTk(0, {}, state)
 
@@ -987,5 +1261,23 @@ describe('timekeeper occurrences', function () {
     expect(warnings[0].message).toMatch(/recurrence kind "rrule"/)
     // nothing is claimed or advanced: the row is left for an instance that has the parser
     expect(state.writes!.length).toBe(0)
+
+    // Warning alone leaves the occurrence to rot. The pass slot is deployment-wide, so this
+    // instance has just spent the one pass of the interval on a row it cannot evaluate; releasing
+    // the slot is what lets an instance that has the parser get there while the occurrence is still
+    // inside the grace window, rather than roughly one interval per instance later.
+    expect(state.released).toBe(1)
+  })
+
+  it('keeps the pass slot when every due schedule is one this instance can evaluate', async function () {
+    const state: FakeState = { claim: [claimRow()] }
+    const tk = makeTk(0, {}, state)
+
+    ;(tk as any).manager = { insert: async () => {} }
+
+    await tk.cron()
+
+    // Releasing on every pass would multiply the claim query by the instance count for no reason.
+    expect(state.released).toBeUndefined()
   })
 })

@@ -968,6 +968,10 @@ export function schedule (schema: string) {
  * is why a claimed row is briefly `next_run_at IS NULL`. A process that dies in that window leaves
  * the row parked; repairSchedules() re-anchors it.
  *
+ * `updated_on` is bumped so the row records when it was claimed. `last_run_at` cannot serve that
+ * purpose: it holds the occurrence, which after an outage is already older than any staleness
+ * window a repair pass could reasonably use (see getSchedulesToRepair).
+ *
  * SKIP LOCKED keeps concurrent passes from stepping on each other rather than queueing behind each
  * other, but it is not what makes the claim exclusive: `next_run_at = due.next_run_at` is. The
  * update re-evaluates that condition against the row as it stands when the write lock is granted,
@@ -978,9 +982,7 @@ export function schedule (schema: string) {
 export function claimDueSchedules (schema: string, noSkipLocked = false) {
   return `
     WITH due AS (
-      -- Read before the update, so last_run_at here is the previous run rather than the one being
-      -- claimed. The caller needs that to tell a schedule's first occurrence from a repeat.
-      SELECT name, key, next_run_at, last_run_at AS prior_run_at
+      SELECT name, key, next_run_at
       FROM ${schema}.schedule
       WHERE next_run_at IS NOT NULL
         AND next_run_at <= now()
@@ -989,13 +991,13 @@ export function claimDueSchedules (schema: string, noSkipLocked = false) {
       ${noSkipLocked ? '' : 'FOR UPDATE SKIP LOCKED'}
     )
     UPDATE ${schema}.schedule s
-    SET last_run_at = due.next_run_at, next_run_at = NULL
+    SET last_run_at = due.next_run_at, next_run_at = NULL, updated_on = now()
     FROM due
     WHERE s.name = due.name
       AND s.key = due.key
       AND s.next_run_at = due.next_run_at
     RETURNING s.name, s.key, s.kind, s.cron AS expression, s.timezone, s.data, s.options,
-              s.last_run_at AS "dueAt", due.prior_run_at AS "priorRunAt", now() AS "databaseTime"
+              s.last_run_at AS "dueAt", now() AS "databaseTime"
   `
 }
 
@@ -1019,35 +1021,63 @@ export function getUnsupportedDueSchedules (schema: string) {
  * Schedules with no occurrence pending: rows written before kinds were tracked (upgrade), and rows
  * whose claiming process died before it could write the following occurrence back.
  *
- * The staleness floor on last_run_at is what keeps this from racing the pass that is mid-claim: a
- * row claimed moments ago has last_run_at within the window and is left alone, while a row parked
- * by a dead process ages out of it. Rows of an exhausted finite recurrence match forever and simply
- * re-derive `null` each pass, which costs one parser call on a table with one row per schedule.
+ * The staleness floor is on `updated_on`, which the claim bumps, so it measures how long ago the
+ * row was claimed. `last_run_at` cannot: it holds the occurrence, and an occurrence claimed after
+ * an outage longer than the window is already outside it, which would make every row a pass is
+ * mid-claim on immediately repairable. A row claimed moments ago is left alone either way, and a
+ * row parked by a dead process ages out of the window.
+ *
+ * A row that has never fired needs no such guard, since there is no claim in flight to race: the
+ * claim sets `last_run_at` in the same statement that clears `next_run_at`. Skipping the guard
+ * there is what lets the first pass after the upgrade anchor a recently edited schedule
+ * immediately rather than a staleness window later.
+ *
+ * Rows of an exhausted finite recurrence match forever and simply re-derive `null` each pass, which
+ * costs one parser call on a table with one row per schedule.
  */
 export function getSchedulesToRepair (schema: string, staleSeconds: number) {
   return `
-    SELECT name, key, kind, cron AS expression, timezone, last_run_at AS "lastRunAt", now() AS "databaseTime"
+    SELECT name, key, kind, cron AS expression, timezone, now() AS "databaseTime"
     FROM ${schema}.schedule
     WHERE next_run_at IS NULL
       AND kind = ANY($1::text[])
-      AND (last_run_at IS NULL OR last_run_at < now() - interval '${staleSeconds} seconds')
+      AND (last_run_at IS NULL OR updated_on < now() - interval '${staleSeconds} seconds')
     ORDER BY name, key
   `
 }
 
 /**
- * Writes back the occurrence a schedule is waiting on. Guarded on `next_run_at IS NULL` so a
- * concurrent schedule() edit, which anchors the row on the new expression, is never overwritten by
- * a pass still holding the old one.
+ * Writes back the occurrence each schedule is waiting on, for a whole pass in one statement. The
+ * first pass after the upgrade that added occurrence tracking has to anchor every row in the table,
+ * and a round-trip per row would push the first post-upgrade sends well past the pass they belong
+ * to.
+ *
+ * Guarded on `next_run_at IS NULL` so a concurrent schedule() edit, which anchors the row on the
+ * new expression, is never overwritten by a pass still holding the old one.
  */
 export function setScheduleNextRun (schema: string) {
   return `
-    UPDATE ${schema}.schedule
-    SET next_run_at = $3
-    WHERE name = $1
-      AND key = $2
-      AND next_run_at IS NULL
+    UPDATE ${schema}.schedule s
+    SET next_run_at = u."nextRunAt"
+    FROM json_to_recordset($1::json) AS u (name text, key text, "nextRunAt" timestamptz)
+    WHERE s.name = u.name
+      AND s.key = u.key
+      AND s.next_run_at IS NULL
   `
+}
+
+/**
+ * Releases the deployment-wide scheduling pass slot (see trySetCronTime), so the next instance to
+ * tick runs a pass instead of finding the slot already taken.
+ *
+ * Used when a pass finds due schedules of a kind it has no parser for. The slot is one pass per
+ * cronMonitorIntervalSeconds across the whole deployment, so an instance without the parser
+ * consumes the slot and leaves the row for a pass it has no way to hand over to. Where one instance
+ * in ten registers the kind, that instance wins a slot roughly every ten intervals, by which point
+ * the occurrence is outside the grace window and the default `missed` policy writes it off.
+ */
+export function clearCronTime (schema: string) {
+  return `UPDATE ${schema}.version SET cron_on = null`
 }
 
 export function unschedule (schema: string) {
