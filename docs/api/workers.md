@@ -51,11 +51,11 @@ The default options for `work()` is 1 job every 2 seconds.
   - **Throwing** from the handler still fails the entire batch, exactly as without `perJobResults`. Use the returned array to express per-job failures; reserve throwing for batch-wide errors.
   - Resolving with anything other than an array is treated as a contract violation and fails the whole batch.
 
-* **priority**, bool, *(default=true)*
+* **priority**, bool — **deprecated, ignored since 12.30.0**
 
   Same as in [`fetch()`](./jobs#fetchname-options)
 
-* **orderByCreatedOn**, bool, *(default=true)*
+* **orderByCreatedOn**, bool — **deprecated, ignored since 12.30.0**
 
   Same as in [`fetch()`](./jobs#fetchname-options)
 

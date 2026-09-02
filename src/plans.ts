@@ -732,12 +732,33 @@ function createIndexJobThrottle (schema: string) {
 }
 
 function createIndexJobFetch (schema: string, noCoveringIndex = false) {
-  // No covering INCLUDE: the fetch locks candidate rows with FOR UPDATE ... SKIP LOCKED, which
-  // forces heap access, so an index-only scan is impossible and a covering payload would never be
-  // read from the index. Confirmed dead weight via EXPLAIN ANALYZE (see examples/index-perf);
-  // dropping it shrinks job_i5 on the hot insert path at no read-side cost.
-  // noCoveringIndex (the CockroachDB profile flag that stripped the old INCLUDE) is now moot here.
-  return `CREATE INDEX job_i5 ON ${schema}.job (name, start_after) WHERE state < '${JOB_STATES.active}' AND NOT blocked`
+  // Ordered to match the fetch's ORDER BY (priority desc, created_on, id) rather than its
+  // start_after filter, so the common case is an ordered walk instead of a scan-and-sort of every
+  // eligible row. Measured on a 50k-due backlog: 23-33 ms -> 0.09 ms.
+  //
+  // Two details are load-bearing, and dropping either costs an order of magnitude:
+  //
+  //  - `start_after` is a trailing KEY column, not INCLUDE and not absent. A non-leading key column
+  //    is still evaluated as an Index Cond, so not-yet-due rows are filtered inside the index. With
+  //    it absent the predicate becomes a Filter needing a heap fetch per candidate, and an idle
+  //    queue sitting on a scheduled backlog goes 0.04 ms -> 18 ms at 50k deferred, growing
+  //    linearly. INCLUDE cannot help: FOR UPDATE forces an Index Scan, never an Index Only Scan.
+  //
+  //  - `id` is deliberately NOT a key column, even though the fetch's ORDER BY ends with it. The
+  //    obvious shape, (name, priority DESC, created_on, id), satisfies the ordering outright — but
+  //    id is a random uuid, so it defeats btree deduplication and dominates size: 24 MB against
+  //    3.6 MB for this shape at 500k rows, 8.5x, on the hot insert path and on every vacuum's
+  //    bulkdelete. Leaving it out costs an Incremental Sort over the presorted (priority,
+  //    created_on) prefix, which sorts only within one tie group — measured at one full-sort group
+  //    of ~28 kB. Incremental Sort is PG13+, which is pg-boss's minimum; verified on 13.23.
+  //
+  // Also measured: neutral for key_strict_fifo (that fetch never reaches this index — the
+  // strict_fifo_heads CTE on job_i10 feeds the outer CTE), and a ~7x win on CockroachDB, which
+  // takes the noSkipLocked path and so does not depend on Incremental Sort at all.
+  //
+  // noCoveringIndex is accepted for signature symmetry with the other index builders; this shape
+  // has no covering payload to strip.
+  return `CREATE INDEX job_i5 ON ${schema}.job (name, priority DESC, created_on, start_after) WHERE state < '${JOB_STATES.active}' AND NOT blocked`
 }
 
 function createIndexJobPolicyExclusive (schema: string) {
@@ -1384,7 +1405,7 @@ function buildFetchParams (options: FetchJobOptions): FetchQueryParams {
  * exceeds fetch time.
  */
 export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): SqlQuery {
-  const { schema, table, name, policy, limit, includeMetadata, priority = true, orderByCreatedOn = true, ignoreStartAfter = false, groupConcurrency, minPriority, maxPriority } = options
+  const { schema, table, name, policy, limit, includeMetadata, ignoreStartAfter = false, groupConcurrency, minPriority, maxPriority } = options
 
   const keyStrictFifo = policy === QUEUE_POLICIES.key_strict_fifo
   const singletonFetch = limit > 1 && (policy === QUEUE_POLICIES.singleton || policy === QUEUE_POLICIES.stately)
@@ -1500,12 +1521,27 @@ export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): S
     groupConcurrencyFilter
   ].filter(Boolean).join('\n          AND ')
 
+  // Unconditional, and with no `id` tiebreak.
+  //
+  // The two conditionals this replaces existed only to serve the `priority` and `orderByCreatedOn`
+  // fetch options, which were requested as performance escapes from this sort. job_i5 now satisfies
+  // the ordering directly, so the escapes have nothing to escape — see the deprecation in
+  // manager.fetch(). Dropping them also deletes two branches from the hottest SQL builder here.
+  //
+  // `id` goes too. It is a random uuid, so it never provided creation order: a batch insert shares
+  // one now() and therefore ties on created_on, and those ties resolve today in random uuid order,
+  // not insertion order. Without it the index satisfies the ordering outright rather than through
+  // an Incremental Sort — 0.097 -> 0.031 ms and 50 -> 5 buffers at limit=1 — and ties fall back to
+  // index order, which tracks insertion order better than a uuid does.
+  //
+  // key_strict_fifo keeps its own id tiebreak in strict_fifo_heads, where DISTINCT ON does need a
+  // total order to pick a deterministic head per key.
   const nextCte = `
       next AS (
         SELECT ${selectCols}
         FROM ${schema}.${table} j
         WHERE ${whereConditions}
-        ORDER BY ${priority ? 'j.priority desc, ' : ''}${orderByCreatedOn ? 'j.created_on, ' : ''}j.id
+        ORDER BY j.priority desc, j.created_on
         LIMIT ${limit}
         ${lockClause}
       )`

@@ -68,8 +68,15 @@ const QUEUE_STATS_FORCE_TTL_SECONDS = 60
 
 const events = {
   error: 'error',
+  warning: 'warning',
   wip: 'wip'
 }
+
+// The fetch options that were performance escapes from the fetch's sort. job_i5 is now ordered to
+// match the fetch, so they escape nothing — `priority: false` is the only remaining shape that
+// still full-sorts, making it slower than the default it was meant to beat. Accepted and ignored
+// for now; removed in the next major.
+const DEPRECATED_FETCH_OPTIONS = ['priority', 'orderByCreatedOn'] as const
 
 // Standard translation of low-level Postgres errors raised by job-creation SQL
 // into actionable pg-boss errors. Centralized so any write path can reuse it.
@@ -85,6 +92,8 @@ function rethrowWriteError (err: any): never {
 
 class Manager extends EventEmitter implements types.EventsMixin {
   events = events
+  // Warn once per option per instance, not once per fetch.
+  #warnedFetchOptions = new Set<string>()
   db: (types.IDatabase & { _pgbdb?: false }) | Db
   config: types.ResolvedConstructorOptions
   wipTs: number
@@ -1337,11 +1346,27 @@ class Manager extends EventEmitter implements types.EventsMixin {
     return startAfter
   }
 
+  // Only fires when the option is explicitly disabled: work() forwards both keys with their
+  // defaults on every poll, so testing for presence would warn on every fetch in the process.
+  #warnDeprecatedFetchOptions (options: types.FetchOptions) {
+    for (const option of DEPRECATED_FETCH_OPTIONS) {
+      if (options[option] === false && !this.#warnedFetchOptions.has(option)) {
+        this.#warnedFetchOptions.add(option)
+        this.emit(events.warning, {
+          message: `${option}: false is deprecated and now ignored — jobs are always fetched in priority and creation order. Remove it; it will be rejected in the next major.`,
+          data: { type: 'deprecated_fetch_option', option }
+        })
+      }
+    }
+  }
+
   fetch<T>(name: string): Promise<types.Job<T>[]>
   fetch<T>(name: string, options: types.FetchOptions & { includeMetadata: true }): Promise<types.JobWithMetadata<T>[]>
   fetch<T>(name: string, options: types.FetchOptions): Promise<types.Job<T>[]>
   async fetch (name: string, options: types.FetchOptions = {}) {
     Attorney.checkFetchArgs(name, options)
+
+    this.#warnDeprecatedFetchOptions(options)
 
     const db = this.assertDb(options)
 

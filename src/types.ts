@@ -781,15 +781,20 @@ export interface JobFetchOptions {
    */
   includeMetadata?: boolean;
   /**
-   * Allow jobs with a higher priority to be fetched before jobs with lower or
-   * no priority.
-   * @default true
+   * @deprecated Ignored since 12.30.0, and removed in the next major. Jobs are always fetched in
+   * priority order.
+   *
+   * This existed to skip the priority sort for throughput, but the fetch index is now ordered to
+   * match the fetch, so there is no sort to skip — setting it `false` was measured ~180x *slower*
+   * than leaving it alone, since no index leads with `created_on`.
    */
   priority?: boolean;
   /**
-   * Fetch jobs in the order they were created. Set to `false` to disable this
-   * sorting and improve performance when the order of jobs does not matter.
-   * @default true
+   * @deprecated Ignored since 12.30.0, and removed in the next major. Jobs are always fetched in
+   * creation order.
+   *
+   * This existed to skip the `created_on` sort for throughput. The fetch index now provides that
+   * order directly, so disabling it saved nothing measurable.
    */
   orderByCreatedOn?: boolean;
   /**
@@ -1056,7 +1061,7 @@ export type UpdateQueueOptions = Omit<Queue, 'name' | 'partition' | 'policy' | '
 
 export interface Warning { message: string, data: object }
 
-export type WarningType = 'slow_query' | 'queue_backlog' | 'clock_skew' | 'listen_notify_unavailable' | 'invalid_schedule' | 'index_bloat' | 'xmin_horizon' | 'autovacuum_disabled'
+export type WarningType = 'slow_query' | 'queue_backlog' | 'clock_skew' | 'listen_notify_unavailable' | 'invalid_schedule' | 'index_bloat' | 'xmin_horizon' | 'autovacuum_disabled' | 'deprecated_fetch_option'
 
 export interface PersistedWarning {
   id: number;
