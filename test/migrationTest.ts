@@ -574,10 +574,16 @@ describe('migration', function () {
         // CREATE INDEX for every index in the schema, none of which it introduces. Rolling it back
         // is not supposed to drop them, and counting them here reports the whole index set as
         // leaked. Only standalone index DDL states what a migration actually adds.
-        const created = [...new Set(commands
+        const indexNames = (list: string[]) => new Set(list
           .filter(command => !/CREATE\s+(OR\s+REPLACE\s+)?FUNCTION/i.test(command))
           .map(command => bamCommandIndexName(command))
-          .filter((name): name is string => !!name))]
+          .filter((name): name is string => !!name))
+
+        // An index the uninstall also creates is being *reshaped* by this migration, not introduced
+        // by it — v40 drops job_i5 and rebuilds it in the previous shape, and job_i5 is meant to
+        // survive the rollback. Only what a migration adds outright is expected to disappear.
+        const restored = indexNames((migration.uninstall ?? []) as string[])
+        const created = [...indexNames(commands)].filter(name => !restored.has(name))
 
         await contractor.rollback(migration.version)
         expect(await contractor.schemaVersion()).toBe(migration.previous)
