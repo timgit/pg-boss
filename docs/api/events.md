@@ -33,7 +33,9 @@ boss.on('warning', ({ message, data }) => {
 | `clock_skew` | Database clock is out of sync with application server | `seconds`, `direction` |
 | `listen_notify_unavailable` | `useListenNotify` is enabled but a `LISTEN/NOTIFY` listener could not be established (for example a `db` adapter without `listen`, or PgBouncer transaction pooling); pg-boss continues with polling only | `type`, `error` |
 | `index_bloat` | A job index is holding far more pages than its live entries need and was not rebuilt — because rebuilds are disabled, the connected role does not own the index, the index exceeds `maxIndexBytes`, or `REINDEX CONCURRENTLY` failed. The message names the reason. Emitted once per index rather than on every pass, and again if the condition returns after being cleared | `name`, `table`, `pages`, `entries`, `bytes`, `owned` |
-| `invalid_schedule` | A stored schedule could not be evaluated (for example an unusable `timezone` written by an older release) and was skipped for this cron pass; the remaining schedules are unaffected. Emitted once per broken schedule rather than on every pass, and again if the schedule is edited or the instance restarts | `queue`, `key`, `cron`, `timezone` |
+| `invalid_schedule` | A stored schedule could not be evaluated (for example an unusable `timezone` written by an older release, or a recurrence parser that answered with something other than a date) and was skipped for this scheduling pass; the remaining schedules are unaffected. Emitted once per broken schedule rather than on every pass, and again if the schedule is edited or the instance restarts | `queue`, `key`, `kind`, `expression`, `timezone` |
+| `unsupported_recurrence` | A schedule came due whose recurrence `kind` this instance has no parser for. The row is left untouched for an instance that has one. Emitted once per schedule rather than on every pass | `queue`, `key`, `kind`, `expression` |
+| `missed_occurrences_capped` | A `missed: 'all'` schedule was owed more than 1000 occurrences; the remainder were dropped | `queue`, `key`, `kind`, `expression`, `timezone`, `cap` |
 
 ### Warning Persistence
 

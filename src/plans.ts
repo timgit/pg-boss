@@ -22,6 +22,9 @@ export const PG_ERROR = {
 }
 
 export const DEFAULT_SCHEMA = 'pgboss'
+// The recurrence kind pg-boss parses itself, and the default for every schedule row written before
+// kinds existed. Other kinds arrive as parsers registered on the constructor (see recurrence.ts).
+export const CRON_KIND = 'cron'
 export const MIGRATE_RACE_MESSAGE = 'division by zero'
 export const CREATE_RACE_MESSAGE = 'already exists'
 export const SINGLE_QUOTE_REGEX = /'/g
@@ -207,10 +210,13 @@ function createTableSchedule (schema: string) {
     CREATE TABLE ${schema}.schedule (
       name text REFERENCES ${schema}.queue ON DELETE CASCADE,
       key text not null DEFAULT '',
+      kind text not null DEFAULT '${CRON_KIND}',
       cron text not null,
       timezone text,
       data jsonb,
       options jsonb,
+      next_run_at timestamp with time zone,
+      last_run_at timestamp with time zone,
       created_on timestamp with time zone not null default now(),
       updated_on timestamp with time zone not null default now(),
       PRIMARY KEY (name, key)
@@ -917,28 +923,130 @@ export function deleteAllJobs (schema: string, table: string) {
   return `DELETE from ${schema}.${table} WHERE name = $1`
 }
 
+// `cron` holds the expression for every kind, so `expression` is aliased alongside it: the column
+// name predates pluggable kinds and renaming it would break every query written against the table.
+const SCHEDULE_COLUMNS = '*, cron AS expression, next_run_at AS "nextRunAt", last_run_at AS "lastRunAt"'
+
 export function getSchedules (schema: string) {
-  return `SELECT * FROM ${schema}.schedule ORDER BY name, key`
+  return `SELECT ${SCHEDULE_COLUMNS} FROM ${schema}.schedule ORDER BY name, key`
 }
 
 export function getSchedulesByQueue (schema: string) {
-  return `SELECT * FROM ${schema}.schedule WHERE name = $1 ORDER BY key`
+  return `SELECT ${SCHEDULE_COLUMNS} FROM ${schema}.schedule WHERE name = $1 ORDER BY key`
 }
 
 export function getSchedulesByQueueAndKey (schema: string) {
-  return `SELECT * FROM ${schema}.schedule WHERE name = $1 AND COALESCE(key, '') = $2`
+  return `SELECT ${SCHEDULE_COLUMNS} FROM ${schema}.schedule WHERE name = $1 AND COALESCE(key, '') = $2`
 }
 
 export function schedule (schema: string) {
   return `
-    INSERT INTO ${schema}.schedule (name, key, cron, timezone, data, options)
-    VALUES ($1, $2, $3, $4, $5, $6)
+    INSERT INTO ${schema}.schedule (name, key, kind, cron, timezone, data, options, next_run_at)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
     ON CONFLICT (name, key) DO UPDATE SET
+      kind = EXCLUDED.kind,
       cron = EXCLUDED.cron,
       timezone = EXCLUDED.timezone,
       data = EXCLUDED.data,
       options = EXCLUDED.options,
+      -- Re-anchored on the new expression. last_run_at is deliberately kept: it records when this
+      -- schedule last fired, which is still true after an edit.
+      next_run_at = EXCLUDED.next_run_at,
       updated_on = now()
+  `
+}
+
+/**
+ * Claims every occurrence that has come due, for the kinds this process can evaluate ($1).
+ *
+ * Taking the row is what makes an occurrence exclusive across instances: `next_run_at` is cleared
+ * in the same statement that reports it, so a second instance running the same pass finds nothing
+ * to claim. That replaces the old `singletonSeconds: 60` throttle on the forwarding job, which
+ * pinned scheduling to minute granularity even for kinds that don't want it.
+ *
+ * The caller then computes the following occurrence and writes it back (setScheduleNextRun), which
+ * is why a claimed row is briefly `next_run_at IS NULL`. A process that dies in that window leaves
+ * the row parked; repairSchedules() re-anchors it.
+ *
+ * SKIP LOCKED keeps concurrent passes from stepping on each other rather than queueing behind each
+ * other, but it is not what makes the claim exclusive: `next_run_at = due.next_run_at` is. The
+ * update re-evaluates that condition against the row as it stands when the write lock is granted,
+ * so a pass that lost the race matches nothing and reports nothing. That is what lets the engines
+ * where SKIP LOCKED performs poorly (CockroachDB) take the same statement with no locking clause at
+ * all, the way the fetch path does.
+ */
+export function claimDueSchedules (schema: string, noSkipLocked = false) {
+  return `
+    WITH due AS (
+      -- Read before the update, so last_run_at here is the previous run rather than the one being
+      -- claimed. The caller needs that to tell a schedule's first occurrence from a repeat.
+      SELECT name, key, next_run_at, last_run_at AS prior_run_at
+      FROM ${schema}.schedule
+      WHERE next_run_at IS NOT NULL
+        AND next_run_at <= now()
+        AND kind = ANY($1::text[])
+      ORDER BY next_run_at
+      ${noSkipLocked ? '' : 'FOR UPDATE SKIP LOCKED'}
+    )
+    UPDATE ${schema}.schedule s
+    SET last_run_at = due.next_run_at, next_run_at = NULL
+    FROM due
+    WHERE s.name = due.name
+      AND s.key = due.key
+      AND s.next_run_at = due.next_run_at
+    RETURNING s.name, s.key, s.kind, s.cron AS expression, s.timezone, s.data, s.options,
+              s.last_run_at AS "dueAt", due.prior_run_at AS "priorRunAt", now() AS "databaseTime"
+  `
+}
+
+/**
+ * Due occurrences of kinds no parser in this process understands. Nothing is claimed: the rows stay
+ * due for an instance that has the parser, mirroring how a queue with no work() handler is simply
+ * not fetched. Reported so the case is visible rather than silent.
+ */
+export function getUnsupportedDueSchedules (schema: string) {
+  return `
+    SELECT name, key, kind, cron AS expression
+    FROM ${schema}.schedule
+    WHERE next_run_at IS NOT NULL
+      AND next_run_at <= now()
+      AND kind <> ALL($1::text[])
+    ORDER BY name, key
+  `
+}
+
+/**
+ * Schedules with no occurrence pending: rows written before kinds were tracked (upgrade), and rows
+ * whose claiming process died before it could write the following occurrence back.
+ *
+ * The staleness floor on last_run_at is what keeps this from racing the pass that is mid-claim: a
+ * row claimed moments ago has last_run_at within the window and is left alone, while a row parked
+ * by a dead process ages out of it. Rows of an exhausted finite recurrence match forever and simply
+ * re-derive `null` each pass, which costs one parser call on a table with one row per schedule.
+ */
+export function getSchedulesToRepair (schema: string, staleSeconds: number) {
+  return `
+    SELECT name, key, kind, cron AS expression, timezone, last_run_at AS "lastRunAt", now() AS "databaseTime"
+    FROM ${schema}.schedule
+    WHERE next_run_at IS NULL
+      AND kind = ANY($1::text[])
+      AND (last_run_at IS NULL OR last_run_at < now() - interval '${staleSeconds} seconds')
+    ORDER BY name, key
+  `
+}
+
+/**
+ * Writes back the occurrence a schedule is waiting on. Guarded on `next_run_at IS NULL` so a
+ * concurrent schedule() edit, which anchors the row on the new expression, is never overwritten by
+ * a pass still holding the old one.
+ */
+export function setScheduleNextRun (schema: string) {
+  return `
+    UPDATE ${schema}.schedule
+    SET next_run_at = $3
+    WHERE name = $1
+      AND key = $2
+      AND next_run_at IS NULL
   `
 }
 

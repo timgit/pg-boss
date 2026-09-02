@@ -1,5 +1,6 @@
 import assert from 'node:assert'
 import { DEFAULT_SCHEMA } from './plans.ts'
+import { assertRecurrenceConfig } from './recurrence.ts'
 import type * as types from './types.ts'
 
 const POLICY = {
@@ -783,6 +784,10 @@ function applyScheduleConfig (config: any) {
     'configuration assert: cronWorkerIntervalSeconds must be between 1 and 45 seconds')
 
   config.cronWorkerIntervalSeconds = config.cronWorkerIntervalSeconds || 5
+
+  if ('recurrences' in config) {
+    assertRecurrenceConfig(config.recurrences)
+  }
 }
 
 function applyBamConfig (config: any) {

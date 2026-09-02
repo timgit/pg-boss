@@ -1468,6 +1468,29 @@ function getAll (schema: string, noPartitioning = false, noCovering = false): ty
       uninstall: [
         `ALTER TABLE ${schema}.version DROP COLUMN reindex_on`
       ]
+    },
+    {
+      release: '12.30.0',
+      version: 40,
+      previous: 39,
+      // Pluggable recurrence kinds. `kind` names the parser that evaluates the `cron` column (which
+      // now holds an expression of any kind), and next_run_at/last_run_at move the "is it due?"
+      // decision out of a per-pass cron evaluation and into the row, so an occurrence is claimed
+      // exactly once by whichever instance takes the row.
+      //
+      // next_run_at is left NULL for existing rows on purpose: the first cron pass anchors each one
+      // on its next future occurrence (repairSchedules), which is the same thing the old evaluation
+      // would have concluded, and avoids a migration that has to parse every stored expression.
+      install: [
+        `ALTER TABLE ${schema}.schedule ADD COLUMN IF NOT EXISTS kind text NOT NULL DEFAULT '${plans.CRON_KIND}'`,
+        `ALTER TABLE ${schema}.schedule ADD COLUMN IF NOT EXISTS next_run_at timestamp with time zone`,
+        `ALTER TABLE ${schema}.schedule ADD COLUMN IF NOT EXISTS last_run_at timestamp with time zone`
+      ],
+      uninstall: [
+        `ALTER TABLE ${schema}.schedule DROP COLUMN kind`,
+        `ALTER TABLE ${schema}.schedule DROP COLUMN next_run_at`,
+        `ALTER TABLE ${schema}.schedule DROP COLUMN last_run_at`
+      ]
     }
   ]
 }
