@@ -2714,8 +2714,8 @@ export function cacheQueueStats (schema: string, table: string, queues: string[]
 
   // Two columns in here are not counts and are easy to mistake for incidental:
   //
-  // monitor_on is stamped here and nowhere else - the claim in trySetQueueMonitorTime writes
-  // monitor_claim_on instead. So capturedOn means exactly one thing, "when these counts were
+  // monitor_on is stamped by this statement and by refreshQueueStats - the two that write counts -
+  // and never by the claim in trySetQueueMonitorTime, which writes monitor_claim_on instead. So capturedOn means exactly one thing, "when these counts were
   // written", and a claimed pass that skipped the aggregate (backed off, or beaten to the lock
   // below) leaves it aging rather than advancing it over unchanged counts.
   //
@@ -2791,10 +2791,18 @@ export function cacheQueueStats (schema: string, table: string, queues: string[]
 // Returning no rows is the documented outcome of losing the race: the caller serves the cached
 // counts it is already holding, which is what a concurrent refresh would have converged on anyway.
 // Single statement, so the lock is scoped to its implicit transaction and released with it.
-export function refreshQueueStats (schema: string, table: string, name: string, noAdvisoryLocks?: boolean): string {
+//
+// firstCapture is the one case that must not lose. A queue with no capture yet has no cached counts
+// to fall back on - only the columns' default zeros - so skipping the scan would answer "this queue
+// is empty" for a queue holding thousands of jobs, which is a fabricated number rather than a stale
+// one. And the lock key is global rather than per-queue, so a first read collides with any supervise
+// aggregate anywhere in the schema, which on exactly the slow-aggregate deployments this subsystem
+// targets is not a rare race. Skipping the lock is bounded: it can happen at most once per queue,
+// because the scan it runs is what populates the cache that gates every later read.
+export function refreshQueueStats (schema: string, table: string, name: string, options: { noAdvisoryLocks?: boolean, firstCapture?: boolean } = {}): string {
   const statsQuery = getQueueStats(schema, table, [name])
   const statsText = statsQuery.text.replace('$1::text[]', serializeArrayParam([name]))
-  const lock = tryAdvisoryLock(schema, 'queue-stats', noAdvisoryLocks)
+  const lock = tryAdvisoryLock(schema, 'queue-stats', options.noAdvisoryLocks || options.firstCapture)
 
   return `
     WITH ${lock.cte}stats AS (SELECT * FROM (${statsText}) agg WHERE true${lock.guard})

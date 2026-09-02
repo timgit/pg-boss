@@ -2004,7 +2004,12 @@ class Manager extends EventEmitter implements types.EventsMixin {
       return [toSnapshot(cached)]
     }
 
-    const refreshSql = plans.refreshQueueStats(this.config.schema, cached.table, name, this.config.noAdvisoryLocks)
+    // A queue with no capture yet has no cache to fall back on, so its first scan is exempt from the
+    // try-lock — see refreshQueueStats. Every later read has real counts to serve and can lose.
+    const refreshSql = plans.refreshQueueStats(this.config.schema, cached.table, name, {
+      noAdvisoryLocks: this.config.noAdvisoryLocks,
+      firstCapture: cached.capturedOn == null
+    })
     const { rows: refreshed } = await this.db.executeSql(refreshSql)
 
     // No row means another instance is running this exact aggregate right now and won the try-lock.

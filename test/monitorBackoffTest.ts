@@ -352,6 +352,27 @@ helper.describePostgresOnly('monitor backoff', function () {
       }
     })
 
+    it('runs a never-monitored queue\'s first scan even while losing the race', async function () {
+      const boss = await startBoss()
+
+      await boss.send('backoff', {})
+      await boss.send('backoff', {})
+
+      const release = await holdStatsLock(ctx.schema)
+
+      try {
+        // The lock key is global, not per-queue, so any supervise aggregate anywhere in the schema
+        // collides with a first read. Losing it would answer with the queue columns' default zeros —
+        // a fabricated count, not a stale one, because this queue has no capture to fall back on.
+        const [stats] = await boss.getQueueStats('backoff')
+
+        expect(stats.totalCount).toBe(2)
+        expect(stats.capturedOn).not.toBeNull()
+      } finally {
+        await release()
+      }
+    })
+
     it('serves the cache when a forced read loses the same race', async function () {
       const boss = await startBoss()
 

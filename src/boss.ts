@@ -324,16 +324,16 @@ class Boss extends EventEmitter implements types.EventsMixin {
 
     if (this.#stopping) return
 
-    await this.#checkVacuum()
-
-    await this.#maintainWarnings()
-    await this.#maintainQueueStats()
-
     // Immediately after the aggregates it measures, not at the head of the next pass. Deferring the
     // write left a whole supervise interval between a slow aggregate finishing and the gate closing
     // behind it, and a getQueueStats({ force: true }) landing in that window ran exactly the scan
     // the backoff was about to prevent.
     await this.#applyMonitorBackoff()
+
+    await this.#checkVacuum()
+
+    await this.#maintainWarnings()
+    await this.#maintainQueueStats()
 
     // Last in the pass: a rebuild is DDL that can run for seconds, so nothing time-sensitive
     // (expiry, deletion, stats) should ever queue behind it.
@@ -357,8 +357,9 @@ class Boss extends EventEmitter implements types.EventsMixin {
       // The vacuum-safety backoff defers the stats aggregate, not the whole pass. Job expiry and
       // heartbeat failure below are narrow indexed updates that pin nothing, and gating them on the
       // horizon would turn a vacuum-safety valve into a job-expiry outage lasting two naptimes at
-      // minimum. See the note on plans.trySetQueueMonitorTime.
-      const refreshStats = rows.every((q) => q.refreshStats !== false)
+      // minimum. See the note on plans.trySetQueueMonitorTime. The flag is a property of the
+      // statement, not of a queue, so every row carries the same value.
+      const refreshStats = rows[0].refreshStats !== false
 
       if (refreshStats) {
         const cacheStatsSql = plans.cacheQueueStats(this.#config.schema, table, queues, this.#config.noAdvisoryLocks)
