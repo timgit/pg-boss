@@ -74,13 +74,17 @@ function hourlySchedule () {
   return { expression: `${minute} * * * *`, previous }
 }
 
-// Parks a schedule on an occurrence that came due while nothing was claiming.
+// Parks a schedule on an occurrence that came due while nothing was claiming. updated_on is aged
+// along with the rest: the grace window runs from the later of the occurrence and the moment the
+// row was written, so a row still carrying the timestamp schedule() gave it a second ago is one
+// nothing could have missed yet, whatever its next_run_at says.
 async function backdateSchedule (previous: Date, hoursAgo: number) {
   const nextRunAt = new Date(previous.getTime() - hoursAgo * 3600_000)
+  const before = new Date(nextRunAt.getTime() - 3600_000)
 
   await execute(
-    `UPDATE ${ctx.schema}.schedule SET next_run_at = $1, last_run_at = $2 WHERE name = $3`,
-    [nextRunAt, new Date(nextRunAt.getTime() - 3600_000), ctx.schema]
+    `UPDATE ${ctx.schema}.schedule SET next_run_at = $1, last_run_at = $2, updated_on = $2 WHERE name = $3`,
+    [nextRunAt, before, ctx.schema]
   )
 }
 

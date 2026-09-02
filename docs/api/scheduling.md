@@ -72,6 +72,8 @@ For more cron documentation and examples see the docs for the [cron-parser packa
 
 An occurrence claimed within `missedGraceSeconds` of coming due was not missed, and is sent whatever the policy below says. That window defaults to 60 seconds, or twice `cronMonitorIntervalSeconds` when that is longer, and it is what lets a pass send every occurrence it arrived in time for rather than one per pass: a kind with second-level resolution gets all of them.
 
+The window runs from whichever is later, the occurrence or the moment the schedule row was written, because an occurrence cannot have been missed before the row naming it existed.
+
 Anything older came due while no instance was claiming, which is what the `missed` option decides the fate of. Because each schedule stores the occurrence it is waiting on, pg-boss knows exactly which ones those were.
 
 * **skip** (default)
@@ -86,7 +88,7 @@ Anything older came due while no instance was claiming, which is what the `misse
 
   Send one job per missed occurrence, oldest first. Capped by `maxCatchupOccurrences` (1000 by default), after which the remainder is dropped and a [`warning`](./events.md#warning) of type `missed_occurrences_capped` is emitted. The cap applies to the pass as a whole as well as to each schedule, so a long catch-up cannot turn one pass into an unbounded insert; every schedule due in that pass still gets the occurrence it is actually due.
 
-A schedule's first occurrence is treated exactly like any later one. `schedule()` anchors it one grace window back, so `0 3 * * *` created at 03:00:30 still sends immediately, but a schedule created while nothing was claiming gets whatever its policy says rather than an exemption.
+That is what makes a schedule's first occurrence work without needing an exemption. `schedule()` anchors a new schedule on the occurrence that has just passed, looking back a full window, so `0 3 * * *` created any time in the minute after 03:00 still sends immediately. A schedule created a month before the outage that swallowed its first occurrence gets whatever its policy says, exactly like a schedule that has been running for years.
 
 ### `schedule(name, recurrence, data, options)`
 

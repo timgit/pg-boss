@@ -982,7 +982,10 @@ export function schedule (schema: string) {
 export function claimDueSchedules (schema: string, noSkipLocked = false) {
   return `
     WITH due AS (
-      SELECT name, key, next_run_at
+      -- updated_on is read here, before the update below overwrites it, so it reports when the row
+      -- was last written rather than when this pass claimed it. The caller needs that to tell an
+      -- occurrence nobody was there to claim from one a schedule() call has only just anchored.
+      SELECT name, key, next_run_at, updated_on AS touched_at
       FROM ${schema}.schedule
       WHERE next_run_at IS NOT NULL
         AND next_run_at <= now()
@@ -997,7 +1000,7 @@ export function claimDueSchedules (schema: string, noSkipLocked = false) {
       AND s.key = due.key
       AND s.next_run_at = due.next_run_at
     RETURNING s.name, s.key, s.kind, s.cron AS expression, s.timezone, s.data, s.options,
-              s.last_run_at AS "dueAt", now() AS "databaseTime"
+              s.last_run_at AS "dueAt", due.touched_at AS "touchedAt", now() AS "databaseTime"
   `
 }
 

@@ -135,6 +135,8 @@ interface ClaimRow {
   expression: string
   timezone: string
   options?: types.ScheduleOptions
+  /** When the row was last written, before this claim. See plans.claimDueSchedules. */
+  touchedAt?: Date | null
 }
 
 interface ClaimedOccurrence {
@@ -510,6 +512,14 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
    * the monitor interval gets every occurrence rather than one per pass. A run the pass reached
    * within the grace window ran on time; an older one came due while no instance was claiming, so
    * the schedule's `missed` policy decides its fate.
+   *
+   * The window runs from whichever is later, the occurrence or the moment the row was written,
+   * because an occurrence cannot have been missed before the row naming it existed. schedule()
+   * deliberately anchors a brand-new schedule on the occurrence that has just passed, up to a full
+   * window back (see firstOccurrence), so measuring from the occurrence alone would drop that
+   * occurrence for any schedule created late in its own period: `0 3 * * *` created at 03:00:59
+   * would be silent until tomorrow. It is the same rule an edit gets, since schedule() re-anchors
+   * on the new expression, and it still writes off a month-old occurrence on a month-old row.
    */
   private planOccurrences (row: ClaimRow, dueAt: Date, now: Date, budget: number): OccurrencePlan {
     const parser = this.parsers.get(row.kind)!
@@ -517,7 +527,10 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
     const tz = timezone || 'UTC'
     const missed = resolveMissedPolicy(row.options?.missed)
 
-    const late = now.getTime() - dueAt.getTime() > this.missedGraceSeconds * 1000
+    const touchedAt = row.touchedAt ? toDate(row.touchedAt) : dueAt
+    const claimable = Math.max(dueAt.getTime(), touchedAt.getTime())
+
+    const late = now.getTime() - claimable > this.missedGraceSeconds * 1000
 
     if (missed === 'once' || (missed === 'skip' && late)) {
       // Anchored past the occurrence as well as past now, so a claim that lands fractionally before
@@ -673,8 +686,10 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
    * start life owing a backlog of occurrences that nobody missed.
    *
    * An occurrence anchored in the past still has to be claimed inside the grace window to be sent,
-   * exactly like every later one. A schedule created while nothing was running gets the same
-   * treatment its second occurrence would: `skip` resumes at the next one.
+   * exactly like every later one, except that the window runs from the moment this row is written
+   * rather than from the occurrence (see planOccurrences). Without that, anchoring a full window
+   * back would hand the pass an occurrence that is already at the edge of it, and a schedule
+   * created late in its own period would be silent until the next one.
    */
   private firstOccurrence (parser: types.RecurrenceParser, expression: string, tz: string): Date | null {
     const now = this.databaseNow()

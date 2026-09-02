@@ -547,7 +547,9 @@ describe('timekeeper occurrences', function () {
     return new Date(Math.floor(Date.now() / 60_000) * 60_000)
   }
 
-  // A claim row as the database hands it back, where `dueAt` is the occurrence taken.
+  // A claim row as the database hands it back, where `dueAt` is the occurrence taken and
+  // `touchedAt` is when the row was last written. An hour back by default, which is a schedule that
+  // has been running a while rather than one schedule() has only just anchored.
   function claimRow (overrides: object = {}) {
     return {
       name: 'q',
@@ -558,6 +560,7 @@ describe('timekeeper occurrences', function () {
       data: null,
       options: {},
       dueAt: justPassed(),
+      touchedAt: new Date(Date.now() - 3600_000),
       databaseTime: new Date(),
       ...overrides
     }
@@ -792,11 +795,13 @@ describe('timekeeper occurrences', function () {
   })
 
   it('skips a first occurrence nobody claimed in time, the same as any later one', async function () {
-    // A schedule created while nothing was running, or created seconds before an outage. The row
-    // has never fired, but that is not a reason to send a month-old occurrence under a policy
-    // documented as sending nothing for the ones that were missed.
+    // A schedule created a month before the outage that swallowed its occurrence. The row has never
+    // fired, but that is not a reason to send a month-old occurrence under a policy documented as
+    // sending nothing for the ones that were missed.
     const dueAt = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
-    const state: FakeState = { claim: [claimRow({ dueAt, expression: '0 3 * * *' })] }
+    const state: FakeState = {
+      claim: [claimRow({ dueAt, touchedAt: dueAt, expression: '0 3 * * *' })]
+    }
     const tk = makeTk(0, {}, state)
 
     const inserted: any[] = []
@@ -807,6 +812,25 @@ describe('timekeeper occurrences', function () {
 
     expect(inserted.length).toBe(0)
     expect(state.writes![0].nextRunAt!.getTime()).toBeGreaterThan(Date.now())
+  })
+
+  it('sends the occurrence schedule() just anchored, however close to the window it already was', async function () {
+    // schedule() deliberately looks back a whole grace window for the occurrence that has just
+    // passed, so a schedule created at 03:00:59 anchors on 03:00:00 with a second of the window
+    // left. Measuring lateness from the occurrence alone would drop it for the seconds a pass took
+    // to get here, and `0 3 * * *` created a minute late would be silent until tomorrow.
+    const dueAt = new Date(Date.now() - 90_000)
+    const state: FakeState = {
+      claim: [claimRow({ dueAt, touchedAt: new Date(Date.now() - 2000), expression: '0 3 * * *' })]
+    }
+    const tk = makeTk(0, {}, state)
+
+    const inserted: any[] = []
+    ;(tk as any).manager = { insert: async (_q: string, jobs: any[]) => { inserted.push(...jobs) } }
+
+    await tk.cron()
+
+    expect(inserted.length).toBe(1)
   })
 
   it('missed: once collapses a whole outage into a single job', async function () {
