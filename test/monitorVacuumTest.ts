@@ -88,7 +88,12 @@ async function startBoss (options: object = {}) {
   return boss
 }
 
-helper.describePostgresOnly('vacuum monitoring', function () {
+// describeMultiConnectionOnly, not describePostgresOnly: nearly every case here needs a second
+// independent connection to hold the horizon while pg-boss observes it, and PGlite has no server to
+// open one against (getConnectionString returns a placeholder that fails DNS). The subsystem is not
+// meaningfully exercisable there anyway - it reads real autovacuum activity out of
+// pg_stat_user_tables against a genuine MVCC horizon.
+helper.describeMultiConnectionOnly('vacuum monitoring', function () {
   it('stays quiet while the table is under its own autovacuum budget', async function () {
     const boss = await startBoss()
 

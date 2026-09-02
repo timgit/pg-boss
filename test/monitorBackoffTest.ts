@@ -181,119 +181,6 @@ helper.describePostgresOnly('monitor backoff', function () {
     expect(new Date(forced.capturedOn).getTime()).toBe(new Date(cached.capturedOn).getTime())
   })
 
-  it('measures the pin on the server, not the latency of the call', async function () {
-    const boss = await startBoss()
-
-    await boss.send('backoff', {})
-
-    // One connection, and something else already holding it. This is the shape a busy app hands the
-    // supervisor: the same pool serves every fetch and complete, so the wait for a connection lands
-    // inside any stopwatch the client wraps around the call — while pinning nothing, because the
-    // transaction has not begun yet. Deferring on that number would blame the job table for pool
-    // contention, and deferring monitoring would do nothing to relieve it.
-    const pool = new pg.Pool({ connectionString: helper.getConnectionString(), max: 1 })
-
-    try {
-      const hog = pool.query('SELECT pg_sleep(2)')
-
-      await new Promise(resolve => setTimeout(resolve, 50))
-
-      const started = Date.now()
-      const result = await pool.query(plans.cacheQueueStats(ctx.schema, 'job', ['backoff']))
-      const callSeconds = (Date.now() - started) / 1000
-
-      const rows = (Array.isArray(result) ? result : [result]).flatMap(r => r?.rows ?? [])
-      const pinSeconds = rows.reduce((max, row) => Math.max(max, Number(row.pinSeconds) || 0), 0)
-
-      expect(callSeconds).toBeGreaterThan(1.5)
-      expect(pinSeconds).toBeLessThan(0.5)
-
-      await hog
-    } finally {
-      await pool.end()
-    }
-  })
-
-  // The same key cacheQueueStats/refreshQueueStats derive, computed in SQL so the test cannot drift
-  // from the implementation's hashing.
-  const LOCK_KEY = (schema: string) =>
-    `('x' || encode(sha224((current_database() || '.pgboss.${schema}queue-stats')::bytea), 'hex'))::bit(64)::bigint`
-
-  async function holdStatsLock (schema: string) {
-    const client = new pg.Client(helper.getConnectionString())
-    await client.connect()
-    await client.query('BEGIN')
-    await client.query(`SELECT pg_advisory_xact_lock(${LOCK_KEY(schema)})`)
-
-    return async () => {
-      await client.query('ROLLBACK')
-      await client.end()
-    }
-  }
-
-  it('skips the aggregate instead of queueing behind another instance', async function () {
-    const boss = await startBoss({ monitorIntervalSeconds: 1 })
-
-    await boss.send('backoff', {})
-    await boss.supervise()
-
-    const [before] = await boss.getQueueStats('backoff')
-
-    await boss.send('backoff', {})
-
-    const release = await holdStatsLock(ctx.schema)
-
-    try {
-      await new Promise(resolve => setTimeout(resolve, 1500))
-
-      // Blocking here would hold this backend's snapshot for the whole of the other instance's
-      // scan, which is the overlap the backoff exists to prevent. The pass gives up instead.
-      const started = Date.now()
-      await boss.supervise()
-      const seconds = (Date.now() - started) / 1000
-
-      expect(seconds).toBeLessThan(1)
-
-      const [after] = await boss.getQueueStats('backoff')
-
-      // And it gives up without writing counts: an empty stats CTE still LEFT JOINs, so an
-      // unguarded UPDATE would COALESCE every one of them to zero.
-      expect(after.totalCount).toBe(before.totalCount)
-
-      // capturedOn does move, because trySetQueueMonitorTime stamped monitor_on when it claimed the
-      // interval, a statement earlier and before the lock was attempted. The queue therefore sits
-      // out one interval rather than retrying immediately — the counts are at most one
-      // monitorIntervalSeconds behind, against a staleness budget measured in hours.
-      expect(new Date(after.capturedOn).getTime()).toBeGreaterThan(new Date(before.capturedOn).getTime())
-    } finally {
-      await release()
-    }
-  })
-
-  it('serves the cache when a forced read loses the same race', async function () {
-    const boss = await startBoss()
-
-    await boss.send('backoff', {})
-    await boss.supervise()
-
-    const [cached] = await boss.getQueueStats('backoff')
-
-    await boss.send('backoff', {})
-
-    const release = await holdStatsLock(ctx.schema)
-
-    try {
-      // refreshQueueStats had no gate at all before this: every instance holding a stale cache ran
-      // its own whole-table scan, and two different queue names did not even contend.
-      const [forced] = await boss.getQueueStats('backoff', { force: true })
-
-      expect(forced.totalCount).toBe(cached.totalCount)
-      expect(new Date(forced.capturedOn).getTime()).toBe(new Date(cached.capturedOn).getTime())
-    } finally {
-      await release()
-    }
-  })
-
   it('does not run when vacuum monitoring is turned off', async function () {
     const boss = await startBoss({ __test__monitor_stats_seconds: 90, monitorVacuum: false })
 
@@ -319,5 +206,123 @@ helper.describePostgresOnly('monitor backoff', function () {
     // that the interval is measured start-to-start, and stops delaying anything at all the moment
     // one aggregate outruns it.
     expect(new Date(stamped).getTime()).toBeGreaterThanOrEqual(before.getTime())
+  })
+
+  // These three need a second, independent connection - one to hold the queue-stats lock or the
+  // pool while another instance tries to proceed. PGlite has no server and CockroachDB has no
+  // advisory locks, so the scenario cannot be staged on either.
+  helper.describeMultiConnectionOnly('under contention', function () {
+    it('measures the pin on the server, not the latency of the call', async function () {
+      const boss = await startBoss()
+
+      await boss.send('backoff', {})
+
+      // One connection, and something else already holding it. This is the shape a busy app hands the
+      // supervisor: the same pool serves every fetch and complete, so the wait for a connection lands
+      // inside any stopwatch the client wraps around the call — while pinning nothing, because the
+      // transaction has not begun yet. Deferring on that number would blame the job table for pool
+      // contention, and deferring monitoring would do nothing to relieve it.
+      const pool = new pg.Pool({ connectionString: helper.getConnectionString(), max: 1 })
+
+      try {
+        const hog = pool.query('SELECT pg_sleep(2)')
+
+        await new Promise(resolve => setTimeout(resolve, 50))
+
+        const started = Date.now()
+        const result = await pool.query(plans.cacheQueueStats(ctx.schema, 'job', ['backoff']))
+        const callSeconds = (Date.now() - started) / 1000
+
+        const rows = (Array.isArray(result) ? result : [result]).flatMap(r => r?.rows ?? [])
+        const pinSeconds = rows.reduce((max, row) => Math.max(max, Number(row.pinSeconds) || 0), 0)
+
+        expect(callSeconds).toBeGreaterThan(1.5)
+        expect(pinSeconds).toBeLessThan(0.5)
+
+        await hog
+      } finally {
+        await pool.end()
+      }
+    })
+
+    // The same key cacheQueueStats/refreshQueueStats derive, computed in SQL so the test cannot drift
+    // from the implementation's hashing.
+    const LOCK_KEY = (schema: string) =>
+      `('x' || encode(sha224((current_database() || '.pgboss.${schema}queue-stats')::bytea), 'hex'))::bit(64)::bigint`
+
+    async function holdStatsLock (schema: string) {
+      const client = new pg.Client(helper.getConnectionString())
+      await client.connect()
+      await client.query('BEGIN')
+      await client.query(`SELECT pg_advisory_xact_lock(${LOCK_KEY(schema)})`)
+
+      return async () => {
+        await client.query('ROLLBACK')
+        await client.end()
+      }
+    }
+
+    it('skips the aggregate instead of queueing behind another instance', async function () {
+      const boss = await startBoss({ monitorIntervalSeconds: 1 })
+
+      await boss.send('backoff', {})
+      await boss.supervise()
+
+      const [before] = await boss.getQueueStats('backoff')
+
+      await boss.send('backoff', {})
+
+      const release = await holdStatsLock(ctx.schema)
+
+      try {
+        await new Promise(resolve => setTimeout(resolve, 1500))
+
+        // Blocking here would hold this backend's snapshot for the whole of the other instance's
+        // scan, which is the overlap the backoff exists to prevent. The pass gives up instead.
+        const started = Date.now()
+        await boss.supervise()
+        const seconds = (Date.now() - started) / 1000
+
+        expect(seconds).toBeLessThan(1)
+
+        const [after] = await boss.getQueueStats('backoff')
+
+        // And it gives up without writing counts: an empty stats CTE still LEFT JOINs, so an
+        // unguarded UPDATE would COALESCE every one of them to zero.
+        expect(after.totalCount).toBe(before.totalCount)
+
+        // capturedOn does move, because trySetQueueMonitorTime stamped monitor_on when it claimed the
+        // interval, a statement earlier and before the lock was attempted. The queue therefore sits
+        // out one interval rather than retrying immediately — the counts are at most one
+        // monitorIntervalSeconds behind, against a staleness budget measured in hours.
+        expect(new Date(after.capturedOn).getTime()).toBeGreaterThan(new Date(before.capturedOn).getTime())
+      } finally {
+        await release()
+      }
+    })
+
+    it('serves the cache when a forced read loses the same race', async function () {
+      const boss = await startBoss()
+
+      await boss.send('backoff', {})
+      await boss.supervise()
+
+      const [cached] = await boss.getQueueStats('backoff')
+
+      await boss.send('backoff', {})
+
+      const release = await holdStatsLock(ctx.schema)
+
+      try {
+        // refreshQueueStats had no gate at all before this: every instance holding a stale cache ran
+        // its own whole-table scan, and two different queue names did not even contend.
+        const [forced] = await boss.getQueueStats('backoff', { force: true })
+
+        expect(forced.totalCount).toBe(cached.totalCount)
+        expect(new Date(forced.capturedOn).getTime()).toBe(new Date(cached.capturedOn).getTime())
+      } finally {
+        await release()
+      }
+    })
   })
 })
