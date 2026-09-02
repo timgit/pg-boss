@@ -32,20 +32,50 @@ describe('priority', function () {
     expect(job3.id).toBe(low)
   })
 
-  it('bypasses priority when priority option used in fetch', async function () {
+  it('ignores the deprecated priority option and warns once', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
+
+    const warnings: { message: string, data?: { type?: string, option?: string } }[] = []
+    ctx.boss.on('warning', w => warnings.push(w))
 
     const low = await ctx.boss.send(ctx.schema, null, { priority: 1 })
     const medium = await ctx.boss.send(ctx.schema, null, { priority: 5 })
     const high = await ctx.boss.send(ctx.schema, null, { priority: 10 })
 
+    // priority: false used to skip the priority sort. The fetch index is now ordered to match the
+    // fetch, so there is nothing to skip and the option is ignored — highest priority comes first.
     const [job1] = await ctx.boss.fetch(ctx.schema, { priority: false })
     const [job2] = await ctx.boss.fetch(ctx.schema, { priority: false })
     const [job3] = await ctx.boss.fetch(ctx.schema, { priority: false })
 
-    expect(job1.id).toBe(low)
+    expect(job1.id).toBe(high)
     expect(job2.id).toBe(medium)
-    expect(job3.id).toBe(high)
+    expect(job3.id).toBe(low)
+
+    // Warned once per option per instance, not once per fetch.
+    const deprecations = warnings.filter(w => w.data?.type === 'deprecated_fetch_option')
+    expect(deprecations).toHaveLength(1)
+    expect(deprecations[0].data?.option).toBe('priority')
+  })
+
+  it('ignores the deprecated orderByCreatedOn option and warns once', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    const warnings: { data?: { type?: string, option?: string } }[] = []
+    ctx.boss.on('warning', w => warnings.push(w))
+
+    const first = await ctx.boss.send(ctx.schema)
+    const second = await ctx.boss.send(ctx.schema)
+
+    const [job1] = await ctx.boss.fetch(ctx.schema, { orderByCreatedOn: false })
+    const [job2] = await ctx.boss.fetch(ctx.schema, { orderByCreatedOn: false })
+
+    expect(job1.id).toBe(first)
+    expect(job2.id).toBe(second)
+
+    const deprecations = warnings.filter(w => w.data?.type === 'deprecated_fetch_option')
+    expect(deprecations).toHaveLength(1)
+    expect(deprecations[0].data?.option).toBe('orderByCreatedOn')
   })
 
   it('minPriority skips jobs below threshold', async function () {

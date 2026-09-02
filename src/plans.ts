@@ -1405,7 +1405,7 @@ function buildFetchParams (options: FetchJobOptions): FetchQueryParams {
  * exceeds fetch time.
  */
 export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): SqlQuery {
-  const { schema, table, name, policy, limit, includeMetadata, priority = true, orderByCreatedOn = true, ignoreStartAfter = false, groupConcurrency, minPriority, maxPriority } = options
+  const { schema, table, name, policy, limit, includeMetadata, ignoreStartAfter = false, groupConcurrency, minPriority, maxPriority } = options
 
   const keyStrictFifo = policy === QUEUE_POLICIES.key_strict_fifo
   const singletonFetch = limit > 1 && (policy === QUEUE_POLICIES.singleton || policy === QUEUE_POLICIES.stately)
@@ -1521,12 +1521,27 @@ export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): S
     groupConcurrencyFilter
   ].filter(Boolean).join('\n          AND ')
 
+  // Unconditional, and with no `id` tiebreak.
+  //
+  // The two conditionals this replaces existed only to serve the `priority` and `orderByCreatedOn`
+  // fetch options, which were requested as performance escapes from this sort. job_i5 now satisfies
+  // the ordering directly, so the escapes have nothing to escape — see the deprecation in
+  // manager.fetch(). Dropping them also deletes two branches from the hottest SQL builder here.
+  //
+  // `id` goes too. It is a random uuid, so it never provided creation order: a batch insert shares
+  // one now() and therefore ties on created_on, and those ties resolve today in random uuid order,
+  // not insertion order. Without it the index satisfies the ordering outright rather than through
+  // an Incremental Sort — 0.097 -> 0.031 ms and 50 -> 5 buffers at limit=1 — and ties fall back to
+  // index order, which tracks insertion order better than a uuid does.
+  //
+  // key_strict_fifo keeps its own id tiebreak in strict_fifo_heads, where DISTINCT ON does need a
+  // total order to pick a deterministic head per key.
   const nextCte = `
       next AS (
         SELECT ${selectCols}
         FROM ${schema}.${table} j
         WHERE ${whereConditions}
-        ORDER BY ${priority ? 'j.priority desc, ' : ''}${orderByCreatedOn ? 'j.created_on, ' : ''}j.id
+        ORDER BY j.priority desc, j.created_on
         LIMIT ${limit}
         ${lockClause}
       )`
