@@ -3,6 +3,24 @@ import * as helper from './testHelper.ts'
 import { ctx } from './hooks.ts'
 import { assertTruthy } from './testHelper.ts'
 
+// process.emitWarning is process-global, so a listener has to be attached and removed around the
+// call under test rather than left on the boss instance. Node also dedupes nothing here — the
+// once-per-option-per-instance guard is pg-boss's own, which is exactly what these assert.
+async function captureDeprecations (fn: () => Promise<void>) {
+  const seen: NodeJS.ErrnoException[] = []
+  const listener = (w: Error) => seen.push(w as NodeJS.ErrnoException)
+
+  process.on('warning', listener)
+
+  try {
+    await fn()
+  } finally {
+    process.off('warning', listener)
+  }
+
+  return seen.filter(w => w.name === 'DeprecationWarning' && w.code === 'PGBOSS_DEP_FETCH_SORT')
+}
+
 describe('priority', function () {
   it('higher priority job', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
@@ -35,47 +53,47 @@ describe('priority', function () {
   it('ignores the deprecated priority option and warns once', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 
-    const warnings: { message: string, data?: { type?: string, option?: string } }[] = []
-    ctx.boss.on('warning', w => warnings.push(w))
-
     const low = await ctx.boss.send(ctx.schema, null, { priority: 1 })
     const medium = await ctx.boss.send(ctx.schema, null, { priority: 5 })
     const high = await ctx.boss.send(ctx.schema, null, { priority: 10 })
 
+    const jobs: string[] = []
+
     // priority: false used to skip the priority sort. The fetch index is now ordered to match the
     // fetch, so there is nothing to skip and the option is ignored — highest priority comes first.
-    const [job1] = await ctx.boss.fetch(ctx.schema, { priority: false })
-    const [job2] = await ctx.boss.fetch(ctx.schema, { priority: false })
-    const [job3] = await ctx.boss.fetch(ctx.schema, { priority: false })
+    const deprecations = await captureDeprecations(async () => {
+      for (let i = 0; i < 3; i++) {
+        const [job] = await ctx.boss!.fetch(ctx.schema, { priority: false })
+        jobs.push(job.id)
+      }
+    })
 
-    expect(job1.id).toBe(high)
-    expect(job2.id).toBe(medium)
-    expect(job3.id).toBe(low)
+    expect(jobs).toEqual([high, medium, low])
 
     // Warned once per option per instance, not once per fetch.
-    const deprecations = warnings.filter(w => w.data?.type === 'deprecated_fetch_option')
     expect(deprecations).toHaveLength(1)
-    expect(deprecations[0].data?.option).toBe('priority')
+    expect(deprecations[0].message).toContain('priority: false is deprecated')
   })
 
   it('ignores the deprecated orderByCreatedOn option and warns once', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 
-    const warnings: { data?: { type?: string, option?: string } }[] = []
-    ctx.boss.on('warning', w => warnings.push(w))
-
     const first = await ctx.boss.send(ctx.schema)
     const second = await ctx.boss.send(ctx.schema)
 
-    const [job1] = await ctx.boss.fetch(ctx.schema, { orderByCreatedOn: false })
-    const [job2] = await ctx.boss.fetch(ctx.schema, { orderByCreatedOn: false })
+    const jobs: string[] = []
 
-    expect(job1.id).toBe(first)
-    expect(job2.id).toBe(second)
+    const deprecations = await captureDeprecations(async () => {
+      for (let i = 0; i < 2; i++) {
+        const [job] = await ctx.boss!.fetch(ctx.schema, { orderByCreatedOn: false })
+        jobs.push(job.id)
+      }
+    })
 
-    const deprecations = warnings.filter(w => w.data?.type === 'deprecated_fetch_option')
+    expect(jobs).toEqual([first, second])
+
     expect(deprecations).toHaveLength(1)
-    expect(deprecations[0].data?.option).toBe('orderByCreatedOn')
+    expect(deprecations[0].message).toContain('orderByCreatedOn: false is deprecated')
   })
 
   it('minPriority skips jobs below threshold', async function () {

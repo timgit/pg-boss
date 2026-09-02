@@ -1069,7 +1069,7 @@ export type UpdateQueueOptions = Omit<Queue, 'name' | 'partition' | 'policy' | '
 
 export interface Warning { message: string, data: object }
 
-export type WarningType = 'slow_query' | 'queue_backlog' | 'clock_skew' | 'listen_notify_unavailable' | 'invalid_schedule' | 'index_bloat' | 'xmin_horizon' | 'autovacuum_disabled' | 'deprecated_fetch_option' | 'monitor_backoff'
+export type WarningType = 'slow_query' | 'queue_backlog' | 'clock_skew' | 'listen_notify_unavailable' | 'invalid_schedule' | 'index_bloat' | 'xmin_horizon' | 'autovacuum_disabled' | 'monitor_backoff'
 
 export interface PersistedWarning {
   id: number;

@@ -437,7 +437,7 @@ Returns an array of jobs from a queue
 
   * `priority`, bool — **deprecated, ignored since 12.30.0**
 
-    Jobs are always fetched in priority order. This option existed to skip the priority sort for throughput; the fetch index is now ordered to match the fetch, so there is no sort to skip. Setting it `false` was measured roughly 180x *slower* than leaving it alone, because no index leads with `created_on`. Emits a `deprecated_fetch_option` [`warning`](./events.md#warning) once per instance, and will be rejected in the next major.
+    Jobs are always fetched in priority order. This option existed to skip the priority sort for throughput; the fetch index is now ordered to match the fetch, so there is no sort to skip. Setting it `false` was measured roughly 180x *slower* than leaving it alone, because no index leads with `created_on`. Emits a Node `DeprecationWarning` (code `PGBOSS_DEP_FETCH_SORT`) once per option per instance — run with `--trace-deprecation` to find the call site — and will be rejected in the next major.
 
   * `orderByCreatedOn`, bool — **deprecated, ignored since 12.30.0**
 

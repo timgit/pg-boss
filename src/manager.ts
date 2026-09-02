@@ -68,7 +68,6 @@ const QUEUE_STATS_FORCE_TTL_SECONDS = 60
 
 const events = {
   error: 'error',
-  warning: 'warning',
   wip: 'wip'
 }
 
@@ -77,6 +76,9 @@ const events = {
 // still full-sorts, making it slower than the default it was meant to beat. Accepted and ignored
 // for now; removed in the next major.
 const DEPRECATED_FETCH_OPTIONS = ['priority', 'orderByCreatedOn'] as const
+
+// Shared code for both options, so --no-deprecation and friends can be scoped to this one change.
+const DEPRECATED_FETCH_OPTIONS_CODE = 'PGBOSS_DEP_FETCH_SORT'
 
 // Standard translation of low-level Postgres errors raised by job-creation SQL
 // into actionable pg-boss errors. Centralized so any write path can reuse it.
@@ -1346,16 +1348,23 @@ class Manager extends EventEmitter implements types.EventsMixin {
     return startAfter
   }
 
+  // A DeprecationWarning rather than a pg-boss `warning` event, because the two answer different
+  // questions. Every `warning` type is a database or queue health condition an operator watches and
+  // acts on; this is a code change a developer has to make, and what they need is the call site.
+  // process.emitWarning gives them that: --trace-deprecation prints the stack to the offending
+  // fetch()/work(), --throw-deprecation fails a build on it, --no-deprecation silences it.
+  //
   // Only fires when the option is explicitly disabled: work() forwards both keys with their
   // defaults on every poll, so testing for presence would warn on every fetch in the process.
   #warnDeprecatedFetchOptions (options: types.FetchOptions) {
     for (const option of DEPRECATED_FETCH_OPTIONS) {
       if (options[option] === false && !this.#warnedFetchOptions.has(option)) {
         this.#warnedFetchOptions.add(option)
-        this.emit(events.warning, {
-          message: `${option}: false is deprecated and now ignored — jobs are always fetched in priority and creation order. Remove it; it will be rejected in the next major.`,
-          data: { type: 'deprecated_fetch_option', option }
-        })
+        process.emitWarning(
+          `${option}: false is deprecated and now ignored — jobs are always fetched in priority and creation order. Remove it; it will be rejected in the next major.`,
+          'DeprecationWarning',
+          DEPRECATED_FETCH_OPTIONS_CODE
+        )
       }
     }
   }
