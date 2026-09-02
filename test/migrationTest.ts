@@ -673,7 +673,93 @@ describe('migration', function () {
     await db.close()
   })
 
-  itPostgresOnly('builds the key_strict_fifo head index for shared and strict FIFO job tables', async function () {
+  itPostgresOnly('reorders job_i5 to the priority-ordered shape at v40, across partitions and reversibly', async function () {
+    const config = { ...ctx.bossConfig }
+    const schema = config.schema
+
+    const db = await getDb()
+    // @ts-ignore
+    const contractor = new Contractor(db, config)
+
+    const fetchIndexDefs = async (): Promise<(string | null)[]> => {
+      const parts = await db.executeSql(`SELECT table_name FROM ${schema}.queue WHERE partition = true ORDER BY table_name`)
+      const tables = ['job_common', ...parts.rows.map((r: { table_name: string }) => r.table_name)]
+      const defs: (string | null)[] = []
+      for (const t of tables) {
+        const res = await db.executeSql(
+          'SELECT pg_get_indexdef(c.oid) AS indexdef FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = $1 AND c.relname = $2',
+          [schema, `${t}_i5`]
+        )
+        defs.push(res.rows[0]?.indexdef ?? null)
+      }
+      return defs
+    }
+
+    const drainBam = async () => {
+      let next
+      while ((next = (await db.executeSql(
+        `SELECT id, command FROM ${schema}.bam WHERE status IN ('pending', 'failed') ORDER BY created_on LIMIT 1`
+      )).rows[0])) {
+        await db.executeSql(next.command)
+        await db.executeSql(`UPDATE ${schema}.bam SET status = 'completed' WHERE id = $1`, [next.id])
+      }
+    }
+
+    await contractor.create()
+    await db.executeSql(`SELECT ${schema}.create_queue('part_q', '{"partition":true,"policy":"standard"}'::jsonb)`)
+
+    // Fresh install: every table carries the priority-ordered shape, including a queue created
+    // after the migration — which is the create_queue snapshot, not the migration, doing the work.
+    let i5 = await fetchIndexDefs()
+    expect(i5).toHaveLength(2)
+    for (const def of i5) {
+      expect(def).toContain('priority DESC, created_on, start_after')
+      // The uuid tiebreaker is deliberately absent: it defeats btree deduplication and costs 8.5x
+      // index size, and an Incremental Sort covers the ORDER BY without it.
+      expect(def).not.toContain(', id)')
+    }
+
+    // Roll back to v39: the start_after-ordered shape returns everywhere.
+    let version = await contractor.schemaVersion()
+    assertTruthy(version)
+    while (version > 39) {
+      await contractor.rollback(version)
+      version = await contractor.schemaVersion()
+      assertTruthy(version)
+    }
+    expect(version).toBe(39)
+    i5 = await fetchIndexDefs()
+    for (const def of i5) {
+      expect(def).toContain('(name, start_after)')
+      expect(def).not.toContain('priority')
+    }
+
+    // Forward again. Like v33, the reshape is enqueued on BAM as CONCURRENTLY DDL rather than run
+    // inside the migration transaction, so nothing is rebuilt until BAM drains.
+    await contractor.migrate(39)
+    expect(await contractor.schemaVersion()).toBe(currentSchemaVersion)
+    i5 = await fetchIndexDefs()
+    for (const def of i5) expect(def).toContain('(name, start_after)') // deferred
+
+    await drainBam()
+
+    i5 = await fetchIndexDefs()
+    expect(i5).toHaveLength(2)
+    for (const def of i5) expect(def).toContain('priority DESC, created_on, start_after')
+
+    // Idempotent: the drop-then-rebuild pair converges on re-run rather than colliding on the name.
+    await db.executeSql(`UPDATE ${schema}.bam SET status = 'pending'`)
+    await drainBam()
+    i5 = await fetchIndexDefs()
+    for (const def of i5) expect(def).toContain('priority DESC, created_on, start_after')
+
+    await db.close()
+  })
+
+  // Timeout raised for v40: the upgrade now enqueues a job_i5 drop-then-rebuild pair per job
+  // table on top of this test's own key_strict_fifo build, and BAM drains one command per
+  // bamIntervalSeconds. The work is real, not a hang — the poll below still asserts it completes.
+  itPostgresOnly('builds the key_strict_fifo head index for shared and strict FIFO job tables', { timeout: 60000 }, async function () {
     const config = { ...ctx.bossConfig }
     const schema = config.schema
     const db = await getDb()
@@ -705,7 +791,7 @@ describe('migration', function () {
     await expect.poll(async () => {
       const status = await boss.getBamStatus()
       return status.filter(item => item.status !== 'completed').reduce((sum, item) => sum + item.count, 0)
-    }, { timeout: 10000 }).toBe(0)
+    }, { timeout: 45000 }).toBe(0)
 
     const existingIndexes = await db.executeSql(`
       SELECT to_regclass('${schema}.job_common_i10') AS common,
@@ -879,8 +965,13 @@ describe('migration', function () {
     // @ts-ignore
     const contractor = new Contractor(db, config)
 
-    // Helper function to wait for BAM completion
-    const waitForBamCompletion = async (boss: PgBoss, timeoutMs = 10000): Promise<void> => {
+    // Helper function to wait for BAM completion.
+    //
+    // The budget tracks the migration list, same as the enclosing test timeout above: v40 reshapes
+    // job_i5 with a drop-then-rebuild pair per job table, so a full rollback-and-replay drains
+    // noticeably more BAM commands than it did at v39 and the old 10s default started tipping under
+    // the contention of a parallel run.
+    const waitForBamCompletion = async (boss: PgBoss, timeoutMs = 30000): Promise<void> => {
       const startTime = Date.now()
       while (true) {
         const bamStatus = await boss.getBamStatus()

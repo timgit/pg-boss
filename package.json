@@ -68,7 +68,7 @@
     "sponsors:label": "node --env-file-if-exists=.env ./scripts/sponsor-label.js"
   },
   "pgboss": {
-    "schema": 39
+    "schema": 40
   },
   "repository": {
     "type": "git",

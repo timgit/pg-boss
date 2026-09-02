@@ -52,7 +52,7 @@ describe('drift', function () {
 
     it('attaches the expected key-column list to each index', function () {
       const byName = new Map(plans.expectedManagedIndexes('pgboss', true, []).map(i => [i.name, i]))
-      expect(byName.get('job_common_i5')!.keys).toBe('name, start_after')
+      expect(byName.get('job_common_i5')!.keys).toBe('name, priority DESC, created_on, start_after')
       expect(byName.get('job_common_i9')!.keys).toBe('name, id')
       expect(byName.get('job_common_i1')!.keys).toBe("name, COALESCE(singleton_key, '')")
       // predicate is the catalog-canonical pg_get_indexdef form (per-conjunct parens)
@@ -71,7 +71,7 @@ describe('drift', function () {
         .toBe("CREATE UNIQUE INDEX job_common_i1 ON myschema.job_common (name, COALESCE(singleton_key, '')) WHERE (state = 'created') AND (policy = 'short')")
       // per-queue partition keeps its own physical name and table
       expect(byName.get('jabc_i5')!.definition)
-        .toBe("CREATE INDEX jabc_i5 ON myschema.jabc (name, start_after) WHERE (state < 'active') AND (NOT blocked)")
+        .toBe("CREATE INDEX jabc_i5 ON myschema.jabc (name, priority DESC, created_on, start_after) WHERE (state < 'active') AND (NOT blocked)")
       // static index needs no partition rewrite
       expect(byName.get('warning_i1')!.definition)
         .toBe('CREATE INDEX warning_i1 ON myschema.warning (created_on DESC)')
@@ -749,7 +749,7 @@ describe('drift', function () {
       expect(report.missing.map(i => i.name)).toContain(`${table}_i5`)
       // the report carries the exact DDL to recreate it, schema-qualified
       const m = report.missing.find(i => i.name === `${table}_i5`)!
-      expect(m.definition).toBe(`CREATE INDEX ${table}_i5 ON ${schema}.${table} (name, start_after) WHERE (state < 'active') AND (NOT blocked)`)
+      expect(m.definition).toBe(`CREATE INDEX ${table}_i5 ON ${schema}.${table} (name, priority DESC, created_on, start_after) WHERE (state < 'active') AND (NOT blocked)`)
     })
 
     it('treats a missing index with a pending BAM build as building, not missing', async function () {
