@@ -16,7 +16,14 @@ const WARNINGS = {
   LARGE_QUEUE: { size: 10_000, message: 'Warning: large queue backlog. Your queue should be reviewed' },
   // No threshold constant: the trigger is measured, not configured. See #checkVacuum.
   XMIN_HORIZON: { message: 'Warning: the database transaction horizon is pinned, so completed jobs cannot be cleaned up' },
-  AUTOVACUUM_DISABLED: { message: 'Warning: autovacuum is disabled, so nothing is reclaiming completed jobs' }
+  AUTOVACUUM_DISABLED: { message: 'Warning: autovacuum is disabled, so nothing is reclaiming completed jobs' },
+  // Deliberately weaker than XMIN_HORIZON, and the difference is the evidence behind each. That one
+  // asserts the horizon is pinned and that jobs cannot be reclaimed, having watched a vacuum run and
+  // reclaim nothing across two passes. This one has a stopwatch and nothing else. The aggregate does
+  // pin the horizon while it runs - that much is definitional - but whether any reclamation was
+  // actually lost to it is not measured here, so this reports the exposure and the action taken and
+  // leaves the diagnosis to XMIN_HORIZON, which will fire on its own if the harm is real.
+  MONITOR_BACKOFF: { message: 'Warning: queue monitoring spent long enough scanning the job table to risk holding back autovacuum, so the next stats refresh is deferred' }
 }
 
 const WARNING_TYPES = {
@@ -24,7 +31,8 @@ const WARNING_TYPES = {
   QUEUE_BACKLOG: 'queue_backlog',
   INDEX_BLOAT: 'index_bloat',
   XMIN_HORIZON: 'xmin_horizon',
-  AUTOVACUUM_DISABLED: 'autovacuum_disabled'
+  AUTOVACUUM_DISABLED: 'autovacuum_disabled',
+  MONITOR_BACKOFF: 'monitor_backoff'
 } as const
 
 // Which holder class each source in the horizon query represents, phrased so the warning names
@@ -35,6 +43,59 @@ const XMIN_HOLDERS: Record<plans.XminHorizonSource, string> = {
   slotsCatalog: 'a replication slot (catalog xmin)',
   standbys: 'a standby with hot_standby_feedback enabled',
   prepared: 'a prepared transaction'
+}
+
+// The oldest backend holding the horizon, as far as this role is allowed to see it. state is null
+// for a backend owned by another role; pid, applicationName and userName always survive. The query
+// text is deliberately absent - see getXminHorizon for why collecting it, at any length, is not
+// something a persisted and log-forwarded warning should do.
+type XminBackendHolder = {
+  pid: number
+  applicationName: string | null
+  userName: string | null
+  state: string | null
+  age: number | null
+  xactSeconds: number | null
+}
+
+type XminHorizonRow = Partial<Record<plans.XminHorizonSource, number | null>> & {
+  oldestTransactionSeconds?: number | null
+  backendHolder?: XminBackendHolder | null
+  opaqueBackends?: number | null
+  selfApplicationName?: string | null
+}
+
+// Name the holder as specifically as the catalog allowed. Falls back to the holder class when the
+// source is not a backend (a replication slot has no pid to report) or when no backend row came
+// back, so the warning never loses the description it had before.
+function describeXminHolder (source: plans.XminHorizonSource, row: XminHorizonRow): string {
+  const holder = source === 'backends' ? row.backendHolder : null
+
+  if (!holder) return XMIN_HOLDERS[source]
+
+  const app = holder.applicationName || null
+
+  const where = [
+    app && `application_name '${app}'`,
+    holder.userName && `role ${holder.userName}`,
+    `pid ${holder.pid}`
+  ].filter(Boolean).join(', ')
+
+  const open = holder.xactSeconds === null || holder.xactSeconds === undefined
+    ? 'for an unreadable length of time'
+    : `for ${holder.xactSeconds}s`
+
+  // Three outcomes, not two, because an empty application_name cannot be classified either way and
+  // saying "another application" would be asserting something unmeasured. Comparison is against
+  // this connection's own value rather than the literal 'pgboss': an adapter-supplied pool carries
+  // whatever the host app set, so "same application_name as us" is the strongest true claim.
+  const who = !app
+    ? 'a backend with no application_name'
+    : app === row.selfApplicationName
+      ? "this application's own connection"
+      : 'another application'
+
+  return `${who} (${where}) has held a transaction open ${open}`
 }
 
 // One job table's garbage, as two consecutive supervise passes saw it.
@@ -84,6 +145,12 @@ class Boss extends EventEmitter implements types.EventsMixin {
   // Sources the connected role could not read. Narrowed once on first failure rather than retried
   // every pass; an empty-but-unreadable source must never be reported as healthy.
   #xminHorizonSources: plans.XminHorizonSource[] | null = null
+  // Seconds this supervise pass held the MVCC horizon inside the queue-stats aggregate, as the
+  // server measured it, summed across every table and every 100-name chunk. The sum, not the worst
+  // single query: chunking and partitioned queues both multiply the aggregate within one pass (each
+  // chunk re-reads the whole heap - measured at 384,632 buffers for 2 of 20 queue names), and it is
+  // the total contiguous pin that starves autovacuum, not any one scan.
+  #statsElapsedSeconds = 0
 
   events = events
 
@@ -257,6 +324,8 @@ class Boss extends EventEmitter implements types.EventsMixin {
 
     if (this.#stopping) return
 
+    await this.#applyMonitorBackoff()
+
     await this.#checkVacuum()
 
     await this.#maintainWarnings()
@@ -283,7 +352,15 @@ class Boss extends EventEmitter implements types.EventsMixin {
       const queues = rows.map((q) => q.name)
 
       const cacheStatsSql = plans.cacheQueueStats(this.#config.schema, table, queues, this.#config.noAdvisoryLocks)
+      // The pin this pass cost, taken from the server's own clock (see the pinSeconds column in
+      // cacheQueueStats) and not from a stopwatch around the call - that would count pool wait,
+      // network and event-loop lag, none of which hold the horizon. The client measurement stays as
+      // a fallback for a backend or adapter that returns no rows to read it from.
+      const statsStarted = Date.now()
       const { rows: rowsCacheStats } = await this.#executeQuery(cacheStatsSql)
+      const pinned = rowsCacheStats.reduce((max, row) => Math.max(max, Number(row.pinSeconds) || 0), 0)
+
+      this.#statsElapsedSeconds += pinned || (Date.now() - statsStarted) / 1000
 
       if (this.#config.persistQueueStats) {
         const insertSql = plans.insertQueueStats(this.#config.schema, queues, this.#config.noAdvisoryLocks)
@@ -345,6 +422,66 @@ class Boss extends EventEmitter implements types.EventsMixin {
       const depSql = plans.cleanupDependencies(this.#config.schema, table, queues, this.#config.noAdvisoryLocks)
       await this.#executeQuery(depSql)
     }
+  }
+
+  /**
+   * Defer the next queue-stats aggregate when this pass spent long enough inside it to threaten
+   * autovacuum, and tell the operator that it happened.
+   *
+   * The aggregate in cacheQueueStats is a whole-heap scan - the queue-name filter does not reduce
+   * the I/O, only the number of rows fed to the aggregate transitions - and for its whole duration
+   * it advertises a snapshot Postgres will not vacuum past. Measured on a 3 GB / 10M-row job table:
+   * 0.19 s at 1M rows, 2.1 s with parallel workers and 3.6 s without at 10M, and 24-75 s for the
+   * same 3 GB read cold from network storage. Against that, a 200,000-row delete stayed
+   * "dead but not yet removable" for exactly as long as one such snapshot was held open, and was
+   * removed by the next vacuum after it closed.
+   *
+   * What is measured is the server's own transaction duration, not the latency of the call: a pool
+   * with no free connection makes executeSql slow without pinning anything (a 1 ms transaction timed
+   * at 1.97 s behind one busy connection), and backing off on that would defer monitoring for pool
+   * contention and then tell the operator to go and shrink their job table.
+   *
+   * So the danger is not the aggregate; it is the aggregate's duty cycle. Three things push it up
+   * without anyone changing a default - a slow enough scan that a pass outruns the interval, the
+   * 100-name chunking that makes one pass re-read the heap once per chunk, and one aggregate per
+   * table on a partitioned deployment - and one thing pushes it up deliberately, which is tuning
+   * monitorIntervalSeconds down. All four land in the same place, and #statsElapsedSeconds measures
+   * all four the same way.
+   *
+   * The threshold and the length both come from the server's own autovacuum_naptime rather than
+   * from a constant here; see plans.setMonitorBackoff for why the free window has to be longer than
+   * a naptime and why two of them is the right number. The statement returns a row only when it
+   * engaged, so this warns exactly when monitoring is actually being held back.
+   *
+   * PostgreSQL-only, and off with the rest of the vacuum subsystem: distributed backends have no
+   * autovacuum_naptime to read and reclaim on their own schedule, and an operator who set
+   * monitorVacuum: false has taken vacuum health into their own hands.
+   */
+  async #applyMonitorBackoff () {
+    const elapsed = this.#config.__test__monitor_stats_seconds ?? this.#statsElapsedSeconds
+    this.#statsElapsedSeconds = 0
+
+    if (!elapsed) return
+    if (this.#config.monitorVacuum === false || this.#config.noMonitorVacuum) return
+
+    const { rows } = await this.#executeQuery(plans.setMonitorBackoff(this.#config.schema, elapsed))
+
+    const engaged = rows.at(0)
+
+    if (!engaged) return
+
+    await emitAndPersistWarning(this.#warningContext,
+      WARNING_TYPES.MONITOR_BACKOFF,
+      `${WARNINGS.MONITOR_BACKOFF.message}: ${elapsed.toFixed(1)}s of aggregate against an ` +
+      `autovacuum_naptime of ${Number(engaged.naptimeSeconds)}s. ` +
+      'Shrink the job table (retention, deleteAfterSeconds) or partition its busiest queues.',
+      {
+        elapsedSeconds: elapsed,
+        naptimeSeconds: Number(engaged.naptimeSeconds),
+        backoffSeconds: Number(engaged.backoffSeconds),
+        backoffUntil: engaged.backoffUntil
+      }
+    )
   }
 
   /**
@@ -517,14 +654,37 @@ class Boss extends EventEmitter implements types.EventsMixin {
     const worst = stuck.reduce((a, b) => (b.deadTuples > a.deadTuples ? b : a))
     const seconds = Number(horizon.row.oldestTransactionSeconds)
 
+    const backend = holder.source === 'backends' ? horizon.row.backendHolder ?? null : null
+    const opaque = Number(horizon.row.opaqueBackends) || 0
+
+    // Only worth saying when the holder could not be named: with a name in hand the operator has
+    // what they need, and the grant is beside the point.
+    const opaqueNote = opaque && !backend
+      ? ` ${opaque} backend(s) could not be inspected by this role; GRANT pg_read_all_stats to name them.`
+      : ''
+
     await emitAndPersistWarning(this.#warningContext,
       WARNING_TYPES.XMIN_HORIZON,
-      `${WARNINGS.XMIN_HORIZON.message}: ${XMIN_HOLDERS[holder.source]} is holding it ${holder.age} transactions back. ` +
+      `${WARNINGS.XMIN_HORIZON.message}: ${describeXminHolder(holder.source, horizon.row)}, ` +
+      `holding it ${holder.age} transactions back. ` +
       `${worst.name} has ${worst.deadTuples} dead rows that a vacuum ${worst.vacuumAgeSeconds}s ago could not reclaim ` +
-      `(Postgres vacuums this table at ${Math.round(worst.budget)})`,
+      `(Postgres vacuums this table at ${Math.round(worst.budget)}).${opaqueNote}`,
       {
         source: holder.source,
-        holder: XMIN_HOLDERS[holder.source],
+        holder: describeXminHolder(holder.source, horizon.row),
+        holderClass: XMIN_HOLDERS[holder.source],
+        // Null unless the holder is a backend this role could read a row for. `self` says whether it
+        // shares this connection's application_name — pg-boss pinning its own horizon and an
+        // external reporting tool pinning it have opposite fixes.
+        holderPid: backend?.pid ?? null,
+        holderApplicationName: backend?.applicationName ?? null,
+        holderUserName: backend?.userName ?? null,
+        holderState: backend?.state ?? null,
+        holderTransactionSeconds: backend?.xactSeconds ?? null,
+        self: backend ? backend.applicationName === horizon.row.selfApplicationName : null,
+        // Backends whose transaction this role is not allowed to time. Non-zero means the picture is
+        // partial, whether or not a holder was named.
+        opaqueBackends: opaque,
         transactions: holder.age,
         table: worst.name,
         liveTuples: worst.liveTuples,
@@ -546,14 +706,15 @@ class Boss extends EventEmitter implements types.EventsMixin {
    * stuck — so this is a straight maximum. The horizon is pinned to the oldest of them, which makes
    * the widest the one worth naming.
    */
-  #attributeXminHorizon (row: Record<string, number | null>) {
+  #attributeXminHorizon (row: XminHorizonRow) {
     let worst: { source: plans.XminHorizonSource, age: number } | null = null
 
     // Iterates the known holder classes, not the row's columns: the row also carries
     // oldestTransactionSeconds, which is informational and would otherwise read as a holder named
     // after a column with an age of 0.
     for (const source of Object.keys(XMIN_HOLDERS) as plans.XminHorizonSource[]) {
-      const age = row[source] === undefined || row[source] === null ? NaN : Number(row[source])
+      const value = row[source]
+      const age = value === undefined || value === null ? NaN : Number(value)
 
       if (Number.isFinite(age) && (!worst || age > worst.age)) {
         worst = { source, age }
@@ -575,7 +736,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
       const { rows } = await this.#executeQuery(plans.getXminHorizon(lastVacuum, attempted))
       const unreadable = plans.XMIN_HORIZON_QUERY_SOURCES.filter(name => !attempted.includes(name))
 
-      return { row: (rows[0] ?? {}) as Record<string, number | null>, unreadable }
+      return { row: (rows[0] ?? {}) as XminHorizonRow, unreadable }
     } catch (err) {
       // A role that cannot read one of the catalogs fails the whole statement. Narrow to the
       // sources that do work rather than losing the check entirely - but remember what was dropped,

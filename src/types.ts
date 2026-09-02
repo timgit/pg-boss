@@ -415,6 +415,14 @@ export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, 
   /** @internal */
   __test__delay_clock_skew_ms?: number;
   /**
+   * Report this many seconds as the queue-stats aggregate's duration to the vacuum-safety backoff,
+   * instead of the real measurement. autovacuum_naptime is a SIGHUP-level GUC a test cannot move,
+   * so this is how a test crosses the threshold without actually pinning the horizon for six
+   * seconds. The naptime read and the backoff arithmetic are still the real ones.
+   * @internal
+   */
+  __test__monitor_stats_seconds?: number;
+  /**
    * Force the distributed runtime toggles (`noSkipLocked` + `noMultiMutationCte`) on top
    * of the current backend's schema, so the distributed code paths can be exercised on a
    * plain Postgres instance (see `npm run test:distributed`) without a distributed DB.
@@ -1061,7 +1069,7 @@ export type UpdateQueueOptions = Omit<Queue, 'name' | 'partition' | 'policy' | '
 
 export interface Warning { message: string, data: object }
 
-export type WarningType = 'slow_query' | 'queue_backlog' | 'clock_skew' | 'listen_notify_unavailable' | 'invalid_schedule' | 'index_bloat' | 'xmin_horizon' | 'autovacuum_disabled' | 'deprecated_fetch_option'
+export type WarningType = 'slow_query' | 'queue_backlog' | 'clock_skew' | 'listen_notify_unavailable' | 'invalid_schedule' | 'index_bloat' | 'xmin_horizon' | 'autovacuum_disabled' | 'deprecated_fetch_option' | 'monitor_backoff'
 
 export interface PersistedWarning {
   id: number;

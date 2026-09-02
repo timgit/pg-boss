@@ -942,6 +942,13 @@
       },
       {
         "table": "version",
+        "column": "monitor_backoff_on",
+        "type": "timestamp with time zone",
+        "notNull": false,
+        "default": null
+      },
+      {
+        "table": "version",
         "column": "reindex_on",
         "type": "timestamp with time zone",
         "notNull": false,
@@ -1873,6 +1880,13 @@
       {
         "table": "version",
         "column": "flow_on",
+        "type": "timestamp with time zone",
+        "notNull": false,
+        "default": null
+      },
+      {
+        "table": "version",
+        "column": "monitor_backoff_on",
         "type": "timestamp with time zone",
         "notNull": false,
         "default": null

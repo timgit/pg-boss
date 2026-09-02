@@ -9,9 +9,15 @@ import type { Warning } from '../src/types.ts'
 // Opens a second connection, pins the MVCC horizon with a REPEATABLE READ snapshot, and holds it
 // until released. A plain BEGIN is not enough — the snapshot has to be taken (hence the SELECT) for
 // backend_xmin to be set, and repeatable read is what keeps it set while the backend sits idle.
-async function holdHorizon () {
+async function holdHorizon (applicationName?: string) {
   const client = new pg.Client(helper.getConnectionString())
   await client.connect()
+
+  if (applicationName) {
+    // set_config, not SET: SET takes no bind parameters.
+    await client.query('SELECT set_config($1, $2, false)', ['application_name', applicationName])
+  }
+
   await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ')
   await client.query('SELECT 1')
 
@@ -167,8 +173,12 @@ helper.describePostgresOnly('vacuum monitoring', function () {
       expect(stored.data.table).toBe(plans.COMMON_JOB_TABLE)
       expect(stored.data.deadTuples).toBeGreaterThan(stored.data.budget)
       expect(stored.data.unreadableSources).toEqual([])
-      // Names the holder class rather than just a number, so the message is actionable.
-      expect(stored.message).toContain('backend holding an open transaction')
+      // Identifies the individual backend, not just its class: pid and role are readable for any
+      // backend, whoever owns it, and are what an operator needs to go and look at the thing.
+      expect(stored.data.holderPid).toBeGreaterThan(0)
+      expect(stored.data.holderUserName).toBeTruthy()
+      expect(stored.message).toContain(`pid ${stored.data.holderPid}`)
+      expect(stored.message).toContain('has held a transaction open')
       expect(stored.message).toContain('could not reclaim')
 
       // Also emitted, not only persisted — an instance running with persistWarnings off still
@@ -179,6 +189,113 @@ helper.describePostgresOnly('vacuum monitoring', function () {
     } finally {
       await release()
     }
+  })
+
+  // Which backend wins max(age(backend_xmin)) is not a test's to decide: the suite shares one
+  // database and every other worker's pg-boss is a holder too. So the identity half of the warning
+  // is staged by rewriting the horizon row, which also stands in for the case a shared database
+  // cannot produce — a backend owned by a different role, whose xact_start reads NULL.
+  async function withStagedHolder (row: Record<string, unknown>) {
+    const realDb = await helper.getDb()
+
+    return await startBoss({
+      db: {
+        async executeSql (sql: string, values: any[]) {
+          const result = await realDb.executeSql(sql, values)
+
+          if (sql.includes('backendHolder') && result.rows?.length) {
+            Object.assign(result.rows[0], row)
+          }
+
+          return result
+        }
+      }
+    })
+  }
+
+  async function provoke (boss: PgBoss) {
+    const release = await holdHorizon()
+
+    try {
+      await churn(boss, 'garbage')
+      await boss.supervise()
+      await churn(boss, 'garbage')
+      await boss.supervise()
+
+      return (await storedWarnings(ctx.schema, 'xmin_horizon'))[0]
+    } finally {
+      await release()
+    }
+  }
+
+  it('separates another application from this one by application_name', async function () {
+    // A reporting tool holding a long transaction open on the same database is the most common
+    // cause of a pinned horizon and the one pg-boss cannot fix for the operator — so it has to be
+    // told apart from pg-boss pinning its own horizon, which has an entirely different remedy.
+    const boss = await withStagedHolder({
+      backendHolder: { pid: 4242, applicationName: 'metabase', userName: 'analytics', state: 'active', age: 900, xactSeconds: 412 },
+      selfApplicationName: 'pgboss'
+    })
+
+    const stored = await provoke(boss)
+
+    // Never the holder's SQL text, at any length: warning.data is readable with plain SELECT on this
+    // schema, kept for warningRetentionDays and forwarded to logs, while pg_stat_activity.query
+    // takes pg_read_all_stats and dies with the backend. state carries the diagnosis instead.
+    expect(stored.data).not.toHaveProperty('holderQuery')
+    expect(stored.data.holderState).toBe('active')
+    expect(JSON.stringify(stored.data)).not.toContain('SELECT')
+
+    expect(stored.data.holderApplicationName).toBe('metabase')
+    expect(stored.data.holderUserName).toBe('analytics')
+    expect(stored.data.holderTransactionSeconds).toBe(412)
+    expect(stored.data.self).toBe(false)
+    expect(stored.message).toContain("another application (application_name 'metabase', role analytics, pid 4242) has held a transaction open for 412s")
+  })
+
+  it('says so when the holder shares this application_name', async function () {
+    // Db sets application_name to 'pgboss' on the pool it owns, so a holder carrying this
+    // connection's own value is pg-boss doing it to itself — its own stats aggregate most likely.
+    const boss = await withStagedHolder({
+      backendHolder: { pid: 4243, applicationName: 'pgboss', userName: 'app', state: 'active', age: 900, xactSeconds: 30 },
+      selfApplicationName: 'pgboss'
+    })
+
+    const stored = await provoke(boss)
+
+    expect(stored.data.self).toBe(true)
+    expect(stored.message).toContain("this application's own connection (application_name 'pgboss'")
+  })
+
+  it('will not guess when the holder set no application_name', async function () {
+    const boss = await withStagedHolder({
+      backendHolder: { pid: 4244, applicationName: '', userName: 'app', state: null, age: 900, xactSeconds: null },
+      selfApplicationName: 'pgboss'
+    })
+
+    const stored = await provoke(boss)
+
+    expect(stored.data.self).toBe(false)
+    // Neither ours nor assertably someone else's, and an unreadable xact_start is said rather than
+    // rendered as a number.
+    expect(stored.message).toContain('a backend with no application_name (role app, pid 4244)')
+    expect(stored.message).toContain('for an unreadable length of time')
+  })
+
+  it('reports how many backends this role could not inspect', async function () {
+    // pg_stat_activity hands an ordinary role a NULL xact_start for a backend owned by a different
+    // role, so those holders can be counted but never named or timed.
+    const boss = await withStagedHolder({ backendHolder: null, opaqueBackends: 3 })
+
+    const stored = await provoke(boss)
+
+    // Falls back to the holder class, and says plainly that the picture is partial rather than
+    // letting an unnameable holder read as no holder.
+    expect(stored.data.opaqueBackends).toBe(3)
+    expect(stored.data.holderPid).toBeNull()
+    expect(stored.message).toContain('backend holding an open transaction')
+    expect(stored.message).toContain('3 backend(s) could not be inspected')
+    expect(stored.message).toContain('GRANT pg_read_all_stats')
   })
 
   it('warns once per episode, not once per pass', async function () {

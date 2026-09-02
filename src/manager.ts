@@ -1987,13 +1987,24 @@ class Manager extends EventEmitter implements types.EventsMixin {
       ? Infinity
       : Date.now() - new Date(cached.capturedOn).getTime()
 
+    // The vacuum-safety backoff outranks staleness, including a caller's { force: true }. Refreshing
+    // here runs the same whole-job-table aggregate the supervisor just backed away from, and a
+    // dashboard polling forced reads is exactly the "continuously running analytical query" shape
+    // that pins the horizon. Serve the cache; capturedOn already tells the caller how old it is.
+    if (cached.monitorBackoff === true) {
+      return [toSnapshot(cached)]
+    }
+
     if (cacheAgeMs <= maxCacheAgeMs) {
       return [toSnapshot(cached)]
     }
 
-    const refreshSql = plans.refreshQueueStats(this.config.schema, cached.table, name)
+    const refreshSql = plans.refreshQueueStats(this.config.schema, cached.table, name, this.config.noAdvisoryLocks)
     const { rows: refreshed } = await this.db.executeSql(refreshSql)
 
+    // No row means another instance is running this exact aggregate right now and won the try-lock.
+    // Fall back to the cache rather than queueing behind it: waiting would hold the horizon for the
+    // duration of someone else's scan to arrive at the counts that scan is about to write anyway.
     return [toSnapshot(refreshed.at(0) ?? cached)]
   }
 
