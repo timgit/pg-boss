@@ -203,6 +203,13 @@ function createTableQueue (schema: string) {
       heartbeat_seconds int,
       notify bool NOT NULL DEFAULT false,
       singletons_active text[],
+      -- Two stamps, not one. monitor_claim_on is the interval claim that decides which instance
+      -- runs a monitor pass; monitor_on is when this queue's counts were actually written, and is
+      -- stamped only by the aggregate that wrote them (see cacheQueueStats). Splitting them is what
+      -- lets a pass be claimed and then skip the aggregate — because the vacuum backoff is in force,
+      -- or because another instance holds the stats try-lock — without capturedOn claiming a
+      -- freshness the counts do not have.
+      monitor_claim_on timestamp with time zone,
       monitor_on timestamp with time zone,
       maintain_on timestamp with time zone,
       created_on timestamp with time zone not null default now(),
@@ -745,9 +752,7 @@ function createIndexJobThrottle (schema: string) {
 }
 
 function createIndexJobFetch (schema: string, noCoveringIndex = false) {
-  // Ordered to match the fetch's ORDER BY (priority desc, created_on, id) rather than its
-  // start_after filter, so the common case is an ordered walk instead of a scan-and-sort of every
-  // eligible row. Measured on a 50k-due backlog: 23-33 ms -> 0.09 ms.
+  // Ordered to match the fetch's ORDER BY (priority desc, created_on)
   //
   // Two details are load-bearing, and dropping either costs an order of magnitude:
   //
@@ -757,13 +762,13 @@ function createIndexJobFetch (schema: string, noCoveringIndex = false) {
   //    queue sitting on a scheduled backlog goes 0.04 ms -> 18 ms at 50k deferred, growing
   //    linearly. INCLUDE cannot help: FOR UPDATE forces an Index Scan, never an Index Only Scan.
   //
-  //  - `id` is deliberately NOT a key column, even though the fetch's ORDER BY ends with it. The
-  //    obvious shape, (name, priority DESC, created_on, id), satisfies the ordering outright — but
-  //    id is a random uuid, so it defeats btree deduplication and dominates size: 24 MB against
-  //    3.6 MB for this shape at 500k rows, 8.5x, on the hot insert path and on every vacuum's
-  //    bulkdelete. Leaving it out costs an Incremental Sort over the presorted (priority,
-  //    created_on) prefix, which sorts only within one tie group — measured at one full-sort group
-  //    of ~28 kB. Incremental Sort is PG13+, which is pg-boss's minimum; verified on 13.23.
+  //  - `id` is deliberately NOT a key column. The obvious shape, (name, priority DESC, created_on,
+  //    id), also satisfies the ordering — but id is a random uuid, so it defeats btree
+  //    deduplication and dominates size: 24 MB against 19 MB for this shape at 500k rows, on the
+  //    hot insert path and on every vacuum's bulkdelete. It buys nothing, because fetchNextJob
+  //    dropped id from its ORDER BY for the same reason (a random uuid was never creation order);
+  //    with the ordering ending at created_on, this index satisfies it outright and the plan
+  //    carries no sort node at all.
   //
   // Also measured: neutral for key_strict_fifo (that fetch never reaches this index — the
   // strict_fifo_heads CTE on job_i10 feeds the outer CTE), and a ~7x win on CockroachDB, which
@@ -771,7 +776,7 @@ function createIndexJobFetch (schema: string, noCoveringIndex = false) {
   //
   // noCoveringIndex is accepted for signature symmetry with the other index builders; this shape
   // has no covering payload to strip.
-  return `CREATE INDEX job_i5 ON ${schema}.job (name, priority DESC, created_on, start_after) WHERE state < '${JOB_STATES.active}' AND NOT blocked`
+  return `CREATE INDEX job_i11 ON ${schema}.job (name, priority DESC, created_on, start_after) WHERE state < '${JOB_STATES.active}' AND NOT blocked`
 }
 
 function createIndexJobPolicyExclusive (schema: string) {
@@ -790,8 +795,8 @@ function createIndexJobPolicyKeyStrictFifoHeads (schema: string, noCoveringIndex
   // are satisfied by the partial predicate, so start_after is the only remaining filter in the
   // heads CTE. Without it every index entry needs a heap fetch and the scan degrades from an
   // Index Only Scan to an Index Scan (measured at 200k queued rows / 2,000 keys: 47ms -> 111ms,
-  // ~400k extra buffer hits). It costs no HOT updates that job_i5 doesn't already cost, since
-  // job_i5 indexes start_after too, and it only widens a partial index that key_strict_fifo
+  // ~400k extra buffer hits). It costs no HOT updates that job_i11 doesn't already cost, since
+  // job_i11 indexes start_after too, and it only widens a partial index that key_strict_fifo
   // rows enter. Backends without covering indexes (the CockroachDB profile) fall back to the
   // narrow form and pay the heap fetches; they take a different fetch path anyway (noSkipLocked).
   const include = noCoveringIndex ? '' : ' INCLUDE (start_after)'
@@ -814,7 +819,7 @@ function createIndexJobBlocking (schema: string) {
   return `CREATE INDEX job_i9 ON ${schema}.job (name, id) WHERE blocking AND state = '${JOB_STATES.completed}'`
 }
 
-// The interval claim for the per-queue stats aggregate, plus the vacuum-safety gate.
+// The interval claim for a monitor pass, and the vacuum-safety gate on the expensive half of it.
 //
 // getQueueStats() is the only whole-job-table aggregate pg-boss runs, and while it is in flight it
 // advertises a snapshot that Postgres cannot vacuum past: a measured 200,000 deleted rows stayed
@@ -823,22 +828,35 @@ function createIndexJobBlocking (schema: string) {
 // reclaimed - the failure PlanetScale documents as a queue's death spiral, and the same one
 // #checkVacuum reports after the fact as `xmin_horizon`.
 //
-// `monitor_on` alone doesn't prevent that. It paces the aggregate start-to-start, so once the
+// The claim alone doesn't prevent that. It paces the aggregate start-to-start, so once the
 // aggregate itself runs longer than monitorIntervalSeconds the gate stops delaying anything and
 // passes run back to back with no gap at all. `monitor_backoff_on` is the second condition: a
 // deadline written by setMonitorBackoff() after a pass that was measurably slow, before which no
 // instance - timer-driven, manual supervise(), or a fresh CLI process - may start another
 // aggregate. Being a column rather than instance state is the point: the horizon is a property of
 // the database, so the gate has to be too.
+//
+// The backoff is returned as `refreshStats` rather than folded into the WHERE, and that distinction
+// is the whole reason this claim exists separately from the aggregate. A monitor pass is not only
+// the stats scan: it is also failJobsByTimeout and failJobsByHeartbeat, which are narrow indexed
+// updates that pin nothing and are the mechanism by which expired and heartbeat-dead jobs are
+// released. Suppressing the claim during a backoff would suspend those too, for two naptimes at
+// minimum and up to an hour at the cap - the vacuum-safety valve silently becoming a job-expiry
+// outage. So the pass is always claimed and always fails timed-out jobs; only the aggregate is
+// deferred.
+//
+// The claim stamps monitor_claim_on, never monitor_on. monitor_on belongs to the aggregate that
+// writes the counts (see cacheQueueStats), so a pass that claims and then skips the aggregate -
+// backed off, or beaten to the stats try-lock - leaves capturedOn correctly aging instead of
+// advertising a freshness the counts do not have.
 export function trySetQueueMonitorTime (schema: string, queues: string[], seconds: number): SqlQuery {
   return {
     text: `
     UPDATE ${schema}.queue
-    SET monitor_on = now()
+    SET monitor_claim_on = now()
     WHERE name = ANY($1::text[])
-      AND EXTRACT( EPOCH FROM (now() - COALESCE(monitor_on, now() - interval '1 week') ) ) > ${seconds}
-      AND NOT EXISTS (SELECT 1 FROM ${schema}.version WHERE monitor_backoff_on > now())
-    RETURNING name
+      AND EXTRACT( EPOCH FROM (now() - COALESCE(monitor_claim_on, now() - interval '1 week') ) ) > ${seconds}
+    RETURNING name, NOT EXISTS (SELECT 1 FROM ${schema}.version WHERE monitor_backoff_on > now()) as "refreshStats"
   `,
     values: [queues]
   }
@@ -878,6 +896,14 @@ const MONITOR_BACKOFF_CAP_SECONDS = 3600
 // proportionally longer backoff - which is the correct answer, not a coincidence.
 //
 // Returns a row only when the backoff actually engaged, so the caller warns exactly when it does.
+//
+// GREATEST, not assignment: the deadline may only ever move outward. Instances measure their own
+// passes and write independently, so a marginal pass elsewhere must not cut short a long backoff
+// already in force - instance A measuring 600s writes a 600s deadline, and instance B measuring 7s
+// would otherwise overwrite it with 120s a moment later and re-open the window A had closed.
+// `backoffSeconds` is therefore reported as the time actually remaining on the winning deadline
+// rather than as the length this pass computed, so the warning never claims a backoff shorter or
+// longer than the one in force.
 export function setMonitorBackoff (schema: string, elapsedSeconds: number): SqlQuery {
   return {
     text: `
@@ -893,12 +919,15 @@ export function setMonitorBackoff (schema: string, elapsedSeconds: number): SqlQ
       ) n
     )
     UPDATE ${schema}.version v
-    SET monitor_backoff_on = now() + make_interval(secs => b.backoff)
+    SET monitor_backoff_on = GREATEST(
+      COALESCE(v.monitor_backoff_on, now()),
+      now() + make_interval(secs => b.backoff)
+    )
     FROM budget b
     WHERE $1::float8 > ${MONITOR_PIN_BUDGET_RATIO} * b.naptime
     RETURNING
       b.naptime  as "naptimeSeconds",
-      b.backoff  as "backoffSeconds",
+      EXTRACT(EPOCH FROM (v.monitor_backoff_on - now()))::float8 as "backoffSeconds",
       v.monitor_backoff_on as "backoffUntil"
   `,
     values: [elapsedSeconds]
@@ -1630,7 +1659,7 @@ export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): S
   // Unconditional, and with no `id` tiebreak.
   //
   // The two conditionals this replaces existed only to serve the `priority` and `orderByCreatedOn`
-  // fetch options, which were requested as performance escapes from this sort. job_i5 now satisfies
+  // fetch options, which were requested as performance escapes from this sort. job_i11 now satisfies
   // the ordering directly, so the escapes have nothing to escape — see the deprecation in
   // manager.fetch(). Dropping them also deletes two branches from the hottest SQL builder here.
   //
@@ -2685,11 +2714,10 @@ export function cacheQueueStats (schema: string, table: string, queues: string[]
 
   // Two columns in here are not counts and are easy to mistake for incidental:
   //
-  // monitor_on is re-stamped at the end of the aggregate, not only by the claim that preceded it.
-  // trySetQueueMonitorTime paces start-to-start, which stops delaying anything the moment the
-  // aggregate outruns monitorIntervalSeconds; re-stamping on completion makes the interval the idle
-  // time *between* aggregates instead, so the gap can never collapse to zero however slow the scan
-  // gets. It also makes capturedOn mean what it says: when the counts were written.
+  // monitor_on is stamped here and nowhere else - the claim in trySetQueueMonitorTime writes
+  // monitor_claim_on instead. So capturedOn means exactly one thing, "when these counts were
+  // written", and a claimed pass that skipped the aggregate (backed off, or beaten to the lock
+  // below) leaves it aging rather than advancing it over unchanged counts.
   //
   // ready_history is an always-on sliding window of recent ready counts for the dashboard sparkline,
   // maintained here independently of persistQueueStats: prepend the newest sample, keep the newest
@@ -2847,10 +2875,11 @@ function advisoryLock (schema: string, key?: string) {
 // overlapping-analytics regime this whole subsystem exists to prevent, manufactured by the lock
 // meant to prevent duplicate work.
 //
-// So the loser does nothing. trySetQueueMonitorTime stamped monitor_on a statement earlier, when it
-// claimed the interval and before this lock was attempted, so those queues sit out one interval
-// rather than retrying at once - their counts end up at most one monitorIntervalSeconds behind,
-// against a staleness budget measured in hours. Losing one sample costs a gap in the sparkline;
+// So the loser does nothing. trySetQueueMonitorTime stamped monitor_claim_on a statement earlier,
+// when it claimed the interval and before this lock was attempted, so those queues sit out one
+// interval rather than retrying at once - their counts end up at most one monitorIntervalSeconds
+// behind, and monitor_on keeps aging so capturedOn says so.
+// Against a staleness budget measured in hours, losing one sample costs a gap in the sparkline;
 // winning the race to duplicate a scan nobody asked for costs the job table.
 //
 // The guard is a one-time filter, so a lost race skips the scan rather than running and discarding
@@ -3208,8 +3237,9 @@ const POLICY_JOB_INDEXES: Record<number, string> = {
   10: QUEUE_POLICIES.key_strict_fifo
 }
 // job_iN indexes with no policy gate — created on every job table regardless of policy
-// (throttle i4, fetch i5, group-concurrency i7, blocking i9).
-const BASE_JOB_INDEXES = [4, 5, 7, 9]
+// (throttle i4, fetch i11, group-concurrency i7, blocking i9). 5 is absent, not missing: the fetch
+// index was replaced in v40 and the retired number is not reused.
+const BASE_JOB_INDEXES = [4, 7, 9, 11]
 
 // The fixed (non-job) managed tables; job/job_common/partitions are handled separately.
 const FIXED_MANAGED_TABLES = ['version', 'queue', 'schedule', 'subscription', 'bam', 'warning', 'queue_stats', 'job_dependency']
@@ -3339,7 +3369,7 @@ export function expectedManagedIndexes (schema: string, partitioned: boolean, pa
 //
 // Autovacuum reclaims heap space but never returns btree pages to the OS, so a job index sizes
 // itself to the largest backlog its queue has ever held and stays there. A drained 1M-job peak
-// leaves job_common_i5 at 38 MB and job_common_pkey at 51 MB holding 1k live rows — and every
+// leaves job_common_i11 at 38 MB and job_common_pkey at 51 MB holding 1k live rows — and every
 // subsequent vacuum with dead tuples to clean does a full physical scan of every one of those
 // pages (measured: 17,969 buffer hits + 3,892 reads vs 750 hits / 0 reads after a rebuild), which
 // is what drains IO burst credits on managed Postgres.
@@ -3596,6 +3626,10 @@ export const XMIN_HORIZON_QUERY_SOURCES = Object.keys(XMIN_HORIZON_SOURCES) as r
  * how long as well as how far; nothing keys off it.
  */
 export function getXminHorizon (lastVacuum: Date, sources: readonly XminHorizonSource[] = XMIN_HORIZON_QUERY_SOURCES): SqlQuery {
+  // There is no statement with no columns, and an empty list here would silently build `SELECT ,`.
+  // Callers that have narrowed to nothing must stop asking, not ask for nothing.
+  assert(sources.length, 'getXminHorizon requires at least one source')
+
   const columns = sources.map(name => `(${XMIN_HORIZON_SOURCES[name]}) as "${name}"`)
 
   // Identity for the oldest holding backend, so the warning can name what is interfering instead of
@@ -3719,8 +3753,8 @@ export function dropIndexConcurrently (schema: string, name: string): string {
  * The statement list an operator runs by hand: every stale stub dropped first, then the rebuilds.
  *
  * Stubs are emitted whole rather than paired to the index they came from. Postgres does not append
- * `_ccnew` — it truncates the *base* so the result fits in 63 bytes, so `j<sha224>_i5` (60 chars)
- * leaves behind `j<sha224>__ccnew` with the `i5` gone, and a prefix match never fires on a
+ * `_ccnew` — it truncates the *base* so the result fits in 63 bytes, so `j<sha224>_i11` (61 chars)
+ * leaves behind `j<sha224>__ccnew` with the `i11` gone, and a prefix match never fires on a
  * partitioned queue (every partition table name is `'j' || sha224(queue_name)`, 57 chars). Dropping
  * them unconditionally is also what the background pass does: an invalid stub is dead weight that
  * vacuum still walks, whichever index it came from.

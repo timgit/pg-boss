@@ -734,6 +734,7 @@ function applyOpsConfig (config: any) {
   config.queueStatRetentionDays = config.queueStatRetentionDays || 7
 
   validateReindexConfig(config)
+  validateVacuumMonitorConfig(config)
 }
 
 function validateReindexConfig (config: any) {
@@ -764,7 +765,9 @@ function validateReindexConfig (config: any) {
 
   assert(config.reindexIntervalSeconds / 60 / 60 <= POLICY.MAX_EXPIRATION_HOURS,
     `configuration assert: reindexIntervalSeconds cannot exceed ${POLICY.MAX_EXPIRATION_HOURS} hours`)
+}
 
+function validateVacuumMonitorConfig (config: any) {
   // A switch, not a threshold: the check derives its trigger from the server's own autovacuum
   // settings and from measured dead tuples, so there is no number here for a caller to get wrong.
   assert(!('monitorVacuum' in config) || typeof config.monitorVacuum === 'boolean',

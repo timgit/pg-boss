@@ -1991,7 +1991,12 @@ class Manager extends EventEmitter implements types.EventsMixin {
     // here runs the same whole-job-table aggregate the supervisor just backed away from, and a
     // dashboard polling forced reads is exactly the "continuously running analytical query" shape
     // that pins the horizon. Serve the cache; capturedOn already tells the caller how old it is.
-    if (cached.monitorBackoff === true) {
+    //
+    // Only when there is a cache to serve. A queue that has never been monitored carries a NULL
+    // capturedOn and default-zero counts, and returning those would not be stale data - it would be
+    // a fabricated answer of zero for a queue that may hold thousands of jobs. One first aggregate
+    // per never-monitored queue is worth paying even under backoff.
+    if (cached.monitorBackoff === true && cached.capturedOn != null) {
       return [toSnapshot(cached)]
     }
 

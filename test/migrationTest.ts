@@ -580,8 +580,9 @@ describe('migration', function () {
           .filter((name): name is string => !!name))
 
         // An index the uninstall also creates is being *reshaped* by this migration, not introduced
-        // by it — v40 drops job_i5 and rebuilds it in the previous shape, and job_i5 is meant to
-        // survive the rollback. Only what a migration adds outright is expected to disappear.
+        // by it (v33 rebuilds job_i5 in place), and is meant to survive the rollback. Only what a
+        // migration adds outright is expected to disappear — for v40 that is job_i11, which the
+        // rollback drops, while the job_i5 its uninstall recreates is a restoration, not a leak.
         const restored = indexNames((migration.uninstall ?? []) as string[])
         const created = [...indexNames(commands)].filter(name => !restored.has(name))
 
@@ -767,6 +768,33 @@ describe('migration', function () {
     expect(rolledBackSchema.indexes.rows).not.toEqual(originalSchema.indexes.rows)
   })
 
+  it('builds a replacement fetch index before retiring the one it replaces, in both directions', function () {
+    const forward = getAll('custom').find(m => m.version === 40)
+    assertTruthy(forward)
+
+    // Install: build job_i11 on every table, then retire job_i5. BAM runs one command per interval,
+    // so the reverse order would leave every job table with no fetch index for one interval per
+    // partition. The same ordering applies to the rollback, which restores job_i5 before dropping
+    // job_i11 rather than the other way round.
+    const async = (forward.async ?? []).map(c => (typeof c === 'string' ? c : c.command))
+    const build = async.findIndex(c => /CREATE INDEX CONCURRENTLY .*job_i11/.test(c))
+    const retire = async.findIndex(c => /DROP INDEX CONCURRENTLY .*job_i5/.test(c))
+
+    expect(build).toBeGreaterThanOrEqual(0)
+    expect(retire).toBeGreaterThan(build)
+
+    const uninstall = (forward.uninstall ?? []) as string[]
+    const restore = uninstall.findIndex(c => /CREATE INDEX IF NOT EXISTS job_i5/.test(c))
+    const drop = uninstall.findIndex(c => /DROP INDEX IF EXISTS .*job_i11/.test(c))
+
+    expect(restore).toBeGreaterThanOrEqual(0)
+    expect(drop).toBeGreaterThan(restore)
+
+    // IF NOT EXISTS, not a drop-and-rebuild: v40 never reshapes job_i5, so one still present is
+    // already the v39 shape and must not be rebuilt for nothing.
+    expect(uninstall.some(c => /DROP INDEX IF EXISTS .*job_i5/.test(c))).toBe(false)
+  })
+
   it('patch upgrade from schema 35 carries only the bam default — no job-index churn (issue #832)', function () {
     // A database already past v33 (schema 35) upgrading to 36 runs only v36, which carries the
     // bam.created_on default change and NO index work. So it never re-drops/rebuilds its existing
@@ -846,9 +874,9 @@ describe('migration', function () {
     const contractor = new Contractor(db, config)
 
     // Helper function to wait for BAM completion
-    // The budget tracks the migration list: v40 reshapes job_i5 with a drop-then-rebuild pair per
-    // job table, so a full rollback-and-replay drains noticeably more BAM commands than it did at
-    // v39 and the old 10s default started tipping under the contention of a parallel run.
+    // The budget tracks the migration list: v40 replaces the fetch index with a build-then-retire
+    // pair per job table, so a full rollback-and-replay drains noticeably more BAM commands than it
+    // did at v39 and the old 10s default started tipping under the contention of a parallel run.
     const waitForBamCompletion = async (boss: PgBoss, timeoutMs = 30000): Promise<void> => {
       const startTime = Date.now()
       while (true) {

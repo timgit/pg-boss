@@ -14,9 +14,12 @@ describe('drift', function () {
       const expected = plans.expectedManagedIndexes('pgboss', false, [])
       const names = expected.map(i => i.name)
 
-      for (let n = 1; n <= 9; n++) {
+      // 5 is absent by design: the fetch index was replaced by job_i11 in v40 and the number was
+      // retired rather than reused. See createIndexJobFetch.
+      for (const n of [1, 2, 3, 4, 6, 7, 8, 9, 10, 11]) {
         expect(names).toContain(`job_i${n}`)
       }
+      expect(names).not.toContain('job_i5')
       expect(names).toContain('warning_i1')
       expect(names).toContain('queue_stats_i1')
       expect(names).toContain('job_dep_parent_idx')
@@ -27,9 +30,10 @@ describe('drift', function () {
     it('partitioned puts the full set on job_common', function () {
       const names = plans.expectedManagedIndexes('pgboss', true, []).map(i => i.name)
 
-      for (let n = 1; n <= 9; n++) {
+      for (const n of [1, 2, 3, 4, 6, 7, 8, 9, 10, 11]) {
         expect(names).toContain(`job_common_i${n}`)
       }
+      expect(names).not.toContain('job_common_i5')
       expect(names).not.toContain('job_i1')
     })
 
@@ -38,7 +42,7 @@ describe('drift', function () {
 
       // base: throttle/fetch/group/blocking
       expect(names).toContain('jabc_i4')
-      expect(names).toContain('jabc_i5')
+      expect(names).toContain('jabc_i11')
       expect(names).toContain('jabc_i7')
       expect(names).toContain('jabc_i9')
       // short -> i1
@@ -52,9 +56,9 @@ describe('drift', function () {
 
     it('attaches the expected key-column list to each index', function () {
       const byName = new Map(plans.expectedManagedIndexes('pgboss', true, []).map(i => [i.name, i]))
-      // Sampled on indexes whose shape is settled. job_i5 is deliberately not asserted here — it
-      // is the one index that gets reshaped, and pinning its column list makes every index change
-      // edit this test for no gain. Its *rewriting* is covered structurally below.
+      // Sampled on indexes whose shape is settled. The fetch index is deliberately not asserted
+      // here — it is the one that gets replaced, and pinning its column list makes every index
+      // change edit this test for no gain. Its *rewriting* is covered structurally below.
       expect(byName.get('job_common_i9')!.keys).toBe('name, id')
       expect(byName.get('job_common_i1')!.keys).toBe("name, COALESCE(singleton_key, '')")
       // predicate is the catalog-canonical pg_get_indexdef form (per-conjunct parens)
@@ -72,10 +76,10 @@ describe('drift', function () {
       expect(byName.get('job_common_i1')!.definition)
         .toBe("CREATE UNIQUE INDEX job_common_i1 ON myschema.job_common (name, COALESCE(singleton_key, '')) WHERE (state = 'created') AND (policy = 'short')")
       // per-queue partition keeps its own physical name and table. Asserted as a shape rather than
-      // a literal: what is under test is the name/table rewriting, not job_i5's column list, and
+      // a literal: what is under test is the name/table rewriting, not the fetch index's key list, and
       // spelling the list out here means every index change edits this test.
-      expect(byName.get('jabc_i5')!.definition)
-        .toMatch(/^CREATE INDEX jabc_i5 ON myschema\.jabc \(.+\) WHERE .+$/)
+      expect(byName.get('jabc_i11')!.definition)
+        .toMatch(/^CREATE INDEX jabc_i11 ON myschema\.jabc \(.+\) WHERE .+$/)
       // static index needs no partition rewrite
       expect(byName.get('warning_i1')!.definition)
         .toBe('CREATE INDEX warning_i1 ON myschema.warning (created_on DESC)')
@@ -98,13 +102,13 @@ describe('drift', function () {
 
   describe('computeSchemaDrift (pure)', function () {
     const expected = [
-      { name: 'job_common_i5', table: 'job_common' },
+      { name: 'job_common_i11', table: 'job_common' },
       { name: 'warning_i1', table: 'warning' }
     ]
 
     it('reports ok when the live catalog matches', function () {
       const live = [
-        { name: 'job_common_i5', table: 'job_common', valid: true },
+        { name: 'job_common_i11', table: 'job_common', valid: true },
         { name: 'warning_i1', table: 'warning', valid: true }
       ]
       const report = drifter.computeSchemaDrift({ indexes: { expected, live } })
@@ -116,31 +120,31 @@ describe('drift', function () {
       const live = [{ name: 'warning_i1', table: 'warning', valid: true }]
       const report = drifter.computeSchemaDrift({ indexes: { expected, live } })
       expect(report.ok).toBe(false)
-      expect(report.missing.map(i => i.name)).toEqual(['job_common_i5'])
+      expect(report.missing.map(i => i.name)).toEqual(['job_common_i11'])
     })
 
     it('treats a missing index with an incomplete BAM build as building, not missing', function () {
       const live = [{ name: 'warning_i1', table: 'warning', valid: true }]
-      const report = drifter.computeSchemaDrift({ indexes: { expected, live, building: new Set(['job_common_i5']) } })
+      const report = drifter.computeSchemaDrift({ indexes: { expected, live, building: new Set(['job_common_i11']) } })
       expect(report.missing).toHaveLength(0)
-      expect(report.building.map(i => i.name)).toEqual(['job_common_i5'])
+      expect(report.building.map(i => i.name)).toEqual(['job_common_i11'])
       // building alone is not drift
       expect(report.ok).toBe(true)
     })
 
     it('flags an invalid index', function () {
       const live = [
-        { name: 'job_common_i5', table: 'job_common', valid: false, def: 'CREATE INDEX job_common_i5 ON pgboss.job_common USING btree (name, start_after)' },
+        { name: 'job_common_i11', table: 'job_common', valid: false, def: 'CREATE INDEX job_common_i11 ON pgboss.job_common USING btree (name, start_after)' },
         { name: 'warning_i1', table: 'warning', valid: true }
       ]
       const report = drifter.computeSchemaDrift({ indexes: { expected, live } })
       expect(report.ok).toBe(false)
-      expect(report.invalid.map(i => i.name)).toEqual(['job_common_i5'])
+      expect(report.invalid.map(i => i.name)).toEqual(['job_common_i11'])
     })
 
     it('reports non-constraint indexes on a managed table that are not expected as extra (a warning)', function () {
       const live = [
-        { name: 'job_common_i5', table: 'job_common', valid: true },
+        { name: 'job_common_i11', table: 'job_common', valid: true },
         { name: 'warning_i1', table: 'warning', valid: true },
         { name: 'job_common_i99', table: 'job_common', valid: true }, // stale pg-boss-named
         { name: 'my_custom_lookup', table: 'job_common', valid: true }, // user's own
@@ -378,7 +382,7 @@ describe('drift', function () {
 
   describe('bamCommandIndexName (pure)', function () {
     it('extracts the index name from CREATE INDEX variants', function () {
-      expect(plans.bamCommandIndexName('CREATE INDEX CONCURRENTLY jabc_i5 ON s.t (a)')).toBe('jabc_i5')
+      expect(plans.bamCommandIndexName('CREATE INDEX CONCURRENTLY jabc_i11 ON s.t (a)')).toBe('jabc_i11')
       expect(plans.bamCommandIndexName('CREATE UNIQUE INDEX IF NOT EXISTS job_i1 ON s.t (a)')).toBe('job_i1')
       expect(plans.bamCommandIndexName('ANALYZE s.t')).toBe(null)
     })
@@ -745,18 +749,18 @@ describe('drift', function () {
       const db = await helper.getDb()
       // job_common exists in partitioned mode; job in non-partitioned. Drop the fetch index either way.
       const table = helper.isCockroachDb ? 'job' : 'job_common'
-      await db.executeSql(`DROP INDEX ${schema}.${table}_i5`)
+      await db.executeSql(`DROP INDEX ${schema}.${table}_i11`)
       await db.close()
 
       const report = await ctx.boss.detectSchemaDrift()
       expect(report.ok).toBe(false)
-      expect(report.missing.map(i => i.name)).toContain(`${table}_i5`)
+      expect(report.missing.map(i => i.name)).toContain(`${table}_i11`)
       // The report carries DDL that actually recreates it, schema-qualified and physically named.
       // Asserted by running it rather than by matching a literal column list, so reshaping the
       // fetch index does not require editing this test.
-      const m = report.missing.find(i => i.name === `${table}_i5`)!
+      const m = report.missing.find(i => i.name === `${table}_i11`)!
       const definition = m.definition!
-      expect(definition).toMatch(new RegExp(`^CREATE INDEX ${table}_i5 ON ${schema}\\.${table} \\(.+\\) WHERE `))
+      expect(definition).toMatch(new RegExp(`^CREATE INDEX ${table}_i11 ON ${schema}\\.${table} \\(.+\\) WHERE `))
 
       const repair = await helper.getDb()
       try {
@@ -773,7 +777,7 @@ describe('drift', function () {
       const table = helper.isCockroachDb ? 'job' : 'job_common'
 
       const db = await helper.getDb()
-      await db.executeSql(`DROP INDEX ${schema}.${table}_i5`)
+      await db.executeSql(`DROP INDEX ${schema}.${table}_i11`)
       // Insert as a fresh in_progress build, not pending: the started boss runs a live BAM worker, and a
       // 'pending' row would be picked up and actually built (CREATE INDEX CONCURRENTLY) before the drift
       // scan runs — a race that leaves `building` empty. A non-stale in_progress row is neither a pending
@@ -782,13 +786,13 @@ describe('drift', function () {
       await db.executeSql(
         `INSERT INTO ${schema}.bam (name, version, status, started_on, table_name, command)
          VALUES ($1, 27, 'in_progress', now(), $2, $3)`,
-        ['drift-build', table, `CREATE INDEX CONCURRENTLY ${table}_i5 ON ${schema}.${table} (name, start_after)`]
+        ['drift-build', table, `CREATE INDEX CONCURRENTLY ${table}_i11 ON ${schema}.${table} (name, start_after)`]
       )
       await db.close()
 
       const report = await ctx.boss.detectSchemaDrift()
-      expect(report.building.map(i => i.name)).toContain(`${table}_i5`)
-      expect(report.missing.map(i => i.name)).not.toContain(`${table}_i5`)
+      expect(report.building.map(i => i.name)).toContain(`${table}_i11`)
+      expect(report.missing.map(i => i.name)).not.toContain(`${table}_i11`)
     })
 
     it('reports stray indexes on a managed table as extra (a warning; ok stays true)', async function () {

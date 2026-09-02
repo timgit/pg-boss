@@ -36,6 +36,11 @@ async function monitorOn (schema: string, queue: string): Promise<Date | null> {
   return rows.at(0)?.monitor_on ?? null
 }
 
+async function monitorClaimOn (schema: string, queue: string): Promise<Date | null> {
+  const rows = await query(`SELECT monitor_claim_on FROM ${schema}.queue WHERE name = $1`, [queue])
+  return rows.at(0)?.monitor_claim_on ?? null
+}
+
 async function warnings (schema: string) {
   return await query(`SELECT message, data FROM ${schema}.warning WHERE type = 'monitor_backoff' ORDER BY created_on`)
 }
@@ -208,6 +213,46 @@ helper.describePostgresOnly('monitor backoff', function () {
     expect(new Date(stamped).getTime()).toBeGreaterThanOrEqual(before.getTime())
   })
 
+  it('never shortens a deadline another instance already set', async function () {
+    const boss = await startBoss({ __test__monitor_stats_seconds: 300 })
+
+    await boss.supervise()
+
+    const long = await backoffUntil(ctx.schema)
+
+    helper.assertTruthy(long)
+
+    // A second instance whose own pass was only marginally slow computes a 2-naptime backoff. It
+    // must not overwrite the 300s one already in force: instances measure independently, so the
+    // deadline may only ever move outward or the shorter write re-opens the window the longer one
+    // closed.
+    await query(plans.setMonitorBackoff(ctx.schema, 7).text, plans.setMonitorBackoff(ctx.schema, 7).values)
+
+    expect((await backoffUntil(ctx.schema))!.getTime()).toBe(new Date(long).getTime())
+  })
+
+  it('still expires timed-out jobs while the aggregate is backed off', async function () {
+    const boss = await startBoss({ monitorIntervalSeconds: 1 })
+
+    const jobId = await boss.send('backoff', {}, { expireInSeconds: 1 })
+
+    helper.assertTruthy(jobId)
+
+    await boss.fetch('backoff')
+
+    // The backoff exists to space out the whole-table aggregate. Expiry is a narrow indexed update
+    // that pins nothing, so gating it on the horizon would turn a vacuum-safety valve into a
+    // job-expiry outage lasting two naptimes at minimum.
+    await query(`UPDATE ${ctx.schema}.version SET monitor_backoff_on = now() + interval '10 minutes'`)
+    await query(`UPDATE ${ctx.schema}.job SET started_on = now() - interval '1 hour' WHERE id = $1`, [jobId])
+
+    await boss.supervise()
+
+    const job = await boss.getJobById('backoff', jobId)
+
+    expect(job?.state).not.toBe('active')
+  })
+
   // These three need a second, independent connection - one to hold the queue-stats lock or the
   // pool while another instance tries to proceed. PGlite has no server and CockroachDB has no
   // advisory locks, so the scenario cannot be staged on either.
@@ -272,6 +317,8 @@ helper.describePostgresOnly('monitor backoff', function () {
 
       await boss.send('backoff', {})
 
+      const claimBefore = await monitorClaimOn(ctx.schema, 'backoff')
+
       const release = await holdStatsLock(ctx.schema)
 
       try {
@@ -291,11 +338,15 @@ helper.describePostgresOnly('monitor backoff', function () {
         // unguarded UPDATE would COALESCE every one of them to zero.
         expect(after.totalCount).toBe(before.totalCount)
 
-        // capturedOn does move, because trySetQueueMonitorTime stamped monitor_on when it claimed the
-        // interval, a statement earlier and before the lock was attempted. The queue therefore sits
-        // out one interval rather than retrying immediately — the counts are at most one
-        // monitorIntervalSeconds behind, against a staleness budget measured in hours.
-        expect(new Date(after.capturedOn).getTime()).toBeGreaterThan(new Date(before.capturedOn).getTime())
+        // capturedOn does NOT move. monitor_on is stamped by the aggregate that writes the counts,
+        // and this pass wrote none, so the reported capture time stays honest about how old the
+        // counts really are.
+        expect(new Date(after.capturedOn).getTime()).toBe(new Date(before.capturedOn).getTime())
+
+        // The claim did move, which is what makes the queue sit out one interval rather than
+        // retrying immediately against a lock another instance is still holding.
+        const claimAfter = await monitorClaimOn(ctx.schema, 'backoff')
+        expect(claimAfter!.getTime()).toBeGreaterThan(claimBefore!.getTime())
       } finally {
         await release()
       }

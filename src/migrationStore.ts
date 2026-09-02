@@ -951,7 +951,7 @@ const createQueueFn: Record<number, (schema: string) => string> = {
       EXECUTE ${schema}.job_table_format($cmd$ALTER TABLE ${schema}.job ADD CONSTRAINT q_fkey FOREIGN KEY (name) REFERENCES ${schema}.queue (name) ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED$cmd$, tablename);
       EXECUTE ${schema}.job_table_format($cmd$ALTER TABLE ${schema}.job ADD CONSTRAINT dlq_fkey FOREIGN KEY (dead_letter) REFERENCES ${schema}.queue (name) ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED$cmd$, tablename);
 
-      EXECUTE ${schema}.job_table_format($cmd$CREATE INDEX job_i5 ON ${schema}.job (name, priority DESC, created_on, start_after) WHERE state < 'active' AND NOT blocked$cmd$, tablename);
+      EXECUTE ${schema}.job_table_format($cmd$CREATE INDEX job_i11 ON ${schema}.job (name, priority DESC, created_on, start_after) WHERE state < 'active' AND NOT blocked$cmd$, tablename);
       EXECUTE ${schema}.job_table_format($cmd$CREATE UNIQUE INDEX job_i4 ON ${schema}.job (name, singleton_on, COALESCE(singleton_key, '')) WHERE state <> 'cancelled' AND singleton_on IS NOT NULL$cmd$, tablename);
       EXECUTE ${schema}.job_table_format($cmd$CREATE INDEX job_i7 ON ${schema}.job (name, group_id) WHERE state = 'active' AND group_id IS NOT NULL$cmd$, tablename);
       EXECUTE ${schema}.job_table_format($cmd$CREATE INDEX job_i9 ON ${schema}.job (name, id) WHERE blocking AND state = 'completed'$cmd$, tablename);
@@ -1332,6 +1332,14 @@ function getAll (schema: string, noPartitioning = false, noCovering = false): ty
         )
         `,
         `CREATE INDEX IF NOT EXISTS job_dep_parent_idx ON ${schema}.job_dependency (parent_name, parent_id)`,
+        // NOTE: the v31 job_i5 rebuild (adding `AND NOT blocked`) is intentionally omitted — v33
+        // drops and rebuilds job_i5 again (slimming off the covering INCLUDE), so on a multi-version
+        // upgrade (<= v31 -> >= v33, applied as one migration transaction) this only built a covering
+        // index that v33 immediately throws away. The whole migration runs in a single transaction,
+        // so no worker observes the pre-v33 shape; the old job_i5 simply persists untouched until v33
+        // replaces it. Anyone who already migrated to exactly v31/v32 keeps the index they built then,
+        // so removing the build here does not affect them. New partitions created while on v31 still
+        // get the correct shape from createQueueFn[31] below.
         createQueueFn[31](schema)
       ],
       uninstall: [
@@ -1368,6 +1376,20 @@ function getAll (schema: string, noPartitioning = false, noCovering = false): ty
       previous: 32,
       install: [
         `ALTER TABLE ${schema}.version ADD COLUMN IF NOT EXISTS flow_on timestamp with time zone`,
+        // The job_i9 build and job_i5 reshape are run OFF the migration transaction, via BAM as
+        // CONCURRENTLY DDL — see the `async` block below. The original v33 ran them synchronously here
+        // via job_table_run(), taking SHARE/ACCESS EXCLUSIVE locks on job_common + every partition
+        // inside the migration transaction, which deadlocked live workers polling job_common during a
+        // rolling deploy (issue #832).
+        //
+        // Only databases that have NOT yet passed v33 execute this install, and they always have the
+        // covering job_i5 (the slim form is introduced here) — so the reshape never needlessly
+        // rebuilds an already-slim index. Databases already past v33 keep what they built then; they
+        // pick up only the bam default change, carried separately by migration v36.
+        //
+        // Must run BEFORE the enqueues below and therefore in v33, not v36: migrations apply in
+        // version order, and the ordered pair enqueued here needs the default already changed. See
+        // createTableBam for why the default is clock_timestamp().
         `ALTER TABLE ${schema}.bam ALTER COLUMN created_on SET DEFAULT clock_timestamp()`,
         createQueueFn[33](schema)
       ],
@@ -1379,6 +1401,8 @@ function getAll (schema: string, noPartitioning = false, noCovering = false): ty
           CREATE INDEX CONCURRENTLY IF NOT EXISTS job_i9 ON ${schema}.job (name, id) WHERE blocking AND state = 'completed'
           $$
         )`,
+        // CONCURRENTLY cannot reshape in place, so this is an ordered drop-then-rebuild pair; BAM
+        // applies them in created_on order (see the clock_timestamp() default set above).
         `SELECT ${schema}.job_table_run_async(
           'fetch_index_drop',
           $VERSION$,
@@ -1406,6 +1430,8 @@ function getAll (schema: string, noPartitioning = false, noCovering = false): ty
       release: '12.23.0',
       version: 34,
       previous: 33,
+      // Plain columns on the partitioned parent cascade to job_common (DEFAULT partition) and every
+      // existing/future partition, so no job_table_run fan-out or createQueueFn bump is needed.
       install: [
         `ALTER TABLE ${schema}.job ADD COLUMN IF NOT EXISTS source_name text`,
         `ALTER TABLE ${schema}.job ADD COLUMN IF NOT EXISTS source_id uuid`,
@@ -1423,6 +1449,12 @@ function getAll (schema: string, noPartitioning = false, noCovering = false): ty
       release: '12.24.0',
       version: 35,
       previous: 34,
+      // Mirror plans.create(): honor noTablePartitioning so upgrades on non-partitioning
+      // deployments (e.g. CockroachDB, which rejects declarative RANGE partitioning) get a plain
+      // queue_stats table instead of a partitioned one they could never maintain. noCovering is a
+      // separate axis (CockroachDB sets it, YugabyteDB doesn't) gating the index's covering INCLUDE.
+      // queue.ready_history is NOT NULL DEFAULT '{}' so existing rows backfill with an empty window
+      // that fills in over the next monitor cycles.
       install: [
         ...(noPartitioning
           ? [
@@ -1445,18 +1477,29 @@ function getAll (schema: string, noPartitioning = false, noCovering = false): ty
       release: '12.24.1',
       version: 36,
       previous: 35,
+      // Carry only the bam.created_on default change (now() -> clock_timestamp()) to databases that
+      // already ran v33 and so won't re-run its install. This keeps a fully-migrated database's schema
+      // identical to a fresh install (plans.create builds the bam table with this default), and lets a
+      // future async migration enqueue an ordered drop-then-rebuild without the now() tie. The ALTER
+      // is idempotent, so databases that just ran v33's copy of it (a multi-version upgrade) are
+      // unaffected. No index work here — that lives in v33, which the deadlock-affected (pre-v33)
+      // databases run; databases already past v33 keep the indexes they built and skip the churn.
       install: [
         `ALTER TABLE ${schema}.bam ALTER COLUMN created_on SET DEFAULT clock_timestamp()`
       ],
+      // The default change is forward-compatible and harmless to keep, so rollback leaves it in place.
       uninstall: []
     },
     {
       release: '12.26.0',
       version: 37,
       previous: 36,
+      // Only installed where partitioning is enabled — plans.create() creates job_table_format()
+      // solely in that case, so a noPartitioning database has none to replace.
       install: noPartitioning
         ? []
         : [jobTableFormatFn[37](schema)],
+      // Restore the prior (naive) definition on rollback so the schema matches v36 exactly.
       uninstall: noPartitioning
         ? []
         : [jobTableFormatFn[36](schema)]
@@ -1466,6 +1509,8 @@ function getAll (schema: string, noPartitioning = false, noCovering = false): ty
       version: 38,
       previous: 37,
       install: noPartitioning
+        // noCovering backends (CockroachDB) have no INCLUDE, so they get the narrow index. The
+        // partitioned path is PostgreSQL-only and always covering.
         ? [`CREATE INDEX job_i10 ON ${schema}.job (name, singleton_key, state DESC, created_on, id)${noCovering ? '' : ' INCLUDE (start_after)'} WHERE state < 'active' AND NOT blocked AND policy = 'key_strict_fifo'`]
         : [createQueueFn[38](schema)],
       async: noPartitioning
@@ -1501,36 +1546,49 @@ function getAll (schema: string, noPartitioning = false, noCovering = false): ty
       previous: 39,
       install: [
         `ALTER TABLE ${schema}.version ADD COLUMN IF NOT EXISTS monitor_backoff_on timestamp with time zone`,
+        `ALTER TABLE ${schema}.queue ADD COLUMN IF NOT EXISTS monitor_claim_on timestamp with time zone`,
+        // Seed the claim from the existing pace so an upgrade does not make every queue immediately
+        // eligible and stampede one aggregate per queue on the first supervise pass after deploy.
+        `UPDATE ${schema}.queue SET monitor_claim_on = monitor_on WHERE monitor_claim_on IS NULL`,
         ...(noPartitioning
+          // Single transaction, so both statements commit together and no window exists to protect.
           ? [
-              `DROP INDEX IF EXISTS ${schema}.job_i5`,
-              `CREATE INDEX job_i5 ON ${schema}.job (name, priority DESC, created_on, start_after) WHERE state < 'active' AND NOT blocked`
+              `CREATE INDEX job_i11 ON ${schema}.job (name, priority DESC, created_on, start_after) WHERE state < 'active' AND NOT blocked`,
+              `DROP INDEX IF EXISTS ${schema}.job_i5`
             ]
           : [createQueueFn[40](schema)])
       ],
+      // Build before retire. BAM applies these in created_on order, so job_i11 is complete on a
+      // table before job_i5 is dropped from it.
       async: noPartitioning
         ? []
         : [
             {
-              name: 'fetch_index_priority_drop',
-              command: `DROP INDEX CONCURRENTLY IF EXISTS ${schema}.job_i5`
+              name: 'fetch_index_priority_build',
+              command: `CREATE INDEX CONCURRENTLY IF NOT EXISTS job_i11 ON ${schema}.job (name, priority DESC, created_on, start_after) WHERE state < 'active' AND NOT blocked`
             },
             {
-              name: 'fetch_index_priority',
-              command: `CREATE INDEX CONCURRENTLY IF NOT EXISTS job_i5 ON ${schema}.job (name, priority DESC, created_on, start_after) WHERE state < 'active' AND NOT blocked`
+              name: 'fetch_index_retire',
+              command: `DROP INDEX CONCURRENTLY IF EXISTS ${schema}.job_i5`
             }
           ],
+      // Restore before retire, the mirror of the install. Rollback can land at any point in the async
+      // sequence — before the build, between build and retire, or after both — and IF NOT EXISTS is
+      // what makes all three the same statement: v40 never reshapes job_i5, it only drops it, so a
+      // job_i5 still present is already the v39 shape and is left exactly where it is rather than
+      // being dropped and rebuilt for nothing.
       uninstall: [
         ...(noPartitioning
           ? [
-              `DROP INDEX IF EXISTS ${schema}.job_i5`,
-              `CREATE INDEX job_i5 ON ${schema}.job (name, start_after) WHERE state < 'active' AND NOT blocked`
+              `CREATE INDEX IF NOT EXISTS job_i5 ON ${schema}.job (name, start_after) WHERE state < 'active' AND NOT blocked`,
+              `DROP INDEX IF EXISTS ${schema}.job_i11`
             ]
           : [
               createQueueFn[38](schema),
-              `SELECT ${schema}.job_table_run($cmd$DROP INDEX IF EXISTS ${schema}.job_i5$cmd$)`,
-              `SELECT ${schema}.job_table_run($cmd$CREATE INDEX job_i5 ON ${schema}.job (name, start_after) WHERE state < 'active' AND NOT blocked$cmd$)`
+              `SELECT ${schema}.job_table_run($cmd$CREATE INDEX IF NOT EXISTS job_i5 ON ${schema}.job (name, start_after) WHERE state < 'active' AND NOT blocked$cmd$)`,
+              `SELECT ${schema}.job_table_run($cmd$DROP INDEX IF EXISTS ${schema}.job_i11$cmd$)`
             ]),
+        `ALTER TABLE ${schema}.queue DROP COLUMN monitor_claim_on`,
         `ALTER TABLE ${schema}.version DROP COLUMN monitor_backoff_on`
       ]
     }

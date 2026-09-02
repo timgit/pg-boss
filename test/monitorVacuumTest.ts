@@ -509,9 +509,17 @@ helper.describeMultiConnectionOnly('vacuum monitoring', function () {
       await churn(boss, 'garbage')
       await boss.supervise()
 
+      // Two more passes with the same stuck garbage. Narrowing found nothing readable and said so;
+      // it must not keep re-probing and re-warning every pass thereafter, and it must not hand an
+      // empty source list back to a query builder that cannot express one.
+      await churn(boss, 'garbage')
+      await boss.supervise()
+      await churn(boss, 'garbage')
+      await boss.supervise()
+
       const disabled = warnings.filter(w => w.message.includes('xmin_horizon check is disabled'))
 
-      expect(disabled.length).toBeGreaterThan(0)
+      expect(disabled).toHaveLength(1)
       expect((disabled[0].data as { type: string }).type).toBe('xmin_horizon')
       expect((disabled[0].data as { error: string }).error).toContain('permission denied')
 

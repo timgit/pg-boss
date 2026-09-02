@@ -324,12 +324,16 @@ class Boss extends EventEmitter implements types.EventsMixin {
 
     if (this.#stopping) return
 
-    await this.#applyMonitorBackoff()
-
     await this.#checkVacuum()
 
     await this.#maintainWarnings()
     await this.#maintainQueueStats()
+
+    // Immediately after the aggregates it measures, not at the head of the next pass. Deferring the
+    // write left a whole supervise interval between a slow aggregate finishing and the gate closing
+    // behind it, and a getQueueStats({ force: true }) landing in that window ran exactly the scan
+    // the backoff was about to prevent.
+    await this.#applyMonitorBackoff()
 
     // Last in the pass: a rebuild is DDL that can run for seconds, so nothing time-sensitive
     // (expiry, deletion, stats) should ever queue behind it.
@@ -350,37 +354,52 @@ class Boss extends EventEmitter implements types.EventsMixin {
 
     if (rows.length) {
       const queues = rows.map((q) => q.name)
+      // The vacuum-safety backoff defers the stats aggregate, not the whole pass. Job expiry and
+      // heartbeat failure below are narrow indexed updates that pin nothing, and gating them on the
+      // horizon would turn a vacuum-safety valve into a job-expiry outage lasting two naptimes at
+      // minimum. See the note on plans.trySetQueueMonitorTime.
+      const refreshStats = rows.every((q) => q.refreshStats !== false)
 
-      const cacheStatsSql = plans.cacheQueueStats(this.#config.schema, table, queues, this.#config.noAdvisoryLocks)
-      // The pin this pass cost, taken from the server's own clock (see the pinSeconds column in
-      // cacheQueueStats) and not from a stopwatch around the call - that would count pool wait,
-      // network and event-loop lag, none of which hold the horizon. The client measurement stays as
-      // a fallback for a backend or adapter that returns no rows to read it from.
-      const statsStarted = Date.now()
-      const { rows: rowsCacheStats } = await this.#executeQuery(cacheStatsSql)
-      const pinned = rowsCacheStats.reduce((max, row) => Math.max(max, Number(row.pinSeconds) || 0), 0)
+      if (refreshStats) {
+        const cacheStatsSql = plans.cacheQueueStats(this.#config.schema, table, queues, this.#config.noAdvisoryLocks)
+        // The pin this pass cost, taken from the server's own clock (see the pinSeconds column in
+        // cacheQueueStats) and not from a stopwatch around the call - that would count pool wait,
+        // network and event-loop lag, none of which hold the horizon. The client measurement stays as
+        // a fallback for a backend or adapter that returns no rows to read it from.
+        const statsStarted = Date.now()
+        const { rows: rowsCacheStats } = await this.#executeQuery(cacheStatsSql)
+        const pinned = rowsCacheStats.reduce((max, row) => Math.max(max, Number(row.pinSeconds) || 0), 0)
 
-      this.#statsElapsedSeconds += pinned || (Date.now() - statsStarted) / 1000
+        // Only when the aggregate actually ran. An empty result means another instance holds the
+        // stats try-lock and this statement returned without scanning anything, so the elapsed
+        // client time is pool and network latency - exactly the measurement the server-side
+        // pinSeconds column exists to avoid backing off on.
+        if (rowsCacheStats.length) {
+          this.#statsElapsedSeconds += pinned || (Date.now() - statsStarted) / 1000
+        }
 
-      if (this.#config.persistQueueStats) {
-        const insertSql = plans.insertQueueStats(this.#config.schema, queues, this.#config.noAdvisoryLocks)
-        await this.#executeQuery(insertSql)
+        if (this.#config.persistQueueStats) {
+          const insertSql = plans.insertQueueStats(this.#config.schema, queues, this.#config.noAdvisoryLocks)
+          await this.#executeQuery(insertSql)
+        }
+
+        if (this.#stopping) return
+
+        // Coerce with Number(): CockroachDB returns these integer columns as strings, so a bare `>`
+        // would compare lexicographically ("100" > "9" === false) and silently miss the backlog. On
+        // standard Postgres these are already numbers, so Number() is a no-op.
+        const warnings = rowsCacheStats.filter(i => Number(i.queuedCount) > (Number(i.warningQueueSize) || this.#largeQueueSize))
+
+        for (const warning of warnings) {
+          await emitAndPersistWarning(this.#warningContext,
+            WARNING_TYPES.QUEUE_BACKLOG,
+            WARNINGS.LARGE_QUEUE.message,
+            warning
+          )
+        }
       }
 
       if (this.#stopping) return
-
-      // Coerce with Number(): CockroachDB returns these integer columns as strings, so a bare `>`
-      // would compare lexicographically ("100" > "9" === false) and silently miss the backlog. On
-      // standard Postgres these are already numbers, so Number() is a no-op.
-      const warnings = rowsCacheStats.filter(i => Number(i.queuedCount) > (Number(i.warningQueueSize) || this.#largeQueueSize))
-
-      for (const warning of warnings) {
-        await emitAndPersistWarning(this.#warningContext,
-          WARNING_TYPES.QUEUE_BACKLOG,
-          WARNINGS.LARGE_QUEUE.message,
-          warning
-        )
-      }
 
       // CockroachDB rejects the multi-mutation failJobs() CTE these use, so under noMultiMutationCte
       // route expiry through the manager's split select/delete/re-insert variants instead.
@@ -731,6 +750,11 @@ class Boss extends EventEmitter implements types.EventsMixin {
    */
   async #readXminHorizon (lastVacuum: Date) {
     const attempted = this.#xminHorizonSources ?? plans.XMIN_HORIZON_QUERY_SOURCES
+
+    // Narrowing has already found that this role can read none of them, and the check said so once.
+    // Without this the empty list would be handed back to getXminHorizon, which cannot build a
+    // statement with no columns, and every later pass would re-fail, re-probe and re-warn.
+    if (!attempted.length) return null
 
     try {
       const { rows } = await this.#executeQuery(plans.getXminHorizon(lastVacuum, attempted))
