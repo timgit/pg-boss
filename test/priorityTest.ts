@@ -4,8 +4,13 @@ import { ctx } from './hooks.ts'
 import { assertTruthy } from './testHelper.ts'
 
 // process.emitWarning is process-global, so a listener has to be attached and removed around the
-// call under test rather than left on the boss instance. Node also dedupes nothing here — the
-// once-per-option-per-instance guard is pg-boss's own, which is exactly what these assert.
+// call under test rather than left on the boss instance. The dedupe under test is pg-boss's own,
+// once per option per instance; Node does not dedupe.
+//
+// The setImmediate is load-bearing. process.emitWarning defers emission past the microtask queue,
+// so awaiting the calls that trigger it is not enough to observe it — against a real server the
+// query I/O happens to provide the macrotask turn, but against an in-process backend (PGlite)
+// everything resolves in microtasks and the listener would come off before the warning arrives.
 async function captureDeprecations (fn: () => Promise<void>) {
   const seen: NodeJS.ErrnoException[] = []
   const listener = (w: Error) => seen.push(w as NodeJS.ErrnoException)
@@ -14,6 +19,7 @@ async function captureDeprecations (fn: () => Promise<void>) {
 
   try {
     await fn()
+    await new Promise(resolve => setImmediate(resolve))
   } finally {
     process.off('warning', listener)
   }
