@@ -307,6 +307,101 @@ helper.describePostgresOnly('vacuum monitoring', function () {
     expect(await storedWarnings(ctx.schema, 'autovacuum_disabled')).toHaveLength(1)
   })
 
+  // A managed provider can revoke a catalog the horizon query reads. The whole statement fails, so
+  // the check has to find out which sources this role can still read rather than losing the answer.
+  it('drops the sources the role cannot read and keeps the rest', async function () {
+    const realDb = await helper.getDb()
+    let slotAttempts = 0
+
+    const boss = await startBoss({
+      db: {
+        async executeSql (sql: string, values: any[]) {
+          if (sql.includes('pg_replication_slots')) {
+            slotAttempts++
+            throw new Error('permission denied for view pg_replication_slots')
+          }
+
+          return realDb.executeSql(sql, values)
+        }
+      }
+    })
+
+    const release = await holdHorizon()
+
+    try {
+      await churn(boss, 'garbage')
+      await boss.supervise()
+
+      // Second pass is the first one with a failed vacuum behind it, so it is the first to read the
+      // horizon: the combined query fails, and the probe loop narrows to the readable sources.
+      await churn(boss, 'garbage')
+      await boss.supervise()
+
+      expect(await storedWarnings(ctx.schema, 'xmin_horizon')).toHaveLength(0)
+      // The combined statement plus one probe per revoked source, all in that one pass.
+      expect(slotAttempts).toBe(3)
+
+      await churn(boss, 'garbage')
+      await boss.supervise()
+
+      const [stored] = await storedWarnings(ctx.schema, 'xmin_horizon')
+
+      expect(stored.data.source).toBe('backends')
+      // A partial answer says so, so an empty pg_replication_slots this role never read cannot be
+      // mistaken for evidence that no slot is holding the horizon.
+      expect(stored.data.unreadableSources).toEqual(['slots', 'slotsCatalog'])
+
+      // Narrowing is remembered: later passes never pay for the revoked sources again.
+      await churn(boss, 'garbage')
+      await boss.supervise()
+
+      expect(slotAttempts).toBe(3)
+    } finally {
+      await release()
+      await realDb.close()
+    }
+  })
+
+  it('disables the check and says so when no source is readable', async function () {
+    const realDb = await helper.getDb()
+    const warnings: Warning[] = []
+
+    const boss = await startBoss({
+      db: {
+        async executeSql (sql: string, values: any[]) {
+          // Every variant of the horizon query carries this column, narrowed or not.
+          if (sql.includes('oldestTransactionSeconds')) throw new Error('permission denied for view pg_stat_activity')
+
+          return realDb.executeSql(sql, values)
+        }
+      }
+    })
+
+    boss.on('warning', w => warnings.push(w))
+
+    const release = await holdHorizon()
+
+    try {
+      await churn(boss, 'garbage')
+      await boss.supervise()
+      await churn(boss, 'garbage')
+      await boss.supervise()
+
+      const disabled = warnings.filter(w => w.message.includes('xmin_horizon check is disabled'))
+
+      expect(disabled.length).toBeGreaterThan(0)
+      expect((disabled[0].data as { type: string }).type).toBe('xmin_horizon')
+      expect((disabled[0].data as { error: string }).error).toContain('permission denied')
+
+      // No holder can be named without a readable source, so the diagnosis is withheld rather than
+      // guessed at from the table evidence alone.
+      expect(await storedWarnings(ctx.schema, 'xmin_horizon')).toHaveLength(0)
+    } finally {
+      await release()
+      await realDb.close()
+    }
+  })
+
   it('rejects a non-boolean setting', async function () {
     const { PgBoss } = await import('../src/index.ts')
 

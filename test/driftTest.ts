@@ -755,11 +755,12 @@ describe('drift', function () {
       // Asserted by running it rather than by matching a literal column list, so reshaping the
       // fetch index does not require editing this test.
       const m = report.missing.find(i => i.name === `${table}_i5`)!
-      expect(m.definition).toMatch(new RegExp(`^CREATE INDEX ${table}_i5 ON ${schema}\\.${table} \\(.+\\) WHERE `))
+      const definition = m.definition!
+      expect(definition).toMatch(new RegExp(`^CREATE INDEX ${table}_i5 ON ${schema}\\.${table} \\(.+\\) WHERE `))
 
       const repair = await helper.getDb()
       try {
-        await repair.executeSql(m.definition)
+        await repair.executeSql(definition)
       } finally {
         await repair.close()
       }
