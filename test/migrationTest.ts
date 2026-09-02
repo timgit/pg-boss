@@ -4,16 +4,29 @@ import { getDb, assertTruthy, getSchemaDefs, itPostgresOnly, start } from './tes
 import Contractor from '../src/contractor.ts'
 import { getAll, migrate, migrateCommands, getMinVersion, next } from '../src/migrationStore.ts'
 import packageJson from '../package.json' with { type: 'json' }
-import { setVersion, getPartitionedQueueTables, jobTableFormatFunction } from '../src/plans.ts'
+import { setVersion, getPartitionedQueueTables, jobTableFormatFunction, bamCommandIndexName } from '../src/plans.ts'
 import { ctx } from './hooks.ts'
 
 const currentSchemaVersion = packageJson.pgboss.schema
 // Version 27 has async migrations that create BAM entries for partitioned tables
 const versionWithAsyncMigrations = 27
-// The migration that enqueues the key_strict_fifo head index (job_i10). Pinned by number rather
-// than derived from currentSchemaVersion so a later schema bump can't silently retarget the tests
-// that exercise it at an unrelated migration.
-const keyStrictFifoVersion = 38
+
+// How many migrations back the round-trip and async-lifecycle tests reach, counted from the current
+// schema version rather than pinned to any particular one. This is the knob that keeps these tests
+// from accreting: a new migration is covered the moment it is added, and nothing needs editing.
+// Raise it locally (MIGRATION_DEPTH=10) to sweep further back.
+const MIGRATION_DEPTH = Math.min(
+  Number(process.env.MIGRATION_DEPTH ?? 3),
+  currentSchemaVersion - getMinVersion('x')!
+)
+
+// The newest migration that enqueues async (BAM) work, discovered from the migration list. Used by
+// the async-lifecycle tests so they follow the migrations rather than naming one.
+function newestAsyncMigration (schema = 'x') {
+  return getAll(schema)
+    .filter(m => Array.isArray(m.async) && m.async.length > 0)
+    .sort((a, b) => b.version - a.version)[0]
+}
 
 describe('migration', function () {
   let contractor: Contractor
@@ -419,6 +432,177 @@ describe('migration', function () {
     expect(Array.isArray(bamStatus)).toBe(true)
   })
 
+  // Rolls back `depth` migrations and replays them, then asserts the schema is byte-identical to a
+  // fresh install. This is the test that replaces per-migration schema assertions: because the
+  // window is relative to currentSchemaVersion, every new migration is covered the moment it lands
+  // and no test needs to be written or edited for it.
+  //
+  // What it catches, generically: an uninstall that does not fully reverse its install, an index or
+  // constraint left behind or not rebuilt, a create_queue snapshot that drifts from the live
+  // function, and async (BAM) work that never converges.
+  async function assertRoundTripConverges (depth: number) {
+    const config = { ...ctx.bossConfig }
+
+    await contractor.create()
+
+    // A dedicated partition per policy, so the comparison covers the per-partition fan-out and the
+    // policy-scoped index builds — not just job_common. Without these, a migration that built the
+    // wrong index on the wrong partition would round-trip clean.
+    const db = await getDb()
+    try {
+      for (const policy of ['standard', 'short', 'singleton', 'stately', 'exclusive', 'key_strict_fifo']) {
+        await db.executeSql(
+          `SELECT ${config.schema}.create_queue($1, $2::jsonb)`,
+          [`part_${policy}`, JSON.stringify({ partition: true, policy })])
+      }
+    } finally {
+      await db.close()
+    }
+
+    const fresh = await getSchemaDefs([config.schema])
+
+    for (let i = 0; i < depth; i++) {
+      const version = await contractor.schemaVersion()
+      assertTruthy(version)
+      await contractor.rollback(version)
+    }
+
+    const rolledBackTo = await contractor.schemaVersion()
+    assertTruthy(rolledBackTo)
+    expect(rolledBackTo).toBe(currentSchemaVersion - depth)
+
+    await contractor.migrate(rolledBackTo)
+    expect(await contractor.schemaVersion()).toBe(currentSchemaVersion)
+
+    // Migrations defer index work to BAM, so the schema has not converged until BAM drains.
+    const boss = ctx.boss = await start({
+      ...config,
+      noDefault: true,
+      bamIntervalSeconds: 1,
+      __test__bypass_bam_interval_check: true
+    })
+    await expect.poll(async () => {
+      const status = await boss.getBamStatus()
+      return status.filter(item => item.status !== 'completed').reduce((sum, item) => sum + item.count, 0)
+    }, { timeout: 45000 }).toBe(0)
+    await boss.stop()
+
+    const replayed = await getSchemaDefs([config.schema])
+
+    for (const part of ['columns', 'indexes', 'constraints', 'functions'] as const) {
+      expect(replayed[part].rows, `${part} differ after rolling back ${depth} and replaying`)
+        .toEqual(fresh[part].rows)
+    }
+  }
+
+  for (let depth = 1; depth <= MIGRATION_DEPTH; depth++) {
+    itPostgresOnly(`converges on the fresh-install schema after rolling back ${depth} and replaying`, { timeout: 90000 }, async function () {
+      await assertRoundTripConverges(depth)
+    })
+  }
+
+  // The async (BAM) lifecycle, driven by whichever migration most recently enqueues async work
+  // rather than by a named version. Covers what the per-migration BAM tests used to assert one
+  // migration at a time: commands are enqueued for the right tables, they drain, and rolling the
+  // version back removes any that never ran.
+  itPostgresOnly('enqueues async work for the newest async migration and clears it on rollback', { timeout: 90000 }, async function () {
+    const schema = ctx.bossConfig.schema
+    const target = newestAsyncMigration()
+    assertTruthy(target)
+
+    const db = await getDb()
+
+    try {
+      await contractor.create()
+      // A partitioned queue gives the fan-out a second table to reach.
+      await db.executeSql(`SELECT ${schema}.create_queue('part_q', '{"partition":true,"policy":"standard"}'::jsonb)`)
+
+      await rollbackTo(target.previous)
+      expect(await contractor.schemaVersion()).toBe(target.previous)
+
+      await contractor.migrate(target.previous)
+      expect(await contractor.schemaVersion()).toBe(currentSchemaVersion)
+
+      // Enqueued, not yet run: the migration transaction must not do index work inline (issue #832).
+      const { rows: queued } = await db.executeSql(
+        `SELECT count(*)::int AS count FROM ${schema}.bam WHERE version = $1 AND status <> 'completed'`,
+        [target.version])
+      expect(queued[0].count).toBeGreaterThan(0)
+
+      // Rolling the version back must remove its unfinished commands, so a later replay does not
+      // apply DDL belonging to a version the schema is no longer on.
+      await rollbackTo(target.previous)
+      const { rows: cleared } = await db.executeSql(
+        `SELECT count(*)::int AS count FROM ${schema}.bam WHERE version = $1 AND status <> 'completed'`,
+        [target.version])
+      expect(cleared[0].count).toBe(0)
+    } finally {
+      await db.close()
+    }
+  })
+
+  // Every index a migration creates must be gone once that migration is rolled back.
+  //
+  // This is the property the round-trip test cannot see: an uninstall that fails to drop what its
+  // install created is invisible to a before/after comparison, because replaying the migration
+  // recreates the object idempotently and the end state matches anyway. The leak only shows at the
+  // intermediate version. Index names are read out of each migration's own DDL, so this follows the
+  // migration list rather than naming versions.
+  itPostgresOnly('drops every index a migration created when that migration is rolled back', { timeout: 90000 }, async function () {
+    const schema = ctx.bossConfig.schema
+    const migrations = getAll(schema)
+      .filter(m => m.version > currentSchemaVersion - MIGRATION_DEPTH)
+      .sort((a, b) => b.version - a.version)
+
+    const db = await getDb()
+
+    try {
+      await contractor.create()
+      await db.executeSql(
+        `SELECT ${schema}.create_queue($1, $2::jsonb)`,
+        ['part_q', JSON.stringify({ partition: true, policy: 'key_strict_fifo' })])
+
+      for (const migration of migrations) {
+        const commands = [
+          ...(migration.install ?? []),
+          ...(migration.async ?? []).map(a => typeof a === 'string' ? a : a.command)
+        ]
+
+        // The bare job_iN token each command builds, before per-partition renaming.
+        //
+        // Function bodies are excluded: a migration that only re-declares create_queue carries a
+        // CREATE INDEX for every index in the schema, none of which it introduces. Rolling it back
+        // is not supposed to drop them, and counting them here reports the whole index set as
+        // leaked. Only standalone index DDL states what a migration actually adds.
+        const created = [...new Set(commands
+          .filter(command => !/CREATE\s+(OR\s+REPLACE\s+)?FUNCTION/i.test(command))
+          .map(command => bamCommandIndexName(command))
+          .filter((name): name is string => !!name))]
+
+        await contractor.rollback(migration.version)
+        expect(await contractor.schemaVersion()).toBe(migration.previous)
+
+        for (const index of created) {
+          // Migrations spell indexes as the bare job_iN token; job_table_format renames them per
+          // table (job_i10 -> job_common_i10, <partition>_i10), so match on the suffix.
+          const suffix = index.replace(/^job_/, '')
+
+          const { rows } = await db.executeSql(
+            `SELECT c.relname FROM pg_class c
+               JOIN pg_namespace n ON n.oid = c.relnamespace
+              WHERE n.nspname = $1 AND c.relkind IN ('i','I')
+                AND (c.relname = $2 OR c.relname LIKE '%\\_' || $3)`,
+            [schema, index, suffix])
+
+          expect(rows.map((r: { relname: string }) => r.relname),
+            `v${migration.version} created ${index} but its rollback left it behind`).toEqual([])
+        }
+      }
+    } finally {
+      await db.close()
+    }
+  })
+
   itPostgresOnly('should have identical schema after rollback and forward migration', async function () {
     const config = { ...ctx.bossConfig }
 
@@ -577,316 +761,6 @@ describe('migration', function () {
     expect(rolledBackSchema.indexes.rows).not.toEqual(originalSchema.indexes.rows)
   })
 
-  itPostgresOnly('reshapes job_i5 and builds job_i9 off-transaction via BAM on upgrade across partitions (issue #832)', async function () {
-    const config = { ...ctx.bossConfig }
-    const schema = config.schema
-
-    const db = await getDb()
-    // @ts-ignore
-    const contractor = new Contractor(db, config)
-
-    // Read an index's definition on job_common + every partition by targeting each index relation by
-    // name (pg_get_indexdef on its regclass), rather than scanning the catalog-wide pg_indexes view —
-    // that view can transiently race concurrent DDL from parallel test workers ("could not open
-    // relation with OID"). Touching only this schema's own relations keeps the read deterministic.
-    const fetchIndexDefs = async (suffix: string): Promise<(string | null)[]> => {
-      const parts = await db.executeSql(`SELECT table_name FROM ${schema}.queue WHERE partition = true ORDER BY table_name`)
-      const tables = ['job_common', ...parts.rows.map((r: { table_name: string }) => r.table_name)]
-      const defs: (string | null)[] = []
-      for (const t of tables) {
-        const res = await db.executeSql(
-          'SELECT pg_get_indexdef(c.oid) AS indexdef FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = $1 AND c.relname = $2',
-          [schema, `${t}${suffix}`]
-        )
-        defs.push(res.rows[0]?.indexdef ?? null)
-      }
-      return defs
-    }
-
-    // The BAM background worker drains its queue one command at a time in created_on order. CONCURRENTLY
-    // runs outside a transaction (pool.query autocommits), so we can apply each command directly.
-    const drainBam = async () => {
-      let next
-      while ((next = (await db.executeSql(
-        `SELECT id, command FROM ${schema}.bam WHERE status IN ('pending', 'failed') ORDER BY created_on LIMIT 1`
-      )).rows[0])) {
-        await db.executeSql(next.command)
-        await db.executeSql(`UPDATE ${schema}.bam SET status = 'completed' WHERE id = $1`, [next.id])
-      }
-    }
-
-    await contractor.create()
-    // A partitioned queue gives the indexes a second home, exercising the per-partition fan-out.
-    await db.executeSql(`SELECT ${schema}.create_queue('part_q', '{"partition":true,"policy":"standard"}'::jsonb)`)
-
-    // Fresh install (current version): job_i5 is slim (no covering payload — FOR UPDATE ... SKIP
-    // LOCKED precludes an index-only scan) and job_i9 exists on every table.
-    let i5 = await fetchIndexDefs('_i5')
-    expect(i5).toHaveLength(2)
-    for (const def of i5) expect(def).not.toContain('INCLUDE')
-    let i9 = await fetchIndexDefs('_i9')
-    for (const def of i9) expect(def).not.toBeNull()
-
-    // Roll back to v32: the historical covering job_i5 is restored and job_i9 is dropped everywhere.
-    let version = await contractor.schemaVersion()
-    assertTruthy(version)
-    while (version > 32) {
-      await contractor.rollback(version)
-      version = await contractor.schemaVersion()
-      assertTruthy(version)
-    }
-    expect(version).toBe(32)
-    i5 = await fetchIndexDefs('_i5')
-    for (const def of i5) expect(def).toContain('INCLUDE (priority, created_on, id)')
-    i9 = await fetchIndexDefs('_i9')
-    for (const def of i9) expect(def).toBeNull()
-
-    // Migrate forward. Per issue #832, v33 no longer changes indexes synchronously inside the
-    // migration transaction; it enqueues the work on BAM as CONCURRENTLY DDL instead, so the
-    // transaction takes no locks on job_common. The build is deferred until BAM drains.
-    await contractor.migrate(32)
-    expect(await contractor.schemaVersion()).toBe(currentSchemaVersion)
-    i9 = await fetchIndexDefs('_i9')
-    for (const def of i9) expect(def).toBeNull() // not built yet — deferred to BAM
-    i5 = await fetchIndexDefs('_i5')
-    for (const def of i5) expect(def).toContain('INCLUDE (priority, created_on, id)') // not reshaped yet
-
-    await drainBam()
-
-    // After draining, job_i9 exists on every table and job_i5 has been slimmed (drop ran before
-    // rebuild, so the rebuild's name didn't collide) — converging on the fresh-install schema.
-    i9 = await fetchIndexDefs('_i9')
-    for (const def of i9) expect(def).not.toBeNull()
-    i5 = await fetchIndexDefs('_i5')
-    expect(i5).toHaveLength(2)
-    for (const def of i5) expect(def).not.toContain('INCLUDE')
-
-    // Idempotency: re-running the enqueued commands converges to the same state (job_i9 build is
-    // IF NOT EXISTS; job_i5 is a drop-then-rebuild that lands slim again).
-    await db.executeSql(`UPDATE ${schema}.bam SET status = 'pending'`)
-    await drainBam()
-    i9 = await fetchIndexDefs('_i9')
-    for (const def of i9) expect(def).not.toBeNull()
-    i5 = await fetchIndexDefs('_i5')
-    for (const def of i5) expect(def).not.toContain('INCLUDE')
-
-    await db.close()
-  })
-
-  itPostgresOnly('reorders job_i5 to the priority-ordered shape at v40, across partitions and reversibly', async function () {
-    const config = { ...ctx.bossConfig }
-    const schema = config.schema
-
-    const db = await getDb()
-    // @ts-ignore
-    const contractor = new Contractor(db, config)
-
-    const fetchIndexDefs = async (): Promise<(string | null)[]> => {
-      const parts = await db.executeSql(`SELECT table_name FROM ${schema}.queue WHERE partition = true ORDER BY table_name`)
-      const tables = ['job_common', ...parts.rows.map((r: { table_name: string }) => r.table_name)]
-      const defs: (string | null)[] = []
-      for (const t of tables) {
-        const res = await db.executeSql(
-          'SELECT pg_get_indexdef(c.oid) AS indexdef FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = $1 AND c.relname = $2',
-          [schema, `${t}_i5`]
-        )
-        defs.push(res.rows[0]?.indexdef ?? null)
-      }
-      return defs
-    }
-
-    const drainBam = async () => {
-      let next
-      while ((next = (await db.executeSql(
-        `SELECT id, command FROM ${schema}.bam WHERE status IN ('pending', 'failed') ORDER BY created_on LIMIT 1`
-      )).rows[0])) {
-        await db.executeSql(next.command)
-        await db.executeSql(`UPDATE ${schema}.bam SET status = 'completed' WHERE id = $1`, [next.id])
-      }
-    }
-
-    await contractor.create()
-    await db.executeSql(`SELECT ${schema}.create_queue('part_q', '{"partition":true,"policy":"standard"}'::jsonb)`)
-
-    // Fresh install: every table carries the priority-ordered shape, including a queue created
-    // after the migration — which is the create_queue snapshot, not the migration, doing the work.
-    let i5 = await fetchIndexDefs()
-    expect(i5).toHaveLength(2)
-    for (const def of i5) {
-      expect(def).toContain('priority DESC, created_on, start_after')
-      // The uuid tiebreaker is deliberately absent: it defeats btree deduplication and costs 8.5x
-      // index size, and an Incremental Sort covers the ORDER BY without it.
-      expect(def).not.toContain(', id)')
-    }
-
-    // Roll back to v39: the start_after-ordered shape returns everywhere.
-    let version = await contractor.schemaVersion()
-    assertTruthy(version)
-    while (version > 39) {
-      await contractor.rollback(version)
-      version = await contractor.schemaVersion()
-      assertTruthy(version)
-    }
-    expect(version).toBe(39)
-    i5 = await fetchIndexDefs()
-    for (const def of i5) {
-      expect(def).toContain('(name, start_after)')
-      expect(def).not.toContain('priority')
-    }
-
-    // Forward again. Like v33, the reshape is enqueued on BAM as CONCURRENTLY DDL rather than run
-    // inside the migration transaction, so nothing is rebuilt until BAM drains.
-    await contractor.migrate(39)
-    expect(await contractor.schemaVersion()).toBe(currentSchemaVersion)
-    i5 = await fetchIndexDefs()
-    for (const def of i5) expect(def).toContain('(name, start_after)') // deferred
-
-    await drainBam()
-
-    i5 = await fetchIndexDefs()
-    expect(i5).toHaveLength(2)
-    for (const def of i5) expect(def).toContain('priority DESC, created_on, start_after')
-
-    // Idempotent: the drop-then-rebuild pair converges on re-run rather than colliding on the name.
-    await db.executeSql(`UPDATE ${schema}.bam SET status = 'pending'`)
-    await drainBam()
-    i5 = await fetchIndexDefs()
-    for (const def of i5) expect(def).toContain('priority DESC, created_on, start_after')
-
-    await db.close()
-  })
-
-  // Timeout raised for v40: the upgrade now enqueues a job_i5 drop-then-rebuild pair per job
-  // table on top of this test's own key_strict_fifo build, and BAM drains one command per
-  // bamIntervalSeconds. The work is real, not a hang — the poll below still asserts it completes.
-  itPostgresOnly('builds the key_strict_fifo head index for shared and strict FIFO job tables', { timeout: 60000 }, async function () {
-    const config = { ...ctx.bossConfig }
-    const schema = config.schema
-    const db = await getDb()
-
-    await contractor.create()
-    await rollbackTo(keyStrictFifoVersion - 1)
-    await db.executeSql(`SELECT ${schema}.create_queue('strict_existing', '{"partition":true,"policy":"key_strict_fifo"}'::jsonb)`)
-    await db.executeSql(`SELECT ${schema}.create_queue('standard_existing', '{"partition":true,"policy":"standard"}'::jsonb)`)
-
-    const queues = await db.executeSql(`SELECT name, table_name FROM ${schema}.queue WHERE name IN ('strict_existing', 'standard_existing')`)
-    const strictTable = queues.rows.find(row => row.name === 'strict_existing').table_name
-    const standardTable = queues.rows.find(row => row.name === 'standard_existing').table_name
-
-    await contractor.migrate(keyStrictFifoVersion - 1)
-
-    const targets = await db.executeSql(`SELECT table_name, queue FROM ${schema}.bam WHERE name = 'key_strict_fifo_head_index' ORDER BY table_name`)
-    expect(targets.rows.map(row => row.table_name)).toEqual(['job_common', strictTable].sort())
-    // Partition rows record which queue they belong to, matching the unscoped fan-out inside
-    // job_table_run_async(); job_common has no queue of its own, so its row stays null.
-    expect(targets.rows.find(row => row.table_name === strictTable).queue).toBe('strict_existing')
-    expect(targets.rows.find(row => row.table_name === 'job_common').queue).toBeNull()
-
-    const boss = ctx.boss = await start({
-      ...config,
-      noDefault: true,
-      bamIntervalSeconds: 1,
-      __test__bypass_bam_interval_check: true
-    })
-    await expect.poll(async () => {
-      const status = await boss.getBamStatus()
-      return status.filter(item => item.status !== 'completed').reduce((sum, item) => sum + item.count, 0)
-    }, { timeout: 45000 }).toBe(0)
-
-    const existingIndexes = await db.executeSql(`
-      SELECT to_regclass('${schema}.job_common_i10') AS common,
-             to_regclass('${schema}.${strictTable}_i10') AS strict,
-             to_regclass('${schema}.${standardTable}_i10') AS standard
-    `)
-    expect(existingIndexes.rows[0].common).not.toBeNull()
-    expect(existingIndexes.rows[0].strict).not.toBeNull()
-    expect(existingIndexes.rows[0].standard).toBeNull()
-
-    await boss.createQueue('strict_future', { partition: true, policy: 'key_strict_fifo' })
-    const futureQueue = await db.executeSql(`SELECT table_name FROM ${schema}.queue WHERE name = 'strict_future'`)
-    const futureIndex = await db.executeSql(`SELECT to_regclass('${schema}.${futureQueue.rows[0].table_name}_i10') AS name`)
-    expect(futureIndex.rows[0].name).not.toBeNull()
-
-    await db.close()
-  })
-
-  itPostgresOnly('removes pending key_strict_fifo index builds before rolling back v38', async function () {
-    const schema = ctx.bossConfig.schema
-    const db = await getDb()
-
-    await contractor.create()
-    await rollbackTo(keyStrictFifoVersion - 1)
-    await db.executeSql(`SELECT ${schema}.create_queue('strict_existing', '{"partition":true,"policy":"key_strict_fifo"}'::jsonb)`)
-
-    const queue = await db.executeSql(`SELECT table_name FROM ${schema}.queue WHERE name = 'strict_existing'`)
-    const table = queue.rows[0].table_name
-
-    await contractor.migrate(keyStrictFifoVersion - 1)
-
-    const pendingBefore = await db.executeSql(`SELECT count(*)::int AS count FROM ${schema}.bam WHERE version = ${keyStrictFifoVersion} AND name = 'key_strict_fifo_head_index' AND status <> 'completed'`)
-    expect(pendingBefore.rows[0].count).toBe(2)
-
-    await rollbackTo(keyStrictFifoVersion - 1)
-
-    const pendingAfter = await db.executeSql(`SELECT count(*)::int AS count FROM ${schema}.bam WHERE version = ${keyStrictFifoVersion} AND name = 'key_strict_fifo_head_index' AND status <> 'completed'`)
-    const indexes = await db.executeSql(`SELECT to_regclass('${schema}.job_common_i10') AS common, to_regclass('${schema}.${table}_i10') AS strict`)
-    expect(pendingAfter.rows[0].count).toBe(0)
-    expect(indexes.rows[0]).toEqual({ common: null, strict: null })
-
-    await db.close()
-  })
-
-  itPostgresOnly('rolls back past an unfinished key_strict_fifo build without a special guard', async function () {
-    // A row left at 'in_progress' by an instance that died mid-build must not wedge rollback: there is
-    // no status check, because a build that is genuinely running holds a ShareUpdateExclusiveLock on
-    // the table the uninstall drops the index from, so it fails the whole transaction on lock_timeout
-    // instead. See the note in migrationStore.rollback().
-    const schema = ctx.bossConfig.schema
-    const db = await getDb()
-
-    await contractor.create()
-    await rollbackTo(keyStrictFifoVersion - 1)
-    await contractor.migrate(keyStrictFifoVersion - 1)
-    await db.executeSql(`UPDATE ${schema}.bam SET status = 'in_progress', started_on = now() - interval '1 hour' WHERE version = ${keyStrictFifoVersion} AND name = 'key_strict_fifo_head_index' AND table_name = 'job_common'`)
-
-    await rollbackTo(keyStrictFifoVersion - 1)
-
-    const version = await db.executeSql(`SELECT version FROM ${schema}.version`)
-    expect(Number(version.rows[0].version)).toBe(keyStrictFifoVersion - 1)
-
-    const pending = await db.executeSql(`SELECT count(*)::int AS count FROM ${schema}.bam WHERE version = ${keyStrictFifoVersion} AND status <> 'completed'`)
-    expect(pending.rows[0].count).toBe(0)
-
-    await db.close()
-  })
-
-  itPostgresOnly('clears unfinished bam rows for any rolled-back version, not just the newest', async function () {
-    // The cleanup lives in rollback(), not in one migration's uninstall list, because the BAM runner
-    // does not filter by schema version: any row left pending would rebuild an index the rollback had
-    // just dropped. v33 enqueues its own async builds and is rolled back here to prove that.
-    const schema = ctx.bossConfig.schema
-    const db = await getDb()
-
-    await contractor.create()
-
-    for (let v = currentSchemaVersion; v >= 33; v--) {
-      await contractor.rollback(v)
-    }
-
-    // Re-apply v33 so its async builds are enqueued for real rather than hand-inserted
-    await contractor.migrate(32)
-
-    const before = await db.executeSql(`SELECT count(*)::int AS count FROM ${schema}.bam WHERE version = 33 AND status <> 'completed'`)
-    expect(before.rows[0].count).toBeGreaterThan(0)
-
-    await contractor.rollback(33)
-
-    const after = await db.executeSql(`SELECT count(*)::int AS count FROM ${schema}.bam WHERE version = 33 AND status <> 'completed'`)
-    expect(after.rows[0].count).toBe(0)
-
-    await db.close()
-  })
-
   it('patch upgrade from schema 35 carries only the bam default — no job-index churn (issue #832)', function () {
     // A database already past v33 (schema 35) upgrading to 36 runs only v36, which carries the
     // bam.created_on default change and NO index work. So it never re-drops/rebuilds its existing
@@ -965,12 +839,10 @@ describe('migration', function () {
     // @ts-ignore
     const contractor = new Contractor(db, config)
 
-    // Helper function to wait for BAM completion.
-    //
-    // The budget tracks the migration list, same as the enclosing test timeout above: v40 reshapes
-    // job_i5 with a drop-then-rebuild pair per job table, so a full rollback-and-replay drains
-    // noticeably more BAM commands than it did at v39 and the old 10s default started tipping under
-    // the contention of a parallel run.
+    // Helper function to wait for BAM completion
+    // The budget tracks the migration list: v40 reshapes job_i5 with a drop-then-rebuild pair per
+    // job table, so a full rollback-and-replay drains noticeably more BAM commands than it did at
+    // v39 and the old 10s default started tipping under the contention of a parallel run.
     const waitForBamCompletion = async (boss: PgBoss, timeoutMs = 30000): Promise<void> => {
       const startTime = Date.now()
       while (true) {
