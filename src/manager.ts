@@ -2002,17 +2002,27 @@ class Manager extends EventEmitter implements types.EventsMixin {
 
   async findJobs<T>(name: string, options: types.FindJobsOptions = {}): Promise<types.JobWithMetadata<T>[]> {
     Attorney.assertQueueName(name)
+    Attorney.checkFindJobsArgs(options)
 
     const db = this.assertDb(options)
 
     const { table } = await this.getQueueCache(name)
 
-    const { id, key, data, queued = false } = options
+    const { id, key, data, states, cursor, limit, direction, queued = false } = options
+
+    // Anything that needs a defined order turns ordering on. A caller that asks for none of them
+    // gets the unordered statement findJobs has always issued.
+    const orderBy = (options.orderBy ?? (limit !== undefined || cursor !== undefined || direction !== undefined ? 'createdOn' : undefined))
 
     const sql = plans.findJobs(this.config.schema, table, {
       byId: id !== undefined,
       byKey: key !== undefined,
       byData: data !== undefined,
+      byStates: states !== undefined,
+      byCursor: cursor !== undefined,
+      limited: limit !== undefined,
+      orderBy,
+      descending: direction === 'desc',
       queued
     })
 
@@ -2020,10 +2030,45 @@ class Manager extends EventEmitter implements types.EventsMixin {
     if (id !== undefined) values.push(id)
     if (key !== undefined) values.push(key)
     if (data !== undefined) values.push(JSON.stringify(data))
+    if (states !== undefined) values.push(states)
+    if (cursor !== undefined) values.push(cursor)
+    if (limit !== undefined) values.push(limit)
 
     const result = await db.executeSql(sql, values)
 
-    return result?.rows || []
+    const rows = result?.rows || []
+
+    // CockroachDB returns integer columns as strings; normalize them so a job read here has the
+    // same shape as one from fetch() or getJobById().
+    if (this.config.backend === 'cockroachdb') {
+      for (const row of rows) {
+        for (const field of NUMERIC_METADATA_FIELDS) {
+          if (row[field] !== undefined && row[field] !== null) row[field] = Number(row[field])
+        }
+      }
+    }
+
+    return rows
+  }
+
+  // The singleton-key counterpart of getJobById. A key identifies a series rather than a row, so
+  // this answers with the most recent one; pass `queued: true` for the job the key currently has
+  // outstanding under a short/singleton/stately/exclusive policy.
+  async getJobByKey<T>(name: string, key: string, options: types.GetJobByKeyOptions = {}): Promise<types.JobWithMetadata<T> | null> {
+    assert(typeof key === 'string', 'getJobByKey() requires a singleton key')
+
+    const { queued, db } = options
+
+    const [job] = await this.findJobs<T>(name, {
+      key,
+      queued,
+      db,
+      limit: 1,
+      orderBy: 'createdOn',
+      direction: 'desc'
+    })
+
+    return job ?? null
   }
 
   async getDependencies (name: string, id: string, options: types.ConnectionOptions = {}): Promise<types.DependencyRef[]> {

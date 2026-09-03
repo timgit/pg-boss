@@ -1,5 +1,5 @@
 import assert from 'node:assert'
-import { DEFAULT_SCHEMA } from './plans.ts'
+import { DEFAULT_SCHEMA, JOB_STATES } from './plans.ts'
 import type * as types from './types.ts'
 
 const POLICY = {
@@ -456,6 +456,38 @@ function checkFetchArgs (name: string, options: any) {
   validatePriorityRangeConfig(options)
 }
 
+const FIND_JOBS_ORDER_BY = ['createdOn', 'startAfter']
+
+function checkFindJobsArgs (options: any) {
+  assert(typeof options === 'object' && options !== null, 'options must be an object')
+
+  // Both narrow by state, and `states` is the superset. Silently letting one win would make
+  // findJobs({ queued: true, states: ['completed'] }) return something no reading of the call
+  // predicts, so it is rejected instead.
+  assert(!('queued' in options && options.queued !== undefined) || !('states' in options && options.states !== undefined),
+    'queued and states cannot be combined: states already expresses the queued filter')
+
+  if (options.states !== undefined) {
+    assert(Array.isArray(options.states) && options.states.length > 0, 'states must be a non-empty array')
+
+    for (const state of options.states) {
+      assert(Object.hasOwn(JOB_STATES, state), `unknown job state: ${state}`)
+    }
+  }
+
+  assert(!('limit' in options && options.limit !== undefined) || (Number.isInteger(options.limit) && options.limit >= 1),
+    'limit must be an integer >= 1')
+
+  assert(!('orderBy' in options && options.orderBy !== undefined) || FIND_JOBS_ORDER_BY.includes(options.orderBy),
+    `orderBy must be one of ${FIND_JOBS_ORDER_BY.join(', ')}`)
+
+  assert(!('direction' in options && options.direction !== undefined) || options.direction === 'asc' || options.direction === 'desc',
+    "direction must be 'asc' or 'desc'")
+
+  assert(!('cursor' in options && options.cursor !== undefined) || typeof options.cursor === 'string',
+    'cursor must be a job id')
+}
+
 function getConfig (value: string | types.ConstructorOptions): types.ResolvedConstructorOptions {
   assert(value && (typeof value === 'object' || typeof value === 'string'),
     'configuration assert: string or config object is required to connect to postgres')
@@ -806,6 +838,7 @@ export {
   assertPostgresObjectName,
   assertQueueName,
   checkFetchArgs,
+  checkFindJobsArgs,
   checkSendArgs,
   checkUpdateArgs,
   checkWorkArgs,
