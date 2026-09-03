@@ -1,4 +1,5 @@
 import { CronExpressionParser } from 'cron-parser'
+import assert from 'node:assert'
 import EventEmitter from 'node:events'
 
 import * as Attorney from './attorney.ts'
@@ -29,6 +30,12 @@ const WARNING_TYPES = {
   INVALID_SCHEDULE: 'invalid_schedule'
 } as const
 
+// previewSchedule() defaults and ceiling. The ceiling is not a database limit, since the walk is
+// pure cron-parser arithmetic, but an unbounded count on a per-second expression is a foot-gun.
+// A caller that genuinely wants more can page by passing the last occurrence back as `from`.
+const PREVIEW_DEFAULT_COUNT = 5
+const PREVIEW_MAX_COUNT = 1000
+
 /**
  * Asserts that `tz` is a time zone cron evaluation can actually use.
  *
@@ -48,6 +55,20 @@ function assertTimezone (tz: string): void {
     // Quoted so an empty string renders as `""` rather than a dangling colon
     throw new Error(`Unknown or unsupported time zone: "${tz}"`)
   }
+}
+
+/**
+ * Validates a recurrence exactly as schedule() does, so previewSchedule() rejects the same inputs
+ * schedule() rejects rather than previewing an expression that could never be stored.
+ *
+ * Expression first, so a bad expression reports as one rather than as a time zone problem. The
+ * check is deliberately run against UTC rather than the supplied tz: it only works today because
+ * cron-parser is lazy about an unusable zone, and if that ever changes this call would throw the
+ * opaque "CronDate: unhandled timestamp" that assertTimezone exists to replace.
+ */
+function assertRecurrence (cron: string, tz: string): void {
+  CronExpressionParser.parse(cron, { tz: 'UTC', strict: false })
+  assertTimezone(tz)
 }
 
 class Timekeeper extends EventEmitter implements types.EventsMixin {
@@ -294,15 +315,55 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
     return rows
   }
 
+  async getSchedule (name: string, key = ''): Promise<types.Schedule | null> {
+    Attorney.assertQueueName(name)
+    Attorney.assertKey(key)
+
+    const [schedule] = await this.getSchedules(name, key)
+
+    return schedule ?? null
+  }
+
+  /**
+   * The occurrences a cron expression produces, computed in process without touching the database
+   * or the schedule table.
+   *
+   * `from` defaults to database time (this instance's clock plus the cached skew), the same reading
+   * the cron pass evaluates against, so a preview taken from a running instance lines up with what
+   * that instance will actually send. Occurrences are strictly after `from`, so paging is a matter
+   * of passing the last one back in.
+   *
+   * The result describes the expression, not the delivery. The cron pass runs every
+   * `cronMonitorIntervalSeconds` and matches an occurrence within the preceding 60 seconds, so a
+   * job lands at or shortly after each listed time.
+   */
+  previewSchedule (cron: string, options: types.PreviewScheduleOptions = {}): Date[] {
+    const { tz = 'UTC', count = PREVIEW_DEFAULT_COUNT } = options
+
+    assert(Number.isInteger(count) && count >= 1 && count <= PREVIEW_MAX_COUNT,
+      `count must be an integer between 1 and ${PREVIEW_MAX_COUNT}`)
+
+    const from = options.from ?? new Date(Date.now() + this.clockSkew)
+
+    assert(from instanceof Date && !Number.isNaN(from.getTime()), 'from must be a valid Date')
+
+    assertRecurrence(cron, tz)
+
+    const interval = CronExpressionParser.parse(cron, { tz, strict: false, currentDate: from })
+
+    const occurrences: Date[] = []
+
+    for (let i = 0; i < count; i++) {
+      occurrences.push(interval.next().toDate())
+    }
+
+    return occurrences
+  }
+
   async schedule (name: string, cron: string, data?: unknown, options: types.ScheduleOptions = {}): Promise<void> {
     const { tz = 'UTC', key = '', ...rest } = options
 
-    // Expression first, so a bad expression reports as one rather than as a time zone problem. The
-    // check is deliberately run against UTC rather than the supplied tz: it only works today
-    // because cron-parser is lazy about an unusable zone, and if that ever changes this call would
-    // throw the opaque "CronDate: unhandled timestamp" that assertTimezone exists to replace.
-    CronExpressionParser.parse(cron, { tz: 'UTC', strict: false })
-    assertTimezone(tz)
+    assertRecurrence(cron, tz)
 
     Attorney.checkSendArgs([name, data, { ...rest }])
     Attorney.assertKey(key)

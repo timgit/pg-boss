@@ -701,6 +701,25 @@ export interface QueueResult extends Queue {
 
 export type ScheduleOptions = SendOptions & { tz?: string, key?: string }
 
+export interface PreviewScheduleOptions {
+  /**
+   * Time zone the expression is evaluated in.
+   * @default 'UTC'
+   */
+  tz?: string;
+  /**
+   * Reference point the walk starts from. Occurrences are strictly after it, so passing the last
+   * occurrence of one page back in yields the next page.
+   * @default database time (the instance clock plus the cached skew)
+   */
+  from?: Date;
+  /**
+   * How many occurrences to return. Must be an integer between 1 and 1000.
+   * @default 5
+   */
+  count?: number;
+}
+
 /**
  * How long a worker waits between fetches. The delay before each fetch is chosen by
  * precedence — **burst → notify → base**:
