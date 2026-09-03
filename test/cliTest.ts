@@ -451,7 +451,7 @@ describePglite('cli', function () {
         { expectedOutput: 'Successfully created' }
       )
 
-      // Drains a 60k-job backlog so job_common_i5 and job_common_pkey keep the pages they grew.
+      // Drains a 60k-job backlog so job_common_i11 and job_common_pkey keep the pages they grew.
       async function bloatIndexes () {
         const db = await getDb()
         await db.executeSql(`SELECT ${schema}.create_queue('churn', '{"policy":"standard"}'::jsonb)`)
@@ -485,11 +485,11 @@ describePglite('cli', function () {
 
         const { stdout, code } = runCli(['reindex', '--connection-string', connectionString, '--schema', schema, '--dry-run'])
         expect(stdout).toContain('REINDEX INDEX CONCURRENTLY')
-        expect(stdout).toContain('job_common_i5')
+        expect(stdout).toContain('job_common_i11')
         expect(code).toBe(0)
 
         const db = await getDb()
-        const { rows } = await db.executeSql(`SELECT pg_relation_size('${schema}.job_common_i5')::bigint as bytes`)
+        const { rows } = await db.executeSql(`SELECT pg_relation_size('${schema}.job_common_i11')::bigint as bytes`)
         await db.close()
         expect(Number(rows[0].bytes)).toBeGreaterThan(1024 * 1024)
       })
@@ -503,7 +503,7 @@ describePglite('cli', function () {
         expect(code).toBe(0)
 
         const db = await getDb()
-        const { rows } = await db.executeSql(`SELECT pg_relation_size('${schema}.job_common_i5')::bigint as bytes`)
+        const { rows } = await db.executeSql(`SELECT pg_relation_size('${schema}.job_common_i11')::bigint as bytes`)
         await db.close()
         expect(Number(rows[0].bytes)).toBeLessThan(64 * 1024)
       })
@@ -551,7 +551,7 @@ describePglite('cli', function () {
 
         const { stdout } = runCli(['doctor', '--connection-string', connectionString, '--schema', schema])
         expect(stdout).toContain('INDEX BLOAT')
-        expect(stdout).toContain('job_common_i5')
+        expect(stdout).toContain('job_common_i11')
       })
     })
 
@@ -589,12 +589,12 @@ describePglite('cli', function () {
         await createSchema()
 
         const db = await getDb()
-        await db.executeSql(`DROP INDEX ${schema}.job_common_i5`)
+        await db.executeSql(`DROP INDEX ${schema}.job_common_i11`)
         await db.close()
 
         const { stdout, code } = runCli(['doctor', '--connection-string', connectionString, '--schema', schema])
         expect(stdout).toContain('MISSING')
-        expect(stdout).toContain('job_common_i5')
+        expect(stdout).toContain('job_common_i11')
         expect(code).toBe(1)
       })
 

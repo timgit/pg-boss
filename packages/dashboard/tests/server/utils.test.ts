@@ -9,8 +9,11 @@ import {
   isValidJobState,
   isValidWarningType,
   isValidBamStatus,
+  warningTypeLabel,
+  warningTypeVariant,
   JOB_STATES,
   WARNING_TYPES,
+  WARNING_TYPE_LABELS,
   BAM_STATUSES,
   BAM_STATUS_VARIANTS,
   BAM_STATUS_OPTIONS,
@@ -188,6 +191,43 @@ describe('utils', () => {
     })
   })
 
+  describe('WARNING_TYPES constant', () => {
+    // Mirrors WarningType in the pg-boss core; index_bloat arrived with reindex maintenance in
+    // 12.29.0 and xmin_horizon/autovacuum_disabled/monitor_backoff with vacuum monitoring in 12.30.0
+    it('covers every warning type the core writes', () => {
+      expect([...WARNING_TYPES]).toEqual([
+        'slow_query',
+        'queue_backlog',
+        'clock_skew',
+        'listen_notify_unavailable',
+        'invalid_schedule',
+        'index_bloat',
+        'xmin_horizon',
+        'autovacuum_disabled',
+        'monitor_backoff',
+      ])
+    })
+
+    it('labels every type', () => {
+      for (const type of WARNING_TYPES) {
+        expect(WARNING_TYPE_LABELS[type]).toBeTruthy()
+      }
+    })
+  })
+
+  describe('warningTypeLabel / warningTypeVariant', () => {
+    it('resolves known types', () => {
+      expect(warningTypeLabel('index_bloat')).toBe('Index Bloat')
+      expect(warningTypeVariant('xmin_horizon')).toBe('error')
+    })
+
+    // A newer core can persist a warning type this dashboard predates; it still has to render
+    it('falls back to the raw type for unknown types', () => {
+      expect(warningTypeLabel('some_future_warning')).toBe('some_future_warning')
+      expect(warningTypeVariant('some_future_warning')).toBe('gray')
+    })
+  })
+
   describe('JOB_STATES constant', () => {
     it('contains all expected states', () => {
       expect(JOB_STATES).toContain('created')
@@ -197,15 +237,6 @@ describe('utils', () => {
       expect(JOB_STATES).toContain('cancelled')
       expect(JOB_STATES).toContain('failed')
       expect(JOB_STATES).toHaveLength(6)
-    })
-  })
-
-  describe('WARNING_TYPES constant', () => {
-    it('contains all expected types', () => {
-      expect(WARNING_TYPES).toContain('slow_query')
-      expect(WARNING_TYPES).toContain('queue_backlog')
-      expect(WARNING_TYPES).toContain('clock_skew')
-      expect(WARNING_TYPES).toHaveLength(3)
     })
   })
 

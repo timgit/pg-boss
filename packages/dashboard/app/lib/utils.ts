@@ -99,7 +99,7 @@ export function isValidJobState (value: string | null): value is JobStateFilter 
 }
 
 // Badge variant mappings for job states
-type BadgeVariant = 'gray' | 'primary' | 'success' | 'warning' | 'error'
+export type BadgeVariant = 'gray' | 'primary' | 'success' | 'warning' | 'error'
 
 export const JOB_STATE_VARIANTS: Record<JobStateValue, BadgeVariant> = {
   created: 'gray',
@@ -205,11 +205,18 @@ function coerceJsonScalar (value: string): string | number | boolean {
   return value
 }
 
-// Valid warning types
+// Valid warning types. Mirrors WarningType in the pg-boss core (src/types.ts); the core does not
+// publish the union as an exported type, so it is duplicated here.
 export const WARNING_TYPES = [
   'slow_query',
   'queue_backlog',
   'clock_skew',
+  'listen_notify_unavailable',
+  'invalid_schedule',
+  'index_bloat',
+  'xmin_horizon',
+  'autovacuum_disabled',
+  'monitor_backoff',
 ] as const
 
 export type WarningTypeValue = (typeof WARNING_TYPES)[number]
@@ -227,6 +234,12 @@ export const WARNING_TYPE_VARIANTS: Record<WarningTypeValue, BadgeVariant> = {
   slow_query: 'warning',
   queue_backlog: 'error',
   clock_skew: 'gray',
+  listen_notify_unavailable: 'warning',
+  invalid_schedule: 'error',
+  index_bloat: 'warning',
+  xmin_horizon: 'error',
+  autovacuum_disabled: 'error',
+  monitor_backoff: 'gray',
 }
 
 // Human-readable labels for warning types
@@ -234,6 +247,22 @@ export const WARNING_TYPE_LABELS: Record<WarningTypeValue, string> = {
   slow_query: 'Slow Query',
   queue_backlog: 'Queue Backlog',
   clock_skew: 'Clock Skew',
+  listen_notify_unavailable: 'Listen/Notify Unavailable',
+  invalid_schedule: 'Invalid Schedule',
+  index_bloat: 'Index Bloat',
+  xmin_horizon: 'Xmin Horizon',
+  autovacuum_disabled: 'Autovacuum Disabled',
+  monitor_backoff: 'Monitor Backoff',
+}
+
+// A warning type written by a newer pg-boss core than this dashboard knows about still has to
+// render, so fall back to the raw type instead of an empty badge with an undefined variant.
+export function warningTypeVariant (type: string): BadgeVariant {
+  return WARNING_TYPE_VARIANTS[type as WarningTypeValue] ?? 'gray'
+}
+
+export function warningTypeLabel (type: string): string {
+  return WARNING_TYPE_LABELS[type as WarningTypeValue] ?? type
 }
 
 // Filter options for warning types (for dropdowns)

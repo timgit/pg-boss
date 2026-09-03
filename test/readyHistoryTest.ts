@@ -17,10 +17,11 @@ describe('readyHistory', function () {
         `SELECT ready_history FROM ${ctx.schema}.queue WHERE name = $1`, [queue])
       return rows[0].ready_history
     }
-    // The monitor only runs for queues whose monitor_on is older than monitorIntervalSeconds; age it
-    // so each manual supervise() actually performs a cycle.
+    // The monitor only runs for queues whose monitor_claim_on is older than monitorIntervalSeconds;
+    // age it so each manual supervise() actually performs a cycle. (monitor_on is written by the
+    // aggregate itself and does not pace anything — see plans.trySetQueueMonitorTime.)
     const makeDue = () => db.executeSql(
-      `UPDATE ${ctx.schema}.queue SET monitor_on = now() - interval '1 day' WHERE name = $1`, [queue])
+      `UPDATE ${ctx.schema}.queue SET monitor_claim_on = now() - interval '1 day' WHERE name = $1`, [queue])
 
     // Empty queue: the first monitor cycle records a single 0.
     await ctx.boss.supervise(queue)
@@ -39,7 +40,7 @@ describe('readyHistory', function () {
     await db.executeSql(
       `UPDATE ${ctx.schema}.queue
          SET ready_history = (SELECT array_agg(g ORDER BY g) FROM generate_series(1000, ${hi}) AS g),
-             monitor_on = now() - interval '1 day'
+             monitor_claim_on = now() - interval '1 day'
        WHERE name = $1`, [queue])
     await ctx.boss.supervise(queue)
 

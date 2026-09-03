@@ -120,7 +120,7 @@ Use this where pg-boss cannot run the rebuild itself — the connected role does
 ```js
 const commands = await boss.getReindexCommands()
 // [
-//   'REINDEX INDEX CONCURRENTLY pgboss."job_common_i5"',
+//   'REINDEX INDEX CONCURRENTLY pgboss."job_common_i11"',
 //   'REINDEX INDEX CONCURRENTLY pgboss."job_common_pkey"'
 // ]
 ```

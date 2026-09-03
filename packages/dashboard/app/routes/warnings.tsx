@@ -23,8 +23,8 @@ import {
   formatDateWithSeconds,
   formatWarningData,
   WARNING_TYPE_OPTIONS,
-  WARNING_TYPE_VARIANTS,
-  WARNING_TYPE_LABELS,
+  warningTypeVariant,
+  warningTypeLabel,
 } from '~/lib/utils'
 import { dbContext } from '~/lib/db-context'
 
@@ -159,8 +159,8 @@ export default function Warnings ({ loaderData }: Route.ComponentProps) {
 
 function WarningTypeBadge ({ type }: { type: WarningType }) {
   return (
-    <Badge variant={WARNING_TYPE_VARIANTS[type]} size="sm" dot>
-      {WARNING_TYPE_LABELS[type]}
+    <Badge variant={warningTypeVariant(type)} size="sm" dot>
+      {warningTypeLabel(type)}
     </Badge>
   )
 }

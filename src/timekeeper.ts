@@ -31,7 +31,7 @@ const WARNING_TYPES = {
 
 // What the cron pass puts on the send-it queue. `key` identifies the schedule row the occurrence
 // came from, so the handler can record the job it produced. It is absent on rows written by an
-// instance older than 12.30.0, which is why the handler treats it as optional rather than required.
+// instance older than 12.31.0, which is why the handler treats it as optional rather than required.
 type ScheduledRequest = types.Request & { key?: string }
 
 // One schedule occurrence that produced a job, as handed to plans.setScheduleLastJobIds. camelCase

@@ -155,6 +155,15 @@ function createEnumJobState (schema: string) {
   `
 }
 
+// The *_on columns are single-row interval claims, one per background pass, so that one instance
+// per interval does the work rather than every instance racing to:
+//
+//   reindex_on          the index-bloat maintenance pass, against every instance issuing the same
+//                       REINDEX.
+//   monitor_backoff_on  the odd one out - a deadline rather than a last-run stamp. Before it, no
+//                       instance may start another queue-stats aggregate, so autovacuum gets a
+//                       horizon-free window it cannot miss. Null on a database that has never
+//                       needed one; see setMonitorBackoff for what writes it and how long it is.
 function createTableVersion (schema: string) {
   return `
     CREATE TABLE ${schema}.version (
@@ -162,7 +171,8 @@ function createTableVersion (schema: string) {
       cron_on timestamp with time zone,
       bam_on timestamp with time zone,
       flow_on timestamp with time zone,
-      reindex_on timestamp with time zone
+      reindex_on timestamp with time zone,
+      monitor_backoff_on timestamp with time zone
     )
   `
 }
@@ -193,6 +203,13 @@ function createTableQueue (schema: string) {
       heartbeat_seconds int,
       notify bool NOT NULL DEFAULT false,
       singletons_active text[],
+      -- Two stamps, not one. monitor_claim_on is the interval claim that decides which instance
+      -- runs a monitor pass; monitor_on is when this queue's counts were actually written, and is
+      -- stamped only by the aggregate that wrote them (see cacheQueueStats). Splitting them is what
+      -- lets a pass be claimed and then skip the aggregate — because the vacuum backoff is in force,
+      -- or because another instance holds the stats try-lock — without capturedOn claiming a
+      -- freshness the counts do not have.
+      monitor_claim_on timestamp with time zone,
       monitor_on timestamp with time zone,
       maintain_on timestamp with time zone,
       created_on timestamp with time zone not null default now(),
@@ -231,6 +248,9 @@ function createTableSubscription (schema: string) {
   `
 }
 
+// created_on defaults to clock_timestamp(), not now(), so multiple job_table_run_async() enqueues
+// within a single migration transaction keep their insertion order — BAM applies queued commands in
+// created_on order, and some migrations enqueue an ordered drop-then-rebuild pair (see v33).
 function createTableBam (schema: string) {
   return `
     CREATE TABLE ${schema}.bam (
@@ -242,9 +262,6 @@ function createTableBam (schema: string) {
       table_name text NOT NULL,
       command text NOT NULL,
       error text,
-      -- clock_timestamp() (not now()) so multiple job_table_run_async() enqueues within a single
-      -- migration transaction keep their insertion order — BAM applies queued commands in created_on
-      -- order, and some migrations enqueue an ordered drop-then-rebuild pair (see migration v33).
       created_on timestamp with time zone NOT NULL DEFAULT clock_timestamp(),
       started_on timestamp with time zone,
       completed_on timestamp with time zone
@@ -383,6 +400,9 @@ function jobTableRunAsyncFunction (schema: string) {
 }
 
 function createTableJob (schema: string, noPartitioning = false) {
+  // source_name / source_id / source_created_on / source_retry_count are dead-letter provenance:
+  // where a job in a dead-letter queue came from, stamped at the transfer so the original queue,
+  // id, enqueue time and retry count survive the move.
   const partitionClause = noPartitioning ? '' : 'PARTITION BY LIST (name)'
   return `
     CREATE TABLE ${schema}.job (
@@ -733,12 +753,31 @@ function createIndexJobThrottle (schema: string) {
 }
 
 function createIndexJobFetch (schema: string, noCoveringIndex = false) {
-  // No covering INCLUDE: the fetch locks candidate rows with FOR UPDATE ... SKIP LOCKED, which
-  // forces heap access, so an index-only scan is impossible and a covering payload would never be
-  // read from the index. Confirmed dead weight via EXPLAIN ANALYZE (see examples/index-perf);
-  // dropping it shrinks job_i5 on the hot insert path at no read-side cost.
-  // noCoveringIndex (the CockroachDB profile flag that stripped the old INCLUDE) is now moot here.
-  return `CREATE INDEX job_i5 ON ${schema}.job (name, start_after) WHERE state < '${JOB_STATES.active}' AND NOT blocked`
+  // Ordered to match the fetch's ORDER BY (priority desc, created_on)
+  //
+  // Two details are load-bearing, and dropping either costs an order of magnitude:
+  //
+  //  - `start_after` is a trailing KEY column, not INCLUDE and not absent. A non-leading key column
+  //    is still evaluated as an Index Cond, so not-yet-due rows are filtered inside the index. With
+  //    it absent the predicate becomes a Filter needing a heap fetch per candidate, and an idle
+  //    queue sitting on a scheduled backlog goes 0.04 ms -> 18 ms at 50k deferred, growing
+  //    linearly. INCLUDE cannot help: FOR UPDATE forces an Index Scan, never an Index Only Scan.
+  //
+  //  - `id` is deliberately NOT a key column. The obvious shape, (name, priority DESC, created_on,
+  //    id), also satisfies the ordering — but id is a random uuid, so it defeats btree
+  //    deduplication and dominates size: 24 MB against 19 MB for this shape at 500k rows, on the
+  //    hot insert path and on every vacuum's bulkdelete. It buys nothing, because fetchNextJob
+  //    dropped id from its ORDER BY for the same reason (a random uuid was never creation order);
+  //    with the ordering ending at created_on, this index satisfies it outright and the plan
+  //    carries no sort node at all.
+  //
+  // Also measured: neutral for key_strict_fifo (that fetch never reaches this index — the
+  // strict_fifo_heads CTE on job_i10 feeds the outer CTE), and a ~7x win on CockroachDB, which
+  // takes the noSkipLocked path and so does not depend on Incremental Sort at all.
+  //
+  // noCoveringIndex is accepted for signature symmetry with the other index builders; this shape
+  // has no covering payload to strip.
+  return `CREATE INDEX job_i11 ON ${schema}.job (name, priority DESC, created_on, start_after) WHERE state < '${JOB_STATES.active}' AND NOT blocked`
 }
 
 function createIndexJobPolicyExclusive (schema: string) {
@@ -757,8 +796,8 @@ function createIndexJobPolicyKeyStrictFifoHeads (schema: string, noCoveringIndex
   // are satisfied by the partial predicate, so start_after is the only remaining filter in the
   // heads CTE. Without it every index entry needs a heap fetch and the scan degrades from an
   // Index Only Scan to an Index Scan (measured at 200k queued rows / 2,000 keys: 47ms -> 111ms,
-  // ~400k extra buffer hits). It costs no HOT updates that job_i5 doesn't already cost, since
-  // job_i5 indexes start_after too, and it only widens a partial index that key_strict_fifo
+  // ~400k extra buffer hits). It costs no HOT updates that job_i11 doesn't already cost, since
+  // job_i11 indexes start_after too, and it only widens a partial index that key_strict_fifo
   // rows enter. Backends without covering indexes (the CockroachDB profile) fall back to the
   // narrow form and pay the heap fetches; they take a different fetch path anyway (noSkipLocked).
   const include = noCoveringIndex ? '' : ' INCLUDE (start_after)'
@@ -781,8 +820,119 @@ function createIndexJobBlocking (schema: string) {
   return `CREATE INDEX job_i9 ON ${schema}.job (name, id) WHERE blocking AND state = '${JOB_STATES.completed}'`
 }
 
+// The interval claim for a monitor pass, and the vacuum-safety gate on the expensive half of it.
+//
+// getQueueStats() is the only whole-job-table aggregate pg-boss runs, and while it is in flight it
+// advertises a snapshot that Postgres cannot vacuum past: a measured 200,000 deleted rows stayed
+// "dead but not yet removable" for exactly as long as one such snapshot was open, and were removed
+// by the very next vacuum after it closed. Run it densely enough and the job table can never be
+// reclaimed - the failure PlanetScale documents as a queue's death spiral, and the same one
+// #checkVacuum reports after the fact as `xmin_horizon`.
+//
+// The claim alone doesn't prevent that. It paces the aggregate start-to-start, so once the
+// aggregate itself runs longer than monitorIntervalSeconds the gate stops delaying anything and
+// passes run back to back with no gap at all. `monitor_backoff_on` is the second condition: a
+// deadline written by setMonitorBackoff() after a pass that was measurably slow, before which no
+// instance - timer-driven, manual supervise(), or a fresh CLI process - may start another
+// aggregate. Being a column rather than instance state is the point: the horizon is a property of
+// the database, so the gate has to be too.
+//
+// The backoff is returned as `refreshStats` rather than folded into the WHERE, and that distinction
+// is the whole reason this claim exists separately from the aggregate. A monitor pass is not only
+// the stats scan: it is also failJobsByTimeout and failJobsByHeartbeat, which are narrow indexed
+// updates that pin nothing and are the mechanism by which expired and heartbeat-dead jobs are
+// released. Suppressing the claim during a backoff would suspend those too, for two naptimes at
+// minimum and up to an hour at the cap - the vacuum-safety valve silently becoming a job-expiry
+// outage. So the pass is always claimed and always fails timed-out jobs; only the aggregate is
+// deferred.
+//
+// The claim stamps monitor_claim_on, never monitor_on. monitor_on belongs to the aggregate that
+// writes the counts (see cacheQueueStats), so a pass that claims and then skips the aggregate -
+// backed off, or beaten to the stats try-lock - leaves capturedOn correctly aging instead of
+// advertising a freshness the counts do not have.
 export function trySetQueueMonitorTime (schema: string, queues: string[], seconds: number): SqlQuery {
-  return trySetQueueTimestamp(schema, queues, 'monitor_on', seconds)
+  return {
+    text: `
+    UPDATE ${schema}.queue
+    SET monitor_claim_on = now()
+    WHERE name = ANY($1::text[])
+      AND EXTRACT( EPOCH FROM (now() - COALESCE(monitor_claim_on, now() - interval '1 week') ) ) > ${seconds}
+    RETURNING name, NOT EXISTS (SELECT 1 FROM ${schema}.version WHERE monitor_backoff_on > now()) as "refreshStats"
+  `,
+    values: [queues]
+  }
+}
+
+// How much of autovacuum_naptime the stats aggregate may spend pinning the horizon before the
+// backoff engages. At the default 60s naptime this is 6s: every measured aggregate below that size
+// (0.19s at 1M rows, 2.1-3.6s at 10M rows / 3GB) leaves a free window of at least 54s out of every
+// 60s, which no phase alignment of the autovacuum launcher can miss for long. Above it, the free
+// window stops being reliably longer than a naptime and has to be enforced rather than assumed.
+const MONITOR_PIN_BUDGET_RATIO = 0.1
+
+// Ceiling on the duration-proportional half of the backoff, so one pathological table cannot stall
+// the counts indefinitely. Ten minutes already dwarfs any plausible naptime.
+const MONITOR_BACKOFF_MAX_SECONDS = 600
+
+// Absolute ceiling, for a server whose naptime has itself been tuned into the hours.
+const MONITOR_BACKOFF_CAP_SECONDS = 3600
+
+// Defer the next stats aggregate long enough for autovacuum to get a clean run at the job table.
+//
+// The length follows from when a vacuum decides what it may remove: OldestXmin is computed once,
+// when the worker starts on the relation, and never revisited. So the requirement is not that a
+// vacuum *finish* between two aggregates - it is that the instant a worker computes its cutoff
+// falls in a window with no aggregate running. The launcher retries every autovacuum_naptime, so a
+// free window strictly longer than one naptime cannot be missed by any phase alignment, while
+// anything shorter is a probability that two 60s timers can conspire to defeat for hours.
+//
+//   2 x naptime   the launcher gets two full ticks inside the free window, because its tick is not
+//                 the moment the cutoff is taken: the worker still has to connect, build its table
+//                 list, and may vacuum other tables first, with autovacuum_max_workers saturated.
+//   >= elapsed    a pass that pinned for T seconds is followed by at least T seconds free, capping
+//                 the aggregate's duty cycle at 50%. This is PlanetScale's "one concurrent
+//                 analytics worker" limit expressed in time rather than in workers.
+//
+// naptime is read from the server rather than assumed, so an operator who has tuned it up gets a
+// proportionally longer backoff - which is the correct answer, not a coincidence.
+//
+// Returns a row only when the backoff actually engaged, so the caller warns exactly when it does.
+//
+// GREATEST, not assignment: the deadline may only ever move outward. Instances measure their own
+// passes and write independently, so a marginal pass elsewhere must not cut short a long backoff
+// already in force - instance A measuring 600s writes a 600s deadline, and instance B measuring 7s
+// would otherwise overwrite it with 120s a moment later and re-open the window A had closed.
+// `backoffSeconds` is therefore reported as the time actually remaining on the winning deadline
+// rather than as the length this pass computed, so the warning never claims a backoff shorter or
+// longer than the one in force.
+export function setMonitorBackoff (schema: string, elapsedSeconds: number): SqlQuery {
+  return {
+    text: `
+    WITH budget AS (
+      SELECT
+        naptime,
+        LEAST(
+          GREATEST(2 * naptime, LEAST($1::float8, ${MONITOR_BACKOFF_MAX_SECONDS})),
+          ${MONITOR_BACKOFF_CAP_SECONDS}
+        ) AS backoff
+      FROM (
+        SELECT EXTRACT(EPOCH FROM current_setting('autovacuum_naptime')::interval)::float8 AS naptime
+      ) n
+    )
+    UPDATE ${schema}.version v
+    SET monitor_backoff_on = GREATEST(
+      COALESCE(v.monitor_backoff_on, now()),
+      now() + make_interval(secs => b.backoff)
+    )
+    FROM budget b
+    WHERE $1::float8 > ${MONITOR_PIN_BUDGET_RATIO} * b.naptime
+    RETURNING
+      b.naptime  as "naptimeSeconds",
+      EXTRACT(EPOCH FROM (v.monitor_backoff_on - now()))::float8 as "backoffSeconds",
+      v.monitor_backoff_on as "backoffUntil"
+  `,
+    values: [elapsedSeconds]
+  }
 }
 
 export function trySetQueueDeletionTime (schema: string, queues: string[], seconds: number): SqlQuery {
@@ -1163,6 +1313,11 @@ export function insertQueueStats (schema: string, queues: string[], noAdvisoryLo
 // Cheap single-row read of the cached counts the monitor maintains on the queue table. capturedOn
 // is monitor_on — the moment those counts were last refreshed, or NULL if the queue has never been
 // monitored (so the caller knows to recompute rather than trust default-zero counts).
+//
+// monitorBackoff rides along because the caller must serve this cache even when it is stale while
+// the vacuum-safety backoff is in force: a forced refresh runs the same whole-table aggregate the
+// backoff exists to space out, and a dashboard polling { force: true } would otherwise walk
+// straight back into the pin the monitor just backed away from. See setMonitorBackoff.
 export function getQueueStatsCache (schema: string): string {
   return `
     SELECT
@@ -1174,7 +1329,8 @@ export function getQueueStatsCache (schema: string): string {
       failed_count   as "failedCount",
       total_count    as "totalCount",
       table_name     as "table",
-      monitor_on     as "capturedOn"
+      monitor_on     as "capturedOn",
+      (SELECT monitor_backoff_on > now() FROM ${schema}.version) as "monitorBackoff"
     FROM ${schema}.queue
     WHERE name = $1
   `
@@ -1419,7 +1575,7 @@ function buildFetchParams (options: FetchJobOptions): FetchQueryParams {
  * exceeds fetch time.
  */
 export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): SqlQuery {
-  const { schema, table, name, policy, limit, includeMetadata, priority = true, orderByCreatedOn = true, ignoreStartAfter = false, groupConcurrency, minPriority, maxPriority } = options
+  const { schema, table, name, policy, limit, includeMetadata, ignoreStartAfter = false, groupConcurrency, minPriority, maxPriority } = options
 
   const keyStrictFifo = policy === QUEUE_POLICIES.key_strict_fifo
   const singletonFetch = limit > 1 && (policy === QUEUE_POLICIES.singleton || policy === QUEUE_POLICIES.stately)
@@ -1535,12 +1691,27 @@ export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): S
     groupConcurrencyFilter
   ].filter(Boolean).join('\n          AND ')
 
+  // Unconditional, and with no `id` tiebreak.
+  //
+  // The two conditionals this replaces existed only to serve the `priority` and `orderByCreatedOn`
+  // fetch options, which were requested as performance escapes from this sort. job_i11 now satisfies
+  // the ordering directly, so the escapes have nothing to escape — see the deprecation in
+  // manager.fetch(). Dropping them also deletes two branches from the hottest SQL builder here.
+  //
+  // `id` goes too. It is a random uuid, so it never provided creation order: a batch insert shares
+  // one now() and therefore ties on created_on, and those ties resolve today in random uuid order,
+  // not insertion order. Without it the index satisfies the ordering outright rather than through
+  // an Incremental Sort — 0.097 -> 0.031 ms and 50 -> 5 buffers at limit=1 — and ties fall back to
+  // index order, which tracks insertion order better than a uuid does.
+  //
+  // key_strict_fifo keeps its own id tiebreak in strict_fifo_heads, where DISTINCT ON does need a
+  // total order to pick a deterministic head per key.
   const nextCte = `
       next AS (
         SELECT ${selectCols}
         FROM ${schema}.${table} j
         WHERE ${whereConditions}
-        ORDER BY ${priority ? 'j.priority desc, ' : ''}${orderByCreatedOn ? 'j.created_on, ' : ''}j.id
+        ORDER BY j.priority desc, j.created_on
         LIMIT ${limit}
         ${lockClause}
       )`
@@ -2380,6 +2551,12 @@ export function insertDeadLetterJob (schema: string): string {
 // from the original send() are not preserved, since the DLQ copy never stored them. `dead_letter`
 // is the same value send() falls back to, so a second terminal failure re-enters the DLQ.
 // Job-identity columns (priority, singleton_key, group_id, group_tier) are carried over instead.
+//
+// The insert's ON CONFLICT DO NOTHING is load-bearing: a destination queue's short/stately policy
+// can still collide on (name, singleton_key) if two redriven jobs share a key (job_i1/job_i3), and
+// dropping just that row — matching retried_jobs' ON CONFLICT DO NOTHING elsewhere — is preferable
+// to aborting the whole batch. The dropped job has already been deleted from the DLQ by the moved
+// CTE and is not restored.
 export function redriveJobs (schema: string, table: string): string {
   return `
     WITH candidates AS (
@@ -2408,10 +2585,6 @@ export function redriveJobs (schema: string, table: string): string {
         now() + q.retention_seconds * interval '1s', q.deletion_seconds, q.policy,
         m.singleton_key, m.group_id, m.group_tier, q.heartbeat_seconds, q.dead_letter
       FROM moved m JOIN ${schema}.queue q ON q.name = COALESCE($2, m.source_name)
-      -- A destination queue's short/stately policy can still collide on (name, singleton_key)
-      -- if two redriven jobs share a key (job_i1/job_i3); dropping just that row here, matching
-      -- retried_jobs' ON CONFLICT DO NOTHING elsewhere, is preferable to aborting the whole batch.
-      -- The dropped job has already been deleted from the DLQ by the moved CTE and is not restored.
       ON CONFLICT DO NOTHING
       RETURNING 1
     )
@@ -2459,6 +2632,14 @@ export function retryJobs (schema: string, table: string) {
 // edit emits a single pg_notify iff a touched row ends up runnable (start_after <= now()),
 // closing the wake-up gap for jobs pulled forward. Callers needing insert-on-miss compose this
 // with insertJobs (see Manager.upsert).
+//
+// Two guards inside are easy to read as incidental. When only startAfter moves, keep_until slides by
+// the same original retention window (keep_until - start_after), so pulling a job forward or back
+// never leaves keep_until in the past, where the deletion sweep would treat it as expired and remove
+// a still-pending job. And the UPDATE re-checks `state < active` on the locked row, not just in the
+// unlocked target CTE: under READ COMMITTED a concurrent fetchNextJob can activate a candidate
+// between target selection and the UPDATE, and EvalPlanQual re-evaluates this predicate on the
+// freshly-locked row, so the repeat prevents mutating a job a worker has already started.
 export function updateJob (schema: string, table: string, name: string, by: 'id' | 'singletonKey', match: JobMatchStrategy, notify = false) {
   const targetPredicate = by === 'id'
     ? "job.id = (o.data->>'id')::uuid"
@@ -2503,9 +2684,6 @@ export function updateJob (schema: string, table: string, name: string, by: 'id'
           keep_until = CASE
             WHEN jsonb_exists(o.data, 'retentionSeconds')
               THEN (${resolvedStartAfter}) + ((o.data->>'retentionSeconds')::int * interval '1s')
-            -- When only start_after moves, slide keep_until by the same original retention window
-            -- (keep_until - start_after) so pulling a job forward/back never leaves keep_until in
-            -- the past, which the deletion sweep would treat as expired and remove the pending job.
             WHEN jsonb_exists(o.data, 'startAfter')
               THEN (${resolvedStartAfter}) + (job.keep_until - job.start_after)
             ELSE job.keep_until END,
@@ -2520,10 +2698,6 @@ export function updateJob (schema: string, table: string, name: string, by: 'id'
           group_id = CASE WHEN jsonb_exists(o.data, 'groupId') THEN o.data->>'groupId' ELSE job.group_id END,
           group_tier = CASE WHEN jsonb_exists(o.data, 'groupTier') THEN o.data->>'groupTier' ELSE job.group_tier END
       FROM o
-      -- Re-check state < active on the locked row, not just in the unlocked target CTE. Under
-      -- READ COMMITTED a concurrent fetchNextJob can activate a candidate between target selection
-      -- and this UPDATE; EvalPlanQual re-evaluates this predicate on the freshly-locked row, so the
-      -- guard here prevents mutating a job a worker has already started running.
       WHERE job.id IN (SELECT id FROM target)
         AND job.state < '${JOB_STATES.active}'
       RETURNING job.id, job.start_after
@@ -2569,11 +2743,33 @@ export const READY_HISTORY_SIZE = 60
 
 export function cacheQueueStats (schema: string, table: string, queues: string[], noAdvisoryLocks?: boolean): string {
   const statsQuery = getQueueStats(schema, table, queues)
-  // Serialize the $1 parameter for use in locked() multi-statement query
+  // Serialize the $1 parameter for use in the multi-statement transaction below
   const statsText = statsQuery.text.replace('$1::text[]', serializeArrayParam(queues))
+  const lock = tryAdvisoryLock(schema, 'queue-stats', noAdvisoryLocks)
 
+  // Two columns in here are not counts and are easy to mistake for incidental:
+  //
+  // monitor_on is stamped by this statement and by refreshQueueStats - the two that write counts -
+  // and never by the claim in trySetQueueMonitorTime, which writes monitor_claim_on instead. So capturedOn means exactly one thing, "when these counts were
+  // written", and a claimed pass that skipped the aggregate (backed off, or beaten to the lock
+  // below) leaves it aging rather than advancing it over unchanged counts.
+  //
+  // ready_history is an always-on sliding window of recent ready counts for the dashboard sparkline,
+  // maintained here independently of persistQueueStats: prepend the newest sample, keep the newest
+  // READY_HISTORY_SIZE, stored newest-first. Built with unnest + array_agg rather than array slicing,
+  // which CockroachDB lacks.
+  //
+  // pinSeconds is how long this transaction has held the MVCC horizon, measured by the server
+  // rather than by a stopwatch around the call. The two are not the same number: executeSql waits
+  // for a pool connection inside the client's timing window, and a saturated pool inflates it
+  // without pinning anything (measured: a 1 ms transaction timed at 1.97 s behind one busy
+  // connection). Backing off on that number would defer monitoring for pool contention and then
+  // blame the job table for it. transaction_timestamp() is the BEGIN; clock_timestamp() is
+  // volatile, so this is evaluated as rows are returned - after the aggregate CTE has run, which is
+  // the part that pins. It undercounts the tail (the remaining rows and the COMMIT), the safe
+  // direction to be wrong in.
   const sql = `
-    WITH stats AS (${statsText})
+    WITH ${lock.cte}stats AS (SELECT * FROM (${statsText}) agg WHERE true${lock.guard})
     UPDATE ${schema}.queue SET
       deferred_count = COALESCE(stats."deferredCount", 0),
       queued_count = COALESCE(stats."queuedCount", 0),
@@ -2582,9 +2778,7 @@ export function cacheQueueStats (schema: string, table: string, queues: string[]
       failed_count = COALESCE(stats."failedCount", 0),
       total_count = COALESCE(stats."totalCount", 0),
       singletons_active = stats."singletonsActive",
-      -- Always-on sliding window of recent ready counts for the dashboard sparkline (independent of
-      -- persistQueueStats). Prepend the newest sample and keep the newest READY_HISTORY_SIZE, stored
-      -- newest-first. Built with unnest + array_agg (not array slicing, which CockroachDB lacks).
+      monitor_on = now(),
       ready_history = (
         SELECT COALESCE(array_agg(v ORDER BY ord), '{}'::int[])
         FROM (
@@ -2604,27 +2798,49 @@ export function cacheQueueStats (schema: string, table: string, queues: string[]
       FROM unnest(${serializeArrayParam(queues)}) AS q(name)
     ) q
     LEFT JOIN stats ON stats.name = q.name
-    WHERE queue.name = q.name
+    WHERE queue.name = q.name${lock.guard}
     RETURNING
       queue.name,
       queue.queued_count as "queuedCount",
-      queue.warning_queued as "warningQueueSize"
+      queue.warning_queued as "warningQueueSize",
+      EXTRACT(EPOCH FROM (clock_timestamp() - transaction_timestamp()))::float8 as "pinSeconds"
   `
 
-  return locked(schema, sql, 'queue-stats', noAdvisoryLocks)
+  // transaction(), not locked(): the lock is taken inside the statement with try rather than by a
+  // preceding blocking one. The wrapper is still wanted for its SET LOCAL timeouts.
+  return transaction(sql)
 }
 
 // Recompute one queue's counts from the job table and write them back to the queue-table cache
 // (including monitor_on, so subsequent reads are served from cache), returning the fresh counts.
-// Backs getQueueStats(name, { force: true }) and the first read of a never-monitored queue. A single
-// atomic UPDATE ... RETURNING — no advisory lock needed since concurrent forced refreshes are
-// idempotent (each is a valid point-in-time snapshot; last write wins).
-export function refreshQueueStats (schema: string, table: string, name: string): string {
+// Backs getQueueStats(name, { force: true }) and the first read of a never-monitored queue.
+//
+// Shares the monitor's try-lock, and needs it more than the monitor does. Correctness never
+// required one - concurrent forced refreshes are idempotent, each a valid point-in-time snapshot
+// with last write wins - but the horizon does: nothing else gates this path. Two instances reading
+// the same stale cache both decide to refresh and both scan the whole table, and two *different*
+// queue names on the same table do not even contend for the cache entry, so the concurrency is
+// bounded only by how many instances are running. Sharing the monitor's key also keeps a forced
+// read from overlapping a supervise pass already in flight.
+//
+// Returning no rows is the documented outcome of losing the race: the caller serves the cached
+// counts it is already holding, which is what a concurrent refresh would have converged on anyway.
+// Single statement, so the lock is scoped to its implicit transaction and released with it.
+//
+// firstCapture is the one case that must not lose. A queue with no capture yet has no cached counts
+// to fall back on - only the columns' default zeros - so skipping the scan would answer "this queue
+// is empty" for a queue holding thousands of jobs, which is a fabricated number rather than a stale
+// one. And the lock key is global rather than per-queue, so a first read collides with any supervise
+// aggregate anywhere in the schema, which on exactly the slow-aggregate deployments this subsystem
+// targets is not a rare race. Skipping the lock is bounded: it can happen at most once per queue,
+// because the scan it runs is what populates the cache that gates every later read.
+export function refreshQueueStats (schema: string, table: string, name: string, options: { noAdvisoryLocks?: boolean, firstCapture?: boolean } = {}): string {
   const statsQuery = getQueueStats(schema, table, [name])
   const statsText = statsQuery.text.replace('$1::text[]', serializeArrayParam([name]))
+  const lock = tryAdvisoryLock(schema, 'queue-stats', options.noAdvisoryLocks || options.firstCapture)
 
   return `
-    WITH stats AS (${statsText})
+    WITH ${lock.cte}stats AS (SELECT * FROM (${statsText}) agg WHERE true${lock.guard})
     UPDATE ${schema}.queue SET
       deferred_count = COALESCE(stats."deferredCount", 0),
       queued_count = COALESCE(stats."queuedCount", 0),
@@ -2639,7 +2855,7 @@ export function refreshQueueStats (schema: string, table: string, name: string):
       FROM unnest(${serializeArrayParam([name])}) AS q(name)
     ) q
     LEFT JOIN stats ON stats.name = q.name
-    WHERE queue.name = q.name
+    WHERE queue.name = q.name${lock.guard}
     RETURNING
       queue.name,
       queue.deferred_count as "deferredCount",
@@ -2683,10 +2899,45 @@ export function locked (schema: string, query: string | string[], key?: string, 
 // normalizeSchemaName, not resolveSchemaName: the key is opaque to postgres and never compared
 // against the catalog, so it only has to agree across instances on the same schema. See the note
 // on the helper.
+function advisoryLockKey (schema: string, key?: string) {
+  return `('x' || encode(sha224((current_database() || '.pgboss.${normalizeSchemaName(schema)}${key || ''}')::bytea), 'hex'))::bit(64)::bigint`
+}
+
 function advisoryLock (schema: string, key?: string) {
-  return `SELECT pg_advisory_xact_lock(
-      ('x' || encode(sha224((current_database() || '.pgboss.${normalizeSchemaName(schema)}${key || ''}')::bytea), 'hex'))::bit(64)::bigint
-  )`
+  return `SELECT pg_advisory_xact_lock(${advisoryLockKey(schema, key)})`
+}
+
+// The stats aggregate takes its lock with try, not wait, and abandons the pass if another instance
+// already holds it.
+//
+// Waiting is worse than skipping here, and not by a little. A backend blocked on a lock has already
+// sent BEGIN and taken its snapshot, so it advertises backend_xmin for the whole wait - confirmed
+// on pg_stat_activity: wait_event_type 'Lock' with backend_xmin set. Blocking to run a second
+// whole-table scan would therefore hold the horizon for the first instance's aggregate *and* its
+// own, turning one 3s pin into a contiguous 6s one, and three instances into 9s. That is the
+// overlapping-analytics regime this whole subsystem exists to prevent, manufactured by the lock
+// meant to prevent duplicate work.
+//
+// So the loser does nothing. trySetQueueMonitorTime stamped monitor_claim_on a statement earlier,
+// when it claimed the interval and before this lock was attempted, so those queues sit out one
+// interval rather than retrying at once - their counts end up at most one monitorIntervalSeconds
+// behind, and monitor_on keeps aging so capturedOn says so.
+// Against a staleness budget measured in hours, losing one sample costs a gap in the sparkline;
+// winning the race to duplicate a scan nobody asked for costs the job table.
+//
+// The guard is a one-time filter, so a lost race skips the scan rather than running and discarding
+// it — verified on the plan: `Parallel Seq Scan on job (never executed)`. It also has to gate the
+// UPDATE, not just the aggregate: an empty stats CTE still LEFT JOINs, and the COALESCE(…, 0) would
+// write every count to zero.
+function tryAdvisoryLock (schema: string, key: string, noAdvisoryLocks?: boolean) {
+  if (noAdvisoryLocks) {
+    return { cte: '', guard: '' }
+  }
+
+  return {
+    cte: `lock AS MATERIALIZED (SELECT pg_try_advisory_xact_lock(${advisoryLockKey(schema, key)}) AS got),\n    `,
+    guard: ' AND (SELECT got FROM lock)'
+  }
 }
 
 export function assertMigration (schema: string, version: number) {
@@ -2867,6 +3118,20 @@ export function getNextBamCommand (schema: string, { useLiveness = false }: { us
     AND NOT ${liveBuild(tableCol)}
   )`
 
+  // The candidate CTE's FOR UPDATE OF c SKIP LOCKED is defense-in-depth against a double-claim. The
+  // upstream trySetBamTime throttle serializes healers to one per interval, but a build running
+  // longer than bamIntervalSeconds lets a second instance pass the throttle while the first is still
+  // working. SKIP LOCKED makes the claim itself mutually exclusive: whichever instance locks the head
+  // row wins, and the other skips it (and, with LIMIT 1, claims nothing) rather than re-running the
+  // same UPDATE and re-driving the command with a stale prior_status. OF c scopes the lock to the
+  // candidate row only, so the NOT EXISTS probe over bam g is never itself locked. Postgres-only:
+  // SKIP LOCKED is deliberately absent from the timeout-only variant, which also serves CockroachDB
+  // and YugabyteDB, where it performs poorly and can skip unexpectedly.
+  //
+  // The returned `reattempt` asks whether this command was already tried once (a stale-reclaimed
+  // in_progress, or a prior 'failed'). Either way an interrupted or failed CREATE INDEX CONCURRENTLY
+  // may have left an INVALID index, so the runner heals (drop-then-rebuild) before re-running. Fresh
+  // 'pending' rows have nothing to heal.
   return `
     WITH candidate AS (
       SELECT c.id, c.status AS prior_status
@@ -2881,15 +3146,6 @@ export function getNextBamCommand (schema: string, { useLiveness = false }: { us
       )
       ORDER BY (c.status != 'pending'), c.created_on
       LIMIT 1
-      -- Defense-in-depth against a double-claim. The upstream trySetBamTime throttle serializes healers
-      -- to one per interval, but a build running longer than bamIntervalSeconds lets a second instance
-      -- pass the throttle while the first is still working. FOR UPDATE SKIP LOCKED makes the claim itself
-      -- mutually exclusive: whichever instance locks the head row wins; the other skips it (and, with
-      -- LIMIT 1, claims nothing) rather than re-running the same UPDATE and re-driving the command with a
-      -- stale prior_status. OF c scopes the lock to the candidate row only, so the NOT EXISTS probe over
-      -- bam g is never itself locked. Postgres-only path — SKIP LOCKED is deliberately absent from the
-      -- timeout-only variant, which also serves CockroachDB/YugabyteDB where it performs poorly and can
-      -- skip unexpectedly.
       FOR UPDATE OF c SKIP LOCKED
     )
     UPDATE ${schema}.bam b
@@ -2898,10 +3154,6 @@ export function getNextBamCommand (schema: string, { useLiveness = false }: { us
     WHERE b.id = candidate.id
     RETURNING b.id, b.name, b.version, b.status, b.queue, b.table_name as "table", b.command, b.error,
               b.created_on as "createdOn", b.started_on as "startedOn", b.completed_on as "completedOn",
-              -- reattempt: was this command already tried once (stale-reclaimed in_progress OR a prior
-              -- 'failed')? Either way an interrupted/failed CREATE INDEX CONCURRENTLY may have left an
-              -- INVALID index, so the runner heals (drop-then-rebuild) before re-running. Fresh
-              -- 'pending' rows have nothing to heal.
               (candidate.prior_status <> 'pending') as reattempt
   `
 }
@@ -3028,8 +3280,9 @@ const POLICY_JOB_INDEXES: Record<number, string> = {
   10: QUEUE_POLICIES.key_strict_fifo
 }
 // job_iN indexes with no policy gate — created on every job table regardless of policy
-// (throttle i4, fetch i5, group-concurrency i7, blocking i9).
-const BASE_JOB_INDEXES = [4, 5, 7, 9]
+// (throttle i4, fetch i11, group-concurrency i7, blocking i9). 5 is absent, not missing: the fetch
+// index was replaced in v40 and the retired number is not reused.
+const BASE_JOB_INDEXES = [4, 7, 9, 11]
 
 // The fixed (non-job) managed tables; job/job_common/partitions are handled separately.
 const FIXED_MANAGED_TABLES = ['version', 'queue', 'schedule', 'subscription', 'bam', 'warning', 'queue_stats', 'job_dependency']
@@ -3159,7 +3412,7 @@ export function expectedManagedIndexes (schema: string, partitioned: boolean, pa
 //
 // Autovacuum reclaims heap space but never returns btree pages to the OS, so a job index sizes
 // itself to the largest backlog its queue has ever held and stays there. A drained 1M-job peak
-// leaves job_common_i5 at 38 MB and job_common_pkey at 51 MB holding 1k live rows — and every
+// leaves job_common_i11 at 38 MB and job_common_pkey at 51 MB holding 1k live rows — and every
 // subsequent vacuum with dead tuples to clean does a full physical scan of every one of those
 // pages (measured: 17,969 buffer hits + 3,892 reads vs 750 hits / 0 reads after a rebuild), which
 // is what drains IO burst credits on managed Postgres.
@@ -3265,6 +3518,11 @@ export function getBloatedIndexes (schema: string, tables?: string[], options?: 
   const maxEntriesPerPage = numericThreshold(options?.maxEntriesPerPage, REINDEX_DEFAULTS.maxEntriesPerPage, 'maxEntriesPerPage')
   const minSizeRatio = numericThreshold(options?.minSizeRatio, REINDEX_DEFAULTS.minSizeRatio, 'minSizeRatio')
 
+  // The `reltuples >= 0` gate is not redundant. PG 14+ writes -1 rather than 0 for a relation that
+  // has never been vacuumed or analyzed (commit 3d351d916b2), and -1 would pass both thresholds
+  // below - a negative count is under any density, and a negative expected size is under any page
+  // count - on statistics that mean "unknown" rather than "empty".
+
   return `
     SELECT
       i.relname as name,
@@ -3282,10 +3540,6 @@ export function getBloatedIndexes (schema: string, tables?: string[], options?: 
       AND x.indisvalid
       AND ${jobTableScope(schema, tables)}
       AND i.relpages > ${minPages}
-      -- PG 14+ writes -1 rather than 0 for a relation that has never been vacuumed or analyzed
-      -- (commit 3d351d916b2). It would pass both gates below - a negative count is under any
-      -- density, and a negative expected size is under any page count - on stats that mean
-      -- "unknown" rather than "empty".
       AND i.reltuples >= 0
       AND i.reltuples / GREATEST(i.relpages, 1) < ${maxEntriesPerPage}
       AND i.relpages > ${minSizeRatio} * ${EXPECTED_PAGES}
@@ -3366,6 +3620,170 @@ function quoteIdentifier (name: string) {
   return `"${name.replace(/"/g, '""')}"`
 }
 
+/**
+ * The sources that can hold the MVCC horizon back, and the catalog each is read from. Split out so
+ * an installation whose role cannot read one of them still gets an answer from the rest, and so the
+ * warning can name which sources it could not check rather than implying a clean bill of health.
+ *
+ * `pg_stat_activity.backend_xmin` is readable by an unprivileged role (it is not one of the columns
+ * restricted to the owning user), as are the other three views, so the degraded path is defensive
+ * rather than expected — a managed provider may still revoke them.
+ */
+export const XMIN_HORIZON_SOURCES = {
+  // Restricted to backends whose transaction was already open when the failed vacuum ran ($1).
+  // Every backend executing a query advertises a backend_xmin, including the one asking this
+  // question, so presence alone is not evidence — the ordering against a vacuum that reclaimed
+  // nothing is. Compared as timestamps inside one statement rather than as two ages read from two
+  // queries a moment apart, which would let a connection that started after the vacuum qualify.
+  //
+  // A NULL xact_start passes rather than being dropped, and that is the difference between seeing
+  // the most common cause of a pinned horizon and being blind to it. pg_stat_activity hands an
+  // ordinary role only pid, application_name, usename and backend_xmin for a backend owned by a
+  // *different* role; xact_start reads NULL and query reads '<insufficient privilege>' (measured on
+  // PG18). Since `NULL < $1` is NULL, the strict form silently discarded exactly the holder an
+  // operator most needs named — another application's analytical query — leaving every source NULL,
+  // no holder attributable, and the warning withheld. Admitting them costs a possible false
+  // positive from a young foreign backend, which in practice loses the max(age()) to any real
+  // holder, and opaqueBackends below reports how many could not be timed.
+  backends: 'SELECT max(age(backend_xmin)) FROM pg_catalog.pg_stat_activity WHERE backend_xmin IS NOT NULL AND (xact_start IS NULL OR xact_start < $1)',
+  slots: 'SELECT max(age(xmin)) FROM pg_catalog.pg_replication_slots WHERE xmin IS NOT NULL',
+  slotsCatalog: 'SELECT max(age(catalog_xmin)) FROM pg_catalog.pg_replication_slots WHERE catalog_xmin IS NOT NULL',
+  standbys: 'SELECT max(age(backend_xmin)) FROM pg_catalog.pg_stat_replication WHERE backend_xmin IS NOT NULL',
+  prepared: 'SELECT max(age(transaction)) FROM pg_catalog.pg_prepared_xacts'
+} as const
+
+export type XminHorizonSource = keyof typeof XMIN_HORIZON_SOURCES
+
+export const XMIN_HORIZON_QUERY_SOURCES = Object.keys(XMIN_HORIZON_SOURCES) as readonly XminHorizonSource[]
+
+/**
+ * How far behind the MVCC horizon is, per holder class, in **transactions**.
+ *
+ * `age()` measures transactions elapsed since the pinned xid, not wall time, which is the metric
+ * that matters: dead tuples accumulate per transaction, so a horizon pinned across an idle night
+ * costs nothing while the same age on a busy queue is a backlog of rows autovacuum cannot reclaim.
+ * Measured directly — a REPEATABLE READ holder open on an idle database reports 0, and 2,000 after
+ * 2,000 transactions with the same holder still open.
+ *
+ * Also returns the oldest in-transaction backend's wall-clock age, purely so the warning can say
+ * how long as well as how far; nothing keys off it.
+ */
+export function getXminHorizon (lastVacuum: Date, sources: readonly XminHorizonSource[] = XMIN_HORIZON_QUERY_SOURCES): SqlQuery {
+  // There is no statement with no columns, and an empty list here would silently build `SELECT ,`.
+  // Callers that have narrowed to nothing must stop asking, not ask for nothing.
+  assert(sources.length, 'getXminHorizon requires at least one source')
+
+  const columns = sources.map(name => `(${XMIN_HORIZON_SOURCES[name]}) as "${name}"`)
+
+  // Identity for the oldest holding backend, so the warning can name what is interfering instead of
+  // only its class. Every column here is readable by an ordinary role for another role's backend
+  // except state, which reads NULL. Self is excluded by pid: the backend asking this question is
+  // always holding a snapshot of its own.
+  //
+  // The query text is deliberately NOT collected, and truncating it would not make it collectable.
+  // pg_stat_activity.query is the raw statement, so an un-parameterized one carries its literals -
+  // emails, tokens, keys - and they sit in the WHERE clause, at the front, where a prefix cut keeps
+  // them. Nor is size the issue: track_activity_query_size already caps it at 1 kB by default. The
+  // objection is where it would end up. Reading that column takes pg_read_all_stats, superuser or
+  // the same role, and it vanishes with the backend; warning.data needs only SELECT on this schema,
+  // survives for warningRetentionDays, is served by getWarnings and the dashboard, and is emitted as
+  // an event most apps forward to their logs. Copying one into the other widens who can read another
+  // application's SQL, makes it durable, and sends it off-box.
+  //
+  // state is kept because it carries the part that changes what the operator does: 'idle in
+  // transaction' is an abandoned transaction (fix the client, or set
+  // idle_in_transaction_session_timeout) while 'active' is a genuinely long-running query. Which
+  // query it is follows from pid, application_name and role, looked up live where the catalog's own
+  // privilege rules still apply.
+  //
+  // selfApplicationName is what makes "ours or theirs" answerable. Db sets application_name to
+  // 'pgboss' on the pool it owns, so a holder matching this connection's own value is pg-boss doing
+  // it to itself - the monitor's own aggregate, most likely - which has a completely different fix
+  // from an external reporting tool holding a transaction open. It is compared rather than hardcoded
+  // because an adapter-supplied pool sets whatever the host app chose, and claiming that is
+  // definitely pg-boss would be a guess.
+  const backendIdentity = sources.includes('backends')
+    ? `,
+      (SELECT to_jsonb(h) FROM (
+        SELECT
+          pid,
+          application_name                                    as "applicationName",
+          usename::text                                       as "userName",
+          state,
+          age(backend_xmin)                                   as age,
+          extract(epoch from (now() - xact_start))::int       as "xactSeconds"
+        FROM pg_catalog.pg_stat_activity
+        WHERE backend_xmin IS NOT NULL
+          AND (xact_start IS NULL OR xact_start < $1)
+          AND pid <> pg_backend_pid()
+        ORDER BY age(backend_xmin) DESC, xact_start NULLS LAST
+        LIMIT 1
+      ) h) as "backendHolder",
+      (SELECT count(*)::int FROM pg_catalog.pg_stat_activity
+        WHERE backend_xmin IS NOT NULL AND xact_start IS NULL
+          AND pid <> pg_backend_pid()) as "opaqueBackends",
+      current_setting('application_name') as "selfApplicationName"`
+    : ''
+
+  const text = `
+    SELECT
+      ${columns.join(',\n      ')},
+      (SELECT max(extract(epoch from (now() - xact_start)))::int
+         FROM pg_catalog.pg_stat_activity
+        WHERE backend_xmin IS NOT NULL AND xact_start IS NOT NULL) as "oldestTransactionSeconds"${backendIdentity}
+  `
+
+  // Only backends carries the placeholder, so the value goes along only when it is actually
+  // referenced - binding one to a statement that has none is an error, not a no-op.
+  return { text, values: sources.includes('backends') ? [lastVacuum] : [] }
+}
+
+/**
+ * Dead-tuple accounting for pg-boss's own job tables, plus the autovacuum settings each table is
+ * actually measured against.
+ *
+ * This is the direct measurement the `xmin_horizon` check is built on. `age(backend_xmin)` is only
+ * a proxy for it, and a poor one: it counts cluster transactions, so a producer batching 500 jobs
+ * per `insert()` moves it ~9x slower than one calling `send()` per job for identical garbage, and
+ * any unrelated application sharing the database moves it for reasons that have nothing to do with
+ * pg-boss at all. `n_dead_tup` is the harm itself.
+ *
+ * The budget comes from Postgres rather than from a pg-boss constant:
+ * `autovacuum_vacuum_threshold + autovacuum_vacuum_scale_factor * n_live_tup` is the point the
+ * server itself decides a table needs vacuuming. Per-table reloptions win over the cluster
+ * settings, so an operator who has tuned a queue's table is measured against their own numbers.
+ *
+ * `lastVacuum` is the later of the autovacuum and manual timestamps: what matters is that a vacuum
+ * ran, not who asked for it. GREATEST ignores NULLs, so it is NULL only when neither has ever run.
+ * Its age is computed server-side rather than against the client clock, so the check does not
+ * inherit the skew that `clock_skew` exists to report.
+ *
+ * PostgreSQL-only. Callers must gate on noMonitorVacuum - see the note in boss.ts #checkXminHorizon.
+ */
+export function getJobTableGarbage (schema: string, tables?: string[]): string {
+  return `
+    SELECT t.relname as name,
+      s.n_live_tup as "liveTuples",
+      s.n_dead_tup as "deadTuples",
+      GREATEST(s.last_autovacuum, s.last_vacuum) as "lastVacuum",
+      extract(epoch from (now() - GREATEST(s.last_autovacuum, s.last_vacuum)))::int as "vacuumAgeSeconds",
+      coalesce((SELECT option_value::int FROM pg_options_to_table(t.reloptions)
+                 WHERE option_name = 'autovacuum_vacuum_threshold'),
+               current_setting('autovacuum_vacuum_threshold')::int) as "threshold",
+      coalesce((SELECT option_value::float8 FROM pg_options_to_table(t.reloptions)
+                 WHERE option_name = 'autovacuum_vacuum_scale_factor'),
+               current_setting('autovacuum_vacuum_scale_factor')::float8) as "scaleFactor",
+      coalesce((SELECT option_value::boolean FROM pg_options_to_table(t.reloptions)
+                 WHERE option_name = 'autovacuum_enabled'), true) as "autovacuumEnabled"
+    FROM pg_catalog.pg_class t
+    JOIN pg_catalog.pg_namespace n ON n.oid = t.relnamespace
+    JOIN pg_catalog.pg_stat_user_tables s ON s.relid = t.oid
+    WHERE n.nspname = '${resolveSchemaName(schema).replace(SINGLE_QUOTE_REGEX, "''")}'
+      AND t.relkind = 'r'
+      AND ${jobTableScope(schema, tables)}
+  `
+}
+
 export function reindexIndex (schema: string, name: string): string {
   return `REINDEX INDEX CONCURRENTLY ${schema}.${quoteIdentifier(name)}`
 }
@@ -3378,8 +3796,8 @@ export function dropIndexConcurrently (schema: string, name: string): string {
  * The statement list an operator runs by hand: every stale stub dropped first, then the rebuilds.
  *
  * Stubs are emitted whole rather than paired to the index they came from. Postgres does not append
- * `_ccnew` — it truncates the *base* so the result fits in 63 bytes, so `j<sha224>_i5` (60 chars)
- * leaves behind `j<sha224>__ccnew` with the `i5` gone, and a prefix match never fires on a
+ * `_ccnew` — it truncates the *base* so the result fits in 63 bytes, so `j<sha224>_i11` (61 chars)
+ * leaves behind `j<sha224>__ccnew` with the `i11` gone, and a prefix match never fires on a
  * partitioned queue (every partition table name is `'j' || sha224(queue_name)`, 57 chars). Dropping
  * them unconditionally is also what the background pass does: an invalid stub is dead weight that
  * vacuum still walks, whichever index it came from.
