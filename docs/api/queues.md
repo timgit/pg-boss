@@ -42,6 +42,29 @@ Allowed policy values:
 | `exclusive` | Only allows 1 job to be queued or active. Can be extended with `singletonKey` |
 | `key_strict_fifo` | FIFO ordering per `singletonKey`. Requires `singletonKey` on every job. Holds back successors while a job with the same key is active, in retry, or failed without blocking other keys. |
 
+#### Which states a policy occupies
+
+Each policy is a unique index over `(name, singletonKey)` restricted to a set of job states. Only a job in one of those states occupies the key's slot, so this is what decides whether a `send()` for an existing key succeeds or resolves `null`.
+
+| Policy | A key is occupied while a job with it is in |
+| - | - |
+| `standard` | nothing, the policy places no per-key constraint |
+| `short` | `created` |
+| `singleton` | `active` |
+| `stately` | `created`, `retry`, and `active`, each counted separately |
+| `exclusive` | `created`, `retry`, or `active`, counted together |
+| `key_strict_fifo` | `active`, `retry`, or `failed` |
+
+Consequences worth knowing:
+
+- **`short` counts `created` only.** A job that failed into `retry` has left the slot, so a new job can be created alongside it. "One job queued" is one job *created*, not one job in any pre-active state. `findJobs(name, { queued: true })` matches `created` and `retry`, a wider set than `short` enforces.
+- **`stately` is per state, so one key can hold three rows at once**, one `created`, one `retry`, one `active`. `exclusive` is the version that counts them together and allows exactly one.
+- **`key_strict_fifo` keeps holding a key after terminal failure.** `failed` is in its set, which is what blocks the key until the job is retried or deleted; see `getBlockedKeys()`.
+- **Terminal states never occupy a key**, apart from `failed` under `key_strict_fifo`. Completed and cancelled jobs accumulate in the table under a key without affecting sends.
+- **A job with no `singletonKey` is treated as having the empty key**, so on a keyed policy the constraint applies to the queue as a whole until keys are used. `key_strict_fifo` is the exception: it requires a key on every job and rejects a send without one.
+
+Throttling with `singletonSeconds` is a separate constraint and is not one of the above. Its index covers every state except `cancelled`, so a job that has already completed or failed still holds its time slot for the remainder of the interval.
+
 > [!WARNING]
 > `stately` queues are special in how retries are handled. By definition, stately queues will not allow multiple jobs to occupy `retry` state. Once a job exists in `retry`, failing another `active` job will bypass the retry mechanism and force the job to `failed`. If this job requires retries, consider a custom retry implementation using a dead letter queue.
 
@@ -143,6 +166,8 @@ Actual detection time is `heartbeatSeconds` + up to `monitorIntervalSeconds` (de
 * **retentionSeconds**, number
 
   Default: 14 days. How many seconds a job may be in created or retry state before it's deleted. Must be >=1
+
+  The window is measured from the job's `startAfter`, not from when the job was created, so a deferred job gets its full retention after it becomes eligible to run rather than spending it waiting. See [retention and deferred jobs](jobs#retention-and-deferred-jobs).
 
 * **deleteAfterSeconds**, int
 

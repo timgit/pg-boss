@@ -28,6 +28,25 @@ If needed, the default clock monitoring interval can be adjusted using `clockMon
 
 For more cron documentation and examples see the docs for the [cron-parser package](https://www.npmjs.com/package/cron-parser).
 
+## How occurrences are evaluated
+
+Understanding the pass matters mostly for one question: what happens to an occurrence that falls due while nothing is running.
+
+**One pass per interval, deployment-wide.** A pass is claimed through a timestamp on the `version` table, so whichever instance gets there first runs it and the rest skip. `cronMonitorIntervalSeconds` (default 30, must be between 1 and 45) is how long a claim holds, not a per-instance timer, so adding instances does not add passes.
+
+**A pass fires anything due in the last 60 seconds.** For each schedule it evaluates the expression against database time and sends the job if the most recent occurrence is under 60 seconds old. The 45 second ceiling on `cronMonitorIntervalSeconds` exists to guarantee a pass lands inside that window, so a running deployment cannot step over an occurrence.
+
+**One job per schedule per minute, at most.** A slot is usually visible to more than one pass (a 30 second interval against a 60 second window), so the forwarded job is throttled on the schedule's `(queue, key)` with a 60 second window. This is also the reason 6-placeholder expressions do not deliver second-level precision: whatever the expression says, a schedule cannot produce more than one job a minute.
+
+**Missed occurrences are skipped, not replayed.** There is no catch-up. If no instance runs a pass within 60 seconds of an occurrence, that occurrence is gone, and the next job the schedule produces is its next occurrence rather than the one that was missed. Concretely:
+
+| Gap with no instance running | Result |
+| - | - |
+| Under 60 seconds | The occurrence still fires. The first pass after startup runs immediately and picks it up. |
+| Longer than 60 seconds | Every occurrence more than 60 seconds old is skipped, no matter how many. Nothing is queued to make up for them. |
+
+So a rolling deploy that leaves a sub-minute gap rides through, while a longer outage drops whatever fell inside it. If a schedule must not miss an occurrence, make the job idempotent and have the handler work out what still needs doing, rather than relying on one job per occurrence.
+
 ### `schedule(name, cron, data, options)`
 
 Schedules a job to be sent to the specified queue based on a cron expression. If the schedule already exists, it's updated to the new cron expression.

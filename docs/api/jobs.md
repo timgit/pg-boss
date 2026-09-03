@@ -64,10 +64,29 @@ Creates a new job and returns the job id.
 
   Default: 14 days. How many seconds a job may be in created or retry state before it's deleted. Must be >=1
 
+  The window is measured from `startAfter`, not from when the job was created. See [retention and deferred jobs](#retention-and-deferred-jobs).
+
 * **deleteAfterSeconds**, int
 
   Default: 7 days. How long a job should be retained in the database after it's completed. Set to 0 to never delete completed jobs.
 
+#### Retention and deferred jobs
+
+A job's retention deadline is `startAfter + retentionSeconds`, not `createdOn + retentionSeconds`. Maintenance deletes a job still in `created` or `retry` once that deadline passes.
+
+Anchoring on `startAfter` is what makes long deferrals work. Sending a job a month out with the default 14 day retention keeps it: the deadline lands two weeks past its start time, not two weeks from now. If retention were measured from creation, the job would be swept away a fortnight before it was due to run, silently.
+
+The same anchoring means retention is measured from when a deferred job becomes *eligible*, so a job deferred by an hour still gets its full window to be picked up after that hour, rather than an hour less.
+
+`update()` and `upsert()` preserve the window when they move `startAfter`: the deadline slides by the same amount, so pulling a job forward or pushing it back never leaves it with a deadline already in the past for maintenance to act on.
+
+```js
+// runs in 30 days, and is retained until 14 days after that
+await boss.send('quarterly-report', data, { startAfter: '30 days' })
+
+// a short window on a deferred job still starts at the deferral, not now
+await boss.send('reminder', data, { startAfter: '1 hour', retentionSeconds: 300 })
+```
 
 All retry, expiration, and retention options can also be set on the queue and will be inheritied for each job, unless they are overridden.
   
