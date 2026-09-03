@@ -217,23 +217,76 @@ class Db extends EventEmitter implements types.IDatabase, types.EventsMixin {
     }
   }
 
-  async withTransaction<T> (fn: (db: types.IDatabase) => Promise<T>): Promise<T> {
+  // Pins a client, opens a transaction, and hands back the controls. Callers that can express their
+  // work as a single function should use withTransaction(); this exists for the cases where the
+  // begin and the settle happen in different call frames, which is how a transactional worker holds
+  // one transaction open across a fetch, a handler, and a completion.
+  //
+  // The handle owns the client: commit() and rollback() each release it exactly once, and a failed
+  // COMMIT releases with the error so the pool discards a client left in an unknown state.
+  async beginTransaction (): Promise<types.TransactionHandle> {
     assert(this.opened, 'Database not opened. Call open() before executing SQL.')
 
     const client = await this.pool.connect()
+
+    let released = false
+
+    const release = (err?: Error) => {
+      if (released) return
+      released = true
+      client.release(err)
+    }
+
     try {
       await client.query('BEGIN')
-      const txDb: types.IDatabase = {
-        executeSql: (text: string, values?: unknown[]) => client.query(text, values)
+    } catch (err) {
+      release(err as Error)
+      throw err
+    }
+
+    return {
+      db: {
+        // Refuses to run once the transaction is settled. Without this, a statement issued late by
+        // a handler that outlived its timeout would land on a client the pool has already handed
+        // to someone else, running outside any transaction and inside a stranger's session.
+        executeSql: (text: string, values?: unknown[]) => released
+          ? Promise.reject(new Error('Transaction is already settled'))
+          : client.query(text, values)
+      },
+      commit: async () => {
+        try {
+          await client.query('COMMIT')
+        } catch (err) {
+          release(err as Error)
+          throw err
+        }
+
+        release()
+      },
+      // Deliberately swallows its own failure: a rollback is already the error path, and the
+      // caller has an original error worth more than "ROLLBACK failed". The client is released
+      // either way so it cannot leak.
+      rollback: async () => {
+        try {
+          await client.query('ROLLBACK')
+          release()
+        } catch (err) {
+          release(err as Error)
+        }
       }
-      const result = await fn(txDb)
-      await client.query('COMMIT')
+    }
+  }
+
+  async withTransaction<T> (fn: (db: types.IDatabase) => Promise<T>): Promise<T> {
+    const tx = await this.beginTransaction()
+
+    try {
+      const result = await fn(tx.db)
+      await tx.commit()
       return result
     } catch (err) {
-      await client.query('ROLLBACK')
+      await tx.rollback()
       throw err
-    } finally {
-      client.release()
     }
   }
 }

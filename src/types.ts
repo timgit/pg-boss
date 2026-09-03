@@ -26,10 +26,26 @@ export interface IDatabase {
    * can be recovered. Returns a handle whose `close()` tears down the listener.
    */
   listen?(channel: string, onNotification: (payload: string) => void, onReconnect: () => void): Promise<ListenHandle>;
+  /**
+   * Optional capability for pg-boss-owned transactions. When present, pg-boss can open a
+   * transaction whose begin and settle happen in different call frames, which is what
+   * `work(name, { transactional: true }, ...)` needs. The built-in pool-based Db implements it;
+   * a custom adapter may implement it to enable transactional workers.
+   */
+  beginTransaction?(): Promise<TransactionHandle>;
 }
 
 export interface ListenHandle {
   close(): Promise<void>;
+}
+
+export interface TransactionHandle {
+  /** Runs statements inside the transaction. Pass it as the `db` option on any pg-boss call. */
+  db: IDatabase;
+  /** Commits and releases the underlying connection. */
+  commit(): Promise<void>;
+  /** Rolls back and releases the underlying connection. Never rejects. */
+  rollback(): Promise<void>;
 }
 
 export interface DatabaseOptions {
@@ -827,6 +843,23 @@ export type WorkOptions = JobFetchOptions & JobPollingOptions & WorkConcurrencyO
    * error. Throwing from the handler still fails the whole batch. Defaults to false.
    */
   perJobResults?: boolean;
+  /**
+   * Run the fetch, the handler, and the completion inside one database transaction.
+   *
+   * The handler receives a second argument, a `db` for that transaction. Anything written through
+   * it commits atomically with the job's completion, so a handler cannot leave its side effects
+   * committed and the job unfinished, or the reverse. Throwing rolls the whole unit back, and the
+   * job is then failed on a separate connection so retry accounting still applies.
+   *
+   * Requires a database connection pg-boss can open a transaction on: the built-in pool, or a `db`
+   * adapter implementing `beginTransaction`. Cannot be combined with `perJobResults`,
+   * `groupConcurrency`, or `localGroupConcurrency`.
+   *
+   * The transaction is open for as long as the handler runs, so this suits short handlers.
+   * Heartbeats are not sent, since the `active` row is not visible outside the transaction.
+   * @default false
+   */
+  transactional?: boolean;
 }
 export interface FetchGroupConcurrencyOptions {
   groupConcurrency?: number | GroupConcurrencyConfig;
@@ -873,19 +906,35 @@ export interface PerJobWorkWithMetadataHandler<ReqData> {
 }
 
 /**
+ * Handler for a `transactional: true` worker. `tx` runs statements inside the transaction the jobs
+ * were fetched in, so pass it as the `db` option on any pg-boss call, or hand it to your own SQL,
+ * to have that work commit with the job's completion.
+ */
+export interface TransactionalWorkHandler<ReqData, ResData = any> {
+  (jobs: Job<ReqData>[], tx: IDatabase): Promise<ResData>;
+}
+
+export interface TransactionalWorkWithMetadataHandler<ReqData, ResData = any> {
+  (jobs: JobWithMetadata<ReqData>[], tx: IDatabase): Promise<ResData>;
+}
+
+/**
  * Resolves the handler signature a `work` call must satisfy from the *inferred* options type `O`.
- * A literal `perJobResults: true` (optionally with `includeMetadata: true`) demands a per-job handler
- * that resolves with a `JobResult[]`; anything else keeps the permissive single-output handler.
+ * A literal `transactional: true` adds the transaction `db` as a second parameter. A literal
+ * `perJobResults: true` (optionally with `includeMetadata: true`) demands a per-job handler that
+ * resolves with a `JobResult[]`; anything else keeps the permissive single-output handler.
  *
- * Because the branch is driven by `O extends { perJobResults: true }`, only a statically-known `true`
- * selects the strict handler. Options whose `perJobResults` is a plain `boolean` (e.g. a value typed
- * as `WorkOptions`, or `{ perJobResults: someFlag }`) do not match the literal and fall through to the
+ * Because each branch is driven by `O extends { flag: true }`, only a statically-known `true`
+ * selects the stricter handler. Options whose flag is a plain `boolean` (e.g. a value typed as
+ * `WorkOptions`, or `{ perJobResults: someFlag }`) do not match the literal and fall through to the
  * permissive handler, so dynamically-built options keep compiling exactly as before.
  */
 export type WorkHandlerFor<O extends WorkOptions, ReqData, ResData = any> =
-  O extends { perJobResults: true }
-    ? (O extends { includeMetadata: true } ? PerJobWorkWithMetadataHandler<ReqData> : PerJobWorkHandler<ReqData>)
-    : (O extends { includeMetadata: true } ? WorkWithMetadataHandler<ReqData, ResData> : WorkHandler<ReqData, ResData>)
+  O extends { transactional: true }
+    ? (O extends { includeMetadata: true } ? TransactionalWorkWithMetadataHandler<ReqData, ResData> : TransactionalWorkHandler<ReqData, ResData>)
+    : O extends { perJobResults: true }
+      ? (O extends { includeMetadata: true } ? PerJobWorkWithMetadataHandler<ReqData> : PerJobWorkHandler<ReqData>)
+      : (O extends { includeMetadata: true } ? WorkWithMetadataHandler<ReqData, ResData> : WorkHandler<ReqData, ResData>)
 
 export interface Request {
   name: string;

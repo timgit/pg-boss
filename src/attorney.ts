@@ -439,11 +439,29 @@ function checkWorkArgs (name: string, args: any[]): {
   assert(!('priority' in options) || typeof options.priority === 'boolean', 'priority must be a boolean')
   assert(!('localConcurrency' in options) || (Number.isInteger(options.localConcurrency) && options.localConcurrency >= 1), 'localConcurrency must be an integer >= 1')
   assert(!('perJobResults' in options) || typeof options.perJobResults === 'boolean', 'perJobResults must be a boolean')
+  assert(!('transactional' in options) || typeof options.transactional === 'boolean', 'transactional must be a boolean')
   validatePriorityRangeConfig(options)
   validateGroupConcurrencyConfig(options)
   validateHeartbeatRefreshConfig(options)
+  validateTransactionalConfig(options)
 
   return { options, callback }
+}
+
+// Rejects the combinations a transactional worker cannot honour, rather than quietly degrading one
+// of the two features.
+function validateTransactionalConfig (options: any) {
+  if (!options.transactional) return
+
+  // Per-job settlement partitions a batch into separate outcomes; one transaction can only commit
+  // or roll back as a whole, so the two contradict each other.
+  assert(!options.perJobResults, 'transactional cannot be combined with perJobResults')
+
+  // groupConcurrency counts active jobs across instances, and localGroupConcurrency restores the
+  // jobs it holds back. Neither survives a fetch that is not committed yet: another instance cannot
+  // see the active rows, and restore() on the pooled connection cannot see the jobs to restore.
+  assert(options.groupConcurrency == null, 'transactional cannot be combined with groupConcurrency')
+  assert(options.localGroupConcurrency == null, 'transactional cannot be combined with localGroupConcurrency')
 }
 
 function checkFetchArgs (name: string, options: any) {
