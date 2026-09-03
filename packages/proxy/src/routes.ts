@@ -30,7 +30,9 @@ import {
   getQueueResponseSchema,
   getQueueStatsResponseSchema,
   getQueuesResponseSchema,
+  getScheduleResponseSchema,
   getSchedulesResponseSchema,
+  previewScheduleResponseSchema,
   insertRequestSchema,
   insertResponseSchema,
   isInstalledResponseSchema,
@@ -150,6 +152,23 @@ const schedulesQuerySchema = z.object({
   key: z.string().optional()
 })
 
+// getSchedule reads one row by its primary key, so unlike getSchedules the name is required. The
+// key stays optional, since the method defaults it to the empty string schedule() writes.
+const scheduleQuerySchema = z.object({
+  name: z.string().min(1),
+  key: z.string().optional()
+})
+
+// previewSchedule maps onto PreviewScheduleOptions. GET params arrive as strings, so `from`
+// transforms to the Date the option expects and `count` coerces; both are optional, as is `tz`, so
+// an omitted param leaves the method's own default in place.
+const previewScheduleQuerySchema = z.object({
+  cron: z.string().min(1),
+  tz: z.string().optional(),
+  from: z.iso.datetime().transform((v) => new Date(v)).optional(),
+  count: z.coerce.number().int().positive().optional()
+})
+
 const findJobsQuerySchema = z.object({
   name: z.string().min(1),
   id: z.string().optional(),
@@ -238,6 +257,14 @@ export const getMethods: RouteEntry[] = [
     if (q.name && q.key) return [q.name, q.key]
     if (q.name) return [q.name]
     return []
+  }),
+  get('schedules', 'getSchedule', getScheduleResponseSchema, scheduleQuerySchema, (q) => (q.key !== undefined ? [q.name, q.key] : [q.name])),
+  get('schedules', 'previewSchedule', previewScheduleResponseSchema, previewScheduleQuerySchema, (q) => {
+    const options: Record<string, unknown> = {}
+    if (q.tz !== undefined) options.tz = q.tz
+    if (q.from !== undefined) options.from = q.from
+    if (q.count !== undefined) options.count = q.count
+    return Object.keys(options).length > 0 ? [q.cron, options] : [q.cron]
   }),
   get('jobs', 'getDependencies', getDependenciesResponseSchema, dependencyQuerySchema, (q) => [q.name, q.id]),
   get('jobs', 'getDependents', getDependentsResponseSchema, dependencyQuerySchema, (q) => [q.name, q.id]),

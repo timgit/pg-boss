@@ -104,3 +104,75 @@ Returns all scheduled jobs by queue name and unique key.
 ```js
 const [schedule] = await boss.getSchedules('report', 'eu')
 ```
+
+### `getSchedule(name, key)`
+
+Returns the schedule for a queue name and unique key, or `null` if there is none. `key` defaults to
+the empty string, the key `schedule()` uses when none is supplied.
+
+Unlike `getSchedules(name, key)`, which always returns an array, this reads the one row a
+`(name, key)` pair can have.
+
+```js
+const schedule = await boss.getSchedule('report', 'eu')
+
+if (schedule) {
+  console.log(`${schedule.cron} ${schedule.timezone}`)
+}
+```
+
+### `previewSchedule(cron, options)`
+
+Returns the next occurrences a cron expression produces, as an array of `Date`. The expression and
+time zone are validated exactly as `schedule()` validates them, so anything this previews can also
+be stored.
+
+This is pure computation: it does not query the database and does not require a started instance.
+
+**Arguments**
+
+- `cron`: string, *required*
+- `options`: object
+
+**options**
+
+* **tz**, string, *default: `UTC`*
+
+  Time zone the expression is evaluated in.
+
+* **from**, Date, *default: database time*
+
+  Reference point the walk starts from. Occurrences are strictly after it, so passing the last
+  occurrence of one page back in yields the next page.
+
+  The default is this instance's clock plus the skew cached against the database, the same reading
+  the cron pass evaluates against. Skew is only cached by an instance started with `schedule`
+  enabled; on any other instance, including a proxy running with its default of `schedule: false`,
+  it is zero and the default reduces to the local clock of the calling process. Pass `from`
+  explicitly when the reference point has to be exact.
+
+* **count**, number, *default: 5*
+
+  How many occurrences to return. Must be an integer between 1 and 1000.
+
+  Occurrences of a sparse expression are expensive to find, and the walk is synchronous, so it also
+  gives up after a second rather than hold the event loop for as long as the count would take. Ask
+  for fewer and page with `from` if that happens.
+
+```js
+const occurrences = boss.previewSchedule('0 3 * * *', { tz: 'America/Chicago', count: 3 })
+```
+
+The result describes the expression, not the delivery. Schedules are checked every
+`cronMonitorIntervalSeconds` and an occurrence within the preceding 60 seconds is sent, so a job
+lands at or shortly after each listed time.
+
+To preview a stored schedule, read it first:
+
+```js
+const schedule = await boss.getSchedule('report', 'eu')
+
+if (schedule) {
+  const upcoming = boss.previewSchedule(schedule.cron, { tz: schedule.timezone })
+}
+```

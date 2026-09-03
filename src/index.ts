@@ -519,6 +519,14 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#timekeeper.getSchedules(name, key)
   }
 
+  getSchedule (name: string, key?: string): Promise<types.Schedule | null> {
+    return this.#timekeeper.getSchedule(name, key)
+  }
+
+  previewSchedule (cron: string, options?: types.PreviewScheduleOptions): Date[] {
+    return this.#timekeeper.previewSchedule(cron, options)
+  }
+
   async getBamStatus (): Promise<types.BamStatusSummary[]> {
     const sql = plans.getBamStatus(this.#config.schema)
     const { rows } = await this.#db.executeSql(sql)
@@ -590,6 +598,7 @@ export type {
   EnumDrift,
   OffWorkOptions,
   PgBossEventMap,
+  PreviewScheduleOptions,
   Queue,
   QueueOptions,
   QueuePolicy,
