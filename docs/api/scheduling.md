@@ -89,6 +89,38 @@ for (const schedule of schedules) {
 }
 ```
 
+Each schedule carries the following properties.
+
+| Property | Description |
+| --- | --- |
+| `name` | Queue the schedule sends into |
+| `key` | Unique key within the queue, `''` when none was supplied |
+| `cron` | Cron expression |
+| `timezone` | Time zone the expression is evaluated in |
+| `data` | Payload sent with each job |
+| `options` | `send()` options applied to each job |
+| `createdOn` | When the schedule was first stored |
+| `updatedOn` | When the definition was last changed |
+| `lastJobId` | Id of the job the schedule most recently created, or `null` if it has not fired yet |
+
+`lastJobId` connects a schedule to its last run, so a queue's history can be inspected from the
+schedule that produced it.
+
+```js
+const [schedule] = await boss.getSchedules('report', 'eu')
+
+if (schedule.lastJobId) {
+  const [job] = await boss.findJobs('report', { id: schedule.lastJobId })
+
+  // null once the job passes the queue's retention window
+  console.log(job?.state)
+}
+```
+
+`lastJobId` is not a foreign key: the job it names is subject to the queue's retention policy and is
+eventually deleted, so it may no longer exist. Re-running `schedule()` for the same `(name, key)`
+updates the definition and leaves `lastJobId` alone; `unschedule()` removes the row entirely.
+
 ### `getSchedules(name)`
 
 Returns all scheduled jobs by queue name.

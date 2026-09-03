@@ -213,6 +213,7 @@ function createTableSchedule (schema: string) {
       options jsonb,
       created_on timestamp with time zone not null default now(),
       updated_on timestamp with time zone not null default now(),
+      last_job_id uuid,
       PRIMARY KEY (name, key)
     )
   `
@@ -917,16 +918,46 @@ export function deleteAllJobs (schema: string, table: string) {
   return `DELETE from ${schema}.${table} WHERE name = $1`
 }
 
+// Named and aliased rather than SELECT *, so the timestamp columns and last_job_id reach callers
+// in the same camelCase shape every other read in the API uses.
+const SCHEDULE_COLUMNS = `
+  name,
+  key,
+  cron,
+  timezone,
+  data,
+  options,
+  created_on as "createdOn",
+  updated_on as "updatedOn",
+  last_job_id as "lastJobId"
+`
+
 export function getSchedules (schema: string) {
-  return `SELECT * FROM ${schema}.schedule ORDER BY name, key`
+  return `SELECT ${SCHEDULE_COLUMNS} FROM ${schema}.schedule ORDER BY name, key`
 }
 
 export function getSchedulesByQueue (schema: string) {
-  return `SELECT * FROM ${schema}.schedule WHERE name = $1 ORDER BY key`
+  return `SELECT ${SCHEDULE_COLUMNS} FROM ${schema}.schedule WHERE name = $1 ORDER BY key`
 }
 
 export function getSchedulesByQueueAndKey (schema: string) {
-  return `SELECT * FROM ${schema}.schedule WHERE name = $1 AND COALESCE(key, '') = $2`
+  return `SELECT ${SCHEDULE_COLUMNS} FROM ${schema}.schedule WHERE name = $1 AND COALESCE(key, '') = $2`
+}
+
+// Records the job each schedule most recently produced. Written from the send-it handler after the
+// job exists, one statement per batch rather than one per schedule, with the (name, key, job id)
+// triples carried in a JSON recordset.
+//
+// updated_on is deliberately left alone: it tracks edits to the definition, and a firing schedule
+// has not been edited.
+export function setScheduleLastJobIds (schema: string) {
+  return `
+    UPDATE ${schema}.schedule s
+    SET last_job_id = x.job_id
+    FROM json_to_recordset($1::json) AS x (name text, key text, job_id uuid)
+    WHERE s.name = x.name
+      AND COALESCE(s.key, '') = x.key
+  `
 }
 
 export function schedule (schema: string) {

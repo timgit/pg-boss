@@ -900,6 +900,16 @@ export interface Schedule {
   timezone: string;
   data?: object;
   options?: SendOptions;
+  createdOn: Date;
+  updatedOn: Date;
+  /**
+   * Id of the job this schedule most recently created, or `null` if it has not fired since the
+   * column was added.
+   *
+   * Not a foreign key: the job is subject to the queue's retention policy and will eventually be
+   * deleted, so an id here does not guarantee the job still exists.
+   */
+  lastJobId: string | null;
 }
 
 export interface Job<T = object> {

@@ -29,6 +29,11 @@ const WARNING_TYPES = {
   INVALID_SCHEDULE: 'invalid_schedule'
 } as const
 
+// What the cron pass puts on the send-it queue. `key` identifies the schedule row the occurrence
+// came from, so the handler can record the job it produced. It is absent on rows written by an
+// instance older than 12.30.0, which is why the handler treats it as optional rather than required.
+type ScheduledRequest = types.Request & { key?: string }
+
 /**
  * Asserts that `tz` is a time zone cron evaluation can actually use.
  *
@@ -109,7 +114,7 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
       batchSize: 50
     }
 
-    await this.manager.work<types.Request>(QUEUES.SEND_IT, options, (jobs) => this.onSendIt(jobs))
+    await this.manager.work<ScheduledRequest>(QUEUES.SEND_IT, options, (jobs) => this.onSendIt(jobs))
 
     setImmediate(() => this.onCron())
 
@@ -243,7 +248,7 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
       }
 
       if (due) {
-        scheduled.push({ data: { name, data, options }, singletonKey: `${name}__${key}`, singletonSeconds: 60 })
+        scheduled.push({ data: { name, key, data, options }, singletonKey: `${name}__${key}`, singletonSeconds: 60 })
       }
     }
 
@@ -266,14 +271,45 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
     return prevDiff < 60
   }
 
-  private async onSendIt (jobs: types.Job<types.Request>[]): Promise<void> {
-    const results = await Promise.allSettled(jobs.map(({ data }) => this.manager.send(data)))
+  private async onSendIt (jobs: types.Job<ScheduledRequest>[]): Promise<void> {
+    // async so a malformed payload rejects its own settlement rather than throwing synchronously
+    // out of map() and taking the whole batch with it
+    const results = await Promise.allSettled(jobs.map(async ({ data }) => {
+      const { key, ...request } = data
+      return await this.manager.send(request)
+    }))
+
+    const fired: { name: string, key: string, job_id: string }[] = []
 
     // Surface any failed forward so a lost cron tick isn't silent
-    for (const result of results) {
+    for (const [index, result] of results.entries()) {
       if (result.status === 'rejected') {
         this.emit(this.events.error, result.reason)
+        continue
       }
+
+      const { name, key } = jobs[index].data
+
+      // send() resolves null when a throttle or queue policy dropped the job, so there is nothing
+      // to point last_job_id at. `key` is absent on a payload written by an older instance.
+      if (result.value && key !== undefined) {
+        fired.push({ name, key, job_id: result.value })
+      }
+    }
+
+    if (fired.length > 0) {
+      await this.setLastJobIds(fired)
+    }
+  }
+
+  // Best effort: the schedule fired and the job exists, so failing to annotate the schedule row
+  // must not fail the send-it job and replay the occurrence. Reported through `error` instead.
+  private async setLastJobIds (fired: { name: string, key: string, job_id: string }[]): Promise<void> {
+    try {
+      const sql = plans.setScheduleLastJobIds(this.config.schema)
+      await this.db.executeSql(sql, [JSON.stringify(fired)])
+    } catch (err) {
+      this.emit(this.events.error, err)
     }
   }
 
