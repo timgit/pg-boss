@@ -101,7 +101,7 @@ Each schedule carries the following properties.
 | `options` | `send()` options applied to each job |
 | `createdOn` | When the schedule was first stored |
 | `updatedOn` | When the definition was last changed |
-| `lastJobId` | Id of the job the schedule most recently created, or `null` if it has not fired yet |
+| `lastJobId` | Id of the job the schedule most recently created |
 
 `lastJobId` connects a schedule to its last run, so a queue's history can be inspected from the
 schedule that produced it.
@@ -120,6 +120,12 @@ if (schedule.lastJobId) {
 `lastJobId` is not a foreign key: the job it names is subject to the queue's retention policy and is
 eventually deleted, so it may no longer exist. Re-running `schedule()` for the same `(name, key)`
 updates the definition and leaves `lastJobId` alone; `unschedule()` removes the row entirely.
+
+It is recorded on a best-effort basis, in a separate statement once the job has been created, so
+`null` does not prove a schedule never fired. A schedule that last fired before the upgrade adding
+the column reads `null` until its next run, and so does one whose annotating statement failed after
+its job was already created. Treat it as a pointer to the last run pg-boss observed, not as a
+complete firing record: the queue's job history is the authority on what actually ran.
 
 ### `getSchedules(name)`
 

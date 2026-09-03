@@ -948,13 +948,17 @@ export function getSchedulesByQueueAndKey (schema: string) {
 // job exists, one statement per batch rather than one per schedule, with the (name, key, job id)
 // triples carried in a JSON recordset.
 //
+// The caller must supply at most one record per (name, key): postgres leaves it unspecified which
+// source row an UPDATE ... FROM uses when several join the same target, so duplicates would make
+// the resulting last_job_id arbitrary rather than latest.
+//
 // updated_on is deliberately left alone: it tracks edits to the definition, and a firing schedule
 // has not been edited.
 export function setScheduleLastJobIds (schema: string) {
   return `
     UPDATE ${schema}.schedule s
-    SET last_job_id = x.job_id
-    FROM json_to_recordset($1::json) AS x (name text, key text, job_id uuid)
+    SET last_job_id = x."jobId"
+    FROM json_to_recordset($1::json) AS x (name text, key text, "jobId" uuid)
     WHERE s.name = x.name
       AND COALESCE(s.key, '') = x.key
   `
