@@ -808,6 +808,46 @@ describe('proxy api routes', () => {
     expect(calls.get('supervise')?.[0]).toEqual([])
   })
 
+  it('edge case: supervise forwards options with no name', async () => {
+    const { boss, calls } = createBossMock()
+    const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any })
+
+    const request = await postJson('http://local/api/supervise', { options: { reindex: { force: true } } })
+    const response = await app.fetch(request)
+    expect(response.status).toBe(200)
+    expect(calls.get('supervise')?.[0]).toEqual([undefined, { reindex: { force: true } }])
+  })
+
+  it('edge case: supervise forwards name and options', async () => {
+    const { boss, calls } = createBossMock()
+    const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any })
+
+    const request = await postJson('http://local/api/supervise', { name: 'queue', options: { reindex: false } })
+    const response = await app.fetch(request)
+    expect(response.status).toBe(200)
+    expect(calls.get('supervise')?.[0]).toEqual(['queue', { reindex: false }])
+  })
+
+  it('edge case: getReindexCommands with no query params', async () => {
+    const { boss, calls } = createBossMock()
+    const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any })
+
+    const request = new Request('http://local/api/getReindexCommands', { method: 'GET' })
+    const response = await app.fetch(request)
+    expect(response.status).toBe(200)
+    expect(calls.get('getReindexCommands')?.[0]).toEqual([])
+  })
+
+  it('edge case: getReindexCommands coerces query params into options', async () => {
+    const { boss, calls } = createBossMock()
+    const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any })
+
+    const request = new Request('http://local/api/getReindexCommands?minPages=256&minSizeRatio=2.5&force=true', { method: 'GET' })
+    const response = await app.fetch(request)
+    expect(response.status).toBe(200)
+    expect(calls.get('getReindexCommands')?.[0]).toEqual([{ minPages: 256, minSizeRatio: 2.5, force: true }])
+  })
+
   it('edge case: getQueues with single name query param', async () => {
     const { boss, calls } = createBossMock()
     const { app } = await createProxyService({ options: {}, bossFactory: () => boss as any })

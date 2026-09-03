@@ -54,7 +54,7 @@ export type JobResult =
     'groupId' | 'groupTier' | 'deadLetter' | 'policy'
   >>
 
-export type WarningType = 'slow_query' | 'queue_backlog' | 'clock_skew'
+export type WarningType = 'slow_query' | 'queue_backlog' | 'clock_skew' | 'listen_notify_unavailable' | 'invalid_schedule' | 'index_bloat' | 'xmin_horizon' | 'autovacuum_disabled' | 'monitor_backoff'
 
 export interface WarningResult {
   id: number;
