@@ -249,6 +249,9 @@ export const scheduleSchema = z.object({
   timezone: z.string(),
   data: jsonRecordSchema.optional(),
   options: sendOptionsSchema.optional(),
+  createdOn: z.iso.datetime().transform((val) => new Date(val)),
+  updatedOn: z.iso.datetime().transform((val) => new Date(val)),
+  lastJobId: z.string().nullable(),
 }) satisfies z.ZodType<types.HttpSchedule>
 
 export const bamStatusSummarySchema = z.object({

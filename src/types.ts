@@ -936,6 +936,20 @@ export interface Schedule {
   timezone: string;
   data?: object;
   options?: SendOptions;
+  createdOn: Date;
+  updatedOn: Date;
+  /**
+   * Id of the job this schedule most recently created.
+   *
+   * Recorded on a best-effort basis, in a separate statement once the job exists, so `null` does
+   * not mean the schedule never fired. It also reads `null` for a schedule that last fired before
+   * the upgrade that added the column, and for one whose annotating statement lost its connection
+   * between creating the job and recording it.
+   *
+   * Not a foreign key: the job is subject to the queue's retention policy and will eventually be
+   * deleted, so an id here does not guarantee the job still exists.
+   */
+  lastJobId: string | null;
 }
 
 export interface Job<T = object> {

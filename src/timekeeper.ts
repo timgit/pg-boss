@@ -29,6 +29,16 @@ const WARNING_TYPES = {
   INVALID_SCHEDULE: 'invalid_schedule'
 } as const
 
+// What the cron pass puts on the send-it queue. `key` identifies the schedule row the occurrence
+// came from, so the handler can record the job it produced. It is absent on rows written by an
+// instance older than 12.31.0, which is why the handler treats it as optional rather than required.
+type ScheduledRequest = types.Request & { key?: string }
+
+// One schedule occurrence that produced a job, as handed to plans.setScheduleLastJobIds. camelCase
+// to match the recordset column list the plan quotes, which is how every other JSON payload crossing
+// into SQL is shaped.
+type FiredSchedule = { name: string, key: string, jobId: string }
+
 /**
  * Asserts that `tz` is a time zone cron evaluation can actually use.
  *
@@ -109,7 +119,7 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
       batchSize: 50
     }
 
-    await this.manager.work<types.Request>(QUEUES.SEND_IT, options, (jobs) => this.onSendIt(jobs))
+    await this.manager.work<ScheduledRequest>(QUEUES.SEND_IT, options, (jobs) => this.onSendIt(jobs))
 
     setImmediate(() => this.onCron())
 
@@ -243,7 +253,12 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
       }
 
       if (due) {
-        scheduled.push({ data: { name, data, options }, singletonKey: `${name}__${key}`, singletonSeconds: 60 })
+        // JSON rather than `${name}__${key}`: underscores are legal in both a queue name and a
+        // schedule key, so the concatenation collapsed ('report_', 'daily') and ('report', '_daily')
+        // onto one key and the 60s singleton then dropped whichever occurrence lost the race. An
+        // instance still on the old format writes the old key, so a mixed-version deployment can
+        // fire a schedule twice in the minute the rollout straddles.
+        scheduled.push({ data: { name, key, data, options }, singletonKey: JSON.stringify([name, key]), singletonSeconds: 60 })
       }
     }
 
@@ -266,14 +281,66 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
     return prevDiff < 60
   }
 
-  private async onSendIt (jobs: types.Job<types.Request>[]): Promise<void> {
-    const results = await Promise.allSettled(jobs.map(({ data }) => this.manager.send(data)))
+  // Reports a problem the send-it handler must survive. Node treats an `error` event with no
+  // listener as a throw, and index.ts re-promotes this one onto the PgBoss instance, so a plain
+  // emit() here could escape the handler, fail the send-it job and replay the whole batch, sending
+  // every occurrence in it a second time.
+  private reportSendItError (err: unknown): void {
+    try {
+      this.emit(this.events.error, err)
+    } catch {
+      // nothing left to report it to
+    }
+  }
+
+  private async onSendIt (jobs: types.Job<ScheduledRequest>[]): Promise<void> {
+    // async so a malformed payload rejects its own settlement rather than throwing synchronously
+    // out of map() and taking the whole batch with it
+    const results = await Promise.allSettled(jobs.map(async ({ data }) => {
+      const { key, ...request } = data
+      return await this.manager.send(request)
+    }))
+
+    // Keyed on (name, key) so a batch that spans two minute buckets for the same schedule resolves
+    // to its latest occurrence. Feeding both to the UPDATE would let postgres pick either source
+    // row, and last_job_id could end up naming the older job.
+    const fired = new Map<string, FiredSchedule>()
 
     // Surface any failed forward so a lost cron tick isn't silent
-    for (const result of results) {
+    for (const [index, result] of results.entries()) {
       if (result.status === 'rejected') {
-        this.emit(this.events.error, result.reason)
+        this.reportSendItError(result.reason)
+        continue
       }
+
+      const { name, key } = jobs[index].data
+
+      // send() resolves null when a throttle or queue policy dropped the job, so there is nothing
+      // to point last_job_id at. `key` is absent on a payload written by an older instance.
+      if (result.value && key !== undefined) {
+        fired.set(JSON.stringify([name, key]), { name, key, jobId: result.value })
+      }
+    }
+
+    if (fired.size > 0) {
+      await this.setLastJobIds([...fired.values()])
+    }
+  }
+
+  // Best effort: the schedule fired and the job exists, so failing to annotate the schedule row
+  // must not fail the send-it job and replay the occurrence. Reported through `error` instead.
+  private async setLastJobIds (fired: FiredSchedule[]): Promise<void> {
+    try {
+      const sql = plans.setScheduleLastJobIds(this.config.schema)
+      await this.db.executeSql(sql, [JSON.stringify(fired)])
+    } catch (err) {
+      // Named, because a bare driver error here is indistinguishable from the forwarding failures
+      // emitted above, and the two call for different responses: this one leaves the jobs created
+      // and only the bookkeeping behind.
+      const schedules = fired.map(({ name, key }) => `"${name}" (key "${key}")`).join(', ')
+      const message = `Warning: schedules fired but their last job id could not be recorded for ${schedules}: ${(err as Error).message}`
+
+      this.reportSendItError(new Error(message, { cause: err }))
     }
   }
 

@@ -1591,6 +1591,21 @@ function getAll (schema: string, noPartitioning = false, noCovering = false): ty
         `ALTER TABLE ${schema}.queue DROP COLUMN monitor_claim_on`,
         `ALTER TABLE ${schema}.version DROP COLUMN monitor_backoff_on`
       ]
+    },
+    {
+      release: '12.31.0',
+      version: 41,
+      previous: 40,
+      // The job each schedule most recently produced, so a schedule can be joined to its last run.
+      // Nullable and unconstrained on purpose: the referenced job is subject to retention and will
+      // eventually be deleted, so a foreign key would either block retention or null the column
+      // back out.
+      install: [
+        `ALTER TABLE ${schema}.schedule ADD COLUMN IF NOT EXISTS last_job_id uuid`
+      ],
+      uninstall: [
+        `ALTER TABLE ${schema}.schedule DROP COLUMN last_job_id`
+      ]
     }
   ]
 }
