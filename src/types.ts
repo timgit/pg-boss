@@ -137,6 +137,21 @@ export interface MaintenanceOptions {
    * @default 86400
    */
   reindexIntervalSeconds?: number;
+  /**
+   * Whether to check that vacuum is keeping up with the queues. Covers two warnings, because the
+   * fixes are opposite: `xmin_horizon` when vacuum runs and reclaims nothing (something is pinning
+   * the MVCC horizon — an idle-in-transaction backend, a lagging replication slot, a standby with
+   * `hot_standby_feedback`, a prepared transaction), and `autovacuum_disabled` when nothing is
+   * vacuuming the table at all. Either way dead tuples and index bloat accumulate without bound,
+   * which is the precondition for every documented Postgres-queue collapse.
+   *
+   * There is no threshold to set. Both fire on measured evidence: a job table past the point
+   * Postgres itself would vacuum it, plus what two consecutive passes show about whether a vacuum
+   * ran and whether it reclaimed anything. Sensitivity is tuned with Postgres's own
+   * `autovacuum_vacuum_threshold` / `autovacuum_vacuum_scale_factor`, per table if wanted.
+   * @default true
+   */
+  monitorVacuum?: boolean;
 }
 
 /** Thresholds for the index-bloat density check. */
@@ -321,6 +336,14 @@ export interface CompatibilityFlags {
    * `relpages` and `pg_relation_size()` as 0 for every relation.
    */
   noReindex?: boolean;
+  /**
+   * The engine has no PostgreSQL-style vacuum to monitor: reclamation is governed by the engine's
+   * own GC (CockroachDB's MVCC GC TTL, YugabyteDB's DocDB compaction) rather than by the oldest
+   * live snapshot, there is no autovacuum to be disabled, and `pg_stat_activity.backend_xmin` /
+   * `pg_replication_slots` do not carry the same meaning. Skips both the `xmin_horizon` and
+   * `autovacuum_disabled` checks entirely.
+   */
+  noMonitorVacuum?: boolean;
 }
 
 export interface Migration {
@@ -391,6 +414,14 @@ export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, 
   __test__delay_flow_ms?: number;
   /** @internal */
   __test__delay_clock_skew_ms?: number;
+  /**
+   * Report this many seconds as the queue-stats aggregate's duration to the vacuum-safety backoff,
+   * instead of the real measurement. autovacuum_naptime is a SIGHUP-level GUC a test cannot move,
+   * so this is how a test crosses the threshold without actually pinning the horizon for six
+   * seconds. The naptime read and the backoff arithmetic are still the real ones.
+   * @internal
+   */
+  __test__monitor_stats_seconds?: number;
   /**
    * Force the distributed runtime toggles (`noSkipLocked` + `noMultiMutationCte`) on top
    * of the current backend's schema, so the distributed code paths can be exercised on a
@@ -758,15 +789,20 @@ export interface JobFetchOptions {
    */
   includeMetadata?: boolean;
   /**
-   * Allow jobs with a higher priority to be fetched before jobs with lower or
-   * no priority.
-   * @default true
+   * @deprecated Ignored since 12.30.0, and removed in the next major. Jobs are always fetched in
+   * priority order.
+   *
+   * This existed to skip the priority sort for throughput, but the fetch index is now ordered to
+   * match the fetch, so there is no sort to skip — setting it `false` was measured ~180x *slower*
+   * than leaving it alone, since no index leads with `created_on`.
    */
   priority?: boolean;
   /**
-   * Fetch jobs in the order they were created. Set to `false` to disable this
-   * sorting and improve performance when the order of jobs does not matter.
-   * @default true
+   * @deprecated Ignored since 12.30.0, and removed in the next major. Jobs are always fetched in
+   * creation order.
+   *
+   * This existed to skip the `created_on` sort for throughput. The fetch index now provides that
+   * order directly, so disabling it saved nothing measurable.
    */
   orderByCreatedOn?: boolean;
   /**
@@ -1033,7 +1069,7 @@ export type UpdateQueueOptions = Omit<Queue, 'name' | 'partition' | 'policy' | '
 
 export interface Warning { message: string, data: object }
 
-export type WarningType = 'slow_query' | 'queue_backlog' | 'clock_skew' | 'listen_notify_unavailable' | 'invalid_schedule' | 'index_bloat'
+export type WarningType = 'slow_query' | 'queue_backlog' | 'clock_skew' | 'listen_notify_unavailable' | 'invalid_schedule' | 'index_bloat' | 'xmin_horizon' | 'autovacuum_disabled' | 'monitor_backoff'
 
 export interface PersistedWarning {
   id: number;

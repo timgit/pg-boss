@@ -435,13 +435,13 @@ Returns an array of jobs from a queue
 
     Number of jobs to return
 
-  * `priority`, bool, *default: true*
+  * `priority`, bool — **deprecated, ignored since 12.30.0**
 
-    If true, allow jobs with a higher priority to be fetched before jobs with lower or no priority
+    Jobs are always fetched in priority order. This option existed to skip the priority sort for throughput; the fetch index is now ordered to match the fetch, so there is no sort to skip. Setting it `false` was measured roughly 180x *slower* than leaving it alone, because no index leads with `created_on`. Emits a Node `DeprecationWarning` (code `PGBOSS_DEP_FETCH_SORT`) once per option per instance — run with `--trace-deprecation` to find the call site — and will be rejected in the next major.
 
-  * `orderByCreatedOn`, bool, *default: true*
+  * `orderByCreatedOn`, bool — **deprecated, ignored since 12.30.0**
 
-    If true, jobs are fetched in the order they were created. Set to false to disable this sorting for improved performance when order doesn't matter.
+    Jobs are always fetched in creation order. Same reasoning: the fetch index now provides that order directly, so disabling it saved nothing measurable.
 
   * `includeMetadata`, bool, *default: false*
 
