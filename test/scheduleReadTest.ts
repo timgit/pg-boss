@@ -1,7 +1,14 @@
-import { expect } from 'vitest'
+import { expect, vi } from 'vitest'
 import * as helper from './testHelper.ts'
 import Timekeeper from '../src/timekeeper.ts'
 import { ctx } from './hooks.ts'
+
+// A timekeeper over a stub database, for the paths that never reach one: previewSchedule() is pure
+// arithmetic, and getSchedule() checks its argument before it queries anything.
+function makeTk (config: object = {}) {
+  const db = { executeSql: async () => ({ rows: [] }) }
+  return new Timekeeper(db as any, {} as any, { schema: 'test', ...config } as any)
+}
 
 describe('getSchedule', function () {
   it('should return a single schedule by queue name and key', async function () {
@@ -40,22 +47,23 @@ describe('getSchedule', function () {
   })
 
   it('should reject a missing queue name', async function () {
-    ctx.boss = await helper.start({ ...ctx.bossConfig })
+    const tk = makeTk()
 
-    await expect(async () => {
-      // @ts-expect-error deliberately calling without the required queue name
-      await ctx.boss.getSchedule()
-    }).rejects.toThrow()
+    // @ts-expect-error deliberately calling without the required queue name
+    await expect(tk.getSchedule()).rejects.toThrow(/Name is required/)
+  })
+
+  it('should return null for a name that could never have been stored', async function () {
+    const tk = makeTk()
+
+    // getSchedules() answers this with an empty array rather than a throw, and this reads the same
+    // rows, so it answers with the null that array destructures to
+    expect(await tk.getSchedule('not a queue name')).toBeNull()
   })
 })
 
 // Pure computation: no database, no running instance.
 describe('previewSchedule', function () {
-  function makeTk (config: object = {}) {
-    const db = { executeSql: async () => ({ rows: [] }) }
-    return new Timekeeper(db as any, {} as any, { schema: 'test', ...config } as any)
-  }
-
   it('should return the next occurrences after the reference date', function () {
     const tk = makeTk()
 
@@ -103,16 +111,26 @@ describe('previewSchedule', function () {
   it('should start from database time when no reference date is given', function () {
     const tk = makeTk()
 
-    // an hour of clock skew has to move the first occurrence of an hourly expression
-    tk.clockSkew = 60 * 60 * 1000
+    // Both readings have to come from one instant. Taken from the real clock, the two calls
+    // straddle an hour boundary every so often and land on the same occurrence.
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-03-01T10:30:00Z'))
 
-    const [skewed] = tk.previewSchedule('0 * * * *', { count: 1 })
+    try {
+      // an hour of clock skew has to move the first occurrence of an hourly expression
+      tk.clockSkew = 60 * 60 * 1000
 
-    tk.clockSkew = 0
+      const [skewed] = tk.previewSchedule('0 * * * *', { count: 1 })
 
-    const [local] = tk.previewSchedule('0 * * * *', { count: 1 })
+      tk.clockSkew = 0
 
-    expect(skewed.getTime()).toBeGreaterThan(local.getTime())
+      const [local] = tk.previewSchedule('0 * * * *', { count: 1 })
+
+      expect(skewed.toISOString()).toBe('2026-03-01T12:00:00.000Z')
+      expect(local.toISOString()).toBe('2026-03-01T11:00:00.000Z')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('should reject an expression schedule() would reject', function () {
@@ -121,10 +139,28 @@ describe('previewSchedule', function () {
     expect(() => tk.previewSchedule('bogus')).toThrow()
   })
 
+  it('should report the expression rather than the count when both are wrong', function () {
+    const tk = makeTk()
+
+    // a count the caller can fix in isolation would otherwise hide an expression that could never
+    // be stored, and the caller would fix one thing only to meet the other
+    expect(() => tk.previewSchedule('bogus', { count: 0 })).toThrow()
+    expect(() => tk.previewSchedule('bogus', { count: 0 })).not.toThrow(/count/)
+  })
+
   it('should reject an unusable time zone', function () {
     const tk = makeTk()
 
     expect(() => tk.previewSchedule('* * * * *', { tz: 'Mars/Phobos' })).toThrow(/time zone/)
+  })
+
+  it('should reject a time zone cron-parser would read as unset', function () {
+    const tk = makeTk()
+
+    // schedule.timezone is nullable, so a row written before schedule() validated zones reads back
+    // as null. cron-parser takes that for "no zone" and evaluates in the host's local zone, which
+    // is a wrong answer rather than a failure.
+    expect(() => tk.previewSchedule('0 3 * * *', { tz: null as unknown as string })).toThrow(/time zone/)
   })
 
   it('should reject a count outside the supported range', function () {
@@ -141,7 +177,26 @@ describe('previewSchedule', function () {
     expect(() => tk.previewSchedule('* * * * *', { from: new Date('nope') })).toThrow(/from/)
   })
 
-  it('should agree with the expression a schedule was stored with', async function () {
+  it('should give up on a walk that outruns its time budget', function () {
+    const tk = makeTk()
+
+    // A second of real sparse expression would make this test cost a second and its outcome depend
+    // on how fast the machine is, so the clock is what moves instead: every reading is a second
+    // later than the last, and the budget is spent within a couple of occurrences.
+    let clock = Date.now()
+    vi.spyOn(Date, 'now').mockImplementation(() => (clock += 1000))
+
+    try {
+      expect(() => tk.previewSchedule('* * * * *', { from: new Date('2026-03-01T00:00:00Z'), count: 100 }))
+        .toThrow(/Gave up after \d+ms with \d+ of 100 occurrences/)
+    } finally {
+      vi.restoreAllMocks()
+    }
+  })
+})
+
+describe('previewSchedule of a stored schedule', function () {
+  it('should agree with the expression the schedule was stored with', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig })
 
     await ctx.boss.schedule(ctx.schema, '0 3 * * *', null, { key: 'daily', tz: 'America/Chicago' })

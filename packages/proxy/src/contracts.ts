@@ -638,6 +638,16 @@ export const getSchedulesResponseSchema: z.ZodType<types.HttpGetSchedulesRespons
   result: z.array(scheduleSchema)
 })
 
+export const getScheduleResponseSchema: z.ZodType<types.HttpGetScheduleResponse> = z.object({
+  ok: z.literal(true),
+  result: scheduleSchema.nullable()
+})
+
+export const previewScheduleResponseSchema: z.ZodType<types.HttpPreviewScheduleResponse> = z.object({
+  ok: z.literal(true),
+  result: z.array(z.iso.datetime().transform((val) => new Date(val)))
+})
+
 export const getBamStatusResponseSchema: z.ZodType<types.HttpGetBamStatusResponse> = z.object({
   ok: z.literal(true),
   result: z.array(bamStatusSummarySchema)

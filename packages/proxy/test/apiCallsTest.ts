@@ -545,6 +545,14 @@ describe('proxy api routes', () => {
       { method: 'getSchedules', query: 'name=queue&key=k', expected: ['queue', 'k'] },
       { method: 'getSchedules', query: 'name=queue', expected: ['queue'] },
       { method: 'getSchedules', expected: [] },
+      { method: 'getSchedule', query: 'name=queue&key=k', expected: ['queue', 'k'] },
+      { method: 'getSchedule', query: 'name=queue', expected: ['queue'] },
+      { method: 'previewSchedule', query: 'cron=0+3+*+*+*', expected: ['0 3 * * *'] },
+      {
+        method: 'previewSchedule',
+        query: 'cron=0+3+*+*+*&tz=America%2FChicago&count=3&from=2026-03-01T00%3A00%3A00Z',
+        expected: ['0 3 * * *', { tz: 'America/Chicago', from: new Date('2026-03-01T00:00:00Z'), count: 3 }]
+      },
     ]
 
     for (const entry of getCases) {

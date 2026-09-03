@@ -710,11 +710,17 @@ export interface PreviewScheduleOptions {
   /**
    * Reference point the walk starts from. Occurrences are strictly after it, so passing the last
    * occurrence of one page back in yields the next page.
+   *
+   * The default is database time, the instance clock plus the skew cached against the database.
+   * Skew is only cached by an instance started with scheduling enabled; on any other instance it is
+   * zero and the default reduces to this process's local clock.
    * @default database time (the instance clock plus the cached skew)
    */
   from?: Date;
   /**
-   * How many occurrences to return. Must be an integer between 1 and 1000.
+   * How many occurrences to return. Must be an integer between 1 and 1000. A walk that has not
+   * produced them within a second gives up, since occurrences of a sparse expression are expensive
+   * to find and the walk holds the event loop while it runs.
    * @default 5
    */
   count?: number;

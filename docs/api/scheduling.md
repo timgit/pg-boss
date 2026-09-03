@@ -142,13 +142,22 @@ This is pure computation: it does not query the database and does not require a 
 
 * **from**, Date, *default: database time*
 
-  Reference point the walk starts from. The default is this instance's clock plus the cached skew,
-  the same reading the cron pass evaluates against. Occurrences are strictly after it, so passing
-  the last occurrence of one page back in yields the next page.
+  Reference point the walk starts from. Occurrences are strictly after it, so passing the last
+  occurrence of one page back in yields the next page.
+
+  The default is this instance's clock plus the skew cached against the database, the same reading
+  the cron pass evaluates against. Skew is only cached by an instance started with `schedule`
+  enabled; on any other instance, including a proxy running with its default of `schedule: false`,
+  it is zero and the default reduces to the local clock of the calling process. Pass `from`
+  explicitly when the reference point has to be exact.
 
 * **count**, number, *default: 5*
 
   How many occurrences to return. Must be an integer between 1 and 1000.
+
+  Occurrences of a sparse expression are expensive to find, and the walk is synchronous, so it also
+  gives up after a second rather than hold the event loop for as long as the count would take. Ask
+  for fewer and page with `from` if that happens.
 
 ```js
 const occurrences = boss.previewSchedule('0 3 * * *', { tz: 'America/Chicago', count: 3 })
@@ -163,5 +172,7 @@ To preview a stored schedule, read it first:
 ```js
 const schedule = await boss.getSchedule('report', 'eu')
 
-const upcoming = boss.previewSchedule(schedule.cron, { tz: schedule.timezone })
+if (schedule) {
+  const upcoming = boss.previewSchedule(schedule.cron, { tz: schedule.timezone })
+}
 ```

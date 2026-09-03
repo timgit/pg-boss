@@ -379,6 +379,16 @@ export type HttpGetSchedulesResponse = {
   result: HttpSchedule[]
 }
 
+export type HttpGetScheduleResponse = {
+  ok: true
+  result: HttpSchedule | null
+}
+
+export type HttpPreviewScheduleResponse = {
+  ok: true
+  result: Date[]
+}
+
 export type HttpGetBamStatusResponse = {
   ok: true
   result: HttpBamStatusSummary[]

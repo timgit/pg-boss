@@ -598,6 +598,7 @@ export type {
   EnumDrift,
   OffWorkOptions,
   PgBossEventMap,
+  PreviewScheduleOptions,
   Queue,
   QueueOptions,
   QueuePolicy,

@@ -30,45 +30,62 @@ const WARNING_TYPES = {
   INVALID_SCHEDULE: 'invalid_schedule'
 } as const
 
-// previewSchedule() defaults and ceiling. The ceiling is not a database limit, since the walk is
-// pure cron-parser arithmetic, but an unbounded count on a per-second expression is a foot-gun.
+// previewSchedule() defaults and ceilings. The count ceiling is not a database limit, since the walk
+// is pure cron-parser arithmetic, but an unbounded count on a per-second expression is a foot-gun.
 // A caller that genuinely wants more can page by passing the last occurrence back as `from`.
 const PREVIEW_DEFAULT_COUNT = 5
 const PREVIEW_MAX_COUNT = 1000
 
+// Count is the wrong budget on its own, because occurrences are not equally priced: 1000 of a
+// per-second expression cost about 8ms, 1000 of '0 0 1 1 *' about 160ms, and 1000 of '0 0 29 2 *'
+// about 6 seconds, since each next() on a sparse expression searches years of candidate dates. The
+// walk is synchronous, so those 6 seconds are 6 seconds of blocked event loop for every worker
+// poll, cron tick and heartbeat in the process. Bounding wall clock as well caps that at a second
+// while leaving the full documented count reachable for any expression that is not pathological.
+const PREVIEW_TIME_BUDGET_MS = 1000
+
 /**
- * Asserts that `tz` is a time zone cron evaluation can actually use.
+ * Parses a recurrence the way the cron pass will evaluate it, mapping cron-parser's failures onto
+ * messages that name the input actually at fault. Deliberately reuses cron-parser rather than an
+ * independent Intl check, so what schedule() accepts is exactly what the cron pass can evaluate.
  *
- * cron-parser validates `tz` lazily: parsing without a reference date never constructs a CronDate,
- * so every string is accepted and a bad zone only surfaces later, when a date is computed, as an
- * opaque "CronDate: unhandled timestamp". Passing a reference date here forces that construction so
- * a typo like 'America/New_Yrok' is rejected by schedule() rather than persisted to the schedule
- * table. Deliberately reuses cron-parser rather than an independent Intl check, so what schedule()
- * accepts is exactly what the cron pass can evaluate.
+ * The expression is checked first, against UTC, so a bad expression reports as one rather than as a
+ * time zone problem. That first parse tolerates any zone only because cron-parser validates `tz`
+ * lazily: with no reference date it never constructs a CronDate, so a typo like 'America/New_Yrok'
+ * survives to the real parse below, which does have a reference date and fails there with an opaque
+ * "CronDate: unhandled timestamp". Rethrown naming the zone, so schedule() rejects it rather than
+ * persisting it to the schedule table.
  *
- * The caller validates the cron expression first, so a failure here is attributable to the zone.
+ * A non-string zone earns no such failure: cron-parser reads it as "unset" and quietly evaluates in
+ * the host's local zone. The schedule.timezone column is nullable, so a row written before
+ * schedule() validated zones reads back as null, and previewing it would be right only on a host
+ * that happens to run in the zone that was meant. Rejected explicitly.
+ *
+ * The returned interval is the one the caller wants anyway, so the walk costs a single parse.
  */
-function assertTimezone (tz: string): void {
+function parseRecurrence (cron: string, tz: string, currentDate: Date) {
+  CronExpressionParser.parse(cron, { tz: 'UTC', strict: false })
+
+  // Quoted so an empty string renders as `""` rather than a dangling colon
+  const unusableZone = `Unknown or unsupported time zone: ${typeof tz === 'string' ? `"${tz}"` : String(tz)}`
+
+  if (typeof tz !== 'string') {
+    throw new Error(unusableZone)
+  }
+
   try {
-    CronExpressionParser.parse('* * * * *', { tz, strict: false, currentDate: new Date() })
+    return CronExpressionParser.parse(cron, { tz, strict: false, currentDate })
   } catch {
-    // Quoted so an empty string renders as `""` rather than a dangling colon
-    throw new Error(`Unknown or unsupported time zone: "${tz}"`)
+    throw new Error(unusableZone)
   }
 }
 
 /**
- * Validates a recurrence exactly as schedule() does, so previewSchedule() rejects the same inputs
- * schedule() rejects rather than previewing an expression that could never be stored.
- *
- * Expression first, so a bad expression reports as one rather than as a time zone problem. The
- * check is deliberately run against UTC rather than the supplied tz: it only works today because
- * cron-parser is lazy about an unusable zone, and if that ever changes this call would throw the
- * opaque "CronDate: unhandled timestamp" that assertTimezone exists to replace.
+ * Validates a recurrence for a caller with no reference date of its own and no use for the
+ * interval, so previewSchedule() and schedule() reject exactly the same inputs.
  */
 function assertRecurrence (cron: string, tz: string): void {
-  CronExpressionParser.parse(cron, { tz: 'UTC', strict: false })
-  assertTimezone(tz)
+  parseRecurrence(cron, tz, new Date())
 }
 
 class Timekeeper extends EventEmitter implements types.EventsMixin {
@@ -104,6 +121,14 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
 
   get checkingSkew (): boolean {
     return this._checkingSkew
+  }
+
+  // The instance's reading of the database clock. previewSchedule() promises the reference point the
+  // cron pass evaluates against, so both read it here rather than each repeating the arithmetic.
+  // Zero skew until cacheClockSkew() has run, which start() only reaches when the instance was
+  // configured with scheduling enabled.
+  private get databaseTime (): number {
+    return Date.now() + this.clockSkew
   }
 
   private get warningContext (): WarningContext {
@@ -276,7 +301,7 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
   }
 
   shouldSendIt (cron: string, tz: string) {
-    const databaseTime = Date.now() + this.clockSkew
+    const databaseTime = this.databaseTime
 
     const interval = CronExpressionParser.parse(cron, { tz, strict: false, currentDate: new Date(databaseTime) })
 
@@ -316,8 +341,14 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
   }
 
   async getSchedule (name: string, key = ''): Promise<types.Schedule | null> {
-    Attorney.assertQueueName(name)
-    Attorney.assertKey(key)
+    // Only that a name is present, and only because getSchedules() reads a falsy one as "every
+    // schedule" and would hand back an arbitrary row as though it belonged to this key. Neither the
+    // name nor the key is checked against the rules schedule() enforces on the way in: a value
+    // those rules reject cannot have a row either, so `null` is the honest answer, and this stays a
+    // drop-in for the `const [schedule] = await getSchedules(name, key)` it replaces rather than
+    // throwing where that returns nothing.
+    assert(name, 'Name is required')
+    assert(typeof name === 'string', 'Name must be a string')
 
     const [schedule] = await this.getSchedules(name, key)
 
@@ -328,10 +359,14 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
    * The occurrences a cron expression produces, computed in process without touching the database
    * or the schedule table.
    *
-   * `from` defaults to database time (this instance's clock plus the cached skew), the same reading
-   * the cron pass evaluates against, so a preview taken from a running instance lines up with what
-   * that instance will actually send. Occurrences are strictly after `from`, so paging is a matter
-   * of passing the last one back in.
+   * `from` defaults to database time: this instance's clock plus the skew cached against the
+   * database, the same reading the cron pass evaluates against, so a preview taken from an instance
+   * that runs schedules lines up with what that instance will send. Skew is cached by the
+   * timekeeper, which start() only runs when the instance was configured with scheduling enabled,
+   * so anywhere else (a never-started instance, or the proxy, which defaults `schedule` to false)
+   * it is zero and the default is this process's plain local clock. Pass `from` to be certain.
+   *
+   * Occurrences are strictly after `from`, so paging is a matter of passing the last one back in.
    *
    * The result describes the expression, not the delivery. The cron pass runs every
    * `cronMonitorIntervalSeconds` and matches an occurrence within the preceding 60 seconds, so a
@@ -340,21 +375,26 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
   previewSchedule (cron: string, options: types.PreviewScheduleOptions = {}): Date[] {
     const { tz = 'UTC', count = PREVIEW_DEFAULT_COUNT } = options
 
-    assert(Number.isInteger(count) && count >= 1 && count <= PREVIEW_MAX_COUNT,
-      `count must be an integer between 1 and ${PREVIEW_MAX_COUNT}`)
-
-    const from = options.from ?? new Date(Date.now() + this.clockSkew)
+    const from = options.from ?? new Date(this.databaseTime)
 
     assert(from instanceof Date && !Number.isNaN(from.getTime()), 'from must be a valid Date')
 
-    assertRecurrence(cron, tz)
+    // The expression before the count, so an out-of-range count cannot mask an expression that
+    // could never be stored. `from` has to precede both: the parse reads it.
+    const interval = parseRecurrence(cron, tz, from)
 
-    const interval = CronExpressionParser.parse(cron, { tz, strict: false, currentDate: from })
+    assert(Number.isInteger(count) && count >= 1 && count <= PREVIEW_MAX_COUNT,
+      `count must be an integer between 1 and ${PREVIEW_MAX_COUNT}`)
 
+    const deadline = Date.now() + PREVIEW_TIME_BUDGET_MS
     const occurrences: Date[] = []
 
-    for (let i = 0; i < count; i++) {
+    while (occurrences.length < count) {
       occurrences.push(interval.next().toDate())
+
+      if (occurrences.length < count && Date.now() > deadline) {
+        throw new Error(`Gave up after ${PREVIEW_TIME_BUDGET_MS}ms with ${occurrences.length} of ${count} occurrences of "${cron}". Ask for fewer and page with \`from\`.`)
+      }
     }
 
     return occurrences
