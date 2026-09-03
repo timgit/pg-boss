@@ -51,6 +51,34 @@ The default options for `work()` is 1 job every 2 seconds.
   - **Throwing** from the handler still fails the entire batch, exactly as without `perJobResults`. Use the returned array to express per-job failures; reserve throwing for batch-wide errors.
   - Resolving with anything other than an array is treated as a contract violation and fails the whole batch.
 
+* **transactional**, bool, *(default=false)*
+
+  Run the fetch, the handler, and the completion inside one database transaction. The handler receives a second argument: a `db` for that transaction, with the same `executeSql` interface every pg-boss `db` option takes.
+
+  ```js
+  await boss.work('charge-customer', { transactional: true }, async (jobs, tx) => {
+    const [job] = jobs
+
+    await tx.executeSql('INSERT INTO ledger (customer, amount) VALUES ($1, $2)', [job.data.customer, job.data.amount])
+
+    // a job created here commits with the ledger row and with this job's completion
+    await boss.send('send-receipt', { customer: job.data.customer }, { db: tx })
+  })
+  ```
+
+  Everything written through `tx` commits with the job's completion, so the handler cannot leave its side effects committed and the job unfinished, or the reverse. Without this, the same guarantee means giving up `work()` and reimplementing its polling, batching, and error handling around a manual `fetch()` / `complete()` pair.
+
+  On a throw, the whole unit rolls back: the handler's writes, the completion, and the fetch itself. The job is then failed on a separate connection, so retry counts, retry delays, and dead lettering behave exactly as they do for a non-transactional worker.
+
+  **Requirements and limits**
+
+  - Needs a database connection pg-boss can open a transaction on: the built-in pool, or a `db` adapter implementing `beginTransaction`. Passing `transactional: true` without one throws from `work()`.
+  - Cannot be combined with `perJobResults` (one transaction has a single outcome, so per-job settlement has nothing to commit separately), `groupConcurrency`, or `localGroupConcurrency` (both depend on seeing `active` rows that this fetch has not committed yet). Each combination is rejected rather than silently degraded.
+  - **No heartbeats.** The `active` row is invisible outside the transaction, so nothing can read a refreshed `heartbeat_on` and the monitor cannot fail the job on a stale one. `expireInSeconds` still bounds the handler in process.
+  - **The transaction is open for as long as the handler runs.** A long transaction holds its snapshot and blocks vacuum from reclaiming dead rows database-wide, so this suits handlers that finish in seconds. For long work, keep the default worker and use the `db` option on `complete()` instead.
+  - A crashed process aborts the transaction, which returns the jobs to the queue immediately rather than leaving them `active` until `expireInSeconds` elapses.
+  - Fetches use `FOR UPDATE SKIP LOCKED`, so other workers step past the locked rows for the duration of the handler. On a backend without `SKIP LOCKED` (CockroachDB), a concurrent fetch contends on those rows instead, so transactional workers are not recommended there.
+
 * **priority**, bool, *(default=true)*
 
   Same as in [`fetch()`](./jobs#fetchname-options)
