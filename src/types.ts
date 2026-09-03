@@ -536,10 +536,56 @@ export interface CompleteOptions extends ConnectionOptions {
   includeQueued?: boolean;
 }
 
+export type JobState = 'created' | 'retry' | 'active' | 'completed' | 'cancelled' | 'failed'
+
+/** Columns `findJobs()` can sort and page on. Both are immutable for the life of a job. */
+export type FindJobsOrderBy = 'createdOn' | 'startAfter'
+
 export interface FindJobsOptions extends ConnectionOptions {
   id?: string;
   key?: string;
   data?: object;
+  /**
+   * Only return jobs in queued state (`created` or `retry`).
+   *
+   * Mutually exclusive with `states`, which expresses the same filter and more.
+   */
+  queued?: boolean;
+  /**
+   * Only return jobs in one of these states. Mutually exclusive with `queued`.
+   */
+  states?: JobState[];
+  /**
+   * Maximum number of jobs to return. Without it the result is unbounded, so a busy queue or a
+   * long-lived singleton key returns its whole retained history.
+   *
+   * Supplying it turns ordering on, defaulting to `createdOn` ascending.
+   */
+  limit?: number;
+  /**
+   * Column to sort by. Supplying it turns ordering on.
+   * @default 'createdOn' when any of `limit`, `cursor`, or `direction` is supplied, otherwise unordered
+   */
+  orderBy?: FindJobsOrderBy;
+  /**
+   * Sort direction. Supplying it turns ordering on.
+   * @default 'asc'
+   */
+  direction?: 'asc' | 'desc';
+  /**
+   * Id of the last job from the previous page. The next page starts strictly after it in the
+   * current ordering, so rows inserted or deleted between calls cannot shift the window.
+   *
+   * Supplying it turns ordering on. An id that does not name a job in this queue returns no rows.
+   */
+  cursor?: string;
+}
+
+export interface GetJobByKeyOptions extends ConnectionOptions {
+  /**
+   * Only consider jobs in queued state (`created` or `retry`).
+   * @default false
+   */
   queued?: boolean;
 }
 
@@ -915,7 +961,7 @@ export interface Job<T = object> {
 
 export interface JobWithMetadata<T = object> extends Job<T> {
   priority: number;
-  state: 'created' | 'retry' | 'active' | 'completed' | 'cancelled' | 'failed';
+  state: JobState;
   retryLimit: number;
   retryCount: number;
   retryDelay: number;

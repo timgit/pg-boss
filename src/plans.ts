@@ -2659,8 +2659,28 @@ export function assertMigration (schema: string, version: number) {
   return `SELECT version::int/(version::int-${version}) from ${schema}.version`
 }
 
-export function findJobs (schema: string, table: string, options: { queued: boolean, byKey: boolean, byData: boolean, byId: boolean }) {
-  const { queued, byKey, byData, byId } = options
+// Columns findJobs can sort and page on. Both are immutable for the life of a job, which is what
+// makes them usable as a cursor anchor: a job that changes state mid-pagination keeps its place in
+// the ordering instead of jumping to another page.
+const FIND_JOBS_ORDER_COLUMNS = {
+  createdOn: 'created_on',
+  startAfter: 'start_after'
+} as const
+
+export type FindJobsOrderBy = keyof typeof FIND_JOBS_ORDER_COLUMNS
+
+export function findJobs (schema: string, table: string, options: {
+  queued: boolean,
+  byKey: boolean,
+  byData: boolean,
+  byId: boolean,
+  byStates: boolean,
+  byCursor: boolean,
+  limited: boolean,
+  orderBy?: FindJobsOrderBy,
+  descending?: boolean
+}) {
+  const { queued, byKey, byData, byId, byStates, byCursor, limited, orderBy, descending } = options
 
   let paramIndex = 1
   const whereConditions = []
@@ -2680,15 +2700,48 @@ export function findJobs (schema: string, table: string, options: { queued: bool
     whereConditions.push(`AND data @> $${paramIndex}`)
   }
 
+  if (byStates) {
+    ++paramIndex
+    whereConditions.push(`AND state = ANY($${paramIndex}::${schema}.job_state[])`)
+  }
+
   if (queued) {
     whereConditions.push(`AND state < '${JOB_STATES.active}'`)
   }
+
+  // Ordering is opt-in so an existing unbounded findJobs() keeps the plan it has always had. It
+  // turns on as soon as the caller asks for something that needs a defined order: orderBy itself,
+  // a limit, or a cursor.
+  const column = orderBy ? FIND_JOBS_ORDER_COLUMNS[orderBy] : null
+  let ordering = ''
+
+  if (column) {
+    const direction = descending ? 'DESC' : 'ASC'
+
+    // Keyset pagination rather than OFFSET: the anchor's sort value and id are read back from the
+    // row the cursor names, and the row comparison walks strictly past it. A row inserted or
+    // deleted between pages cannot shift the window, and the cost of page N does not grow with N.
+    //
+    // id breaks ties so the order is total. Without it two jobs sharing a created_on could sort
+    // either way between calls, which repeats or skips one of them at a page boundary.
+    if (byCursor) {
+      ++paramIndex
+      const comparison = descending ? '<' : '>'
+      whereConditions.push(`AND (${column}, id) ${comparison} (SELECT ${column}, id FROM ${schema}.${table} WHERE name = $1 AND id = $${paramIndex})`)
+    }
+
+    ordering = `ORDER BY ${column} ${direction}, id ${direction}`
+  }
+
+  const limit = limited ? `LIMIT $${++paramIndex}` : ''
 
   return `
     SELECT ${JOB_COLUMNS_ALL}
     FROM ${schema}.${table}
     WHERE name = $1
       ${whereConditions.join('\n      ')}
+    ${ordering}
+    ${limit}
     `
 }
 

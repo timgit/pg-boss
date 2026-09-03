@@ -407,6 +407,10 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#manager.findJobs<T>(name, options)
   }
 
+  getJobByKey<T>(name: string, key: string, options?: types.GetJobByKeyOptions): Promise<types.JobWithMetadata<T> | null> {
+    return this.#manager.getJobByKey<T>(name, key, options)
+  }
+
   createQueue (name: string, options?: Omit<types.Queue, 'name'>): Promise<void> {
     return this.#manager.createQueue(name, options)
   }
