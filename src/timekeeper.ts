@@ -582,7 +582,7 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
   /**
    * The minute slot a forwarded cron job goes in, or nothing for any other kind.
    *
-   * A release before schema 40 evaluated every pass itself and forwarded with `singletonSeconds:
+   * A release before schema 41 evaluated every pass itself and forwarded with `singletonSeconds:
    * 60`, which put the job in job_i4's minute slot. Such an instance keeps running happily against
    * a schema-40 database (the contractor only ever migrates forward), so during a rolling upgrade
    * it and an instance claiming rows can both forward the same occurrence, with nothing to collapse

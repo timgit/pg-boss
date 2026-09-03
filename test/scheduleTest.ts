@@ -708,7 +708,7 @@ describe('timekeeper occurrences', function () {
     expect(other.id).not.toBe(first.id)
   })
 
-  it('files a cron occurrence on the minute in the slot a release before schema 40 would use', async function () {
+  it('files a cron occurrence on the minute in the slot a release before schema 41 would use', async function () {
     const dueAt = onTheMinute()
     const databaseTime = new Date()
     const state: FakeState = { claim: [claimRow({ dueAt, databaseTime })] }
@@ -719,7 +719,7 @@ describe('timekeeper occurrences', function () {
 
     await tk.cron()
 
-    // An instance on pre-40 code keeps running against a 40 schema and forwards with
+    // An instance on pre-41 code keeps running against a 41 schema and forwards with
     // singletonSeconds: 60, so during a rolling upgrade both it and this pass can forward the same
     // occurrence. Reusing its minute slot is what collapses the pair.
     expect(inserted[0].singletonSeconds).toBe(60)

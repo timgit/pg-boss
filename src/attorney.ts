@@ -21,7 +21,8 @@ const COMPATIBILITY_FLAGS = [
   'noCoveringIndexes',
   'noListenNotify',
   'noIndexProgressView',
-  'noReindex'
+  'noReindex',
+  'noMonitorVacuum'
 ] as const
 
 type CompatibilityFlag = typeof COMPATIBILITY_FLAGS[number]
@@ -56,7 +57,8 @@ const BACKEND_PROFILES: Record<types.BackendProfile, BackendDefinition> = {
       // CONCURRENTLY, "unimplemented: this syntax" without — and the bloat check itself cannot run:
       // there is no pg_relation_size(), and reltuples / relpages is an "unsupported binary
       // operator: <float4> / <int4>".
-      noReindex: true
+      noReindex: true,
+      noMonitorVacuum: true
     }
   },
   yugabytedb: {
@@ -70,7 +72,8 @@ const BACKEND_PROFILES: Record<types.BackendProfile, BackendDefinition> = {
       // "REINDEX not supported yet" with or without CONCURRENTLY, and DocDB compaction owns
       // reclamation. The bloat check runs but can never match: relpages and pg_relation_size() are
       // 0 for every relation.
-      noReindex: true
+      noReindex: true,
+      noMonitorVacuum: true
     }
   },
   // No noIndexProgressView: pg-boss keeps its tables coordinator-local (it never calls
@@ -732,6 +735,7 @@ function applyOpsConfig (config: any) {
   config.queueStatRetentionDays = config.queueStatRetentionDays || 7
 
   validateReindexConfig(config)
+  validateVacuumMonitorConfig(config)
 }
 
 function validateReindexConfig (config: any) {
@@ -762,6 +766,13 @@ function validateReindexConfig (config: any) {
 
   assert(config.reindexIntervalSeconds / 60 / 60 <= POLICY.MAX_EXPIRATION_HOURS,
     `configuration assert: reindexIntervalSeconds cannot exceed ${POLICY.MAX_EXPIRATION_HOURS} hours`)
+}
+
+function validateVacuumMonitorConfig (config: any) {
+  // A switch, not a threshold: the check derives its trigger from the server's own autovacuum
+  // settings and from measured dead tuples, so there is no number here for a caller to get wrong.
+  assert(!('monitorVacuum' in config) || typeof config.monitorVacuum === 'boolean',
+    'configuration assert: monitorVacuum must be a boolean')
 }
 
 function validateDeletionConfig (config: any) {

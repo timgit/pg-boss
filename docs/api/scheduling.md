@@ -4,7 +4,7 @@ Jobs may be created automatically on a recurring expression. As with other cron-
 
 Each schedule stores the moment its next occurrence is due. Every 30 seconds, one instance claims the occurrences that have come due and sends their jobs. Claiming the row is what keeps a multi-instance deployment from sending the same occurrence twice, so no throttling is involved and a recurrence kind with finer resolution than a minute is sent as often as its expression says.
 
-Each forwarded job carries an id derived from the schedule and the occurrence, so a forward that has to be retried collapses instead of becoming a second job. A cron occurrence on a minute boundary additionally carries the one-per-minute slot used by releases before schema 40, which is what keeps a rolling upgrade from double-sending: an instance still running the older code evaluates the same expression itself and lands in the same slot. There is exactly one such occurrence per minute, so that slot can never collapse two occurrences of the same schedule.
+Each forwarded job carries an id derived from the schedule and the occurrence, so a forward that has to be retried collapses instead of becoming a second job. A cron occurrence on a minute boundary additionally carries the one-per-minute slot used by releases before schema 41, which is what keeps a rolling upgrade from double-sending: an instance still running the older code evaluates the same expression itself and lands in the same slot. There is exactly one such occurrence per minute, so that slot can never collapse two occurrences of the same schedule.
 
 To change how often occurrences are claimed, set `cronMonitorIntervalSeconds`. To change how often the claimed jobs are forwarded to their queues, set `cronWorkerIntervalSeconds`.
 

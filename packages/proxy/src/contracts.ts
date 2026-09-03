@@ -598,13 +598,38 @@ export const getQueueStatsResponseSchema: z.ZodType<types.HttpGetQueueStatsRespo
   result: z.array(queueStatsSchema)
 })
 
+// Thresholds for the index-bloat density check behind reindex maintenance (pg-boss 12.29.0)
+export const indexBloatOptionsSchema = z.object({
+  minPages: z.number().optional(),
+  maxEntriesPerPage: z.number().optional(),
+  minSizeRatio: z.number().optional()
+}) satisfies z.ZodType<types.HttpIndexBloatOptions>
+
+export const reindexOptionsSchema = z.object({
+  minPages: z.number().optional(),
+  maxEntriesPerPage: z.number().optional(),
+  minSizeRatio: z.number().optional(),
+  force: z.boolean().optional(),
+  maxIndexBytes: z.number().optional()
+}) satisfies z.ZodType<types.HttpReindexOptions>
+
+export const superviseOptionsSchema = z.object({
+  reindex: z.union([z.boolean(), reindexOptionsSchema]).optional()
+}) satisfies z.ZodType<types.HttpSuperviseOptions>
+
 export const superviseRequestSchema: z.ZodType<types.HttpSuperviseRequest> = z.object({
-  name: queueNameSchema.optional()
+  name: queueNameSchema.optional(),
+  options: superviseOptionsSchema.optional()
 })
 
 export const superviseResponseSchema: z.ZodType<types.HttpSuperviseResponse> = z.object({
   ok: z.literal(true),
   result: z.null()
+})
+
+export const getReindexCommandsResponseSchema: z.ZodType<types.HttpGetReindexCommandsResponse> = z.object({
+  ok: z.literal(true),
+  result: z.array(z.string())
 })
 
 export const isInstalledResponseSchema: z.ZodType<types.HttpIsInstalledResponse> = z.object({

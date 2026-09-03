@@ -71,6 +71,15 @@ const events = {
   wip: 'wip'
 }
 
+// The fetch options that were performance escapes from the fetch's sort. The index is now ordered to
+// match the fetch, so they escape nothing — `priority: false` is the only remaining shape that
+// still full-sorts, making it slower than the default it was meant to beat. Accepted and ignored
+// for now; removed in the next major.
+const DEPRECATED_FETCH_OPTIONS = ['priority', 'orderByCreatedOn'] as const
+
+// Shared code for both options, so --no-deprecation and friends can be scoped to this one change.
+const DEPRECATED_FETCH_OPTIONS_CODE = 'PGBOSS_DEP_FETCH_SORT'
+
 // Standard translation of low-level Postgres errors raised by job-creation SQL
 // into actionable pg-boss errors. Centralized so any write path can reuse it.
 // Always throws; rethrows untranslated errors unchanged.
@@ -85,6 +94,8 @@ function rethrowWriteError (err: any): never {
 
 class Manager extends EventEmitter implements types.EventsMixin {
   events = events
+  // Warn once per option per instance, not once per fetch.
+  #warnedFetchOptions = new Set<string>()
   db: (types.IDatabase & { _pgbdb?: false }) | Db
   config: types.ResolvedConstructorOptions
   wipTs: number
@@ -1337,11 +1348,34 @@ class Manager extends EventEmitter implements types.EventsMixin {
     return startAfter
   }
 
+  // A DeprecationWarning rather than a pg-boss `warning` event, because the two answer different
+  // questions. Every `warning` type is a database or queue health condition an operator watches and
+  // acts on; this is a code change a developer has to make, and what they need is the call site.
+  // process.emitWarning gives them that: --trace-deprecation prints the stack to the offending
+  // fetch()/work(), --throw-deprecation fails a build on it, --no-deprecation silences it.
+  //
+  // Only fires when the option is explicitly disabled: work() forwards both keys with their
+  // defaults on every poll, so testing for presence would warn on every fetch in the process.
+  #warnDeprecatedFetchOptions (options: types.FetchOptions) {
+    for (const option of DEPRECATED_FETCH_OPTIONS) {
+      if (options[option] === false && !this.#warnedFetchOptions.has(option)) {
+        this.#warnedFetchOptions.add(option)
+        process.emitWarning(
+          `${option}: false is deprecated and now ignored — jobs are always fetched in priority and creation order. Remove it; it will be rejected in the next major.`,
+          'DeprecationWarning',
+          DEPRECATED_FETCH_OPTIONS_CODE
+        )
+      }
+    }
+  }
+
   fetch<T>(name: string): Promise<types.Job<T>[]>
   fetch<T>(name: string, options: types.FetchOptions & { includeMetadata: true }): Promise<types.JobWithMetadata<T>[]>
   fetch<T>(name: string, options: types.FetchOptions): Promise<types.Job<T>[]>
   async fetch (name: string, options: types.FetchOptions = {}) {
     Attorney.checkFetchArgs(name, options)
+
+    this.#warnDeprecatedFetchOptions(options)
 
     const db = this.assertDb(options)
 
@@ -1962,13 +1996,34 @@ class Manager extends EventEmitter implements types.EventsMixin {
       ? Infinity
       : Date.now() - new Date(cached.capturedOn).getTime()
 
+    // The vacuum-safety backoff outranks staleness, including a caller's { force: true }. Refreshing
+    // here runs the same whole-job-table aggregate the supervisor just backed away from, and a
+    // dashboard polling forced reads is exactly the "continuously running analytical query" shape
+    // that pins the horizon. Serve the cache; capturedOn already tells the caller how old it is.
+    //
+    // Only when there is a cache to serve. A queue that has never been monitored carries a NULL
+    // capturedOn and default-zero counts, and returning those would not be stale data - it would be
+    // a fabricated answer of zero for a queue that may hold thousands of jobs. One first aggregate
+    // per never-monitored queue is worth paying even under backoff.
+    if (cached.monitorBackoff === true && cached.capturedOn != null) {
+      return [toSnapshot(cached)]
+    }
+
     if (cacheAgeMs <= maxCacheAgeMs) {
       return [toSnapshot(cached)]
     }
 
-    const refreshSql = plans.refreshQueueStats(this.config.schema, cached.table, name)
+    // A queue with no capture yet has no cache to fall back on, so its first scan is exempt from the
+    // try-lock — see refreshQueueStats. Every later read has real counts to serve and can lose.
+    const refreshSql = plans.refreshQueueStats(this.config.schema, cached.table, name, {
+      noAdvisoryLocks: this.config.noAdvisoryLocks,
+      firstCapture: cached.capturedOn == null
+    })
     const { rows: refreshed } = await this.db.executeSql(refreshSql)
 
+    // No row means another instance is running this exact aggregate right now and won the try-lock.
+    // Fall back to the cache rather than queueing behind it: waiting would hold the horizon for the
+    // duration of someone else's scan to arrive at the counts that scan is about to write anyway.
     return [toSnapshot(refreshed.at(0) ?? cached)]
   }
 

@@ -24,6 +24,7 @@ import {
   flowResponseSchema,
   findJobsResponseSchema,
   getBamStatusResponseSchema,
+  getReindexCommandsResponseSchema,
   getBlockedKeysResponseSchema,
   getDependenciesResponseSchema,
   getDependentsResponseSchema,
@@ -178,6 +179,15 @@ const queueStatsQuerySchema = z.object({
   force: z.enum(['true', 'false']).transform((v) => v === 'true').optional()
 })
 
+// getReindexCommands options are flat scalars, so they map onto GET query params like getQueueStats
+const reindexCommandsQuerySchema = z.object({
+  minPages: z.coerce.number().int().positive().optional(),
+  maxEntriesPerPage: z.coerce.number().int().positive().optional(),
+  minSizeRatio: z.coerce.number().positive().optional(),
+  maxIndexBytes: z.coerce.number().int().positive().optional(),
+  force: z.enum(['true', 'false']).transform((v) => v === 'true').optional()
+})
+
 const dependencyQuerySchema = z.object({
   name: z.string().min(1),
   id: z.string().min(1)
@@ -213,13 +223,25 @@ export const postMethods: RouteEntry[] = [
   post('events', 'publish', publishRequestSchema, publishResponseSchema, (body) => withOptionalDataOptions([body.event], body.data, body.options)),
   post('schedules', 'schedule', scheduleRequestSchema, scheduleResponseSchema, (body) => withOptionalDataOptions([body.name, body.cron], body.data, body.options)),
   post('schedules', 'unschedule', unscheduleRequestSchema, unscheduleResponseSchema, (body) => (body.key ? [body.name, body.key] : [body.name])),
-  post('system', 'supervise', superviseRequestSchema, superviseResponseSchema, (body) => (body.name ? [body.name] : []))
+  // supervise(name?, options?): options alone still has to reach the second argument
+  post('system', 'supervise', superviseRequestSchema, superviseResponseSchema, (body) => (
+    body.options ? [body.name, body.options] : (body.name ? [body.name] : [])
+  ))
 ]
 
 export const getMethods: RouteEntry[] = [
   get('system', 'isInstalled', isInstalledResponseSchema),
   get('system', 'schemaVersion', schemaVersionResponseSchema),
   get('system', 'getBamStatus', getBamStatusResponseSchema),
+  get('system', 'getReindexCommands', getReindexCommandsResponseSchema, reindexCommandsQuerySchema, (q) => {
+    const options: Record<string, unknown> = {}
+    if (q.minPages !== undefined) options.minPages = q.minPages
+    if (q.maxEntriesPerPage !== undefined) options.maxEntriesPerPage = q.maxEntriesPerPage
+    if (q.minSizeRatio !== undefined) options.minSizeRatio = q.minSizeRatio
+    if (q.maxIndexBytes !== undefined) options.maxIndexBytes = q.maxIndexBytes
+    if (q.force !== undefined) options.force = q.force
+    return Object.keys(options).length > 0 ? [options] : []
+  }),
   get('queues', 'getQueue', getQueueResponseSchema, nameQuerySchema, (q) => [q.name]),
   get('queues', 'getBlockedKeys', getBlockedKeysResponseSchema, blockedKeysQuerySchema, (q) => [q.name]),
   get('queues', 'getQueues', getQueuesResponseSchema, namesQuerySchema, (q) => (q.names ? [q.names] : [])),

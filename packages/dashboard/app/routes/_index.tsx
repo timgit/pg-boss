@@ -25,10 +25,10 @@ import { Sparkline } from '~/components/ui/sparkline'
 import { ErrorCard } from '~/components/error-card'
 import {
   formatTimeAgo,
-  WARNING_TYPE_VARIANTS,
-  WARNING_TYPE_LABELS,
+  warningTypeVariant,
+  warningTypeLabel,
 } from '~/lib/utils'
-import type { WarningType, QueueResult, WarningResult } from '~/lib/types'
+import type { QueueResult, WarningResult } from '~/lib/types'
 import { dbContext } from '~/lib/db-context'
 
 export async function loader ({ context }: Route.LoaderArgs) {
@@ -182,10 +182,10 @@ export default function Overview ({ loaderData }: Route.ComponentProps) {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
                       <Badge
-                        variant={WARNING_TYPE_VARIANTS[warning.type as WarningType]}
+                        variant={warningTypeVariant(warning.type)}
                         size="sm"
                       >
-                        {WARNING_TYPE_LABELS[warning.type as WarningType]}
+                        {warningTypeLabel(warning.type)}
                       </Badge>
                       <span className="text-[11px] text-[var(--text-tertiary)] pgb-num">
                         {formatTimeAgo(new Date(warning.createdOn))}

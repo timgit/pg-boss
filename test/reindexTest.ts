@@ -6,7 +6,7 @@ import pg from 'pg'
 import type { IDatabase, Warning } from '../src/types.ts'
 import { delay } from '../src/tools.ts'
 
-// Enough rows that job_common_i5 and job_common_pkey both clear the 128-page (1 MB) floor once the
+// Enough rows that job_common_i11 and job_common_pkey both clear the 128-page (1 MB) floor once the
 // rows are deleted: the heap truncates, the btrees keep every page they grew.
 const BLOAT_ROWS = 60_000
 
@@ -38,7 +38,7 @@ async function indexSizes (schema: string): Promise<Record<string, number>> {
       SELECT c.relname as name, pg_relation_size(c.oid)::bigint as bytes
       FROM pg_class c
       JOIN pg_namespace n ON n.oid = c.relnamespace
-      WHERE n.nspname = $1 AND c.relname IN ('job_common_i5', 'job_common_pkey')
+      WHERE n.nspname = $1 AND c.relname IN ('job_common_i11', 'job_common_pkey')
     `, [schema])
 
     return Object.fromEntries(rows.map(r => [r.name, Number(r.bytes)]))
@@ -82,7 +82,7 @@ helper.describePostgresOnly('reindex', function () {
 
     const commands = await boss.getReindexCommands()
 
-    expect(commands).toContain(`REINDEX INDEX CONCURRENTLY ${ctx.schema}."job_common_i5"`)
+    expect(commands).toContain(`REINDEX INDEX CONCURRENTLY ${ctx.schema}."job_common_i11"`)
     expect(commands).toContain(`REINDEX INDEX CONCURRENTLY ${ctx.schema}."job_common_pkey"`)
   })
 
@@ -92,14 +92,14 @@ helper.describePostgresOnly('reindex', function () {
     await fillAndDrain(ctx.schema, 'churn')
 
     const before = await indexSizes(ctx.schema)
-    expect(before.job_common_i5).toBeGreaterThan(1024 * 1024)
+    expect(before.job_common_i11).toBeGreaterThan(1024 * 1024)
     expect(before.job_common_pkey).toBeGreaterThan(1024 * 1024)
 
     await boss.supervise()
 
     const after = await indexSizes(ctx.schema)
     // The rebuilt indexes hold no live entries at all, so they collapse to a page or two.
-    expect(after.job_common_i5).toBeLessThan(64 * 1024)
+    expect(after.job_common_i11).toBeLessThan(64 * 1024)
     expect(after.job_common_pkey).toBeLessThan(64 * 1024)
     expect(await boss.getReindexCommands()).toEqual([])
   })
@@ -124,7 +124,7 @@ helper.describePostgresOnly('reindex', function () {
     await boss.supervise()
     const after = await indexSizes(ctx.schema)
 
-    expect(after.job_common_i5).toBe(before.job_common_i5)
+    expect(after.job_common_i11).toBe(before.job_common_i11)
     expect(after.job_common_pkey).toBe(before.job_common_pkey)
   })
 
@@ -146,7 +146,7 @@ helper.describePostgresOnly('reindex', function () {
     await boss.supervise()
     const after = await indexSizes(ctx.schema)
 
-    expect(after.job_common_i5).toBe(before.job_common_i5)
+    expect(after.job_common_i11).toBe(before.job_common_i11)
 
     const bloatWarnings = warnings.filter(w => w.message.includes('is bloated'))
     expect(bloatWarnings.length).toBeGreaterThan(0)
@@ -182,11 +182,11 @@ helper.describePostgresOnly('reindex', function () {
 
     // Same instance, rebuilds enabled for this pass only: the claim is there to be taken.
     const before = await indexSizes(ctx.schema)
-    expect(before.job_common_i5).toBeGreaterThan(1024 * 1024)
+    expect(before.job_common_i11).toBeGreaterThan(1024 * 1024)
 
     await reporter.supervise(undefined, { reindex: true })
 
-    expect((await indexSizes(ctx.schema)).job_common_i5).toBeLessThan(64 * 1024)
+    expect((await indexSizes(ctx.schema)).job_common_i11).toBeLessThan(64 * 1024)
   })
 
   it('checks each job table once per pass, not once per queue', async function () {
@@ -321,7 +321,7 @@ helper.describePostgresOnly('reindex', function () {
     await boss.supervise()
     const after = await indexSizes(ctx.schema)
 
-    expect(after.job_common_i5).toBe(before.job_common_i5)
+    expect(after.job_common_i11).toBe(before.job_common_i11)
     expect(events).toEqual([])
 
     const db = await helper.getDb()
@@ -344,7 +344,7 @@ helper.describePostgresOnly('reindex', function () {
     await boss.supervise(undefined, { reindex: { maxIndexBytes: 1024 } })
     const after = await indexSizes(ctx.schema)
 
-    expect(after.job_common_i5).toBe(before.job_common_i5)
+    expect(after.job_common_i11).toBe(before.job_common_i11)
     expect(after.job_common_pkey).toBe(before.job_common_pkey)
   })
 
@@ -355,7 +355,7 @@ helper.describePostgresOnly('reindex', function () {
     // Nothing qualifies on the density check, so only force reaches these.
     const commands = await boss.getReindexCommands({ force: true })
 
-    expect(commands).toContain(`REINDEX INDEX CONCURRENTLY ${ctx.schema}."job_common_i5"`)
+    expect(commands).toContain(`REINDEX INDEX CONCURRENTLY ${ctx.schema}."job_common_i11"`)
     expect(commands.length).toBeGreaterThan(2)
 
     await expect(boss.supervise(undefined, { reindex: { force: true } })).resolves.toBeUndefined()
@@ -369,7 +369,7 @@ helper.describePostgresOnly('reindex', function () {
     // First pass claims version.reindex_on and rebuilds.
     await boss.supervise()
     const after = await indexSizes(ctx.schema)
-    expect(after.job_common_i5).toBeLessThan(64 * 1024)
+    expect(after.job_common_i11).toBeLessThan(64 * 1024)
 
     const db = await helper.getDb()
     const { rows } = await db.executeSql(`SELECT reindex_on FROM ${ctx.schema}.version`)
@@ -382,7 +382,7 @@ helper.describePostgresOnly('reindex', function () {
     await fillAndDrain(ctx.schema, 'churn')
     const before = await indexSizes(ctx.schema)
     await boss.supervise()
-    expect((await indexSizes(ctx.schema)).job_common_i5).toBe(before.job_common_i5)
+    expect((await indexSizes(ctx.schema)).job_common_i11).toBe(before.job_common_i11)
   })
 
   it('drops invalid _ccnew leftovers before rebuilding', async function () {
@@ -393,17 +393,17 @@ helper.describePostgresOnly('reindex', function () {
     const db = await helper.getDb()
     // Stand in for the stub an interrupted REINDEX CONCURRENTLY leaves behind: same name shape,
     // marked invalid in the catalog.
-    await db.executeSql(`CREATE INDEX job_common_i5_ccnew ON ${ctx.schema}.job_common (name, start_after)`)
-    await db.executeSql(`UPDATE pg_index SET indisvalid = false WHERE indexrelid = '${ctx.schema}.job_common_i5_ccnew'::regclass`)
+    await db.executeSql(`CREATE INDEX job_common_i11_ccnew ON ${ctx.schema}.job_common (name, start_after)`)
+    await db.executeSql(`UPDATE pg_index SET indisvalid = false WHERE indexrelid = '${ctx.schema}.job_common_i11_ccnew'::regclass`)
 
     const commands = await boss.getReindexCommands()
-    expect(commands).toContain(`DROP INDEX CONCURRENTLY IF EXISTS ${ctx.schema}."job_common_i5_ccnew"`)
-    expect(commands.indexOf(`DROP INDEX CONCURRENTLY IF EXISTS ${ctx.schema}."job_common_i5_ccnew"`))
-      .toBeLessThan(commands.indexOf(`REINDEX INDEX CONCURRENTLY ${ctx.schema}."job_common_i5"`))
+    expect(commands).toContain(`DROP INDEX CONCURRENTLY IF EXISTS ${ctx.schema}."job_common_i11_ccnew"`)
+    expect(commands.indexOf(`DROP INDEX CONCURRENTLY IF EXISTS ${ctx.schema}."job_common_i11_ccnew"`))
+      .toBeLessThan(commands.indexOf(`REINDEX INDEX CONCURRENTLY ${ctx.schema}."job_common_i11"`))
 
     await boss.supervise()
 
-    const { rows } = await db.executeSql(`SELECT to_regclass('${ctx.schema}.job_common_i5_ccnew') as name`)
+    const { rows } = await db.executeSql(`SELECT to_regclass('${ctx.schema}.job_common_i11_ccnew') as name`)
     await db.close()
 
     expect(rows[0].name).toBeNull()
@@ -428,13 +428,13 @@ helper.describePostgresOnly('reindex', function () {
       await db.executeSql(`VACUUM (ANALYZE) ${ctx.schema}.${table}`)
 
       // Postgres does not append `_ccnew` — it truncates the base so the whole name fits in 63
-      // bytes. A partition table is `'j' || sha224(queue_name)` (57 chars), so its `_i5` index is
-      // 60 and the stub loses the `i5` entirely. Pairing a stub to its index by name prefix would
+      // bytes. A partition table is `'j' || sha224(queue_name)` (57 chars), so its `_i11` index is
+      // 61 and the stub loses the `i11` entirely. Pairing a stub to its index by name prefix would
       // therefore miss every partitioned queue.
       const stub = `${table}_ccnew`
 
       expect(stub.length).toBe(63)
-      expect(stub.startsWith(`${table}_i5_ccnew`)).toBe(false)
+      expect(stub.startsWith(`${table}_i11_ccnew`)).toBe(false)
 
       await db.executeSql(`CREATE INDEX ${stub} ON ${ctx.schema}.${table} (name, start_after)`)
       await db.executeSql(`UPDATE pg_index SET indisvalid = false WHERE indexrelid = '${ctx.schema}.${stub}'::regclass`)
@@ -494,7 +494,7 @@ helper.describePostgresOnly('reindex', function () {
       await guest.supervise()
       const after = await indexSizes(ctx.schema)
 
-      expect(after.job_common_i5).toBe(before.job_common_i5)
+      expect(after.job_common_i11).toBe(before.job_common_i11)
       expect(after.job_common_pkey).toBe(before.job_common_pkey)
       expect(warnings.some(m => m.includes('does not own the index'))).toBe(true)
 
@@ -503,14 +503,14 @@ helper.describePostgresOnly('reindex', function () {
       const db2 = await helper.getDb()
 
       try {
-        await db2.executeSql(`CREATE INDEX job_common_i5_ccnew ON ${ctx.schema}.job_common (name, start_after)`)
-        await db2.executeSql(`UPDATE pg_index SET indisvalid = false WHERE indexrelid = '${ctx.schema}.job_common_i5_ccnew'::regclass`)
+        await db2.executeSql(`CREATE INDEX job_common_i11_ccnew ON ${ctx.schema}.job_common (name, start_after)`)
+        await db2.executeSql(`UPDATE pg_index SET indisvalid = false WHERE indexrelid = '${ctx.schema}.job_common_i11_ccnew'::regclass`)
 
         const commands = await guest.getReindexCommands()
-        expect(commands).toContain(`DROP INDEX CONCURRENTLY IF EXISTS ${ctx.schema}."job_common_i5_ccnew"`)
-        expect(commands).toContain(`REINDEX INDEX CONCURRENTLY ${ctx.schema}."job_common_i5"`)
+        expect(commands).toContain(`DROP INDEX CONCURRENTLY IF EXISTS ${ctx.schema}."job_common_i11_ccnew"`)
+        expect(commands).toContain(`REINDEX INDEX CONCURRENTLY ${ctx.schema}."job_common_i11"`)
       } finally {
-        await db2.executeSql(`DROP INDEX IF EXISTS ${ctx.schema}.job_common_i5_ccnew`).catch(() => {})
+        await db2.executeSql(`DROP INDEX IF EXISTS ${ctx.schema}.job_common_i11_ccnew`).catch(() => {})
         await db2.close()
       }
     } finally {
@@ -556,7 +556,7 @@ helper.describePostgresOnly('reindex', function () {
       await boss.supervise()
       const after = await indexSizes(ctx.schema)
 
-      expect(after.job_common_i5).toBe(before.job_common_i5)
+      expect(after.job_common_i11).toBe(before.job_common_i11)
       expect(warnings.filter(m => m.includes('does not exist')).length).toBe(2)
     } finally {
       await db.close()
@@ -583,7 +583,7 @@ helper.describePostgresOnly('reindex', function () {
 
       // Dropping stale stubs is best effort — the rebuild it precedes must not be lost with it.
       expect(errors.length).toBeGreaterThan(0)
-      expect((await indexSizes(ctx.schema)).job_common_i5).toBeLessThan(64 * 1024)
+      expect((await indexSizes(ctx.schema)).job_common_i11).toBeLessThan(64 * 1024)
     } finally {
       await db.close()
     }
@@ -633,7 +633,7 @@ helper.describePostgresOnly('reindex', function () {
       const before = await indexSizes(ctx.schema)
       await guest.supervise()
 
-      expect((await indexSizes(ctx.schema)).job_common_i5).toBe(before.job_common_i5)
+      expect((await indexSizes(ctx.schema)).job_common_i11).toBe(before.job_common_i11)
       // Both indexes report the wrapper, not just the one that was attempted: the others were
       // skipped by the giveup, so a size-cap message would name a limit they are nowhere near.
       expect(warnings.filter(m => m.includes('cannot run inside a transaction block')).length).toBe(2)
@@ -665,10 +665,10 @@ helper.describePostgresOnly('reindex', function () {
     const db = await helper.getDb()
 
     try {
-      await db.executeSql(`UPDATE pg_class SET reltuples = -1 WHERE oid = '${ctx.schema}.job_common_i5'::regclass`)
+      await db.executeSql(`UPDATE pg_class SET reltuples = -1 WHERE oid = '${ctx.schema}.job_common_i11'::regclass`)
 
       const commands = await boss.getReindexCommands()
-      expect(commands).not.toContain(`REINDEX INDEX CONCURRENTLY ${ctx.schema}."job_common_i5"`)
+      expect(commands).not.toContain(`REINDEX INDEX CONCURRENTLY ${ctx.schema}."job_common_i11"`)
       expect(commands).toContain(`REINDEX INDEX CONCURRENTLY ${ctx.schema}."job_common_pkey"`)
     } finally {
       await db.close()
@@ -695,10 +695,10 @@ helper.describePostgresOnly('reindex', function () {
     const builder = connection()
 
     try {
-      await db.executeSql(`CREATE INDEX job_common_i5_ccnew ON ${ctx.schema}.job_common (name, start_after)`)
-      await db.executeSql(`UPDATE pg_index SET indisvalid = false WHERE indexrelid = '${ctx.schema}.job_common_i5_ccnew'::regclass`)
+      await db.executeSql(`CREATE INDEX job_common_i11_ccnew ON ${ctx.schema}.job_common (name, start_after)`)
+      await db.executeSql(`UPDATE pg_index SET indisvalid = false WHERE indexrelid = '${ctx.schema}.job_common_i11_ccnew'::regclass`)
 
-      const drop = `DROP INDEX CONCURRENTLY IF EXISTS ${ctx.schema}."job_common_i5_ccnew"`
+      const drop = `DROP INDEX CONCURRENTLY IF EXISTS ${ctx.schema}."job_common_i11_ccnew"`
       expect(await boss.getReindexCommands()).toContain(drop)
 
       // A real build, held in its wait phase rather than raced: REINDEX CONCURRENTLY waits out every
@@ -763,7 +763,7 @@ helper.describePostgresOnly('reindex', function () {
     await boss.supervise(undefined, { reindex: { minSizeRatio: 1_000_000 } })
     const after = await indexSizes(ctx.schema)
 
-    expect(after.job_common_i5).toBe(before.job_common_i5)
+    expect(after.job_common_i11).toBe(before.job_common_i11)
     expect(after.job_common_pkey).toBe(before.job_common_pkey)
   })
 
