@@ -178,10 +178,14 @@ helper.describeMultiConnectionOnly('vacuum monitoring', function () {
       expect(stored.data.table).toBe(plans.COMMON_JOB_TABLE)
       expect(stored.data.deadTuples).toBeGreaterThan(stored.data.budget)
       expect(stored.data.unreadableSources).toEqual([])
-      // Identifies the individual backend, not just its class: pid and role are readable for any
-      // backend, whoever owns it, and are what an operator needs to go and look at the thing.
+      // Identifies the individual backend, not just its class, which is what an operator needs to go
+      // and look at the thing. Only the pid is asserted here: which backend wins max(age(backend_xmin))
+      // is not this test's to decide on a shared database, and an autovacuum worker that started its
+      // per-table transaction before the held horizon qualifies and wins — carrying a NULL usename,
+      // since pg_stat_activity leaves usename NULL for every non-client backend. The role, the
+      // application_name and the wording built from them are pinned by the staged-holder cases below,
+      // where the row is not a race.
       expect(stored.data.holderPid).toBeGreaterThan(0)
-      expect(stored.data.holderUserName).toBeTruthy()
       expect(stored.message).toContain(`pid ${stored.data.holderPid}`)
       expect(stored.message).toContain('has held a transaction open')
       expect(stored.message).toContain('could not reclaim')
