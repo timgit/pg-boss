@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom'
 import { ThemeToggle } from '~/components/ui/theme-toggle'
 import { ColorThemePicker } from '~/components/ui/color-theme-picker'
 import { cn } from '~/lib/utils'
+import type { PublicDatabase } from '~/lib/types'
 import {
   Sidebar,
   SidebarContent,
@@ -17,16 +18,9 @@ import {
   useSidebar,
 } from '~/components/ui/sidebar'
 
-interface DatabaseConfig {
-  id: string
-  name: string
-  url: string
-  schema: string
-}
-
 interface RootLoaderData {
-  databases: DatabaseConfig[]
-  currentDb: DatabaseConfig
+  databases: PublicDatabase[]
+  currentDb: PublicDatabase
 }
 
 const navigation = [
@@ -107,9 +101,9 @@ function DatabaseSelector ({
   currentDb,
   onSelect,
 }: {
-  databases: DatabaseConfig[]
-  currentDb: DatabaseConfig
-  onSelect: (db: DatabaseConfig) => void
+  databases: PublicDatabase[]
+  currentDb: PublicDatabase
+  onSelect: (db: PublicDatabase) => void
 }) {
   const [isOpen, setIsOpen] = useState(false)
   const buttonRef = useRef<HTMLButtonElement>(null)
@@ -218,7 +212,7 @@ export function AppSidebar () {
   const currentDb = rootData?.currentDb
   const dbParam = searchParams.get('db')
 
-  const handleDatabaseSelect = (db: DatabaseConfig) => {
+  const handleDatabaseSelect = (db: PublicDatabase) => {
     const params = new URLSearchParams(searchParams)
     if (db.id === databases[0]?.id) {
       params.delete('db')

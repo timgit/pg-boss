@@ -15,6 +15,7 @@ import { Breadcrumbs } from "~/components/breadcrumbs";
 import { SidebarProvider, SidebarTrigger, useSidebar } from "~/components/ui/sidebar";
 import { cn } from "~/lib/utils";
 import { dbContext } from "~/lib/db-context";
+import { toPublicDatabase } from "~/lib/config.server";
 
 function MainContent ({ children }: { children: React.ReactNode }) {
   const { open, isMobile, state } = useSidebar()
@@ -96,9 +97,14 @@ const themeScript = `
 
 export async function loader({ context }: Route.LoaderArgs) {
   const { databases, currentDb } = context.get(dbContext);
+
+  // Project before returning. The sidebar needs an id, a display name and the
+  // schema; it never needs the connection string. A loader's return value is
+  // serialized into the HTML for hydration, so returning the raw config puts
+  // every connection string, passwords included, in page source.
   return {
-    databases,
-    currentDb,
+    databases: databases.map(toPublicDatabase),
+    currentDb: currentDb ? toPublicDatabase(currentDb) : currentDb,
   };
 }
 
