@@ -22,6 +22,7 @@
     "rootDirs": [".", ".react-router/types"],
     "paths": {
       "~/*": ["./app/*"],
+      "~pro": ["./app/lib/pro-stub.ts"],
       "pg-boss": ["../../src"]
     }
   }

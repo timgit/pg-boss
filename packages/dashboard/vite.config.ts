@@ -3,6 +3,7 @@ import { defineConfig } from 'vite'
 import tailwindcss from '@tailwindcss/vite'
 import { resolve } from 'path'
 import { resolveBasePath } from './app/lib/base-path'
+import { proAlias } from './app/lib/pro-overlay'
 
 const { viteBase } = resolveBasePath(process.env.PGBOSS_DASHBOARD_BASE_PATH)
 
@@ -27,6 +28,7 @@ export default defineConfig(({ command }) => ({
   resolve: {
     alias: {
       '~': '/app',
+      '~pro': proAlias(),
       'pg-boss': resolve(__dirname, '../../src'),
     },
     // Force a single copy of React in the dev module graph. Without this, Vite's
