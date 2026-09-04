@@ -35,9 +35,12 @@ const README_END = '<!-- sponsors:end -->'
 // The ladder, highest rung first. Thresholds are monthly dollars and mirror what
 // the tier descriptions promise, so changing one means changing the other. A
 // sponsor lands in the first rung they clear, and anything under the last rung is
-// not listed at all. Adding a rung later — Partner, Advisory — is one entry here
-// and nothing else.
+// not listed at all. A rung with no occupants renders nothing, so an entry can
+// sit here before the tier has sold — which is why Partner and Advisory are
+// already listed.
 const TIERS = [
+  { dollars: 1000, heading: 'Advisory Sponsors', logoSize: 128 },
+  { dollars: 500, heading: 'Partner Sponsors', logoSize: 112 },
   { dollars: 250, heading: 'Production Sponsors', logoSize: 96 },
   { dollars: 50, heading: 'Sponsors', logoSize: 64 },
   { dollars: 10, heading: 'Backers' }
@@ -58,8 +61,8 @@ const QUERY = `
           tier { monthlyPriceInDollars isOneTime }
           sponsorEntity {
             __typename
-            ... on User { login name url websiteUrl avatarUrl(size: 200) }
-            ... on Organization { login name url websiteUrl avatarUrl(size: 200) }
+            ... on User { login name url websiteUrl avatarUrl(size: 256) }
+            ... on Organization { login name url websiteUrl avatarUrl(size: 256) }
           }
         }
       }
