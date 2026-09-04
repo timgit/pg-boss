@@ -3,7 +3,7 @@ import { defineConfig } from 'vite'
 import tailwindcss from '@tailwindcss/vite'
 import { resolve } from 'path'
 import { resolveBasePath } from './app/lib/base-path'
-import { proAlias } from './app/lib/pro-overlay'
+import { proAlias } from './app/lib/pro-overlay.ts'
 
 const { viteBase } = resolveBasePath(process.env.PGBOSS_DASHBOARD_BASE_PATH)
 
