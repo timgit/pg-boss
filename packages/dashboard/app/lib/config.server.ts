@@ -1,3 +1,5 @@
+import type { PublicDatabase } from './types'
+
 // Multi-database configuration support
 // Format: "name1=postgres://host1/db1|name2=postgres://host2/db2"
 // Or simply: "postgres://host1/db1|postgres://host2/db2" (names derived from database)
@@ -7,6 +9,18 @@ export interface DatabaseConfig {
   name: string;    // Display name
   url: string;     // Connection string
   schema: string;  // pg-boss schema
+}
+
+/**
+ * Strip a database configuration down to what the browser is allowed to see.
+ *
+ * `url` is a connection string with a password in it. Anything a loader
+ * returns is serialized into the SSR payload and readable in page source, so
+ * the projection has to happen before the value leaves the server, not in the
+ * component that renders it.
+ */
+export function toPublicDatabase ({ id, name, schema }: DatabaseConfig): PublicDatabase {
+  return { id, name, schema }
 }
 
 const SEPARATOR = '|'

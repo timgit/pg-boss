@@ -117,3 +117,15 @@ export interface ScheduleResult extends Schedule {
   createdOn: Date;
   updatedOn: Date;
 }
+
+// The subset of a database configuration that is safe to send to the browser.
+// `DatabaseConfig` in config.server.ts also carries `url`, a connection string
+// with a password in it, and that must never reach a loader payload — React
+// Router serializes those into the HTML for hydration, where anyone who can
+// load the page can read them. The schema name is not a credential and the
+// database selector displays it, so it stays.
+export interface PublicDatabase {
+  id: string;
+  name: string;
+  schema: string;
+}
