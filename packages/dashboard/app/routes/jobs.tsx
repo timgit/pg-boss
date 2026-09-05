@@ -1,6 +1,7 @@
 import { useSearchParams } from 'react-router'
 import { DbLink } from '~/components/db-link'
 import type { Route } from './+types/jobs'
+import { useReadOnly } from '~/lib/read-only'
 import {
   getRecentJobs,
   getRecentJobsCount,
@@ -173,8 +174,8 @@ export async function loader ({ request, context }: Route.LoaderArgs) {
   }
 }
 
-export function ErrorBoundary () {
-  return <ErrorCard title="Failed to load jobs" />
+export function ErrorBoundary ({ error }: Route.ErrorBoundaryProps) {
+  return <ErrorCard title="Failed to load jobs" error={error} />
 }
 
 // Exported for tests: must round-trip through parseFiltersFromUrl.
@@ -222,6 +223,7 @@ export function buildParams (
 }
 
 export default function Jobs ({ loaderData }: Route.ComponentProps) {
+  const readOnly = useReadOnly()
   const {
     recentJobs,
     queueNames,
@@ -284,11 +286,11 @@ export default function Jobs ({ loaderData }: Route.ComponentProps) {
       <PageHeader
         title="Jobs"
         subtitle={subtitle}
-        action={
+        action={readOnly ? undefined : (
           <DbLink to="/send">
             <Button variant="primary" size="md">Send Job</Button>
           </DbLink>
-        }
+        )}
       />
 
       <JobsFilterBar

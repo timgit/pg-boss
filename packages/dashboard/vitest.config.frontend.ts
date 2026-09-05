@@ -1,6 +1,7 @@
 import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import { resolve } from 'path'
+import { proAlias } from './app/lib/pro-overlay.ts'
 
 export default defineConfig({
   plugins: [react()],
@@ -34,6 +35,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '~': resolve(__dirname, './app'),
+      '~pro': proAlias(),
       'pg-boss': resolve(__dirname, '../../src'),
     },
   },

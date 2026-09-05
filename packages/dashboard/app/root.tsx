@@ -16,6 +16,7 @@ import { SidebarProvider, SidebarTrigger, useSidebar } from "~/components/ui/sid
 import { cn } from "~/lib/utils";
 import { dbContext } from "~/lib/db-context";
 import { toPublicDatabase } from "~/lib/config.server";
+import { isReadOnly } from "~/lib/read-only.server";
 
 function MainContent ({ children }: { children: React.ReactNode }) {
   const { open, isMobile, state } = useSidebar()
@@ -105,6 +106,9 @@ export async function loader({ context }: Route.LoaderArgs) {
   return {
     databases: databases.map(toPublicDatabase),
     currentDb: currentDb ? toPublicDatabase(currentDb) : currentDb,
+    // Drives whether mutating controls render. The server refuses mutations
+    // regardless, so this is presentation, not enforcement.
+    readOnly: isReadOnly(),
   };
 }
 

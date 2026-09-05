@@ -64,10 +64,11 @@ export async function loader ({ request, context }: Route.LoaderArgs) {
   return { entries, summary, statusFilter, page, totalPages }
 }
 
-export function ErrorBoundary () {
+export function ErrorBoundary ({ error }: Route.ErrorBoundaryProps) {
   return (
     <ErrorCard
       title="Failed to load migrations"
+      error={error}
       backTo={{ href: '/', label: 'Back to Dashboard' }}
     />
   )

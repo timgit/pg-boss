@@ -12,6 +12,7 @@
     "target": "ES2022",
     "module": "ESNext",
     "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
     "moduleResolution": "bundler",
     "jsx": "react-jsx",
     "strict": true,
@@ -22,6 +23,7 @@
     "rootDirs": [".", ".react-router/types"],
     "paths": {
       "~/*": ["./app/*"],
+      "~pro": ["./app/lib/pro-stub.ts"],
       "pg-boss": ["../../src"]
     }
   }

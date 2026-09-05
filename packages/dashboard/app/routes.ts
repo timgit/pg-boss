@@ -1,4 +1,5 @@
 import { type RouteConfig, index, route } from '@react-router/dev/routes'
+import { proRoutes } from './lib/pro-overlay'
 
 export default [
   index('routes/_index.tsx'),
@@ -14,4 +15,5 @@ export default [
   route('send', 'routes/send.tsx'),
   route('migrations', 'routes/migrations.tsx'),
   route('warnings', 'routes/warnings.tsx'),
+  ...await proRoutes(),
 ] satisfies RouteConfig

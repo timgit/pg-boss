@@ -47,6 +47,7 @@ The dashboard is configured via environment variables:
 | `PORT` | Server port | `3000` |
 | `PGBOSS_DASHBOARD_AUTH_USERNAME` | Basic auth username (optional) | - |
 | `PGBOSS_DASHBOARD_AUTH_PASSWORD` | Basic auth password (optional) | - |
+| `PGBOSS_DASHBOARD_READ_ONLY` | Set to `1` to disable every mutating action (see [Read-only mode](#read-only-mode)) | - |
 | `PGBOSS_DASHBOARD_BASE_PATH` | Sub-path to serve the dashboard under, e.g. `/pgboss` (build-time only, see [Serving under a sub-path](#serving-under-a-sub-path)) | `/` |
 | `PGBOSS_DASHBOARD_QUERY_TIMEOUT` | Max milliseconds per dashboard query before server-side cancellation (`statement_timeout`). Requires a restart to change. | `60000` |
 
@@ -62,6 +63,23 @@ npx pg-boss-dashboard
 ```
 
 Both variables must be provided together. If only one is set, the dashboard will throw an error on startup.
+
+### Read-only mode
+
+Set `PGBOSS_DASHBOARD_READ_ONLY=1` to serve the dashboard as a viewer:
+
+```bash
+PGBOSS_DASHBOARD_READ_ONLY=1 \
+DATABASE_URL="postgres://localhost/mydb" \
+npx pg-boss-dashboard
+```
+
+Every page still loads and every query still runs. What changes:
+
+- The server rejects every non-`GET`/`HEAD` request with `403`, so sending, retrying, cancelling, resuming, deleting, creating queues, and scheduling are all refused — including a request crafted by hand.
+- The controls for those actions are not rendered, and `/send`, `/queues/create`, and `/schedules/new` explain themselves instead of showing a form.
+
+This is a global switch rather than a permission system: everyone who can reach the dashboard sees the same read-only view. It is independent of basic authentication and can be combined with it.
 
 ### Multi-Database Configuration
 

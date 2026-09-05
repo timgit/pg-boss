@@ -4,6 +4,7 @@ import { MoreHorizontal, ChevronDown, ChevronRight, LineChart } from 'lucide-rea
 import { Menu } from '@base-ui/react/menu'
 import { DbLink } from '~/components/db-link'
 import type { Route } from './+types/queues.$name'
+import { useReadOnly } from '~/lib/read-only'
 import {
   getQueue,
   getJobs,
@@ -163,16 +164,18 @@ export async function action ({ params, request, context }: Route.ActionArgs) {
   return { success: affected > 0, affected, message }
 }
 
-export function ErrorBoundary () {
+export function ErrorBoundary ({ error }: Route.ErrorBoundaryProps) {
   return (
     <ErrorCard
       title="Failed to load queue"
+      error={error}
       backTo={{ href: '/queues', label: 'Back to Queues' }}
     />
   )
 }
 
 export default function QueueDetail ({ loaderData }: Route.ComponentProps) {
+  const readOnly = useReadOnly()
   const {
     queue,
     jobs,
@@ -240,9 +243,11 @@ export default function QueueDetail ({ loaderData }: Route.ComponentProps) {
                 View metrics
               </Button>
             </DbLink>
-            <DbLink to={`/send?queue=${encodeURIComponent(queue.name)}`}>
-              <Button variant="primary" size="md">Send Job</Button>
-            </DbLink>
+            {!readOnly && (
+              <DbLink to={`/send?queue=${encodeURIComponent(queue.name)}`}>
+                <Button variant="primary" size="md">Send Job</Button>
+              </DbLink>
+            )}
           </div>
         }
       />
@@ -429,6 +434,7 @@ function JobRow ({
   queueName: string
   jobColumns: JobColumn[]
 }) {
+  const readOnly = useReadOnly()
   const fetcher = useFetcher<{ success?: boolean; affected?: number; message?: string; error?: string }>()
   const isLoading = fetcher.state !== 'idle'
   const [confirmDialog, setConfirmDialog] = useState<{
@@ -496,76 +502,78 @@ function JobRow ({
                 Failed
               </span>
             )}
-            <Menu.Root>
-              <Menu.Trigger
-                className={cn(
-                  'inline-flex items-center justify-center rounded-md p-1.5',
-                  'text-gray-500 hover:text-gray-900 hover:bg-gray-100',
-                  'dark:text-gray-400 dark:hover:text-gray-100 dark:hover:bg-gray-800',
-                  'focus:outline-none focus:ring-2 focus:ring-primary-500',
-                  'transition-colors disabled:opacity-50'
-                )}
-                disabled={isLoading}
-                aria-label="Job actions"
-              >
-                <MoreHorizontal className="h-4 w-4" />
-              </Menu.Trigger>
-              <Menu.Portal>
-                <Menu.Positioner>
-                  <Menu.Popup
-                    className={cn(
-                      'min-w-[10rem] rounded-md border p-1 shadow-md z-50',
-                      'bg-white border-gray-200',
-                      'dark:bg-gray-900 dark:border-gray-800',
-                      'animate-in fade-in-0 zoom-in-95'
-                    )}
-                  >
-                    {canRetry && (
-                      <Menu.Item
-                        className={menuItemClass}
-                        onClick={() => submitAction('retry')}
-                      >
-                        Retry
-                      </Menu.Item>
-                    )}
-                    {canResume && (
-                      <Menu.Item
-                        className={menuItemClass}
-                        onClick={() => submitAction('resume')}
-                      >
-                        Resume
-                      </Menu.Item>
-                    )}
-                    {canCancel && (
-                      <Menu.Item
-                        className={dangerMenuItemClass}
-                        onClick={() => openConfirmDialog(
-                          'cancel',
-                          'Cancel Job',
-                          `Are you sure you want to cancel job ${job.id}? This will stop the job from being processed.`,
-                          'Cancel Job'
-                        )}
-                      >
-                        Cancel
-                      </Menu.Item>
-                    )}
-                    {canDelete && (
-                      <Menu.Item
-                        className={dangerMenuItemClass}
-                        onClick={() => openConfirmDialog(
-                          'delete',
-                          'Delete Job',
-                          `Are you sure you want to delete job ${job.id}? This action cannot be undone.`,
-                          'Delete'
-                        )}
-                      >
-                        Delete
-                      </Menu.Item>
-                    )}
-                  </Menu.Popup>
-                </Menu.Positioner>
-              </Menu.Portal>
-            </Menu.Root>
+            {!readOnly && (
+              <Menu.Root>
+                <Menu.Trigger
+                  className={cn(
+                    'inline-flex items-center justify-center rounded-md p-1.5',
+                    'text-gray-500 hover:text-gray-900 hover:bg-gray-100',
+                    'dark:text-gray-400 dark:hover:text-gray-100 dark:hover:bg-gray-800',
+                    'focus:outline-none focus:ring-2 focus:ring-primary-500',
+                    'transition-colors disabled:opacity-50'
+                  )}
+                  disabled={isLoading}
+                  aria-label="Job actions"
+                >
+                  <MoreHorizontal className="h-4 w-4" />
+                </Menu.Trigger>
+                <Menu.Portal>
+                  <Menu.Positioner>
+                    <Menu.Popup
+                      className={cn(
+                        'min-w-[10rem] rounded-md border p-1 shadow-md z-50',
+                        'bg-white border-gray-200',
+                        'dark:bg-gray-900 dark:border-gray-800',
+                        'animate-in fade-in-0 zoom-in-95'
+                      )}
+                    >
+                      {canRetry && (
+                        <Menu.Item
+                          className={menuItemClass}
+                          onClick={() => submitAction('retry')}
+                        >
+                          Retry
+                        </Menu.Item>
+                      )}
+                      {canResume && (
+                        <Menu.Item
+                          className={menuItemClass}
+                          onClick={() => submitAction('resume')}
+                        >
+                          Resume
+                        </Menu.Item>
+                      )}
+                      {canCancel && (
+                        <Menu.Item
+                          className={dangerMenuItemClass}
+                          onClick={() => openConfirmDialog(
+                            'cancel',
+                            'Cancel Job',
+                            `Are you sure you want to cancel job ${job.id}? This will stop the job from being processed.`,
+                            'Cancel Job'
+                          )}
+                        >
+                          Cancel
+                        </Menu.Item>
+                      )}
+                      {canDelete && (
+                        <Menu.Item
+                          className={dangerMenuItemClass}
+                          onClick={() => openConfirmDialog(
+                            'delete',
+                            'Delete Job',
+                            `Are you sure you want to delete job ${job.id}? This action cannot be undone.`,
+                            'Delete'
+                          )}
+                        >
+                          Delete
+                        </Menu.Item>
+                      )}
+                    </Menu.Popup>
+                  </Menu.Positioner>
+                </Menu.Portal>
+              </Menu.Root>
+            )}
           </div>
         </TableCell>
       </TableRow>

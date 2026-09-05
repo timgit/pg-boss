@@ -1,6 +1,7 @@
 import { serve } from '@hono/node-server'
 import type { ServerBuild } from 'react-router'
 import { createHonoApp } from './server'
+import pkg from '../package.json' with { type: 'json' }
 
 // The React Router server build is emitted by `react-router build` as a sibling of this
 // bundle (`build/server/index.js`). It does not exist at type-check time and must be
@@ -15,7 +16,9 @@ const hostname = process.env.HOST || '0.0.0.0'
 const app = createHonoApp({ build, mode: 'production', serveStaticAssets: true })
 
 serve({ fetch: app.fetch, port, hostname }, (info) => {
-  console.log(`pg-boss dashboard listening on http://${hostname}:${info.port}`)
+  // Named from the manifest rather than hardcoded: this bundle is repackaged under
+  // other names, and a build that announces itself as something else is confusing.
+  console.log(`${pkg.name}@${pkg.version} listening on http://${hostname}:${info.port}`)
   if (build.basename && build.basename !== '/') {
     console.log(`base path: ${build.basename}`)
   }

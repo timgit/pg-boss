@@ -1,0 +1,3 @@
+# The Pro overlay is cloned in at build time and is never part of this
+# repository. See app/lib/pro-overlay.ts.
+app/pro

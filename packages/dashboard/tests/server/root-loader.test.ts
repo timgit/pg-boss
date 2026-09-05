@@ -45,6 +45,24 @@ async function load (databases = [primary, secondary]) {
 }
 
 describe('root loader', () => {
+  it('publishes read-only mode so the UI can hide mutating controls', async () => {
+    const original = process.env.PGBOSS_DASHBOARD_READ_ONLY
+
+    try {
+      delete process.env.PGBOSS_DASHBOARD_READ_ONLY
+      expect((await load()).readOnly).toBe(false)
+
+      process.env.PGBOSS_DASHBOARD_READ_ONLY = '1'
+      expect((await load()).readOnly).toBe(true)
+    } finally {
+      if (original === undefined) {
+        delete process.env.PGBOSS_DASHBOARD_READ_ONLY
+      } else {
+        process.env.PGBOSS_DASHBOARD_READ_ONLY = original
+      }
+    }
+  })
+
   it('never sends a connection string to the browser', async () => {
     const data = await load()
 
@@ -90,6 +108,6 @@ describe('root loader', () => {
       params: {},
     } as Parameters<typeof rootLoader>[0])
 
-    expect(data).toEqual({ databases: [], currentDb: undefined })
+    expect(data).toEqual({ databases: [], currentDb: undefined, readOnly: false })
   })
 })

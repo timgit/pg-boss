@@ -2,6 +2,7 @@ import { useSearchParams } from 'react-router'
 import { useState, useEffect } from 'react'
 import { DbLink } from '~/components/db-link'
 import type { Route } from './+types/queues._index'
+import { useReadOnly } from '~/lib/read-only'
 import { getQueues, getQueueCount } from '~/lib/queries.server'
 import { Sparkline } from '~/components/ui/sparkline'
 import { Card, CardContent } from '~/components/ui/card'
@@ -92,6 +93,7 @@ export function ErrorBoundary () {
 }
 
 export default function QueuesIndex ({ loaderData }: Route.ComponentProps) {
+  const readOnly = useReadOnly()
   const { queues, totalCount, page, totalPages, hasNextPage, hasPrevPage, filter, search } = loaderData
   const [searchParams, setSearchParams] = useSearchParams()
   const [searchInput, setSearchInput] = useState(search)
@@ -147,11 +149,11 @@ export default function QueuesIndex ({ loaderData }: Route.ComponentProps) {
       <PageHeader
         title="Queues"
         subtitle={`${totalCount.toLocaleString()} queue${totalCount !== 1 ? 's' : ''} ${hasActiveFilters ? 'found' : 'configured'}`}
-        action={
+        action={readOnly ? undefined : (
           <DbLink to="/queues/create">
             <Button variant="primary" size="md">Create Queue</Button>
           </DbLink>
-        }
+        )}
       />
 
       {/* Search and Filters */}

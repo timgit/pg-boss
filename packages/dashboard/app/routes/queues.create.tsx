@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { redirect, useActionData, useNavigation, useBlocker } from 'react-router'
 import { DbLink } from '~/components/db-link'
 import type { Route } from './+types/queues.create'
+import { useReadOnly } from '~/lib/read-only'
+import { ReadOnlyNotice } from '~/components/read-only-notice'
 import { getQueues } from '~/lib/queries.server'
 import { createQueue } from '~/lib/boss.server'
 import { dbContext } from '~/lib/db-context'
@@ -137,16 +139,18 @@ export async function action ({ request, context }: Route.ActionArgs) {
   return redirect(redirectUrl)
 }
 
-export function ErrorBoundary () {
+export function ErrorBoundary ({ error }: Route.ErrorBoundaryProps) {
   return (
     <ErrorCard
       title="Failed to load queue creation page"
+      error={error}
       backTo={{ href: '/queues', label: 'Back to Queues' }}
     />
   )
 }
 
 export default function CreateQueue ({ loaderData }: Route.ComponentProps) {
+  const readOnly = useReadOnly()
   const { queues } = loaderData
   const actionData = useActionData<typeof action>()
   const navigation = useNavigation()
@@ -196,6 +200,18 @@ export default function CreateQueue ({ loaderData }: Route.ComponentProps) {
     window.addEventListener('beforeunload', handleBeforeUnload)
     return () => window.removeEventListener('beforeunload', handleBeforeUnload)
   }, [isDirty, isSubmitting])
+
+  // Read-only mode: the route stays reachable so a bookmark explains itself, but
+  // the form is replaced rather than rendered disabled — the server would refuse
+  // the submit anyway.
+  if (readOnly) {
+    return (
+      <div className="space-y-6">
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Create Queue</h1>
+        <ReadOnlyNotice action="Creating queues" />
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">
