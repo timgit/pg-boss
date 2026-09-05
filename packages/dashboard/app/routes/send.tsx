@@ -107,10 +107,11 @@ export async function action ({ request, context }: Route.ActionArgs) {
   return redirect(redirectUrl)
 }
 
-export function ErrorBoundary () {
+export function ErrorBoundary ({ error }: Route.ErrorBoundaryProps) {
   return (
     <ErrorCard
       title="Failed to load job sending page"
+      error={error}
       backTo={{ href: '/queues', label: 'Back to Queues' }}
     />
   )

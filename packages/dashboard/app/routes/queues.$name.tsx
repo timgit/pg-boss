@@ -164,10 +164,11 @@ export async function action ({ params, request, context }: Route.ActionArgs) {
   return { success: affected > 0, affected, message }
 }
 
-export function ErrorBoundary () {
+export function ErrorBoundary ({ error }: Route.ErrorBoundaryProps) {
   return (
     <ErrorCard
       title="Failed to load queue"
+      error={error}
       backTo={{ href: '/queues', label: 'Back to Queues' }}
     />
   )

@@ -119,10 +119,11 @@ export async function action ({ request, context }: Route.ActionArgs) {
   return redirect(redirectUrl)
 }
 
-export function ErrorBoundary () {
+export function ErrorBoundary ({ error }: Route.ErrorBoundaryProps) {
   return (
     <ErrorCard
       title="Failed to load schedule creation"
+      error={error}
       backTo={{ href: '/schedules', label: 'Back to Schedules' }}
     />
   )

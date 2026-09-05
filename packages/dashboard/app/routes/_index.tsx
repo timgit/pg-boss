@@ -66,8 +66,8 @@ export async function loader ({ context }: Route.LoaderArgs) {
   }
 }
 
-export function ErrorBoundary () {
-  return <ErrorCard title="Failed to load dashboard" />
+export function ErrorBoundary ({ error }: Route.ErrorBoundaryProps) {
+  return <ErrorCard title="Failed to load dashboard" error={error} />
 }
 
 export default function Overview ({ loaderData }: Route.ComponentProps) {

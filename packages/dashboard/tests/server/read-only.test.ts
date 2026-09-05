@@ -1,6 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { Hono } from 'hono'
-import { configureReadOnly, isReadOnly } from '~/lib/read-only.server'
+import {
+  READ_ONLY_MESSAGE,
+  READ_ONLY_STATUS_TEXT,
+  configureReadOnly,
+  isReadOnly,
+} from '~/lib/read-only.server'
 
 function appWithRoutes (): Hono {
   const app = new Hono()
@@ -71,8 +76,22 @@ describe('read-only mode', () => {
       for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) {
         const res = await app.request('/test', { method })
         expect(res.status, method).toBe(403)
-        expect((await res.json() as { error: string }).error).toContain('read-only')
+        expect(await res.text(), method).toBe(READ_ONLY_MESSAGE)
       }
+    })
+
+    it('refuses in the shape a route error boundary can render', async () => {
+      // A submit expects a single-fetch response, so this arrives at the boundary as
+      // a route error. `ErrorCard` shows the status text as its heading and the body
+      // as its detail, which only works if both carry the explanation.
+      process.env.PGBOSS_DASHBOARD_READ_ONLY = '1'
+      const app = appWithRoutes()
+
+      const res = await app.request('/test', { method: 'POST' })
+
+      expect(res.statusText).toBe(READ_ONLY_STATUS_TEXT)
+      expect(res.headers.get('content-type')).toMatch(/^text\/plain/)
+      expect(await res.text()).toContain('PGBOSS_DASHBOARD_READ_ONLY=1')
     })
 
     it('covers paths that have no route of their own, so a route added later is guarded', async () => {

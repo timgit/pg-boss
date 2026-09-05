@@ -1,7 +1,7 @@
 import { PgBoss } from 'pg-boss'
 
 const connectionString = process.env.DATABASE_URL || 'postgres://postgres:postgres@127.0.0.1:5432/pgboss'
-const schema = process.env.PGBOSS_SCHEMA || 'pgboss'
+const schema = process.env.PGBOSS_SCHEMA || 'pgboss_dev'
 
 async function main () {
   console.log(`Starting pg-boss worker on schema "${schema}"...`)

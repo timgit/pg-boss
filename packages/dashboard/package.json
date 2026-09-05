@@ -26,10 +26,10 @@
     "bin"
   ],
   "scripts": {
-    "dev": "cross-env DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/pgboss node server.js",
-    "dev:auth": "cross-env DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/pgboss PGBOSS_DASHBOARD_AUTH_USERNAME=admin PGBOSS_DASHBOARD_AUTH_PASSWORD=admin node server.js",
-    "dev:init-db": "cross-env DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/pgboss tsx scripts/init-dev-db.ts",
-    "dev:worker": "cross-env DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/pgboss tsx scripts/worker.ts",
+    "dev": "cross-env DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/pgboss PGBOSS_SCHEMA=pgboss_dev node server.js",
+    "dev:auth": "cross-env DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/pgboss PGBOSS_SCHEMA=pgboss_dev PGBOSS_DASHBOARD_AUTH_USERNAME=admin PGBOSS_DASHBOARD_AUTH_PASSWORD=admin node server.js",
+    "dev:init-db": "cross-env DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/pgboss PGBOSS_SCHEMA=pgboss_dev tsx scripts/init-dev-db.ts",
+    "dev:worker": "cross-env DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/pgboss PGBOSS_SCHEMA=pgboss_dev tsx scripts/worker.ts",
     "build": "react-router build && esbuild app/server.node.ts --bundle --platform=node --format=esm --packages=external --outfile=build/server.js",
     "start": "node ./build/server.js",
     "prepublishOnly": "npm run typecheck && npm run test && npm run build",

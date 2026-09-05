@@ -2,10 +2,14 @@
  * Initialize the development database: pg-boss schema, queues, and a dataset that
  * exercises everything the dashboard can draw.
  *
- * The script owns the queues listed in `OWNED_QUEUES` and drops them on every run,
- * so repeated runs converge on the same dataset instead of piling up jobs. Queues
- * you created by hand are never touched — the blast radius is exactly the names
- * below.
+ * The script owns a schema of its own — `pgboss_dev` by default — and drops it
+ * whole on every run, so repeated runs converge on the same dataset instead of
+ * piling up jobs. The blast radius is that one schema. Nothing outside it is read
+ * or written, so the queue names below are free to be ordinary-sounding without
+ * colliding with anything real in the same database.
+ *
+ * `npm run dev`, `npm run dev:auth`, and `npm run dev:worker` all point at the same
+ * schema, so the dashboard sees what this script wrote.
  *
  * Two populations, deliberately:
  *
@@ -21,27 +25,42 @@ import { Client } from 'pg'
 import { PgBoss } from 'pg-boss'
 
 const connectionString = process.env.DATABASE_URL || 'postgres://postgres:postgres@127.0.0.1:5432/pgboss'
-const schema = process.env.PGBOSS_SCHEMA || 'pgboss'
+const schema = process.env.PGBOSS_SCHEMA || 'pgboss_dev'
 
 /**
- * Every queue this script owns, in deletion order. A queue naming another as its
- * dead letter holds a foreign key to it, so referencing queues come first and
- * `demo-dlq` goes last.
+ * This script drops its schema before seeding, so it must never be pointed at one
+ * somebody keeps anything in. Two gates:
+ *
+ * - The name has to be a bare identifier, since it is interpolated into DDL.
+ * - The name has to end in `_dev`, which is what makes the drop safe by
+ *   construction. `PGBOSS_SEED_FORCE=1` overrides that for a scratch schema named
+ *   something else, and is the only way to aim this at an arbitrary name.
  */
-const OWNED_QUEUES = [
-  'email-notifications',
-  'payment-processing',
-  'report-generation',
-  'user-sync',
-  'cleanup-tasks',
-  'tenant-jobs',
-  'demo-payments',
-  'demo-exports',
-  'demo-webhooks',
-  'demo-billing',
-  'demo-imports',
-  'demo-dlq',
-] as const
+function assertDroppable (name: string): void {
+  if (!/^[a-z_][a-z0-9_]*$/i.test(name)) {
+    throw new Error(`Refusing to seed schema "${name}": not a bare SQL identifier.`)
+  }
+
+  if (!name.endsWith('_dev') && process.env.PGBOSS_SEED_FORCE !== '1') {
+    throw new Error(
+      `Refusing to drop schema "${name}": this script recreates its schema from scratch ` +
+      'and only does that to a name ending in "_dev". Set PGBOSS_SEED_FORCE=1 if you ' +
+      'really mean this one.'
+    )
+  }
+}
+
+/** Drop the schema so every run starts from the same empty slate. pg-boss recreates it. */
+async function resetSchema (): Promise<void> {
+  const client = new Client({ connectionString })
+  await client.connect()
+
+  try {
+    await client.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`)
+  } finally {
+    await client.end()
+  }
+}
 
 const boss = new PgBoss({
   connectionString,
@@ -54,16 +73,13 @@ const boss = new PgBoss({
 boss.on('error', (err) => console.error('pg-boss error:', err.message))
 
 async function main () {
-  console.log(`Initializing pg-boss schema "${schema}"...`)
-  await boss.start()
+  assertDroppable(schema)
 
-  // Deleting a queue that does not exist is already a no-op, so this needs no
-  // catch — and a failure here means a real problem (usually a dead-letter
-  // reference still pointing at the queue being dropped) that should be loud
-  // rather than swallowed into a dataset that silently accumulates.
-  for (const name of OWNED_QUEUES) {
-    await boss.deleteQueue(name)
-  }
+  console.log(`Resetting schema "${schema}"...`)
+  await resetSchema()
+
+  console.log('Installing pg-boss schema...')
+  await boss.start()
 
   await seedWorkerQueues()
   await seedEveryJobState()

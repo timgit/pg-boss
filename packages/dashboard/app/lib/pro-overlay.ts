@@ -26,6 +26,7 @@ import type { RouteConfigEntry } from '@react-router/dev/routes'
 
 const here = dirname(fileURLToPath(import.meta.url))
 
+/** Where a Pro build clones the overlay. The default for every caller but the tests. */
 export const overlayDir = join(here, '..', 'pro')
 export const stubPath = join(here, 'pro-stub.ts')
 
@@ -34,36 +35,42 @@ export function proEnabled (): boolean {
   return process.env.PGBOSS_PRO === '1'
 }
 
-function requireOverlay (): void {
-  if (!existsSync(overlayDir)) {
+function requireOverlay (dir: string): void {
+  if (!existsSync(dir)) {
     throw new Error(
-      `PGBOSS_PRO=1 but no overlay is present at ${overlayDir}. ` +
+      `PGBOSS_PRO=1 but no overlay is present at ${dir}. ` +
       'Clone the Pro overlay into that directory before building, or unset PGBOSS_PRO.'
     )
   }
 }
 
-/** Target for the `~pro` alias: the overlay's runtime entry, or the stub. */
-export function proAlias (): string {
+/**
+ * Target for the `~pro` alias: the overlay's runtime entry, or the stub.
+ *
+ * `dir` exists so the tests can point at a scratch directory they own. Nothing
+ * here ever writes to or removes `dir`, and no test may pass `overlayDir` — a
+ * developer's overlay clone is live, uncommitted work.
+ */
+export function proAlias (dir: string = overlayDir): string {
   if (!proEnabled()) {
     return stubPath
   }
 
-  requireOverlay()
-  return join(overlayDir, 'index.tsx')
+  requireOverlay(dir)
+  return join(dir, 'index.tsx')
 }
 
-/** Routes the overlay adds, appended to the free route table. */
-export async function proRoutes (): Promise<RouteConfigEntry[]> {
+/** Routes the overlay adds, appended to the free route table. See `proAlias` on `dir`. */
+export async function proRoutes (dir: string = overlayDir): Promise<RouteConfigEntry[]> {
   if (!proEnabled()) {
     return []
   }
 
-  requireOverlay()
+  requireOverlay(dir)
 
   // The specifier is computed so TypeScript does not try to resolve a directory
   // that is absent from every build but a Pro one.
-  const entry = pathToFileURL(join(overlayDir, 'routes.ts')).href
+  const entry = pathToFileURL(join(dir, 'routes.ts')).href
   const { default: routes } = await import(/* @vite-ignore */ entry) as { default: RouteConfigEntry[] }
   return routes
 }

@@ -63,8 +63,8 @@ export async function loader ({ request, context }: Route.LoaderArgs) {
   }
 }
 
-export function ErrorBoundary () {
-  return <ErrorCard title="Failed to load schedules" />
+export function ErrorBoundary ({ error }: Route.ErrorBoundaryProps) {
+  return <ErrorCard title="Failed to load schedules" error={error} />
 }
 
 function ordinal (n: number): string {
