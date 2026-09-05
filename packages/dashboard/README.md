@@ -13,7 +13,6 @@ DATABASE_URL="postgres://user:password@localhost:5432/mydb" npx pg-boss-dashboar
 
 Open http://localhost:3000 in your browser.
 
-Requires Node.js 22.12+ and a PostgreSQL database with a pg-boss schema (pg-boss 12.24+ recommended). For configuration, multi-database setup, production deployment, warning persistence, and troubleshooting, see the [documentation](https://pgboss.io/dashboard).
 
 ## Development
 
@@ -27,7 +26,7 @@ cd pg-boss/packages/dashboard
 # Install dependencies
 npm install
 
-# Initialize local database with pg-boss schema and test queues
+# Initialize local database with pg-boss schema and demo data
 npm run dev:init-db
 
 # Start development server with hot reloading
@@ -43,10 +42,6 @@ npm run build
 # Run production build
 npm start
 ```
-
-The `dev:init-db` script creates the pg-boss schema and populates it with sample queues and jobs for testing. It connects to `postgres://postgres:postgres@127.0.0.1:5432/pgboss` by default.
-
-The `dev:worker` script starts a worker that processes jobs from the same pg-boss instance as the dashboard. This is useful for testing the dashboard while jobs are being processed. The worker will stay running until you stop it with Ctrl+C.
 
 ### Testing
 
