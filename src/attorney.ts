@@ -1,5 +1,6 @@
 import assert from 'node:assert'
 import { DEFAULT_SCHEMA } from './plans.ts'
+import { assertRecurrenceConfig } from './recurrence.ts'
 import type * as types from './types.ts'
 
 const POLICY = {
@@ -794,6 +795,27 @@ function applyScheduleConfig (config: any) {
     'configuration assert: cronWorkerIntervalSeconds must be between 1 and 45 seconds')
 
   config.cronWorkerIntervalSeconds = config.cronWorkerIntervalSeconds || 5
+
+  assert(!('missedGraceSeconds' in config) || config.missedGraceSeconds >= 1,
+    'configuration assert: missedGraceSeconds must be at least 1 second')
+
+  // Derived rather than fixed: a pass that cannot run more often than the monitor interval cannot
+  // be expected to claim inside a window narrower than two of them.
+  config.missedGraceSeconds = config.missedGraceSeconds || Math.max(60, config.cronMonitorIntervalSeconds * 2)
+
+  assert(!('maxCatchupOccurrences' in config) || config.maxCatchupOccurrences >= 1,
+    'configuration assert: maxCatchupOccurrences must be at least 1')
+
+  config.maxCatchupOccurrences = config.maxCatchupOccurrences || 1000
+
+  assert(!('scheduleRepairSeconds' in config) || config.scheduleRepairSeconds >= 1,
+    'configuration assert: scheduleRepairSeconds must be at least 1 second')
+
+  config.scheduleRepairSeconds = config.scheduleRepairSeconds || 300
+
+  if ('recurrences' in config) {
+    assertRecurrenceConfig(config.recurrences)
+  }
 }
 
 function applyBamConfig (config: any) {

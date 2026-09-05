@@ -88,6 +88,7 @@ export const updateOptionsSchema = z.object({
 export const scheduleOptionsSchema = sendOptionsSchemaBase.extend({
   tz: z.string().optional(),
   key: z.string().optional(),
+  missed: z.enum(['skip', 'once', 'all']).optional(),
 }) satisfies z.ZodType<types.HttpScheduleOptions>
 
 export const fetchOptionsSchema = z.object({
@@ -245,10 +246,15 @@ export const queueResultSchema = z.object({
 export const scheduleSchema = z.object({
   name: z.string(),
   key: z.string(),
+  kind: z.string(),
+  // the expression lives in the cron column whatever the kind, so both names are reported
+  expression: z.string(),
   cron: z.string(),
   timezone: z.string(),
   data: jsonRecordSchema.optional(),
-  options: sendOptionsSchema.optional(),
+  options: scheduleOptionsSchema.optional(),
+  nextRunAt: z.iso.datetime().nullable().transform((val) => val ? new Date(val) : null),
+  lastRunAt: z.iso.datetime().nullable().transform((val) => val ? new Date(val) : null),
 }) satisfies z.ZodType<types.HttpSchedule>
 
 export const bamStatusSummarySchema = z.object({
@@ -636,9 +642,16 @@ export const schemaVersionResponseSchema: z.ZodType<types.HttpSchemaVersionRespo
   result: z.number().nullable()
 })
 
+export const recurrenceSchema = z.object({
+  kind: z.string(),
+  expression: z.string(),
+}) satisfies z.ZodType<types.HttpRecurrence>
+
 export const scheduleRequestSchema: z.ZodType<types.HttpScheduleRequest> = z.object({
   name: queueNameSchema,
-  cron: z.string(),
+  // A bare string is cron, which is what every caller written before kinds existed sends, so the
+  // field keeps its name. The object form names a kind registered on the server's constructor.
+  cron: z.union([z.string(), recurrenceSchema]),
   data: nullableJsonRecordSchema.optional(),
   options: scheduleOptionsSchema.optional()
 })

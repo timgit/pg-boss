@@ -71,7 +71,91 @@ export interface SchedulingOptions {
   clockMonitorIntervalSeconds?: number;
   cronWorkerIntervalSeconds?: number;
   cronMonitorIntervalSeconds?: number;
+  /**
+   * Recurrence parsers this process can evaluate, keyed by kind. Registered the same way `work()`
+   * handlers are: the parser lives in the process, only the expression is stored, and an instance
+   * with no parser for a stored kind leaves those schedules to an instance that has one.
+   *
+   * `cron` is built in and cannot be replaced.
+   *
+   * @example
+   * const boss = new PgBoss({
+   *   connectionString,
+   *   recurrences: {
+   *     rrule: {
+   *       next: (expression, after, tz) => myEngine.after(expression, after, tz),
+   *       validate: (expression, tz) => myEngine.parse(expression, tz)
+   *     }
+   *   }
+   * })
+   */
+  recurrences?: RecurrenceParsers;
+  /**
+   * How long after coming due an occurrence still counts as on time, in seconds. Anything older
+   * came due while no instance was claiming, and the schedule's `missed` policy decides its fate.
+   *
+   * Defaults to 60 seconds, or twice `cronMonitorIntervalSeconds` when that is longer. Raise it in
+   * a deployment whose passes routinely run late (a large schedule table, a contended pass slot,
+   * or a recurrence kind only some instances have a parser for), so healthy occurrences are not
+   * written off as missed.
+   * @default 60
+   */
+  missedGraceSeconds?: number;
+  /**
+   * The most occurrences one scheduling pass will send, per schedule and in total. `missed: 'all'`
+   * is unbounded by construction, so the remainder is dropped and reported as a
+   * `missed_occurrences_capped` warning.
+   * @default 1000
+   */
+  maxCatchupOccurrences?: number;
+  /**
+   * How long a schedule may sit with no pending occurrence before a pass re-anchors it, in seconds.
+   * Covers rows carried over from a schema that stored no occurrence, and rows whose claiming
+   * process died before it could write the following occurrence back.
+   * @default 300
+   */
+  scheduleRepairSeconds?: number;
 }
+
+/**
+ * Computes occurrences of a recurrence expression. Pure functions: pg-boss calls them, it never
+ * stores or serializes them.
+ */
+export interface RecurrenceParser {
+  /**
+   * The first occurrence strictly after `after`, or `null` when the expression has no further
+   * occurrence (an exhausted finite recurrence). Returning a date at or before `after` is an
+   * error, as is returning anything other than a Date or `null`.
+   */
+  next(expression: string, after: Date, tz: string): Date | null | undefined;
+  /**
+   * Optional expression check, called by `schedule()`. Throw to reject the expression before it
+   * reaches the schedule table.
+   */
+  validate?(expression: string, tz: string): void;
+}
+
+/** Recurrence parsers keyed by kind, as passed to the constructor. */
+export type RecurrenceParsers = Record<string, RecurrenceParser>
+
+/** A recurrence expression together with the kind of parser that evaluates it. */
+export interface Recurrence {
+  /** `cron`, or a kind registered through the `recurrences` constructor option. */
+  kind: string;
+  expression: string;
+}
+
+/**
+ * What to do with occurrences that came due while no instance was claiming them.
+ *
+ * An occurrence claimed within `missedGraceSeconds` of coming due was not missed, and is sent
+ * whatever the policy.
+ *
+ * - `skip`: send nothing for them, resume at the next future occurrence. The default.
+ * - `once`: send a single job, no matter how many occurrences were missed.
+ * - `all`: send one job per missed occurrence, oldest first.
+ */
+export type MissedPolicy = 'skip' | 'once' | 'all'
 
 /**
  * A named database backend. Selecting a backend turns on the internal compatibility
@@ -462,6 +546,9 @@ export interface ResolvedConstructorOptions extends ConstructorOptions, Compatib
   bamIntervalSeconds: number;
   flowIntervalSeconds: number;
   reindexIntervalSeconds: number;
+  missedGraceSeconds: number;
+  maxCatchupOccurrences: number;
+  scheduleRepairSeconds: number;
 }
 
 /**
@@ -730,7 +817,7 @@ export interface QueueResult extends Queue {
   singletonsActive: string[] | null;
 }
 
-export type ScheduleOptions = SendOptions & { tz?: string, key?: string }
+export type ScheduleOptions = SendOptions & { tz?: string, key?: string, missed?: MissedPolicy }
 
 /**
  * How long a worker waits between fetches. The delay before each fetch is chosen by
@@ -932,10 +1019,24 @@ export interface Request {
 export interface Schedule {
   name: string;
   key: string;
+  /** `cron`, or a kind registered through the `recurrences` constructor option. */
+  kind: string;
+  /**
+   * The recurrence expression. Stored in the `cron` column whatever the kind, which is why both
+   * names are present.
+   */
+  expression: string;
   cron: string;
   timezone: string;
   data?: object;
-  options?: SendOptions;
+  options?: ScheduleOptions;
+  /**
+   * When the next occurrence is due. Briefly null while an occurrence is being dispatched, and
+   * null for good once a finite recurrence has no occurrence left.
+   */
+  nextRunAt: Date | null;
+  /** The occurrence most recently claimed by a cron pass, or null if it has never fired. */
+  lastRunAt: Date | null;
 }
 
 export interface Job<T = object> {
@@ -1069,7 +1170,7 @@ export type UpdateQueueOptions = Omit<Queue, 'name' | 'partition' | 'policy' | '
 
 export interface Warning { message: string, data: object }
 
-export type WarningType = 'slow_query' | 'queue_backlog' | 'clock_skew' | 'listen_notify_unavailable' | 'invalid_schedule' | 'index_bloat' | 'xmin_horizon' | 'autovacuum_disabled' | 'monitor_backoff'
+export type WarningType = 'slow_query' | 'queue_backlog' | 'clock_skew' | 'listen_notify_unavailable' | 'invalid_schedule' | 'index_bloat' | 'xmin_horizon' | 'autovacuum_disabled' | 'monitor_backoff' | 'unsupported_recurrence' | 'missed_occurrences_capped' | 'missed_occurrences_skipped'
 
 export interface PersistedWarning {
   id: number;

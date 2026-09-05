@@ -507,8 +507,12 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     return this.#contractor.detectDrift()
   }
 
-  schedule (name: string, cron: string, data?: object | null, options?: types.ScheduleOptions): Promise<void> {
-    return this.#timekeeper.schedule(name, cron, data, options)
+  /**
+   * Schedules a job on a recurring expression. A string is a cron expression; any other kind needs a
+   * parser registered with the `recurrences` constructor option.
+   */
+  schedule (name: string, recurrence: string | types.Recurrence, data?: object | null, options?: types.ScheduleOptions): Promise<void> {
+    return this.#timekeeper.schedule(name, recurrence, data, options)
   }
 
   unschedule (name: string, key?: string): Promise<void> {
@@ -580,6 +584,7 @@ export type {
   JobWithMetadata,
   MaintenanceOptions,
   ManagedIndex,
+  MissedPolicy,
   MigrationPartition,
   AsyncMigrationCommand,
   MismatchedIndex,
@@ -596,6 +601,9 @@ export type {
   QueueResult,
   QueueStats,
   QueueStatsOptions,
+  Recurrence,
+  RecurrenceParser,
+  RecurrenceParsers,
   RedriveOptions,
   ReindexOptions,
   Request,
