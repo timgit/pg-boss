@@ -12,6 +12,7 @@
     "target": "ES2022",
     "module": "ESNext",
     "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
     "moduleResolution": "bundler",
     "jsx": "react-jsx",
     "strict": true,

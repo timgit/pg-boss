@@ -1,5 +1,6 @@
 import { DbLink } from '~/components/db-link'
 import type { Route } from './+types/_index'
+import { useReadOnly } from '~/lib/read-only'
 import {
   getWarnings,
   getQueueStats,
@@ -70,6 +71,7 @@ export function ErrorBoundary () {
 }
 
 export default function Overview ({ loaderData }: Route.ComponentProps) {
+  const readOnly = useReadOnly()
   const { stats, warnings, topQueues, migrations } = loaderData
 
   return (
@@ -77,11 +79,11 @@ export default function Overview ({ loaderData }: Route.ComponentProps) {
       <PageHeader
         title="Overview"
         subtitle="Monitor your pg-boss job queues"
-        action={
+        action={readOnly ? undefined : (
           <DbLink to="/send">
             <Button variant="primary" size="md">Send Job</Button>
           </DbLink>
-        }
+        )}
       />
 
       {/* Stat row */}

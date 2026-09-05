@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { DbLink } from '~/components/db-link'
 import type { Route } from './+types/schedules.$name.$key'
+import { useReadOnly } from '~/lib/read-only'
 import { getSchedule } from '~/lib/queries.server'
 import { nextCronOccurrence } from '~/lib/cron.server'
 import { unschedule } from '~/lib/boss.server'
@@ -64,6 +65,7 @@ export function ErrorBoundary () {
 
 export default function ScheduleDetail ({ loaderData, actionData }: Route.ComponentProps) {
   const { schedule, nextOccurrence } = loaderData
+  const readOnly = useReadOnly()
   const [confirmDialog, setConfirmDialog] = useState(false)
 
   return (
@@ -78,14 +80,16 @@ export default function ScheduleDetail ({ loaderData, actionData }: Route.Compon
           </h1>
         </div>
         <div className="flex flex-col items-end gap-3">
-          <Button
-            variant="danger"
-            size="md"
-            className="cursor-pointer"
-            onClick={() => setConfirmDialog(true)}
-          >
-            Unschedule
-          </Button>
+          {!readOnly && (
+            <Button
+              variant="danger"
+              size="md"
+              className="cursor-pointer"
+              onClick={() => setConfirmDialog(true)}
+            >
+              Unschedule
+            </Button>
+          )}
           <div className="flex gap-6 text-sm text-[var(--text-tertiary)]">
             <span>Created {formatDate(new Date(schedule.createdOn))}</span>
             {new Date(schedule.updatedOn).getTime() !== new Date(schedule.createdOn).getTime() && (

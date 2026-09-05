@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { redirect, useActionData, useNavigation, useBlocker, useSearchParams } from 'react-router'
 import { DbLink } from '~/components/db-link'
 import type { Route } from './+types/send'
+import { useReadOnly } from '~/lib/read-only'
+import { ReadOnlyNotice } from '~/components/read-only-notice'
 import { getQueues } from '~/lib/queries.server'
 import { sendJob } from '~/lib/boss.server'
 import { dbContext } from '~/lib/db-context'
@@ -115,6 +117,7 @@ export function ErrorBoundary () {
 }
 
 export default function SendJob ({ loaderData }: Route.ComponentProps) {
+  const readOnly = useReadOnly()
   const { queues } = loaderData
   const [searchParams] = useSearchParams()
   const actionData = useActionData<typeof action>()
@@ -157,6 +160,18 @@ export default function SendJob ({ loaderData }: Route.ComponentProps) {
     window.addEventListener('beforeunload', handleBeforeUnload)
     return () => window.removeEventListener('beforeunload', handleBeforeUnload)
   }, [isDirty, isSubmitting])
+
+  // Read-only mode: the route stays reachable so a bookmark explains itself, but
+  // the form is replaced rather than rendered disabled — the server would refuse
+  // the submit anyway.
+  if (readOnly) {
+    return (
+      <div className="space-y-6">
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Send Job</h1>
+        <ReadOnlyNotice action="Sending jobs" />
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">

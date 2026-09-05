@@ -1,6 +1,6 @@
 {
   "name": "@pg-boss/dashboard",
-  "version": "1.6.7",
+  "version": "1.7.0",
   "description": "Web dashboard for monitoring and managing pg-boss job queues",
   "keywords": [
     "pg-boss",
@@ -44,15 +44,15 @@
     "ci": "npm run typecheck && npm run cover:frontend && cross-env DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/pgboss npm run cover:server"
   },
   "dependencies": {
-    "@base-ui/react": "^1.7.0",
+    "@base-ui/react": "^1.8.0",
     "@hono/node-server": "^2.1.1",
     "@react-router/node": "^8.3.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cron-parser": "^5.10.0",
-    "hono": "^4.13.5",
+    "hono": "^4.13.7",
     "isbot": "^5.2.2",
-    "lucide-react": "^1.40.0",
+    "lucide-react": "^1.41.0",
     "pg": "^8.23.0",
     "pg-boss": "^12.30.0",
     "react": "^19.2.8",

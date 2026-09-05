@@ -3,6 +3,7 @@ import { serveStatic } from '@hono/node-server/serve-static'
 import { createRequestHandler, RouterContextProvider, type ServerBuild } from 'react-router'
 import type { Context } from 'hono'
 import { configureAuth } from './lib/auth.server'
+import { configureReadOnly } from './lib/read-only.server'
 import { getDatabaseConfigs, findDatabaseById } from './lib/config.server'
 import { dbContext } from './lib/db-context'
 
@@ -49,6 +50,11 @@ export function createHonoApp ({ build, mode, serveStaticAssets = false }: Creat
   // Basic auth (no-op unless PGBOSS_DASHBOARD_AUTH_* are set). Runs first so static
   // assets and SSR responses are both gated.
   configureAuth(app)
+
+  // Read-only mode (no-op unless PGBOSS_DASHBOARD_READ_ONLY=1). Runs after auth so a
+  // rejected mutation still requires credentials to provoke, and before the SSR
+  // handler so every route action is covered by one check.
+  configureReadOnly(app)
 
   if (serveStaticAssets) {
     // The build's own basename is the single source of truth (baked by

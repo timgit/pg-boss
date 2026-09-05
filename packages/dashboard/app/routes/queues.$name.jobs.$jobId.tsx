@@ -3,6 +3,7 @@ import { useFetcher, redirect } from 'react-router'
 import { Copy, Check } from 'lucide-react'
 import { DbLink } from '~/components/db-link'
 import type { Route } from './+types/queues.$name.jobs.$jobId'
+import { useReadOnly } from '~/lib/read-only'
 import { getJobById, cancelJob, retryJob, resumeJob, deleteJob, isValidIntent } from '~/lib/queries.server'
 import { dbContext } from '~/lib/db-context'
 import { Card, CardHeader, CardTitle, CardContent } from '~/components/ui/card'
@@ -92,6 +93,7 @@ export function ErrorBoundary () {
 
 export default function JobDetail ({ loaderData }: Route.ComponentProps) {
   const { job, queueName } = loaderData
+  const readOnly = useReadOnly()
   const fetcher = useFetcher<{ success?: boolean; affected?: number; message?: string; error?: string }>()
   const isLoading = fetcher.state !== 'idle'
   const [copied, setCopied] = useState(false)
@@ -120,7 +122,7 @@ export default function JobDetail ({ loaderData }: Route.ComponentProps) {
             <Badge variant={JOB_STATE_VARIANTS[job.state]} size="lg" dot>{job.state}</Badge>
           </span>
         }
-        action={
+        action={readOnly ? undefined : (
           <div className="flex items-center gap-2">
             {showError && (
               <span className="text-xs text-[var(--warning-600)]" title={actionResult.message}>
@@ -162,7 +164,7 @@ export default function JobDetail ({ loaderData }: Route.ComponentProps) {
               />
             )}
           </div>
-        }
+        )}
       />
 
       {/* Details Card */}
