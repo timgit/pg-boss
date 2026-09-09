@@ -137,6 +137,7 @@ export function create (schema: string, version: number, options?: CreateOptions
   const commands = [
     options?.createSchema ? createSchema(schema) : '',
     createEnumJobState(schema),
+    createClockFunction(schema),
 
     createTableVersion(schema),
     createTableQueue(schema),
@@ -191,6 +192,19 @@ function createEnumJobState (schema: string) {
       '${JOB_STATES.cancelled}',
       '${JOB_STATES.failed}'
     )
+  `
+}
+
+// The one place pg-boss SQL reads the clock. STABLE and a single SELECT, so the planner inlines it
+// and plans are identical to calling now() directly; a TestClock swaps the body (pg-boss #689).
+export function createClockFunction (schema: string) {
+  return `
+    CREATE FUNCTION ${schema}.now()
+    RETURNS timestamp with time zone AS
+    $$
+      SELECT pg_catalog.now();
+    $$
+    LANGUAGE sql STABLE;
   `
 }
 
@@ -250,8 +264,8 @@ function createTableQueue (schema: string) {
       monitor_claim_on timestamp with time zone,
       monitor_on timestamp with time zone,
       maintain_on timestamp with time zone,
-      created_on timestamp with time zone not null default now(),
-      updated_on timestamp with time zone not null default now(),
+      created_on timestamp with time zone not null default ${schema}.now(),
+      updated_on timestamp with time zone not null default ${schema}.now(),
       PRIMARY KEY (name)
     )
   `
@@ -274,8 +288,8 @@ function createTableSchedule (schema: string) {
       timezone text DEFAULT 'UTC',
       data jsonb,
       options jsonb,
-      created_on timestamp with time zone not null default now(),
-      updated_on timestamp with time zone not null default now(),
+      created_on timestamp with time zone not null default ${schema}.now(),
+      updated_on timestamp with time zone not null default ${schema}.now(),
       last_job_id uuid,
       PRIMARY KEY (name, key)
     )
@@ -287,8 +301,8 @@ function createTableSubscription (schema: string) {
     CREATE TABLE ${schema}.subscription (
       event text not null,
       name text not null REFERENCES ${schema}.queue ON DELETE CASCADE,
-      created_on timestamp with time zone not null default now(),
-      updated_on timestamp with time zone not null default now(),
+      created_on timestamp with time zone not null default ${schema}.now(),
+      updated_on timestamp with time zone not null default ${schema}.now(),
       PRIMARY KEY(event, name)
     )
   `
@@ -322,7 +336,7 @@ export function createTableWarning (schema: string) {
       type text NOT NULL,
       message text NOT NULL,
       data jsonb,
-      created_on timestamp with time zone NOT NULL DEFAULT now()
+      created_on timestamp with time zone NOT NULL DEFAULT ${schema}.now()
     )
   `
 }
@@ -468,11 +482,11 @@ function createTableJob (schema: string, noPartitioning = false) {
       singleton_on timestamp without time zone,
       group_id text,
       group_tier text,
-      start_after timestamp with time zone not null default now(),
-      created_on timestamp with time zone not null default now(),
+      start_after timestamp with time zone not null default ${schema}.now(),
+      created_on timestamp with time zone not null default ${schema}.now(),
       started_on timestamp with time zone,
       completed_on timestamp with time zone,
-      keep_until timestamp with time zone NOT NULL default now() + interval '${QUEUE_DEFAULTS.retention_seconds}',
+      keep_until timestamp with time zone NOT NULL default ${schema}.now() + interval '${QUEUE_DEFAULTS.retention_seconds}',
       output jsonb,
       dead_letter text,
       policy text,
@@ -1313,7 +1327,7 @@ export function createTableQueueStats (schema: string, noPartitioning = false): 
       active_count   int NOT NULL DEFAULT 0,
       failed_count   int NOT NULL DEFAULT 0,
       total_count    int NOT NULL DEFAULT 0,
-      captured_on timestamptz NOT NULL DEFAULT now(),
+      captured_on timestamptz NOT NULL DEFAULT ${schema}.now(),
       ${noPartitioning ? 'PRIMARY KEY (id)' : 'PRIMARY KEY (id, captured_on)'}
     ) ${noPartitioning ? '' : 'PARTITION BY RANGE (captured_on)'}
   `
