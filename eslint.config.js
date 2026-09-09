@@ -8,13 +8,8 @@ const config = neostandard({
   noJsx: true,
 })
 
-// Every clock read in pg-boss SQL goes through ${schema}.now() so a TestClock can redirect it
-// (pg-boss #689). Postgres has eleven spellings of "the current time" once age( is counted;
-// reject them all inside string and template contents under src/. Diagnostics that compare
-// against pg_stat_* catalog timestamps opt out with a disable/enable block that states why. age(
-// is included because the one-argument form reads current_date and a regex cannot tell it from
-// age(xid). The quoted input strings 'now', 'today', 'tomorrow' and 'yesterday' read the
-// transaction clock as well and are rejected on the same grounds.
+// Ensure Postgres timestamp API calls in SQL statements go through
+// ${schema}.now() so a test clock can redirect them (pg-boss #689).
 const SQL_CLOCK_CALLS = String.raw`(^|[^.\w])(now|transaction_timestamp|statement_timestamp|clock_timestamp|timeofday|age)\(`
 const SQL_CLOCK_KEYWORDS = String.raw`\b(CURRENT_DATE|CURRENT_TIME|CURRENT_TIMESTAMP|LOCALTIME|LOCALTIMESTAMP)\b`
 const SQL_CLOCK_INPUT_STRINGS = String.raw`'(now|today|tomorrow|yesterday)'`
