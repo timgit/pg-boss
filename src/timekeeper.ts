@@ -188,11 +188,11 @@ function parseRecurrence (cron: string, tz: string, currentDate: Date) {
  * Validates a recurrence in whichever of the two formats it is written, so previewSchedule() and
  * schedule() reject exactly the same expressions.
  */
-function assertRecurrence (expression: string, tz: string): void {
+function assertRecurrence (expression: string, tz: string, now: Date): void {
   if (isRrule(expression)) {
     assertRrule(expression, tz)
   } else {
-    parseRecurrence(expression, tz, new Date())
+    parseRecurrence(expression, tz, now)
   }
 }
 
@@ -202,8 +202,8 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
   manager: Manager
 
   private stopped = true
-  private cronMonitorInterval: NodeJS.Timeout | null | undefined
-  private skewMonitorInterval: NodeJS.Timeout | null | undefined
+  private cronMonitorInterval: types.ClockTimer | null | undefined
+  private skewMonitorInterval: types.ClockTimer | null | undefined
   private timekeeping: boolean | undefined
   private _checkingSkew = false
 
@@ -236,7 +236,7 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
   // Zero skew until cacheClockSkew() has run, which start() only reaches when the instance was
   // configured with scheduling enabled.
   private get databaseTime (): number {
-    return Date.now() + this.clockSkew
+    return this.config.clock.now() + this.clockSkew
   }
 
   private get warningContext (): WarningContext {
@@ -267,8 +267,8 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
 
     setImmediate(() => this.onCron())
 
-    this.cronMonitorInterval = setInterval(async () => await this.onCron(), this.config.cronMonitorIntervalSeconds! * 1000)
-    this.skewMonitorInterval = setInterval(async () => await this.cacheClockSkew(), this.config.clockMonitorIntervalSeconds! * 1000)
+    this.cronMonitorInterval = this.config.clock.setInterval(async () => await this.onCron(), this.config.cronMonitorIntervalSeconds! * 1000)
+    this.skewMonitorInterval = this.config.clock.setInterval(async () => await this.cacheClockSkew(), this.config.clockMonitorIntervalSeconds! * 1000)
   }
 
   async stop () {
@@ -281,12 +281,12 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
     await this.manager.offWork(QUEUES.SEND_IT, { wait: true })
 
     if (this.skewMonitorInterval) {
-      clearInterval(this.skewMonitorInterval)
+      this.config.clock.clearInterval(this.skewMonitorInterval)
       this.skewMonitorInterval = null
     }
 
     if (this.cronMonitorInterval) {
-      clearInterval(this.cronMonitorInterval)
+      this.config.clock.clearInterval(this.cronMonitorInterval)
       this.cronMonitorInterval = null
     }
 
@@ -311,7 +311,7 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
 
       const { rows } = await this.db.executeSql(plans.getTime(this.config.schema))
 
-      const local = Date.now()
+      const local = this.config.clock.now()
 
       const dbTime = parseFloat(rows[0].time)
 
@@ -843,7 +843,7 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
     // other, and a row can say what it is without anyone parsing it.
     const kind: types.ScheduleKind = isRrule(cron) ? plans.SCHEDULE_KINDS.rrule : plans.SCHEDULE_KINDS.cron
 
-    assertRecurrence(cron, tz)
+    assertRecurrence(cron, tz, new Date(this.config.clock.now()))
 
     // A rule, unlike a cron expression, can have nothing left to send, which is the one failure a
     // caller cannot see: the row sits in the table, every pass evaluates it, and no job is ever

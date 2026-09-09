@@ -23,7 +23,7 @@ class Navigator extends EventEmitter implements types.EventsMixin {
   #stopped: boolean
   #stopping: boolean
   #working: boolean
-  #pollInterval: NodeJS.Timeout | undefined
+  #pollInterval: types.ClockTimer | undefined
   #db: types.IDatabase
   #manager: Manager
   #config: types.ResolvedConstructorOptions
@@ -55,7 +55,7 @@ class Navigator extends EventEmitter implements types.EventsMixin {
     this.#stopping = false
 
     setImmediate(() => this.#onPoll())
-    this.#pollInterval = setInterval(
+    this.#pollInterval = this.#config.clock.setInterval(
       () => this.#onPoll(),
       this.#config.flowIntervalSeconds * 1000
     )
@@ -67,7 +67,7 @@ class Navigator extends EventEmitter implements types.EventsMixin {
     this.#stopped = true
 
     if (this.#pollInterval) {
-      clearInterval(this.#pollInterval)
+      this.#config.clock.clearInterval(this.#pollInterval)
       this.#pollInterval = undefined
     }
 

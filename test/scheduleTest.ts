@@ -4,6 +4,7 @@ import { DateTime } from 'luxon'
 import * as helper from './testHelper.ts'
 import { PgBoss } from '../src/index.ts'
 import Timekeeper from '../src/timekeeper.ts'
+import { systemClock } from '../src/clock.ts'
 import { ctx } from './hooks.ts'
 
 describe('schedule', function () {
@@ -494,7 +495,7 @@ describe('timekeeper clock domain', function () {
         return { rows: [{ time: String(Date.now() + dbTimeOffsetMs) }] }
       }
     }
-    return new Timekeeper(db as any, manager as any, { schema: 'test', ...config } as any)
+    return new Timekeeper(db as any, manager as any, { schema: 'test', clock: systemClock, ...config } as any)
   }
 
   // A manager whose send() walks the given script, one entry per job in the batch. An Error entry

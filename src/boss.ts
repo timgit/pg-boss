@@ -118,7 +118,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
   #stopped: boolean
   #stopping: boolean
   #maintaining: boolean | undefined
-  #superviseInterval: NodeJS.Timeout | undefined
+  #superviseInterval: types.ClockTimer | undefined
   #db: types.IDatabase
   #config: types.ResolvedConstructorOptions
   #manager: Manager
@@ -177,7 +177,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
   async start () {
     if (this.#stopped) {
       this.#stopping = false
-      this.#superviseInterval = setInterval(
+      this.#superviseInterval = this.#config.clock.setInterval(
         () => this.#onSupervise(),
         this.#config.superviseIntervalSeconds! * 1000
       )
@@ -188,7 +188,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
   async stop () {
     if (!this.#stopped) {
       this.#stopping = true
-      if (this.#superviseInterval) clearInterval(this.#superviseInterval)
+      if (this.#superviseInterval) this.#config.clock.clearInterval(this.#superviseInterval)
       this.#stopped = true
       while (this.#maintaining) {
         await delay(10)
@@ -212,11 +212,11 @@ class Boss extends EventEmitter implements types.EventsMixin {
       query = { text: query, values: [] }
     }
 
-    const started = Date.now()
+    const started = this.#config.clock.now()
 
     const result = unwrapSQLResult(await this.#db.executeSql(query.text, query.values))
 
-    const elapsed = (Date.now() - started) / 1000
+    const elapsed = (this.#config.clock.now() - started) / 1000
 
     if (
       elapsed > this.#slowQuerySeconds ||
@@ -367,7 +367,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
         // cacheQueueStats) and not from a stopwatch around the call - that would count pool wait,
         // network and event-loop lag, none of which hold the horizon. The client measurement stays as
         // a fallback for a backend or adapter that returns no rows to read it from.
-        const statsStarted = Date.now()
+        const statsStarted = this.#config.clock.now()
         const { rows: rowsCacheStats } = await this.#executeQuery(cacheStatsSql)
         const pinned = rowsCacheStats.reduce((max, row) => Math.max(max, Number(row.pinSeconds) || 0), 0)
 
@@ -376,7 +376,7 @@ class Boss extends EventEmitter implements types.EventsMixin {
         // client time is pool and network latency - exactly the measurement the server-side
         // pinSeconds column exists to avoid backing off on.
         if (rowsCacheStats.length) {
-          this.#statsElapsedSeconds += pinned || (Date.now() - statsStarted) / 1000
+          this.#statsElapsedSeconds += pinned || (this.#config.clock.now() - statsStarted) / 1000
         }
 
         if (this.#config.persistQueueStats) {
@@ -852,8 +852,8 @@ class Boss extends EventEmitter implements types.EventsMixin {
         const { rows } = await this.#executeQuery(claim)
         if (!rows.length) return
       } else {
-        if (Date.now() < this.#detectOnly) return
-        this.#detectOnly = Date.now() + this.#config.reindexIntervalSeconds * 1000
+        if (this.#config.clock.now() < this.#detectOnly) return
+        this.#detectOnly = this.#config.clock.now() + this.#config.reindexIntervalSeconds * 1000
       }
     }
 

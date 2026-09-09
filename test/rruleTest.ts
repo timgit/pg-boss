@@ -2,6 +2,7 @@ import { expect } from 'vitest'
 import { delay } from '../src/tools.ts'
 import * as helper from './testHelper.ts'
 import Timekeeper from '../src/timekeeper.ts'
+import { systemClock } from '../src/clock.ts'
 import { isRrule, latestOccurrenceBefore, nextOccurrence, occurrencesInWindow, assertRrule, assertRruleSends } from '../src/rrule.ts'
 import { ctx } from './hooks.ts'
 
@@ -29,7 +30,7 @@ function makeTk () {
     }
   }
 
-  const tk = new Timekeeper(db as any, {} as any, { schema: 'test' } as any)
+  const tk = new Timekeeper(db as any, {} as any, { schema: 'test', clock: systemClock } as any)
 
   return Object.assign(tk, { executed })
 }

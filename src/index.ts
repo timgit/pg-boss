@@ -50,7 +50,6 @@ export function getRollbackPlans (schema?: string, version?: number, options?: t
 }
 
 export class PgBoss extends EventEmitter<types.PgBossEventMap> {
-  #stoppingOn: number | null
   #stopped: boolean
   #started: boolean | undefined
   #startingPromise: Promise<this> | null = null
@@ -69,7 +68,6 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
   constructor (options: types.ConstructorOptions)
   constructor (value: string | types.ConstructorOptions) {
     super()
-    this.#stoppingOn = null
     this.#stopped = true
 
     const config = Attorney.getConfig(value)
@@ -244,7 +242,6 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
 
     timeout = Math.max(timeout, 1000)
 
-    this.#stoppingOn = Date.now()
     this.#stoppingPromise = this.#doStop(close, graceful, timeout)
 
     try {
@@ -255,42 +252,45 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
   }
 
   async #doStop (close: boolean, graceful: boolean, timeout: number): Promise<void> {
+    await this.#notifier.stop()
+    await this.#manager.stop()
+    await this.#timekeeper.stop()
+    await this.#boss.stop()
+    await this.#navigator.stop()
+    await this.#bam.stop()
+
+    const shutdown = async () => {
+      await this.#manager.failWip()
+
+      if (close) {
+        await this.#closeDb()
+      }
+
+      this.#stopped = true
+      this.#started = false
+
+      this.emit(events.stopped)
+    }
+
+    if (!graceful) {
+      await shutdown()
+      return
+    }
+
+    // The deadline runs on the configured clock; the poll that watches for it stays on real
+    // time because it waits on in-flight handler I/O, not on the clock.
+    const deadline = { reached: false }
+    const deadlineTimer = this.#config.clock.setTimeout(() => { deadline.reached = true }, timeout)
+
     try {
-      await this.#notifier.stop()
-      await this.#manager.stop()
-      await this.#timekeeper.stop()
-      await this.#boss.stop()
-      await this.#navigator.stop()
-      await this.#bam.stop()
-
-      const shutdown = async () => {
-        await this.#manager.failWip()
-
-        if (close) {
-          await this.#closeDb()
-        }
-
-        this.#stopped = true
-        this.#started = false
-
-        this.emit(events.stopped)
-      }
-
-      if (!graceful) {
-        await shutdown()
-        return
-      }
-
-      while ((Date.now() - this.#stoppingOn!) < timeout && this.#manager.hasPendingCleanups()) {
+      while (!deadline.reached && this.#manager.hasPendingCleanups()) {
         await delay(500)
       }
-
-      await shutdown()
     } finally {
-      // Reset unconditionally (success or throw) so a stop() that fails partway can be retried
-      // instead of every future stop()/start() call silently no-op-ing forever on the stale marker.
-      this.#stoppingOn = null
+      this.#config.clock.clearTimeout(deadlineTimer)
     }
+
+    await shutdown()
   }
 
   async #closeDb (): Promise<void> {

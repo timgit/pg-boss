@@ -3,6 +3,7 @@ import pg from 'pg'
 import assert from 'node:assert'
 import { delay } from './tools.ts'
 import type * as types from './types.ts'
+import { systemClock } from './clock.ts'
 
 // Keep silent network failures below the default 30-second notify polling backstop: in the
 // worst case a failure happens immediately after a successful check, then takes one interval,
@@ -19,12 +20,15 @@ export const TRANSACTION_ROLLBACK_TIMEOUT_MS = 5000
 class Db extends EventEmitter implements types.IDatabase, types.EventsMixin {
   private pool!: pg.Pool
   private config: types.DatabaseOptions
+  private clock: types.Clock
   /** @internal */
   readonly _pgbdb: true
   opened: boolean
 
-  constructor (config: types.DatabaseOptions) {
+  constructor (config: types.DatabaseOptions & { clock?: types.Clock }) {
     super()
+
+    this.clock = config.clock ?? systemClock
 
     config.application_name = config.application_name || 'pgboss'
     config.connectionTimeoutMillis ??= 10000
@@ -82,8 +86,8 @@ class Db extends EventEmitter implements types.IDatabase, types.EventsMixin {
 
     let closed = false
     let client: pg.Client | null = null
-    let reconnectTimer: ReturnType<typeof setTimeout> | null = null
-    let heartbeatTimer: ReturnType<typeof setTimeout> | null = null
+    let reconnectTimer: types.ClockTimer | null = null
+    let heartbeatTimer: types.ClockTimer | null = null
     let attempt = 0
     const heartbeatInterval = this.config.notifyHeartbeatIntervalMs ?? DEFAULT_LISTEN_HEARTBEAT_INTERVAL_MS
     const heartbeatTimeout = this.config.notifyHeartbeatTimeoutMs ?? DEFAULT_LISTEN_HEARTBEAT_TIMEOUT_MS
@@ -97,7 +101,7 @@ class Db extends EventEmitter implements types.IDatabase, types.EventsMixin {
 
     const clearHeartbeat = () => {
       if (!heartbeatTimer) return
-      clearTimeout(heartbeatTimer)
+      this.clock.clearTimeout(heartbeatTimer)
       heartbeatTimer = null
     }
 
@@ -105,7 +109,7 @@ class Db extends EventEmitter implements types.IDatabase, types.EventsMixin {
       if (closed || reconnectTimer) return
       const backoff = Math.min(30000, 1000 * 2 ** Math.min(attempt, 5))
       attempt++
-      reconnectTimer = setTimeout(() => {
+      reconnectTimer = this.clock.setTimeout(() => {
         reconnectTimer = null
         connect().catch(() => scheduleReconnect())
       }, backoff)
@@ -124,7 +128,7 @@ class Db extends EventEmitter implements types.IDatabase, types.EventsMixin {
 
     const scheduleHeartbeat = (target: pg.Client) => {
       if (closed || client !== target) return
-      heartbeatTimer = setTimeout(() => {
+      heartbeatTimer = this.clock.setTimeout(() => {
         heartbeatTimer = null
         heartbeat(target).catch(error => disconnect(target, error))
       }, heartbeatInterval)
@@ -133,7 +137,7 @@ class Db extends EventEmitter implements types.IDatabase, types.EventsMixin {
     const heartbeat = async (target: pg.Client) => {
       if (closed || client !== target) return
 
-      let timeout: ReturnType<typeof setTimeout> | null = null
+      let timeout: types.ClockTimer | null = null
       const query = target.query(
         `SELECT EXISTS (
            SELECT 1
@@ -148,7 +152,7 @@ class Db extends EventEmitter implements types.IDatabase, types.EventsMixin {
         const result = await Promise.race([
           query,
           new Promise<never>((resolve, reject) => {
-            timeout = setTimeout(() => reject(new Error('LISTEN/NOTIFY heartbeat timed out')), heartbeatTimeout)
+            timeout = this.clock.setTimeout(() => reject(new Error('LISTEN/NOTIFY heartbeat timed out')), heartbeatTimeout)
           })
         ])
 
@@ -156,7 +160,7 @@ class Db extends EventEmitter implements types.IDatabase, types.EventsMixin {
           throw new Error('LISTEN/NOTIFY channel registration was lost')
         }
       } finally {
-        if (timeout) clearTimeout(timeout)
+        if (timeout) this.clock.clearTimeout(timeout)
       }
 
       scheduleHeartbeat(target)
@@ -210,7 +214,7 @@ class Db extends EventEmitter implements types.IDatabase, types.EventsMixin {
       close: async () => {
         closed = true
         if (reconnectTimer) {
-          clearTimeout(reconnectTimer)
+          this.clock.clearTimeout(reconnectTimer)
           reconnectTimer = null
         }
         clearHeartbeat()
