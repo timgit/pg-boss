@@ -199,12 +199,21 @@ function createEnumJobState (schema: string) {
 // clause, so the planner inlines it and plans are identical to calling pg_catalog.now() directly;
 // STABLE matches the body and is what CockroachDB requires to inline. A TestClock swaps the body
 // (pg-boss #689).
-function createClockFunction (schema: string) {
+export const CLOCK_FUNCTION_BODY = 'SELECT pg_catalog.now();'
+
+// The body a TestClock installs: the single row of ${schema}.clock when present, else the real
+// clock. The subquery defeats inlining, which is fine in tests and never happens in production.
+export function clockOverrideBody (schema: string) {
+  return `SELECT COALESCE((SELECT c.now FROM ${schema}.clock c LIMIT 1), pg_catalog.now());`
+}
+
+export function createClockFunction (schema: string, options: { replace?: boolean, body?: string } = {}) {
+  const { replace = false, body = CLOCK_FUNCTION_BODY } = options
   return `
-    CREATE FUNCTION ${schema}.now()
+    CREATE ${replace ? 'OR REPLACE ' : ''}FUNCTION ${schema}.now()
     RETURNS timestamp with time zone AS
     $$
-      SELECT pg_catalog.now();
+      ${body}
     $$
     LANGUAGE sql STABLE;
   `
@@ -3508,9 +3517,12 @@ export function expectedManagedConstraints (schema: string, partitioned: boolean
 // delete_queue; non-partitioned mode has neither the helpers nor the partition branches). Each entry
 // carries the whitespace-normalised body used for the diff and the full statement for remediation.
 // Postgres stores a function body verbatim, so the manifest body compares equal to the live one.
-export function expectedManagedFunctions (schema: string, partitioned: boolean): ManagedFunction[] {
+export function expectedManagedFunctions (schema: string, partitioned: boolean, options: { clockOverride?: boolean } = {}): ManagedFunction[] {
   return manifestSection(partitioned).functions.map(fn => {
-    const def = applyManifestSchema(fn.def, schema)
+    let def = applyManifestSchema(fn.def, schema)
+    if (fn.name === 'now' && options.clockOverride) {
+      def = def.replace(extractFunctionBody(def), ` ${clockOverrideBody(schema)} `)
+    }
     return {
       name: fn.name,
       expectedBody: normalizeFunctionBody(extractFunctionBody(def)),

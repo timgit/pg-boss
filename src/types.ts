@@ -464,6 +464,14 @@ export interface Clock {
  */
 export type ClockTimer = unknown
 
+/**
+ * A Clock that also owns the Postgres-side clock. PgBoss attaches it on start(), after the schema
+ * is installed, and disposes the returned handle on stop(). The handle is the only attachment state.
+ */
+export interface AttachableClock extends Clock {
+  attach(target: { db: IDatabase, schema: string }): Promise<AsyncDisposable>
+}
+
 export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, MaintenanceOptions, BackendOptions {
   /**
    * Source of time and timers for this instance. Defaults to the system clock (`Date.now` and the

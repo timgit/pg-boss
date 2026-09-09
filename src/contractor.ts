@@ -137,7 +137,7 @@ class Contractor {
   // Presence-level schema drift scan: compares the managed indexes the code expects against the live
   // catalog. Partitioned vs. non-partitioned is read from the database (job_common presence), and the
   // per-queue policy indexes are computed from the queue table, so conditional indexes are handled.
-  async detectDrift (): Promise<types.SchemaDriftReport> {
+  async detectDrift (options: { clockOverride?: boolean } = {}): Promise<types.SchemaDriftReport> {
     const schema = this.config.schema
 
     const probe = await this.db.executeSql(plans.jobCommonExists(schema))
@@ -238,7 +238,7 @@ class Contractor {
     return drifter.computeSchemaDrift({
       indexes: { expected: expectedIndexes, live, building },
       tables: { expected: plans.expectedManagedTables(schema, partitioned, partitions), live: liveTables ?? [...new Set(liveColumns.map(c => c.table))] },
-      functions: functionsSupported ? { expected: plans.expectedManagedFunctions(schema, partitioned), live: liveFunctions } : undefined,
+      functions: functionsSupported ? { expected: plans.expectedManagedFunctions(schema, partitioned, options), live: liveFunctions } : undefined,
       columns: { expected: expectedColumns, live: liveColumns },
       constraints: canonicalPg ? { expected: plans.expectedManagedConstraints(schema, partitioned), live: liveConstraints } : undefined,
       enum: { name: 'job_state', expected: plans.EXPECTED_JOB_STATES, actual: enumLabels }

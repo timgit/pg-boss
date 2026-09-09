@@ -49,11 +49,16 @@ export function getRollbackPlans (schema?: string, version?: number, options?: t
   return Contractor.rollbackPlans(schema, version, options)
 }
 
+function isAttachable (clock: types.Clock): clock is types.AttachableClock {
+  return typeof (clock as Partial<types.AttachableClock>).attach === 'function'
+}
+
 export class PgBoss extends EventEmitter<types.PgBossEventMap> {
   #stopped: boolean
   #started: boolean | undefined
   #startingPromise: Promise<this> | null = null
   #stoppingPromise: Promise<void> | null = null
+  #attachedClock: AsyncDisposable | null = null
   #config: types.ResolvedConstructorOptions
   #db: (types.IDatabase & { _pgbdb?: false }) | DbDefault
   #boss: Boss
@@ -163,6 +168,10 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
       await this.#contractor.check()
     }
 
+    if (isAttachable(this.#config.clock)) {
+      this.#attachedClock = await this.#config.clock.attach({ db: this.#db, schema: this.#config.schema })
+    }
+
     await this.#manager.start()
 
     if (this.#config.useListenNotify) {
@@ -261,6 +270,12 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
 
     const shutdown = async () => {
       await this.#manager.failWip()
+
+      if (this.#attachedClock) {
+        const attachment = this.#attachedClock
+        this.#attachedClock = null
+        await attachment[Symbol.asyncDispose]()
+      }
 
       if (close) {
         await this.#closeDb()
@@ -529,7 +544,7 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
   }
 
   detectSchemaDrift (): Promise<types.SchemaDriftReport> {
-    return this.#contractor.detectDrift()
+    return this.#contractor.detectDrift({ clockOverride: this.#attachedClock !== null })
   }
 
   /**
@@ -581,11 +596,12 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
   }
 }
 
-export { systemClock } from './clock.ts'
+export { systemClock, TestClock } from './clock.ts'
 
 export type {
   BackendProfile,
   BackendOptions,
+  AttachableClock,
   Clock,
   ClockTimer,
   BamEntry,
