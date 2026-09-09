@@ -2,7 +2,7 @@
 
 If you need to interact with pg-boss outside of Node.js, such as other clients or even using triggers within PostgreSQL itself, most functionality is supported when working directly against the internal tables. For example, if you wanted to bulk load jobs and skip calling `send()` or `insert()`, you could use SQL `INSERT` or `COPY` commands.
 
-The following is the definition of the primary job table. For manual job creation, the only required column is `name`. All other columns are nullable or have defaults.
+The following is the definition of the primary job table. For manual job creation, the only required column is `name`. All other columns are nullable or have defaults. `pgboss.now()` is pg-boss's own clock function (schema v42); Postgres inlines it to `now()`, and test tooling can redirect it.
 
 ```sql
 CREATE TABLE pgboss.job (
@@ -20,11 +20,11 @@ CREATE TABLE pgboss.job (
   deletion_seconds integer not null default (60 * 60 * 24 * 7),
   singleton_key text,
   singleton_on timestamp without time zone,
-  start_after timestamp with time zone not null default now(),
-  created_on timestamp with time zone not null default now(),
+  start_after timestamp with time zone not null default pgboss.now(),
+  created_on timestamp with time zone not null default pgboss.now(),
   started_on timestamp with time zone,
   completed_on timestamp with time zone,
-  keep_until timestamp with time zone NOT NULL default now() + interval '14 days',
+  keep_until timestamp with time zone NOT NULL default pgboss.now() + interval '14 days',
   output jsonb,
   dead_letter text,
   policy text,
