@@ -1,5 +1,6 @@
 import { describe, it } from 'vitest'
-import { expect } from './hooks.ts'
+import { ctx, expect } from './hooks.ts'
+import * as helper from './testHelper.ts'
 import * as plans from '../src/plans.ts'
 
 // A clock read that is not qualified with the schema. `.now(` (Date.now, s.now) is excluded.
@@ -31,5 +32,29 @@ describe('schema clock', function () {
         expect(sql).toContain(`${schema}.now()`)
       }
     }
+  })
+
+  helper.itPostgresOnly('is inlined by the planner, so a fetch predicate reads pg_catalog.now() directly', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+    const db = await helper.getDb()
+
+    // The predicate fetchNextJob emits. Whether it lands as an Index Cond or a Filter depends on
+    // statistics for a fresh empty table, so assert the inlined text wherever it appears.
+    const { rows } = await db.executeSql(
+      `EXPLAIN (VERBOSE, COSTS OFF) SELECT id FROM ${ctx.schema}.job WHERE name = 'q' AND start_after <= ${ctx.schema}.now()`
+    )
+    const plan = rows.map((r: any) => r['QUERY PLAN']).join('\n')
+
+    expect(plan).toMatch(/start_after <= now\(\)/)
+    expect(plan).not.toContain(`${ctx.schema}.now(`)
+  })
+
+  it('agrees with pg_catalog.now() inside one statement', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+    const db = await helper.getDb()
+
+    const { rows } = await db.executeSql(`SELECT ${ctx.schema}.now() = pg_catalog.now() AS same`)
+
+    expect(rows[0].same).toBe(true)
   })
 })
