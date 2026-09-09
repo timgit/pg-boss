@@ -2,25 +2,43 @@ import { delay } from '../src/tools.ts'
 import { expect } from 'vitest'
 import { DateTime } from 'luxon'
 import * as helper from './testHelper.ts'
-import { PgBoss } from '../src/index.ts'
+import { PgBoss, TestClock } from '../src/index.ts'
 import Timekeeper from '../src/timekeeper.ts'
 import { systemClock } from '../src/clock.ts'
 import { ctx } from './hooks.ts'
 
 describe('schedule', function () {
-  it('should send job based on every minute expression', async function () {
-    const config = {
-      ...ctx.bossConfig,
-      cronMonitorIntervalSeconds: 1,
-      cronWorkerIntervalSeconds: 1,
-      schedule: true
+  const cronConfig = () => ({
+    ...ctx.bossConfig,
+    clock: new TestClock(),
+    cronMonitorIntervalSeconds: 1,
+    cronWorkerIntervalSeconds: 1,
+    schedule: true
+  })
+
+  // Drives the cron chain on a TestClock until `expected` jobs reach the queue: each one-second tick
+  // fires the cron pass and the send-it worker's poll; the insert and send they start are real I/O,
+  // so give each tick a moment to land before the next.
+  async function runCronCycle (clock: TestClock, expected = 1) {
+    for (let i = 0; i < 20; i++) {
+      await clock.tick(1000)
+      const settled = Date.now() + 500
+      while (Date.now() < settled) {
+        if ((await helper.countJobs(ctx.schema, 'job', 'name = $1', [ctx.schema])) >= expected) return
+        await delay(20)
+      }
     }
+    throw new Error(`cron did not enqueue ${expected} job(s)`)
+  }
+
+  it('should send job based on every minute expression', async function () {
+    const config = cronConfig()
 
     ctx.boss = await helper.start(config)
 
     await ctx.boss.schedule(ctx.schema, '* * * * *')
 
-    await delay(4000)
+    await runCronCycle(config.clock)
 
     const [job] = await ctx.boss.fetch(ctx.schema)
 
@@ -28,18 +46,13 @@ describe('schedule', function () {
   })
 
   it('should set job metadata correctly', async function () {
-    const config = {
-      ...ctx.bossConfig,
-      cronMonitorIntervalSeconds: 1,
-      cronWorkerIntervalSeconds: 1,
-      schedule: true
-    }
+    const config = cronConfig()
 
     ctx.boss = await helper.start(config)
 
     await ctx.boss.schedule(ctx.schema, '* * * * *', {}, { retryLimit: 42, singletonSeconds: 5 })
 
-    await delay(4000)
+    await runCronCycle(config.clock)
 
     const [job] = await ctx.boss.fetch(ctx.schema, { includeMetadata: true })
 
@@ -63,9 +76,10 @@ describe('schedule', function () {
 
     await ctx.boss.stop({ graceful: false })
 
-    ctx.boss = await helper.start({ ...ctx.bossConfig, cronWorkerIntervalSeconds: 1, schedule: true })
+    const config = cronConfig()
+    ctx.boss = await helper.start(config)
 
-    await delay(4000)
+    await runCronCycle(config.clock)
 
     const [job] = await ctx.boss.fetch(ctx.schema)
 
@@ -90,16 +104,11 @@ describe('schedule', function () {
   })
 
   it('should send job based on current minute in UTC', async function () {
-    const config = {
-      ...ctx.bossConfig,
-      cronMonitorIntervalSeconds: 1,
-      cronWorkerIntervalSeconds: 1,
-      schedule: true
-    }
+    const config = cronConfig()
 
     ctx.boss = await helper.start(config)
 
-    const nowUtc = DateTime.utc()
+    const nowUtc = DateTime.fromMillis(config.clock.now(), { zone: 'utc' })
 
     const currentMinute = nowUtc.minute
     const currentHour = nowUtc.hour
@@ -117,7 +126,7 @@ describe('schedule', function () {
 
     await ctx.boss.schedule(ctx.schema, cron)
 
-    await delay(6000)
+    await runCronCycle(config.clock)
 
     const [job] = await ctx.boss.fetch(ctx.schema)
 
@@ -125,18 +134,13 @@ describe('schedule', function () {
   })
 
   it('should send job based on current minute in a specified time zone', async function () {
-    const config = {
-      ...ctx.bossConfig,
-      cronMonitorIntervalSeconds: 1,
-      cronWorkerIntervalSeconds: 1,
-      schedule: true
-    }
+    const config = cronConfig()
 
     ctx.boss = await helper.start(config)
 
     const tz = 'America/Los_Angeles'
 
-    const nowLocal = DateTime.fromObject({}, { zone: tz })
+    const nowLocal = DateTime.fromMillis(config.clock.now(), { zone: tz })
 
     const currentMinute = nowLocal.minute
     const currentHour = nowLocal.hour
@@ -154,7 +158,7 @@ describe('schedule', function () {
 
     await ctx.boss.schedule(ctx.schema, cron, null, { tz })
 
-    await delay(6000)
+    await runCronCycle(config.clock)
 
     const [job] = await ctx.boss.fetch(ctx.schema)
 
@@ -184,8 +188,10 @@ describe('schedule', function () {
   })
 
   it('errors during clock skew monitoring should emit', async function () {
+    const clock = new TestClock()
     const config = {
       ...ctx.bossConfig,
+      clock,
       clockMonitorIntervalSeconds: 1,
       schedule: true,
       __test__force_clock_monitoring_error: 'pg-boss mock error: clock skew monitoring'
@@ -202,14 +208,16 @@ describe('schedule', function () {
 
     await ctx.boss.start()
 
-    await delay(2000)
+    await clock.tick(2000)
 
     expect(errorCount).toBeGreaterThanOrEqual(1)
   })
 
   it('errors during cron monitoring should emit', async function () {
+    const clock = new TestClock()
     const config = {
       ...ctx.bossConfig,
+      clock,
       cronMonitorIntervalSeconds: 1,
       schedule: true,
       __test__force_cron_monitoring_error: 'pg-boss mock error: cron monitoring'
@@ -226,14 +234,15 @@ describe('schedule', function () {
 
     await ctx.boss.start()
 
-    await delay(2000)
-
-    expect(errorCount).toBeGreaterThanOrEqual(1)
+    await clock.tick(2000)
+    await helper.until(() => errorCount >= 1)
   })
 
   it('clock monitoring error handling works', async function () {
+    const clock = new TestClock()
     const config = {
       ...ctx.bossConfig,
+      clock,
       schedule: true,
       clockMonitorIntervalSeconds: 1,
       __test__force_clock_monitoring_error: 'pg-boss mock error: clock monitoring'
@@ -250,7 +259,7 @@ describe('schedule', function () {
 
     await ctx.boss.start()
 
-    await delay(4000)
+    await clock.tick(4000)
 
     expect(errorCount).toBeGreaterThanOrEqual(1)
   })
@@ -271,19 +280,14 @@ describe('schedule', function () {
   })
 
   it('should send jobs per unique key on the same cron', async function () {
-    const config = {
-      ...ctx.bossConfig,
-      cronMonitorIntervalSeconds: 1,
-      cronWorkerIntervalSeconds: 1,
-      schedule: true
-    }
+    const config = cronConfig()
 
     ctx.boss = await helper.start(config)
 
     await ctx.boss.schedule(ctx.schema, '* * * * *', null, { key: 'a' })
     await ctx.boss.schedule(ctx.schema, '* * * * *', null, { key: 'b' })
 
-    await delay(4000)
+    await runCronCycle(config.clock, 2)
 
     const jobs = await ctx.boss.fetch(ctx.schema, { batchSize: 2 })
 

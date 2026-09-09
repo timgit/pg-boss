@@ -1,12 +1,13 @@
 import { expect } from 'vitest'
 import * as helper from './testHelper.ts'
 import { assertTruthy } from './testHelper.ts'
-import { delay } from '../src/tools.ts'
+import { TestClock } from '../src/index.ts'
 import { ctx } from './hooks.ts'
 
 describe('expire', function () {
   it('should expire a job', async function () {
-    ctx.boss = await helper.start({ ...ctx.bossConfig, monitorIntervalSeconds: 1 })
+    const clock = new TestClock()
+    ctx.boss = await helper.start({ ...ctx.bossConfig, clock, monitorIntervalSeconds: 1 })
 
     const jobId = await ctx.boss.send(ctx.schema, null, { retryLimit: 0, expireInSeconds: 1 })
 
@@ -16,7 +17,8 @@ describe('expire', function () {
 
     expect(job1).toBeTruthy()
 
-    await delay(1000)
+    // expiration is strictly after the window, so land one tick past it
+    await clock.tick(1001)
 
     await ctx.boss.supervise(ctx.schema)
 
@@ -53,7 +55,8 @@ describe('expire', function () {
   })
 
   it('should expire a job - cascaded config', async function () {
-    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
+    const clock = new TestClock()
+    ctx.boss = await helper.start({ ...ctx.bossConfig, clock, noDefault: true })
 
     await ctx.boss.createQueue(ctx.schema, { expireInSeconds: 1, retryLimit: 0 })
     const jobId = await ctx.boss.send(ctx.schema)
@@ -63,7 +66,7 @@ describe('expire', function () {
     // fetch the job but don't complete it
     await ctx.boss.fetch(ctx.schema)
 
-    await delay(1000)
+    await clock.tick(1001)
 
     await ctx.boss.supervise(ctx.schema)
 
@@ -75,8 +78,10 @@ describe('expire', function () {
   })
 
   it('should expire a job via supervise option', async function () {
+    const clock = new TestClock()
     ctx.boss = await helper.start({
       ...ctx.bossConfig,
+      clock,
       noDefault: true,
       supervise: true,
       monitorIntervalSeconds: 1,
@@ -91,13 +96,18 @@ describe('expire', function () {
     // fetch the job but don't complete it
     await ctx.boss.fetch(ctx.schema)
 
-    await delay(4000)
-
     assertTruthy(jobId)
-    const job = await ctx.boss.getJobById(ctx.schema, jobId)
 
-    assertTruthy(job)
-    expect(job.state).toBe('failed')
+    // Each tick fires one supervise pass; the pass itself is real I/O and reads the clock whenever
+    // it reaches the database, so settle briefly after each rather than assuming which time it saw.
+    const failed = async () => (await ctx.boss!.getJobById(ctx.schema, jobId))?.state === 'failed'
+
+    for (let i = 0; i < 5 && !(await failed()); i++) {
+      await clock.tick(1000)
+      await helper.until(failed, 300).catch(() => {})
+    }
+
+    expect(await failed()).toBe(true)
   })
 
   it('should persist an expiration of exactly 24 hours', async function () {
@@ -122,23 +132,27 @@ describe('expire', function () {
   })
 
   it('should abort signal when job handler times out', async function () {
-    ctx.boss = await helper.start({ ...ctx.bossConfig, monitorIntervalSeconds: 1 })
+    const clock = new TestClock()
+    ctx.boss = await helper.start({ ...ctx.bossConfig, clock, monitorIntervalSeconds: 1 })
 
     const jobId = await ctx.boss.send(ctx.schema, null, { retryLimit: 0, expireInSeconds: 1 })
 
     expect(jobId).toBeTruthy()
 
+    let handlerStarted = false
     let signalAborted = false
 
-    await ctx.boss.work(ctx.schema, async ([job]) => {
+    await ctx.boss.work(ctx.schema, ([job]) => new Promise<void>(resolve => {
+      handlerStarted = true
       job.signal.addEventListener('abort', () => {
         signalAborted = true
-      })
-      await delay(2000)
-    })
+        resolve()
+      }, { once: true })
+    }))
 
-    await delay(3000)
-
-    expect(signalAborted).toBe(true)
+    // the expiration timer starts when the handler does, so let the fetch land before ticking
+    await helper.until(() => handlerStarted)
+    await clock.tick(1000)
+    await helper.until(() => signalAborted)
   })
 })
