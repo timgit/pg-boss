@@ -243,3 +243,13 @@ The following configuration options should not normally need to be changed, but 
 
   Based on this setting, the fetch strategy, mutation strategy, schema shape, and numeric coercion may be changed. See [Database Backends](../database-backends.md#backend-profiles)
   for what each backend enables and the [compatibility matrix](../database-backends.md#database-compatibility).
+
+**Testing options**
+
+* **clock**, object, default the system clock
+
+  Where this instance reads the time and schedules its timers: every poll, heartbeat, cron pass, backoff and timeout. Pass a [`TestClock`](./testing.md#controlling-time) to drive time by hand in tests; it also takes over the Postgres side, so `${schema}.now()` reports the same time for pg-boss's own statements. Any object with `now`, `setTimeout`, `clearTimeout`, `setInterval` and `clearInterval` is accepted. Leave unset in production.
+
+* **__test__enableSpies**, bool, default false
+
+  Enables [`getSpy()`](./testing.md#getspyname) for deterministic tests. Adds per-transition tracking overhead, so leave unset in production.
