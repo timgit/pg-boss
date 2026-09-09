@@ -222,7 +222,8 @@ describe('migration', function () {
     // the CLI wraps, which takes --backend for exactly this reason. Stock PostgreSQL stays the
     // default, so a caller that names nothing gets what it always got.
     const schema = 'custom'
-    const from = currentSchemaVersion - 2
+    // Start below the oldest migration that seeds a backfill, so every seed the gate drops is in range.
+    const from = Math.min(...getAll(schema).filter(m => sameTransactionBackfills(m).length > 0).map(m => m.previous))
 
     const stock = {
       construction: getConstructionPlans(schema),
@@ -1318,5 +1319,55 @@ describe('migration', function () {
         expect(sql).toContain(`CREATE INDEX CONCURRENTLY IF NOT EXISTS ${partition.tableName}_i7 ON ${dbSchema}.${partition.tableName}`)
       }
     })
+  })
+
+  it('v42 adds the schema clock function and points every timestamp default at it', async function () {
+    await contractor.create()
+
+    const { schema } = ctx.bossConfig
+    const db = await getDb()
+
+    // Every default that reads the clock. bam.created_on uses clock_timestamp() on purpose and is
+    // excluded by the LIKE pattern.
+    const clockDefaults = async () => (await db.executeSql(`
+      SELECT table_name, column_name, column_default
+        FROM information_schema.columns
+       WHERE table_schema = $1
+         AND column_default LIKE '%now()%'
+       ORDER BY table_name, column_name`, [schema])).rows as Array<{ table_name: string, column_name: string, column_default: string }>
+
+    const hasClockFunction = async () => (await db.executeSql(`
+      SELECT 1
+        FROM pg_catalog.pg_proc p
+        JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
+       WHERE n.nspname = $1 AND p.proname = 'now'`, [schema])).rows.length === 1
+
+    // Fresh install: the function exists and every clock default is schema-qualified.
+    expect(await hasClockFunction()).toBe(true)
+    const fresh = await clockDefaults()
+    expect(fresh.length).toBeGreaterThan(0)
+    for (const row of fresh) {
+      expect(row.column_default, `${row.table_name}.${row.column_name}`).toContain(`${schema}.now()`)
+    }
+    const tables = new Set(fresh.map(r => r.table_name))
+    for (const table of ['job', 'queue', 'schedule', 'subscription', 'warning', 'queue_stats']) {
+      expect(tables.has(table), table).toBe(true)
+    }
+    // Partitioned installs must also have repointed the default partition (recursion, not ONLY).
+    if (tables.has('job_common')) {
+      expect(fresh.filter(r => r.table_name === 'job_common').every(r => r.column_default.includes(`${schema}.now()`))).toBe(true)
+    }
+
+    // Rolling v42 back restores pg_catalog's now() and drops the function.
+    await contractor.rollback(currentSchemaVersion)
+    expect(await hasClockFunction()).toBe(false)
+    for (const row of await clockDefaults()) {
+      expect(row.column_default, `${row.table_name}.${row.column_name}`).not.toContain('.now()')
+    }
+
+    // Migrating forward again lands on exactly the fresh-install shape.
+    await contractor.migrate(currentSchemaVersion - 1)
+    expect(await hasClockFunction()).toBe(true)
+    expect(await clockDefaults()).toEqual(fresh)
   })
 })

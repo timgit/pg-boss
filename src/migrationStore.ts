@@ -1666,6 +1666,36 @@ function getAll (schema: string, noPartitioning = false, noCovering = false, noA
         `ALTER TABLE ${schema}.schedule DROP COLUMN kind`,
         `ALTER TABLE ${schema}.schedule DROP COLUMN last_job_id`
       ]
+    },
+    {
+      release: '12.33.0',
+      version: 42,
+      previous: 41,
+      install: [
+        // The single clock every pg-boss statement and timestamp default reads. A single-statement
+        // LANGUAGE sql function, so the planner inlines it to pg_catalog.now(); STABLE matches the
+        // body and is what CockroachDB requires to inline. A TestClock swaps the body (pg-boss #689).
+        `CREATE FUNCTION ${schema}.now() RETURNS timestamp with time zone AS $$ SELECT pg_catalog.now(); $$ LANGUAGE sql STABLE`,
+        `ALTER TABLE ${schema}.queue ALTER COLUMN created_on SET DEFAULT ${schema}.now(), ALTER COLUMN updated_on SET DEFAULT ${schema}.now()`,
+        `ALTER TABLE ${schema}.schedule ALTER COLUMN created_on SET DEFAULT ${schema}.now(), ALTER COLUMN updated_on SET DEFAULT ${schema}.now()`,
+        `ALTER TABLE ${schema}.subscription ALTER COLUMN created_on SET DEFAULT ${schema}.now(), ALTER COLUMN updated_on SET DEFAULT ${schema}.now()`,
+        `ALTER TABLE ${schema}.warning ALTER COLUMN created_on SET DEFAULT ${schema}.now()`,
+        `ALTER TABLE ${schema}.queue_stats ALTER COLUMN captured_on SET DEFAULT ${schema}.now()`,
+        // No ONLY, so this recurses to job_common and every per-queue partition. 1209600 s is 14
+        // days, the literal createTableJob uses (QUEUE_DEFAULTS.retention_seconds).
+        `ALTER TABLE ${schema}.job ALTER COLUMN start_after SET DEFAULT ${schema}.now(), ALTER COLUMN created_on SET DEFAULT ${schema}.now(), ALTER COLUMN keep_until SET DEFAULT ${schema}.now() + interval '1209600'`
+      ],
+      // Defaults first, then the function: DROP FUNCTION fails while a default still references it.
+      // pg_catalog.now() is spelled out so the ESLint clock guard does not see a bare now().
+      uninstall: [
+        `ALTER TABLE ${schema}.job ALTER COLUMN start_after SET DEFAULT pg_catalog.now(), ALTER COLUMN created_on SET DEFAULT pg_catalog.now(), ALTER COLUMN keep_until SET DEFAULT pg_catalog.now() + interval '1209600'`,
+        `ALTER TABLE ${schema}.queue_stats ALTER COLUMN captured_on SET DEFAULT pg_catalog.now()`,
+        `ALTER TABLE ${schema}.warning ALTER COLUMN created_on SET DEFAULT pg_catalog.now()`,
+        `ALTER TABLE ${schema}.subscription ALTER COLUMN created_on SET DEFAULT pg_catalog.now(), ALTER COLUMN updated_on SET DEFAULT pg_catalog.now()`,
+        `ALTER TABLE ${schema}.schedule ALTER COLUMN created_on SET DEFAULT pg_catalog.now(), ALTER COLUMN updated_on SET DEFAULT pg_catalog.now()`,
+        `ALTER TABLE ${schema}.queue ALTER COLUMN created_on SET DEFAULT pg_catalog.now(), ALTER COLUMN updated_on SET DEFAULT pg_catalog.now()`,
+        `DROP FUNCTION ${schema}.now()`
+      ]
     }
   ]
 }
