@@ -313,6 +313,7 @@ function createTableSubscription (schema: string) {
 // created_on defaults to clock_timestamp(), not ${schema}.now(), so multiple job_table_run_async() enqueues
 // within a single migration transaction keep their insertion order — BAM applies queued commands in
 // created_on order, and some migrations enqueue an ordered drop-then-rebuild pair (see v33).
+/* eslint-disable no-restricted-syntax -- bam.created_on orders several enqueues within one transaction; the schema clock would tie them */
 function createTableBam (schema: string) {
   return `
     CREATE TABLE ${schema}.bam (
@@ -330,6 +331,7 @@ function createTableBam (schema: string) {
     )
   `
 }
+/* eslint-enable no-restricted-syntax */
 
 export function createTableWarning (schema: string) {
   return `
@@ -2873,6 +2875,10 @@ export function getQueueStats (schema: string, table: string, queues: string[]):
 // ~160px detail card) without over-collecting — more points than pixels add nothing visible.
 export const READY_HISTORY_SIZE = 60
 
+/* eslint-disable no-restricted-syntax -- how long this transaction has held its snapshot: real elapsed time, not job time */
+const PIN_SECONDS_SQL = 'EXTRACT(EPOCH FROM (clock_timestamp() - transaction_timestamp()))::float8'
+/* eslint-enable no-restricted-syntax */
+
 export function cacheQueueStats (schema: string, table: string, queues: string[], noAdvisoryLocks?: boolean): string {
   const statsQuery = getQueueStats(schema, table, queues)
   // Serialize the $1 parameter for use in the multi-statement transaction below
@@ -2935,7 +2941,7 @@ export function cacheQueueStats (schema: string, table: string, queues: string[]
       queue.name,
       queue.queued_count as "queuedCount",
       queue.warning_queued as "warningQueueSize",
-      EXTRACT(EPOCH FROM (clock_timestamp() - transaction_timestamp()))::float8 as "pinSeconds"
+      ${PIN_SECONDS_SQL} as "pinSeconds"
   `
 
   // transaction(), not locked(): the lock is taken inside the statement with try rather than by a
@@ -3761,6 +3767,7 @@ function quoteIdentifier (name: string) {
  * restricted to the owning user), as are the other three views, so the degraded path is defensive
  * rather than expected — a managed provider may still revoke them.
  */
+/* eslint-disable no-restricted-syntax -- these measure real backend and vacuum age against pg_stat_* timestamps Postgres wrote; a fake clock would compare two different clocks */
 export const XMIN_HORIZON_SOURCES = {
   // Restricted to backends whose transaction was already open when the failed vacuum ran ($1).
   // Every backend executing a query advertises a backend_xmin, including the one asking this
@@ -3915,6 +3922,7 @@ export function getJobTableGarbage (schema: string, tables?: string[]): string {
       AND ${jobTableScope(schema, tables)}
   `
 }
+/* eslint-enable no-restricted-syntax */
 
 export function reindexIndex (schema: string, name: string): string {
   return `REINDEX INDEX CONCURRENTLY ${schema}.${quoteIdentifier(name)}`

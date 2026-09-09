@@ -1,3 +1,4 @@
+/* eslint-disable no-restricted-syntax -- everything above the v42 entry keeps its original SQL verbatim: the pre-v42 migrations and the versioned DDL snapshot maps they use. The clock guard applies from v42 on; a new snapshot builder for v42 or later must use the schema clock even though it sits inside this region. */
 import assert from 'node:assert'
 import * as plans from './plans.ts'
 import { resolveSchemaName } from './tools.ts'
@@ -1667,6 +1668,7 @@ function getAll (schema: string, noPartitioning = false, noCovering = false, noA
         `ALTER TABLE ${schema}.schedule DROP COLUMN last_job_id`
       ]
     },
+    /* eslint-enable no-restricted-syntax */
     {
       release: '12.32.0',
       version: 42,
