@@ -309,7 +309,7 @@ class Timekeeper extends EventEmitter implements types.EventsMixin {
         await delay(this.config.__test__delay_clock_skew_ms)
       }
 
-      const { rows } = await this.db.executeSql(plans.getTime())
+      const { rows } = await this.db.executeSql(plans.getTime(this.config.schema))
 
       const local = Date.now()
 
