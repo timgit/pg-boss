@@ -445,7 +445,32 @@ export interface MigrationPlanOptions extends PlanOptions {
   partitionTables?: MigrationPartition[];
 }
 
+/**
+ * Source of time and timers. pg-boss reads the wall clock and schedules every poll, heartbeat and
+ * timeout through this interface so a test can substitute a controllable clock.
+ */
+export interface Clock {
+  /** epoch milliseconds */
+  now(): number
+  setTimeout(fn: () => void, ms: number): ClockTimer
+  clearTimeout(handle: ClockTimer): void
+  setInterval(fn: () => void, ms: number): ClockTimer
+  clearInterval(handle: ClockTimer): void
+}
+
+/**
+ * Opaque handle returned by a Clock's setTimeout/setInterval and accepted by its clear methods.
+ * The system clock returns NodeJS.Timeout; a test clock returns whatever it uses to track timers.
+ */
+export type ClockTimer = unknown
+
 export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, MaintenanceOptions, BackendOptions {
+  /**
+   * Source of time and timers for this instance. Defaults to the system clock (`Date.now` and the
+   * global timer functions).
+   * @default systemClock
+   */
+  clock?: Clock;
   /**
    * Enables the LISTEN/NOTIFY listener so workers on notify-enabled queues are woken
    * the moment a job is created, instead of waiting out their polling interval. This
@@ -547,6 +572,7 @@ export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, 
 /** @internal */
 export interface ResolvedConstructorOptions extends ConstructorOptions, CompatibilityFlags {
   schema: string;
+  clock: Clock;
   monitorIntervalSeconds: number;
   cronMonitorIntervalSeconds: number;
   maintenanceIntervalSeconds: number;

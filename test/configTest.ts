@@ -1,6 +1,6 @@
 import { expect } from 'vitest'
 import Db from '../src/db.ts'
-import { PgBoss } from '../src/index.ts'
+import { PgBoss, systemClock } from '../src/index.ts'
 import * as Attorney from '../src/attorney.ts'
 import * as helper from './testHelper.ts'
 import packageJson from '../package.json' with { type: 'json' }
@@ -147,6 +147,33 @@ describe('config', function () {
     expect(config.schema.length > 50).toBeTruthy()
 
     expect(() => new PgBoss(config)).toThrow()
+  })
+
+  describe('clock', function () {
+    const stubClock = () => ({
+      now: () => 0,
+      setTimeout: () => null,
+      clearTimeout: () => {},
+      setInterval: () => null,
+      clearInterval: () => {}
+    })
+
+    it('defaults to the system clock', function () {
+      const resolved = Attorney.getConfig({ connectionString: 'postgres://localhost/db' })
+      expect(resolved.clock).toBe(systemClock)
+    })
+
+    it('accepts any object implementing the five clock methods', function () {
+      const clock = stubClock()
+      const resolved = Attorney.getConfig({ connectionString: 'postgres://localhost/db', clock })
+      expect(resolved.clock).toBe(clock)
+    })
+
+    it('rejects a clock missing a method', function () {
+      const { setInterval, ...partial } = stubClock()
+      expect(() => Attorney.getConfig({ connectionString: 'postgres://localhost/db', clock: partial as any }))
+        .toThrow('clock must implement setInterval()')
+    })
   })
 
   it('compatibility flags are derived from the backend, not user-settable', function () {
