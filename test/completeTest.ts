@@ -53,7 +53,7 @@ describe('complete', function () {
     assertTruthy(jobId)
     await ctx.boss.complete(ctx.schema, jobId, completionData)
 
-    const jobWithMetadata = await ctx.boss.getJobById(ctx.schema, jobId)
+    const [jobWithMetadata] = await ctx.boss.findJobs(ctx.schema, { id: jobId })
     expect(jobWithMetadata).toBeTruthy()
 
     expect((jobWithMetadata as any).output.msg).toBe(completionData.msg)
@@ -73,7 +73,7 @@ describe('complete', function () {
     assertTruthy(jobId)
     await ctx.boss.fail(ctx.schema, jobId, completionError)
 
-    const jobWithMetadata = await ctx.boss.getJobById(ctx.schema, jobId)
+    const [jobWithMetadata] = await ctx.boss.findJobs(ctx.schema, { id: jobId })
     expect(jobWithMetadata).toBeTruthy()
 
     expect((jobWithMetadata as any).output.message).toBe(completionError.message)
@@ -127,7 +127,7 @@ describe('complete', function () {
 
     expect(result.affected).toBe(1)
 
-    const jobWithMetadata = await ctx.boss.getJobById(ctx.schema, jobId)
+    const [jobWithMetadata] = await ctx.boss.findJobs(ctx.schema, { id: jobId })
     expect(jobWithMetadata).toBeTruthy()
     expect(jobWithMetadata?.state).toBe(states.completed)
     expect((jobWithMetadata as any).output.msg).toBe(completionData.msg)
@@ -143,7 +143,7 @@ describe('complete', function () {
     await ctx.boss.fetch(ctx.schema)
     await ctx.boss.fail(ctx.schema, jobId, new Error('test failure'))
 
-    const jobWithMetadata = await ctx.boss.getJobById(ctx.schema, jobId)
+    const [jobWithMetadata] = await ctx.boss.findJobs(ctx.schema, { id: jobId })
     expect(jobWithMetadata?.state).toBe(states.retry)
 
     // Complete the job in retry state
@@ -152,7 +152,7 @@ describe('complete', function () {
 
     expect(result.affected).toBe(1)
 
-    const completedJob = await ctx.boss.getJobById(ctx.schema, jobId)
+    const [completedJob] = await ctx.boss.findJobs(ctx.schema, { id: jobId })
     expect(completedJob?.state).toBe(states.completed)
     expect((completedJob as any).output.msg).toBe(completionData.msg)
   })
@@ -168,7 +168,7 @@ describe('complete', function () {
 
     expect(result.affected).toBe(0)
 
-    const jobWithMetadata = await ctx.boss.getJobById(ctx.schema, jobId)
+    const [jobWithMetadata] = await ctx.boss.findJobs(ctx.schema, { id: jobId })
     expect(jobWithMetadata?.state).toBe(states.created)
   })
 
@@ -198,9 +198,9 @@ describe('complete', function () {
 
     expect(result.affected).toBe(3)
 
-    const job1Final = await ctx.boss.getJobById(ctx.schema, jobId1)
-    const job2Final = await ctx.boss.getJobById(ctx.schema, jobId2)
-    const job3Final = await ctx.boss.getJobById(ctx.schema, jobId3)
+    const [job1Final] = await ctx.boss.findJobs(ctx.schema, { id: jobId1 })
+    const [job2Final] = await ctx.boss.findJobs(ctx.schema, { id: jobId2 })
+    const [job3Final] = await ctx.boss.findJobs(ctx.schema, { id: jobId3 })
 
     expect(job1Final?.state).toBe(states.completed) // was retry
     expect(job2Final?.state).toBe(states.completed) // was active

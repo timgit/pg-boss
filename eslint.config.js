@@ -12,4 +12,12 @@ export default defineConfig(config, {
   languageOptions: {
     ecmaVersion: 2025,
   },
+}, {
+  files: ['test/**/*.ts'],
+  rules: {
+    'no-restricted-syntax': ['error', {
+      selector: "CallExpression[callee.property.name='getJobById']",
+      message: 'getJobById() is deprecated; use findJobs({ id }) instead',
+    }],
+  },
 })

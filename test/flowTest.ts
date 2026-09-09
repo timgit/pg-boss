@@ -17,11 +17,11 @@ describe('flows', function () {
     const parentId = flow.parent
     const childId = flow.child
 
-    const childJob = await ctx.boss.getJobById(ctx.schema, childId)
+    const [childJob] = await ctx.boss.findJobs(ctx.schema, { id: childId })
     assertTruthy(childJob)
     expect(childJob.blocked).toBe(true)
 
-    const parentJob = await ctx.boss.getJobById(ctx.schema, parentId)
+    const [parentJob] = await ctx.boss.findJobs(ctx.schema, { id: parentId })
     assertTruthy(parentJob)
     expect(parentJob.blocking).toBe(true)
 
@@ -50,8 +50,8 @@ describe('flows', function () {
     const parentId2 = flow.p2
     const childId = flow.child
 
-    const parent1Job = await ctx.boss.getJobById(ctx.schema, parentId1)
-    const parent2Job = await ctx.boss.getJobById(ctx.schema, parentId2)
+    const [parent1Job] = await ctx.boss.findJobs(ctx.schema, { id: parentId1 })
+    const [parent2Job] = await ctx.boss.findJobs(ctx.schema, { id: parentId2 })
     assertTruthy(parent1Job)
     assertTruthy(parent2Job)
     expect(parent1Job.blocking).toBe(true)
@@ -61,7 +61,7 @@ describe('flows', function () {
     await ctx.boss.complete(ctx.schema, job1.id)
     await ctx.boss.resolveFlow()
 
-    const childAfterOne = await ctx.boss.getJobById(ctx.schema, childId)
+    const [childAfterOne] = await ctx.boss.findJobs(ctx.schema, { id: childId })
     assertTruthy(childAfterOne)
     expect(childAfterOne.blocked).toBe(true)
 
@@ -69,7 +69,7 @@ describe('flows', function () {
     await ctx.boss.complete(ctx.schema, job2.id)
     await ctx.boss.resolveFlow()
 
-    const childAfterAll = await ctx.boss.getJobById(ctx.schema, childId)
+    const [childAfterAll] = await ctx.boss.findJobs(ctx.schema, { id: childId })
     assertTruthy(childAfterAll)
     expect(childAfterAll.blocked).toBe(false)
 
@@ -115,7 +115,7 @@ describe('flows', function () {
     expect(job.id).toBe(parentId)
     await ctx.boss.fail(ctx.schema, parentId, new Error('permanent failure'))
 
-    const childJob = await ctx.boss.getJobById(ctx.schema, childId)
+    const [childJob] = await ctx.boss.findJobs(ctx.schema, { id: childId })
     assertTruthy(childJob)
     expect(childJob.blocked).toBe(true)
 
@@ -141,13 +141,13 @@ describe('flows', function () {
 
     // The retried parent must still be flagged as blocking, otherwise completing it later
     // would never unblock its dependents (regression guard for distributed fail+retry).
-    const retriedParent = await ctx.boss.getJobById(ctx.schema, parentId)
+    const [retriedParent] = await ctx.boss.findJobs(ctx.schema, { id: parentId })
     assertTruthy(retriedParent)
     expect(retriedParent.state).toBe(states.retry)
     expect(retriedParent.blocking).toBe(true)
 
     // Child stays blocked while the parent is pending its retry
-    const blockedChild = await ctx.boss.getJobById(ctx.schema, childId)
+    const [blockedChild] = await ctx.boss.findJobs(ctx.schema, { id: childId })
     assertTruthy(blockedChild)
     expect(blockedChild.blocked).toBe(true)
 
@@ -158,7 +158,7 @@ describe('flows', function () {
     await ctx.boss.resolveFlow()
 
     // Child should now be unblocked and fetchable
-    const unblockedChild = await ctx.boss.getJobById(ctx.schema, childId)
+    const [unblockedChild] = await ctx.boss.findJobs(ctx.schema, { id: childId })
     assertTruthy(unblockedChild)
     expect(unblockedChild.blocked).toBe(false)
     expect(unblockedChild.pendingDependencies).toBe(0)
@@ -181,7 +181,7 @@ describe('flows', function () {
 
     await ctx.boss.cancel(ctx.schema, parentId)
 
-    const childJob = await ctx.boss.getJobById(ctx.schema, childId)
+    const [childJob] = await ctx.boss.findJobs(ctx.schema, { id: childId })
     assertTruthy(childJob)
     expect(childJob.blocked).toBe(true)
 
@@ -301,7 +301,7 @@ describe('flows', function () {
         }
       })
 
-      const childJob = await ctx.boss.getJobById(ctx.schema, flow.child)
+      const [childJob] = await ctx.boss.findJobs(ctx.schema, { id: flow.child })
       assertTruthy(childJob)
       expect(childJob.blocked).toBe(true)
       expect(calls.length).toBeGreaterThan(0)
@@ -333,7 +333,7 @@ describe('flows', function () {
         { ref: 'child', name: ctx.schema, dependsOn: ['parent'] }
       ])
 
-      const childJob = await ctx.boss.getJobById(ctx.schema, flow.child)
+      const [childJob] = await ctx.boss.findJobs(ctx.schema, { id: flow.child })
       assertTruthy(childJob)
       expect(childJob.blocked).toBe(true)
       expect(calls.length).toBeGreaterThan(0)
@@ -371,7 +371,7 @@ describe('flows', function () {
     await ctx.boss.complete(ctx.schema, job.id)
     await ctx.boss.resolveFlow()
 
-    const childJob = await ctx.boss.getJobById(ctx.schema, childId)
+    const [childJob] = await ctx.boss.findJobs(ctx.schema, { id: childId })
     assertTruthy(childJob)
     expect(childJob.blocked).toBe(false)
 
@@ -422,7 +422,7 @@ describe('flows', function () {
       ])
       await ctx.boss.resolveFlow()
 
-      const childJob = await ctx.boss.getJobById(ctx.schema, flow.child)
+      const [childJob] = await ctx.boss.findJobs(ctx.schema, { id: flow.child })
       assertTruthy(childJob)
       expect(childJob.blocked).toBe(false)
       expect(childJob.pendingDependencies).toBe(0)
@@ -490,7 +490,7 @@ describe('flows', function () {
         expect(childResult.affected).toBe(1)
       })
 
-      const childJob = await ctx.boss.getJobById(ctx.schema, flow.child)
+      const [childJob] = await ctx.boss.findJobs(ctx.schema, { id: flow.child })
       assertTruthy(childJob)
       expect(childJob.blocked).toBe(false)
       expect(childJob.pendingDependencies).toBe(0)
@@ -511,8 +511,8 @@ describe('flows', function () {
     const result = await ctx.boss.complete(ctx.schema, [flow.parent, flow.child], null, { includeQueued: true })
     expect(result.affected).toBe(2)
 
-    const parentJob = await ctx.boss.getJobById(ctx.schema, flow.parent)
-    const childJob = await ctx.boss.getJobById(ctx.schema, flow.child)
+    const [parentJob] = await ctx.boss.findJobs(ctx.schema, { id: flow.parent })
+    const [childJob] = await ctx.boss.findJobs(ctx.schema, { id: flow.child })
     assertTruthy(parentJob)
     assertTruthy(childJob)
     expect(parentJob.state).toBe(states.completed)
@@ -534,11 +534,11 @@ describe('flows', function () {
     const parentId = flow.parent
     const childId = flow.child
 
-    const childJob = await ctx.boss.getJobById(ctx.schema, childId)
+    const [childJob] = await ctx.boss.findJobs(ctx.schema, { id: childId })
     assertTruthy(childJob)
     expect(childJob.blocked).toBe(true)
 
-    const parentJob = await ctx.boss.getJobById(ctx.schema, parentId)
+    const [parentJob] = await ctx.boss.findJobs(ctx.schema, { id: parentId })
     assertTruthy(parentJob)
     expect(parentJob.blocking).toBe(true)
 
@@ -549,7 +549,7 @@ describe('flows', function () {
     await ctx.boss.complete(ctx.schema, parentId)
     await ctx.boss.resolveFlow()
 
-    const childAfter = await ctx.boss.getJobById(ctx.schema, childId)
+    const [childAfter] = await ctx.boss.findJobs(ctx.schema, { id: childId })
     assertTruthy(childAfter)
     expect(childAfter.blocked).toBe(false)
     expect(childAfter.pendingDependencies).toBe(0)

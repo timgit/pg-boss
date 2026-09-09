@@ -23,13 +23,13 @@ describe('cancel', function () {
     assertTruthy(jobId)
     await ctx.boss.cancel(ctx.schema, jobId)
 
-    const job = await ctx.boss.getJobById(ctx.schema, jobId)
+    const [job] = await ctx.boss.findJobs(ctx.schema, { id: jobId })
 
     expect(job && job.state === 'cancelled').toBeTruthy()
 
     await ctx.boss.resume(ctx.schema, jobId)
 
-    const job2 = await ctx.boss.getJobById(ctx.schema, jobId)
+    const [job2] = await ctx.boss.findJobs(ctx.schema, { id: jobId })
 
     expect(job2 && job2.state === 'created').toBeTruthy()
   })
@@ -55,13 +55,13 @@ describe('cancel', function () {
     assertTruthy(jobId)
     await ctx.boss.cancel(ctx.schema, jobId, { db })
 
-    const job = await ctx.boss.getJobById(ctx.schema, jobId, { db })
+    const [job] = await ctx.boss.findJobs(ctx.schema, { id: jobId, db })
 
     expect(job && job.state === 'cancelled').toBeTruthy()
 
     await ctx.boss.resume(ctx.schema, jobId, { db })
 
-    const job2 = await ctx.boss.getJobById(ctx.schema, jobId, { db })
+    const [job2] = await ctx.boss.findJobs(ctx.schema, { id: jobId, db })
 
     expect(job2 && job2.state === 'created').toBeTruthy()
     expect(callCount).toBe(4)

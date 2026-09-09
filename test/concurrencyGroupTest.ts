@@ -16,7 +16,7 @@ describe('groupConcurrency', function () {
     })
 
     assertTruthy(jobId)
-    const job = await ctx.boss.getJobById(ctx.schema, jobId)
+    const [job] = await ctx.boss.findJobs(ctx.schema, { id: jobId })
 
     assertTruthy(job)
     expect(job.groupId).toBe(groupId)

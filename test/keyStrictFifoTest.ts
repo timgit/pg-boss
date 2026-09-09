@@ -96,7 +96,7 @@ describe('key_strict_fifo', function () {
       await ctx.boss.fail(ctx.schema, job1.id)
 
       assertTruthy(jobId1)
-      const job1WithData = await ctx.boss.getJobById(ctx.schema, jobId1)
+      const [job1WithData] = await ctx.boss.findJobs(ctx.schema, { id: jobId1 })
       assertTruthy(job1WithData)
       expect(job1WithData.state).toBe('retry')
 
@@ -277,7 +277,7 @@ describe('key_strict_fifo', function () {
       await ctx.boss.fail(ctx.schema, job1.id)
 
       assertTruthy(jobId1)
-      const job1WithData = await ctx.boss.getJobById(ctx.schema, jobId1)
+      const [job1WithData] = await ctx.boss.findJobs(ctx.schema, { id: jobId1 })
       assertTruthy(job1WithData)
       expect(job1WithData.state).toBe('failed')
 

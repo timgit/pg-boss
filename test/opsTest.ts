@@ -17,12 +17,12 @@ describe('ops', function () {
     await new Promise(resolve => ctx.boss!.once('error', resolve))
   })
 
-  it('should return null from getJobById if not found', async function () {
+  it('should return no job from findJobs if not found', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 
-    const jobId = await ctx.boss.getJobById(ctx.schema, randomUUID())
+    const [job] = await ctx.boss.findJobs(ctx.schema, { id: randomUUID() })
 
-    expect(jobId).toBeFalsy()
+    expect(job).toBeFalsy()
   })
 
   it('should force stop', async function () {

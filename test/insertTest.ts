@@ -43,7 +43,7 @@ describe('insert', function () {
 
     await ctx.boss.insert(ctx.schema, [input])
 
-    const job = await ctx.boss.getJobById(ctx.schema, input.id)
+    const [job] = await ctx.boss.findJobs(ctx.schema, { id: input.id })
 
     expect(job).toBeTruthy()
 
@@ -100,7 +100,7 @@ describe('insert', function () {
 
     await ctx.boss.insert(ctx.schema, [input], options)
 
-    const job = await ctx.boss.getJobById(ctx.schema, input.id)
+    const [job] = await ctx.boss.findJobs(ctx.schema, { id: input.id })
 
     expect(job).toBeTruthy()
 
@@ -145,7 +145,7 @@ describe('insert', function () {
 
     await ctx.boss.insert(ctx.schema, [input], options)
 
-    const job = await ctx.boss.getJobById(ctx.schema, input.id)
+    const [job] = await ctx.boss.findJobs(ctx.schema, { id: input.id })
     expect(job).toBeTruthy()
 
     expect(called).toBe(true)
@@ -162,7 +162,7 @@ describe('insert', function () {
 
     await ctx.boss.insert(ctx.schema, [input])
 
-    const job = await ctx.boss.getJobById(ctx.schema, input.id)
+    const [job] = await ctx.boss.findJobs(ctx.schema, { id: input.id })
 
     expect(job!.groupId).toBe(input.group.id)
     expect(job!.groupTier).toBe(input.group.tier)
@@ -178,7 +178,7 @@ describe('insert', function () {
 
     await ctx.boss.insert(ctx.schema, [input])
 
-    const job = await ctx.boss.getJobById(ctx.schema, input.id)
+    const [job] = await ctx.boss.findJobs(ctx.schema, { id: input.id })
 
     expect(job!.groupId).toBe(input.group.id)
     expect(job!.groupTier).toBe(null)
@@ -195,7 +195,7 @@ describe('insert', function () {
 
     await ctx.boss.insert(ctx.schema, [input as JobInsert])
 
-    const job = await ctx.boss.getJobById(ctx.schema, input.id)
+    const [job] = await ctx.boss.findJobs(ctx.schema, { id: input.id })
 
     expect(job!.groupId).toBe(input.groupId)
     expect(job!.groupTier).toBe(input.groupTier)

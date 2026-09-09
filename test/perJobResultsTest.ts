@@ -30,8 +30,8 @@ describe('perJobResults', function () {
     await spy.waitForJobWithId(completeId, 'completed')
     await spy.waitForJobWithId(failId, 'failed')
 
-    const completed = await ctx.boss.getJobById(ctx.schema, completeId)
-    const failed = await ctx.boss.getJobById(ctx.schema, failId)
+    const [completed] = await ctx.boss.findJobs(ctx.schema, { id: completeId })
+    const [failed] = await ctx.boss.findJobs(ctx.schema, { id: failId })
 
     assertTruthy(completed)
     expect(completed.state).toBe('completed')
@@ -64,8 +64,9 @@ describe('perJobResults', function () {
       }))
 
     for (let i = 0; i < size; i++) {
-      await spy.waitForJobWithId(ids[i]!, i % 2 === 0 ? 'completed' : 'failed')
-      const job: JobWithMetadata | null = await ctx.boss.getJobById(ctx.schema, ids[i]!)
+      const id = ids[i]
+      await spy.waitForJobWithId(id, i % 2 === 0 ? 'completed' : 'failed')
+      const job: JobWithMetadata<unknown> | undefined = (await ctx.boss.findJobs(ctx.schema, { id }))[0]
       assertTruthy(job)
       if (i % 2 === 0) {
         expect(job.state).toBe('completed')
@@ -95,8 +96,8 @@ describe('perJobResults', function () {
     await spy.waitForJobWithId(keptId, 'completed')
     await spy.waitForJobWithId(omittedId, 'failed')
 
-    const kept = await ctx.boss.getJobById(ctx.schema, keptId)
-    const omitted = await ctx.boss.getJobById(ctx.schema, omittedId)
+    const [kept] = await ctx.boss.findJobs(ctx.schema, { id: keptId })
+    const [omitted] = await ctx.boss.findJobs(ctx.schema, { id: omittedId })
 
     assertTruthy(kept)
     expect(kept.state).toBe('completed')
@@ -119,7 +120,7 @@ describe('perJobResults', function () {
 
     await spy.waitForJobWithId(jobId, 'failed')
 
-    const job = await ctx.boss.getJobById(ctx.schema, jobId)
+    const [job] = await ctx.boss.findJobs(ctx.schema, { id: jobId })
     assertTruthy(job)
     expect(job.state).toBe('failed')
     expect((job.output as { message: string }).message).toContain('must resolve with an array')
@@ -138,7 +139,7 @@ describe('perJobResults', function () {
 
     await spy.waitForJobWithId(jobId, 'failed')
 
-    const job = await ctx.boss.getJobById(ctx.schema, jobId)
+    const [job] = await ctx.boss.findJobs(ctx.schema, { id: jobId })
     assertTruthy(job)
     expect(job.state).toBe('failed')
     expect((job.output as { message: string }).message).toBe('boom')
@@ -165,7 +166,7 @@ describe('perJobResults', function () {
     await spy.waitForJobWithId(jobId, 'failed')
     await spy.waitForJobWithId(jobId, 'completed')
 
-    const job = await ctx.boss.getJobById(ctx.schema, jobId)
+    const [job] = await ctx.boss.findJobs(ctx.schema, { id: jobId })
     assertTruthy(job)
     expect(job.state).toBe('completed')
     expect(job.retryCount).toBe(1)
@@ -193,7 +194,7 @@ describe('perJobResults', function () {
     assertTruthy(dlqJob)
     expect(dlqJob.data.key).toBe('payload')
 
-    const dlqWithMeta = await ctx.boss.getJobById(deadLetter, dlqJob.id)
+    const [dlqWithMeta] = await ctx.boss.findJobs(deadLetter, { id: dlqJob.id })
     assertTruthy(dlqWithMeta)
     expect((dlqWithMeta.output as { message: string }).message).toBe('dlq please')
   })
@@ -209,7 +210,7 @@ describe('perJobResults', function () {
     const parentId = flow.parent
     const childId = flow.child
 
-    const parentBefore = await ctx.boss.getJobById(ctx.schema, parentId)
+    const [parentBefore] = await ctx.boss.findJobs(ctx.schema, { id: parentId })
     assertTruthy(parentBefore)
     expect(parentBefore.blocking).toBe(true)
 
@@ -221,7 +222,7 @@ describe('perJobResults', function () {
     await spy.waitForJobWithId(parentId, 'completed')
     await spy.waitForJobWithId(childId, 'completed')
 
-    const child = await ctx.boss.getJobById(ctx.schema, childId)
+    const [child] = await ctx.boss.findJobs(ctx.schema, { id: childId })
     assertTruthy(child)
     expect(child.blocked).toBe(false)
     expect(child.pendingDependencies).toBe(0)
@@ -241,7 +242,7 @@ describe('perJobResults', function () {
 
     await spy.waitForJobWithId(jobId, 'failed')
 
-    const job = await ctx.boss.getJobById(ctx.schema, jobId)
+    const [job] = await ctx.boss.findJobs(ctx.schema, { id: jobId })
     assertTruthy(job)
     expect(job.state).toBe('failed')
     expect((job.output as { message: string }).message).toBe('no disposition returned by handler')
@@ -265,7 +266,7 @@ describe('perJobResults', function () {
     await spy.waitForJobWithId(jobId, 'failed')
 
     // The source job is terminally failed on its first attempt - no retry was consumed.
-    const source = await ctx.boss.getJobById(ctx.schema, jobId)
+    const [source] = await ctx.boss.findJobs(ctx.schema, { id: jobId })
     assertTruthy(source)
     expect(source.state).toBe('failed')
     expect(source.retryCount).toBe(0)
@@ -275,7 +276,7 @@ describe('perJobResults', function () {
     assertTruthy(dlqJob)
     expect(dlqJob.data.key).toBe('payload')
 
-    const dlqWithMeta = await ctx.boss.getJobById(deadLetter, dlqJob.id)
+    const [dlqWithMeta] = await ctx.boss.findJobs(deadLetter, { id: dlqJob.id })
     assertTruthy(dlqWithMeta)
     expect((dlqWithMeta.output as { message: string }).message).toBe('fatal, do not retry')
   })
@@ -293,7 +294,7 @@ describe('perJobResults', function () {
     await spy.waitForJobWithId(jobId, 'failed')
 
     // Without a dead letter queue, deadletter is just a terminal failure that skips remaining retries.
-    const job = await ctx.boss.getJobById(ctx.schema, jobId)
+    const [job] = await ctx.boss.findJobs(ctx.schema, { id: jobId })
     assertTruthy(job)
     expect(job.state).toBe('failed')
     expect(job.retryCount).toBe(0)
@@ -322,8 +323,8 @@ describe('perJobResults', function () {
       await spy.waitForJobWithId(completeId, 'completed')
       await spy.waitForJobWithId(failId, 'failed')
 
-      const completed = await ctx.boss.getJobById(ctx.schema, completeId)
-      const failed = await ctx.boss.getJobById(ctx.schema, failId)
+      const [completed] = await ctx.boss.findJobs(ctx.schema, { id: completeId })
+      const [failed] = await ctx.boss.findJobs(ctx.schema, { id: failId })
 
       assertTruthy(completed)
       expect(completed.state).toBe('completed')
@@ -345,7 +346,7 @@ describe('perJobResults', function () {
       const parentId = flow.parent
       const childId = flow.child
 
-      const parentBefore = await ctx.boss.getJobById(ctx.schema, parentId)
+      const [parentBefore] = await ctx.boss.findJobs(ctx.schema, { id: parentId })
       assertTruthy(parentBefore)
       expect(parentBefore.blocking).toBe(true)
 
@@ -357,7 +358,7 @@ describe('perJobResults', function () {
       await spy.waitForJobWithId(parentId, 'completed')
       await spy.waitForJobWithId(childId, 'completed')
 
-      const child = await ctx.boss.getJobById(ctx.schema, childId)
+      const [child] = await ctx.boss.findJobs(ctx.schema, { id: childId })
       assertTruthy(child)
       expect(child.blocked).toBe(false)
       expect(child.pendingDependencies).toBe(0)
@@ -385,7 +386,7 @@ describe('perJobResults', function () {
       assertTruthy(dlqJob)
       expect(dlqJob.data.key).toBe('payload')
 
-      const dlqWithMeta = await ctx.boss.getJobById(deadLetter, dlqJob.id)
+      const [dlqWithMeta] = await ctx.boss.findJobs(deadLetter, { id: dlqJob.id })
       assertTruthy(dlqWithMeta)
       expect((dlqWithMeta.output as { message: string }).message).toBe('dlq please')
     })
@@ -408,7 +409,7 @@ describe('perJobResults', function () {
 
       await spy.waitForJobWithId(jobId, 'failed')
 
-      const source = await ctx.boss.getJobById(ctx.schema, jobId)
+      const [source] = await ctx.boss.findJobs(ctx.schema, { id: jobId })
       assertTruthy(source)
       expect(source.state).toBe('failed')
       expect(source.retryCount).toBe(0)
@@ -417,7 +418,7 @@ describe('perJobResults', function () {
       assertTruthy(dlqJob)
       expect(dlqJob.data.key).toBe('payload')
 
-      const dlqWithMeta = await ctx.boss.getJobById(deadLetter, dlqJob.id)
+      const [dlqWithMeta] = await ctx.boss.findJobs(deadLetter, { id: dlqJob.id })
       assertTruthy(dlqWithMeta)
       expect((dlqWithMeta.output as { message: string }).message).toBe('fatal, do not retry')
     })
@@ -443,7 +444,7 @@ describe('perJobResults', function () {
       await spy.waitForJobWithId(jobId, 'failed')
 
       // The out-of-band completion stands; the per-job fail did nothing.
-      const job = await ctx.boss.getJobById(ctx.schema, jobId)
+      const [job] = await ctx.boss.findJobs(ctx.schema, { id: jobId })
       assertTruthy(job)
       expect(job.state).toBe('completed')
     })
@@ -472,8 +473,8 @@ describe('perJobResults', function () {
       await spy.waitForJobWithId(completeId, 'completed')
       await spy.waitForJobWithId(failId, 'failed')
 
-      const completed = await ctx.boss.getJobById(ctx.schema, completeId)
-      const failed = await ctx.boss.getJobById(ctx.schema, failId)
+      const [completed] = await ctx.boss.findJobs(ctx.schema, { id: completeId })
+      const [failed] = await ctx.boss.findJobs(ctx.schema, { id: failId })
 
       assertTruthy(completed)
       expect(completed.state).toBe('completed')
@@ -502,7 +503,7 @@ describe('perJobResults', function () {
 
       await spy.waitForJobWithId(jobId, 'failed')
 
-      const source = await ctx.boss.getJobById(ctx.schema, jobId)
+      const [source] = await ctx.boss.findJobs(ctx.schema, { id: jobId })
       assertTruthy(source)
       expect(source.state).toBe('failed')
       expect(source.retryCount).toBe(0)
@@ -511,7 +512,7 @@ describe('perJobResults', function () {
       assertTruthy(dlqJob)
       expect(dlqJob.data.key).toBe('payload')
 
-      const dlqWithMeta = await ctx.boss.getJobById(deadLetter, dlqJob.id)
+      const [dlqWithMeta] = await ctx.boss.findJobs(deadLetter, { id: dlqJob.id })
       assertTruthy(dlqWithMeta)
       expect((dlqWithMeta.output as { message: string }).message).toBe('fatal, do not retry')
     })

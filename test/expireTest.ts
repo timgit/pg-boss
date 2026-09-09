@@ -21,7 +21,7 @@ describe('expire', function () {
     await ctx.boss.supervise(ctx.schema)
 
     assertTruthy(jobId)
-    const job = await ctx.boss.getJobById(ctx.schema, jobId)
+    const [job] = await ctx.boss.findJobs(ctx.schema, { id: jobId })
 
     assertTruthy(job)
     expect(job.state).toBe('failed')
@@ -47,7 +47,7 @@ describe('expire', function () {
 
     await ctx.boss.supervise(ctx.schema)
 
-    const job = await ctx.boss.getJobById(ctx.schema, jobId)
+    const [job] = await ctx.boss.findJobs(ctx.schema, { id: jobId })
     assertTruthy(job)
     expect(job.state).toBe('failed')
   })
@@ -68,7 +68,7 @@ describe('expire', function () {
     await ctx.boss.supervise(ctx.schema)
 
     assertTruthy(jobId)
-    const job = await ctx.boss.getJobById(ctx.schema, jobId)
+    const [job] = await ctx.boss.findJobs(ctx.schema, { id: jobId })
 
     assertTruthy(job)
     expect(job.state).toBe('failed')
@@ -94,7 +94,7 @@ describe('expire', function () {
     await delay(4000)
 
     assertTruthy(jobId)
-    const job = await ctx.boss.getJobById(ctx.schema, jobId)
+    const [job] = await ctx.boss.findJobs(ctx.schema, { id: jobId })
 
     assertTruthy(job)
     expect(job.state).toBe('failed')
