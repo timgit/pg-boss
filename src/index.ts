@@ -292,17 +292,17 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
       return
     }
 
-    // The deadline runs on the configured clock; the poll that watches for it stays on real
-    // time because it waits on in-flight handler I/O, not on the clock.
+    // Real time, not the configured clock: the deadline bounds shutdown I/O, and under a test
+    // clock nothing would tick it while the test is blocked inside stop().
     const deadline = { reached: false }
-    const deadlineTimer = this.#config.clock.setTimeout(() => { deadline.reached = true }, timeout)
+    const deadlineTimer = setTimeout(() => { deadline.reached = true }, timeout)
 
     try {
       while (!deadline.reached && this.#manager.hasPendingCleanups()) {
         await delay(500)
       }
     } finally {
-      this.#config.clock.clearTimeout(deadlineTimer)
+      clearTimeout(deadlineTimer)
     }
 
     await shutdown()

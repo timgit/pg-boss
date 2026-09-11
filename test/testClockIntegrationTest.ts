@@ -12,7 +12,7 @@ const T0 = Date.parse('2026-01-01T12:00:30Z')
 
 async function countJobs (boss: PgBoss, name: string): Promise<number> {
   const { rows } = await boss.getDb().executeSql(`SELECT count(*)::int AS n FROM ${ctx.schema}.job WHERE name = $1`, [name])
-  return rows[0].n
+  return Number(rows[0].n)
 }
 
 async function dbTime (boss: PgBoss): Promise<number> {
@@ -117,6 +117,25 @@ describe('TestClock', function () {
     expect(retried?.id).toBe(job.id)
   })
 
+  it('a dead-lettered job is stamped on the clock and fetchable at once', async function () {
+    const clock = new TestClock(T0)
+    ctx.boss = await helper.start({ ...ctx.bossConfig, clock })
+    const dlq = `${ctx.schema}_dlq`
+    await ctx.boss.createQueue(dlq)
+
+    await ctx.boss.send(ctx.schema, null, { retryLimit: 0, deadLetter: dlq })
+    const [job] = await ctx.boss.fetch(ctx.schema)
+    assertTruthy(job)
+    await ctx.boss.fail(ctx.schema, job.id)
+
+    // T0 is behind real time, so a column default would stamp the copy in the clock's future.
+    const { rows } = await ctx.boss.getDb().executeSql(`SELECT start_after, created_on FROM ${ctx.schema}.job WHERE name = $1`, [dlq])
+    expect(rows).toHaveLength(1)
+    expect(new Date(rows[0].start_after).getTime()).toBe(T0)
+    expect(new Date(rows[0].created_on).getTime()).toBe(T0)
+    expect(await ctx.boss.fetch(dlq)).toHaveLength(1)
+  })
+
   it('a cron schedule enqueues after ticking through its next occurrence', async function () {
     const clock = new TestClock(T0)
     ctx.boss = await helper.start({ ...ctx.bossConfig, clock, schedule: true, cronMonitorIntervalSeconds: 1, cronWorkerIntervalSeconds: 1 })
@@ -134,7 +153,59 @@ describe('TestClock', function () {
     expect(await countJobs(ctx.boss, ctx.schema)).toBeGreaterThanOrEqual(1)
   })
 
-  it('schema drift is clean while attached and after the clock is released', async function () {
+  it('moving the clock backwards defers a job that was due', async function () {
+    const clock = new TestClock(T0)
+    ctx.boss = await helper.start({ ...ctx.bossConfig, clock })
+
+    await ctx.boss.send(ctx.schema, null, { startAfter: 60, retryLimit: 1 })
+    await clock.setTime(T0 + MINUTE)
+    const [job] = await ctx.boss.fetch(ctx.schema)
+    assertTruthy(job)
+    // The retry re-queues the job with start_after at the clock's current reading.
+    await ctx.boss.fail(ctx.schema, job.id)
+
+    await clock.setTime(T0)
+    expect(await ctx.boss.fetch(ctx.schema)).toHaveLength(0)
+
+    await clock.setTime(T0 + MINUTE)
+    const [retried] = await ctx.boss.fetch(ctx.schema)
+    expect(retried?.id).toBe(job.id)
+  })
+
+  it('a year-long jump expires retention and files stats under the jumped-to day', async function () {
+    const clock = new TestClock(T0)
+    ctx.boss = await helper.start({ ...ctx.bossConfig, clock, persistQueueStats: true })
+
+    await ctx.boss.send(ctx.schema, null, { retentionSeconds: 60 })
+    await ctx.boss.supervise(ctx.schema)
+    expect(await countJobs(ctx.boss, ctx.schema)).toBe(1)
+
+    const later = T0 + 365 * 24 * 60 * MINUTE
+    await clock.setTime(later)
+    await ctx.boss.supervise(ctx.schema)
+
+    expect(await countJobs(ctx.boss, ctx.schema)).toBe(0)
+    const [snapshot] = await ctx.boss.getQueueStats(ctx.schema)
+    expect(snapshot.capturedOn.getTime()).toBe(later)
+  })
+
+  it('a graceful stop() returns on real time while a handler hangs', async function () {
+    const clock = new TestClock(T0)
+    ctx.boss = await helper.start({ ...ctx.bossConfig, clock, __test__enableSpies: true })
+    const spy = ctx.boss.getSpy(ctx.schema)
+
+    const id = await ctx.boss.send(ctx.schema)
+    assertTruthy(id)
+    await ctx.boss.work(ctx.schema, () => new Promise(() => {}))
+    await spy.waitForJobWithId(id, 'active')
+
+    const started = Date.now()
+    await ctx.boss.stop({ timeout: 1000 })
+    expect(Date.now() - started).toBeLessThan(5000)
+  })
+
+  // CockroachDB rewrites the override body, so the drift substitution cannot match there.
+  it.skipIf(helper.isCockroachDb)('schema drift is clean while attached and after the clock is released', async function () {
     const clock = new TestClock(T0)
     ctx.boss = await helper.start({ ...ctx.bossConfig, clock })
 

@@ -23,19 +23,13 @@ export interface AbortablePromise<T> extends Promise<T> {
   abort: () => void
 }
 
-function delay (ms: number, error?: string, abortController?: AbortController): AbortablePromise<void> {
-  const ac = abortController || new AbortController()
+function delay (ms: number, error?: string): AbortablePromise<void> {
+  const ac = new AbortController()
 
   const promise = new Promise<void>((resolve, reject) => {
     setTimeout(ms, null, { signal: ac.signal })
-      .then(() => {
-        if (error) {
-          reject(new Error(error))
-        } else {
-          resolve()
-        }
-      })
-      .catch(resolve)
+      .then(() => error ? reject(new Error(error)) : resolve())
+      .catch(() => resolve())
   }) as AbortablePromise<void>
 
   promise.abort = () => {

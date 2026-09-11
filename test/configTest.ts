@@ -163,6 +163,11 @@ describe('config', function () {
       expect(resolved.clock).toBe(systemClock)
     })
 
+    it('treats clock: undefined as the default', function () {
+      const resolved = Attorney.getConfig({ connectionString: 'postgres://localhost/db', clock: undefined })
+      expect(resolved.clock).toBe(systemClock)
+    })
+
     it('accepts any object implementing the five clock methods', function () {
       const clock = stubClock()
       const resolved = Attorney.getConfig({ connectionString: 'postgres://localhost/db', clock })

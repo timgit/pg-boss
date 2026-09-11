@@ -134,7 +134,7 @@ The current fake time in epoch milliseconds.
 
 Advances the clock by `ms`, firing every timer that falls due along the way in due order. Before each timer fires, the clock is set to that timer's due time and pushed to the database, so a poll that fires at second 30 runs its SQL against second 30. Intervals reschedule themselves after each firing. When the last due timer has fired, the clock lands on `now + ms`.
 
-`tick` does not wait for the I/O a timer callback starts. A worker poll fired by `tick` has issued its fetch by the time `tick` resolves, but the handler may still be running. Observe outcomes with a spy or by querying, as above. Only one `tick` may be in progress at a time; a second call while one is running rejects.
+`tick` does not wait for the I/O a timer callback starts. A worker poll fired by `tick` has issued its fetch by the time `tick` resolves, but the handler may still be running. Observe outcomes with a spy or by querying, as above. Only one `tick` may be in progress at a time; a second call while one is running rejects. An interval fires once per period crossed, so ticking an hour past a worker polling every two seconds runs 1800 polls; to jump, use `setTime`.
 
 ### `clock.setTime(t)`
 
@@ -148,7 +148,7 @@ While a `TestClock` is attached, `${schema}.now()`, the function every pg-boss s
 
 Anything pg-boss waits on that is not a clock, such as a database round trip or a handler's own promise, still takes real time.
 
-The graceful `stop()` deadline is a clock timer as well. A test that stops while a handler is still running must either `tick` past the timeout or stop with `graceful: false`; otherwise `stop()` waits on a deadline that never arrives.
+The graceful `stop()` deadline stays on real time. It bounds shutdown I/O rather than queue time, so a test that stops while a handler is still running returns after `timeout` without ticking.
 
 ## Example Test
 

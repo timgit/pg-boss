@@ -83,6 +83,14 @@ describe('tools.clockDelay', function () {
     await promise
     expect(clock.timers.size).toBe(0)
   })
+
+  it('resolves at once when the controller is already aborted', async function () {
+    const clock = new ManualClock()
+    const ac = new AbortController()
+    ac.abort()
+    await clockDelay(clock, 10, 'too slow', ac)
+    expect(clock.timers.size).toBe(0)
+  })
 })
 
 describe('tools.resolveWithinSeconds', function () {

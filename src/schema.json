@@ -119,7 +119,7 @@
         "column": "created_on",
         "type": "timestamp with time zone",
         "notNull": true,
-        "default": "{{schema}}.now()"
+        "default": "now()"
       },
       {
         "table": "job_common",
@@ -189,7 +189,7 @@
         "column": "keep_until",
         "type": "timestamp with time zone",
         "notNull": true,
-        "default": "({{schema}}.now() + '336:00:00'::interval)"
+        "default": "(now() + '336:00:00'::interval)"
       },
       {
         "table": "job_common",
@@ -308,7 +308,7 @@
         "column": "start_after",
         "type": "timestamp with time zone",
         "notNull": true,
-        "default": "{{schema}}.now()"
+        "default": "now()"
       },
       {
         "table": "job_common",
@@ -378,7 +378,7 @@
         "column": "created_on",
         "type": "timestamp with time zone",
         "notNull": true,
-        "default": "{{schema}}.now()"
+        "default": "now()"
       },
       {
         "table": "job",
@@ -448,7 +448,7 @@
         "column": "keep_until",
         "type": "timestamp with time zone",
         "notNull": true,
-        "default": "({{schema}}.now() + '336:00:00'::interval)"
+        "default": "(now() + '336:00:00'::interval)"
       },
       {
         "table": "job",
@@ -567,7 +567,7 @@
         "column": "start_after",
         "type": "timestamp with time zone",
         "notNull": true,
-        "default": "{{schema}}.now()"
+        "default": "now()"
       },
       {
         "table": "job",
@@ -595,7 +595,7 @@
         "column": "captured_on",
         "type": "timestamp with time zone",
         "notNull": true,
-        "default": "{{schema}}.now()"
+        "default": "now()"
       },
       {
         "table": "queue_stats",
@@ -658,7 +658,7 @@
         "column": "created_on",
         "type": "timestamp with time zone",
         "notNull": true,
-        "default": "{{schema}}.now()"
+        "default": "now()"
       },
       {
         "table": "queue",
@@ -833,7 +833,7 @@
         "column": "updated_on",
         "type": "timestamp with time zone",
         "notNull": true,
-        "default": "{{schema}}.now()"
+        "default": "now()"
       },
       {
         "table": "queue",
@@ -847,7 +847,7 @@
         "column": "created_on",
         "type": "timestamp with time zone",
         "notNull": true,
-        "default": "{{schema}}.now()"
+        "default": "now()"
       },
       {
         "table": "schedule",
@@ -910,14 +910,14 @@
         "column": "updated_on",
         "type": "timestamp with time zone",
         "notNull": true,
-        "default": "{{schema}}.now()"
+        "default": "now()"
       },
       {
         "table": "subscription",
         "column": "created_on",
         "type": "timestamp with time zone",
         "notNull": true,
-        "default": "{{schema}}.now()"
+        "default": "now()"
       },
       {
         "table": "subscription",
@@ -938,7 +938,7 @@
         "column": "updated_on",
         "type": "timestamp with time zone",
         "notNull": true,
-        "default": "{{schema}}.now()"
+        "default": "now()"
       },
       {
         "table": "version",
@@ -987,7 +987,7 @@
         "column": "created_on",
         "type": "timestamp with time zone",
         "notNull": true,
-        "default": "{{schema}}.now()"
+        "default": "now()"
       },
       {
         "table": "warning",
@@ -1351,7 +1351,7 @@
         "column": "created_on",
         "type": "timestamp with time zone",
         "notNull": true,
-        "default": "{{schema}}.now()"
+        "default": "now()"
       },
       {
         "table": "job",
@@ -1421,7 +1421,7 @@
         "column": "keep_until",
         "type": "timestamp with time zone",
         "notNull": true,
-        "default": "({{schema}}.now() + '336:00:00'::interval)"
+        "default": "(now() + '336:00:00'::interval)"
       },
       {
         "table": "job",
@@ -1540,7 +1540,7 @@
         "column": "start_after",
         "type": "timestamp with time zone",
         "notNull": true,
-        "default": "{{schema}}.now()"
+        "default": "now()"
       },
       {
         "table": "job",
@@ -1568,7 +1568,7 @@
         "column": "captured_on",
         "type": "timestamp with time zone",
         "notNull": true,
-        "default": "{{schema}}.now()"
+        "default": "now()"
       },
       {
         "table": "queue_stats",
@@ -1631,7 +1631,7 @@
         "column": "created_on",
         "type": "timestamp with time zone",
         "notNull": true,
-        "default": "{{schema}}.now()"
+        "default": "now()"
       },
       {
         "table": "queue",
@@ -1806,7 +1806,7 @@
         "column": "updated_on",
         "type": "timestamp with time zone",
         "notNull": true,
-        "default": "{{schema}}.now()"
+        "default": "now()"
       },
       {
         "table": "queue",
@@ -1820,7 +1820,7 @@
         "column": "created_on",
         "type": "timestamp with time zone",
         "notNull": true,
-        "default": "{{schema}}.now()"
+        "default": "now()"
       },
       {
         "table": "schedule",
@@ -1883,14 +1883,14 @@
         "column": "updated_on",
         "type": "timestamp with time zone",
         "notNull": true,
-        "default": "{{schema}}.now()"
+        "default": "now()"
       },
       {
         "table": "subscription",
         "column": "created_on",
         "type": "timestamp with time zone",
         "notNull": true,
-        "default": "{{schema}}.now()"
+        "default": "now()"
       },
       {
         "table": "subscription",
@@ -1911,7 +1911,7 @@
         "column": "updated_on",
         "type": "timestamp with time zone",
         "notNull": true,
-        "default": "{{schema}}.now()"
+        "default": "now()"
       },
       {
         "table": "version",
@@ -1960,7 +1960,7 @@
         "column": "created_on",
         "type": "timestamp with time zone",
         "notNull": true,
-        "default": "{{schema}}.now()"
+        "default": "now()"
       },
       {
         "table": "warning",

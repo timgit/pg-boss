@@ -523,10 +523,10 @@ function getConfig (value: string | types.ConstructorOptions): types.ResolvedCon
 const CLOCK_METHODS = ['now', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] as const
 
 function applyClockConfig (config: types.ConstructorOptions) {
-  if ('clock' in config) {
-    const clock = config.clock as Record<string, unknown> | undefined
+  if (config.clock) {
+    const clock = config.clock as unknown as Record<string, unknown>
     for (const method of CLOCK_METHODS) {
-      assert(clock && typeof clock[method] === 'function', `configuration assert: clock must implement ${method}()`)
+      assert(typeof clock[method] === 'function', `configuration assert: clock must implement ${method}()`)
     }
   }
 

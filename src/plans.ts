@@ -275,8 +275,8 @@ function createTableQueue (schema: string) {
       monitor_claim_on timestamp with time zone,
       monitor_on timestamp with time zone,
       maintain_on timestamp with time zone,
-      created_on timestamp with time zone not null default ${schema}.now(),
-      updated_on timestamp with time zone not null default ${schema}.now(),
+      created_on timestamp with time zone not null default pg_catalog.now(),
+      updated_on timestamp with time zone not null default pg_catalog.now(),
       PRIMARY KEY (name)
     )
   `
@@ -299,8 +299,8 @@ function createTableSchedule (schema: string) {
       timezone text DEFAULT 'UTC',
       data jsonb,
       options jsonb,
-      created_on timestamp with time zone not null default ${schema}.now(),
-      updated_on timestamp with time zone not null default ${schema}.now(),
+      created_on timestamp with time zone not null default pg_catalog.now(),
+      updated_on timestamp with time zone not null default pg_catalog.now(),
       last_job_id uuid,
       PRIMARY KEY (name, key)
     )
@@ -312,8 +312,8 @@ function createTableSubscription (schema: string) {
     CREATE TABLE ${schema}.subscription (
       event text not null,
       name text not null REFERENCES ${schema}.queue ON DELETE CASCADE,
-      created_on timestamp with time zone not null default ${schema}.now(),
-      updated_on timestamp with time zone not null default ${schema}.now(),
+      created_on timestamp with time zone not null default pg_catalog.now(),
+      updated_on timestamp with time zone not null default pg_catalog.now(),
       PRIMARY KEY(event, name)
     )
   `
@@ -349,7 +349,7 @@ export function createTableWarning (schema: string) {
       type text NOT NULL,
       message text NOT NULL,
       data jsonb,
-      created_on timestamp with time zone NOT NULL DEFAULT ${schema}.now()
+      created_on timestamp with time zone NOT NULL DEFAULT pg_catalog.now()
     )
   `
 }
@@ -495,11 +495,11 @@ function createTableJob (schema: string, noPartitioning = false) {
       singleton_on timestamp without time zone,
       group_id text,
       group_tier text,
-      start_after timestamp with time zone not null default ${schema}.now(),
-      created_on timestamp with time zone not null default ${schema}.now(),
+      start_after timestamp with time zone not null default pg_catalog.now(),
+      created_on timestamp with time zone not null default pg_catalog.now(),
       started_on timestamp with time zone,
       completed_on timestamp with time zone,
-      keep_until timestamp with time zone NOT NULL default ${schema}.now() + interval '${QUEUE_DEFAULTS.retention_seconds}',
+      keep_until timestamp with time zone NOT NULL default pg_catalog.now() + interval '${QUEUE_DEFAULTS.retention_seconds}',
       output jsonb,
       dead_letter text,
       policy text,
@@ -1243,8 +1243,8 @@ export function setScheduleKinds (schema: string) {
 
 export function schedule (schema: string) {
   return `
-    INSERT INTO ${schema}.schedule (name, key, kind, cron, timezone, data, options)
-    VALUES ($1, $2, $3, $4, $5, $6, $7)
+    INSERT INTO ${schema}.schedule (name, key, kind, cron, timezone, data, options, created_on, updated_on)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, ${schema}.now(), ${schema}.now())
     ON CONFLICT (name, key) DO UPDATE SET
       kind = EXCLUDED.kind,
       cron = EXCLUDED.cron,
@@ -1294,8 +1294,8 @@ export function getTime (schema: string) {
 
 export function insertWarning (schema: string) {
   return `
-    INSERT INTO ${schema}.warning (type, message, data)
-    VALUES ($1, $2, $3)
+    INSERT INTO ${schema}.warning (type, message, data, created_on)
+    VALUES ($1, $2, $3, ${schema}.now())
   `
 }
 
@@ -1340,7 +1340,7 @@ export function createTableQueueStats (schema: string, noPartitioning = false): 
       active_count   int NOT NULL DEFAULT 0,
       failed_count   int NOT NULL DEFAULT 0,
       total_count    int NOT NULL DEFAULT 0,
-      captured_on timestamptz NOT NULL DEFAULT ${schema}.now(),
+      captured_on timestamptz NOT NULL DEFAULT pg_catalog.now(),
       ${noPartitioning ? 'PRIMARY KEY (id)' : 'PRIMARY KEY (id, captured_on)'}
     ) ${noPartitioning ? '' : 'PARTITION BY RANGE (captured_on)'}
   `
@@ -1430,8 +1430,8 @@ export function deleteOldQueueStats (schema: string, days: number): string {
 export function insertQueueStats (schema: string, queues: string[], noAdvisoryLocks?: boolean): string {
   const sql = `
     INSERT INTO ${schema}.queue_stats
-      (name, deferred_count, queued_count, ready_count, active_count, failed_count, total_count)
-    SELECT name, deferred_count, queued_count, ready_count, active_count, failed_count, total_count
+      (name, deferred_count, queued_count, ready_count, active_count, failed_count, total_count, captured_on)
+    SELECT name, deferred_count, queued_count, ready_count, active_count, failed_count, total_count, ${schema}.now()
     FROM ${schema}.queue
     WHERE name = ANY(${serializeArrayParam(queues)})
   `
@@ -2104,6 +2104,7 @@ export function insertJobs (schema: string, { table, name, returnId = true, noti
       data,
       priority,
       start_after,
+      created_on,
       singleton_key,
       singleton_on,
       group_id,
@@ -2128,6 +2129,7 @@ export function insertJobs (schema: string, { table, name, returnId = true, noti
       data,
       COALESCE(priority, 0) as priority,
       j.start_after,
+      ${schema}.now() as created_on,
       "singletonKey",
       CASE
         ${slotClause}
@@ -2454,7 +2456,7 @@ function failJobsBody (schema: string, table: string, where: string, output: str
       SELECT * FROM failed_jobs
     ),
     dlq_jobs as (
-      INSERT INTO ${schema}.job (name, priority, data, output, retry_limit, retry_backoff, retry_delay, keep_until, deletion_seconds,
+      INSERT INTO ${schema}.job (name, priority, data, output, retry_limit, retry_backoff, retry_delay, start_after, created_on, keep_until, deletion_seconds,
         expire_seconds, source_name, source_id, source_created_on, source_retry_count, singleton_key, group_id, group_tier, heartbeat_seconds)
       SELECT
         r.dead_letter,
@@ -2464,6 +2466,8 @@ function failJobsBody (schema: string, table: string, where: string, output: str
         q.retry_limit,
         q.retry_backoff,
         q.retry_delay,
+        ${schema}.now(),
+        ${schema}.now(),
         ${schema}.now() + q.retention_seconds * interval '1s',
         q.deletion_seconds,
         q.expire_seconds,
@@ -2685,10 +2689,10 @@ export function insertRetryJob (schema: string, table: string): string {
 
 export function insertDeadLetterJob (schema: string): string {
   return `
-    INSERT INTO ${schema}.job (name, data, output, retry_limit, retry_backoff, retry_delay, keep_until, deletion_seconds,
+    INSERT INTO ${schema}.job (name, data, output, retry_limit, retry_backoff, retry_delay, start_after, created_on, keep_until, deletion_seconds,
       expire_seconds, source_name, source_id, source_created_on, source_retry_count, singleton_key, heartbeat_seconds,
       priority, group_id, group_tier)
-    SELECT $1, $2, $3, q.retry_limit, q.retry_backoff, q.retry_delay, ${schema}.now() + q.retention_seconds * interval '1s', q.deletion_seconds,
+    SELECT $1, $2, $3, q.retry_limit, q.retry_backoff, q.retry_delay, ${schema}.now(), ${schema}.now(), ${schema}.now() + q.retention_seconds * interval '1s', q.deletion_seconds,
       q.expire_seconds, $4, $5, $6, $7, $8, q.heartbeat_seconds, $9, $10, $11
     FROM ${schema}.queue q WHERE q.name = $1
   `
@@ -2731,10 +2735,10 @@ export function redriveJobs (schema: string, table: string): string {
     ins AS (
       INSERT INTO ${schema}.job
         (name, data, priority, retry_limit, retry_backoff, retry_delay, retry_delay_max,
-         expire_seconds, keep_until, deletion_seconds, policy, singleton_key, group_id, group_tier,
+         expire_seconds, start_after, created_on, keep_until, deletion_seconds, policy, singleton_key, group_id, group_tier,
          heartbeat_seconds, dead_letter)
       SELECT COALESCE($2, m.source_name), m.data, m.priority, q.retry_limit, q.retry_backoff,
-        q.retry_delay, q.retry_delay_max, q.expire_seconds,
+        q.retry_delay, q.retry_delay_max, q.expire_seconds, ${schema}.now(), ${schema}.now(),
         ${schema}.now() + q.retention_seconds * interval '1s', q.deletion_seconds, q.policy,
         m.singleton_key, m.group_id, m.group_tier, q.heartbeat_seconds, q.dead_letter
       FROM moved m JOIN ${schema}.queue q ON q.name = COALESCE($2, m.source_name)

@@ -1321,7 +1321,7 @@ describe('migration', function () {
     })
   })
 
-  it('v42 adds the schema clock function and points every timestamp default at it', async function () {
+  it('v42 adds the schema clock function and leaves the timestamp defaults on pg_catalog', async function () {
     await contractor.create()
 
     const { schema } = ctx.bossConfig
@@ -1342,28 +1342,19 @@ describe('migration', function () {
         JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
        WHERE n.nspname = $1 AND p.proname = 'now'`, [schema])).rows.length === 1
 
-    // Fresh install: the function exists and every clock default is schema-qualified.
+    // Fresh install: the function exists and no default reaches it, so DROP FUNCTION never has a
+    // dependent (CockroachDB records one from create_queue() through the queue table's defaults).
     expect(await hasClockFunction()).toBe(true)
     const fresh = await clockDefaults()
     expect(fresh.length).toBeGreaterThan(0)
     for (const row of fresh) {
-      expect(row.column_default, `${row.table_name}.${row.column_name}`).toContain(`${schema}.now()`)
-    }
-    const tables = new Set(fresh.map(r => r.table_name))
-    for (const table of ['job', 'queue', 'schedule', 'subscription', 'warning', 'queue_stats']) {
-      expect(tables.has(table), table).toBe(true)
-    }
-    // Partitioned installs must also have repointed the default partition (recursion, not ONLY).
-    if (tables.has('job_common')) {
-      expect(fresh.filter(r => r.table_name === 'job_common').every(r => r.column_default.includes(`${schema}.now()`))).toBe(true)
+      expect(row.column_default, `${row.table_name}.${row.column_name}`).not.toContain(`${schema}.now()`)
     }
 
-    // Rolling v42 back restores pg_catalog's now() and drops the function.
+    // Rolling v42 back drops the function and leaves the defaults alone.
     await contractor.rollback(currentSchemaVersion)
     expect(await hasClockFunction()).toBe(false)
-    for (const row of await clockDefaults()) {
-      expect(row.column_default, `${row.table_name}.${row.column_name}`).not.toContain('.now()')
-    }
+    expect(await clockDefaults()).toEqual(fresh)
 
     // Migrating forward again lands on exactly the fresh-install shape.
     await contractor.migrate(currentSchemaVersion - 1)

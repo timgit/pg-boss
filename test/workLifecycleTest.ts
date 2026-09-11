@@ -80,13 +80,9 @@ describe('work lifecycle', function () {
 
     await ctx.boss.work(ctx.schema, { pollingIntervalSeconds: 1 }, async ([job]) => {
       jobStartedResolve()
-      const ac = new AbortController()
-      job.signal.addEventListener('abort', () => ac.abort(), { once: true })
-      try {
-        await delay(10000, undefined, ac)
-      } catch {
-        // aborted during boss.stop() teardown — expected
-      }
+      const wait = delay(10000)
+      job.signal.addEventListener('abort', () => wait.abort(), { once: true })
+      await wait
     })
 
     await jobStarted
