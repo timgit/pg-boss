@@ -70,6 +70,20 @@ describe('ops', function () {
     expect(ctx.boss.getDb().pool.totalCount).toBe(0)
   })
 
+  it('should do nothing when stop() is called again after the pool was closed', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    let stoppedCount = 0
+    ctx.boss.on('stopped', () => { stoppedCount++ })
+
+    await ctx.boss.stop({ close: false })
+    await ctx.boss.stop()
+    await ctx.boss.stop()
+
+    // the third call has nothing left to close and must not shut anything down again
+    expect(stoppedCount).toBe(1)
+  })
+
   helper.itPglite('should not close the connection pool when the second stop also passes close: false', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 
