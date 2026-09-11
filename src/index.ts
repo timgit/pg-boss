@@ -8,6 +8,7 @@ import Bam from './bam.ts'
 import Navigator from './navigator.ts'
 import Notifier from './notifier.ts'
 import { delay } from './tools.ts'
+import { isAttachable } from './clock.ts'
 import type * as types from './types.ts'
 import * as plans from './plans.ts'
 import DbDefault from './db.ts'
@@ -47,10 +48,6 @@ export function getIndexBloatPlans (schema?: string, options?: types.IndexBloatO
 
 export function getRollbackPlans (schema?: string, version?: number, options?: types.PlanOptions) {
   return Contractor.rollbackPlans(schema, version, options)
-}
-
-function isAttachable (clock: types.Clock): clock is types.AttachableClock {
-  return typeof (clock as Partial<types.AttachableClock>).attach === 'function'
 }
 
 export class PgBoss extends EventEmitter<types.PgBossEventMap> {

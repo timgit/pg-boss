@@ -3,7 +3,8 @@ import pg from 'pg'
 import assert from 'node:assert'
 import { delay } from './tools.ts'
 import type * as types from './types.ts'
-import { systemClock } from './clock.ts'
+import { isAttachable, systemClock } from './clock.ts'
+import * as plans from './plans.ts'
 
 // Keep silent network failures below the default 30-second notify polling backstop: in the
 // worst case a failure happens immediately after a successful check, then takes one interval,
@@ -46,6 +47,14 @@ class Db extends EventEmitter implements types.IDatabase, types.EventsMixin {
   async open () {
     this.pool = new pg.Pool(this.config)
     this.pool.on('error', error => this.emit('error', error))
+
+    if (isAttachable(this.clock)) {
+      // Queued on the client before any checkout query, so every connection reads the fake clock.
+      this.pool.on('connect', client => {
+        client.query(plans.enableClockOverride()).catch(error => this.emit('error', error))
+      })
+    }
+
     this.opened = true
   }
 

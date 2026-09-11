@@ -10,6 +10,10 @@ export const systemClock: Clock = {
   clearInterval: (handle: ClockTimer) => clearInterval(handle as NodeJS.Timeout)
 }
 
+export function isAttachable (clock: Clock): clock is AttachableClock {
+  return typeof (clock as Partial<AttachableClock>).attach === 'function'
+}
+
 interface Timer {
   fn: () => void
   due: number
@@ -127,6 +131,8 @@ export class TestClock implements AttachableClock {
       ${plans.createClockFunction(schema, { replace: true, body: plans.clockOverrideBody(schema) })}
     `)
     await db.executeSql(`INSERT INTO ${schema}.clock (now) VALUES (to_timestamp($1))`, [this.#now / 1000])
+    // Enough for a single-connection adapter such as PGlite; pg-boss's own pool opts in per connection.
+    await db.executeSql(plans.enableClockOverride())
 
     const entry: Target = { db, schema }
     this.#targets.push(entry)

@@ -201,10 +201,18 @@ function createEnumJobState (schema: string) {
 // (pg-boss #689).
 export const CLOCK_FUNCTION_BODY = 'SELECT pg_catalog.now();'
 
-// The body a TestClock installs: the single row of ${schema}.clock when present, else the real
-// clock. The subquery defeats inlining, which is fine in tests and never happens in production.
+// Sessions opt into the fake clock through this setting, so an instance without a TestClock on
+// the same schema, or one started after a killed run left the override behind, stays on real time.
+export const CLOCK_OVERRIDE_SETTING = 'pgboss.test_clock'
+
+// The body a TestClock installs: the single row of ${schema}.clock for a session that opted in, else
+// the real clock. The subquery defeats inlining, which is fine in tests and never happens in production.
 export function clockOverrideBody (schema: string) {
-  return `SELECT COALESCE((SELECT c.now FROM ${schema}.clock c LIMIT 1), pg_catalog.now());`
+  return `SELECT COALESCE(CASE WHEN current_setting('${CLOCK_OVERRIDE_SETTING}', true) = 'on' THEN (SELECT c.now FROM ${schema}.clock c LIMIT 1) END, pg_catalog.now());`
+}
+
+export function enableClockOverride () {
+  return `SET ${CLOCK_OVERRIDE_SETTING} = 'on'`
 }
 
 export function createClockFunction (schema: string, options: { replace?: boolean, body?: string } = {}) {

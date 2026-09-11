@@ -189,6 +189,20 @@ describe('TestClock', function () {
     expect(snapshot.capturedOn.getTime()).toBe(later)
   })
 
+  // PGlite is one session, so the opt-in from attach() is visible to every instance sharing it.
+  helper.itPglite('an instance without a clock keeps real time on a schema another instance holds on fake time', async function () {
+    const clock = new TestClock(T0)
+    ctx.boss = await helper.start({ ...ctx.bossConfig, clock })
+    const plain = await helper.start({ ...ctx.bossConfig, noDefault: true })
+
+    try {
+      expect(await dbTime(ctx.boss)).toBe(T0)
+      expect(Math.abs(await dbTime(plain) - Date.now())).toBeLessThan(60_000)
+    } finally {
+      await plain.stop({ graceful: false })
+    }
+  })
+
   it('a graceful stop() returns on real time while a handler hangs', async function () {
     const clock = new TestClock(T0)
     ctx.boss = await helper.start({ ...ctx.bossConfig, clock, __test__enableSpies: true })

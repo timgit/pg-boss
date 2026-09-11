@@ -144,6 +144,8 @@ Jumps to `t`, forwards or backwards, without firing anything. Postgres will happ
 
 While a `TestClock` is attached, `${schema}.now()`, the function every pg-boss statement reads the clock through, returns the fake time. That covers job creation and `start_after`, singleton slots, retry delays, expiration, maintenance and cron gating. It does not change `pg_catalog.now()` or your own SQL, and the `created_on` of rows your application inserts directly are unaffected.
 
+Only sessions that set `pgboss.test_clock = 'on'` see the fake time. pg-boss's own pool sets it on every connection when a `TestClock` is configured, so an instance without one on the same schema keeps real time, as does anything started after a killed run left the override in place. A custom `db` adapter has to set it on its own connections; `attach()` issues one `SET`, which is enough for a single-connection adapter such as PGlite.
+
 `start()` attaches the clock after the schema is installed, and `stop()` releases it, restoring the real clock for that schema. One `TestClock` may be shared by several instances; the schema stays on fake time until the last of them stops.
 
 Anything pg-boss waits on that is not a clock, such as a database round trip or a handler's own promise, still takes real time.
