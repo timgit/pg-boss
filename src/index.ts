@@ -222,6 +222,18 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
       return this.#stoppingPromise
     }
 
+    // stop({ close: false }) marks the instance stopped while leaving the pool open, so a later
+    // stop() that asks to close has to be answered before the guard below. Everything else was
+    // already shut down by the first stop().
+    if (this.#stopped && (options.close ?? true) && this.#db._pgbdb && this.#db.opened) {
+      await this.#db.close()
+
+      // Give event loop time to process socket closes
+      await delay(10)
+
+      return
+    }
+
     if (this.#stopped) {
       return
     }

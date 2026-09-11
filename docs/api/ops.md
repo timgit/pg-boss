@@ -51,6 +51,9 @@ await boss.stop()
 // stop workers but keep the connection pool open for send() and fetch()
 await boss.stop({ close: false })
 
+// ...and close the pool once the rest of the process is done with it
+await boss.stop()
+
 // shut down immediately without waiting for active jobs
 await boss.stop({ graceful: false })
 ```
