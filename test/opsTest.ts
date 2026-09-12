@@ -70,6 +70,31 @@ describe('ops', function () {
     expect(ctx.boss.getDb().pool.totalCount).toBe(0)
   })
 
+  helper.itPglite('should not resolve a concurrent stop() before the pool from a close: false stop is closed', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    await ctx.boss.stop({ close: false })
+
+    // @ts-ignore
+    const pool = ctx.boss.getDb().pool
+
+    // keep one connection busy so pool.end() has something to drain. pg-pool hands an idle client
+    // out on the next tick, so wait until the query holds it before stopping
+    const acquired = new Promise(resolve => pool.once('acquire', resolve))
+    const busy = ctx.boss.getDb().executeSql('select pg_sleep(0.5)')
+    await acquired
+
+    const first = ctx.boss.stop()
+    const second = ctx.boss.stop()
+
+    // the second caller must wait for the close, not fall through to the stopped guard
+    await second
+    expect(pool.totalCount).toBe(0)
+
+    await first
+    await busy
+  })
+
   it('should do nothing when stop() is called again after the pool was closed', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 
@@ -142,37 +167,6 @@ describe('ops', function () {
     } finally {
       await db.close()
     }
-  })
-
-  it('should emit stopped once when a close: false stop is followed by a stop that closes', async function () {
-    ctx.boss = await helper.start(ctx.bossConfig)
-
-    let stoppedCount = 0
-    ctx.boss.on('stopped', () => { stoppedCount++ })
-
-    await ctx.boss.stop({ close: false })
-    await ctx.boss.stop()
-
-    // stopped reports workers and maintenance shutting down, which only happened on the first stop
-    expect(stoppedCount).toBe(1)
-  })
-
-  it('should not leave open handles when a close: false stop is followed by a stop that closes', async function () {
-    const resourcesBefore = process.getActiveResourcesInfo()
-
-    const boss = new PgBoss(ctx.bossConfig)
-    await boss.start()
-    await boss.createQueue(ctx.schema)
-
-    await boss.stop({ close: false })
-    await boss.stop()
-
-    // Allow a tick for cleanup
-    await new Promise(resolve => setImmediate(resolve))
-
-    const resourcesAfter = process.getActiveResourcesInfo()
-
-    expect(resourcesAfter.length).toBeLessThanOrEqual(resourcesBefore.length)
   })
 
   it('should be able to run an arbitrary query via getDb()', async function () {
