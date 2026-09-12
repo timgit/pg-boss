@@ -65,6 +65,11 @@ export interface DatabaseOptions {
   schema?: string;
   ssl?: any;
   connectionString?: string;
+  /**
+   * Command-line options sent to the server on connect, e.g. `-c statement_timeout=5000`. Applied
+   * to every connection in the pool. Passed through to `pg`.
+   */
+  options?: string;
   max?: number;
   db?: IDatabase;
   connectionTimeoutMillis?: number;
@@ -375,6 +380,19 @@ export interface CompatibilityFlags {
    * `autovacuum_disabled` checks entirely.
    */
   noMonitorVacuum?: boolean;
+  /**
+   * The engine will not let a transaction write a row another session wrote after that transaction
+   * began. A transactional worker's heartbeat is exactly that shape: `touch()` refreshes
+   * `heartbeat_on` on the claimed row from a pooled connection, by design, so the job stays visibly
+   * `active` while the handler runs. Under CockroachDB's serializable isolation that write lands
+   * above the handler transaction's timestamp, and the completion pg-boss runs inside the
+   * transaction then fails with a `40001` WriteTooOldError. The transaction has already returned
+   * rows to the client, so there is nothing left to refresh and the batch cannot be retried in
+   * place. When set, `work()` rejects `transactional` on a queue that configures `heartbeatSeconds`
+   * rather than shipping a worker that fails every batch. (YugabyteDB's snapshot isolation makes the
+   * second write wait rather than abort, so it does NOT set this flag.)
+   */
+  noTransactionalHeartbeat?: boolean;
 }
 
 export interface Migration {
@@ -510,6 +528,12 @@ export interface ConstructorOptions extends DatabaseOptions, SchedulingOptions, 
    * @internal
    */
   __test__noReindex?: boolean;
+  /**
+   * Force `noTransactionalHeartbeat` on top of the current backend, so the rejection of a
+   * transactional worker on a heartbeat queue (CockroachDB) can be exercised on plain Postgres.
+   * @internal
+   */
+  __test__noTransactionalHeartbeat?: boolean;
   /** @internal */
   migrations?: Migration[];
 }
@@ -1251,7 +1275,7 @@ export type UpdateQueueOptions = Omit<Queue, 'name' | 'partition' | 'policy' | '
 
 export interface Warning { message: string, data: object }
 
-export type WarningType = 'slow_query' | 'queue_backlog' | 'clock_skew' | 'listen_notify_unavailable' | 'invalid_schedule' | 'index_bloat' | 'xmin_horizon' | 'autovacuum_disabled' | 'monitor_backoff' | 'transactional_pool_headroom'
+export type WarningType = 'slow_query' | 'queue_backlog' | 'clock_skew' | 'listen_notify_unavailable' | 'invalid_schedule' | 'index_bloat' | 'xmin_horizon' | 'autovacuum_disabled' | 'monitor_backoff' | 'transactional_pool_headroom' | 'transaction_timeout_probe'
 
 export interface PersistedWarning {
   id: number;
@@ -1268,6 +1292,12 @@ export interface CommandResponse {
   requested: number;
   /** @internal */
   affected: number;
+  /**
+   * The ids the statement actually settled, where it reports them. `jobs` is the list that was
+   * asked about; this is the subset that landed.
+   * @internal
+   */
+  settled?: string[];
 }
 
 /**

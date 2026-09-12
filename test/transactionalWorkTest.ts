@@ -22,6 +22,19 @@ async function until (check: () => Promise<boolean>, timeoutMs = 8000): Promise<
   throw new Error('condition was not met in time')
 }
 
+// The bound pg-boss applied, in milliseconds, read from inside the handler's transaction.
+// pg_settings rather than current_setting: it reports both GUCs unitless on every backend, where
+// current_setting spells the same 35 seconds '35s' on PostgreSQL and '35000' on CockroachDB.
+// Null when the server recognises neither GUC and the transaction ran unbounded.
+async function readTransactionBound (tx: types.IDatabase): Promise<number | null> {
+  const { rows } = await tx.executeSql(
+    `SELECT name, setting::bigint AS ms FROM pg_settings
+      WHERE name IN ('transaction_timeout', 'idle_in_transaction_session_timeout')
+      ORDER BY name = 'transaction_timeout' DESC`)
+
+  return rows.length ? Number(rows[0].ms) : null
+}
+
 describeTransactional('transactional work', function () {
   it('should commit handler writes with the job completion', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
@@ -186,7 +199,10 @@ describeTransactional('transactional work', function () {
     releaseHandler()
   })
 
-  it('should refresh the heartbeat while a transactional handler runs', async function () {
+  // Skipped where the backend cannot carry both: the refresh writes the claimed row from outside
+  // the handler transaction, which CockroachDB then refuses the completion a write to. The
+  // rejection that replaces it is covered by the two tests below.
+  it.skipIf(helper.isCockroachDb)('should refresh the heartbeat while a transactional handler runs', async function () {
     ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true })
 
     await ctx.boss.createQueue(ctx.schema, { heartbeatSeconds: 10 })
@@ -219,6 +235,47 @@ describeTransactional('transactional work', function () {
     await db.close()
 
     expect(refreshed).toBe(true)
+  })
+
+  it('should reject a transactional worker on a heartbeat queue where the backend cannot carry both', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, noDefault: true, __test__noTransactionalHeartbeat: true })
+
+    await ctx.boss.createQueue(ctx.schema, { heartbeatSeconds: 10 })
+
+    await expect(ctx.boss.work(ctx.schema, { transactional: true }, async () => {}))
+      .rejects.toThrow('cannot run a transactional worker on a queue with heartbeatSeconds')
+
+    // The same queue without the transaction is untouched: only the combination is refused.
+    const workerId = await ctx.boss.work(ctx.schema, async () => {})
+    expect(workerId).toBeTruthy()
+  })
+
+  it('should fail a batch a per-job heartbeat put on a queue that has none', async function () {
+    ctx.boss = await helper.start({ ...ctx.bossConfig, __test__noTransactionalHeartbeat: true })
+
+    // The queue carries no heartbeat, so work() has nothing to refuse and the worker registers.
+    // The job brings its own, which only the batch can see.
+    const jobId = await ctx.boss.send(ctx.schema, { work: true }, { heartbeatSeconds: 10, retryLimit: 0 })
+    helper.assertTruthy(jobId)
+
+    let handled = false
+
+    await ctx.boss.work(ctx.schema, { transactional: true }, async () => {
+      handled = true
+    })
+
+    await until(async () => {
+      const job = await ctx.boss!.getJobById(ctx.schema, jobId)
+      return job?.state === 'failed'
+    })
+
+    const job = await ctx.boss.getJobById(ctx.schema, jobId)
+    helper.assertTruthy(job)
+
+    // Refused before the handler and before the begin, so there is no transaction to conflict with
+    // and no raw write conflict in the output.
+    expect(handled).toBe(false)
+    expect(JSON.stringify(job.output)).toContain('cannot run a transactional worker on a queue with heartbeatSeconds')
   })
 
   it('should work with localGroupConcurrency', async function () {
@@ -433,7 +490,53 @@ describeTransactional('transactional work', function () {
     const { rows } = await db.executeSql(`SELECT id FROM ${ledger}`)
 
     expect(attempts).toBe(2)
-    expect(selfSettled).toEqual([0, 1])
+    // CockroachDB answers the handler's own settle on a row a peer just moved with a 40001 retry
+    // error rather than affected: 0, so the first attempt throws before it reaches the reading.
+    // Either way the batch rolls back, which is what the one ledger row asserts.
+    expect(selfSettled).toEqual(helper.isCockroachDb ? [1] : [0, 1])
+    expect(rows.length).toBe(1)
+  })
+
+  it('should commit when the handler settles part of its own batch first', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    const ledger = `${ctx.schema}.ledger`
+    const db = ctx.boss.getDb()
+
+    await db.executeSql(`CREATE TABLE ${ledger} (id serial primary key)`)
+
+    const ids: string[] = []
+
+    for (let i = 0; i < 2; i++) {
+      const id: string | null = await ctx.boss.send(ctx.schema, { seq: i })
+      helper.assertTruthy(id)
+      ids.push(id)
+    }
+
+    const settles: Array<{ cancelled: number, completed: number, requested: number }> = []
+
+    await ctx.boss.work(ctx.schema, { transactional: true, batchSize: 2 }, async (jobs, tx) => {
+      await tx.executeSql(`INSERT INTO ${ledger} DEFAULT VALUES`)
+
+      const cancelled = await ctx.boss!.cancel(ctx.schema, jobs[0].id, { db: tx })
+      // Partly redundant by design: one of these two was cancelled a statement ago, so this
+      // settles the other. The short count is the handler's own doing, not a lost claim, and
+      // reading it as one would throw away a batch that did exactly what it was asked to.
+      const completed = await ctx.boss!.complete(ctx.schema, jobs.map(job => job.id), undefined, { db: tx })
+
+      settles.push({ cancelled: cancelled.affected, completed: completed.affected, requested: completed.requested })
+    })
+
+    await until(async () => {
+      const jobs = await Promise.all(ids.map(id => ctx.boss!.getJobById(ctx.schema, id)))
+      return jobs.every(job => job?.state === 'cancelled' || job?.state === 'completed')
+    })
+
+    const jobs = await Promise.all(ids.map(id => ctx.boss!.getJobById(ctx.schema, id)))
+    const { rows } = await db.executeSql(`SELECT id FROM ${ledger}`)
+
+    expect(settles).toEqual([{ cancelled: 1, completed: 1, requested: 2 }])
+    expect(jobs.map(job => job?.state).sort()).toEqual(['cancelled', 'completed'])
     expect(rows.length).toBe(1)
   })
 
@@ -526,13 +629,10 @@ describeTransactional('transactional work', function () {
     const jobId = await ctx.boss.send(ctx.schema, { work: true }, { expireInSeconds: 30 })
     helper.assertTruthy(jobId)
 
-    let applied: Record<string, string | null> | undefined
+    let applied: number | null | undefined
 
     await ctx.boss.work(ctx.schema, { transactional: true }, async (jobs, tx) => {
-      const { rows } = await tx.executeSql(
-        `SELECT current_setting('transaction_timeout', true) AS transaction_timeout,
-                current_setting('idle_in_transaction_session_timeout', true) AS idle_timeout`)
-      applied = rows[0]
+      applied = await readTransactionBound(tx)
     })
 
     await until(async () => {
@@ -540,12 +640,9 @@ describeTransactional('transactional work', function () {
       return job?.state === 'completed'
     })
 
-    helper.assertTruthy(applied)
-
     // expireInSeconds plus the 5s pg-boss allows its own rollback, on whichever GUC this server
     // recognises. transaction_timeout arrived in PostgreSQL 17, so older servers get the idle one.
-    const bound = applied.transaction_timeout !== null ? applied.transaction_timeout : applied.idle_timeout
-    expect(bound).toBe('35s')
+    expect(applied).toBe(35000)
   })
 
   it('should honour an explicit transactionTimeoutSeconds', async function () {
@@ -554,13 +651,10 @@ describeTransactional('transactional work', function () {
     const jobId = await ctx.boss.send(ctx.schema, { work: true }, { expireInSeconds: 30 })
     helper.assertTruthy(jobId)
 
-    let applied: Record<string, string | null> | undefined
+    let applied: number | null | undefined
 
     await ctx.boss.work(ctx.schema, { transactional: true, transactionTimeoutSeconds: 90 }, async (jobs, tx) => {
-      const { rows } = await tx.executeSql(
-        `SELECT current_setting('transaction_timeout', true) AS transaction_timeout,
-                current_setting('idle_in_transaction_session_timeout', true) AS idle_timeout`)
-      applied = rows[0]
+      applied = await readTransactionBound(tx)
     })
 
     await until(async () => {
@@ -568,10 +662,7 @@ describeTransactional('transactional work', function () {
       return job?.state === 'completed'
     })
 
-    helper.assertTruthy(applied)
-
-    const bound = applied.transaction_timeout !== null ? applied.transaction_timeout : applied.idle_timeout
-    expect(bound).toBe('90s')
+    expect(applied).toBe(90000)
   })
 
   it('should leave the transaction unbounded at transactionTimeoutSeconds 0', async function () {
@@ -580,13 +671,10 @@ describeTransactional('transactional work', function () {
     const jobId = await ctx.boss.send(ctx.schema, { work: true })
     helper.assertTruthy(jobId)
 
-    let applied: Record<string, string | null> | undefined
+    let applied: number | null | undefined
 
     await ctx.boss.work(ctx.schema, { transactional: true, transactionTimeoutSeconds: 0 }, async (jobs, tx) => {
-      const { rows } = await tx.executeSql(
-        `SELECT current_setting('transaction_timeout', true) AS transaction_timeout,
-                current_setting('idle_in_transaction_session_timeout', true) AS idle_timeout`)
-      applied = rows[0]
+      applied = await readTransactionBound(tx)
     })
 
     await until(async () => {
@@ -594,11 +682,8 @@ describeTransactional('transactional work', function () {
       return job?.state === 'completed'
     })
 
-    helper.assertTruthy(applied)
-
-    // '0' is how both GUCs spell "no bound"; a server that has neither reports null for both.
-    expect(applied.transaction_timeout === null || applied.transaction_timeout === '0').toBe(true)
-    expect(applied.idle_timeout === null || applied.idle_timeout === '0').toBe(true)
+    // 0 is how both GUCs spell "no bound"; a server that has neither reports nothing at all.
+    expect(applied === null || applied === 0).toBe(true)
   })
 
   it('should roll the handler back when the database gives up on its transaction', async function () {
@@ -637,15 +722,17 @@ describeTransactional('transactional work', function () {
     expect(rows.length).toBe(0)
   })
 
-  it('should probe the transaction timeout again after a probe that failed', async function () {
+  it('should run unbounded and probe again after a probe the server refused', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 
     const inner = ctx.boss.getDb()
     let probes = 0
 
-    // Refuses the GUC probe once. The batch after it has to ask again: a remembered rejection
-    // would leave every transaction from then on unbounded for the life of the process.
-    const failFirstProbe = (db: types.IDatabase): types.IDatabase => ({
+    // Refuses the GUC probe once. The batch that hits it still has to run: the database-side bound
+    // is a backstop against a process that has already failed, so losing it is worth a warning and
+    // nothing more. The batch after it has to ask again, since a remembered rejection would leave
+    // every transaction from then on unbounded for the life of the process.
+    const db = {
       executeSql: (text: string, values?: unknown[]) => {
         if (text.includes("current_setting('transaction_timeout'")) {
           probes++
@@ -655,44 +742,97 @@ describeTransactional('transactional work', function () {
           }
         }
 
-        return db.executeSql(text, values)
-      }
-    })
-
-    const db = {
-      executeSql: (text: string, values?: unknown[]) => inner.executeSql(text, values),
-      beginTransaction: async () => {
-        const tx = await inner.beginTransaction!()
-        return { ...tx, db: failFirstProbe(tx.db) }
-      }
+        return inner.executeSql(text, values)
+      },
+      beginTransaction: () => inner.beginTransaction!()
     }
 
     const boss2 = new PgBoss({ ...ctx.bossConfig, db, createSchema: false, migrate: false })
 
+    const warnings: any[] = []
+    boss2.on('warning', warning => warnings.push(warning))
+
     await boss2.start()
 
     try {
-      const first = await boss2.send(ctx.schema, { work: true }, { retryLimit: 0 })
-      const second = await boss2.send(ctx.schema, { work: true }, { retryLimit: 0 })
+      const first = await boss2.send(ctx.schema, { work: true }, { retryLimit: 0, expireInSeconds: 30 })
+      const second = await boss2.send(ctx.schema, { work: true }, { retryLimit: 0, expireInSeconds: 30 })
       helper.assertTruthy(first)
       helper.assertTruthy(second)
 
-      // One job per batch, so the refused probe and the successful one land in transactions of
-      // their own and the second job only runs once the first has been failed.
-      await boss2.work(ctx.schema, { transactional: true, batchSize: 1 }, async () => {})
+      const bounds: Array<number | null> = []
 
-      await until(async () => {
-        const failed = await boss2.getJobById(ctx.schema, first)
-        const completed = await boss2.getJobById(ctx.schema, second)
-        return failed?.state === 'failed' && completed?.state === 'completed'
+      // One job per batch, so the refused probe and the successful one land in transactions of
+      // their own and the second job only runs once the first is settled.
+      await boss2.work(ctx.schema, { transactional: true, batchSize: 1 }, async (jobs, tx) => {
+        bounds.push(await readTransactionBound(tx))
       })
 
-      const failed = await boss2.getJobById(ctx.schema, first)
-      expect((failed!.output as any).message).toBe('probe refused')
+      await until(async () => {
+        const jobs = await Promise.all([first, second].map(id => boss2.getJobById(ctx.schema, id)))
+        return jobs.every(job => job?.state === 'completed')
+      })
+
+      // Both committed. The first ran with whatever bound the connection already carried (none, on
+      // a stock server), the second with the one pg-boss derived from expireInSeconds.
       expect(probes).toBe(2)
+      expect(bounds.length).toBe(2)
+      expect(bounds[0] === null || bounds[0] === 0).toBe(true)
+      expect(bounds[1]).toBe(35000)
+      expect(warnings.filter(w => w.data?.type === 'transaction_timeout_probe').length).toBe(1)
     } finally {
       await boss2.stop({ graceful: false })
     }
+  })
+
+  // Both GUCs, since which one pg-boss picks depends on the server: transaction_timeout where it
+  // exists (PostgreSQL 17+, CockroachDB), the idle one on 13-16. -c applies them to every
+  // connection in the pool, which is how a role, a managed provider or a pooler sets them.
+  const withOperatorBound = (ms: number) => ({
+    ...ctx.bossConfig,
+    options: `-c transaction_timeout=${ms} -c idle_in_transaction_session_timeout=${ms}`
+  })
+
+  it('should keep an operator bound that is tighter than the derived one', async function () {
+    // 3 seconds the DBA set against 35 derived from expireInSeconds. Widening it would happen on
+    // exactly the longest transactions pg-boss opens, which is the worst place to do it.
+    ctx.boss = await helper.start(withOperatorBound(3000))
+
+    const jobId = await ctx.boss.send(ctx.schema, { work: true }, { expireInSeconds: 30 })
+    helper.assertTruthy(jobId)
+
+    let applied: number | null | undefined
+
+    await ctx.boss.work(ctx.schema, { transactional: true }, async (jobs, tx) => {
+      applied = await readTransactionBound(tx)
+    })
+
+    await until(async () => {
+      const job = await ctx.boss!.getJobById(ctx.schema, jobId)
+      return job?.state === 'completed'
+    })
+
+    expect(applied).toBe(3000)
+  })
+
+  it('should apply the derived bound over an operator bound that is looser', async function () {
+    ctx.boss = await helper.start(withOperatorBound(600000))
+
+    const jobId = await ctx.boss.send(ctx.schema, { work: true }, { expireInSeconds: 30 })
+    helper.assertTruthy(jobId)
+
+    let applied: number | null | undefined
+
+    await ctx.boss.work(ctx.schema, { transactional: true }, async (jobs, tx) => {
+      applied = await readTransactionBound(tx)
+    })
+
+    await until(async () => {
+      const job = await ctx.boss!.getJobById(ctx.schema, jobId)
+      return job?.state === 'completed'
+    })
+
+    expect(applied).toBe(35000)
   })
 
   it('should reject a transactional worker on a db without transaction support', async function () {

@@ -24,8 +24,11 @@ const TRANSACTION_ABORTED = '25P02'
 const DEFAULT_POOL_MAX = 10
 
 const WARNING_TYPES = {
-  TRANSACTIONAL_POOL_HEADROOM: 'transactional_pool_headroom'
+  TRANSACTIONAL_POOL_HEADROOM: 'transactional_pool_headroom',
+  TRANSACTION_TIMEOUT_PROBE: 'transaction_timeout_probe'
 } as const
+
+const TRANSACTIONAL_HEARTBEAT_UNSUPPORTED = 'this backend cannot run a transactional worker on a queue with heartbeatSeconds: the heartbeat refreshes the claimed row from a pooled connection, which the handler transaction is then refused a write to. Drop heartbeatSeconds and let expireInSeconds bound the job, or drop transactional and settle it with complete({ db })'
 
 // Candidates for bounding a transactional handler's transaction from the database side, best
 // first. transaction_timeout covers the whole transaction; idle_in_transaction_session_timeout only
@@ -40,6 +43,18 @@ const TRANSACTION_TIMEOUT_GUCS = ['transaction_timeout', 'idle_in_transaction_se
 // parsing. transaction_timeout arrived in PostgreSQL 17 and exists on CockroachDB; asking for it on
 // 13-16 any other way is a hard error.
 const TRANSACTION_TIMEOUT_PROBE = `SELECT ${TRANSACTION_TIMEOUT_GUCS.map(name => `current_setting('${name}', true) AS ${name}`).join(', ')}`
+
+// Applies pg-boss's bound without widening one the connection already carries. A role, a managed
+// provider or a pooler that sets idle_in_transaction_session_timeout means it, and the transactions
+// this runs on are the longest ones pg-boss opens, so overwriting it is exactly the wrong place to
+// do so. pg_settings reports both GUCs unitless in milliseconds on every backend that has them,
+// which current_setting does not, so the comparison needs no parsing and no second round trip.
+// LEAST ignores nulls, which covers both cases where there is nothing to be tighter than: 0 is how
+// either GUC spells "no bound" (NULLIF turns it into one of them), and a backend that recognises
+// the parameter without listing it in pg_settings is the other. Read per transaction rather than
+// cached, since the value belongs to the connection and not to the process.
+const TRANSACTION_TIMEOUT_APPLY = `SELECT set_config($1,
+  LEAST($2::bigint, NULLIF((SELECT s.setting::bigint FROM pg_settings s WHERE s.name = $1), 0))::text, true)`
 
 // CockroachDB returns integer columns (INT8) as strings; these aliased metadata
 // fields must be coerced back to numbers when backend === 'cockroachdb'.
@@ -140,8 +155,12 @@ class Manager extends EventEmitter implements types.EventsMixin {
   // there. Weak because the key is the transaction, so an entry goes away with it.
   #handlerSettledJobs: WeakMap<types.IDatabase, Set<string>>
   // Which GUC this server bounds a transaction with, resolved on the first transactional batch and
-  // kept for the life of the process. Null once resolved means neither is recognised.
+  // kept for the life of the process. Resolving to null means neither is recognised, or the probe
+  // itself failed; a failed probe clears the memo so the next batch asks again.
   #transactionTimeoutGuc: Promise<string | null> | null
+  // One warning per process for a probe the server will not answer, matching the other episodic
+  // warnings. The probe itself is retried every batch; the message does not need repeating.
+  #warnedTransactionTimeoutProbe: boolean
   #localGroupActive: Map<string, Map<string, number>>
   #localGroupConfig: Map<string, types.GroupConcurrencyConfig>
   #localGroupMaxLimit: Map<string, number>
@@ -158,6 +177,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     this.#spies = new Map()
     this.#handlerSettledJobs = new WeakMap()
     this.#transactionTimeoutGuc = null
+    this.#warnedTransactionTimeoutProbe = false
     this.#localGroupActive = new Map()
     this.#localGroupConfig = new Map()
     this.#localGroupMaxLimit = new Map()
@@ -547,6 +567,11 @@ class Manager extends EventEmitter implements types.EventsMixin {
     let transaction: types.TransactionHandle | null = null
 
     try {
+      // A per-job heartbeatSeconds can put a heartbeat on a batch whose queue carries none, which
+      // the work() check cannot see. Thrown before the begin so the batch takes the ordinary
+      // failure path rather than the backend's raw write conflict.
+      assert(!(transactional && heartbeatSeconds > 0 && this.config.noTransactionalHeartbeat), TRANSACTIONAL_HEARTBEAT_UNSUPPORTED)
+
       if (transactional) {
         transaction = await this.db.beginTransaction!()
         this.#handlerSettledJobs.set(transaction.db, new Set())
@@ -664,21 +689,43 @@ class Manager extends EventEmitter implements types.EventsMixin {
   async #setTransactionTimeout (transaction: types.TransactionHandle, timeoutMs: number) {
     if (timeoutMs <= 0) return
 
-    const guc = await this.#resolveTransactionTimeoutGuc(transaction.db)
+    const guc = await this.#resolveTransactionTimeoutGuc()
 
     if (!guc) return
 
-    await transaction.db.executeSql('SELECT set_config($1, $2, true)', [guc, `${Math.round(timeoutMs)}`])
+    await transaction.db.executeSql(TRANSACTION_TIMEOUT_APPLY, [guc, `${Math.round(timeoutMs)}`])
   }
 
-  #resolveTransactionTimeoutGuc (db: types.IDatabase): Promise<string | null> {
-    this.#transactionTimeoutGuc ??= db.executeSql(TRANSACTION_TIMEOUT_PROBE)
+  /**
+   * Which GUC this server bounds a transaction with, or null if neither is available and the
+   * transaction runs unbounded.
+   *
+   * Asked on the pooled connection rather than the handler's, even though the bound is applied on
+   * the handler's. A statement that errors leaves its transaction aborted, so a probe the backend
+   * or a `db` adapter cannot answer would poison the very transaction it was meant to protect and
+   * every handler statement after it would come back 25P02 blaming the handler for a SQL error it
+   * never raised. Off the transaction, a failed probe costs the bound and nothing else.
+   *
+   * The bound is a backstop against a process that has already failed, so losing it degrades rather
+   * than fails the batch: warn once, run this batch unbounded, and leave the memo empty so the next
+   * batch asks again instead of running unbounded for the life of the process.
+   */
+  #resolveTransactionTimeoutGuc (): Promise<string | null> {
+    this.#transactionTimeoutGuc ??= this.db.executeSql(TRANSACTION_TIMEOUT_PROBE)
       .then(({ rows }) => TRANSACTION_TIMEOUT_GUCS.find(name => rows[0][name] !== null) ?? null)
       .catch((err: any) => {
-        // Not remembered, so the next batch asks again rather than leaving every transaction after
-        // a single failed probe unbounded for the life of the process.
         this.#transactionTimeoutGuc = null
-        throw err
+
+        if (!this.#warnedTransactionTimeoutProbe) {
+          this.#warnedTransactionTimeoutProbe = true
+
+          this.emit(events.warning, {
+            message: `could not ask this server which transaction timeout it supports, so transactional handlers run with no database-side bound: ${err.message}`,
+            data: { type: WARNING_TYPES.TRANSACTION_TIMEOUT_PROBE }
+          })
+        }
+
+        return null
       })
 
     return this.#transactionTimeoutGuc
@@ -723,20 +770,24 @@ class Manager extends EventEmitter implements types.EventsMixin {
   // Records a settle a transactional handler ran through the transaction it was handed. A no-op for
   // every other caller: only a transaction #processJobs opened is in the map.
   //
-  // Called with the response rather than the ids, and only records an all-or-nothing settle,
-  // because a short one is the shape a lost claim leaves behind: complete() on a job a peer already
-  // moved out of `active` updates no rows. Recording that as the handler's settle would account for
-  // a job nobody settled and let the batch commit, which is the duplicate #assertClaimHeld exists
-  // to stop. Short means unrecorded and so rolled back, which is the safe direction.
+  // Records the ids the statement touched rather than the ids it was asked about, because the two
+  // differ in both directions. complete() on a job a peer already moved out of `active` updates no
+  // rows, and recording that as the handler's settle would account for a job nobody settled and let
+  // the batch commit, which is the duplicate #assertClaimHeld exists to stop. A handler that
+  // settles part of its own batch first then asks about all of it lands short for the opposite
+  // reason, and reading that as a lost claim would throw away a batch that did what it was asked.
+  // The count alone cannot tell those apart; the ids can, and the statement already returns them.
   #trackHandlerSettle (options: types.ConnectionOptions, response: types.CommandResponse) {
-    if (response.affected < response.requested) return
-
     const settled = options.db && this.#handlerSettledJobs.get(options.db)
 
-    if (settled) {
-      for (const id of response.jobs) {
-        settled.add(id)
-      }
+    if (!settled) return
+
+    // Without the ids there is no way to attribute a short count, so fall back to the all-or-nothing
+    // reading: a full settle is the handler's, anything less is left for #assertClaimHeld to judge.
+    const landed = response.settled ?? (response.affected < response.requested ? [] : response.jobs)
+
+    for (const id of landed) {
+      settled.add(id)
     }
   }
 
@@ -876,6 +927,8 @@ class Manager extends EventEmitter implements types.EventsMixin {
       assert(typeof this.db.beginTransaction === 'function',
         'transactional workers require a database connection pg-boss can open a transaction on: the built-in pool, or a db adapter implementing beginTransaction')
 
+      await this.#assertTransactionalHeartbeatSupported(name)
+
       this.#warnOnTransactionalPoolHeadroom(localConcurrency)
     }
 
@@ -970,6 +1023,37 @@ class Manager extends EventEmitter implements types.EventsMixin {
     }
 
     return firstWorkerId
+  }
+
+  /**
+   * Refuses a transactional worker on a queue that configures heartbeats, where the backend cannot
+   * carry both.
+   *
+   * `touch()` refreshes `heartbeat_on` on the claimed row from a pooled connection so the job stays
+   * visibly `active` while the handler runs. Under CockroachDB's serializable isolation that write
+   * lands above the handler transaction's timestamp and the completion pg-boss runs inside the
+   * transaction then cannot write the same row: `40001` WriteTooOldError, every batch. The
+   * transaction has already returned rows to the handler, so there is no read timestamp left to
+   * refresh and no retry to make in place.
+   *
+   * Neither half survives being dropped quietly. Skipping the refresh would leave `heartbeat_on`
+   * to go stale under a live handler, and `failJobsByHeartbeat` would reclaim exactly the
+   * long-running jobs heartbeats exist for, so the batch would roll back and retry forever with
+   * nothing in the output to say why. Rejecting at registration says it once, where the
+   * configuration is.
+   *
+   * Only queried on a backend that sets the flag, so `work()` stays off the database everywhere
+   * else. A per-job `heartbeatSeconds` can still override a queue that has none, which this call
+   * cannot see; #processJobs catches that from the batch itself.
+   */
+  async #assertTransactionalHeartbeatSupported (name: string) {
+    if (!this.config.noTransactionalHeartbeat) return
+
+    // A queue that does not exist yet cannot be read, and work() has never required one. The batch
+    // check is the backstop either way.
+    const queue = await this.getQueue(name).catch(() => null)
+
+    assert(!queue?.heartbeatSeconds, TRANSACTIONAL_HEARTBEAT_UNSUPPORTED)
   }
 
   // Each transactional handler in flight holds a pool connection for its own duration, so a pool
@@ -1726,7 +1810,11 @@ class Manager extends EventEmitter implements types.EventsMixin {
     return {
       jobs: ids,
       requested: ids.length,
-      affected: result && result.rows ? parseInt(result.rows[0].count) : 0
+      affected: result && result.rows ? parseInt(result.rows[0].count) : 0,
+      // The settle statements aggregate the ids they touched beside the count; the read-only
+      // mutators that share this mapper (resume, restore, retry, touch) do not, so it stays
+      // optional and #trackHandlerSettle falls back to the count when it is absent.
+      settled: result?.rows?.[0]?.ids
     }
   }
 
@@ -1771,7 +1859,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
     // completion is a single statement on every backend.
     const sql = plans.completeJobsDistributed(this.config.schema, table, includeQueued)
     const { rows } = await db.executeSql(sql, [name, ids, outputData])
-    return { jobs: ids, requested: ids.length, affected: rows.length }
+    return { jobs: ids, requested: ids.length, affected: rows.length, settled: rows.map(row => row.id) }
   }
 
   async fail (name: string, id: string | string[], data?: any, options: types.ConnectionOptions = {}) {
@@ -1808,7 +1896,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       const { rows: jobs } = await tx.executeSql(selectQuery.text, [name, ids])
 
       if (jobs.length === 0) {
-        return { jobs: ids, requested: ids.length, affected: 0 }
+        return { jobs: ids, requested: ids.length, affected: 0, settled: [] }
       }
 
       // Step 2: Delete the jobs
@@ -1818,7 +1906,7 @@ class Manager extends EventEmitter implements types.EventsMixin {
       // Step 3: Re-insert jobs with updated state
       const count = await this.reinsertFailedJobs(tx, table, jobs, outputData)
 
-      return { jobs: ids, requested: ids.length, affected: count }
+      return { jobs: ids, requested: ids.length, affected: count, settled: jobs.map(job => job.id) }
     })
   }
 

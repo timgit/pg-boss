@@ -1117,9 +1117,9 @@ export function deleteJobsById (schema: string, table: string) {
       DELETE FROM ${schema}.${table}
       WHERE name = $1
         AND id = ANY($2::uuid[])
-      RETURNING 1
+      RETURNING id
     )
-    SELECT COUNT(*) from results
+    ${settledCountAndIds()}
   `
 }
 
@@ -1934,9 +1934,9 @@ export function completeJobs (schema: string, table: string, includeQueued?: boo
   return `
     WITH results AS (
       ${completeJobsUpdate(schema, table, includeQueued)}
-      RETURNING 1
+      RETURNING id
     )
-    SELECT COUNT(*) FROM results
+    ${settledCountAndIds()}
   `
 }
 
@@ -1992,9 +1992,9 @@ export function cancelJobs (schema: string, table: string) {
       WHERE name = $1
         AND id = ANY($2::uuid[])
         AND state < '${JOB_STATES.completed}'
-      RETURNING 1
+      RETURNING id
     )
-    SELECT COUNT(*) from results
+    ${settledCountAndIds()}
   `
 }
 
@@ -2202,7 +2202,7 @@ export function failJobsById (schema: string, table: string) {
   const where = `name = $1 AND id = ANY($2::uuid[]) AND state < '${JOB_STATES.completed}'`
   const output = '$3::jsonb'
 
-  return failJobs(schema, table, where, output)
+  return failJobs(schema, table, where, output, true)
 }
 
 export function failJobsByTimeout (schema: string, table: string, queues: string[], noAdvisoryLocks?: boolean): string {
@@ -2240,11 +2240,21 @@ export function touchJobs (schema: string, table: string) {
   `
 }
 
-function failJobs (schema: string, table: string, where: string, output: string) {
+// `returnIds` is off for the supervisor's bulk maintenance (failJobsByTimeout/failJobsByHeartbeat),
+// which only ever reads the count and would otherwise ship a whole sweep's worth of ids back.
+function failJobs (schema: string, table: string, where: string, output: string, returnIds = false) {
   return `
     WITH ${failJobsBody(schema, table, where, output)}
-    SELECT COUNT(*) FROM results
+    ${returnIds ? settledCountAndIds() : 'SELECT COUNT(*) FROM results'}
   `
+}
+
+// The tail of every settle statement: how many rows the mutation touched, and which. The count is
+// what callers report as `affected`; the ids are what tells a transactional handler's own settle
+// apart from a claim that went away, since a short count alone cannot say which of its jobs landed.
+// Aggregated from the same `results` CTE the count comes from, so it costs no extra round trip.
+function settledCountAndIds () {
+  return "SELECT COUNT(*), COALESCE(array_agg(id), '{}'::uuid[]) AS ids FROM results"
 }
 
 // The CTE chain shared by failJobs() and failJobsByIdWithOutputs(): delete the matched jobs and

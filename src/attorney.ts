@@ -22,7 +22,8 @@ const COMPATIBILITY_FLAGS = [
   'noListenNotify',
   'noIndexProgressView',
   'noReindex',
-  'noMonitorVacuum'
+  'noMonitorVacuum',
+  'noTransactionalHeartbeat'
 ] as const
 
 type CompatibilityFlag = typeof COMPATIBILITY_FLAGS[number]
@@ -62,7 +63,12 @@ const BACKEND_PROFILES: Record<types.BackendProfile, BackendDefinition> = {
       // there is no pg_relation_size(), and reltuples / relpages is an "unsupported binary
       // operator: <float4> / <int4>".
       noReindex: true,
-      noMonitorVacuum: true
+      noMonitorVacuum: true,
+      // The heartbeat writes heartbeat_on on the claimed row from a pooled connection, which under
+      // serializable lands at a timestamp above the handler transaction's. The completion pg-boss
+      // runs inside that transaction then cannot write the same row and the batch dies with a
+      // WriteTooOldError. YugabyteDB's snapshot isolation waits instead, so it does NOT set this.
+      noTransactionalHeartbeat: true
     }
   },
   yugabytedb: {
@@ -567,6 +573,11 @@ function resolveBackend (config: any) {
   // used by CockroachDB/YugabyteDB, on a plain Postgres instance.
   if (config.__test__noIndexProgressView) {
     config.noIndexProgressView = true
+  }
+
+  // Test hook: exercise the transactional-heartbeat rejection (CockroachDB) on plain Postgres.
+  if (config.__test__noTransactionalHeartbeat) {
+    config.noTransactionalHeartbeat = true
   }
 
   // Test hook: exercise the detection-only reindex path (bloat is reported, never rebuilt) used by

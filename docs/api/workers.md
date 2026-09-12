@@ -82,6 +82,7 @@ The default options for `work()` is 1 job every 2 seconds.
   - Cannot be combined with `perJobResults`: one transaction has a single outcome, so per-job settlement has nothing to commit separately. Rejected rather than silently degraded.
   - **Every handler in flight holds a pool connection for its own duration.** Size `max` above `localConcurrency` (summed over your transactional queues) with room to spare for fetches, failures, and maintenance, or those queries wait out `connectionTimeoutMillis` and reject. pg-boss emits a `warning` at `work()` time when the pool has no room left.
   - **The transaction is open for as long as the handler runs.** A long transaction holds its snapshot and blocks vacuum from reclaiming dead rows database-wide, so this suits handlers that finish in seconds. For long work, keep the default worker and use the `db` option on `complete()` instead. The database bounds it either way: see `transactionTimeoutSeconds` below.
+  - **Some backends cannot carry a transactional worker and heartbeats at once.** The heartbeat refreshes the claimed row from a pooled connection so the job stays visibly `active`, and an engine that refuses the handler's transaction a write to a row another session wrote after it began (CockroachDB, under serializable isolation) then fails the completion. `work()` rejects the combination on those backends rather than shipping a worker that fails every batch; `expireInSeconds` is the liveness bound there. See [database backends](../database-backends.md#compatibility-flags).
   - **A SQL error the handler catches leaves the transaction aborted.** Postgres then rejects every later statement in it, including the completion pg-boss runs there, so the job fails even though the handler returned. Either let such an error propagate out of the handler, or isolate the statement behind a `SAVEPOINT` of your own.
 
 * **transactionTimeoutSeconds**, int, *(default=`expireInSeconds` + 5)*
@@ -95,6 +96,8 @@ The default options for `work()` is 1 job every 2 seconds.
   ```
 
   The default leaves the handler's own timeout and its rollback the whole window they need, so the server only gives up once neither ran. Applied as `transaction_timeout` where the server has it (PostgreSQL 17+, CockroachDB) and `idle_in_transaction_session_timeout` otherwise, which bounds the gaps between the handler's statements rather than the transaction as a whole. Either way the connection is dropped, so the batch ends on the rolled-back path, and the job is retried under its own retry policy.
+
+  A bound the connection already carries is never widened. Where a role, a managed provider, or a pooler has already set the GUC to something stricter, that value stands and this option cannot raise it. These are the longest transactions pg-boss opens, so they are the last place to relax someone else's limit. If pg-boss cannot ask the server which GUC it recognises, it emits a [`transaction_timeout_probe`](./events.md#warning) warning once, runs the batch with no database-side bound, and asks again on the next one.
 
 * **priority**, bool — **deprecated, ignored since 12.30.0**
 
