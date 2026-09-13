@@ -1,3 +1,4 @@
+import assert from 'node:assert'
 import EventEmitter from 'node:events'
 import * as Attorney from './attorney.ts'
 import Contractor from './contractor.ts'
@@ -166,6 +167,8 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
     }
 
     if (isAttachable(this.#config.clock)) {
+      assert(this.#db._pgbdb || this.#db.clockSessionSetup,
+        `clock assert: this db adapter does not declare clockSessionSetup, so a TestClock cannot reach every session. Run "${plans.enableClockOverride()}" on every connection it opens, then set clockSessionSetup: true on the adapter.`)
       this.#attachedClock = await this.#config.clock.attach({ db: this.#db, schema: this.#config.schema })
     }
 
@@ -594,6 +597,7 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
 }
 
 export { systemClock, TestClock } from './clock.ts'
+export { CLOCK_OVERRIDE_SETTING, enableClockOverride, disableClockOverride } from './plans.ts'
 
 export type {
   BackendProfile,

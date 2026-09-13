@@ -5,6 +5,8 @@ import { ctx } from './hooks.ts'
 import { PgBoss, TestClock } from '../src/index.ts'
 import * as plans from '../src/plans.ts'
 import { delay } from '../src/tools.ts'
+import { enableClockOverride } from '../src/plans.ts'
+import pg from 'pg'
 
 // A fixed epoch keeps the tests independent of when they run.
 const MINUTE = 60_000
@@ -187,6 +189,36 @@ describe('TestClock', function () {
     expect(await countJobs(ctx.boss, ctx.schema)).toBe(0)
     const [snapshot] = await ctx.boss.getQueueStats(ctx.schema)
     expect(snapshot.capturedOn.getTime()).toBe(later)
+  })
+
+  helper.itPglite('start() refuses a TestClock on a custom adapter that has not declared session setup', async function () {
+    const inner = await helper.getDb()
+    const adapter = { executeSql: (text: string, values?: unknown[]) => inner.executeSql(text, values) }
+
+    try {
+      const boss = new PgBoss({ ...ctx.bossConfig, clock: new TestClock(T0), db: adapter })
+      await expect(boss.start()).rejects.toThrow('clockSessionSetup')
+    } finally {
+      await inner.close()
+    }
+  })
+
+  helper.itPglite('a pooled custom adapter that opts in every connection reads the clock on all of them', async function () {
+    const pool = new pg.Pool({ ...ctx.bossConfig, max: 5 })
+    pool.on('connect', client => { client.query(enableClockOverride()).catch(() => {}) })
+    const adapter = { executeSql: (text: string, values?: unknown[]) => pool.query(text, values), clockSessionSetup: true }
+
+    try {
+      const clock = new TestClock(T0)
+      ctx.boss = await helper.start({ ...ctx.bossConfig, clock, db: adapter })
+
+      const reads = await Promise.all(Array.from({ length: 5 }, () => dbTime(ctx.boss!)))
+      expect(reads).toEqual([T0, T0, T0, T0, T0])
+    } finally {
+      await ctx.boss?.stop({ graceful: false })
+      ctx.boss = undefined
+      await pool.end()
+    }
   })
 
   // PGlite is one session, so the opt-in from attach() is visible to every instance sharing it.

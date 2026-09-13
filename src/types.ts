@@ -33,6 +33,12 @@ export interface IDatabase {
    * a custom adapter may implement it to enable transactional workers.
    */
   beginTransaction?(): Promise<TransactionHandle>;
+  /**
+   * Declares that every session this adapter opens has run the statement `enableClockOverride()`
+   * returns, or that it has a single session, so an attached TestClock reaches all of them. pg-boss's
+   * own pool does this itself; `start()` refuses a TestClock on a custom adapter without it.
+   */
+  clockSessionSetup?: boolean;
 }
 
 export interface ListenHandle {

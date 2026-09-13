@@ -215,6 +215,10 @@ export function enableClockOverride () {
   return `SET ${CLOCK_OVERRIDE_SETTING} = 'on'`
 }
 
+export function disableClockOverride () {
+  return `RESET ${CLOCK_OVERRIDE_SETTING}`
+}
+
 export function createClockFunction (schema: string, options: { replace?: boolean, body?: string } = {}) {
   const { replace = false, body = CLOCK_FUNCTION_BODY } = options
   return `
@@ -254,6 +258,7 @@ function createTableVersion (schema: string) {
 // the aggregate that wrote them (see cacheQueueStats). Splitting them is what lets a pass be claimed
 // and then skip the aggregate - because the vacuum backoff is in force, or because another instance
 // holds the stats try-lock - without capturedOn claiming a freshness the counts do not have.
+/* eslint-disable no-restricted-syntax -- defaults keep the now() spelling earlier releases installed; either spelling binds to pg_catalog, so no migration is needed */
 function createTableQueue (schema: string) {
   return `
     CREATE TABLE ${schema}.queue (
@@ -283,8 +288,8 @@ function createTableQueue (schema: string) {
       monitor_claim_on timestamp with time zone,
       monitor_on timestamp with time zone,
       maintain_on timestamp with time zone,
-      created_on timestamp with time zone not null default pg_catalog.now(),
-      updated_on timestamp with time zone not null default pg_catalog.now(),
+      created_on timestamp with time zone not null default now(),
+      updated_on timestamp with time zone not null default now(),
       PRIMARY KEY (name)
     )
   `
@@ -297,6 +302,9 @@ function createTableQueue (schema: string) {
 // `timezone` defaults to UTC rather than to null, so a row written straight into the table with SQL
 // gets the zone schedule() would have given it. Nullable still, because an instance on an older
 // release can write a null during a rolling upgrade, which is what the read-side COALESCE covers.
+/* eslint-enable no-restricted-syntax */
+
+/* eslint-disable no-restricted-syntax -- defaults keep the now() spelling earlier releases installed; either spelling binds to pg_catalog, so no migration is needed */
 function createTableSchedule (schema: string) {
   return `
     CREATE TABLE ${schema}.schedule (
@@ -307,21 +315,24 @@ function createTableSchedule (schema: string) {
       timezone text DEFAULT 'UTC',
       data jsonb,
       options jsonb,
-      created_on timestamp with time zone not null default pg_catalog.now(),
-      updated_on timestamp with time zone not null default pg_catalog.now(),
+      created_on timestamp with time zone not null default now(),
+      updated_on timestamp with time zone not null default now(),
       last_job_id uuid,
       PRIMARY KEY (name, key)
     )
   `
 }
 
+/* eslint-enable no-restricted-syntax */
+
+/* eslint-disable no-restricted-syntax -- defaults keep the now() spelling earlier releases installed; either spelling binds to pg_catalog, so no migration is needed */
 function createTableSubscription (schema: string) {
   return `
     CREATE TABLE ${schema}.subscription (
       event text not null,
       name text not null REFERENCES ${schema}.queue ON DELETE CASCADE,
-      created_on timestamp with time zone not null default pg_catalog.now(),
-      updated_on timestamp with time zone not null default pg_catalog.now(),
+      created_on timestamp with time zone not null default now(),
+      updated_on timestamp with time zone not null default now(),
       PRIMARY KEY(event, name)
     )
   `
@@ -330,6 +341,8 @@ function createTableSubscription (schema: string) {
 // created_on defaults to clock_timestamp(), not ${schema}.now(), so multiple job_table_run_async() enqueues
 // within a single migration transaction keep their insertion order — BAM applies queued commands in
 // created_on order, and some migrations enqueue an ordered drop-then-rebuild pair (see v33).
+/* eslint-enable no-restricted-syntax */
+
 /* eslint-disable no-restricted-syntax -- bam.created_on orders several enqueues within one transaction; the schema clock would tie them */
 function createTableBam (schema: string) {
   return `
@@ -350,6 +363,7 @@ function createTableBam (schema: string) {
 }
 /* eslint-enable no-restricted-syntax */
 
+/* eslint-disable no-restricted-syntax -- defaults keep the now() spelling earlier releases installed; either spelling binds to pg_catalog, so no migration is needed */
 export function createTableWarning (schema: string) {
   return `
     CREATE TABLE ${schema}.warning (
@@ -357,7 +371,7 @@ export function createTableWarning (schema: string) {
       type text NOT NULL,
       message text NOT NULL,
       data jsonb,
-      created_on timestamp with time zone NOT NULL DEFAULT pg_catalog.now()
+      created_on timestamp with time zone NOT NULL DEFAULT now()
     )
   `
 }
@@ -365,6 +379,8 @@ export function createTableWarning (schema: string) {
 export function createIndexWarning (schema: string) {
   return `CREATE INDEX warning_i1 ON ${schema}.warning (created_on DESC)`
 }
+
+/* eslint-enable no-restricted-syntax */
 
 export function createTableJobDependency (schema: string) {
   return `
@@ -480,6 +496,7 @@ function jobTableRunAsyncFunction (schema: string) {
   `
 }
 
+/* eslint-disable no-restricted-syntax -- defaults keep the now() spelling earlier releases installed; either spelling binds to pg_catalog, so no migration is needed */
 function createTableJob (schema: string, noPartitioning = false) {
   // source_name / source_id / source_created_on / source_retry_count are dead-letter provenance:
   // where a job in a dead-letter queue came from, stamped at the transfer so the original queue,
@@ -503,11 +520,11 @@ function createTableJob (schema: string, noPartitioning = false) {
       singleton_on timestamp without time zone,
       group_id text,
       group_tier text,
-      start_after timestamp with time zone not null default pg_catalog.now(),
-      created_on timestamp with time zone not null default pg_catalog.now(),
+      start_after timestamp with time zone not null default now(),
+      created_on timestamp with time zone not null default now(),
       started_on timestamp with time zone,
       completed_on timestamp with time zone,
-      keep_until timestamp with time zone NOT NULL default pg_catalog.now() + interval '${QUEUE_DEFAULTS.retention_seconds}',
+      keep_until timestamp with time zone NOT NULL default now() + interval '${QUEUE_DEFAULTS.retention_seconds}',
       output jsonb,
       dead_letter text,
       policy text,
@@ -553,6 +570,8 @@ const JOB_COLUMNS_ALL = `${JOB_COLUMNS_MIN},
   source_created_on as "sourceCreatedOn",
   source_retry_count as "sourceRetryCount"
 `
+
+/* eslint-enable no-restricted-syntax */
 
 function createTableJobCommon (schema: string) {
   return `
@@ -1337,6 +1356,7 @@ export function deleteOldWarnings (schema: string, days: number): string {
   `
 }
 
+/* eslint-disable no-restricted-syntax -- defaults keep the now() spelling earlier releases installed; either spelling binds to pg_catalog, so no migration is needed */
 export function createTableQueueStats (schema: string, noPartitioning = false): string {
   return `
     CREATE TABLE ${schema}.queue_stats (
@@ -1348,11 +1368,12 @@ export function createTableQueueStats (schema: string, noPartitioning = false): 
       active_count   int NOT NULL DEFAULT 0,
       failed_count   int NOT NULL DEFAULT 0,
       total_count    int NOT NULL DEFAULT 0,
-      captured_on timestamptz NOT NULL DEFAULT pg_catalog.now(),
+      captured_on timestamptz NOT NULL DEFAULT now(),
       ${noPartitioning ? 'PRIMARY KEY (id)' : 'PRIMARY KEY (id, captured_on)'}
     ) ${noPartitioning ? '' : 'PARTITION BY RANGE (captured_on)'}
   `
 }
+/* eslint-enable no-restricted-syntax */
 
 export function createIndexQueueStats (schema: string, noCoveringIndex = false): string {
   const include = noCoveringIndex
@@ -1802,7 +1823,7 @@ export function fetchNextJob (options: FetchJobOptions, noSkipLocked = false): S
     `j.name = '${name}'`,
     `j.state < '${JOB_STATES.active}'`,
     'NOT j.blocked',
-    // `<=` (not `<`) so a job inserted with the default start_after = ${schema}.now() is immediately
+    // `<=` (not `<`) so a job inserted with start_after = ${schema}.now() is immediately
     // fetchable in the next statement. `${schema}.now()` is transaction-scoped; on backends with coarse
     // clock resolution (notably PGlite) consecutive autocommit statements often share the same
     // timestamp, so `<` would leave freshly-inserted jobs invisible until the clock ticks.

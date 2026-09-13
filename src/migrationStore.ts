@@ -1678,7 +1678,17 @@ function getAll (schema: string, noPartitioning = false, noCovering = false, noA
         // STABLE is what CockroachDB needs to inline. A TestClock swaps the body (pg-boss #689).
         // Column defaults stay on pg_catalog.now(): CockroachDB would record a dependency from
         // create_queue() to this function, and every pg-boss write names its timestamps anyway.
-        `CREATE FUNCTION ${schema}.now() RETURNS timestamp with time zone AS $$ SELECT pg_catalog.now(); $$ LANGUAGE sql STABLE`
+        // The manifest's rendering of a fresh install (schema.json functions.now.def), pasted so a
+        // migrated schema stores byte-identical prosrc. Pasted, not referenced: v42 must not change
+        // when a later version edits the body.
+        `CREATE OR REPLACE FUNCTION ${schema}.now()
+ RETURNS timestamp with time zone
+ LANGUAGE sql
+ STABLE
+AS $function$
+      SELECT pg_catalog.now();
+    $function$
+`
       ],
       uninstall: [
         `DROP FUNCTION ${schema}.now()`

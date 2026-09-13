@@ -150,6 +150,7 @@ export class TestClock implements AttachableClock {
           await db.executeSql(`
             ${plans.createClockFunction(schema, { replace: true })}
             DROP TABLE IF EXISTS ${schema}.clock;
+            ${plans.disableClockOverride()};
           `)
         }
       }

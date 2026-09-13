@@ -8,7 +8,7 @@ CREATE TABLE pgboss.warning (
   type text NOT NULL,
   message text NOT NULL,
   data jsonb,
-  created_on timestamp with time zone NOT NULL DEFAULT pgboss.now()
+  created_on timestamp with time zone NOT NULL DEFAULT now()
 )
 ```
 
