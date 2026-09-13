@@ -12,9 +12,9 @@
     "node": ">=22.12.0"
   },
   "dependencies": {
-    "cron-parser": "^5.10.0",
+    "cron-parser": "^5.10.1",
     "pg": "^8.23.0",
-    "rrule-temporal": "^2.2.4",
+    "rrule-temporal": "^2.2.5",
     "serialize-error": "^13.0.1"
   },
   "devDependencies": {
