@@ -87,12 +87,17 @@ describe('ops', function () {
     const first = ctx.boss.stop()
     const second = ctx.boss.stop()
 
-    // the second caller must wait for the close, not fall through to the stopped guard
     await second
-    expect(pool.totalCount).toBe(0)
+
+    // read before the remaining awaits, asserted after them: a failing expect between the two
+    // would leave first and busy unawaited and stack an unhandled rejection on the failure
+    const totalCountAfterSecond = pool.totalCount
 
     await first
     await busy
+
+    // the second caller must wait for the close, not fall through to the stopped guard
+    expect(totalCountAfterSecond).toBe(0)
   })
 
   it('should do nothing when stop() is called again after the pool was closed', async function () {
@@ -127,7 +132,9 @@ describe('ops', function () {
   })
 
   it('should do nothing when stopping an instance that was never started', async function () {
-    // #stopped is true from the constructor, so the close branch is reached before the pool exists
+    // #stopped is true from the constructor, so the close branch is evaluated before the pool
+    // exists. It is not taken: the instance was never opened, and that guard is what keeps the
+    // close off a pool that is still undefined
     const boss = new PgBoss(ctx.bossConfig)
 
     let stoppedCount = 0

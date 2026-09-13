@@ -37,6 +37,8 @@ By default, calling `stop()` without any arguments will gracefully wait for all 
   * `close`, bool
     Default: `true`. If the database connection is managed by pg-boss, it will close the connection pool. Use `false` if needed to continue allowing operations such as `send()` and `fetch()`. Calling `stop()` again later closes the pool, and from then on those operations reject with `Database not opened`.
 
+    That later close happens once. If it rejects, the pool is left as the driver leaves it and a further `stop()` has nothing to retry, so treat a `stop()` that throws as terminal for that instance rather than calling it again.
+
   * `timeout`, int
 
     Default: 30000. Maximum time (in milliseconds) to wait for workers to finish job processing before shutting down the PgBoss instance.
