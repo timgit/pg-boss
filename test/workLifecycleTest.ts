@@ -116,6 +116,38 @@ describe('work lifecycle', function () {
     await ctx.boss.send(ctx.schema)
   })
 
+  it('should allow reads other than fetch() after stopping with close: false', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    await ctx.boss.stop({ close: false })
+
+    const queues = await ctx.boss.getQueues()
+    expect(queues.length).toBeGreaterThan(0)
+
+    const queue = await ctx.boss.getQueue(ctx.schema)
+    assertTruthy(queue)
+    expect(queue.name).toBe(ctx.schema)
+  })
+
+  helper.itPglite('should report the worker error from work() and the database error from send() once the pool closes', async function () {
+    // PGlite hands pg-boss a constructor-provided db, so stop() never closes anything and the
+    // closed-pool half of this boundary cannot be reached there.
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    await ctx.boss.stop({ close: false })
+
+    // workers are gone while the pool is open, so work() is refused by the worker check
+    await expect(ctx.boss.work(ctx.schema, async () => {})).rejects.toThrow('Workers are disabled')
+
+    await ctx.boss.stop()
+
+    // once the pool is closed the db assert is what everything else hits
+    await expect(ctx.boss.send(ctx.schema)).rejects.toThrow('Database not opened')
+
+    // work() still answers for the worker, not the db
+    await expect(ctx.boss.work(ctx.schema, async () => {})).rejects.toThrow('Workers are disabled')
+  })
+
   it('should abort signal when graceful shutdown timeout expires', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
 

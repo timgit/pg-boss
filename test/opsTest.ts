@@ -56,6 +56,119 @@ describe('ops', function () {
     expect(jobId).toBe(job.id)
   })
 
+  helper.itPglite('should close the connection pool on a stop after stop with close: false', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    await ctx.boss.stop({ close: false })
+
+    // the pool stays open, which is the documented point of close: false
+    await ctx.boss.send(ctx.schema)
+
+    await ctx.boss.stop()
+
+    // @ts-ignore
+    expect(ctx.boss.getDb().pool.totalCount).toBe(0)
+  })
+
+  helper.itPglite('should not resolve a concurrent stop() before the pool from a close: false stop is closed', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    await ctx.boss.stop({ close: false })
+
+    // @ts-ignore
+    const pool = ctx.boss.getDb().pool
+
+    // keep one connection busy so pool.end() has something to drain. pg-pool hands an idle client
+    // out on the next tick, so wait until the query holds it before stopping
+    const acquired = new Promise(resolve => pool.once('acquire', resolve))
+    const busy = ctx.boss.getDb().executeSql('select pg_sleep(0.5)')
+    await acquired
+
+    const first = ctx.boss.stop()
+    const second = ctx.boss.stop()
+
+    // the second caller must wait for the close, not fall through to the stopped guard
+    await second
+    expect(pool.totalCount).toBe(0)
+
+    await first
+    await busy
+  })
+
+  it('should do nothing when stop() is called again after the pool was closed', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    let stoppedCount = 0
+    ctx.boss.on('stopped', () => { stoppedCount++ })
+
+    await ctx.boss.stop({ close: false })
+    await ctx.boss.stop()
+    await ctx.boss.stop()
+
+    // the third call has nothing left to close and must not shut anything down again
+    expect(stoppedCount).toBe(1)
+  })
+
+  helper.itPglite('should not close the connection pool when the second stop also passes close: false', async function () {
+    ctx.boss = await helper.start(ctx.bossConfig)
+
+    let stoppedCount = 0
+    ctx.boss.on('stopped', () => { stoppedCount++ })
+
+    await ctx.boss.stop({ close: false })
+    await ctx.boss.stop({ close: false })
+
+    // the second stop did nothing: the pool is still usable and nothing was shut down again
+    await ctx.boss.send(ctx.schema)
+    expect(stoppedCount).toBe(1)
+
+    // @ts-ignore
+    expect(ctx.boss.getDb().pool.totalCount).toBeGreaterThan(0)
+  })
+
+  it('should do nothing when stopping an instance that was never started', async function () {
+    // #stopped is true from the constructor, so the close branch is reached before the pool exists
+    const boss = new PgBoss(ctx.bossConfig)
+
+    let stoppedCount = 0
+    boss.on('stopped', () => { stoppedCount++ })
+
+    await boss.stop()
+
+    expect(stoppedCount).toBe(0)
+  })
+
+  it('should not close a constructor-provided db on the stop after a close: false stop', async function () {
+    const db = await helper.getDb()
+
+    try {
+      ctx.boss = new PgBoss({
+        ...ctx.bossConfig,
+        db: {
+          async executeSql (sql, values) {
+            return db.executeSql(sql, values)
+          }
+        }
+      })
+
+      await ctx.boss.start()
+
+      let stoppedCount = 0
+      ctx.boss.on('stopped', () => { stoppedCount++ })
+
+      await ctx.boss.stop({ close: false })
+      await ctx.boss.stop()
+
+      // the connection belongs to the caller, so pg-boss must not have closed it, and with
+      // nothing to close the second stop must not shut anything down again either
+      const { rows } = await db.executeSql('select 1 as one')
+      expect(rows[0].one).toBe(1)
+      expect(stoppedCount).toBe(1)
+    } finally {
+      await db.close()
+    }
+  })
+
   it('should be able to run an arbitrary query via getDb()', async function () {
     ctx.boss = await helper.start(ctx.bossConfig)
     const { rows } = await ctx.boss.getDb().executeSql('select 1')

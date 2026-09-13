@@ -222,11 +222,25 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
       return this.#stoppingPromise
     }
 
+    let { close = true, graceful = true, timeout = 30000 } = options
+
+    // stop({ close: false }) marks the instance stopped while leaving the pool open, so a later
+    // stop() that asks to close has to be answered before the guard below. Everything else was
+    // already shut down by the first stop(). The close is published as #stoppingPromise so a
+    // concurrent stop() or start() waits for the pool to drain instead of falling through.
+    if (this.#stopped && close && this.#db._pgbdb && this.#db.opened) {
+      this.#stoppingPromise = this.#closeDb()
+
+      try {
+        return await this.#stoppingPromise
+      } finally {
+        this.#stoppingPromise = null
+      }
+    }
+
     if (this.#stopped) {
       return
     }
-
-    let { close = true, graceful = true, timeout = 30000 } = options
 
     timeout = Math.max(timeout, 1000)
 
@@ -252,11 +266,8 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
       const shutdown = async () => {
         await this.#manager.failWip()
 
-        if (this.#db._pgbdb && this.#db.opened && close) {
-          await this.#db.close()
-
-          // Give event loop time to process socket closes
-          await delay(10)
+        if (close) {
+          await this.#closeDb()
         }
 
         this.#stopped = true
@@ -280,6 +291,17 @@ export class PgBoss extends EventEmitter<types.PgBossEventMap> {
       // instead of every future stop()/start() call silently no-op-ing forever on the stale marker.
       this.#stoppingOn = null
     }
+  }
+
+  async #closeDb (): Promise<void> {
+    if (!this.#db._pgbdb || !this.#db.opened) {
+      return
+    }
+
+    await this.#db.close()
+
+    // Give event loop time to process socket closes
+    await delay(10)
   }
 
   send (request: types.Request): Promise<string | null>

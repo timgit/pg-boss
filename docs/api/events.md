@@ -102,6 +102,8 @@ boss.on('wip', workers => {
 
 Emitted after `stop()` once all workers have completed their work and maintenance has been shut down.
 
+After `stop({ close: false })` this fires while the connection pool is still open. A later `stop()` that closes the pool does not emit it again, since workers and maintenance were already shut down.
+
 ## `bam`
 
 Emitted when a boss async migration (BAM) command changes status. BAM commands are database operations that run asynchronously after schema migrations, such as creating indexes on partitioned tables.
